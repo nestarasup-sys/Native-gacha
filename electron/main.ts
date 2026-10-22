@@ -50,6 +50,7 @@ import { registerFabricatorModelCatalogHandlers } from './domains/fabricator/mod
 import { FabricatorWardrobeCatalog } from './domains/fabricator/wardrobeCatalog'
 import { registerFabricatorWardrobeCatalogHandlers } from './domains/fabricator/wardrobeCatalogIpc'
 import { publishModelSource, type ModelSourcePublishRequest } from './domains/fabricator/modelSource'
+import { createFabricatorModelWriter } from './domains/fabricator/modelWriter'
 import { registerModelSourceDownloadHandlers } from './domains/fabricator/modelSourceExportIpc'
 
 let configuredAppDataRoot: string | null = null
@@ -1387,69 +1388,13 @@ async function readFabricatorHistory(slot: number): Promise<FabricatorHistorySta
   return { undo: await Promise.all(stored.undo.map(restoreEntry)), redo: await Promise.all(stored.redo.map(restoreEntry)) }
 }
 
-async function writeFabricatorProject(project: FabricatorProjectSave, changedAssets: FabricatorAssetSave[], folderOverride?: string): Promise<void> {
-  if (!isValidSlot(project.slot) || project.schemaVersion !== 1 || project.parts.length > 500) throw new Error('Projeto inválido.')
-  const folder = folderOverride ?? slotPath(project.slot)
-  const partsFolder = join(folder, 'parts')
-  await mkdir(partsFolder, { recursive: true })
-  const sourceFile = project.sourceAssetName
-  if (!/^source-[a-f0-9-]+\.(png|jpe?g|webp)$/i.test(sourceFile)) throw new Error('Imagem original inválida.')
-  await readFile(join(folder, sourceFile))
-  const parts = project.parts.map((part) => {
-    if (!/^[a-zA-Z0-9_-]{1,80}$/.test(part.id)) throw new Error('Identificador de peça inválido.')
-    return part
-  })
-  const validPartIds = new Set(parts.map((part) => part.id))
-  for (const asset of changedAssets) {
-    if (!validPartIds.has(asset.id)) continue
-    await writeAssetImageSource(join(partsFolder, `${asset.id}.png`), dataUrlBuffer(asset.dataUrl))
-    if (asset.chromaBaseDataUrl) await writeFile(join(partsFolder, `${asset.id}.base.png`), dataUrlBuffer(asset.chromaBaseDataUrl))
-  }
-  // Never publish a manifest until every referenced image exists. Serializing
-  // saves per slot also prevents an older save from deleting a newer asset.
-  const missingAssets: string[] = []
-  for (const part of parts) {
-    try { await access(join(partsFolder, `${part.id}.png`)) } catch (reason) {
-      if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason
-      missingAssets.push(part.id)
-    }
-  }
-  if (missingAssets.length) throw new Error(`FABRICATOR_MISSING_ASSETS:${missingAssets.join(',')}`)
-  const projectDocument = {
-    schemaVersion: project.schemaVersion,
-    slot: project.slot,
-    name: project.name,
-    sourceName: project.sourceName,
-    sourceAssetName: project.sourceAssetName,
-    width: project.width,
-    height: project.height,
-    tolerance: project.tolerance,
-    chromaBaseTolerance: project.chromaBaseTolerance,
-    joints: project.joints,
-    layerOrder: project.layerOrder,
-    hiddenPartIds: project.hiddenPartIds,
-    updatedAt: project.updatedAt
-  }
-  const manifest = { ...projectDocument, parts, sourceFile }
-  const manifestTemp = join(folder, 'project.json.tmp')
-  await writeFile(manifestTemp, JSON.stringify(manifest), 'utf8')
-  await rename(manifestTemp, join(folder, 'project.json'))
-  const keepFiles = new Set(parts.flatMap((part) => [
-    `${part.id}.png`,
-    ...(part.chromaBaseSaved ? [`${part.id}.base.png`] : [])
-  ]))
-  for (const file of await readdir(partsFolder)) {
-    if (file.endsWith('.png') && !file.endsWith('.paint.png') && !keepFiles.has(file)) await unlink(join(partsFolder, file))
-  }
-  const keptSources = new Set([sourceFile])
-  try {
-    const history = JSON.parse(await readFile(join(folder, 'history', 'history.json'), 'utf8')) as { undo?: Array<{ project?: { sourceAssetName?: string } }>; redo?: Array<{ project?: { sourceAssetName?: string } }> }
-    for (const entry of [...(history.undo ?? []), ...(history.redo ?? [])]) if (entry.project?.sourceAssetName) keptSources.add(entry.project.sourceAssetName)
-  } catch { /* No persisted history yet. */ }
-  for (const file of await readdir(folder)) {
-    if (/^source-[a-f0-9-]+\.(png|jpe?g|webp)$/i.test(file) && !keptSources.has(file)) await unlink(join(folder, file))
-  }
-}
+const writeFabricatorProject = createFabricatorModelWriter({
+  slotPath,
+  isValidSlot,
+  dataUrlBuffer,
+  writeAssetImageSource,
+  files: { mkdir, readFile, writeFile, rename, readdir, access, unlink }
+})
 
 async function writePoseAssets(folder: string, parts: Array<Omit<PosePart, 'dataUrl'>>, assets: FabricatorAssetSave[], fallbackFolder?: string): Promise<void> {
   const partsFolder = join(folder, 'parts')
