@@ -1,4 +1,4 @@
-import { fabricatorIpcChannels } from '../../../src/shared/fabricatorIpcChannels'
+import { fabricatorIpcChannels } from '../../../src/shared/fabricatorIpcChannels.ts'
 /** Canais legados do Animador DEV com fila de gravação única por processo. */
 import type { IpcMain, IpcMainInvokeEvent } from 'electron'
 import { basename, dirname, join, resolve } from 'node:path'
