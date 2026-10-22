@@ -1,4 +1,5 @@
 import { createFabricatorInvoker, fabricatorIpcChannels } from '../src/shared/fabricatorIpcChannels'
+import { createStudioInvoker } from '../src/shared/studioIpcChannels'
 import { contextBridge, ipcRenderer } from 'electron'
 import type { FabricatorDesktopApi, FabricatorModelSourcePublishRequest } from '../src/shared/fabricator'
 import type { CustomizerDesktopApi } from '../src/shared/customizer'
@@ -76,15 +77,16 @@ const customizerApi: CustomizerDesktopApi = {
   deleteCustomizerCharacter: (id) => ipcRenderer.invoke('customizer:characters:delete', id)
 }
 
+const invokeStudio = createStudioInvoker(ipcRenderer)
 const studioApi: StudioDesktopApi = {
-  flushPendingWrites: () => ipcRenderer.invoke('app:flush-pending-writes'),
-  listStudios: () => ipcRenderer.invoke('studio:list'),
-  saveStudio: (studio) => ipcRenderer.invoke('studio:save', studio),
-  deleteStudio: (id) => ipcRenderer.invoke('studio:delete', id),
-  getStudioFolder: () => ipcRenderer.invoke('studio:folder'),
-  importStudioImage: (category) => ipcRenderer.invoke('studio:import-image', category),
-  saveStudioPrint: (studioId, dataUrl) => ipcRenderer.invoke('studio:save-print', studioId, dataUrl),
-  openStudioPrints: (studioId) => ipcRenderer.invoke('studio:open-prints', studioId)
+  flushPendingWrites: () => invokeStudio('flushPendingWrites'),
+  listStudios: () => invokeStudio('listStudios'),
+  saveStudio: (studio) => invokeStudio('saveStudio', studio),
+  deleteStudio: (id) => invokeStudio('deleteStudio', id),
+  getStudioFolder: () => invokeStudio('getStudioFolder'),
+  importStudioImage: (category) => invokeStudio('importStudioImage', category),
+  saveStudioPrint: (studioId, dataUrl) => invokeStudio('saveStudioPrint', studioId, dataUrl),
+  openStudioPrints: (studioId) => invokeStudio('openStudioPrints', studioId)
 }
 
 const videoStudioApi: VideoStudioDesktopApi = {
