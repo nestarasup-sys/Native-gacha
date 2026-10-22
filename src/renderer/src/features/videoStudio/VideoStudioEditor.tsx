@@ -1,4 +1,5 @@
 import { snapshotVideoStudioScene as snapshot, withStudioSnapshot as withSnapshot, studioCharacterRenderKey } from '../../../../shared/studioSceneModel'
+import { SerializedDocumentSaveQueue } from '../../../../shared/serializedDocumentSave'
 import { findTimelineBlockStart, resizeTimelineBlock, timelineBlockOverlaps, type TimelineBlockTarget } from '../../../../shared/videoTimelineEditing'
 import './VideoStudioEditor.css'
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
@@ -237,6 +238,7 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
   const automaticBlinkFrameCacheRef = useRef<{ signature: string; frames: Array<{ elementId: string; dataUrl: string; geometry: Pick<StudioElement, 'width' | 'height' | 'characterCanvasWidth'> }> } | null>(null)
   const automaticMouthFrameCacheRef = useRef(new Map<string, Record<string, AutomaticMouthAnimation>>())
   const saveGenerationRef = useRef(0)
+  const studioSaveQueue = useRef(new SerializedDocumentSaveQueue())
   const expressionSaveSignatureRef = useRef<{ studioId: string; value: string } | null>(null)
   const normalizedStudioIdsRef = useRef(new Set<string>())
   const nextStudioNumber = useRef(1)
@@ -999,7 +1001,7 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
     const generation = ++saveGenerationRef.current
     const startedAt = performance.now()
     try {
-      await persistence.save({ ...document, updatedAt: new Date().toISOString() })
+      await studioSaveQueue.current.run(() => persistence.save({ ...document, updatedAt: new Date().toISOString() }))
       console.info(`[Video Studio perf] salvar projeto: ${(performance.now() - startedAt).toFixed(1)} ms · ${document.videoTimeline?.characterKeys.length ?? 0} quadros-chave`)
       if (generation === saveGenerationRef.current) {
         setSaved(true)
