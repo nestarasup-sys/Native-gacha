@@ -5,7 +5,8 @@
     "customizer -> fabricator": 0,
     "fabricator -> customizer": 0,
     "studio -> customizer": 0,
-    "videoStudio -> customizer": 9,
-    "videoStudio -> studio": 1
+    "videoStudio -> customizer": 1,
+    "videoStudio -> studio": 0,
+    "roteiros -> studio": 0
   }
 }
