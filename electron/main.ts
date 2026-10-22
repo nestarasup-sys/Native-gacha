@@ -52,6 +52,8 @@ import { publishModelSource, type ModelSourcePublishRequest } from './domains/fa
 import { createFabricatorModelWriter } from './domains/fabricator/modelWriter'
 import { createPosePersistence } from './domains/fabricator/posePersistence'
 import { createAnimatorPersistence } from './domains/fabricator/animatorPersistence'
+import { registerFabricatorPoseHandlers } from './domains/fabricator/poseIpc'
+import { registerFabricatorAnimatorHandlers } from './domains/fabricator/animatorIpc'
 import { registerModelSourceDownloadHandlers } from './domains/fabricator/modelSourceExportIpc'
 
 let configuredAppDataRoot: string | null = null
@@ -2011,189 +2013,23 @@ async function registerFabricatorHandlers(): Promise<void> {
     }
   })
 
-  ipcMain.handle('fabricator:poses:list', async (event, requestedModelSlot?: number): Promise<FabricatorPoseSummary[]> => {
-    assertTrustedSender(event)
-    await ensureLegacyPoseMigration()
-    if (requestedModelSlot !== undefined && !isValidModelSlot(requestedModelSlot)) throw new Error('Modelo inválido.')
-    const modelSlots = requestedModelSlot === undefined ? Array.from({ length: slotCount }, (_, index) => index + 1) : [requestedModelSlot]
-    const allSlots: FabricatorPoseSummary[] = []
-    for (const modelSlot of modelSlots) {
-      for (let slot = 1; slot <= poseSlotCount; slot += 1) {
-        try {
-          const manifest = JSON.parse(await readFile(join(poseSlotPath(modelSlot, slot), 'pose.json'), 'utf8')) as FabricatorPoseSave
-          if (manifest.sourceModelSlot !== modelSlot || manifest.slot !== slot) continue
-          allSlots.push({ slot, sourceModelSlot: modelSlot, name: manifest.name, category: resolvePoseCategory(manifest), sourceModelName: manifest.sourceModelName, partCount: manifest.parts.length, updatedAt: manifest.updatedAt })
-        } catch { /* Slots sem manifest válido aparecem vazios. */ }
-      }
-    }
-    return requestedModelSlot === undefined ? allSlots : Array.from({ length: poseSlotCount }, (_, index) => allSlots.find((item) => item?.slot === index + 1) ?? null)
+  registerFabricatorPoseHandlers({
+    ipcMain, assertTrustedSender, ensureLegacyPoseMigration, isValidModelSlot, isValidPoseSlot,
+    slotCount, poseSlotCount, poseSlotPath, poseModelPath, poseDraftPath,
+    queuePoseWrite, readPoseProject, writePoseProject, readPoseDraft, writePoseDraft,
+    files: { readFile, writeFile, mkdir, rename, rm }
   })
 
-  ipcMain.handle('fabricator:poses:export-slots:get', async (event, modelSlot: number): Promise<Array<number | null> | null> => {
-    assertTrustedSender(event)
-    if (!isValidModelSlot(modelSlot)) throw new Error('Modelo inválido.')
-    try {
-      const parsed = JSON.parse(await readFile(join(poseModelPath(modelSlot), 'export-slots.json'), 'utf8')) as unknown
-      if (!Array.isArray(parsed) || parsed.length !== 5 || parsed.some((slot) => slot !== null && (typeof slot !== 'number' || !isValidPoseSlot(slot)))) return null
-      return parsed
-    } catch (reason) {
-      if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return null
-      throw reason
-    }
+  registerFabricatorAnimatorHandlers({
+    ipcMain, assertTrustedSender, isValidModelSlot, isValidAnimatorSlot, poseSlotCount,
+    animatorLibraryPath, animatorModelPath, animatorSlotPath, animatorDraftPath,
+    readAnimatorAnimation, writeAnimatorAnimation, readAnimatorDraft, writeAnimatorDraft,
+    getQueue: () => animatorSaveQueue,
+    setQueue: next => { animatorSaveQueue = next },
+    files: { readFile, readdir, rm }
   })
 
-  ipcMain.handle('fabricator:poses:export-slots:save', async (event, modelSlot: number, slots: unknown): Promise<void> => {
-    assertTrustedSender(event)
-    if (!isValidModelSlot(modelSlot) || !Array.isArray(slots) || slots.length !== 5 || slots.some((slot) => slot !== null && (typeof slot !== 'number' || !isValidPoseSlot(slot)))) throw new Error('Os cinco slots de poses para exportação são inválidos.')
-    const unique = slots.filter((slot): slot is number => slot !== null)
-    if (new Set(unique).size !== unique.length) throw new Error('Cada pose pode ocupar apenas um slot de exportação.')
-    await queuePoseWrite(async () => {
-      const summaries = await Promise.all(unique.map(async (slot) => readPoseProject(modelSlot, slot)))
-      if (summaries.some((pose) => !pose)) throw new Error('Uma das poses selecionadas não existe mais nesta biblioteca.')
-      const folder = poseModelPath(modelSlot)
-      await mkdir(folder, { recursive: true })
-      const target = join(folder, 'export-slots.json')
-      const temporary = `${target}.tmp`
-      await writeFile(temporary, JSON.stringify(slots), 'utf8')
-      await rename(temporary, target)
-    })
-  })
-
-  ipcMain.handle('fabricator:poses:load', async (event, modelSlot: number, slot: number): Promise<FabricatorPose | null> => {
-    assertTrustedSender(event)
-    let loaded: FabricatorPose | null = null
-    await queuePoseWrite(async () => { loaded = await readPoseProject(modelSlot, slot) })
-    return loaded
-  })
-
-  ipcMain.handle('fabricator:poses:save', async (event, modelSlot: number, slot: number, project: FabricatorPoseSave, assets: FabricatorAssetSave[]): Promise<void> => {
-    assertTrustedSender(event)
-    await queuePoseWrite(() => writePoseProject(modelSlot, slot, project, assets))
-  })
-
-  ipcMain.handle('fabricator:poses:delete', async (event, modelSlot: number, slot: number): Promise<void> => {
-    assertTrustedSender(event)
-    if (!isValidModelSlot(modelSlot) || !isValidPoseSlot(slot)) throw new Error('Slot de pose inválido.')
-    await queuePoseWrite(async () => {
-      const base = resolve(poseModelPath(modelSlot))
-      const target = resolve(poseSlotPath(modelSlot, slot))
-      if (dirname(target) !== base || basename(target) !== `slot-${slot}`) throw new Error('Caminho de exclusão de pose inválido.')
-      await rm(target, { recursive: true, force: true })
-    })
-  })
-
-  ipcMain.handle('fabricator:poses:draft:load', async (event, modelSlot: number): Promise<FabricatorPoseDraft | null> => {
-    assertTrustedSender(event)
-    await ensureLegacyPoseMigration()
-    let loaded: FabricatorPoseDraft | null = null
-    await queuePoseWrite(async () => { loaded = await readPoseDraft(modelSlot) })
-    return loaded
-  })
-
-  ipcMain.handle('fabricator:poses:draft:save', async (event, modelSlot: number, draft: FabricatorPoseDraftSave, assets: FabricatorAssetSave[]): Promise<void> => {
-    assertTrustedSender(event)
-    await queuePoseWrite(() => writePoseDraft(modelSlot, draft, assets))
-  })
-
-  ipcMain.handle('fabricator:poses:draft:delete', async (event, modelSlot: number): Promise<void> => {
-    assertTrustedSender(event)
-    if (!isValidModelSlot(modelSlot)) throw new Error('Modelo de rascunho inválido.')
-    await queuePoseWrite(async () => {
-      const base = resolve(poseModelPath(modelSlot))
-      const target = resolve(poseDraftPath(modelSlot))
-      if (dirname(target) !== base || basename(target) !== 'draft') throw new Error('Caminho de rascunho inválido.')
-      await rm(target, { recursive: true, force: true })
-    })
-  })
-
-  ipcMain.handle('fabricator:animator:model-slots', async (event): Promise<number[]> => {
-    assertTrustedSender(event)
-    try {
-      const entries = await readdir(animatorLibraryPath(), { withFileTypes: true })
-      return entries.flatMap((entry) => {
-        const match = entry.isDirectory() ? /^model-(\d{1,3})$/.exec(entry.name) : null
-        const slot = match ? Number(match[1]) : 0
-        return slot && isValidModelSlot(slot) ? [slot] : []
-      }).sort((a, b) => a - b)
-    } catch (reason) {
-      if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return []
-      throw reason
-    }
-  })
-
-  ipcMain.handle('fabricator:animator:list', async (event, modelSlot: number): Promise<AnimatorAnimationSummary[]> => {
-    assertTrustedSender(event)
-    if (!isValidModelSlot(modelSlot)) throw new Error('Modelo inválido.')
-    const entries: AnimatorAnimationSummary[] = []
-    for (let slot = 1; slot <= poseSlotCount; slot += 1) {
-      try {
-        const animation = JSON.parse(await readFile(join(animatorSlotPath(modelSlot, slot), 'animation.json'), 'utf8')) as AnimatorAnimationSave
-        if (animation.schemaVersion !== 1 || animation.sourceModelSlot !== modelSlot || animation.slot !== slot) continue
-        entries.push({ slot, sourceModelSlot: modelSlot, name: animation.name, sourceModelName: animation.sourceModelName, sourceModelUpdatedAt: animation.sourceModelUpdatedAt, sourceModelPartCount: animation.sourceModelPartCount, thumbnailDataUrl: animation.thumbnailDataUrl, updatedAt: animation.updatedAt })
-      } catch { /* Slots inválidos ou ainda vazios são ignorados. */ }
-    }
-    return entries
-  })
-
-  ipcMain.handle('fabricator:animator:load', async (event, modelSlot: number, slot: number): Promise<AnimatorAnimation | null> => {
-    assertTrustedSender(event)
-    let loaded: AnimatorAnimation | null = null
-    const next = animatorSaveQueue.catch(() => undefined).then(async () => { loaded = await readAnimatorAnimation(modelSlot, slot) })
-    animatorSaveQueue = next
-    await next
-    return loaded
-  })
-
-  ipcMain.handle('fabricator:animator:save', async (event, modelSlot: number, slot: number, animation: AnimatorAnimationSave, assets: AnimatorAnimationAsset[]): Promise<void> => {
-    assertTrustedSender(event)
-    const next = animatorSaveQueue.catch(() => undefined).then(() => writeAnimatorAnimation(modelSlot, slot, animation, assets))
-    animatorSaveQueue = next
-    await next
-  })
-
-  ipcMain.handle('fabricator:animator:delete', async (event, modelSlot: number, slot: number): Promise<void> => {
-    assertTrustedSender(event)
-    if (!isValidModelSlot(modelSlot) || !isValidAnimatorSlot(slot)) throw new Error('Slot de animação inválido.')
-    const next = animatorSaveQueue.catch(() => undefined).then(async () => {
-      const base = resolve(animatorModelPath(modelSlot))
-      const target = resolve(animatorSlotPath(modelSlot, slot))
-      if (dirname(target) !== base || basename(target) !== `slot-${slot}`) throw new Error('Caminho de exclusão de animação inválido.')
-      await rm(target, { recursive: true, force: true })
-    })
-    animatorSaveQueue = next
-    await next
-  })
-
-  ipcMain.handle('fabricator:animator:draft:load', async (event, modelSlot: number): Promise<AnimatorAnimationDraft | null> => {
-    assertTrustedSender(event)
-    let loaded: AnimatorAnimationDraft | null = null
-    const next = animatorSaveQueue.catch(() => undefined).then(async () => { loaded = await readAnimatorDraft(modelSlot) })
-    animatorSaveQueue = next
-    await next
-    return loaded
-  })
-
-  ipcMain.handle('fabricator:animator:draft:save', async (event, modelSlot: number, draft: AnimatorAnimationDraft, assets: AnimatorAnimationAsset[]): Promise<void> => {
-    assertTrustedSender(event)
-    const next = animatorSaveQueue.catch(() => undefined).then(() => writeAnimatorDraft(modelSlot, draft, assets))
-    animatorSaveQueue = next
-    await next
-  })
-
-  ipcMain.handle('fabricator:animator:draft:delete', async (event, modelSlot: number): Promise<void> => {
-    assertTrustedSender(event)
-    if (!isValidModelSlot(modelSlot)) throw new Error('Modelo de rascunho inválido.')
-    const next = animatorSaveQueue.catch(() => undefined).then(async () => {
-      const base = resolve(animatorModelPath(modelSlot))
-      const target = resolve(animatorDraftPath(modelSlot))
-      if (dirname(target) !== base || basename(target) !== 'draft') throw new Error('Caminho de rascunho inválido.')
-      await rm(target, { recursive: true, force: true })
-    })
-    animatorSaveQueue = next
-    await next
-  })
-
-  registerFabricatorWardrobeCatalogHandlers(ipcMain, assertTrustedSender, new FabricatorWardrobeCatalog(wardrobeModelPath, { readdir, readFile }, slotCount))
+    registerFabricatorWardrobeCatalogHandlers(ipcMain, assertTrustedSender, new FabricatorWardrobeCatalog(wardrobeModelPath, { readdir, readFile }, slotCount))
 
   ipcMain.handle('fabricator:wardrobe:load', async (event, modelSlot: number, id: string): Promise<WardrobeSet | null> => {
     assertTrustedSender(event)
