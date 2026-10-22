@@ -1,7 +1,6 @@
 /** Editor isolado de uma seção de roteiro, com seleção de vídeo e blocos de reação. */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Icon } from '../../ui/components/Icon'
-import { CharacterPortrait } from '../../ui/components/CharacterPortrait'
 import { RenderedCharacterPortrait } from '../../ui/components/RenderedCharacterPortrait'
 import type { CustomizerCharacter } from '../../../../shared/customizer'
 import type { BaseVideoDetails, RoteiroReactionBlock, RoteiroSectionContent, RoteiroVideoReference } from '../../../../shared/roteiros'
