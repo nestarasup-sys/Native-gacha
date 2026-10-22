@@ -612,9 +612,14 @@ export function StudioPage() {
     if (!document) return true
     const generation = ++saveGenerationRef.current
     try {
-      const thumbnailDataUrl = await makeStudioThumbnail(document).catch(() => document.thumbnailDataUrl)
-      const savedDocument = { ...document, ...(thumbnailDataUrl ? { thumbnailDataUrl } : {}), updatedAt: new Date().toISOString() }
-      await studioSaveQueue.current.run(() => window.desktop.saveStudio(savedDocument))
+      // Enfileirar antes de preparar a miniatura: uma geração PNG lenta não pode
+      // fazer um snapshot antigo ser gravado depois de um novo.
+      const savedDocument = await studioSaveQueue.current.run(async () => {
+        const thumbnailDataUrl = await makeStudioThumbnail(document).catch(() => document.thumbnailDataUrl)
+        const next = { ...document, ...(thumbnailDataUrl ? { thumbnailDataUrl } : {}), updatedAt: new Date().toISOString() }
+        await window.desktop.saveStudio(next)
+        return next
+      })
       if (generation === saveGenerationRef.current) {
         if (savedDocument.thumbnailDataUrl !== document.thumbnailDataUrl) {
           setStudios((current) => current.map((studio) => studio.id === document.id && studio.updatedAt === document.updatedAt && studio.thumbnailDataUrl !== savedDocument.thumbnailDataUrl
