@@ -26,10 +26,10 @@ export class FabricatorCatalogAssetService {
   async read(namespace: AssetNamespace, identity: string, version: string, path: string): Promise<Buffer> {
     this.reads++
     // hit count is an indicator of already-cached payload; pending reads remain deduplicated.
-    const before = this.resolver.has(namespace, identity, version)
+    const before = this.resolver.has(namespace, identity, version, path)
     if (before) this.hits++
     else this.misses++
-    const bytes = await this.resolver.resolve(namespace, identity, version, () => this.readAssetImage(path))
+    const bytes = await this.resolver.resolve(namespace, identity, version, () => this.readAssetImage(path), path)
     return Buffer.from(bytes)
   }
   invalidate(namespace: AssetNamespace, identity: string): void {
