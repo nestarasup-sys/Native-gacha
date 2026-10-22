@@ -1,0 +1,86 @@
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import * as fs from 'node:fs/promises'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
+import { createHash } from 'node:crypto'
+import { createFabricatorCatalogPersistence } from '../electron/domains/fabricator/catalogPersistence.ts'
+import { recoverCatalogImageTransaction } from '../electron/domains/fabricator/catalogImageTransaction.ts'
+
+const digest = value => createHash('sha256').update(value).digest('hex')
+async function fixture(t, manifestName = 'wardrobe.json') {
+  const folder = await fs.mkdtemp(join(tmpdir(),'native-catalog-journal-'))
+  t.after(()=>fs.rm(folder,{recursive:true,force:true}))
+  const imageFolder=join(folder,manifestName === 'wardrobe.json' ? 'parts':'images')
+  const images=[{id:'left',bytes:Buffer.from('OLD_LEFT')},{id:'right',bytes:Buffer.from('OLD_RIGHT')}]
+  const save=createFabricatorCatalogPersistence(fs, (p,b)=>fs.writeFile(p,b))
+  const expected=new Set(['left','right'])
+  const manifest={schemaVersion:1, id:'set1', updatedAt:'old'}
+  await save.saveCatalog({folder,imageFolder,manifestName,manifest,images,expected})
+  return {folder,imageFolder,manifestName,manifest,images,save,expected}
+}
+test('P0: falha após sobrescrever a primeira manga restaura ambos PNGs e manifesto', async t => {
+  const fx=await fixture(t)
+  const output=join(fx.imageFolder,'left.png')
+  const failing=createFabricatorCatalogPersistence(fs,async (file,bytes)=>{
+    await fs.writeFile(file,bytes)
+    if (file === output) throw Error('Simulated crash after partial write')
+  })
+  await assert.rejects(failing.saveCatalog({...fx, manifest:{...fx.manifest,updatedAt:'new'},
+    images:[{id:'left',bytes:Buffer.from('BAD_LEFT')},{id:'right',bytes:Buffer.from('BAD_RIGHT')}] }),/Simulated crash/)
+  assert.equal(await fs.readFile(output,'utf8'),'OLD_LEFT')
+  assert.equal(await fs.readFile(join(fx.imageFolder,'right.png'),'utf8'),'OLD_RIGHT')
+  assert.deepEqual(JSON.parse(await fs.readFile(join(fx.folder,fx.manifestName),'utf8')),fx.manifest)
+  await assert.rejects(fs.access(join(fx.folder,'.catalog-transaction')),{code:'ENOENT'})
+})
+test('P0: falha na promoção do manifesto desfaz PNGs mesmo depois de ambas gravações',async t=>{
+ const fx=await fixture(t,'face.json')
+ const badFiles={...fs,rename:async(source,target)=>{
+   if(String(source).endsWith('face.json.tmp'))throw Error('Manifest swap failed')
+   return fs.rename(source,target)
+ }}
+ const persistence=createFabricatorCatalogPersistence(badFiles,(p,b)=>fs.writeFile(p,b))
+ await assert.rejects(persistence.saveCatalog({folder:fx.folder,imageFolder:fx.imageFolder,
+   manifestName:fx.manifestName,manifest:{...fx.manifest,updatedAt:'new'},
+   images:[{id:'left',bytes:Buffer.from('NEWL')},{id:'right',bytes:Buffer.from('NEWR')}],expected:fx.expected
+ }),/Manifest swap failed/)
+ assert.equal(await fs.readFile(join(fx.imageFolder,'left.png'),'utf8'),'OLD_LEFT')
+ assert.equal(await fs.readFile(join(fx.imageFolder,'right.png'),'utf8'),'OLD_RIGHT')
+})
+test('P0: outro processo restaura journal interrompido sem tocar sidecars e catálogo vizinho',async t=>{
+ const fx=await fixture(t,'hair-style.json')
+ const journalFolder=join(fx.folder,'.catalog-transaction')
+ const manifestName=fx.manifestName
+ await fs.mkdir(journalFolder)
+ const oldManifest=JSON.stringify(fx.manifest)
+ await fs.writeFile(join(journalFolder,'left.bak'),'OLD_LEFT')
+ await fs.writeFile(join(journalFolder,'right.bak'),'OLD_RIGHT')
+ await fs.writeFile(join(journalFolder,'journal.json'),JSON.stringify({
+   schemaVersion:1,manifestName,nextHash:digest(JSON.stringify({...fx.manifest,updatedAt:'new'})),
+   oldHash:digest(oldManifest),entries:[{id:'left',existed:true},{id:'right',existed:true}]
+ }))
+ await fs.writeFile(join(fx.imageFolder,'left.png'),'TRUNCATED')
+ await fs.writeFile(join(fx.imageFolder,'right.png'),'DUPLICATE_LEFT')
+ await fs.writeFile(join(fx.imageFolder,'left.png.paint.png'),'MANUAL_PAINT')
+ const sibling=join(fx.folder,'..','sibling-sentinel-'+fx.folder.split('-').at(-1))
+ await fs.mkdir(sibling)
+ t.after(()=>fs.rm(sibling,{recursive:true,force:true}))
+ await fs.writeFile(join(sibling,'keep.txt'),'OTHER_PROFILE')
+ await recoverCatalogImageTransaction(fs,fx.folder,fx.imageFolder)
+ assert.equal(await fs.readFile(join(fx.imageFolder,'left.png'),'utf8'),'OLD_LEFT')
+ assert.equal(await fs.readFile(join(fx.imageFolder,'right.png'),'utf8'),'OLD_RIGHT')
+ assert.equal(await fs.readFile(join(fx.imageFolder,'left.png.paint.png'),'utf8'),'MANUAL_PAINT')
+ assert.equal(await fs.readFile(join(sibling,'keep.txt'),'utf8'),'OTHER_PROFILE')
+ await assert.rejects(fs.access(journalFolder),{code:'ENOENT'})
+})
+test('P0: arquivo de journal malicioso falha fechado sem editar PNGs',async t=>{
+ const fx=await fixture(t)
+ const journalFolder=join(fx.folder,'.catalog-transaction')
+ await fs.mkdir(journalFolder)
+ await fs.writeFile(join(journalFolder,'journal.json'),JSON.stringify({
+  schemaVersion:1,manifestName:'wardrobe.json',nextHash:'0'.repeat(64),
+  oldHash:null,entries:[{id:'../escape',existed:false}]
+ }))
+ await assert.rejects(recoverCatalogImageTransaction(fs,fx.folder,fx.imageFolder),/inválido/)
+ assert.equal(await fs.readFile(join(fx.imageFolder,'left.png'),'utf8'),'OLD_LEFT')
+})
