@@ -1,0 +1,49 @@
+name: Quality - core and architecture
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'electron/**'
+      - 'scripts/**'
+      - 'tests/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'tsconfig.json'
+      - 'electron.vite.config.ts'
+      - '.github/workflows/quality.yml'
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Linux / architecture and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.22.0'
+          cache: npm
+      - name: Install dependencies without Electron download hooks
+        run: npm ci --ignore-scripts
+      - name: Check architecture boundaries and relative imports
+        run: npm run audit:architecture
+      - name: Test refactored domains
+        run: npm run test:refactor
+      - name: Test architecture budget
+        run: node --test tests/architecture-audit.test.cjs
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Production bundles
+        run: npm run build
