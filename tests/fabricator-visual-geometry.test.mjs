@@ -28,7 +28,7 @@ function golden(rows) {
   const pixels=new Uint8Array(WIDTH*HEIGHT*4)
   rows.forEach((row,y)=>{
     assert.equal(row.length,WIDTH)
-    [...row].forEach((c,x)=>pixels.set(palette[c],(y*WIDTH+x)*4))
+    Array.from(row).forEach((c,x)=>pixels.set(palette[c],(y*WIDTH+x)*4))
   })
   return pixels
 }
