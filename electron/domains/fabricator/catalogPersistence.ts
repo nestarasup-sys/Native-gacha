@@ -5,8 +5,9 @@
 import { join } from 'node:path'
 import type * as nodeFs from 'node:fs/promises'
 import { publishJsonManifest } from '../storage/atomicManifest.ts'
+import { recoverCatalogImageTransaction, runCatalogImageTransaction } from './catalogImageTransaction.ts'
 
-type Files = Pick<typeof nodeFs, 'mkdir' | 'access' | 'writeFile' | 'rename' | 'unlink' | 'readdir'>
+type Files = Pick<typeof nodeFs, 'mkdir' | 'access' | 'writeFile' | 'readFile' | 'rm' | 'rename' | 'unlink' | 'readdir'>
 type Image = { id: string; bytes: Buffer }
 type Options = {
   folder: string
@@ -26,7 +27,7 @@ export function createFabricatorCatalogPersistence(
 ) {
   const { mkdir, access, writeFile, rename, unlink, readdir } = files
 
-  async function recoverWardrobeManifest(folder: string): Promise<void> {
+  async function recoverLegacyWardrobeManifest(folder: string): Promise<void> {
     const target = join(folder, 'wardrobe.json')
     const backup = join(folder, 'wardrobe.json.backup')
     try { await access(target); return } catch (reason) {
@@ -37,10 +38,18 @@ export function createFabricatorCatalogPersistence(
     }
   }
 
+  async function recoverCatalogManifest(folder: string, imageFolder: string): Promise<void> {
+    await recoverCatalogImageTransaction(files, folder, imageFolder)
+  }
+  async function recoverWardrobeManifest(folder: string): Promise<void> {
+    await recoverCatalogManifest(folder, join(folder, 'parts'))
+    await recoverLegacyWardrobeManifest(folder)
+  }
+
   async function commitWardrobeManifest(folder: string, set: unknown): Promise<void> {
     const target = join(folder, 'wardrobe.json')
     const backup = join(folder, 'wardrobe.json.backup')
-    await recoverWardrobeManifest(folder)
+    await recoverLegacyWardrobeManifest(folder)
     // Mantém o protocolo legado de swap, inclusive em Windows/DomainFileSystem.
     try {
       await access(target)
@@ -77,23 +86,27 @@ export function createFabricatorCatalogPersistence(
         throw new Error(missingMessage?.(id) ?? 'Imagem do catálogo ausente: ' + id)
       }
     }
-    for (const image of images) await writeImage(join(imageFolder, image.id + '.png'), image.bytes)
-    // Confere a presença de todos os PNGs também depois da gravação.
+    const promoteManifest = async () => {
+      if (manifestName === 'wardrobe.json') {
+        await commitWardrobeManifest(folder, manifest)
+      } else {
+        const path = join(folder, manifestName)
+        await publishJsonManifest({
+          files: { writeFile, rename, unlink },
+          target: path, temporary: path + '.tmp', value: manifest
+        })
+      }
+    }
+    await runCatalogImageTransaction({
+      files, folder, imageFolder, manifestName, manifest, images, writeImage, promoteManifest
+    })
+    // Revalidação: não confirmar um manifesto com PNG faltando.
     for (const id of expected) {
       try { await access(join(imageFolder, id + '.png')) }
       catch (reason) {
         if (!isMissing(reason)) throw reason
         throw new Error(missingMessage?.(id) ?? 'Imagem do catálogo ausente: ' + id)
       }
-    }
-    if (manifestName === 'wardrobe.json') {
-      await commitWardrobeManifest(folder, manifest)
-    } else {
-      const path = join(folder, manifestName)
-      await publishJsonManifest({
-        files: { writeFile, rename, unlink },
-        target: path, temporary: path + '.tmp', value: manifest
-      })
     }
     // Só remove imagens obsoletas DEPOIS de promover o manifesto.
     if (!prune) return
@@ -104,5 +117,5 @@ export function createFabricatorCatalogPersistence(
     }
   }
 
-  return { saveCatalog, recoverWardrobeManifest }
+  return { saveCatalog, recoverWardrobeManifest, recoverCatalogManifest }
 }
