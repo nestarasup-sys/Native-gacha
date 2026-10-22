@@ -2,6 +2,7 @@ import { studioCharacterRenderKey, studioElementSize } from '../../../../shared/
 import { isPoseSnapshotForModel } from '../../../../shared/characterSourceContinuity'
 import { recordStudioHistory, undoStudioHistory, redoStudioHistory } from '../../../../shared/studioHistory'
 import { useStudioInspectorState } from './useStudioInspectorState'
+import { trimTransparentImage, fitElementToTrim, faceRenderGeometry } from '../../characters/characterGeometry'
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { buildStudioExpressionAppearance, buildStudioExpressionTransforms, resolveStudioExpressionBase, studioExpressionCollection } from './expressionTransforms'
 import { Icon } from '../../ui/components/Icon'
@@ -33,58 +34,6 @@ const studioTools = [
 ] as const
 const isUuid = (value: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
 
-type TrimmedImage = { dataUrl: string; width: number; height: number; left: number; top: number; sourceWidth: number; sourceHeight: number }
-
-function trimTransparentImage(dataUrl: string): Promise<TrimmedImage | null> {
-  return new Promise((resolve) => {
-    const image = new Image()
-    image.onload = () => {
-      const canvas = document.createElement('canvas')
-      canvas.width = image.naturalWidth
-      canvas.height = image.naturalHeight
-      const context = canvas.getContext('2d', { willReadFrequently: true })
-      if (!context || !canvas.width || !canvas.height) return resolve(null)
-      context.drawImage(image, 0, 0)
-      let pixels: Uint8ClampedArray
-      try { pixels = context.getImageData(0, 0, canvas.width, canvas.height).data } catch { return resolve(null) }
-      let left = canvas.width, top = canvas.height, right = -1, bottom = -1
-      for (let y = 0; y < canvas.height; y++) for (let x = 0; x < canvas.width; x++) {
-        if (pixels[(y * canvas.width + x) * 4 + 3] <= 8) continue
-        if (x < left) left = x
-        if (x > right) right = x
-        if (y < top) top = y
-        if (y > bottom) bottom = y
-      }
-      if (right < left || bottom < top) return resolve(null)
-      const width = right - left + 1
-      const height = bottom - top + 1
-      if (left === 0 && top === 0 && width === canvas.width && height === canvas.height) return resolve(null)
-      const cropped = document.createElement('canvas')
-      cropped.width = width
-      cropped.height = height
-      cropped.getContext('2d')?.drawImage(image, left, top, width, height, 0, 0, width, height)
-      resolve({ dataUrl: cropped.toDataURL('image/png'), width, height, left, top, sourceWidth: canvas.width, sourceHeight: canvas.height })
-    }
-    image.onerror = () => resolve(null)
-    image.src = dataUrl
-  })
-}
-
-function fitElementToTrim(element: StudioElement, crop: TrimmedImage): StudioElement {
-  const offsetX = ((crop.left + crop.width / 2) / crop.sourceWidth - 0.5) * element.width * (element.flipX ? -1 : 1)
-  const offsetY = ((crop.top + crop.height / 2) / crop.sourceHeight - 0.5) * element.height
-  const radians = element.rotation * Math.PI / 180
-  const x = offsetX * Math.cos(radians) - offsetY * (9 / 16) * Math.sin(radians)
-  const y = offsetX * (16 / 9) * Math.sin(radians) + offsetY * Math.cos(radians)
-  return {
-    ...element,
-    x: element.x + x,
-    y: element.y + y,
-    width: element.width * crop.width / crop.sourceWidth,
-    height: element.height * crop.height / crop.sourceHeight
-  }
-}
-
 function loadLegacyStudios(): Array<{ id: string; title: string; color: string }> {
   try {
     const saved: unknown = JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? '[]')
@@ -97,17 +46,6 @@ function loadLegacyStudios(): Array<{ id: string; title: string; color: string }
 
 
 
-
-function faceRenderGeometry(element: StudioElement, rendered: { width: number; height: number }, crop: { width: number; height: number } | null, stageWidth: number, stageHeight: number) {
-  const cropWidth = crop?.width ?? rendered.width
-  const cropHeight = crop?.height ?? rendered.height
-  const characterCanvasWidth = element.characterCanvasWidth ?? element.width * rendered.width / Math.max(1, cropWidth)
-  return {
-    characterCanvasWidth,
-    width: characterCanvasWidth * cropWidth / rendered.width,
-    height: characterCanvasWidth * stageWidth / Math.max(1, stageHeight) * cropHeight / rendered.width
-  }
-}
 
 function makeElement(kind: StudioElement['kind'], zIndex: number): StudioElement {
   return {
