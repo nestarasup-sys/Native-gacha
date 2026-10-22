@@ -34,6 +34,22 @@ for(const phase of modes)test('SQLite restart real: '+phase,{skip:!sqlite},async
   }))
   await setup.files.writeFile(join(slot,'source-aaaa1111.png'),Buffer.from('OLD_SOURCE'))
   await setup.files.writeFile(join(slot,'parts','head.png'),Buffer.from('OLD_PART'))
+  // Salvos antes do crash; Model Source não pode alterar snapshots ou outro perfil.
+  const pose=join(root,'profile','fabricator','poses','model-1','slot-1')
+  const wardrobe=join(root,'profile','fabricator','wardrobe','model-1','set-legacy')
+  await setup.files.mkdir(join(pose,'parts'),{recursive:true})
+  await setup.files.mkdir(join(wardrobe,'parts'),{recursive:true})
+  const preserved=[
+    [join(pose,'pose.json'),JSON.stringify({schemaVersion:1,slot:1,sourceModelSlot:1,parts:[{id:'head'}]})],
+    [join(pose,'parts','head.png'),'POSE_SNAPSHOT'],
+    [join(wardrobe,'wardrobe.json'),JSON.stringify({schemaVersion:1,id:'legacy',modelSlot:1,components:[{id:'coat'}]})],
+    [join(wardrobe,'parts','coat.png'),'OUTFIT_SNAPSHOT']
+  ]
+  for(const [path,data] of preserved)await setup.files.writeFile(path,data)
+  const secondProfile=join(root,'independent-profile','fabricator','models','slot-1')
+  await fs.mkdir(secondProfile,{recursive:true})
+  await fs.writeFile(join(secondProfile,'project.json'),JSON.stringify({schemaVersion:1,slot:1,name:'Outro perfil'}))
+  const secondBefore=await fs.readFile(join(secondProfile,'project.json'))
   setup.catalog.close()
   const result=spawnSync(process.execPath,['--experimental-strip-types',
     resolve('scripts/fabricator/crash-model-source-sqlite.mjs'),root,phase],
@@ -48,5 +64,9 @@ for(const phase of modes)test('SQLite restart real: '+phase,{skip:!sqlite},async
     assert.equal(data,phase==='after-backup'?'OLD_PART':'NEW')
     if(phase==='after-backup')assert.equal(manifest.sourceFile,'source-aaaa1111.png')
     else assert.match(manifest.sourceFile,/^source-[a-f0-9-]+\.png$/)
+    for(const [path,data] of preserved)assert.equal((await restarted.files.readFile(path)).toString(),data)
+    assert.deepEqual(await fs.readFile(join(secondProfile,'project.json')),secondBefore)
+    assert.equal(await recoverModelSourceSlot(1,()=>slot,restarted.files),'intact')
+    for(const [path,data] of preserved)assert.equal((await restarted.files.readFile(path)).toString(),data)
   }finally{ restarted.catalog.close() }
 })
