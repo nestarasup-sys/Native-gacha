@@ -31,6 +31,7 @@ test('ambos os Studios usam fila pura nos comandos de salvar, sem alterar IPC le
    readFile('src/renderer/src/features/studio/StudioPage.tsx','utf8'),
    readFile('src/renderer/src/features/videoStudio/VideoStudioEditor.tsx','utf8')
  ])
- assert.match(studio,/studioSaveQueue\.current\.run\(\(\) => window\.desktop\.saveStudio\(savedDocument\)\)/)
+ assert.match(studio,/studioSaveQueue\\.current\\.run\\(async \\(\\) =>/)
+ assert.match(studio,/await window\\.desktop\\.saveStudio\\(next\\)/)
  assert.match(video,/studioSaveQueue\.current\.run\(\(\) => persistence\.save\(/)
 })
