@@ -54,6 +54,7 @@ import { createPosePersistence } from './domains/fabricator/posePersistence'
 import { createAnimatorPersistence } from './domains/fabricator/animatorPersistence'
 import { registerFabricatorPoseHandlers } from './domains/fabricator/poseIpc'
 import { registerFabricatorAnimatorHandlers } from './domains/fabricator/animatorIpc'
+import { captureFabricatorRealScreens } from './domains/fabricator/visualUiCapture'
 import { registerModelSourceDownloadHandlers } from './domains/fabricator/modelSourceExportIpc'
 
 let configuredAppDataRoot: string | null = null
@@ -2353,6 +2354,18 @@ function createMainWindow(): void {
       console.error('A validação final do armazenamento local falhou; as cópias de segurança temporárias foram preservadas.', reason)
     })
   })
+
+  // Smoke isolado, somente perfil DEV AI validado por configureDevAiDataRoot().
+  // Não captura screenshots nem usa perfis reais em execução normal.
+  if (process.env.GACHA_DEV_AI_TEST === '1' && process.env.GACHA_FABRICATOR_REAL_UI_CAPTURE === '1') {
+    window.webContents.once('did-finish-load', () => {
+      const sandbox = resolve(process.env.GACHA_DEV_AI_SANDBOX ?? '')
+      const captures = join(sandbox, 'fabricator-real-ui-captures')
+      void captureFabricatorRealScreens(window, captures, process.env.GACHA_FABRICATOR_VISUAL_BASELINE)
+        .then(() => { console.log('Capturas das telas reais salvas em', captures); app.quit() })
+        .catch(error => { console.error('Falha no teste visual real do Fabricador:', error); app.exit(1) })
+    })
+  }
 
   let closeAfterFlush = false
   let flushingBeforeClose = false
