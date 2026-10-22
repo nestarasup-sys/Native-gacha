@@ -12,7 +12,7 @@ on:
       - 'package-lock.json'
       - '.github/workflows/ci-core.yml'
   pull_request:
-    branches: [main]
+    branches: [main, refactor/shared-character-core]
   workflow_dispatch:
 
 permissions:
