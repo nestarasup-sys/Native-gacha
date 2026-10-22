@@ -63,6 +63,20 @@ async function createCompleteCharacterFixture(root){
   })
   await writePng(path.join(pose,'parts','body.png'),110,230,[87,130,207,255])
   await writePng(path.join(pose,'parts','head.png'),76,100,[241,185,151,255])
+  // A second saved pose transforms the SAME body-part IDs, including an
+  // independent change of X/Y scale and rotation. The original sheet stays put.
+  const secondPose=path.join(base,'poses','model-1','slot-2')
+  const secondParts=manifest.parts.map(({sourceTransform,...part})=>part.id==='body'
+    ? {...part,x:91,y:121,width:100,height:219,rotation:11}
+    : {...part,x:102,y:23,rotation:-8})
+  writeJson(path.join(secondPose,'pose.json'),{
+    schemaVersion:1,slot:2,name:'Pose 2 — giro e escala',sourceModelSlot:1,
+    sourceModelName:manifest.name,sourceModelUpdatedAt:T,width:256,height:384,
+    category:'Parado',parts:secondParts,joints:[],layerOrder:['head','body'],
+    hiddenPartIds:[],updatedAt:T
+  })
+  await writePng(path.join(secondPose,'parts','body.png'),110,230,[87,130,207,255])
+  await writePng(path.join(secondPose,'parts','head.png'),76,100,[241,185,151,255])
   const outfit=path.join(base,'wardrobe','model-1','set-uniform')
   const sourceBone = manifest.parts[0].sourceTransform
   const fitBinding = part => ({
