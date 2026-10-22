@@ -8,6 +8,13 @@ on:
       - 'src/**'
       - 'scripts/fabricator/**'
       - '.github/workflows/fabricator-real-ui-windows.yml'
+  pull_request:
+    branches: [refactor/shared-character-core]
+    paths:
+      - 'electron/**'
+      - 'src/**'
+      - 'scripts/fabricator/**'
+      - '.github/workflows/fabricator-real-ui-windows.yml'
   workflow_dispatch:
 
 permissions:
@@ -32,16 +39,16 @@ jobs:
         run: npm ci
       - name: Compile desktop application
         run: npm run build
-      - name: Capture eight real UI sections (isolated synthetic profile)
+      - name: Capture ten real UI screens (isolated synthetic profile)
         run: npm run test:fabricator:real-ui -- --synthetic-complete
-      - name: Verify manifest and PNG hashes
+      - name: Verify ten screenshots and SHA256 integrity
         shell: pwsh
         run: |
           $captures = Get-ChildItem -Path out/dev-ai/runs -Recurse -File -Filter manifest.json |
             Where-Object { $_.DirectoryName -like '*fabricator-real-ui-captures' } |
             Select-Object -First 1
           if (-not $captures) { throw 'Nenhuma captura completa encontrada.' }
-          node scripts/fabricator/review-real-ui-captures.cjs "--captures=$($captures.DirectoryName)"
+          node scripts/fabricator/review-real-ui-captures.cjs "--captures=$($captures.DirectoryName)" --with-workspaces
       - name: Save captures for human approval
         if: always()
         uses: actions/upload-artifact@v4
