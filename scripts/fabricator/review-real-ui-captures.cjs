@@ -54,16 +54,51 @@ async function verifyRealUiCaptures(directory, baseline) {
   return { verified, mode: baseline ? 'comparado-com-baseline' : 'capturas-integrias-revisao-pendente' }
 }
 
+/** Confirma que as outras duas capturas vieram do Electron real, não de mocks.
+ * A aprovação do conteúdo visual ainda depende de inspeção humana.
+ */
+async function verifyWorkspaceCaptures(directory) {
+  const folder = resolve(directory)
+  const manifest = JSON.parse(await fs.readFile(join(folder, 'workspace-manifest.json'), 'utf8'))
+  const expectedWorkspaces = [
+    { section: 'Customizador', file: 'customizador.png' },
+    { section: 'Studio Principal — cena criada', file: 'studio.png' }
+  ]
+  if (manifest.schemaVersion !== 1 || manifest.mode !== 'real-electron-workspaces' ||
+      manifest.syntheticOnly !== true || !Array.isArray(manifest.results) ||
+      manifest.results.length !== expectedWorkspaces.length) {
+    throw Error('Manifesto de workspaces gráficos incompleto.')
+  }
+  for (let i = 0; i < expectedWorkspaces.length; i++) {
+    const expected = expectedWorkspaces[i]
+    const item = manifest.results[i]
+    if (item?.section !== expected.section || item?.file !== expected.file) {
+      throw Error('Workspace capturado fora da ordem: ' + expected.file)
+    }
+    const bytes = await fs.readFile(join(folder, expected.file))
+    const metadata = await sharp(bytes).metadata()
+    if (metadata.format !== 'png' || !metadata.width || !metadata.height ||
+        metadata.width < 320 || metadata.height < 240 ||
+        item.dimensions !== metadata.width + 'x' + metadata.height ||
+        item.sha256 !== hash(bytes)) {
+      throw Error('Imagem ou hash do workspace inválido: ' + expected.file)
+    }
+  }
+  return expectedWorkspaces.map(item => item.file)
+}
+
 if (require.main === module) {
   const capture = process.argv.find(arg => arg.startsWith('--captures='))
   const baseline = process.argv.find(arg => arg.startsWith('--baseline='))
+  const withWorkspaces = process.argv.includes('--with-workspaces')
   if (!capture) {
     console.error('Uso: node scripts/fabricator/review-real-ui-captures.cjs --captures=PASTA [--baseline=PASTA_APROVADA]')
     process.exitCode = 2
   } else {
     verifyRealUiCaptures(capture.slice('--captures='.length), baseline?.slice('--baseline='.length))
+      .then(async result => ({ ...result, ...(withWorkspaces ? { workspaces: await verifyWorkspaceCaptures(capture.slice('--captures='.length)) } : {}) }))
       .then(result => console.log(JSON.stringify(result, null, 2)))
       .catch(reason => { console.error(reason); process.exitCode = 1 })
   }
 }
-module.exports = { verifyRealUiCaptures, expected }
+module.exports = { verifyRealUiCaptures, verifyWorkspaceCaptures, expected }
