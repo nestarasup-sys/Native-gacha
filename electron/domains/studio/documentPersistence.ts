@@ -3,10 +3,10 @@
  * canais públicos e formatos legados. Nenhuma migração implícita.
  */
 import { join, resolve, dirname, basename } from 'node:path'
-import { createHash, randomUUID } from 'node:crypto'
+import { createHash } from 'node:crypto'
 import type * as nodeFs from 'node:fs/promises'
 import type { StudioAsset, StudioDocument, VideoTimelineDocument, VideoStudioCardSummary } from '../../../src/shared/studio'
-import { publishJsonManifest } from '../storage/atomicManifest.ts'
+import { publishStudioAssetsAndManifest, recoverStudioAssetTransaction } from '../storage/studioAssetTransaction.ts'
 
 export type StudioWorkspaceStorage = 'studio' | 'video'
 type Files = Pick<typeof nodeFs, 'readFile' | 'writeFile' | 'mkdir' | 'access' | 'rename' | 'unlink' | 'rm'>
@@ -22,7 +22,7 @@ export function createStudioDocumentPersistence(deps: {
   ensureVideoAssets: (id: string, assets: NonNullable<VideoTimelineDocument['videoAssets']>) => Promise<unknown>
   videoStudioCardSummary: (value: Record<string, unknown>, id: string) => VideoStudioCardSummary
 }) {
-  const { readFile, writeFile, mkdir, access, rename, unlink, rm } = deps.files
+  const { readFile, writeFile, mkdir, rm } = deps.files
   const studioPath = deps.studioPath
   const isStudioDocument = deps.validate
   const importedImageDataUrlBuffer = deps.decodeImage
@@ -55,6 +55,7 @@ function normalizeStudio(value: Record<string, unknown>, id: string, workspace: 
 async function readStudio(id: string, workspace: StudioWorkspaceStorage = 'studio'): Promise<StudioDocument | null> {
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) throw new Error('Identificador de Studio inválido.')
   try {
+    await recoverStudioAssetTransaction(deps.files, studioPath(id, workspace))
     const raw = JSON.parse(await readFile(join(studioPath(id, workspace), 'studio.json'), 'utf8')) as Record<string, unknown>
     const normalized = normalizeStudio(raw, id, workspace)
     const folder = studioPath(id, workspace)
@@ -137,19 +138,17 @@ async function writeStudio(studio: StudioDocument, workspace: StudioWorkspaceSto
   ])
   if (workspace === 'video' && studio.videoTimeline?.videoAssets?.length) await videoLibrary.ensureProjectAssets(studio.id, studio.videoTimeline.videoAssets)
   const assetManifest: Array<Omit<StudioAsset, 'dataUrl'>> = []
+  const assetWrites: Array<{ relativePath: string; bytes: Buffer }> = []
   for (const asset of studio.assets) {
     const sourceBytes = importedImageDataUrlBuffer(asset.dataUrl)
     const canonical = asset.mimeType === 'image/png'
       ? { bytes: sourceBytes }
       : await normalizeImageBuffer(sourceBytes)
-    const extension = 'png'
-    const bytes = canonical.bytes
     const categoryFolder = asset.category === 'background' ? 'backgrounds' : asset.category === 'character' ? 'characters' : 'objects'
-    await writeFile(join(folder, 'assets', categoryFolder, `${asset.id}.${extension}`), bytes)
+    assetWrites.push({ relativePath: `assets/${categoryFolder}/${asset.id}.png`, bytes: canonical.bytes })
     const { dataUrl: _dataUrl, ...metadata } = asset
     assetManifest.push({ ...metadata, mimeType: 'image/png' })
   }
-  const temporary = join(folder, `studio.json.${randomUUID()}.tmp`)
   const { assets: _assets, ...metadata } = studio
   const savedMetadata = { ...metadata, videoTimeline: studio.videoTimeline ? structuredClone(studio.videoTimeline) : undefined }
   if (workspace === 'video' && savedMetadata.videoTimeline) {
@@ -159,8 +158,7 @@ async function writeStudio(studio: StudioDocument, workspace: StudioWorkspaceSto
       if (!state) return
       const bytes = Buffer.from(state.imageDataUrl.slice(state.imageDataUrl.indexOf(',') + 1), 'base64')
       const hash = createHash('sha256').update(bytes).digest('hex')
-      const path = join(frameFolder, `${hash}.png`)
-      try { await access(path) } catch { await writeFile(path, bytes) }
+      assetWrites.push({ relativePath: `assets/video-frames/${hash}.png`, bytes })
       state.imageDataUrl = `@video-frame:${hash}`
     }
     await Promise.all([
@@ -168,18 +166,15 @@ async function writeStudio(studio: StudioDocument, workspace: StudioWorkspaceSto
       ...savedMetadata.videoTimeline.characterKeys.map((key) => storeImage(key.state))
     ])
   }
-  await publishJsonManifest({
-    files: { writeFile, rename, unlink },
-    temporary, target: join(folder, 'studio.json'),
-    value: { ...savedMetadata, title: studio.title.trim(), assets: assetManifest },
-    indent: 2,
+  await publishStudioAssetsAndManifest({
+    files: deps.files, folder, assets: assetWrites,
+    manifestValue: { ...savedMetadata, title: studio.title.trim(), assets: assetManifest },
     afterCommit: async () => {
       if (workspace === 'video') {
         const card = videoStudioCardSummary(savedMetadata as unknown as Record<string, unknown>, studio.id)
         await writeFile(join(folder, 'studio-card.json'), JSON.stringify(card), 'utf8')
       }
-    },
-    onCleanupError: () => console.error('Não foi possível remover o manifesto temporário do Studio após gravar.')
+    }
   })
 }
 
