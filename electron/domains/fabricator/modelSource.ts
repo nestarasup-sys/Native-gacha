@@ -6,13 +6,9 @@
 import { mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { dirname, join } from 'node:path'
-import type { FabricatorAssetSave, FabricatorProjectSave } from '../../../src/shared/fabricator'
+import type { FabricatorAssetSave, FabricatorProjectSave, FabricatorModelSourcePublishRequest } from '../../../src/shared/fabricator'
 
-export type ModelSourcePublishRequest = {
-  project: FabricatorProjectSave
-  sourceDataUrl: string
-  changedAssets: FabricatorAssetSave[]
-}
+export type ModelSourcePublishRequest = FabricatorModelSourcePublishRequest
 
 export function validateModelSourceImage(dataUrl: string, width?: number, height?: number): Buffer {
   if (typeof dataUrl !== 'string' || dataUrl.length > 70 * 1024 * 1024) throw new Error('Model Source excede o limite de 50 MB.')
