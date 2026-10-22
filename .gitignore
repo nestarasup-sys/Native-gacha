@@ -1,0 +1,42 @@
+# Dependências e artefatos
+node_modules/
+out/
+dist/
+release/
+coverage/
+*.log
+*.tsbuildinfo
+
+# Segredos, credenciais e dados pessoais
+.env
+.env.*
+!.env.example
+.npmrc
+*.pem
+*.key
+*.p12
+*.pfx
+app-data/
+userData/
+userdata/
+local-data/
+backups/
+*.sqlite-wal
+*.sqlite-shm
+
+# Ferramentas e binários locais
+/tools-local/
+/resources/video-tools/
+
+# Arquivos compactados grandes e locais
+*.zip
+*.7z
+*.rar
+
+# Temporários, editores e SO
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.tmp
+*.bak
