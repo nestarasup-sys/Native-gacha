@@ -25,6 +25,8 @@ async function setup(t,overrides={}){
   let ensureCalls=0
   const deps={
     files:fs,studioPath,
+    studioLibraryPath:workspace=>join(root,workspace),
+    prepareVideoDelete:async()=>{ensureCalls++},
     validate:value=>value?.schemaVersion===1,
     decodeImage:dataUrl=>Buffer.from(dataUrl.slice(dataUrl.indexOf(',')+1),'base64'),
     normalizeImage:async bytes=>({bytes}),
@@ -89,4 +91,23 @@ test('falha antes da promoção do manifesto não altera a versão anterior nem 
   assert.equal(await fs.readFile(join(studioPath(other,'studio'),'sentinel'),'utf8'),'outro perfil intacto')
   const temp=(await fs.readdir(studioPath(id,'studio'))).filter(x=>x.includes('studio.json.')&&x.endsWith('.tmp'))
   assert.deepEqual(temp,[])
+})
+
+test('remoção de Studio protege outros projetos e exige ID válido',async t=>{
+  const {persistence,studioPath,getEnsureCalls}=await setup(t)
+  await persistence.writeStudio(makeDoc('Excluível'))
+  await fs.mkdir(studioPath(other,'studio'),{recursive:true})
+  await fs.writeFile(join(studioPath(other,'studio'),'sentinel'),'KEEP')
+  await assert.rejects(persistence.removeStudio('../','studio'),/Identificador de Studio inválido/)
+  await persistence.removeStudio(id,'studio')
+  await assert.rejects(fs.access(studioPath(id,'studio')),{code:'ENOENT'})
+  assert.equal(await fs.readFile(join(studioPath(other,'studio'),'sentinel'),'utf8'),'KEEP')
+  assert.equal(getEnsureCalls(),0)
+})
+test('remoção de Video Studio consulta biblioteca antes de excluir',async t=>{
+  const {persistence,studioPath,getEnsureCalls}=await setup(t)
+  await fs.mkdir(studioPath(id,'video'),{recursive:true})
+  await persistence.removeStudio(id,'video')
+  assert.equal(getEnsureCalls(),1)
+  await assert.rejects(fs.access(studioPath(id,'video')),{code:'ENOENT'})
 })
