@@ -4,6 +4,7 @@
 import type { BrowserWindow } from 'electron'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { createHash } from 'node:crypto'
 import sharp from 'sharp'
 
 const sections = [
@@ -42,7 +43,7 @@ export async function captureFabricatorRealScreens(win: BrowserWindow, output: s
   await mkdir(output, { recursive: true })
   await win.webContents.executeJavaScript("window.location.hash = '#/fabricador-dev'")
   await waitFor(win, '.fabricator-section-list')
-  const results: Array<{ section: string; file: string; dimensions: string; changedPixels?: number }> = []
+  const results: Array<{ section: string; file: string; dimensions: string; sha256: string; changedPixels?: number }> = []
   for (const [key, label] of sections) {
     const clicked = await win.webContents.executeJavaScript(`(() => {
       const label = ${JSON.stringify(label)}
@@ -55,13 +56,20 @@ export async function captureFabricatorRealScreens(win: BrowserWindow, output: s
     if (!clicked) throw new Error('Seção real ausente: ' + label)
     await waitFor(win, '.fabricator-section-button[aria-pressed="true"]')
     await new Promise(resolve => setTimeout(resolve, 900))
+    const active = await win.webContents.executeJavaScript(`(() => {
+      const active = [...document.querySelectorAll('.fabricator-section-button')]
+        .filter(item => item.getAttribute('aria-pressed') === 'true')
+      return active.map(item => item.textContent?.trim() ?? '')
+    })()`) as string[]
+    if (!active.includes(label)) throw new Error('Captura selecionou seção errada: ' + label + ' (ativos: ' + active.join(', ') + ')')
     const png = await win.webContents.capturePage()
     const image = png.toPNG()
     const name = key + '.png'
     await writeFile(join(output, name), image)
     const size = png.getSize()
-    const result: { section: string; file: string; dimensions: string; changedPixels?: number } = {
-      section: label, file: name, dimensions: size.width + 'x' + size.height
+    const result: { section: string; file: string; dimensions: string; sha256: string; changedPixels?: number } = {
+      section: label, file: name, dimensions: size.width + 'x' + size.height,
+      sha256: createHash('sha256').update(image).digest('hex')
     }
     if (baseline) {
       const changed = await compareScreenshot(image, join(baseline, name))
