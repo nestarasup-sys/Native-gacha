@@ -23,9 +23,6 @@ export function inspectFabricatorStorage(
   if (document.schemaVersion !== 1) {
     return {compatible:false,reason:'Versão de esquema não suportada.'}
   }
-  if (!Number.isInteger(document.updatedAt === undefined ? 1 : 1)) {
-    return {compatible:false,reason:'Manifesto inválido.'}
-  }
   const legacy = (kind === 'model' && (document.layerOrder === undefined || document.hiddenPartIds === undefined))
     || (kind === 'wardrobe' && document.edition === undefined)
     || (kind === 'hair-style' && document.category === undefined)
