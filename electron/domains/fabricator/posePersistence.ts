@@ -3,7 +3,7 @@
  */
 import { join } from 'node:path'
 import type { FabricatorAssetSave, FabricatorPose, FabricatorPoseDraft, FabricatorPoseDraftSave, FabricatorPoseSave, ModelPart, PosePart } from '../../../src/shared/fabricator.ts'
-import { resolvePoseCategory } from '../../../src/shared/fabricator'
+import { resolvePoseCategory } from '../../../src/shared/fabricator.ts'
 import { applyModelHeadShape } from '../../../src/shared/headShape.ts'
 import type * as nodeFs from 'node:fs/promises'
 
