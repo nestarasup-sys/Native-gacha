@@ -11,7 +11,8 @@ import { configureCharacterSampling, MAX_CHARACTER_PREVIEW_PIXELS } from './rend
 import { drawFaceExpressionEffects } from './expressionEffectRender'
 import { legacyStandardExpressionEffects } from '../../../shared/legacyExpressionEffects'
 import type { VideoCharacterRenderAssetProvider } from '../../../shared/videoCharacterRenderAssets'
-import { resolveSavedCharacterSource, type CatalogArtwork } from './characterSourceResolver'
+import { resolveSavedCharacterSource, characterShapeScale, type CatalogArtwork } from './characterSourceResolver'
+import { getCharacterProportions } from '../../../shared/customizer'
 export { withCharacterHeadSize, characterShapeScale } from './characterSourceResolver'
 export type { CatalogArtwork } from './characterSourceResolver'
 
@@ -949,6 +950,7 @@ export async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, 
 
 export async function prepareSavedCharacterRenderer(character: CustomizerCharacter, renderSource?: { artwork: CatalogArtwork; source: FabricatorProject; assetProvider?: VideoCharacterRenderAssetProvider }): Promise<{ width: number; height: number; render: (appearance?: CustomizerFaceAppearance, studioFaceTransforms?: StudioFaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: StudioFaceMode) => Promise<{ dataUrl: string; width: number; height: number }> }> {
   const { modelSlot, assetProvider, source, artwork } = await resolveSavedCharacterSource(character, renderSource)
+  const proportions = getCharacterProportions(character.customization)
   const hairAppearance = character.customization.hairAppearance
   const [backStyles, posteriorStyles, fringeStyles] = await Promise.all([
     loadHairAppearanceLayers(hairAppearance, modelSlot, 'back', {}, assetProvider),
