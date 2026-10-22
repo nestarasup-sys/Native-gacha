@@ -33,8 +33,8 @@ test('auditoria do cabelo distingue frente, trás, franja e imagem original', as
   assert.deepEqual(report.duplicateGroups, [])
   assert.ok(report.assets.every(x => !x.warning))
   assert.equal(await fs.readFile(join(root, 'hair.json'), 'utf8'), original)
-  for (const [filename, bytes] of Object.entries(bytes))
-    assert.deepEqual(await fs.readFile(join(root, 'images', filename)), bytes)
+  for (const [filename, fileBytes] of Object.entries(bytes))
+    assert.deepEqual(await fs.readFile(join(root, 'images', filename)), fileBytes)
 })
 
 test('auditoria do rosto evidencia olhos duplicados sem tentar reparar', async t => {
