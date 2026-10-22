@@ -9,7 +9,7 @@ test('main do Electron delega leitura, escrita e reidratação Studio', async()=
   assert.doesNotMatch(main,/async function (?:writeStudio|readStudio)\(/)
   assert.match(repo,/async function writeStudio\(/)
   assert.match(repo,/async function readStudio\(/)
-  assert.match(repo,/await publishJsonManifest\(/)
+  assert.match(repo,/await publishStudioAssetsAndManifest\(/)
   assert.match(repo,/VIDEO_FRAME_DATA_URL_CACHE_LIMIT/)
   assert.match(repo,/Quadro de vídeo corrompido/)
 })
