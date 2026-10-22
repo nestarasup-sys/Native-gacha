@@ -7,7 +7,7 @@ import { fabricatorIpcChannels, createFabricatorInvoker } from '../src/shared/fa
 test('canais IPC tipados não são duplicados e mantêm compatibilidade legada',()=>{
  const values=Object.values(fabricatorIpcChannels)
  assert.equal(new Set(values).size,values.length)
- assert.equal(values.length,21)
+ assert.equal(values.length,35)
  assert.equal(fabricatorIpcChannels.saveFabricatorPose,'fabricator:poses:save')
  assert.equal(fabricatorIpcChannels.saveAnimatorAnimation,'fabricator:animator:save')
  assert.equal(fabricatorIpcChannels.publishFabricatorModelSource,'fabricator:model-source:publish')
@@ -23,7 +23,7 @@ test('main e preload usam mapa central para canais da biblioteca Fabricador',asy
  const root=resolve('.')
  const files=['electron/preload.ts','electron/domains/fabricator/poseIpc.ts',
  'electron/domains/fabricator/animatorIpc.ts','electron/domains/fabricator/modelIpc.ts',
- 'electron/domains/fabricator/modelSourceExportIpc.ts','electron/main.ts']
+ 'electron/domains/fabricator/modelSourceExportIpc.ts','electron/domains/fabricator/wardrobeCatalogIpc.ts','electron/main.ts']
  const sources=await Promise.all(files.map(f=>readFile(resolve(root,f),'utf8')))
  const joined=sources.join('\n')
  for(const key of Object.keys(fabricatorIpcChannels)){
