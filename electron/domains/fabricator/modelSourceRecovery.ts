@@ -56,9 +56,30 @@ export async function recoverModelSourceSlot(
   const valid: string[] = []
   for (const folder of matches) if (await manifestLooksComplete(folder, files)) valid.push(folder)
   if (valid.length === 0) return 'missing'
-  if (valid.length > 1) throw new Error('Há múltiplos backups válidos do Model Source. Recuperação manual necessária.')
+  let expected: string | null = null
   try {
-    await files.rename(valid[0], official)
+    const marker = JSON.parse(await files.readFile(join(base, `.model-source-pending-${slot}.json`), 'utf8')) as { version?: unknown; backup?: unknown }
+    // Aceita somente um nome gerado pelo próprio publicador, nunca um caminho arbitrário.
+    if (marker.version === 1 && typeof marker.backup === 'string'
+      && new RegExp('^\\\\.model-source-backup-' + slot + '-[a-f0-9-]{36}
+    return 'restored'
+  } catch (reason) {
+    // Outra leitura pode ter recuperado simultaneamente o mesmo slot.
+    try { await files.readdir(official); return 'intact' } catch { throw reason }
+  }
+}
+).test(marker.backup)) {
+      expected = join(base, marker.backup)
+    }
+  } catch (reason) {
+    if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw new Error('Marcador de recuperação do Model Source inválido.')
+  }
+  const selected = expected
+    ? valid.find(candidate => candidate === expected)
+    : valid.length === 1 ? valid[0] : null
+  if (!selected) throw new Error('Há múltiplos backups ou uma publicação pendente inconsistente. Recuperação manual necessária.')
+  try {
+    await files.rename(selected, official)
     return 'restored'
   } catch (reason) {
     // Outra leitura pode ter recuperado simultaneamente o mesmo slot.
