@@ -1,0 +1,51 @@
+name: Core architecture validation
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'electron/**'
+      - 'src/**'
+      - 'scripts/**'
+      - 'tests/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/ci-core.yml'
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: core-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  core:
+    name: Core / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.22.0'
+          cache: npm
+      - name: Install dependencies (skip native postinstall in CI)
+        run: npm ci --ignore-scripts
+      - name: Audit module boundaries
+        run: npm run audit:architecture
+      - name: Verify refactor contracts
+        run: npm run test:refactor
+      - name: Geometry regression
+        run: npm run test:geometry
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Compile Electron/React
+        run: npm run build
