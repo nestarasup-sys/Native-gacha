@@ -110,7 +110,21 @@ export function mapWardrobeComponentToPose(
   edgePadding = 0
 ): WardrobePoseTransform {
   const binding = component.binding?.boneId === sourceBone.id ? component.binding : null
-  if (binding) return mapBoundWardrobeComponentToPose(binding, poseBone, kneeOverlap, edgePadding)
+  if (binding) {
+    // X/Y e dimensões do manifesto são o encaixe autorado no Fabricador DEV.
+    // Vínculos antigos podem estar defasados depois de calibrações ou ajustes
+    // individuais: não permitir que um binding obsoleto apague esses offsets.
+    const current = bindWardrobeComponent(component, sourceBone)
+    const coherent = Math.abs(binding.localCenterX - current.localCenterX) < 1e-5
+      && Math.abs(binding.localCenterY - current.localCenterY) < 1e-5
+      && Math.abs(binding.widthRatio - current.widthRatio) < 1e-5
+      && Math.abs(binding.heightRatio - current.heightRatio) < 1e-5
+      && Math.abs(binding.relativeRotation - current.relativeRotation) < 1e-5
+      && Math.abs(binding.boneWidth - current.boneWidth) < 1e-5
+      && Math.abs(binding.boneHeight - current.boneHeight) < 1e-5
+      && Math.abs(binding.boneRotation - current.boneRotation) < 1e-5
+    return mapBoundWardrobeComponentToPose(coherent ? binding : current, poseBone, kneeOverlap, edgePadding)
+  }
   const source = sourceBone.sourceTransform
   const sourceWidth = Math.max(1, source?.width ?? sourceBone.width)
   const sourceHeight = Math.max(1, source?.height ?? sourceBone.height)
