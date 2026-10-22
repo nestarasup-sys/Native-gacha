@@ -1,4 +1,5 @@
 import { selectCharacterArtwork } from '../../../../shared/characterSourceContinuity'
+import { useCustomizerCharacterRoster } from './useCustomizerCharacterRoster'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { RenderedCharacterPortrait } from '../../ui/components/RenderedCharacterPortrait'
 import { Icon, type IconName } from '../../ui/components/Icon'
@@ -497,13 +498,12 @@ function CustomizerCategoryIcon({ category }: { category: string }) {
 }
 
 export function CustomizerPage() {
-  const [characters, setCharacters] = useState<CustomizerCharacter[]>([])
-  const charactersRef = useRef<CustomizerCharacter[]>([])
-  const characterSaveQueue = useRef(new Map<string, Promise<void>>())
-  const [selectedCharacterId, setSelectedCharacterId] = useState('')
-  const [charactersLoading, setCharactersLoading] = useState(true)
-  const [charactersError, setCharactersError] = useState('')
-  const [characterSaveState, setCharacterSaveState] = useState<'saved' | 'saving' | 'error'>('saved')
+  const {
+    characters, setCharacters, charactersRef, characterSaveQueue,
+    selectedCharacterId, setSelectedCharacterId,
+    charactersLoading, charactersError, setCharactersError,
+    characterSaveState, setCharacterSaveState
+  } = useCustomizerCharacterRoster()
   const [dialogMode, setDialogMode] = useState<'create' | 'rename' | null>(null)
   const [nameDraft, setNameDraft] = useState('')
   const [savingCharacter, setSavingCharacter] = useState(false)
@@ -675,28 +675,6 @@ export function CustomizerPage() {
   const characterWardrobeHydrationKey = characterWardrobeGroups.map((group) => `${group.modelSlot}:${group.setId}:${group.category}:${group.componentId ?? ''}`).sort().join('|')
   const visibleCharacters = characters
     .filter((character) => character.name.toLowerCase().includes(rosterQuery.trim().toLowerCase()))
-
-  useEffect(() => {
-    let cancelled = false
-    void window.desktop.listCustomizerCharacters().then((loaded) => {
-      if (cancelled) return
-      charactersRef.current = loaded
-      setCharacters(loaded)
-      let remembered = ''
-      try { remembered = localStorage.getItem('nymi.customizer.activeCharacter') ?? '' } catch { /* Storage preferences are optional. */ }
-      setSelectedCharacterId(loaded.some((character) => character.id === remembered) ? remembered : loaded[0]?.id ?? '')
-    }).catch((reason: unknown) => {
-      if (!cancelled) setCharactersError(reason instanceof Error ? reason.message : 'Não foi possível carregar os personagens.')
-    }).finally(() => { if (!cancelled) setCharactersLoading(false) })
-    return () => { cancelled = true }
-  }, [])
-
-  useEffect(() => {
-    try {
-      if (selectedCharacterId) localStorage.setItem('nymi.customizer.activeCharacter', selectedCharacterId)
-      else localStorage.removeItem('nymi.customizer.activeCharacter')
-    } catch { /* Selection persistence is best-effort; character data is stored by Electron. */ }
-  }, [selectedCharacterId])
 
   useEffect(() => {
     let cancelled = false
