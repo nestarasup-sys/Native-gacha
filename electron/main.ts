@@ -55,6 +55,7 @@ import { createAnimatorPersistence } from './domains/fabricator/animatorPersiste
 import { registerFabricatorPoseHandlers } from './domains/fabricator/poseIpc'
 import { registerFabricatorAnimatorHandlers } from './domains/fabricator/animatorIpc'
 import { VersionedAssetResolver, type AssetNamespace } from './domains/fabricator/versionedAssetResolver'
+import { inspectFabricatorStorage } from '../src/shared/fabricatorStorageCompatibility'
 import { fabricatorIpcChannels } from '../src/shared/fabricatorIpcChannels'
 import { captureFabricatorRealScreens } from './domains/fabricator/visualUiCapture'
 import { registerModelSourceDownloadHandlers } from './domains/fabricator/modelSourceExportIpc'
@@ -515,6 +516,7 @@ async function readFaceSet(modelSlot: number, id: string): Promise<FaceSet | nul
   try {
     const folder = faceSetPath(modelSlot, id)
     const set = JSON.parse(await readFile(join(folder, 'face.json'), 'utf8')) as FaceSetSave
+    if (!inspectFabricatorStorage('face', set).compatible) return null
     if (!validFaceSet(modelSlot, set) || set.id !== id) return null
     const version = set.updatedAt
     const identity = `${modelSlot}:set:${id}`
@@ -592,6 +594,7 @@ async function readFaceCatalogItem(modelSlot: number, id: string): Promise<FaceC
   try {
     const folder = faceCatalogItemPath(modelSlot, id)
     const item = JSON.parse(await readFile(join(folder, 'item.json'), 'utf8')) as FaceCatalogItemSave
+    if (!inspectFabricatorStorage('face-catalog', item).compatible) return null
     if (!validFaceCatalogItem(modelSlot, item) || item.id !== id) return null
     const identity = `${modelSlot}:catalog:${id}`
     const version = item.updatedAt
@@ -726,6 +729,7 @@ async function readFaceComponentAsset(modelSlot: number, id: string): Promise<Fa
   try {
     const folder = faceComponentItemPath(modelSlot, id)
     const asset = JSON.parse(await readFile(join(folder, 'asset.json'), 'utf8')) as FaceComponentAssetSave
+    if (!inspectFabricatorStorage('face-component', asset).compatible) return null
     if (!validFaceComponentAsset(modelSlot, asset) || asset.id !== id) return null
     const dataUrl = `data:image/png;base64,${(await readCatalogPng('face', `${modelSlot}:component:${id}`, asset.updatedAt, join(folder, 'asset.png'))).toString('base64')}`
     return { ...asset, dataUrl }
@@ -791,6 +795,7 @@ async function readHairWorkspace(modelSlot: number): Promise<HairWorkspace | nul
   try {
     const folder = hairModelPath(modelSlot)
     const saved = JSON.parse(await readFile(join(folder, 'hair.json'), 'utf8')) as HairWorkspaceSave
+    if (!inspectFabricatorStorage('hair', saved).compatible) return null
     if (!validHairWorkspace(modelSlot, saved)) return null
     const identity = `${modelSlot}:workspace`
     const version = saved.updatedAt
@@ -855,6 +860,7 @@ async function readHairStyle(modelSlot: number, id: string): Promise<HairStyle |
   try {
     const folder = hairStylePath(modelSlot, id)
     const saved = JSON.parse(await readFile(join(folder, 'hair-style.json'), 'utf8')) as HairStyleSave
+    if (!inspectFabricatorStorage('hair-style', saved).compatible) return null
     if (!validHairStyle(modelSlot, saved) || saved.id !== id) return null
     const identity = `${modelSlot}:style:${id}`
     const version = saved.updatedAt
@@ -937,6 +943,7 @@ async function readWardrobeSet(modelSlot: number, id: string): Promise<WardrobeS
     const folder = wardrobeSetPath(modelSlot, id)
     await recoverWardrobeManifest(folder)
     const set = JSON.parse(await readFile(join(folder, 'wardrobe.json'), 'utf8')) as WardrobeSetSave
+    if (!inspectFabricatorStorage('wardrobe', set).compatible) return null
     if (set.schemaVersion !== 1 || (set.edition !== undefined && set.edition !== 1 && set.edition !== 2) || set.modelSlot !== modelSlot || set.id !== id || !Array.isArray(set.components) || set.components.length > 100) return null
     const version = `${set.updatedAt}:${set.edition ?? 1}`
     const identity = `${modelSlot}:${id}`
