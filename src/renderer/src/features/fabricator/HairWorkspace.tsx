@@ -1,3 +1,4 @@
+import { projectForOriginalPreview } from '../../../../shared/fabricatorModelViews'
 import { useModelSourceRefresh } from './models/useModelSourceRefresh'
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type PointerEvent } from 'react'
 import type { FabricatorProject, FabricatorSlotSummary, HairStyle, HairStyleSave, HairTransform, HairWorkspace as HairWorkspaceData, HairWorkspaceSave, ModelPart } from '../../../../shared/fabricator'
@@ -80,7 +81,7 @@ export function HairWorkspace() {
   const [models, setModels] = useState<FabricatorSlotSummary[]>([])
   const [modelSlot, setModelSlot] = useState(1)
   const [project, setProject] = useState<FabricatorProject | null>(null)
-  useModelSourceRefresh(modelSlot, setProject)
+  useModelSourceRefresh(modelSlot, fresh => setProject(projectForOriginalPreview(fresh)))
   const [hairWorkspace, setHairWorkspace] = useState<HairWorkspaceData | null>(null)
   const [hairStyles, setHairStyles] = useState<HairStyle[]>([])
   const [activeStyleId, setActiveStyleId] = useState<string | null>(null)
@@ -131,7 +132,7 @@ export function HairWorkspace() {
     setLoadingProject(true)
     void window.desktop.loadFabricatorSlot(modelSlot).then((loaded) => {
       if (cancelled) return
-      setProject(loaded)
+      setProject(projectForOriginalPreview(loaded))
       if (!loaded) setError('Este slot ainda não tem um modelo salvo.')
     }).catch((reason: unknown) => {
       if (!cancelled) setError(reason instanceof Error ? reason.message : 'Não foi possível carregar o modelo selecionado.')
