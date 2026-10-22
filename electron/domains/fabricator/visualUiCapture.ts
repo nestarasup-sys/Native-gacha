@@ -128,8 +128,21 @@ export async function captureFabricatorRealScreens(win: BrowserWindow, output: s
       ) as number
       if (count !== 3) throw Error('Prévia do Fabricador não mostra as três peças: ' + count)
     }
-    await new Promise(resolve => setTimeout(resolve, 350))
+    await new Promise(resolve => setTimeout(resolve, 800))
     await waitForRendered(win, '.fabricator-section-button[aria-pressed="true"]')
+    if (key === 'roupas') {
+      // A contagem precisa continuar válida no instante da foto. O elemento
+      // pode ter existido antes e a tela voltar ao placeholder ao hidratar.
+      await waitForRendered(win, '.wardrobe-preview-part')
+      const ready = await win.webContents.executeJavaScript(`(() => ({
+        count: document.querySelectorAll('.wardrobe-preview-part').length,
+        selectedSet: !!document.querySelector('.wardrobe-set-row.active'),
+        activePiece: !!document.querySelector('.wardrobe-component-row.active')
+      }))()`) as { count: number; selectedSet: boolean; activePiece: boolean }
+      if (ready.count !== 3 || !ready.selectedSet || !ready.activePiece) {
+        throw Error('Prévia de Roupas Dev não está estável no instante da foto: ' + JSON.stringify(ready))
+      }
+    }
     const active = await win.webContents.executeJavaScript(`(() => {
       const active = [...document.querySelectorAll('.fabricator-section-button')]
         .filter(item => item.getAttribute('aria-pressed') === 'true')
@@ -138,6 +151,13 @@ export async function captureFabricatorRealScreens(win: BrowserWindow, output: s
     if (!active.includes(label)) throw new Error('Captura selecionou seção errada: ' + label + ' (ativos: ' + active.join(', ') + ')')
     const png = await win.webContents.capturePage()
     const image = png.toPNG()
+    const postCapture = await win.webContents.executeJavaScript(`(() => ({
+      loading: document.body.innerText.includes('Carregando área'),
+      garmentCount: document.querySelectorAll('.wardrobe-preview-part').length
+    }))()`) as { loading: boolean; garmentCount: number }
+    if (postCapture.loading || (key === 'roupas' && postCapture.garmentCount !== 3)) {
+      throw Error('Screenshot capturado durante transição ou sem roupa: ' + key + ' ' + JSON.stringify(postCapture))
+    }
     const name = key + '.png'
     await writeFile(join(output, name), image)
     const size = png.getSize()
