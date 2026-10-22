@@ -57,3 +57,11 @@ test('Video Studio não importa mais runtime do Customizador e pages não contê
  assert.match(commands,/function saveCharacterCustomization\(/)
  assert.match(studio,/undoStudioHistory\(/)
 })
+
+test('sandbox DEV AI configura appData dentro do perfil validado para migração',async()=>{
+ const main=await readFile('electron/main.ts','utf8')
+ assert.match(main,/marker\.syntheticOnly !== true/)
+ assert.match(main,/app\.setPath\('appData', sandbox\)/)
+ assert.match(main,/app\.setPath\('appData', privateRoot\)/)
+ assert.match(main,/Root sintético DEV AI fora do diretório autorizado/)
+})
