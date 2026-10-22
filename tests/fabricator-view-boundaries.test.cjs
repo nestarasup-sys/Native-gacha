@@ -8,6 +8,7 @@ const read = path => readFileSync(resolve(path), 'utf8')
 test('Poses DEV consome a montagem, sem trocar pelo PNG original', () => {
   const poses = read('src/renderer/src/features/fabricator/PoseWorkspace.tsx')
   const views = read('src/shared/fabricatorModelViews.ts')
+  const projection = read('src/renderer/src/features/fabricator/models/poseProjection.ts')
   assert.match(poses, /selectMountedModelSource\(model\)/)
   assert.match(poses, /mounted\.parts\.map\(/)
   assert.match(poses, /mounted\.joints\.map\(/)
