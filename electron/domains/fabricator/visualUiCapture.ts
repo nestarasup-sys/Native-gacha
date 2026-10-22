@@ -1,7 +1,7 @@
 /** Captura as telas reais do Fabricador, dentro do perfil de teste DEV AI.
  * Os dados da biblioteca de produção nunca são montados nem modificados.
  */
-import type { BrowserWindow } from 'electron'
+import { app, type BrowserWindow } from 'electron'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { createHash } from 'node:crypto'
@@ -101,8 +101,10 @@ async function sampleElectronPerformance(win: BrowserWindow): Promise<{ sampledF
     }
     requestAnimationFrame(sample)
   })`) as { sampledFps: number; frameP95Ms: number; jsHeapUsedBytes: number | null }
-  const memory = await win.webContents.getProcessMemoryInfo()
-  return { ...samples, rendererPrivateKb: memory.private, rendererSharedKb: memory.shared }
+  const rendererPid = win.webContents.getOSProcessId()
+  const processMetric = app.getAppMetrics().find(item => item.pid === rendererPid)
+  if (!processMetric?.memory || processMetric.memory.privateBytes <= 0) throw Error('Processo renderizador Electron não forneceu métricas de memória.')
+  return { ...samples, rendererPrivateKb: processMetric.memory.privateBytes, rendererSharedKb: processMetric.memory.sharedBytes }
 }
 
 async function compareScreenshot(image: Buffer, baselinePath: string): Promise<number> {
