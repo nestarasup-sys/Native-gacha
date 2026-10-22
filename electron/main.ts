@@ -58,6 +58,7 @@ import { FabricatorCatalogAssetService } from './domains/fabricator/catalogAsset
 import { createFabricatorCatalogPersistence } from './domains/fabricator/catalogPersistence'
 import { registerStudioPrimaryHandlers } from './domains/studio/primaryIpc'
 import { createStudioLibraryIndex } from './domains/studio/libraryIndex'
+import { studioIpcChannels } from '../src/shared/studioIpcChannels'
 import { publishJsonManifest } from './domains/storage/atomicManifest'
 import type { AssetNamespace } from './domains/fabricator/versionedAssetResolver'
 import { inspectFabricatorStorage } from '../src/shared/fabricatorStorageCompatibility'
@@ -1357,7 +1358,7 @@ const { isValidAnimatorSlot, writeAnimatorAnimation, readAnimatorAnimation, writ
 })
 
 async function registerFabricatorHandlers(): Promise<void> {
-  ipcMain.handle('app:flush-pending-writes', async (event): Promise<void> => {
+  ipcMain.handle(studioIpcChannels.flushPendingWrites, async (event): Promise<void> => {
     assertTrustedSender(event)
     const pendingWrites = [
       ...fabricatorSaveQueues.values(), ...poseSaveWrites, ...hairSaveQueues.values(),
