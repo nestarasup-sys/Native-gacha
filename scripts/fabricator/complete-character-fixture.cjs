@@ -1,0 +1,76 @@
+'use strict'
+/** Gera material sintético e reprodutível para screenshot E2E do Fabricador.
+ * Os componentes são PNGs reais, criados num sandbox separado do perfil do usuário.
+ */
+const fs = require('node:fs')
+const path = require('node:path')
+const sharp = require('sharp')
+
+async function writePng(filename, width, height, rgba) {
+  fs.mkdirSync(path.dirname(filename), {recursive:true})
+  const pixel=Buffer.alloc(width*height*4)
+  for(let y=0;y<height;y++)for(let x=0;x<width;x++){
+    const i=(y*width+x)*4
+    const on = x>1 && y>1 && x<width-2 && y<height-2
+    pixel[i]=rgba[0]; pixel[i+1]=rgba[1]; pixel[i+2]=rgba[2]; pixel[i+3]=on?rgba[3]:0
+  }
+  fs.writeFileSync(filename,await sharp(pixel,{raw:{width,height,channels:4}}).png().toBuffer())
+}
+function writeJson(filename,data){fs.mkdirSync(path.dirname(filename),{recursive:true});fs.writeFileSync(filename,JSON.stringify(data,null,2))}
+const T='2026-10-22T12:00:00.000Z'
+async function createCompleteCharacterFixture(root){
+  const base=path.join(root,'fabricator')
+  const model=path.join(base,'models','slot-1')
+  const manifest={
+    schemaVersion:1,slot:1,name:'Boneco sintético de regressão',sourceName:'fixture-source.png',
+    sourceAssetName:'source-aaaa1111.png',sourceFile:'source-aaaa1111.png',
+    width:256,height:384,tolerance:74,updatedAt:T,
+    joints:[],layerOrder:['body','head'],hiddenPartIds:[],
+    parts:[
+      {id:'body',name:'Corpo',x:74,y:118,width:110,height:230,rotation:0,
+       sourceTransform:{x:20,y:126,width:110,height:230,rotation:0}},
+      {id:'head',name:'Cabeça',x:90,y:20,width:76,height:100,rotation:0,
+       sourceTransform:{x:158,y:28,width:76,height:100,rotation:0}}
+    ]
+  }
+  writeJson(path.join(model,'project.json'),manifest)
+  await writePng(path.join(model,'source-aaaa1111.png'),256,384,[65,200,120,255])
+  await writePng(path.join(model,'parts','body.png'),110,230,[87,130,207,255])
+  await writePng(path.join(model,'parts','head.png'),76,100,[241,185,151,255])
+  const pose=path.join(base,'poses','model-1','slot-1')
+  writeJson(path.join(pose,'pose.json'),{
+    schemaVersion:1,slot:1,name:'Parado, com cabelo e roupa',sourceModelSlot:1,
+    sourceModelName:manifest.name,sourceModelUpdatedAt:T,width:256,height:384,
+    category:'Parado',parts:manifest.parts.map(({sourceTransform,...part})=>part),
+    joints:[],layerOrder:['body','head'],hiddenPartIds:[],updatedAt:T
+  })
+  await writePng(path.join(pose,'parts','body.png'),110,230,[87,130,207,255])
+  await writePng(path.join(pose,'parts','head.png'),76,100,[241,185,151,255])
+  const outfit=path.join(base,'wardrobe','model-1','set-uniform')
+  writeJson(path.join(outfit,'wardrobe.json'),{
+    schemaVersion:1,edition:1,id:'uniform',modelSlot:1,modelName:manifest.name,
+    name:'Jaqueta de teste',width:256,height:384,updatedAt:T,
+    components:[{id:'coat',name:'Casaco',category:'camisa',attachedPartId:'body',
+      x:74,y:130,width:110,height:135,rotation:0}]
+  })
+  await writePng(path.join(outfit,'parts','coat.png'),110,135,[212,82,115,255])
+  const hair=path.join(base,'hair','model-1','styles','style-short')
+  writeJson(path.join(hair,'hair-style.json'),{
+    schemaVersion:1,id:'short',modelSlot:1,name:'Cabelo de teste',
+    front:{width:82,height:36},back:{width:88,height:42},fringe:null,
+    transforms:{
+      front:{x:90,y:18,scaleX:1,scaleY:1,rotation:0},
+      back:{x:88,y:12,scaleX:1,scaleY:1,rotation:0}
+    },createdAt:T,updatedAt:T
+  })
+  await writePng(path.join(hair,'images','front.png'),82,36,[60,40,105,255])
+  await writePng(path.join(hair,'images','back.png'),88,42,[54,31,89,255])
+  const eye=path.join(base,'face-components','model-1','item-eyesL')
+  writeJson(path.join(eye,'asset.json'),{
+    schemaVersion:1,id:'eyesL',modelSlot:1,kind:'eye-left',name:'Olho azul',
+    width:18,height:10,defaultTransform:{x:104,y:65,scaleX:1,scaleY:1,rotation:0},updatedAt:T
+  })
+  await writePng(path.join(eye,'asset.png'),18,10,[41,104,196,255])
+  return {model,pose,outfit,hair,eye}
+}
+module.exports={createCompleteCharacterFixture}
