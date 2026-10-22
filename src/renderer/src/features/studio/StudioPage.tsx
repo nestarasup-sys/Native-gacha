@@ -1,3 +1,4 @@
+import { isPoseSnapshotForModel } from '../../../shared/characterSourceContinuity'
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { buildStudioExpressionAppearance, buildStudioExpressionTransforms, resolveStudioExpressionBase, studioExpressionCollection } from './expressionTransforms'
 import { Icon } from '../../ui/components/Icon'
@@ -480,7 +481,7 @@ export function StudioPage() {
       const thumbnails = await Promise.all(studioPoseSlots.map(async (pose) => {
         try {
           const artwork = await window.desktop.loadFabricatorPose(pose.sourceModelSlot, pose.slot)
-          if (!artwork) return null
+          if (!isPoseSnapshotForModel(artwork, pose.sourceModelSlot, pose.slot)) return null
           const thumbnail = await renderArtwork(artwork, 180)
           return thumbnail ? { slot: pose.slot, thumbnail, width: artwork.width, height: artwork.height } : null
         } catch { return null }
