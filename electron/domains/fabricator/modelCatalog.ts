@@ -2,6 +2,7 @@
  * Customizador/Studio continuam consumindo este formato via os canais IPC legados.
  */
 import { extname, join } from 'node:path'
+import { VersionedAssetResolver } from './versionedAssetResolver'
 import type { FabricatorProject, FabricatorSlotSummary, ModelPart } from '../../../src/shared/fabricator'
 
 export interface FabricatorModelFiles {
@@ -19,11 +20,13 @@ export class FabricatorModelCatalog {
   private readonly slotCount: number
   private readonly slotPath: (slot: number) => string
   private readonly files: FabricatorModelFiles
+  private readonly resolver: VersionedAssetResolver
 
-  constructor(slotCount: number, slotPath: (slot: number) => string, files: FabricatorModelFiles) {
+  constructor(slotCount: number, slotPath: (slot: number) => string, files: FabricatorModelFiles, resolver = new VersionedAssetResolver()) {
     this.slotCount = slotCount
     this.slotPath = slotPath
     this.files = files
+    this.resolver = resolver
   }
 
   private assertSlot(slot: number): void {
@@ -55,15 +58,19 @@ export class FabricatorModelCatalog {
       if (!/^source-[a-f0-9-]+\.(png|jpe?g|webp)$/i.test(manifest.sourceFile)
         || manifest.parts.length > 500
         || manifest.parts.some((part) => !/^[a-zA-Z0-9_-]{1,80}$/.test(part.id))) return null
-      const sourceBytes = await this.files.readFile(join(folder, manifest.sourceFile))
+      const version = manifest.sourceFile + ':' + manifest.updatedAt
+      const sourceBytes = await this.resolver.resolve('model', slot + ':source', version,
+        () => this.files.readFile(join(folder, manifest.sourceFile)))
       const extension = extname(manifest.sourceFile).toLowerCase()
       const mime = extension === '.png' ? 'image/png' : extension === '.webp' ? 'image/webp' : 'image/jpeg'
       const sourceDataUrl = `data:${mime};base64,${Buffer.from(sourceBytes).toString('base64')}`
       const parts = await Promise.all(manifest.parts.map(async (part) => ({
         ...part,
-        dataUrl: `data:image/png;base64,${Buffer.from(await this.files.readAssetImage(join(folder, 'parts', `${part.id}.png`))).toString('base64')}`,
+        dataUrl: `data:image/png;base64,${Buffer.from(await this.resolver.resolve('model', slot + ':part:' + part.id, version,
+          () => this.files.readAssetImage(join(folder, 'parts', `${part.id}.png`)))).toString('base64')}`,
         ...(part.chromaBaseSaved ? {
-          chromaBaseDataUrl: `data:image/png;base64,${Buffer.from(await this.files.readFile(join(folder, 'parts', `${part.id}.base.png`))).toString('base64')}`
+          chromaBaseDataUrl: `data:image/png;base64,${Buffer.from(await this.resolver.resolve('model', slot + ':chroma:' + part.id, version,
+            () => this.files.readFile(join(folder, 'parts', `${part.id}.base.png`)))).toString('base64')}`
         } : {})
       })))
       return { ...manifest, sourceDataUrl, parts }
