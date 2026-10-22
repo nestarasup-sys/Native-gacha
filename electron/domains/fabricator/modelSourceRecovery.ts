@@ -36,10 +36,19 @@ export async function recoverModelSourceSlot(
   if (!Number.isInteger(slot) || slot < 1 || slot > 10) throw new Error('Slot inválido para recuperação.')
   const official = slotPath(slot)
   const base = dirname(official)
+  let emptyLogicalSlot = false
   try {
-    // Existência do diretório oficial (mesmo com manifesto inválido) impede restauração destrutiva.
-    await files.readdir(official)
-    return 'intact'
+    // O SQLite pode manter um diretório lógico vazio depois do rename.
+    // Nunca restaurar sobre conteúdo real, mesmo com manifesto corrompido.
+    const entries = await files.readdir(official)
+    if (entries.length > 0) return 'intact'
+    try {
+      await files.readFile(join(official, 'project.json'), 'utf8')
+      return 'intact'
+    } catch (reason) {
+      if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') return 'intact'
+      emptyLogicalSlot = true
+    }
   } catch (reason) {
     if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason
   }
@@ -68,6 +77,8 @@ export async function recoverModelSourceSlot(
   } catch (reason) {
     if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw new Error('Marcador de recuperação do Model Source inválido.')
   }
+  // Diretorio lógico vazio só é recuperável com transação pendente explícita.
+  if (emptyLogicalSlot && !expected) return 'intact'
   const selected = expected
     ? valid.find(candidate => candidate === expected)
     : valid.length === 1 ? valid[0] : null
