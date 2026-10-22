@@ -1,4 +1,4 @@
-import { snapshotStudioScene as snapshot, withStudioSnapshot as withSnapshot, studioCharacterRenderKey, studioElementSize } from '../../../../shared/studioSceneModel'
+import { studioCharacterRenderKey, studioElementSize } from '../../../../shared/studioSceneModel'
 import { isPoseSnapshotForModel } from '../../../../shared/characterSourceContinuity'
 import { recordStudioHistory, undoStudioHistory, redoStudioHistory } from '../../../../shared/studioHistory'
 import { useStudioInspectorState } from './useStudioInspectorState'
