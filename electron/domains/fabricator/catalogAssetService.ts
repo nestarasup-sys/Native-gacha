@@ -1,7 +1,7 @@
 /** Serviço de domínio para PNGs dos catálogos do Fabricador.
  * Sem Electron nem mutação de manifestos. Leitura via DomainFileSystem injetado.
  */
-import { VersionedAssetResolver, type AssetNamespace } from './versionedAssetResolver'
+import { VersionedAssetResolver, type AssetNamespace } from './versionedAssetResolver.ts'
 
 export type CatalogAssetStatistics = {
   reads: number
