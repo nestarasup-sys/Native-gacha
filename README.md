@@ -1,44 +1,28 @@
-# Native Gacha — modernização do G-V5
+# Native Gacha — G-V5
 
-Aplicativo desktop de produção de personagens e cenas, originalmente desenvolvido com Electron, React e TypeScript.
+Aplicativo desktop de criação de personagens, customização e composição de cenas, feito com **Electron + React + TypeScript**. Este repositório registra uma **refatoração incremental** do aplicativo que já funciona, preservando formatos de arquivos e contratos IPC.
 
-> **Estado do repositório:** configuração inicial de GitHub. O código-fonte completo **ainda precisa ser importado** do pacote de refatoração de 22/10/2026. Não confunda a presença deste README com uma versão compilável.
+> **Estado atual: em reorganização arquitetural.** O build e a execução Electron no Windows ainda precisam de validação com dependências completas. **Não execute com bibliotecas pessoais sem backup.** O **Video Studio está congelado**, fora do escopo de novas mudanças.
 
-## Fluxo do produto
-
-- **Fabricador DEV:** autoria de modelos, poses, rostos, cabelos, roupas e bibliotecas.
-- **Customizador:** configura personagens individuais com base nas bibliotecas do Fabricador; não duplica a fonte de verdade.
-- **Studio:** consome os personagens customizados e recursos publicados.
-- **Roteiros / Base de Vídeos:** módulos de documentos, organização e persistência.
-- **Video Studio:** congelado neste ciclo de modernização; nenhuma migração do motor de vídeo está planejada agora.
-
-## Direção arquitetural
-
-Manter o Electron e React inicialmente; organizar o aplicativo em um **monólito modular**:
+## Fluxo principal do produto
 
 ```text
-React (apresentação)
-  -> preload / contratos IPC tipados
-    -> serviços de aplicação
-      -> regras de domínio / catálogos
-      -> repositórios / SQLite / arquivos locais
+Fabricador DEV ── bibliotecas (poses, peças, cabelo, rosto, modelos) ──► Customizador
+                                                                          │
+                                                                          ▼
+                                                          Personagem com ajustes individuais
+                                                                          │
+                                                                          ▼
+                                                                    Studio principal
 ```
 
-Regras: preservar formatos de personagens e dados; evitar imports cruzados de componentes internos entre features; separar IPC de persistência; migrar módulos gradualmente e com testes.
+O **Fabricador DEV** é o autor das bibliotecas. O **Customizador** seleciona e ajusta componentes por personagem. O **Studio** consome os personagens resultantes. Os módulos não devem editar o acervo de origem do outro módulo.
 
-## Importação do código-fonte
+## Ambiente
 
-A origem é o arquivo `G-V5-evolucao-estrutural-2026-10-22.zip`, preparado a partir do G-V5 legado. SHA-256 previsto do pacote:
-
-```text
-e0c0f8f5c8013b9866b45ac395fa59a58c59046a3727bfa6ec16c215e1cfffcd
-```
-
-Extrair o conteúdo **na raiz** do clone, não enviar o ZIP como único arquivo. Nunca publicar `node_modules`, dados de usuário, arquivos `.env`, chaves ou perfis pessoais. Consulte `docs/IMPORTAR_ZIP.md` para comandos.
-
-## Verificação após a importação
-
-Requer Node.js **22.22.0 ou posterior na linha 22** e npm.
+- **Node.js 22.22.0 ou superior** (veja `.nvmrc` / `package.json`; exigência de `react-router@8.4.0`).
+- npm (a versão e o lockfile precisam permanecer consistentes).
+- Windows recomendado para validação completa do desktop e integração nativa.
 
 ```bash
 npm ci
@@ -46,16 +30,30 @@ npm run audit:architecture
 npm run test:refactor
 npm run typecheck
 npm run build
+npm run dev
 ```
 
-Para validação final, executar o aplicativo Electron no Windows **usando perfil sintético isolado**, antes de abrir os dados reais. Os testes aprovados na etapa local foram apenas uma verificação parcial (24 casos de refatoração, auditoria sintática e de imports).
+> Algumas dependências são nativas e `postinstall` instala Electron; o setup completo deve ser executado no ambiente de desenvolvimento. Os testes de arquitetura e refatoração podem ser executados sem iniciar o desktop.
 
-## Próximos passos
+## Estrutura existente (sem mudança agressiva de diretórios)
 
-1. Importar o conteúdo do ZIP como arquivos normais e conferir `git status`.
-2. Executar o fluxo de qualidade do GitHub Actions.
-3. Congelar fixtures de dados de Fabricador → Customizador → Studio, incluindo save/reopen/backup.
-4. Isolar o catálogo de Fabricador e os contratos compartilhados dos personagens.
-5. Reduzir o acoplamento do `electron/main.ts` sem alterar o Video Studio.
+- `electron/`: processo principal, preload seguro, serviços de arquivos e SQLite.
+- `src/renderer/src/features/`: interfaces e fluxos dos módulos.
+- `src/shared/`: regras compartilhadas sem dependência de páginas do React.
+- `tests/`: contratos, migrações e testes de regressão.
+- `scripts/architecture/`: auditorias de sintaxe, resolução de imports e limites de dependências.
+- `docs/architecture/`: decisões e evidências das duas primeiras rodadas de refatoração.
 
-**Atenção:** este repositório está público. Verifique licenças de imagens, código de terceiros e dados sensíveis antes de publicar o conteúdo completo.
+A estrutura final deve evoluir **por domínio** e não por movimentação massiva de pastas. Preserve os caminhos antigos por reexports temporários quando necessário.
+
+## Documentação útil
+
+- [ADR 001 — Electron modular](docs/architecture/ADR-001-modular-electron.md)
+- [ADR 002 — fluxo de personagens](docs/architecture/ADR-002-fluxo-personagens.md)
+- [Relatório da evolução 22/10/2026](docs/architecture/RELATORIO_EVOLUCAO_2026-10-22.md)
+- [Plano de trabalho e GitHub](docs/architecture/PLANO_GITHUB_E_PROXIMOS_PASSOS.md)
+- [README histórico, com referências legadas](docs/architecture/README_LEGADO_2026-10-22.md)
+
+## Segurança e publicação
+
+O repositório GitHub é **público**. Não versionar projetos pessoais, personagens privados, perfis reais, chaves, tokens, vídeos privados nem bases SQLite de trabalho. A CI opera apenas com testes/fixtures sintéticas. Para mudanças estruturais, use branches curtas e pull requests com auditorias aprovadas.

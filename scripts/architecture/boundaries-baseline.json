@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "description": "Teto temporário para acoplamentos legados; reduzir, jamais aumentar.",
+  "crossFeatureRuntimeImports": {
+    "customizer -> fabricator": 1,
+    "fabricator -> customizer": 1,
+    "studio -> customizer": 6,
+    "videoStudio -> customizer": 9,
+    "videoStudio -> studio": 1
+  }
+}

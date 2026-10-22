@@ -1,0 +1,9 @@
+G-V5 LEGADO - PACOTE DE CODIGO-FONTE
+
+Origem: branch Master-AValonia, commit 6857952
+Preparado para analise e desenvolvimento por outra IA.
+Inclui arquivos rastreados do legado, documentacao, configuracao e package-lock.json.
+Exclui master avalonia, .git, node_modules, app-data, builds locais e ferramentas de video baixadas localmente.
+
+Para rodar no Windows: instale Node.js 20.19+ (ou 22.12+) e npm; extraia o ZIP; execute npm install e npm run dev, ou use ABRIR_DESENVOLVIMENTO.bat.
+Os dados locais em app-data nao acompanham este pacote.

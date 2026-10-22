@@ -1,42 +1,30 @@
-# Dependências e artefatos
+# Dependências, builds e outputs
 node_modules/
 out/
 dist/
 release/
 coverage/
 *.log
-*.tsbuildinfo
+npm-debug.log*
 
-# Segredos, credenciais e dados pessoais
+# Dados pessoais, estado local e ferramentas nativas
 .env
 .env.*
 !.env.example
-.npmrc
-*.pem
-*.key
-*.p12
-*.pfx
 app-data/
-userData/
-userdata/
-local-data/
-backups/
-*.sqlite-wal
-*.sqlite-shm
-
-# Ferramentas e binários locais
 /tools-local/
-/resources/video-tools/
+resources/video-tools/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.db
+*.db-shm
+*.db-wal
+*.backup
+*.tmp
 
-# Arquivos compactados grandes e locais
-*.zip
-*.7z
-*.rar
-
-# Temporários, editores e SO
+# IDE / Sistema
 .DS_Store
 Thumbs.db
 .vscode/
 .idea/
-*.tmp
-*.bak
