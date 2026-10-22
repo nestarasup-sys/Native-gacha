@@ -1,12 +1,12 @@
 /** Cache bounded by bytes for immutable assets belonging to a published source revision.
- * Key always includes namespace, identity and version. No cache when versions differ.
+ * Key includes namespace, identity, revision AND physical asset path. Multiple PNGs\n * within a set cannot share an image or pending read.
  * Values are copied across the cache boundary to avoid mutation.
  */
 export type AssetNamespace = 'model' | 'wardrobe' | 'hair' | 'face' | 'expression' | 'pose' | 'animator'
 
-export function assetCacheKey(namespace: AssetNamespace, identity: string, version: string): string {
-  if (!identity || !version || /[\0\n\r]/.test(identity + version)) throw new Error('Chave ou versão do asset inválida.')
-  return JSON.stringify([namespace, identity, version])
+export function assetCacheKey(namespace: AssetNamespace, identity: string, version: string, assetPath = ''): string {
+  if (!identity || !version || /[\0\n\r]/.test(identity + version + assetPath)) throw new Error('Chave ou versão do asset inválida.')
+  return JSON.stringify([namespace, identity, version, assetPath])
 }
 
 export class VersionedAssetResolver {
@@ -23,8 +23,8 @@ export class VersionedAssetResolver {
 
   get byteSize(): number { return this.size }
   get entries(): number { return this.cache.size }
-  has(namespace: AssetNamespace, identity: string, version: string): boolean {
-    return this.cache.has(assetCacheKey(namespace, identity, version))
+  has(namespace: AssetNamespace, identity: string, version: string, assetPath = ''): boolean {
+    return this.cache.has(assetCacheKey(namespace, identity, version, assetPath))
   }
 
   invalidate(namespace: AssetNamespace, identity: string): void {
@@ -37,8 +37,8 @@ export class VersionedAssetResolver {
 
   clear(): void { this.cache.clear(); this.pending.clear(); this.size = 0 }
 
-  async resolve(namespace: AssetNamespace, identity: string, version: string, read: () => Promise<Uint8Array>): Promise<Uint8Array> {
-    const key = assetCacheKey(namespace, identity, version)
+  async resolve(namespace: AssetNamespace, identity: string, version: string, read: () => Promise<Uint8Array>, assetPath = ''): Promise<Uint8Array> {
+    const key = assetCacheKey(namespace, identity, version, assetPath)
     const cached = this.cache.get(key)
     if (cached) {
       this.cache.delete(key)
