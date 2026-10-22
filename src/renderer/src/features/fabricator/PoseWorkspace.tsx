@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FabricatorPose, FabricatorPoseDraft, FabricatorPoseDraftSave, FabricatorPoseSave, FabricatorPoseSummary, FabricatorProject, FabricatorSlotSummary, PosePart } from '../../../../shared/fabricator'
 import { resolvePoseCategory } from '../../../../shared/fabricator'
+import { selectMountedModelSource } from '../../../../shared/fabricatorModelViews'
 import { Icon } from '../../ui/components/Icon'
 import { usePreviewBackground } from './usePreviewBackground'
 import { normalizeLayerOrder, orderedParts, partJointAnchor } from './models/rig'
@@ -88,6 +89,8 @@ function toDraftSave(project: DraftProject, editingSlot: number | null): Fabrica
 }
 
 function poseFromModel(model: FabricatorProject): DraftProject {
+  // Somente Poses DEV consome a montagem com suas juntas e posições reais.
+  const mounted = selectMountedModelSource(model)
   return {
     schemaVersion: 1,
     name: `Pose de ${model.name}`,
@@ -97,13 +100,13 @@ function poseFromModel(model: FabricatorProject): DraftProject {
     sourceModelUpdatedAt: model.updatedAt,
     width: model.width,
     height: model.height,
-    parts: model.parts.map((part) => ({
+    parts: mounted.parts.map((part) => ({
       id: part.id, name: part.name, x: part.x, y: part.y, width: part.width, height: part.height,
       rotation: part.rotation, jointAnchor: part.jointAnchor ? { ...part.jointAnchor } : undefined, sourceTransform: part.sourceTransform ? { ...part.sourceTransform, ...(part.sourceTransform.jointAnchor ? { jointAnchor: { ...part.sourceTransform.jointAnchor } } : {}) } : undefined, dataUrl: part.dataUrl
     })),
-    joints: model.joints.map((joint) => structuredClone(joint)),
-    layerOrder: normalizeLayerOrder(model.parts, model.layerOrder),
-    hiddenPartIds: [...(model.hiddenPartIds ?? [])],
+    joints: mounted.joints.map((joint) => structuredClone(joint)),
+    layerOrder: normalizeLayerOrder(mounted.parts, mounted.layerOrder),
+    hiddenPartIds: [...mounted.hiddenPartIds],
     updatedAt: new Date().toISOString()
   }
 }
