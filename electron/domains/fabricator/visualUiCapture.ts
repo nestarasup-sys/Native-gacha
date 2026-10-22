@@ -237,7 +237,28 @@ export async function captureCustomizerStudioRealScreens(win: BrowserWindow, out
   await win.webContents.executeJavaScript("window.location.hash = '#/customizar'")
   await waitFor(win, '.roster-panel')
   await waitFor(win, '.character-card')
-  const garmentPixels = await inspectSyntheticWardrobePreview(win)
+  const focused = await win.webContents.executeJavaScript(`(() => {
+    const card = [...document.querySelectorAll('.character-card')]
+      .find(item => item.textContent?.includes(${JSON.stringify(name)}))
+    if (!card) return false
+    card.click()
+    return true
+  })()`) as boolean
+  if (!focused) throw Error('Personagem salvo não apareceu no elenco da UI.')
+  let garmentPixels: Awaited<ReturnType<typeof inspectSyntheticWardrobePreview>>
+  try { garmentPixels = await inspectSyntheticWardrobePreview(win) }
+  catch (error) {
+    const diagnostic = await win.webContents.executeJavaScript(`(() => ({
+      character: document.querySelector('.customizer-preview-character-name')?.textContent,
+      selected: [...document.querySelectorAll('.character-card.selected')].map(e => e.textContent),
+      renderedBody: !!document.querySelector('img.customizer-selected-artwork'),
+      renderedClothes: !!document.querySelector('img.customizer-wardrobe-overlay'),
+      loading: document.querySelector('.customizer-preview-loading')?.textContent,
+      errors: [...document.querySelectorAll('[role="alert"]')].map(e => e.textContent?.slice(0,350)),
+      view: document.body.innerText.slice(0,850)
+    }))()`)
+    throw Error('Composição visual Customizador falhou: ' + String(error) + '; DOM=' + JSON.stringify(diagnostic))
+  }
   await writeFile(join(output, 'wardrobe-pixels.json'), JSON.stringify(garmentPixels, null, 2))
   await capture('Customizador', 'customizador.png')
   await win.webContents.executeJavaScript("window.location.hash = '#/estudio'")
