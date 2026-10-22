@@ -54,7 +54,7 @@ export function isWardrobePanelCandidateSelected(candidate: WardrobePanelCandida
   return candidate.components.every((component) => groups.some((group) => group.modelSlot === candidate.summary.modelSlot && group.setId === candidate.summary.id && group.category === panel.category && group.componentId === component.id))
 }
 
-async function renderWardrobeThumbnail(set: WardrobeSet, categories: WardrobeCategory[], componentIds?: string[], resolution = 112): Promise<string | null> {
+export async function renderWardrobeThumbnail(set: WardrobeSet, categories: WardrobeCategory[], componentIds?: string[], resolution = 112): Promise<string | null> {
   const allowedIds = componentIds ? new Set(componentIds) : null
   const pieces = set.components.filter((component) => categories.includes(component.category) && (!allowedIds || allowedIds.has(component.id)))
   if (!pieces.length) return null
