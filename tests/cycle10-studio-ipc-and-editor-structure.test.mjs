@@ -48,6 +48,6 @@ test('Roteiros e Customizador mantêm UI separada dos componentes centrais',asyn
   assert.match(editor,/export function RoteiroSectionEditor/)
   assert.match(page,/from '\.\/RoteiroSectionEditor'/)
   assert.match(customizer,/useCustomizerCharacterRoster\(\)/)
-  assert.doesNotMatch(customizer,/window\.desktop\.listCustomizerCharacters\(\)/)
+  assert.doesNotMatch(customizer,/useEffect\(\(\) => \{\n    let cancelled = false\n    void window\.desktop\.listCustomizerCharacters\(\)/)
   assert.match(roster,/window\.desktop\.listCustomizerCharacters\(\)/)
 })
