@@ -147,3 +147,12 @@ test('arraste na prévia da pose volta ao espaço da folha original sem trocar o
   near(center(transformed).x-center(base).x,drag.x)
   near(center(transformed).y-center(base).y,drag.y)
 })
+
+test('teste de pose não mascara membros ausentes com PNG na folha original',async()=>{
+  const {readFile}=await import('node:fs/promises')
+  const editor=await readFile('src/renderer/src/features/fabricator/wardrobe/WardrobeWorkspace.tsx','utf8')
+  assert.match(editor,/const poseMissingAttachments = testPose && draft/)
+  assert.match(editor,/if \(!poseTransform\) return null/)
+  assert.match(editor,/Esta pose não contém a parte corporal/)
+  assert.match(editor,/poseUsesOlderModel/)
+})
