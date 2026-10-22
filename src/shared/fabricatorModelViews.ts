@@ -117,6 +117,8 @@ export function projectForOriginalPreview(project: FabricatorProject | null): Fa
           : part.jointAnchor ? transformPoint(part.id, part.jointAnchor) : undefined }
     }),
     joints: project.joints.map(joint => {
+      // Modelos/fixtures antigos podem omitir anchors; preserve sem converter.
+      if (!joint.parentAnchor || !joint.childAnchor) return structuredClone(joint)
       const parentAnchor = transformPoint(joint.parentPartId, joint.parentAnchor)
       const childAnchor = transformPoint(joint.childPartId, joint.childAnchor)
       return { ...joint, parentAnchor, childAnchor,
