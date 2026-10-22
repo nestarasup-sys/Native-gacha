@@ -1,4 +1,4 @@
-import { interpolateFrames } from './models/animationInterpolation'
+import { interpolateFrames, shortestAngle } from './models/animationInterpolation'
 import { useModelSourceRefresh } from './models/useModelSourceRefresh'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, FormEvent, PointerEvent as ReactPointerEvent } from 'react'
