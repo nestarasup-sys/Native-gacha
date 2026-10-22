@@ -6,7 +6,7 @@ import { Icon } from '../../ui/components/Icon'
 import { normalizeLayerOrder, orderedParts, partJointAnchor } from './models/rig'
 import { usePreviewBackground } from './usePreviewBackground'
 import { mapWardrobeComponentToPose } from './wardrobe/poseTransform'
-import { applyCharacterBodyShape } from '../customizer/bodyShape'
+import { applyCharacterBodyShape } from '../../../../shared/bodyShape'
 
 const SLOT_COUNT = 12
 const HISTORY_LIMIT = 40

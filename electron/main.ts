@@ -5,10 +5,9 @@ import { basename, dirname, extname, join, relative, resolve, sep } from 'node:p
 import { createHash, randomUUID } from 'node:crypto'
 import { Readable } from 'node:stream'
 import { fileURLToPath } from 'node:url'
-import type { AnimatorAnimation, AnimatorAnimationAsset, AnimatorAnimationDraft, AnimatorAnimationSave, AnimatorAnimationSummary, FaceAssetKind, FaceAssetSave, FaceCatalogItem, FaceCatalogItemSave, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSave, FaceComponentAssetSummary, FaceElementKind, FaceExpressionCollection, FaceExpressionPreset, FaceExpressionPresetSummary, FaceExpressionTransforms, FaceExpressionWorkspaceDraft, FaceSet, FaceSetSave, FaceSetSummary, FaceSheetKind, FaceTransform, FabricatorAssetSave, FabricatorHistoryEntry, FabricatorHistorySaveEntry, FabricatorHistorySaveState, FabricatorHistoryState, FabricatorPose, FabricatorPoseDraft, FabricatorPoseDraftSave, FabricatorPoseSave, FabricatorPoseSummary, FabricatorProject, FabricatorProjectSave, HairStyle, HairStyleAsset, HairStyleSave, HairStyleSummary, HairWorkspace, HairWorkspaceAsset, HairWorkspaceSave, ModelPart, PosePart, WardrobeAssetSave, WardrobeCategory, WardrobeSet, WardrobeSetSave, WardrobeSetSummary } from '../src/shared/fabricator'
+import type { AnimatorAnimation, AnimatorAnimationAsset, AnimatorAnimationDraft, AnimatorAnimationSave, AnimatorAnimationSummary, FaceAssetKind, FaceAssetSave, FaceCatalogItem, FaceCatalogItemSave, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSave, FaceComponentAssetSummary, FaceElementKind, FaceExpressionCollection, FaceExpressionPreset, FaceExpressionPresetSummary, FaceExpressionTransforms, FaceExpressionWorkspaceDraft, FaceSet, FaceSetSave, FaceSetSummary, FaceSheetKind, FaceTransform, FabricatorAssetSave, FabricatorHistoryEntry, FabricatorHistorySaveEntry, FabricatorHistorySaveState, FabricatorHistoryState, FabricatorPose, FabricatorPoseDraft, FabricatorPoseDraftSave, FabricatorPoseSave, FabricatorPoseSummary, FabricatorProject, FabricatorProjectSave, HairStyle, HairStyleAsset, HairStyleSave, HairStyleSummary, HairWorkspace, HairWorkspaceAsset, HairWorkspaceSave, ModelPart, PosePart, WardrobeAssetSave, WardrobeCategory, WardrobeSet, WardrobeSetSave } from '../src/shared/fabricator'
 import { resolvePoseCategory } from '../src/shared/fabricator'
 import { hairCategories } from '../src/shared/hairCategories'
-import type { CustomizerCharacter } from '../src/shared/customizer'
 import type { StudioAsset, StudioDocument, VideoStudioAsset, VideoStudioCardSummary, VideoTimelineDocument } from '../src/shared/studio'
 import { applyModelHeadShape } from '../src/shared/headShape'
 import { isStudioExpressionEffects, isStudioFaceTransforms } from '../src/shared/studio'
@@ -48,6 +47,8 @@ import { registerCustomizerCharacterHandlers } from './domains/customizer/ipc'
 import { starterCharacters } from './domains/customizer/starterCharacters'
 import { FabricatorModelCatalog } from './domains/fabricator/modelCatalog'
 import { registerFabricatorModelCatalogHandlers } from './domains/fabricator/modelIpc'
+import { FabricatorWardrobeCatalog } from './domains/fabricator/wardrobeCatalog'
+import { registerFabricatorWardrobeCatalogHandlers } from './domains/fabricator/wardrobeCatalogIpc'
 
 let configuredAppDataRoot: string | null = null
 let videoExportLibrary: VideoExportLibrary | null = null
@@ -2413,26 +2414,7 @@ async function registerFabricatorHandlers(): Promise<void> {
     await next
   })
 
-  ipcMain.handle('fabricator:wardrobe:list', async (event, modelSlot: number): Promise<WardrobeSetSummary[]> => {
-    assertTrustedSender(event)
-    if (!isValidModelSlot(modelSlot)) throw new Error('Modelo inválido.')
-    const folder = wardrobeModelPath(modelSlot)
-    try {
-      const entries = await readdir(folder, { withFileTypes: true })
-      const sets: WardrobeSetSummary[] = []
-      for (const entry of entries) {
-        if (!entry.isDirectory() || !/^set-[a-zA-Z0-9_-]{1,80}$/.test(entry.name)) continue
-        try {
-          const set = JSON.parse(await readFile(join(folder, entry.name, 'wardrobe.json'), 'utf8')) as WardrobeSet
-          if (set.schemaVersion === 1 && (set.edition === undefined || set.edition === 1 || set.edition === 2) && set.modelSlot === modelSlot && set.id === entry.name.slice(4) && Array.isArray(set.components)) sets.push({ id: set.id, modelSlot, modelName: set.modelName, name: set.name, updatedAt: set.updatedAt, edition: set.edition ?? 1, componentCount: set.components.length })
-        } catch { /* Manifestos inválidos não entram na biblioteca. */ }
-      }
-      return sets.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-    } catch (reason) {
-      if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return []
-      throw reason
-    }
-  })
+  registerFabricatorWardrobeCatalogHandlers(ipcMain, assertTrustedSender, new FabricatorWardrobeCatalog(wardrobeModelPath, { readdir, readFile }, slotCount))
 
   ipcMain.handle('fabricator:wardrobe:load', async (event, modelSlot: number, id: string): Promise<WardrobeSet | null> => {
     assertTrustedSender(event)

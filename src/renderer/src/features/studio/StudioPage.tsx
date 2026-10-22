@@ -476,7 +476,7 @@ export function StudioPage() {
     if (!studioPoseSlots.length) { setStudioPoseThumbnails({}); setStudioPoseDimensions({}); return }
     let cancelled = false
     void (async () => {
-      const { renderArtwork } = await import('../customizer/CustomizerPage')
+      const { renderArtwork } = await import('../../characters/characterRenderer')
       const thumbnails = await Promise.all(studioPoseSlots.map(async (pose) => {
         try {
           const artwork = await window.desktop.loadFabricatorPose(pose.sourceModelSlot, pose.slot)
@@ -568,7 +568,7 @@ export function StudioPage() {
     const stageHeight = sceneRef.current?.clientHeight ?? 562
     void (async () => {
       try {
-        const { renderSavedCharacter } = await import('../customizer/CustomizerPage')
+        const { renderSavedCharacter } = await import('../../characters/characterRenderer')
         const updates: Array<{ previous: StudioElement; next: StudioElement; asset: StudioAsset }> = []
         for (const { element, character, shouldRecomposeExpression, assetRevisionKey, assetsChanged } of pending) {
           const savedPreset = element.activeExpressionPresetId
@@ -847,7 +847,7 @@ export function StudioPage() {
       const removedCharacterAssetIds = new Set(activeStudio.elements.filter((element) => element.kind === 'character' && element.characterId && !selectedIds.has(element.characterId)).map((element) => element.assetId).filter((id): id is string => Boolean(id)))
       const retainedCharacters = new Set(retained.filter((element) => element.kind === 'character').map((element) => element.characterId))
       const additions = availableCharacters.filter((character) => selectedIds.has(character.id) && !retainedCharacters.has(character.id))
-      const { renderSavedCharacter } = await import('../customizer/CustomizerPage')
+      const { renderSavedCharacter } = await import('../../characters/characterRenderer')
       const assets: StudioAsset[] = []
       const elements: StudioElement[] = []
       const stageWidth = sceneRef.current?.clientWidth ?? 1000
@@ -907,7 +907,7 @@ export function StudioPage() {
       }
       const key = studioCharacterRenderKey(characterCopy)
       if (!studioFaceRendererRef.current || studioFaceRendererRef.current.key !== key) {
-        const { prepareSavedCharacterRenderer } = await import('../customizer/CustomizerPage')
+        const { prepareSavedCharacterRenderer } = await import('../../characters/characterRenderer')
         const renderer = await prepareSavedCharacterRenderer(characterCopy)
         studioFaceRendererRef.current = { key, render: renderer.render }
       }
@@ -1010,7 +1010,7 @@ export function StudioPage() {
     if (!activeStudio || selectedElement?.kind !== 'character' || !selectedStudioCharacter || !selectedElement.assetId || studioFaceBusy) return
     setStudioFaceBusy(true)
     try {
-      const { renderSavedCharacter } = await import('../customizer/CustomizerPage')
+      const { renderSavedCharacter } = await import('../../characters/characterRenderer')
       let characterCanvasWidth = selectedElement.characterCanvasWidth
       if (!characterCanvasWidth) {
         const currentPoseCharacter: CustomizerCharacter = { ...selectedStudioCharacter, customization: { ...selectedStudioCharacter.customization, poseSlot: selectedElement.poseSlot === undefined ? selectedStudioCharacter.customization.poseSlot : selectedElement.poseSlot, faceAppearance: selectedElement.faceAppearance ?? selectedStudioCharacter.customization.faceAppearance } }
@@ -1132,7 +1132,7 @@ export function StudioPage() {
         const key = studioCharacterRenderKey(job.character)
         try {
           if (!studioFaceRendererRef.current || studioFaceRendererRef.current.key !== key) {
-            const { prepareSavedCharacterRenderer } = await import('../customizer/CustomizerPage')
+            const { prepareSavedCharacterRenderer } = await import('../../characters/characterRenderer')
             const renderer = await prepareSavedCharacterRenderer(job.character)
             if (version !== studioFaceRenderVersionRef.current) continue
             studioFaceRendererRef.current = { key, render: renderer.render }
