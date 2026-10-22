@@ -47,17 +47,29 @@ async function createCompleteCharacterFixture(root){
   await writePng(path.join(pose,'parts','body.png'),110,230,[87,130,207,255])
   await writePng(path.join(pose,'parts','head.png'),76,100,[241,185,151,255])
   const outfit=path.join(base,'wardrobe','model-1','set-uniform')
+  const sourceBone = manifest.parts[0].sourceTransform
+  const fitBinding = part => ({
+    version: 1, boneId: 'body', boneWidth: sourceBone.width, boneHeight: sourceBone.height,
+    boneRotation: sourceBone.rotation,
+    localCenterX: (part.x + part.width / 2 - sourceBone.x - sourceBone.width / 2) / sourceBone.width,
+    localCenterY: (part.y + part.height / 2 - sourceBone.y - sourceBone.height / 2) / sourceBone.height,
+    widthRatio: part.width / sourceBone.width, heightRatio: part.height / sourceBone.height,
+    relativeRotation: part.rotation - sourceBone.rotation
+  })
+  // Encaixes deliberadamente movidos nos dois eixos em relação ao recorte;
+  // o Customizador deve usar estes X/Y, não um posicionamento automático.
+  const fittedClothes = [
+    {id:'coat',name:'Casaco',category:'camisa',attachedPartId:'body',
+      x:68,y:141,width:110,height:135,rotation:0},
+    {id:'sleeve-left',name:'Manga superior esquerda',category:'manga-superior',attachedPartId:'body',
+      x:45,y:154,width:32,height:95,rotation:0},
+    {id:'sleeve-right',name:'Manga superior direita',category:'manga-superior',attachedPartId:'body',
+      x:161,y:131,width:32,height:95,rotation:0}
+  ].map(part => ({...part,binding:fitBinding(part)}))
   writeJson(path.join(outfit,'wardrobe.json'),{
     schemaVersion:1,edition:1,id:'uniform',modelSlot:1,modelName:manifest.name,
     name:'Jaqueta de teste',width:256,height:384,updatedAt:T,
-    components:[
-      {id:'coat',name:'Casaco',category:'camisa',attachedPartId:'body',
-        x:74,y:130,width:110,height:135,rotation:0},
-      {id:'sleeve-left',name:'Manga superior esquerda',category:'manga-superior',attachedPartId:'body',
-        x:42,y:145,width:32,height:95,rotation:0},
-      {id:'sleeve-right',name:'Manga superior direita',category:'manga-superior',attachedPartId:'body',
-        x:184,y:145,width:32,height:95,rotation:0}
-    ]
+    components:fittedClothes
   })
   await writePng(path.join(outfit,'parts','coat.png'),110,135,[212,82,115,255])
   await writePng(path.join(outfit,'parts','sleeve-left.png'),32,95,[42,174,207,255])
