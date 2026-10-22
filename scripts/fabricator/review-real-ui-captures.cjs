@@ -62,7 +62,8 @@ async function verifyWorkspaceCaptures(directory) {
   const manifest = JSON.parse(await fs.readFile(join(folder, 'workspace-manifest.json'), 'utf8'))
   const expectedWorkspaces = [
     { section: 'Customizador', file: 'customizador.png' },
-    { section: 'Studio Principal — cena criada', file: 'studio.png' }
+    { section: 'Studio Principal — elenco salvo', file: 'studio.png' },
+    { section: 'Studio Principal — cena reaberta', file: 'studio-reaberto.png' }
   ]
   if (manifest.schemaVersion !== 1 || manifest.mode !== 'real-electron-workspaces' ||
       manifest.syntheticOnly !== true || !Array.isArray(manifest.results) ||
@@ -84,6 +85,8 @@ async function verifyWorkspaceCaptures(directory) {
       throw Error('Imagem ou hash do workspace inválido: ' + expected.file)
     }
   }
+  const state = JSON.parse(await fs.readFile(join(folder, 'flow-state.json'), 'utf8'))
+  if (state.schemaVersion !== 1 || state.syntheticOnly !== true || !state.characterId || !state.studioId) throw Error('Identidade de fluxo E2E inválida.')
   return expectedWorkspaces.map(item => item.file)
 }
 
