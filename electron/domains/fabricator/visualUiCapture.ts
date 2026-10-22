@@ -112,6 +112,15 @@ export async function captureCustomizerStudioRealScreens(win: BrowserWindow, out
     return true
   })()`) as boolean
   if (!clicked) throw new Error('Não foi possível criar cena no Studio real.')
+  // Criar somente seleciona o card no Studio legado: abrir exige um segundo clique.
+  await waitFor(win, 'button.studio-card-open')
+  const opened = await win.webContents.executeJavaScript(`(() => {
+    const button = document.querySelector('button.studio-card-open')
+    if (!button) return false
+    button.click()
+    return true
+  })()`) as boolean
+  if (!opened) throw new Error('Não foi possível abrir a cena recém-criada no Studio.')
   await waitFor(win, '.studio-scene-area')
   await capture('Studio Principal — cena criada', 'studio.png')
   await writeFile(join(output, 'workspace-manifest.json'), JSON.stringify({
