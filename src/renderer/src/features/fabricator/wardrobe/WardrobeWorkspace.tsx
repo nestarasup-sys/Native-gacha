@@ -1,3 +1,4 @@
+import { projectForOriginalPreview } from '../../../../../shared/fabricatorModelViews'
 import { useModelSourceRefresh } from '../models/useModelSourceRefresh'
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import type { FabricatorHistoryState, FabricatorPose, FabricatorPoseSummary, FabricatorProject, FabricatorProjectSave, FabricatorSlotSummary, ModelPart, WardrobeCategory, WardrobeComponent, WardrobeSet, WardrobeSetSave, WardrobeSetSummary } from '../../../../../shared/fabricator'
@@ -119,7 +120,7 @@ export function WardrobeWorkspace() {
   const [models, setModels] = useState<FabricatorSlotSummary[]>(Array.from({ length: 10 }, () => null))
   const [modelSlot, setModelSlot] = useState(1)
   const [model, setModel] = useState<FabricatorProject | null>(null)
-  useModelSourceRefresh(modelSlot, setModel)
+  useModelSourceRefresh(modelSlot, fresh => setModel(projectForOriginalPreview(fresh)))
   const [sets, setSets] = useState<WardrobeSetSummary[]>([])
   const [activeSetId, setActiveSetId] = useState<string | null>(null)
   const [draft, setDraft] = useState<WardrobeSet | null>(null)
@@ -161,7 +162,7 @@ export function WardrobeWorkspace() {
   // Keep the saved original source sheet and its existing minimum preview scale.
   const referenceSource = model?.sourceDataUrl ?? null
   const sourceParts = model && sourceReference?.sourceDataUrl === referenceSource ? sourceReference.parts : null
-  const referenceModel = model && sourceParts ? { ...model, parts: model.parts.map((part) => withSourceFrame(part, sourceParts[part.id])) } : model
+  const referenceModel = model && sourceParts ? { ...model, parts: model.parts.map((part) => withSourceFrame(part, sourceParts[part.id])) } : projectForOriginalPreview(model)
   const referenceBone = (partId: string) => referenceModel?.parts.find((part) => part.id === partId)
 
   const reload = useCallback(async (targetSlot: number) => {
