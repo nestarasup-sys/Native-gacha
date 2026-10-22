@@ -106,22 +106,6 @@ const studioTools = [
   { id: 'objects', label: 'Objetos', icon: 'sparkles' }
 ] as const
 
-function fitElementToTrim(element: StudioElement, crop: TrimmedImage): StudioElement {
-  const offsetX = ((crop.left + crop.width / 2) / crop.sourceWidth - 0.5) * element.width * (element.flipX ? -1 : 1)
-  const offsetY = ((crop.top + crop.height / 2) / crop.sourceHeight - 0.5) * element.height
-  const radians = element.rotation * Math.PI / 180
-  const x = offsetX * Math.cos(radians) - offsetY * (9 / 16) * Math.sin(radians)
-  const y = offsetX * (16 / 9) * Math.sin(radians) + offsetY * Math.cos(radians)
-  return {
-    ...element,
-    x: element.x + x,
-    y: element.y + y,
-    width: element.width * crop.width / crop.sourceWidth,
-    height: element.height * crop.height / crop.sourceHeight
-  }
-}
-
-
 function equalStudioSnapshot(left: StudioSnapshot, right: StudioSnapshot): boolean {
   const editorialTimeline = (timeline: StudioSnapshot['videoTimeline']) => {
     if (!timeline) return timeline
