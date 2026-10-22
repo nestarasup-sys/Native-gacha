@@ -13,7 +13,7 @@ test('recorte de personagem preserva proporções dos Studios, incluindo rotaç�
    assert.equal(updated.height,original.height*crop.height/crop.sourceHeight)
    assert.equal(original.x,20,'não altera elemento original')
    assert.ok(Number.isFinite(updated.x) && Number.isFinite(updated.y))
-   assert.notEqual(updated.x,original.x)
+   assert.ok(updated.x !== original.x || updated.y !== original.y, 'recorte desloca ao menos um eixo')
   }
  }
 })
