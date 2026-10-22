@@ -512,7 +512,10 @@ export function WardrobeWorkspace() {
       }
       const set: WardrobeSet = { ...draft, edition: 1, modelSlot, modelName: model?.name ?? draft.modelName, updatedAt: new Date().toISOString() }
       const serialized: WardrobeSetSave = { ...set, components: set.components.map(({ dataUrl: _dataUrl, ...component }) => ({ ...component, renderAboveHair: (component.category === 'oculos' || component.category === 'acessorio-cabeca') && component.renderAboveHair === true })) }
-      await window.desktop.saveWardrobeSet(modelSlot, serialized, set.components.map(({ id, dataUrl: image }) => ({ id, dataUrl: image })))
+      // Alterações de encaixe de um conjunto já existente não mudam seus pixels.
+       // Evita regravar PNGs do catálogo a partir de cópias carregadas em memória.
+       const images = activeSetId === set.id ? [] : set.components.map(({ id, dataUrl: image }) => ({ id, dataUrl: image }))
+       await window.desktop.saveWardrobeSet(modelSlot, serialized, images)
       window.dispatchEvent(new Event('fabricator:assets-updated'))
       setDraft(set); setActiveSetId(set.id); setDirty(false); setSets(await window.desktop.listWardrobeSets(modelSlot))
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível salvar o conjunto.') }
