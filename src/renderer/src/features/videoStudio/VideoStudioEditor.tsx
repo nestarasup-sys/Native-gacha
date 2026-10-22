@@ -1,3 +1,4 @@
+import { snapshotVideoStudioScene as snapshot, withStudioSnapshot as withSnapshot, studioCharacterRenderKey } from '../../../../shared/studioSceneModel'
 import { findTimelineBlockStart, resizeTimelineBlock, timelineBlockOverlaps, type TimelineBlockTarget } from '../../../../shared/videoTimelineEditing'
 import './VideoStudioEditor.css'
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
@@ -120,20 +121,6 @@ function fitElementToTrim(element: StudioElement, crop: TrimmedImage): StudioEle
   }
 }
 
-function snapshot(studio: StudioDocument): StudioSnapshot {
-  return {
-    backgroundColor: studio.backgroundColor,
-    backgroundAssetId: studio.backgroundAssetId,
-    backgroundX: studio.backgroundX,
-    backgroundY: studio.backgroundY,
-    backgroundWidth: studio.backgroundWidth,
-    backgroundHeight: studio.backgroundHeight,
-    backgroundRotation: studio.backgroundRotation,
-    assets: studio.assets,
-    elements: studio.elements,
-    videoTimeline: studio.videoTimeline
-  }
-}
 
 function equalStudioSnapshot(left: StudioSnapshot, right: StudioSnapshot): boolean {
   const editorialTimeline = (timeline: StudioSnapshot['videoTimeline']) => {
@@ -144,14 +131,7 @@ function equalStudioSnapshot(left: StudioSnapshot, right: StudioSnapshot): boole
   return equalHistoryValue({ ...left, videoTimeline: editorialTimeline(left.videoTimeline) }, { ...right, videoTimeline: editorialTimeline(right.videoTimeline) })
 }
 
-function withSnapshot(studio: StudioDocument, next: StudioSnapshot): StudioDocument {
-  return { ...studio, ...next, updatedAt: new Date().toISOString() }
-}
 
-function studioCharacterRenderKey(character: CustomizerCharacter): string {
-  const { faceAppearance: _ignored, ...customization } = character.customization
-  return JSON.stringify({ id: character.id, customization })
-}
 
 
 function makeElement(kind: StudioElement['kind'], zIndex: number): StudioElement {
