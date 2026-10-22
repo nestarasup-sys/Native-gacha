@@ -138,9 +138,18 @@ export async function captureCustomizerStudioRealScreens(win: BrowserWindow, out
     const list = await window.desktop.listCustomizerCharacters()
     const character = list.find(item => item.id === ${JSON.stringify(id)})
     if (!character) return false
+    const wardrobe = await window.desktop.loadWardrobeSet(1, 'uniform')
+    if (!wardrobe || wardrobe.components.length !== 3 ||
+        new Set(wardrobe.components.map(component => component.dataUrl)).size !== 3) {
+      throw new Error('Roupas Dev retornou manga duplicada ou perdeu componente.')
+    }
+    const wardrobeGroups = wardrobe.components.map(component => ({
+      modelSlot: 1, setId: wardrobe.id, category: component.category,
+      componentId: component.id, offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1, rotation: 0
+    }))
     await window.desktop.saveCustomizerCharacter({
       ...character,
-      customization: { ...character.customization, modelSlot: 1, poseSlot: 1 },
+      customization: { ...character.customization, modelSlot: 1, poseSlot: 1, wardrobeGroups },
       updatedAt: new Date().toISOString()
     })
     return true
@@ -213,9 +222,19 @@ export async function captureCustomizerStudioReopened(win: BrowserWindow, output
   if (flow.schemaVersion !== 1 || flow.syntheticOnly !== true) throw Error('Fixture de reinício inválida.')
   await win.webContents.executeJavaScript("window.location.hash = '#/customizar'")
   await waitFor(win, '.roster-panel')
-  const characters = await win.webContents.executeJavaScript('window.desktop.listCustomizerCharacters()') as Array<{ id: string; name: string; customization: { modelSlot: number; poseSlot: number } }>
+  const characters = await win.webContents.executeJavaScript('window.desktop.listCustomizerCharacters()') as Array<{ id: string; name: string; customization: { modelSlot: number; poseSlot: number; wardrobeGroups?: Array<{ setId: string; componentId?: string }> } }>
   const saved = characters.find(item => item.id === flow.characterId && item.name === flow.name)
   if (!saved || saved.customization.modelSlot !== 1 || saved.customization.poseSlot !== 1) throw Error('Customizador perdeu a personalização após reiniciar.')
+  const garmentIds = ['coat', 'sleeve-left', 'sleeve-right']
+  const equipped = saved.customization.wardrobeGroups ?? []
+  if (!garmentIds.every(id => equipped.some(group => group.setId === 'uniform' && group.componentId === id))) {
+    throw Error('Customizador perdeu a roupa individual após reiniciar.')
+  }
+  const garment = await win.webContents.executeJavaScript("window.desktop.loadWardrobeSet(1, 'uniform')") as { components: Array<{ id: string; dataUrl: string }> } | null
+  if (!garment || garment.components.length !== 3 ||
+      new Set(garment.components.map(piece => piece.dataUrl)).size !== 3) {
+    throw Error('Mangas e camisa foram duplicadas após reabrir o Electron.')
+  }
   await win.webContents.executeJavaScript("window.location.hash = '#/estudio'")
   await waitFor(win, '.studio-page')
   const studios = await win.webContents.executeJavaScript('window.desktop.listStudios()') as Array<{ id: string; elements: Array<{ characterId?: string; assetId?: string }>; assets: Array<{ id: string; dataUrl: string }> }>
