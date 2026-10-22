@@ -59,16 +59,10 @@ export async function recoverModelSourceSlot(
   let expected: string | null = null
   try {
     const marker = JSON.parse(await files.readFile(join(base, `.model-source-pending-${slot}.json`), 'utf8')) as { version?: unknown; backup?: unknown }
-    // Aceita somente um nome gerado pelo próprio publicador, nunca um caminho arbitrário.
+    const prefix = `.model-source-backup-${slot}-`
+    // Nome rigidamente validado: nunca aceitar caminhos nem arquivos de outros slots.
     if (marker.version === 1 && typeof marker.backup === 'string'
-      && new RegExp('^\\\\.model-source-backup-' + slot + '-[a-f0-9-]{36}
-    return 'restored'
-  } catch (reason) {
-    // Outra leitura pode ter recuperado simultaneamente o mesmo slot.
-    try { await files.readdir(official); return 'intact' } catch { throw reason }
-  }
-}
-).test(marker.backup)) {
+      && marker.backup.startsWith(prefix) && /^[a-f0-9-]{36}$/.test(marker.backup.slice(prefix.length))) {
       expected = join(base, marker.backup)
     }
   } catch (reason) {
