@@ -31,7 +31,6 @@ import { DomainFileSystem } from './domainFileSystem.cjs'
 import { DataMigrationService } from './dataMigration.cjs'
 import { DataBackupService } from './dataBackups.cjs'
 import { configureAssetImageStorage, readAssetImage, writeAssetImageSource } from './assetImageOverrides'
-import { legacyStandardExpressionEffects } from '../src/shared/legacyExpressionEffects'
 import { migrateElectronProfile } from './electronProfileMigration.cjs'
 import { normalizeImageBuffer } from './imageIngestion.cjs'
 import { measureIpc } from './ipcPerformance'
@@ -56,6 +55,7 @@ import { registerFabricatorPoseHandlers } from './domains/fabricator/poseIpc'
 import { registerFabricatorAnimatorHandlers } from './domains/fabricator/animatorIpc'
 import { FabricatorCatalogAssetService } from './domains/fabricator/catalogAssetService'
 import { createFabricatorCatalogPersistence } from './domains/fabricator/catalogPersistence'
+import { createFabricatorExpressionStorage } from './domains/fabricator/expressionStorage'
 import { registerStudioPrimaryHandlers } from './domains/studio/primaryIpc'
 import { createStudioLibraryIndex } from './domains/studio/libraryIndex'
 import { createStudioDocumentPersistence } from './domains/studio/documentPersistence'
@@ -408,103 +408,14 @@ function validFaceExpressionWorkspaceDraft(modelSlot: number, draft: FaceExpress
   return true
 }
 
-async function readFaceExpressionWorkspaceDraft(modelSlot: number): Promise<FaceExpressionWorkspaceDraft | null> {
-  if (!isValidModelSlot(modelSlot)) throw new Error('Modelo inválido.')
-  try {
-    const draft = JSON.parse(await readFile(faceExpressionWorkspaceDraftPath(modelSlot), 'utf8')) as FaceExpressionWorkspaceDraft
-    return validFaceExpressionWorkspaceDraft(modelSlot, draft) ? draft : null
-  } catch (reason) {
-    if ((reason as NodeJS.ErrnoException).code === 'ENOENT' || reason instanceof SyntaxError) return null
-    throw reason
-  }
-}
-
-async function writeFaceExpressionWorkspaceDraft(modelSlot: number, draft: FaceExpressionWorkspaceDraft): Promise<void> {
-  if (!validFaceExpressionWorkspaceDraft(modelSlot, draft)) throw new Error('Rascunho de expressão inválido.')
-  const target = faceExpressionWorkspaceDraftPath(modelSlot)
-  await mkdir(dirname(target), { recursive: true })
-  const temporary = `${target}.tmp`
-  await writeFile(temporary, JSON.stringify(draft), 'utf8')
-  await rename(temporary, target)
-}
-
-async function listFaceExpressionPresets(modelSlot: number): Promise<FaceExpressionPresetSummary[]> {
-  if (!isValidModelSlot(modelSlot)) throw new Error('Modelo inválido.')
-  const folder = join(app.getPath('userData'), 'fabricator', 'expression-presets', `model-${modelSlot}`)
-  try {
-    const entries = await readdir(folder, { withFileTypes: true })
-    const presets: FaceExpressionPresetSummary[] = []
-    for (const entry of entries) {
-      if (!entry.isFile() || !/^preset-[a-zA-Z0-9_-]{1,80}\.json$/.test(entry.name)) continue
-      try {
-        const preset = JSON.parse(await readFile(join(folder, entry.name), 'utf8')) as FaceExpressionPreset
-        if (validFaceExpressionPreset(modelSlot, preset) && entry.name === `preset-${preset.id}.json`) {
-          presets.push({ id: preset.id, modelSlot, name: preset.name, updatedAt: preset.updatedAt, collectionId: preset.collectionId, expressionIndex: preset.expressionIndex })
-        }
-      } catch { /* Arquivos incompletos não aparecem na biblioteca. */ }
-    }
-    return presets.sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'))
-  } catch (reason) {
-    if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return []
-    throw reason
-  }
-}
-
-function isValidFaceExpressionCollection(modelSlot: number, collection: FaceExpressionCollection): boolean {
-  return isValidModelSlot(modelSlot) && !!collection && collection.schemaVersion === 1 && collection.modelSlot === modelSlot
-    && isValidWardrobeId(collection.id) && typeof collection.name === 'string' && Boolean(collection.name.trim()) && collection.name.length <= 80
-    && typeof collection.createdAt === 'string' && Number.isFinite(Date.parse(collection.createdAt))
-    && typeof collection.updatedAt === 'string' && Number.isFinite(Date.parse(collection.updatedAt))
-}
-
-async function listFaceExpressionCollections(modelSlot: number): Promise<FaceExpressionCollection[]> {
-  if (!isValidModelSlot(modelSlot)) throw new Error('Modelo inválido.')
-  try {
-    const collections = JSON.parse(await readFile(faceExpressionCollectionsPath(modelSlot), 'utf8')) as unknown
-    if (!Array.isArray(collections)) return []
-    return collections.filter((item): item is FaceExpressionCollection => isValidFaceExpressionCollection(modelSlot, item))
-  } catch (reason) {
-    if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return []
-    throw reason
-  }
-}
-
-async function writeFaceExpressionCollection(modelSlot: number, collection: FaceExpressionCollection): Promise<void> {
-  if (!isValidFaceExpressionCollection(modelSlot, collection)) throw new Error('Conjunto de expressões inválido.')
-  const filePath = faceExpressionCollectionsPath(modelSlot)
-  const existing = await listFaceExpressionCollections(modelSlot)
-  const next = [...existing.filter((item) => item.id !== collection.id), collection]
-  await mkdir(dirname(filePath), { recursive: true })
-  const temporary = `${filePath}.tmp`
-  await writeFile(temporary, JSON.stringify(next), 'utf8')
-  await rename(temporary, filePath)
-}
-
-async function readFaceExpressionPreset(modelSlot: number, id: string): Promise<FaceExpressionPreset | null> {
-  if (!isValidModelSlot(modelSlot) || !isValidWardrobeId(id)) throw new Error('Preset de expressão inválido.')
-  try {
-    const preset = JSON.parse(await readFile(faceExpressionPresetPath(modelSlot, id), 'utf8')) as FaceExpressionPreset
-    if (!validFaceExpressionPreset(modelSlot, preset) || preset.id !== id) return null
-    return {
-      ...preset,
-      effects: preset.effects ?? legacyStandardExpressionEffects(preset),
-      selections: { ...preset.selections, eyebrows: preset.selections.eyebrows ?? { left: null, right: null } },
-      transforms: { ...preset.transforms, browLeft: preset.transforms.browLeft ?? { x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0 }, browRight: preset.transforms.browRight ?? { x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0 } }
-    }
-  } catch (reason) {
-    if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return null
-    throw reason
-  }
-}
-
-async function writeFaceExpressionPreset(modelSlot: number, preset: FaceExpressionPreset): Promise<void> {
-  if (!validFaceExpressionPreset(modelSlot, preset)) throw new Error('Preset de expressão inválido.')
-  const target = faceExpressionPresetPath(modelSlot, preset.id)
-  await mkdir(dirname(target), { recursive: true })
-  const temporary = `${target}.tmp`
-  await writeFile(temporary, JSON.stringify(preset), 'utf8')
-  await rename(temporary, target)
-}
+const expressionStorage = createFabricatorExpressionStorage({
+  files: { readFile, writeFile, mkdir, rename, readdir }, userDataRoot: app.getPath('userData'),
+  isValidModelSlot, isValidWardrobeId, validFaceExpressionPreset, validFaceExpressionWorkspaceDraft,
+  faceExpressionWorkspaceDraftPath, faceExpressionCollectionsPath, faceExpressionPresetPath
+})
+const { readFaceExpressionWorkspaceDraft, writeFaceExpressionWorkspaceDraft,
+  listFaceExpressionPresets, listFaceExpressionCollections, writeFaceExpressionCollection,
+  readFaceExpressionPreset, writeFaceExpressionPreset } = expressionStorage
 
 const catalogPersistence = createFabricatorCatalogPersistence({ mkdir, access, readFile, writeFile, rename, unlink, rm, readdir }, writeAssetImageSource)
 
