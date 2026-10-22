@@ -1,4 +1,4 @@
-import { fabricatorIpcChannels } from '../../../src/shared/fabricatorIpcChannels'
+import { fabricatorIpcChannels } from '../../../src/shared/fabricatorIpcChannels.ts'
 /** Canais legados de Poses DEV: transporte isolado, autorização obrigatória. */
 import type { IpcMain, IpcMainInvokeEvent } from 'electron'
 import { basename, dirname, join, resolve } from 'node:path'
