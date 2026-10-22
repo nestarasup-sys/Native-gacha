@@ -78,24 +78,53 @@ export function selectMountedModelSource(project: FabricatorProject): MountedMod
 }
 
 
-/** Compatibilidade para editores DEV que ainda esperam FabricatorProject:
- * substitui APENAS a geometria de exibição das peças por sourceTransform.
- * Nenhum manifesto é gravado, e a montagem original permanece intacta.
+/** Projeta a geometria para a folha original sem perder a topologia do rig.
+ * Transformações de joints usam os eixos locais da peça, para o Animador DEV
+ * não perder articulações ao exibir a referência original.
  */
 export function projectForOriginalPreview(project: FabricatorProject | null): FabricatorProject | null {
   if (!project) return null
+  type Point = { x: number; y: number }
+  const originals = new Map(project.parts.map(part => {
+    const source = part.sourceTransform
+    return [part.id, source ? {
+      x: source.x, y: source.y, width: source.width ?? part.width,
+      height: source.height ?? part.height, rotation: source.rotation
+    } : { x: part.x, y: part.y, width: part.width, height: part.height, rotation: part.rotation }] as const
+  }))
+  function transformPoint(partId: string, point: Point): Point {
+    const part = project.parts.find(candidate => candidate.id === partId)
+    const source = originals.get(partId)
+    if (!part || !source) return { ...point }
+    const radians = part.rotation * Math.PI / 180
+    const srcRadians = source.rotation * Math.PI / 180
+    const px = point.x - (part.x + part.width / 2)
+    const py = point.y - (part.y + part.height / 2)
+    const localX = (px * Math.cos(radians) + py * Math.sin(radians)) * source.width / part.width
+    const localY = (-px * Math.sin(radians) + py * Math.cos(radians)) * source.height / part.height
+    return {
+      x: source.x + source.width / 2 + localX * Math.cos(srcRadians) - localY * Math.sin(srcRadians),
+      y: source.y + source.height / 2 + localX * Math.sin(srcRadians) + localY * Math.cos(srcRadians)
+    }
+  }
   return {
     ...project,
     parts: project.parts.map(part => {
-      const original = part.sourceTransform
-      return original
-        ? { ...part, x: original.x, y: original.y, width: original.width ?? part.width,
-          height: original.height ?? part.height, rotation: original.rotation,
-          // Não propaga âncoras da montagem para a folha de origem.
-          jointAnchor: original.jointAnchor ? { ...original.jointAnchor } : undefined }
-        : { ...part }
+      const original = originals.get(part.id)!
+      return { ...part, ...original,
+        jointAnchor: part.sourceTransform?.jointAnchor
+          ? { ...part.sourceTransform.jointAnchor }
+          : part.jointAnchor ? transformPoint(part.id, part.jointAnchor) : undefined }
     }),
-    joints: [],
+    joints: project.joints.map(joint => {
+      const parentAnchor = transformPoint(joint.parentPartId, joint.parentAnchor)
+      const childAnchor = transformPoint(joint.childPartId, joint.childAnchor)
+      return { ...joint, parentAnchor, childAnchor,
+        ...(joint.pivot ? { pivot: {
+          x: (parentAnchor.x + childAnchor.x) / 2,
+          y: (parentAnchor.y + childAnchor.y) / 2
+        } } : {}) }
+    }),
     layerOrder: [...(project.layerOrder ?? project.parts.map(part => part.id))],
     hiddenPartIds: [...(project.hiddenPartIds ?? [])]
   }
