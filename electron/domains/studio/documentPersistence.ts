@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
 import type * as nodeFs from 'node:fs/promises'
 import type { StudioAsset, StudioDocument, VideoTimelineDocument, VideoStudioCardSummary } from '../../../src/shared/studio'
-import { publishJsonManifest } from '../storage/atomicManifest'
+import { publishJsonManifest } from '../storage/atomicManifest.ts'
 
 export type StudioWorkspaceStorage = 'studio' | 'video'
 type Files = Pick<typeof nodeFs, 'readFile' | 'writeFile' | 'mkdir' | 'access' | 'rename' | 'unlink'>
