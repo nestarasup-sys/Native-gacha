@@ -49,6 +49,7 @@ import { FabricatorModelCatalog } from './domains/fabricator/modelCatalog'
 import { registerFabricatorModelCatalogHandlers } from './domains/fabricator/modelIpc'
 import { FabricatorWardrobeCatalog } from './domains/fabricator/wardrobeCatalog'
 import { registerFabricatorWardrobeCatalogHandlers } from './domains/fabricator/wardrobeCatalogIpc'
+import { publishModelSource, type ModelSourcePublishRequest } from './domains/fabricator/modelSource'
 
 let configuredAppDataRoot: string | null = null
 let videoExportLibrary: VideoExportLibrary | null = null
@@ -1385,9 +1386,9 @@ async function readFabricatorHistory(slot: number): Promise<FabricatorHistorySta
   return { undo: await Promise.all(stored.undo.map(restoreEntry)), redo: await Promise.all(stored.redo.map(restoreEntry)) }
 }
 
-async function writeFabricatorProject(project: FabricatorProjectSave, changedAssets: FabricatorAssetSave[]): Promise<void> {
+async function writeFabricatorProject(project: FabricatorProjectSave, changedAssets: FabricatorAssetSave[], folderOverride?: string): Promise<void> {
   if (!isValidSlot(project.slot) || project.schemaVersion !== 1 || project.parts.length > 500) throw new Error('Projeto inválido.')
-  const folder = slotPath(project.slot)
+  const folder = folderOverride ?? slotPath(project.slot)
   const partsFolder = join(folder, 'parts')
   await mkdir(partsFolder, { recursive: true })
   const sourceFile = project.sourceAssetName
@@ -2190,6 +2191,20 @@ async function registerFabricatorHandlers(): Promise<void> {
     fabricatorSaveQueues.set(slot, current)
     try { await current } finally {
       if (fabricatorSaveQueues.get(slot) === current) fabricatorSaveQueues.delete(slot)
+    }
+  })
+
+
+  ipcMain.handle('fabricator:model-source:publish', async (event, request: ModelSourcePublishRequest): Promise<string> => {
+    assertTrustedSender(event)
+    if (!request || !isValidSlot(request.project?.slot)) throw new Error('Slot inválido.')
+    const slot = request.project.slot
+    const previous = fabricatorSaveQueues.get(slot) ?? Promise.resolve()
+    const job = previous.catch(() => undefined).then(() => publishModelSource(request, slotPath, writeFabricatorProject))
+    const queue = job.then(() => undefined)
+    fabricatorSaveQueues.set(slot, queue)
+    try { return await job } finally {
+      if (fabricatorSaveQueues.get(slot) === queue) fabricatorSaveQueues.delete(slot)
     }
   })
 
