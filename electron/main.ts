@@ -57,6 +57,7 @@ import { registerFabricatorAnimatorHandlers } from './domains/fabricator/animato
 import { FabricatorCatalogAssetService } from './domains/fabricator/catalogAssetService'
 import { createFabricatorCatalogPersistence } from './domains/fabricator/catalogPersistence'
 import { registerStudioPrimaryHandlers } from './domains/studio/primaryIpc'
+import { publishJsonManifest } from './domains/storage/atomicManifest'
 import type { AssetNamespace } from './domains/fabricator/versionedAssetResolver'
 import { inspectFabricatorStorage } from '../src/shared/fabricatorStorageCompatibility'
 import { fabricatorIpcChannels } from '../src/shared/fabricatorIpcChannels'
@@ -1198,34 +1199,19 @@ async function writeStudio(studio: StudioDocument, workspace: StudioWorkspaceSto
       ...savedMetadata.videoTimeline.characterKeys.map((key) => storeImage(key.state))
     ])
   }
-  try {
-    await writeFile(temporary, JSON.stringify({ ...savedMetadata, title: studio.title.trim(), assets: assetManifest }, null, 2), 'utf8')
-    const target = join(folder, 'studio.json')
-    const maxAttempts = process.platform === 'win32' ? 5 : 1
-    for (let attempt = 1; ; attempt += 1) {
-      try {
-        await rename(temporary, target)
-        break
-      } catch (reason) {
-        const error = reason as NodeJS.ErrnoException
-        const retryable = process.platform === 'win32' && ['EPERM', 'EACCES', 'EBUSY'].includes(error.code ?? '')
-        if (!retryable || attempt >= maxAttempts) throw reason
-        await new Promise((resolveDelay) => setTimeout(resolveDelay, 20 * (2 ** (attempt - 1))))
+  await publishJsonManifest({
+    files: { writeFile, rename, unlink },
+    temporary, target: join(folder, 'studio.json'),
+    value: { ...savedMetadata, title: studio.title.trim(), assets: assetManifest },
+    indent: 2,
+    afterCommit: async () => {
+      if (workspace === 'video') {
+        const card = videoStudioCardSummary(savedMetadata as unknown as Record<string, unknown>, studio.id)
+        await writeFile(join(folder, 'studio-card.json'), JSON.stringify(card), 'utf8')
       }
-    }
-    if (workspace === 'video') {
-      const card = videoStudioCardSummary(savedMetadata as unknown as Record<string, unknown>, studio.id)
-      await writeFile(join(folder, 'studio-card.json'), JSON.stringify(card), 'utf8')
-    }
-  } finally {
-    // Only this save operation owns the UUID-named temporary manifest.
-    // Never touch the prior committed studio.json on a failed rename.
-    try { await unlink(temporary) } catch (reason) {
-      if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') {
-        console.error('Não foi possível remover o manifesto temporário do Studio após gravar.')
-      }
-    }
-  }
+    },
+    onCleanupError: () => console.error('Não foi possível remover o manifesto temporário do Studio após gravar.')
+  })
 }
 
 async function listStudios(workspace: StudioWorkspaceStorage = 'studio'): Promise<StudioDocument[]> {
