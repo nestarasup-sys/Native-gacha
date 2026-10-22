@@ -1,3 +1,4 @@
+import { useModelSourceRefresh } from './models/useModelSourceRefresh'
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type PointerEvent } from 'react'
 import type { FabricatorProject, FabricatorSlotSummary, HairStyle, HairStyleSave, HairTransform, HairWorkspace as HairWorkspaceData, HairWorkspaceSave, ModelPart } from '../../../../shared/fabricator'
 import type { HairPartId } from '../../../../shared/customizer'
@@ -79,6 +80,7 @@ export function HairWorkspace() {
   const [models, setModels] = useState<FabricatorSlotSummary[]>([])
   const [modelSlot, setModelSlot] = useState(1)
   const [project, setProject] = useState<FabricatorProject | null>(null)
+  useModelSourceRefresh(modelSlot, setProject)
   const [hairWorkspace, setHairWorkspace] = useState<HairWorkspaceData | null>(null)
   const [hairStyles, setHairStyles] = useState<HairStyle[]>([])
   const [activeStyleId, setActiveStyleId] = useState<string | null>(null)
