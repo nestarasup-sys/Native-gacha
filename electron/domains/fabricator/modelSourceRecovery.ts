@@ -3,7 +3,7 @@
  */
 import { dirname, join } from 'node:path'
 import type { ModelSourceFiles } from './modelSource'
-import { isModelSourceJournal, verifyModelSourceCommit } from './modelSourceJournal'
+import { isModelSourceJournal, verifyModelSourceCommit } from './modelSourceJournal.ts'
 
 type RecoveryFiles = Pick<ModelSourceFiles, 'readdir' | 'readFile' | 'rename' | 'rm'>
 
