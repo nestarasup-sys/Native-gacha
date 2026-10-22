@@ -56,6 +56,7 @@ import { registerFabricatorPoseHandlers } from './domains/fabricator/poseIpc'
 import { registerFabricatorAnimatorHandlers } from './domains/fabricator/animatorIpc'
 import { FabricatorCatalogAssetService } from './domains/fabricator/catalogAssetService'
 import { createFabricatorCatalogPersistence } from './domains/fabricator/catalogPersistence'
+import { registerStudioPrimaryHandlers } from './domains/studio/primaryIpc'
 import type { AssetNamespace } from './domains/fabricator/versionedAssetResolver'
 import { inspectFabricatorStorage } from '../src/shared/fabricatorStorageCompatibility'
 import { fabricatorIpcChannels } from '../src/shared/fabricatorIpcChannels'
@@ -1425,7 +1426,22 @@ async function registerFabricatorHandlers(): Promise<void> {
   })
 
   const registerStudioWorkspace = (workspace: StudioWorkspaceStorage, channel: 'studio' | 'video-studio') => {
-    ipcMain.handle(`${channel}:list`, async (event): Promise<StudioDocument[] | VideoStudioCardSummary[]> => {
+    if (workspace === 'studio') registerStudioPrimaryHandlers({
+      ipcMain, assertTrustedSender,
+      list: () => listStudios('studio'),
+      write: (document) => writeStudio(document, 'studio'),
+      remove: async (id) => {
+        const folder = resolve(studioPath(id, 'studio'))
+        if (dirname(folder) !== resolve(studioLibraryPath('studio')) || basename(folder) !== `studio-${id}`) {
+          throw new Error('Pasta do Studio inválida.')
+        }
+        await rm(folder, { recursive: true, force: true })
+      },
+      getPendingWrites: () => studioSaveQueues.studio,
+      setPendingWrites: (pending) => { studioSaveQueues.studio = pending },
+      measure: (label, operation) => measureIpc(label, operation)
+    })
+    if (workspace === 'video') ipcMain.handle(`${channel}:list`, async (event): Promise<StudioDocument[] | VideoStudioCardSummary[]> => {
       assertTrustedSender(event)
       return measureIpc<StudioDocument[] | VideoStudioCardSummary[]>(`${channel}:list`, () => workspace === 'video' ? listVideoStudioCards() : listStudios(workspace))
     })
@@ -1437,14 +1453,14 @@ async function registerFabricatorHandlers(): Promise<void> {
       return measureIpc('video-studio:get', () => readStudio(id, 'video'))
     })
 
-    ipcMain.handle(`${channel}:save`, async (event, studio: StudioDocument): Promise<void> => {
+    if (workspace === 'video') ipcMain.handle(`${channel}:save`, async (event, studio: StudioDocument): Promise<void> => {
       assertTrustedSender(event)
       const next = studioSaveQueues[workspace].catch(() => undefined).then(() => writeStudio(studio, workspace))
       studioSaveQueues[workspace] = next
       await measureIpc(`${channel}:save`, () => next)
     })
 
-    ipcMain.handle(`${channel}:delete`, async (event, id: string): Promise<void> => {
+    if (workspace === 'video') ipcMain.handle(`${channel}:delete`, async (event, id: string): Promise<void> => {
       assertTrustedSender(event)
       if (typeof id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) throw new Error('Identificador de Studio inválido.')
       const next = studioSaveQueues[workspace].catch(() => undefined).then(async () => {
