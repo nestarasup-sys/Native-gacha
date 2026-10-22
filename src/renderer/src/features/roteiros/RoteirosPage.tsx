@@ -2,9 +2,10 @@ import { useEffect, useRef, useState } from 'react'
 import { Icon } from '../../ui/components/Icon'
 import { RoteiroSectionEditor } from './RoteiroSectionEditor'
 import { CharacterPortrait } from '../../ui/components/CharacterPortrait'
+import { RenderedCharacterPortrait } from '../../ui/components/RenderedCharacterPortrait'
 import type { CustomizerCharacter } from '../../../../shared/customizer'
-import type { RoteiroDocument, RoteiroExportCharacterInfo, RoteiroExportLog, RoteiroSectionContent, RoteiroTikTok, RoteiroUiGifItem } from '../../../../shared/roteiros'
-import type { VideoBackgroundLibraryItem } from '../../../../shared/studio'
+import type { RoteiroDocument, RoteiroExportCharacterInfo, RoteiroExportLog, RoteiroReactionBlock, RoteiroSectionContent, RoteiroTikTok, RoteiroUiGifItem, RoteiroVideoReference } from '../../../../shared/roteiros'
+import type { VideoBackgroundLibraryItem, VideoLibraryItem } from '../../../../shared/studio'
 
 /** Workspace de Roteiros isolado do App shell. Contratos e persistência permanecem inalterados. */
 
