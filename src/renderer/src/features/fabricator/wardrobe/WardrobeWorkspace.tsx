@@ -300,7 +300,9 @@ export function WardrobeWorkspace() {
   }
   const releaseSelectedBinding = () => {
     if (!selected) return
-    updateComponent(selected.id, { ...releaseWardrobeGlue(selected) })
+    setDraft((current) => current ? { ...current, components: current.components.map((piece) => piece.id === selected.id ? releaseWardrobeGlue(piece) : piece), updatedAt: new Date().toISOString() } : current)
+    setDirty(true)
+    setBodyOffsets({})
   }
   const calibrateSourceAnchor = async (partId: string, x: number, y: number) => {
     if (!model) return
