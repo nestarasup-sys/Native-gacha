@@ -1,3 +1,4 @@
+import { snapshotStudioScene as snapshot, withStudioSnapshot as withSnapshot, studioCharacterRenderKey, studioElementSize } from '../../../../shared/studioSceneModel'
 import { isPoseSnapshotForModel } from '../../../../shared/characterSourceContinuity'
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { buildStudioExpressionAppearance, buildStudioExpressionTransforms, resolveStudioExpressionBase, studioExpressionCollection } from './expressionTransforms'
@@ -91,37 +92,9 @@ function loadLegacyStudios(): Array<{ id: string; title: string; color: string }
   } catch { return [] }
 }
 
-function snapshot(studio: StudioDocument): StudioSnapshot {
-  return {
-    backgroundColor: studio.backgroundColor,
-    backgroundAssetId: studio.backgroundAssetId,
-    backgroundX: studio.backgroundX,
-    backgroundY: studio.backgroundY,
-    backgroundWidth: studio.backgroundWidth,
-    backgroundHeight: studio.backgroundHeight,
-    backgroundRotation: studio.backgroundRotation,
-    assets: studio.assets,
-    elements: studio.elements
-  }
-}
 
-function withSnapshot(studio: StudioDocument, next: StudioSnapshot): StudioDocument {
-  return { ...studio, ...next, updatedAt: new Date().toISOString() }
-}
 
-function studioCharacterRenderKey(character: CustomizerCharacter): string {
-  const { faceAppearance: _ignored, ...customization } = character.customization
-  return JSON.stringify({ id: character.id, customization })
-}
 
-function studioElementSize(element: StudioElement) {
-  if (element.kind !== 'character') return { width: element.width, height: element.height }
-  const scale = (element.characterScale ?? 100) / 100
-  return {
-    width: element.width * scale * (element.characterWidthScale ?? 100) / 100,
-    height: element.height * scale * (element.characterHeightScale ?? 100) / 100
-  }
-}
 
 function faceRenderGeometry(element: StudioElement, rendered: { width: number; height: number }, crop: { width: number; height: number } | null, stageWidth: number, stageHeight: number) {
   const cropWidth = crop?.width ?? rendered.width
