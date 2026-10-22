@@ -157,6 +157,13 @@ export function WardrobeWorkspace() {
   const selectedIndex = draft?.components.findIndex((component) => component.id === selectedId) ?? -1
   const previewProject = testPose ?? model
   const previewPoseParts = testPose ? orderedParts(testPose.parts, testPose.layerOrder).filter((part) => !(testPose.hiddenPartIds ?? []).includes(part.id)) : []
+  // A pose is a saved snapshot. Never invent a placement on the original
+  // sheet for a garment whose matching pose part is missing.
+  const poseMissingAttachments = testPose && draft
+    ? draft.components.filter((component) => !model?.parts.some((part) => part.id === component.attachedPartId)
+      || !testPose.parts.some((part) => part.id === component.attachedPartId))
+    : []
+  const poseUsesOlderModel = Boolean(testPose && model && testPose.sourceModelUpdatedAt !== model.updatedAt)
   const previewLayerStride = (draft?.components.length ?? 0) + 2
   const scale = previewProject && previewSize.width && previewSize.height ? Math.max(0.05, Math.min((previewSize.width - 48) / previewProject.width, (previewSize.height - 48) / previewProject.height)) * zoom : 1
   // Keep the saved original source sheet and its existing minimum preview scale.
@@ -569,6 +576,10 @@ export function WardrobeWorkspace() {
       <div className="wardrobe-toolbar-actions"><span className={`wardrobe-save-state${dirty ? ' pending' : ''}`}><i />{dirty ? 'Alterações não salvas' : model ? `${model.parts.length} peças no modelo` : 'Escolha um modelo salvo'}</span><button className="pose-button secondary" disabled={!model || processing || saving || openingSet || !sourceParts} onClick={() => { if (dirty && !window.confirm('Descartar as alterações atuais e importar outra folha?')) return; inputRef.current?.click() }} type="button"><Icon name="plus" /> Importar folha</button>{testPose ? <button className="pose-button danger" onClick={exitTestPose} type="button"><Icon name="eyeOff" /> Sair do teste</button> : <button className="pose-button secondary" disabled={!model || !draft?.components.length} onClick={() => void openTestPosePicker()} type="button"><Icon name="eye" /> Testar pose</button>}<button className="pose-button primary" disabled={!draft || draft.edition === 2 || saving || processing || openingSet || !sourceParts} onClick={() => void save()} type="button"><Icon name="check" />{saving ? 'Salvando…' : activeSetId ? 'Salvar alterações' : 'Salvar conjunto'}</button>{activeSetId && <button className="pose-icon-button" title="Excluir conjunto" disabled={processing || saving || openingSet} onClick={() => void deleteSet()} type="button"><Icon name="trash" /></button>}<input ref={inputRef} hidden type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => { void importSheet(event.target.files?.[0]); event.currentTarget.value = '' }} /></div>
     </header>
     {error && <div className="wardrobe-error" role="alert">{error}<button onClick={() => setError('')} type="button">Fechar</button></div>}
+    {testPose && (poseMissingAttachments.length > 0 || poseUsesOlderModel) && <div className="wardrobe-error" role="alert">
+      {poseMissingAttachments.length > 0 && <span>Esta pose não contém a parte corporal de {poseMissingAttachments.length} peça(s): {poseMissingAttachments.map((part) => part.name).join(', ')}. Elas foram ocultadas no teste, sem alterar a roupa salva. </span>}
+      {poseUsesOlderModel && <span>Esta pose foi salva a partir de outra revisão do modelo. Confira o encaixe visual antes de confiar na prévia.</span>}
+    </div>}}
     <div className="wardrobe-body wardrobe-body-v2">
       <aside className="wardrobe-library"><header><span><strong>Conjuntos</strong><small>{sets.length} salvos para este modelo</small></span><span className="wardrobe-count">{sets.length}</span></header><div className="wardrobe-set-list">{sets.map((set) => <button className={`wardrobe-set-row${activeSetId === set.id ? ' active' : ''}`} key={set.id} disabled={processing || saving || openingSet} onClick={() => void openSet(set.id)} type="button"><span className="wardrobe-set-icon"><Icon name="shirt" /></span><span><b>{set.name}</b><small>{set.componentCount} peças</small></span><Icon name="chevronRight" /></button>)}{!sets.length && <div className="wardrobe-library-empty"><Icon name="box" /><span>Nenhum conjunto salvo.<br />Importe sua primeira folha.</span></div>}</div><div className="wardrobe-category-legend"><strong>Categorias</strong>{categories.map((category) => <span key={category}><i />{categoryNames[category]}</span>)}</div></aside>
       <aside className="wardrobe-catalog-panel" aria-label="Catálogo de peças do conjunto">
@@ -599,14 +610,15 @@ export function WardrobeWorkspace() {
           const testComponent = { ...component, x: componentX, y: componentY }
           if (testPose && modelBone && (testOffset.x !== 0 || testOffset.y !== 0)) testComponent.binding = bindWardrobeComponent(testComponent, modelBone)
           const { kneeOverlap, edgePadding } = wardrobePosePadding(component, draft.components)
-          const poseTransform = testPose && modelBone?.sourceTransform && poseBone
+          const poseTransform = testPose && modelBone && poseBone
             ? mapWardrobeComponentToPose(testComponent, modelBone, poseBone, kneeOverlap, edgePadding)
             : null
           const poseLayer = testPose?.layerOrder.indexOf(component.attachedPartId) ?? -1
           const zIndex = testPose ? 3 + Math.max(0, poseLayer) * layerBand + index : 2 + layer * layerBand + index
           const imageClassName = `wardrobe-preview-part${component.id === selectedId ? ' selected' : ''}`
           const imageTitle = `${component.name} · ${categoryNames[component.category]} · camada do modelo ${layer + 1}`
-           if (!testPose || !poseTransform) return <img key={component.id} className={imageClassName} src={component.dataUrl} alt={component.name} title={imageTitle} draggable={false} onClick={() => setSelectedId(component.id)} onPointerDown={(event) => beginPieceDrag(event, component)} onPointerMove={movePieceDrag} onPointerUp={finishPieceDrag} onPointerCancel={finishPieceDrag} style={{ left: componentX * scale, top: componentY * scale, width: component.width * scale, height: component.height * scale, zIndex, transform: `rotate(${component.rotation}deg)` }} />
+           if (testPose && !poseTransform) return null
+           if (!testPose) return <img key={component.id} className={imageClassName} src={component.dataUrl} alt={component.name} title={imageTitle} draggable={false} onClick={() => setSelectedId(component.id)} onPointerDown={(event) => beginPieceDrag(event, component)} onPointerMove={movePieceDrag} onPointerUp={finishPieceDrag} onPointerCancel={finishPieceDrag} style={{ left: componentX * scale, top: componentY * scale, width: component.width * scale, height: component.height * scale, zIndex, transform: `rotate(${component.rotation}deg)` }} />
           const image = <img className={imageClassName} src={component.dataUrl} alt={component.name} title={imageTitle} draggable={false} onClick={() => setSelectedId(component.id)} onPointerDown={(event) => beginPieceDrag(event, component)} onPointerMove={movePieceDrag} onPointerUp={finishPieceDrag} onPointerCancel={finishPieceDrag} style={{ left: poseTransform.localLeft * scale, top: poseTransform.localTop * scale, width: poseTransform.renderWidth * scale, height: poseTransform.renderHeight * scale, transformOrigin: 'center', transform: `rotate(${poseTransform.localRotation}deg)` }} />
           return <div key={component.id} className="wardrobe-pose-garment" style={{ left: poseTransform.origin.x * scale, top: poseTransform.origin.y * scale, width: 0, height: 0, zIndex, transformOrigin: '0 0', transform: poseTransform.matrix }}>{image}</div>
         })}
