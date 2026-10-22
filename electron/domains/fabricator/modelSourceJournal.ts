@@ -12,7 +12,7 @@ export type ModelSourceTransactionJournal = {
   targetSourceFile: string
   transactionId: string
 }
-const sourcePattern = /^source-[a-f0-9-]+\.png$/i
+const sourcePattern = /^source-[a-f0-9-]+\.(png|jpe?g|webp)$/i
 const uuidPattern = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i
 
 export function createModelSourceJournal(
