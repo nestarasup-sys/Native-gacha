@@ -1,5 +1,6 @@
 import { snapshotStudioScene as snapshot, withStudioSnapshot as withSnapshot, studioCharacterRenderKey, studioElementSize } from '../../../../shared/studioSceneModel'
 import { isPoseSnapshotForModel } from '../../../../shared/characterSourceContinuity'
+import { recordStudioHistory, undoStudioHistory, redoStudioHistory } from '../../../../shared/studioHistory'
 import { useStudioInspectorState } from './useStudioInspectorState'
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { buildStudioExpressionAppearance, buildStudioExpressionTransforms, resolveStudioExpressionBase, studioExpressionCollection } from './expressionTransforms'
@@ -712,39 +713,42 @@ export function StudioPage() {
 
   const recordHistory = () => {
     if (!activeStudio) return
-    undoRef.current = [...undoRef.current.slice(-29), snapshot(activeStudio)]
-    redoRef.current = []
-    setCanUndo(undoRef.current.length > 0)
+    const history = recordStudioHistory({ undo: undoRef.current, redo: redoRef.current }, activeStudio)
+    undoRef.current = history.undo
+    redoRef.current = history.redo
+    setCanUndo(history.undo.length > 0)
     setCanRedo(false)
-    setHistoryVersion((value) => value + 1)
+    setHistoryVersion(value => value + 1)
   }
 
   const changeScene = (transform: (studio: StudioDocument) => StudioDocument) => {
     if (!activeStudio) return
     recordHistory()
-    patchStudio((studio) => transform(studio))
+    patchStudio(transform)
   }
 
   const undo = () => {
-    if (!activeStudio || !undoRef.current.length) return
-    const previous = undoRef.current[undoRef.current.length - 1]
-    undoRef.current = undoRef.current.slice(0, -1)
-    redoRef.current = [...redoRef.current.slice(-29), snapshot(activeStudio)]
-    patchStudio((studio) => withSnapshot(studio, previous))
-    setCanUndo(undoRef.current.length > 0)
+    if (!activeStudio) return
+    const result = undoStudioHistory({ undo: undoRef.current, redo: redoRef.current }, activeStudio)
+    if (!result) return
+    undoRef.current = result.history.undo
+    redoRef.current = result.history.redo
+    patchStudio(() => result.document)
+    setCanUndo(result.history.undo.length > 0)
     setCanRedo(true)
-    setHistoryVersion((value) => value + 1)
+    setHistoryVersion(value => value + 1)
   }
 
   const redo = () => {
-    if (!activeStudio || !redoRef.current.length) return
-    const next = redoRef.current[redoRef.current.length - 1]
-    redoRef.current = redoRef.current.slice(0, -1)
-    undoRef.current = [...undoRef.current.slice(-29), snapshot(activeStudio)]
-    patchStudio((studio) => withSnapshot(studio, next))
+    if (!activeStudio) return
+    const result = redoStudioHistory({ undo: undoRef.current, redo: redoRef.current }, activeStudio)
+    if (!result) return
+    undoRef.current = result.history.undo
+    redoRef.current = result.history.redo
+    patchStudio(() => result.document)
     setCanUndo(true)
-    setCanRedo(redoRef.current.length > 0)
-    setHistoryVersion((value) => value + 1)
+    setCanRedo(result.history.redo.length > 0)
+    setHistoryVersion(value => value + 1)
   }
 
   const importImage = async (category: StudioAsset['category']) => {
