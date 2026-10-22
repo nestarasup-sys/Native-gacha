@@ -367,7 +367,7 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
           ? automaticBlinkFrameCacheRef.current.frames
           : null
         if (!frames) {
-          const { renderSavedCharacter } = await import('../customizer/CustomizerPage')
+          const { renderSavedCharacter } = await import('../../characters/characterRenderer')
           const stageWidth = sceneRef.current?.clientWidth ?? 1000
           const stageHeight = sceneRef.current?.clientHeight ?? 562
           frames = []
@@ -432,7 +432,7 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
     let cancelled = false
     const renderAutomaticMouths = async () => {
       const renderedStates: Record<string, AutomaticMouthAnimation> = {}
-      const { renderSavedCharacter } = await import('../customizer/CustomizerPage')
+      const { renderSavedCharacter } = await import('../../characters/characterRenderer')
       const stageWidth = sceneRef.current?.clientWidth ?? 1000
       const stageHeight = sceneRef.current?.clientHeight ?? 562
       for (const { element, mode, speechStartFrame } of automaticMouthTargets) {
@@ -725,7 +725,7 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
     if (!studioPoseSlots.length) { setStudioPoseThumbnails({}); setStudioPoseDimensions({}); return }
     let cancelled = false
     void (async () => {
-      const { renderArtwork } = await import('../customizer/CustomizerPage')
+      const { renderArtwork } = await import('../../characters/characterRenderer')
       const thumbnails = await Promise.all(studioPoseSlots.map(async (pose) => {
         try {
           const artwork = await window.desktop.loadFabricatorPose(pose.sourceModelSlot, pose.slot)
@@ -823,7 +823,7 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
     const stageHeight = sceneRef.current?.clientHeight ?? 562
     void (async () => {
       try {
-        const { renderSavedCharacter } = await import('../customizer/CustomizerPage')
+        const { renderSavedCharacter } = await import('../../characters/characterRenderer')
         const updates: Array<{ previous: StudioElement; next: StudioElement; asset: StudioAsset }> = []
         const timelineStates = new Map<string, Map<string, NonNullable<VideoTimelineDocument['characterBases']>[string]>>()
         const refreshedStates = new Map<string, NonNullable<VideoTimelineDocument['characterBases']>[string]>()
@@ -1631,7 +1631,7 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
       const removedCharacterAssetIds = new Set(activeStudio.elements.filter((element) => element.kind === 'character' && element.characterId && !selectedIds.has(element.characterId)).map((element) => element.assetId).filter((id): id is string => Boolean(id)))
       const retainedCharacters = new Set(retained.filter((element) => element.kind === 'character').map((element) => element.characterId))
       const additions = availableCharacters.filter((character) => selectedIds.has(character.id) && !retainedCharacters.has(character.id))
-      const { renderSavedCharacter } = await import('../customizer/CustomizerPage')
+      const { renderSavedCharacter } = await import('../../characters/characterRenderer')
       const assets: StudioAsset[] = []
       const elements: StudioElement[] = []
       const stageWidth = sceneRef.current?.clientWidth ?? 1000
@@ -1711,7 +1711,7 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
       }
       const key = studioCharacterRenderKey(characterCopy)
       if (!studioFaceRendererRef.current || studioFaceRendererRef.current.key !== key) {
-        const { prepareSavedCharacterRenderer } = await import('../customizer/CustomizerPage')
+        const { prepareSavedCharacterRenderer } = await import('../../characters/characterRenderer')
         const renderer = await prepareSavedCharacterRenderer(characterCopy)
         studioFaceRendererRef.current = { key, render: renderer.render }
       }
@@ -1789,7 +1789,7 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
     if (!activeStudio || selectedElement?.kind !== 'character' || !selectedStudioCharacter || !selectedElement.assetId || studioFaceBusy || selectedVideoTrackLocked) return
     setStudioFaceBusy(true)
     try {
-      const { renderSavedCharacter } = await import('../customizer/CustomizerPage')
+      const { renderSavedCharacter } = await import('../../characters/characterRenderer')
       let characterCanvasWidth = selectedElement.characterCanvasWidth
       if (!characterCanvasWidth) {
         const currentPoseCharacter: CustomizerCharacter = { ...selectedStudioCharacter, customization: { ...selectedStudioCharacter.customization, poseSlot: selectedElement.poseSlot === undefined ? selectedStudioCharacter.customization.poseSlot : selectedElement.poseSlot, faceAppearance: selectedElement.faceAppearance ?? selectedStudioCharacter.customization.faceAppearance } }
@@ -1911,7 +1911,7 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
         const key = studioCharacterRenderKey(job.character)
         try {
           if (!studioFaceRendererRef.current || studioFaceRendererRef.current.key !== key) {
-            const { prepareSavedCharacterRenderer } = await import('../customizer/CustomizerPage')
+            const { prepareSavedCharacterRenderer } = await import('../../characters/characterRenderer')
             const renderer = await prepareSavedCharacterRenderer(job.character)
             if (version !== studioFaceRenderVersionRef.current) continue
             studioFaceRendererRef.current = { key, render: renderer.render }
