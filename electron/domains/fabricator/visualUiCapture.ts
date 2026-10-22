@@ -108,6 +108,48 @@ async function sampleElectronPerformance(win: BrowserWindow): Promise<{ sampledF
     rendererPrivateKb: processMetric.memory.privateBytes ?? null }
 }
 
+/** Click the REAL Roupas DEV UI: Soltar → Fixar → Salvar, then reload by IPC. */
+async function exerciseGlueWorkflow(win: BrowserWindow): Promise<void> {
+  const before = await win.webContents.executeJavaScript("window.desktop.loadWardrobeSet(1, 'uniform')") as {components: Array<{id:string;dataUrl:string}>} | null
+  if (!before?.components.length) throw Error('Fixture de roupa não carregou para o teste de grude.')
+  const waitStatus = async (expected: string) => {
+    for(let attempt=0; attempt<50; attempt++) {
+      const found = await win.webContents.executeJavaScript("document.querySelector('.wardrobe-glue-controls [role=status]')?.textContent ?? ''") as string
+      if (found.includes(expected)) return
+      await new Promise(resolve => setTimeout(resolve, 100))
+    }
+    throw Error('Estado de grude não apareceu: ' + expected)
+  }
+  const click = async (name: string, root = '.wardrobe-glue-controls') => {
+    const found = await win.webContents.executeJavaScript(`(() => {
+      const button = [...document.querySelectorAll(${JSON.stringify(root + ' button')})]
+        .find(item => item.textContent?.includes(${JSON.stringify(name)}))
+      if (!button) return false
+      button.click()
+      return true
+    })()`) as boolean
+    if (!found) throw Error('Botão de grude não encontrado: ' + name)
+  }
+  await waitStatus('Fixada')
+  await click('Soltar')
+  await waitStatus('Solta')
+  await click('Fixar')
+  await waitStatus('Fixada')
+  await click('Salvar', '.wardrobe-toolbar-actions')
+  let saved: {components:Array<{id:string;dataUrl:string;glue?:{mode:string}}> } | null = null
+  for(let attempt=0;attempt<50;attempt++){
+    saved = await win.webContents.executeJavaScript("window.desktop.loadWardrobeSet(1, 'uniform')") as typeof saved
+    if(saved?.components[0]?.glue?.mode==='fixed') break
+    await new Promise(resolve=>setTimeout(resolve,100))
+  }
+  if (!saved || saved.components[0]?.glue?.mode !== 'fixed' ||
+      saved.components.length !== before.components.length ||
+      saved.components.some((item,index)=>item.id !== before.components[index].id ||
+        item.dataUrl !== before.components[index].dataUrl)) {
+    throw Error('Fixação da UI não persistiu ou modificou os PNGs individuais.')
+  }
+}
+
 async function compareScreenshot(image: Buffer, baselinePath: string): Promise<number> {
   const [a, b] = await Promise.all([
     sharp(image).ensureAlpha().raw().toBuffer({ resolveWithObject: true }),
@@ -170,6 +212,7 @@ export async function captureFabricatorRealScreens(win: BrowserWindow, output: s
       if (ready.count !== 3 || !ready.selectedSet || !ready.activePiece) {
         throw Error('Prévia de Roupas Dev não está estável no instante da foto: ' + JSON.stringify(ready))
       }
+      await exerciseGlueWorkflow(win)
     }
     const active = await win.webContents.executeJavaScript(`(() => {
       const active = [...document.querySelectorAll('.fabricator-section-button')]
