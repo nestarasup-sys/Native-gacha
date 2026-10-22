@@ -92,6 +92,7 @@ export async function captureFabricatorRealScreens(win: BrowserWindow, output: s
  */
 export async function captureCustomizerStudioRealScreens(win: BrowserWindow, output: string): Promise<void> {
   await mkdir(output, { recursive: true })
+  const startedAt = Date.now()
   const results: Array<{ section: string; file: string; dimensions: string; sha256: string }> = []
   const capture = async (section: string, file: string) => {
     await new Promise(resolve => setTimeout(resolve, 700))
@@ -208,7 +209,8 @@ export async function captureCustomizerStudioRealScreens(win: BrowserWindow, out
   await writeFile(join(output, 'flow-state.json'), JSON.stringify({ schemaVersion: 1, syntheticOnly: true, characterId: id, studioId: studio.id, name }, null, 2))
   await writeFile(join(output, 'workspace-manifest.json'), JSON.stringify({
     schemaVersion: 1, mode: 'real-electron-workspaces', syntheticOnly: true,
-    capturedAt: new Date().toISOString(), results
+    capturedAt: new Date().toISOString(), results,
+    timingsMs: { firstProcessFlow: Date.now() - startedAt }
   }, null, 2), 'utf8')
 }
 
@@ -216,6 +218,7 @@ export async function captureCustomizerStudioRealScreens(win: BrowserWindow, out
  * Prova reidratação real por IPC e renderização da cena após reinicialização.
  */
 export async function captureCustomizerStudioReopened(win: BrowserWindow, output: string): Promise<void> {
+  const startedAt = Date.now()
   const flow = JSON.parse(await readFile(join(output, 'flow-state.json'), 'utf8')) as {
     schemaVersion: number; syntheticOnly: boolean; characterId: string; studioId: string; name: string
   }
@@ -260,7 +263,9 @@ export async function captureCustomizerStudioReopened(win: BrowserWindow, output
   await writeFile(join(output, file), image)
   const manifest = JSON.parse(await readFile(join(output, 'workspace-manifest.json'), 'utf8')) as {
     results: Array<{ section: string; file: string; dimensions: string; sha256: string }>
+    timingsMs?: Record<string, number>
   }
+  manifest.timingsMs = { ...manifest.timingsMs, reopenedFlow: Date.now() - startedAt }
   manifest.results.push({
     section: 'Studio Principal — cena reaberta',
     file, dimensions: info.width + 'x' + info.height, sha256: createHash('sha256').update(image).digest('hex')
