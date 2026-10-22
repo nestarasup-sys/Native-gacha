@@ -34,7 +34,7 @@ test('falha durante PNG reverte bytes antigos e preserva documento',async t=>{
 })
 test('reabertura recupera journal interrompido e protege outro projeto',async t=>{
  const folder=await setup(t)
- const other=join(folder,'..','outro')
+ const other=join(folder,'other-project')
  await fs.mkdir(other,{recursive:true})
  await fs.writeFile(join(other,'keep.txt'),'DO NOT TOUCH')
  const journalFolder=join(folder,'.studio-assets-transaction')
