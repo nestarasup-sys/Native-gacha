@@ -1,47 +1,22 @@
-import { projectForOriginalPreview } from '../../../../../shared/fabricatorModelViews'
+import { projectForOriginalPreview, selectOriginalModelSource } from '../../../../../shared/fabricatorModelViews'
 import { useModelSourceRefresh } from '../models/useModelSourceRefresh'
-import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import type { FabricatorHistoryState, FabricatorPose, FabricatorPoseSummary, FabricatorProject, FabricatorProjectSave, FabricatorSlotSummary, ModelPart, WardrobeCategory, WardrobeComponent, WardrobeSet, WardrobeSetSave, WardrobeSetSummary } from '../../../../../shared/fabricator'
 import { Icon } from '../../../ui/components/Icon'
 import { usePreviewBackground } from '../usePreviewBackground'
 import { orderedParts, partJointAnchor, sourcePointFromCanvas } from '../models/rig'
-import { isHeadPart } from '../models/resize'
-import { resizeAroundAnchor } from '../../../../../shared/headShape'
 import { bindWardrobeComponent, mapWardrobeComponentToPose, poseDeltaToSource, wardrobePosePadding, rebaseWardrobeSetToOriginalSheet } from './poseTransform'
 import { suggestWardrobeBone } from './boneSelection'
 import { normalizeEditableImageFile } from '../normalizeImage'
 
 type WorkerPiece = Omit<WardrobeComponent, 'category' | 'attachedPartId' | 'rotation' | 'dataUrl'> & { png: ArrayBuffer }
 type WorkerMessage = { type: 'complete'; id: number; width: number; height: number; pieces: WorkerPiece[] } | { type: 'error'; id: number; message: string }
-type ReferenceMessage = { type: 'complete'; id: number; png: ArrayBuffer } | { type: 'error'; id: number; message: string }
 type PieceDrag = { pointerId: number; componentId: string; pointerX: number; pointerY: number; originX: number; originY: number }
 type PreviewPanDrag = { pointerId: number; pointerX: number; pointerY: number; originX: number; originY: number }
-type SourcePiece = { x: number; y: number; width: number; height: number; png: ArrayBuffer }
-type SourceMessage = { type: 'complete'; id: number; parts: SourcePiece[] } | { type: 'error'; id: number; message: string } | { type: 'progress'; id: number; value: number }
 type SourceReferencePart = { x: number; y: number; width: number; height: number; imageDataUrl: string }
 type BodyDrag = { pointerId: number; partId: string; pointerX: number; pointerY: number; originX: number; originY: number }
 type Point = { x: number; y: number }
 const zeroOffset: Point = { x: 0, y: 0 }
-
-function withSourceFrame(part: ModelPart, reference?: SourceReferencePart): ModelPart {
-  if (!reference) return part
-  return { ...part, sourceTransform: { ...part.sourceTransform, x: reference.x, y: reference.y, width: reference.width, height: reference.height, rotation: 0 } }
-}
-
-function sourcePreviewFrame(part: ModelPart, source: SourceReferencePart): SourceReferencePart {
-  const original = part.sourceTransform
-  if (!isHeadPart(part) || !part.resizeBase || !original) return source
-  const sourceWidth = original.width ?? source.width
-  const sourceHeight = original.height ?? source.height
-  const anchor = original.jointAnchor ?? { x: source.x + source.width / 2, y: source.y + source.height / 2 }
-  const resized = resizeAroundAnchor(
-    { ...source, rotation: original.rotation },
-    source.width * part.width / sourceWidth,
-    source.height * part.height / sourceHeight,
-    anchor
-  )
-  return { ...source, x: resized.x, y: resized.y, width: resized.width, height: resized.height }
-}
 
 function bindingMarker(component: WardrobeComponent, bone: ModelPart): Point {
   const source = bone.sourceTransform
@@ -60,7 +35,7 @@ function rebindComponents(components: WardrobeComponent[], reference: Fabricator
     if (!bone) return component
     const expected = bindWardrobeComponent(component, bone)
     const current = component.binding
-    if (current?.boneId === expected.boneId && Math.abs(current.localCenterX - expected.localCenterX) < 0.00001 && Math.abs(current.localCenterY - expected.localCenterY) < 0.00001 && Math.abs(current.widthRatio - expected.widthRatio) < 0.00001 && Math.abs(current.heightRatio - expected.heightRatio) < 0.00001 && Math.abs(current.relativeRotation - expected.relativeRotation) < 0.00001) return component
+    if (current?.boneId === expected.boneId && Math.abs(current.localCenterX - expected.localCenterX) < 0.00001 && Math.abs(current.localCenterY - expected.localCenterY) < 0.00001 && Math.abs(current.widthRatio - expected.widthRatio) < 0.00001 && Math.abs(current.heightRatio - expected.heightRatio) < 0.00001 && Math.abs(current.relativeRotation - expected.relativeRotation) < 0.00001 && Math.abs(current.boneWidth - expected.boneWidth) < 0.00001 && Math.abs(current.boneHeight - expected.boneHeight) < 0.00001 && Math.abs(current.boneRotation - expected.boneRotation) < 0.00001) return component
     changed = true
     return { ...component, binding: expected }
   })
@@ -120,7 +95,7 @@ export function WardrobeWorkspace() {
   const [models, setModels] = useState<FabricatorSlotSummary[]>(Array.from({ length: 10 }, () => null))
   const [modelSlot, setModelSlot] = useState(1)
   const [model, setModel] = useState<FabricatorProject | null>(null)
-  useModelSourceRefresh(modelSlot, fresh => setModel(projectForOriginalPreview(fresh)))
+  useModelSourceRefresh(modelSlot, fresh => setModel(fresh))
   const [sets, setSets] = useState<WardrobeSetSummary[]>([])
   const [activeSetId, setActiveSetId] = useState<string | null>(null)
   const [draft, setDraft] = useState<WardrobeSet | null>(null)
@@ -141,8 +116,6 @@ export function WardrobeWorkspace() {
   const previewRef = useRef<HTMLDivElement>(null)
   const artboardRef = useRef<HTMLDivElement>(null)
   const [previewSize, setPreviewSize] = useState({ width: 0, height: 0 })
-  const [referencePreview, setReferencePreview] = useState<{ sourceDataUrl: string; imageDataUrl: string } | null>(null)
-  const [sourceReference, setSourceReference] = useState<{ sourceDataUrl: string; parts: Record<string, SourceReferencePart> } | null>(null)
   const [moveBodyMode, setMoveBodyMode] = useState(false)
   const [showBindingMarkers, setShowBindingMarkers] = useState(true)
   const [bodyOffsets, setBodyOffsets] = useState<Record<string, Point>>({})
@@ -162,10 +135,14 @@ export function WardrobeWorkspace() {
   const poseUsesOlderModel = Boolean(testPose && model && testPose.sourceModelUpdatedAt !== model.updatedAt)
   const previewLayerStride = (draft?.components.length ?? 0) + 2
   const scale = previewProject && previewSize.width && previewSize.height ? Math.max(0.05, Math.min((previewSize.width - 48) / previewProject.width, (previewSize.height - 48) / previewProject.height)) * zoom : 1
-  // Keep the saved original source sheet and its existing minimum preview scale.
-  const referenceSource = model?.sourceDataUrl ?? null
-  const sourceParts = model && sourceReference?.sourceDataUrl === referenceSource ? sourceReference.parts : null
-  const referenceModel = model && sourceParts ? { ...model, parts: model.parts.map((part) => withSourceFrame(part, sourceParts[part.id])) } : projectForOriginalPreview(model)
+  // Use the original local frames and the EDITED PNGs persisted under their
+  // stable body-part IDs. Recropping the raw uploaded sheet can swap parts and
+  // disagree with the source used by the Customizer.
+  const sourceParts = useMemo<Record<string, SourceReferencePart> | null>(() => model
+    ? Object.fromEntries(selectOriginalModelSource(model).parts.map((part) =>
+      [part.id, { x: part.x, y: part.y, width: part.width, height: part.height, imageDataUrl: part.dataUrl }]))
+    : null, [model])
+  const referenceModel = projectForOriginalPreview(model)
   const referenceBone = (partId: string) => referenceModel?.parts.find((part) => part.id === partId)
 
   const reload = useCallback(async (targetSlot: number) => {
@@ -227,48 +204,6 @@ export function WardrobeWorkspace() {
     const observer = new ResizeObserver(([entry]) => setPreviewSize({ width: entry.contentRect.width, height: entry.contentRect.height }))
     observer.observe(element); return () => observer.disconnect()
   }, [model])
-  useEffect(() => {
-    if (!model) { setReferencePreview(null); return }
-    let alive = true
-    const worker = new Worker(new URL('./wardrobeReference.worker.ts', import.meta.url), { type: 'module' })
-    worker.onmessage = (event: MessageEvent<ReferenceMessage>) => {
-      if (!alive) return
-      if (event.data.type === 'complete') {
-        if (referenceSource) setReferencePreview({ sourceDataUrl: referenceSource, imageDataUrl: dataUrl(event.data.png) })
-      } else setError(event.data.message)
-      worker.terminate()
-    }
-    worker.onerror = () => { if (alive) setError('Não foi possível limpar o fundo verde da referência.'); worker.terminate() }
-    worker.postMessage({ id: 1, sourceDataUrl: referenceSource, tolerance: model.tolerance })
-    return () => { alive = false; worker.terminate() }
-  }, [model, referenceSource])
-  useEffect(() => {
-    if (!model) { setSourceReference(null); return }
-    if (referencePreview?.sourceDataUrl !== referenceSource) { setSourceReference(null); return }
-    let alive = true
-    setSourceReference(null)
-    const worker = new Worker(new URL('../models/imageProcessor.worker.ts', import.meta.url), { type: 'module' })
-    worker.onmessage = (event: MessageEvent<SourceMessage>) => {
-      if (!alive || event.data.type === 'progress') return
-      if (event.data.type === 'error') { setError(`Não foi possível separar o corpo original: ${event.data.message}`); worker.terminate(); return }
-      const pieces = event.data.parts
-      // Reprocessing with a different chroma tolerance changes crop margins.
-      // Import and reprocessing both sort components by y/x, so preserve that
-      // stable order instead of rejecting valid pieces by their old dimensions.
-      if (pieces.length !== model.parts.length) { setError(`A folha original gerou ${pieces.length} peças, mas o modelo salvo tem ${model.parts.length}. Ajuste o chroma do modelo para recuperar a mesma separação.`); worker.terminate(); return }
-      const parts: Record<string, SourceReferencePart> = {}
-      model.parts.forEach((part, index) => {
-        const piece = pieces[index]
-        parts[part.id] = { x: piece.x, y: piece.y, width: piece.width, height: piece.height, imageDataUrl: dataUrl(piece.png) }
-      })
-      setSourceReference({ sourceDataUrl: model.sourceDataUrl, parts })
-      setError('')
-      worker.terminate()
-    }
-    worker.onerror = () => { if (alive) setError('Não foi possível carregar as peças separadas do corpo original.'); worker.terminate() }
-    worker.postMessage({ id: 1, sourceDataUrl: model.sourceDataUrl, tolerance: model.tolerance })
-    return () => { alive = false; worker.terminate() }
-  }, [model, referencePreview, referenceSource])
   useEffect(() => {
     if (!sourceParts || !referenceModel || !draft) return
     if (draft.edition === 2) {
@@ -406,9 +341,8 @@ export function WardrobeWorkspace() {
     const overBody = Boolean(model && sourceParts && model.parts.some((part) => {
       const source = sourceParts[part.id]
       if (!source) return false
-      const frame = sourcePreviewFrame(part, source)
       const offset = bodyOffsets[part.id] ?? zeroOffset
-      return x >= frame.x + offset.x && x <= frame.x + offset.x + frame.width && y >= frame.y + offset.y && y <= frame.y + offset.y + frame.height
+      return x >= source.x + offset.x && x <= source.x + offset.x + source.width && y >= source.y + offset.y && y <= source.y + offset.y + source.height
     }))
     const overGarment = Boolean(draft?.components.some((component) => x >= component.x && x <= component.x + component.width && y >= component.y && y <= component.y + component.height))
     if (overBody || overGarment) return
@@ -589,10 +523,8 @@ export function WardrobeWorkspace() {
           const source = sourceParts[part.id]
           if (!source) return null
           const offset = moveBodyMode ? bodyOffsets[part.id] ?? zeroOffset : zeroOffset
-          const frame = sourcePreviewFrame(part, source)
-          return <img key={part.id} className={`wardrobe-reference-body-part${moveBodyMode ? ' movable' : ''}`} src={source.imageDataUrl} alt={part.name} title={moveBodyMode ? `Arraste ${part.name} para conferir o vínculo` : undefined} draggable={false} onPointerDown={moveBodyMode ? (event) => beginBodyDrag(event, part.id) : undefined} onPointerMove={moveBodyMode ? moveBodyDrag : undefined} onPointerUp={moveBodyMode ? finishBodyDrag : undefined} onPointerCancel={moveBodyMode ? finishBodyDrag : undefined} style={{ left: (frame.x + offset.x) * scale, top: (frame.y + offset.y) * scale, width: frame.width * scale, height: frame.height * scale, zIndex: moveBodyMode ? 1000 + model.parts.indexOf(part) : 1 }} />
+          return <img key={part.id} className={`wardrobe-reference-body-part${moveBodyMode ? ' movable' : ''}`} src={source.imageDataUrl} alt={part.name} title={moveBodyMode ? `Arraste ${part.name} para conferir o vínculo` : undefined} draggable={false} onPointerDown={moveBodyMode ? (event) => beginBodyDrag(event, part.id) : undefined} onPointerMove={moveBodyMode ? moveBodyDrag : undefined} onPointerUp={moveBodyMode ? finishBodyDrag : undefined} onPointerCancel={moveBodyMode ? finishBodyDrag : undefined} style={{ left: (source.x + offset.x) * scale, top: (source.y + offset.y) * scale, width: source.width * scale, height: source.height * scale, transform: `rotate(${part.sourceTransform?.rotation ?? part.rotation}deg)`, zIndex: moveBodyMode ? 1000 + model.parts.indexOf(part) : 1 }} />
         })}
-        {!testPose && model && !sourceParts && referencePreview?.sourceDataUrl === referenceSource && <img className="wardrobe-base-image" src={referencePreview.imageDataUrl} alt={`Folha original desmontada do modelo ${model.name}`} style={{ left: 0, top: 0, width: previewProject.width * scale, height: previewProject.height * scale, zIndex: 1 }} />}
         {testPose && previewPoseParts.map((part, index) => <img key={part.id} className="wardrobe-pose-body-part" src={part.dataUrl} alt={part.name} draggable={false} style={{ left: part.x * scale, top: part.y * scale, width: part.width * scale, height: part.height * scale, zIndex: 2 + index * previewLayerStride, transform: `rotate(${part.rotation}deg)` }} />)}
         {draft?.components.map((component, index) => {
           const layer = getBodyLayer(model, component.attachedPartId)
