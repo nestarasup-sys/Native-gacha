@@ -1,3 +1,4 @@
+import { useModelSourceRefresh } from '../../models/useModelSourceRefresh'
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import type { FabricatorHistoryState, FabricatorPose, FabricatorPoseSummary, FabricatorProject, FabricatorProjectSave, FabricatorSlotSummary, ModelPart, WardrobeCategory, WardrobeComponent, WardrobeSet, WardrobeSetSave, WardrobeSetSummary } from '../../../../../shared/fabricator'
 import { Icon } from '../../../ui/components/Icon'
@@ -118,6 +119,7 @@ export function WardrobeWorkspace() {
   const [models, setModels] = useState<FabricatorSlotSummary[]>(Array.from({ length: 10 }, () => null))
   const [modelSlot, setModelSlot] = useState(1)
   const [model, setModel] = useState<FabricatorProject | null>(null)
+  useModelSourceRefresh(modelSlot, setModel)
   const [sets, setSets] = useState<WardrobeSetSummary[]>([])
   const [activeSetId, setActiveSetId] = useState<string | null>(null)
   const [draft, setDraft] = useState<WardrobeSet | null>(null)
