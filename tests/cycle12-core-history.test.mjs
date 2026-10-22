@@ -22,6 +22,25 @@ test('histórico fica limitado a 30 snapshots mesmo em edições sucessivas',()=
  assert.equal(h.undo.length,STUDIO_HISTORY_LIMIT)
  assert.equal(h.undo[0].backgroundX,50)
 })
+test('todos editores usam o resolvedor compartilhado sem dependência de páginas',async()=>{
+ const [renderer,resolver,studio,video,transition]=await Promise.all([
+ readFile('src/renderer/src/characters/characterRenderer.ts','utf8'),
+ readFile('src/renderer/src/characters/characterSourceResolver.ts','utf8'),
+ readFile('src/renderer/src/features/studio/StudioPage.tsx','utf8'),
+ readFile('src/renderer/src/features/videoStudio/VideoStudioEditor.tsx','utf8'),
+ readFile('src/renderer/src/features/videoStudio/transitionRenderer.ts','utf8')
+ ])
+ assert.match(renderer,/await resolveSavedCharacterSource\(character, renderSource\)/)
+ assert.match(resolver,/export async function resolveSavedCharacterSource/)
+ assert.match(resolver,/loadFabricatorPose/)
+ assert.match(resolver,/loadFabricatorSlot/)
+ assert.match(resolver,/applyCharacterBodyShape/)
+ assert.match(studio,/studioSceneModel/)
+ assert.match(video,/studioSceneModel/)
+ assert.match(transition,/characterRenderer/)
+ assert.doesNotMatch(resolver,/\.\.\/features\/|CustomizerPage|StudioPage/)
+})
+
 test('Video Studio não importa mais runtime do Customizador e pages não contêm comandos de save',async()=>{
  const [transitions,baseline,customizer,studio,commands]=await Promise.all([
  readFile('src/renderer/src/features/videoStudio/transitionRenderer.ts','utf8'),
