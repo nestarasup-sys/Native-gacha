@@ -45,9 +45,13 @@ export function createFabricatorCatalogPersistence(
     try { await access(target); return } catch (reason) {
       if (!isMissing(reason)) throw reason
     }
-    try { await rename(backup, target) } catch (reason) {
-      if (!isMissing(reason)) throw reason
+    // SQLite DomainFileSystem pode lançar "Origem não encontrada" sem code
+    // para rename de arquivo ausente. Nunca chamar rename sem confirmar backup.
+    try { await access(backup) } catch (reason) {
+      if (isMissing(reason)) return
+      throw reason
     }
+    await rename(backup, target)
   }
 
   async function recoverCatalogManifest(folder: string, imageFolder: string): Promise<void> {
@@ -72,8 +76,13 @@ export function createFabricatorCatalogPersistence(
     const temporary = join(folder, 'wardrobe.json.tmp')
     await writeFile(temporary, JSON.stringify(set), 'utf8')
     let previousManifest = false
-    try { await rename(target, backup); previousManifest = true }
-    catch (reason) { if (!isMissing(reason)) throw reason }
+    try {
+      await access(target)
+      await rename(target, backup)
+      previousManifest = true
+    } catch (reason) {
+      if (!isMissing(reason)) throw reason
+    }
     try { await rename(temporary, target) }
     catch (reason) {
       if (previousManifest) await rename(backup, target).catch(() => undefined)
