@@ -108,6 +108,19 @@ async function verifyWorkspaceCaptures(directory) {
         !Number.isInteger(piece.pixels) || piece.pixels < 15)) {
     throw Error('Segunda pose não comprovou as três roupas com posição alterada no Customizador.')
   }
+  const performance = JSON.parse(await fs.readFile(join(folder,'electron-performance.json'),'utf8'))
+  if (performance.schemaVersion !== 1 || performance.syntheticOnly !== true || performance.source !== 'real-electron-renderer') {
+    throw Error('Medições reais de desempenho Electron ausentes ou incompatíveis.')
+  }
+  for(const sample of [performance.poseOne, performance.poseTwo]) {
+    if (!sample || !Number.isFinite(sample.sampledFps) || sample.sampledFps <= 0 ||
+        !Number.isFinite(sample.frameP95Ms) || sample.frameP95Ms <= 0 ||
+        !Number.isFinite(sample.rendererPrivateKb) || sample.rendererPrivateKb <= 0 ||
+        !Number.isFinite(sample.rendererSharedKb) || sample.rendererSharedKb < 0 ||
+        (sample.jsHeapUsedBytes !== null && (!Number.isFinite(sample.jsHeapUsedBytes) || sample.jsHeapUsedBytes < 0))) {
+      throw Error('Amostra FPS/memória inválida para a pose no Electron.')
+    }
+  }
   return expectedWorkspaces.map(item => item.file)
 }
 
