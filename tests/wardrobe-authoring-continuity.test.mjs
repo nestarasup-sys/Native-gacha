@@ -52,3 +52,22 @@ test('face, roupa e pose são resolvidos sem importar páginas Customizador ou F
  assert.match(customizer,/renderWardrobeOverlay\(/)
  assert.match(video,/prepareSavedCharacterRenderer/)
 })
+
+test('escala horizontal e vertical divergentes no Fabricador não reverte ao tamanho do PNG original',()=>{
+ const authored={...piece,x:piece.x+8,y:piece.y+17,width:46,height:89,
+  originWidth:36,originHeight:60,binding:bindWardrobeComponent(piece,sourceBone)}
+ const original={...sourceBone,x:12,y:25,width:40,height:70,rotation:0}
+ const result=mapWardrobeComponentToPose(authored,sourceBone,original)
+ assert.equal(result.renderWidth,46)
+ assert.equal(result.renderHeight,89)
+ assert.deepEqual(center(result),{x:6+8+46/2,y:42+17+89/2})
+ assert.equal(authored.binding.widthRatio,36/40,'binding antigo não deve ser alterado')
+})
+test('escala XY atualizada e binding válido preserva a largura e altura no pose rig',()=>{
+ const authored={...piece,width:44,height:73,originWidth:36,originHeight:60}
+ authored.binding=bindWardrobeComponent(authored,sourceBone)
+ const pose={...sourceBone,x:100,y:40,width:80,height:140,rotation:0}
+ const output=mapWardrobeComponentToPose(authored,sourceBone,pose)
+ assert.equal(output.renderWidth,88)
+ assert.equal(output.renderHeight,146)
+})
