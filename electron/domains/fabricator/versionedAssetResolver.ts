@@ -23,6 +23,9 @@ export class VersionedAssetResolver {
 
   get byteSize(): number { return this.size }
   get entries(): number { return this.cache.size }
+  has(namespace: AssetNamespace, identity: string, version: string): boolean {
+    return this.cache.has(assetCacheKey(namespace, identity, version))
+  }
 
   invalidate(namespace: AssetNamespace, identity: string): void {
     const prefix = JSON.stringify([namespace, identity]).slice(0, -1) + ','
