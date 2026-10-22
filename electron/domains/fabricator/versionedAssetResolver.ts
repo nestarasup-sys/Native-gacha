@@ -14,8 +14,11 @@ export class VersionedAssetResolver {
   private readonly pending = new Map<string, Promise<Uint8Array>>()
   private size = 0
 
-  constructor(private readonly maxBytes = 32 * 1024 * 1024) {
+  private readonly maxBytes: number
+
+  constructor(maxBytes = 32 * 1024 * 1024) {
     if (!Number.isSafeInteger(maxBytes) || maxBytes < 1) throw new Error('Limite inválido de cache.')
+    this.maxBytes = maxBytes
   }
 
   get byteSize(): number { return this.size }
