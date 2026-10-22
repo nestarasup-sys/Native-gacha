@@ -2,9 +2,9 @@
  * O adaptador é injetado para manter o DomainFileSystem e compatibilidade legada.
  */
 import { join } from 'node:path'
-import type { FabricatorAssetSave, FabricatorPose, FabricatorPoseDraft, FabricatorPoseDraftSave, FabricatorPoseSave, FabricatorProjectSave, ModelPart, PosePart } from '../../../src/shared/fabricator'
+import type { FabricatorAssetSave, FabricatorPose, FabricatorPoseDraft, FabricatorPoseDraftSave, FabricatorPoseSave, FabricatorProjectSave, ModelPart, PosePart } from '../../../src/shared/fabricator.ts'
 import { resolvePoseCategory } from '../../../src/shared/fabricator'
-import { applyModelHeadShape } from '../../../src/shared/headShape'
+import { applyModelHeadShape } from '../../../src/shared/headShape.ts'
 import type * as nodeFs from 'node:fs/promises'
 
 export type PosePersistenceDependencies = {
