@@ -1,7 +1,7 @@
 /** Character-only clothing operations. Never writes Fabricador source or PNGs. */
 import type { WardrobeCategory, WardrobeComponent, ModelPart } from './fabricator'
 import type { CustomizerWardrobeCategory, CustomizerWardrobeGroup } from './customizer'
-import { editWardrobeAdjustment } from './wardrobeAdjustment'
+import { editWardrobeAdjustment } from './wardrobeAdjustment.ts'
 
 type Adjustment = Partial<Pick<CustomizerWardrobeGroup, 'offsetX' | 'offsetY' | 'scaleX' | 'scaleY' | 'rotation'>>
 type Selection = { modelSlot: number; setId: string; category: CustomizerWardrobeCategory; componentId: string }
