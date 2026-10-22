@@ -2196,6 +2196,12 @@ async function registerFabricatorHandlers(): Promise<void> {
   })
 
 
+  ipcMain.handle('fabricator:model-source:download', async (event, slot: number, pngDataUrl: string): Promise<string> => {
+    assertTrustedSender(event)
+    if (!isValidSlot(slot)) throw new Error('Slot inválido.')
+    return exportModelSourceToDownloads(slot, pngDataUrl, app.getPath('downloads'), nativeWriteFile)
+  })
+
   ipcMain.handle('fabricator:model-source:publish', async (event, request: ModelSourcePublishRequest): Promise<string> => {
     assertTrustedSender(event)
     if (!request || !isValidSlot(request.project?.slot)) throw new Error('Slot inválido.')
