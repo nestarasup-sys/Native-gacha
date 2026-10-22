@@ -87,6 +87,14 @@ async function verifyWorkspaceCaptures(directory) {
   }
   const state = JSON.parse(await fs.readFile(join(folder, 'flow-state.json'), 'utf8'))
   if (state.schemaVersion !== 1 || state.syntheticOnly !== true || !state.characterId || !state.studioId) throw Error('Identidade de fluxo E2E inválida.')
+  const alignment = JSON.parse(await fs.readFile(join(folder, 'wardrobe-pixels.json'), 'utf8'))
+  if (alignment?.source !== 'customizer-overlay' || !Array.isArray(alignment.colors) || alignment.colors.length !== 3 ||
+      alignment.colors.some((piece,index) => piece.name !== ['coat','sleeve-left','sleeve-right'][index] ||
+        !Number.isFinite(piece.x) || !Number.isFinite(piece.y) || !Number.isInteger(piece.pixels) || piece.pixels < 15) ||
+      alignment.colors[1].x >= alignment.colors[2].x - 30 ||
+      alignment.colors[1].y <= alignment.colors[2].y + 6) {
+    throw Error('Alinhamento visual X/Y das peças do Fabricador não confirmado no Customizador.')
+  }
   return expectedWorkspaces.map(item => item.file)
 }
 
