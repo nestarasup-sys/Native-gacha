@@ -37,20 +37,39 @@ if(syntheticComplete){
   const {createCompleteCharacterFixture}=require('./complete-character-fixture.cjs')
   void createCompleteCharacterFixture(path.join(sandbox,'electron-user-data')).then(()=>start()).catch(error=>{console.error(error);process.exitCode=1})
 }else start()
-function start(){
-const env = {
-  ...process.env,
-  GACHA_DEV_AI_TEST: '1',
-  GACHA_DEV_AI_SANDBOX: sandbox,
-  GACHA_FABRICATOR_REAL_UI_CAPTURE: '1'
-}
-if (baselineArg) env.GACHA_FABRICATOR_VISUAL_BASELINE = path.resolve(baselineArg.slice('--baseline='.length))
-const electron = require('electron')
-const child = spawn(electron, [path.join(root, 'out', 'main', 'main.js')], { env, stdio: 'inherit' })
-child.on('error', error => { console.error(error); process.exitCode = 1 })
-child.on('exit', code => {
-  const output = path.join(sandbox, 'fabricator-real-ui-captures')
-  if (code === 0) console.log('Capturas reais do Fabricador:', output)
-  process.exitCode = code ?? 1
-})
+async function start(){
+  const electron = require('electron')
+  const launch = (reopen) => new Promise(resolve => {
+    const env = {
+      ...process.env,
+      GACHA_DEV_AI_TEST: '1',
+      GACHA_DEV_AI_SANDBOX: sandbox,
+      GACHA_FABRICATOR_REAL_UI_CAPTURE: '1',
+      GACHA_DEV_AI_REOPEN: reopen ? '1' : '0'
+    }
+    if (baselineArg) env.GACHA_FABRICATOR_VISUAL_BASELINE = path.resolve(baselineArg.slice('--baseline='.length))
+    const child = spawn(electron, [path.join(root, 'out', 'main', 'main.js')], { env, stdio: 'inherit' })
+    let finished = false
+    const complete = code => {
+      if (finished) return
+      finished = true
+      clearTimeout(timeout)
+      resolve(code)
+    }
+    // Limite explícito: um Electron bloqueado não deixa o runner Windows indefinidamente.
+    const timeout = setTimeout(() => {
+      console.error('Tempo máximo de captura Electron excedido:', reopen ? 'reabertura' : 'primeiro processo')
+      child.kill()
+      complete(1)
+    }, 180000)
+    child.on('error', error => { console.error(error); complete(1) })
+    child.on('exit', code => complete(code ?? 1))
+  })
+  const first = await launch(false)
+  if (first !== 0) { process.exitCode = first; return }
+  const second = await launch(true)
+  if (second === 0) {
+    console.log('11 screenshots reais e verificação de reabertura:', path.join(sandbox, 'fabricator-real-ui-captures'))
+  }
+  process.exitCode = second
 }
