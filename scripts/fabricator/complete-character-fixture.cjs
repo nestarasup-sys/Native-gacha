@@ -67,10 +67,25 @@ async function createCompleteCharacterFixture(root){
   await writePng(path.join(hair,'images','back.png'),88,42,[54,31,89,255])
   const eye=path.join(base,'face-components','model-1','item-eyesL')
   writeJson(path.join(eye,'asset.json'),{
-    schemaVersion:1,id:'eyesL',modelSlot:1,kind:'eye-left',name:'Olho azul',
+    schemaVersion:1,id:'eyesL',modelSlot:1,kind:'eye',name:'Olho azul',
     width:18,height:10,defaultTransform:{x:104,y:65,scaleX:1,scaleY:1,rotation:0},updatedAt:T
   })
   await writePng(path.join(eye,'asset.png'),18,10,[41,104,196,255])
-  return {model,pose,outfit,hair,eye}
+  const eyebrow=path.join(base,'face-components','model-1','item-browL')
+  writeJson(path.join(eyebrow,'asset.json'),{
+    schemaVersion:1,id:'browL',modelSlot:1,kind:'eyebrow',name:'Sobrancelha expressiva',
+    width:26,height:7,defaultTransform:{x:100,y:56,scaleX:1,scaleY:1,rotation:0},updatedAt:T
+  })
+  await writePng(path.join(eyebrow,'asset.png'),26,7,[66,29,81,255])
+  const expression=path.join(base,'expression-presets','model-1','preset-smile.json')
+  writeJson(expression,{
+    schemaVersion:1,id:'smile',modelSlot:1,name:'Expressão sorridente',
+    selections:{
+      eyes:{left:'eyesL',right:null},pupils:{left:null,right:null},
+      eyebrows:{left:'browL',right:null},nose:null,mouth:null
+    },
+    transforms:{},noseOpacity:1,updatedAt:T
+  })
+  return {model,pose,outfit,hair,eye,eyebrow,expression}
 }
 module.exports={createCompleteCharacterFixture}
