@@ -2,7 +2,7 @@
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { writeFile as nativeWriteFile } from 'node:fs/promises'
-import { validateModelSourceImage } from './modelSource'
+import { validateModelSourceImage } from './modelSource.ts'
 
 export async function exportModelSourceToDownloads(
   slot: number,
