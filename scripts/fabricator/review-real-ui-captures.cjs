@@ -25,6 +25,9 @@ async function verifyRealUiCaptures(directory, baseline) {
         typeof info.section !== 'string' || !info.section.trim()) {
       throw Error('Ordem, nome ou seção de captura inválida: ' + name)
     }
+    if (name === 'roupas.png' && info.contentVerified !== 'three-fitted-garments') {
+      throw Error('Screenshot Roupas Dev não comprovou três peças encaixadas no Fabricador.')
+    }
     seen.add(name)
     const bytes = await fs.readFile(join(folder, name))
     const image = sharp(bytes)
