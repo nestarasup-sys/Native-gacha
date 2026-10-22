@@ -3,6 +3,7 @@ import { hairCategories } from '../../../shared/hairCategories'
 import type { CustomizerCharacter, CustomizerFaceAppearance, CustomizerWardrobeCategory, CustomizerWardrobeGroup, FaceComponentPartId, FacePalettePartId, HairColorOverrides, HairColorRole, HairPartId } from '../../../shared/customizer'
 import { resolveStudioTalkMouthId, type StudioFaceMode, type StudioFaceTransforms } from '../../../shared/studio'
 import { mapWardrobeComponentToPose, wardrobePosePadding } from '../../../shared/wardrobePose'
+import { normalizeLayerOrder } from '../../../shared/modelRig'
 import { validateWardrobeFlow } from '../../../shared/assetFlow'
 import { wardrobeAdjustmentMatrix } from '../../../shared/wardrobeAdjustment'
 import { eyeInteriorMask } from '../ui/image/eyeInteriorMask'
@@ -315,8 +316,7 @@ export async function renderWardrobeOverlay(
   let aboveHairCanvas: HTMLCanvasElement | null = null
   let aboveHairContext: CanvasRenderingContext2D | null = null
   const hidden = new Set(artwork.hiddenPartIds ?? [])
-  const bodyOrder = (artwork.layerOrder ?? []).filter((id, index, order) => artwork.parts.some((part) => part.id === id) && order.indexOf(id) === index)
-  for (const part of artwork.parts) if (!bodyOrder.includes(part.id)) bodyOrder.push(part.id)
+  const bodyOrder = normalizeLayerOrder(artwork.parts, artwork.layerOrder)
   const garmentLayers = new Map<string, Array<{ group: CustomizerWardrobeGroup; component: WardrobeSet['components'][number]; transform: ReturnType<typeof mapWardrobeComponentToPose>; center: { x: number; y: number }; sequence: number }>>()
   let sequence = 0
   let hasAboveHairAccessories = false
