@@ -6,7 +6,7 @@
 import { mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { dirname, join } from 'node:path'
-import { createModelSourceJournal, verifyModelSourceCommit } from './modelSourceJournal'
+import { createModelSourceJournal, verifyModelSourceCommit } from './modelSourceJournal.ts'
 import type { FabricatorAssetSave, FabricatorProjectSave, FabricatorModelSourcePublishRequest } from '../../../src/shared/fabricator'
 
 export type ModelSourcePublishRequest = FabricatorModelSourcePublishRequest
