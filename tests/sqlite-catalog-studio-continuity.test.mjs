@@ -2,7 +2,6 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import * as native from 'node:fs/promises'
 import { join } from 'node:path'
-import { tmpdir } from 'node:os'
 import { createRequire } from 'node:module'
 import sharp from 'sharp'
 import { createFabricatorCatalogPersistence } from '../electron/domains/fabricator/catalogPersistence.ts'
@@ -14,7 +13,13 @@ const {DomainFileSystem}=require('../electron/domainFileSystem.cjs')
 
 const UUID='12345678-aaaa-4abc-8abc-123456789abc'
 async function sandbox(t){
- const root=await native.mkdtemp(join(tmpdir(),'gacha-sqlite-continuity-'))
+ // O Windows runner pode fornecer os.tmpdir() com nome 8.3 (RUNNER~1),
+ // rejeitado corretamente pelo DataPlatform por não ser um caminho canônico.
+ // Gerar o sandbox em workspace real; nunca usar/perder perfil pessoal.
+ const canonicalWorkspace=await native.realpath(process.cwd())
+ const base=join(canonicalWorkspace,'out','dev-ai','sqlite-regression')
+ await native.mkdir(base,{recursive:true})
+ const root=await native.realpath(await native.mkdtemp(join(base,'gacha-sqlite-continuity-')))
  const profile=join(root,'profile')
  await native.mkdir(profile,{recursive:true})
  const platform=new DataPlatform(join(root,'app-data')).initialize()
