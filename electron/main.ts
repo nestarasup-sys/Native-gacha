@@ -50,6 +50,7 @@ import { registerFabricatorModelCatalogHandlers } from './domains/fabricator/mod
 import { FabricatorWardrobeCatalog } from './domains/fabricator/wardrobeCatalog'
 import { registerFabricatorWardrobeCatalogHandlers } from './domains/fabricator/wardrobeCatalogIpc'
 import { publishModelSource, type ModelSourcePublishRequest } from './domains/fabricator/modelSource'
+import { exportModelSourceToDownloads } from './domains/fabricator/modelSourceExport'
 
 let configuredAppDataRoot: string | null = null
 let videoExportLibrary: VideoExportLibrary | null = null
