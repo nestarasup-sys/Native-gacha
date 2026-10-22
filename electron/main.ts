@@ -1063,9 +1063,11 @@ function isStudioAsset(value: unknown): value is StudioAsset {
     && typeof asset.dataUrl === 'string' && asset.dataUrl.startsWith(`data:${asset.mimeType};base64,`) && asset.dataUrl.length <= 70_000_000
 }
 
-const { readStudio, writeStudio } = createStudioDocumentPersistence({
-  files: { readFile, writeFile, mkdir, access, rename, unlink },
+const { readStudio, writeStudio, removeStudio } = createStudioDocumentPersistence({
+  files: { readFile, writeFile, mkdir, access, rename, unlink, rm },
   studioPath,
+  studioLibraryPath,
+  prepareVideoDelete: () => videoLibrary.list(),
   validate: isStudioDocument,
   decodeImage: importedImageDataUrlBuffer,
   normalizeImage: normalizeImageBuffer,
@@ -1233,13 +1235,7 @@ async function registerFabricatorHandlers(): Promise<void> {
       ipcMain, assertTrustedSender,
       list: () => listStudios('studio'),
       write: (document) => writeStudio(document, 'studio'),
-      remove: async (id) => {
-        const folder = resolve(studioPath(id, 'studio'))
-        if (dirname(folder) !== resolve(studioLibraryPath('studio')) || basename(folder) !== `studio-${id}`) {
-          throw new Error('Pasta do Studio inválida.')
-        }
-        await rm(folder, { recursive: true, force: true })
-      },
+      remove: (id) => removeStudio(id, 'studio'),
       getPendingWrites: () => studioSaveQueues.studio,
       setPendingWrites: (pending) => { studioSaveQueues.studio = pending },
       measure: (label, operation) => measureIpc(label, operation)
@@ -1267,10 +1263,7 @@ async function registerFabricatorHandlers(): Promise<void> {
       assertTrustedSender(event)
       if (typeof id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) throw new Error('Identificador de Studio inválido.')
       const next = studioSaveQueues[workspace].catch(() => undefined).then(async () => {
-        const folder = resolve(studioPath(id, workspace))
-        if (dirname(folder) !== resolve(studioLibraryPath(workspace)) || basename(folder) !== `studio-${id}`) throw new Error('Pasta do Studio inválida.')
-        if (workspace === 'video') await videoLibrary.list()
-        await rm(folder, { recursive: true, force: true })
+        await removeStudio(id, workspace)
       })
       studioSaveQueues[workspace] = next
       await next
