@@ -50,7 +50,7 @@ import { registerFabricatorModelCatalogHandlers } from './domains/fabricator/mod
 import { FabricatorWardrobeCatalog } from './domains/fabricator/wardrobeCatalog'
 import { registerFabricatorWardrobeCatalogHandlers } from './domains/fabricator/wardrobeCatalogIpc'
 import { publishModelSource, type ModelSourcePublishRequest } from './domains/fabricator/modelSource'
-import { exportModelSourceToDownloads } from './domains/fabricator/modelSourceExport'
+import { registerModelSourceDownloadHandlers } from './domains/fabricator/modelSourceExportIpc'
 
 let configuredAppDataRoot: string | null = null
 let videoExportLibrary: VideoExportLibrary | null = null
@@ -2196,11 +2196,7 @@ async function registerFabricatorHandlers(): Promise<void> {
   })
 
 
-  ipcMain.handle('fabricator:model-source:download', async (event, slot: number, pngDataUrl: string): Promise<string> => {
-    assertTrustedSender(event)
-    if (!isValidSlot(slot)) throw new Error('Slot inválido.')
-    return exportModelSourceToDownloads(slot, pngDataUrl, app.getPath('downloads'), nativeWriteFile)
-  })
+  registerModelSourceDownloadHandlers(ipcMain, assertTrustedSender, () => app.getPath('downloads'))
 
   ipcMain.handle('fabricator:model-source:publish', async (event, request: ModelSourcePublishRequest): Promise<string> => {
     assertTrustedSender(event)
