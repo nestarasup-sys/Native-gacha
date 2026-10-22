@@ -13,6 +13,7 @@ export class VersionedAssetResolver {
   private readonly cache = new Map<string, Uint8Array>()
   private readonly pending = new Map<string, Promise<Uint8Array>>()
   private size = 0
+  private epoch = 0
 
   private readonly maxBytes: number
 
@@ -28,14 +29,17 @@ export class VersionedAssetResolver {
   }
 
   invalidate(namespace: AssetNamespace, identity: string): void {
+    // Leituras em andamento pertencem à revisão anterior e não podem voltar ao cache.
+    this.epoch++
     const prefix = JSON.stringify([namespace, identity]).slice(0, -1) + ','
+    for (const key of this.pending.keys()) if (key.startsWith(prefix)) this.pending.delete(key)
     for (const [key, data] of this.cache) if (key.startsWith(prefix)) {
       this.cache.delete(key)
       this.size -= data.byteLength
     }
   }
 
-  clear(): void { this.cache.clear(); this.pending.clear(); this.size = 0 }
+  clear(): void { this.epoch++; this.cache.clear(); this.pending.clear(); this.size = 0 }
 
   async resolve(namespace: AssetNamespace, identity: string, version: string, read: () => Promise<Uint8Array>, assetPath = ''): Promise<Uint8Array> {
     const key = assetCacheKey(namespace, identity, version, assetPath)
@@ -47,9 +51,10 @@ export class VersionedAssetResolver {
     }
     const existing = this.pending.get(key)
     if (existing) return Uint8Array.from(await existing)
+    const startedAt = this.epoch
     const task = (async () => {
       const loaded = Uint8Array.from(await read())
-      if (loaded.byteLength <= this.maxBytes) {
+      if (startedAt === this.epoch && loaded.byteLength <= this.maxBytes) {
         while (this.size + loaded.byteLength > this.maxBytes && this.cache.size) {
           const oldest = this.cache.keys().next().value!
           this.size -= this.cache.get(oldest)!.byteLength
