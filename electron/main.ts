@@ -49,6 +49,7 @@ import { registerFabricatorModelCatalogHandlers } from './domains/fabricator/mod
 import { FabricatorWardrobeCatalog } from './domains/fabricator/wardrobeCatalog'
 import { registerFabricatorWardrobeCatalogHandlers } from './domains/fabricator/wardrobeCatalogIpc'
 import { publishModelSource, type ModelSourcePublishRequest } from './domains/fabricator/modelSource'
+import { recoverModelSourceSlot } from './domains/fabricator/modelSourceRecovery'
 import { createFabricatorModelWriter } from './domains/fabricator/modelWriter'
 import { createPosePersistence } from './domains/fabricator/posePersistence'
 import { createAnimatorPersistence } from './domains/fabricator/animatorPersistence'
@@ -1917,7 +1918,20 @@ async function registerFabricatorHandlers(): Promise<void> {
 
   registerCustomizerCharacterHandlers(ipcMain, assertTrustedSender, customizerService, measureIpc)
 
-  registerFabricatorModelCatalogHandlers(ipcMain, assertTrustedSender, fabricatorModelCatalog)
+  // A leitura do catálogo também recupera um slot que ficou sem nome após queda
+  // entre as duas renomeações da publicação. Não remove nem escolhe backups ambíguos.
+  const recoverSlot = (slot: number) =>
+    recoverModelSourceSlot(slot, slotPath, { readdir, readFile, rename })
+  registerFabricatorModelCatalogHandlers(ipcMain, assertTrustedSender, {
+    listSlots: async () => {
+      for (let slot = 1; slot <= slotCount; slot += 1) await recoverSlot(slot)
+      return fabricatorModelCatalog.listSlots()
+    },
+    loadSlot: async (slot) => {
+      if (isValidSlot(slot)) await recoverSlot(slot)
+      return fabricatorModelCatalog.loadSlot(slot)
+    }
+  })
 
   ipcMain.handle('fabricator:import-model', async (event, slot: number) => {
     assertTrustedSender(event)
@@ -1966,7 +1980,10 @@ async function registerFabricatorHandlers(): Promise<void> {
     if (!request || !isValidSlot(request.project?.slot)) throw new Error('Slot inválido.')
     const slot = request.project.slot
     const previous = fabricatorSaveQueues.get(slot) ?? Promise.resolve()
-    const job = previous.catch(() => undefined).then(() => publishModelSource(request, slotPath, writeFabricatorProject, { mkdir, readFile, writeFile, readdir, rename, rm }))
+    const job = previous.catch(() => undefined).then(async () => {
+      await recoverModelSourceSlot(slot, slotPath, { readdir, readFile, rename })
+      return publishModelSource(request, slotPath, writeFabricatorProject, { mkdir, readFile, writeFile, readdir, rename, rm })
+    })
     const queue = job.then(() => undefined)
     fabricatorSaveQueues.set(slot, queue)
     try { return await job } finally {
