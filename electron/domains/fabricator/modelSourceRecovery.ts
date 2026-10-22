@@ -4,7 +4,7 @@
 import { dirname, join } from 'node:path'
 import type { ModelSourceFiles } from './modelSource'
 
-type RecoveryFiles = Pick<ModelSourceFiles, 'readdir' | 'readFile' | 'rename'>
+type RecoveryFiles = Pick<ModelSourceFiles, 'readdir' | 'readFile' | 'rename' | 'rm'>
 
 async function manifestLooksComplete(folder: string, files: RecoveryFiles): Promise<boolean> {
   try {
@@ -84,6 +84,11 @@ export async function recoverModelSourceSlot(
     : valid.length === 1 ? valid[0] : null
   if (!selected) throw new Error('Há múltiplos backups ou uma publicação pendente inconsistente. Recuperação manual necessária.')
   try {
+    if (emptyLogicalSlot) {
+      // Remove apenas placeholder vazio e somente após validar o marcador e backup.
+      if ((await files.readdir(official)).length > 0) return 'intact'
+      await files.rm(official, { recursive: true, force: false })
+    }
     await files.rename(selected, official)
     return 'restored'
   } catch (reason) {
