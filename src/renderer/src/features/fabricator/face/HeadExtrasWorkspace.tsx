@@ -1,3 +1,4 @@
+import { useModelSourceRefresh } from '../models/useModelSourceRefresh'
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ChangeEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import type { FaceComponentAsset, FaceComponentAssetSave, FaceComponentAssetSummary, FaceGuideSettings, FabricatorProject, FabricatorSlotSummary, FaceTransform } from '../../../../../shared/fabricator'
 import { Icon } from '../../../ui/components/Icon'
@@ -73,6 +74,7 @@ export function HeadExtrasWorkspace() {
   const [models, setModels] = useState<FabricatorSlotSummary[]>([])
   const [modelSlot, setModelSlot] = useState(1)
   const [model, setModel] = useState<FabricatorProject | null>(null)
+  useModelSourceRefresh(modelSlot, setModel)
   const [assets, setAssets] = useState<FaceComponentAssetSummary[]>([])
   const [details, setDetails] = useState<Record<string, FaceComponentAsset>>({})
   const detailsRef = useRef(details)
