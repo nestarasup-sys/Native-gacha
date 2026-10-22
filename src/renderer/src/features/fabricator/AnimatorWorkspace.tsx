@@ -1,3 +1,4 @@
+import { projectForOriginalPreview } from '../../../../shared/fabricatorModelViews'
 import { interpolateFrames, shortestAngle } from './models/animationInterpolation'
 import { useModelSourceRefresh } from './models/useModelSourceRefresh'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -283,7 +284,7 @@ export function AnimatorWorkspace() {
   const [modelSlot, setModelSlot] = useState<number | null>(null)
   const [characterId, setCharacterId] = useState('')
   const [source, setSource] = useState<FabricatorProject | null>(null)
-  useModelSourceRefresh(modelSlot, setSource)
+  useModelSourceRefresh(modelSlot, fresh => setSource(projectForOriginalPreview(fresh)))
   const [baseProject, setBaseProject] = useState<FabricatorProject | null>(null)
   const [summaries, setSummaries] = useState<AnimatorAnimationSummary[]>([])
   const [activeSlot, setActiveSlot] = useState(1)
@@ -472,13 +473,13 @@ export function AnimatorWorkspace() {
     setSource(null); setBaseProject(null); setPlaying(false)
     void window.desktop.loadFabricatorSlot(modelSlot).then(async (project) => {
       if (!live) return
-      setSource(project)
+      setSource(projectForOriginalPreview(project))
       if (!project) { setBaseProject(null); return }
       const character = selectedCharacter?.customization.modelSlot === modelSlot ? selectedCharacter : null
       const poseSlot = character?.customization.poseSlot
       if (poseSlot !== null && poseSlot !== undefined) {
         const pose = await window.desktop.loadFabricatorPose(modelSlot, poseSlot)
-        if (live) setBaseProject(pose ? makePoseProject(project, pose) : project)
+        if (live) setBaseProject(pose ? makePoseProject(project, pose) : projectForOriginalPreview(project))
       } else setBaseProject(project)
     }).catch((reason: unknown) => { if (live) setError(reason instanceof Error ? reason.message : 'Não foi possível carregar o modelo selecionado.') })
     return () => { live = false }
