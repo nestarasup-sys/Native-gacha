@@ -111,3 +111,41 @@ test('remoção de Video Studio consulta biblioteca antes de excluir',async t=>{
   assert.equal(getEnsureCalls(),1)
   await assert.rejects(fs.access(studioPath(id,'video')),{code:'ENOENT'})
 })
+
+test('IPC concorrente: salvar v1 lenta, salvar v2 e ler reabertura nunca restauram v1',async t=>{
+ const gate={release:null}
+ const firstBlocked=new Promise(resolve=>{gate.release=resolve})
+ let notify
+ const entered=new Promise(resolve=>{notify=resolve})
+ let writes=0
+ const files={...fs,writeFile:async(file,data,...options)=>{
+   if(String(file).endsWith(asset+'.png') && writes++===0){
+     notify()
+     await firstBlocked
+   }
+   return fs.writeFile(file,data,...options)
+ }}
+ const {persistence}=await setup(t,{files})
+ const old=persistence.writeStudio(makeDoc('versao-1'))
+ await entered
+ const fresh=persistence.writeStudio(makeDoc('versao-2'))
+ const reading=persistence.readStudio(id,'studio')
+ gate.release()
+ await Promise.all([old,fresh])
+ assert.equal((await reading)?.title,'versao-2')
+ assert.equal((await persistence.readStudio(id,'studio'))?.title,'versao-2')
+})
+test('IPC serializa remoção com salvamento no mesmo ID, não toca biblioteca do outro workspace',async t=>{
+ const {persistence,studioPath}=await setup(t)
+ await persistence.writeStudio(makeDoc('video-preservado'),'video')
+ const tasks=[persistence.writeStudio(makeDoc('primeiro'),'studio'),
+   persistence.writeStudio(makeDoc('segundo'),'studio')]
+ await Promise.all(tasks)
+ assert.equal((await persistence.readStudio(id,'studio'))?.title,'segundo')
+ const removing=persistence.removeStudio(id,'studio')
+ const savedVideo=await persistence.readStudio(id,'video')
+ assert.equal(savedVideo?.title,'video-preservado')
+ await removing
+ assert.equal(await persistence.readStudio(id,'studio'),null)
+ assert.equal((await fs.readFile(join(studioPath(id,'video'),'studio.json'),'utf8')).includes('video-preservado'),true)
+})
