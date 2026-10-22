@@ -2,6 +2,7 @@
  * Customizador/Studio continuam consumindo este formato via os canais IPC legados.
  */
 import { extname, join } from 'node:path'
+import { inspectFabricatorStorage } from '../../../src/shared/fabricatorStorageCompatibility.ts'
 import { VersionedAssetResolver } from './versionedAssetResolver.ts'
 import type { FabricatorProject, FabricatorSlotSummary, ModelPart } from '../../../src/shared/fabricator'
 
@@ -38,6 +39,7 @@ export class FabricatorModelCatalog {
     for (let slot = 1; slot <= this.slotCount; slot += 1) {
       try {
         const manifest = JSON.parse(await this.files.readFile(join(this.slotPath(slot), 'project.json'), 'utf8')) as ModelManifest
+        if (!inspectFabricatorStorage('model', manifest).compatible) continue
         slots[slot - 1] = {
           slot,
           name: manifest.name,
@@ -55,7 +57,8 @@ export class FabricatorModelCatalog {
     try {
       const folder = this.slotPath(slot)
       const manifest = JSON.parse(await this.files.readFile(join(folder, 'project.json'), 'utf8')) as ModelManifest
-      if (!/^source-[a-f0-9-]+\.(png|jpe?g|webp)$/i.test(manifest.sourceFile)
+      if (!inspectFabricatorStorage('model', manifest).compatible
+        || !/^source-[a-f0-9-]+\.(png|jpe?g|webp)$/i.test(manifest.sourceFile)
         || manifest.parts.length > 500
         || manifest.parts.some((part) => !/^[a-zA-Z0-9_-]{1,80}$/.test(part.id))) return null
       const version = manifest.sourceFile + ':' + manifest.updatedAt
