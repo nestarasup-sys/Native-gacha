@@ -14,7 +14,7 @@ export type ModelSourcePublishRequest = {
   changedAssets: FabricatorAssetSave[]
 }
 
-export function validateModelSourceImage(dataUrl: string, width: number, height: number): Buffer {
+export function validateModelSourceImage(dataUrl: string, width?: number, height?: number): Buffer {
   if (typeof dataUrl !== 'string' || dataUrl.length > 70 * 1024 * 1024) throw new Error('Model Source excede o limite de 50 MB.')
   const match = /^data:image\/png;base64,([A-Za-z0-9+/]+={0,2})$/.exec(dataUrl)
   if (!match) throw new Error('Model Source exige PNG válido.')
@@ -22,8 +22,10 @@ export function validateModelSourceImage(dataUrl: string, width: number, height:
   if (image.length < 24 || image.length > 50 * 1024 * 1024
     || image.subarray(0, 8).toString('hex') !== '89504e470d0a1a0a'
     || image.toString('ascii', 12, 16) !== 'IHDR') throw new Error('PNG de Model Source inválido.')
-  if (image.readUInt32BE(16) !== width || image.readUInt32BE(20) !== height
-    || width < 1 || height < 1 || width * height > 32_000_000) throw new Error('Dimensões do Model Source divergentes.')
+  const pngWidth = image.readUInt32BE(16)
+  const pngHeight = image.readUInt32BE(20)
+  if ((width !== undefined && pngWidth !== width) || (height !== undefined && pngHeight !== height)
+    || pngWidth < 1 || pngHeight < 1 || pngWidth * pngHeight > 32_000_000) throw new Error('Dimensões do Model Source divergentes.')
   return image
 }
 
