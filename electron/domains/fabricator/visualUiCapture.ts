@@ -87,21 +87,72 @@ export async function captureFabricatorRealScreens(win: BrowserWindow, output: s
  * uma cena apenas no perfil sintético do runner. Requer GACHA_DEV_AI_TEST.
  * Não confundir screenshot integridade com aprovação visual humana.
  */
+/** E2E real sobre perfil descartável: cria personagem pela UI, salva customização
+ * pelo IPC público, adiciona elenco pela UI e reinicia o Electron em fase 2.
+ */
 export async function captureCustomizerStudioRealScreens(win: BrowserWindow, output: string): Promise<void> {
   await mkdir(output, { recursive: true })
-  const result: Array<{ section: string; file: string; dimensions: string; sha256: string }> = []
+  const results: Array<{ section: string; file: string; dimensions: string; sha256: string }> = []
   const capture = async (section: string, file: string) => {
-    await new Promise(resolve => setTimeout(resolve, 850))
+    await new Promise(resolve => setTimeout(resolve, 700))
     const png = (await win.webContents.capturePage()).toPNG()
     const info = await sharp(png).metadata()
-    if (!info.width || !info.height) throw new Error('Screenshot real sem dimensões: ' + section)
+    if (!info.width || !info.height) throw Error('Screenshot Electron sem dimensões: ' + section)
     await writeFile(join(output, file), png)
-    result.push({ section, file, dimensions: info.width + 'x' + info.height, sha256: createHash('sha256').update(png).digest('hex') })
+    results.push({ section, file, dimensions: info.width + 'x' + info.height, sha256: createHash('sha256').update(png).digest('hex') })
   }
+  const name = 'Nymi E2E sintético'
   await win.webContents.executeJavaScript("window.location.hash = '#/customizar'")
   await waitFor(win, '.roster-panel')
+  const createdByUi = await win.webContents.executeJavaScript(`(() => {
+    const button = document.querySelector('button[aria-label="Adicionar personagem"]')
+    if (!button) return false
+    button.click()
+    return true
+  })()`) as boolean
+  if (!createdByUi) throw Error('Botão de criação de personagem ausente no Customizador.')
+  await waitFor(win, '#character-name')
+  const submitted = await win.webContents.executeJavaScript(`(() => {
+    const field = document.querySelector('#character-name')
+    if (!(field instanceof HTMLInputElement)) return false
+    const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+    if (!set) return false
+    set.call(field, ${JSON.stringify(name)})
+    field.dispatchEvent(new Event('input', { bubbles: true }))
+    const form = field.closest('form')
+    if (!form) return false
+    form.requestSubmit()
+    return true
+  })()`) as boolean
+  if (!submitted) throw Error('Não foi possível salvar o personagem pela UI.')
+  const deadline = Date.now() + 20000
+  let character: { id: string; name: string; customization: Record<string, unknown>; updatedAt: string } | null = null
+  while (Date.now() < deadline) {
+    character = await win.webContents.executeJavaScript(`window.desktop.listCustomizerCharacters().then(list => list.find(item => item.name === ${JSON.stringify(name)}) ?? null)`) as typeof character
+    if (character) break
+    await new Promise(resolve => setTimeout(resolve, 200))
+  }
+  if (!character) throw Error('Personagem não persistiu após clique do formulário.')
+  const id = character.id
+  // Usa o MESMO contrato de personalização que a UI invoca, sem editar modelo-fonte.
+  const changed = await win.webContents.executeJavaScript(`(async () => {
+    const list = await window.desktop.listCustomizerCharacters()
+    const character = list.find(item => item.id === ${JSON.stringify(id)})
+    if (!character) return false
+    await window.desktop.saveCustomizerCharacter({
+      ...character,
+      customization: { ...character.customization, modelSlot: 1, poseSlot: 1 },
+      updatedAt: new Date().toISOString()
+    })
+    return true
+  })()`) as boolean
+  if (!changed) throw Error('Personalização não foi salva via API pública.')
+  await win.webContents.executeJavaScript("window.location.hash = '#/estudio'")
+  await waitFor(win, '.studio-page')
+  await win.webContents.executeJavaScript("window.location.hash = '#/customizar'")
+  await waitFor(win, '.roster-panel')
+  await waitFor(win, '.character-card')
   await capture('Customizador', 'customizador.png')
-
   await win.webContents.executeJavaScript("window.location.hash = '#/estudio'")
   await waitFor(win, '.studio-page')
   await waitFor(win, 'button.studio-action-primary:not([disabled])')
@@ -111,8 +162,7 @@ export async function captureCustomizerStudioRealScreens(win: BrowserWindow, out
     button.click()
     return true
   })()`) as boolean
-  if (!clicked) throw new Error('Não foi possível criar cena no Studio real.')
-  // Criar somente seleciona o card no Studio legado: abrir exige um segundo clique.
+  if (!clicked) throw Error('Não foi possível criar cena no Studio real.')
   await waitFor(win, 'button.studio-card-open')
   const opened = await win.webContents.executeJavaScript(`(() => {
     const button = document.querySelector('button.studio-card-open')
@@ -120,11 +170,79 @@ export async function captureCustomizerStudioRealScreens(win: BrowserWindow, out
     button.click()
     return true
   })()`) as boolean
-  if (!opened) throw new Error('Não foi possível abrir a cena recém-criada no Studio.')
+  if (!opened) throw Error('Não foi possível abrir cena no Studio real.')
   await waitFor(win, '.studio-scene-area')
-  await capture('Studio Principal — cena criada', 'studio.png')
+  await waitFor(win, '.studio-cast-add-button')
+  const castOpened = await win.webContents.executeJavaScript(`(() => {
+    const button = document.querySelector('.studio-cast-add-button')
+    if (!button) return false
+    button.click()
+    return true
+  })()`) as boolean
+  if (!castOpened) throw Error('Não foi possível abrir elenco na cena real.')
+  await waitFor(win, '.studio-cast-modal-option')
+  const castChosen = await win.webContents.executeJavaScript(`(() => {
+    const option = [...document.querySelectorAll('.studio-cast-modal-option')]
+      .find(item => item.textContent?.includes(${JSON.stringify(name)}))
+    if (!option) return false
+    option.click()
+    document.querySelector('.studio-cast-modal-save')?.click()
+    return true
+  })()`) as boolean
+  if (!castChosen) throw Error('Personagem sintético não apareceu no seletor de elenco.')
+  await waitFor(win, '.studio-cast-item', 30000)
+  const studios = await win.webContents.executeJavaScript('window.desktop.listStudios()') as Array<{ id: string; title: string; elements: Array<{ characterId?: string }> }>
+  const studio = studios.find(item => item.elements.some(element => element.characterId === id))
+  if (!studio) throw Error('Elenco não persistiu no Studio Principal.')
+  await capture('Studio Principal — elenco salvo', 'studio.png')
+  await writeFile(join(output, 'flow-state.json'), JSON.stringify({ schemaVersion: 1, syntheticOnly: true, characterId: id, studioId: studio.id, name }, null, 2))
   await writeFile(join(output, 'workspace-manifest.json'), JSON.stringify({
     schemaVersion: 1, mode: 'real-electron-workspaces', syntheticOnly: true,
-    capturedAt: new Date().toISOString(), results: result
+    capturedAt: new Date().toISOString(), results
   }, null, 2), 'utf8')
+}
+
+/** Chamado num processo Electron NOVO, apontando para o mesmo perfil sintético.
+ * Prova reidratação real por IPC e renderização da cena após reinicialização.
+ */
+export async function captureCustomizerStudioReopened(win: BrowserWindow, output: string): Promise<void> {
+  const flow = JSON.parse(await readFile(join(output, 'flow-state.json'), 'utf8')) as {
+    schemaVersion: number; syntheticOnly: boolean; characterId: string; studioId: string; name: string
+  }
+  if (flow.schemaVersion !== 1 || flow.syntheticOnly !== true) throw Error('Fixture de reinício inválida.')
+  await win.webContents.executeJavaScript("window.location.hash = '#/customizar'")
+  await waitFor(win, '.roster-panel')
+  const characters = await win.webContents.executeJavaScript('window.desktop.listCustomizerCharacters()') as Array<{ id: string; name: string; customization: { modelSlot: number; poseSlot: number } }>
+  const saved = characters.find(item => item.id === flow.characterId && item.name === flow.name)
+  if (!saved || saved.customization.modelSlot !== 1 || saved.customization.poseSlot !== 1) throw Error('Customizador perdeu a personalização após reiniciar.')
+  await win.webContents.executeJavaScript("window.location.hash = '#/estudio'")
+  await waitFor(win, '.studio-page')
+  const studios = await win.webContents.executeJavaScript('window.desktop.listStudios()') as Array<{ id: string; elements: Array<{ characterId?: string; assetId?: string }>; assets: Array<{ id: string; dataUrl: string }> }>
+  const scene = studios.find(item => item.id === flow.studioId)
+  if (!scene || !scene.elements.some(item => item.characterId === flow.characterId)) throw Error('Studio perdeu elenco após reiniciar.')
+  if (scene.elements.some(element => element.characterId === flow.characterId &&
+    !scene.assets.some(asset => asset.id === element.assetId && asset.dataUrl.startsWith('data:image/')))) {
+    throw Error('Studio reabriu com imagem de personagem ausente.')
+  }
+  const opened = await win.webContents.executeJavaScript(`(() => {
+    const button = document.querySelector('button.studio-card-open')
+    if (!button) return false
+    button.click()
+    return true
+  })()`) as boolean
+  if (!opened) throw Error('Cena não reabriu na interface.')
+  await waitFor(win, '.studio-cast-item', 30000)
+  const image = (await win.webContents.capturePage()).toPNG()
+  const info = await sharp(image).metadata()
+  if (!info.width || !info.height) throw Error('Screenshot de reabertura sem dimensões.')
+  const file = 'studio-reaberto.png'
+  await writeFile(join(output, file), image)
+  const manifest = JSON.parse(await readFile(join(output, 'workspace-manifest.json'), 'utf8')) as {
+    results: Array<{ section: string; file: string; dimensions: string; sha256: string }>
+  }
+  manifest.results.push({
+    section: 'Studio Principal — cena reaberta',
+    file, dimensions: info.width + 'x' + info.height, sha256: createHash('sha256').update(image).digest('hex')
+  })
+  await writeFile(join(output, 'workspace-manifest.json'), JSON.stringify(manifest, null, 2))
 }
