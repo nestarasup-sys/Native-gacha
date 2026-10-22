@@ -1,15 +1,15 @@
 /** Comandos do Customizador: alterações em cópias por personagem, nunca em modelos fonte.
  * Preserva a fila serializada por id, rollback via Electron e evento legado.
  */
-import type { Dispatch, RefObject, SetStateAction } from 'react'
+import type { Dispatch, MutableRefObject, SetStateAction } from 'react'
 import type { CustomizerCharacter, CustomizerWardrobeGroup } from '../../../../shared/customizer'
 
 type Customization = CustomizerCharacter['customization']
 export type CharacterPatch = Partial<Customization> | ((current: Customization) => Partial<Customization>)
 
 export function useCustomizerCharacterCommands(deps: {
-  charactersRef: RefObject<CustomizerCharacter[]>
-  characterSaveQueue: RefObject<Map<string, Promise<void>>>
+  charactersRef: MutableRefObject<CustomizerCharacter[]>
+  characterSaveQueue: MutableRefObject<Map<string, Promise<void>>>
   setCharacters: Dispatch<SetStateAction<CustomizerCharacter[]>>
   selectedCharacter: CustomizerCharacter | null
   setSelectedCharacterId: Dispatch<SetStateAction<string>>
