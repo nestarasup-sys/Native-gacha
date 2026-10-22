@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as
 import type { FabricatorHistoryState, FabricatorPose, FabricatorPoseSummary, FabricatorProject, FabricatorProjectSave, FabricatorSlotSummary, ModelPart, WardrobeCategory, WardrobeComponent, WardrobeSet, WardrobeSetSave, WardrobeSetSummary } from '../../../../../shared/fabricator'
 import { Icon } from '../../../ui/components/Icon'
 import { usePreviewBackground } from '../usePreviewBackground'
-import { orderedParts, partJointAnchor, sourcePointFromCanvas } from '../models/rig'
+import { normalizeLayerOrder, orderedParts, partJointAnchor, sourcePointFromCanvas } from '../models/rig'
 import { bindWardrobeComponent, mapWardrobeComponentToPose, poseDeltaToSource, wardrobePosePadding, rebaseWardrobeSetToOriginalSheet } from './poseTransform'
 import { suggestWardrobeBone } from './boneSelection'
 import { normalizeEditableImageFile } from '../normalizeImage'
@@ -129,6 +129,7 @@ export function WardrobeWorkspace() {
   const selected = draft?.components.find((component) => component.id === selectedId) ?? null
   const selectedIndex = draft?.components.findIndex((component) => component.id === selectedId) ?? -1
   const previewProject = testPose ?? model
+  const previewPoseOrder = testPose ? normalizeLayerOrder(testPose.parts, testPose.layerOrder) : []
   const previewPoseParts = testPose ? orderedParts(testPose.parts, testPose.layerOrder).filter((part) => !(testPose.hiddenPartIds ?? []).includes(part.id)) : []
   const poseMissingAttachments = testPose && draft ? draft.components.filter((component) =>
     !model?.parts.some((part) => part.id === component.attachedPartId) || !testPose.parts.some((part) => part.id === component.attachedPartId)) : []
@@ -525,7 +526,7 @@ export function WardrobeWorkspace() {
           const offset = moveBodyMode ? bodyOffsets[part.id] ?? zeroOffset : zeroOffset
           return <img key={part.id} className={`wardrobe-reference-body-part${moveBodyMode ? ' movable' : ''}`} src={source.imageDataUrl} alt={part.name} title={moveBodyMode ? `Arraste ${part.name} para conferir o vínculo` : undefined} draggable={false} onPointerDown={moveBodyMode ? (event) => beginBodyDrag(event, part.id) : undefined} onPointerMove={moveBodyMode ? moveBodyDrag : undefined} onPointerUp={moveBodyMode ? finishBodyDrag : undefined} onPointerCancel={moveBodyMode ? finishBodyDrag : undefined} style={{ left: (source.x + offset.x) * scale, top: (source.y + offset.y) * scale, width: source.width * scale, height: source.height * scale, transform: `rotate(${part.sourceTransform?.rotation ?? part.rotation}deg)`, zIndex: moveBodyMode ? 1000 + model.parts.indexOf(part) : 1 }} />
         })}
-        {testPose && previewPoseParts.map((part, index) => <img key={part.id} className="wardrobe-pose-body-part" src={part.dataUrl} alt={part.name} draggable={false} style={{ left: part.x * scale, top: part.y * scale, width: part.width * scale, height: part.height * scale, zIndex: 2 + index * previewLayerStride, transform: `rotate(${part.rotation}deg)` }} />)}
+        {testPose && previewPoseParts.map((part, index) => <img key={part.id} className="wardrobe-pose-body-part" src={part.dataUrl} alt={part.name} draggable={false} style={{ left: part.x * scale, top: part.y * scale, width: part.width * scale, height: part.height * scale, zIndex: 2 + previewPoseOrder.indexOf(part.id) * previewLayerStride, transform: `rotate(${part.rotation}deg)` }} />)}
         {draft?.components.map((component, index) => {
           const layer = getBodyLayer(model, component.attachedPartId)
           const layerBand = testPose ? previewLayerStride : draft.components.length + 1
@@ -541,7 +542,7 @@ export function WardrobeWorkspace() {
           const poseTransform = testPose && modelBone && poseBone
             ? mapWardrobeComponentToPose(testComponent, modelBone, poseBone, kneeOverlap, edgePadding)
             : null
-          const poseLayer = testPose?.layerOrder.indexOf(component.attachedPartId) ?? -1
+          const poseLayer = previewPoseOrder.indexOf(component.attachedPartId)
           const zIndex = testPose ? 3 + Math.max(0, poseLayer) * layerBand + index : 2 + layer * layerBand + index
           const imageClassName = `wardrobe-preview-part${component.id === selectedId ? ' selected' : ''}`
           const imageTitle = `${component.name} · ${categoryNames[component.category]} · camada do modelo ${layer + 1}`
