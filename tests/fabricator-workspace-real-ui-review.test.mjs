@@ -25,6 +25,12 @@ async function fixture(t){
     results.push({section,file,dimensions:'360x260',sha256:hash(bytes)})
   }
   await writeFile(join(folder,'flow-state.json'),JSON.stringify({schemaVersion:1,syntheticOnly:true,characterId:'c-id',studioId:'s-id'}))
+  await writeFile(join(folder,'wardrobe-pixels.json'),JSON.stringify({
+    source:'customizer-overlay',
+    colors:[{name:'coat',pixels:250,x:150,y:198},
+      {name:'sleeve-left',pixels:175,x:110,y:210},
+      {name:'sleeve-right',pixels:175,x:233,y:172}]
+  }))
   await writeFile(join(folder,'workspace-manifest.json'),JSON.stringify({
     schemaVersion:1,mode:'real-electron-workspaces',syntheticOnly:true,results
   }))
@@ -43,4 +49,18 @@ test('revisor recusa mudança de bytes e manifesto adulterado',async t=>{
   const m=JSON.parse(await readFile(path,'utf8'));m.syntheticOnly=false
   await writeFile(path,JSON.stringify(m))
   await assert.rejects(verifyWorkspaceCaptures(other),/incompleto/)
+})
+
+test('revisor recusa regressão dos offsets: duas mangas invertidas mesmo com PNGs válidos',async t=>{
+  const {folder}=await fixture(t)
+  const filepath=join(folder,'wardrobe-pixels.json')
+  const m=JSON.parse(await readFile(filepath,'utf8'))
+  m.colors[1].x=239
+  await writeFile(filepath,JSON.stringify(m))
+  await assert.rejects(verifyWorkspaceCaptures(folder),/Alinhamento visual X\/Y/)
+})
+test('revisor não aprova overlay ausente mesmo que a screenshot possua SHA256 válido',async t=>{
+  const {folder}=await fixture(t)
+  await rm(join(folder,'wardrobe-pixels.json'))
+  await assert.rejects(verifyWorkspaceCaptures(folder),{code:'ENOENT'})
 })
