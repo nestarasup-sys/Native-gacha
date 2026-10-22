@@ -1,6 +1,7 @@
 import { selectCharacterArtwork } from '../../../../shared/characterSourceContinuity'
 import { useCustomizerCharacterRoster } from './useCustomizerCharacterRoster'
 import { useCustomizerModelBrowserState } from './useCustomizerModelBrowserState'
+import { useCustomizerAssetLibraryState } from './useCustomizerAssetLibraryState'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { RenderedCharacterPortrait } from '../../ui/components/RenderedCharacterPortrait'
 import { Icon, type IconName } from '../../ui/components/Icon'
@@ -544,30 +545,20 @@ export function CustomizerPage() {
   const [upperWardrobePage, setUpperWardrobePage] = useState<1 | 2>(1)
   const [lowerWardrobePage, setLowerWardrobePage] = useState<1 | 2>(1)
   const [otherPanelTab, setOtherPanelTab] = useState<(typeof customizerOtherTabs)[number]['id']>('extra')
-  const [wardrobeSets, setWardrobeSets] = useState<WardrobeSetSummary[]>([])
-  const [wardrobeLoading, setWardrobeLoading] = useState(false)
-  const [wardrobeDetails, setWardrobeDetails] = useState<Record<string, WardrobeSet>>({})
-  const [wardrobeThumbnails, setWardrobeThumbnails] = useState<Record<string, string>>({})
-  const [wardrobeLibraryPanel, setWardrobeLibraryPanel] = useState<WardrobePanel | null>(null)
-  const [wardrobeLibraryPage, setWardrobeLibraryPage] = useState(0)
-  const [faceCatalogItems, setFaceCatalogItems] = useState<FaceCatalogItemSummary[]>([])
-  const [faceCatalogDetails, setFaceCatalogDetails] = useState<Record<string, FaceCatalogItem>>({})
-  const [standardExpressionEffects, setStandardExpressionEffects] = useState<StandardExpressionEffects>({})
-  const [faceComponentAssets, setFaceComponentAssets] = useState<FaceComponentAssetSummary[]>([])
-  const [faceComponentDetails, setFaceComponentDetails] = useState<Record<string, FaceComponentAsset>>({})
-  const [faceDetails, setFaceDetails] = useState<Record<string, FaceSet>>({})
-  const [faceLoading, setFaceLoading] = useState(false)
-  const [faceComponentLoading, setFaceComponentLoading] = useState(false)
-  const [hairStyles, setHairStyles] = useState<HairStyleSummary[]>([])
-  const [hairDetails, setHairDetails] = useState<Record<string, HairStyle>>({})
-  const [hairCatalogSide, setHairCatalogSide] = useState<HairCatalogSide>('front')
-  const [hairLoading, setHairLoading] = useState(false)
-  const [hairLibraryPart, setHairLibraryPart] = useState<HairPartId | null>(null)
-  const [hairLibraryPage, setHairLibraryPage] = useState(0)
-  const [faceLibraryPart, setFaceLibraryPart] = useState<FaceLibraryPartId | null>(null)
-  const [faceLibraryPage, setFaceLibraryPage] = useState(0)
-  const [faceCatalogLibraryPart, setFaceCatalogLibraryPart] = useState<'nose' | 'eye-highlight-left' | 'mouth' | 'eye-highlight-right' | 'blush' | 'facial-shadow' | null>(null)
-  const [faceCatalogLibraryPage, setFaceCatalogLibraryPage] = useState(0)
+  const {
+    wardrobeSets, setWardrobeSets, wardrobeLoading, setWardrobeLoading,
+    wardrobeDetails, setWardrobeDetails, wardrobeThumbnails, setWardrobeThumbnails,
+    wardrobeLibraryPanel, setWardrobeLibraryPanel, wardrobeLibraryPage, setWardrobeLibraryPage,
+    faceCatalogItems, setFaceCatalogItems, faceCatalogDetails, setFaceCatalogDetails,
+    standardExpressionEffects, setStandardExpressionEffects, faceComponentAssets, setFaceComponentAssets,
+    faceComponentDetails, setFaceComponentDetails, faceDetails, setFaceDetails,
+    faceLoading, setFaceLoading, faceComponentLoading, setFaceComponentLoading,
+    hairStyles, setHairStyles, hairDetails, setHairDetails,
+    hairCatalogSide, setHairCatalogSide, hairLoading, setHairLoading,
+    hairLibraryPart, setHairLibraryPart, hairLibraryPage, setHairLibraryPage,
+    faceLibraryPart, setFaceLibraryPart, faceLibraryPage, setFaceLibraryPage,
+    faceCatalogLibraryPart, setFaceCatalogLibraryPart, faceCatalogLibraryPage, setFaceCatalogLibraryPage
+  } = useCustomizerAssetLibraryState<WardrobePanel, FaceLibraryPartId>()
   const [headPanelTab, setHeadPanelTab] = useState<'hair' | 'eyes' | 'face' | 'extra' | 'adjust'>('hair')
   const [headCategorySelection, setHeadCategorySelection] = useState<'hair' | 'eyes' | 'face' | 'extra'>('hair')
   const [headAdjustSelection, setHeadAdjustSelection] = useState<string | null>(null)
