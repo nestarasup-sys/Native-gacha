@@ -23,12 +23,18 @@ test('revisor de capturas exige oito PNGs autênticos, dimensões e SHA256 corre
     const name = key + '.png'
     await fs.writeFile(join(root, name), bytes)
     await fs.writeFile(join(baseline, name), bytes)
-    results.push({ section: key, file: name, dimensions: '400x300', sha256: digest(bytes) })
+    results.push({ section: key, file: name, dimensions: '400x300', sha256: digest(bytes), ...(key === 'roupas' ? {contentVerified:'three-fitted-garments'} : {}) })
   }
   const manifest = { schemaVersion: 1, mode: 'real-electron-ui', results }
   await fs.writeFile(join(root, 'manifest.json'), JSON.stringify(manifest))
   assert.equal((await verifyRealUiCaptures(root)).verified.length, 8)
   assert.equal((await verifyRealUiCaptures(root, baseline)).mode, 'comparado-com-baseline')
+  const originalStatus = manifest.results.find(item => item.file === 'roupas.png')
+  originalStatus.contentVerified = undefined
+  await fs.writeFile(join(root, 'manifest.json'), JSON.stringify(manifest))
+  await assert.rejects(verifyRealUiCaptures(root), /três peças encaixadas/)
+  originalStatus.contentVerified = 'three-fitted-garments'
+  await fs.writeFile(join(root, 'manifest.json'), JSON.stringify(manifest))
   await fs.writeFile(join(root, 'olhos.png'), Buffer.from('não é PNG'))
   await assert.rejects(verifyRealUiCaptures(root), /SHA256|PNG|unsupported image format/)
   await fs.writeFile(join(root, 'olhos.png'), await fs.readFile(join(baseline, 'olhos.png')))
