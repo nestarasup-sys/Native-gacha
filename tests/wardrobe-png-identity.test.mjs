@@ -4,17 +4,19 @@ import * as fs from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { createHash } from 'node:crypto'
+import sharp from 'sharp'
 import { createFabricatorCatalogPersistence } from '../electron/domains/fabricator/catalogPersistence.ts'
 import { FabricatorCatalogAssetService } from '../electron/domains/fabricator/catalogAssetService.ts'
 
 const ids=['manga-esquerda','manga-direita','camisa','gola']
-const bytes=ids.map((id,index)=>Buffer.from(`PNG-ORIGINAL-${id}-${index}`))
+const pngColors=['#b62d2d','#2d8ab6','#e1bd42','#8755d9']
 const hash=value=>createHash('sha256').update(value).digest('hex')
 
 test('upload e ajuste posteriores nunca trocam os PNGs individuais por cópias de uma manga', async t=>{
   const root=await fs.mkdtemp(join(tmpdir(),'wardrobe-png-identity-'))
   t.after(()=>fs.rm(root,{recursive:true,force:true}))
   const imageFolder=join(root,'parts')
+  const bytes=await Promise.all(pngColors.map(color=>sharp({create:{width:8,height:8,channels:4,background:color}}).png().toBuffer()))
   const files=fs
   const catalog=createFabricatorCatalogPersistence(files,(path,data)=>fs.writeFile(path,data))
   const expected=new Set(ids)
