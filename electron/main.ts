@@ -54,6 +54,7 @@ import { createPosePersistence } from './domains/fabricator/posePersistence'
 import { createAnimatorPersistence } from './domains/fabricator/animatorPersistence'
 import { registerFabricatorPoseHandlers } from './domains/fabricator/poseIpc'
 import { registerFabricatorAnimatorHandlers } from './domains/fabricator/animatorIpc'
+import { VersionedAssetResolver, type AssetNamespace } from './domains/fabricator/versionedAssetResolver'
 import { fabricatorIpcChannels } from '../src/shared/fabricatorIpcChannels'
 import { captureFabricatorRealScreens } from './domains/fabricator/visualUiCapture'
 import { registerModelSourceDownloadHandlers } from './domains/fabricator/modelSourceExportIpc'
@@ -494,6 +495,7 @@ async function writeFaceExpressionPreset(modelSlot: number, preset: FaceExpressi
 }
 
 async function writeFaceSet(modelSlot: number, set: FaceSetSave, assets: FaceAssetSave[]): Promise<void> {
+  invalidateCatalogPng('face', `${modelSlot}:set:${set.id}`)
   if (!validFaceSet(modelSlot, set)) throw new Error('Rosto inválido.')
   const folder = faceSetPath(modelSlot, set.id)
   const partsFolder = join(folder, 'images')
@@ -514,9 +516,11 @@ async function readFaceSet(modelSlot: number, id: string): Promise<FaceSet | nul
     const folder = faceSetPath(modelSlot, id)
     const set = JSON.parse(await readFile(join(folder, 'face.json'), 'utf8')) as FaceSetSave
     if (!validFaceSet(modelSlot, set) || set.id !== id) return null
+    const version = set.updatedAt
+    const identity = `${modelSlot}:set:${id}`
     const sheets = { ...set.sheets } as FaceSet['sheets']
-    for (const kind of faceSheetKinds) if (sheets[kind]) sheets[kind] = { ...sheets[kind], dataUrl: `data:image/png;base64,${(await readAssetImage(join(folder, 'images', `sheet-${kind}.png`))).toString('base64')}` }
-    const pieces = await Promise.all(set.pieces.map(async (piece) => ({ ...piece, dataUrl: `data:image/png;base64,${(await readAssetImage(join(folder, 'images', `${piece.id}.png`))).toString('base64')}` })))
+    for (const kind of faceSheetKinds) if (sheets[kind]) sheets[kind] = { ...sheets[kind], dataUrl: `data:image/png;base64,${(await readCatalogPng('face', identity, version, join(folder, 'images', `sheet-${kind}.png`))).toString('base64')}` }
+    const pieces = await Promise.all(set.pieces.map(async (piece) => ({ ...piece, dataUrl: `data:image/png;base64,${(await readCatalogPng('face', identity, version, join(folder, 'images', `${piece.id}.png`))).toString('base64')}` })))
     return { ...set, sheets, pieces }
   } catch (reason) {
     if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return null
@@ -557,6 +561,7 @@ function validFaceCatalogItem(modelSlot: number, item: FaceCatalogItemSave): boo
 }
 
 async function writeFaceCatalogItem(modelSlot: number, item: FaceCatalogItemSave, assets: FaceAssetSave[]): Promise<void> {
+  invalidateCatalogPng('face', `${modelSlot}:catalog:${item.id}`)
   if (!validFaceCatalogItem(modelSlot, item)) throw new Error('Peça facial inválida.')
   const folder = faceCatalogItemPath(modelSlot, item.id)
   const images = join(folder, 'images')
@@ -588,8 +593,10 @@ async function readFaceCatalogItem(modelSlot: number, id: string): Promise<FaceC
     const folder = faceCatalogItemPath(modelSlot, id)
     const item = JSON.parse(await readFile(join(folder, 'item.json'), 'utf8')) as FaceCatalogItemSave
     if (!validFaceCatalogItem(modelSlot, item) || item.id !== id) return null
-    const sheet = { ...item.sheet, dataUrl: `data:image/png;base64,${(await readAssetImage(join(folder, 'images', `sheet-${item.category}.png`))).toString('base64')}` }
-    const pieces = await Promise.all(item.pieces.map(async (piece) => ({ ...piece, dataUrl: `data:image/png;base64,${(await readAssetImage(join(folder, 'images', `${piece.id}.png`))).toString('base64')}` })))
+    const identity = `${modelSlot}:catalog:${id}`
+    const version = item.updatedAt
+    const sheet = { ...item.sheet, dataUrl: `data:image/png;base64,${(await readCatalogPng('face', identity, version, join(folder, 'images', `sheet-${item.category}.png`))).toString('base64')}` }
+    const pieces = await Promise.all(item.pieces.map(async (piece) => ({ ...piece, dataUrl: `data:image/png;base64,${(await readCatalogPng('face', identity, version, join(folder, 'images', `${piece.id}.png`))).toString('base64')}` })))
     return { ...item, sheet, pieces }
   } catch (reason) {
     if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason
@@ -720,12 +727,13 @@ async function readFaceComponentAsset(modelSlot: number, id: string): Promise<Fa
     const folder = faceComponentItemPath(modelSlot, id)
     const asset = JSON.parse(await readFile(join(folder, 'asset.json'), 'utf8')) as FaceComponentAssetSave
     if (!validFaceComponentAsset(modelSlot, asset) || asset.id !== id) return null
-    const dataUrl = `data:image/png;base64,${(await readAssetImage(join(folder, 'asset.png'))).toString('base64')}`
+    const dataUrl = `data:image/png;base64,${(await readCatalogPng('face', `${modelSlot}:component:${id}`, asset.updatedAt, join(folder, 'asset.png'))).toString('base64')}`
     return { ...asset, dataUrl }
   } catch (reason) { if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return null; throw reason }
 }
 
 async function writeFaceComponentAsset(modelSlot: number, asset: FaceComponentAssetSave, dataUrl: string): Promise<void> {
+  invalidateCatalogPng('face', `${modelSlot}:component:${asset.id}`)
   if (!validFaceComponentAsset(modelSlot, asset) || typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/png;base64,')) throw new Error('Asset facial inválido; use uma imagem PNG.')
   const folder = faceComponentItemPath(modelSlot, asset.id)
   await mkdir(folder, { recursive: true })
@@ -757,6 +765,7 @@ function validHairWorkspace(modelSlot: number, workspace: HairWorkspaceSave): bo
 }
 
 async function writeHairWorkspace(modelSlot: number, workspace: HairWorkspaceSave, assets: HairWorkspaceAsset[]): Promise<void> {
+  invalidateCatalogPng('hair', `${modelSlot}:workspace`)
   if (!validHairWorkspace(modelSlot, workspace)) throw new Error('Configuração de cabelo inválida.')
   const folder = hairModelPath(modelSlot)
   const images = join(folder, 'images')
@@ -783,12 +792,14 @@ async function readHairWorkspace(modelSlot: number): Promise<HairWorkspace | nul
     const folder = hairModelPath(modelSlot)
     const saved = JSON.parse(await readFile(join(folder, 'hair.json'), 'utf8')) as HairWorkspaceSave
     if (!validHairWorkspace(modelSlot, saved)) return null
+    const identity = `${modelSlot}:workspace`
+    const version = saved.updatedAt
     const loadPart = async (side: 'front' | 'back' | 'fringe') => saved[side]
-      ? { ...saved[side]!, dataUrl: `data:image/png;base64,${(await readAssetImage(join(folder, 'images', `${side}.png`))).toString('base64')}` }
+      ? { ...saved[side]!, dataUrl: `data:image/png;base64,${(await readCatalogPng('hair', identity, version, join(folder, 'images', `${side}.png`))).toString('base64')}` }
       : null
     let sourceImageDataUrl: string | undefined
     if (saved.sourceImageSaved) {
-      try { sourceImageDataUrl = `data:image/png;base64,${(await readFile(join(folder, 'images', 'source.png'))).toString('base64')}` }
+      try { sourceImageDataUrl = `data:image/png;base64,${(await readCatalogPng('hair', identity, version, join(folder, 'images', 'source.png'))).toString('base64')}` }
       catch (reason) { if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason }
     }
     return { ...saved, front: await loadPart('front'), back: await loadPart('back'), fringe: await loadPart('fringe'), ...(sourceImageDataUrl ? { sourceImageDataUrl } : {}) }
@@ -819,6 +830,7 @@ function validHairStyle(modelSlot: number, style: HairStyleSave): boolean {
 }
 
 async function writeHairStyle(modelSlot: number, style: HairStyleSave, assets: HairStyleAsset[]): Promise<void> {
+  invalidateCatalogPng('hair', `${modelSlot}:style:${style.id}`)
   if (!validHairStyle(modelSlot, style)) throw new Error('Estilo de cabelo inválido.')
   const folder = hairStylePath(modelSlot, style.id)
   const images = join(folder, 'images')
@@ -844,8 +856,10 @@ async function readHairStyle(modelSlot: number, id: string): Promise<HairStyle |
     const folder = hairStylePath(modelSlot, id)
     const saved = JSON.parse(await readFile(join(folder, 'hair-style.json'), 'utf8')) as HairStyleSave
     if (!validHairStyle(modelSlot, saved) || saved.id !== id) return null
+    const identity = `${modelSlot}:style:${id}`
+    const version = saved.updatedAt
     const loadPart = async (side: 'front' | 'back' | 'fringe') => saved[side]
-      ? { ...saved[side]!, dataUrl: `data:image/png;base64,${(await readAssetImage(join(folder, 'images', `${side}.png`))).toString('base64')}` }
+      ? { ...saved[side]!, dataUrl: `data:image/png;base64,${(await readCatalogPng('hair', identity, version, join(folder, 'images', `${side}.png`))).toString('base64')}` }
       : null
     return { ...saved, front: await loadPart('front'), back: await loadPart('back'), fringe: await loadPart('fringe') }
   } catch (reason) {
@@ -866,6 +880,7 @@ async function recoverWardrobeManifest(folder: string): Promise<void> {
 }
 
 async function writeWardrobeSet(modelSlot: number, set: WardrobeSetSave, assets: WardrobeAssetSave[]): Promise<void> {
+  invalidateCatalogPng('wardrobe', `${modelSlot}:${set.id}`)
   if (!isValidModelSlot(modelSlot) || set.schemaVersion !== 1 || (set.edition !== undefined && set.edition !== 1 && set.edition !== 2) || set.modelSlot !== modelSlot || !isValidWardrobeId(set.id) || !Array.isArray(set.components) || set.components.length < 1 || set.components.length > 100) throw new Error('Conjunto de roupa inválido.')
   const folder = wardrobeSetPath(modelSlot, set.id)
   const partsFolder = join(folder, 'parts')
@@ -906,6 +921,15 @@ async function writeWardrobeSet(modelSlot: number, set: WardrobeSetSave, assets:
   for (const filename of await readdir(partsFolder)) if (filename.endsWith('.png') && !filename.endsWith('.paint.png') && !retained.has(filename)) await unlink(join(partsFolder, filename))
 }
 
+// Assets versionados são usados apenas nas bibliotecas oficiais; rascunhos não entram em cache.
+const catalogAssetCache = new VersionedAssetResolver(32 * 1024 * 1024)
+function readCatalogPng(namespace: AssetNamespace, identity: string, version: string, imagePath: string): Promise<Uint8Array> {
+  return catalogAssetCache.resolve(namespace, identity, version, () => readAssetImage(imagePath))
+}
+function invalidateCatalogPng(namespace: AssetNamespace, identity: string): void {
+  catalogAssetCache.invalidate(namespace, identity)
+}
+
 async function readWardrobeSet(modelSlot: number, id: string): Promise<WardrobeSet | null> {
   if (!isValidModelSlot(modelSlot) || !isValidWardrobeId(id)) throw new Error('Conjunto de roupa inválido.')
   try {
@@ -914,11 +938,13 @@ async function readWardrobeSet(modelSlot: number, id: string): Promise<WardrobeS
     await recoverWardrobeManifest(folder)
     const set = JSON.parse(await readFile(join(folder, 'wardrobe.json'), 'utf8')) as WardrobeSetSave
     if (set.schemaVersion !== 1 || (set.edition !== undefined && set.edition !== 1 && set.edition !== 2) || set.modelSlot !== modelSlot || set.id !== id || !Array.isArray(set.components) || set.components.length > 100) return null
+    const version = `${set.updatedAt}:${set.edition ?? 1}`
+    const identity = `${modelSlot}:${id}`
     const components = await Promise.all(set.components.map(async (component) => ({
       ...component,
       category: (component.category as string) === 'cinto-saia-1' ? 'cinto' as const : (component.category as string) === 'cinto-saia-2' ? 'saia' as const : component.category,
       renderAboveHair: (component.category === 'oculos' || component.category === 'acessorio-cabeca') && component.renderAboveHair === true,
-      dataUrl: `data:image/png;base64,${(await readAssetImage(join(folder, 'parts', `${component.id}.png`))).toString('base64')}`
+      dataUrl: `data:image/png;base64,${(await readCatalogPng('wardrobe', identity, version, join(folder, 'parts', `${component.id}.png`))).toString('base64')}`
     })))
     return { ...set, components }
   } catch (reason) {
