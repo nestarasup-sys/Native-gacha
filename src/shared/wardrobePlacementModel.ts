@@ -48,3 +48,22 @@ export function updateWardrobeComponentGroups(
   }
   return updated
 }
+
+/** All per-component palette mutations are isolated from Fabricador manifests. */
+export function recolorWardrobeComponents(
+  groups: readonly CustomizerWardrobeGroup[],
+  modelSlot: number, setId: string, category: CustomizerWardrobeCategory,
+  componentIds: readonly string[],
+  change: { kind: 'replace'; colors: NonNullable<CustomizerWardrobeGroup['colors']> }
+    | { kind: 'role'; role: keyof NonNullable<CustomizerWardrobeGroup['colors']>; value: string }
+    | { kind: 'clear' }
+): CustomizerWardrobeGroup[] {
+  const ids = new Set(componentIds)
+  return groups.map(group => {
+    if (group.modelSlot !== modelSlot || group.setId !== setId || group.category !== category
+        || !group.componentId || !ids.has(group.componentId)) return group
+    if (change.kind === 'clear') { const { colors: _colors, ...rest } = group; return rest }
+    return { ...group, colors: change.kind === 'replace' ? change.colors
+      : { ...group.colors, [change.role]: change.value } }
+  })
+}
