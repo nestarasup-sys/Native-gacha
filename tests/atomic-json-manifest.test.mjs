@@ -56,3 +56,18 @@ test('callback pós-commit roda após o manifesto existir e paths temporários s
   await assert.rejects(publishJsonManifest({files:fs,target,temporary:target,value:{schemaVersion:1}}),/fora da pasta/)
   assert.equal(JSON.parse(await fs.readFile(target,'utf8')).revision,'FINAL')
 })
+
+test('falha durante escrita parcial remove apenas temporário e preserva versão anterior', async t => {
+  const { target, temporary } = await fixture(t)
+  const partial = { ...fs, writeFile: async (file, data, encoding) => {
+    await fs.writeFile(file, String(data).slice(0, 11), encoding)
+    const error = new Error('write interrupted')
+    error.code = 'EIO'
+    throw error
+  } }
+  await assert.rejects(publishJsonManifest({
+    files: partial, target, temporary, value: {schemaVersion:1,revision:'NEW'}
+  }), /write interrupted/)
+  assert.equal(JSON.parse(await fs.readFile(target,'utf8')).revision,'OLD')
+  await assert.rejects(fs.access(temporary), {code:'ENOENT'})
+})
