@@ -49,7 +49,7 @@ async function waitForRendered(win: BrowserWindow, selector: string, timeoutMs =
 /** Regressão de pixels: peça com deslocamentos X/Y deve continuar no lado
  * correto do personagem. Nada é alterado na biblioteca pessoal do Fabricador.
  */
-async function inspectSyntheticWardrobePreview(win: BrowserWindow): Promise<{
+async function inspectSyntheticWardrobePreview(win: BrowserWindow, requirePoseOneOffsets = true): Promise<{
   source: 'customizer-overlay'; colors: Array<{ name: string; pixels: number; x: number; y: number }>
 }> {
   await waitForRendered(win, 'img.customizer-wardrobe-overlay', 30000)
@@ -74,7 +74,7 @@ async function inspectSyntheticWardrobePreview(win: BrowserWindow): Promise<{
     return { name: item.name, pixels: count, x: sumX/count, y: sumY/count }
   })
   const left = colors[1], right = colors[2]
-  if (left.x >= right.x - 30 || left.y <= right.y + 6) {
+  if (requirePoseOneOffsets && (left.x >= right.x - 30 || left.y <= right.y + 6)) {
     throw Error('Offsets X/Y do Fabricador não sobreviveram no Customizador: ' + JSON.stringify(colors))
   }
   return { source: 'customizer-overlay', colors }
@@ -281,6 +281,52 @@ export async function captureCustomizerStudioRealScreens(win: BrowserWindow, out
   }
   await writeFile(join(output, 'wardrobe-pixels.json'), JSON.stringify(garmentPixels, null, 2))
   await capture('Customizador', 'customizador.png')
+
+  // Exercise a SECOND saved pose in the actual Electron/Customizer renderer.
+  // The fixture lives in the isolated DEV AI sandbox; restore pose 1 before
+  // carrying on with Studio and the reopen check.
+  const changeSyntheticPose = async (slot: number) => {
+    const applied = await win.webContents.executeJavaScript(
+      "(async () => { const list = await window.desktop.listCustomizerCharacters();" +
+      " const character = list.find(item => item.id === " + JSON.stringify(id) + ");" +
+      " if (!character) return false;" +
+      " await window.desktop.saveCustomizerCharacter({...character, customization: {...character.customization, poseSlot: " + slot + "}, updatedAt: new Date().toISOString()}); return true; })()"
+    ) as boolean
+    if (!applied) throw Error('Falha ao selecionar pose sintética ' + slot)
+    await win.webContents.executeJavaScript("window.location.hash = '#/estudio'")
+    await waitFor(win, '.studio-page')
+    await win.webContents.executeJavaScript("window.location.hash = '#/customizar'")
+    await waitFor(win, '.roster-panel')
+    await waitFor(win, '.character-card')
+    const clicked = await win.webContents.executeJavaScript(`(() => {
+      const card = [...document.querySelectorAll('.character-card')]
+        .find(item => item.textContent?.includes(${JSON.stringify(name)}))
+      if (!card) return false
+      card.click()
+      return true
+    })()`) as boolean
+    if (!clicked) throw Error('Personagem sintético sumiu ao mudar de pose.')
+  }
+  await changeSyntheticPose(2)
+  let secondPosePixels: Awaited<ReturnType<typeof inspectSyntheticWardrobePreview>> | null = null
+  let distance = 0
+  const secondPoseDeadline = Date.now() + 20000
+  while (Date.now() < secondPoseDeadline) {
+    try {
+      const observed = await inspectSyntheticWardrobePreview(win, false)
+      const moved = observed.colors.reduce((sum, color, index) =>
+        sum + Math.abs(color.x - garmentPixels.colors[index].x) + Math.abs(color.y - garmentPixels.colors[index].y), 0)
+      if (moved > 10) { secondPosePixels = observed; distance = moved; break }
+    } catch { /* Retry while the second pose is loading. */ }
+    await new Promise(resolve => setTimeout(resolve, 250))
+  }
+  if (!secondPosePixels) throw Error('A roupa não acompanhou a segunda pose no Customizador Electron.')
+  await writeFile(join(output, 'wardrobe-pose2-pixels.json'), JSON.stringify({
+    ...secondPosePixels, poseSlot: 2, centroidMovement: distance
+  }, null, 2))
+  await capture('Customizador', 'customizador-pose2.png')
+  await changeSyntheticPose(1)
+  await inspectSyntheticWardrobePreview(win)
   await win.webContents.executeJavaScript("window.location.hash = '#/estudio'")
   await waitFor(win, '.studio-page')
   await waitFor(win, 'button.studio-action-primary:not([disabled])')
