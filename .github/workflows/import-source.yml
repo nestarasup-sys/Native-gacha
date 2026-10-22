@@ -1,0 +1,49 @@
+name: Importar codigo-fonte do ZIP verificado
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/import-source.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: import-source-main
+  cancel-in-progress: false
+
+jobs:
+  extract-and-commit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout existing repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Verify package and import source
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -f package.json ]]; then
+            echo "Source is already unpacked; nothing to do."
+            exit 0
+          fi
+          zip_name='Native-gacha-GitHub-pronto-2026-10-22.zip'
+          test -f "$zip_name"
+          printf '%s  %s\n' 'd52d389762a1af3af0921e4853ddf087819ab36d3e2b71bb6e4609a34574ac2e' "$zip_name" | sha256sum -c -
+          if unzip -Z1 "$zip_name" | grep -Eq '(^/|(^|/)\.\.(/|$))'; then
+            echo "Unsafe paths in archive" >&2
+            exit 1
+          fi
+          mkdir -p /tmp/native-gacha-unpacked
+          unzip -q "$zip_name" -d /tmp/native-gacha-unpacked
+          rsync -a --exclude='.git/' --exclude='node_modules/' --exclude='.env' --exclude='app-data/' /tmp/native-gacha-unpacked/ ./
+          test -f package.json && test -d electron && test -d src && test -d tests
+          git rm -- "$zip_name"
+          git add -A
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m "feat: importar codigo-fonte G-V5 e configuracao Native Gacha"
+          git push origin HEAD:main
