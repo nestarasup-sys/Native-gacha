@@ -108,6 +108,8 @@ export async function publishModelSource(
     await files.writeFile(join(staging, 'history', 'history.json'), JSON.stringify({ version: 1, undo: [], redo: [] }), 'utf8')
     await files.rm(join(staging, 'history', 'assets'), { recursive: true, force: true })
     await saveProject({ ...project, sourceAssetName: filename }, changedAssets, staging)
+    // Nunca iniciar a troca de diretórios com recortes/manifesto incompletos.
+    await verifyModelSourceCommit(staging, filename, files)
     // Marcador persistente informa qual backup recuperar se cair entre renomeações.
     await files.writeFile(pending, JSON.stringify(createModelSourceJournal(project.slot, suffix, old.sourceFile ?? '', filename)), 'utf8')
     // Duas renomeações no mesmo volume. Se a segunda falhar, restauramos a origem.
