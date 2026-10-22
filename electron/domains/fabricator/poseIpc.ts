@@ -1,3 +1,4 @@
+import { fabricatorIpcChannels } from '../../../src/shared/fabricatorIpcChannels'
 /** Canais legados de Poses DEV: transporte isolado, autorização obrigatória. */
 import type { IpcMain, IpcMainInvokeEvent } from 'electron'
 import { basename, dirname, join, resolve } from 'node:path'
@@ -28,7 +29,7 @@ export function registerFabricatorPoseHandlers(deps: PoseIpcDependencies): void 
     slotCount, poseSlotCount, poseSlotPath, poseModelPath, poseDraftPath,
     queuePoseWrite, readPoseProject, writePoseProject, readPoseDraft, writePoseDraft } = deps
   const { readFile, writeFile, mkdir, rename, rm } = deps.files
-  ipcMain.handle('fabricator:poses:list', async (event, requestedModelSlot?: number): Promise<FabricatorPoseSummary[]> => {
+  ipcMain.handle(fabricatorIpcChannels.listFabricatorPoseSlots, async (event, requestedModelSlot?: number): Promise<FabricatorPoseSummary[]> => {
     assertTrustedSender(event)
     await ensureLegacyPoseMigration()
     if (requestedModelSlot !== undefined && !isValidModelSlot(requestedModelSlot)) throw new Error('Modelo inválido.')
@@ -46,7 +47,7 @@ export function registerFabricatorPoseHandlers(deps: PoseIpcDependencies): void 
     return requestedModelSlot === undefined ? allSlots : Array.from({ length: poseSlotCount }, (_, index) => allSlots.find((item) => item?.slot === index + 1) ?? null)
   })
 
-  ipcMain.handle('fabricator:poses:export-slots:get', async (event, modelSlot: number): Promise<Array<number | null> | null> => {
+  ipcMain.handle(fabricatorIpcChannels.getFabricatorExportPoseSlots, async (event, modelSlot: number): Promise<Array<number | null> | null> => {
     assertTrustedSender(event)
     if (!isValidModelSlot(modelSlot)) throw new Error('Modelo inválido.')
     try {
@@ -59,7 +60,7 @@ export function registerFabricatorPoseHandlers(deps: PoseIpcDependencies): void 
     }
   })
 
-  ipcMain.handle('fabricator:poses:export-slots:save', async (event, modelSlot: number, slots: unknown): Promise<void> => {
+  ipcMain.handle(fabricatorIpcChannels.saveFabricatorExportPoseSlots, async (event, modelSlot: number, slots: unknown): Promise<void> => {
     assertTrustedSender(event)
     if (!isValidModelSlot(modelSlot) || !Array.isArray(slots) || slots.length !== 5 || slots.some((slot) => slot !== null && (typeof slot !== 'number' || !isValidPoseSlot(slot)))) throw new Error('Os cinco slots de poses para exportação são inválidos.')
     const unique = slots.filter((slot): slot is number => slot !== null)
@@ -76,19 +77,19 @@ export function registerFabricatorPoseHandlers(deps: PoseIpcDependencies): void 
     })
   })
 
-  ipcMain.handle('fabricator:poses:load', async (event, modelSlot: number, slot: number): Promise<FabricatorPose | null> => {
+  ipcMain.handle(fabricatorIpcChannels.loadFabricatorPose, async (event, modelSlot: number, slot: number): Promise<FabricatorPose | null> => {
     assertTrustedSender(event)
     let loaded: FabricatorPose | null = null
     await queuePoseWrite(async () => { loaded = await readPoseProject(modelSlot, slot) })
     return loaded
   })
 
-  ipcMain.handle('fabricator:poses:save', async (event, modelSlot: number, slot: number, project: FabricatorPoseSave, assets: FabricatorAssetSave[]): Promise<void> => {
+  ipcMain.handle(fabricatorIpcChannels.saveFabricatorPose, async (event, modelSlot: number, slot: number, project: FabricatorPoseSave, assets: FabricatorAssetSave[]): Promise<void> => {
     assertTrustedSender(event)
     await queuePoseWrite(() => writePoseProject(modelSlot, slot, project, assets))
   })
 
-  ipcMain.handle('fabricator:poses:delete', async (event, modelSlot: number, slot: number): Promise<void> => {
+  ipcMain.handle(fabricatorIpcChannels.deleteFabricatorPose, async (event, modelSlot: number, slot: number): Promise<void> => {
     assertTrustedSender(event)
     if (!isValidModelSlot(modelSlot) || !isValidPoseSlot(slot)) throw new Error('Slot de pose inválido.')
     await queuePoseWrite(async () => {
@@ -99,7 +100,7 @@ export function registerFabricatorPoseHandlers(deps: PoseIpcDependencies): void 
     })
   })
 
-  ipcMain.handle('fabricator:poses:draft:load', async (event, modelSlot: number): Promise<FabricatorPoseDraft | null> => {
+  ipcMain.handle(fabricatorIpcChannels.loadFabricatorPoseDraft, async (event, modelSlot: number): Promise<FabricatorPoseDraft | null> => {
     assertTrustedSender(event)
     await ensureLegacyPoseMigration()
     let loaded: FabricatorPoseDraft | null = null
@@ -107,12 +108,12 @@ export function registerFabricatorPoseHandlers(deps: PoseIpcDependencies): void 
     return loaded
   })
 
-  ipcMain.handle('fabricator:poses:draft:save', async (event, modelSlot: number, draft: FabricatorPoseDraftSave, assets: FabricatorAssetSave[]): Promise<void> => {
+  ipcMain.handle(fabricatorIpcChannels.saveFabricatorPoseDraft, async (event, modelSlot: number, draft: FabricatorPoseDraftSave, assets: FabricatorAssetSave[]): Promise<void> => {
     assertTrustedSender(event)
     await queuePoseWrite(() => writePoseDraft(modelSlot, draft, assets))
   })
 
-  ipcMain.handle('fabricator:poses:draft:delete', async (event, modelSlot: number): Promise<void> => {
+  ipcMain.handle(fabricatorIpcChannels.deleteFabricatorPoseDraft, async (event, modelSlot: number): Promise<void> => {
     assertTrustedSender(event)
     if (!isValidModelSlot(modelSlot)) throw new Error('Modelo de rascunho inválido.')
     await queuePoseWrite(async () => {
