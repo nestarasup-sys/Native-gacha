@@ -119,12 +119,11 @@ export async function captureCustomizerStudioRealScreens(win: BrowserWindow, out
     if (!set) return false
     set.call(field, ${JSON.stringify(name)})
     field.dispatchEvent(new Event('input', { bubbles: true }))
-    const form = field.closest('form')
-    if (!form) return false
-    form.requestSubmit()
     return true
   })()`) as boolean
-  if (!submitted) throw Error('Não foi possível salvar o personagem pela UI.')
+  if (!submitted) throw Error('Não foi possível inserir nome do personagem pela UI.')
+  await waitFor(win, '.character-dialog .primary-button:not([disabled])')
+  await win.webContents.executeJavaScript("document.querySelector('.character-dialog')?.requestSubmit()")
   const deadline = Date.now() + 20000
   let character: { id: string; name: string; customization: Record<string, unknown>; updatedAt: string } | null = null
   while (Date.now() < deadline) {
