@@ -1,3 +1,4 @@
+import { selectCharacterArtwork } from '../../../shared/characterSourceContinuity'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { RenderedCharacterPortrait } from '../../ui/components/RenderedCharacterPortrait'
 import { Icon, type IconName } from '../../ui/components/Icon'
@@ -766,7 +767,8 @@ export function CustomizerPage() {
       try {
         const sourceProject = await window.desktop.loadFabricatorSlot(model.slot)
         if (!sourceProject) throw new Error('O modelo de referência não está disponível no Fabricador Dev.')
-        const artwork = pose ? await window.desktop.loadFabricatorPose(model.slot, pose.slot) : sourceProject
+        const poseArtwork = pose ? await window.desktop.loadFabricatorPose(model.slot, pose.slot) : null
+        const artwork = selectCharacterArtwork(sourceProject, poseArtwork, pose?.slot ?? null)
         if (!artwork) throw new Error('Não foi possível carregar a prévia deste personagem.')
         if (!cancelled && previewLoadRequest.current === requestId) { setSelectedArtworkProject(artwork); setSelectedSourceModelProject(sourceProject) }
         const artworkUrl = await renderArtwork(applyCharacterBodyShape(withCharacterHeadSize(artwork, activeProportions), activeBodyDimensions), characterRenderSize(artwork.width, artwork.height, previewExtent.width, previewExtent.height, customizerPreviewZoom, previewExtent.density), selectedCharacter.customization.modelSkinTone)
@@ -1081,7 +1083,7 @@ export function CustomizerPage() {
         const source = await window.desktop.loadFabricatorSlot(modelSlot)
         const poseSlot = selectedCharacter.customization.poseSlot
         const pose = poseSlot === null ? null : await window.desktop.loadFabricatorPose(modelSlot, poseSlot)
-        const artwork = poseSlot === null ? source : pose
+        const artwork = selectCharacterArtwork(source, pose, poseSlot)
         if (source && artwork) {
           const shaped = applyCharacterBodyShape(withCharacterHeadSize(artwork, getCharacterProportions(selectedCharacter.customization)), getCharacterBodyDimensions(selectedCharacter.customization))
           const details = Object.fromEntries(restored.filter((entry): entry is typeof entry & { set: WardrobeSet } => !!entry.set).map(({ key, set }) => [key, set]))
