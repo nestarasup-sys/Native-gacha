@@ -3,12 +3,9 @@
  */
 import { useEffect, useRef, useState } from 'react'
 import type { CustomizerCharacter } from '../../../../shared/customizer'
+import { selectRememberedCustomizerCharacter } from '../../../../shared/customizerSelection'
 
 const SELECTED_CHARACTER_KEY = 'nymi.customizer.activeCharacter'
-
-export function selectRememberedCustomizerCharacter(characters: readonly Pick<CustomizerCharacter, 'id'>[], remembered: string): string {
-  return characters.some(character => character.id === remembered) ? remembered : characters[0]?.id ?? ''
-}
 
 export function useCustomizerCharacterRoster() {
   const [characters, setCharacters] = useState<CustomizerCharacter[]>([])
