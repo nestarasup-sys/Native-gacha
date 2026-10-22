@@ -73,7 +73,7 @@ let sqlite
 try { require('better-sqlite3'); sqlite = {DataPlatform:require('../electron/dataPlatform.cjs').DataPlatform,DomainFileSystem:require('../electron/domainFileSystem.cjs').DomainFileSystem} }
 catch { /* CI sem builds nativos: integração SQLite precisa npm install completo no Windows. */ }
 test('SQLite ativo: publicar no DomainFileSystem com a mesma semântica de backup', { skip:!sqlite }, async t=>{
- const root=await mkdtemp(join(tmpdir(),'native-source-sqlite-'))
+ const root=await fs.realpath(await mkdtemp(join(tmpdir(),'native-source-sqlite-')))
  t.after(()=>fs.rm(root,{recursive:true,force:true}))
  const dataRoot=join(root,'app-data')
  const profile=join(root,'profile')
