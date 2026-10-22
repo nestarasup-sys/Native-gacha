@@ -17,6 +17,7 @@ import { type StudioFaceTransforms } from '../../../../shared/studio'
 import { usePreviewBackground } from '../../ui/hooks/usePreviewBackground'
 import { DesignBanner } from '../../ui/components/DesignBanner'
 import { anchorWardrobeAdjustments, editWardrobeAdjustment, moveWardrobeAdjustment } from '../../../../shared/wardrobeAdjustment'
+import { toggleWardrobeVisibility, updateWardrobeComponentGroups, matchesWardrobeComponent } from '../../../../shared/wardrobePlacementModel'
 import { applyCharacterBodyShape } from '../../../../shared/bodyShape'
 import { characterRenderSize, configureCharacterSampling, MAX_CHARACTER_PREVIEW_PIXELS } from './renderResolution'
 import { renderArtwork, loadStandardExpressionEffects, loadSkinTintedImage, loadCachedImage, withCharacterHeadSize, loadHairAppearanceLayers, renderArtworkWithHair, renderWardrobeOverlay, isRightFaceAsset, renderFaceOverlay, renderFrontHairOverlay, characterShapeScale, drawFaceCatalogOverlay, loadHairTintedImage, resolvedHairColors, clothingCategories, wardrobeComponentsForGroup, customizerHairParts, hairAppearanceStyleId } from '../../characters/characterRenderer'
@@ -2201,8 +2202,7 @@ export function CustomizerPage() {
         if (operation === 'transform') return editWardrobeAdjustment(group,
           displayArtworkProject?.parts.find((bone) => bone.id === group.adjustmentReference?.boneId),
           { offsetX: values?.x, offsetY: values?.y, scaleX: values?.scaleX, scaleY: values?.scaleY, rotation: values?.rotation }, displayed)
-        if (group.hidden) { const { opacity: _opacity, ...rest } = group; return { ...rest, hidden: false } }
-        return { ...group, hidden: true }
+        return toggleWardrobeVisibility(group)
       })
       await saveCharacterCustomization({ wardrobeGroups })
       return
@@ -2228,33 +2228,9 @@ export function CustomizerPage() {
     const groups = anchorCurrentWardrobe(originalGroups)
     const selectedSet = wardrobeDetails[`${selectedClothing.modelSlot}:${selectedClothing.setId}`]
     const sourceCategories: WardrobeCategory[] = clothingCategories.Inferior.concat(clothingCategories.Superior).find((item) => item.id === selectedClothing.category)?.source ?? []
-    const isSamePiece = (group: CustomizerWardrobeGroup) => group.modelSlot === selectedClothing.modelSlot && group.setId === selectedClothing.setId && group.category === selectedClothing.category && (group.componentId === selectedClothing.componentId || !group.componentId)
-    const displayed = originalGroups.find(isSamePiece)
-    const transformGroup = (group: CustomizerWardrobeGroup) => editWardrobeAdjustment(group,
-      displayArtworkProject?.parts.find((bone) => bone.id === group.adjustmentReference?.boneId), values ?? {}, displayed ?? group)
-    const nextGroups: CustomizerWardrobeGroup[] = []
-    const toggleHidden = (group: CustomizerWardrobeGroup): CustomizerWardrobeGroup => {
-      if (group.hidden) { const { opacity: _opacity, ...rest } = group; return { ...rest, hidden: false } }
-      return { ...group, hidden: true }
-    }
-    for (const group of groups) {
-      if (!isSamePiece(group)) { nextGroups.push(group); continue }
-      if (group.componentId) {
-        if (operation === 'transform') nextGroups.push(transformGroup(group))
-        else nextGroups.push(toggleHidden(group))
-        continue
-      }
-      if (!selectedSet) { nextGroups.push(group); continue }
-      const matchingComponents = selectedSet.components.filter((component) => sourceCategories.includes(component.category))
-      if (!matchingComponents.length) { nextGroups.push(group); continue }
-      for (const component of matchingComponents) {
-        const componentGroup = { ...group, componentId: component.id }
-        if (operation === 'transform' && component.id === selectedClothing.componentId) nextGroups.push(transformGroup(componentGroup))
-        else if (operation === 'toggle-hidden' && component.id === selectedClothing.componentId) nextGroups.push(toggleHidden(componentGroup))
-        else nextGroups.push(componentGroup)
-      }
-    }
-    const adjusted = nextGroups.find(isSamePiece)
+    const selection = { modelSlot: selectedClothing.modelSlot, setId: selectedClothing.setId, category: selectedClothing.category, componentId: selectedClothing.componentId }
+    const nextGroups = updateWardrobeComponentGroups(groups, originalGroups, selection, operation, values, sourceCategories, selectedSet?.components, displayArtworkProject?.parts ?? [])
+    const adjusted = nextGroups.find((group) => matchesWardrobeComponent(group, selection))
     if (values && adjusted) setWardrobeTransformDraft({ offsetX: adjusted.offsetX, offsetY: adjusted.offsetY, scaleX: adjusted.scaleX, scaleY: adjusted.scaleY, rotation: adjusted.rotation })
     await saveCharacterCustomization({ wardrobeGroups: nextGroups })
   }
