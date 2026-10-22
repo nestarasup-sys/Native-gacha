@@ -1,6 +1,6 @@
 /** Encaixe explícito na folha ORIGINAL desmontada, sem mover PNGs ou poses. */
 import type { ModelPart, WardrobeComponent, WardrobeBinding } from './fabricator'
-import { bindWardrobeComponent } from './wardrobePose'
+import { bindWardrobeComponent } from './wardrobePose.ts'
 
 export type WardrobeGlueFrame = { x: number; y: number; width: number; height: number; rotation: number }
 export type WardrobeGlueState = 'loose' | 'fixed' | 'stale' | 'orphan'
