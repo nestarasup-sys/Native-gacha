@@ -19,7 +19,6 @@ export function createFabricatorExpressionStorage(deps: {
   const { readFile, writeFile, rename, readdir, mkdir } = deps.files
   const { isValidModelSlot, isValidWardrobeId, validFaceExpressionPreset, validFaceExpressionWorkspaceDraft,
     faceExpressionWorkspaceDraftPath, faceExpressionCollectionsPath, faceExpressionPresetPath } = deps
-  const app = { getPath: () => deps.userDataRoot }
 async function readFaceExpressionWorkspaceDraft(modelSlot: number): Promise<FaceExpressionWorkspaceDraft | null> {
   if (!isValidModelSlot(modelSlot)) throw new Error('Modelo inválido.')
   try {
@@ -42,7 +41,7 @@ async function writeFaceExpressionWorkspaceDraft(modelSlot: number, draft: FaceE
 
 async function listFaceExpressionPresets(modelSlot: number): Promise<FaceExpressionPresetSummary[]> {
   if (!isValidModelSlot(modelSlot)) throw new Error('Modelo inválido.')
-  const folder = join(app.getPath('userData'), 'fabricator', 'expression-presets', `model-${modelSlot}`)
+  const folder = join(deps.userDataRoot, 'fabricator', 'expression-presets', `model-${modelSlot}`)
   try {
     const entries = await readdir(folder, { withFileTypes: true })
     const presets: FaceExpressionPresetSummary[] = []
