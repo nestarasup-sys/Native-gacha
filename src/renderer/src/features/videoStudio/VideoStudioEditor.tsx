@@ -2,6 +2,7 @@ import { snapshotVideoStudioScene as snapshot, withStudioSnapshot as withSnapsho
 import { SerializedDocumentSaveQueue } from '../../../../shared/serializedDocumentSave'
 import { findTimelineBlockStart, resizeTimelineBlock, timelineBlockOverlaps, type TimelineBlockTarget } from '../../../../shared/videoTimelineEditing'
 import { captureVideoPoster } from './videoPoster'
+import { useStudioInspectorState } from '../../characters/useStudioInspectorState'
 import './VideoStudioEditor.css'
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { buildStudioExpressionAppearance, buildStudioExpressionTransforms, resolveStudioExpressionBase, studioExpressionCollection } from '../../characters/studioExpressionTransforms'
@@ -138,25 +139,7 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
   const [savingCast, setSavingCast] = useState(false)
   const [videoLibraryOpen, setVideoLibraryOpen] = useState(false)
   const [backgroundLibraryOpen, setBackgroundLibraryOpen] = useState(false)
-  const [inspectorTab, setInspectorTab] = useState<'editor' | 'custom'>('editor')
-  const [inspectorCustomView, setInspectorCustomView] = useState<'face' | 'presets'>('face')
-  const characterInspectorViewRef = useRef<{ tab: 'editor' | 'custom'; customView: 'face' | 'presets' }>({ tab: 'editor', customView: 'face' })
-  const [studioPresetCategory, setStudioPresetCategory] = useState<'pose' | 'expression'>('expression')
-  const [studioExpressionCollections, setStudioExpressionCollections] = useState<FaceExpressionCollection[]>([])
-  const [studioExpressionPresets, setStudioExpressionPresets] = useState<FaceExpressionPresetSummary[]>([])
-  const [sceneExpressionPresetVersions, setSceneExpressionPresetVersions] = useState<Record<string, string>>({})
-  const [studioExpressionCollectionMenuOpen, setStudioExpressionCollectionMenuOpen] = useState(false)
-  const [studioExpressionLoading, setStudioExpressionLoading] = useState(false)
-  const [studioExpressionBusy, setStudioExpressionBusy] = useState(false)
-  const [studioPoseSlots, setStudioPoseSlots] = useState<Array<NonNullable<FabricatorPoseSummary>>>([])
-  const [studioPoseThumbnails, setStudioPoseThumbnails] = useState<Record<number, string>>({})
-  const [studioPoseDimensions, setStudioPoseDimensions] = useState<Record<number, { width: number; height: number }>>({})
-  const [inspectorOpen, setInspectorOpen] = useState(true)
-  const [studioFaceCategory, setStudioFaceCategory] = useState<'eyes' | 'eyebrows' | 'nose' | 'mouth'>('eyes')
-  const [studioFaceItems, setStudioFaceItems] = useState<FaceCatalogItemSummary[]>([])
-  const [studioFaceDetails, setStudioFaceDetails] = useState<Record<string, FaceCatalogItem>>({})
-  const [studioFaceLoading, setStudioFaceLoading] = useState(false)
-  const [studioFaceBusy, setStudioFaceBusy] = useState(false)
+  const { inspectorTab, setInspectorTab, inspectorCustomView, setInspectorCustomView, studioPresetCategory, setStudioPresetCategory, studioExpressionCollections, setStudioExpressionCollections, studioExpressionPresets, setStudioExpressionPresets, sceneExpressionPresetVersions, setSceneExpressionPresetVersions, studioExpressionCollectionMenuOpen, setStudioExpressionCollectionMenuOpen, studioExpressionLoading, setStudioExpressionLoading, studioExpressionBusy, setStudioExpressionBusy, studioPoseSlots, setStudioPoseSlots, studioPoseThumbnails, setStudioPoseThumbnails, studioPoseDimensions, setStudioPoseDimensions, inspectorOpen, setInspectorOpen, studioFaceCategory, setStudioFaceCategory, studioFaceItems, setStudioFaceItems, studioFaceDetails, setStudioFaceDetails, studioFaceLoading, setStudioFaceLoading, studioFaceBusy, setStudioFaceBusy, characterInspectorViewRef } = useStudioInspectorState()
   const [studioFolder, setStudioFolder] = useState('')
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [activeStudioId, setActiveStudioId] = useState<string | null>(null)
