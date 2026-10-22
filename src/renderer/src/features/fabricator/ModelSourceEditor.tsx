@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react'
 import type { FabricatorProject, ModelPart } from '../../../../shared/fabricator'
+import { selectOriginalModelSource } from '../../../../shared/fabricatorModelViews'
 import { isHeadPart } from './models/resize'
 import { composeModelSource, sourceRect, validateModelSourceChroma, validateModelSourceDimensions, MAX_CHROMA_TOLERANCE, type ModelSourceDimensions, type ModelSourceResult } from './models/modelSource'
 
@@ -18,6 +19,7 @@ const checker: CSSProperties = {
 }
 
 export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
+  const original = selectOriginalModelSource(project)
   const [selectedId, setSelectedId] = useState(project.parts[0]?.id ?? '')
   const [dimensions, setDimensions] = useState<ModelSourceDimensions>({})
   const [chromaTolerance, setChromaTolerance] = useState(project.tolerance)
@@ -34,7 +36,7 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
   const baseline = selected ? sourceRect(selected) : null
   const effectiveSize = useMemo(() => project.parts.map(part => ({ id: part.id, ...sourceRect(part, dimensions[part.id]) })), [project, dimensions])
   const selection = effectiveSize.find(part => part.id === selectedId)
-  const previewScale = Math.min(1, 620 / project.width, 430 / project.height)
+  const previewScale = Math.min(1, 620 / original.width, 430 / original.height)
 
   useEffect(() => {
     let active = true
