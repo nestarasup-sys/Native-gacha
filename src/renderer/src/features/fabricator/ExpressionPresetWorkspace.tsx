@@ -1,3 +1,4 @@
+import { useModelSourceRefresh } from './models/useModelSourceRefresh'
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import type { FaceCatalogItem, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSummary, FaceExpressionCollection, FaceExpressionPreset, FaceExpressionPresetSummary, FaceExpressionEffects, FaceExpressionTransforms, FaceExpressionWorkspaceDraft, FaceExpressionWorkspaceEntry, FaceTransform, FabricatorProject } from '../../../../shared/fabricator'
 import { Icon, type IconName } from '../../ui/components/Icon'
@@ -172,6 +173,7 @@ function buildCatalogOptions(summaries: FaceCatalogItemSummary[], items: Record<
 
 export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) {
   const [project, setProject] = useState<FabricatorProject | null>(null)
+  useModelSourceRefresh(modelSlot, setProject)
   const [componentSummaries, setComponentSummaries] = useState<FaceComponentAssetSummary[]>([])
   const [componentAssets, setComponentAssets] = useState<Record<string, FaceComponentAsset>>({})
   const [catalogSummaries, setCatalogSummaries] = useState<FaceCatalogItemSummary[]>([])
