@@ -136,10 +136,12 @@ async function exerciseGlueWorkflow(win: BrowserWindow): Promise<void> {
   await click('Fixar')
   await waitStatus('Fixada')
   await click('Salvar', '.wardrobe-toolbar-actions')
-  let saved: {components:Array<{id:string;dataUrl:string;glue?:{mode:string}}> } | null = null
+  type SavedWardrobe = { components: Array<{ id: string; dataUrl: string; glue?: { mode: string } }> }
+  let saved: SavedWardrobe | null = null
   for(let attempt=0;attempt<50;attempt++){
-    saved = await win.webContents.executeJavaScript("window.desktop.loadWardrobeSet(1, 'uniform')") as typeof saved
-    if(saved?.components[0]?.glue?.mode==='fixed') break
+    const loaded = await win.webContents.executeJavaScript("window.desktop.loadWardrobeSet(1, 'uniform')") as SavedWardrobe | null
+    saved = loaded
+    if(loaded?.components[0]?.glue?.mode==='fixed') break
     await new Promise(resolve=>setTimeout(resolve,100))
   }
   if (!saved || saved.components[0]?.glue?.mode !== 'fixed' ||
