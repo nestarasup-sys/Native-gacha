@@ -1,3 +1,4 @@
+import { useModelSourceRefresh } from '../models/useModelSourceRefresh'
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
 import type { FaceAssetKind, FaceCatalogItem, FaceCatalogItemSave, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSave, FaceComponentAssetSummary, FaceComponentKind, FaceDetailKind, FaceGuideProfile, FaceGuideSettings, FaceTransform, FabricatorProject, FabricatorSlotSummary, ModelPart } from '../../../../../shared/fabricator'
 import { Icon } from '../../../ui/components/Icon'
@@ -189,6 +190,7 @@ export function FaceComponentsWorkspace({ mode }: { mode: FaceWorkspaceMode }) {
   const [guidesLoadedFor, setGuidesLoadedFor] = useState<FaceGuideProfile | null>(null)
   const [importAnchorsByModel, setImportAnchorsByModel] = useState<FaceImportAnchors>(readFaceImportAnchors)
   const [model, setModel] = useState<FabricatorProject | null>(null)
+  useModelSourceRefresh(modelSlot, setModel)
   const [assets, setAssets] = useState<FaceComponentAssetSummary[]>([])
   const [details, setDetails] = useState<Record<string, FaceComponentAsset>>({})
   const [eyeMasks, setEyeMasks] = useState<Record<string, string>>({})
