@@ -64,9 +64,30 @@ export async function publishModelSource(
     || project.slot < 1 || project.slot > 10 || !Array.isArray(project.parts)
     || project.parts.length > 500 || !Array.isArray(changedAssets)
     || changedAssets.length !== project.parts.length
-    || new Set(changedAssets.map(asset => asset.id)).size !== project.parts.length
-    || project.parts.some(part => !changedAssets.some(asset => asset.id === part.id))) {
+    || !Number.isInteger(project.width) || !Number.isInteger(project.height)
+    || !Number.isFinite(project.tolerance) || project.tolerance < 0 || project.tolerance > 280
+    || !Array.isArray(project.joints)) {
     throw new Error('Manifesto ou recortes do Model Source inválidos.')
+  }
+  const validId = (value: unknown): value is string =>
+    typeof value === 'string' && /^[a-zA-Z0-9_-]{1,80}$/.test(value)
+  const partIds = new Set<string>()
+  for (const part of project.parts) {
+    if (!part || !validId(part.id) || partIds.has(part.id)
+      || ![part.x, part.y, part.width, part.height, part.rotation].every(Number.isFinite)
+      || part.width <= 0 || part.height <= 0 || part.width > 8192 || part.height > 8192) {
+      throw new Error('Peça duplicada, insegura ou com dimensões inválidas no Model Source.')
+    }
+    partIds.add(part.id)
+  }
+  const assetIds = new Set<string>()
+  for (const asset of changedAssets) {
+    if (!asset || !validId(asset.id) || assetIds.has(asset.id) || !partIds.has(asset.id)) {
+      throw new Error('Recorte duplicado ou estranho ao modelo.')
+    }
+    assetIds.add(asset.id)
+    validateModelSourceImage(asset.dataUrl)
+    if (asset.chromaBaseDataUrl !== undefined) validateModelSourceImage(asset.chromaBaseDataUrl)
   }
   const bytes = validateModelSourceImage(sourceDataUrl, project.width, project.height)
   const folder = slotPath(project.slot)
