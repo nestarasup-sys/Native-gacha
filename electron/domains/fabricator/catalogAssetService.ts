@@ -17,10 +17,9 @@ export class FabricatorCatalogAssetService {
   private hits = 0
   private misses = 0
   private invalidations = 0
-  constructor(
-    private readonly readAssetImage: (path: string) => Promise<Uint8Array>,
-    capacity = 32 * 1024 * 1024
-  ) {
+  private readonly readAssetImage: (path: string) => Promise<Uint8Array>
+  constructor(readAssetImage: (path: string) => Promise<Uint8Array>, capacity = 32 * 1024 * 1024) {
+    this.readAssetImage = readAssetImage
     this.resolver = new VersionedAssetResolver(capacity)
   }
 
