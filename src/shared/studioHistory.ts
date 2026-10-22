@@ -2,7 +2,7 @@
  * Os snapshots guardam só o estado da cena; timestamps são renovados no replay.
  */
 import type { StudioDocument } from './studio'
-import { snapshotStudioScene, withStudioSnapshot, type StudioSceneSnapshot } from './studioSceneModel'
+import { snapshotStudioScene, withStudioSnapshot, type StudioSceneSnapshot } from './studioSceneModel.ts'
 
 export type StudioHistory = { undo: StudioSceneSnapshot[]; redo: StudioSceneSnapshot[] }
 export const STUDIO_HISTORY_LIMIT = 30
