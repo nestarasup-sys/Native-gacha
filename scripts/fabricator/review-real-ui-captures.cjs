@@ -115,8 +115,8 @@ async function verifyWorkspaceCaptures(directory) {
   for(const sample of [performance.poseOne, performance.poseTwo]) {
     if (!sample || !Number.isFinite(sample.sampledFps) || sample.sampledFps <= 0 ||
         !Number.isFinite(sample.frameP95Ms) || sample.frameP95Ms <= 0 ||
-        !Number.isFinite(sample.rendererPrivateKb) || sample.rendererPrivateKb <= 0 ||
-        !Number.isFinite(sample.rendererSharedKb) || sample.rendererSharedKb < 0 ||
+        !Number.isFinite(sample.rendererWorkingSetKb) || sample.rendererWorkingSetKb <= 0 ||
+        (sample.rendererPrivateKb !== null && (!Number.isFinite(sample.rendererPrivateKb) || sample.rendererPrivateKb < 0)) ||
         (sample.jsHeapUsedBytes !== null && (!Number.isFinite(sample.jsHeapUsedBytes) || sample.jsHeapUsedBytes < 0))) {
       throw Error('Amostra FPS/memória inválida para a pose no Electron.')
     }
