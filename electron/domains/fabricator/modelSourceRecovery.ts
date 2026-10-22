@@ -43,7 +43,7 @@ export async function recoverModelSourceSlot(
   } catch (reason) {
     if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason
   }
-  let entries: Awaited<ReturnType<RecoveryFiles['readdir']>>
+  let entries: Array<{ name: string; isDirectory(): boolean }>
   try {
     entries = await files.readdir(base, { withFileTypes: true })
   } catch (reason) {
