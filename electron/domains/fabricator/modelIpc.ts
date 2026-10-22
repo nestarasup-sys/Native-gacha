@@ -1,4 +1,4 @@
-import { fabricatorIpcChannels } from '../../../src/shared/fabricatorIpcChannels'
+import { fabricatorIpcChannels } from '../../../src/shared/fabricatorIpcChannels.ts'
 /** Canais IPC estáveis para o catálogo de modelos do Fabricador. */
 import type { IpcMain, IpcMainInvokeEvent } from 'electron'
 import type { FabricatorModelCatalog } from './modelCatalog.ts'
