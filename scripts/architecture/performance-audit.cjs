@@ -4,10 +4,10 @@ const fs = require('node:fs')
 const path = require('node:path')
 const root = path.resolve(__dirname, '../..')
 const budgets = {
-  'src/renderer/src/features/customizer/CustomizerPage.tsx': 2940,
-  'electron/main.ts': 2740,
+  'src/renderer/src/features/customizer/CustomizerPage.tsx': 2930,
+  'electron/main.ts': 2600,
   'src/renderer/src/features/videoStudio/VideoStudioEditor.tsx': 2600,
-  'src/renderer/src/features/studio/StudioPage.tsx': 1660,
+  'src/renderer/src/features/studio/StudioPage.tsx': 1645,
   'src/renderer/src/features/fabricator/FabricatorPage.tsx': 1085,
   'src/renderer/src/ui/App.tsx': 100,
   'src/renderer/src/features/roteiros/RoteirosPage.tsx': 560,
