@@ -31,7 +31,6 @@ export class FabricatorCatalogAssetService {
     if (before) this.hits++
     else this.misses++
     const bytes = await this.resolver.resolve(namespace, identity, version, () => this.readAssetImage(path))
-    void key
     return Buffer.from(bytes)
   }
   invalidate(namespace: AssetNamespace, identity: string): void {
