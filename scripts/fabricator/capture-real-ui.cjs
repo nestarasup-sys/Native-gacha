@@ -69,7 +69,7 @@ async function start(){
   if (first !== 0) { process.exitCode = first; return }
   const second = await launch(true)
   if (second === 0) {
-    console.log('11 screenshots reais e verificação de reabertura:', path.join(sandbox, 'fabricator-real-ui-captures'))
+    console.log('12 screenshots reais e verificação de duas poses e reabertura:', path.join(sandbox, 'fabricator-real-ui-captures'))
   }
   process.exitCode = second
 }
