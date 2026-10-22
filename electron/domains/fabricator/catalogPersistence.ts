@@ -74,6 +74,8 @@ export function createFabricatorCatalogPersistence(
       images.some(image => !expected.has(image.id) || !/^[a-zA-Z0-9_-]{1,80}$/.test(image.id))) {
       throw new Error('Imagens de catálogo duplicadas ou inesperadas.')
     }
+    // Restaura escrita anterior interrompida antes de verificar o conjunto atual.
+    await recoverCatalogImageTransaction(files, folder, imageFolder)
     await mkdir(imageFolder, { recursive: true })
     // Pré-validação ANTES de escrever qualquer PNG: um conjunto incompleto não
     // deve sobrescrever peças antigas se outra peça estiver ausente.
