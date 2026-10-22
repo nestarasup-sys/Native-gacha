@@ -2,6 +2,7 @@ import { selectCharacterArtwork } from '../../../../shared/characterSourceContin
 import { useCustomizerCharacterRoster } from './useCustomizerCharacterRoster'
 import { useCustomizerModelBrowserState } from './useCustomizerModelBrowserState'
 import { useCustomizerAssetLibraryState } from './useCustomizerAssetLibraryState'
+import { useCustomizerCharacterCommands } from './useCustomizerCharacterCommands'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { RenderedCharacterPortrait } from '../../ui/components/RenderedCharacterPortrait'
 import { Icon, type IconName } from '../../ui/components/Icon'
@@ -1109,53 +1110,18 @@ export function CustomizerPage() {
     return () => { cancelled = true }
   }, [selectedCharacter?.id, selectedCharacter?.customization.modelSkinTone, selectedCharacter?.customization.wardrobeGroups, wardrobeDetails, displayArtworkProject, selectedCatalogModelSlot, selectedSourceModelProject, selectedClothing?.modelSlot, selectedClothing?.setId, selectedClothing?.category, selectedClothing?.componentId, wardrobeTransformDraft, previewExtent, customizerPreviewZoom, activeWardrobePreviewHighlight])
 
-  function selectCharacter(id: string) {
-    setSelectedCharacterId(id)
-    setActiveModule(null)
-  }
-
-  async function saveCharacter(next: CustomizerCharacter) {
-    setCharactersError('')
-    setCharacterSaveState('saving')
-    charactersRef.current = charactersRef.current.map((character) => character.id === next.id ? next : character)
-    setCharacters(charactersRef.current)
-    const previousWrite = characterSaveQueue.current.get(next.id)
-    const write = (previousWrite ? previousWrite.catch(() => undefined) : Promise.resolve())
-      .then(() => window.desktop.saveCustomizerCharacter(next))
-    characterSaveQueue.current.set(next.id, write)
-    try {
-      await write
-      setCharacterSaveState('saved')
-      window.dispatchEvent(new Event('customizer:characters-updated'))
-    } catch (reason) {
-      setCharacterSaveState('error')
-      setCharactersError(reason instanceof Error ? reason.message : 'Não foi possível salvar o personagem.')
-      if (characterSaveQueue.current.get(next.id) === write) {
-        const latest = await window.desktop.listCustomizerCharacters().catch(() => null)
-        if (latest) {
-          charactersRef.current = latest
-          setCharacters(latest)
-        }
-      }
-    } finally {
-      if (characterSaveQueue.current.get(next.id) === write) characterSaveQueue.current.delete(next.id)
-    }
-  }
-
   function anchorCurrentWardrobe(groups: CustomizerWardrobeGroup[]): CustomizerWardrobeGroup[] {
     if (!displayArtworkProject || !selectedSourceModelProject) return groups
     return anchorWardrobeAdjustments(groups, selectedSourceModelProject.slot, displayArtworkProject.parts,
       (group) => wardrobeComponentsForGroup(group, wardrobeDetails))
   }
 
-  async function saveCharacterCustomization(patch: Partial<CustomizerCharacter['customization']> | ((current: CustomizerCharacter['customization']) => Partial<CustomizerCharacter['customization']>)) {
-    if (!selectedCharacter) return
-    const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
-    const changes = typeof patch === 'function' ? patch(current.customization) : patch
-    const customization = { ...current.customization, ...changes }
-    if (customization.wardrobeGroups) customization.wardrobeGroups = anchorCurrentWardrobe(customization.wardrobeGroups)
-    await saveCharacter({ ...current, customization, updatedAt: new Date().toISOString() })
-  }
+
+  const { selectCharacter, saveCharacter, saveCharacterCustomization } = useCustomizerCharacterCommands({
+    charactersRef, characterSaveQueue, setCharacters, selectedCharacter,
+    setSelectedCharacterId, setActiveModule, setCharactersError, setCharacterSaveState,
+    anchorWardrobe: (groups) => anchorCurrentWardrobe(groups)
+  })
 
   function changeProportion(key: keyof CharacterProportions, value: number) {
     if (!selectedCharacter) return
