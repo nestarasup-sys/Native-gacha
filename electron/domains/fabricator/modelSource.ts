@@ -45,9 +45,9 @@ export async function publishModelSource(
   const folder = slotPath(project.slot)
   const base = dirname(folder)
   const suffix = randomUUID()
-  const staging = join(base, \`.model-source-stage-\${project.slot}-\${suffix}\`)
-  const backup = join(base, \`.model-source-backup-\${project.slot}-\${suffix}\`)
-  const filename = \`source-\${randomUUID()}.png\`
+  const staging = join(base, `.model-source-stage-${project.slot}-${suffix}`)
+  const backup = join(base, `.model-source-backup-${project.slot}-${suffix}`)
+  const filename = `source-${randomUUID()}.png`
   // Verifica concorrência depois de adquirir a fila de salvamento do slot.
   const old = JSON.parse(await readFile(join(folder, 'project.json'), 'utf8')) as { sourceFile?: string }
   if (old.sourceFile !== project.sourceAssetName) throw new Error('O modelo mudou. Reabra o slot antes de publicar.')
