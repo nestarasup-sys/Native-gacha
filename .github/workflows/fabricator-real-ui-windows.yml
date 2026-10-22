@@ -39,9 +39,9 @@ jobs:
         run: npm ci
       - name: Compile desktop application
         run: npm run build
-      - name: Capture ten real UI screens (isolated synthetic profile)
+      - name: Capture eleven real UI screens in two Electron processes (synthetic profile)
         run: npm run test:fabricator:real-ui -- --synthetic-complete
-      - name: Verify ten screenshots and SHA256 integrity
+      - name: Verify eleven screenshots, persisted identities and SHA256
         shell: pwsh
         run: |
           $captures = Get-ChildItem -Path out/dev-ai/runs -Recurse -File -Filter manifest.json |
