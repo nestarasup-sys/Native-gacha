@@ -115,6 +115,7 @@ export async function publishStudioAssetsAndManifest(options: {
   let release!: () => void
   const inFlight = new Promise<void>(resolve => { release = resolve })
   pending.set(folder, inFlight)
+  let successfullyCommitted = false
   try {
     for (const [path, bytes] of unique) {
       const destination = within(folder, path)
@@ -126,9 +127,11 @@ export async function publishStudioAssetsAndManifest(options: {
       value: manifestValue, indent: 2, afterCommit,
       onCleanupError: () => { /* Um temporário órfão não sobrescreve manifesto confirmado. */ }
     })
+    successfullyCommitted = true
   } finally {
     pending.delete(folder)
     release()
-    await recoverStudioAssetTransaction(files, folder)
+    if (successfullyCommitted) await files.rm(root, { recursive: true, force: true })
+    else await recoverStudioAssetTransaction(files, folder)
   }
 }
