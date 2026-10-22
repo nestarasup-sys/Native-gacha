@@ -1,0 +1,52 @@
+name: Fabricator - screenshots reais Windows
+
+on:
+  push:
+    branches: [feature/model-source-editor]
+    paths:
+      - 'electron/**'
+      - 'src/**'
+      - 'scripts/fabricator/**'
+      - '.github/workflows/fabricator-real-ui-windows.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fabricator-real-ui-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  capture:
+    name: Windows / Electron GUI synthetic full character
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.22.0'
+          cache: npm
+      - name: Install Electron and native dependencies
+        run: npm ci
+      - name: Compile desktop application
+        run: npm run build
+      - name: Capture eight real UI sections (isolated synthetic profile)
+        run: npm run test:fabricator:real-ui -- --synthetic-complete
+      - name: Verify manifest and PNG hashes
+        shell: pwsh
+        run: |
+          $captures = Get-ChildItem -Path out/dev-ai/runs -Recurse -File -Filter manifest.json |
+            Where-Object { $_.DirectoryName -like '*fabricator-real-ui-captures' } |
+            Select-Object -First 1
+          if (-not $captures) { throw 'Nenhuma captura completa encontrada.' }
+          node scripts/fabricator/review-real-ui-captures.cjs "--captures=$($captures.DirectoryName)"
+      - name: Save captures for human approval
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fabricator-real-ui-windows-${{ github.run_id }}
+          path: out/dev-ai/runs/**/fabricator-real-ui-captures/
+          if-no-files-found: warn
+          retention-days: 14
