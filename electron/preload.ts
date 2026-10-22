@@ -1,6 +1,6 @@
 import { createFabricatorInvoker, fabricatorIpcChannels } from '../src/shared/fabricatorIpcChannels'
 import { contextBridge, ipcRenderer } from 'electron'
-import type { FabricatorDesktopApi } from '../src/shared/fabricator'
+import type { FabricatorDesktopApi, FabricatorModelSourcePublishRequest } from '../src/shared/fabricator'
 import type { CustomizerDesktopApi } from '../src/shared/customizer'
 import type { StudioDesktopApi, VideoStudioDesktopApi } from '../src/shared/studio'
 import type { VideoExportProgress } from '../src/shared/videoExportRuntime'
@@ -12,7 +12,7 @@ const fabricatorApi: FabricatorDesktopApi = {
   importFabricatorModel: (slot) => ipcRenderer.invoke('fabricator:import-model', slot),
   loadFabricatorSlot: (slot) => invokeFabricator('loadFabricatorSlot', slot),
   saveFabricatorProject: (project, changedAssets) => ipcRenderer.invoke('fabricator:save-project', project, changedAssets),
-  publishFabricatorModelSource: (project, sourceDataUrl, changedAssets) => ipcRenderer.invoke(fabricatorIpcChannels.publishFabricatorModelSource, { project, sourceDataUrl, changedAssets }),
+  publishFabricatorModelSource: (project, sourceDataUrl, changedAssets) => ipcRenderer.invoke(fabricatorIpcChannels.publishFabricatorModelSource, { project, sourceDataUrl, changedAssets } satisfies FabricatorModelSourcePublishRequest),
   downloadFabricatorModelSource: (slot, pngDataUrl) => invokeFabricator('downloadFabricatorModelSource', slot, pngDataUrl),
   loadFabricatorHistory: (slot) => ipcRenderer.invoke('fabricator:load-history', slot),
   saveFabricatorHistory: (slot, history, current, changedAssets) => ipcRenderer.invoke('fabricator:save-history', slot, history, current, changedAssets),
