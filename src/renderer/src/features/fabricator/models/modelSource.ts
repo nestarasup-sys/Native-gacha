@@ -26,7 +26,7 @@ export function validateModelSourceDimensions(project: FabricatorProject, update
   const rects = project.parts.map(part => sourceRect(part, updates[part.id]))
   rects.forEach((rect, index) => {
     if (![rect.x, rect.y, rect.width, rect.height].every(Number.isFinite)
-      || ![rect.x, rect.y, rect.width, rect.height].every(Number.isInteger)
+      || !Number.isInteger(rect.width) || !Number.isInteger(rect.height)
       || rect.width < 1 || rect.height < 1 || rect.width > MAX_DIMENSION || rect.height > MAX_DIMENSION
       || rect.x < 0 || rect.y < 0 || rect.x + rect.width > project.width || rect.y + rect.height > project.height) {
       throw new Error('A peça ' + project.parts[index].name + ' precisa caber dentro da folha original.')
@@ -134,7 +134,12 @@ export async function composeModelSource(
         x: rect.x, y: rect.y, width: rect.width, height: rect.height,
         rotation: part.sourceTransform?.rotation ?? 0,
         anchorVersion: 1,
-        ...(part.sourceTransform?.jointAnchor ? { jointAnchor: part.sourceTransform.jointAnchor } : {})
+        ...(part.sourceTransform?.jointAnchor ? {
+          jointAnchor: {
+            x: rect.x + (part.sourceTransform.jointAnchor.x - baseline.x) * rect.width / baseline.width,
+            y: rect.y + (part.sourceTransform.jointAnchor.y - baseline.y) * rect.height / baseline.height
+          }
+        } : {})
       },
       dataUrl: displayPart.toDataURL('image/png'),
       chromaBaseSaved: true,
