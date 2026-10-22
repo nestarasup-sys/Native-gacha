@@ -54,3 +54,31 @@ test('leitura com erro não deixa entrada incompleta em cache e permite retry',a
  assert.equal(cache.entries,0)
  assert.deepEqual(Array.from(await cache.resolve('face','eyes','v1',async()=>Uint8Array.of(5))),[5])
 })
+
+test('invalidação enquanto PNG antigo está sendo lido não ressuscita cache obsoleto', async () => {
+  const resolver = new VersionedAssetResolver()
+  let releaseOld
+  const oldBlock = new Promise(resolve => { releaseOld = resolve })
+  const first = resolver.resolve('wardrobe','1:set-1','rev-1',async () => {
+    await oldBlock
+    return Uint8Array.of(71)
+  },'/pieces/manga-esquerda.png')
+  // A leitura ainda está em andamento quando um conjunto é salvo novamente.
+  resolver.invalidate('wardrobe','1:set-1')
+  const newRead = await resolver.resolve('wardrobe','1:set-1','rev-1',async () => Uint8Array.of(99),'/pieces/manga-esquerda.png')
+  assert.deepEqual(Array.from(newRead),[99])
+  releaseOld()
+  assert.deepEqual(Array.from(await first),[71], 'uma chamada já iniciada pode completar com sua versão antiga')
+  assert.deepEqual(Array.from(await resolver.resolve('wardrobe','1:set-1','rev-1',async()=>Uint8Array.of(55),'/pieces/manga-esquerda.png')),[99], 'o cache final deve manter a versão nova')
+})
+
+test('mesmo set e versão, paths diferentes geram chaves independentes', () => {
+  assert.notEqual(
+    assetCacheKey('wardrobe','model-1:set','v1','/parts/sleeve-left.png'),
+    assetCacheKey('wardrobe','model-1:set','v1','/parts/sleeve-right.png')
+  )
+  assert.notEqual(
+    assetCacheKey('face','model-1:face','v1','/eyes-left.png'),
+    assetCacheKey('face','model-1:face','v1','/eyes-right.png')
+  )
+})
