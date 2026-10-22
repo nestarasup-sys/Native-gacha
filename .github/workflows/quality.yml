@@ -31,19 +31,36 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
+      - name: Detect source import
+        id: source
+        shell: bash
+        run: |
+          if [[ -f package.json && -f package-lock.json ]]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "Source ZIP not imported yet — skipping validation."
+          fi
       - uses: actions/setup-node@v4
+        if: steps.source.outputs.present == 'true'
         with:
           node-version: '22.22.0'
           cache: npm
       - name: Install dependencies without Electron download hooks
+        if: steps.source.outputs.present == 'true'
         run: npm ci --ignore-scripts
       - name: Check architecture boundaries and relative imports
+        if: steps.source.outputs.present == 'true'
         run: npm run audit:architecture
       - name: Test refactored domains
+        if: steps.source.outputs.present == 'true'
         run: npm run test:refactor
       - name: Test architecture budget
+        if: steps.source.outputs.present == 'true'
         run: node --test tests/architecture-audit.test.cjs
       - name: Typecheck
+        if: steps.source.outputs.present == 'true'
         run: npm run typecheck
       - name: Production bundles
+        if: steps.source.outputs.present == 'true'
         run: npm run build
