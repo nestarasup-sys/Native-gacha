@@ -96,6 +96,7 @@ export async function publishModelSource(
   const staging = join(base, `.model-source-stage-${project.slot}-${suffix}`)
   const backup = join(base, `.model-source-backup-${project.slot}-${suffix}`)
   const filename = `source-${randomUUID()}.png`
+  const pending = join(base, `.model-source-pending-${project.slot}.json`)
   // Verifica concorrência depois de adquirir a fila de salvamento do slot.
   const old = JSON.parse(await files.readFile(join(folder, 'project.json'), 'utf8')) as { sourceFile?: string }
   if (old.sourceFile !== project.sourceAssetName) throw new Error('O modelo mudou. Reabra o slot antes de publicar.')
@@ -110,6 +111,8 @@ export async function publishModelSource(
     await files.writeFile(join(staging, 'history', 'history.json'), JSON.stringify({ version: 1, undo: [], redo: [] }), 'utf8')
     await files.rm(join(staging, 'history', 'assets'), { recursive: true, force: true })
     await saveProject({ ...project, sourceAssetName: filename }, changedAssets, staging)
+    // Marcador persistente informa qual backup recuperar se cair entre renomeações.
+    await files.writeFile(pending, JSON.stringify({ version: 1, backup: `.model-source-backup-${project.slot}-${suffix}`, sourceFile: old.sourceFile }), 'utf8')
     // Duas renomeações no mesmo volume. Se a segunda falhar, restauramos a origem.
     await files.rename(folder, backup)
     movedOld = true
@@ -121,8 +124,12 @@ export async function publishModelSource(
       throw error
     }
     // Backup fora dos slots visíveis. Nunca apagar em caso de falha.
+    await files.rm(pending, { force: true }).catch(() => undefined)
     return filename
   } finally {
-    if (!movedOld) await files.rm(staging, { recursive: true, force: true }).catch(() => undefined)
+    if (!movedOld) {
+      await files.rm(staging, { recursive: true, force: true }).catch(() => undefined)
+      await files.rm(pending, { force: true }).catch(() => undefined)
+    }
   }
 }
