@@ -2,25 +2,27 @@
  * Files e operações externas injetados para preservar DomainFileSystem, SQLite,
  * canais públicos e formatos legados. Nenhuma migração implícita.
  */
-import { join } from 'node:path'
+import { join, resolve, dirname, basename } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
 import type * as nodeFs from 'node:fs/promises'
 import type { StudioAsset, StudioDocument, VideoTimelineDocument, VideoStudioCardSummary } from '../../../src/shared/studio'
 import { publishJsonManifest } from '../storage/atomicManifest.ts'
 
 export type StudioWorkspaceStorage = 'studio' | 'video'
-type Files = Pick<typeof nodeFs, 'readFile' | 'writeFile' | 'mkdir' | 'access' | 'rename' | 'unlink'>
+type Files = Pick<typeof nodeFs, 'readFile' | 'writeFile' | 'mkdir' | 'access' | 'rename' | 'unlink' | 'rm'>
 
 export function createStudioDocumentPersistence(deps: {
   files: Files
   studioPath: (id: string, workspace: StudioWorkspaceStorage) => string
+  studioLibraryPath: (workspace: StudioWorkspaceStorage) => string
+  prepareVideoDelete: () => Promise<unknown>
   validate: (document: unknown) => document is StudioDocument
   decodeImage: (dataUrl: string) => Buffer
   normalizeImage: (bytes: Buffer) => Promise<{ bytes: Buffer }>
   ensureVideoAssets: (id: string, assets: NonNullable<VideoTimelineDocument['videoAssets']>) => Promise<unknown>
   videoStudioCardSummary: (value: Record<string, unknown>, id: string) => VideoStudioCardSummary
 }) {
-  const { readFile, writeFile, mkdir, access, rename, unlink } = deps.files
+  const { readFile, writeFile, mkdir, access, rename, unlink, rm } = deps.files
   const studioPath = deps.studioPath
   const isStudioDocument = deps.validate
   const importedImageDataUrlBuffer = deps.decodeImage
@@ -181,5 +183,17 @@ async function writeStudio(studio: StudioDocument, workspace: StudioWorkspaceSto
   })
 }
 
-  return { readStudio, writeStudio }
+  async function removeStudio(id: string, workspace: StudioWorkspaceStorage = 'studio'): Promise<void> {
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) {
+      throw new Error('Identificador de Studio inválido.')
+    }
+    const folder = resolve(studioPath(id, workspace))
+    if (dirname(folder) !== resolve(deps.studioLibraryPath(workspace)) || basename(folder) !== `studio-${id}`) {
+      throw new Error('Pasta do Studio inválida.')
+    }
+    if (workspace === 'video') await deps.prepareVideoDelete()
+    await rm(folder, { recursive: true, force: true })
+  }
+
+  return { readStudio, writeStudio, removeStudio }
 }
