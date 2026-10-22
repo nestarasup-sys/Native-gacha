@@ -1,7 +1,7 @@
 /** Interpolação determinística de quadros, separada do estado React. */
 import type { AnimatorAnimation, AnimatorFrame, AnimatorFrameTransform } from '../../../../../shared/fabricator'
 
-function shortestAngle(from: number, to: number): number { return ((to - from + 540) % 360) - 180 }
+export function shortestAngle(from: number, to: number): number { return ((to - from + 540) % 360) - 180 }
 
 export function interpolateFrames(frames: AnimatorFrame[], elapsed: number, mode: AnimatorAnimation['interpolation'], loopMode: AnimatorAnimation['loopMode'], direction: 1 | -1 = 1) {
   const total = frames.reduce((sum, frame) => sum + frame.durationMs, 0)
