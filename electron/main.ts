@@ -55,6 +55,7 @@ import { createAnimatorPersistence } from './domains/fabricator/animatorPersiste
 import { registerFabricatorPoseHandlers } from './domains/fabricator/poseIpc'
 import { registerFabricatorAnimatorHandlers } from './domains/fabricator/animatorIpc'
 import { FabricatorCatalogAssetService } from './domains/fabricator/catalogAssetService'
+import { createFabricatorCatalogPersistence } from './domains/fabricator/catalogPersistence'
 import type { AssetNamespace } from './domains/fabricator/versionedAssetResolver'
 import { inspectFabricatorStorage } from '../src/shared/fabricatorStorageCompatibility'
 import { fabricatorIpcChannels } from '../src/shared/fabricatorIpcChannels'
@@ -496,20 +497,19 @@ async function writeFaceExpressionPreset(modelSlot: number, preset: FaceExpressi
   await rename(temporary, target)
 }
 
+const catalogPersistence = createFabricatorCatalogPersistence({ mkdir, access, writeFile, rename, unlink, readdir }, writeAssetImageSource)
+
 async function writeFaceSet(modelSlot: number, set: FaceSetSave, assets: FaceAssetSave[]): Promise<void> {
   invalidateCatalogPng('face', `${modelSlot}:set:${set.id}`)
   if (!validFaceSet(modelSlot, set)) throw new Error('Rosto inválido.')
+  const expected = new Set([...set.pieces.map(piece => piece.id), ...Object.keys(set.sheets).map(kind => `sheet-${kind}`)])
+  if (assets.some(asset => !expected.has(asset.id)) || new Set(assets.map(asset => asset.id)).size !== assets.length) throw new Error('Imagens do rosto inválidas.')
   const folder = faceSetPath(modelSlot, set.id)
-  const partsFolder = join(folder, 'images')
-  await mkdir(partsFolder, { recursive: true })
-  const expected = new Set([...set.pieces.map((piece) => piece.id), ...Object.keys(set.sheets).map((kind) => `sheet-${kind}`)])
-  if (assets.some((asset) => !expected.has(asset.id)) || new Set(assets.map((asset) => asset.id)).size !== assets.length) throw new Error('Imagens do rosto inválidas.')
-  for (const asset of assets) await writeAssetImageSource(join(partsFolder, `${asset.id}.png`), dataUrlBuffer(asset.dataUrl))
-  for (const id of expected) await access(join(partsFolder, `${id}.png`))
-  const temporary = join(folder, 'face.json.tmp')
-  await writeFile(temporary, JSON.stringify(set), 'utf8')
-  await rename(temporary, join(folder, 'face.json'))
-  for (const filename of await readdir(partsFolder)) if (filename.endsWith('.png') && !filename.endsWith('.paint.png') && !expected.has(filename.slice(0, -4))) await unlink(join(partsFolder, filename))
+  await catalogPersistence.saveCatalog({
+    folder, imageFolder: join(folder, 'images'), manifestName: 'face.json', manifest: set,
+    images: assets.map(asset => ({ id: asset.id, bytes: dataUrlBuffer(asset.dataUrl) })),
+    expected, prune: 'all'
+  })
 }
 
 async function readFaceSet(modelSlot: number, id: string): Promise<FaceSet | null> {
@@ -566,16 +566,14 @@ function validFaceCatalogItem(modelSlot: number, item: FaceCatalogItemSave): boo
 async function writeFaceCatalogItem(modelSlot: number, item: FaceCatalogItemSave, assets: FaceAssetSave[]): Promise<void> {
   invalidateCatalogPng('face', `${modelSlot}:catalog:${item.id}`)
   if (!validFaceCatalogItem(modelSlot, item)) throw new Error('Peça facial inválida.')
+  const expected = new Set([`sheet-${item.category}`, ...item.pieces.map(piece => piece.id)])
+  if (assets.some(asset => !expected.has(asset.id)) || new Set(assets.map(asset => asset.id)).size !== assets.length) throw new Error('Imagens da peça facial inválidas.')
   const folder = faceCatalogItemPath(modelSlot, item.id)
-  const images = join(folder, 'images')
-  const expected = new Set([`sheet-${item.category}`, ...item.pieces.map((piece) => piece.id)])
-  if (assets.some((asset) => !expected.has(asset.id)) || new Set(assets.map((asset) => asset.id)).size !== assets.length) throw new Error('Imagens da peça facial inválidas.')
-  await mkdir(images, { recursive: true })
-  for (const asset of assets) await writeAssetImageSource(join(images, `${asset.id}.png`), dataUrlBuffer(asset.dataUrl))
-  for (const id of expected) await access(join(images, `${id}.png`))
-  await writeFile(join(folder, 'item.json.tmp'), JSON.stringify(item), 'utf8')
-  await rename(join(folder, 'item.json.tmp'), join(folder, 'item.json'))
-  for (const filename of await readdir(images)) if (filename.endsWith('.png') && !filename.endsWith('.paint.png') && !expected.has(filename.slice(0, -4))) await unlink(join(images, filename))
+  await catalogPersistence.saveCatalog({
+    folder, imageFolder: join(folder, 'images'), manifestName: 'item.json', manifest: item,
+    images: assets.map(asset => ({ id: asset.id, bytes: dataUrlBuffer(asset.dataUrl) })),
+    expected, prune: 'all'
+  })
 }
 
 function legacyFaceCatalogId(id: string): { setId: string; category: FaceSheetKind } | null {
@@ -741,10 +739,10 @@ async function writeFaceComponentAsset(modelSlot: number, asset: FaceComponentAs
   invalidateCatalogPng('face', `${modelSlot}:component:${asset.id}`)
   if (!validFaceComponentAsset(modelSlot, asset) || typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/png;base64,')) throw new Error('Asset facial inválido; use uma imagem PNG.')
   const folder = faceComponentItemPath(modelSlot, asset.id)
-  await mkdir(folder, { recursive: true })
-  await writeAssetImageSource(join(folder, 'asset.png'), dataUrlBuffer(dataUrl))
-  await writeFile(join(folder, 'asset.json.tmp'), JSON.stringify(asset), 'utf8')
-  await rename(join(folder, 'asset.json.tmp'), join(folder, 'asset.json'))
+  await catalogPersistence.saveCatalog({
+    folder, imageFolder: folder, manifestName: 'asset.json', manifest: asset,
+    images: [{ id: 'asset', bytes: dataUrlBuffer(dataUrl) }], expected: new Set(['asset'])
+  })
 }
 
 function validHairWorkspace(modelSlot: number, workspace: HairWorkspaceSave): boolean {
@@ -772,23 +770,16 @@ function validHairWorkspace(modelSlot: number, workspace: HairWorkspaceSave): bo
 async function writeHairWorkspace(modelSlot: number, workspace: HairWorkspaceSave, assets: HairWorkspaceAsset[]): Promise<void> {
   invalidateCatalogPng('hair', `${modelSlot}:workspace`)
   if (!validHairWorkspace(modelSlot, workspace)) throw new Error('Configuração de cabelo inválida.')
-  const folder = hairModelPath(modelSlot)
-  const images = join(folder, 'images')
-  await mkdir(images, { recursive: true })
-  const expected = new Set<string>((['front', 'back', 'fringe'] as const).filter((side) => workspace[side] != null))
+  const expected = new Set<string>((['front', 'back', 'fringe'] as const).filter(side => workspace[side] != null))
   if (workspace.sourceImageSaved) expected.add('source')
-  if (assets.some((asset) => !expected.has(asset.id)) || new Set(assets.map((asset) => asset.id)).size !== assets.length) throw new Error('Imagens de cabelo inválidas.')
-  for (const asset of assets) await writeAssetImageSource(join(images, `${asset.id}.png`), dataUrlBuffer(asset.dataUrl))
-  for (const side of expected) {
-    try { await access(join(images, `${side}.png`)) } catch (reason) {
-      if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason
-      throw new Error(`Imagem de cabelo ausente: ${side}.`)
-    }
-  }
-  for (const side of ['front', 'back', 'fringe', 'source'] as const) if (!expected.has(side)) await unlink(join(images, `${side}.png`)).catch((reason: NodeJS.ErrnoException) => { if (reason.code !== 'ENOENT') throw reason })
-  const temporary = join(folder, 'hair.json.tmp')
-  await writeFile(temporary, JSON.stringify(workspace), 'utf8')
-  await rename(temporary, join(folder, 'hair.json'))
+  if (assets.some(asset => !expected.has(asset.id)) || new Set(assets.map(asset => asset.id)).size !== assets.length) throw new Error('Imagens de cabelo inválidas.')
+  const folder = hairModelPath(modelSlot)
+  await catalogPersistence.saveCatalog({
+    folder, imageFolder: join(folder, 'images'), manifestName: 'hair.json', manifest: workspace,
+    images: assets.map(asset => ({ id: asset.id, bytes: dataUrlBuffer(asset.dataUrl) })),
+    expected, prune: ['front', 'back', 'fringe', 'source'],
+    missingMessage: id => `Imagem de cabelo ausente: ${id}.`
+  })
 }
 
 async function readHairWorkspace(modelSlot: number): Promise<HairWorkspace | null> {
@@ -838,22 +829,15 @@ function validHairStyle(modelSlot: number, style: HairStyleSave): boolean {
 async function writeHairStyle(modelSlot: number, style: HairStyleSave, assets: HairStyleAsset[]): Promise<void> {
   invalidateCatalogPng('hair', `${modelSlot}:style:${style.id}`)
   if (!validHairStyle(modelSlot, style)) throw new Error('Estilo de cabelo inválido.')
+  const expected = new Set<string>((['front', 'back', 'fringe'] as const).filter(side => style[side] != null))
+  if (assets.some(asset => !expected.has(asset.id)) || new Set(assets.map(asset => asset.id)).size !== assets.length) throw new Error('Imagens do cabelo inválidas.')
   const folder = hairStylePath(modelSlot, style.id)
-  const images = join(folder, 'images')
-  await mkdir(images, { recursive: true })
-  const expected = new Set((['front', 'back', 'fringe'] as const).filter((side) => style[side] != null))
-  if (assets.some((asset) => !expected.has(asset.id)) || new Set(assets.map((asset) => asset.id)).size !== assets.length) throw new Error('Imagens do cabelo inválidas.')
-  for (const asset of assets) await writeAssetImageSource(join(images, `${asset.id}.png`), dataUrlBuffer(asset.dataUrl))
-  for (const side of expected) {
-    try { await access(join(images, `${side}.png`)) } catch (reason) {
-      if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason
-      throw new Error(`Imagem de cabelo ausente: ${side}.`)
-    }
-  }
-  for (const side of ['front', 'back', 'fringe'] as const) if (!expected.has(side)) await unlink(join(images, `${side}.png`)).catch((reason: NodeJS.ErrnoException) => { if (reason.code !== 'ENOENT') throw reason })
-  const temporary = join(folder, 'hair-style.json.tmp')
-  await writeFile(temporary, JSON.stringify(style), 'utf8')
-  await rename(temporary, join(folder, 'hair-style.json'))
+  await catalogPersistence.saveCatalog({
+    folder, imageFolder: join(folder, 'images'), manifestName: 'hair-style.json', manifest: style,
+    images: assets.map(asset => ({ id: asset.id, bytes: dataUrlBuffer(asset.dataUrl) })),
+    expected, prune: ['front', 'back', 'fringe'],
+    missingMessage: id => `Imagem de cabelo ausente: ${id}.`
+  })
 }
 
 async function readHairStyle(modelSlot: number, id: string): Promise<HairStyle | null> {
@@ -876,56 +860,25 @@ async function readHairStyle(modelSlot: number, id: string): Promise<HairStyle |
 }
 
 async function recoverWardrobeManifest(folder: string): Promise<void> {
-  const target = join(folder, 'wardrobe.json')
-  const backup = join(folder, 'wardrobe.json.backup')
-  try { await access(target); return } catch (reason) {
-    if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason
-  }
-  try { await rename(backup, target) } catch (reason) {
-    if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason
-  }
+  await catalogPersistence.recoverWardrobeManifest(folder)
 }
 
 async function writeWardrobeSet(modelSlot: number, set: WardrobeSetSave, assets: WardrobeAssetSave[]): Promise<void> {
   invalidateCatalogPng('wardrobe', `${modelSlot}:${set.id}`)
   if (!isValidModelSlot(modelSlot) || set.schemaVersion !== 1 || (set.edition !== undefined && set.edition !== 1 && set.edition !== 2) || set.modelSlot !== modelSlot || !isValidWardrobeId(set.id) || !Array.isArray(set.components) || set.components.length < 1 || set.components.length > 100) throw new Error('Conjunto de roupa inválido.')
+  const ids = new Set(set.components.map(component => component.id))
+  if (ids.size !== set.components.length || set.components.some(component => !isValidWardrobeId(component.id) || !wardrobeCategories.includes(component.category) || !isValidWardrobeId(component.attachedPartId))) throw new Error('Peças do conjunto inválidas.')
   const folder = wardrobeSetPath(modelSlot, set.id)
-  const partsFolder = join(folder, 'parts')
-  await mkdir(partsFolder, { recursive: true })
-  const ids = new Set(set.components.map((component) => component.id))
-  if (ids.size !== set.components.length || set.components.some((component) => !isValidWardrobeId(component.id) || !wardrobeCategories.includes(component.category) || !isValidWardrobeId(component.attachedPartId))) throw new Error('Peças do conjunto inválidas.')
-  for (const asset of assets) if (ids.has(asset.id)) await writeAssetImageSource(join(partsFolder, `${asset.id}.png`), dataUrlBuffer(asset.dataUrl))
-  for (const component of set.components) {
-    try { await access(join(partsFolder, `${component.id}.png`)) } catch (reason) {
-      if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason
-      throw new Error(`Imagem ausente no conjunto: ${component.name} (${component.id}).`)
+  await catalogPersistence.saveCatalog({
+    folder, imageFolder: join(folder, 'parts'), manifestName: 'wardrobe.json', manifest: set,
+    // O contrato legado ignora assets extras não presentes no conjunto.
+    images: assets.filter(asset => ids.has(asset.id)).map(asset => ({ id: asset.id, bytes: dataUrlBuffer(asset.dataUrl) })),
+    expected: ids, prune: 'all',
+    missingMessage: id => {
+      const component = set.components.find(part => part.id === id)
+      return `Imagem ausente no conjunto: ${component?.name ?? id} (${id}).`
     }
-  }
-  const target = join(folder, 'wardrobe.json')
-  const backup = join(folder, 'wardrobe.json.backup')
-  await recoverWardrobeManifest(folder)
-  // On Windows, rename(newFile, existingFile) fails with EPERM. Keep the last
-  // valid manifest under a recoverable name while publishing the replacement.
-  // A stale backup with a present target means the new manifest was already
-  // published before a previous process stopped during cleanup.
-  try { await access(target); await unlink(backup).catch((reason) => {
-    if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason
-  }) } catch (reason) {
-    if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason
-  }
-  const temporary = join(folder, 'wardrobe.json.tmp')
-  await writeFile(temporary, JSON.stringify(set), 'utf8')
-  let previousManifest = false
-  try { await rename(target, backup); previousManifest = true } catch (reason) {
-    if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason
-  }
-  try { await rename(temporary, target) } catch (reason) {
-    if (previousManifest) await rename(backup, target).catch(() => undefined)
-    throw reason
-  }
-  if (previousManifest) await unlink(backup)
-  const retained = new Set(set.components.map((component) => `${component.id}.png`))
-  for (const filename of await readdir(partsFolder)) if (filename.endsWith('.png') && !filename.endsWith('.paint.png') && !retained.has(filename)) await unlink(join(partsFolder, filename))
+  })
 }
 
 // Assets versionados são usados apenas nas bibliotecas oficiais; rascunhos não entram em cache.
