@@ -37,7 +37,7 @@ export function isModelSourceJournal(value: unknown, slot: number): value is Mod
   return entry.version === 1 && typeof entry.backup === 'string'
     && typeof entry.sourceFile === 'string' && typeof entry.targetSourceFile === 'string'
     && typeof entry.transactionId === 'string'
-    && /^source-[a-f0-9-]+\.png$/i.test(entry.sourceFile)
+    && sourcePattern.test(entry.sourceFile)
     && sourcePattern.test(entry.targetSourceFile)
     && uuidPattern.test(entry.transactionId)
     && entry.backup === `.model-source-backup-${slot}-${entry.transactionId}`
