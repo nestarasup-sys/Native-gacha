@@ -30,7 +30,7 @@ test('revisor de capturas exige oito PNGs autênticos, dimensões e SHA256 corre
   assert.equal((await verifyRealUiCaptures(root)).verified.length, 8)
   assert.equal((await verifyRealUiCaptures(root, baseline)).mode, 'comparado-com-baseline')
   await fs.writeFile(join(root, 'olhos.png'), Buffer.from('não é PNG'))
-  await assert.rejects(verifyRealUiCaptures(root), /SHA256|PNG/)
+  await assert.rejects(verifyRealUiCaptures(root), /SHA256|PNG|unsupported image format/)
   await fs.writeFile(join(root, 'olhos.png'), await fs.readFile(join(baseline, 'olhos.png')))
   manifest.results.pop()
   await fs.writeFile(join(root, 'manifest.json'), JSON.stringify(manifest))
