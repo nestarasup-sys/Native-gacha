@@ -47,8 +47,6 @@ function bytesToDataUrl(buffer: ArrayBuffer): string {
   return `data:image/png;base64,${btoa(binary)}`
 }
 
-function makeId(): string { return crypto.randomUUID() }
-
 const DEFAULT_CHROMA_TOLERANCE = 74
 const MAX_CHROMA_TOLERANCE = 280
 const emptyHistory = (): FabricatorHistoryState => ({ undo: [], redo: [] })
