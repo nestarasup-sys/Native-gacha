@@ -27,6 +27,18 @@ export function createFabricatorCatalogPersistence(
 ) {
   const { mkdir, access, writeFile, rename, unlink, readdir } = files
 
+  // Mutex por conjunto: não permitir leitura de recuperação enquanto uma nova
+  // versão ainda está montando backups, PNGs e manifesto (inclusive em SQLite).
+  const inFlight = new Map<string, Promise<void>>()
+  function serialized<T>(folder: string, task: () => Promise<T>): Promise<T> {
+    const preceding = inFlight.get(folder) ?? Promise.resolve()
+    const result = preceding.catch(() => undefined).then(task)
+    const settled = result.then(() => undefined, () => undefined)
+    inFlight.set(folder, settled)
+    void settled.then(() => { if (inFlight.get(folder) === settled) inFlight.delete(folder) })
+    return result
+  }
+
   async function recoverLegacyWardrobeManifest(folder: string): Promise<void> {
     const target = join(folder, 'wardrobe.json')
     const backup = join(folder, 'wardrobe.json.backup')
@@ -39,11 +51,13 @@ export function createFabricatorCatalogPersistence(
   }
 
   async function recoverCatalogManifest(folder: string, imageFolder: string): Promise<void> {
-    await recoverCatalogImageTransaction(files, folder, imageFolder)
+    await serialized(folder, () => recoverCatalogImageTransaction(files, folder, imageFolder))
   }
   async function recoverWardrobeManifest(folder: string): Promise<void> {
-    await recoverCatalogManifest(folder, join(folder, 'parts'))
-    await recoverLegacyWardrobeManifest(folder)
+    await serialized(folder, async () => {
+      await recoverCatalogImageTransaction(files, folder, join(folder, 'parts'))
+      await recoverLegacyWardrobeManifest(folder)
+    })
   }
 
   async function commitWardrobeManifest(folder: string, set: unknown): Promise<void> {
@@ -70,6 +84,7 @@ export function createFabricatorCatalogPersistence(
 
   async function saveCatalog(options: Options): Promise<void> {
     const { folder, imageFolder, manifestName, manifest, images, expected, prune, missingMessage } = options
+    return serialized(folder, async () => {
     if (new Set(images.map(image => image.id)).size !== images.length ||
       images.some(image => !expected.has(image.id) || !/^[a-zA-Z0-9_-]{1,80}$/.test(image.id))) {
       throw new Error('Imagens de catálogo duplicadas ou inesperadas.')
@@ -117,6 +132,7 @@ export function createFabricatorCatalogPersistence(
       if (prune !== 'all' && !prune.includes(filename.slice(0, -4))) continue
       await unlink(join(imageFolder, filename))
     }
+    })
   }
 
   return { saveCatalog, recoverWardrobeManifest, recoverCatalogManifest }
