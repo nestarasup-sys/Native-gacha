@@ -31,8 +31,10 @@ export async function publishJsonManifest(options: JsonManifestPublication): Pro
   const delay = options.delay ?? (ms => new Promise<void>(done => setTimeout(done, ms)))
   let staged = false
   try {
-    await files.writeFile(temporary, JSON.stringify(value, null, options.indent), 'utf8')
+    // A gravação pode deixar bytes parciais antes de lançar erro: assuma posse
+    // do temporário ANTES da chamada, nunca do manifesto de destino.
     staged = true
+    await files.writeFile(temporary, JSON.stringify(value, null, options.indent), 'utf8')
     for (let attempt = 1; ; attempt++) {
       try { await files.rename(temporary, target); break }
       catch (reason) {
