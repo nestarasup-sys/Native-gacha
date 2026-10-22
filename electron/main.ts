@@ -131,6 +131,8 @@ function configureDevAiDataRoot(): void {
     if (lstatSync(sessionData).isSymbolicLink() || !sameCanonicalPath(realpathSync(sessionData), sessionData)) {
       throw new Error('Diretório de sessão privado inválido.')
     }
+    // appData deve conter userData: requisito da migração segura e dos backups.
+    app.setPath('appData', privateRoot)
     app.setPath('userData', userData)
     app.setPath('sessionData', sessionData)
     return
@@ -167,6 +169,9 @@ function configureDevAiDataRoot(): void {
   const sessionData = join(sandbox, 'electron-session-data')
   mkdirSync(userData, { recursive: true })
   mkdirSync(sessionData, { recursive: true })
+  // O appData nativo aponta ao perfil Windows real; neste teste deve ser o
+  // sandbox previamente autenticado pelo marcador. Mantém a regra within().
+  app.setPath('appData', sandbox)
   app.setPath('userData', userData)
   app.setPath('sessionData', sessionData)
 }
