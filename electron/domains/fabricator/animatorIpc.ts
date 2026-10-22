@@ -1,3 +1,4 @@
+import { fabricatorIpcChannels } from '../../../src/shared/fabricatorIpcChannels'
 /** Canais legados do Animador DEV com fila de gravação única por processo. */
 import type { IpcMain, IpcMainInvokeEvent } from 'electron'
 import { basename, dirname, join, resolve } from 'node:path'
@@ -29,7 +30,7 @@ export function registerFabricatorAnimatorHandlers(deps: AnimatorIpcDependencies
     readAnimatorAnimation, writeAnimatorAnimation, readAnimatorDraft, writeAnimatorDraft,
     getQueue, setQueue } = deps
   const { readFile, readdir, rm } = deps.files
-    ipcMain.handle('fabricator:animator:model-slots', async (event): Promise<number[]> => {
+    ipcMain.handle(fabricatorIpcChannels.listAnimatorModelSlots, async (event): Promise<number[]> => {
     assertTrustedSender(event)
     try {
       const entries = await readdir(animatorLibraryPath(), { withFileTypes: true })
@@ -44,7 +45,7 @@ export function registerFabricatorAnimatorHandlers(deps: AnimatorIpcDependencies
     }
   })
 
-  ipcMain.handle('fabricator:animator:list', async (event, modelSlot: number): Promise<AnimatorAnimationSummary[]> => {
+  ipcMain.handle(fabricatorIpcChannels.listAnimatorAnimations, async (event, modelSlot: number): Promise<AnimatorAnimationSummary[]> => {
     assertTrustedSender(event)
     if (!isValidModelSlot(modelSlot)) throw new Error('Modelo inválido.')
     const entries: AnimatorAnimationSummary[] = []
@@ -58,7 +59,7 @@ export function registerFabricatorAnimatorHandlers(deps: AnimatorIpcDependencies
     return entries
   })
 
-  ipcMain.handle('fabricator:animator:load', async (event, modelSlot: number, slot: number): Promise<AnimatorAnimation | null> => {
+  ipcMain.handle(fabricatorIpcChannels.loadAnimatorAnimation, async (event, modelSlot: number, slot: number): Promise<AnimatorAnimation | null> => {
     assertTrustedSender(event)
     let loaded: AnimatorAnimation | null = null
     const next = getQueue().catch(() => undefined).then(async () => { loaded = await readAnimatorAnimation(modelSlot, slot) })
@@ -67,14 +68,14 @@ export function registerFabricatorAnimatorHandlers(deps: AnimatorIpcDependencies
     return loaded
   })
 
-  ipcMain.handle('fabricator:animator:save', async (event, modelSlot: number, slot: number, animation: AnimatorAnimationSave, assets: AnimatorAnimationAsset[]): Promise<void> => {
+  ipcMain.handle(fabricatorIpcChannels.saveAnimatorAnimation, async (event, modelSlot: number, slot: number, animation: AnimatorAnimationSave, assets: AnimatorAnimationAsset[]): Promise<void> => {
     assertTrustedSender(event)
     const next = getQueue().catch(() => undefined).then(() => writeAnimatorAnimation(modelSlot, slot, animation, assets))
     setQueue(next)
     await next
   })
 
-  ipcMain.handle('fabricator:animator:delete', async (event, modelSlot: number, slot: number): Promise<void> => {
+  ipcMain.handle(fabricatorIpcChannels.deleteAnimatorAnimation, async (event, modelSlot: number, slot: number): Promise<void> => {
     assertTrustedSender(event)
     if (!isValidModelSlot(modelSlot) || !isValidAnimatorSlot(slot)) throw new Error('Slot de animação inválido.')
     const next = getQueue().catch(() => undefined).then(async () => {
@@ -87,7 +88,7 @@ export function registerFabricatorAnimatorHandlers(deps: AnimatorIpcDependencies
     await next
   })
 
-  ipcMain.handle('fabricator:animator:draft:load', async (event, modelSlot: number): Promise<AnimatorAnimationDraft | null> => {
+  ipcMain.handle(fabricatorIpcChannels.loadAnimatorDraft, async (event, modelSlot: number): Promise<AnimatorAnimationDraft | null> => {
     assertTrustedSender(event)
     let loaded: AnimatorAnimationDraft | null = null
     const next = getQueue().catch(() => undefined).then(async () => { loaded = await readAnimatorDraft(modelSlot) })
@@ -96,14 +97,14 @@ export function registerFabricatorAnimatorHandlers(deps: AnimatorIpcDependencies
     return loaded
   })
 
-  ipcMain.handle('fabricator:animator:draft:save', async (event, modelSlot: number, draft: AnimatorAnimationDraft, assets: AnimatorAnimationAsset[]): Promise<void> => {
+  ipcMain.handle(fabricatorIpcChannels.saveAnimatorDraft, async (event, modelSlot: number, draft: AnimatorAnimationDraft, assets: AnimatorAnimationAsset[]): Promise<void> => {
     assertTrustedSender(event)
     const next = getQueue().catch(() => undefined).then(() => writeAnimatorDraft(modelSlot, draft, assets))
     setQueue(next)
     await next
   })
 
-  ipcMain.handle('fabricator:animator:draft:delete', async (event, modelSlot: number): Promise<void> => {
+  ipcMain.handle(fabricatorIpcChannels.deleteAnimatorDraft, async (event, modelSlot: number): Promise<void> => {
     assertTrustedSender(event)
     if (!isValidModelSlot(modelSlot)) throw new Error('Modelo de rascunho inválido.')
     const next = getQueue().catch(() => undefined).then(async () => {
