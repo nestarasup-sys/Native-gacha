@@ -186,10 +186,12 @@ export async function captureCustomizerStudioRealScreens(win: BrowserWindow, out
       .find(item => item.textContent?.includes(${JSON.stringify(name)}))
     if (!option) return false
     option.click()
-    document.querySelector('.studio-cast-modal-save')?.click()
     return true
   })()`) as boolean
   if (!castChosen) throw Error('Personagem sintético não apareceu no seletor de elenco.')
+  // React precisa renderizar o novo castSelection antes do callback de salvar.
+  await waitFor(win, '.studio-cast-modal-option.selected')
+  await win.webContents.executeJavaScript("document.querySelector('.studio-cast-modal-save')?.click()")
   await waitFor(win, '.studio-cast-item', 30000)
   const studios = await win.webContents.executeJavaScript('window.desktop.listStudios()') as Array<{ id: string; title: string; elements: Array<{ characterId?: string }> }>
   const studio = studios.find(item => item.elements.some(element => element.characterId === id))
