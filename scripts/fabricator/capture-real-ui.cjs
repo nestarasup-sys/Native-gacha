@@ -14,6 +14,8 @@ const runRoot = path.join(root, 'out', 'dev-ai', 'runs', id)
 const sandbox = path.join(runRoot, 'sandbox')
 const fixtureArg = process.argv.find(arg => arg.startsWith('--fixture='))
 const baselineArg = process.argv.find(arg => arg.startsWith('--baseline='))
+const syntheticComplete = process.argv.includes('--synthetic-complete')
+if(syntheticComplete && fixtureArg)throw new Error('Escolha --fixture ou --synthetic-complete; nunca misture bibliotecas.')
 if (!fs.existsSync(path.join(root, 'out', 'main', 'main.js'))) {
   console.error('Build não encontrado. Execute npm run build antes do teste visual.')
   process.exit(1)
@@ -31,6 +33,11 @@ if (fixtureArg) {
     filter: item => !fs.lstatSync(item).isSymbolicLink()
   })
 }
+if(syntheticComplete){
+  const {createCompleteCharacterFixture}=require('./complete-character-fixture.cjs')
+  void createCompleteCharacterFixture(path.join(sandbox,'electron-user-data')).then(()=>start()).catch(error=>{console.error(error);process.exitCode=1})
+}else start()
+function start(){
 const env = {
   ...process.env,
   GACHA_DEV_AI_TEST: '1',
@@ -46,3 +53,4 @@ child.on('exit', code => {
   if (code === 0) console.log('Capturas reais do Fabricador:', output)
   process.exitCode = code ?? 1
 })
+}
