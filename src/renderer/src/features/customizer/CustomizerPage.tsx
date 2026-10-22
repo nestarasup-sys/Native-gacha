@@ -13,7 +13,7 @@ import { mapWardrobeComponentToPose, wardrobePosePadding } from '../../../../sha
 import { validateWardrobeFlow } from '../../../../shared/assetFlow'
 import { anchorWardrobeAdjustments, editWardrobeAdjustment, moveWardrobeAdjustment, wardrobeAdjustmentMatrix } from '../../../../shared/wardrobeAdjustment'
 import { eyeInteriorMask } from '../../ui/image/eyeInteriorMask'
-import { applyCharacterBodyShape } from './bodyShape'
+import { applyCharacterBodyShape } from '../../../../shared/bodyShape'
 import { tintSkinPixels } from './skinTint'
 import { characterRenderSize, configureCharacterSampling, MAX_CHARACTER_PREVIEW_PIXELS } from './renderResolution'
 import { drawFaceExpressionEffects } from './expressionEffectRender'
