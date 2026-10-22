@@ -1,5 +1,6 @@
 import { selectCharacterArtwork } from '../../../../shared/characterSourceContinuity'
 import { useCustomizerCharacterRoster } from './useCustomizerCharacterRoster'
+import { useCustomizerModelBrowserState } from './useCustomizerModelBrowserState'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { RenderedCharacterPortrait } from '../../ui/components/RenderedCharacterPortrait'
 import { Icon, type IconName } from '../../ui/components/Icon'
@@ -529,17 +530,14 @@ export function CustomizerPage() {
     return () => { observer.disconnect(); window.removeEventListener('resize', update) }
   }, [selectedCustomizerTopTab])
 
-  const [rosterQuery, setRosterQuery] = useState('')
-  const [catalogModels, setCatalogModels] = useState<FabricatorSlotSummary[]>([])
-  const [catalogPoses, setCatalogPoses] = useState<FabricatorPoseSummary[]>([])
-  const [catalogLoading, setCatalogLoading] = useState(true)
-  const [catalogError, setCatalogError] = useState('')
-  const [selectedCatalogModelSlot, setSelectedCatalogModelSlot] = useState<number | null>(null)
-  const [selectedCatalogPoseSlot, setSelectedCatalogPoseSlot] = useState<number | null>(null)
-  const [selectedPoseCategory, setSelectedPoseCategory] = useState('Parado')
-  const [selectedPosePage, setSelectedPosePage] = useState(0)
-  const [modelThumbnails, setModelThumbnails] = useState<Record<number, string>>({})
-  const [poseThumbnails, setPoseThumbnails] = useState<Record<string, string>>({})
+  const {
+    rosterQuery, setRosterQuery, catalogModels, setCatalogModels,
+    catalogPoses, setCatalogPoses, catalogLoading, setCatalogLoading,
+    catalogError, setCatalogError, selectedCatalogModelSlot, setSelectedCatalogModelSlot,
+    selectedCatalogPoseSlot, setSelectedCatalogPoseSlot, selectedPoseCategory, setSelectedPoseCategory,
+    selectedPosePage, setSelectedPosePage, modelThumbnails, setModelThumbnails,
+    poseThumbnails, setPoseThumbnails
+  } = useCustomizerModelBrowserState()
   const [clothingSection, setClothingSection] = useState<'Customizar' | 'Superior' | 'Inferior'>('Superior')
   const [clothesPanelTab, setClothesPanelTab] = useState<(typeof customizerClothesTabs)[number]['id']>('upper')
   const [clothesCategorySelection, setClothesCategorySelection] = useState<Exclude<(typeof customizerClothesTabs)[number]['id'], 'adjust'>>('upper')
