@@ -157,12 +157,8 @@ export function WardrobeWorkspace() {
   const selectedIndex = draft?.components.findIndex((component) => component.id === selectedId) ?? -1
   const previewProject = testPose ?? model
   const previewPoseParts = testPose ? orderedParts(testPose.parts, testPose.layerOrder).filter((part) => !(testPose.hiddenPartIds ?? []).includes(part.id)) : []
-  // A pose is a saved snapshot. Never invent a placement on the original
-  // sheet for a garment whose matching pose part is missing.
-  const poseMissingAttachments = testPose && draft
-    ? draft.components.filter((component) => !model?.parts.some((part) => part.id === component.attachedPartId)
-      || !testPose.parts.some((part) => part.id === component.attachedPartId))
-    : []
+  const poseMissingAttachments = testPose && draft ? draft.components.filter((component) =>
+    !model?.parts.some((part) => part.id === component.attachedPartId) || !testPose.parts.some((part) => part.id === component.attachedPartId)) : []
   const poseUsesOlderModel = Boolean(testPose && model && testPose.sourceModelUpdatedAt !== model.updatedAt)
   const previewLayerStride = (draft?.components.length ?? 0) + 2
   const scale = previewProject && previewSize.width && previewSize.height ? Math.max(0.05, Math.min((previewSize.width - 48) / previewProject.width, (previewSize.height - 48) / previewProject.height)) * zoom : 1
