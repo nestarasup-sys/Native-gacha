@@ -1,3 +1,4 @@
+import { projectForOriginalPreview } from '../../../../../shared/fabricatorModelViews'
 import { useModelSourceRefresh } from '../models/useModelSourceRefresh'
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
 import type { FaceAssetKind, FaceCatalogItem, FaceCatalogItemSave, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSave, FaceComponentAssetSummary, FaceComponentKind, FaceDetailKind, FaceGuideProfile, FaceGuideSettings, FaceTransform, FabricatorProject, FabricatorSlotSummary, ModelPart } from '../../../../../shared/fabricator'
@@ -190,7 +191,7 @@ export function FaceComponentsWorkspace({ mode }: { mode: FaceWorkspaceMode }) {
   const [guidesLoadedFor, setGuidesLoadedFor] = useState<FaceGuideProfile | null>(null)
   const [importAnchorsByModel, setImportAnchorsByModel] = useState<FaceImportAnchors>(readFaceImportAnchors)
   const [model, setModel] = useState<FabricatorProject | null>(null)
-  useModelSourceRefresh(modelSlot, setModel)
+  useModelSourceRefresh(modelSlot, fresh => setModel(projectForOriginalPreview(fresh)))
   const [assets, setAssets] = useState<FaceComponentAssetSummary[]>([])
   const [details, setDetails] = useState<Record<string, FaceComponentAsset>>({})
   const [eyeMasks, setEyeMasks] = useState<Record<string, string>>({})
@@ -463,7 +464,7 @@ export function FaceComponentsWorkspace({ mode }: { mode: FaceWorkspaceMode }) {
       const savedSelection = mode === 'eyes' ? readComponentSelections()[modelSlot] : undefined
       const savedParts = Object.fromEntries(Object.entries(savedSelection?.parts ?? {}).filter(([part, id]) =>
         categories.some((category) => category.parts.includes(part as PartId) && assetKinds.get(id) === category.kind))) as Partial<Record<PartId, string>>
-      setModel(project); setAssets(visibleList); setDetails(Object.fromEntries(loadedAssets.map((item) => [item.id, item])))
+      setModel(projectForOriginalPreview(project)); setAssets(visibleList); setDetails(Object.fromEntries(loadedAssets.map((item) => [item.id, item])))
       setSelectedAssets(savedParts)
       setLinked({ eye: true, pupil: true, 'eye-closed': true, eyebrow: true, ...savedSelection?.linked })
       setMoveTogether({ eye: false, pupil: false, 'eye-closed': false, eyebrow: false, ...savedSelection?.moveTogether })
