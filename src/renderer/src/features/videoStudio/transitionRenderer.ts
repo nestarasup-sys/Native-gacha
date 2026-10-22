@@ -5,6 +5,7 @@ import type { VideoCharacterRenderAssetProvider } from '../../../../shared/video
 import { faceRenderGeometry, trimTransparentImage } from './characterGeometry'
 import { mixAppearance, mixEffects, mixPoseArtwork, mixStageElement, mixStudioTransforms, smoothProgress, transitionProgress, type PoseArtwork } from '../../../../shared/videoCharacterInterpolation'
 import type { CharacterTransition } from './characterTransitions'
+import { loadStandardExpressionEffects, prepareSavedCharacterRenderer } from '../../characters/characterRenderer'
 
 /** Resolve the same visible defaults as the ordinary character compositor. */
 function visibleEffects(appearance: CustomizerFaceAppearance | undefined, effects: FaceExpressionEffects | undefined): FaceExpressionEffects {
@@ -85,22 +86,22 @@ export class TransitionRenderer {
     if (t >= 1) return transition.to
     const a = transition.from.element, b = transition.to.element
     const slot = character.customization.modelSlot ?? 1
-    const [source, fromPose, toPose, rendererModule] = await Promise.all([
+    const [source, fromPose, toPose] = await Promise.all([
       this.model(slot), this.pose(slot, a.poseSlot === undefined ? character.customization.poseSlot : a.poseSlot),
-      this.pose(slot, b.poseSlot === undefined ? character.customization.poseSlot : b.poseSlot), import('../customizer/CustomizerPage')
+      this.pose(slot, b.poseSlot === undefined ? character.customization.poseSlot : b.poseSlot)
     ])
     if (!source || !fromPose || !toPose) throw new Error(`Uma pose de ${character.name} não está disponível para a animação.`)
     const aa = a.faceAppearance ?? character.customization.faceAppearance, ba = b.faceAppearance ?? character.customization.faceAppearance
     const appearance = aa && ba ? mixAppearance(aa, ba, t) : aa ?? ba
     const normalized = await this.normalizedTransforms(a.faceTransforms ?? {}, b.faceTransforms ?? {}, aa, ba)
     const transforms = mixStudioTransforms(normalized.left, normalized.right, t)
-    if (!this.effects.has(slot)) this.effects.set(slot, rendererModule.loadStandardExpressionEffects(slot, this.assetProvider))
+    if (!this.effects.has(slot)) this.effects.set(slot, loadStandardExpressionEffects(slot, this.assetProvider))
     const defaults = await this.effects.get(slot)!
     const effects = mixEffects(visibleEffects(aa, a.activeExpressionEffects ?? (aa ? defaults[aa.expressionIndex] : undefined)), visibleEffects(ba, b.activeExpressionEffects ?? (ba ? defaults[ba.expressionIndex] : undefined)), t)
     const element = mixStageElement(a, b, t)
     const artwork = mixPoseArtwork(fromPose, toPose, t)
     const copy: CustomizerCharacter = { ...character, customization: { ...character.customization, faceAppearance: appearance } }
-    const renderer = await rendererModule.prepareSavedCharacterRenderer(copy, { source, artwork, assetProvider: this.assetProvider })
+    const renderer = await prepareSavedCharacterRenderer(copy, { source, artwork, assetProvider: this.assetProvider })
     const mode = t < .5 ? a.activeFaceMode : b.activeFaceMode
     const rendered = await renderer.render(appearance, transforms, effects, mode)
     const crop = await trimTransparentImage(rendered.dataUrl)
