@@ -41,7 +41,7 @@ jobs:
           fi
           mkdir -p /tmp/native-gacha-unpacked
           unzip -q "$zip_name" -d /tmp/native-gacha-unpacked
-          rsync -a --exclude='.git/' --exclude='node_modules/' --exclude='.env' --exclude='app-data/' /tmp/native-gacha-unpacked/ ./
+          rsync -a --exclude='.git/' --exclude='.github/workflows/' --exclude='node_modules/' --exclude='.env' --exclude='app-data/' /tmp/native-gacha-unpacked/ ./
           test -f package.json && test -d electron && test -d src && test -d tests
           git rm -- "$zip_name"
           git add -A
