@@ -54,6 +54,7 @@ import { createPosePersistence } from './domains/fabricator/posePersistence'
 import { createAnimatorPersistence } from './domains/fabricator/animatorPersistence'
 import { registerFabricatorPoseHandlers } from './domains/fabricator/poseIpc'
 import { registerFabricatorAnimatorHandlers } from './domains/fabricator/animatorIpc'
+import { fabricatorIpcChannels } from '../src/shared/fabricatorIpcChannels'
 import { captureFabricatorRealScreens } from './domains/fabricator/visualUiCapture'
 import { registerModelSourceDownloadHandlers } from './domains/fabricator/modelSourceExportIpc'
 
@@ -1975,7 +1976,7 @@ async function registerFabricatorHandlers(): Promise<void> {
 
   registerModelSourceDownloadHandlers(ipcMain, assertTrustedSender, () => app.getPath('downloads'))
 
-  ipcMain.handle('fabricator:model-source:publish', async (event, request: ModelSourcePublishRequest): Promise<string> => {
+  ipcMain.handle(fabricatorIpcChannels.publishFabricatorModelSource, async (event, request: ModelSourcePublishRequest): Promise<string> => {
     assertTrustedSender(event)
     if (!request || !isValidSlot(request.project?.slot)) throw new Error('Slot inválido.')
     const slot = request.project.slot
