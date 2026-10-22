@@ -13,6 +13,7 @@ type PanGesture = { pointerId: number; x: number; y: number; originX: number; or
 type PartGesture = { pointerId: number; partId: string; x: number; y: number; lastAngle: number; startRotation: number; accumulatedRotation: number; pivotX: number; pivotY: number; includeConnectedChildren: boolean; movePiece: boolean; canMove: boolean; before: DraftProject }
 
 const SLOT_COUNT = 12
+const EXPORT_POSE_SLOT_COUNT = 5
 const HISTORY_LIMIT = 50
 const emptyHistory = (): PoseHistory => ({ undo: [], redo: [] })
 
