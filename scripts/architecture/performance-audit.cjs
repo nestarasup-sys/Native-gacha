@@ -5,11 +5,11 @@ const path = require('node:path')
 const root = path.resolve(__dirname, '../..')
 const budgets = {
   'src/renderer/src/features/customizer/CustomizerPage.tsx': 4053,
-  'electron/main.ts': 3147,
+  'electron/main.ts': 2900,
   'src/renderer/src/features/videoStudio/VideoStudioEditor.tsx': 2613,
   'src/renderer/src/features/studio/StudioPage.tsx': 1673,
   'src/renderer/src/features/fabricator/FabricatorPage.tsx': 1085,
-  'src/renderer/src/ui/App.tsx': 862
+  'src/renderer/src/ui/App.tsx': 100
 }
 function analyzeSource(content) {
   return {
