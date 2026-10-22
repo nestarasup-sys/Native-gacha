@@ -356,6 +356,7 @@ export async function renderWardrobeOverlay(
       const targetBone = artwork.parts.find((part) => part.id === component.attachedPartId)
       if (!sourceBone || !targetBone) continue
       const { kneeOverlap, edgePadding } = wardrobePosePadding(component, equippedComponents.get(`${group.modelSlot}:${group.setId}`) ?? [])
+      if (component.glue?.mode === 'loose') continue
       const transform = mapWardrobeComponentToPose(component, sourceBone, targetBone, kneeOverlap, edgePadding)
       mapped.push({ component, transform, center: transform.origin, sequence: sequence++ })
     }
