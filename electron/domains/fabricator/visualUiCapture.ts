@@ -37,7 +37,7 @@ async function waitForRendered(win: BrowserWindow, selector: string, timeoutMs =
       if (!element || !element.isConnected) return false
       const rectangle = element.getBoundingClientRect()
       return rectangle.width > 0 && rectangle.height > 0 &&
-        !document.body.innerText.includes('Carregando área...')
+        !document.body.innerText.includes('Carregando área')
     })()`) as boolean
     consecutive = ready ? consecutive + 1 : 0
     if (consecutive >= 4) return
