@@ -392,7 +392,7 @@ function RoteiroWorkspace({ roteiro, onBack, onUpdate, onDeleteDraftVideo, chara
       const job = await window.desktop.startRoteiroCharacterExport({ id: roteiro.id, title: roteiro.title, characters: cast.map(({ id, name }) => ({ id, name })) })
       jobId = job.jobId
       const [{ prepareSavedCharacterRenderer }, { appearanceWithPupilsLookingLeft, buildStudioExpressionAppearance, buildStudioExpressionTransforms, presetWithPupilsLookingLeft }] = await Promise.all([
-        import('../../characters/characterRenderer'), import('../studio/expressionTransforms')
+        import('../../characters/characterRenderer'), import('../../characters/studioExpressionTransforms')
       ])
       let completedFiles = 0
       let omittedVariants = 0
