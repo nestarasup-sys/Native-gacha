@@ -28,7 +28,7 @@ import { DEFAULT_VIDEO_DURATION_FRAMES } from '../../../../shared/videoTimelineD
 import { captureVideoCharacter, characterStateAt, normalizeVideoCharacterTransforms, restoreVideoTracks, synchronizeVideoCharacterTransforms, videoCharacterStateEquals, videoCharacterStageElement } from './characterTrack'
 import type { CustomizerCharacter } from '../../../../shared/customizer'
 import type { CustomizerFaceAppearance } from '../../../../shared/customizer'
-import type { FaceCatalogItem, FaceCatalogItemSummary, FaceExpressionCollection, FaceExpressionEffects, FaceExpressionPreset, FaceExpressionPresetSummary, FaceSheetKind, FabricatorPoseSummary } from '../../../../shared/fabricator'
+import type { FaceCatalogItem, FaceCatalogItemSummary, FaceExpressionEffects, FaceExpressionPreset, FaceExpressionPresetSummary, FaceSheetKind, FabricatorPoseSummary } from '../../../../shared/fabricator'
 import type { VideoExportProgress, VideoExportRecoveryRecord } from '../../../../shared/videoExportRuntime'
 import type { RenderVariant } from '../../../../shared/videoSceneIR'
 import { createVideoCharacterRenderAssetSnapshot } from '../../../../shared/videoCharacterRenderAssets'
