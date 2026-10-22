@@ -10,6 +10,7 @@ const fabricatorApi: FabricatorDesktopApi = {
   importFabricatorModel: (slot) => ipcRenderer.invoke('fabricator:import-model', slot),
   loadFabricatorSlot: (slot) => ipcRenderer.invoke('fabricator:load-slot', slot),
   saveFabricatorProject: (project, changedAssets) => ipcRenderer.invoke('fabricator:save-project', project, changedAssets),
+  publishFabricatorModelSource: (project, sourceDataUrl, changedAssets) => ipcRenderer.invoke('fabricator:model-source:publish', { project, sourceDataUrl, changedAssets }),
   loadFabricatorHistory: (slot) => ipcRenderer.invoke('fabricator:load-history', slot),
   saveFabricatorHistory: (slot, history, current, changedAssets) => ipcRenderer.invoke('fabricator:save-history', slot, history, current, changedAssets),
   deleteFabricatorSlot: (slot) => ipcRenderer.invoke('fabricator:delete-slot', slot),
