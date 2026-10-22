@@ -25,6 +25,61 @@ async function waitFor(win: BrowserWindow, selector: string, timeoutMs = 15000):
   }
   throw new Error('Tela não abriu: ' + selector)
 }
+/** Não aceitar screenshot do Suspense ou do skeleton de navegação.
+ * Exigir DOM estável e conteúdo visível antes de cada captura de workspace.
+ */
+async function waitForRendered(win: BrowserWindow, selector: string, timeoutMs = 30000): Promise<void> {
+  const until = Date.now() + timeoutMs
+  let consecutive = 0
+  while (Date.now() < until) {
+    const ready = await win.webContents.executeJavaScript(`(() => {
+      const element = document.querySelector(${JSON.stringify(selector)})
+      if (!element || !element.isConnected) return false
+      const rectangle = element.getBoundingClientRect()
+      return rectangle.width > 0 && rectangle.height > 0 &&
+        !document.body.innerText.includes('Carregando área...')
+    })()`) as boolean
+    consecutive = ready ? consecutive + 1 : 0
+    if (consecutive >= 4) return
+    await new Promise(resolve => setTimeout(resolve, 250))
+  }
+  throw new Error('Tela não terminou de renderizar (evitando screenshot de loading): ' + selector)
+}
+
+/** Regressão de pixels: peça com deslocamentos X/Y deve continuar no lado
+ * correto do personagem. Nada é alterado na biblioteca pessoal do Fabricador.
+ */
+async function inspectSyntheticWardrobePreview(win: BrowserWindow): Promise<{
+  source: 'customizer-overlay'; colors: Array<{ name: string; pixels: number; x: number; y: number }>
+}> {
+  await waitForRendered(win, 'img.customizer-wardrobe-overlay', 30000)
+  const uri = await win.webContents.executeJavaScript(
+    "document.querySelector('img.customizer-wardrobe-overlay')?.getAttribute('src') ?? null"
+  ) as string | null
+  if (!uri?.startsWith('data:image/png;base64,')) throw Error('Customizador não compôs a roupa em PNG.')
+  const image = await sharp(Buffer.from(uri.slice(uri.indexOf(',') + 1), 'base64')).ensureAlpha().raw().toBuffer({ resolveWithObject: true })
+  const expected = [
+    { name: 'coat', rgba: [212,82,115] },
+    { name: 'sleeve-left', rgba: [42,174,207] },
+    { name: 'sleeve-right', rgba: [237,177,60] }
+  ]
+  const colors = expected.map(item => {
+    let sumX = 0, sumY = 0, count = 0
+    for (let y = 0; y < image.info.height; y++) for (let x = 0; x < image.info.width; x++) {
+      const index = (y * image.info.width + x) * 4
+      if (image.data[index+3] < 160 || item.rgba.some((value,channel) => Math.abs(value-image.data[index+channel]) > 9)) continue
+      sumX += x; sumY += y; count++
+    }
+    if (count < 15) throw Error('Peça sintética não apareceu na composição do Customizador: ' + item.name)
+    return { name: item.name, pixels: count, x: sumX/count, y: sumY/count }
+  })
+  const left = colors[1], right = colors[2]
+  if (left.x >= right.x - 30 || left.y <= right.y + 6) {
+    throw Error('Offsets X/Y do Fabricador não sobreviveram no Customizador: ' + JSON.stringify(colors))
+  }
+  return { source: 'customizer-overlay', colors }
+}
+
 async function compareScreenshot(image: Buffer, baselinePath: string): Promise<number> {
   const [a, b] = await Promise.all([
     sharp(image).ensureAlpha().raw().toBuffer({ resolveWithObject: true }),
@@ -95,7 +150,8 @@ export async function captureCustomizerStudioRealScreens(win: BrowserWindow, out
   const startedAt = Date.now()
   const results: Array<{ section: string; file: string; dimensions: string; sha256: string }> = []
   const capture = async (section: string, file: string) => {
-    await new Promise(resolve => setTimeout(resolve, 700))
+    const selector = section === 'Customizador' ? '.roster-panel' : '.studio-scene-area'
+    await waitForRendered(win, selector)
     const png = (await win.webContents.capturePage()).toPNG()
     const info = await sharp(png).metadata()
     if (!info.width || !info.height) throw Error('Screenshot Electron sem dimensões: ' + section)
@@ -161,6 +217,8 @@ export async function captureCustomizerStudioRealScreens(win: BrowserWindow, out
   await win.webContents.executeJavaScript("window.location.hash = '#/customizar'")
   await waitFor(win, '.roster-panel')
   await waitFor(win, '.character-card')
+  const garmentPixels = await inspectSyntheticWardrobePreview(win)
+  await writeFile(join(output, 'wardrobe-pixels.json'), JSON.stringify(garmentPixels, null, 2))
   await capture('Customizador', 'customizador.png')
   await win.webContents.executeJavaScript("window.location.hash = '#/estudio'")
   await waitFor(win, '.studio-page')
@@ -256,6 +314,7 @@ export async function captureCustomizerStudioReopened(win: BrowserWindow, output
   })()`) as boolean
   if (!opened) throw Error('Cena não reabriu na interface.')
   await waitFor(win, '.studio-cast-item', 30000)
+  await waitForRendered(win, '.studio-scene-area')
   const image = (await win.webContents.capturePage()).toPNG()
   const info = await sharp(image).metadata()
   if (!info.width || !info.height) throw Error('Screenshot de reabertura sem dimensões.')
