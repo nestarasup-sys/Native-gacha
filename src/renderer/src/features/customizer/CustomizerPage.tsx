@@ -8,7 +8,7 @@ import type { CustomizerCharacter, CustomizerFaceAppearance, CustomizerWardrobeC
 import { characterBodyDimensionLimits, characterProportionLimits, defaultCharacterBodyDimensions, defaultCharacterProportions, getCharacterBodyDimensions, getCharacterProportions, type CharacterBodyDimensions, type CharacterProportions } from '../../../../shared/customizer'
 import { resolveStudioTalkMouthId, type StudioFaceMode, type StudioFaceTransforms } from '../../../../shared/studio'
 import { usePreviewBackground } from '../../ui/hooks/usePreviewBackground'
-import { DesignBanner } from '../fabricator/DesignWorkspace'
+import { DesignBanner } from '../../ui/components/DesignBanner'
 import { mapWardrobeComponentToPose, wardrobePosePadding } from '../../../../shared/wardrobePose'
 import { validateWardrobeFlow } from '../../../../shared/assetFlow'
 import { anchorWardrobeAdjustments, editWardrobeAdjustment, moveWardrobeAdjustment, wardrobeAdjustmentMatrix } from '../../../../shared/wardrobeAdjustment'
