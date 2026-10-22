@@ -62,9 +62,9 @@ async function createCompleteCharacterFixture(root){
     {id:'coat',name:'Casaco',category:'camisa',attachedPartId:'body',
       x:68,y:141,width:110,height:135,rotation:0},
     {id:'sleeve-left',name:'Manga superior esquerda',category:'manga-superior',attachedPartId:'body',
-      x:45,y:154,width:32,height:95,rotation:0},
+      x:45,y:154,width:38,height:102,originWidth:32,originHeight:95,rotation:0},
     {id:'sleeve-right',name:'Manga superior direita',category:'manga-superior',attachedPartId:'body',
-      x:161,y:131,width:32,height:95,rotation:0}
+      x:161,y:131,width:25,height:120,originWidth:32,originHeight:95,rotation:0}
   ].map(part => ({...part,binding:fitBinding(part)}))
   writeJson(path.join(outfit,'wardrobe.json'),{
     schemaVersion:1,edition:1,id:'uniform',modelSlot:1,modelName:manifest.name,
