@@ -511,7 +511,7 @@ export function FabricatorPage() {
     if (savedTimer.current) clearTimeout(savedTimer.current)
     try {
       await persistProject(current)
-      const next: FabricatorProject = { ...current, sourceDataUrl: result.sourceDataUrl, parts: result.parts, updatedAt: new Date().toISOString() }
+      const next: FabricatorProject = { ...current, sourceDataUrl: result.sourceDataUrl, parts: result.parts, tolerance: result.tolerance, chromaBaseTolerance: 0, chromaVersion: 2, updatedAt: new Date().toISOString() }
       const { sourceDataUrl: _sourceDataUrl, parts, ...metadata } = next
       const serialized = { ...metadata, parts: parts.map(({ dataUrl: _dataUrl, chromaBaseDataUrl: _baseData, ...part }) => part) }
       const changedAssets: FabricatorAssetSave[] = result.parts.map(part => ({
@@ -528,6 +528,7 @@ export function FabricatorPage() {
       mixerSurfacesRef.current.clear()
       projectRef.current = published
       setProject(published)
+      setChromaValue(result.tolerance)
       setSaveState('saved')
       setModelSourceOpen(false)
       window.dispatchEvent(new Event('fabricator:assets-updated'))
