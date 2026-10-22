@@ -80,6 +80,31 @@ async function inspectSyntheticWardrobePreview(win: BrowserWindow, requirePoseOn
   return { source: 'customizer-overlay', colors }
 }
 
+/** Sample the ACTUAL Chromium renderer in the synthetic Electron profile.
+ * The screen may be idle; sampled FPS is diagnostic, not a gaming benchmark.
+ * Never run this sampling or retain memory readings from production profiles.
+ */
+async function sampleElectronPerformance(win: BrowserWindow): Promise<{ sampledFps: number; frameP95Ms: number; rendererPrivateKb: number; rendererSharedKb: number; jsHeapUsedBytes: number | null }> {
+  const samples = await win.webContents.executeJavaScript(`new Promise(resolve => {
+    const gaps = []; let previous = null
+    function sample(now) {
+      if (previous !== null) gaps.push(now - previous)
+      previous = now
+      if (gaps.length < 20) requestAnimationFrame(sample)
+      else {
+        gaps.sort((a,b) => a-b)
+        const average = gaps.reduce((a,b) => a+b,0) / gaps.length
+        const used = performance.memory?.usedJSHeapSize
+        resolve({ sampledFps: 1000/average, frameP95Ms: gaps[Math.ceil(gaps.length*.95)-1],
+          jsHeapUsedBytes: Number.isFinite(used) ? used : null })
+      }
+    }
+    requestAnimationFrame(sample)
+  })`) as { sampledFps: number; frameP95Ms: number; jsHeapUsedBytes: number | null }
+  const memory = await win.webContents.getProcessMemoryInfo()
+  return { ...samples, rendererPrivateKb: memory.private, rendererSharedKb: memory.shared }
+}
+
 async function compareScreenshot(image: Buffer, baselinePath: string): Promise<number> {
   const [a, b] = await Promise.all([
     sharp(image).ensureAlpha().raw().toBuffer({ resolveWithObject: true }),
@@ -281,6 +306,7 @@ export async function captureCustomizerStudioRealScreens(win: BrowserWindow, out
   }
   await writeFile(join(output, 'wardrobe-pixels.json'), JSON.stringify(garmentPixels, null, 2))
   await capture('Customizador', 'customizador.png')
+  const poseOnePerformance = await sampleElectronPerformance(win)
 
   // Exercise a SECOND saved pose in the actual Electron/Customizer renderer.
   // The fixture lives in the isolated DEV AI sandbox; restore pose 1 before
@@ -325,6 +351,7 @@ export async function captureCustomizerStudioRealScreens(win: BrowserWindow, out
     ...secondPosePixels, poseSlot: 2, centroidMovement: distance
   }, null, 2))
   await capture('Customizador', 'customizador-pose2.png')
+  const poseTwoPerformance = await sampleElectronPerformance(win)
   await changeSyntheticPose(1)
   await inspectSyntheticWardrobePreview(win)
   await win.webContents.executeJavaScript("window.location.hash = '#/estudio'")
@@ -372,6 +399,11 @@ export async function captureCustomizerStudioRealScreens(win: BrowserWindow, out
   if (!studio) throw Error('Elenco não persistiu no Studio Principal.')
   await capture('Studio Principal — elenco salvo', 'studio.png')
   await writeFile(join(output, 'flow-state.json'), JSON.stringify({ schemaVersion: 1, syntheticOnly: true, characterId: id, studioId: studio.id, name }, null, 2))
+  await writeFile(join(output, 'electron-performance.json'), JSON.stringify({
+    schemaVersion: 1, syntheticOnly: true, source: 'real-electron-renderer',
+    poseOne: poseOnePerformance, poseTwo: poseTwoPerformance
+  }, null, 2))
+
   await writeFile(join(output, 'workspace-manifest.json'), JSON.stringify({
     schemaVersion: 1, mode: 'real-electron-workspaces', syntheticOnly: true,
     capturedAt: new Date().toISOString(), results,
