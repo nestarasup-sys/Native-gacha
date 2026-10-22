@@ -40,8 +40,8 @@ async function fixture(t){
   }))
   await writeFile(join(folder,'electron-performance.json'),JSON.stringify({
     schemaVersion:1,syntheticOnly:true,source:'real-electron-renderer',
-    poseOne:{sampledFps:59,frameP95Ms:19,rendererPrivateKb:42000,rendererSharedKb:2100,jsHeapUsedBytes:20000000},
-    poseTwo:{sampledFps:57,frameP95Ms:22,rendererPrivateKb:45000,rendererSharedKb:2200,jsHeapUsedBytes:null}
+    poseOne:{sampledFps:59,frameP95Ms:19,rendererWorkingSetKb:42000,rendererPrivateKb:36000,jsHeapUsedBytes:20000000},
+    poseTwo:{sampledFps:57,frameP95Ms:22,rendererWorkingSetKb:45000,rendererPrivateKb:null,jsHeapUsedBytes:null}
   }))
   await writeFile(join(folder,'workspace-manifest.json'),JSON.stringify({
     schemaVersion:1,mode:'real-electron-workspaces',syntheticOnly:true,results
@@ -90,7 +90,7 @@ test('revisor recusa amostras artificiais sem memória real do renderer',async t
   const {folder}=await fixture(t)
   const filename=join(folder,'electron-performance.json')
   const report=JSON.parse(await readFile(filename,'utf8'))
-  report.poseTwo.rendererPrivateKb=0
+  report.poseTwo.rendererWorkingSetKb=0
   await writeFile(filename,JSON.stringify(report))
   await assert.rejects(verifyWorkspaceCaptures(folder),/Amostra FPS\/memória/)
 })
