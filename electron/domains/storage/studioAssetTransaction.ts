@@ -57,7 +57,9 @@ export async function recoverStudioAssetTransaction(files: Files, folder: string
     return { file: within(key, e.relativePath), backup: join(root, i + '.bak'), backedUp: e.backedUp }
   })
   const current = await maybeRead(files, join(key, 'studio.json'))
-  const committed = current !== null && digest(current) === journal.nextHash && journal.previousHash !== journal.nextHash
+  const confirmed = await maybeRead(files, join(root, 'committed.ok'))
+  const committed = (confirmed?.toString('utf8') === journal.nextHash) ||
+    (current !== null && digest(current) === journal.nextHash && journal.previousHash !== journal.nextHash)
   if (!committed) {
     for (const entry of paths) {
       if (entry.backedUp) {
@@ -128,6 +130,8 @@ export async function publishStudioAssetsAndManifest(options: {
       onCleanupError: () => { /* Um temporário órfão não sobrescreve manifesto confirmado. */ }
     })
     successfullyCommitted = true
+    // Após ack do manifesto, este marcador mantém o commit mesmo quando o JSON é idêntico.
+    await files.writeFile(join(root, 'committed.ok'), digest(nextContents), 'utf8')
   } finally {
     pending.delete(folder)
     release()
