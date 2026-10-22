@@ -26,11 +26,13 @@ test('Customizador separa bibliotecas do Fabricador do estado do personagem', as
 })
 test('Studio Principal mantém estado de inspector separado dos snapshots compartilhados',async()=>{
   const page=await readFile('src/renderer/src/features/studio/StudioPage.tsx','utf8')
-  const hook=await readFile('src/renderer/src/features/studio/useStudioInspectorState.ts','utf8')
+  const hook=await readFile('src/renderer/src/characters/useStudioInspectorState.ts','utf8')
+  const compat=await readFile('src/renderer/src/features/studio/useStudioInspectorState.ts','utf8')
   assert.match(page,/useStudioInspectorState\(\)/)
   assert.match(hook,/export function useStudioInspectorState/)
   assert.match(hook,/characterInspectorViewRef/)
   assert.match(hook,/studioExpressionCollections/)
+  assert.match(compat,/export \{ useStudioInspectorState \} from '\.\.\/\.\.\/characters\/useStudioInspectorState'/)
   assert.doesNotMatch(hook,/window\.desktop|studioSaveQueues/)
 })
 test('workflow Windows exige screenshots reais das três áreas no PR e perfis sintéticos',async()=>{
