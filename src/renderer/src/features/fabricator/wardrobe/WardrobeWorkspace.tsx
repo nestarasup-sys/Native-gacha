@@ -8,6 +8,9 @@ import { normalizeLayerOrder, orderedParts, partJointAnchor, sourcePointFromCanv
 import { bindWardrobeComponent, mapWardrobeComponentToPose, poseDeltaToSource, wardrobePosePadding, rebaseWardrobeSetToOriginalSheet } from './poseTransform'
 import { editWardrobeGlue, fixWardrobeGlue, releaseWardrobeGlue, suggestWardrobeGlueTarget, wardrobeGlueState } from '../../../../../shared/wardrobeGlue'
 import { WardrobeGlueControls } from './WardrobeGlueControls'
+import { snapWardrobePlacement } from '../../../../../shared/wardrobeMagnet'
+import { useWardrobePoseAudit } from './useWardrobePoseAudit'
+import { WardrobePoseAuditPanel } from './WardrobePoseAuditPanel'
 import { suggestWardrobeBone } from './boneSelection'
 import { normalizeEditableImageFile } from '../normalizeImage'
 
@@ -110,6 +113,7 @@ export function WardrobeWorkspace() {
   const artboardRef = useRef<HTMLDivElement>(null)
   const [previewSize, setPreviewSize] = useState({ width: 0, height: 0 })
   const [moveBodyMode, setMoveBodyMode] = useState(false)
+  const [magneticSnap, setMagneticSnap] = useState(true)
   const [bodyOffsets, setBodyOffsets] = useState<Record<string, Point>>({})
   const bodyDragRef = useRef<BodyDrag | null>(null)
   const [testPosePickerOpen, setTestPosePickerOpen] = useState(false)
@@ -118,6 +122,7 @@ export function WardrobeWorkspace() {
   const [testPoseLoading, setTestPoseLoading] = useState(false)
   const [testDragOffsets, setTestDragOffsets] = useState<Record<string, { x: number; y: number }>>({})
   const [calibratingPartId, setCalibratingPartId] = useState<string | null>(null)
+  const poseAudit = useWardrobePoseAudit(model,draft)
   const selected = draft?.components.find((component) => component.id === selectedId) ?? null
   const selectedIndex = draft?.components.findIndex((component) => component.id === selectedId) ?? -1
   const previewProject = testPose ?? model
@@ -410,8 +415,15 @@ export function WardrobeWorkspace() {
     const modelBone = component && referenceBone(component.attachedPartId)
     const poseBone = component && testPose?.parts.find((part) => part.id === component.attachedPartId)
     const sourceDelta = testPose && modelBone && poseBone ? poseDeltaToSource(delta, modelBone, poseBone) : delta
-    const x = drag.originX + sourceDelta.x
-    const y = drag.originY + sourceDelta.y
+    let x = drag.originX + sourceDelta.x
+    let y = drag.originY + sourceDelta.y
+    // Snap only a LOOSE piece; a fixed fit never jumps to another coordinate.
+    if (!testPose && magneticSnap && component && component.glue?.mode === 'loose') {
+      const target = referenceBone(component.attachedPartId)
+        ?? (referenceModel ? suggestWardrobeGlueTarget({...component,x,y}, referenceModel.parts) : null)
+      const snapped = snapWardrobePlacement({...component,x,y},target ?? undefined)
+      if (snapped) { x=snapped.x; y=snapped.y }
+    }
     if (testPose) {
       if (component) setTestDragOffsets((current) => ({ ...current, [drag.componentId]: { x: x - component.x, y: y - component.y } }))
     } else updateComponent(drag.componentId, { x, y })
@@ -516,7 +528,8 @@ export function WardrobeWorkspace() {
         {draft ? renderComponentList() : <div className="wardrobe-edit-empty"><Icon name="shirt" /><strong>Nenhum conjunto aberto</strong><small>Escolha um conjunto à esquerda para ver as peças.</small></div>}
       </aside>
       <section className="wardrobe-preview-card"><header><span><i /> {testPose ? `TESTE DA POSE · ${testPose.name}` : 'PRÉVIA DE ENCAIXE · FOLHA ORIGINAL'}</span><span>{previewProject ? `${previewProject.width} × ${previewProject.height}` : 'Sem modelo'}</span></header>
-        {!testPose && <div className="wardrobe-preview-controls"><button className={`pose-button ${moveBodyMode ? 'primary' : 'secondary'}`} disabled={!sourceParts || Boolean(calibratingPartId)} onClick={() => setMoveBodyMode((value) => !value)} type="button">{moveBodyMode ? 'Mover corpo: ligado' : 'Mover corpo'}</button><button className="pose-button secondary" disabled={!Object.keys(bodyOffsets).length} onClick={() => setBodyOffsets({})} type="button">Repor corpo</button><button className="pose-button secondary" disabled={previewPan.x === 0 && previewPan.y === 0} onClick={() => setPreviewPan(zeroOffset)} type="button">Centralizar prévia</button><label className="preview-background-picker" title="Mudar a cor do fundo em Modelos, Poses, Rosto e Roupas"><span>Fundo da prévia</span><input type="color" aria-label="Cor do fundo das prévias" value={previewBackground} onChange={(event) => setPreviewBackground(event.target.value)} /><code>{previewBackground.toUpperCase()}</code></label></div>}
+        {draft && model && <WardrobePoseAuditPanel disabled={processing || saving || openingSet} running={poseAudit.running} results={poseAudit.results} error={poseAudit.error} onAudit={() => void poseAudit.audit()} onPreview={(slot) => void loadTestPose(slot)} />}
+        {!testPose && <div className="wardrobe-preview-controls"><button className={`pose-button ${moveBodyMode ? 'primary' : 'secondary'}`} disabled={!sourceParts || Boolean(calibratingPartId)} onClick={() => setMoveBodyMode((value) => !value)} type="button">{moveBodyMode ? 'Mover corpo: ligado' : 'Mover corpo'}</button><button className="pose-button secondary" disabled={!Object.keys(bodyOffsets).length} onClick={() => setBodyOffsets({})} type="button">Repor corpo</button><button className={`pose-button ${magneticSnap ? 'primary' : 'secondary'}`} type="button" aria-pressed={magneticSnap} title="Aproxima bordas e centros da peça corporal durante o arraste; não fixa sem clicar em Fixar" onClick={() => setMagneticSnap((active) => !active)}>{magneticSnap ? 'Ímã ligado' : 'Ímã desligado'}</button><button className="pose-button secondary" disabled={previewPan.x === 0 && previewPan.y === 0} onClick={() => setPreviewPan(zeroOffset)} type="button">Centralizar prévia</button><label className="preview-background-picker" title="Mudar a cor do fundo em Modelos, Poses, Rosto e Roupas"><span>Fundo da prévia</span><input type="color" aria-label="Cor do fundo das prévias" value={previewBackground} onChange={(event) => setPreviewBackground(event.target.value)} /><code>{previewBackground.toUpperCase()}</code></label></div>}
         <div ref={previewRef} className={`wardrobe-preview-stage${testPose ? ' testing-pose' : ''}${!moveBodyMode && !calibratingPartId && !testPose ? ' pan-ready' : ''}`} onPointerDown={handlePreviewPointerDown} onPointerMove={movePreviewPan} onPointerUp={finishPreviewPan} onPointerCancel={finishPreviewPan} style={{ '--preview-background': previewBackground } as import('react').CSSProperties}>{previewProject && <div ref={artboardRef} className={`wardrobe-artboard${calibratingPartId ? ' calibrating-origin' : ''}${!moveBodyMode && !calibratingPartId && !testPose ? ' pan-ready' : ''}`} onPointerDown={handleArtboardPointerDown} style={{ width: previewProject.width * scale, height: previewProject.height * scale, transform: `translate(${previewPan.x}px, ${previewPan.y}px)` }}>
         {!testPose && model && sourceParts && orderedParts(model.parts, model.layerOrder).map((part) => {
           const source = sourceParts[part.id]
