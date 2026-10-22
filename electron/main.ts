@@ -2200,7 +2200,7 @@ async function registerFabricatorHandlers(): Promise<void> {
     if (!request || !isValidSlot(request.project?.slot)) throw new Error('Slot inválido.')
     const slot = request.project.slot
     const previous = fabricatorSaveQueues.get(slot) ?? Promise.resolve()
-    const job = previous.catch(() => undefined).then(() => publishModelSource(request, slotPath, writeFabricatorProject))
+    const job = previous.catch(() => undefined).then(() => publishModelSource(request, slotPath, writeFabricatorProject, { mkdir, readFile, writeFile, readdir, rename, rm }))
     const queue = job.then(() => undefined)
     fabricatorSaveQueues.set(slot, queue)
     try { return await job } finally {
