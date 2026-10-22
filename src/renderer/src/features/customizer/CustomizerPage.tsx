@@ -1,4 +1,4 @@
-import { selectCharacterArtwork } from '../../../shared/characterSourceContinuity'
+import { selectCharacterArtwork } from '../../../../shared/characterSourceContinuity'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { RenderedCharacterPortrait } from '../../ui/components/RenderedCharacterPortrait'
 import { Icon, type IconName } from '../../ui/components/Icon'
