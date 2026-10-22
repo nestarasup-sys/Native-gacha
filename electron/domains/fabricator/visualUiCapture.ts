@@ -84,7 +84,7 @@ async function inspectSyntheticWardrobePreview(win: BrowserWindow, requirePoseOn
  * The screen may be idle; sampled FPS is diagnostic, not a gaming benchmark.
  * Never run this sampling or retain memory readings from production profiles.
  */
-async function sampleElectronPerformance(win: BrowserWindow): Promise<{ sampledFps: number; frameP95Ms: number; rendererPrivateKb: number; rendererSharedKb: number; jsHeapUsedBytes: number | null }> {
+async function sampleElectronPerformance(win: BrowserWindow): Promise<{ sampledFps: number; frameP95Ms: number; rendererWorkingSetKb: number; rendererPrivateKb: number | null; jsHeapUsedBytes: number | null }> {
   const samples = await win.webContents.executeJavaScript(`new Promise(resolve => {
     const gaps = []; let previous = null
     function sample(now) {
@@ -103,8 +103,9 @@ async function sampleElectronPerformance(win: BrowserWindow): Promise<{ sampledF
   })`) as { sampledFps: number; frameP95Ms: number; jsHeapUsedBytes: number | null }
   const rendererPid = win.webContents.getOSProcessId()
   const processMetric = app.getAppMetrics().find(item => item.pid === rendererPid)
-  if (!processMetric?.memory || processMetric.memory.privateBytes <= 0) throw Error('Processo renderizador Electron não forneceu métricas de memória.')
-  return { ...samples, rendererPrivateKb: processMetric.memory.privateBytes, rendererSharedKb: processMetric.memory.sharedBytes }
+  if (!processMetric?.memory || processMetric.memory.workingSetSize <= 0) throw Error('Processo renderizador Electron não forneceu métricas de memória.')
+  return { ...samples, rendererWorkingSetKb: processMetric.memory.workingSetSize,
+    rendererPrivateKb: processMetric.memory.privateBytes ?? null }
 }
 
 async function compareScreenshot(image: Buffer, baselinePath: string): Promise<number> {
