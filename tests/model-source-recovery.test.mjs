@@ -51,3 +51,22 @@ test('mais de um backup válido exige recuperação manual; não escolhe arbitra
 test('slot inválido é barrado antes de ler filesystem',async()=>{
   await assert.rejects(recoverModelSourceSlot(0,()=>{throw Error('não chamado')},fs),/Slot inválido/)
 })
+
+test('marcador da transação seleciona o backup correto mesmo com históricos anteriores',async t=>{
+  const {root,official,backup,write}=await fixture(t)
+  const old=join(root,'.model-source-backup-1-11111111-2222-3333-4444-555555555555')
+  await write(backup)
+  await write(old)
+  await fs.writeFile(join(root,'.model-source-pending-1.json'),JSON.stringify({
+    version:1,backup:'.model-source-backup-1-01234567-89ab-cdef-0123-456789abcdef'
+  }))
+  assert.equal(await recoverModelSourceSlot(1,()=>official,fs),'restored')
+  await fs.access(join(old,'project.json'))
+  assert.equal(await fs.readFile(join(official,'parts','head.png'),'utf8'),'PIXELS')
+})
+test('marcador com caminho inválido nunca sai da pasta do Fabricador',async t=>{
+  const {root,official,backup,write}=await fixture(t)
+  await write(backup)
+  await fs.writeFile(join(root,'.model-source-pending-1.json'),JSON.stringify({version:1,backup:'../../segredo'}))
+  assert.equal(await recoverModelSourceSlot(1,()=>official,fs),'restored')
+})
