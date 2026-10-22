@@ -1,4 +1,5 @@
 import { studioCharacterRenderKey, studioElementSize } from '../../../../shared/studioSceneModel'
+import { SerializedDocumentSaveQueue } from '../../../../shared/serializedDocumentSave'
 import { isPoseSnapshotForModel } from '../../../../shared/characterSourceContinuity'
 import { recordStudioHistory, undoStudioHistory, redoStudioHistory } from '../../../../shared/studioHistory'
 import { useStudioInspectorState } from './useStudioInspectorState'
@@ -179,6 +180,7 @@ export function StudioPage() {
   const studioFaceRenderRunningRef = useRef(false)
   const studioFaceRendererRef = useRef<{ key: string; render: (appearance?: CustomizerFaceAppearance, transforms?: StudioFaceTransforms, effects?: FaceExpressionEffects, mode?: StudioFaceMode) => Promise<{ dataUrl: string; width: number; height: number }> } | null>(null)
   const saveGenerationRef = useRef(0)
+  const studioSaveQueue = useRef(new SerializedDocumentSaveQueue())
   const expressionSaveSignatureRef = useRef<{ studioId: string; value: string } | null>(null)
   const normalizedStudioIdsRef = useRef(new Set<string>())
   const nextStudioNumber = useRef(1)
@@ -612,7 +614,7 @@ export function StudioPage() {
     try {
       const thumbnailDataUrl = await makeStudioThumbnail(document).catch(() => document.thumbnailDataUrl)
       const savedDocument = { ...document, ...(thumbnailDataUrl ? { thumbnailDataUrl } : {}), updatedAt: new Date().toISOString() }
-      await window.desktop.saveStudio(savedDocument)
+      await studioSaveQueue.current.run(() => window.desktop.saveStudio(savedDocument))
       if (generation === saveGenerationRef.current) {
         if (savedDocument.thumbnailDataUrl !== document.thumbnailDataUrl) {
           setStudios((current) => current.map((studio) => studio.id === document.id && studio.updatedAt === document.updatedAt && studio.thumbnailDataUrl !== savedDocument.thumbnailDataUrl
