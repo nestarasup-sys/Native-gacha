@@ -3,6 +3,7 @@
  */
 import { dirname, join } from 'node:path'
 import type { ModelSourceFiles } from './modelSource'
+import { isModelSourceJournal, verifyModelSourceCommit } from './modelSourceJournal'
 
 type RecoveryFiles = Pick<ModelSourceFiles, 'readdir' | 'readFile' | 'rename' | 'rm'>
 
@@ -26,6 +27,30 @@ async function manifestLooksComplete(folder: string, files: RecoveryFiles): Prom
   }
 }
 
+/** Finaliza commit já publicado quando houve queda após promover o staging.
+ * Não reescreve manifesto nem força rollback sobre uma versão válida.
+ */
+async function settleCompletedJournal(
+  slot: number, official: string, base: string, files: RecoveryFiles
+): Promise<void> {
+  const pending = join(base, `.model-source-pending-${slot}.json`)
+  let raw: string
+  try { raw = await files.readFile(pending, 'utf8') }
+  catch (reason) {
+    if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return
+    throw reason
+  }
+  let journal: unknown
+  try { journal = JSON.parse(raw) } catch { return }
+  if (!isModelSourceJournal(journal, slot)) return // Marcadores legados são preservados.
+  try {
+    await verifyModelSourceCommit(official, journal.targetSourceFile, files)
+    await files.rm(pending, { force: true })
+  } catch {
+    // Versão não corresponde ao journal: não tocar nem no slot nem no backup.
+  }
+}
+
 export type ModelSourceRecoveryResult = 'intact' | 'restored' | 'missing'
 
 export async function recoverModelSourceSlot(
@@ -41,9 +66,13 @@ export async function recoverModelSourceSlot(
     // O SQLite pode manter um diretório lógico vazio depois do rename.
     // Nunca restaurar sobre conteúdo real, mesmo com manifesto corrompido.
     const entries = await files.readdir(official)
-    if (entries.length > 0) return 'intact'
+    if (entries.length > 0) {
+      await settleCompletedJournal(slot, official, base, files)
+      return 'intact'
+    }
     try {
       await files.readFile(join(official, 'project.json'), 'utf8')
+      await settleCompletedJournal(slot, official, base, files)
       return 'intact'
     } catch (reason) {
       if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') return 'intact'
