@@ -1,4 +1,4 @@
-import { isPoseSnapshotForModel } from '../../../shared/characterSourceContinuity'
+import { isPoseSnapshotForModel } from '../../../../shared/characterSourceContinuity'
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { buildStudioExpressionAppearance, buildStudioExpressionTransforms, resolveStudioExpressionBase, studioExpressionCollection } from './expressionTransforms'
 import { Icon } from '../../ui/components/Icon'
