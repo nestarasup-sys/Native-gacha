@@ -36,14 +36,15 @@
     "audit:architecture": "node scripts/architecture/check-syntax.cjs && node scripts/architecture/check-relative-imports.cjs && node scripts/architecture/check-boundaries.cjs",
     "test:base-videos": "node --experimental-strip-types --test tests/base-videos-architecture.test.mjs",
     "test:roteiros": "node --experimental-strip-types --test tests/roteiros-validation.test.mjs",
-    "test:refactor": "node --experimental-strip-types --test tests/base-videos-architecture.test.mjs tests/roteiros-validation.test.mjs tests/customizer-architecture.test.mjs tests/fabricator-model-catalog.test.mjs tests/shared-body-shape.test.cjs tests/character-production-flow.test.mjs tests/fabricator-wardrobe-catalog.test.mjs tests/model-source-publish.test.mjs tests/model-source-dimensions.test.cjs tests/model-source-download.test.mjs",
+    "test:refactor": "node --experimental-strip-types --test tests/base-videos-architecture.test.mjs tests/roteiros-validation.test.mjs tests/customizer-architecture.test.mjs tests/fabricator-model-catalog.test.mjs tests/shared-body-shape.test.cjs tests/character-production-flow.test.mjs tests/fabricator-wardrobe-catalog.test.mjs tests/model-source-publish.test.mjs tests/model-source-dimensions.test.cjs tests/model-source-download.test.mjs tests/fabricator-model-writer.test.mjs tests/fabricator-model-views.test.mjs tests/fabricator-view-boundaries.test.cjs",
     "test:customizer": "node --experimental-strip-types --test tests/customizer-architecture.test.mjs",
     "test:fabricator-catalog": "node --experimental-strip-types --test tests/fabricator-model-catalog.test.mjs",
     "test:asset-flow": "node scripts/audit-wardrobe-flow.mjs",
     "test:geometry": "node --test tests/shared-body-shape.test.cjs tests/studio-character-geometry.test.cjs",
     "test:character-flow": "node --experimental-strip-types --test tests/character-production-flow.test.mjs",
     "test:fabricator": "node --experimental-strip-types --test tests/fabricator-model-catalog.test.mjs tests/fabricator-wardrobe-catalog.test.mjs",
-    "test:model-source": "node --experimental-strip-types --test tests/model-source-publish.test.mjs tests/model-source-dimensions.test.cjs tests/model-source-download.test.mjs"
+    "test:model-source": "node --experimental-strip-types --test tests/model-source-publish.test.mjs tests/model-source-dimensions.test.cjs tests/model-source-download.test.mjs",
+    "test:fabricator:contracts": "node --experimental-strip-types --test tests/fabricator-model-writer.test.mjs tests/fabricator-model-views.test.mjs tests/fabricator-view-boundaries.test.cjs tests/model-source-publish.test.mjs"
   },
   "dependencies": {
     "better-sqlite3": "^13.0.3",
