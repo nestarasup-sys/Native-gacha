@@ -21,7 +21,8 @@ test('editores DEV apresentam a imagem-base sem gravar sobre a montagem',()=>{
  ])
  assert.deepEqual(selectOriginalModelSource(model).parts.map(x=>[x.x,x.y]),[[8,12]])
  assert.deepEqual(selectMountedModelSource(model).parts.map(x=>[x.x,x.y]),[[100,80]])
- assert.deepEqual(preview.joints,[])
+ assert.equal(preview.joints.length,1)
+ assert.equal(preview.joints[0].childPartId,'head')
  assert.deepEqual(model,snapshot)
 })
 test('legado sem sourceTransform permanece renderizável e não é mutado',()=>{
