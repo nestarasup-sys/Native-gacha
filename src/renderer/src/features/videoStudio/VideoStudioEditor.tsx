@@ -11,7 +11,7 @@ import type { StudioAsset, StudioDocument, StudioElement, StudioFaceMode, Studio
 import { automaticBlinkFrameFor, resolveVideoFrameSelection } from '../../../../shared/videoFrame'
 import { defaultVideoTransform, editVideoMediaClip, isValidVideoMediaClip, splitVideoMediaClip as splitMediaClip } from '../../../../shared/videoMedia'
 import { videoStageCssTransform } from '../../../../shared/videoStageGeometry'
-import { faceRenderGeometry, trimTransparentImage, type TrimmedImage } from './characterGeometry'
+import { faceRenderGeometry, trimTransparentImage, fitElementToTrim, type TrimmedImage } from './characterGeometry'
 import { useCharacterTransitions } from './useCharacterTransitions'
 import { PreviewTransport } from './PreviewTransport'
 import { usePreviewFullscreen } from './usePreviewFullscreen'
