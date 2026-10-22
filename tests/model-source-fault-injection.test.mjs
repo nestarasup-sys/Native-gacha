@@ -91,4 +91,10 @@ test('SQLite ativo: publicar no DomainFileSystem com a mesma semântica de backu
  assert.match(version,/^source-/)
  assert.equal(JSON.parse(await files.readFile(join(slot,'project.json'),'utf8')).sourceFile,version)
  assert.equal((await files.readFile(join(slot,'parts','head.png'))).toString(),'UPDATED')
+ const injected=adapter(files,(method,args)=>method==='rename' && String(args[0]).includes('.model-source-stage-'))
+ await assert.rejects(publishModelSource({
+   ...request,project:{...request.project,sourceAssetName:version}
+ },()=>slot,(p,a,d)=>save(p,a,d,injected),injected),/INJECTED_/)
+ assert.equal(JSON.parse(await files.readFile(join(slot,'project.json'),'utf8')).sourceFile,version)
+ assert.equal((await files.readFile(join(slot,'parts','head.png'))).toString(),'UPDATED')
 })
