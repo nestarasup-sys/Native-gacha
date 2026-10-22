@@ -50,10 +50,18 @@ async function createCompleteCharacterFixture(root){
   writeJson(path.join(outfit,'wardrobe.json'),{
     schemaVersion:1,edition:1,id:'uniform',modelSlot:1,modelName:manifest.name,
     name:'Jaqueta de teste',width:256,height:384,updatedAt:T,
-    components:[{id:'coat',name:'Casaco',category:'camisa',attachedPartId:'body',
-      x:74,y:130,width:110,height:135,rotation:0}]
+    components:[
+      {id:'coat',name:'Casaco',category:'camisa',attachedPartId:'body',
+        x:74,y:130,width:110,height:135,rotation:0},
+      {id:'sleeve-left',name:'Manga superior esquerda',category:'manga-superior',attachedPartId:'body',
+        x:42,y:145,width:32,height:95,rotation:0},
+      {id:'sleeve-right',name:'Manga superior direita',category:'manga-superior',attachedPartId:'body',
+        x:184,y:145,width:32,height:95,rotation:0}
+    ]
   })
   await writePng(path.join(outfit,'parts','coat.png'),110,135,[212,82,115,255])
+  await writePng(path.join(outfit,'parts','sleeve-left.png'),32,95,[42,174,207,255])
+  await writePng(path.join(outfit,'parts','sleeve-right.png'),32,95,[237,177,60,255])
   const hair=path.join(base,'hair','model-1','styles','style-short')
   writeJson(path.join(hair,'hair-style.json'),{
     schemaVersion:1,id:'short',modelSlot:1,name:'Cabelo de teste',
