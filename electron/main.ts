@@ -1955,7 +1955,7 @@ async function registerFabricatorHandlers(): Promise<void> {
   // A leitura do catálogo também recupera um slot que ficou sem nome após queda
   // entre as duas renomeações da publicação. Não remove nem escolhe backups ambíguos.
   const recoverSlot = (slot: number) =>
-    recoverModelSourceSlot(slot, slotPath, { readdir, readFile, rename })
+    recoverModelSourceSlot(slot, slotPath, { readdir, readFile, rename, rm })
   registerFabricatorModelCatalogHandlers(ipcMain, assertTrustedSender, {
     listSlots: async () => {
       for (let slot = 1; slot <= slotCount; slot += 1) await recoverSlot(slot)
@@ -2015,7 +2015,7 @@ async function registerFabricatorHandlers(): Promise<void> {
     const slot = request.project.slot
     const previous = fabricatorSaveQueues.get(slot) ?? Promise.resolve()
     const job = previous.catch(() => undefined).then(async () => {
-      await recoverModelSourceSlot(slot, slotPath, { readdir, readFile, rename })
+      await recoverModelSourceSlot(slot, slotPath, { readdir, readFile, rename, rm })
       return publishModelSource(request, slotPath, writeFabricatorProject, { mkdir, readFile, writeFile, readdir, rename, rm })
     })
     const queue = job.then(() => undefined)
