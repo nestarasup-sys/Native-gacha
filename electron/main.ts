@@ -923,8 +923,8 @@ async function writeWardrobeSet(modelSlot: number, set: WardrobeSetSave, assets:
 
 // Assets versionados são usados apenas nas bibliotecas oficiais; rascunhos não entram em cache.
 const catalogAssetCache = new VersionedAssetResolver(32 * 1024 * 1024)
-function readCatalogPng(namespace: AssetNamespace, identity: string, version: string, imagePath: string): Promise<Uint8Array> {
-  return catalogAssetCache.resolve(namespace, identity, version, () => readAssetImage(imagePath))
+async function readCatalogPng(namespace: AssetNamespace, identity: string, version: string, imagePath: string): Promise<Buffer> {
+  return Buffer.from(await catalogAssetCache.resolve(namespace, identity, version, () => readAssetImage(imagePath)))
 }
 function invalidateCatalogPng(namespace: AssetNamespace, identity: string): void {
   catalogAssetCache.invalidate(namespace, identity)
