@@ -1,3 +1,4 @@
+import { useModelSourceRefresh } from './models/useModelSourceRefresh'
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import type { FaceCatalogItem, FaceComponentAsset, FaceExpressionEffect, FaceExpressionPreset, FaceExpressionTransforms, FaceTransform, FabricatorProject } from '../../../../shared/fabricator'
 import { Icon } from '../../ui/components/Icon'
@@ -71,6 +72,7 @@ function drawFacialLayer(context: CanvasRenderingContext2D, image: CanvasImageSo
 
 export function FaceAnimatorWorkspace({ modelSlot }: { modelSlot: number }) {
   const [project, setProject] = useState<FabricatorProject | null>(null)
+  useModelSourceRefresh(modelSlot, setProject)
   const [presets, setPresets] = useState<FaceExpressionPreset[]>([])
   const [assets, setAssets] = useState<Record<string, FaceComponentAsset>>({})
   const [catalog, setCatalog] = useState<Record<string, FaceCatalogItem>>({})
