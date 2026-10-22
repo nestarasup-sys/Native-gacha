@@ -1,4 +1,4 @@
-import { useModelSourceRefresh } from '../../models/useModelSourceRefresh'
+import { useModelSourceRefresh } from '../models/useModelSourceRefresh'
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import type { FabricatorHistoryState, FabricatorPose, FabricatorPoseSummary, FabricatorProject, FabricatorProjectSave, FabricatorSlotSummary, ModelPart, WardrobeCategory, WardrobeComponent, WardrobeSet, WardrobeSetSave, WardrobeSetSummary } from '../../../../../shared/fabricator'
 import { Icon } from '../../../ui/components/Icon'
