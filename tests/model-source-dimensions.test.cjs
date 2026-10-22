@@ -7,7 +7,7 @@ const ts = require('typescript')
 const file = resolve('src/renderer/src/features/fabricator/models/modelSource.ts')
 const compiled = ts.transpileModule(readFileSync(file,'utf8'), {
   compilerOptions: {module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}
-}).outputText
+}).outputText.replaceAll('import.meta.url', '\"file:///model-source-test.ts\"')
 const mod={exports:{}}
 new Function('exports','module','require',compiled)(mod.exports,mod,(specifier) => {
   if (specifier === './resize') return { isHeadPart: part => /cabe[çc]a|head/i.test(part.name) }
