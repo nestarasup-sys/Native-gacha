@@ -1,3 +1,4 @@
+import { projectForOriginalPreview } from '../../../../shared/fabricatorModelViews'
 import { useModelSourceRefresh } from './models/useModelSourceRefresh'
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import type { FaceCatalogItem, FaceComponentAsset, FaceExpressionEffect, FaceExpressionPreset, FaceExpressionTransforms, FaceTransform, FabricatorProject } from '../../../../shared/fabricator'
@@ -72,7 +73,7 @@ function drawFacialLayer(context: CanvasRenderingContext2D, image: CanvasImageSo
 
 export function FaceAnimatorWorkspace({ modelSlot }: { modelSlot: number }) {
   const [project, setProject] = useState<FabricatorProject | null>(null)
-  useModelSourceRefresh(modelSlot, setProject)
+  useModelSourceRefresh(modelSlot, fresh => setProject(projectForOriginalPreview(fresh)))
   const [presets, setPresets] = useState<FaceExpressionPreset[]>([])
   const [assets, setAssets] = useState<Record<string, FaceComponentAsset>>({})
   const [catalog, setCatalog] = useState<Record<string, FaceCatalogItem>>({})
@@ -121,7 +122,7 @@ export function FaceAnimatorWorkspace({ modelSlot }: { modelSlot: number }) {
           Promise.all(catalogSummaries.map((entry) => window.desktop.loadFaceCatalogItem(modelSlot, entry.id)))
         ])
         if (!active) return
-        setProject(model)
+        setProject(projectForOriginalPreview(model))
         setPresets(loadedPresets.filter((entry): entry is FaceExpressionPreset => !!entry && entry.collectionId === 'standard'))
         setAssets(Object.fromEntries(loadedComponents.filter((entry): entry is FaceComponentAsset => !!entry).map((entry) => [entry.id, entry])))
         setCatalog(Object.fromEntries(loadedCatalog.filter((entry): entry is FaceCatalogItem => !!entry).map((entry) => [entry.id, entry])))
