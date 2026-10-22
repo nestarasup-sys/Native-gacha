@@ -2,7 +2,7 @@
  * Customizador/Studio continuam consumindo este formato via os canais IPC legados.
  */
 import { extname, join } from 'node:path'
-import { VersionedAssetResolver } from './versionedAssetResolver'
+import { VersionedAssetResolver } from './versionedAssetResolver.ts'
 import type { FabricatorProject, FabricatorSlotSummary, ModelPart } from '../../../src/shared/fabricator'
 
 export interface FabricatorModelFiles {
