@@ -2,7 +2,7 @@ import { studioCharacterRenderKey, studioElementSize } from '../../../../shared/
 import { isPoseSnapshotForModel } from '../../../../shared/characterSourceContinuity'
 import { recordStudioHistory, undoStudioHistory, redoStudioHistory } from '../../../../shared/studioHistory'
 import { useStudioInspectorState } from './useStudioInspectorState'
-import { trimTransparentImage, fitElementToTrim, faceRenderGeometry } from '../../characters/characterGeometry'
+import { trimTransparentImage, fitElementToTrim, faceRenderGeometry, type TrimmedImage } from '../../characters/characterGeometry'
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { buildStudioExpressionAppearance, buildStudioExpressionTransforms, resolveStudioExpressionBase, studioExpressionCollection } from './expressionTransforms'
 import { Icon } from '../../ui/components/Icon'
