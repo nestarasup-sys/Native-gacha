@@ -84,6 +84,7 @@ export function selectMountedModelSource(project: FabricatorProject): MountedMod
  */
 export function projectForOriginalPreview(project: FabricatorProject | null): FabricatorProject | null {
   if (!project) return null
+  const model = project
   type Point = { x: number; y: number }
   const originals = new Map(project.parts.map(part => {
     const source = part.sourceTransform
@@ -93,7 +94,7 @@ export function projectForOriginalPreview(project: FabricatorProject | null): Fa
     } : { x: part.x, y: part.y, width: part.width, height: part.height, rotation: part.rotation }] as const
   }))
   function transformPoint(partId: string, point: Point): Point {
-    const part = project.parts.find(candidate => candidate.id === partId)
+    const part = model.parts.find(candidate => candidate.id === partId)
     const source = originals.get(partId)
     if (!part || !source) return { ...point }
     const radians = part.rotation * Math.PI / 180
