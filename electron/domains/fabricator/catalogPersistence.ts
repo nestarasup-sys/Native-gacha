@@ -4,6 +4,7 @@
  */
 import { join } from 'node:path'
 import type * as nodeFs from 'node:fs/promises'
+import { publishJsonManifest } from '../storage/atomicManifest.ts'
 
 type Files = Pick<typeof nodeFs, 'mkdir' | 'access' | 'writeFile' | 'rename' | 'unlink' | 'readdir'>
 type Image = { id: string; bytes: Buffer }
@@ -77,9 +78,10 @@ export function createFabricatorCatalogPersistence(
       await commitWardrobeManifest(folder, manifest)
     } else {
       const path = join(folder, manifestName)
-      const temporary = path + '.tmp'
-      await writeFile(temporary, JSON.stringify(manifest), 'utf8')
-      await rename(temporary, path)
+      await publishJsonManifest({
+        files: { writeFile, rename, unlink },
+        target: path, temporary: path + '.tmp', value: manifest
+      })
     }
     // Só remove imagens obsoletas DEPOIS de promover o manifesto.
     if (!prune) return
