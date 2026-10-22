@@ -1,42 +1,19 @@
 import type { FaceCatalogItem, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSummary, FaceDetailKind, FaceElementKind, FaceExpressionEffects, FaceSet, FaceSheetKind, FabricatorProject, HairStyle, WardrobeCategory, WardrobeSet } from '../../../shared/fabricator'
 import { hairCategories } from '../../../shared/hairCategories'
 import type { CustomizerCharacter, CustomizerFaceAppearance, CustomizerWardrobeCategory, CustomizerWardrobeGroup, FaceComponentPartId, FacePalettePartId, HairColorOverrides, HairColorRole, HairPartId } from '../../../shared/customizer'
-import { getCharacterBodyDimensions, getCharacterProportions, type CharacterProportions } from '../../../shared/customizer'
 import { resolveStudioTalkMouthId, type StudioFaceMode, type StudioFaceTransforms } from '../../../shared/studio'
 import { mapWardrobeComponentToPose, wardrobePosePadding } from '../../../shared/wardrobePose'
 import { validateWardrobeFlow } from '../../../shared/assetFlow'
 import { wardrobeAdjustmentMatrix } from '../../../shared/wardrobeAdjustment'
 import { eyeInteriorMask } from '../ui/image/eyeInteriorMask'
-import { applyCharacterBodyShape } from '../../../shared/bodyShape'
 import { tintSkinPixels } from './skinTint'
 import { configureCharacterSampling, MAX_CHARACTER_PREVIEW_PIXELS } from './renderResolution'
 import { drawFaceExpressionEffects } from './expressionEffectRender'
 import { legacyStandardExpressionEffects } from '../../../shared/legacyExpressionEffects'
 import type { VideoCharacterRenderAssetProvider } from '../../../shared/videoCharacterRenderAssets'
-
-export type CatalogArtwork = Pick<FabricatorProject, 'width' | 'height' | 'parts' | 'layerOrder' | 'hiddenPartIds'> & Partial<Pick<FabricatorProject, 'joints'>>
-
-export function withCharacterHeadSize(artwork: CatalogArtwork, proportions: CharacterProportions): CatalogArtwork {
-  const scaleX = proportions.head * proportions.headWidth / 10000
-  const scaleY = proportions.head * proportions.headHeight / 10000
-  if (scaleX === 1 && scaleY === 1) return artwork
-  const head = artwork.parts.find((part) => /cabe[çc]a|head/i.test(part.name))
-  if (!head) return artwork
-  return {
-    ...artwork,
-    parts: artwork.parts.map((part) => part.id === head.id ? {
-      ...part,
-      x: part.x - (part.width * scaleX - part.width) / 2,
-      y: part.y - (part.height * scaleY - part.height),
-      width: part.width * scaleX,
-      height: part.height * scaleY
-    } : part)
-  }
-}
-
-export function characterShapeScale(proportions: CharacterProportions): { x: number; y: number } {
-  return { x: proportions.scale * proportions.width / 10000, y: proportions.scale * proportions.height / 10000 }
-}
+import { resolveSavedCharacterSource, type CatalogArtwork } from './characterSourceResolver'
+export { withCharacterHeadSize, characterShapeScale } from './characterSourceResolver'
+export type { CatalogArtwork } from './characterSourceResolver'
 
 const wardrobeImageCache = new Map<string, Promise<HTMLImageElement>>()
 
@@ -971,13 +948,7 @@ export async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, 
 }
 
 export async function prepareSavedCharacterRenderer(character: CustomizerCharacter, renderSource?: { artwork: CatalogArtwork; source: FabricatorProject; assetProvider?: VideoCharacterRenderAssetProvider }): Promise<{ width: number; height: number; render: (appearance?: CustomizerFaceAppearance, studioFaceTransforms?: StudioFaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: StudioFaceMode) => Promise<{ dataUrl: string; width: number; height: number }> }> {
-  const modelSlot = character.customization.modelSlot ?? 1
-  const assetProvider = renderSource?.assetProvider ?? window.desktop
-  const source = renderSource?.source ?? await assetProvider.loadFabricatorSlot(modelSlot)
-  if (!source) throw new Error(`O modelo de ${character.name} não está disponível.`)
-  const pose = renderSource?.artwork ?? (character.customization.poseSlot === null ? null : await assetProvider.loadFabricatorPose(modelSlot, character.customization.poseSlot))
-  const proportions = getCharacterProportions(character.customization)
-  const artwork = applyCharacterBodyShape(withCharacterHeadSize(pose ?? source, proportions), getCharacterBodyDimensions(character.customization))
+  const { modelSlot, assetProvider, source, artwork } = await resolveSavedCharacterSource(character, renderSource)
   const hairAppearance = character.customization.hairAppearance
   const [backStyles, posteriorStyles, fringeStyles] = await Promise.all([
     loadHairAppearanceLayers(hairAppearance, modelSlot, 'back', {}, assetProvider),
