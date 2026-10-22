@@ -54,7 +54,8 @@ import { createPosePersistence } from './domains/fabricator/posePersistence'
 import { createAnimatorPersistence } from './domains/fabricator/animatorPersistence'
 import { registerFabricatorPoseHandlers } from './domains/fabricator/poseIpc'
 import { registerFabricatorAnimatorHandlers } from './domains/fabricator/animatorIpc'
-import { VersionedAssetResolver, type AssetNamespace } from './domains/fabricator/versionedAssetResolver'
+import { FabricatorCatalogAssetService } from './domains/fabricator/catalogAssetService'
+import type { AssetNamespace } from './domains/fabricator/versionedAssetResolver'
 import { inspectFabricatorStorage } from '../src/shared/fabricatorStorageCompatibility'
 import { fabricatorIpcChannels } from '../src/shared/fabricatorIpcChannels'
 import { captureFabricatorRealScreens } from './domains/fabricator/visualUiCapture'
@@ -928,12 +929,12 @@ async function writeWardrobeSet(modelSlot: number, set: WardrobeSetSave, assets:
 }
 
 // Assets versionados são usados apenas nas bibliotecas oficiais; rascunhos não entram em cache.
-const catalogAssetCache = new VersionedAssetResolver(32 * 1024 * 1024)
-async function readCatalogPng(namespace: AssetNamespace, identity: string, version: string, imagePath: string): Promise<Buffer> {
-  return Buffer.from(await catalogAssetCache.resolve(namespace, identity, version, () => readAssetImage(imagePath)))
+const catalogAssets = new FabricatorCatalogAssetService(readAssetImage)
+function readCatalogPng(namespace: AssetNamespace, identity: string, version: string, imagePath: string): Promise<Buffer> {
+  return catalogAssets.read(namespace, identity, version, imagePath)
 }
 function invalidateCatalogPng(namespace: AssetNamespace, identity: string): void {
-  catalogAssetCache.invalidate(namespace, identity)
+  catalogAssets.invalidate(namespace, identity)
 }
 
 async function readWardrobeSet(modelSlot: number, id: string): Promise<WardrobeSet | null> {
