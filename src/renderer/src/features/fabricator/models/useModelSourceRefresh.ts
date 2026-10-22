@@ -1,5 +1,5 @@
-/** Recarrega apenas a referência de imagem ao publicar Model Source.
- * Preserva rascunhos, animações e edições locais do consumidor.
+/** Recarrega a fonte da versão oficial e ignora respostas assíncronas obsoletas.
+ * Não limpa rascunhos nem assets de poses salvas.
  */
 import { useEffect, useRef } from 'react'
 import type { FabricatorProject } from '../../../../../shared/fabricator'
@@ -14,13 +14,18 @@ export function useModelSourceRefresh(
   useEffect(() => {
     if (slot === null || !Number.isInteger(slot) || slot < 1) return
     let active = true
-    const unsubscribe = subscribeModelSourceUpdate(slot, () => {
+    let sequence = 0
+    const unsubscribe = subscribeModelSourceUpdate(slot, update => {
+      const requested = ++sequence
       void window.desktop.loadFabricatorSlot(slot).then(project => {
-        if (active) consumer.current(project)
+        // sourceAssetName muda a cada publicação: cache antigo jamais substitui o novo.
+        if (active && requested === sequence && project?.sourceAssetName === update.sourceAssetName) {
+          consumer.current(project)
+        }
       }).catch(() => {
-        // Mantém a prévia anterior se o recarregamento falhar; não perde rascunho.
+        // A interface mantém a última referência íntegra; não perde trabalho.
       })
     })
-    return () => { active = false; unsubscribe() }
+    return () => { active = false; sequence++; unsubscribe() }
   }, [slot])
 }
