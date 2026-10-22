@@ -103,7 +103,7 @@ test('proteção pré-gravação: peça faltante nunca sobrescreve PNG válido, 
     }), /Imagem do catálogo ausente: right|Imagem do catálogo ausente: missing/)
     assert.equal(writeLog.length, 0, 'não deve escrever nem a primeira manga quando falta outra peça: ' + manifestName)
     assert.deepEqual(await fs.readFile(join(imageFolder, 'left.png')), beforeLeft)
-    assert.deepEqual(await fs.readFile(join(folder, manifestName), 'utf8'), JSON.stringify(original))
+    assert.deepEqual(JSON.parse(await fs.readFile(join(folder, manifestName), 'utf8')), original)
     await assert.rejects(fs.access(join(imageFolder, 'right.png')), { code: 'ENOENT' })
     assert.equal(beforeRight.toString(), 'RIGHT_ORIGINAL')
   }
