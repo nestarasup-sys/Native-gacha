@@ -1,3 +1,4 @@
+import { useModelSourceRefresh } from './models/useModelSourceRefresh'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, FormEvent, PointerEvent as ReactPointerEvent } from 'react'
 import { resolvePoseCategory, type AnimatorAnimation, type AnimatorAnimationAsset, type AnimatorAnimationDraft, type AnimatorFrame, type AnimatorAnimationSave, type AnimatorAnimationSummary, type AnimatorFrameTransform, type FaceCatalogItem, type FaceElementKind, type FaceSet, type FaceSheetKind, type FabricatorPose, type FabricatorProject, type FabricatorSlotSummary, type HairStyle, type JointLink, type PosePart, type WardrobeSet } from '../../../../shared/fabricator'
@@ -323,6 +324,7 @@ export function AnimatorWorkspace() {
   const [modelSlot, setModelSlot] = useState<number | null>(null)
   const [characterId, setCharacterId] = useState('')
   const [source, setSource] = useState<FabricatorProject | null>(null)
+  useModelSourceRefresh(modelSlot, setSource)
   const [baseProject, setBaseProject] = useState<FabricatorProject | null>(null)
   const [summaries, setSummaries] = useState<AnimatorAnimationSummary[]>([])
   const [activeSlot, setActiveSlot] = useState(1)
