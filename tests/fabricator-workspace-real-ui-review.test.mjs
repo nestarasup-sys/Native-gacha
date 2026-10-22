@@ -15,7 +15,8 @@ async function fixture(t){
   t.after(()=>rm(folder,{recursive:true,force:true}))
   const names=[
     ['Customizador','customizador.png'],
-    ['Studio Principal — cena criada','studio.png']
+    ['Studio Principal — elenco salvo','studio.png'],
+    ['Studio Principal — cena reaberta','studio-reaberto.png']
   ]
   const results=[]
   for (const [section,file] of names) {
@@ -23,6 +24,7 @@ async function fixture(t){
     await writeFile(join(folder,file),bytes)
     results.push({section,file,dimensions:'360x260',sha256:hash(bytes)})
   }
+  await writeFile(join(folder,'flow-state.json'),JSON.stringify({schemaVersion:1,syntheticOnly:true,characterId:'c-id',studioId:'s-id'}))
   await writeFile(join(folder,'workspace-manifest.json'),JSON.stringify({
     schemaVersion:1,mode:'real-electron-workspaces',syntheticOnly:true,results
   }))
@@ -30,7 +32,7 @@ async function fixture(t){
 }
 test('revisor exige screenshots Customizador e Studio com dimensões e hashes',async t=>{
   const {folder}=await fixture(t)
-  assert.deepEqual(await verifyWorkspaceCaptures(folder),['customizador.png','studio.png'])
+  assert.deepEqual(await verifyWorkspaceCaptures(folder),['customizador.png','studio.png','studio-reaberto.png'])
 })
 test('revisor recusa mudança de bytes e manifesto adulterado',async t=>{
   const {folder}=await fixture(t)
