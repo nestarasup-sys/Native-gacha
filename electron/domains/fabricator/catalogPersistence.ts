@@ -66,7 +66,19 @@ export function createFabricatorCatalogPersistence(
       throw new Error('Imagens de catálogo duplicadas ou inesperadas.')
     }
     await mkdir(imageFolder, { recursive: true })
+    // Pré-validação ANTES de escrever qualquer PNG: um conjunto incompleto não
+    // deve sobrescrever peças antigas se outra peça estiver ausente.
+    const provided = new Set(images.map(image => image.id))
+    for (const id of expected) {
+      if (provided.has(id)) continue
+      try { await access(join(imageFolder, id + '.png')) }
+      catch (reason) {
+        if (!isMissing(reason)) throw reason
+        throw new Error(missingMessage?.(id) ?? 'Imagem do catálogo ausente: ' + id)
+      }
+    }
     for (const image of images) await writeImage(join(imageFolder, image.id + '.png'), image.bytes)
+    // Confere a presença de todos os PNGs também depois da gravação.
     for (const id of expected) {
       try { await access(join(imageFolder, id + '.png')) }
       catch (reason) {
