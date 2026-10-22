@@ -82,3 +82,40 @@ export async function captureFabricatorRealScreens(win: BrowserWindow, output: s
   }
   await writeFile(join(output, 'manifest.json'), JSON.stringify({ schemaVersion:1, mode:'real-electron-ui', capturedAt:new Date().toISOString(), results }, null, 2), 'utf8')
 }
+
+/** Smoke gráfico de Customizador e Studio: navega no Electron REAL e cria
+ * uma cena apenas no perfil sintético do runner. Requer GACHA_DEV_AI_TEST.
+ * Não confundir screenshot integridade com aprovação visual humana.
+ */
+export async function captureCustomizerStudioRealScreens(win: BrowserWindow, output: string): Promise<void> {
+  await mkdir(output, { recursive: true })
+  const result: Array<{ section: string; file: string; dimensions: string; sha256: string }> = []
+  const capture = async (section: string, file: string) => {
+    await new Promise(resolve => setTimeout(resolve, 850))
+    const png = (await win.webContents.capturePage()).toPNG()
+    const info = await sharp(png).metadata()
+    if (!info.width || !info.height) throw new Error('Screenshot real sem dimensões: ' + section)
+    await writeFile(join(output, file), png)
+    result.push({ section, file, dimensions: info.width + 'x' + info.height, sha256: createHash('sha256').update(png).digest('hex') })
+  }
+  await win.webContents.executeJavaScript("window.location.hash = '#/customizar'")
+  await waitFor(win, '.roster-panel')
+  await capture('Customizador', 'customizador.png')
+
+  await win.webContents.executeJavaScript("window.location.hash = '#/estudio'")
+  await waitFor(win, '.studio-page')
+  await waitFor(win, 'button.studio-action-primary:not([disabled])')
+  const clicked = await win.webContents.executeJavaScript(`(() => {
+    const button = document.querySelector('button.studio-action-primary:not([disabled])')
+    if (!button) return false
+    button.click()
+    return true
+  })()`) as boolean
+  if (!clicked) throw new Error('Não foi possível criar cena no Studio real.')
+  await waitFor(win, '.studio-scene-area')
+  await capture('Studio Principal — cena criada', 'studio.png')
+  await writeFile(join(output, 'workspace-manifest.json'), JSON.stringify({
+    schemaVersion: 1, mode: 'real-electron-workspaces', syntheticOnly: true,
+    capturedAt: new Date().toISOString(), results: result
+  }, null, 2), 'utf8')
+}
