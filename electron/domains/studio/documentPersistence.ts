@@ -29,6 +29,18 @@ export function createStudioDocumentPersistence(deps: {
   const normalizeImageBuffer = deps.normalizeImage
   const videoLibrary = { ensureProjectAssets: deps.ensureVideoAssets }
   const videoStudioCardSummary = deps.videoStudioCardSummary
+  // Fila por documento+workspace no processo principal: cobre TAMBÉM chamadas
+  // IPC diretas de criar, importar, duplicar, autosave, ler e excluir.
+  const operations = new Map<string, Promise<void>>()
+  function serialized<T>(id: string, workspace: StudioWorkspaceStorage, fn: () => Promise<T>): Promise<T> {
+    const key = workspace + ':' + id
+    const prior = operations.get(key) ?? Promise.resolve()
+    const task = prior.catch(() => undefined).then(fn)
+    const idle = task.then(() => undefined, () => undefined)
+    operations.set(key, idle)
+    void idle.then(() => { if (operations.get(key) === idle) operations.delete(key) })
+    return task
+  }
 
 function normalizeStudio(value: Record<string, unknown>, id: string, workspace: StudioWorkspaceStorage = 'studio'): StudioDocument {
   return {
@@ -190,5 +202,12 @@ async function writeStudio(studio: StudioDocument, workspace: StudioWorkspaceSto
     await rm(folder, { recursive: true, force: true })
   }
 
-  return { readStudio, writeStudio, removeStudio }
+  return {
+    readStudio: (id: string, workspace: StudioWorkspaceStorage = 'studio') =>
+      serialized(id, workspace, () => readStudio(id, workspace)),
+    writeStudio: (document: StudioDocument, workspace: StudioWorkspaceStorage = 'studio') =>
+      serialized(document.id, workspace, () => writeStudio(document, workspace)),
+    removeStudio: (id: string, workspace: StudioWorkspaceStorage = 'studio') =>
+      serialized(id, workspace, () => removeStudio(id, workspace))
+  }
 }
