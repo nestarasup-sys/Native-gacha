@@ -89,3 +89,20 @@ test('usa o adaptador injetado do armazenamento, sem acesso nativo implícito', 
   assert.ok(calls.includes('rename'))
   assert.equal(await readFile(join(slot,'parts','torso.png'),'utf8'),'NEW')
 })
+
+test('recusa peças duplicadas, identificadores inseguros e PNGs inválidos antes do acesso ao disco', async () => {
+  const refuse = async (requestWithInvalidData, pattern) => {
+    let accessed = false
+    await assert.rejects(publishModelSource(requestWithInvalidData, () => {
+      accessed = true
+      throw new Error('Não deveria abrir o slot')
+    }, async () => { throw new Error('Não deveria salvar') }), pattern)
+    assert.equal(accessed, false)
+  }
+  await refuse({ ...request, project: {...request.project, parts:[{...request.project.parts[0],id:'../escape'}]},
+    changedAssets:[{id:'../escape',dataUrl:testPng()}] }, /Peça duplicada, insegura/)
+  await refuse({...request,changedAssets:[{id:'torso',dataUrl:'data:image/png;base64,AAAA'}]},/PNG/)
+  await refuse({...request,project:{...request.project,tolerance:900}},/Manifesto ou recortes/)
+  await refuse({...request,project:{...request.project,parts:[request.project.parts[0],request.project.parts[0]]},
+    changedAssets:[{id:'torso',dataUrl:testPng()},{id:'torso',dataUrl:testPng()}]}, /Peça duplicada, insegura/)
+})
