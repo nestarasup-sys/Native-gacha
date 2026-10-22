@@ -69,6 +69,9 @@ export type FabricatorProjectSave = Omit<FabricatorProject, 'sourceDataUrl' | 'p
 
 export type FabricatorAssetSave = { id: string; dataUrl: string; chromaBaseDataUrl?: string }
 
+/** Carga única do canal de publicação, preservando o payload IPC legado. */
+export type FabricatorModelSourcePublishRequest = { project: FabricatorProjectSave; sourceDataUrl: string; changedAssets: FabricatorAssetSave[] }
+
 export type FabricatorHistoryAction = 'edit' | 'mixer' | 'reset'
 export type FabricatorHistoryEntry = { action: FabricatorHistoryAction; project: FabricatorProject }
 export type FabricatorHistoryState = { undo: FabricatorHistoryEntry[]; redo: FabricatorHistoryEntry[] }
