@@ -3,7 +3,7 @@
  * Substitui o slot inteiro por uma cópia validada, sem tocar no perfil externo.
  * O diretório anterior fica em backup isolado para recuperação manual.
  */
-import { cp, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { dirname, join } from 'node:path'
 import type { FabricatorAssetSave, FabricatorProjectSave } from '../../../src/shared/fabricator'
@@ -27,10 +27,35 @@ export function validateModelSourceImage(dataUrl: string, width: number, height:
   return image
 }
 
+/** Adaptador obrigatório para domínios ativos em SQLite e armazenamento legado em arquivos. */
+export type ModelSourceFiles = {
+  mkdir: typeof mkdir
+  readFile: typeof readFile
+  writeFile: typeof writeFile
+  readdir: typeof readdir
+  rename: typeof rename
+  rm: typeof rm
+}
+
+const nativeFiles: ModelSourceFiles = { mkdir, readFile, writeFile, readdir, rename, rm }
+
+async function copyDirectory(source: string, target: string, files: ModelSourceFiles): Promise<void> {
+  await files.mkdir(target, { recursive: true })
+  const entries = await files.readdir(source, { withFileTypes: true })
+  for (const entry of entries) {
+    const from = join(source, entry.name)
+    const to = join(target, entry.name)
+    if (entry.isDirectory()) await copyDirectory(from, to, files)
+    else if (entry.isFile()) await files.writeFile(to, await files.readFile(from))
+    else throw new Error('Entrada não suportada no catálogo de Model Source.')
+  }
+}
+
 export async function publishModelSource(
   request: ModelSourcePublishRequest,
   slotPath: (slot: number) => string,
-  saveProject: (project: FabricatorProjectSave, changedAssets: FabricatorAssetSave[], folder: string) => Promise<void>
+  saveProject: (project: FabricatorProjectSave, changedAssets: FabricatorAssetSave[], folder: string) => Promise<void>,
+  files: ModelSourceFiles = nativeFiles
 ): Promise<string> {
   const { project, sourceDataUrl, changedAssets } = request
   if (!project || project.schemaVersion !== 1 || !Number.isInteger(project.slot)
@@ -49,32 +74,32 @@ export async function publishModelSource(
   const backup = join(base, `.model-source-backup-${project.slot}-${suffix}`)
   const filename = `source-${randomUUID()}.png`
   // Verifica concorrência depois de adquirir a fila de salvamento do slot.
-  const old = JSON.parse(await readFile(join(folder, 'project.json'), 'utf8')) as { sourceFile?: string }
+  const old = JSON.parse(await files.readFile(join(folder, 'project.json'), 'utf8')) as { sourceFile?: string }
   if (old.sourceFile !== project.sourceAssetName) throw new Error('O modelo mudou. Reabra o slot antes de publicar.')
-  await mkdir(base, { recursive: true })
+  await files.mkdir(base, { recursive: true })
   let movedOld = false
   try {
-    await cp(folder, staging, { recursive: true, errorOnExist: true, force: false })
-    await writeFile(join(staging, filename), bytes, { flag: 'wx' })
+    await copyDirectory(folder, staging, files)
+    await files.writeFile(join(staging, filename), bytes, { flag: 'wx' })
     // Histórico de montagem anterior faz referência aos pixels antigos.
     // A publicação é um novo marco permanente, sem Undo cruzando versões.
-    await mkdir(join(staging, 'history'), { recursive: true })
-    await writeFile(join(staging, 'history', 'history.json'), JSON.stringify({ version: 1, undo: [], redo: [] }), 'utf8')
-    await rm(join(staging, 'history', 'assets'), { recursive: true, force: true })
+    await files.mkdir(join(staging, 'history'), { recursive: true })
+    await files.writeFile(join(staging, 'history', 'history.json'), JSON.stringify({ version: 1, undo: [], redo: [] }), 'utf8')
+    await files.rm(join(staging, 'history', 'assets'), { recursive: true, force: true })
     await saveProject({ ...project, sourceAssetName: filename }, changedAssets, staging)
     // Duas renomeações no mesmo volume. Se a segunda falhar, restauramos a origem.
-    await rename(folder, backup)
+    await files.rename(folder, backup)
     movedOld = true
     try {
-      await rename(staging, folder)
+      await files.rename(staging, folder)
     } catch (error) {
-      await rename(backup, folder)
+      await files.rename(backup, folder)
       movedOld = false
       throw error
     }
     // Backup fora dos slots visíveis. Nunca apagar em caso de falha.
     return filename
   } finally {
-    if (!movedOld) await rm(staging, { recursive: true, force: true }).catch(() => undefined)
+    if (!movedOld) await files.rm(staging, { recursive: true, force: true }).catch(() => undefined)
   }
 }
