@@ -15,6 +15,7 @@ import { DesignWorkspace } from './DesignWorkspace'
 import { ExpressionPresetWorkspace } from './ExpressionPresetWorkspace'
 import { FaceAnimatorWorkspace } from './FaceAnimatorWorkspace'
 import { ModelSourceEditor } from './ModelSourceEditor'
+import { broadcastModelSourceUpdate } from './models/modelSourceEvents'
 import { splitImage, mergeImages } from './models/partImages'
 import type { ModelSourceResult } from './models/modelSource'
 
@@ -531,6 +532,7 @@ export function FabricatorPage() {
       setChromaValue(result.tolerance)
       setSaveState('saved')
       setModelSourceOpen(false)
+      broadcastModelSourceUpdate({ slot: published.slot, sourceAssetName: newSourceName })
       window.dispatchEvent(new Event('fabricator:assets-updated'))
     } catch (reason) {
       setSaveState('error')
