@@ -66,3 +66,26 @@ test('falha de staging preserva projeto e partes originais',async t=>{
   assert.equal(JSON.parse(await readFile(join(slot,'project.json'),'utf8')).sourceFile,'source-aaaa1111.png')
   assert.equal((await readdir(home)).length,1)
 })
+
+test('usa o adaptador injetado do armazenamento, sem acesso nativo implícito', async t => {
+  const home = await mkdtemp(join(tmpdir(), 'native-model-source-adapter-'))
+  t.after(() => rm(home, {recursive:true,force:true}))
+  const slot = join(home, 'slot-1')
+  await mkdir(join(slot,'parts'), {recursive:true})
+  await writeFile(join(slot,'project.json'),JSON.stringify({sourceFile:'source-aaaa1111.png'}))
+  await writeFile(join(slot,'parts','torso.png'),'ORIGINAL')
+  const fs = await import('node:fs/promises')
+  const calls = []
+  const adapter = Object.fromEntries(['mkdir','readFile','writeFile','readdir','rename','rm'].map(name => [
+    name, async (...args) => { calls.push(name); return fs[name](...args) }
+  ]))
+  await publishModelSource(request, () => slot, async (next,assets,destination) => {
+    assert.equal(next.parts.length, 1)
+    await adapter.writeFile(join(destination,'parts','torso.png'),'NEW')
+    await adapter.writeFile(join(destination,'project.json'),JSON.stringify({...next, sourceFile:next.sourceAssetName}))
+  },adapter)
+  assert.ok(calls.includes('readdir'))
+  assert.ok(calls.includes('readFile'))
+  assert.ok(calls.includes('rename'))
+  assert.equal(await readFile(join(slot,'parts','torso.png'),'utf8'),'NEW')
+})
