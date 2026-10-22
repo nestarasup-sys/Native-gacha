@@ -506,7 +506,7 @@ async function writeFaceExpressionPreset(modelSlot: number, preset: FaceExpressi
   await rename(temporary, target)
 }
 
-const catalogPersistence = createFabricatorCatalogPersistence({ mkdir, access, writeFile, rename, unlink, readdir }, writeAssetImageSource)
+const catalogPersistence = createFabricatorCatalogPersistence({ mkdir, access, readFile, writeFile, rename, unlink, rm, readdir }, writeAssetImageSource)
 
 async function writeFaceSet(modelSlot: number, set: FaceSetSave, assets: FaceAssetSave[]): Promise<void> {
   invalidateCatalogPng('face', `${modelSlot}:set:${set.id}`)
@@ -525,6 +525,7 @@ async function readFaceSet(modelSlot: number, id: string): Promise<FaceSet | nul
   if (!isValidModelSlot(modelSlot) || !isValidWardrobeId(id)) throw new Error('Rosto inválido.')
   try {
     const folder = faceSetPath(modelSlot, id)
+    await catalogPersistence.recoverCatalogManifest(folder, join(folder, 'images'))
     const set = JSON.parse(await readFile(join(folder, 'face.json'), 'utf8')) as FaceSetSave
     if (!inspectFabricatorStorage('face', set).compatible) return null
     if (!validFaceSet(modelSlot, set) || set.id !== id) return null
@@ -601,6 +602,7 @@ async function readFaceCatalogItem(modelSlot: number, id: string): Promise<FaceC
   if (!isValidModelSlot(modelSlot) || !isValidFaceCatalogId(id)) throw new Error('Peça facial inválida.')
   try {
     const folder = faceCatalogItemPath(modelSlot, id)
+    await catalogPersistence.recoverCatalogManifest(folder, join(folder, 'images'))
     const item = JSON.parse(await readFile(join(folder, 'item.json'), 'utf8')) as FaceCatalogItemSave
     if (!inspectFabricatorStorage('face-catalog', item).compatible) return null
     if (!validFaceCatalogItem(modelSlot, item) || item.id !== id) return null
@@ -795,6 +797,7 @@ async function readHairWorkspace(modelSlot: number): Promise<HairWorkspace | nul
   if (!isValidModelSlot(modelSlot)) throw new Error('Modelo inválido.')
   try {
     const folder = hairModelPath(modelSlot)
+    await catalogPersistence.recoverCatalogManifest(folder, join(folder, 'images'))
     const saved = JSON.parse(await readFile(join(folder, 'hair.json'), 'utf8')) as HairWorkspaceSave
     if (!inspectFabricatorStorage('hair', saved).compatible) return null
     if (!validHairWorkspace(modelSlot, saved)) return null
@@ -853,6 +856,7 @@ async function readHairStyle(modelSlot: number, id: string): Promise<HairStyle |
   if (!isValidModelSlot(modelSlot) || !isValidWardrobeId(id)) throw new Error('Estilo de cabelo inválido.')
   try {
     const folder = hairStylePath(modelSlot, id)
+    await catalogPersistence.recoverCatalogManifest(folder, join(folder, 'images'))
     const saved = JSON.parse(await readFile(join(folder, 'hair-style.json'), 'utf8')) as HairStyleSave
     if (!inspectFabricatorStorage('hair-style', saved).compatible) return null
     if (!validHairStyle(modelSlot, saved) || saved.id !== id) return null
