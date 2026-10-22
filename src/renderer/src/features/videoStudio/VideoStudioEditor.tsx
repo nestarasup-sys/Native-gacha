@@ -1,6 +1,7 @@
 import { snapshotVideoStudioScene as snapshot, withStudioSnapshot as withSnapshot, studioCharacterRenderKey } from '../../../../shared/studioSceneModel'
 import { SerializedDocumentSaveQueue } from '../../../../shared/serializedDocumentSave'
 import { findTimelineBlockStart, resizeTimelineBlock, timelineBlockOverlaps, type TimelineBlockTarget } from '../../../../shared/videoTimelineEditing'
+import { captureVideoPoster } from './videoPoster'
 import './VideoStudioEditor.css'
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { buildStudioExpressionAppearance, buildStudioExpressionTransforms, resolveStudioExpressionBase, studioExpressionCollection } from '../../characters/studioExpressionTransforms'
@@ -42,58 +43,6 @@ type AutomaticMouthAnimation = { frames: AutomaticMouthFrame[]; cycleFrames: num
 
 const STUDIO_FACE_RENDER_VERSION = 6
 const studioColor = (number: number) => `hsl(${(number * 137.508) % 360} 45% 78%)`
-
-function captureVideoPoster(videoId: string, sourceFrame = 0): Promise<string | null> {
-  return new Promise((resolve) => {
-    const video = document.createElement('video')
-    video.crossOrigin = 'anonymous'
-    video.muted = true
-    video.preload = 'auto'
-    let finished = false
-    const timeout = window.setTimeout(() => finish(null), 12000)
-    const cleanup = () => {
-      window.clearTimeout(timeout)
-      video.onloadeddata = null
-      video.onseeked = null
-      video.onerror = null
-      video.pause()
-      video.removeAttribute('src')
-      video.load()
-    }
-    const finish = (poster: string | null) => {
-      if (finished) return
-      finished = true
-      cleanup()
-      resolve(poster)
-    }
-    const capture = () => {
-      try {
-        if (!video.videoWidth || !video.videoHeight) return finish(null)
-        const width = 320, height = 180
-        const canvas = document.createElement('canvas')
-        canvas.width = width; canvas.height = height
-        const context = canvas.getContext('2d')
-        if (!context) return finish(null)
-        const sourceRatio = video.videoWidth / video.videoHeight
-        const targetRatio = width / height
-        const sourceWidth = sourceRatio > targetRatio ? video.videoHeight * targetRatio : video.videoWidth
-        const sourceHeight = sourceRatio > targetRatio ? video.videoHeight : video.videoWidth / targetRatio
-        context.drawImage(video, (video.videoWidth - sourceWidth) / 2, (video.videoHeight - sourceHeight) / 2, sourceWidth, sourceHeight, 0, 0, width, height)
-        finish(canvas.toDataURL('image/jpeg', 0.78))
-      } catch { finish(null) }
-    }
-    video.onerror = () => finish(null)
-    video.onseeked = capture
-    video.onloadeddata = () => {
-      const frameTime = Math.max(0, sourceFrame / 60)
-      if (frameTime > 0 && Number.isFinite(video.duration) && frameTime < video.duration) {
-        try { video.currentTime = frameTime } catch { capture() }
-      } else capture()
-    }
-    video.src = `gacha-video://library/${videoId}`
-    video.load()
-  })
-}
 
 const defaultStudioEyeTransform: StudioFaceTransform = { x: 0, y: 0, width: 100, height: 100, rotation: 0 }
 function studioFaceModeForElement(element: StudioElement | null, appearance: CustomizerFaceAppearance | undefined): StudioFaceMode {
