@@ -65,6 +65,7 @@ async function verifyWorkspaceCaptures(directory) {
   const manifest = JSON.parse(await fs.readFile(join(folder, 'workspace-manifest.json'), 'utf8'))
   const expectedWorkspaces = [
     { section: 'Customizador', file: 'customizador.png' },
+    { section: 'Customizador', file: 'customizador-pose2.png' },
     { section: 'Studio Principal — elenco salvo', file: 'studio.png' },
     { section: 'Studio Principal — cena reaberta', file: 'studio-reaberto.png' }
   ]
@@ -97,6 +98,15 @@ async function verifyWorkspaceCaptures(directory) {
       alignment.colors[1].x >= alignment.colors[2].x - 30 ||
       alignment.colors[1].y <= alignment.colors[2].y + 6) {
     throw Error('Alinhamento visual X/Y das peças do Fabricador não confirmado no Customizador.')
+  }
+  const secondPose = JSON.parse(await fs.readFile(join(folder, 'wardrobe-pose2-pixels.json'), 'utf8'))
+  if (secondPose?.source !== 'customizer-overlay' || secondPose.poseSlot !== 2 ||
+      !Array.isArray(secondPose.colors) || secondPose.colors.length !== 3 ||
+      !Number.isFinite(secondPose.centroidMovement) || secondPose.centroidMovement <= 10 ||
+      secondPose.colors.some((piece,index) => piece.name !== alignment.colors[index].name ||
+        !Number.isFinite(piece.x) || !Number.isFinite(piece.y) ||
+        !Number.isInteger(piece.pixels) || piece.pixels < 15)) {
+    throw Error('Segunda pose não comprovou as três roupas com posição alterada no Customizador.')
   }
   return expectedWorkspaces.map(item => item.file)
 }
