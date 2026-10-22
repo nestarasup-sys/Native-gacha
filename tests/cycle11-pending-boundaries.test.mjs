@@ -1,0 +1,46 @@
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
+
+test('main do Electron delega leitura, escrita e reidratação Studio', async()=>{
+  const main=await readFile('electron/main.ts','utf8')
+  const repo=await readFile('electron/domains/studio/documentPersistence.ts','utf8')
+  assert.match(main,/createStudioDocumentPersistence\(/)
+  assert.doesNotMatch(main,/async function (?:writeStudio|readStudio)\(/)
+  assert.match(repo,/async function writeStudio\(/)
+  assert.match(repo,/async function readStudio\(/)
+  assert.match(repo,/await publishJsonManifest\(/)
+  assert.match(repo,/VIDEO_FRAME_DATA_URL_CACHE_LIMIT/)
+  assert.match(repo,/Quadro de vídeo corrompido/)
+})
+test('Customizador separa bibliotecas do Fabricador do estado do personagem', async()=>{
+  const page=await readFile('src/renderer/src/features/customizer/CustomizerPage.tsx','utf8')
+  const browser=await readFile('src/renderer/src/features/customizer/useCustomizerModelBrowserState.ts','utf8')
+  const library=await readFile('src/renderer/src/features/customizer/useCustomizerAssetLibraryState.ts','utf8')
+  assert.match(page,/useCustomizerModelBrowserState\(\)/)
+  assert.match(page,/useCustomizerAssetLibraryState<WardrobePanel, FaceLibraryPartId>\(\)/)
+  assert.match(browser,/useState<FabricatorPoseSummary\[\]>/)
+  assert.match(library,/useState<WardrobeSetSummary\[\]>/)
+  assert.doesNotMatch(browser,/window\.desktop|fs\.readFile/)
+  assert.doesNotMatch(library,/window\.desktop|fs\.readFile/)
+})
+test('Studio Principal mantém estado de inspector separado dos snapshots compartilhados',async()=>{
+  const page=await readFile('src/renderer/src/features/studio/StudioPage.tsx','utf8')
+  const hook=await readFile('src/renderer/src/features/studio/useStudioInspectorState.ts','utf8')
+  assert.match(page,/useStudioInspectorState\(\)/)
+  assert.match(hook,/export function useStudioInspectorState/)
+  assert.match(hook,/characterInspectorViewRef/)
+  assert.match(hook,/studioExpressionCollections/)
+  assert.doesNotMatch(hook,/window\.desktop|studioSaveQueues/)
+})
+test('workflow Windows exige screenshots reais das três áreas no PR e perfis sintéticos',async()=>{
+  const yaml=await readFile('.github/workflows/fabricator-real-ui-windows.yml','utf8')
+  const cap=await readFile('electron/domains/fabricator/visualUiCapture.ts','utf8')
+  assert.match(yaml,/pull_request:/)
+  assert.match(yaml,/--synthetic-complete/)
+  assert.match(yaml,/--with-workspaces/)
+  assert.match(cap,/captureCustomizerStudioRealScreens/)
+  assert.match(cap,/window\.location\.hash = '#\/customizar'/)
+  assert.match(cap,/window\.location\.hash = '#\/estudio'/)
+  assert.match(cap,/studio\.scene\.area|studio-scene-area/)
+})
