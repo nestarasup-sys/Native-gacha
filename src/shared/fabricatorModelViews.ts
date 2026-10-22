@@ -89,8 +89,8 @@ export function projectForOriginalPreview(project: FabricatorProject | null): Fa
     parts: project.parts.map(part => {
       const original = part.sourceTransform
       return original
-        ? { ...part, x: original.x, y: original.y, width: original.width,
-          height: original.height, rotation: original.rotation,
+        ? { ...part, x: original.x, y: original.y, width: original.width ?? part.width,
+          height: original.height ?? part.height, rotation: original.rotation,
           // Não propaga âncoras da montagem para a folha de origem.
           jointAnchor: original.jointAnchor ? { ...original.jointAnchor } : undefined }
         : { ...part }
