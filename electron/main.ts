@@ -63,7 +63,7 @@ import { studioIpcChannels } from '../src/shared/studioIpcChannels'
 import type { AssetNamespace } from './domains/fabricator/versionedAssetResolver'
 import { inspectFabricatorStorage } from '../src/shared/fabricatorStorageCompatibility'
 import { fabricatorIpcChannels } from '../src/shared/fabricatorIpcChannels'
-import { captureFabricatorRealScreens, captureCustomizerStudioRealScreens } from './domains/fabricator/visualUiCapture'
+import { captureFabricatorRealScreens, captureCustomizerStudioRealScreens, captureCustomizerStudioReopened } from './domains/fabricator/visualUiCapture'
 import { registerModelSourceDownloadHandlers } from './domains/fabricator/modelSourceExportIpc'
 
 let configuredAppDataRoot: string | null = null
@@ -2161,9 +2161,12 @@ function createMainWindow(): void {
     window.webContents.once('did-finish-load', () => {
       const sandbox = resolve(process.env.GACHA_DEV_AI_SANDBOX ?? '')
       const captures = join(sandbox, 'fabricator-real-ui-captures')
-      void captureFabricatorRealScreens(window, captures, process.env.GACHA_FABRICATOR_VISUAL_BASELINE)
-        .then(() => captureCustomizerStudioRealScreens(window, captures))
-        .then(() => { console.log('Capturas das telas reais salvas em', captures); app.quit() })
+      const reopen = process.env.GACHA_DEV_AI_REOPEN === '1'
+      const capture = reopen
+        ? captureCustomizerStudioReopened(window, captures)
+        : captureFabricatorRealScreens(window, captures, process.env.GACHA_FABRICATOR_VISUAL_BASELINE)
+          .then(() => captureCustomizerStudioRealScreens(window, captures))
+      void capture.then(() => { console.log('Capturas reais concluídas', captures, reopen ? '(reabertura)' : '(primeiro processo)'); app.quit() })
         .catch(error => { console.error('Falha no teste visual real do Fabricador:', error); app.exit(1) })
     })
   }
