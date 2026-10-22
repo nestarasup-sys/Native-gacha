@@ -25,7 +25,7 @@ test('fixture visual inclui folhas e recortes reais de corpo, cabeça, roupa, ca
  const pose=JSON.parse(await readFile(join(entries.pose,'pose.json'),'utf8'))
  assert.equal(wardrobe.components[0].attachedPartId,'body')
  assert.equal(hair.front.width,82)
- assert.equal(eye.kind,'eye-left')
+ assert.equal(eye.kind,'eye')
  assert.equal(pose.sourceModelSlot,1)
  assert.equal(pose.parts[1].id,'head')
 })
