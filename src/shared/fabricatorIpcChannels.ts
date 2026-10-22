@@ -25,6 +25,20 @@ export const fabricatorIpcChannels = {
   loadAnimatorDraft: 'fabricator:animator:draft:load',
   saveAnimatorDraft: 'fabricator:animator:draft:save',
   deleteAnimatorDraft: 'fabricator:animator:draft:delete',
+  listWardrobeSets: 'fabricator:wardrobe:list',
+  loadWardrobeSet: 'fabricator:wardrobe:load',
+  saveWardrobeSet: 'fabricator:wardrobe:save',
+  deleteWardrobeSet: 'fabricator:wardrobe:delete',
+  listFaceComponentAssets: 'fabricator:face-components:list',
+  loadFaceComponentAsset: 'fabricator:face-components:load',
+  saveFaceComponentAsset: 'fabricator:face-components:save',
+  deleteFaceComponentAsset: 'fabricator:face-components:delete',
+  loadHairWorkspace: 'fabricator:hair:load',
+  saveHairWorkspace: 'fabricator:hair:save',
+  listHairStyles: 'fabricator:hair:styles:list',
+  loadHairStyle: 'fabricator:hair:styles:load',
+  saveHairStyle: 'fabricator:hair:styles:save',
+  deleteHairStyle: 'fabricator:hair:styles:delete',
 } as const satisfies Partial<Record<keyof FabricatorDesktopApi, string>>
 
 export type FabricatorIpcMethod = keyof typeof fabricatorIpcChannels
