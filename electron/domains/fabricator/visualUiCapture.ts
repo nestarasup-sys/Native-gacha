@@ -127,7 +127,7 @@ export async function captureCustomizerStudioRealScreens(win: BrowserWindow, out
   const deadline = Date.now() + 20000
   let character: { id: string; name: string; customization: Record<string, unknown>; updatedAt: string } | null = null
   while (Date.now() < deadline) {
-    character = await win.webContents.executeJavaScript(`window.desktop.listCustomizerCharacters().then(list => list.find(item => item.name === ${JSON.stringify(name)}) ?? null)`) as typeof character
+    character = await win.webContents.executeJavaScript(`window.desktop.listCustomizerCharacters().then(list => list.find(item => item.name === ${JSON.stringify(name)}) ?? null)`) as { id: string; name: string; customization: Record<string, unknown>; updatedAt: string } | null
     if (character) break
     await new Promise(resolve => setTimeout(resolve, 200))
   }
