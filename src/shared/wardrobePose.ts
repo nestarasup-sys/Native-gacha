@@ -124,7 +124,19 @@ export function mapWardrobeComponentToPose(
     && Math.abs(binding.boneWidth - current.boneWidth) < 1e-5
     && Math.abs(binding.boneHeight - current.boneHeight) < 1e-5
     && Math.abs(binding.boneRotation - current.boneRotation) < 1e-5
-  return mapBoundWardrobeComponentToPose(coherent && binding ? binding : current, poseBone, kneeOverlap, edgePadding)
+  // An explicitly fixed garment keeps its frozen local placement if the
+  // source sheet changes. Report it as stale in Roupas DEV, never silently
+  // re-anchor it to a different part geometry while drawing Customizador.
+  const frame = component.glue?.sourceFrame
+  const source = sourceBone.sourceTransform
+  const now = { x: source?.x ?? sourceBone.x, y: source?.y ?? sourceBone.y,
+    width: source?.width ?? sourceBone.width, height: source?.height ?? sourceBone.height,
+    rotation: source?.rotation ?? sourceBone.rotation }
+  const frameChanged = frame && (Math.abs(frame.x-now.x)>1e-5 || Math.abs(frame.y-now.y)>1e-5
+    || Math.abs(frame.width-now.width)>1e-5 || Math.abs(frame.height-now.height)>1e-5
+    || Math.abs(frame.rotation-now.rotation)>1e-5)
+  const frozen = component.glue?.mode === 'fixed' && frameChanged && binding
+  return mapBoundWardrobeComponentToPose(frozen || (coherent && binding) || current, poseBone, kneeOverlap, edgePadding)
 }
 
 function mapBoundWardrobeComponentToPose(binding: WardrobeBinding, poseBone: ModelPart, kneeOverlap: number, edgePadding: number): WardrobePoseTransform {
