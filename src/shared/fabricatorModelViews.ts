@@ -76,3 +76,27 @@ export function selectMountedModelSource(project: FabricatorProject): MountedMod
     hiddenPartIds: [...(project.hiddenPartIds ?? [])]
   }
 }
+
+
+/** Compatibilidade para editores DEV que ainda esperam FabricatorProject:
+ * substitui APENAS a geometria de exibição das peças por sourceTransform.
+ * Nenhum manifesto é gravado, e a montagem original permanece intacta.
+ */
+export function projectForOriginalPreview(project: FabricatorProject | null): FabricatorProject | null {
+  if (!project) return null
+  return {
+    ...project,
+    parts: project.parts.map(part => {
+      const original = part.sourceTransform
+      return original
+        ? { ...part, x: original.x, y: original.y, width: original.width,
+          height: original.height, rotation: original.rotation,
+          // Não propaga âncoras da montagem para a folha de origem.
+          jointAnchor: original.jointAnchor ? { ...original.jointAnchor } : undefined }
+        : { ...part }
+    }),
+    joints: [],
+    layerOrder: [...(project.layerOrder ?? project.parts.map(part => part.id))],
+    hiddenPartIds: [...(project.hiddenPartIds ?? [])]
+  }
+}
