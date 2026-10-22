@@ -352,7 +352,9 @@ export function WardrobeWorkspace() {
         if (!target) updated.binding = undefined
       }
       const bone = referenceBone(updated.attachedPartId)
-      if (bone && (component.binding || values.attachedPartId !== undefined || values.category !== undefined)) updated.binding = bindWardrobeComponent(updated, bone)
+      // Todo ajuste X/Y, largura/altura ou rotação deve atualizar o vínculo.
+      // Versões antigas podem não ter binding: não perpetuar o encaixe obsoleto.
+      if (bone) updated.binding = bindWardrobeComponent(updated, bone)
       return updated
     }), updatedAt: new Date().toISOString() }) : current)
   }
