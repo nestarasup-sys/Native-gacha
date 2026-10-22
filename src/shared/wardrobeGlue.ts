@@ -41,7 +41,7 @@ export function releaseWardrobeGlue(component: WardrobeComponent): WardrobeCompo
 /** Manual edits reattach only if the piece was already fixed, never while loose. */
 export function editWardrobeGlue(component: WardrobeComponent, patch: Partial<WardrobeComponent>, sourcePart?: ModelPart): WardrobeComponent {
   const updated = { ...component, ...patch }
-  if (component.glue?.mode === 'loose') return { ...updated, binding: undefined, glue: { version: 1, mode: 'loose' } }
+  if (component.glue?.mode === 'loose' || (patch.attachedPartId !== undefined && patch.attachedPartId !== component.attachedPartId)) return { ...updated, binding: undefined, glue: { version: 1, mode: 'loose' } }
   if (!sourcePart || sourcePart.id !== updated.attachedPartId) return { ...updated, binding: undefined, glue: { version: 1, mode: 'loose' } }
   // Legacy fitted clothes preserve their long-standing edit-to-rebind behavior.
   return fixWardrobeGlue(updated, sourcePart)
