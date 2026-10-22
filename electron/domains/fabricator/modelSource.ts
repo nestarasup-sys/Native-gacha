@@ -6,6 +6,7 @@
 import { mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { dirname, join } from 'node:path'
+import { createModelSourceJournal, verifyModelSourceCommit } from './modelSourceJournal'
 import type { FabricatorAssetSave, FabricatorProjectSave, FabricatorModelSourcePublishRequest } from '../../../src/shared/fabricator'
 
 export type ModelSourcePublishRequest = FabricatorModelSourcePublishRequest
@@ -108,7 +109,7 @@ export async function publishModelSource(
     await files.rm(join(staging, 'history', 'assets'), { recursive: true, force: true })
     await saveProject({ ...project, sourceAssetName: filename }, changedAssets, staging)
     // Marcador persistente informa qual backup recuperar se cair entre renomeações.
-    await files.writeFile(pending, JSON.stringify({ version: 1, backup: `.model-source-backup-${project.slot}-${suffix}`, sourceFile: old.sourceFile }), 'utf8')
+    await files.writeFile(pending, JSON.stringify(createModelSourceJournal(project.slot, suffix, old.sourceFile ?? '', filename)), 'utf8')
     // Duas renomeações no mesmo volume. Se a segunda falhar, restauramos a origem.
     await files.rename(folder, backup)
     movedOld = true
@@ -119,6 +120,8 @@ export async function publishModelSource(
       movedOld = false
       throw error
     }
+    // A validação lê manifesto e PNGs via DomainFileSystem antes de encerrar o journal.
+    await verifyModelSourceCommit(folder, filename, files)
     // Backup fora dos slots visíveis. Nunca apagar em caso de falha.
     await files.rm(pending, { force: true }).catch(() => undefined)
     return filename
