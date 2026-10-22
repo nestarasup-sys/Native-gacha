@@ -1,8 +1,8 @@
-import test from 'node:test'
-import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
-import ts from 'typescript'
+const test = require('node:test')
+const assert = require('node:assert/strict')
+const { readFileSync } = require('node:fs')
+const { resolve } = require('node:path')
+const ts = require('typescript')
 
 const file = resolve('src/renderer/src/features/fabricator/models/modelSource.ts')
 const compiled = ts.transpileModule(readFileSync(file,'utf8'), {
