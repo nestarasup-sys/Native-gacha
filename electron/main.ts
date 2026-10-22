@@ -2082,19 +2082,19 @@ async function registerFabricatorHandlers(): Promise<void> {
 
     registerFabricatorWardrobeCatalogHandlers(ipcMain, assertTrustedSender, new FabricatorWardrobeCatalog(wardrobeModelPath, { readdir, readFile }, slotCount))
 
-  ipcMain.handle('fabricator:wardrobe:load', async (event, modelSlot: number, id: string): Promise<WardrobeSet | null> => {
+  ipcMain.handle(fabricatorIpcChannels.loadWardrobeSet, async (event, modelSlot: number, id: string): Promise<WardrobeSet | null> => {
     assertTrustedSender(event)
     return readWardrobeSet(modelSlot, id)
   })
 
-  ipcMain.handle('fabricator:wardrobe:save', async (event, modelSlot: number, set: WardrobeSetSave, assets: WardrobeAssetSave[]): Promise<void> => {
+  ipcMain.handle(fabricatorIpcChannels.saveWardrobeSet, async (event, modelSlot: number, set: WardrobeSetSave, assets: WardrobeAssetSave[]): Promise<void> => {
     assertTrustedSender(event)
     const next = wardrobeSaveQueue.catch(() => undefined).then(() => writeWardrobeSet(modelSlot, set, assets))
     wardrobeSaveQueue = next
     await next
   })
 
-  ipcMain.handle('fabricator:wardrobe:delete', async (event, modelSlot: number, id: string): Promise<void> => {
+  ipcMain.handle(fabricatorIpcChannels.deleteWardrobeSet, async (event, modelSlot: number, id: string): Promise<void> => {
     assertTrustedSender(event)
     if (!isValidModelSlot(modelSlot) || !isValidWardrobeId(id)) throw new Error('Conjunto de roupa inválido.')
     const base = resolve(wardrobeModelPath(modelSlot))
@@ -2238,21 +2238,21 @@ async function registerFabricatorHandlers(): Promise<void> {
     await next
   })
 
-  ipcMain.handle('fabricator:face-components:list', async (event, modelSlot: number, kind?: FaceAssetKind): Promise<FaceComponentAssetSummary[]> => {
+  ipcMain.handle(fabricatorIpcChannels.listFaceComponentAssets, async (event, modelSlot: number, kind?: FaceAssetKind): Promise<FaceComponentAssetSummary[]> => {
     assertTrustedSender(event)
     return listFaceComponentAssets(modelSlot, kind)
   })
-  ipcMain.handle('fabricator:face-components:load', async (event, modelSlot: number, id: string): Promise<FaceComponentAsset | null> => {
+  ipcMain.handle(fabricatorIpcChannels.loadFaceComponentAsset, async (event, modelSlot: number, id: string): Promise<FaceComponentAsset | null> => {
     assertTrustedSender(event)
     return readFaceComponentAsset(modelSlot, id)
   })
-  ipcMain.handle('fabricator:face-components:save', async (event, modelSlot: number, asset: FaceComponentAssetSave, dataUrl: string): Promise<void> => {
+  ipcMain.handle(fabricatorIpcChannels.saveFaceComponentAsset, async (event, modelSlot: number, asset: FaceComponentAssetSave, dataUrl: string): Promise<void> => {
     assertTrustedSender(event)
     const next = faceSaveQueue.catch(() => undefined).then(() => writeFaceComponentAsset(modelSlot, asset, dataUrl))
     faceSaveQueue = next
     await next
   })
-  ipcMain.handle('fabricator:face-components:delete', async (event, modelSlot: number, id: string): Promise<void> => {
+  ipcMain.handle(fabricatorIpcChannels.deleteFaceComponentAsset, async (event, modelSlot: number, id: string): Promise<void> => {
     assertTrustedSender(event)
     if (!isValidModelSlot(modelSlot) || !isValidWardrobeId(id)) throw new Error('Asset facial inválido.')
     const base = resolve(faceComponentPath(modelSlot))
@@ -2275,12 +2275,12 @@ async function registerFabricatorHandlers(): Promise<void> {
     await next
   })
 
-  ipcMain.handle('fabricator:hair:load', async (event, modelSlot: number): Promise<HairWorkspace | null> => {
+  ipcMain.handle(fabricatorIpcChannels.loadHairWorkspace, async (event, modelSlot: number): Promise<HairWorkspace | null> => {
     assertTrustedSender(event)
     return readHairWorkspace(modelSlot)
   })
 
-  ipcMain.handle('fabricator:hair:save', async (event, modelSlot: number, workspace: HairWorkspaceSave, assets: HairWorkspaceAsset[]): Promise<void> => {
+  ipcMain.handle(fabricatorIpcChannels.saveHairWorkspace, async (event, modelSlot: number, workspace: HairWorkspaceSave, assets: HairWorkspaceAsset[]): Promise<void> => {
     assertTrustedSender(event)
     const previous = hairSaveQueues.get(modelSlot) ?? Promise.resolve()
     const current = previous.catch(() => undefined).then(() => writeHairWorkspace(modelSlot, workspace, assets))
@@ -2288,7 +2288,7 @@ async function registerFabricatorHandlers(): Promise<void> {
     try { await current } finally { if (hairSaveQueues.get(modelSlot) === current) hairSaveQueues.delete(modelSlot) }
   })
 
-  ipcMain.handle('fabricator:hair:styles:list', async (event, modelSlot: number): Promise<HairStyleSummary[]> => {
+  ipcMain.handle(fabricatorIpcChannels.listHairStyles, async (event, modelSlot: number): Promise<HairStyleSummary[]> => {
     assertTrustedSender(event)
     if (!isValidModelSlot(modelSlot)) throw new Error('Modelo inválido.')
     try {
@@ -2329,12 +2329,12 @@ async function registerFabricatorHandlers(): Promise<void> {
     }
   })
 
-  ipcMain.handle('fabricator:hair:styles:load', async (event, modelSlot: number, id: string): Promise<HairStyle | null> => {
+  ipcMain.handle(fabricatorIpcChannels.loadHairStyle, async (event, modelSlot: number, id: string): Promise<HairStyle | null> => {
     assertTrustedSender(event)
     return readHairStyle(modelSlot, id)
   })
 
-  ipcMain.handle('fabricator:hair:styles:save', async (event, modelSlot: number, style: HairStyleSave, assets: HairStyleAsset[]): Promise<void> => {
+  ipcMain.handle(fabricatorIpcChannels.saveHairStyle, async (event, modelSlot: number, style: HairStyleSave, assets: HairStyleAsset[]): Promise<void> => {
     assertTrustedSender(event)
     const previous = hairSaveQueues.get(modelSlot) ?? Promise.resolve()
     const current = previous.catch(() => undefined).then(() => writeHairStyle(modelSlot, style, assets))
@@ -2342,7 +2342,7 @@ async function registerFabricatorHandlers(): Promise<void> {
     try { await current } finally { if (hairSaveQueues.get(modelSlot) === current) hairSaveQueues.delete(modelSlot) }
   })
 
-  ipcMain.handle('fabricator:hair:styles:delete', async (event, modelSlot: number, id: string): Promise<void> => {
+  ipcMain.handle(fabricatorIpcChannels.deleteHairStyle, async (event, modelSlot: number, id: string): Promise<void> => {
     assertTrustedSender(event)
     if (!isValidModelSlot(modelSlot) || !isValidWardrobeId(id)) throw new Error('Estilo de cabelo inválido.')
     const base = resolve(join(hairModelPath(modelSlot), 'styles'))
