@@ -1,5 +1,5 @@
 /** Modelo-fonte canônico: folha editada antes da montagem e independência do React. */
-import type { FabricatorProject, ModelPart } from '../../../../shared/fabricator'
+import type { FabricatorProject, ModelPart } from '../../../../../shared/fabricator'
 
 export type ModelSourceDimensions = Record<string, { width: number; height: number }>
 export type ModelSourceResult = { sourceDataUrl: string; parts: ModelPart[] }
