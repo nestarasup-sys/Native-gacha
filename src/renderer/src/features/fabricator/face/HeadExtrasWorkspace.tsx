@@ -1,3 +1,4 @@
+import { projectForOriginalPreview } from '../../../../../shared/fabricatorModelViews'
 import { useModelSourceRefresh } from '../models/useModelSourceRefresh'
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ChangeEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import type { FaceComponentAsset, FaceComponentAssetSave, FaceComponentAssetSummary, FaceGuideSettings, FabricatorProject, FabricatorSlotSummary, FaceTransform } from '../../../../../shared/fabricator'
@@ -74,7 +75,7 @@ export function HeadExtrasWorkspace() {
   const [models, setModels] = useState<FabricatorSlotSummary[]>([])
   const [modelSlot, setModelSlot] = useState(1)
   const [model, setModel] = useState<FabricatorProject | null>(null)
-  useModelSourceRefresh(modelSlot, setModel)
+  useModelSourceRefresh(modelSlot, fresh => setModel(projectForOriginalPreview(fresh)))
   const [assets, setAssets] = useState<FaceComponentAssetSummary[]>([])
   const [details, setDetails] = useState<Record<string, FaceComponentAsset>>({})
   const detailsRef = useRef(details)
@@ -128,7 +129,7 @@ export function HeadExtrasWorkspace() {
   useEffect(() => {
     let cancelled = false
     setModel(null)
-    void window.desktop.loadFabricatorSlot(modelSlot).then((project) => { if (!cancelled) setModel(project) }).catch((reason) => { if (!cancelled) setError(String(reason)) })
+    void window.desktop.loadFabricatorSlot(modelSlot).then((project) => { if (!cancelled) setModel(projectForOriginalPreview(project)) }).catch((reason) => { if (!cancelled) setError(String(reason)) })
     return () => { cancelled = true }
   }, [modelSlot])
 
