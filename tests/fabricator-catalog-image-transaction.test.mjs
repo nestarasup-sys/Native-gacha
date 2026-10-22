@@ -84,3 +84,35 @@ test('P0: arquivo de journal malicioso falha fechado sem editar PNGs',async t=>{
  await assert.rejects(recoverCatalogImageTransaction(fs,fx.folder,fx.imageFolder),/inválido/)
  assert.equal(await fs.readFile(join(fx.imageFolder,'left.png'),'utf8'),'OLD_LEFT')
 })
+
+test('save concorrente + recuperação da mesma roupa não reinstala PNGs antigos',async t=>{
+ const fx=await fixture(t)
+ let signal,release
+ const entered=new Promise(resolve=>{signal=resolve})
+ const gate=new Promise(resolve=>{release=resolve})
+ let first=true
+ const persistence=createFabricatorCatalogPersistence(fs,async (path,bytes)=>{
+   if(first && path.endsWith('left.png')) {
+     first=false
+     signal()
+     await gate
+   }
+   await fs.writeFile(path,bytes)
+ })
+ const v1=persistence.saveCatalog({folder:fx.folder,imageFolder:fx.imageFolder,manifestName:fx.manifestName,
+  manifest:{...fx.manifest,updatedAt:'v1'},images:[
+   {id:'left',bytes:Buffer.from('A1')},{id:'right',bytes:Buffer.from('B1')}
+  ],expected:fx.expected})
+ await entered
+ const v2=persistence.saveCatalog({folder:fx.folder,imageFolder:fx.imageFolder,manifestName:fx.manifestName,
+  manifest:{...fx.manifest,updatedAt:'v2'},images:[
+   {id:'left',bytes:Buffer.from('A2')},{id:'right',bytes:Buffer.from('B2')}
+  ],expected:fx.expected})
+ const reopen=persistence.recoverWardrobeManifest(fx.folder)
+ release()
+ await Promise.all([v1,v2,reopen])
+ assert.equal(await fs.readFile(join(fx.imageFolder,'left.png'),'utf8'),'A2')
+ assert.equal(await fs.readFile(join(fx.imageFolder,'right.png'),'utf8'),'B2')
+ assert.equal(JSON.parse(await fs.readFile(join(fx.folder,fx.manifestName),'utf8')).updatedAt,'v2')
+ await assert.rejects(fs.access(join(fx.folder,'.catalog-transaction')),{code:'ENOENT'})
+})
