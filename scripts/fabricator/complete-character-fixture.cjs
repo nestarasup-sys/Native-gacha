@@ -16,6 +16,18 @@ async function writePng(filename, width, height, rgba) {
   }
   fs.writeFileSync(filename,await sharp(pixel,{raw:{width,height,channels:4}}).png().toBuffer())
 }
+async function writeSourcePartsPng(filename,width,height,parts){
+  fs.mkdirSync(path.dirname(filename),{recursive:true})
+  const pixel=Buffer.alloc(width*height*4)
+  for(const part of parts){
+    for(let y=part.y+2;y<part.y+part.height-2;y++)
+      for(let x=part.x+2;x<part.x+part.width-2;x++){
+        const i=(y*width+x)*4
+        for(let channel=0;channel<4;channel++)pixel[i+channel]=part.rgba[channel]
+      }
+  }
+  fs.writeFileSync(filename,await sharp(pixel,{raw:{width,height,channels:4}}).png().toBuffer())
+}
 function writeJson(filename,data){fs.mkdirSync(path.dirname(filename),{recursive:true});fs.writeFileSync(filename,JSON.stringify(data,null,2))}
 const T='2026-10-22T12:00:00.000Z'
 async function createCompleteCharacterFixture(root){
@@ -34,7 +46,12 @@ async function createCompleteCharacterFixture(root){
     ]
   }
   writeJson(path.join(model,'project.json'),manifest)
-  await writePng(path.join(model,'source-aaaa1111.png'),256,384,[65,200,120,255])
+  // Folha original de duas peças, não fundo uniforme: detecção de transparência
+  // deve achar exatamente corpo e cabeça, como declara o manifesto do modelo.
+  await writeSourcePartsPng(path.join(model,'source-aaaa1111.png'),256,384,[
+    {x:20,y:126,width:110,height:230,rgba:[87,130,207,255]},
+    {x:158,y:28,width:76,height:100,rgba:[241,185,151,255]}
+  ])
   await writePng(path.join(model,'parts','body.png'),110,230,[87,130,207,255])
   await writePng(path.join(model,'parts','head.png'),76,100,[241,185,151,255])
   const pose=path.join(base,'poses','model-1','slot-1')
