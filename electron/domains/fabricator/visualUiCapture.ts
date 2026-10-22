@@ -225,6 +225,7 @@ export async function captureCustomizerStudioReopened(win: BrowserWindow, output
     !scene.assets.some(asset => asset.id === element.assetId && asset.dataUrl.startsWith('data:image/')))) {
     throw Error('Studio reabriu com imagem de personagem ausente.')
   }
+  await waitFor(win, 'button.studio-card-open')
   const opened = await win.webContents.executeJavaScript(`(() => {
     const button = document.querySelector('button.studio-card-open')
     if (!button) return false
