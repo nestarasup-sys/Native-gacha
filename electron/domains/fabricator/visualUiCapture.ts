@@ -109,8 +109,27 @@ export async function captureFabricatorRealScreens(win: BrowserWindow, output: s
       return true
     })()`) as boolean
     if (!clicked) throw new Error('Seção real ausente: ' + label)
-    await waitFor(win, '.fabricator-section-button[aria-pressed="true"]')
-    await new Promise(resolve => setTimeout(resolve, 900))
+    await waitForRendered(win, '.fabricator-section-button[aria-pressed="true"]')
+    if (key === 'roupas') {
+      // Não fotografar biblioteca vazia: abrir a roupa sintética realmente salva.
+      await waitForRendered(win, '.wardrobe-workspace')
+      await waitFor(win, '.wardrobe-set-row', 30000)
+      const opened = await win.webContents.executeJavaScript(`(() => {
+        const item = [...document.querySelectorAll('.wardrobe-set-row')]
+          .find(button => button.textContent?.includes('Jaqueta de teste'))
+        if (!item) return false
+        item.click()
+        return true
+      })()`) as boolean
+      if (!opened) throw Error('Roupas Dev não listou o conjunto sintético.')
+      await waitForRendered(win, '.wardrobe-preview-part', 30000)
+      const count = await win.webContents.executeJavaScript(
+        "document.querySelectorAll('.wardrobe-preview-part').length"
+      ) as number
+      if (count !== 3) throw Error('Prévia do Fabricador não mostra as três peças: ' + count)
+    }
+    await new Promise(resolve => setTimeout(resolve, 350))
+    await waitForRendered(win, '.fabricator-section-button[aria-pressed="true"]')
     const active = await win.webContents.executeJavaScript(`(() => {
       const active = [...document.querySelectorAll('.fabricator-section-button')]
         .filter(item => item.getAttribute('aria-pressed') === 'true')
@@ -122,9 +141,10 @@ export async function captureFabricatorRealScreens(win: BrowserWindow, output: s
     const name = key + '.png'
     await writeFile(join(output, name), image)
     const size = png.getSize()
-    const result: { section: string; file: string; dimensions: string; sha256: string; changedPixels?: number } = {
+    const result: { section: string; file: string; dimensions: string; sha256: string; changedPixels?: number; contentVerified?: string } = {
       section: label, file: name, dimensions: size.width + 'x' + size.height,
-      sha256: createHash('sha256').update(image).digest('hex')
+      sha256: createHash('sha256').update(image).digest('hex'),
+      ...(key === 'roupas' ? { contentVerified: 'three-fitted-garments' } : {})
     }
     if (baseline) {
       const changed = await compareScreenshot(image, join(baseline, name))
