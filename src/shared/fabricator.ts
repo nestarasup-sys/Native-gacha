@@ -366,6 +366,8 @@ export type FabricatorDesktopApi = {
   saveFabricatorProject: (project: FabricatorProjectSave, changedAssets: FabricatorAssetSave[]) => Promise<void>
   /** Publica uma folha PNG definitiva, suas peças e o novo manifesto num único slot. */
   publishFabricatorModelSource: (project: FabricatorProjectSave, sourceDataUrl: string, changedAssets: FabricatorAssetSave[]) => Promise<string>
+  /** Exporta a visualização do modelo em PNG para Downloads, sem modificar o projeto. */
+  downloadFabricatorModelSource: (slot: number, pngDataUrl: string) => Promise<string>
   loadFabricatorHistory: (slot: number) => Promise<FabricatorHistoryState>
   saveFabricatorHistory: (slot: number, history: FabricatorHistorySaveState, current: FabricatorProjectSave, changedAssets: FabricatorAssetSave[]) => Promise<void>
   deleteFabricatorSlot: (slot: number) => Promise<void>
