@@ -138,14 +138,15 @@ test('encaixe utiliza fonte original persistida, não pixels recortados por orde
   assert.match(editor,/useModelSourceRefresh\(modelSlot, fresh => setModel\(fresh\)\)/)
 })
 
-test('sobreposição de costuras é calculada para conjunto e pose, sem alterações nos PNGs', () => {
+test('costuras não são ampliadas quando outras categorias de roupa são equipadas', () => {
   const sleeve=garment('manga','arm-left',8,42,59,87)
   const source=model().parts[0]
   const posed={...source,rotation:35,width:110,height:64}
   const entire=[sleeve,{...garment('coxa','body',140,45,80,50),category:'calca-coxa'},
     {...garment('canela','arm-right',282,80,55,40),category:'calca-canela'}]
   const pad=wardrobePosePadding(sleeve,entire)
-  assert.ok(pad.edgePadding>0)
+  assert.deepEqual(pad,{kneeOverlap:0,edgePadding:0})
   const mapped=mapWardrobeComponentToPose(sleeve,source,posed,pad.kneeOverlap,pad.edgePadding)
-  almost(mapped.renderWidth*mapped.scaleX, sleeve.width*(posed.width/source.sourceTransform.width)+2*pad.edgePadding)
+  almost(mapped.renderWidth*mapped.scaleX, sleeve.width*(posed.width/source.sourceTransform.width))
+  almost(mapped.renderHeight*mapped.scaleY, sleeve.height*(posed.height/source.sourceTransform.height))
 })
