@@ -753,7 +753,7 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
                   : previousBase
                 const appearance = shouldRecomposeExpression
                   ? savedPreset && expressionBase
-                    ? await buildStudioExpressionAppearance(savedPreset, expressionBase.appearance, (id) => window.desktop.loadFaceCatalogItem(modelSlot, id), stateElement.activeExpressionGaze ?? 'right')
+                    ? await buildStudioExpressionAppearance(savedPreset, expressionBase.appearance, (id) => window.desktop.loadFaceCatalogItem(modelSlot, id))
                     : expressionBase?.appearance ?? sourceAppearance
                   : stateElement.faceAppearance ?? expressionBase?.appearance ?? sourceAppearance
                 const faceMode = stateElement.activeFaceMode ?? studioFaceModeForElement(stateElement, appearance)
