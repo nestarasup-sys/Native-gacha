@@ -1,5 +1,6 @@
 import { compilePortableExpression, resolvePresetPupilGaze, type ExpressionMetrics } from '../../../../shared/portableExpression'
 import { pupilDeltaFromDrag, pupilSourceMirrored } from '../../../../shared/facePupilGeometry'
+import { faceExpressionDefaults as defaultTransforms } from '../../../../shared/faceExpressionDefaults'
 import { FACE_COMPONENT_SELECTION_STORAGE_KEY, pickFaceLibraryBase, savedFaceLibraryParts } from '../../../../shared/faceLibrarySelection'
 import { ExpressionCharacterPreview } from './ExpressionCharacterPreview'
 import { projectForOriginalPreview } from '../../../../shared/fabricatorModelViews'
@@ -88,23 +89,6 @@ const cloneTransforms = (transforms: FaceExpressionTransforms): FaceExpressionTr
 const layerKey = (kind: 'eye' | 'pupil' | 'eyebrow', side: Side): LayerKey => kind === 'eye' ? side === 'left' ? 'eyeLeft' : 'eyeRight' : kind === 'pupil' ? side === 'left' ? 'pupilLeft' : 'pupilRight' : side === 'left' ? 'browLeft' : 'browRight'
 const pairedLayerKeys: Partial<Record<LayerKey, LayerKey>> = { eyeLeft: 'eyeRight', eyeRight: 'eyeLeft', pupilLeft: 'pupilRight', pupilRight: 'pupilLeft', browLeft: 'browRight', browRight: 'browLeft' }
 const pairedKindForLayer = (layer: LayerKey): PairedLayerKind | null => layer.startsWith('eye') ? 'eye' : layer.startsWith('pupil') ? 'pupil' : layer.startsWith('brow') ? 'eyebrow' : null
-
-function defaultTransforms(composition: ExpressionComposition, components: Record<string, FaceComponentAsset>, catalogs: Record<string, FaceCatalogItem>): FaceExpressionTransforms {
-  const transforms = emptyTransforms()
-  for (const side of ['left', 'right'] as const) {
-    const eye = composition.eyes[side] ? components[composition.eyes[side]!] : undefined
-    const pupil = composition.pupils[side] ? components[composition.pupils[side]!] : undefined
-    const brow = composition.eyebrows[side] ? components[composition.eyebrows[side]!] : undefined
-    if (eye) transforms[layerKey('eye', side)] = { ...eye.defaultTransform }
-    if (pupil) transforms[layerKey('pupil', side)] = { ...pupil.defaultTransform }
-    if (brow) transforms[layerKey('eyebrow', side)] = { ...brow.defaultTransform }
-  }
-  const nose = composition.nose ? catalogs[composition.nose.catalogId] : undefined
-  const mouth = composition.mouth ? catalogs[composition.mouth.catalogId] : undefined
-  if (nose?.transforms.nose) transforms.nose = { ...nose.transforms.nose }
-  if (mouth?.transforms.mouth) transforms.mouth = { ...mouth.transforms.mouth }
-  return transforms
-}
 
 function rebaseTransform(transform: FaceTransform, reference: FaceTransform, nextReference: FaceTransform): FaceTransform {
   const rebased: FaceTransform = {
