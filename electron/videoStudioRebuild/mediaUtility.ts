@@ -16,7 +16,7 @@ const port: Port = utilityParent
 type Session = { frame: number; sinceNs: bigint; playing: boolean; audioMaster: boolean }
 const sessions = new Map<string, Session>()
 const clockNow = () => process.hrtime.bigint()
-const clampFrame = (frame: number | undefined): frame is number => Number.isSafeInteger(frame) && frame >= 0 && frame <= 24 * 3600 * 60
+const clampFrame = (frame: number | undefined): frame is number => typeof frame === 'number' && Number.isSafeInteger(frame) && frame >= 0 && frame <= 24 * 3600 * 60
 const frameNow = (s: Session): number =>
   s.playing ? Math.max(0,s.frame+Number((clockNow()-s.sinceNs)*60n/1000000000n)) : s.frame
 
