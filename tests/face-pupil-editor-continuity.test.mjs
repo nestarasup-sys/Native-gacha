@@ -79,7 +79,7 @@ test('seleções quebradas ou JSON truncado não sobrescrevem conjuntos existent
   assert.equal(pupilSourceMirrored('right',true),false)
 })
 
-test('ambos os editores usam o mesmo inversor, sem clamping ou gesto PT que mude o preset',async()=>{
+test('ambos os editores usam o mesmo inversor, incluindo pupila PT sem clamping nem alteração da normal',async()=>{
   const [eyes,presets,core]=await Promise.all([
     readFile('src/renderer/src/features/fabricator/face/FaceComponentsWorkspace.tsx','utf8'),
     readFile('src/renderer/src/features/fabricator/ExpressionPresetWorkspace.tsx','utf8'),
@@ -90,7 +90,9 @@ test('ambos os editores usam o mesmo inversor, sem clamping ou gesto PT que mude
   assert.doesNotMatch(eyes,/head\.width \* \.25/)
   assert.doesNotMatch(eyes,/head\.height \* \.25/)
   assert.match(presets,/if \(open \|\| previewGaze==='right'\)return raw/)
-  assert.match(presets,/previewGaze==='right' && \(selectedLayer === pupilLayer/)
+  assert.match(presets,/const canDrag = selectedLayer === pupilLayer/)
+  assert.match(presets,/setPtPupils\(/)
+  assert.match(presets,/ptPupilMotion:compilePtPupilMotion/)
   assert.match(presets,/FACE_COMPONENT_SELECTION_STORAGE_KEY/)
   assert.match(core,/pupilScreenOffset/)
   assert.match(core,/pupilDeltaFromDrag/)
@@ -133,7 +135,8 @@ test('não gerar expressões legadas implícitas nem sobrescrever presets parcia
   assert.doesNotMatch(editor,/saveFaceExpressionPreset\(modelSlot, preset\)\)\)/)
   assert.match(editor,/const loadedPresets = savedPresets/)
   assert.match(editor,/faceExpressionDefaults as defaultTransforms/)
-  assert.match(editor,/if\(previewGaze==='left'\)return/)
+  assert.match(editor,/if\(previewGaze==='left'\)\{setPtPupils\(\{\}\);return\}/)
+  assert.match(editor,/ptPupils:structuredClone\(ptPupils\)/)
 })
 
 test('seleção legada de pupilas é lida somente como fallback, sem gravar storage',()=>{
