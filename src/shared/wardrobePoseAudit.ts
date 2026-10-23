@@ -43,15 +43,16 @@ export function inspectWardrobePose(model: FabricatorProject, set: WardrobeSet, 
       warnings.push(`${component.name}: transformação numérica inválida.`)
       continue
     }
-    const sourceFrame = component.glue?.sourceFrame ?? base.sourceTransform ?? base
-    const factorX = bone.width / Math.max(1,sourceFrame.width)
-    const factorY = bone.height / Math.max(1,sourceFrame.height)
+    const sourceWidth = component.glue?.sourceFrame?.width ?? base.sourceTransform?.width ?? base.width
+    const sourceHeight = component.glue?.sourceFrame?.height ?? base.sourceTransform?.height ?? base.height
+    const factorX = bone.width / Math.max(1,sourceWidth)
+    const factorY = bone.height / Math.max(1,sourceHeight)
     if (factorX > 3 || factorY > 3 || factorX < .25 || factorY < .25) {
       warnings.push(`${component.name}: a pose redimensiona muito a parte corporal.`)
     }
     const localDistance = Math.hypot(transform.localLeft + transform.renderWidth/2,
       transform.localTop + transform.renderHeight/2)
-    const boneDiagonal = Math.hypot(Math.max(1,sourceFrame.width),Math.max(1,sourceFrame.height))
+    const boneDiagonal = Math.hypot(Math.max(1,sourceWidth),Math.max(1,sourceHeight))
     if (localDistance > 2.5*boneDiagonal) {
       warnings.push(`${component.name}: encaixe muito afastado da parte corporal.`)
     }
