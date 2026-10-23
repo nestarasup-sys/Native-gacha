@@ -31,7 +31,11 @@ export function ExpressionCharacterPreview({modelSlot,preset,gaze,onClose}:Props
   useEffect(()=>{
     let active=true
     const character=characters.find(item=>item.id===characterId)
-    if(!character || !character.customization.faceAppearance)return
+    setBaseImage('');setResultImage('')
+    if(!character){setLoading(false);setError('Escolha um personagem compatível com este modelo.');return}
+    if(!character.customization.faceAppearance){
+      setLoading(false);setError('Este personagem ainda não tem um rosto-base no Customizador.');return
+    }
     setLoading(true);setError('')
     void (async()=>{
       try {
