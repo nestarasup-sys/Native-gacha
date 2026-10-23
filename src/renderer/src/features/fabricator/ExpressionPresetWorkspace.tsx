@@ -130,11 +130,13 @@ function authoredMetrics(composition: ExpressionComposition, components: Record<
     const eye=composition.eyes[side] ? components[composition.eyes[side]!] : undefined
     const brow=composition.eyebrows[side] ? components[composition.eyebrows[side]!] : undefined
     if(eye){
-      metrics[`eye${suffix}`]={width:eye.width,height:eye.height}
-      // Pupil placement is measured in eye coordinates, not the pupil PNG dimensions.
-      metrics[`pupil${suffix}`]={width:eye.width,height:eye.height}
+      metrics[`eye${suffix}`]={width:eye.width,height:eye.height,mirrored:side==='right' && !eye.rightSidePositioned}
+      // Pupil offsets use eye dimensions but the PUPIL's own mirror orientation.
+      const pupilId=composition.pupils[side]
+      const pupil=pupilId ? components[pupilId] : undefined
+      metrics[`pupil${suffix}`]={width:eye.width,height:eye.height,mirrored:side==='right' && !pupil?.rightSidePositioned}
     }
-    if(brow)metrics[`brow${suffix}`]={width:brow.width,height:brow.height}
+    if(brow)metrics[`brow${suffix}`]={width:brow.width,height:brow.height,mirrored:side==='right' && !brow.rightSidePositioned}
   }
   if(composition.nose){
     const piece=catalogs[composition.nose.catalogId]?.pieces.find(item=>item.sheet==='nose' && item.index===composition.nose?.index)
