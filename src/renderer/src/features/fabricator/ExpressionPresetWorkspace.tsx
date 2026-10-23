@@ -1,7 +1,7 @@
 import { compilePortableExpression, resolvePresetPupilGaze, type ExpressionMetrics } from '../../../../shared/portableExpression'
 import { pupilDeltaFromDrag, pupilSourceMirrored } from '../../../../shared/facePupilGeometry'
 import { faceExpressionDefaults as defaultTransforms } from '../../../../shared/faceExpressionDefaults'
-import { FACE_COMPONENT_SELECTION_STORAGE_KEY, pickFaceLibraryBase, savedFaceLibraryParts } from '../../../../shared/faceLibrarySelection'
+import { FACE_COMPONENT_SELECTION_STORAGE_KEY, LEGACY_PUPIL_SELECTION_STORAGE_KEY, pickFaceLibraryBase, savedFaceLibraryParts, savedLegacyPupilParts } from '../../../../shared/faceLibrarySelection'
 import { ExpressionCharacterPreview } from './ExpressionCharacterPreview'
 import { projectForOriginalPreview } from '../../../../shared/fabricatorModelViews'
 import { useModelSourceRefresh } from './models/useModelSourceRefresh'
@@ -334,7 +334,12 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
       // DEV, including each asset's saved defaultTransform. Existing presets,
       // drafts and published transforms always take precedence below.
       let preferredParts = {} as ReturnType<typeof savedFaceLibraryParts>
-      try { preferredParts = savedFaceLibraryParts(localStorage.getItem(FACE_COMPONENT_SELECTION_STORAGE_KEY),modelSlot) }
+      try {
+        preferredParts = {
+          ...savedLegacyPupilParts(localStorage.getItem(LEGACY_PUPIL_SELECTION_STORAGE_KEY),modelSlot),
+          ...savedFaceLibraryParts(localStorage.getItem(FACE_COMPONENT_SELECTION_STORAGE_KEY),modelSlot)
+        }
+      }
       catch { /* Missing storage: fall back to the first available pair. */ }
       const choose=(kind: 'eye'|'pupil'|'eyebrow',side:Side,left?:FaceComponentAssetSummary) =>
         pickFaceLibraryBase(kind,side,preferredParts,readyComponents,left)
