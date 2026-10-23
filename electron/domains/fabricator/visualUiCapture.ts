@@ -215,6 +215,33 @@ export async function captureFabricatorRealScreens(win: BrowserWindow, output: s
         throw Error('Prévia de Roupas Dev não está estável no instante da foto: ' + JSON.stringify(ready))
       }
       await exerciseGlueWorkflow(win)
+      const magnetCheck = await win.webContents.executeJavaScript(`(() => {
+        const magnet = document.querySelector('.wardrobe-preview-controls button[title*="Aproxima bordas"]')
+        if (!magnet || magnet.getAttribute('aria-pressed') !== 'true') return false
+        magnet.click()
+        if (magnet.getAttribute('aria-pressed') !== 'false') return false
+        magnet.click()
+        return true
+      })()`) as boolean
+      if (!magnetCheck) throw Error('Ímã da folha original não alternou corretamente.')
+      await waitFor(win, '.wardrobe-comparison-toggle button', 30000)
+      const compared = await win.webContents.executeJavaScript(`(() => {
+        const button = document.querySelector('.wardrobe-comparison-toggle button')
+        if (!button) return false
+        button.click()
+        return true
+      })()`) as boolean
+      if (!compared) throw Error('Não abriu comparação original × pose.')
+      await waitForRendered(win, '.wardrobe-comparison')
+      const audited = await win.webContents.executeJavaScript(`(() => {
+        const button = [...document.querySelectorAll('.wardrobe-pose-audit button')]
+          .find(item => item.textContent?.includes('Conferir todas as poses'))
+        if (!button) return false
+        button.click()
+        return true
+      })()`) as boolean
+      if (!audited) throw Error('Auditoria de todas as poses indisponível no Roupas Dev.')
+      await waitFor(win, '.wardrobe-pose-audit-row:nth-child(2)', 30000)
     }
     const active = await win.webContents.executeJavaScript(`(() => {
       const active = [...document.querySelectorAll('.fabricator-section-button')]
