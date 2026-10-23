@@ -134,7 +134,10 @@ export class TransitionRenderer {
           JSON.stringify([
             character.id, slot,
             a.poseSlot === undefined ? character.customization.poseSlot : a.poseSlot,
-            appearance?.modelSlot ?? null, appearance?.setId ?? null
+            // A legacy face set can pre-rasterize a particular expression
+            // index, eye selection or palette into its base. Key the entire
+            // authored appearance, not just setId, or PT eyes may bleed.
+            appearance ?? null
           ]),
           () => prepareSavedCharacterRenderer(copy, { source, artwork, assetProvider: this.assetProvider })
         )

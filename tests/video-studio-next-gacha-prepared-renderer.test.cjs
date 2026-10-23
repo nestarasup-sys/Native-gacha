@@ -125,6 +125,17 @@ test('different poses and face-set references never share prepared body/legacy-f
   renderer.dispose()
 })
 
+test('same face set but different expression indices/pupil selections cannot share prepared legacy face', async () => {
+  const { renderer, state, transition, events, character, appearance } = rig()
+  const first = { ...appearance, expressionIndex: 0, eyeLeftCatalogId: 'left-0' }
+  const second = { ...appearance, expressionIndex: 4, eyeLeftCatalogId: 'left-4' }
+  await renderer.render(transition(state(1, first)), 1, character)
+  await renderer.render(transition(state(1, second)), 1, character)
+  assert.equal(events.prepared.length, 2, 'different legacy/categorical facial bases must not collide')
+  assert.equal(renderer.preparedStats().entries, 2)
+  renderer.dispose()
+})
+
 test('pose-to-pose transitions retain the original interpolated artwork path', async () => {
   const { renderer, state, transition, events, character } = rig()
   const from = state(1), to = state(2)
