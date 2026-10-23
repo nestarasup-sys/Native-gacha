@@ -3,6 +3,7 @@ import { useCustomizerCharacterRoster } from './useCustomizerCharacterRoster'
 import { useCustomizerModelBrowserState } from './useCustomizerModelBrowserState'
 import { useCustomizerAssetLibraryState } from './useCustomizerAssetLibraryState'
 import { useCustomizerCharacterCommands } from './useCustomizerCharacterCommands'
+import { CustomizerClothesAdjustmentPanel } from './CustomizerClothesAdjustmentPanel'
 import { upperWardrobePanels, upperWardrobePageTwoPanels, accessoryWardrobePanels, lowerWardrobePanels, lowerWardrobePageTwoPanels, wardrobeComponentMatchesPanel, isWardrobePanelCandidateSelected, renderWardrobeThumbnail } from './wardrobePanelModel'
 import type { WardrobePanel, WardrobePanelCandidate } from './wardrobePanelModel'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -2273,62 +2274,20 @@ export function CustomizerPage() {
     const selectedAdjustmentComponent = !isHead && selectedClothing
       ? adjustmentComponents.find((entry) => entry.group.modelSlot === selectedClothing.modelSlot && entry.group.setId === selectedClothing.setId && entry.group.category === selectedClothing.category && entry.component.id === selectedClothing.componentId)
       : undefined
-    const selectedAdjustmentPieceIsDimmed = Boolean(selectedAdjustmentComponent?.group.hidden)
 
     if (!isHead) {
-      const transform = wardrobeTransformDraft ?? { offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1, rotation: 0 }
-      const changeTransform = (patch: Partial<typeof transform>) => {
-        const next = { ...transform, ...patch }
-        void updateClothesAdjustComponent('transform', next)
-      }
-      const moveBy = (x: number, y: number) => changeTransform({ offsetX: transform.offsetX + x, offsetY: transform.offsetY + y })
-      return <section className="customizer-adjust-picker customizer-clothes-adjust-detail" aria-label={`Ajustes de roupas ${adjustmentLabel.toLowerCase()}`}>
-        <header className="customizer-adjust-heading customizer-clothes-adjust-detail-heading">
-          <button className={`customizer-adjust-reset ${selectedAdjustmentPieceIsDimmed ? 'is-restore' : 'is-delete'}`} type="button" onClick={() => void updateClothesAdjustComponent('toggle-hidden')} disabled={!selectedCharacter || !selectedAdjustmentComponent} title={selectedAdjustmentPieceIsDimmed ? `Restaurar ${selectedAdjustmentComponent?.component.name || 'peça selecionada'}` : `Excluir ${selectedAdjustmentComponent?.component.name || 'peça selecionada'}`} aria-label={selectedAdjustmentPieceIsDimmed ? `Restaurar ${selectedAdjustmentComponent?.component.name || 'peça selecionada'}` : `Excluir ${selectedAdjustmentComponent?.component.name || 'peça selecionada'}`}><Icon name={selectedAdjustmentPieceIsDimmed ? 'undo' : 'trash'} /><span>{selectedAdjustmentPieceIsDimmed ? 'RESTAURAR' : 'EXCLUIR'}</span></button>
-          <h2>Ajustar roupas · {adjustmentLabel}</h2>
-        </header>
-        {!selectedCharacter && <p className="customizer-adjust-hint">Selecione um personagem para ver as peças dele.</p>}
-        {selectedCharacter && <div className="customizer-clothes-adjust-workspace">
-          <section className="customizer-clothes-adjust-parts" aria-label={`Peças de roupas ${adjustmentLabel.toLowerCase()}`}>
-            <header><strong>Roupas · {adjustmentLabel}</strong><small>{adjustmentComponents.length} peça(s)</small></header>
-            {adjustmentComponents.length ? <div className="customizer-clothes-adjust-part-grid">
-              {adjustmentComponents.map(({ group, component, set, pairStart }) => {
-                const isSelected = selectedClothing?.modelSlot === group.modelSlot && selectedClothing.setId === group.setId && selectedClothing.category === group.category && selectedClothing.componentId === component.id
-                const isDimmed = Boolean(group.hidden)
-                return <div key={`${group.modelSlot}:${group.setId}:${component.id}`} className={`customizer-clothes-adjust-part${isSelected ? ' selected' : ''}${isDimmed ? ' dimmed' : ''}${pairStart ? ' pair-start' : ''}`}>
-                  <button type="button" className="customizer-clothes-adjust-part-select" aria-pressed={isSelected} onClick={() => {
-                    setSelectedClothing({ modelSlot: group.modelSlot, setId: group.setId, category: group.category, componentId: component.id })
-                    selectAdjustmentPreviewTarget({ scope: 'clothing', piece: { modelSlot: group.modelSlot, setId: group.setId, category: group.category, componentId: component.id } })
-                  }}>
-                    <span className="customizer-clothes-adjust-part-preview"><img src={component.dataUrl} alt="" /></span>
-                    <strong title={component.name}>{component.name || component.attachedPartId}</strong>
-                    <small>{set.name}</small>
-                  </button>
-                </div>
-              })}
-            </div> : <p className="customizer-clothes-adjust-empty">Nenhuma peça aplicada em <strong>{adjustmentLabel}</strong> neste personagem. Escolha uma peça nesta categoria para ajustar seus componentes.</p>}
-          </section>
-          {selectedAdjustmentComponent ? <section className="customizer-clothes-adjust-controls" aria-label="Controles da peça selecionada">
-            <div className="customizer-clothes-adjust-position">
-              <div className="customizer-clothes-adjust-pad" aria-label="Mover a peça">
-                <button type="button" aria-label="Mover para cima" onClick={() => moveBy(0, -1)}>↑</button>
-                <button type="button" aria-label="Mover para a esquerda" onClick={() => moveBy(-1, 0)}>←</button>
-                <span><Icon name="move" /></span>
-                <button type="button" aria-label="Mover para a direita" onClick={() => moveBy(1, 0)}>→</button>
-                <button type="button" aria-label="Mover para baixo" onClick={() => moveBy(0, 1)}>↓</button>
-              </div>
-            </div>
-            <div className="customizer-clothes-adjust-axis-grid">
-              {([{ key: 'scaleX', label: 'Largura', min: .05, max: 5, step: .02 }, { key: 'scaleY', label: 'Altura', min: .05, max: 5, step: .02 }] as const).map(({ key, label, min, max, step }) => <div className="customizer-clothes-adjust-axis" key={key}>
-                <strong>{label} <output>{Math.round(transform[key] * 100)}%</output></strong>
-                <button type="button" aria-label={`Diminuir ${label.toLowerCase()}`} onClick={() => changeTransform({ [key]: Math.max(min, Number((transform[key] - step).toFixed(2))) })}>−</button>
-                <button type="button" aria-label={`Aumentar ${label.toLowerCase()}`} onClick={() => changeTransform({ [key]: Math.min(max, Number((transform[key] + step).toFixed(2))) })}>+</button>
-              </div>)}
-            </div>
-            <div className="customizer-clothes-adjust-rotation"><strong>Rotação <output>{Math.round(transform.rotation)}°</output></strong><button type="button" aria-label="Girar para a esquerda" onClick={() => changeTransform({ rotation: transform.rotation - 1 })}>↶</button><button type="button" aria-label="Girar para a direita" onClick={() => changeTransform({ rotation: transform.rotation + 1 })}>↷</button></div>
-          </section> : <div className="customizer-clothes-adjust-empty-controls">Selecione uma peça na lista para ajustar.</div>}
-        </div>}
-      </section>
+      const transform = wardrobeTransformDraft ?? { offsetX:0,offsetY:0,scaleX:1,scaleY:1,rotation:0 }
+      return <CustomizerClothesAdjustmentPanel
+        label={adjustmentLabel} hasCharacter={Boolean(selectedCharacter)}
+        entries={adjustmentComponents} selected={selectedAdjustmentComponent}
+        selectedPiece={selectedClothing} transform={transform}
+        onSelect={(piece) => {
+          setSelectedClothing(piece)
+          selectAdjustmentPreviewTarget({ scope:'clothing',piece })
+        }}
+        onTransform={(next) => { void updateClothesAdjustComponent('transform',next) }}
+        onToggleHidden={() => { void updateClothesAdjustComponent('toggle-hidden') }}
+      />
     }
       const items = headAdjustmentItemsFor(headCategorySelection)
     const selectedId = headAdjustSelection
