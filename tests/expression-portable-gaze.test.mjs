@@ -184,7 +184,9 @@ test('normal preserva X e rotação autorais, sem o antigo recálculo obrigatór
   assert.equal(normal.x,4-13/70*82,'no forced positive right gaze')
   assert.equal(normal.rotation,0)
   const both=await buildStudioExpressionTransforms({...preset,ptPupilMotion:undefined},actor.appearance,{},actor.loadComponent,actor.loadCatalog,'left')
-  assert.notEqual(both['expression-component:pupil-right'].sourceTransformOverride.x,normal.x)
+  assert.equal(both['expression-component:pupil-right'].sourceTransformOverride.x,
+    resolvePresetPupilGaze(normal.x,4,82,1.4,'right',true,'left'),
+    'PT legado usa a direção calculada; ela pode coincidir com um preset já olhando à esquerda')
   assert.deepEqual(preset,original)
 })
 
