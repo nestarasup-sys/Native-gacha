@@ -1,5 +1,5 @@
 import type { CustomizerFaceAppearance } from '../../../shared/customizer'
-import { applyPortableExpressionLayer, type ExpressionGaze } from '../../../shared/portableExpression'
+import { applyPortableExpressionLayer, resolvePresetPupilGaze, type ExpressionGaze } from '../../../shared/portableExpression'
 import type { FaceCatalogItem, FaceComponentAsset, FaceExpressionPreset, FaceExpressionPresetSummary, FaceTransform } from '../../../shared/fabricator'
 import type { StudioElement, StudioExpressionBase, StudioFaceTransforms } from '../../../shared/studio'
 
@@ -143,7 +143,7 @@ export async function buildStudioExpressionTransforms(
       if (kind === 'pupil') {
         const sourceEyeId = preset.selections.eyes[side]
         const targetEyeId = appearance.components?.[`eye-${side}`]?.assetId
-        const [sourceEye, targetEye] = await Promise.all([sourceEyeId ? component(sourceEyeId) : null, targetEyeId ? component(targetEyeId) : null])
+        const [sourceEye, targetEye] = await Promise.all([!motion && sourceEyeId ? component(sourceEyeId) : null, targetEyeId ? component(targetEyeId) : null])
         if (targetEye) metric={width:targetEye.width,height:targetEye.height}
         if (sourceEye && targetEye && source) {
           const eyeBase = preset.referenceTransforms?.[right ? 'eyeRight' : 'eyeLeft'] ?? sourceEye.defaultTransform
@@ -210,21 +210,22 @@ export async function buildStudioExpressionTransforms(
       }))
     }
   }
-  if (gaze === 'left') {
-    // PT uses the SAME expression. Flip only the authored horizontal pupil
-    // movement about THIS character's neutral pupil position; no image swap,
-    // no preset mutation, no extra offset on repeated application.
-    for (const side of ['left','right'] as const) {
-      const part=`pupil-${side}` as const
-      const selected=appearance.components?.[part]
-      if(!selected?.assetId)continue
-      const asset=await component(selected.assetId)
-      if(!asset)continue
-      const baseline=selected.transform ?? asset.defaultTransform
-      const key=`expression-component:${part}`
-      const current=result[key]?.sourceTransformOverride ?? baseline
-      put(key,{...current,x:2*baseline.x-current.x})
-    }
+  // One deterministic gaze for the current actor. PT flips only the pupil's
+  // authored movement around its OWN neutral x; an unconfigured neutral pupil
+  // gets a small explicit glance. Gaze never accumulates on previous renders.
+  for (const side of ['left','right'] as const) {
+    const part=`pupil-${side}` as const
+    const eyePart=`eye-${side}` as const
+    const selected=appearance.components?.[part], eyeChoice=appearance.components?.[eyePart]
+    if(!selected?.assetId || !eyeChoice?.assetId)continue
+    const [asset,eye]=await Promise.all([component(selected.assetId),component(eyeChoice.assetId)])
+    if(!asset || !eye)continue
+    const baseline=selected.transform ?? asset.defaultTransform
+    const eyeBase=result[`expression-component:${eyePart}`]?.sourceTransformOverride ?? eyeChoice.transform ?? eye.defaultTransform
+    const key=`expression-component:${part}`
+    const current=result[key]?.sourceTransformOverride ?? baseline
+    put(key,{...current,x:resolvePresetPupilGaze(current.x,baseline.x,eye.width,eyeBase.scaleX,
+      side,asset.rightSidePositioned===true,gaze)})
   }
   return result
 }
