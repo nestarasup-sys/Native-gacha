@@ -131,6 +131,9 @@ export type WardrobeSet = {
   updatedAt: string
 }
 export type WardrobeSetSave = Omit<WardrobeSet, 'components'> & { components: Array<Omit<WardrobeComponent, 'dataUrl'>> }
+/** Listing warnings expose only the affected set and reason, never file paths or contents. */
+export type WardrobeCatalogListing = { sets: WardrobeSetSummary[]; issues: Array<{ id: string; reason: string }> }
+
 export type WardrobeSetSummary = Pick<WardrobeSet, 'id' | 'modelSlot' | 'modelName' | 'name' | 'updatedAt'> & { edition: WardrobeEdition; componentCount: number }
 export type WardrobeAssetSave = { id: string; dataUrl: string }
 export type FaceSheetKind = 'eyes' | 'eyebrows' | 'nose' | 'mouth-closed' | 'mouth-open'
@@ -394,6 +397,7 @@ export type FabricatorDesktopApi = {
   saveAnimatorDraft: (modelSlot: number, draft: AnimatorAnimationDraft, assets: AnimatorAnimationAsset[]) => Promise<void>
   deleteAnimatorDraft: (modelSlot: number) => Promise<void>
   listWardrobeSets: (modelSlot: number) => Promise<WardrobeSetSummary[]>
+  listWardrobeSetsDetailed: (modelSlot: number) => Promise<WardrobeCatalogListing>
   loadWardrobeSet: (modelSlot: number, id: string) => Promise<WardrobeSet | null>
   saveWardrobeSet: (modelSlot: number, set: WardrobeSetSave, assets: WardrobeAssetSave[]) => Promise<void>
   deleteWardrobeSet: (modelSlot: number, id: string) => Promise<void>
