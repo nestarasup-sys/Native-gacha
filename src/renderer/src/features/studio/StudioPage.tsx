@@ -20,7 +20,7 @@ type Tool = 'background' | 'objects' | null
 type DragState = { id: string; pointerId: number; startX: number; startY: number; originalX: number; originalY: number; width: number; height: number }
 
 const STORAGE_KEY = 'gacha-nymi-studio-catalog-v1'
-const STUDIO_FACE_RENDER_VERSION = 6
+const STUDIO_FACE_RENDER_VERSION = 7
 const studioColor = (number: number) => `hsl(${(number * 137.508) % 360} 45% 78%)`
 const defaultStudioEyeTransform: StudioFaceTransform = { x: 0, y: 0, width: 100, height: 100, rotation: 0 }
 function studioFaceModeForElement(element: StudioElement | null, appearance: CustomizerFaceAppearance | undefined): StudioFaceMode {
@@ -494,7 +494,7 @@ export function StudioPage() {
             : previousBase
           const appearance = shouldRecomposeExpression
             ? savedPreset && expressionBase
-              ? await buildStudioExpressionAppearance(savedPreset, expressionBase.appearance, (id) => window.desktop.loadFaceCatalogItem(savedPreset.modelSlot, id))
+              ? await buildStudioExpressionAppearance(savedPreset, expressionBase.appearance, (id) => window.desktop.loadFaceCatalogItem(savedPreset.modelSlot, id), element.activeExpressionGaze ?? 'right')
               : expressionBase?.appearance ?? element.faceAppearance
             : element.faceAppearance ?? expressionBase?.appearance
           const faceMode = studioFaceModeForElement(element, element.faceAppearance ?? expressionBase?.appearance)
@@ -804,7 +804,7 @@ export function StudioPage() {
     } finally { setSavingCast(false) }
   }
 
-  const applyStudioFaceAppearance = async (appearance: CustomizerFaceAppearance, faceTransforms: StudioFaceTransforms = selectedElement?.faceTransforms ?? {}, record = true, expressionState?: Pick<StudioElement, 'expressionBase' | 'activeExpressionPresetId' | 'activeExpressionPresetUpdatedAt' | 'activeExpressionCollectionId' | 'activeExpressionEffects' | 'activeFaceMode'>) => {
+  const applyStudioFaceAppearance = async (appearance: CustomizerFaceAppearance, faceTransforms: StudioFaceTransforms = selectedElement?.faceTransforms ?? {}, record = true, expressionState?: Pick<StudioElement, 'expressionBase' | 'activeExpressionGaze' | 'activeExpressionPresetId' | 'activeExpressionPresetUpdatedAt' | 'activeExpressionCollectionId' | 'activeExpressionEffects' | 'activeFaceMode'>) => {
     if (!activeStudio || selectedElement?.kind !== 'character' || !selectedStudioCharacter || !selectedElement.assetId || studioFaceBusy) return
     setStudioFaceBusy(true)
     try {
@@ -855,11 +855,11 @@ export function StudioPage() {
     const base = { ...resolveStudioExpressionBase(selectedElement, appearance), appearance: structuredClone(appearance) }
     setStudioExpressionBusy(true)
     try {
-      await applyStudioFaceAppearance(base.appearance, base.transforms, true, { expressionBase: base, activeExpressionPresetId: null, activeExpressionPresetUpdatedAt: undefined, activeExpressionCollectionId: selectedStudioExpressionCollectionId, activeExpressionEffects: undefined, activeFaceMode: faceMode })
+      await applyStudioFaceAppearance(base.appearance, base.transforms, true, { expressionBase: base, activeExpressionPresetId: null, activeExpressionGaze: 'right', activeExpressionPresetUpdatedAt: undefined, activeExpressionCollectionId: selectedStudioExpressionCollectionId, activeExpressionEffects: undefined, activeFaceMode: faceMode })
     } finally { setStudioExpressionBusy(false) }
   }
 
-  const applyStudioExpressionPreset = async (summary: FaceExpressionPresetSummary, pupilsLeft = false) => {
+  const applyStudioExpressionPreset = async (summary: FaceExpressionPresetSummary, gaze: 'right' | 'left' = 'right') => {
     if (!selectedStudioCharacter || !selectedElement || selectedElement.kind !== 'character' || studioExpressionBusy || studioFaceBusy) return
     setStudioExpressionBusy(true)
     setError(null)
@@ -878,35 +878,11 @@ export function StudioPage() {
       const faceTransforms = await buildStudioExpressionTransforms(
         preset, nextAppearance, base.transforms,
         (id) => window.desktop.loadFaceComponentAsset(preset.modelSlot, id),
-        (id) => window.desktop.loadFaceCatalogItem(preset.modelSlot, id)
+        (id) => window.desktop.loadFaceCatalogItem(preset.modelSlot, id),
+        gaze
       )
-      if (pupilsLeft) {
-        for (const side of ['left', 'right'] as const) {
-          const pupilPart = `pupil-${side}` as const
-          const eyePart = `eye-${side}` as const
-          const transformKey = `expression-component:${pupilPart}`
-          const current = faceTransforms[transformKey]
-          const pupilId = nextAppearance.components?.[pupilPart]?.assetId
-          const eyeId = nextAppearance.components?.[eyePart]?.assetId
-          if (!current?.sourceTransformOverride || !pupilId || !eyeId) continue
-          const [pupilAsset, eyeAsset] = await Promise.all([
-            window.desktop.loadFaceComponentAsset(preset.modelSlot, pupilId),
-            window.desktop.loadFaceComponentAsset(preset.modelSlot, eyeId)
-          ])
-          if (!pupilAsset || !eyeAsset) continue
-          const eyeTransform = nextAppearance.components?.[eyePart]?.transform ?? eyeAsset.defaultTransform
-          const pointsLeft = side === 'left' || pupilAsset.rightSidePositioned === true
-          faceTransforms[transformKey] = {
-            ...current,
-            sourceTransformOverride: {
-              ...current.sourceTransformOverride,
-              x: (pointsLeft ? -1 : 1) * eyeAsset.width * eyeTransform.scaleX * .16
-            }
-          }
-        }
-      }
 
-      await applyStudioFaceAppearance(nextAppearance, faceTransforms, true, { expressionBase: base, activeExpressionPresetId: preset.id, activeExpressionPresetUpdatedAt: preset.updatedAt, activeExpressionCollectionId: preset.collectionId ?? 'standard', activeExpressionEffects: preset.effects, activeFaceMode: faceMode })
+      await applyStudioFaceAppearance(nextAppearance, faceTransforms, true, { expressionBase: base, activeExpressionPresetId: preset.id, activeExpressionGaze: gaze, activeExpressionPresetUpdatedAt: preset.updatedAt, activeExpressionCollectionId: preset.collectionId ?? 'standard', activeExpressionEffects: preset.effects, activeFaceMode: faceMode })
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Não foi possível aplicar este preset de expressão.')
     } finally {
@@ -1369,7 +1345,7 @@ export function StudioPage() {
                   <button className={`studio-expression-option${selectedElement.activeExpressionPresetId === preset.id ? ' selected' : ''}`} type="button" aria-pressed={selectedElement.activeExpressionPresetId === preset.id} onClick={() => void applyStudioExpressionPreset(preset)} disabled={studioExpressionBusy || studioFaceBusy}>
                     <b>{String((preset.expressionIndex ?? 0) + 1).padStart(2, '0')}</b><span>{preset.name}</span>
                   </button>
-                  <button className="studio-expression-look-left" type="button" title={`Aplicar ${preset.name} com as pupilas voltadas à esquerda`} aria-label={`Pupilas à esquerda: ${preset.name}`} onClick={() => void applyStudioExpressionPreset(preset, true)} disabled={studioExpressionBusy || studioFaceBusy}>pt</button>
+                  <button className="studio-expression-look-left" type="button" title={`Aplicar ${preset.name} com as pupilas voltadas à esquerda`} aria-label={`Pupilas à esquerda: ${preset.name}`} onClick={() => void applyStudioExpressionPreset(preset, 'left')} disabled={studioExpressionBusy || studioFaceBusy}>pt</button>
                 </div>)}
                 {!expressions.length && <p className="studio-custom-hint">Nenhuma expressão salva neste conjunto. Salve expressões no Expressão Dev para listá-las aqui.</p>}
               </div>
