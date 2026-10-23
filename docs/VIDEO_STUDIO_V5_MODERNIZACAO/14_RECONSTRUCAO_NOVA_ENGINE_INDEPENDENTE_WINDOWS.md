@@ -51,3 +51,7 @@ O usuário rejeitou continuar estendendo o editor legado e determinou três prin
 
 **Limite de validação:** smoke de subprocesso real requer executar `npm run test:video:rebuild:worker:windows` em máquina com Electron instalado; a CI que usa `--ignore-scripts` valida o bundle e o contrato, não uma sessão completa de decodificação AV. **Ainda NÃO existe equivalência visual completa normal/PT dinâmica, timeline de áudio independente, mixer nativo, export pelo novo compositor ou benchmark de 4 personagens na nova tela.** O corte não autoriza afirmar 60 FPS, OOM resolvido ou reconstrução funcional completa.
 
+
+## Smoke real da nova interface Windows
+
+O runner `npm run test:video:rebuild:ui:windows` inicia **um processo Electron real** com perfil DEV AI isolado e raiz nova dentro de `out/dev-ai/runs/`. Ele verifica: entrada da nova biblioteca, criação de projeto inédito no StudioDocument v1, contexto WebGL2, Play avançando quadros sem pré-render serial, seek para quadro absoluto 2700 e persistência de uma cópia por IPC. **Watchdog de 45 segundos**, limpeza apenas dos PIDs do subprocesso iniciado pelo próprio runner, nenhum projeto pessoal lido ou escrito. Este gate mede funcionamento básico e NÃO é golden PT nem teste de FPS/AV em quatro personagens.

@@ -60,7 +60,8 @@
     "test:fabricator:real-ui:review": "node scripts/fabricator/review-real-ui-captures.cjs",
     "test:video:rebuild": "node --test tests/video-studio-rebuild-scheduler.test.cjs tests/video-studio-rebuild-gpu.test.cjs tests/video-studio-rebuild-media-worker.test.cjs tests/video-studio-rebuild-preview-transport.test.cjs tests/video-studio-rebuild-media-lifecycle.test.cjs",
     "test:video:rebuild:worker:windows": "electron scripts/video-studio/media-supervisor-windows-smoke.cjs",
-    "test:video:rebuild:worker:bundle": "node -e \"for(const f of ['out/main/main.js','out/main/media-engine-worker.js']) if(!require('node:fs').existsSync(f)){console.error('Missing Electron entry: '+f);process.exitCode=1}\""
+    "test:video:rebuild:worker:bundle": "node -e \"for(const f of ['out/main/main.js','out/main/media-engine-worker.js']) if(!require('node:fs').existsSync(f)){console.error('Missing Electron entry: '+f);process.exitCode=1}\"",
+    "test:video:rebuild:ui:windows": "node scripts/video-studio/windows-rebuild-ui-smoke.cjs"
   },
   "dependencies": {
     "better-sqlite3": "^13.0.3",

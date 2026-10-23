@@ -7,6 +7,7 @@ on:
       - 'electron/**'
       - 'src/**'
       - 'scripts/fabricator/**'
+      - 'scripts/video-studio/windows-rebuild-ui-smoke.cjs'
       - '.github/workflows/fabricator-real-ui-windows.yml'
   pull_request:
     branches: [refactor/shared-character-core]
@@ -14,6 +15,7 @@ on:
       - 'electron/**'
       - 'src/**'
       - 'scripts/fabricator/**'
+      - 'scripts/video-studio/windows-rebuild-ui-smoke.cjs'
       - '.github/workflows/fabricator-real-ui-windows.yml'
   workflow_dispatch:
 
@@ -41,6 +43,8 @@ jobs:
         run: npm run build
       - name: Verify AV worker in a real Electron process (Windows)
         run: npm run test:video:rebuild:worker:windows
+      - name: Smoke rebuilt Video Studio UI with real Windows Chromium (synthetic profile)
+        run: npm run test:video:rebuild:ui:windows
       - name: Capture eleven real UI screens in two Electron processes (synthetic profile)
         run: npm run test:fabricator:real-ui -- --synthetic-complete
       - name: Verify eleven screenshots, persisted identities and SHA256
