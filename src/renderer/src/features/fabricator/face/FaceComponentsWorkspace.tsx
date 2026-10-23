@@ -996,7 +996,9 @@ export function FaceComponentsWorkspace({ mode }: { mode: FaceWorkspaceMode }) {
     const asset = assetId ? details[assetId] : undefined
     const leftAsset = leftId ? details[leftId] : undefined
     if (!asset) return null
-    const imageAsset = rightSide && mirror && linked[category.kind] ? leftAsset ?? asset : asset
+    // Linking edits must not silently substitute the LEFT pixels for an
+    // explicitly saved RIGHT asset. Presets DEV renders the saved ID itself.
+    const imageAsset = rightSide && mirror && linked[category.kind] && !ownId ? leftAsset ?? asset : asset
     const openEyeId = rightSide ? selectedAssets['eye-right'] ?? selectedAssets['eye-left'] : selectedAssets['eye-left']
     const openEye = category.kind === 'eye-closed' && openEyeId ? details[openEyeId] : undefined
     const leftOpen = details[selectedAssets['eye-left'] ?? '']
@@ -1020,9 +1022,7 @@ export function FaceComponentsWorkspace({ mode }: { mode: FaceWorkspaceMode }) {
     }
     const mirroredPosition = rightSide && !physicalRight && category.kind !== 'pupil'
     const x = mirroredPosition ? head.width - localX : localX
-    const shouldFlip = rightSide && linked[category.kind]
-      ? !Boolean(leftAsset?.defaultTransform.flipX)
-      : Boolean(transform.flipX)
+    const shouldFlip = Boolean(transform.flipX) !== (rightSide && !physicalRight && category.kind !== 'pupil')
     const width = category.kind === 'pupil' ? eyeWidth * transform.scaleX : imageAsset.width * transform.scaleX
     const height = category.kind === 'pupil' ? eyeHeight * transform.scaleY : imageAsset.height * transform.scaleY
     const style: CSSProperties = { left: `${x / head.width * 100}%`, top: `${localY / head.height * 100}%`, width: `${width / head.width * 100}%`, height: `${height / head.height * 100}%`, transform: `translate(-50%,-50%) rotate(${transform.rotation * (mirroredPosition ? -1 : 1)}deg) scaleX(${shouldFlip ? -1 : 1})` }
@@ -1051,7 +1051,7 @@ export function FaceComponentsWorkspace({ mode }: { mode: FaceWorkspaceMode }) {
         const pupilOffsetX = pupilSourceMirrored(rightSide?'right':'left',physicalRight) ? -transform.x : transform.x
         const eyeFlipDirection = eyeFlip ? -1 : 1
         const pupilRotation = transform.rotation * (rightSide && !physicalRight ? -1 : 1) * eyeFlipDirection
-        const pupilFlip = shouldFlip !== eyeFlip
+        const pupilFlip = Boolean(transform.flipX) !== eyeFlip
         const pupilStyle: CSSProperties = {
           left: `${50 + pupilOffsetX / (eyeFlipDirection * eyeTransform.scaleX * maskImage.width) * 100}%`,
           top: `${50 + transform.y / (eyeTransform.scaleY * maskImage.height) * 100}%`,
