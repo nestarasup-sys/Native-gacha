@@ -103,6 +103,46 @@ function defaultTransforms(composition: ExpressionComposition, components: Recor
   return transforms
 }
 
+function rebaseTransform(transform: FaceTransform, reference: FaceTransform, nextReference: FaceTransform): FaceTransform {
+  const rebased: FaceTransform = {
+    ...nextReference,
+    x: nextReference.x + transform.x - reference.x,
+    y: nextReference.y + transform.y - reference.y,
+    scaleX: Math.max(.02, Math.min(20, nextReference.scaleX * transform.scaleX / reference.scaleX)),
+    scaleY: Math.max(.02, Math.min(20, nextReference.scaleY * transform.scaleY / reference.scaleY)),
+    rotation: nextReference.rotation + transform.rotation - reference.rotation
+  }
+  if (Boolean(transform.flipX) !== Boolean(reference.flipX)) {
+    const flipX = !Boolean(nextReference.flipX)
+    if (flipX) rebased.flipX = true
+    else delete rebased.flipX
+  }
+  return rebased
+}
+
+function rebaseExpressionTransforms(
+  transforms: FaceExpressionTransforms,
+  reference: FaceExpressionTransforms,
+  nextReference: FaceExpressionTransforms
+): FaceExpressionTransforms {
+  const keys: LayerKey[] = ['eyeLeft', 'eyeRight', 'pupilLeft', 'pupilRight', 'browLeft', 'browRight', 'nose', 'mouth']
+  return Object.fromEntries(keys.map((key) => [key, rebaseTransform(transforms[key], reference[key], nextReference[key])])) as FaceExpressionTransforms
+}
+
+function compositionForExpression(composition: ExpressionComposition, index: number, catalogs: Record<string, FaceCatalogItem>): ExpressionComposition {
+  const next = structuredClone(composition)
+  if (next.nose) {
+    const nose = catalogs[next.nose.catalogId]
+    if (nose && !nose.pieces.some((piece) => piece.index === next.nose!.index)) next.nose.index = nose.pieces[0]?.index ?? 0
+  }
+  if (next.mouth) {
+    const mouth = catalogs[next.mouth.catalogId]
+    if (mouth?.pieces.some((piece) => piece.index === index)) next.mouth.index = index
+    else if (mouth && !mouth.pieces.some((piece) => piece.index === next.mouth!.index)) next.mouth.index = mouth.pieces[0]?.index ?? 0
+  }
+  return next
+}
+
 const emptyComposition: ExpressionComposition = {
   eyes: { left: null, right: null }, pupils: { left: null, right: null }, eyebrows: { left: null, right: null }, nose: null, mouth: null
 }
@@ -471,11 +511,76 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
   }
 
   const beginChoosing = () => { setDraft(composition); setDraftTransforms(cloneTransforms(transforms)); setDraftNoseOpacity(noseOpacity); setCategory('eyes'); setOpen(true) }
-  const applyComposition = () => {
-    const nextTransforms = cloneTransforms(draftTransforms)
-    setComposition(draft); setTransforms(nextTransforms); setNoseOpacity(draftNoseOpacity)
-    setBaseComposition(draft); setBaseTransforms(nextTransforms); setBaseNoseOpacity(draftNoseOpacity)
-    setOpen(false); setError(null)
+  const applyComposition = async () => {
+    if (saving || switchingExpression) return
+    setSaving(true); setError(null)
+    try {
+      const nextBaseTransforms = defaultTransforms(draft, componentAssets, catalogItems)
+      const keys = new Set<number>(Array.from({ length: STANDARD_EXPRESSIONS.length }, (_, index) => index))
+      if (selectedExpressionIndex >= STANDARD_EXPRESSIONS.length) keys.add(selectedExpressionIndex)
+      const existingByIndex = new Map(presets
+        .filter((preset) => preset.collectionId === selectedCollectionId && Number.isInteger(preset.expressionIndex))
+        .map((preset) => [preset.expressionIndex!, preset]))
+      const now = new Date().toISOString()
+      const previous: Array<FaceExpressionPreset | null> = []
+      const nextPresets: FaceExpressionPreset[] = []
+      const nextCopies: Record<string, ExpressionWorkingCopy> = {}
+
+      for (const index of keys) {
+        const key = expressionWorkingCopyKey(selectedCollectionId, index)
+        const summary = existingByIndex.get(index)
+        const saved = summary ? await window.desktop.loadFaceExpressionPreset(modelSlot, summary.id) : null
+        previous.push(saved)
+        const workingCopy = index === selectedExpressionIndex
+          ? { id: presetId, composition, transforms, noseOpacity, effects }
+          : workingCopies[key]
+        const sourceComposition = workingCopy?.composition ?? saved?.selections ?? baseComposition
+        const sourceTransforms = workingCopy?.transforms ?? saved?.transforms ?? defaultTransforms(sourceComposition, componentAssets, catalogItems)
+        const sourceReferenceTransforms = {
+          ...defaultTransforms(saved?.selections ?? sourceComposition, componentAssets, catalogItems),
+          ...(saved?.referenceTransforms ?? {})
+        }
+        const selections = compositionForExpression(draft, index, catalogItems)
+        const rebasedTransforms = rebaseExpressionTransforms(sourceTransforms, sourceReferenceTransforms, nextBaseTransforms)
+        const id = workingCopy?.id ?? saved?.id ?? summary?.id ?? crypto.randomUUID()
+        const name = saved?.name ?? customExpressionNames[key] ?? STANDARD_EXPRESSIONS[index] ?? `Nova expressão ${index - STANDARD_EXPRESSIONS.length + 1}`
+        const nextPreset: FaceExpressionPreset = {
+          ...saved,
+          schemaVersion: 1, id, modelSlot, name, collectionId: selectedCollectionId, expressionIndex: index,
+          selections, transforms: rebasedTransforms, referenceTransforms: cloneTransforms(nextBaseTransforms),
+          noseOpacity: draftNoseOpacity, effects: cloneEffects(workingCopy?.effects ?? saved?.effects), updatedAt: now
+        }
+        nextPresets.push(nextPreset)
+        nextCopies[key] = { id, composition: selections, transforms: rebasedTransforms, noseOpacity: draftNoseOpacity, effects: cloneEffects(nextPreset.effects) }
+      }
+
+      let written = 0
+      try {
+        for (const preset of nextPresets) {
+          await window.desktop.saveFaceExpressionPreset(modelSlot, preset)
+          written += 1
+        }
+      } catch (reason) {
+        await Promise.allSettled(nextPresets.slice(0, written).map((preset, index) => {
+          const before = previous[index]
+          return before
+            ? window.desktop.saveFaceExpressionPreset(modelSlot, before)
+            : window.desktop.deleteFaceExpressionPreset(modelSlot, preset.id)
+        }))
+        throw reason
+      }
+
+      setBaseComposition(draft); setBaseTransforms(nextBaseTransforms); setBaseNoseOpacity(draftNoseOpacity)
+      setWorkingCopies((current) => ({ ...current, ...nextCopies }))
+      const active = nextCopies[expressionWorkingCopyKey(selectedCollectionId, selectedExpressionIndex)]
+      if (active) {
+        setPresetId(active.id); setComposition(active.composition); setTransforms(active.transforms); setNoseOpacity(active.noseOpacity); setEffects(active.effects)
+      }
+      setPresets(await window.desktop.listFaceExpressionPresets(modelSlot))
+      setOpen(false)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Não foi possível aplicar a composição às expressões.')
+    } finally { setSaving(false) }
   }
   const cancelChoosing = () => { setDraft(composition); setDraftTransforms(cloneTransforms(transforms)); setDraftNoseOpacity(noseOpacity); setOpen(false) }
   const updateLayerTransform = (key: LayerKey, patch: Partial<FaceTransform>) => {
@@ -1044,7 +1149,7 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
             })}</div></>}
           </>}
         </div>
-        <footer><span>{draft.eyes.left || draft.eyes.right ? 'Olhos' : 'Sem olhos'} · {draft.pupils.left || draft.pupils.right ? 'pupilas' : 'sem pupilas'} · {draft.nose ? 'nariz' : 'sem nariz'} · {draft.mouth ? 'boca' : 'sem boca'}</span><button className="expression-picker-apply" onClick={applyComposition} type="button"><Icon name="check" />Usar composição</button></footer>
+        <footer><span>{draft.eyes.left || draft.eyes.right ? 'Olhos' : 'Sem olhos'} · {draft.pupils.left || draft.pupils.right ? 'pupilas' : 'sem pupilas'} · {draft.nose ? 'nariz' : 'sem nariz'} · {draft.mouth ? 'boca' : 'sem boca'}</span><button className="expression-picker-apply" disabled={saving || switchingExpression} onClick={() => void applyComposition()} type="button"><Icon name="check" />{saving ? 'Aplicando…' : 'Usar composição'}</button></footer>
       </section>
     </div>}
     {collectionDialogOpen && <div className="expression-picker-backdrop" role="presentation" onClick={() => setCollectionDialogOpen(false)}>
