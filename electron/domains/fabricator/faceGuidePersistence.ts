@@ -33,7 +33,8 @@ export function createFaceGuidePersistence(files: Files, userDataPath: () => str
     if (!isFaceGuideProfile(profile)) throw new Error('Perfil de guias inválido.')
     try {
       const value = JSON.parse(await files.readFile(pathFor(profile), 'utf8')) as unknown
-      return isFaceGuideValues(value) ? value : null
+      if (!isFaceGuideValues(value)) throw new Error('Arquivo de guias inválido; arquivo original preservado. Corrija ou restaure uma cópia de segurança antes de editar as guias.')
+      return value
     } catch (reason) {
       if (isMissing(reason)) return null
       throw reason
@@ -44,6 +45,9 @@ export function createFaceGuidePersistence(files: Files, userDataPath: () => str
     if (!isFaceGuideProfile(profile)) throw new Error('Perfil de guias inválido.')
     if (!isFaceGuideValues(value)) throw new Error('Guias de desenho inválidas.')
     const target = pathFor(profile)
+    // Fail closed: never replace a corrupt but existing profile just because
+    // the renderer could fall back to localStorage or default values.
+    await read(profile)
     await files.mkdir(join(userDataPath(), 'fabricator'), { recursive: true })
     const temporary = `${target}.tmp`
     await files.writeFile(temporary, JSON.stringify(value), 'utf8')
