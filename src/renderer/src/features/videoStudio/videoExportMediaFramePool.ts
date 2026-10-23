@@ -21,23 +21,56 @@ export class VideoExportMediaFramePool {
   private readonly transients = new Set<CachedBitmap>()
   private bitmapBytes = 0
   private activeScene = false
+  private readonly activeSceneAssets = new Set<string>()
   private disposed = false
 
   constructor(
     private readonly jobId: string,
     private readonly maxBitmapBytes = 96 * 1024 * 1024,
     private readonly budget?: VideoStudioResourceBudget,
-    private readonly releaseExternalCache?: () => void
+    private readonly releaseExternalCache?: () => void,
+    private readonly maxIdleDecoders = 8
   ) {
     if (!Number.isSafeInteger(maxBitmapBytes) || maxBitmapBytes < 1) {
       throw new RangeError('Orçamento de bitmaps de mídia inválido.')
+    }
+    if (!Number.isSafeInteger(maxIdleDecoders) || maxIdleDecoders < 1) {
+      throw new RangeError('Quantidade máxima de decoders ociosos inválida.')
+    }
+  }
+
+  /**
+   * Bound retained HTMLVideoElement decoders across long exports with many
+   * different sources. Active scene assets are protected; overlapping media
+   * can exceed the idle cap temporarily to preserve composition correctness.
+   */
+  private trimIdleDecoders(): void {
+    while (this.videos.size > this.maxIdleDecoders) {
+      let victim: [string, HTMLVideoElement] | undefined
+      for (const pair of this.videos) {
+        if (!this.activeSceneAssets.has(pair[0])) { victim = pair; break }
+      }
+      if (!victim) break
+      const [assetId, video] = victim
+      this.videos.delete(assetId)
+      this.ready.delete(assetId)
+      video.pause()
+      video.removeAttribute('src')
+      video.load()
     }
   }
 
   private video(assetId: string): Promise<HTMLVideoElement> {
     if (this.disposed) return Promise.reject(new Error('Decoder de mídia já foi descartado.'))
     let pending = this.ready.get(assetId)
-    if (pending) return pending
+    if (pending) {
+      const video = this.videos.get(assetId)
+      if (video) {
+        this.videos.delete(assetId)
+        this.videos.set(assetId, video)
+      }
+      return pending
+    }
     const video = document.createElement('video')
     video.muted = true
     video.preload = 'auto'
@@ -142,6 +175,11 @@ export class VideoExportMediaFramePool {
     if (cached) {
       this.bitmaps.delete(key)
       this.bitmaps.set(key, cached)
+      const decoder = this.videos.get(assetId)
+      if (decoder) {
+        this.videos.delete(assetId)
+        this.videos.set(assetId, decoder)
+      }
       cached.pins++
       let released = false
       return { bitmap: cached.bitmap, release: () => {
@@ -213,6 +251,8 @@ export class VideoExportMediaFramePool {
     if (this.disposed) throw new Error('Decoder de mídia já foi descartado.')
     if (this.activeScene) throw new Error('Composições de vídeo simultâneas na mesma surface.')
     this.activeScene = true
+    this.activeSceneAssets.clear()
+    for (const video of scene.videos) this.activeSceneAssets.add(video.assetId)
     const frames = new Map<string, CanvasImageSource>()
     const releases: Array<() => void> = []
     let released = false
@@ -220,7 +260,9 @@ export class VideoExportMediaFramePool {
       if (released) return
       released = true
       for (const done of releases.reverse()) done()
+      this.activeSceneAssets.clear()
       this.activeScene = false
+      this.trimIdleDecoders()
     }
     try {
       for (const video of scene.videos) {
@@ -252,5 +294,6 @@ export class VideoExportMediaFramePool {
     }
     this.videos.clear()
     this.ready.clear()
+    this.activeSceneAssets.clear()
   }
 }

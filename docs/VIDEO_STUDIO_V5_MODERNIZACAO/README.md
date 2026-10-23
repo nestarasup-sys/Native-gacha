@@ -55,6 +55,12 @@ Novos testes: `npm run test:video:next`, também incluídos em `npm test`. O cor
 - Novos testes cobrem **três vídeos simultâneos, expulsão segura, orçamento compartilhado, memória insuficiente, descarte durante decode, PTS e seek reverso**. Executados pela CI **Windows** com `npm run test:video:next`.
 - **Limite ainda presente:** a reserva usa a dimensão de `ImageBitmap` obtida *após* a decodificação, e não limita buffers internos do Chromium/decoder, RAM/VRAM do processo, preview principal, múltiplas surfaces nem FFmpeg. O orçamento global N1/N6 e stress em hardware Windows seguem pendentes.
 
+### Quarto corte — decodificadores de vídeo ociosos limitados (Windows)
+
+`VideoExportMediaFramePool` agora mantém **no máximo oito elementos de vídeo ociosos por surface** após cada composição. Um algoritmo LRU descarrega a fonte e seus recursos quando outra mídia assume a posição. Os arquivos originais permanecem inalterados. **Mídias simultaneamente necessárias numa composição ficam protegidas** e podem exceder esse limite temporariamente; o cache volta à capacidade configurada depois de liberar o frame, sem cortar um vídeo da cena.
+
+Testes Windows cobrem 12 mídias sequenciais, reapertura de fonte expulsa e cinco vídeos simultâneos com limite ocioso menor. O teto é de **quantidade de decoders retidos**, não de bytes dos buffers internos nem teto RAM/VRAM; medir isso em Windows real segue necessário.
+
 ## Estrutura-alvo resumida
 
 `StudioDocument/AssetManifest → ProjectRepository + EditorCore/CommandBus → SceneCompiler/Evaluator → FramePlan → ResourceBudgeter/Scheduler + GachaRenderer + MediaService → PreviewTransport / ExportService → verificador e publish atômico`.

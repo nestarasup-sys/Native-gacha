@@ -174,3 +174,40 @@ test('seek with source PTS is repeatable; abort and invalid timestamps cleanly f
   pool.dispose()
   assert.equal(budget.snapshot().usedBytes, 0)
 })
+
+test('long export releases idle HTMLVideoElement decoders instead of retaining every source', async () => {
+  const { Pool, videoElements } = harness()
+  const budget = new VideoStudioResourceBudget(512)
+  const pool = new Pool('job', 64, budget, undefined, 3)
+  for (let i = 0; i < 12; i++) {
+    const borrowed = await pool.acquireFramesForScene(scene('media-' + i))
+    assert.equal(borrowed.frames.size, 1)
+    borrowed.release()
+  }
+  assert.equal(videoElements.length, 12, 'each new source has been decoded once')
+  assert.equal(videoElements.filter((video) => video.src !== '').length, 3,
+    'only three recently used decoders remain loaded')
+  const revisited = await pool.acquireFramesForScene(scene('media-0'))
+  assert.equal(revisited.frames.size, 1)
+  revisited.release()
+  assert.equal(videoElements.filter((video) => video.src !== '').length, 3)
+  pool.dispose()
+  assert.equal(videoElements.filter((video) => video.src !== '').length, 0)
+  assert.equal(budget.snapshot().usedBytes, 0)
+})
+
+test('idle decoder cap never closes videos required simultaneously by one scene', async () => {
+  const { Pool, videoElements, bitmaps } = harness()
+  const budget = new VideoStudioResourceBudget(512)
+  const pool = new Pool('job', 64, budget, undefined, 2)
+  const borrowed = await pool.acquireFramesForScene(scene('one', 'two', 'three', 'four', 'five'))
+  assert.equal(borrowed.frames.size, 5)
+  assert.equal(videoElements.filter((video) => video.src !== '').length, 5)
+  assert.ok(bitmaps.every((bitmap) => !bitmap.closed))
+  borrowed.release()
+  assert.equal(videoElements.filter((video) => video.src !== '').length, 2)
+  pool.dispose()
+  assert.equal(budget.snapshot().usedBytes, 0)
+  assert.ok(bitmaps.every((bitmap) => bitmap.closed))
+  assert.throws(() => new Pool('job', 64, undefined, undefined, 0), /decoders ociosos/)
+})
