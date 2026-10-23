@@ -250,8 +250,12 @@ export async function captureFabricatorRealScreens(win: BrowserWindow, output: s
         pathPixels.push(observed)
       }
       win.webContents.sendInputEvent({type:'mouseUp',x:x+25,y,button:'left',clickCount:1})
-      if(!pathPixels.slice(1).every((value,index)=>value>pathPixels[index]+.15)) {
-        throw Error('Arrastar a pupila à direita não moveu a imagem continuamente: '+JSON.stringify(pathPixels))
+      // Electron/React may batch several pointermove events into one paint:
+      // plateaus are valid, backwards movement is not. The final displacement
+      // must still be visible, not a "pass" from a frozen cursor.
+      if(!pathPixels.slice(1).every((value,index)=>value>=pathPixels[index]-.3)
+        || pathPixels[pathPixels.length-1]<pathPixels[0]+7) {
+        throw Error('Arrastar a pupila à direita congelou ou inverteu a imagem: '+JSON.stringify(pathPixels))
       }
       await new Promise(resolve=>setTimeout(resolve,650))
       const saved = await win.webContents.executeJavaScript(`window.desktop.loadFaceComponentAsset(1,'regPupilL').then(item=>item?.defaultTransform.x ?? null)`) as number|null
