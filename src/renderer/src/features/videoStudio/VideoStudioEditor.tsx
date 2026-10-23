@@ -2,6 +2,7 @@ import { snapshotVideoStudioScene as snapshot, withStudioSnapshot as withSnapsho
 import { SerializedDocumentSaveQueue } from '../../../../shared/serializedDocumentSave'
 import { findTimelineBlockStart, timelineBlockOverlaps, type TimelineBlockTarget } from '../../../../shared/videoTimelineEditing'
 import { applyVideoStudioEditorCommand } from '../../../../shared/videoStudioNext/editorCore'
+import { compileVideoSpeechIndex, evaluateVideoSpeechIndex } from '../../../../shared/videoStudioNext/speechIndex'
 import { captureVideoPoster } from './videoPoster'
 import { useStudioInspectorState } from '../../characters/useStudioInspectorState'
 import './VideoStudioEditor.css'
@@ -219,23 +220,17 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
     }),
     renderer: STUDIO_FACE_RENDER_VERSION
   })
-  const automaticMouthModes = new Map<string, 'talk' | 'idle'>()
-  const automaticSpeechStartFrames = new Map<string, number>()
-  if (isVideoWorkspace && activeStudio) {
-    const timeline = videoTimelineFor(activeStudio)
-    for (const clip of timeline.textClips) {
-      if (clip.startFrame > videoPreviewFrame || videoPreviewFrame >= clip.endFrame) continue
-      const balloon = clip.state ?? activeStudio.elements.find((element) => element.id === clip.elementId)
-      const speakerId = balloon?.speakerCharacterId
-      if (!speakerId) continue
-      if (clip.kind === 'speech') {
-        automaticMouthModes.set(speakerId, 'talk')
-        const previousStart = automaticSpeechStartFrames.get(speakerId)
-        automaticSpeechStartFrames.set(speakerId, previousStart === undefined ? clip.startFrame : Math.min(previousStart, clip.startFrame))
-      }
-      else if (automaticMouthModes.get(speakerId) !== 'talk') automaticMouthModes.set(speakerId, 'idle')
-    }
-  }
+  // Compile only when authored clips/element identities change; playback queries
+  // indexed active intervals instead of scanning every balloon at 60 FPS.
+  const videoSpeechIndex = useMemo(
+    () => isVideoWorkspace && activeStudio
+      ? compileVideoSpeechIndex(videoTimelineFor(activeStudio).textClips, activeStudio.elements)
+      : null,
+    [isVideoWorkspace, activeStudio?.id, activeStudio?.videoTimeline?.textClips, activeStudio?.elements]
+  )
+  const speechAtFrame = videoSpeechIndex ? evaluateVideoSpeechIndex(videoSpeechIndex, videoPreviewFrame) : null
+  const automaticMouthModes = speechAtFrame?.modes ?? new Map<string, 'talk' | 'idle'>()
+  const automaticSpeechStartFrames = speechAtFrame?.speechStartFrames ?? new Map<string, number>()
   const automaticMouthTargets = isVideoWorkspace && activeStudio
     ? stageCharacters.flatMap((element) => {
         const mode = automaticMouthModes.get(element.id)

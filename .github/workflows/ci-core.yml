@@ -45,7 +45,8 @@ jobs:
         run: npm run test:refactor
       - name: Geometry regression
         run: npm run test:geometry
-      - name: Test rebuilt Video Studio contracts
+      - name: Test rebuilt Video Studio contracts (Windows only)
+        if: matrix.os == 'windows-latest'
         run: npm run test:video:next
       - name: Typecheck
         run: npm run typecheck

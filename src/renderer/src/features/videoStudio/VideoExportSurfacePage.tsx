@@ -5,6 +5,7 @@ import { VideoCharacterFrameRenderer } from './videoCharacterFrameRenderer'
 import { VideoExportMediaFramePool } from './videoExportMediaFramePool'
 import { renderVideoSceneFrameToCanvas, clearVideoCanvasImageCache } from './videoCanvasCompositor'
 import { VideoCanvasLayerCache } from './videoCanvasLayerCache'
+import { VideoStudioResourceBudget } from '../../../../shared/videoStudioNext/resourceBudget'
 
 function errorMessage(reason: unknown): string {
   return reason instanceof Error ? reason.message : String(reason)
@@ -26,6 +27,7 @@ function jobIdFromHash(): string {
 export function VideoExportSurfacePage() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const layerCacheRef = useRef<VideoCanvasLayerCache | null>(null)
+  const cacheBudgetRef = useRef<VideoStudioResourceBudget | null>(null)
 
   useEffect(() => {
     let disposed = false
@@ -51,8 +53,10 @@ export function VideoExportSurfacePage() {
       const query = surfaceQuery()
       const layerCacheEnabled = query.get('layerCache') !== '0'
       const readbackOptimized = query.get('readbackCpu') !== '0'
-      if (layerCacheEnabled) layerCacheRef.current ??= new VideoCanvasLayerCache()
-      else layerCacheRef.current = null
+      if (layerCacheEnabled) {
+        cacheBudgetRef.current ??= new VideoStudioResourceBudget(96 * 1024 * 1024)
+        layerCacheRef.current ??= new VideoCanvasLayerCache(96 * 1024 * 1024, cacheBudgetRef.current)
+      } else layerCacheRef.current = null
       return { program, canvas, readbackOptimized }
     })()
 
@@ -104,6 +108,8 @@ export function VideoExportSurfacePage() {
       mediaPool?.dispose()
       layerCacheRef.current?.clear()
       layerCacheRef.current = null
+      cacheBudgetRef.current?.dispose()
+      cacheBudgetRef.current = null
       clearVideoCanvasImageCache()
     }
   }, [])

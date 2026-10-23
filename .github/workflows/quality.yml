@@ -58,9 +58,6 @@ jobs:
       - name: Test architecture budget
         if: steps.source.outputs.present == 'true'
         run: node --test tests/architecture-audit.test.cjs
-      - name: Test rebuilt Video Studio contracts
-        if: steps.source.outputs.present == 'true'
-        run: npm run test:video:next
       - name: Typecheck
         if: steps.source.outputs.present == 'true'
         run: npm run typecheck

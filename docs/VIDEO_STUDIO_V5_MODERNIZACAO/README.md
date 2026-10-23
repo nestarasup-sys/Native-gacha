@@ -40,6 +40,13 @@ O módulo `src/shared/videoStudioNext/editorCore.ts` inicia a nova fronteira de 
 
 Novos testes: `npm run test:video:next`, também incluídos em `npm test`. O corte depende de validação CI/Windows; não há promessa de ganho de FPS/memória.
 
+### Segundo corte — consultas de fala e memória de layers (Windows)
+
+- `src/shared/videoStudioNext/speechIndex.ts` compila um índice de intervalos de balões por revisão da timeline, consultado durante Play/seek em vez de percorrer todos os balões a cada frame. A UI usa o índice e a precedência histórica de fala/pensamento foi mantida. **É uma melhoria algorítmica pontual; ganhos de FPS ainda precisam de benchmark.**
+- `VideoCanvasLayerCache` agora aceita `VideoStudioResourceBudget` para reservar bytes estimados de RGBA efetivamente colocados em cache. Expulsar/limpar um layer devolve a reserva. A export surface instancia o budget e o compartilha com esse cache de layers, incluindo a proteção contra renders assíncronos terminando após `clear()`. Se não houver orçamento para cache, o frame ainda é desenhado sem ser retido.
+- **Limite honesto:** este budget regula **somente os layers cacheados desta surface**; não mede/limita HTMLVideoElement, ImageBitmap, PNGs, GPU, ffmpeg, memórias transitórias ou a árvore Electron. A integração global continua **pendente**.
+- Testes novos: fala indexada (comparada com a varredura antiga por muitos frames), LRU/leases sob pressão, descarte assíncrono e retry após erro. `npm run test:video:next` roda os quatro arquivos de testes, **em CI focada no Windows**. Os workflows históricos de outras áreas não foram removidos.
+
 ## Estrutura-alvo resumida
 
 `StudioDocument/AssetManifest → ProjectRepository + EditorCore/CommandBus → SceneCompiler/Evaluator → FramePlan → ResourceBudgeter/Scheduler + GachaRenderer + MediaService → PreviewTransport / ExportService → verificador e publish atômico`.
