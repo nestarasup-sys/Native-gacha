@@ -95,8 +95,10 @@ export function useFaceGuides(profile: FaceGuideProfile, reportError: Dispatch<S
       const fallback = readStoredGuides(profile)
       guidesRef.current = { ...guidesRef.current, [profile]: fallback }
       setGuidesByProfile(guidesRef.current)
-      loadedProfileRef.current = profile
-      setLoadedProfile(profile)
+      // Local data is preview-only in failure mode. Do not allow the controls
+      // to overwrite an invalid but existing Fabricador JSON on disk.
+      loadedProfileRef.current = null
+      setLoadedProfile(null)
       reportError(reason instanceof Error ? reason.message : String(reason))
     })
 
