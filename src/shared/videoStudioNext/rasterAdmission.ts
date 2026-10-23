@@ -55,11 +55,18 @@ export class VideoStudioRasterAdmission {
     }
 
     this.active = true
-    void Promise.resolve().then(job.run).then(job.resolve, job.reject).finally(() => {
+    const complete = () => {
       lease?.release()
       this.active = false
       this.startNext()
-    })
+    }
+    // Release the reservation BEFORE notifying the caller that the work has
+    // settled. Promise.finally() after resolve/reject would expose stale
+    // usedBytes to downstream jobs and could trigger spurious budget denials.
+    void Promise.resolve().then(job.run).then(
+      (value) => { complete(); job.resolve(value) },
+      (reason) => { complete(); job.reject(reason) }
+    )
   }
 
   run<T>(task: () => Promise<T>): Promise<T> {
