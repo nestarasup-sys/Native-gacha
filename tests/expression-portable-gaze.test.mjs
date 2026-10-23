@@ -218,16 +218,19 @@ test('presets legados continuam transferindo usando referências; erro visível 
   assert.equal(isPortableExpressionMotion({version:1,layers:{eyeLeft:{dx:Infinity,dy:0,sx:1,sy:1,rotation:0,flip:false}}}),false)
 })
 
-test('Studio e Video Studio persistem o estado de PT sem escrever outro preset',async()=>{
+test('schema v1 preserva PT independente e editor novo conserva estado sem criar preset adicional',async()=>{
   const paths=['src/renderer/src/features/studio/StudioPage.tsx',
-    'src/renderer/src/features/videoStudio/VideoStudioEditor.tsx',
+    'src/shared/studio.ts',
+    'src/shared/videoStudioRebuild/rebuildEditor.ts',
     'src/renderer/src/features/fabricator/ExpressionPresetWorkspace.tsx']
-  const [studio,video,editor]=await Promise.all(paths.map(path=>readFile(path,'utf8')))
+  const [studio,schema,rebuild,editor]=await Promise.all(paths.map(path=>readFile(path,'utf8')))
   assert.match(studio,/activeExpressionGaze: gaze/)
-  assert.match(video,/activeExpressionGaze: gaze/)
-  assert.match(video,/PT: /)
   assert.match(studio,/element\.activeExpressionGaze \?\? 'right'/)
-  assert.match(video,/stateElement\.activeExpressionGaze \?\? 'right'/)
+  assert.match(schema,/activeExpressionGaze\?: 'right' \| 'left'/)
+  assert.match(schema,/activeExpressionPresetId\?: string \| null/)
+  assert.match(rebuild,/const state: VideoCharacterState/)
+  assert.match(rebuild,/expressionPresetId:element\.activeExpressionPresetId/)
+  assert.doesNotMatch(rebuild,/saveFaceExpressionPresetBatch|createFaceExpressionPreset/)
   assert.match(editor,/setPreviewGaze\(pupilsLeft\?'left':'right'\)/)
   assert.doesNotMatch(editor,/turnPupilsLeft\(/)
   assert.match(editor,/ExpressionCharacterPreview/)

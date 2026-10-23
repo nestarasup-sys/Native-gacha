@@ -25,13 +25,17 @@ test('falha de um save não bloqueia o próximo, nem mascara a exceção',async(
  await queue.idle()
  assert.equal(queue.pending,0)
 })
-test('ambos os Studios usam fila pura nos comandos de salvar, sem alterar IPC legado',async()=>{
+test('Studio mantém fila serial; Video Studio novo salva cópia por IPC sem sobrescrever o projeto original',async()=>{
  const {readFile}=await import('node:fs/promises')
- const [studio,video]=await Promise.all([
+ const [studio,video,preload]=await Promise.all([
    readFile('src/renderer/src/features/studio/StudioPage.tsx','utf8'),
-   readFile('src/renderer/src/features/videoStudio/VideoStudioEditor.tsx','utf8')
+   readFile('src/renderer/src/features/videoStudioRebuild/VideoStudioRebuildPage.tsx','utf8'),
+   readFile('electron/preload.ts','utf8')
  ])
  assert.ok(studio.includes('studioSaveQueue.current.run(async () =>'))
  assert.ok(studio.includes('await window.desktop.saveStudio(next)'))
- assert.match(video,/studioSaveQueue\.current\.run\(\(\) => persistence\.save\(/)
+ assert.match(video,/id:crypto\.randomUUID\(\)/)
+ assert.match(video,/await window\.desktop\.saveVideoStudio\(out\)/)
+ assert.doesNotMatch(video,/saveVideoStudio\(studio\)/)
+ assert.match(preload,/saveVideoStudio: \(studio\) => ipcRenderer\.invoke\('video-studio:save', studio\)/)
 })

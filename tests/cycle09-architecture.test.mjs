@@ -21,14 +21,19 @@ test('roteamento carrega Roteiros como feature e não mantém regras da página 
   assert.match(page,/export function RoteirosPage\(/)
   assert.doesNotMatch(page,/import\(['"]\.\.\/studio\/expressionTransforms['"]\)/)
 })
-test('consumidores comuns não importam páginas completas para renderizar personagens', async () => {
-  const [video,portrait]=await Promise.all([
-    readFile('src/renderer/src/features/videoStudio/VideoStudioEditor.tsx','utf8'),
-    readFile('src/renderer/src/ui/components/RenderedCharacterPortrait.tsx','utf8')
+test('editor reconstruído não importa páginas completas; oráculo export ainda usa renderizador Gacha compartilhado', async () => {
+  const [app,video,portrait,oracle]=await Promise.all([
+    readFile('src/renderer/src/ui/App.tsx','utf8'),
+    readFile('src/renderer/src/features/videoStudioRebuild/VideoStudioRebuildPage.tsx','utf8'),
+    readFile('src/renderer/src/ui/components/RenderedCharacterPortrait.tsx','utf8'),
+    readFile('src/renderer/src/features/videoStudio/VideoPreviewOraclePage.tsx','utf8')
   ])
-  for(const source of [video,portrait]){
+  assert.match(app,/features\/videoStudioRebuild\/VideoStudioRebuildPage/)
+  for(const source of [video,portrait,oracle]) {
     assert.doesNotMatch(source,/import\(['"][^'"]*CustomizerPage['"]\)/)
-    assert.match(source,/characters\/characterRenderer/)
   }
-  assert.match(video,/characters\/studioExpressionTransforms/)
+  assert.match(video,/VideoStudioFrameEngine/)
+  assert.match(video,/GachaGpuStage/)
+  assert.match(portrait,/characters\/characterRenderer/)
+  assert.match(oracle,/videoCharacterFrameRenderer/)
 })

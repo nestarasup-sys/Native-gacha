@@ -27,7 +27,7 @@ test('todos editores usam o resolvedor compartilhado sem dependência de página
  readFile('src/renderer/src/characters/characterRenderer.ts','utf8'),
  readFile('src/renderer/src/characters/characterSourceResolver.ts','utf8'),
  readFile('src/renderer/src/features/studio/StudioPage.tsx','utf8'),
- readFile('src/renderer/src/features/videoStudio/VideoStudioEditor.tsx','utf8'),
+ readFile('src/renderer/src/features/videoStudioRebuild/VideoStudioRebuildPage.tsx','utf8'),
  readFile('src/renderer/src/features/videoStudio/transitionRenderer.ts','utf8')
  ])
  assert.match(renderer,/await resolveSavedCharacterSource\(character, renderSource\)/)
@@ -36,7 +36,9 @@ test('todos editores usam o resolvedor compartilhado sem dependência de página
  assert.match(resolver,/loadFabricatorSlot/)
  assert.match(resolver,/applyCharacterBodyShape/)
  assert.match(studio,/studioSceneModel/)
- assert.match(video,/studioSceneModel/)
+ assert.match(video,/VideoStudioFrameEngine/)
+ assert.match(video,/GachaGpuStage/)
+ assert.doesNotMatch(video,/VideoStudioEditor|CustomizerPage/)
  assert.match(transition,/characterRenderer/)
  assert.doesNotMatch(resolver,/\.\.\/features\/|CustomizerPage|StudioPage/)
 })
