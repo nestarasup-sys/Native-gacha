@@ -645,6 +645,7 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
   }
   const cancelChoosing = () => { setDraft(composition); setDraftTransforms(cloneTransforms(transforms)); setDraftNoseOpacity(noseOpacity); setOpen(false) }
   const updateLayerTransform = (key: LayerKey, patch: Partial<FaceTransform>) => {
+    if(previewGaze==='left' && !open)return // PT is read-only, keep authored pose untouched.
     const pairKind = pairedKindForLayer(key)
     const pairedKey = pairedLayerKeys[key]
     const linkPair = Boolean(pairKind && pairedKey && linkedLayerPairs[pairKind])
@@ -721,6 +722,7 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
   }
   const resetSelectedLayer = () => {
+    if(previewGaze==='left')return
     const defaultForLayer = (layer: LayerKey) => {
       const assetId = layer === 'eyeLeft' ? composition.eyes.left : layer === 'eyeRight' ? composition.eyes.right
         : layer === 'pupilLeft' ? composition.pupils.left : layer === 'pupilRight' ? composition.pupils.right
@@ -779,6 +781,7 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
       : { offsetY: Math.max(-.5, Math.min(.5, movement.offsetY!)) })
   }
   const resetCurrentExpression = () => {
+    if(previewGaze==='left')return
     setTransforms(defaultTransforms(composition, componentAssets, catalogItems))
     setNoseOpacity(composition.nose ? catalogItems[composition.nose.catalogId]?.opacity ?? 1 : 1)
     setEffects(defaultExpressionEffects())
@@ -1033,6 +1036,7 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
         disabled={loading || saving || !head} title="Comparar base facial e expressão num personagem do Customizador">
         Testar em personagem
       </button>
+      {previewGaze==='left' && <small role="status" title="PT é uma orientação de olhar, não outra expressão">PT — prévia somente leitura. Selecione a expressão normal para editar as coordenadas.</small>}
       <span className="expression-preset-toolbar-spacer" />
       {!loading && <span className={`expression-workspace-save-status${workspaceSaveStatus === 'failed' ? ' failed' : ''}`} role="status">{workspaceSaveStatus === 'saving' ? 'Salvando rascunho…' : workspaceSaveStatus === 'failed' ? 'Falha ao salvar' : 'Rascunho salvo'}</span>}
       <span className="expression-preset-model-label">Modelo {String(modelSlot).padStart(2, '0')} · {project?.name ?? 'sem modelo'}</span>
