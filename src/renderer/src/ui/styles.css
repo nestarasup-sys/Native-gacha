@@ -2745,7 +2745,7 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .wardrobe-pose-audit-row>.pose-button { max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
 .wardrobe-pose-audit-row small { font-size:9px;color:#7f7480; }
 .wardrobe-pose-audit>[role="alert"] { color:#bc4263;font-size:10px; }
-.wardrobe-comparison-toggle { position:absolute;z-index:500;top:38px;right:9px;max-width:calc(100% - 18px);display:flex;flex-direction:column;align-items:flex-end;gap:6px; }
+.wardrobe-comparison-toggle { position:relative;z-index:500;max-width:100%;min-height:34px;display:flex;flex-direction:column;align-items:flex-end;gap:6px;padding:4px 8px;border-bottom:1px solid #f0ebef;background:#fff; }
 .wardrobe-comparison { position:fixed;z-index:8000;top:50%;left:50%;transform:translate(-50%,-50%);width:min(720px,calc(100vw - 40px));max-height:calc(100vh - 120px);overflow:auto;padding:16px;border:1px solid #d6dce7;border-radius:12px;background:#fff;box-shadow:0 12px 55px #28182566; }
 .wardrobe-comparison>header { display:grid;gap:3px;margin:0 0 7px;color:#5a5061;font-size:11px; }
 .wardrobe-comparison>header small,.wardrobe-comparison .wardrobe-note { color:#8f8490;font-size:9px;line-height:1.5; }
