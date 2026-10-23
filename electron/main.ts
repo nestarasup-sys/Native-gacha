@@ -1200,6 +1200,9 @@ async function registerFabricatorHandlers(): Promise<void> {
     })
     if (workspace === 'video') ipcMain.handle(`${channel}:list`, async (event): Promise<StudioDocument[] | VideoStudioCardSummary[]> => {
       assertTrustedSender(event)
+      // Listing during an atomic save must not observe a temporary card before
+      // its studio.json is committed. The single-writer queue is authoritative.
+      await studioSaveQueues.video
       return measureIpc<StudioDocument[] | VideoStudioCardSummary[]>(`${channel}:list`, () => workspace === 'video' ? listVideoStudioCards() : listStudios(workspace))
     })
 
