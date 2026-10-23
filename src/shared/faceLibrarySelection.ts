@@ -35,7 +35,7 @@ export function pickFaceLibraryBase(
   const exact=available.find(item=>item.id===preferredId && item.kind===kind)
   if(exact)return exact
   if(side==='right' && pairedWith){
-    const baseName=(name:string)=>name.replace(/\\s*[·-]\\s*(?:Olho(?: aberto| fechado)?|Pupila|Sobrancelha)\\s*(?:esquerd[oa]|direit[oa])$/i,'').trim()
+    const baseName=(name:string)=>String(name ?? '').replace(/\\s*[·-]\\s*(?:Olho(?: aberto| fechado)?|Pupila|Sobrancelha)\\s*(?:esquerd[oa]|direit[oa])$/i,'').trim()
     // Never silently take the first unrelated RIGHT asset. Without an exact
     // saved right selection, prefer the actual pair of the selected left asset.
     const paired=available.find(item=>item.id!==pairedWith.id && item.kind===kind &&
