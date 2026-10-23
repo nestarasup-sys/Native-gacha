@@ -107,16 +107,18 @@ test('expressão nova criada durante lote é retirada se a transação falhar',a
 })
 
 test('caminho do renderer usa endpoint único; leituras passam pela fila serializada',async()=>{
-  const [editor,main,preload]=await Promise.all([
+  const [editor,main,preload,handlers]=await Promise.all([
     fs.readFile('src/renderer/src/features/fabricator/ExpressionPresetWorkspace.tsx','utf8'),
     fs.readFile('electron/main.ts','utf8'),
-    fs.readFile('electron/preload.ts','utf8')
+    fs.readFile('electron/preload.ts','utf8'),
+    fs.readFile('electron/domains/fabricator/expressionIpc.ts','utf8')
   ])
   assert.match(editor,/saveFaceExpressionPresetBatch\(modelSlot, nextPresets\)/)
   assert.doesNotMatch(editor,/Promise\.allSettled\(nextPresets\.slice/)
   assert.match(main,/expressionBatch\.recover\(modelSlot\)/)
   assert.match(main,/queueExpressionWork\(/)
-  assert.match(main,/fabricator:expression-presets:save-batch/)
+  assert.match(handlers,/fabricator:expression-presets:save-batch/)
+  assert.match(main,/registerExpressionPresetHandlers\(/)
   assert.match(preload,/saveFaceExpressionPresetBatch:/)
 })
 
