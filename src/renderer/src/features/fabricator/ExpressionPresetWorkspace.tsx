@@ -649,7 +649,30 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
   }
   const cancelChoosing = () => { setDraft(composition); setDraftTransforms(cloneTransforms(transforms)); setDraftNoseOpacity(noseOpacity); setOpen(false) }
   const updateLayerTransform = (key: LayerKey, patch: Partial<FaceTransform>) => {
-    if(previewGaze==='left' && !open)return // PT is read-only, keep authored pose untouched.
+    if(previewGaze==='left' && !open){
+      if (key!=='pupilLeft' && key!=='pupilRight')return
+      if(!Object.keys(patch).every(field=>['x','y','rotation'].includes(field)))return
+      const side=key==='pupilLeft'?'left':'right', pairedSide=side==='left'?'right':'left'
+      setPtPupils(current=>{
+        const before=current[side] ?? {x:visibleTransforms[key].x,y:visibleTransforms[key].y,rotation:visibleTransforms[key].rotation}
+        const after={...before,...patch}
+        const next={...current,[side]:after}
+        if(linkedLayerPairs.pupil){
+          const otherKey=side==='left'?'pupilRight':'pupilLeft'
+          const prior=current[pairedSide] ?? {x:visibleTransforms[otherKey].x,y:visibleTransforms[otherKey].y,rotation:visibleTransforms[otherKey].rotation}
+          const paired={...prior}
+          if(patch.x!==undefined){
+            const mirror=(s:'left'|'right')=>s==='right' && componentAssets[composition.pupils[s] ?? '']?.rightSidePositioned!==true?-1:1
+            paired.x+=(after.x-before.x)*mirror(side)/mirror(pairedSide)
+          }
+          if(patch.y!==undefined)paired.y+=after.y-before.y
+          if(patch.rotation!==undefined)paired.rotation-=after.rotation-before.rotation
+          next[pairedSide]=paired
+        }
+        return next
+      })
+      return
+    }
     const pairKind = pairedKindForLayer(key)
     const pairedKey = pairedLayerKeys[key]
     const linkPair = Boolean(pairKind && pairedKey && linkedLayerPairs[pairKind])
@@ -685,12 +708,10 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
     if (!bounds?.width || !bounds.height) return
     event.preventDefault()
     event.stopPropagation()
+    if(previewGaze==='left' && requestedMappings.some(item=>!item.layer.startsWith('pupil')))return
     event.currentTarget.setPointerCapture(event.pointerId)
-    // PT is a different view of the SAME preset, not an alternate authoring
-    // coordinate system. Switching back to Normal is required to drag a pupil.
-    if (previewGaze==='left' && requestedMappings.some(item=>item.layer.startsWith('pupil')))return
     const mappings: PreviewLayerMapping[] = requestedMappings.map((mapping) => ({
-      ...mapping, startX: transforms[mapping.layer].x, startY: transforms[mapping.layer].y
+      ...mapping, startX: visibleTransforms[mapping.layer].x, startY: visibleTransforms[mapping.layer].y
     }))
     previewLayerDrag.current = {
       pointerId: event.pointerId, clientX: event.clientX, clientY: event.clientY,
@@ -703,7 +724,7 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
     if (!drag || drag.pointerId !== event.pointerId) return
     event.preventDefault()
     event.stopPropagation()
-    setTransforms((current) => {
+    const apply=(current: FaceExpressionTransforms) => {
       const next = { ...current }
       for (const mapping of drag.mappings) {
         const rotatedPupil = mapping.layer === 'pupilLeft' || mapping.layer === 'pupilRight'
@@ -718,6 +739,17 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
         }
       }
       return next
+    }
+    if(previewGaze!=='left'){setTransforms(apply);return}
+    const projected=apply(visibleTransforms)
+    setPtPupils(current=>{
+      const next={...current}
+      for(const mapping of drag.mappings){
+        const side=mapping.layer==='pupilLeft'?'left':'right'
+        next[side]={x:projected[mapping.layer].x,y:projected[mapping.layer].y,
+          rotation:current[side]?.rotation ?? visibleTransforms[mapping.layer].rotation}
+      }
+      return next
     })
   }
   const endPreviewLayerDrag = (event: ReactPointerEvent<HTMLElement>) => {
@@ -726,7 +758,17 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
   }
   const resetSelectedLayer = () => {
-    if(previewGaze==='left')return
+    if(previewGaze==='left'){
+      const side=selectedLayer==='pupilLeft'?'left':selectedLayer==='pupilRight'?'right':null
+      if(!side)return
+      setPtPupils(current=>{
+        const next={...current}
+        delete next[side]
+        if(linkedLayerPairs.pupil)delete next[side==='left'?'right':'left']
+        return next
+      })
+      return
+    }
     const defaultForLayer = (layer: LayerKey) => {
       const assetId = layer === 'eyeLeft' ? composition.eyes.left : layer === 'eyeRight' ? composition.eyes.right
         : layer === 'pupilLeft' ? composition.pupils.left : layer === 'pupilRight' ? composition.pupils.right
@@ -785,7 +827,7 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
       : { offsetY: Math.max(-.5, Math.min(.5, movement.offsetY!)) })
   }
   const resetCurrentExpression = () => {
-    if(previewGaze==='left')return
+    if(previewGaze==='left'){setPtPupils({});return}
     setTransforms(defaultTransforms(composition, componentAssets, catalogItems))
     setNoseOpacity(composition.nose ? catalogItems[composition.nose.catalogId]?.opacity ?? 1 : 1)
     setEffects(defaultExpressionEffects())
@@ -995,7 +1037,7 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
     const pairedSide = right ? 'left' : 'right'
     const pairedPupilLayer = layerKey('pupil', pairedSide)
     const movePair = linkedLayerPairs.pupil
-    const canDrag = previewGaze==='right' && (selectedLayer === pupilLayer || movePair && selectedLayer === pairedPupilLayer)
+    const canDrag = selectedLayer === pupilLayer || movePair && selectedLayer === pairedPupilLayer
     const pairedPupilId = visibleComposition.pupils[pairedSide]
     const pairedEyeId = visibleComposition.eyes[pairedSide]
     const pairedPupilAsset = pairedPupilId ? componentAssets[pairedPupilId] : undefined
@@ -1038,7 +1080,7 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
   return <section className="fabricator-workspace expression-preset-workspace" aria-label="Preset Expressão Dev">
     {characterComparisonOpen && <ExpressionCharacterPreview modelSlot={modelSlot} preset={comparisonPreset} gaze={previewGaze} onClose={() => setCharacterComparisonOpen(false)}/>}
     <header className="expression-preset-toolbar">
-      <button className="expression-choose-set-button" onClick={beginChoosing} disabled={loading || !head} type="button"><Icon name="face" />Escolher assets</button>
+      <button className="expression-choose-set-button" onClick={beginChoosing} disabled={loading || !head || previewGaze==='left'} type="button"><Icon name="face" />Escolher assets</button>
       <span className="model-slot-logo"><Icon name="face" /></span>
       <strong>Preset Expressão Dev</strong>
       <span className="expression-current-title"><b>{String(selectedExpressionIndex + 1).padStart(2, '0')}</b>{activeExpressionName}</span>
@@ -1046,7 +1088,7 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
         disabled={loading || saving || !head} title="Comparar base facial e expressão num personagem do Customizador">
         Testar em personagem
       </button>
-      {previewGaze==='left' && <small role="status" title="PT é uma orientação de olhar, não outra expressão">PT — prévia somente leitura. Selecione a expressão normal para editar as coordenadas.</small>}
+      {previewGaze==='left' && <small role="status" title="PT herda os demais ajustes da expressão normal">PT — edite somente X, Y e rotação das pupilas. Os demais elementos seguem a expressão normal.</small>}
       <span className="expression-preset-toolbar-spacer" />
       {!loading && <span className={`expression-workspace-save-status${workspaceSaveStatus === 'failed' ? ' failed' : ''}`} role="status">{workspaceSaveStatus === 'saving' ? 'Salvando rascunho…' : workspaceSaveStatus === 'failed' ? 'Falha ao salvar' : 'Rascunho salvo'}</span>}
       <span className="expression-preset-model-label">Modelo {String(modelSlot).padStart(2, '0')} · {project?.name ?? 'sem modelo'}</span>
@@ -1138,27 +1180,27 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
         <div className="expression-layer-picker-grid">
           {presetLayerPairs.map(({ kind, label, keys, labels }) => <section className="expression-layer-pair" key={kind} aria-label={label}>
             <div role="group" aria-label={`Escolher ${label.toLowerCase()} para ajustar`}>
-              {keys.map((key, index) => <button key={key} type="button" aria-pressed={selectedLayer === key} className={selectedLayer === key ? 'active' : ''} onClick={() => setSelectedLayer(key)}>
+              {keys.map((key, index) => <button key={key} type="button" aria-pressed={selectedLayer === key} className={selectedLayer === key ? 'active' : ''} onClick={() => setSelectedLayer(key)} disabled={previewGaze==='left' && !key.startsWith('pupil')}>
                 <Icon name="eye" /><span>{labels[index]}</span>
               </button>)}
             </div>
-            <label><input type="checkbox" checked={linkedLayerPairs[kind]} onChange={(event) => setLinkedLayerPairs((current) => ({ ...current, [kind]: event.target.checked }))} /><span>Mover os dois lados juntos</span></label>
+            <label><input type="checkbox" checked={linkedLayerPairs[kind]} disabled={previewGaze==='left' && kind!=='pupil'} onChange={(event) => setLinkedLayerPairs((current) => ({ ...current, [kind]: event.target.checked }))} /><span>Mover os dois lados juntos</span></label>
           </section>)}
           <div className="expression-layer-singles" role="group" aria-label="Escolher nariz ou boca para ajustar">
-            {presetSingleLayers.map(({ key, label, icon }) => <button key={key} type="button" aria-pressed={selectedLayer === key} className={selectedLayer === key ? 'active' : ''} onClick={() => setSelectedLayer(key)}>
+            {presetSingleLayers.map(({ key, label, icon }) => <button key={key} type="button" aria-pressed={selectedLayer === key} className={selectedLayer === key ? 'active' : ''} onClick={() => setSelectedLayer(key)} disabled={previewGaze==='left' && !key.startsWith('pupil')}>
               <Icon name={icon} /><span>{label}</span>
             </button>)}
           </div>
         </div>
       </section>
-      {(['x', 'y'] as const).map((field) => <label className="expression-transform-control" key={field}>{field === 'x' ? 'Posição horizontal' : 'Posição vertical'}<input type="range" min={-100} max={Math.max(100, (field === 'x' ? head?.width : head?.height) ?? 100)} step="1" value={transforms[selectedLayer][field]} onChange={(event) => updateLayerTransform(selectedLayer, { [field]: Number(event.target.value) })} /><output>{Math.round(transforms[selectedLayer][field])} px</output></label>)}
-      {(['scaleX', 'scaleY'] as const).map((field) => <label className="expression-transform-control" key={field}>{field === 'scaleX' ? 'Largura' : 'Altura'}<input type="range" min="0.02" max="4" step="0.01" value={transforms[selectedLayer][field]} onChange={(event) => updateLayerTransform(selectedLayer, { [field]: Number(event.target.value) })} /><output>{Math.round(transforms[selectedLayer][field] * 100)}%</output></label>)}
-      <label className="expression-transform-control">Rotação<input type="range" min="-180" max="180" step="1" value={transforms[selectedLayer].rotation} onChange={(event) => updateLayerTransform(selectedLayer, { rotation: Number(event.target.value) })} /><output>{Math.round(transforms[selectedLayer].rotation)}°</output></label>
-      <button className="expression-flip-button" type="button" onClick={() => updateLayerTransform(selectedLayer, { flipX: !transforms[selectedLayer].flipX })}><Icon name="flipHorizontal" />{transforms[selectedLayer].flipX ? 'Desespelhar peça' : 'Espelhar peça'}</button>
-      {selectedLayer === 'nose' && <label className="expression-transform-control">Transparência<input type="range" min="0" max="1" step="0.01" value={noseOpacity} onChange={(event) => setNoseOpacity(Number(event.target.value))} /><output>{Math.round((1 - noseOpacity) * 100)}%</output></label>}
+      {(['x', 'y'] as const).map((field) => <label className="expression-transform-control" key={field}>{field === 'x' ? 'Posição horizontal' : 'Posição vertical'}<input type="range" min={-100} max={Math.max(100, (field === 'x' ? head?.width : head?.height) ?? 100)} step="1" value={visibleTransforms[selectedLayer][field]} disabled={previewGaze==='left' && !selectedLayer.startsWith('pupil')} onChange={(event) => updateLayerTransform(selectedLayer, { [field]: Number(event.target.value) })} /><output>{Math.round(transforms[selectedLayer][field])} px</output></label>)}
+      {(['scaleX', 'scaleY'] as const).map((field) => <label className="expression-transform-control" key={field}>{field === 'scaleX' ? 'Largura' : 'Altura'}<input type="range" min="0.02" max="4" step="0.01" value={visibleTransforms[selectedLayer][field]} disabled={previewGaze==='left' && !selectedLayer.startsWith('pupil')} onChange={(event) => updateLayerTransform(selectedLayer, { [field]: Number(event.target.value) })} /><output>{Math.round(transforms[selectedLayer][field] * 100)}%</output></label>)}
+      <label className="expression-transform-control">Rotação<input type="range" min="-180" max="180" step="1" value={visibleTransforms[selectedLayer].rotation} disabled={previewGaze==='left' && !selectedLayer.startsWith('pupil')} onChange={(event) => updateLayerTransform(selectedLayer, { rotation: Number(event.target.value) })} /><output>{Math.round(transforms[selectedLayer].rotation)}°</output></label>
+      <button className="expression-flip-button" type="button" disabled={previewGaze==='left'} onClick={() => updateLayerTransform(selectedLayer, { flipX: !transforms[selectedLayer].flipX })}><Icon name="flipHorizontal" />{transforms[selectedLayer].flipX ? 'Desespelhar peça' : 'Espelhar peça'}</button>
+      {previewGaze!=='left' && selectedLayer === 'nose' && <label className="expression-transform-control">Transparência<input type="range" min="0" max="1" step="0.01" value={noseOpacity} onChange={(event) => setNoseOpacity(Number(event.target.value))} /><output>{Math.round((1 - noseOpacity) * 100)}%</output></label>}
       <button className="expression-flip-button" type="button" onClick={resetSelectedLayer}><Icon name="reset" />Restaurar valores emprestados</button>
-      <small>Esses valores pertencem apenas ao preset atual. Eles não alteram os assets de origem.</small>
-      <section className="expression-effects-section" aria-label="Efeitos da expressão">
+      <small>{previewGaze==='left'?'PT: só as coordenadas e rotação das pupilas são independentes.':'Esses valores pertencem apenas ao preset atual. Eles não alteram os assets de origem.'}</small>
+      {previewGaze!=='left' && <section className="expression-effects-section" aria-label="Efeitos da expressão">
         <header><strong>Efeitos da expressão</strong><small>Aplicados somente a este preset</small></header>
         {([['shadow', 'Sombra'], ['blush', 'Blush nas bochechas'], ['mouthBlush', 'Blush na boca']] as const).map(([key, label]) => {
           const effect = effects[key]
@@ -1179,7 +1221,7 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
             </>}
           </details>
         })}
-      </section>
+      </section>}
     </aside>
     </div>
     {open && <div className="expression-picker-backdrop" role="presentation" onClick={cancelChoosing}>
