@@ -483,7 +483,7 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
   const visibleComposition = open ? draft : composition
   const visibleTransforms = useMemo(() => {
     const raw=open ? draftTransforms : transforms
-    if (open || previewGaze !== 'left')return raw
+    if (open)return raw
     // PT is a strictly read-only alternate preview. Neither draft autosave nor
     // published presets include the gaze variation.
     const next=cloneTransforms(raw)
@@ -495,7 +495,7 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
       const eyeKey=side==='left'?'eyeLeft':'eyeRight'
       const key=side==='left'?'pupilLeft':'pupilRight'
       next[key].x=resolvePresetPupilGaze(raw[key].x,baseTransforms[key].x,eye.width,raw[eyeKey].scaleX,side,
-        pupil.rightSidePositioned===true,'left')
+        pupil.rightSidePositioned===true,previewGaze)
     }
     return next
   },[open,draftTransforms,transforms,previewGaze,composition,baseTransforms,componentAssets])
