@@ -1756,7 +1756,7 @@ async function registerFabricatorHandlers(): Promise<void> {
 
     registerFabricatorWardrobeCatalogHandlers(ipcMain, assertTrustedSender,
       new FabricatorWardrobeCatalog(wardrobeModelPath, { readdir, readFile }, slotCount,
-        (folder, imageFolder) => catalogPersistence.recoverCatalogManifest(folder, imageFolder)))
+        (folder) => catalogPersistence.recoverWardrobeManifest(folder)))
 
   ipcMain.handle(fabricatorIpcChannels.loadWardrobeSet, async (event, modelSlot: number, id: string): Promise<WardrobeSet | null> => {
     assertTrustedSender(event)
