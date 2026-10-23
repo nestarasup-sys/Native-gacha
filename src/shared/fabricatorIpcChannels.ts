@@ -26,6 +26,7 @@ export const fabricatorIpcChannels = {
   saveAnimatorDraft: 'fabricator:animator:draft:save',
   deleteAnimatorDraft: 'fabricator:animator:draft:delete',
   listWardrobeSets: 'fabricator:wardrobe:list',
+  listWardrobeSetsDetailed: 'fabricator:wardrobe:list-detailed',
   loadWardrobeSet: 'fabricator:wardrobe:load',
   saveWardrobeSet: 'fabricator:wardrobe:save',
   deleteWardrobeSet: 'fabricator:wardrobe:delete',
