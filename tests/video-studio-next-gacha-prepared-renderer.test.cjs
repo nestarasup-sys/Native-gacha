@@ -68,6 +68,7 @@ function rig({ budget, width = 128, height = 128 } = {}) {
     '../../../../shared/videoCharacterInterpolation': interpolation,
     '../../characters/characterRenderer': actualRenderer,
     '../../../../shared/videoStudioNext/boundedMemo': memoModule,
+    './videoGachaCanvasFrame': { snapshotTrimmedGachaCanvas: () => { throw new Error('Canvas path forbidden in legacy PNG tests') } },
   }
   // The source imports directly from shared, not from its own Next directory.
   deps['../../../../shared/videoStudioNext/boundedMemo'] = memoModule

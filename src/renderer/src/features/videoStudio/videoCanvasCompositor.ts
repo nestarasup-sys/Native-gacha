@@ -1,4 +1,4 @@
-import type { StudioElement, VideoCharacterState } from '../../../../shared/studio'
+import type { StudioElement } from '../../../../shared/studio'
 import { videoCharacterTrackColor } from '../../../../shared/studio'
 import type { VideoSceneFrame, VideoSceneLayer } from '../../../../shared/videoSceneIR'
 import { videoCharacterElementSize, videoClipStageRect, videoStageRect, VIDEO_STAGE_HEIGHT, VIDEO_STAGE_WIDTH } from '../../../../shared/videoStageGeometry'
