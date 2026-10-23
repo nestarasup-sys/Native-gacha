@@ -152,3 +152,23 @@ test('Studio e Video Studio persistem o estado de PT sem escrever outro preset',
   assert.match(editor,/ExpressionCharacterPreview/)
   assert.match(editor,/saveFaceExpressionPresetBatch/)
 })
+
+test('todas as 21 expressões são variações da base e PT não vira um novo preset',async()=>{
+  const actor=setupCharacter(1.2)
+  const baseline=structuredClone(actor.appearance)
+  const emotionIds=[]
+  for(let index=0;index<21;index++){
+    const emotion={...preset,id:`emotion-${index}`,expressionIndex:index}
+    const composed=await buildStudioExpressionAppearance(emotion,actor.appearance,actor.loadCatalog)
+    for(const gaze of ['right','left']){
+      const position=await buildStudioExpressionTransforms(emotion,composed,{},actor.loadComponent,actor.loadCatalog,gaze)
+      assert.ok(position['expression-component:pupil-left'])
+      assert.ok(position['expression-component:brow-right'])
+      assert.equal(composed.components['eye-left'].assetId,baseline.components['eye-left'].assetId)
+    }
+    emotionIds.push(emotion.id)
+  }
+  assert.equal(new Set(emotionIds).size,21)
+  assert.deepEqual(actor.appearance,baseline)
+  assert.equal(actor.loaded.some(id=>id.startsWith('author')),false)
+})
