@@ -37,6 +37,7 @@ export function createFaceGuidePersistence(files: Files, userDataPath: () => str
       return value
     } catch (reason) {
       if (isMissing(reason)) return null
+      if (reason instanceof SyntaxError) throw new Error('Arquivo de guias inválido; arquivo original preservado. Restaure um backup antes de editar as guias.')
       throw reason
     }
   }
