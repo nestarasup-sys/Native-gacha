@@ -1468,6 +1468,7 @@ export function CustomizerPage() {
   }
 
   async function setWardrobePieceColor(setId: string, category: ClothingGroupCategory, componentIds: string[], role: HairColorRole, value: string) {
+    if (selectedCatalogModelSlot === null) return
     if (!selectedCharacter) return
     const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
     const wardrobeGroups = recolorWardrobeComponents(current.customization.wardrobeGroups ?? [],
@@ -1476,6 +1477,7 @@ export function CustomizerPage() {
   }
 
   async function resetWardrobePieceColors(panel: WardrobePanel, setId: string, componentIds: string[]) {
+    if (selectedCatalogModelSlot === null) return
     if (!selectedCharacter) return
     const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
     const after = recolorWardrobeComponents(current.customization.wardrobeGroups ?? [],
