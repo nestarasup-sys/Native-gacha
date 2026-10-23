@@ -6,7 +6,7 @@ Documentos anteriores, inclusive `docs/AGENTE_EXPORT_V5/`, são histórico e ref
 
 ## Ordem de leitura atual
 
-**Reavaliação recente (2026-10-23):** [12_REAVALIACAO_RECONSTRUCAO_MLT_SKIA_2026-10-23.md](./12_REAVALIACAO_RECONSTRUCAO_MLT_SKIA_2026-10-23.md) — **estudo aprofundado com fontes primárias**, diagnóstico de OOM, bibliotecas e aplicações open source, orçamentos de memória, engine intercambiável, plano de stress e shortlist por evidência. Substitui a preferência por uma pilha específica, sem autorizar mudança de runtime. Referências antigas a G-V5/master-desenvolvimento são históricas.
+**Plano ativo ampliado (2026-10-23):** [12_REAVALIACAO_RECONSTRUCAO_MLT_SKIA_2026-10-23.md](./12_REAVALIACAO_RECONSTRUCAO_MLT_SKIA_2026-10-23.md) — pesquisa detalhada de **seis prioridades**: (1) memória/OOM/VRAM, (2) raster Gacha incremental, (3) cache/proxies/pré-render, (4) processos/recuperação, (5) clock único e PTS, (6) testes pesados Windows. Cada capítulo traz fontes primárias, achados atuais, projeto de solução, experimentos e gates. **MLT/Skia/C++ continuam opcionais**, sem mudança automática de runtime.
 
 1. **[00_PLANO_DIRETOR.md](./00_PLANO_DIRETOR.md)** — visão e arquitetura.
 2. **[11_PESQUISA_OPEN_SOURCE_E_FECHAMENTO_EXPORTADOR.md](./11_PESQUISA_OPEN_SOURCE_E_FECHAMENTO_EXPORTADOR.md)** — pesquisa externa atual, matriz de engines, padrões extraídos e ordem revisada para fechar o exportador.
