@@ -5,7 +5,7 @@ const fs=require('node:fs')
 const path=require('node:path')
 const ts=require('typescript')
 function setup(){
-  const log={uploads:0,draws:0,deleted:0,lost:false}
+  const log={uploads:0,draws:0,deleted:0,programs:0,lost:false}
   const gl=new Proxy({},{
     get(target,k) {
       const constants={VERTEX_SHADER:1,FRAGMENT_SHADER:2,COMPILE_STATUS:3,LINK_STATUS:4,ARRAY_BUFFER:5,
@@ -15,7 +15,8 @@ function setup(){
         COLOR_BUFFER_BIT:23}
       if(Object.hasOwn(constants,k))return constants[k]
       if(k==='getShaderParameter'||k==='getProgramParameter')return()=>true
-      if(k==='createShader'||k==='createProgram'||k==='createBuffer'||k==='createTexture')return()=>({})
+      if(k==='createProgram')return()=>{log.programs++;return {}}
+      if(k==='createShader'||k==='createBuffer'||k==='createTexture')return()=>({})
       if(k==='getAttribLocation')return()=>0
       if(k==='getUniformLocation')return()=>({})
       if(k==='texImage2D')return()=>{log.uploads++}
@@ -79,5 +80,7 @@ test('GPU context loss clears leases and restore permits rebuilding textures',()
   events.get('webglcontextrestored')()
   stage.draw([sprite('restored')])
   assert.equal(stage.stats().textureCount,1)
+  assert.equal(stage.stats().contextLost,false)
+  assert.equal(log.programs,2,'GPU shaders and buffers must be recreated after context recovery')
   stage.dispose()
 })

@@ -18,21 +18,32 @@ type CachedTexture = { texture: WebGLTexture; bytes: number; lastUsed: number }
  */
 export class GachaGpuStage {
   private readonly gl: WebGL2RenderingContext
-  private readonly program: WebGLProgram
-  private readonly vertices: WebGLBuffer
+  private program!: WebGLProgram
+  private vertices!: WebGLBuffer
   private readonly textures = new Map<string, CachedTexture>()
   private tick = 0
   private bytes = 0
   private closed = false
   private lost = false
   private readonly onLost = (event: Event) => { event.preventDefault(); this.lost = true; this.textures.clear(); this.bytes = 0 }
-  private readonly onRestored = () => { this.lost = false; this.textures.clear(); this.bytes = 0 }
+  private readonly onRestored = () => {
+    if(this.closed)return
+    this.lost=true;this.textures.clear();this.bytes=0
+    try{this.initGraphics();this.lost=false}catch{this.lost=true}
+  }
 
   constructor(private readonly canvas: HTMLCanvasElement, readonly maxTextureBytes = 96 * 1024 * 1024) {
     if (!Number.isSafeInteger(maxTextureBytes) || maxTextureBytes < 4) throw new RangeError('Orçamento GPU inválido.')
     const gl = canvas.getContext('webgl2', { alpha: false, premultipliedAlpha: true, antialias: false })
     if (!gl) throw new Error('WebGL2 indisponível no Windows; o motor GPU não iniciou.')
     this.gl = gl
+    this.initGraphics()
+    canvas.addEventListener('webglcontextlost',this.onLost)
+    canvas.addEventListener('webglcontextrestored',this.onRestored)
+  }
+
+  private initGraphics(): void {
+    const gl=this.gl
     const shader = (type: number, source: string) => {
       const sh = gl.createShader(type)
       if (!sh) throw new Error('Shader GPU indisponível.')
@@ -66,8 +77,6 @@ export class GachaGpuStage {
     this.vertices=vertices
     gl.bindBuffer(gl.ARRAY_BUFFER,vertices)
     gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-.5,-.5,.5,-.5,-.5,.5,.5,.5]),gl.STATIC_DRAW)
-    canvas.addEventListener('webglcontextlost',this.onLost)
-    canvas.addEventListener('webglcontextrestored',this.onRestored)
   }
 
   private clearTextures(): void {
@@ -130,7 +139,7 @@ export class GachaGpuStage {
     }
   }
 
-  stats(){return {backend:'webgl2' as const,textureCount:this.textures.size,retainedEstimatedBytes:this.bytes,capBytes:this.maxTextureBytes}}
+  stats(){return {backend:'webgl2' as const,textureCount:this.textures.size,retainedEstimatedBytes:this.bytes,capBytes:this.maxTextureBytes,contextLost:this.lost}}
 
   dispose():void {
     if(this.closed)return
