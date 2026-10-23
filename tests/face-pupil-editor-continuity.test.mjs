@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
+import { faceExpressionDefaults } from '../src/shared/faceExpressionDefaults.ts'
 import { pupilDeltaFromDrag,pupilScreenOffset,pupilSourceMirrored }
   from '../src/shared/facePupilGeometry.ts'
 import { FACE_COMPONENT_SELECTION_STORAGE_KEY,savedFaceLibraryParts,pickFaceLibraryBase }
@@ -93,4 +94,44 @@ test('ambos os editores usam o mesmo inversor, sem clamping ou gesto PT que mude
   assert.match(presets,/FACE_COMPONENT_SELECTION_STORAGE_KEY/)
   assert.match(core,/pupilScreenOffset/)
   assert.match(core,/pupilDeltaFromDrag/)
+})
+
+test('conjunto novo reproduz sem arredondar posições, escalas, rotações e flipX salvos em Olhos DEV',()=>{
+  const face=(id,kind,defaultTransform)=>({id,kind,defaultTransform})
+  const components={
+    'eye-l':face('eye-l','eye',{x:31.4,y:22.7,scaleX:.86,scaleY:1.17,rotation:23,flipX:true}),
+    'eye-r':face('eye-r','eye',{x:172.2,y:29.9,scaleX:1.8,scaleY:.92,rotation:-19}),
+    'pupil-l':face('pupil-l','pupil',{x:-17.25,y:4.5,scaleX:.39,scaleY:.54,rotation:0}),
+    'pupil-r':face('pupil-r','pupil',{x:28.3,y:-2.5,scaleX:.78,scaleY:.33,rotation:31,flipX:true}),
+    'brow-l':face('brow-l','eyebrow',{x:60,y:12,scaleX:1.2,scaleY:1.3,rotation:-5}),
+    'brow-r':face('brow-r','eyebrow',{x:162,y:12,scaleX:.8,scaleY:1.1,rotation:6})
+  }
+  const catalogs={
+    nose:{transforms:{nose:{x:99,y:105,scaleX:.43,scaleY:.99,rotation:-8}}},
+    mouth:{transforms:{mouth:{x:110,y:148,scaleX:1.9,scaleY:.48,rotation:13}}}
+  }
+  const selection={
+    eyes:{left:'eye-l',right:'eye-r'},pupils:{left:'pupil-l',right:'pupil-r'},
+    eyebrows:{left:'brow-l',right:'brow-r'},nose:{catalogId:'nose',index:0},
+    mouth:{catalogId:'mouth',index:4,kind:'mouth-closed'}
+  }
+  const before=structuredClone({selection,components,catalogs})
+  const actual=faceExpressionDefaults(selection,components,catalogs)
+  for(const [layer,id] of Object.entries({eyeLeft:'eye-l',eyeRight:'eye-r',pupilLeft:'pupil-l',pupilRight:'pupil-r',
+    browLeft:'brow-l',browRight:'brow-r'})){
+    assert.deepEqual(actual[layer],components[id].defaultTransform,`novo preset distorceu ${layer}`)
+    assert.notStrictEqual(actual[layer],components[id].defaultTransform,'não pode mutar o asset fonte')
+  }
+  assert.deepEqual(actual.nose,catalogs.nose.transforms.nose)
+  assert.deepEqual(actual.mouth,catalogs.mouth.transforms.mouth)
+  assert.deepEqual({selection,components,catalogs},before)
+})
+
+test('não gerar expressões legadas implícitas nem sobrescrever presets parcialmente salvos',async()=>{
+  const editor=await readFile('src/renderer/src/features/fabricator/ExpressionPresetWorkspace.tsx','utf8')
+  assert.doesNotMatch(editor,/importLegacyStandardExpressions\(/)
+  assert.doesNotMatch(editor,/saveFaceExpressionPreset\(modelSlot, preset\)\)\)/)
+  assert.match(editor,/const loadedPresets = savedPresets/)
+  assert.match(editor,/faceExpressionDefaults as defaultTransforms/)
+  assert.match(editor,/if\(previewGaze==='left'\)return/)
 })
