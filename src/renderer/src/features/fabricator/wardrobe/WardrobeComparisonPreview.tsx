@@ -3,7 +3,7 @@ import { selectOriginalModelSource } from '../../../../../shared/fabricatorModel
 import { normalizeLayerOrder } from '../models/rig'
 import { mapWardrobeComponentToPose, wardrobePosePadding } from '../../../../../shared/wardrobePose'
 
-type Props = { model: FabricatorProject; outfit: WardrobeSet; pose: FabricatorPose }
+type Props = { model: FabricatorProject; outfit: WardrobeSet; pose: FabricatorPose; onClose: () => void }
 type DisplayBone = Pick<ModelPart,'x' | 'y' | 'width' | 'height'> & { rotation?: number }
 const size = (width: number, height: number) => {
   const scale = Math.min(210 / Math.max(1,width), 160 / Math.max(1,height))
@@ -11,7 +11,7 @@ const size = (width: number, height: number) => {
 }
 
 /** Both panels use the SAME source frames and shared pose matrix as Customizer. */
-export function WardrobeComparisonPreview({model,outfit,pose}:Props) {
+export function WardrobeComparisonPreview({model,outfit,pose,onClose}:Props) {
   const original=selectOriginalModelSource(model)
   const left=size(original.width,original.height),right=size(pose.width,pose.height)
   const order=normalizeLayerOrder(model.parts,model.layerOrder)
@@ -25,7 +25,10 @@ export function WardrobeComparisonPreview({model,outfit,pose}:Props) {
     transform:`rotate(${part.rotation ?? 0}deg)`,pointerEvents:'none' as const
   })
   return <section className="wardrobe-comparison" aria-label="Comparação entre original desmontado e pose">
-    <header><strong>Conferência lado a lado</strong><small>Prévia informativa · não muda o encaixe salvo</small></header>
+    <header><div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:12}}>
+      <strong>Conferência lado a lado</strong>
+      <button className="pose-button secondary" type="button" onClick={onClose} aria-label="Fechar comparação">Fechar ×</button>
+    </div><small>Prévia informativa · não muda o encaixe salvo</small></header>
     <div style={{display:'flex',gap:12,flexWrap:'wrap',justifyContent:'center'}}>
       <div><small>Original desmontado</small>
         <div style={{position:'relative',width:left.width,height:left.height,background:'var(--preview-background, #ddd)',overflow:'hidden'}}>
