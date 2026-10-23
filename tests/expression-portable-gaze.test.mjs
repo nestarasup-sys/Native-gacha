@@ -2,7 +2,8 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { compilePortableExpression, applyPortableExpressionLayer,
-  isPortableExpressionMotion, resolvePresetPupilGaze } from '../src/shared/portableExpression.ts'
+  isPortableExpressionMotion, resolvePresetPupilGaze, compilePtPupilMotion, applyPtPupilMotion,
+  isPtPupilOverrides, isPtPupilMotion } from '../src/shared/portableExpression.ts'
 import { buildStudioExpressionTransforms, buildStudioExpressionAppearance, resolveStudioExpressionBase }
   from '../src/renderer/src/characters/studioExpressionTransforms.ts'
 
@@ -128,6 +129,79 @@ test('uma pupila neutra ainda olha realmente à direita na normal e esquerda em 
   assert.equal(resolvePresetPupilGaze(0,0,100,1,'left',false,'right'),16)
   assert.equal(resolvePresetPupilGaze(0,0,100,1,'left',false,'left'),-16)
   assert.equal(resolvePresetPupilGaze(0,0,100,1,'right',false,'left'),16)
+})
+
+test('PT manuais são isoladas por expressão, por lado e herdam todos os outros componentes',async()=>{
+  const ptPupils={left:{x:-9,y:7,rotation:31},right:{x:8,y:-5,rotation:-26}}
+  const ptPupilMotion=compilePtPupilMotion(ptPupils,neutral,metrics)
+  assert.equal(isPtPupilOverrides(ptPupils),true)
+  assert.equal(isPtPupilMotion(ptPupilMotion),true)
+  assert.equal(isPtPupilOverrides({left:{x:NaN,y:0,rotation:1}}),false)
+  assert.equal(isPtPupilMotion({version:1,layers:{left:{dx:Infinity,dy:0,rotation:1}}}),false)
+  assert.deepEqual(compilePtPupilMotion({},neutral,metrics),undefined)
+  const edited={...preset,ptPupils,ptPupilMotion}
+  const serialized=JSON.parse(JSON.stringify(edited))
+  const actor=setupCharacter(1)
+  const prior=structuredClone(actor.appearance)
+  const normal=await buildStudioExpressionTransforms(serialized,actor.appearance,{},actor.loadComponent,actor.loadCatalog,'right')
+  const pt=await buildStudioExpressionTransforms(serialized,actor.appearance,{},actor.loadComponent,actor.loadCatalog,'left')
+  for(const key of Object.keys(normal)){
+    if(key.includes('pupil-'))continue
+    assert.deepEqual(pt[key],normal[key],'PT inherits regular layer '+key)
+  }
+  for(const [side,manual] of Object.entries(ptPupils)){
+    const id='expression-component:pupil-'+side
+    const pupil=pt[id].sourceTransformOverride
+    const base=actor.appearance.components['pupil-'+side].transform
+    assert.ok(Math.abs(pupil.x-(base.x+manual.x/70*82))<1e-7)
+    assert.ok(Math.abs(pupil.y-(base.y+manual.y/34*41))<1e-7)
+    assert.equal(pupil.rotation,manual.rotation)
+    assert.equal(pupil.scaleX,normal[id].sourceTransformOverride.scaleX)
+    assert.equal(pupil.scaleY,normal[id].sourceTransformOverride.scaleY)
+    assert.equal(pupil.flipX,normal[id].sourceTransformOverride.flipX)
+  }
+  // Changing the normal eye, brow, or pupil size propagates to PT automatically.
+  const changed=structuredClone(serialized)
+  changed.portableMotion.layers.eyeLeft={...changed.portableMotion.layers.eyeLeft,dx:.21}
+  changed.portableMotion.layers.pupilLeft={...changed.portableMotion.layers.pupilLeft,sx:1.6}
+  const after=await buildStudioExpressionTransforms(changed,actor.appearance,{},actor.loadComponent,actor.loadCatalog,'left')
+  assert.ok(after['expression-component:eye-left'].sourceTransformOverride.x!==pt['expression-component:eye-left'].sourceTransformOverride.x)
+  assert.equal(after['expression-component:pupil-left'].sourceTransformOverride.scaleX,
+    pt['expression-component:pupil-left'].sourceTransformOverride.scaleX*1.6)
+  assert.equal(after['expression-component:pupil-left'].sourceTransformOverride.x,
+    pt['expression-component:pupil-left'].sourceTransformOverride.x)
+  assert.deepEqual(actor.appearance,prior,'source character remains untouched')
+  assert.deepEqual(serialized.ptPupils,ptPupils)
+})
+
+test('normal preserva X e rotação autorais, sem o antigo recálculo obrigatório para a direita',async()=>{
+  const original=structuredClone(preset)
+  const actor=setupCharacter(1)
+  const result=await buildStudioExpressionTransforms(preset,actor.appearance,{},actor.loadComponent,actor.loadCatalog,'right')
+  const normal=result['expression-component:pupil-right'].sourceTransformOverride
+  assert.equal(normal.x,4-13/70*82,'no forced positive right gaze')
+  assert.equal(normal.rotation,0)
+  const both=await buildStudioExpressionTransforms({...preset,ptPupilMotion:undefined},actor.appearance,{},actor.loadComponent,actor.loadCatalog,'left')
+  assert.notEqual(both['expression-component:pupil-right'].sourceTransformOverride.x,normal.x)
+  assert.deepEqual(preset,original)
+})
+
+test('PT sem edição permanece automática em todas as 21 expressões e após JSON roundtrip',async()=>{
+  const actor=setupCharacter(.8)
+  for(let i=0;i<21;i++){
+    const edited=structuredClone({...preset,id:'face-'+i,expressionIndex:i,
+      ptPupils:{left:{x:i-8,y:i/2,rotation:i*3}}})
+    edited.ptPupilMotion=compilePtPupilMotion(edited.ptPupils,neutral,metrics)
+    const load=JSON.parse(JSON.stringify(edited))
+    const pt=await buildStudioExpressionTransforms(load,actor.appearance,{},actor.loadComponent,actor.loadCatalog,'left')
+    const normal=await buildStudioExpressionTransforms(load,actor.appearance,{},actor.loadComponent,actor.loadCatalog,'right')
+    const left=pt['expression-component:pupil-left'].sourceTransformOverride
+    const right=pt['expression-component:pupil-right'].sourceTransformOverride
+    assert.equal(left.rotation,i*3)
+    assert.notEqual(left.x,normal['expression-component:pupil-left'].sourceTransformOverride.x)
+    assert.notEqual(right.x,normal['expression-component:pupil-right'].sourceTransformOverride.x,'unconfigured right retains fallback')
+    assert.equal(right.y,normal['expression-component:pupil-right'].sourceTransformOverride.y)
+  }
 })
 
 test('presets legados continuam transferindo usando referências; erro visível se asset faltou',async()=>{
