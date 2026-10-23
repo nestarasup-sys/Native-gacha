@@ -183,6 +183,12 @@ export async function captureFabricatorRealScreens(win: BrowserWindow, output: s
   await waitFor(win, '.fabricator-section-list')
   const results: Array<{ section: string; file: string; dimensions: string; sha256: string; changedPixels?: number }> = []
   for (const [key, label] of sections) {
+    const expressionSnapshot = key==='expressoes'
+      ? await win.webContents.executeJavaScript(`(async()=>{
+          const list=await window.desktop.listFaceExpressionPresets(1)
+          return Promise.all(list.map(item=>window.desktop.loadFaceExpressionPreset(1,item.id)))
+        })()`) as unknown[]
+      : null
     const clicked = await win.webContents.executeJavaScript(`(() => {
       const label = ${JSON.stringify(label)}
       const button = [...document.querySelectorAll('.fabricator-section-button')]
@@ -240,6 +246,13 @@ export async function captureFabricatorRealScreens(win: BrowserWindow, output: s
       if(!comparisonButton)throw Error('Presets DEV não oferece prévia em outro personagem.')
       await waitFor(win,'[aria-label="Testar expressão em personagem do Customizador"]')
       await win.webContents.executeJavaScript("document.querySelector('[aria-label=\"Fechar teste de expressão\"]')?.click()")
+      const current = await win.webContents.executeJavaScript(`(async()=>{
+        const list=await window.desktop.listFaceExpressionPresets(1)
+        return Promise.all(list.map(item=>window.desktop.loadFaceExpressionPreset(1,item.id)))
+      })()`) as unknown[]
+      if (JSON.stringify(current)!==JSON.stringify(expressionSnapshot)) {
+        throw Error('Abertura ou PT do Presets DEV sobrescreveu expressões publicadas.')
+      }
     }
     if (key === 'roupas') {
       // A contagem precisa continuar válida no instante da foto. O elemento
