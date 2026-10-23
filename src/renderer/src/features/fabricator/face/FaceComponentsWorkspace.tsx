@@ -1,5 +1,6 @@
 import { projectForOriginalPreview } from '../../../../../shared/fabricatorModelViews'
 import { useModelSourceRefresh } from '../models/useModelSourceRefresh'
+import { pupilDeltaFromDrag, pupilSourceMirrored } from '../../../../../shared/facePupilGeometry'
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
 import type { FaceAssetKind, FaceCatalogItem, FaceCatalogItemSave, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSave, FaceComponentAssetSummary, FaceComponentKind, FaceDetailKind, FaceGuideProfile, FaceGuideSettings, FaceTransform, FabricatorProject, FabricatorSlotSummary, ModelPart } from '../../../../../shared/fabricator'
 import { Icon } from '../../../ui/components/Icon'
@@ -18,7 +19,7 @@ type CatalogKind = 'nose' | 'mouth-closed' | 'mouth-open'
 type LibraryCategory = FaceComponentKind | FaceDetailKind | 'nose' | 'mouth'
 type FaceWorkspaceMode = 'eyes' | 'face'
 type FaceGuide = FaceGuideSettings
-type PreviewDrag = { pointerId: number; key: string; clientX: number; clientY: number; startX: number; startY: number; modelPerPixelX: number; modelPerPixelY: number; invertX: boolean; pupil: boolean }
+type PreviewDrag = { pointerId: number; key: string; clientX: number; clientY: number; startX: number; startY: number; modelPerPixelX: number; modelPerPixelY: number; invertX: boolean; pupil: boolean; rotation: number }
 const COMPONENT_SELECTION_STORAGE_KEY = 'gacha-nymi:face-dev-component-selections'
 const LEGACY_PUPIL_SELECTION_STORAGE_KEY = 'gacha-nymi:face-dev-pupil-selections'
 const FACE_IMPORT_ANCHORS_STORAGE_KEY = 'gacha-nymi:face-dev-import-anchors'
@@ -136,8 +137,8 @@ function FaceTransformControls({ head, transform, sourceWidth, sourceHeight, pup
   moveTogether?: boolean; followEyes?: boolean
   opacity?: number; onChange: (patch: Partial<FaceTransform>) => void; onOpacityChange?: (value: number) => void; onReset: () => void
 }) {
-  const xRange = pupil ? head.width * .25 : head.width
-  const yRange = pupil ? head.height * .25 : head.height
+  const xRange = pupil ? Math.max(head.width,Math.abs(transform.x)+head.width) : head.width
+  const yRange = pupil ? Math.max(head.height,Math.abs(transform.y)+head.height) : head.height
   const widthPercent = sourceWidth * transform.scaleX / head.width * 100
   const heightPercent = sourceHeight * transform.scaleY / head.height * 100
   const sizeControl = (label: string, value: number, sourceSize: number, headSize: number, field: 'scaleX' | 'scaleY') => <label className="face-component-slider" key={field}>
@@ -151,8 +152,8 @@ function FaceTransformControls({ head, transform, sourceWidth, sourceHeight, pup
       <button type="button" aria-label="Descer peça" onClick={() => onChange({ y: transform.y + 1 })}>↓</button>
       <button type="button" aria-label="Mover peça para a direita" onClick={() => onChange({ x: transform.x + 1 })}>→</button>
     </div></div>
-    <label className="face-component-slider"><span>{pupil ? 'Deslocamento horizontal' : 'Horizontal'}<output>{pupil ? `${Math.round(transform.x)} px` : `${Math.round(transform.x / head.width * 100)}%`}</output></span><input type="range" min={pupil ? -xRange : 0} max={xRange} step="1" value={transform.x} onChange={(event) => onChange({ x: Number(event.target.value) })} /></label>
-    <label className="face-component-slider"><span>{pupil ? 'Deslocamento vertical' : 'Vertical'}<output>{pupil ? `${Math.round(transform.y)} px` : `${Math.round(transform.y / head.height * 100)}%`}</output></span><input type="range" min={pupil ? -yRange : 0} max={yRange} step="1" value={transform.y} onChange={(event) => onChange({ y: Number(event.target.value) })} /></label></>}
+    <label className="face-component-slider"><span>{pupil ? 'Deslocamento horizontal' : 'Horizontal'}<output>{pupil ? `${Math.round(transform.x)} px` : `${Math.round(transform.x / head.width * 100)}%`}</output></span><input type="range" min={pupil ? -xRange : 0} max={xRange} step="1" value={transform.x} onChange={(event) => onChange({ x: Number(event.target.value) })} />{pupil && <input type="number" aria-label="Deslocamento horizontal livre da pupila" step="0.1" value={transform.x} onChange={(event)=>{const x=Number(event.target.value);if(Number.isFinite(x))onChange({x})}} />}</label>
+    <label className="face-component-slider"><span>{pupil ? 'Deslocamento vertical' : 'Vertical'}<output>{pupil ? `${Math.round(transform.y)} px` : `${Math.round(transform.y / head.height * 100)}%`}</output></span><input type="range" min={pupil ? -yRange : 0} max={yRange} step="1" value={transform.y} onChange={(event) => onChange({ y: Number(event.target.value) })} />{pupil && <input type="number" aria-label="Deslocamento vertical livre da pupila" step="0.1" value={transform.y} onChange={(event)=>{const y=Number(event.target.value);if(Number.isFinite(y))onChange({y})}} />}</label></>}
     {!moveTogether && !followEyes && sizeControl('Largura horizontal', widthPercent, sourceWidth, head.width, 'scaleX')}
     {!moveTogether && sizeControl('Altura vertical', heightPercent, sourceHeight, head.height, 'scaleY')}
     <label className="face-component-slider"><span>Rotação<output>{Math.round(transform.rotation)}°</output></span><input type="range" min="-180" max="180" step="1" value={transform.rotation} onChange={(event) => onChange({ rotation: Number(event.target.value) })} /></label>
@@ -852,9 +853,9 @@ export function FaceComponentsWorkspace({ mode }: { mode: FaceWorkspaceMode }) {
     const rightValue = rightCurrent.defaultTransform[axis]
     const center = (leftValue + rightValue) / 2
     const limit = axis === 'x' ? head.width : head.height
-    const minimum = kind === 'pupil' ? -limit * .25 : 0
-    const maximum = kind === 'pupil' ? limit * .25 : limit
-    const delta = clamp((relative ? center + target : target) - center, Math.max(minimum - leftValue, minimum - rightValue), Math.min(maximum - leftValue, maximum - rightValue))
+    const minimum = 0, maximum = limit
+    const desired = (relative ? center + target : target) - center
+    const delta = kind === 'pupil' ? desired : clamp(desired,Math.max(minimum-leftValue,minimum-rightValue),Math.min(maximum-leftValue,maximum-rightValue))
     if (Math.abs(delta) < .001) return
     saveComponentTransform(leftCurrent, { [axis]: leftValue + delta })
     saveComponentTransform(rightCurrent, { [axis]: rightValue + delta })
@@ -912,7 +913,7 @@ export function FaceComponentsWorkspace({ mode }: { mode: FaceWorkspaceMode }) {
     queueSave(`catalog:${next.modelSlot}:${next.id}`, () => window.desktop.saveFaceCatalogItem(next.modelSlot, catalogSaveData(next), catalogImagesForSave(next)))
   }
 
-  function beginPreviewDrag(event: ReactPointerEvent<HTMLImageElement>, key: string, invertX = false, pupil = false) {
+  function beginPreviewDrag(event: ReactPointerEvent<HTMLImageElement>, key: string, invertX = false, pupil = false, rotation = 0) {
     if (event.button !== 0 || !event.isPrimary || !head || !selectedTransform || key !== activePreviewKey) return
     const canvas = event.currentTarget.closest('.face-components-preview-canvas')
     if (!canvas) return
@@ -924,7 +925,7 @@ export function FaceComponentsWorkspace({ mode }: { mode: FaceWorkspaceMode }) {
       pointerId: event.pointerId, key, clientX: event.clientX, clientY: event.clientY,
       startX: selectedTransform.x, startY: selectedTransform.y,
       modelPerPixelX: head.width / bounds.width, modelPerPixelY: head.height / bounds.height,
-      invertX, pupil
+      invertX, pupil, rotation
     }
     setDraggingPreview(true)
   }
@@ -932,11 +933,12 @@ export function FaceComponentsWorkspace({ mode }: { mode: FaceWorkspaceMode }) {
   function movePreviewDrag(event: ReactPointerEvent<HTMLImageElement>) {
     const drag = previewDrag.current
     if (!drag || drag.pointerId !== event.pointerId || drag.key !== activePreviewKey || !head) return
-    const xRange = drag.pupil ? head.width * .25 : head.width
-    const yRange = drag.pupil ? head.height * .25 : head.height
-    const x = drag.startX + (event.clientX - drag.clientX) * drag.modelPerPixelX * (drag.invertX ? -1 : 1)
-    const y = drag.startY + (event.clientY - drag.clientY) * drag.modelPerPixelY
-    updateTransform({ x: clamp(x, drag.pupil ? -xRange : 0, xRange), y: clamp(y, drag.pupil ? -yRange : 0, yRange) })
+    const delta = pupilDeltaFromDrag(event.clientX-drag.clientX,event.clientY-drag.clientY,{
+      rotationDegrees:drag.pupil ? drag.rotation : 0,mirrorSourceX:drag.invertX,
+      modelPerPixelX:drag.modelPerPixelX,modelPerPixelY:drag.modelPerPixelY
+    })
+    const x=drag.startX+delta.x,y=drag.startY+delta.y
+    updateTransform(drag.pupil ? {x,y} : {x:clamp(x,0,head.width),y:clamp(y,0,head.height)})
   }
 
   function endPreviewDrag(event: ReactPointerEvent<HTMLImageElement>) {
@@ -1013,7 +1015,7 @@ export function FaceComponentsWorkspace({ mode }: { mode: FaceWorkspaceMode }) {
     let localY = transform.y
     if (category.kind === 'pupil') {
       const eyeX = eyeTransform?.x ?? head.width * .37
-      localX = (rightSide && (!rightEyeId || !eyeAsset?.rightSidePositioned) ? head.width - eyeX : eyeX) + (rightSide && !physicalRight && linked.pupil ? -transform.x : transform.x)
+      localX = (rightSide && (!rightEyeId || !eyeAsset?.rightSidePositioned) ? head.width - eyeX : eyeX) + (pupilSourceMirrored(rightSide?'right':'left',physicalRight) ? -transform.x : transform.x)
       localY = (eyeTransform?.y ?? head.height * .46) + transform.y
     }
     const mirroredPosition = rightSide && !physicalRight && category.kind !== 'pupil'
@@ -1031,14 +1033,14 @@ export function FaceComponentsWorkspace({ mode }: { mode: FaceWorkspaceMode }) {
       const selectedEyeId = overrides[eyePartId] ?? selectedAssets[eyePartId] ?? (rightSide ? selectedAssets['eye-left'] : undefined)
       const sideEye = selectedEyeId ? details[selectedEyeId] : undefined
       const leftEye = leftEyeId ? details[leftEyeId] : undefined
-      const maskImage = rightSide && linked.eye ? leftEye ?? sideEye : sideEye
+      const maskImage = sideEye // match the saved Olhos DEV asset used by Presets DEV
       if (sideEye && maskImage) {
         const eyeTransform = sideEye.defaultTransform
         const eyePhysicalRight = rightSide && sideEye.rightSidePositioned === true
         const eyeMirrored = rightSide && !eyePhysicalRight
         const eyeX = eyeMirrored ? head.width - eyeTransform.x : eyeTransform.x
         const eyeRotation = eyeTransform.rotation * (eyeMirrored ? -1 : 1)
-        const eyeFlip = rightSide && linked.eye ? !Boolean(leftEye?.defaultTransform.flipX) : Boolean(eyeTransform.flipX)
+        const eyeFlip = Boolean(eyeTransform.flipX) !== eyeMirrored
         const maskStyle: CSSProperties = {
           left: `${eyeX / head.width * 100}%`, top: `${eyeTransform.y / head.height * 100}%`,
           width: `${maskImage.width * eyeTransform.scaleX / head.width * 100}%`,
@@ -1046,7 +1048,7 @@ export function FaceComponentsWorkspace({ mode }: { mode: FaceWorkspaceMode }) {
           transform: `translate(-50%,-50%) rotate(${eyeRotation}deg) scaleX(${eyeFlip ? -1 : 1})`,
           maskImage: `url(${eyeMasks[maskImage.id] ?? maskImage.dataUrl})`, WebkitMaskImage: `url(${eyeMasks[maskImage.id] ?? maskImage.dataUrl})`
         }
-        const pupilOffsetX = rightSide && !physicalRight && linked.pupil ? -transform.x : transform.x
+        const pupilOffsetX = pupilSourceMirrored(rightSide?'right':'left',physicalRight) ? -transform.x : transform.x
         const eyeFlipDirection = eyeFlip ? -1 : 1
         const pupilRotation = transform.rotation * (rightSide && !physicalRight ? -1 : 1) * eyeFlipDirection
         const pupilFlip = shouldFlip !== eyeFlip
@@ -1057,11 +1059,11 @@ export function FaceComponentsWorkspace({ mode }: { mode: FaceWorkspaceMode }) {
           transform: `translate(-50%,-50%) rotate(${pupilRotation}deg) scaleX(${pupilFlip ? -1 : 1})`
         }
         return <div key={`${id}-${assetId}`} className={`face-component-pupil-mask${canDrag ? ` face-component-pupil-mask-draggable${draggingPreview ? ' is-dragging' : ''}` : ''}`} style={maskStyle}>
-          <img className="face-component-pupil-image" src={imageAsset.dataUrl} alt={category.names[rightSide ? 1 : 0]} style={pupilStyle} draggable={false} title={canDrag ? 'Arraste a pupila dentro do olho' : undefined} onPointerDown={canDrag ? (event) => beginPreviewDrag(event, dragKey, false, true) : undefined} onPointerMove={canDrag ? movePreviewDrag : undefined} onPointerUp={canDrag ? endPreviewDrag : undefined} onPointerCancel={canDrag ? endPreviewDrag : undefined} onLostPointerCapture={canDrag ? endPreviewDrag : undefined} />
+          <img className="face-component-pupil-image" src={imageAsset.dataUrl} alt={category.names[rightSide ? 1 : 0]} style={pupilStyle} draggable={false} title={canDrag ? 'Arraste a pupila dentro do olho' : undefined} onPointerDown={canDrag ? (event) => beginPreviewDrag(event, dragKey, pupilSourceMirrored(rightSide?'right':'left',physicalRight), true, eyeRotation) : undefined} onPointerMove={canDrag ? movePreviewDrag : undefined} onPointerUp={canDrag ? endPreviewDrag : undefined} onPointerCancel={canDrag ? endPreviewDrag : undefined} onLostPointerCapture={canDrag ? endPreviewDrag : undefined} />
         </div>
       }
     }
-    return <img key={`${id}-${assetId}`} className={`face-component-layer${canDrag ? ` face-component-layer-draggable${draggingPreview ? ' is-dragging' : ''}` : ''}`} src={imageAsset.dataUrl} alt={category.names[rightSide ? 1 : 0]} style={style} draggable={false} title={canDrag ? 'Arraste para mover esta peça' : undefined} onPointerDown={canDrag ? (event) => beginPreviewDrag(event, dragKey, mirroredPosition || rightSide && !physicalRight && category.kind === 'pupil' && linked.pupil, category.kind === 'pupil') : undefined} onPointerMove={canDrag ? movePreviewDrag : undefined} onPointerUp={canDrag ? endPreviewDrag : undefined} onPointerCancel={canDrag ? endPreviewDrag : undefined} onLostPointerCapture={canDrag ? endPreviewDrag : undefined} />
+    return <img key={`${id}-${assetId}`} className={`face-component-layer${canDrag ? ` face-component-layer-draggable${draggingPreview ? ' is-dragging' : ''}` : ''}`} src={imageAsset.dataUrl} alt={category.names[rightSide ? 1 : 0]} style={style} draggable={false} title={canDrag ? 'Arraste para mover esta peça' : undefined} onPointerDown={canDrag ? (event) => beginPreviewDrag(event, dragKey, mirroredPosition || category.kind === 'pupil' && pupilSourceMirrored(rightSide?'right':'left',physicalRight), category.kind === 'pupil') : undefined} onPointerMove={canDrag ? movePreviewDrag : undefined} onPointerUp={canDrag ? endPreviewDrag : undefined} onPointerCancel={canDrag ? endPreviewDrag : undefined} onLostPointerCapture={canDrag ? endPreviewDrag : undefined} />
   }
 
   const workspaceTitle = mode === 'eyes' ? 'Olhos Dev' : 'Rosto Dev'
