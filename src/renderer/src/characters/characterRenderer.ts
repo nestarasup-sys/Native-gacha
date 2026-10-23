@@ -1004,7 +1004,8 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
   }
   let legacyFaceUrl: string | null = null
   if (appearance?.modelSlot === modelSlot) {
-    if (appearance.eyeCatalogId || appearance.eyeLeftCatalogId || appearance.eyeRightCatalogId || appearance.eyebrowCatalogId || appearance.eyebrowLeftCatalogId || appearance.eyebrowRightCatalogId || appearance.noseCatalogId || appearance.mouthClosedCatalogId || appearance.mouthOpenCatalogId || Object.values(appearance.components ?? {}).some((component) => component?.assetId) || Object.values(appearance.headExtras ?? {}).some(Boolean)) {
+    const hasCatalogFaceSelection = Boolean(appearance.eyeCatalogId || appearance.eyeLeftCatalogId || appearance.eyeRightCatalogId || appearance.eyebrowCatalogId || appearance.eyebrowLeftCatalogId || appearance.eyebrowRightCatalogId || appearance.noseCatalogId || appearance.mouthClosedCatalogId || appearance.mouthOpenCatalogId || Object.values(appearance.components ?? {}).some((component) => component?.assetId))
+    if (hasCatalogFaceSelection) {
       const selections: Array<[FaceSheetKind | FaceElementKind, string | undefined]> = [
         ['eyes', appearance.eyeCatalogId], ['eyebrows', appearance.eyebrowCatalogId], ['nose', appearance.noseCatalogId],
         ['eye-left', appearance.eyeLeftCatalogId ?? undefined], ['eye-right', appearance.eyeRightCatalogId ?? undefined], ['brow-left', appearance.eyebrowLeftCatalogId ?? undefined], ['brow-right', appearance.eyebrowRightCatalogId ?? undefined],
@@ -1058,8 +1059,9 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
         ['eye-left', faceAppearance.eyeLeftCatalogId ?? undefined], ['eye-right', faceAppearance.eyeRightCatalogId ?? undefined], ['brow-left', faceAppearance.eyebrowLeftCatalogId ?? undefined], ['brow-right', faceAppearance.eyebrowRightCatalogId ?? undefined],
         ['mouth-closed', faceAppearance.mouthClosedCatalogId], ['mouth-open', faceAppearance.mouthOpenCatalogId]
       ]
-      const hasCatalogSelection = selections.some(([, id]) => Boolean(id)) || Object.values(faceAppearance.components ?? {}).some((component) => component?.assetId) || Object.values(faceAppearance.faceDetails ?? {}).some(Boolean) || Object.values(faceAppearance.headExtras ?? {}).some(Boolean)
-      if (studioFaceMode === 'blink' && !hasCatalogSelection) throw new Error('Blink precisa dos assets faciais separados do catálogo de rosto ou de Olhos Dev.')
+      const hasCatalogFaceSelection = selections.some(([, id]) => Boolean(id)) || Object.values(faceAppearance.components ?? {}).some((component) => component?.assetId)
+      const hasFaceOverlaySelection = Object.values(faceAppearance.faceDetails ?? {}).some(Boolean) || Object.values(faceAppearance.headExtras ?? {}).some(Boolean)
+      if (studioFaceMode === 'blink' && !hasCatalogFaceSelection && !legacyFaceImage) throw new Error('Blink precisa dos assets faciais separados do catálogo de rosto ou de Olhos Dev.')
       const activeItems: Partial<Record<FaceSheetKind | FaceElementKind, FaceCatalogItem>> = {}
       await Promise.all(selections.filter((entry): entry is [FaceSheetKind | FaceElementKind, string] => Boolean(entry[1])).map(async ([category, id]) => {
         let item = faceItems[category]?.id === id ? faceItems[category] : null
@@ -1079,8 +1081,8 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
         throw new Error('Não encontrei uma boca aberta para esta variante. Selecione uma folha de bocas abertas em Rosto Dev.')
       }
       const mouthEffects = expressionEffects ?? expressionEffectsByIndex[faceAppearance.expressionIndex]
-      if (hasCatalogSelection) await drawFaceCatalogOverlay(context, artwork, source, activeItems, faceAppearance, character.customization.modelSkinTone, studioFaceTransforms, mouthEffects, studioFaceMode, resolveClosedEye, character.customization.partOverrides, undefined, assetProvider)
-      else if (legacyFaceImage && faceAppearance.setId === appearance?.setId) context.drawImage(legacyFaceImage, 0, 0, canvas.width, canvas.height)
+      if (!hasCatalogFaceSelection && legacyFaceImage && faceAppearance.setId === appearance?.setId) context.drawImage(legacyFaceImage, 0, 0, canvas.width, canvas.height)
+      if (hasCatalogFaceSelection || hasFaceOverlaySelection) await drawFaceCatalogOverlay(context, artwork, source, activeItems, faceAppearance, character.customization.modelSkinTone, studioFaceTransforms, mouthEffects, studioFaceMode, resolveClosedEye, character.customization.partOverrides, undefined, assetProvider)
     } else if (legacyFaceImage) context.drawImage(legacyFaceImage, 0, 0, canvas.width, canvas.height)
     if (frontHairImage) context.drawImage(frontHairImage, 0, 0, canvas.width, canvas.height)
     if (wardrobeAboveHairImage) context.drawImage(wardrobeAboveHairImage, 0, 0, canvas.width, canvas.height)
