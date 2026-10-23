@@ -117,3 +117,25 @@ test('memo fails open for over-budget artwork, ignores stale completion after cl
   memo.clear()
   assert.equal(budget.snapshot().usedBytes, 0)
 })
+
+test('decoded source-image estimates evict by RGBA bytes rather than by a count of 256', async () => {
+  const mib = 1024 * 1024
+  const budget = new budgetModule.VideoStudioResourceBudget(160 * mib)
+  const cap = 48 * mib
+  const images = new VideoStudioBoundedMemo(
+    128, cap, (image) => image.naturalWidth * image.naturalHeight * 4,
+    budget, 'texture'
+  )
+  const bytes = 1920 * 1080 * 4
+  for (let i = 0; i < 10; i++) {
+    await images.getOrCreate('source-' + i, async () => ({ naturalWidth: 1920, naturalHeight: 1080 }))
+  }
+  assert.ok(images.stats().entries < 10)
+  assert.ok(images.stats().retainedBytes <= cap)
+  assert.equal(budget.snapshot().byCategory.texture, images.stats().retainedBytes)
+  await images.getOrCreate('oversized', async () => ({ naturalWidth: 8192, naturalHeight: 8192 }))
+  assert.ok(images.stats().retainedBytes <= cap, 'large single bitmap remains transient')
+  assert.ok(!Number.isNaN(bytes))
+  images.clear()
+  assert.equal(budget.snapshot().usedBytes, 0)
+})

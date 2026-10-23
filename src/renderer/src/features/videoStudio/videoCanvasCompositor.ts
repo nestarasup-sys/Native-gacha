@@ -4,6 +4,8 @@ import type { VideoSceneFrame, VideoSceneLayer } from '../../../../shared/videoS
 import { videoCharacterElementSize, videoClipStageRect, videoStageRect, VIDEO_STAGE_HEIGHT, VIDEO_STAGE_WIDTH } from '../../../../shared/videoStageGeometry'
 import { matchingVideoVisualPlugin } from './videoVisualPluginRegistry'
 import type { VideoCanvasLayerCache } from './videoCanvasLayerCache'
+import { VideoStudioBoundedMemo } from '../../../../shared/videoStudioNext/boundedMemo'
+import type { VideoStudioResourceBudget } from '../../../../shared/videoStudioNext/resourceBudget'
 
 export type VideoCanvasFrameResources = Readonly<{
   /** Transition/blink/mouth renderer output keyed by Studio character element id. */
@@ -15,8 +17,27 @@ export type VideoCanvasFrameResources = Readonly<{
   willReadFrequently?: boolean
 }>
 
-const imageCache = new Map<string, Promise<HTMLImageElement>>()
-const MAX_IMAGE_CACHE = 256
+// Decoder-owned/GPU allocations are not fully visible to JavaScript. This
+// ledger caps the retained estimated RGBA footprint of loaded source images
+// instead of retaining 256 arbitrary high-resolution images by item count.
+const MAX_IMAGE_CACHE_BYTES = 48 * 1024 * 1024
+function makeImageCache(budget?: VideoStudioResourceBudget): VideoStudioBoundedMemo<HTMLImageElement> {
+  return new VideoStudioBoundedMemo(
+    128, MAX_IMAGE_CACHE_BYTES,
+    (image) => {
+      const bytes = image.naturalWidth * image.naturalHeight * 4
+      return Number.isSafeInteger(bytes) && bytes > 0 ? bytes : Number.MAX_SAFE_INTEGER
+    },
+    budget, 'texture'
+  )
+}
+let imageCache = makeImageCache()
+
+/** The export surface opts in to its 160 MiB shared resource ledger. */
+export function configureVideoCanvasImageBudget(budget: VideoStudioResourceBudget): void {
+  imageCache.clear()
+  imageCache = makeImageCache(budget)
+}
 const sourceTokens=new Map<string,number>()
 let nextSourceToken=0
 function sourceToken(source:string|undefined):number{
@@ -27,22 +48,13 @@ function sourceToken(source:string|undefined):number{
 }
 
 async function loadImage(source: string): Promise<HTMLImageElement> {
-  let pending = imageCache.get(source)
-  if (!pending) {
-    pending = new Promise<HTMLImageElement>((resolve, reject) => {
-      const image = new Image()
-      image.decoding = 'async'
-      image.onload = () => resolve(image)
-      image.onerror = () => reject(new Error('Uma imagem da cena não pôde ser decodificada.'))
-      image.src = source
-    })
-    imageCache.set(source, pending)
-    if (imageCache.size > MAX_IMAGE_CACHE) {
-      const oldest = imageCache.keys().next().value
-      if (oldest) imageCache.delete(oldest)
-    }
-  }
-  return pending
+  return imageCache.getOrCreate(source, () => new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new Image()
+    image.decoding = 'async'
+    image.onload = () => resolve(image)
+    image.onerror = () => reject(new Error('Uma imagem da cena não pôde ser decodificada.'))
+    image.src = source
+  }))
 }
 
 function sourceSize(source: CanvasImageSource): { width: number; height: number } {
@@ -259,7 +271,9 @@ export async function renderVideoSceneFrameToCanvas(
 }
 
 export function clearVideoCanvasImageCache(): void {
-  for (const promise of imageCache.values()) void promise.then((image) => { image.src = '' }).catch(() => undefined)
+  // Drop retained promises/leases; do NOT blank image.src on a bitmap another
+  // in-flight draw may still be using. Chromium can reclaim images once their
+  // last renderer reference is released.
   imageCache.clear()
   sourceTokens.clear()
   nextSourceToken=0

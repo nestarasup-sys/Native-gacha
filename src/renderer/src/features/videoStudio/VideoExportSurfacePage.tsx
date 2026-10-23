@@ -3,7 +3,7 @@ import { compileVideoScene, evaluateVideoSceneFrame } from '../../../../shared/v
 import { VIDEO_STAGE_HEIGHT, VIDEO_STAGE_WIDTH } from '../../../../shared/videoStageGeometry'
 import { VideoCharacterFrameRenderer } from './videoCharacterFrameRenderer'
 import { VideoExportMediaFramePool, type VideoExportMediaFrameLease } from './videoExportMediaFramePool'
-import { renderVideoSceneFrameToCanvas, clearVideoCanvasImageCache } from './videoCanvasCompositor'
+import { renderVideoSceneFrameToCanvas, clearVideoCanvasImageCache, configureVideoCanvasImageBudget } from './videoCanvasCompositor'
 import { VideoCanvasLayerCache } from './videoCanvasLayerCache'
 import { VideoStudioResourceBudget } from '../../../../shared/videoStudioNext/resourceBudget'
 
@@ -55,6 +55,7 @@ export function VideoExportSurfacePage() {
       // frames. Decoders, GPU/Chromium internals and transit buffers are not
       // fully accounted yet; this is not a process-wide memory ceiling.
       cacheBudgetRef.current ??= new VideoStudioResourceBudget(160 * 1024 * 1024)
+      configureVideoCanvasImageBudget(cacheBudgetRef.current)
       characterRenderer = new VideoCharacterFrameRenderer(data.characters, data.characterAssets, cacheBudgetRef.current)
       if (layerCacheEnabled) {
         layerCacheRef.current ??= new VideoCanvasLayerCache(96 * 1024 * 1024, cacheBudgetRef.current)
@@ -64,6 +65,7 @@ export function VideoExportSurfacePage() {
         () => {
           layerCacheRef.current?.clear()
           characterRenderer?.clear()
+          clearVideoCanvasImageCache()
         }
       )
       return { program, canvas, readbackOptimized }

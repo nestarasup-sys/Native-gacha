@@ -109,6 +109,14 @@ Testes Windows cobrem 12 mídias sequenciais, reapertura de fonte expulsa e cinc
 
 **Limite honesto:** reservar `w × h × 4` **não controla** preload/decoder interno iniciado ao criar um `HTMLVideoElement`, frames GPU, cópias temporárias de canvas, GL textures, malloc nativo ou memória do FFmpeg. A reserva Gacha de 16 MiB é **estimativa conservadora de workspace, não teto físico de um render**. Se a demanda real ultrapassar os tetos, podem surgir erros de export recuperáveis. A política global multi-PID e o compositor por partes continuam pendentes.
 
+### Oitavo corte — imagens de cena limitadas por bytes em vez de 256 entradas (Windows)
+
+O `videoCanvasCompositor.ts` guardava até **256 `HTMLImageElement`** no `imageCache` sem relação com resolução ou uso de RAM. Agora usa `VideoStudioBoundedMemo` com **48 MiB de retenção estimada** e até 128 itens, calculando `naturalWidth × naturalHeight × 4` após decodificação. Imagens grandes demais **continuam podendo ser usadas no frame**, porém deixam de ficar retidas no cache. A export surface conecta essas reservas ao **mesmo ledger de 160 MiB** usado por Canvas layers, frames de vídeo e resultados Gacha.
+
+O cache permite `clear()` sem anular `image.src` de uma imagem que outro desenho ainda possa estar usando; isso preserva a correção durante falha/pressão e descarta as referências/leases mantidos. A callback de pressão do pool de vídeo passa a liberar **também** as imagens cacheadas, além dos layers e renders derivados. Acrescentei teste para múltiplas imagens sintéticas 1080p e uma imagem excessivamente grande.
+
+**Limites:** as estimativas só contabilizam imagens **retidas**, não decodificação em progresso, texturas ou memória interna do Chromium. GC pode atrasar a liberação física após a referência sair do cache; não é teto global de RAM/VRAM, nem solução demonstrada do OOM. As prioridades seguintes continuam medir pressão multi-processo no Windows real e implementar raster incremental de corpo/olhos/boca, com golden PT e continuidade do export.
+
 ## Estrutura-alvo resumida
 
 `StudioDocument/AssetManifest → ProjectRepository + EditorCore/CommandBus → SceneCompiler/Evaluator → FramePlan → ResourceBudgeter/Scheduler + GachaRenderer + MediaService → PreviewTransport / ExportService → verificador e publish atômico`.
