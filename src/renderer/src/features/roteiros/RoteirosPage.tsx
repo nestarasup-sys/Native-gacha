@@ -457,6 +457,7 @@ export function RoteirosPage() {
     const roteiro: SidebarRoteiro = { id: crypto.randomUUID(), title, videoTitle: 'Vídeo 01', characterIds: newCharacterIds, tiktoks: [] }
     setRoteiros((current) => [roteiro, ...current])
     setSelectedRoteiroId(roteiro.id)
+    setOpenedRoteiroId(roteiro.id)
     setNewTitle(''); setNewCharacterIds([]); setCreateOpen(false)
   }
 
