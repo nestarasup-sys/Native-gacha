@@ -8,7 +8,7 @@ import type * as nodeFs from 'node:fs/promises'
 import type { FaceExpressionPreset } from '../../../src/shared/fabricator'
 
 type Files = Pick<typeof nodeFs, 'mkdir' | 'readFile' | 'writeFile' | 'rename' | 'rm' | 'unlink'>
-type Entry = { id: string; existed: boolean; sha256: string | null }
+type Entry = { id: string; existed: boolean; sha256: string | null; nextSha256: string }
 type Journal = { schemaVersion: 1; modelSlot: number; entries: Entry[] }
 const safeId = /^[a-zA-Z0-9_-]{1,80}$/
 const sha = (value: Buffer | string) => createHash('sha256').update(value).digest('hex')
@@ -23,7 +23,8 @@ function validJournal(value: unknown, slot: number): value is Journal {
     && Array.isArray(journal.entries) && journal.entries.length > 0 && journal.entries.length <= 64
     && journal.entries.every(entry => entry && safeId.test(entry.id)
       && typeof entry.existed === 'boolean'
-      && (entry.existed ? typeof entry.sha256 === 'string' && /^[a-f0-9]{64}$/.test(entry.sha256) : entry.sha256 === null))
+      && (entry.existed ? typeof entry.sha256 === 'string' && /^[a-f0-9]{64}$/.test(entry.sha256) : entry.sha256 === null)
+      && typeof entry.nextSha256 === 'string' && /^[a-f0-9]{64}$/.test(entry.nextSha256))
     && new Set(journal.entries.map(entry => entry.id)).size === journal.entries.length
 }
 
@@ -53,6 +54,12 @@ export function createExpressionBatchTransaction(deps: {
     if (!validJournal(raw,slot)) throw Error('Journal de expressões inválido; arquivos preservados para recuperação manual.')
     const acknowledged = await maybeRead(files,join(folder,'committed.ok'))
     if (acknowledged?.toString('utf8') === sha(journalBytes)) {
+      for (const entry of raw.entries) {
+        const current = await maybeRead(files,presetPath(slot,entry.id))
+        if (!current || sha(current) !== entry.nextSha256) {
+          throw Error(`Lote de expressões confirmado, mas preset ${entry.id} divergente; journal preservado para revisão.`)
+        }
+      }
       await files.rm(folder,{recursive:true,force:true})
       return
     }
@@ -103,7 +110,7 @@ export function createExpressionBatchTransaction(deps: {
         if(item.old) await files.writeFile(join(folder,`${item.id}.bak`),item.old)
       }
       const journal: Journal = { schemaVersion:1,modelSlot:slot,
-        entries:saved.map(item=>({id:item.id,existed:item.old!==null,sha256:item.old ? sha(item.old):null})) }
+        entries:saved.map(item=>({id:item.id,existed:item.old!==null,sha256:item.old ? sha(item.old):null,nextSha256:sha(item.updated)})) }
       const record=Buffer.from(JSON.stringify(journal),'utf8')
       await files.writeFile(join(folder,'journal.json.tmp'),record)
       await files.rename(join(folder,'journal.json.tmp'),join(folder,'journal.json'))
