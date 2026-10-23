@@ -1,12 +1,12 @@
 # Video Studio V5 — Modernização Integral
 
-Diretório canônico da modernização do **Video Studio do G-V5**. Nesta trilha, **Roteiros e Base de Vídeos são domínios separados e ficam fora do escopo**, salvo contratos mínimos usados pelo Video Studio para consumir mídia. O caminho crítico atual é **finalizar o exportador**, endurecer estabilidade e medir otimizações de preview/export.
+Diretório de planejamento da modernização do **Video Studio do Native Gacha/G-V5**. **Roteiros e Base de Vídeos** seguem fora de escopo salvo contratos de importação. A prioridade atual (2026-10-23) é **estabilidade sob projetos Gacha grandes, controle de memória/processos, fidelidade do preview e export**, com a escolha de engine em aberto. As etapas de fechamento do exportador continuam relevantes, mas não substituem o teste de stress real.
 
-O plano antigo `docs/AGENTE_EXPORT_V5/` permanece como histórico/backlog tático. Em divergência, o estado real do código + CI + documentos deste diretório prevalecem.
+Documentos anteriores, inclusive `docs/AGENTE_EXPORT_V5/`, são histórico e referência; **o código/CI atuais + o estudo 12 abaixo prevalecem para prioridades novas**. Nenhuma engine (MLT, GES, Skia, PixiJS ou FFmpeg via APIs) é obrigatória sem gate.
 
 ## Ordem de leitura atual
 
-**Reavaliação recente (2026-10-23):** [12_REAVALIACAO_RECONSTRUCAO_MLT_SKIA_2026-10-23.md](./12_REAVALIACAO_RECONSTRUCAO_MLT_SKIA_2026-10-23.md) — decisão provisória sobre reconstrução, MLT, Skia e alternativas, fundamentada no HEAD do Native-gacha. **Não é adoção automática da engine.** Referências antigas a G-V5/master-desenvolvimento são históricas e não autorizam escrita fora da branch atual.
+**Reavaliação recente (2026-10-23):** [12_REAVALIACAO_RECONSTRUCAO_MLT_SKIA_2026-10-23.md](./12_REAVALIACAO_RECONSTRUCAO_MLT_SKIA_2026-10-23.md) — **estudo aprofundado com fontes primárias**, diagnóstico de OOM, bibliotecas e aplicações open source, orçamentos de memória, engine intercambiável, plano de stress e shortlist por evidência. Substitui a preferência por uma pilha específica, sem autorizar mudança de runtime. Referências antigas a G-V5/master-desenvolvimento são históricas.
 
 1. **[00_PLANO_DIRETOR.md](./00_PLANO_DIRETOR.md)** — visão e arquitetura.
 2. **[11_PESQUISA_OPEN_SOURCE_E_FECHAMENTO_EXPORTADOR.md](./11_PESQUISA_OPEN_SOURCE_E_FECHAMENTO_EXPORTADOR.md)** — pesquisa externa atual, matriz de engines, padrões extraídos e ordem revisada para fechar o exportador.
@@ -21,7 +21,11 @@ O plano antigo `docs/AGENTE_EXPORT_V5/` permanece como histórico/backlog tátic
 11. **[01_ESTUDO_DE_MOTORES.md](./01_ESTUDO_DE_MOTORES.md)** — pesquisa original de engines.
 12. **[03_MIGRACAO_E_DADOS.md](./03_MIGRACAO_E_DADOS.md)** — dados, mídia derivada, CAS e segurança.
 
-## Estado factual atual — 2026-10-20
+## Prioridade e estado factual — atualização 2026-10-23
+
+**Requisito central:** projetos pesados de animação Gacha precisam continuar utilizáveis; processos de decode/render/export devem ser controlados por orçamento, com fallback e recuperação. **O relato de crash ainda não foi reproduzido instrumentalmente; não afirmar diagnóstico definitivo.** Começar por G0 e G1 do estudo 12. O antigo relatório de soak de 15 minutos reaproveitava frame estático após 301 e **não** comprova estabilidade de composição continuamente animada. O desenvolvimento da engine ocorre **somente na branch autorizada**, sem tocar em `main`.
+
+## Inventário histórico — 2026-10-20
 
 O Video Studio já não está na fase descrita pelos primeiros documentos de 2026-10-19. Já existem no código, entre outros:
 

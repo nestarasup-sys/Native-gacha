@@ -1,210 +1,324 @@
-# Video Studio G-V5 — Reavaliação da reconstrução estrutural e hipótese Electron + C++ + MLT + Skia
+# Video Studio G-V5 — pesquisa aprofundada e plano de reconstrução resiliente
 
-**Data:** 23/10/2026  
-**Status:** documento de decisão arquitetural **provisória**, sem autorização implícita para substituir o motor, migrar arquivos ou distribuir binários.  
-**Referência auditada:** repositório `nestarasup-sys/Native-gacha`, branch `feature/model-source-editor`, commit `7f5f9ec9c7c6bc33b312e2720fd199b6f0180446`.  
-**Produto:** Video Studio. Fabricador DEV, Customizador e Studio Principal ficam fora da reconstrução.
+**Atualização:** 23/10/2026 · **Estado:** pesquisa/planejamento, **não** implementação e **não** decisão irrevogável de engine.  
+**Código auditado:** `nestarasup-sys/Native-gacha` · `feature/model-source-editor` · HEAD de referência `26803164a8b9370f9f1e13228054b2fa1c422292`.  
+**Motivação prioritária:** um teste real de projeto pesado já provocou travamento/fechamento do aplicativo relatado pelo criador. O objetivo **não é só refatorar arquivos**, mas manter um editor Gacha útil e recuperável sob carga severa. **O teste não foi reproduzido nesta pesquisa**; mecanismos causais abaixo são hipóteses até medição.  
+**Escopo:** somente Video Studio e seus contratos/infra relacionados. Preservar Fabricador, Customizador, Studio, biblioteca, PNGs, modelos, poses, expressões, roupas, vídeos, áudios e documentos do usuário.
 
-> **Recomendação:** é razoável reconstruir a organização interna do Video Studio, originalmente experimental, **mas não escolher MLT + Skia como dependências obrigatórias antes de uma prova comparativa no Windows**. Manter Electron/React; preservar formatos de projeto e semântica de personagens; extrair uma arquitetura de editor e motor desacoplados; decidir engine com paridade visual, áudio, seek, benchmarks, licenças, distribuição e recuperação.
+> **Proposta executiva (substitui a preferência automática por MLT/Skia):** conservar **Electron + React** como editor; separar **semântica autoral Gacha** de **decode/mix/render/encode**; colocar trabalhos pesados em processos supervisionados; aplicar **orçamento global de memória, filas limitadas, proxies e preview adaptativo**. Comparar, em etapas independentes, **FFmpeg/libav***, **MLT**, **GStreamer/GES** e outras opções; para composição Gacha, comparar **Canvas atual**, **PixiJS/WebGL**, **Skia** e, se for necessário, alternativas 2D CPU. **MLT, C++ e Skia não são obrigatórios.** Só escolher uma combinação após testes reproduzíveis no Windows com animações *de verdade* e leitura de memória de *todos* os processos.
 
-## 1. Relação com o planejamento existente
+## 0. Como interpretar este documento
 
-O repositório **já contém planejamento extenso** em `docs/VIDEO_STUDIO_V5_MODERNIZACAO/`: `00_PLANO_DIRETOR.md`, `01_ESTUDO_DE_MOTORES.md`, `02_ARQUITETURA_CANONICA.md`, `03_MIGRACAO_E_DADOS.md`, `04_LAB_E_GATES.md`, `05_DECISOES_ADR.md`, `06_BACKLOG_DE_EXECUCAO.md`, `07_MODOS_DE_EXPORTACAO.md`, `08_ARQUITETURA_EXTENSIVEL_E_RECONSTRUCAO.md`, `10_RELEASE_CHECKLIST.md` e `11_PESQUISA_OPEN_SOURCE_E_FECHAMENTO_EXPORTADOR.md`.
+- É a **revisão ativa** do estudo iniciado neste arquivo. Substitui sua recomendação anterior de pôr MLT como primeiro candidato obrigatório ou privilegiado. Uma prova de conceito isolada pode usar MLT, mas a baseline do FFmpeg atual e a melhoria estrutural sem nova biblioteca também competem.
+- Complementa `00_PLANO_DIRETOR.md`, `01_ESTUDO_DE_MOTORES.md`, `02_ARQUITETURA_CANONICA.md`, `03_MIGRACAO_E_DADOS.md`, `04_LAB_E_GATES.md`, `05_DECISOES_ADR.md`, `08_ARQUITETURA_EXTENSIVEL_E_RECONSTRUCAO.md` e `11_PESQUISA_OPEN_SOURCE_E_FECHAMENTO_EXPORTADOR.md`. Esses textos contêm histórico útil, mas **não são medição do HEAD atual**.
+- Alguns documentos antigos citam `G-V5/master-desenvolvimento`. Esse endereço é **histórico**. O único destino de escrita desta rodada foi `Native-gacha/feature/model-source-editor`. `main` intocável sem autorização expressa; PR existente permanece draft.
+- **Legendas das tabelas:** `CONFIRMADO` = observado diretamente no código/documentação primária; `HISTÓRICO` = medido em commit anterior; `HIPÓTESE` = precisa ser testado; `PROPOSTA` = desenho futuro, ainda não executado.
 
-Este documento **complementa** esses estudos, não os substitui. Vários estados em documentos antigos são históricos. **O código no HEAD e a CI Windows vencem descrições obsoletas.** Alguns textos se referem ao repositório `G-V5` e à branch `master-desenvolvimento`: esses destinos são históricos; na rodada presente, toda escrita ocorre **somente** em `Native-gacha/feature/model-source-editor`. Nunca tocar ou mesclar em `main` sem autorização explícita.
+## 1. O que o Video Studio realmente faz (mapa de responsabilidades)
 
-## 2. Estado real da implementação
-
-| Responsabilidade | Código existente | Conclusão do diagnóstico |
+| Função | Evidência de implementação atual | Quem deve ser dono disso na arquitetura nova? |
 | --- | --- | --- |
-| Interface e orquestração | `src/renderer/src/features/videoStudio/VideoStudioEditor.tsx` (~2.500 linhas/180 kB); `VideoStudioEditor.css` (~60 kB) | Editor concentra funções demais: seleção, biblioteca, elenco, expressão, save, export e playback. **Reestruturação recomendada**. |
-| Timeline | `VideoTimeline.tsx` (~596 linhas/51 kB), `videoTimelineIndex.ts`, `src/shared/videoTimelineEditing.ts` | Tracks de personagem, expressões/poses, lacunas, balões, vídeo, áudio, split, resize, zoom, lock e snapping já existem. MLT não substitui essa semântica automaticamente. |
-| Dados persistidos | `src/shared/studio.ts`: `StudioDocument` e `VideoTimelineDocument` | `schemaVersion: 1` e `frameRate: 60`; keys e duração em frames, mídia importada, áudio, texto e estados faciais. **Contrato autoral a preservar**. |
-| Compilação | `src/shared/videoSceneIR.ts` | `compileVideoScene` / `evaluateVideoSceneFrame` resolvem estados absolutos, ordem de layers, transições, blink, mouth, gaps e vídeo por frame. Já há um núcleo semântico reaproveitável. |
-| Composição | `videoCanvasCompositor.ts`, `videoCharacterFrameRenderer.ts`, `VideoStudioDomElement.tsx` | Export usa Canvas/receitas de personagem; a UI também usa DOM. Paridade real DOM/Canvas/MP4 ainda merece teste visual rigoroso. |
-| Exportação | `electron/videoExportCoordinator.ts`, `videoExportJobs.ts`, `videoExportSurfaceHost.ts`, `VideoExportSurfacePage.tsx`, `videoSerialChunkEncoder.ts`, `videoExportAssembler.ts` | Existem snapshots imutáveis, renderers isolados Electron, frames RGBA, chunks, FFmpeg/FFprobe, saída MP4, modos serial/Turbo, cancelamento e recuperação. **Não reconstruir essas fundações sem necessidade**. |
-| Mídia/caches | `videoLibrary.ts`, `videoMediaProbe.ts`, `videoPreviewProxyStore.ts`, `videoPersistentFrameCache.ts`, `videoOutputVerifier.ts` | Há cópias de mídia por projeto, proxies, caches, probes e validação. Original não é cache descartável. |
-| Gacha compartilhado | `src/renderer/src/characters/characterRenderer.ts`, `studioExpressionTransforms.ts`, `src/shared/portableExpression.ts` | Personagem, pose, rosto, roupa e expressões normal/PT possuem regras próprias; motor Skia precisaria implementá-las fielmente. |
+| Blocos de personagem na timeline | `src/shared/studio.ts`, `VideoTimeline.tsx` e `videoTimelineIndex.ts`: keys de personagem, estado base, track ends, gaps e posição/transformação global | **Modelo autoral Gacha + editor**, não playlist genérica MLT. |
+| Mudança de pose e expressão | `videoCharacterTransitions.ts`: interpolação automática de até **15 frames** antes da boundary, desde que estados mudem e não haja gap; `videoCharacterInterpolation.ts` interpola pose/rosto/efeitos | **SceneCompiler Gacha**; renderiza estado absoluto do frame N. |
+| Balões de fala/pensamento | `VideoTimelineDocument.textClips` com `startFrame/endFrame`, speaker e estado do elemento | **SceneCompiler Gacha**; texto pode ter renderizador tipográfico próprio. |
+| Falando/piscando | `VideoStudioEditor.tsx` e `videoSceneIR.ts`: balão `speech` aciona boca; blink automático determinístico; boca possui seis variações no preview com fases fixas | **Gacha SceneEvaluator** + renderer facial compartilhado. |
+| Vídeo visível na cena | `VideoClipPreview.tsx` cria um `HTMLVideoElement` por clipe ativo; `videoMediaPlayback.ts` sincroniza `currentTime`/`play()` com playhead calculado por `requestAnimationFrame` | **MediaDecoder + relógio A/V**; não depender de múltiplos relógios independentes em projeto pesado. |
+| Mídias importadas e áudio | `VideoMediaClip` + `VideoAudioSettings`, `videoStudioAudioPlan.ts` monta `atrim`, `adelay`, `amix` e AAC via FFmpeg | **Media engine**: FFmpeg/libav ou MLT/GES aprovados por benchmarks. |
+| Prévia e manipulação | DOM de personagem e balões em `VideoStudioDomElement.tsx`; elementos `<video>` na cena e handlers React | **React UI/stage**, alimentado por frames/estados solicitados ao motor; overlay de seleção continua interativo. |
+| Exportação | `videoSceneIR.ts` compila quadros; `VideoExportSurfacePage.tsx` usa Canvas 2D + HTMLVideoElement + `getImageData`; `videoExportCoordinator.ts` envia RGBA ao FFmpeg | **Processo de render/encode separado**, com snapshot e validação. |
+| Modos de export | `RenderVariant`: `animated` e `static-characters` | **Contrato existente**, não remover nem alterar sem pedido. |
 
-**Diagnóstico:** “reconstruir do zero” é justificável para **fronteiras entre módulos, fluxo de estado e possivelmente pipeline audiovisual**. “Jogar fora tudo” não é: documentos, SceneIR, snapshots, validações e testes são contratos de valor que já existiam mesmo num editor originalmente experimental.
+O projeto autoral é `StudioDocument schemaVersion: 1`, com `VideoTimelineDocument.frameRate: 60`. **Não trocar esse arquivo por XML do MLT, timeline de GES ou JSON interno de qualquer biblioteca**. Plugins e engines recebem uma projeção de execução temporária e versionada.
 
-## 3. Avaliação objetiva de Electron + C++ + MLT + Skia
+### Particularidades que não cabem numa playlist comum
 
-### Onde a proposta é boa
+- Um bloco de personagem pode implicar **pose, expressão, transformação facial, escala de palco e estado de animação**, não apenas um pedaço de vídeo.
+- Lacunas têm efeito na presença do personagem e transições. O frame da fronteira pertence ao novo estado.
+- Balões controlam a boca do *speaker*; olho, pupila e roupa dependem dos contratos compartilhados com o Fabricador/Customizador.
+- Presets **PT** têm deslocamento/rotação própria por pupila sobre a expressão normal, com fallback para presets legados; **o normal não pode receber deslocamentos artificiais**.
+- O vídeo de fundo atualmente tem z-order próprio (`videoSceneIR.ts` com layer `zOrder:1`); mudanças para layering livre são **mudanças de produto**, não detalhe transparente da engine.
+- O media clock nativo de cada `<video>` e o playhead de `requestAnimationFrame` já são diferentes; o preview futuro precisa resolver autoridade temporal e tolerância de A/V.
 
-1. **Electron e React continuam na interface.** Não é preciso recriar menus, painel de propriedades e timeline em C++.
-2. **MLT/MLT++** têm producers, playlists, tractors, filtros, consumers, áudio/vídeo e avaliação lazy/pull. O consumer `avformat` usa FFmpeg internamente para encode/mux, sem exigir obrigatoriamente um segundo `ffmpeg.exe` para isso.
-3. **Skia** é um motor de desenho 2D nativo apropriado para PNG, sprites, clipping, geometria, cor e texto — **mas não contém as regras de montagem de um Gacha**.
-4. Uma engine `GachaVideoEngine.exe` separada pode isolar falhas, administrar recursos e oferecer uma função de frame comum a preview e export.
-5. Um IPC de controle pequeno e frames em memória compartilhada é uma direção plausível para reduzir cópias.
+## 2. Auditoria de riscos de travamento/memória
 
-### O que não se obtém automaticamente
+**Não foi possível concluir qual recurso derrubou o projeto real sem o fixture/log.** Há, porém, pontos que tornam plausível pressão de memória mesmo quando os testes unitários estão verdes:
 
-- **MLT não sabe** que um personagem preserva posição global enquanto pose/expressão variam, que há gaps, balões, lip sync ou PT com pupilas independentes. Precisamos de tradução do nosso SceneIR a serviços ou frames do MLT.
-- **Skia não substitui** o renderizador de personagem sem portar ordem de peças, máscaras, flips, offsets, pupilas, roupas, olhos, boca, efeitos, tipografia, recortes e cores.
-- **Paridade preview/export** depende de tempo, geometria, alpha, fontes, cor, escalonamento e regras de amostragem; colocar ambos em C++ pode reduzir divergências, mas não as elimina automaticamente.
-- **C++ não garante velocidade**: decode, render, textura, readback, IPC, B-frames, audio mix e montagem de gráficos podem dominar o custo.
-- **Windows distribuível** exige DLLs, plugins, CRT, símbolos, assinatura, caminho seguro, bibliotecas e licenças correspondentes. Skia também tem build GN/Ninja e dependências opcionais.
-- Criar um producer customizado Skia→MLT é trabalho específico do projeto, não uma integração pronta.
-
-**Síntese:** a ideia é tecnicamente viável e merece uma PoC. A justificativa maior seria um Video Studio com recursos amplos de NLE (muitas trilhas, efeitos, filtros, transições e mixagem profissional). Para um compositor 2D de histórias Gacha, talvez uma pipeline especializada mais simples vença em custo/robustez.
-
-## 4. Matriz de arquiteturas candidatas
-
-| Alternativa | Arquitetura | Vantagem esperada | Maior risco | Encaminhamento |
-| --- | --- | --- | --- | --- |
-| **A — Evolução modular** | React + SceneIR atual + Canvas ou Pixi sob benchmark + FFmpeg | Reutilização, fallback e menor superfície de mudança | DOM vs Canvas, readback e arquitetura React acoplada | **Baseline prioritária** |
-| **B — MLT para mídia** | React + SceneIR + raster Gacha atual + MLT para mídia/mix/export | Adiciona NLE sem portar personagem | Sincronização e duas pipelines, DLLs/plugins | PoC específica |
-| **C — MLT + Skia completos** | React + bridge Electron + sidecar C++ + MLT/MLT++ + Skia | Motor dedicado e controle audiovisual central | Port completo de personagem + protocolo + packaging | **PoC isolada; não adotar ainda** |
-| **D — Skia + FFmpeg sem MLT** | React + sidecar C++ + Skia + libav*/FFmpeg | Frame Gacha especializado; evita grafo NLE | Teria de implementar agenda, áudio, cache e recovery | Concorrente se nativo for vantajoso |
-
-Nenhum candidato recebe nota de FPS, RAM ou qualidade sem comparar **a mesma cena no mesmo Windows**. A hipótese inicial de menor risco é **A**. Se o gargalo for especificamente edição/mix de vídeo, estudar **B**. Se Skia trouxer vantagem comprovada, comparar **C e D**. Não usar “feito em C++” como critério.
-
-## 5. Arquitetura-alvo independente de motor
-
-`StudioDocument v1 (original do usuário)`  
-→ `validação e adaptação de leitura`  
-→ `snapshot imutável + AssetManifest pinado (SHA-256)`  
-→ `Scene Compiler / SceneIR: estado absoluto no frame N`  
-→ `FrameRenderer selecionável: Canvas/Pixi ou Skia`  
-→ `MediaDecoder / AudioMixer / TimelineClock: FFmpeg ou MLT`  
-→ `Preview Transport + ExportCoordinator`  
-→ `preview Electron e MP4 verificado`
-
-**Separação obrigatória de responsabilidades:**
-
-- **ProjectRepository**: formatos de projeto, load/save/backup, versões. Único dono dos dados persistidos; não transformar XML de MLT no documento oficial.
-- **EditorCommands / History**: operações puras de timeline (move/trim/split/snap/lock), undo/redo e seleção; sem escrita em arquivos no render.
-- **SceneCompiler**: keyframes, easing, gaps, layers, resolução de personagem/pose/expressão/PT, texto e background, *sempre a partir de um frame absoluto* (sem deltas acumulativos).
-- **AssetResolver**: IDs e hashes; manifest seguro; assets originais separados de caches/proxies; referências imutáveis durante export.
-- **FrameRenderer**: pixels e recursos renderizados, sem decidir semântica da timeline.
-- **MediaClock/Decoder/AudioMixer**: timestamps e sincronização de vídeo importado, inclusive VFR/B-frames; um relógio autoritativo.
-- **PreviewController**: `seek` latest-only, IDs e revisão monotônica, bounded queues, descarte de frames atrasados, preview de resolução reduzida.
-- **ExportCoordinator**: snapshot fixo, progresso, cancel, recovery, arquivos temporários, ffprobe/full decode e publicação atômica.
-- **Diagnostics**: tempos por etapa, uso real de RAM/VRAM e IPC, crashes, métricas locais sem conteúdo privado.
-
-**Contratos:** SceneIR da implementação atual pode ter `Map`, `dataUrl` e objetos JS; para cruzar o limite C++, criar representação **serializável e versionada**, não enviar internals React/DOM nem milhões de bytes por JSON a cada quadro. Canonizar tempo, unidades, layer IDs, assets e transformações; manter adaptadores legados e novas features com versionamento.
-
-**Sidecar só após PoC:** protocolo sugerido `hello/capabilities`, `openSession(snapshot/manifest)`, `updateScene(revision, diff)`, `requestFrame(frame, revision, quality, requestId)`, `play/pause/seek`, `startExport(snapshotHash)`, `progress/cancel`, `releaseFrame` e `closeSession`. Renderer Electron não ganha acesso arbitrário ao sistema de arquivos. Supervisor reinicia/isola engine falha, com fallback.
-
-**Custo de pixels:** RGBA Full HD = 1920 × 1080 × 4 = **8.294.400 bytes/frame** (~8,3 MB); 60 FPS × uma cópia = **~498 MB/s**, sem computar GPU readback/mais cópias. Usar pipe/IPC para comandos; frames preferencialmente via ring buffer/shared memory ou textura compartilhada medida, com ownership/ACK e backpressure. Electron sharedTexture é recurso avançado/experimental: testar fallback CPU.
-
-## 6. O renderizador Gacha é o caminho crítico
-
-A “etapa definitiva” nativa seria portar corretamente:
-
-- PNG e camadas do Fabricador, cabeças, corpos, poses, roupas, cores e acessórios;
-- máscaras, clipping, clipping invertido, recorte/crop/trim, premultiplied alpha;
-- olhos esquerdo/direito, espelhamento real vs asset físico direito, transformação do olho sobre a pupila, rotação, escala e pivô;
-- expressões normais **sem deslocamento artificial** e PT com **X/Y/rotação próprias de cada pupila**, resto herdado da expressão normal;
-- Customizador como fonte da base facial sem alterações cumulativas;
-- blink, talk, transição, interpolação, gaps, expressão e pose no frame exato;
-- balões, tipografia, fontes, Unicode/emoji, espaçamento, quebras de linha, cor, efeitos, z-order;
-- fundos e vídeo importado com alpha, fps variável e áudio sincronizado.
-
-**Duas etapas intencionais:**
-
-1. **PoC sem portar Gacha:** TypeScript gera assets/frame Gacha já conhecidos; engine usa raster para provar decode/mix/composição/seek/export/bridge. Isso isola o benefício de MLT.
-2. **PoC com um personagem nativo:** portar um modelo e todas as variações selecionadas ao Skia; comparar por camada contra o oráculo atual; só depois considerar um renderizador completo. Não portar todo o sistema para descobrir no fim que a tipografia/máscara diverge.
-
-Uma imagem “parecida” não é critério suficiente. Os testes devem registrar posição em coordenadas canônicas e diferenças por região (olho/pupila, boca, borda de roupa, texto), hash onde determinístico e tolerâncias documentadas para raster de texto. Erro semântico (PT olhar errado, peça fora da máscara, frame errado) é **veto**, mesmo com SSIM alto.
-
-## 7. Reconstrução do editor React: modular, sem perder UX
-
-Uma organização **proposta**, não migração imediata:
-
-`features/videoStudio/{shell,projects,timeline,tracks,stage,inspector,playback,media,commands,history,export}/`  
-`shared/video-studio/{contracts,scene,editing,time,geometry,assets}/`  
-`electron/video-studio/{project-store,engine-adapter,media,export,diagnostics}/`  
-`native/gacha-video-engine/{protocol,scene,timeline,gacha-renderer,media,preview,export}/` (**somente se decisão nativa for positiva**)  
-`tests/video-studio/{fixtures,contracts,parity,windows-e2e,benchmarks}/`
-
-Ordem de extração: **projeto e comandos → histórico → timeline → stage/inspector → playback → render-adapter → export UI**. PRs pequenos e reversíveis; preservar rotas, atalhos, seleção, drag, persistência e export atuais até provar equivalência.
-
-**Produto a decidir com o criador antes de codificar:**
-- foco principal: **produção de histórias Gacha** ou NLE abrangente semelhante a editores de vídeo tradicionais;
-- tracks e regras de sobreposição (personagem/expressão/pose vs clips de vídeo/áudio/texto);
-- keyframes de personagem, câmera, zoom/pan, transições e easing;
-- manipulação de balões e lip sync, sons, waveform, scrubbing com áudio;
-- editor offline no Windows, qualidade preview, resolução e perfis de export;
-- ergonomia: undo/redo, snapping, lock/mute, atalhos, autosave/recovery, biblioteca.
-
-Não copiar 100% da UI experimental por obrigação; porém cada mudança de comportamento atual deve estar explicitamente especificada, testada e aprovada.
-
-## 8. Experimentos Windows e quality gates
-
-### Gate G0 — baseline e oráculo
-
-- Fixar **um fixture sintético**: projeto v1, sem dados pessoais e sem tocar a biblioteca real.
-- Registrar HEAD, Windows/CPU/GPU/RAM, Electron e FFmpeg exatos, build flags, encoder, tempos e hashes.
-- Guardar quadros de preview, export e print; provar seek `A→B→A`, carga fria/quente e restart.
-- Validar todos os recursos atuais e o mesmo resultado após save/load, undo/redo e troca de expressão.
-
-### Cena de PoC que pode reprovar a arquitetura
-
-**1920×1080, 60 FPS, 10 s (600 frames)**: um fundo, 2 personagens de modelos diferentes, troca de pose e expressão normal/PT com pupilas personalizadas X/Y/rotação, blink/talk, movimento de palco, uma lacuna, balão de texto, vídeo importado com áudio e sobreposição. Separadamente testar vídeos 24/25/29,97/60 FPS e VFR, B-frames e codec não suportado.
-
-Conferir **frames 0, 1, 29, 30, 59, 60, 149, 150, 299, 300, 449 e 599**, seek em sequência A→B→A, play/pause/scrub, MP4 H.264+AAC com audio sync, ffprobe e decode completo. Testar cancel, matar processo, retomar job, abrir após reiniciar e rodar **sem FFmpeg instalado globalmente**.
-
-### Experimentos que isolam custos
-
-| Spike | Comparação controlada | Resultado obrigatório |
+| Achado observado no código | Consequência possível (hipótese, não causa provada) | Teste apropriado |
 | --- | --- | --- |
-| **S0** | Pipeline atual, fixtures do HEAD | baseline de frames, seek, áudio, memória, duração export, falhas |
-| **S1** | Editor modular com renderer antigo | prova de que desacoplar UI/estado não quebra comportamento |
-| **S2** | FFmpeg atual **versus MLT** usando os *mesmos PNGs Gacha pré-renderizados* | custo MLT no decode/áudio/mix/encode, latência, PTS, qualidade, plugin BOM e instalação |
-| **S3** | Canvas/Pixi **versus Skia** renderizando a mesma cena 2D/olho/PT/balão, sem MLT | ROI pixel, fontes, alpha, CPU/GPU/RSS, readback, tempo por frame |
-| **S4** | Sidecar C++ + IPC sem render nativo inteiro | custo real frame transport/seek, crash/restart, bounded queue, fallback |
-| **S5** | Integração completa **só se S2–S4 satisfatórios** | MP4+áudio + preview dentro do Electron e instalação Windows limpa |
+| `VideoStudioEditor.tsx` tem ~2.517 linhas, lista `studios` de documentos abertos e guarda `availableCharacters`/assets no estado React. | Grandes strings `dataUrl` e árvores de objetos podem permanecer referenciadas após navegação; diffs e renderizações custam CPU/heap. | Abrir/fechar/reabrir muitos projetos, heap snapshots de objetos retidos, monitorar RSS e Blink. |
+| `captureVideoCharacter()` incorpora `imageDataUrl` ao estado de cada key; `createVideoExportSnapshot()` faz `structuredClone` do documento. | Snapshot, duplicação e export podem criar picos transitórios e conteúdo raster duplicado em strings/bytes; é preciso medir o que o runtime deduplica. | Medir `dataUrl` bytes distintos/repetidos por projeto, custo de clone/serialização e heap/RSS antes/depois. |
+| `EditHistory<StudioSnapshot>` armazena até **1.000 snapshots**; compartilha assets por referência em vários casos. | O compartilhamento protege em edições triviais, **não garante** pouca memória se alterações substituem array/PNG ou clonam estados; limitador conta snapshots, não bytes. | Repetir 1.000 edições incluindo pose/expressão/imagem; heap retained size e undo fidelity. |
+| Fala no preview cria até **seis PNGs** de variação facial por personagem/alvo; cache por **duas assinaturas**; blink prepara outro PNG por alvo. | Muitos personagens/estados rapidamente trocados podem manter raster em JS, memória Blink e texturas decodificadas. | 12/24/48 personagens, 2/10/30 mudanças de expressão por segundo, `Image` decode/evictions e p95. |
+| `useCharacterTransitions.ts` tem cache `128 MiB` estimados por comprimento de `dataUrl` e no máximo 240 frames; faz `Image.decode()`. | Teto não equivale a teto de memória decodificada GPU/Blink; cache pode não representar buffers transitórios. | Contadores de PNG codificado **versus** bitmaps/texturas decodificados, picos GPU. |
+| `videoCanvasCompositor.ts` mantém `MAX_IMAGE_CACHE=256` por quantidade de imagens (sem limite explícito de bytes); `videoCanvasLayerCache.ts` usa **96 MiB por surface** para canvas 1920×1080. | 256 imagens podem consumir valores muito diferentes de RAM; limite de cada surface não é orçamento do app. | Cache calor/frio em várias resoluções; residentes Canvas e texturas, GPU RAM. |
+| `VideoExportMediaFramePool` admite **96 MiB de `ImageBitmap` por surface** e um `HTMLVideoElement` por asset; fecha os bitmaps ao expulsar. | Cada surface/decoder pode consumir memória privada além desse mapa; dois workers dobram certos recursos. | Serial vs Turbo, contadores de decoders, working set de todas as surfaces. |
+| `VideoSemanticFrameCache` permite **96 MiB RAM por job**; `VideoPersistentFrameCache` permite **512 MiB em DISCO**, não RAM. Encoder e writer admitem até 2 buffers em voo. | Tetos individuais ajudam, mas **não significam soma global controlada** de caches + FFmpeg + Chromium + GPU. | Orçamento unificado com contadores por categoria e processo; RAM total árvore. |
+| Preview usa `<video>`/decoders Chromium por clipe ativo e playhead React; export usa surface/Canvas/media pool separados. | Decodificação e composição podem divergir entre preview e export; fontes concorrentes podem agravar RAM e seek. | 1/2/4 vídeos simultâneos, reverse seek A→B→A, fps variável, áudio e vídeo importado. |
+| `videoSerialChunkEncoder.ts` pré-busca com limite e `videoRawFrameWriter.ts` impõe 2 frames no pipe. | **Já existe backpressure no encode**, portanto não atribuir tudo a um suposto “buffer infinito”; investigar antes de reescrever. | Medir peakInFlight e waitMs, confirmar no stress real. |
 
-**Medições:** p50/p95/p99 de frame e seek, drift e latência A/V, memória do Electron **mais subprocessos**, GPU, bytes em trânsito, tempo total do encode, cold start, tamanho do pacote, crash/recovery e qualidade por frame. Várias rodadas com warmup, não apenas uma amostra de cinco segundos. Não prometer ganho de FPS antes dos resultados.
+### Histórico de medições: cuidado ao interpretar
 
-**Gate para adotar MLT/Skia:** cumprir paridade sem regressão funcional, pacote Windows reproduzível e compliance de licença, recovery, fallback e benefício mensurável de performance **ou** funcionalidade NLE impossível/inviável com A. Se falhar, **não migrar**; continuar com A ou testar B/D. Uma decisão inconclusiva permanece inconclusiva, nunca positiva por preferência.
+`LOCAL_HARDWARE_REPORT_2026-10-20.md` corresponde a **outro commit** (`845761c...`, branch histórica `master-desenvolvimento`), em Windows 11 com Ryzen 5 4600G, ~15,4 GiB RAM física e RX 7600 reportada. Na amostra sintética **5 s**, o relatório mediu ~**1,11 GiB** serial e ~**1,52 GiB** Turbo na árvore Electron, **sem somar confiavelmente FFmpeg**. O soak de **15 minutos** escreveu 54.000 frames corretamente, **mas após o frame 301 reutilizava frame estático**: validou encode/chunks/concat, **não** 15 minutos de composição Gacha pesada. Experimentos de GPU/WebGL reportaram `supported:false` na sessão usada; são **inconclusivos**, não prova de GPU inadequada.
 
-## 9. Persistência, dados pessoais e rollback
+**Não repetir como fato:** “o editor aguenta 15 minutos de animação complexa”, “a RX 7600 não suporta WebGL”, “o MLT economiza N GB”, “o fechamento foi um leak específico”, “FFmpeg é incapaz de NLE”, “Skia é sempre mais rápido”.
 
-1. **Não trocar `StudioDocument v1` por XML MLT.** O projeto do usuário continua sendo a fonte autoral; graph MLT e caches são derivados descartáveis.
-2. A PoC deve operar em **perfil Windows sintético isolado**. Nunca ler/modificar automaticamente PNG, pose, roupa, personagem, áudio/vídeo ou projeto pessoal para “migrar”.
-3. Usar snapshots imutáveis, manifests e SHA-256 para frames/PNGs/mídia de export; paths normalizados e limitados a raízes autorizadas; nenhum plugin/script de projeto executável.
-4. Engine experimental atrás de **feature flag desativada por padrão** e fallback imediato; projetos continuam abrindo pela implementação antiga.
-5. Nenhuma limpeza, sobrescrita ou renomeação de dados originais. Migração de schema futura apenas com backup, cópia de teste, roundtrip, plano de restauração, aceite e rollback.
-6. MP4 final somente é publicado depois da validação (ffprobe, decode, frames, áudio, hash). Crash e cancel deixam temporário gerenciável, não arquivo final enganoso.
-7. CI utiliza mídias/PNGs sintéticos; diagnósticos não incluem automaticamente nomes, caminhos, frames privados nem conversas.
+### Telemetria diagnóstica local proposta
 
-## 10. Licenças e empacotamento — bloqueadores possíveis
+Coletar em intervalos moderados e ao mudar de estado: `app.getAppMetrics()` (main/renderer/GPU/utility), `process.getProcessMemoryInfo()`/`getBlinkMemoryInfo()` (onde disponíveis), working set/commit de `ffmpeg.exe`/sidecar e **total efetivo da árvore**, VRAM/uso GPU via ferramenta Windows apropriada, contadores de caches, URLs de imagem, decoders, canvas, frames em voo, tempo `decode/render/readback/IPC/encode`, `FPS` real, `seek p95`, GC, autosaves e revisão da cena. Crash events `render-process-gone`, `child-process-gone`, status `oom/crashed`. Logs sanitizados por `jobId`, sem paths pessoais e sem frames de projetos privados.
 
-- **MLT framework e MLT++:** política oficial cita **LGPLv2.1**, mas **plugins variam**, e utilitários como `melt` são GPL. Auditar os **binários realmente distribuídos** (DLL, módulos, codecs, dependências, avisos/código-fonte). Não afirmar que todo MLT é LGPL.
-- **FFmpeg:** LGPL na configuração padrão, mas opções/depêndencias podem ativar GPL ou condições adicionais. `--enable-gpl`, `--enable-nonfree`, origem/hash do pacote e licenças de codecs/patentes precisam de revisão.
-- **Skia:** licença principal BSD-3-Clause; dependências de fontes, codec, imagem e build também demandam inventário. Build oficial usa **GN/Ninja** e pode envolver configurações/dlls complexas.
-- **Electron/Windows:** provar execução completamente offline sem SDK/MLT/FFmpeg global, com permissões mínimas, paths seguros, DLL versionada, crash supervisionado, atualizador e diagnóstico sanitizado.
-- **Contrato:** isto é checklist de engenharia; distribuição comercial exige revisão jurídica própria.
+As API de Electron **não** medem automaticamente todo o consumo de todas as dependências nativas; complementar com métricas Windows e correlacionar por PID. Perf counters devem ser opcionais para uso comum e sempre com baixa sobrecarga.
 
-## 11. Backlog de execução, sem implantação prematura
+## 3. Pesquisa de **engines audiovisuais**, separadas da interface
 
-| Ordem | Entrega pequena e verificável | Gate |
+**Pergunta correta:** qual biblioteca resolve *decode, seek, áudio, time mapping, composição de vídeo e encode* do nosso **SceneIR Gacha** ao menor custo total, com memória controlável e preview/export corretos?
+
+| Tecnologia / aplicação de referência | O que vem pronto e é útil | O que não entrega ao G-V5 | Custos, licença e situação |
+| --- | --- | --- | --- |
+| **FFmpeg CLI + ffprobe (atual)** | Containers, codecs, filtros/overlay, `atrim`/`amix`/`adelay`, encode/mux, verificação e subprocess isolado; arquitetura existente já testada | Timeline editorial interativa e caracter Gacha; cada frame ainda precisa vir do nosso renderer | **BASELINE REUTILIZÁVEL**; build LGPL/GPL variável, configurá-lo e distribuí-lo. |
+| **libavcodec/libavformat/libavfilter/libswresample** | A mesma pilha FFmpeg via API C, controle de demux/decode/seek/filter e filas | Não oferece UI/NLE de alto nível, complexidade de lifecycle/PTS/thread | **Candidata nativa se CLI/Chromium decoders forem gargalo mensurado**; não port por preferência. |
+| **MLT Framework + MLT++** | Producers, playlists, tractors, filters, transitions, consumers, FFmpeg avformat, frame pull/lazy; atual **7.42.0 (03/10/2026)** adicionou módulo placebo e mix de ducking | Renderizador/semântica Gacha, UI, licença homogênea entre plugins, orçamento global de RAM | **Candidato forte de PoC NLE**, não obrigação. Core/MLT++ LGPLv2.1, módulos variáveis (qimage GPLv2). |
+| **GStreamer + Editing Services (GES)** | Pipelines, codecs, scheduling, timeline/layers/tracks para aplicativo editor, Windows | Caracter Gacha; exige bridge/semântica, seleção de plugins e empacotamento privado | **Concorrente de MLT se precisar NLE maior**; GES LGPL, plugins devem ser auditados. |
+| **libopenshot** | Biblioteca C++ de vídeo/áudio, layers, keyframes, time remapping, FFmpeg, bindings e Qt player | Não interpreta StudioDocument, faces e props Gacha; pode carregar mais dependências | **Alternativa secundária**; LGPLv3+ ou comercial, dependências como JUCE/FFmpeg com termos próprios. |
+| **libmpv / mpv** | Playback, seek, cache de leitura, GPU, render API | Não é pipeline NLE/engine export + timelines + personagens | **Referência ou candidato a player isolado**, somente se resolver decode/preview medido. |
+| **libobs / OBS Studio** | Fontes, cenas, filtros, outputs, encoders, mixer e desenho em tempo real | Focado em captura/transmissão; editor NLE de busca arbitrária/frames exatos não vem pronto | **Aprender modularidade de fontes e isolamento**, não escolher como NLE sem PoC excepcional. |
+| **Remotion** | React declarativo por frame, render paralelo por Chrome tabs, áudio/mídia e encoder integrado | UI do editor, Gacha e solução automática para OOM; browser tabs paralelas podem pressionar RAM | **Aprender snapshot/pipeline**, não importar por padrão. **Licença própria** com elegibilidade/limitações comerciais e proibição de certas derivações; não tratar como MIT. |
+| **Mediabunny + WebCodecs** | Demux/mux e API TS de mídia, decode/encode WebCodecs e integração com UI | Cobertura varia por navegador/hardware/codec, fila/frame lifecycle, gestão de áudio, NLE Gacha | **Spike leve de preview/decodificação**, caso Chromium no Windows suporte as features. **MPL-2.0**. |
+| **OpenTimelineIO** | Intercâmbio de edição/cortes e convenções de tempo | **Não renderiza vídeo**, não substitui media engine | **Interoperabilidade futura**, fora do núcleo de estabilidade. |
+
+### O que copiar *como ideias*, não código
+
+- **Kdenlive + Shotcut** (MLT): pipeline visual separado da timeline, proxies dos originais, thumbnails/waveform, preview render de trechos com efeitos, jobs e fallback. Kdenlive explicita que **proxy não resolve tudo**: efeitos caros podem exigir pré-renderização.
+- **OpenShot** (libopenshot): time mapping por curvas, frame readers/writers, cache e controle de concorrência.
+- **OBS** (libobs): `source / scene / filter / output / encoder` como módulos, CPU/GPU e hot swap; não confundir tempo real de streaming com seek aleatório de uma NLE.
+- **mpv**: decode/readahead/adaptação a seeks, separação de fontes e render, limites configuráveis.
+- **Blender VSE, Natron e Olive**: grafos/cache/preview por contexto; *Olive declara-se alpha/instável*, não base de produção. Natron/Blender têm licenças copyleft relevantes; extrair ideias, não código por atalho.
+- **LosslessCut** (Electron/FFmpeg): bom exemplo de manter GUI no Electron e codec no processo de mídia; seu foco é trim/corte sem recodificação, **não** animação Gacha.
+- **Remotion**: concorrência limitada (a documentação alerta que paralelismo excessivo causa crash) e frames por chamada; licença precisa ser tratada antes de inclusão.
+
+**Conclusão de mídia:** FFmpeg atual **já oferece grande parte da infraestrutura que precisamos**. Uma engine NLE como MLT/GES só deve vencer se **simplificar o produto e melhorar estabilidade/perf sob stress**, incluindo empacotamento/licença. A aposta não é “MLT vs construir vídeo inteiro”; é **MLT/GES vs adaptar nosso FFmpeg + SceneIR**, com protótipos equivalentes.
+
+## 4. Pesquisa de **renderizadores 2D e GPU** para personagens Gacha
+
+| Tecnologia | Pontos fortes comprovados nas fontes | Dificuldade para o Native Gacha | Recomendação de laboratório |
+| --- | --- | --- | --- |
+| **Canvas 2D/Chromium atual** | Render e geometria Gacha já existem; tipografia CSS/Canvas próxima dos previews; nenhum runtime extra | Decoded images e readback, CPU e recursos do Chromium, inconsistências entre DOM/Canvas | **Oráculo de comportamento; baseline** |
+| **PixiJS v8 WebGL/WebGL2** | Sprite batching, render groups, texturas, GPU; **WebGL é recomendação oficial de produção** | Port de máscaras/texto/layout, GC de texturas, readback para encoder; aceler. não foi comprovada no teste anterior | **Primeiro candidato visual alternativo** quando GPU real estiver funcional |
+| **PixiJS WebGPU** | API moderna GPU; pode ser eficiente em algumas placas | Compatibilidade e diferenças por browser; Pixi o trata como menos maduro | **Somente PoC e fallback WebGL/Canvas** |
+| **Skia nativo (C++ CPU/GPU)** | Desenho 2D maduro em Chromium/Flutter; imagem, texto, clipping, blending, transformações; BSD-3-Clause | Port integral de personagem/renderer/typography, build GN/Ninja, codecs/fontes, bridge com Electron | **Candidato nativo; não pré-requisito de mídia** |
+| **Blend2D (C++ CPU)** | Rasterizador 2D otimizado/JIT com multithread, suporte a imagem e texto; licença zlib | Sem compositor audiovisual/decoder; comparar qualidade de máscaras/fontes, custo SIMD/JIT | **PoC alternativa CPU de menor escopo** se GPU indisponível |
+| **ThorVG** | Vetor SVG/Lottie rápido e leve, MIT | Assets majoritariamente PNG e regras Gacha; não compõe vídeos | **Opção futura para efeitos vetoriais**, não engine principal |
+| **Dawn / wgpu** | APIs GPU nativas portáveis (D3D12/Vulkan/Metal) | Abstrações de baixo nível exigem *construir nosso próprio raster 2D*, tipografia e pipelines | **Não priorizar**; fundamento técnico, não editor pronto |
+| **Qt Quick/QRhi** | Scene graph e render backends Windows, Qt RHI | Troca de UI ou runtime Qt pesado sem necessidade; licença/ABI/Qrhi Private | **Não adotar** sem requisito técnico novo |
+| **libplacebo** | Render/pixel conversion, scaling, HDR/tone map, shaders e GPU; **MLT 7.42 integra placebo** | Não monta personagem/fala/pose e não é NLE completo | **Possível estágio de pós-processamento**, não renderer Gacha |
+
+**Não cometer falso atalho:** Skia ser usado pelo Chromium **não significa** que chamar Skia em C++ reproduz automaticamente o DOM, fontes e SVG do Native Gacha. Do mesmo modo, PixiJS **não garante** superioridade em leitura de pixels para FFmpeg. A comparação precisa incluir upload/readback, GPU/CPU fallback, alpha premultiplicado, máscara, CSS/texto e manutenção.
+
+## 5. Matriz de opções **independentes** — não amarrar quatro tecnologias
+
+Separar **três eixos**:
+
+1. **Editor e contratos:** Electron + React + `StudioDocument` + `SceneCompiler` existente (preferência estável).
+2. **Mídia/tempo/áudio:** (M0) FFmpeg subprocess/CLI e decode atual modernizado; (M1) libav* com acesso nativo; (M2) MLT; (M3) GES; (M4) libopenshot.
+3. **Render Gacha/compositor:** (R0) renderer atual/Canvas 2D/DOM; (R1) PixiJS WebGL; (R2) Skia CPU/GPU; (R3) Blend2D CPU; (R4) renderer próprio GPU baixo nível **somente se exigido por provas**.
+4. **Local de execução:** (E0) processo auxiliar Node/Electron `utilityProcess` ou renderer isolado; (E1) sidecar externo nativo supervisionado. **E1 não pressupõe R2 nem M2**.
+
+Combinações a medir primeiro:
+
+| Pipeline | Combinação | Benefício que provaria sua adoção | Preocupação |
+| --- | --- | --- | --- |
+| **P0 — baseline** | UI React + SceneIR TS + Canvas/DOM + FFmpeg CLI + surfaces isoladas atuais | Referência de paridade, custo e regressões | Não resolve sozinho memória se projeto inteiro fica no React |
+| **P1 — JS isolado e orçado** | UI React + SceneIR TS + render em processo dedicado com caches orçados + FFmpeg atual | Menor esforço para **conter pressão de memória**, manter semântica | Processo separado não torna GPU/OS ilimitados |
+| **P2 — compositor WebGL** | P1 + PixiJS (fallback Canvas) | Redução de CPU e custo de sprites no Windows | GPU pode falhar/indisponível; readback pode anular ganho |
+| **P3 — NLE híbrido MLT/GES** | UI/SceneIR TS + backend MLT **ou** GES para mídia/áudio, renderer Gacha separado | Mixer/seek multitrack/formatos mais simples e robustos | Tradução Gacha→NLE e DLLs, duas pipelines |
+| **P4 — renderer nativo sem MLT** | UI/SceneIR + sidecar C++ com Skia/Blend2D e libav*/FFmpeg | Reduz dependencia Chromium no raster; controle de buffers | Port caro, sincronização e manutenção C++ |
+| **P5 — nativo completo** | UI/SceneIR + sidecar C++ + MLT + Skia | Integração ampla NLE + Gacha caso P3/P4 tenham vencido | Integrações e licenças máximas, **última opção, não default** |
+
+**Recomendação de sequência:** **P0 diagnóstico → P1 limites/processos/proxy → P2 visual e P3 audiovisual em laboratório independentes → P4/P5 apenas se benchmarks justificarem.** Essa ordem ataca o relato de OOM antes de investir meses numa porta C++ sem benefício demonstrado.
+
+## 6. Arquitetura de produção proposta: projeto leve, demanda de quadros, processos recuperáveis
+
+`StudioDocument v1 + arquivos originais (imutáveis)`  
+→ `ProjectRepository: validação, backup, migração apenas em cópias`  
+→ `SceneCompiler TS: evaluate(frameIndex), eventos Gacha, z-order, tempo racional`  
+→ `SceneIR serializável e versionado + AssetManifest (ID/hash/versão)`  
+→ `FrameService: getFrame(frame, revision, quality, deadline)`  
+→ `MediaService: decode/seek/audio clock; FFmpeg/MLT/GES intercambiáveis`  
+→ `GachaRenderer: Canvas/Pixi/Skia por adaptadores; sprites e textos por IDs`  
+→ `Preview frames/transporte (sem JSON gigante) **ou** Export snapshot imutável + jobs`  
+→ `FFprobe, decode completo, publish atômico e registro recuperável`
+
+### Contratos internos obrigatórios
+
+- **Tempo:** índice inteiro absoluto do projeto a 60 FPS hoje, base racional `num/den` ao importar VFR e ao formar PTS. Um relógio mestre A/V; nunca derivar posição final apenas de `requestAnimationFrame` quando o áudio real governa o playback.
+- **SceneIR:** uma chamada para o frame N retorna *exatamente* estado de personagem, boca, blink, pose, face normal/PT, balloon, vídeo ativo, ordem e transformações. Sem aplicação cumulativa de transforms a cada tick.
+- **AssetManifest:** `id` opaco, hash SHA-256, tipo, dimensão e versão de renderer. PNGs/media no disco; não transportar strings `dataUrl` a cada quadro nem copiar bytes de asset para cada key.
+- **Render leases:** cada frame tem `frameId`, `revision`, `timestamp`, `quality`, `byteLength`, `pixelFormat`, `colorSpace`, `stride`, owner e ACK/release. Recurso sem proprietário/expiração não entra no pipeline.
+- **Preview:** request mais recente prevalece; cancelar lógico e descartar resposta de revisão antiga. **Máximo de frames e bytes em voo configurado**. Canvas de seleção/control handles é camada leve no React, não obrigatório copiar pixels a cada drag.
+- **Export:** snapshot/pins v1, cache derivado, jobs/chunks/checksum e fallback serial já existentes; não usar estado mutável do playhead como fonte durante encode.
+- **Integridade:** áudio do mesmo frame/tempo; alpha correto; preview 540p/720p quando necessário e export 1080p/60 **sem usar proxy na qualidade final**.
+- **IPC:** comandos pequenos em canal autenticado por sessão/revision; frames em buffers de memória compartilhada ou transferíveis medidos; validar tipo, ID, tamanho, CRC/hash se necessário e caminhos permitidos.
+- **Falhas:** watchdog distingue crash, timeout, OOM e cancel. Se renderer de preview morrer, editor tenta recuperar sessão sem apagar dados; export falha/reinicia com job recuperável.
+
+### Memória: o que “limitada” precisa significar
+
+Full HD RGBA = **8.294.400 bytes (~7,91 MiB) por frame**. 4K UHD RGBA = **33.177.600 bytes (~31,64 MiB)**. Uma cópia a 60 FPS tem tráfego teórico de ~**498 MB/s (1080p)** ou **1,99 GB/s (4K)** *antes* de outras cópias e GPU readback. Esses números são aritméticos, **não** benchmark.
+
+- **Orçamento GLOBAL por sessão** para RAM e VRAM: agregador conta cache PNG comprimido, decodificado, atlas de textura, video decoder frames, imagem pré-render, surfaces, buffer IPC, job encode e cache semântico. Caches de disco têm orçamento distinto.
+- **Orçamentos por categoria e por PID**, não apenas 128 MiB aqui e 96 MiB ali. Dois workers significam dois grupos de recursos; reduzir workers dinamicamente sob pressão.
+- **Admissão e eviction por bytes e relevância temporal:** LRU de sprites/proxies, limite por resolução e visibilidade; frame fora do playhead e fora do horizonte não é mantido por padrão.
+- **Qualidade adaptativa:** diminuir preview para 540p/720p, usar proxy, congelar visual pesado temporariamente em drag, limitar prefetch, reduzir de 2 workers para 1, alertar usuário e preservar trabalho.
+- **Backpressure completo:** decode → render → compose → IPC → encode com filas finitas; a fase seguinte precisa liberar recursos antes de receber novos. `VideoFrame.close()` / `ImageBitmap.close()`/destroy de texturas e buffer ownership obrigatórios quando a API for usada.
+- **Disco:** caching comprimido e pré-render de trechos (ex.: mudanças de pose/efeitos) com hash da revisão; invalidar segmentos afetados e manter originals imutáveis. Evitar dezenas de MP4 enormes com resave por segundo de drag.
+- **Processos:** preferir isolamento de render/decoder do renderer UI. No Windows, avaliar `Job Objects` para limites/monitoramento do sidecar e árvore de subprocessos; **limitar memória pode causar falha controlada, não garante prevenção de toda falha do sistema**.
+- **Desempenho previsível:** orçamento adaptado à RAM/VRAM livre do PC, com limites mínimos e máximos em MiB definidos *após profiling*, não fixar orçamento “seguro para todos” sem dados.
+
+## 7. Contrato de paridade que **nenhuma engine pode quebrar**
+
+Preservar, em projeto antigo e novo:
+
+- Cabeça/corpo/pose/roupas/cabelo/acessórios, ocultações, juntas, flip, pivôs, escala/crop, transparência, layer order e efeitos.
+- Face/expressões base do Customizador sem sobreposição dupla; normal sem deslocar pupilas; **PT independente esquerda/direita X/Y/rotação** herdando outros elementos faciais, fallback legado e persistência.
+- Mudança de pose/expressão por blocos; transição de 15 frames, gap e borda; personagem desaparece/volta sem dar salto.
+- Balões/Unicode/fontes, ligações ao speaker, boca durante `speech`, seis fases de talk e blink determinístico.
+- Z-index de imagem e vídeo, fundo, quadro da mídia original no tempo correto e áudio com mute/volume por clip.
+- `animated` e `static-characters` idênticos semanticamente entre preview e MP4.
+- Save/load v1, undo/redo, autosave, preview fullscreen, import/export e reconciliação de assets. Links ausentes devem gerar aviso restaurável, não substituir mídia silenciosamente.
+
+Oráculo por camadas: comparar estado semântico estruturado (ID, pose, expressão, PT, mouth/blink, geometry); depois máscara/alpha pixel por ROI e fontes; depois MP4 inteiro e áudio (PTS, frame count, drift). **SSIM alto não desculpa erro de pupila, balão ou frame.**
+
+## 8. Plano experimental Windows por etapas, sem dependências no produto até aprovação
+
+### G0 — Reproduzir a falha antes de substituir motor
+
+1. Criar no PC uma **cópia não destrutiva do projeto que travou**, ou fixture sintético equivalente, perfil isolado; nunca subir mídia pessoal.
+2. Repetir: abrir → inserir muitos blocos → trocar expressões/poses → Play longo → seek repetido → export, com marcador temporal por evento. Saber em qual ação o app fecha.
+3. Coletar logs sanitizados de `render-process-gone/child-process-gone`, heap Blink/V8, RAM árvore (inclusive FFmpeg), VRAM, contadores de cache e timing de cada etapa. Identificar se é memory leak (cresce sem plateau), pico transitório, GPU crash, deadlock ou decoder thrash.
+4. Medir com **um** worker de export e GPU real habilitada quando possível; separar bug de driver de arquitetura.
+5. Criar `GOLDEN_SCENE_MANIFEST` sintético, hashes de assets e frames, testes A→B→A e save/load. A reprodução de falha nunca edita original.
+
+**Gate G0:** relatório com hipótese mais provável sustentada por contadores/trace e baseline real; se irreproduzível, documentar limite e executar perfil sintético pesado de qualquer modo.
+
+### G1 — Proteger o atual sem trocar engine (spike de custo baixo)
+
+- Orçar memória por categoria/processo, corrigir retenções específicas, carregar só projeto aberto, reduzir `dataUrl` em estados/histórico, colocar assets em cache de conteúdo, limitar caches por bytes **inclusive bitmaps GPU**.
+- Separar tarefas pesadas em worker/processo supervisionado e medir preview at 540/720p; usar proxies já existentes, sem degradar export.
+- Filas finitas, latest-only requests e cancelamento; tratar crash de renderer com recuperação de projeto/autosave. Testar 1000 edições undo/redo e previews de 4 vídeos.
+- **Gate:** projeto pesado estabiliza e UI não morre; se G1 resolver, **não há motivo automático para C++/MLT**.
+
+### G2 — Comparar motores de mídia com **o mesmo Gacha pré-renderizado**
+
+**Cena de controle:** 1920×1080, 60 FPS, 10–30 s sintéticos. Fundo, 2 personagens de modelos diferentes, mudanças de pose e normal/PT, fala/blink, balão, 2 vídeos sobrepostos + trilhas de áudio, gap, hold e transformação; fonte 24/25/29,97/60 e VFR em casos separados. Mesmas imagens RGBA/PNG de Gacha fornecidas para *cada* pipeline, isolando o custo audiovisual.
+
+- **M0:** FFmpeg CLI e melhorias no reader/scheduler atual.
+- **M1:** libav* em sidecar **só se** custo CLI/decoder for gargalo.
+- **M2:** MLT/MLT++ headless + custom producer/raster, módulo mínimo, consumer avformat.
+- **M3:** GStreamer/GES se MLT não atender e necessidade de timeline/multi-stream justificar; não fazer quatro portas nativas completas por obrigação.
+- **M4:** libopenshot sob demanda se um requisito de efeitos/time mapping a favoreça.
+
+**Métrica:** decode seek p50/p95, frame correctness e AV sync, áudio mix, intervalos com blank frame, memória agregada e pico, resize/color/alpha, CPU/GPU/threads, montagem do grafo e custo de edição incremental, crash/restart, DLL/plugin BOM e instalador Windows totalmente offline. Validar pacote sem `ffmpeg.exe` global.
+
+**Gate:** promover biblioteca somente se ganhar em requisitos/perf/manutenção com qualidade e licença aceitáveis. Se MLT demandar converter todos os blocos Gacha em vídeo intermediário só para reproduzi-los, medir volume, invalidation e latência; pode invalidar a escolha.
+
+### G3 — Comparar raster Gacha com motor de mídia congelado
+
+**R0 Canvas vs R1 PixiJS WebGL vs R2 Skia CPU/GPU**, `Blend2D` como alternativa CPU se houver gargalo de raster; não comparar ao mesmo tempo com mudanças de decoder. Testar PNG sheets, alpha premultiplied, clipping, olhos/pupila PT, pose/roupa, 15 frames de interpolação, 6 fases de boca, balões Unicode, textos e 2 personagens sobrepostos. Incluir GPU desabilitada e GPU habilitada real, sem assumir que a RX 7600 falhou no teste anterior.
+
+**Gate:** paridade visual e memória. Ganho de draw calls não basta se GPU readback/IPC para MP4 for pior. Skia só entra na produção depois de provar **um personagem completo com todos os atributos**, e uma porta incremental de catálogo/asset.
+
+### G4 — Teste pesado **animado** e não só encode de frame estático
+
+| Perfil | Conteúdo sintético editável | O que estressa |
 | --- | --- | --- |
-| **R0** | Definir requisitos do Video Studio definitivo (histórias Gacha vs NLE, tracks, câmera, áudio, efeitos) | aprovação do escopo de produto |
-| **R1** | Inventariar funções do editor atual e montar fixtures/goldens Windows | todos os recursos observáveis e projetos v1 legíveis |
-| **R2** | Extrair comandos/store/timeline/stage do monólito React mantendo renderer e formato | UI, histórico, save/load e export idênticos |
-| **R3** | PoC S2: FFmpeg vs MLT **sobre o mesmo raster Gacha** | comparação Windows de codec, áudio, timestamps, package BOM |
-| **R4** | PoC S3/S4: Skia vs render 2D atual e IPC de sidecar | paridade de personagem/PT, texto, máscaras; latência e memória |
-| **R5** | Registrar ADR selecionando A/B/C/D, fontes, commits, jobs e números | decisão baseada em dados; fallback e licença |
-| **R6** | Implementar em fatias sob feature flag, sem substituir projeto de usuário | regressão Windows + Aceite visual em cada fatia |
-| **R7** | Testar com **cópias locais** de projetos reais e instalador Windows | nenhuma perda; fallback funciona; autorização específica para release/merge |
+| **F0 — controle** | 2 atores, um balão, 1 mídia 1080p, 60 FPS, 30 s | Golden por frame, timebase e paridade |
+| **F1 — personagens** | 12 atores, 200+ keys de expressão/pose, vários balões e blink/talk, 3–5 min | CPU de interpolação, imagens, undo, memória |
+| **F2 — mídia** | 4 vídeos simultâneos com áudio, formatos mistos 24/30/60/VFR, 3–5 min | Decoders/seek, áudio, cache e VRAM |
+| **F3 — extremo** | 24–48 atores + 4 mídias, mudança facial frequente, playback/seek/edits contínuos, 15–30 min | Plateau RAM, GC, performance e tempo de resposta |
+| **F4 — duração** | Ao menos 15 min de **composição efetivamente variável**, sem “repetir frame após 301”, e export final | Crescimento real de memória, recovery e áudio longo |
+| **F5 — limites/crash** | Picos de cache, GPU loss, kill sidecar/FFmpeg, mídia ausente, projeto corrompido em cópia, falta de espaço | Editor permanece vivo, projeto íntegro, fallback |
+| **F6 — compatibilidade** | Projeto v1 legado, normal/PT manual, renderer fallback CPU, instalador Windows sem software extra | Sem migração destrutiva, preview/export legíveis |
 
-**Definição de pronto deste planejamento:** escolher **o problema e o experimento a fazer primeiro**, não escolher antecipadamente uma engine. Este documento não aprova downloads de dependências, criação de sidecar de produção, edição da `main` nem migração de dados.
+**Indicadores/objetivos iniciais (ajustáveis após baseline, não resultados medidos):** zero perda/corrupção dos dados de teste; zero encerramento do **editor principal** ao matar sidecar; memória agregada deve estabilizar ou degradar preview ordenadamente ao aproximar orçamento; nenhuma fila sem limite; nenhuma divergência semântica por frame; saída final decodificável; o MP4 usa todos os frames corretos e áudio no tempo. Reportar `p50/p95/p99`, GC, RAM/VRAM pico e base, pausas UI e duração de export. **Não aprovar** uma solução só porque roda 5 s ou porque 15 min de conteúdo majoritariamente estático passam.
 
-## 12. Fontes técnicas verificadas em 2026-10-23
+Comparar mínimo de 3 execuções por perfil (aquecimento separado), registrar SHA, CPU/GPU/driver, encoder real, resolução, orçamento, timestamps e hashes de frames. A tolerância visual/áudio deve ser explícita na fixture; evitar promessas rígidas antes da medição.
 
-- MLT, funcionamento producer/consumer: https://mltframework.org/docs/framework/
-- API MLT++: https://mltframework.org/docs/mlt%2B%2B/
-- Consumer avformat/FFmpeg: https://mltframework.org/plugins/ConsumerAvformat/
-- Política de licenças MLT: https://mltframework.org/docs/copyrightpolicy/
-- Funcionalidades e plugins MLT: https://www.mltframework.org/features/
-- Skia e plataformas: https://skia.org/docs/
-- Build GN/Ninja e Windows: https://skia.org/docs/user/build/
-- Licença Skia: https://github.com/google/skia/blob/main/LICENSE
-- Licença e redistribuição FFmpeg: https://ffmpeg.org/legal.html
-- Electron offscreen bitmap/shared texture: https://www.electronjs.org/docs/latest/tutorial/offscreen-rendering
+### G5 — Critério de promoção de tecnologia / ADR
 
-**Regra final:** estado comprovado do código e testes do HEAD > texto histórico. Sem benchmark reproduzível, versão, hardware e comparação de saída, não é possível afirmar que uma engine será melhor que outra.
+| Critério | Bloqueio obrigatório |
+| --- | --- |
+| Segurança e dados | Qualquer perda, auto-migração destrutiva, paths fora da raiz ou upload involuntário é veto |
+| Robustez | Editor UI morre em crash controlado de subprocesso, filas ilimitadas, crescimento indefinido ou dados não recuperáveis = veto |
+| Correção | Erro de pose/expressão/olho PT/fala/gap/z-order, frame missing, áudio sem sincronia = veto |
+| Windows | Não roda offline num Windows limpo, não empacota todas as DLLs/codecs/CRT, quebra aceleração/fallback = veto |
+| Licenças | Um plugin obrigatório incompatível com distribuição e política do projeto = veto |
+| Desempenho/custo | Avanço em NLE/qualidade/perf/manutenção **mensurável** contra baseline; caso contrário continuar simples |
+
+Toda adoção vira ADR com links para commits/CI, binários e configuração, números A/B, decisão de licenças, rollback e dívida de manutenção. Resultados faltantes significam **“não decidido”**.
+
+## 9. O que manter, o que substituir e o que explicitamente descartar do plano antigo
+
+| Item anterior | Revisão após pesquisa |
+| --- | --- |
+| `Electron + C++ + MLT + Skia` como arquitetura “completa” | **RETIRAR como destino pré-selecionado.** Combinação possível somente se G2 + G3 + G4 justificarem as duas bibliotecas e C++. |
+| MLT como primeira escolha de motor | **REBAIXAR a candidato de NLE**, competindo com FFmpeg CLI/libav e GES. MLT 7.42 é atual, mas não tem semântica Gacha pronta. |
+| “Migrar o renderizador Gacha definitivamente ao Skia” | **TORNAR CONDICIONAL.** Pode manter TypeScript/Canvas/Pixi por anos se paridade e memória forem melhores. |
+| “Reescrever tudo do zero” | **NÃO.** Refazer orquestração/estado/infra onde necessário; manter formatos, testes, SceneIR, catálogo e algoritmos semânticos. |
+| “Usar PNG da tela por frame no IPC” | **EVITAR**: recursos ID/hash + frames transferíveis e backpressure; render asset somente na mudança de estado. |
+| “Mais workers é sempre melhor” | **DESCARTAR**: orçamento único, autotuning por pressão real e serial como fallback de correção. |
+| “Soak 15 min comprova animação pesada” | **CORRIGIR**: fixture histórica reutilizava frame após 301; falta soak continuamente animado. |
+| “Fazer o projeto MLT XML” | **DESCARTAR**: arquivo autoral `StudioDocument v1` preservado. |
+| "Importar Shotcut/Kdenlive/Olive/OBS/Natron/Blender" | **NÃO**: grandes apps, contratos e licenças próprias; aprender padrões e escrever só o adaptador necessário. |
+| “WebCodecs é solução universal” | **NÃO**: testar codec, hardware, gerenciamento de `VideoFrame.close` e fila do encoder; MDN alerta que menos de 100 frames vivos podem derrubar aplicativos. |
+
+## 10. Segurança, distribuição e licenças (checagem por **binário real**)
+
+- **MLT/MLT++:** framework LGPLv2.1 de acordo com política oficial; **plugins variam** (`qimage` listado GPLv2), `melt` GPL; módulos opcionais e libs transitivas podem mudar a análise. Preferir subset minimalista headless; licenciar **cada** DLL/plugin embarcado. `placebo` GPU é novidade de v7.42, não tratar “tem GPU” como benchmark positivo.
+- **FFmpeg/libav:** LGPL/GPL depende de flags e bibliotecas ativadas; codecs/encoders e patentes são questões separadas. Fixar versão/hash e procurar suporte real a `h264_mf`/`amf`/`qsv` sem assumir que “listed” = utilizável.
+- **GES/GStreamer:** GES LGPL, módulos/plugins variam; Windows exige runtime/plugins bem empacotados e paths controlados; não depender de instalação global.
+- **libopenshot:** LGPLv3+ **ou licença comercial**, com dependências como FFmpeg/JUCE sob termos próprios.
+- **Skia BSD-3-Clause**, **PixiJS MIT**, **Blend2D zlib**, **ThorVG MIT**, **Mediabunny MPL-2.0**, **Dawn Apache-2.0**: auditar dependências e notices, não presumir igualdade de todos os builds.
+- **Remotion:** **licença própria**, não tratar como biblioteca permissiva geral para incorporar num editor distribuído sem verificar elegibilidade/uso. **Shotcut GPLv3, Natron GPLv2, Olive/Blender e outros copyleft**: não copiar código de aplicações completas sem análise legal.
+- **IPC:** validação rigorosa; nunca abrir paths arbitrários do projeto em função nativa. Sem execução de shaders/plugins/scripts desconhecidos por padrão.
+- **Windows:** builds reproduzíveis, arquitetura x64, símbolos para dump local, assinatura/fallback, serviço supervisee, binários no instalador. Testes em ambiente limpo sem FFmpeg/MLT/SDK/Visual Studio no PATH.
+- **Telemetria:** opt-in para diagnóstico rico; não registrar path/título de projeto, PNG, texto, rosto ou vídeo por padrão.
+
+Checklist de engenharia, não parecer jurídico. Versões e licenças podem mudar; conferir o artefato exato **antes de distribuir**.
+
+## 11. Execução recomendada (backlog atualizado)
+
+**R0 — Definição de produto**: confirmar o foco principal nas histórias/encenação Gacha, sem perder recursos de edição de mídia. Especificar separadamente tracks de personagem (estado/pose/expressão/movimento), balões e mídia tradicional; estabilizar semântica e UX.
+
+**R1 — Capturar o crash real em ambiente isolado e estabelecer orçamento**: scripts de stress e logging local, reproduzir projeto grande *em cópia*; evidência de RAM/VRAM da árvore, GPU e processos, sem modificar assets de produção.
+
+**R2 — Modernização mínima com maior valor**: store/editor + cache por bytes, desduplicar assets/snapshots, limitar decoders/pre-render, filtrar imagens carregadas, proxy, backpressure, watchdog e erro recuperável. O trabalho é isolado em fatias com rollback e screenshots Windows.
+
+**R3 — Laboratório de media backend**: M0 FFmpeg atual vs M2 MLT, e só abrir M1 libav/M3 GES/M4 libopenshot se houver razão. Mesmo SceneIR/raster, resultados MP4+AAC e seek/PTS/falhas.
+
+**R4 — Laboratório de compositor**: R0 Canvas vs R1 PixiJS WebGL com GPU comprovada. Se consumo/cor/paridade forem insuficientes, R2 Skia CPU/GPU e Blend2D CPU. Sem alterar o motor audiovisual ao mesmo tempo.
+
+**R5 — Decisão ADR**: escolher os adaptadores aprovados pelos gates, inclusive a possibilidade de **ficar com FFmpeg, Canvas e uma arquitetura de processos melhor**; registrar custos, o que foi rejeitado e o que permanece aberto.
+
+**R6 — Implantar por etapas e feature flags**: projeto v1 legível → oráculo de render → preview → áudio/seek → export → otimização e GPU; remover renderer anterior só depois de testes/rollback.
+
+**R7 — Verificar aceite de produto com o criador**: abrir cópia local de cenas grandes reais, testar diálogo/olhos PT/blink/poses, memória e export; liberar somente após CI Windows, instalador offline, hardware real e autorização específica para merge/release.
+
+**Não fazer nesta fase documental:** criar `native/` de produção, baixar DLLs, substituir framework, editar dados pessoais, reescrever `main` ou prometer benchmark que não foi executado.
+
+## 12. Referências primárias e links de pesquisa (verificados 23/10/2026)
+
+**Mídia/NLE:**  
+[MLT framework/producer-consumer](https://mltframework.org/docs/framework/) · [MLT++](https://mltframework.org/docs/mlt%2B%2B/) · [MLT 7.42 release 03/10/2026](https://www.mltframework.org/blog/v7.42.0_released/) · [MLT license policy](https://mltframework.org/docs/copyrightpolicy/) · [MLT qimage GPL](https://www.mltframework.org/plugins/ProducerQimage/) · [MLT placebo/render](https://mltframework.org/plugins/FilterPlacebo-render/) · [GES architecture](https://gstreamer.freedesktop.org/documentation/gst-editing-services/) · [GStreamer Windows deployment](https://gstreamer.freedesktop.org/documentation/deploying/windows.html) · [FFmpeg libraries](https://ffmpeg.org/doxygen/trunk/md_README.html) · [FFmpeg legal](https://ffmpeg.org/legal.html) · [libopenshot features/license](https://www.openshot.org/libopenshot/) · [libmpv API](https://github.com/mpv-player/mpv/blob/master/include/mpv/client.h).
+
+**Editores e boas práticas:**  
+[Kdenlive architecture](https://github.com/KDE/kdenlive/blob/master/dev-docs/architecture.md) · [Kdenlive proxies](https://docs.kdenlive.org/en/project_and_asset_management/project_settings/proxy_settings.html) · [Kdenlive timeline preview render](https://docs.kdenlive.org/en/tips_and_tricks/tips_and_tricks/timeline_preview_rendering.html) · [Shotcut dependencies](https://github.com/mltframework/shotcut) · [OBS libobs backend](https://docs.obsproject.com/backend-design) · [Remotion concurrency](https://www.remotiondocs.com/docs/terminology/concurrency) · [Remotion license](https://www.remotion.dev/docs/license/pricing) · [Remotion video limits](https://cloudrun.remotion.dev/docs/video-vs-offthreadvideo) · [Olive alpha status](https://github.com/olive-editor/olive/blob/master/README.md) · [Natron](https://github.com/NatronGitHub/Natron) · [LosslessCut Electron](https://github.com/mifi/lossless-cut).
+
+**Renderização:**  
+[PixiJS production WebGL](https://pixijs.com/guides/components/renderers/) · [Skia 2D docs](https://skia.org/docs/) · [Skia license](https://github.com/google/skia/blob/main/LICENSE) · [Blend2D SIMD/JIT](https://blend2d.com/) · [ThorVG](https://www.thorvg.org/) · [Dawn/WebGPU](https://github.com/google/dawn) · [Qt RHI](https://doc.qt.io/qt-6/topics-graphics.html) · [libplacebo](https://libplacebo.org/renderer/).
+
+**Memória/isolamento:**  
+[Electron process memory](https://www.electronjs.org/docs/latest/api/process) · [Electron utilityProcess](https://www.electronjs.org/docs/latest/api/utility-process) · [Electron render-process-gone/OOM](https://www.electronjs.org/docs/latest/tutorial/crash-reporting) · [Electron OSR/shared texture](https://www.electronjs.org/docs/latest/tutorial/offscreen-rendering) · [WebCodecs lifecycle and backpressure](https://developer.mozilla.org/en-US/docs/Web/API/WebCodecs_API/Using_the_WebCodecs_API) · [VideoFrame.close](https://developer.mozilla.org/en-US/docs/Web/API/VideoFrame/close) · [Mediabunny](https://mediabunny.dev/guide/introduction) · [Windows Job Objects](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects).
+
+**Fonte factual do Native Gacha:** os arquivos citados nas seções 1–2 deste mesmo commit e `docs/VIDEO_STUDIO_V5_MODERNIZACAO/LOCAL_HARDWARE_REPORT_2026-10-20.md` (histórico com limites claros).
+
+---
+
+**Síntese de decisão:** **o problema do criador é robustez no stress, não falta de uma lista de bibliotecas.** A primeira entrega técnica é um **diagnóstico de memória real + proteção contra OOM + adaptação modular reversível**, com benchmarks Windows. **MLT é opcional; Skia é opcional; C++ é opcional; processos isolados, budgets e paridade de dados não são opcionais.** A escolha final é feita por evidência, nunca por preferência estética de stack.
