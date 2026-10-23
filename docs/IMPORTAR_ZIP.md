@@ -1,57 +1,40 @@
-# Importação do G-V5 no Native-gacha
+# Importação original G-V5 — auditoria e continuidade (issue #1)
 
-Este repositório foi inicializado com arquivos de configuração. O código-fonte completo deverá ser importado como arquivos rastreados pelo Git, **não** como um único ZIP.
+O repositório **já contém arquivos-fonte Git versionados** na branch de desenvolvimento
+`feature/model-source-editor`, com Electron, React/TypeScript, lockfile, testes e documentação.
+A antiga instrução de importar novamente o ZIP e executar `git push origin main` está **obsoleta e perigosa**: NÃO execute nem sobreponha arquivos existentes.
 
-## Antes de importar
+## Origem original (ainda precisa de comprovação independente)
 
-1. Confirme que você deseja publicar o código no repositório atual: ele está **público**.
-2. Faça backup do pacote original e confira que os arquivos descompactados não contêm credenciais, perfis reais, dados pessoais nem material sem licença de redistribuição.
-3. Use o arquivo `G-V5-evolucao-estrutural-2026-10-22.zip`, com SHA-256 `e0c0f8f5c8013b9866b45ac395fa59a58c59046a3727bfa6ec16c215e1cfffcd`.
+- Arquivo histórico: `G-V5-evolucao-estrutural-2026-10-22.zip`
+- SHA-256 original esperado: `e0c0f8f5c8013b9866b45ac395fa59a58c59046a3727bfa6ec16c215e1cfffcd`
+- **O ZIP original não foi fornecido junto com o repositório nem está disponível nesta revisão.** Não é possível comprovar bit a bit sua correspondência retroativa com as fontes já importadas, nem declarar a revisão de licenças concluída automaticamente.
+- O comando `npm run audit:gv5-import` confere **somente leitura** as fontes rastreadas e possíveis arquivos privados versionados. O relatório identifica explicitamente `originalZipNotAvailable: true`.
+- Quando o usuário disponibilizar o ZIP legítimo fora do repositório, executar localmente no Windows:
+  ```powershell
+  Get-FileHash -Algorithm SHA256 -LiteralPath "C:\\CAMINHO\\G-V5-evolucao-estrutural-2026-10-22.zip"
+  npm run audit:gv5-import -- "C:\\CAMINHO\\G-V5-evolucao-estrutural-2026-10-22.zip"
+  ```
+  Exigir `fullyVerified: true`, além de revisar manualmente que o conteúdo do ZIP corresponde ao inventário pretendido. **Hash válido do ZIP não prova que todos os bytes presentes no Git são os mesmos do ZIP**; a comparação de conteúdo completo exige uma cópia original verificável e uma revisão de diffs. Nunca sobrescrever o checkout ativo para fazer essa comparação.
 
-## Windows (PowerShell)
+## Segurança da publicação
 
-Salve o ZIP numa pasta conhecida, abra o PowerShell e ajuste o caminho na primeira linha:
+1. O GitHub é **público**. Antes de publicar, verifique licenças e direitos sobre **todo** código/asset; um script não consegue atestar titularidade.
+2. Execute `npm run audit:gv5-import` e revise `git ls-files` e `git status --short`, em especial perfis reais, credenciais, tokens, `.env`, `node_modules`, bancos SQLite, backups e PNGs pessoais.
+3. Caso encontre qualquer material privado já publicado, interrompa novos pushes e trate a exposição com revogação de credenciais e revisão do histórico; excluir só o arquivo da ponta do Git não elimina uma exposição anterior.
+4. **Nunca** executar `git push origin main`, merge, force push ou checkout destrutivo sem autorização explícita.
+
+## Validação da implementação atual (Windows)
+
+A branch `feature/model-source-editor` usa PR #5 em rascunho com base em `refactor/shared-character-core`, sem merge na `main`.
 
 ```powershell
-$zip = "C:\\CAMINHO\\G-V5-evolucao-estrutural-2026-10-22.zip"
-$workspace = Join-Path $HOME "Native-gacha"
-$tmp = Join-Path $env:TEMP "native-gacha-import"
-git clone https://github.com/nestarasup-sys/Native-gacha.git $workspace
-if (Test-Path $tmp) { Remove-Item $tmp -Recurse -Force }
-Expand-Archive -LiteralPath $zip -DestinationPath $tmp -Force
-Get-ChildItem -LiteralPath $tmp -Force | Where-Object { $_.Name -ne ".git" } | Copy-Item -Destination $workspace -Recurse -Force
-Set-Location $workspace
-git status --short
-# Revise os arquivos que serão públicos antes de continuar:
-git add .
-git diff --cached --stat
-git commit -m "feat: importa base G-V5 refatorada"
-git push origin main
+npm ci
+npm run audit:architecture
+npm run audit:gv5-import
+npm run test:refactor
+npm run typecheck
+npm run build
 ```
 
-**Nota:** o pacote contém um `README.md` próprio, que substituirá o README inicial. Este guia permanecerá em `docs/IMPORTAR_ZIP.md`.
-
-## Linux/macOS
-
-```bash
-git clone https://github.com/nestarasup-sys/Native-gacha.git
-mkdir -p /tmp/native-gacha-import
-unzip -q G-V5-evolucao-estrutural-2026-10-22.zip -d /tmp/native-gacha-import
-cp -a /tmp/native-gacha-import/. Native-gacha/
-cd Native-gacha
-git status --short
-git add .
-git diff --cached --stat
-git commit -m 'feat: importa base G-V5 refatorada'
-git push origin main
-```
-
-## Depois de importar
-
-- Instale Node 22.22+ (linha 22) e execute `npm ci`.
-- Execute `npm run audit:architecture`, `npm run test:refactor`, `npm run typecheck` e `npm run build`.
-- Verifique os resultados do workflow `Quality - core and architecture`.
-- Faça smoke test manual no Windows em perfil de usuário sintético, sem usar dados reais.
-- Para novas mudanças, trabalhe em branch `refactor/<modulo>` e abra PR para `main`.
-
-**Não abra o aplicativo refatorado no seu perfil real enquanto não houver teste de compatibilidade e restauração de backup.**
+Conferir o workflow **Core architecture validation — Windows** e **Fabricator — Electron gráfico Windows** no *mesmo commit* da branch, usando apenas perfil e imagens sintéticas. Os testes não validam a instalação real de cada usuário nem substituem uma inspeção estética manual. Nenhuma operação de auditoria altera JSON, SQLite, PNG, projetos ou imagens do usuário.
