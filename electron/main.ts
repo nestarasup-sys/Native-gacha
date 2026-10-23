@@ -45,6 +45,7 @@ import { starterCharacters } from './domains/customizer/starterCharacters'
 import { FabricatorModelCatalog } from './domains/fabricator/modelCatalog'
 import { registerFabricatorModelCatalogHandlers } from './domains/fabricator/modelIpc'
 import { FabricatorWardrobeCatalog } from './domains/fabricator/wardrobeCatalog'
+import { createFabricatorCatalogListings, legacyHairStyle } from './domains/fabricator/catalogListings'
 import { registerFabricatorWardrobeCatalogHandlers } from './domains/fabricator/wardrobeCatalogIpc'
 import { createFaceGuidePersistence, isFaceGuideProfile } from './domains/fabricator/faceGuidePersistence'
 import { publishModelSource, type ModelSourcePublishRequest } from './domains/fabricator/modelSource'
@@ -769,7 +770,10 @@ async function readHairStyle(modelSlot: number, id: string): Promise<HairStyle |
       : null
     return { ...saved, front: await loadPart('front'), back: await loadPart('back'), fringe: await loadPart('fringe') }
   } catch (reason) {
-    if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return null
+    if ((reason as NodeJS.ErrnoException).code === 'ENOENT') {
+      if (id === 'legacy-workspace') return legacyHairStyle(modelSlot,await readHairWorkspace(modelSlot))
+      return null
+    }
     throw reason
   }
 }
@@ -1784,26 +1788,17 @@ async function registerFabricatorHandlers(): Promise<void> {
     await next
   })
 
+  const catalogListings = createFabricatorCatalogListings({
+    files:{readdir,readFile},
+    validSlot:isValidModelSlot,
+    faceModelPath,hairModelPath,
+    validFace:validFaceSet,validHair:validHairStyle,
+    recover:(folder,images)=>catalogPersistence.recoverCatalogManifest(folder,images),
+    readLegacyHair:readHairWorkspace
+  })
   ipcMain.handle('fabricator:face:list', async (event, modelSlot: number): Promise<FaceSetSummary[]> => {
     assertTrustedSender(event)
-    if (!isValidModelSlot(modelSlot)) throw new Error('Modelo inválido.')
-    try {
-      const entries = await readdir(faceModelPath(modelSlot), { withFileTypes: true })
-      const sets: FaceSetSummary[] = []
-      for (const entry of entries) {
-        if (!entry.isDirectory() || !/^set-[a-zA-Z0-9_-]{1,80}$/.test(entry.name)) continue
-        const folder = join(faceModelPath(modelSlot), entry.name)
-        await catalogPersistence.recoverCatalogManifest(folder, join(folder, 'images'))
-        try {
-          const set = JSON.parse(await readFile(join(folder, 'face.json'), 'utf8')) as FaceSetSave
-          if (validFaceSet(modelSlot, set) && set.id === entry.name.slice(4)) sets.push({ id: set.id, modelSlot, name: set.name, updatedAt: set.updatedAt, pieceCount: set.pieces.length })
-        } catch { /* Rostos incompletos não aparecem na biblioteca. */ }
-      }
-      return sets.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-    } catch (reason) {
-      if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return []
-      throw reason
-    }
+    return catalogListings.listFaces(modelSlot)
   })
 
   ipcMain.handle('fabricator:face:load', async (event, modelSlot: number, id: string): Promise<FaceSet | null> => {
@@ -1943,45 +1938,7 @@ async function registerFabricatorHandlers(): Promise<void> {
 
   ipcMain.handle(fabricatorIpcChannels.listHairStyles, async (event, modelSlot: number): Promise<HairStyleSummary[]> => {
     assertTrustedSender(event)
-    if (!isValidModelSlot(modelSlot)) throw new Error('Modelo inválido.')
-    try {
-      const stylesFolder = join(hairModelPath(modelSlot), 'styles')
-      await mkdir(stylesFolder, { recursive: true })
-      const entries = await readdir(stylesFolder, { withFileTypes: true })
-      const styles: HairStyleSummary[] = []
-      for (const entry of entries) {
-        if (!entry.isDirectory() || !/^style-[a-zA-Z0-9_-]{1,80}$/.test(entry.name)) continue
-        const styleFolder = join(stylesFolder, entry.name)
-        await catalogPersistence.recoverCatalogManifest(styleFolder, join(styleFolder, 'images'))
-        try {
-          const saved = JSON.parse(await readFile(join(styleFolder, 'hair-style.json'), 'utf8')) as HairStyleSave
-          if (validHairStyle(modelSlot, saved) && saved.id === entry.name.slice(6)) styles.push({ ...saved, front: saved.front, back: saved.back })
-        } catch { /* Configurações incompletas não aparecem no catálogo. */ }
-      }
-      const migrationMarker = join(hairModelPath(modelSlot), 'hair-style-migration-v1')
-      try { await access(migrationMarker) } catch (reason) {
-        if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason
-        const legacy = await readHairWorkspace(modelSlot)
-        if (legacy && (legacy.front || legacy.back || legacy.fringe) && !styles.some((style) => style.id === 'legacy-workspace')) {
-          const now = legacy.updatedAt || new Date().toISOString()
-          const saved: HairStyleSave = {
-            schemaVersion: 1, id: 'legacy-workspace', modelSlot, name: 'Cabelo 01',
-            front: legacy.front ? { width: legacy.front.width, height: legacy.front.height } : null,
-            back: legacy.back ? { width: legacy.back.width, height: legacy.back.height } : null,
-            fringe: legacy.fringe ? { width: legacy.fringe.width, height: legacy.fringe.height } : null,
-            transforms: legacy.transforms, createdAt: now, updatedAt: now
-          }
-          const assets = [legacy.front && { id: 'front' as const, dataUrl: legacy.front.dataUrl }, legacy.back && { id: 'back' as const, dataUrl: legacy.back.dataUrl }, legacy.fringe && { id: 'fringe' as const, dataUrl: legacy.fringe.dataUrl }].filter((asset): asset is NonNullable<typeof asset> => asset !== null)
-          await writeHairStyle(modelSlot, saved, assets)
-          styles.push(saved)
-        }
-        await writeFile(migrationMarker, new Date().toISOString(), 'utf8')
-      }
-      return styles.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-    } catch (reason) {
-      if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return []
-      throw reason
-    }
+    return catalogListings.listHair(modelSlot)
   })
 
   ipcMain.handle(fabricatorIpcChannels.loadHairStyle, async (event, modelSlot: number, id: string): Promise<HairStyle | null> => {
