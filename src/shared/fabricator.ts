@@ -414,6 +414,7 @@ export type FabricatorDesktopApi = {
   saveFaceExpressionCollection: (modelSlot: number, collection: FaceExpressionCollection) => Promise<void>
   loadFaceExpressionPreset: (modelSlot: number, id: string) => Promise<FaceExpressionPreset | null>
   saveFaceExpressionPreset: (modelSlot: number, preset: FaceExpressionPreset) => Promise<void>
+  saveFaceExpressionPresetBatch: (modelSlot: number, presets: FaceExpressionPreset[]) => Promise<void>
   deleteFaceExpressionPreset: (modelSlot: number, id: string) => Promise<void>
   saveFaceAnimationExport: (modelSlot: number, data: Uint8Array) => Promise<boolean>
   loadFaceExpressionWorkspaceDraft: (modelSlot: number) => Promise<FaceExpressionWorkspaceDraft | null>
