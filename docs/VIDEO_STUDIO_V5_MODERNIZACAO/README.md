@@ -47,6 +47,14 @@ Novos testes: `npm run test:video:next`, também incluídos em `npm test`. O cor
 - **Limite honesto:** este budget regula **somente os layers cacheados desta surface**; não mede/limita HTMLVideoElement, ImageBitmap, PNGs, GPU, ffmpeg, memórias transitórias ou a árvore Electron. A integração global continua **pendente**.
 - Testes novos: fala indexada (comparada com a varredura antiga por muitos frames), LRU/leases sob pressão, descarte assíncrono e retry após erro. `npm run test:video:next` roda os quatro arquivos de testes, **em CI focada no Windows**. Os workflows históricos de outras áreas não foram removidos.
 
+### Terceiro corte — vídeos importados com frames protegidos e orçamento compartilhado (Windows)
+
+- `VideoExportMediaFramePool` passa a entregar **frames emprestados por composição** via `acquireFramesForScene()` com `release()` obrigatório. Um `ImageBitmap` em uso não pode ser fechado por expulsão LRU quando outra mídia é decodificada. Frames extras que ultrapassam o limite do **cache** ficam **transitórios**, reservados no ledger e fechados após a composição.
+- A `VideoExportSurfacePage` agora faz `Promise.allSettled` entre Gacha e mídia, liberando frames em `finally` mesmo com falha no desenho, render ou readback. Uma surface não aceita dois empréstimos ativos simultâneos, evitando o mesmo decoder servir seeks concorrentes.
+- **Um budget de 160 MiB por surface** é compartilhado entre cache de camadas (máximo 96 MiB) e ImageBitmaps de mídia (máximo 96 MiB retidos em LRU, mais transitórios *dentro do mesmo budget*). Sob pressão o cache de camadas derivadas pode ser limpo para dar lugar a frames originais. Em falta de memória para frames simultâneos, a exportação falha **explicitamente**, sem retornar bitmap já fechado nem publicar resultado parcial.
+- Novos testes cobrem **três vídeos simultâneos, expulsão segura, orçamento compartilhado, memória insuficiente, descarte durante decode, PTS e seek reverso**. Executados pela CI **Windows** com `npm run test:video:next`.
+- **Limite ainda presente:** a reserva usa a dimensão de `ImageBitmap` obtida *após* a decodificação, e não limita buffers internos do Chromium/decoder, RAM/VRAM do processo, preview principal, múltiplas surfaces nem FFmpeg. O orçamento global N1/N6 e stress em hardware Windows seguem pendentes.
+
 ## Estrutura-alvo resumida
 
 `StudioDocument/AssetManifest → ProjectRepository + EditorCore/CommandBus → SceneCompiler/Evaluator → FramePlan → ResourceBudgeter/Scheduler + GachaRenderer + MediaService → PreviewTransport / ExportService → verificador e publish atômico`.

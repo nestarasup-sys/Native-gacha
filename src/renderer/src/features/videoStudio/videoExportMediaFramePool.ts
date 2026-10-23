@@ -1,6 +1,14 @@
 import type { VideoSceneFrame } from '../../../../shared/videoSceneIR'
+import type { VideoStudioBudgetLease, VideoStudioResourceBudget } from '../../../../shared/videoStudioNext/resourceBudget'
 
-type CachedBitmap = { bitmap: ImageBitmap; bytes: number }
+type CachedBitmap = { bitmap: ImageBitmap; bytes: number; pins: number; lease?: VideoStudioBudgetLease }
+type BorrowedBitmap = Readonly<{ bitmap: ImageBitmap; release: () => void }>
+
+/** Keep frames alive for the entire scene render. Caller MUST release in finally. */
+export type VideoExportMediaFrameLease = Readonly<{
+  frames: ReadonlyMap<string, CanvasImageSource>
+  release: () => void
+}>
 
 function abortError(signal?: AbortSignal): Error {
   return signal?.reason instanceof Error ? signal.reason : new DOMException('Operação cancelada.', 'AbortError')
@@ -10,10 +18,21 @@ export class VideoExportMediaFramePool {
   private readonly videos = new Map<string, HTMLVideoElement>()
   private readonly ready = new Map<string, Promise<HTMLVideoElement>>()
   private readonly bitmaps = new Map<string, CachedBitmap>()
+  private readonly transients = new Set<CachedBitmap>()
   private bitmapBytes = 0
+  private activeScene = false
   private disposed = false
 
-  constructor(private readonly jobId: string, private readonly maxBitmapBytes = 96 * 1024 * 1024) {}
+  constructor(
+    private readonly jobId: string,
+    private readonly maxBitmapBytes = 96 * 1024 * 1024,
+    private readonly budget?: VideoStudioResourceBudget,
+    private readonly releaseExternalCache?: () => void
+  ) {
+    if (!Number.isSafeInteger(maxBitmapBytes) || maxBitmapBytes < 1) {
+      throw new RangeError('Orçamento de bitmaps de mídia inválido.')
+    }
+  }
 
   private video(assetId: string): Promise<HTMLVideoElement> {
     if (this.disposed) return Promise.reject(new Error('Decoder de mídia já foi descartado.'))
@@ -89,53 +108,143 @@ export class VideoExportMediaFramePool {
     if (signal?.aborted) throw abortError(signal)
   }
 
-  private remember(key: string, bitmap: ImageBitmap): ImageBitmap {
-    const bytes = bitmap.width * bitmap.height * 4
-    this.bitmaps.set(key, { bitmap, bytes })
-    this.bitmapBytes += bytes
-    while (this.bitmapBytes > this.maxBitmapBytes && this.bitmaps.size > 1) {
-      const oldestKey = this.bitmaps.keys().next().value
-      const oldest = oldestKey ? this.bitmaps.get(oldestKey) : undefined
-      if (!oldestKey || !oldest) break
-      this.bitmaps.delete(oldestKey)
-      this.bitmapBytes -= oldest.bytes
-      oldest.bitmap.close()
-    }
-    return bitmap
+  private closeEntry(entry: CachedBitmap): void {
+    entry.bitmap.close()
+    entry.lease?.release()
   }
 
-  async frame(assetId: string, sourceNumerator: number, sourceDenominator: number, signal?: AbortSignal): Promise<ImageBitmap> {
-    if (!Number.isSafeInteger(sourceNumerator) || !Number.isSafeInteger(sourceDenominator) || sourceNumerator < 0 || sourceDenominator <= 0) {
+  /** Cached frames borrowed by a composition must never be evicted. */
+  private evictUnpinned(): boolean {
+    for (const [key, entry] of this.bitmaps) {
+      if (entry.pins > 0) continue
+      this.bitmaps.delete(key)
+      this.bitmapBytes -= entry.bytes
+      this.closeEntry(entry)
+      return true
+    }
+    return false
+  }
+
+  private async borrowFrame(
+    assetId: string,
+    sourceNumerator: number,
+    sourceDenominator: number,
+    signal?: AbortSignal
+  ): Promise<BorrowedBitmap> {
+    if (this.disposed) throw new Error('Decoder de mídia já foi descartado.')
+    if (!Number.isSafeInteger(sourceNumerator) || !Number.isSafeInteger(sourceDenominator)
+      || sourceNumerator < 0 || sourceDenominator <= 0) {
       throw new Error('Timestamp de mídia inválido.')
     }
-    const key = `${assetId}:${sourceNumerator}/${sourceDenominator}`
+
+    const key = assetId + ':' + sourceNumerator + '/' + sourceDenominator
     const cached = this.bitmaps.get(key)
     if (cached) {
       this.bitmaps.delete(key)
       this.bitmaps.set(key, cached)
-      return cached.bitmap
+      cached.pins++
+      let released = false
+      return { bitmap: cached.bitmap, release: () => {
+        if (released) return
+        released = true
+        if (cached.pins > 0) cached.pins--
+      } }
     }
+
     const video = await this.video(assetId)
+    if (this.disposed) throw new Error('Decoder de mídia já foi descartado.')
     await this.seek(video, sourceNumerator / sourceDenominator, signal)
+    if (this.disposed) throw new Error('Decoder de mídia já foi descartado.')
     if (signal?.aborted) throw abortError(signal)
     const bitmap = await createImageBitmap(video)
-    if (!bitmap.width || !bitmap.height) { bitmap.close(); throw new Error('Decoder retornou um frame de vídeo vazio.') }
-    return this.remember(key, bitmap)
+    if (this.disposed || signal?.aborted) {
+      bitmap.close()
+      throw this.disposed ? new Error('Decoder de mídia já foi descartado.') : abortError(signal)
+    }
+    const bytes = bitmap.width * bitmap.height * 4
+    if (!bitmap.width || !bitmap.height || !Number.isSafeInteger(bytes)) {
+      bitmap.close()
+      throw new Error('Decoder retornou um frame de vídeo inválido.')
+    }
+
+    // Both cached and in-flight frames reserve bytes in the surface budget.
+    // Evict only non-borrowed frames; preserve frames from earlier clips in
+    // the same composite, even when the 96 MiB cache is full.
+    while ((this.bitmapBytes + bytes > this.maxBitmapBytes
+      || (this.budget && this.budget.snapshot().availableBytes < bytes))
+      && this.evictUnpinned()) { /* finite LRU */ }
+
+    let lease = this.budget?.tryReserve('video-decoder', bytes)
+    if (this.budget && !lease) {
+      // Layer cache is derived and can be regenerated. Flush it before
+      // dropping a final-quality video frame.
+      this.releaseExternalCache?.()
+      lease = this.budget.tryReserve('video-decoder', bytes)
+    }
+    if (this.budget && !lease) {
+      bitmap.close()
+      throw new Error('Orçamento de frames decodificados esgotado para esta surface.')
+    }
+
+    const entry: CachedBitmap = { bitmap, bytes, pins: 1, ...(lease ? { lease } : {}) }
+    if (bytes <= this.maxBitmapBytes && this.bitmapBytes + bytes <= this.maxBitmapBytes) {
+      this.bitmaps.set(key, entry)
+      this.bitmapBytes += bytes
+      let released = false
+      return { bitmap, release: () => {
+        if (released) return
+        released = true
+        if (entry.pins > 0) entry.pins--
+      } }
+    }
+
+    // Cache exceeded by simultaneously visible clips: transient frame is
+    // pinned and counted until composition releases it, then closed.
+    this.transients.add(entry)
+    let released = false
+    return { bitmap, release: () => {
+      if (released) return
+      released = true
+      if (this.transients.delete(entry)) this.closeEntry(entry)
+    } }
   }
 
-  async framesForScene(scene: VideoSceneFrame, signal?: AbortSignal): Promise<ReadonlyMap<string, CanvasImageSource>> {
-    const result = new Map<string, CanvasImageSource>()
-    for (const video of scene.videos) {
-      result.set(video.clipId, await this.frame(video.assetId, video.sourceTimeNumerator, video.sourceTimeDenominator, signal))
+  async acquireFramesForScene(scene: VideoSceneFrame, signal?: AbortSignal): Promise<VideoExportMediaFrameLease> {
+    if (this.disposed) throw new Error('Decoder de mídia já foi descartado.')
+    if (this.activeScene) throw new Error('Composições de vídeo simultâneas na mesma surface.')
+    this.activeScene = true
+    const frames = new Map<string, CanvasImageSource>()
+    const releases: Array<() => void> = []
+    let released = false
+    const release = () => {
+      if (released) return
+      released = true
+      for (const done of releases.reverse()) done()
+      this.activeScene = false
     }
-    return result
+    try {
+      for (const video of scene.videos) {
+        if (signal?.aborted) throw abortError(signal)
+        const pinned = await this.borrowFrame(
+          video.assetId, video.sourceTimeNumerator, video.sourceTimeDenominator, signal
+        )
+        releases.push(pinned.release)
+        frames.set(video.clipId, pinned.bitmap)
+      }
+      return { frames, release }
+    } catch (reason) {
+      release()
+      throw reason
+    }
   }
 
   dispose(): void {
     this.disposed = true
-    for (const cached of this.bitmaps.values()) cached.bitmap.close()
+    for (const cached of this.bitmaps.values()) this.closeEntry(cached)
     this.bitmaps.clear()
     this.bitmapBytes = 0
+    for (const transient of this.transients) this.closeEntry(transient)
+    this.transients.clear()
     for (const video of this.videos.values()) {
       video.pause()
       video.removeAttribute('src')
