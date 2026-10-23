@@ -1,4 +1,4 @@
-import type { FaceComponentAsset, FaceComponentAssetSummary } from './fabricator'
+import type { FaceComponentAssetSummary } from './fabricator'
 
 /** Olhos DEV selection identity is local to the user's editor.
  * Using the same key when constructing a NEW Presets DEV set does not modify
