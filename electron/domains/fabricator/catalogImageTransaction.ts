@@ -9,13 +9,18 @@ import type * as nodeFs from 'node:fs/promises'
 type Files = Pick<typeof nodeFs, 'mkdir' | 'readFile' | 'writeFile' | 'rename' | 'rm' | 'unlink'>
 export type CatalogPendingImage = { id: string; bytes: Buffer }
 type Entry = { id: string; existed: boolean }
-type Journal = { schemaVersion: 1; manifestName: string; nextHash: string; oldHash: string | null; entries: Entry[] }
+type Journal = { schemaVersion: 1; manifestName: CatalogManifestName; nextHash: string; oldHash: string | null; entries: Entry[] }
+export const catalogManifestNames = Object.freeze(['asset.json', 'face.json', 'hair-style.json', 'hair.json', 'item.json', 'wardrobe.json'] as const)
+export type CatalogManifestName = (typeof catalogManifestNames)[number]
 const safeId = /^[a-zA-Z0-9_-]{1,80}$/
-const safeManifest = /^(?:wardrobe|hair|hair-style|face|item)\.json$/
+const safeManifestNames = new Set<string>(catalogManifestNames)
 const isMissing = (error: unknown) => (error as NodeJS.ErrnoException)?.code === 'ENOENT'
 const hash = (value: Buffer | string) => createHash('sha256').update(value).digest('hex')
 const canonical = (value: unknown) => JSON.stringify(value)
 const paths = (folder: string) => ({ journal: join(folder, '.catalog-transaction'), imageFolder: join(folder, 'parts') })
+function isCatalogManifestName(value: unknown): value is CatalogManifestName {
+  return typeof value === 'string' && safeManifestNames.has(value)
+}
 async function maybeRead(files: Files, file: string): Promise<Buffer | null> {
   try { return await files.readFile(file) } catch (error) { if (isMissing(error)) return null; throw error }
 }
@@ -26,7 +31,7 @@ function imagePath(imageFolder: string, id: string): string {
 function validJournal(value: unknown): value is Journal {
   if (!value || typeof value !== 'object') return false
   const j = value as Journal
-  return j.schemaVersion === 1 && safeManifest.test(j.manifestName)
+  return j.schemaVersion === 1 && isCatalogManifestName(j.manifestName)
     && /^[0-9a-f]{64}$/.test(j.nextHash)
     && (j.oldHash === null || /^[0-9a-f]{64}$/.test(j.oldHash))
     && Array.isArray(j.entries) && j.entries.length <= 200
@@ -74,14 +79,14 @@ export async function runCatalogImageTransaction(options: {
   files: Files
   folder: string
   imageFolder: string
-  manifestName: string
+  manifestName: CatalogManifestName
   manifest: unknown
   images: readonly CatalogPendingImage[]
   writeImage: (path: string, bytes: Buffer) => Promise<void>
   promoteManifest: () => Promise<void>
 }): Promise<void> {
   const { files, folder, imageFolder, manifestName, manifest, images, writeImage, promoteManifest } = options
-  if (!safeManifest.test(manifestName)) throw new Error('Manifesto de catálogo não autorizado.')
+  if (!isCatalogManifestName(manifestName)) throw new Error('Manifesto de catálogo não autorizado.')
   await recoverCatalogImageTransaction(files, folder, imageFolder)
   const journalFolder = paths(folder).journal
   const nextHash = hash(canonical(manifest))

@@ -5,14 +5,14 @@
 import { join } from 'node:path'
 import type * as nodeFs from 'node:fs/promises'
 import { publishJsonManifest } from '../storage/atomicManifest.ts'
-import { recoverCatalogImageTransaction, runCatalogImageTransaction } from './catalogImageTransaction.ts'
+import { recoverCatalogImageTransaction, runCatalogImageTransaction, type CatalogManifestName } from './catalogImageTransaction.ts'
 
 type Files = Pick<typeof nodeFs, 'mkdir' | 'access' | 'writeFile' | 'readFile' | 'rm' | 'rename' | 'unlink' | 'readdir'>
 type Image = { id: string; bytes: Buffer }
 type Options = {
   folder: string
   imageFolder: string
-  manifestName: string
+  manifestName: CatalogManifestName
   manifest: unknown
   images: readonly Image[]
   expected: ReadonlySet<string>

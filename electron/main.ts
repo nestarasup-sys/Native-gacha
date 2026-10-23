@@ -546,8 +546,10 @@ async function listFaceCatalogItems(modelSlot: number): Promise<FaceCatalogItemS
   try {
     for (const entry of await readdir(faceCatalogPath(modelSlot), { withFileTypes: true })) {
       if (!entry.isDirectory() || !/^item-[a-zA-Z0-9_-]{1,120}$/.test(entry.name)) continue
+      const folder = join(faceCatalogPath(modelSlot), entry.name)
+      await catalogPersistence.recoverCatalogManifest(folder, join(folder, 'images'))
       try {
-        const item = JSON.parse(await readFile(join(faceCatalogPath(modelSlot), entry.name, 'item.json'), 'utf8')) as FaceCatalogItemSave
+        const item = JSON.parse(await readFile(join(folder, 'item.json'), 'utf8')) as FaceCatalogItemSave
         if (validFaceCatalogItem(modelSlot, item) && item.id === entry.name.slice(5)) items.set(item.id, { id: item.id, modelSlot, category: item.category, name: item.name, updatedAt: item.updatedAt, pieceCount: item.pieces.length })
       } catch { /* Incomplete catalog items are hidden. */ }
     }
@@ -557,8 +559,10 @@ async function listFaceCatalogItems(modelSlot: number): Promise<FaceCatalogItemS
     for (const entry of await readdir(faceModelPath(modelSlot), { withFileTypes: true })) {
       if (!entry.isDirectory() || !/^set-[a-zA-Z0-9_-]{1,80}$/.test(entry.name)) continue
       const setId = entry.name.slice(4)
+      const folder = join(faceModelPath(modelSlot), entry.name)
+      await catalogPersistence.recoverCatalogManifest(folder, join(folder, 'images'))
       try {
-        const set = JSON.parse(await readFile(join(faceModelPath(modelSlot), entry.name, 'face.json'), 'utf8')) as FaceSetSave
+        const set = JSON.parse(await readFile(join(folder, 'face.json'), 'utf8')) as FaceSetSave
         if (!validFaceSet(modelSlot, set) || set.id !== setId) continue
         for (const category of faceSheetKinds) {
           const sheet = set.sheets[category]
@@ -634,8 +638,10 @@ async function listFaceComponentAssets(modelSlot: number, kind?: FaceAssetKind):
   try {
     for (const entry of await readdir(directory, { withFileTypes: true })) {
       if (!entry.isDirectory() || !/^item-[a-zA-Z0-9_-]{1,120}$/.test(entry.name)) continue
+      const folder = join(directory, entry.name)
+      await catalogPersistence.recoverCatalogManifest(folder, folder)
       try {
-        const asset = JSON.parse(await readFile(join(directory, entry.name, 'asset.json'), 'utf8')) as FaceComponentAssetSave
+        const asset = JSON.parse(await readFile(join(folder, 'asset.json'), 'utf8')) as FaceComponentAssetSave
         if (!validFaceComponentAsset(modelSlot, asset) || asset.id !== entry.name.slice(5) || kind && asset.kind !== kind) continue
         const { defaultTransform: _transform, ...summary } = asset
         output.push(summary)
@@ -649,6 +655,7 @@ async function readFaceComponentAsset(modelSlot: number, id: string): Promise<Fa
   if (!isValidModelSlot(modelSlot) || !isValidWardrobeId(id)) throw new Error('Asset facial inválido.')
   try {
     const folder = faceComponentItemPath(modelSlot, id)
+    await catalogPersistence.recoverCatalogManifest(folder, folder)
     const asset = JSON.parse(await readFile(join(folder, 'asset.json'), 'utf8')) as FaceComponentAssetSave
     if (!inspectFabricatorStorage('face-component', asset).compatible) return null
     if (!validFaceComponentAsset(modelSlot, asset) || asset.id !== id) return null
@@ -1766,7 +1773,9 @@ async function registerFabricatorHandlers(): Promise<void> {
     files: { readFile, readdir, rm }
   })
 
-    registerFabricatorWardrobeCatalogHandlers(ipcMain, assertTrustedSender, new FabricatorWardrobeCatalog(wardrobeModelPath, { readdir, readFile }, slotCount))
+    registerFabricatorWardrobeCatalogHandlers(ipcMain, assertTrustedSender,
+      new FabricatorWardrobeCatalog(wardrobeModelPath, { readdir, readFile }, slotCount,
+        (folder, imageFolder) => catalogPersistence.recoverCatalogManifest(folder, imageFolder)))
 
   ipcMain.handle(fabricatorIpcChannels.loadWardrobeSet, async (event, modelSlot: number, id: string): Promise<WardrobeSet | null> => {
     assertTrustedSender(event)
@@ -1799,8 +1808,10 @@ async function registerFabricatorHandlers(): Promise<void> {
       const sets: FaceSetSummary[] = []
       for (const entry of entries) {
         if (!entry.isDirectory() || !/^set-[a-zA-Z0-9_-]{1,80}$/.test(entry.name)) continue
+        const folder = join(faceModelPath(modelSlot), entry.name)
+        await catalogPersistence.recoverCatalogManifest(folder, join(folder, 'images'))
         try {
-          const set = JSON.parse(await readFile(join(faceModelPath(modelSlot), entry.name, 'face.json'), 'utf8')) as FaceSetSave
+          const set = JSON.parse(await readFile(join(folder, 'face.json'), 'utf8')) as FaceSetSave
           if (validFaceSet(modelSlot, set) && set.id === entry.name.slice(4)) sets.push({ id: set.id, modelSlot, name: set.name, updatedAt: set.updatedAt, pieceCount: set.pieces.length })
         } catch { /* Rostos incompletos não aparecem na biblioteca. */ }
       }
@@ -1984,8 +1995,10 @@ async function registerFabricatorHandlers(): Promise<void> {
       const styles: HairStyleSummary[] = []
       for (const entry of entries) {
         if (!entry.isDirectory() || !/^style-[a-zA-Z0-9_-]{1,80}$/.test(entry.name)) continue
+        const styleFolder = join(stylesFolder, entry.name)
+        await catalogPersistence.recoverCatalogManifest(styleFolder, join(styleFolder, 'images'))
         try {
-          const saved = JSON.parse(await readFile(join(hairModelPath(modelSlot), 'styles', entry.name, 'hair-style.json'), 'utf8')) as HairStyleSave
+          const saved = JSON.parse(await readFile(join(styleFolder, 'hair-style.json'), 'utf8')) as HairStyleSave
           if (validHairStyle(modelSlot, saved) && saved.id === entry.name.slice(6)) styles.push({ ...saved, front: saved.front, back: saved.back })
         } catch { /* Configurações incompletas não aparecem no catálogo. */ }
       }

@@ -351,7 +351,7 @@ export function HairWorkspace() {
           <button type="button" onClick={() => singleFileInputRef.current?.click()} disabled={!head || loadingHair || saving}><Icon name="plus" /> Importar</button>
           <button type="button" onClick={() => { const style = hairStyles.find((item) => item.id === activeStyleId); if (style) void deleteStyle(style) }} disabled={!activeStyleId || saving}><Icon name="trash" /> Excluir</button>
         </div>
-        <input ref={singleFileInputRef} className="hair-dev-file" type="file" accept="image/png,image/webp" onChange={(event) => void importSinglePiece(event)} />
+        <input ref={singleFileInputRef} className="hair-dev-file" type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => void importSinglePiece(event)} />
         <small className="hair-dev-library-hint">Importe uma peça PNG ou WebP com fundo transparente na categoria escolhida.</small>
         {(selectedSide === 'front' || selectedCategory === 'backHair') && <><button className="hair-dev-sheet-import" onClick={() => fileInputRef.current?.click()} disabled={!head || loadingHair || saving} type="button">Importar folha Posterior/Traseiro</button><input ref={fileInputRef} className="hair-dev-file" type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => void importSheet(event)} /></>}
         <nav className="hair-dev-library-tabs" aria-label="Categorias da biblioteca" role="tablist">

@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { createHash } from 'node:crypto'
 import { createFabricatorCatalogPersistence } from '../electron/domains/fabricator/catalogPersistence.ts'
-import { recoverCatalogImageTransaction } from '../electron/domains/fabricator/catalogImageTransaction.ts'
+import { catalogManifestNames, recoverCatalogImageTransaction, runCatalogImageTransaction } from '../electron/domains/fabricator/catalogImageTransaction.ts'
 
 const digest = value => createHash('sha256').update(value).digest('hex')
 async function fixture(t, manifestName = 'wardrobe.json') {
@@ -115,4 +115,36 @@ test('save concorrente + recuperação da mesma roupa não reinstala PNGs antigo
  assert.equal(await fs.readFile(join(fx.imageFolder,'right.png'),'utf8'),'B2')
  assert.equal(JSON.parse(await fs.readFile(join(fx.folder,fx.manifestName),'utf8')).updatedAt,'v2')
  await assert.rejects(fs.access(join(fx.folder,'.catalog-transaction')),{code:'ENOENT'})
+})
+
+for (const manifestName of catalogManifestNames) {
+ test(`catálogo autoriza o manifesto usado por importações: ${manifestName}`, async t => {
+  const folder = await fs.mkdtemp(join(tmpdir(), 'native-catalog-manifest-'))
+  t.after(() => fs.rm(folder, { recursive: true, force: true }))
+  const imageFolder = manifestName === 'asset.json' ? folder : join(folder, manifestName === 'wardrobe.json' ? 'parts' : 'images')
+  const save = createFabricatorCatalogPersistence(fs, (path, bytes) => fs.writeFile(path, bytes))
+  const manifest = { schemaVersion: 1, id: 'imported-item', updatedAt: '2026-10-22T00:00:00.000Z' }
+  const image = Buffer.from(`PNG:${manifestName}`)
+
+  await save.saveCatalog({
+   folder, imageFolder, manifestName, manifest,
+   images: [{ id: 'asset', bytes: image }], expected: new Set(['asset'])
+  })
+
+  assert.deepEqual(JSON.parse(await fs.readFile(join(folder, manifestName), 'utf8')), manifest)
+  assert.deepEqual(await fs.readFile(join(imageFolder, 'asset.png')), image)
+ })
+}
+
+test('manifestos fora do catálogo autorizado não podem escolher um caminho de gravação', async () => {
+  await assert.rejects(runCatalogImageTransaction({
+    files: {}, folder: 'catalog', imageFolder: 'catalog/images', manifestName: '../outside.json',
+    manifest: {}, images: [], writeImage: async () => {}, promoteManifest: async () => {}
+  }), /Manifesto de catálogo não autorizado/)
+})
+
+test('todos os manifestos usados pelo processo principal estão registrados para a transação', async () => {
+  const main = await fs.readFile(new URL('../electron/main.ts', import.meta.url), 'utf8')
+  const used = [...main.matchAll(/manifestName:\s*['"]([^'"]+)['"]/g)].map((match) => match[1])
+  assert.deepEqual([...new Set(used)].sort(), [...catalogManifestNames].sort())
 })

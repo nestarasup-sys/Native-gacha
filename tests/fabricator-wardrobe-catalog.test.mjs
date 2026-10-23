@@ -38,6 +38,26 @@ test('lista roupas em ordem, ignora manifestos errados e não modifica a bibliot
   await assert.rejects(catalog.list(11), /Modelo inválido/)
 })
 
+test('recupera a transação das imagens antes de ler cada manifesto de roupa', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'native-gacha-wardrobe-recovery-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const pathForModel = slot => join(root, `model-${slot}`)
+  const order = []
+  const catalog = new FabricatorWardrobeCatalog(pathForModel, {
+    readdir,
+    readFile: async (...args) => { order.push('read'); return readFile(...args) }
+  }, 10, async (folder, imageFolder) => {
+    order.push(`recover:${folder}:${imageFolder}`)
+  })
+  const setFolder = join(pathForModel(1), 'set-camisa')
+  await mkdir(setFolder, { recursive: true })
+  await writeFile(join(setFolder, 'wardrobe.json'), JSON.stringify({ schemaVersion: 1, edition: 1, modelSlot: 1,
+    id: 'camisa', name: 'Camisa', modelName: 'Modelo', updatedAt: '2026-10-22T00:00:00Z', components: [] }))
+
+  assert.equal((await catalog.list(1)).length, 1)
+  assert.deepEqual(order, [`recover:${setFolder}:${join(setFolder, 'parts')}`, 'read'])
+})
+
 test('IPC mantém canal e bloqueia origem não confiável antes de chamar a biblioteca', async () => {
   const handlers = new Map()
   let calls = 0

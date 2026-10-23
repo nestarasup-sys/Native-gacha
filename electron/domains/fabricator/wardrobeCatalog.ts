@@ -13,11 +13,18 @@ export class FabricatorWardrobeCatalog {
   private readonly modelPath: (modelSlot: number) => string
   private readonly files: WardrobeCatalogFiles
   private readonly modelSlotCount: number
+  private readonly recoverCatalogManifest?: (folder: string, imageFolder: string) => Promise<void>
 
-  constructor(modelPath: (modelSlot: number) => string, files: WardrobeCatalogFiles, modelSlotCount: number) {
+  constructor(
+    modelPath: (modelSlot: number) => string,
+    files: WardrobeCatalogFiles,
+    modelSlotCount: number,
+    recoverCatalogManifest?: (folder: string, imageFolder: string) => Promise<void>
+  ) {
     this.modelPath = modelPath
     this.files = files
     this.modelSlotCount = modelSlotCount
+    this.recoverCatalogManifest = recoverCatalogManifest
   }
 
   async list(modelSlot: number): Promise<WardrobeSetSummary[]> {
@@ -28,8 +35,10 @@ export class FabricatorWardrobeCatalog {
       const sets: WardrobeSetSummary[] = []
       for (const entry of entries) {
         if (!entry.isDirectory() || !/^set-[a-zA-Z0-9_-]{1,80}$/.test(entry.name)) continue
+        const setFolder = join(folder, entry.name)
+        await this.recoverCatalogManifest?.(setFolder, join(setFolder, 'parts'))
         try {
-          const set = JSON.parse(await this.files.readFile(join(folder, entry.name, 'wardrobe.json'), 'utf8')) as WardrobeSet
+          const set = JSON.parse(await this.files.readFile(join(setFolder, 'wardrobe.json'), 'utf8')) as WardrobeSet
           if (set.schemaVersion === 1 && (set.edition === undefined || set.edition === 1 || set.edition === 2)
             && set.modelSlot === modelSlot && set.id === entry.name.slice(4) && Array.isArray(set.components)) {
             sets.push({ id: set.id, modelSlot, modelName: set.modelName, name: set.name,
