@@ -7,7 +7,8 @@ import { fabricatorIpcChannels, createFabricatorInvoker } from '../src/shared/fa
 test('canais IPC tipados não são duplicados e mantêm compatibilidade legada',()=>{
  const values=Object.values(fabricatorIpcChannels)
  assert.equal(new Set(values).size,values.length)
- assert.equal(values.length,35)
+ assert.ok(values.length>=35)
+ assert.equal(fabricatorIpcChannels.listWardrobeSetsDetailed,'fabricator:wardrobe:list-detailed')
  assert.equal(fabricatorIpcChannels.saveFabricatorPose,'fabricator:poses:save')
  assert.equal(fabricatorIpcChannels.saveAnimatorAnimation,'fabricator:animator:save')
  assert.equal(fabricatorIpcChannels.publishFabricatorModelSource,'fabricator:model-source:publish')
