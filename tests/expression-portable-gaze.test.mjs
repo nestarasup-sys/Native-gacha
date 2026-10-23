@@ -104,7 +104,7 @@ test('duas faces completamente distintas usam a mesma emoção sem carregar PNGs
   }
 })
 
-test('normal e PT são a MESMA expressão, só pupila muda X, sem acumular após alternar 30 vezes',async()=>{
+test('normal e PT compartilham a expressão e PT fallback aplica direção sem acumular alterações',async()=>{
   const fixture=setupCharacter(1)
   const before=structuredClone(preset)
   const right=await buildStudioExpressionTransforms(preset,fixture.appearance,{},fixture.loadComponent,fixture.loadCatalog,'right')
@@ -114,8 +114,10 @@ test('normal e PT são a MESMA expressão, só pupila muda X, sem acumular após
   for(const side of ['left','right']){
     const key=`expression-component:pupil-${side}`
     const neutralX=fixture.appearance.components[`pupil-${side}`].transform.x
-    assert.ok(right[key].sourceTransformOverride.x!==left[key].sourceTransformOverride.x)
-    assert.ok(Math.abs((right[key].sourceTransformOverride.x-neutralX)+(left[key].sourceTransformOverride.x-neutralX))<1e-7)
+    const eye=fixture.comps[`target-eye-${side==='left'?'L':'R'}`]
+    const expected=resolvePresetPupilGaze(right[key].sourceTransformOverride.x,neutralX,eye.width,1.4,
+      side,side==='right','left')
+    assert.equal(left[key].sourceTransformOverride.x,expected)
     assert.equal(right[key].sourceTransformOverride.y,left[key].sourceTransformOverride.y)
   }
   for(let i=0;i<30;i++){
@@ -199,7 +201,10 @@ test('PT sem edição permanece automática em todas as 21 expressões e após J
     const right=pt['expression-component:pupil-right'].sourceTransformOverride
     assert.equal(left.rotation,i*3)
     assert.notEqual(left.x,normal['expression-component:pupil-left'].sourceTransformOverride.x)
-    assert.notEqual(right.x,normal['expression-component:pupil-right'].sourceTransformOverride.x,'unconfigured right retains fallback')
+    const eye=actor.comps['target-eye-R']
+    const baseline=actor.appearance.components['pupil-right'].transform.x
+    assert.equal(right.x,resolvePresetPupilGaze(normal['expression-component:pupil-right'].sourceTransformOverride.x,
+      baseline,eye.width,1.4,'right',true,'left'),'unconfigured right retains fallback')
     assert.equal(right.y,normal['expression-component:pupil-right'].sourceTransformOverride.y)
   }
 })
