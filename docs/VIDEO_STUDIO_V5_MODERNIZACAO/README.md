@@ -127,6 +127,14 @@ O cache permite `clear()` sem anular `image.src` de uma imagem que outro desenho
 
 **Próximo bloqueador de §N4:** completar compositor por camadas/sprites com corpo/roupa/face independentes e golden Windows real para oclusão de cabelo, roupas e pupilas PT. A base reaproveitada ainda é desenhada no canvas final por variante facial e convertida em PNG para o pipeline legado, portanto a reconstrução estrutural completa do renderer não está concluída.
 
+### Décimo corte — caches de corpo, roupa, cabelo e tons de pele isolados na exportação Windows
+
+O renderer Gacha comum tinha `wardrobeImageCache`, `skinTintImageCache` e `hairTintImageCache` como mapas locais da aplicação (inclusive com alguns sem limite de bytes). Agora a `VideoExportSurfacePage` ativa **somente no processo de export** um conjunto de caches separados para imagens originais (24 MiB), tons de pele (16 MiB) e recolorações de cabelo/olhos (16 MiB), todos limitados por **pixels RGBA estimados e número de entradas**. As três categorias compartilham o mesmo budget de 160 MiB da surface; `clear()` e `dispose()` devolvem seus leases em falha, pressão e encerramento da exportação.
+
+**Compatibilidade importante:** Fabricador, Customizador e Studio Principal continuam a utilizar seus caches anteriores por padrão. Os novos limites são **ativados explicitamente pela surface isolada de exportação**, não alterando biblioteca de personagens nem projetos. Imagens podem ser decodificadas novamente se seu cache for expulso; as cores, roupas, olhos normais e parâmetros PT são preservados.
+
+**Validação:** testes de source images grandes, recoloração de pele, reutilização de referências recentes, redecodificação após eviction e liberação total de bytes; suite `npm run test:video:next` na CI Windows. Ainda se trata de orçamento de retenção **depois** do decode, não de um teto físico para buffers internos do Chromium, GPU ou outros processos. A migração de um compositor verdadeiramente separado em camadas e o golden visual real continuam pendentes.
+
 ## Estrutura-alvo resumida
 
 `StudioDocument/AssetManifest → ProjectRepository + EditorCore/CommandBus → SceneCompiler/Evaluator → FramePlan → ResourceBudgeter/Scheduler + GachaRenderer + MediaService → PreviewTransport / ExportService → verificador e publish atômico`.

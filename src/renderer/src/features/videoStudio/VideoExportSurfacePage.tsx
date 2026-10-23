@@ -6,6 +6,7 @@ import { VideoExportMediaFramePool, type VideoExportMediaFrameLease } from './vi
 import { renderVideoSceneFrameToCanvas, clearVideoCanvasImageCache, configureVideoCanvasImageBudget } from './videoCanvasCompositor'
 import { VideoCanvasLayerCache } from './videoCanvasLayerCache'
 import { VideoStudioResourceBudget } from '../../../../shared/videoStudioNext/resourceBudget'
+import { configureVideoExportCharacterImageCaches, clearVideoExportCharacterImageCaches, disposeVideoExportCharacterImageCaches } from '../../characters/characterRenderer'
 
 function errorMessage(reason: unknown): string {
   return reason instanceof Error ? reason.message : String(reason)
@@ -56,6 +57,7 @@ export function VideoExportSurfacePage() {
       // fully accounted yet; this is not a process-wide memory ceiling.
       cacheBudgetRef.current ??= new VideoStudioResourceBudget(160 * 1024 * 1024)
       configureVideoCanvasImageBudget(cacheBudgetRef.current)
+      configureVideoExportCharacterImageCaches(cacheBudgetRef.current)
       characterRenderer = new VideoCharacterFrameRenderer(data.characters, data.characterAssets, cacheBudgetRef.current)
       if (layerCacheEnabled) {
         layerCacheRef.current ??= new VideoCanvasLayerCache(96 * 1024 * 1024, cacheBudgetRef.current)
@@ -66,6 +68,7 @@ export function VideoExportSurfacePage() {
           layerCacheRef.current?.clear()
           characterRenderer?.clear()
           clearVideoCanvasImageCache()
+          clearVideoExportCharacterImageCaches()
         }
       )
       return { program, canvas, readbackOptimized }
@@ -129,6 +132,7 @@ export function VideoExportSurfacePage() {
       mediaPool?.dispose()
       layerCacheRef.current?.clear()
       layerCacheRef.current = null
+      disposeVideoExportCharacterImageCaches()
       cacheBudgetRef.current?.dispose()
       cacheBudgetRef.current = null
       clearVideoCanvasImageCache()

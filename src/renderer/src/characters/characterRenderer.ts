@@ -14,6 +14,8 @@ import { legacyStandardExpressionEffects } from '../../../shared/legacyExpressio
 import type { VideoCharacterRenderAssetProvider } from '../../../shared/videoCharacterRenderAssets'
 import { resolveSavedCharacterSource, characterShapeScale, type CatalogArtwork } from './characterSourceResolver'
 import { getCharacterProportions } from '../../../shared/customizer'
+import { VideoStudioBoundedMemo } from '../../../shared/videoStudioNext/boundedMemo'
+import type { VideoStudioResourceBudget } from '../../../shared/videoStudioNext/resourceBudget'
 export { withCharacterHeadSize, characterShapeScale } from './characterSourceResolver'
 export type { CatalogArtwork } from './characterSourceResolver'
 
@@ -22,6 +24,45 @@ const wardrobeImageCache = new Map<string, Promise<HTMLImageElement>>()
 const skinTintImageCache = new Map<string, Promise<HTMLImageElement>>()
 
 const hairTintImageCache = new Map<string, Promise<HTMLImageElement>>()
+
+type ExportImageMemos = Readonly<{
+  originals: VideoStudioBoundedMemo<HTMLImageElement>
+  skin: VideoStudioBoundedMemo<HTMLImageElement>
+  hair: VideoStudioBoundedMemo<HTMLImageElement>
+}>
+let exportImageMemos: ExportImageMemos | null = null
+
+function estimateDecodedRgba(image: HTMLImageElement): number {
+  const width = image.naturalWidth || image.width
+  const height = image.naturalHeight || image.height
+  const bytes = width * height * 4
+  return Number.isSafeInteger(bytes) && bytes > 0 ? bytes : Number.MAX_SAFE_INTEGER
+}
+
+/**
+ * Called ONLY by the independent video export surface. Other Gacha editors
+ * retain their previous caches and behavior. Costs are estimated decoded
+ * RGBA retention; Canvas/Chromium/GPU transient allocations remain external.
+ */
+export function configureVideoExportCharacterImageCaches(budget: VideoStudioResourceBudget): void {
+  clearVideoExportCharacterImageCaches()
+  exportImageMemos = {
+    originals: new VideoStudioBoundedMemo(64, 24 * 1024 * 1024, estimateDecodedRgba, budget, 'texture'),
+    skin: new VideoStudioBoundedMemo(32, 16 * 1024 * 1024, estimateDecodedRgba, budget, 'texture'),
+    hair: new VideoStudioBoundedMemo(32, 16 * 1024 * 1024, estimateDecodedRgba, budget, 'texture'),
+  }
+}
+
+export function clearVideoExportCharacterImageCaches(): void {
+  exportImageMemos?.originals.clear()
+  exportImageMemos?.skin.clear()
+  exportImageMemos?.hair.clear()
+}
+
+export function disposeVideoExportCharacterImageCaches(): void {
+  clearVideoExportCharacterImageCaches()
+  exportImageMemos = null
+}
 
 export type StandardExpressionEffects = Record<number, FaceExpressionEffects>
 
@@ -55,14 +96,16 @@ export function isRightFaceAsset(asset: FaceComponentAssetSummary): boolean {
 }
 
 export function loadCachedImage(source: string): Promise<HTMLImageElement> {
-  const cached = wardrobeImageCache.get(source)
-  if (cached) return cached
-  const promise = new Promise<HTMLImageElement>((resolve, reject) => {
+  const create = () => new Promise<HTMLImageElement>((resolve, reject) => {
     const image = new Image()
     image.onload = () => resolve(image)
     image.onerror = () => reject(new Error('Não foi possível carregar a imagem da roupa.'))
     image.src = source
   })
+  if (exportImageMemos) return exportImageMemos.originals.getOrCreate(source, create)
+  const cached = wardrobeImageCache.get(source)
+  if (cached) return cached
+  const promise = create()
   wardrobeImageCache.set(source, promise)
   void promise.catch(() => wardrobeImageCache.delete(source))
   return promise
@@ -126,9 +169,11 @@ function hairPixelColorRole(red: number, green: number, blue: number, profile: R
 export function loadHairTintedImage(source: string, overrides: HairColorOverrides | undefined, options?: HairTintOptions): Promise<HTMLImageElement> {
   if (!overrides || !Object.values(overrides).some(Boolean)) return loadCachedImage(source)
   const key = `${source}:${JSON.stringify([overrides, options])}`
-  const cached = hairTintImageCache.get(key)
-  if (cached) return cached
-  const tinted = loadCachedImage(source).then((sourceImage) => {
+  if (!exportImageMemos) {
+    const cached = hairTintImageCache.get(key)
+    if (cached) return cached
+  }
+  const createTinted = () => loadCachedImage(source).then((sourceImage) => {
     const canvas = document.createElement('canvas')
     canvas.width = sourceImage.naturalWidth || sourceImage.width
     canvas.height = sourceImage.naturalHeight || sourceImage.height
@@ -179,6 +224,8 @@ export function loadHairTintedImage(source: string, overrides: HairColorOverride
       output.onerror = () => reject(new Error('Não foi possível recolorir o cabelo.'))
     })
   })
+  if (exportImageMemos) return exportImageMemos.hair.getOrCreate(key, createTinted)
+  const tinted = createTinted()
   hairTintImageCache.set(key, tinted)
   if (hairTintImageCache.size > 40) hairTintImageCache.delete(hairTintImageCache.keys().next().value!)
   void tinted.catch(() => hairTintImageCache.delete(key))
@@ -187,9 +234,11 @@ export function loadHairTintedImage(source: string, overrides: HairColorOverride
 
 export function loadSkinTintedImage(source: string, tone: string): Promise<HTMLImageElement> {
   const key = `${tone}:${source}`
-  const cached = skinTintImageCache.get(key)
-  if (cached) return cached
-  const tinted = loadCachedImage(source).then((sourceImage) => {
+  if (!exportImageMemos) {
+    const cached = skinTintImageCache.get(key)
+    if (cached) return cached
+  }
+  const createTinted = () => loadCachedImage(source).then((sourceImage) => {
     const canvas = document.createElement('canvas')
     canvas.width = sourceImage.naturalWidth || sourceImage.width
     canvas.height = sourceImage.naturalHeight || sourceImage.height
@@ -207,6 +256,8 @@ export function loadSkinTintedImage(source: string, tone: string): Promise<HTMLI
       output.onerror = () => reject(new Error('Não foi possível aplicar a cor de pele.'))
     })
   })
+  if (exportImageMemos) return exportImageMemos.skin.getOrCreate(key, createTinted)
+  const tinted = createTinted()
   skinTintImageCache.set(key, tinted)
   void tinted.catch(() => skinTintImageCache.delete(key))
   return tinted
