@@ -343,13 +343,13 @@ export async function captureFabricatorRealScreens(win: BrowserWindow, output: s
         win.webContents.sendInputEvent({type:'mouseMove',x:target.x,y:target.y})
         win.webContents.sendInputEvent({type:'mouseDown',x:target.x,y:target.y,button:'left',clickCount:1})
         for(let step=1;step<=5;step++){
-          win.webContents.sendInputEvent({type:'mouseMove',x:target.x+step*6,y:target.y+step*2,button:'left',modifiers:['leftButtonDown']})
+          win.webContents.sendInputEvent({type:'mouseMove',x:target.x+step*6,y:target.y+step*2,button:'left',modifiers:['leftbuttondown']})
           await new Promise(resolve=>setTimeout(resolve,85))
         }
         win.webContents.sendInputEvent({type:'mouseUp',x:target.x+30,y:target.y+10,button:'left'})
         let authored: {x:number;y:number;rotation:number}|null=null
         for(let attempt=0;attempt<35;attempt++){
-          authored=await win.webContents.executeJavaScript("window.desktop.loadFaceExpressionWorkspaceDraft(1).then(d=>d?.current?.ptPupils?.left ?? null)") as typeof authored
+          authored=await win.webContents.executeJavaScript("window.desktop.loadFaceExpressionWorkspaceDraft(1).then(d=>d?.current?.ptPupils?.left ?? null)") as {x:number;y:number;rotation:number}|null
           if(authored && Number.isFinite(authored.x) && Number.isFinite(authored.y))break
           await new Promise(resolve=>setTimeout(resolve,200))
         }
@@ -362,7 +362,7 @@ export async function captureFabricatorRealScreens(win: BrowserWindow, output: s
             const list=await window.desktop.listFaceExpressionPresets(1)
             const entry=list.find(item=>item.collectionId==='standard'&&item.expressionIndex===0)
             return entry?window.desktop.loadFaceExpressionPreset(1,entry.id):null
-          })()`) as typeof saved
+          })()`) as {id:string;ptPupils?:{left?:{x:number;y:number;rotation:number}};transforms:unknown}|null
           if(saved?.ptPupils?.left)break
           await new Promise(resolve=>setTimeout(resolve,200))
         }
@@ -724,7 +724,7 @@ export async function captureCustomizerStudioReopened(win: BrowserWindow, output
   if (flow.schemaVersion !== 1 || flow.syntheticOnly !== true) throw Error('Fixture de reinício inválida.')
   let ptEvidence: {id:string;ptPupils:{left:{x:number;y:number;rotation:number}};normalTransforms:unknown}|null=null
   try {
-    ptEvidence=JSON.parse(await readFile(join(output,'pt-pupil-persistence.json'),'utf8')) as typeof ptEvidence
+    ptEvidence=JSON.parse(await readFile(join(output,'pt-pupil-persistence.json'),'utf8')) as {id:string;ptPupils:{left:{x:number;y:number;rotation:number}};normalTransforms:unknown}|null
   } catch (reason) {
     if((reason as NodeJS.ErrnoException).code!=='ENOENT')throw reason
   }
