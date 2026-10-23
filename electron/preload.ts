@@ -36,6 +36,7 @@ const fabricatorApi: FabricatorDesktopApi = {
   saveAnimatorDraft: (modelSlot, draft, assets) => invokeFabricator('saveAnimatorDraft', modelSlot, draft, assets),
   deleteAnimatorDraft: (modelSlot) => invokeFabricator('deleteAnimatorDraft', modelSlot),
   listWardrobeSets: (modelSlot) => invokeFabricator('listWardrobeSets', modelSlot),
+  listWardrobeSetsDetailed: (modelSlot) => invokeFabricator('listWardrobeSetsDetailed', modelSlot),
   loadWardrobeSet: (modelSlot, id) => invokeFabricator('loadWardrobeSet', modelSlot, id),
   saveWardrobeSet: (modelSlot, set, assets) => invokeFabricator('saveWardrobeSet', modelSlot, set, assets),
   deleteWardrobeSet: (modelSlot, id) => invokeFabricator('deleteWardrobeSet', modelSlot, id),
