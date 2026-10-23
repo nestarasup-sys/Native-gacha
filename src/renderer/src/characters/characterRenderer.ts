@@ -14,6 +14,7 @@ import { legacyStandardExpressionEffects } from '../../../shared/legacyExpressio
 import type { VideoCharacterRenderAssetProvider } from '../../../shared/videoCharacterRenderAssets'
 import { resolveSavedCharacterSource, characterShapeScale, type CatalogArtwork } from './characterSourceResolver'
 import { getCharacterProportions } from '../../../shared/customizer'
+import { prepareGachaStaticLayers } from './gachaStaticLayers'
 import { exportImageMemos, loadCachedImage } from './characterImageMemos'
 export { loadCachedImage, configureVideoExportCharacterImageCaches, clearVideoExportCharacterImageCaches, disposeVideoExportCharacterImageCaches } from './characterImageMemos'
 export { withCharacterHeadSize, characterShapeScale } from './characterSourceResolver'
@@ -1029,13 +1030,13 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
   const context = canvas.getContext('2d')
   if (context) configureCharacterSampling(context)
   if (!context) throw new Error('Não foi possível preparar a imagem do personagem.')
+  const rigLayers = prepareGachaStaticLayers(baseImage, wardrobeImage, frontHairImage, wardrobeAboveHairImage)
   const shapeScale = characterShapeScale(proportions)
   const outputWidth = Math.max(canvas.width, Math.ceil(canvas.width * shapeScale.x))
   const outputHeight = Math.max(canvas.height, Math.ceil(canvas.height * shapeScale.y))
   const renderToCanvas = async (currentAppearance: CustomizerFaceAppearance | undefined = appearance, studioFaceTransforms?: StudioFaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: StudioFaceMode) => {
     context.clearRect(0, 0, canvas.width, canvas.height)
-    context.drawImage(baseImage, 0, 0, canvas.width, canvas.height)
-    if (wardrobeImage) context.drawImage(wardrobeImage, 0, 0, canvas.width, canvas.height)
+    context.drawImage(rigLayers.behindFace, 0, 0, canvas.width, canvas.height)
     let faceAppearance = currentAppearance && studioFaceMode ? {
       ...currentAppearance,
       eyeState: studioFaceMode === 'blink' ? 2 as const : currentAppearance.eyeState === 1 ? 1 as const : 0 as const,
@@ -1078,8 +1079,7 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
       if (!hasCatalogFaceSelection && legacyFaceImage && faceAppearance.setId === appearance?.setId) context.drawImage(legacyFaceImage, 0, 0, canvas.width, canvas.height)
       if (hasCatalogFaceSelection || hasFaceOverlaySelection) await drawFaceCatalogOverlay(context, artwork, source, activeItems, faceAppearance, character.customization.modelSkinTone, studioFaceTransforms, mouthEffects, studioFaceMode, resolveClosedEye, character.customization.partOverrides, undefined, assetProvider)
     } else if (legacyFaceImage) context.drawImage(legacyFaceImage, 0, 0, canvas.width, canvas.height)
-    if (frontHairImage) context.drawImage(frontHairImage, 0, 0, canvas.width, canvas.height)
-    if (wardrobeAboveHairImage) context.drawImage(wardrobeAboveHairImage, 0, 0, canvas.width, canvas.height)
+    if (rigLayers.inFrontOfFace) context.drawImage(rigLayers.inFrontOfFace, 0, 0, canvas.width, canvas.height)
     if (shapeScale.x === 1 && shapeScale.y === 1) return { canvas, width: canvas.width, height: canvas.height }
     const output = document.createElement('canvas')
     output.width = outputWidth

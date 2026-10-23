@@ -151,13 +151,13 @@ test('pose-to-pose transitions retain the original interpolated artwork path', a
 })
 
 test('shared bytes ledger bounds prepared rigs and releases on cache eviction/dispose', async () => {
-  const budget = new VideoStudioResourceBudget(270000)
+  const budget = new VideoStudioResourceBudget(450000)
   const { renderer, state, transition, events, character } = rig({ budget })
   await renderer.render(transition(state(1)), 1, character)
-  assert.equal(budget.snapshot().usedBytes, 128 * 128 * 4 * 4)
+  assert.equal(budget.snapshot().usedBytes, 128 * 128 * 4 * 6)
   await renderer.render(transition(state(2)), 1, character)
   assert.equal(renderer.preparedStats().entries, 1)
-  assert.equal(budget.snapshot().usedBytes, 128 * 128 * 4 * 4)
+  assert.equal(budget.snapshot().usedBytes, 128 * 128 * 4 * 6)
   await renderer.render(transition(state(1)), 1, character)
   assert.equal(events.prepared.length, 3, 'evicted rig rebuilt when requested again')
   renderer.dispose()

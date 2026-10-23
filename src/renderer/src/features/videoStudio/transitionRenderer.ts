@@ -41,9 +41,9 @@ export class TransitionRenderer {
   ) {
     this.preparedStatic = new VideoStudioBoundedMemo(
       8, 48 * 1024 * 1024,
-      // Multiple prepared canvases (base/body, wardrobe, front hair, output).
+      // Prepared body/wardrobe/front hair, two static composites and output.
       // Conservative retained estimate, NOT actual native/VRAM accounting.
-      (prepared) => Math.max(1, prepared.width * prepared.height * 4 * 4),
+      (prepared) => Math.max(1, prepared.width * prepared.height * 4 * 6),
       budget, 'artwork'
     )
   }

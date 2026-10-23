@@ -147,6 +147,12 @@ A `VideoExportSurfacePage` escolhe `renderFrame(scene, true)`. O `videoCanvasCom
 
 **Testes Windows:** recorte alfa 2D e threshold, caminho de leitura falha sem quebrar o frame, cópia independente, múltiplas expressões que evitam `toDataURL`, preparador de corpo reutilizado, pupilas esquerda/direita e ordem de composição, roteamento da exportação Canvas e fallback PNG preservado. Também continuam os cenários de SceneIR 12/24/48 personagens. **Ainda exigem ensaio físico separado**: comparação de golden PNG vs Canvas com personagens/roupas reais, export MP4 integral com áudio/VFR e medição p95 de FPS/commit/VRAM em Windows. Não alegar ganho 10× nem OOM eliminado apenas pelos testes sintéticos.
 
+### Décimo segundo corte — subcamadas Gacha estáveis preparadas uma só vez
+
+`src/renderer/src/characters/gachaStaticLayers.ts` separa a composição **baixo do rosto** (`corpo + cabelo posterior + roupa`) e **acima do rosto** (`cabelo frontal + roupas acima do cabelo`) em **dois canvases reutilizáveis por pose/rig**. O rosto, pupilas PT, olhos, boca, blink e máscaras continuam dinâmicos **entre esses dois grupos** no compositor Gacha original. `renderToCanvas()` deixa de recompor as quatro fontes estáticas individualmente a cada quadro facial: agora faz uma composição de baixo, o rosto e uma composição de cima, sem criar PNG intermediário. A ordem de oclusão é preservada. O ledger do `TransitionRenderer` estima **seis superfícies RGBA** por preparação estática (limite LRU 8 rigs, 48 MiB), por conta das novas superfícies preparadas, sem fingir medir buffers nativos.
+
+**Testes novos:** grupos estáticos com ordem corpo→roupa e cabelo→roupa por cima, ausência do grupo superior quando vazio e invalidação de rig inválido; preservados os testes de recorte/pupilas/PT e sem PNG por expressão. A verdadeira composição por sprites individualmente no palco (Pixi/Skia) **não** foi introduzida: a exportação faz composição Canvas com subcamadas estáveis e uma face variável, e só então entrega a superfície ao compositor 1920×1080. O golden visual de personagens reais e benchmark Windows RAM/VRAM continuam gates obrigatórios.
+
 ## Estrutura-alvo resumida
 
 `StudioDocument/AssetManifest → ProjectRepository + EditorCore/CommandBus → SceneCompiler/Evaluator → FramePlan → ResourceBudgeter/Scheduler + GachaRenderer + MediaService → PreviewTransport / ExportService → verificador e publish atômico`.
