@@ -73,3 +73,26 @@ test('new immutable editor split respects locks, duplicate positions and authore
   const locked={...first,videoTimeline:{...first.videoTimeline,trackSettings:{actor:{locked:true}}}}
   assert.equal(splitCharacterAt(locked,'actor',75,'locked','new'),locked)
 })
+
+test('new frame evaluator reuses authored data URLs without cloning project assets on every seek',()=>{
+  let compiled=0
+  const {VideoStudioFrameEngine}=load('src/shared/videoStudioRebuild/frameEngine.ts',{
+    '../videoSceneIR':{
+      compileVideoScene:(snapshot,variant)=>{
+        compiled++;assert.equal(variant,'animated')
+        assert.strictEqual(snapshot.studio,source)
+        assert.strictEqual(snapshot.timeline,source.videoTimeline)
+        return { snapshot }
+      },
+      evaluateVideoSceneFrame:(program,frame)=>({frame,art:program.snapshot.studio.assets[0].dataUrl}),
+    },
+  })
+  const src='data:image/png;base64,'+'a'.repeat(800000)
+  const source={schemaVersion:1,assets:[{id:'real',dataUrl:src}],
+    videoTimeline:{schemaVersion:1,frameRate:60,durationFrames:10800,characterKeys:[],textClips:[]}}
+  const engine=new VideoStudioFrameEngine(source)
+  assert.equal(engine.evaluate(0).art,src)
+  assert.equal(engine.evaluate(10500).art,src)
+  assert.equal(compiled,1)
+  assert.throws(()=>engine.evaluate(10800),RangeError)
+})
