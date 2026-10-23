@@ -6,10 +6,14 @@ import type { FabricatorWardrobeCatalog } from './wardrobeCatalog'
 export function registerFabricatorWardrobeCatalogHandlers(
   ipc: Pick<IpcMain, 'handle'>,
   assertTrustedSender: (event: IpcMainInvokeEvent) => void,
-  catalog: Pick<FabricatorWardrobeCatalog, 'list'>
+  catalog: Pick<FabricatorWardrobeCatalog, 'list' | 'listDetailed'>
 ): void {
   ipc.handle(fabricatorIpcChannels.listWardrobeSets, async (event, modelSlot: number) => {
     assertTrustedSender(event)
     return catalog.list(modelSlot)
+  })
+  ipc.handle(fabricatorIpcChannels.listWardrobeSetsDetailed, async (event, modelSlot: number) => {
+    assertTrustedSender(event)
+    return catalog.listDetailed(modelSlot)
   })
 }
