@@ -100,7 +100,10 @@ async function run(){
     await evaluate("(()=>{const e=document.querySelector('input[aria-label=\"Frame absoluto\"]');const setter=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set;setter.call(e,'2700');e.dispatchEvent(new Event('input',{bubbles:true}));e.dispatchEvent(new Event('change',{bubbles:true}));return true})()")
     await until("Number(document.querySelector('input[aria-label=\"Frame absoluto\"]')?.value)===2700",'seek absoluto')
     await evaluate("(()=>{const b=[...document.querySelectorAll('button')].find(x=>x.textContent.includes('Salvar cópia'));b.click();return true})()")
-    const saved=await until("window.desktop.listVideoStudios().then(xs=>xs.length>0)",'cópia no serviço de persistência')
+    // The save command is asynchronous. A library read during the asset
+    // transaction can encounter its temporary manifest; wait for IPC success.
+    await until("Boolean(document.querySelector('.video-rebuild footer')?.textContent?.includes('Cópia gravada'))",'confirmação da gravação')
+    const saved=await until("window.desktop.listVideoStudios().then(xs=>xs.length>0).catch(()=>false)",'cópia no serviço de persistência')
     assert.equal(saved,true)
     const result={ok:true,renderBackend:'webgl2',playedFrame:progress.value,seekFrame:2700,
       persisted:true,projectIsolation:'synthetic',runId}
