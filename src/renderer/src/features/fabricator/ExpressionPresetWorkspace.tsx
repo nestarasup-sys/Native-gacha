@@ -1,5 +1,6 @@
 import { compilePortableExpression, resolvePresetPupilGaze, type ExpressionMetrics } from '../../../../shared/portableExpression'
 import { pupilDeltaFromDrag, pupilSourceMirrored } from '../../../../shared/facePupilGeometry'
+import { FACE_COMPONENT_SELECTION_STORAGE_KEY, pickFaceLibraryBase, savedFaceLibraryParts } from '../../../../shared/faceLibrarySelection'
 import { ExpressionCharacterPreview } from './ExpressionCharacterPreview'
 import { projectForOriginalPreview } from '../../../../shared/fabricatorModelViews'
 import { useModelSourceRefresh } from './models/useModelSourceRefresh'
@@ -346,12 +347,23 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
         .filter((preset) => typeof preset.collectionId === 'string' && Number.isInteger(preset.expressionIndex) && preset.expressionIndex! >= STANDARD_EXPRESSIONS.length)
         .map((preset) => [expressionWorkingCopyKey(preset.collectionId!, preset.expressionIndex!), preset.name])))
 
-      const leftEye = readyComponents.find((asset) => asset.kind === 'eye' && componentSide(asset) === 'left')
-      const leftPupil = readyComponents.find((asset) => asset.kind === 'pupil' && componentSide(asset) === 'left')
-      const leftBrow = readyComponents.find((asset) => asset.kind === 'eyebrow' && componentSide(asset) === 'left')
-      const rightEye = leftEye ? findPairedAsset(leftEye, components) : readyComponents.find((asset) => asset.kind === 'eye' && componentSide(asset) === 'right')
-      const rightPupil = leftPupil ? findPairedAsset(leftPupil, components) : readyComponents.find((asset) => asset.kind === 'pupil' && componentSide(asset) === 'right')
-      const rightBrow = leftBrow ? findPairedAsset(leftBrow, components) : readyComponents.find((asset) => asset.kind === 'eyebrow' && componentSide(asset) === 'right')
+      // A NEW set must start from the exact assets currently chosen in Olhos
+      // DEV, including each asset's saved defaultTransform. Existing presets,
+      // drafts and published transforms always take precedence below.
+      let preferredParts = {} as ReturnType<typeof savedFaceLibraryParts>
+      try { preferredParts = savedFaceLibraryParts(localStorage.getItem(FACE_COMPONENT_SELECTION_STORAGE_KEY),modelSlot) }
+      catch { /* Missing storage: fall back to the first available pair. */ }
+      const choose=(kind: 'eye'|'pupil'|'eyebrow',side:Side,left?:FaceComponentAsset) =>
+        pickFaceLibraryBase(kind,side,preferredParts,readyComponents,left)
+      const leftEye = choose('eye','left')
+      const leftPupil = choose('pupil','left')
+      const leftBrow = choose('eyebrow','left')
+      const rightEye = choose('eye','right',leftEye)
+        ?? (leftEye ? findPairedAsset(leftEye,components) : undefined)
+      const rightPupil = choose('pupil','right',leftPupil)
+        ?? (leftPupil ? findPairedAsset(leftPupil,components) : undefined)
+      const rightBrow = choose('eyebrow','right',leftBrow)
+        ?? (leftBrow ? findPairedAsset(leftBrow,components) : undefined)
       const nose = readyCatalogs.find((item) => item.category === 'nose')
       const mouth = readyCatalogs.find((item) => item.category === 'mouth-closed') ?? readyCatalogs.find((item) => item.category === 'mouth-open')
       const initial: ExpressionComposition = {
