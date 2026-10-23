@@ -95,6 +95,7 @@ export function WardrobeWorkspace() {
   const [model, setModel] = useState<FabricatorProject | null>(null)
   useModelSourceRefresh(modelSlot, fresh => setModel(fresh))
   const [sets, setSets] = useState<WardrobeSetSummary[]>([])
+  const [catalogIssues, setCatalogIssues] = useState<Array<{ id: string; reason: string }>>([])
   const [activeSetId, setActiveSetId] = useState<string | null>(null)
   const [draft, setDraft] = useState<WardrobeSet | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -154,10 +155,10 @@ export function WardrobeWorkspace() {
     const requestId = ++requestRef.current
     workerRef.current?.terminate()
     setOpeningSet(false)
-    setModel(null); setSets([]); setDraft(null); setActiveSetId(null); setSelectedId(null)
+    setModel(null); setSets([]); setCatalogIssues([]); setDraft(null); setActiveSetId(null); setSelectedId(null)
     setError('')
     try {
-      const [savedModels, reference, library] = await Promise.all([window.desktop.listFabricatorSlots(), window.desktop.loadFabricatorSlot(targetSlot), window.desktop.listWardrobeSets(targetSlot)])
+      const [savedModels, reference, library] = await Promise.all([window.desktop.listFabricatorSlots(), window.desktop.loadFabricatorSlot(targetSlot), window.desktop.listWardrobeSetsDetailed(targetSlot)])
       if (requestRef.current !== requestId) return
       setModels(savedModels)
       const firstAvailableModel = savedModels.find((slot) => slot)
@@ -194,11 +195,11 @@ export function WardrobeWorkspace() {
         }
       }
       if (requestRef.current !== requestId) return
-      setModels(savedModels); setModel(recoveredModel); setSets(library)
+      setModels(savedModels); setModel(recoveredModel); setSets(library.sets); setCatalogIssues(library.issues)
       setActiveSetId(null); setDraft(null); setSelectedId(null); setDirty(false); setBodyOffsets({}); setMoveBodyMode(false)
     } catch (reason) {
       if (requestRef.current !== requestId) return
-      setModel(null); setSets([]); setDraft(null); setActiveSetId(null); setSelectedId(null)
+      setModel(null); setSets([]); setCatalogIssues([]); setDraft(null); setActiveSetId(null); setSelectedId(null)
       setError(reason instanceof Error ? reason.message : 'Não foi possível carregar a biblioteca de roupas.')
     }
   }, [])
@@ -520,6 +521,7 @@ export function WardrobeWorkspace() {
       {draft && <input aria-label="Nome do conjunto" className="wardrobe-name-input" value={draft.name} onChange={(event) => { setDirty(true); setDraft((current) => current ? { ...current, name: event.target.value } : current) }} placeholder="Nome do conjunto" />}
       <div className="wardrobe-toolbar-actions"><span className={`wardrobe-save-state${dirty ? ' pending' : ''}`}><i />{dirty ? 'Alterações não salvas' : model ? `${model.parts.length} peças no modelo` : 'Escolha um modelo salvo'}</span><button className="pose-button secondary" disabled={!model || processing || saving || openingSet || !sourceParts} onClick={() => { if (dirty && !window.confirm('Descartar as alterações atuais e importar outra folha?')) return; inputRef.current?.click() }} type="button"><Icon name="plus" /> Importar folha</button>{testPose ? <button className="pose-button danger" onClick={exitTestPose} type="button"><Icon name="eyeOff" /> Sair do teste</button> : <button className="pose-button secondary" disabled={!model || !draft?.components.length} onClick={() => void openTestPosePicker()} type="button"><Icon name="eye" /> Testar pose</button>}<button className="pose-button primary" disabled={!draft || draft.edition === 2 || saving || processing || openingSet || !sourceParts} onClick={() => void save()} type="button"><Icon name="check" />{saving ? 'Salvando…' : activeSetId ? 'Salvar alterações' : 'Salvar conjunto'}</button>{activeSetId && <button className="pose-icon-button" title="Excluir conjunto" disabled={processing || saving || openingSet} onClick={() => void deleteSet()} type="button"><Icon name="trash" /></button>}<input ref={inputRef} hidden type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => { void importSheet(event.target.files?.[0]); event.currentTarget.value = '' }} /></div>
     </header>
+    {!!catalogIssues.length && <div className="wardrobe-error" role="alert">{catalogIssues.length} conjunto(s) exigem revisão: {catalogIssues.map(issue => `${issue.id}: ${issue.reason}`).join(' · ')}. Os demais conjuntos continuam disponíveis; nenhum arquivo problemático foi descartado.</div>}
     {error && <div className="wardrobe-error" role="alert">{error}<button onClick={() => setError('')} type="button">Fechar</button></div>}
     {testPose && (poseMissingAttachments.length > 0 || poseUsesOlderModel) && <div className="wardrobe-error" role="alert">
       {poseMissingAttachments.length > 0 && <span>Esta pose não contém a parte corporal de {poseMissingAttachments.length} peça(s): {poseMissingAttachments.map((part) => part.name).join(', ')}. Elas foram ocultadas no teste, sem alterar a roupa salva. </span>}
