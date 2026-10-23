@@ -1,4 +1,4 @@
-import { compilePortableExpression, type ExpressionMetrics } from '../../../../shared/portableExpression'
+import { compilePortableExpression, resolvePresetPupilGaze, type ExpressionMetrics } from '../../../../shared/portableExpression'
 import { projectForOriginalPreview } from '../../../../shared/fabricatorModelViews'
 import { useModelSourceRefresh } from './models/useModelSourceRefresh'
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
@@ -261,6 +261,7 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
   const [selectedCollectionId, setSelectedCollectionId] = useState(EXPRESSION_COLLECTION_ID)
   const [presetId, setPresetId] = useState<string>(() => crypto.randomUUID())
   const [selectedExpressionIndex, setSelectedExpressionIndex] = useState(0)
+  const [previewGaze, setPreviewGaze] = useState<'right'|'left'>('right')
   const [customExpressionNames, setCustomExpressionNames] = useState<Record<string, string>>({})
   const [workingCopies, setWorkingCopies] = useState<Record<string, ExpressionWorkingCopy>>({})
   const [workspaceReady, setWorkspaceReady] = useState(false)
@@ -478,7 +479,24 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
 
   const head = useMemo(() => project?.parts.find((part) => /cabe[çc]a|head/i.test(part.name)) ?? null, [project])
   const visibleComposition = open ? draft : composition
-  const visibleTransforms = open ? draftTransforms : transforms
+  const visibleTransforms = useMemo(() => {
+    const raw=open ? draftTransforms : transforms
+    if (open || previewGaze !== 'left')return raw
+    // PT is a strictly read-only alternate preview. Neither draft autosave nor
+    // published presets include the gaze variation.
+    const next=cloneTransforms(raw)
+    for(const side of ['left','right'] as const){
+      const eyeId=composition.eyes[side],pupilId=composition.pupils[side]
+      const eye=eyeId ? componentAssets[eyeId] : undefined
+      const pupil=pupilId ? componentAssets[pupilId] : undefined
+      if(!eye || !pupil)continue
+      const eyeKey=side==='left'?'eyeLeft':'eyeRight'
+      const key=side==='left'?'pupilLeft':'pupilRight'
+      next[key].x=resolvePresetPupilGaze(raw[key].x,baseTransforms[key].x,eye.width,raw[eyeKey].scaleX,side,
+        pupil.rightSidePositioned===true,'left')
+    }
+    return next
+  },[open,draftTransforms,transforms,previewGaze,composition,baseTransforms,componentAssets])
   const visibleNoseOpacity = open ? draftNoseOpacity : noseOpacity
   const collectionExpressionNames = useMemo(() => Object.fromEntries(Object.entries(customExpressionNames)
     .filter(([key]) => key.startsWith(`${selectedCollectionId}:`))
@@ -734,28 +752,11 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
     setNoseOpacity(composition.nose ? catalogItems[composition.nose.catalogId]?.opacity ?? 1 : 1)
     setEffects(defaultExpressionEffects())
   }
-  const turnPupilsLeft = (sourceComposition: ExpressionComposition, sourceTransforms: FaceExpressionTransforms): FaceExpressionTransforms => {
-    const next = cloneTransforms(sourceTransforms)
-    if (!head) return next
-    for (const side of ['left', 'right'] as const) {
-      const eye = sourceComposition.eyes[side] ? componentAssets[sourceComposition.eyes[side]!] : undefined
-      const pupil = sourceComposition.pupils[side] ? componentAssets[sourceComposition.pupils[side]!] : undefined
-      if (!eye || !pupil) continue
-      const eyeTransform = next[layerKey('eye', side)]
-      const key = layerKey('pupil', side)
-      // The right logical slot is mirrored when its asset is not physically right-sided.
-      // Compensate for that so both pupils move toward the same (left) side of the preview.
-      const pointsLeft = side === 'left' || pupil.rightSidePositioned === true
-      next[key] = { ...next[key], x: (pointsLeft ? -1 : 1) * eye.width * eyeTransform.scaleX * .16 }
-    }
-    return next
-  }
   const selectExpression = async (index: number, pupilsLeft = false) => {
     if (switchingExpression || saving) return
-    if (index === selectedExpressionIndex) {
-      if (pupilsLeft) setTransforms((current) => turnPupilsLeft(composition, current))
-      return
-    }
+    // The ordinary expression and PT share one saved set of transforms.
+    setPreviewGaze(pupilsLeft?'left':'right')
+    if (index === selectedExpressionIndex) return
     setSwitchingExpression(true)
     setError(null)
     const currentKey = expressionWorkingCopyKey(selectedCollectionId, selectedExpressionIndex)
@@ -767,13 +768,13 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
     try {
       const workingCopy = workingCopies[targetKey]
       if (workingCopy) {
-        setPresetId(workingCopy.id); setComposition(workingCopy.composition); setTransforms(pupilsLeft ? turnPupilsLeft(workingCopy.composition, workingCopy.transforms) : cloneTransforms(workingCopy.transforms)); setNoseOpacity(workingCopy.noseOpacity); setEffects(cloneEffects(workingCopy.effects))
+        setPresetId(workingCopy.id); setComposition(workingCopy.composition); setTransforms(cloneTransforms(workingCopy.transforms)); setNoseOpacity(workingCopy.noseOpacity); setEffects(cloneEffects(workingCopy.effects))
         return
       }
       const summary = expressionPresetByIndex.get(index)
       const saved = summary ? await window.desktop.loadFaceExpressionPreset(modelSlot, summary.id) : null
       if (saved) {
-        setPresetId(saved.id); setComposition(saved.selections); setTransforms(pupilsLeft ? turnPupilsLeft(saved.selections, saved.transforms) : saved.transforms); setNoseOpacity(saved.noseOpacity); setEffects(cloneEffects(saved.effects))
+        setPresetId(saved.id); setComposition(saved.selections); setTransforms(cloneTransforms(saved.transforms)); setNoseOpacity(saved.noseOpacity); setEffects(cloneEffects(saved.effects))
         return
       }
       const nextComposition = structuredClone(baseComposition)
@@ -781,7 +782,7 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
         const mouth = catalogItems[nextComposition.mouth.catalogId]
         if (mouth?.pieces.some((piece) => piece.index === index)) nextComposition.mouth.index = index
       }
-      setPresetId(crypto.randomUUID()); setComposition(nextComposition); setTransforms(pupilsLeft ? turnPupilsLeft(nextComposition, baseTransforms) : cloneTransforms(baseTransforms)); setNoseOpacity(baseNoseOpacity); setEffects(defaultExpressionEffects())
+      setPresetId(crypto.randomUUID()); setComposition(nextComposition); setTransforms(cloneTransforms(baseTransforms)); setNoseOpacity(baseNoseOpacity); setEffects(defaultExpressionEffects())
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Não foi possível abrir esta expressão.')
     } finally {
@@ -790,6 +791,7 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
   }
   const createExpression = () => {
     if (loading || switchingExpression || saving) return
+    setPreviewGaze('right')
     const nextIndex = Math.max(STANDARD_EXPRESSIONS.length - 1, ...customExpressionIndices) + 1
     const name = `Nova expressão ${nextIndex - STANDARD_EXPRESSIONS.length + 1}`
     const nextId = crypto.randomUUID()
@@ -838,6 +840,7 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
     } }))
     setSelectedCollectionId(collectionId)
     setSelectedExpressionIndex(0)
+    setPreviewGaze('right')
     try {
       const workingCopy = workingCopies[targetKey]
       if (workingCopy) {
@@ -1028,7 +1031,7 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
             <button type="button" className={`expression-sequence-item${isActive ? ' active' : ''}`} aria-pressed={isActive} disabled={loading || switchingExpression || saving} onClick={() => void selectExpression(index)}>
               <b>{String(index + 1).padStart(2, '0')}</b><span>{name}</span><small>{isActive ? 'Editando' : saved ? 'Salvo' : cached ? 'Rascunho' : 'Vazio'}</small>
             </button>
-            <button className="expression-sequence-look-left" type="button" title={`Carregar ${name} com as pupilas voltadas à esquerda`} aria-label={`Pupilas à esquerda: ${name}`} disabled={loading || switchingExpression || saving} onClick={() => void selectExpression(index, true)}>pt</button>
+            <button className="expression-sequence-look-left" type="button" aria-pressed={isActive && previewGaze === 'left'} title={`Carregar ${name} com as pupilas voltadas à esquerda`} aria-label={`Pupilas à esquerda: ${name}`} disabled={loading || switchingExpression || saving} onClick={() => void selectExpression(index, true)}>pt</button>
           </div>
         })}
         {customExpressionIndices.map((index) => {
@@ -1040,7 +1043,7 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
             <button type="button" className={`expression-sequence-item expression-sequence-item-custom${isActive ? ' active' : ''}`} aria-pressed={isActive} disabled={loading || switchingExpression || saving} onClick={() => void selectExpression(index)}>
               <b>+</b><span>{name}</span><small>{isActive ? 'Editando' : saved ? 'Salvo' : cached ? 'Rascunho' : 'Vazio'}</small>
             </button>
-            <button className="expression-sequence-look-left" type="button" title={`Carregar ${name} com as pupilas voltadas à esquerda`} aria-label={`Pupilas à esquerda: ${name}`} disabled={loading || switchingExpression || saving} onClick={() => void selectExpression(index, true)}>pt</button>
+            <button className="expression-sequence-look-left" type="button" aria-pressed={isActive && previewGaze === 'left'} title={`Carregar ${name} com as pupilas voltadas à esquerda`} aria-label={`Pupilas à esquerda: ${name}`} disabled={loading || switchingExpression || saving} onClick={() => void selectExpression(index, true)}>pt</button>
           </div>
         })}
       </nav>
