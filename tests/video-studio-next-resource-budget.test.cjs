@@ -46,6 +46,16 @@ test('invalid reservations cannot poison counters; disposal releases all leases'
   assert.equal(budget.tryReserve('other', 1), null)
 })
 
+test('one-byte limits have a valid soft limit and a releasable lease', () => {
+  const budget = new VideoStudioResourceBudget(1)
+  const lease = budget.tryReserve('other', 1)
+  assert.ok(lease)
+  assert.equal(budget.snapshot().softLimitBytes, 1)
+  assert.equal(budget.snapshot().pressure, true)
+  lease.release()
+  assert.equal(budget.snapshot().usedBytes, 0)
+})
+
 test('separate ledgers do not incorrectly share their counters', () => {
   const a = new VideoStudioResourceBudget(16)
   const b = new VideoStudioResourceBudget(16)

@@ -31,7 +31,7 @@ export class VideoStudioResourceBudget {
 
   constructor(
     readonly limitBytes: number,
-    readonly softLimitBytes: number = Math.floor(limitBytes * 0.85)
+    readonly softLimitBytes: number = Math.max(1, Math.floor(limitBytes * 0.85))
   ) {
     if (!Number.isSafeInteger(limitBytes) || limitBytes < 1
       || !Number.isSafeInteger(softLimitBytes) || softLimitBytes < 1 || softLimitBytes > limitBytes) {

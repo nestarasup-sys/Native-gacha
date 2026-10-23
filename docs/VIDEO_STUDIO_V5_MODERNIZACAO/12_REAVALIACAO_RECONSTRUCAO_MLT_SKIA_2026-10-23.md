@@ -313,7 +313,7 @@ Os capítulos **12–17** preservam e aprofundam a pesquisa feita sobre:
 
 A pesquisa detalhada funciona como **base para projetar módulos novos**, não como backlog de “consertar o editor legado até parecer suficiente”. Mesmo se X1 com Canvas/FFmpeg vencer, os marcos N2–N9 continuam obrigatórios. O capítulo **18** reúne fontes externas.
 
-**Status real na data desta revisão:** apenas o **planejamento** foi reescrito. Nenhum núcleo novo, motor nativo, processo supervisor, renderer PixiJS/Skia, teste pesado novo ou migração de projeto foi implementado como parte desta decisão.
+**Status de execução atualizado:** a reconstrução **começou em N2, ainda parcial**: o novo `src/shared/videoStudioNext/editorCore.ts` recebe comandos de resize, track settings, transições, duração e viewport e já é utilizado pelo `VideoStudioEditor.tsx` por um adaptador. O novo `resourceBudget.ts` implementa apenas um **ledger local de admissão por bytes**, sem controle de RAM/VRAM global ainda. Dois testes Node verificam contratos básicos; a CI Linux/Windows passa a executá-los. **N1–N10 não estão concluídos**: histórico, estado de UI, render Gacha, decoder, supervisor, export e integração de budgets continuam legados. As provas de stress em hardware real permanecem pendentes; não atribuir ganhos de memória à etapa inicial.
 
 ---
 
