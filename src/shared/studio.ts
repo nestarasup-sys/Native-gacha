@@ -97,6 +97,8 @@ export type StudioElement = {
   faceTransforms?: StudioFaceTransforms
   /** Character-specific neutral face, shared by every expression collection. */
   expressionBase?: StudioExpressionBase
+  /** PT looks left; ordinary expression looks right. Same preset, scene-only gaze. */
+  activeExpressionGaze?: 'right' | 'left'
   activeExpressionPresetId?: string | null
   /** Saved preset revision currently composed into this Studio actor. */
   activeExpressionPresetUpdatedAt?: string
