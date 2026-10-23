@@ -4,7 +4,7 @@ import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/p
 import { join, resolve } from 'node:path'
 import { runVideoStudioProcess, type VideoStudioFfmpegCapabilities } from './videoFfmpegCapabilities'
 
-export const VIDEO_PREVIEW_PROXY_VERSION = 'proxy-540p30-v1'
+export const VIDEO_PREVIEW_PROXY_VERSION = 'proxy-540p30-v2'
 
 export type VideoPreviewProxyRecord = Readonly<{
   schemaVersion: 1
@@ -120,7 +120,8 @@ export class VideoPreviewProxyStore {
       let waveformFilename:string|null=null
       const wave=await runVideoStudioProcess(input.ffmpeg.executable,[
         '-hide_banner','-loglevel','error','-nostdin','-y','-i',sourcePath,
-        '-map','0:a:0?','-filter_complex','aformat=channel_layouts=mono,showwavespic=s=1200x120:colors=white',
+        '-filter_complex','[0:a:0]aformat=channel_layouts=mono,showwavespic=s=1200x120:colors=white[wave]',
+        '-map','[wave]',
         '-frames:v','1','-f','image2',waveTemp
       ],{timeoutMs,signal:input.signal}).catch(()=>null)
       if(wave?.code===0){
@@ -177,7 +178,10 @@ export class VideoPreviewProxyStore {
           }
           entries.push({sha:item.name,folder,bytes,createdAt:record.createdAt})
         }catch{
-          if(item.name!==protectedSha) await rm(folder,{recursive:true,force:true}).catch(()=>undefined)
+          // A different source may currently be writing its proxy into this
+          // folder. Another concurrent generation must not mistake that
+          // in-flight directory for a stale cache entry and remove it.
+          if(item.name!==protectedSha&&!this.pending.has(item.name)) await rm(folder,{recursive:true,force:true}).catch(()=>undefined)
         }
       }
     }
@@ -185,7 +189,7 @@ export class VideoPreviewProxyStore {
     let bytes=entries.reduce((sum,item)=>sum+item.bytes,0),removed=0
     for(const item of entries){
       if(bytes<=this.maxBytes) break
-      if(item.sha===protectedSha) continue
+      if(item.sha===protectedSha||this.pending.has(item.sha)) continue
       await rm(item.folder,{recursive:true,force:true})
       bytes-=item.bytes
       removed++

@@ -5,7 +5,8 @@ param(
   [Parameter(Mandatory = $true)][ValidateRange(1, 2147483647)][int]$RootPid,
   [ValidateRange(1, 3600)][int]$Samples = 60,
   [ValidateRange(1, 60)][int]$IntervalSeconds = 1,
-  [string]$CsvPath = ''
+  [string]$CsvPath = '',
+  [string]$StopFile = ''
 )
 $ErrorActionPreference = 'Stop'
 if (-not $IsWindows -and $PSVersionTable.PSEdition -eq 'Core') {
@@ -49,7 +50,10 @@ for ($sample = 0; $sample -lt $Samples; $sample++) {
       # Process exited during sampling, not a fatal error.
     }
   }
-  if ($sample -lt $Samples - 1) { Start-Sleep -Seconds $IntervalSeconds }
+  if ($sample -lt $Samples - 1) {
+    if ($StopFile -and (Test-Path -LiteralPath $StopFile)) { break }
+    Start-Sleep -Seconds $IntervalSeconds
+  }
 }
 if ($CsvPath) {
   $parent = Split-Path -Parent $CsvPath

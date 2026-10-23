@@ -50,6 +50,7 @@ export class VideoMediaPlayback {
     if (!next.playing || !this.media.paused || this.pending || this.blocked) return
     this.pending = true
     const request = ++this.request
+    const requestedSource = this.media.src || this.media.currentSrc
     void this.media.play().then(() => {
       if (this.disposed || request !== this.request) return
       if (!this.state?.playing) {
@@ -60,10 +61,15 @@ export class VideoMediaPlayback {
     }).catch((reason: unknown) => {
       if (this.disposed || request !== this.request) return
       this.pending = false
+      const errorName = reason && typeof reason === 'object' && 'name' in reason ? String(reason.name) : ''
+      // Replacing original media with its preview proxy starts a new resource
+      // load. Chromium rejects a pending play() for the old src with AbortError;
+      // the new source's loadedmetadata handler calls refresh() and retries.
+      if (errorName === 'AbortError' && (this.media.src || this.media.currentSrc) !== requestedSource) return
       this.blocked = true
       this.media.muted = true
       this.media.pause()
-      const denied = reason instanceof Error && reason.name === 'NotAllowedError'
+      const denied = errorName === 'NotAllowedError'
       this.onError(denied ? 'A reprodução foi bloqueada. Clique em Pausar e depois em Play para ouvir o vídeo.' : 'Não foi possível reproduzir este vídeo e seu áudio. Tente abrir o arquivo em MP4 ou WebM compatível.')
     })
   }

@@ -93,6 +93,7 @@ const studioApi: StudioDesktopApi = {
 
 const videoStudioApi: VideoStudioDesktopApi = {
   getVideoStudioMemoryReport: () => ipcRenderer.invoke('video-studio:diagnostics:memory'),
+  captureVideoStressPage: () => ipcRenderer.invoke('video-studio:stress:capture-page'),
   listVideoStudios: () => ipcRenderer.invoke('video-studio:list'),
   loadVideoStudio: (id) => ipcRenderer.invoke('video-studio:get', id),
   saveVideoStudio: (studio) => ipcRenderer.invoke('video-studio:save', studio),
@@ -100,7 +101,7 @@ const videoStudioApi: VideoStudioDesktopApi = {
   getVideoStudioFolder: () => ipcRenderer.invoke('video-studio:folder'),
   importVideoStudioImage: (category) => ipcRenderer.invoke('video-studio:import-image', category),
   listVideoLibrary: () => ipcRenderer.invoke('video-studio:video-library:list'),
-  importVideoLibrary: () => ipcRenderer.invoke('video-studio:video-library:import'),
+  importVideoLibrary: (offscreenStressMediaPath) => ipcRenderer.invoke('video-studio:video-library:import', offscreenStressMediaPath),
   finishVideoLibraryImport: (id, durationFrames) => ipcRenderer.invoke('video-studio:video-library:finish', id, durationFrames),
   deleteVideoLibraryItem: (id) => ipcRenderer.invoke('video-studio:video-library:delete', id),
   renameVideoLibraryItem: (id, name) => ipcRenderer.invoke('video-studio:video-library:rename', id, name),

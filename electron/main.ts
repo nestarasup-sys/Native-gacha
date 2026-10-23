@@ -236,6 +236,22 @@ function configureLocalAppDataRoot(): string | null {
 
 configuredAppDataRoot = configureLocalAppDataRoot()
 
+// Local, opt-in harness for Windows Video Studio stress runs. It keeps the
+// normal app-data profile and app IPC, but lets an external local runner drive
+// the hidden renderer through CDP without showing a desktop window.
+if (process.env.GACHA_VIDEO_STRESS_OFFSCREEN === '1') {
+  app.commandLine.appendSwitch('remote-debugging-address', '127.0.0.1')
+  // Keep Chromium's animation/compositor clock running in the isolated Windows
+  // harness even though its native window is positioned outside every display.
+  app.commandLine.appendSwitch('disable-background-timer-throttling')
+  app.commandLine.appendSwitch('disable-renderer-backgrounding')
+  app.commandLine.appendSwitch('disable-backgrounding-occluded-windows')
+  const debuggingPort = process.env.GACHA_VIDEO_STRESS_DEBUG_PORT
+  if (debuggingPort && /^\d{1,5}$/.test(debuggingPort) && Number(debuggingPort) > 0 && Number(debuggingPort) <= 65535) {
+    app.commandLine.appendSwitch('remote-debugging-port', debuggingPort)
+  }
+}
+
 // The catalog starts empty and does not scan or rewrite legacy libraries.
 // Existing JSON/file stores remain authoritative until each domain is migrated.
 const dataPlatform = new DataPlatform(configuredAppDataRoot ?? dirname(app.getPath('userData')))
@@ -1247,6 +1263,15 @@ async function registerFabricatorHandlers(): Promise<void> {
           recentProcessFailures: videoStudioRecentProcessFailures,
         })
       })
+      ipcMain.handle('video-studio:stress:capture-page', async (event) => {
+        assertTrustedSender(event)
+        if (process.env.GACHA_VIDEO_STRESS_OFFSCREEN !== '1' || process.platform !== 'win32') {
+          throw new Error('Capturas de página só estão disponíveis na sessão oculta de estresse do Windows.')
+        }
+        const image = await event.sender.capturePage()
+        const size = image.getSize()
+        return { width: size.width, height: size.height, pngBase64: image.toPNG().toString('base64') }
+      })
       videoExportLibrary ??= new VideoExportLibrary(app.getPath('appData'))
   videoPreviewProxyStore ??= new VideoPreviewProxyStore(join(app.getPath('appData'), 'CACHE', 'video-studio', 'preview-media'))
       ipcMain.handle('video-studio:exports:list', async (event) => {
@@ -1323,8 +1348,22 @@ async function registerFabricatorHandlers(): Promise<void> {
         videoExportJobOwners.delete(jobId)
       })
       ipcMain.handle('video-studio:video-library:list', async (event) => { assertTrustedSender(event); return videoLibrary.list() })
-      ipcMain.handle('video-studio:video-library:import', async (event) => {
+      ipcMain.handle('video-studio:video-library:import', async (event, offscreenStressMediaPath?: string) => {
         assertTrustedSender(event)
+        if (offscreenStressMediaPath !== undefined) {
+          if (process.env.GACHA_VIDEO_STRESS_OFFSCREEN !== '1' || typeof offscreenStressMediaPath !== 'string') {
+            throw new Error('A importação por caminho local só está disponível no runner oculto de estresse.')
+          }
+          const allowedRoot = resolve(app.getAppPath(), 'app-data', 'stress-media')
+          const requested = resolve(offscreenStressMediaPath)
+          if (dirname(requested) !== allowedRoot || !existsSync(allowedRoot) || !existsSync(requested)
+            || lstatSync(allowedRoot).isSymbolicLink() || lstatSync(requested).isSymbolicLink()
+            || realpathSync(allowedRoot) !== allowedRoot || realpathSync(requested) !== requested
+            || !lstatSync(requested).isFile()) {
+            throw new Error('O arquivo de estresse deve ser um arquivo local direto de app-data/stress-media.')
+          }
+          return videoLibrary.importFile(requested)
+        }
         const result = await dialog.showOpenDialog({ title: 'Biblioteca de vídeos: importar', properties: ['openFile'], filters: [{ name: 'Vídeos', extensions: ['mp4', 'webm', 'mov', 'm4v'] }] })
         if (result.canceled || !result.filePaths[0]) return null
         return videoLibrary.importFile(result.filePaths[0])
@@ -2008,8 +2047,9 @@ async function registerFabricatorHandlers(): Promise<void> {
 
 function createMainWindow(): void {
   Menu.setApplicationMenu(null)
+  const videoStressOffscreen = process.env.GACHA_VIDEO_STRESS_OFFSCREEN === '1'
   const window = new BrowserWindow({
-    show: process.env.GACHA_DEV_AI_TEST !== '1',
+    show: !videoStressOffscreen && process.env.GACHA_DEV_AI_TEST !== '1',
     width: 1440,
     height: 900,
     minWidth: 1120,
@@ -2022,11 +2062,21 @@ function createMainWindow(): void {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
-      // Deterministic paint and requestAnimationFrame behavior for the hidden
-      // DEV AI Electron window; normal user windows retain Chromium throttling.
-      backgroundThrottling: process.env.GACHA_DEV_AI_TEST === '1' ? false : true
+      // Normal windows retain Chromium's background throttling. Stress sessions
+      // keep their preview clock active while the window stays off-display.
+      backgroundThrottling: videoStressOffscreen || process.env.GACHA_DEV_AI_TEST === '1' ? false : true
     }
   })
+  if (videoStressOffscreen) {
+    window.setSkipTaskbar(true)
+    window.once('ready-to-show', () => {
+      // A never-shown BrowserWindow is throttled by some Windows compositor
+      // paths despite backgroundThrottling=false. An off-display native window
+      // keeps real Electron rendering active without appearing on any monitor.
+      window.setPosition(-32000, -32000)
+      window.showInactive()
+    })
+  }
   window.removeMenu()
   window.webContents.once('did-finish-load', () => {
     if (dataBackupService) {
