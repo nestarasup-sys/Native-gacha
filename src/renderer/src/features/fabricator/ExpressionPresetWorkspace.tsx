@@ -1,3 +1,4 @@
+import { compilePortableExpression, type ExpressionMetrics } from '../../../../shared/portableExpression'
 import { projectForOriginalPreview } from '../../../../shared/fabricatorModelViews'
 import { useModelSourceRefresh } from './models/useModelSourceRefresh'
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
@@ -118,6 +119,31 @@ function rebaseTransform(transform: FaceTransform, reference: FaceTransform, nex
     else delete rebased.flipX
   }
   return rebased
+}
+
+/** Metrics are captured when authoring, never read from the original PNG to apply a preset later. */
+function authoredMetrics(composition: ExpressionComposition, components: Record<string,FaceComponentAsset>, catalogs: Record<string,FaceCatalogItem>): ExpressionMetrics {
+  const metrics: ExpressionMetrics = {}
+  for(const side of ['left','right'] as const){
+    const suffix=side==='left'?'Left':'Right'
+    const eye=composition.eyes[side] ? components[composition.eyes[side]!] : undefined
+    const brow=composition.eyebrows[side] ? components[composition.eyebrows[side]!] : undefined
+    if(eye){
+      metrics[`eye${suffix}`]={width:eye.width,height:eye.height}
+      // Pupil placement is measured in eye coordinates, not the pupil PNG dimensions.
+      metrics[`pupil${suffix}`]={width:eye.width,height:eye.height}
+    }
+    if(brow)metrics[`brow${suffix}`]={width:brow.width,height:brow.height}
+  }
+  if(composition.nose){
+    const piece=catalogs[composition.nose.catalogId]?.pieces.find(item=>item.sheet==='nose' && item.index===composition.nose?.index)
+    if(piece)metrics.nose={width:piece.width,height:piece.height}
+  }
+  if(composition.mouth){
+    const piece=catalogs[composition.mouth.catalogId]?.pieces.find(item=>item.sheet===composition.mouth?.kind && item.index===composition.mouth?.index)
+    if(piece)metrics.mouth={width:piece.width,height:piece.height}
+  }
+  return metrics
 }
 
 function rebaseExpressionTransforms(
@@ -546,6 +572,7 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
           ...saved,
           schemaVersion: 1, id, modelSlot, name, collectionId: selectedCollectionId, expressionIndex: index,
           selections, transforms: rebasedTransforms, referenceTransforms: cloneTransforms(nextBaseTransforms),
+          portableMotion: compilePortableExpression(rebasedTransforms,nextBaseTransforms,authoredMetrics(selections,componentAssets,catalogItems)),
           noseOpacity: draftNoseOpacity, effects: cloneEffects(workingCopy?.effects ?? saved?.effects), updatedAt: now
         }
         nextPresets.push(nextPreset)
@@ -790,7 +817,8 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
       const saved: FaceExpressionPreset = {
         schemaVersion: 1, id: presetId, modelSlot, name: activeExpressionName,
         collectionId: selectedCollectionId, expressionIndex: selectedExpressionIndex,
-        selections: structuredClone(composition), transforms: cloneTransforms(transforms), referenceTransforms: structuredClone(referenceTransforms), noseOpacity, effects: cloneEffects(effects), updatedAt: new Date().toISOString()
+        selections: structuredClone(composition), transforms: cloneTransforms(transforms), referenceTransforms: structuredClone(referenceTransforms),
+        portableMotion: compilePortableExpression(transforms,referenceTransforms,authoredMetrics(composition,componentAssets,catalogItems)), noseOpacity, effects: cloneEffects(effects), updatedAt: new Date().toISOString()
       }
       await window.desktop.saveFaceExpressionPreset(modelSlot, saved)
       setPresetId(saved.id)
