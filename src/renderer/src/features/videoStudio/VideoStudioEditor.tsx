@@ -1,6 +1,7 @@
 import { snapshotVideoStudioScene as snapshot, withStudioSnapshot as withSnapshot, studioCharacterRenderKey } from '../../../../shared/studioSceneModel'
 import { SerializedDocumentSaveQueue } from '../../../../shared/serializedDocumentSave'
-import { findTimelineBlockStart, resizeTimelineBlock, timelineBlockOverlaps, type TimelineBlockTarget } from '../../../../shared/videoTimelineEditing'
+import { findTimelineBlockStart, timelineBlockOverlaps, type TimelineBlockTarget } from '../../../../shared/videoTimelineEditing'
+import { applyVideoStudioEditorCommand } from '../../../../shared/videoStudioNext/editorCore'
 import { captureVideoPoster } from './videoPoster'
 import { useStudioInspectorState } from '../../characters/useStudioInspectorState'
 import './VideoStudioEditor.css'
@@ -1015,15 +1016,8 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
   }
 
   const changeTimelineView = (settings: { zoom?: number; height?: number }) => {
-    patchStudio((studio) => ({
-      ...studio,
-      videoTimeline: {
-        ...videoTimelineFor(studio),
-        ...(settings.zoom !== undefined ? { timelineZoom: settings.zoom } : {}),
-        ...(settings.height !== undefined ? { timelineHeight: settings.height } : {})
-      },
-      updatedAt: new Date().toISOString()
-    }))
+    patchStudio((studio) => applyVideoStudioEditorCommand(studio, videoTimelineFor(studio),
+      { type: 'set-view', ...settings }, new Date().toISOString()))
   }
 
   const setCharacterPositionsLocked = (locked: boolean) => changeScene((studio) => {
@@ -1491,11 +1485,8 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
   }
 
   const resizeVideoBlock = (target: TimelineBlockTarget, startFrame: number, endFrame: number) => {
-    changeScene((studio) => {
-      const current = videoTimelineFor(studio)
-      const videoTimeline = resizeTimelineBlock(current, target, startFrame, endFrame, studio.elements.filter((element) => element.kind === 'character').map((element) => element.id))
-      return videoTimeline === current ? studio : { ...studio, videoTimeline, updatedAt: new Date().toISOString() }
-    })
+    changeScene((studio) => applyVideoStudioEditorCommand(studio, videoTimelineFor(studio),
+      { type: 'resize-block', target, startFrame, endFrame }, new Date().toISOString()))
   }
 
   const moveVideoCharacterTrack = (elementId: string, direction: -1 | 1) => {
@@ -2345,7 +2336,7 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
           </div>
         </section>
         {fullView && <PreviewTransport preparing={animationPreparing} frame={videoPlayheadFrame} duration={videoTimelineFor(activeStudio).durationFrames} playing={videoPlaying} audio={videoTimelineFor(activeStudio).videoAudio} onSeek={seekVideoFrame} onTogglePlayback={toggleVideoPlayback} onAudioChange={updateVideoAudio} onBeginAudioEdit={recordHistory} />}
-        {!fullView && isVideoWorkspace && <VideoTimeline preparing={animationPreparing} onExport={() => setExportDialogOpen(true)} canUndo={canUndo && !studioFaceBusy && !studioExpressionBusy && !savingCast} canRedo={canRedo && !studioFaceBusy && !studioExpressionBusy && !savingCast} onUndo={undo} onRedo={redo} selectedCanvasId={selectedElementId} studio={activeStudio} playheadFrame={videoPlayheadFrame} playing={videoPlaying} height={videoTimelineHeight} presetNames={Object.fromEntries(studioExpressionPresets.map((preset) => [preset.id, preset.name]))} onResize={setVideoTimelineHeight} onChangeTimelineView={changeTimelineView} onSelectElement={(elementId) => { setVideoPlaying(false); setSelectedElementId(elementId); setInspectorOpen(true); if (elementId.startsWith('video:')) { setActiveTool(null); setInspectorTab('editor') } }} onSeek={seekVideoFrame} onTogglePlayback={toggleVideoPlayback} onEnterFullscreen={enterFullView} onSaveFrame={saveVideoFrame} onSplitCharacter={splitVideoCharacterTrack} onSplitTextClip={splitVideoTextClip} onSplitVideoClip={splitVideoMediaClip} onUpdateVideoClip={updateVideoMediaClip} onChangeVideoAudio={updateVideoAudio} onBeginAudioEdit={recordHistory} onDuplicateVideoClip={duplicateVideoMediaClip} onUpdateTextClip={updateVideoTextClip} onDeleteTextClip={deleteVideoTextClip} onDeleteVideoClip={deleteVideoMediaClip} onDeleteTextElement={deleteVideoTextElement} onDeleteCharacterSegment={deleteVideoCharacterSegment} onDuplicateTextClip={duplicateVideoTextClip} onResizeBlock={resizeVideoBlock} onAddText={(kind) => addTextElement(kind)} onAddVideo={() => void openVideoLibrary()} onChangeTrackSettings={(id, settings) => changeScene((studio) => ({ ...studio, videoTimeline: { ...videoTimelineFor(studio), trackSettings: { ...videoTimelineFor(studio).trackSettings, [id]: settings } }, updatedAt: new Date().toISOString() }))} onSetCharacterAnimationsEnabled={(enabled) => changeScene((studio) => ({ ...studio, videoTimeline: { ...videoTimelineFor(studio), animateCharacterTransitions: enabled }, updatedAt: new Date().toISOString() }))} onMoveCharacterTrack={moveVideoCharacterTrack} onSetCharacterPositionsLocked={setCharacterPositionsLocked} onChangeDuration={(durationFrames) => changeScene((studio) => ({ ...studio, videoTimeline: { ...videoTimelineFor(studio), durationFrames, playheadFrame: Math.min(videoPlayheadFrame, durationFrames) }, updatedAt: new Date().toISOString() }))} />}
+        {!fullView && isVideoWorkspace && <VideoTimeline preparing={animationPreparing} onExport={() => setExportDialogOpen(true)} canUndo={canUndo && !studioFaceBusy && !studioExpressionBusy && !savingCast} canRedo={canRedo && !studioFaceBusy && !studioExpressionBusy && !savingCast} onUndo={undo} onRedo={redo} selectedCanvasId={selectedElementId} studio={activeStudio} playheadFrame={videoPlayheadFrame} playing={videoPlaying} height={videoTimelineHeight} presetNames={Object.fromEntries(studioExpressionPresets.map((preset) => [preset.id, preset.name]))} onResize={setVideoTimelineHeight} onChangeTimelineView={changeTimelineView} onSelectElement={(elementId) => { setVideoPlaying(false); setSelectedElementId(elementId); setInspectorOpen(true); if (elementId.startsWith('video:')) { setActiveTool(null); setInspectorTab('editor') } }} onSeek={seekVideoFrame} onTogglePlayback={toggleVideoPlayback} onEnterFullscreen={enterFullView} onSaveFrame={saveVideoFrame} onSplitCharacter={splitVideoCharacterTrack} onSplitTextClip={splitVideoTextClip} onSplitVideoClip={splitVideoMediaClip} onUpdateVideoClip={updateVideoMediaClip} onChangeVideoAudio={updateVideoAudio} onBeginAudioEdit={recordHistory} onDuplicateVideoClip={duplicateVideoMediaClip} onUpdateTextClip={updateVideoTextClip} onDeleteTextClip={deleteVideoTextClip} onDeleteVideoClip={deleteVideoMediaClip} onDeleteTextElement={deleteVideoTextElement} onDeleteCharacterSegment={deleteVideoCharacterSegment} onDuplicateTextClip={duplicateVideoTextClip} onResizeBlock={resizeVideoBlock} onAddText={(kind) => addTextElement(kind)} onAddVideo={() => void openVideoLibrary()} onChangeTrackSettings={(id, settings) => changeScene((studio) => applyVideoStudioEditorCommand(studio, videoTimelineFor(studio), { type: 'set-track-settings', trackId: id, settings }, new Date().toISOString()))} onSetCharacterAnimationsEnabled={(enabled) => changeScene((studio) => applyVideoStudioEditorCommand(studio, videoTimelineFor(studio), { type: 'set-character-transitions', enabled }, new Date().toISOString()))} onMoveCharacterTrack={moveVideoCharacterTrack} onSetCharacterPositionsLocked={setCharacterPositionsLocked} onChangeDuration={(durationFrames) => changeScene((studio) => applyVideoStudioEditorCommand(studio, videoTimelineFor(studio), { type: 'set-duration', durationFrames, playheadFrame: videoPlayheadFrame }, new Date().toISOString()))} />}
         {exportDialogOpen && !fullView && <div className="video-export-modal-backdrop" onPointerDown={(event) => { if (event.target === event.currentTarget && !exportPreparing) setExportDialogOpen(false) }}>
           <section className="video-export-modal" role="dialog" aria-modal="true" aria-labelledby="video-export-title">
             <header><span><small>EXPORTAÇÃO</small><h2 id="video-export-title">Exportar vídeo</h2></span><button type="button" onClick={() => setExportDialogOpen(false)} disabled={exportPreparing}>×</button></header>

@@ -32,6 +32,14 @@
 
 **Precedência em conflitos:** integridade de dados e semântica real > gates/decisões do documento 12 > texto histórico. Qualquer instrução de docs antigos para escrita em `G-V5/master-desenvolvimento` deve ser tratada como **obsoleta**.
 
+## Execução iniciada — primeira fatia N2 (ainda não concluído)
+
+O módulo `src/shared/videoStudioNext/editorCore.ts` inicia a nova fronteira de comandos da timeline, sem dependências de React: **resize de bloco, settings/lock de tracks, transições, duração e viewport**. O editor real já encaminha esses comandos para o novo núcleo, preservando o formato v1 e o compartilhamento das referências de mídia. Histórico, salvar e muitas outras ações seguem temporariamente no adaptador legado; **N2 não está pronto**.
+
+`src/shared/videoStudioNext/resourceBudget.ts` inicia um **ledger local por bytes e leases** com testes de admissão/liberação. **Não foi conectado ainda a caches, decoders, superfícies, GPU ou subprocessos**, portanto **não impõe um limite global à RAM/VRAM nem resolve OOM nesta etapa**. Essa integração é trabalho dos marcos N1/N4/N6.
+
+Novos testes: `npm run test:video:next`, também incluídos em `npm test`. O corte depende de validação CI/Windows; não há promessa de ganho de FPS/memória.
+
 ## Estrutura-alvo resumida
 
 `StudioDocument/AssetManifest → ProjectRepository + EditorCore/CommandBus → SceneCompiler/Evaluator → FramePlan → ResourceBudgeter/Scheduler + GachaRenderer + MediaService → PreviewTransport / ExportService → verificador e publish atômico`.
