@@ -106,7 +106,8 @@ export function resolvePresetPupilGaze(
     throw Error('Direção das pupilas recebeu geometria inválida.')
   // Authoring establishes the intensity; playback establishes a consistent
   // screen direction even for physically mirrored right-side image assets.
-  const magnitude=Math.abs(authoredX-neutralX) || eyeWidth*eyeScaleX*.16
+  const authoredMagnitude=Math.abs(authoredX-neutralX)
+  const magnitude=authoredMagnitude < eyeWidth*eyeScaleX*.03 ? eyeWidth*eyeScaleX*.16 : authoredMagnitude
   const mirror=(side==='right' && !rightSidePositioned ? -1 : 1)*(eyeFlipped?-1:1)
   return neutralX+(gaze==='left'?-1:1)*mirror*magnitude
 }
