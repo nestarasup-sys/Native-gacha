@@ -21,6 +21,8 @@ O usuário rejeitou continuar estendendo o editor legado e determinou três prin
 - Contratos de transporte `src/shared/videoStudioRebuild/mediaContracts.ts` no preload; `VideoStudioMediaEngine` alimenta o relógio com a amostra real do `HTMLVideoElement.currentTime` se houver áudio ativo e usa clock monotônico quando não houver.
 - Teste dedicado valida timebase, áudio, cancelamento, seek, rejeição IPC e reinício após morte do processo.
 
+**Smoke real Windows do subprocesso:** após `npm run build`, execute `npm run test:video:rebuild:worker:windows` com Electron instalado. O script inicia um utilityProcess real, confirma clock, pausa, áudio e encerramento. A CI Windows verifica presença do `out/main/media-engine-worker.js`; ela ainda **não executa** o smoke Electron, pois sua instalação em CI usa `npm ci --ignore-scripts`.
+
 **Precisão do escopo:** isso isola e supervisiona o **relógio e a política AV**, não a decodificação nem a mixagem. Os HTMLVideoElements/decoders Chromium ainda vivem na surface; FFmpeg e o compositor próprio ainda precisam de workers isolados. Não declarar a terceira decisão inteiramente concluída até transferir decoders/export e validar PTS no Windows real.
 
 ## Limitações explícitas do primeiro corte

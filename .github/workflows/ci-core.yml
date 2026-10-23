@@ -60,3 +60,6 @@ jobs:
         run: npm run typecheck
       - name: Compile Electron/React
         run: npm run build
+      - name: Verify separate AV utility bundle on Windows
+        if: matrix.os == 'windows-latest'
+        run: npm run test:video:rebuild:worker:bundle
