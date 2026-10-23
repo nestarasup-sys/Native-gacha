@@ -38,7 +38,7 @@ test('todos editores usam o resolvedor compartilhado sem dependência de página
  assert.match(studio,/studioSceneModel/)
  assert.match(video,/VideoStudioFrameEngine/)
  assert.match(video,/GachaGpuStage/)
- assert.doesNotMatch(video,/^\s*import\s+.*(?:VideoStudioEditor|CustomizerPage)/m)
+ assert.doesNotMatch(video,/from ['\"][^'\"]*\/(?:VideoStudioEditor|CustomizerPage)(?:\.tsx)?['\"]/)
  assert.match(transition,/characterRenderer/)
  assert.doesNotMatch(resolver,/\.\.\/features\/|CustomizerPage|StudioPage/)
 })
