@@ -72,7 +72,7 @@ test('GPU byte budget evicts least-recently-used source and video updates in sam
 })
 
 test('GPU context loss clears leases and restore permits rebuilding textures',()=>{
-  const {Stage,canvas,events}=setup(),stage=new Stage(canvas,4096)
+  const {Stage,canvas,events,log}=setup(),stage=new Stage(canvas,4096)
   stage.draw([sprite('one')])
   events.get('webglcontextlost')({preventDefault(){}})
   assert.equal(stage.stats().retainedEstimatedBytes,0)
