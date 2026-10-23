@@ -2559,11 +2559,6 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .wardrobe-reference-body-part { pointer-events:none;touch-action:none; }
 .wardrobe-reference-body-part.movable { pointer-events:auto;cursor:grab;filter:drop-shadow(0 0 3px #3284f5a8); }
 .wardrobe-reference-body-part.movable:active { cursor:grabbing; }
-.wardrobe-binding-marker { position:absolute;z-index:3000;width:18px;height:18px;margin:0;padding:0;transform:translate(-50%,-50%);border:3px solid white;border-radius:50%;background:#2685e9;box-shadow:0 0 0 2px #1768bd,0 2px 7px #173b7999;cursor:grab;touch-action:none;user-select:none; }
-.wardrobe-binding-marker:hover,.wardrobe-binding-marker:focus-visible { outline:2px solid #0e80ff;outline-offset:3px; }
-.wardrobe-binding-marker:active { cursor:grabbing; }
-.wardrobe-binding-marker.selected { width:22px;height:22px;background:#39adff;box-shadow:0 0 0 3px #1557a8,0 0 12px #0e80ff; }
-.wardrobe-bind-dot { width:10px;height:10px;flex:0 0 10px;border:2px solid #fff;border-radius:50%;background:#2685e9;box-shadow:0 0 0 1px #1768bd; }
 .wardrobe-preview-part { cursor:grab;touch-action:none;user-select:none; }
 .wardrobe-preview-part:active { cursor:grabbing; }
 .wardrobe-preview-part.selected { filter:drop-shadow(0 0 2px #e15683) drop-shadow(0 0 4px #e156835e); }
@@ -2734,3 +2729,27 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .face-animator-empty { max-width:300px;padding:22px;color:#918594;font-size:12px;line-height:1.6;text-align:center; }
 @media (max-width:1000px) { .face-animator-layout { grid-template-columns:minmax(170px,210px) minmax(0,1fr); }.face-animator-inspector { grid-column:1/-1;max-height:230px; }.face-animator-inspector>label { display:inline-grid;width:48%;margin-right:1%; } }
 @media (max-width:700px) { .face-animator-toolbar { flex-wrap:wrap; }.face-animator-layout { grid-template-columns:1fr;grid-template-rows:auto minmax(330px,1fr) auto; }.face-animator-recipes { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px; }.face-animator-recipes>header { grid-column:1/-1; }.face-animator-recipes>button { margin:0; }.face-animator-inspector { grid-column:1; } }
+
+/* Ciclo 17: grude substitui os antigos pontos azuis, sem reduzir a área de encaixe. */
+.wardrobe-glue-controls { display:grid;gap:7px;margin:5px 0;padding:10px;border:1px solid #cfe8e1;border-radius:9px;background:#f6fffb; }
+.wardrobe-glue-controls>strong { color:#27675f;font-size:12px; }
+.wardrobe-glue-controls>[role="status"] { color:#47746d;font-size:10px;line-height:1.5; }
+.wardrobe-glue-actions { display:flex;flex-wrap:wrap;gap:6px; }
+.wardrobe-glue-actions>.pose-button { flex:1;min-width:95px;justify-content:center; }
+.wardrobe-glue-controls .wardrobe-note { color:#7b8c84;font-size:10px;line-height:1.5; }
+.wardrobe-preview-card { position:relative; }
+.wardrobe-pose-audit { display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:5px 8px;border-bottom:1px solid #f0ebef;background:#fff; }
+.wardrobe-pose-audit>.pose-button { flex:0 0 auto; }
+.wardrobe-pose-audit-results { flex-basis:100%;max-height:102px;overflow:auto;display:grid;gap:4px; }
+.wardrobe-pose-audit-row { display:flex;align-items:center;flex-wrap:wrap;gap:4px;padding:4px 6px;border:1px solid #eee9ed;border-radius:6px;background:#faf9fa; }
+.wardrobe-pose-audit-row>.pose-button { max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+.wardrobe-pose-audit-row small { font-size:9px;color:#7f7480; }
+.wardrobe-pose-audit>[role="alert"] { color:#bc4263;font-size:10px; }
+.wardrobe-comparison-toggle { position:absolute;z-index:500;top:38px;right:9px;max-width:calc(100% - 18px);display:flex;flex-direction:column;align-items:flex-end;gap:6px; }
+.wardrobe-comparison { max-width:min(490px,calc(100vw - 390px));max-height:320px;overflow:auto;padding:10px;border:1px solid #d6dce7;border-radius:10px;background:#fff;box-shadow:0 8px 24px #40394735; }
+.wardrobe-comparison>header { display:grid;gap:3px;margin:0 0 7px;color:#5a5061;font-size:11px; }
+.wardrobe-comparison>header small,.wardrobe-comparison .wardrobe-note { color:#8f8490;font-size:9px;line-height:1.5; }
+.wardrobe-comparison>div>div { display:grid;align-content:start;gap:5px; }
+.wardrobe-comparison>div>div>small { color:#776e78;font-size:10px;font-weight:750; }
+.wardrobe-comparison img { image-rendering:auto;user-select:none; }
+.wardrobe-preview-card>.wardrobe-preview-stage { min-height:110px; }
