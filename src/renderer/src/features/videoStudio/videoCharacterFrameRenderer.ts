@@ -9,6 +9,7 @@ import { TransitionRenderer } from './transitionRenderer'
 import { VideoStudioBoundedMemo } from '../../../../shared/videoStudioNext/boundedMemo'
 import { VideoStudioRasterAdmission } from '../../../../shared/videoStudioNext/rasterAdmission'
 import type { VideoStudioResourceBudget } from '../../../../shared/videoStudioNext/resourceBudget'
+import type { VideoGachaCanvasState } from './videoGachaCanvasFrame'
 
 const DEFAULT_FACE_TRANSFORM: StudioFaceTransform = { x: 0, y: 0, width: 100, height: 100, rotation: 0 }
 const TALK_SCALES = [
@@ -30,7 +31,7 @@ function faceModeForElement(element: StudioElement): StudioFaceMode {
 export class VideoCharacterFrameRenderer {
   private readonly provider: VideoCharacterRenderAssetProvider
   private readonly transitionRenderer: TransitionRenderer
-  private readonly cache: VideoStudioBoundedMemo<VideoCharacterState>
+  private readonly cache: VideoStudioBoundedMemo<VideoGachaCanvasState>
   private readonly admission: VideoStudioRasterAdmission
   private readonly stateIds = new WeakMap<object, number>()
   private nextStateId = 0
@@ -44,7 +45,9 @@ export class VideoCharacterFrameRenderer {
     this.transitionRenderer = new TransitionRenderer(this.provider, budget)
     this.cache = new VideoStudioBoundedMemo(
       240, 64 * 1024 * 1024,
-      (state) => Math.max(1, state.imageDataUrl.length * 2),
+      (state) => state.canvasImage
+        ? state.canvasImage.width * state.canvasImage.height * 4
+        : Math.max(1, state.imageDataUrl.length * 2),
       budget, 'artwork'
     )
     this.admission = new VideoStudioRasterAdmission(budget, 16 * 1024 * 1024, 8, () => this.cache.clear())
@@ -57,7 +60,7 @@ export class VideoCharacterFrameRenderer {
     return id
   }
 
-  private remember(key: string, create: () => Promise<VideoCharacterState>): Promise<VideoCharacterState> {
+  private remember(key: string, create: () => Promise<VideoGachaCanvasState>): Promise<VideoGachaCanvasState> {
     return this.cache.getOrCreate(key, () => this.admission.run(create))
   }
 
@@ -68,13 +71,14 @@ export class VideoCharacterFrameRenderer {
   private renderTransition(
     frame: VideoSceneFrame,
     character: VideoSceneFrame['characters'][number],
-  ): Promise<VideoCharacterState> {
+    directCanvas: boolean,
+  ): Promise<VideoGachaCanvasState> {
     const transition = character.transition
     if (!transition) throw new Error('Transição ausente no frame solicitado.')
-    const key = this.transitionKey(frame, character.elementId, transition.startFrame, transition.boundaryFrame)
+    const key = `${directCanvas ? 'canvas:' : 'png:'}${this.transitionKey(frame, character.elementId, transition.startFrame, transition.boundaryFrame)}`
     return this.remember(key, async () => {
       const source = characterFromVideoExportSnapshot(this.characters, transition.from.element.characterId ?? '')
-      const rendered = await this.transitionRenderer.render({
+      const rendered = await this.transitionRenderer[directCanvas ? 'renderCanvas' : 'render']({
         elementId: character.elementId,
         startFrame: transition.startFrame,
         boundaryFrame: transition.boundaryFrame,
@@ -88,14 +92,14 @@ export class VideoCharacterFrameRenderer {
   }
 
   /** Render one authored state through the exact character renderer without interpolating artwork. */
-  private renderFaceState(state: VideoCharacterState, mode: StudioFaceMode, transforms: StudioFaceTransforms, recipe: string): Promise<VideoCharacterState> {
+  private renderFaceState(state: VideoCharacterState, mode: StudioFaceMode, transforms: StudioFaceTransforms, recipe: string, directCanvas: boolean): Promise<VideoGachaCanvasState> {
     const characterId = state.element.characterId
     if (!characterId) throw new Error('Estado de personagem sem characterId.')
     const source = characterFromVideoExportSnapshot(this.characters, characterId)
     const element = { ...state.element, faceTransforms: transforms, activeFaceMode: mode }
     const synthetic: VideoCharacterState = { element, imageDataUrl: state.imageDataUrl }
-    const key = `face:${this.stateId(state)}:${mode}:${recipe}`
-    return this.remember(key, () => this.transitionRenderer.render({
+    const key = `${directCanvas ? 'canvas:' : 'png:'}face:${this.stateId(state)}:${mode}:${recipe}`
+    return this.remember(key, () => this.transitionRenderer[directCanvas ? 'renderCanvas' : 'render']({
       elementId: element.id,
       startFrame: 0,
       boundaryFrame: 2,
@@ -104,16 +108,16 @@ export class VideoCharacterFrameRenderer {
     }, 1, source))
   }
 
-  private renderBlink(state: VideoCharacterState): Promise<VideoCharacterState> {
+  private renderBlink(state: VideoCharacterState, directCanvas: boolean): Promise<VideoGachaCanvasState> {
     if (faceModeForElement(state.element) !== 'idle' || !state.element.faceAppearance) return Promise.resolve(state)
-    return this.renderFaceState(state, 'blink', state.element.faceTransforms ?? {}, 'blink')
+    return this.renderFaceState(state, 'blink', state.element.faceTransforms ?? {}, 'blink', directCanvas)
       .catch(() => state) // Preview also treats a missing closed-eye asset as an optional effect.
   }
 
-  private async renderMouth(state: VideoCharacterState, frame: number, speechStartFrame: number, mode: 'talk' | 'idle'): Promise<VideoCharacterState> {
+  private async renderMouth(state: VideoCharacterState, frame: number, speechStartFrame: number, mode: 'talk' | 'idle', directCanvas: boolean): Promise<VideoGachaCanvasState> {
     const appearance = state.element.faceAppearance
     if (!appearance) return state
-    if (mode !== 'talk') return this.renderFaceState(state, 'idle', state.element.faceTransforms ?? {}, 'idle').catch(() => state)
+    if (mode !== 'talk') return this.renderFaceState(state, 'idle', state.element.faceTransforms ?? {}, 'idle', directCanvas).catch(() => state)
     const characterId = state.element.characterId
     if (!characterId) return state
     const character = characterFromVideoExportSnapshot(this.characters, characterId)
@@ -134,16 +138,16 @@ export class VideoCharacterFrameRenderer {
     const transforms = scale.width === 1 && scale.height === 1
       ? saved
       : { ...saved, mouth: { ...mouth, width: mouth.width * scale.width, height: mouth.height * scale.height } }
-    return this.renderFaceState(state, 'talk', transforms, `talk:${index}`).catch(() => state)
+    return this.renderFaceState(state, 'talk', transforms, `talk:${index}`, directCanvas).catch(() => state)
   }
 
   /** Resolve pixel-ready character states for one absolute frame using the same renderer recipes as the preview. */
-  async renderFrame(frame: VideoSceneFrame): Promise<ReadonlyMap<string, VideoCharacterState>> {
-    const states = new Map<string, VideoCharacterState>()
+  async renderFrame(frame: VideoSceneFrame, directCanvas = false): Promise<ReadonlyMap<string, VideoGachaCanvasState>> {
+    const states = new Map<string, VideoGachaCanvasState>()
     for (const character of frame.characters) {
       if (character.hidden || !character.authoredState) continue
       if (character.transition) {
-        states.set(character.elementId, await this.renderTransition(frame, character))
+        states.set(character.elementId, await this.renderTransition(frame, character, directCanvas))
         continue
       }
       if (character.automaticMouth) {
@@ -152,11 +156,12 @@ export class VideoCharacterFrameRenderer {
           frame.frame,
           character.automaticMouth.speechStartFrame,
           character.automaticMouth.mode,
+          directCanvas,
         ))
         continue
       }
       if (character.automaticBlink) {
-        states.set(character.elementId, await this.renderBlink(character.authoredState))
+        states.set(character.elementId, await this.renderBlink(character.authoredState, directCanvas))
         continue
       }
       states.set(character.elementId, character.authoredState)

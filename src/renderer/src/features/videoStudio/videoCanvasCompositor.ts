@@ -4,12 +4,13 @@ import type { VideoSceneFrame, VideoSceneLayer } from '../../../../shared/videoS
 import { videoCharacterElementSize, videoClipStageRect, videoStageRect, VIDEO_STAGE_HEIGHT, VIDEO_STAGE_WIDTH } from '../../../../shared/videoStageGeometry'
 import { matchingVideoVisualPlugin } from './videoVisualPluginRegistry'
 import type { VideoCanvasLayerCache } from './videoCanvasLayerCache'
+import type { VideoGachaCanvasState } from './videoGachaCanvasFrame'
 import { VideoStudioBoundedMemo } from '../../../../shared/videoStudioNext/boundedMemo'
 import type { VideoStudioResourceBudget } from '../../../../shared/videoStudioNext/resourceBudget'
 
 export type VideoCanvasFrameResources = Readonly<{
   /** Transition/blink/mouth renderer output keyed by Studio character element id. */
-  characterStates?: ReadonlyMap<string, VideoCharacterState>
+  characterStates?: ReadonlyMap<string, VideoGachaCanvasState>
   /** Exact source video frame keyed by clip id. */
   videoFrames?: ReadonlyMap<string, CanvasImageSource>
   layerCache?: VideoCanvasLayerCache
@@ -195,6 +196,11 @@ async function drawElementLayer(
   const pluginContext = { frame, layer, element, imageDataUrl: source, characterState }
   const plugin = matchingVideoVisualPlugin(pluginContext)
   if (plugin?.renderCanvas && await plugin.renderCanvas(pluginContext, context)) return
+  if (element.kind === 'character' && characterState?.canvasImage) {
+    const size = videoCharacterElementSize(element)
+    drawTransformed(context, characterState.canvasImage, { ...element, ...size }, element.flipX === true)
+    return
+  }
   if ((element.kind === 'image' || element.kind === 'character') && source) {
     const image = await loadImage(source)
     const size = videoCharacterElementSize(element)

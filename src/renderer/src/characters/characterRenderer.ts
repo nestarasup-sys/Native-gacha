@@ -1032,7 +1032,7 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
   const shapeScale = characterShapeScale(proportions)
   const outputWidth = Math.max(canvas.width, Math.ceil(canvas.width * shapeScale.x))
   const outputHeight = Math.max(canvas.height, Math.ceil(canvas.height * shapeScale.y))
-  const render = async (currentAppearance: CustomizerFaceAppearance | undefined = appearance, studioFaceTransforms?: StudioFaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: StudioFaceMode) => {
+  const renderToCanvas = async (currentAppearance: CustomizerFaceAppearance | undefined = appearance, studioFaceTransforms?: StudioFaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: StudioFaceMode) => {
     context.clearRect(0, 0, canvas.width, canvas.height)
     context.drawImage(baseImage, 0, 0, canvas.width, canvas.height)
     if (wardrobeImage) context.drawImage(wardrobeImage, 0, 0, canvas.width, canvas.height)
@@ -1080,7 +1080,7 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
     } else if (legacyFaceImage) context.drawImage(legacyFaceImage, 0, 0, canvas.width, canvas.height)
     if (frontHairImage) context.drawImage(frontHairImage, 0, 0, canvas.width, canvas.height)
     if (wardrobeAboveHairImage) context.drawImage(wardrobeAboveHairImage, 0, 0, canvas.width, canvas.height)
-    if (shapeScale.x === 1 && shapeScale.y === 1) return { dataUrl: canvas.toDataURL('image/png'), width: canvas.width, height: canvas.height }
+    if (shapeScale.x === 1 && shapeScale.y === 1) return { canvas, width: canvas.width, height: canvas.height }
     const output = document.createElement('canvas')
     output.width = outputWidth
     output.height = outputHeight
@@ -1089,9 +1089,13 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
     outputContext.translate(outputWidth / 2, outputHeight / 2)
     outputContext.scale(shapeScale.x, shapeScale.y)
     outputContext.drawImage(canvas, -canvas.width / 2, -canvas.height / 2)
-    return { dataUrl: output.toDataURL('image/png'), width: outputWidth, height: outputHeight }
+    return { canvas: output, width: outputWidth, height: outputHeight }
   }
-  return { width: outputWidth, height: outputHeight, render }
+  const render = async (...args: Parameters<typeof renderToCanvas>) => {
+    const value = await renderToCanvas(...args)
+    return { dataUrl: value.canvas.toDataURL('image/png'), width: value.width, height: value.height }
+  }
+  return { width: outputWidth, height: outputHeight, render, renderToCanvas }
 }
 
 export async function renderSavedCharacter(character: CustomizerCharacter, studioFaceTransforms?: StudioFaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: StudioFaceMode): Promise<{ dataUrl: string; width: number; height: number }> {

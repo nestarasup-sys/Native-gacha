@@ -8,6 +8,7 @@ import type { CharacterTransition } from './characterTransitions'
 import { loadStandardExpressionEffects, prepareSavedCharacterRenderer } from '../../characters/characterRenderer'
 import { VideoStudioBoundedMemo } from '../../../../shared/videoStudioNext/boundedMemo'
 import type { VideoStudioResourceBudget } from '../../../../shared/videoStudioNext/resourceBudget'
+import { snapshotTrimmedGachaCanvas, type VideoGachaCanvasState } from './videoGachaCanvasFrame'
 
 /** Resolve the same visible defaults as the ordinary character compositor. */
 function visibleEffects(appearance: CustomizerFaceAppearance | undefined, effects: FaceExpressionEffects | undefined): FaceExpressionEffects {
@@ -103,7 +104,7 @@ export class TransitionRenderer {
     return { left, right }
   }
 
-  async render(transition: CharacterTransition, frame: number, character: CustomizerCharacter): Promise<VideoCharacterState> {
+  private async renderResult(transition: CharacterTransition, frame: number, character: CustomizerCharacter, directCanvas: boolean): Promise<VideoGachaCanvasState> {
     const t = smoothProgress(transitionProgress(transition, frame))
     if (t <= 0) return transition.from
     if (t >= 1) return transition.to
@@ -143,11 +144,31 @@ export class TransitionRenderer {
         )
       : await prepareSavedCharacterRenderer(copy, { source, artwork, assetProvider: this.assetProvider })
     const mode = t < .5 ? a.activeFaceMode : b.activeFaceMode
+    if (directCanvas) {
+      // The prepared body/wardrobe/front-hair canvases are reused, while the
+      // unchanged facial overlay draws dynamic mouth, blink and independent PT
+      // pupils. Snapshot before the prepared rig is painted again.
+      const rendered = await renderer.renderToCanvas(appearance, transforms, effects, mode)
+      const snapshot = snapshotTrimmedGachaCanvas(rendered.canvas)
+      const geometry = faceRenderGeometry(element, rendered, snapshot.crop, 1920, 1080)
+      return {
+        element: { ...element, ...geometry, faceAppearance: appearance, faceTransforms: transforms, activeExpressionEffects: effects },
+        imageDataUrl: transition.from.imageDataUrl,
+        canvasImage: snapshot.canvas
+      }
+    }
     const rendered = await renderer.render(appearance, transforms, effects, mode)
     const crop = await trimTransparentImage(rendered.dataUrl)
-    // Rendering is measured against the invariant 1920x1080 stage, not window pixels.
     const geometry = faceRenderGeometry(element, rendered, crop, 1920, 1080)
     return { element: { ...element, ...geometry, faceAppearance: appearance, faceTransforms: transforms, activeExpressionEffects: effects }, imageDataUrl: crop?.dataUrl ?? rendered.dataUrl }
+  }
+
+  render(transition: CharacterTransition, frame: number, character: CustomizerCharacter): Promise<VideoCharacterState> {
+    return this.renderResult(transition, frame, character, false)
+  }
+
+  renderCanvas(transition: CharacterTransition, frame: number, character: CustomizerCharacter): Promise<VideoGachaCanvasState> {
+    return this.renderResult(transition, frame, character, true)
   }
 
   preparedStats(): Readonly<{ entries: number; retainedBytes: number; maxEntries: number; maxBytes: number }> {

@@ -137,6 +137,16 @@ O renderer Gacha comum tinha `wardrobeImageCache`, `skinTintImageCache` e `hairT
 
 **Validação:** testes de source images grandes, recoloração de pele, reutilização de referências recentes, redecodificação após eviction e liberação total de bytes; suite `npm run test:video:next` na CI Windows. Ainda se trata de orçamento de retenção **depois** do decode, não de um teto físico para buffers internos do Chromium, GPU ou outros processos. A migração de um compositor verdadeiramente separado em camadas e o golden visual real continuam pendentes.
 
+### Décimo primeiro corte — Gacha direto em Canvas (sem PNG intermediário por expressão)
+
+**Implementação integrada à export surface Windows:** `prepareSavedCharacterRenderer()` conserva o contrato legado `render() → PNG`, mas também expõe `renderToCanvas()` usando **as mesmas camadas de corpo, roupas, cabelo, rosto, olhos, boca, piscadas, máscaras e pupilas PT**. `TransitionRenderer.renderCanvas()` chama esta saída direta, calcula recorte por canal alfa **no próprio Canvas** (limiar de alfa acima de 8, igual ao legado) e produz uma **cópia independente** da superfície recortada, impedindo que a próxima expressão sobrescreva quadros cacheados. O renderer de frames separa chaves de cache `png:` e `canvas:`; as duas vias continuam testáveis.
+
+A `VideoExportSurfacePage` escolhe `renderFrame(scene, true)`. O `videoCanvasCompositor` consome `canvasImage` como `CanvasImageSource` e aplica exatamente a geometria/crop/flip do personagem sem `Image.src = data:image/png` para cada boca, olho ou transição Gacha. **Não** é mais necessário fazer o round-trip `toDataURL → Image.decode → drawImage` na animação rasterizada; o caminho PNG permanece para snapshots de projeto, outras telas e falhas opcionais sem impacto de schema.
+
+**Garantias:** a prioridade do compositor visual/plugin continua igual; a ordem original das camadas internas, recoloração/roupa, máscaras e pupilas PT independentes não foi recriada por heurística (o motor Gacha já existente é usado). A memória retida agora é estimada em **RGBA do Canvas** no memo do renderer em vez de bytes de string PNG; reservas usam o ledger local da exportação. Nenhum arquivo de modelo, projeto `v1` ou mídia é migrado.
+
+**Testes Windows:** recorte alfa 2D e threshold, caminho de leitura falha sem quebrar o frame, cópia independente, múltiplas expressões que evitam `toDataURL`, preparador de corpo reutilizado, pupilas esquerda/direita e ordem de composição, roteamento da exportação Canvas e fallback PNG preservado. Também continuam os cenários de SceneIR 12/24/48 personagens. **Ainda exigem ensaio físico separado**: comparação de golden PNG vs Canvas com personagens/roupas reais, export MP4 integral com áudio/VFR e medição p95 de FPS/commit/VRAM em Windows. Não alegar ganho 10× nem OOM eliminado apenas pelos testes sintéticos.
+
 ## Estrutura-alvo resumida
 
 `StudioDocument/AssetManifest → ProjectRepository + EditorCore/CommandBus → SceneCompiler/Evaluator → FramePlan → ResourceBudgeter/Scheduler + GachaRenderer + MediaService → PreviewTransport / ExportService → verificador e publish atômico`.

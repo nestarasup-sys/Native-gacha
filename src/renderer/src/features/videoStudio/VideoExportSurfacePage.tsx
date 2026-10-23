@@ -84,7 +84,7 @@ export function VideoExportSurfacePage() {
           // Both tasks may fail independently: allSettled ensures an acquired
           // media lease can be released even if the character renderer rejects.
           const [characterResult, mediaResult] = await Promise.allSettled([
-            characterRenderer!.renderFrame(scene),
+            characterRenderer!.renderFrame(scene, true),
             mediaPool!.acquireFramesForScene(scene),
           ])
           if (mediaResult.status === 'fulfilled') mediaLease = mediaResult.value
