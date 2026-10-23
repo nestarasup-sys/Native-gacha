@@ -93,3 +93,21 @@ export function expressionGazeX(
   const mirror=side === 'right' && !rightSidePositioned ? -1 : 1
   return basePupilX + (gaze==='left' ? -1 : 1)*mirror*eyeWidth*eyeScaleX*.16
 }
+
+/** Keeps normal authored gaze untouched. PT mirrors authored displacement, or
+ * uses a deterministic left offset when the authored pupil is neutral.
+ * Does not edit the original preset or alter pupil Y / size / rotation.
+ */
+export function resolvePresetPupilGaze(
+  authoredX: number, neutralX: number, eyeWidth: number, eyeScaleX: number,
+  side: 'left'|'right', rightSidePositioned: boolean, gaze: ExpressionGaze
+): number {
+  const difference=authoredX-neutralX
+  const threshold=eyeWidth*eyeScaleX*.03
+  if(gaze==='right') return Math.abs(difference)<threshold
+    ? expressionGazeX(neutralX,eyeWidth,eyeScaleX,side,rightSidePositioned,'right')
+    : authoredX
+  return Math.abs(difference)<threshold
+    ? expressionGazeX(neutralX,eyeWidth,eyeScaleX,side,rightSidePositioned,'left')
+    : neutralX-difference
+}
