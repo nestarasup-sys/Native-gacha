@@ -6,6 +6,8 @@ O plano antigo `docs/AGENTE_EXPORT_V5/` permanece como histórico/backlog tátic
 
 ## Ordem de leitura atual
 
+**Reavaliação recente (2026-10-23):** [12_REAVALIACAO_RECONSTRUCAO_MLT_SKIA_2026-10-23.md](./12_REAVALIACAO_RECONSTRUCAO_MLT_SKIA_2026-10-23.md) — decisão provisória sobre reconstrução, MLT, Skia e alternativas, fundamentada no HEAD do Native-gacha. **Não é adoção automática da engine.** Referências antigas a G-V5/master-desenvolvimento são históricas e não autorizam escrita fora da branch atual.
+
 1. **[00_PLANO_DIRETOR.md](./00_PLANO_DIRETOR.md)** — visão e arquitetura.
 2. **[11_PESQUISA_OPEN_SOURCE_E_FECHAMENTO_EXPORTADOR.md](./11_PESQUISA_OPEN_SOURCE_E_FECHAMENTO_EXPORTADOR.md)** — pesquisa externa atual, matriz de engines, padrões extraídos e ordem revisada para fechar o exportador.
 3. **[10_RELEASE_CHECKLIST.md](./10_RELEASE_CHECKLIST.md)** — gate final de release.
