@@ -14,55 +14,14 @@ import { legacyStandardExpressionEffects } from '../../../shared/legacyExpressio
 import type { VideoCharacterRenderAssetProvider } from '../../../shared/videoCharacterRenderAssets'
 import { resolveSavedCharacterSource, characterShapeScale, type CatalogArtwork } from './characterSourceResolver'
 import { getCharacterProportions } from '../../../shared/customizer'
-import { VideoStudioBoundedMemo } from '../../../shared/videoStudioNext/boundedMemo'
-import type { VideoStudioResourceBudget } from '../../../shared/videoStudioNext/resourceBudget'
+import { exportImageMemos, loadCachedImage } from './characterImageMemos'
+export { loadCachedImage, configureVideoExportCharacterImageCaches, clearVideoExportCharacterImageCaches, disposeVideoExportCharacterImageCaches } from './characterImageMemos'
 export { withCharacterHeadSize, characterShapeScale } from './characterSourceResolver'
 export type { CatalogArtwork } from './characterSourceResolver'
-
-const wardrobeImageCache = new Map<string, Promise<HTMLImageElement>>()
 
 const skinTintImageCache = new Map<string, Promise<HTMLImageElement>>()
 
 const hairTintImageCache = new Map<string, Promise<HTMLImageElement>>()
-
-type ExportImageMemos = Readonly<{
-  originals: VideoStudioBoundedMemo<HTMLImageElement>
-  skin: VideoStudioBoundedMemo<HTMLImageElement>
-  hair: VideoStudioBoundedMemo<HTMLImageElement>
-}>
-let exportImageMemos: ExportImageMemos | null = null
-
-function estimateDecodedRgba(image: HTMLImageElement): number {
-  const width = image.naturalWidth || image.width
-  const height = image.naturalHeight || image.height
-  const bytes = width * height * 4
-  return Number.isSafeInteger(bytes) && bytes > 0 ? bytes : Number.MAX_SAFE_INTEGER
-}
-
-/**
- * Called ONLY by the independent video export surface. Other Gacha editors
- * retain their previous caches and behavior. Costs are estimated decoded
- * RGBA retention; Canvas/Chromium/GPU transient allocations remain external.
- */
-export function configureVideoExportCharacterImageCaches(budget: VideoStudioResourceBudget): void {
-  clearVideoExportCharacterImageCaches()
-  exportImageMemos = {
-    originals: new VideoStudioBoundedMemo(64, 24 * 1024 * 1024, estimateDecodedRgba, budget, 'texture'),
-    skin: new VideoStudioBoundedMemo(32, 16 * 1024 * 1024, estimateDecodedRgba, budget, 'texture'),
-    hair: new VideoStudioBoundedMemo(32, 16 * 1024 * 1024, estimateDecodedRgba, budget, 'texture'),
-  }
-}
-
-export function clearVideoExportCharacterImageCaches(): void {
-  exportImageMemos?.originals.clear()
-  exportImageMemos?.skin.clear()
-  exportImageMemos?.hair.clear()
-}
-
-export function disposeVideoExportCharacterImageCaches(): void {
-  clearVideoExportCharacterImageCaches()
-  exportImageMemos = null
-}
 
 export type StandardExpressionEffects = Record<number, FaceExpressionEffects>
 
@@ -93,22 +52,6 @@ const faceElementOrder: FaceElementKind[] = ['brow-left', 'brow-right', 'eye-lef
 
 export function isRightFaceAsset(asset: FaceComponentAssetSummary): boolean {
   return asset.rightSidePositioned === true || / · (?:Olho|Olho aberto|Olho fechado|Pupila|Sobrancelha) direit[oa]$/i.test(asset.name)
-}
-
-export function loadCachedImage(source: string): Promise<HTMLImageElement> {
-  const create = () => new Promise<HTMLImageElement>((resolve, reject) => {
-    const image = new Image()
-    image.onload = () => resolve(image)
-    image.onerror = () => reject(new Error('Não foi possível carregar a imagem da roupa.'))
-    image.src = source
-  })
-  if (exportImageMemos) return exportImageMemos.originals.getOrCreate(source, create)
-  const cached = wardrobeImageCache.get(source)
-  if (cached) return cached
-  const promise = create()
-  wardrobeImageCache.set(source, promise)
-  void promise.catch(() => wardrobeImageCache.delete(source))
-  return promise
 }
 
 export type HairTintOptions = { preserveNearWhite?: boolean; allowNearWhiteRoles?: readonly HairColorRole[] }

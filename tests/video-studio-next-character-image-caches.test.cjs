@@ -50,9 +50,13 @@ function fakeRenderer() {
   const memo = moduleFrom('../src/shared/videoStudioNext/boundedMemo.ts', {
     require: () => ({}), Image: FakeImage, document,
   })
+  const imageMemos = moduleFrom('../src/renderer/src/characters/characterImageMemos.ts', {
+    require: (id) => id.endsWith('/boundedMemo') ? memo : {},
+    Image: FakeImage, document,
+  })
   const renderer = moduleFrom('../src/renderer/src/characters/characterRenderer.ts', {
     require: (id) => {
-      if (id.endsWith('/boundedMemo')) return memo
+      if (id === './characterImageMemos') return imageMemos
       if (id.endsWith('/hairCategories')) return { hairCategories: [] }
       if (id.endsWith('/skinTint')) return { tintSkinPixels: () => {} }
       return {}
