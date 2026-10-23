@@ -75,6 +75,30 @@ Testes Windows cobrem 12 mídias sequenciais, reapertura de fonte expulsa e cinc
 
 **Validação Windows:** `npm run test:video:next` verifica diagnósticos, histórico, cache de arte e relógio. A CI Windows executa também smoke de `windows-memory-probe.ps1` (processo de teste, 1 amostra) e `windows-sceneir-stress.cjs` com **12, 24 e 48 atores, até 1000 keys, 4 referências de vídeo e timeline sintética de 15 minutos amostrada**. Essa avaliação não faz composição GPU nem decodifica áudio/vídeo reais, e **não equivale à reprodução contínua de 15 minutos**. O IPC de métricas passou a incluir os últimos 24 motivos de perda de processo renderer/child (`oom`, `crashed` etc. quando relatados pelo Electron), sem paths de usuário. O diagnóstico Windows físico e todos os gates de full raster/export continuam pendentes.
 
+### Evidência Windows real de CI — SceneIR sintética (23/10/2026)
+
+**Execução:** [Core architecture validation — Windows](https://github.com/nestarasup-sys/Native-gacha/actions/runs/40003220416), commit `2b7297e`, 27/27 testes específicos aprovados, typecheck e build aprovados. O probe PowerShell também executou com sucesso no runner.
+
+| Atores | Keys | Janela cronológica | Frames **amostrados** | Referências de vídeos, sem decode | Compilação SceneIR | p95 avaliação/frame | RSS delta do processo de teste* |
+| ---: | ---: | --- | ---: | ---: | ---: | ---: | ---: |
+| 12 | 300 | 15 min / 54.000 frames | 1.500 | 4 | 7,709 ms | 0,081 ms | +6,59 MiB |
+| 24 | 600 | 15 min / 54.000 frames | 1.500 | 4 | 5,648 ms | 0,047 ms | +2,38 MiB |
+| 48 | 1.000 | 15 min / 54.000 frames | 1.500 | 4 | 8,231 ms | 0,075 ms | +15,39 MiB |
+
+*O RSS delta foi medido sequencialmente em um único processo Node de CI; **não** são medições isoladas, números cumulativos ou comparações de memória de GPU. A variação depende de GC e aquecimento; executar com perfis isolados e repetidos antes de tomar decisão. Todos os 1.499 pares consecutivos de avaliações amostradas mudaram de `reuseKey`, mas **não foram renderizados todos os 54.000 frames**.*
+
+**O que o teste demonstra:** SceneIR consegue compilar e avaliar essas fixtures sem falha de contrato, com custo semântico relativamente pequeno nesse runner. **O que não demonstra:** que 48 PNGs pesados + quatro vídeos decodificados + áudio + render GPU/Canvas + IPC + FFmpeg cabem na RAM ou exportam 15 min sem travar. O teste de stress completo Windows, medição de VRAM/commit e reprodução do problema do usuário continuam **bloqueadores**.
+
+### Estado dos cinco objetivos — não confundir cortes técnicos com conclusão
+
+1. **Diagnóstico total Windows: PARCIAL.** A coleta Electron por PID e o script externo são funcionais, mas faltam capturas WPR/WPA/VRAM no projeto pesado e diagnóstico da causa do crash.
+2. **Budget global: PARCIAL.** Cache Canvas, ImageBitmap e Gacha derivado compartilham reservas por surface; faltam decoders nativos, caches de preview, FFmpeg, recursos em voo e controle entre processos.
+3. **EditorCore/histórico: PARCIAL.** Cinco comandos de timeline + histórico genérico já vivem fora da UI; maioria dos comandos/undo snapshots e persistência continuam adaptadores legados.
+4. **Render Gacha incremental: PARCIAL.** Resultados de receitas faciais estão memoizados por bytes; ainda não há compositor por corpo/olhos/boca separado, atlas nem golden PT integral.
+5. **Playback/export unificados: PARCIAL.** Contrato de 60 fps por frame e SceneIR compartilhados; ainda faltam relógio de áudio autoritativo, PTS/VFR, decoders coordenados e fault-injection de export.
+
+**Logo, as cinco prioridades foram iniciadas e validadas em cortes verificáveis, mas não seria correto declará-las integralmente concluídas.**
+
 ## Estrutura-alvo resumida
 
 `StudioDocument/AssetManifest → ProjectRepository + EditorCore/CommandBus → SceneCompiler/Evaluator → FramePlan → ResourceBudgeter/Scheduler + GachaRenderer + MediaService → PreviewTransport / ExportService → verificador e publish atômico`.
