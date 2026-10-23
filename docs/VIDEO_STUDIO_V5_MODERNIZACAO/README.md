@@ -2,6 +2,8 @@
 
 **Decisão ativa (23/10/2026):** reconstruir **integralmente a arquitetura interna do Video Studio**. Não basta “otimizar o editor antigo”. A nova fundação deve conter editor/domínio, timeline, SceneEvaluator, renderizador Gacha, MediaService/AV clock, scheduler, orçamento de memória, supervisão de processos, preview, export e persistência, com **substituição progressiva e aposentadoria da orquestração experimental**.
 
+**Nova execução iniciada:** [14 — Reconstrução do novo Video Studio independente, GPU/WebGL2 e scheduler sob demanda](./14_RECONSTRUCAO_NOVA_ENGINE_INDEPENDENTE_WINDOWS.md). Primeira fatia funcional, ainda sem paridade integral.
+
 **Ler primeiro após o stress real:** [13 — Diagnóstico Windows real e decisão de arquitetura após 13 minutos de preview](./13_DECISAO_APOS_STRESS_REAL_WINDOWS_2026-10-23.md). Evidência medida determina prioridades e gates.
 
 **Ler primeiro:** [12 — Plano diretor da reconstrução integral e pesquisa das seis prioridades](./12_REAVALIACAO_RECONSTRUCAO_MLT_SKIA_2026-10-23.md). O nome do arquivo `12` é histórico e foi mantido para preservar links; **não significa que MLT/Skia foram escolhidos**.

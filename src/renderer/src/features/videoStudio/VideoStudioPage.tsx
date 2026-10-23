@@ -1,6 +1,6 @@
-import { VideoStudioEditor } from './VideoStudioEditor'
+import { VideoStudioRebuildPage } from '../videoStudioRebuild/VideoStudioRebuildPage'
 
-/** Independent editor, layout styles, and document library for Video Studio. */
+/** New default editor. Legacy VideoStudioEditor.tsx is no longer mounted here. */
 export function VideoStudioPage({ onEditorActiveChange }: { onEditorActiveChange?: (active: boolean) => void }) {
-  return <VideoStudioEditor onEditorActiveChange={onEditorActiveChange} />
+  return <VideoStudioRebuildPage onEditorActiveChange={onEditorActiveChange} />
 }
