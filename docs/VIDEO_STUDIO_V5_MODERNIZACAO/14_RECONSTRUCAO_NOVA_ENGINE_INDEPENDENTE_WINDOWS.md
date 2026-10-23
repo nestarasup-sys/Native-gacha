@@ -40,3 +40,14 @@ O usuário rejeitou continuar estendendo o editor legado e determinou três prin
 5. ExportService usando `SceneEvaluator` e compositor da engine nova; verificar 1080p60, áudio PTS, salvamento, crash recovery e fidelidade preview/export 5/15/30s → 180s; só depois grandes escalas.
 
 **Não reduzir o critério de paridade para fazer números de FPS parecerem melhores. A UI nova é uma fatia inicial da reconstrução, não uma entrega equivalente ao antigo Video Studio.**
+
+## Auditoria e endurecimento do preview (continuação)
+
+- Uma regressão importante foi corrigida: `electron.vite.config.ts` não pode mudar `out/main/main.js` para `out/main/index.js`, porque o executável, os scripts e a CI de screenshots reais esperam `main.js`. O entrypoint foi restaurado; o arquivo `out/main/media-engine-worker.js` continua separado. A verificação de bundle agora exige os **dois** arquivos.
+- `previewTransport.ts` assumiu o relógio e o loop `requestAnimationFrame`, sem fazê-los depender dos commits React; UI recebe apenas atualizações de estado limitadas a cerca de **10 Hz**. Quadros são avaliados sob demanda; ao chegar tarde, pulam-se estados intermediários em vez de fazer pré-render serial de transições. `seek()` invalida trabalho e `AbortSignal` libera rapidamente esperas por imagens quando há cancelamento.
+- O decoder de imagens do preview tem `VideoStudioBoundedMemo` limitado a 48 entradas e 64 MiB RGBA retidos. A engine de cena do preview **não faz `structuredClone` das strings PNG de projetos pesados**; a exportação continua criando snapshots congelados separadamente.
+- `mediaEngine.ts` libera decoders não ativos (a terceira mídia não fica bloqueada pelo teto de dois), cancela `loadedmetadata` pendente no `stop`, impõe timeout e usa backoff para reconectar ao relógio. O supervisor não rejeita comandos de um processo novo quando o processo antigo termina atrasado.
+- Suites novas cobrem imagem reutilizada, busca absoluta, reprodução sem preparação prévia, cancelamento de seek, abertura de terceiro vídeo, descarte de decoder em voo e bloqueio do bug `main.js`.
+
+**Limite de validação:** smoke de subprocesso real requer executar `npm run test:video:rebuild:worker:windows` em máquina com Electron instalado; a CI que usa `--ignore-scripts` valida o bundle e o contrato, não uma sessão completa de decodificação AV. **Ainda NÃO existe equivalência visual completa normal/PT dinâmica, timeline de áudio independente, mixer nativo, export pelo novo compositor ou benchmark de 4 personagens na nova tela.** O corte não autoriza afirmar 60 FPS, OOM resolvido ou reconstrução funcional completa.
+

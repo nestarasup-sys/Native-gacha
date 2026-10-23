@@ -32,7 +32,10 @@ export class VideoMediaEngineSupervisor {
       else pending.reject(new Error(response.error??'Resposta AV inválida.'))
     })
     child.on('exit',(code)=>{
-      if(this.child===child)this.child=null
+      // A superseded process may exit AFTER a replacement has accepted IPC.
+      // Never reject pending commands owned by the newly started process.
+      if(this.child!==child)return
+      this.child=null
       this.rejectPending(new Error('Processo de mídia terminou; sessão AV cancelada (código '+code+').'))
     })
     return child

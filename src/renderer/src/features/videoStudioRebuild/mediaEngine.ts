@@ -15,6 +15,8 @@ type MediaEntry = { element: HTMLVideoElement; source: string; ready: boolean }
 export class VideoStudioMediaEngine {
   private readonly videos = new Map<string, MediaEntry>()
   private readonly pending = new Map<string, Promise<MediaEntry>>()
+  private readonly loadingElements = new Set<HTMLVideoElement>()
+  private loadController = new AbortController()
   private generation = 0
   private closed = false
   private anchor: { frame: number; at: number } | null = null
@@ -25,6 +27,7 @@ export class VideoStudioMediaEngine {
   private lastWorkerSync = 0
   private workerSyncPending = false
   private workerOnline = true
+  private workerRetryAt = 0
 
   constructor(
     private readonly studioId: string,
@@ -47,25 +50,41 @@ export class VideoStudioMediaEngine {
       pending = window.desktop.prepareVideoPreviewMedia(this.studioId, asset).then(async (proxy) => {
         if (generation !== this.generation || this.closed) throw new Error('Mídia obsoleta.')
         const element = document.createElement('video')
+        this.loadingElements.add(element)
+        const stopSignal = this.loadController.signal
         element.preload = 'auto'
         element.playsInline = true
         element.src = proxy.proxyUrl
         element.load()
         const entry = { element, source: proxy.proxyUrl, ready: false }
-        await new Promise<void>((resolve, reject) => {
-          const done = () => { element.removeEventListener('loadedmetadata',ok);element.removeEventListener('error',fail) }
-          const ok = () => { done(); resolve() }
-          const fail = () => { done(); reject(new Error('Não foi possível decodificar o vídeo no motor novo.')) }
-          element.addEventListener('loadedmetadata',ok,{once:true})
-          element.addEventListener('error',fail,{once:true})
-          if (element.readyState >= 1) ok()
-        })
-        if (this.closed || generation !== this.generation) {
+        try {
+          await new Promise<void>((resolve, reject) => {
+            const done = () => {
+              element.removeEventListener('loadedmetadata',ok)
+              element.removeEventListener('error',fail)
+              stopSignal.removeEventListener('abort',abort)
+              clearTimeout(timeout)
+            }
+            const ok = () => { done(); resolve() }
+            const fail = () => { done(); reject(new Error('Não foi possível decodificar o vídeo no motor novo.')) }
+            const abort = () => { done(); reject(new DOMException('Mídia cancelada.', 'AbortError')) }
+            const timeout = setTimeout(() => { done(); reject(new Error('Timeout de metadados da mídia.')) }, 5000)
+            element.addEventListener('loadedmetadata',ok,{once:true})
+            element.addEventListener('error',fail,{once:true})
+            stopSignal.addEventListener('abort',abort,{once:true})
+            if(stopSignal.aborted) abort()
+            else if(element.readyState >= 1) ok()
+          })
+          if(this.closed || generation !== this.generation || stopSignal.aborted)
+            throw new DOMException('Mídia obsoleta.', 'AbortError')
+          entry.ready=true;this.videos.set(assetId,entry)
+          return entry
+        } catch (reason) {
           element.pause();element.removeAttribute('src');element.load()
-          throw new Error('Mídia obsoleta.')
+          throw reason
+        } finally {
+          this.loadingElements.delete(element)
         }
-        entry.ready=true;this.videos.set(assetId,entry)
-        return entry
       }).finally(() => { this.pending.delete(assetId) })
       this.pending.set(assetId,pending)
     }
@@ -111,6 +130,7 @@ export class VideoStudioMediaEngine {
     // Feed it the native media clock when an audible source is ready; never
     // await IPC in requestAnimationFrame or make Play wait for an asset render.
     const now=performance.now()
+    if(!this.workerOnline && now>=this.workerRetryAt)this.workerOnline=true
     if(this.workerOnline && !this.workerSyncPending && now-this.lastWorkerSync>=200) {
       this.lastWorkerSync=now;this.workerSyncPending=true
       const masterVideo=scene.videos[0]
@@ -122,12 +142,19 @@ export class VideoStudioMediaEngine {
         op:'sync',sessionId:this.sessionId,frame:scene.frame,playing,
         ...(audioFrame===undefined?{}:{audioFrame})
       }).then(result=>{if(!this.closed)this.workerFrame={frame:result.frame,at:performance.now()}})
-        .catch(()=>{this.workerOnline=false;this.workerFrame=null})
+        .catch(()=>{this.workerOnline=false;this.workerFrame=null;this.workerRetryAt=performance.now()+2000})
         .finally(()=>{this.workerSyncPending=false})
     }
     const activeIds=new Set(scene.videos.map(v=>v.assetId))
     this.audioMasterId=scene.videos[0]?.assetId ?? null
-    for(const [id, entry] of this.videos) if(!activeIds.has(id)) entry.element.pause()
+    // Free idle decoder slots: otherwise a timeline with >2 distinct videos
+    // eventually becomes unable to open its third clip.
+    for(const [id, entry] of this.videos) if(!activeIds.has(id)) {
+      entry.element.pause()
+      entry.element.removeAttribute('src')
+      entry.element.load()
+      this.videos.delete(id)
+    }
     for(const video of scene.videos) {
       const entry=this.videos.get(video.assetId)
       if (!entry?.ready) { void this.acquire(video.assetId); continue }
@@ -152,7 +179,15 @@ export class VideoStudioMediaEngine {
   /** Cancels pending publications and *really stops* native decoders. */
   stop(): void {
     this.generation++
+    this.loadController.abort()
+    this.loadController = new AbortController()
     this.playing=false;this.anchor=null;this.audioMasterId=null
+    for(const element of this.loadingElements) {
+      element.pause()
+      element.removeAttribute('src')
+      element.load()
+    }
+    this.loadingElements.clear()
     for(const entry of this.videos.values()) {
       entry.element.pause()
       entry.element.removeAttribute('src')

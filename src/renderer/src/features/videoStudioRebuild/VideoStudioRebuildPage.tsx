@@ -1,13 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { StudioDocument, VideoStudioCardSummary } from '../../../../shared/studio'
-import { videoCharacterElementSize } from '../../../../shared/videoStageGeometry'
 import { VideoStudioFrameEngine } from '../../../../shared/videoStudioRebuild/frameEngine'
-import { VideoStudioBoundedMemo } from '../../../../shared/videoStudioNext/boundedMemo'
-import { VideoFrameScheduler } from '../../../../shared/videoStudioRebuild/frameScheduler'
 import { splitCharacterAt } from '../../../../shared/videoStudioRebuild/rebuildEditor'
 import { applyVideoStudioEditorCommand } from '../../../../shared/videoStudioNext/editorCore'
-import { GachaGpuStage, type GachaGpuLayer } from './gachaGpuStage'
+import { GachaGpuStage } from './gachaGpuStage'
 import { VideoStudioMediaEngine } from './mediaEngine'
+import { VideoStudioPreviewTransport } from './previewTransport'
 import './rebuild.css'
 
 type Props = { onEditorActiveChange?: (active: boolean) => void }
@@ -29,30 +27,14 @@ export function VideoStudioRebuildPage({onEditorActiveChange}:Props) {
   const [gpuStats,setGpuStats]=useState('')
   const [rendering,setRendering]=useState(false)
   const canvas=useRef<HTMLCanvasElement|null>(null)
-  const gpu=useRef<GachaGpuStage|null>(null)
-  const scheduler=useRef<VideoFrameScheduler|null>(null)
-  const media=useRef<VideoStudioMediaEngine|null>(null)
-  const imageCache=useRef(new VideoStudioBoundedMemo<HTMLImageElement>(
-    48,64*1024*1024,(image)=>{
-      const bytes=image.naturalWidth*image.naturalHeight*4
-      return Number.isSafeInteger(bytes)&&bytes>0?bytes:Number.MAX_SAFE_INTEGER
-    }
-  ))
-  const imageIds=useRef(new WeakMap<HTMLImageElement,number>())
-  const nextImageId=useRef(0)
-  const textureId=(image:HTMLImageElement)=>{
-    let token=imageIds.current.get(image)
-    if(!token){token=++nextImageId.current;imageIds.current.set(image,token)}
-    return 'asset:'+token
-  }
-  const lastFrame=useRef(0)
-  const documentRef=useRef<StudioDocument|null>(null)
-  documentRef.current=studio
+  const transport=useRef<VideoStudioPreviewTransport|null>(null)
+  const [presented,setPresented]=useState(0)
+  const [skipped,setSkipped]=useState(0)
+
   const engine=useMemo(()=>studio?.videoTimeline ? new VideoStudioFrameEngine(studio):null,[studio])
   const duration=engine?.durationFrames??1
   const viewFrame=Math.min(frame,duration-1)
-  const scene=useMemo(()=>engine?.evaluate(viewFrame)??null,[engine,viewFrame])
-  useEffect(()=>{onEditorActiveChange?.(Boolean(studio));return()=>onEditorActiveChange?.(false)},[studio,onEditorActiveChange])
+  useEffect(()=>{onEditorActiveChange?.(Boolean(studio));return()=>onEditorActiveChange?.(false)},[Boolean(studio),onEditorActiveChange])
   useEffect(()=>{
     let mounted=true
     void window.desktop.listVideoStudios().then(x=>{if(mounted)setCards(x)}).catch(e=>{if(mounted)setStatus(String(e))})
@@ -60,7 +42,7 @@ export function VideoStudioRebuildPage({onEditorActiveChange}:Props) {
   },[])
 
   const open=async(id:string)=>{
-    setPlaying(false)
+    pause()
     try{
       const doc=await window.desktop.loadVideoStudio(id)
       if(!doc?.videoTimeline)throw new Error('O projeto não possui timeline de vídeo.')
@@ -69,7 +51,7 @@ export function VideoStudioRebuildPage({onEditorActiveChange}:Props) {
     }catch(e){setStatus(String(e))}
   }
   const close=()=>{
-    setPlaying(false);setStudio(null);setFrame(0)
+    pause();setStudio(null);setFrame(0)
     void window.desktop.listVideoStudios().then(setCards).catch(()=>undefined)
   }
   const blank=()=>{
@@ -89,101 +71,49 @@ export function VideoStudioRebuildPage({onEditorActiveChange}:Props) {
     if(!studio)return
     const stamp=now()
     const out:StudioDocument={...studio,id:crypto.randomUUID(),title:studio.title.includes('Novo motor')?studio.title:studio.title+' — Novo motor',
-      createdAt:stamp,updatedAt:stamp,videoTimeline:studio.videoTimeline?{...studio.videoTimeline,playheadFrame:Math.min(viewFrame,duration),playing:false}:undefined}
+      createdAt:stamp,updatedAt:stamp,videoTimeline:studio.videoTimeline?{...studio.videoTimeline,playheadFrame:Math.min(transport.current?.snapshot().frame??viewFrame,duration),playing:false}:undefined}
     try{await window.desktop.saveVideoStudio(out);setStudio(out);setStatus('Cópia gravada sem alterar o projeto original.')}
     catch(e){setStatus('Falha ao salvar cópia: '+String(e))}
   }
   const edit=(action:(doc:StudioDocument)=>StudioDocument)=>{
     if(!studio)return
-    setPlaying(false)
+    pause()
     try{const next=action(studio);if(next!==studio){setStudio(next);setStatus('Alteração somente local — salve uma cópia para persistir.')}}catch(e){setStatus(String(e))}
   }
-  const decode=(src:string):Promise<HTMLImageElement>=>{
-    return imageCache.current.getOrCreate(src,()=>new Promise<HTMLImageElement>((resolve,reject)=>{
-      const image=new Image()
-      image.decoding='async'
-      image.onload=()=>resolve(image)
-      image.onerror=()=>reject(new Error('Asset visual do personagem indisponível.'))
-      image.src=src
-    }))
-  }
-
-  // Canvas, GPU textures, media decoding and scheduling are owned outside React.
+  // The transport, decoder cache, request queue, AV clock and GPU context
+  // live OUTSIDE React. React receives only throttled presentation snapshots.
   useEffect(()=>{
     if(!studio||!engine||!canvas.current)return
-    const schedule=new VideoFrameScheduler(2)
     let graph:GachaGpuStage
     try{graph=new GachaGpuStage(canvas.current)}
     catch(e){setStatus('GPU indisponível: '+String(e));return}
-    const mediaEngine=new VideoStudioMediaEngine(studio.id,studio.videoTimeline?.videoAssets??[])
-    gpu.current=graph;scheduler.current=schedule;media.current=mediaEngine
-    imageCache.current.clear();imageIds.current=new WeakMap();nextImageId.current=0
+    const media=new VideoStudioMediaEngine(studio.id,studio.videoTimeline?.videoAssets??[])
+    const instance=new VideoStudioPreviewTransport(engine,graph,media,
+      state=>{
+        setFrame(state.frame)
+        setPlaying(state.playing)
+        setRendering(state.rendering)
+        setPresented(state.presentedFrames)
+        setSkipped(state.skippedFrames)
+        setGpuStats(JSON.stringify({retainedEstimatedBytes:state.textureBytes}))
+      },
+      error=>setStatus('Falha da prévia GPU: '+error.message))
+    transport.current=instance
     return()=>{
-      schedule.dispose();mediaEngine.dispose();graph.dispose()
-      gpu.current=null;scheduler.current=null;media.current=null
-      imageCache.current.clear();imageIds.current=new WeakMap();nextImageId.current=0
+      if(transport.current===instance)transport.current=null
+      instance.dispose()
     }
-  },[studio?.id])
+  },[engine,studio?.id])
 
-  useEffect(()=>{
-    if(!scene||!gpu.current||!scheduler.current||!media.current)return
-    let ignore=false
-    const job=scheduler.current.request('frame:'+scene.frame,'visible',async(signal)=>{
-      const layers:GachaGpuLayer[]=[]
-      if(scene.background.assetDataUrl){
-        const image=await decode(scene.background.assetDataUrl)
-        if(signal.aborted)throw new Error('Frame cancelado')
-        layers.push({textureId:textureId(image),source:image,element:{
-          x:scene.background.x,y:scene.background.y,width:scene.background.width,height:scene.background.height,rotation:scene.background.rotation,
-        }})
-      }
-      media.current?.sync(scene,playing)
-      for(const layer of scene.layers){
-        if(signal.aborted)throw new Error('Frame cancelado')
-        if(layer.type==='video'){
-          const video=media.current?.activeFrameSources(scene).get(layer.clipId)
-          if(video)layers.push({textureId:'video:'+layer.clipId,source:video,dynamic:true,
-            element:{x:layer.transform?.x??0,y:layer.transform?.y??0,width:layer.transform?.width??100,height:layer.transform?.height??100,rotation:layer.transform?.rotation??0}})
-          continue
-        }
-        const src=layer.assetDataUrl
-        if(!src)continue
-        const image=await decode(src)
-        if(signal.aborted)throw new Error('Frame cancelado')
-        const e=layer.element
-        const size=videoCharacterElementSize(e)
-        layers.push({textureId:textureId(image),source:image,element:{...e,...size}})
-      }
-      return layers
-    })
-    setRendering(true)
-    void job.then(layers=>{
-      if(ignore)return
-      gpu.current?.draw(layers,scene.background.color)
-      setGpuStats(JSON.stringify(gpu.current?.stats()??{}))
-    }).catch(e=>{if(!ignore&&(e as Error)?.name!=='AbortError')setStatus(String(e))}).finally(()=>{if(!ignore)setRendering(false)})
-    return()=>{ignore=true}
-  },[scene,playing])
-
-  useEffect(()=>{
-    if(!playing||!engine)return
-    const initial=frame
-    const started=performance.now()
-    let request=0
-    const loop=()=>{
-      const elapsed=Math.floor((performance.now()-started)*.06)
-      const target=Math.min(duration-1,initial+elapsed)
-      // Native media clock is authoritative when an audible video is active.
-      const active=engine.evaluate(target)
-      const clock=media.current?.currentFrame(target,active)??target
-      const next=Math.max(0,Math.min(duration-1,clock))
-      if(next!==lastFrame.current){lastFrame.current=next;setFrame(next)}
-      if(next>=duration-1){setPlaying(false);return}
-      request=requestAnimationFrame(loop)
-    }
-    request=requestAnimationFrame(loop)
-    return()=>cancelAnimationFrame(request)
-  },[playing,engine,duration])
+  const seek=(nextFrame:number)=>{
+    transport.current?.seek(nextFrame)
+  }
+  const togglePlayback=()=>{
+    transport.current?.setPlaying(!transport.current.snapshot().playing)
+  }
+  const pause=()=>{
+    transport.current?.setPlaying(false)
+  }
 
   return <div className="video-rebuild">
     <header className="video-rebuild-header">
@@ -205,6 +135,7 @@ export function VideoStudioRebuildPage({onEditorActiveChange}:Props) {
         <aside>
           <h3>{studio.title}</h3>
           <p>{formatFrame(viewFrame)} / {formatFrame(duration)}</p>
+          <p>Quadros apresentados: {presented} · saltados: {skipped}</p>
           <p>{studio.elements.filter(e=>e.kind==='character').length} personagens · {studio.videoTimeline?.characterKeys.length??0} chaves</p>
           <h4>Personagens</h4>
           {studio.elements.filter(e=>e.kind==='character').map(e=><button className={selected===e.id?'selected':''} key={e.id} onClick={()=>setSelected(e.id)}>{e.speakerName||e.id.slice(0,8)}</button>)}
@@ -214,14 +145,14 @@ export function VideoStudioRebuildPage({onEditorActiveChange}:Props) {
       </div>
       <section className="video-rebuild-timeline">
         <div className="video-rebuild-transport">
-          <button onClick={()=>setPlaying(v=>!v)}>{playing?'Pausar':'Reproduzir'}</button>
-          <button onClick={()=>{setPlaying(false);setFrame(0)}}>Voltar ao início</button>
-          <label>Frame <input aria-label="Frame absoluto" type="number" min="0" max={duration-1} value={viewFrame} onChange={e=>{setPlaying(false);setFrame(Math.max(0,Math.min(duration-1,Math.round(Number(e.target.value)||0))))}} /></label>
+          <button onClick={togglePlayback}>{playing?'Pausar':'Reproduzir'}</button>
+          <button onClick={()=>seek(0)}>Voltar ao início</button>
+          <label>Frame <input aria-label="Frame absoluto" type="number" min="0" max={duration-1} value={viewFrame} onChange={e=>seek(Math.max(0,Math.min(duration-1,Math.round(Number(e.target.value)||0))))} /></label>
           <button disabled={!selected} onClick={()=>edit(doc=>splitCharacterAt(doc,selected,viewFrame,crypto.randomUUID(),now()))}>Dividir bloco</button>
           <button onClick={()=>edit(doc=>applyVideoStudioEditorCommand(doc,doc.videoTimeline!,{type:'set-character-transitions',enabled:doc.videoTimeline?.animateCharacterTransitions===false},now()))}>Alternar transições</button>
         </div>
-        <input className="video-rebuild-scrub" aria-label="Buscar quadro" type="range" min="0" max={duration-1} value={viewFrame} onChange={e=>{setPlaying(false);setFrame(Number(e.target.value))}} />
-        <div className="video-rebuild-keys">{studio.elements.filter(e=>e.kind==='character').map(e=><div className="video-rebuild-lane" key={e.id}><span>{e.speakerName||e.id.slice(0,8)}</span><div>{studio.videoTimeline?.characterKeys.filter(k=>k.elementId===e.id).map(k=><button key={k.id} title={'Quadro '+k.frame} style={{left:(k.frame/duration*100)+'%'}} onClick={()=>{setPlaying(false);setFrame(k.frame)}} />)}</div></div>)}</div>
+        <input className="video-rebuild-scrub" aria-label="Buscar quadro" type="range" min="0" max={duration-1} value={viewFrame} onChange={e=>seek(Number(e.target.value))} />
+        <div className="video-rebuild-keys">{studio.elements.filter(e=>e.kind==='character').map(e=><div className="video-rebuild-lane" key={e.id}><span>{e.speakerName||e.id.slice(0,8)}</span><div>{studio.videoTimeline?.characterKeys.filter(k=>k.elementId===e.id).map(k=><button key={k.id} title={'Quadro '+k.frame} style={{left:(k.frame/duration*100)+'%'}} onClick={()=>seek(k.frame)} />)}</div></div>)}</div>
       </section>
     </>}
     <footer role="status">{status}</footer>
