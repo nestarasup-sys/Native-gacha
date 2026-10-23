@@ -1,4 +1,5 @@
 import { compilePortableExpression, resolvePresetPupilGaze, type ExpressionMetrics } from '../../../../shared/portableExpression'
+import { pupilDeltaFromDrag, pupilSourceMirrored } from '../../../../shared/facePupilGeometry'
 import { ExpressionCharacterPreview } from './ExpressionCharacterPreview'
 import { projectForOriginalPreview } from '../../../../shared/fabricatorModelViews'
 import { useModelSourceRefresh } from './models/useModelSourceRefresh'
@@ -312,6 +313,7 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
     setComposition(emptyComposition)
     setPresets([])
     setSelectedExpressionIndex(0)
+    setPreviewGaze('right')
     setWorkingCopies({})
     latestWorkspaceDraft.current = null
     setSwitchingExpression(false)
@@ -500,7 +502,9 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
   const visibleComposition = open ? draft : composition
   const visibleTransforms = useMemo(() => {
     const raw=open ? draftTransforms : transforms
-    if (open)return raw
+    if (open || previewGaze==='right')return raw
+    // Normal edit mode MUST exactly display the saved Olhos DEV coordinates.
+    // PT is strictly read-only and never participates in mouse drag or save.
     // PT is a strictly read-only alternate preview. Neither draft autosave nor
     // published presets include the gaze variation.
     const next=cloneTransforms(raw)
@@ -680,6 +684,9 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
     event.preventDefault()
     event.stopPropagation()
     event.currentTarget.setPointerCapture(event.pointerId)
+    // PT is a different view of the SAME preset, not an alternate authoring
+    // coordinate system. Switching back to Normal is required to drag a pupil.
+    if (previewGaze==='left' && requestedMappings.some(item=>item.layer.startsWith('pupil')))return
     const mappings: PreviewLayerMapping[] = requestedMappings.map((mapping) => ({
       ...mapping, startX: transforms[mapping.layer].x, startY: transforms[mapping.layer].y
     }))
@@ -694,19 +701,18 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
     if (!drag || drag.pointerId !== event.pointerId) return
     event.preventDefault()
     event.stopPropagation()
-    const screenX = (event.clientX - drag.clientX) * drag.modelPerPixelX
-    const screenY = (event.clientY - drag.clientY) * drag.modelPerPixelY
     setTransforms((current) => {
       const next = { ...current }
       for (const mapping of drag.mappings) {
         const rotatedPupil = mapping.layer === 'pupilLeft' || mapping.layer === 'pupilRight'
-        const radians = rotatedPupil ? mapping.rotation * Math.PI / 180 : 0
-        const localX = screenX * Math.cos(radians) + screenY * Math.sin(radians)
-        const localY = -screenX * Math.sin(radians) + screenY * Math.cos(radians)
+        const delta = pupilDeltaFromDrag(event.clientX-drag.clientX,event.clientY-drag.clientY,{
+          rotationDegrees:rotatedPupil ? mapping.rotation : 0,mirrorSourceX:mapping.mirroredX,
+          modelPerPixelX:drag.modelPerPixelX,modelPerPixelY:drag.modelPerPixelY
+        })
         next[mapping.layer] = {
           ...current[mapping.layer],
-          x: mapping.startX + localX * (mapping.mirroredX ? -1 : 1),
-          y: mapping.startY + localY
+          x: mapping.startX + delta.x,
+          y: mapping.startY + delta.y
         }
       }
       return next
@@ -956,7 +962,7 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
     const eyeX = eyeMirrored ? head.width - eyeTransform.x : eyeTransform.x
     const eyeRotation = eyeMirrored ? -eyeTransform.rotation : eyeTransform.rotation
     const pupilTransform = transform
-    const mirroredPupilX = right && !physicallyRight
+    const mirroredPupilX = pupilSourceMirrored(currentSide,physicallyRight)
     const pupilX = mirroredPupilX ? -pupilTransform.x : pupilTransform.x
     const eyeFlip = Boolean(eyeTransform.flipX) !== eyeMirrored
     const eyeFlipDirection = eyeFlip ? -1 : 1
@@ -979,7 +985,7 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
     const pairedSide = right ? 'left' : 'right'
     const pairedPupilLayer = layerKey('pupil', pairedSide)
     const movePair = linkedLayerPairs.pupil
-    const canDrag = selectedLayer === pupilLayer || movePair && selectedLayer === pairedPupilLayer
+    const canDrag = previewGaze==='right' && (selectedLayer === pupilLayer || movePair && selectedLayer === pairedPupilLayer)
     const pairedPupilId = visibleComposition.pupils[pairedSide]
     const pairedEyeId = visibleComposition.eyes[pairedSide]
     const pairedPupilAsset = pairedPupilId ? componentAssets[pairedPupilId] : undefined
@@ -989,7 +995,7 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
     const pairedEyeRotation = pairedEyeMirrored ? -pairedEyeTransform.rotation : pairedEyeTransform.rotation
     const dragMappings: Array<Omit<PreviewLayerMapping, 'startX' | 'startY'>> = [{ layer: pupilLayer, mirroredX: mirroredPupilX, rotation: eyeRotation }]
     if (movePair && pairedPupilAsset && pairedEyeAsset) dragMappings.push({
-      layer: layerKey('pupil', pairedSide), mirroredX: pairedSide === 'right' && pairedPupilAsset.rightSidePositioned !== true, rotation: pairedEyeRotation
+      layer: layerKey('pupil', pairedSide), mirroredX: pupilSourceMirrored(pairedSide,pairedPupilAsset.rightSidePositioned===true), rotation: pairedEyeRotation
     })
     return <span key={`${kind}-${asset.id}-${right}`} className="expression-head-pupil-mask" style={{ ...maskStyle, pointerEvents: canDrag ? 'auto' : 'none', cursor: canDrag ? 'grab' : undefined, touchAction: canDrag ? 'none' : undefined }}
       onPointerDown={canDrag ? (event) => beginPreviewLayerDrag(event, dragMappings) : undefined}
