@@ -17,7 +17,7 @@ import { type StudioFaceTransforms } from '../../../../shared/studio'
 import { usePreviewBackground } from '../../ui/hooks/usePreviewBackground'
 import { DesignBanner } from '../../ui/components/DesignBanner'
 import { anchorWardrobeAdjustments, editWardrobeAdjustment, moveWardrobeAdjustment } from '../../../../shared/wardrobeAdjustment'
-import { toggleWardrobeVisibility, updateWardrobeComponentGroups, matchesWardrobeComponent } from '../../../../shared/wardrobePlacementModel'
+import { toggleWardrobeVisibility, updateWardrobeComponentGroups, matchesWardrobeComponent, recolorWardrobeComponents } from '../../../../shared/wardrobePlacementModel'
 import { applyCharacterBodyShape } from '../../../../shared/bodyShape'
 import { characterRenderSize, configureCharacterSampling, MAX_CHARACTER_PREVIEW_PIXELS } from './renderResolution'
 import { renderArtwork, loadStandardExpressionEffects, loadSkinTintedImage, loadCachedImage, withCharacterHeadSize, loadHairAppearanceLayers, renderArtworkWithHair, renderWardrobeOverlay, isRightFaceAsset, renderFaceOverlay, renderFrontHairOverlay, characterShapeScale, drawFaceCatalogOverlay, loadHairTintedImage, resolvedHairColors, clothingCategories, wardrobeComponentsForGroup, customizerHairParts, hairAppearanceStyleId } from '../../characters/characterRenderer'
@@ -1457,10 +1457,9 @@ export function CustomizerPage() {
   async function applyWardrobePalette(panel: WardrobePanel, candidate: WardrobePanelCandidate, colors: HairColorOverrides) {
     if (!selectedCharacter) return
     const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
-    const componentIds = new Set(candidate.components.map((component) => component.id))
-    const wardrobeGroups = (current.customization.wardrobeGroups ?? []).map((group) => group.modelSlot === candidate.summary.modelSlot && group.setId === candidate.summary.id && group.category === panel.category && !!group.componentId && componentIds.has(group.componentId)
-      ? { ...group, colors }
-      : group)
+    const wardrobeGroups = recolorWardrobeComponents(current.customization.wardrobeGroups ?? [],
+      candidate.summary.modelSlot,candidate.summary.id,panel.category,candidate.components.map(component => component.id),
+      {kind:'replace',colors})
     await saveCharacterCustomization({
       wardrobePalettes: { ...current.customization.wardrobePalettes, [panel.id]: colors },
       wardrobeGroups
@@ -1470,24 +1469,16 @@ export function CustomizerPage() {
   async function setWardrobePieceColor(setId: string, category: ClothingGroupCategory, componentIds: string[], role: HairColorRole, value: string) {
     if (!selectedCharacter) return
     const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
-    const groups = current.customization.wardrobeGroups ?? []
-    const componentIdSet = new Set(componentIds)
-    const wardrobeGroups = groups.map((group) => group.modelSlot === selectedCatalogModelSlot && group.setId === setId && group.category === category && !!group.componentId && componentIdSet.has(group.componentId)
-      ? { ...group, colors: { ...group.colors, [role]: value } }
-      : group)
+    const wardrobeGroups = recolorWardrobeComponents(current.customization.wardrobeGroups ?? [],
+      selectedCatalogModelSlot,setId,category,componentIds,{kind:'role',role,value})
     await saveCharacterCustomization({ wardrobeGroups })
   }
 
   async function resetWardrobePieceColors(panel: WardrobePanel, setId: string, componentIds: string[]) {
     if (!selectedCharacter) return
     const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
-    const before = current.customization.wardrobeGroups ?? []
-    const componentIdSet = new Set(componentIds)
-    const after = before.map((group) => {
-      if (group.setId !== setId || group.modelSlot !== selectedCatalogModelSlot || group.category !== panel.category || !group.componentId || !componentIdSet.has(group.componentId)) return group
-      const { colors: _colors, ...rest } = group
-      return rest
-    })
+    const after = recolorWardrobeComponents(current.customization.wardrobeGroups ?? [],
+      selectedCatalogModelSlot,setId,panel.category,componentIds,{kind:'clear'})
     const wardrobePalettes = { ...current.customization.wardrobePalettes }
     delete wardrobePalettes[panel.id]
     await saveCharacterCustomization({ wardrobeGroups: after, wardrobePalettes })
