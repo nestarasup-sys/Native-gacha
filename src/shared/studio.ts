@@ -281,6 +281,8 @@ export type VideoStudioCardSummary = Pick<StudioDocument, 'id' | 'title' | 'colo
 }
 
 export type VideoStudioDesktopApi = {
+  /** Windows on-demand Electron process metric sample; no user/project data. */
+  getVideoStudioMemoryReport: () => Promise<import('./videoStudioNext/diagnostics').VideoStudioMemoryReport>
   listVideoStudios: () => Promise<VideoStudioCardSummary[]>
   loadVideoStudio: (id: string) => Promise<StudioDocument | null>
   saveVideoStudio: (studio: StudioDocument) => Promise<void>

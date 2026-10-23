@@ -6,6 +6,8 @@ import { characterFromVideoExportSnapshot } from '../../../../shared/videoExport
 import type { VideoCharacterRenderAssetProvider, VideoCharacterRenderAssetSnapshot } from '../../../../shared/videoCharacterRenderAssets'
 import { createVideoCharacterRenderSnapshotProvider } from '../../../../shared/videoCharacterRenderAssets'
 import { TransitionRenderer } from './transitionRenderer'
+import { VideoStudioBoundedMemo } from '../../../../shared/videoStudioNext/boundedMemo'
+import type { VideoStudioResourceBudget } from '../../../../shared/videoStudioNext/resourceBudget'
 
 const DEFAULT_FACE_TRANSFORM: StudioFaceTransform = { x: 0, y: 0, width: 100, height: 100, rotation: 0 }
 const TALK_SCALES = [
@@ -27,16 +29,22 @@ function faceModeForElement(element: StudioElement): StudioFaceMode {
 export class VideoCharacterFrameRenderer {
   private readonly provider: VideoCharacterRenderAssetProvider
   private readonly transitionRenderer: TransitionRenderer
-  private readonly cache = new Map<string, Promise<VideoCharacterState>>()
+  private readonly cache: VideoStudioBoundedMemo<VideoCharacterState>
   private readonly stateIds = new WeakMap<object, number>()
   private nextStateId = 0
 
   constructor(
     private readonly characters: VideoExportCharacterSnapshot,
     characterAssets: VideoCharacterRenderAssetSnapshot,
+    budget?: VideoStudioResourceBudget
   ) {
     this.provider = createVideoCharacterRenderSnapshotProvider(characterAssets)
     this.transitionRenderer = new TransitionRenderer(this.provider)
+    this.cache = new VideoStudioBoundedMemo(
+      240, 64 * 1024 * 1024,
+      (state) => Math.max(1, state.imageDataUrl.length * 2),
+      budget, 'artwork'
+    )
   }
 
   private stateId(state: VideoCharacterState): number {
@@ -47,14 +55,7 @@ export class VideoCharacterFrameRenderer {
   }
 
   private remember(key: string, create: () => Promise<VideoCharacterState>): Promise<VideoCharacterState> {
-    let pending = this.cache.get(key)
-    if (!pending) {
-      pending = create()
-      this.cache.set(key, pending)
-      void pending.catch(() => this.cache.delete(key))
-      while (this.cache.size > 240) this.cache.delete(this.cache.keys().next().value!)
-    }
-    return pending
+    return this.cache.getOrCreate(key, create)
   }
 
   private transitionKey(frame: VideoSceneFrame, elementId: string, startFrame: number, boundaryFrame: number): string {

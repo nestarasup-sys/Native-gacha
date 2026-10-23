@@ -20,7 +20,8 @@ import { faceRenderGeometry, trimTransparentImage, fitElementToTrim, type Trimme
 import { useCharacterTransitions } from './useCharacterTransitions'
 import { PreviewTransport } from './PreviewTransport'
 import { usePreviewFullscreen } from './usePreviewFullscreen'
-import { EditHistory, equalHistoryValue } from './editHistory'
+import { VideoStudioCommandHistory as EditHistory, equalVideoStudioHistoryValue as equalHistoryValue } from '../../../../shared/videoStudioNext/commandHistory'
+import { frameFromElapsed } from '../../../../shared/videoStudioNext/projectClock'
 import { VideoLibraryModal } from './VideoLibraryModal'
 import { BackgroundLibraryModal } from './BackgroundLibraryModal'
 import { VideoStudioClipPreview } from './VideoClipPreview'
@@ -425,7 +426,7 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
     let raf = 0
     const tick = (now: number) => {
       const anchor = videoPlaybackAnchorRef.current
-      const next = Math.min(duration, anchor.frame + Math.floor((now - anchor.time) * 60 / 1000))
+      const next = frameFromElapsed(anchor.frame, now - anchor.time, duration)
       setVideoPlayheadFrame(next)
       if (next >= duration) {
         setVideoPlaying(false)

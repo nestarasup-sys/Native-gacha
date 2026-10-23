@@ -3,6 +3,8 @@ import { createReadStream, existsSync, lstatSync, mkdirSync, readFileSync, realp
 import { mkdir as nativeMkdir, readFile as nativeReadFile, writeFile as nativeWriteFile, readdir as nativeReaddir, unlink as nativeUnlink, rename as nativeRename, stat as nativeStat, access as nativeAccess, rm as nativeRm, copyFile as nativeCopyFile } from 'node:fs/promises'
 import { basename, dirname, extname, join, relative, resolve, sep } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
+import { totalmem, freemem } from 'node:os'
+import { videoStudioMemoryReport } from '../src/shared/videoStudioNext/diagnostics'
 import { Readable } from 'node:stream'
 import { fileURLToPath } from 'node:url'
 import type { FaceAssetKind, FaceAssetSave, FaceCatalogItem, FaceCatalogItemSave, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSave, FaceComponentAssetSummary, FaceElementKind, FaceExpressionPreset, FaceExpressionTransforms, FaceExpressionWorkspaceDraft, FaceGuideProfile, FaceSet, FaceSetSave, FaceSetSummary, FaceSheetKind, FaceTransform, FabricatorAssetSave, FabricatorHistoryEntry, FabricatorHistorySaveEntry, FabricatorHistorySaveState, FabricatorHistoryState, FabricatorPoseDraftSave, FabricatorPoseSave, FabricatorProject, FabricatorProjectSave, HairStyle, HairStyleAsset, HairStyleSave, HairStyleSummary, HairWorkspace, HairWorkspaceAsset, HairWorkspaceSave, ModelPart, WardrobeAssetSave, WardrobeCategory, WardrobeSet, WardrobeSetSave } from '../src/shared/fabricator'
@@ -1217,6 +1219,18 @@ async function registerFabricatorHandlers(): Promise<void> {
     })
 
     if (workspace === 'video') {
+      ipcMain.handle('video-studio:diagnostics:memory', (event) => {
+        assertTrustedSender(event)
+        if (process.platform !== 'win32') throw new Error('Diagnóstico de Video Studio somente no Windows.')
+        return videoStudioMemoryReport(app.getAppMetrics(), {
+          sampledAt: new Date().toISOString(),
+          platform: process.platform,
+          mainPid: process.pid,
+          totalRamBytes: totalmem(),
+          freeRamBytes: freemem(),
+          mainRssBytes: process.memoryUsage().rss,
+        })
+      })
       videoExportLibrary ??= new VideoExportLibrary(app.getPath('appData'))
   videoPreviewProxyStore ??= new VideoPreviewProxyStore(join(app.getPath('appData'), 'CACHE', 'video-studio', 'preview-media'))
       ipcMain.handle('video-studio:exports:list', async (event) => {

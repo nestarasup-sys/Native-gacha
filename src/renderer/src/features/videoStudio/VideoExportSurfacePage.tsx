@@ -44,7 +44,6 @@ export function VideoExportSurfacePage() {
       await document.fonts.ready
       if (disposed) throw new DOMException('Surface descartada.', 'AbortError')
       const program = compileVideoScene(data.snapshot, data.renderVariant)
-      characterRenderer = new VideoCharacterFrameRenderer(data.characters, data.characterAssets)
       const canvas = canvasRef.current
       if (!canvas) throw new Error('Canvas da surface não foi montado.')
       canvas.width = VIDEO_STAGE_WIDTH
@@ -56,12 +55,16 @@ export function VideoExportSurfacePage() {
       // frames. Decoders, GPU/Chromium internals and transit buffers are not
       // fully accounted yet; this is not a process-wide memory ceiling.
       cacheBudgetRef.current ??= new VideoStudioResourceBudget(160 * 1024 * 1024)
+      characterRenderer = new VideoCharacterFrameRenderer(data.characters, data.characterAssets, cacheBudgetRef.current)
       if (layerCacheEnabled) {
         layerCacheRef.current ??= new VideoCanvasLayerCache(96 * 1024 * 1024, cacheBudgetRef.current)
       } else layerCacheRef.current = null
       mediaPool = new VideoExportMediaFramePool(
         jobId, 96 * 1024 * 1024, cacheBudgetRef.current,
-        () => layerCacheRef.current?.clear()
+        () => {
+          layerCacheRef.current?.clear()
+          characterRenderer?.clear()
+        }
       )
       return { program, canvas, readbackOptimized }
     })()

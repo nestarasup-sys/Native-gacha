@@ -61,6 +61,20 @@ Novos testes: `npm run test:video:next`, também incluídos em `npm test`. O cor
 
 Testes Windows cobrem 12 mídias sequenciais, reapertura de fonte expulsa e cinco vídeos simultâneos com limite ocioso menor. O teto é de **quantidade de decoders retidos**, não de bytes dos buffers internos nem teto RAM/VRAM; medir isso em Windows real segue necessário.
 
+### Quinto corte — cinco prioridades iniciadas na nova fundação (Windows)
+
+| Prioridade | Entrega de código nesta fatia | Limitação / próximo gate |
+| --- | --- | --- |
+| **1. Diagnóstico Windows** | IPC on-demand `getVideoStudioMemoryReport()` com memória por PID Electron e processo GPU, acompanhado de `scripts/video-studio/windows-memory-probe.ps1` para árvore de processos (incluindo FFmpeg quando descendente). | **Sem medições reais feitas nesta sessão**; GPU VRAM dedicada, ETW/WPA e causa do OOM ainda não diagnosticados. |
+| **2. Orçamento compartilhado** | O `VideoStudioResourceBudget` da export surface passou a contabilizar estimativas de retenção **Canvas, ImageBitmap de vídeo e cache derivado de PNG/receitas Gacha**. Falta de orçamento desabilita retenção de arte, sem perder frame. | Não controla a RAM total, assets transitórios, decoded GPU, processos FFmpeg nem outros processos Electron. |
+| **3. Núcleo/histórico** | `videoStudioNext/commandHistory.ts` assume a implementação genérica de checkpoints e undo/redo, agora usada pela UI através de importação do novo núcleo. Comportamento de `StudioDocument v1` preservado e comparado com história antiga nos testes. | Estado editorial, persistência e maioria dos comandos ainda no monólito; não representa N2 concluído. |
+| **4. Renderização Gacha** | `videoStudioNext/boundedMemo.ts` faz deduplicação de receitas assíncronas e LRU por bytes de **resultados de imagem** em `VideoCharacterFrameRenderer`; limpa leases no `clear()`. O pool de mídia limpa caches derivados sob pressão. | É retenção eficiente de resultados; **não é ainda desenho incremental por camadas/sprites**. Necessário spike Canvas/Pixi com golden de expressão PT e roupas. |
+| **5. Tempo AV / recuperação** | `videoStudioNext/projectClock.ts` centraliza cálculo de tempo em frames 60 fps, usado pelo preview React e pela SceneIR de export; a export surface continua com isolamento, timeouts e render-process-gone pré-existentes. | Relógio de áudio mestre, VFR PTS real e fault-injection Windows ainda pendentes; não declarar playback unificado completo. |
+
+**Amostragem Windows:** `window.desktop.getVideoStudioMemoryReport()` somente por chamada explícita. Para perfis de processos não-Electron, executar o script manualmente com o `mainPid` retornado pela API, durante projeto **de teste**: `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/video-studio/windows-memory-probe.ps1 -RootPid <pid> -Samples 120 -CsvPath <arquivo-temporario.csv>`. Traces e CSV são privados e **não** devem conter arquivos/projetos reais em CI. Valores de working set podem se sobrepor e não são memória exclusiva.
+
+**Validação:** `npm run test:video:next` inclui testes novos de diagnósticos, histórico, memo e clock. CI específica roda no `windows-latest`; compilação e testes de integração UI/Gacha sob estresse físico são gates futuros.
+
 ## Estrutura-alvo resumida
 
 `StudioDocument/AssetManifest → ProjectRepository + EditorCore/CommandBus → SceneCompiler/Evaluator → FramePlan → ResourceBudgeter/Scheduler + GachaRenderer + MediaService → PreviewTransport / ExportService → verificador e publish atômico`.

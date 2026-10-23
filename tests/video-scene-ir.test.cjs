@@ -17,6 +17,7 @@ function loadPureTs(file, deps = {}) {
 }
 
 const frameHelpers = loadPureTs('../src/shared/videoFrame.ts')
+const projectClock = loadPureTs('../src/shared/videoStudioNext/projectClock.ts')
 const characterTimeline = loadPureTs('../src/shared/videoCharacterTimeline.ts')
 const characterTransitions = loadPureTs('../src/shared/videoCharacterTransitions.ts')
 const characterInterpolation = loadPureTs('../src/shared/videoCharacterInterpolation.ts')
@@ -27,6 +28,7 @@ const previewTransitions = loadPureTs('../src/renderer/src/features/videoStudio/
 const snapshotModule = loadPureTs('../src/shared/videoExportSnapshot.ts', { './videoFrame': frameHelpers })
 const { compileVideoScene, evaluateVideoSceneFrame } = loadPureTs('../src/shared/videoSceneIR.ts', {
   './videoFrame': frameHelpers,
+  './videoStudioNext/projectClock': projectClock,
   './videoCharacterTimeline': characterTimeline,
   './videoCharacterTransitions': characterTransitions,
   './videoExportSnapshot': snapshotModule,

@@ -2,6 +2,7 @@ import type { StudioElement, VideoCharacterState, VideoClipTransform, VideoTimel
 import type { VideoExportSnapshot } from './videoExportSnapshot'
 import { compileVideoCharacterTransitions, type VideoCharacterTransition } from './videoCharacterTransitions'
 import { automaticBlinkFrameFor } from './videoFrame'
+import { framePresentationTime } from './videoStudioNext/projectClock'
 import { videoCharacterStateAt, videoCharacterTimelineLookup, type VideoCharacterTimelineLookup } from './videoCharacterTimeline'
 
 export type RenderVariant = 'animated' | 'static-characters'
@@ -218,7 +219,8 @@ export function evaluateVideoSceneFrame(program: VideoSceneProgram, frame: numbe
   })
   const videos = videoClips.map((clip) => {
     const sourceTick = clip.sourceStartFrame + frame - clip.startFrame
-    return { clipId: clip.id, assetId: clip.assetId, sourceTick, sourceTimeNumerator: sourceTick, sourceTimeDenominator: 60 as const, ...(clip.transform ? { transform: clip.transform } : {}), zOrder: 1 as const }
+    const sourceTime = framePresentationTime(sourceTick)
+    return { clipId: clip.id, assetId: clip.assetId, sourceTick, sourceTimeNumerator: sourceTime.numerator, sourceTimeDenominator: sourceTime.denominator, ...(clip.transform ? { transform: clip.transform } : {}), zOrder: 1 as const }
   })
   videos.forEach((video, documentOrder) => layers.push({ type: 'video', kind: 'video', ...video, documentOrder }))
   layers.sort((a, b) => a.zOrder - b.zOrder || a.documentOrder - b.documentOrder)
@@ -259,8 +261,8 @@ export function evaluateVideoSceneFrame(program: VideoSceneProgram, frame: numbe
 
   return {
     frame,
-    timestampNumerator: frame,
-    timestampDenominator: 60,
+    timestampNumerator: framePresentationTime(frame).numerator,
+    timestampDenominator: framePresentationTime(frame).denominator,
     variant: program.variant,
     background: {
       color: studio.backgroundColor,
