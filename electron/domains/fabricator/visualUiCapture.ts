@@ -49,7 +49,7 @@ async function waitForRendered(win: BrowserWindow, selector: string, timeoutMs =
 /** Regressão de pixels: peça com deslocamentos X/Y deve continuar no lado
  * correto do personagem. Nada é alterado na biblioteca pessoal do Fabricador.
  */
-async function inspectSyntheticWardrobePreview(win: BrowserWindow, requirePoseOneOffsets = true): Promise<{
+async function inspectSyntheticWardrobePreview(win: BrowserWindow, requirePoseOneOffsets = true, expectedNames: readonly string[] = ['coat','sleeve-left','sleeve-right']): Promise<{
   source: 'customizer-overlay'; colors: Array<{ name: string; pixels: number; x: number; y: number }>
 }> {
   await waitForRendered(win, 'img.customizer-wardrobe-overlay', 30000)
@@ -63,7 +63,7 @@ async function inspectSyntheticWardrobePreview(win: BrowserWindow, requirePoseOn
     { name: 'sleeve-left', rgba: [42,174,207] },
     { name: 'sleeve-right', rgba: [237,177,60] }
   ]
-  const colors = expected.map(item => {
+  const colors = expected.filter(item => expectedNames.includes(item.name)).map(item => {
     let sumX = 0, sumY = 0, count = 0
     for (let y = 0; y < image.info.height; y++) for (let x = 0; x < image.info.width; x++) {
       const index = (y * image.info.width + x) * 4
@@ -74,7 +74,7 @@ async function inspectSyntheticWardrobePreview(win: BrowserWindow, requirePoseOn
     return { name: item.name, pixels: count, x: sumX/count, y: sumY/count }
   })
   const left = colors[1], right = colors[2]
-  if (requirePoseOneOffsets && (left.x >= right.x - 30 || left.y <= right.y + 6)) {
+  if (requirePoseOneOffsets && colors.length === 3 && (left.x >= right.x - 30 || left.y <= right.y + 6)) {
     throw Error('Offsets X/Y do Fabricador não sobreviveram no Customizador: ' + JSON.stringify(colors))
   }
   return { source: 'customizer-overlay', colors }
@@ -378,6 +378,58 @@ export async function captureCustomizerStudioRealScreens(win: BrowserWindow, out
   await writeFile(join(output, 'wardrobe-pixels.json'), JSON.stringify(garmentPixels, null, 2))
   await capture('Customizador', 'customizador.png')
   const poseOnePerformance = await sampleElectronPerformance(win)
+
+  // Hide and restore each independent colored garment via the same public IPC
+  // used by the Customizer. The other sleeve must remain at the exact centroid
+  // it had before the visibility change. No source assets are written.
+  const setSyntheticPieceHidden = async (pieceId: string, hidden: boolean) => {
+    const applied = await win.webContents.executeJavaScript(`(async () => {
+      const list = await window.desktop.listCustomizerCharacters()
+      const character = list.find(item => item.id === ${JSON.stringify(id)})
+      if (!character) return false
+      const wardrobeGroups = (character.customization.wardrobeGroups ?? []).map(group =>
+        group.componentId === ${JSON.stringify(pieceId)} ? { ...group, hidden: ${hidden} } : group)
+      await window.desktop.saveCustomizerCharacter({
+        ...character,customization:{...character.customization,wardrobeGroups},
+        updatedAt:new Date().toISOString()
+      })
+      return true
+    })()`) as boolean
+    if (!applied) throw Error('Não atualizou visibilidade sintética da peça ' + pieceId)
+    await win.webContents.executeJavaScript("window.location.hash = '#/estudio'")
+    await waitFor(win,'.studio-page')
+    await win.webContents.executeJavaScript("window.location.hash = '#/customizar'")
+    await waitFor(win,'.roster-panel')
+    await waitFor(win,'.character-card')
+    const clicked = await win.webContents.executeJavaScript(`(() => {
+      const card = [...document.querySelectorAll('.character-card')]
+        .find(item => item.textContent?.includes(${JSON.stringify(name)}))
+      if (!card) return false
+      card.click()
+      return true
+    })()`) as boolean
+    if (!clicked) throw Error('Não reabriu personagem após ocultar/restaurar ' + pieceId)
+  }
+  const baselineSleeves = garmentPixels.colors.slice(1)
+  const maxMovement = (observed: { name:string;x:number;y:number }, expected: {name:string;x:number;y:number}) =>
+    Math.abs(observed.x - expected.x) + Math.abs(observed.y - expected.y)
+  const isolation: Array<{hidden:string;other:string;otherMovement:number;restoredMovement:number}> = []
+  for (const [hiddenPiece, otherPiece] of [['sleeve-right','sleeve-left'],['sleeve-left','sleeve-right']]) {
+    const expected = baselineSleeves.find(item => item.name === otherPiece)!
+    await setSyntheticPieceHidden(hiddenPiece,true)
+    const remaining = (await inspectSyntheticWardrobePreview(win,false,[otherPiece])).colors[0]
+    const otherMovement = maxMovement(remaining,expected)
+    if (otherMovement > 0.8) throw Error('Ocultar ' + hiddenPiece + ' deslocou a peça ' + otherPiece + ': ' + otherMovement)
+    await setSyntheticPieceHidden(hiddenPiece,false)
+    const restored = await inspectSyntheticWardrobePreview(win)
+    const restoredMovement = Math.max(...restored.colors.slice(1).map(item =>
+      maxMovement(item,baselineSleeves.find(known=>known.name===item.name)!)))
+    if (restoredMovement > 0.8) throw Error('Restaurar ' + hiddenPiece + ' alterou o encaixe original: ' + restoredMovement)
+    isolation.push({hidden:hiddenPiece,other:otherPiece,otherMovement,restoredMovement})
+  }
+  await writeFile(join(output,'wardrobe-hide-restore.json'),JSON.stringify({
+    source:'customizer-overlay',syntheticOnly:true,poseSlot:1,checks:isolation
+  },null,2))
 
   // Exercise a SECOND saved pose in the actual Electron/Customizer renderer.
   // The fixture lives in the isolated DEV AI sandbox; restore pose 1 before
