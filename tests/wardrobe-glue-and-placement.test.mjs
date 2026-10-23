@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { fixWardrobeGlue, releaseWardrobeGlue, editWardrobeGlue, wardrobeGlueState, suggestWardrobeGlueTarget } from '../src/shared/wardrobeGlue.ts'
 import { mapWardrobeComponentToPose } from '../src/shared/wardrobePose.ts'
-import { toggleWardrobeVisibility, updateWardrobeComponentGroups } from '../src/shared/wardrobePlacementModel.ts'
+import { toggleWardrobeVisibility, updateWardrobeComponentGroups, recolorWardrobeComponents } from '../src/shared/wardrobePlacementModel.ts'
 
 const bone = (id,name,x,y,width=42,height=80)=>({
   id,name,x:x+120,y:y+55,width,height,rotation:45,dataUrl:'data:image/png;base64,AA==',
@@ -112,4 +112,23 @@ test('interface usa grude real, sem bolinha azul, sem mudar a folha desmontada',
   assert.match(controls,/Soltar/)
   assert.match(renderer,/component\.glue\?\.mode === 'loose'/)
   assert.match(customizer,/updateWardrobeComponentGroups\(/)
+})
+
+test('paletas de roupas são alteradas apenas no componente e lado escolhidos',()=>{
+  const left={...group,componentId:'sleeve-left',colors:{base:'#111111'}}
+  const right={...group,componentId:'sleeve-right',colors:{base:'#222222'}}
+  const input=[left,right]
+  const recolored=recolorWardrobeComponents(input,1,'uniform','manga-inferior',['sleeve-right'],
+    {kind:'role',role:'base',value:'#abcdef'})
+  assert.equal(recolored[0],left)
+  assert.equal(recolored[1].colors.base,'#abcdef')
+  assert.equal(left.colors.base,'#111111')
+  const replaced=recolorWardrobeComponents(recolored,1,'uniform','manga-inferior',['sleeve-left'],
+    {kind:'replace',colors:{base:'#fedcba'}})
+  assert.equal(replaced[0].colors.base,'#fedcba')
+  assert.equal(replaced[1].colors.base,'#abcdef')
+  const cleared=recolorWardrobeComponents(replaced,1,'uniform','manga-inferior',['sleeve-right'],{kind:'clear'})
+  assert.equal(cleared[1].colors,undefined)
+  assert.equal(cleared[0].colors.base,'#fedcba')
+  assert.deepEqual(input,[left,right])
 })
