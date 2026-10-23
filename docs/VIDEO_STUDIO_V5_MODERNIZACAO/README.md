@@ -53,7 +53,7 @@ Novos testes: `npm run test:video:next`, também incluídos em `npm test`. O cor
 - A `VideoExportSurfacePage` agora faz `Promise.allSettled` entre Gacha e mídia, liberando frames em `finally` mesmo com falha no desenho, render ou readback. Uma surface não aceita dois empréstimos ativos simultâneos, evitando o mesmo decoder servir seeks concorrentes.
 - **Um budget de 160 MiB por surface** é compartilhado entre cache de camadas (máximo 96 MiB) e ImageBitmaps de mídia (máximo 96 MiB retidos em LRU, mais transitórios *dentro do mesmo budget*). Sob pressão o cache de camadas derivadas pode ser limpo para dar lugar a frames originais. Em falta de memória para frames simultâneos, a exportação falha **explicitamente**, sem retornar bitmap já fechado nem publicar resultado parcial.
 - Novos testes cobrem **três vídeos simultâneos, expulsão segura, orçamento compartilhado, memória insuficiente, descarte durante decode, PTS e seek reverso**. Executados pela CI **Windows** com `npm run test:video:next`.
-- **Limite ainda presente:** a reserva usa a dimensão de `ImageBitmap` obtida *após* a decodificação, e não limita buffers internos do Chromium/decoder, RAM/VRAM do processo, preview principal, múltiplas surfaces nem FFmpeg. O orçamento global N1/N6 e stress em hardware Windows seguem pendentes.
+- **Nota histórica — superada no sétimo corte:** esta versão reservava o tamanho do `ImageBitmap` apenas *após* decodificar. Isso foi corrigido para admissão antecipada usando `videoWidth/videoHeight` antes de `seek()` e `createImageBitmap()`. Ainda não limita buffers internos do Chromium/decoder, RAM/VRAM, preview, múltiplas surfaces ou FFmpeg.
 
 ### Quarto corte — decodificadores de vídeo ociosos limitados (Windows)
 
@@ -98,6 +98,16 @@ Testes Windows cobrem 12 mídias sequenciais, reapertura de fonte expulsa e cinc
 5. **Playback/export unificados: PARCIAL.** Contrato de 60 fps por frame e SceneIR compartilhados; ainda faltam relógio de áudio autoritativo, PTS/VFR, decoders coordenados e fault-injection de export.
 
 **Logo, as cinco prioridades foram iniciadas e validadas em cortes verificáveis, mas não seria correto declará-las integralmente concluídas.**
+
+### Sétimo corte — prevenção de alocação antes de admitir memória (Windows)
+
+**Mudança de segurança:** no `videoExportMediaFramePool.ts`, a reserva estimada de bytes **antecede** o seek e o `createImageBitmap(video)`, usando `videoWidth × videoHeight × 4` depois de obter metadados. Se o frame não couber no ledger de 160 MiB da surface, ele **não é materializado** pelo `createImageBitmap`; antes de negar, o pool expulsa cache não usado e permite limpar caches derivados de Canvas/Gacha. A reserva acompanha o frame emprestado e é devolvida após composição, cancelamento, erro, descarte ou eviction. Se as dimensões finais excederem as declaradas, o bitmap é fechado e a renderização falha **sem publicar frame inválido**.
+
+**Trabalhos Gacha controlados:** `videoStudioNext/rasterAdmission.ts` serializa a geração pesada de resultados Gacha por surface, com **no máximo oito trabalhos aguardando** e uma reserva antecipada de trabalho de **16 MiB estimados**. O `VideoCharacterFrameRenderer` usa essa admissão antes de cada receita de transição/boca/blink; saturação, falta de orçamento e erros produzem falhas controladas, não filas infinitas. `dispose()` rejeita trabalhos aguardando, e o trabalho ativo libera o empréstimo ao terminar. `clear()` continua descartando somente resultados derivados, para ser seguro sob pressão durante o render.
+
+**Testes Windows novos:** rejeição *antes* de criar bitmap ou iniciar seek, erro de conversão, metadados inconsistentes, abort durante conversão, fila saturada, admissão de trabalho Gacha antes de executar, pressão sobre cache derivado e liberação exata do lease após falha/descarte. Comandos: `npm run test:video:next` e CI Windows existente. Os testes de vídeo usam mocks de browser; o typecheck/build valida integração, e **a paridade real de canvas/codec/VRAM ainda exige ensaio Windows físico**.
+
+**Limite honesto:** reservar `w × h × 4` **não controla** preload/decoder interno iniciado ao criar um `HTMLVideoElement`, frames GPU, cópias temporárias de canvas, GL textures, malloc nativo ou memória do FFmpeg. A reserva Gacha de 16 MiB é **estimativa conservadora de workspace, não teto físico de um render**. Se a demanda real ultrapassar os tetos, podem surgir erros de export recuperáveis. A política global multi-PID e o compositor por partes continuam pendentes.
 
 ## Estrutura-alvo resumida
 

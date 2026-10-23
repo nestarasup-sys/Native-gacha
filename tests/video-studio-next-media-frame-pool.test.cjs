@@ -16,7 +16,7 @@ new Function('module', 'exports', compile('../src/shared/videoStudioNext/resourc
 )
 const { VideoStudioResourceBudget } = resourceModule.exports
 
-function harness({ width = 4, height = 4, beforeBitmap } = {}) {
+function harness({ width = 4, height = 4, beforeBitmap, metadataWidth = width, metadataHeight = height } = {}) {
   const bitmaps = []
   const videoElements = []
   const document = {
@@ -26,7 +26,7 @@ function harness({ width = 4, height = 4, beforeBitmap } = {}) {
       let currentTime = 0
       const video = {
         muted: false, preload: '', playsInline: false, crossOrigin: '', src: '',
-        duration: 30, readyState: 3,
+        duration: 30, readyState: 3, videoWidth: metadataWidth, videoHeight: metadataHeight,
         get currentTime() { return currentTime },
         set currentTime(next) {
           currentTime = next
@@ -109,12 +109,12 @@ test('layer-cache memory pressure releases derived layers before denying video f
   assert.equal(budget.snapshot().usedBytes, 0)
 })
 
-test('denied second frame closes it, releases first pin, leaves no transient memory', async () => {
+test('preflight denies a second frame BEFORE bitmap allocation and releases the first pin', async () => {
   const { Pool, bitmaps } = harness()
   const budget = new VideoStudioResourceBudget(64)
   const pool = new Pool('job', 96, budget)
   await assert.rejects(pool.acquireFramesForScene(scene('a', 'b')), /Orçamento/)
-  assert.deepEqual(bitmaps.map((bitmap) => bitmap.closed), [false, true])
+  assert.deepEqual(bitmaps.map((bitmap) => bitmap.closed), [false], 'second bitmap is never allocated')
   assert.equal(budget.snapshot().activeLeases, 1, 'first frame can remain in reusable LRU')
   const recovered = await pool.acquireFramesForScene(scene('a'))
   assert.equal(recovered.frames.get('a'), bitmaps[0])
@@ -210,4 +210,73 @@ test('idle decoder cap never closes videos required simultaneously by one scene'
   assert.equal(budget.snapshot().usedBytes, 0)
   assert.ok(bitmaps.every((bitmap) => bitmap.closed))
   assert.throws(() => new Pool('job', 64, undefined, undefined, 0), /decoders ociosos/)
+})
+
+test('admission failure cannot start a seek or allocate a bitmap', async () => {
+  const { Pool, bitmaps, videoElements } = harness()
+  const budget = new VideoStudioResourceBudget(32)
+  const pool = new Pool('job', 96, budget)
+  await assert.rejects(pool.acquireFramesForScene(scene('too-large')), /Orçamento/)
+  assert.equal(bitmaps.length, 0)
+  assert.equal(videoElements[0].currentTime, 0)
+  assert.equal(budget.snapshot().usedBytes, 0)
+  pool.dispose()
+})
+
+test('bad metadata rejects before decode; oversized bitmap is closed and returns reserved bytes', async () => {
+  const budget = new VideoStudioResourceBudget(512)
+  const wrongMeta = harness({ metadataWidth: 0 })
+  const invalid = new wrongMeta.Pool('job', 512, budget)
+  await assert.rejects(invalid.acquireFramesForScene(scene('invalid')), /Dimensões/)
+  assert.equal(wrongMeta.bitmaps.length, 0)
+  assert.equal(budget.snapshot().usedBytes, 0)
+  invalid.dispose()
+
+  const largerBitmap = harness({ width: 8, height: 8, metadataWidth: 4, metadataHeight: 4 })
+  const pool = new largerBitmap.Pool('job', 512, budget)
+  await assert.rejects(pool.acquireFramesForScene(scene('surprise')), /excede a reserva/)
+  assert.equal(largerBitmap.bitmaps.length, 1)
+  assert.equal(largerBitmap.bitmaps[0].closed, true)
+  assert.equal(budget.snapshot().usedBytes, 0)
+  pool.dispose()
+})
+
+test('bitmap conversion failure releases pre-admitted bytes and permits retry', async () => {
+  let attempts = 0
+  const { Pool } = harness({ beforeBitmap: async () => {
+    if (++attempts === 1) throw new Error('synthetic bitmap failure')
+  } })
+  const budget = new VideoStudioResourceBudget(128)
+  const pool = new Pool('job', 96, budget)
+  await assert.rejects(pool.acquireFramesForScene(scene('retry')), /synthetic bitmap failure/)
+  assert.equal(budget.snapshot().usedBytes, 0)
+  const usable = await pool.acquireFramesForScene(scene('retry'))
+  assert.equal(usable.frames.size, 1)
+  usable.release()
+  pool.dispose()
+  assert.equal(budget.snapshot().usedBytes, 0)
+})
+
+test('abort during bitmap conversion closes late bitmap and releases its lease', async () => {
+  let started
+  let complete
+  const entered = new Promise(resolve => { started = resolve })
+  const delayed = new Promise(resolve => { complete = resolve })
+  const { Pool, bitmaps } = harness({ beforeBitmap: async () => {
+    started()
+    await delayed
+  } })
+  const budget = new VideoStudioResourceBudget(128)
+  const pool = new Pool('job', 96, budget)
+  const controller = new AbortController()
+  const pending = pool.acquireFramesForScene(scene('a'), controller.signal)
+  await entered
+  assert.equal(budget.snapshot().usedBytes, 64, 'reservation exists during conversion')
+  controller.abort()
+  complete()
+  await assert.rejects(pending, /abort|cancelad/i)
+  assert.equal(bitmaps.length, 1)
+  assert.equal(bitmaps[0].closed, true)
+  assert.equal(budget.snapshot().usedBytes, 0)
+  pool.dispose()
 })

@@ -123,7 +123,7 @@ export function VideoExportSurfacePage() {
     return () => {
       disposed = true
       unsubscribe?.()
-      characterRenderer?.clear()
+      characterRenderer?.dispose()
       mediaPool?.dispose()
       layerCacheRef.current?.clear()
       layerCacheRef.current = null

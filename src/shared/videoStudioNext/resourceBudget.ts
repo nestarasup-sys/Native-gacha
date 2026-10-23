@@ -4,7 +4,7 @@
  * per-PID measurements, decoders, native buffers, GPU and in-flight resources.
  */
 export type VideoStudioResourceCategory =
-  | 'artwork' | 'texture' | 'video-decoder' | 'audio' | 'preview' | 'export' | 'ipc' | 'other'
+  | 'artwork' | 'texture' | 'video-decoder' | 'audio' | 'preview' | 'export' | 'ipc' | 'render-work' | 'other'
 
 export type VideoStudioBudgetLease = Readonly<{
   id: number

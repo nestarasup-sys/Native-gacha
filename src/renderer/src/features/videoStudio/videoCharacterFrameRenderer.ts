@@ -7,6 +7,7 @@ import type { VideoCharacterRenderAssetProvider, VideoCharacterRenderAssetSnapsh
 import { createVideoCharacterRenderSnapshotProvider } from '../../../../shared/videoCharacterRenderAssets'
 import { TransitionRenderer } from './transitionRenderer'
 import { VideoStudioBoundedMemo } from '../../../../shared/videoStudioNext/boundedMemo'
+import { VideoStudioRasterAdmission } from '../../../../shared/videoStudioNext/rasterAdmission'
 import type { VideoStudioResourceBudget } from '../../../../shared/videoStudioNext/resourceBudget'
 
 const DEFAULT_FACE_TRANSFORM: StudioFaceTransform = { x: 0, y: 0, width: 100, height: 100, rotation: 0 }
@@ -30,6 +31,7 @@ export class VideoCharacterFrameRenderer {
   private readonly provider: VideoCharacterRenderAssetProvider
   private readonly transitionRenderer: TransitionRenderer
   private readonly cache: VideoStudioBoundedMemo<VideoCharacterState>
+  private readonly admission: VideoStudioRasterAdmission
   private readonly stateIds = new WeakMap<object, number>()
   private nextStateId = 0
 
@@ -45,6 +47,7 @@ export class VideoCharacterFrameRenderer {
       (state) => Math.max(1, state.imageDataUrl.length * 2),
       budget, 'artwork'
     )
+    this.admission = new VideoStudioRasterAdmission(budget, 16 * 1024 * 1024, 8, () => this.cache.clear())
   }
 
   private stateId(state: VideoCharacterState): number {
@@ -55,7 +58,7 @@ export class VideoCharacterFrameRenderer {
   }
 
   private remember(key: string, create: () => Promise<VideoCharacterState>): Promise<VideoCharacterState> {
-    return this.cache.getOrCreate(key, create)
+    return this.cache.getOrCreate(key, () => this.admission.run(create))
   }
 
   private transitionKey(frame: VideoSceneFrame, elementId: string, startFrame: number, boundaryFrame: number): string {
@@ -162,6 +165,11 @@ export class VideoCharacterFrameRenderer {
   }
 
   clear(): void {
+    this.cache.clear()
+  }
+
+  dispose(): void {
+    this.admission.dispose()
     this.cache.clear()
   }
 }

@@ -191,39 +191,57 @@ export class VideoExportMediaFramePool {
 
     const video = await this.video(assetId)
     if (this.disposed) throw new Error('Decoder de mídia já foi descartado.')
-    await this.seek(video, sourceNumerator / sourceDenominator, signal)
-    if (this.disposed) throw new Error('Decoder de mídia já foi descartado.')
     if (signal?.aborted) throw abortError(signal)
-    const bitmap = await createImageBitmap(video)
-    if (this.disposed || signal?.aborted) {
-      bitmap.close()
-      throw this.disposed ? new Error('Decoder de mídia já foi descartado.') : abortError(signal)
-    }
-    const bytes = bitmap.width * bitmap.height * 4
-    if (!bitmap.width || !bitmap.height || !Number.isSafeInteger(bytes)) {
-      bitmap.close()
-      throw new Error('Decoder retornou um frame de vídeo inválido.')
-    }
 
-    // Both cached and in-flight frames reserve bytes in the surface budget.
-    // Evict only non-borrowed frames; preserve frames from earlier clips in
-    // the same composite, even when the 96 MiB cache is full.
-    while ((this.bitmapBytes + bytes > this.maxBitmapBytes
-      || (this.budget && this.budget.snapshot().availableBytes < bytes))
+    // loadedmetadata exposes decoded frame dimensions BEFORE seek/bitmap
+    // materialization. Admit the expected RGBA surface before allocating it,
+    // not after Chromium has already created an ImageBitmap.
+    const expectedBytes = video.videoWidth * video.videoHeight * 4
+    if (!Number.isSafeInteger(video.videoWidth) || !Number.isSafeInteger(video.videoHeight)
+      || video.videoWidth < 1 || video.videoHeight < 1 || !Number.isSafeInteger(expectedBytes)) {
+      throw new Error('Dimensões do vídeo inválidas para reserva antecipada de memória.')
+    }
+    // Evict only unused bitmaps: earlier clips in this same frame remain pinned.
+    while ((this.bitmapBytes + expectedBytes > this.maxBitmapBytes
+      || (this.budget && this.budget.snapshot().availableBytes < expectedBytes))
       && this.evictUnpinned()) { /* finite LRU */ }
 
-    let lease = this.budget?.tryReserve('video-decoder', bytes)
+    let lease = this.budget?.tryReserve('video-decoder', expectedBytes)
     if (this.budget && !lease) {
-      // Layer cache is derived and can be regenerated. Flush it before
-      // dropping a final-quality video frame.
+      // Derived Canvas layers and Gacha recipe results can be regenerated.
       this.releaseExternalCache?.()
-      lease = this.budget.tryReserve('video-decoder', bytes)
+      lease = this.budget.tryReserve('video-decoder', expectedBytes)
     }
     if (this.budget && !lease) {
-      bitmap.close()
       throw new Error('Orçamento de frames decodificados esgotado para esta surface.')
     }
 
+    let bitmap: ImageBitmap
+    try {
+      // The reservation covers retained RGBA bitmap bytes. Chromium's codec
+      // and GPU allocations remain external and need process-tree monitoring.
+      await this.seek(video, sourceNumerator / sourceDenominator, signal)
+      if (this.disposed) throw new Error('Decoder de mídia já foi descartado.')
+      if (signal?.aborted) throw abortError(signal)
+      bitmap = await createImageBitmap(video)
+    } catch (reason) {
+      lease?.release()
+      throw reason
+    }
+    if (this.disposed || signal?.aborted) {
+      bitmap.close()
+      lease?.release()
+      throw this.disposed ? new Error('Decoder de mídia já foi descartado.') : abortError(signal)
+    }
+    const actualBytes = bitmap.width * bitmap.height * 4
+    if (!Number.isSafeInteger(actualBytes) || actualBytes < 1 || actualBytes > expectedBytes) {
+      bitmap.close()
+      lease?.release()
+      throw new Error('Frame decodificado excede a reserva de memória calculada para a mídia.')
+    }
+    // Keep the metadata reservation conservatively if the bitmap is smaller.
+    // The bitmap must NEVER outlive its lease, including on failed seeks.
+    const bytes = expectedBytes
     const entry: CachedBitmap = { bitmap, bytes, pins: 1, ...(lease ? { lease } : {}) }
     if (bytes <= this.maxBitmapBytes && this.bitmapBytes + bytes <= this.maxBitmapBytes) {
       this.bitmaps.set(key, entry)
