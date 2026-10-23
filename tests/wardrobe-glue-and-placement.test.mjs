@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { fixWardrobeGlue, releaseWardrobeGlue, editWardrobeGlue, wardrobeGlueState, suggestWardrobeGlueTarget } from '../src/shared/wardrobeGlue.ts'
 import { mapWardrobeComponentToPose } from '../src/shared/wardrobePose.ts'
-import { toggleWardrobeVisibility, updateWardrobeComponentGroups, recolorWardrobeComponents } from '../src/shared/wardrobePlacementModel.ts'
+import { toggleWardrobeVisibility, updateWardrobeComponentGroups, recolorWardrobeComponents, selectWardrobePanelComponents } from '../src/shared/wardrobePlacementModel.ts'
 
 const bone = (id,name,x,y,width=42,height=80)=>({
   id,name,x:x+120,y:y+55,width,height,rotation:45,dataUrl:'data:image/png;base64,AA==',
@@ -131,4 +131,21 @@ test('paletas de roupas são alteradas apenas no componente e lado escolhidos',(
   assert.equal(cleared[1].colors,undefined)
   assert.equal(cleared[0].colors.base,'#fedcba')
   assert.deepEqual(input,[left,right])
+})
+
+test('trocar manga direita preserva manga esquerda e ajustes da peça oposta',()=>{
+  const left={...group,componentId:'left-piece',offsetX:11,colors:{base:'#111111'}}
+  const right={...group,componentId:'old-right',offsetX:35,colors:{base:'#222222'}}
+  const other={...group,category:'camisa',componentId:'shirt'}
+  const swapped=selectWardrobePanelComponents([left,right,other],1,'manga-inferior',
+    ['1:uniform:old-right'],{modelSlot:1,setId:'uniform',componentIds:['new-right'],colors:{base:'#abcdef'}})
+  assert.equal(swapped.length,3)
+  assert.equal(swapped[0],left)
+  assert.equal(swapped[0].offsetX,11)
+  assert.equal(swapped[1],other)
+  assert.equal(swapped[2].componentId,'new-right')
+  assert.equal(swapped[2].offsetX,0)
+  assert.equal(swapped[2].colors.base,'#abcdef')
+  const removed=selectWardrobePanelComponents(swapped,1,'manga-inferior',['1:uniform:new-right'],null)
+  assert.deepEqual(removed,[left,other])
 })
