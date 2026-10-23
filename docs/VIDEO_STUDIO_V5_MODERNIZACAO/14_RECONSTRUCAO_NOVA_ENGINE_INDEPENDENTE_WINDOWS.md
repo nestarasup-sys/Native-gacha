@@ -11,7 +11,7 @@ O usuário rejeitou continuar estendendo o editor legado e determinou três prin
 - `src/renderer/src/features/videoStudioRebuild/mediaEngine.ts`: serviço de vídeo/áudio independente de React: prepara proxies pela API da aplicação, mantém decoders HTMLVideoElement com limite 2, usa relógio nativo do vídeo ativo quando disponível e monotônico na ausência de áudio, suporta pause/seek/sync/stop/dispose. **Ainda está no processo renderer Electron; sem subprocesso de mídia supervisionado e sem mixagem AV completa.** Esse é o próximo marco obrigatório, não afirmar que o motor de mídia está definitivamente isolado.
 - `src/shared/videoStudioRebuild/rebuildEditor.ts`: divisão de bloco imutável preservando o estado Gacha/PT e locks.
 - `src/renderer/src/features/videoStudioRebuild/VideoStudioRebuildPage.tsx` + CSS: nova biblioteca/editor funcional básico independente do antigo, Play sem pré-render de todas as transições, seek, timeline de chaves, split, toggle de transições e salvar **cópia** sem alterar original.
-- `src/renderer/src/ui/App.tsx`: a rota principal `#/video-studio` agora importa diretamente a nova `VideoStudioRebuildPage`. `VideoStudioPage.tsx` e `VideoStudioEditor.tsx` antigos permanecem no código apenas como referências/fallback de migração, **não são instanciados pela rota principal**.
+- `src/renderer/src/ui/App.tsx`: a rota principal `#/video-studio` importa diretamente `VideoStudioRebuildPage`. **`VideoStudioPage.tsx` e `VideoStudioEditor.tsx` foram excluídos fisicamente no commit `033a0dc`**; somente bibliotecas/oráculos de exportação ainda necessários permanecem temporariamente. Consultar [15 — handoff](./15_HANDOFF_PROXIMO_CHAT_RECONSTRUCAO_WINDOWS_2026-10-23.md).
 
 ## Segundo corte: subprocesso AV supervisionado (clock e sessão)
 

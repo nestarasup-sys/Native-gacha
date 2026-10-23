@@ -2,6 +2,8 @@
 
 **Decisão ativa (23/10/2026):** reconstruir **integralmente a arquitetura interna do Video Studio**. Não basta “otimizar o editor antigo”. A nova fundação deve conter editor/domínio, timeline, SceneEvaluator, renderizador Gacha, MediaService/AV clock, scheduler, orçamento de memória, supervisão de processos, preview, export e persistência, com **substituição progressiva e aposentadoria da orquestração experimental**.
 
+**Continuidade entre chats:** [15 — Handoff, exclusão do monólito e prioridades do motor novo](./15_HANDOFF_PROXIMO_CHAT_RECONSTRUCAO_WINDOWS_2026-10-23.md). Leia antes de novos commits.
+
 **Nova execução iniciada:** [14 — Reconstrução do novo Video Studio independente, GPU/WebGL2 e scheduler sob demanda](./14_RECONSTRUCAO_NOVA_ENGINE_INDEPENDENTE_WINDOWS.md). Primeira fatia funcional, ainda sem paridade integral.
 
 **Ler primeiro após o stress real:** [13 — Diagnóstico Windows real e decisão de arquitetura após 13 minutos de preview](./13_DECISAO_APOS_STRESS_REAL_WINDOWS_2026-10-23.md). Evidência medida determina prioridades e gates.
@@ -16,7 +18,7 @@
 - **Robustez e testes obrigatórios:** RAM/VRAM/processos/decoders medidas; filas e memória orçadas; recovery de falha da engine; preview/export coerentes; 12/24/48 atores e até 4 vídeos sob stress, 15–30 min de **animação variável**, AV/PTS e Windows offline. O teste histórico de 15 min com frame estático após 301 **não valida essa carga**.
 - **Nenhuma promessa de “10×” sem benchmark.** A meta é capacidade/confiabilidade, fidelidade e fluidez mensuradas em hardware real, com degradação de preview quando necessário.
 - **Branch autorizada:** exclusivamente `nestarasup-sys/Native-gacha` → `feature/model-source-editor`. `main` e `refactor/shared-character-core` **não** podem ser alteradas, mescladas ou receber release sem autorização explícita. PR #5 permanece rascunho até aprovação.
-- **Estado:** reconstrução em cortes **parciais**, com melhorias Canvas na exportação, mas **preview ainda preso a fila serial de PNG e preparação bloqueante**, conforme relatório real de 23/10/2026. Não há estabilidade/ganho FPS comprovado nem export MP4 de 180 s validado.
+- **Estado:** reconstrução em cortes **parciais**. A rota ativa agora usa o preview reconstruído com scheduler sob demanda/WebGL2, **sem o editor monolítico**; porém ainda desenha PNGs de personagens já salvos como texturas, sem paridade normal/PT dinâmica, export novo ou prova de FPS/VRAM com quatro atores. O preview antigo de preparação serial foi medido como gargalo histórico e não é mais a rota principal.
 
 ## Ordem de leitura
 
