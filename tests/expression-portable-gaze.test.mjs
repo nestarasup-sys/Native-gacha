@@ -172,3 +172,19 @@ test('todas as 21 expressões são variações da base e PT não vira um novo pr
   assert.deepEqual(actor.appearance,baseline)
   assert.equal(actor.loaded.some(id=>id.startsWith('author')),false)
 })
+
+test('movimento da sobrancelha direita troca o sinal ao passar de PNG espelhado para direito real',()=>{
+  const original=transforms()
+  const edited=transforms()
+  edited.browRight.x+=12
+  edited.browRight.rotation+=19
+  const mirrored=compilePortableExpression(edited,original,{browRight:{width:60,height:20,mirrored:true}})
+  const target=tf(190,105,1.25,.95)
+  const physical=applyPortableExpressionLayer(mirrored,'browRight',target,{width:90,height:30,mirrored:false})
+  assert.equal(physical.x,172)
+  assert.equal(physical.rotation,-19)
+  const mirrorTarget=applyPortableExpressionLayer(mirrored,'browRight',target,{width:90,height:30,mirrored:true})
+  assert.equal(mirrorTarget.x,208)
+  assert.equal(mirrorTarget.rotation,19)
+  assert.deepEqual(target,tf(190,105,1.25,.95))
+})
