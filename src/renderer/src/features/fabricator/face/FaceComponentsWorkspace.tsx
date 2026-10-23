@@ -525,6 +525,47 @@ export function FaceComponentsWorkspace({ mode }: { mode: FaceWorkspaceMode }) {
     } finally { setBusy(false) }
   }
 
+  async function importEyebrow(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]; event.target.value = ''
+    if (!file || !head) return
+    setBusy(true); setError('')
+    const savedIds: string[] = []
+    try {
+      const image = await readImage(file)
+      const baseName = file.name.replace(/\.[^.]+$/, '').slice(0, 90) || 'Sobrancelha'
+      const pairId = crypto.randomUUID()
+      const updatedAt = new Date().toISOString()
+      const leftTransform = initialTransform('eyebrow', head, image.width, image.height)
+      const left: FaceComponentAssetSave = {
+        schemaVersion: 1, id: crypto.randomUUID(), modelSlot, kind: 'eyebrow',
+        name: `${baseName} · Sobrancelha esquerda`.slice(0, 120), width: image.width, height: image.height,
+        defaultTransform: leftTransform, pairId, updatedAt
+      }
+      const right: FaceComponentAssetSave = {
+        ...left, id: crypto.randomUUID(), name: `${baseName} · Sobrancelha direita`.slice(0, 120),
+        rightSidePositioned: true,
+        defaultTransform: {
+          ...leftTransform, x: head.width - leftTransform.x,
+          rotation: -leftTransform.rotation, flipX: !leftTransform.flipX
+        }
+      }
+      await window.desktop.saveFaceComponentAsset(modelSlot, left, image.dataUrl)
+      savedIds.push(left.id)
+      await window.desktop.saveFaceComponentAsset(modelSlot, right, image.dataUrl)
+      savedIds.push(right.id)
+
+      const imported = [left, right].map((asset) => ({ ...asset, dataUrl: image.dataUrl }))
+      setDetails((current) => ({ ...current, ...Object.fromEntries(imported.map((asset) => [asset.id, asset])) }))
+      setAssets((current) => [...imported, ...current])
+      setSelectedAssets((current) => ({ ...current, 'brow-left': left.id, 'brow-right': right.id }))
+      setSelectedPart('brow-left'); setLibraryCategory('eyebrow'); setOpenModal(null)
+      setNotice('Sobrancelha importada. O lado direito foi criado espelhado; ajuste cada lado na Biblioteca.')
+    } catch (reason) {
+      await Promise.allSettled(savedIds.map((id) => window.desktop.deleteFaceComponentAsset(modelSlot, id)))
+      setError(reason instanceof Error ? reason.message : String(reason))
+    } finally { setBusy(false) }
+  }
+
   function selectFaceDetail(kind: FaceDetailKind, id: string | undefined) {
     setFaceDetailSelectionsByModel((current) => {
       const selected = { ...(current[modelSlot] ?? {}) }
@@ -1130,7 +1171,10 @@ export function FaceComponentsWorkspace({ mode }: { mode: FaceWorkspaceMode }) {
       <div className="face-components-modal" role="dialog" aria-modal="true" aria-labelledby="face-components-modal-title">
         <header><div><strong id="face-components-modal-title">{openModal === 'import' ? 'Importar peças do rosto' : 'Excluir peças do rosto'}</strong><small>{openModal === 'import' ? 'Escolha a categoria e o formato de importação.' : 'Escolha as peças já importadas que deseja remover.'}</small></div><button type="button" aria-label="Fechar" disabled={busy} onClick={() => setOpenModal(null)}>×</button></header>
         {openModal === 'import' ? <div className="face-components-import-options">
-          {mode === 'eyes' ? <label className="face-components-import-option"><span className="face-components-import-sheet"><span>3 peças</span></span><strong>Olho + pupila + olho fechado</strong><small>Folha vertical com as três peças, mesmo que as alturas variem.</small><span className="face-components-import-action"><Icon name="plus" /> Escolher imagem</span><input type="file" accept="image/png,image/jpeg,image/webp" disabled={busy || !head} onChange={(event) => void importEyeSheet(event)} /></label> : <>
+          {mode === 'eyes' ? <>
+            <label className="face-components-import-option"><span className="face-components-import-sheet"><span>3 peças</span></span><strong>Olho + pupila + olho fechado</strong><small>Folha vertical com as três peças, mesmo que as alturas variem.</small><span className="face-components-import-action"><Icon name="plus" /> Escolher imagem</span><input type="file" accept="image/png,image/jpeg,image/webp" disabled={busy || !head} onChange={(event) => void importEyeSheet(event)} /></label>
+            <label className="face-components-import-option"><span className="face-components-import-sheet"><span>1 peça</span></span><strong>Sobrancelha esquerda + direita</strong><small>Envie uma sobrancelha esquerda; o app cria o lado direito espelhado.</small><span className="face-components-import-action"><Icon name="plus" /> Escolher imagem</span><input type="file" accept="image/png,image/jpeg,image/webp" disabled={busy || !head} onChange={(event) => void importEyebrow(event)} /></label>
+          </> : <>
             <label className="face-components-import-option"><span className="face-components-import-sheet"><span>1 peça</span></span><strong>Nariz único</strong><small>Uma imagem com um nariz.</small><span className="face-components-import-action"><Icon name="plus" /> Escolher folha</span><input type="file" accept="image/png,image/jpeg,image/webp" disabled={busy || !head} onChange={(event) => void importCatalogSheet('nose', event, 'one')} /></label>
             <label className="face-components-import-option"><span className="face-components-import-sheet"><span>3 × 2</span></span><strong>Seis narizes</strong><small>Folha com seis variações de nariz.</small><span className="face-components-import-action"><Icon name="plus" /> Escolher folha</span><input type="file" accept="image/png,image/jpeg,image/webp" disabled={busy || !head} onChange={(event) => void importCatalogSheet('nose', event, 'six')} /></label>
             <label className="face-components-import-option"><span className="face-components-import-sheet"><span>7 × 3</span></span><strong>Bocas fechadas</strong><small>Folha com 21 expressões fechadas.</small><span className="face-components-import-action"><Icon name="plus" /> Escolher folha</span><input type="file" accept="image/png,image/jpeg,image/webp" disabled={busy || !head} onChange={(event) => void importCatalogSheet('mouth-closed', event)} /></label>
