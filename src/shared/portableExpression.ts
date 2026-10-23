@@ -1,4 +1,4 @@
-import type { FaceExpressionTransforms, FaceTransform, PortableExpressionMotion } from './fabricator'
+import type { FaceExpressionTransforms, FaceTransform, PortableExpressionMotion, PtPupilOverrides, PtPupilMotion } from './fabricator'
 
 export type ExpressionLayer = keyof FaceExpressionTransforms
 export type ExpressionMetric = { width: number; height: number; mirrored?: boolean }
@@ -83,6 +83,51 @@ export function applyPortableExpressionLayer(
  * The right-side asset can be already positioned on the right, otherwise it is mirrored.
  */
 export type ExpressionGaze = 'right' | 'left'
+
+export function isPtPupilOverrides(value: unknown): value is PtPupilOverrides {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  return Object.entries(value).every(([side, part]) => (side === 'left' || side === 'right')
+    && Boolean(part) && typeof part === 'object' && !Array.isArray(part)
+    && Object.keys(part as object).every(key => ['x','y','rotation'].includes(key))
+    && [(part as FaceTransform).x,(part as FaceTransform).y,(part as FaceTransform).rotation].every(Number.isFinite))
+}
+export function isPtPupilMotion(value: unknown): value is PtPupilMotion {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  const motion = value as PtPupilMotion
+  return motion.version === 1 && !!motion.layers && typeof motion.layers === 'object' && !Array.isArray(motion.layers)
+    && Object.entries(motion.layers).every(([side, part]) => (side === 'left' || side === 'right')
+      && !!part && [part.dx,part.dy,part.rotation].every(Number.isFinite)
+      && (part.sourceMirrored === undefined || typeof part.sourceMirrored === 'boolean'))
+}
+/** Save manual PT offsets normalized to the authored eye dimensions, never the pupil bitmap. */
+export function compilePtPupilMotion(overrides: PtPupilOverrides | undefined,
+  reference: FaceExpressionTransforms, metrics: ExpressionMetrics): PtPupilMotion | undefined {
+  if (!overrides || !Object.keys(overrides).length) return undefined
+  if (!isPtPupilOverrides(overrides)) throw Error('Pupilas PT inválidas.')
+  const layers: PtPupilMotion['layers'] = {}
+  for (const side of ['left','right'] as const) {
+    const value=overrides[side]
+    if (!value) continue
+    const key=side==='left'?'pupilLeft':'pupilRight'
+    const metric=metrics[key],base=reference[key]
+    if (!validMetric(metric) || !validTransform(base)) throw Error('Olho de referência ausente ao salvar pupila PT.')
+    layers[side]={
+      dx:(value.x-base.x)/metric.width,dy:(value.y-base.y)/metric.height,
+      rotation:value.rotation-base.rotation,
+      ...(metric.mirrored!==undefined?{sourceMirrored:metric.mirrored}:{})
+    }
+  }
+  return {version:1,layers}
+}
+/** Only PT position/rotation differ: normal scale/flip always remain inherited. */
+export function applyPtPupilMotion(normal: FaceTransform, neutral: FaceTransform,
+  layer: NonNullable<PtPupilMotion['layers']['left']>, metric: ExpressionMetric): FaceTransform {
+  if (!validTransform(normal) || !validTransform(neutral) || !validMetric(metric)
+      || ![layer.dx,layer.dy,layer.rotation].every(Number.isFinite)) throw Error('Movimento PT inválido.')
+  const direction=Boolean(layer.sourceMirrored)!==Boolean(metric.mirrored)?-1:1
+  return {...normal,x:neutral.x+layer.dx*metric.width*direction,
+    y:neutral.y+layer.dy*metric.height,rotation:neutral.rotation+layer.rotation*direction}
+}
 export function expressionGazeX(
   basePupilX: number,
   eyeWidth: number,

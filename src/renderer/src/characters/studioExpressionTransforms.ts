@@ -1,5 +1,5 @@
 import type { CustomizerFaceAppearance } from '../../../shared/customizer'
-import { applyPortableExpressionLayer, resolvePresetPupilGaze, type ExpressionGaze } from '../../../shared/portableExpression.ts'
+import { applyPortableExpressionLayer, applyPtPupilMotion, resolvePresetPupilGaze, type ExpressionGaze } from '../../../shared/portableExpression.ts'
 import type { FaceCatalogItem, FaceComponentAsset, FaceExpressionPreset, FaceExpressionPresetSummary, FaceTransform } from '../../../shared/fabricator'
 import type { StudioElement, StudioExpressionBase, StudioFaceTransforms } from '../../../shared/studio'
 
@@ -210,9 +210,9 @@ export async function buildStudioExpressionTransforms(
       }))
     }
   }
-  // One deterministic gaze for the current actor. PT flips only the pupil's
-  // authored movement around its OWN neutral x; an unconfigured neutral pupil
-  // gets a small explicit glance. Gaze never accumulates on previous renders.
+  // Normal playback must not overwrite authored pupil X with forced gaze.
+  // PT applies its own manual motion, otherwise the original left-look fallback.
+  if (gaze !== 'left') return result
   for (const side of ['left','right'] as const) {
     const part=`pupil-${side}` as const
     const eyePart=`eye-${side}` as const
@@ -224,9 +224,13 @@ export async function buildStudioExpressionTransforms(
     const eyeBase=result[`expression-component:${eyePart}`]?.sourceTransformOverride ?? eyeChoice.transform ?? eye.defaultTransform
     const key=`expression-component:${part}`
     const current=result[key]?.sourceTransformOverride ?? baseline
-    put(key,{...current,x:resolvePresetPupilGaze(current.x,baseline.x,eye.width,eyeBase.scaleX,
-      side,asset.rightSidePositioned===true,gaze,
-      Boolean(eyeBase.flipX)!==(side==='right' && eye.rightSidePositioned!==true))})
+    const manual=preset.ptPupilMotion?.layers[side]
+    put(key,manual
+      ? applyPtPupilMotion(current,baseline,manual,
+        {width:eye.width,height:eye.height,mirrored:side==='right' && asset.rightSidePositioned!==true})
+      : {...current,x:resolvePresetPupilGaze(current.x,baseline.x,eye.width,eyeBase.scaleX,
+          side,asset.rightSidePositioned===true,gaze,
+          Boolean(eyeBase.flipX)!==(side==='right' && eye.rightSidePositioned!==true))})
   }
   return result
 }

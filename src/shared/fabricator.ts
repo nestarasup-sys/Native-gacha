@@ -219,6 +219,11 @@ export type PortableExpressionMotion = {
 }
 export type FaceExpressionEffect = { enabled: boolean; color: string; opacity: number; softness: number; size: number; offsetY: number; offsetX?: number; aspectRatio?: number; width?: number; height?: number; rotation?: number; style?: 'oval' | 'cheeks' | 'bands' | 'diagonal' | 'spot' }
 export type FaceExpressionEffects = { shadow: FaceExpressionEffect; blush: FaceExpressionEffect; mouthBlush: FaceExpressionEffect }
+/** PT inherits every regular expression field except pupil x, y and rotation. */
+export type PtPupilOverrides = Partial<Record<'left' | 'right', Pick<FaceTransform, 'x' | 'y' | 'rotation'>>>
+export type PtPupilMotion = { version: 1; layers: Partial<Record<'left' | 'right', {
+  dx: number; dy: number; rotation: number; sourceMirrored?: boolean
+}>> }
 /** A preset stores immutable references to shared face assets plus private transform snapshots. */
 export type FaceExpressionPreset = {
   schemaVersion: 1
@@ -234,6 +239,8 @@ export type FaceExpressionPreset = {
   referenceTransforms?: FaceExpressionTransforms
   /** Saved relative movement. Applies to any compatible character's facial assets. */
   portableMotion?: PortableExpressionMotion
+  ptPupils?: PtPupilOverrides
+  ptPupilMotion?: PtPupilMotion
   noseOpacity: number
   effects?: FaceExpressionEffects
   updatedAt: string
@@ -244,6 +251,7 @@ export type FaceExpressionWorkspaceEntry = {
   id: string
   selections: FaceExpressionSelections
   transforms: FaceExpressionTransforms
+  ptPupils?: PtPupilOverrides
   noseOpacity: number
   effects: FaceExpressionEffects
 }

@@ -59,7 +59,7 @@ import { FabricatorCatalogAssetService } from './domains/fabricator/catalogAsset
 import { createFabricatorCatalogPersistence } from './domains/fabricator/catalogPersistence'
 import { createFabricatorExpressionStorage } from './domains/fabricator/expressionStorage'
 import { createExpressionBatchTransaction } from './domains/fabricator/expressionBatchTransaction'
-import { isPortableExpressionMotion } from '../src/shared/portableExpression'
+import { isPortableExpressionMotion, isPtPupilOverrides, isPtPupilMotion } from '../src/shared/portableExpression'
 import { registerExpressionPresetHandlers } from './domains/fabricator/expressionIpc'
 import { registerStudioPrimaryHandlers } from './domains/studio/primaryIpc'
 import { createStudioLibraryIndex } from './domains/studio/libraryIndex'
@@ -382,6 +382,8 @@ function validFaceExpressionPreset(modelSlot: number, preset: FaceExpressionPres
     && (preset.transforms.browRight === undefined || validTransform(preset.transforms.browRight))
     && (preset.referenceTransforms === undefined || Object.values(preset.referenceTransforms).every(validTransform))
     && (preset.portableMotion === undefined || isPortableExpressionMotion(preset.portableMotion))
+    && (preset.ptPupils === undefined || isPtPupilOverrides(preset.ptPupils))
+    && (preset.ptPupilMotion === undefined || isPtPupilMotion(preset.ptPupilMotion))
     && Number.isFinite(preset.noseOpacity) && preset.noseOpacity >= 0 && preset.noseOpacity <= 1
     && (preset.effects === undefined || isStudioExpressionEffects(preset.effects))
 }
@@ -395,7 +397,7 @@ function validFaceExpressionWorkspaceDraft(modelSlot: number, draft: FaceExpress
     if (!entry || typeof entry !== 'object') return false
     return validFaceExpressionPreset(modelSlot, {
       schemaVersion: 1, id: entry.id, modelSlot, name: 'Rascunho', collectionId,
-      expressionIndex, selections: entry.selections, transforms: entry.transforms,
+      expressionIndex, selections: entry.selections, transforms: entry.transforms, ptPupils: entry.ptPupils,
       noseOpacity: entry.noseOpacity, effects: entry.effects, updatedAt: draft.updatedAt
     })
   }
