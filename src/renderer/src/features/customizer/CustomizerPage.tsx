@@ -18,7 +18,7 @@ import { type StudioFaceTransforms } from '../../../../shared/studio'
 import { usePreviewBackground } from '../../ui/hooks/usePreviewBackground'
 import { DesignBanner } from '../../ui/components/DesignBanner'
 import { anchorWardrobeAdjustments, editWardrobeAdjustment, moveWardrobeAdjustment } from '../../../../shared/wardrobeAdjustment'
-import { toggleWardrobeVisibility, updateWardrobeComponentGroups, matchesWardrobeComponent, recolorWardrobeComponents } from '../../../../shared/wardrobePlacementModel'
+import { toggleWardrobeVisibility, updateWardrobeComponentGroups, matchesWardrobeComponent, recolorWardrobeComponents, selectWardrobePanelComponents } from '../../../../shared/wardrobePlacementModel'
 import { applyCharacterBodyShape } from '../../../../shared/bodyShape'
 import { characterRenderSize, configureCharacterSampling, MAX_CHARACTER_PREVIEW_PIXELS } from './renderResolution'
 import { renderArtwork, loadStandardExpressionEffects, loadSkinTintedImage, loadCachedImage, withCharacterHeadSize, loadHairAppearanceLayers, renderArtworkWithHair, renderWardrobeOverlay, isRightFaceAsset, renderFaceOverlay, renderFrontHairOverlay, characterShapeScale, drawFaceCatalogOverlay, loadHairTintedImage, resolvedHairColors, clothingCategories, wardrobeComponentsForGroup, customizerHairParts, hairAppearanceStyleId } from '../../characters/characterRenderer'
@@ -1430,15 +1430,12 @@ export function CustomizerPage() {
     const panelComponentKeys = new Set(panelComponents)
     const matchingGroups = before.filter((group) => group.modelSlot === selectedCatalogModelSlot && group.category === panel.category && (!group.componentId || panelComponentKeys.has(`${group.modelSlot}:${group.setId}:${group.componentId}`)))
     if (!candidate && !matchingGroups.length) return
-    const after = before.filter((group) => {
-      if (group.modelSlot !== selectedCatalogModelSlot || group.category !== panel.category) return true
-      if (!group.componentId) return false
-      return !panelComponentKeys.has(`${group.modelSlot}:${group.setId}:${group.componentId}`)
-    })
+    const palette = current.customization.wardrobePalettes?.[panel.id]
+    const after = selectWardrobePanelComponents(before,selectedCatalogModelSlot,panel.category,[...panelComponentKeys],
+      candidate ? {modelSlot:candidate.summary.modelSlot,setId:candidate.summary.id,
+        componentIds:candidate.components.map(component=>component.id),colors:palette} : null)
     if (candidate) {
-      const palette = current.customization.wardrobePalettes?.[panel.id]
-      after.push(...candidate.components.map((component) => ({ modelSlot: candidate.summary.modelSlot, setId: candidate.summary.id, category: panel.category, componentId: component.id, offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1, rotation: 0, ...(palette ? { colors: palette } : {}) })))
-      setSelectedClothing({ modelSlot: candidate.summary.modelSlot, setId: candidate.summary.id, category: panel.category, componentId: candidate.component.id })
+      setSelectedClothing({modelSlot:candidate.summary.modelSlot,setId:candidate.summary.id,category:panel.category,componentId:candidate.component.id})
     } else {
       if (selectedClothing?.category === panel.category && panelComponentKeys.has(`${selectedCatalogModelSlot}:${selectedClothing.setId}:${selectedClothing.componentId}`)) setSelectedClothing(null)
     }
