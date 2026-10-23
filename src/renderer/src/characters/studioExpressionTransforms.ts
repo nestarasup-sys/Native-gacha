@@ -175,7 +175,7 @@ export async function buildStudioExpressionTransforms(
     if ((base || noseMotion) && targetBase) {
       const sourcePiece = source?.pieces?.find((piece) => piece.sheet === 'nose' && piece.index === noseChoice?.index)
       const targetPiece = target?.pieces?.find((piece) => piece.sheet === 'nose' && piece.index === appearance.noseIndex)
-      const positionScale = sourcePiece && targetPiece ? relativePieceSize(sourcePiece, base, targetPiece, targetBase) : { x: 1, y: 1 }
+      const positionScale = sourcePiece && targetPiece ? relativePieceSize(sourcePiece, base!, targetPiece, targetBase) : { x: 1, y: 1 }
       put(`expression:nose:${appearance.noseCatalogId}`, noseMotion
         ? applyPortableExpressionLayer(preset.portableMotion!,'nose',targetBase,targetPiece ? {width:targetPiece.width,height:targetPiece.height} : {width:1,height:1})
         : transferExpressionTransform(base!, preset.transforms.nose, targetBase, false, false, positionScale))
@@ -203,7 +203,7 @@ export async function buildStudioExpressionTransforms(
         const targetBase = sharedTargetBase ?? target?.transforms.mouth
         if (!targetBase) return
         const targetPiece = target?.pieces.find((piece) => piece.sheet === sheet && piece.index === appearance.expressionIndex)
-        const positionScale = sourcePiece && targetPiece ? relativePieceSize(sourcePiece, base, targetPiece, targetBase) : { x: 1, y: 1 }
+        const positionScale = sourcePiece && targetPiece ? relativePieceSize(sourcePiece, base!, targetPiece, targetBase) : { x: 1, y: 1 }
         put(`expression:${sheet}:${targetId}`, mouthMotion
           ? applyPortableExpressionLayer(preset.portableMotion!,'mouth',targetBase,targetPiece ? {width:targetPiece.width,height:targetPiece.height} : {width:1,height:1})
           : transferExpressionTransform(base!,preset.transforms.mouth,targetBase,false,false,positionScale))
