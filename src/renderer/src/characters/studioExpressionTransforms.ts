@@ -1,5 +1,5 @@
 import type { CustomizerFaceAppearance } from '../../../shared/customizer'
-import { applyPortableExpressionLayer, expressionGazeX, type ExpressionGaze } from '../../../shared/portableExpression'
+import { applyPortableExpressionLayer, type ExpressionGaze } from '../../../shared/portableExpression'
 import type { FaceCatalogItem, FaceComponentAsset, FaceExpressionPreset, FaceExpressionPresetSummary, FaceTransform } from '../../../shared/fabricator'
 import type { StudioElement, StudioExpressionBase, StudioFaceTransforms } from '../../../shared/studio'
 
@@ -105,7 +105,8 @@ export async function buildStudioExpressionTransforms(
   appearance: CustomizerFaceAppearance,
   previous: StudioFaceTransforms,
   loadComponent: (id: string) => Promise<FaceComponentAsset | null>,
-  loadCatalog: (id: string) => Promise<FaceCatalogItem | null>
+  loadCatalog: (id: string) => Promise<FaceCatalogItem | null>,
+  gaze: ExpressionGaze = 'right'
 ): Promise<StudioFaceTransforms> {
   const components = new Map<string, Promise<FaceComponentAsset | null>>()
   const catalogs = new Map<string, Promise<FaceCatalogItem | null>>()
@@ -207,6 +208,22 @@ export async function buildStudioExpressionTransforms(
           ? applyPortableExpressionLayer(preset.portableMotion!,'mouth',targetBase,targetPiece ? {width:targetPiece.width,height:targetPiece.height} : {width:1,height:1})
           : transferExpressionTransform(base!,preset.transforms.mouth,targetBase,false,false,positionScale))
       }))
+    }
+  }
+  if (gaze === 'left') {
+    // PT uses the SAME expression. Flip only the authored horizontal pupil
+    // movement about THIS character's neutral pupil position; no image swap,
+    // no preset mutation, no extra offset on repeated application.
+    for (const side of ['left','right'] as const) {
+      const part=`pupil-${side}` as const
+      const selected=appearance.components?.[part]
+      if(!selected?.assetId)continue
+      const asset=await component(selected.assetId)
+      if(!asset)continue
+      const baseline=selected.transform ?? asset.defaultTransform
+      const key=`expression-component:${part}`
+      const current=result[key]?.sourceTransformOverride ?? baseline
+      put(key,{...current,x:2*baseline.x-current.x})
     }
   }
   return result
