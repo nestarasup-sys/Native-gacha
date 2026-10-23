@@ -41,7 +41,7 @@ export function pickFaceLibraryBase(
     const paired=available.find(item=>item.id!==pairedWith.id && item.kind===kind &&
       (item.rightSidePositioned===true || /direit[oa]$/i.test(item.name)) &&
       (Boolean(pairedWith.pairId && item.pairId===pairedWith.pairId) ||
-        baseName(item.name)===baseName(pairedWith.name)))
+        Boolean(item.name && pairedWith.name && baseName(item.name) && baseName(item.name)===baseName(pairedWith.name))))
     return paired
   }
   return available.find(item=>item.kind===kind && (side==='right' ? item.rightSidePositioned===true : item.rightSidePositioned!==true))
