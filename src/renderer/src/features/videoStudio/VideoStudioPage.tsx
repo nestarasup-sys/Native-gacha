@@ -1,6 +1,6 @@
-import { VideoStudioRebuildPage } from '../videoStudioRebuild/VideoStudioRebuildPage'
+import { VideoStudioEditor } from './VideoStudioEditor'
 
-/** New default editor. Legacy VideoStudioEditor.tsx is no longer mounted here. */
+/** Legacy reference only: the main App route now mounts VideoStudioRebuildPage. */
 export function VideoStudioPage({ onEditorActiveChange }: { onEditorActiveChange?: (active: boolean) => void }) {
-  return <VideoStudioRebuildPage onEditorActiveChange={onEditorActiveChange} />
+  return <VideoStudioEditor onEditorActiveChange={onEditorActiveChange} />
 }
