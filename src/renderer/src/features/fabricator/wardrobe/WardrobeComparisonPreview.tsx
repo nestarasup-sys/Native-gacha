@@ -4,7 +4,7 @@ import { normalizeLayerOrder } from '../models/rig'
 import { mapWardrobeComponentToPose, wardrobePosePadding } from '../../../../../shared/wardrobePose'
 
 type Props = { model: FabricatorProject; outfit: WardrobeSet; pose: FabricatorPose }
-type DisplayBone = ModelPart
+type DisplayBone = Pick<ModelPart,'x' | 'y' | 'width' | 'height'> & { rotation?: number }
 const size = (width: number, height: number) => {
   const scale = Math.min(210 / Math.max(1,width), 160 / Math.max(1,height))
   return {scale,width:width*scale,height:height*scale}
@@ -22,7 +22,7 @@ export function WardrobeComparisonPreview({model,outfit,pose}:Props) {
   const baseStyle = (part:DisplayBone,scale:number,zIndex:number)=>({
     position:'absolute' as const,left:part.x*scale,top:part.y*scale,
     width:part.width*scale,height:part.height*scale,zIndex,
-    transform:`rotate(${part.rotation}deg)`,pointerEvents:'none' as const
+    transform:`rotate(${part.rotation ?? 0}deg)`,pointerEvents:'none' as const
   })
   return <section className="wardrobe-comparison" aria-label="Comparação entre original desmontado e pose">
     <header><strong>Conferência lado a lado</strong><small>Prévia informativa · não muda o encaixe salvo</small></header>
