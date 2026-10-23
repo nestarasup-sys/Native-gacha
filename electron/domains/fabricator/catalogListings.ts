@@ -4,10 +4,12 @@
  * File adapter retains existing DomainFileSystem / SQLite behavior.
  */
 import { join } from 'node:path'
-import type * as nodeFs from 'node:fs/promises'
 import type { FaceSetSave, FaceSetSummary, HairStyle, HairStyleSave, HairStyleSummary, HairWorkspace } from '../../../src/shared/fabricator.ts'
 
-type Files = Pick<typeof nodeFs,'readdir' | 'readFile'>
+type Files = {
+  readdir(folder:string,options:{withFileTypes:true}):Promise<Array<{name:string;isDirectory():boolean}>>
+  readFile(path:string,encoding:'utf8'):Promise<string>
+}
 type Deps = {
   files: Files
   validSlot:(slot:number)=>boolean
@@ -29,7 +31,7 @@ export function legacyHairStyle(slot:number,legacy:HairWorkspace|null):HairStyle
 export function createFabricatorCatalogListings(deps:Deps) {
   async function listFaces(modelSlot:number):Promise<FaceSetSummary[]> {
     if(!deps.validSlot(modelSlot))throw Error('Modelo inválido.')
-    let entries:Awaited<ReturnType<Files['readdir']>>
+    let entries:Array<{name:string;isDirectory():boolean}>
     try { entries=await deps.files.readdir(deps.faceModelPath(modelSlot),{withFileTypes:true}) }
     catch(reason){if(missing(reason))return [];throw reason}
     const sets:FaceSetSummary[]=[]
@@ -53,7 +55,7 @@ export function createFabricatorCatalogListings(deps:Deps) {
     const stylesFolder=join(deps.hairModelPath(modelSlot),'styles')
     let entries:Awaited<ReturnType<Files['readdir']>>
     try { entries=await deps.files.readdir(stylesFolder,{withFileTypes:true}) }
-    catch(reason){if(missing(reason))entries=[] as unknown as typeof entries;else throw reason}
+    catch(reason){if(missing(reason))entries=[];else throw reason}
     const styles:HairStyleSummary[]=[]
     for(const entry of entries) {
       if(!entry.isDirectory() || !/^style-[a-zA-Z0-9_-]{1,80}$/.test(entry.name))continue
@@ -69,8 +71,15 @@ export function createFabricatorCatalogListings(deps:Deps) {
     // read-only browsing mutate personal assets. Keep this as a virtual style
     // while its source workspace continues to exist.
     if(!styles.some(item=>item.id==='legacy-workspace')) {
-      const legacy=legacyHairStyle(modelSlot,await deps.readLegacyHair(modelSlot))
-      if(legacy) styles.push(legacy)
+      // Respect the historical migration marker: a user who previously
+      // deleted the migrated style must not see it unexpectedly resurrected.
+      let migrated=false
+      try { await deps.files.readFile(join(deps.hairModelPath(modelSlot),'hair-style-migration-v1'),'utf8');migrated=true }
+      catch(reason){if(!missing(reason))throw reason}
+      if(!migrated) {
+        const legacy=legacyHairStyle(modelSlot,await deps.readLegacyHair(modelSlot))
+        if(legacy) styles.push(legacy)
+      }
     }
     return styles.sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt))
   }
