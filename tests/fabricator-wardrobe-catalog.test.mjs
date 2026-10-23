@@ -1,11 +1,12 @@
 /** Catálogo de roupas do Fabricador DEV é somente leitura e respeita o IPC legado. */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, mkdir, writeFile, readFile, readdir, rm } from 'node:fs/promises'
+import { mkdtemp, mkdir, writeFile, readFile, readdir, rm, rename as fsRename, unlink as fsUnlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { FabricatorWardrobeCatalog } from '../electron/domains/fabricator/wardrobeCatalog.ts'
 import { registerFabricatorWardrobeCatalogHandlers } from '../electron/domains/fabricator/wardrobeCatalogIpc.ts'
+import { recoverCatalogImageTransaction } from '../electron/domains/fabricator/catalogImageTransaction.ts'
 
 async function fixture(t) {
   const root = await mkdtemp(join(tmpdir(), 'native-gacha-wardrobe-'))
@@ -63,10 +64,46 @@ test('IPC mantém canal e bloqueia origem não confiável antes de chamar a bibl
   let calls = 0
   registerFabricatorWardrobeCatalogHandlers({handle: (channel, callback) => handlers.set(channel, callback)}, event => {
     if (!event.trusted) throw new Error('Origem não confiável')
-  }, {list: async () => { calls++; return [] }})
-  assert.deepEqual([...handlers.keys()], ['fabricator:wardrobe:list'])
+  }, {list: async () => { calls++; return [] },listDetailed: async () => ({sets:[],issues:[]})})
+  assert.deepEqual([...handlers.keys()].sort(), ['fabricator:wardrobe:list','fabricator:wardrobe:list-detailed'].sort())
   await assert.rejects(handlers.get('fabricator:wardrobe:list')({trusted:false}, 1), /Origem não confiável/)
   assert.equal(calls, 0)
   assert.deepEqual(await handlers.get('fabricator:wardrobe:list')({trusted:true}, 1), [])
   assert.equal(calls, 1)
+})
+
+test('listagem mantém roupas saudáveis mesmo se journal de uma roupa estiver corrompido',async t=>{
+  const root=await mkdtemp(join(tmpdir(),'native-gacha-isolation-'))
+  t.after(()=>rm(root,{recursive:true,force:true}))
+  const models=slot=>join(root,`model-${slot}`)
+  const valid=join(models(1),'set-healthy'),blocked=join(models(1),'set-damaged')
+  const validManifest={schemaVersion:1,edition:1,id:'healthy',modelSlot:1,name:'Saudável',updatedAt:'2026-10-23T00:00:00Z',components:[]}
+  for(const folder of [valid,blocked])await mkdir(join(folder,'parts'),{recursive:true})
+  await writeFile(join(valid,'wardrobe.json'),JSON.stringify(validManifest))
+  await writeFile(join(valid,'parts','sleeve.png'),'ORIGINAL_HEALTHY_PNG')
+  await writeFile(join(blocked,'wardrobe.json'),JSON.stringify({...validManifest,id:'damaged',name:'Danificada'}))
+  const journal=join(blocked,'.catalog-transaction')
+  await mkdir(journal)
+  await writeFile(join(journal,'journal.json'),'{invalid json -- preserved')
+  const catalog=new FabricatorWardrobeCatalog(models,{readdir,readFile},10,
+    (folder,images)=>recoverCatalogImageTransaction({readFile,writeFile,rename:fsRename,mkdir,rm,unlink:fsUnlink},folder,images))
+  const detailed=await catalog.listDetailed(1)
+  assert.deepEqual(detailed.sets.map(item=>item.id),['healthy'])
+  assert.equal(detailed.issues.length,1)
+  assert.equal(detailed.issues[0].id,'damaged')
+  assert.match(detailed.issues[0].reason,/Journal/)
+  assert.deepEqual((await catalog.list(1)).map(item=>item.id),['healthy'])
+  assert.equal(await readFile(join(valid,'parts','sleeve.png'),'utf8'),'ORIGINAL_HEALTHY_PNG')
+  assert.equal(await readFile(join(journal,'journal.json'),'utf8'),'{invalid json -- preserved')
+})
+test('IPC detalhado bloqueia sender não autorizado e entrega avisos estruturados',async()=>{
+  const handlers=new Map(),calls=[]
+  registerFabricatorWardrobeCatalogHandlers({handle:(channel,fn)=>handlers.set(channel,fn)},
+    event=>{if(!event.trusted)throw Error('Origem não confiável')},
+    {list:async()=>[],listDetailed:async(slot)=>{calls.push(slot);return {sets:[],issues:[{id:'damaged',reason:'journal inválido'}]}}})
+  await assert.rejects(handlers.get('fabricator:wardrobe:list-detailed')({trusted:false},1),/Origem não confiável/)
+  assert.deepEqual(calls,[])
+  const report=await handlers.get('fabricator:wardrobe:list-detailed')({trusted:true},1)
+  assert.equal(report.issues[0].id,'damaged')
+  assert.deepEqual(calls,[1])
 })
