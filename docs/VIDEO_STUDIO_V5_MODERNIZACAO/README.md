@@ -1,104 +1,51 @@
-# Video Studio V5 — Modernização Integral
+# Video Studio V5 — Reconstrução integral da arquitetura
 
-Diretório de planejamento da modernização do **Video Studio do Native Gacha/G-V5**. **Roteiros e Base de Vídeos** seguem fora de escopo salvo contratos de importação. A prioridade atual (2026-10-23) é **estabilidade sob projetos Gacha grandes, controle de memória/processos, fidelidade do preview e export**, com a escolha de engine em aberto. As etapas de fechamento do exportador continuam relevantes, mas não substituem o teste de stress real.
+**Decisão ativa (23/10/2026):** reconstruir **integralmente a arquitetura interna do Video Studio**. Não basta “otimizar o editor antigo”. A nova fundação deve conter editor/domínio, timeline, SceneEvaluator, renderizador Gacha, MediaService/AV clock, scheduler, orçamento de memória, supervisão de processos, preview, export e persistência, com **substituição progressiva e aposentadoria da orquestração experimental**.
 
-Documentos anteriores, inclusive `docs/AGENTE_EXPORT_V5/`, são histórico e referência; **o código/CI atuais + o estudo 12 abaixo prevalecem para prioridades novas**. Nenhuma engine (MLT, GES, Skia, PixiJS ou FFmpeg via APIs) é obrigatória sem gate.
+**Ler primeiro:** [12 — Plano diretor da reconstrução integral e pesquisa das seis prioridades](./12_REAVALIACAO_RECONSTRUCAO_MLT_SKIA_2026-10-23.md). O nome do arquivo `12` é histórico e foi mantido para preservar links; **não significa que MLT/Skia foram escolhidos**.
 
-## Ordem de leitura atual
+## Política de reconstrução
 
-**Plano ativo ampliado (2026-10-23):** [12_REAVALIACAO_RECONSTRUCAO_MLT_SKIA_2026-10-23.md](./12_REAVALIACAO_RECONSTRUCAO_MLT_SKIA_2026-10-23.md) — pesquisa detalhada de **seis prioridades**: (1) memória/OOM/VRAM, (2) raster Gacha incremental, (3) cache/proxies/pré-render, (4) processos/recuperação, (5) clock único e PTS, (6) testes pesados Windows. Cada capítulo traz fontes primárias, achados atuais, projeto de solução, experimentos e gates. **MLT/Skia/C++ continuam opcionais**, sem mudança automática de runtime.
+- **Arquitetura nova é obrigatória; tecnologias específicas não.** Electron + React continuam a direção de UI. FFmpeg/libav, MLT, GES, Canvas, PixiJS, Skia, Blend2D e C++ entram **somente** após comparação de paridade/Windows/custo/licenças.
+- **Código antigo = oráculo, algoritmo ou adaptador temporário, nunca arquitetura final.** Reaproveitar `StudioDocument v1`, SceneIR, semântica normal/PT, pose, fala, blink, infraestrutura de export/FFmpeg e testes quando eles satisfizerem contratos e budgets novos. Não reescrever tudo cegamente; também não deixar o `VideoStudioEditor.tsx` como centro permanente.
+- **Nenhuma perda de dados:** preservar personagens, roupas, poses, expressões, PNGs, textos, áudios, vídeos, bibliotecas e projetos v1. Migrações somente aditivas, testadas com cópias e com rollback. Fabricador, Customizador, Studio Principal, Roteiros e Base de Vídeos fora de escopo.
+- **Robustez e testes obrigatórios:** RAM/VRAM/processos/decoders medidas; filas e memória orçadas; recovery de falha da engine; preview/export coerentes; 12/24/48 atores e até 4 vídeos sob stress, 15–30 min de **animação variável**, AV/PTS e Windows offline. O teste histórico de 15 min com frame estático após 301 **não valida essa carga**.
+- **Nenhuma promessa de “10×” sem benchmark.** A meta é capacidade/confiabilidade, fidelidade e fluidez mensuradas em hardware real, com degradação de preview quando necessário.
+- **Branch autorizada:** exclusivamente `nestarasup-sys/Native-gacha` → `feature/model-source-editor`. `main` e `refactor/shared-character-core` **não** podem ser alteradas, mescladas ou receber release sem autorização explícita. PR #5 permanece rascunho até aprovação.
+- **Estado:** pesquisa e especificação. O novo motor **não foi implementado** por esta revisão de documentação.
 
-1. **[00_PLANO_DIRETOR.md](./00_PLANO_DIRETOR.md)** — visão e arquitetura.
-2. **[11_PESQUISA_OPEN_SOURCE_E_FECHAMENTO_EXPORTADOR.md](./11_PESQUISA_OPEN_SOURCE_E_FECHAMENTO_EXPORTADOR.md)** — pesquisa externa atual, matriz de engines, padrões extraídos e ordem revisada para fechar o exportador.
-3. **[10_RELEASE_CHECKLIST.md](./10_RELEASE_CHECKLIST.md)** — gate final de release.
-4. **[04_LAB_E_GATES.md](./04_LAB_E_GATES.md)** — fixtures, benchmarks, paridade e evidências.
-5. **[05_DECISOES_ADR.md](./05_DECISOES_ADR.md)** — ADRs e hipóteses reversíveis.
-6. **[06_BACKLOG_DE_EXECUCAO.md](./06_BACKLOG_DE_EXECUCAO.md)** — backlog técnico; pode conter status histórico, portanto código/CI vencem caixas antigas.
-7. **[02_ARQUITETURA_CANONICA.md](./02_ARQUITETURA_CANONICA.md)** — RenderIR, Scene Compiler, cache, PTS, áudio e GPU.
-8. **[07_MODOS_DE_EXPORTACAO.md](./07_MODOS_DE_EXPORTACAO.md)** — `animated` e `static-characters`.
-9. **[08_ARQUITETURA_EXTENSIVEL_E_RECONSTRUCAO.md](./08_ARQUITETURA_EXTENSIVEL_E_RECONSTRUCAO.md)** — modularidade/extensibilidade.
-10. **[09_MISSAO_CODEX_AUTONOMA.md](./09_MISSAO_CODEX_AUTONOMA.md)** — brief de execução autônoma.
-11. **[01_ESTUDO_DE_MOTORES.md](./01_ESTUDO_DE_MOTORES.md)** — pesquisa original de engines.
-12. **[03_MIGRACAO_E_DADOS.md](./03_MIGRACAO_E_DADOS.md)** — dados, mídia derivada, CAS e segurança.
+## Ordem de leitura
 
-## Prioridade e estado factual — atualização 2026-10-23
+1. **[12 — Reconstrução integral, contratos, roadmap N0–N10, gates e seis investigações](./12_REAVALIACAO_RECONSTRUCAO_MLT_SKIA_2026-10-23.md)** — fonte atual da decisão arquitetural.
+2. [00_PLANO_DIRETOR.md](./00_PLANO_DIRETOR.md) — visão histórica de produto.
+3. [11_PESQUISA_OPEN_SOURCE_E_FECHAMENTO_EXPORTADOR.md](./11_PESQUISA_OPEN_SOURCE_E_FECHAMENTO_EXPORTADOR.md) — pesquisa anterior de engines e fechamento do exportador.
+4. [02_ARQUITETURA_CANONICA.md](./02_ARQUITETURA_CANONICA.md) — SceneIR, frame/render/audio e contratos já estudados.
+5. [04_LAB_E_GATES.md](./04_LAB_E_GATES.md) — laboratório histórico e cenários anteriores.
+6. [05_DECISOES_ADR.md](./05_DECISOES_ADR.md) — ADRs anteriores, sujeitos à nova meta.
+7. [06_BACKLOG_DE_EXECUCAO.md](./06_BACKLOG_DE_EXECUCAO.md) — tarefas anteriores, não equivalentes ao roadmap N0–N10.
+8. [03_MIGRACAO_E_DADOS.md](./03_MIGRACAO_E_DADOS.md) — integridade, asset refs e CAS.
+9. [07_MODOS_DE_EXPORTACAO.md](./07_MODOS_DE_EXPORTACAO.md) — variantes `animated` / `static-characters`.
+10. [08_ARQUITETURA_EXTENSIVEL_E_RECONSTRUCAO.md](./08_ARQUITETURA_EXTENSIVEL_E_RECONSTRUCAO.md) — abstrações propostas historicamente.
+11. [10_RELEASE_CHECKLIST.md](./10_RELEASE_CHECKLIST.md) — critérios de release a complementar com os gates da reconstrução.
+12. [01_ESTUDO_DE_MOTORES.md](./01_ESTUDO_DE_MOTORES.md) — motores avaliados anteriormente.
+13. [09_MISSAO_CODEX_AUTONOMA.md](./09_MISSAO_CODEX_AUTONOMA.md) — briefing histórico de execução, não autorização de mudança de branch.
 
-**Requisito central:** projetos pesados de animação Gacha precisam continuar utilizáveis; processos de decode/render/export devem ser controlados por orçamento, com fallback e recuperação. **O relato de crash ainda não foi reproduzido instrumentalmente; não afirmar diagnóstico definitivo.** Começar por G0 e G1 do estudo 12. O antigo relatório de soak de 15 minutos reaproveitava frame estático após 301 e **não** comprova estabilidade de composição continuamente animada. O desenvolvimento da engine ocorre **somente na branch autorizada**, sem tocar em `main`.
+**Precedência em conflitos:** integridade de dados e semântica real > gates/decisões do documento 12 > texto histórico. Qualquer instrução de docs antigos para escrita em `G-V5/master-desenvolvimento` deve ser tratada como **obsoleta**.
 
-## Inventário histórico — 2026-10-20
+## Estrutura-alvo resumida
 
-O Video Studio já não está na fase descrita pelos primeiros documentos de 2026-10-19. Já existem no código, entre outros:
+`StudioDocument/AssetManifest → ProjectRepository + EditorCore/CommandBus → SceneCompiler/Evaluator → FramePlan → ResourceBudgeter/Scheduler + GachaRenderer + MediaService → PreviewTransport / ExportService → verificador e publish atômico`.
 
-- SceneIR/evaluator absoluto por frame;
-- variantes `animated` e `static-characters`;
-- snapshot e dependências pinadas por SHA-256;
-- ExportSurface Electron;
-- compositor Canvas;
-- personagem, transição, blink e mouth;
-- vídeo importado com pool dedicado;
-- FFmpeg capability probing;
-- H.264/AAC, concat, FFprobe e full decode verification;
-- serial e Turbo de dois workers com fallback;
-- coordinator, cancel e recovery;
-- cache semântico L1 e persistente L2;
-- layer cache;
-- preview seek scheduler latest-only;
-- proxy/waveform;
-- CAS shadow;
-- registry V546;
-- full-engine benchmark;
-- gates 90 s e 15 min;
-- preparação de runtime FFmpeg LGPL;
-- experimentos PixiJS e Mediabunny/WebCodecs.
+A interface React apresenta estado e edita; não controla bitmap/decoder como parte do histórico. O autor dos estados Gacha é único por frame. A engine pesada é supervisionada e tem limites de recursos.
 
-Portanto, **não reconstruir fundações já existentes só porque documentos históricos ainda dizem “falta implementar”**.
+## Gates de conclusão
 
-## Caminho crítico atual
+1. **Nova arquitetura real**, sem execução crítica dependente do monólito experimental;
+2. **Fidelidade Gacha** total: PT L/R, pose, expressão, fala, blink, balão, transições e z-order;
+3. **Projetos v1 íntegros** no roundtrip, incluindo compatibilidade com assets e undo/redo;
+4. **Memória limitada e recuperação** em projetos grandes e falha injetada de processo isolado;
+5. **Preview, áudio/PTS e MP4 final corretos**, sem frames faltando ou output parcial;
+6. **Stress animado e embalagem Windows offline**, com CI/benchmarks registrados;
+7. **Aceite do criador e autorização explícita** de merge/release.
 
-1. determinismo Preview/Canvas/MP4, especialmente seek A-B-A;
-2. serial como oracle de correção;
-3. recovery/crash torture completo;
-4. memória bounded e backpressure;
-5. Turbo/autotuner sem oversubscription;
-6. packaging Windows limpo com FFmpeg/FFprobe próprios;
-7. hardware gate no PC alvo;
-8. decisões Pixi/WebCodecs/sharedTexture baseadas em medição;
-9. release checklist com evidência no HEAD final.
-
-## Direção tecnológica após nova pesquisa
-
-O backbone preferido continua:
-
-```text
-Studio -> pinned AssetManifest -> Scene Compiler / RenderIR
-       -> compositor determinístico -> scheduler serial/Turbo
-       -> FFmpeg encode/audio/mux -> ffprobe/full decode -> atomic publish
-```
-
-Não trocar por uma engine NLE completa sem evidência. MLT, GES, libopenshot, Shotcut, Kdenlive, mpv, VapourSynth, AviSynth+, Natron, Blender, GStreamer e outros são usados principalmente para **extrair padrões maduros** de frame evaluation, cache, proxy, backpressure, isolamento e recovery. Consulte o documento 11.
-
-## Regras
-
-- Escrita apenas em `nestarasup-sys/G-V5/master-desenvolvimento`.
-- Editor V4 é somente referência.
-- Sem mídia/projetos privados em CI.
-- Não executar DEV AI/auditorias desativadas.
-- Não otimizar sacrificando frames, áudio, transições, personagem ou deterministicidade.
-- Serial continua fallback e referência de correção.
-- Nenhuma promessa de “2×” sem benchmark.
-- sharedTexture, Pixi, WebCodecs, NodeAV ou qualquer engine externa entram somente após A/B, licença, Windows packaging e fallback.
-
-## Definição prática de conclusão
-
-O Video Studio não está concluído porque existe uma arquitetura ou um MP4. Está concluído quando o HEAD final provar:
-
-- paridade/determinismo;
-- MP4 H.264/AAC válido;
-- serial e Turbo estáveis;
-- recovery/cancel;
-- 90 s/15 min;
-- memória bounded;
-- pacote Windows sem FFmpeg global;
-- hardware alvo;
-- nenhum output parcial publicado;
-- decisões experimentais documentadas por dados.
+Um reparo de OOM no código antigo **não satisfaz** por si só o gate 1. O roadmap técnico **N0–N10** do documento 12 é o plano de execução ativo.
