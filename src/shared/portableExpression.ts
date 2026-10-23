@@ -1,7 +1,7 @@
 import type { FaceExpressionTransforms, FaceTransform, PortableExpressionMotion } from './fabricator'
 
 export type ExpressionLayer = keyof FaceExpressionTransforms
-export type ExpressionMetric = { width: number; height: number }
+export type ExpressionMetric = { width: number; height: number; mirrored?: boolean }
 export type ExpressionMetrics = Partial<Record<ExpressionLayer, ExpressionMetric>>
 export const expressionLayers: readonly ExpressionLayer[] = ['eyeLeft','eyeRight','pupilLeft','pupilRight','browLeft','browRight','nose','mouth']
 
