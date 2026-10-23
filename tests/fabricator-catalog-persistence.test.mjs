@@ -163,3 +163,28 @@ test('leitura retorna vazio quando ainda não há ajustes e gravação recusa va
   await assert.rejects(service.write('invalid', {}), /Perfil de guias inválido/)
   assert.equal(await service.read('face'), null)
 })
+
+test('arquivo de guias inválido não é confundido com ausência e nunca é sobrescrito',async t=>{
+  const root=await sandbox(t),directory=join(root,'fabricator')
+  await fs.mkdir(directory,{recursive:true})
+  const location=join(directory,'guides-eyes.json')
+  const service=createFaceGuidePersistence(fs,()=>root)
+  for(const content of ['{json truncado',JSON.stringify({1:{visible:true,verticalX:900}})]){
+    await fs.writeFile(location,content)
+    await assert.rejects(service.read('eyes'),/Arquivo de guias inválido|SyntaxError|Expected property|Unexpected token/)
+    await assert.rejects(service.write('eyes',{1:{visible:true,verticalX:50,horizontalY:45,lowerHorizontalY:65,angle:12}}),/Arquivo de guias inválido|SyntaxError|Expected property|Unexpected token/)
+    assert.equal(await fs.readFile(location,'utf8'),content,'o original não pode ser apagado por um fallback')
+  }
+  const stable={1:{visible:true,verticalX:50,horizontalY:45,lowerHorizontalY:65,angle:12}}
+  await fs.writeFile(location,JSON.stringify(stable))
+  assert.deepEqual(await service.read('eyes'),stable)
+  await service.write('eyes',{...stable,1:{...stable[1],angle:15}})
+  assert.equal((await service.read('eyes'))[1].angle,15)
+})
+
+test('hook desativa edição ao receber erro da persistência e mantém prévia local',async()=>{
+  const hook=await fs.readFile('src/renderer/src/features/fabricator/face/useFaceGuides.ts','utf8')
+  const persistence=await fs.readFile('electron/domains/fabricator/faceGuidePersistence.ts','utf8')
+  assert.match(hook,/loadedProfileRef\.current = null\s+setLoadedProfile\(null\)\s+reportError/)
+  assert.match(persistence,/await read\(profile\)/)
+})
