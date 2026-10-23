@@ -210,6 +210,13 @@ export type FaceExpressionTransforms = {
   nose: FaceTransform
   mouth: FaceTransform
 }
+/** Versioned portable motion independent of the PNGs used for authoring. */
+export type PortableExpressionMotion = {
+  version: 1
+  layers: Partial<Record<keyof FaceExpressionTransforms, {
+    dx: number; dy: number; sx: number; sy: number; rotation: number; flip: boolean
+  }>>
+}
 export type FaceExpressionEffect = { enabled: boolean; color: string; opacity: number; softness: number; size: number; offsetY: number; offsetX?: number; aspectRatio?: number; width?: number; height?: number; rotation?: number; style?: 'oval' | 'cheeks' | 'bands' | 'diagonal' | 'spot' }
 export type FaceExpressionEffects = { shadow: FaceExpressionEffect; blush: FaceExpressionEffect; mouthBlush: FaceExpressionEffect }
 /** A preset stores immutable references to shared face assets plus private transform snapshots. */
@@ -225,6 +232,8 @@ export type FaceExpressionPreset = {
   transforms: FaceExpressionTransforms
   /** Asset calibration at authoring time, used to transfer relative edits safely. */
   referenceTransforms?: FaceExpressionTransforms
+  /** Saved relative movement. Applies to any compatible character's facial assets. */
+  portableMotion?: PortableExpressionMotion
   noseOpacity: number
   effects?: FaceExpressionEffects
   updatedAt: string
