@@ -522,7 +522,6 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
         .filter((preset) => preset.collectionId === selectedCollectionId && Number.isInteger(preset.expressionIndex))
         .map((preset) => [preset.expressionIndex!, preset]))
       const now = new Date().toISOString()
-      const previous: Array<FaceExpressionPreset | null> = []
       const nextPresets: FaceExpressionPreset[] = []
       const nextCopies: Record<string, ExpressionWorkingCopy> = {}
 
@@ -530,7 +529,6 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
         const key = expressionWorkingCopyKey(selectedCollectionId, index)
         const summary = existingByIndex.get(index)
         const saved = summary ? await window.desktop.loadFaceExpressionPreset(modelSlot, summary.id) : null
-        previous.push(saved)
         const workingCopy = index === selectedExpressionIndex
           ? { id: presetId, composition, transforms, noseOpacity, effects }
           : workingCopies[key]
@@ -554,21 +552,10 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
         nextCopies[key] = { id, composition: selections, transforms: rebasedTransforms, noseOpacity: draftNoseOpacity, effects: cloneEffects(nextPreset.effects) }
       }
 
-      let written = 0
-      try {
-        for (const preset of nextPresets) {
-          await window.desktop.saveFaceExpressionPreset(modelSlot, preset)
-          written += 1
-        }
-      } catch (reason) {
-        await Promise.allSettled(nextPresets.slice(0, written).map((preset, index) => {
-          const before = previous[index]
-          return before
-            ? window.desktop.saveFaceExpressionPreset(modelSlot, before)
-            : window.desktop.deleteFaceExpressionPreset(modelSlot, preset.id)
-        }))
-        throw reason
-      }
+      // One server-side transaction: all preset JSONs commit together, or the
+      // durable journal restores and verifies the previous bytes on reopening.
+      // Never attempt parallel best-effort rollbacks from the React renderer.
+      await window.desktop.saveFaceExpressionPresetBatch(modelSlot, nextPresets)
 
       setBaseComposition(draft); setBaseTransforms(nextBaseTransforms); setBaseNoseOpacity(draftNoseOpacity)
       setWorkingCopies((current) => ({ ...current, ...nextCopies }))
