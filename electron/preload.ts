@@ -53,6 +53,7 @@ const fabricatorApi: FabricatorDesktopApi = {
   saveFaceExpressionCollection: (modelSlot, collection) => ipcRenderer.invoke('fabricator:expression-collections:save', modelSlot, collection),
   loadFaceExpressionPreset: (modelSlot, id) => ipcRenderer.invoke('fabricator:expression-presets:load', modelSlot, id),
   saveFaceExpressionPreset: (modelSlot, preset) => ipcRenderer.invoke('fabricator:expression-presets:save', modelSlot, preset),
+  saveFaceExpressionPresetBatch: (modelSlot, presets) => ipcRenderer.invoke('fabricator:expression-presets:save-batch', modelSlot, presets),
   deleteFaceExpressionPreset: (modelSlot, id) => ipcRenderer.invoke('fabricator:expression-presets:delete', modelSlot, id),
   saveFaceAnimationExport: (modelSlot, data) => ipcRenderer.invoke('fabricator:face-animation:export', modelSlot, data),
   loadFaceExpressionWorkspaceDraft: (modelSlot) => ipcRenderer.invoke('fabricator:expression-workspace:load', modelSlot),
