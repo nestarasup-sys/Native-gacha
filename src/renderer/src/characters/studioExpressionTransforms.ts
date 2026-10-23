@@ -1,4 +1,5 @@
 import type { CustomizerFaceAppearance } from '../../../shared/customizer'
+import { applyPortableExpressionLayer, expressionGazeX, type ExpressionGaze } from '../../../shared/portableExpression'
 import type { FaceCatalogItem, FaceComponentAsset, FaceExpressionPreset, FaceExpressionPresetSummary, FaceTransform } from '../../../shared/fabricator'
 import type { StudioElement, StudioExpressionBase, StudioFaceTransforms } from '../../../shared/studio'
 
@@ -126,26 +127,31 @@ export async function buildStudioExpressionTransforms(
     const part = `${kind}-${side}` as const
     const layer = `${kind}${right ? 'Right' : 'Left'}` as 'eyeLeft' | 'eyeRight' | 'pupilLeft' | 'pupilRight' | 'browLeft' | 'browRight'
     const sourceId = (kind === 'eye' ? preset.selections.eyes : kind === 'pupil' ? preset.selections.pupils : preset.selections.eyebrows)[side]
-    if (!sourceId) return
-    const source = await component(sourceId)
-    if (!source) throw new Error('Um asset de referência desta expressão não está disponível. Abra e salve a expressão no Expressão Dev.')
-    const base = preset.referenceTransforms?.[layer] ?? source.defaultTransform
+    const motion = preset.portableMotion?.layers[layer]
+    if (!sourceId && !motion) return
+    const source = motion ? null : sourceId ? await component(sourceId) : null
+    if (!motion && !source) throw new Error('Preset antigo depende de um asset que não existe. Abra o Presets DEV para recuperar o movimento portátil sem sobrescrever os dados antigos.')
+    const base = preset.referenceTransforms?.[layer] ?? source?.defaultTransform
     const targetId = appearance.components?.[part]?.assetId
     if (targetId) {
       const target = await component(targetId)
       if (!target) return
       const targetBase = appearance.components?.[part]?.transform ?? target.defaultTransform
-      let positionScale = relativePieceSize(source, base, target, targetBase)
+      let metric = {width:target.width,height:target.height}
+      let positionScale = source && base ? relativePieceSize(source, base, target, targetBase) : {x:1,y:1}
       if (kind === 'pupil') {
         const sourceEyeId = preset.selections.eyes[side]
         const targetEyeId = appearance.components?.[`eye-${side}`]?.assetId
         const [sourceEye, targetEye] = await Promise.all([sourceEyeId ? component(sourceEyeId) : null, targetEyeId ? component(targetEyeId) : null])
-        if (sourceEye && targetEye) {
+        if (targetEye) metric={width:targetEye.width,height:targetEye.height}
+        if (sourceEye && targetEye && source) {
           const eyeBase = preset.referenceTransforms?.[right ? 'eyeRight' : 'eyeLeft'] ?? sourceEye.defaultTransform
           positionScale = relativePieceSize(sourceEye, eyeBase, targetEye, appearance.components?.[`eye-${side}`]?.transform ?? targetEye.defaultTransform)
         }
       }
-      put(`expression-component:${part}`, transferExpressionTransform(base, preset.transforms[layer], targetBase, right && !source.rightSidePositioned, right && !target.rightSidePositioned, positionScale))
+      put(`expression-component:${part}`, motion
+        ? applyPortableExpressionLayer(preset.portableMotion!,layer,targetBase,metric)
+        : transferExpressionTransform(base!, preset.transforms[layer], targetBase, right && !source!.rightSidePositioned, right && !target.rightSidePositioned, positionScale))
     } else if (kind !== 'pupil') {
       const id = kind === 'eye' ? sideCatalog(right ? 'eyeRightCatalogId' : 'eyeLeftCatalogId', appearance.eyeCatalogId) : sideCatalog(right ? 'eyebrowRightCatalogId' : 'eyebrowLeftCatalogId', appearance.eyebrowCatalogId)
       if (!id) return
@@ -153,19 +159,25 @@ export async function buildStudioExpressionTransforms(
       const element = part as 'eye-left' | 'eye-right' | 'brow-left' | 'brow-right'
       const targetBase = appearance.transforms?.[element] ?? target?.transforms[element]
       const piece = target?.pieces?.find((candidate) => candidate.side === side && candidate.index === (kind === 'eye' ? appearance.eyeState ?? 0 : 0))
-      if (targetBase) put(`expression:${part}:${id}`, transferExpressionTransform(base, preset.transforms[layer], targetBase, right && !source.rightSidePositioned, false, piece ? relativePieceSize(source, base, piece, targetBase) : { x: 1, y: 1 }))
+      if (targetBase) put(`expression:${part}:${id}`, motion
+        ? applyPortableExpressionLayer(preset.portableMotion!,layer,targetBase,piece ? {width:piece.width,height:piece.height} : {width:1,height:1})
+        : transferExpressionTransform(base!,preset.transforms[layer],targetBase,right && !source!.rightSidePositioned,false,
+          piece && source ? relativePieceSize(source,base!,piece,targetBase) : {x:1,y:1}))
     }
   })))
   const noseChoice = preset.selections.nose
-  if (noseChoice && appearance.noseCatalogId) {
-    const [source, target] = await Promise.all([catalog(noseChoice.catalogId), catalog(appearance.noseCatalogId)])
+  const noseMotion = preset.portableMotion?.layers.nose
+  if ((noseChoice || noseMotion) && appearance.noseCatalogId) {
+    const [source, target] = await Promise.all([noseChoice && !noseMotion ? catalog(noseChoice.catalogId) : null, catalog(appearance.noseCatalogId)])
     const base = preset.referenceTransforms?.nose ?? source?.transforms.nose
     const targetBase = appearance.transforms?.nose ?? target?.transforms.nose
-    if (base && targetBase) {
-      const sourcePiece = source?.pieces?.find((piece) => piece.sheet === 'nose' && piece.index === noseChoice.index)
+    if ((base || noseMotion) && targetBase) {
+      const sourcePiece = source?.pieces?.find((piece) => piece.sheet === 'nose' && piece.index === noseChoice?.index)
       const targetPiece = target?.pieces?.find((piece) => piece.sheet === 'nose' && piece.index === appearance.noseIndex)
       const positionScale = sourcePiece && targetPiece ? relativePieceSize(sourcePiece, base, targetPiece, targetBase) : { x: 1, y: 1 }
-      put(`expression:nose:${appearance.noseCatalogId}`, transferExpressionTransform(base, preset.transforms.nose, targetBase, false, false, positionScale))
+      put(`expression:nose:${appearance.noseCatalogId}`, noseMotion
+        ? applyPortableExpressionLayer(preset.portableMotion!,'nose',targetBase,targetPiece ? {width:targetPiece.width,height:targetPiece.height} : {width:1,height:1})
+        : transferExpressionTransform(base!, preset.transforms.nose, targetBase, false, false, positionScale))
     }
   }
 
@@ -174,11 +186,12 @@ export async function buildStudioExpressionTransforms(
   // same authored change to both sheets so the speaking mouth keeps the same
   // placement and scale as its closed counterpart.
   const mouthChoice = preset.selections.mouth
-  if (mouthChoice) {
-    const source = await catalog(mouthChoice.catalogId)
+  const mouthMotion = preset.portableMotion?.layers.mouth
+  if (mouthChoice || mouthMotion) {
+    const source = mouthChoice && !mouthMotion ? await catalog(mouthChoice.catalogId) : null
     const base = preset.referenceTransforms?.mouth ?? source?.transforms.mouth
-    if (source && base) {
-      const sourcePiece = source.pieces.find((piece) => piece.sheet === mouthChoice.kind && piece.index === mouthChoice.index)
+    if (base || mouthMotion) {
+      const sourcePiece = source?.pieces.find((piece) => piece.sheet === mouthChoice?.kind && piece.index === mouthChoice?.index)
       const closedTargetId = appearance.mouthClosedCatalogId
       const closedTarget = closedTargetId ? await catalog(closedTargetId) : null
       const sharedTargetBase = appearance.transforms?.mouth ?? closedTarget?.transforms.mouth
@@ -190,7 +203,9 @@ export async function buildStudioExpressionTransforms(
         if (!targetBase) return
         const targetPiece = target?.pieces.find((piece) => piece.sheet === sheet && piece.index === appearance.expressionIndex)
         const positionScale = sourcePiece && targetPiece ? relativePieceSize(sourcePiece, base, targetPiece, targetBase) : { x: 1, y: 1 }
-        put(`expression:${sheet}:${targetId}`, transferExpressionTransform(base, preset.transforms.mouth, targetBase, false, false, positionScale))
+        put(`expression:${sheet}:${targetId}`, mouthMotion
+          ? applyPortableExpressionLayer(preset.portableMotion!,'mouth',targetBase,targetPiece ? {width:targetPiece.width,height:targetPiece.height} : {width:1,height:1})
+          : transferExpressionTransform(base!,preset.transforms.mouth,targetBase,false,false,positionScale))
       }))
     }
   }
