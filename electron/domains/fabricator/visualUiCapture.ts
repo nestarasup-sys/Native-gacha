@@ -215,15 +215,11 @@ export async function captureFabricatorRealScreens(win: BrowserWindow, output: s
         throw Error('Prévia de Roupas Dev não está estável no instante da foto: ' + JSON.stringify(ready))
       }
       await exerciseGlueWorkflow(win)
-      const magnetCheck = await win.webContents.executeJavaScript(`(() => {
-        const magnet = document.querySelector('.wardrobe-preview-controls button[title*="Aproxima bordas"]')
-        if (!magnet || magnet.getAttribute('aria-pressed') !== 'true') return false
-        magnet.click()
-        if (magnet.getAttribute('aria-pressed') !== 'false') return false
-        magnet.click()
-        return true
-      })()`) as boolean
-      if (!magnetCheck) throw Error('Ímã da folha original não alternou corretamente.')
+      await waitFor(win, '.wardrobe-preview-controls button[title*="Aproxima bordas"][aria-pressed="true"]')
+      await win.webContents.executeJavaScript("document.querySelector('.wardrobe-preview-controls button[title*=Aproxima]')?.click()")
+      await waitFor(win, '.wardrobe-preview-controls button[title*="Aproxima bordas"][aria-pressed="false"]')
+      await win.webContents.executeJavaScript("document.querySelector('.wardrobe-preview-controls button[title*=Aproxima]')?.click()")
+      await waitFor(win, '.wardrobe-preview-controls button[title*="Aproxima bordas"][aria-pressed="true"]')
       await waitFor(win, '.wardrobe-comparison-toggle button', 30000)
       const compared = await win.webContents.executeJavaScript(`(() => {
         const button = document.querySelector('.wardrobe-comparison-toggle button')
