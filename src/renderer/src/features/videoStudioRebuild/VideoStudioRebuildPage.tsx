@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { StudioDocument, VideoStudioCardSummary } from '../../../../shared/studio'
 import { videoCharacterElementSize } from '../../../../shared/videoStageGeometry'
 import { VideoStudioFrameEngine } from '../../../../shared/videoStudioRebuild/frameEngine'
+import { VideoStudioBoundedMemo } from '../../../../shared/videoStudioNext/boundedMemo'
 import { VideoFrameScheduler } from '../../../../shared/videoStudioRebuild/frameScheduler'
 import { splitCharacterAt } from '../../../../shared/videoStudioRebuild/rebuildEditor'
 import { applyVideoStudioEditorCommand } from '../../../../shared/videoStudioNext/editorCore'
@@ -31,8 +32,19 @@ export function VideoStudioRebuildPage({onEditorActiveChange}:Props) {
   const gpu=useRef<GachaGpuStage|null>(null)
   const scheduler=useRef<VideoFrameScheduler|null>(null)
   const media=useRef<VideoStudioMediaEngine|null>(null)
-  const imageCache=useRef(new Map<string,Promise<HTMLImageElement>>())
-  const imageIds=useRef(new Map<string,number>())
+  const imageCache=useRef(new VideoStudioBoundedMemo<HTMLImageElement>(
+    48,64*1024*1024,(image)=>{
+      const bytes=image.naturalWidth*image.naturalHeight*4
+      return Number.isSafeInteger(bytes)&&bytes>0?bytes:Number.MAX_SAFE_INTEGER
+    }
+  ))
+  const imageIds=useRef(new WeakMap<HTMLImageElement,number>())
+  const nextImageId=useRef(0)
+  const textureId=(image:HTMLImageElement)=>{
+    let token=imageIds.current.get(image)
+    if(!token){token=++nextImageId.current;imageIds.current.set(image,token)}
+    return 'asset:'+token
+  }
   const lastFrame=useRef(0)
   const documentRef=useRef<StudioDocument|null>(null)
   documentRef.current=studio
@@ -87,19 +99,13 @@ export function VideoStudioRebuildPage({onEditorActiveChange}:Props) {
     try{const next=action(studio);if(next!==studio){setStudio(next);setStatus('Alteração somente local — salve uma cópia para persistir.')}}catch(e){setStatus(String(e))}
   }
   const decode=(src:string):Promise<HTMLImageElement>=>{
-    const cached=imageCache.current.get(src)
-    if(cached)return cached
-    const load=new Promise<HTMLImageElement>((resolve,reject)=>{
+    return imageCache.current.getOrCreate(src,()=>new Promise<HTMLImageElement>((resolve,reject)=>{
       const image=new Image()
       image.decoding='async'
       image.onload=()=>resolve(image)
       image.onerror=()=>reject(new Error('Asset visual do personagem indisponível.'))
       image.src=src
-    })
-    imageCache.current.set(src,load)
-    void load.catch(()=>imageCache.current.delete(src))
-    if(imageCache.current.size>96)imageCache.current.delete(imageCache.current.keys().next().value!)
-    return load
+    }))
   }
 
   // Canvas, GPU textures, media decoding and scheduling are owned outside React.
@@ -111,11 +117,11 @@ export function VideoStudioRebuildPage({onEditorActiveChange}:Props) {
     catch(e){setStatus('GPU indisponível: '+String(e));return}
     const mediaEngine=new VideoStudioMediaEngine(studio.id,studio.videoTimeline?.videoAssets??[])
     gpu.current=graph;scheduler.current=schedule;media.current=mediaEngine
-    imageCache.current.clear();imageIds.current.clear()
+    imageCache.current.clear();imageIds.current=new WeakMap();nextImageId.current=0
     return()=>{
       schedule.dispose();mediaEngine.dispose();graph.dispose()
       gpu.current=null;scheduler.current=null;media.current=null
-      imageCache.current.clear();imageIds.current.clear()
+      imageCache.current.clear();imageIds.current=new WeakMap();nextImageId.current=0
     }
   },[studio?.id])
 
@@ -127,7 +133,7 @@ export function VideoStudioRebuildPage({onEditorActiveChange}:Props) {
       if(scene.background.assetDataUrl){
         const image=await decode(scene.background.assetDataUrl)
         if(signal.aborted)throw new Error('Frame cancelado')
-        layers.push({textureId:'background:'+image.src,source:image,element:{
+        layers.push({textureId:textureId(image),source:image,element:{
           x:scene.background.x,y:scene.background.y,width:scene.background.width,height:scene.background.height,rotation:scene.background.rotation,
         }})
       }
@@ -146,9 +152,7 @@ export function VideoStudioRebuildPage({onEditorActiveChange}:Props) {
         if(signal.aborted)throw new Error('Frame cancelado')
         const e=layer.element
         const size=videoCharacterElementSize(e)
-        let token=imageIds.current.get(src)
-        if(!token){token=imageIds.current.size+1;imageIds.current.set(src,token)}
-        layers.push({textureId:'asset:'+token,source:image,element:{...e,...size}})
+        layers.push({textureId:textureId(image),source:image,element:{...e,...size}})
       }
       return layers
     })
