@@ -86,15 +86,20 @@ export type WardrobePoseTransform = {
   scaleY: number
 }
 
-/** Pose seam coverage is based on the complete visible outfit, not one picker slot. */
-export function wardrobePosePadding(component: WardrobeComponent, outfit: readonly WardrobeComponent[]): { kneeOverlap: number; edgePadding: number } {
-  const hasThighAndCalf = outfit.some((piece) => piece.category === 'calca-coxa')
-    && outfit.some((piece) => piece.category === 'calca-canela')
-  return {
-    kneeOverlap: hasThighAndCalf && (component.category === 'calca-coxa' || component.category === 'calca-canela') ? 18 : 0,
-    edgePadding: component.category === 'manga-superior' || component.category === 'manga-inferior'
-      ? Math.max(8, Math.min(14, Math.round(Math.min(component.width, component.height) * .06))) : 0
-  }
+/**
+ * Preserve the authored geometry of EACH clothing component independently.
+ *
+ * The previous knee-seam rule added 18 pixels to thigh/calf parts only while
+ * both categories were equipped. Hiding/restoring an adjacent part therefore
+ * moved and resized the other part. Even sleeve padding widened manually
+ * fitted PNGs compared with the original sheet.
+ *
+ * Kept as a compatibility entry point for previews and renderers; no automatic
+ * seam correction may depend on the other currently equipped components.
+ * The user can deliberately author overlaps in Roupas DEV instead.
+ */
+export function wardrobePosePadding(_component: WardrobeComponent, _outfit: readonly WardrobeComponent[]): { kneeOverlap: number; edgePadding: number } {
+  return { kneeOverlap: 0, edgePadding: 0 }
 }
 
 /**
