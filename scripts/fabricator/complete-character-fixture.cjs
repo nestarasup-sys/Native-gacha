@@ -122,6 +122,25 @@ async function createCompleteCharacterFixture(root){
     width:18,height:10,defaultTransform:{x:104,y:65,scaleX:1,scaleY:1,rotation:0},updatedAt:T
   })
   await writePng(path.join(eye,'asset.png'),18,10,[41,104,196,255])
+  // Dedicated pupil calibration fixture for REAL Windows mouse/preview tests.
+  // These assets are disposable and never touch the user's personal library.
+  for(const item of [
+    {id:'regEyeL',kind:'eye',name:'Olho calibrado · esquerdo',width:24,height:14,x:23,y:35,right:false,pair:'regEyes',rgba:[48,106,215,255]},
+    {id:'regEyeR',kind:'eye',name:'Olho calibrado · direito',width:24,height:14,x:53,y:35,right:true,pair:'regEyes',rgba:[55,119,228,255]},
+    {id:'regPupilL',kind:'pupil',name:'Pupila calibrada · esquerda',width:10,height:10,x:2,y:-1,right:false,pair:'regPupils',rgba:[12,24,52,255]},
+    {id:'regPupilR',kind:'pupil',name:'Pupila calibrada · direita',width:10,height:10,x:-2,y:-1,right:true,pair:'regPupils',rgba:[22,28,68,255]}
+  ]){
+    const folder=path.join(base,'face-components','model-1','item-'+item.id)
+    writeJson(path.join(folder,'asset.json'),{
+      schemaVersion:1,id:item.id,modelSlot:1,kind:item.kind,name:item.name,
+      width:item.width,height:item.height,pairId:item.pair,rightSidePositioned:item.right,
+      defaultTransform:item.kind==='pupil'
+        ? {x:item.x,y:item.y,scaleX:.42,scaleY:.42,rotation:0}
+        : {x:item.x,y:item.y,scaleX:1,scaleY:1,rotation:0},
+      updatedAt:T
+    })
+    await writePng(path.join(folder,'asset.png'),item.width,item.height,item.rgba)
+  }
   const eyebrow=path.join(base,'face-components','model-1','item-browL')
   writeJson(path.join(eyebrow,'asset.json'),{
     schemaVersion:1,id:'browL',modelSlot:1,kind:'eyebrow',name:'Sobrancelha expressiva',
