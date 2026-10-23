@@ -41,7 +41,7 @@ export class VideoCharacterFrameRenderer {
     budget?: VideoStudioResourceBudget
   ) {
     this.provider = createVideoCharacterRenderSnapshotProvider(characterAssets)
-    this.transitionRenderer = new TransitionRenderer(this.provider)
+    this.transitionRenderer = new TransitionRenderer(this.provider, budget)
     this.cache = new VideoStudioBoundedMemo(
       240, 64 * 1024 * 1024,
       (state) => Math.max(1, state.imageDataUrl.length * 2),
@@ -166,10 +166,12 @@ export class VideoCharacterFrameRenderer {
 
   clear(): void {
     this.cache.clear()
+    this.transitionRenderer.clearPrepared()
   }
 
   dispose(): void {
     this.admission.dispose()
     this.cache.clear()
+    this.transitionRenderer.dispose()
   }
 }

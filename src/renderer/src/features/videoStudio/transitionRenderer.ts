@@ -6,6 +6,8 @@ import { faceRenderGeometry, trimTransparentImage } from './characterGeometry'
 import { mixAppearance, mixEffects, mixPoseArtwork, mixStageElement, mixStudioTransforms, smoothProgress, transitionProgress, type PoseArtwork } from '../../../../shared/videoCharacterInterpolation'
 import type { CharacterTransition } from './characterTransitions'
 import { loadStandardExpressionEffects, prepareSavedCharacterRenderer } from '../../characters/characterRenderer'
+import { VideoStudioBoundedMemo } from '../../../../shared/videoStudioNext/boundedMemo'
+import type { VideoStudioResourceBudget } from '../../../../shared/videoStudioNext/resourceBudget'
 
 /** Resolve the same visible defaults as the ordinary character compositor. */
 function visibleEffects(appearance: CustomizerFaceAppearance | undefined, effects: FaceExpressionEffects | undefined): FaceExpressionEffects {
@@ -20,9 +22,30 @@ function visibleEffects(appearance: CustomizerFaceAppearance | undefined, effect
   }
 }
 
+/**
+ * A prepared renderer owns the body/pose, wardrobe, skin and front/back hair
+ * canvases. The dynamic render(appearance, transforms, effects, mode) call
+ * still draws eyes, independent PT pupils, mouth, blink and masks for each
+ * requested state using the original exact character compositor.
+ */
+type PreparedGachaRenderer = Awaited<ReturnType<typeof prepareSavedCharacterRenderer>>
+
 /** Session-local reader. No supplier, character, or timeline writes are exposed. */
 export class TransitionRenderer {
-  constructor(private readonly assetProvider: VideoCharacterRenderAssetProvider = window.desktop) {}
+  private readonly preparedStatic: VideoStudioBoundedMemo<PreparedGachaRenderer>
+
+  constructor(
+    private readonly assetProvider: VideoCharacterRenderAssetProvider = window.desktop,
+    budget?: VideoStudioResourceBudget
+  ) {
+    this.preparedStatic = new VideoStudioBoundedMemo(
+      8, 48 * 1024 * 1024,
+      // Multiple prepared canvases (base/body, wardrobe, front hair, output).
+      // Conservative retained estimate, NOT actual native/VRAM accounting.
+      (prepared) => Math.max(1, prepared.width * prepared.height * 4 * 4),
+      budget, 'artwork'
+    )
+  }
 
   private models = new Map<number, Promise<FabricatorProject | null>>()
   private poses = new Map<string, Promise<PoseArtwork | null>>()
@@ -99,14 +122,45 @@ export class TransitionRenderer {
     const defaults = await this.effects.get(slot)!
     const effects = mixEffects(visibleEffects(aa, a.activeExpressionEffects ?? (aa ? defaults[aa.expressionIndex] : undefined)), visibleEffects(ba, b.activeExpressionEffects ?? (ba ? defaults[ba.expressionIndex] : undefined)), t)
     const element = mixStageElement(a, b, t)
-    const artwork = mixPoseArtwork(fromPose, toPose, t)
+    // Facial/blink/talk recipes pass the *same authored state* as both ends.
+    // Preserve the source pose directly: do not remount the model, wardrobe
+    // or hair for every 6-mouth-phase / eye-closed PNG. Real pose transitions
+    // keep their old mixed-artwork path to preserve exact interpolation.
+    const staticPose = transition.from === transition.to && fromPose === toPose
+    const artwork = staticPose ? fromPose : mixPoseArtwork(fromPose, toPose, t)
     const copy: CustomizerCharacter = { ...character, customization: { ...character.customization, faceAppearance: appearance } }
-    const renderer = await prepareSavedCharacterRenderer(copy, { source, artwork, assetProvider: this.assetProvider })
+    const renderer = staticPose
+      ? await this.preparedStatic.getOrCreate(
+          JSON.stringify([
+            character.id, slot,
+            a.poseSlot === undefined ? character.customization.poseSlot : a.poseSlot,
+            appearance?.modelSlot ?? null, appearance?.setId ?? null
+          ]),
+          () => prepareSavedCharacterRenderer(copy, { source, artwork, assetProvider: this.assetProvider })
+        )
+      : await prepareSavedCharacterRenderer(copy, { source, artwork, assetProvider: this.assetProvider })
     const mode = t < .5 ? a.activeFaceMode : b.activeFaceMode
     const rendered = await renderer.render(appearance, transforms, effects, mode)
     const crop = await trimTransparentImage(rendered.dataUrl)
     // Rendering is measured against the invariant 1920x1080 stage, not window pixels.
     const geometry = faceRenderGeometry(element, rendered, crop, 1920, 1080)
     return { element: { ...element, ...geometry, faceAppearance: appearance, faceTransforms: transforms, activeExpressionEffects: effects }, imageDataUrl: crop?.dataUrl ?? rendered.dataUrl }
+  }
+
+  preparedStats(): Readonly<{ entries: number; retainedBytes: number; maxEntries: number; maxBytes: number }> {
+    return this.preparedStatic.stats()
+  }
+
+  clearPrepared(): void {
+    this.preparedStatic.clear()
+  }
+
+  dispose(): void {
+    this.preparedStatic.clear()
+    this.models.clear()
+    this.poses.clear()
+    this.components.clear()
+    this.catalogs.clear()
+    this.effects.clear()
   }
 }

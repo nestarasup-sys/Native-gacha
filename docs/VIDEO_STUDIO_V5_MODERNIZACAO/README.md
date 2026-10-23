@@ -117,6 +117,16 @@ O cache permite `clear()` sem anular `image.src` de uma imagem que outro desenho
 
 **Limites:** as estimativas só contabilizam imagens **retidas**, não decodificação em progresso, texturas ou memória interna do Chromium. GC pode atrasar a liberação física após a referência sair do cache; não é teto global de RAM/VRAM, nem solução demonstrada do OOM. As prioridades seguintes continuam medir pressão multi-processo no Windows real e implementar raster incremental de corpo/olhos/boca, com golden PT e continuidade do export.
 
+### Nono corte — preparar pose/corpo/roupa/cabelo uma vez para a mesma expressão Gacha (Windows)
+
+**Implementado em produção da export surface:** `TransitionRenderer` distingue uma **receita facial com estado de origem e destino idênticos** (`transition.from === transition.to`) de uma **transição verdadeira de pose**. Quando é apenas boca/piscada/face do mesmo estado e pose, prepara `prepareSavedCharacterRenderer()` **uma única vez por personagem, pose e face set**, retendo temporariamente o compositor-base (corpo, roupa, cabelo e proporções). O desenho da expressão continua dinâmico com os métodos originais de `drawFaceCatalogOverlay`, máscaras, olhos/PT, pupilas esquerda/direita, boca e efeitos. Assim as seis fases de fala não exigem reconstruir do zero a roupa e cabelo em cada fase.
+
+**Isolamento e limites:** `TransitionRenderer` mantém LRU de no máximo **8 preparações**, com teto de **48 MiB estimados** (`width × height × 4 × 4`), integrado ao ledger de 160 MiB da exportação. O renderer limpa estas preparações quando há pressão por cache ou no `dispose()`. O fluxo de transições pose-a-pose **permanece sem cache da preparação interpolada**, pois misturas diferentes a cada frame precisam da geometria correta.
+
+**Testes:** novas verificações sintéticas para seis variantes boca/blink sobre a mesma base (apenas **uma preparação**, mas seis renderizações faciais), pupilas PT com parâmetros independentes, isolação por pose e set facial, preservação de mixagem de duas poses, evicção por bytes e liberação final do lease. O ganho de preparação é medido por contagem de chamadas, **não equivale ainda a benchmark de FPS ou à paridade pixel-a-pixel de imagens reais**.
+
+**Próximo bloqueador de §N4:** completar compositor por camadas/sprites com corpo/roupa/face independentes e golden Windows real para oclusão de cabelo, roupas e pupilas PT. A base reaproveitada ainda é desenhada no canvas final por variante facial e convertida em PNG para o pipeline legado, portanto a reconstrução estrutural completa do renderer não está concluída.
+
 ## Estrutura-alvo resumida
 
 `StudioDocument/AssetManifest → ProjectRepository + EditorCore/CommandBus → SceneCompiler/Evaluator → FramePlan → ResourceBudgeter/Scheduler + GachaRenderer + MediaService → PreviewTransport / ExportService → verificador e publish atômico`.
