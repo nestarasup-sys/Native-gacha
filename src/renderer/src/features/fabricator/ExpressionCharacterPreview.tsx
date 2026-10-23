@@ -27,7 +27,7 @@ export function ExpressionCharacterPreview({modelSlot,preset,gaze,onClose}:Props
     }).catch(reason=>{if(active)setError(String(reason))})
     return ()=>{active=false}
   },[modelSlot])
-  const signature=JSON.stringify([preset.id,preset.transforms,preset.portableMotion,preset.selections,preset.expressionIndex,preset.effects,gaze])
+  const signature=JSON.stringify([preset.id,preset.transforms,preset.portableMotion,preset.ptPupils,preset.ptPupilMotion,preset.selections,preset.expressionIndex,preset.effects,gaze])
   useEffect(()=>{
     let active=true
     const character=characters.find(item=>item.id===characterId)
