@@ -99,6 +99,21 @@ async function verifyWorkspaceCaptures(directory) {
       alignment.colors[1].y <= alignment.colors[2].y + 6) {
     throw Error('Alinhamento visual X/Y das peças do Fabricador não confirmado no Customizador.')
   }
+  const isolation = JSON.parse(await fs.readFile(join(folder, 'wardrobe-hide-restore.json'), 'utf8'))
+  const expectedIsolation = [
+    { hidden:'sleeve-right', other:'sleeve-left' },
+    { hidden:'sleeve-left', other:'sleeve-right' }
+  ]
+  if (isolation?.source !== 'customizer-overlay' || isolation.syntheticOnly !== true ||
+      isolation.poseSlot !== 1 || !Array.isArray(isolation.checks) ||
+      isolation.checks.length !== expectedIsolation.length ||
+      isolation.checks.some((check,index) =>
+        check.hidden !== expectedIsolation[index].hidden ||
+        check.other !== expectedIsolation[index].other ||
+        !Number.isFinite(check.otherMovement) || check.otherMovement > 0.8 ||
+        !Number.isFinite(check.restoredMovement) || check.restoredMovement > 0.8)) {
+    throw Error('Ocultar/restaurar uma peça alterou o encaixe de outra peça no Customizador.')
+  }
   const secondPose = JSON.parse(await fs.readFile(join(folder, 'wardrobe-pose2-pixels.json'), 'utf8'))
   if (secondPose?.source !== 'customizer-overlay' || secondPose.poseSlot !== 2 ||
       !Array.isArray(secondPose.colors) || secondPose.colors.length !== 3 ||
