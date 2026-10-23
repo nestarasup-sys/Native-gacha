@@ -788,9 +788,12 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
     }))
     if (selectedLayer === 'nose') setNoseOpacity(composition.nose ? catalogItems[composition.nose.catalogId]?.opacity ?? 1 : 1)
   }
-  const updateEffect = (key: keyof FaceExpressionEffects, patch: Partial<FaceExpressionEffects[keyof FaceExpressionEffects]>) => setEffects((current) => ({ ...current, [key]: { ...current[key], ...patch } }))
+  const updateEffect = (key: keyof FaceExpressionEffects, patch: Partial<FaceExpressionEffects[keyof FaceExpressionEffects]>) => {
+    if (previewGaze === 'left') return // PT inherits emotion effects; never author them here.
+    setEffects((current) => ({ ...current, [key]: { ...current[key], ...patch } }))
+  }
   const beginBlushDrag = (event: ReactPointerEvent<HTMLSpanElement>) => {
-    if (event.button !== 0 && event.pointerType === 'mouse') return
+    if (previewGaze === 'left' || event.button !== 0 && event.pointerType === 'mouse') return
     const bounds = previewCanvas.current?.getBoundingClientRect()
     if (!bounds?.width || !bounds.height) return
     event.preventDefault()
@@ -815,6 +818,7 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
   }
   const nudgeBlush = (event: ReactKeyboardEvent<HTMLSpanElement>) => {
+    if (previewGaze === 'left') return
     const delta = event.shiftKey ? .05 : .01
     const movement = event.key === 'ArrowLeft' ? { offsetX: (effects.blush.offsetX ?? 0) - delta }
       : event.key === 'ArrowRight' ? { offsetX: (effects.blush.offsetX ?? 0) + delta }
@@ -1152,7 +1156,7 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
             const shape = effect.style ?? 'cheeks'
             const radial = (at: string) => `radial-gradient(ellipse at ${at}, ${color}, transparent ${Math.round((.4 + effect.softness * .6) * 100)}%)`
             const background = shape === 'cheeks' ? `${radial('27% 50%')}, ${radial('73% 50%')}` : shape === 'bands' ? `${radial('50% 25%')}, ${radial('50% 50%')}, ${radial('50% 75%')}` : radial('50% 50%')
-            return <span key={key} className="expression-preview-blush expression-preview-blush-draggable" role="group" tabIndex={0} aria-label="Posição do blush nas bochechas. Arraste ou use as setas para mover; Shift move mais." onPointerDown={beginBlushDrag} onPointerMove={moveBlushDrag} onPointerUp={endBlushDrag} onPointerCancel={endBlushDrag} onLostPointerCapture={endBlushDrag} onKeyDown={nudgeBlush} style={{ left: `${50 + (effect.offsetX ?? 0) * 100}%`, top: `${50 + effect.offsetY * 100}%`, width: `${effect.size * 100}%`, height: `${effect.size * (effect.aspectRatio ?? .52) * 100}%`, background, transform: `translate(-50%,-50%) rotate(${shape === 'diagonal' ? -16 : 0}deg)` }} />
+            return <span key={key} className="expression-preview-blush expression-preview-blush-draggable" role="group" tabIndex={previewGaze==='left'?-1:0} aria-label="Posição do blush nas bochechas. Arraste ou use as setas para mover; Shift move mais." onPointerDown={beginBlushDrag} onPointerMove={moveBlushDrag} onPointerUp={endBlushDrag} onPointerCancel={endBlushDrag} onLostPointerCapture={endBlushDrag} onKeyDown={nudgeBlush} style={{ left: `${50 + (effect.offsetX ?? 0) * 100}%`, top: `${50 + effect.offsetY * 100}%`, width: `${effect.size * 100}%`, height: `${effect.size * (effect.aspectRatio ?? .52) * 100}%`, background, transform: `translate(-50%,-50%) rotate(${shape === 'diagonal' ? -16 : 0}deg)` }} />
           }
           if (!visibleComposition.mouth) return null
           const mouthTransform = visibleTransforms.mouth
