@@ -2,6 +2,8 @@
 
 **Decisão ativa (23/10/2026):** reconstruir **integralmente a arquitetura interna do Video Studio**. Não basta “otimizar o editor antigo”. A nova fundação deve conter editor/domínio, timeline, SceneEvaluator, renderizador Gacha, MediaService/AV clock, scheduler, orçamento de memória, supervisão de processos, preview, export e persistência, com **substituição progressiva e aposentadoria da orquestração experimental**.
 
+**Ler primeiro após o stress real:** [13 — Diagnóstico Windows real e decisão de arquitetura após 13 minutos de preview](./13_DECISAO_APOS_STRESS_REAL_WINDOWS_2026-10-23.md). Evidência medida determina prioridades e gates.
+
 **Ler primeiro:** [12 — Plano diretor da reconstrução integral e pesquisa das seis prioridades](./12_REAVALIACAO_RECONSTRUCAO_MLT_SKIA_2026-10-23.md). O nome do arquivo `12` é histórico e foi mantido para preservar links; **não significa que MLT/Skia foram escolhidos**.
 
 ## Política de reconstrução
@@ -12,10 +14,11 @@
 - **Robustez e testes obrigatórios:** RAM/VRAM/processos/decoders medidas; filas e memória orçadas; recovery de falha da engine; preview/export coerentes; 12/24/48 atores e até 4 vídeos sob stress, 15–30 min de **animação variável**, AV/PTS e Windows offline. O teste histórico de 15 min com frame estático após 301 **não valida essa carga**.
 - **Nenhuma promessa de “10×” sem benchmark.** A meta é capacidade/confiabilidade, fidelidade e fluidez mensuradas em hardware real, com degradação de preview quando necessário.
 - **Branch autorizada:** exclusivamente `nestarasup-sys/Native-gacha` → `feature/model-source-editor`. `main` e `refactor/shared-character-core` **não** podem ser alteradas, mescladas ou receber release sem autorização explícita. PR #5 permanece rascunho até aprovação.
-- **Estado:** pesquisa e especificação. O novo motor **não foi implementado** por esta revisão de documentação.
+- **Estado:** reconstrução em cortes **parciais**, com melhorias Canvas na exportação, mas **preview ainda preso a fila serial de PNG e preparação bloqueante**, conforme relatório real de 23/10/2026. Não há estabilidade/ganho FPS comprovado nem export MP4 de 180 s validado.
 
 ## Ordem de leitura
 
+0. **[13 — Evidência Windows real, diagnóstico da preparação e decisão Pixi/MLT/Skia](./13_DECISAO_APOS_STRESS_REAL_WINDOWS_2026-10-23.md)** — prioridades corrigidas após teste de 4 personagens / 180 s.
 1. **[12 — Reconstrução integral, contratos, roadmap N0–N10, gates e seis investigações](./12_REAVALIACAO_RECONSTRUCAO_MLT_SKIA_2026-10-23.md)** — fonte atual da decisão arquitetural.
 2. [00_PLANO_DIRETOR.md](./00_PLANO_DIRETOR.md) — visão histórica de produto.
 3. [11_PESQUISA_OPEN_SOURCE_E_FECHAMENTO_EXPORTADOR.md](./11_PESQUISA_OPEN_SOURCE_E_FECHAMENTO_EXPORTADOR.md) — pesquisa anterior de engines e fechamento do exportador.
