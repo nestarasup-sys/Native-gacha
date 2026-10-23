@@ -722,6 +722,21 @@ export async function captureCustomizerStudioReopened(win: BrowserWindow, output
     schemaVersion: number; syntheticOnly: boolean; characterId: string; studioId: string; name: string
   }
   if (flow.schemaVersion !== 1 || flow.syntheticOnly !== true) throw Error('Fixture de reinício inválida.')
+  let ptEvidence: {id:string;ptPupils:{left:{x:number;y:number;rotation:number}};normalTransforms:unknown}|null=null
+  try {
+    ptEvidence=JSON.parse(await readFile(join(output,'pt-pupil-persistence.json'),'utf8')) as typeof ptEvidence
+  } catch (reason) {
+    if((reason as NodeJS.ErrnoException).code!=='ENOENT')throw reason
+  }
+  if(ptEvidence){
+    const saved=await win.webContents.executeJavaScript(
+      `window.desktop.loadFaceExpressionPreset(1,${JSON.stringify(ptEvidence.id)})`
+    ) as {ptPupils?:{left?:{x:number;y:number;rotation:number}};ptPupilMotion?:unknown;transforms:unknown}|null
+    if(!saved?.ptPupilMotion || JSON.stringify(saved.ptPupils)!==JSON.stringify(ptEvidence.ptPupils)
+       || JSON.stringify(saved.transforms)!==JSON.stringify(ptEvidence.normalTransforms)) {
+      throw Error('Reiniciar Electron perdeu PT manual ou alterou a expressão normal.')
+    }
+  }
   await win.webContents.executeJavaScript("window.location.hash = '#/customizar'")
   await waitFor(win, '.roster-panel')
   const characters = await win.webContents.executeJavaScript('window.desktop.listCustomizerCharacters()') as Array<{ id: string; name: string; customization: { modelSlot: number; poseSlot: number; wardrobeGroups?: Array<{ setId: string; componentId?: string }> } }>
