@@ -1032,7 +1032,6 @@ export function FaceComponentsWorkspace({ mode }: { mode: FaceWorkspaceMode }) {
       const eyePartId = rightSide ? 'eye-right' : 'eye-left'
       const selectedEyeId = overrides[eyePartId] ?? selectedAssets[eyePartId] ?? (rightSide ? selectedAssets['eye-left'] : undefined)
       const sideEye = selectedEyeId ? details[selectedEyeId] : undefined
-      const leftEye = leftEyeId ? details[leftEyeId] : undefined
       const maskImage = sideEye // match the saved Olhos DEV asset used by Presets DEV
       if (sideEye && maskImage) {
         const eyeTransform = sideEye.defaultTransform
