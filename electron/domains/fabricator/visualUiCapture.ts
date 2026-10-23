@@ -179,6 +179,20 @@ async function compareScreenshot(image: Buffer, baselinePath: string): Promise<n
 
 export async function captureFabricatorRealScreens(win: BrowserWindow, output: string, baseline?: string): Promise<void> {
   await mkdir(output, { recursive: true })
+  const hasSyntheticPupils=process.env.GACHA_DEV_AI_TEST==='1' && await win.webContents.executeJavaScript(`(async()=>{
+    const pupils=await window.desktop.listFaceComponentAssets(1,'pupil')
+    return pupils.some(item=>item.id==='regPupilL')
+  })()`) as boolean
+  if (hasSyntheticPupils) {
+    await win.webContents.executeJavaScript(`(() => {
+      window.localStorage.setItem('gacha-nymi:face-dev-component-selections',JSON.stringify({
+        1:{parts:{
+          'eye-left':'regEyeL','eye-right':'regEyeR',
+          'pupil-left':'regPupilL','pupil-right':'regPupilR'
+        },linked:{eye:false,pupil:false,eyebrow:false},moveTogether:{eye:false,pupil:false,eyebrow:false}}
+      }))
+    })()`)
+  }
   await win.webContents.executeJavaScript("window.location.hash = '#/fabricador-dev'")
   await waitFor(win, '.fabricator-section-list')
   const results: Array<{ section: string; file: string; dimensions: string; sha256: string; changedPixels?: number }> = []
@@ -199,6 +213,51 @@ export async function captureFabricatorRealScreens(win: BrowserWindow, output: s
     })()`) as boolean
     if (!clicked) throw new Error('Seção real ausente: ' + label)
     await waitForRendered(win, '.fabricator-section-button[aria-pressed="true"]')
+    if (key==='olhos' && hasSyntheticPupils) {
+      await waitFor(win,'.face-components-preview-canvas')
+      const tab = await win.webContents.executeJavaScript(`(() => {
+        const button=[...document.querySelectorAll('.face-components-library-tabs button')]
+          .find(item=>item.textContent?.trim()==='Pupilas')
+        if(!button)return false
+        button.click();return true
+      })()`) as boolean
+      if(!tab)throw Error('Olhos DEV sem aba de pupilas.')
+      await waitFor(win,'.face-component-pupil-mask-draggable .face-component-pupil-image')
+      const position = await win.webContents.executeJavaScript(`(() => {
+        const img=document.querySelector('.face-component-pupil-mask-draggable .face-component-pupil-image')
+        if(!img)return null
+        const rect=img.getBoundingClientRect()
+        return {x:rect.x+rect.width/2,y:rect.y+rect.height/2,width:rect.width,height:rect.height}
+      })()`) as {x:number;y:number;width:number;height:number}|null
+      if(!position || position.width<2 || position.height<2)
+        throw Error('Pupila sintética não apareceu na prévia Olhos DEV.')
+      const x=Math.round(position.x), y=Math.round(position.y)
+      const observe=async()=>win.webContents.executeJavaScript(`(() => {
+        const img=document.querySelector('.face-component-pupil-mask-draggable .face-component-pupil-image')
+        return img?.getBoundingClientRect().left ?? null
+      })()`) as Promise<number|null>
+      const pathPixels:number[]=[]
+      win.webContents.sendInputEvent({type:'mouseMove',x,y})
+      win.webContents.sendInputEvent({type:'mouseDown',x,y,button:'left',clickCount:1})
+      const first=await observe()
+      if(first===null)throw Error('Não conseguiu medir pupila do Olhos DEV.')
+      pathPixels.push(first)
+      for(let index=1;index<=5;index++){
+        win.webContents.sendInputEvent({type:'mouseMove',x:x+index*5,y})
+        await new Promise(resolve=>setTimeout(resolve,85))
+        const observed=await observe()
+        if(observed===null)throw Error('Pupila saiu da interface durante drag.')
+        pathPixels.push(observed)
+      }
+      win.webContents.sendInputEvent({type:'mouseUp',x:x+25,y,button:'left',clickCount:1})
+      if(!pathPixels.slice(1).every((value,index)=>value>pathPixels[index]+.15)) {
+        throw Error('Arrastar a pupila à direita não moveu a imagem continuamente: '+JSON.stringify(pathPixels))
+      }
+      await new Promise(resolve=>setTimeout(resolve,650))
+      const saved = await win.webContents.executeJavaScript(`window.desktop.loadFaceComponentAsset(1,'regPupilL').then(item=>item?.defaultTransform.x ?? null)`) as number|null
+      if(saved===null || saved<=2)throw Error('Olhos DEV não persistiu deslocamento positivo da pupila sintética.')
+      await writeFile(join(output,'eyes-pupil-drag.json'),JSON.stringify({savedX:saved,observedPath:pathPixels},null,2))
+    }
     if (key === 'roupas') {
       // Não fotografar biblioteca vazia: abrir a roupa sintética realmente salva.
       await waitForRendered(win, '.wardrobe-workspace')
@@ -219,6 +278,18 @@ export async function captureFabricatorRealScreens(win: BrowserWindow, output: s
     }
     await new Promise(resolve => setTimeout(resolve, 800))
     await waitForRendered(win, '.fabricator-section-button[aria-pressed="true"]')
+    if (key==='expressoes' && hasSyntheticPupils) {
+      await waitFor(win,'.expression-head-pupil-mask img')
+      const values = await win.webContents.executeJavaScript(`(() => {
+        const img=document.querySelector('.expression-head-pupil-mask img')
+        return img ? {x:parseFloat(img.style.left),left:img.style.left} : null
+      })()`) as {x:number;left:string}|null
+      const previous=JSON.parse((await readFile(join(output,'eyes-pupil-drag.json'),'utf8'))) as {savedX:number}
+      const expected=50+previous.savedX/24*100
+      if(!values || !Number.isFinite(values.x) || Math.abs(values.x-expected)>1.2) {
+        throw Error('Presets DEV não reproduziu a calibração Olhos DEV: '+JSON.stringify({expected,values}))
+      }
+    }
     if (key === 'expressoes') {
       await waitFor(win,'.expression-sequence-look-left')
       await waitFor(win,'.expression-sequence-item')
