@@ -494,7 +494,7 @@ export function StudioPage() {
             : previousBase
           const appearance = shouldRecomposeExpression
             ? savedPreset && expressionBase
-              ? await buildStudioExpressionAppearance(savedPreset, expressionBase.appearance, (id) => window.desktop.loadFaceCatalogItem(savedPreset.modelSlot, id), element.activeExpressionGaze ?? 'right')
+              ? await buildStudioExpressionAppearance(savedPreset, expressionBase.appearance, (id) => window.desktop.loadFaceCatalogItem(savedPreset.modelSlot, id))
               : expressionBase?.appearance ?? element.faceAppearance
             : element.faceAppearance ?? expressionBase?.appearance
           const faceMode = studioFaceModeForElement(element, element.faceAppearance ?? expressionBase?.appearance)
@@ -502,7 +502,7 @@ export function StudioPage() {
             ? savedPreset && appearance && expressionBase
               ? await buildStudioExpressionTransforms(savedPreset, appearance, expressionBase.transforms,
                 (id) => window.desktop.loadFaceComponentAsset(savedPreset.modelSlot, id),
-                (id) => window.desktop.loadFaceCatalogItem(savedPreset.modelSlot, id))
+                (id) => window.desktop.loadFaceCatalogItem(savedPreset.modelSlot, id), element.activeExpressionGaze ?? 'right')
               : expressionBase?.transforms ?? element.faceTransforms
             : element.faceTransforms ?? expressionBase?.transforms
           const expressionEffects = shouldRecomposeExpression ? savedPreset?.effects : element.activeExpressionEffects
