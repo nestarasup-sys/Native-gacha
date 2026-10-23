@@ -336,7 +336,7 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
       let preferredParts = {} as ReturnType<typeof savedFaceLibraryParts>
       try { preferredParts = savedFaceLibraryParts(localStorage.getItem(FACE_COMPONENT_SELECTION_STORAGE_KEY),modelSlot) }
       catch { /* Missing storage: fall back to the first available pair. */ }
-      const choose=(kind: 'eye'|'pupil'|'eyebrow',side:Side,left?:FaceComponentAsset) =>
+      const choose=(kind: 'eye'|'pupil'|'eyebrow',side:Side,left?:FaceComponentAssetSummary) =>
         pickFaceLibraryBase(kind,side,preferredParts,readyComponents,left)
       const leftEye = choose('eye','left')
       const leftPupil = choose('pupil','left')
