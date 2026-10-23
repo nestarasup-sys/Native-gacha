@@ -49,7 +49,7 @@ async function waitForRendered(win: BrowserWindow, selector: string, timeoutMs =
 /** Regressão de pixels: peça com deslocamentos X/Y deve continuar no lado
  * correto do personagem. Nada é alterado na biblioteca pessoal do Fabricador.
  */
-async function inspectSyntheticWardrobePreview(win: BrowserWindow, requirePoseOneOffsets = true, expectedNames: readonly string[] = ['coat','sleeve-left','sleeve-right']): Promise<{
+async function inspectSyntheticWardrobePreview(win: BrowserWindow, requirePoseOneOffsets = true, expectedNames: readonly string[] = ['coat','sleeve-left','sleeve-right'], absentName?: string): Promise<{
   source: 'customizer-overlay'; colors: Array<{ name: string; pixels: number; x: number; y: number }>
 }> {
   await waitForRendered(win, 'img.customizer-wardrobe-overlay', 30000)
@@ -73,6 +73,17 @@ async function inspectSyntheticWardrobePreview(win: BrowserWindow, requirePoseOn
     if (count < 15) throw Error('Peça sintética não apareceu na composição do Customizador: ' + item.name)
     return { name: item.name, pixels: count, x: sumX/count, y: sumY/count }
   })
+  if (absentName) {
+    const absent = expected.find(item => item.name === absentName)
+    if (!absent) throw Error('Nome desconhecido de roupa sintética: ' + absentName)
+    let remainingPixels = 0
+    for (let y = 0; y < image.info.height; y++) for (let x = 0; x < image.info.width; x++) {
+      const index = (y * image.info.width + x) * 4
+      if (image.data[index+3] >= 160 &&
+        absent.rgba.every((value,channel) => Math.abs(value-image.data[index+channel]) <= 9)) remainingPixels++
+    }
+    if (remainingPixels >= 15) throw Error('Peça oculta ainda aparece no Customizador: ' + absentName)
+  }
   const left = colors[1], right = colors[2]
   if (requirePoseOneOffsets && colors.length === 3 && (left.x >= right.x - 30 || left.y <= right.y + 6)) {
     throw Error('Offsets X/Y do Fabricador não sobreviveram no Customizador: ' + JSON.stringify(colors))
@@ -417,7 +428,7 @@ export async function captureCustomizerStudioRealScreens(win: BrowserWindow, out
   for (const [hiddenPiece, otherPiece] of [['sleeve-right','sleeve-left'],['sleeve-left','sleeve-right']]) {
     const expected = baselineSleeves.find(item => item.name === otherPiece)!
     await setSyntheticPieceHidden(hiddenPiece,true)
-    const remaining = (await inspectSyntheticWardrobePreview(win,false,[otherPiece])).colors[0]
+    const remaining = (await inspectSyntheticWardrobePreview(win,false,[otherPiece],hiddenPiece)).colors[0]
     const otherMovement = maxMovement(remaining,expected)
     if (otherMovement > 0.8) throw Error('Ocultar ' + hiddenPiece + ' deslocou a peça ' + otherPiece + ': ' + otherMovement)
     await setSyntheticPieceHidden(hiddenPiece,false)
