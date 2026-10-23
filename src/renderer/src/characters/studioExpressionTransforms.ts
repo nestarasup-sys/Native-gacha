@@ -138,13 +138,13 @@ export async function buildStudioExpressionTransforms(
       const target = await component(targetId)
       if (!target) return
       const targetBase = appearance.components?.[part]?.transform ?? target.defaultTransform
-      let metric = {width:target.width,height:target.height}
+      let metric = {width:target.width,height:target.height,mirrored:right && !target.rightSidePositioned}
       let positionScale = source && base ? relativePieceSize(source, base, target, targetBase) : {x:1,y:1}
       if (kind === 'pupil') {
         const sourceEyeId = preset.selections.eyes[side]
         const targetEyeId = appearance.components?.[`eye-${side}`]?.assetId
         const [sourceEye, targetEye] = await Promise.all([!motion && sourceEyeId ? component(sourceEyeId) : null, targetEyeId ? component(targetEyeId) : null])
-        if (targetEye) metric={width:targetEye.width,height:targetEye.height}
+        if (targetEye) metric={width:targetEye.width,height:targetEye.height,mirrored:right && !target.rightSidePositioned}
         if (sourceEye && targetEye && source) {
           const eyeBase = preset.referenceTransforms?.[right ? 'eyeRight' : 'eyeLeft'] ?? sourceEye.defaultTransform
           positionScale = relativePieceSize(sourceEye, eyeBase, targetEye, appearance.components?.[`eye-${side}`]?.transform ?? targetEye.defaultTransform)
@@ -161,7 +161,7 @@ export async function buildStudioExpressionTransforms(
       const targetBase = appearance.transforms?.[element] ?? target?.transforms[element]
       const piece = target?.pieces?.find((candidate) => candidate.side === side && candidate.index === (kind === 'eye' ? appearance.eyeState ?? 0 : 0))
       if (targetBase) put(`expression:${part}:${id}`, motion
-        ? applyPortableExpressionLayer(preset.portableMotion!,layer,targetBase,piece ? {width:piece.width,height:piece.height} : {width:1,height:1})
+        ? applyPortableExpressionLayer(preset.portableMotion!,layer,targetBase,piece ? {width:piece.width,height:piece.height,mirrored:false} : {width:1,height:1,mirrored:false})
         : transferExpressionTransform(base!,preset.transforms[layer],targetBase,right && !source!.rightSidePositioned,false,
           piece && source ? relativePieceSize(source,base!,piece,targetBase) : {x:1,y:1}))
     }
