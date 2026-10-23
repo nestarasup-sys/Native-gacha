@@ -58,6 +58,7 @@ import { FabricatorCatalogAssetService } from './domains/fabricator/catalogAsset
 import { createFabricatorCatalogPersistence } from './domains/fabricator/catalogPersistence'
 import { createFabricatorExpressionStorage } from './domains/fabricator/expressionStorage'
 import { createExpressionBatchTransaction } from './domains/fabricator/expressionBatchTransaction'
+import { registerExpressionPresetHandlers } from './domains/fabricator/expressionIpc'
 import { registerStudioPrimaryHandlers } from './domains/studio/primaryIpc'
 import { createStudioLibraryIndex } from './domains/studio/libraryIndex'
 import { createStudioDocumentPersistence } from './domains/studio/documentPersistence'
@@ -1854,57 +1855,23 @@ async function registerFabricatorHandlers(): Promise<void> {
     await next
   })
 
-  ipcMain.handle('fabricator:expression-presets:list', async (event, modelSlot: number): Promise<FaceExpressionPresetSummary[]> => {
-    assertTrustedSender(event)
-    return queueExpressionWork(async () => {
-      await expressionBatch.recover(modelSlot)
-      return listFaceExpressionPresets(modelSlot)
-    })
-  })
-  ipcMain.handle('fabricator:expression-collections:list', async (event, modelSlot: number): Promise<FaceExpressionCollection[]> => {
-    assertTrustedSender(event)
-    return queueExpressionWork(async () => {
-      await expressionBatch.recover(modelSlot)
-      return listFaceExpressionCollections(modelSlot)
-    })
-  })
-  ipcMain.handle('fabricator:expression-collections:save', async (event, modelSlot: number, collection: FaceExpressionCollection): Promise<void> => {
-    assertTrustedSender(event)
-    await queueExpressionWork(async () => {
-      await expressionBatch.recover(modelSlot)
-      await writeFaceExpressionCollection(modelSlot, collection)
-    })
-  })
-  ipcMain.handle('fabricator:expression-presets:load', async (event, modelSlot: number, id: string): Promise<FaceExpressionPreset | null> => {
-    assertTrustedSender(event)
-    return queueExpressionWork(async () => {
-      await expressionBatch.recover(modelSlot)
-      return readFaceExpressionPreset(modelSlot, id)
-    })
-  })
-  ipcMain.handle('fabricator:expression-presets:save', async (event, modelSlot: number, preset: FaceExpressionPreset): Promise<void> => {
-    assertTrustedSender(event)
-    await queueExpressionWork(async () => {
-      await expressionBatch.recover(modelSlot)
-      await writeFaceExpressionPreset(modelSlot, preset)
-    })
-  })
-  ipcMain.handle('fabricator:expression-presets:save-batch', async (event, modelSlot: number, presets: FaceExpressionPreset[]): Promise<void> => {
-    assertTrustedSender(event)
-    await queueExpressionWork(() => expressionBatch.save(modelSlot, presets))
+  registerExpressionPresetHandlers(ipcMain, assertTrustedSender, {
+    queue: queueExpressionWork,
+    recover: expressionBatch.recover,
+    listPresets: listFaceExpressionPresets,
+    listCollections: listFaceExpressionCollections,
+    saveCollection: writeFaceExpressionCollection,
+    loadPreset: readFaceExpressionPreset,
+    savePreset: writeFaceExpressionPreset,
+    saveBatch: expressionBatch.save,
+    removePreset: path => rm(path, { force: true }),
+    presetPath: faceExpressionPresetPath,
+    validSlot: isValidModelSlot,
+    validId: isValidWardrobeId,
+    loadDraft: readFaceExpressionWorkspaceDraft,
+    saveDraft: writeFaceExpressionWorkspaceDraft
   })
 
-  ipcMain.handle('fabricator:expression-presets:delete', async (event, modelSlot: number, id: string): Promise<void> => {
-    assertTrustedSender(event)
-    if (!isValidModelSlot(modelSlot) || !isValidWardrobeId(id)) throw new Error('Preset de expressão inválido.')
-    const target = resolve(faceExpressionPresetPath(modelSlot, id))
-    const base = resolve(join(app.getPath('userData'), 'fabricator', 'expression-presets', `model-${modelSlot}`))
-    if (dirname(target) !== base || basename(target) !== `preset-${id}.json`) throw new Error('Caminho de exclusão inválido.')
-    await queueExpressionWork(async () => {
-      await expressionBatch.recover(modelSlot)
-      await rm(target, { force: true })
-    })
-  })
   ipcMain.handle('fabricator:face-animation:export', async (event, modelSlot: number, data: Uint8Array): Promise<boolean> => {
     assertTrustedSender(event)
     if (!isValidModelSlot(modelSlot) || !(data instanceof Uint8Array) || data.byteLength < 4 || data.byteLength > 250 * 1024 * 1024 || data[0] !== 0x1a || data[1] !== 0x45 || data[2] !== 0xdf || data[3] !== 0xa3) {
@@ -1922,21 +1889,6 @@ async function registerFabricatorHandlers(): Promise<void> {
     await writeFile(destination, Buffer.from(data))
     return true
   })
-  ipcMain.handle('fabricator:expression-workspace:load', async (event, modelSlot: number): Promise<FaceExpressionWorkspaceDraft | null> => {
-    assertTrustedSender(event)
-    return queueExpressionWork(async () => {
-      await expressionBatch.recover(modelSlot)
-      return readFaceExpressionWorkspaceDraft(modelSlot)
-    })
-  })
-  ipcMain.handle('fabricator:expression-workspace:save', async (event, modelSlot: number, draft: FaceExpressionWorkspaceDraft): Promise<void> => {
-    assertTrustedSender(event)
-    await queueExpressionWork(async () => {
-      await expressionBatch.recover(modelSlot)
-      await writeFaceExpressionWorkspaceDraft(modelSlot, draft)
-    })
-  })
-
   ipcMain.handle(fabricatorIpcChannels.listFaceComponentAssets, async (event, modelSlot: number, kind?: FaceAssetKind): Promise<FaceComponentAssetSummary[]> => {
     assertTrustedSender(event)
     return listFaceComponentAssets(modelSlot, kind)
