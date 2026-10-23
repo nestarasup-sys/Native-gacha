@@ -58,6 +58,7 @@ import { FabricatorCatalogAssetService } from './domains/fabricator/catalogAsset
 import { createFabricatorCatalogPersistence } from './domains/fabricator/catalogPersistence'
 import { createFabricatorExpressionStorage } from './domains/fabricator/expressionStorage'
 import { createExpressionBatchTransaction } from './domains/fabricator/expressionBatchTransaction'
+import { isPortableExpressionMotion } from '../src/shared/portableExpression'
 import { registerExpressionPresetHandlers } from './domains/fabricator/expressionIpc'
 import { registerStudioPrimaryHandlers } from './domains/studio/primaryIpc'
 import { createStudioLibraryIndex } from './domains/studio/libraryIndex'
@@ -379,6 +380,7 @@ function validFaceExpressionPreset(modelSlot: number, preset: FaceExpressionPres
     && (preset.transforms.browLeft === undefined || validTransform(preset.transforms.browLeft))
     && (preset.transforms.browRight === undefined || validTransform(preset.transforms.browRight))
     && (preset.referenceTransforms === undefined || Object.values(preset.referenceTransforms).every(validTransform))
+    && (preset.portableMotion === undefined || isPortableExpressionMotion(preset.portableMotion))
     && Number.isFinite(preset.noseOpacity) && preset.noseOpacity >= 0 && preset.noseOpacity <= 1
     && (preset.effects === undefined || isStudioExpressionEffects(preset.effects))
 }
