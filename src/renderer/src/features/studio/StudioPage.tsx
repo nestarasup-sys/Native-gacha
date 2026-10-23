@@ -1342,10 +1342,10 @@ export function StudioPage() {
               <div className="studio-expression-list">
                 <button className={`studio-expression-option${!selectedElement.activeExpressionPresetId ? ' selected' : ''}`} type="button" onClick={() => void applyStudioBaseExpression()} disabled={studioExpressionBusy || studioFaceBusy} aria-pressed={!selectedElement.activeExpressionPresetId}><b>•</b><span>Base</span></button>
                 {expressions.map((preset) => <div className="studio-expression-row" key={preset.id}>
-                  <button className={`studio-expression-option${selectedElement.activeExpressionPresetId === preset.id ? ' selected' : ''}`} type="button" aria-pressed={selectedElement.activeExpressionPresetId === preset.id} onClick={() => void applyStudioExpressionPreset(preset)} disabled={studioExpressionBusy || studioFaceBusy}>
+                  <button className={`studio-expression-option${selectedElement.activeExpressionPresetId === preset.id && selectedElement.activeExpressionGaze !== 'left' ? ' selected' : ''}`} type="button" aria-pressed={selectedElement.activeExpressionPresetId === preset.id} onClick={() => void applyStudioExpressionPreset(preset)} disabled={studioExpressionBusy || studioFaceBusy}>
                     <b>{String((preset.expressionIndex ?? 0) + 1).padStart(2, '0')}</b><span>{preset.name}</span>
                   </button>
-                  <button className="studio-expression-look-left" type="button" title={`Aplicar ${preset.name} com as pupilas voltadas à esquerda`} aria-label={`Pupilas à esquerda: ${preset.name}`} onClick={() => void applyStudioExpressionPreset(preset, 'left')} disabled={studioExpressionBusy || studioFaceBusy}>pt</button>
+                  <button className="studio-expression-look-left" type="button" aria-pressed={selectedElement.activeExpressionPresetId === preset.id && selectedElement.activeExpressionGaze === 'left'} title={`Aplicar ${preset.name} com as pupilas voltadas à esquerda`} aria-label={`Pupilas à esquerda: ${preset.name}`} onClick={() => void applyStudioExpressionPreset(preset, 'left')} disabled={studioExpressionBusy || studioFaceBusy}>pt</button>
                 </div>)}
                 {!expressions.length && <p className="studio-custom-hint">Nenhuma expressão salva neste conjunto. Salve expressões no Expressão Dev para listá-las aqui.</p>}
               </div>
