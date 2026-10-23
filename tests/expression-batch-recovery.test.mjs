@@ -75,7 +75,7 @@ test('backup corrompido falha fechado ANTES de restaurar qualquer preset',async 
   const fx=await fixture(t)
   const dir=journal(fx)
   await fs.mkdir(dir)
-  const entries=[{id:'p0',existed:true,sha256:'0'.repeat(64)},{id:'p1',existed:true,sha256:'1'.repeat(64)}]
+  const entries=[{id:'p0',existed:true,sha256:'0'.repeat(64),nextSha256:'2'.repeat(64)},{id:'p1',existed:true,sha256:'1'.repeat(64),nextSha256:'3'.repeat(64)}]
   await fs.writeFile(join(dir,'journal.json'),JSON.stringify({schemaVersion:1,modelSlot:1,entries}))
   await fs.writeFile(join(dir,'p0.bak'),'bad')
   const before=await snapshot(fx)
