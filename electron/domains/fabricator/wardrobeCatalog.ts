@@ -46,7 +46,12 @@ export class FabricatorWardrobeCatalog {
         } catch (reason) {
           // A damaged journal is NEVER cleaned or ignored. Other sets remain
           // available; the affected set is quarantined from the listing only.
-          issues.push({ id: entry.name.slice(4), reason: reason instanceof Error ? reason.message : 'Recuperação bloqueada.' })
+          // Do not leak OS paths or internal storage errors into UI messages.
+          const message = reason instanceof Error ? reason.message : ''
+          const summary = /journal/i.test(message) ? 'Journal do conjunto inválido ou ilegível.'
+            : /backup|\.bak|ENOENT/i.test(message) ? 'Backup necessário não pôde ser confirmado.'
+              : 'Falha ao recuperar os arquivos deste conjunto.'
+          issues.push({ id: entry.name.slice(4), reason: summary + ' Conjunto preservado para revisão.' })
           continue
         }
         try {
