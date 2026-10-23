@@ -225,7 +225,8 @@ export async function buildStudioExpressionTransforms(
     const key=`expression-component:${part}`
     const current=result[key]?.sourceTransformOverride ?? baseline
     put(key,{...current,x:resolvePresetPupilGaze(current.x,baseline.x,eye.width,eyeBase.scaleX,
-      side,asset.rightSidePositioned===true,gaze)})
+      side,asset.rightSidePositioned===true,gaze,
+      Boolean(eyeBase.flipX)!==(side==='right' && eye.rightSidePositioned!==true))})
   }
   return result
 }
