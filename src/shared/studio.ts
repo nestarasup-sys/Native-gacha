@@ -283,6 +283,7 @@ export type VideoStudioCardSummary = Pick<StudioDocument, 'id' | 'title' | 'colo
 export type VideoStudioDesktopApi = {
   /** Windows on-demand Electron process metric sample; no user/project data. */
   getVideoStudioMemoryReport: () => Promise<import('./videoStudioNext/diagnostics').VideoStudioMemoryReport>
+  controlVideoMediaEngine: (command: import('./videoStudioRebuild/mediaContracts').VideoEngineMediaRequest) => Promise<import('./videoStudioRebuild/mediaContracts').VideoEngineMediaClock>
   /** Hidden development-only screenshot used by the Windows Video Studio stress runner. */
   captureVideoStressPage: () => Promise<{ width: number; height: number; pngBase64: string }>
   listVideoStudios: () => Promise<VideoStudioCardSummary[]>

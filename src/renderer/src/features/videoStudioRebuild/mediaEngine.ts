@@ -20,6 +20,11 @@ export class VideoStudioMediaEngine {
   private anchor: { frame: number; at: number } | null = null
   private playing = false
   private audioMasterId: string | null = null
+  private readonly sessionId = crypto.randomUUID()
+  private workerFrame: { frame: number; at: number } | null = null
+  private lastWorkerSync = 0
+  private workerSyncPending = false
+  private workerOnline = true
 
   constructor(
     private readonly studioId: string,
@@ -84,6 +89,9 @@ export class VideoStudioMediaEngine {
         return Math.max(0,Math.round((media.currentTime*60)-active.sourceTick+scene.frame))
       }
     }
+    if(this.workerFrame && performance.now()-this.workerFrame.at < 1000) {
+      return Math.max(0,this.workerFrame.frame+Math.round((performance.now()-this.workerFrame.at)*.06))
+    }
     return this.anchor
       ? Math.max(0,this.anchor.frame+Math.round((performance.now()-this.anchor.at)*.06))
       : fallbackFrame
@@ -99,6 +107,24 @@ export class VideoStudioMediaEngine {
       if (playing) this.anchor={frame:scene.frame,at:performance.now()}
       else this.anchor=null
     }
+    // The independent utility process owns the rational 60 fps timeline clock.
+    // Feed it the native media clock when an audible source is ready; never
+    // await IPC in requestAnimationFrame or make Play wait for an asset render.
+    const now=performance.now()
+    if(this.workerOnline && !this.workerSyncPending && now-this.lastWorkerSync>=200) {
+      this.lastWorkerSync=now;this.workerSyncPending=true
+      const masterVideo=scene.videos[0]
+      const element=masterVideo&&this.videos.get(masterVideo.assetId)?.element
+      const audioFrame=element && !element.paused && element.readyState>=2
+        ? Math.max(0,Math.round(element.currentTime*60-masterVideo.sourceTick+scene.frame))
+        : undefined
+      void window.desktop.controlVideoMediaEngine({
+        op:'sync',sessionId:this.sessionId,frame:scene.frame,playing,
+        ...(audioFrame===undefined?{}:{audioFrame})
+      }).then(result=>{if(!this.closed)this.workerFrame={frame:result.frame,at:performance.now()}})
+        .catch(()=>{this.workerOnline=false;this.workerFrame=null})
+        .finally(()=>{this.workerSyncPending=false})
+    }
     const activeIds=new Set(scene.videos.map(v=>v.assetId))
     this.audioMasterId=scene.videos[0]?.assetId ?? null
     for(const [id, entry] of this.videos) if(!activeIds.has(id)) entry.element.pause()
@@ -107,7 +133,7 @@ export class VideoStudioMediaEngine {
       if (!entry?.ready) { void this.acquire(video.assetId); continue }
       const element=entry.element
       const target=video.sourceTimeNumerator/video.sourceTimeDenominator
-      if (Number.isFinite(element.duration) && Math.abs(element.currentTime-target)>(playing?.2:1/60)) {
+      if (Number.isFinite(element.duration) && Math.abs(element.currentTime-target)>(playing ? .2 : 1/60)) {
         try {element.currentTime=Math.max(0,Math.min(target,element.duration-.001))} catch { /* wait for decoder */ }
       }
       element.muted=video.assetId!==this.audioMasterId
@@ -133,10 +159,13 @@ export class VideoStudioMediaEngine {
       entry.element.load()
     }
     this.videos.clear()
+    this.workerFrame=null
+    if(this.workerOnline) void window.desktop.controlVideoMediaEngine({op:'cancel',sessionId:this.sessionId}).catch(()=>undefined)
   }
 
   dispose(): void {
     if(this.closed)return
     this.closed=true;this.stop()
+    if(this.workerOnline) void window.desktop.controlVideoMediaEngine({op:'close',sessionId:this.sessionId}).catch(()=>undefined)
   }
 }

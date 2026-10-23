@@ -5,6 +5,7 @@ import { basename, dirname, extname, join, relative, resolve, sep } from 'node:p
 import { createHash, randomUUID } from 'node:crypto'
 import type { VideoStudioProcessFailure } from '../src/shared/videoStudioNext/diagnostics'
 import { registerVideoStudioWindowsDiagnostics } from './videoStudioRebuild/windowsDiagnostics'
+import { registerVideoMediaEngineHandlers } from './videoStudioRebuild/mediaSupervisor'
 import { Readable } from 'node:stream'
 import { fileURLToPath } from 'node:url'
 import type { FaceAssetKind, FaceAssetSave, FaceCatalogItem, FaceCatalogItemSave, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSave, FaceComponentAssetSummary, FaceElementKind, FaceExpressionPreset, FaceExpressionTransforms, FaceExpressionWorkspaceDraft, FaceGuideProfile, FaceSet, FaceSetSave, FaceSetSummary, FaceSheetKind, FaceTransform, FabricatorAssetSave, FabricatorHistoryEntry, FabricatorHistorySaveEntry, FabricatorHistorySaveState, FabricatorHistoryState, FabricatorPoseDraftSave, FabricatorPoseSave, FabricatorProject, FabricatorProjectSave, HairStyle, HairStyleAsset, HairStyleSave, HairStyleSummary, HairWorkspace, HairWorkspaceAsset, HairWorkspaceSave, ModelPart, WardrobeAssetSave, WardrobeCategory, WardrobeSet, WardrobeSetSave } from '../src/shared/fabricator'
@@ -1251,6 +1252,7 @@ async function registerFabricatorHandlers(): Promise<void> {
 
     if (workspace === 'video') {
       registerVideoStudioWindowsDiagnostics(ipcMain, assertTrustedSender, () => videoStudioRecentProcessFailures)
+      registerVideoMediaEngineHandlers(ipcMain, assertTrustedSender)
       videoExportLibrary ??= new VideoExportLibrary(app.getPath('appData'))
   videoPreviewProxyStore ??= new VideoPreviewProxyStore(join(app.getPath('appData'), 'CACHE', 'video-studio', 'preview-media'))
       ipcMain.handle('video-studio:exports:list', async (event) => {

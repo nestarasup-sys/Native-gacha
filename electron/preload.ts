@@ -93,6 +93,7 @@ const studioApi: StudioDesktopApi = {
 
 const videoStudioApi: VideoStudioDesktopApi = {
   getVideoStudioMemoryReport: () => ipcRenderer.invoke('video-studio:diagnostics:memory'),
+  controlVideoMediaEngine: (command) => ipcRenderer.invoke('video-engine:media:control', command),
   captureVideoStressPage: () => ipcRenderer.invoke('video-studio:stress:capture-page'),
   listVideoStudios: () => ipcRenderer.invoke('video-studio:list'),
   loadVideoStudio: (id) => ipcRenderer.invoke('video-studio:get', id),
