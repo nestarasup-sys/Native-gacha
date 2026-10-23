@@ -213,6 +213,34 @@ export async function captureFabricatorRealScreens(win: BrowserWindow, output: s
     }
     await new Promise(resolve => setTimeout(resolve, 800))
     await waitForRendered(win, '.fabricator-section-button[aria-pressed="true"]')
+    if (key === 'expressoes') {
+      await waitFor(win,'.expression-sequence-look-left')
+      await waitFor(win,'.expression-sequence-item')
+      // PT must preview the same expression and toggle back without creating
+      // an extra expression or modifying its published motion.
+      for (let index = 0; index < 3; index++) {
+        const pressed = await win.webContents.executeJavaScript(`(() => {
+          const pt=document.querySelector('.expression-sequence-look-left')
+          if (!pt) return false
+          pt.click()
+          return true
+        })()`) as boolean
+        if (!pressed) throw Error('Preset PT não encontrado no Presets DEV.')
+        await waitFor(win,'.expression-sequence-look-left[aria-pressed="true"]')
+        await win.webContents.executeJavaScript("document.querySelector('.expression-sequence-item')?.click()")
+        await waitFor(win,'.expression-sequence-look-left[aria-pressed="false"]')
+      }
+      const comparisonButton = await win.webContents.executeJavaScript(`(() => {
+        const button = [...document.querySelectorAll('.expression-preset-toolbar button')]
+          .find(item=>item.textContent?.includes('Testar em personagem'))
+        if (!button) return false
+        button.click()
+        return true
+      })()`) as boolean
+      if(!comparisonButton)throw Error('Presets DEV não oferece prévia em outro personagem.')
+      await waitFor(win,'[aria-label="Testar expressão em personagem do Customizador"]')
+      await win.webContents.executeJavaScript("document.querySelector('[aria-label=\"Fechar teste de expressão\"]')?.click()")
+    }
     if (key === 'roupas') {
       // A contagem precisa continuar válida no instante da foto. O elemento
       // pode ter existido antes e a tela voltar ao placeholder ao hidratar.
