@@ -32,6 +32,11 @@ async function fixture(t){
       {name:'sleeve-left',pixels:175,x:110,y:210},
       {name:'sleeve-right',pixels:175,x:233,y:172}]
   }))
+  await writeFile(join(folder,'wardrobe-hide-restore.json'),JSON.stringify({
+    source:'customizer-overlay',syntheticOnly:true,poseSlot:1,
+    checks:[{hidden:'sleeve-right',other:'sleeve-left',otherMovement:0,restoredMovement:0},
+      {hidden:'sleeve-left',other:'sleeve-right',otherMovement:0,restoredMovement:0}]
+  }))
   await writeFile(join(folder,'wardrobe-pose2-pixels.json'),JSON.stringify({
     source:'customizer-overlay',poseSlot:2,centroidMovement:48,
     colors:[{name:'coat',pixels:230,x:167,y:201},
@@ -93,4 +98,13 @@ test('revisor recusa amostras artificiais sem memória real do renderer',async t
   report.poseTwo.rendererWorkingSetKb=0
   await writeFile(filename,JSON.stringify(report))
   await assert.rejects(verifyWorkspaceCaptures(folder),/Amostra FPS\/memória/)
+})
+
+test('revisor recusa deslocamento de peça vizinha ao excluir e restaurar roupa',async t=>{
+  const {folder}=await fixture(t)
+  const filename=join(folder,'wardrobe-hide-restore.json')
+  const report=JSON.parse(await readFile(filename,'utf8'))
+  report.checks[0].otherMovement=18
+  await writeFile(filename,JSON.stringify(report))
+  await assert.rejects(verifyWorkspaceCaptures(folder),/Ocultar\/restaurar/)
 })
