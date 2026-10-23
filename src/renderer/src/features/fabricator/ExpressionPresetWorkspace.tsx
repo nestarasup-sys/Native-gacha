@@ -147,6 +147,21 @@ function authoredMetrics(composition: ExpressionComposition, components: Record<
   return metrics
 }
 
+function motionForPublishedPreset(
+  transforms: FaceExpressionTransforms,
+  reference: FaceExpressionTransforms,
+  selection: ExpressionComposition,
+  components: Record<string,FaceComponentAsset>,
+  catalogs: Record<string,FaceCatalogItem>,
+  previous?: FaceExpressionPreset | null
+) {
+  const compiled=compilePortableExpression(transforms,reference,authoredMetrics(selection,components,catalogs))
+  const old=previous && JSON.stringify(previous.selections)===JSON.stringify(selection)
+    ? previous.portableMotion?.layers : undefined
+  const layers={...old,...compiled.layers}
+  return Object.keys(layers).length ? {version:1 as const,layers} : undefined
+}
+
 function rebaseExpressionTransforms(
   transforms: FaceExpressionTransforms,
   reference: FaceExpressionTransforms,
@@ -600,7 +615,7 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
           ...saved,
           schemaVersion: 1, id, modelSlot, name, collectionId: selectedCollectionId, expressionIndex: index,
           selections, transforms: rebasedTransforms, referenceTransforms: cloneTransforms(nextBaseTransforms),
-          portableMotion: compilePortableExpression(rebasedTransforms,nextBaseTransforms,authoredMetrics(selections,componentAssets,catalogItems)),
+          portableMotion: motionForPublishedPreset(rebasedTransforms,nextBaseTransforms,selections,componentAssets,catalogItems,saved),
           noseOpacity: draftNoseOpacity, effects: cloneEffects(workingCopy?.effects ?? saved?.effects), updatedAt: now
         }
         nextPresets.push(nextPreset)
@@ -830,7 +845,7 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
         schemaVersion: 1, id: presetId, modelSlot, name: activeExpressionName,
         collectionId: selectedCollectionId, expressionIndex: selectedExpressionIndex,
         selections: structuredClone(composition), transforms: cloneTransforms(transforms), referenceTransforms: structuredClone(referenceTransforms),
-        portableMotion: compilePortableExpression(transforms,referenceTransforms,authoredMetrics(composition,componentAssets,catalogItems)), noseOpacity, effects: cloneEffects(effects), updatedAt: new Date().toISOString()
+        portableMotion: motionForPublishedPreset(transforms,referenceTransforms,composition,componentAssets,catalogItems,sameComposition?existing:null), noseOpacity, effects: cloneEffects(effects), updatedAt: new Date().toISOString()
       }
       await window.desktop.saveFaceExpressionPreset(modelSlot, saved)
       setPresetId(saved.id)
