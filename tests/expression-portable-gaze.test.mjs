@@ -98,7 +98,7 @@ test('duas faces completamente distintas usam a mesma emoção sem carregar PNGs
     const brow=result['expression-component:brow-left'].sourceTransformOverride
     assert.ok(Math.abs(brow.y-(106+24*factor*6/22))<.001)
     assert.equal(brow.rotation,-12)
-    assert.equal(result['expression:nose:target-nose'].sourceTransformOverride.y,199+32*factor*4/22)
+    assert.ok(Math.abs(result['expression:nose:target-nose'].sourceTransformOverride.y-(199+32*factor*4/22))<1e-7)
     assert.deepEqual(character.appearance,original,'customizer base never mutates')
   }
 })
