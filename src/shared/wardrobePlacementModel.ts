@@ -67,3 +67,25 @@ export function recolorWardrobeComponents(
       : { ...group.colors, [change.role]: change.value } }
   })
 }
+
+/** Replace one Customizer picker slot without removing opposite-side garments. */
+export function selectWardrobePanelComponents(
+  groups: readonly CustomizerWardrobeGroup[],
+  modelSlot: number,
+  category: CustomizerWardrobeCategory,
+  panelComponentKeys: readonly string[],
+  next: { modelSlot: number; setId: string; componentIds: readonly string[]; colors?: CustomizerWardrobeGroup['colors'] } | null
+): CustomizerWardrobeGroup[] {
+  const known = new Set(panelComponentKeys)
+  const after = groups.filter(group => {
+    if (group.modelSlot !== modelSlot || group.category !== category) return true
+    if (!group.componentId) return false // Legacy category-wide entry for this slot.
+    return !known.has(`${group.modelSlot}:${group.setId}:${group.componentId}`)
+  })
+  if (next) after.push(...next.componentIds.map(componentId => ({
+    modelSlot:next.modelSlot,setId:next.setId,category,componentId,
+    offsetX:0,offsetY:0,scaleX:1,scaleY:1,rotation:0,
+    ...(next.colors ? {colors:next.colors} : {})
+  })))
+  return after
+}
