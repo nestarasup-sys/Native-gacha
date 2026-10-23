@@ -133,7 +133,7 @@ test('uma pupila neutra ainda olha realmente à direita na normal e esquerda em 
 test('presets legados continuam transferindo usando referências; erro visível se asset faltou',async()=>{
   const legacy={...preset,portableMotion:undefined}
   const fixture=setupCharacter(1)
-  await assert.rejects(buildStudioExpressionTransforms(legacy,fixture.appearance,{},fixture.loadComponent,fixture.loadCatalog),/Preset antigo depende/)
+  await assert.rejects(buildStudioExpressionTransforms(legacy,fixture.appearance,{},id=>id.startsWith('author')?Promise.resolve(null):fixture.loadComponent(id),fixture.loadCatalog),/Preset antigo depende/)
   assert.equal(isPortableExpressionMotion({version:1,layers:{eyeLeft:{dx:Infinity,dy:0,sx:1,sy:1,rotation:0,flip:false}}}),false)
 })
 
