@@ -42,7 +42,7 @@ type DragState = { id: string; pointerId: number; startX: number; startY: number
 type AutomaticMouthFrame = { dataUrl: string; geometry: Pick<StudioElement, 'width' | 'height' | 'characterCanvasWidth'> }
 type AutomaticMouthAnimation = { frames: AutomaticMouthFrame[]; cycleFrames: number; speechStartFrame: number }
 
-const STUDIO_FACE_RENDER_VERSION = 6
+const STUDIO_FACE_RENDER_VERSION = 7
 const studioColor = (number: number) => `hsl(${(number * 137.508) % 360} 45% 78%)`
 
 const defaultStudioEyeTransform: StudioFaceTransform = { x: 0, y: 0, width: 100, height: 100, rotation: 0 }
@@ -753,7 +753,7 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
                   : previousBase
                 const appearance = shouldRecomposeExpression
                   ? savedPreset && expressionBase
-                    ? await buildStudioExpressionAppearance(savedPreset, expressionBase.appearance, (id) => window.desktop.loadFaceCatalogItem(modelSlot, id))
+                    ? await buildStudioExpressionAppearance(savedPreset, expressionBase.appearance, (id) => window.desktop.loadFaceCatalogItem(modelSlot, id), stateElement.activeExpressionGaze ?? 'right')
                     : expressionBase?.appearance ?? sourceAppearance
                   : stateElement.faceAppearance ?? expressionBase?.appearance ?? sourceAppearance
                 const faceMode = stateElement.activeFaceMode ?? studioFaceModeForElement(stateElement, appearance)
@@ -1590,7 +1590,7 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
     } finally { setSavingCast(false) }
   }
 
-  const applyStudioFaceAppearance = async (appearance: CustomizerFaceAppearance, faceTransforms: StudioFaceTransforms = selectedElement?.faceTransforms ?? {}, record = true, expressionState?: Pick<StudioElement, 'expressionBase' | 'activeExpressionPresetId' | 'activeExpressionPresetUpdatedAt' | 'activeExpressionCollectionId' | 'activeExpressionEffects' | 'activeFaceMode'>) => {
+  const applyStudioFaceAppearance = async (appearance: CustomizerFaceAppearance, faceTransforms: StudioFaceTransforms = selectedElement?.faceTransforms ?? {}, record = true, expressionState?: Pick<StudioElement, 'expressionBase' | 'activeExpressionGaze' | 'activeExpressionPresetId' | 'activeExpressionPresetUpdatedAt' | 'activeExpressionCollectionId' | 'activeExpressionEffects' | 'activeFaceMode'>) => {
     if (!activeStudio || selectedElement?.kind !== 'character' || !selectedStudioCharacter || !selectedElement.assetId || studioFaceBusy || selectedVideoTrackLocked) return
     setStudioFaceBusy(true)
     try {
@@ -1641,11 +1641,11 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
     const base = { ...resolveStudioExpressionBase(selectedElement, appearance), appearance: structuredClone(appearance) }
     setStudioExpressionBusy(true)
     try {
-      await applyStudioFaceAppearance(base.appearance, base.transforms, true, { expressionBase: base, activeExpressionPresetId: null, activeExpressionPresetUpdatedAt: undefined, activeExpressionCollectionId: selectedStudioExpressionCollectionId, activeExpressionEffects: undefined, activeFaceMode: faceMode })
+      await applyStudioFaceAppearance(base.appearance, base.transforms, true, { expressionBase: base, activeExpressionPresetId: null, activeExpressionGaze: 'right', activeExpressionPresetUpdatedAt: undefined, activeExpressionCollectionId: selectedStudioExpressionCollectionId, activeExpressionEffects: undefined, activeFaceMode: faceMode })
     } finally { setStudioExpressionBusy(false) }
   }
 
-  const applyStudioExpressionPreset = async (summary: FaceExpressionPresetSummary) => {
+  const applyStudioExpressionPreset = async (summary: FaceExpressionPresetSummary, gaze: 'right'|'left' = 'right') => {
     if (!selectedStudioCharacter || !selectedElement || selectedElement.kind !== 'character' || studioExpressionBusy || studioFaceBusy) return
     setStudioExpressionBusy(true)
     setError(null)
@@ -1664,10 +1664,11 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
       const faceTransforms = await buildStudioExpressionTransforms(
         preset, nextAppearance, base.transforms,
         (id) => window.desktop.loadFaceComponentAsset(preset.modelSlot, id),
-        (id) => window.desktop.loadFaceCatalogItem(preset.modelSlot, id)
+        (id) => window.desktop.loadFaceCatalogItem(preset.modelSlot, id),
+        gaze
       )
 
-      await applyStudioFaceAppearance(nextAppearance, faceTransforms, true, { expressionBase: base, activeExpressionPresetId: preset.id, activeExpressionPresetUpdatedAt: preset.updatedAt, activeExpressionCollectionId: preset.collectionId ?? 'standard', activeExpressionEffects: preset.effects, activeFaceMode: faceMode })
+      await applyStudioFaceAppearance(nextAppearance, faceTransforms, true, { expressionBase: base, activeExpressionPresetId: preset.id, activeExpressionGaze: gaze, activeExpressionPresetUpdatedAt: preset.updatedAt, activeExpressionCollectionId: preset.collectionId ?? 'standard', activeExpressionEffects: preset.effects, activeFaceMode: faceMode })
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Não foi possível aplicar este preset de expressão.')
     } finally {
@@ -2238,9 +2239,14 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
             return <div className="video-studio-expression-selected">
               <div className="video-studio-expression-list">
                 <button className={`video-studio-expression-option${!selectedElement.activeExpressionPresetId ? ' selected' : ''}`} type="button" onClick={() => void applyStudioBaseExpression()} disabled={studioExpressionBusy || studioFaceBusy} aria-pressed={!selectedElement.activeExpressionPresetId}><b>•</b><span>Base</span></button>
-                {expressions.map((preset) => <button className={`video-studio-expression-option${selectedElement.activeExpressionPresetId === preset.id ? ' selected' : ''}`} key={preset.id} type="button" aria-pressed={selectedElement.activeExpressionPresetId === preset.id} onClick={() => void applyStudioExpressionPreset(preset)} disabled={studioExpressionBusy || studioFaceBusy}>
-                  <b>{String((preset.expressionIndex ?? 0) + 1).padStart(2, '0')}</b><span>{preset.name}</span>
-                </button>)}
+                {expressions.map((preset) => <div className="video-studio-expression-row" key={preset.id} style={{display:'flex',gap:6}}>
+                  <button className={`video-studio-expression-option${selectedElement.activeExpressionPresetId === preset.id && selectedElement.activeExpressionGaze !== 'left' ? ' selected' : ''}`} type="button" onClick={() => void applyStudioExpressionPreset(preset,'right')} disabled={studioExpressionBusy || studioFaceBusy}>
+                    <b>{String((preset.expressionIndex ?? 0) + 1).padStart(2, '0')}</b><span>{preset.name}</span>
+                  </button>
+                  <button className="video-studio-expression-option" type="button" title="Mesma expressão olhando à esquerda" aria-label={`PT: ${preset.name}, olhando à esquerda`}
+                    aria-pressed={selectedElement.activeExpressionPresetId === preset.id && selectedElement.activeExpressionGaze === 'left'}
+                    onClick={() => void applyStudioExpressionPreset(preset,'left')} disabled={studioExpressionBusy || studioFaceBusy}>PT ←</button>
+                </div>)}
                 {!expressions.length && <p className="video-studio-custom-hint">Nenhuma expressão salva neste conjunto. Salve expressões no Expressão Dev para listá-las aqui.</p>}
               </div>
             </div>
