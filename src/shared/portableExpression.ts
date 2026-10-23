@@ -100,14 +100,13 @@ export function expressionGazeX(
  */
 export function resolvePresetPupilGaze(
   authoredX: number, neutralX: number, eyeWidth: number, eyeScaleX: number,
-  side: 'left'|'right', rightSidePositioned: boolean, gaze: ExpressionGaze
+  side: 'left'|'right', rightSidePositioned: boolean, gaze: ExpressionGaze, eyeFlipped = false
 ): number {
-  const difference=authoredX-neutralX
-  const threshold=eyeWidth*eyeScaleX*.03
-  if(gaze==='right') return Math.abs(difference)<threshold
-    ? expressionGazeX(neutralX,eyeWidth,eyeScaleX,side,rightSidePositioned,'right')
-    : authoredX
-  return Math.abs(difference)<threshold
-    ? expressionGazeX(neutralX,eyeWidth,eyeScaleX,side,rightSidePositioned,'left')
-    : neutralX-difference
+  if (![authoredX,neutralX,eyeWidth,eyeScaleX].every(finite) || eyeWidth<=0 || eyeScaleX<=0)
+    throw Error('Direção das pupilas recebeu geometria inválida.')
+  // Authoring establishes the intensity; playback establishes a consistent
+  // screen direction even for physically mirrored right-side image assets.
+  const magnitude=Math.abs(authoredX-neutralX) || eyeWidth*eyeScaleX*.16
+  const mirror=(side==='right' && !rightSidePositioned ? -1 : 1)*(eyeFlipped?-1:1)
+  return neutralX+(gaze==='left'?-1:1)*mirror*magnitude
 }
