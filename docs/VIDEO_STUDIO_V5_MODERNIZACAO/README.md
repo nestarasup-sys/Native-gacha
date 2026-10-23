@@ -73,7 +73,7 @@ Testes Windows cobrem 12 mídias sequenciais, reapertura de fonte expulsa e cinc
 
 **Amostragem Windows:** `window.desktop.getVideoStudioMemoryReport()` somente por chamada explícita. Para perfis de processos não-Electron, executar o script manualmente com o `mainPid` retornado pela API, durante projeto **de teste**: `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/video-studio/windows-memory-probe.ps1 -RootPid <pid> -Samples 120 -CsvPath <arquivo-temporario.csv>`. Traces e CSV são privados e **não** devem conter arquivos/projetos reais em CI. Valores de working set podem se sobrepor e não são memória exclusiva.
 
-**Validação:** `npm run test:video:next` inclui testes novos de diagnósticos, histórico, memo e clock. CI específica roda no `windows-latest`; compilação e testes de integração UI/Gacha sob estresse físico são gates futuros.
+**Validação Windows:** `npm run test:video:next` inclui diagnósticos, histórico, cache de arte e relógio. A CI Windows também executa smoke de `windows-memory-probe.ps1` (processo sintético, 1 amostra) e `windows-sceneir-stress.cjs --quick` (12 personagens, keys, 4 vídeos **somente avaliação semântica**). Para pesquisa de escalabilidade, `node scripts/video-studio/windows-sceneir-stress.cjs` cobre 12/24/48 atores, até 1000 keys e timeline de 15 minutos **amostrada**, sem imagens verdadeiras nem decoders. **Não** equivale ao teste completo de 15 min com renderização de cada frame ou à reprodução da falha real. Esses gates continuam abertos.
 
 ## Estrutura-alvo resumida
 
