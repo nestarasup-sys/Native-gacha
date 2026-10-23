@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises'
 import { faceExpressionDefaults } from '../src/shared/faceExpressionDefaults.ts'
 import { pupilDeltaFromDrag,pupilScreenOffset,pupilSourceMirrored }
   from '../src/shared/facePupilGeometry.ts'
-import { FACE_COMPONENT_SELECTION_STORAGE_KEY,savedFaceLibraryParts,pickFaceLibraryBase }
+import { FACE_COMPONENT_SELECTION_STORAGE_KEY,savedFaceLibraryParts,pickFaceLibraryBase,savedLegacyPupilParts }
   from '../src/shared/faceLibrarySelection.ts'
 
 test('o arraste aplica a inversa EXATA da geometria da prévia para todo ângulo e lado',()=>{
@@ -134,4 +134,12 @@ test('não gerar expressões legadas implícitas nem sobrescrever presets parcia
   assert.match(editor,/const loadedPresets = savedPresets/)
   assert.match(editor,/faceExpressionDefaults as defaultTransforms/)
   assert.match(editor,/if\(previewGaze==='left'\)return/)
+})
+
+test('seleção legada de pupilas é lida somente como fallback, sem gravar storage',()=>{
+  const legacy=JSON.stringify({'1':{left:'oldL',right:'oldR',linked:true}})
+  assert.deepEqual(savedLegacyPupilParts(legacy,1),{'pupil-left':'oldL','pupil-right':'oldR'})
+  assert.deepEqual(savedLegacyPupilParts(legacy,2),{})
+  const current=savedFaceLibraryParts(JSON.stringify({'1':{parts:{'pupil-left':'newL'}}}),1)
+  assert.deepEqual({...savedLegacyPupilParts(legacy,1),...current},{'pupil-left':'newL','pupil-right':'oldR'})
 })
