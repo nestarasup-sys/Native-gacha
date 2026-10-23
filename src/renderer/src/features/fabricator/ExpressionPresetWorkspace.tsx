@@ -870,7 +870,7 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
 
   return <section className="fabricator-workspace expression-preset-workspace" aria-label="Preset Expressão Dev">
     <header className="expression-preset-toolbar">
-      <button className="expression-choose-set-button" onClick={beginChoosing} disabled={loading || !head} type="button"><Icon name="face" />Escolher conjunto</button>
+      <button className="expression-choose-set-button" onClick={beginChoosing} disabled={loading || !head} type="button"><Icon name="face" />Escolher assets</button>
       <span className="model-slot-logo"><Icon name="face" /></span>
       <strong>Preset Expressão Dev</strong>
       <span className="expression-current-title"><b>{String(selectedExpressionIndex + 1).padStart(2, '0')}</b>{activeExpressionName}</span>
