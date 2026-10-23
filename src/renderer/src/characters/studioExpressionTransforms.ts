@@ -174,7 +174,7 @@ export async function buildStudioExpressionTransforms(
     const targetBase = appearance.transforms?.nose ?? target?.transforms.nose
     if ((base || noseMotion) && targetBase) {
       const sourcePiece = source?.pieces?.find((piece) => piece.sheet === 'nose' && piece.index === noseChoice?.index)
-      const targetPiece = target?.pieces?.find((piece) => piece.sheet === 'nose' && piece.index === appearance.noseIndex)
+      const targetPiece = target?.pieces?.find((piece) => piece.sheet === 'nose' && piece.index === (appearance.noseIndex ?? 0))
       const positionScale = sourcePiece && targetPiece ? relativePieceSize(sourcePiece, base!, targetPiece, targetBase) : { x: 1, y: 1 }
       put(`expression:nose:${appearance.noseCatalogId}`, noseMotion
         ? applyPortableExpressionLayer(preset.portableMotion!,'nose',targetBase,targetPiece ? {width:targetPiece.width,height:targetPiece.height} : {width:1,height:1})
