@@ -1,7 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import * as fs from 'node:fs/promises'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
+import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { createExpressionBatchTransaction } from '../electron/domains/fabricator/expressionBatchTransaction.ts'
 
@@ -117,4 +118,26 @@ test('caminho do renderer usa endpoint único; leituras passam pela fila seriali
   assert.match(main,/queueExpressionWork\(/)
   assert.match(main,/fabricator:expression-presets:save-batch/)
   assert.match(preload,/saveFaceExpressionPresetBatch:/)
+})
+
+test('queda de processo real no sexto preset é recuperada após reabrir a biblioteca',async t=>{
+  const root=await fs.mkdtemp(join(tmpdir(),'native-expression-crash-'))
+  t.after(()=>fs.rm(root,{recursive:true,force:true}))
+  const modelFolder=slot=>join(root,`model-${slot}`)
+  const presetPath=(slot,id)=>join(modelFolder(slot),`preset-${id}.json`)
+  await fs.mkdir(modelFolder(1),{recursive:true})
+  const originals=Array.from({length:21},(_,i)=>preset(`p${i}`,'original'))
+  const bytes=originals.map(item=>JSON.stringify(item))
+  await Promise.all(originals.map((item,i)=>fs.writeFile(presetPath(1,item.id),bytes[i])))
+  const child=spawnSync(process.execPath,['--experimental-strip-types',
+    resolve('scripts/fabricator/crash-expression-batch.mjs'),root],{encoding:'utf8',timeout:30000})
+  assert.equal(child.status,96,child.stderr||child.error?.message||'Process did not hit checkpoint')
+  assert.equal(JSON.parse(await fs.readFile(presetPath(1,'p0'),'utf8')).updatedAt,'new')
+  const service=createExpressionBatchTransaction({files:fs,modelFolder,presetPath,
+    validModelSlot:slot=>slot===1,validPreset:(slot,item)=>item?.modelSlot===slot})
+  await service.recover(1)
+  const after=await Promise.all(originals.map(item=>fs.readFile(presetPath(1,item.id),'utf8')))
+  assert.deepEqual(after,bytes,'nenhum preset pessoal pode ficar parcialmente alterado')
+  await service.recover(1)
+  await assert.rejects(fs.access(join(modelFolder(1),'.expression-batch-transaction')),{code:'ENOENT'})
 })
