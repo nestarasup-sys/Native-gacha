@@ -32,7 +32,8 @@ export function compilePortableExpression(
       dy: (part.y-base.y)/metric.height,
       sx: part.scaleX/base.scaleX, sy: part.scaleY/base.scaleY,
       rotation: part.rotation-base.rotation,
-      flip: Boolean(part.flipX) !== Boolean(base.flipX)
+      flip: Boolean(part.flipX) !== Boolean(base.flipX),
+      ...(metric.mirrored !== undefined ? {sourceMirrored:metric.mirrored} : {})
     }
   }
   return {version:1,layers}
@@ -48,6 +49,7 @@ export function isPortableExpressionMotion(value: unknown): value is PortableExp
     return expressionLayers.includes(key as ExpressionLayer) && Boolean(part)
       && [part!.dx,part!.dy,part!.sx,part!.sy,part!.rotation].every(finite)
       && part!.sx > 0 && part!.sy > 0 && typeof part!.flip === 'boolean'
+      && (part!.sourceMirrored === undefined || typeof part!.sourceMirrored === 'boolean')
   })
 }
 
@@ -61,13 +63,14 @@ export function applyPortableExpressionLayer(
     throw Error('Movimento de expressão inválido; os dados originais foram preservados.')
   const part=motion.layers[layer]
   if (!part) return { ...base }
+  const direction=Boolean(part.sourceMirrored) !== Boolean(metric.mirrored) ? -1 : 1
   const result: FaceTransform = {
     ...base,
-    x: base.x+part.dx*metric.width,
+    x: base.x+part.dx*metric.width*direction,
     y: base.y+part.dy*metric.height,
     scaleX: base.scaleX*part.sx,
     scaleY: base.scaleY*part.sy,
-    rotation: base.rotation+part.rotation
+    rotation: base.rotation+part.rotation*direction
   }
   const flip=Boolean(base.flipX)!==part.flip
   if (flip) result.flipX=true
