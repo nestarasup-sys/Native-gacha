@@ -328,6 +328,58 @@ export async function captureFabricatorRealScreens(win: BrowserWindow, output: s
       if (JSON.stringify(current)!==JSON.stringify(expressionSnapshot)) {
         throw Error('Abertura ou PT do Presets DEV sobrescreveu expressões publicadas.')
       }
+      if (hasSyntheticPupils) {
+        // Exercise real PT drag and publication only inside the throwaway Windows profile.
+        // Normal and PT must remain a single persisted preset with different pupil motion.
+        await win.webContents.executeJavaScript("document.querySelector('.expression-sequence-look-left')?.click()")
+        await waitFor(win,'.expression-sequence-look-left[aria-pressed="true"]')
+        await waitFor(win,'.expression-head-pupil-mask img')
+        const target=await win.webContents.executeJavaScript(`(() => {
+          const img=document.querySelector('.expression-head-pupil-mask img')
+          const rect=img?.getBoundingClientRect()
+          return rect&&rect.width&&rect.height?{x:Math.round(rect.x+rect.width/2),y:Math.round(rect.y+rect.height/2)}:null
+        })()`) as {x:number;y:number}|null
+        if(!target)throw Error('Pupila PT sem alvo de arraste.')
+        win.webContents.sendInputEvent({type:'mouseMove',x:target.x,y:target.y})
+        win.webContents.sendInputEvent({type:'mouseDown',x:target.x,y:target.y,button:'left',clickCount:1})
+        for(let step=1;step<=5;step++){
+          win.webContents.sendInputEvent({type:'mouseMove',x:target.x+step*6,y:target.y+step*2,button:'left',modifiers:['leftButtonDown']})
+          await new Promise(resolve=>setTimeout(resolve,85))
+        }
+        win.webContents.sendInputEvent({type:'mouseUp',x:target.x+30,y:target.y+10,button:'left'})
+        let authored: {x:number;y:number;rotation:number}|null=null
+        for(let attempt=0;attempt<35;attempt++){
+          authored=await win.webContents.executeJavaScript("window.desktop.loadFaceExpressionWorkspaceDraft(1).then(d=>d?.current?.ptPupils?.left ?? null)") as typeof authored
+          if(authored && Number.isFinite(authored.x) && Number.isFinite(authored.y))break
+          await new Promise(resolve=>setTimeout(resolve,200))
+        }
+        if(!authored)throw Error('Arraste PT não persistiu o rascunho independente.')
+        const savedClick=await win.webContents.executeJavaScript("(() => { const save=document.querySelector('.expression-save-button'); if(!(save instanceof HTMLButtonElement)||save.disabled)return false;save.click();return true })()") as boolean
+        if(!savedClick)throw Error('Não foi possível salvar preset PT pela interface.')
+        let saved: {id:string;ptPupils?:{left?:{x:number;y:number;rotation:number}};transforms:unknown}|null=null
+        for(let attempt=0;attempt<35;attempt++){
+          saved=await win.webContents.executeJavaScript(`(async()=>{
+            const list=await window.desktop.listFaceExpressionPresets(1)
+            const entry=list.find(item=>item.collectionId==='standard'&&item.expressionIndex===0)
+            return entry?window.desktop.loadFaceExpressionPreset(1,entry.id):null
+          })()`) as typeof saved
+          if(saved?.ptPupils?.left)break
+          await new Promise(resolve=>setTimeout(resolve,200))
+        }
+        if(!saved?.ptPupils?.left || Math.abs(saved.ptPupils.left.x-authored.x)>1e-6
+            || Math.abs(saved.ptPupils.left.y-authored.y)>1e-6) {
+          throw Error('Publicação de PT perdeu as coordenadas que a UI arrastou.')
+        }
+        const ptSource=await win.webContents.executeJavaScript("window.desktop.loadFaceExpressionWorkspaceDraft(1).then(d=>d?.current?.transforms ?? null)") as unknown
+        if(JSON.stringify(saved.transforms)!==JSON.stringify(ptSource)){
+          throw Error('Editar somente pupilas PT alterou os transforms normais.')
+        }
+        await writeFile(join(output,'pt-pupil-persistence.json'),JSON.stringify({
+          id:saved.id,ptPupils:saved.ptPupils,normalTransforms:saved.transforms
+        },null,2))
+        await win.webContents.executeJavaScript("document.querySelector('.expression-sequence-item')?.click()")
+        await waitFor(win,'.expression-sequence-look-left[aria-pressed="false"]')
+      }
     }
     if (key === 'roupas') {
       // A contagem precisa continuar válida no instante da foto. O elemento
