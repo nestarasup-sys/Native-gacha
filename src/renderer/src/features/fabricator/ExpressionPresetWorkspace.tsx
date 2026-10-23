@@ -1,4 +1,5 @@
 import { compilePortableExpression, resolvePresetPupilGaze, type ExpressionMetrics } from '../../../../shared/portableExpression'
+import { ExpressionCharacterPreview } from './ExpressionCharacterPreview'
 import { projectForOriginalPreview } from '../../../../shared/fabricatorModelViews'
 import { useModelSourceRefresh } from './models/useModelSourceRefresh'
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
@@ -262,6 +263,7 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
   const [presetId, setPresetId] = useState<string>(() => crypto.randomUUID())
   const [selectedExpressionIndex, setSelectedExpressionIndex] = useState(0)
   const [previewGaze, setPreviewGaze] = useState<'right'|'left'>('right')
+  const [characterComparisonOpen,setCharacterComparisonOpen] = useState(false)
   const [customExpressionNames, setCustomExpressionNames] = useState<Record<string, string>>({})
   const [workingCopies, setWorkingCopies] = useState<Record<string, ExpressionWorkingCopy>>({})
   const [workspaceReady, setWorkspaceReady] = useState(false)
@@ -497,6 +499,14 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
     }
     return next
   },[open,draftTransforms,transforms,previewGaze,composition,baseTransforms,componentAssets])
+  const comparisonPreset = useMemo((): FaceExpressionPreset => {
+    const portable=compilePortableExpression(transforms,baseTransforms,authoredMetrics(composition,componentAssets,catalogItems))
+    return { schemaVersion:1,id:presetId,modelSlot,name:'Prévia do Presets DEV',
+      collectionId:selectedCollectionId,expressionIndex:selectedExpressionIndex,
+      selections:composition,transforms,referenceTransforms:baseTransforms,
+      ...(Object.keys(portable.layers).length ? {portableMotion:portable} : {}),
+      noseOpacity,effects,updatedAt:new Date(0).toISOString() }
+  },[transforms,baseTransforms,composition,componentAssets,catalogItems,presetId,modelSlot,selectedCollectionId,selectedExpressionIndex,noseOpacity,effects])
   const visibleNoseOpacity = open ? draftNoseOpacity : noseOpacity
   const collectionExpressionNames = useMemo(() => Object.fromEntries(Object.entries(customExpressionNames)
     .filter(([key]) => key.startsWith(`${selectedCollectionId}:`))
@@ -992,11 +1002,16 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
   }
 
   return <section className="fabricator-workspace expression-preset-workspace" aria-label="Preset Expressão Dev">
+    {characterComparisonOpen && <ExpressionCharacterPreview modelSlot={modelSlot} preset={comparisonPreset} gaze={previewGaze} onClose={() => setCharacterComparisonOpen(false)}/>}
     <header className="expression-preset-toolbar">
       <button className="expression-choose-set-button" onClick={beginChoosing} disabled={loading || !head} type="button"><Icon name="face" />Escolher assets</button>
       <span className="model-slot-logo"><Icon name="face" /></span>
       <strong>Preset Expressão Dev</strong>
       <span className="expression-current-title"><b>{String(selectedExpressionIndex + 1).padStart(2, '0')}</b>{activeExpressionName}</span>
+      <button type="button" className="pose-button secondary" onClick={() => setCharacterComparisonOpen(true)}
+        disabled={loading || saving || !head} title="Comparar base facial e expressão num personagem do Customizador">
+        Testar em personagem
+      </button>
       <span className="expression-preset-toolbar-spacer" />
       {!loading && <span className={`expression-workspace-save-status${workspaceSaveStatus === 'failed' ? ' failed' : ''}`} role="status">{workspaceSaveStatus === 'saving' ? 'Salvando rascunho…' : workspaceSaveStatus === 'failed' ? 'Falha ao salvar' : 'Rascunho salvo'}</span>}
       <span className="expression-preset-model-label">Modelo {String(modelSlot).padStart(2, '0')} · {project?.name ?? 'sem modelo'}</span>
