@@ -361,10 +361,12 @@ export async function renderWardrobeOverlay(
       mapped.push({ component, transform, center: transform.origin, sequence: sequence++ })
     }
     if (!mapped.length) continue
-    const center = mapped.reduce((sum, item) => ({ x: sum.x + item.center.x / mapped.length, y: sum.y + item.center.y / mapped.length }), { x: 0, y: 0 })
+    // Each component owns its bone anchor. Averaging the centers of visible
+    // siblings shifted scale/rotation pivots whenever another piece was hidden
+    // or restored (thigh + calf, sleeves, accessories, etc.).
     for (const item of mapped) {
       const layer = garmentLayers.get(item.component.attachedPartId) ?? []
-      layer.push({ group, ...item, center })
+      layer.push({ group, ...item })
       garmentLayers.set(item.component.attachedPartId, layer)
     }
   }
