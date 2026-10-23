@@ -1,5 +1,5 @@
 import type { CustomizerFaceAppearance } from '../../../shared/customizer'
-import { applyPortableExpressionLayer, resolvePresetPupilGaze, type ExpressionGaze } from '../../../shared/portableExpression'
+import { applyPortableExpressionLayer, resolvePresetPupilGaze, type ExpressionGaze } from '../../../shared/portableExpression.ts'
 import type { FaceCatalogItem, FaceComponentAsset, FaceExpressionPreset, FaceExpressionPresetSummary, FaceTransform } from '../../../shared/fabricator'
 import type { StudioElement, StudioExpressionBase, StudioFaceTransforms } from '../../../shared/studio'
 
