@@ -374,19 +374,31 @@ test('guided migration mounts and cleans up Fabricator face-guide single files',
   const catalog = catalogAt(root)
   const userData = path.join(root, 'user-data')
   await fs.mkdir(path.join(userData, 'fabricator'), { recursive: true })
-  const guides = Buffer.from('{"eyes":{"x":0.25}}\n')
-  const guidePath = path.join(userData, 'fabricator', 'guides-eyes.json')
-  await fs.writeFile(guidePath, guides)
+  const guides = new Map([
+    ['guides-eyes.json', Buffer.from('{"eyes":{"x":0.25}}\n')],
+    ['guides-face.json', Buffer.from('{"face":{"x":0.5}}\n')],
+    ['guides-head-extras.json', Buffer.from('{"headExtras":{"x":0.75}}\n')]
+  ])
+  const guidePaths = [...guides].map(([name, bytes]) => {
+    const file = path.join(userData, 'fabricator', name)
+    return { file, bytes }
+  })
+  for (const entry of guidePaths) await fs.writeFile(entry.file, entry.bytes)
   const service = new DataMigrationService({ dataRoot: root, userDataRoot: userData, catalog })
   const result = await service.migrateDomain('fabricator.face-sets')
   assert.equal(result.state, 'active')
   const adapter = new DomainFileSystem(catalog, userData)
-  assert.equal(adapter.locate(guidePath).relativePath, 'guides-eyes.json')
-  assert.deepEqual(await adapter.readFile(guidePath), guides)
+  for (const { file, bytes } of guidePaths) {
+    assert.equal(adapter.locate(file).relativePath, path.basename(file))
+    assert.deepEqual(await adapter.readFile(file), bytes)
+  }
   const finalized = await service.finalizeAfterHealthyLoad()
   assert.equal(finalized.find((item) => item.domainId === 'fabricator.face-sets').cleaned, true)
-  await assert.rejects(fs.access(guidePath), { code: 'ENOENT' })
-  assert.deepEqual(await adapter.readFile(guidePath), guides)
+  for (const { file, bytes } of guidePaths) {
+    await assert.rejects(fs.access(file), { code: 'ENOENT' })
+    assert.deepEqual(await adapter.readFile(file), bytes)
+  }
+  const guidePath = guidePaths[0].file
   const updatedGuides = Buffer.from('{"eyes":{"x":0.5}}\n')
   await adapter.mkdir(path.dirname(guidePath), { recursive: true })
   await adapter.writeFile(`${guidePath}.tmp`, updatedGuides)

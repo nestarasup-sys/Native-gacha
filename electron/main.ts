@@ -5,7 +5,7 @@ import { basename, dirname, extname, join, relative, resolve, sep } from 'node:p
 import { createHash, randomUUID } from 'node:crypto'
 import { Readable } from 'node:stream'
 import { fileURLToPath } from 'node:url'
-import type { FaceAssetKind, FaceAssetSave, FaceCatalogItem, FaceCatalogItemSave, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSave, FaceComponentAssetSummary, FaceElementKind, FaceExpressionCollection, FaceExpressionPreset, FaceExpressionPresetSummary, FaceExpressionTransforms, FaceExpressionWorkspaceDraft, FaceSet, FaceSetSave, FaceSetSummary, FaceSheetKind, FaceTransform, FabricatorAssetSave, FabricatorHistoryEntry, FabricatorHistorySaveEntry, FabricatorHistorySaveState, FabricatorHistoryState, FabricatorPoseDraftSave, FabricatorPoseSave, FabricatorProject, FabricatorProjectSave, HairStyle, HairStyleAsset, HairStyleSave, HairStyleSummary, HairWorkspace, HairWorkspaceAsset, HairWorkspaceSave, ModelPart, WardrobeAssetSave, WardrobeCategory, WardrobeSet, WardrobeSetSave } from '../src/shared/fabricator'
+import type { FaceAssetKind, FaceAssetSave, FaceCatalogItem, FaceCatalogItemSave, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSave, FaceComponentAssetSummary, FaceElementKind, FaceExpressionCollection, FaceExpressionPreset, FaceExpressionPresetSummary, FaceExpressionTransforms, FaceExpressionWorkspaceDraft, FaceGuideProfile, FaceSet, FaceSetSave, FaceSetSummary, FaceSheetKind, FaceTransform, FabricatorAssetSave, FabricatorHistoryEntry, FabricatorHistorySaveEntry, FabricatorHistorySaveState, FabricatorHistoryState, FabricatorPoseDraftSave, FabricatorPoseSave, FabricatorProject, FabricatorProjectSave, HairStyle, HairStyleAsset, HairStyleSave, HairStyleSummary, HairWorkspace, HairWorkspaceAsset, HairWorkspaceSave, ModelPart, WardrobeAssetSave, WardrobeCategory, WardrobeSet, WardrobeSetSave } from '../src/shared/fabricator'
 import { hairCategories } from '../src/shared/hairCategories'
 import type { StudioAsset, StudioDocument, VideoStudioAsset, VideoStudioCardSummary, VideoTimelineDocument } from '../src/shared/studio'
 import { isStudioExpressionEffects, isStudioFaceTransforms } from '../src/shared/studio'
@@ -46,6 +46,7 @@ import { FabricatorModelCatalog } from './domains/fabricator/modelCatalog'
 import { registerFabricatorModelCatalogHandlers } from './domains/fabricator/modelIpc'
 import { FabricatorWardrobeCatalog } from './domains/fabricator/wardrobeCatalog'
 import { registerFabricatorWardrobeCatalogHandlers } from './domains/fabricator/wardrobeCatalogIpc'
+import { createFaceGuidePersistence, isFaceGuideProfile } from './domains/fabricator/faceGuidePersistence'
 import { publishModelSource, type ModelSourcePublishRequest } from './domains/fabricator/modelSource'
 import { recoverModelSourceSlot } from './domains/fabricator/modelSourceRecovery'
 import { createFabricatorModelWriter } from './domains/fabricator/modelWriter'
@@ -232,6 +233,7 @@ const stat = dataFileSystem.stat.bind(dataFileSystem) as typeof nativeStat
 const access = dataFileSystem.access.bind(dataFileSystem) as typeof nativeAccess
 const rm = dataFileSystem.rm.bind(dataFileSystem) as typeof nativeRm
 const copyFile = dataFileSystem.copyFile.bind(dataFileSystem) as typeof nativeCopyFile
+const faceGuidePersistence = createFaceGuidePersistence({ mkdir, readFile, writeFile, rename }, () => app.getPath('userData'))
 let dataMigration: InstanceType<typeof DataMigrationService> | null = null
 let dataBackupService: InstanceType<typeof DataBackupService> | null = null
 let dataMigrationRunning = false
@@ -591,45 +593,8 @@ function validFaceComponentAsset(modelSlot: number, asset: FaceComponentAssetSav
     && typeof asset.updatedAt === 'string'
 }
 
-function validFaceGuideProfile(profile: unknown): profile is 'eyes' | 'face' { return profile === 'eyes' || profile === 'face' }
-function validFaceGuides(value: unknown): value is Record<number, { visible: boolean; verticalX: number; horizontalY: number; lowerHorizontalY: number; angle: number }> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
-  return Object.entries(value).every(([slot, guide]) => {
-    if (!/^([1-9]|10)$/.test(slot) || !guide || typeof guide !== 'object') return false
-    const item = guide as Record<string, unknown>
-    return typeof item.visible === 'boolean' && typeof item.verticalX === 'number' && Number.isFinite(item.verticalX) && item.verticalX >= 20 && item.verticalX <= 80
-      && typeof item.horizontalY === 'number' && Number.isFinite(item.horizontalY) && item.horizontalY >= 10 && item.horizontalY <= 90
-      && typeof item.lowerHorizontalY === 'number' && Number.isFinite(item.lowerHorizontalY) && item.lowerHorizontalY > item.horizontalY && item.lowerHorizontalY <= 99
-      && typeof item.angle === 'number' && Number.isFinite(item.angle) && item.angle >= -30 && item.angle <= 30
-  })
-}
-const faceGuidePath = (profile: 'eyes' | 'face') => join(app.getPath('userData'), 'fabricator', `guides-${profile}.json`)
-async function readFaceGuides(profile: 'eyes' | 'face') {
-  try {
-    const guides = JSON.parse(await readFile(faceGuidePath(profile), 'utf8')) as unknown
-    if (!validFaceGuides(guides)) return null
-    if (profile !== 'face') return guides
-    // Preserve existing eye-only model settings while unifying all guide editors.
-    try {
-      const eyeGuides = JSON.parse(await readFile(faceGuidePath('eyes'), 'utf8')) as unknown
-      return validFaceGuides(eyeGuides) ? { ...eyeGuides, ...guides } : guides
-    } catch (reason) {
-      if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return guides
-      throw reason
-    }
-  } catch (reason) {
-    if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return null
-    throw reason
-  }
-}
-async function writeFaceGuides(profile: 'eyes' | 'face', guides: unknown): Promise<void> {
-  if (!validFaceGuideProfile(profile) || !validFaceGuides(guides)) throw new Error('Guias de desenho inválidas.')
-  const target = faceGuidePath(profile)
-  await mkdir(dirname(target), { recursive: true })
-  const temporary = `${target}.tmp`
-  await writeFile(temporary, JSON.stringify(guides), 'utf8')
-  await rename(temporary, target)
-}
+async function readFaceGuides(profile: FaceGuideProfile) { return faceGuidePersistence.read(profile) }
+async function writeFaceGuides(profile: FaceGuideProfile, guides: unknown): Promise<void> { return faceGuidePersistence.write(profile, guides) }
 
 async function listFaceComponentAssets(modelSlot: number, kind?: FaceAssetKind): Promise<FaceComponentAssetSummary[]> {
   if (!isValidModelSlot(modelSlot)) throw new Error('Modelo inválido.')
@@ -1961,12 +1926,12 @@ async function registerFabricatorHandlers(): Promise<void> {
   })
   ipcMain.handle('fabricator:face-guides:load', async (event, profile: string) => {
     assertTrustedSender(event)
-    if (!validFaceGuideProfile(profile)) throw new Error('Perfil de guias inválido.')
+    if (!isFaceGuideProfile(profile)) throw new Error('Perfil de guias inválido.')
     return readFaceGuides(profile)
   })
   ipcMain.handle('fabricator:face-guides:save', async (event, profile: string, guides: unknown): Promise<void> => {
     assertTrustedSender(event)
-    if (!validFaceGuideProfile(profile)) throw new Error('Perfil de guias inválido.')
+    if (!isFaceGuideProfile(profile)) throw new Error('Perfil de guias inválido.')
     const next = faceGuideSaveQueue.catch(() => undefined).then(() => writeFaceGuides(profile, guides))
     faceGuideSaveQueue = next
     await next

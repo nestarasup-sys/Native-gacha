@@ -4,6 +4,7 @@ import * as fs from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { createFabricatorCatalogPersistence } from '../electron/domains/fabricator/catalogPersistence.ts'
+import { createFaceGuidePersistence } from '../electron/domains/fabricator/faceGuidePersistence.ts'
 
 async function sandbox(t) {
   const root = await fs.mkdtemp(join(tmpdir(), 'native-catalog-persistence-'))
@@ -130,4 +131,35 @@ test('proteção pré-gravação: falha de permissão conserva o manifesto e tod
   assert.equal(writes, 0)
   assert.equal(await fs.readFile(join(imageFolder, 'left.png'), 'utf8'), 'LEFT')
   assert.deepEqual(JSON.parse(await fs.readFile(join(folder, 'wardrobe.json'), 'utf8')), { id: 'a' })
+})
+
+test('guias de olhos, rosto e cabeça extra persistem por perfil e modelo sem sobrescrever umas às outras', async t => {
+  const root = await sandbox(t)
+  const guide = (changes = {}) => ({ visible: true, verticalX: 50, horizontalY: 45, lowerHorizontalY: 65, angle: 12, ...changes })
+  const service = createFaceGuidePersistence(fs, () => root)
+  const eyes = { 1: guide({ verticalX: 35, angle: -8 }), 2: guide({ horizontalY: 40 }) }
+  const face = { 1: guide({ verticalX: 62, horizontalY: 52 }), 3: guide({ visible: false, angle: 0 }) }
+  const headExtras = { 1: guide({ verticalX: 70, lowerHorizontalY: 80 }) }
+
+  await service.write('eyes', eyes)
+  await service.write('face', face)
+  await service.write('head-extras', headExtras)
+  assert.deepEqual(await service.read('eyes'), eyes)
+  assert.deepEqual(await service.read('face'), face)
+  assert.deepEqual(await service.read('head-extras'), headExtras)
+
+  await service.write('eyes', { ...eyes, 1: guide({ verticalX: 31, angle: -15 }) })
+  assert.equal((await service.read('eyes'))?.[1].verticalX, 31)
+  assert.deepEqual(await service.read('face'), face)
+  assert.deepEqual(await service.read('head-extras'), headExtras)
+})
+
+test('leitura retorna vazio quando ainda não há ajustes e gravação recusa valores inválidos', async t => {
+  const root = await sandbox(t)
+  const service = createFaceGuidePersistence(fs, () => root)
+
+  assert.equal(await service.read('eyes'), null)
+  await assert.rejects(service.write('face', { 1: { visible: true, verticalX: 50, horizontalY: 45, lowerHorizontalY: 65, angle: 45 } }), /Guias de desenho inválidas/)
+  await assert.rejects(service.write('invalid', {}), /Perfil de guias inválido/)
+  assert.equal(await service.read('face'), null)
 })

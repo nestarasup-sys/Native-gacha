@@ -5,6 +5,7 @@ import type { FaceComponentAsset, FaceComponentAssetSave, FaceComponentAssetSumm
 import { Icon } from '../../../ui/components/Icon'
 import { usePreviewBackground } from '../usePreviewBackground'
 import { normalizeEditableImageFile } from '../normalizeImage'
+import { defaultFaceGuide, useFaceGuides } from './useFaceGuides'
 import './face-components.css'
 import './head-extras.css'
 
@@ -31,20 +32,8 @@ function normalizeExtraTransform(asset: FaceComponentAsset, head: NonNullable<Re
 function sameTransform(a: FaceTransform, b: FaceTransform): boolean {
   return a.x === b.x && a.y === b.y && a.scaleX === b.scaleX && a.scaleY === b.scaleY && a.rotation === b.rotation && a.flipX === b.flipX
 }
-const GUIDE_STORAGE_KEY = 'gacha-nymi:rosto-dev-guides'
 type FaceGuide = FaceGuideSettings
 type PreviewDrag = { pointerId: number; assetId: string; startX: number; startY: number; startTransform: FaceTransform; currentTransform: FaceTransform; scale: number }
-const defaultGuide: FaceGuide = { visible: true, verticalX: 50, horizontalY: 45, lowerHorizontalY: 65, angle: 12 }
-function readSharedGuides(): Record<number, FaceGuide> {
-  try {
-    const stored = JSON.parse(window.localStorage.getItem(GUIDE_STORAGE_KEY) ?? '{}') as Record<string, Partial<FaceGuide>>
-    return Object.fromEntries(Object.entries(stored).filter(([slot, value]) => /^[1-9]\d*$/.test(slot) && Number(slot) <= 10 && value && typeof value === 'object').map(([slot, value]) => {
-      const read = (candidate: unknown, fallback: number) => typeof candidate === 'number' && Number.isFinite(candidate) ? candidate : fallback
-      const horizontalY = clamp(read(value.horizontalY, defaultGuide.horizontalY), 10, 90)
-      return [Number(slot), { visible: value.visible !== false, verticalX: clamp(read(value.verticalX, defaultGuide.verticalX), 20, 80), horizontalY, lowerHorizontalY: Math.max(horizontalY + 1, clamp(read(value.lowerHorizontalY, defaultGuide.lowerHorizontalY), 11, 99)), angle: clamp(read(value.angle, defaultGuide.angle), -30, 30) }]
-    }))
-  } catch { return {} }
-}
 function HeadGuideOverlay({ head, guide }: { head: NonNullable<ReturnType<typeof headPart>>; guide: FaceGuide }) {
   const x = head.width * guide.verticalX / 100, y = head.height * guide.horizontalY / 100, lowerY = head.height * guide.lowerHorizontalY / 100
   return <svg className="face-components-guide-overlay" viewBox={`0 0 ${head.width} ${head.height}`} preserveAspectRatio="none" aria-hidden="true"><g transform={`rotate(${guide.angle} ${x} ${head.height / 2})`}>
@@ -86,36 +75,15 @@ export function HeadExtrasWorkspace() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('Importe óculos ou outro extra para a cabeça.')
-  const [guidesByModel, setGuidesByModel] = useState<Record<number, FaceGuide>>(readSharedGuides)
-  const [guidesLoaded, setGuidesLoaded] = useState(false)
+  const { guidesByModel, guidesLoaded, updateGuide: persistGuide } = useFaceGuides('head-extras', setError)
   const stageRef = useRef<HTMLDivElement>(null)
   const [stageSize, setStageSize] = useState({ width: 0, height: 0 })
   const head = useMemo(() => headPart(model), [model])
   const selected = selectedId ? details[selectedId] : undefined
-  const guide = guidesByModel[modelSlot] ?? defaultGuide
-
-  useEffect(() => {
-    let cancelled = false
-    void window.desktop.loadFaceGuides('face').then(async (saved) => {
-      if (cancelled) return
-      const next = saved ?? readSharedGuides()
-      setGuidesByModel(next as Record<number, FaceGuide>)
-      if (!saved) await window.desktop.saveFaceGuides('face', next)
-      if (!cancelled) setGuidesLoaded(true)
-    }).catch((reason) => { if (!cancelled) { setError(reason instanceof Error ? reason.message : String(reason)); setGuidesLoaded(true) } })
-    return () => { cancelled = true }
-  }, [])
-
-  useEffect(() => {
-    try { window.localStorage.setItem(GUIDE_STORAGE_KEY, JSON.stringify(guidesByModel)) } catch { /* The app data copy remains authoritative. */ }
-    if (guidesLoaded) void window.desktop.saveFaceGuides('face', guidesByModel).catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)))
-  }, [guidesByModel, guidesLoaded])
+  const guide = guidesByModel[modelSlot] ?? defaultFaceGuide
 
   function updateGuide(patch: Partial<FaceGuide>) {
-    const next = { ...guidesByModel, [modelSlot]: { ...(guidesByModel[modelSlot] ?? defaultGuide), ...patch } }
-    setGuidesByModel(next)
-    try { window.localStorage.setItem(GUIDE_STORAGE_KEY, JSON.stringify(next)) } catch { /* The durable app data copy remains available. */ }
-    if (guidesLoaded) void window.desktop.saveFaceGuides('face', next).catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)))
+    persistGuide(modelSlot, patch)
   }
 
   useEffect(() => {
@@ -305,7 +273,7 @@ export function HeadExtrasWorkspace() {
           <label>Posição do eixo <output>{guide.verticalX}%</output><input type="range" min="20" max="80" step="1" value={guide.verticalX} disabled={!guide.visible || !guidesLoaded} onChange={(event) => updateGuide({ verticalX: Number(event.target.value) })} /></label>
           <label>Altura da linha superior <output>{guide.horizontalY}%</output><input type="range" min="10" max={Math.min(90, guide.lowerHorizontalY - 1)} step="1" value={guide.horizontalY} disabled={!guide.visible || !guidesLoaded} onChange={(event) => updateGuide({ horizontalY: Number(event.target.value) })} /></label>
           <label>Altura da linha inferior <output>{guide.lowerHorizontalY}%</output><input type="range" min={guide.horizontalY + 1} max="99" step="1" value={guide.lowerHorizontalY} disabled={!guide.visible || !guidesLoaded} onChange={(event) => updateGuide({ lowerHorizontalY: Number(event.target.value) })} /></label>
-          <button type="button" disabled={!guidesLoaded} onClick={() => updateGuide(defaultGuide)}>Restaurar guias</button>
+          <button type="button" disabled={!guidesLoaded} onClick={() => updateGuide(defaultFaceGuide)}>Restaurar guias</button>
         </section>
       </aside>
     </div>{error && <div className="face-components-error" role="alert">{error}</div>}

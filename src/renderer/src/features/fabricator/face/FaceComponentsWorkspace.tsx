@@ -6,6 +6,7 @@ import { Icon } from '../../../ui/components/Icon'
 import { usePreviewBackground } from '../usePreviewBackground'
 import { processFaceSheet } from './processFaceSheet'
 import { splitEyeSheet } from './splitEyeSheet'
+import { defaultFaceGuide, useFaceGuides } from './useFaceGuides'
 import { eyeInteriorMask } from './eyeInteriorMask'
 import { alignImportedFacePiece, captureFaceImportAnchor, fitClosedEyeToOpen, validFaceImportAnchor, type AlignableFaceKind, type FaceImportAnchor } from './faceImportAlignment'
 import { removeEyebrowGreen } from './removeEyebrowGreen'
@@ -18,14 +19,10 @@ type LibraryCategory = FaceComponentKind | FaceDetailKind | 'nose' | 'mouth'
 type FaceWorkspaceMode = 'eyes' | 'face'
 type FaceGuide = FaceGuideSettings
 type PreviewDrag = { pointerId: number; key: string; clientX: number; clientY: number; startX: number; startY: number; modelPerPixelX: number; modelPerPixelY: number; invertX: boolean; pupil: boolean }
-const GUIDE_STORAGE_KEY = 'gacha-nymi:face-dev-guides'
-const EYES_GUIDE_STORAGE_KEY = 'gacha-nymi:eyes-dev-guides'
-const FACE_GUIDE_STORAGE_KEY = 'gacha-nymi:rosto-dev-guides'
 const COMPONENT_SELECTION_STORAGE_KEY = 'gacha-nymi:face-dev-component-selections'
 const LEGACY_PUPIL_SELECTION_STORAGE_KEY = 'gacha-nymi:face-dev-pupil-selections'
 const FACE_IMPORT_ANCHORS_STORAGE_KEY = 'gacha-nymi:face-dev-import-anchors'
 const FACE_DETAIL_SELECTION_STORAGE_KEY = 'gacha-nymi:face-dev-detail-selections'
-const defaultGuide: FaceGuide = { visible: true, verticalX: 50, horizontalY: 45, lowerHorizontalY: 65, angle: 12 }
 const categories: Array<{ kind: FaceComponentKind; label: string; parts: [PartId, PartId]; names: [string, string] }> = [
   { kind: 'eye', label: 'Olhos', parts: ['eye-left', 'eye-right'], names: ['Olho esquerdo', 'Olho direito'] },
   { kind: 'pupil', label: 'Pupilas', parts: ['pupil-left', 'pupil-right'], names: ['Pupila esquerda', 'Pupila direita'] },
@@ -57,23 +54,6 @@ function sameLibraryPair(left: FaceComponentAsset, right: FaceComponentAsset): b
   return libraryBaseName(left.name) === libraryBaseName(right.name) && left.dataUrl === right.dataUrl
 }
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value))
-const guideValue = (value: unknown, fallback: number, min: number, max: number) => typeof value === 'number' && Number.isFinite(value) ? clamp(value, min, max) : fallback
-function readFaceGuides(storageKey: string, fallbackStorageKey?: string): Record<number, FaceGuide> {
-  try {
-    const stored = JSON.parse(window.localStorage.getItem(storageKey) ?? (fallbackStorageKey ? window.localStorage.getItem(fallbackStorageKey) : null) ?? '{}') as Record<string, Partial<FaceGuide>>
-    if (!stored || typeof stored !== 'object' || Array.isArray(stored)) return {}
-    return Object.fromEntries(Object.entries(stored).filter(([slot, value]) => /^[1-9]\d*$/.test(slot) && Number(slot) <= 10 && value && typeof value === 'object').map(([slot, value]) => {
-      const horizontalY = guideValue(value.horizontalY, defaultGuide.horizontalY, 10, 90)
-      return [Number(slot), {
-        visible: value.visible !== false,
-        verticalX: guideValue(value.verticalX, defaultGuide.verticalX, 20, 80),
-        horizontalY,
-        lowerHorizontalY: Math.max(horizontalY + 1, guideValue(value.lowerHorizontalY, defaultGuide.lowerHorizontalY, 11, 99)),
-        angle: guideValue(value.angle, defaultGuide.angle, -30, 30)
-      }]
-    }))
-  } catch { return {} }
-}
 type ComponentSelection = { parts: Partial<Record<PartId, string>>; linked: Partial<Record<FaceComponentKind, boolean>>; moveTogether?: Partial<Record<FaceComponentKind, boolean>> }
 function readComponentSelections(): Record<number, ComponentSelection> {
   try {
@@ -183,12 +163,9 @@ function FaceTransformControls({ head, transform, sourceWidth, sourceHeight, pup
 
 export function FaceComponentsWorkspace({ mode }: { mode: FaceWorkspaceMode }) {
   const [previewBackground] = usePreviewBackground()
-  const guideStorageKey = FACE_GUIDE_STORAGE_KEY
-  const guideProfile: FaceGuideProfile = 'face'
+  const guideProfile: FaceGuideProfile = mode === 'eyes' ? 'eyes' : 'face'
   const [models, setModels] = useState<FabricatorSlotSummary[]>([])
   const [modelSlot, setModelSlot] = useState(1)
-  const [guidesByModel, setGuidesByModel] = useState<Record<number, FaceGuide>>(() => readFaceGuides(guideStorageKey, mode === 'eyes' ? GUIDE_STORAGE_KEY : undefined))
-  const [guidesLoadedFor, setGuidesLoadedFor] = useState<FaceGuideProfile | null>(null)
   const [importAnchorsByModel, setImportAnchorsByModel] = useState<FaceImportAnchors>(readFaceImportAnchors)
   const [model, setModel] = useState<FabricatorProject | null>(null)
   useModelSourceRefresh(modelSlot, fresh => setModel(projectForOriginalPreview(fresh)))
@@ -211,6 +188,7 @@ export function FaceComponentsWorkspace({ mode }: { mode: FaceWorkspaceMode }) {
   const [moveTogether, setMoveTogether] = useState<Record<FaceComponentKind, boolean>>({ eye: false, pupil: false, 'eye-closed': false, eyebrow: false })
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const { guidesByModel, guidesLoaded, updateGuide: persistGuide } = useFaceGuides(guideProfile, setError)
   const [notice, setNotice] = useState(() => mode === 'eyes' ? 'Importe a folha 3 em 1 de olhos.' : 'Adicione as peças faciais à biblioteca.')
   const [openModal, setOpenModal] = useState<'import' | 'delete' | null>(null)
   const [markedForDeletion, setMarkedForDeletion] = useState<string[]>([])
@@ -242,7 +220,7 @@ export function FaceComponentsWorkspace({ mode }: { mode: FaceWorkspaceMode }) {
     return () => { cancelled = true }
   }, [details])
   const head = useMemo(() => model?.parts.find((part) => /cabe[çc]a|head/i.test(part.name)) ?? null, [model])
-  const guide = guidesByModel[modelSlot] ?? defaultGuide
+  const guide = guidesByModel[modelSlot] ?? defaultFaceGuide
   const previewScale = head && stageSize.width > 0 && stageSize.height > 0
     ? Math.min((stageSize.width - 24) / head.width, (stageSize.height - 24) / head.height) * .9
     : 0
@@ -369,24 +347,6 @@ export function FaceComponentsWorkspace({ mode }: { mode: FaceWorkspaceMode }) {
   }
 
   useEffect(() => { void window.desktop.listFabricatorSlots().then((slots) => { setModels(slots); const first = slots.findIndex(Boolean); if (first >= 0) setModelSlot(first + 1) }).catch((reason) => setError(String(reason))) }, [])
-  useEffect(() => {
-    let cancelled = false
-    setGuidesLoadedFor(null)
-    void window.desktop.loadFaceGuides(guideProfile).then(async (saved) => {
-      if (cancelled) return
-      const legacyEyes = readFaceGuides(EYES_GUIDE_STORAGE_KEY)
-      const legacyFace = readFaceGuides(FACE_GUIDE_STORAGE_KEY, GUIDE_STORAGE_KEY)
-      const next = saved ?? { ...legacyEyes, ...legacyFace }
-      setGuidesByModel(next as Record<number, FaceGuide>)
-      if (!saved) await window.desktop.saveFaceGuides(guideProfile, next)
-      if (!cancelled) setGuidesLoadedFor(guideProfile)
-    }).catch((reason) => { if (!cancelled) { setError(reason instanceof Error ? reason.message : String(reason)); setGuidesLoadedFor(guideProfile) } })
-    return () => { cancelled = true }
-  }, [guideProfile, guideStorageKey, mode])
-  useEffect(() => {
-    try { window.localStorage.setItem(guideStorageKey, JSON.stringify(guidesByModel)) } catch { /* Keep the durable Fabricator copy available. */ }
-    if (guidesLoadedFor === guideProfile) void window.desktop.saveFaceGuides(guideProfile, guidesByModel).catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)))
-  }, [guideProfile, guideStorageKey, guidesByModel, guidesLoadedFor])
   useEffect(() => { if (mode !== 'eyes') return; try { window.localStorage.setItem(FACE_IMPORT_ANCHORS_STORAGE_KEY, JSON.stringify(importAnchorsByModel)) } catch { setError('Não foi possível salvar a fixação de importação neste computador.') } }, [mode, importAnchorsByModel])
   useEffect(() => { if (mode !== 'face') return; try { window.localStorage.setItem(FACE_DETAIL_SELECTION_STORAGE_KEY, JSON.stringify(faceDetailSelectionsByModel)) } catch { /* Saved assets remain available in the library. */ } }, [mode, faceDetailSelectionsByModel])
   useEffect(() => {
@@ -399,10 +359,7 @@ export function FaceComponentsWorkspace({ mode }: { mode: FaceWorkspaceMode }) {
     } catch { /* The saved assets remain available in the library. */ }
   }, [mode, modelSlot, selectedAssets, linked, moveTogether])
   function updateGuide(patch: Partial<FaceGuide>) {
-    const next = { ...guidesByModel, [modelSlot]: { ...(guidesByModel[modelSlot] ?? defaultGuide), ...patch } }
-    setGuidesByModel(next)
-    try { window.localStorage.setItem(guideStorageKey, JSON.stringify(next)) } catch { /* The durable Fabricator store remains authoritative. */ }
-    if (guidesLoadedFor === guideProfile) void window.desktop.saveFaceGuides(guideProfile, next).catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)))
+    persistGuide(modelSlot, patch)
   }
   function fixImportAnchors() {
     if (!head) return
@@ -1160,12 +1117,12 @@ export function FaceComponentsWorkspace({ mode }: { mode: FaceWorkspaceMode }) {
           <FaceTransformControls head={head} transform={selectedTransform} sourceWidth={selectedSourceWidth} sourceHeight={selectedSourceHeight} pupil={activeComponent?.kind === 'pupil'} moveTogether={componentPair ? moveTogether[componentPair.kind] : false} followEyes={followsOpenEye} opacity={selectedCatalogItem?.category === 'nose' ? selectedCatalogItem.opacity ?? 1 : undefined} onChange={updateTransform} onOpacityChange={updateCatalogOpacity} onReset={resetSelectedTransform} />
         </> : <div className="face-component-empty">Nenhuma peça selecionada</div>}
         <section className="face-components-guide-controls" aria-label="Guias de alinhamento do rosto">
-          <header><strong>Guias de desenho</strong><label><input type="checkbox" checked={guide.visible} disabled={guidesLoadedFor !== guideProfile} onChange={(event) => updateGuide({ visible: event.target.checked })} /> Mostrar</label></header>
-          <label>Inclinação do eixo <output>{guide.angle}°</output><input type="range" min="-30" max="30" step="1" value={guide.angle} disabled={!guide.visible || guidesLoadedFor !== guideProfile} onChange={(event) => updateGuide({ angle: Number(event.target.value) })} /></label>
-          <label>Posição do eixo <output>{guide.verticalX}%</output><input type="range" min="20" max="80" step="1" value={guide.verticalX} disabled={!guide.visible || guidesLoadedFor !== guideProfile} onChange={(event) => updateGuide({ verticalX: Number(event.target.value) })} /></label>
-          <label>Altura da linha superior <output>{guide.horizontalY}%</output><input type="range" min="10" max={Math.min(90, guide.lowerHorizontalY - 1)} step="1" value={guide.horizontalY} disabled={!guide.visible || guidesLoadedFor !== guideProfile} onChange={(event) => updateGuide({ horizontalY: Number(event.target.value) })} /></label>
-          <label>Altura da linha inferior <output>{guide.lowerHorizontalY}%</output><input type="range" min={guide.horizontalY + 1} max="99" step="1" value={guide.lowerHorizontalY} disabled={!guide.visible || guidesLoadedFor !== guideProfile} onChange={(event) => updateGuide({ lowerHorizontalY: Number(event.target.value) })} /></label>
-          <button type="button" disabled={guidesLoadedFor !== guideProfile} onClick={() => updateGuide(defaultGuide)}>Restaurar guias</button>
+          <header><strong>Guias de desenho</strong><label><input type="checkbox" checked={guide.visible} disabled={!guidesLoaded} onChange={(event) => updateGuide({ visible: event.target.checked })} /> Mostrar</label></header>
+          <label>Inclinação do eixo <output>{guide.angle}°</output><input type="range" min="-30" max="30" step="1" value={guide.angle} disabled={!guide.visible || !guidesLoaded} onChange={(event) => updateGuide({ angle: Number(event.target.value) })} /></label>
+          <label>Posição do eixo <output>{guide.verticalX}%</output><input type="range" min="20" max="80" step="1" value={guide.verticalX} disabled={!guide.visible || !guidesLoaded} onChange={(event) => updateGuide({ verticalX: Number(event.target.value) })} /></label>
+          <label>Altura da linha superior <output>{guide.horizontalY}%</output><input type="range" min="10" max={Math.min(90, guide.lowerHorizontalY - 1)} step="1" value={guide.horizontalY} disabled={!guide.visible || !guidesLoaded} onChange={(event) => updateGuide({ horizontalY: Number(event.target.value) })} /></label>
+          <label>Altura da linha inferior <output>{guide.lowerHorizontalY}%</output><input type="range" min={guide.horizontalY + 1} max="99" step="1" value={guide.lowerHorizontalY} disabled={!guide.visible || !guidesLoaded} onChange={(event) => updateGuide({ lowerHorizontalY: Number(event.target.value) })} /></label>
+          <button type="button" disabled={!guidesLoaded} onClick={() => updateGuide(defaultFaceGuide)}>Restaurar guias</button>
         </section>
       </aside>
     </div>{error && <div className={`face-components-error${openModal ? ' face-components-error-modal' : ''}`} role="alert">{error}</div>}
