@@ -214,7 +214,7 @@ export type FaceExpressionTransforms = {
 export type PortableExpressionMotion = {
   version: 1
   layers: Partial<Record<keyof FaceExpressionTransforms, {
-    dx: number; dy: number; sx: number; sy: number; rotation: number; flip: boolean
+    dx: number; dy: number; sx: number; sy: number; rotation: number; flip: boolean; sourceMirrored?: boolean
   }>>
 }
 export type FaceExpressionEffect = { enabled: boolean; color: string; opacity: number; softness: number; size: number; offsetY: number; offsetX?: number; aspectRatio?: number; width?: number; height?: number; rotation?: number; style?: 'oval' | 'cheeks' | 'bands' | 'diagonal' | 'spot' }
