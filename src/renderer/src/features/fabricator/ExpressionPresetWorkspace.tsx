@@ -510,7 +510,8 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
       const eyeKey=side==='left'?'eyeLeft':'eyeRight'
       const key=side==='left'?'pupilLeft':'pupilRight'
       next[key].x=resolvePresetPupilGaze(raw[key].x,baseTransforms[key].x,eye.width,raw[eyeKey].scaleX,side,
-        pupil.rightSidePositioned===true,previewGaze)
+        pupil.rightSidePositioned===true,previewGaze,
+        Boolean(raw[eyeKey].flipX)!==(side==='right' && eye.rightSidePositioned!==true))
     }
     return next
   },[open,draftTransforms,transforms,previewGaze,composition,baseTransforms,componentAssets])
