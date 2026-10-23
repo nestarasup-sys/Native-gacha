@@ -771,7 +771,14 @@ async function readHairStyle(modelSlot: number, id: string): Promise<HairStyle |
     return { ...saved, front: await loadPart('front'), back: await loadPart('back'), fringe: await loadPart('fringe') }
   } catch (reason) {
     if ((reason as NodeJS.ErrnoException).code === 'ENOENT') {
-      if (id === 'legacy-workspace') return legacyHairStyle(modelSlot,await readHairWorkspace(modelSlot))
+      if (id === 'legacy-workspace') {
+        // Respect a migration/deletion previously recorded by older builds.
+        // The virtual legacy entry must not return after the migrated entry
+        // was deliberately removed by the user.
+        try { await access(join(hairModelPath(modelSlot),'hair-style-migration-v1')); return null }
+        catch(markerError) { if ((markerError as NodeJS.ErrnoException).code !== 'ENOENT') throw markerError }
+        return legacyHairStyle(modelSlot,await readHairWorkspace(modelSlot))
+      }
       return null
     }
     throw reason
