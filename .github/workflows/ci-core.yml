@@ -55,7 +55,7 @@ jobs:
           .\scripts\video-studio\windows-memory-probe.ps1 -RootPid $PID -Samples 1 | Select-Object -First 1 | Out-Null
       - name: Smoke Windows semantic SceneIR stress
         if: matrix.os == 'windows-latest'
-        run: node scripts/video-studio/windows-sceneir-stress.cjs --quick
+        run: node scripts/video-studio/windows-sceneir-stress.cjs
       - name: Typecheck
         run: npm run typecheck
       - name: Compile Electron/React

@@ -4,7 +4,7 @@ import { mkdir as nativeMkdir, readFile as nativeReadFile, writeFile as nativeWr
 import { basename, dirname, extname, join, relative, resolve, sep } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
 import { totalmem, freemem } from 'node:os'
-import { videoStudioMemoryReport } from '../src/shared/videoStudioNext/diagnostics'
+import { videoStudioMemoryReport, type VideoStudioProcessFailure } from '../src/shared/videoStudioNext/diagnostics'
 import { Readable } from 'node:stream'
 import { fileURLToPath } from 'node:url'
 import type { FaceAssetKind, FaceAssetSave, FaceCatalogItem, FaceCatalogItemSave, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSave, FaceComponentAssetSummary, FaceElementKind, FaceExpressionPreset, FaceExpressionTransforms, FaceExpressionWorkspaceDraft, FaceGuideProfile, FaceSet, FaceSetSave, FaceSetSummary, FaceSheetKind, FaceTransform, FabricatorAssetSave, FabricatorHistoryEntry, FabricatorHistorySaveEntry, FabricatorHistorySaveState, FabricatorHistoryState, FabricatorPoseDraftSave, FabricatorPoseSave, FabricatorProject, FabricatorProjectSave, HairStyle, HairStyleAsset, HairStyleSave, HairStyleSummary, HairWorkspace, HairWorkspaceAsset, HairWorkspaceSave, ModelPart, WardrobeAssetSave, WardrobeCategory, WardrobeSet, WardrobeSetSave } from '../src/shared/fabricator'
@@ -13,6 +13,21 @@ import type { StudioAsset, StudioDocument, VideoStudioAsset, VideoStudioCardSumm
 import { isStudioExpressionEffects, isStudioFaceTransforms } from '../src/shared/studio'
 import { isValidVideoMediaClip } from '../src/shared/videoMedia'
 import { isValidVideoAudioSettings } from '../src/shared/videoAudio'
+// In-memory, privacy-minimal crash ring (no project paths or media bytes).
+const videoStudioRecentProcessFailures: VideoStudioProcessFailure[] = []
+function recordVideoStudioProcessFailure(kind: VideoStudioProcessFailure['kind'], reason: string, exitCode: number): void {
+  videoStudioRecentProcessFailures.push({
+    occurredAt: new Date().toISOString(), kind, reason, exitCode,
+  })
+  if (videoStudioRecentProcessFailures.length > 24) videoStudioRecentProcessFailures.shift()
+}
+app.on('render-process-gone', (_event, _contents, details) => {
+  recordVideoStudioProcessFailure('renderer', details.reason, details.exitCode)
+})
+app.on('child-process-gone', (_event, details) => {
+  recordVideoStudioProcessFailure('child', details.reason, details.exitCode)
+})
+
 import { VideoLibraryStore, configureVideoLibraryStorage } from './videoLibrary'
 import { VideoBackgroundLibraryStore, configureBackgroundLibraryStorage } from './backgroundLibrary'
 import { RoteiroUiGifLibraryStore, configureRoteiroUiGifStorage } from './roteiroUiGifLibrary'
@@ -1229,6 +1244,7 @@ async function registerFabricatorHandlers(): Promise<void> {
           totalRamBytes: totalmem(),
           freeRamBytes: freemem(),
           mainRssBytes: process.memoryUsage().rss,
+          recentProcessFailures: videoStudioRecentProcessFailures,
         })
       })
       videoExportLibrary ??= new VideoExportLibrary(app.getPath('appData'))

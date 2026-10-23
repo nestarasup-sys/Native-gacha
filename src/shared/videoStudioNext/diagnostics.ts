@@ -11,6 +11,13 @@ export type VideoStudioElectronMetric = Readonly<{
   privateBytesKiB: number
 }>
 
+export type VideoStudioProcessFailure = Readonly<{
+  occurredAt: string
+  kind: 'renderer' | 'child'
+  reason: string
+  exitCode: number
+}>
+
 export type VideoStudioMemoryReport = Readonly<{
   sampledAt: string
   platform: string
@@ -19,6 +26,7 @@ export type VideoStudioMemoryReport = Readonly<{
   freeRamBytes: number
   mainRssBytes: number
   electronProcesses: ReadonlyArray<VideoStudioElectronMetric>
+  recentProcessFailures: ReadonlyArray<VideoStudioProcessFailure>
   reportedWorkingSetKiB: number
   reportedPrivateBytesKiB: number
   /** Not inferred: this API has no trustworthy process-tree FFmpeg or VRAM totals. */
@@ -42,6 +50,7 @@ export function videoStudioMemoryReport(
   host: Readonly<{
     sampledAt: string; platform: string; mainPid: number
     totalRamBytes: number; freeRamBytes: number; mainRssBytes: number
+    recentProcessFailures?: ReadonlyArray<VideoStudioProcessFailure>
   }>
 ): VideoStudioMemoryReport {
   const safeKiB = (input: unknown) =>
@@ -57,6 +66,7 @@ export function videoStudioMemoryReport(
   return {
     ...host,
     electronProcesses: processes,
+    recentProcessFailures: [...(host.recentProcessFailures ?? [])],
     reportedWorkingSetKiB: processes.reduce((sum, p) => sum + p.workingSetKiB, 0),
     reportedPrivateBytesKiB: processes.reduce((sum, p) => sum + p.privateBytesKiB, 0),
     ffmpegAndOtherChildrenIncluded: false,

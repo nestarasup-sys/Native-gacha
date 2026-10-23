@@ -48,6 +48,7 @@ test('Windows on-demand process report labels KiB correctly and never fabricates
   assert.equal(report.reportedPrivateBytesKiB, 2000)
   assert.equal(report.electronProcesses.length, 2)
   assert.equal(report.gpuDedicatedBytes, null)
+  assert.deepEqual(report.recentProcessFailures, [])
   assert.equal(report.ffmpegAndOtherChildrenIncluded, false)
   assert.equal(report.totalRamBytes, 10000)
   assert.equal(report.electronProcesses[1].type, 'GPU')
