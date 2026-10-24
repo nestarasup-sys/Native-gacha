@@ -8,7 +8,7 @@ import type { CharacterTransition } from './characterTransitions'
 import { loadStandardExpressionEffects, prepareSavedCharacterRenderer } from '../../characters/characterRenderer'
 import { VideoStudioBoundedMemo } from '../../../../shared/videoStudioNext/boundedMemo'
 import type { VideoStudioResourceBudget } from '../../../../shared/videoStudioNext/resourceBudget'
-import { snapshotTrimmedGachaCanvas, type VideoGachaCanvasState } from './videoGachaCanvasFrame'
+import { snapshotTrimmedGachaCanvas, snapshotTrimmedPreviewGachaCanvas, type VideoGachaCanvasState } from './videoGachaCanvasFrame'
 
 /** Resolve the same visible defaults as the ordinary character compositor. */
 function visibleEffects(appearance: CustomizerFaceAppearance | undefined, effects: FaceExpressionEffects | undefined): FaceExpressionEffects {
@@ -104,7 +104,7 @@ export class TransitionRenderer {
     return { left, right }
   }
 
-  private async renderResult(transition: CharacterTransition, frame: number, character: CustomizerCharacter, directCanvas: boolean, signal?: AbortSignal): Promise<VideoGachaCanvasState> {
+  private async renderResult(transition: CharacterTransition, frame: number, character: CustomizerCharacter, directCanvas: boolean, signal?: AbortSignal, previewCrop = false): Promise<VideoGachaCanvasState> {
     signal?.throwIfAborted()
     const t = smoothProgress(transitionProgress(transition, frame))
     if (t <= 0) return transition.from
@@ -155,7 +155,9 @@ export class TransitionRenderer {
       // pupils. Snapshot before the prepared rig is painted again.
       const rendered = await renderer.renderToCanvas(appearance, transforms, effects, mode)
       signal?.throwIfAborted()
-      const snapshot = snapshotTrimmedGachaCanvas(rendered.canvas)
+      const snapshot = previewCrop
+        ? await snapshotTrimmedPreviewGachaCanvas(rendered.canvas, signal)
+        : snapshotTrimmedGachaCanvas(rendered.canvas)
       const geometry = faceRenderGeometry(element, rendered, snapshot.crop, 1920, 1080)
       return {
         element: { ...element, ...geometry, faceAppearance: appearance, faceTransforms: transforms, activeExpressionEffects: effects },
@@ -179,7 +181,7 @@ export class TransitionRenderer {
   async renderPreview(transition: CharacterTransition, frame: number, character: CustomizerCharacter, signal?: AbortSignal): Promise<VideoGachaCanvasState> {
     try {
       signal?.throwIfAborted()
-      const state = await this.renderCanvas(transition, frame, character, signal)
+      const state = await this.renderResult(transition, frame, character, true, signal, true)
       signal?.throwIfAborted()
       return state
     } catch (reason) {

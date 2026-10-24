@@ -5,11 +5,11 @@ import type { VideoCharacterState } from '../../../../shared/studio'
  * an independent canvas snapshot replaces the per-expression PNG round-trip.
  */
 export type VideoGachaCanvasState = VideoCharacterState & Readonly<{
-  canvasImage?: HTMLCanvasElement
+  canvasImage?: HTMLCanvasElement | ImageBitmap
 }>
 
 export type VideoGachaCanvasRaster = Readonly<{
-  canvas: HTMLCanvasElement
+  canvas: HTMLCanvasElement | ImageBitmap
   width: number
   height: number
   crop: Readonly<{ width: number; height: number }> | null
@@ -60,4 +60,26 @@ export function snapshotTrimmedGachaCanvas(source: HTMLCanvasElement): VideoGach
   if (!context) throw new Error('Canvas de snapshot Gacha indisponível.')
   context.drawImage(source, left, top, width, height, 0, 0, width, height)
   return { canvas, width: source.width, height: source.height, crop }
+}
+
+/**
+ * During interactive playback the expensive RGBA scan/crop runs inside a
+ * dedicated Web Worker, not React's renderer thread. Falls back to the
+ * production synchronous path if workers/OffscreenCanvas are unavailable.
+ * Export remains deterministic and uses snapshotTrimmedGachaCanvas.
+ */
+export async function snapshotTrimmedPreviewGachaCanvas(
+  source: HTMLCanvasElement,
+  signal?: AbortSignal,
+): Promise<VideoGachaCanvasRaster> {
+  signal?.throwIfAborted()
+  try {
+    const { cropGachaCanvasInWorker } = await import('./previewCanvasWorkerClient')
+    const cropped = await cropGachaCanvasInWorker(source, signal)
+    signal?.throwIfAborted()
+    return cropped
+  } catch (error) {
+    if (signal?.aborted) throw error
+    return snapshotTrimmedGachaCanvas(source)
+  }
 }

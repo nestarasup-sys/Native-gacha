@@ -51,6 +51,11 @@ function rig({ failCanvas = false } = {}) {
     },
     '../../../../shared/videoStudioNext/boundedMemo': { VideoStudioBoundedMemo },
     './videoGachaCanvasFrame': {
+      snapshotTrimmedPreviewGachaCanvas: async () => ({crop: {width: 40,height: 50},
+        canvas: { width: 40, height: 50, toDataURL: () => {
+          calls.encode++
+          return 'data:image/png;base64,CANVAS'
+        } } }),
       snapshotTrimmedGachaCanvas: () => ({crop: {width: 40,height: 50},
         canvas: { width: 40, height: 50, toDataURL: () => {
           calls.encode++

@@ -175,6 +175,7 @@ export class PreviewTransitionSession {
         const cached = this.cache.get(oldest)!
         this.bytes -= cached.bytes
         this.cache.delete(oldest)
+        this.releaseFrame(cached)
       }
     }).finally(() => {
       if (this.pending.get(key) === job) this.pending.delete(key)
@@ -301,9 +302,18 @@ export class PreviewTransitionSession {
     }
   }
 
+  private releaseFrame(frame: CachedFrame): void {
+    const image = frame.state.canvasImage
+    if (typeof ImageBitmap !== 'undefined' && image instanceof ImageBitmap) image.close()
+    for (const [elementId, last] of this.lastDisplayed) {
+      if (last.state === frame.state) this.lastDisplayed.delete(elementId)
+    }
+  }
+
   dispose(): void {
     this.cancelPending()
     this.disposed = true
+    for (const frame of this.cache.values()) this.releaseFrame(frame)
     this.cache.clear()
     this.bytes = 0
     this.activeTransitions.clear()
