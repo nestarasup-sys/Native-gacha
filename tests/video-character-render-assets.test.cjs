@@ -164,10 +164,15 @@ test('transition renderer forwards one injected provider through model, pose, fa
     faceRenderGeometry: () => ({ x: 0, y: 0, width: 100, height: 100 }),
   }
   const sharedInterpolation = loadPureTs('../src/shared/videoCharacterInterpolation.ts')
+  const { VideoStudioBoundedMemo } = loadPureTs('../src/shared/videoStudioNext/boundedMemo.ts')
   const { TransitionRenderer } = loadPureTs('../src/renderer/src/features/videoStudio/transitionRenderer.ts', {
     './characterGeometry': geometry,
     '../../../../shared/videoCharacterInterpolation': sharedInterpolation,
-    '../customizer/CustomizerPage': customizer,
+    '../../characters/characterRenderer': customizer,
+    '../../../../shared/videoStudioNext/boundedMemo': { VideoStudioBoundedMemo },
+    './videoGachaCanvasFrame': {
+      snapshotTrimmedGachaCanvas: () => { throw new Error('Legacy asset provider test must not raster Canvas') },
+    },
   })
   const appearance = { modelSlot: 1, eyeCatalogId: 'eye-a', expressionIndex: 0 }
   const state = (poseSlot) => ({
