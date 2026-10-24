@@ -40,3 +40,10 @@
 .video-rebuild-actor-controls h4{margin:2px 0}
 .video-rebuild-actor-controls label{display:grid;gap:3px;font-size:12px}
 .video-rebuild-actor-controls input{max-width:100%;background:#101827;color:#edf2fb;border:1px solid #546486;border-radius:4px;padding:6px}
+
+.video-rebuild-inspector{display:grid;gap:8px;margin:12px 0;border-top:1px solid #455878;padding-top:9px}
+.video-rebuild-inspector h4{margin:0}
+.video-rebuild-inspector label{display:grid;gap:4px;font-size:12px}
+.video-rebuild-inspector label:has(input[type="checkbox"]){display:flex;align-items:center}
+.video-rebuild-inspector input[type="number"],.video-rebuild-inspector textarea{background:#101827;color:#edf2fb;border:1px solid #546486;border-radius:4px;padding:6px;max-width:100%;min-width:0}
+.video-rebuild-inspector textarea{resize:vertical}

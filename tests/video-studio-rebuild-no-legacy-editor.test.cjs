@@ -26,3 +26,14 @@ test('legacy editor was removed from mandatory architecture inventory',()=>{
   assert.match(audit,/src\/renderer\/src\/features\/videoStudioRebuild\/VideoStudioRebuildPage\.tsx/)
   assert.doesNotMatch(audit,/src\/renderer\/src\/features\/videoStudio\/VideoStudioEditor\.tsx/)
 })
+
+test('rebuilt inspector exposes keyframe, clip text, source-preserving reposition and audio edits',()=>{
+  const file=source('src/renderer/src/features/videoStudioRebuild/VideoStudioRebuildPage.tsx')
+  assert.match(file,/setTextClipContent\(/)
+  assert.match(file,/moveVideoClip\(/)
+  assert.match(file,/moveCharacterKey\(/)
+  assert.match(file,/deleteCharacterKey\(/)
+  assert.match(file,/setVideoClipAudio\(/)
+  assert.match(file,/setProjectVideoAudio\(/)
+  assert.match(file,/aria-label="Texto do balão"/)
+})

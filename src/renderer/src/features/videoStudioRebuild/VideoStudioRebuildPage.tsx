@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { StudioDocument, VideoStudioCardSummary } from '../../../../shared/studio'
 import { VideoStudioFrameEngine } from '../../../../shared/videoStudioRebuild/frameEngine'
-import { splitCharacterAt } from '../../../../shared/videoStudioRebuild/rebuildEditor'
+import { splitCharacterAt, moveCharacterKey, deleteCharacterKey } from '../../../../shared/videoStudioRebuild/rebuildEditor'
+import { setTextClipContent, moveTextClip, moveVideoClip, setVideoClipAudio, setProjectVideoAudio, deleteTimelineClip } from '../../../../shared/videoStudioRebuild/timelineClipCommands'
 import { setActorStageTransform } from '../../../../shared/videoStudioRebuild/actorTransformEditor'
 import { splitTextClipAt, splitVideoClipAt } from '../../../../shared/videoStudioRebuild/rebuildClipEditor'
 import { RebuildDocumentHistory } from '../../../../shared/videoStudioRebuild/documentHistory'
@@ -27,6 +28,7 @@ export function VideoStudioRebuildPage({onEditorActiveChange}:Props) {
   const [playing,setPlaying]=useState(false)
   const [selected,setSelected]=useState('')
   const [selectedClip,setSelectedClip]=useState<{kind:'text'|'video';id:string}|null>(null)
+  const [selectedKeyId,setSelectedKeyId]=useState<string|null>(null)
   const [status,setStatus]=useState('Selecione um projeto. Nenhum arquivo será modificado.')
   const [gpuStats,setGpuStats]=useState('')
   const [rendering,setRendering]=useState(false)
@@ -41,6 +43,11 @@ export function VideoStudioRebuildPage({onEditorActiveChange}:Props) {
   const engine=useMemo(()=>studio?.videoTimeline ? new VideoStudioFrameEngine(studio):null,[studio])
   const duration=engine?.durationFrames??1
   const viewFrame=Math.min(frame,duration-1)
+  const timeline=studio?.videoTimeline
+  const selectedKey=timeline?.characterKeys.find(key=>key.id===selectedKeyId&&key.elementId===selected)
+  const textClip=selectedClip?.kind==='text'?timeline?.textClips.find(clip=>clip.id===selectedClip.id):undefined
+  const videoClip=selectedClip?.kind==='video'?timeline?.videoClips?.find(clip=>clip.id===selectedClip.id):undefined
+  const activeClip=textClip??videoClip
   const activeActor=studio?.elements.find(e=>e.kind==='character'&&e.id===selected)
   const stageActor=activeActor?{...activeActor,...studio?.videoTimeline?.characterTransforms?.[selected]}:null
   useEffect(()=>{onEditorActiveChange?.(Boolean(studio));return()=>onEditorActiveChange?.(false)},[Boolean(studio),onEditorActiveChange])
@@ -56,12 +63,12 @@ export function VideoStudioRebuildPage({onEditorActiveChange}:Props) {
       const doc=await window.desktop.loadVideoStudio(id)
       if(!doc?.videoTimeline)throw new Error('O projeto não possui timeline de vídeo.')
       history.current.reset(doc);changedHistory()
-      setStudio(doc);setFrame(0);setSelectedClip(null);setSelected(doc.elements.find(e=>e.kind==='character')?.id??'')
+      setStudio(doc);setFrame(0);setSelectedClip(null);setSelectedKeyId(null);setSelected(doc.elements.find(e=>e.kind==='character')?.id??'')
       setStatus('Novo motor — edição local; use Salvar cópia para persistir.')
     }catch(e){setStatus(String(e))}
   }
   const close=()=>{
-    pause();history.current.reset(null);changedHistory();setStudio(null);setFrame(0);setSelected('');setSelectedClip(null)
+    pause();history.current.reset(null);changedHistory();setStudio(null);setFrame(0);setSelected('');setSelectedClip(null);setSelectedKeyId(null)
     void window.desktop.listVideoStudios().then(setCards).catch(()=>undefined)
   }
   const blank=()=>{
@@ -76,7 +83,7 @@ export function VideoStudioRebuildPage({onEditorActiveChange}:Props) {
       }
     }
     history.current.reset(doc);changedHistory()
-    setStudio(doc);setFrame(0);setSelected('');setSelectedClip(null);setStatus('Projeto novo em memória. Use Salvar cópia.')
+    setStudio(doc);setFrame(0);setSelected('');setSelectedClip(null);setSelectedKeyId(null);setStatus('Projeto novo em memória. Use Salvar cópia.')
   }
   const copy=async()=>{
     if(!studio)return
@@ -181,6 +188,66 @@ export function VideoStudioRebuildPage({onEditorActiveChange}:Props) {
               {stageActor.flipX?'Remover espelho horizontal':'Espelhar horizontalmente'}
             </button>
           </div>}
+          {selectedKey&&<div className="video-rebuild-inspector">
+            <h4>Keyframe selecionado</h4>
+            <label>Quadro de destino
+              <input aria-label="Mover keyframe para frame" type="number" min="1" max={duration-1}
+                value={selectedKey.frame} disabled={Boolean(timeline?.trackSettings?.[selected]?.locked)}
+                onChange={event=>edit(doc=>moveCharacterKey(doc,selected,selectedKey.id,Number(event.target.value),now()))}/>
+            </label>
+            <button disabled={Boolean(timeline?.trackSettings?.[selected]?.locked)}
+              onClick={()=>{edit(doc=>deleteCharacterKey(doc,selected,selectedKey.id,now()));setSelectedKeyId(null)}}>
+              Excluir keyframe
+            </button>
+          </div>}
+          {activeClip&&<div className="video-rebuild-inspector">
+            <h4>{textClip?'Fala / pensamento':'Vídeo'} selecionado</h4>
+            <label>Início na timeline
+              <input aria-label="Início do clipe" type="number" min="0" max={duration-1}
+                value={activeClip.startFrame}
+                disabled={Boolean(timeline?.trackSettings?.[textClip?.kind??'video']?.locked)}
+                onChange={event=>edit(doc=>textClip
+                  ?moveTextClip(doc,textClip.id,Number(event.target.value),now())
+                  :moveVideoClip(doc,videoClip!.id,Number(event.target.value),now()))}/>
+            </label>
+            {textClip&&<label>Texto do balão
+              <textarea aria-label="Texto do balão" rows={3}
+                value={textClip.state?.text??studio.elements.find(e=>e.id===textClip.elementId)?.text??''}
+                disabled={Boolean(timeline?.trackSettings?.[textClip.kind]?.locked)}
+                onChange={event=>edit(doc=>setTextClipContent(doc,textClip.id,event.target.value,now()))}/>
+            </label>}
+            {videoClip&&<>
+              <label>Volume do clipe (0 a 1)
+                <input aria-label="Volume do clipe" type="number" min="0" max="1" step=".05"
+                  value={videoClip.audio?.volume??1}
+                  disabled={Boolean(timeline?.trackSettings?.video?.locked)}
+                  onChange={event=>edit(doc=>setVideoClipAudio(doc,videoClip.id,{volume:Number(event.target.value)},now()))}/>
+              </label>
+              <label><input aria-label="Mudo do clipe" type="checkbox"
+                checked={videoClip.audio?.muted??false}
+                disabled={Boolean(timeline?.trackSettings?.video?.locked)}
+                onChange={event=>edit(doc=>setVideoClipAudio(doc,videoClip.id,{muted:event.target.checked},now()))}/>
+                Silenciar clipe
+              </label>
+            </>}
+            <button disabled={Boolean(timeline?.trackSettings?.[textClip?.kind??'video']?.locked)}
+              onClick={()=>{edit(doc=>deleteTimelineClip(doc,selectedClip!.kind,activeClip.id,now()));setSelectedClip(null)}}>
+              Excluir clipe
+            </button>
+          </div>}
+          <div className="video-rebuild-inspector">
+            <h4>Áudio do projeto</h4>
+            <label>Volume geral (0 a 1)
+              <input aria-label="Volume geral" type="number" min="0" max="1" step=".05"
+                value={timeline?.videoAudio?.volume??1}
+                onChange={event=>edit(doc=>setProjectVideoAudio(doc,{volume:Number(event.target.value)},now()))}/>
+            </label>
+            <label><input aria-label="Mudo do projeto" type="checkbox"
+              checked={timeline?.videoAudio?.muted??false}
+              onChange={event=>edit(doc=>setProjectVideoAudio(doc,{muted:event.target.checked},now()))}/>
+              Silenciar todos os vídeos
+            </label>
+          </div>
           <p className="video-rebuild-note">A GPU anima posição, escala e mistura snapshots nas transições. Boca, piscada, máscaras e pupilas PT independentes ainda exigem sprites do catálogo e golden visual Windows.</p>
           <small>{gpuStats}</small>
         </aside>
@@ -201,17 +268,17 @@ export function VideoStudioRebuildPage({onEditorActiveChange}:Props) {
         </div>
         <input className="video-rebuild-scrub" aria-label="Buscar quadro" type="range" min="0" max={duration-1} value={viewFrame} onChange={e=>seek(Number(e.target.value))} />
         <div className="video-rebuild-keys">
-          {studio.elements.filter(e=>e.kind==='character').map(e=><div className="video-rebuild-lane" key={e.id}><span>{e.speakerName||e.id.slice(0,8)}</span><div>{studio.videoTimeline?.characterKeys.filter(k=>k.elementId===e.id).map(k=><button key={k.id} title={'Quadro '+k.frame} style={{left:(k.frame/duration*100)+'%'}} onClick={()=>{setSelected(e.id);seek(k.frame)}} />)}</div></div>)}
+          {studio.elements.filter(e=>e.kind==='character').map(e=><div className="video-rebuild-lane" key={e.id}><span>{e.speakerName||e.id.slice(0,8)}</span><div>{studio.videoTimeline?.characterKeys.filter(k=>k.elementId===e.id).map(k=><button key={k.id} title={'Quadro '+k.frame} style={{left:(k.frame/duration*100)+'%'}} onClick={()=>{setSelected(e.id);setSelectedKeyId(k.id);setSelectedClip(null);seek(k.frame)}} />)}</div></div>)}
           {(['speech','thought'] as const).map(kind=><div className="video-rebuild-lane" key={kind}><span>{kind==='speech'?'Falas':'Pensamentos'}</span><div>{studio.videoTimeline?.textClips.filter(clip=>clip.kind===kind).map(clip=><button
             className={'video-rebuild-clip '+(selectedClip?.id===clip.id?'selected':'')} key={clip.id}
             title={kind+' · '+clip.startFrame+'–'+clip.endFrame}
             style={{left:(clip.startFrame/duration*100)+'%',width:((clip.endFrame-clip.startFrame)/duration*100)+'%'}}
-            onClick={()=>{setSelectedClip({kind:'text',id:clip.id});seek(clip.startFrame)}}/>)}</div></div>)}
+            onClick={()=>{setSelectedClip({kind:'text',id:clip.id});setSelectedKeyId(null);seek(clip.startFrame)}}/>)}</div></div>)}
           {(studio.videoTimeline?.videoClips?.length??0)>0&&<div className="video-rebuild-lane"><span>Vídeos</span><div>{studio.videoTimeline?.videoClips?.map(clip=><button
             className={'video-rebuild-clip '+(selectedClip?.id===clip.id?'selected':'')} key={clip.id}
             title={'Vídeo · '+clip.startFrame+'–'+clip.endFrame}
             style={{left:(clip.startFrame/duration*100)+'%',width:((clip.endFrame-clip.startFrame)/duration*100)+'%'}}
-            onClick={()=>{setSelectedClip({kind:'video',id:clip.id});seek(clip.startFrame)}}/>)}</div></div>}
+            onClick={()=>{setSelectedClip({kind:'video',id:clip.id});setSelectedKeyId(null);seek(clip.startFrame)}}/>)}</div></div>}
         </div>
       </section>
     </>}
