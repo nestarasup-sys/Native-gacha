@@ -19,7 +19,12 @@ const {VideoFrameScheduler}=load('src/shared/videoStudioRebuild/frameScheduler.t
 const {VideoStudioPreviewTransport}=load('src/renderer/src/features/videoStudioRebuild/previewTransport.ts',{
   '../../../../shared/videoStudioNext/boundedMemo':{VideoStudioBoundedMemo},
   '../../../../shared/videoStudioRebuild/frameScheduler':{VideoFrameScheduler},
-  '../../../../shared/videoStageGeometry':{videoCharacterElementSize:el=>({width:el.width,height:el.height})}
+  '../../../../shared/videoStageGeometry':{videoCharacterElementSize:el=>({width:el.width,height:el.height})},
+  '../../../../shared/videoStudioRebuild/previewSpritePlan':{
+    planSnapshotSprites:layer=>layer.assetDataUrl?[{
+      imageDataUrl:layer.assetDataUrl,element:layer.element,opacity:1
+    }]:[]
+  }
 })
 const flush=()=>new Promise(resolve=>setImmediate(resolve))
 function setup(){

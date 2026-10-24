@@ -1,5 +1,5 @@
 import type { VideoSceneFrame } from '../../../../shared/videoSceneIR'
-import { videoCharacterElementSize } from '../../../../shared/videoStageGeometry'
+import { planSnapshotSprites } from '../../../../shared/videoStudioRebuild/previewSpritePlan'
 import { VideoStudioBoundedMemo } from '../../../../shared/videoStudioNext/boundedMemo'
 import { VideoStudioFrameEngine } from '../../../../shared/videoStudioRebuild/frameEngine'
 import { VideoFrameScheduler } from '../../../../shared/videoStudioRebuild/frameScheduler'
@@ -133,13 +133,15 @@ export class VideoStudioPreviewTransport {
         })
         continue
       }
-      if (!layer.assetDataUrl) continue
-      const image = await this.decode(layer.assetDataUrl, signal)
-      const element = layer.element
-      output.push({
-        textureId: this.textureId(image), source: image,
-        element: { ...element, ...videoCharacterElementSize(element) }
-      })
+      // Decode only current absolute-frame transition sprites, retaining them
+      // as independent GPU textures in the same document z-order.
+      const planned = planSnapshotSprites(layer, scene.characters ?? [])
+      const sprites = await Promise.all(planned.map(async item => {
+        const image = await this.decode(item.imageDataUrl, signal)
+        return { textureId: this.textureId(image), source: image,
+          element: item.element, opacity: item.opacity }
+      }))
+      output.push(...sprites)
     }
     return output
   }
