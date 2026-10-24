@@ -20,7 +20,7 @@ export function useCharacterTransitions(
   )
   const session = useMemo(() => new PreviewTransitionSession(studio?.id ?? ''), [studio?.id])
   const [revision, setRevision] = useState(0)
-  useEffect(() => () => session.dispose(), [session])
+  useEffect(() => { session.activate(); return () => session.dispose() }, [session])
 
   // Every render asks for only the absolute frame on screen; no await and no
   // preparation of a complete 15-frame segment before enabling playback.
