@@ -10,7 +10,7 @@ export type GachaGpuLayer = Readonly<{
   /** Video textures need fresh pixels each frame without allocating a new texture. */
   dynamic?: boolean
 }>
-type CachedTexture = { texture: WebGLTexture; bytes: number; lastUsed: number; source: TexImageSource }
+type CachedTexture = { texture: WebGLTexture; bytes: number; lastUsed: number; sourceId: number }
 
 /** WebGL2 textured layers with persistent GPU resources and finite LRU.
  * This first runtime can draw existing authored snapshots; the dedicated
@@ -21,6 +21,16 @@ export class GachaGpuStage {
   private program!: WebGLProgram
   private vertices!: WebGLBuffer
   private readonly textures = new Map<string, CachedTexture>()
+  // Weak identity tracking: the GPU cache must not pin decoded HTML images in
+  // renderer RAM after the bounded image memo evicts them.
+  private readonly sourceIds = new WeakMap<object, number>()
+  private nextSourceId = 0
+  private sourceId(source: TexImageSource): number {
+    const key = source as object
+    let id = this.sourceIds.get(key)
+    if (!id) { id = ++this.nextSourceId; this.sourceIds.set(key, id) }
+    return id
+  }
   private tick = 0
   private bytes = 0
   private closed = false
@@ -85,8 +95,9 @@ export class GachaGpuStage {
   }
 
   private texture(id: string, source: TexImageSource): WebGLTexture {
+    const sourceId=this.sourceId(source)
     const cached=this.textures.get(id)
-    if (cached?.source===source) {
+    if (cached?.sourceId===sourceId) {
       cached.lastUsed=++this.tick
       return cached.texture
     }
@@ -115,7 +126,7 @@ export class GachaGpuStage {
     gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE)
     try {gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,source)}
     catch(error){gl.deleteTexture(texture);throw error}
-    this.textures.set(id,{texture,bytes,lastUsed:++this.tick,source});this.bytes+=bytes
+    this.textures.set(id,{texture,bytes,lastUsed:++this.tick,sourceId});this.bytes+=bytes
     return texture
   }
 

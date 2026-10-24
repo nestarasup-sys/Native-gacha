@@ -102,3 +102,9 @@ test('revised eye replaces just its GPU texture; stable body remains resident',(
   stage.dispose()
   assert.equal(log.deleted,3)
 })
+
+test('GPU cache uses weak source identities rather than retaining decoded HTML images',()=>{
+  const source=fs.readFileSync(path.resolve(__dirname,'../src/renderer/src/features/videoStudioRebuild/gachaGpuStage.ts'),'utf8')
+  assert.match(source,/sourceIds\s*=\s*new WeakMap<object,\s*number>\(\)/)
+  assert.doesNotMatch(source,/type CachedTexture\s*=\s*\{[^\n]*source:\s*TexImageSource/)
+})
