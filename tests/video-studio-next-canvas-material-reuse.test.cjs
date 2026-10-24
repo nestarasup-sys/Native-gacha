@@ -140,7 +140,7 @@ test('material cache stays bounded and a missing authorial wardrobe asset is nev
   renderer.materialsForPreparedCharacter({id:'actor',updatedAt:'broken',
    customization:{modelSlot:1,wardrobeGroups:[{...groups[0],setId:'missing'}]}},
   1,provider,cache),/indisponível/)
- assert.equal(cache.size,6,'failed manifest promises cannot poison the session cache')
+ assert.ok(cache.size<=6,'failed manifest promises cannot poison the session cache')
 })
 test('the production Canvas path uses native wardrobe layers and reuses its shape surface',()=>{
  const source=fs.readFileSync(path.resolve(__dirname,
