@@ -83,9 +83,21 @@ export function VideoExportSurfacePage() {
           const scene = evaluateVideoSceneFrame(runtime.program, request.frame)
           // Both tasks may fail independently: allSettled ensures an acquired
           // media lease can be released even if the character renderer rejects.
+          // Character raster and imported-media decode already run concurrently.
+          // Attribute both costs separately; their durations OVERLAP and must
+          // not be added to total wall-clock time.
+          let characterMs = 0, mediaDecodeMs = 0
           const [characterResult, mediaResult] = await Promise.allSettled([
-            characterRenderer!.renderFrame(scene, true),
-            mediaPool!.acquireFramesForScene(scene),
+            (async () => {
+              const started = performance.now()
+              try { return await characterRenderer!.renderFrame(scene, true) }
+              finally { characterMs = performance.now() - started }
+            })(),
+            (async () => {
+              const started = performance.now()
+              try { return await mediaPool!.acquireFramesForScene(scene) }
+              finally { mediaDecodeMs = performance.now() - started }
+            })(),
           ])
           if (mediaResult.status === 'fulfilled') mediaLease = mediaResult.value
           if (characterResult.status === 'rejected') throw characterResult.reason
@@ -102,7 +114,7 @@ export function VideoExportSurfacePage() {
             requestId: request.requestId,
             frame: request.frame,
             pixels,
-            timings: { composeMs, readbackMs },
+            timings: { composeMs, readbackMs, characterMs, mediaDecodeMs },
             layerCache: layerCacheRef.current?.stats(),
           })
         } catch (reason) {

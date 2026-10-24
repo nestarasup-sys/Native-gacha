@@ -8,7 +8,7 @@ import type { VideoExportJobStore } from './videoExportJobs'
 
 export type VideoExportSurfaceFrameResult = Readonly<{
   pixels: Buffer
-  timings: Readonly<{ composeMs: number; readbackMs: number }>
+  timings: Readonly<{ composeMs: number; readbackMs: number; characterMs: number; mediaDecodeMs: number }>
   roundTripMs: number
 }>
 
@@ -108,11 +108,15 @@ export class VideoExportSurfaceHost {
       }
       const composeMs = Number(ready.timings?.composeMs)
       const readbackMs = Number(ready.timings?.readbackMs)
+      const characterMs = Number(ready.timings?.characterMs)
+      const mediaDecodeMs = Number(ready.timings?.mediaDecodeMs)
       pending.resolve({
         pixels: Buffer.from(ready.pixels.buffer, ready.pixels.byteOffset, ready.pixels.byteLength),
         timings: {
           composeMs: Number.isFinite(composeMs) && composeMs >= 0 ? composeMs : 0,
           readbackMs: Number.isFinite(readbackMs) && readbackMs >= 0 ? readbackMs : 0,
+          characterMs: Number.isFinite(characterMs) && characterMs >= 0 ? characterMs : 0,
+          mediaDecodeMs: Number.isFinite(mediaDecodeMs) && mediaDecodeMs >= 0 ? mediaDecodeMs : 0,
         },
         roundTripMs: Math.max(0, performance.now() - pending.startedAt),
       })

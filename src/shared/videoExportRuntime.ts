@@ -27,6 +27,10 @@ export type VideoExportMetrics = Readonly<{
   persistentCacheWrites?: number
   persistentCacheWriteSkips?: number
   surfaceRoundTripMs?: number
+  /** Sum of Gacha character renderer time across actual cache-miss frames. */
+  characterMs?: number
+  /** Time acquiring imported video bitmaps; may overlap with characterMs. */
+  mediaDecodeMs?: number
   composeMs?: number
   readbackMs?: number
   surfaceOtherMs?: number

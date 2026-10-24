@@ -334,6 +334,7 @@ export class VideoExportCoordinator {
       pendingPersistentWrites.add(write)
     }
     let surfaceRoundTripMs = 0, composeMs = 0, readbackMs = 0, surfaceOtherMs = 0
+    let characterMs = 0, mediaDecodeMs = 0
     let writerWaitMs = 0, writerPeakInFlight = 0
     const frameBytes = 1920 * 1080 * 4
 
@@ -356,6 +357,8 @@ export class VideoExportCoordinator {
         persistentCacheWrites,
         persistentCacheWriteSkips,
         surfaceRoundTripMs,
+        characterMs,
+        mediaDecodeMs,
         composeMs,
         readbackMs,
         surfaceOtherMs,
@@ -396,6 +399,8 @@ export class VideoExportCoordinator {
           surfaceRoundTripMs += roundTripMs
           composeMs += timings.composeMs
           readbackMs += timings.readbackMs
+          characterMs += timings.characterMs
+          mediaDecodeMs += timings.mediaDecodeMs
           surfaceOtherMs += Math.max(0, roundTripMs - timings.composeMs - timings.readbackMs)
           frameCache.set(semantic, rgba)
           schedulePersistentWrite(semantic, rgba)
@@ -534,6 +539,8 @@ export class VideoExportCoordinator {
         persistentCacheWrites,
         persistentCacheWriteSkips,
         surfaceRoundTripMs,
+        characterMs,
+        mediaDecodeMs,
         composeMs,
         readbackMs,
         surfaceOtherMs,
@@ -617,6 +624,8 @@ export class VideoExportCoordinator {
         persistentCacheWrites,
         persistentCacheWriteSkips,
         surfaceRoundTripMs,
+        characterMs,
+        mediaDecodeMs,
         composeMs,
         readbackMs,
         surfaceOtherMs,
