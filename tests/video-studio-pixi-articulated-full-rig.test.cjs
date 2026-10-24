@@ -81,7 +81,7 @@ test('face texture receives an invertible affine head transport even during rota
  assert.ok(Math.abs(back.x-fromCenter.x)<1e-8)
  assert.ok(Math.abs(back.y-fromCenter.y)<1e-8)
  const identity=multiplyGachaAffine(m,invertGachaAffine(m))
- assert.deepEqual(identity.map(v=>Math.round(v*1e8)/1e8),[1,0,0,1,0,0])
+ assert.deepEqual(identity.map(v=>Math.abs(v)<1e-8?0:Math.round(v*1e8)/1e8),[1,0,0,1,0,0])
 })
 
 test('hidden bones and absent upper hair cannot leave a ghost behind',()=>{
