@@ -168,3 +168,42 @@ test('prepared Gacha sprite assembler retains source rig identity and normal dra
     assert.deepEqual(passesDrawn,[...module.GPU_FACE_PASSES])
   }finally{global.document=old}
 })
+
+test('real wardrobe and front hair have independent ordered GPU identities',async()=>{
+  const old=global.document
+  const copied=[]
+  global.document={createElement:()=>({
+    width:0,height:0,getContext:()=>({
+      drawImage:source=>copied.push(source),translate(){},scale(){}
+    })
+  })}
+  const module=load('src/renderer/src/characters/gachaPreparedGpuLayers.ts',{
+    './renderResolution':{configureCharacterSampling:()=>{}}
+  })
+  const body={width:16,height:16,id:'body-and-back-hair'}
+  const wardrobe={width:16,height:16,id:'wardrobe'}
+  const frontHair={width:16,height:16,id:'front-hair'}
+  const upperClothing={width:16,height:16,id:'over-front-hair'}
+  try{
+    const rig=module.createPreparedGachaGpuLayers({
+      rigLayers:{behindFace:{width:16,height:16},inFrontOfFace:{width:16,height:16}},
+      staticSources:{bodyAndBackHair:body,wardrobe,frontHair,wardrobeAboveHair:upperClothing},
+      shapeScale:{x:1,y:1},outputWidth:16,outputHeight:16,
+      artworkWidth:16,artworkHeight:16,modelSlot:1,
+      appearance:{modelSlot:1},legacyFaceImage:null,
+      drawFace:async()=>{}
+    })
+    const layers=await rig.renderGpuLayers()
+    assert.deepEqual(layers.map(x=>x.id),[
+      'rig-body-back-hair','rig-wardrobe',
+      ...module.GPU_FACE_PASSES.map(x=>'face:'+x),
+      'rig-front-hair','rig-wardrobe-over-hair'
+    ])
+    assert.strictEqual(layers[0].source,body)
+    assert.strictEqual(layers.at(-2).source,frontHair)
+    assert.notStrictEqual(layers[1].source,layers[0].source)
+    assert.ok(copied.includes(wardrobe))
+    assert.ok(copied.includes(upperClothing))
+    assert.notStrictEqual(layers[1].source,layers.at(-1).source)
+  }finally{global.document=old}
+})
