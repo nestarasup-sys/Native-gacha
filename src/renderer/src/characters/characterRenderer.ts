@@ -305,7 +305,7 @@ export async function renderWardrobeOverlayCanvases(
   output.width = Math.max(1, Math.ceil(artwork.width * pixelScale))
   output.height = Math.max(1, Math.ceil(artwork.height * pixelScale))
   const outputContext = output.getContext('2d')
-  if (!outputContext) return { imageUrl: null, aboveHairImageUrl: null }
+  if (!outputContext) return { canvas: null, aboveHairCanvas: null }
   configureCharacterSampling(outputContext)
   outputContext.scale(pixelScale, pixelScale)
   let aboveHairCanvas: HTMLCanvasElement | null = null
