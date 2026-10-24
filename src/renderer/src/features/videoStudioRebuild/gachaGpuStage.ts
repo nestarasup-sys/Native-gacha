@@ -146,8 +146,38 @@ export class GachaGpuStage {
     return { texture, uploaded: true }
   }
 
+  /** Verify the entire visible frame before clearing the canvas or evicting
+   * any retained texture. Never render half a character when an eye/mask
+   * exceeds the budget or two logical IDs disagree about their source. */
+  private validateFrameResources(layers: readonly GachaGpuLayer[]): void {
+    const unique=new Map<string,TexImageSource>()
+    let bytes=0
+    for (const layer of layers) {
+      const entries=layer.mask
+        ? [[layer.textureId,layer.source],[layer.mask.textureId,layer.mask.source]] as const
+        : [[layer.textureId,layer.source]] as const
+      for (const [id,source] of entries) {
+        const previous=unique.get(id)
+        if(previous) {
+          if(previous!==source)throw new Error('ID de textura Gacha repetido com fonte diferente no mesmo quadro.')
+          continue
+        }
+        const dim=source as {videoWidth?:number;naturalWidth?:number;width?:number;videoHeight?:number;naturalHeight?:number;height?:number}
+        const width=Number(dim.videoWidth||dim.naturalWidth||dim.width)
+        const height=Number(dim.videoHeight||dim.naturalHeight||dim.height)
+        const size=width*height*4
+        if(!Number.isSafeInteger(size)||size<4||size>this.maxTextureBytes)
+          throw new Error('Textura Gacha acima do orçamento.')
+        bytes+=size
+        if(bytes>this.maxTextureBytes)throw new Error('Camadas GPU simultâneas acima do orçamento.')
+        unique.set(id,source)
+      }
+    }
+  }
+
   draw(layers:readonly GachaGpuLayer[],backgroundColor='#000000'):void {
     if (this.closed||this.lost) return
+    this.validateFrameResources(layers)
     const gl=this.gl
     gl.viewport(0,0,this.canvas.width,this.canvas.height)
     const hex=/^#([0-9a-f]{6})$/i.exec(backgroundColor)?.[1]??'000000'

@@ -165,3 +165,24 @@ test('GPU budget cannot evict a sprite still bound for the same rendered frame',
   assert.equal(log.deleted,0,'not allowed to silently evict an in-flight face texture')
   stage.dispose()
 })
+
+test('preflight rejects overbudget face/mask without clearing or deleting the last valid frame',()=>{
+  const {Stage,canvas,log}=setup(),stage=new Stage(canvas,2048)
+  const base=sprite('base')
+  stage.draw([base])
+  const already=log.draws,removed=log.deleted
+  const eye=sprite('eye')
+  eye.mask={textureId:'mask',source:{width:16,height:16}}
+  assert.throws(()=>stage.draw([base,eye]),/simultâneas/)
+  assert.equal(log.draws,already)
+  assert.equal(log.deleted,removed)
+  assert.equal(stage.stats().textureCount,1)
+  stage.dispose()
+})
+test('preflight rejects colliding eye and PT pupil texture identities',()=>{
+  const {Stage,canvas,log}=setup(),stage=new Stage(canvas,8192)
+  const a=sprite('eye-left'),b=sprite('eye-left')
+  assert.throws(()=>stage.draw([a,b]),/repetido com fonte diferente/)
+  assert.equal(log.uploads,0)
+  stage.dispose()
+})
