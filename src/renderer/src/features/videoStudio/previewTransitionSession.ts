@@ -24,6 +24,12 @@ export type PreviewTransitionMetrics = Readonly<{
 }>
 export type PreviewTransitionRenderer = Pick<TransitionRenderer, 'render' | 'dispose'> & Partial<Pick<TransitionRenderer, 'renderPreview'>>
 
+/** New arrays with the same immutable items are the same timeline revision. */
+function sameReferences<T>(left: readonly T[], right: readonly T[]): boolean {
+  return left === right || (left.length === right.length && left.every((item, index) => item === right[index]))
+}
+
+
 /**
  * Session-local PNG compatibility path for the existing DOM stage.
  *
@@ -97,8 +103,8 @@ export class PreviewTransitionSession {
 
   private setPlan(next: Plan): void {
     const prev = this.plan
-    if (prev && prev.kind === next.kind && prev.spans === next.spans
-      && prev.characters === next.characters && prev.boundary === next.boundary
+    if (prev && prev.kind === next.kind && sameReferences(prev.spans, next.spans)
+      && sameReferences(prev.characters, next.characters) && prev.boundary === next.boundary
       && (next.kind === 'ahead' || prev.anchorFrame === next.anchorFrame)) return
     this.cancelPending()
     this.plan = next
@@ -168,7 +174,7 @@ export class PreviewTransitionSession {
     if (this.disposed) return
     // A Play request on this very frame owns its longer preparation.
     if (this.playbackRequested && this.plan?.kind === 'ahead' && this.plan.anchorFrame === frame
-      && this.plan.spans === spans && this.plan.characters === characters) return
+      && sameReferences(this.plan.spans, spans) && sameReferences(this.plan.characters, characters)) return
     this.setPlan({ kind: 'paused', spans, characters, boundary: null, anchorFrame: frame })
     const relevant = spans.filter(span => frame > span.startFrame && frame < span.boundaryFrame)
     for (const span of relevant) {
