@@ -104,7 +104,8 @@ export class TransitionRenderer {
     return { left, right }
   }
 
-  private async renderResult(transition: CharacterTransition, frame: number, character: CustomizerCharacter, directCanvas: boolean): Promise<VideoGachaCanvasState> {
+  private async renderResult(transition: CharacterTransition, frame: number, character: CustomizerCharacter, directCanvas: boolean, signal?: AbortSignal): Promise<VideoGachaCanvasState> {
+    signal?.throwIfAborted()
     const t = smoothProgress(transitionProgress(transition, frame))
     if (t <= 0) return transition.from
     if (t >= 1) return transition.to
@@ -114,13 +115,16 @@ export class TransitionRenderer {
       this.model(slot), this.pose(slot, a.poseSlot === undefined ? character.customization.poseSlot : a.poseSlot),
       this.pose(slot, b.poseSlot === undefined ? character.customization.poseSlot : b.poseSlot)
     ])
+    signal?.throwIfAborted()
     if (!source || !fromPose || !toPose) throw new Error(`Uma pose de ${character.name} não está disponível para a animação.`)
     const aa = a.faceAppearance ?? character.customization.faceAppearance, ba = b.faceAppearance ?? character.customization.faceAppearance
     const appearance = aa && ba ? mixAppearance(aa, ba, t) : aa ?? ba
     const normalized = await this.normalizedTransforms(a.faceTransforms ?? {}, b.faceTransforms ?? {}, aa, ba)
+    signal?.throwIfAborted()
     const transforms = mixStudioTransforms(normalized.left, normalized.right, t)
     if (!this.effects.has(slot)) this.effects.set(slot, loadStandardExpressionEffects(slot, this.assetProvider))
     const defaults = await this.effects.get(slot)!
+    signal?.throwIfAborted()
     const effects = mixEffects(visibleEffects(aa, a.activeExpressionEffects ?? (aa ? defaults[aa.expressionIndex] : undefined)), visibleEffects(ba, b.activeExpressionEffects ?? (ba ? defaults[ba.expressionIndex] : undefined)), t)
     const element = mixStageElement(a, b, t)
     // Facial/blink/talk recipes pass the *same authored state* as both ends.
@@ -143,12 +147,14 @@ export class TransitionRenderer {
           () => prepareSavedCharacterRenderer(copy, { source, artwork, assetProvider: this.assetProvider })
         )
       : await prepareSavedCharacterRenderer(copy, { source, artwork, assetProvider: this.assetProvider })
+    signal?.throwIfAborted()
     const mode = t < .5 ? a.activeFaceMode : b.activeFaceMode
     if (directCanvas) {
       // The prepared body/wardrobe/front-hair canvases are reused, while the
       // unchanged facial overlay draws dynamic mouth, blink and independent PT
       // pupils. Snapshot before the prepared rig is painted again.
       const rendered = await renderer.renderToCanvas(appearance, transforms, effects, mode)
+      signal?.throwIfAborted()
       const snapshot = snapshotTrimmedGachaCanvas(rendered.canvas)
       const geometry = faceRenderGeometry(element, rendered, snapshot.crop, 1920, 1080)
       return {
@@ -158,17 +164,19 @@ export class TransitionRenderer {
       }
     }
     const rendered = await renderer.render(appearance, transforms, effects, mode)
+    signal?.throwIfAborted()
     const crop = await trimTransparentImage(rendered.dataUrl)
+    signal?.throwIfAborted()
     const geometry = faceRenderGeometry(element, rendered, crop, 1920, 1080)
     return { element: { ...element, ...geometry, faceAppearance: appearance, faceTransforms: transforms, activeExpressionEffects: effects }, imageDataUrl: crop?.dataUrl ?? rendered.dataUrl }
   }
 
-  render(transition: CharacterTransition, frame: number, character: CustomizerCharacter): Promise<VideoCharacterState> {
-    return this.renderResult(transition, frame, character, false)
+  render(transition: CharacterTransition, frame: number, character: CustomizerCharacter, signal?: AbortSignal): Promise<VideoCharacterState> {
+    return this.renderResult(transition, frame, character, false, signal)
   }
 
-  renderCanvas(transition: CharacterTransition, frame: number, character: CustomizerCharacter): Promise<VideoGachaCanvasState> {
-    return this.renderResult(transition, frame, character, true)
+  renderCanvas(transition: CharacterTransition, frame: number, character: CustomizerCharacter, signal?: AbortSignal): Promise<VideoGachaCanvasState> {
+    return this.renderResult(transition, frame, character, true, signal)
   }
 
   preparedStats(): Readonly<{ entries: number; retainedBytes: number; maxEntries: number; maxBytes: number }> {

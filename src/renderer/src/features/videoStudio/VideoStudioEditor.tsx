@@ -1250,6 +1250,7 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
     if (!activeStudio) return
     editHistoryRef.current.cancelPending()
     animationPlayRequestRef.current += 1
+    characterAnimation.cancelPlayback()
     setAnimationPreparing(false)
     const clamped = Math.max(0, Math.min(videoTimelineFor(activeStudio).durationFrames, Math.round(frame)))
     setVideoPlaying(false)
@@ -1280,7 +1281,7 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
 
   const toggleVideoPlayback = async () => {
     if (!activeStudio) return
-    if (animationPreparing) { animationPlayRequestRef.current += 1; setAnimationPreparing(false); return }
+    if (animationPreparing) { animationPlayRequestRef.current += 1; characterAnimation.cancelPlayback(); setAnimationPreparing(false); return }
     if (videoPlaying) { seekVideoFrame(videoPlayheadFrame); return }
     editHistoryRef.current.cancelPending()
     const startFrame = videoPlayheadFrame >= videoTimelineFor(activeStudio).durationFrames ? 0 : videoPlayheadFrame
