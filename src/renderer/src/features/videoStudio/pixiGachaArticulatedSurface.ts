@@ -147,7 +147,7 @@ export class PixiGachaArticulatedSurface {
     return this.canvas
   }
   /** Readback for sparse visual oracle only (not every video frame). */
-  pixels(): Uint8Array {
+  pixels(): Uint8Array | Uint8ClampedArray {
     if (this.lost || this.disposed) throw new Error('Contexto GPU não disponível.')
     return this.app.renderer.extract.pixels(this.app.stage).pixels
   }

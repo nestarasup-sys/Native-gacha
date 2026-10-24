@@ -311,7 +311,7 @@ export class TransitionRenderer {
         signal?.throwIfAborted()
         const snapshot = await snapshotTrimmedPreviewGachaCanvas(accelerated,signal)
         const geometry = faceRenderGeometry(element,
-          {canvas:accelerated,width:accelerated.width,height:accelerated.height},
+          {width:accelerated.width,height:accelerated.height},
           snapshot.crop,1920,1080)
         return {element:{...element,...geometry,faceAppearance:appearance,faceTransforms:transforms,
           activeExpressionEffects:effects},imageDataUrl:transition.from.imageDataUrl,canvasImage:snapshot.canvas}
