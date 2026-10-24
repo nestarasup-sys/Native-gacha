@@ -2,6 +2,7 @@ import type { StudioElement, StudioFaceMode, StudioFaceTransform, StudioFaceTran
 import { resolveStudioTalkMouthId } from '../../../../shared/studio'
 import type { VideoSceneFrame } from '../../../../shared/videoSceneIR'
 import type { VideoExportCharacterSnapshot } from '../../../../shared/videoExportCharacters'
+import type { FaceCatalogItemSummary } from '../../../../shared/fabricator'
 import { characterFromVideoExportSnapshot } from '../../../../shared/videoExportCharacters'
 import type { VideoCharacterRenderAssetProvider, VideoCharacterRenderAssetSnapshot } from '../../../../shared/videoCharacterRenderAssets'
 import { createVideoCharacterRenderSnapshotProvider } from '../../../../shared/videoCharacterRenderAssets'
@@ -35,6 +36,7 @@ export class VideoCharacterFrameRenderer {
   private readonly admission: VideoStudioRasterAdmission
   private readonly stateIds = new WeakMap<object, number>()
   private nextStateId = 0
+  private readonly faceCatalogs = new Map<number, Promise<FaceCatalogItemSummary[]>>()
 
   constructor(
     private readonly characters: VideoExportCharacterSnapshot,
@@ -92,6 +94,23 @@ export class VideoCharacterFrameRenderer {
   }
 
   /** Render one authored state through the exact character renderer without interpolating artwork. */
+  /**
+   * An export may contain thousands of automatic-mouth frames for one model.
+   * The pinned face catalog is immutable for the duration of that job: do
+   * not repeat a provider request on all six phases of every talk cycle.
+   */
+  private faceCatalogForSlot(slot: number): Promise<FaceCatalogItemSummary[]> {
+    let pending = this.faceCatalogs.get(slot)
+    if (!pending) {
+      pending = this.provider.listFaceCatalog(slot)
+      this.faceCatalogs.set(slot, pending)
+      void pending.catch(() => {
+        if (this.faceCatalogs.get(slot) === pending) this.faceCatalogs.delete(slot)
+      })
+    }
+    return pending
+  }
+
   private renderFaceState(state: VideoCharacterState, mode: StudioFaceMode, transforms: StudioFaceTransforms, recipe: string, directCanvas: boolean): Promise<VideoGachaCanvasState> {
     const characterId = state.element.characterId
     if (!characterId) throw new Error('Estado de personagem sem characterId.')
@@ -122,7 +141,7 @@ export class VideoCharacterFrameRenderer {
     if (!characterId) return state
     const character = characterFromVideoExportSnapshot(this.characters, characterId)
     const modelSlot = character.customization.modelSlot ?? 1
-    const faceItems = await this.provider.listFaceCatalog(modelSlot)
+    const faceItems = await this.faceCatalogForSlot(modelSlot)
     const openMouthId = resolveStudioTalkMouthId(appearance, faceItems.filter((item) => item.modelSlot === modelSlot))
     const saved = state.element.faceTransforms ?? {}
     const closedMouthId = appearance.mouthClosedCatalogId
@@ -171,12 +190,14 @@ export class VideoCharacterFrameRenderer {
 
   clear(): void {
     this.cache.clear()
+    this.faceCatalogs.clear()
     this.transitionRenderer.clearPrepared()
   }
 
   dispose(): void {
     this.admission.dispose()
     this.cache.clear()
+    this.faceCatalogs.clear()
     this.transitionRenderer.dispose()
   }
 }
