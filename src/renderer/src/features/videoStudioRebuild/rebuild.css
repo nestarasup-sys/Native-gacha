@@ -32,3 +32,6 @@
 .video-rebuild-lane>div{position:relative;flex:1;height:23px;background:#263454;border-radius:3px}
 .video-rebuild-lane>div>button{position:absolute;top:2px;width:5px;height:19px;padding:0;border:0;border-radius:0;background:#90bcff}
 .video-rebuild footer{border-top:1px solid #33415d;padding:8px 14px;color:#c0cce0;font-size:12px}
+
+.video-rebuild-lane>div>button.video-rebuild-clip{min-width:5px;border-radius:3px;background:#7b99d0;border:1px solid #a5b8e0}
+.video-rebuild-lane>div>button.video-rebuild-clip.selected{background:#d4b878;border-color:#ffe1a2}

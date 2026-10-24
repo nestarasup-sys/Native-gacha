@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { StudioDocument, VideoStudioCardSummary } from '../../../../shared/studio'
 import { VideoStudioFrameEngine } from '../../../../shared/videoStudioRebuild/frameEngine'
-import { splitCharacterAt } from '../../../../shared/videoStudioRebuild/rebuildEditor'
+import { splitCharacterAt, splitTextClipAt, splitVideoClipAt } from '../../../../shared/videoStudioRebuild/rebuildEditor'
 import { RebuildDocumentHistory } from '../../../../shared/videoStudioRebuild/documentHistory'
 import { applyVideoStudioEditorCommand } from '../../../../shared/videoStudioNext/editorCore'
 import { GachaGpuStage } from './gachaGpuStage'
@@ -24,6 +24,7 @@ export function VideoStudioRebuildPage({onEditorActiveChange}:Props) {
   const [frame,setFrame]=useState(0)
   const [playing,setPlaying]=useState(false)
   const [selected,setSelected]=useState('')
+  const [selectedClip,setSelectedClip]=useState<{kind:'text'|'video';id:string}|null>(null)
   const [status,setStatus]=useState('Selecione um projeto. Nenhum arquivo será modificado.')
   const [gpuStats,setGpuStats]=useState('')
   const [rendering,setRendering]=useState(false)
@@ -51,12 +52,12 @@ export function VideoStudioRebuildPage({onEditorActiveChange}:Props) {
       const doc=await window.desktop.loadVideoStudio(id)
       if(!doc?.videoTimeline)throw new Error('O projeto não possui timeline de vídeo.')
       history.current.reset(doc);changedHistory()
-      setStudio(doc);setFrame(0);setSelected(doc.elements.find(e=>e.kind==='character')?.id??'')
+      setStudio(doc);setFrame(0);setSelectedClip(null);setSelected(doc.elements.find(e=>e.kind==='character')?.id??'')
       setStatus('Novo motor — edição local; use Salvar cópia para persistir.')
     }catch(e){setStatus(String(e))}
   }
   const close=()=>{
-    pause();history.current.reset(null);changedHistory();setStudio(null);setFrame(0);setSelected('')
+    pause();history.current.reset(null);changedHistory();setStudio(null);setFrame(0);setSelected('');setSelectedClip(null)
     void window.desktop.listVideoStudios().then(setCards).catch(()=>undefined)
   }
   const blank=()=>{
@@ -71,7 +72,7 @@ export function VideoStudioRebuildPage({onEditorActiveChange}:Props) {
       }
     }
     history.current.reset(doc);changedHistory()
-    setStudio(doc);setFrame(0);setSelected('');setStatus('Projeto novo em memória. Use Salvar cópia.')
+    setStudio(doc);setFrame(0);setSelected('');setSelectedClip(null);setStatus('Projeto novo em memória. Use Salvar cópia.')
   }
   const copy=async()=>{
     if(!studio)return
@@ -170,11 +171,27 @@ export function VideoStudioRebuildPage({onEditorActiveChange}:Props) {
           <button disabled={!history.current.canUndo} onClick={()=>stepHistory('undo')}>Desfazer</button>
           <button disabled={!history.current.canRedo} onClick={()=>stepHistory('redo')}>Refazer</button>
           <label>Frame <input aria-label="Frame absoluto" type="number" min="0" max={duration-1} value={viewFrame} onChange={e=>seek(Math.max(0,Math.min(duration-1,Math.round(Number(e.target.value)||0))))} /></label>
-          <button disabled={!selected} onClick={()=>edit(doc=>splitCharacterAt(doc,selected,viewFrame,crypto.randomUUID(),now()))}>Dividir bloco</button>
+          <button disabled={!selected} onClick={()=>edit(doc=>splitCharacterAt(doc,selected,viewFrame,crypto.randomUUID(),now()))}>Dividir personagem</button>
+          <button disabled={!selectedClip} onClick={()=>edit(doc=>selectedClip?.kind==='video'
+            ? splitVideoClipAt(doc,selectedClip.id,viewFrame,crypto.randomUUID(),now())
+            : selectedClip ? splitTextClipAt(doc,selectedClip.id,viewFrame,crypto.randomUUID(),now()) : doc
+          )}>Dividir clipe</button>
           <button onClick={()=>edit(doc=>applyVideoStudioEditorCommand(doc,doc.videoTimeline!,{type:'set-character-transitions',enabled:doc.videoTimeline?.animateCharacterTransitions===false},now()))}>Alternar transições</button>
         </div>
         <input className="video-rebuild-scrub" aria-label="Buscar quadro" type="range" min="0" max={duration-1} value={viewFrame} onChange={e=>seek(Number(e.target.value))} />
-        <div className="video-rebuild-keys">{studio.elements.filter(e=>e.kind==='character').map(e=><div className="video-rebuild-lane" key={e.id}><span>{e.speakerName||e.id.slice(0,8)}</span><div>{studio.videoTimeline?.characterKeys.filter(k=>k.elementId===e.id).map(k=><button key={k.id} title={'Quadro '+k.frame} style={{left:(k.frame/duration*100)+'%'}} onClick={()=>seek(k.frame)} />)}</div></div>)}</div>
+        <div className="video-rebuild-keys">
+          {studio.elements.filter(e=>e.kind==='character').map(e=><div className="video-rebuild-lane" key={e.id}><span>{e.speakerName||e.id.slice(0,8)}</span><div>{studio.videoTimeline?.characterKeys.filter(k=>k.elementId===e.id).map(k=><button key={k.id} title={'Quadro '+k.frame} style={{left:(k.frame/duration*100)+'%'}} onClick={()=>{setSelected(e.id);seek(k.frame)}} />)}</div></div>)}
+          {(['speech','thought'] as const).map(kind=><div className="video-rebuild-lane" key={kind}><span>{kind==='speech'?'Falas':'Pensamentos'}</span><div>{studio.videoTimeline?.textClips.filter(clip=>clip.kind===kind).map(clip=><button
+            className={'video-rebuild-clip '+(selectedClip?.id===clip.id?'selected':'')} key={clip.id}
+            title={kind+' · '+clip.startFrame+'–'+clip.endFrame}
+            style={{left:(clip.startFrame/duration*100)+'%',width:((clip.endFrame-clip.startFrame)/duration*100)+'%'}}
+            onClick={()=>{setSelectedClip({kind:'text',id:clip.id});seek(clip.startFrame)}}/>)}</div></div>)}
+          {(studio.videoTimeline?.videoClips?.length??0)>0&&<div className="video-rebuild-lane"><span>Vídeos</span><div>{studio.videoTimeline?.videoClips?.map(clip=><button
+            className={'video-rebuild-clip '+(selectedClip?.id===clip.id?'selected':'')} key={clip.id}
+            title={'Vídeo · '+clip.startFrame+'–'+clip.endFrame}
+            style={{left:(clip.startFrame/duration*100)+'%',width:((clip.endFrame-clip.startFrame)/duration*100)+'%'}}
+            onClick={()=>{setSelectedClip({kind:'video',id:clip.id});seek(clip.startFrame)}}/>)}</div></div>}
+        </div>
       </section>
     </>}
     <footer role="status">{status}</footer>
