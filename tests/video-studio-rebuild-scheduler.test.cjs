@@ -12,7 +12,7 @@ function load(file,deps={}) {
   return mod.exports
 }
 const {VideoFrameScheduler}=load('src/shared/videoStudioRebuild/frameScheduler.ts')
-const {splitCharacterAt}=load('src/shared/videoStudioRebuild/rebuildEditor.ts',{
+const {splitCharacterAt,deleteCharacterKey,moveCharacterKey}=load('src/shared/videoStudioRebuild/rebuildEditor.ts',{
   '../videoCharacterTimeline':{videoCharacterStateAt:(timeline,id,frame)=>timeline.characterBases[id]},
 })
 const deferred=()=>{let resolve;const promise=new Promise(r=>resolve=r);return{promise,resolve}}
@@ -95,4 +95,27 @@ test('new frame evaluator reuses authored data URLs without cloning project asse
   assert.equal(engine.evaluate(10500).art,src)
   assert.equal(compiled,1)
   assert.throws(()=>engine.evaluate(10800),RangeError)
+})
+
+test('rebuilt editor repositions and removes only one authored key without changing pose/PT images',()=>{
+  const eye={element:{id:'actor',kind:'character',poseSlot:3,activeExpressionGaze:'left',
+    faceTransforms:{'expression-component:pupil-right':{x:11,y:1,width:80,height:80,rotation:0}}},
+    imageDataUrl:'data:image/png;base64,IMMUTABLE'}
+  const original={schemaVersion:1,elements:[{id:'actor',kind:'character'}],
+    videoTimeline:{durationFrames:400,characterBases:{actor:eye},
+      characterKeys:[{id:'first',elementId:'actor',frame:100,state:eye},
+        {id:'other',elementId:'actor',frame:200,state:eye}]}}
+  const moved=moveCharacterKey(original,'actor','first',150,'now')
+  assert.deepEqual(moved.videoTimeline.characterKeys.map(k=>k.frame),[150,200])
+  assert.strictEqual(moved.videoTimeline.characterKeys[0].state,eye)
+  assert.strictEqual(original.videoTimeline.characterKeys[0].frame,100)
+  assert.strictEqual(moveCharacterKey(original,'actor','first',200,'now'),original)
+  assert.strictEqual(moveCharacterKey(original,'actor','first',400,'now'),original)
+  const removed=deleteCharacterKey(moved,'actor','first','new')
+  assert.equal(removed.videoTimeline.characterKeys.length,1)
+  assert.strictEqual(removed.videoTimeline.characterBases.actor,eye)
+  assert.strictEqual(deleteCharacterKey(removed,'actor','first','again'),removed)
+  const locked={...original,videoTimeline:{...original.videoTimeline,trackSettings:{actor:{locked:true}}}}
+  assert.strictEqual(moveCharacterKey(locked,'actor','first',120,'now'),locked)
+  assert.strictEqual(deleteCharacterKey(locked,'actor','first','now'),locked)
 })
