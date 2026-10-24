@@ -1,6 +1,7 @@
 import type { PoseArtwork } from '../../../../shared/videoCharacterInterpolation'
 import { orderedVisiblePoseParts, PixiGachaPoseRig, type GachaPixiPort, type PoseGpuStatistics } from './pixiGachaPoseRig'
 import { preparePixiSkinToneArtwork } from './pixiGachaArtworkPreparation'
+import { PixiGachaPoseGeometrySession } from './pixiGachaPoseGeometrySession'
 
 type PixiModule = typeof import('pixi.js')
 type PixiApplication = import('pixi.js').Application
@@ -16,6 +17,7 @@ export class PixiGachaPoseSurface {
   private readonly loaded = new Set<string>()
   private lost = false
   private disposed = false
+  private geometrySession: { from: PoseArtwork; to: PoseArtwork; worker: PixiGachaPoseGeometrySession } | null = null
   private readonly onContextLost = (event: Event) => {
     event.preventDefault()
     this.lost = true
@@ -97,6 +99,36 @@ export class PixiGachaPoseSurface {
     this.app.renderer.render(this.app.stage)
   }
 
+  /**
+   * Actual off-thread articulated pose interpolation. The Worker sees only
+   * numeric geometry and joint anchors; full Gacha PNGs remain in the GPU
+   * thread. A seek may abort individual frames without blocking React.
+   *
+   * This path is explicitly experimental until the complete character/GPU
+   * pixel oracle approves it. The existing synchronous method is retained
+   * for machines where Workers are not supported.
+   */
+  async renderInterpolatedPoseInWorker(
+    from: PoseArtwork, to: PoseArtwork, progress: number, signal?: AbortSignal,
+  ): Promise<void> {
+    this.assertReady()
+    this.assertTexturesReady(from)
+    this.assertTexturesReady(to)
+    if (!this.geometrySession || this.geometrySession.from !== from || this.geometrySession.to !== to) {
+      this.geometrySession?.worker.dispose()
+      this.geometrySession = { from, to, worker: new PixiGachaPoseGeometrySession(from, to) }
+    }
+    const artwork = await this.geometrySession.worker.interpolate(progress, signal)
+    this.assertReady()
+    signal?.throwIfAborted()
+    this.rig.setPose(artwork)
+    this.app.renderer.render(this.app.stage)
+  }
+
+  cancelPendingPoseFrames(): void {
+    this.geometrySession?.worker.cancelPending()
+  }
+
   stats(): PoseGpuStatistics & { loadedAssets: number; gpuContextLost: boolean } {
     return { ...this.rig.stats(), loadedAssets: this.loaded.size, gpuContextLost: this.lost }
   }
@@ -104,6 +136,8 @@ export class PixiGachaPoseSurface {
   dispose(): void {
     if (this.disposed) return
     this.disposed = true
+    this.geometrySession?.worker.dispose()
+    this.geometrySession = null
     this.canvas.removeEventListener('webglcontextlost', this.onContextLost)
     this.app.stage.removeChild(this.rig.stage as unknown as import('pixi.js').Container)
     this.rig.dispose()
