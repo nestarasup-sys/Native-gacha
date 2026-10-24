@@ -289,7 +289,7 @@ export function wardrobeComponentsForGroup(group: CustomizerWardrobeGroup, detai
     && (!group.componentId || group.componentId === component.id)) ?? []
 }
 
-export async function renderWardrobeOverlay(
+export async function renderWardrobeOverlayCanvases(
   groups: CustomizerWardrobeGroup[],
   details: Record<string, WardrobeSet>,
   artwork: CatalogArtwork,
@@ -298,8 +298,8 @@ export async function renderWardrobeOverlay(
   skinTone?: string,
   maxSize = Math.max(artwork.width, artwork.height),
   highlight?: AdjustmentPreviewHighlight | null
-): Promise<{ imageUrl: string | null; aboveHairImageUrl: string | null }> {
-  if (!groups.length || modelSlot === null || !source) return { imageUrl: null, aboveHairImageUrl: null }
+): Promise<{ canvas: HTMLCanvasElement | null; aboveHairCanvas: HTMLCanvasElement | null }> {
+  if (!groups.length || modelSlot === null || !source) return { canvas: null, aboveHairCanvas: null }
   const output = document.createElement('canvas')
   const pixelScale = Math.min(maxSize / Math.max(artwork.width, artwork.height), Math.sqrt(MAX_CHARACTER_PREVIEW_PIXELS / (artwork.width * artwork.height)))
   output.width = Math.max(1, Math.ceil(artwork.width * pixelScale))
@@ -424,8 +424,32 @@ export async function renderWardrobeOverlay(
       }
     }
   }
-  const aboveHairImageUrl = hasAboveHairAccessories && aboveHairCanvas ? aboveHairCanvas.toDataURL('image/png') : null
-  return { imageUrl: output.toDataURL('image/png'), aboveHairImageUrl }
+  // Keep the rendered buffers in memory for Video Studio. Serializing every
+  // changing wardrobe pose to PNG and decoding it back blocks both preview
+  // and export; callers needing a PNG still have the legacy wrapper below.
+  return { canvas: output, aboveHairCanvas: hasAboveHairAccessories ? aboveHairCanvas : null }
+}
+
+/**
+ * Historical PNG API for Customizador/Fabricador and other consumers.
+ * Preserve the public contract while Video Studio composes native Canvases.
+ */
+export async function renderWardrobeOverlay(
+  groups: CustomizerWardrobeGroup[],
+  details: Record<string, WardrobeSet>,
+  artwork: CatalogArtwork,
+  modelSlot: number | null,
+  source: FabricatorProject | null,
+  skinTone?: string,
+  maxSize = Math.max(artwork.width, artwork.height),
+  highlight?: AdjustmentPreviewHighlight | null
+): Promise<{ imageUrl: string | null; aboveHairImageUrl: string | null }> {
+  const rendered = await renderWardrobeOverlayCanvases(
+    groups, details, artwork, modelSlot, source, skinTone, maxSize, highlight)
+  return {
+    imageUrl: rendered.canvas?.toDataURL('image/png') ?? null,
+    aboveHairImageUrl: rendered.aboveHairCanvas?.toDataURL('image/png') ?? null,
+  }
 }
 
 export async function renderArtwork(artwork: CatalogArtwork, maxSize: number, skinTone?: string, trimTransparent = false): Promise<string | null> {
@@ -989,7 +1013,7 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
     if (!set) throw new Error(`O personagem referencia um conjunto de roupa indisponível (${key}). A fonte não será modificada.`)
     details[key] = set
   }))
-  const wardrobe = await renderWardrobeOverlay(groups, details, artwork, modelSlot, source, character.customization.modelSkinTone)
+  const wardrobe = await renderWardrobeOverlayCanvases(groups, details, artwork, modelSlot, source, character.customization.modelSkinTone)
 
   const appearance = character.customization.faceAppearance
   const expressionEffectsByIndex = appearance?.modelSlot === modelSlot
@@ -1038,8 +1062,10 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
     if (!frontContext) throw new Error('Não foi possível preparar o cabelo do personagem.')
     await renderFrontHairOverlay(artwork, source, frontStyles, Math.max(artwork.width, artwork.height), hairAppearance, frontContext, character.customization.partOverrides)
   }
-  const wardrobeImage = wardrobe.imageUrl ? await loadCachedImage(wardrobe.imageUrl) : null
-  const wardrobeAboveHairImage = wardrobe.aboveHairImageUrl ? await loadCachedImage(wardrobe.aboveHairImageUrl) : null
+  // Direct Canvas-to-Canvas composition avoids two expensive PNG encode/decode
+  // cycles for every interpolated pose, preserving the *same pixel buffers*.
+  const wardrobeImage = wardrobe.canvas
+  const wardrobeAboveHairImage = wardrobe.aboveHairCanvas
   const legacyFaceImage = legacyFaceUrl ? await loadCachedImage(legacyFaceUrl) : null
   const canvas = document.createElement('canvas')
   canvas.width = Math.max(1, artwork.width)
