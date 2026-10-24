@@ -2,6 +2,7 @@ import type { CustomizerFaceAppearance } from '../../../shared/customizer'
 import type { FaceExpressionEffects } from '../../../shared/fabricator'
 import type { StudioFaceMode, StudioFaceTransforms } from '../../../shared/studio'
 import type { GachaStaticLayers } from './gachaStaticLayers'
+import { configureCharacterSampling } from './renderResolution'
 
 /** Independent render passes around a single immutable prepared pose. */
 export type GachaFacePass = 'effects' | 'catalog' | 'details' | 'extras'
@@ -58,6 +59,7 @@ export function createPreparedGachaGpuLayers(args: Readonly<{
     canvas.height = args.artworkHeight
     const context = canvas.getContext('2d')
     if (!context) throw new Error('Camada facial Gacha indisponível.')
+    configureCharacterSampling(context)
     await args.drawFace(context, appearance, transforms, effects, mode, pass)
     return scaled(canvas)
   }

@@ -18,6 +18,7 @@ import { resolveSavedCharacterSource, characterShapeScale, type CatalogArtwork }
 import { getCharacterProportions } from '../../../shared/customizer'
 import { prepareGachaStaticLayers } from './gachaStaticLayers'
 import { createPreparedGachaGpuLayers, type GachaFacePass } from './gachaPreparedGpuLayers'
+import { catalogComponentIdsForPass } from './gachaFaceComponentPass'
 export { GPU_FACE_PASSES } from './gachaPreparedGpuLayers'
 export type { GachaFacePass } from './gachaPreparedGpuLayers'
 import { exportImageMemos, loadCachedImage } from './characterImageMemos'
@@ -752,7 +753,7 @@ export async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, 
     } catch { /* Keep the rest of the face visible if one catalog asset is missing. */ }
   }
   if (gpuPass === 'catalog') return
-  const componentIds: FaceComponentPartId[] = ['eye-left', 'eye-right', 'pupil-left', 'pupil-right', 'brow-left', 'brow-right']
+  const componentIds = catalogComponentIdsForPass(gpuPass)
   const loaded = new Map<FaceComponentPartId, FaceComponentAsset>()
   await Promise.all(componentIds.map(async (part) => {
     const id = appearance.components?.[part]?.assetId
