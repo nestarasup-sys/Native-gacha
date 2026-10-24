@@ -90,8 +90,10 @@ async function run(){
     }
     await send('Runtime.enable')
     if(catalogMode){
-      await evaluate("location.hash='#/video-studio';true")
-      await until("Boolean(document.querySelector('.video-rebuild-library'))",'biblioteca do catálogo')
+      // Persist the synthetic model/project BEFORE mounting the library. The
+      // rebuilt library reads cards on mount rather than watching filesystem
+      // changes, so saving afterwards would leave a stale in-memory card list.
+      await until("Boolean(window.desktop?.createCustomizerCharacter)",'API de teste isolada')
       const projectId=randomUUID()
       await evaluate(`(async()=>{
         const user=await window.desktop.createCustomizerCharacter('GPU PT synthetic')
@@ -130,6 +132,9 @@ async function run(){
         })
         return true
       })()`)
+      await until("window.desktop.listVideoStudios().then(xs=>xs.some(x=>x.title.includes('CATALOG GPU SYNTHETIC'))).catch(()=>false)",'projeto sintético persistido')
+      await evaluate("location.hash='#/video-studio';true")
+      await until("Boolean(document.querySelector('.video-rebuild-library'))",'biblioteca do catálogo')
       await until("Boolean([...document.querySelectorAll('.video-rebuild-cards button')].find(x=>x.textContent.includes('CATALOG GPU SYNTHETIC')))",'personagem salvo de catálogo')
       await evaluate("(()=>{const b=[...document.querySelectorAll('.video-rebuild-cards button')].find(x=>x.textContent.includes('CATALOG GPU SYNTHETIC'));b.click();return true})()")
       await until("Boolean(document.querySelector('.video-rebuild-stage canvas'))",'palco WebGL catalogado')
