@@ -127,3 +127,44 @@ test('an incomplete or absent model cannot replace the persisted V1 PNG',async()
     assert.equal(compiler.sprites(layer,{...actor(),transition:{}}),null)
   }finally{compiler.dispose();global.window=old}
 })
+
+test('GPU pass loading requests only relevant side and matching pupil mask',()=>{
+  const {catalogComponentIdsForPass}=load('src/renderer/src/characters/gachaFaceComponentPass.ts')
+  assert.deepEqual(catalogComponentIdsForPass('pupil-left'),['eye-left','pupil-left'])
+  assert.deepEqual(catalogComponentIdsForPass('pupil-right'),['eye-right','pupil-right'])
+  assert.deepEqual(catalogComponentIdsForPass('eye-left'),['eye-left'])
+  assert.deepEqual(catalogComponentIdsForPass('eye-right'),['eye-right'])
+  assert.deepEqual(catalogComponentIdsForPass('catalog'),[])
+  assert.deepEqual(catalogComponentIdsForPass('details'),[])
+  assert.equal(catalogComponentIdsForPass().length,6,'legacy full face keeps all components')
+})
+test('prepared Gacha sprite assembler retains source rig identity and normal draw order',async()=>{
+  const old=global.document
+  let operations=[]
+  global.document={createElement:()=>({
+    width:0,height:0,getContext:()=>({drawImage:(...args)=>operations.push(['draw',...args]),
+      translate(){},scale(){}})
+  })}
+  const module=load('src/renderer/src/characters/gachaPreparedGpuLayers.ts',{
+    './renderResolution':{configureCharacterSampling:()=>{}}
+  })
+  const original={width:16,height:16}
+  const head={width:16,height:16}
+  const passesDrawn=[]
+  try{
+    const rig=module.createPreparedGachaGpuLayers({
+      rigLayers:{behindFace:original,inFrontOfFace:head},
+      shapeScale:{x:1,y:1},outputWidth:16,outputHeight:16,
+      artworkWidth:16,artworkHeight:16,modelSlot:1,
+      appearance:{modelSlot:1},
+      legacyFaceImage:null,
+      drawFace:async(context,appearance,transforms,effects,mode,pass)=>passesDrawn.push(pass)
+    })
+    const render=await rig.renderGpuLayers()
+    assert.strictEqual(rig.gpuStaticLayers.behindFace,original)
+    assert.strictEqual(rig.gpuStaticLayers.inFrontOfFace,head)
+    assert.deepEqual(render.map(l=>l.id),[
+      'rig-behind-face',...module.GPU_FACE_PASSES.map(x=>'face:'+x),'rig-front'])
+    assert.deepEqual(passesDrawn,[...module.GPU_FACE_PASSES])
+  }finally{global.document=old}
+})
