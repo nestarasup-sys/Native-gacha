@@ -65,7 +65,7 @@ if not exist "node_modules\.bin\electron-vite.cmd" (
 rem Preview de videos e exportacao precisam de um par FFmpeg + FFprobe.
 rem Nao baixar nada se o usuario ja definiu os DOIS executaveis por ambiente.
 if defined GACHA_FFMPEG_PATH if defined GACHA_FFPROBE_PATH goto :video_tools_ready
-if exist "resources\\video-tools\\ffmpeg.exe" if exist "resources\\video-tools\\ffprobe.exe" goto :video_tools_ready
+if exist "resources\video-tools\ffmpeg.exe" if exist "resources\video-tools\ffprobe.exe" goto :video_tools_ready
 echo.
 echo FFmpeg/FFprobe ainda nao foram preparados para o Video Studio.
 echo Um pacote LGPL fixado em resources/video-tools.manifest.json sera baixado
@@ -78,7 +78,7 @@ if errorlevel 1 (
   echo ERRO: PowerShell do Windows nao foi localizado.
   goto :video_tools_skip
 )
-powershell -NoProfile -ExecutionPolicy Bypass -File "scripts\\video-studio\\prepare-ffmpeg-lgpl.ps1"
+powershell -NoProfile -ExecutionPolicy Bypass -File "scripts\video-studio\prepare-ffmpeg-lgpl.ps1"
 if errorlevel 1 (
   echo AVISO: Nao foi possivel preparar FFmpeg/FFprobe.
   echo Os videos originais ainda poderao ser visualizados, mas a
@@ -90,7 +90,7 @@ echo FFmpeg/FFprobe configurados para o Video Studio.
 goto :video_tools_done
 :video_tools_skip
 echo Para instalar depois, rode:
-echo powershell -NoProfile -ExecutionPolicy Bypass -File scripts\\video-studio\\prepare-ffmpeg-lgpl.ps1
+echo powershell -NoProfile -ExecutionPolicy Bypass -File scripts\video-studio\prepare-ffmpeg-lgpl.ps1
 :video_tools_done
 echo.
 
