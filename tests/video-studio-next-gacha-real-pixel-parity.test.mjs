@@ -110,5 +110,20 @@ test('real Fabricator PNG wardrobe and front hair can be uploaded as separate GP
   }
   assert.ok(nonTransparent>20000,'fixture must exercise real opaque character source pixels')
   assert.ok(maxDelta<=3,'independent GPU groups must match original painter; max delta '+maxDelta)
-  assert.deepEqual(await raw(bodyAndRear),await raw(bodyAndRear),'body texture is unchanged by alternate face passes')
+  const unchangedBody=await raw(bodyAndRear)
+  const darkerEye={...eye,input:await sharp(eye.input).modulate({brightness:.65}).png().toBuffer()}
+  const alternateFace=await composite([brow,darkerEye])
+  const alternateIndependent=await composite([
+    {input:bodyAndRear,left:0,top:0},
+    {input:wardrobe,left:0,top:0},
+    {input:alternateFace,left:0,top:0},
+    {input:frontHair,left:0,top:0}
+  ])
+  const alternateWhole=await composite([rear,body,head,coat,brow,darkerEye,front])
+  const a=await raw(alternateWhole),b=await raw(alternateIndependent)
+  let maxAlternateDelta=0
+  for(let i=0;i<a.length;i++)maxAlternateDelta=Math.max(maxAlternateDelta,Math.abs(a[i]-b[i]))
+  assert.ok(maxAlternateDelta<=3,'alternate eye must also preserve painter parity')
+  assert.deepEqual(await raw(bodyAndRear),unchangedBody,'body/back-hair remains stable when only the eye changes')
+  assert.notDeepEqual(await raw(alternateIndependent),next,'eye-only change must affect the final character pixels')
 })
