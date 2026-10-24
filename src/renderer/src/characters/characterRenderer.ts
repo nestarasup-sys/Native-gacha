@@ -10,7 +10,9 @@ import { eyeInteriorMask } from '../ui/image/eyeInteriorMask'
 import { tintSkinPixels } from './skinTint'
 import { configureCharacterSampling, MAX_CHARACTER_PREVIEW_PIXELS } from './renderResolution'
 import { drawFaceExpressionEffects } from './expressionEffectRender'
-import { legacyStandardExpressionEffects } from '../../../shared/legacyExpressionEffects'
+import { loadStandardExpressionEffects } from './standardExpressionEffects'
+export { loadStandardExpressionEffects } from './standardExpressionEffects'
+export type { StandardExpressionEffects } from './standardExpressionEffects'
 import type { VideoCharacterRenderAssetProvider } from '../../../shared/videoCharacterRenderAssets'
 import { resolveSavedCharacterSource, characterShapeScale, type CatalogArtwork } from './characterSourceResolver'
 import { getCharacterProportions } from '../../../shared/customizer'
@@ -26,31 +28,6 @@ export type { CatalogArtwork } from './characterSourceResolver'
 const skinTintImageCache = new Map<string, Promise<HTMLImageElement>>()
 
 const hairTintImageCache = new Map<string, Promise<HTMLImageElement>>()
-
-export type StandardExpressionEffects = Record<number, FaceExpressionEffects>
-
-export async function loadStandardExpressionEffects(modelSlot: number, assetProvider: VideoCharacterRenderAssetProvider = window.desktop): Promise<StandardExpressionEffects> {
-  const summaries = await assetProvider.listFaceExpressionPresets(modelSlot)
-  const standard = summaries.filter((preset) => (preset.collectionId ?? 'standard') === 'standard'
-    && Number.isInteger(preset.expressionIndex) && preset.expressionIndex! >= 0 && preset.expressionIndex! < 21)
-  const loaded = await Promise.all(standard.map((summary) => assetProvider.loadFaceExpressionPreset(modelSlot, summary.id)))
-  const effectsByIndex: StandardExpressionEffects = {}
-  for (const preset of loaded) {
-    if (!preset || !Number.isInteger(preset.expressionIndex)) continue
-    const fallback = legacyStandardExpressionEffects({ ...preset, collectionId: preset.collectionId ?? 'standard' })
-    const effects = preset.effects ?? fallback
-    if (!effects) continue
-    // Customizer's checkbox controls the mouth blush. Keep the other authored
-    // expression effects exclusive to Studio presets.
-    effectsByIndex[preset.expressionIndex!] = {
-      ...structuredClone(effects),
-      shadow: { ...effects.shadow, enabled: false },
-      blush: { ...effects.blush, enabled: false },
-      mouthBlush: { ...effects.mouthBlush }
-    }
-  }
-  return effectsByIndex
-}
 
 const faceElementOrder: FaceElementKind[] = ['brow-left', 'brow-right', 'eye-left', 'eye-right', 'nose', 'mouth']
 
@@ -1122,7 +1099,7 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
     return { dataUrl: value.canvas.toDataURL('image/png'), width: value.width, height: value.height }
   }
   return { width: outputWidth, height: outputHeight, render, renderToCanvas, renderGpuLayers, renderGpuFacePass,
-    gpuStaticLayers: { behindFace: rigBack, inFrontOfFace: rigFront } }
+    gpuStaticLayers }
 }
 
 export async function renderSavedCharacter(character: CustomizerCharacter, studioFaceTransforms?: StudioFaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: StudioFaceMode): Promise<{ dataUrl: string; width: number; height: number }> {
