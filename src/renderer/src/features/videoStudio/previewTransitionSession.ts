@@ -22,7 +22,7 @@ export type PreviewTransitionMetrics = Readonly<{
   cachedFrames: number
   inFlight: number
 }>
-export type PreviewTransitionRenderer = Pick<TransitionRenderer, 'render' | 'dispose'>
+export type PreviewTransitionRenderer = Pick<TransitionRenderer, 'render' | 'dispose'> & Partial<Pick<TransitionRenderer, 'renderPreview'>>
 
 /**
  * Session-local PNG compatibility path for the existing DOM stage.
@@ -120,7 +120,11 @@ export class PreviewTransitionSession {
       const start = performance.now()
       let state: VideoCharacterState
       try {
-        state = await this.renderer.render(span, frame, character, signal)
+        // Prefer the same direct-Canvas Gacha raster used by export. A renderer
+        // without that capability remains compatible with the legacy PNG path.
+        state = await (this.renderer.renderPreview
+          ? this.renderer.renderPreview(span, frame, character, signal)
+          : this.renderer.render(span, frame, character, signal))
       } catch (reason) {
         if (this.disposed || signal.aborted || generation !== this.generation) {
           this.discarded++

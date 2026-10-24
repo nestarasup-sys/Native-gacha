@@ -23,3 +23,9 @@ Branch de trabalho: `codex/video-studio-preview-foundation-20261023`.
 ## Limites
 
 O código desta rodada é uma fatia de reconstrução; não declara N4/N5/N6/N7 concluídos, nem export real certificado. Nenhum dado local de usuário foi consultado, migrado ou excluído.
+
+## Segunda fatia: Canvas Gacha reutilizado na rota DOM
+
+`TransitionRenderer.renderPreview()` usa `renderCanvas()` e só transforma o canvas **final recortado** em uma única URL PNG para o DOM legado; evita `render() → PNG → trimTransparentImage` por amostra intermediária. O backend de export continua intacto e continua produzindo Canvas diretamente, sem encode PNG. Há fallback para `render()` em falha específica do Canvas, exceto quando o pedido foi abortado; cancelamento não pode provocar raster antigo. Testes sintéticos cobrem escolha Canvas, fallback e abort.
+
+**Gate em aberto:** comparar pixels/ROI no Chromium Windows com personagens reais, PT e roupas, usando o oráculo existente; não afirmar paridade completa, FPS melhor ou desaparecimento de OOM sem medições.
