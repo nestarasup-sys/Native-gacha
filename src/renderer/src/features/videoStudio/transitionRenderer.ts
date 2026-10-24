@@ -34,6 +34,69 @@ type PreparedGachaRenderer = Awaited<ReturnType<typeof prepareSavedCharacterRend
 /** Session-local reader. No supplier, character, or timeline writes are exposed. */
 export class TransitionRenderer {
   private readonly preparedStatic: VideoStudioBoundedMemo<PreparedGachaRenderer>
+  /**
+   * Hidden opt-in only. The default editor keeps the exact Canvas composer.
+   * Once PixiJS is shown to differ for any character, never retry that actor
+   * in this editing session; avoid flicker/ghosting from backend oscillation.
+   */
+  private readonly experimentalGpu = new Map<string, Promise<{
+    width: number
+    height: number
+    surface: import('./pixiGachaLayerSurface').PixiGachaLayerSurface
+  }>>()
+  private readonly disabledExperimentalGpu = new Set<string>()
+
+  private gpuPreviewEnabled(): boolean {
+    // Deliberately no project setting, layout change or persisted preference.
+    // A developer can enable this during local parity experiments through
+    // window.__NATIVE_GACHA_GPU_PREVIEW_EXPERIMENTAL__ = true in devtools.
+    return typeof window !== 'undefined'
+      && (window as Window & { __NATIVE_GACHA_GPU_PREVIEW_EXPERIMENTAL__?: boolean })
+        .__NATIVE_GACHA_GPU_PREVIEW_EXPERIMENTAL__ === true
+  }
+
+  private async drawExperimentalGpu(
+    characterId: string,
+    renderer: PreparedGachaRenderer,
+    appearance: CustomizerFaceAppearance | undefined,
+    transforms: StudioFaceTransforms,
+    effects: FaceExpressionEffects,
+    mode: VideoCharacterState['element']['activeFaceMode'],
+  ): Promise<HTMLCanvasElement | null> {
+    if (!this.gpuPreviewEnabled() || this.disabledExperimentalGpu.has(characterId)) return null
+    try {
+      const layers = await renderer.renderLayersToCanvas(appearance, transforms, effects, mode)
+      let active = this.experimentalGpu.get(characterId)
+      if (active) {
+        const existing = await active
+        if (existing.width !== layers.outputWidth || existing.height !== layers.outputHeight) {
+          existing.surface.dispose()
+          this.experimentalGpu.delete(characterId)
+          active = undefined
+        }
+      }
+      if (!active) {
+        active = import('./pixiGachaLayerSurface').then(async ({ PixiGachaLayerSurface }) => ({
+          width: layers.outputWidth,
+          height: layers.outputHeight,
+          surface: await PixiGachaLayerSurface.create(layers.outputWidth, layers.outputHeight),
+        }))
+        this.experimentalGpu.set(characterId, active)
+      }
+      const current = await active
+      // This automatically rejects mismatched skin/wardrobe/PT pixels via
+      // PixiGachaVisualGate; never display a visually different frame.
+      return current.surface.render(layers)
+    } catch {
+      this.disabledExperimentalGpu.add(characterId)
+      const failed = this.experimentalGpu.get(characterId)
+      this.experimentalGpu.delete(characterId)
+      if (failed) void failed.then((instance) => instance.surface.dispose()).catch(() => {})
+      return null
+    }
+  }
+
+
 
   constructor(
     private readonly assetProvider: VideoCharacterRenderAssetProvider = window.desktop,
@@ -159,7 +222,12 @@ export class TransitionRenderer {
       // The prepared body/wardrobe/front-hair canvases are reused, while the
       // unchanged facial overlay draws dynamic mouth, blink and independent PT
       // pupils. Snapshot before the prepared rig is painted again.
-      const rendered = await renderer.renderToCanvas(appearance, transforms, effects, mode)
+      const gpuCanvas = previewCrop
+        ? await this.drawExperimentalGpu(character.id, renderer, appearance, transforms, effects, mode)
+        : null
+      const rendered = gpuCanvas
+        ? { canvas: gpuCanvas, width: renderer.width, height: renderer.height }
+        : await renderer.renderToCanvas(appearance, transforms, effects, mode)
       signal?.throwIfAborted()
       const snapshot = previewCrop
         ? await snapshotTrimmedPreviewGachaCanvas(rendered.canvas, signal)
@@ -210,10 +278,15 @@ export class TransitionRenderer {
 
   clearPrepared(): void {
     this.preparedStatic.clear()
+    for (const pending of this.experimentalGpu.values()) {
+      void pending.then(({ surface }) => surface.dispose()).catch(() => {})
+    }
+    this.experimentalGpu.clear()
+    this.disabledExperimentalGpu.clear()
   }
 
   dispose(): void {
-    this.preparedStatic.clear()
+    this.clearPrepared()
     this.models.clear()
     this.poses.clear()
     this.components.clear()
