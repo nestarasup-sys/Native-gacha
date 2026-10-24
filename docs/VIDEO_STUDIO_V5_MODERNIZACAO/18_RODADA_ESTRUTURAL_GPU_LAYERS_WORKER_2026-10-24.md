@@ -80,3 +80,9 @@ CI após o último commit de código: https://github.com/nestarasup-sys/Native-g
 4. Integrar um modo GPU experimental na preview real com seleção e fallback por personagem; só promover a padrão após passar os oráculos visuais e benchmark de regressão.
 
 **Nenhum teste manual do usuário é obrigatório nesta etapa; o funcionamento normal do Video Studio segue protegido.**
+
+## Admissão visual do compositor experimental (sprint seguinte)
+
+A superfície GPU `PixiGachaLayerSurface` agora executa `PixiGachaVisualGate` antes de disponibilizar imagens. O gate monta a referência 2D diretamente das mesmas camadas autorais e compara com leitura RGBA real do PixiJS. Ele valida alguns frames iniciais, reavalia amostras periodicamente e força nova verificação se a fonte da roupa/corpo ou cabelo mudar; o caminho de alta frequência não lê pixels a cada frame. Os limites default são conservadores (0,3% dos pixels acima de tolerância de 10 canais; erro médio 1,25; erro p99 5). Divergência, fonte inválida ou amostra acima de 2 milhões de pixels rejeita aquela superfície, e a chamada retorna ao Canvas histórico, sem ghost/crossfade.
+
+O novo Canvas de rosto em `prepareSavedCharacterRenderer` passou a ser alocado **sob demanda** somente se a API experimental de camadas for chamada. O preview Canvas habitual deixa de pagar o custo dessa memória adicional.
