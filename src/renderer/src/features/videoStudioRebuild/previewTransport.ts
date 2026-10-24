@@ -1,5 +1,6 @@
 import type { VideoSceneFrame } from '../../../../shared/videoSceneIR'
 import { planSnapshotSprites } from '../../../../shared/videoStudioRebuild/previewSpritePlan'
+import { createPreviewBalloonCanvas, previewBalloonKey } from './balloonCanvas'
 import { VideoStudioBoundedMemo } from '../../../../shared/videoStudioNext/boundedMemo'
 import { VideoStudioFrameEngine } from '../../../../shared/videoStudioRebuild/frameEngine'
 import { VideoFrameScheduler } from '../../../../shared/videoStudioRebuild/frameScheduler'
@@ -38,7 +39,10 @@ export class VideoStudioPreviewTransport {
   private readonly images = new VideoStudioBoundedMemo<HTMLImageElement>(
     48, 64 * 1024 * 1024, image => Math.max(1, image.naturalWidth * image.naturalHeight * 4)
   )
-  private readonly imageIds = new WeakMap<HTMLImageElement, number>()
+  private readonly balloons = new VideoStudioBoundedMemo<HTMLCanvasElement>(
+    24, 24 * 1024 * 1024, canvas => canvas.width * canvas.height * 4
+  )
+  private readonly imageIds = new WeakMap<object, number>()
   private nextImageId = 0
   private frame = 0
   private playing = false
@@ -93,7 +97,7 @@ export class VideoStudioPreviewTransport {
     })
   }
 
-  private textureId(image: HTMLImageElement): string {
+  private textureId(image: TexImageSource): string {
     let id = this.imageIds.get(image)
     if (!id) { id = ++this.nextImageId; this.imageIds.set(image, id) }
     return 'asset:' + id
@@ -131,6 +135,16 @@ export class VideoStudioPreviewTransport {
             width: layer.transform?.width ?? 100, height: layer.transform?.height ?? 100,
             rotation: layer.transform?.rotation ?? 0 }
         })
+        continue
+      }
+      if ((layer.kind === 'speech' || layer.kind === 'thought') && !layer.assetDataUrl) {
+        const key=previewBalloonKey(layer.element)
+        const canvas=await awaitAbortable(this.balloons.getOrCreate(key,
+          () => Promise.resolve(createPreviewBalloonCanvas(layer.element))),signal)
+        output.push({textureId:this.textureId(canvas),source:canvas,
+          element:{x:layer.element.x,y:layer.element.y,width:layer.element.width,
+            height:layer.element.height,rotation:layer.element.rotation,
+            flipX:layer.element.flipX}})
         continue
       }
       // Decode only current absolute-frame transition sprites, retaining them
@@ -208,6 +222,7 @@ export class VideoStudioPreviewTransport {
     ++this.requestId
     this.scheduler.dispose()
     this.images.clear()
+    this.balloons.clear()
     this.media.dispose()
     this.gpu.dispose()
   }

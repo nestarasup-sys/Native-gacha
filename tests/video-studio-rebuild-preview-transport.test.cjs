@@ -26,7 +26,9 @@ const spritePlan=load('src/shared/videoStudioRebuild/previewSpritePlan.ts',{
 const {VideoStudioPreviewTransport}=load('src/renderer/src/features/videoStudioRebuild/previewTransport.ts',{
   '../../../../shared/videoStudioNext/boundedMemo':{VideoStudioBoundedMemo},
   '../../../../shared/videoStudioRebuild/frameScheduler':{VideoFrameScheduler},
-  '../../../../shared/videoStudioRebuild/previewSpritePlan':spritePlan
+  '../../../../shared/videoStudioRebuild/previewSpritePlan':spritePlan,
+  './balloonCanvas':{previewBalloonKey:element=>element.kind+':'+element.text,
+    createPreviewBalloonCanvas:()=>({width:512,height:256})}
 })
 const flush=()=>new Promise(resolve=>setImmediate(resolve))
 function setup(sceneFactory){
