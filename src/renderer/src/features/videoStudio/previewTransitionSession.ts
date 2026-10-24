@@ -1,5 +1,4 @@
 import type { CustomizerCharacter } from '../../../../shared/customizer'
-import type { VideoCharacterState } from '../../../../shared/studio'
 import type { VideoGachaCanvasState } from './videoGachaCanvasFrame'
 import type { CharacterTransition } from './characterTransitions'
 import { transitionSampleFrames } from './characterTransitions'
@@ -167,6 +166,9 @@ export class PreviewTransitionSession {
         : state.imageDataUrl.length * 2
       this.cache.set(key, { state, bytes })
       this.bytes += bytes
+      if (this.activeTransitions.get(span.elementId) === this.key(span, -1, character)) {
+        this.lastDisplayed.set(span.elementId, { signature: this.key(span, -1, character), state })
+      }
       this.rendered++
       this.lastRenderMs = performance.now() - start
       this.renderMs += this.lastRenderMs
