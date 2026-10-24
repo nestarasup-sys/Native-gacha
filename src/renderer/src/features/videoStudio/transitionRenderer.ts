@@ -45,6 +45,8 @@ export class TransitionRenderer {
     surface: import('./pixiGachaLayerSurface').PixiGachaLayerSurface
   }>>()
   private readonly disabledExperimentalGpu = new Set<string>()
+  private readonly gpuDrawQueues = new Map<string, Promise<void>>()
+  private gpuGeneration = 0
 
   private gpuPreviewEnabled(): boolean {
     // Deliberately no project setting, layout change or persisted preference.
@@ -64,38 +66,62 @@ export class TransitionRenderer {
     mode: VideoCharacterState['element']['activeFaceMode'],
   ): Promise<HTMLCanvasElement | null> {
     if (!this.gpuPreviewEnabled() || this.disabledExperimentalGpu.has(characterId)) return null
-    try {
-      const layers = await renderer.renderLayersToCanvas(appearance, transforms, effects, mode)
-      let active = this.experimentalGpu.get(characterId)
-      if (active) {
-        const existing = await active
-        if (existing.width !== layers.outputWidth || existing.height !== layers.outputHeight) {
-          existing.surface.dispose()
-          this.experimentalGpu.delete(characterId)
-          active = undefined
+    // One prepared Gacha face layer is mutable. Do not allow two concurrent
+    // transition requests to paint that canvas while the previous GPU upload
+    // is still in progress. Serialize per actor, not globally.
+    const generation = this.gpuGeneration
+    const previous = this.gpuDrawQueues.get(characterId) ?? Promise.resolve()
+    const next = previous.then(async (): Promise<HTMLCanvasElement | null> => {
+      if (generation !== this.gpuGeneration || this.disabledExperimentalGpu.has(characterId)) return null
+      try {
+        const layers = await renderer.renderLayersToCanvas(appearance, transforms, effects, mode)
+        if (generation !== this.gpuGeneration) return null
+        let active = this.experimentalGpu.get(characterId)
+        if (active) {
+          const existing = await active
+          if (existing.width !== layers.outputWidth || existing.height !== layers.outputHeight) {
+            existing.surface.dispose()
+            this.experimentalGpu.delete(characterId)
+            active = undefined
+          }
         }
+        if (!active) {
+          active = import('./pixiGachaLayerSurface').then(async ({ PixiGachaLayerSurface }) => ({
+            width: layers.outputWidth, height: layers.outputHeight,
+            surface: await PixiGachaLayerSurface.create(layers.outputWidth, layers.outputHeight),
+          }))
+          this.experimentalGpu.set(characterId, active)
+        }
+        const current = await active
+        if (generation !== this.gpuGeneration) return null
+        const gpu = current.surface.render(layers)
+        // The Pixi backing canvas is reused by the next frame. Snapshot it
+        // *while this actor's queue is held* before the next request can
+        // overwrite its pixels. Preview crop can then safely run async.
+        const stable = document.createElement('canvas')
+        stable.width = gpu.width
+        stable.height = gpu.height
+        const context = stable.getContext('2d')
+        if (!context) throw new Error('Não foi possível capturar o frame GPU Gacha.')
+        context.drawImage(gpu, 0, 0)
+        return stable
+      } catch {
+        this.disabledExperimentalGpu.add(characterId)
+        const failed = this.experimentalGpu.get(characterId)
+        this.experimentalGpu.delete(characterId)
+        if (failed) void failed.then(({ surface }) => surface.dispose()).catch(() => {})
+        return null
       }
-      if (!active) {
-        active = import('./pixiGachaLayerSurface').then(async ({ PixiGachaLayerSurface }) => ({
-          width: layers.outputWidth,
-          height: layers.outputHeight,
-          surface: await PixiGachaLayerSurface.create(layers.outputWidth, layers.outputHeight),
-        }))
-        this.experimentalGpu.set(characterId, active)
-      }
-      const current = await active
-      // This automatically rejects mismatched skin/wardrobe/PT pixels via
-      // PixiGachaVisualGate; never display a visually different frame.
-      return current.surface.render(layers)
-    } catch {
-      this.disabledExperimentalGpu.add(characterId)
-      const failed = this.experimentalGpu.get(characterId)
-      this.experimentalGpu.delete(characterId)
-      if (failed) void failed.then((instance) => instance.surface.dispose()).catch(() => {})
-      return null
-    }
+    })
+    // Rejection does not poison following queued frames. All stale work is
+    // dropped when clearPrepared/dispose increments the session generation.
+    const settled = next.then(() => undefined, () => undefined)
+    this.gpuDrawQueues.set(characterId, settled)
+    void settled.then(() => {
+      if (this.gpuDrawQueues.get(characterId) === settled) this.gpuDrawQueues.delete(characterId)
+    })
+    return next
   }
-
 
 
   constructor(
@@ -277,7 +303,9 @@ export class TransitionRenderer {
   }
 
   clearPrepared(): void {
+    this.gpuGeneration++
     this.preparedStatic.clear()
+    this.gpuDrawQueues.clear()
     for (const pending of this.experimentalGpu.values()) {
       void pending.then(({ surface }) => surface.dispose()).catch(() => {})
     }
