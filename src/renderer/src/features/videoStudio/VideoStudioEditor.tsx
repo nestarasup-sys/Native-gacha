@@ -2271,14 +2271,16 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
             data-transition-render-ms={characterAnimation.transitionMetrics.renderMs.toFixed(2)}
             data-transition-discarded={characterAnimation.transitionMetrics.discarded}
             data-transition-cache-bytes={characterAnimation.transitionMetrics.cachedBytes}
+            data-transition-fallback-count={characterAnimation.fallbackTransitions.size}
             ref={sceneRef} style={{ backgroundColor: activeStudio.backgroundColor }} onPointerDown={() => { if (!fullView) setSelectedElementId(null) }}>
             {backgroundAsset && <img className={`video-studio-canvas-background${selectedElementId === 'background' && !fullView ? ' selected' : ''}`} src={backgroundAsset.dataUrl} alt="" style={imageStyle(activeStudio.backgroundX, activeStudio.backgroundY, activeStudio.backgroundWidth, activeStudio.backgroundHeight, activeStudio.backgroundRotation)} onPointerDown={(event) => startDrag(event, 'background')} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag} />}
             {[...activeStudio.elements].sort((a, b) => a.zIndex - b.zIndex).map((sourceElement) => {
               if (videoFrameSelection && sourceElement.kind === 'character' && videoFrameSelection.hiddenCharacterIds.has(sourceElement.id)) return null
               if (videoFrameSelection && (sourceElement.kind === 'speech' || sourceElement.kind === 'thought') && !videoFrameSelection.textClipByElementId.has(sourceElement.id)) return null
               const transitionState = characterAnimation.samples.get(sourceElement.id)
+              const transitionFallback = characterAnimation.fallbackTransitions.get(sourceElement.id)
               const playbackState = transitionState ?? videoPlaybackStates?.get(sourceElement.id)
-              const mouthAnimation = sourceElement.kind === 'character' && !transitionState ? automaticMouthPreview[sourceElement.id] : undefined
+              const mouthAnimation = sourceElement.kind === 'character' && !transitionState && !transitionFallback ? automaticMouthPreview[sourceElement.id] : undefined
               const mouthMode = automaticMouthModes.get(sourceElement.id)
               const speechStartFrame = mouthAnimation?.speechStartFrame ?? videoPreviewFrame
               const mouthPhase = mouthAnimation?.cycleFrames && videoPlaying && animateMouthDuringSpeech && mouthMode === 'talk'
@@ -2288,9 +2290,9 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
                 ? Math.floor(mouthPhase / Math.max(1, mouthAnimation.cycleFrames / mouthAnimation.frames.length)) % mouthAnimation.frames.length
                 : 0
               const automaticMouthState = mouthAnimation?.frames[mouthFrameIndex]
-              const blinkState = sourceElement.kind === 'character' && !transitionState && !automaticMouthState ? automaticBlinkPreview[sourceElement.id] : undefined
+              const blinkState = sourceElement.kind === 'character' && !transitionState && !transitionFallback && !automaticMouthState ? automaticBlinkPreview[sourceElement.id] : undefined
               const activeTextClip = videoFrameSelection?.textClipByElementId.get(sourceElement.id)
-              const playbackElement = playbackState?.element ?? activeTextClip?.state ?? sourceElement
+              const playbackElement = transitionFallback?.element ?? playbackState?.element ?? activeTextClip?.state ?? sourceElement
               const faceGeometry = automaticMouthState?.geometry ?? blinkState?.geometry
               const blinkedElement = faceGeometry && playbackElement.kind === 'character' ? { ...playbackElement, ...faceGeometry } : playbackElement
               const element = isVideoWorkspace ? videoCharacterStageElement(videoTimelineFor(activeStudio), blinkedElement) : blinkedElement
@@ -2304,6 +2306,7 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
                 element={element}
                 imageDataUrl={imageDataUrl}
                 canvasImage={transitionState?.canvasImage}
+                transitionFallback={transitionFallback}
                 assetName={asset?.name}
                 speakerName={speakerName}
                 speakerColor={speakerColor}

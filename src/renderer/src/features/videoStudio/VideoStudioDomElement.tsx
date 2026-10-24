@@ -2,11 +2,13 @@ import { useLayoutEffect, useRef, type CSSProperties, type PointerEventHandler }
 import type { StudioElement } from '../../../../shared/studio'
 import { videoCharacterElementSize, videoStageCssTransform } from '../../../../shared/videoStageGeometry'
 import { matchingVideoVisualPlugin } from './videoVisualPluginRegistry'
+import type { RealtimeTransitionFallback } from './realtimeTransitionFallback'
 
 export type VideoStudioDomElementProps = Readonly<{
   element: StudioElement
   imageDataUrl?: string
   canvasImage?: HTMLCanvasElement | ImageBitmap
+  transitionFallback?: RealtimeTransitionFallback
   assetName?: string
   speakerName?: string
   speakerColor?: string
@@ -35,6 +37,7 @@ export function VideoStudioDomElement({
   element,
   imageDataUrl,
   canvasImage,
+  transitionFallback,
   assetName,
   speakerName,
   speakerColor,
@@ -47,7 +50,7 @@ export function VideoStudioDomElement({
 }: VideoStudioDomElementProps) {
   const plugin = matchingVideoVisualPlugin({ element, imageDataUrl })
   const extension = plugin?.renderDom?.({ element, imageDataUrl })
-  if (extension) return <>{extension}</>
+  if (extension && !transitionFallback) return <>{extension}</>
 
   const size = videoCharacterElementSize(element)
   const style: CSSProperties = {
@@ -65,14 +68,20 @@ export function VideoStudioDomElement({
   return (
     <div
       className={`video-studio-canvas-element video-studio-element-${element.kind}${selected ? ' selected' : ''}`}
+      data-transition-visual={transitionFallback ? 'realtime-blend' : canvasImage ? 'canvas' : undefined}
       style={style}
       onPointerDown={interactive ? onPointerDown : undefined}
       onPointerMove={interactive ? onPointerMove : undefined}
       onPointerUp={interactive ? onPointerUp : undefined}
       onPointerCancel={interactive ? onPointerCancel : undefined}
     >
-      {element.kind === 'character' && canvasImage
-        ? <VideoStudioCanvasRaster source={canvasImage} label={assetName ?? element.text} />
+      {element.kind === 'character' && transitionFallback
+        ? <div className="video-studio-character-blend" role="img" aria-label={assetName ?? element.text}>
+            <img src={transitionFallback.fromImageDataUrl} alt="" aria-hidden="true" draggable={false} style={{ opacity: 1 - transitionFallback.progress }} />
+            <img src={transitionFallback.toImageDataUrl} alt="" aria-hidden="true" draggable={false} style={{ opacity: transitionFallback.progress }} />
+          </div>
+        : element.kind === 'character' && canvasImage
+          ? <VideoStudioCanvasRaster source={canvasImage} label={assetName ?? element.text} />
         : (element.kind === 'image' || element.kind === 'character') && imageDataUrl
           ? <img src={imageDataUrl} alt={assetName ?? element.text} draggable={false} />
         : element.kind === 'speech' || element.kind === 'thought'

@@ -3,6 +3,7 @@ import type { CustomizerCharacter } from '../../../../shared/customizer'
 import type { StudioDocument } from '../../../../shared/studio'
 import type { VideoGachaCanvasState } from './videoGachaCanvasFrame'
 import { compileCharacterTransitions, transitionSampleFrames, type CharacterTransition } from './characterTransitions'
+import { evaluateRealtimeTransitionFallback, type RealtimeTransitionFallback } from './realtimeTransitionFallback'
 import { PreviewTransitionSession } from './previewTransitionSession'
 
 export function useCharacterTransitions(
@@ -16,24 +17,28 @@ export function useCharacterTransitions(
   const timeline = studio?.videoTimeline
   const spans = useMemo(
     () => studio ? compileCharacterTransitions(studio) : [],
-    [studio?.id, timeline?.characterKeys, timeline?.characterBases, timeline?.characterGaps, timeline?.durationFrames],
+    [studio?.id, studio?.elements, timeline?.characterKeys, timeline?.characterBases, timeline?.characterGaps, timeline?.durationFrames],
   )
   const session = useMemo(() => new PreviewTransitionSession(studio?.id ?? ''), [studio?.id])
   const [revision, setRevision] = useState(0)
   useEffect(() => { session.activate(); return () => session.dispose() }, [session])
 
-  // Every render asks for only the absolute frame on screen; no await and no
-  // preparation of a complete 15-frame segment before enabling playback.
+  // During Play, use an immediate GPU cross-dissolve of the authored endpoint
+  // snapshots. A full Gacha raster may take longer than all 15 timeline frames;
+  // requesting it every RAF can starve the interface without showing one frame.
   useEffect(() => {
-    if (!studio || !enabled) {
-      session.cancelPending()
-      return
-    }
+    if (playing || !enabled) session.cancelPending()
+  }, [playing, enabled, session])
+
+  // Paused seek asks for just ONE precise Gacha frame asynchronously. The
+  // fallback remains visible until that expensive render finishes.
+  useEffect(() => {
+    if (!studio || !enabled || playing) return
     session.requestFrame(spans, frame, characters,
       () => setRevision(value => value + 1),
       (error) => onError(error instanceof Error ? error.message : 'Erro ao renderizar a prévia de personagem.'),
     )
-  }, [studio?.id, enabled, session, spans, frame, characters, onError])
+  }, [studio?.id, enabled, playing, session, spans, frame, characters, onError])
 
   const samplesByFrame = useMemo(() => {
     const result = new Map<number, CharacterTransition[]>()
@@ -45,14 +50,26 @@ export function useCharacterTransitions(
 
   const samples = useMemo(() => {
     const result = new Map<string, VideoGachaCanvasState>()
-    if (enabled) for (const span of samplesByFrame.get(frame) ?? []) {
+    // Never mix sporadically cached accurate rasters with the fast playback
+    // dissolve: doing so causes visible flashes and temporal discontinuities.
+    if (!playing && enabled) for (const span of samplesByFrame.get(frame) ?? []) {
       const character = characters.find(item => item.id === span.from.element.characterId)
-      const state = character && session.get(span, frame, character, playing)
+      const state = character && session.get(span, frame, character)
       if (state) result.set(span.elementId, state)
     }
     return result
   }, [samplesByFrame, frame, session, characters, revision, enabled, playing])
 
+  const fallbackTransitions = useMemo(() => {
+    const result = new Map<string, RealtimeTransitionFallback>()
+    if (enabled) for (const span of samplesByFrame.get(frame) ?? []) {
+      if (samples.has(span.elementId)) continue
+      const fallback = evaluateRealtimeTransitionFallback(span, frame)
+      if (fallback) result.set(span.elementId, fallback)
+    }
+    return result
+  }, [samplesByFrame, frame, samples, enabled])
+
   const cancelPlayback = () => session.cancelPending()
-  return { samples, cancelPlayback, transitionMetrics: session.metrics() }
+  return { samples, fallbackTransitions, cancelPlayback, transitionMetrics: session.metrics() }
 }
