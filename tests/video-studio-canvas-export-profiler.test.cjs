@@ -38,7 +38,7 @@ test('export final job diagnostics show character cost, media decode and existin
  assert.match(metrics,/writerWaitMs\?: number/)
  assert.match(coordinator,/characterMs \+= timings\.characterMs/)
  assert.match(coordinator,/mediaDecodeMs \+= timings\.mediaDecodeMs/)
- assert.equal(coordinator.split('        characterMs,\n        mediaDecodeMs,').length,4,
+ assert.equal(coordinator.match(/^\s+characterMs,\r?\n\s+mediaDecodeMs,/gm)?.length,3,
    'export rendering, assembly and final report must retain the new diagnostics')
  assert.match(coordinator,/surfaceOtherMs \+= Math\.max\(0, roundTripMs - timings\.composeMs - timings\.readbackMs\)/)
  assert.match(coordinator,/workerCount,/)
