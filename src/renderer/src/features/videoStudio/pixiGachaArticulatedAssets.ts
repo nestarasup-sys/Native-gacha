@@ -6,7 +6,7 @@ import { mapWardrobeComponentToPose, wardrobePosePadding } from '../../../../sha
 import { wardrobeAdjustmentMatrix } from '../../../../shared/wardrobeAdjustment'
 import { getCharacterProportions } from '../../../../shared/customizer'
 import {
-  clothingCategories, wardrobeComponentsForGroup, loadHairAppearanceLayers, loadHairTintedImage,
+  wardrobeComponentsForGroup, loadHairAppearanceLayers, loadHairTintedImage,
   loadSkinTintedImage, loadCachedImage, resolvedHairColors,
 } from '../../characters/characterRenderer'
 import { characterShapeScale } from '../../characters/characterSourceResolver'
@@ -147,7 +147,6 @@ export async function prepareGachaArticulatedAssets(
   }))
   const garments: Garment[] = []
   for (const group of groups) {
-    const set = details[`${group.modelSlot}:${group.setId}`]
     for (const component of wardrobeComponentsForGroup(group, details)) {
       if (component.glue?.mode === 'loose') continue
       const image = group.colors ? await loadHairTintedImage(component.dataUrl, group.colors) : await loadCachedImage(component.dataUrl)
