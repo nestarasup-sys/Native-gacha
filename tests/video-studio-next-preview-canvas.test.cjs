@@ -67,13 +67,15 @@ function rig({ failCanvas = false } = {}) {
   return { session, character, span, calls }
 }
 
-test('DOM preview uses Canvas Gacha rendering, encodes a single final PNG and preserves output geometry', async () => {
+test('DOM preview returns Canvas Gacha raster without any PNG encoding', async () => {
   const { session, character, span, calls } = rig()
   const result = await session.renderPreview(span, 7, character)
-  assert.equal(result.imageDataUrl, 'data:image/png;base64,CANVAS')
+  assert.equal(result.canvasImage?.width, 40)
+  assert.equal(result.canvasImage?.height, 50)
+  assert.equal(result.imageDataUrl, 'data:image/png;base64,AUTHORED')
   assert.equal(result.element.width, 25)
   assert.equal(calls.canvas, 1)
-  assert.equal(calls.encode, 1)
+  assert.equal(calls.encode, 0)
   assert.equal(calls.png, 0)
   session.dispose()
 })
