@@ -609,6 +609,7 @@ export async function renderFaceOverlay(artwork: CatalogArtwork, source: Fabrica
   if (!context) return null
   context.scale(pixelScale, pixelScale)
   for (const element of faceElementOrder) {
+    if (gpuPass && gpuPass !== 'catalog') break
     if (element.startsWith('brow') && !appearance.eyebrows) continue
     const sheet = element.startsWith('eye') ? 'eyes' : element.startsWith('brow') ? 'eyebrows' : element === 'nose' ? 'nose' : appearance.mouthOpen ? 'mouth-open' : 'mouth-closed'
     const index = sheet === 'eyes' ? appearance.eyeState : sheet === 'nose' ? appearance.noseIndex : sheet.startsWith('mouth') ? appearance.expressionIndex : 0
@@ -679,7 +680,17 @@ function alignMouthTransformToClosedBase(transform: FaceComponentAsset['defaultT
 
 type StudioClosedEyeResolver = (openEye: FaceComponentAsset, side: 'left' | 'right') => Promise<FaceComponentAsset | null>
 
-export async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, artwork: CatalogArtwork, source: FabricatorProject, items: Partial<Record<FaceSheetKind | FaceElementKind, FaceCatalogItem>>, appearance: CustomizerFaceAppearance, skinTone?: string, studioFaceTransforms?: StudioFaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: StudioFaceMode, resolveClosedEye?: StudioClosedEyeResolver, headOverrides: CustomizerCharacter['customization']['partOverrides'] = {}, highlightedHeadId?: string | null, assetProvider: VideoCharacterRenderAssetProvider = window.desktop): Promise<void> {
+/** Independent catalog draw passes used by the GPU engine. Existing canvas
+ * callers omit this parameter and preserve the old painter's order. */
+export type GachaFacePass = 'effects' | 'catalog' | 'details' | 'extras'
+  | 'brow-left' | 'brow-right' | 'eye-left' | 'eye-right'
+  | 'pupil-left' | 'pupil-right'
+export const GPU_FACE_PASSES: readonly GachaFacePass[] = [
+  'effects','catalog','brow-left','brow-right','eye-left','eye-right',
+  'pupil-left','pupil-right','details','extras'
+] as const
+
+export async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, artwork: CatalogArtwork, source: FabricatorProject, items: Partial<Record<FaceSheetKind | FaceElementKind, FaceCatalogItem>>, appearance: CustomizerFaceAppearance, skinTone?: string, studioFaceTransforms?: StudioFaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: StudioFaceMode, resolveClosedEye?: StudioClosedEyeResolver, headOverrides: CustomizerCharacter['customization']['partOverrides'] = {}, highlightedHeadId?: string | null, assetProvider: VideoCharacterRenderAssetProvider = window.desktop, gpuPass?: GachaFacePass): Promise<void> {
   const sourceHead = source.parts.find((part) => /cabe[çc]a|head/i.test(part.name))
   const targetHead = artwork.parts.find((part) => /cabe[çc]a|head/i.test(part.name))
   if (!sourceHead || !targetHead || sourceHead.width <= 0 || sourceHead.height <= 0) return
@@ -691,7 +702,9 @@ export async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, 
     if (!pending) { pending = assetProvider.loadFaceComponentAsset(appearance.modelSlot, id); componentLoads.set(id, pending) }
     return pending
   }
-  await drawFaceExpressionEffects(context, artwork, sourceHead, targetHead, appearance, items, expressionEffects, studioFaceTransforms)
+  if (!gpuPass || gpuPass === 'effects')
+    await drawFaceExpressionEffects(context, artwork, sourceHead, targetHead, appearance, items, expressionEffects, studioFaceTransforms)
+  if (gpuPass === 'effects') return
   const categoryIds: Partial<Record<FaceSheetKind, string | undefined>> = {
     eyes: appearance.eyeCatalogId,
     eyebrows: appearance.eyebrowCatalogId,
@@ -767,6 +780,7 @@ export async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, 
       context.restore()
     } catch { /* Keep the rest of the face visible if one catalog asset is missing. */ }
   }
+  if (gpuPass === 'catalog') return
   const componentIds: FaceComponentPartId[] = ['eye-left', 'eye-right', 'pupil-left', 'pupil-right', 'brow-left', 'brow-right']
   const loaded = new Map<FaceComponentPartId, FaceComponentAsset>()
   await Promise.all(componentIds.map(async (part) => {
@@ -803,6 +817,7 @@ export async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, 
   const layerOrder: FaceComponentPartId[] = ['brow-left', 'brow-right', 'eye-left', 'eye-right', 'pupil-left', 'pupil-right']
   let pupilClipCanvas: HTMLCanvasElement | null = null
   for (const part of layerOrder) {
+    if (gpuPass && gpuPass !== part) continue
     const category = part.startsWith('eye') ? 'eye' : part.startsWith('pupil') ? 'pupil' : 'eyebrow'
     const isRight = part.endsWith('right')
     if (studioFaceMode === 'blink' && category === 'pupil') continue
@@ -897,8 +912,10 @@ export async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, 
       }
     } catch { /* Keep the rest of the face visible if one component asset is unavailable. */ }
   }
+  if (gpuPass && gpuPass !== 'details' && gpuPass !== 'extras') return
   const detailOrder: FaceDetailKind[] = ['facial-shadow', 'blush', 'eye-highlight-left', 'eye-highlight-right']
   for (const kind of detailOrder) {
+    if (gpuPass === 'extras') break
     const id = appearance.faceDetails?.[kind]
     if (!id) continue
     const asset = await loadComponent(id)
@@ -921,6 +938,7 @@ export async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, 
       drawPreviewImageWithHalo(context, image, -width / 2, -height / 2, highlightedHeadId === kind, width, height); context.restore()
     } catch { /* Keep the rest of the face visible if one detail asset is unavailable. */ }
   }
+  if (gpuPass === 'details') return
   for (const id of Object.values(appearance.headExtras ?? {})) {
     if (!id) continue
     const asset = await loadComponent(id)
@@ -946,7 +964,7 @@ export async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, 
   }
 }
 
-export async function prepareSavedCharacterRenderer(character: CustomizerCharacter, renderSource?: { artwork: CatalogArtwork; source: FabricatorProject; assetProvider?: VideoCharacterRenderAssetProvider }): Promise<{ width: number; height: number; render: (appearance?: CustomizerFaceAppearance, studioFaceTransforms?: StudioFaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: StudioFaceMode) => Promise<{ dataUrl: string; width: number; height: number }>; renderToCanvas: (appearance?: CustomizerFaceAppearance, studioFaceTransforms?: StudioFaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: StudioFaceMode) => Promise<{ canvas: HTMLCanvasElement; width: number; height: number }> }> {
+export async function prepareSavedCharacterRenderer(character: CustomizerCharacter, renderSource?: { artwork: CatalogArtwork; source: FabricatorProject; assetProvider?: VideoCharacterRenderAssetProvider }): Promise<{ width: number; height: number; render: (appearance?: CustomizerFaceAppearance, studioFaceTransforms?: StudioFaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: StudioFaceMode) => Promise<{ dataUrl: string; width: number; height: number }>; renderToCanvas: (appearance?: CustomizerFaceAppearance, studioFaceTransforms?: StudioFaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: StudioFaceMode) => Promise<{ canvas: HTMLCanvasElement; width: number; height: number }>; renderGpuLayers: (appearance?: CustomizerFaceAppearance, studioFaceTransforms?: StudioFaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: StudioFaceMode) => Promise<ReadonlyArray<{ id: string; source: HTMLCanvasElement }>> }> {
   const { modelSlot, assetProvider, source, artwork } = await resolveSavedCharacterSource(character, renderSource)
   const proportions = getCharacterProportions(character.customization)
   const hairAppearance = character.customization.hairAppearance
@@ -1034,9 +1052,14 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
   const shapeScale = characterShapeScale(proportions)
   const outputWidth = Math.max(canvas.width, Math.ceil(canvas.width * shapeScale.x))
   const outputHeight = Math.max(canvas.height, Math.ceil(canvas.height * shapeScale.y))
-  const renderToCanvas = async (currentAppearance: CustomizerFaceAppearance | undefined = appearance, studioFaceTransforms?: StudioFaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: StudioFaceMode) => {
-    context.clearRect(0, 0, canvas.width, canvas.height)
-    context.drawImage(rigLayers.behindFace, 0, 0, canvas.width, canvas.height)
+  const drawFace = async (
+    faceContext: CanvasRenderingContext2D,
+    currentAppearance: CustomizerFaceAppearance | undefined,
+    studioFaceTransforms?: StudioFaceTransforms,
+    expressionEffects?: FaceExpressionEffects,
+    studioFaceMode?: StudioFaceMode,
+    gpuPass?: GachaFacePass
+  ): Promise<void> => {
     let faceAppearance = currentAppearance && studioFaceMode ? {
       ...currentAppearance,
       eyeState: studioFaceMode === 'blink' ? 2 as const : currentAppearance.eyeState === 1 ? 1 as const : 0 as const,
@@ -1076,9 +1099,14 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
         throw new Error('Não encontrei uma boca aberta para esta variante. Selecione uma folha de bocas abertas em Rosto Dev.')
       }
       const mouthEffects = expressionEffects ?? expressionEffectsByIndex[faceAppearance.expressionIndex]
-      if (!hasCatalogFaceSelection && legacyFaceImage && faceAppearance.setId === appearance?.setId) context.drawImage(legacyFaceImage, 0, 0, canvas.width, canvas.height)
-      if (hasCatalogFaceSelection || hasFaceOverlaySelection) await drawFaceCatalogOverlay(context, artwork, source, activeItems, faceAppearance, character.customization.modelSkinTone, studioFaceTransforms, mouthEffects, studioFaceMode, resolveClosedEye, character.customization.partOverrides, undefined, assetProvider)
-    } else if (legacyFaceImage) context.drawImage(legacyFaceImage, 0, 0, canvas.width, canvas.height)
+      if ((!gpuPass || gpuPass === 'catalog') && !hasCatalogFaceSelection && legacyFaceImage && faceAppearance.setId === appearance?.setId) faceContext.drawImage(legacyFaceImage, 0, 0, canvas.width, canvas.height)
+      if (hasCatalogFaceSelection || hasFaceOverlaySelection) await drawFaceCatalogOverlay(faceContext, artwork, source, activeItems, faceAppearance, character.customization.modelSkinTone, studioFaceTransforms, mouthEffects, studioFaceMode, resolveClosedEye, character.customization.partOverrides, undefined, assetProvider, gpuPass)
+    } else if ((!gpuPass || gpuPass === 'catalog') && legacyFaceImage) faceContext.drawImage(legacyFaceImage, 0, 0, canvas.width, canvas.height)
+  }
+  const renderToCanvas = async (currentAppearance: CustomizerFaceAppearance | undefined = appearance, studioFaceTransforms?: StudioFaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: StudioFaceMode) => {
+    context.clearRect(0, 0, canvas.width, canvas.height)
+    context.drawImage(rigLayers.behindFace, 0, 0, canvas.width, canvas.height)
+    await drawFace(context, currentAppearance, studioFaceTransforms, expressionEffects, studioFaceMode)
     if (rigLayers.inFrontOfFace) context.drawImage(rigLayers.inFrontOfFace, 0, 0, canvas.width, canvas.height)
     if (shapeScale.x === 1 && shapeScale.y === 1) return { canvas, width: canvas.width, height: canvas.height }
     const output = document.createElement('canvas')
@@ -1091,11 +1119,55 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
     outputContext.drawImage(canvas, -canvas.width / 2, -canvas.height / 2)
     return { canvas: output, width: outputWidth, height: outputHeight }
   }
+  // The rig/wardrobe/hair textures are static for a prepared pose; only
+  // the selected face pass is repainted. Individual PT pupils never trigger
+  // a redraw or upload of the body texture.
+  const scaled = (sourceCanvas: HTMLCanvasElement): HTMLCanvasElement => {
+    if (shapeScale.x === 1 && shapeScale.y === 1) return sourceCanvas
+    const result = document.createElement('canvas')
+    result.width = outputWidth
+    result.height = outputHeight
+    const out = result.getContext('2d')
+    if (!out) throw new Error('Canvas de camada proporcional indisponível.')
+    out.translate(outputWidth / 2, outputHeight / 2)
+    out.scale(shapeScale.x, shapeScale.y)
+    out.drawImage(sourceCanvas, -sourceCanvas.width / 2, -sourceCanvas.height / 2)
+    return result
+  }
+  const rigBack = scaled(rigLayers.behindFace)
+  const rigFront = rigLayers.inFrontOfFace ? scaled(rigLayers.inFrontOfFace) : null
+  const renderGpuLayers = async (
+    currentAppearance: CustomizerFaceAppearance | undefined = appearance,
+    studioFaceTransforms?: StudioFaceTransforms,
+    expressionEffects?: FaceExpressionEffects,
+    studioFaceMode?: StudioFaceMode
+  ): Promise<ReadonlyArray<{ id: string; source: HTMLCanvasElement }>> => {
+    const layers: Array<{id:string;source:HTMLCanvasElement}> = [{id:'rig-behind-face',source:rigBack}]
+    const needFace = Boolean(currentAppearance?.modelSlot === modelSlot)
+    if (needFace) {
+      for (const part of GPU_FACE_PASSES) {
+        const faceCanvas = document.createElement('canvas')
+        faceCanvas.width = artwork.width
+        faceCanvas.height = artwork.height
+        const faceContext = faceCanvas.getContext('2d')
+        if (!faceContext) throw new Error('Camada facial Gacha indisponível.')
+        await drawFace(faceContext, currentAppearance, studioFaceTransforms, expressionEffects, studioFaceMode, part)
+        layers.push({id:'face:'+part,source:scaled(faceCanvas)})
+      }
+    } else if (legacyFaceImage) {
+      const legacy = document.createElement('canvas')
+      legacy.width=artwork.width;legacy.height=artwork.height
+      const ctx=legacy.getContext('2d')
+      if(ctx){ctx.drawImage(legacyFaceImage,0,0,legacy.width,legacy.height);layers.push({id:'face:legacy',source:scaled(legacy)})}
+    }
+    if (rigFront) layers.push({id:'rig-front',source:rigFront})
+    return layers
+  }
   const render = async (...args: Parameters<typeof renderToCanvas>) => {
     const value = await renderToCanvas(...args)
     return { dataUrl: value.canvas.toDataURL('image/png'), width: value.width, height: value.height }
   }
-  return { width: outputWidth, height: outputHeight, render, renderToCanvas }
+  return { width: outputWidth, height: outputHeight, render, renderToCanvas, renderGpuLayers }
 }
 
 export async function renderSavedCharacter(character: CustomizerCharacter, studioFaceTransforms?: StudioFaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: StudioFaceMode): Promise<{ dataUrl: string; width: number; height: number }> {
