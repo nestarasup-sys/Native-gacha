@@ -1,0 +1,65 @@
+'use strict'
+const test = require('node:test')
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
+const ts = require('typescript')
+
+const editorPath = path.resolve(__dirname, '../src/renderer/src/features/videoStudio/VideoStudioEditor.tsx')
+const hookPath = path.resolve(__dirname, '../src/renderer/src/features/videoStudio/useCharacterTransitions.ts')
+const cssPath = path.resolve(__dirname, '../src/renderer/src/features/videoStudio/VideoStudioEditor.css')
+const editor = fs.readFileSync(editorPath, 'utf8')
+const hook = fs.readFileSync(hookPath, 'utf8')
+const css = fs.readFileSync(cssPath, 'utf8')
+
+test('Pixi experimental on/off control is discoverable inside the Video Studio toolbar without AMD keyboard shortcuts', () => {
+  assert.match(editor, /video-studio-gpu-toggle/)
+  assert.match(editor, /<span>GPU PixiJS<\/span>/)
+  assert.match(editor, /aria-pressed=\{pixiPreviewEnabled\}/)
+  assert.match(editor, /onClick=\{togglePixiPreview\}/)
+  assert.match(editor, /Ligar GPU PixiJS experimental/)
+  assert.match(editor, /Desligar GPU PixiJS experimental/)
+  assert.match(editor, /pixiPreviewEnabled \? 'ON' : 'OFF'/)
+  assert.match(css, /video-studio-gpu-toggle\.active/)
+  const button = editor.indexOf('video-studio-gpu-toggle')
+  assert.ok(button > editor.indexOf('<nav className="video-studio-tool-list"'))
+  assert.ok(button < editor.indexOf('</nav>', button))
+})
+
+test('button switches the actual preview GPU flag and never writes project or export settings', () => {
+  const start = editor.indexOf('const togglePixiPreview = () =>')
+  const end = editor.indexOf('const [animationPreparing', start)
+  const handler = editor.slice(start, end)
+  assert.ok(start > 0)
+  assert.match(handler, /__NATIVE_GACHA_GPU_PREVIEW_EXPERIMENTAL__ = enabled/)
+  assert.match(handler, /setVideoPlaying\(false\)/)
+  assert.match(handler, /setAnimationPreparing\(false\)/)
+  assert.match(handler, /setPixiPreviewEnabled\(enabled\)/)
+  assert.match(handler, /setPixiPreviewRevision\(revision => revision \+ 1\)/)
+  assert.doesNotMatch(handler, /saveStudio|setStudios|window\.desktop|localStorage|sessionStorage/)
+  assert.match(handler, /se a GPU falhar, o Canvas será usado/)
+})
+
+test('changing GPU mode destroys the old Gacha preview session and stale cached frames', () => {
+  assert.match(editor, /useCharacterTransitions\([^\n]*pixiPreviewRevision\)/)
+  assert.match(hook, /backendRevision = 0/)
+  assert.match(hook, /new PreviewTransitionSession\(studio\?\.id \?\? ''\), \[studio\?\.id, backendRevision\]/)
+  assert.match(hook, /session\.activate\(\); return \(\) => session\.dispose\(\)/)
+  const old = fs.readFileSync(path.resolve(__dirname,
+    '../src/renderer/src/features/videoStudio/previewTransitionSession.ts'), 'utf8')
+  assert.match(old, /this\.renderer\.dispose\(\)/)
+  assert.match(old, /this\.cache\.clear\(\)/)
+  const renderer = fs.readFileSync(path.resolve(__dirname,
+    '../src/renderer/src/features/videoStudio/transitionRenderer.ts'), 'utf8')
+  assert.match(renderer, /gpuPreviewEnabled\(\)/)
+  assert.match(renderer, /__NATIVE_GACHA_GPU_PREVIEW_EXPERIMENTAL__/)
+  assert.match(renderer, /disabledExperimentalGpu\.add\(/)
+})
+
+test('editor, preview hook and stylesheet compile or parse after toggle integration', () => {
+  const editorTree = ts.createSourceFile('VideoStudioEditor.tsx', editor, ts.ScriptTarget.ES2022, true, ts.ScriptKind.TSX)
+  const hookTree = ts.createSourceFile('useCharacterTransitions.ts', hook, ts.ScriptTarget.ES2022, true, ts.ScriptKind.TS)
+  assert.equal(editorTree.parseDiagnostics.length, 0)
+  assert.equal(hookTree.parseDiagnostics.length, 0)
+  assert.ok(css.includes('video-studio-gpu-toggle:focus-visible'))
+})
