@@ -316,6 +316,15 @@
 .video-studio-cast-tool-button>i { min-width:15px;height:15px;display:grid;place-items:center;padding:0 3px;border-radius:99px;background:#f8e5ed;color:#a7446b;font-size:8px;font-weight:800;font-style:normal; }
 .video-studio-tool-separator { height:4px; }
 .video-studio-tool-button.video-studio-view-button { min-height:76px;background:#ffe8f0; }
+/* Experimental preview renderer. Visible only in the Video Studio's left
+   toolbar; active state is obvious without Windows/AMD keyboard shortcuts. */
+.video-studio-tool-button.video-studio-gpu-toggle { min-height:65px;border-color:#d0c0df;background:#fbf8ff; }
+.video-studio-tool-button.video-studio-gpu-toggle>span { color:#715c83; }
+.video-studio-tool-button.video-studio-gpu-toggle>i { color:#8d8298; }
+.video-studio-tool-button.video-studio-gpu-toggle.active { border-color:#8d64c9;background:#eee2fb; }
+.video-studio-tool-button.video-studio-gpu-toggle.active>span,
+.video-studio-tool-button.video-studio-gpu-toggle.active>i { color:#6f3ca7; }
+.video-studio-tool-button.video-studio-gpu-toggle:focus-visible { outline:2px solid #8d64c9;outline-offset:2px; }
 .video-studio-save-indicator { display:flex;align-items:center;gap:6px;margin-top:auto;padding:6px 2px 0;color:#8f8190;font-size:8px; }
 .video-studio-save-indicator i { width:6px;height:6px;border-radius:50%;background:#67b98e; }
 .video-studio-save-indicator.unsaved i { background:#e1a851; }

@@ -13,13 +13,16 @@ export function useCharacterTransitions(
   playing: boolean,
   onError: (message: string) => void,
   enabled = true,
+  backendRevision = 0,
 ) {
   const timeline = studio?.videoTimeline
   const spans = useMemo(
     () => studio ? compileCharacterTransitions(studio) : [],
     [studio?.id, studio?.elements, timeline?.characterKeys, timeline?.characterBases, timeline?.characterGaps, timeline?.durationFrames],
   )
-  const session = useMemo(() => new PreviewTransitionSession(studio?.id ?? ''), [studio?.id])
+  // A GPU/Canvas switch must allocate a completely fresh session, not reuse
+  // cached frames produced by the previous renderer or an aborted seek.
+  const session = useMemo(() => new PreviewTransitionSession(studio?.id ?? ''), [studio?.id, backendRevision])
   const endpointWarmup = useMemo(() => new PreviewEndpointWarmup(), [studio?.id])
   const [revision, setRevision] = useState(0)
   useEffect(() => { session.activate(); return () => session.dispose() }, [session])

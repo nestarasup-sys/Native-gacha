@@ -152,6 +152,28 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null)
   const [videoPlayheadFrame, setVideoPlayheadFrame] = useState(0)
   const [videoPlaying, setVideoPlaying] = useState(false)
+  // Local renderer-only choice. Never persisted to StudioDocument, snapshots,
+  // autosave or export settings; resets when the Electron window is restarted.
+  const [pixiPreviewEnabled, setPixiPreviewEnabled] = useState(
+    () => (window as Window & { __NATIVE_GACHA_GPU_PREVIEW_EXPERIMENTAL__?: boolean })
+      .__NATIVE_GACHA_GPU_PREVIEW_EXPERIMENTAL__ === true
+  )
+  const [pixiPreviewRevision, setPixiPreviewRevision] = useState(0)
+  const togglePixiPreview = () => {
+    const enabled = !pixiPreviewEnabled
+    ;(window as Window & { __NATIVE_GACHA_GPU_PREVIEW_EXPERIMENTAL__?: boolean })
+      .__NATIVE_GACHA_GPU_PREVIEW_EXPERIMENTAL__ = enabled
+    // Pausing and replacing the transition session discards cached Canvas
+    // snapshots and outstanding frame requests from the previous backend.
+    setVideoPlaying(false)
+    animationPlayRequestRef.current += 1
+    setAnimationPreparing(false)
+    setPixiPreviewEnabled(enabled)
+    setPixiPreviewRevision(revision => revision + 1)
+    setNotice(enabled
+      ? 'GPU PixiJS experimental ligada. Teste transições de pose e rosto; se a GPU falhar, o Canvas será usado.'
+      : 'GPU experimental desligada. A prévia voltou ao Canvas original.')
+  }
   const [animationPreparing, setAnimationPreparing] = useState(false)
   const animationPlayRequestRef = useRef(0)
   const [automaticBlinkPreview, setAutomaticBlinkPreview] = useState<Record<string, { dataUrl: string; geometry: Pick<StudioElement, 'width' | 'height' | 'characterCanvasWidth'> }>>({})
@@ -184,7 +206,7 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
   useEffect(() => {
     onEditorActiveChange?.(isVideoWorkspace && Boolean(activeStudio))
   }, [isVideoWorkspace, activeStudioId, Boolean(activeStudio), onEditorActiveChange])
-  const characterAnimation = useCharacterTransitions(activeStudio, availableCharacters, videoPreviewFrame, videoPlaying, setError, activeStudio ? videoTimelineFor(activeStudio).animateCharacterTransitions !== false : true)
+  const characterAnimation = useCharacterTransitions(activeStudio, availableCharacters, videoPreviewFrame, videoPlaying, setError, activeStudio ? videoTimelineFor(activeStudio).animateCharacterTransitions !== false : true, pixiPreviewRevision)
   const videoPlaybackStates = isVideoWorkspace && videoPlaying && activeStudio
     ? new Map(activeStudio.elements.filter((element) => element.kind === 'character').map((element) => [element.id, characterStateAt(videoTimelineFor(activeStudio), element.id, videoPlayheadFrame)]))
     : null
@@ -2254,6 +2276,16 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
             <span className="video-studio-tool-separator" />
             <button className="video-studio-tool-button video-studio-export-button" onClick={() => setExportDialogOpen(true)} type="button"><Icon name="download" /><span>Exportar vídeo</span><i aria-hidden="true">▶</i></button>
             <button className="video-studio-tool-button video-studio-view-button" onClick={() => enterFullView()} type="button"><Icon name="expand" /><span>View</span></button>
+            <button
+              className={`video-studio-tool-button video-studio-gpu-toggle${pixiPreviewEnabled ? ' active' : ''}`}
+              type="button"
+              aria-label={pixiPreviewEnabled ? 'Desligar GPU PixiJS experimental' : 'Ligar GPU PixiJS experimental'}
+              aria-pressed={pixiPreviewEnabled}
+              title={pixiPreviewEnabled
+                ? 'GPU PixiJS experimental ligada na prévia. Clique para voltar ao Canvas.'
+                : 'Testar animações de poses e expressões com PixiJS. Desliga automaticamente se a imagem divergir do Canvas.'}
+              onClick={togglePixiPreview}
+            ><Icon name="settings" /><span>GPU PixiJS</span><i aria-hidden="true">{pixiPreviewEnabled ? 'ON' : 'OFF'}</i></button>
           </nav>
           <small className={`video-studio-save-indicator${saved ? '' : ' unsaved'}`}><i />{saved ? 'Salvo automaticamente' : 'Salvando alterações…'}</small>
           {error && <small className="video-studio-error-message" role="alert">{error}</small>}
