@@ -46,10 +46,13 @@ const sprite=(id,w=16,h=16,dynamic=false)=>({
 
 test('WebGL2 renders sprite layers with stable retained GPU textures and no PNG serialization',()=>{
   const {Stage,canvas,log}=setup(),stage=new Stage(canvas,4096)
-  stage.draw([sprite('body'),sprite('pupil-left'),sprite('pupil-right')],'#122333')
+  // Decoded image objects are memoized in previewTransport; reuse the same
+  // TexImageSource to model unchanged retained artwork across two frames.
+  const body=sprite('body'),left=sprite('pupil-left'),right=sprite('pupil-right')
+  stage.draw([body,left,right],'#122333')
   assert.equal(log.draws,3)
   assert.equal(log.uploads,3)
-  stage.draw([sprite('body'),sprite('pupil-left')])
+  stage.draw([body,left])
   assert.equal(log.draws,5)
   assert.equal(log.uploads,3)
   assert.equal(stage.stats().textureCount,3)
