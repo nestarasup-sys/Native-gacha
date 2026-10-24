@@ -1,5 +1,6 @@
 import type { PoseArtwork } from '../../../../shared/videoCharacterInterpolation'
 import { orderedVisiblePoseParts, PixiGachaPoseRig, type GachaPixiPort, type PoseGpuStatistics } from './pixiGachaPoseRig'
+import { preparePixiSkinToneArtwork } from './pixiGachaArtworkPreparation'
 
 type PixiModule = typeof import('pixi.js')
 type PixiApplication = import('pixi.js').Application
@@ -64,6 +65,20 @@ export class PixiGachaPoseSurface {
       this.assertReady()
       this.loaded.add(url)
     }))
+  }
+
+  /**
+   * For body-only GPU parity experiments, reuse the *canonical* Canvas skin
+   * tint pipeline exactly once per unique source PNG. Returns derived poses
+   * whose texture URLs can be used with renderPose/renderInterpolatedPose.
+   * Hair, wardrobe and PT facial overlays remain subject to the Canvas gate.
+   */
+  async primeWithSkinTone(poses: readonly PoseArtwork[], skinTone?: string): Promise<readonly PoseArtwork[]> {
+    this.assertReady()
+    const gpuArtwork = await preparePixiSkinToneArtwork(poses, skinTone)
+    this.assertReady()
+    await this.prime(gpuArtwork)
+    return gpuArtwork
   }
 
   renderPose(pose: PoseArtwork): void {
