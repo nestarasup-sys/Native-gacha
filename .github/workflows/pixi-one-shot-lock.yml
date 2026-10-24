@@ -1,0 +1,29 @@
+name: One-time PixiJS lockfile bootstrap
+on:
+  push:
+    branches: [Main-desenvolvimento]
+    paths:
+      - '.github/workflows/pixi-one-shot-lock.yml'
+permissions:
+  contents: write
+jobs:
+  lock:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.22.0'
+      - name: Pin PixiJS and all transitive packages in npm lockfile
+        run: npm install --package-lock-only --ignore-scripts --save-exact pixi.js@8.22.0
+      - name: Verify clean npm dependency tree from generated lockfile
+        run: npm ci --ignore-scripts
+      - name: Commit synchronized manifests and remove bootstrap workflow
+        run: |
+          git rm .github/workflows/pixi-one-shot-lock.yml
+          git add package.json package-lock.json
+          git -c user.name="native-gacha-automation" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -m "build(video-studio): pin PixiJS v8.22.0 with reproducible npm lockfile"
+          git push origin HEAD:Main-desenvolvimento
