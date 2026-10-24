@@ -1036,7 +1036,7 @@ function gachaMaterialKey(character: CustomizerCharacter, modelSlot: number): st
   ])
 }
 
-async function materialsForPreparedCharacter(
+export async function materialsForPreparedCharacter(
   character: CustomizerCharacter, slot: number, assetProvider: VideoCharacterRenderAssetProvider,
   cache?: GachaReusableMaterialCache,
 ): Promise<GachaReusableMaterials> {
