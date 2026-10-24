@@ -2,6 +2,7 @@ import * as PIXI from 'pixi.js'
 import { PixiGachaPoseRig, orderedVisiblePoseParts, type GachaPixiPort } from '../../src/renderer/src/features/videoStudio/pixiGachaPoseRig'
 import { mixPoseArtwork } from '../../src/shared/videoCharacterInterpolation'
 import { compareGachaPixels } from '../../src/renderer/src/features/videoStudio/pixiGachaParity'
+import { PixiGachaLayerStack, type PixiLayerPort } from '../../src/renderer/src/features/videoStudio/pixiGachaLayerStack'
 
 // The benchmark runs inside an Electron window with the *same bundled Pixi*
 // code used by production (not file:// ES module imports across origins).
@@ -81,10 +82,99 @@ void (async () => {
   }
   const pixiMs = performance.now() - pixiStarted
   const stats = rig.stats()
+  app.stage.removeChild(rig.stage as unknown as PIXI.Container)
   rig.dispose()
+
+  // Second proof uses a real three-group Gacha-style composition: body with
+  // coat and rear hair / animated face pupils and mouth / front hair. Its
+  // transparent overlap exercises occlusion and mutable GPU texture upload.
+  const newLayer = (): HTMLCanvasElement => {
+    const layer = document.createElement('canvas')
+    layer.width = width; layer.height = height
+    return layer
+  }
+  const behind = newLayer(), dynamicFace = newLayer(), inFront = newLayer()
+  const body = behind.getContext('2d')!
+  body.fillStyle = '#f0bd9a'
+  body.fillRect(95, 42, 168, 226)
+  body.fillStyle = '#526cc1' // clothes beneath the face
+  body.fillRect(106, 162, 147, 98)
+  body.fillStyle = '#6c436a'
+  body.fillRect(90, 52, 27, 152) // back hair
+  const front = inFront.getContext('2d')!
+  front.fillStyle = 'rgba(115,58,103,0.87)'
+  front.fillRect(107, 35, 165, 31)
+  front.fillRect(237, 45, 29, 127)
+  const facePaint = dynamicFace.getContext('2d')!
+  const full = newLayer()
+  const whole = full.getContext('2d', { willReadFrequently: true })!
+  const paintFace = (phase: number) => {
+    facePaint.clearRect(0, 0, width, height)
+    facePaint.fillStyle = '#182142'
+    facePaint.fillRect(139, 103, 25, 17)
+    facePaint.fillRect(196, 103, 25, 17)
+    facePaint.fillStyle = '#ffffff'
+    facePaint.fillRect(146 + phase % 4, 106, 9, 9)
+    facePaint.fillRect(204 + phase % 4, 106, 9, 9)
+    facePaint.fillStyle = '#9d4660'
+    facePaint.fillRect(166, 146, 33, 3 + phase % 8)
+    facePaint.fillStyle = 'rgba(240,88,133,0.5)'
+    facePaint.fillRect(129, 128, 24, 10)
+    facePaint.fillRect(207, 128, 24, 10)
+  }
+  const stack = new PixiGachaLayerStack(PIXI as unknown as PixiLayerPort)
+  app.stage.addChild(stack.stage as unknown as PIXI.Container)
+  const layeredSamples = []
+  for (const phase of [0, 2, 4, 6, 8]) {
+    paintFace(phase)
+    stack.setLayers({
+      behindFace: behind, face: dynamicFace, inFrontOfFace: inFront,
+      width, height, outputWidth: width, outputHeight: height,
+      shapeScaleX: 1, shapeScaleY: 1,
+    })
+    app.renderer.render(app.stage)
+    whole.clearRect(0, 0, width, height)
+    whole.drawImage(behind, 0, 0)
+    whole.drawImage(dynamicFace, 0, 0)
+    whole.drawImage(inFront, 0, 0)
+    const cpu = whole.getImageData(0, 0, width, height).data
+    const gpu = app.renderer.extract.pixels(app.stage).pixels
+    layeredSamples.push({
+      phase,
+      ...compareGachaPixels(cpu, gpu, width, height),
+      cpuOpaque: cpu.filter((_, index) => index % 4 === 3 && cpu[index] > 0).length,
+      gpuOpaque: gpu.filter((_, index) => index % 4 === 3 && gpu[index] > 0).length,
+    })
+  }
+  const layerCpuStart = performance.now()
+  for (let i = 0; i < frames; i++) {
+    paintFace(i)
+    whole.clearRect(0, 0, width, height)
+    whole.drawImage(behind, 0, 0)
+    whole.drawImage(dynamicFace, 0, 0)
+    whole.drawImage(inFront, 0, 0)
+  }
+  const layerCanvasMs = performance.now() - layerCpuStart
+  const layerGpuStart = performance.now()
+  for (let i = 0; i < frames; i++) {
+    paintFace(i)
+    stack.setLayers({
+      behindFace: behind, face: dynamicFace, inFrontOfFace: inFront,
+      width, height, outputWidth: width, outputHeight: height,
+      shapeScaleX: 1, shapeScaleY: 1,
+    })
+    app.renderer.render(app.stage)
+  }
+  const layerPixiMs = performance.now() - layerGpuStart
+  const layered = {
+    samples: layeredSamples, canvasMs: layerCanvasMs,
+    pixiMs: layerPixiMs, stats: stack.metrics(),
+  }
+  app.stage.removeChild(stack.stage as unknown as PIXI.Container)
+  stack.dispose()
   app.destroy(true, { children: true })
   window.__pixiRigBenchmark = {
-    ok: true, backend: 'webgl2', frames, width, height, samples, canvasMs, pixiMs, stats,
+    ok: true, backend: 'webgl2', frames, width, height, samples, canvasMs, pixiMs, stats, layered,
     // A speedup is merely an observation on these synthetic sprites. Real
     // Gacha requires face/wardrobe/hair parity and an honest Windows profile.
     relativeSpeedup: canvasMs / pixiMs,
