@@ -28,17 +28,30 @@ export function prepareGachaStaticLayers(
   bodyAndBackHair: HTMLCanvasElement,
   wardrobe: CanvasImageSource | null,
   frontHair: HTMLCanvasElement | null,
-  wardrobeOverHair: CanvasImageSource | null
+  wardrobeOverHair: CanvasImageSource | null,
+  options: Readonly<{ adoptSourceCanvases?: boolean }> = {},
 ): GachaStaticLayers {
   const { width, height } = bodyAndBackHair
   if (!width || !height) throw new Error('Dimensões da pose Gacha inválidas.')
-  const [behindFace, back] = newLayerCanvas(width, height)
-  back.drawImage(bodyAndBackHair, 0, 0, width, height)
+  // The prepared pose owns these disposable canvases exclusively, so reuse
+  // them instead of allocating and copying another two full-resolution
+  // buffers at every intermediate pose. Other callers keep copy semantics.
+  const adopt = options.adoptSourceCanvases === true
+  const [behindFace, back] = adopt
+    ? [bodyAndBackHair, bodyAndBackHair.getContext('2d')]
+    : newLayerCanvas(width, height)
+  if (!back) throw new Error('Canvas da camada inferior Gacha indisponível.')
+  if (!adopt) back.drawImage(bodyAndBackHair, 0, 0, width, height)
   if (wardrobe) back.drawImage(wardrobe, 0, 0, width, height)
   let inFrontOfFace: HTMLCanvasElement | null = null
   if (frontHair || wardrobeOverHair) {
-    const [over, front] = newLayerCanvas(width, height)
-    if (frontHair) front.drawImage(frontHair, 0, 0, width, height)
+    const reuseFront = adopt && Boolean(frontHair)
+      && frontHair?.width === width && frontHair?.height === height
+    const [over, front] = reuseFront
+      ? [frontHair!, frontHair!.getContext('2d')]
+      : newLayerCanvas(width, height)
+    if (!front) throw new Error('Canvas da camada superior Gacha indisponível.')
+    if (frontHair && !reuseFront) front.drawImage(frontHair, 0, 0, width, height)
     if (wardrobeOverHair) front.drawImage(wardrobeOverHair, 0, 0, width, height)
     inFrontOfFace = over
   }

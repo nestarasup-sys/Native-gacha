@@ -1130,7 +1130,10 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
   const context = canvas.getContext('2d')
   if (context) configureCharacterSampling(context)
   if (!context) throw new Error('Não foi possível preparar a imagem do personagem.')
-  const rigLayers = prepareGachaStaticLayers(baseImage, wardrobeImage, frontHairImage, wardrobeAboveHairImage)
+  // baseImage/frontHairImage are exclusively owned by this prepared rig.
+  // Compose onto them in place: no duplicate full-size Canvas buffers.
+  const rigLayers = prepareGachaStaticLayers(baseImage, wardrobeImage, frontHairImage, wardrobeAboveHairImage,
+    { adoptSourceCanvases: true })
   const shapeScale = characterShapeScale(proportions)
   const outputWidth = Math.max(canvas.width, Math.ceil(canvas.width * shapeScale.x))
   const outputHeight = Math.max(canvas.height, Math.ceil(canvas.height * shapeScale.y))
