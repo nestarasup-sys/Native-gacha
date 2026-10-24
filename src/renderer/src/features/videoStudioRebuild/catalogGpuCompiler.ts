@@ -201,10 +201,15 @@ export class CatalogGpuCompiler {
     const mode=modeAtFrame(actor,element)
     const sourceParts:Array<{id:string;part:CompiledPart}>=[]
     const staticLayers=rig.gpuStaticLayers
-    const base=staticLayers.behindFace
-    sourceParts.push({id:'rig-behind-face',part:{
-      source:base,crop:{x:0,y:0,width:base.width,height:base.height},fullWidth:base.width,fullHeight:base.height
-    }})
+    const backParts=staticLayers.backParts?.length ? staticLayers.backParts
+      : [{id:'rig-behind-face',source:staticLayers.behindFace}]
+    for(const item of backParts) {
+      const base=item.source
+      sourceParts.push({id:item.id,part:{
+        source:base,crop:{x:0,y:0,width:base.width,height:base.height},
+        fullWidth:base.width,fullHeight:base.height
+      }})
+    }
     // A matching source revision is mandatory; otherwise keep the PNG instead
     // of presenting a stale or wrong model.
     for(const pass of GPU_FACE_PASSES){
@@ -214,9 +219,11 @@ export class CatalogGpuCompiler {
       if(part===undefined)return null
       if(part)sourceParts.push({id:'face:'+pass,part})
     }
-    if(staticLayers.inFrontOfFace) {
-      const front=staticLayers.inFrontOfFace
-      sourceParts.push({id:'rig-front',part:{
+    const frontParts=staticLayers.frontParts?.length ? staticLayers.frontParts
+      : staticLayers.inFrontOfFace ? [{id:'rig-front',source:staticLayers.inFrontOfFace}] : []
+    for(const item of frontParts){
+      const front=item.source
+      sourceParts.push({id:item.id,part:{
         source:front,crop:{x:0,y:0,width:front.width,height:front.height},
         fullWidth:front.width,fullHeight:front.height
       }})

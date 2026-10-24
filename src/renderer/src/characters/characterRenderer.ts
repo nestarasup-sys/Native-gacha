@@ -1093,7 +1093,7 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
   }
   const {renderGpuLayers,renderGpuFacePass,gpuStaticLayers}=createPreparedGachaGpuLayers({
     rigLayers,shapeScale,outputWidth,outputHeight,artworkWidth:artwork.width,
-    artworkHeight:artwork.height,modelSlot,appearance,legacyFaceImage,drawFace
+    artworkHeight:artwork.height,modelSlot,appearance,legacyFaceImage,drawFace,staticSources:{bodyAndBackHair:baseImage,wardrobe:wardrobeImage,frontHair:frontHairImage,wardrobeAboveHair:wardrobeAboveHairImage}
   })
   const render = async (...args: Parameters<typeof renderToCanvas>) => {
     const value = await renderToCanvas(...args)
