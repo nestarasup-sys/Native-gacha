@@ -161,7 +161,7 @@ export function VideoStudioRebuildPage({onEditorActiveChange}:Props) {
             type:'set-track-settings',trackId:selected,
             settings:{...doc.videoTimeline?.trackSettings?.[selected],locked:!doc.videoTimeline?.trackSettings?.[selected]?.locked}
           },now()))}>{studio.videoTimeline?.trackSettings?.[selected]?.locked?'Desbloquear faixa':'Bloquear faixa'}</button>}
-          <p className="video-rebuild-note">Prévia GPU de estados visuais salvos. Transições faciais dinâmicas e máscaras PT ainda aguardam compilação de sprites e golden visual.</p>
+          <p className="video-rebuild-note">A GPU anima posição, escala e mistura snapshots nas transições. Boca, piscada, máscaras e pupilas PT independentes ainda exigem sprites do catálogo e golden visual Windows.</p>
           <small>{gpuStats}</small>
         </aside>
       </div>
