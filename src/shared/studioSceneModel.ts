@@ -1,11 +1,9 @@
 /** Operações puras sobre composição salva. Não importam React, Electron nem editam bibliotecas.
- * As formas dos snapshots são as formas legadas, inclusive videoTimeline opcional.
  */
 import type { StudioDocument, StudioElement } from './studio'
 import type { CustomizerCharacter } from './customizer'
 
 export type StudioSceneSnapshot = Pick<StudioDocument, 'backgroundColor' | 'backgroundAssetId' | 'backgroundX' | 'backgroundY' | 'backgroundWidth' | 'backgroundHeight' | 'backgroundRotation' | 'assets' | 'elements'>
-export type VideoStudioSceneSnapshot = StudioSceneSnapshot & Pick<StudioDocument, 'videoTimeline'>
 
 export function snapshotStudioScene(studio: StudioDocument): StudioSceneSnapshot {
   return {
@@ -19,10 +17,6 @@ export function snapshotStudioScene(studio: StudioDocument): StudioSceneSnapshot
     assets: studio.assets,
     elements: studio.elements
   }
-}
-
-export function snapshotVideoStudioScene(studio: StudioDocument): VideoStudioSceneSnapshot {
-  return { ...snapshotStudioScene(studio), videoTimeline: studio.videoTimeline }
 }
 
 export function withStudioSnapshot<T extends Partial<StudioDocument>>(studio: StudioDocument, next: T): StudioDocument {

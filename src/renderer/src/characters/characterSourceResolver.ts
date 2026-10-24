@@ -1,12 +1,12 @@
 /** Resolução compartilhada e não-mutante de modelo/pose do personagem.
  * Fabricador fornece fontes permanentes; Customizador aplica somente overrides
- * em memória; Studio e Video Studio consomem a mesma geometria.
+ * em memória; Os fluxos do Studio e do Customizador compartilham a geometria.
  */
 import type { FabricatorProject } from '../../../shared/fabricator'
 import type { CustomizerCharacter } from '../../../shared/customizer'
 import { getCharacterBodyDimensions, getCharacterProportions, type CharacterProportions } from '../../../shared/customizer'
 import { applyCharacterBodyShape } from '../../../shared/bodyShape'
-import type { VideoCharacterRenderAssetProvider } from '../../../shared/videoCharacterRenderAssets'
+import type { CharacterRenderAssetProvider } from '../../../shared/characterRenderAssets'
 
 export type CatalogArtwork = Pick<FabricatorProject, 'width' | 'height' | 'parts' | 'layerOrder' | 'hiddenPartIds'> & Partial<Pick<FabricatorProject, 'joints'>>
 
@@ -35,8 +35,8 @@ export function characterShapeScale(proportions: CharacterProportions): { x: num
 
 export async function resolveSavedCharacterSource(
   character: CustomizerCharacter,
-  renderSource?: { artwork: CatalogArtwork; source: FabricatorProject; assetProvider?: VideoCharacterRenderAssetProvider }
-): Promise<{ modelSlot: number; assetProvider: VideoCharacterRenderAssetProvider; source: FabricatorProject; artwork: CatalogArtwork }> {
+  renderSource?: { artwork: CatalogArtwork; source: FabricatorProject; assetProvider?: CharacterRenderAssetProvider }
+): Promise<{ modelSlot: number; assetProvider: CharacterRenderAssetProvider; source: FabricatorProject; artwork: CatalogArtwork }> {
   const modelSlot = character.customization.modelSlot ?? 1
   const assetProvider = renderSource?.assetProvider ?? window.desktop
   const source = renderSource?.source ?? await assetProvider.loadFabricatorSlot(modelSlot)

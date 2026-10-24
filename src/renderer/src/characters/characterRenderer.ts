@@ -11,13 +11,13 @@ import { tintSkinPixels } from './skinTint'
 import { configureCharacterSampling, MAX_CHARACTER_PREVIEW_PIXELS } from './renderResolution'
 import { drawFaceExpressionEffects } from './expressionEffectRender'
 import { legacyStandardExpressionEffects } from '../../../shared/legacyExpressionEffects'
-import type { VideoCharacterRenderAssetProvider } from '../../../shared/videoCharacterRenderAssets'
+import type { CharacterRenderAssetProvider } from '../../../shared/characterRenderAssets'
 import { resolveSavedCharacterSource, characterShapeScale, type CatalogArtwork } from './characterSourceResolver'
 import { getCharacterProportions } from '../../../shared/customizer'
 import { prepareGachaStaticLayers } from './gachaStaticLayers'
-import { exportImageMemos, loadCachedImage } from './characterImageMemos'
+import { loadCachedImage } from './characterImageMemos'
 import { createCharacterCanvas, isCharacterCanvasWorker } from './canvasSurface'
-export { loadCachedImage, configureVideoExportCharacterImageCaches, clearVideoExportCharacterImageCaches, disposeVideoExportCharacterImageCaches } from './characterImageMemos'
+export { loadCachedImage } from './characterImageMemos'
 export { withCharacterHeadSize, characterShapeScale } from './characterSourceResolver'
 export type { CatalogArtwork } from './characterSourceResolver'
 
@@ -27,7 +27,7 @@ const hairTintImageCache = new Map<string, Promise<HTMLImageElement>>()
 
 export type StandardExpressionEffects = Record<number, FaceExpressionEffects>
 
-export async function loadStandardExpressionEffects(modelSlot: number, assetProvider: VideoCharacterRenderAssetProvider = window.desktop): Promise<StandardExpressionEffects> {
+export async function loadStandardExpressionEffects(modelSlot: number, assetProvider: CharacterRenderAssetProvider = window.desktop): Promise<StandardExpressionEffects> {
   const summaries = await assetProvider.listFaceExpressionPresets(modelSlot)
   const standard = summaries.filter((preset) => (preset.collectionId ?? 'standard') === 'standard'
     && Number.isInteger(preset.expressionIndex) && preset.expressionIndex! >= 0 && preset.expressionIndex! < 21)
@@ -114,10 +114,8 @@ function hairPixelColorRole(red: number, green: number, blue: number, profile: R
 export function loadHairTintedImage(source: string, overrides: HairColorOverrides | undefined, options?: HairTintOptions): Promise<HTMLImageElement> {
   if (!overrides || !Object.values(overrides).some(Boolean)) return loadCachedImage(source)
   const key = `${source}:${JSON.stringify([overrides, options])}`
-  if (!exportImageMemos) {
-    const cached = hairTintImageCache.get(key)
-    if (cached) return cached
-  }
+  const cached = hairTintImageCache.get(key)
+  if (cached) return cached
   const createTinted = () => loadCachedImage(source).then((sourceImage) => {
     const canvas = createCharacterCanvas()
     canvas.width = sourceImage.naturalWidth || sourceImage.width
@@ -170,7 +168,6 @@ export function loadHairTintedImage(source: string, overrides: HairColorOverride
       output.onerror = () => reject(new Error('Não foi possível recolorir o cabelo.'))
     })
   })
-  if (exportImageMemos) return exportImageMemos.hair.getOrCreate(key, createTinted)
   const tinted = createTinted()
   hairTintImageCache.set(key, tinted)
   if (hairTintImageCache.size > 40) hairTintImageCache.delete(hairTintImageCache.keys().next().value!)
@@ -180,10 +177,8 @@ export function loadHairTintedImage(source: string, overrides: HairColorOverride
 
 export function loadSkinTintedImage(source: string, tone: string): Promise<HTMLImageElement> {
   const key = `${tone}:${source}`
-  if (!exportImageMemos) {
-    const cached = skinTintImageCache.get(key)
-    if (cached) return cached
-  }
+  const cached = skinTintImageCache.get(key)
+  if (cached) return cached
   const createTinted = () => loadCachedImage(source).then((sourceImage) => {
     const canvas = createCharacterCanvas()
     canvas.width = sourceImage.naturalWidth || sourceImage.width
@@ -203,7 +198,6 @@ export function loadSkinTintedImage(source: string, tone: string): Promise<HTMLI
       output.onerror = () => reject(new Error('Não foi possível aplicar a cor de pele.'))
     })
   })
-  if (exportImageMemos) return exportImageMemos.skin.getOrCreate(key, createTinted)
   const tinted = createTinted()
   skinTintImageCache.set(key, tinted)
   void tinted.catch(() => skinTintImageCache.delete(key))
@@ -254,7 +248,7 @@ function hairAppearanceStyleIds(appearance: NonNullable<CustomizerCharacter['cus
   })
 }
 
-export async function loadHairAppearanceLayers(appearance: NonNullable<CustomizerCharacter['customization']['hairAppearance']> | undefined, modelSlot: number, side: HairLayerSide, cached: Record<string, HairStyle> = {}, assetProvider: VideoCharacterRenderAssetProvider = window.desktop): Promise<HairLayerReference[]> {
+export async function loadHairAppearanceLayers(appearance: NonNullable<CustomizerCharacter['customization']['hairAppearance']> | undefined, modelSlot: number, side: HairLayerSide, cached: Record<string, HairStyle> = {}, assetProvider: CharacterRenderAssetProvider = window.desktop): Promise<HairLayerReference[]> {
   if (!appearance || appearance.modelSlot !== modelSlot) return []
   const ids = hairAppearanceStyleIds(appearance, side)
   const styles = await Promise.all(ids.map(async ({ id }) => cached[`${modelSlot}:${id}`] ?? await assetProvider.loadHairStyle(modelSlot, id)))
@@ -427,7 +421,7 @@ export async function renderWardrobeOverlayCanvases(
       }
     }
   }
-  // Keep the rendered buffers in memory for Video Studio. Serializing every
+  // Reutiliza os buffers renderizados em memória. Serializar cada
   // changing wardrobe pose to PNG and decoding it back blocks both preview
   // and export; callers needing a PNG still have the legacy wrapper below.
   return { canvas: output, aboveHairCanvas: hasAboveHairAccessories ? aboveHairCanvas : null }
@@ -435,7 +429,7 @@ export async function renderWardrobeOverlayCanvases(
 
 /**
  * Historical PNG API for Customizador/Fabricador and other consumers.
- * Preserve the public contract while Video Studio composes native Canvases.
+ * Mantém o contrato público ao compor Canvas nativo.
  */
 export async function renderWardrobeOverlay(
   groups: CustomizerWardrobeGroup[],
@@ -706,7 +700,7 @@ function alignMouthTransformToClosedBase(transform: FaceComponentAsset['defaultT
 
 type StudioClosedEyeResolver = (openEye: FaceComponentAsset, side: 'left' | 'right') => Promise<FaceComponentAsset | null>
 
-export async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, artwork: CatalogArtwork, source: FabricatorProject, items: Partial<Record<FaceSheetKind | FaceElementKind, FaceCatalogItem>>, appearance: CustomizerFaceAppearance, skinTone?: string, studioFaceTransforms?: StudioFaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: StudioFaceMode, resolveClosedEye?: StudioClosedEyeResolver, headOverrides: CustomizerCharacter['customization']['partOverrides'] = {}, highlightedHeadId?: string | null, assetProvider: VideoCharacterRenderAssetProvider = window.desktop): Promise<void> {
+export async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, artwork: CatalogArtwork, source: FabricatorProject, items: Partial<Record<FaceSheetKind | FaceElementKind, FaceCatalogItem>>, appearance: CustomizerFaceAppearance, skinTone?: string, studioFaceTransforms?: StudioFaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: StudioFaceMode, resolveClosedEye?: StudioClosedEyeResolver, headOverrides: CustomizerCharacter['customization']['partOverrides'] = {}, highlightedHeadId?: string | null, assetProvider: CharacterRenderAssetProvider = window.desktop): Promise<void> {
   const sourceHead = source.parts.find((part) => /cabe[çc]a|head/i.test(part.name))
   const targetHead = artwork.parts.find((part) => /cabe[çc]a|head/i.test(part.name))
   if (!sourceHead || !targetHead || sourceHead.width <= 0 || sourceHead.height <= 0) return
@@ -1006,7 +1000,7 @@ export type GachaReusableMaterialCache = Map<string, Promise<GachaReusableMateri
 async function loadGachaReusableMaterials(
   character: CustomizerCharacter,
   modelSlot: number,
-  assetProvider: VideoCharacterRenderAssetProvider
+  assetProvider: CharacterRenderAssetProvider
 ): Promise<GachaReusableMaterials> {
   const hairAppearance = character.customization.hairAppearance
   const [backStyles, posteriorStyles, fringeStyles] = await Promise.all([
@@ -1040,7 +1034,7 @@ function gachaMaterialKey(character: CustomizerCharacter, modelSlot: number): st
 }
 
 export async function materialsForPreparedCharacter(
-  character: CustomizerCharacter, slot: number, assetProvider: VideoCharacterRenderAssetProvider,
+  character: CustomizerCharacter, slot: number, assetProvider: CharacterRenderAssetProvider,
   cache?: GachaReusableMaterialCache,
 ): Promise<GachaReusableMaterials> {
   if (!cache) return loadGachaReusableMaterials(character, slot, assetProvider)
@@ -1059,7 +1053,7 @@ export async function materialsForPreparedCharacter(
   return pending
 }
 
-export async function prepareSavedCharacterRenderer(character: CustomizerCharacter, renderSource?: { artwork: CatalogArtwork; source: FabricatorProject; assetProvider?: VideoCharacterRenderAssetProvider; materialCache?: GachaReusableMaterialCache }): Promise<{ width: number; height: number; render: (appearance?: CustomizerFaceAppearance, studioFaceTransforms?: StudioFaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: StudioFaceMode) => Promise<{ dataUrl: string; width: number; height: number }>; renderToCanvas: (appearance?: CustomizerFaceAppearance, studioFaceTransforms?: StudioFaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: StudioFaceMode) => Promise<{ canvas: HTMLCanvasElement; width: number; height: number }>; renderLayersToCanvas: (appearance?: CustomizerFaceAppearance, studioFaceTransforms?: StudioFaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: StudioFaceMode) => Promise<PreparedGachaLayerFrame> }> {
+export async function prepareSavedCharacterRenderer(character: CustomizerCharacter, renderSource?: { artwork: CatalogArtwork; source: FabricatorProject; assetProvider?: CharacterRenderAssetProvider; materialCache?: GachaReusableMaterialCache }): Promise<{ width: number; height: number; render: (appearance?: CustomizerFaceAppearance, studioFaceTransforms?: StudioFaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: StudioFaceMode) => Promise<{ dataUrl: string; width: number; height: number }>; renderToCanvas: (appearance?: CustomizerFaceAppearance, studioFaceTransforms?: StudioFaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: StudioFaceMode) => Promise<{ canvas: HTMLCanvasElement; width: number; height: number }>; renderLayersToCanvas: (appearance?: CustomizerFaceAppearance, studioFaceTransforms?: StudioFaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: StudioFaceMode) => Promise<PreparedGachaLayerFrame> }> {
   const { modelSlot, assetProvider, source, artwork } = await resolveSavedCharacterSource(character, renderSource)
   const proportions = getCharacterProportions(character.customization)
   const hairAppearance = character.customization.hairAppearance

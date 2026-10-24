@@ -19,8 +19,7 @@ export default defineConfig({
       outDir: 'out/preload',
       rollupOptions: {
         input: {
-          preload: resolve(projectRoot, 'electron/preload.ts'),
-          'video-export-preload': resolve(projectRoot, 'electron/videoExportPreload.ts')
+          preload: resolve(projectRoot, 'electron/preload.ts')
         },
         output: { format: 'cjs', entryFileNames: '[name].cjs' }
       }

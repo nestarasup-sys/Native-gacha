@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  snapshotStudioScene, snapshotVideoStudioScene, withStudioSnapshot,
+  snapshotStudioScene, withStudioSnapshot,
   studioCharacterRenderKey, studioElementSize
 } from '../src/shared/studioSceneModel.ts'
 import { selectRememberedCustomizerCharacter } from '../src/shared/customizerSelection.ts'
@@ -12,17 +12,14 @@ const BASE = {
   updatedAt:'2026-10-22T00:00:00Z', backgroundColor:'#fff',
   backgroundAssetId:null, backgroundX:0, backgroundY:0,
   backgroundWidth:100, backgroundHeight:100, backgroundRotation:0,
-  assets:[], elements:[], videoTimeline:{playheadFrame:10}
+  assets:[], elements:[]
 }
-test('snapshots do Studio preservam campos, referências e isolamento da timeline', () => {
-  const primary=snapshotStudioScene(BASE),video=snapshotVideoStudioScene(BASE)
-  assert.equal('videoTimeline' in primary,false)
-  assert.equal(video.videoTimeline,BASE.videoTimeline)
+test('snapshot do Studio preserva campos e referências sem mutar a cena', () => {
+  const primary=snapshotStudioScene(BASE)
   assert.equal(primary.assets,BASE.assets)
   assert.equal(primary.elements,BASE.elements)
   const edited=withStudioSnapshot(BASE,{...primary,backgroundX:42})
   assert.equal(edited.backgroundX,42)
-  assert.equal(edited.videoTimeline,BASE.videoTimeline)
   assert.equal(BASE.backgroundX,0)
   assert.equal(Date.parse(edited.updatedAt)>0,true)
 })

@@ -105,7 +105,7 @@ function archiveProfileSafely(source, root, expectedInventory, now) {
 }
 
 function restoreMissingDomainFiles(source, destination) {
-  const domains = ['customizer', 'fabricator', 'studios', 'video-studios']
+  const domains = ['customizer', 'fabricator', 'studios']
   const result = { restoredFiles: 0, alreadyPresentFiles: 0, preservedConflicts: 0 }
   for (const domain of domains) {
     const from = path.join(source, domain)

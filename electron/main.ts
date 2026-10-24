@@ -3,46 +3,18 @@ import { createReadStream, existsSync, lstatSync, mkdirSync, readFileSync, realp
 import { mkdir as nativeMkdir, readFile as nativeReadFile, writeFile as nativeWriteFile, readdir as nativeReaddir, unlink as nativeUnlink, rename as nativeRename, stat as nativeStat, access as nativeAccess, rm as nativeRm, copyFile as nativeCopyFile } from 'node:fs/promises'
 import { basename, dirname, extname, join, relative, resolve, sep } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
-import { totalmem, freemem } from 'node:os'
-import { videoStudioMemoryReport, type VideoStudioProcessFailure } from '../src/shared/videoStudioNext/diagnostics'
 import { Readable } from 'node:stream'
 import { fileURLToPath } from 'node:url'
 import type { FaceAssetKind, FaceAssetSave, FaceCatalogItem, FaceCatalogItemSave, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSave, FaceComponentAssetSummary, FaceElementKind, FaceExpressionPreset, FaceExpressionTransforms, FaceExpressionWorkspaceDraft, FaceGuideProfile, FaceSet, FaceSetSave, FaceSetSummary, FaceSheetKind, FaceTransform, FabricatorAssetSave, FabricatorHistoryEntry, FabricatorHistorySaveEntry, FabricatorHistorySaveState, FabricatorHistoryState, FabricatorPoseDraftSave, FabricatorPoseSave, FabricatorProject, FabricatorProjectSave, HairStyle, HairStyleAsset, HairStyleSave, HairStyleSummary, HairWorkspace, HairWorkspaceAsset, HairWorkspaceSave, ModelPart, WardrobeAssetSave, WardrobeCategory, WardrobeSet, WardrobeSetSave } from '../src/shared/fabricator'
 import { hairCategories } from '../src/shared/hairCategories'
-import type { StudioAsset, StudioDocument, VideoStudioAsset, VideoStudioCardSummary, VideoTimelineDocument } from '../src/shared/studio'
+import type { StudioAsset, StudioDocument } from '../src/shared/studio'
 import { isStudioExpressionEffects, isStudioFaceTransforms } from '../src/shared/studio'
-import { isValidVideoMediaClip } from '../src/shared/videoMedia'
-import { isValidVideoAudioSettings } from '../src/shared/videoAudio'
-// In-memory, privacy-minimal crash ring (no project paths or media bytes).
-const videoStudioRecentProcessFailures: VideoStudioProcessFailure[] = []
-function recordVideoStudioProcessFailure(kind: VideoStudioProcessFailure['kind'], reason: string, exitCode: number): void {
-  videoStudioRecentProcessFailures.push({
-    occurredAt: new Date().toISOString(), kind, reason, exitCode,
-  })
-  if (videoStudioRecentProcessFailures.length > 24) videoStudioRecentProcessFailures.shift()
-}
-app.on('render-process-gone', (_event, _contents, details) => {
-  recordVideoStudioProcessFailure('renderer', details.reason, details.exitCode)
-})
-app.on('child-process-gone', (_event, details) => {
-  recordVideoStudioProcessFailure('child', details.reason, details.exitCode)
-})
-
 import { VideoLibraryStore, configureVideoLibraryStorage } from './videoLibrary'
 import { VideoBackgroundLibraryStore, configureBackgroundLibraryStorage } from './backgroundLibrary'
 import { RoteiroUiGifLibraryStore, configureRoteiroUiGifStorage } from './roteiroUiGifLibrary'
-import { VideoExportLibrary } from './videoExports'
-import { VideoExportJobStore } from './videoExportJobs'
-import { VideoExportSurfaceHost } from './videoExportSurfaceHost'
-import { VideoExportCoordinator } from './videoExportCoordinator'
-import { VideoPreviewProxyStore } from './videoPreviewProxyStore'
-import { resolveVideoStudioTools } from './videoToolsResolver'
-import { probeVideoStudioFfmpeg, type VideoStudioFfmpegCapabilities } from './videoFfmpegCapabilities'
-import type { VideoExportProgress, VideoExportStartRequest } from '../src/shared/videoExportRuntime'
 import type { RoteiroDocument, RoteiroExportCharacterInfo, RoteiroExportLog, RoteiroReactionBlock, RoteiroSectionContent, RoteiroVideoReference } from '../src/shared/roteiros'
 import { RoteiroCharacterExportStore } from './roteiroCharacterExport'
 import { RoteiroProjectExportStore } from './roteiroProjectExport'
-import { serializeVideoCharacterRenderAssetSnapshot } from '../src/shared/videoCharacterRenderAssets'
 import { DataPlatform, getAppDataUsage } from './dataPlatform.cjs'
 import { DomainFileSystem } from './domainFileSystem.cjs'
 import { DataMigrationService } from './dataMigration.cjs'
@@ -54,7 +26,7 @@ import { measureIpc } from './ipcPerformance'
 import { BaseVideoService } from './domains/baseVideos/service'
 import { registerBaseVideoHandlers } from './domains/baseVideos/ipc'
 import { isRoteiroDocument } from './domains/roteiros/validation'
-import { isCustomizerCharacter, isValidCustomizerFaceAppearance } from './domains/customizer/validation'
+import { isValidCustomizerFaceAppearance } from './domains/customizer/validation'
 import { CustomizerCharacterRepository } from './domains/customizer/repository'
 import { CustomizerCharacterService } from './domains/customizer/service'
 import { registerCustomizerCharacterHandlers } from './domains/customizer/ipc'
@@ -89,14 +61,6 @@ import { captureFabricatorRealScreens, captureCustomizerStudioRealScreens, captu
 import { registerModelSourceDownloadHandlers } from './domains/fabricator/modelSourceExportIpc'
 
 let configuredAppDataRoot: string | null = null
-let videoExportLibrary: VideoExportLibrary | null = null
-let videoExportJobStore: VideoExportJobStore | null = null
-let videoExportSurfaceHost: VideoExportSurfaceHost | null = null
-let videoExportCoordinator: VideoExportCoordinator | null = null
-let videoPreviewProxyStore: VideoPreviewProxyStore | null = null
-let videoPreviewToolsPromise: Promise<{ ffmpeg: VideoStudioFfmpegCapabilities }> | null = null
-const videoExportJobOwners = new Map<string, number>()
-const videoExportTerminalCleanupTimers = new Map<string, NodeJS.Timeout>()
 let roteirosSaveQueue: Promise<void> = Promise.resolve()
 let roteiroCharacterExportStore: RoteiroCharacterExportStore | null = null
 let roteiroProjectExportStore: RoteiroProjectExportStore | null = null
@@ -236,7 +200,7 @@ function configureLocalAppDataRoot(): string | null {
 
 configuredAppDataRoot = configureLocalAppDataRoot()
 
-// Local, opt-in harness for Windows Video Studio stress runs. It keeps the
+// Local, opt-in harness for Windows media stress runs. It keeps the
 // normal app-data profile and app IPC, but lets an external local runner drive
 // the hidden renderer through CDP without showing a desktop window.
 if (process.env.GACHA_VIDEO_STRESS_OFFSCREEN === '1') {
@@ -311,13 +275,12 @@ const faceComponentItemPath = (modelSlot: number, id: string) => join(faceCompon
 const hairModelPath = (modelSlot: number) => join(app.getPath('userData'), 'fabricator', 'hair', `model-${modelSlot}`)
 const hairStylePath = (modelSlot: number, id: string) => join(hairModelPath(modelSlot), 'styles', `style-${id}`)
 const characterLibraryPath = () => join(app.getPath('userData'), 'customizer', 'characters')
-type StudioWorkspaceStorage = 'studio' | 'video'
-const studioLibraryPath = (workspace: StudioWorkspaceStorage = 'studio') => join(app.getPath('userData'), 'studios', workspace === 'video' ? 'Video Studio' : 'Studio Principal')
-const studioPath = (id: string, workspace: StudioWorkspaceStorage = 'studio') => join(studioLibraryPath(workspace), `studio-${id}`)
+const studioLibraryPath = (workspace: 'studio' | 'video' = 'studio') => join(app.getPath('userData'), 'studios', workspace === 'video' ? 'Video Studio' : 'Studio Principal')
+const studioPath = (id: string) => join(studioLibraryPath('studio'), `studio-${id}`)
 const videoLibrary = new VideoLibraryStore(() => studioLibraryPath('video'))
 const videoBackgroundLibrary = new VideoBackgroundLibraryStore(() => studioLibraryPath('video'))
 const roteiroUiGifLibrary = new RoteiroUiGifLibraryStore(() => studioLibraryPath('video'))
-const studioSaveQueues: Record<StudioWorkspaceStorage, Promise<void>> = { studio: Promise.resolve(), video: Promise.resolve() }
+const studioSaveQueues = { studio: Promise.resolve() as Promise<void> }
 const characterManifestPath = () => join(characterLibraryPath(), 'characters.json')
 const fabricatorSaveQueues = new Map<number, Promise<void>>()
 let poseSaveQueue: Promise<void> = Promise.resolve()
@@ -959,11 +922,9 @@ function isStudioDocument(value: unknown): value is StudioDocument {
     && Array.isArray(assets) && assets.length <= 500
     && assets.every((asset) => isStudioAsset(asset))
     && Array.isArray(elements) && elements.length <= 1000
-    && (studio.videoTimeline === undefined || isVideoTimelineDocument(studio.videoTimeline, elements))
     && (studio.backgroundAssetId === null || assets.some((asset) => asset.id === studio.backgroundAssetId && asset.category === 'background'))
     && elements.every((element) => Boolean(element && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(element.id) && typeof element.text === 'string'
       && ['image', 'character', 'narrator', 'speech', 'thought'].includes(element.kind)
-      && (element.timelineColor === undefined || typeof element.timelineColor === 'string' && /^#[0-9a-f]{6}$/i.test(element.timelineColor))
       && isStudioFaceTransforms(element.faceTransforms)
       && (element.expressionBase === undefined || Boolean(element.expressionBase && element.expressionBase.appearance && isValidCustomizerFaceAppearance(element.expressionBase.appearance)
         && element.expressionBase.transforms && isStudioFaceTransforms(element.expressionBase.transforms)))
@@ -974,40 +935,6 @@ function isStudioDocument(value: unknown): value is StudioDocument {
       && (element.kind !== 'image' || assets.some((asset) => asset.id === element.assetId && asset.category === 'object'))
       && (element.kind !== 'character' || (typeof element.characterId === 'string' && assets.some((asset) => asset.id === element.assetId && asset.category === 'character')))
       && [element.x, element.y, element.width, element.height, element.rotation, element.zIndex].every(Number.isFinite)))
-}
-
-function isVideoTimelineDocument(value: unknown, elements: StudioDocument['elements']): value is VideoTimelineDocument {
-  if (!value || typeof value !== 'object') return false
-  const timeline = value as Partial<VideoTimelineDocument>
-  const characterIds = new Set(elements.filter((element) => element?.kind === 'character').map((element) => element.id))
-  const textIds = new Set(elements.filter((element) => element?.kind === 'speech' || element?.kind === 'thought').map((element) => element.id))
-  const validState = (state: VideoTimelineDocument['characterKeys'][number]['state'], id: string) => Boolean(state
-    && state.element?.kind === 'character' && state.element.id === id
-    && typeof state.element.characterId === 'string' && typeof state.element.assetId === 'string'
-    && [state.element.x, state.element.y, state.element.width, state.element.height, state.element.rotation, state.element.zIndex].every(Number.isFinite)
-    && isStudioFaceTransforms(state.element.faceTransforms) && isStudioExpressionEffects(state.element.activeExpressionEffects)
-    && typeof state.imageDataUrl === 'string' && state.imageDataUrl.startsWith('data:image/png;base64,') && state.imageDataUrl.length <= 70_000_000)
-  return timeline.schemaVersion === 1 && timeline.frameRate === 60
-    && typeof timeline.playing === 'boolean'
-    && (timeline.coverDataUrl === undefined || typeof timeline.coverDataUrl === 'string' && /^data:image\/(jpeg|png);base64,/.test(timeline.coverDataUrl) && timeline.coverDataUrl.length <= 1_500_000)
-    && isValidVideoAudioSettings(timeline.videoAudio)
-    && (timeline.trackSettings === undefined || Object.keys(timeline.trackSettings).length <= 1002 && Object.entries(timeline.trackSettings).every(([id, settings]) => (characterIds.has(id) || id === 'speech' || id === 'thought' || id === 'video') && settings && (settings.visible === undefined || typeof settings.visible === 'boolean') && (settings.locked === undefined || typeof settings.locked === 'boolean') && (settings.collapsed === undefined || typeof settings.collapsed === 'boolean') && (settings.order === undefined || Number.isInteger(settings.order) && settings.order >= 0 && settings.order <= 1002) && (settings.label === undefined || typeof settings.label === 'string' && settings.label.length <= 80)))
-    && Number.isInteger(timeline.durationFrames) && timeline.durationFrames! >= 60 && timeline.durationFrames! <= 60 * 60 * 60 * 24
-    && Number.isInteger(timeline.playheadFrame) && timeline.playheadFrame! >= 0 && timeline.playheadFrame! <= timeline.durationFrames!
-    && Array.isArray(timeline.characterKeys) && timeline.characterKeys.length <= 100_000
-    && (timeline.characterBases === undefined || Object.entries(timeline.characterBases).every(([id, state]) => characterIds.has(id) && validState(state, id)))
-    && (timeline.characterPositions === undefined || Object.entries(timeline.characterPositions).every(([id, position]) => characterIds.has(id) && position && Number.isFinite(position.x) && Number.isFinite(position.y)))
-    && (timeline.characterTransforms === undefined || Object.entries(timeline.characterTransforms).every(([id, transform]) => characterIds.has(id) && transform && [transform.x, transform.y, transform.rotation, transform.zIndex].every(Number.isFinite) && (transform.flipX === undefined || typeof transform.flipX === 'boolean') && [transform.characterScale, transform.characterWidthScale, transform.characterHeightScale].every((value) => value === undefined || Number.isFinite(value))))
-    && timeline.characterKeys.every((key) => Boolean(key && typeof key.id === 'string' && characterIds.has(key.elementId) && Number.isInteger(key.frame) && key.frame >= 0 && key.frame <= timeline.durationFrames! && (key.poseSlot === null || Number.isInteger(key.poseSlot)) && (key.expressionCollectionId === null || typeof key.expressionCollectionId === 'string') && (key.expressionPresetId === null || typeof key.expressionPresetId === 'string') && ['idle', 'blink', 'talk'].includes(key.faceMode) && (key.state === undefined || validState(key.state, key.elementId))))
-    && Array.isArray(timeline.textClips) && timeline.textClips.length <= 100_000
-    && timeline.textClips.every((clip) => Boolean(clip && typeof clip.id === 'string' && textIds.has(clip.elementId) && (clip.kind === 'speech' || clip.kind === 'thought') && Number.isInteger(clip.startFrame) && Number.isInteger(clip.endFrame) && clip.startFrame >= 0 && clip.endFrame > clip.startFrame && clip.endFrame <= timeline.durationFrames! && (clip.state === undefined || clip.state.id === clip.elementId && clip.state.kind === clip.kind && typeof clip.state.text === 'string' && [clip.state.x, clip.state.y, clip.state.width, clip.state.height, clip.state.rotation, clip.state.zIndex].every(Number.isFinite))))
-    && (timeline.videoAssets === undefined || Array.isArray(timeline.videoAssets) && timeline.videoAssets.length <= 1000 && timeline.videoAssets.every((asset) => Boolean(asset && typeof asset.id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(asset.id) && typeof asset.name === 'string' && asset.name.length <= 255 && (asset.extension === 'mp4' && asset.mimeType === 'video/mp4' || asset.extension === 'webm' && asset.mimeType === 'video/webm' || asset.extension === 'mov' && asset.mimeType === 'video/quicktime' || asset.extension === 'm4v' && asset.mimeType === 'video/x-m4v') && Number.isInteger(asset.size) && asset.size > 0 && asset.size <= 5 * 1024 * 1024 * 1024 && Number.isInteger(asset.durationFrames) && asset.durationFrames > 0 && asset.durationFrames <= 60 * 60 * 60 * 24)))
-    && (timeline.videoClips === undefined || Array.isArray(timeline.videoClips) && timeline.videoClips.length <= 100_000 && timeline.videoClips.every((clip) => {
-      const asset = timeline.videoAssets?.find((item) => item.id === clip?.assetId)
-      return Boolean(asset && isValidVideoMediaClip(clip, asset.durationFrames, timeline.durationFrames!))
-    }))
-    && Array.isArray(timeline.saveMarkers) && timeline.saveMarkers.length <= 100_000
-    && timeline.saveMarkers.every((marker) => Boolean(marker && typeof marker.id === 'string' && Number.isInteger(marker.frame) && marker.frame >= 0 && marker.frame <= timeline.durationFrames! && Array.isArray(marker.affectedTrackIds) && marker.affectedTrackIds.every((id) => typeof id === 'string')))
 }
 
 function isStudioAsset(value: unknown): value is StudioAsset {
@@ -1024,18 +951,15 @@ const { readStudio, writeStudio, removeStudio } = createStudioDocumentPersistenc
   files: { readFile, writeFile, mkdir, access, rename, unlink, rm },
   studioPath,
   studioLibraryPath,
-  prepareVideoDelete: () => videoLibrary.list(),
   validate: isStudioDocument,
   decodeImage: importedImageDataUrlBuffer,
-  normalizeImage: normalizeImageBuffer,
-  ensureVideoAssets: (id, assets) => videoLibrary.ensureProjectAssets(id, assets),
-  videoStudioCardSummary: (value, id) => videoStudioCardSummary(value, id)
+  normalizeImage: normalizeImageBuffer
 })
 
-const { listStudios, listVideoStudioCards, videoStudioCardSummary } = createStudioLibraryIndex({
-  files: { mkdir, readdir, readFile, writeFile },
+const { listStudios } = createStudioLibraryIndex({
+  files: { mkdir, readdir },
   studioLibraryPath,
-  readStudio: (id, workspace) => readStudio(id, workspace)
+  readStudio
 })
 
 function dataUrlBuffer(dataUrl: string): Buffer {
@@ -1180,306 +1104,123 @@ async function registerFabricatorHandlers(): Promise<void> {
       ...fabricatorSaveQueues.values(), ...poseSaveWrites, ...hairSaveQueues.values(),
       animatorSaveQueue, wardrobeSaveQueue, faceSaveQueue, expressionPresetSaveQueue,
       faceGuideSaveQueue, customizerService.pendingWrites,
-      studioSaveQueues.studio, studioSaveQueues.video, roteirosSaveQueue
+      studioSaveQueues.studio, roteirosSaveQueue
     ]
     const results = await Promise.allSettled(pendingWrites)
     const failedWrite = results.find((result): result is PromiseRejectedResult => result.status === 'rejected')
     if (failedWrite) throw failedWrite.reason
   })
 
-  const registerStudioWorkspace = (workspace: StudioWorkspaceStorage, channel: 'studio' | 'video-studio') => {
-    if (workspace === 'studio') registerStudioPrimaryHandlers({
-      ipcMain, assertTrustedSender,
-      list: () => listStudios('studio'),
-      write: (document) => writeStudio(document, 'studio'),
-      remove: (id) => removeStudio(id, 'studio'),
-      getPendingWrites: () => studioSaveQueues.studio,
-      setPendingWrites: (pending) => { studioSaveQueues.studio = pending },
-      measure: (label, operation) => measureIpc(label, operation)
+  registerStudioPrimaryHandlers({
+    ipcMain, assertTrustedSender,
+    list: () => listStudios(),
+    write: (document) => writeStudio(document),
+    remove: (id) => removeStudio(id),
+    getPendingWrites: () => studioSaveQueues.studio,
+    setPendingWrites: (pending) => { studioSaveQueues.studio = pending },
+    measure: (label, operation) => measureIpc(label, operation)
+  })
+
+  ipcMain.handle('studio:folder', (event): string => {
+    assertTrustedSender(event)
+    return join(app.getPath('appData'), 'projects', 'studio')
+  })
+  ipcMain.handle('studio:import-image', async (event, category: StudioAsset['category']): Promise<StudioAsset | null> => {
+    assertTrustedSender(event)
+    if (category !== 'background' && category !== 'object') throw new Error('Categoria de imagem inválida.')
+    const result = await dialog.showOpenDialog({
+      title: `Studio: ${category === 'background' ? 'adicionar imagem de fundo' : 'adicionar objeto à cena'}`,
+      properties: ['openFile'],
+      filters: [{ name: 'Imagens', extensions: ['png', 'jpg', 'jpeg', 'webp'] }]
     })
-    if (workspace === 'video') ipcMain.handle(`${channel}:list`, async (event): Promise<StudioDocument[] | VideoStudioCardSummary[]> => {
-      assertTrustedSender(event)
-      return measureIpc<StudioDocument[] | VideoStudioCardSummary[]>(`${channel}:list`, () => workspace === 'video' ? listVideoStudioCards() : listStudios(workspace))
+    if (result.canceled || !result.filePaths[0]) return null
+    const path = result.filePaths[0]
+    const size = (await stat(path)).size
+    if (size > 50 * 1024 * 1024) throw new Error('A imagem excede o limite de 50 MB.')
+    const canonical = await normalizeImageBuffer(await readFile(path))
+    return { id: randomUUID(), category, name: basename(path), mimeType: 'image/png', dataUrl: `data:image/png;base64,${canonical.bytes.toString('base64')}` }
+  })
+  ipcMain.handle('studio:save-print', async (event, id: string, dataUrl: string): Promise<string | null> => {
+    assertTrustedSender(event)
+    if (typeof id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) throw new Error('Identificador de Studio inválido.')
+    const bytes = dataUrlBuffer(dataUrl)
+    if (bytes.length > 50 * 1024 * 1024) throw new Error('O print excede o limite de 50 MB.')
+    const printsFolder = join(studioPath(id), 'prints')
+    await mkdir(printsFolder, { recursive: true })
+    const printPath = join(printsFolder, `print-${new Date().toISOString().replace(/[:.]/g, '-')}-${randomUUID().slice(0, 8)}.png`)
+    await writeFile(printPath, bytes)
+    return printPath
+  })
+  ipcMain.handle('studio:open-prints', async (event, id: string): Promise<void> => {
+    assertTrustedSender(event)
+    if (typeof id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) throw new Error('Identificador de Studio inválido.')
+    const studioFolder = resolve(studioPath(id))
+    const printsFolder = resolve(studioFolder, 'prints')
+    if (dirname(printsFolder) !== studioFolder) throw new Error('Pasta de prints inválida.')
+    let folderToOpen = printsFolder
+    const location = dataFileSystem.locate(printsFolder)
+    if (location && dataPlatform.getDomainState(location.domainId).state !== 'legacy') {
+      folderToOpen = join(app.getPath('temp'), 'exports', 'studio', `studio-${id}`, 'prints')
+      await rm(folderToOpen, { recursive: true, force: true })
+      await dataFileSystem.materializeDirectory(printsFolder, folderToOpen)
+    } else await mkdir(printsFolder, { recursive: true })
+    const error = await shell.openPath(folderToOpen)
+    if (error) throw new Error(`Não foi possível abrir a pasta de prints: ${error}`)
+  })
+
+  ipcMain.handle('video-library:list', async (event) => { assertTrustedSender(event); return videoLibrary.list() })
+  ipcMain.handle('video-library:import', async (event) => {
+    assertTrustedSender(event)
+    const result = await dialog.showOpenDialog({ title: 'Biblioteca de vídeos: importar', properties: ['openFile'], filters: [{ name: 'Vídeos', extensions: ['mp4', 'webm', 'mov', 'm4v'] }] })
+    if (result.canceled || !result.filePaths[0]) return null
+    return videoLibrary.importFile(result.filePaths[0])
+  })
+  ipcMain.handle('video-library:finish', async (event, id: string, durationFrames: number) => { assertTrustedSender(event); return videoLibrary.finishImport(id, durationFrames) })
+  ipcMain.handle('video-library:rename', async (event, id: string, name: string) => { assertTrustedSender(event); return videoLibrary.rename(id, name) })
+  ipcMain.handle('video-library:delete', async (event, id: string) => {
+    assertTrustedSender(event)
+    const next = roteirosSaveQueue.catch(() => undefined).then(async () => {
+      const reference = dataPlatform.database?.prepare("SELECT 1 FROM roteiro_sections WHERE json_extract(video_asset_json, '$.id') = ? LIMIT 1").get(id)
+      if (reference) throw new Error('Este vídeo está sendo usado em uma abertura ou TikTok. Remova a referência no roteiro antes de excluí-lo da biblioteca.')
+      await videoLibrary.delete(id)
     })
-
-    if (workspace === 'video') ipcMain.handle('video-studio:get', async (event, id: string): Promise<StudioDocument | null> => {
-      assertTrustedSender(event)
-      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) throw new Error('Identificador de Video Studio inválido.')
-      await studioSaveQueues.video
-      return measureIpc('video-studio:get', () => readStudio(id, 'video'))
-    })
-
-    if (workspace === 'video') ipcMain.handle(`${channel}:save`, async (event, studio: StudioDocument): Promise<void> => {
-      assertTrustedSender(event)
-      const next = studioSaveQueues[workspace].catch(() => undefined).then(() => writeStudio(studio, workspace))
-      studioSaveQueues[workspace] = next
-      await measureIpc(`${channel}:save`, () => next)
-    })
-
-    if (workspace === 'video') ipcMain.handle(`${channel}:delete`, async (event, id: string): Promise<void> => {
-      assertTrustedSender(event)
-      if (typeof id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) throw new Error('Identificador de Studio inválido.')
-      const next = studioSaveQueues[workspace].catch(() => undefined).then(async () => {
-        await removeStudio(id, workspace)
-      })
-      studioSaveQueues[workspace] = next
-      await next
-    })
-
-    ipcMain.handle(`${channel}:folder`, (event): string => {
-      assertTrustedSender(event)
-      return join(app.getPath('appData'), 'projects', workspace === 'video' ? 'video-studio' : 'studio')
-    })
-
-    ipcMain.handle(`${channel}:import-image`, async (event, category: StudioAsset['category']): Promise<StudioAsset | null> => {
-      assertTrustedSender(event)
-      if (category !== 'background' && category !== 'object') throw new Error('Categoria de imagem inválida.')
-      const label = workspace === 'video' ? 'Video Studio' : 'Studio'
-      const result = await dialog.showOpenDialog({
-        title: `${label}: ${category === 'background' ? 'adicionar imagem de fundo' : 'adicionar objeto à cena'}`,
-        properties: ['openFile'],
-        filters: [{ name: 'Imagens', extensions: ['png', 'jpg', 'jpeg', 'webp'] }]
-      })
-      if (result.canceled || !result.filePaths[0]) return null
-      const path = result.filePaths[0]
-      const size = (await stat(path)).size
-      if (size > 50 * 1024 * 1024) throw new Error('A imagem excede o limite de 50 MB.')
-      const bytes = await readFile(path)
-      const canonical = await normalizeImageBuffer(bytes)
-      return { id: randomUUID(), category, name: basename(path), mimeType: 'image/png', dataUrl: `data:image/png;base64,${canonical.bytes.toString('base64')}` }
-    })
-
-    if (workspace === 'video') {
-      ipcMain.handle('video-studio:diagnostics:memory', (event) => {
-        assertTrustedSender(event)
-        if (process.platform !== 'win32') throw new Error('Diagnóstico de Video Studio somente no Windows.')
-        return videoStudioMemoryReport(app.getAppMetrics(), {
-          sampledAt: new Date().toISOString(),
-          platform: process.platform,
-          mainPid: process.pid,
-          totalRamBytes: totalmem(),
-          freeRamBytes: freemem(),
-          mainRssBytes: process.memoryUsage().rss,
-          recentProcessFailures: videoStudioRecentProcessFailures,
-        })
-      })
-      ipcMain.handle('video-studio:stress:capture-page', async (event) => {
-        assertTrustedSender(event)
-        if (process.env.GACHA_VIDEO_STRESS_OFFSCREEN !== '1' || process.platform !== 'win32') {
-          throw new Error('Capturas de página só estão disponíveis na sessão oculta de estresse do Windows.')
-        }
-        const image = await event.sender.capturePage()
-        const size = image.getSize()
-        return { width: size.width, height: size.height, pngBase64: image.toPNG().toString('base64') }
-      })
-      videoExportLibrary ??= new VideoExportLibrary(app.getPath('appData'))
-  videoPreviewProxyStore ??= new VideoPreviewProxyStore(join(app.getPath('appData'), 'CACHE', 'video-studio', 'preview-media'))
-      ipcMain.handle('video-studio:exports:list', async (event) => {
-        assertTrustedSender(event)
-        return videoExportLibrary!.list()
-      })
-      ipcMain.handle('video-studio:exports:open-folder', async (event, studioId?: string) => {
-        assertTrustedSender(event)
-        const folder = await videoExportLibrary!.folder(studioId)
-        const error = await shell.openPath(folder)
-        if (error) throw new Error(`Não foi possível abrir a pasta de exportações: ${error}`)
-      })
-      ipcMain.handle('video-studio:exports:delete', async (event, id: string) => {
-        assertTrustedSender(event)
-        await videoExportLibrary!.delete(id)
-      })
-      ipcMain.handle('video-studio:export:start', async (event, request: VideoExportStartRequest) => {
-        assertTrustedSender(event)
-        if (!videoExportCoordinator) throw new Error('Coordenador de exportação ainda não foi inicializado.')
-        if (!request || !isStudioDocument(request.studio) || !request.studio.videoTimeline
-          || !Array.isArray(request.characters) || request.characters.length > 500 || !request.characters.every(isCustomizerCharacter)
-          || !['animated', 'static-characters'].includes(request.renderVariant)) {
-          throw new Error('Solicitação de exportação inválida.')
-        }
-        // Validate the transitively captured dependency snapshot before accepting
-        // a long-running job from the renderer.
-        serializeVideoCharacterRenderAssetSnapshot(request.characterAssets)
-        await studioSaveQueues.video.catch(() => undefined)
-        await videoLibrary.ensureProjectAssets(request.studio.id, request.studio.videoTimeline.videoAssets ?? [])
-        const jobId = videoExportCoordinator.start(request)
-        videoExportJobOwners.set(jobId, event.sender.id)
-        const current = videoExportCoordinator.status(jobId)
-        if (current) event.sender.send('video-studio:export:progress', current)
-        return { jobId }
-      })
-      ipcMain.handle('video-studio:export:status', (event, jobId: string) => {
-        assertTrustedSender(event)
-        if (!videoExportCoordinator || videoExportJobOwners.get(jobId) !== event.sender.id) throw new Error('Job de exportação não pertence a esta janela.')
-        return videoExportCoordinator.status(jobId)
-      })
-      ipcMain.handle('video-studio:export:cancel', async (event, jobId: string) => {
-        assertTrustedSender(event)
-        if (!videoExportCoordinator || videoExportJobOwners.get(jobId) !== event.sender.id) throw new Error('Job de exportação não pertence a esta janela.')
-        await videoExportCoordinator.cancel(jobId)
-      })
-      ipcMain.handle('video-studio:export:recoverable', async (event) => {
-        assertTrustedSender(event)
-        if (!videoExportCoordinator) throw new Error('Coordenador de exportação ainda não foi inicializado.')
-        return videoExportCoordinator.listRecoverable()
-      })
-      ipcMain.handle('video-studio:export:resume', async (event, jobId: string) => {
-        assertTrustedSender(event)
-        if (!videoExportCoordinator) throw new Error('Coordenador de exportação ainda não foi inicializado.')
-        const existingCleanup = videoExportTerminalCleanupTimers.get(jobId)
-        if (existingCleanup) {
-          clearTimeout(existingCleanup)
-          videoExportTerminalCleanupTimers.delete(jobId)
-        }
-        const resumed = await videoExportCoordinator.resume(jobId)
-        videoExportJobOwners.set(resumed, event.sender.id)
-        const current = videoExportCoordinator.status(resumed)
-        if (current) event.sender.send('video-studio:export:progress', current)
-        return { jobId: resumed }
-      })
-      ipcMain.handle('video-studio:export:discard-recovery', async (event, jobId: string) => {
-        assertTrustedSender(event)
-        if (!videoExportCoordinator) throw new Error('Coordenador de exportação ainda não foi inicializado.')
-        const owner = videoExportJobOwners.get(jobId)
-        if (owner !== undefined && owner !== event.sender.id) throw new Error('Job de exportação pertence a outra janela.')
-        await videoExportCoordinator.discardRecovery(jobId)
-        const cleanupTimer = videoExportTerminalCleanupTimers.get(jobId)
-        if (cleanupTimer) clearTimeout(cleanupTimer)
-        videoExportTerminalCleanupTimers.delete(jobId)
-        videoExportJobOwners.delete(jobId)
-      })
-      ipcMain.handle('video-studio:video-library:list', async (event) => { assertTrustedSender(event); return videoLibrary.list() })
-      ipcMain.handle('video-studio:video-library:import', async (event, offscreenStressMediaPath?: string) => {
-        assertTrustedSender(event)
-        if (offscreenStressMediaPath !== undefined) {
-          if (process.env.GACHA_VIDEO_STRESS_OFFSCREEN !== '1' || typeof offscreenStressMediaPath !== 'string') {
-            throw new Error('A importação por caminho local só está disponível no runner oculto de estresse.')
-          }
-          const allowedRoot = resolve(app.getAppPath(), 'app-data', 'stress-media')
-          const requested = resolve(offscreenStressMediaPath)
-          if (dirname(requested) !== allowedRoot || !existsSync(allowedRoot) || !existsSync(requested)
-            || lstatSync(allowedRoot).isSymbolicLink() || lstatSync(requested).isSymbolicLink()
-            || realpathSync(allowedRoot) !== allowedRoot || realpathSync(requested) !== requested
-            || !lstatSync(requested).isFile()) {
-            throw new Error('O arquivo de estresse deve ser um arquivo local direto de app-data/stress-media.')
-          }
-          return videoLibrary.importFile(requested)
-        }
-        const result = await dialog.showOpenDialog({ title: 'Biblioteca de vídeos: importar', properties: ['openFile'], filters: [{ name: 'Vídeos', extensions: ['mp4', 'webm', 'mov', 'm4v'] }] })
-        if (result.canceled || !result.filePaths[0]) return null
-        return videoLibrary.importFile(result.filePaths[0])
-      })
-      ipcMain.handle('video-studio:video-library:finish', async (event, id: string, durationFrames: number) => { assertTrustedSender(event); return videoLibrary.finishImport(id, durationFrames) })
-      ipcMain.handle('video-studio:video-library:rename', async (event, id: string, name: string) => { assertTrustedSender(event); return videoLibrary.rename(id, name) })
-      ipcMain.handle('video-studio:video-library:delete', async (event, id: string) => {
-        assertTrustedSender(event)
-        const next = roteirosSaveQueue.catch(() => undefined).then(async () => {
-          const reference = dataPlatform.database?.prepare("SELECT 1 FROM roteiro_sections WHERE json_extract(video_asset_json, '$.id') = ? LIMIT 1").get(id)
-          if (reference) throw new Error('Este vídeo está sendo usado em uma abertura ou TikTok. Remova a referência no roteiro antes de excluí-lo da biblioteca.')
-          await videoLibrary.delete(id)
-        })
-        roteirosSaveQueue = next
-        await next
-      })
-      ipcMain.handle('video-studio:video-library:attach', async (event, studioId: string, ids: string[]) => { assertTrustedSender(event); return videoLibrary.attach(studioId, ids) })
-      ipcMain.handle('video-studio:preview-media:prepare', async (event, studioId: string, asset: VideoStudioAsset) => {
-        assertTrustedSender(event)
-        if (!videoPreviewProxyStore) throw new Error('Cache de preview ainda não foi inicializado.')
-        if (!asset || typeof asset !== 'object' || typeof asset.id !== 'string') throw new Error('Asset de preview inválido.')
-        const source = await videoLibrary.resolveProjectMediaDependency(studioId, asset.id, asset)
-        videoPreviewToolsPromise ??= resolveVideoStudioTools().then(async (paths) => ({ ffmpeg: await probeVideoStudioFfmpeg(paths.ffmpeg) }))
-        void videoPreviewToolsPromise.catch(() => { videoPreviewToolsPromise = null })
-        let tools: { ffmpeg: Awaited<ReturnType<typeof probeVideoStudioFfmpeg>> }
-        try {
-          tools = await videoPreviewToolsPromise
-        } catch (error) {
-          // A proxy is optional. If the pinned ffmpeg/ffprobe pair has not
-          // been installed yet, Chromium can still play the original source.
-          // Do not throw one identical Electron IPC error for every clip.
-          if (error instanceof Error && error.message.includes('Prepare resources/video-tools')) {
-            return {
-              sourceSha256: '',
-              proxyUrl: `gacha-video://studio/${studioId}/${asset.id}`,
-              waveformUrl: null,
-            }
-          }
-          throw error
-        }
-        const record = await videoPreviewProxyStore.ensure({ sourcePath: source.path, ffmpeg: tools.ffmpeg })
-        return {
-          sourceSha256: record.sourceSha256,
-          proxyUrl: `gacha-video://preview-proxy/${record.sourceSha256}`,
-          waveformUrl: record.waveformFilename ? `gacha-video://preview-waveform/${record.sourceSha256}` : null,
-        }
-      })
-      ipcMain.handle('video-studio:background-library:list', async (event) => { assertTrustedSender(event); return videoBackgroundLibrary.list() })
-      ipcMain.handle('video-studio:background-library:import', async (event) => {
-        assertTrustedSender(event)
-        const result = await dialog.showOpenDialog({ title: 'Biblioteca de fundos: importar', properties: ['openFile'], filters: [{ name: 'Imagens', extensions: ['png', 'jpg', 'jpeg', 'webp'] }] })
-        if (result.canceled || !result.filePaths[0]) return null
-        return videoBackgroundLibrary.importFile(result.filePaths[0])
-      })
-      ipcMain.handle('video-studio:background-library:delete', async (event, id: string) => {
-        assertTrustedSender(event)
-        if (typeof id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) throw new Error('Identificador de fundo inválido.')
-        const reference = dataPlatform.database?.prepare('SELECT id, title FROM roteiros WHERE background_asset_id=? LIMIT 1').get(id) as { id: string; title: string } | undefined
-        if (reference) throw new Error(`Este fundo está selecionado no roteiro “${reference.title}”. Troque ou remova o fundo antes de excluí-lo permanentemente.`)
-        return videoBackgroundLibrary.delete(id)
-      })
-      ipcMain.handle('video-studio:background-library:attach', async (event, studioId: string, id: string) => { assertTrustedSender(event); return videoBackgroundLibrary.attach(studioId, id) })
-      ipcMain.handle('roteiros:ui-gifs:list', async (event) => {
-        assertTrustedSender(event)
-        const roots = [join(app.getAppPath(), 'src', 'renderer', 'public', 'assets', 'ui', 'loading.gif'), join(app.getAppPath(), 'out', 'renderer', 'assets', 'ui', 'loading.gif')]
-        const defaultGifPath = roots.find((path) => existsSync(path))
-        if (!defaultGifPath) throw new Error('O GIF padrão do Gacha V5 não foi encontrado na instalação.')
-        return roteiroUiGifLibrary.list(defaultGifPath)
-      })
-      ipcMain.handle('roteiros:ui-gifs:import', async (event) => {
-        assertTrustedSender(event)
-        const result = await dialog.showOpenDialog({ title: 'Biblioteca de GIFs: adicionar', properties: ['openFile'], filters: [{ name: 'GIF animado', extensions: ['gif'] }] })
-        if (result.canceled || !result.filePaths[0]) return null
-        return roteiroUiGifLibrary.importFile(result.filePaths[0])
-      })
-      ipcMain.handle('roteiros:ui-gifs:delete', async (event, id: string) => {
-        assertTrustedSender(event)
-        if (typeof id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) throw new Error('Identificador de GIF inválido.')
-        const reference = dataPlatform.database?.prepare('SELECT id, title FROM roteiros WHERE ui_gif_asset_id=? LIMIT 1').get(id) as { id: string; title: string } | undefined
-        if (reference) throw new Error(`Este GIF está selecionado no roteiro “${reference.title}”. Remova a associação ao roteiro antes de excluí-lo permanentemente.`)
-        return roteiroUiGifLibrary.delete(id)
-      })
-
-    }
-    ipcMain.handle(`${channel}:save-print`, async (event, id: string, dataUrl: string): Promise<string | null> => {
-      assertTrustedSender(event)
-      if (typeof id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) throw new Error('Identificador de Studio inválido.')
-      const bytes = dataUrlBuffer(dataUrl)
-      if (bytes.length > 50 * 1024 * 1024) throw new Error('O print excede o limite de 50 MB.')
-      const printsFolder = join(studioPath(id, workspace), 'prints')
-      await mkdir(printsFolder, { recursive: true })
-      const printPath = join(printsFolder, `print-${new Date().toISOString().replace(/[:.]/g, '-')}-${randomUUID().slice(0, 8)}.png`)
-      await writeFile(printPath, bytes)
-      return printPath
-    })
-
-    ipcMain.handle(`${channel}:open-prints`, async (event, id: string): Promise<void> => {
-      assertTrustedSender(event)
-      if (typeof id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) throw new Error('Identificador de Studio inválido.')
-      const studioFolder = resolve(studioPath(id, workspace))
-      const printsFolder = resolve(studioFolder, 'prints')
-      if (dirname(printsFolder) !== studioFolder) throw new Error('Pasta de prints inválida.')
-      let folderToOpen = printsFolder
-      if (dataFileSystem.locate(printsFolder) && dataPlatform.getDomainState(dataFileSystem.locate(printsFolder)!.domainId).state !== 'legacy') {
-        folderToOpen = join(app.getPath('temp'), 'exports', workspace, `studio-${id}`, 'prints')
-        await rm(folderToOpen, { recursive: true, force: true })
-        await dataFileSystem.materializeDirectory(printsFolder, folderToOpen)
-      } else await mkdir(printsFolder, { recursive: true })
-      const error = await shell.openPath(folderToOpen)
-      if (error) throw new Error(`Não foi possível abrir a pasta de prints: ${error}`)
-    })
-  }
-
-  registerStudioWorkspace('studio', 'studio')
-  registerStudioWorkspace('video', 'video-studio')
-
+    roteirosSaveQueue = next
+    await next
+  })
+  ipcMain.handle('background-library:list', async (event) => { assertTrustedSender(event); return videoBackgroundLibrary.list() })
+  ipcMain.handle('background-library:import', async (event) => {
+    assertTrustedSender(event)
+    const result = await dialog.showOpenDialog({ title: 'Biblioteca de fundos: importar', properties: ['openFile'], filters: [{ name: 'Imagens', extensions: ['png', 'jpg', 'jpeg', 'webp'] }] })
+    if (result.canceled || !result.filePaths[0]) return null
+    return videoBackgroundLibrary.importFile(result.filePaths[0])
+  })
+  ipcMain.handle('background-library:delete', async (event, id: string) => {
+    assertTrustedSender(event)
+    if (typeof id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) throw new Error('Identificador de fundo inválido.')
+    const reference = dataPlatform.database?.prepare('SELECT id, title FROM roteiros WHERE background_asset_id=? LIMIT 1').get(id) as { id: string; title: string } | undefined
+    if (reference) throw new Error(`Este fundo está selecionado no roteiro “${reference.title}”. Troque ou remova o fundo antes de excluí-lo permanentemente.`)
+    return videoBackgroundLibrary.delete(id)
+  })
+  ipcMain.handle('roteiros:ui-gifs:list', async (event) => {
+    assertTrustedSender(event)
+    const roots = [join(app.getAppPath(), 'src', 'renderer', 'public', 'assets', 'ui', 'loading.gif'), join(app.getAppPath(), 'out', 'renderer', 'assets', 'ui', 'loading.gif')]
+    const defaultGifPath = roots.find((path) => existsSync(path))
+    if (!defaultGifPath) throw new Error('O GIF padrão do Gacha V5 não foi encontrado na instalação.')
+    return roteiroUiGifLibrary.list(defaultGifPath)
+  })
+  ipcMain.handle('roteiros:ui-gifs:import', async (event) => {
+    assertTrustedSender(event)
+    const result = await dialog.showOpenDialog({ title: 'Biblioteca de GIFs: adicionar', properties: ['openFile'], filters: [{ name: 'GIF animado', extensions: ['gif'] }] })
+    if (result.canceled || !result.filePaths[0]) return null
+    return roteiroUiGifLibrary.importFile(result.filePaths[0])
+  })
+  ipcMain.handle('roteiros:ui-gifs:delete', async (event, id: string) => {
+    assertTrustedSender(event)
+    if (typeof id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) throw new Error('Identificador de GIF inválido.')
+    const reference = dataPlatform.database?.prepare('SELECT id, title FROM roteiros WHERE ui_gif_asset_id=? LIMIT 1').get(id) as { id: string; title: string } | undefined
+    if (reference) throw new Error(`Este GIF está selecionado no roteiro “${reference.title}”. Remova a associação ao roteiro antes de excluí-lo permanentemente.`)
+    return roteiroUiGifLibrary.delete(id)
+  })
   const getRoteiroCharacterExportStore = () => {
     if (!roteiroCharacterExportStore) {
       const root = configuredAppDataRoot ?? join(app.getPath('userData'), 'app-data')
@@ -2160,63 +1901,26 @@ function registerVideoAssetProtocol(): void {
       const url = new URL(request.url)
       const parts = url.pathname.split('/').filter(Boolean)
       const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-      const candidates = ['mp4', 'webm', 'mov', 'm4v'] as const
-      let path: string | undefined
-      let extension: typeof candidates[number] | undefined
-      if (url.hostname === 'library' && parts.length === 1 && uuid.test(parts[0])) {
-        const media = await videoLibrary.resolveMedia(parts[0])
-        path = media.path
-        extension = media.extension
-      } else if (url.hostname === 'studio' && parts.length === 2 && parts.every((part) => uuid.test(part))) {
-        const folder = join(studioPath(parts[0], 'video'), 'videos')
-        for (const candidate of candidates) {
-          const candidatePath = join(folder, `${parts[1]}.${candidate}`)
-          try { await access(candidatePath); path = candidatePath; extension = candidate; break } catch { /* try next extension */ }
-        }
-      } else if (url.hostname === 'export-job' && parts.length === 2 && parts.every((part) => uuid.test(part))) {
-        if (!videoExportJobStore) return new Response('Export job unavailable', { status: 503 })
-        const media = await videoExportJobStore.resolvePinnedMedia(parts[0], parts[1])
-        path = media.path
-        extension = media.extension
-      } else if ((url.hostname === 'preview-proxy' || url.hostname === 'preview-waveform') && parts.length === 1 && /^[a-f0-9]{64}$/i.test(parts[0])) {
-        if (!videoPreviewProxyStore) return new Response('Preview cache unavailable', { status: 503 })
-        const kind = url.hostname === 'preview-proxy' ? 'proxy' : 'waveform'
-        path = await videoPreviewProxyStore.resolveFile(parts[0].toLowerCase(), kind)
-        if (kind === 'proxy') extension = 'mp4'
-        else {
-          const file = await stat(path)
-          const range = request.headers.get('range')
-          const headers = new Headers({ 'content-type': 'image/png', 'content-length': String(file.size), 'cache-control': 'public, max-age=31536000, immutable' })
-          if (request.method === 'HEAD') return new Response(null, { status: 200, headers })
-          if (range) return new Response(null, { status: 416, headers: { 'content-range': `bytes */${file.size}` } })
-          return new Response(Readable.toWeb(createReadStream(path)) as unknown as BodyInit, { status: 200, headers })
-        }
-      }
-      if (!path || !extension) return new Response('Not found', { status: 404 })
-      path = await dataFileSystem.resolvePhysicalPath(path) ?? path
+      if (url.hostname !== 'library' || parts.length !== 1 || !uuid.test(parts[0])) return new Response('Not found', { status: 404 })
+      const media = await videoLibrary.resolveMedia(parts[0])
+      const path = await dataFileSystem.resolvePhysicalPath(media.path) ?? media.path
       const file = await stat(path)
-      const mimeType = ({ mp4: 'video/mp4', webm: 'video/webm', mov: 'video/quicktime', m4v: 'video/x-m4v' } as const)[extension]
-      const range = request.headers.get('range')
+      const mimeType = ({ mp4: 'video/mp4', webm: 'video/webm', mov: 'video/quicktime', m4v: 'video/x-m4v' } as const)[media.extension]
       const headers = new Headers({ 'accept-ranges': 'bytes', 'content-type': mimeType, 'cache-control': 'no-store' })
-      if (request.method === 'HEAD') {
-        headers.set('content-length', String(file.size))
-        return new Response(null, { status: 200, headers })
-      }
+      const range = request.headers.get('range')
+      if (request.method === 'HEAD') { headers.set('content-length', String(file.size)); return new Response(null, { status: 200, headers }) }
       if (range) {
         const match = /^bytes=(\d*)-(\d*)$/.exec(range)
         if (!match || (!match[1] && !match[2])) return new Response(null, { status: 416, headers: { 'content-range': `bytes */${file.size}` } })
         const start = match[1] ? Number(match[1]) : Math.max(0, file.size - Number(match[2]))
         const end = match[2] && match[1] ? Math.min(file.size - 1, Number(match[2])) : file.size - 1
         if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || start >= file.size || end < start) return new Response(null, { status: 416, headers: { 'content-range': `bytes */${file.size}` } })
-        headers.set('content-range', `bytes ${start}-${end}/${file.size}`)
-        headers.set('content-length', String(end - start + 1))
-        return new Response(Readable.toWeb(createReadStream(path, { start, end })) as unknown as BodyInit, { status: 206, headers })
+        headers.set('content-range', `bytes ${start}-${end}/${file.size}`); headers.set('content-length', String(end-start+1))
+        return new Response(Readable.toWeb(createReadStream(path,{start,end})) as unknown as BodyInit,{status:206,headers})
       }
       headers.set('content-length', String(file.size))
       return new Response(Readable.toWeb(createReadStream(path)) as unknown as BodyInit, { status: 200, headers })
-    } catch {
-      return new Response('Not found', { status: 404 })
-    }
+    } catch { return new Response('Not found', { status: 404 }) }
   })
 }
 
@@ -2273,28 +1977,6 @@ async function activateFabricatorDesignSettingsDomain(): Promise<void> {
 }
 
 app.whenReady().then(async () => {
-  const packagedToolsSmokeOutput = process.env.GACHA_VIDEO_TOOLS_SMOKE_OUTPUT
-  if (packagedToolsSmokeOutput) {
-    if (!app.isPackaged) throw new Error('O smoke de ferramentas empacotadas exige app.isPackaged=true.')
-    const output = resolve(packagedToolsSmokeOutput)
-    if (output !== packagedToolsSmokeOutput) throw new Error('Smoke output precisa usar caminho absoluto.')
-    const paths = await resolveVideoStudioTools()
-    if (paths.source !== 'packaged') throw new Error(`Smoke empacotado resolveu ferramentas de origem inesperada: ${paths.source}.`)
-    const capability = await probeVideoStudioFfmpeg(paths.ffmpeg)
-    const report = {
-      schemaVersion: 1,
-      packaged: app.isPackaged,
-      resourcesPath: process.resourcesPath,
-      toolSource: paths.source,
-      videoEncoder: capability.videoEncoder,
-      audioEncoder: capability.audioEncoder,
-      smokeEncoded: capability.smokeEncoded,
-      versionLine: capability.versionLine,
-    }
-    await nativeWriteFile(output, `${JSON.stringify(report, null, 2)}\n`, 'utf8')
-    app.quit()
-    return
-  }
   dataBackupService = new DataBackupService({ dataRoot: app.getPath('appData'), catalog: dataPlatform })
   await dataBackupService.applyPendingRestore()
   dataPlatform.initialize()
@@ -2357,7 +2039,7 @@ app.whenReady().then(async () => {
     const pending = [
       ...fabricatorSaveQueues.values(), ...poseSaveWrites, ...hairSaveQueues.values(), animatorSaveQueue,
       wardrobeSaveQueue, faceSaveQueue, expressionPresetSaveQueue, faceGuideSaveQueue, customizerService.pendingWrites,
-      studioSaveQueues.studio, studioSaveQueues.video
+      studioSaveQueues.studio
     ]
     const results = await Promise.allSettled(pending)
     const failed = results.find((result): result is PromiseRejectedResult => result.status === 'rejected')
@@ -2449,37 +2131,6 @@ app.whenReady().then(async () => {
     })
     session.defaultSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false))
   }
-  videoExportLibrary ??= new VideoExportLibrary(app.getPath('appData'))
-  videoExportJobStore ??= new VideoExportJobStore(videoExportLibrary.jobRoot, (studioId, asset) =>
-    videoLibrary.resolveProjectMediaDependency(studioId, asset.id, asset))
-  videoExportSurfaceHost ??= new VideoExportSurfaceHost(videoExportJobStore, {
-    preloadPath: join(__dirname, '../preload/video-export-preload.cjs'),
-    ...(process.env.ELECTRON_RENDERER_URL
-      ? { rendererUrl: process.env.ELECTRON_RENDERER_URL }
-      : { rendererFile: join(__dirname, '../renderer/index.html') }),
-  })
-  videoExportCoordinator ??= new VideoExportCoordinator(
-    videoExportJobStore,
-    videoExportLibrary,
-    videoExportSurfaceHost,
-    (studioId, asset) => videoLibrary.resolveProjectMediaDependency(studioId, asset.id, asset),
-    (progress: VideoExportProgress) => {
-      const ownerId = videoExportJobOwners.get(progress.jobId)
-      const owner = ownerId === undefined ? undefined : BrowserWindow.getAllWindows().find((candidate) => candidate.webContents.id === ownerId)
-      if (owner && !owner.isDestroyed()) owner.webContents.send('video-studio:export:progress', progress)
-      if (['done', 'failed', 'cancelled'].includes(progress.stage)) {
-        const previousTimer = videoExportTerminalCleanupTimers.get(progress.jobId)
-        if (previousTimer) clearTimeout(previousTimer)
-        const timer = setTimeout(() => {
-          videoExportJobOwners.delete(progress.jobId)
-          videoExportTerminalCleanupTimers.delete(progress.jobId)
-          try { videoExportCoordinator?.forgetTerminal(progress.jobId) } catch { /* job may have resumed */ }
-        }, 10 * 60_000)
-        timer.unref?.()
-        videoExportTerminalCleanupTimers.set(progress.jobId, timer)
-      }
-    },
-  )
   registerVideoAssetProtocol()
   registerVideoBackgroundProtocol()
   await registerFabricatorHandlers()
@@ -2505,7 +2156,7 @@ app.on('before-quit', (event) => {
   waitingForPersistenceWritesBeforeQuit = true
   const pendingWrites = [
     ...fabricatorSaveQueues.values(), ...poseSaveWrites, ...hairSaveQueues.values(),
-    studioSaveQueues.studio, studioSaveQueues.video, roteirosSaveQueue,
+    studioSaveQueues.studio, roteirosSaveQueue,
     ...(dataMigrationTask ? [dataMigrationTask] : [])
   ]
   void Promise.allSettled(pendingWrites).then((results) => {

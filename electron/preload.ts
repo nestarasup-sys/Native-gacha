@@ -3,8 +3,7 @@ import { createStudioInvoker } from '../src/shared/studioIpcChannels'
 import { contextBridge, ipcRenderer } from 'electron'
 import type { FabricatorDesktopApi, FabricatorModelSourcePublishRequest } from '../src/shared/fabricator'
 import type { CustomizerDesktopApi } from '../src/shared/customizer'
-import type { StudioDesktopApi, VideoStudioDesktopApi } from '../src/shared/studio'
-import type { VideoExportProgress } from '../src/shared/videoExportRuntime'
+import type { StudioDesktopApi, VideoLibraryDesktopApi } from '../src/shared/studio'
 import type { RoteirosDesktopApi } from '../src/shared/roteiros'
 
 const invokeFabricator = createFabricatorInvoker(ipcRenderer)
@@ -91,42 +90,15 @@ const studioApi: StudioDesktopApi = {
   openStudioPrints: (studioId) => invokeStudio('openStudioPrints', studioId)
 }
 
-const videoStudioApi: VideoStudioDesktopApi = {
-  getVideoStudioMemoryReport: () => ipcRenderer.invoke('video-studio:diagnostics:memory'),
-  captureVideoStressPage: () => ipcRenderer.invoke('video-studio:stress:capture-page'),
-  listVideoStudios: () => ipcRenderer.invoke('video-studio:list'),
-  loadVideoStudio: (id) => ipcRenderer.invoke('video-studio:get', id),
-  saveVideoStudio: (studio) => ipcRenderer.invoke('video-studio:save', studio),
-  deleteVideoStudio: (id) => ipcRenderer.invoke('video-studio:delete', id),
-  getVideoStudioFolder: () => ipcRenderer.invoke('video-studio:folder'),
-  importVideoStudioImage: (category) => ipcRenderer.invoke('video-studio:import-image', category),
-  listVideoLibrary: () => ipcRenderer.invoke('video-studio:video-library:list'),
-  importVideoLibrary: (offscreenStressMediaPath) => ipcRenderer.invoke('video-studio:video-library:import', offscreenStressMediaPath),
-  finishVideoLibraryImport: (id, durationFrames) => ipcRenderer.invoke('video-studio:video-library:finish', id, durationFrames),
-  deleteVideoLibraryItem: (id) => ipcRenderer.invoke('video-studio:video-library:delete', id),
-  renameVideoLibraryItem: (id, name) => ipcRenderer.invoke('video-studio:video-library:rename', id, name),
-  attachVideoLibraryItems: (studioId, ids) => ipcRenderer.invoke('video-studio:video-library:attach', studioId, ids),
-  prepareVideoPreviewMedia: (studioId, asset) => ipcRenderer.invoke('video-studio:preview-media:prepare', studioId, asset),
-  listVideoBackgroundLibrary: () => ipcRenderer.invoke('video-studio:background-library:list'),
-  importVideoBackground: () => ipcRenderer.invoke('video-studio:background-library:import'),
-  deleteVideoBackground: (id) => ipcRenderer.invoke('video-studio:background-library:delete', id),
-  attachVideoBackground: (studioId, id) => ipcRenderer.invoke('video-studio:background-library:attach', studioId, id),
-  saveVideoStudioPrint: (studioId, dataUrl) => ipcRenderer.invoke('video-studio:save-print', studioId, dataUrl),
-  openVideoStudioPrints: (studioId) => ipcRenderer.invoke('video-studio:open-prints', studioId),
-  listVideoExports: () => ipcRenderer.invoke('video-studio:exports:list'),
-  openVideoExportsFolder: (studioId) => ipcRenderer.invoke('video-studio:exports:open-folder', studioId),
-  deleteVideoExport: (id) => ipcRenderer.invoke('video-studio:exports:delete', id),
-  startVideoExport: (request) => ipcRenderer.invoke('video-studio:export:start', request),
-  cancelVideoExport: (jobId) => ipcRenderer.invoke('video-studio:export:cancel', jobId),
-  getVideoExportStatus: (jobId) => ipcRenderer.invoke('video-studio:export:status', jobId),
-  onVideoExportProgress: (callback) => {
-    const listener = (_event: Electron.IpcRendererEvent, progress: VideoExportProgress) => callback(progress)
-    ipcRenderer.on('video-studio:export:progress', listener)
-    return () => ipcRenderer.removeListener('video-studio:export:progress', listener)
-  },
-  listRecoverableVideoExports: () => ipcRenderer.invoke('video-studio:export:recoverable'),
-  resumeVideoExport: (jobId) => ipcRenderer.invoke('video-studio:export:resume', jobId),
-  discardVideoExportRecovery: (jobId) => ipcRenderer.invoke('video-studio:export:discard-recovery', jobId)
+const videoLibraryApi: VideoLibraryDesktopApi = {
+  listVideoLibrary: () => ipcRenderer.invoke('video-library:list'),
+  importVideoLibrary: () => ipcRenderer.invoke('video-library:import'),
+  finishVideoLibraryImport: (id, durationFrames) => ipcRenderer.invoke('video-library:finish', id, durationFrames),
+  deleteVideoLibraryItem: (id) => ipcRenderer.invoke('video-library:delete', id),
+  renameVideoLibraryItem: (id, name) => ipcRenderer.invoke('video-library:rename', id, name),
+  listVideoBackgroundLibrary: () => ipcRenderer.invoke('background-library:list'),
+  importVideoBackground: () => ipcRenderer.invoke('background-library:import'),
+  deleteVideoBackground: (id) => ipcRenderer.invoke('background-library:delete', id)
 }
 
 const roteirosApi: RoteirosDesktopApi = {
@@ -179,6 +151,6 @@ contextBridge.exposeInMainWorld('desktop', {
   ...fabricatorApi,
   ...customizerApi,
   ...studioApi,
-  ...videoStudioApi,
+  ...videoLibraryApi,
   ...roteirosApi
 })

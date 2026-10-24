@@ -20,8 +20,7 @@ const ROOTS = [
   { id: 'customizer.characters', path: 'customizer/characters' },
   { id: 'studio.projects', path: 'studios/Studio Principal' },
   { id: 'video-studio.media', path: 'studios/Video Studio/media-library' },
-  { id: 'video-studio.backgrounds', path: 'studios/Video Studio/background-library' },
-  { id: 'video-studio.projects', path: 'studios/Video Studio' }
+  { id: 'video-studio.backgrounds', path: 'studios/Video Studio/background-library' }
 ].sort((a, b) => b.path.length - a.path.length)
 
 function isWithin(root, target) {

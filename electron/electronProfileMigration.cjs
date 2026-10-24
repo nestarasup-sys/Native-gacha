@@ -11,7 +11,7 @@ const DISPOSABLE_ENTRIES = new Set([
   'cache', 'code cache', 'dawngraphitecache', 'dawnwebgpucache', 'gpucache', 'gpupersistentcache',
   'grshadercache', 'shadercache', 'videodecodestats', 'shared dictionary', 'devtoolsactiveport'
 ])
-const LEGACY_DOMAIN_ENTRIES = new Set(['fabricator', 'customizer', 'studios', 'video-studios'])
+const LEGACY_DOMAIN_ENTRIES = new Set(['fabricator', 'customizer', 'studios'])
 
 function isWithin(root, candidate) {
   const relative = path.relative(path.resolve(root), path.resolve(candidate))

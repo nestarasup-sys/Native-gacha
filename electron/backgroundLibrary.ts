@@ -47,7 +47,7 @@ function validEntry(value: unknown): value is Entry {
     && typeof item.createdAt === 'string' && Number.isFinite(Date.parse(item.createdAt))
 }
 
-/** Library originals are shared; every Video Studio script gets an independent background copy. */
+/** Library originals are shared by Roteiros and remain independent of each script. */
 export class VideoBackgroundLibraryStore {
   private queue: Promise<unknown> = Promise.resolve()
   constructor(private readonly workspacePath: () => string) {}
@@ -64,7 +64,7 @@ export class VideoBackgroundLibraryStore {
       const catalog = JSON.parse(await readFile(join(this.libraryPath(), 'catalog.json'), 'utf8')) as Catalog
       if (catalog.schemaVersion !== 1 || !Array.isArray(catalog.items) || !catalog.items.every(validEntry)
         || new Set(catalog.items.map((item) => item.id)).size !== catalog.items.length
-        || !Array.isArray(catalog.deleted) || !catalog.deleted.every((item) => validId(item?.id) && Object.hasOwn(formats, item.extension))) throw new Error('O catálogo de fundos do Video Studio está inválido.')
+        || !Array.isArray(catalog.deleted) || !catalog.deleted.every((item) => validId(item?.id) && Object.hasOwn(formats, item.extension))) throw new Error('O catálogo de fundos está inválido.')
       return catalog
     } catch (reason) {
       if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return { schemaVersion: 1, items: [], deleted: [] }

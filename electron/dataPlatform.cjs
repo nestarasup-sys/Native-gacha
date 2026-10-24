@@ -12,7 +12,7 @@ const BUILTIN_DOMAINS = [
   'fabricator.models', 'fabricator.poses', 'fabricator.animations', 'fabricator.wardrobe', 'fabricator.design-settings',
   'fabricator.face-sets', 'fabricator.face-catalog', 'fabricator.face-components',
   'fabricator.expression-presets', 'fabricator.hair', 'fabricator.accessories',
-  'customizer.characters', 'studio.projects', 'studio.prints', 'video-studio.projects',
+  'customizer.characters', 'studio.projects', 'studio.prints',
   'video-studio.media', 'video-studio.backgrounds'
 ]
 

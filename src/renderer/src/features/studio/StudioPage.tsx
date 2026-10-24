@@ -134,7 +134,7 @@ function makeStudioThumbnail(studio: StudioDocument): Promise<string> {
   return makeCanvasPrint(studio, 480, 270, 'image/jpeg')
 }
 
-/** Normal Studio owns this layout; Video Studio has its own editor and stylesheet. */
+/** Layout do Studio Principal. */
 export function StudioPage() {
   const [studios, setStudios] = useState<StudioCard[]>([])
   const [loading, setLoading] = useState(true)

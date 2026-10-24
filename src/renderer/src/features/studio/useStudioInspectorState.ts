@@ -1,2 +1,2 @@
-// Compatibilidade de import; hook de inspector único para Studio e Video Studio.
+// Compatibilidade de import; mantém um único hook para o Studio Principal.
 export { useStudioInspectorState } from '../../characters/useStudioInspectorState'

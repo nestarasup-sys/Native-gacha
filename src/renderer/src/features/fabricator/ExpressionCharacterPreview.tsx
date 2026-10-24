@@ -7,7 +7,7 @@ import type { ExpressionGaze } from '../../../../shared/portableExpression'
 
 type Props = { modelSlot: number; preset: FaceExpressionPreset; gaze: ExpressionGaze; onClose: () => void }
 
-/** Read-only comparison using the actual Studio/Video Studio composition path.
+/** Read-only comparison using the actual Studio composition path.
  * Character JSON, Presets DEV drafts, Studio documents and PNGs remain untouched.
  */
 export function ExpressionCharacterPreview({modelSlot,preset,gaze,onClose}:Props) {
@@ -78,6 +78,6 @@ export function ExpressionCharacterPreview({modelSlot,preset,gaze,onClose}:Props
     </div>
     {loading && <small role="status">Compondo as duas versões sem alterar o personagem…</small>}
     {error && <p role="alert">{error}</p>}
-    <small>Este teste usa o mesmo resolvedor do Studio e Video Studio. Nenhum dado é salvo.</small>
+    <small>Este teste usa o mesmo resolvedor do Studio Principal. Nenhum dado é salvo.</small>
   </section>
 }

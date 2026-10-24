@@ -21,14 +21,3 @@ test('roteamento carrega Roteiros como feature e não mantém regras da página 
   assert.match(page,/export function RoteirosPage\(/)
   assert.doesNotMatch(page,/import\(['"]\.\.\/studio\/expressionTransforms['"]\)/)
 })
-test('consumidores comuns não importam páginas completas para renderizar personagens', async () => {
-  const [video,portrait]=await Promise.all([
-    readFile('src/renderer/src/features/videoStudio/VideoStudioEditor.tsx','utf8'),
-    readFile('src/renderer/src/ui/components/RenderedCharacterPortrait.tsx','utf8')
-  ])
-  for(const source of [video,portrait]){
-    assert.doesNotMatch(source,/import\(['"][^'"]*CustomizerPage['"]\)/)
-    assert.match(source,/characters\/characterRenderer/)
-  }
-  assert.match(video,/characters\/studioExpressionTransforms/)
-})

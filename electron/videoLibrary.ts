@@ -1,15 +1,15 @@
 import { constants } from 'node:fs'
-import { access as nativeAccess, copyFile as nativeCopyFile, mkdir as nativeMkdir, readFile as nativeReadFile, readdir as nativeReaddir, rename as nativeRename, stat as nativeStat, unlink as nativeUnlink, writeFile as nativeWriteFile } from 'node:fs/promises'
+import { access as nativeAccess, copyFile as nativeCopyFile, mkdir as nativeMkdir, readFile as nativeReadFile, rename as nativeRename, stat as nativeStat, unlink as nativeUnlink, writeFile as nativeWriteFile } from 'node:fs/promises'
 import { basename, dirname, extname, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import type { StudioDocument, VideoLibraryItem, VideoStudioAsset } from '../src/shared/studio'
+import type { VideoLibraryItem } from '../src/shared/studio'
 import type { DomainFileSystem } from './domainFileSystem.cjs'
 import { sha256File } from './videoCasShadow'
 
-type StorageAdapter = Pick<DomainFileSystem, 'access' | 'copyFile' | 'mkdir' | 'readFile' | 'readdir' | 'rename' | 'stat' | 'unlink' | 'writeFile'>
+type StorageAdapter = Pick<DomainFileSystem, 'access' | 'copyFile' | 'mkdir' | 'readFile' | 'rename' | 'stat' | 'unlink' | 'writeFile'>
   & Partial<Pick<DomainFileSystem, 'resolvePhysicalPath'>>
 let storage: StorageAdapter = { access: nativeAccess, copyFile: nativeCopyFile, mkdir: nativeMkdir, readFile: nativeReadFile,
-  readdir: nativeReaddir, rename: nativeRename, stat: nativeStat, unlink: nativeUnlink, writeFile: nativeWriteFile }
+rename: nativeRename, stat: nativeStat, unlink: nativeUnlink, writeFile: nativeWriteFile }
 export function configureVideoLibraryStorage(adapter: StorageAdapter) { storage = adapter }
 const access = (path: Parameters<StorageAdapter['access']>[0], mode?: Parameters<StorageAdapter['access']>[1]) => storage.access(path, mode)
 const copyFile = (source: Parameters<StorageAdapter['copyFile']>[0], destination: Parameters<StorageAdapter['copyFile']>[1], mode?: Parameters<StorageAdapter['copyFile']>[2]) => storage.copyFile(source, destination, mode)
@@ -18,9 +18,6 @@ function readFile(path: string): Promise<Buffer>
 function readFile(path: string, options: BufferEncoding): Promise<string>
 function readFile(path: string, options: { encoding: BufferEncoding }): Promise<string>
 function readFile(path: string, options?: BufferEncoding | { encoding: BufferEncoding }): Promise<Buffer | string> { return storage.readFile(path, options as BufferEncoding | { encoding: BufferEncoding }) }
-function readdir(path: string, options: { withFileTypes: true }): Promise<import('node:fs').Dirent[]>
-function readdir(path: string, options?: { withFileTypes?: false } | BufferEncoding): Promise<string[]>
-function readdir(path: string, options?: { withFileTypes?: boolean } | BufferEncoding): Promise<import('node:fs').Dirent[] | string[]> { return storage.readdir(path, options as never) }
 const rename = (oldPath: Parameters<StorageAdapter['rename']>[0], newPath: Parameters<StorageAdapter['rename']>[1]) => storage.rename(oldPath, newPath)
 const stat = (path: Parameters<StorageAdapter['stat']>[0]) => storage.stat(path)
 const unlink = (path: Parameters<StorageAdapter['unlink']>[0]) => storage.unlink(path)
@@ -30,8 +27,7 @@ const formats = { mp4: 'video/mp4', webm: 'video/webm', mov: 'video/quicktime', 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const maxFrames = 60 * 60 * 60 * 24
 type Entry = Omit<VideoLibraryItem, 'available' | 'studios'> & { sha256?: string }
-type Catalog = { schemaVersion: 1; items: Entry[]; deleted: Array<{ id: string; extension: VideoStudioAsset['extension'] }> }
-type Project = { id: string; title: string; createdAt: string; assets: VideoStudioAsset[] }
+type Catalog = { schemaVersion: 1; items: Entry[]; deleted: Array<{ id: string; extension: Entry['extension'] }> }
 const validId = (id: unknown): id is string => typeof id === 'string' && uuid.test(id)
 const requireId = (id: unknown) => { if (!validId(id)) throw new Error('Identificador de vídeo ou roteiro inválido.') }
 const exists = async (path: string) => { try { await access(path); return true } catch (reason) { if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return false; throw reason } }
@@ -52,7 +48,6 @@ export class VideoLibraryStore {
   constructor(private readonly workspacePath: () => string) {}
   private libraryPath() { return join(this.workspacePath(), 'media-library') }
   private mediaPath(item: Pick<Entry, 'id' | 'extension'>) { return join(this.libraryPath(), 'videos', `${item.id}.${item.extension}`) }
-  private projectMediaPath(studioId: string, item: Pick<Entry, 'id' | 'extension'>) { return join(this.workspacePath(), `studio-${studioId}`, 'videos', `${item.id}.${item.extension}`) }
   private async hashStoredFile(filePath: string, expectedSha?: string) {
     // Active app-data domains expose logical paths, so resolve the content-addressed
     // file before using Node's native stream APIs. For legacy storage the path is physical.
@@ -84,25 +79,6 @@ export class VideoLibraryStore {
     await writeFile(temporary, JSON.stringify(catalog, null, 2), 'utf8')
     await rename(temporary, join(this.libraryPath(), 'catalog.json'))
   }
-  private async projects(): Promise<Project[]> {
-    await mkdir(this.workspacePath(), { recursive: true })
-    const directories = await readdir(this.workspacePath(), { withFileTypes: true })
-    const projects: Project[] = []
-    for (const directory of directories) {
-      const id = directory.name.slice('studio-'.length)
-      if (!directory.isDirectory() || !directory.name.startsWith('studio-') || !validId(id)) continue
-      try {
-        const document = JSON.parse(await readFile(join(this.workspacePath(), directory.name, 'studio.json'), 'utf8')) as StudioDocument
-        if (!document || typeof document !== 'object' || Array.isArray(document)) continue
-        const createdAt = Number.isFinite(Date.parse(document.createdAt)) ? document.createdAt : new Date(0).toISOString()
-        projects.push({ id, title: typeof document.title === 'string' ? document.title.slice(0, 100) : 'Roteiro', createdAt,
-          assets: (Array.isArray(document.videoTimeline?.videoAssets) ? document.videoTimeline.videoAssets : []).filter((asset) => validEntry({ ...asset, createdAt })) })
-      } catch (reason) {
-        if ((reason as NodeJS.ErrnoException).code !== 'ENOENT' && !(reason instanceof SyntaxError)) throw reason
-      }
-    }
-    return projects
-  }
   private async copyVerified(source: string, destination: string, size: number) {
     if (!await exists(destination)) {
       await mkdir(dirname(destination), { recursive: true })
@@ -117,20 +93,7 @@ export class VideoLibraryStore {
     }
     if ((await stat(destination)).size !== size) throw new Error('A cópia do vídeo tem um tamanho inesperado. O arquivo existente foi preservado.')
   }
-  private async migrate(catalog: Catalog, projects: Project[]) {
-    let changed = false
-    for (const project of projects) for (const asset of project.assets) {
-      if (catalog.deleted.some((item) => item.id === asset.id)) continue
-      const source = this.projectMediaPath(project.id, asset)
-      if (!await exists(source)) continue
-      const existing = catalog.items.find((item) => item.id === asset.id)
-      if (existing && (existing.extension !== asset.extension || existing.size !== asset.size)) continue
-      await this.copyVerified(source, this.mediaPath(asset), asset.size)
-      const sha256 = await this.hashStoredFile(this.mediaPath(asset), existing?.sha256)
-      if (!existing) { catalog.items.push({ ...asset, createdAt: project.createdAt, sha256 }); changed = true }
-      else if (!existing.sha256) { existing.sha256 = sha256; changed = true }
-    }
-    if (changed) await this.writeCatalog(catalog)
+  private async cleanupDeleted(catalog: Catalog) {
     // A playing preview can temporarily hold a deleted file open on Windows.
     for (const item of catalog.deleted) {
       try { await unlink(this.mediaPath(item)) } catch (reason) { if (!['ENOENT', 'EPERM', 'EBUSY', 'EACCES'].includes((reason as NodeJS.ErrnoException).code ?? '')) throw reason }
@@ -139,10 +102,9 @@ export class VideoLibraryStore {
   async list(): Promise<VideoLibraryItem[]> {
     return this.run(async () => {
       const catalog = await this.readCatalog()
-      const projects = await this.projects()
-      await this.migrate(catalog, projects)
+      await this.cleanupDeleted(catalog)
       return Promise.all(catalog.items.sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map(async (item) => ({ ...item,
-        available: await exists(this.mediaPath(item)), studios: projects.filter((project) => project.assets.some((asset) => asset.id === item.id)).map(({ id, title }) => ({ id, title })) })))
+        available: await exists(this.mediaPath(item)), studios: [] })))
     })
   }
   async importFile(source: string): Promise<VideoLibraryItem> {
@@ -206,22 +168,7 @@ export class VideoLibraryStore {
       // The catalog tombstone is the logical deletion commit point. A locked
       // file is retried by the next library scan, so cleanup errors must not
       // turn a completed deletion into an ambiguous partial failure.
-      try { await this.migrate(catalog, []) } catch { /* retry from the tombstone on next access */ }
-    })
-  }
-  async attach(studioId: string, ids: string[]): Promise<VideoStudioAsset[]> {
-    requireId(studioId)
-    if (!Array.isArray(ids) || ids.length < 1 || ids.length > 1000 || !ids.every(validId)) throw new Error('Seleção de vídeos inválida.')
-    return this.run(async () => {
-      const catalog = await this.readCatalog()
-      const items = [...new Set(ids)].map((id) => {
-        const item = catalog.items.find((entry) => entry.id === id)
-        if (!item || item.durationFrames === null) throw new Error('Um dos vídeos está indisponível ou ainda não teve sua duração reconhecida.')
-        return item
-      })
-      for (const item of items) if (!await exists(this.mediaPath(item))) throw new Error(`O arquivo de ${item.name} não foi encontrado.`)
-      for (const item of items) await this.copyVerified(this.mediaPath(item), this.projectMediaPath(studioId, item), item.size)
-      return items.map(({ createdAt: _createdAt, ...item }) => ({ ...item, durationFrames: item.durationFrames! }))
+      try { await this.cleanupDeleted(catalog) } catch { /* retry from the tombstone on next access */ }
     })
   }
   async resolveMedia(id: string): Promise<{ path: string; extension: Entry['extension']; durationFrames: Entry['durationFrames'] }> {
@@ -230,47 +177,6 @@ export class VideoLibraryStore {
       const item = (await this.readCatalog()).items.find((entry) => entry.id === id)
       if (!item) throw new Error('Vídeo não encontrado na biblioteca.')
       return { path: this.mediaPath(item), extension: item.extension, durationFrames: item.durationFrames }
-    })
-  }
-  /** Resolves a referenced copy from this saved project, never a same-named asset in another project. */
-  async resolveProjectMediaDependency(studioId: string, assetId: string, expected: Pick<VideoStudioAsset, 'extension' | 'mimeType' | 'size'>): Promise<{ path: string; trustedRoot: string }> {
-    requireId(studioId)
-    requireId(assetId)
-    return this.run(async () => {
-      const project = (await this.projects()).find((entry) => entry.id === studioId)
-      const asset = project?.assets.find((entry) => entry.id === assetId)
-      if (!asset || asset.extension !== expected.extension || asset.mimeType !== expected.mimeType || asset.size !== expected.size) {
-        throw new Error('O vídeo não corresponde aos metadados salvos neste roteiro.')
-      }
-      const path = this.projectMediaPath(studioId, asset)
-      if (!await exists(path)) throw new Error(`O arquivo de ${asset.name} não está disponível neste roteiro.`)
-      const file = await stat(path)
-      if (file.size !== asset.size) throw new Error(`O arquivo de ${asset.name} mudou desde que foi anexado.`)
-      return { path, trustedRoot: join(this.workspacePath(), `studio-${studioId}`, 'videos') }
-    })
-  }
-  /** Repairs copies in duplicated scripts without resurrecting deleted library entries. */
-  async ensureProjectAssets(studioId: string, assets: VideoStudioAsset[]): Promise<void> {
-    requireId(studioId)
-    return this.run(async () => {
-      const catalog = await this.readCatalog()
-      const directories = await readdir(this.workspacePath(), { withFileTypes: true })
-      for (const asset of assets) {
-        requireId(asset.id)
-        const destination = this.projectMediaPath(studioId, asset)
-        if (await exists(destination)) continue
-        const entry = catalog.items.find((item) => item.id === asset.id)
-        let source = entry && entry.extension === asset.extension ? this.mediaPath(entry) : undefined
-        if (source && !await exists(source)) source = undefined
-        if (!source) for (const directory of directories) {
-          const id = directory.name.slice('studio-'.length)
-          if (!directory.isDirectory() || !directory.name.startsWith('studio-') || !validId(id)) continue
-          const candidate = this.projectMediaPath(id, asset)
-          if (await exists(candidate)) { source = candidate; break }
-        }
-        if (!source) throw new Error(`O arquivo de ${asset.name} não foi encontrado para este roteiro.`)
-        await this.copyVerified(source, destination, asset.size)
-      }
     })
   }
 }

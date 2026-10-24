@@ -20,7 +20,6 @@ const DOMAINS = [
   { id: 'fabricator.hair', roots: ['fabricator/hair'] },
   { id: 'customizer.characters', roots: ['customizer/characters'] },
   { id: 'studio.projects', roots: ['studios/Studio Principal'] },
-  { id: 'video-studio.projects', roots: ['studios/Video Studio'], exclude: ['studios/Video Studio/media-library/', 'studios/Video Studio/background-library/'] },
   { id: 'video-studio.media', roots: ['studios/Video Studio/media-library'] },
   { id: 'video-studio.backgrounds', roots: ['studios/Video Studio/background-library'] }
 ]
@@ -270,7 +269,7 @@ class DataMigrationService {
       }
       // Only remove the exact, inventoried roots owned by this domain. Shared
       // face paths are excluded here; individual files are removed by manifest.
-      if (item.domainId === 'fabricator.face-sets' || item.domainId === 'fabricator.face-catalog' || item.domainId === 'video-studio.projects') {
+      if (item.domainId === 'fabricator.face-sets' || item.domainId === 'fabricator.face-catalog') {
         for (const file of actual.files) {
           const absolute = path.resolve(this.userDataRoot, file.sourceRelativePath)
           if (!within(this.userDataRoot, absolute)) throw new Error('Caminho de origem inválido durante limpeza.')

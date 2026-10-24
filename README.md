@@ -2,7 +2,7 @@
 
 Aplicativo desktop de criação de personagens, customização e composição de cenas, feito com **Electron + React + TypeScript**. Este repositório registra uma **refatoração incremental** do aplicativo que já funciona, preservando formatos de arquivos e contratos IPC.
 
-> **Estado atual: em reorganização arquitetural.** O Video Studio foi retirado da interface desta branch. As bibliotecas de vídeos e fundos continuam disponíveis em Base de vídeos e Roteiros, que dependem desses arquivos compartilhados.
+> **Estado atual: em reorganização arquitetural.** O Video Studio e seu motor de edição e exportação foram removidos do aplicativo. As bibliotecas de vídeos e fundos continuam disponíveis em Base de vídeos e Roteiros, que dependem desses arquivos compartilhados.
 
 ## Fluxo principal do produto
 

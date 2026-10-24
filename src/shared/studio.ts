@@ -1,6 +1,5 @@
 import type { CustomizerFaceAppearance } from './customizer'
 import type { FaceCatalogItemSummary, FaceExpressionEffects, FaceTransform } from './fabricator'
-import type { VideoExportProgress, VideoExportRecoveryRecord, VideoExportStartRequest, VideoExportStartResult } from './videoExportRuntime'
 
 export type StudioAsset = {
   id: string
@@ -78,12 +77,6 @@ export type StudioElement = {
   kind: 'image' | 'character' | 'narrator' | 'speech' | 'thought'
   assetId?: string
   characterId?: string
-  /** Video Studio lane color; stored with this scene instance, not the saved character. */
-  timelineColor?: string
-  /** Video Studio speech/thought bubbles belong to the actor selected at creation. */
-  speakerCharacterId?: string
-  speakerName?: string
-  speakerColor?: string
   /** Customizer revision used to compose this actor's stored image. */
   characterSourceUpdatedAt?: string
   flipX?: boolean
@@ -151,81 +144,14 @@ export type StudioDocument = {
   thumbnailDataUrl?: string
   assets: StudioAsset[]
   elements: StudioElement[]
-  /** Present only in the independent Video Studio workspace. */
-  videoTimeline?: VideoTimelineDocument
 }
 
-export type VideoTimelineDocument = {
-  schemaVersion: 1
-  frameRate: 60
-  durationFrames: number
-  playheadFrame: number
-  playing: boolean
-  /** Interpolate pose and expression changes during playback; defaults to enabled for older scenes. */
-  animateCharacterTransitions?: boolean
-  /** Video Studio control preferences stored independently in each project. */
-  characterPositionsLocked?: boolean
-  timelineZoom?: number
-  timelineHeight?: number
-  /** Persisted timeline UI metadata; visibility hides lanes and lock blocks edits. */
-  trackSettings?: Record<string, { visible?: boolean; locked?: boolean; label?: string; collapsed?: boolean; order?: number }>
-  /** Original state of each actor, retained when returning to the first segment. */
-  characterBases?: Record<string, VideoCharacterState>
-  /** One authoritative stage position per actor, shared by every segment and transition. */
-  characterPositions?: Record<string, { x: number; y: number }>
-  /** Global stage transforms; pose and expression remain authored per segment. */
-  characterTransforms?: Record<string, Pick<StudioElement, 'x' | 'y' | 'rotation' | 'flipX' | 'characterScale' | 'characterWidthScale' | 'characterHeightScale' | 'zIndex'>>
-  /** Empty intervals created by deleting a character segment, preserving adjacent states. */
-  characterGaps?: Array<{ id: string; elementId: string; startFrame: number; endFrame: number }>
-  /** Last visible authored frame boundary per character, retained when a block is resized. */
-  characterTrackEnds?: Record<string, number>
-  /** Imported media files live in this Studio project's dedicated videos folder. */
-  videoAssets?: VideoStudioAsset[]
-  /** Compressed still from the first video clip, used as this project's library cover. */
-  coverDataUrl?: string
-  /** Video clips use source duration in frames and are placed on the top timeline lane. */
-  videoClips?: VideoMediaClip[]
-  /** Project-wide video sound mix, restored with the timeline. */
-  videoAudio?: VideoAudioSettings
-  characterKeys: Array<{ id: string; elementId: string; frame: number; poseSlot: number | null; expressionCollectionId: string | null; expressionPresetId: string | null; faceMode: StudioFaceMode; state?: VideoCharacterState }>
-  textClips: Array<{ id: string; elementId: string; kind: 'speech' | 'thought'; startFrame: number; endFrame: number; state?: StudioElement }>
-  saveMarkers: Array<{ id: string; frame: number; affectedTrackIds: string[] }>
-}
-
-/** Timeline placement and the corresponding window inside the original video. */
-export type VideoMediaClip = {
-  id: string
-  assetId: string
-  startFrame: number
-  endFrame: number
-  sourceStartFrame: number
-  sourceEndFrame: number
-  /** Absent in older projects: original sound at full volume. */
-  audio?: VideoAudioSettings
-  /** Per-segment composition; omitted by older documents for the centered default. */
-  transform?: VideoClipTransform
-}
-
-export type VideoClipTransform = { x: number; y: number; width: number; height: number; rotation: number }
-
-export type VideoAudioSettings = { volume: number; muted: boolean }
-
-export type VideoStudioAsset = {
+export type VideoLibraryItem = {
   id: string
   name: string
   mimeType: 'video/mp4' | 'video/webm' | 'video/quicktime' | 'video/x-m4v'
   extension: 'mp4' | 'webm' | 'mov' | 'm4v'
   size: number
-  durationFrames: number
-}
-
-export type VideoPreviewMedia = {
-  sourceSha256: string
-  proxyUrl: string
-  waveformUrl: string | null
-}
-
-export type VideoLibraryItem = Omit<VideoStudioAsset, 'durationFrames'> & {
   durationFrames: number | null
   createdAt: string
   available: boolean
@@ -243,27 +169,6 @@ export type VideoBackgroundLibraryItem = {
   studios: Array<{ id: string; title: string }>
 }
 
-export type VideoExportRecord = {
-  schemaVersion: 1
-  id: string
-  studioId: string
-  studioTitle: string
-  filename: string
-  sizeBytes: number
-  sha256: string
-  width: 1920
-  height: 1080
-  frameRate: 60
-  durationFrames: number
-  videoCodec: 'h264'
-  audioCodec: 'aac' | null
-  createdAt: string
-  available: boolean
-}
-
-/** A segment owns both its editable Studio properties and its composed artwork. */
-export type VideoCharacterState = { element: StudioElement; imageDataUrl: string }
-
 export type StudioDesktopApi = {
   flushPendingWrites: () => Promise<void>
   listStudios: () => Promise<StudioDocument[]>
@@ -275,43 +180,14 @@ export type StudioDesktopApi = {
   openStudioPrints: (studioId: string) => Promise<void>
 }
 
-/** Independent persistence boundary for the Video Studio workspace. */
-export type VideoStudioCardSummary = Pick<StudioDocument, 'id' | 'title' | 'color' | 'createdAt' | 'updatedAt'> & {
-  coverDataUrl?: string
-}
-
-export type VideoStudioDesktopApi = {
-  /** Windows on-demand Electron process metric sample; no user/project data. */
-  getVideoStudioMemoryReport: () => Promise<import('./videoStudioNext/diagnostics').VideoStudioMemoryReport>
-  /** Hidden development-only screenshot used by the Windows Video Studio stress runner. */
-  captureVideoStressPage: () => Promise<{ width: number; height: number; pngBase64: string }>
-  listVideoStudios: () => Promise<VideoStudioCardSummary[]>
-  loadVideoStudio: (id: string) => Promise<StudioDocument | null>
-  saveVideoStudio: (studio: StudioDocument) => Promise<void>
-  deleteVideoStudio: (id: string) => Promise<void>
-  getVideoStudioFolder: () => Promise<string>
-  importVideoStudioImage: (category: StudioAsset['category']) => Promise<StudioAsset | null>
+/** Shared video and background libraries used by Base Videos and Roteiros. */
+export type VideoLibraryDesktopApi = {
   listVideoLibrary: () => Promise<VideoLibraryItem[]>
-  importVideoLibrary: (offscreenStressMediaPath?: string) => Promise<VideoLibraryItem | null>
+  importVideoLibrary: () => Promise<VideoLibraryItem | null>
   finishVideoLibraryImport: (id: string, durationFrames: number) => Promise<VideoLibraryItem>
   deleteVideoLibraryItem: (id: string) => Promise<void>
   renameVideoLibraryItem: (id: string, name: string) => Promise<VideoLibraryItem>
-  attachVideoLibraryItems: (studioId: string, ids: string[]) => Promise<VideoStudioAsset[]>
-  prepareVideoPreviewMedia: (studioId: string, asset: VideoStudioAsset) => Promise<VideoPreviewMedia>
   listVideoBackgroundLibrary: () => Promise<VideoBackgroundLibraryItem[]>
   importVideoBackground: () => Promise<VideoBackgroundLibraryItem | null>
   deleteVideoBackground: (id: string) => Promise<void>
-  attachVideoBackground: (studioId: string, id: string) => Promise<StudioAsset>
-  saveVideoStudioPrint: (studioId: string, dataUrl: string) => Promise<string | null>
-  openVideoStudioPrints: (studioId: string) => Promise<void>
-  listVideoExports: () => Promise<VideoExportRecord[]>
-  openVideoExportsFolder: (studioId?: string) => Promise<void>
-  deleteVideoExport: (id: string) => Promise<void>
-  startVideoExport: (request: VideoExportStartRequest) => Promise<VideoExportStartResult>
-  cancelVideoExport: (jobId: string) => Promise<void>
-  getVideoExportStatus: (jobId: string) => Promise<VideoExportProgress | null>
-  onVideoExportProgress: (callback: (progress: VideoExportProgress) => void) => () => void
-  listRecoverableVideoExports: () => Promise<VideoExportRecoveryRecord[]>
-  resumeVideoExport: (jobId: string) => Promise<VideoExportStartResult>
-  discardVideoExportRecovery: (jobId: string) => Promise<void>
 }

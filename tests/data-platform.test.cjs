@@ -449,25 +449,6 @@ test('Electron profile migration preserves legacy domain data and refuses to ove
   assert.equal(await fs.readFile(path.join(profile, 'Preferences'), 'utf8'), 'existing')
 }))
 
-test('video project cleanup cannot delete separate media-library or background-library roots', async () => withRoot(async (root) => {
-  const catalog = catalogAt(root)
-  const userData = path.join(root, 'user-data')
-  const video = path.join(userData, 'studios', 'Video Studio')
-  await fs.mkdir(path.join(video, 'studio-00000000-0000-4000-8000-000000000001'), { recursive: true })
-  await fs.mkdir(path.join(video, 'media-library', 'videos'), { recursive: true })
-  await fs.mkdir(path.join(video, 'background-library', 'images'), { recursive: true })
-  await fs.writeFile(path.join(video, 'studio-00000000-0000-4000-8000-000000000001', 'studio.json'), '{"title":"synthetic"}')
-  await fs.writeFile(path.join(video, 'media-library', 'videos', 'asset.mp4'), Buffer.from('video-fixture'))
-  await fs.writeFile(path.join(video, 'background-library', 'images', 'asset.png'), Buffer.from('image-fixture'))
-  const service = new DataMigrationService({ dataRoot: root, userDataRoot: userData, catalog })
-  const projects = await service.migrateDomain('video-studio.projects')
-  assert.equal(projects.state, 'active')
-  await service.finalizeAfterHealthyLoad()
-  await assert.rejects(fs.access(path.join(video, 'studio-00000000-0000-4000-8000-000000000001', 'studio.json')),{ code: 'ENOENT' })
-  assert.equal((await fs.readFile(path.join(video, 'media-library', 'videos', 'asset.mp4'))).toString(), 'video-fixture')
-  assert.equal((await fs.readFile(path.join(video, 'background-library', 'images', 'asset.png'))).toString(), 'image-fixture')
-}))
-
 test('on-demand app backup verifies every file and restore swaps into place only after staging', async () => withRoot(async (root) => {
   const catalog = catalogAt(root)
   const profile = path.join(root, 'runtime', 'profile')
