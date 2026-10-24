@@ -1,3 +1,5 @@
+export {}
+
 type CropRequest = { id: number; bitmap: ImageBitmap }
 type CropResponse = {
   id: number
