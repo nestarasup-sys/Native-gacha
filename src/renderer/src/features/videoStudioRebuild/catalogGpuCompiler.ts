@@ -1,6 +1,5 @@
-import type { CustomizerCharacter, CustomizerFaceAppearance } from '../../../../shared/customizer'
-import type { FaceExpressionEffects } from '../../../../shared/fabricator'
-import type { StudioElement, StudioFaceMode, StudioFaceTransforms } from '../../../../shared/studio'
+import type { CustomizerCharacter, CustomizerFaceAppearance, FaceComponentPartId } from '../../../../shared/customizer'
+import type { StudioElement, StudioFaceMode } from '../../../../shared/studio'
 import { videoCharacterElementSize } from '../../../../shared/videoStageGeometry'
 import type { EvaluatedCharacter, VideoSceneLayer } from '../../../../shared/videoSceneIR'
 import { GPU_FACE_PASSES, prepareSavedCharacterRenderer, type GachaFacePass } from '../../characters/characterRenderer'
@@ -77,10 +76,10 @@ export function catalogFaceRecipe(
   const overrides=element.faceTransforms
   if(pass==='pupil-left'||pass==='pupil-right') {
     const side=pass.endsWith('left')?'left':'right'
-    const eye=`eye-${side}`,pupil=`pupil-${side}`
+    const eye=`eye-${side}` as FaceComponentPartId,pupil=`pupil-${side}` as FaceComponentPartId
     return JSON.stringify([pass,mode==='blink',components?.[pupil],components?.[eye],
       overrides?.[`expression-component:${pupil}`],overrides?.[`expression-component:${eye}`],
-      appearance?.partColors?.[eye]])
+      appearance?.partColors?.[eye as 'eye-left' | 'eye-right']])
   }
   if(pass==='eye-left'||pass==='eye-right') {
     const side=pass.endsWith('left')?'left':'right'

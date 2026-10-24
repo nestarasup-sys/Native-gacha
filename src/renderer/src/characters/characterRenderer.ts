@@ -10,7 +10,7 @@ import { eyeInteriorMask } from '../ui/image/eyeInteriorMask'
 import { tintSkinPixels } from './skinTint'
 import { configureCharacterSampling, MAX_CHARACTER_PREVIEW_PIXELS } from './renderResolution'
 import { drawFaceExpressionEffects } from './expressionEffectRender'
-import { loadStandardExpressionEffects } from './standardExpressionEffects'
+import { loadStandardExpressionEffects, type StandardExpressionEffects } from './standardExpressionEffects'
 export { loadStandardExpressionEffects } from './standardExpressionEffects'
 export type { StandardExpressionEffects } from './standardExpressionEffects'
 import type { VideoCharacterRenderAssetProvider } from '../../../shared/videoCharacterRenderAssets'
@@ -589,7 +589,6 @@ export async function renderFaceOverlay(artwork: CatalogArtwork, source: Fabrica
   if (!context) return null
   context.scale(pixelScale, pixelScale)
   for (const element of faceElementOrder) {
-    if (gpuPass && gpuPass !== 'catalog') break
     if (element.startsWith('brow') && !appearance.eyebrows) continue
     const sheet = element.startsWith('eye') ? 'eyes' : element.startsWith('brow') ? 'eyebrows' : element === 'nose' ? 'nose' : appearance.mouthOpen ? 'mouth-open' : 'mouth-closed'
     const index = sheet === 'eyes' ? appearance.eyeState : sheet === 'nose' ? appearance.noseIndex : sheet.startsWith('mouth') ? appearance.expressionIndex : 0

@@ -162,7 +162,11 @@ export class VideoStudioPreviewTransport {
           return bytes + Number(size.naturalWidth??size.videoWidth??size.width??0)
             *Number(size.naturalHeight??size.videoHeight??size.height??0)*4
         },0)
-        const needed = sprites?.reduce((bytes,item) => bytes+item.source.width*item.source.height*4,0) ?? 0
+        const needed = sprites?.reduce((bytes,item) => {
+          const source=item.source as {width?:number;height?:number;videoWidth?:number;videoHeight?:number;naturalWidth?:number;naturalHeight?:number}
+          return bytes+Number(source.width??source.naturalWidth??source.videoWidth??0)
+            *Number(source.height??source.naturalHeight??source.videoHeight??0)*4
+        },0) ?? 0
         if(sprites?.length && inUse+needed<=budget){output.push(...sprites);continue}
       }
       // Decode only current absolute-frame transition sprites, retaining them
