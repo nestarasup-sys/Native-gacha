@@ -57,7 +57,8 @@
     "test:fabricator:fixture": "node --experimental-strip-types --test tests/fabricator-complete-visual-fixture.test.mjs",
     "bench:fabricator:cache": "node scripts/fabricator/bench-catalog-cache.cjs",
     "test:fabricator:full-golden": "node --experimental-strip-types --test tests/fabricator-complete-character-golden.test.mjs",
-    "test:fabricator:real-ui:review": "node scripts/fabricator/review-real-ui-captures.cjs"
+    "test:fabricator:real-ui:review": "node scripts/fabricator/review-real-ui-captures.cjs",
+    "bench:video:pixi-rig": "electron scripts/video-studio/pixi-gacha-pose-rig-smoke.cjs"
   },
   "dependencies": {
     "better-sqlite3": "^13.0.3",
