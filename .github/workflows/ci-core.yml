@@ -48,6 +48,9 @@ jobs:
       - name: Test rebuilt Video Studio contracts (Windows only)
         if: matrix.os == 'windows-latest'
         run: npm run test:video:next
+      - name: Verify existing serial export contracts (Windows only)
+        if: matrix.os == 'windows-latest'
+        run: npm run test:export:synthetic
       - name: Smoke Windows process-tree memory probe
         if: matrix.os == 'windows-latest'
         shell: pwsh
