@@ -1,6 +1,6 @@
 /** Opt-in aggregate diagnostics: no user/project names, asset paths or content. */
 type RouteStats = { commits:number; commitMs:number; worstCommitMs:number; longTasks:number; longTaskMs:number }
-const routes = new Set(['/', '/customizar', '/estudio', '/video-studio', '/roteiros', '/base-videos', '/opcoes', '/fabricador-dev'])
+const routes = new Set(['/', '/customizar', '/estudio', '/roteiros', '/base-videos', '/opcoes', '/fabricador-dev'])
 const stats = new Map<string, RouteStats>()
 const enabled = (() => { try { return typeof window !== 'undefined' && sessionStorage.getItem('gv5:perf') === '1' } catch { return false } })()
 function entryFor(route: string): RouteStats {

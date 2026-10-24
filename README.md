@@ -2,7 +2,7 @@
 
 Aplicativo desktop de criação de personagens, customização e composição de cenas, feito com **Electron + React + TypeScript**. Este repositório registra uma **refatoração incremental** do aplicativo que já funciona, preservando formatos de arquivos e contratos IPC.
 
-> **Estado atual: em reorganização arquitetural.** O **Video Studio está em reconstrução ativa** na branch `Main-desenvolvimento`, ainda sem validação completa de reprodução e exportação pesadas no Windows. **Não execute com bibliotecas pessoais sem backup.**
+> **Estado atual: em reorganização arquitetural.** O Video Studio foi retirado da interface desta branch. As bibliotecas de vídeos e fundos continuam disponíveis em Base de vídeos e Roteiros, que dependem desses arquivos compartilhados.
 
 ## Fluxo principal do produto
 
@@ -37,7 +37,7 @@ npm run dev
 
 ## Branch oficial e atalhos de desenvolvimento (Windows)
 
-A branch de trabalho do Native Gacha é **`Main-desenvolvimento`** (respeite maiúsculas/minúsculas). As mudanças do Video Studio e os testes de regressão são feitas nessa branch; `main` não é atualizada automaticamente.
+A branch de trabalho do Native Gacha é **`Main-desenvolvimento`** (respeite maiúsculas/minúsculas); `main` não é atualizada automaticamente.
 
 - **`ATUALIZAR_DESENVOLVIMENTO.bat`**: verifica o clone `origin`, recusa alterações locais não salvas, faz fetch da branch oficial, seleciona `Main-desenvolvimento`, configura o upstream e faz `git pull --ff-only`. Não executa `reset --hard`, `clean` ou rebase.
 - **`ABRIR_DESENVOLVIMENTO.bat`**: inicia o Electron no Windows sem chamar o `predev` que migra dados do perfil G-V5 legado.
@@ -51,7 +51,6 @@ git switch --track -c Main-desenvolvimento origin/Main-desenvolvimento
 
 Se a branch local `Main-desenvolvimento` já existir, use `git switch Main-desenvolvimento` no lugar do segundo comando, seguido de `git pull --ff-only origin Main-desenvolvimento`.
 
-Para validar a reconstrução atual do Video Studio: `npm run test:video:next`, `npm run test:export:synthetic`, `npm run typecheck` e `npm run build`. Testes sintéticos e build verde **não** substituem validação visual e teste real de estresse de 180 s.
 
 ## Estrutura existente (sem mudança agressiva de diretórios)
 

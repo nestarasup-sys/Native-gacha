@@ -18,8 +18,8 @@ const domainLabels: Record<string, string> = {
   'fabricator.models': 'Modelos e folhas', 'fabricator.poses': 'Poses', 'fabricator.animations': 'Animações',
   'fabricator.wardrobe': 'Roupas', 'fabricator.face-sets': 'Rosto', 'fabricator.face-catalog': 'Catálogo do rosto',
   'fabricator.face-components': 'Peças do rosto', 'fabricator.expression-presets': 'Expressões', 'fabricator.hair': 'Cabelos',
-  'customizer.characters': 'Personagens e ajustes', 'studio.projects': 'Studio normal', 'video-studio.projects': 'Projetos do Video Studio',
-  'video-studio.media': 'Vídeos', 'video-studio.backgrounds': 'Fundos do Video Studio'
+  'customizer.characters': 'Personagens e ajustes', 'studio.projects': 'Studio normal',
+  'video-studio.media': 'Biblioteca de vídeos', 'video-studio.backgrounds': 'Biblioteca de fundos'
 }
 
 function formatBytes(bytes: number): string {
