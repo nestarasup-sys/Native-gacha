@@ -2,7 +2,7 @@ name: Core architecture validation
 
 on:
   push:
-    branches: [main]
+    branches: [main, Main-desenvolvimento]
     paths:
       - 'electron/**'
       - 'src/**'
@@ -10,6 +10,7 @@ on:
       - 'tests/**'
       - 'package.json'
       - 'package-lock.json'
+      - 'ATUALIZAR_DESENVOLVIMENTO.bat'
       - '.github/workflows/ci-core.yml'
   pull_request:
     branches: [main, Main-desenvolvimento, refactor/shared-character-core]
@@ -59,6 +60,14 @@ jobs:
       - name: Smoke Windows semantic SceneIR stress
         if: matrix.os == 'windows-latest'
         run: node scripts/video-studio/windows-sceneir-stress.cjs
+      - name: Verify updater targets canonical development branch (Windows only)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          $bat = Get-Content 'ATUALIZAR_DESENVOLVIMENTO.bat' -Raw
+          if (-not $bat.Contains('set "DEV_BRANCH=Main-desenvolvimento"')) { throw 'Updater branch is not Main-desenvolvimento' }
+          if (-not $bat.Contains('git pull --ff-only origin "%DEV_BRANCH%"')) { throw 'Updater must use a safe fast-forward pull' }
+          if ($bat -match '(?i)git\s+(reset\s+--hard|clean\s+-[a-z]*f)') { throw 'Updater must not force-clean the user worktree' }
       - name: Typecheck
         run: npm run typecheck
       - name: Compile Electron/React
