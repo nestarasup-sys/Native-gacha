@@ -77,7 +77,7 @@ export class TransitionRenderer {
     if (kind === 'fallback') {
       reason = /diverg|diferença|pixels|paridade|Canvas original/i.test(message)
         ? 'A imagem da GPU ficou diferente da original.'
-        : /context|contexto|webgl|perdido/i.test(message)
+        : /context|contexto|webgl|perdido|lost/i.test(message)
           ? 'O contexto WebGL/GPU não está disponível.'
           : /textura|texture|asset|imagem/i.test(message)
             ? 'Não foi possível preparar uma textura do personagem.'
