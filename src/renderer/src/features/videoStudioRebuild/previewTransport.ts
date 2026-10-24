@@ -15,6 +15,7 @@ export type RebuiltPreviewStatus = Readonly<{
   presentedFrames: number
   skippedFrames: number
   textureBytes: number
+  catalogTextureCount: number
 }>
 
 function awaitAbortable<T>(task: Promise<T>, signal: AbortSignal): Promise<T> {
@@ -53,6 +54,7 @@ export class VideoStudioPreviewTransport {
   private lastRenderedFrame = -1
   private dirtySprites = false
   private presented = 0
+  private catalogTextureCount = 0
   private skipped = 0
   private startedAt = 0
   private startFrame = 0
@@ -96,7 +98,8 @@ export class VideoStudioPreviewTransport {
       rendering: this.inFlight,
       presentedFrames: this.presented,
       skippedFrames: this.skipped,
-      textureBytes: this.gpu.stats().retainedEstimatedBytes
+      textureBytes: this.gpu.stats().retainedEstimatedBytes,
+      catalogTextureCount: this.catalogTextureCount
     })
   }
 
@@ -193,6 +196,7 @@ export class VideoStudioPreviewTransport {
     void work.then(layers => {
       if (this.disposed || requestId !== this.requestId) return
       this.gpu.draw(layers, scene.background.color)
+      this.catalogTextureCount = layers.filter(item => item.textureId.startsWith('catalog:')).length
       this.presented++
       if (this.lastRenderedFrame >= 0 && scene.frame > this.lastRenderedFrame + 1) {
         this.skipped += scene.frame - this.lastRenderedFrame - 1
@@ -242,7 +246,8 @@ export class VideoStudioPreviewTransport {
   snapshot(): RebuiltPreviewStatus {
     return { frame: this.frame, playing: this.playing, rendering: this.inFlight,
       presentedFrames: this.presented, skippedFrames: this.skipped,
-      textureBytes: this.gpu.stats().retainedEstimatedBytes }
+      textureBytes: this.gpu.stats().retainedEstimatedBytes,
+      catalogTextureCount: this.catalogTextureCount }
   }
 
   dispose() {

@@ -126,7 +126,8 @@ export function VideoStudioRebuildPage({onEditorActiveChange}:Props) {
         setRendering(state.rendering)
         setPresented(state.presentedFrames)
         setSkipped(state.skippedFrames)
-        setGpuStats(JSON.stringify({retainedEstimatedBytes:state.textureBytes}))
+        setGpuStats(JSON.stringify({retainedEstimatedBytes:state.textureBytes,
+          catalogTextureCount:state.catalogTextureCount}))
       },
       error=>setStatus('Falha da prévia GPU: '+error.message),catalog)
     transport.current=instance
