@@ -10,7 +10,7 @@ export type GachaGpuLayer = Readonly<{
   /** Video textures need fresh pixels each frame without allocating a new texture. */
   dynamic?: boolean
 }>
-type CachedTexture = { texture: WebGLTexture; bytes: number; lastUsed: number; sourceId: number }
+type CachedTexture = { texture: WebGLTexture; bytes: number; lastUsed: number; sourceId: number; width: number; height: number }
 
 /** WebGL2 textured layers with persistent GPU resources and finite LRU.
  * This first runtime can draw existing authored snapshots; the dedicated
@@ -94,12 +94,19 @@ export class GachaGpuStage {
     this.textures.clear();this.bytes=0
   }
 
-  private texture(id: string, source: TexImageSource): WebGLTexture {
+  private texture(id: string, source: TexImageSource): { texture: WebGLTexture; uploaded: boolean } {
+    const dim=source as {videoWidth?:number;naturalWidth?:number;width?:number;videoHeight?:number;naturalHeight?:number;height?:number}
+    const width=Number(dim.videoWidth||dim.naturalWidth||dim.width)
+    const height=Number(dim.videoHeight||dim.naturalHeight||dim.height)
+    const bytes=width*height*4
+    if (!Number.isSafeInteger(bytes)||bytes<4||bytes>this.maxTextureBytes) throw new Error('Textura Gacha acima do orçamento.')
     const sourceId=this.sourceId(source)
     const cached=this.textures.get(id)
-    if (cached?.sourceId===sourceId) {
+    // Video frames preserve the same element identity but may change resolution.
+    // Reallocate only on an actual source revision or a dimension change.
+    if (cached?.sourceId===sourceId && cached.width===width && cached.height===height) {
       cached.lastUsed=++this.tick
-      return cached.texture
+      return { texture: cached.texture, uploaded: false }
     }
     // A stable logical sprite ID may refer to an updated catalog revision.
     // Release only the revised texture, never unrelated body/hair sprites.
@@ -108,9 +115,6 @@ export class GachaGpuStage {
       this.textures.delete(id)
       this.bytes-=cached.bytes
     }
-    const dim=source as {videoWidth?:number;naturalWidth?:number;width?:number;videoHeight?:number;naturalHeight?:number;height?:number}
-    const bytes=Number(dim.videoWidth||dim.naturalWidth||dim.width)*Number(dim.videoHeight||dim.naturalHeight||dim.height)*4
-    if (!Number.isSafeInteger(bytes)||bytes<4||bytes>this.maxTextureBytes) throw new Error('Textura Gacha acima do orçamento.')
     const gl=this.gl
     while (this.bytes+bytes>this.maxTextureBytes && this.textures.size) {
       const [key,entry]=[...this.textures.entries()].sort((a,b)=>a[1].lastUsed-b[1].lastUsed)[0]
@@ -126,8 +130,8 @@ export class GachaGpuStage {
     gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE)
     try {gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,source)}
     catch(error){gl.deleteTexture(texture);throw error}
-    this.textures.set(id,{texture,bytes,lastUsed:++this.tick,sourceId});this.bytes+=bytes
-    return texture
+    this.textures.set(id,{texture,bytes,lastUsed:++this.tick,sourceId,width,height});this.bytes+=bytes
+    return { texture, uploaded: true }
   }
 
   draw(layers:readonly GachaGpuLayer[],backgroundColor='#000000'):void {
@@ -145,9 +149,13 @@ export class GachaGpuStage {
       const e=layer.element
       const rect=videoStageRect(e.x,e.y,e.width,e.height)
       gl.activeTexture(gl.TEXTURE0)
-      const texture=this.texture(layer.textureId,layer.source)
+      const { texture, uploaded }=this.texture(layer.textureId,layer.source)
       gl.bindTexture(gl.TEXTURE_2D,texture)
-      if(layer.dynamic) gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,layer.source)
+      // New allocations already have their current frame from texImage2D.
+      // For stable video dimensions, change pixels via texSubImage2D without
+      // reallocating GPU storage or uploading the first frame twice.
+      if(layer.dynamic && !uploaded)
+        gl.texSubImage2D(gl.TEXTURE_2D,0,0,0,gl.RGBA,gl.UNSIGNED_BYTE,layer.source)
       gl.uniform2f(gl.getUniformLocation(this.program,'u_center'),rect.centerX,rect.centerY)
       gl.uniform2f(gl.getUniformLocation(this.program,'u_size'),rect.width,rect.height)
       gl.uniform1f(gl.getUniformLocation(this.program,'u_angle'),e.rotation*Math.PI/180)

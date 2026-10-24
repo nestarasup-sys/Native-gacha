@@ -11,3 +11,7 @@
 ## Escopo propositalmente NÃO concluído
 
 Essa transição faz crossfade de **imagens completas salvas**, não uma interpolação exata das partes articuladas ou dos pixels faciais. Piscada, fala, efeitos, máscaras e **pupilas PT esquerda/direita independentes** ainda precisam do compilador de sprites do catálogo e de golden visual Windows. A prévia de mídia ainda usa HTMLVideoElement com relógio em utilityProcess, sem decoder isolado completo; export MP4 integrado ao novo motor e stress real de quatro personagens também não estão liberados.
+
+## Retenção de texturas de vídeo
+
+O cache WebGL passou a diferenciar atualização de pixels de vídeo (\`texSubImage2D\`) de realocação de armazenamento (\`texImage2D\`). Atualização com dimensões estáveis não duplica o primeiro upload; mudança de resolução invalida só a textura correspondente e corrige o orçamento de bytes. Testes do WebGL mock cobrem as duas operações; métricas reais de GPU/VRAM no Windows permanecem pendentes.

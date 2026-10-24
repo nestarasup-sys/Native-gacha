@@ -5,7 +5,7 @@ const fs=require('node:fs')
 const path=require('node:path')
 const ts=require('typescript')
 function setup(){
-  const log={uploads:0,draws:0,deleted:0,programs:0,lost:false}
+  const log={uploads:0,subUploads:0,draws:0,deleted:0,programs:0,lost:false}
   const gl=new Proxy({},{
     get(target,k) {
       const constants={VERTEX_SHADER:1,FRAGMENT_SHADER:2,COMPILE_STATUS:3,LINK_STATUS:4,ARRAY_BUFFER:5,
@@ -20,6 +20,7 @@ function setup(){
       if(k==='getAttribLocation')return()=>0
       if(k==='getUniformLocation')return()=>({})
       if(k==='texImage2D')return()=>{log.uploads++}
+      if(k==='texSubImage2D')return()=>{log.subUploads++}
       if(k==='drawArrays')return()=>{log.draws++}
       if(k==='deleteTexture')return()=>{log.deleted++}
       return()=>undefined
@@ -66,10 +67,13 @@ test('GPU byte budget evicts least-recently-used source and video updates in sam
   stage.draw([sprite('head')])
   stage.draw([sprite('mouth')])
   assert.ok(stage.stats().retainedEstimatedBytes<=2048)
-  stage.draw([sprite('video',8,8,true)])
-  stage.draw([sprite('video',8,8,true)])
+  const video=sprite('video',8,8,true)
+  const uploadedBefore=log.uploads
+  stage.draw([video])
+  stage.draw([video])
+  assert.equal(log.uploads,uploadedBefore+1,'first video frame allocates once')
+  assert.equal(log.subUploads,1,'subsequent video frame only changes pixels')
   assert.equal(stage.stats().textureCount<=2,true)
-  assert.ok(log.uploads>=5)
   assert.throws(()=>stage.draw([sprite('huge',200,200)]),/orçamento/)
   stage.dispose()
 })
@@ -107,4 +111,20 @@ test('GPU cache uses weak source identities rather than retaining decoded HTML i
   const source=fs.readFileSync(path.resolve(__dirname,'../src/renderer/src/features/videoStudioRebuild/gachaGpuStage.ts'),'utf8')
   assert.match(source,/sourceIds\s*=\s*new WeakMap<object,\s*number>\(\)/)
   assert.doesNotMatch(source,/type CachedTexture\s*=\s*\{[^\n]*source:\s*TexImageSource/)
+})
+
+test('GPU reallocates a video only when its native resolution changes',()=>{
+  const {Stage,canvas,log}=setup(),stage=new Stage(canvas,4096)
+  const video=sprite('video',8,8,true)
+  stage.draw([video])
+  assert.equal(stage.stats().retainedEstimatedBytes,8*8*4)
+  video.source.width=16
+  stage.draw([video])
+  assert.equal(stage.stats().retainedEstimatedBytes,16*8*4)
+  assert.equal(log.deleted,1)
+  assert.equal(log.uploads,2)
+  assert.equal(log.subUploads,0)
+  stage.draw([video])
+  assert.equal(log.subUploads,1)
+  stage.dispose()
 })
