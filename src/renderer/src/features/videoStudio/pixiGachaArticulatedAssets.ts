@@ -110,9 +110,10 @@ export async function prepareGachaArticulatedAssets(
   const body = new Map<string, { url: string; width: number; height: number }>()
   const allParts = [...from.parts, ...to.parts]
   await Promise.all(allParts.map(async part => {
-    if (body.has(part.id)) return
+    const key = `${part.id}:${part.dataUrl}`
+    if (body.has(key)) return
     const image = skin ? await loadSkinTintedImage(part.dataUrl, skin) : await loadCachedImage(part.dataUrl)
-    body.set(part.id, { url: imageSource(image), width: image.naturalWidth || image.width, height: image.naturalHeight || image.height })
+    body.set(key, { url: imageSource(image), width: image.naturalWidth || image.width, height: image.naturalHeight || image.height })
   }))
   const appearance = character.customization.hairAppearance
   const [back, front, fringe] = await Promise.all([
@@ -181,7 +182,7 @@ export function gachaArticulatedCommands(assets: GachaArticulatedAssets, posed: 
   const behind: GachaDrawCommand[] = []
   const front: GachaDrawCommand[] = []
   const drawPart = (part: ModelPart): GachaDrawCommand | null => {
-    const texture = assets.body.get(part.id)
+    const texture = assets.body.get(`${part.id}:${part.dataUrl}`)
     if (!texture || hidden.has(part.id)) return null
     return { id: `body:${part.id}`, url: texture.url,
       width: texture.width, height: texture.height,
@@ -225,9 +226,10 @@ export function gachaArticulatedCommands(assets: GachaArticulatedAssets, posed: 
       else behind.push(garmentCmd)
     }
   }
-  if (sourceHead && posedHead) for (const layer of assets.hairFront) {
-    front.unshift({ id: layer.id, url: layer.url, width: layer.width, height: layer.height,
-      matrix: hairPlacement(sourceHead, posedHead, layer), alpha: 1 })
+  if (sourceHead && posedHead) {
+    const hair = assets.hairFront.map(layer => ({ id: layer.id, url: layer.url, width: layer.width,
+      height: layer.height, matrix: hairPlacement(sourceHead, posedHead, layer), alpha: 1 }))
+    front.unshift(...hair)
   }
   return { behind, front }
 }
