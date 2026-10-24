@@ -10,7 +10,7 @@ A fonte permanece read-only; não grava presets, poses, projetos ou assets.
 
 **Esta fase ainda NÃO substitui o desenho principal no editor**, pois a composição exata inclui skin tone/tingimentos, roupas e acessórios, cabelo atrás/à frente, máscaras dos olhos/PT, boca e efeitos faciais. Mudar a preview padrão antes de preservar tudo isso seria uma regressão visual. O runtime Pixi é **o componente real inicial**, mas é mantido como protótipo isolado enquanto ocorre a paridade de pixels.
 
-PixiJS foi instalado pelo usuário na máquina local, mas **o pacote ainda não está registrado no `package.json`/`package-lock.json` versionados** nesta primeira fatia; os testes de contrato usam uma porta tipada, sem baixar dependências de GPU na CI. Antes de integrar o runtime ao bundle de produção, será necessário versionar os manifests npm com o lock sincronizado para garantir que `npm ci` funcione.
+PixiJS **8.22.0 já está versionado no `package.json` e no `package-lock.json`**, com instalação limpa `npm ci --ignore-scripts` validada. A implementação usa uma interface tipada e, na superfície experimental `PixiGachaPoseSurface`, importa PixiJS dinamicamente, inicializa WebGL2, prepara os assets via `Assets.load`, renderiza sob comando da timeline (sem ticker próprio) e detecta perda de contexto GPU. A preview padrão do Video Studio continua no Canvas, sem mudança visual antes da paridade.
 
 ## Ganho imediato no editor legado
 
@@ -28,7 +28,7 @@ Transições com **mudança real de pose** continuam usando o compositor canôni
 
 ## Próximas fatias
 
-1. Versionar Pixi em manifests npm com `package-lock.json` sincronizado.
+1. Validar a superfície Pixi no Electron Windows com GPU e medir paridade de pixels e custo de frame.
 2. Criar camada GPU de roupas/cabelo/pele, face e máscaras; manter mesmo recorte, tamanho, ordem de camadas e textura.
 3. Introduzir modo experimental de preview com A/B, fallback para Canvas em contexto ausente/perdido; nunca mudar o visual silenciosamente.
 4. Extrair camada de render para Worker/OffscreenCanvas e depois supervisor Electron.
