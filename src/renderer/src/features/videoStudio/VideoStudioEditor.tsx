@@ -2282,7 +2282,13 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
           {inspectorTab === 'editor' ? <div className="video-studio-inspector-content">{propertyPanel()}</div> : <div className="video-studio-inspector-content">{inspectorCustomView === 'presets' ? presetsPanel() : customPanel()}</div>}
         </aside>}
         <section className="video-studio-scene-area" aria-label="Prévia da cena">
-          <div className="video-studio-scene-canvas" ref={sceneRef} style={{ backgroundColor: activeStudio.backgroundColor }} onPointerDown={() => { if (!fullView) setSelectedElementId(null) }}>
+          <div className="video-studio-scene-canvas"
+            data-transition-rendered={characterAnimation.transitionMetrics.rendered}
+            data-transition-cache-hits={characterAnimation.transitionMetrics.cacheHits}
+            data-transition-render-ms={characterAnimation.transitionMetrics.renderMs.toFixed(2)}
+            data-transition-discarded={characterAnimation.transitionMetrics.discarded}
+            data-transition-cache-bytes={characterAnimation.transitionMetrics.cachedBytes}
+            ref={sceneRef} style={{ backgroundColor: activeStudio.backgroundColor }} onPointerDown={() => { if (!fullView) setSelectedElementId(null) }}>
             {backgroundAsset && <img className={`video-studio-canvas-background${selectedElementId === 'background' && !fullView ? ' selected' : ''}`} src={backgroundAsset.dataUrl} alt="" style={imageStyle(activeStudio.backgroundX, activeStudio.backgroundY, activeStudio.backgroundWidth, activeStudio.backgroundHeight, activeStudio.backgroundRotation)} onPointerDown={(event) => startDrag(event, 'background')} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag} />}
             {[...activeStudio.elements].sort((a, b) => a.zIndex - b.zIndex).map((sourceElement) => {
               if (videoFrameSelection && sourceElement.kind === 'character' && videoFrameSelection.hiddenCharacterIds.has(sourceElement.id)) return null
