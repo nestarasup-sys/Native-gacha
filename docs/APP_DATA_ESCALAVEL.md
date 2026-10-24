@@ -39,7 +39,7 @@ O layout existente dentro de `user-data` permanece ativo durante a transição. 
 - Cada domínio registra `domain_id`, versão do schema e manifesto. Categorias novas são declaradas no registro, sem alterar o schema físico para cada tipo novo.
 - `DataPlatform` é o ponto único para inicializar catálogo, registrar domínio/asset/relação, paginar/buscar e obter resumo. `ContentAddressedStore` publica objetos em `media/objects/sha256`, gera miniaturas e avalia recompressão PNG lossless.
 - `DomainFileSystem` preserva as operações de arquivo usadas pelos módulos existentes e as direciona para o catálogo/armazenamento por conteúdo após o domínio ser ativado. Domínios ainda não migrados continuam usando os caminhos legados.
-- Fabricador, Customizador, Studio e Video Studio passam a usar essa camada em seus fluxos de persistência conectados. O IPC existente permanece compatível; a camada resolve caminhos virtuais para leitura e streaming.
+- Fabricador, Customizador, Studio Principal e bibliotecas compartilhadas de vídeo/fundos usam essa camada em seus fluxos de persistência conectados. O IPC existente permanece compatível; a camada resolve caminhos virtuais para leitura e streaming.
 - PNGs enviados permanecem byte a byte intactos. Miniaturas são derivações recriáveis. O relatório de recompressão lossless compara pixels decodificados e bytes, mas não troca o original.
 
 ## Segurança e recuperação
@@ -69,7 +69,7 @@ O layout existente dentro de `user-data` permanece ativo durante a transição. 
 5. Backups manuais e restauração foram exercitados em sandbox sintético, incluindo verificação e troca transacional de raízes.
 6. Retenção automática e coleta de objetos continuam desativadas; a implementação não remove backups manuais nem objetos compartilhados automaticamente.
 
-Pendências para a validação no perfil real: executar a migração guiada com o app fechado de outras instâncias, confirmar visualmente Fabricador/Customizador/Studio/Video Studio, testar backup copiado para outro disco e manter o backup de segurança até confirmar todos os dados. A cobertura sintética não substitui essa validação.
+Pendências para a validação no perfil real: executar a migração guiada com o app fechado de outras instâncias, confirmar visualmente Fabricador/Customizador/Studio Principal e os fluxos de Base de Vídeos/Roteiros, testar backup copiado para outro disco e manter o backup de segurança até confirmar todos os dados. A cobertura sintética não substitui essa validação.
 
 ## Critérios de escala
 

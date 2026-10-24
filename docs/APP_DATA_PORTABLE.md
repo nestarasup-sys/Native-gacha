@@ -9,7 +9,7 @@ app-data/
   database/catalog.sqlite       # metadados e arquivos lógicos por domínio
   libraries/                    # bibliotecas publicadas pelo Fabricador
   characters/                   # personagens e overrides do Customizador
-  projects/                     # documentos dos Studios
+  projects/                     # documentos do Studio Principal
   media/objects/sha256/         # arquivos binários deduplicados
   media/thumbnails/             # miniaturas derivadas
   runtime/profile/              # Local State e preferências do Electron
@@ -26,7 +26,7 @@ app-data/
 
 ## Dados de domínio
 
-O catálogo oferece migração guiada por domínio em Opções > Dados e armazenamento. Domínios ativos usam o catálogo e objetos endereçados por conteúdo através de um adaptador de filesystem, preservando os contratos de persistência das áreas. Fabricador publica bibliotecas e vínculos; Customizador guarda personagens e overrides; Studio normal e Video Studio mantêm projetos independentes.
+O catálogo oferece migração guiada por domínio em Opções > Dados e armazenamento. Domínios ativos usam o catálogo e objetos endereçados por conteúdo através de um adaptador de filesystem, preservando os contratos de persistência das áreas. Fabricador publica bibliotecas e vínculos; Customizador guarda personagens e overrides; Studio Principal mantém as cenas. Base de Vídeos e Roteiros compartilham vídeos e fundos em `runtime/profile/studios/Editor Gacha`.
 
 Antes de uma migração de domínio, crie um backup manual em Opções. A migração verifica origem e destino por hash e só remove os arquivos antigos após o primeiro carregamento saudável. Não execute várias instâncias durante a migração.
 
