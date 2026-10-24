@@ -48,13 +48,19 @@ export function cropCatalogPart(source: HTMLCanvasElement): CompiledPart | null 
 /** Same painter-space geometry for every independent part, including actor
  * flip and rotation. A left pupil moves without moving its right counterpart. */
 export function placeCatalogPart(
-  part: CompiledPart, actor: StudioElement
+  part: CompiledPart, actor: StudioElement, union: Rectangle = {
+    x:0,y:0,width:part.fullWidth,height:part.fullHeight
+  }
 ): GachaGpuLayer['element'] {
+  // StudioDocument V1 stores a TRIMMED visible character image. The rig is
+  // rendered on the untrimmed Fabricator sheet. All pieces MUST be mapped into
+  // one shared visible union or their stage width/height would stretch.
   const w=videoCharacterElementSize(actor)
-  const {crop,fullWidth,fullHeight}=part
-  const sx=crop.width/fullWidth,sy=crop.height/fullHeight
-  const offX=((crop.x+crop.width/2)/fullWidth-.5)*w.width*(actor.flipX?-1:1)
-  const offY=((crop.y+crop.height/2)/fullHeight-.5)*w.height
+  const {crop}=part
+  if(union.width<=0||union.height<=0)throw new Error('Recorte Gacha vazio.')
+  const sx=crop.width/union.width,sy=crop.height/union.height
+  const offX=((crop.x+crop.width/2-union.x)/union.width-.5)*w.width*(actor.flipX?-1:1)
+  const offY=((crop.y+crop.height/2-union.y)/union.height-.5)*w.height
   const angle=actor.rotation*Math.PI/180
   return {
     x:actor.x+offX*Math.cos(angle)-offY*Math.sin(angle)*1080/1920,
@@ -62,6 +68,16 @@ export function placeCatalogPart(
     width:w.width*sx,height:w.height*sy,
     rotation:actor.rotation,flipX:actor.flipX
   }
+}
+
+/** Shared alpha union of all source pixels. The original Studio saved PNG
+ * was trimmed after composing rig, eyes, face and hair, not before it. */
+export function catalogVisibleUnion(parts: ReadonlyArray<CompiledPart>): Rectangle {
+  if(!parts.length)throw new Error('Rig Gacha sem pixels visíveis.')
+  const x=Math.min(...parts.map(p=>p.crop.x)),y=Math.min(...parts.map(p=>p.crop.y))
+  const right=Math.max(...parts.map(p=>p.crop.x+p.crop.width))
+  const bottom=Math.max(...parts.map(p=>p.crop.y+p.crop.height))
+  return {x,y,width:right-x,height:bottom-y}
 }
 
 /** A fine-grained recipe ensures a PT pupil change never invalidates the
@@ -205,10 +221,8 @@ export class CatalogGpuCompiler {
       : [{id:'rig-behind-face',source:staticLayers.behindFace}]
     for(const item of backParts) {
       const base=item.source
-      sourceParts.push({id:item.id,part:{
-        source:base,crop:{x:0,y:0,width:base.width,height:base.height},
-        fullWidth:base.width,fullHeight:base.height
-      }})
+      const cropped=cropCatalogPart(base)
+      if(cropped)sourceParts.push({id:item.id,part:cropped})
     }
     // A matching source revision is mandatory; otherwise keep the PNG instead
     // of presenting a stale or wrong model.
@@ -223,15 +237,15 @@ export class CatalogGpuCompiler {
       : staticLayers.inFrontOfFace ? [{id:'rig-front',source:staticLayers.inFrontOfFace}] : []
     for(const item of frontParts){
       const front=item.source
-      sourceParts.push({id:item.id,part:{
-        source:front,crop:{x:0,y:0,width:front.width,height:front.height},
-        fullWidth:front.width,fullHeight:front.height
-      }})
+      const cropped=cropCatalogPart(front)
+      if(cropped)sourceParts.push({id:item.id,part:cropped})
     }
+    if(!sourceParts.length)return null
+    const visible=catalogVisibleUnion(sourceParts.map(item=>item.part))
     return sourceParts.map(({id,part})=>({
       textureId:'catalog:'+layer.element.id+':'+id,
       source:part.source,
-      element:placeCatalogPart(part,layer.element)
+      element:placeCatalogPart(part,layer.element,visible)
     }))
   }
 

@@ -36,7 +36,7 @@ const moduleUnderTest=load('src/renderer/src/features/videoStudioRebuild/catalog
   },
   '../../../../shared/videoStageGeometry':{videoCharacterElementSize:e=>({width:e.width,height:e.height})}
 })
-const {CatalogGpuCompiler,cropCatalogPart,catalogFaceRecipe,placeCatalogPart}=moduleUnderTest
+const {CatalogGpuCompiler,cropCatalogPart,catalogFaceRecipe,placeCatalogPart,catalogVisibleUnion}=moduleUnderTest
 const flush=()=>new Promise(resolve=>setImmediate(resolve))
 const actor=(x=0)=>({
   elementId:'actor',automaticBlink:false,hidden:false,
@@ -206,4 +206,19 @@ test('real wardrobe and front hair have independent ordered GPU identities',asyn
     assert.ok(copied.includes(upperClothing))
     assert.notStrictEqual(layers[1].source,layers.at(-1).source)
   }finally{global.document=old}
+})
+
+test('trimmed Studio character uses the union of body, PT pupils and hair, not full Fabricator sheet',()=>{
+  const a={source:{width:20,height:100},crop:{x:45,y:40,width:80,height:200},fullWidth:256,fullHeight:384}
+  const b={source:{width:16,height:10},crop:{x:60,y:82,width:12,height:8},fullWidth:256,fullHeight:384}
+  const union=catalogVisibleUnion([a,b])
+  assert.deepEqual(union,{x:45,y:40,width:80,height:200})
+  const actor={kind:'character',x:2,y:-4,width:40,height:60,rotation:0,flipX:false}
+  assert.deepEqual(placeCatalogPart(a,actor,union),{x:2,y:-4,width:40,height:60,rotation:0,flipX:false})
+  const p=placeCatalogPart(b,actor,union)
+  assert.equal(p.width,6)
+  assert.equal(p.height,2.4)
+  assert.ok(p.x<actor.x&&p.y<actor.y,'pupil offset is relative to visible character, not entire model sheet')
+  const mirrored=placeCatalogPart(b,{...actor,flipX:true},union)
+  assert.equal(mirrored.x,actor.x-(p.x-actor.x))
 })
