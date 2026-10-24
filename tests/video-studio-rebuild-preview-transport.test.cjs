@@ -138,3 +138,25 @@ test('real snapshot planner integrates with seek transport: two GPU layers only 
   assert.equal(h.errors.length,0)
   h.transport.dispose()
 })
+
+test('non-blocking compiled GPU character sprites bypass saved PNG only after a complete rig is ready',async()=>{
+  const rig={sprites(){return [{textureId:'catalog:actor:rig-behind-face',
+    source:{width:16,height:16},element:{x:0,y:0,width:12,height:25,rotation:0}}]},dispose(){}}
+  // The optional catalog contract is passed as the final constructor argument.
+  const h=setup()
+  h.transport.dispose()
+  let now=0
+  const calls=[]
+  const media={sync(){},currentFrame(frame){return frame},activeFrameSources(){return new Map()},dispose(){}}
+  const gpu={draw(layers){calls.push(layers.map(l=>l.textureId))},
+    stats(){return{capBytes:96*1024*1024,retainedEstimatedBytes:0}},dispose(){}}
+  const engine={durationFrames:60,evaluate(frame){return{frame,background:{color:'#000000'},
+    characters:[{elementId:'actor',authoredState:{element:{id:'actor'}},automaticBlink:false}],
+    layers:[{type:'element',kind:'character',element:{id:'actor',kind:'character'},
+      assetDataUrl:'data:image/png;base64,SAVED'}]}}}
+  const v=new VideoStudioPreviewTransport(engine,gpu,media,()=>{},()=>{},rig)
+  v.seek(1)
+  await flush();await flush()
+  assert.ok(calls.some(items=>items.includes('catalog:actor:rig-behind-face')))
+  v.dispose()
+})

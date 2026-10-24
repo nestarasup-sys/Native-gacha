@@ -1,5 +1,6 @@
 import type { VideoSceneFrame } from '../../../../shared/videoSceneIR'
 import { planSnapshotSprites } from '../../../../shared/videoStudioRebuild/previewSpritePlan'
+import type { CatalogGpuCompiler } from './catalogGpuCompiler'
 import { createPreviewBalloonCanvas, previewBalloonKey } from './balloonCanvas'
 import { VideoStudioBoundedMemo } from '../../../../shared/videoStudioNext/boundedMemo'
 import { VideoStudioFrameEngine } from '../../../../shared/videoStudioRebuild/frameEngine'
@@ -50,6 +51,7 @@ export class VideoStudioPreviewTransport {
   private requestId = 0
   private inFlight = false
   private lastRenderedFrame = -1
+  private dirtySprites = false
   private presented = 0
   private skipped = 0
   private startedAt = 0
@@ -62,7 +64,8 @@ export class VideoStudioPreviewTransport {
     private readonly gpu: GachaGpuStage,
     private readonly media: VideoStudioMediaEngine,
     private readonly notify: (status: RebuiltPreviewStatus) => void,
-    private readonly onError: (error: Error) => void
+    private readonly onError: (error: Error) => void,
+    private readonly catalog?: CatalogGpuCompiler
   ) {
     this.emit()
     this.animation = requestAnimationFrame(this.tick)
@@ -78,7 +81,7 @@ export class VideoStudioPreviewTransport {
       this.frame = Math.max(0, Math.min(this.engine.durationFrames - 1, clock))
       if (this.frame === this.engine.durationFrames - 1) this.playing = false
     }
-    if (!this.inFlight && this.frame !== this.lastRenderedFrame) this.request('visible')
+    if (!this.inFlight && (this.dirtySprites || this.frame !== this.lastRenderedFrame)) this.request('visible')
     if (now - this.lastNotifyAt >= 100) {
       this.lastNotifyAt = now
       this.emit()
@@ -147,6 +150,21 @@ export class VideoStudioPreviewTransport {
             flipX:layer.element.flipX}})
         continue
       }
+      // An experimental real-catalog rig is used only if ALL current parts
+      // are ready. Missing models, old projects and transitions display the
+      // exact saved PNG immediately instead of waiting for catalog raster.
+      if (layer.kind === 'character' && this.catalog) {
+        const actor = scene.characters?.find(item => item.elementId === layer.element.id)
+        const sprites = this.catalog.sprites(layer, actor)
+        const budget = this.gpu.stats().capBytes ?? Number.POSITIVE_INFINITY
+        const inUse = output.reduce((bytes,item) => {
+          const size=item.source as {naturalWidth?:number;naturalHeight?:number;width?:number;height?:number;videoWidth?:number;videoHeight?:number}
+          return bytes + Number(size.naturalWidth??size.videoWidth??size.width??0)
+            *Number(size.naturalHeight??size.videoHeight??size.height??0)*4
+        },0)
+        const needed = sprites?.reduce((bytes,item) => bytes+item.source.width*item.source.height*4,0) ?? 0
+        if(sprites?.length && inUse+needed<=budget){output.push(...sprites);continue}
+      }
       // Decode only current absolute-frame transition sprites, retaining them
       // as independent GPU textures in the same document z-order.
       const planned = planSnapshotSprites(layer, scene.characters ?? [])
@@ -162,6 +180,7 @@ export class VideoStudioPreviewTransport {
 
   private request(priority: 'visible'|'seek') {
     if (this.disposed) return
+    this.dirtySprites=false
     const requestId = ++this.requestId
     const scene = this.engine.evaluate(this.frame)
     this.media.sync(scene, this.playing)
@@ -183,6 +202,13 @@ export class VideoStudioPreviewTransport {
       this.inFlight = false
       this.emit()
     })
+  }
+
+  /** Catalog pass compilation finished: refresh the current absolute frame
+   * without restarting Play or preparing future transition samples. */
+  refreshGpuSources():void {
+    if(this.disposed)return
+    this.dirtySprites=true
   }
 
   seek(frame: number) {
@@ -223,6 +249,7 @@ export class VideoStudioPreviewTransport {
     this.scheduler.dispose()
     this.images.clear()
     this.balloons.clear()
+    this.catalog?.dispose()
     this.media.dispose()
     this.gpu.dispose()
   }

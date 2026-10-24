@@ -10,6 +10,7 @@ import { applyVideoStudioEditorCommand } from '../../../../shared/videoStudioNex
 import { GachaGpuStage } from './gachaGpuStage'
 import { VideoStudioMediaEngine } from './mediaEngine'
 import { VideoStudioPreviewTransport } from './previewTransport'
+import { CatalogGpuCompiler } from './catalogGpuCompiler'
 import './rebuild.css'
 
 type Props = { onEditorActiveChange?: (active: boolean) => void }
@@ -32,6 +33,7 @@ export function VideoStudioRebuildPage({onEditorActiveChange}:Props) {
   const [status,setStatus]=useState('Selecione um projeto. Nenhum arquivo será modificado.')
   const [gpuStats,setGpuStats]=useState('')
   const [rendering,setRendering]=useState(false)
+  const [catalogGpuExperimental,setCatalogGpuExperimental]=useState(false)
   const canvas=useRef<HTMLCanvasElement|null>(null)
   const transport=useRef<VideoStudioPreviewTransport|null>(null)
   const [presented,setPresented]=useState(0)
@@ -115,6 +117,8 @@ export function VideoStudioRebuildPage({onEditorActiveChange}:Props) {
     catch(e){setStatus('GPU indisponível: '+String(e));return}
     const media=new VideoStudioMediaEngine(studio.id,studio.videoTimeline?.videoAssets??[],2,
       {master:studio.videoTimeline?.videoAudio,clips:studio.videoTimeline?.videoClips??[]})
+    const catalog = catalogGpuExperimental
+      ? new CatalogGpuCompiler(()=>transport.current?.refreshGpuSources()) : undefined
     const instance=new VideoStudioPreviewTransport(engine,graph,media,
       state=>{
         setFrame(state.frame)
@@ -124,7 +128,7 @@ export function VideoStudioRebuildPage({onEditorActiveChange}:Props) {
         setSkipped(state.skippedFrames)
         setGpuStats(JSON.stringify({retainedEstimatedBytes:state.textureBytes}))
       },
-      error=>setStatus('Falha da prévia GPU: '+error.message))
+      error=>setStatus('Falha da prévia GPU: '+error.message),catalog)
     transport.current=instance
     // Scene recompilation must retain the absolute playhead on Undo/Redo.
     instance.seek(Math.min(viewFrame,engine.durationFrames-1))
@@ -132,7 +136,7 @@ export function VideoStudioRebuildPage({onEditorActiveChange}:Props) {
       if(transport.current===instance)transport.current=null
       instance.dispose()
     }
-  },[engine,studio?.id])
+  },[engine,studio?.id,catalogGpuExperimental])
 
   const seek=(nextFrame:number)=>{
     transport.current?.seek(nextFrame)
@@ -248,6 +252,12 @@ export function VideoStudioRebuildPage({onEditorActiveChange}:Props) {
               Silenciar todos os vídeos
             </label>
           </div>
+          <label className="video-rebuild-note">
+            <input type="checkbox" aria-label="Camadas Gacha GPU experimentais"
+              checked={catalogGpuExperimental}
+              onChange={event=>setCatalogGpuExperimental(event.target.checked)}/>
+            Ativar camadas reais de catálogo (experimental, fallback PNG, paridade ainda em validação)
+          </label>
           <p className="video-rebuild-note">A GPU anima posição, escala e mistura snapshots nas transições. Boca, piscada, máscaras e pupilas PT independentes ainda exigem sprites do catálogo e golden visual Windows.</p>
           <small>{gpuStats}</small>
         </aside>
