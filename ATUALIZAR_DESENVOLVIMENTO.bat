@@ -7,7 +7,7 @@ if errorlevel 1 (
 )
 
 rem Branch oficial do desenvolvimento do Native Gacha.
-set "DEV_BRANCH=feature/model-source-editor"
+set "DEV_BRANCH=Main-desenvolvimento"
 
 echo ================================================
 echo   NATIVE GACHA - ATUALIZAR DESENVOLVIMENTO
@@ -57,6 +57,13 @@ if errorlevel 1 (
 )
 if errorlevel 1 (
   echo ERRO: Nao foi possivel selecionar a branch de desenvolvimento.
+  goto :error
+)
+
+rem Garante que "git pull" futuro acompanhe a mesma branch remota.
+git branch --set-upstream-to="origin/%DEV_BRANCH%" "%DEV_BRANCH%" >nul
+if errorlevel 1 (
+  echo ERRO: Nao foi possivel configurar o upstream da branch.
   goto :error
 )
 
