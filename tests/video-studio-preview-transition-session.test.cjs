@@ -237,3 +237,21 @@ test('Gacha transition prefetch yields between real rig renders rather than hold
   assert.deepEqual(frames.slice(0, 4), [11,15,19,23])
   session.dispose()
 })
+
+test('after seek, stale actor identity cannot reject real Gacha frames from the next boundary', async () => {
+  const frames = []
+  const renderer = { render: async (span, frame) => {
+    frames.push({ boundary: span.boundaryFrame, frame })
+    return { ...span.from, imageDataUrl: 'exact-' + span.boundaryFrame + '-' + frame }
+  }, dispose() {} }
+  const session = new Session('studio', renderer)
+  const ready = []
+  session.requestFrame(spans, 18, [actor], (_id, frame) => ready.push(frame))
+  await eventually(() => ready.includes(18), 'paused first frame missing')
+  session.cancelPending()
+  await session.prepareAhead(spans, 30, [actor])
+  const renderedNext = session.get(spans[1], 51, actor)
+  assert.equal(renderedNext?.imageDataUrl, 'exact-65-51')
+  assert.ok(frames.some(x => x.boundary === 65))
+  session.dispose()
+})
