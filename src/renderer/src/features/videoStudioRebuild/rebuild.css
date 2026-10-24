@@ -35,3 +35,8 @@
 
 .video-rebuild-lane>div>button.video-rebuild-clip{min-width:5px;border-radius:3px;background:#7b99d0;border:1px solid #a5b8e0}
 .video-rebuild-lane>div>button.video-rebuild-clip.selected{background:#d4b878;border-color:#ffe1a2}
+
+.video-rebuild-actor-controls{display:grid;gap:7px;margin:12px 0;border-top:1px solid #455878;padding-top:8px}
+.video-rebuild-actor-controls h4{margin:2px 0}
+.video-rebuild-actor-controls label{display:grid;gap:3px;font-size:12px}
+.video-rebuild-actor-controls input{max-width:100%;background:#101827;color:#edf2fb;border:1px solid #546486;border-radius:4px;padding:6px}

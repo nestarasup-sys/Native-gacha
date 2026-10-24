@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { StudioDocument, VideoStudioCardSummary } from '../../../../shared/studio'
 import { VideoStudioFrameEngine } from '../../../../shared/videoStudioRebuild/frameEngine'
 import { splitCharacterAt } from '../../../../shared/videoStudioRebuild/rebuildEditor'
+import { setActorStageTransform } from '../../../../shared/videoStudioRebuild/actorTransformEditor'
 import { splitTextClipAt, splitVideoClipAt } from '../../../../shared/videoStudioRebuild/rebuildClipEditor'
 import { RebuildDocumentHistory } from '../../../../shared/videoStudioRebuild/documentHistory'
 import { applyVideoStudioEditorCommand } from '../../../../shared/videoStudioNext/editorCore'
@@ -40,6 +41,8 @@ export function VideoStudioRebuildPage({onEditorActiveChange}:Props) {
   const engine=useMemo(()=>studio?.videoTimeline ? new VideoStudioFrameEngine(studio):null,[studio])
   const duration=engine?.durationFrames??1
   const viewFrame=Math.min(frame,duration-1)
+  const activeActor=studio?.elements.find(e=>e.kind==='character'&&e.id===selected)
+  const stageActor=activeActor?{...activeActor,...studio?.videoTimeline?.characterTransforms?.[selected]}:null
   useEffect(()=>{onEditorActiveChange?.(Boolean(studio));return()=>onEditorActiveChange?.(false)},[Boolean(studio),onEditorActiveChange])
   useEffect(()=>{
     let mounted=true
@@ -161,6 +164,22 @@ export function VideoStudioRebuildPage({onEditorActiveChange}:Props) {
             type:'set-track-settings',trackId:selected,
             settings:{...doc.videoTimeline?.trackSettings?.[selected],locked:!doc.videoTimeline?.trackSettings?.[selected]?.locked}
           },now()))}>{studio.videoTimeline?.trackSettings?.[selected]?.locked?'Desbloquear faixa':'Bloquear faixa'}</button>}
+          {stageActor&&<div className="video-rebuild-actor-controls">
+            <h4>Transformação do personagem</h4>
+            {(['x','y','rotation','characterScale'] as const).map(field=><label key={field}>
+              {field==='x'?'Posição X':field==='y'?'Posição Y':field==='rotation'?'Rotação':'Escala %'}
+              <input aria-label={'Personagem '+field} type="number"
+                min={field==='characterScale'?10:field==='rotation'?-360:-100}
+                max={field==='characterScale'?400:field==='rotation'?360:100}
+                value={stageActor[field]??(field==='characterScale'?100:0)}
+                disabled={Boolean(studio.videoTimeline?.trackSettings?.[selected]?.locked)}
+                onChange={event=>edit(doc=>setActorStageTransform(doc,selected,{[field]:Number(event.target.value)},now()))}/>
+            </label>)}
+            <button disabled={Boolean(studio.videoTimeline?.trackSettings?.[selected]?.locked)}
+              onClick={()=>edit(doc=>setActorStageTransform(doc,selected,{flipX:!stageActor.flipX},now()))}>
+              {stageActor.flipX?'Remover espelho horizontal':'Espelhar horizontalmente'}
+            </button>
+          </div>}
           <p className="video-rebuild-note">A GPU anima posição, escala e mistura snapshots nas transições. Boca, piscada, máscaras e pupilas PT independentes ainda exigem sprites do catálogo e golden visual Windows.</p>
           <small>{gpuStats}</small>
         </aside>
