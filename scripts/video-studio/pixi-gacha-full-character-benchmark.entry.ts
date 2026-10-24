@@ -5,6 +5,8 @@ import type { CustomizerCharacter } from '../../src/shared/customizer'
 import { PixiGachaLayerStack, type PixiLayerPort } from '../../src/renderer/src/features/videoStudio/pixiGachaLayerStack'
 import { compareGachaPixels } from '../../src/renderer/src/features/videoStudio/pixiGachaParity'
 import { PixiGachaVisualGate } from '../../src/renderer/src/features/videoStudio/pixiGachaVisualGate'
+import { PixiGachaArticulatedSession } from '../../src/renderer/src/features/videoStudio/pixiGachaArticulatedSession'
+import { mixPoseArtwork } from '../../src/shared/videoCharacterInterpolation'
 
 declare global {
   interface Window {
@@ -102,6 +104,38 @@ void (async () => {
   } finally {
     if (app.renderer) app.destroy(true,{children:true})
   }
+  // Third scenario: NEW articulated full-character engine. Unlike the
+  // layered A/B fixture above, this does NOT reconstruct body, clothing,
+  // front/back hair at each intermediate pose. A failed pixel gate reports
+  // the exact first rejected frame and retains the legacy Canvas preview.
+  let articulated: Record<string, unknown> = {}
+  const disabled = { enabled:false, color:'#000000', opacity:0, softness:.5, size:.1, offsetY:0 }
+  const effects = { shadow:disabled, blush:disabled, mouthBlush:disabled }
+  const actor = await PixiGachaArticulatedSession.create(character,source,pose1,pose2,provider)
+  const articulatedStarted = performance.now()
+  let accepted = 0
+  try {
+    for (let frame=1;frame<=14;frame++) {
+      const progress=frame/15
+      const appearance=appearances[frame<8?0:1]
+      const mode=frame%6===0?'blink':frame%3===0?'talk':'idle'
+      try {
+        await actor.render(mixPoseArtwork(pose1,pose2,progress),appearance,{},
+          effects,mode as 'blink'|'talk'|'idle')
+        accepted++
+      } catch (error) {
+        articulated={firstRejectedFrame:frame,rejection:
+          error instanceof Error ? error.message : String(error)}
+        break
+      }
+    }
+    articulated={...articulated,framesAccepted:accepted,targetFrames:14,
+      elapsedMs:performance.now()-articulatedStarted,stats:actor.stats(),
+      eligibleForProduction:accepted===14}
+  } finally {
+    actor.dispose()
+  }
+
   // Do not require GPU parity to be perfect yet: this is the experimental
   // measurement that determines *whether* we can turn the backend on.
   // A failed gate is a product decision, not a failure of the oracle itself.
@@ -109,7 +143,7 @@ void (async () => {
   window.__fullGachaGpuReport = {
     ok:true,backend:'webgl2',fixture:'Gacha actual characterRenderer',
     poses:2,faceModes:['idle','talk','blink'],frames,
-    samples,rendererStats,measuredCanvasMs:canvasMs,measuredGpuMs:gpuMs,
+    samples,rendererStats,measuredCanvasMs:canvasMs,measuredGpuMs:gpuMs,articulated,
     rejectedFrames:mismatch,eligibleForProduction:mismatch===0,
   }
 })().catch((error:unknown)=>{
