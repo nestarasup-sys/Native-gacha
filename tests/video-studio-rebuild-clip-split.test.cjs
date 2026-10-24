@@ -15,7 +15,7 @@ const load=(name,deps={})=>{
 }
 const audio=load('../src/shared/videoAudio.ts')
 const video=load('../src/shared/videoMedia.ts',{'./videoAudio':audio})
-const editing=load('../src/shared/videoStudioRebuild/rebuildEditor.ts',{'../videoMedia':video,'../videoCharacterTimeline':{}})
+const editing=load('../src/shared/videoStudioRebuild/rebuildClipEditor.ts',{'../videoMedia':video})
 const fixture=()=>({
   schemaVersion:1,id:'one',title:'Project',updatedAt:'old',
   assets:[{id:'x',dataUrl:'data:image/png;base64,UNCHANGED'}],elements:[],
