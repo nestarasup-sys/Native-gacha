@@ -179,6 +179,9 @@ async function run(){
       const bases=Object.fromEntries(elements.map((element,i)=>[
         element.id,{element,imageDataUrl:baseImages[i]}
       ]))
+      const speech={id:crypto.randomUUID(),kind:'speech',text:'Teste de fala na GPU',
+        speakerCharacterId:elements[0].id,x:0,y:-32,width:34,height:17,
+        rotation:0,zIndex:8}
       const keys=elements.flatMap((element,i)=>[120,240].map((frame,j)=>({
         id:'key-'+i+'-'+frame,elementId:element.id,frame,
         poseSlot:j+1,expressionCollectionId:null,expressionPresetId:null,faceMode:'idle',
@@ -188,9 +191,12 @@ async function run(){
       const studio={schemaVersion:1,id:'${fourId}',title:'FOUR ACTORS SYNTHETIC ${runId}',
         color:'#526ea9',createdAt:stamp,updatedAt:stamp,backgroundColor:'#101725',
         backgroundAssetId:null,backgroundX:0,backgroundY:0,backgroundWidth:100,
-        backgroundHeight:100,backgroundRotation:0,assets,elements,
+        backgroundHeight:100,backgroundRotation:0,assets,elements:[...elements,speech],
         videoTimeline:{schemaVersion:1,frameRate:60,durationFrames:300,playheadFrame:0,
-          playing:false,characterKeys:keys,textClips:[],saveMarkers:[],characterBases:bases}}
+          playing:false,characterKeys:keys,textClips:[{
+            id:crypto.randomUUID(),elementId:speech.id,kind:'speech',startFrame:45,endFrame:180,
+            state:speech
+          }],saveMarkers:[],characterBases:bases}}
       await window.desktop.saveVideoStudio(studio)
       return true
     })()`)
