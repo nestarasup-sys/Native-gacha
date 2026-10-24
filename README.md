@@ -2,7 +2,7 @@
 
 Aplicativo desktop de criação de personagens, customização e composição de cenas, feito com **Electron + React + TypeScript**. Este repositório registra uma **refatoração incremental** do aplicativo que já funciona, preservando formatos de arquivos e contratos IPC.
 
-> **Estado atual: em reorganização arquitetural.** O build e a execução Electron no Windows ainda precisam de validação com dependências completas. **Não execute com bibliotecas pessoais sem backup.** O **Video Studio está congelado**, fora do escopo de novas mudanças.
+> **Estado atual: em reorganização arquitetural.** O **Video Studio está em reconstrução ativa** na branch `Main-desenvolvimento`, ainda sem validação completa de reprodução e exportação pesadas no Windows. **Não execute com bibliotecas pessoais sem backup.**
 
 ## Fluxo principal do produto
 
@@ -34,6 +34,24 @@ npm run dev
 ```
 
 > Algumas dependências são nativas e `postinstall` instala Electron; o setup completo deve ser executado no ambiente de desenvolvimento. Os testes de arquitetura e refatoração podem ser executados sem iniciar o desktop.
+
+## Branch oficial e atalhos de desenvolvimento (Windows)
+
+A branch de trabalho do Native Gacha é **`Main-desenvolvimento`** (respeite maiúsculas/minúsculas). As mudanças do Video Studio e os testes de regressão são feitas nessa branch; `main` não é atualizada automaticamente.
+
+- **`ATUALIZAR_DESENVOLVIMENTO.bat`**: verifica o clone `origin`, recusa alterações locais não salvas, faz fetch da branch oficial, seleciona `Main-desenvolvimento`, configura o upstream e faz `git pull --ff-only`. Não executa `reset --hard`, `clean` ou rebase.
+- **`ABRIR_DESENVOLVIMENTO.bat`**: inicia o Electron no Windows sem chamar o `predev` que migra dados do perfil G-V5 legado.
+
+**Primeira atualização em clones antigos:** se o BAT *já presente no computador* ainda cita `feature/model-source-editor`, o usuário precisa primeiro trocar para a branch nova pelo Git ou copiar a versão atualizada do BAT do GitHub. O script antigo não muda sozinho antes de ser atualizado. Com a pasta limpa:
+
+```bash
+git fetch origin Main-desenvolvimento
+git switch --track -c Main-desenvolvimento origin/Main-desenvolvimento
+```
+
+Se a branch local `Main-desenvolvimento` já existir, use `git switch Main-desenvolvimento` no lugar do segundo comando, seguido de `git pull --ff-only origin Main-desenvolvimento`.
+
+Para validar a reconstrução atual do Video Studio: `npm run test:video:next`, `npm run test:export:synthetic`, `npm run typecheck` e `npm run build`. Testes sintéticos e build verde **não** substituem validação visual e teste real de estresse de 180 s.
 
 ## Estrutura existente (sem mudança agressiva de diretórios)
 
