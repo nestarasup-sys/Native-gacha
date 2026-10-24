@@ -1388,7 +1388,22 @@ async function registerFabricatorHandlers(): Promise<void> {
         const source = await videoLibrary.resolveProjectMediaDependency(studioId, asset.id, asset)
         videoPreviewToolsPromise ??= resolveVideoStudioTools().then(async (paths) => ({ ffmpeg: await probeVideoStudioFfmpeg(paths.ffmpeg) }))
         void videoPreviewToolsPromise.catch(() => { videoPreviewToolsPromise = null })
-        const tools = await videoPreviewToolsPromise
+        let tools: { ffmpeg: Awaited<ReturnType<typeof probeVideoStudioFfmpeg>> }
+        try {
+          tools = await videoPreviewToolsPromise
+        } catch (error) {
+          // A proxy is optional. If the pinned ffmpeg/ffprobe pair has not
+          // been installed yet, Chromium can still play the original source.
+          // Do not throw one identical Electron IPC error for every clip.
+          if (error instanceof Error && error.message.includes('Prepare resources/video-tools')) {
+            return {
+              sourceSha256: '',
+              proxyUrl: `gacha-video://studio/${studioId}/${asset.id}`,
+              waveformUrl: null,
+            }
+          }
+          throw error
+        }
         const record = await videoPreviewProxyStore.ensure({ sourcePath: source.path, ffmpeg: tools.ffmpeg })
         return {
           sourceSha256: record.sourceSha256,

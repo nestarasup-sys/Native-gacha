@@ -11,6 +11,7 @@ on:
       - 'package.json'
       - 'package-lock.json'
       - 'ATUALIZAR_DESENVOLVIMENTO.bat'
+      - 'ABRIR_DESENVOLVIMENTO.bat'
       - '.github/workflows/ci-core.yml'
   pull_request:
     branches: [main, Main-desenvolvimento, refactor/shared-character-core]

@@ -19,3 +19,10 @@ test('verified media setup script rejects checksum mismatch and version alias', 
   assert.match(script, /latest/)
   assert.match(script, /forbiddenConfigureFlags/)
 })
+
+test('missing proxy ffmpeg degrades to authorized original source without repeated Electron IPC stack traces', () => {
+  const main = fs.readFileSync(path.join(__dirname, '../electron/main.ts'), 'utf8')
+  assert.match(main, /error\.message\.includes\('Prepare resources\/video-tools'\)/)
+  assert.match(main, /proxyUrl: `gacha-video:\/\/studio\/\$\{studioId\}\/\$\{asset\.id\}`/)
+  assert.match(main, /throw error/)
+})
