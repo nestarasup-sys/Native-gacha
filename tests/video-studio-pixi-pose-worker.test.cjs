@@ -5,7 +5,8 @@ const fs=require('node:fs')
 const path=require('node:path')
 const ts=require('typescript')
 function compile(file,deps={}){
- const code=ts.transpile(fs.readFileSync(path.resolve(__dirname,file),'utf8'),
+ const source=fs.readFileSync(path.resolve(__dirname,file),'utf8').replaceAll('import.meta.url', "'file:///test/'")
+ const code=ts.transpile(source,
    {module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022})
  const module={exports:{}}
  new Function('require','module','exports','Worker',code)(name=>{
