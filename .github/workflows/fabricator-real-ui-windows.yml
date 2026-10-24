@@ -62,6 +62,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: fabricator-real-ui-windows-${{ github.run_id }}
-          path: out/dev-ai/runs/**/fabricator-real-ui-captures/
+          path: |
+            out/dev-ai/runs/**/fabricator-real-ui-captures/
+            out/dev-ai/runs/**/catalog-gpu-preview.png
+            out/dev-ai/runs/**/catalog-gpu-smoke.json
           if-no-files-found: warn
           retention-days: 14
