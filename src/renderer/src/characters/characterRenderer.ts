@@ -1056,7 +1056,7 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
    * legacy all-in-one Canvas and the GPU-ready layered compositor.
    * Only the drawing target changes. No second face calibration pipeline.
    */
-  const renderFaceOverlay = async (
+  const paintPreparedFace = async (
     targetContext: CanvasRenderingContext2D,
     currentAppearance: CustomizerFaceAppearance | undefined = appearance,
     studioFaceTransforms?: StudioFaceTransforms,
@@ -1124,7 +1124,7 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
     studioFaceMode?: StudioFaceMode
   ) => {
     faceContext.clearRect(0, 0, faceLayer.width, faceLayer.height)
-    await renderFaceOverlay(faceContext, currentAppearance, studioFaceTransforms, expressionEffects, studioFaceMode)
+    await paintPreparedFace(faceContext, currentAppearance, studioFaceTransforms, expressionEffects, studioFaceMode)
     return {
       behindFace: rigLayers.behindFace,
       face: faceLayer,
@@ -1137,7 +1137,7 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
   const renderToCanvas = async (currentAppearance: CustomizerFaceAppearance | undefined = appearance, studioFaceTransforms?: StudioFaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: StudioFaceMode) => {
     context.clearRect(0, 0, canvas.width, canvas.height)
     context.drawImage(rigLayers.behindFace, 0, 0, canvas.width, canvas.height)
-    await renderFaceOverlay(context, currentAppearance, studioFaceTransforms, expressionEffects, studioFaceMode)
+    await paintPreparedFace(context, currentAppearance, studioFaceTransforms, expressionEffects, studioFaceMode)
     if (rigLayers.inFrontOfFace) context.drawImage(rigLayers.inFrontOfFace, 0, 0, canvas.width, canvas.height)
     if (shapeScale.x === 1 && shapeScale.y === 1) return { canvas, width: canvas.width, height: canvas.height }
     const output = document.createElement('canvas')
