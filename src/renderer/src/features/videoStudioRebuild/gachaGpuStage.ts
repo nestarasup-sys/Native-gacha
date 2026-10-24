@@ -9,6 +9,8 @@ export type GachaGpuLayer = Readonly<{
   opacity?: number
   /** Video textures need fresh pixels each frame without allocating a new texture. */
   dynamic?: boolean
+  /** Optional face/eye/pupil cutout in the sprite's local texture coordinates. */
+  mask?: Readonly<{ textureId: string; source: TexImageSource }>
 }>
 type CachedTexture = { texture: WebGLTexture; bytes: number; lastUsed: number; sourceId: number; width: number; height: number }
 
@@ -74,8 +76,12 @@ export class GachaGpuStage {
     ].join('\n'))
     const fragment = shader(gl.FRAGMENT_SHADER, [
       '#version 300 es','precision mediump float; in vec2 v_uv; out vec4 outColor;',
-      'uniform sampler2D u_tex; uniform float u_opacity;',
-      'void main(){outColor=texture(u_tex,v_uv)*u_opacity;}'
+      'uniform sampler2D u_tex; uniform sampler2D u_mask;',
+      'uniform float u_opacity; uniform float u_has_mask;',
+      'void main(){',
+      'float cutout = u_has_mask > 0.5 ? texture(u_mask,v_uv).a : 1.0;',
+      'outColor=texture(u_tex,v_uv)*u_opacity*cutout;',
+      '}'
     ].join('\n'))
     const program=gl.createProgram()
     if (!program) throw new Error('Programa GPU indisponível.')
@@ -95,7 +101,7 @@ export class GachaGpuStage {
     this.textures.clear();this.bytes=0
   }
 
-  private texture(id: string, source: TexImageSource): { texture: WebGLTexture; uploaded: boolean } {
+  private texture(id: string, source: TexImageSource, pinned: ReadonlySet<string>): { texture: WebGLTexture; uploaded: boolean } {
     const dim=source as {videoWidth?:number;naturalWidth?:number;width?:number;videoHeight?:number;naturalHeight?:number;height?:number}
     const width=Number(dim.videoWidth||dim.naturalWidth||dim.width)
     const height=Number(dim.videoHeight||dim.naturalHeight||dim.height)
@@ -118,7 +124,10 @@ export class GachaGpuStage {
     }
     const gl=this.gl
     while (this.bytes+bytes>this.maxTextureBytes && this.textures.size) {
-      const [key,entry]=[...this.textures.entries()].sort((a,b)=>a[1].lastUsed-b[1].lastUsed)[0]
+      const evictable=[...this.textures.entries()].filter(([key])=>!pinned.has(key))
+        .sort((a,b)=>a[1].lastUsed-b[1].lastUsed)[0]
+      if (!evictable) throw new Error('Camadas GPU simultâneas acima do orçamento.')
+      const [key,entry]=evictable
       gl.deleteTexture(entry.texture);this.textures.delete(key);this.bytes-=entry.bytes
     }
     const texture=gl.createTexture()
@@ -148,17 +157,29 @@ export class GachaGpuStage {
     const attr=gl.getAttribLocation(this.program,'a_pos')
     gl.enableVertexAttribArray(attr);gl.vertexAttribPointer(attr,2,gl.FLOAT,false,0,0)
     gl.uniform1i(gl.getUniformLocation(this.program,'u_tex'),0)
+    gl.uniform1i(gl.getUniformLocation(this.program,'u_mask'),1)
+    const pinned=new Set<string>()
     for (const layer of layers) {
       const e=layer.element
       const rect=videoStageRect(e.x,e.y,e.width,e.height)
       gl.activeTexture(gl.TEXTURE0)
-      const { texture, uploaded }=this.texture(layer.textureId,layer.source)
+      const { texture, uploaded }=this.texture(layer.textureId,layer.source,pinned)
+      pinned.add(layer.textureId)
       gl.bindTexture(gl.TEXTURE_2D,texture)
       // New allocations already have their current frame from texImage2D.
       // For stable video dimensions, change pixels via texSubImage2D without
       // reallocating GPU storage or uploading the first frame twice.
       if(layer.dynamic && !uploaded)
         gl.texSubImage2D(gl.TEXTURE_2D,0,0,0,gl.RGBA,gl.UNSIGNED_BYTE,layer.source)
+      if (layer.mask) {
+        if(layer.mask.textureId===layer.textureId && layer.mask.source!==layer.source)
+          throw new Error('Identidade GPU de máscara e arte conflitante.')
+        gl.activeTexture(gl.TEXTURE1)
+        const mask=this.texture(layer.mask.textureId,layer.mask.source,pinned)
+        pinned.add(layer.mask.textureId)
+        gl.bindTexture(gl.TEXTURE_2D,mask.texture)
+        gl.uniform1f(gl.getUniformLocation(this.program,'u_has_mask'),1)
+      } else gl.uniform1f(gl.getUniformLocation(this.program,'u_has_mask'),0)
       gl.uniform2f(gl.getUniformLocation(this.program,'u_center'),rect.centerX,rect.centerY)
       gl.uniform2f(gl.getUniformLocation(this.program,'u_size'),rect.width,rect.height)
       gl.uniform1f(gl.getUniformLocation(this.program,'u_angle'),e.rotation*Math.PI/180)

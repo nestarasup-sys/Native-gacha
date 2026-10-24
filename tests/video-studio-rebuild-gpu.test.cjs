@@ -10,7 +10,7 @@ function setup(){
     get(target,k) {
       const constants={VERTEX_SHADER:1,FRAGMENT_SHADER:2,COMPILE_STATUS:3,LINK_STATUS:4,ARRAY_BUFFER:5,
         STATIC_DRAW:6,BLEND:7,ONE:8,ONE_MINUS_SRC_ALPHA:9,FLOAT:10,TRIANGLE_STRIP:11,TEXTURE_2D:12,
-        TEXTURE0:13,RGBA:14,UNSIGNED_BYTE:15,LINEAR:16,TEXTURE_MIN_FILTER:17,TEXTURE_MAG_FILTER:18,
+        TEXTURE0:13,TEXTURE1:25,RGBA:14,UNSIGNED_BYTE:15,LINEAR:16,TEXTURE_MIN_FILTER:17,TEXTURE_MAG_FILTER:18,
         TEXTURE_WRAP_S:19,TEXTURE_WRAP_T:20,CLAMP_TO_EDGE:21,UNPACK_PREMULTIPLY_ALPHA_WEBGL:22,UNPACK_FLIP_Y_WEBGL:24,
         COLOR_BUFFER_BIT:23}
       if(Object.hasOwn(constants,k))return constants[k]
@@ -136,5 +136,32 @@ test('DOM image top must face screen top; explicit unflipped upload also applies
   const {Stage,canvas}=setup(),stage=new Stage(canvas,4096)
   stage.draw([sprite('top-red-bottom-blue')])
   stage.draw([sprite('video',8,8,true)])
+  stage.dispose()
+})
+
+test('independent left/right PT masks own persistent GPU textures and preserve body upload',()=>{
+  const {Stage,canvas,log}=setup(),stage=new Stage(canvas,8192)
+  const body=sprite('body')
+  const left=sprite('pupil-left'),right=sprite('pupil-right')
+  left.mask={textureId:'mask-left',source:{width:16,height:16}}
+  right.mask={textureId:'mask-right',source:{width:16,height:16}}
+  stage.draw([body,left,right])
+  assert.equal(log.uploads,5)
+  stage.draw([body,left,right])
+  assert.equal(log.uploads,5,'masks/pupils must not reupload on stable facial state')
+  right.mask={textureId:'mask-right',source:{width:8,height:8}}
+  stage.draw([body,left,right])
+  assert.equal(log.uploads,6,'changing right mask alone uploads one texture')
+  assert.equal(log.deleted,1)
+  assert.equal(stage.stats().textureCount,5)
+  stage.dispose()
+})
+
+test('GPU budget cannot evict a sprite still bound for the same rendered frame',()=>{
+  const {Stage,canvas,log}=setup(),stage=new Stage(canvas,1024)
+  const base=sprite('face',16,16)
+  base.mask={textureId:'mask',source:{width:16,height:16}}
+  assert.throws(()=>stage.draw([base]),/simultâneas acima do orçamento/)
+  assert.equal(log.deleted,0,'not allowed to silently evict an in-flight face texture')
   stage.dispose()
 })
