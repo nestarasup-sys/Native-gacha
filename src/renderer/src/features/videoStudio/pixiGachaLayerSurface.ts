@@ -1,5 +1,6 @@
 import type { PreparedGachaLayerFrame } from '../../characters/characterRenderer'
 import { PixiGachaLayerStack, type LayerStackMetrics, type PixiLayerPort } from './pixiGachaLayerStack'
+import { PixiGachaVisualGate, type GachaGpuGateSnapshot } from './pixiGachaVisualGate'
 
 type PixiModule = typeof import('pixi.js')
 type PixiApplication = import('pixi.js').Application
@@ -19,6 +20,7 @@ export class PixiGachaLayerSurface {
   readonly canvas: HTMLCanvasElement
   private readonly lost = { value: false }
   private disposed = false
+  private readonly parityGate = new PixiGachaVisualGate()
   private readonly stack: PixiGachaLayerStack
   private readonly onContextLost = (event: Event): void => {
     event.preventDefault()
@@ -67,16 +69,23 @@ export class PixiGachaLayerSurface {
     }
     this.stack.setLayers(layers)
     this.app.renderer.render(this.app.stage)
+    // Calibrate cold frames and repeat at sparse intervals. If the compositor
+    // differs from the exact Canvas, throw to drawGachaLayeredFrame's fallback.
+    if (this.parityGate.shouldCheck(layers)) {
+      const gpuPixels = this.app.renderer.extract.pixels(this.app.stage).pixels
+      this.parityGate.verify(layers, gpuPixels)
+    } else this.parityGate.noteFastFrame()
     return this.canvas
   }
 
-  stats(): LayerStackMetrics & { contextLost: boolean } {
-    return { ...this.stack.metrics(), contextLost: this.lost.value }
+  stats(): LayerStackMetrics & { contextLost: boolean; parity: GachaGpuGateSnapshot } {
+    return { ...this.stack.metrics(), contextLost: this.lost.value, parity: this.parityGate.snapshot() }
   }
 
   dispose(): void {
     if (this.disposed) return
     this.disposed = true
+    this.parityGate.dispose()
     this.canvas.removeEventListener('webglcontextlost', this.onContextLost)
     this.app.stage.removeChild(this.stack.stage as unknown as import('pixi.js').Container)
     this.stack.dispose()
