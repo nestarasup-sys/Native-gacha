@@ -4,12 +4,19 @@ const fs = require('node:fs')
 const path = require('node:path')
 const root = path.resolve(__dirname, '../..')
 const budgets = {
-  'src/renderer/src/features/customizer/CustomizerPage.tsx': 4053,
-  'electron/main.ts': 3147,
-  'src/renderer/src/features/videoStudio/VideoStudioEditor.tsx': 2613,
-  'src/renderer/src/features/studio/StudioPage.tsx': 1673,
+  'src/renderer/src/features/customizer/CustomizerPage.tsx': 2830,
+  'electron/main.ts': 2500,
+  'src/renderer/src/features/videoStudioRebuild/VideoStudioRebuildPage.tsx': 350,
+  'src/renderer/src/features/studio/StudioPage.tsx': 1590,
   'src/renderer/src/features/fabricator/FabricatorPage.tsx': 1085,
-  'src/renderer/src/ui/App.tsx': 862
+  'src/renderer/src/ui/App.tsx': 100,
+  'src/renderer/src/characters/characterRenderer.ts': 1110,
+  'src/renderer/src/characters/characterGeometry.ts': 75,
+  'src/renderer/src/characters/useStudioInspectorState.ts': 80,
+  'src/renderer/src/features/fabricator/wardrobe/WardrobeWorkspace.tsx': 630,
+  'src/renderer/src/characters/characterSourceResolver.ts': 100,
+  'src/renderer/src/features/roteiros/RoteirosPage.tsx': 560,
+  'src/renderer/src/features/roteiros/RoteiroSectionEditor.tsx': 280
 }
 function analyzeSource(content) {
   return {

@@ -14,6 +14,10 @@ import { AnimatorWorkspace } from './AnimatorWorkspace'
 import { DesignWorkspace } from './DesignWorkspace'
 import { ExpressionPresetWorkspace } from './ExpressionPresetWorkspace'
 import { FaceAnimatorWorkspace } from './FaceAnimatorWorkspace'
+import { ModelSourceEditor } from './ModelSourceEditor'
+import { broadcastModelSourceUpdate } from './models/modelSourceEvents'
+import { splitImage, mergeImages } from './models/partImages'
+import type { ModelSourceResult } from './models/modelSource'
 
 const sections: { id: string; label: string; icon: IconName }[] = [
   { id: 'Modelos', label: 'Modelos Dev', icon: 'sparkles' }, { id: 'Poses', label: 'Poses Dev', icon: 'expand' }, { id: 'Roupas', label: 'Roupas Dev', icon: 'shirt' }, { id: 'Olhos', label: 'Olhos Dev', icon: 'face' }, { id: 'Rosto', label: 'Rosto Dev', icon: 'face' }, { id: 'Preset Expressão Dev', label: 'Preset Expressão Dev', icon: 'face' }, { id: 'Animador Rosto Dev', label: 'Animador Rosto Dev', icon: 'face' }, { id: 'Cabeças extra', label: 'Cabeças extra dev', icon: 'face' }, { id: 'Cabelos Dev', label: 'Cabelos Dev', icon: 'bow' }, { id: 'Animador Dev', label: 'Animador Dev', icon: 'body' }, { id: 'Design Dev', label: 'Design Dev', icon: 'flower' }
@@ -43,8 +47,6 @@ function bytesToDataUrl(buffer: ArrayBuffer): string {
   }
   return `data:image/png;base64,${btoa(binary)}`
 }
-
-function makeId(): string { return crypto.randomUUID() }
 
 const DEFAULT_CHROMA_TOLERANCE = 74
 const MAX_CHROMA_TOLERANCE = 280
@@ -93,53 +95,6 @@ async function cleanSavedPartEdges(parts: ModelPart[], sourceDataUrl: string, to
   return cleaned
 }
 
-async function splitImage(part: ModelPart, axis: 'horizontal' | 'vertical'): Promise<ModelPart[]> {
-  const image = await imageFromDataUrl(part.dataUrl)
-  const baseImage = await imageFromDataUrl(part.chromaBaseDataUrl ?? part.dataUrl)
-  const firstWidth = axis === 'vertical' ? Math.floor(part.width / 2) : part.width
-  const firstHeight = axis === 'horizontal' ? Math.floor(part.height / 2) : part.height
-  const regions = axis === 'vertical'
-    ? [{ x: 0, y: 0, width: firstWidth, height: part.height }, { x: firstWidth, y: 0, width: part.width - firstWidth, height: part.height }]
-    : [{ x: 0, y: 0, width: part.width, height: firstHeight }, { x: 0, y: firstHeight, width: part.width, height: part.height - firstHeight }]
-  return Promise.all(regions.map(async (region, index) => {
-    const canvas = document.createElement('canvas')
-    canvas.width = region.width; canvas.height = region.height
-    canvas.getContext('2d')?.drawImage(image, region.x, region.y, region.width, region.height, 0, 0, region.width, region.height)
-    const baseCanvas = document.createElement('canvas')
-    baseCanvas.width = region.width; baseCanvas.height = region.height
-    baseCanvas.getContext('2d')?.drawImage(baseImage, region.x, region.y, region.width, region.height, 0, 0, region.width, region.height)
-    const sourceX = (part.sourceTransform?.x ?? part.x) + region.x
-    const sourceY = (part.sourceTransform?.y ?? part.y) + region.y
-    return { ...part, id: makeId(), name: `${part.name} ${index === 0 ? 'A' : 'B'}`, x: part.x + region.x, y: part.y + region.y, width: region.width, height: region.height, rotation: 0, jointAnchor: { x: part.x + region.x + region.width / 2, y: part.y + region.y + region.height / 2 }, sourceTransform: part.sourceTransform ? { x: sourceX, y: sourceY, width: region.width, height: region.height, rotation: part.sourceTransform.rotation, anchorVersion: 1, jointAnchor: { x: sourceX + region.width / 2, y: sourceY + region.height / 2 } } : undefined, chromaBaseSaved: true, chromaBaseDataUrl: baseCanvas.toDataURL('image/png'), dataUrl: canvas.toDataURL('image/png') }
-  }))
-}
-
-async function mergeImages(parts: ModelPart[]): Promise<ModelPart> {
-  const x = Math.min(...parts.map((part) => part.x)); const y = Math.min(...parts.map((part) => part.y))
-  const right = Math.max(...parts.map((part) => part.x + part.width)); const bottom = Math.max(...parts.map((part) => part.y + part.height))
-  const canvas = document.createElement('canvas'); canvas.width = Math.ceil(right - x); canvas.height = Math.ceil(bottom - y)
-  const context = canvas.getContext('2d')
-  if (!context) throw new Error('Não foi possível mesclar as peças.')
-  const baseCanvas = document.createElement('canvas'); baseCanvas.width = canvas.width; baseCanvas.height = canvas.height
-  const baseContext = baseCanvas.getContext('2d')
-  if (!baseContext) throw new Error('Não foi possível mesclar as bases do chroma.')
-  for (const part of parts) {
-    const image = await imageFromDataUrl(part.dataUrl)
-    const baseImage = await imageFromDataUrl(part.chromaBaseDataUrl ?? part.dataUrl)
-    context.save()
-    context.translate(part.x - x + part.width / 2, part.y - y + part.height / 2)
-    context.rotate(part.rotation * Math.PI / 180)
-    context.drawImage(image, -part.width / 2, -part.height / 2, part.width, part.height)
-    context.restore()
-    baseContext.save()
-    baseContext.translate(part.x - x + part.width / 2, part.y - y + part.height / 2)
-    baseContext.rotate(part.rotation * Math.PI / 180)
-    baseContext.drawImage(baseImage, -part.width / 2, -part.height / 2, part.width, part.height)
-    baseContext.restore()
-  }
-  return { id: makeId(), name: 'Peças mescladas', x, y, width: canvas.width, height: canvas.height, rotation: 0, chromaBaseSaved: true, chromaBaseDataUrl: baseCanvas.toDataURL('image/png'), dataUrl: canvas.toDataURL('image/png') }
-}
-
 export function FabricatorPage() {
   const [previewBackground] = usePreviewBackground()
   const [activeSection, setActiveSection] = useState('Modelos')
@@ -151,6 +106,8 @@ export function FabricatorPage() {
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [processing, setProcessing] = useState(false)
   const [chromaApplying, setChromaApplying] = useState(false)
+  const [modelSourceOpen, setModelSourceOpen] = useState(false)
+  const [modelSourcePublishing, setModelSourcePublishing] = useState(false)
   const [chromaValue, setChromaValue] = useState(DEFAULT_CHROMA_TOLERANCE)
   const [deletingSlot, setDeletingSlot] = useState<number | null>(null)
   const [progress, setProgress] = useState(0)
@@ -544,6 +501,45 @@ export function FabricatorPage() {
     }
     worker.onerror = () => { worker.terminate(); workerRef.current = null; setProcessing(false); setError('O processamento da imagem falhou.') }
     worker.postMessage({ id, sourceDataUrl, tolerance })
+  }
+
+
+  const publishEditedModelSource = async (result: ModelSourceResult): Promise<void> => {
+    const current = projectRef.current
+    if (!current || modelSourcePublishing || processing || chromaApplying || historyBusy) throw new Error('O modelo não está disponível para edição.')
+    setModelSourcePublishing(true)
+    setSaveState('saving')
+    if (savedTimer.current) clearTimeout(savedTimer.current)
+    try {
+      await persistProject(current)
+      const next: FabricatorProject = { ...current, sourceDataUrl: result.sourceDataUrl, parts: result.parts, tolerance: result.tolerance, chromaBaseTolerance: 0, chromaVersion: 2, updatedAt: new Date().toISOString() }
+      const { sourceDataUrl: _sourceDataUrl, parts, ...metadata } = next
+      const serialized = { ...metadata, parts: parts.map(({ dataUrl: _dataUrl, chromaBaseDataUrl: _baseData, ...part }) => part) }
+      const changedAssets: FabricatorAssetSave[] = result.parts.map(part => ({
+        id: part.id,
+        dataUrl: part.dataUrl,
+        ...(part.chromaBaseDataUrl ? { chromaBaseDataUrl: part.chromaBaseDataUrl } : {})
+      }))
+      const newSourceName = await window.desktop.publishFabricatorModelSource(serialized, result.sourceDataUrl, changedAssets)
+      const published: FabricatorProject = { ...next, sourceAssetName: newSourceName }
+      historyRef.current = emptyHistory()
+      setHistory(historyRef.current)
+      dirtyAssets.current.clear()
+      dirtyChromaBases.current.clear()
+      mixerSurfacesRef.current.clear()
+      projectRef.current = published
+      setProject(published)
+      setChromaValue(result.tolerance)
+      setSaveState('saved')
+      setModelSourceOpen(false)
+      broadcastModelSourceUpdate({ slot: published.slot, sourceAssetName: newSourceName })
+      window.dispatchEvent(new Event('fabricator:assets-updated'))
+    } catch (reason) {
+      setSaveState('error')
+      throw reason
+    } finally {
+      setModelSourcePublishing(false)
+    }
   }
 
   const applyChromaKey = () => {
@@ -998,6 +994,7 @@ export function FabricatorPage() {
         </nav>
       </aside>
 
+      {modelSourceOpen && project && <ModelSourceEditor project={project} onClose={() => { if (!modelSourcePublishing) setModelSourceOpen(false) }} onPublish={publishEditedModelSource} />}
       {activeSection === 'Design Dev' ? <DesignWorkspace /> : activeSection === 'Poses' ? <PoseWorkspace /> : activeSection === 'Roupas' ? <WardrobeWorkspace /> : activeSection === 'Olhos' ? <FaceComponentsWorkspace mode="eyes" /> : activeSection === 'Rosto' ? <FaceComponentsWorkspace mode="face" /> : activeSection === 'Preset Expressão Dev' ? <ExpressionPresetWorkspace modelSlot={activeSlot} /> : activeSection === 'Animador Rosto Dev' ? <FaceAnimatorWorkspace modelSlot={activeSlot} /> : activeSection === 'Cabeças extra' ? <HeadExtrasWorkspace /> : activeSection === 'Cabelos Dev' ? <HairWorkspace /> : activeSection === 'Animador Dev' ? <AnimatorWorkspace /> : (
         <section className="fabricator-model-editor" aria-label="Editor de modelos">
           <header className="model-slotbar">
@@ -1034,6 +1031,7 @@ export function FabricatorPage() {
                     <div className="model-chroma-adjust"><input id="model-chroma-range" aria-label="Intensidade do chroma key" type="range" min={project.chromaBaseTolerance ?? project.tolerance} max={MAX_CHROMA_TOLERANCE} value={Math.max(chromaValue, project.chromaBaseTolerance ?? project.tolerance)} disabled={chromaApplying || processing || historyBusy} onChange={(event) => setChromaValue(Number(event.target.value))} /><button className="model-chroma-apply" onClick={applyChromaKey} disabled={chromaApplying || processing || historyBusy || chromaValue === project.tolerance} type="button">{chromaApplying ? 'Aplicando…' : 'Aplicar'}</button></div>
                     <small>Arraste para ajustar em qualquer direção · Resetar restaura a importação</small>
                   </div>
+                  <button className="model-tool-button" onClick={() => setModelSourceOpen(true)} disabled={processing || chromaApplying || historyBusy || modelSourcePublishing || saveState === 'error'} title="Alterar permanentemente a largura e a altura das peças na imagem de origem" type="button"><Icon name="edit" /><span>Editar imagem original</span></button>
                   <button className="model-tool-button model-reset-button" onClick={() => void resetModel()} disabled={processing || chromaApplying || historyBusy} title="Voltar o modelo inteiro ao estado da imagem importada" type="button"><Icon name="reset" /><span>{processing ? 'Resetando…' : 'Resetar'}</span></button>
                   <button className={`model-tool-button model-mixer-toggle${mixerActive ? ' active' : ''}`} aria-pressed={mixerActive} onClick={() => { setMixerActive((active) => !active); setConnectMode(false); setConnectFromId(null) }} disabled={processing || chromaApplying || historyBusy} title="Pinte sobre a junta: o pincel edita a peça visível mais alta, mesmo que outra esteja selecionada" type="button"><Icon name="brush" /><span>Misturador</span></button>
                   <button className="model-tool-button model-mixer-clear" onClick={() => { setMixerActive(false); void restoreHistory('undo') }} disabled={history.undo[history.undo.length - 1]?.action !== 'mixer' || historyBusy || processing || chromaApplying} title="Limpar o último traço do Misturador" aria-label="Limpar último traço do Misturador" type="button"><Icon name="eraser" /></button>

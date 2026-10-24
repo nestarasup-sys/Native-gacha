@@ -1,0 +1,26 @@
+'use strict'
+const test = require('node:test')
+const assert = require('node:assert/strict')
+const { readFileSync } = require('node:fs')
+const { resolve } = require('node:path')
+
+const read = path => readFileSync(resolve(path), 'utf8')
+test('Poses DEV consome a montagem, sem trocar pelo PNG original', () => {
+  const poses = read('src/renderer/src/features/fabricator/PoseWorkspace.tsx')
+  const views = read('src/shared/fabricatorModelViews.ts')
+  const projection = read('src/renderer/src/features/fabricator/models/poseProjection.ts')
+  assert.match(poses, /from '\.\/models\/poseProjection'/)
+  assert.match(projection, /selectMountedModelSource\(model\)/)
+  assert.match(projection, /mounted\.parts\.map\(/)
+  assert.match(projection, /mounted\.joints\.map\(/)
+  assert.match(views, /kind: 'original'/)
+  assert.match(views, /kind: 'mounted'/)
+  assert.doesNotMatch(poses, /selectOriginalModelSource/)
+})
+test('Video Studio e Customizador continuam fora do domínio de salvamento do Fabricador', () => {
+  const writer = read('electron/domains/fabricator/modelWriter.ts')
+  const source = read('electron/domains/fabricator/modelSource.ts')
+  assert.doesNotMatch(writer, /\b(?:ipcMain|BrowserWindow|webContents)\b/)
+  assert.doesNotMatch(source, /\b(?:ipcMain|BrowserWindow|webContents)\b/)
+  assert.doesNotMatch(writer, /features\/videoStudio|features\/customizer/)
+})

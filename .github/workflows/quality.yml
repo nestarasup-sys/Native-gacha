@@ -14,7 +14,7 @@ on:
       - 'electron.vite.config.ts'
       - '.github/workflows/quality.yml'
   pull_request:
-    branches: [main]
+    branches: [main, refactor/shared-character-core]
   workflow_dispatch:
 
 permissions:

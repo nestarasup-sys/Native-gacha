@@ -12,7 +12,7 @@ on:
       - 'package-lock.json'
       - '.github/workflows/ci-core.yml'
   pull_request:
-    branches: [main]
+    branches: [main, refactor/shared-character-core]
   workflow_dispatch:
 
 permissions:
@@ -45,7 +45,21 @@ jobs:
         run: npm run test:refactor
       - name: Geometry regression
         run: npm run test:geometry
+      - name: Test rebuilt Video Studio contracts (Windows only)
+        if: matrix.os == 'windows-latest'
+        run: npm run test:video:next
+      - name: Smoke Windows process-tree memory probe
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          .\scripts\video-studio\windows-memory-probe.ps1 -RootPid $PID -Samples 1 | Select-Object -First 1 | Out-Null
+      - name: Smoke Windows semantic SceneIR stress
+        if: matrix.os == 'windows-latest'
+        run: node scripts/video-studio/windows-sceneir-stress.cjs
       - name: Typecheck
         run: npm run typecheck
       - name: Compile Electron/React
         run: npm run build
+      - name: Verify separate AV utility bundle on Windows
+        if: matrix.os == 'windows-latest'
+        run: npm run test:video:rebuild:worker:bundle

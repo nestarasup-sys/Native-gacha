@@ -1,9 +1,13 @@
+import { projectForOriginalPreview } from '../../../../../shared/fabricatorModelViews'
+import { useModelSourceRefresh } from '../models/useModelSourceRefresh'
+import { pupilDeltaFromDrag, pupilSourceMirrored } from '../../../../../shared/facePupilGeometry'
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
 import type { FaceAssetKind, FaceCatalogItem, FaceCatalogItemSave, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSave, FaceComponentAssetSummary, FaceComponentKind, FaceDetailKind, FaceGuideProfile, FaceGuideSettings, FaceTransform, FabricatorProject, FabricatorSlotSummary, ModelPart } from '../../../../../shared/fabricator'
 import { Icon } from '../../../ui/components/Icon'
 import { usePreviewBackground } from '../usePreviewBackground'
 import { processFaceSheet } from './processFaceSheet'
 import { splitEyeSheet } from './splitEyeSheet'
+import { defaultFaceGuide, useFaceGuides } from './useFaceGuides'
 import { eyeInteriorMask } from './eyeInteriorMask'
 import { alignImportedFacePiece, captureFaceImportAnchor, fitClosedEyeToOpen, validFaceImportAnchor, type AlignableFaceKind, type FaceImportAnchor } from './faceImportAlignment'
 import { removeEyebrowGreen } from './removeEyebrowGreen'
@@ -15,15 +19,11 @@ type CatalogKind = 'nose' | 'mouth-closed' | 'mouth-open'
 type LibraryCategory = FaceComponentKind | FaceDetailKind | 'nose' | 'mouth'
 type FaceWorkspaceMode = 'eyes' | 'face'
 type FaceGuide = FaceGuideSettings
-type PreviewDrag = { pointerId: number; key: string; clientX: number; clientY: number; startX: number; startY: number; modelPerPixelX: number; modelPerPixelY: number; invertX: boolean; pupil: boolean }
-const GUIDE_STORAGE_KEY = 'gacha-nymi:face-dev-guides'
-const EYES_GUIDE_STORAGE_KEY = 'gacha-nymi:eyes-dev-guides'
-const FACE_GUIDE_STORAGE_KEY = 'gacha-nymi:rosto-dev-guides'
+type PreviewDrag = { pointerId: number; key: string; clientX: number; clientY: number; startX: number; startY: number; modelPerPixelX: number; modelPerPixelY: number; invertX: boolean; pupil: boolean; rotation: number }
 const COMPONENT_SELECTION_STORAGE_KEY = 'gacha-nymi:face-dev-component-selections'
 const LEGACY_PUPIL_SELECTION_STORAGE_KEY = 'gacha-nymi:face-dev-pupil-selections'
 const FACE_IMPORT_ANCHORS_STORAGE_KEY = 'gacha-nymi:face-dev-import-anchors'
 const FACE_DETAIL_SELECTION_STORAGE_KEY = 'gacha-nymi:face-dev-detail-selections'
-const defaultGuide: FaceGuide = { visible: true, verticalX: 50, horizontalY: 45, lowerHorizontalY: 65, angle: 12 }
 const categories: Array<{ kind: FaceComponentKind; label: string; parts: [PartId, PartId]; names: [string, string] }> = [
   { kind: 'eye', label: 'Olhos', parts: ['eye-left', 'eye-right'], names: ['Olho esquerdo', 'Olho direito'] },
   { kind: 'pupil', label: 'Pupilas', parts: ['pupil-left', 'pupil-right'], names: ['Pupila esquerda', 'Pupila direita'] },
@@ -55,23 +55,6 @@ function sameLibraryPair(left: FaceComponentAsset, right: FaceComponentAsset): b
   return libraryBaseName(left.name) === libraryBaseName(right.name) && left.dataUrl === right.dataUrl
 }
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value))
-const guideValue = (value: unknown, fallback: number, min: number, max: number) => typeof value === 'number' && Number.isFinite(value) ? clamp(value, min, max) : fallback
-function readFaceGuides(storageKey: string, fallbackStorageKey?: string): Record<number, FaceGuide> {
-  try {
-    const stored = JSON.parse(window.localStorage.getItem(storageKey) ?? (fallbackStorageKey ? window.localStorage.getItem(fallbackStorageKey) : null) ?? '{}') as Record<string, Partial<FaceGuide>>
-    if (!stored || typeof stored !== 'object' || Array.isArray(stored)) return {}
-    return Object.fromEntries(Object.entries(stored).filter(([slot, value]) => /^[1-9]\d*$/.test(slot) && Number(slot) <= 10 && value && typeof value === 'object').map(([slot, value]) => {
-      const horizontalY = guideValue(value.horizontalY, defaultGuide.horizontalY, 10, 90)
-      return [Number(slot), {
-        visible: value.visible !== false,
-        verticalX: guideValue(value.verticalX, defaultGuide.verticalX, 20, 80),
-        horizontalY,
-        lowerHorizontalY: Math.max(horizontalY + 1, guideValue(value.lowerHorizontalY, defaultGuide.lowerHorizontalY, 11, 99)),
-        angle: guideValue(value.angle, defaultGuide.angle, -30, 30)
-      }]
-    }))
-  } catch { return {} }
-}
 type ComponentSelection = { parts: Partial<Record<PartId, string>>; linked: Partial<Record<FaceComponentKind, boolean>>; moveTogether?: Partial<Record<FaceComponentKind, boolean>> }
 function readComponentSelections(): Record<number, ComponentSelection> {
   try {
@@ -154,8 +137,8 @@ function FaceTransformControls({ head, transform, sourceWidth, sourceHeight, pup
   moveTogether?: boolean; followEyes?: boolean
   opacity?: number; onChange: (patch: Partial<FaceTransform>) => void; onOpacityChange?: (value: number) => void; onReset: () => void
 }) {
-  const xRange = pupil ? head.width * .25 : head.width
-  const yRange = pupil ? head.height * .25 : head.height
+  const xRange = pupil ? Math.max(head.width,Math.abs(transform.x)+head.width) : head.width
+  const yRange = pupil ? Math.max(head.height,Math.abs(transform.y)+head.height) : head.height
   const widthPercent = sourceWidth * transform.scaleX / head.width * 100
   const heightPercent = sourceHeight * transform.scaleY / head.height * 100
   const sizeControl = (label: string, value: number, sourceSize: number, headSize: number, field: 'scaleX' | 'scaleY') => <label className="face-component-slider" key={field}>
@@ -169,8 +152,8 @@ function FaceTransformControls({ head, transform, sourceWidth, sourceHeight, pup
       <button type="button" aria-label="Descer peça" onClick={() => onChange({ y: transform.y + 1 })}>↓</button>
       <button type="button" aria-label="Mover peça para a direita" onClick={() => onChange({ x: transform.x + 1 })}>→</button>
     </div></div>
-    <label className="face-component-slider"><span>{pupil ? 'Deslocamento horizontal' : 'Horizontal'}<output>{pupil ? `${Math.round(transform.x)} px` : `${Math.round(transform.x / head.width * 100)}%`}</output></span><input type="range" min={pupil ? -xRange : 0} max={xRange} step="1" value={transform.x} onChange={(event) => onChange({ x: Number(event.target.value) })} /></label>
-    <label className="face-component-slider"><span>{pupil ? 'Deslocamento vertical' : 'Vertical'}<output>{pupil ? `${Math.round(transform.y)} px` : `${Math.round(transform.y / head.height * 100)}%`}</output></span><input type="range" min={pupil ? -yRange : 0} max={yRange} step="1" value={transform.y} onChange={(event) => onChange({ y: Number(event.target.value) })} /></label></>}
+    <label className="face-component-slider"><span>{pupil ? 'Deslocamento horizontal' : 'Horizontal'}<output>{pupil ? `${Math.round(transform.x)} px` : `${Math.round(transform.x / head.width * 100)}%`}</output></span><input type="range" min={pupil ? -xRange : 0} max={xRange} step="1" value={transform.x} onChange={(event) => onChange({ x: Number(event.target.value) })} />{pupil && <input type="number" aria-label="Deslocamento horizontal livre da pupila" step="0.1" value={transform.x} onChange={(event)=>{const x=Number(event.target.value);if(Number.isFinite(x))onChange({x})}} />}</label>
+    <label className="face-component-slider"><span>{pupil ? 'Deslocamento vertical' : 'Vertical'}<output>{pupil ? `${Math.round(transform.y)} px` : `${Math.round(transform.y / head.height * 100)}%`}</output></span><input type="range" min={pupil ? -yRange : 0} max={yRange} step="1" value={transform.y} onChange={(event) => onChange({ y: Number(event.target.value) })} />{pupil && <input type="number" aria-label="Deslocamento vertical livre da pupila" step="0.1" value={transform.y} onChange={(event)=>{const y=Number(event.target.value);if(Number.isFinite(y))onChange({y})}} />}</label></>}
     {!moveTogether && !followEyes && sizeControl('Largura horizontal', widthPercent, sourceWidth, head.width, 'scaleX')}
     {!moveTogether && sizeControl('Altura vertical', heightPercent, sourceHeight, head.height, 'scaleY')}
     <label className="face-component-slider"><span>Rotação<output>{Math.round(transform.rotation)}°</output></span><input type="range" min="-180" max="180" step="1" value={transform.rotation} onChange={(event) => onChange({ rotation: Number(event.target.value) })} /></label>
@@ -181,14 +164,12 @@ function FaceTransformControls({ head, transform, sourceWidth, sourceHeight, pup
 
 export function FaceComponentsWorkspace({ mode }: { mode: FaceWorkspaceMode }) {
   const [previewBackground] = usePreviewBackground()
-  const guideStorageKey = FACE_GUIDE_STORAGE_KEY
-  const guideProfile: FaceGuideProfile = 'face'
+  const guideProfile: FaceGuideProfile = mode === 'eyes' ? 'eyes' : 'face'
   const [models, setModels] = useState<FabricatorSlotSummary[]>([])
   const [modelSlot, setModelSlot] = useState(1)
-  const [guidesByModel, setGuidesByModel] = useState<Record<number, FaceGuide>>(() => readFaceGuides(guideStorageKey, mode === 'eyes' ? GUIDE_STORAGE_KEY : undefined))
-  const [guidesLoadedFor, setGuidesLoadedFor] = useState<FaceGuideProfile | null>(null)
   const [importAnchorsByModel, setImportAnchorsByModel] = useState<FaceImportAnchors>(readFaceImportAnchors)
   const [model, setModel] = useState<FabricatorProject | null>(null)
+  useModelSourceRefresh(modelSlot, fresh => setModel(projectForOriginalPreview(fresh)))
   const [assets, setAssets] = useState<FaceComponentAssetSummary[]>([])
   const [details, setDetails] = useState<Record<string, FaceComponentAsset>>({})
   const [eyeMasks, setEyeMasks] = useState<Record<string, string>>({})
@@ -208,6 +189,7 @@ export function FaceComponentsWorkspace({ mode }: { mode: FaceWorkspaceMode }) {
   const [moveTogether, setMoveTogether] = useState<Record<FaceComponentKind, boolean>>({ eye: false, pupil: false, 'eye-closed': false, eyebrow: false })
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const { guidesByModel, guidesLoaded, updateGuide: persistGuide } = useFaceGuides(guideProfile, setError)
   const [notice, setNotice] = useState(() => mode === 'eyes' ? 'Importe a folha 3 em 1 de olhos.' : 'Adicione as peças faciais à biblioteca.')
   const [openModal, setOpenModal] = useState<'import' | 'delete' | null>(null)
   const [markedForDeletion, setMarkedForDeletion] = useState<string[]>([])
@@ -239,7 +221,7 @@ export function FaceComponentsWorkspace({ mode }: { mode: FaceWorkspaceMode }) {
     return () => { cancelled = true }
   }, [details])
   const head = useMemo(() => model?.parts.find((part) => /cabe[çc]a|head/i.test(part.name)) ?? null, [model])
-  const guide = guidesByModel[modelSlot] ?? defaultGuide
+  const guide = guidesByModel[modelSlot] ?? defaultFaceGuide
   const previewScale = head && stageSize.width > 0 && stageSize.height > 0
     ? Math.min((stageSize.width - 24) / head.width, (stageSize.height - 24) / head.height) * .9
     : 0
@@ -366,24 +348,6 @@ export function FaceComponentsWorkspace({ mode }: { mode: FaceWorkspaceMode }) {
   }
 
   useEffect(() => { void window.desktop.listFabricatorSlots().then((slots) => { setModels(slots); const first = slots.findIndex(Boolean); if (first >= 0) setModelSlot(first + 1) }).catch((reason) => setError(String(reason))) }, [])
-  useEffect(() => {
-    let cancelled = false
-    setGuidesLoadedFor(null)
-    void window.desktop.loadFaceGuides(guideProfile).then(async (saved) => {
-      if (cancelled) return
-      const legacyEyes = readFaceGuides(EYES_GUIDE_STORAGE_KEY)
-      const legacyFace = readFaceGuides(FACE_GUIDE_STORAGE_KEY, GUIDE_STORAGE_KEY)
-      const next = saved ?? { ...legacyEyes, ...legacyFace }
-      setGuidesByModel(next as Record<number, FaceGuide>)
-      if (!saved) await window.desktop.saveFaceGuides(guideProfile, next)
-      if (!cancelled) setGuidesLoadedFor(guideProfile)
-    }).catch((reason) => { if (!cancelled) { setError(reason instanceof Error ? reason.message : String(reason)); setGuidesLoadedFor(guideProfile) } })
-    return () => { cancelled = true }
-  }, [guideProfile, guideStorageKey, mode])
-  useEffect(() => {
-    try { window.localStorage.setItem(guideStorageKey, JSON.stringify(guidesByModel)) } catch { /* Keep the durable Fabricator copy available. */ }
-    if (guidesLoadedFor === guideProfile) void window.desktop.saveFaceGuides(guideProfile, guidesByModel).catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)))
-  }, [guideProfile, guideStorageKey, guidesByModel, guidesLoadedFor])
   useEffect(() => { if (mode !== 'eyes') return; try { window.localStorage.setItem(FACE_IMPORT_ANCHORS_STORAGE_KEY, JSON.stringify(importAnchorsByModel)) } catch { setError('Não foi possível salvar a fixação de importação neste computador.') } }, [mode, importAnchorsByModel])
   useEffect(() => { if (mode !== 'face') return; try { window.localStorage.setItem(FACE_DETAIL_SELECTION_STORAGE_KEY, JSON.stringify(faceDetailSelectionsByModel)) } catch { /* Saved assets remain available in the library. */ } }, [mode, faceDetailSelectionsByModel])
   useEffect(() => {
@@ -396,10 +360,7 @@ export function FaceComponentsWorkspace({ mode }: { mode: FaceWorkspaceMode }) {
     } catch { /* The saved assets remain available in the library. */ }
   }, [mode, modelSlot, selectedAssets, linked, moveTogether])
   function updateGuide(patch: Partial<FaceGuide>) {
-    const next = { ...guidesByModel, [modelSlot]: { ...(guidesByModel[modelSlot] ?? defaultGuide), ...patch } }
-    setGuidesByModel(next)
-    try { window.localStorage.setItem(guideStorageKey, JSON.stringify(next)) } catch { /* The durable Fabricator store remains authoritative. */ }
-    if (guidesLoadedFor === guideProfile) void window.desktop.saveFaceGuides(guideProfile, next).catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)))
+    persistGuide(modelSlot, patch)
   }
   function fixImportAnchors() {
     if (!head) return
@@ -461,7 +422,7 @@ export function FaceComponentsWorkspace({ mode }: { mode: FaceWorkspaceMode }) {
       const savedSelection = mode === 'eyes' ? readComponentSelections()[modelSlot] : undefined
       const savedParts = Object.fromEntries(Object.entries(savedSelection?.parts ?? {}).filter(([part, id]) =>
         categories.some((category) => category.parts.includes(part as PartId) && assetKinds.get(id) === category.kind))) as Partial<Record<PartId, string>>
-      setModel(project); setAssets(visibleList); setDetails(Object.fromEntries(loadedAssets.map((item) => [item.id, item])))
+      setModel(projectForOriginalPreview(project)); setAssets(visibleList); setDetails(Object.fromEntries(loadedAssets.map((item) => [item.id, item])))
       setSelectedAssets(savedParts)
       setLinked({ eye: true, pupil: true, 'eye-closed': true, eyebrow: true, ...savedSelection?.linked })
       setMoveTogether({ eye: false, pupil: false, 'eye-closed': false, eyebrow: false, ...savedSelection?.moveTogether })
@@ -559,6 +520,47 @@ export function FaceComponentsWorkspace({ mode }: { mode: FaceWorkspaceMode }) {
       setSelectedAssets((current) => ({ ...current, ...assigned }))
       setSelectedPart('eye-left'); setLibraryCategory('eye'); setOpenModal(null)
       setNotice('Olho aberto, pupila e olho fechado importados. Ajuste cada peça na Biblioteca.')
+    } catch (reason) {
+      await Promise.allSettled(savedIds.map((id) => window.desktop.deleteFaceComponentAsset(modelSlot, id)))
+      setError(reason instanceof Error ? reason.message : String(reason))
+    } finally { setBusy(false) }
+  }
+
+  async function importEyebrow(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]; event.target.value = ''
+    if (!file || !head) return
+    setBusy(true); setError('')
+    const savedIds: string[] = []
+    try {
+      const image = await readImage(file)
+      const baseName = file.name.replace(/\.[^.]+$/, '').slice(0, 90) || 'Sobrancelha'
+      const pairId = crypto.randomUUID()
+      const updatedAt = new Date().toISOString()
+      const leftTransform = initialTransform('eyebrow', head, image.width, image.height)
+      const left: FaceComponentAssetSave = {
+        schemaVersion: 1, id: crypto.randomUUID(), modelSlot, kind: 'eyebrow',
+        name: `${baseName} · Sobrancelha esquerda`.slice(0, 120), width: image.width, height: image.height,
+        defaultTransform: leftTransform, pairId, updatedAt
+      }
+      const right: FaceComponentAssetSave = {
+        ...left, id: crypto.randomUUID(), name: `${baseName} · Sobrancelha direita`.slice(0, 120),
+        rightSidePositioned: true,
+        defaultTransform: {
+          ...leftTransform, x: head.width - leftTransform.x,
+          rotation: -leftTransform.rotation, flipX: !leftTransform.flipX
+        }
+      }
+      await window.desktop.saveFaceComponentAsset(modelSlot, left, image.dataUrl)
+      savedIds.push(left.id)
+      await window.desktop.saveFaceComponentAsset(modelSlot, right, image.dataUrl)
+      savedIds.push(right.id)
+
+      const imported = [left, right].map((asset) => ({ ...asset, dataUrl: image.dataUrl }))
+      setDetails((current) => ({ ...current, ...Object.fromEntries(imported.map((asset) => [asset.id, asset])) }))
+      setAssets((current) => [...imported, ...current])
+      setSelectedAssets((current) => ({ ...current, 'brow-left': left.id, 'brow-right': right.id }))
+      setSelectedPart('brow-left'); setLibraryCategory('eyebrow'); setOpenModal(null)
+      setNotice('Sobrancelha importada. O lado direito foi criado espelhado; ajuste cada lado na Biblioteca.')
     } catch (reason) {
       await Promise.allSettled(savedIds.map((id) => window.desktop.deleteFaceComponentAsset(modelSlot, id)))
       setError(reason instanceof Error ? reason.message : String(reason))
@@ -851,9 +853,9 @@ export function FaceComponentsWorkspace({ mode }: { mode: FaceWorkspaceMode }) {
     const rightValue = rightCurrent.defaultTransform[axis]
     const center = (leftValue + rightValue) / 2
     const limit = axis === 'x' ? head.width : head.height
-    const minimum = kind === 'pupil' ? -limit * .25 : 0
-    const maximum = kind === 'pupil' ? limit * .25 : limit
-    const delta = clamp((relative ? center + target : target) - center, Math.max(minimum - leftValue, minimum - rightValue), Math.min(maximum - leftValue, maximum - rightValue))
+    const minimum = 0, maximum = limit
+    const desired = (relative ? center + target : target) - center
+    const delta = kind === 'pupil' ? desired : clamp(desired,Math.max(minimum-leftValue,minimum-rightValue),Math.min(maximum-leftValue,maximum-rightValue))
     if (Math.abs(delta) < .001) return
     saveComponentTransform(leftCurrent, { [axis]: leftValue + delta })
     saveComponentTransform(rightCurrent, { [axis]: rightValue + delta })
@@ -911,7 +913,7 @@ export function FaceComponentsWorkspace({ mode }: { mode: FaceWorkspaceMode }) {
     queueSave(`catalog:${next.modelSlot}:${next.id}`, () => window.desktop.saveFaceCatalogItem(next.modelSlot, catalogSaveData(next), catalogImagesForSave(next)))
   }
 
-  function beginPreviewDrag(event: ReactPointerEvent<HTMLImageElement>, key: string, invertX = false, pupil = false) {
+  function beginPreviewDrag(event: ReactPointerEvent<HTMLImageElement>, key: string, invertX = false, pupil = false, rotation = 0) {
     if (event.button !== 0 || !event.isPrimary || !head || !selectedTransform || key !== activePreviewKey) return
     const canvas = event.currentTarget.closest('.face-components-preview-canvas')
     if (!canvas) return
@@ -923,7 +925,7 @@ export function FaceComponentsWorkspace({ mode }: { mode: FaceWorkspaceMode }) {
       pointerId: event.pointerId, key, clientX: event.clientX, clientY: event.clientY,
       startX: selectedTransform.x, startY: selectedTransform.y,
       modelPerPixelX: head.width / bounds.width, modelPerPixelY: head.height / bounds.height,
-      invertX, pupil
+      invertX, pupil, rotation
     }
     setDraggingPreview(true)
   }
@@ -931,11 +933,12 @@ export function FaceComponentsWorkspace({ mode }: { mode: FaceWorkspaceMode }) {
   function movePreviewDrag(event: ReactPointerEvent<HTMLImageElement>) {
     const drag = previewDrag.current
     if (!drag || drag.pointerId !== event.pointerId || drag.key !== activePreviewKey || !head) return
-    const xRange = drag.pupil ? head.width * .25 : head.width
-    const yRange = drag.pupil ? head.height * .25 : head.height
-    const x = drag.startX + (event.clientX - drag.clientX) * drag.modelPerPixelX * (drag.invertX ? -1 : 1)
-    const y = drag.startY + (event.clientY - drag.clientY) * drag.modelPerPixelY
-    updateTransform({ x: clamp(x, drag.pupil ? -xRange : 0, xRange), y: clamp(y, drag.pupil ? -yRange : 0, yRange) })
+    const delta = pupilDeltaFromDrag(event.clientX-drag.clientX,event.clientY-drag.clientY,{
+      rotationDegrees:drag.pupil ? drag.rotation : 0,mirrorSourceX:drag.invertX,
+      modelPerPixelX:drag.modelPerPixelX,modelPerPixelY:drag.modelPerPixelY
+    })
+    const x=drag.startX+delta.x,y=drag.startY+delta.y
+    updateTransform(drag.pupil ? {x,y} : {x:clamp(x,0,head.width),y:clamp(y,0,head.height)})
   }
 
   function endPreviewDrag(event: ReactPointerEvent<HTMLImageElement>) {
@@ -993,7 +996,9 @@ export function FaceComponentsWorkspace({ mode }: { mode: FaceWorkspaceMode }) {
     const asset = assetId ? details[assetId] : undefined
     const leftAsset = leftId ? details[leftId] : undefined
     if (!asset) return null
-    const imageAsset = rightSide && mirror && linked[category.kind] ? leftAsset ?? asset : asset
+    // Linking edits must not silently substitute the LEFT pixels for an
+    // explicitly saved RIGHT asset. Presets DEV renders the saved ID itself.
+    const imageAsset = rightSide && mirror && linked[category.kind] && !ownId ? leftAsset ?? asset : asset
     const openEyeId = rightSide ? selectedAssets['eye-right'] ?? selectedAssets['eye-left'] : selectedAssets['eye-left']
     const openEye = category.kind === 'eye-closed' && openEyeId ? details[openEyeId] : undefined
     const leftOpen = details[selectedAssets['eye-left'] ?? '']
@@ -1012,14 +1017,12 @@ export function FaceComponentsWorkspace({ mode }: { mode: FaceWorkspaceMode }) {
     let localY = transform.y
     if (category.kind === 'pupil') {
       const eyeX = eyeTransform?.x ?? head.width * .37
-      localX = (rightSide && (!rightEyeId || !eyeAsset?.rightSidePositioned) ? head.width - eyeX : eyeX) + (rightSide && !physicalRight && linked.pupil ? -transform.x : transform.x)
+      localX = (rightSide && (!rightEyeId || !eyeAsset?.rightSidePositioned) ? head.width - eyeX : eyeX) + (pupilSourceMirrored(rightSide?'right':'left',physicalRight) ? -transform.x : transform.x)
       localY = (eyeTransform?.y ?? head.height * .46) + transform.y
     }
     const mirroredPosition = rightSide && !physicalRight && category.kind !== 'pupil'
     const x = mirroredPosition ? head.width - localX : localX
-    const shouldFlip = rightSide && linked[category.kind]
-      ? !Boolean(leftAsset?.defaultTransform.flipX)
-      : Boolean(transform.flipX)
+    const shouldFlip = Boolean(transform.flipX) !== (rightSide && !physicalRight && category.kind !== 'pupil')
     const width = category.kind === 'pupil' ? eyeWidth * transform.scaleX : imageAsset.width * transform.scaleX
     const height = category.kind === 'pupil' ? eyeHeight * transform.scaleY : imageAsset.height * transform.scaleY
     const style: CSSProperties = { left: `${x / head.width * 100}%`, top: `${localY / head.height * 100}%`, width: `${width / head.width * 100}%`, height: `${height / head.height * 100}%`, transform: `translate(-50%,-50%) rotate(${transform.rotation * (mirroredPosition ? -1 : 1)}deg) scaleX(${shouldFlip ? -1 : 1})` }
@@ -1029,15 +1032,14 @@ export function FaceComponentsWorkspace({ mode }: { mode: FaceWorkspaceMode }) {
       const eyePartId = rightSide ? 'eye-right' : 'eye-left'
       const selectedEyeId = overrides[eyePartId] ?? selectedAssets[eyePartId] ?? (rightSide ? selectedAssets['eye-left'] : undefined)
       const sideEye = selectedEyeId ? details[selectedEyeId] : undefined
-      const leftEye = leftEyeId ? details[leftEyeId] : undefined
-      const maskImage = rightSide && linked.eye ? leftEye ?? sideEye : sideEye
+      const maskImage = sideEye // match the saved Olhos DEV asset used by Presets DEV
       if (sideEye && maskImage) {
         const eyeTransform = sideEye.defaultTransform
         const eyePhysicalRight = rightSide && sideEye.rightSidePositioned === true
         const eyeMirrored = rightSide && !eyePhysicalRight
         const eyeX = eyeMirrored ? head.width - eyeTransform.x : eyeTransform.x
         const eyeRotation = eyeTransform.rotation * (eyeMirrored ? -1 : 1)
-        const eyeFlip = rightSide && linked.eye ? !Boolean(leftEye?.defaultTransform.flipX) : Boolean(eyeTransform.flipX)
+        const eyeFlip = Boolean(eyeTransform.flipX) !== eyeMirrored
         const maskStyle: CSSProperties = {
           left: `${eyeX / head.width * 100}%`, top: `${eyeTransform.y / head.height * 100}%`,
           width: `${maskImage.width * eyeTransform.scaleX / head.width * 100}%`,
@@ -1045,10 +1047,10 @@ export function FaceComponentsWorkspace({ mode }: { mode: FaceWorkspaceMode }) {
           transform: `translate(-50%,-50%) rotate(${eyeRotation}deg) scaleX(${eyeFlip ? -1 : 1})`,
           maskImage: `url(${eyeMasks[maskImage.id] ?? maskImage.dataUrl})`, WebkitMaskImage: `url(${eyeMasks[maskImage.id] ?? maskImage.dataUrl})`
         }
-        const pupilOffsetX = rightSide && !physicalRight && linked.pupil ? -transform.x : transform.x
+        const pupilOffsetX = pupilSourceMirrored(rightSide?'right':'left',physicalRight) ? -transform.x : transform.x
         const eyeFlipDirection = eyeFlip ? -1 : 1
         const pupilRotation = transform.rotation * (rightSide && !physicalRight ? -1 : 1) * eyeFlipDirection
-        const pupilFlip = shouldFlip !== eyeFlip
+        const pupilFlip = Boolean(transform.flipX) !== eyeFlip
         const pupilStyle: CSSProperties = {
           left: `${50 + pupilOffsetX / (eyeFlipDirection * eyeTransform.scaleX * maskImage.width) * 100}%`,
           top: `${50 + transform.y / (eyeTransform.scaleY * maskImage.height) * 100}%`,
@@ -1056,11 +1058,11 @@ export function FaceComponentsWorkspace({ mode }: { mode: FaceWorkspaceMode }) {
           transform: `translate(-50%,-50%) rotate(${pupilRotation}deg) scaleX(${pupilFlip ? -1 : 1})`
         }
         return <div key={`${id}-${assetId}`} className={`face-component-pupil-mask${canDrag ? ` face-component-pupil-mask-draggable${draggingPreview ? ' is-dragging' : ''}` : ''}`} style={maskStyle}>
-          <img className="face-component-pupil-image" src={imageAsset.dataUrl} alt={category.names[rightSide ? 1 : 0]} style={pupilStyle} draggable={false} title={canDrag ? 'Arraste a pupila dentro do olho' : undefined} onPointerDown={canDrag ? (event) => beginPreviewDrag(event, dragKey, false, true) : undefined} onPointerMove={canDrag ? movePreviewDrag : undefined} onPointerUp={canDrag ? endPreviewDrag : undefined} onPointerCancel={canDrag ? endPreviewDrag : undefined} onLostPointerCapture={canDrag ? endPreviewDrag : undefined} />
+          <img className="face-component-pupil-image" src={imageAsset.dataUrl} alt={category.names[rightSide ? 1 : 0]} style={pupilStyle} draggable={false} title={canDrag ? 'Arraste a pupila dentro do olho' : undefined} onPointerDown={canDrag ? (event) => beginPreviewDrag(event, dragKey, pupilSourceMirrored(rightSide?'right':'left',physicalRight), true, eyeRotation) : undefined} onPointerMove={canDrag ? movePreviewDrag : undefined} onPointerUp={canDrag ? endPreviewDrag : undefined} onPointerCancel={canDrag ? endPreviewDrag : undefined} onLostPointerCapture={canDrag ? endPreviewDrag : undefined} />
         </div>
       }
     }
-    return <img key={`${id}-${assetId}`} className={`face-component-layer${canDrag ? ` face-component-layer-draggable${draggingPreview ? ' is-dragging' : ''}` : ''}`} src={imageAsset.dataUrl} alt={category.names[rightSide ? 1 : 0]} style={style} draggable={false} title={canDrag ? 'Arraste para mover esta peça' : undefined} onPointerDown={canDrag ? (event) => beginPreviewDrag(event, dragKey, mirroredPosition || rightSide && !physicalRight && category.kind === 'pupil' && linked.pupil, category.kind === 'pupil') : undefined} onPointerMove={canDrag ? movePreviewDrag : undefined} onPointerUp={canDrag ? endPreviewDrag : undefined} onPointerCancel={canDrag ? endPreviewDrag : undefined} onLostPointerCapture={canDrag ? endPreviewDrag : undefined} />
+    return <img key={`${id}-${assetId}`} className={`face-component-layer${canDrag ? ` face-component-layer-draggable${draggingPreview ? ' is-dragging' : ''}` : ''}`} src={imageAsset.dataUrl} alt={category.names[rightSide ? 1 : 0]} style={style} draggable={false} title={canDrag ? 'Arraste para mover esta peça' : undefined} onPointerDown={canDrag ? (event) => beginPreviewDrag(event, dragKey, mirroredPosition || category.kind === 'pupil' && pupilSourceMirrored(rightSide?'right':'left',physicalRight), category.kind === 'pupil') : undefined} onPointerMove={canDrag ? movePreviewDrag : undefined} onPointerUp={canDrag ? endPreviewDrag : undefined} onPointerCancel={canDrag ? endPreviewDrag : undefined} onLostPointerCapture={canDrag ? endPreviewDrag : undefined} />
   }
 
   const workspaceTitle = mode === 'eyes' ? 'Olhos Dev' : 'Rosto Dev'
@@ -1132,7 +1134,7 @@ export function FaceComponentsWorkspace({ mode }: { mode: FaceWorkspaceMode }) {
           <label className="face-component-link"><input type="checkbox" checked={linked[componentPair.kind]} onChange={(event) => {
             if (event.target.checked) { setLinked((current) => ({ ...current, [componentPair.kind]: true })); setSelectedPart(componentPair.parts[0]) }
             else void chooseComponentSide(componentPair.parts[1])
-          }} /> Espelhar imagem da esquerda</label>
+          }} /> Usar espelho só quando faltar a peça direita</label>
           <button className={`face-component-move-together${moveTogether[componentPair.kind] ? ' active' : ''}`} type="button" aria-pressed={moveTogether[componentPair.kind]} disabled={!movementLeftAsset || busy} onClick={() => setMoveTogether((current) => ({ ...current, [componentPair.kind]: !current[componentPair.kind] }))}>Mover junto</button>
         </div>}
         {libraryCategory === 'eyebrow' && selectedAsset && <button className="face-component-chroma-action" type="button" disabled={busy} onClick={() => void cleanSelectedEyebrow()}>Remover fundo verde da sobrancelha salva</button>}
@@ -1145,8 +1147,8 @@ export function FaceComponentsWorkspace({ mode }: { mode: FaceWorkspaceMode }) {
             <button type="button" aria-label="Descer os dois lados" onClick={() => void movePair(componentPair.kind, 'y', 1, true)}>↓</button>
             <button type="button" aria-label="Mover os dois lados para a direita" onClick={() => void movePair(componentPair.kind, 'x', 1, true)}>→</button>
           </div>
-          <label className="face-component-slider"><span>Horizontal <output>{Math.round(pairX)} px</output></span><input type="range" min={componentPair.kind === 'pupil' ? -head.width * .25 : 0} max={componentPair.kind === 'pupil' ? head.width * .25 : head.width} step="1" value={pairX} onChange={(event) => void movePair(componentPair.kind, 'x', Number(event.target.value))} /></label>
-          <label className="face-component-slider"><span>Vertical <output>{Math.round(pairY)} px</output></span><input type="range" min={componentPair.kind === 'pupil' ? -head.height * .25 : 0} max={componentPair.kind === 'pupil' ? head.height * .25 : head.height} step="1" value={pairY} onChange={(event) => void movePair(componentPair.kind, 'y', Number(event.target.value))} /></label>
+          <label className="face-component-slider"><span>Horizontal <output>{Math.round(pairX)} px</output></span><input type="range" min={componentPair.kind === 'pupil' ? -Math.max(head.width,Math.abs(pairX)+head.width) : 0} max={componentPair.kind === 'pupil' ? Math.max(head.width,Math.abs(pairX)+head.width) : head.width} step="1" value={pairX} onChange={(event) => void movePair(componentPair.kind, 'x', Number(event.target.value))} /></label>
+          <label className="face-component-slider"><span>Vertical <output>{Math.round(pairY)} px</output></span><input type="range" min={componentPair.kind === 'pupil' ? -Math.max(head.height,Math.abs(pairY)+head.height) : 0} max={componentPair.kind === 'pupil' ? Math.max(head.height,Math.abs(pairY)+head.height) : head.height} step="1" value={pairY} onChange={(event) => void movePair(componentPair.kind, 'y', Number(event.target.value))} /></label>
           <label className="face-component-slider"><span>Largura horizontal dos dois lados <output>{Math.round(pairWidthPercent)}%</output></span><input type="range" min="1" max={Math.max(400, Math.ceil(pairWidthPercent / 100) * 100 + 100)} step="1" value={pairWidthPercent} onChange={(event) => void resizePair(componentPair.kind, 'scaleX', Number(event.target.value))} /></label>
           {pairHeightAsset && <label className="face-component-slider"><span>Altura vertical dos dois lados <output>{Math.round(pairHeightPercent)}%</output></span><input type="range" min="1" max={Math.max(400, Math.ceil(pairHeightPercent / 100) * 100 + 100)} step="1" value={pairHeightPercent} onChange={(event) => void resizePair(componentPair.kind, 'scaleY', Number(event.target.value))} /></label>}
         </section>}
@@ -1157,12 +1159,12 @@ export function FaceComponentsWorkspace({ mode }: { mode: FaceWorkspaceMode }) {
           <FaceTransformControls head={head} transform={selectedTransform} sourceWidth={selectedSourceWidth} sourceHeight={selectedSourceHeight} pupil={activeComponent?.kind === 'pupil'} moveTogether={componentPair ? moveTogether[componentPair.kind] : false} followEyes={followsOpenEye} opacity={selectedCatalogItem?.category === 'nose' ? selectedCatalogItem.opacity ?? 1 : undefined} onChange={updateTransform} onOpacityChange={updateCatalogOpacity} onReset={resetSelectedTransform} />
         </> : <div className="face-component-empty">Nenhuma peça selecionada</div>}
         <section className="face-components-guide-controls" aria-label="Guias de alinhamento do rosto">
-          <header><strong>Guias de desenho</strong><label><input type="checkbox" checked={guide.visible} disabled={guidesLoadedFor !== guideProfile} onChange={(event) => updateGuide({ visible: event.target.checked })} /> Mostrar</label></header>
-          <label>Inclinação do eixo <output>{guide.angle}°</output><input type="range" min="-30" max="30" step="1" value={guide.angle} disabled={!guide.visible || guidesLoadedFor !== guideProfile} onChange={(event) => updateGuide({ angle: Number(event.target.value) })} /></label>
-          <label>Posição do eixo <output>{guide.verticalX}%</output><input type="range" min="20" max="80" step="1" value={guide.verticalX} disabled={!guide.visible || guidesLoadedFor !== guideProfile} onChange={(event) => updateGuide({ verticalX: Number(event.target.value) })} /></label>
-          <label>Altura da linha superior <output>{guide.horizontalY}%</output><input type="range" min="10" max={Math.min(90, guide.lowerHorizontalY - 1)} step="1" value={guide.horizontalY} disabled={!guide.visible || guidesLoadedFor !== guideProfile} onChange={(event) => updateGuide({ horizontalY: Number(event.target.value) })} /></label>
-          <label>Altura da linha inferior <output>{guide.lowerHorizontalY}%</output><input type="range" min={guide.horizontalY + 1} max="99" step="1" value={guide.lowerHorizontalY} disabled={!guide.visible || guidesLoadedFor !== guideProfile} onChange={(event) => updateGuide({ lowerHorizontalY: Number(event.target.value) })} /></label>
-          <button type="button" disabled={guidesLoadedFor !== guideProfile} onClick={() => updateGuide(defaultGuide)}>Restaurar guias</button>
+          <header><strong>Guias de desenho</strong><label><input type="checkbox" checked={guide.visible} disabled={!guidesLoaded} onChange={(event) => updateGuide({ visible: event.target.checked })} /> Mostrar</label></header>
+          <label>Inclinação do eixo <output>{guide.angle}°</output><input type="range" min="-30" max="30" step="1" value={guide.angle} disabled={!guide.visible || !guidesLoaded} onChange={(event) => updateGuide({ angle: Number(event.target.value) })} /></label>
+          <label>Posição do eixo <output>{guide.verticalX}%</output><input type="range" min="20" max="80" step="1" value={guide.verticalX} disabled={!guide.visible || !guidesLoaded} onChange={(event) => updateGuide({ verticalX: Number(event.target.value) })} /></label>
+          <label>Altura da linha superior <output>{guide.horizontalY}%</output><input type="range" min="10" max={Math.min(90, guide.lowerHorizontalY - 1)} step="1" value={guide.horizontalY} disabled={!guide.visible || !guidesLoaded} onChange={(event) => updateGuide({ horizontalY: Number(event.target.value) })} /></label>
+          <label>Altura da linha inferior <output>{guide.lowerHorizontalY}%</output><input type="range" min={guide.horizontalY + 1} max="99" step="1" value={guide.lowerHorizontalY} disabled={!guide.visible || !guidesLoaded} onChange={(event) => updateGuide({ lowerHorizontalY: Number(event.target.value) })} /></label>
+          <button type="button" disabled={!guidesLoaded} onClick={() => updateGuide(defaultFaceGuide)}>Restaurar guias</button>
         </section>
       </aside>
     </div>{error && <div className={`face-components-error${openModal ? ' face-components-error-modal' : ''}`} role="alert">{error}</div>}
@@ -1170,12 +1172,15 @@ export function FaceComponentsWorkspace({ mode }: { mode: FaceWorkspaceMode }) {
       <div className="face-components-modal" role="dialog" aria-modal="true" aria-labelledby="face-components-modal-title">
         <header><div><strong id="face-components-modal-title">{openModal === 'import' ? 'Importar peças do rosto' : 'Excluir peças do rosto'}</strong><small>{openModal === 'import' ? 'Escolha a categoria e o formato de importação.' : 'Escolha as peças já importadas que deseja remover.'}</small></div><button type="button" aria-label="Fechar" disabled={busy} onClick={() => setOpenModal(null)}>×</button></header>
         {openModal === 'import' ? <div className="face-components-import-options">
-          {mode === 'eyes' ? <label className="face-components-import-option"><span className="face-components-import-sheet"><span>3 peças</span></span><strong>Olho + pupila + olho fechado</strong><small>Folha vertical com as três peças, mesmo que as alturas variem.</small><span className="face-components-import-action"><Icon name="plus" /> Escolher imagem</span><input type="file" accept="image/png,image/jpeg,image/webp" disabled={busy || !head} onChange={(event) => void importEyeSheet(event)} /></label> : <>
+          {mode === 'eyes' ? <>
+            <label className="face-components-import-option"><span className="face-components-import-sheet"><span>3 peças</span></span><strong>Olho + pupila + olho fechado</strong><small>Folha vertical com as três peças, mesmo que as alturas variem.</small><span className="face-components-import-action"><Icon name="plus" /> Escolher imagem</span><input type="file" accept="image/png,image/jpeg,image/webp" disabled={busy || !head} onChange={(event) => void importEyeSheet(event)} /></label>
+            <label className="face-components-import-option"><span className="face-components-import-sheet"><span>1 peça</span></span><strong>Sobrancelha esquerda + direita</strong><small>Envie uma sobrancelha esquerda; o app cria o lado direito espelhado.</small><span className="face-components-import-action"><Icon name="plus" /> Escolher imagem</span><input type="file" accept="image/png,image/jpeg,image/webp" disabled={busy || !head} onChange={(event) => void importEyebrow(event)} /></label>
+          </> : <>
             <label className="face-components-import-option"><span className="face-components-import-sheet"><span>1 peça</span></span><strong>Nariz único</strong><small>Uma imagem com um nariz.</small><span className="face-components-import-action"><Icon name="plus" /> Escolher folha</span><input type="file" accept="image/png,image/jpeg,image/webp" disabled={busy || !head} onChange={(event) => void importCatalogSheet('nose', event, 'one')} /></label>
             <label className="face-components-import-option"><span className="face-components-import-sheet"><span>3 × 2</span></span><strong>Seis narizes</strong><small>Folha com seis variações de nariz.</small><span className="face-components-import-action"><Icon name="plus" /> Escolher folha</span><input type="file" accept="image/png,image/jpeg,image/webp" disabled={busy || !head} onChange={(event) => void importCatalogSheet('nose', event, 'six')} /></label>
             <label className="face-components-import-option"><span className="face-components-import-sheet"><span>7 × 3</span></span><strong>Bocas fechadas</strong><small>Folha com 21 expressões fechadas.</small><span className="face-components-import-action"><Icon name="plus" /> Escolher folha</span><input type="file" accept="image/png,image/jpeg,image/webp" disabled={busy || !head} onChange={(event) => void importCatalogSheet('mouth-closed', event)} /></label>
             <label className="face-components-import-option"><span className="face-components-import-sheet"><span>7 × 3</span></span><strong>Bocas abertas</strong><small>Folha com 21 expressões abertas.</small><span className="face-components-import-action"><Icon name="plus" /> Escolher folha</span><input type="file" accept="image/png,image/jpeg,image/webp" disabled={busy || !head} onChange={(event) => void importCatalogSheet('mouth-open', event)} /></label>
-            {faceDetailCategories.map((category) => <label key={category.kind} className="face-components-import-option"><span className="face-components-import-sheet"><span>1 peça</span></span><strong>{category.label}</strong><small>Uma imagem PNG para este detalhe facial.</small><span className="face-components-import-action"><Icon name="plus" /> Escolher imagem</span><input type="file" accept="image/png,image/jpeg,image/webp" disabled={busy || !head} onChange={(event) => void importFaceDetail(category.kind, event)} /></label>)}
+            {faceDetailCategories.map((category) => <label key={category.kind} className="face-components-import-option"><span className="face-components-import-sheet"><span>1 peça</span></span><strong>{category.label}</strong><small>Imagem PNG, JPG ou WebP estática para este detalhe facial.</small><span className="face-components-import-action"><Icon name="plus" /> Escolher imagem</span><input type="file" accept="image/png,image/jpeg,image/webp" disabled={busy || !head} onChange={(event) => void importFaceDetail(category.kind, event)} /></label>)}
           </>}
         </div> : <><div className="face-components-delete-list">
           {mode === 'eyes' ? categories.map((category) => <section key={category.kind}><h3>{category.label}</h3>{libraryAssets.filter((asset) => asset.kind === category.kind).map((asset) => {

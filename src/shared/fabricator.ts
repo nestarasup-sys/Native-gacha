@@ -69,6 +69,9 @@ export type FabricatorProjectSave = Omit<FabricatorProject, 'sourceDataUrl' | 'p
 
 export type FabricatorAssetSave = { id: string; dataUrl: string; chromaBaseDataUrl?: string }
 
+/** Carga única do canal de publicação, preservando o payload IPC legado. */
+export type FabricatorModelSourcePublishRequest = { project: FabricatorProjectSave; sourceDataUrl: string; changedAssets: FabricatorAssetSave[] }
+
 export type FabricatorHistoryAction = 'edit' | 'mixer' | 'reset'
 export type FabricatorHistoryEntry = { action: FabricatorHistoryAction; project: FabricatorProject }
 export type FabricatorHistoryState = { undo: FabricatorHistoryEntry[]; redo: FabricatorHistoryEntry[] }
@@ -108,6 +111,8 @@ export type WardrobeComponent = {
   originHeight?: number
   /** Relação congelada com o osso, atualizada junto com os ajustes manuais. */
   binding?: WardrobeBinding
+  /** Optional explicit adhesion. Absence keeps legacy wardrobe sets readable. */
+  glue?: { version: 1; mode: 'fixed' | 'loose'; sourceFrame?: { x: number; y: number; width: number; height: number; rotation: number } }
   /** Head accessories enabled here are composited above front and back hair. */
   renderAboveHair?: boolean
   dataUrl: string
@@ -126,6 +131,9 @@ export type WardrobeSet = {
   updatedAt: string
 }
 export type WardrobeSetSave = Omit<WardrobeSet, 'components'> & { components: Array<Omit<WardrobeComponent, 'dataUrl'>> }
+/** Listing warnings expose only the affected set and reason, never file paths or contents. */
+export type WardrobeCatalogListing = { sets: WardrobeSetSummary[]; issues: Array<{ id: string; reason: string }> }
+
 export type WardrobeSetSummary = Pick<WardrobeSet, 'id' | 'modelSlot' | 'modelName' | 'name' | 'updatedAt'> & { edition: WardrobeEdition; componentCount: number }
 export type WardrobeAssetSave = { id: string; dataUrl: string }
 export type FaceSheetKind = 'eyes' | 'eyebrows' | 'nose' | 'mouth-closed' | 'mouth-open'
@@ -157,7 +165,7 @@ export type FaceAssetSave = { id: string; dataUrl: string }
 export type FaceComponentKind = 'eye' | 'pupil' | 'eye-closed' | 'eyebrow'
 export type FaceDetailKind = 'eye-highlight-left' | 'eye-highlight-right' | 'blush' | 'facial-shadow'
 export type FaceAssetKind = FaceComponentKind | FaceDetailKind | 'head-extra'
-export type FaceGuideProfile = 'eyes' | 'face'
+export type FaceGuideProfile = 'eyes' | 'face' | 'head-extras'
 export type FaceGuideSettings = { visible: boolean; verticalX: number; horizontalY: number; lowerHorizontalY: number; angle: number }
 export type FaceComponentAsset = { schemaVersion: 1; id: string; modelSlot: number; kind: FaceAssetKind; name: string; width: number; height: number; defaultTransform: FaceTransform; rightSidePositioned?: boolean; pairId?: string; updatedAt: string; dataUrl: string }
 export type FaceComponentAssetSave = Omit<FaceComponentAsset, 'dataUrl'>
@@ -202,8 +210,20 @@ export type FaceExpressionTransforms = {
   nose: FaceTransform
   mouth: FaceTransform
 }
+/** Versioned portable motion independent of the PNGs used for authoring. */
+export type PortableExpressionMotion = {
+  version: 1
+  layers: Partial<Record<keyof FaceExpressionTransforms, {
+    dx: number; dy: number; sx: number; sy: number; rotation: number; flip: boolean; sourceMirrored?: boolean
+  }>>
+}
 export type FaceExpressionEffect = { enabled: boolean; color: string; opacity: number; softness: number; size: number; offsetY: number; offsetX?: number; aspectRatio?: number; width?: number; height?: number; rotation?: number; style?: 'oval' | 'cheeks' | 'bands' | 'diagonal' | 'spot' }
 export type FaceExpressionEffects = { shadow: FaceExpressionEffect; blush: FaceExpressionEffect; mouthBlush: FaceExpressionEffect }
+/** PT inherits every regular expression field except pupil x, y and rotation. */
+export type PtPupilOverrides = Partial<Record<'left' | 'right', Pick<FaceTransform, 'x' | 'y' | 'rotation'>>>
+export type PtPupilMotion = { version: 1; layers: Partial<Record<'left' | 'right', {
+  dx: number; dy: number; rotation: number; sourceMirrored?: boolean
+}>> }
 /** A preset stores immutable references to shared face assets plus private transform snapshots. */
 export type FaceExpressionPreset = {
   schemaVersion: 1
@@ -217,6 +237,10 @@ export type FaceExpressionPreset = {
   transforms: FaceExpressionTransforms
   /** Asset calibration at authoring time, used to transfer relative edits safely. */
   referenceTransforms?: FaceExpressionTransforms
+  /** Saved relative movement. Applies to any compatible character's facial assets. */
+  portableMotion?: PortableExpressionMotion
+  ptPupils?: PtPupilOverrides
+  ptPupilMotion?: PtPupilMotion
   noseOpacity: number
   effects?: FaceExpressionEffects
   updatedAt: string
@@ -227,6 +251,7 @@ export type FaceExpressionWorkspaceEntry = {
   id: string
   selections: FaceExpressionSelections
   transforms: FaceExpressionTransforms
+  ptPupils?: PtPupilOverrides
   noseOpacity: number
   effects: FaceExpressionEffects
 }
@@ -364,6 +389,10 @@ export type FabricatorDesktopApi = {
   importFabricatorModel: (slot: number) => Promise<{ sourceName: string; sourceAssetName: string; sourceDataUrl: string } | null>
   loadFabricatorSlot: (slot: number) => Promise<FabricatorProject | null>
   saveFabricatorProject: (project: FabricatorProjectSave, changedAssets: FabricatorAssetSave[]) => Promise<void>
+  /** Publica uma folha PNG definitiva, suas peças e o novo manifesto num único slot. */
+  publishFabricatorModelSource: (project: FabricatorProjectSave, sourceDataUrl: string, changedAssets: FabricatorAssetSave[]) => Promise<string>
+  /** Exporta a visualização do modelo em PNG para Downloads, sem modificar o projeto. */
+  downloadFabricatorModelSource: (slot: number, pngDataUrl: string) => Promise<string>
   loadFabricatorHistory: (slot: number) => Promise<FabricatorHistoryState>
   saveFabricatorHistory: (slot: number, history: FabricatorHistorySaveState, current: FabricatorProjectSave, changedAssets: FabricatorAssetSave[]) => Promise<void>
   deleteFabricatorSlot: (slot: number) => Promise<void>
@@ -385,6 +414,7 @@ export type FabricatorDesktopApi = {
   saveAnimatorDraft: (modelSlot: number, draft: AnimatorAnimationDraft, assets: AnimatorAnimationAsset[]) => Promise<void>
   deleteAnimatorDraft: (modelSlot: number) => Promise<void>
   listWardrobeSets: (modelSlot: number) => Promise<WardrobeSetSummary[]>
+  listWardrobeSetsDetailed: (modelSlot: number) => Promise<WardrobeCatalogListing>
   loadWardrobeSet: (modelSlot: number, id: string) => Promise<WardrobeSet | null>
   saveWardrobeSet: (modelSlot: number, set: WardrobeSetSave, assets: WardrobeAssetSave[]) => Promise<void>
   deleteWardrobeSet: (modelSlot: number, id: string) => Promise<void>
@@ -401,6 +431,7 @@ export type FabricatorDesktopApi = {
   saveFaceExpressionCollection: (modelSlot: number, collection: FaceExpressionCollection) => Promise<void>
   loadFaceExpressionPreset: (modelSlot: number, id: string) => Promise<FaceExpressionPreset | null>
   saveFaceExpressionPreset: (modelSlot: number, preset: FaceExpressionPreset) => Promise<void>
+  saveFaceExpressionPresetBatch: (modelSlot: number, presets: FaceExpressionPreset[]) => Promise<void>
   deleteFaceExpressionPreset: (modelSlot: number, id: string) => Promise<void>
   saveFaceAnimationExport: (modelSlot: number, data: Uint8Array) => Promise<boolean>
   loadFaceExpressionWorkspaceDraft: (modelSlot: number) => Promise<FaceExpressionWorkspaceDraft | null>

@@ -1,3 +1,9 @@
+import { studioCharacterRenderKey, studioElementSize } from '../../../../shared/studioSceneModel'
+import { SerializedDocumentSaveQueue } from '../../../../shared/serializedDocumentSave'
+import { isPoseSnapshotForModel } from '../../../../shared/characterSourceContinuity'
+import { recordStudioHistory, undoStudioHistory, redoStudioHistory } from '../../../../shared/studioHistory'
+import { useStudioInspectorState } from '../../characters/useStudioInspectorState'
+import { trimTransparentImage, fitElementToTrim, faceRenderGeometry, type TrimmedImage } from '../../characters/characterGeometry'
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { buildStudioExpressionAppearance, buildStudioExpressionTransforms, resolveStudioExpressionBase, studioExpressionCollection } from './expressionTransforms'
 import { Icon } from '../../ui/components/Icon'
@@ -7,15 +13,14 @@ import { fitStudioCharacterToStage } from '../../../../shared/studioCharacterGeo
 import type { StudioAsset, StudioDocument, StudioElement, StudioFaceMode, StudioFaceTransform, StudioFaceTransforms } from '../../../../shared/studio'
 import type { CustomizerCharacter } from '../../../../shared/customizer'
 import type { CustomizerFaceAppearance } from '../../../../shared/customizer'
-import type { FaceCatalogItem, FaceCatalogItemSummary, FaceExpressionCollection, FaceExpressionEffects, FaceExpressionPreset, FaceExpressionPresetSummary, FaceSheetKind, FabricatorPoseSummary } from '../../../../shared/fabricator'
-
+import type { FaceCatalogItem, FaceCatalogItemSummary, FaceExpressionEffects, FaceExpressionPreset, FaceExpressionPresetSummary, FaceSheetKind, FabricatorPoseSummary } from '../../../../shared/fabricator'
 type StudioCard = StudioDocument
 type StudioSnapshot = Pick<StudioDocument, 'backgroundColor' | 'backgroundAssetId' | 'backgroundX' | 'backgroundY' | 'backgroundWidth' | 'backgroundHeight' | 'backgroundRotation' | 'assets' | 'elements'>
 type Tool = 'background' | 'objects' | null
 type DragState = { id: string; pointerId: number; startX: number; startY: number; originalX: number; originalY: number; width: number; height: number }
 
 const STORAGE_KEY = 'gacha-nymi-studio-catalog-v1'
-const STUDIO_FACE_RENDER_VERSION = 6
+const STUDIO_FACE_RENDER_VERSION = 7
 const studioColor = (number: number) => `hsl(${(number * 137.508) % 360} 45% 78%)`
 const defaultStudioEyeTransform: StudioFaceTransform = { x: 0, y: 0, width: 100, height: 100, rotation: 0 }
 function studioFaceModeForElement(element: StudioElement | null, appearance: CustomizerFaceAppearance | undefined): StudioFaceMode {
@@ -30,58 +35,6 @@ const studioTools = [
 ] as const
 const isUuid = (value: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
 
-type TrimmedImage = { dataUrl: string; width: number; height: number; left: number; top: number; sourceWidth: number; sourceHeight: number }
-
-function trimTransparentImage(dataUrl: string): Promise<TrimmedImage | null> {
-  return new Promise((resolve) => {
-    const image = new Image()
-    image.onload = () => {
-      const canvas = document.createElement('canvas')
-      canvas.width = image.naturalWidth
-      canvas.height = image.naturalHeight
-      const context = canvas.getContext('2d', { willReadFrequently: true })
-      if (!context || !canvas.width || !canvas.height) return resolve(null)
-      context.drawImage(image, 0, 0)
-      let pixels: Uint8ClampedArray
-      try { pixels = context.getImageData(0, 0, canvas.width, canvas.height).data } catch { return resolve(null) }
-      let left = canvas.width, top = canvas.height, right = -1, bottom = -1
-      for (let y = 0; y < canvas.height; y++) for (let x = 0; x < canvas.width; x++) {
-        if (pixels[(y * canvas.width + x) * 4 + 3] <= 8) continue
-        if (x < left) left = x
-        if (x > right) right = x
-        if (y < top) top = y
-        if (y > bottom) bottom = y
-      }
-      if (right < left || bottom < top) return resolve(null)
-      const width = right - left + 1
-      const height = bottom - top + 1
-      if (left === 0 && top === 0 && width === canvas.width && height === canvas.height) return resolve(null)
-      const cropped = document.createElement('canvas')
-      cropped.width = width
-      cropped.height = height
-      cropped.getContext('2d')?.drawImage(image, left, top, width, height, 0, 0, width, height)
-      resolve({ dataUrl: cropped.toDataURL('image/png'), width, height, left, top, sourceWidth: canvas.width, sourceHeight: canvas.height })
-    }
-    image.onerror = () => resolve(null)
-    image.src = dataUrl
-  })
-}
-
-function fitElementToTrim(element: StudioElement, crop: TrimmedImage): StudioElement {
-  const offsetX = ((crop.left + crop.width / 2) / crop.sourceWidth - 0.5) * element.width * (element.flipX ? -1 : 1)
-  const offsetY = ((crop.top + crop.height / 2) / crop.sourceHeight - 0.5) * element.height
-  const radians = element.rotation * Math.PI / 180
-  const x = offsetX * Math.cos(radians) - offsetY * (9 / 16) * Math.sin(radians)
-  const y = offsetX * (16 / 9) * Math.sin(radians) + offsetY * Math.cos(radians)
-  return {
-    ...element,
-    x: element.x + x,
-    y: element.y + y,
-    width: element.width * crop.width / crop.sourceWidth,
-    height: element.height * crop.height / crop.sourceHeight
-  }
-}
-
 function loadLegacyStudios(): Array<{ id: string; title: string; color: string }> {
   try {
     const saved: unknown = JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? '[]')
@@ -91,48 +44,9 @@ function loadLegacyStudios(): Array<{ id: string; title: string; color: string }
   } catch { return [] }
 }
 
-function snapshot(studio: StudioDocument): StudioSnapshot {
-  return {
-    backgroundColor: studio.backgroundColor,
-    backgroundAssetId: studio.backgroundAssetId,
-    backgroundX: studio.backgroundX,
-    backgroundY: studio.backgroundY,
-    backgroundWidth: studio.backgroundWidth,
-    backgroundHeight: studio.backgroundHeight,
-    backgroundRotation: studio.backgroundRotation,
-    assets: studio.assets,
-    elements: studio.elements
-  }
-}
 
-function withSnapshot(studio: StudioDocument, next: StudioSnapshot): StudioDocument {
-  return { ...studio, ...next, updatedAt: new Date().toISOString() }
-}
 
-function studioCharacterRenderKey(character: CustomizerCharacter): string {
-  const { faceAppearance: _ignored, ...customization } = character.customization
-  return JSON.stringify({ id: character.id, customization })
-}
 
-function studioElementSize(element: StudioElement) {
-  if (element.kind !== 'character') return { width: element.width, height: element.height }
-  const scale = (element.characterScale ?? 100) / 100
-  return {
-    width: element.width * scale * (element.characterWidthScale ?? 100) / 100,
-    height: element.height * scale * (element.characterHeightScale ?? 100) / 100
-  }
-}
-
-function faceRenderGeometry(element: StudioElement, rendered: { width: number; height: number }, crop: { width: number; height: number } | null, stageWidth: number, stageHeight: number) {
-  const cropWidth = crop?.width ?? rendered.width
-  const cropHeight = crop?.height ?? rendered.height
-  const characterCanvasWidth = element.characterCanvasWidth ?? element.width * rendered.width / Math.max(1, cropWidth)
-  return {
-    characterCanvasWidth,
-    width: characterCanvasWidth * cropWidth / rendered.width,
-    height: characterCanvasWidth * stageWidth / Math.max(1, stageHeight) * cropHeight / rendered.width
-  }
-}
 
 function makeElement(kind: StudioElement['kind'], zIndex: number): StudioElement {
   return {
@@ -233,25 +147,18 @@ export function StudioPage() {
   const [castPickerOpen, setCastPickerOpen] = useState(false)
   const [castSelection, setCastSelection] = useState<string[]>([])
   const [savingCast, setSavingCast] = useState(false)
-  const [inspectorTab, setInspectorTab] = useState<'editor' | 'custom'>('editor')
-  const [inspectorCustomView, setInspectorCustomView] = useState<'face' | 'presets'>('face')
-  const characterInspectorViewRef = useRef<{ tab: 'editor' | 'custom'; customView: 'face' | 'presets' }>({ tab: 'editor', customView: 'face' })
-  const [studioPresetCategory, setStudioPresetCategory] = useState<'pose' | 'expression'>('expression')
-  const [studioExpressionCollections, setStudioExpressionCollections] = useState<FaceExpressionCollection[]>([])
-  const [studioExpressionPresets, setStudioExpressionPresets] = useState<FaceExpressionPresetSummary[]>([])
-  const [sceneExpressionPresetVersions, setSceneExpressionPresetVersions] = useState<Record<string, string>>({})
-  const [studioExpressionCollectionMenuOpen, setStudioExpressionCollectionMenuOpen] = useState(false)
-  const [studioExpressionLoading, setStudioExpressionLoading] = useState(false)
-  const [studioExpressionBusy, setStudioExpressionBusy] = useState(false)
-  const [studioPoseSlots, setStudioPoseSlots] = useState<Array<NonNullable<FabricatorPoseSummary>>>([])
-  const [studioPoseThumbnails, setStudioPoseThumbnails] = useState<Record<number, string>>({})
-  const [studioPoseDimensions, setStudioPoseDimensions] = useState<Record<number, { width: number; height: number }>>({})
-  const [inspectorOpen, setInspectorOpen] = useState(true)
-  const [studioFaceCategory, setStudioFaceCategory] = useState<'eyes' | 'eyebrows' | 'nose' | 'mouth'>('eyes')
-  const [studioFaceItems, setStudioFaceItems] = useState<FaceCatalogItemSummary[]>([])
-  const [studioFaceDetails, setStudioFaceDetails] = useState<Record<string, FaceCatalogItem>>({})
-  const [studioFaceLoading, setStudioFaceLoading] = useState(false)
-  const [studioFaceBusy, setStudioFaceBusy] = useState(false)
+  const {
+    inspectorTab, setInspectorTab, inspectorCustomView, setInspectorCustomView,
+    characterInspectorViewRef, studioPresetCategory, setStudioPresetCategory, studioExpressionCollections,
+    setStudioExpressionCollections, studioExpressionPresets, setStudioExpressionPresets, sceneExpressionPresetVersions,
+    setSceneExpressionPresetVersions, studioExpressionCollectionMenuOpen, setStudioExpressionCollectionMenuOpen, studioExpressionLoading,
+    setStudioExpressionLoading, studioExpressionBusy, setStudioExpressionBusy, studioPoseSlots,
+    setStudioPoseSlots, studioPoseThumbnails, setStudioPoseThumbnails, studioPoseDimensions,
+    setStudioPoseDimensions, inspectorOpen, setInspectorOpen, studioFaceCategory,
+    setStudioFaceCategory, studioFaceItems, setStudioFaceItems, studioFaceDetails,
+    setStudioFaceDetails, studioFaceLoading, setStudioFaceLoading, studioFaceBusy,
+    setStudioFaceBusy
+  } = useStudioInspectorState()
   const [studioFolder, setStudioFolder] = useState('')
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [activeStudioId, setActiveStudioId] = useState<string | null>(null)
@@ -273,6 +180,7 @@ export function StudioPage() {
   const studioFaceRenderRunningRef = useRef(false)
   const studioFaceRendererRef = useRef<{ key: string; render: (appearance?: CustomizerFaceAppearance, transforms?: StudioFaceTransforms, effects?: FaceExpressionEffects, mode?: StudioFaceMode) => Promise<{ dataUrl: string; width: number; height: number }> } | null>(null)
   const saveGenerationRef = useRef(0)
+  const studioSaveQueue = useRef(new SerializedDocumentSaveQueue())
   const expressionSaveSignatureRef = useRef<{ studioId: string; value: string } | null>(null)
   const normalizedStudioIdsRef = useRef(new Set<string>())
   const nextStudioNumber = useRef(1)
@@ -480,7 +388,7 @@ export function StudioPage() {
       const thumbnails = await Promise.all(studioPoseSlots.map(async (pose) => {
         try {
           const artwork = await window.desktop.loadFabricatorPose(pose.sourceModelSlot, pose.slot)
-          if (!artwork) return null
+          if (!isPoseSnapshotForModel(artwork, pose.sourceModelSlot, pose.slot)) return null
           const thumbnail = await renderArtwork(artwork, 180)
           return thumbnail ? { slot: pose.slot, thumbnail, width: artwork.width, height: artwork.height } : null
         } catch { return null }
@@ -594,7 +502,7 @@ export function StudioPage() {
             ? savedPreset && appearance && expressionBase
               ? await buildStudioExpressionTransforms(savedPreset, appearance, expressionBase.transforms,
                 (id) => window.desktop.loadFaceComponentAsset(savedPreset.modelSlot, id),
-                (id) => window.desktop.loadFaceCatalogItem(savedPreset.modelSlot, id))
+                (id) => window.desktop.loadFaceCatalogItem(savedPreset.modelSlot, id), element.activeExpressionGaze ?? 'right')
               : expressionBase?.transforms ?? element.faceTransforms
             : element.faceTransforms ?? expressionBase?.transforms
           const expressionEffects = shouldRecomposeExpression ? savedPreset?.effects : element.activeExpressionEffects
@@ -704,9 +612,14 @@ export function StudioPage() {
     if (!document) return true
     const generation = ++saveGenerationRef.current
     try {
-      const thumbnailDataUrl = await makeStudioThumbnail(document).catch(() => document.thumbnailDataUrl)
-      const savedDocument = { ...document, ...(thumbnailDataUrl ? { thumbnailDataUrl } : {}), updatedAt: new Date().toISOString() }
-      await window.desktop.saveStudio(savedDocument)
+      // Enfileirar antes de preparar a miniatura: uma geração PNG lenta não pode
+      // fazer um snapshot antigo ser gravado depois de um novo.
+      const savedDocument = await studioSaveQueue.current.run(async () => {
+        const thumbnailDataUrl = await makeStudioThumbnail(document).catch(() => document.thumbnailDataUrl)
+        const next = { ...document, ...(thumbnailDataUrl ? { thumbnailDataUrl } : {}), updatedAt: new Date().toISOString() }
+        await window.desktop.saveStudio(next)
+        return next
+      })
       if (generation === saveGenerationRef.current) {
         if (savedDocument.thumbnailDataUrl !== document.thumbnailDataUrl) {
           setStudios((current) => current.map((studio) => studio.id === document.id && studio.updatedAt === document.updatedAt && studio.thumbnailDataUrl !== savedDocument.thumbnailDataUrl
@@ -745,39 +658,42 @@ export function StudioPage() {
 
   const recordHistory = () => {
     if (!activeStudio) return
-    undoRef.current = [...undoRef.current.slice(-29), snapshot(activeStudio)]
-    redoRef.current = []
-    setCanUndo(undoRef.current.length > 0)
+    const history = recordStudioHistory({ undo: undoRef.current, redo: redoRef.current }, activeStudio)
+    undoRef.current = history.undo
+    redoRef.current = history.redo
+    setCanUndo(history.undo.length > 0)
     setCanRedo(false)
-    setHistoryVersion((value) => value + 1)
+    setHistoryVersion(value => value + 1)
   }
 
   const changeScene = (transform: (studio: StudioDocument) => StudioDocument) => {
     if (!activeStudio) return
     recordHistory()
-    patchStudio((studio) => transform(studio))
+    patchStudio(transform)
   }
 
   const undo = () => {
-    if (!activeStudio || !undoRef.current.length) return
-    const previous = undoRef.current[undoRef.current.length - 1]
-    undoRef.current = undoRef.current.slice(0, -1)
-    redoRef.current = [...redoRef.current.slice(-29), snapshot(activeStudio)]
-    patchStudio((studio) => withSnapshot(studio, previous))
-    setCanUndo(undoRef.current.length > 0)
+    if (!activeStudio) return
+    const result = undoStudioHistory({ undo: undoRef.current, redo: redoRef.current }, activeStudio)
+    if (!result) return
+    undoRef.current = result.history.undo
+    redoRef.current = result.history.redo
+    patchStudio(() => result.document)
+    setCanUndo(result.history.undo.length > 0)
     setCanRedo(true)
-    setHistoryVersion((value) => value + 1)
+    setHistoryVersion(value => value + 1)
   }
 
   const redo = () => {
-    if (!activeStudio || !redoRef.current.length) return
-    const next = redoRef.current[redoRef.current.length - 1]
-    redoRef.current = redoRef.current.slice(0, -1)
-    undoRef.current = [...undoRef.current.slice(-29), snapshot(activeStudio)]
-    patchStudio((studio) => withSnapshot(studio, next))
+    if (!activeStudio) return
+    const result = redoStudioHistory({ undo: undoRef.current, redo: redoRef.current }, activeStudio)
+    if (!result) return
+    undoRef.current = result.history.undo
+    redoRef.current = result.history.redo
+    patchStudio(() => result.document)
     setCanUndo(true)
-    setCanRedo(redoRef.current.length > 0)
-    setHistoryVersion((value) => value + 1)
+    setCanRedo(result.history.redo.length > 0)
+    setHistoryVersion(value => value + 1)
   }
 
   const importImage = async (category: StudioAsset['category']) => {
@@ -888,7 +804,7 @@ export function StudioPage() {
     } finally { setSavingCast(false) }
   }
 
-  const applyStudioFaceAppearance = async (appearance: CustomizerFaceAppearance, faceTransforms: StudioFaceTransforms = selectedElement?.faceTransforms ?? {}, record = true, expressionState?: Pick<StudioElement, 'expressionBase' | 'activeExpressionPresetId' | 'activeExpressionPresetUpdatedAt' | 'activeExpressionCollectionId' | 'activeExpressionEffects' | 'activeFaceMode'>) => {
+  const applyStudioFaceAppearance = async (appearance: CustomizerFaceAppearance, faceTransforms: StudioFaceTransforms = selectedElement?.faceTransforms ?? {}, record = true, expressionState?: Pick<StudioElement, 'expressionBase' | 'activeExpressionGaze' | 'activeExpressionPresetId' | 'activeExpressionPresetUpdatedAt' | 'activeExpressionCollectionId' | 'activeExpressionEffects' | 'activeFaceMode'>) => {
     if (!activeStudio || selectedElement?.kind !== 'character' || !selectedStudioCharacter || !selectedElement.assetId || studioFaceBusy) return
     setStudioFaceBusy(true)
     try {
@@ -939,11 +855,11 @@ export function StudioPage() {
     const base = { ...resolveStudioExpressionBase(selectedElement, appearance), appearance: structuredClone(appearance) }
     setStudioExpressionBusy(true)
     try {
-      await applyStudioFaceAppearance(base.appearance, base.transforms, true, { expressionBase: base, activeExpressionPresetId: null, activeExpressionPresetUpdatedAt: undefined, activeExpressionCollectionId: selectedStudioExpressionCollectionId, activeExpressionEffects: undefined, activeFaceMode: faceMode })
+      await applyStudioFaceAppearance(base.appearance, base.transforms, true, { expressionBase: base, activeExpressionPresetId: null, activeExpressionGaze: 'right', activeExpressionPresetUpdatedAt: undefined, activeExpressionCollectionId: selectedStudioExpressionCollectionId, activeExpressionEffects: undefined, activeFaceMode: faceMode })
     } finally { setStudioExpressionBusy(false) }
   }
 
-  const applyStudioExpressionPreset = async (summary: FaceExpressionPresetSummary, pupilsLeft = false) => {
+  const applyStudioExpressionPreset = async (summary: FaceExpressionPresetSummary, gaze: 'right' | 'left' = 'right') => {
     if (!selectedStudioCharacter || !selectedElement || selectedElement.kind !== 'character' || studioExpressionBusy || studioFaceBusy) return
     setStudioExpressionBusy(true)
     setError(null)
@@ -962,35 +878,11 @@ export function StudioPage() {
       const faceTransforms = await buildStudioExpressionTransforms(
         preset, nextAppearance, base.transforms,
         (id) => window.desktop.loadFaceComponentAsset(preset.modelSlot, id),
-        (id) => window.desktop.loadFaceCatalogItem(preset.modelSlot, id)
+        (id) => window.desktop.loadFaceCatalogItem(preset.modelSlot, id),
+        gaze
       )
-      if (pupilsLeft) {
-        for (const side of ['left', 'right'] as const) {
-          const pupilPart = `pupil-${side}` as const
-          const eyePart = `eye-${side}` as const
-          const transformKey = `expression-component:${pupilPart}`
-          const current = faceTransforms[transformKey]
-          const pupilId = nextAppearance.components?.[pupilPart]?.assetId
-          const eyeId = nextAppearance.components?.[eyePart]?.assetId
-          if (!current?.sourceTransformOverride || !pupilId || !eyeId) continue
-          const [pupilAsset, eyeAsset] = await Promise.all([
-            window.desktop.loadFaceComponentAsset(preset.modelSlot, pupilId),
-            window.desktop.loadFaceComponentAsset(preset.modelSlot, eyeId)
-          ])
-          if (!pupilAsset || !eyeAsset) continue
-          const eyeTransform = nextAppearance.components?.[eyePart]?.transform ?? eyeAsset.defaultTransform
-          const pointsLeft = side === 'left' || pupilAsset.rightSidePositioned === true
-          faceTransforms[transformKey] = {
-            ...current,
-            sourceTransformOverride: {
-              ...current.sourceTransformOverride,
-              x: (pointsLeft ? -1 : 1) * eyeAsset.width * eyeTransform.scaleX * .16
-            }
-          }
-        }
-      }
 
-      await applyStudioFaceAppearance(nextAppearance, faceTransforms, true, { expressionBase: base, activeExpressionPresetId: preset.id, activeExpressionPresetUpdatedAt: preset.updatedAt, activeExpressionCollectionId: preset.collectionId ?? 'standard', activeExpressionEffects: preset.effects, activeFaceMode: faceMode })
+      await applyStudioFaceAppearance(nextAppearance, faceTransforms, true, { expressionBase: base, activeExpressionPresetId: preset.id, activeExpressionGaze: gaze, activeExpressionPresetUpdatedAt: preset.updatedAt, activeExpressionCollectionId: preset.collectionId ?? 'standard', activeExpressionEffects: preset.effects, activeFaceMode: faceMode })
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Não foi possível aplicar este preset de expressão.')
     } finally {
@@ -1450,10 +1342,10 @@ export function StudioPage() {
               <div className="studio-expression-list">
                 <button className={`studio-expression-option${!selectedElement.activeExpressionPresetId ? ' selected' : ''}`} type="button" onClick={() => void applyStudioBaseExpression()} disabled={studioExpressionBusy || studioFaceBusy} aria-pressed={!selectedElement.activeExpressionPresetId}><b>•</b><span>Base</span></button>
                 {expressions.map((preset) => <div className="studio-expression-row" key={preset.id}>
-                  <button className={`studio-expression-option${selectedElement.activeExpressionPresetId === preset.id ? ' selected' : ''}`} type="button" aria-pressed={selectedElement.activeExpressionPresetId === preset.id} onClick={() => void applyStudioExpressionPreset(preset)} disabled={studioExpressionBusy || studioFaceBusy}>
+                  <button className={`studio-expression-option${selectedElement.activeExpressionPresetId === preset.id && selectedElement.activeExpressionGaze !== 'left' ? ' selected' : ''}`} type="button" aria-pressed={selectedElement.activeExpressionPresetId === preset.id} onClick={() => void applyStudioExpressionPreset(preset)} disabled={studioExpressionBusy || studioFaceBusy}>
                     <b>{String((preset.expressionIndex ?? 0) + 1).padStart(2, '0')}</b><span>{preset.name}</span>
                   </button>
-                  <button className="studio-expression-look-left" type="button" title={`Aplicar ${preset.name} com as pupilas voltadas à esquerda`} aria-label={`Pupilas à esquerda: ${preset.name}`} onClick={() => void applyStudioExpressionPreset(preset, true)} disabled={studioExpressionBusy || studioFaceBusy}>pt</button>
+                  <button className="studio-expression-look-left" type="button" aria-pressed={selectedElement.activeExpressionPresetId === preset.id && selectedElement.activeExpressionGaze === 'left'} title={`Aplicar ${preset.name} com as pupilas voltadas à esquerda`} aria-label={`Pupilas à esquerda: ${preset.name}`} onClick={() => void applyStudioExpressionPreset(preset, 'left')} disabled={studioExpressionBusy || studioFaceBusy}>pt</button>
                 </div>)}
                 {!expressions.length && <p className="studio-custom-hint">Nenhuma expressão salva neste conjunto. Salve expressões no Expressão Dev para listá-las aqui.</p>}
               </div>

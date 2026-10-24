@@ -1,0 +1,789 @@
+/** Captura as telas reais do Fabricador, dentro do perfil de teste DEV AI.
+ * Os dados da biblioteca de produção nunca são montados nem modificados.
+ */
+import { app, type BrowserWindow } from 'electron'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import { createHash } from 'node:crypto'
+import sharp from 'sharp'
+
+const sections = [
+  ['modelos', 'Modelos Dev'], ['poses', 'Poses Dev'], ['roupas', 'Roupas Dev'],
+  ['olhos', 'Olhos Dev'], ['rosto', 'Rosto Dev'], ['expressoes', 'Preset Expressão Dev'],
+  ['cabelos', 'Cabelos Dev'], ['animador', 'Animador Dev']
+] as const
+
+async function waitFor(win: BrowserWindow, selector: string, timeoutMs = 15000): Promise<void> {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    if (win.isDestroyed() || win.webContents.isDestroyed()) throw new Error('Janela de captura foi fechada.')
+    const present = await win.webContents.executeJavaScript(
+      `Boolean(document.querySelector(${JSON.stringify(selector)}))`
+    ) as boolean
+    if (present) return
+    await new Promise(resolve => setTimeout(resolve, 150))
+  }
+  throw new Error('Tela não abriu: ' + selector)
+}
+/** Não aceitar screenshot do Suspense ou do skeleton de navegação.
+ * Exigir DOM estável e conteúdo visível antes de cada captura de workspace.
+ */
+async function waitForRendered(win: BrowserWindow, selector: string, timeoutMs = 30000): Promise<void> {
+  const until = Date.now() + timeoutMs
+  let consecutive = 0
+  while (Date.now() < until) {
+    const ready = await win.webContents.executeJavaScript(`(() => {
+      const element = document.querySelector(${JSON.stringify(selector)})
+      if (!element || !element.isConnected) return false
+      const rectangle = element.getBoundingClientRect()
+      return rectangle.width > 0 && rectangle.height > 0 &&
+        !document.body.innerText.includes('Carregando área')
+    })()`) as boolean
+    consecutive = ready ? consecutive + 1 : 0
+    if (consecutive >= 4) return
+    await new Promise(resolve => setTimeout(resolve, 250))
+  }
+  throw new Error('Tela não terminou de renderizar (evitando screenshot de loading): ' + selector)
+}
+
+/** Regressão de pixels: peça com deslocamentos X/Y deve continuar no lado
+ * correto do personagem. Nada é alterado na biblioteca pessoal do Fabricador.
+ */
+async function inspectSyntheticWardrobePreview(win: BrowserWindow, requirePoseOneOffsets = true, expectedNames: readonly string[] = ['coat','sleeve-left','sleeve-right'], absentName?: string): Promise<{
+  source: 'customizer-overlay'; colors: Array<{ name: string; pixels: number; x: number; y: number }>
+}> {
+  await waitForRendered(win, 'img.customizer-wardrobe-overlay', 30000)
+  const uri = await win.webContents.executeJavaScript(
+    "document.querySelector('img.customizer-wardrobe-overlay')?.getAttribute('src') ?? null"
+  ) as string | null
+  if (!uri?.startsWith('data:image/png;base64,')) throw Error('Customizador não compôs a roupa em PNG.')
+  const image = await sharp(Buffer.from(uri.slice(uri.indexOf(',') + 1), 'base64')).ensureAlpha().raw().toBuffer({ resolveWithObject: true })
+  const expected = [
+    { name: 'coat', rgba: [212,82,115] },
+    { name: 'sleeve-left', rgba: [42,174,207] },
+    { name: 'sleeve-right', rgba: [237,177,60] }
+  ]
+  const colors = expected.filter(item => expectedNames.includes(item.name)).map(item => {
+    let sumX = 0, sumY = 0, count = 0
+    for (let y = 0; y < image.info.height; y++) for (let x = 0; x < image.info.width; x++) {
+      const index = (y * image.info.width + x) * 4
+      if (image.data[index+3] < 160 || item.rgba.some((value,channel) => Math.abs(value-image.data[index+channel]) > 9)) continue
+      sumX += x; sumY += y; count++
+    }
+    if (count < 15) throw Error('Peça sintética não apareceu na composição do Customizador: ' + item.name)
+    return { name: item.name, pixels: count, x: sumX/count, y: sumY/count }
+  })
+  if (absentName) {
+    const absent = expected.find(item => item.name === absentName)
+    if (!absent) throw Error('Nome desconhecido de roupa sintética: ' + absentName)
+    let remainingPixels = 0
+    for (let y = 0; y < image.info.height; y++) for (let x = 0; x < image.info.width; x++) {
+      const index = (y * image.info.width + x) * 4
+      if (image.data[index+3] >= 160 &&
+        absent.rgba.every((value,channel) => Math.abs(value-image.data[index+channel]) <= 9)) remainingPixels++
+    }
+    if (remainingPixels >= 15) throw Error('Peça oculta ainda aparece no Customizador: ' + absentName)
+  }
+  const left = colors[1], right = colors[2]
+  if (requirePoseOneOffsets && colors.length === 3 && (left.x >= right.x - 30 || left.y <= right.y + 6)) {
+    throw Error('Offsets X/Y do Fabricador não sobreviveram no Customizador: ' + JSON.stringify(colors))
+  }
+  return { source: 'customizer-overlay', colors }
+}
+
+/** Sample the ACTUAL Chromium renderer in the synthetic Electron profile.
+ * The screen may be idle; sampled FPS is diagnostic, not a gaming benchmark.
+ * Never run this sampling or retain memory readings from production profiles.
+ */
+async function sampleElectronPerformance(win: BrowserWindow): Promise<{ sampledFps: number; frameP95Ms: number; rendererWorkingSetKb: number; rendererPrivateKb: number | null; jsHeapUsedBytes: number | null }> {
+  const samples = await win.webContents.executeJavaScript(`new Promise(resolve => {
+    const gaps = []; let previous = null
+    function sample(now) {
+      if (previous !== null) gaps.push(now - previous)
+      previous = now
+      if (gaps.length < 20) requestAnimationFrame(sample)
+      else {
+        gaps.sort((a,b) => a-b)
+        const average = gaps.reduce((a,b) => a+b,0) / gaps.length
+        const used = performance.memory?.usedJSHeapSize
+        resolve({ sampledFps: 1000/average, frameP95Ms: gaps[Math.ceil(gaps.length*.95)-1],
+          jsHeapUsedBytes: Number.isFinite(used) ? used : null })
+      }
+    }
+    requestAnimationFrame(sample)
+  })`) as { sampledFps: number; frameP95Ms: number; jsHeapUsedBytes: number | null }
+  const rendererPid = win.webContents.getOSProcessId()
+  const processMetric = app.getAppMetrics().find(item => item.pid === rendererPid)
+  if (!processMetric?.memory || processMetric.memory.workingSetSize <= 0) throw Error('Processo renderizador Electron não forneceu métricas de memória.')
+  return { ...samples, rendererWorkingSetKb: processMetric.memory.workingSetSize,
+    rendererPrivateKb: processMetric.memory.privateBytes ?? null }
+}
+
+/** Click the REAL Roupas DEV UI: Soltar → Fixar → Salvar, then reload by IPC. */
+async function exerciseGlueWorkflow(win: BrowserWindow): Promise<void> {
+  const before = await win.webContents.executeJavaScript("window.desktop.loadWardrobeSet(1, 'uniform')") as {components: Array<{id:string;dataUrl:string}>} | null
+  if (!before?.components.length) throw Error('Fixture de roupa não carregou para o teste de grude.')
+  const waitStatus = async (expected: string) => {
+    for(let attempt=0; attempt<50; attempt++) {
+      const found = await win.webContents.executeJavaScript("document.querySelector('.wardrobe-glue-controls [role=status]')?.textContent ?? ''") as string
+      if (found.includes(expected)) return
+      await new Promise(resolve => setTimeout(resolve, 100))
+    }
+    throw Error('Estado de grude não apareceu: ' + expected)
+  }
+  const click = async (name: string, root = '.wardrobe-glue-controls') => {
+    const found = await win.webContents.executeJavaScript(`(() => {
+      const button = [...document.querySelectorAll(${JSON.stringify(root + ' button')})]
+        .find(item => item.textContent?.includes(${JSON.stringify(name)}))
+      if (!button) return false
+      button.click()
+      return true
+    })()`) as boolean
+    if (!found) throw Error('Botão de grude não encontrado: ' + name)
+  }
+  await waitStatus('Fixada')
+  await click('Soltar')
+  await waitStatus('Solta')
+  await click('Fixar')
+  await waitStatus('Fixada')
+  await click('Salvar', '.wardrobe-toolbar-actions')
+  type SavedWardrobe = { components: Array<{ id: string; dataUrl: string; glue?: { mode: string } }> }
+  let saved: SavedWardrobe | null = null
+  for(let attempt=0;attempt<50;attempt++){
+    const loaded = await win.webContents.executeJavaScript("window.desktop.loadWardrobeSet(1, 'uniform')") as SavedWardrobe | null
+    saved = loaded
+    if(loaded?.components[0]?.glue?.mode==='fixed') break
+    await new Promise(resolve=>setTimeout(resolve,100))
+  }
+  if (!saved || saved.components[0]?.glue?.mode !== 'fixed' ||
+      saved.components.length !== before.components.length ||
+      saved.components.some((item,index)=>item.id !== before.components[index].id ||
+        item.dataUrl !== before.components[index].dataUrl)) {
+    throw Error('Fixação da UI não persistiu ou modificou os PNGs individuais.')
+  }
+}
+
+async function compareScreenshot(image: Buffer, baselinePath: string): Promise<number> {
+  const [a, b] = await Promise.all([
+    sharp(image).ensureAlpha().raw().toBuffer({ resolveWithObject: true }),
+    sharp(await readFile(baselinePath)).ensureAlpha().raw().toBuffer({ resolveWithObject: true })
+  ])
+  if (a.info.width !== b.info.width || a.info.height !== b.info.height) throw new Error('Dimensões da baseline diferentes: ' + baselinePath)
+  let changed = 0
+  // Tolerância de 8 por canal para diferenças de anti-aliasing entre drivers.
+  for (let i = 0; i < a.data.length; i += 4) {
+    if ([0, 1, 2, 3].some(ch => Math.abs(a.data[i + ch] - b.data[i + ch]) > 8)) changed++
+  }
+  return changed
+}
+
+export async function captureFabricatorRealScreens(win: BrowserWindow, output: string, baseline?: string): Promise<void> {
+  await mkdir(output, { recursive: true })
+  const hasSyntheticPupils=process.env.GACHA_DEV_AI_TEST==='1' && await win.webContents.executeJavaScript(`(async()=>{
+    const pupils=await window.desktop.listFaceComponentAssets(1,'pupil')
+    return pupils.some(item=>item.id==='regPupilL')
+  })()`) as boolean
+  if (hasSyntheticPupils) {
+    await win.webContents.executeJavaScript(`(() => {
+      window.localStorage.setItem('gacha-nymi:face-dev-component-selections',JSON.stringify({
+        1:{parts:{
+          'eye-left':'regEyeL','eye-right':'regEyeR',
+          'pupil-left':'regPupilL','pupil-right':'regPupilR'
+        },linked:{eye:false,pupil:false,eyebrow:false},moveTogether:{eye:false,pupil:false,eyebrow:false}}
+      }))
+    })()`)
+  }
+  await win.webContents.executeJavaScript("window.location.hash = '#/fabricador-dev'")
+  await waitFor(win, '.fabricator-section-list')
+  const results: Array<{ section: string; file: string; dimensions: string; sha256: string; changedPixels?: number }> = []
+  for (const [key, label] of sections) {
+    const expressionSnapshot = key==='expressoes'
+      ? await win.webContents.executeJavaScript(`(async()=>{
+          const list=await window.desktop.listFaceExpressionPresets(1)
+          return Promise.all(list.map(item=>window.desktop.loadFaceExpressionPreset(1,item.id)))
+        })()`) as unknown[]
+      : null
+    const clicked = await win.webContents.executeJavaScript(`(() => {
+      const label = ${JSON.stringify(label)}
+      const button = [...document.querySelectorAll('.fabricator-section-button')]
+        .find(item => item.textContent?.trim() === label)
+      if (!button) return false
+      button.click()
+      return true
+    })()`) as boolean
+    if (!clicked) throw new Error('Seção real ausente: ' + label)
+    await waitForRendered(win, '.fabricator-section-button[aria-pressed="true"]')
+    if (key==='olhos' && hasSyntheticPupils) {
+      await waitFor(win,'.face-components-preview-canvas')
+      const tab = await win.webContents.executeJavaScript(`(() => {
+        const button=[...document.querySelectorAll('.face-components-library-tabs button')]
+          .find(item=>item.textContent?.trim()==='Pupilas')
+        if(!button)return false
+        button.click();return true
+      })()`) as boolean
+      if(!tab)throw Error('Olhos DEV sem aba de pupilas.')
+      await waitFor(win,'.face-component-pupil-mask-draggable .face-component-pupil-image')
+      const position = await win.webContents.executeJavaScript(`(() => {
+        const img=document.querySelector('.face-component-pupil-mask-draggable .face-component-pupil-image')
+        if(!img)return null
+        const rect=img.getBoundingClientRect()
+        return {x:rect.x+rect.width/2,y:rect.y+rect.height/2,width:rect.width,height:rect.height}
+      })()`) as {x:number;y:number;width:number;height:number}|null
+      if(!position || position.width<2 || position.height<2)
+        throw Error('Pupila sintética não apareceu na prévia Olhos DEV.')
+      const x=Math.round(position.x), y=Math.round(position.y)
+      const observe=async()=>win.webContents.executeJavaScript(`(() => {
+        const img=document.querySelector('.face-component-pupil-mask-draggable .face-component-pupil-image')
+        return img?.getBoundingClientRect().left ?? null
+      })()`) as Promise<number|null>
+      const pathPixels:number[]=[]
+      win.webContents.sendInputEvent({type:'mouseMove',x,y})
+      win.webContents.sendInputEvent({type:'mouseDown',x,y,button:'left',clickCount:1})
+      const first=await observe()
+      if(first===null)throw Error('Não conseguiu medir pupila do Olhos DEV.')
+      pathPixels.push(first)
+      for(let index=1;index<=5;index++){
+        win.webContents.sendInputEvent({type:'mouseMove',x:x+index*5,y})
+        await new Promise(resolve=>setTimeout(resolve,85))
+        const observed=await observe()
+        if(observed===null)throw Error('Pupila saiu da interface durante drag.')
+        pathPixels.push(observed)
+      }
+      win.webContents.sendInputEvent({type:'mouseUp',x:x+25,y,button:'left',clickCount:1})
+      // Electron/React may batch several pointermove events into one paint:
+      // plateaus are valid, backwards movement is not. The final displacement
+      // must still be visible, not a "pass" from a frozen cursor.
+      if(!pathPixels.slice(1).every((value,index)=>value>=pathPixels[index]-.3)
+        || pathPixels[pathPixels.length-1]<pathPixels[0]+7) {
+        throw Error('Arrastar a pupila à direita congelou ou inverteu a imagem: '+JSON.stringify(pathPixels))
+      }
+      await new Promise(resolve=>setTimeout(resolve,650))
+      const saved = await win.webContents.executeJavaScript(`window.desktop.loadFaceComponentAsset(1,'regPupilL').then(item=>item?.defaultTransform.x ?? null)`) as number|null
+      if(saved===null || saved<=2)throw Error('Olhos DEV não persistiu deslocamento positivo da pupila sintética.')
+      await writeFile(join(output,'eyes-pupil-drag.json'),JSON.stringify({savedX:saved,observedPath:pathPixels},null,2))
+    }
+    if (key === 'roupas') {
+      // Não fotografar biblioteca vazia: abrir a roupa sintética realmente salva.
+      await waitForRendered(win, '.wardrobe-workspace')
+      await waitFor(win, '.wardrobe-set-row', 30000)
+      const opened = await win.webContents.executeJavaScript(`(() => {
+        const item = [...document.querySelectorAll('.wardrobe-set-row')]
+          .find(button => button.textContent?.includes('Jaqueta de teste'))
+        if (!item) return false
+        item.click()
+        return true
+      })()`) as boolean
+      if (!opened) throw Error('Roupas Dev não listou o conjunto sintético.')
+      await waitForRendered(win, '.wardrobe-preview-part', 30000)
+      const count = await win.webContents.executeJavaScript(
+        "document.querySelectorAll('.wardrobe-preview-part').length"
+      ) as number
+      if (count !== 3) throw Error('Prévia do Fabricador não mostra as três peças: ' + count)
+    }
+    await new Promise(resolve => setTimeout(resolve, 800))
+    await waitForRendered(win, '.fabricator-section-button[aria-pressed="true"]')
+    if (key==='expressoes' && hasSyntheticPupils) {
+      await waitFor(win,'.expression-head-pupil-mask img')
+      const values = await win.webContents.executeJavaScript(`(() => {
+        const img=document.querySelector('.expression-head-pupil-mask img')
+        return img ? {x:parseFloat(img.style.left),left:img.style.left} : null
+      })()`) as {x:number;left:string}|null
+      const previous=JSON.parse((await readFile(join(output,'eyes-pupil-drag.json'),'utf8'))) as {savedX:number}
+      const expected=50+previous.savedX/24*100
+      if(!values || !Number.isFinite(values.x) || Math.abs(values.x-expected)>1.2) {
+        throw Error('Presets DEV não reproduziu a calibração Olhos DEV: '+JSON.stringify({expected,values}))
+      }
+    }
+    if (key === 'expressoes') {
+      await waitFor(win,'.expression-sequence-look-left')
+      await waitFor(win,'.expression-sequence-item')
+      // PT must preview the same expression and toggle back without creating
+      // an extra expression or modifying its published motion.
+      for (let index = 0; index < 3; index++) {
+        const pressed = await win.webContents.executeJavaScript(`(() => {
+          const pt=document.querySelector('.expression-sequence-look-left')
+          if (!pt) return false
+          pt.click()
+          return true
+        })()`) as boolean
+        if (!pressed) throw Error('Preset PT não encontrado no Presets DEV.')
+        await waitFor(win,'.expression-sequence-look-left[aria-pressed="true"]')
+        await win.webContents.executeJavaScript("document.querySelector('.expression-sequence-item')?.click()")
+        await waitFor(win,'.expression-sequence-look-left[aria-pressed="false"]')
+      }
+      const comparisonButton = await win.webContents.executeJavaScript(`(() => {
+        const button = [...document.querySelectorAll('.expression-preset-toolbar button')]
+          .find(item=>item.textContent?.includes('Testar em personagem'))
+        if (!button) return false
+        button.click()
+        return true
+      })()`) as boolean
+      if(!comparisonButton)throw Error('Presets DEV não oferece prévia em outro personagem.')
+      await waitFor(win,'[aria-label="Testar expressão em personagem do Customizador"]')
+      await win.webContents.executeJavaScript("document.querySelector('[aria-label=\"Fechar teste de expressão\"]')?.click()")
+      const current = await win.webContents.executeJavaScript(`(async()=>{
+        const list=await window.desktop.listFaceExpressionPresets(1)
+        return Promise.all(list.map(item=>window.desktop.loadFaceExpressionPreset(1,item.id)))
+      })()`) as unknown[]
+      if (JSON.stringify(current)!==JSON.stringify(expressionSnapshot)) {
+        throw Error('Abertura ou PT do Presets DEV sobrescreveu expressões publicadas.')
+      }
+      if (hasSyntheticPupils) {
+        // Exercise real PT drag and publication only inside the throwaway Windows profile.
+        // Normal and PT must remain a single persisted preset with different pupil motion.
+        await win.webContents.executeJavaScript("document.querySelector('.expression-sequence-look-left')?.click()")
+        await waitFor(win,'.expression-sequence-look-left[aria-pressed="true"]')
+        await waitFor(win,'.expression-head-pupil-mask img')
+        const target=await win.webContents.executeJavaScript(`(() => {
+          const img=document.querySelector('.expression-head-pupil-mask img')
+          const rect=img?.getBoundingClientRect()
+          return rect&&rect.width&&rect.height?{x:Math.round(rect.x+rect.width/2),y:Math.round(rect.y+rect.height/2)}:null
+        })()`) as {x:number;y:number}|null
+        if(!target)throw Error('Pupila PT sem alvo de arraste.')
+        win.webContents.sendInputEvent({type:'mouseMove',x:target.x,y:target.y})
+        win.webContents.sendInputEvent({type:'mouseDown',x:target.x,y:target.y,button:'left',clickCount:1})
+        for(let step=1;step<=5;step++){
+          win.webContents.sendInputEvent({type:'mouseMove',x:target.x+step*6,y:target.y+step*2,button:'left',modifiers:['leftbuttondown']})
+          await new Promise(resolve=>setTimeout(resolve,85))
+        }
+        win.webContents.sendInputEvent({type:'mouseUp',x:target.x+30,y:target.y+10,button:'left'})
+        let authored: {x:number;y:number;rotation:number}|null=null
+        for(let attempt=0;attempt<35;attempt++){
+          authored=await win.webContents.executeJavaScript("window.desktop.loadFaceExpressionWorkspaceDraft(1).then(d=>d?.current?.ptPupils?.left ?? null)") as {x:number;y:number;rotation:number}|null
+          if(authored && Number.isFinite(authored.x) && Number.isFinite(authored.y))break
+          await new Promise(resolve=>setTimeout(resolve,200))
+        }
+        if(!authored)throw Error('Arraste PT não persistiu o rascunho independente.')
+        const savedClick=await win.webContents.executeJavaScript("(() => { const save=document.querySelector('.expression-save-button'); if(!(save instanceof HTMLButtonElement)||save.disabled)return false;save.click();return true })()") as boolean
+        if(!savedClick)throw Error('Não foi possível salvar preset PT pela interface.')
+        let saved: {id:string;ptPupils?:{left?:{x:number;y:number;rotation:number}};transforms:unknown}|null=null
+        for(let attempt=0;attempt<35;attempt++){
+          saved=await win.webContents.executeJavaScript(`(async()=>{
+            const list=await window.desktop.listFaceExpressionPresets(1)
+            const entry=list.find(item=>item.collectionId==='standard'&&item.expressionIndex===0)
+            return entry?window.desktop.loadFaceExpressionPreset(1,entry.id):null
+          })()`) as {id:string;ptPupils?:{left?:{x:number;y:number;rotation:number}};transforms:unknown}|null
+          if(saved?.ptPupils?.left)break
+          await new Promise(resolve=>setTimeout(resolve,200))
+        }
+        if(!saved?.ptPupils?.left || Math.abs(saved.ptPupils.left.x-authored.x)>1e-6
+            || Math.abs(saved.ptPupils.left.y-authored.y)>1e-6) {
+          throw Error('Publicação de PT perdeu as coordenadas que a UI arrastou.')
+        }
+        const ptSource=await win.webContents.executeJavaScript("window.desktop.loadFaceExpressionWorkspaceDraft(1).then(d=>d?.current?.transforms ?? null)") as unknown
+        if(JSON.stringify(saved.transforms)!==JSON.stringify(ptSource)){
+          throw Error('Editar somente pupilas PT alterou os transforms normais.')
+        }
+        await writeFile(join(output,'pt-pupil-persistence.json'),JSON.stringify({
+          id:saved.id,ptPupils:saved.ptPupils,normalTransforms:saved.transforms
+        },null,2))
+        await win.webContents.executeJavaScript("document.querySelector('.expression-sequence-item')?.click()")
+        await waitFor(win,'.expression-sequence-look-left[aria-pressed="false"]')
+      }
+    }
+    if (key === 'roupas') {
+      // A contagem precisa continuar válida no instante da foto. O elemento
+      // pode ter existido antes e a tela voltar ao placeholder ao hidratar.
+      await waitForRendered(win, '.wardrobe-preview-part')
+      const ready = await win.webContents.executeJavaScript(`(() => ({
+        count: document.querySelectorAll('.wardrobe-preview-part').length,
+        selectedSet: !!document.querySelector('.wardrobe-set-row.active'),
+        activePiece: !!document.querySelector('.wardrobe-component-row.active')
+      }))()`) as { count: number; selectedSet: boolean; activePiece: boolean }
+      if (ready.count !== 3 || !ready.selectedSet || !ready.activePiece) {
+        throw Error('Prévia de Roupas Dev não está estável no instante da foto: ' + JSON.stringify(ready))
+      }
+      await exerciseGlueWorkflow(win)
+      await waitFor(win, '.wardrobe-preview-controls button[title*="Aproxima bordas"][aria-pressed="true"]')
+      await win.webContents.executeJavaScript("document.querySelector('.wardrobe-preview-controls button[title*=Aproxima]')?.click()")
+      await waitFor(win, '.wardrobe-preview-controls button[title*="Aproxima bordas"][aria-pressed="false"]')
+      await win.webContents.executeJavaScript("document.querySelector('.wardrobe-preview-controls button[title*=Aproxima]')?.click()")
+      await waitFor(win, '.wardrobe-preview-controls button[title*="Aproxima bordas"][aria-pressed="true"]')
+      await waitFor(win, '.wardrobe-comparison-toggle button', 30000)
+      const compared = await win.webContents.executeJavaScript(`(() => {
+        const button = document.querySelector('.wardrobe-comparison-toggle button')
+        if (!button) return false
+        button.click()
+        return true
+      })()`) as boolean
+      if (!compared) throw Error('Não abriu comparação original × pose.')
+      await waitForRendered(win, '.wardrobe-comparison')
+      const audited = await win.webContents.executeJavaScript(`(() => {
+        const button = [...document.querySelectorAll('.wardrobe-pose-audit button')]
+          .find(item => item.textContent?.includes('Conferir todas as poses'))
+        if (!button) return false
+        button.click()
+        return true
+      })()`) as boolean
+      if (!audited) throw Error('Auditoria de todas as poses indisponível no Roupas Dev.')
+      await waitFor(win, '.wardrobe-pose-audit-row:nth-child(2)', 30000)
+    }
+    const active = await win.webContents.executeJavaScript(`(() => {
+      const active = [...document.querySelectorAll('.fabricator-section-button')]
+        .filter(item => item.getAttribute('aria-pressed') === 'true')
+      return active.map(item => item.textContent?.trim() ?? '')
+    })()`) as string[]
+    if (!active.includes(label)) throw new Error('Captura selecionou seção errada: ' + label + ' (ativos: ' + active.join(', ') + ')')
+    const png = await win.webContents.capturePage()
+    const image = png.toPNG()
+    const postCapture = await win.webContents.executeJavaScript(`(() => ({
+      loading: document.body.innerText.includes('Carregando área'),
+      garmentCount: document.querySelectorAll('.wardrobe-preview-part').length
+    }))()`) as { loading: boolean; garmentCount: number }
+    if (postCapture.loading || (key === 'roupas' && postCapture.garmentCount !== 3)) {
+      throw Error('Screenshot capturado durante transição ou sem roupa: ' + key + ' ' + JSON.stringify(postCapture))
+    }
+    const name = key + '.png'
+    await writeFile(join(output, name), image)
+    const size = png.getSize()
+    const result: { section: string; file: string; dimensions: string; sha256: string; changedPixels?: number; contentVerified?: string } = {
+      section: label, file: name, dimensions: size.width + 'x' + size.height,
+      sha256: createHash('sha256').update(image).digest('hex'),
+      ...(key === 'roupas' ? { contentVerified: 'three-fitted-garments' } : {})
+    }
+    if (baseline) {
+      const changed = await compareScreenshot(image, join(baseline, name))
+      result.changedPixels = changed
+      if (changed > size.width * size.height * .01) {
+        throw new Error('Regressão visual na seção ' + label + ': ' + changed + ' pixels diferentes.')
+      }
+    }
+    results.push(result)
+  }
+  await writeFile(join(output, 'manifest.json'), JSON.stringify({ schemaVersion:1, mode:'real-electron-ui', capturedAt:new Date().toISOString(), results }, null, 2), 'utf8')
+}
+
+/** Smoke gráfico de Customizador e Studio: navega no Electron REAL e cria
+ * uma cena apenas no perfil sintético do runner. Requer GACHA_DEV_AI_TEST.
+ * Não confundir screenshot integridade com aprovação visual humana.
+ */
+/** E2E real sobre perfil descartável: cria personagem pela UI, salva customização
+ * pelo IPC público, adiciona elenco pela UI e reinicia o Electron em fase 2.
+ */
+export async function captureCustomizerStudioRealScreens(win: BrowserWindow, output: string): Promise<void> {
+  await mkdir(output, { recursive: true })
+  const startedAt = Date.now()
+  const results: Array<{ section: string; file: string; dimensions: string; sha256: string }> = []
+  const capture = async (section: string, file: string) => {
+    const selector = section === 'Customizador' ? '.roster-panel' : '.studio-scene-area'
+    await waitForRendered(win, selector)
+    const png = (await win.webContents.capturePage()).toPNG()
+    const info = await sharp(png).metadata()
+    if (!info.width || !info.height) throw Error('Screenshot Electron sem dimensões: ' + section)
+    await writeFile(join(output, file), png)
+    results.push({ section, file, dimensions: info.width + 'x' + info.height, sha256: createHash('sha256').update(png).digest('hex') })
+  }
+  const name = 'Nymi E2E sintético'
+  await win.webContents.executeJavaScript("window.location.hash = '#/customizar'")
+  await waitFor(win, '.roster-panel')
+  const createdByUi = await win.webContents.executeJavaScript(`(() => {
+    const button = document.querySelector('button[aria-label="Adicionar personagem"]')
+    if (!button) return false
+    button.click()
+    return true
+  })()`) as boolean
+  if (!createdByUi) throw Error('Botão de criação de personagem ausente no Customizador.')
+  await waitFor(win, '#character-name')
+  const submitted = await win.webContents.executeJavaScript(`(() => {
+    const field = document.querySelector('#character-name')
+    if (!(field instanceof HTMLInputElement)) return false
+    const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+    if (!set) return false
+    set.call(field, ${JSON.stringify(name)})
+    field.dispatchEvent(new Event('input', { bubbles: true }))
+    return true
+  })()`) as boolean
+  if (!submitted) throw Error('Não foi possível inserir nome do personagem pela UI.')
+  await waitFor(win, '.character-dialog .primary-button:not([disabled])')
+  await win.webContents.executeJavaScript("document.querySelector('.character-dialog')?.requestSubmit()")
+  const deadline = Date.now() + 20000
+  let character: { id: string; name: string; customization: Record<string, unknown>; updatedAt: string } | null = null
+  while (Date.now() < deadline) {
+    character = await win.webContents.executeJavaScript(`window.desktop.listCustomizerCharacters().then(list => list.find(item => item.name === ${JSON.stringify(name)}) ?? null)`) as { id: string; name: string; customization: Record<string, unknown>; updatedAt: string } | null
+    if (character) break
+    await new Promise(resolve => setTimeout(resolve, 200))
+  }
+  if (!character) throw Error('Personagem não persistiu após clique do formulário.')
+  const id = character.id
+  // Usa o MESMO contrato de personalização que a UI invoca, sem editar modelo-fonte.
+  const changed = await win.webContents.executeJavaScript(`(async () => {
+    const list = await window.desktop.listCustomizerCharacters()
+    const character = list.find(item => item.id === ${JSON.stringify(id)})
+    if (!character) return false
+    const wardrobe = await window.desktop.loadWardrobeSet(1, 'uniform')
+    if (!wardrobe || wardrobe.components.length !== 3 ||
+        new Set(wardrobe.components.map(component => component.dataUrl)).size !== 3) {
+      throw new Error('Roupas Dev retornou manga duplicada ou perdeu componente.')
+    }
+    const wardrobeGroups = wardrobe.components.map(component => ({
+      modelSlot: 1, setId: wardrobe.id, category: component.category,
+      componentId: component.id, offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1, rotation: 0
+    }))
+    await window.desktop.saveCustomizerCharacter({
+      ...character,
+      customization: { ...character.customization, modelSlot: 1, poseSlot: 1, wardrobeGroups },
+      updatedAt: new Date().toISOString()
+    })
+    return true
+  })()`) as boolean
+  if (!changed) throw Error('Personalização não foi salva via API pública.')
+  await win.webContents.executeJavaScript("window.location.hash = '#/estudio'")
+  await waitFor(win, '.studio-page')
+  await win.webContents.executeJavaScript("window.location.hash = '#/customizar'")
+  await waitFor(win, '.roster-panel')
+  await waitFor(win, '.character-card')
+  const focused = await win.webContents.executeJavaScript(`(() => {
+    const card = [...document.querySelectorAll('.character-card')]
+      .find(item => item.textContent?.includes(${JSON.stringify(name)}))
+    if (!card) return false
+    card.click()
+    return true
+  })()`) as boolean
+  if (!focused) throw Error('Personagem salvo não apareceu no elenco da UI.')
+  let garmentPixels: Awaited<ReturnType<typeof inspectSyntheticWardrobePreview>>
+  try { garmentPixels = await inspectSyntheticWardrobePreview(win) }
+  catch (error) {
+    const diagnostic = await win.webContents.executeJavaScript(`(() => ({
+      character: document.querySelector('.customizer-preview-character-name')?.textContent,
+      selected: [...document.querySelectorAll('.character-card.selected')].map(e => e.textContent),
+      renderedBody: !!document.querySelector('img.customizer-selected-artwork'),
+      renderedClothes: !!document.querySelector('img.customizer-wardrobe-overlay'),
+      loading: document.querySelector('.customizer-preview-loading')?.textContent,
+      errors: [...document.querySelectorAll('[role="alert"]')].map(e => e.textContent?.slice(0,350)),
+      view: document.body.innerText.slice(0,850)
+    }))()`)
+    throw Error('Composição visual Customizador falhou: ' + String(error) + '; DOM=' + JSON.stringify(diagnostic))
+  }
+  await writeFile(join(output, 'wardrobe-pixels.json'), JSON.stringify(garmentPixels, null, 2))
+  await capture('Customizador', 'customizador.png')
+  const poseOnePerformance = await sampleElectronPerformance(win)
+
+  // Hide and restore each independent colored garment via the same public IPC
+  // used by the Customizer. The other sleeve must remain at the exact centroid
+  // it had before the visibility change. No source assets are written.
+  const setSyntheticPieceHidden = async (pieceId: string, hidden: boolean) => {
+    const applied = await win.webContents.executeJavaScript(`(async () => {
+      const list = await window.desktop.listCustomizerCharacters()
+      const character = list.find(item => item.id === ${JSON.stringify(id)})
+      if (!character) return false
+      const wardrobeGroups = (character.customization.wardrobeGroups ?? []).map(group =>
+        group.componentId === ${JSON.stringify(pieceId)} ? { ...group, hidden: ${hidden} } : group)
+      await window.desktop.saveCustomizerCharacter({
+        ...character,customization:{...character.customization,wardrobeGroups},
+        updatedAt:new Date().toISOString()
+      })
+      return true
+    })()`) as boolean
+    if (!applied) throw Error('Não atualizou visibilidade sintética da peça ' + pieceId)
+    await win.webContents.executeJavaScript("window.location.hash = '#/estudio'")
+    await waitFor(win,'.studio-page')
+    await win.webContents.executeJavaScript("window.location.hash = '#/customizar'")
+    await waitFor(win,'.roster-panel')
+    await waitFor(win,'.character-card')
+    const clicked = await win.webContents.executeJavaScript(`(() => {
+      const card = [...document.querySelectorAll('.character-card')]
+        .find(item => item.textContent?.includes(${JSON.stringify(name)}))
+      if (!card) return false
+      card.click()
+      return true
+    })()`) as boolean
+    if (!clicked) throw Error('Não reabriu personagem após ocultar/restaurar ' + pieceId)
+  }
+  const baselineSleeves = garmentPixels.colors.slice(1)
+  const maxMovement = (observed: { name:string;x:number;y:number }, expected: {name:string;x:number;y:number}) =>
+    Math.abs(observed.x - expected.x) + Math.abs(observed.y - expected.y)
+  const isolation: Array<{hidden:string;other:string;otherMovement:number;restoredMovement:number}> = []
+  for (const [hiddenPiece, otherPiece] of [['sleeve-right','sleeve-left'],['sleeve-left','sleeve-right']]) {
+    const expected = baselineSleeves.find(item => item.name === otherPiece)!
+    await setSyntheticPieceHidden(hiddenPiece,true)
+    const remaining = (await inspectSyntheticWardrobePreview(win,false,[otherPiece],hiddenPiece)).colors[0]
+    const otherMovement = maxMovement(remaining,expected)
+    if (otherMovement > 0.8) throw Error('Ocultar ' + hiddenPiece + ' deslocou a peça ' + otherPiece + ': ' + otherMovement)
+    await setSyntheticPieceHidden(hiddenPiece,false)
+    const restored = await inspectSyntheticWardrobePreview(win)
+    const restoredMovement = Math.max(...restored.colors.slice(1).map(item =>
+      maxMovement(item,baselineSleeves.find(known=>known.name===item.name)!)))
+    if (restoredMovement > 0.8) throw Error('Restaurar ' + hiddenPiece + ' alterou o encaixe original: ' + restoredMovement)
+    isolation.push({hidden:hiddenPiece,other:otherPiece,otherMovement,restoredMovement})
+  }
+  await writeFile(join(output,'wardrobe-hide-restore.json'),JSON.stringify({
+    source:'customizer-overlay',syntheticOnly:true,poseSlot:1,checks:isolation
+  },null,2))
+
+  // Exercise a SECOND saved pose in the actual Electron/Customizer renderer.
+  // The fixture lives in the isolated DEV AI sandbox; restore pose 1 before
+  // carrying on with Studio and the reopen check.
+  const changeSyntheticPose = async (slot: number) => {
+    const applied = await win.webContents.executeJavaScript(
+      "(async () => { const list = await window.desktop.listCustomizerCharacters();" +
+      " const character = list.find(item => item.id === " + JSON.stringify(id) + ");" +
+      " if (!character) return false;" +
+      " await window.desktop.saveCustomizerCharacter({...character, customization: {...character.customization, poseSlot: " + slot + "}, updatedAt: new Date().toISOString()}); return true; })()"
+    ) as boolean
+    if (!applied) throw Error('Falha ao selecionar pose sintética ' + slot)
+    await win.webContents.executeJavaScript("window.location.hash = '#/estudio'")
+    await waitFor(win, '.studio-page')
+    await win.webContents.executeJavaScript("window.location.hash = '#/customizar'")
+    await waitFor(win, '.roster-panel')
+    await waitFor(win, '.character-card')
+    const clicked = await win.webContents.executeJavaScript(`(() => {
+      const card = [...document.querySelectorAll('.character-card')]
+        .find(item => item.textContent?.includes(${JSON.stringify(name)}))
+      if (!card) return false
+      card.click()
+      return true
+    })()`) as boolean
+    if (!clicked) throw Error('Personagem sintético sumiu ao mudar de pose.')
+  }
+  await changeSyntheticPose(2)
+  let secondPosePixels: Awaited<ReturnType<typeof inspectSyntheticWardrobePreview>> | null = null
+  let distance = 0
+  const secondPoseDeadline = Date.now() + 20000
+  while (Date.now() < secondPoseDeadline) {
+    try {
+      const observed = await inspectSyntheticWardrobePreview(win, false)
+      const moved = observed.colors.reduce((sum, color, index) =>
+        sum + Math.abs(color.x - garmentPixels.colors[index].x) + Math.abs(color.y - garmentPixels.colors[index].y), 0)
+      if (moved > 10) { secondPosePixels = observed; distance = moved; break }
+    } catch { /* Retry while the second pose is loading. */ }
+    await new Promise(resolve => setTimeout(resolve, 250))
+  }
+  if (!secondPosePixels) throw Error('A roupa não acompanhou a segunda pose no Customizador Electron.')
+  await writeFile(join(output, 'wardrobe-pose2-pixels.json'), JSON.stringify({
+    ...secondPosePixels, poseSlot: 2, centroidMovement: distance
+  }, null, 2))
+  await capture('Customizador', 'customizador-pose2.png')
+  const poseTwoPerformance = await sampleElectronPerformance(win)
+  await changeSyntheticPose(1)
+  await inspectSyntheticWardrobePreview(win)
+  await win.webContents.executeJavaScript("window.location.hash = '#/estudio'")
+  await waitFor(win, '.studio-page')
+  await waitFor(win, 'button.studio-action-primary:not([disabled])')
+  const clicked = await win.webContents.executeJavaScript(`(() => {
+    const button = document.querySelector('button.studio-action-primary:not([disabled])')
+    if (!button) return false
+    button.click()
+    return true
+  })()`) as boolean
+  if (!clicked) throw Error('Não foi possível criar cena no Studio real.')
+  await waitFor(win, 'button.studio-card-open')
+  const opened = await win.webContents.executeJavaScript(`(() => {
+    const button = document.querySelector('button.studio-card-open')
+    if (!button) return false
+    button.click()
+    return true
+  })()`) as boolean
+  if (!opened) throw Error('Não foi possível abrir cena no Studio real.')
+  await waitFor(win, '.studio-scene-area')
+  await waitFor(win, '.studio-cast-add-button')
+  const castOpened = await win.webContents.executeJavaScript(`(() => {
+    const button = document.querySelector('.studio-cast-add-button')
+    if (!button) return false
+    button.click()
+    return true
+  })()`) as boolean
+  if (!castOpened) throw Error('Não foi possível abrir elenco na cena real.')
+  await waitFor(win, '.studio-cast-modal-option')
+  const castChosen = await win.webContents.executeJavaScript(`(() => {
+    const option = [...document.querySelectorAll('.studio-cast-modal-option')]
+      .find(item => item.textContent?.includes(${JSON.stringify(name)}))
+    if (!option) return false
+    option.click()
+    return true
+  })()`) as boolean
+  if (!castChosen) throw Error('Personagem sintético não apareceu no seletor de elenco.')
+  // React precisa renderizar o novo castSelection antes do callback de salvar.
+  await waitFor(win, '.studio-cast-modal-option.selected')
+  await win.webContents.executeJavaScript("document.querySelector('.studio-cast-modal-save')?.click()")
+  await waitFor(win, '.studio-cast-item', 30000)
+  const studios = await win.webContents.executeJavaScript('window.desktop.listStudios()') as Array<{ id: string; title: string; elements: Array<{ characterId?: string }> }>
+  const studio = studios.find(item => item.elements.some(element => element.characterId === id))
+  if (!studio) throw Error('Elenco não persistiu no Studio Principal.')
+  await capture('Studio Principal — elenco salvo', 'studio.png')
+  await writeFile(join(output, 'flow-state.json'), JSON.stringify({ schemaVersion: 1, syntheticOnly: true, characterId: id, studioId: studio.id, name }, null, 2))
+  await writeFile(join(output, 'electron-performance.json'), JSON.stringify({
+    schemaVersion: 1, syntheticOnly: true, source: 'real-electron-renderer',
+    poseOne: poseOnePerformance, poseTwo: poseTwoPerformance
+  }, null, 2))
+
+  await writeFile(join(output, 'workspace-manifest.json'), JSON.stringify({
+    schemaVersion: 1, mode: 'real-electron-workspaces', syntheticOnly: true,
+    capturedAt: new Date().toISOString(), results,
+    timingsMs: { firstProcessFlow: Date.now() - startedAt }
+  }, null, 2), 'utf8')
+}
+
+/** Chamado num processo Electron NOVO, apontando para o mesmo perfil sintético.
+ * Prova reidratação real por IPC e renderização da cena após reinicialização.
+ */
+export async function captureCustomizerStudioReopened(win: BrowserWindow, output: string): Promise<void> {
+  const startedAt = Date.now()
+  const flow = JSON.parse(await readFile(join(output, 'flow-state.json'), 'utf8')) as {
+    schemaVersion: number; syntheticOnly: boolean; characterId: string; studioId: string; name: string
+  }
+  if (flow.schemaVersion !== 1 || flow.syntheticOnly !== true) throw Error('Fixture de reinício inválida.')
+  let ptEvidence: {id:string;ptPupils:{left:{x:number;y:number;rotation:number}};normalTransforms:unknown}|null=null
+  try {
+    ptEvidence=JSON.parse(await readFile(join(output,'pt-pupil-persistence.json'),'utf8')) as {id:string;ptPupils:{left:{x:number;y:number;rotation:number}};normalTransforms:unknown}|null
+  } catch (reason) {
+    if((reason as NodeJS.ErrnoException).code!=='ENOENT')throw reason
+  }
+  if(ptEvidence){
+    const saved=await win.webContents.executeJavaScript(
+      `window.desktop.loadFaceExpressionPreset(1,${JSON.stringify(ptEvidence.id)})`
+    ) as {ptPupils?:{left?:{x:number;y:number;rotation:number}};ptPupilMotion?:unknown;transforms:unknown}|null
+    if(!saved?.ptPupilMotion || JSON.stringify(saved.ptPupils)!==JSON.stringify(ptEvidence.ptPupils)
+       || JSON.stringify(saved.transforms)!==JSON.stringify(ptEvidence.normalTransforms)) {
+      throw Error('Reiniciar Electron perdeu PT manual ou alterou a expressão normal.')
+    }
+  }
+  await win.webContents.executeJavaScript("window.location.hash = '#/customizar'")
+  await waitFor(win, '.roster-panel')
+  const characters = await win.webContents.executeJavaScript('window.desktop.listCustomizerCharacters()') as Array<{ id: string; name: string; customization: { modelSlot: number; poseSlot: number; wardrobeGroups?: Array<{ setId: string; componentId?: string }> } }>
+  const saved = characters.find(item => item.id === flow.characterId && item.name === flow.name)
+  if (!saved || saved.customization.modelSlot !== 1 || saved.customization.poseSlot !== 1) throw Error('Customizador perdeu a personalização após reiniciar.')
+  const garmentIds = ['coat', 'sleeve-left', 'sleeve-right']
+  const equipped = saved.customization.wardrobeGroups ?? []
+  if (!garmentIds.every(id => equipped.some(group => group.setId === 'uniform' && group.componentId === id))) {
+    throw Error('Customizador perdeu a roupa individual após reiniciar.')
+  }
+  const garment = await win.webContents.executeJavaScript("window.desktop.loadWardrobeSet(1, 'uniform')") as { components: Array<{ id: string; dataUrl: string }> } | null
+  if (!garment || garment.components.length !== 3 ||
+      new Set(garment.components.map(piece => piece.dataUrl)).size !== 3) {
+    throw Error('Mangas e camisa foram duplicadas após reabrir o Electron.')
+  }
+  await win.webContents.executeJavaScript("window.location.hash = '#/estudio'")
+  await waitFor(win, '.studio-page')
+  const studios = await win.webContents.executeJavaScript('window.desktop.listStudios()') as Array<{ id: string; elements: Array<{ characterId?: string; assetId?: string }>; assets: Array<{ id: string; dataUrl: string }> }>
+  const scene = studios.find(item => item.id === flow.studioId)
+  if (!scene || !scene.elements.some(item => item.characterId === flow.characterId)) throw Error('Studio perdeu elenco após reiniciar.')
+  if (scene.elements.some(element => element.characterId === flow.characterId &&
+    !scene.assets.some(asset => asset.id === element.assetId && asset.dataUrl.startsWith('data:image/')))) {
+    throw Error('Studio reabriu com imagem de personagem ausente.')
+  }
+  await waitFor(win, 'button.studio-card-open')
+  const opened = await win.webContents.executeJavaScript(`(() => {
+    const button = document.querySelector('button.studio-card-open')
+    if (!button) return false
+    button.click()
+    return true
+  })()`) as boolean
+  if (!opened) throw Error('Cena não reabriu na interface.')
+  await waitFor(win, '.studio-cast-item', 30000)
+  await waitForRendered(win, '.studio-scene-area')
+  const image = (await win.webContents.capturePage()).toPNG()
+  const info = await sharp(image).metadata()
+  if (!info.width || !info.height) throw Error('Screenshot de reabertura sem dimensões.')
+  const file = 'studio-reaberto.png'
+  await writeFile(join(output, file), image)
+  const manifest = JSON.parse(await readFile(join(output, 'workspace-manifest.json'), 'utf8')) as {
+    results: Array<{ section: string; file: string; dimensions: string; sha256: string }>
+    timingsMs?: Record<string, number>
+  }
+  manifest.timingsMs = { ...manifest.timingsMs, reopenedFlow: Date.now() - startedAt }
+  manifest.results.push({
+    section: 'Studio Principal — cena reaberta',
+    file, dimensions: info.width + 'x' + info.height, sha256: createHash('sha256').update(image).digest('hex')
+  })
+  await writeFile(join(output, 'workspace-manifest.json'), JSON.stringify(manifest, null, 2))
+}

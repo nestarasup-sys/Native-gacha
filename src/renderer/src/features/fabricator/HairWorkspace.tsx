@@ -1,3 +1,5 @@
+import { projectForOriginalPreview } from '../../../../shared/fabricatorModelViews'
+import { useModelSourceRefresh } from './models/useModelSourceRefresh'
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type PointerEvent } from 'react'
 import type { FabricatorProject, FabricatorSlotSummary, HairStyle, HairStyleSave, HairTransform, HairWorkspace as HairWorkspaceData, HairWorkspaceSave, ModelPart } from '../../../../shared/fabricator'
 import type { HairPartId } from '../../../../shared/customizer'
@@ -79,6 +81,7 @@ export function HairWorkspace() {
   const [models, setModels] = useState<FabricatorSlotSummary[]>([])
   const [modelSlot, setModelSlot] = useState(1)
   const [project, setProject] = useState<FabricatorProject | null>(null)
+  useModelSourceRefresh(modelSlot, fresh => setProject(projectForOriginalPreview(fresh)))
   const [hairWorkspace, setHairWorkspace] = useState<HairWorkspaceData | null>(null)
   const [hairStyles, setHairStyles] = useState<HairStyle[]>([])
   const [activeStyleId, setActiveStyleId] = useState<string | null>(null)
@@ -129,7 +132,7 @@ export function HairWorkspace() {
     setLoadingProject(true)
     void window.desktop.loadFabricatorSlot(modelSlot).then((loaded) => {
       if (cancelled) return
-      setProject(loaded)
+      setProject(projectForOriginalPreview(loaded))
       if (!loaded) setError('Este slot ainda não tem um modelo salvo.')
     }).catch((reason: unknown) => {
       if (!cancelled) setError(reason instanceof Error ? reason.message : 'Não foi possível carregar o modelo selecionado.')
@@ -348,7 +351,7 @@ export function HairWorkspace() {
           <button type="button" onClick={() => singleFileInputRef.current?.click()} disabled={!head || loadingHair || saving}><Icon name="plus" /> Importar</button>
           <button type="button" onClick={() => { const style = hairStyles.find((item) => item.id === activeStyleId); if (style) void deleteStyle(style) }} disabled={!activeStyleId || saving}><Icon name="trash" /> Excluir</button>
         </div>
-        <input ref={singleFileInputRef} className="hair-dev-file" type="file" accept="image/png,image/webp" onChange={(event) => void importSinglePiece(event)} />
+        <input ref={singleFileInputRef} className="hair-dev-file" type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => void importSinglePiece(event)} />
         <small className="hair-dev-library-hint">Importe uma peça PNG ou WebP com fundo transparente na categoria escolhida.</small>
         {(selectedSide === 'front' || selectedCategory === 'backHair') && <><button className="hair-dev-sheet-import" onClick={() => fileInputRef.current?.click()} disabled={!head || loadingHair || saving} type="button">Importar folha Posterior/Traseiro</button><input ref={fileInputRef} className="hair-dev-file" type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => void importSheet(event)} /></>}
         <nav className="hair-dev-library-tabs" aria-label="Categorias da biblioteca" role="tablist">

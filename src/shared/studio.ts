@@ -97,6 +97,8 @@ export type StudioElement = {
   faceTransforms?: StudioFaceTransforms
   /** Character-specific neutral face, shared by every expression collection. */
   expressionBase?: StudioExpressionBase
+  /** PT looks left; ordinary expression looks right. Same preset, scene-only gaze. */
+  activeExpressionGaze?: 'right' | 'left'
   activeExpressionPresetId?: string | null
   /** Saved preset revision currently composed into this Studio actor. */
   activeExpressionPresetUpdatedAt?: string
@@ -279,6 +281,11 @@ export type VideoStudioCardSummary = Pick<StudioDocument, 'id' | 'title' | 'colo
 }
 
 export type VideoStudioDesktopApi = {
+  /** Windows on-demand Electron process metric sample; no user/project data. */
+  getVideoStudioMemoryReport: () => Promise<import('./videoStudioNext/diagnostics').VideoStudioMemoryReport>
+  controlVideoMediaEngine: (command: import('./videoStudioRebuild/mediaContracts').VideoEngineMediaRequest) => Promise<import('./videoStudioRebuild/mediaContracts').VideoEngineMediaClock>
+  /** Hidden development-only screenshot used by the Windows Video Studio stress runner. */
+  captureVideoStressPage: () => Promise<{ width: number; height: number; pngBase64: string }>
   listVideoStudios: () => Promise<VideoStudioCardSummary[]>
   loadVideoStudio: (id: string) => Promise<StudioDocument | null>
   saveVideoStudio: (studio: StudioDocument) => Promise<void>
@@ -286,7 +293,7 @@ export type VideoStudioDesktopApi = {
   getVideoStudioFolder: () => Promise<string>
   importVideoStudioImage: (category: StudioAsset['category']) => Promise<StudioAsset | null>
   listVideoLibrary: () => Promise<VideoLibraryItem[]>
-  importVideoLibrary: () => Promise<VideoLibraryItem | null>
+  importVideoLibrary: (offscreenStressMediaPath?: string) => Promise<VideoLibraryItem | null>
   finishVideoLibraryImport: (id: string, durationFrames: number) => Promise<VideoLibraryItem>
   deleteVideoLibraryItem: (id: string) => Promise<void>
   renameVideoLibraryItem: (id: string, name: string) => Promise<VideoLibraryItem>

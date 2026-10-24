@@ -1,0 +1,70 @@
+name: Fabricator - screenshots reais Windows
+
+on:
+  push:
+    branches: [feature/model-source-editor]
+    paths:
+      - 'electron/**'
+      - 'src/**'
+      - 'scripts/fabricator/**'
+      - 'scripts/video-studio/windows-rebuild-ui-smoke.cjs'
+      - '.github/workflows/fabricator-real-ui-windows.yml'
+  pull_request:
+    branches: [refactor/shared-character-core]
+    paths:
+      - 'electron/**'
+      - 'src/**'
+      - 'scripts/fabricator/**'
+      - 'scripts/video-studio/windows-rebuild-ui-smoke.cjs'
+      - '.github/workflows/fabricator-real-ui-windows.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fabricator-real-ui-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  capture:
+    name: Windows / Electron GUI synthetic full character
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.22.0'
+          cache: npm
+      - name: Install Electron and native dependencies
+        run: npm ci
+      - name: Compile desktop application
+        run: npm run build
+      - name: Verify AV worker in a real Electron process (Windows)
+        run: npm run test:video:rebuild:worker:windows
+      - name: Smoke rebuilt Video Studio UI with real Windows Chromium (synthetic profile)
+        run: npm run test:video:rebuild:ui:windows
+      - name: Verify real Fabricator catalog eye and independent PT pupil GPU layers (Windows)
+        run: npm run test:video:rebuild:catalog:windows
+      - name: Capture eleven real UI screens in two Electron processes (synthetic profile)
+        run: npm run test:fabricator:real-ui -- --synthetic-complete
+      - name: Verify eleven screenshots, persisted identities and SHA256
+        shell: pwsh
+        run: |
+          $captures = Get-ChildItem -Path out/dev-ai/runs -Recurse -File -Filter manifest.json |
+            Where-Object { $_.DirectoryName -like '*fabricator-real-ui-captures' } |
+            Select-Object -First 1
+          if (-not $captures) { throw 'Nenhuma captura completa encontrada.' }
+          node scripts/fabricator/review-real-ui-captures.cjs "--captures=$($captures.DirectoryName)" --with-workspaces
+      - name: Save captures for human approval
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fabricator-real-ui-windows-${{ github.run_id }}
+          path: |
+            out/dev-ai/runs/**/fabricator-real-ui-captures/
+            out/dev-ai/runs/**/catalog-gpu-preview.png
+            out/dev-ai/runs/**/catalog-gpu-smoke.json
+          if-no-files-found: warn
+          retention-days: 14

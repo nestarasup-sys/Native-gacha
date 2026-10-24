@@ -5,6 +5,10 @@ import type { VideoCharacterRenderAssetProvider } from '../../../../shared/video
 import { faceRenderGeometry, trimTransparentImage } from './characterGeometry'
 import { mixAppearance, mixEffects, mixPoseArtwork, mixStageElement, mixStudioTransforms, smoothProgress, transitionProgress, type PoseArtwork } from '../../../../shared/videoCharacterInterpolation'
 import type { CharacterTransition } from './characterTransitions'
+import { loadStandardExpressionEffects, prepareSavedCharacterRenderer } from '../../characters/characterRenderer'
+import { VideoStudioBoundedMemo } from '../../../../shared/videoStudioNext/boundedMemo'
+import type { VideoStudioResourceBudget } from '../../../../shared/videoStudioNext/resourceBudget'
+import { snapshotTrimmedGachaCanvas, type VideoGachaCanvasState } from './videoGachaCanvasFrame'
 
 /** Resolve the same visible defaults as the ordinary character compositor. */
 function visibleEffects(appearance: CustomizerFaceAppearance | undefined, effects: FaceExpressionEffects | undefined): FaceExpressionEffects {
@@ -19,9 +23,30 @@ function visibleEffects(appearance: CustomizerFaceAppearance | undefined, effect
   }
 }
 
+/**
+ * A prepared renderer owns the body/pose, wardrobe, skin and front/back hair
+ * canvases. The dynamic render(appearance, transforms, effects, mode) call
+ * still draws eyes, independent PT pupils, mouth, blink and masks for each
+ * requested state using the original exact character compositor.
+ */
+type PreparedGachaRenderer = Awaited<ReturnType<typeof prepareSavedCharacterRenderer>>
+
 /** Session-local reader. No supplier, character, or timeline writes are exposed. */
 export class TransitionRenderer {
-  constructor(private readonly assetProvider: VideoCharacterRenderAssetProvider = window.desktop) {}
+  private readonly preparedStatic: VideoStudioBoundedMemo<PreparedGachaRenderer>
+
+  constructor(
+    private readonly assetProvider: VideoCharacterRenderAssetProvider = window.desktop,
+    budget?: VideoStudioResourceBudget
+  ) {
+    this.preparedStatic = new VideoStudioBoundedMemo(
+      8, 48 * 1024 * 1024,
+      // Prepared body/wardrobe/front hair, two static composites and output.
+      // Conservative retained estimate, NOT actual native/VRAM accounting.
+      (prepared) => Math.max(1, prepared.width * prepared.height * 4 * 6),
+      budget, 'artwork'
+    )
+  }
 
   private models = new Map<number, Promise<FabricatorProject | null>>()
   private poses = new Map<string, Promise<PoseArtwork | null>>()
@@ -79,33 +104,87 @@ export class TransitionRenderer {
     return { left, right }
   }
 
-  async render(transition: CharacterTransition, frame: number, character: CustomizerCharacter): Promise<VideoCharacterState> {
+  private async renderResult(transition: CharacterTransition, frame: number, character: CustomizerCharacter, directCanvas: boolean): Promise<VideoGachaCanvasState> {
     const t = smoothProgress(transitionProgress(transition, frame))
     if (t <= 0) return transition.from
     if (t >= 1) return transition.to
     const a = transition.from.element, b = transition.to.element
     const slot = character.customization.modelSlot ?? 1
-    const [source, fromPose, toPose, rendererModule] = await Promise.all([
+    const [source, fromPose, toPose] = await Promise.all([
       this.model(slot), this.pose(slot, a.poseSlot === undefined ? character.customization.poseSlot : a.poseSlot),
-      this.pose(slot, b.poseSlot === undefined ? character.customization.poseSlot : b.poseSlot), import('../customizer/CustomizerPage')
+      this.pose(slot, b.poseSlot === undefined ? character.customization.poseSlot : b.poseSlot)
     ])
     if (!source || !fromPose || !toPose) throw new Error(`Uma pose de ${character.name} não está disponível para a animação.`)
     const aa = a.faceAppearance ?? character.customization.faceAppearance, ba = b.faceAppearance ?? character.customization.faceAppearance
     const appearance = aa && ba ? mixAppearance(aa, ba, t) : aa ?? ba
     const normalized = await this.normalizedTransforms(a.faceTransforms ?? {}, b.faceTransforms ?? {}, aa, ba)
     const transforms = mixStudioTransforms(normalized.left, normalized.right, t)
-    if (!this.effects.has(slot)) this.effects.set(slot, rendererModule.loadStandardExpressionEffects(slot, this.assetProvider))
+    if (!this.effects.has(slot)) this.effects.set(slot, loadStandardExpressionEffects(slot, this.assetProvider))
     const defaults = await this.effects.get(slot)!
     const effects = mixEffects(visibleEffects(aa, a.activeExpressionEffects ?? (aa ? defaults[aa.expressionIndex] : undefined)), visibleEffects(ba, b.activeExpressionEffects ?? (ba ? defaults[ba.expressionIndex] : undefined)), t)
     const element = mixStageElement(a, b, t)
-    const artwork = mixPoseArtwork(fromPose, toPose, t)
+    // Facial/blink/talk recipes pass the *same authored state* as both ends.
+    // Preserve the source pose directly: do not remount the model, wardrobe
+    // or hair for every 6-mouth-phase / eye-closed PNG. Real pose transitions
+    // keep their old mixed-artwork path to preserve exact interpolation.
+    const staticPose = transition.from === transition.to && fromPose === toPose
+    const artwork = staticPose ? fromPose : mixPoseArtwork(fromPose, toPose, t)
     const copy: CustomizerCharacter = { ...character, customization: { ...character.customization, faceAppearance: appearance } }
-    const renderer = await rendererModule.prepareSavedCharacterRenderer(copy, { source, artwork, assetProvider: this.assetProvider })
+    const renderer = staticPose
+      ? await this.preparedStatic.getOrCreate(
+          JSON.stringify([
+            character.id, slot,
+            a.poseSlot === undefined ? character.customization.poseSlot : a.poseSlot,
+            // A legacy face set can pre-rasterize a particular expression
+            // index, eye selection or palette into its base. Key the entire
+            // authored appearance, not just setId, or PT eyes may bleed.
+            appearance ?? null
+          ]),
+          () => prepareSavedCharacterRenderer(copy, { source, artwork, assetProvider: this.assetProvider })
+        )
+      : await prepareSavedCharacterRenderer(copy, { source, artwork, assetProvider: this.assetProvider })
     const mode = t < .5 ? a.activeFaceMode : b.activeFaceMode
+    if (directCanvas) {
+      // The prepared body/wardrobe/front-hair canvases are reused, while the
+      // unchanged facial overlay draws dynamic mouth, blink and independent PT
+      // pupils. Snapshot before the prepared rig is painted again.
+      const rendered = await renderer.renderToCanvas(appearance, transforms, effects, mode)
+      const snapshot = snapshotTrimmedGachaCanvas(rendered.canvas)
+      const geometry = faceRenderGeometry(element, rendered, snapshot.crop, 1920, 1080)
+      return {
+        element: { ...element, ...geometry, faceAppearance: appearance, faceTransforms: transforms, activeExpressionEffects: effects },
+        imageDataUrl: transition.from.imageDataUrl,
+        canvasImage: snapshot.canvas
+      }
+    }
     const rendered = await renderer.render(appearance, transforms, effects, mode)
     const crop = await trimTransparentImage(rendered.dataUrl)
-    // Rendering is measured against the invariant 1920x1080 stage, not window pixels.
     const geometry = faceRenderGeometry(element, rendered, crop, 1920, 1080)
     return { element: { ...element, ...geometry, faceAppearance: appearance, faceTransforms: transforms, activeExpressionEffects: effects }, imageDataUrl: crop?.dataUrl ?? rendered.dataUrl }
+  }
+
+  render(transition: CharacterTransition, frame: number, character: CustomizerCharacter): Promise<VideoCharacterState> {
+    return this.renderResult(transition, frame, character, false)
+  }
+
+  renderCanvas(transition: CharacterTransition, frame: number, character: CustomizerCharacter): Promise<VideoGachaCanvasState> {
+    return this.renderResult(transition, frame, character, true)
+  }
+
+  preparedStats(): Readonly<{ entries: number; retainedBytes: number; maxEntries: number; maxBytes: number }> {
+    return this.preparedStatic.stats()
+  }
+
+  clearPrepared(): void {
+    this.preparedStatic.clear()
+  }
+
+  dispose(): void {
+    this.preparedStatic.clear()
+    this.models.clear()
+    this.poses.clear()
+    this.components.clear()
+    this.catalogs.clear()
+    this.effects.clear()
   }
 }

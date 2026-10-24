@@ -12,7 +12,7 @@ export function RenderedCharacterPortrait({ character, className = '' }: { chara
     const key = `${character.id}:${character.updatedAt}`
     let rendered = portraitCache.get(key)
     if (!rendered) {
-      rendered = import('../../features/customizer/CustomizerPage')
+      rendered = import('../../characters/characterRenderer')
         .then(({ renderSavedCharacter }) => renderSavedCharacter(character))
         .then((result) => result.dataUrl)
         .catch(() => null)

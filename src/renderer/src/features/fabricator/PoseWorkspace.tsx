@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { FabricatorPose, FabricatorPoseDraft, FabricatorPoseDraftSave, FabricatorPoseSave, FabricatorPoseSummary, FabricatorProject, FabricatorSlotSummary, PosePart } from '../../../../shared/fabricator'
+import type { FabricatorPose, FabricatorPoseDraft, FabricatorPoseDraftSave, FabricatorPoseSave, FabricatorPoseSummary, FabricatorSlotSummary, PosePart } from '../../../../shared/fabricator'
 import { resolvePoseCategory } from '../../../../shared/fabricator'
+import { defaultExportPoseSlots, poseFromModel } from './models/poseProjection'
 import { Icon } from '../../ui/components/Icon'
 import { usePreviewBackground } from './usePreviewBackground'
 import { normalizeLayerOrder, orderedParts, partJointAnchor } from './models/rig'
@@ -15,11 +16,6 @@ const SLOT_COUNT = 12
 const EXPORT_POSE_SLOT_COUNT = 5
 const HISTORY_LIMIT = 50
 const emptyHistory = (): PoseHistory => ({ undo: [], redo: [] })
-
-function defaultExportPoseSlots(summaries: FabricatorPoseSummary[], modelSlot: number): Array<number | null> {
-  const available = summaries.filter((pose): pose is NonNullable<FabricatorPoseSummary> => Boolean(pose && pose.sourceModelSlot === modelSlot)).sort((a, b) => a.slot - b.slot).slice(0, EXPORT_POSE_SLOT_COUNT)
-  return [...available.map((pose) => pose.slot), ...Array.from({ length: EXPORT_POSE_SLOT_COUNT - available.length }, () => null)]
-}
 
 function cloneProject(project: DraftProject): DraftProject {
   return structuredClone(project)
@@ -84,27 +80,6 @@ function toDraftSave(project: DraftProject, editingSlot: number | null): Fabrica
     editingSlot,
     updatedAt: new Date().toISOString(),
     project: { ...project, parts: project.parts.map(({ dataUrl: _dataUrl, ...part }) => part) }
-  }
-}
-
-function poseFromModel(model: FabricatorProject): DraftProject {
-  return {
-    schemaVersion: 1,
-    name: `Pose de ${model.name}`,
-    category: 'Parado',
-    sourceModelSlot: model.slot,
-    sourceModelName: model.name,
-    sourceModelUpdatedAt: model.updatedAt,
-    width: model.width,
-    height: model.height,
-    parts: model.parts.map((part) => ({
-      id: part.id, name: part.name, x: part.x, y: part.y, width: part.width, height: part.height,
-      rotation: part.rotation, jointAnchor: part.jointAnchor ? { ...part.jointAnchor } : undefined, sourceTransform: part.sourceTransform ? { ...part.sourceTransform, ...(part.sourceTransform.jointAnchor ? { jointAnchor: { ...part.sourceTransform.jointAnchor } } : {}) } : undefined, dataUrl: part.dataUrl
-    })),
-    joints: model.joints.map((joint) => structuredClone(joint)),
-    layerOrder: normalizeLayerOrder(model.parts, model.layerOrder),
-    hiddenPartIds: [...(model.hiddenPartIds ?? [])],
-    updatedAt: new Date().toISOString()
   }
 }
 

@@ -2,7 +2,7 @@
  * Apenas consulta os manifestos; nunca grava assets ou altera personagens.
  */
 import { join } from 'node:path'
-import type { WardrobeSet, WardrobeSetSummary } from '../../../src/shared/fabricator'
+import type { WardrobeCatalogListing, WardrobeSet, WardrobeSetSummary } from '../../../src/shared/fabricator'
 
 export interface WardrobeCatalogFiles {
   readdir(folder: string, options: { withFileTypes: true }): Promise<Array<{ name: string; isDirectory(): boolean }>>
@@ -13,33 +13,66 @@ export class FabricatorWardrobeCatalog {
   private readonly modelPath: (modelSlot: number) => string
   private readonly files: WardrobeCatalogFiles
   private readonly modelSlotCount: number
+  private readonly recoverCatalogManifest?: (folder: string, imageFolder: string) => Promise<void>
 
-  constructor(modelPath: (modelSlot: number) => string, files: WardrobeCatalogFiles, modelSlotCount: number) {
+  constructor(
+    modelPath: (modelSlot: number) => string,
+    files: WardrobeCatalogFiles,
+    modelSlotCount: number,
+    recoverCatalogManifest?: (folder: string, imageFolder: string) => Promise<void>
+  ) {
     this.modelPath = modelPath
     this.files = files
     this.modelSlotCount = modelSlotCount
+    this.recoverCatalogManifest = recoverCatalogManifest
   }
 
   async list(modelSlot: number): Promise<WardrobeSetSummary[]> {
+    return (await this.listDetailed(modelSlot)).sets
+  }
+
+  async listDetailed(modelSlot: number): Promise<WardrobeCatalogListing> {
     if (!Number.isInteger(modelSlot) || modelSlot < 1 || modelSlot > this.modelSlotCount) throw new Error('Modelo inválido.')
     const folder = this.modelPath(modelSlot)
     try {
       const entries = await this.files.readdir(folder, { withFileTypes: true })
       const sets: WardrobeSetSummary[] = []
+      const issues: WardrobeCatalogListing['issues'] = []
       for (const entry of entries) {
         if (!entry.isDirectory() || !/^set-[a-zA-Z0-9_-]{1,80}$/.test(entry.name)) continue
+        const setFolder = join(folder, entry.name)
         try {
-          const set = JSON.parse(await this.files.readFile(join(folder, entry.name, 'wardrobe.json'), 'utf8')) as WardrobeSet
+          await this.recoverCatalogManifest?.(setFolder, join(setFolder, 'parts'))
+        } catch (reason) {
+          // A damaged journal is NEVER cleaned or ignored. Other sets remain
+          // available; the affected set is quarantined from the listing only.
+          // Do not leak OS paths or internal storage errors into UI messages.
+          const message = reason instanceof Error ? reason.message : ''
+          const summary = /journal/i.test(message) ? 'Journal do conjunto inválido ou ilegível.'
+            : /backup|\.bak|ENOENT/i.test(message) ? 'Backup necessário não pôde ser confirmado.'
+              : 'Falha ao recuperar os arquivos deste conjunto.'
+          issues.push({ id: entry.name.slice(4), reason: summary + ' Conjunto preservado para revisão.' })
+          continue
+        }
+        try {
+          const set = JSON.parse(await this.files.readFile(join(setFolder, 'wardrobe.json'), 'utf8')) as WardrobeSet
           if (set.schemaVersion === 1 && (set.edition === undefined || set.edition === 1 || set.edition === 2)
             && set.modelSlot === modelSlot && set.id === entry.name.slice(4) && Array.isArray(set.components)) {
             sets.push({ id: set.id, modelSlot, modelName: set.modelName, name: set.name,
               updatedAt: set.updatedAt, edition: set.edition ?? 1, componentCount: set.components.length })
+          } else {
+            issues.push({ id: entry.name.slice(4), reason: 'Manifesto incompatível ou inválido; nenhum arquivo foi alterado.' })
           }
-        } catch { /* Manifests inválidos nunca aparecem no catálogo. */ }
+        } catch (reason) {
+          issues.push({ id: entry.name.slice(4), reason:
+            (reason as NodeJS.ErrnoException)?.code === 'ENOENT'
+              ? 'Manifesto ausente; conjunto preservado no disco.'
+              : 'Manifesto ilegível; conjunto preservado para revisão.' })
+        }
       }
-      return sets.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+      return { sets: sets.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)), issues }
     } catch (reason) {
-      if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return []
+      if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return { sets: [], issues: [] }
       throw reason
     }
   }

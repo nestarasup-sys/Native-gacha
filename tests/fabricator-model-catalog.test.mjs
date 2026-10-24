@@ -67,3 +67,22 @@ test('IPC conserva canais e impede acesso de origem não confiável', async () =
   assert.equal(calls, 0)
   assert.deepEqual(await handlers.get('fabricator:load-slot')({ trusted: true }, 1), { slot: 1 })
 })
+
+test('catálogo reutiliza PNGs da versão atual e atualiza após nova publicação', async t => {
+  const { folder } = await fixture(t)
+  let imageReads = 0
+  const counting = new FabricatorModelCatalog(10, () => folder, {
+    readFile,
+    readAssetImage: async path => { imageReads++; return readFile(path) }
+  })
+  const first = await counting.loadSlot(1)
+  const second = await counting.loadSlot(1)
+  assert.equal(imageReads, 1)
+  assert.equal(second.parts[0].dataUrl, first.parts[0].dataUrl)
+  await writeFile(join(folder,'parts','head.png'),Buffer.from([9,8,7]))
+  await writeFile(join(folder,'project.json'),JSON.stringify({...manifest, updatedAt:'2026-10-22T13:00:00Z'}))
+  const updated = await counting.loadSlot(1)
+  assert.equal(imageReads, 2)
+  assert.equal(updated.parts[0].dataUrl, 'data:image/png;base64,CQgH')
+  assert.equal(first.parts[0].dataUrl,'data:image/png;base64,BAUG')
+})

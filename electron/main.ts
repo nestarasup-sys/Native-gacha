@@ -3,16 +3,32 @@ import { createReadStream, existsSync, lstatSync, mkdirSync, readFileSync, realp
 import { mkdir as nativeMkdir, readFile as nativeReadFile, writeFile as nativeWriteFile, readdir as nativeReaddir, unlink as nativeUnlink, rename as nativeRename, stat as nativeStat, access as nativeAccess, rm as nativeRm, copyFile as nativeCopyFile } from 'node:fs/promises'
 import { basename, dirname, extname, join, relative, resolve, sep } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
+import type { VideoStudioProcessFailure } from '../src/shared/videoStudioNext/diagnostics'
+import { registerVideoStudioWindowsDiagnostics } from './videoStudioRebuild/windowsDiagnostics'
+import { registerVideoMediaEngineHandlers } from './videoStudioRebuild/mediaSupervisor'
 import { Readable } from 'node:stream'
 import { fileURLToPath } from 'node:url'
-import type { AnimatorAnimation, AnimatorAnimationAsset, AnimatorAnimationDraft, AnimatorAnimationSave, AnimatorAnimationSummary, FaceAssetKind, FaceAssetSave, FaceCatalogItem, FaceCatalogItemSave, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSave, FaceComponentAssetSummary, FaceElementKind, FaceExpressionCollection, FaceExpressionPreset, FaceExpressionPresetSummary, FaceExpressionTransforms, FaceExpressionWorkspaceDraft, FaceSet, FaceSetSave, FaceSetSummary, FaceSheetKind, FaceTransform, FabricatorAssetSave, FabricatorHistoryEntry, FabricatorHistorySaveEntry, FabricatorHistorySaveState, FabricatorHistoryState, FabricatorPose, FabricatorPoseDraft, FabricatorPoseDraftSave, FabricatorPoseSave, FabricatorPoseSummary, FabricatorProject, FabricatorProjectSave, HairStyle, HairStyleAsset, HairStyleSave, HairStyleSummary, HairWorkspace, HairWorkspaceAsset, HairWorkspaceSave, ModelPart, PosePart, WardrobeAssetSave, WardrobeCategory, WardrobeSet, WardrobeSetSave } from '../src/shared/fabricator'
-import { resolvePoseCategory } from '../src/shared/fabricator'
+import type { FaceAssetKind, FaceAssetSave, FaceCatalogItem, FaceCatalogItemSave, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSave, FaceComponentAssetSummary, FaceElementKind, FaceExpressionPreset, FaceExpressionTransforms, FaceExpressionWorkspaceDraft, FaceGuideProfile, FaceSet, FaceSetSave, FaceSetSummary, FaceSheetKind, FaceTransform, FabricatorAssetSave, FabricatorHistoryEntry, FabricatorHistorySaveEntry, FabricatorHistorySaveState, FabricatorHistoryState, FabricatorPoseDraftSave, FabricatorPoseSave, FabricatorProject, FabricatorProjectSave, HairStyle, HairStyleAsset, HairStyleSave, HairStyleSummary, HairWorkspace, HairWorkspaceAsset, HairWorkspaceSave, ModelPart, WardrobeAssetSave, WardrobeCategory, WardrobeSet, WardrobeSetSave } from '../src/shared/fabricator'
 import { hairCategories } from '../src/shared/hairCategories'
 import type { StudioAsset, StudioDocument, VideoStudioAsset, VideoStudioCardSummary, VideoTimelineDocument } from '../src/shared/studio'
-import { applyModelHeadShape } from '../src/shared/headShape'
 import { isStudioExpressionEffects, isStudioFaceTransforms } from '../src/shared/studio'
 import { isValidVideoMediaClip } from '../src/shared/videoMedia'
 import { isValidVideoAudioSettings } from '../src/shared/videoAudio'
+// In-memory, privacy-minimal crash ring (no project paths or media bytes).
+const videoStudioRecentProcessFailures: VideoStudioProcessFailure[] = []
+function recordVideoStudioProcessFailure(kind: VideoStudioProcessFailure['kind'], reason: string, exitCode: number): void {
+  videoStudioRecentProcessFailures.push({
+    occurredAt: new Date().toISOString(), kind, reason, exitCode,
+  })
+  if (videoStudioRecentProcessFailures.length > 24) videoStudioRecentProcessFailures.shift()
+}
+app.on('render-process-gone', (_event, _contents, details) => {
+  recordVideoStudioProcessFailure('renderer', details.reason, details.exitCode)
+})
+app.on('child-process-gone', (_event, details) => {
+  recordVideoStudioProcessFailure('child', details.reason, details.exitCode)
+})
+
 import { VideoLibraryStore, configureVideoLibraryStorage } from './videoLibrary'
 import { VideoBackgroundLibraryStore, configureBackgroundLibraryStorage } from './backgroundLibrary'
 import { RoteiroUiGifLibraryStore, configureRoteiroUiGifStorage } from './roteiroUiGifLibrary'
@@ -33,7 +49,6 @@ import { DomainFileSystem } from './domainFileSystem.cjs'
 import { DataMigrationService } from './dataMigration.cjs'
 import { DataBackupService } from './dataBackups.cjs'
 import { configureAssetImageStorage, readAssetImage, writeAssetImageSource } from './assetImageOverrides'
-import { legacyStandardExpressionEffects } from '../src/shared/legacyExpressionEffects'
 import { migrateElectronProfile } from './electronProfileMigration.cjs'
 import { normalizeImageBuffer } from './imageIngestion.cjs'
 import { measureIpc } from './ipcPerformance'
@@ -48,7 +63,31 @@ import { starterCharacters } from './domains/customizer/starterCharacters'
 import { FabricatorModelCatalog } from './domains/fabricator/modelCatalog'
 import { registerFabricatorModelCatalogHandlers } from './domains/fabricator/modelIpc'
 import { FabricatorWardrobeCatalog } from './domains/fabricator/wardrobeCatalog'
+import { createFabricatorCatalogListings, legacyHairStyle } from './domains/fabricator/catalogListings'
 import { registerFabricatorWardrobeCatalogHandlers } from './domains/fabricator/wardrobeCatalogIpc'
+import { createFaceGuidePersistence, isFaceGuideProfile } from './domains/fabricator/faceGuidePersistence'
+import { publishModelSource, type ModelSourcePublishRequest } from './domains/fabricator/modelSource'
+import { recoverModelSourceSlot } from './domains/fabricator/modelSourceRecovery'
+import { createFabricatorModelWriter } from './domains/fabricator/modelWriter'
+import { createPosePersistence } from './domains/fabricator/posePersistence'
+import { createAnimatorPersistence } from './domains/fabricator/animatorPersistence'
+import { registerFabricatorPoseHandlers } from './domains/fabricator/poseIpc'
+import { registerFabricatorAnimatorHandlers } from './domains/fabricator/animatorIpc'
+import { FabricatorCatalogAssetService } from './domains/fabricator/catalogAssetService'
+import { createFabricatorCatalogPersistence } from './domains/fabricator/catalogPersistence'
+import { createFabricatorExpressionStorage } from './domains/fabricator/expressionStorage'
+import { createExpressionBatchTransaction } from './domains/fabricator/expressionBatchTransaction'
+import { isPortableExpressionMotion, isPtPupilOverrides, isPtPupilMotion } from '../src/shared/portableExpression'
+import { registerExpressionPresetHandlers } from './domains/fabricator/expressionIpc'
+import { registerStudioPrimaryHandlers } from './domains/studio/primaryIpc'
+import { createStudioLibraryIndex } from './domains/studio/libraryIndex'
+import { createStudioDocumentPersistence } from './domains/studio/documentPersistence'
+import { studioIpcChannels } from '../src/shared/studioIpcChannels'
+import type { AssetNamespace } from './domains/fabricator/versionedAssetResolver'
+import { inspectFabricatorStorage } from '../src/shared/fabricatorStorageCompatibility'
+import { fabricatorIpcChannels } from '../src/shared/fabricatorIpcChannels'
+import { captureFabricatorRealScreens, captureCustomizerStudioRealScreens, captureCustomizerStudioReopened } from './domains/fabricator/visualUiCapture'
+import { registerModelSourceDownloadHandlers } from './domains/fabricator/modelSourceExportIpc'
 
 let configuredAppDataRoot: string | null = null
 let videoExportLibrary: VideoExportLibrary | null = null
@@ -115,6 +154,8 @@ function configureDevAiDataRoot(): void {
     if (lstatSync(sessionData).isSymbolicLink() || !sameCanonicalPath(realpathSync(sessionData), sessionData)) {
       throw new Error('Diretório de sessão privado inválido.')
     }
+    // appData deve conter userData: requisito da migração segura e dos backups.
+    app.setPath('appData', privateRoot)
     app.setPath('userData', userData)
     app.setPath('sessionData', sessionData)
     return
@@ -151,6 +192,9 @@ function configureDevAiDataRoot(): void {
   const sessionData = join(sandbox, 'electron-session-data')
   mkdirSync(userData, { recursive: true })
   mkdirSync(sessionData, { recursive: true })
+  // O appData nativo aponta ao perfil Windows real; neste teste deve ser o
+  // sandbox previamente autenticado pelo marcador. Mantém a regra within().
+  app.setPath('appData', sandbox)
   app.setPath('userData', userData)
   app.setPath('sessionData', sessionData)
 }
@@ -193,6 +237,22 @@ function configureLocalAppDataRoot(): string | null {
 
 configuredAppDataRoot = configureLocalAppDataRoot()
 
+// Local, opt-in harness for Windows Video Studio stress runs. It keeps the
+// normal app-data profile and app IPC, but lets an external local runner drive
+// the hidden renderer through CDP without showing a desktop window.
+if (process.env.GACHA_VIDEO_STRESS_OFFSCREEN === '1') {
+  app.commandLine.appendSwitch('remote-debugging-address', '127.0.0.1')
+  // Keep Chromium's animation/compositor clock running in the isolated Windows
+  // harness even though its native window is positioned outside every display.
+  app.commandLine.appendSwitch('disable-background-timer-throttling')
+  app.commandLine.appendSwitch('disable-renderer-backgrounding')
+  app.commandLine.appendSwitch('disable-backgrounding-occluded-windows')
+  const debuggingPort = process.env.GACHA_VIDEO_STRESS_DEBUG_PORT
+  if (debuggingPort && /^\d{1,5}$/.test(debuggingPort) && Number(debuggingPort) > 0 && Number(debuggingPort) <= 65535) {
+    app.commandLine.appendSwitch('remote-debugging-port', debuggingPort)
+  }
+}
+
 // The catalog starts empty and does not scan or rewrite legacy libraries.
 // Existing JSON/file stores remain authoritative until each domain is migrated.
 const dataPlatform = new DataPlatform(configuredAppDataRoot ?? dirname(app.getPath('userData')))
@@ -211,6 +271,7 @@ const stat = dataFileSystem.stat.bind(dataFileSystem) as typeof nativeStat
 const access = dataFileSystem.access.bind(dataFileSystem) as typeof nativeAccess
 const rm = dataFileSystem.rm.bind(dataFileSystem) as typeof nativeRm
 const copyFile = dataFileSystem.copyFile.bind(dataFileSystem) as typeof nativeCopyFile
+const faceGuidePersistence = createFaceGuidePersistence({ mkdir, readFile, writeFile, rename }, () => app.getPath('userData'))
 let dataMigration: InstanceType<typeof DataMigrationService> | null = null
 let dataBackupService: InstanceType<typeof DataBackupService> | null = null
 let dataMigrationRunning = false
@@ -354,6 +415,9 @@ function validFaceExpressionPreset(modelSlot: number, preset: FaceExpressionPres
     && (preset.transforms.browLeft === undefined || validTransform(preset.transforms.browLeft))
     && (preset.transforms.browRight === undefined || validTransform(preset.transforms.browRight))
     && (preset.referenceTransforms === undefined || Object.values(preset.referenceTransforms).every(validTransform))
+    && (preset.portableMotion === undefined || isPortableExpressionMotion(preset.portableMotion))
+    && (preset.ptPupils === undefined || isPtPupilOverrides(preset.ptPupils))
+    && (preset.ptPupilMotion === undefined || isPtPupilMotion(preset.ptPupilMotion))
     && Number.isFinite(preset.noseOpacity) && preset.noseOpacity >= 0 && preset.noseOpacity <= 1
     && (preset.effects === undefined || isStudioExpressionEffects(preset.effects))
 }
@@ -367,7 +431,7 @@ function validFaceExpressionWorkspaceDraft(modelSlot: number, draft: FaceExpress
     if (!entry || typeof entry !== 'object') return false
     return validFaceExpressionPreset(modelSlot, {
       schemaVersion: 1, id: entry.id, modelSlot, name: 'Rascunho', collectionId,
-      expressionIndex, selections: entry.selections, transforms: entry.transforms,
+      expressionIndex, selections: entry.selections, transforms: entry.transforms, ptPupils: entry.ptPupils,
       noseOpacity: entry.noseOpacity, effects: entry.effects, updatedAt: draft.updatedAt
     })
   }
@@ -387,128 +451,58 @@ function validFaceExpressionWorkspaceDraft(modelSlot: number, draft: FaceExpress
   return true
 }
 
-async function readFaceExpressionWorkspaceDraft(modelSlot: number): Promise<FaceExpressionWorkspaceDraft | null> {
-  if (!isValidModelSlot(modelSlot)) throw new Error('Modelo inválido.')
-  try {
-    const draft = JSON.parse(await readFile(faceExpressionWorkspaceDraftPath(modelSlot), 'utf8')) as FaceExpressionWorkspaceDraft
-    return validFaceExpressionWorkspaceDraft(modelSlot, draft) ? draft : null
-  } catch (reason) {
-    if ((reason as NodeJS.ErrnoException).code === 'ENOENT' || reason instanceof SyntaxError) return null
-    throw reason
-  }
+const expressionStorage = createFabricatorExpressionStorage({
+  files: { readFile, writeFile, mkdir, rename, readdir }, userDataRoot: app.getPath('userData'),
+  isValidModelSlot, isValidWardrobeId, validFaceExpressionPreset, validFaceExpressionWorkspaceDraft,
+  faceExpressionWorkspaceDraftPath, faceExpressionCollectionsPath, faceExpressionPresetPath
+})
+const { readFaceExpressionWorkspaceDraft, writeFaceExpressionWorkspaceDraft,
+  listFaceExpressionPresets, listFaceExpressionCollections, writeFaceExpressionCollection,
+  readFaceExpressionPreset, writeFaceExpressionPreset } = expressionStorage
+
+const expressionBatch = createExpressionBatchTransaction({
+  files: { mkdir, readFile, writeFile, rename, rm, unlink },
+  modelFolder: slot => join(app.getPath('userData'), 'fabricator', 'expression-presets', `model-${slot}`),
+  presetPath: faceExpressionPresetPath,
+  validModelSlot: isValidModelSlot,
+  validPreset: validFaceExpressionPreset
+})
+
+// Reads are queued too: no list/load may observe a half-written batch.
+function queueExpressionWork<T>(operation: () => Promise<T>): Promise<T> {
+  const work = expressionPresetSaveQueue.catch(() => undefined).then(operation)
+  expressionPresetSaveQueue = work.then(() => undefined, () => undefined)
+  return work
 }
 
-async function writeFaceExpressionWorkspaceDraft(modelSlot: number, draft: FaceExpressionWorkspaceDraft): Promise<void> {
-  if (!validFaceExpressionWorkspaceDraft(modelSlot, draft)) throw new Error('Rascunho de expressão inválido.')
-  const target = faceExpressionWorkspaceDraftPath(modelSlot)
-  await mkdir(dirname(target), { recursive: true })
-  const temporary = `${target}.tmp`
-  await writeFile(temporary, JSON.stringify(draft), 'utf8')
-  await rename(temporary, target)
-}
-
-async function listFaceExpressionPresets(modelSlot: number): Promise<FaceExpressionPresetSummary[]> {
-  if (!isValidModelSlot(modelSlot)) throw new Error('Modelo inválido.')
-  const folder = join(app.getPath('userData'), 'fabricator', 'expression-presets', `model-${modelSlot}`)
-  try {
-    const entries = await readdir(folder, { withFileTypes: true })
-    const presets: FaceExpressionPresetSummary[] = []
-    for (const entry of entries) {
-      if (!entry.isFile() || !/^preset-[a-zA-Z0-9_-]{1,80}\.json$/.test(entry.name)) continue
-      try {
-        const preset = JSON.parse(await readFile(join(folder, entry.name), 'utf8')) as FaceExpressionPreset
-        if (validFaceExpressionPreset(modelSlot, preset) && entry.name === `preset-${preset.id}.json`) {
-          presets.push({ id: preset.id, modelSlot, name: preset.name, updatedAt: preset.updatedAt, collectionId: preset.collectionId, expressionIndex: preset.expressionIndex })
-        }
-      } catch { /* Arquivos incompletos não aparecem na biblioteca. */ }
-    }
-    return presets.sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'))
-  } catch (reason) {
-    if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return []
-    throw reason
-  }
-}
-
-function isValidFaceExpressionCollection(modelSlot: number, collection: FaceExpressionCollection): boolean {
-  return isValidModelSlot(modelSlot) && !!collection && collection.schemaVersion === 1 && collection.modelSlot === modelSlot
-    && isValidWardrobeId(collection.id) && typeof collection.name === 'string' && Boolean(collection.name.trim()) && collection.name.length <= 80
-    && typeof collection.createdAt === 'string' && Number.isFinite(Date.parse(collection.createdAt))
-    && typeof collection.updatedAt === 'string' && Number.isFinite(Date.parse(collection.updatedAt))
-}
-
-async function listFaceExpressionCollections(modelSlot: number): Promise<FaceExpressionCollection[]> {
-  if (!isValidModelSlot(modelSlot)) throw new Error('Modelo inválido.')
-  try {
-    const collections = JSON.parse(await readFile(faceExpressionCollectionsPath(modelSlot), 'utf8')) as unknown
-    if (!Array.isArray(collections)) return []
-    return collections.filter((item): item is FaceExpressionCollection => isValidFaceExpressionCollection(modelSlot, item))
-  } catch (reason) {
-    if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return []
-    throw reason
-  }
-}
-
-async function writeFaceExpressionCollection(modelSlot: number, collection: FaceExpressionCollection): Promise<void> {
-  if (!isValidFaceExpressionCollection(modelSlot, collection)) throw new Error('Conjunto de expressões inválido.')
-  const filePath = faceExpressionCollectionsPath(modelSlot)
-  const existing = await listFaceExpressionCollections(modelSlot)
-  const next = [...existing.filter((item) => item.id !== collection.id), collection]
-  await mkdir(dirname(filePath), { recursive: true })
-  const temporary = `${filePath}.tmp`
-  await writeFile(temporary, JSON.stringify(next), 'utf8')
-  await rename(temporary, filePath)
-}
-
-async function readFaceExpressionPreset(modelSlot: number, id: string): Promise<FaceExpressionPreset | null> {
-  if (!isValidModelSlot(modelSlot) || !isValidWardrobeId(id)) throw new Error('Preset de expressão inválido.')
-  try {
-    const preset = JSON.parse(await readFile(faceExpressionPresetPath(modelSlot, id), 'utf8')) as FaceExpressionPreset
-    if (!validFaceExpressionPreset(modelSlot, preset) || preset.id !== id) return null
-    return {
-      ...preset,
-      effects: preset.effects ?? legacyStandardExpressionEffects(preset),
-      selections: { ...preset.selections, eyebrows: preset.selections.eyebrows ?? { left: null, right: null } },
-      transforms: { ...preset.transforms, browLeft: preset.transforms.browLeft ?? { x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0 }, browRight: preset.transforms.browRight ?? { x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0 } }
-    }
-  } catch (reason) {
-    if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return null
-    throw reason
-  }
-}
-
-async function writeFaceExpressionPreset(modelSlot: number, preset: FaceExpressionPreset): Promise<void> {
-  if (!validFaceExpressionPreset(modelSlot, preset)) throw new Error('Preset de expressão inválido.')
-  const target = faceExpressionPresetPath(modelSlot, preset.id)
-  await mkdir(dirname(target), { recursive: true })
-  const temporary = `${target}.tmp`
-  await writeFile(temporary, JSON.stringify(preset), 'utf8')
-  await rename(temporary, target)
-}
+const catalogPersistence = createFabricatorCatalogPersistence({ mkdir, access, readFile, writeFile, rename, unlink, rm, readdir }, writeAssetImageSource)
 
 async function writeFaceSet(modelSlot: number, set: FaceSetSave, assets: FaceAssetSave[]): Promise<void> {
+  invalidateCatalogPng('face', `${modelSlot}:set:${set.id}`)
   if (!validFaceSet(modelSlot, set)) throw new Error('Rosto inválido.')
+  const expected = new Set([...set.pieces.map(piece => piece.id), ...Object.keys(set.sheets).map(kind => `sheet-${kind}`)])
+  if (assets.some(asset => !expected.has(asset.id)) || new Set(assets.map(asset => asset.id)).size !== assets.length) throw new Error('Imagens do rosto inválidas.')
   const folder = faceSetPath(modelSlot, set.id)
-  const partsFolder = join(folder, 'images')
-  await mkdir(partsFolder, { recursive: true })
-  const expected = new Set([...set.pieces.map((piece) => piece.id), ...Object.keys(set.sheets).map((kind) => `sheet-${kind}`)])
-  if (assets.some((asset) => !expected.has(asset.id)) || new Set(assets.map((asset) => asset.id)).size !== assets.length) throw new Error('Imagens do rosto inválidas.')
-  for (const asset of assets) await writeAssetImageSource(join(partsFolder, `${asset.id}.png`), dataUrlBuffer(asset.dataUrl))
-  for (const id of expected) await access(join(partsFolder, `${id}.png`))
-  const temporary = join(folder, 'face.json.tmp')
-  await writeFile(temporary, JSON.stringify(set), 'utf8')
-  await rename(temporary, join(folder, 'face.json'))
-  for (const filename of await readdir(partsFolder)) if (filename.endsWith('.png') && !filename.endsWith('.paint.png') && !expected.has(filename.slice(0, -4))) await unlink(join(partsFolder, filename))
+  await catalogPersistence.saveCatalog({
+    folder, imageFolder: join(folder, 'images'), manifestName: 'face.json', manifest: set,
+    images: assets.map(asset => ({ id: asset.id, bytes: dataUrlBuffer(asset.dataUrl) })),
+    expected, prune: 'all'
+  })
 }
 
 async function readFaceSet(modelSlot: number, id: string): Promise<FaceSet | null> {
   if (!isValidModelSlot(modelSlot) || !isValidWardrobeId(id)) throw new Error('Rosto inválido.')
   try {
     const folder = faceSetPath(modelSlot, id)
+    await catalogPersistence.recoverCatalogManifest(folder, join(folder, 'images'))
     const set = JSON.parse(await readFile(join(folder, 'face.json'), 'utf8')) as FaceSetSave
+    if (!inspectFabricatorStorage('face', set).compatible) return null
     if (!validFaceSet(modelSlot, set) || set.id !== id) return null
+    const version = set.updatedAt
+    const identity = `${modelSlot}:set:${id}`
     const sheets = { ...set.sheets } as FaceSet['sheets']
-    for (const kind of faceSheetKinds) if (sheets[kind]) sheets[kind] = { ...sheets[kind], dataUrl: `data:image/png;base64,${(await readAssetImage(join(folder, 'images', `sheet-${kind}.png`))).toString('base64')}` }
-    const pieces = await Promise.all(set.pieces.map(async (piece) => ({ ...piece, dataUrl: `data:image/png;base64,${(await readAssetImage(join(folder, 'images', `${piece.id}.png`))).toString('base64')}` })))
+    for (const kind of faceSheetKinds) if (sheets[kind]) sheets[kind] = { ...sheets[kind], dataUrl: `data:image/png;base64,${(await readCatalogPng('face', identity, version, join(folder, 'images', `sheet-${kind}.png`))).toString('base64')}` }
+    const pieces = await Promise.all(set.pieces.map(async (piece) => ({ ...piece, dataUrl: `data:image/png;base64,${(await readCatalogPng('face', identity, version, join(folder, 'images', `${piece.id}.png`))).toString('base64')}` })))
     return { ...set, sheets, pieces }
   } catch (reason) {
     if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return null
@@ -549,17 +543,16 @@ function validFaceCatalogItem(modelSlot: number, item: FaceCatalogItemSave): boo
 }
 
 async function writeFaceCatalogItem(modelSlot: number, item: FaceCatalogItemSave, assets: FaceAssetSave[]): Promise<void> {
+  invalidateCatalogPng('face', `${modelSlot}:catalog:${item.id}`)
   if (!validFaceCatalogItem(modelSlot, item)) throw new Error('Peça facial inválida.')
+  const expected = new Set([`sheet-${item.category}`, ...item.pieces.map(piece => piece.id)])
+  if (assets.some(asset => !expected.has(asset.id)) || new Set(assets.map(asset => asset.id)).size !== assets.length) throw new Error('Imagens da peça facial inválidas.')
   const folder = faceCatalogItemPath(modelSlot, item.id)
-  const images = join(folder, 'images')
-  const expected = new Set([`sheet-${item.category}`, ...item.pieces.map((piece) => piece.id)])
-  if (assets.some((asset) => !expected.has(asset.id)) || new Set(assets.map((asset) => asset.id)).size !== assets.length) throw new Error('Imagens da peça facial inválidas.')
-  await mkdir(images, { recursive: true })
-  for (const asset of assets) await writeAssetImageSource(join(images, `${asset.id}.png`), dataUrlBuffer(asset.dataUrl))
-  for (const id of expected) await access(join(images, `${id}.png`))
-  await writeFile(join(folder, 'item.json.tmp'), JSON.stringify(item), 'utf8')
-  await rename(join(folder, 'item.json.tmp'), join(folder, 'item.json'))
-  for (const filename of await readdir(images)) if (filename.endsWith('.png') && !filename.endsWith('.paint.png') && !expected.has(filename.slice(0, -4))) await unlink(join(images, filename))
+  await catalogPersistence.saveCatalog({
+    folder, imageFolder: join(folder, 'images'), manifestName: 'item.json', manifest: item,
+    images: assets.map(asset => ({ id: asset.id, bytes: dataUrlBuffer(asset.dataUrl) })),
+    expected, prune: 'all'
+  })
 }
 
 function legacyFaceCatalogId(id: string): { setId: string; category: FaceSheetKind } | null {
@@ -578,10 +571,14 @@ async function readFaceCatalogItem(modelSlot: number, id: string): Promise<FaceC
   if (!isValidModelSlot(modelSlot) || !isValidFaceCatalogId(id)) throw new Error('Peça facial inválida.')
   try {
     const folder = faceCatalogItemPath(modelSlot, id)
+    await catalogPersistence.recoverCatalogManifest(folder, join(folder, 'images'))
     const item = JSON.parse(await readFile(join(folder, 'item.json'), 'utf8')) as FaceCatalogItemSave
+    if (!inspectFabricatorStorage('face-catalog', item).compatible) return null
     if (!validFaceCatalogItem(modelSlot, item) || item.id !== id) return null
-    const sheet = { ...item.sheet, dataUrl: `data:image/png;base64,${(await readAssetImage(join(folder, 'images', `sheet-${item.category}.png`))).toString('base64')}` }
-    const pieces = await Promise.all(item.pieces.map(async (piece) => ({ ...piece, dataUrl: `data:image/png;base64,${(await readAssetImage(join(folder, 'images', `${piece.id}.png`))).toString('base64')}` })))
+    const identity = `${modelSlot}:catalog:${id}`
+    const version = item.updatedAt
+    const sheet = { ...item.sheet, dataUrl: `data:image/png;base64,${(await readCatalogPng('face', identity, version, join(folder, 'images', `sheet-${item.category}.png`))).toString('base64')}` }
+    const pieces = await Promise.all(item.pieces.map(async (piece) => ({ ...piece, dataUrl: `data:image/png;base64,${(await readCatalogPng('face', identity, version, join(folder, 'images', `${piece.id}.png`))).toString('base64')}` })))
     return { ...item, sheet, pieces }
   } catch (reason) {
     if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason
@@ -607,8 +604,10 @@ async function listFaceCatalogItems(modelSlot: number): Promise<FaceCatalogItemS
   try {
     for (const entry of await readdir(faceCatalogPath(modelSlot), { withFileTypes: true })) {
       if (!entry.isDirectory() || !/^item-[a-zA-Z0-9_-]{1,120}$/.test(entry.name)) continue
+      const folder = join(faceCatalogPath(modelSlot), entry.name)
+      await catalogPersistence.recoverCatalogManifest(folder, join(folder, 'images'))
       try {
-        const item = JSON.parse(await readFile(join(faceCatalogPath(modelSlot), entry.name, 'item.json'), 'utf8')) as FaceCatalogItemSave
+        const item = JSON.parse(await readFile(join(folder, 'item.json'), 'utf8')) as FaceCatalogItemSave
         if (validFaceCatalogItem(modelSlot, item) && item.id === entry.name.slice(5)) items.set(item.id, { id: item.id, modelSlot, category: item.category, name: item.name, updatedAt: item.updatedAt, pieceCount: item.pieces.length })
       } catch { /* Incomplete catalog items are hidden. */ }
     }
@@ -618,8 +617,10 @@ async function listFaceCatalogItems(modelSlot: number): Promise<FaceCatalogItemS
     for (const entry of await readdir(faceModelPath(modelSlot), { withFileTypes: true })) {
       if (!entry.isDirectory() || !/^set-[a-zA-Z0-9_-]{1,80}$/.test(entry.name)) continue
       const setId = entry.name.slice(4)
+      const folder = join(faceModelPath(modelSlot), entry.name)
+      await catalogPersistence.recoverCatalogManifest(folder, join(folder, 'images'))
       try {
-        const set = JSON.parse(await readFile(join(faceModelPath(modelSlot), entry.name, 'face.json'), 'utf8')) as FaceSetSave
+        const set = JSON.parse(await readFile(join(folder, 'face.json'), 'utf8')) as FaceSetSave
         if (!validFaceSet(modelSlot, set) || set.id !== setId) continue
         for (const category of faceSheetKinds) {
           const sheet = set.sheets[category]
@@ -648,45 +649,8 @@ function validFaceComponentAsset(modelSlot: number, asset: FaceComponentAssetSav
     && typeof asset.updatedAt === 'string'
 }
 
-function validFaceGuideProfile(profile: unknown): profile is 'eyes' | 'face' { return profile === 'eyes' || profile === 'face' }
-function validFaceGuides(value: unknown): value is Record<number, { visible: boolean; verticalX: number; horizontalY: number; lowerHorizontalY: number; angle: number }> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
-  return Object.entries(value).every(([slot, guide]) => {
-    if (!/^([1-9]|10)$/.test(slot) || !guide || typeof guide !== 'object') return false
-    const item = guide as Record<string, unknown>
-    return typeof item.visible === 'boolean' && typeof item.verticalX === 'number' && Number.isFinite(item.verticalX) && item.verticalX >= 20 && item.verticalX <= 80
-      && typeof item.horizontalY === 'number' && Number.isFinite(item.horizontalY) && item.horizontalY >= 10 && item.horizontalY <= 90
-      && typeof item.lowerHorizontalY === 'number' && Number.isFinite(item.lowerHorizontalY) && item.lowerHorizontalY > item.horizontalY && item.lowerHorizontalY <= 99
-      && typeof item.angle === 'number' && Number.isFinite(item.angle) && item.angle >= -30 && item.angle <= 30
-  })
-}
-const faceGuidePath = (profile: 'eyes' | 'face') => join(app.getPath('userData'), 'fabricator', `guides-${profile}.json`)
-async function readFaceGuides(profile: 'eyes' | 'face') {
-  try {
-    const guides = JSON.parse(await readFile(faceGuidePath(profile), 'utf8')) as unknown
-    if (!validFaceGuides(guides)) return null
-    if (profile !== 'face') return guides
-    // Preserve existing eye-only model settings while unifying all guide editors.
-    try {
-      const eyeGuides = JSON.parse(await readFile(faceGuidePath('eyes'), 'utf8')) as unknown
-      return validFaceGuides(eyeGuides) ? { ...eyeGuides, ...guides } : guides
-    } catch (reason) {
-      if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return guides
-      throw reason
-    }
-  } catch (reason) {
-    if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return null
-    throw reason
-  }
-}
-async function writeFaceGuides(profile: 'eyes' | 'face', guides: unknown): Promise<void> {
-  if (!validFaceGuideProfile(profile) || !validFaceGuides(guides)) throw new Error('Guias de desenho inválidas.')
-  const target = faceGuidePath(profile)
-  await mkdir(dirname(target), { recursive: true })
-  const temporary = `${target}.tmp`
-  await writeFile(temporary, JSON.stringify(guides), 'utf8')
-  await rename(temporary, target)
-}
+async function readFaceGuides(profile: FaceGuideProfile) { return faceGuidePersistence.read(profile) }
+async function writeFaceGuides(profile: FaceGuideProfile, guides: unknown): Promise<void> { return faceGuidePersistence.write(profile, guides) }
 
 async function listFaceComponentAssets(modelSlot: number, kind?: FaceAssetKind): Promise<FaceComponentAssetSummary[]> {
   if (!isValidModelSlot(modelSlot)) throw new Error('Modelo inválido.')
@@ -695,8 +659,10 @@ async function listFaceComponentAssets(modelSlot: number, kind?: FaceAssetKind):
   try {
     for (const entry of await readdir(directory, { withFileTypes: true })) {
       if (!entry.isDirectory() || !/^item-[a-zA-Z0-9_-]{1,120}$/.test(entry.name)) continue
+      const folder = join(directory, entry.name)
+      await catalogPersistence.recoverCatalogManifest(folder, folder)
       try {
-        const asset = JSON.parse(await readFile(join(directory, entry.name, 'asset.json'), 'utf8')) as FaceComponentAssetSave
+        const asset = JSON.parse(await readFile(join(folder, 'asset.json'), 'utf8')) as FaceComponentAssetSave
         if (!validFaceComponentAsset(modelSlot, asset) || asset.id !== entry.name.slice(5) || kind && asset.kind !== kind) continue
         const { defaultTransform: _transform, ...summary } = asset
         output.push(summary)
@@ -710,20 +676,23 @@ async function readFaceComponentAsset(modelSlot: number, id: string): Promise<Fa
   if (!isValidModelSlot(modelSlot) || !isValidWardrobeId(id)) throw new Error('Asset facial inválido.')
   try {
     const folder = faceComponentItemPath(modelSlot, id)
+    await catalogPersistence.recoverCatalogManifest(folder, folder)
     const asset = JSON.parse(await readFile(join(folder, 'asset.json'), 'utf8')) as FaceComponentAssetSave
+    if (!inspectFabricatorStorage('face-component', asset).compatible) return null
     if (!validFaceComponentAsset(modelSlot, asset) || asset.id !== id) return null
-    const dataUrl = `data:image/png;base64,${(await readAssetImage(join(folder, 'asset.png'))).toString('base64')}`
+    const dataUrl = `data:image/png;base64,${(await readCatalogPng('face', `${modelSlot}:component:${id}`, asset.updatedAt, join(folder, 'asset.png'))).toString('base64')}`
     return { ...asset, dataUrl }
   } catch (reason) { if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return null; throw reason }
 }
 
 async function writeFaceComponentAsset(modelSlot: number, asset: FaceComponentAssetSave, dataUrl: string): Promise<void> {
+  invalidateCatalogPng('face', `${modelSlot}:component:${asset.id}`)
   if (!validFaceComponentAsset(modelSlot, asset) || typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/png;base64,')) throw new Error('Asset facial inválido; use uma imagem PNG.')
   const folder = faceComponentItemPath(modelSlot, asset.id)
-  await mkdir(folder, { recursive: true })
-  await writeAssetImageSource(join(folder, 'asset.png'), dataUrlBuffer(dataUrl))
-  await writeFile(join(folder, 'asset.json.tmp'), JSON.stringify(asset), 'utf8')
-  await rename(join(folder, 'asset.json.tmp'), join(folder, 'asset.json'))
+  await catalogPersistence.saveCatalog({
+    folder, imageFolder: folder, manifestName: 'asset.json', manifest: asset,
+    images: [{ id: 'asset', bytes: dataUrlBuffer(dataUrl) }], expected: new Set(['asset'])
+  })
 }
 
 function validHairWorkspace(modelSlot: number, workspace: HairWorkspaceSave): boolean {
@@ -749,38 +718,36 @@ function validHairWorkspace(modelSlot: number, workspace: HairWorkspaceSave): bo
 }
 
 async function writeHairWorkspace(modelSlot: number, workspace: HairWorkspaceSave, assets: HairWorkspaceAsset[]): Promise<void> {
+  invalidateCatalogPng('hair', `${modelSlot}:workspace`)
   if (!validHairWorkspace(modelSlot, workspace)) throw new Error('Configuração de cabelo inválida.')
-  const folder = hairModelPath(modelSlot)
-  const images = join(folder, 'images')
-  await mkdir(images, { recursive: true })
-  const expected = new Set<string>((['front', 'back', 'fringe'] as const).filter((side) => workspace[side] != null))
+  const expected = new Set<string>((['front', 'back', 'fringe'] as const).filter(side => workspace[side] != null))
   if (workspace.sourceImageSaved) expected.add('source')
-  if (assets.some((asset) => !expected.has(asset.id)) || new Set(assets.map((asset) => asset.id)).size !== assets.length) throw new Error('Imagens de cabelo inválidas.')
-  for (const asset of assets) await writeAssetImageSource(join(images, `${asset.id}.png`), dataUrlBuffer(asset.dataUrl))
-  for (const side of expected) {
-    try { await access(join(images, `${side}.png`)) } catch (reason) {
-      if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason
-      throw new Error(`Imagem de cabelo ausente: ${side}.`)
-    }
-  }
-  for (const side of ['front', 'back', 'fringe', 'source'] as const) if (!expected.has(side)) await unlink(join(images, `${side}.png`)).catch((reason: NodeJS.ErrnoException) => { if (reason.code !== 'ENOENT') throw reason })
-  const temporary = join(folder, 'hair.json.tmp')
-  await writeFile(temporary, JSON.stringify(workspace), 'utf8')
-  await rename(temporary, join(folder, 'hair.json'))
+  if (assets.some(asset => !expected.has(asset.id)) || new Set(assets.map(asset => asset.id)).size !== assets.length) throw new Error('Imagens de cabelo inválidas.')
+  const folder = hairModelPath(modelSlot)
+  await catalogPersistence.saveCatalog({
+    folder, imageFolder: join(folder, 'images'), manifestName: 'hair.json', manifest: workspace,
+    images: assets.map(asset => ({ id: asset.id, bytes: dataUrlBuffer(asset.dataUrl) })),
+    expected, prune: ['front', 'back', 'fringe', 'source'],
+    missingMessage: id => `Imagem de cabelo ausente: ${id}.`
+  })
 }
 
 async function readHairWorkspace(modelSlot: number): Promise<HairWorkspace | null> {
   if (!isValidModelSlot(modelSlot)) throw new Error('Modelo inválido.')
   try {
     const folder = hairModelPath(modelSlot)
+    await catalogPersistence.recoverCatalogManifest(folder, join(folder, 'images'))
     const saved = JSON.parse(await readFile(join(folder, 'hair.json'), 'utf8')) as HairWorkspaceSave
+    if (!inspectFabricatorStorage('hair', saved).compatible) return null
     if (!validHairWorkspace(modelSlot, saved)) return null
+    const identity = `${modelSlot}:workspace`
+    const version = saved.updatedAt
     const loadPart = async (side: 'front' | 'back' | 'fringe') => saved[side]
-      ? { ...saved[side]!, dataUrl: `data:image/png;base64,${(await readAssetImage(join(folder, 'images', `${side}.png`))).toString('base64')}` }
+      ? { ...saved[side]!, dataUrl: `data:image/png;base64,${(await readCatalogPng('hair', identity, version, join(folder, 'images', `${side}.png`))).toString('base64')}` }
       : null
     let sourceImageDataUrl: string | undefined
     if (saved.sourceImageSaved) {
-      try { sourceImageDataUrl = `data:image/png;base64,${(await readFile(join(folder, 'images', 'source.png'))).toString('base64')}` }
+      try { sourceImageDataUrl = `data:image/png;base64,${(await readCatalogPng('hair', identity, version, join(folder, 'images', 'source.png'))).toString('base64')}` }
       catch (reason) { if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason }
     }
     return { ...saved, front: await loadPart('front'), back: await loadPart('back'), fringe: await loadPart('fringe'), ...(sourceImageDataUrl ? { sourceImageDataUrl } : {}) }
@@ -811,91 +778,78 @@ function validHairStyle(modelSlot: number, style: HairStyleSave): boolean {
 }
 
 async function writeHairStyle(modelSlot: number, style: HairStyleSave, assets: HairStyleAsset[]): Promise<void> {
+  invalidateCatalogPng('hair', `${modelSlot}:style:${style.id}`)
   if (!validHairStyle(modelSlot, style)) throw new Error('Estilo de cabelo inválido.')
+  const expected = new Set<string>((['front', 'back', 'fringe'] as const).filter(side => style[side] != null))
+  if (assets.some(asset => !expected.has(asset.id)) || new Set(assets.map(asset => asset.id)).size !== assets.length) throw new Error('Imagens do cabelo inválidas.')
   const folder = hairStylePath(modelSlot, style.id)
-  const images = join(folder, 'images')
-  await mkdir(images, { recursive: true })
-  const expected = new Set((['front', 'back', 'fringe'] as const).filter((side) => style[side] != null))
-  if (assets.some((asset) => !expected.has(asset.id)) || new Set(assets.map((asset) => asset.id)).size !== assets.length) throw new Error('Imagens do cabelo inválidas.')
-  for (const asset of assets) await writeAssetImageSource(join(images, `${asset.id}.png`), dataUrlBuffer(asset.dataUrl))
-  for (const side of expected) {
-    try { await access(join(images, `${side}.png`)) } catch (reason) {
-      if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason
-      throw new Error(`Imagem de cabelo ausente: ${side}.`)
-    }
-  }
-  for (const side of ['front', 'back', 'fringe'] as const) if (!expected.has(side)) await unlink(join(images, `${side}.png`)).catch((reason: NodeJS.ErrnoException) => { if (reason.code !== 'ENOENT') throw reason })
-  const temporary = join(folder, 'hair-style.json.tmp')
-  await writeFile(temporary, JSON.stringify(style), 'utf8')
-  await rename(temporary, join(folder, 'hair-style.json'))
+  await catalogPersistence.saveCatalog({
+    folder, imageFolder: join(folder, 'images'), manifestName: 'hair-style.json', manifest: style,
+    images: assets.map(asset => ({ id: asset.id, bytes: dataUrlBuffer(asset.dataUrl) })),
+    expected, prune: ['front', 'back', 'fringe'],
+    missingMessage: id => `Imagem de cabelo ausente: ${id}.`
+  })
 }
 
 async function readHairStyle(modelSlot: number, id: string): Promise<HairStyle | null> {
   if (!isValidModelSlot(modelSlot) || !isValidWardrobeId(id)) throw new Error('Estilo de cabelo inválido.')
   try {
     const folder = hairStylePath(modelSlot, id)
+    await catalogPersistence.recoverCatalogManifest(folder, join(folder, 'images'))
     const saved = JSON.parse(await readFile(join(folder, 'hair-style.json'), 'utf8')) as HairStyleSave
+    if (!inspectFabricatorStorage('hair-style', saved).compatible) return null
     if (!validHairStyle(modelSlot, saved) || saved.id !== id) return null
+    const identity = `${modelSlot}:style:${id}`
+    const version = saved.updatedAt
     const loadPart = async (side: 'front' | 'back' | 'fringe') => saved[side]
-      ? { ...saved[side]!, dataUrl: `data:image/png;base64,${(await readAssetImage(join(folder, 'images', `${side}.png`))).toString('base64')}` }
+      ? { ...saved[side]!, dataUrl: `data:image/png;base64,${(await readCatalogPng('hair', identity, version, join(folder, 'images', `${side}.png`))).toString('base64')}` }
       : null
     return { ...saved, front: await loadPart('front'), back: await loadPart('back'), fringe: await loadPart('fringe') }
   } catch (reason) {
-    if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return null
+    if ((reason as NodeJS.ErrnoException).code === 'ENOENT') {
+      if (id === 'legacy-workspace') {
+        // Respect a migration/deletion previously recorded by older builds.
+        // The virtual legacy entry must not return after the migrated entry
+        // was deliberately removed by the user.
+        try { await access(join(hairModelPath(modelSlot),'hair-style-migration-v1')); return null }
+        catch(markerError) { if ((markerError as NodeJS.ErrnoException).code !== 'ENOENT') throw markerError }
+        return legacyHairStyle(modelSlot,await readHairWorkspace(modelSlot))
+      }
+      return null
+    }
     throw reason
   }
 }
 
 async function recoverWardrobeManifest(folder: string): Promise<void> {
-  const target = join(folder, 'wardrobe.json')
-  const backup = join(folder, 'wardrobe.json.backup')
-  try { await access(target); return } catch (reason) {
-    if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason
-  }
-  try { await rename(backup, target) } catch (reason) {
-    if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason
-  }
+  await catalogPersistence.recoverWardrobeManifest(folder)
 }
 
 async function writeWardrobeSet(modelSlot: number, set: WardrobeSetSave, assets: WardrobeAssetSave[]): Promise<void> {
+  invalidateCatalogPng('wardrobe', `${modelSlot}:${set.id}`)
   if (!isValidModelSlot(modelSlot) || set.schemaVersion !== 1 || (set.edition !== undefined && set.edition !== 1 && set.edition !== 2) || set.modelSlot !== modelSlot || !isValidWardrobeId(set.id) || !Array.isArray(set.components) || set.components.length < 1 || set.components.length > 100) throw new Error('Conjunto de roupa inválido.')
+  const ids = new Set(set.components.map(component => component.id))
+  if (ids.size !== set.components.length || set.components.some(component => !isValidWardrobeId(component.id) || !wardrobeCategories.includes(component.category) || !isValidWardrobeId(component.attachedPartId))) throw new Error('Peças do conjunto inválidas.')
   const folder = wardrobeSetPath(modelSlot, set.id)
-  const partsFolder = join(folder, 'parts')
-  await mkdir(partsFolder, { recursive: true })
-  const ids = new Set(set.components.map((component) => component.id))
-  if (ids.size !== set.components.length || set.components.some((component) => !isValidWardrobeId(component.id) || !wardrobeCategories.includes(component.category) || !isValidWardrobeId(component.attachedPartId))) throw new Error('Peças do conjunto inválidas.')
-  for (const asset of assets) if (ids.has(asset.id)) await writeAssetImageSource(join(partsFolder, `${asset.id}.png`), dataUrlBuffer(asset.dataUrl))
-  for (const component of set.components) {
-    try { await access(join(partsFolder, `${component.id}.png`)) } catch (reason) {
-      if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason
-      throw new Error(`Imagem ausente no conjunto: ${component.name} (${component.id}).`)
+  await catalogPersistence.saveCatalog({
+    folder, imageFolder: join(folder, 'parts'), manifestName: 'wardrobe.json', manifest: set,
+    // O contrato legado ignora assets extras não presentes no conjunto.
+    images: assets.filter(asset => ids.has(asset.id)).map(asset => ({ id: asset.id, bytes: dataUrlBuffer(asset.dataUrl) })),
+    expected: ids, prune: 'all',
+    missingMessage: id => {
+      const component = set.components.find(part => part.id === id)
+      return `Imagem ausente no conjunto: ${component?.name ?? id} (${id}).`
     }
-  }
-  const target = join(folder, 'wardrobe.json')
-  const backup = join(folder, 'wardrobe.json.backup')
-  await recoverWardrobeManifest(folder)
-  // On Windows, rename(newFile, existingFile) fails with EPERM. Keep the last
-  // valid manifest under a recoverable name while publishing the replacement.
-  // A stale backup with a present target means the new manifest was already
-  // published before a previous process stopped during cleanup.
-  try { await access(target); await unlink(backup).catch((reason) => {
-    if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason
-  }) } catch (reason) {
-    if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason
-  }
-  const temporary = join(folder, 'wardrobe.json.tmp')
-  await writeFile(temporary, JSON.stringify(set), 'utf8')
-  let previousManifest = false
-  try { await rename(target, backup); previousManifest = true } catch (reason) {
-    if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason
-  }
-  try { await rename(temporary, target) } catch (reason) {
-    if (previousManifest) await rename(backup, target).catch(() => undefined)
-    throw reason
-  }
-  if (previousManifest) await unlink(backup)
-  const retained = new Set(set.components.map((component) => `${component.id}.png`))
-  for (const filename of await readdir(partsFolder)) if (filename.endsWith('.png') && !filename.endsWith('.paint.png') && !retained.has(filename)) await unlink(join(partsFolder, filename))
+  })
+}
+
+// Assets versionados são usados apenas nas bibliotecas oficiais; rascunhos não entram em cache.
+const catalogAssets = new FabricatorCatalogAssetService(readAssetImage)
+function readCatalogPng(namespace: AssetNamespace, identity: string, version: string, imagePath: string): Promise<Buffer> {
+  return catalogAssets.read(namespace, identity, version, imagePath)
+}
+function invalidateCatalogPng(namespace: AssetNamespace, identity: string): void {
+  catalogAssets.invalidate(namespace, identity)
 }
 
 async function readWardrobeSet(modelSlot: number, id: string): Promise<WardrobeSet | null> {
@@ -905,12 +859,15 @@ async function readWardrobeSet(modelSlot: number, id: string): Promise<WardrobeS
     const folder = wardrobeSetPath(modelSlot, id)
     await recoverWardrobeManifest(folder)
     const set = JSON.parse(await readFile(join(folder, 'wardrobe.json'), 'utf8')) as WardrobeSetSave
+    if (!inspectFabricatorStorage('wardrobe', set).compatible) return null
     if (set.schemaVersion !== 1 || (set.edition !== undefined && set.edition !== 1 && set.edition !== 2) || set.modelSlot !== modelSlot || set.id !== id || !Array.isArray(set.components) || set.components.length > 100) return null
+    const version = `${set.updatedAt}:${set.edition ?? 1}`
+    const identity = `${modelSlot}:${id}`
     const components = await Promise.all(set.components.map(async (component) => ({
       ...component,
       category: (component.category as string) === 'cinto-saia-1' ? 'cinto' as const : (component.category as string) === 'cinto-saia-2' ? 'saia' as const : component.category,
       renderAboveHair: (component.category === 'oculos' || component.category === 'acessorio-cabeca') && component.renderAboveHair === true,
-      dataUrl: `data:image/png;base64,${(await readAssetImage(join(folder, 'parts', `${component.id}.png`))).toString('base64')}`
+      dataUrl: `data:image/png;base64,${(await readCatalogPng('wardrobe', identity, version, join(folder, 'parts', `${component.id}.png`))).toString('base64')}`
     })))
     return { ...set, components }
   } catch (reason) {
@@ -1064,221 +1021,23 @@ function isStudioAsset(value: unknown): value is StudioAsset {
     && typeof asset.dataUrl === 'string' && asset.dataUrl.startsWith(`data:${asset.mimeType};base64,`) && asset.dataUrl.length <= 70_000_000
 }
 
-function normalizeStudio(value: Record<string, unknown>, id: string, workspace: StudioWorkspaceStorage = 'studio'): StudioDocument {
-  return {
-    schemaVersion: 1,
-    id,
-    title: String(value.title ?? 'Studio').slice(0, 100),
-    color: String(value.color ?? '#d7b5cd'),
-    createdAt: String(value.createdAt ?? new Date().toISOString()),
-    updatedAt: String(value.updatedAt ?? new Date().toISOString()),
-    backgroundColor: typeof value.backgroundColor === 'string' && /^#[0-9a-f]{6}$/i.test(value.backgroundColor) ? value.backgroundColor : '#d7b5cd',
-    backgroundAssetId: typeof value.backgroundAssetId === 'string' ? value.backgroundAssetId : null,
-    backgroundX: typeof value.backgroundX === 'number' && Number.isFinite(value.backgroundX) ? value.backgroundX : 0,
-    backgroundY: typeof value.backgroundY === 'number' && Number.isFinite(value.backgroundY) ? value.backgroundY : 0,
-    backgroundWidth: typeof value.backgroundWidth === 'number' && Number.isFinite(value.backgroundWidth) ? value.backgroundWidth : 100,
-    backgroundHeight: typeof value.backgroundHeight === 'number' && Number.isFinite(value.backgroundHeight) ? value.backgroundHeight : 100,
-    backgroundRotation: typeof value.backgroundRotation === 'number' && Number.isFinite(value.backgroundRotation) ? value.backgroundRotation : 0,
-    ...(typeof value.thumbnailDataUrl === 'string' && /^data:image\/(jpeg|png);base64,/.test(value.thumbnailDataUrl) && value.thumbnailDataUrl.length <= 1_500_000 ? { thumbnailDataUrl: value.thumbnailDataUrl } : {}),
-    assets: Array.isArray(value.assets) ? value.assets as StudioAsset[] : [],
-    elements: Array.isArray(value.elements) ? value.elements as StudioDocument['elements'] : [],
-    ...(workspace === 'video' && value.videoTimeline && typeof value.videoTimeline === 'object' ? { videoTimeline: value.videoTimeline as VideoTimelineDocument } : {})
-  }
-}
+const { readStudio, writeStudio, removeStudio } = createStudioDocumentPersistence({
+  files: { readFile, writeFile, mkdir, access, rename, unlink, rm },
+  studioPath,
+  studioLibraryPath,
+  prepareVideoDelete: () => videoLibrary.list(),
+  validate: isStudioDocument,
+  decodeImage: importedImageDataUrlBuffer,
+  normalizeImage: normalizeImageBuffer,
+  ensureVideoAssets: (id, assets) => videoLibrary.ensureProjectAssets(id, assets),
+  videoStudioCardSummary: (value, id) => videoStudioCardSummary(value, id)
+})
 
-async function readStudio(id: string, workspace: StudioWorkspaceStorage = 'studio'): Promise<StudioDocument | null> {
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) throw new Error('Identificador de Studio inválido.')
-  try {
-    const raw = JSON.parse(await readFile(join(studioPath(id, workspace), 'studio.json'), 'utf8')) as Record<string, unknown>
-    const normalized = normalizeStudio(raw, id, workspace)
-    const folder = studioPath(id, workspace)
-    const assets = await Promise.all(normalized.assets.map(async (asset) => {
-      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(asset.id)
-        || !['background', 'object', 'character'].includes(asset.category)
-        || !['image/png', 'image/jpeg', 'image/webp'].includes(asset.mimeType)) throw new Error('Biblioteca de imagens do Studio inválida.')
-      const extension = asset.mimeType === 'image/jpeg' ? 'jpg' : asset.mimeType.slice('image/'.length)
-      const categoryFolder = asset.category === 'background' ? 'backgrounds' : asset.category === 'character' ? 'characters' : 'objects'
-      const data = await readFile(join(folder, 'assets', categoryFolder, `${asset.id}.${extension}`))
-      return { ...asset, dataUrl: `data:${asset.mimeType};base64,${data.toString('base64')}` }
-    }))
-    if (workspace === 'video' && normalized.videoTimeline) {
-      const restoreImage = async (state: VideoTimelineDocument['characterKeys'][number]['state']) => {
-        if (!state?.imageDataUrl.startsWith('@video-frame:')) return
-        const hash = state.imageDataUrl.slice('@video-frame:'.length)
-        if (!/^[0-9a-f]{64}$/.test(hash)) throw new Error('Quadro de vídeo inválido.')
-        const cached = videoFrameDataUrlCache.get(hash)
-        if (cached) {
-          videoFrameDataUrlCache.delete(hash)
-          videoFrameDataUrlCache.set(hash, cached)
-          state.imageDataUrl = cached
-          return
-        }
-        let pending = videoFrameDataUrlLoads.get(hash)
-        if (!pending) {
-          pending = (async () => {
-            const bytes = await readFile(join(folder, 'assets', 'video-frames', `${hash}.png`))
-            if (createHash('sha256').update(bytes).digest('hex') !== hash) throw new Error('Quadro de vídeo corrompido.')
-            return `data:image/png;base64,${bytes.toString('base64')}`
-          })()
-          videoFrameDataUrlLoads.set(hash, pending)
-        }
-        try {
-          const dataUrl = await pending
-          const weight = dataUrl.length * 2
-          if (!videoFrameDataUrlCache.has(hash) && weight <= VIDEO_FRAME_DATA_URL_CACHE_LIMIT) {
-            videoFrameDataUrlCache.set(hash, dataUrl)
-            videoFrameDataUrlCacheWeight += weight
-            while (videoFrameDataUrlCacheWeight > VIDEO_FRAME_DATA_URL_CACHE_LIMIT && videoFrameDataUrlCache.size) {
-              const oldestHash = videoFrameDataUrlCache.keys().next().value
-              if (!oldestHash) break
-              const oldest = videoFrameDataUrlCache.get(oldestHash)!
-              videoFrameDataUrlCache.delete(oldestHash)
-              videoFrameDataUrlCacheWeight -= oldest.length * 2
-            }
-          }
-          state.imageDataUrl = dataUrl
-        } finally {
-          videoFrameDataUrlLoads.delete(hash)
-        }
-      }
-      await Promise.all([
-        ...Object.values(normalized.videoTimeline.characterBases ?? {}).map(restoreImage),
-        ...normalized.videoTimeline.characterKeys.map((key) => restoreImage(key.state))
-      ])
-    }
-    const document = { ...normalized, assets }
-    if (!isStudioDocument(document)) throw new Error(`Os dados do Studio ${id} estão inválidos.`)
-    return document
-  } catch (reason) {
-    if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return null
-    throw reason
-  }
-}
-
-const VIDEO_FRAME_DATA_URL_CACHE_LIMIT = 96 * 1024 * 1024
-const videoFrameDataUrlCache = new Map<string, string>()
-const videoFrameDataUrlLoads = new Map<string, Promise<string>>()
-let videoFrameDataUrlCacheWeight = 0
-
-async function writeStudio(studio: StudioDocument, workspace: StudioWorkspaceStorage = 'studio'): Promise<void> {
-  if (!isStudioDocument(studio)) throw new Error('Dados do Studio inválidos.')
-  const folder = studioPath(studio.id, workspace)
-  await Promise.all([
-    mkdir(join(folder, 'assets', 'backgrounds'), { recursive: true }),
-    mkdir(join(folder, 'assets', 'objects'), { recursive: true }),
-    mkdir(join(folder, 'assets', 'characters'), { recursive: true }),
-    mkdir(join(folder, 'prints'), { recursive: true })
-  ])
-  if (workspace === 'video' && studio.videoTimeline?.videoAssets?.length) await videoLibrary.ensureProjectAssets(studio.id, studio.videoTimeline.videoAssets)
-  const assetManifest: Array<Omit<StudioAsset, 'dataUrl'>> = []
-  for (const asset of studio.assets) {
-    const sourceBytes = importedImageDataUrlBuffer(asset.dataUrl)
-    const canonical = asset.mimeType === 'image/png'
-      ? { bytes: sourceBytes }
-      : await normalizeImageBuffer(sourceBytes)
-    const extension = 'png'
-    const bytes = canonical.bytes
-    const categoryFolder = asset.category === 'background' ? 'backgrounds' : asset.category === 'character' ? 'characters' : 'objects'
-    await writeFile(join(folder, 'assets', categoryFolder, `${asset.id}.${extension}`), bytes)
-    const { dataUrl: _dataUrl, ...metadata } = asset
-    assetManifest.push({ ...metadata, mimeType: 'image/png' })
-  }
-  const temporary = join(folder, `studio.json.${randomUUID()}.tmp`)
-  const { assets: _assets, ...metadata } = studio
-  const savedMetadata = { ...metadata, videoTimeline: studio.videoTimeline ? structuredClone(studio.videoTimeline) : undefined }
-  if (workspace === 'video' && savedMetadata.videoTimeline) {
-    const frameFolder = join(folder, 'assets', 'video-frames')
-    await mkdir(frameFolder, { recursive: true })
-    const storeImage = async (state: VideoTimelineDocument['characterKeys'][number]['state']) => {
-      if (!state) return
-      const bytes = Buffer.from(state.imageDataUrl.slice(state.imageDataUrl.indexOf(',') + 1), 'base64')
-      const hash = createHash('sha256').update(bytes).digest('hex')
-      const path = join(frameFolder, `${hash}.png`)
-      try { await access(path) } catch { await writeFile(path, bytes) }
-      state.imageDataUrl = `@video-frame:${hash}`
-    }
-    await Promise.all([
-      ...Object.values(savedMetadata.videoTimeline.characterBases ?? {}).map(storeImage),
-      ...savedMetadata.videoTimeline.characterKeys.map((key) => storeImage(key.state))
-    ])
-  }
-  try {
-    await writeFile(temporary, JSON.stringify({ ...savedMetadata, title: studio.title.trim(), assets: assetManifest }, null, 2), 'utf8')
-    const target = join(folder, 'studio.json')
-    const maxAttempts = process.platform === 'win32' ? 5 : 1
-    for (let attempt = 1; ; attempt += 1) {
-      try {
-        await rename(temporary, target)
-        break
-      } catch (reason) {
-        const error = reason as NodeJS.ErrnoException
-        const retryable = process.platform === 'win32' && ['EPERM', 'EACCES', 'EBUSY'].includes(error.code ?? '')
-        if (!retryable || attempt >= maxAttempts) throw reason
-        await new Promise((resolveDelay) => setTimeout(resolveDelay, 20 * (2 ** (attempt - 1))))
-      }
-    }
-    if (workspace === 'video') {
-      const card = videoStudioCardSummary(savedMetadata as unknown as Record<string, unknown>, studio.id)
-      await writeFile(join(folder, 'studio-card.json'), JSON.stringify(card), 'utf8')
-    }
-  } finally {
-    // Only this save operation owns the UUID-named temporary manifest.
-    // Never touch the prior committed studio.json on a failed rename.
-    try { await unlink(temporary) } catch (reason) {
-      if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') {
-        console.error('Não foi possível remover o manifesto temporário do Studio após gravar.')
-      }
-    }
-  }
-}
-
-async function listStudios(workspace: StudioWorkspaceStorage = 'studio'): Promise<StudioDocument[]> {
-  const libraryPath = studioLibraryPath(workspace)
-  await mkdir(libraryPath, { recursive: true })
-  const entries = await readdir(libraryPath, { withFileTypes: true })
-  const documents = await Promise.all(entries
-    .filter((entry) => entry.isDirectory() && /^studio-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(entry.name))
-    .map((entry) => readStudio(entry.name.slice('studio-'.length), workspace)))
-  return documents.filter((studio): studio is StudioDocument => studio !== null)
-    .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.title.localeCompare(b.title))
-}
-
-function videoStudioCardSummary(value: Record<string, unknown>, id: string): VideoStudioCardSummary {
-  const timeline = value.videoTimeline && typeof value.videoTimeline === 'object' ? value.videoTimeline as Record<string, unknown> : null
-  return {
-    id,
-    title: String(value.title ?? 'Video Studio').slice(0, 100),
-    color: typeof value.color === 'string' ? value.color : '#d7b5cd',
-    createdAt: String(value.createdAt ?? new Date(0).toISOString()),
-    updatedAt: String(value.updatedAt ?? new Date(0).toISOString()),
-    ...(typeof timeline?.coverDataUrl === 'string' && timeline.coverDataUrl.length <= 1_500_000 ? { coverDataUrl: timeline.coverDataUrl } : {})
-  }
-}
-
-async function listVideoStudioCards(): Promise<VideoStudioCardSummary[]> {
-  const libraryPath = studioLibraryPath('video')
-  await mkdir(libraryPath, { recursive: true })
-  const entries = await readdir(libraryPath, { withFileTypes: true })
-  const cards = await Promise.all(entries
-    .filter((entry) => entry.isDirectory() && /^studio-([0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i.test(entry.name))
-    .map(async (entry) => {
-      const id = entry.name.slice('studio-'.length)
-      const cardPath = join(libraryPath, entry.name, 'studio-card.json')
-      try {
-        const card = JSON.parse(await readFile(cardPath, 'utf8')) as VideoStudioCardSummary
-        return card.id === id ? card : null
-      } catch (reason) {
-        if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason
-        const raw = JSON.parse(await readFile(join(libraryPath, entry.name, 'studio.json'), 'utf8')) as Record<string, unknown>
-        const card = videoStudioCardSummary(raw, id)
-        // Migrate the light card manifest once, without hydrating timeline images or video data.
-        await writeFile(cardPath, JSON.stringify(card), 'utf8')
-        return card
-      }
-    }))
-  return cards.filter((card): card is VideoStudioCardSummary => card !== null)
-    .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.title.localeCompare(b.title))
-}
+const { listStudios, listVideoStudioCards, videoStudioCardSummary } = createStudioLibraryIndex({
+  files: { mkdir, readdir, readFile, writeFile },
+  studioLibraryPath,
+  readStudio: (id, workspace) => readStudio(id, workspace)
+})
 
 function dataUrlBuffer(dataUrl: string): Buffer {
   const match = /^data:image\/png;base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl)
@@ -1385,101 +1144,19 @@ async function readFabricatorHistory(slot: number): Promise<FabricatorHistorySta
   return { undo: await Promise.all(stored.undo.map(restoreEntry)), redo: await Promise.all(stored.redo.map(restoreEntry)) }
 }
 
-async function writeFabricatorProject(project: FabricatorProjectSave, changedAssets: FabricatorAssetSave[]): Promise<void> {
-  if (!isValidSlot(project.slot) || project.schemaVersion !== 1 || project.parts.length > 500) throw new Error('Projeto inválido.')
-  const folder = slotPath(project.slot)
-  const partsFolder = join(folder, 'parts')
-  await mkdir(partsFolder, { recursive: true })
-  const sourceFile = project.sourceAssetName
-  if (!/^source-[a-f0-9-]+\.(png|jpe?g|webp)$/i.test(sourceFile)) throw new Error('Imagem original inválida.')
-  await readFile(join(folder, sourceFile))
-  const parts = project.parts.map((part) => {
-    if (!/^[a-zA-Z0-9_-]{1,80}$/.test(part.id)) throw new Error('Identificador de peça inválido.')
-    return part
-  })
-  const validPartIds = new Set(parts.map((part) => part.id))
-  for (const asset of changedAssets) {
-    if (!validPartIds.has(asset.id)) continue
-    await writeAssetImageSource(join(partsFolder, `${asset.id}.png`), dataUrlBuffer(asset.dataUrl))
-    if (asset.chromaBaseDataUrl) await writeFile(join(partsFolder, `${asset.id}.base.png`), dataUrlBuffer(asset.chromaBaseDataUrl))
-  }
-  // Never publish a manifest until every referenced image exists. Serializing
-  // saves per slot also prevents an older save from deleting a newer asset.
-  const missingAssets: string[] = []
-  for (const part of parts) {
-    try { await access(join(partsFolder, `${part.id}.png`)) } catch (reason) {
-      if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason
-      missingAssets.push(part.id)
-    }
-  }
-  if (missingAssets.length) throw new Error(`FABRICATOR_MISSING_ASSETS:${missingAssets.join(',')}`)
-  const projectDocument = {
-    schemaVersion: project.schemaVersion,
-    slot: project.slot,
-    name: project.name,
-    sourceName: project.sourceName,
-    sourceAssetName: project.sourceAssetName,
-    width: project.width,
-    height: project.height,
-    tolerance: project.tolerance,
-    chromaBaseTolerance: project.chromaBaseTolerance,
-    joints: project.joints,
-    layerOrder: project.layerOrder,
-    hiddenPartIds: project.hiddenPartIds,
-    updatedAt: project.updatedAt
-  }
-  const manifest = { ...projectDocument, parts, sourceFile }
-  const manifestTemp = join(folder, 'project.json.tmp')
-  await writeFile(manifestTemp, JSON.stringify(manifest), 'utf8')
-  await rename(manifestTemp, join(folder, 'project.json'))
-  const keepFiles = new Set(parts.flatMap((part) => [
-    `${part.id}.png`,
-    ...(part.chromaBaseSaved ? [`${part.id}.base.png`] : [])
-  ]))
-  for (const file of await readdir(partsFolder)) {
-    if (file.endsWith('.png') && !file.endsWith('.paint.png') && !keepFiles.has(file)) await unlink(join(partsFolder, file))
-  }
-  const keptSources = new Set([sourceFile])
-  try {
-    const history = JSON.parse(await readFile(join(folder, 'history', 'history.json'), 'utf8')) as { undo?: Array<{ project?: { sourceAssetName?: string } }>; redo?: Array<{ project?: { sourceAssetName?: string } }> }
-    for (const entry of [...(history.undo ?? []), ...(history.redo ?? [])]) if (entry.project?.sourceAssetName) keptSources.add(entry.project.sourceAssetName)
-  } catch { /* No persisted history yet. */ }
-  for (const file of await readdir(folder)) {
-    if (/^source-[a-f0-9-]+\.(png|jpe?g|webp)$/i.test(file) && !keptSources.has(file)) await unlink(join(folder, file))
-  }
-}
+const writeFabricatorProject = createFabricatorModelWriter({
+  slotPath,
+  isValidSlot,
+  dataUrlBuffer,
+  writeAssetImageSource,
+  files: { mkdir, readFile, writeFile, rename, readdir, access, unlink }
+})
 
-async function writePoseAssets(folder: string, parts: Array<Omit<PosePart, 'dataUrl'>>, assets: FabricatorAssetSave[], fallbackFolder?: string): Promise<void> {
-  const partsFolder = join(folder, 'parts')
-  await mkdir(partsFolder, { recursive: true })
-  const partIds = new Set(parts.map((part) => part.id))
-  for (const asset of assets) {
-    if (!partIds.has(asset.id) || !/^[a-zA-Z0-9_-]{1,80}$/.test(asset.id)) continue
-    await writeAssetImageSource(join(partsFolder, `${asset.id}.png`), dataUrlBuffer(asset.dataUrl))
-  }
-  for (const part of parts) {
-    if (!/^[a-zA-Z0-9_-]{1,80}$/.test(part.id)) throw new Error('Peça de pose inválida.')
-    const target = join(partsFolder, `${part.id}.png`)
-    try { await access(target) } catch (reason) {
-      if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason
-      if (!fallbackFolder) throw new Error(`Imagem ausente na pose: ${part.name} (${part.id}).`)
-      try { await copyFile(join(fallbackFolder, 'parts', `${part.id}.png`), target) } catch (fallbackReason) {
-        if ((fallbackReason as NodeJS.ErrnoException).code === 'ENOENT') throw new Error(`Imagem ausente na pose e no rascunho: ${part.name} (${part.id}).`)
-        throw fallbackReason
-      }
-    }
-  }
-  const keepFiles = new Set(parts.map((part) => `${part.id}.png`))
-  for (const filename of await readdir(partsFolder)) if (filename.endsWith('.png') && !filename.endsWith('.paint.png') && !keepFiles.has(filename)) await unlink(join(partsFolder, filename))
-}
-
-async function readPoseAssets(folder: string, parts: Array<Omit<PosePart, 'dataUrl'>>): Promise<PosePart[]> {
-  const partsFolder = join(folder, 'parts')
-  return Promise.all(parts.map(async (part) => ({
-    ...part,
-    dataUrl: `data:image/png;base64,${(await readAssetImage(join(partsFolder, `${part.id}.png`))).toString('base64')}`
-  })))
-}
+const { writePoseProject, readPoseProject, writePoseDraft, readPoseDraft } = createPosePersistence({
+  poseSlotPath, poseDraftPath, modelHeadParts, isValidModelSlot, isValidPoseSlot,
+  dataUrlBuffer, writeAssetImageSource, readAssetImage,
+  files: { mkdir, access, copyFile, readdir, unlink, readFile, writeFile, rename }
+})
 
 async function modelHeadParts(modelSlot: number): Promise<Array<Pick<ModelPart, 'id' | 'name' | 'width' | 'height' | 'resizeBase'>>> {
   try {
@@ -1491,173 +1168,14 @@ async function modelHeadParts(modelSlot: number): Promise<Array<Pick<ModelPart, 
   }
 }
 
-async function preserveAndWritePoseManifest(path: string, document: FabricatorPoseSave | FabricatorPoseDraftSave): Promise<void> {
-  const backup = `${path}.before-head-shape`
-  try { await access(backup) } catch (reason) {
-    if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason
-    await copyFile(path, backup)
-  }
-  const temporary = `${path}.tmp`
-  await writeFile(temporary, JSON.stringify(document), 'utf8')
-  await rename(temporary, path)
-}
-
-async function writePoseProject(modelSlot: number, slot: number, project: FabricatorPoseSave, assets: FabricatorAssetSave[]): Promise<void> {
-  if (!isValidModelSlot(modelSlot) || project.sourceModelSlot !== modelSlot || !isValidPoseSlot(slot) || project.slot !== slot || project.schemaVersion !== 1 || project.parts.length === 0 || project.parts.length > 500) throw new Error('Pose inválida.')
-  if (project.category !== undefined && (typeof project.category !== 'string' || !project.category.trim() || project.category.trim().length > 32 || /[\r\n\t]/.test(project.category))) throw new Error('Categoria de pose inválida.')
-  const folder = poseSlotPath(modelSlot, slot)
-  // A edição automática salva primeiro no diretório de rascunho e consome as
-  // imagens pendentes no renderer. Ao salvar no slot, copie as partes já
-  // persistidas no rascunho para que o slot independente tenha sua biblioteca.
-  await writePoseAssets(folder, project.parts, assets, poseDraftPath(modelSlot))
-  const temporary = join(folder, 'pose.json.tmp')
-  await writeFile(temporary, JSON.stringify({ ...project, category: resolvePoseCategory(project) }), 'utf8')
-  await rename(temporary, join(folder, 'pose.json'))
-}
-
-async function readPoseProject(modelSlot: number, slot: number): Promise<FabricatorPose | null> {
-  if (!isValidModelSlot(modelSlot)) throw new Error('Modelo da pose inválido.')
-  if (!isValidPoseSlot(slot)) throw new Error('Slot de pose inválido.')
-  try {
-    const folder = poseSlotPath(modelSlot, slot)
-    const manifest = JSON.parse(await readFile(join(folder, 'pose.json'), 'utf8')) as FabricatorPoseSave
-    if (manifest.slot !== slot || manifest.sourceModelSlot !== modelSlot || manifest.schemaVersion !== 1 || manifest.parts.length === 0 || manifest.parts.length > 500) return null
-    const pose = { ...manifest, parts: await readPoseAssets(folder, manifest.parts) }
-    const shaped = applyModelHeadShape(pose, await modelHeadParts(modelSlot))
-    if (shaped !== pose) {
-      const { parts, ...metadata } = shaped
-      await preserveAndWritePoseManifest(join(folder, 'pose.json'), { ...metadata, parts: parts.map(({ dataUrl: _dataUrl, ...part }) => part) })
-    }
-    return shaped
-  } catch (reason) {
-    if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return null
-    throw reason
-  }
-}
-
-async function writePoseDraft(modelSlot: number, draft: FabricatorPoseDraftSave, assets: FabricatorAssetSave[]): Promise<void> {
-  if (!isValidModelSlot(modelSlot) || draft.project.sourceModelSlot !== modelSlot) throw new Error('Modelo do rascunho inválido.')
-  if (draft.editingSlot !== null && !isValidPoseSlot(draft.editingSlot)) throw new Error('Rascunho de pose inválido.')
-  if (draft.project.schemaVersion !== 1 || draft.project.parts.length === 0 || draft.project.parts.length > 500) throw new Error('Rascunho de pose inválido.')
-  if (draft.project.category !== undefined && (typeof draft.project.category !== 'string' || !draft.project.category.trim() || draft.project.category.trim().length > 32 || /[\r\n\t]/.test(draft.project.category))) throw new Error('Categoria de pose inválida.')
-  const folder = poseDraftPath(modelSlot)
-  await writePoseAssets(folder, draft.project.parts, assets)
-  const temporary = join(folder, 'draft.json.tmp')
-  await writeFile(temporary, JSON.stringify({ ...draft, project: { ...draft.project, category: resolvePoseCategory({ ...draft.project, slot: draft.editingSlot ?? undefined }) } }), 'utf8')
-  await rename(temporary, join(folder, 'draft.json'))
-}
-
-async function readPoseDraft(modelSlot: number): Promise<FabricatorPoseDraft | null> {
-  if (!isValidModelSlot(modelSlot)) throw new Error('Modelo do rascunho inválido.')
-  try {
-    const folder = poseDraftPath(modelSlot)
-    const draft = JSON.parse(await readFile(join(folder, 'draft.json'), 'utf8')) as FabricatorPoseDraftSave
-    if (draft.editingSlot !== null && !isValidPoseSlot(draft.editingSlot)) return null
-    if (draft.project.sourceModelSlot !== modelSlot || draft.project.schemaVersion !== 1 || draft.project.parts.length === 0 || draft.project.parts.length > 500) return null
-    const project = { ...draft.project, parts: await readPoseAssets(folder, draft.project.parts) }
-    const shaped = applyModelHeadShape(project, await modelHeadParts(modelSlot))
-    if (shaped !== project) {
-      const { parts, ...metadata } = shaped
-      await preserveAndWritePoseManifest(join(folder, 'draft.json'), { ...draft, project: { ...metadata, parts: parts.map(({ dataUrl: _dataUrl, ...part }) => part) } })
-    }
-    return { ...draft, project: shaped }
-  } catch (reason) {
-    if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return null
-    throw reason
-  }
-}
-
-function isValidAnimatorSlot(slot: number): boolean { return isValidPoseSlot(slot) }
-
-function validateAnimatorDocument(modelSlot: number, document: Pick<AnimatorAnimation, 'schemaVersion' | 'sourceModelSlot' | 'parts' | 'frames' | 'interpolation' | 'loopMode' | 'speed' | 'thumbnailDataUrl'>): void {
-  if (!isValidModelSlot(modelSlot) || document.schemaVersion !== 1 || document.sourceModelSlot !== modelSlot || !Array.isArray(document.parts) || document.parts.length === 0 || document.parts.length > 500 || !Array.isArray(document.frames) || document.frames.length === 0 || document.frames.length > 300) throw new Error('Animação inválida.')
-  if (!['smooth', 'stepped'].includes(document.interpolation) || !['once', 'loop', 'pingpong'].includes(document.loopMode) || !Number.isFinite(document.speed) || document.speed < 0.1 || document.speed > 4) throw new Error('Configurações da animação inválidas.')
-  const partIds = new Set(document.parts.map((part) => part.id))
-  if (partIds.size !== document.parts.length || [...partIds].some((id) => !/^[a-zA-Z0-9_-]{1,80}$/.test(id))) throw new Error('Identificadores de peças da animação inválidos.')
-  for (const frame of document.frames) {
-    if (!frame.id || !Number.isFinite(frame.durationMs) || frame.durationMs < 40 || frame.durationMs > 10000 || !frame.thumbnailDataUrl.startsWith('data:image/png;base64,') || frame.thumbnailDataUrl.length > 3_000_000) throw new Error('Frame de animação inválido.')
-    for (const id of partIds) {
-      const transform = frame.transforms[id]
-      if (!transform || !Number.isFinite(transform.x) || !Number.isFinite(transform.y) || !Number.isFinite(transform.rotation)) throw new Error('Transformação de frame inválida.')
-      if (transform.width !== undefined && (!Number.isFinite(transform.width) || transform.width <= 0 || transform.width > 10000)) throw new Error('Largura de frame inválida.')
-      if (transform.height !== undefined && (!Number.isFinite(transform.height) || transform.height <= 0 || transform.height > 10000)) throw new Error('Altura de frame inválida.')
-    }
-  }
-  if (!document.thumbnailDataUrl.startsWith('data:image/png;base64,') || document.thumbnailDataUrl.length > 3_000_000) throw new Error('Miniatura da animação inválida.')
-}
-
-async function writeAnimatorParts(folder: string, parts: Array<Omit<PosePart, 'dataUrl'>>, assets: AnimatorAnimationAsset[]): Promise<void> {
-  const partsFolder = join(folder, 'parts')
-  await mkdir(partsFolder, { recursive: true })
-  const validIds = new Set(parts.map((part) => part.id))
-  for (const asset of assets) if (validIds.has(asset.id)) await writeAssetImageSource(join(partsFolder, `${asset.id}.png`), dataUrlBuffer(asset.dataUrl))
-  for (const part of parts) {
-    const target = join(partsFolder, `${part.id}.png`)
-    try { await access(target) } catch (reason) {
-      if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason
-      throw new Error(`Imagem-base ausente na animação: ${part.name} (${part.id}).`)
-    }
-  }
-  const keep = new Set(parts.map((part) => `${part.id}.png`))
-  for (const filename of await readdir(partsFolder)) if (filename.endsWith('.png') && !filename.endsWith('.paint.png') && !keep.has(filename)) await unlink(join(partsFolder, filename))
-}
-
-async function readAnimatorParts(folder: string, parts: Array<Omit<PosePart, 'dataUrl'>>): Promise<PosePart[]> {
-  return Promise.all(parts.map(async (part) => ({ ...part, dataUrl: `data:image/png;base64,${(await readAssetImage(join(folder, 'parts', `${part.id}.png`))).toString('base64')}` })))
-}
-
-async function writeAnimatorAnimation(modelSlot: number, slot: number, animation: AnimatorAnimationSave, assets: AnimatorAnimationAsset[]): Promise<void> {
-  if (!isValidAnimatorSlot(slot) || animation.slot !== slot) throw new Error('Slot de animação inválido.')
-  validateAnimatorDocument(modelSlot, animation as AnimatorAnimation)
-  const folder = animatorSlotPath(modelSlot, slot)
-  await writeAnimatorParts(folder, animation.parts, assets)
-  await mkdir(folder, { recursive: true })
-  const temporary = join(folder, 'animation.json.tmp')
-  await writeFile(temporary, JSON.stringify(animation), 'utf8')
-  await rename(temporary, join(folder, 'animation.json'))
-}
-
-async function readAnimatorAnimation(modelSlot: number, slot: number): Promise<AnimatorAnimation | null> {
-  if (!isValidModelSlot(modelSlot) || !isValidAnimatorSlot(slot)) throw new Error('Slot de animação inválido.')
-  try {
-    const folder = animatorSlotPath(modelSlot, slot)
-    const saved = JSON.parse(await readFile(join(folder, 'animation.json'), 'utf8')) as AnimatorAnimationSave
-    if (saved.slot !== slot) return null
-    validateAnimatorDocument(modelSlot, saved as AnimatorAnimation)
-    return { ...saved, parts: await readAnimatorParts(folder, saved.parts) }
-  } catch (reason) {
-    if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return null
-    throw reason
-  }
-}
-
-async function writeAnimatorDraft(modelSlot: number, draft: AnimatorAnimationDraft, assets: AnimatorAnimationAsset[]): Promise<void> {
-  if (!isValidModelSlot(modelSlot) || draft.animation.sourceModelSlot !== modelSlot || (draft.editingSlot !== null && !isValidAnimatorSlot(draft.editingSlot))) throw new Error('Rascunho de animação inválido.')
-  validateAnimatorDocument(modelSlot, { ...draft.animation, slot: draft.editingSlot ?? 1 } as AnimatorAnimation)
-  const folder = animatorDraftPath(modelSlot)
-  await writeAnimatorParts(folder, draft.animation.parts, assets)
-  await mkdir(folder, { recursive: true })
-  const temporary = join(folder, 'draft.json.tmp')
-  await writeFile(temporary, JSON.stringify(draft), 'utf8')
-  await rename(temporary, join(folder, 'draft.json'))
-}
-
-async function readAnimatorDraft(modelSlot: number): Promise<AnimatorAnimationDraft | null> {
-  if (!isValidModelSlot(modelSlot)) throw new Error('Modelo de rascunho inválido.')
-  try {
-    const folder = animatorDraftPath(modelSlot)
-    const draft = JSON.parse(await readFile(join(folder, 'draft.json'), 'utf8')) as AnimatorAnimationDraft
-    if (draft.editingSlot !== null && !isValidAnimatorSlot(draft.editingSlot)) return null
-    validateAnimatorDocument(modelSlot, { ...draft.animation, slot: draft.editingSlot ?? 1 } as AnimatorAnimation)
-    return { ...draft, animation: { ...draft.animation, parts: await readAnimatorParts(folder, draft.animation.parts) } }
-  } catch (reason) {
-    if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return null
-    throw reason
-  }
-}
+const { isValidAnimatorSlot, writeAnimatorAnimation, readAnimatorAnimation, writeAnimatorDraft, readAnimatorDraft } = createAnimatorPersistence({
+  animatorSlotPath, animatorDraftPath, isValidModelSlot, isValidPoseSlot,
+  dataUrlBuffer, writeAssetImageSource, readAssetImage,
+  files: { mkdir, access, readdir, unlink, readFile, writeFile, rename }
+})
 
 async function registerFabricatorHandlers(): Promise<void> {
-  ipcMain.handle('app:flush-pending-writes', async (event): Promise<void> => {
+  ipcMain.handle(studioIpcChannels.flushPendingWrites, async (event): Promise<void> => {
     assertTrustedSender(event)
     const pendingWrites = [
       ...fabricatorSaveQueues.values(), ...poseSaveWrites, ...hairSaveQueues.values(),
@@ -1671,8 +1189,20 @@ async function registerFabricatorHandlers(): Promise<void> {
   })
 
   const registerStudioWorkspace = (workspace: StudioWorkspaceStorage, channel: 'studio' | 'video-studio') => {
-    ipcMain.handle(`${channel}:list`, async (event): Promise<StudioDocument[] | VideoStudioCardSummary[]> => {
+    if (workspace === 'studio') registerStudioPrimaryHandlers({
+      ipcMain, assertTrustedSender,
+      list: () => listStudios('studio'),
+      write: (document) => writeStudio(document, 'studio'),
+      remove: (id) => removeStudio(id, 'studio'),
+      getPendingWrites: () => studioSaveQueues.studio,
+      setPendingWrites: (pending) => { studioSaveQueues.studio = pending },
+      measure: (label, operation) => measureIpc(label, operation)
+    })
+    if (workspace === 'video') ipcMain.handle(`${channel}:list`, async (event): Promise<StudioDocument[] | VideoStudioCardSummary[]> => {
       assertTrustedSender(event)
+      // Listing during an atomic save must not observe a temporary card before
+      // its studio.json is committed. The single-writer queue is authoritative.
+      await studioSaveQueues.video
       return measureIpc<StudioDocument[] | VideoStudioCardSummary[]>(`${channel}:list`, () => workspace === 'video' ? listVideoStudioCards() : listStudios(workspace))
     })
 
@@ -1683,21 +1213,18 @@ async function registerFabricatorHandlers(): Promise<void> {
       return measureIpc('video-studio:get', () => readStudio(id, 'video'))
     })
 
-    ipcMain.handle(`${channel}:save`, async (event, studio: StudioDocument): Promise<void> => {
+    if (workspace === 'video') ipcMain.handle(`${channel}:save`, async (event, studio: StudioDocument): Promise<void> => {
       assertTrustedSender(event)
       const next = studioSaveQueues[workspace].catch(() => undefined).then(() => writeStudio(studio, workspace))
       studioSaveQueues[workspace] = next
       await measureIpc(`${channel}:save`, () => next)
     })
 
-    ipcMain.handle(`${channel}:delete`, async (event, id: string): Promise<void> => {
+    if (workspace === 'video') ipcMain.handle(`${channel}:delete`, async (event, id: string): Promise<void> => {
       assertTrustedSender(event)
       if (typeof id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) throw new Error('Identificador de Studio inválido.')
       const next = studioSaveQueues[workspace].catch(() => undefined).then(async () => {
-        const folder = resolve(studioPath(id, workspace))
-        if (dirname(folder) !== resolve(studioLibraryPath(workspace)) || basename(folder) !== `studio-${id}`) throw new Error('Pasta do Studio inválida.')
-        if (workspace === 'video') await videoLibrary.list()
-        await rm(folder, { recursive: true, force: true })
+        await removeStudio(id, workspace)
       })
       studioSaveQueues[workspace] = next
       await next
@@ -1727,6 +1254,8 @@ async function registerFabricatorHandlers(): Promise<void> {
     })
 
     if (workspace === 'video') {
+      registerVideoStudioWindowsDiagnostics(ipcMain, assertTrustedSender, () => videoStudioRecentProcessFailures)
+      registerVideoMediaEngineHandlers(ipcMain, assertTrustedSender)
       videoExportLibrary ??= new VideoExportLibrary(app.getPath('appData'))
   videoPreviewProxyStore ??= new VideoPreviewProxyStore(join(app.getPath('appData'), 'CACHE', 'video-studio', 'preview-media'))
       ipcMain.handle('video-studio:exports:list', async (event) => {
@@ -1803,8 +1332,22 @@ async function registerFabricatorHandlers(): Promise<void> {
         videoExportJobOwners.delete(jobId)
       })
       ipcMain.handle('video-studio:video-library:list', async (event) => { assertTrustedSender(event); return videoLibrary.list() })
-      ipcMain.handle('video-studio:video-library:import', async (event) => {
+      ipcMain.handle('video-studio:video-library:import', async (event, offscreenStressMediaPath?: string) => {
         assertTrustedSender(event)
+        if (offscreenStressMediaPath !== undefined) {
+          if (process.env.GACHA_VIDEO_STRESS_OFFSCREEN !== '1' || typeof offscreenStressMediaPath !== 'string') {
+            throw new Error('A importação por caminho local só está disponível no runner oculto de estresse.')
+          }
+          const allowedRoot = resolve(app.getAppPath(), 'app-data', 'stress-media')
+          const requested = resolve(offscreenStressMediaPath)
+          if (dirname(requested) !== allowedRoot || !existsSync(allowedRoot) || !existsSync(requested)
+            || lstatSync(allowedRoot).isSymbolicLink() || lstatSync(requested).isSymbolicLink()
+            || realpathSync(allowedRoot) !== allowedRoot || realpathSync(requested) !== requested
+            || !lstatSync(requested).isFile()) {
+            throw new Error('O arquivo de estresse deve ser um arquivo local direto de app-data/stress-media.')
+          }
+          return videoLibrary.importFile(requested)
+        }
         const result = await dialog.showOpenDialog({ title: 'Biblioteca de vídeos: importar', properties: ['openFile'], filters: [{ name: 'Vídeos', extensions: ['mp4', 'webm', 'mov', 'm4v'] }] })
         if (result.canceled || !result.filePaths[0]) return null
         return videoLibrary.importFile(result.filePaths[0])
@@ -2152,7 +1695,20 @@ async function registerFabricatorHandlers(): Promise<void> {
 
   registerCustomizerCharacterHandlers(ipcMain, assertTrustedSender, customizerService, measureIpc)
 
-  registerFabricatorModelCatalogHandlers(ipcMain, assertTrustedSender, fabricatorModelCatalog)
+  // A leitura do catálogo também recupera um slot que ficou sem nome após queda
+  // entre as duas renomeações da publicação. Não remove nem escolhe backups ambíguos.
+  const recoverSlot = (slot: number) =>
+    recoverModelSourceSlot(slot, slotPath, { readdir, readFile, rename, rm })
+  registerFabricatorModelCatalogHandlers(ipcMain, assertTrustedSender, {
+    listSlots: async () => {
+      for (let slot = 1; slot <= slotCount; slot += 1) await recoverSlot(slot)
+      return fabricatorModelCatalog.listSlots()
+    },
+    loadSlot: async (slot) => {
+      if (isValidSlot(slot)) await recoverSlot(slot)
+      return fabricatorModelCatalog.loadSlot(slot)
+    }
+  })
 
   ipcMain.handle('fabricator:import-model', async (event, slot: number) => {
     assertTrustedSender(event)
@@ -2190,6 +1746,25 @@ async function registerFabricatorHandlers(): Promise<void> {
     fabricatorSaveQueues.set(slot, current)
     try { await current } finally {
       if (fabricatorSaveQueues.get(slot) === current) fabricatorSaveQueues.delete(slot)
+    }
+  })
+
+
+  registerModelSourceDownloadHandlers(ipcMain, assertTrustedSender, () => app.getPath('downloads'))
+
+  ipcMain.handle(fabricatorIpcChannels.publishFabricatorModelSource, async (event, request: ModelSourcePublishRequest): Promise<string> => {
+    assertTrustedSender(event)
+    if (!request || !isValidSlot(request.project?.slot)) throw new Error('Slot inválido.')
+    const slot = request.project.slot
+    const previous = fabricatorSaveQueues.get(slot) ?? Promise.resolve()
+    const job = previous.catch(() => undefined).then(async () => {
+      await recoverModelSourceSlot(slot, slotPath, { readdir, readFile, rename, rm })
+      return publishModelSource(request, slotPath, writeFabricatorProject, { mkdir, readFile, writeFile, readdir, rename, rm })
+    })
+    const queue = job.then(() => undefined)
+    fabricatorSaveQueues.set(slot, queue)
+    try { return await job } finally {
+      if (fabricatorSaveQueues.get(slot) === queue) fabricatorSaveQueues.delete(slot)
     }
   })
 
@@ -2232,203 +1807,39 @@ async function registerFabricatorHandlers(): Promise<void> {
     }
   })
 
-  ipcMain.handle('fabricator:poses:list', async (event, requestedModelSlot?: number): Promise<FabricatorPoseSummary[]> => {
-    assertTrustedSender(event)
-    await ensureLegacyPoseMigration()
-    if (requestedModelSlot !== undefined && !isValidModelSlot(requestedModelSlot)) throw new Error('Modelo inválido.')
-    const modelSlots = requestedModelSlot === undefined ? Array.from({ length: slotCount }, (_, index) => index + 1) : [requestedModelSlot]
-    const allSlots: FabricatorPoseSummary[] = []
-    for (const modelSlot of modelSlots) {
-      for (let slot = 1; slot <= poseSlotCount; slot += 1) {
-        try {
-          const manifest = JSON.parse(await readFile(join(poseSlotPath(modelSlot, slot), 'pose.json'), 'utf8')) as FabricatorPoseSave
-          if (manifest.sourceModelSlot !== modelSlot || manifest.slot !== slot) continue
-          allSlots.push({ slot, sourceModelSlot: modelSlot, name: manifest.name, category: resolvePoseCategory(manifest), sourceModelName: manifest.sourceModelName, partCount: manifest.parts.length, updatedAt: manifest.updatedAt })
-        } catch { /* Slots sem manifest válido aparecem vazios. */ }
-      }
-    }
-    return requestedModelSlot === undefined ? allSlots : Array.from({ length: poseSlotCount }, (_, index) => allSlots.find((item) => item?.slot === index + 1) ?? null)
+  registerFabricatorPoseHandlers({
+    ipcMain, assertTrustedSender, ensureLegacyPoseMigration, isValidModelSlot, isValidPoseSlot,
+    slotCount, poseSlotCount, poseSlotPath, poseModelPath, poseDraftPath,
+    queuePoseWrite, readPoseProject, writePoseProject, readPoseDraft, writePoseDraft,
+    files: { readFile, writeFile, mkdir, rename, rm }
   })
 
-  ipcMain.handle('fabricator:poses:export-slots:get', async (event, modelSlot: number): Promise<Array<number | null> | null> => {
-    assertTrustedSender(event)
-    if (!isValidModelSlot(modelSlot)) throw new Error('Modelo inválido.')
-    try {
-      const parsed = JSON.parse(await readFile(join(poseModelPath(modelSlot), 'export-slots.json'), 'utf8')) as unknown
-      if (!Array.isArray(parsed) || parsed.length !== 5 || parsed.some((slot) => slot !== null && (typeof slot !== 'number' || !isValidPoseSlot(slot)))) return null
-      return parsed
-    } catch (reason) {
-      if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return null
-      throw reason
-    }
+  registerFabricatorAnimatorHandlers({
+    ipcMain, assertTrustedSender, isValidModelSlot, isValidAnimatorSlot, poseSlotCount,
+    animatorLibraryPath, animatorModelPath, animatorSlotPath, animatorDraftPath,
+    readAnimatorAnimation, writeAnimatorAnimation, readAnimatorDraft, writeAnimatorDraft,
+    getQueue: () => animatorSaveQueue,
+    setQueue: next => { animatorSaveQueue = next },
+    files: { readFile, readdir, rm }
   })
 
-  ipcMain.handle('fabricator:poses:export-slots:save', async (event, modelSlot: number, slots: unknown): Promise<void> => {
-    assertTrustedSender(event)
-    if (!isValidModelSlot(modelSlot) || !Array.isArray(slots) || slots.length !== 5 || slots.some((slot) => slot !== null && (typeof slot !== 'number' || !isValidPoseSlot(slot)))) throw new Error('Os cinco slots de poses para exportação são inválidos.')
-    const unique = slots.filter((slot): slot is number => slot !== null)
-    if (new Set(unique).size !== unique.length) throw new Error('Cada pose pode ocupar apenas um slot de exportação.')
-    await queuePoseWrite(async () => {
-      const summaries = await Promise.all(unique.map(async (slot) => readPoseProject(modelSlot, slot)))
-      if (summaries.some((pose) => !pose)) throw new Error('Uma das poses selecionadas não existe mais nesta biblioteca.')
-      const folder = poseModelPath(modelSlot)
-      await mkdir(folder, { recursive: true })
-      const target = join(folder, 'export-slots.json')
-      const temporary = `${target}.tmp`
-      await writeFile(temporary, JSON.stringify(slots), 'utf8')
-      await rename(temporary, target)
-    })
-  })
+    registerFabricatorWardrobeCatalogHandlers(ipcMain, assertTrustedSender,
+      new FabricatorWardrobeCatalog(wardrobeModelPath, { readdir, readFile }, slotCount,
+        (folder) => catalogPersistence.recoverWardrobeManifest(folder)))
 
-  ipcMain.handle('fabricator:poses:load', async (event, modelSlot: number, slot: number): Promise<FabricatorPose | null> => {
-    assertTrustedSender(event)
-    let loaded: FabricatorPose | null = null
-    await queuePoseWrite(async () => { loaded = await readPoseProject(modelSlot, slot) })
-    return loaded
-  })
-
-  ipcMain.handle('fabricator:poses:save', async (event, modelSlot: number, slot: number, project: FabricatorPoseSave, assets: FabricatorAssetSave[]): Promise<void> => {
-    assertTrustedSender(event)
-    await queuePoseWrite(() => writePoseProject(modelSlot, slot, project, assets))
-  })
-
-  ipcMain.handle('fabricator:poses:delete', async (event, modelSlot: number, slot: number): Promise<void> => {
-    assertTrustedSender(event)
-    if (!isValidModelSlot(modelSlot) || !isValidPoseSlot(slot)) throw new Error('Slot de pose inválido.')
-    await queuePoseWrite(async () => {
-      const base = resolve(poseModelPath(modelSlot))
-      const target = resolve(poseSlotPath(modelSlot, slot))
-      if (dirname(target) !== base || basename(target) !== `slot-${slot}`) throw new Error('Caminho de exclusão de pose inválido.')
-      await rm(target, { recursive: true, force: true })
-    })
-  })
-
-  ipcMain.handle('fabricator:poses:draft:load', async (event, modelSlot: number): Promise<FabricatorPoseDraft | null> => {
-    assertTrustedSender(event)
-    await ensureLegacyPoseMigration()
-    let loaded: FabricatorPoseDraft | null = null
-    await queuePoseWrite(async () => { loaded = await readPoseDraft(modelSlot) })
-    return loaded
-  })
-
-  ipcMain.handle('fabricator:poses:draft:save', async (event, modelSlot: number, draft: FabricatorPoseDraftSave, assets: FabricatorAssetSave[]): Promise<void> => {
-    assertTrustedSender(event)
-    await queuePoseWrite(() => writePoseDraft(modelSlot, draft, assets))
-  })
-
-  ipcMain.handle('fabricator:poses:draft:delete', async (event, modelSlot: number): Promise<void> => {
-    assertTrustedSender(event)
-    if (!isValidModelSlot(modelSlot)) throw new Error('Modelo de rascunho inválido.')
-    await queuePoseWrite(async () => {
-      const base = resolve(poseModelPath(modelSlot))
-      const target = resolve(poseDraftPath(modelSlot))
-      if (dirname(target) !== base || basename(target) !== 'draft') throw new Error('Caminho de rascunho inválido.')
-      await rm(target, { recursive: true, force: true })
-    })
-  })
-
-  ipcMain.handle('fabricator:animator:model-slots', async (event): Promise<number[]> => {
-    assertTrustedSender(event)
-    try {
-      const entries = await readdir(animatorLibraryPath(), { withFileTypes: true })
-      return entries.flatMap((entry) => {
-        const match = entry.isDirectory() ? /^model-(\d{1,3})$/.exec(entry.name) : null
-        const slot = match ? Number(match[1]) : 0
-        return slot && isValidModelSlot(slot) ? [slot] : []
-      }).sort((a, b) => a - b)
-    } catch (reason) {
-      if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return []
-      throw reason
-    }
-  })
-
-  ipcMain.handle('fabricator:animator:list', async (event, modelSlot: number): Promise<AnimatorAnimationSummary[]> => {
-    assertTrustedSender(event)
-    if (!isValidModelSlot(modelSlot)) throw new Error('Modelo inválido.')
-    const entries: AnimatorAnimationSummary[] = []
-    for (let slot = 1; slot <= poseSlotCount; slot += 1) {
-      try {
-        const animation = JSON.parse(await readFile(join(animatorSlotPath(modelSlot, slot), 'animation.json'), 'utf8')) as AnimatorAnimationSave
-        if (animation.schemaVersion !== 1 || animation.sourceModelSlot !== modelSlot || animation.slot !== slot) continue
-        entries.push({ slot, sourceModelSlot: modelSlot, name: animation.name, sourceModelName: animation.sourceModelName, sourceModelUpdatedAt: animation.sourceModelUpdatedAt, sourceModelPartCount: animation.sourceModelPartCount, thumbnailDataUrl: animation.thumbnailDataUrl, updatedAt: animation.updatedAt })
-      } catch { /* Slots inválidos ou ainda vazios são ignorados. */ }
-    }
-    return entries
-  })
-
-  ipcMain.handle('fabricator:animator:load', async (event, modelSlot: number, slot: number): Promise<AnimatorAnimation | null> => {
-    assertTrustedSender(event)
-    let loaded: AnimatorAnimation | null = null
-    const next = animatorSaveQueue.catch(() => undefined).then(async () => { loaded = await readAnimatorAnimation(modelSlot, slot) })
-    animatorSaveQueue = next
-    await next
-    return loaded
-  })
-
-  ipcMain.handle('fabricator:animator:save', async (event, modelSlot: number, slot: number, animation: AnimatorAnimationSave, assets: AnimatorAnimationAsset[]): Promise<void> => {
-    assertTrustedSender(event)
-    const next = animatorSaveQueue.catch(() => undefined).then(() => writeAnimatorAnimation(modelSlot, slot, animation, assets))
-    animatorSaveQueue = next
-    await next
-  })
-
-  ipcMain.handle('fabricator:animator:delete', async (event, modelSlot: number, slot: number): Promise<void> => {
-    assertTrustedSender(event)
-    if (!isValidModelSlot(modelSlot) || !isValidAnimatorSlot(slot)) throw new Error('Slot de animação inválido.')
-    const next = animatorSaveQueue.catch(() => undefined).then(async () => {
-      const base = resolve(animatorModelPath(modelSlot))
-      const target = resolve(animatorSlotPath(modelSlot, slot))
-      if (dirname(target) !== base || basename(target) !== `slot-${slot}`) throw new Error('Caminho de exclusão de animação inválido.')
-      await rm(target, { recursive: true, force: true })
-    })
-    animatorSaveQueue = next
-    await next
-  })
-
-  ipcMain.handle('fabricator:animator:draft:load', async (event, modelSlot: number): Promise<AnimatorAnimationDraft | null> => {
-    assertTrustedSender(event)
-    let loaded: AnimatorAnimationDraft | null = null
-    const next = animatorSaveQueue.catch(() => undefined).then(async () => { loaded = await readAnimatorDraft(modelSlot) })
-    animatorSaveQueue = next
-    await next
-    return loaded
-  })
-
-  ipcMain.handle('fabricator:animator:draft:save', async (event, modelSlot: number, draft: AnimatorAnimationDraft, assets: AnimatorAnimationAsset[]): Promise<void> => {
-    assertTrustedSender(event)
-    const next = animatorSaveQueue.catch(() => undefined).then(() => writeAnimatorDraft(modelSlot, draft, assets))
-    animatorSaveQueue = next
-    await next
-  })
-
-  ipcMain.handle('fabricator:animator:draft:delete', async (event, modelSlot: number): Promise<void> => {
-    assertTrustedSender(event)
-    if (!isValidModelSlot(modelSlot)) throw new Error('Modelo de rascunho inválido.')
-    const next = animatorSaveQueue.catch(() => undefined).then(async () => {
-      const base = resolve(animatorModelPath(modelSlot))
-      const target = resolve(animatorDraftPath(modelSlot))
-      if (dirname(target) !== base || basename(target) !== 'draft') throw new Error('Caminho de rascunho inválido.')
-      await rm(target, { recursive: true, force: true })
-    })
-    animatorSaveQueue = next
-    await next
-  })
-
-  registerFabricatorWardrobeCatalogHandlers(ipcMain, assertTrustedSender, new FabricatorWardrobeCatalog(wardrobeModelPath, { readdir, readFile }, slotCount))
-
-  ipcMain.handle('fabricator:wardrobe:load', async (event, modelSlot: number, id: string): Promise<WardrobeSet | null> => {
+  ipcMain.handle(fabricatorIpcChannels.loadWardrobeSet, async (event, modelSlot: number, id: string): Promise<WardrobeSet | null> => {
     assertTrustedSender(event)
     return readWardrobeSet(modelSlot, id)
   })
 
-  ipcMain.handle('fabricator:wardrobe:save', async (event, modelSlot: number, set: WardrobeSetSave, assets: WardrobeAssetSave[]): Promise<void> => {
+  ipcMain.handle(fabricatorIpcChannels.saveWardrobeSet, async (event, modelSlot: number, set: WardrobeSetSave, assets: WardrobeAssetSave[]): Promise<void> => {
     assertTrustedSender(event)
     const next = wardrobeSaveQueue.catch(() => undefined).then(() => writeWardrobeSet(modelSlot, set, assets))
     wardrobeSaveQueue = next
     await next
   })
 
-  ipcMain.handle('fabricator:wardrobe:delete', async (event, modelSlot: number, id: string): Promise<void> => {
+  ipcMain.handle(fabricatorIpcChannels.deleteWardrobeSet, async (event, modelSlot: number, id: string): Promise<void> => {
     assertTrustedSender(event)
     if (!isValidModelSlot(modelSlot) || !isValidWardrobeId(id)) throw new Error('Conjunto de roupa inválido.')
     const base = resolve(wardrobeModelPath(modelSlot))
@@ -2439,24 +1850,17 @@ async function registerFabricatorHandlers(): Promise<void> {
     await next
   })
 
+  const catalogListings = createFabricatorCatalogListings({
+    files:{readdir,readFile},
+    validSlot:isValidModelSlot,
+    faceModelPath,hairModelPath,
+    validFace:validFaceSet,validHair:validHairStyle,
+    recover:(folder,images)=>catalogPersistence.recoverCatalogManifest(folder,images),
+    readLegacyHair:readHairWorkspace
+  })
   ipcMain.handle('fabricator:face:list', async (event, modelSlot: number): Promise<FaceSetSummary[]> => {
     assertTrustedSender(event)
-    if (!isValidModelSlot(modelSlot)) throw new Error('Modelo inválido.')
-    try {
-      const entries = await readdir(faceModelPath(modelSlot), { withFileTypes: true })
-      const sets: FaceSetSummary[] = []
-      for (const entry of entries) {
-        if (!entry.isDirectory() || !/^set-[a-zA-Z0-9_-]{1,80}$/.test(entry.name)) continue
-        try {
-          const set = JSON.parse(await readFile(join(faceModelPath(modelSlot), entry.name, 'face.json'), 'utf8')) as FaceSetSave
-          if (validFaceSet(modelSlot, set) && set.id === entry.name.slice(4)) sets.push({ id: set.id, modelSlot, name: set.name, updatedAt: set.updatedAt, pieceCount: set.pieces.length })
-        } catch { /* Rostos incompletos não aparecem na biblioteca. */ }
-      }
-      return sets.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-    } catch (reason) {
-      if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return []
-      throw reason
-    }
+    return catalogListings.listFaces(modelSlot)
   })
 
   ipcMain.handle('fabricator:face:load', async (event, modelSlot: number, id: string): Promise<FaceSet | null> => {
@@ -2510,40 +1914,23 @@ async function registerFabricatorHandlers(): Promise<void> {
     await next
   })
 
-  ipcMain.handle('fabricator:expression-presets:list', async (event, modelSlot: number): Promise<FaceExpressionPresetSummary[]> => {
-    assertTrustedSender(event)
-    return listFaceExpressionPresets(modelSlot)
+  registerExpressionPresetHandlers(ipcMain, assertTrustedSender, {
+    queue: queueExpressionWork,
+    recover: expressionBatch.recover,
+    listPresets: listFaceExpressionPresets,
+    listCollections: listFaceExpressionCollections,
+    saveCollection: writeFaceExpressionCollection,
+    loadPreset: readFaceExpressionPreset,
+    savePreset: writeFaceExpressionPreset,
+    saveBatch: expressionBatch.save,
+    removePreset: path => rm(path, { force: true }),
+    presetPath: faceExpressionPresetPath,
+    validSlot: isValidModelSlot,
+    validId: isValidWardrobeId,
+    loadDraft: readFaceExpressionWorkspaceDraft,
+    saveDraft: writeFaceExpressionWorkspaceDraft
   })
-  ipcMain.handle('fabricator:expression-collections:list', async (event, modelSlot: number): Promise<FaceExpressionCollection[]> => {
-    assertTrustedSender(event)
-    return listFaceExpressionCollections(modelSlot)
-  })
-  ipcMain.handle('fabricator:expression-collections:save', async (event, modelSlot: number, collection: FaceExpressionCollection): Promise<void> => {
-    assertTrustedSender(event)
-    const next = expressionPresetSaveQueue.catch(() => undefined).then(() => writeFaceExpressionCollection(modelSlot, collection))
-    expressionPresetSaveQueue = next
-    await next
-  })
-  ipcMain.handle('fabricator:expression-presets:load', async (event, modelSlot: number, id: string): Promise<FaceExpressionPreset | null> => {
-    assertTrustedSender(event)
-    return readFaceExpressionPreset(modelSlot, id)
-  })
-  ipcMain.handle('fabricator:expression-presets:save', async (event, modelSlot: number, preset: FaceExpressionPreset): Promise<void> => {
-    assertTrustedSender(event)
-    const next = expressionPresetSaveQueue.catch(() => undefined).then(() => writeFaceExpressionPreset(modelSlot, preset))
-    expressionPresetSaveQueue = next
-    await next
-  })
-  ipcMain.handle('fabricator:expression-presets:delete', async (event, modelSlot: number, id: string): Promise<void> => {
-    assertTrustedSender(event)
-    if (!isValidModelSlot(modelSlot) || !isValidWardrobeId(id)) throw new Error('Preset de expressão inválido.')
-    const target = resolve(faceExpressionPresetPath(modelSlot, id))
-    const base = resolve(join(app.getPath('userData'), 'fabricator', 'expression-presets', `model-${modelSlot}`))
-    if (dirname(target) !== base || basename(target) !== `preset-${id}.json`) throw new Error('Caminho de exclusão inválido.')
-    const next = expressionPresetSaveQueue.catch(() => undefined).then(() => rm(target, { force: true }))
-    expressionPresetSaveQueue = next
-    await next
-  })
+
   ipcMain.handle('fabricator:face-animation:export', async (event, modelSlot: number, data: Uint8Array): Promise<boolean> => {
     assertTrustedSender(event)
     if (!isValidModelSlot(modelSlot) || !(data instanceof Uint8Array) || data.byteLength < 4 || data.byteLength > 250 * 1024 * 1024 || data[0] !== 0x1a || data[1] !== 0x45 || data[2] !== 0xdf || data[3] !== 0xa3) {
@@ -2561,32 +1948,21 @@ async function registerFabricatorHandlers(): Promise<void> {
     await writeFile(destination, Buffer.from(data))
     return true
   })
-  ipcMain.handle('fabricator:expression-workspace:load', async (event, modelSlot: number): Promise<FaceExpressionWorkspaceDraft | null> => {
-    assertTrustedSender(event)
-    return readFaceExpressionWorkspaceDraft(modelSlot)
-  })
-  ipcMain.handle('fabricator:expression-workspace:save', async (event, modelSlot: number, draft: FaceExpressionWorkspaceDraft): Promise<void> => {
-    assertTrustedSender(event)
-    const next = expressionPresetSaveQueue.catch(() => undefined).then(() => writeFaceExpressionWorkspaceDraft(modelSlot, draft))
-    expressionPresetSaveQueue = next
-    await next
-  })
-
-  ipcMain.handle('fabricator:face-components:list', async (event, modelSlot: number, kind?: FaceAssetKind): Promise<FaceComponentAssetSummary[]> => {
+  ipcMain.handle(fabricatorIpcChannels.listFaceComponentAssets, async (event, modelSlot: number, kind?: FaceAssetKind): Promise<FaceComponentAssetSummary[]> => {
     assertTrustedSender(event)
     return listFaceComponentAssets(modelSlot, kind)
   })
-  ipcMain.handle('fabricator:face-components:load', async (event, modelSlot: number, id: string): Promise<FaceComponentAsset | null> => {
+  ipcMain.handle(fabricatorIpcChannels.loadFaceComponentAsset, async (event, modelSlot: number, id: string): Promise<FaceComponentAsset | null> => {
     assertTrustedSender(event)
     return readFaceComponentAsset(modelSlot, id)
   })
-  ipcMain.handle('fabricator:face-components:save', async (event, modelSlot: number, asset: FaceComponentAssetSave, dataUrl: string): Promise<void> => {
+  ipcMain.handle(fabricatorIpcChannels.saveFaceComponentAsset, async (event, modelSlot: number, asset: FaceComponentAssetSave, dataUrl: string): Promise<void> => {
     assertTrustedSender(event)
     const next = faceSaveQueue.catch(() => undefined).then(() => writeFaceComponentAsset(modelSlot, asset, dataUrl))
     faceSaveQueue = next
     await next
   })
-  ipcMain.handle('fabricator:face-components:delete', async (event, modelSlot: number, id: string): Promise<void> => {
+  ipcMain.handle(fabricatorIpcChannels.deleteFaceComponentAsset, async (event, modelSlot: number, id: string): Promise<void> => {
     assertTrustedSender(event)
     if (!isValidModelSlot(modelSlot) || !isValidWardrobeId(id)) throw new Error('Asset facial inválido.')
     const base = resolve(faceComponentPath(modelSlot))
@@ -2598,23 +1974,23 @@ async function registerFabricatorHandlers(): Promise<void> {
   })
   ipcMain.handle('fabricator:face-guides:load', async (event, profile: string) => {
     assertTrustedSender(event)
-    if (!validFaceGuideProfile(profile)) throw new Error('Perfil de guias inválido.')
+    if (!isFaceGuideProfile(profile)) throw new Error('Perfil de guias inválido.')
     return readFaceGuides(profile)
   })
   ipcMain.handle('fabricator:face-guides:save', async (event, profile: string, guides: unknown): Promise<void> => {
     assertTrustedSender(event)
-    if (!validFaceGuideProfile(profile)) throw new Error('Perfil de guias inválido.')
+    if (!isFaceGuideProfile(profile)) throw new Error('Perfil de guias inválido.')
     const next = faceGuideSaveQueue.catch(() => undefined).then(() => writeFaceGuides(profile, guides))
     faceGuideSaveQueue = next
     await next
   })
 
-  ipcMain.handle('fabricator:hair:load', async (event, modelSlot: number): Promise<HairWorkspace | null> => {
+  ipcMain.handle(fabricatorIpcChannels.loadHairWorkspace, async (event, modelSlot: number): Promise<HairWorkspace | null> => {
     assertTrustedSender(event)
     return readHairWorkspace(modelSlot)
   })
 
-  ipcMain.handle('fabricator:hair:save', async (event, modelSlot: number, workspace: HairWorkspaceSave, assets: HairWorkspaceAsset[]): Promise<void> => {
+  ipcMain.handle(fabricatorIpcChannels.saveHairWorkspace, async (event, modelSlot: number, workspace: HairWorkspaceSave, assets: HairWorkspaceAsset[]): Promise<void> => {
     assertTrustedSender(event)
     const previous = hairSaveQueues.get(modelSlot) ?? Promise.resolve()
     const current = previous.catch(() => undefined).then(() => writeHairWorkspace(modelSlot, workspace, assets))
@@ -2622,53 +1998,17 @@ async function registerFabricatorHandlers(): Promise<void> {
     try { await current } finally { if (hairSaveQueues.get(modelSlot) === current) hairSaveQueues.delete(modelSlot) }
   })
 
-  ipcMain.handle('fabricator:hair:styles:list', async (event, modelSlot: number): Promise<HairStyleSummary[]> => {
+  ipcMain.handle(fabricatorIpcChannels.listHairStyles, async (event, modelSlot: number): Promise<HairStyleSummary[]> => {
     assertTrustedSender(event)
-    if (!isValidModelSlot(modelSlot)) throw new Error('Modelo inválido.')
-    try {
-      const stylesFolder = join(hairModelPath(modelSlot), 'styles')
-      await mkdir(stylesFolder, { recursive: true })
-      const entries = await readdir(stylesFolder, { withFileTypes: true })
-      const styles: HairStyleSummary[] = []
-      for (const entry of entries) {
-        if (!entry.isDirectory() || !/^style-[a-zA-Z0-9_-]{1,80}$/.test(entry.name)) continue
-        try {
-          const saved = JSON.parse(await readFile(join(hairModelPath(modelSlot), 'styles', entry.name, 'hair-style.json'), 'utf8')) as HairStyleSave
-          if (validHairStyle(modelSlot, saved) && saved.id === entry.name.slice(6)) styles.push({ ...saved, front: saved.front, back: saved.back })
-        } catch { /* Configurações incompletas não aparecem no catálogo. */ }
-      }
-      const migrationMarker = join(hairModelPath(modelSlot), 'hair-style-migration-v1')
-      try { await access(migrationMarker) } catch (reason) {
-        if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason
-        const legacy = await readHairWorkspace(modelSlot)
-        if (legacy && (legacy.front || legacy.back || legacy.fringe) && !styles.some((style) => style.id === 'legacy-workspace')) {
-          const now = legacy.updatedAt || new Date().toISOString()
-          const saved: HairStyleSave = {
-            schemaVersion: 1, id: 'legacy-workspace', modelSlot, name: 'Cabelo 01',
-            front: legacy.front ? { width: legacy.front.width, height: legacy.front.height } : null,
-            back: legacy.back ? { width: legacy.back.width, height: legacy.back.height } : null,
-            fringe: legacy.fringe ? { width: legacy.fringe.width, height: legacy.fringe.height } : null,
-            transforms: legacy.transforms, createdAt: now, updatedAt: now
-          }
-          const assets = [legacy.front && { id: 'front' as const, dataUrl: legacy.front.dataUrl }, legacy.back && { id: 'back' as const, dataUrl: legacy.back.dataUrl }, legacy.fringe && { id: 'fringe' as const, dataUrl: legacy.fringe.dataUrl }].filter((asset): asset is NonNullable<typeof asset> => asset !== null)
-          await writeHairStyle(modelSlot, saved, assets)
-          styles.push(saved)
-        }
-        await writeFile(migrationMarker, new Date().toISOString(), 'utf8')
-      }
-      return styles.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-    } catch (reason) {
-      if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return []
-      throw reason
-    }
+    return catalogListings.listHair(modelSlot)
   })
 
-  ipcMain.handle('fabricator:hair:styles:load', async (event, modelSlot: number, id: string): Promise<HairStyle | null> => {
+  ipcMain.handle(fabricatorIpcChannels.loadHairStyle, async (event, modelSlot: number, id: string): Promise<HairStyle | null> => {
     assertTrustedSender(event)
     return readHairStyle(modelSlot, id)
   })
 
-  ipcMain.handle('fabricator:hair:styles:save', async (event, modelSlot: number, style: HairStyleSave, assets: HairStyleAsset[]): Promise<void> => {
+  ipcMain.handle(fabricatorIpcChannels.saveHairStyle, async (event, modelSlot: number, style: HairStyleSave, assets: HairStyleAsset[]): Promise<void> => {
     assertTrustedSender(event)
     const previous = hairSaveQueues.get(modelSlot) ?? Promise.resolve()
     const current = previous.catch(() => undefined).then(() => writeHairStyle(modelSlot, style, assets))
@@ -2676,7 +2016,7 @@ async function registerFabricatorHandlers(): Promise<void> {
     try { await current } finally { if (hairSaveQueues.get(modelSlot) === current) hairSaveQueues.delete(modelSlot) }
   })
 
-  ipcMain.handle('fabricator:hair:styles:delete', async (event, modelSlot: number, id: string): Promise<void> => {
+  ipcMain.handle(fabricatorIpcChannels.deleteHairStyle, async (event, modelSlot: number, id: string): Promise<void> => {
     assertTrustedSender(event)
     if (!isValidModelSlot(modelSlot) || !isValidWardrobeId(id)) throw new Error('Estilo de cabelo inválido.')
     const base = resolve(join(hairModelPath(modelSlot), 'styles'))
@@ -2691,8 +2031,9 @@ async function registerFabricatorHandlers(): Promise<void> {
 
 function createMainWindow(): void {
   Menu.setApplicationMenu(null)
+  const videoStressOffscreen = process.env.GACHA_VIDEO_STRESS_OFFSCREEN === '1'
   const window = new BrowserWindow({
-    show: process.env.GACHA_DEV_AI_TEST !== '1',
+    show: !videoStressOffscreen && process.env.GACHA_DEV_AI_TEST !== '1',
     width: 1440,
     height: 900,
     minWidth: 1120,
@@ -2705,11 +2046,21 @@ function createMainWindow(): void {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
-      // Deterministic paint and requestAnimationFrame behavior for the hidden
-      // DEV AI Electron window; normal user windows retain Chromium throttling.
-      backgroundThrottling: process.env.GACHA_DEV_AI_TEST === '1' ? false : true
+      // Normal windows retain Chromium's background throttling. Stress sessions
+      // keep their preview clock active while the window stays off-display.
+      backgroundThrottling: videoStressOffscreen || process.env.GACHA_DEV_AI_TEST === '1' ? false : true
     }
   })
+  if (videoStressOffscreen) {
+    window.setSkipTaskbar(true)
+    window.once('ready-to-show', () => {
+      // A never-shown BrowserWindow is throttled by some Windows compositor
+      // paths despite backgroundThrottling=false. An off-display native window
+      // keeps real Electron rendering active without appearing on any monitor.
+      window.setPosition(-32000, -32000)
+      window.showInactive()
+    })
+  }
   window.removeMenu()
   window.webContents.once('did-finish-load', () => {
     if (dataBackupService) {
@@ -2722,6 +2073,22 @@ function createMainWindow(): void {
       console.error('A validação final do armazenamento local falhou; as cópias de segurança temporárias foram preservadas.', reason)
     })
   })
+
+  // Smoke isolado, somente perfil DEV AI validado por configureDevAiDataRoot().
+  // Não captura screenshots nem usa perfis reais em execução normal.
+  if (process.env.GACHA_DEV_AI_TEST === '1' && process.env.GACHA_FABRICATOR_REAL_UI_CAPTURE === '1') {
+    window.webContents.once('did-finish-load', () => {
+      const sandbox = resolve(process.env.GACHA_DEV_AI_SANDBOX ?? '')
+      const captures = join(sandbox, 'fabricator-real-ui-captures')
+      const reopen = process.env.GACHA_DEV_AI_REOPEN === '1'
+      const capture = reopen
+        ? captureCustomizerStudioReopened(window, captures)
+        : captureFabricatorRealScreens(window, captures, process.env.GACHA_FABRICATOR_VISUAL_BASELINE)
+          .then(() => captureCustomizerStudioRealScreens(window, captures))
+      void capture.then(() => { console.log('Capturas reais concluídas', captures, reopen ? '(reabertura)' : '(primeiro processo)'); app.quit() })
+        .catch(error => { console.error('Falha no teste visual real do Fabricador:', error); app.exit(1) })
+    })
+  }
 
   let closeAfterFlush = false
   let flushingBeforeClose = false

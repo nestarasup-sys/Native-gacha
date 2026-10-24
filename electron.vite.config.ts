@@ -10,7 +10,7 @@ export default defineConfig({
     plugins: [externalizeDepsPlugin()],
     build: {
       outDir: 'out/main',
-      rollupOptions: { input: resolve(projectRoot, 'electron/main.ts') }
+      rollupOptions: { input: { main: resolve(projectRoot, 'electron/main.ts'), 'media-engine-worker': resolve(projectRoot, 'electron/videoStudioRebuild/mediaUtility.ts') } }
     }
   },
   preload: {

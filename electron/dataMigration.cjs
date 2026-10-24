@@ -13,7 +13,7 @@ const DOMAINS = [
   { id: 'fabricator.poses', roots: ['fabricator/poses'] },
   { id: 'fabricator.animations', roots: ['fabricator/animations'] },
   { id: 'fabricator.wardrobe', roots: ['fabricator/wardrobe'] },
-  { id: 'fabricator.face-sets', roots: ['fabricator/faces'], files: ['fabricator/guides-eyes.json', 'fabricator/guides-face.json'], excludeCatalog: true },
+  { id: 'fabricator.face-sets', roots: ['fabricator/faces'], files: ['fabricator/guides-eyes.json', 'fabricator/guides-face.json', 'fabricator/guides-head-extras.json'], excludeCatalog: true },
   { id: 'fabricator.face-catalog', roots: ['fabricator/faces'], includeCatalog: true },
   { id: 'fabricator.face-components', roots: ['fabricator/face-components'] },
   { id: 'fabricator.expression-presets', roots: ['fabricator/expression-presets'] },

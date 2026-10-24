@@ -1,64 +1,39 @@
-import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import { projectForOriginalPreview, selectOriginalModelSource } from '../../../../../shared/fabricatorModelViews'
+import { useModelSourceRefresh } from '../models/useModelSourceRefresh'
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import type { FabricatorHistoryState, FabricatorPose, FabricatorPoseSummary, FabricatorProject, FabricatorProjectSave, FabricatorSlotSummary, ModelPart, WardrobeCategory, WardrobeComponent, WardrobeSet, WardrobeSetSave, WardrobeSetSummary } from '../../../../../shared/fabricator'
 import { Icon } from '../../../ui/components/Icon'
 import { usePreviewBackground } from '../usePreviewBackground'
-import { orderedParts, partJointAnchor, sourcePointFromCanvas } from '../models/rig'
-import { isHeadPart } from '../models/resize'
-import { resizeAroundAnchor } from '../../../../../shared/headShape'
+import { normalizeLayerOrder, orderedParts, partJointAnchor, sourcePointFromCanvas } from '../models/rig'
 import { bindWardrobeComponent, mapWardrobeComponentToPose, poseDeltaToSource, wardrobePosePadding, rebaseWardrobeSetToOriginalSheet } from './poseTransform'
+import { editWardrobeGlue, fixWardrobeGlue, releaseWardrobeGlue, suggestWardrobeGlueTarget, wardrobeGlueState } from '../../../../../shared/wardrobeGlue'
+import { WardrobeGlueControls } from './WardrobeGlueControls'
+import { snapWardrobePlacement } from '../../../../../shared/wardrobeMagnet'
+import { useWardrobePoseAudit } from './useWardrobePoseAudit'
+import { WardrobePoseAuditPanel } from './WardrobePoseAuditPanel'
+import { useWardrobeComparisonPose } from './useWardrobeComparisonPose'
+import { WardrobeComparisonPreview } from './WardrobeComparisonPreview'
 import { suggestWardrobeBone } from './boneSelection'
 import { normalizeEditableImageFile } from '../normalizeImage'
 
 type WorkerPiece = Omit<WardrobeComponent, 'category' | 'attachedPartId' | 'rotation' | 'dataUrl'> & { png: ArrayBuffer }
 type WorkerMessage = { type: 'complete'; id: number; width: number; height: number; pieces: WorkerPiece[] } | { type: 'error'; id: number; message: string }
-type ReferenceMessage = { type: 'complete'; id: number; png: ArrayBuffer } | { type: 'error'; id: number; message: string }
 type PieceDrag = { pointerId: number; componentId: string; pointerX: number; pointerY: number; originX: number; originY: number }
 type PreviewPanDrag = { pointerId: number; pointerX: number; pointerY: number; originX: number; originY: number }
-type SourcePiece = { x: number; y: number; width: number; height: number; png: ArrayBuffer }
-type SourceMessage = { type: 'complete'; id: number; parts: SourcePiece[] } | { type: 'error'; id: number; message: string } | { type: 'progress'; id: number; value: number }
 type SourceReferencePart = { x: number; y: number; width: number; height: number; imageDataUrl: string }
 type BodyDrag = { pointerId: number; partId: string; pointerX: number; pointerY: number; originX: number; originY: number }
 type Point = { x: number; y: number }
 const zeroOffset: Point = { x: 0, y: 0 }
 
-function withSourceFrame(part: ModelPart, reference?: SourceReferencePart): ModelPart {
-  if (!reference) return part
-  return { ...part, sourceTransform: { ...part.sourceTransform, x: reference.x, y: reference.y, width: reference.width, height: reference.height, rotation: 0 } }
-}
-
-function sourcePreviewFrame(part: ModelPart, source: SourceReferencePart): SourceReferencePart {
-  const original = part.sourceTransform
-  if (!isHeadPart(part) || !part.resizeBase || !original) return source
-  const sourceWidth = original.width ?? source.width
-  const sourceHeight = original.height ?? source.height
-  const anchor = original.jointAnchor ?? { x: source.x + source.width / 2, y: source.y + source.height / 2 }
-  const resized = resizeAroundAnchor(
-    { ...source, rotation: original.rotation },
-    source.width * part.width / sourceWidth,
-    source.height * part.height / sourceHeight,
-    anchor
-  )
-  return { ...source, x: resized.x, y: resized.y, width: resized.width, height: resized.height }
-}
-
-function bindingMarker(component: WardrobeComponent, bone: ModelPart): Point {
-  const source = bone.sourceTransform
-  const bx = source?.x ?? bone.x; const by = source?.y ?? bone.y
-  const bw = source?.width ?? bone.width; const bh = source?.height ?? bone.height
-  const left = Math.max(component.x, bx); const right = Math.min(component.x + component.width, bx + bw)
-  const top = Math.max(component.y, by); const bottom = Math.min(component.y + component.height, by + bh)
-  if (right > left && bottom > top) return { x: (left + right) / 2, y: (top + bottom) / 2 }
-  return { x: Math.max(bx, Math.min(bx + bw, component.x + component.width / 2)), y: Math.max(by, Math.min(by + bh, component.y + component.height / 2)) }
-}
 function rebindComponents(components: WardrobeComponent[], reference: FabricatorProject): { components: WardrobeComponent[]; changed: boolean } {
   const bones = new Map(reference.parts.map((part) => [part.id, part]))
   let changed = false
   const rebound = components.map((component) => {
     const bone = bones.get(component.attachedPartId)
-    if (!bone) return component
+    if (!bone || component.glue?.mode === 'fixed' || component.glue?.mode === 'loose') return component
     const expected = bindWardrobeComponent(component, bone)
     const current = component.binding
-    if (current?.boneId === expected.boneId && Math.abs(current.localCenterX - expected.localCenterX) < 0.00001 && Math.abs(current.localCenterY - expected.localCenterY) < 0.00001 && Math.abs(current.widthRatio - expected.widthRatio) < 0.00001 && Math.abs(current.heightRatio - expected.heightRatio) < 0.00001 && Math.abs(current.relativeRotation - expected.relativeRotation) < 0.00001) return component
+    if (current?.boneId === expected.boneId && Math.abs(current.localCenterX - expected.localCenterX) < 0.00001 && Math.abs(current.localCenterY - expected.localCenterY) < 0.00001 && Math.abs(current.widthRatio - expected.widthRatio) < 0.00001 && Math.abs(current.heightRatio - expected.heightRatio) < 0.00001 && Math.abs(current.relativeRotation - expected.relativeRotation) < 0.00001 && Math.abs(current.boneWidth - expected.boneWidth) < 0.00001 && Math.abs(current.boneHeight - expected.boneHeight) < 0.00001 && Math.abs(current.boneRotation - expected.boneRotation) < 0.00001) return component
     changed = true
     return { ...component, binding: expected }
   })
@@ -118,7 +93,9 @@ export function WardrobeWorkspace() {
   const [models, setModels] = useState<FabricatorSlotSummary[]>(Array.from({ length: 10 }, () => null))
   const [modelSlot, setModelSlot] = useState(1)
   const [model, setModel] = useState<FabricatorProject | null>(null)
+  useModelSourceRefresh(modelSlot, fresh => setModel(fresh))
   const [sets, setSets] = useState<WardrobeSetSummary[]>([])
+  const [catalogIssues, setCatalogIssues] = useState<Array<{ id: string; reason: string }>>([])
   const [activeSetId, setActiveSetId] = useState<string | null>(null)
   const [draft, setDraft] = useState<WardrobeSet | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -138,10 +115,9 @@ export function WardrobeWorkspace() {
   const previewRef = useRef<HTMLDivElement>(null)
   const artboardRef = useRef<HTMLDivElement>(null)
   const [previewSize, setPreviewSize] = useState({ width: 0, height: 0 })
-  const [referencePreview, setReferencePreview] = useState<{ sourceDataUrl: string; imageDataUrl: string } | null>(null)
-  const [sourceReference, setSourceReference] = useState<{ sourceDataUrl: string; parts: Record<string, SourceReferencePart> } | null>(null)
   const [moveBodyMode, setMoveBodyMode] = useState(false)
-  const [showBindingMarkers, setShowBindingMarkers] = useState(true)
+  const [magneticSnap, setMagneticSnap] = useState(true)
+  const [showPoseComparison, setShowPoseComparison] = useState(false)
   const [bodyOffsets, setBodyOffsets] = useState<Record<string, Point>>({})
   const bodyDragRef = useRef<BodyDrag | null>(null)
   const [testPosePickerOpen, setTestPosePickerOpen] = useState(false)
@@ -150,26 +126,39 @@ export function WardrobeWorkspace() {
   const [testPoseLoading, setTestPoseLoading] = useState(false)
   const [testDragOffsets, setTestDragOffsets] = useState<Record<string, { x: number; y: number }>>({})
   const [calibratingPartId, setCalibratingPartId] = useState<string | null>(null)
+  const poseAudit = useWardrobePoseAudit(model,draft)
+  const defaultPose = useWardrobeComparisonPose(modelSlot,Boolean(model && draft))
   const selected = draft?.components.find((component) => component.id === selectedId) ?? null
   const selectedIndex = draft?.components.findIndex((component) => component.id === selectedId) ?? -1
   const previewProject = testPose ?? model
+  const previewPoseOrder = testPose ? normalizeLayerOrder(testPose.parts, testPose.layerOrder) : []
   const previewPoseParts = testPose ? orderedParts(testPose.parts, testPose.layerOrder).filter((part) => !(testPose.hiddenPartIds ?? []).includes(part.id)) : []
+  const poseMissingAttachments = testPose && draft ? draft.components.filter((component) =>
+    !model?.parts.some((part) => part.id === component.attachedPartId) || !testPose.parts.some((part) => part.id === component.attachedPartId)) : []
+  const poseUsesOlderModel = Boolean(testPose && model && testPose.sourceModelUpdatedAt !== model.updatedAt)
   const previewLayerStride = (draft?.components.length ?? 0) + 2
   const scale = previewProject && previewSize.width && previewSize.height ? Math.max(0.05, Math.min((previewSize.width - 48) / previewProject.width, (previewSize.height - 48) / previewProject.height)) * zoom : 1
-  // Keep the saved original source sheet and its existing minimum preview scale.
-  const referenceSource = model?.sourceDataUrl ?? null
-  const sourceParts = model && sourceReference?.sourceDataUrl === referenceSource ? sourceReference.parts : null
-  const referenceModel = model && sourceParts ? { ...model, parts: model.parts.map((part) => withSourceFrame(part, sourceParts[part.id])) } : model
+  // Use the original local frames and the EDITED PNGs persisted under their
+  // stable body-part IDs. Recropping the raw uploaded sheet can swap parts and
+  // disagree with the source used by the Customizer.
+  const sourceParts = useMemo<Record<string, SourceReferencePart> | null>(() => model
+    ? Object.fromEntries(selectOriginalModelSource(model).parts.map((part) =>
+      [part.id, { x: part.x, y: part.y, width: part.width, height: part.height, imageDataUrl: part.dataUrl }]))
+    : null, [model])
+  const referenceModel = projectForOriginalPreview(model)
   const referenceBone = (partId: string) => referenceModel?.parts.find((part) => part.id === partId)
+  const selectedBone = selected ? referenceBone(selected.attachedPartId) : undefined
+  const glueStatus = selected ? wardrobeGlueState(selected, selectedBone) : 'loose'
+  const suggestedBone = selected && referenceModel ? suggestWardrobeGlueTarget(selected, referenceModel.parts) : null
 
   const reload = useCallback(async (targetSlot: number) => {
     const requestId = ++requestRef.current
     workerRef.current?.terminate()
     setOpeningSet(false)
-    setModel(null); setSets([]); setDraft(null); setActiveSetId(null); setSelectedId(null)
+    setModel(null); setSets([]); setCatalogIssues([]); setDraft(null); setActiveSetId(null); setSelectedId(null)
     setError('')
     try {
-      const [savedModels, reference, library] = await Promise.all([window.desktop.listFabricatorSlots(), window.desktop.loadFabricatorSlot(targetSlot), window.desktop.listWardrobeSets(targetSlot)])
+      const [savedModels, reference, library] = await Promise.all([window.desktop.listFabricatorSlots(), window.desktop.loadFabricatorSlot(targetSlot), window.desktop.listWardrobeSetsDetailed(targetSlot)])
       if (requestRef.current !== requestId) return
       setModels(savedModels)
       const firstAvailableModel = savedModels.find((slot) => slot)
@@ -206,11 +195,11 @@ export function WardrobeWorkspace() {
         }
       }
       if (requestRef.current !== requestId) return
-      setModels(savedModels); setModel(recoveredModel); setSets(library)
+      setModels(savedModels); setModel(recoveredModel); setSets(library.sets); setCatalogIssues(library.issues)
       setActiveSetId(null); setDraft(null); setSelectedId(null); setDirty(false); setBodyOffsets({}); setMoveBodyMode(false)
     } catch (reason) {
       if (requestRef.current !== requestId) return
-      setModel(null); setSets([]); setDraft(null); setActiveSetId(null); setSelectedId(null)
+      setModel(null); setSets([]); setCatalogIssues([]); setDraft(null); setActiveSetId(null); setSelectedId(null)
       setError(reason instanceof Error ? reason.message : 'Não foi possível carregar a biblioteca de roupas.')
     }
   }, [])
@@ -221,48 +210,6 @@ export function WardrobeWorkspace() {
     const observer = new ResizeObserver(([entry]) => setPreviewSize({ width: entry.contentRect.width, height: entry.contentRect.height }))
     observer.observe(element); return () => observer.disconnect()
   }, [model])
-  useEffect(() => {
-    if (!model) { setReferencePreview(null); return }
-    let alive = true
-    const worker = new Worker(new URL('./wardrobeReference.worker.ts', import.meta.url), { type: 'module' })
-    worker.onmessage = (event: MessageEvent<ReferenceMessage>) => {
-      if (!alive) return
-      if (event.data.type === 'complete') {
-        if (referenceSource) setReferencePreview({ sourceDataUrl: referenceSource, imageDataUrl: dataUrl(event.data.png) })
-      } else setError(event.data.message)
-      worker.terminate()
-    }
-    worker.onerror = () => { if (alive) setError('Não foi possível limpar o fundo verde da referência.'); worker.terminate() }
-    worker.postMessage({ id: 1, sourceDataUrl: referenceSource, tolerance: model.tolerance })
-    return () => { alive = false; worker.terminate() }
-  }, [model, referenceSource])
-  useEffect(() => {
-    if (!model) { setSourceReference(null); return }
-    if (referencePreview?.sourceDataUrl !== referenceSource) { setSourceReference(null); return }
-    let alive = true
-    setSourceReference(null)
-    const worker = new Worker(new URL('../models/imageProcessor.worker.ts', import.meta.url), { type: 'module' })
-    worker.onmessage = (event: MessageEvent<SourceMessage>) => {
-      if (!alive || event.data.type === 'progress') return
-      if (event.data.type === 'error') { setError(`Não foi possível separar o corpo original: ${event.data.message}`); worker.terminate(); return }
-      const pieces = event.data.parts
-      // Reprocessing with a different chroma tolerance changes crop margins.
-      // Import and reprocessing both sort components by y/x, so preserve that
-      // stable order instead of rejecting valid pieces by their old dimensions.
-      if (pieces.length !== model.parts.length) { setError(`A folha original gerou ${pieces.length} peças, mas o modelo salvo tem ${model.parts.length}. Ajuste o chroma do modelo para recuperar a mesma separação.`); worker.terminate(); return }
-      const parts: Record<string, SourceReferencePart> = {}
-      model.parts.forEach((part, index) => {
-        const piece = pieces[index]
-        parts[part.id] = { x: piece.x, y: piece.y, width: piece.width, height: piece.height, imageDataUrl: dataUrl(piece.png) }
-      })
-      setSourceReference({ sourceDataUrl: model.sourceDataUrl, parts })
-      setError('')
-      worker.terminate()
-    }
-    worker.onerror = () => { if (alive) setError('Não foi possível carregar as peças separadas do corpo original.'); worker.terminate() }
-    worker.postMessage({ id: 1, sourceDataUrl: model.sourceDataUrl, tolerance: model.tolerance })
-    return () => { alive = false; worker.terminate() }
-  }, [model, referencePreview, referenceSource])
   useEffect(() => {
     if (!sourceParts || !referenceModel || !draft) return
     if (draft.edition === 2) {
@@ -322,7 +269,8 @@ export function WardrobeWorkspace() {
           const { png, ...metadata } = piece
           const bone = guessBone(category, piece.x + piece.width / 2, message.width, referenceModel ?? model)
           const positioned: WardrobeComponent = { ...metadata, category, attachedPartId: bone?.id ?? '', rotation: 0, originX: metadata.x, originY: metadata.y, originWidth: metadata.width, originHeight: metadata.height, dataUrl: dataUrl(png) }
-          if (bone) positioned.binding = bindWardrobeComponent(positioned, bone)
+          positioned.glue = { version: 1, mode: 'loose' }
+          positioned.binding = undefined
           return { ...positioned, name: guessName(category, piece.x + piece.width / 2, message.width) }
         })
         const unbound = components.filter((component) => !component.attachedPartId)
@@ -348,18 +296,23 @@ export function WardrobeWorkspace() {
         updated.attachedPartId = target?.id ?? ''
         if (!target) updated.binding = undefined
       }
-      const bone = referenceBone(updated.attachedPartId)
-      if (bone && (component.binding || values.attachedPartId !== undefined || values.category !== undefined)) updated.binding = bindWardrobeComponent(updated, bone)
-      return updated
+      return editWardrobeGlue(component, updated, referenceBone(updated.attachedPartId))
     }), updatedAt: new Date().toISOString() }) : current)
   }
   const fixSelectedBinding = () => {
     if (!selected) return
     const bone = referenceBone(selected.attachedPartId)
     if (!bone) return
-    updateComponent(selected.id, { binding: bindWardrobeComponent(selected, bone) })
+    setDraft((current) => current ? { ...current, components: current.components.map((piece) => piece.id === selected.id ? fixWardrobeGlue(piece, bone) : piece), updatedAt: new Date().toISOString() } : current)
+    setDirty(true)
     setBodyOffsets({})
     setError('')
+  }
+  const releaseSelectedBinding = () => {
+    if (!selected) return
+    setDraft((current) => current ? { ...current, components: current.components.map((piece) => piece.id === selected.id ? releaseWardrobeGlue(piece) : piece), updatedAt: new Date().toISOString() } : current)
+    setDirty(true)
+    setBodyOffsets({})
   }
   const calibrateSourceAnchor = async (partId: string, x: number, y: number) => {
     if (!model) return
@@ -398,9 +351,8 @@ export function WardrobeWorkspace() {
     const overBody = Boolean(model && sourceParts && model.parts.some((part) => {
       const source = sourceParts[part.id]
       if (!source) return false
-      const frame = sourcePreviewFrame(part, source)
       const offset = bodyOffsets[part.id] ?? zeroOffset
-      return x >= frame.x + offset.x && x <= frame.x + offset.x + frame.width && y >= frame.y + offset.y && y <= frame.y + offset.y + frame.height
+      return x >= source.x + offset.x && x <= source.x + offset.x + source.width && y >= source.y + offset.y && y <= source.y + offset.y + source.height
     }))
     const overGarment = Boolean(draft?.components.some((component) => x >= component.x && x <= component.x + component.width && y >= component.y && y <= component.y + component.height))
     if (overBody || overGarment) return
@@ -435,7 +387,7 @@ export function WardrobeWorkspace() {
     event.currentTarget.setPointerCapture(event.pointerId)
     const offset = bodyOffsets[partId] ?? zeroOffset
     bodyDragRef.current = { pointerId: event.pointerId, partId, pointerX: event.clientX, pointerY: event.clientY, originX: offset.x, originY: offset.y }
-    const attached = draft?.components.find((component) => component.binding?.boneId === partId)
+    const attached = draft?.components.find((component) => component.binding?.boneId === partId && component.glue?.mode !== 'loose')
     if (attached) setSelectedId(attached.id)
   }
   const moveBodyDrag = (event: ReactPointerEvent<HTMLImageElement>) => {
@@ -468,8 +420,15 @@ export function WardrobeWorkspace() {
     const modelBone = component && referenceBone(component.attachedPartId)
     const poseBone = component && testPose?.parts.find((part) => part.id === component.attachedPartId)
     const sourceDelta = testPose && modelBone && poseBone ? poseDeltaToSource(delta, modelBone, poseBone) : delta
-    const x = drag.originX + sourceDelta.x
-    const y = drag.originY + sourceDelta.y
+    let x = drag.originX + sourceDelta.x
+    let y = drag.originY + sourceDelta.y
+    // Snap only a LOOSE piece; a fixed fit never jumps to another coordinate.
+    if (!testPose && magneticSnap && component && component.glue?.mode === 'loose') {
+      const target = referenceBone(component.attachedPartId)
+        ?? (referenceModel ? suggestWardrobeGlueTarget({...component,x,y}, referenceModel.parts) : null)
+      const snapped = snapWardrobePlacement({...component,x,y},target ?? undefined)
+      if (snapped) { x=snapped.x; y=snapped.y }
+    }
     if (testPose) {
       if (component) setTestDragOffsets((current) => ({ ...current, [drag.componentId]: { x: x - component.x, y: y - component.y } }))
     } else updateComponent(drag.componentId, { x, y })
@@ -502,14 +461,16 @@ export function WardrobeWorkspace() {
     if (!draft || draft.edition === 2 || !draft.components.length || saving || processing || openingSet || !sourceParts) return
     setSaving(true); setError('')
     try {
-      const unbound = draft.components.filter((component) => !referenceBone(component.attachedPartId)
-        || component.binding?.boneId !== component.attachedPartId)
+      const unbound = draft.components.filter((component) => wardrobeGlueState(component, referenceBone(component.attachedPartId)) !== 'fixed')
       if (unbound.length) {
-        throw new Error(`Não é seguro publicar este conjunto: ${unbound.length} peça(s) não têm um vínculo válido com o osso. Corrija os encaixes na lista de peças.`)
+        throw new Error(`Fixe as ${unbound.length} peça(s) soltas, desatualizadas ou sem parte do corpo antes de salvar. Confira o encaixe na folha original.`)
       }
       const set: WardrobeSet = { ...draft, edition: 1, modelSlot, modelName: model?.name ?? draft.modelName, updatedAt: new Date().toISOString() }
       const serialized: WardrobeSetSave = { ...set, components: set.components.map(({ dataUrl: _dataUrl, ...component }) => ({ ...component, renderAboveHair: (component.category === 'oculos' || component.category === 'acessorio-cabeca') && component.renderAboveHair === true })) }
-      await window.desktop.saveWardrobeSet(modelSlot, serialized, set.components.map(({ id, dataUrl: image }) => ({ id, dataUrl: image })))
+      // Alterações de encaixe de um conjunto já existente não mudam seus pixels.
+       // Evita regravar PNGs do catálogo a partir de cópias carregadas em memória.
+       const images = activeSetId === set.id ? [] : set.components.map(({ id, dataUrl: image }) => ({ id, dataUrl: image }))
+       await window.desktop.saveWardrobeSet(modelSlot, serialized, images)
       window.dispatchEvent(new Event('fabricator:assets-updated'))
       setDraft(set); setActiveSetId(set.id); setDirty(false); setSets(await window.desktop.listWardrobeSets(modelSlot))
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível salvar o conjunto.') }
@@ -560,7 +521,12 @@ export function WardrobeWorkspace() {
       {draft && <input aria-label="Nome do conjunto" className="wardrobe-name-input" value={draft.name} onChange={(event) => { setDirty(true); setDraft((current) => current ? { ...current, name: event.target.value } : current) }} placeholder="Nome do conjunto" />}
       <div className="wardrobe-toolbar-actions"><span className={`wardrobe-save-state${dirty ? ' pending' : ''}`}><i />{dirty ? 'Alterações não salvas' : model ? `${model.parts.length} peças no modelo` : 'Escolha um modelo salvo'}</span><button className="pose-button secondary" disabled={!model || processing || saving || openingSet || !sourceParts} onClick={() => { if (dirty && !window.confirm('Descartar as alterações atuais e importar outra folha?')) return; inputRef.current?.click() }} type="button"><Icon name="plus" /> Importar folha</button>{testPose ? <button className="pose-button danger" onClick={exitTestPose} type="button"><Icon name="eyeOff" /> Sair do teste</button> : <button className="pose-button secondary" disabled={!model || !draft?.components.length} onClick={() => void openTestPosePicker()} type="button"><Icon name="eye" /> Testar pose</button>}<button className="pose-button primary" disabled={!draft || draft.edition === 2 || saving || processing || openingSet || !sourceParts} onClick={() => void save()} type="button"><Icon name="check" />{saving ? 'Salvando…' : activeSetId ? 'Salvar alterações' : 'Salvar conjunto'}</button>{activeSetId && <button className="pose-icon-button" title="Excluir conjunto" disabled={processing || saving || openingSet} onClick={() => void deleteSet()} type="button"><Icon name="trash" /></button>}<input ref={inputRef} hidden type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => { void importSheet(event.target.files?.[0]); event.currentTarget.value = '' }} /></div>
     </header>
+    {!!catalogIssues.length && <div className="wardrobe-error" role="alert">{catalogIssues.length} conjunto(s) exigem revisão: {catalogIssues.map(issue => `${issue.id}: ${issue.reason}`).join(' · ')}. Os demais conjuntos continuam disponíveis; nenhum arquivo problemático foi descartado.</div>}
     {error && <div className="wardrobe-error" role="alert">{error}<button onClick={() => setError('')} type="button">Fechar</button></div>}
+    {testPose && (poseMissingAttachments.length > 0 || poseUsesOlderModel) && <div className="wardrobe-error" role="alert">
+      {poseMissingAttachments.length > 0 && <span>Esta pose não contém a parte corporal de {poseMissingAttachments.length} peça(s): {poseMissingAttachments.map((part) => part.name).join(', ')}. Elas foram ocultadas no teste, sem alterar a roupa salva. </span>}
+      {poseUsesOlderModel && <span>Esta pose foi salva a partir de outra revisão do modelo. Confira o encaixe visual antes de confiar na prévia.</span>}
+    </div>}
     <div className="wardrobe-body wardrobe-body-v2">
       <aside className="wardrobe-library"><header><span><strong>Conjuntos</strong><small>{sets.length} salvos para este modelo</small></span><span className="wardrobe-count">{sets.length}</span></header><div className="wardrobe-set-list">{sets.map((set) => <button className={`wardrobe-set-row${activeSetId === set.id ? ' active' : ''}`} key={set.id} disabled={processing || saving || openingSet} onClick={() => void openSet(set.id)} type="button"><span className="wardrobe-set-icon"><Icon name="shirt" /></span><span><b>{set.name}</b><small>{set.componentCount} peças</small></span><Icon name="chevronRight" /></button>)}{!sets.length && <div className="wardrobe-library-empty"><Icon name="box" /><span>Nenhum conjunto salvo.<br />Importe sua primeira folha.</span></div>}</div><div className="wardrobe-category-legend"><strong>Categorias</strong>{categories.map((category) => <span key={category}><i />{categoryNames[category]}</span>)}</div></aside>
       <aside className="wardrobe-catalog-panel" aria-label="Catálogo de peças do conjunto">
@@ -568,17 +534,23 @@ export function WardrobeWorkspace() {
         {draft ? renderComponentList() : <div className="wardrobe-edit-empty"><Icon name="shirt" /><strong>Nenhum conjunto aberto</strong><small>Escolha um conjunto à esquerda para ver as peças.</small></div>}
       </aside>
       <section className="wardrobe-preview-card"><header><span><i /> {testPose ? `TESTE DA POSE · ${testPose.name}` : 'PRÉVIA DE ENCAIXE · FOLHA ORIGINAL'}</span><span>{previewProject ? `${previewProject.width} × ${previewProject.height}` : 'Sem modelo'}</span></header>
-        {!testPose && <div className="wardrobe-preview-controls"><button className={`pose-button ${moveBodyMode ? 'primary' : 'secondary'}`} disabled={!sourceParts || Boolean(calibratingPartId)} onClick={() => setMoveBodyMode((value) => !value)} type="button">{moveBodyMode ? 'Mover corpo: ligado' : 'Mover corpo'}</button><button className="pose-button secondary" disabled={!Object.keys(bodyOffsets).length} onClick={() => setBodyOffsets({})} type="button">Repor corpo</button><button className="pose-button secondary" disabled={previewPan.x === 0 && previewPan.y === 0} onClick={() => setPreviewPan(zeroOffset)} type="button">Centralizar prévia</button><button className="pose-button secondary" aria-pressed={!showBindingMarkers} title={showBindingMarkers ? 'Ocultar os pontos azuis de encaixe na prévia' : 'Mostrar os pontos azuis de encaixe na prévia'} onClick={() => setShowBindingMarkers((visible) => !visible)} type="button"><Icon name={showBindingMarkers ? 'eyeOff' : 'eye'} />{showBindingMarkers ? 'Ocultar pontos azuis' : 'Mostrar pontos azuis'}</button><label className="preview-background-picker" title="Mudar a cor do fundo em Modelos, Poses, Rosto e Roupas"><span>Fundo da prévia</span><input type="color" aria-label="Cor do fundo das prévias" value={previewBackground} onChange={(event) => setPreviewBackground(event.target.value)} /><code>{previewBackground.toUpperCase()}</code></label></div>}
+        {draft && model && <WardrobePoseAuditPanel disabled={processing || saving || openingSet} running={poseAudit.running} results={poseAudit.results} error={poseAudit.error} onAudit={() => void poseAudit.audit()} onPreview={(slot) => void loadTestPose(slot)} />}
+        {draft && model && (testPose || defaultPose) && <div className="wardrobe-comparison-toggle">
+          <button type="button" className="pose-button secondary" aria-expanded={showPoseComparison}
+            onClick={() => setShowPoseComparison(visible => !visible)}>
+            {showPoseComparison ? 'Ocultar comparação' : 'Comparar original e pose'}
+          </button>
+          {showPoseComparison && <WardrobeComparisonPreview model={model} outfit={draft} pose={testPose ?? defaultPose!} onClose={() => setShowPoseComparison(false)}/>}
+        </div>}
+        {!testPose && <div className="wardrobe-preview-controls"><button className={`pose-button ${moveBodyMode ? 'primary' : 'secondary'}`} disabled={!sourceParts || Boolean(calibratingPartId)} onClick={() => setMoveBodyMode((value) => !value)} type="button">{moveBodyMode ? 'Mover corpo: ligado' : 'Mover corpo'}</button><button className="pose-button secondary" disabled={!Object.keys(bodyOffsets).length} onClick={() => setBodyOffsets({})} type="button">Repor corpo</button><button className={`pose-button ${magneticSnap ? 'primary' : 'secondary'}`} type="button" aria-pressed={magneticSnap} title="Aproxima bordas e centros da peça corporal durante o arraste; não fixa sem clicar em Fixar" onClick={() => setMagneticSnap((active) => !active)}>{magneticSnap ? 'Ímã ligado' : 'Ímã desligado'}</button><button className="pose-button secondary" disabled={previewPan.x === 0 && previewPan.y === 0} onClick={() => setPreviewPan(zeroOffset)} type="button">Centralizar prévia</button><label className="preview-background-picker" title="Mudar a cor do fundo em Modelos, Poses, Rosto e Roupas"><span>Fundo da prévia</span><input type="color" aria-label="Cor do fundo das prévias" value={previewBackground} onChange={(event) => setPreviewBackground(event.target.value)} /><code>{previewBackground.toUpperCase()}</code></label></div>}
         <div ref={previewRef} className={`wardrobe-preview-stage${testPose ? ' testing-pose' : ''}${!moveBodyMode && !calibratingPartId && !testPose ? ' pan-ready' : ''}`} onPointerDown={handlePreviewPointerDown} onPointerMove={movePreviewPan} onPointerUp={finishPreviewPan} onPointerCancel={finishPreviewPan} style={{ '--preview-background': previewBackground } as import('react').CSSProperties}>{previewProject && <div ref={artboardRef} className={`wardrobe-artboard${calibratingPartId ? ' calibrating-origin' : ''}${!moveBodyMode && !calibratingPartId && !testPose ? ' pan-ready' : ''}`} onPointerDown={handleArtboardPointerDown} style={{ width: previewProject.width * scale, height: previewProject.height * scale, transform: `translate(${previewPan.x}px, ${previewPan.y}px)` }}>
         {!testPose && model && sourceParts && orderedParts(model.parts, model.layerOrder).map((part) => {
           const source = sourceParts[part.id]
           if (!source) return null
           const offset = moveBodyMode ? bodyOffsets[part.id] ?? zeroOffset : zeroOffset
-          const frame = sourcePreviewFrame(part, source)
-          return <img key={part.id} className={`wardrobe-reference-body-part${moveBodyMode ? ' movable' : ''}`} src={source.imageDataUrl} alt={part.name} title={moveBodyMode ? `Arraste ${part.name} para conferir o vínculo` : undefined} draggable={false} onPointerDown={moveBodyMode ? (event) => beginBodyDrag(event, part.id) : undefined} onPointerMove={moveBodyMode ? moveBodyDrag : undefined} onPointerUp={moveBodyMode ? finishBodyDrag : undefined} onPointerCancel={moveBodyMode ? finishBodyDrag : undefined} style={{ left: (frame.x + offset.x) * scale, top: (frame.y + offset.y) * scale, width: frame.width * scale, height: frame.height * scale, zIndex: moveBodyMode ? 1000 + model.parts.indexOf(part) : 1 }} />
+          return <img key={part.id} className={`wardrobe-reference-body-part${moveBodyMode ? ' movable' : ''}`} src={source.imageDataUrl} alt={part.name} title={moveBodyMode ? `Arraste ${part.name} para conferir o vínculo` : undefined} draggable={false} onPointerDown={moveBodyMode ? (event) => beginBodyDrag(event, part.id) : undefined} onPointerMove={moveBodyMode ? moveBodyDrag : undefined} onPointerUp={moveBodyMode ? finishBodyDrag : undefined} onPointerCancel={moveBodyMode ? finishBodyDrag : undefined} style={{ left: (source.x + offset.x) * scale, top: (source.y + offset.y) * scale, width: source.width * scale, height: source.height * scale, outline: selected?.attachedPartId === part.id ? '2px solid #27a7a5' : undefined, transform: `rotate(${part.sourceTransform?.rotation ?? part.rotation}deg)`, zIndex: moveBodyMode ? 1000 + model.parts.indexOf(part) : 1 }} />
         })}
-        {!testPose && model && !sourceParts && referencePreview?.sourceDataUrl === referenceSource && <img className="wardrobe-base-image" src={referencePreview.imageDataUrl} alt={`Folha original desmontada do modelo ${model.name}`} style={{ left: 0, top: 0, width: previewProject.width * scale, height: previewProject.height * scale, zIndex: 1 }} />}
-        {testPose && previewPoseParts.map((part, index) => <img key={part.id} className="wardrobe-pose-body-part" src={part.dataUrl} alt={part.name} draggable={false} style={{ left: part.x * scale, top: part.y * scale, width: part.width * scale, height: part.height * scale, zIndex: 2 + index * previewLayerStride, transform: `rotate(${part.rotation}deg)` }} />)}
+        {testPose && previewPoseParts.map((part) => <img key={part.id} className="wardrobe-pose-body-part" src={part.dataUrl} alt={part.name} draggable={false} style={{ left: part.x * scale, top: part.y * scale, width: part.width * scale, height: part.height * scale, zIndex: 2 + previewPoseOrder.indexOf(part.id) * previewLayerStride, transform: `rotate(${part.rotation}deg)` }} />)}
         {draft?.components.map((component, index) => {
           const layer = getBodyLayer(model, component.attachedPartId)
           const layerBand = testPose ? previewLayerStride : draft.components.length + 1
@@ -591,21 +563,22 @@ export function WardrobeWorkspace() {
           const testComponent = { ...component, x: componentX, y: componentY }
           if (testPose && modelBone && (testOffset.x !== 0 || testOffset.y !== 0)) testComponent.binding = bindWardrobeComponent(testComponent, modelBone)
           const { kneeOverlap, edgePadding } = wardrobePosePadding(component, draft.components)
-          const poseTransform = testPose && modelBone?.sourceTransform && poseBone
+          const poseTransform = testPose && component.glue?.mode !== 'loose' && modelBone && poseBone
             ? mapWardrobeComponentToPose(testComponent, modelBone, poseBone, kneeOverlap, edgePadding)
             : null
-          const poseLayer = testPose?.layerOrder.indexOf(component.attachedPartId) ?? -1
+          const poseLayer = previewPoseOrder.indexOf(component.attachedPartId)
           const zIndex = testPose ? 3 + Math.max(0, poseLayer) * layerBand + index : 2 + layer * layerBand + index
           const imageClassName = `wardrobe-preview-part${component.id === selectedId ? ' selected' : ''}`
           const imageTitle = `${component.name} · ${categoryNames[component.category]} · camada do modelo ${layer + 1}`
-           if (!testPose || !poseTransform) return <img key={component.id} className={imageClassName} src={component.dataUrl} alt={component.name} title={imageTitle} draggable={false} onClick={() => setSelectedId(component.id)} onPointerDown={(event) => beginPieceDrag(event, component)} onPointerMove={movePieceDrag} onPointerUp={finishPieceDrag} onPointerCancel={finishPieceDrag} style={{ left: componentX * scale, top: componentY * scale, width: component.width * scale, height: component.height * scale, zIndex, transform: `rotate(${component.rotation}deg)` }} />
+           if (!testPose) return <img key={component.id} className={imageClassName} src={component.dataUrl} alt={component.name} title={imageTitle} draggable={false} onClick={() => setSelectedId(component.id)} onPointerDown={(event) => beginPieceDrag(event, component)} onPointerMove={movePieceDrag} onPointerUp={finishPieceDrag} onPointerCancel={finishPieceDrag} style={{ left: componentX * scale, top: componentY * scale, width: component.width * scale, height: component.height * scale, zIndex, transform: `rotate(${component.rotation}deg)` }} />
+          if (!poseTransform) return null
           const image = <img className={imageClassName} src={component.dataUrl} alt={component.name} title={imageTitle} draggable={false} onClick={() => setSelectedId(component.id)} onPointerDown={(event) => beginPieceDrag(event, component)} onPointerMove={movePieceDrag} onPointerUp={finishPieceDrag} onPointerCancel={finishPieceDrag} style={{ left: poseTransform.localLeft * scale, top: poseTransform.localTop * scale, width: poseTransform.renderWidth * scale, height: poseTransform.renderHeight * scale, transformOrigin: 'center', transform: `rotate(${poseTransform.localRotation}deg)` }} />
           return <div key={component.id} className="wardrobe-pose-garment" style={{ left: poseTransform.origin.x * scale, top: poseTransform.origin.y * scale, width: 0, height: 0, zIndex, transformOrigin: '0 0', transform: poseTransform.matrix }}>{image}</div>
         })}
-        {!testPose && showBindingMarkers && draft?.components.map((component) => { if (component.binding?.boneId !== component.attachedPartId) return null; const bone = referenceBone(component.attachedPartId); if (!bone) return null; const offset = bodyOffsets[bone.id] ?? zeroOffset; const marker = bindingMarker(component, bone); return <span key={`binding-${component.id}`} className={`wardrobe-binding-marker${selectedId === component.id ? ' selected' : ''}`} role="button" aria-label={`Encaixe de ${component.name} em ${bone.name}`} tabIndex={0} title={`Arraste para mover ${component.name} e ajustar o encaixe em ${bone.name}`} onPointerDown={(event) => beginPieceDrag(event, component)} onPointerMove={movePieceDrag} onPointerUp={finishPieceDrag} onPointerCancel={finishPieceDrag} onKeyDown={(event) => { const step = event.shiftKey ? 10 : 1; const delta = event.key === 'ArrowLeft' ? { x: -step, y: 0 } : event.key === 'ArrowRight' ? { x: step, y: 0 } : event.key === 'ArrowUp' ? { x: 0, y: -step } : event.key === 'ArrowDown' ? { x: 0, y: step } : null; if (!delta) return; event.preventDefault(); updateComponent(component.id, { x: component.x + delta.x, y: component.y + delta.y }) }} style={{ left: (marker.x + offset.x) * scale, top: (marker.y + offset.y) * scale }} /> })}
-      </div>}{!model && <div className="wardrobe-empty"><Icon name="shirt" /><strong>Selecione um modelo salvo</strong><small>O modelo será usado como guia na prévia de encaixe.</small></div>}{model && !draft && !testPose && <div className="wardrobe-stage-hint">Importe uma folha para começar · fundo transparente preservado</div>}{testPose && <div className="wardrobe-stage-hint wardrobe-test-hint">Teste temporário · a pose salva não será alterada</div>}{calibratingPartId && <div className="wardrobe-stage-hint wardrobe-calibration-hint">Clique na junta de “{model?.parts.find((part) => part.id === calibratingPartId)?.name}” na folha original</div>}<div className="wardrobe-zoom"><span>{Math.round(zoom * 100)}%</span><button onClick={() => setZoom((value) => Math.min(2.2, value + .1))} type="button">+</button><button onClick={() => setZoom((value) => Math.max(.55, value - .1))} type="button">−</button></div>{processing && <div className="wardrobe-processing"><span className="model-spinner" />Detectando peças transparentes…</div>}</div><footer>{testPose ? 'Arraste as roupas para testar o encaixe. Use “Sair do teste” para voltar à folha original.' : 'Arraste a roupa para encaixar. Ative Mover corpo para arrastar a peça corporal com a roupa fixada e conferir o vínculo azul.'}</footer></section>
+
+      </div>}{!model && <div className="wardrobe-empty"><Icon name="shirt" /><strong>Selecione um modelo salvo</strong><small>O modelo será usado como guia na prévia de encaixe.</small></div>}{model && !draft && !testPose && <div className="wardrobe-stage-hint">Importe uma folha para começar · fundo transparente preservado</div>}{testPose && <div className="wardrobe-stage-hint wardrobe-test-hint">Teste temporário · a pose salva não será alterada</div>}{calibratingPartId && <div className="wardrobe-stage-hint wardrobe-calibration-hint">Clique na junta de “{model?.parts.find((part) => part.id === calibratingPartId)?.name}” na folha original</div>}<div className="wardrobe-zoom"><span>{Math.round(zoom * 100)}%</span><button onClick={() => setZoom((value) => Math.min(2.2, value + .1))} type="button">+</button><button onClick={() => setZoom((value) => Math.max(.55, value - .1))} type="button">−</button></div>{processing && <div className="wardrobe-processing"><span className="model-spinner" />Detectando peças transparentes…</div>}</div><footer>{testPose ? 'Arraste as roupas para testar o encaixe. Use “Sair do teste” para voltar à folha original.' : 'Arraste a roupa para encaixar. Clique em Fixar para grudar a roupa na parte selecionada; Mover corpo permite conferir o encaixe.'}</footer></section>
       <aside className="wardrobe-edit-panel wardrobe-edit-panel-v2"><header><span><strong>Ajuste da peça</strong><small>{selected?.name ?? 'Escolha uma peça no catálogo'}</small></span></header>
-        {draft ? <>{selected && <div className="wardrobe-fields"><div className="wardrobe-field-title"><strong>Editar peça · camada do modelo {getBodyLayer(model, selected.attachedPartId) + 1}</strong><button title="Subir camada" aria-label="Subir camada" disabled={selectedIndex === (draft?.components.length ?? 0) - 1} onClick={() => moveComponentLayer(selected.id, 1)} type="button">↑</button><button title="Descer camada" aria-label="Descer camada" disabled={selectedIndex <= 0} onClick={() => moveComponentLayer(selected.id, -1)} type="button">↓</button><button title="Remover esta peça do conjunto" onClick={() => { setDraft((current) => current ? { ...current, components: current.components.filter((component) => component.id !== selected.id) } : current); setSelectedId(draft.components.find((component) => component.id !== selected.id)?.id ?? null); setDirty(true) }} type="button"><Icon name="trash" /></button></div><label>Nome<input value={selected.name} onChange={(event) => updateComponent(selected.id, { name: event.target.value })} /></label><label>Categoria<select value={selected.category} onChange={(event) => updateComponent(selected.id, { category: event.target.value as WardrobeCategory })}>{categories.map((category) => <option key={category} value={category}>{categoryNames[category]}</option>)}</select></label>{(selected.category === 'oculos' || selected.category === 'acessorio-cabeca') && <label className="wardrobe-option-toggle"><input type="checkbox" checked={selected.renderAboveHair ?? false} onChange={(event) => updateComponent(selected.id, { renderAboveHair: event.target.checked })} /><span>Exibir por cima de todos os cabelos</span></label>}<label>Parte correspondente<select value={selected.attachedPartId} onChange={(event) => updateComponent(selected.id, { attachedPartId: event.target.value })}><option value="" disabled>Escolha a parte do corpo</option>{model?.parts.map((part) => <option key={part.id} value={part.id}>{part.name}{part.sourceTransform ? '' : ' · calibrar origem'}</option>)}</select></label>{(() => { const linkedPart = model?.parts.find((part) => part.id === selected.attachedPartId); return linkedPart && !linkedPart.sourceTransform ? <button className="pose-button secondary wardrobe-calibrate-button" onClick={() => { setTestPose(null); setCalibratingPartId(linkedPart.id); setError('') }} type="button"><Icon name="frame" /> Calibrar origem na folha</button> : null })()}<button className={`pose-button ${selected.binding?.boneId === selected.attachedPartId ? 'primary' : 'secondary'} wardrobe-bind-button`} onClick={fixSelectedBinding} disabled={!selected.attachedPartId} type="button"><span className="wardrobe-bind-dot" /><Icon name="link" />{selected.binding?.boneId === selected.attachedPartId ? 'Refixar roupa à peça do corpo' : 'Fixar roupa à peça do corpo'}</button><small className="wardrobe-note">O encaixe guarda posição, rotação e escala em relação ao osso. Ajustes manuais atualizam esse vínculo automaticamente.</small><div className="wardrobe-quick-controls"><div className="wardrobe-nudge-pad"><button aria-label="Mover para cima" title="Mover para cima" onClick={() => nudgeSelected(0, -5)} type="button">↑</button><button aria-label="Mover para esquerda" title="Mover para esquerda" onClick={() => nudgeSelected(-5, 0)} type="button">←</button><span>mover</span><button aria-label="Mover para direita" title="Mover para direita" onClick={() => nudgeSelected(5, 0)} type="button">→</button><button aria-label="Mover para baixo" title="Mover para baixo" onClick={() => nudgeSelected(0, 5)} type="button">↓</button></div><div className="wardrobe-quick-actions"><button title="Diminuir tamanho em 10%" onClick={() => resizeSelected(.9)} type="button">− Tamanho</button><button title="Aumentar tamanho em 10%" onClick={() => resizeSelected(1.1)} type="button">+ Tamanho</button><button title="Girar 15 graus para a esquerda" onClick={() => updateComponent(selected.id, { rotation: selected.rotation - 15 })} type="button">↶ 15°</button><button title="Girar 15 graus para a direita" onClick={() => updateComponent(selected.id, { rotation: selected.rotation + 15 })} type="button">↷ 15°</button><button className="wardrobe-origin-button" onClick={restoreSelectedOrigin} type="button">Voltar à posição original</button></div></div><section className="wardrobe-scale-controls" aria-label="Escala horizontal e vertical"><div className="wardrobe-scale-heading"><strong>Escala da peça</strong><label className="wardrobe-aspect-lock"><input type="checkbox" checked={lockAspectRatio} onChange={(event) => setLockAspectRatio(event.target.checked)} /><span>Manter proporção</span></label></div><label className="wardrobe-scale-row"><span><b>↔ Horizontal</b><output>{Math.round(selected.width / (selected.originWidth ?? selected.width) * 100)}%</output></span><input aria-label="Escala horizontal" type="range" min="10" max="300" step="1" value={Math.max(10, Math.min(300, Math.round(selected.width / (selected.originWidth ?? selected.width) * 100)))} onChange={(event) => scaleSelectedAxis('width', (selected.originWidth ?? selected.width) * Number(event.target.value) / 100)} /></label><label className="wardrobe-scale-row"><span><b>↕ Vertical</b><output>{Math.round(selected.height / (selected.originHeight ?? selected.height) * 100)}%</output></span><input aria-label="Escala vertical" type="range" min="10" max="300" step="1" value={Math.max(10, Math.min(300, Math.round(selected.height / (selected.originHeight ?? selected.height) * 100)))} onChange={(event) => scaleSelectedAxis('height', (selected.originHeight ?? selected.height) * Number(event.target.value) / 100)} /></label></section><div className="wardrobe-number-grid">{([['x', 'X'], ['y', 'Y'], ['width', 'Largura'], ['height', 'Altura'], ['rotation', 'Ângulo']] as const).map(([field, label]) => <label key={field}>{label}<input type="number" step={field === 'rotation' ? 1 : 2} value={Number(selected[field].toFixed(1))} onChange={(event) => { const value = Number(event.target.value); if (field === 'width' || field === 'height') scaleSelectedAxis(field, value); else updateComponent(selected.id, { [field]: value }) }} /></label>)}</div><small className="wardrobe-note">Este vínculo ficará salvo para a futura integração em Customizar.</small></div>}{!selected && <div className="wardrobe-edit-empty"><Icon name="shirt" /><strong>Escolha uma peça</strong><small>Selecione no catálogo para ajustar posição, tamanho e vínculo.</small></div>}</> : <div className="wardrobe-edit-empty"><Icon name="sparkles" /><strong>Pré-encaixe automático</strong><small>A folha é separada por transparência. Depois você revisa categoria, peça do corpo e posição de cada recorte.</small></div>}
+        {draft ? <>{selected && <div className="wardrobe-fields"><div className="wardrobe-field-title"><strong>Editar peça · camada do modelo {getBodyLayer(model, selected.attachedPartId) + 1}</strong><button title="Subir camada" aria-label="Subir camada" disabled={selectedIndex === (draft?.components.length ?? 0) - 1} onClick={() => moveComponentLayer(selected.id, 1)} type="button">↑</button><button title="Descer camada" aria-label="Descer camada" disabled={selectedIndex <= 0} onClick={() => moveComponentLayer(selected.id, -1)} type="button">↓</button><button title="Remover esta peça do conjunto" onClick={() => { setDraft((current) => current ? { ...current, components: current.components.filter((component) => component.id !== selected.id) } : current); setSelectedId(draft.components.find((component) => component.id !== selected.id)?.id ?? null); setDirty(true) }} type="button"><Icon name="trash" /></button></div><label>Nome<input value={selected.name} onChange={(event) => updateComponent(selected.id, { name: event.target.value })} /></label><label>Categoria<select value={selected.category} onChange={(event) => updateComponent(selected.id, { category: event.target.value as WardrobeCategory })}>{categories.map((category) => <option key={category} value={category}>{categoryNames[category]}</option>)}</select></label>{(selected.category === 'oculos' || selected.category === 'acessorio-cabeca') && <label className="wardrobe-option-toggle"><input type="checkbox" checked={selected.renderAboveHair ?? false} onChange={(event) => updateComponent(selected.id, { renderAboveHair: event.target.checked })} /><span>Exibir por cima de todos os cabelos</span></label>}<label>Parte correspondente<select value={selected.attachedPartId} onChange={(event) => updateComponent(selected.id, { attachedPartId: event.target.value })}><option value="" disabled>Escolha a parte do corpo</option>{model?.parts.map((part) => <option key={part.id} value={part.id}>{part.name}{part.sourceTransform ? '' : ' · calibrar origem'}</option>)}</select></label>{(() => { const linkedPart = model?.parts.find((part) => part.id === selected.attachedPartId); return linkedPart && !linkedPart.sourceTransform ? <button className="pose-button secondary wardrobe-calibrate-button" onClick={() => { setTestPose(null); setCalibratingPartId(linkedPart.id); setError('') }} type="button"><Icon name="frame" /> Calibrar origem na folha</button> : null })()}<WardrobeGlueControls component={selected} target={selectedBone} suggested={suggestedBone} status={glueStatus} onChooseTarget={(id) => updateComponent(selected.id, { attachedPartId: id })} onFix={fixSelectedBinding} onRelease={releaseSelectedBinding} /><div className="wardrobe-quick-controls"><div className="wardrobe-nudge-pad"><button aria-label="Mover para cima" title="Mover para cima" onClick={() => nudgeSelected(0, -5)} type="button">↑</button><button aria-label="Mover para esquerda" title="Mover para esquerda" onClick={() => nudgeSelected(-5, 0)} type="button">←</button><span>mover</span><button aria-label="Mover para direita" title="Mover para direita" onClick={() => nudgeSelected(5, 0)} type="button">→</button><button aria-label="Mover para baixo" title="Mover para baixo" onClick={() => nudgeSelected(0, 5)} type="button">↓</button></div><div className="wardrobe-quick-actions"><button title="Diminuir tamanho em 10%" onClick={() => resizeSelected(.9)} type="button">− Tamanho</button><button title="Aumentar tamanho em 10%" onClick={() => resizeSelected(1.1)} type="button">+ Tamanho</button><button title="Girar 15 graus para a esquerda" onClick={() => updateComponent(selected.id, { rotation: selected.rotation - 15 })} type="button">↶ 15°</button><button title="Girar 15 graus para a direita" onClick={() => updateComponent(selected.id, { rotation: selected.rotation + 15 })} type="button">↷ 15°</button><button className="wardrobe-origin-button" onClick={restoreSelectedOrigin} type="button">Voltar à posição original</button></div></div><section className="wardrobe-scale-controls" aria-label="Escala horizontal e vertical"><div className="wardrobe-scale-heading"><strong>Escala da peça</strong><label className="wardrobe-aspect-lock"><input type="checkbox" checked={lockAspectRatio} onChange={(event) => setLockAspectRatio(event.target.checked)} /><span>Manter proporção</span></label></div><label className="wardrobe-scale-row"><span><b>↔ Horizontal</b><output>{Math.round(selected.width / (selected.originWidth ?? selected.width) * 100)}%</output></span><input aria-label="Escala horizontal" type="range" min="10" max="300" step="1" value={Math.max(10, Math.min(300, Math.round(selected.width / (selected.originWidth ?? selected.width) * 100)))} onChange={(event) => scaleSelectedAxis('width', (selected.originWidth ?? selected.width) * Number(event.target.value) / 100)} /></label><label className="wardrobe-scale-row"><span><b>↕ Vertical</b><output>{Math.round(selected.height / (selected.originHeight ?? selected.height) * 100)}%</output></span><input aria-label="Escala vertical" type="range" min="10" max="300" step="1" value={Math.max(10, Math.min(300, Math.round(selected.height / (selected.originHeight ?? selected.height) * 100)))} onChange={(event) => scaleSelectedAxis('height', (selected.originHeight ?? selected.height) * Number(event.target.value) / 100)} /></label></section><div className="wardrobe-number-grid">{([['x', 'X'], ['y', 'Y'], ['width', 'Largura'], ['height', 'Altura'], ['rotation', 'Ângulo']] as const).map(([field, label]) => <label key={field}>{label}<input type="number" step={field === 'rotation' ? 1 : 2} value={Number(selected[field].toFixed(1))} onChange={(event) => { const value = Number(event.target.value); if (field === 'width' || field === 'height') scaleSelectedAxis(field, value); else updateComponent(selected.id, { [field]: value }) }} /></label>)}</div><small className="wardrobe-note">Este vínculo ficará salvo para a futura integração em Customizar.</small></div>}{!selected && <div className="wardrobe-edit-empty"><Icon name="shirt" /><strong>Escolha uma peça</strong><small>Selecione no catálogo para ajustar posição, tamanho e vínculo.</small></div>}</> : <div className="wardrobe-edit-empty"><Icon name="sparkles" /><strong>Pré-encaixe automático</strong><small>A folha é separada por transparência. Depois você revisa categoria, peça do corpo e posição de cada recorte.</small></div>}
       </aside>
     </div>
     {testPosePickerOpen && <div className="pose-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !testPoseLoading) setTestPosePickerOpen(false) }}><section className="pose-model-picker" role="dialog" aria-modal="true" aria-labelledby="wardrobe-test-picker-title"><header><span><small>TESTE DE ROUPA</small><strong id="wardrobe-test-picker-title">Escolha uma pose</strong></span><button onClick={() => setTestPosePickerOpen(false)} aria-label="Fechar" type="button">×</button></header><p>A roupa será exibida sobre uma cópia visual da pose. A pose salva não será modificada.</p><div className="pose-model-options">{testPoseLoading && <div className="pose-model-none">Carregando poses…</div>}{testPoseSlots.map((pose) => pose && <button key={`pose-${pose.slot}`} className="pose-model-option" disabled={testPoseLoading} onClick={() => void loadTestPose(pose.slot)} type="button"><span className="pose-model-number">{String(pose.slot).padStart(2, '0')}</span><span><b>{pose.name}</b><small>{pose.partCount} peças · {new Date(pose.updatedAt).toLocaleDateString('pt-BR')}</small></span><Icon name="chevronRight" /></button>)}{!testPoseLoading && testPoseSlots.length === 0 && <div className="pose-model-none">Este modelo ainda não tem poses salvas.</div>}</div></section></div>}

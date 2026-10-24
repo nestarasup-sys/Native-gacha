@@ -2,9 +2,11 @@ import { useEffect, useRef } from 'react'
 import { compileVideoScene, evaluateVideoSceneFrame } from '../../../../shared/videoSceneIR'
 import { VIDEO_STAGE_HEIGHT, VIDEO_STAGE_WIDTH } from '../../../../shared/videoStageGeometry'
 import { VideoCharacterFrameRenderer } from './videoCharacterFrameRenderer'
-import { VideoExportMediaFramePool } from './videoExportMediaFramePool'
-import { renderVideoSceneFrameToCanvas, clearVideoCanvasImageCache } from './videoCanvasCompositor'
+import { VideoExportMediaFramePool, type VideoExportMediaFrameLease } from './videoExportMediaFramePool'
+import { renderVideoSceneFrameToCanvas, clearVideoCanvasImageCache, configureVideoCanvasImageBudget } from './videoCanvasCompositor'
 import { VideoCanvasLayerCache } from './videoCanvasLayerCache'
+import { VideoStudioResourceBudget } from '../../../../shared/videoStudioNext/resourceBudget'
+import { configureVideoExportCharacterImageCaches, clearVideoExportCharacterImageCaches, disposeVideoExportCharacterImageCaches } from '../../characters/characterRenderer'
 
 function errorMessage(reason: unknown): string {
   return reason instanceof Error ? reason.message : String(reason)
@@ -26,6 +28,7 @@ function jobIdFromHash(): string {
 export function VideoExportSurfacePage() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const layerCacheRef = useRef<VideoCanvasLayerCache | null>(null)
+  const cacheBudgetRef = useRef<VideoStudioResourceBudget | null>(null)
 
   useEffect(() => {
     let disposed = false
@@ -42,8 +45,6 @@ export function VideoExportSurfacePage() {
       await document.fonts.ready
       if (disposed) throw new DOMException('Surface descartada.', 'AbortError')
       const program = compileVideoScene(data.snapshot, data.renderVariant)
-      characterRenderer = new VideoCharacterFrameRenderer(data.characters, data.characterAssets)
-      mediaPool = new VideoExportMediaFramePool(jobId)
       const canvas = canvasRef.current
       if (!canvas) throw new Error('Canvas da surface não foi montado.')
       canvas.width = VIDEO_STAGE_WIDTH
@@ -51,24 +52,47 @@ export function VideoExportSurfacePage() {
       const query = surfaceQuery()
       const layerCacheEnabled = query.get('layerCache') !== '0'
       const readbackOptimized = query.get('readbackCpu') !== '0'
-      if (layerCacheEnabled) layerCacheRef.current ??= new VideoCanvasLayerCache()
-      else layerCacheRef.current = null
+      // One per-surface ledger for cached Canvas layers AND decoded ImageBitmap
+      // frames. Decoders, GPU/Chromium internals and transit buffers are not
+      // fully accounted yet; this is not a process-wide memory ceiling.
+      cacheBudgetRef.current ??= new VideoStudioResourceBudget(160 * 1024 * 1024)
+      configureVideoCanvasImageBudget(cacheBudgetRef.current)
+      configureVideoExportCharacterImageCaches(cacheBudgetRef.current)
+      characterRenderer = new VideoCharacterFrameRenderer(data.characters, data.characterAssets, cacheBudgetRef.current)
+      if (layerCacheEnabled) {
+        layerCacheRef.current ??= new VideoCanvasLayerCache(96 * 1024 * 1024, cacheBudgetRef.current)
+      } else layerCacheRef.current = null
+      mediaPool = new VideoExportMediaFramePool(
+        jobId, 96 * 1024 * 1024, cacheBudgetRef.current,
+        () => {
+          layerCacheRef.current?.clear()
+          characterRenderer?.clear()
+          clearVideoCanvasImageCache()
+          clearVideoExportCharacterImageCaches()
+        }
+      )
       return { program, canvas, readbackOptimized }
     })()
 
     unsubscribe = window.desktop.onVideoExportSurfaceRender((request) => {
       void (async () => {
+        let mediaLease: VideoExportMediaFrameLease | null = null
         try {
           if (disposed) throw new DOMException('Surface descartada.', 'AbortError')
           const runtime = await bootstrap
           const scene = evaluateVideoSceneFrame(runtime.program, request.frame)
-          const [characters, videos] = await Promise.all([
-            characterRenderer!.renderFrame(scene),
-            mediaPool!.framesForScene(scene),
+          // Both tasks may fail independently: allSettled ensures an acquired
+          // media lease can be released even if the character renderer rejects.
+          const [characterResult, mediaResult] = await Promise.allSettled([
+            characterRenderer!.renderFrame(scene, true),
+            mediaPool!.acquireFramesForScene(scene),
           ])
+          if (mediaResult.status === 'fulfilled') mediaLease = mediaResult.value
+          if (characterResult.status === 'rejected') throw characterResult.reason
+          if (mediaResult.status === 'rejected') throw mediaResult.reason
           if (disposed) throw new DOMException('Surface descartada.', 'AbortError')
           const composeStarted = performance.now()
-          const context = await renderVideoSceneFrameToCanvas(scene, runtime.canvas, { characterStates: characters, videoFrames: videos, layerCache: layerCacheRef.current ?? undefined, willReadFrequently: runtime.readbackOptimized })
+          const context = await renderVideoSceneFrameToCanvas(scene, runtime.canvas, { characterStates: characterResult.value, videoFrames: mediaResult.value.frames, layerCache: layerCacheRef.current ?? undefined, willReadFrequently: runtime.readbackOptimized })
           const composeMs = performance.now() - composeStarted
           const readbackStarted = performance.now()
           const rgba = context.getImageData(0, 0, VIDEO_STAGE_WIDTH, VIDEO_STAGE_HEIGHT).data
@@ -87,6 +111,10 @@ export function VideoExportSurfacePage() {
             frame: request.frame,
             error: errorMessage(reason),
           })
+        } finally {
+          // After the render/readback has consumed video bitmaps, close only
+          // transient frames and unpin cached frames. Also runs on failures.
+          mediaLease?.release()
         }
       })()
     })
@@ -100,10 +128,13 @@ export function VideoExportSurfacePage() {
     return () => {
       disposed = true
       unsubscribe?.()
-      characterRenderer?.clear()
+      characterRenderer?.dispose()
       mediaPool?.dispose()
       layerCacheRef.current?.clear()
       layerCacheRef.current = null
+      disposeVideoExportCharacterImageCaches()
+      cacheBudgetRef.current?.dispose()
+      cacheBudgetRef.current = null
       clearVideoCanvasImageCache()
     }
   }, [])

@@ -86,15 +86,20 @@ export type WardrobePoseTransform = {
   scaleY: number
 }
 
-/** Pose seam coverage is based on the complete visible outfit, not one picker slot. */
-export function wardrobePosePadding(component: WardrobeComponent, outfit: readonly WardrobeComponent[]): { kneeOverlap: number; edgePadding: number } {
-  const hasThighAndCalf = outfit.some((piece) => piece.category === 'calca-coxa')
-    && outfit.some((piece) => piece.category === 'calca-canela')
-  return {
-    kneeOverlap: hasThighAndCalf && (component.category === 'calca-coxa' || component.category === 'calca-canela') ? 18 : 0,
-    edgePadding: component.category === 'manga-superior' || component.category === 'manga-inferior'
-      ? Math.max(8, Math.min(14, Math.round(Math.min(component.width, component.height) * .06))) : 0
-  }
+/**
+ * Preserve the authored geometry of EACH clothing component independently.
+ *
+ * The previous knee-seam rule added 18 pixels to thigh/calf parts only while
+ * both categories were equipped. Hiding/restoring an adjacent part therefore
+ * moved and resized the other part. Even sleeve padding widened manually
+ * fitted PNGs compared with the original sheet.
+ *
+ * Kept as a compatibility entry point for previews and renderers; no automatic
+ * seam correction may depend on the other currently equipped components.
+ * The user can deliberately author overlaps in Roupas DEV instead.
+ */
+export function wardrobePosePadding(_component: WardrobeComponent, _outfit: readonly WardrobeComponent[]): { kneeOverlap: number; edgePadding: number } {
+  return { kneeOverlap: 0, edgePadding: 0 }
 }
 
 /**
@@ -109,55 +114,55 @@ export function mapWardrobeComponentToPose(
   kneeOverlap = 0,
   edgePadding = 0
 ): WardrobePoseTransform {
+  // The edited original sheet is the authoring coordinate system, never the
+  // mounted model. Compute its local frame even when a legacy binding is absent.
+  const current = bindWardrobeComponent(component, sourceBone)
   const binding = component.binding?.boneId === sourceBone.id ? component.binding : null
-  if (binding) return mapBoundWardrobeComponentToPose(binding, poseBone, kneeOverlap, edgePadding)
+  // The sheet's X/Y, size and rotation win over a stale saved binding. Reading
+  // must not rewrite a manifest or any PNG; rebind only when the user saves.
+  const coherent = binding !== null
+    && Math.abs(binding.localCenterX - current.localCenterX) < 1e-5
+    && Math.abs(binding.localCenterY - current.localCenterY) < 1e-5
+    && Math.abs(binding.widthRatio - current.widthRatio) < 1e-5
+    && Math.abs(binding.heightRatio - current.heightRatio) < 1e-5
+    && Math.abs(binding.relativeRotation - current.relativeRotation) < 1e-5
+    && Math.abs(binding.boneWidth - current.boneWidth) < 1e-5
+    && Math.abs(binding.boneHeight - current.boneHeight) < 1e-5
+    && Math.abs(binding.boneRotation - current.boneRotation) < 1e-5
+  // An explicitly fixed garment keeps its frozen local placement if the
+  // source sheet changes. Report it as stale in Roupas DEV, never silently
+  // re-anchor it to a different part geometry while drawing Customizador.
+  const frame = component.glue?.sourceFrame
   const source = sourceBone.sourceTransform
-  const sourceWidth = Math.max(1, source?.width ?? sourceBone.width)
-  const sourceHeight = Math.max(1, source?.height ?? sourceBone.height)
-  const scaleX = Math.max(0.0001, poseBone.width / sourceWidth)
-  const scaleY = Math.max(0.0001, poseBone.height / sourceHeight)
-  const sourceRotation = source?.rotation ?? 0
-  const sourceCenter = { x: (source?.x ?? sourceBone.x) + sourceWidth / 2, y: (source?.y ?? sourceBone.y) + sourceHeight / 2 }
-  const garmentCenter = { x: component.x + component.width / 2, y: component.y + component.height / 2 }
-  const toLocalRadians = -sourceRotation * Math.PI / 180
-  const dx = garmentCenter.x - sourceCenter.x
-  const dy = garmentCenter.y - sourceCenter.y
-  const localCenter = {
-    x: dx * Math.cos(toLocalRadians) - dy * Math.sin(toLocalRadians),
-    y: dx * Math.sin(toLocalRadians) + dy * Math.cos(toLocalRadians)
-  }
-  const radians = poseBone.rotation * Math.PI / 180
-  const matrix = [Math.cos(radians) * scaleX, Math.sin(radians) * scaleX, -Math.sin(radians) * scaleY, Math.cos(radians) * scaleY, 0, 0]
-    .map((value) => Number(value.toFixed(8))).join(',')
-  const overlap = Math.max(0, kneeOverlap)
-  const edge = Math.max(0, edgePadding)
-  const renderWidth = component.width + edge * 2
-  const renderHeight = component.height + overlap + edge * 2
-  return {
-    origin: { x: poseBone.x + poseBone.width / 2, y: poseBone.y + poseBone.height / 2 },
-    localLeft: localCenter.x - renderWidth / 2,
-    // Expand evenly around the fitted center so the overlap cannot shift the
-    // garment away from its bone. This tiny test-only stretch closes the knee.
-    localTop: localCenter.y - renderHeight / 2,
-    renderWidth,
-    renderHeight,
-    localRotation: component.rotation - sourceRotation,
-    matrix: `matrix(${matrix})`, scaleX, scaleY
-  }
+  const now = { x: source?.x ?? sourceBone.x, y: source?.y ?? sourceBone.y,
+    width: source?.width ?? sourceBone.width, height: source?.height ?? sourceBone.height,
+    rotation: source?.rotation ?? sourceBone.rotation }
+  const frameChanged = frame && (Math.abs(frame.x-now.x)>1e-5 || Math.abs(frame.y-now.y)>1e-5
+    || Math.abs(frame.width-now.width)>1e-5 || Math.abs(frame.height-now.height)>1e-5
+    || Math.abs(frame.rotation-now.rotation)>1e-5)
+  const frozen = component.glue?.mode === 'fixed' && frameChanged && binding
+  return mapBoundWardrobeComponentToPose(frozen || (coherent && binding) || current, poseBone, kneeOverlap, edgePadding)
 }
 
 function mapBoundWardrobeComponentToPose(binding: WardrobeBinding, poseBone: ModelPart, kneeOverlap: number, edgePadding: number): WardrobePoseTransform {
   const scaleX = Math.max(0.0001, poseBone.width / binding.boneWidth)
   const scaleY = Math.max(0.0001, poseBone.height / binding.boneHeight)
-  const localCenter = { x: binding.localCenterX * poseBone.width, y: binding.localCenterY * poseBone.height }
+  // Local coordinates stay in ORIGINAL bone pixels. Scale the bone axes BEFORE
+  // rotating the garment: R(pose) * S(pose/source) * R(garment-relative).
+  // Resizing the image first and rotating it afterwards incorrectly swaps this
+  // multiplication order for non-uniform scales and rotated clothes.
+  const localCenter = { x: binding.localCenterX * binding.boneWidth, y: binding.localCenterY * binding.boneHeight }
   const radians = poseBone.rotation * Math.PI / 180
   const cosine = Math.cos(radians)
   const sine = Math.sin(radians)
-  const overlap = Math.max(0, kneeOverlap)
-  const edge = Math.max(0, edgePadding)
-  const width = Math.max(1, binding.widthRatio * poseBone.width) + edge * 2
-  const height = Math.max(1, binding.heightRatio * poseBone.height) + edge * 2
-  const matrix = [cosine, sine, -sine, cosine, 0, 0].map((value) => Number(value.toFixed(8))).join(',')
+  const matrix = [cosine * scaleX, sine * scaleX, -sine * scaleY, cosine * scaleY, 0, 0]
+    .map((value) => Number(value.toFixed(8))).join(',')
+  // Keep overlap/padding in output-pose pixels, including when scaling changes.
+  const overlap = Math.max(0, kneeOverlap) / scaleY
+  const edgeX = Math.max(0, edgePadding) / scaleX
+  const edgeY = Math.max(0, edgePadding) / scaleY
+  const width = Math.max(1, binding.widthRatio * binding.boneWidth) + edgeX * 2
+  const height = Math.max(1, binding.heightRatio * binding.boneHeight) + edgeY * 2
   return {
     origin: { x: poseBone.x + poseBone.width / 2, y: poseBone.y + poseBone.height / 2 },
     localLeft: localCenter.x - width / 2,

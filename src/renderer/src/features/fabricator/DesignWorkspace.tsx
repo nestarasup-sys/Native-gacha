@@ -77,7 +77,7 @@ export function DesignWorkspace() {
             </div>
           </article>)}
         </div>
-        <p className="design-dev-limit-note">Até {designLimits.maxSlides} imagens · PNG, JPG, WebP ou GIF · até 1,5 MB por arquivo. A marca Gacha Nymi e a pétala rosa permanecem no cabeçalho.</p>
+        <p className="design-dev-limit-note">Até {designLimits.maxSlides} imagens · PNG, JPG ou WebP estático · até 1,5 MB por arquivo. A marca Gacha Nymi e a pétala rosa permanecem no cabeçalho.</p>
         {error && <p className="design-dev-error" role="alert">{error}</p>}
       </section>
       <aside className="design-dev-preview-panel" aria-label="Prévia ao vivo do banner">

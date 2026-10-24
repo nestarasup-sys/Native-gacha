@@ -1,8 +1,14 @@
+import { compilePortableExpression, compilePtPupilMotion, resolvePresetPupilGaze, type ExpressionMetrics } from '../../../../shared/portableExpression'
+import { pupilDeltaFromDrag, pupilSourceMirrored } from '../../../../shared/facePupilGeometry'
+import { faceExpressionDefaults as defaultTransforms } from '../../../../shared/faceExpressionDefaults'
+import { FACE_COMPONENT_SELECTION_STORAGE_KEY, LEGACY_PUPIL_SELECTION_STORAGE_KEY, pickFaceLibraryBase, savedFaceLibraryParts, savedLegacyPupilParts } from '../../../../shared/faceLibrarySelection'
+import { ExpressionCharacterPreview } from './ExpressionCharacterPreview'
+import { projectForOriginalPreview } from '../../../../shared/fabricatorModelViews'
+import { useModelSourceRefresh } from './models/useModelSourceRefresh'
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
-import type { FaceCatalogItem, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSummary, FaceExpressionCollection, FaceExpressionPreset, FaceExpressionPresetSummary, FaceExpressionEffects, FaceExpressionTransforms, FaceExpressionWorkspaceDraft, FaceExpressionWorkspaceEntry, FaceTransform, FabricatorProject } from '../../../../shared/fabricator'
+import type { FaceCatalogItem, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSummary, FaceExpressionCollection, FaceExpressionPreset, FaceExpressionPresetSummary, FaceExpressionEffects, FaceExpressionTransforms, FaceExpressionWorkspaceDraft, FaceExpressionWorkspaceEntry, FaceTransform, PtPupilOverrides, FabricatorProject } from '../../../../shared/fabricator'
 import { Icon, type IconName } from '../../ui/components/Icon'
 import { eyeInteriorMask } from './face/eyeInteriorMask'
-import { importLegacyStandardExpressions } from './importLegacyStandardExpressions'
 
 type Side = 'left' | 'right'
 type PickerCategory = 'eyes' | 'pupils' | 'eyebrows' | 'nose' | 'mouth'
@@ -10,7 +16,7 @@ type ComponentKind = 'eye' | 'pupil' | 'eyebrow'
 type PairedLayerKind = ComponentKind
 type ComponentOption = { key: string; kind: ComponentKind; name: string; leftId: string; rightId: string; ids: string[] }
 type CatalogOption = { key: string; item: FaceCatalogItemSummary; ids: string[] }
-type ExpressionWorkingCopy = { id: string; composition: ExpressionComposition; transforms: FaceExpressionTransforms; noseOpacity: number; effects: FaceExpressionEffects }
+type ExpressionWorkingCopy = { id: string; composition: ExpressionComposition; transforms: FaceExpressionTransforms; ptPupils?: PtPupilOverrides; noseOpacity: number; effects: FaceExpressionEffects }
 type ExpressionComposition = {
   eyes: Record<Side, string | null>
   pupils: Record<Side, string | null>
@@ -42,11 +48,11 @@ const expressionWorkingCopyKey = (collectionId: string, index: number) => `${col
 const expressionWorkspaceDraftStorageKey = (modelSlot: number) => `fabricator.expression-workspace-draft.v1.model-${modelSlot}`
 const toWorkspaceEntry = (copy: ExpressionWorkingCopy): FaceExpressionWorkspaceEntry => ({
   id: copy.id, selections: structuredClone(copy.composition), transforms: cloneTransforms(copy.transforms),
-  noseOpacity: copy.noseOpacity, effects: cloneEffects(copy.effects)
+  ptPupils: structuredClone(copy.ptPupils ?? {}), noseOpacity: copy.noseOpacity, effects: cloneEffects(copy.effects)
 })
 const fromWorkspaceEntry = (entry: FaceExpressionWorkspaceEntry): ExpressionWorkingCopy => ({
   id: entry.id, composition: structuredClone(entry.selections), transforms: cloneTransforms(entry.transforms),
-  noseOpacity: entry.noseOpacity, effects: cloneEffects(entry.effects)
+  ptPupils: structuredClone(entry.ptPupils ?? {}), noseOpacity: entry.noseOpacity, effects: cloneEffects(entry.effects)
 })
 function isWorkspaceDraftForModel(value: unknown, modelSlot: number): value is FaceExpressionWorkspaceDraft {
   if (!value || typeof value !== 'object') return false
@@ -84,21 +90,86 @@ const layerKey = (kind: 'eye' | 'pupil' | 'eyebrow', side: Side): LayerKey => ki
 const pairedLayerKeys: Partial<Record<LayerKey, LayerKey>> = { eyeLeft: 'eyeRight', eyeRight: 'eyeLeft', pupilLeft: 'pupilRight', pupilRight: 'pupilLeft', browLeft: 'browRight', browRight: 'browLeft' }
 const pairedKindForLayer = (layer: LayerKey): PairedLayerKind | null => layer.startsWith('eye') ? 'eye' : layer.startsWith('pupil') ? 'pupil' : layer.startsWith('brow') ? 'eyebrow' : null
 
-function defaultTransforms(composition: ExpressionComposition, components: Record<string, FaceComponentAsset>, catalogs: Record<string, FaceCatalogItem>): FaceExpressionTransforms {
-  const transforms = emptyTransforms()
-  for (const side of ['left', 'right'] as const) {
-    const eye = composition.eyes[side] ? components[composition.eyes[side]!] : undefined
-    const pupil = composition.pupils[side] ? components[composition.pupils[side]!] : undefined
-    const brow = composition.eyebrows[side] ? components[composition.eyebrows[side]!] : undefined
-    if (eye) transforms[layerKey('eye', side)] = { ...eye.defaultTransform }
-    if (pupil) transforms[layerKey('pupil', side)] = { ...pupil.defaultTransform }
-    if (brow) transforms[layerKey('eyebrow', side)] = { ...brow.defaultTransform }
+function rebaseTransform(transform: FaceTransform, reference: FaceTransform, nextReference: FaceTransform): FaceTransform {
+  const rebased: FaceTransform = {
+    ...nextReference,
+    x: nextReference.x + transform.x - reference.x,
+    y: nextReference.y + transform.y - reference.y,
+    scaleX: Math.max(.02, Math.min(20, nextReference.scaleX * transform.scaleX / reference.scaleX)),
+    scaleY: Math.max(.02, Math.min(20, nextReference.scaleY * transform.scaleY / reference.scaleY)),
+    rotation: nextReference.rotation + transform.rotation - reference.rotation
   }
-  const nose = composition.nose ? catalogs[composition.nose.catalogId] : undefined
-  const mouth = composition.mouth ? catalogs[composition.mouth.catalogId] : undefined
-  if (nose?.transforms.nose) transforms.nose = { ...nose.transforms.nose }
-  if (mouth?.transforms.mouth) transforms.mouth = { ...mouth.transforms.mouth }
-  return transforms
+  if (Boolean(transform.flipX) !== Boolean(reference.flipX)) {
+    const flipX = !Boolean(nextReference.flipX)
+    if (flipX) rebased.flipX = true
+    else delete rebased.flipX
+  }
+  return rebased
+}
+
+/** Metrics are captured when authoring, never read from the original PNG to apply a preset later. */
+function authoredMetrics(composition: ExpressionComposition, components: Record<string,FaceComponentAsset>, catalogs: Record<string,FaceCatalogItem>): ExpressionMetrics {
+  const metrics: ExpressionMetrics = {}
+  for(const side of ['left','right'] as const){
+    const suffix=side==='left'?'Left':'Right'
+    const eye=composition.eyes[side] ? components[composition.eyes[side]!] : undefined
+    const brow=composition.eyebrows[side] ? components[composition.eyebrows[side]!] : undefined
+    if(eye){
+      metrics[`eye${suffix}`]={width:eye.width,height:eye.height,mirrored:side==='right' && !eye.rightSidePositioned}
+      // Pupil offsets use eye dimensions but the PUPIL's own mirror orientation.
+      const pupilId=composition.pupils[side]
+      const pupil=pupilId ? components[pupilId] : undefined
+      metrics[`pupil${suffix}`]={width:eye.width,height:eye.height,mirrored:side==='right' && !pupil?.rightSidePositioned}
+    }
+    if(brow)metrics[`brow${suffix}`]={width:brow.width,height:brow.height,mirrored:side==='right' && !brow.rightSidePositioned}
+  }
+  if(composition.nose){
+    const piece=catalogs[composition.nose.catalogId]?.pieces.find(item=>item.sheet==='nose' && item.index===composition.nose?.index)
+    if(piece)metrics.nose={width:piece.width,height:piece.height}
+  }
+  if(composition.mouth){
+    const piece=catalogs[composition.mouth.catalogId]?.pieces.find(item=>item.sheet===composition.mouth?.kind && item.index===composition.mouth?.index)
+    if(piece)metrics.mouth={width:piece.width,height:piece.height}
+  }
+  return metrics
+}
+
+function motionForPublishedPreset(
+  transforms: FaceExpressionTransforms,
+  reference: FaceExpressionTransforms,
+  selection: ExpressionComposition,
+  components: Record<string,FaceComponentAsset>,
+  catalogs: Record<string,FaceCatalogItem>,
+  previous?: FaceExpressionPreset | null
+) {
+  const compiled=compilePortableExpression(transforms,reference,authoredMetrics(selection,components,catalogs))
+  const old=previous && JSON.stringify(previous.selections)===JSON.stringify(selection)
+    ? previous.portableMotion?.layers : undefined
+  const layers={...old,...compiled.layers}
+  return Object.keys(layers).length ? {version:1 as const,layers} : undefined
+}
+
+function rebaseExpressionTransforms(
+  transforms: FaceExpressionTransforms,
+  reference: FaceExpressionTransforms,
+  nextReference: FaceExpressionTransforms
+): FaceExpressionTransforms {
+  const keys: LayerKey[] = ['eyeLeft', 'eyeRight', 'pupilLeft', 'pupilRight', 'browLeft', 'browRight', 'nose', 'mouth']
+  return Object.fromEntries(keys.map((key) => [key, rebaseTransform(transforms[key], reference[key], nextReference[key])])) as FaceExpressionTransforms
+}
+
+function compositionForExpression(composition: ExpressionComposition, index: number, catalogs: Record<string, FaceCatalogItem>): ExpressionComposition {
+  const next = structuredClone(composition)
+  if (next.nose) {
+    const nose = catalogs[next.nose.catalogId]
+    if (nose && !nose.pieces.some((piece) => piece.index === next.nose!.index)) next.nose.index = nose.pieces[0]?.index ?? 0
+  }
+  if (next.mouth) {
+    const mouth = catalogs[next.mouth.catalogId]
+    if (mouth?.pieces.some((piece) => piece.index === index)) next.mouth.index = index
+    else if (mouth && !mouth.pieces.some((piece) => piece.index === next.mouth!.index)) next.mouth.index = mouth.pieces[0]?.index ?? 0
+  }
+  return next
 }
 
 const emptyComposition: ExpressionComposition = {
@@ -172,6 +243,7 @@ function buildCatalogOptions(summaries: FaceCatalogItemSummary[], items: Record<
 
 export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) {
   const [project, setProject] = useState<FabricatorProject | null>(null)
+  useModelSourceRefresh(modelSlot, fresh => setProject(projectForOriginalPreview(fresh)))
   const [componentSummaries, setComponentSummaries] = useState<FaceComponentAssetSummary[]>([])
   const [componentAssets, setComponentAssets] = useState<Record<string, FaceComponentAsset>>({})
   const [catalogSummaries, setCatalogSummaries] = useState<FaceCatalogItemSummary[]>([])
@@ -181,6 +253,7 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
   const [draft, setDraft] = useState<ExpressionComposition>(emptyComposition)
   const [transforms, setTransforms] = useState<FaceExpressionTransforms>(emptyTransforms())
   const [draftTransforms, setDraftTransforms] = useState<FaceExpressionTransforms>(emptyTransforms())
+  const [ptPupils, setPtPupils] = useState<PtPupilOverrides>({})
   const [baseComposition, setBaseComposition] = useState<ExpressionComposition>(emptyComposition)
   const [baseTransforms, setBaseTransforms] = useState<FaceExpressionTransforms>(emptyTransforms())
   const [noseOpacity, setNoseOpacity] = useState(1)
@@ -192,6 +265,8 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
   const [selectedCollectionId, setSelectedCollectionId] = useState(EXPRESSION_COLLECTION_ID)
   const [presetId, setPresetId] = useState<string>(() => crypto.randomUUID())
   const [selectedExpressionIndex, setSelectedExpressionIndex] = useState(0)
+  const [previewGaze, setPreviewGaze] = useState<'right'|'left'>('right')
+  const [characterComparisonOpen,setCharacterComparisonOpen] = useState(false)
   const [customExpressionNames, setCustomExpressionNames] = useState<Record<string, string>>({})
   const [workingCopies, setWorkingCopies] = useState<Record<string, ExpressionWorkingCopy>>({})
   const [workspaceReady, setWorkspaceReady] = useState(false)
@@ -221,8 +296,10 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
     setComponentAssets({})
     setCatalogItems({})
     setComposition(emptyComposition)
+    setPtPupils({})
     setPresets([])
     setSelectedExpressionIndex(0)
+    setPreviewGaze('right')
     setWorkingCopies({})
     latestWorkspaceDraft.current = null
     setSwitchingExpression(false)
@@ -243,24 +320,40 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
       if (cancelled) return
       const readyComponents = loadedComponents.filter((asset): asset is FaceComponentAsset => Boolean(asset))
       const readyCatalogs = loadedCatalogs.filter((item): item is FaceCatalogItem => Boolean(item))
-      setProject(model)
+      setProject(projectForOriginalPreview(model))
       setComponentSummaries(components)
       setComponentAssets(Object.fromEntries(readyComponents.map((asset) => [asset.id, asset])))
       setCatalogSummaries(facialCatalogs)
       setCatalogItems(Object.fromEntries(readyCatalogs.map((item) => [item.id, item])))
-      let loadedPresets = savedPresets
+      const loadedPresets = savedPresets
       setCollections(savedCollections)
       setSelectedCollectionId(EXPRESSION_COLLECTION_ID)
       setCustomExpressionNames(Object.fromEntries(savedPresets
         .filter((preset) => typeof preset.collectionId === 'string' && Number.isInteger(preset.expressionIndex) && preset.expressionIndex! >= STANDARD_EXPRESSIONS.length)
         .map((preset) => [expressionWorkingCopyKey(preset.collectionId!, preset.expressionIndex!), preset.name])))
 
-      const leftEye = readyComponents.find((asset) => asset.kind === 'eye' && componentSide(asset) === 'left')
-      const leftPupil = readyComponents.find((asset) => asset.kind === 'pupil' && componentSide(asset) === 'left')
-      const leftBrow = readyComponents.find((asset) => asset.kind === 'eyebrow' && componentSide(asset) === 'left')
-      const rightEye = leftEye ? findPairedAsset(leftEye, components) : readyComponents.find((asset) => asset.kind === 'eye' && componentSide(asset) === 'right')
-      const rightPupil = leftPupil ? findPairedAsset(leftPupil, components) : readyComponents.find((asset) => asset.kind === 'pupil' && componentSide(asset) === 'right')
-      const rightBrow = leftBrow ? findPairedAsset(leftBrow, components) : readyComponents.find((asset) => asset.kind === 'eyebrow' && componentSide(asset) === 'right')
+      // A NEW set must start from the exact assets currently chosen in Olhos
+      // DEV, including each asset's saved defaultTransform. Existing presets,
+      // drafts and published transforms always take precedence below.
+      let preferredParts = {} as ReturnType<typeof savedFaceLibraryParts>
+      try {
+        preferredParts = {
+          ...savedLegacyPupilParts(localStorage.getItem(LEGACY_PUPIL_SELECTION_STORAGE_KEY),modelSlot),
+          ...savedFaceLibraryParts(localStorage.getItem(FACE_COMPONENT_SELECTION_STORAGE_KEY),modelSlot)
+        }
+      }
+      catch { /* Missing storage: fall back to the first available pair. */ }
+      const choose=(kind: 'eye'|'pupil'|'eyebrow',side:Side,left?:FaceComponentAssetSummary) =>
+        pickFaceLibraryBase(kind,side,preferredParts,readyComponents,left)
+      const leftEye = choose('eye','left')
+      const leftPupil = choose('pupil','left')
+      const leftBrow = choose('eyebrow','left')
+      const rightEye = choose('eye','right',leftEye)
+        ?? (leftEye ? findPairedAsset(leftEye,components) : undefined)
+      const rightPupil = choose('pupil','right',leftPupil)
+        ?? (leftPupil ? findPairedAsset(leftPupil,components) : undefined)
+      const rightBrow = choose('eyebrow','right',leftBrow)
+        ?? (leftBrow ? findPairedAsset(leftBrow,components) : undefined)
       const nose = readyCatalogs.find((item) => item.category === 'nose')
       const mouth = readyCatalogs.find((item) => item.category === 'mouth-closed') ?? readyCatalogs.find((item) => item.category === 'mouth-open')
       const initial: ExpressionComposition = {
@@ -271,25 +364,11 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
         mouth: mouth ? { catalogId: mouth.id, kind: mouth.category as 'mouth-closed' | 'mouth-open', index: mouth.pieces[0]?.index ?? 0 } : null
       }
       const initialTransforms = defaultTransforms(initial, Object.fromEntries(readyComponents.map((asset) => [asset.id, asset])), Object.fromEntries(readyCatalogs.map((item) => [item.id, item])))
-      const standardPresets = loadedPresets.filter((preset) => preset.collectionId === EXPRESSION_COLLECTION_ID && Number.isInteger(preset.expressionIndex) && preset.expressionIndex! >= 0 && preset.expressionIndex! < STANDARD_EXPRESSIONS.length)
-      const coveredIndexes = new Set(standardPresets.map((preset) => preset.expressionIndex))
-      if (coveredIndexes.size < STANDARD_EXPRESSIONS.length) {
-        const head = model?.parts.find((part) => /cabe[çc]a|head/i.test(part.name))
-        if (head) {
-          const fullPresets = importLegacyStandardExpressions(
-            modelSlot,
-            initial,
-            initialTransforms,
-            { width: head.width, height: head.height },
-            mouth?.pieces.map((piece) => ({ sheet: piece.sheet, index: piece.index })) ?? [],
-            new Map(standardPresets.map((summary) => [summary.expressionIndex!, summary])),
-            nose?.opacity ?? 1,
-            new Date().toISOString()
-          )
-          await Promise.all(fullPresets.map((preset) => window.desktop.saveFaceExpressionPreset(modelSlot, preset)))
-          loadedPresets = await window.desktop.listFaceExpressionPresets(modelSlot)
-        }
-      }
+      // Do not auto-generate legacy pixel offsets when a new model has fewer
+      // than 21 expressions: those offsets are unrelated to Olhos DEV
+      // calibration and used to overwrite saved slots with the same ID.
+      // Existing published presets and drafts remain untouched; empty slots
+      // start from the selected Olhos DEV asset defaults on first edit.
       setPresets(loadedPresets)
       const firstPresetSummary = loadedPresets.find((preset) => preset.collectionId === EXPRESSION_COLLECTION_ID && preset.expressionIndex === 0)
       const selectedPreset = firstPresetSummary ? await window.desktop.loadFaceExpressionPreset(modelSlot, firstPresetSummary.id) : null
@@ -321,6 +400,7 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
         setPresetId(current.id)
         setComposition(current.composition)
         setTransforms(current.transforms)
+        setPtPupils(structuredClone(current.ptPupils ?? {}))
         setNoseOpacity(current.noseOpacity)
         setEffects(current.effects)
         setWorkingCopies(Object.fromEntries(Object.entries(restoredWorkspaceDraft.workingCopies).map(([key, entry]) => [key, fromWorkspaceEntry(entry)])))
@@ -328,13 +408,13 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
       } else if (selectedPreset) {
         setSelectedCollectionId(EXPRESSION_COLLECTION_ID)
         setSelectedExpressionIndex(0)
-        setPresetId(selectedPreset.id); setComposition(selectedPreset.selections); setTransforms(selectedPreset.transforms); setNoseOpacity(selectedPreset.noseOpacity); setEffects(cloneEffects(selectedPreset.effects))
+        setPresetId(selectedPreset.id); setComposition(selectedPreset.selections); setTransforms(selectedPreset.transforms); setPtPupils(structuredClone(selectedPreset.ptPupils ?? {})); setNoseOpacity(selectedPreset.noseOpacity); setEffects(cloneEffects(selectedPreset.effects))
         setWorkingCopies({})
         setCustomExpressionNames(savedCustomNames)
       } else {
         setSelectedCollectionId(EXPRESSION_COLLECTION_ID)
         setSelectedExpressionIndex(0)
-        setPresetId(crypto.randomUUID()); setComposition(initial); setTransforms(initialTransforms); setNoseOpacity(nose?.opacity ?? 1); setEffects(defaultExpressionEffects())
+        setPresetId(crypto.randomUUID()); setComposition(initial); setTransforms(initialTransforms); setPtPupils({}); setNoseOpacity(nose?.opacity ?? 1); setEffects(defaultExpressionEffects())
         setWorkingCopies({})
         setCustomExpressionNames(savedCustomNames)
       }
@@ -352,7 +432,7 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
       modelSlot,
       selectedCollectionId,
       selectedExpressionIndex,
-      current: toWorkspaceEntry({ id: presetId, composition, transforms, noseOpacity, effects }),
+      current: toWorkspaceEntry({ id: presetId, composition, transforms, ptPupils, noseOpacity, effects }),
       workingCopies: Object.fromEntries(Object.entries(workingCopies).map(([key, copy]) => [key, toWorkspaceEntry(copy)])),
       customExpressionNames: { ...customExpressionNames },
       updatedAt: new Date().toISOString()
@@ -381,7 +461,7 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
       if (workspaceSaveTimer.current) clearTimeout(workspaceSaveTimer.current)
       workspaceSaveTimer.current = null
     }
-  }, [workspaceReady, loading, switchingExpression, modelSlot, selectedCollectionId, selectedExpressionIndex, presetId, composition, transforms, noseOpacity, effects, workingCopies, customExpressionNames])
+  }, [workspaceReady, loading, switchingExpression, modelSlot, selectedCollectionId, selectedExpressionIndex, presetId, composition, transforms, ptPupils, noseOpacity, effects, workingCopies, customExpressionNames])
 
   useEffect(() => () => {
     if (workspaceSaveTimer.current) clearTimeout(workspaceSaveTimer.current)
@@ -409,7 +489,36 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
 
   const head = useMemo(() => project?.parts.find((part) => /cabe[çc]a|head/i.test(part.name)) ?? null, [project])
   const visibleComposition = open ? draft : composition
-  const visibleTransforms = open ? draftTransforms : transforms
+  const visibleTransforms = useMemo(() => {
+    const raw=open ? draftTransforms : transforms
+    if (open || previewGaze==='right')return raw
+    // PT inherits all normal layers. Only pupil position/rotation may be authored;
+    // unconfigured pupil sides continue the legacy automatic left-looking behavior.
+    const next=cloneTransforms(raw)
+    for(const side of ['left','right'] as const){
+      const eyeId=composition.eyes[side],pupilId=composition.pupils[side]
+      const eye=eyeId ? componentAssets[eyeId] : undefined
+      const pupil=pupilId ? componentAssets[pupilId] : undefined
+      if(!eye || !pupil)continue
+      const eyeKey=side==='left'?'eyeLeft':'eyeRight'
+      const key=side==='left'?'pupilLeft':'pupilRight'
+      const manual=ptPupils[side]
+      if(manual) next[key]={...raw[key],...manual}
+      else next[key].x=resolvePresetPupilGaze(raw[key].x,baseTransforms[key].x,eye.width,raw[eyeKey].scaleX,side,
+        pupil.rightSidePositioned===true,previewGaze,
+        Boolean(raw[eyeKey].flipX)!==(side==='right' && eye.rightSidePositioned!==true))
+    }
+    return next
+  },[open,draftTransforms,transforms,previewGaze,composition,baseTransforms,componentAssets,ptPupils])
+  const comparisonPreset = useMemo((): FaceExpressionPreset => {
+    const portable=compilePortableExpression(transforms,baseTransforms,authoredMetrics(composition,componentAssets,catalogItems))
+    return { schemaVersion:1,id:presetId,modelSlot,name:'Prévia do Presets DEV',
+      collectionId:selectedCollectionId,expressionIndex:selectedExpressionIndex,
+      selections:composition,transforms,referenceTransforms:baseTransforms,
+      ...(Object.keys(portable.layers).length ? {portableMotion:portable} : {}),
+      ptPupils,ptPupilMotion:compilePtPupilMotion(ptPupils,baseTransforms,authoredMetrics(composition,componentAssets,catalogItems)),
+      noseOpacity,effects,updatedAt:new Date(0).toISOString() }
+  },[transforms,baseTransforms,composition,componentAssets,catalogItems,presetId,modelSlot,selectedCollectionId,selectedExpressionIndex,ptPupils,noseOpacity,effects])
   const visibleNoseOpacity = open ? draftNoseOpacity : noseOpacity
   const collectionExpressionNames = useMemo(() => Object.fromEntries(Object.entries(customExpressionNames)
     .filter(([key]) => key.startsWith(`${selectedCollectionId}:`))
@@ -468,14 +577,102 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
   }
 
   const beginChoosing = () => { setDraft(composition); setDraftTransforms(cloneTransforms(transforms)); setDraftNoseOpacity(noseOpacity); setCategory('eyes'); setOpen(true) }
-  const applyComposition = () => {
-    const nextTransforms = cloneTransforms(draftTransforms)
-    setComposition(draft); setTransforms(nextTransforms); setNoseOpacity(draftNoseOpacity)
-    setBaseComposition(draft); setBaseTransforms(nextTransforms); setBaseNoseOpacity(draftNoseOpacity)
-    setOpen(false); setError(null)
+  const applyComposition = async () => {
+    if (saving || switchingExpression) return
+    setSaving(true); setError(null)
+    try {
+      const nextBaseTransforms = defaultTransforms(draft, componentAssets, catalogItems)
+      const keys = new Set<number>(Array.from({ length: STANDARD_EXPRESSIONS.length }, (_, index) => index))
+      if (selectedExpressionIndex >= STANDARD_EXPRESSIONS.length) keys.add(selectedExpressionIndex)
+      const existingByIndex = new Map(presets
+        .filter((preset) => preset.collectionId === selectedCollectionId && Number.isInteger(preset.expressionIndex))
+        .map((preset) => [preset.expressionIndex!, preset]))
+      const now = new Date().toISOString()
+      const nextPresets: FaceExpressionPreset[] = []
+      const nextCopies: Record<string, ExpressionWorkingCopy> = {}
+
+      for (const index of keys) {
+        const key = expressionWorkingCopyKey(selectedCollectionId, index)
+        const summary = existingByIndex.get(index)
+        const saved = summary ? await window.desktop.loadFaceExpressionPreset(modelSlot, summary.id) : null
+        const workingCopy = index === selectedExpressionIndex
+          ? { id: presetId, composition, transforms, noseOpacity, effects }
+          : workingCopies[key]
+        const sourceComposition = workingCopy?.composition ?? saved?.selections ?? baseComposition
+        const sourceTransforms = workingCopy?.transforms ?? saved?.transforms ?? defaultTransforms(sourceComposition, componentAssets, catalogItems)
+        const sourceReferenceTransforms = {
+          ...defaultTransforms(saved?.selections ?? sourceComposition, componentAssets, catalogItems),
+          ...(saved?.referenceTransforms ?? {})
+        }
+        const selections = compositionForExpression(draft, index, catalogItems)
+        const rebasedTransforms = rebaseExpressionTransforms(sourceTransforms, sourceReferenceTransforms, nextBaseTransforms)
+        const originalPt = workingCopy?.ptPupils ?? saved?.ptPupils ?? {}
+        const rebasedPt: PtPupilOverrides = {}
+        for (const side of ['left','right'] as const) {
+          const part=originalPt[side]
+          if (!part) continue
+          const layer=side==='left'?'pupilLeft':'pupilRight'
+          const oldBase=sourceReferenceTransforms[layer],newBase=nextBaseTransforms[layer]
+          rebasedPt[side]={x:newBase.x+part.x-oldBase.x,y:newBase.y+part.y-oldBase.y,
+            rotation:newBase.rotation+part.rotation-oldBase.rotation}
+        }
+        const id = workingCopy?.id ?? saved?.id ?? summary?.id ?? crypto.randomUUID()
+        const name = saved?.name ?? customExpressionNames[key] ?? STANDARD_EXPRESSIONS[index] ?? `Nova expressão ${index - STANDARD_EXPRESSIONS.length + 1}`
+        const nextPreset: FaceExpressionPreset = {
+          ...saved,
+          schemaVersion: 1, id, modelSlot, name, collectionId: selectedCollectionId, expressionIndex: index,
+          selections, transforms: rebasedTransforms, referenceTransforms: cloneTransforms(nextBaseTransforms),
+          portableMotion: motionForPublishedPreset(rebasedTransforms,nextBaseTransforms,selections,componentAssets,catalogItems,saved),
+          ptPupils:rebasedPt,ptPupilMotion:compilePtPupilMotion(rebasedPt,nextBaseTransforms,authoredMetrics(selections,componentAssets,catalogItems)),
+          noseOpacity: draftNoseOpacity, effects: cloneEffects(workingCopy?.effects ?? saved?.effects), updatedAt: now
+        }
+        nextPresets.push(nextPreset)
+        nextCopies[key] = { id, composition: selections, transforms: rebasedTransforms, ptPupils:rebasedPt, noseOpacity: draftNoseOpacity, effects: cloneEffects(nextPreset.effects) }
+      }
+
+      // One server-side transaction: all preset JSONs commit together, or the
+      // durable journal restores and verifies the previous bytes on reopening.
+      // Never attempt parallel best-effort rollbacks from the React renderer.
+      await window.desktop.saveFaceExpressionPresetBatch(modelSlot, nextPresets)
+
+      setBaseComposition(draft); setBaseTransforms(nextBaseTransforms); setBaseNoseOpacity(draftNoseOpacity)
+      setWorkingCopies((current) => ({ ...current, ...nextCopies }))
+      const active = nextCopies[expressionWorkingCopyKey(selectedCollectionId, selectedExpressionIndex)]
+      if (active) {
+        setPresetId(active.id); setComposition(active.composition); setTransforms(active.transforms); setPtPupils(structuredClone(active.ptPupils ?? {})); setNoseOpacity(active.noseOpacity); setEffects(active.effects)
+      }
+      setPresets(await window.desktop.listFaceExpressionPresets(modelSlot))
+      setOpen(false)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Não foi possível aplicar a composição às expressões.')
+    } finally { setSaving(false) }
   }
   const cancelChoosing = () => { setDraft(composition); setDraftTransforms(cloneTransforms(transforms)); setDraftNoseOpacity(noseOpacity); setOpen(false) }
   const updateLayerTransform = (key: LayerKey, patch: Partial<FaceTransform>) => {
+    if(previewGaze==='left' && !open){
+      if (key!=='pupilLeft' && key!=='pupilRight')return
+      if(!Object.keys(patch).every(field=>['x','y','rotation'].includes(field)))return
+      const side=key==='pupilLeft'?'left':'right', pairedSide=side==='left'?'right':'left'
+      setPtPupils(current=>{
+        const before=current[side] ?? {x:visibleTransforms[key].x,y:visibleTransforms[key].y,rotation:visibleTransforms[key].rotation}
+        const after={...before,...patch}
+        const next={...current,[side]:after}
+        if(linkedLayerPairs.pupil){
+          const otherKey=side==='left'?'pupilRight':'pupilLeft'
+          const prior=current[pairedSide] ?? {x:visibleTransforms[otherKey].x,y:visibleTransforms[otherKey].y,rotation:visibleTransforms[otherKey].rotation}
+          const paired={...prior}
+          if(patch.x!==undefined){
+            const mirror=(s:'left'|'right')=>s==='right' && componentAssets[composition.pupils[s] ?? '']?.rightSidePositioned!==true?-1:1
+            paired.x+=(after.x-before.x)*mirror(side)/mirror(pairedSide)
+          }
+          if(patch.y!==undefined)paired.y+=after.y-before.y
+          if(patch.rotation!==undefined)paired.rotation-=after.rotation-before.rotation
+          next[pairedSide]=paired
+        }
+        return next
+      })
+      return
+    }
     const pairKind = pairedKindForLayer(key)
     const pairedKey = pairedLayerKeys[key]
     const linkPair = Boolean(pairKind && pairedKey && linkedLayerPairs[pairKind])
@@ -511,9 +708,10 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
     if (!bounds?.width || !bounds.height) return
     event.preventDefault()
     event.stopPropagation()
+    if(previewGaze==='left' && requestedMappings.some(item=>!item.layer.startsWith('pupil')))return
     event.currentTarget.setPointerCapture(event.pointerId)
     const mappings: PreviewLayerMapping[] = requestedMappings.map((mapping) => ({
-      ...mapping, startX: transforms[mapping.layer].x, startY: transforms[mapping.layer].y
+      ...mapping, startX: visibleTransforms[mapping.layer].x, startY: visibleTransforms[mapping.layer].y
     }))
     previewLayerDrag.current = {
       pointerId: event.pointerId, clientX: event.clientX, clientY: event.clientY,
@@ -526,20 +724,30 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
     if (!drag || drag.pointerId !== event.pointerId) return
     event.preventDefault()
     event.stopPropagation()
-    const screenX = (event.clientX - drag.clientX) * drag.modelPerPixelX
-    const screenY = (event.clientY - drag.clientY) * drag.modelPerPixelY
-    setTransforms((current) => {
+    const apply=(current: FaceExpressionTransforms) => {
       const next = { ...current }
       for (const mapping of drag.mappings) {
         const rotatedPupil = mapping.layer === 'pupilLeft' || mapping.layer === 'pupilRight'
-        const radians = rotatedPupil ? mapping.rotation * Math.PI / 180 : 0
-        const localX = screenX * Math.cos(radians) + screenY * Math.sin(radians)
-        const localY = -screenX * Math.sin(radians) + screenY * Math.cos(radians)
+        const delta = pupilDeltaFromDrag(event.clientX-drag.clientX,event.clientY-drag.clientY,{
+          rotationDegrees:rotatedPupil ? mapping.rotation : 0,mirrorSourceX:mapping.mirroredX,
+          modelPerPixelX:drag.modelPerPixelX,modelPerPixelY:drag.modelPerPixelY
+        })
         next[mapping.layer] = {
           ...current[mapping.layer],
-          x: mapping.startX + localX * (mapping.mirroredX ? -1 : 1),
-          y: mapping.startY + localY
+          x: mapping.startX + delta.x,
+          y: mapping.startY + delta.y
         }
+      }
+      return next
+    }
+    if(previewGaze!=='left'){setTransforms(apply);return}
+    const projected=apply(visibleTransforms)
+    setPtPupils(current=>{
+      const next={...current}
+      for(const mapping of drag.mappings){
+        const side=mapping.layer==='pupilLeft'?'left':'right'
+        next[side]={x:projected[mapping.layer].x,y:projected[mapping.layer].y,
+          rotation:current[side]?.rotation ?? visibleTransforms[mapping.layer].rotation}
       }
       return next
     })
@@ -550,6 +758,17 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
   }
   const resetSelectedLayer = () => {
+    if(previewGaze==='left'){
+      const side=selectedLayer==='pupilLeft'?'left':selectedLayer==='pupilRight'?'right':null
+      if(!side)return
+      setPtPupils(current=>{
+        const next={...current}
+        delete next[side]
+        if(linkedLayerPairs.pupil)delete next[side==='left'?'right':'left']
+        return next
+      })
+      return
+    }
     const defaultForLayer = (layer: LayerKey) => {
       const assetId = layer === 'eyeLeft' ? composition.eyes.left : layer === 'eyeRight' ? composition.eyes.right
         : layer === 'pupilLeft' ? composition.pupils.left : layer === 'pupilRight' ? composition.pupils.right
@@ -569,9 +788,12 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
     }))
     if (selectedLayer === 'nose') setNoseOpacity(composition.nose ? catalogItems[composition.nose.catalogId]?.opacity ?? 1 : 1)
   }
-  const updateEffect = (key: keyof FaceExpressionEffects, patch: Partial<FaceExpressionEffects[keyof FaceExpressionEffects]>) => setEffects((current) => ({ ...current, [key]: { ...current[key], ...patch } }))
+  const updateEffect = (key: keyof FaceExpressionEffects, patch: Partial<FaceExpressionEffects[keyof FaceExpressionEffects]>) => {
+    if (previewGaze === 'left') return // PT inherits emotion effects; never author them here.
+    setEffects((current) => ({ ...current, [key]: { ...current[key], ...patch } }))
+  }
   const beginBlushDrag = (event: ReactPointerEvent<HTMLSpanElement>) => {
-    if (event.button !== 0 && event.pointerType === 'mouse') return
+    if (previewGaze === 'left' || event.button !== 0 && event.pointerType === 'mouse') return
     const bounds = previewCanvas.current?.getBoundingClientRect()
     if (!bounds?.width || !bounds.height) return
     event.preventDefault()
@@ -596,6 +818,7 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
   }
   const nudgeBlush = (event: ReactKeyboardEvent<HTMLSpanElement>) => {
+    if (previewGaze === 'left') return
     const delta = event.shiftKey ? .05 : .01
     const movement = event.key === 'ArrowLeft' ? { offsetX: (effects.blush.offsetX ?? 0) - delta }
       : event.key === 'ArrowRight' ? { offsetX: (effects.blush.offsetX ?? 0) + delta }
@@ -608,50 +831,35 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
       : { offsetY: Math.max(-.5, Math.min(.5, movement.offsetY!)) })
   }
   const resetCurrentExpression = () => {
+    if(previewGaze==='left'){setPtPupils({});return}
     setTransforms(defaultTransforms(composition, componentAssets, catalogItems))
     setNoseOpacity(composition.nose ? catalogItems[composition.nose.catalogId]?.opacity ?? 1 : 1)
     setEffects(defaultExpressionEffects())
   }
-  const turnPupilsLeft = (sourceComposition: ExpressionComposition, sourceTransforms: FaceExpressionTransforms): FaceExpressionTransforms => {
-    const next = cloneTransforms(sourceTransforms)
-    if (!head) return next
-    for (const side of ['left', 'right'] as const) {
-      const eye = sourceComposition.eyes[side] ? componentAssets[sourceComposition.eyes[side]!] : undefined
-      const pupil = sourceComposition.pupils[side] ? componentAssets[sourceComposition.pupils[side]!] : undefined
-      if (!eye || !pupil) continue
-      const eyeTransform = next[layerKey('eye', side)]
-      const key = layerKey('pupil', side)
-      // The right logical slot is mirrored when its asset is not physically right-sided.
-      // Compensate for that so both pupils move toward the same (left) side of the preview.
-      const pointsLeft = side === 'left' || pupil.rightSidePositioned === true
-      next[key] = { ...next[key], x: (pointsLeft ? -1 : 1) * eye.width * eyeTransform.scaleX * .16 }
-    }
-    return next
-  }
   const selectExpression = async (index: number, pupilsLeft = false) => {
     if (switchingExpression || saving) return
-    if (index === selectedExpressionIndex) {
-      if (pupilsLeft) setTransforms((current) => turnPupilsLeft(composition, current))
-      return
-    }
+    // PT inherits the normal expression but can save separate pupil coordinates.
+    setPreviewGaze(pupilsLeft?'left':'right')
+    if(pupilsLeft)setSelectedLayer('pupilLeft')
+    if (index === selectedExpressionIndex) return
     setSwitchingExpression(true)
     setError(null)
     const currentKey = expressionWorkingCopyKey(selectedCollectionId, selectedExpressionIndex)
     const targetKey = expressionWorkingCopyKey(selectedCollectionId, index)
     setWorkingCopies((current) => ({ ...current, [currentKey]: {
-      id: presetId, composition: structuredClone(composition), transforms: cloneTransforms(transforms), noseOpacity, effects: cloneEffects(effects)
+      id: presetId, composition: structuredClone(composition), transforms: cloneTransforms(transforms), ptPupils:structuredClone(ptPupils), noseOpacity, effects: cloneEffects(effects)
     } }))
     setSelectedExpressionIndex(index)
     try {
       const workingCopy = workingCopies[targetKey]
       if (workingCopy) {
-        setPresetId(workingCopy.id); setComposition(workingCopy.composition); setTransforms(pupilsLeft ? turnPupilsLeft(workingCopy.composition, workingCopy.transforms) : cloneTransforms(workingCopy.transforms)); setNoseOpacity(workingCopy.noseOpacity); setEffects(cloneEffects(workingCopy.effects))
+        setPresetId(workingCopy.id); setComposition(workingCopy.composition); setTransforms(cloneTransforms(workingCopy.transforms)); setPtPupils(structuredClone(workingCopy.ptPupils ?? {})); setNoseOpacity(workingCopy.noseOpacity); setEffects(cloneEffects(workingCopy.effects))
         return
       }
       const summary = expressionPresetByIndex.get(index)
       const saved = summary ? await window.desktop.loadFaceExpressionPreset(modelSlot, summary.id) : null
       if (saved) {
-        setPresetId(saved.id); setComposition(saved.selections); setTransforms(pupilsLeft ? turnPupilsLeft(saved.selections, saved.transforms) : saved.transforms); setNoseOpacity(saved.noseOpacity); setEffects(cloneEffects(saved.effects))
+        setPresetId(saved.id); setComposition(saved.selections); setTransforms(cloneTransforms(saved.transforms)); setPtPupils(structuredClone(saved.ptPupils ?? {})); setNoseOpacity(saved.noseOpacity); setEffects(cloneEffects(saved.effects))
         return
       }
       const nextComposition = structuredClone(baseComposition)
@@ -659,7 +867,7 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
         const mouth = catalogItems[nextComposition.mouth.catalogId]
         if (mouth?.pieces.some((piece) => piece.index === index)) nextComposition.mouth.index = index
       }
-      setPresetId(crypto.randomUUID()); setComposition(nextComposition); setTransforms(pupilsLeft ? turnPupilsLeft(nextComposition, baseTransforms) : cloneTransforms(baseTransforms)); setNoseOpacity(baseNoseOpacity); setEffects(defaultExpressionEffects())
+      setPresetId(crypto.randomUUID()); setComposition(nextComposition); setTransforms(cloneTransforms(baseTransforms)); setPtPupils({}); setNoseOpacity(baseNoseOpacity); setEffects(defaultExpressionEffects())
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Não foi possível abrir esta expressão.')
     } finally {
@@ -668,19 +876,21 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
   }
   const createExpression = () => {
     if (loading || switchingExpression || saving) return
+    setPreviewGaze('right')
     const nextIndex = Math.max(STANDARD_EXPRESSIONS.length - 1, ...customExpressionIndices) + 1
     const name = `Nova expressão ${nextIndex - STANDARD_EXPRESSIONS.length + 1}`
     const nextId = crypto.randomUUID()
     const currentKey = expressionWorkingCopyKey(selectedCollectionId, selectedExpressionIndex)
     const nextKey = expressionWorkingCopyKey(selectedCollectionId, nextIndex)
-    const nextCopy: ExpressionWorkingCopy = { id: nextId, composition: structuredClone(composition), transforms: cloneTransforms(transforms), noseOpacity, effects: cloneEffects(effects) }
+    const nextCopy: ExpressionWorkingCopy = { id: nextId, composition: structuredClone(composition), transforms: cloneTransforms(transforms), ptPupils:{}, noseOpacity, effects: cloneEffects(effects) }
     setWorkingCopies((current) => ({
       ...current,
-      [currentKey]: { id: presetId, composition: structuredClone(composition), transforms: cloneTransforms(transforms), noseOpacity, effects: cloneEffects(effects) },
+      [currentKey]: { id: presetId, composition: structuredClone(composition), transforms: cloneTransforms(transforms), ptPupils:structuredClone(ptPupils), noseOpacity, effects: cloneEffects(effects) },
       [nextKey]: nextCopy
     }))
     setCustomExpressionNames((current) => ({ ...current, [nextKey]: name }))
     setPresetId(nextId)
+    setPtPupils({})
     setSelectedExpressionIndex(nextIndex)
     setError(null)
   }
@@ -695,11 +905,15 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
       const saved: FaceExpressionPreset = {
         schemaVersion: 1, id: presetId, modelSlot, name: activeExpressionName,
         collectionId: selectedCollectionId, expressionIndex: selectedExpressionIndex,
-        selections: structuredClone(composition), transforms: cloneTransforms(transforms), referenceTransforms: structuredClone(referenceTransforms), noseOpacity, effects: cloneEffects(effects), updatedAt: new Date().toISOString()
+        selections: structuredClone(composition), transforms: cloneTransforms(transforms), referenceTransforms: structuredClone(referenceTransforms),
+        portableMotion: motionForPublishedPreset(transforms,referenceTransforms,composition,componentAssets,catalogItems,sameComposition?existing:null),
+        ptPupils:structuredClone(ptPupils),
+        ptPupilMotion:compilePtPupilMotion(ptPupils,referenceTransforms,authoredMetrics(composition,componentAssets,catalogItems)),
+        noseOpacity, effects: cloneEffects(effects), updatedAt: new Date().toISOString()
       }
       await window.desktop.saveFaceExpressionPreset(modelSlot, saved)
       setPresetId(saved.id)
-      setWorkingCopies((current) => ({ ...current, [expressionWorkingCopyKey(selectedCollectionId, selectedExpressionIndex)]: { id: saved.id, composition: saved.selections, transforms: saved.transforms, noseOpacity: saved.noseOpacity, effects: cloneEffects(saved.effects) } }))
+      setWorkingCopies((current) => ({ ...current, [expressionWorkingCopyKey(selectedCollectionId, selectedExpressionIndex)]: { id: saved.id, composition: saved.selections, transforms: saved.transforms, ptPupils:structuredClone(saved.ptPupils ?? {}), noseOpacity: saved.noseOpacity, effects: cloneEffects(saved.effects) } }))
       setPresets(await window.desktop.listFaceExpressionPresets(modelSlot))
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível salvar este preset.') }
     finally { setSaving(false) }
@@ -711,22 +925,23 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
     const currentKey = expressionWorkingCopyKey(selectedCollectionId, selectedExpressionIndex)
     const targetKey = expressionWorkingCopyKey(collectionId, 0)
     setWorkingCopies((current) => ({ ...current, [currentKey]: {
-      id: presetId, composition: structuredClone(composition), transforms: cloneTransforms(transforms), noseOpacity, effects: cloneEffects(effects)
+      id: presetId, composition: structuredClone(composition), transforms: cloneTransforms(transforms), ptPupils:structuredClone(ptPupils), noseOpacity, effects: cloneEffects(effects)
     } }))
     setSelectedCollectionId(collectionId)
     setSelectedExpressionIndex(0)
+    setPreviewGaze('right')
     try {
       const workingCopy = workingCopies[targetKey]
       if (workingCopy) {
-        setPresetId(workingCopy.id); setComposition(workingCopy.composition); setTransforms(cloneTransforms(workingCopy.transforms)); setNoseOpacity(workingCopy.noseOpacity); setEffects(cloneEffects(workingCopy.effects))
+        setPresetId(workingCopy.id); setComposition(workingCopy.composition); setTransforms(cloneTransforms(workingCopy.transforms)); setPtPupils(structuredClone(workingCopy.ptPupils ?? {})); setNoseOpacity(workingCopy.noseOpacity); setEffects(cloneEffects(workingCopy.effects))
         return
       }
       const summary = presets.find((preset) => preset.collectionId === collectionId && preset.expressionIndex === 0)
       const saved = summary ? await window.desktop.loadFaceExpressionPreset(modelSlot, summary.id) : null
       if (saved) {
-        setPresetId(saved.id); setComposition(saved.selections); setTransforms(saved.transforms); setNoseOpacity(saved.noseOpacity); setEffects(cloneEffects(saved.effects))
+        setPresetId(saved.id); setComposition(saved.selections); setTransforms(saved.transforms); setPtPupils(structuredClone(saved.ptPupils ?? {})); setNoseOpacity(saved.noseOpacity); setEffects(cloneEffects(saved.effects))
       } else {
-        setPresetId(crypto.randomUUID()); setComposition(structuredClone(baseComposition)); setTransforms(cloneTransforms(baseTransforms)); setNoseOpacity(baseNoseOpacity); setEffects(defaultExpressionEffects())
+        setPresetId(crypto.randomUUID()); setComposition(structuredClone(baseComposition)); setTransforms(cloneTransforms(baseTransforms)); setPtPupils({}); setNoseOpacity(baseNoseOpacity); setEffects(defaultExpressionEffects())
       }
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Não foi possível abrir este conjunto.')
@@ -744,13 +959,14 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
       await window.desktop.saveFaceExpressionCollection(modelSlot, collection)
       setCollections((current) => [...current, collection].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')))
       setWorkingCopies((current) => ({ ...current, [expressionWorkingCopyKey(selectedCollectionId, selectedExpressionIndex)]: {
-        id: presetId, composition: structuredClone(composition), transforms: cloneTransforms(transforms), noseOpacity, effects: cloneEffects(effects)
+        id: presetId, composition: structuredClone(composition), transforms: cloneTransforms(transforms), ptPupils:structuredClone(ptPupils), noseOpacity, effects: cloneEffects(effects)
       } }))
       setSelectedCollectionId(collection.id)
       setSelectedExpressionIndex(0)
       setPresetId(crypto.randomUUID())
       setComposition(structuredClone(baseComposition))
       setTransforms(cloneTransforms(baseTransforms))
+      setPtPupils({})
       setNoseOpacity(baseNoseOpacity); setEffects(defaultExpressionEffects())
       setCollectionDialogOpen(false)
       setNewCollectionName('')
@@ -802,7 +1018,7 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
     const eyeX = eyeMirrored ? head.width - eyeTransform.x : eyeTransform.x
     const eyeRotation = eyeMirrored ? -eyeTransform.rotation : eyeTransform.rotation
     const pupilTransform = transform
-    const mirroredPupilX = right && !physicallyRight
+    const mirroredPupilX = pupilSourceMirrored(currentSide,physicallyRight)
     const pupilX = mirroredPupilX ? -pupilTransform.x : pupilTransform.x
     const eyeFlip = Boolean(eyeTransform.flipX) !== eyeMirrored
     const eyeFlipDirection = eyeFlip ? -1 : 1
@@ -835,7 +1051,7 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
     const pairedEyeRotation = pairedEyeMirrored ? -pairedEyeTransform.rotation : pairedEyeTransform.rotation
     const dragMappings: Array<Omit<PreviewLayerMapping, 'startX' | 'startY'>> = [{ layer: pupilLayer, mirroredX: mirroredPupilX, rotation: eyeRotation }]
     if (movePair && pairedPupilAsset && pairedEyeAsset) dragMappings.push({
-      layer: layerKey('pupil', pairedSide), mirroredX: pairedSide === 'right' && pairedPupilAsset.rightSidePositioned !== true, rotation: pairedEyeRotation
+      layer: layerKey('pupil', pairedSide), mirroredX: pupilSourceMirrored(pairedSide,pairedPupilAsset.rightSidePositioned===true), rotation: pairedEyeRotation
     })
     return <span key={`${kind}-${asset.id}-${right}`} className="expression-head-pupil-mask" style={{ ...maskStyle, pointerEvents: canDrag ? 'auto' : 'none', cursor: canDrag ? 'grab' : undefined, touchAction: canDrag ? 'none' : undefined }}
       onPointerDown={canDrag ? (event) => beginPreviewLayerDrag(event, dragMappings) : undefined}
@@ -866,11 +1082,17 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
   }
 
   return <section className="fabricator-workspace expression-preset-workspace" aria-label="Preset Expressão Dev">
+    {characterComparisonOpen && <ExpressionCharacterPreview modelSlot={modelSlot} preset={comparisonPreset} gaze={previewGaze} onClose={() => setCharacterComparisonOpen(false)}/>}
     <header className="expression-preset-toolbar">
-      <button className="expression-choose-set-button" onClick={beginChoosing} disabled={loading || !head} type="button"><Icon name="face" />Escolher conjunto</button>
+      <button className="expression-choose-set-button" onClick={beginChoosing} disabled={loading || !head || previewGaze==='left'} type="button"><Icon name="face" />Escolher assets</button>
       <span className="model-slot-logo"><Icon name="face" /></span>
       <strong>Preset Expressão Dev</strong>
       <span className="expression-current-title"><b>{String(selectedExpressionIndex + 1).padStart(2, '0')}</b>{activeExpressionName}</span>
+      <button type="button" className="pose-button secondary" onClick={() => setCharacterComparisonOpen(true)}
+        disabled={loading || saving || !head} title="Comparar base facial e expressão num personagem do Customizador">
+        Testar em personagem
+      </button>
+      {previewGaze==='left' && <small role="status" title="PT herda os demais ajustes da expressão normal">PT — edite somente X, Y e rotação das pupilas. Os demais elementos seguem a expressão normal.</small>}
       <span className="expression-preset-toolbar-spacer" />
       {!loading && <span className={`expression-workspace-save-status${workspaceSaveStatus === 'failed' ? ' failed' : ''}`} role="status">{workspaceSaveStatus === 'saving' ? 'Salvando rascunho…' : workspaceSaveStatus === 'failed' ? 'Falha ao salvar' : 'Rascunho salvo'}</span>}
       <span className="expression-preset-model-label">Modelo {String(modelSlot).padStart(2, '0')} · {project?.name ?? 'sem modelo'}</span>
@@ -905,7 +1127,7 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
             <button type="button" className={`expression-sequence-item${isActive ? ' active' : ''}`} aria-pressed={isActive} disabled={loading || switchingExpression || saving} onClick={() => void selectExpression(index)}>
               <b>{String(index + 1).padStart(2, '0')}</b><span>{name}</span><small>{isActive ? 'Editando' : saved ? 'Salvo' : cached ? 'Rascunho' : 'Vazio'}</small>
             </button>
-            <button className="expression-sequence-look-left" type="button" title={`Carregar ${name} com as pupilas voltadas à esquerda`} aria-label={`Pupilas à esquerda: ${name}`} disabled={loading || switchingExpression || saving} onClick={() => void selectExpression(index, true)}>pt</button>
+            <button className="expression-sequence-look-left" type="button" aria-pressed={isActive && previewGaze === 'left'} title={`Carregar ${name} com as pupilas voltadas à esquerda`} aria-label={`Pupilas à esquerda: ${name}`} disabled={loading || switchingExpression || saving} onClick={() => void selectExpression(index, true)}>pt</button>
           </div>
         })}
         {customExpressionIndices.map((index) => {
@@ -917,7 +1139,7 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
             <button type="button" className={`expression-sequence-item expression-sequence-item-custom${isActive ? ' active' : ''}`} aria-pressed={isActive} disabled={loading || switchingExpression || saving} onClick={() => void selectExpression(index)}>
               <b>+</b><span>{name}</span><small>{isActive ? 'Editando' : saved ? 'Salvo' : cached ? 'Rascunho' : 'Vazio'}</small>
             </button>
-            <button className="expression-sequence-look-left" type="button" title={`Carregar ${name} com as pupilas voltadas à esquerda`} aria-label={`Pupilas à esquerda: ${name}`} disabled={loading || switchingExpression || saving} onClick={() => void selectExpression(index, true)}>pt</button>
+            <button className="expression-sequence-look-left" type="button" aria-pressed={isActive && previewGaze === 'left'} title={`Carregar ${name} com as pupilas voltadas à esquerda`} aria-label={`Pupilas à esquerda: ${name}`} disabled={loading || switchingExpression || saving} onClick={() => void selectExpression(index, true)}>pt</button>
           </div>
         })}
       </nav>
@@ -934,7 +1156,7 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
             const shape = effect.style ?? 'cheeks'
             const radial = (at: string) => `radial-gradient(ellipse at ${at}, ${color}, transparent ${Math.round((.4 + effect.softness * .6) * 100)}%)`
             const background = shape === 'cheeks' ? `${radial('27% 50%')}, ${radial('73% 50%')}` : shape === 'bands' ? `${radial('50% 25%')}, ${radial('50% 50%')}, ${radial('50% 75%')}` : radial('50% 50%')
-            return <span key={key} className="expression-preview-blush expression-preview-blush-draggable" role="group" tabIndex={0} aria-label="Posição do blush nas bochechas. Arraste ou use as setas para mover; Shift move mais." onPointerDown={beginBlushDrag} onPointerMove={moveBlushDrag} onPointerUp={endBlushDrag} onPointerCancel={endBlushDrag} onLostPointerCapture={endBlushDrag} onKeyDown={nudgeBlush} style={{ left: `${50 + (effect.offsetX ?? 0) * 100}%`, top: `${50 + effect.offsetY * 100}%`, width: `${effect.size * 100}%`, height: `${effect.size * (effect.aspectRatio ?? .52) * 100}%`, background, transform: `translate(-50%,-50%) rotate(${shape === 'diagonal' ? -16 : 0}deg)` }} />
+            return <span key={key} className="expression-preview-blush expression-preview-blush-draggable" role="group" tabIndex={previewGaze==='left'?-1:0} aria-label="Posição do blush nas bochechas. Arraste ou use as setas para mover; Shift move mais." onPointerDown={beginBlushDrag} onPointerMove={moveBlushDrag} onPointerUp={endBlushDrag} onPointerCancel={endBlushDrag} onLostPointerCapture={endBlushDrag} onKeyDown={nudgeBlush} style={{ left: `${50 + (effect.offsetX ?? 0) * 100}%`, top: `${50 + effect.offsetY * 100}%`, width: `${effect.size * 100}%`, height: `${effect.size * (effect.aspectRatio ?? .52) * 100}%`, background, transform: `translate(-50%,-50%) rotate(${shape === 'diagonal' ? -16 : 0}deg)` }} />
           }
           if (!visibleComposition.mouth) return null
           const mouthTransform = visibleTransforms.mouth
@@ -962,27 +1184,27 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
         <div className="expression-layer-picker-grid">
           {presetLayerPairs.map(({ kind, label, keys, labels }) => <section className="expression-layer-pair" key={kind} aria-label={label}>
             <div role="group" aria-label={`Escolher ${label.toLowerCase()} para ajustar`}>
-              {keys.map((key, index) => <button key={key} type="button" aria-pressed={selectedLayer === key} className={selectedLayer === key ? 'active' : ''} onClick={() => setSelectedLayer(key)}>
+              {keys.map((key, index) => <button key={key} type="button" aria-pressed={selectedLayer === key} className={selectedLayer === key ? 'active' : ''} onClick={() => setSelectedLayer(key)} disabled={previewGaze==='left' && !key.startsWith('pupil')}>
                 <Icon name="eye" /><span>{labels[index]}</span>
               </button>)}
             </div>
-            <label><input type="checkbox" checked={linkedLayerPairs[kind]} onChange={(event) => setLinkedLayerPairs((current) => ({ ...current, [kind]: event.target.checked }))} /><span>Mover os dois lados juntos</span></label>
+            <label><input type="checkbox" checked={linkedLayerPairs[kind]} disabled={previewGaze==='left' && kind!=='pupil'} onChange={(event) => setLinkedLayerPairs((current) => ({ ...current, [kind]: event.target.checked }))} /><span>Mover os dois lados juntos</span></label>
           </section>)}
           <div className="expression-layer-singles" role="group" aria-label="Escolher nariz ou boca para ajustar">
-            {presetSingleLayers.map(({ key, label, icon }) => <button key={key} type="button" aria-pressed={selectedLayer === key} className={selectedLayer === key ? 'active' : ''} onClick={() => setSelectedLayer(key)}>
+            {presetSingleLayers.map(({ key, label, icon }) => <button key={key} type="button" aria-pressed={selectedLayer === key} className={selectedLayer === key ? 'active' : ''} onClick={() => setSelectedLayer(key)} disabled={previewGaze==='left' && !key.startsWith('pupil')}>
               <Icon name={icon} /><span>{label}</span>
             </button>)}
           </div>
         </div>
       </section>
-      {(['x', 'y'] as const).map((field) => <label className="expression-transform-control" key={field}>{field === 'x' ? 'Posição horizontal' : 'Posição vertical'}<input type="range" min={-100} max={Math.max(100, (field === 'x' ? head?.width : head?.height) ?? 100)} step="1" value={transforms[selectedLayer][field]} onChange={(event) => updateLayerTransform(selectedLayer, { [field]: Number(event.target.value) })} /><output>{Math.round(transforms[selectedLayer][field])} px</output></label>)}
-      {(['scaleX', 'scaleY'] as const).map((field) => <label className="expression-transform-control" key={field}>{field === 'scaleX' ? 'Largura' : 'Altura'}<input type="range" min="0.02" max="4" step="0.01" value={transforms[selectedLayer][field]} onChange={(event) => updateLayerTransform(selectedLayer, { [field]: Number(event.target.value) })} /><output>{Math.round(transforms[selectedLayer][field] * 100)}%</output></label>)}
-      <label className="expression-transform-control">Rotação<input type="range" min="-180" max="180" step="1" value={transforms[selectedLayer].rotation} onChange={(event) => updateLayerTransform(selectedLayer, { rotation: Number(event.target.value) })} /><output>{Math.round(transforms[selectedLayer].rotation)}°</output></label>
-      <button className="expression-flip-button" type="button" onClick={() => updateLayerTransform(selectedLayer, { flipX: !transforms[selectedLayer].flipX })}><Icon name="flipHorizontal" />{transforms[selectedLayer].flipX ? 'Desespelhar peça' : 'Espelhar peça'}</button>
-      {selectedLayer === 'nose' && <label className="expression-transform-control">Transparência<input type="range" min="0" max="1" step="0.01" value={noseOpacity} onChange={(event) => setNoseOpacity(Number(event.target.value))} /><output>{Math.round((1 - noseOpacity) * 100)}%</output></label>}
+      {(['x', 'y'] as const).map((field) => <label className="expression-transform-control" key={field}>{field === 'x' ? 'Posição horizontal' : 'Posição vertical'}<input type="range" min={-100} max={Math.max(100, (field === 'x' ? head?.width : head?.height) ?? 100)} step="1" value={visibleTransforms[selectedLayer][field]} disabled={previewGaze==='left' && !selectedLayer.startsWith('pupil')} onChange={(event) => updateLayerTransform(selectedLayer, { [field]: Number(event.target.value) })} /><output>{Math.round(transforms[selectedLayer][field])} px</output></label>)}
+      {(['scaleX', 'scaleY'] as const).map((field) => <label className="expression-transform-control" key={field}>{field === 'scaleX' ? 'Largura' : 'Altura'}<input type="range" min="0.02" max="4" step="0.01" value={visibleTransforms[selectedLayer][field]} disabled={previewGaze==='left' && !selectedLayer.startsWith('pupil')} onChange={(event) => updateLayerTransform(selectedLayer, { [field]: Number(event.target.value) })} /><output>{Math.round(transforms[selectedLayer][field] * 100)}%</output></label>)}
+      <label className="expression-transform-control">Rotação<input type="range" min="-180" max="180" step="1" value={visibleTransforms[selectedLayer].rotation} disabled={previewGaze==='left' && !selectedLayer.startsWith('pupil')} onChange={(event) => updateLayerTransform(selectedLayer, { rotation: Number(event.target.value) })} /><output>{Math.round(transforms[selectedLayer].rotation)}°</output></label>
+      <button className="expression-flip-button" type="button" disabled={previewGaze==='left'} onClick={() => updateLayerTransform(selectedLayer, { flipX: !transforms[selectedLayer].flipX })}><Icon name="flipHorizontal" />{transforms[selectedLayer].flipX ? 'Desespelhar peça' : 'Espelhar peça'}</button>
+      {previewGaze!=='left' && selectedLayer === 'nose' && <label className="expression-transform-control">Transparência<input type="range" min="0" max="1" step="0.01" value={noseOpacity} onChange={(event) => setNoseOpacity(Number(event.target.value))} /><output>{Math.round((1 - noseOpacity) * 100)}%</output></label>}
       <button className="expression-flip-button" type="button" onClick={resetSelectedLayer}><Icon name="reset" />Restaurar valores emprestados</button>
-      <small>Esses valores pertencem apenas ao preset atual. Eles não alteram os assets de origem.</small>
-      <section className="expression-effects-section" aria-label="Efeitos da expressão">
+      <small>{previewGaze==='left'?'PT: só as coordenadas e rotação das pupilas são independentes.':'Esses valores pertencem apenas ao preset atual. Eles não alteram os assets de origem.'}</small>
+      {previewGaze!=='left' && <section className="expression-effects-section" aria-label="Efeitos da expressão">
         <header><strong>Efeitos da expressão</strong><small>Aplicados somente a este preset</small></header>
         {([['shadow', 'Sombra'], ['blush', 'Blush nas bochechas'], ['mouthBlush', 'Blush na boca']] as const).map(([key, label]) => {
           const effect = effects[key]
@@ -1003,7 +1225,7 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
             </>}
           </details>
         })}
-      </section>
+      </section>}
     </aside>
     </div>
     {open && <div className="expression-picker-backdrop" role="presentation" onClick={cancelChoosing}>
@@ -1041,7 +1263,7 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
             })}</div></>}
           </>}
         </div>
-        <footer><span>{draft.eyes.left || draft.eyes.right ? 'Olhos' : 'Sem olhos'} · {draft.pupils.left || draft.pupils.right ? 'pupilas' : 'sem pupilas'} · {draft.nose ? 'nariz' : 'sem nariz'} · {draft.mouth ? 'boca' : 'sem boca'}</span><button className="expression-picker-apply" onClick={applyComposition} type="button"><Icon name="check" />Usar composição</button></footer>
+        <footer><span>{draft.eyes.left || draft.eyes.right ? 'Olhos' : 'Sem olhos'} · {draft.pupils.left || draft.pupils.right ? 'pupilas' : 'sem pupilas'} · {draft.nose ? 'nariz' : 'sem nariz'} · {draft.mouth ? 'boca' : 'sem boca'}</span><button className="expression-picker-apply" disabled={saving || switchingExpression} onClick={() => void applyComposition()} type="button"><Icon name="check" />{saving ? 'Aplicando…' : 'Usar composição'}</button></footer>
       </section>
     </div>}
     {collectionDialogOpen && <div className="expression-picker-backdrop" role="presentation" onClick={() => setCollectionDialogOpen(false)}>

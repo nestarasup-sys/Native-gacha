@@ -16,6 +16,7 @@ const ROOTS = [
   { id: 'fabricator.face-sets', path: 'fabricator/faces' },
   { id: 'fabricator.face-sets', path: 'fabricator/guides-eyes.json', file: true },
   { id: 'fabricator.face-sets', path: 'fabricator/guides-face.json', file: true },
+  { id: 'fabricator.face-sets', path: 'fabricator/guides-head-extras.json', file: true },
   { id: 'customizer.characters', path: 'customizer/characters' },
   { id: 'studio.projects', path: 'studios/Studio Principal' },
   { id: 'video-studio.media', path: 'studios/Video Studio/media-library' },
