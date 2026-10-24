@@ -172,23 +172,18 @@ export class TransitionRenderer {
   }
 
   /**
-   * Existing DOM stage expects a PNG URL, but rasterize via the same Canvas
-   * character compositor as export, then encode only the final cropped result.
-   * On a Canvas-specific failure fall back to the established PNG implementation.
-   * Abort is not an error fallback: never publish a stale request.
+   * The DOM preview accepts the SAME cropped Canvas snapshot as the export.
+   * No PNG encode, Image decode or dataURL round-trip per transition frame.
+   * Retain legacy PNG fallback for Canvas-incompatible character assets only.
    */
-  async renderPreview(transition: CharacterTransition, frame: number, character: CustomizerCharacter, signal?: AbortSignal): Promise<VideoCharacterState> {
+  async renderPreview(transition: CharacterTransition, frame: number, character: CustomizerCharacter, signal?: AbortSignal): Promise<VideoGachaCanvasState> {
     try {
       signal?.throwIfAborted()
       const state = await this.renderCanvas(transition, frame, character, signal)
       signal?.throwIfAborted()
-      if (!state.canvasImage) return state
-      const imageDataUrl = state.canvasImage.toDataURL('image/png')
-      signal?.throwIfAborted()
-      return { element: state.element, imageDataUrl }
+      return state
     } catch (reason) {
       if (signal?.aborted) throw reason
-      // A Canvas failure should not make already-editable projects unusable.
       return this.render(transition, frame, character, signal)
     }
   }

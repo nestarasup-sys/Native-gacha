@@ -1,4 +1,4 @@
-import type { CSSProperties, PointerEventHandler } from 'react'
+import { useLayoutEffect, useRef, type CSSProperties, type PointerEventHandler } from 'react'
 import type { StudioElement } from '../../../../shared/studio'
 import { videoCharacterElementSize, videoStageCssTransform } from '../../../../shared/videoStageGeometry'
 import { matchingVideoVisualPlugin } from './videoVisualPluginRegistry'
@@ -6,6 +6,7 @@ import { matchingVideoVisualPlugin } from './videoVisualPluginRegistry'
 export type VideoStudioDomElementProps = Readonly<{
   element: StudioElement
   imageDataUrl?: string
+  canvasImage?: HTMLCanvasElement | ImageBitmap
   assetName?: string
   speakerName?: string
   speakerColor?: string
@@ -17,10 +18,23 @@ export type VideoStudioDomElementProps = Readonly<{
   onPointerCancel?: PointerEventHandler<HTMLDivElement>
 }>
 
+/** Paint an immutable Gacha Canvas/ImageBitmap snapshot into the DOM layer. */
+export function VideoStudioCanvasRaster({ source, label }: { source: HTMLCanvasElement | ImageBitmap; label: string }) {
+  const ref = useRef<HTMLCanvasElement>(null)
+  useLayoutEffect(() => {
+    const context = ref.current?.getContext('2d')
+    if (!context) return
+    context.clearRect(0, 0, source.width, source.height)
+    context.drawImage(source, 0, 0)
+  }, [source])
+  return <canvas ref={ref} role="img" aria-label={label} width={source.width} height={source.height} />
+}
+
 /** Exact DOM/CSS visual primitive used by the production preview and the parity oracle. */
 export function VideoStudioDomElement({
   element,
   imageDataUrl,
+  canvasImage,
   assetName,
   speakerName,
   speakerColor,
@@ -57,8 +71,10 @@ export function VideoStudioDomElement({
       onPointerUp={interactive ? onPointerUp : undefined}
       onPointerCancel={interactive ? onPointerCancel : undefined}
     >
-      {(element.kind === 'image' || element.kind === 'character') && imageDataUrl
-        ? <img src={imageDataUrl} alt={assetName ?? element.text} draggable={false} />
+      {element.kind === 'character' && canvasImage
+        ? <VideoStudioCanvasRaster source={canvasImage} label={assetName ?? element.text} />
+        : (element.kind === 'image' || element.kind === 'character') && imageDataUrl
+          ? <img src={imageDataUrl} alt={assetName ?? element.text} draggable={false} />
         : element.kind === 'speech' || element.kind === 'thought'
           ? <span>{speakerName && <strong className="video-studio-balloon-speaker">{speakerName}</strong>}<span className="video-studio-balloon-text">{element.text}</span></span>
           : <span>{element.text}</span>}

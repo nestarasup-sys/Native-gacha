@@ -1,10 +1,12 @@
 import type { CustomizerCharacter } from '../../../../shared/customizer'
 import type { VideoCharacterState } from '../../../../shared/studio'
+import type { VideoGachaCanvasState } from './videoGachaCanvasFrame'
 import type { CharacterTransition } from './characterTransitions'
 import { transitionSampleFrames } from './characterTransitions'
 import { TransitionRenderer } from './transitionRenderer'
 
-type CachedFrame = Readonly<{ state: VideoCharacterState; bytes: number }>
+type CachedFrame = Readonly<{ state: VideoGachaCanvasState; bytes: number }>
+type RequestedFrame = Readonly<{ span: CharacterTransition; frame: number; character: CustomizerCharacter }>
 type Plan = Readonly<{
   kind: 'ahead' | 'paused'
   spans: readonly CharacterTransition[]
@@ -31,7 +33,7 @@ function sameReferences<T>(left: readonly T[], right: readonly T[]): boolean {
 
 
 /**
- * Session-local PNG compatibility path for the existing DOM stage.
+ * Session-local bounded Canvas frame cache for responsive DOM preview.
  *
  * One renderer runs at a time: prepared canvases can be mutable. New seeks,
  * stopped playback and scene revisions abort obsolete queued work. Renderer
@@ -53,6 +55,12 @@ export class PreviewTransitionSession {
   private plan: Plan | null = null
   private disposed = false
   private playbackRequested = false
+  private readonly demanded = new Map<string, RequestedFrame>()
+  private readonly activeTransitions = new Map<string, string>()
+  private readonly lastDisplayed = new Map<string, { signature: string; state: VideoGachaCanvasState }>()
+  private draining = false
+  private onFrameReady: (elementId: string, frame: number) => void = () => {}
+  private onFrameError: (error: unknown) => void = () => {}
   private rendered = 0
   private cacheHits = 0
   private discarded = 0
@@ -72,7 +80,7 @@ export class PreviewTransitionSession {
     return `${span.elementId}:${span.boundaryFrame}:${this.identity(span.from)}:${this.identity(span.to)}:${character.updatedAt}:${frame}`
   }
 
-  get(span: CharacterTransition, frame: number, character: CustomizerCharacter): VideoCharacterState | undefined {
+  get(span: CharacterTransition, frame: number, character: CustomizerCharacter, allowLastFrame = false): VideoGachaCanvasState | undefined {
     const key = this.key(span, frame, character)
     const cached = this.cache.get(key)
     if (cached) {
@@ -80,7 +88,12 @@ export class PreviewTransitionSession {
       this.cache.set(key, cached)
       this.cacheHits++
     }
-    return cached?.state
+    if (cached) {
+      this.lastDisplayed.set(span.elementId, { signature: this.key(span, -1, character), state: cached.state })
+      return cached.state
+    }
+    const last = this.lastDisplayed.get(span.elementId)
+    return allowLastFrame && last?.signature === this.key(span, -1, character) ? last.state : undefined
   }
 
   metrics(): PreviewTransitionMetrics {
@@ -97,6 +110,7 @@ export class PreviewTransitionSession {
     this.abort.abort()
     this.abort = new AbortController()
     this.pending.clear()
+    this.demanded.clear()
     this.plan = null
     this.playbackRequested = false
   }
@@ -124,7 +138,7 @@ export class PreviewTransitionSession {
         return
       }
       const start = performance.now()
-      let state: VideoCharacterState
+      let state: VideoGachaCanvasState
       try {
         // Prefer the same direct-Canvas Gacha raster used by export. A renderer
         // without that capability remains compatible with the legacy PNG path.
@@ -142,8 +156,15 @@ export class PreviewTransitionSession {
         this.discarded++
         return
       }
-      // Full PNG is an existing DOM contract; account UTF-16 conservatively.
-      const bytes = state.imageDataUrl.length * 2
+      // A scene edit can invalidate only this element without aborting all actors.
+      const signature = this.activeTransitions.get(span.elementId)
+      if (signature && signature !== this.key(span, -1, character)) {
+        this.discarded++
+        return
+      }
+      const bytes = state.canvasImage
+        ? state.canvasImage.width * state.canvasImage.height * 4
+        : state.imageDataUrl.length * 2
       this.cache.set(key, { state, bytes })
       this.bytes += bytes
       this.rendered++
@@ -161,6 +182,83 @@ export class PreviewTransitionSession {
     this.pending.set(key, job)
     this.queue = job.catch(() => undefined)
     return job
+  }
+
+  /**
+   * Real-time preview requests ONLY the displayed absolute frame.
+   * One pending slot per character coalesces seeks/RAF updates: work for old
+   * frames is never enqueued unboundedly, and frame preparation never gates the clock.
+   *
+   * Transition identity is keyed by its actual from/to states and character
+   * version. Changing actor A never invalidates actor B's cached raster.
+   */
+  requestFrame(
+    spans: readonly CharacterTransition[],
+    frame: number,
+    characters: readonly CustomizerCharacter[],
+    onReady: (elementId: string, frame: number) => void,
+    onError: (error: unknown) => void = () => {},
+  ): void {
+    if (this.disposed) return
+    this.onFrameReady = onReady
+    this.onFrameError = onError
+    const relevant = spans.filter(span => frame > span.startFrame && frame < span.boundaryFrame)
+    const active = new Set(relevant.map(span => span.elementId))
+    for (const elementId of this.activeTransitions.keys()) {
+      if (!active.has(elementId)) {
+        this.activeTransitions.delete(elementId)
+        this.demanded.delete(elementId)
+        this.lastDisplayed.delete(elementId)
+      }
+    }
+    for (const span of relevant) {
+      const character = characters.find(item => item.id === span.from.element.characterId)
+      if (!character) continue
+      const signature = this.key(span, -1, character)
+      if (this.activeTransitions.get(span.elementId) !== signature) {
+        this.activeTransitions.set(span.elementId, signature)
+        this.lastDisplayed.delete(span.elementId)
+      }
+      // Exact snapshots are reused; only an unrendered frame is requested.
+      if (this.cache.has(this.key(span, frame, character))) {
+        this.demanded.delete(span.elementId)
+      } else {
+        this.demanded.set(span.elementId, { span, frame, character })
+      }
+    }
+    if (!this.draining && this.demanded.size) {
+      this.draining = true
+      // Yield one task so dragging/transport/input handlers get a turn first.
+      setTimeout(() => { void this.drainRealtime() }, 0)
+    }
+  }
+
+  private async drainRealtime(): Promise<void> {
+    try {
+      while (!this.disposed && this.demanded.size) {
+        const entry = this.demanded.entries().next().value as [string, RequestedFrame] | undefined
+        if (!entry) break
+        const [elementId, request] = entry
+        this.demanded.delete(elementId)
+        if (this.activeTransitions.get(elementId) !== this.key(request.span, -1, request.character)) continue
+        try {
+          await this.prepare(request.span, request.frame, request.character)
+          if (!this.disposed && this.activeTransitions.get(elementId) === this.key(request.span, -1, request.character)) {
+            this.onFrameReady(elementId, request.frame)
+          }
+        } catch (error) {
+          if (!this.disposed && this.activeTransitions.get(elementId) === this.key(request.span, -1, request.character)) {
+            this.onFrameError(error)
+          }
+        }
+      }
+    } finally {
+      this.draining = false
+      if (!this.disposed && this.demanded.size) {
+        this.draining = true
+        setTimeout(() => { void this.drainRealtime() }, 0)
+      }
+    }
   }
 
   private characterFor(span: CharacterTransition, characters: readonly CustomizerCharacter[]): CustomizerCharacter {
@@ -208,6 +306,8 @@ export class PreviewTransitionSession {
     this.disposed = true
     this.cache.clear()
     this.bytes = 0
+    this.activeTransitions.clear()
+    this.lastDisplayed.clear()
     this.renderer.dispose()
   }
 }

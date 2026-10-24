@@ -1264,36 +1264,19 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
     }
   }
 
-  const prepareVideoPlayback = async (startFrame: number) => {
-    const request = ++animationPlayRequestRef.current
-    setVideoPlaying(false)
-    setVideoPlayheadFrame(startFrame)
-    setAnimationPreparing(true)
-    const startedAt = performance.now()
-    try {
-      const currentSession = await characterAnimation.preparePlayback(startFrame)
-      console.info(`[Video Studio perf] preparar prévia: ${(performance.now() - startedAt).toFixed(1)} ms · quadro ${startFrame}`)
-      if (currentSession && request === animationPlayRequestRef.current) { setError(null); setVideoPlaying(true) }
-    } catch (reason) {
-      if (request === animationPlayRequestRef.current) setError(reason instanceof Error ? reason.message : 'Não foi possível preparar as animações.')
-    } finally { if (request === animationPlayRequestRef.current) setAnimationPreparing(false) }
-  }
-
-  const toggleVideoPlayback = async () => {
+  const toggleVideoPlayback = () => {
     if (!activeStudio) return
-    if (animationPreparing) { animationPlayRequestRef.current += 1; characterAnimation.cancelPlayback(); setAnimationPreparing(false); return }
     if (videoPlaying) { seekVideoFrame(videoPlayheadFrame); return }
     editHistoryRef.current.cancelPending()
+    // The clock starts immediately. Missing transition rasters are coalesced
+    // asynchronously by PreviewTransitionSession; playback never awaits them.
     const startFrame = videoPlayheadFrame >= videoTimelineFor(activeStudio).durationFrames ? 0 : videoPlayheadFrame
     if (startFrame !== videoPlayheadFrame) seekVideoFrame(startFrame)
-    await prepareVideoPlayback(startFrame)
+    videoPlaybackAnchorRef.current = { frame: startFrame, time: performance.now() }
+    setVideoPlayheadFrame(startFrame)
+    setAnimationPreparing(false)
+    setVideoPlaying(true)
   }
-
-  useEffect(() => {
-    // If preparation cannot keep up on a slow machine, freeze the video clock
-    // at the required sample instead of silently replacing animation with a cut.
-    if (videoPlaying && characterAnimation.missing) void prepareVideoPlayback(videoPreviewFrame)
-  }, [videoPlaying, characterAnimation.missing, videoPreviewFrame])
 
   const splitVideoCharacterTrack = (elementId: string, frame: number) => {
     if (!activeStudio) return
@@ -2320,6 +2303,7 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
                 key={element.id}
                 element={element}
                 imageDataUrl={imageDataUrl}
+                canvasImage={transitionState?.canvasImage}
                 assetName={asset?.name}
                 speakerName={speakerName}
                 speakerColor={speakerColor}
