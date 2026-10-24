@@ -10,6 +10,7 @@ const transpiled = ts.transpile(source, { module:ts.ModuleKind.CommonJS,target:t
 const mod={exports:{}}
 new Function('require','module','exports',transpiled)((name)=>{
   if(name==='./pixiGachaLayerStack')return {PixiGachaLayerStack:class {}}
+  if(name==='./pixiGachaVisualGate')return {PixiGachaVisualGate:class {}}
   throw Error('unexpected dependency '+name)
 },mod,mod.exports)
 const {drawGachaLayeredFrame}=mod.exports
