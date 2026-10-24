@@ -164,15 +164,15 @@ async function run(){
       }
       const elements=paints.map((color,i)=>({
         id:'actor-'+i,kind:'character',text:'',speakerName:'Synthetic '+i,
-        x:-33+i*22,y:0,width:18,height:62,rotation:0,zIndex:i,flipX:false
+        x:-33+i*22,y:0,width:18,height:62,rotation:0,zIndex:i,flipX:false,poseSlot:0
       }))
       const bases=Object.fromEntries(elements.map((element,i)=>[
         element.id,{element,imageDataUrl:makeArt(paints[i],false)}
       ]))
       const keys=elements.flatMap((element,i)=>[120,240].map((frame,j)=>({
         id:'key-'+i+'-'+frame,elementId:element.id,frame,
-        poseSlot:null,expressionCollectionId:null,expressionPresetId:null,faceMode:'idle',
-        state:{element:{...element,rotation:j===0?8:0},
+        poseSlot:j+1,expressionCollectionId:null,expressionPresetId:null,faceMode:'idle',
+        state:{element:{...element,poseSlot:j+1,rotation:j===0?8:0},
           imageDataUrl:makeArt(paints[i],j===0)}
       })))
       const studio={schemaVersion:1,id:'${fourId}',title:'FOUR ACTORS SYNTHETIC ${runId}',
