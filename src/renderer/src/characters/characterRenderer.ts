@@ -946,7 +946,24 @@ export async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, 
   }
 }
 
-export async function prepareSavedCharacterRenderer(character: CustomizerCharacter, renderSource?: { artwork: CatalogArtwork; source: FabricatorProject; assetProvider?: VideoCharacterRenderAssetProvider }): Promise<{ width: number; height: number; render: (appearance?: CustomizerFaceAppearance, studioFaceTransforms?: StudioFaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: StudioFaceMode) => Promise<{ dataUrl: string; width: number; height: number }>; renderToCanvas: (appearance?: CustomizerFaceAppearance, studioFaceTransforms?: StudioFaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: StudioFaceMode) => Promise<{ canvas: HTMLCanvasElement; width: number; height: number }> }> {
+/**
+ * GPU-ready compositing pieces of a prepared Gacha pose. The lower and upper
+ * layers are immutable until the pose itself changes, while face is a mutable
+ * Canvas surface reused for each expression; consume before rendering again.
+ */
+export type PreparedGachaLayerFrame = Readonly<{
+  behindFace: HTMLCanvasElement
+  face: HTMLCanvasElement
+  inFrontOfFace: HTMLCanvasElement | null
+  width: number
+  height: number
+  outputWidth: number
+  outputHeight: number
+  shapeScaleX: number
+  shapeScaleY: number
+}>
+
+export async function prepareSavedCharacterRenderer(character: CustomizerCharacter, renderSource?: { artwork: CatalogArtwork; source: FabricatorProject; assetProvider?: VideoCharacterRenderAssetProvider }): Promise<{ width: number; height: number; render: (appearance?: CustomizerFaceAppearance, studioFaceTransforms?: StudioFaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: StudioFaceMode) => Promise<{ dataUrl: string; width: number; height: number }>; renderToCanvas: (appearance?: CustomizerFaceAppearance, studioFaceTransforms?: StudioFaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: StudioFaceMode) => Promise<{ canvas: HTMLCanvasElement; width: number; height: number }>; renderLayersToCanvas: (appearance?: CustomizerFaceAppearance, studioFaceTransforms?: StudioFaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: StudioFaceMode) => Promise<PreparedGachaLayerFrame> }> {
   const { modelSlot, assetProvider, source, artwork } = await resolveSavedCharacterSource(character, renderSource)
   const proportions = getCharacterProportions(character.customization)
   const hairAppearance = character.customization.hairAppearance
@@ -1034,9 +1051,18 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
   const shapeScale = characterShapeScale(proportions)
   const outputWidth = Math.max(canvas.width, Math.ceil(canvas.width * shapeScale.x))
   const outputHeight = Math.max(canvas.height, Math.ceil(canvas.height * shapeScale.y))
-  const renderToCanvas = async (currentAppearance: CustomizerFaceAppearance | undefined = appearance, studioFaceTransforms?: StudioFaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: StudioFaceMode) => {
-    context.clearRect(0, 0, canvas.width, canvas.height)
-    context.drawImage(rigLayers.behindFace, 0, 0, canvas.width, canvas.height)
+  /**
+   * Share the exact eye/mouth/pupil/blink/effect implementation between the
+   * legacy all-in-one Canvas and the GPU-ready layered compositor.
+   * Only the drawing target changes. No second face calibration pipeline.
+   */
+  const renderFaceOverlay = async (
+    targetContext: CanvasRenderingContext2D,
+    currentAppearance: CustomizerFaceAppearance | undefined = appearance,
+    studioFaceTransforms?: StudioFaceTransforms,
+    expressionEffects?: FaceExpressionEffects,
+    studioFaceMode?: StudioFaceMode
+  ): Promise<void> => {
     let faceAppearance = currentAppearance && studioFaceMode ? {
       ...currentAppearance,
       eyeState: studioFaceMode === 'blink' ? 2 as const : currentAppearance.eyeState === 1 ? 1 as const : 0 as const,
@@ -1076,9 +1102,42 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
         throw new Error('Não encontrei uma boca aberta para esta variante. Selecione uma folha de bocas abertas em Rosto Dev.')
       }
       const mouthEffects = expressionEffects ?? expressionEffectsByIndex[faceAppearance.expressionIndex]
-      if (!hasCatalogFaceSelection && legacyFaceImage && faceAppearance.setId === appearance?.setId) context.drawImage(legacyFaceImage, 0, 0, canvas.width, canvas.height)
-      if (hasCatalogFaceSelection || hasFaceOverlaySelection) await drawFaceCatalogOverlay(context, artwork, source, activeItems, faceAppearance, character.customization.modelSkinTone, studioFaceTransforms, mouthEffects, studioFaceMode, resolveClosedEye, character.customization.partOverrides, undefined, assetProvider)
-    } else if (legacyFaceImage) context.drawImage(legacyFaceImage, 0, 0, canvas.width, canvas.height)
+      if (!hasCatalogFaceSelection && legacyFaceImage && faceAppearance.setId === appearance?.setId) targetContext.drawImage(legacyFaceImage, 0, 0, canvas.width, canvas.height)
+      if (hasCatalogFaceSelection || hasFaceOverlaySelection) await drawFaceCatalogOverlay(targetContext, artwork, source, activeItems, faceAppearance, character.customization.modelSkinTone, studioFaceTransforms, mouthEffects, studioFaceMode, resolveClosedEye, character.customization.partOverrides, undefined, assetProvider)
+    } else if (legacyFaceImage) targetContext.drawImage(legacyFaceImage, 0, 0, canvas.width, canvas.height)
+  }
+  const faceLayer = document.createElement('canvas')
+  faceLayer.width = canvas.width
+  faceLayer.height = canvas.height
+  const faceContext = faceLayer.getContext('2d')
+  if (!faceContext) throw new Error('Não foi possível preparar a camada dinâmica do rosto.')
+  /**
+   * Preview-only three-layer output. Caller must paint/snapshot the mutable
+   * face layer before another call; behindFace and inFrontOfFace stay stable
+   * for the lifetime of this prepared pose. Does not change the exact Canvas
+   * render path or the serialized StudioDocument.
+   */
+  const renderLayersToCanvas = async (
+    currentAppearance: CustomizerFaceAppearance | undefined = appearance,
+    studioFaceTransforms?: StudioFaceTransforms,
+    expressionEffects?: FaceExpressionEffects,
+    studioFaceMode?: StudioFaceMode
+  ) => {
+    faceContext.clearRect(0, 0, faceLayer.width, faceLayer.height)
+    await renderFaceOverlay(faceContext, currentAppearance, studioFaceTransforms, expressionEffects, studioFaceMode)
+    return {
+      behindFace: rigLayers.behindFace,
+      face: faceLayer,
+      inFrontOfFace: rigLayers.inFrontOfFace,
+      width: canvas.width, height: canvas.height,
+      outputWidth, outputHeight,
+      shapeScaleX: shapeScale.x, shapeScaleY: shapeScale.y,
+    }
+  }
+  const renderToCanvas = async (currentAppearance: CustomizerFaceAppearance | undefined = appearance, studioFaceTransforms?: StudioFaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: StudioFaceMode) => {
+    context.clearRect(0, 0, canvas.width, canvas.height)
+    context.drawImage(rigLayers.behindFace, 0, 0, canvas.width, canvas.height)
+    await renderFaceOverlay(context, currentAppearance, studioFaceTransforms, expressionEffects, studioFaceMode)
     if (rigLayers.inFrontOfFace) context.drawImage(rigLayers.inFrontOfFace, 0, 0, canvas.width, canvas.height)
     if (shapeScale.x === 1 && shapeScale.y === 1) return { canvas, width: canvas.width, height: canvas.height }
     const output = document.createElement('canvas')
@@ -1095,7 +1154,7 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
     const value = await renderToCanvas(...args)
     return { dataUrl: value.canvas.toDataURL('image/png'), width: value.width, height: value.height }
   }
-  return { width: outputWidth, height: outputHeight, render, renderToCanvas }
+  return { width: outputWidth, height: outputHeight, render, renderToCanvas, renderLayersToCanvas }
 }
 
 export async function renderSavedCharacter(character: CustomizerCharacter, studioFaceTransforms?: StudioFaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: StudioFaceMode): Promise<{ dataUrl: string; width: number; height: number }> {
