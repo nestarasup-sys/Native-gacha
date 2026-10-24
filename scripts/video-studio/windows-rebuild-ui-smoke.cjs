@@ -108,22 +108,26 @@ async function run(){
     // Real Chromium pixel oracle: an asymmetric Gacha PNG has a RED top and
     // BLUE bottom. A vertical UV inversion is visible only to a pixel oracle,
     // not to a shader-source/unit test or an empty-project Play smoke.
-    const sampleId='gpu-orientation-'+runId
+    const sampleId=randomUUID()
     await evaluate(`(async()=>{
       const stamp=new Date().toISOString()
       const image=document.createElement('canvas');image.width=32;image.height=32
       const g=image.getContext('2d')
       g.fillStyle='#ff0000';g.fillRect(0,0,32,16)
       g.fillStyle='#0000ff';g.fillRect(0,16,32,16)
-      const actor={id:'upright-actor',kind:'character',text:'',x:0,y:0,width:100,height:100,
+      const imageDataUrl=image.toDataURL('image/png')
+      const asset={id:crypto.randomUUID(),category:'character',name:'Orientation PNG',
+        mimeType:'image/png',dataUrl:imageDataUrl}
+      const actor={id:crypto.randomUUID(),kind:'character',characterId:crypto.randomUUID(),
+        assetId:asset.id,text:'',x:0,y:0,width:100,height:100,
         rotation:0,zIndex:0,flipX:false}
       const studio={schemaVersion:1,id:'${sampleId}',title:'ORIENTATION SYNTHETIC ${runId}',
         color:'#526ea9',createdAt:stamp,updatedAt:stamp,backgroundColor:'#000000',
         backgroundAssetId:null,backgroundX:0,backgroundY:0,backgroundWidth:100,
-        backgroundHeight:100,backgroundRotation:0,assets:[],elements:[actor],
+        backgroundHeight:100,backgroundRotation:0,assets:[asset],elements:[actor],
         videoTimeline:{schemaVersion:1,frameRate:60,durationFrames:120,playheadFrame:0,
           playing:false,characterKeys:[],textClips:[],saveMarkers:[],
-          characterBases:{[actor.id]:{element:actor,imageDataUrl:image.toDataURL('image/png')}}}}
+          characterBases:{[actor.id]:{element:actor,imageDataUrl}}}}
       await window.desktop.saveVideoStudio(studio)
       return true
     })()`)
@@ -149,7 +153,7 @@ async function run(){
     // Short, progressive Windows gate: four different saved actors and two
     // authored image keyframes each. This is *synthetic* compositor load, not
     // real catalog/PT fidelity, and must not be called a 180s stress result.
-    const fourId='gpu-4-actors-'+runId
+    const fourId=randomUUID()
     await evaluate(`(async()=>{
       const stamp=new Date().toISOString()
       const paints=['#e4574a','#50bbd6','#f7bd4b','#a47be4']
@@ -163,11 +167,17 @@ async function run(){
         return c.toDataURL('image/png')
       }
       const elements=paints.map((color,i)=>({
-        id:'actor-'+i,kind:'character',text:'',speakerName:'Synthetic '+i,
+        id:crypto.randomUUID(),characterId:crypto.randomUUID(),assetId:crypto.randomUUID(),
+        kind:'character',text:'',speakerName:'Synthetic '+i,
         x:-33+i*22,y:0,width:18,height:62,rotation:0,zIndex:i,flipX:false,poseSlot:0
       }))
+      const baseImages=paints.map(color=>makeArt(color,false))
+      const assets=elements.map((element,i)=>({
+        id:element.assetId,category:'character',name:'Synthetic actor '+i,
+        mimeType:'image/png',dataUrl:baseImages[i]
+      }))
       const bases=Object.fromEntries(elements.map((element,i)=>[
-        element.id,{element,imageDataUrl:makeArt(paints[i],false)}
+        element.id,{element,imageDataUrl:baseImages[i]}
       ]))
       const keys=elements.flatMap((element,i)=>[120,240].map((frame,j)=>({
         id:'key-'+i+'-'+frame,elementId:element.id,frame,
@@ -178,7 +188,7 @@ async function run(){
       const studio={schemaVersion:1,id:'${fourId}',title:'FOUR ACTORS SYNTHETIC ${runId}',
         color:'#526ea9',createdAt:stamp,updatedAt:stamp,backgroundColor:'#101725',
         backgroundAssetId:null,backgroundX:0,backgroundY:0,backgroundWidth:100,
-        backgroundHeight:100,backgroundRotation:0,assets:[],elements,
+        backgroundHeight:100,backgroundRotation:0,assets,elements,
         videoTimeline:{schemaVersion:1,frameRate:60,durationFrames:300,playheadFrame:0,
           playing:false,characterKeys:keys,textClips:[],saveMarkers:[],characterBases:bases}}
       await window.desktop.saveVideoStudio(studio)
