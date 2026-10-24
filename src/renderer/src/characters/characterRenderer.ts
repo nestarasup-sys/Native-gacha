@@ -964,7 +964,7 @@ export async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, 
   }
 }
 
-export async function prepareSavedCharacterRenderer(character: CustomizerCharacter, renderSource?: { artwork: CatalogArtwork; source: FabricatorProject; assetProvider?: VideoCharacterRenderAssetProvider }): Promise<{ width: number; height: number; render: (appearance?: CustomizerFaceAppearance, studioFaceTransforms?: StudioFaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: StudioFaceMode) => Promise<{ dataUrl: string; width: number; height: number }>; renderToCanvas: (appearance?: CustomizerFaceAppearance, studioFaceTransforms?: StudioFaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: StudioFaceMode) => Promise<{ canvas: HTMLCanvasElement; width: number; height: number }>; renderGpuLayers: (appearance?: CustomizerFaceAppearance, studioFaceTransforms?: StudioFaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: StudioFaceMode) => Promise<ReadonlyArray<{ id: string; source: HTMLCanvasElement }>> }> {
+export async function prepareSavedCharacterRenderer(character: CustomizerCharacter, renderSource?: { artwork: CatalogArtwork; source: FabricatorProject; assetProvider?: VideoCharacterRenderAssetProvider }): Promise<{ width: number; height: number; render: (appearance?: CustomizerFaceAppearance, studioFaceTransforms?: StudioFaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: StudioFaceMode) => Promise<{ dataUrl: string; width: number; height: number }>; renderToCanvas: (appearance?: CustomizerFaceAppearance, studioFaceTransforms?: StudioFaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: StudioFaceMode) => Promise<{ canvas: HTMLCanvasElement; width: number; height: number }>; renderGpuLayers: (appearance?: CustomizerFaceAppearance, studioFaceTransforms?: StudioFaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: StudioFaceMode) => Promise<ReadonlyArray<{ id: string; source: HTMLCanvasElement }>>; renderGpuFacePass: (pass: GachaFacePass, appearance?: CustomizerFaceAppearance, studioFaceTransforms?: StudioFaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: StudioFaceMode) => Promise<HTMLCanvasElement>; gpuStaticLayers: Readonly<{ behindFace: HTMLCanvasElement; inFrontOfFace: HTMLCanvasElement | null }> }> {
   const { modelSlot, assetProvider, source, artwork } = await resolveSavedCharacterSource(character, renderSource)
   const proportions = getCharacterProportions(character.customization)
   const hairAppearance = character.customization.hairAppearance
@@ -1136,6 +1136,21 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
   }
   const rigBack = scaled(rigLayers.behindFace)
   const rigFront = rigLayers.inFrontOfFace ? scaled(rigLayers.inFrontOfFace) : null
+  const renderGpuFacePass = async (
+    pass: GachaFacePass,
+    currentAppearance: CustomizerFaceAppearance | undefined = appearance,
+    studioFaceTransforms?: StudioFaceTransforms,
+    expressionEffects?: FaceExpressionEffects,
+    studioFaceMode?: StudioFaceMode
+  ): Promise<HTMLCanvasElement> => {
+    const faceCanvas = document.createElement('canvas')
+    faceCanvas.width = artwork.width
+    faceCanvas.height = artwork.height
+    const faceContext = faceCanvas.getContext('2d')
+    if (!faceContext) throw new Error('Camada facial Gacha indisponível.')
+    await drawFace(faceContext, currentAppearance, studioFaceTransforms, expressionEffects, studioFaceMode, pass)
+    return scaled(faceCanvas)
+  }
   const renderGpuLayers = async (
     currentAppearance: CustomizerFaceAppearance | undefined = appearance,
     studioFaceTransforms?: StudioFaceTransforms,
@@ -1146,13 +1161,7 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
     const needFace = Boolean(currentAppearance?.modelSlot === modelSlot)
     if (needFace) {
       for (const part of GPU_FACE_PASSES) {
-        const faceCanvas = document.createElement('canvas')
-        faceCanvas.width = artwork.width
-        faceCanvas.height = artwork.height
-        const faceContext = faceCanvas.getContext('2d')
-        if (!faceContext) throw new Error('Camada facial Gacha indisponível.')
-        await drawFace(faceContext, currentAppearance, studioFaceTransforms, expressionEffects, studioFaceMode, part)
-        layers.push({id:'face:'+part,source:scaled(faceCanvas)})
+        layers.push({id:'face:'+part,source:await renderGpuFacePass(part,currentAppearance,studioFaceTransforms,expressionEffects,studioFaceMode)})
       }
     } else if (legacyFaceImage) {
       const legacy = document.createElement('canvas')
@@ -1167,7 +1176,8 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
     const value = await renderToCanvas(...args)
     return { dataUrl: value.canvas.toDataURL('image/png'), width: value.width, height: value.height }
   }
-  return { width: outputWidth, height: outputHeight, render, renderToCanvas, renderGpuLayers }
+  return { width: outputWidth, height: outputHeight, render, renderToCanvas, renderGpuLayers, renderGpuFacePass,
+    gpuStaticLayers: { behindFace: rigBack, inFrontOfFace: rigFront } }
 }
 
 export async function renderSavedCharacter(character: CustomizerCharacter, studioFaceTransforms?: StudioFaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: StudioFaceMode): Promise<{ dataUrl: string; width: number; height: number }> {
