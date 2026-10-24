@@ -45,11 +45,11 @@ test('playback prepares next boundary exactly once, keeping all interpolated fra
   const renderer = { render: async (_span, frame) => { frames.push(frame); return state }, dispose() {} }
   const session = new Session('studio', renderer)
   await session.prepareAhead(spans, 0, [actor])
-  assert.deepEqual(frames, Array.from({length: 14}, (_, i) => 11 + i))
+  assert.deepEqual(frames, [11, 15, 19, 23, 12, 13, 14, 16, 17, 18, 20, 21, 22, 24])
   await session.prepareAhead(spans, 1, [actor])
   assert.equal(frames.length, 14, 'same boundary is cached')
   await session.prepareAhead(spans, 30, [actor])
-  assert.deepEqual(frames.slice(14), Array.from({length: 14}, (_, i) => 51 + i))
+  assert.deepEqual(frames.slice(14), [51, 55, 59, 63, 52, 53, 54, 56, 57, 58, 60, 61, 62, 64])
   assert.equal(session.metrics().cachedFrames, 28)
   session.dispose()
 })
@@ -210,5 +210,30 @@ test('last visible frame remains available inside its own transition while the n
   next.resolve()
   await eventually(() => session.metrics().rendered === 2, 'second raster missing')
   assert.equal(session.get(spans[0], 19, actor).imageDataUrl, 'frame-19')
+  session.dispose()
+})
+
+test('playback shows only exact articulated Gacha renders or the authored origin, never double-exposed images', async () => {
+  const sample = { ...state, imageDataUrl: 'gacha-rig-render-frame-11' }
+  const renderer = { render: async (_span, frame) => ({ ...sample, imageDataUrl: 'gacha-rig-render-frame-' + frame }), dispose() {} }
+  const session = new Session('studio', renderer)
+  const origin = session.getBestAvailable(spans[0], 15, actor)
+  assert.strictEqual(origin, spans[0].from)
+  await session.prepareAtFrame(spans, 11, [actor])
+  assert.equal(session.getBestAvailable(spans[0], 13, actor).imageDataUrl, 'gacha-rig-render-frame-11')
+  await session.prepareAtFrame(spans, 13, [actor])
+  assert.equal(session.getBestAvailable(spans[0], 13, actor).imageDataUrl, 'gacha-rig-render-frame-13')
+  session.dispose()
+})
+
+test('Gacha transition prefetch yields between real rig renders rather than holding all 14 synchronous frames', async () => {
+  const frames = []
+  const session = new Session('studio', { render: async (_span, frame) => {
+    frames.push(frame)
+    return state
+  }, dispose() {} })
+  await session.prepareAhead(spans, 0, [actor])
+  assert.equal(frames.length, 14)
+  assert.deepEqual(frames.slice(0, 4), [11,15,19,23])
   session.dispose()
 })

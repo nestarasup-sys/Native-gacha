@@ -3,7 +3,6 @@ import type { CustomizerCharacter } from '../../../../shared/customizer'
 import type { StudioDocument } from '../../../../shared/studio'
 import type { VideoGachaCanvasState } from './videoGachaCanvasFrame'
 import { compileCharacterTransitions, transitionSampleFrames, type CharacterTransition } from './characterTransitions'
-import { evaluateRealtimeTransitionFallback, type RealtimeTransitionFallback } from './realtimeTransitionFallback'
 import { PreviewTransitionSession } from './previewTransitionSession'
 import { PreviewEndpointWarmup } from './previewEndpointWarmup'
 
@@ -32,15 +31,30 @@ export function useCharacterTransitions(
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [studio?.id, enabled, spans, endpointWarmupBucket, endpointWarmup])
 
-  // During Play, use an immediate GPU cross-dissolve of the authored endpoint
-  // snapshots. A full Gacha raster may take longer than all 15 timeline frames;
-  // requesting it every RAF can starve the interface without showing one frame.
+  // The full Gacha compositor (pose joints, clothing, hair, eyes and facial
+  // transforms) produces the *actual* animation samples. Prepare just the
+  // nearest boundary in the background, without gating Play on completion.
+  const nextBoundary = useMemo(
+    () => spans.find(span => span.boundaryFrame > frame)?.boundaryFrame ?? null,
+    [spans, frame],
+  )
+  const warmupBucket = Math.floor(frame / 120)
+  const withinTransition = spans.some(span => frame > span.startFrame && frame < span.boundaryFrame)
   useEffect(() => {
-    if (playing || !enabled) session.cancelPending()
-  }, [playing, enabled, session])
+    if (!studio || !enabled || (withinTransition && !playing) || nextBoundary === null || nextBoundary - frame > 360) return
+    let live = true
+    void session.prepareAhead(spans, frame, characters).then(() => {
+      if (live) setRevision(value => value + 1)
+    }).catch((error: unknown) => {
+      if (live) onError(error instanceof Error ? error.message : 'Erro ao preparar a animação Gacha real.')
+    })
+    return () => { live = false }
+  // Recalculate on boundary or every two timeline seconds, not every RAF.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [studio?.id, enabled, session, spans, characters, nextBoundary, warmupBucket, playing, onError])
 
-  // Paused seek asks for just ONE precise Gacha frame asynchronously. The
-  // fallback remains visible until that expensive render finishes.
+  // Paused seek requests its exact sample immediately; never queue an entire
+  // future transition in front of a direct user seek.
   useEffect(() => {
     if (!studio || !enabled || playing) return
     session.requestFrame(spans, frame, characters,
@@ -59,26 +73,17 @@ export function useCharacterTransitions(
 
   const samples = useMemo(() => {
     const result = new Map<string, VideoGachaCanvasState>()
-    // Never mix sporadically cached accurate rasters with the fast playback
-    // dissolve: doing so causes visible flashes and temporal discontinuities.
-    if (!playing && enabled) for (const span of samplesByFrame.get(frame) ?? []) {
-      const character = characters.find(item => item.id === span.from.element.characterId)
-      const state = character && session.get(span, frame, character)
-      if (state) result.set(span.elementId, state)
-    }
-    return result
-  }, [samplesByFrame, frame, session, characters, revision, enabled, playing])
-
-  const fallbackTransitions = useMemo(() => {
-    const result = new Map<string, RealtimeTransitionFallback>()
     if (enabled) for (const span of samplesByFrame.get(frame) ?? []) {
-      if (samples.has(span.elementId)) continue
-      const fallback = evaluateRealtimeTransitionFallback(span, frame)
-      if (fallback) result.set(span.elementId, fallback)
+      const character = characters.find(item => item.id === span.from.element.characterId)
+      if (!character) continue
+      // Prefer a genuine Gacha rig raster. A delayed sample repeats the last
+      // correctly rendered pose for this transition; it NEVER overlays ghost
+      // copies of incompatible preset/pose art.
+      const state = session.getBestAvailable(span, frame, character)
+      result.set(span.elementId, state)
     }
     return result
-  }, [samplesByFrame, frame, samples, enabled])
-
+  }, [samplesByFrame, frame, session, characters, revision, enabled])
   const cancelPlayback = () => session.cancelPending()
-  return { samples, fallbackTransitions, cancelPlayback, transitionMetrics: session.metrics() }
+  return { samples, cancelPlayback, transitionMetrics: session.metrics() }
 }

@@ -95,6 +95,22 @@ export class PreviewTransitionSession {
     return allowLastFrame && last?.signature === this.key(span, -1, character) ? last.state : undefined
   }
 
+  /**
+   * Playback may advance before the full Gacha rig frame is ready. Reuse only
+   * an *actual* raster from an earlier absolute frame in the same transition.
+   * If none is ready, show the saved FROM state rather than an invalid ghost
+   * blend. No synthetic approximation can masquerade as the DEV animators.
+   */
+  getBestAvailable(span: CharacterTransition, frame: number, character: CustomizerCharacter): VideoGachaCanvasState {
+    const exact = this.get(span, frame, character)
+    if (exact) return exact
+    for (let sample = Math.floor(frame) - 1; sample > span.startFrame; sample--) {
+      const state = this.get(span, sample, character)
+      if (state) return state
+    }
+    return span.from
+  }
+
   metrics(): PreviewTransitionMetrics {
     return {
       rendered: this.rendered, cacheHits: this.cacheHits, discarded: this.discarded,
@@ -297,9 +313,17 @@ export class PreviewTransitionSession {
     const relevant = spans.filter(span => span.boundaryFrame === boundary)
     for (const span of relevant) {
       const character = this.characterFor(span, characters)
-      for (const sample of transitionSampleFrames(span)) {
+      const all = transitionSampleFrames(span)
+      // First generate sparse, articulated keyframes (roughly 4-frame steps).
+      // Then fill the missing intermediate frames for full fidelity.
+      // This is the REAL Gacha interpolation, not an opacity cross-fade.
+      const anchors = all.filter(sample => (sample - span.startFrame - 1) % 4 === 0)
+      const ordered = [...anchors, ...all.filter(sample => !anchors.includes(sample))]
+      for (const sample of ordered) {
         if (this.disposed || signal.aborted) return
         await this.prepare(span, sample, character)
+        // Allow pointer input, React paints and playback clock between rasters.
+        await new Promise<void>(resolve => setTimeout(resolve, 0))
       }
     }
   }
