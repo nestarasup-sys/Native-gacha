@@ -335,6 +335,12 @@ export class VideoExportCoordinator {
     }
     let surfaceRoundTripMs = 0, composeMs = 0, readbackMs = 0, surfaceOtherMs = 0
     let characterMs = 0, mediaDecodeMs = 0
+    let characterWorkerRenderMs = 0, characterWorkerBitmapMs = 0, characterWorkerRoundTripMs = 0
+    let characterWorkerPostMessageMs = 0, characterWorkerInitMs = 0, characterWorkerTransferBytes = 0
+    let characterWorkerTransferCount = 0, characterWorkerMessages = 0, characterWorkerFallbacks = 0
+    let characterWorkerCacheHits = 0, characterWorkerCacheMisses = 0, characterWorkerCacheInvalidations = 0
+    let characterWorkerCacheBytes = 0, characterWorkerImageCacheHits = 0, characterWorkerImageCacheMisses = 0
+    let characterWorkerImageCacheFailures = 0, characterWorkerImageCacheInvalidations = 0, characterWorkerImageCacheBytes = 0
     let writerWaitMs = 0, writerPeakInFlight = 0
     const frameBytes = 1920 * 1080 * 4
 
@@ -359,6 +365,24 @@ export class VideoExportCoordinator {
         surfaceRoundTripMs,
         characterMs,
         mediaDecodeMs,
+        characterWorkerRenderMs,
+        characterWorkerBitmapMs,
+        characterWorkerRoundTripMs,
+        characterWorkerPostMessageMs,
+        characterWorkerInitMs,
+        characterWorkerTransferBytes,
+        characterWorkerTransferCount,
+        characterWorkerMessages,
+        characterWorkerFallbacks,
+        characterWorkerCacheHits,
+        characterWorkerCacheMisses,
+        characterWorkerCacheInvalidations,
+        characterWorkerCacheBytes,
+        characterWorkerImageCacheHits,
+        characterWorkerImageCacheMisses,
+        characterWorkerImageCacheFailures,
+        characterWorkerImageCacheInvalidations,
+        characterWorkerImageCacheBytes,
         composeMs,
         readbackMs,
         surfaceOtherMs,
@@ -401,6 +425,24 @@ export class VideoExportCoordinator {
           readbackMs += timings.readbackMs
           characterMs += timings.characterMs
           mediaDecodeMs += timings.mediaDecodeMs
+          characterWorkerRenderMs += timings.characterWorkerRenderMs
+          characterWorkerBitmapMs += timings.characterWorkerBitmapMs
+          characterWorkerRoundTripMs += timings.characterWorkerRoundTripMs
+          characterWorkerPostMessageMs += timings.characterWorkerPostMessageMs
+          characterWorkerInitMs += timings.characterWorkerInitMs
+          characterWorkerTransferBytes += timings.characterWorkerTransferBytes
+          characterWorkerTransferCount += timings.characterWorkerTransferCount
+          characterWorkerMessages += timings.characterWorkerMessages
+          characterWorkerFallbacks += timings.characterWorkerFallbacks
+          characterWorkerCacheHits += timings.characterWorkerCacheHits
+          characterWorkerCacheMisses += timings.characterWorkerCacheMisses
+          characterWorkerCacheInvalidations += timings.characterWorkerCacheInvalidations
+          characterWorkerCacheBytes = Math.max(characterWorkerCacheBytes, timings.characterWorkerCacheBytes)
+          characterWorkerImageCacheHits += timings.characterWorkerImageCacheHits
+          characterWorkerImageCacheMisses += timings.characterWorkerImageCacheMisses
+          characterWorkerImageCacheFailures += timings.characterWorkerImageCacheFailures
+          characterWorkerImageCacheInvalidations += timings.characterWorkerImageCacheInvalidations
+          characterWorkerImageCacheBytes = Math.max(characterWorkerImageCacheBytes, timings.characterWorkerImageCacheBytes)
           surfaceOtherMs += Math.max(0, roundTripMs - timings.composeMs - timings.readbackMs)
           frameCache.set(semantic, rgba)
           schedulePersistentWrite(semantic, rgba)
@@ -541,6 +583,24 @@ export class VideoExportCoordinator {
         surfaceRoundTripMs,
         characterMs,
         mediaDecodeMs,
+        characterWorkerRenderMs,
+        characterWorkerBitmapMs,
+        characterWorkerRoundTripMs,
+        characterWorkerPostMessageMs,
+        characterWorkerInitMs,
+        characterWorkerTransferBytes,
+        characterWorkerTransferCount,
+        characterWorkerMessages,
+        characterWorkerFallbacks,
+        characterWorkerCacheHits,
+        characterWorkerCacheMisses,
+        characterWorkerCacheInvalidations,
+        characterWorkerCacheBytes,
+        characterWorkerImageCacheHits,
+        characterWorkerImageCacheMisses,
+        characterWorkerImageCacheFailures,
+        characterWorkerImageCacheInvalidations,
+        characterWorkerImageCacheBytes,
         composeMs,
         readbackMs,
         surfaceOtherMs,
@@ -626,6 +686,24 @@ export class VideoExportCoordinator {
         surfaceRoundTripMs,
         characterMs,
         mediaDecodeMs,
+        characterWorkerRenderMs,
+        characterWorkerBitmapMs,
+        characterWorkerRoundTripMs,
+        characterWorkerPostMessageMs,
+        characterWorkerInitMs,
+        characterWorkerTransferBytes,
+        characterWorkerTransferCount,
+        characterWorkerMessages,
+        characterWorkerFallbacks,
+        characterWorkerCacheHits,
+        characterWorkerCacheMisses,
+        characterWorkerCacheInvalidations,
+        characterWorkerCacheBytes,
+        characterWorkerImageCacheHits,
+        characterWorkerImageCacheMisses,
+        characterWorkerImageCacheFailures,
+        characterWorkerImageCacheInvalidations,
+        characterWorkerImageCacheBytes,
         composeMs,
         readbackMs,
         surfaceOtherMs,

@@ -22,7 +22,30 @@ export type VideoExportSurfaceFrameReady = Readonly<{
   error?: string
   /** Canonical Canvas RGBA bytes; present only on successful frame acknowledgements. */
   pixels?: Uint8Array
-  timings?: Readonly<{ composeMs: number; readbackMs: number; characterMs?: number; mediaDecodeMs?: number }>
+  timings?: Readonly<{
+    composeMs: number
+    readbackMs: number
+    characterMs?: number
+    mediaDecodeMs?: number
+    characterWorkerRenderMs?: number
+    characterWorkerBitmapMs?: number
+    characterWorkerRoundTripMs?: number
+    characterWorkerPostMessageMs?: number
+    characterWorkerInitMs?: number
+    characterWorkerTransferBytes?: number
+    characterWorkerTransferCount?: number
+    characterWorkerMessages?: number
+    characterWorkerFallbacks?: number
+    characterWorkerCacheHits?: number
+    characterWorkerCacheMisses?: number
+    characterWorkerCacheInvalidations?: number
+    characterWorkerCacheBytes?: number
+    characterWorkerImageCacheHits?: number
+    characterWorkerImageCacheMisses?: number
+    characterWorkerImageCacheFailures?: number
+    characterWorkerImageCacheInvalidations?: number
+    characterWorkerImageCacheBytes?: number
+  }>
   /** Diagnostic-only cumulative canvas layer-cache counters for local benchmarks. */
   layerCache?: Readonly<{ hits: number; misses: number; evictions: number; entries: number; bytes: number; maxBytes: number }>
 }>

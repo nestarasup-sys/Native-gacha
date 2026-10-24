@@ -34,6 +34,8 @@ type PreparedGachaRenderer = Awaited<ReturnType<typeof prepareSavedCharacterRend
 /** Session-local reader. No supplier, character, or timeline writes are exposed. */
 export class TransitionRenderer {
   private readonly preparedStatic: VideoStudioBoundedMemo<PreparedGachaRenderer>
+  private preparedCacheHits = 0
+  private preparedCacheMisses = 0
   // Shared by Canvas preview AND the export-surface TransitionRenderer:
   // selected hair/outfit manifests load once per actor revision, while each
   // mixed pose continues to validate/draw the exact original bone geometry.
@@ -354,15 +356,20 @@ export class TransitionRenderer {
           activeExpressionEffects:effects},imageDataUrl:transition.from.imageDataUrl,canvasImage:snapshot.canvas}
       }
     }
-    const renderer = staticPose
-      ? await this.preparedStatic.getOrCreate(
-          JSON.stringify([
+    const preparedKey = JSON.stringify([
             character.id, character.updatedAt, slot,
             a.poseSlot === undefined ? character.customization.poseSlot : a.poseSlot,
             // A legacy face can be baked into the prepared body. Base identity
             // MUST remain exact; fractional interpolations are dynamic only.
             baseAppearance ?? null
-          ]),
+          ])
+    if (staticPose) {
+      if (this.preparedStatic.has(preparedKey)) this.preparedCacheHits += 1
+      else this.preparedCacheMisses += 1
+    }
+    const renderer = staticPose
+      ? await this.preparedStatic.getOrCreate(
+          preparedKey,
           () => prepareSavedCharacterRenderer(copy, { source, artwork, assetProvider: this.assetProvider,
             materialCache: this.reusableMaterials })
         )
@@ -423,8 +430,8 @@ export class TransitionRenderer {
     return this.renderResult(transition, frame, character, true, signal)
   }
 
-  preparedStats(): Readonly<{ entries: number; retainedBytes: number; maxEntries: number; maxBytes: number }> {
-    return this.preparedStatic.stats()
+  preparedStats(): Readonly<{ entries: number; retainedBytes: number; maxEntries: number; maxBytes: number; hits: number; misses: number }> {
+    return { ...this.preparedStatic.stats(), hits: this.preparedCacheHits, misses: this.preparedCacheMisses }
   }
 
   clearPrepared(): void {

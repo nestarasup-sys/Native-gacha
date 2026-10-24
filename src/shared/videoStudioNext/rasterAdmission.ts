@@ -49,7 +49,11 @@ export class VideoStudioRasterAdmission {
       return
     }
     if (this.budget && !lease) {
-      job.reject(new Error('Orçamento de memória insuficiente antes de renderizar o personagem Gacha.'))
+      const snapshot = this.budget.snapshot()
+      job.reject(new Error(
+        `Orçamento de memória insuficiente antes de renderizar o personagem Gacha `
+        + `(usado=${snapshot.usedBytes}, limite=${snapshot.limitBytes}, necessário=${this.estimatedWorkBytes} bytes).`
+      ))
       this.startNext()
       return
     }

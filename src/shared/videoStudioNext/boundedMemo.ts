@@ -80,6 +80,10 @@ export class VideoStudioBoundedMemo<T> {
     return pending
   }
 
+  has(key: string): boolean {
+    return this.entries.has(key)
+  }
+
   stats(): Readonly<{ entries: number; retainedBytes: number; maxEntries: number; maxBytes: number }> {
     return { entries: this.entries.size, retainedBytes: this.retainedBytes, maxEntries: this.maxEntries, maxBytes: this.maxBytes }
   }

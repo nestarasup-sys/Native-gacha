@@ -1,3 +1,5 @@
+import { createCharacterCanvas } from './canvasSurface'
+
 /**
  * The Gacha compositor has two groups of invariant layers around the
  * per-frame facial expression. Prepare them exactly once per rig/pose:
@@ -16,7 +18,7 @@ export type GachaStaticLayers = Readonly<{
 }>
 
 function newLayerCanvas(width: number, height: number): [HTMLCanvasElement, CanvasRenderingContext2D] {
-  const canvas = document.createElement('canvas')
+  const canvas = createCharacterCanvas()
   canvas.width = width
   canvas.height = height
   const context = canvas.getContext('2d')

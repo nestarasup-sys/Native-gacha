@@ -24,7 +24,7 @@ const machine={platform:process.platform,release:os.release(),cpuModel:os.cpus()
 const jobId='726e2b84-aa60-4cf5-95b0-8d2557d9447f'
 const studioId='f2ff96c8-ce44-45fc-9251-34e89ad4c45f'
 const assetId='a64b7ec2-7597-48ac-b87c-c5d487830982'
-const {createCharacterMediaFixture}=require('./character-media-oracle-fixture.cjs')
+const {createAnimatedGachaCharacterFixture}=require('./animated-gacha-character-fixture.cjs')
 
 function loadTs(relativePath){
  const source=fs.readFileSync(path.resolve(__dirname,'../..',relativePath),'utf8')
@@ -103,7 +103,7 @@ app.whenReady().then(async()=>{
  const root=fs.mkdtempSync(path.join(os.tmpdir(),'gv5-full-engine-bench-'))
  const source=path.join(root,'dynamic.mp4')
  run(ffmpeg,['-hide_banner','-loglevel','error','-y','-f','lavfi','-i',`testsrc2=size=640x360:rate=60:duration=${totalFrames/60}`,'-an','-c:v','h264_mf','-b:v','3M','-pix_fmt','yuv420p','-movflags','+faststart',source])
- const bootstrap=await createCharacterMediaFixture({jobId,studioId,assetId,durationFrames:totalFrames})
+ const bootstrap=await createAnimatedGachaCharacterFixture({jobId,studioId,assetId,durationFrames:totalFrames})
  const profileCounts=configureProfile(bootstrap,source)
  protocol.handle('gacha-video',(request)=>{const u=new URL(request.url),[requestedJob,id]=u.pathname.split('/').filter(Boolean),file=profileCounts.sourceByAssetId.get(id);return u.hostname==='export-job'&&requestedJob===jobId&&file?serve(request,file):new Response('not found',{status:404})})
 

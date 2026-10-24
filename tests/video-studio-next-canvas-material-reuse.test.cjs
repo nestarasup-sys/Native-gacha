@@ -59,6 +59,7 @@ function harness(){
    loadCachedImage:async src=>{calls.decoded.push(src);return {src,width:80,height:90,naturalWidth:80,naturalHeight:90}},
    exportImageMemos:null,
   },
+  './canvasSurface':{createCharacterCanvas:()=>document.createElement('canvas'),isCharacterCanvasWorker:()=>false},
   '../../../shared/customizer':{},
   './characterSourceResolver':{},
   '../ui/image/eyeInteriorMask':{},

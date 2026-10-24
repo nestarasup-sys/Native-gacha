@@ -13,15 +13,15 @@ test('export separates actual character Canvas cost from imported media and comp
  assert.match(surface,/characterMs = performance\.now\(\) - started/)
  assert.match(surface,/mediaDecodeMs = performance\.now\(\) - started/)
  assert.match(surface,/Promise\.allSettled\(/,'video decode and Gacha character work remain concurrent')
- assert.match(surface,/characterRenderer!\.renderFrame\(scene, true\)/)
- assert.match(surface,/timings: \{ composeMs, readbackMs, characterMs, mediaDecodeMs \}/)
+ assert.match(surface,/characterRenderer\.renderFrame\(scene, true\)/)
+ assert.match(surface,/timings: \{\s*composeMs, readbackMs, characterMs, mediaDecodeMs,/)
  assert.match(surface,/context\.getImageData\(0, 0, VIDEO_STAGE_WIDTH, VIDEO_STAGE_HEIGHT\)/,
  'exact RGBA stage readback is unchanged for FFmpeg and byte parity')
 })
 test('IPC validates per-step performance values and retains original export frame contract',()=>{
  const shared=read('src/shared/videoExportSurface.ts')
  const host=read('electron/videoExportSurfaceHost.ts')
- assert.match(shared,/characterMs\?: number; mediaDecodeMs\?: number/)
+ assert.match(shared,/characterMs\?: number\s+mediaDecodeMs\?: number/)
  assert.match(host,/Number\.isFinite\(characterMs\) && characterMs >= 0 \? characterMs : 0/)
  assert.match(host,/Number\.isFinite\(mediaDecodeMs\) && mediaDecodeMs >= 0 \? mediaDecodeMs : 0/)
  assert.match(host,/Buffer\.from\(ready\.pixels\.buffer, ready\.pixels\.byteOffset, ready\.pixels\.byteLength\)/)

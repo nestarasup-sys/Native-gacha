@@ -6,7 +6,7 @@ import { matchingVideoVisualPlugin } from './videoVisualPluginRegistry'
 export type VideoStudioDomElementProps = Readonly<{
   element: StudioElement
   imageDataUrl?: string
-  canvasImage?: HTMLCanvasElement | ImageBitmap
+  canvasImage?: HTMLCanvasElement | ImageBitmap | OffscreenCanvas
   assetName?: string
   speakerName?: string
   speakerColor?: string
@@ -19,7 +19,7 @@ export type VideoStudioDomElementProps = Readonly<{
 }>
 
 /** Paint an immutable Gacha Canvas/ImageBitmap snapshot into the DOM layer. */
-export function VideoStudioCanvasRaster({ source, label }: { source: HTMLCanvasElement | ImageBitmap; label: string }) {
+export function VideoStudioCanvasRaster({ source, label }: { source: HTMLCanvasElement | ImageBitmap | OffscreenCanvas; label: string }) {
   const ref = useRef<HTMLCanvasElement>(null)
   useLayoutEffect(() => {
     const context = ref.current?.getContext('2d')

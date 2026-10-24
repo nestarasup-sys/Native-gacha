@@ -8,7 +8,15 @@ import type { VideoExportJobStore } from './videoExportJobs'
 
 export type VideoExportSurfaceFrameResult = Readonly<{
   pixels: Buffer
-  timings: Readonly<{ composeMs: number; readbackMs: number; characterMs: number; mediaDecodeMs: number }>
+  timings: Readonly<{
+    composeMs: number; readbackMs: number; characterMs: number; mediaDecodeMs: number
+    characterWorkerRenderMs: number; characterWorkerBitmapMs: number; characterWorkerRoundTripMs: number
+    characterWorkerPostMessageMs: number; characterWorkerInitMs: number; characterWorkerTransferBytes: number
+    characterWorkerTransferCount: number; characterWorkerMessages: number; characterWorkerFallbacks: number
+    characterWorkerCacheHits: number; characterWorkerCacheMisses: number; characterWorkerCacheInvalidations: number
+    characterWorkerCacheBytes: number; characterWorkerImageCacheHits: number; characterWorkerImageCacheMisses: number
+    characterWorkerImageCacheFailures: number; characterWorkerImageCacheInvalidations: number; characterWorkerImageCacheBytes: number
+  }>
   roundTripMs: number
 }>
 
@@ -110,6 +118,7 @@ export class VideoExportSurfaceHost {
       const readbackMs = Number(ready.timings?.readbackMs)
       const characterMs = Number(ready.timings?.characterMs)
       const mediaDecodeMs = Number(ready.timings?.mediaDecodeMs)
+      const workerNumber = (value: unknown) => Number.isFinite(Number(value)) && Number(value) >= 0 ? Number(value) : 0
       pending.resolve({
         pixels: Buffer.from(ready.pixels.buffer, ready.pixels.byteOffset, ready.pixels.byteLength),
         timings: {
@@ -117,6 +126,24 @@ export class VideoExportSurfaceHost {
           readbackMs: Number.isFinite(readbackMs) && readbackMs >= 0 ? readbackMs : 0,
           characterMs: Number.isFinite(characterMs) && characterMs >= 0 ? characterMs : 0,
           mediaDecodeMs: Number.isFinite(mediaDecodeMs) && mediaDecodeMs >= 0 ? mediaDecodeMs : 0,
+          characterWorkerRenderMs: workerNumber(ready.timings?.characterWorkerRenderMs),
+          characterWorkerBitmapMs: workerNumber(ready.timings?.characterWorkerBitmapMs),
+          characterWorkerRoundTripMs: workerNumber(ready.timings?.characterWorkerRoundTripMs),
+          characterWorkerPostMessageMs: workerNumber(ready.timings?.characterWorkerPostMessageMs),
+          characterWorkerInitMs: workerNumber(ready.timings?.characterWorkerInitMs),
+          characterWorkerTransferBytes: workerNumber(ready.timings?.characterWorkerTransferBytes),
+          characterWorkerTransferCount: workerNumber(ready.timings?.characterWorkerTransferCount),
+          characterWorkerMessages: workerNumber(ready.timings?.characterWorkerMessages),
+          characterWorkerFallbacks: workerNumber(ready.timings?.characterWorkerFallbacks),
+          characterWorkerCacheHits: workerNumber(ready.timings?.characterWorkerCacheHits),
+          characterWorkerCacheMisses: workerNumber(ready.timings?.characterWorkerCacheMisses),
+          characterWorkerCacheInvalidations: workerNumber(ready.timings?.characterWorkerCacheInvalidations),
+          characterWorkerCacheBytes: workerNumber(ready.timings?.characterWorkerCacheBytes),
+          characterWorkerImageCacheHits: workerNumber(ready.timings?.characterWorkerImageCacheHits),
+          characterWorkerImageCacheMisses: workerNumber(ready.timings?.characterWorkerImageCacheMisses),
+          characterWorkerImageCacheFailures: workerNumber(ready.timings?.characterWorkerImageCacheFailures),
+          characterWorkerImageCacheInvalidations: workerNumber(ready.timings?.characterWorkerImageCacheInvalidations),
+          characterWorkerImageCacheBytes: workerNumber(ready.timings?.characterWorkerImageCacheBytes),
         },
         roundTripMs: Math.max(0, performance.now() - pending.startedAt),
       })

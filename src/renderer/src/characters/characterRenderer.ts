@@ -6,7 +6,7 @@ import { mapWardrobeComponentToPose, wardrobePosePadding } from '../../../shared
 import { normalizeLayerOrder } from '../../../shared/modelRig'
 import { validateWardrobeFlow } from '../../../shared/assetFlow'
 import { wardrobeAdjustmentMatrix } from '../../../shared/wardrobeAdjustment'
-import { eyeInteriorMask } from '../ui/image/eyeInteriorMask'
+import { eyeInteriorMaskSource } from '../ui/image/eyeInteriorMask'
 import { tintSkinPixels } from './skinTint'
 import { configureCharacterSampling, MAX_CHARACTER_PREVIEW_PIXELS } from './renderResolution'
 import { drawFaceExpressionEffects } from './expressionEffectRender'
@@ -16,6 +16,7 @@ import { resolveSavedCharacterSource, characterShapeScale, type CatalogArtwork }
 import { getCharacterProportions } from '../../../shared/customizer'
 import { prepareGachaStaticLayers } from './gachaStaticLayers'
 import { exportImageMemos, loadCachedImage } from './characterImageMemos'
+import { createCharacterCanvas, isCharacterCanvasWorker } from './canvasSurface'
 export { loadCachedImage, configureVideoExportCharacterImageCaches, clearVideoExportCharacterImageCaches, disposeVideoExportCharacterImageCaches } from './characterImageMemos'
 export { withCharacterHeadSize, characterShapeScale } from './characterSourceResolver'
 export type { CatalogArtwork } from './characterSourceResolver'
@@ -118,7 +119,7 @@ export function loadHairTintedImage(source: string, overrides: HairColorOverride
     if (cached) return cached
   }
   const createTinted = () => loadCachedImage(source).then((sourceImage) => {
-    const canvas = document.createElement('canvas')
+    const canvas = createCharacterCanvas()
     canvas.width = sourceImage.naturalWidth || sourceImage.width
     canvas.height = sourceImage.naturalHeight || sourceImage.height
     const context = canvas.getContext('2d', { willReadFrequently: true })
@@ -160,6 +161,7 @@ export function loadHairTintedImage(source: string, overrides: HairColorOverride
       pixels[offset + 2] = Math.min(255, target[2] * shade)
     }
     context.putImageData(imageData, 0, 0)
+    if (isCharacterCanvasWorker()) return canvas as unknown as HTMLImageElement
     const output = new Image()
     output.src = canvas.toDataURL('image/png')
     if (output.decode) return output.decode().then(() => output)
@@ -183,7 +185,7 @@ export function loadSkinTintedImage(source: string, tone: string): Promise<HTMLI
     if (cached) return cached
   }
   const createTinted = () => loadCachedImage(source).then((sourceImage) => {
-    const canvas = document.createElement('canvas')
+    const canvas = createCharacterCanvas()
     canvas.width = sourceImage.naturalWidth || sourceImage.width
     canvas.height = sourceImage.naturalHeight || sourceImage.height
     const context = canvas.getContext('2d', { willReadFrequently: true })
@@ -192,6 +194,7 @@ export function loadSkinTintedImage(source: string, tone: string): Promise<HTMLI
     const pixels = context.getImageData(0, 0, canvas.width, canvas.height)
     tintSkinPixels(pixels, tone)
     context.putImageData(pixels, 0, 0)
+    if (isCharacterCanvasWorker()) return canvas as unknown as HTMLImageElement
     const output = new Image()
     output.src = canvas.toDataURL('image/png')
     if (output.decode) return output.decode().then(() => output)
@@ -300,7 +303,7 @@ export async function renderWardrobeOverlayCanvases(
   highlight?: AdjustmentPreviewHighlight | null
 ): Promise<{ canvas: HTMLCanvasElement | null; aboveHairCanvas: HTMLCanvasElement | null }> {
   if (!groups.length || modelSlot === null || !source) return { canvas: null, aboveHairCanvas: null }
-  const output = document.createElement('canvas')
+  const output = createCharacterCanvas()
   const pixelScale = Math.min(maxSize / Math.max(artwork.width, artwork.height), Math.sqrt(MAX_CHARACTER_PREVIEW_PIXELS / (artwork.width * artwork.height)))
   output.width = Math.max(1, Math.ceil(artwork.width * pixelScale))
   output.height = Math.max(1, Math.ceil(artwork.height * pixelScale))
@@ -401,7 +404,7 @@ export async function renderWardrobeOverlayCanvases(
         const renderAboveHair = garment.component.renderAboveHair === true
           && (garment.component.category === 'oculos' || garment.component.category === 'acessorio-cabeca')
         if (renderAboveHair && !aboveHairContext) {
-          aboveHairCanvas = document.createElement('canvas')
+          aboveHairCanvas = createCharacterCanvas()
           aboveHairCanvas.width = output.width
           aboveHairCanvas.height = output.height
           aboveHairContext = aboveHairCanvas.getContext('2d')
@@ -455,7 +458,7 @@ export async function renderWardrobeOverlay(
 export async function renderArtwork(artwork: CatalogArtwork, maxSize: number, skinTone?: string, trimTransparent = false): Promise<string | null> {
   if (artwork.width <= 0 || artwork.height <= 0) return null
   const scale = Math.min(maxSize / artwork.width, maxSize / artwork.height)
-  const canvas = document.createElement('canvas')
+  const canvas = createCharacterCanvas()
   canvas.width = Math.max(1, Math.round(artwork.width * scale))
   canvas.height = Math.max(1, Math.round(artwork.height * scale))
   const context = canvas.getContext('2d')
@@ -503,7 +506,7 @@ export async function renderArtwork(artwork: CatalogArtwork, maxSize: number, sk
   }
   if (right < left || bottom < top) return canvas.toDataURL('image/png')
   const margin = 0
-  const trimmed = document.createElement('canvas')
+  const trimmed = createCharacterCanvas()
   trimmed.width = right - left + 1 + margin * 2
   trimmed.height = bottom - top + 1 + margin * 2
   trimmed.getContext('2d')?.drawImage(canvas, left, top, right - left + 1, bottom - top + 1, margin, margin, right - left + 1, bottom - top + 1)
@@ -522,7 +525,7 @@ export async function renderArtworkWithHair(artwork: CatalogArtwork, source: Fab
     return targetContext ? null : fallback
   }
   const scale = Math.min(maxSize / artwork.width, maxSize / artwork.height)
-  const canvas = targetContext?.canvas ?? document.createElement('canvas')
+  const canvas = targetContext?.canvas ?? createCharacterCanvas()
   if (!targetContext) {
     canvas.width = Math.max(1, Math.round(artwork.width * scale))
     canvas.height = Math.max(1, Math.round(artwork.height * scale))
@@ -585,7 +588,7 @@ export async function renderFrontHairOverlay(artwork: CatalogArtwork, source: Fa
   const targetHead = artwork.parts.find((part) => /cabe[çc]a|head/i.test(part.name))
   if (!sourceHead || !targetHead || sourceHead.width <= 0 || sourceHead.height <= 0) return null
   const scale = Math.min(maxSize / artwork.width, maxSize / artwork.height)
-  const canvas = targetContext?.canvas ?? document.createElement('canvas')
+  const canvas = targetContext?.canvas ?? createCharacterCanvas()
   if (!targetContext) canvas.width = Math.max(1, Math.round(artwork.width * scale))
   if (!targetContext) canvas.height = Math.max(1, Math.round(artwork.height * scale))
   const context = targetContext ?? canvas.getContext('2d')
@@ -624,7 +627,7 @@ export async function renderFaceOverlay(artwork: CatalogArtwork, source: Fabrica
   const sourceHead = source.parts.find((part) => /cabe[çc]a|head/i.test(part.name))
   const targetHead = artwork.parts.find((part) => /cabe[çc]a|head/i.test(part.name))
   if (!sourceHead || !targetHead || sourceHead.width <= 0 || sourceHead.height <= 0) return null
-  const canvas = document.createElement('canvas')
+  const canvas = createCharacterCanvas()
   const pixelScale = Math.min(maxSize / Math.max(artwork.width, artwork.height), Math.sqrt(MAX_CHARACTER_PREVIEW_PIXELS / (artwork.width * artwork.height)))
   canvas.width = Math.max(1, Math.ceil(artwork.width * pixelScale))
   canvas.height = Math.max(1, Math.ceil(artwork.height * pixelScale))
@@ -892,7 +895,7 @@ export async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, 
     try {
       const image = await loadHairTintedImage(asset.dataUrl, selectedPart.colors, { preserveNearWhite: true, allowNearWhiteRoles: selectedPart.manualColorRoles })
       if (category === 'pupil' && pupilEyeClip) {
-        if (!pupilClipCanvas) { pupilClipCanvas = document.createElement('canvas'); pupilClipCanvas.width = context.canvas.width; pupilClipCanvas.height = context.canvas.height }
+        if (!pupilClipCanvas) { pupilClipCanvas = createCharacterCanvas(); pupilClipCanvas.width = context.canvas.width; pupilClipCanvas.height = context.canvas.height }
         const clipped = pupilClipCanvas.getContext('2d')
         if (clipped) {
           clipped.clearRect(0, 0, pupilClipCanvas.width, pupilClipCanvas.height)
@@ -901,7 +904,7 @@ export async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, 
           if (pupilFlip) clipped.scale(-1, 1)
           clipped.drawImage(image, -width / 2, -height / 2, width, height); clipped.restore()
 
-          const eyeMask = await loadCachedImage(await eyeInteriorMask(pupilEyeClip.asset.dataUrl))
+          const eyeMask = await loadCachedImage(await eyeInteriorMaskSource(pupilEyeClip.asset.dataUrl))
           const eyeLocalX = pupilEyeClip.transform.x / sourceHead.width * targetHead.width
           const eyeLocalY = pupilEyeClip.transform.y / sourceHead.height * targetHead.height
           const eyeX = targetHead.x + targetHead.width / 2 + (eyeLocalX - targetHead.width / 2) * Math.cos(radians) - (eyeLocalY - targetHead.height / 2) * Math.sin(radians)
@@ -1062,7 +1065,7 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
   const hairAppearance = character.customization.hairAppearance
   const materials = await materialsForPreparedCharacter(character, modelSlot, assetProvider, renderSource?.materialCache)
   const { backStyles, frontStyles } = materials
-  const baseImage = document.createElement('canvas')
+  const baseImage = createCharacterCanvas()
   baseImage.width = artwork.width
   baseImage.height = artwork.height
   const baseContext = baseImage.getContext('2d')
@@ -1111,7 +1114,7 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
       if (face) legacyFaceUrl = await renderFaceOverlay(artwork, source, face, appearance)
     }
   }
-  const frontHairImage = frontStyles.length ? document.createElement('canvas') : null
+  const frontHairImage = frontStyles.length ? createCharacterCanvas() : null
   if (frontHairImage) {
     frontHairImage.width = artwork.width
     frontHairImage.height = artwork.height
@@ -1124,7 +1127,7 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
   const wardrobeImage = wardrobe.canvas
   const wardrobeAboveHairImage = wardrobe.aboveHairCanvas
   const legacyFaceImage = legacyFaceUrl ? await loadCachedImage(legacyFaceUrl) : null
-  const canvas = document.createElement('canvas')
+  const canvas = createCharacterCanvas()
   canvas.width = Math.max(1, artwork.width)
   canvas.height = Math.max(1, artwork.height)
   const context = canvas.getContext('2d')
@@ -1198,7 +1201,7 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
   let faceContext: CanvasRenderingContext2D | null = null
   const ensureFaceLayer = () => {
     if (!faceLayer) {
-      const prepared = document.createElement('canvas')
+      const prepared = createCharacterCanvas()
       prepared.width = canvas.width
       prepared.height = canvas.height
       const context = prepared.getContext('2d')
@@ -1244,7 +1247,7 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
     if (rigLayers.inFrontOfFace) context.drawImage(rigLayers.inFrontOfFace, 0, 0, canvas.width, canvas.height)
     if (shapeScale.x === 1 && shapeScale.y === 1) return { canvas, width: canvas.width, height: canvas.height }
     if (!scaledOutput) {
-      scaledOutput = document.createElement('canvas')
+      scaledOutput = createCharacterCanvas()
       scaledOutput.width = outputWidth
       scaledOutput.height = outputHeight
       scaledContext = scaledOutput.getContext('2d')

@@ -57,6 +57,10 @@ function fakeRenderer() {
   const renderer = moduleFrom('../src/renderer/src/characters/characterRenderer.ts', {
     require: (id) => {
       if (id === './characterImageMemos') return imageMemos
+      if (id === './canvasSurface') return {
+        createCharacterCanvas: () => document.createElement('canvas'),
+        isCharacterCanvasWorker: () => false,
+      }
       if (id.endsWith('/hairCategories')) return { hairCategories: [] }
       if (id.endsWith('/skinTint')) return { tintSkinPixels: () => {} }
       return {}

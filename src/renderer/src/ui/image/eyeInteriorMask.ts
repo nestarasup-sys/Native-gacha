@@ -1,8 +1,11 @@
-const maskCache = new Map<string, Promise<string>>()
+import { createCharacterCanvas, isCharacterCanvasWorker } from '../../characters/canvasSurface'
+
+type EyeMaskImage = string | CanvasImageSource
+const maskCache = new Map<string, Promise<HTMLCanvasElement | null>>()
 const MAX_CACHED_MASKS = 48
 
 /** Builds an alpha mask from the light inner eye area, leaving its dark outline outside the mask. */
-export function eyeInteriorMask(dataUrl: string): Promise<string> {
+async function buildEyeInteriorMask(dataUrl: string): Promise<HTMLCanvasElement | null> {
   const cached = maskCache.get(dataUrl)
   if (cached) return cached
 
@@ -10,11 +13,11 @@ export function eyeInteriorMask(dataUrl: string): Promise<string> {
     const response = await fetch(dataUrl)
     const bitmap = await createImageBitmap(await response.blob())
     try {
-      const canvas = document.createElement('canvas')
+      const canvas = createCharacterCanvas()
       canvas.width = bitmap.width
       canvas.height = bitmap.height
       const context = canvas.getContext('2d', { willReadFrequently: true })
-      if (!context) return dataUrl
+      if (!context) return null
       context.drawImage(bitmap, 0, 0)
       const pixels = context.getImageData(0, 0, canvas.width, canvas.height)
       const values = pixels.data
@@ -32,11 +35,11 @@ export function eyeInteriorMask(dataUrl: string): Promise<string> {
       }
 
       context.putImageData(pixels, 0, 0)
-      return canvas.toDataURL('image/png')
+      return canvas
     } finally {
       bitmap.close()
     }
-  })().catch(() => dataUrl)
+  })().catch(() => null)
 
   maskCache.set(dataUrl, pending)
   while (maskCache.size > MAX_CACHED_MASKS) {
@@ -45,4 +48,15 @@ export function eyeInteriorMask(dataUrl: string): Promise<string> {
     maskCache.delete(oldestKey)
   }
   return pending
+}
+
+export async function eyeInteriorMask(dataUrl: string): Promise<string> {
+  const canvas = await buildEyeInteriorMask(dataUrl)
+  return canvas?.toDataURL('image/png') ?? dataUrl
+}
+
+export async function eyeInteriorMaskSource(dataUrl: string): Promise<EyeMaskImage> {
+  const canvas = await buildEyeInteriorMask(dataUrl)
+  if (!canvas) return dataUrl
+  return isCharacterCanvasWorker() ? canvas as unknown as CanvasImageSource : canvas.toDataURL('image/png')
 }

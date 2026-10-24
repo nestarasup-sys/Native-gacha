@@ -25,7 +25,10 @@ function harness() {
     },
   }
   const mod = { exports: {} }
-  new Function('module', 'exports', 'document', compiled)(mod, mod.exports, document)
+  new Function('module', 'exports', 'document', 'require', compiled)(mod, mod.exports, document, (name) => {
+    if (name === './canvasSurface') return { createCharacterCanvas: () => document.createElement('canvas') }
+    throw new Error(`Import inesperado: ${name}`)
+  })
   return { prepare: mod.exports.prepareGachaStaticLayers, canvases }
 }
 

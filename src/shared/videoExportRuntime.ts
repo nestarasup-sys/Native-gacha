@@ -31,6 +31,24 @@ export type VideoExportMetrics = Readonly<{
   characterMs?: number
   /** Time acquiring imported video bitmaps; may overlap with characterMs. */
   mediaDecodeMs?: number
+  characterWorkerRenderMs?: number
+  characterWorkerBitmapMs?: number
+  characterWorkerRoundTripMs?: number
+  characterWorkerPostMessageMs?: number
+  characterWorkerInitMs?: number
+  characterWorkerTransferBytes?: number
+  characterWorkerTransferCount?: number
+  characterWorkerMessages?: number
+  characterWorkerFallbacks?: number
+  characterWorkerCacheHits?: number
+  characterWorkerCacheMisses?: number
+  characterWorkerCacheInvalidations?: number
+  characterWorkerCacheBytes?: number
+  characterWorkerImageCacheHits?: number
+  characterWorkerImageCacheMisses?: number
+  characterWorkerImageCacheFailures?: number
+  characterWorkerImageCacheInvalidations?: number
+  characterWorkerImageCacheBytes?: number
   composeMs?: number
   readbackMs?: number
   surfaceOtherMs?: number

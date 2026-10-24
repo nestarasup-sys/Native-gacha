@@ -11,6 +11,10 @@ function load(relativePath, dependencies = {}, globals = {}) {
   const mod = { exports: {} }
   new Function('require', 'module', 'exports', 'document', 'Image', 'HTMLCanvasElement', compiled)(
     (name) => {
+      if (name.endsWith('/canvasSurface')) return {
+        createCharacterCanvas: () => globals.document.createElement('canvas'),
+        isCharacterCanvasWorker: () => false,
+      }
       if (!Object.hasOwn(dependencies, name)) throw new Error('Unexpected runtime dependency: ' + name)
       return dependencies[name]
     },

@@ -1,15 +1,16 @@
 import type { VideoCharacterState } from '../../../../shared/studio'
+import { createCharacterCanvas } from '../../characters/canvasSurface'
 
 /**
  * Export-surface-only raster. Never serialize it into StudioDocument v1:
  * an independent canvas snapshot replaces the per-expression PNG round-trip.
  */
 export type VideoGachaCanvasState = VideoCharacterState & Readonly<{
-  canvasImage?: HTMLCanvasElement | ImageBitmap
+  canvasImage?: HTMLCanvasElement | ImageBitmap | OffscreenCanvas
 }>
 
 export type VideoGachaCanvasRaster = Readonly<{
-  canvas: HTMLCanvasElement | ImageBitmap
+  canvas: HTMLCanvasElement | ImageBitmap | OffscreenCanvas
   width: number
   height: number
   crop: Readonly<{ width: number; height: number }> | null
@@ -53,7 +54,7 @@ export function snapshotTrimmedGachaCanvas(source: HTMLCanvasElement): VideoGach
   }
   // This snapshot must not share the mutable source canvas of a prepared rig.
   // Later mouth/blink renders repaint that source before the cached state expires.
-  const canvas = document.createElement('canvas')
+  const canvas = createCharacterCanvas()
   canvas.width = width
   canvas.height = height
   const context = canvas.getContext('2d')
@@ -73,6 +74,7 @@ export async function snapshotTrimmedPreviewGachaCanvas(
   signal?: AbortSignal,
 ): Promise<VideoGachaCanvasRaster> {
   signal?.throwIfAborted()
+  if (typeof document === 'undefined') return snapshotTrimmedGachaCanvas(source)
   try {
     const { cropGachaCanvasInWorker } = await import('./previewCanvasWorkerClient')
     const cropped = await cropGachaCanvasInWorker(source, signal)

@@ -37,6 +37,9 @@ export class VideoCharacterFrameRenderer {
   private readonly stateIds = new WeakMap<object, number>()
   private nextStateId = 0
   private readonly faceCatalogs = new Map<number, Promise<FaceCatalogItemSummary[]>>()
+  private frameCacheHits = 0
+  private frameCacheMisses = 0
+  private cacheInvalidations = 0
 
   constructor(
     private readonly characters: VideoExportCharacterSnapshot,
@@ -63,6 +66,8 @@ export class VideoCharacterFrameRenderer {
   }
 
   private remember(key: string, create: () => Promise<VideoGachaCanvasState>): Promise<VideoGachaCanvasState> {
+    if (this.cache.has(key)) this.frameCacheHits += 1
+    else this.frameCacheMisses += 1
     return this.cache.getOrCreate(key, () => this.admission.run(create))
   }
 
@@ -74,6 +79,7 @@ export class VideoCharacterFrameRenderer {
     frame: VideoSceneFrame,
     character: VideoSceneFrame['characters'][number],
     directCanvas: boolean,
+    signal?: AbortSignal,
   ): Promise<VideoGachaCanvasState> {
     const transition = character.transition
     if (!transition) throw new Error('Transição ausente no frame solicitado.')
@@ -86,7 +92,7 @@ export class VideoCharacterFrameRenderer {
         boundaryFrame: transition.boundaryFrame,
         from: transition.from,
         to: transition.to,
-      }, frame.frame, source)
+      }, frame.frame, source, signal)
       return character.stageTransform
         ? { ...rendered, element: { ...rendered.element, ...character.stageTransform } }
         : rendered
@@ -111,7 +117,7 @@ export class VideoCharacterFrameRenderer {
     return pending
   }
 
-  private renderFaceState(state: VideoCharacterState, mode: StudioFaceMode, transforms: StudioFaceTransforms, recipe: string, directCanvas: boolean): Promise<VideoGachaCanvasState> {
+  private renderFaceState(state: VideoCharacterState, mode: StudioFaceMode, transforms: StudioFaceTransforms, recipe: string, directCanvas: boolean, signal?: AbortSignal): Promise<VideoGachaCanvasState> {
     const characterId = state.element.characterId
     if (!characterId) throw new Error('Estado de personagem sem characterId.')
     const source = characterFromVideoExportSnapshot(this.characters, characterId)
@@ -124,24 +130,26 @@ export class VideoCharacterFrameRenderer {
       boundaryFrame: 2,
       from: synthetic,
       to: synthetic,
-    }, 1, source))
+    }, 1, source, signal))
   }
 
-  private renderBlink(state: VideoCharacterState, directCanvas: boolean): Promise<VideoGachaCanvasState> {
+  private renderBlink(state: VideoCharacterState, directCanvas: boolean, signal?: AbortSignal): Promise<VideoGachaCanvasState> {
     if (faceModeForElement(state.element) !== 'idle' || !state.element.faceAppearance) return Promise.resolve(state)
-    return this.renderFaceState(state, 'blink', state.element.faceTransforms ?? {}, 'blink', directCanvas)
+    return this.renderFaceState(state, 'blink', state.element.faceTransforms ?? {}, 'blink', directCanvas, signal)
       .catch(() => state) // Preview also treats a missing closed-eye asset as an optional effect.
   }
 
-  private async renderMouth(state: VideoCharacterState, frame: number, speechStartFrame: number, mode: 'talk' | 'idle', directCanvas: boolean): Promise<VideoGachaCanvasState> {
+  private async renderMouth(state: VideoCharacterState, frame: number, speechStartFrame: number, mode: 'talk' | 'idle', directCanvas: boolean, signal?: AbortSignal): Promise<VideoGachaCanvasState> {
+    signal?.throwIfAborted()
     const appearance = state.element.faceAppearance
     if (!appearance) return state
-    if (mode !== 'talk') return this.renderFaceState(state, 'idle', state.element.faceTransforms ?? {}, 'idle', directCanvas).catch(() => state)
+    if (mode !== 'talk') return this.renderFaceState(state, 'idle', state.element.faceTransforms ?? {}, 'idle', directCanvas, signal).catch(() => state)
     const characterId = state.element.characterId
     if (!characterId) return state
     const character = characterFromVideoExportSnapshot(this.characters, characterId)
     const modelSlot = character.customization.modelSlot ?? 1
     const faceItems = await this.faceCatalogForSlot(modelSlot)
+    signal?.throwIfAborted()
     const openMouthId = resolveStudioTalkMouthId(appearance, faceItems.filter((item) => item.modelSlot === modelSlot))
     const saved = state.element.faceTransforms ?? {}
     const closedMouthId = appearance.mouthClosedCatalogId
@@ -157,16 +165,17 @@ export class VideoCharacterFrameRenderer {
     const transforms = scale.width === 1 && scale.height === 1
       ? saved
       : { ...saved, mouth: { ...mouth, width: mouth.width * scale.width, height: mouth.height * scale.height } }
-    return this.renderFaceState(state, 'talk', transforms, `talk:${index}`, directCanvas).catch(() => state)
+    return this.renderFaceState(state, 'talk', transforms, `talk:${index}`, directCanvas, signal).catch(() => state)
   }
 
   /** Resolve pixel-ready character states for one absolute frame using the same renderer recipes as the preview. */
-  async renderFrame(frame: VideoSceneFrame, directCanvas = false): Promise<ReadonlyMap<string, VideoGachaCanvasState>> {
+  async renderFrame(frame: VideoSceneFrame, directCanvas = false, signal?: AbortSignal): Promise<ReadonlyMap<string, VideoGachaCanvasState>> {
     const states = new Map<string, VideoGachaCanvasState>()
     for (const character of frame.characters) {
+      signal?.throwIfAborted()
       if (character.hidden || !character.authoredState) continue
       if (character.transition) {
-        states.set(character.elementId, await this.renderTransition(frame, character, directCanvas))
+        states.set(character.elementId, await this.renderTransition(frame, character, directCanvas, signal))
         continue
       }
       if (character.automaticMouth) {
@@ -176,11 +185,12 @@ export class VideoCharacterFrameRenderer {
           character.automaticMouth.speechStartFrame,
           character.automaticMouth.mode,
           directCanvas,
+          signal,
         ))
         continue
       }
       if (character.automaticBlink) {
-        states.set(character.elementId, await this.renderBlink(character.authoredState, directCanvas))
+        states.set(character.elementId, await this.renderBlink(character.authoredState, directCanvas, signal))
         continue
       }
       states.set(character.elementId, character.authoredState)
@@ -188,7 +198,22 @@ export class VideoCharacterFrameRenderer {
     return states
   }
 
+  diagnostics(): Readonly<{
+    frameCache: ReturnType<VideoStudioBoundedMemo<VideoGachaCanvasState>['stats']>
+    preparedCanvases: ReturnType<TransitionRenderer['preparedStats']>
+    frameCacheHits: number
+    frameCacheMisses: number
+    cacheInvalidations: number
+  }> {
+    return {
+      frameCache: this.cache.stats(), preparedCanvases: this.transitionRenderer.preparedStats(),
+      frameCacheHits: this.frameCacheHits, frameCacheMisses: this.frameCacheMisses,
+      cacheInvalidations: this.cacheInvalidations,
+    }
+  }
+
   clear(): void {
+    this.cacheInvalidations += 1
     this.cache.clear()
     this.faceCatalogs.clear()
     this.transitionRenderer.clearPrepared()

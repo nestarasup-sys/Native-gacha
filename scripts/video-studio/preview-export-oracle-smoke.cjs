@@ -54,6 +54,7 @@ let pendingResolve=null
 let timer
 let settled=false
 const intentionalClose=new WeakSet()
+const diagnostics=[]
 
 function fail(reason){
   if(settled)return
@@ -63,7 +64,8 @@ function fail(reason){
   ipcMain.removeAllListeners('video-studio:export-surface:ready')
   ipcMain.removeAllListeners('video-studio:export-surface:frame-ready')
   if(activeWindow&&!activeWindow.isDestroyed())activeWindow.destroy()
-  console.error(reason instanceof Error?reason.stack||reason.message:String(reason))
+  console.error(`${reason instanceof Error?reason.stack||reason.message:String(reason)}${diagnostics.length?`\nRenderer diagnostics: ${JSON.stringify(diagnostics)}`:''}`)
+  process.exitCode=1
   app.exit(1)
 }
 
@@ -72,6 +74,8 @@ function createWindow(offscreen){
     show:false,frame:false,resizable:false,width,height,useContentSize:true,backgroundColor:'#000000',
     webPreferences:{preload:preloadPath,contextIsolation:true,nodeIntegration:false,sandbox:true,backgroundThrottling:false,offscreen},
   })
+  win.webContents.on('did-fail-load',(_event,errorCode,errorDescription,url,isMainFrame)=>diagnostics.push({type:'did-fail-load',errorCode,errorDescription,url,isMainFrame}))
+  win.webContents.on('render-process-gone',(_event,details)=>diagnostics.push({type:'render-process-gone',details}))
   win.webContents.on('render-process-gone',(_event,details)=>{if(!intentionalClose.has(win))fail(new Error(`Oracle renderer encerrou: ${details.reason}`))})
   activeWindow=win
   return win
@@ -80,6 +84,7 @@ function createWindow(offscreen){
 app.disableHardwareAcceleration()
 app.commandLine.appendSwitch('disable-background-timer-throttling')
 app.commandLine.appendSwitch('force-device-scale-factor','1')
+app.on('window-all-closed',()=>{})
 app.whenReady().then(async()=>{
   timer=setTimeout(()=>fail(new Error('Oracle Preview↔Export excedeu 60 segundos.')),60000)
   const allowed=new Set()
@@ -116,7 +121,11 @@ app.whenReady().then(async()=>{
   const domReady=new Promise((resolve,reject)=>{pendingResolve={resolve,reject,win:dom}})
   await dom.loadFile(rendererFile,{hash:`/video-preview-oracle?jobId=${jobId}`})
   const domPixels=await domReady
-  allowed.delete(dom.webContents.id);intentionalClose.add(dom);dom.destroy()
+  allowed.delete(dom.webContents.id);intentionalClose.add(dom)
+  const domClosed=new Promise(resolve=>dom.once('closed',resolve))
+  dom.destroy()
+  await domClosed
+  await new Promise(resolve=>setTimeout(resolve,150))
 
   const canvas=createWindow(true)
   allowed.add(canvas.webContents.id)

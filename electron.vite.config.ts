@@ -30,6 +30,7 @@ export default defineConfig({
     root: resolve(projectRoot, 'src/renderer'),
     resolve: { alias: { '@': resolve(projectRoot, 'src/renderer/src') } },
     plugins: [react()],
+    worker: { format: 'es' },
     build: { outDir: 'out/renderer' }
   }
 })
