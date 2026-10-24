@@ -6,6 +6,76 @@ export type VideoFrameSelection = {
   videoClips: VideoMediaClip[]
 }
 
+type Interval = { startFrame: number; endFrame: number }
+type IntervalEntry<T extends Interval> = Readonly<{ item: T; originalIndex: number }>
+type IntervalIndex<T extends Interval> = Readonly<{
+  entries: readonly IntervalEntry<T>[]
+  prefixMaxEnd: readonly number[]
+}>
+
+/**
+ * At 60 FPS, scanning ALL clips/gaps for every playhead update scales with the
+ * total length of a project rather than what is visible now. Index immutable
+ * timeline arrays once and query only intervals that can overlap the frame.
+ * Original array order is restored because overlapping clips use first-wins
+ * semantics for text, and clip order matters to the stage compositor.
+ */
+function buildIntervalIndex<T extends Interval>(items: readonly T[]): IntervalIndex<T> {
+  const entries = items.flatMap((item, originalIndex) =>
+    Number.isInteger(item.startFrame) && Number.isInteger(item.endFrame) && item.endFrame > item.startFrame
+      ? [{ item, originalIndex }] : [],
+  ).sort((left, right) => left.item.startFrame - right.item.startFrame || left.originalIndex - right.originalIndex)
+  const prefixMaxEnd: number[] = []
+  let latestEnd = -Infinity
+  for (const entry of entries) {
+    latestEnd = Math.max(latestEnd, entry.item.endFrame)
+    prefixMaxEnd.push(latestEnd)
+  }
+  return { entries, prefixMaxEnd }
+}
+
+function intervalsAt<T extends Interval>(index: IntervalIndex<T>, frame: number): T[] {
+  const { entries, prefixMaxEnd } = index
+  let lo = 0, hi = entries.length
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1
+    if (entries[mid].item.startFrame <= frame) lo = mid + 1
+    else hi = mid
+  }
+  const matches: IntervalEntry<T>[] = []
+  for (let pos = lo - 1; pos >= 0 && prefixMaxEnd[pos] > frame; pos--) {
+    if (entries[pos].item.endFrame > frame) matches.push(entries[pos])
+  }
+  matches.sort((a, b) => a.originalIndex - b.originalIndex)
+  return matches.map(entry => entry.item)
+}
+
+type SelectionIndex = Readonly<{
+  gapsRef: VideoTimelineDocument['characterGaps']
+  textRef: VideoTimelineDocument['textClips']
+  clipsRef: VideoTimelineDocument['videoClips']
+  gaps: IntervalIndex<NonNullable<VideoTimelineDocument['characterGaps']>[number]>
+  text: IntervalIndex<VideoTimelineDocument['textClips'][number]>
+  clips: IntervalIndex<VideoMediaClip>
+}>
+const selectionIndices = new WeakMap<VideoTimelineDocument, SelectionIndex>()
+
+function selectionIndex(timeline: VideoTimelineDocument): SelectionIndex {
+  const previous = selectionIndices.get(timeline)
+  if (previous && previous.gapsRef === timeline.characterGaps
+    && previous.textRef === timeline.textClips && previous.clipsRef === timeline.videoClips) return previous
+  const next: SelectionIndex = {
+    gapsRef: timeline.characterGaps,
+    textRef: timeline.textClips,
+    clipsRef: timeline.videoClips,
+    gaps: buildIntervalIndex(timeline.characterGaps ?? []),
+    text: buildIntervalIndex(timeline.textClips),
+    clips: buildIntervalIndex(timeline.videoClips ?? []),
+  }
+  selectionIndices.set(timeline, next)
+  return next
+}
+
 /** Resolve timeline visibility from an absolute frame, independent of playback state. */
 export function resolveVideoFrameSelection(timeline: VideoTimelineDocument, frame: number): VideoFrameSelection {
   const hiddenCharacterIds = new Set<string>()
@@ -14,17 +84,12 @@ export function resolveVideoFrameSelection(timeline: VideoTimelineDocument, fram
   if (!Number.isSafeInteger(frame) || frame < 0 || frame >= timeline.durationFrames) {
     return { hiddenCharacterIds, textClipByElementId, videoClips }
   }
-  for (const gap of timeline.characterGaps ?? []) {
-    if (Number.isInteger(gap.startFrame) && Number.isInteger(gap.endFrame) && gap.startFrame <= frame && frame < gap.endFrame) hiddenCharacterIds.add(gap.elementId)
+  const index = selectionIndex(timeline)
+  for (const gap of intervalsAt(index.gaps, frame)) hiddenCharacterIds.add(gap.elementId)
+  for (const clip of intervalsAt(index.text, frame)) {
+    if (!textClipByElementId.has(clip.elementId)) textClipByElementId.set(clip.elementId, clip)
   }
-  for (const clip of timeline.textClips) {
-    if (!textClipByElementId.has(clip.elementId) && Number.isInteger(clip.startFrame) && Number.isInteger(clip.endFrame) && clip.startFrame <= frame && frame < clip.endFrame) {
-      textClipByElementId.set(clip.elementId, clip)
-    }
-  }
-  for (const clip of timeline.videoClips ?? []) {
-    if (Number.isInteger(clip.startFrame) && Number.isInteger(clip.endFrame) && clip.startFrame <= frame && frame < clip.endFrame) videoClips.push(clip)
-  }
+  videoClips.push(...intervalsAt(index.clips, frame))
   return { hiddenCharacterIds, textClipByElementId, videoClips }
 }
 
@@ -42,4 +107,3 @@ export function automaticBlinkFrameFor(frame: number, characterId: string, frame
   const phase = ((frame + offset) % period + period) % period
   return phase < Math.max(1, Math.round(frameRate * 0.12))
 }
-

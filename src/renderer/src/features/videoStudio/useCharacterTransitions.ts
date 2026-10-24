@@ -46,7 +46,7 @@ export function useCharacterTransitions(
   useEffect(() => {
     if (!studio || !enabled || (withinTransition && !playing) || nextBoundary === null || nextBoundary - frame > 360) return
     let live = true
-    void session.prepareAhead(spans, frame, characters).then(() => {
+    void session.prepareAhead(spans, frame, characters, 'interactive').then(() => {
       if (live) setRevision(value => value + 1)
     }).catch((error: unknown) => {
       if (live) onError(error instanceof Error ? error.message : 'Erro ao preparar a animação Gacha real.')
@@ -56,10 +56,15 @@ export function useCharacterTransitions(
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [studio?.id, enabled, session, spans, characters, nextBoundary, warmupBucket, playing, onError])
 
-  // Paused seek requests its exact sample immediately; never queue an entire
-  // future transition in front of a direct user seek.
+  // Demand the visible frame. When a real pose raster exceeds a 60 FPS frame
+  // budget, request only exact 4-frame anchors during Play, coalescing obsolete
+  // work; while paused, always produce the precise frame the user selected.
+  // This is preview-only. Export keeps all original 60 FPS authored samples.
   useEffect(() => {
-    if (!studio || !enabled || playing) return
+    if (!studio || !enabled) return
+    if (playing && session.metrics().lastRenderMs > 20 && !spans.some(span =>
+      frame > span.startFrame && frame < span.boundaryFrame
+      && (frame - span.startFrame - 1) % 4 === 0)) return
     session.requestFrame(spans, frame, characters,
       () => setRevision(value => value + 1),
       (error) => onError(error instanceof Error ? error.message : 'Erro ao renderizar a prévia de personagem.'),

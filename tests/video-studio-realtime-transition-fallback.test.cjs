@@ -12,7 +12,7 @@ test('playback chooses actual Canvas rig interpolated by production compositor, 
   const editor = read('VideoStudioEditor.tsx')
   const dom = read('VideoStudioDomElement.tsx')
   assert.match(hook, /session\.getBestAvailable\(span, frame, character\)/)
-  assert.match(hook, /session\.prepareAhead\(spans, frame, characters\)/)
+  assert.match(hook, /session\.prepareAhead\(spans, frame, characters, 'interactive'\)/)
   assert.doesNotMatch(hook, /evaluateRealtimeTransitionFallback/)
   assert.doesNotMatch(dom, /transitionFallback|video-studio-character-blend/)
   assert.doesNotMatch(editor, /transitionFallback/)

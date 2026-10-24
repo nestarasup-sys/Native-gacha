@@ -304,8 +304,16 @@ export class PreviewTransitionSession {
     }
   }
 
-  /** Prepare exactly the nearest upcoming transition boundary, not every future key. */
-  async prepareAhead(spans: readonly CharacterTransition[], frame: number, characters: readonly CustomizerCharacter[]): Promise<void> {
+  /**
+   * Offline/full callers retain every exact intermediate sample. Interactive
+   * preview uses only articulated anchors and a short budget so 14 expensive
+   * Canvas renders cannot monopolize the editor before each transition.
+   * Cache entries are exact poses, never blended/approximated screenshots.
+   */
+  async prepareAhead(
+    spans: readonly CharacterTransition[], frame: number,
+    characters: readonly CustomizerCharacter[], mode: 'full' | 'interactive' = 'full',
+  ): Promise<void> {
     if (this.disposed) return
     const boundary = spans.reduce<number | null>((nearest, span) =>
       span.boundaryFrame > frame && (nearest === null || span.boundaryFrame < nearest)
@@ -315,20 +323,35 @@ export class PreviewTransitionSession {
     if (boundary === null) return
     const signal = this.abort.signal
     const relevant = spans.filter(span => span.boundaryFrame === boundary)
-    for (const span of relevant) {
+    const jobs: Array<{ span: CharacterTransition; sample: number; character: CustomizerCharacter }> = []
+    const orderedByActor = relevant.map(span => {
       const character = this.characterFor(span, characters)
       const all = transitionSampleFrames(span)
-      // First generate sparse, articulated keyframes (roughly 4-frame steps).
-      // Then fill the missing intermediate frames for full fidelity.
-      // This is the REAL Gacha interpolation, not an opacity cross-fade.
+      // Sparse anchor artwork is still the actual articulated Gacha renderer.
       const anchors = all.filter(sample => (sample - span.startFrame - 1) % 4 === 0)
-      const ordered = [...anchors, ...all.filter(sample => !anchors.includes(sample))]
-      for (const sample of ordered) {
-        if (this.disposed || signal.aborted) return
-        await this.prepare(span, sample, character)
-        // Allow pointer input, React paints and playback clock between rasters.
-        await new Promise<void>(resolve => setTimeout(resolve, 0))
+      return { span, character, ordered: mode === 'interactive' ? anchors :
+        [...anchors, ...all.filter(sample => !anchors.includes(sample))] }
+    })
+    if (mode === 'interactive') {
+      // Round-robin prevents actor A consuming an entire CPU budget before
+      // actors B/C get their first pose during a many-character scene.
+      for (let index = 0; index < orderedByActor.reduce((max, item) => Math.max(max, item.ordered.length), 0); index++) {
+        for (const item of orderedByActor) {
+          if (item.ordered[index] !== undefined) jobs.push({ ...item, sample: item.ordered[index] })
+        }
       }
+    } else {
+      for (const item of orderedByActor) for (const sample of item.ordered) jobs.push({ ...item, sample })
+    }
+    const began = performance.now()
+    for (const job of jobs) {
+      if (this.disposed || signal.aborted) return
+      // A costly raster is uninterruptible once begun. At least stop the
+      // prefetch queue afterwards instead of painting another 13 frames.
+      if (mode === 'interactive' && performance.now() - began > 32) return
+      await this.prepare(job.span, job.sample, job.character)
+      // Allow pointer input, React paints and playback clock between rasters.
+      await new Promise<void>(resolve => setTimeout(resolve, 0))
     }
   }
 

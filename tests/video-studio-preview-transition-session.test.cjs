@@ -255,3 +255,31 @@ test('after seek, stale actor identity cannot reject real Gacha frames from the 
   assert.ok(frames.some(x => x.boundary === 65))
   session.dispose()
 })
+
+test('interactive prefetch prepares only exact anchor rasters, not every 60 FPS transition frame', async () => {
+  const frames = []
+  const session = new Session('studio', {
+    render: async (_span, frame) => { frames.push(frame); return state },
+    dispose() {},
+  })
+  await session.prepareAhead(spans, 0, [actor], 'interactive')
+  assert.deepEqual(frames, [11, 15, 19, 23])
+  assert.equal(session.metrics().cachedFrames, 4)
+  session.dispose()
+})
+
+test('interactive prefetch stops producing artwork when a frame already exhausted the UI budget', async () => {
+  const frames = []
+  const session = new Session('studio', {
+    render: async (_span, frame) => {
+      frames.push(frame)
+      await new Promise(resolve => setTimeout(resolve, 45))
+      return state
+    },
+    dispose() {},
+  })
+  await session.prepareAhead(spans, 0, [actor], 'interactive')
+  assert.deepEqual(frames, [11], 'one already-started Canvas render cannot be preempted')
+  assert.equal(session.metrics().cachedFrames, 1)
+  session.dispose()
+})
