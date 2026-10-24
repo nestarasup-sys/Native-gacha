@@ -107,3 +107,46 @@ test('Canvas compositor draws a facial CanvasImageSource rather than decoding it
   assert.equal(drawCalls[0].source, faceCanvas)
   assert.equal(drawCalls[0].rest.length, 4, 'drawTransformed follows the old character geometry')
 })
+
+test('Canvas export reuses the pinned mouth catalog across many 60 FPS speech phases', async () => {
+  const { VideoStudioBoundedMemo } = load('../src/shared/videoStudioNext/boundedMemo.ts')
+  const { VideoStudioRasterAdmission } = load('../src/shared/videoStudioNext/rasterAdmission.ts')
+  const reads = { catalog: 0, faces: 0 }
+  class StubTransitionRenderer {
+    async renderCanvas(transition) {
+      reads.faces++
+      return { ...transition.from, canvasImage: { width: 8, height: 8 } }
+    }
+    clearPrepared() {}
+    dispose() {}
+  }
+  const { VideoCharacterFrameRenderer } = load('../src/renderer/src/features/videoStudio/videoCharacterFrameRenderer.ts', {
+    '../../../../shared/studio': { resolveStudioTalkMouthId: () => 'mouth-open' },
+    '../../../../shared/videoExportCharacters': { characterFromVideoExportSnapshot: () => ({
+      id:'character-1', customization:{modelSlot:1,faceAppearance:{modelSlot:1}},
+    }) },
+    '../../../../shared/videoCharacterRenderAssets': { createVideoCharacterRenderSnapshotProvider: () => ({
+      listFaceCatalog: async () => { reads.catalog++; return [] },
+    }) },
+    './transitionRenderer': { TransitionRenderer: StubTransitionRenderer },
+    '../../../../shared/videoStudioNext/boundedMemo': { VideoStudioBoundedMemo },
+    '../../../../shared/videoStudioNext/rasterAdmission': { VideoStudioRasterAdmission },
+  })
+  const renderer = new VideoCharacterFrameRenderer({}, {})
+  const state = { element: { id:'actor',kind:'character',characterId:'character-1',
+    faceAppearance: { modelSlot:1,mouthClosedCatalogId:'mouth-closed' },
+    faceTransforms:{},activeFaceMode:'talk' }, imageDataUrl:'base' }
+  const frame = at => ({ frame:at, characters:[{
+    elementId:'actor',hidden:false,authoredState:state,
+    automaticMouth:{mode:'talk',speechStartFrame:0},
+  }] })
+  await renderer.renderFrame(frame(0), true)
+  await renderer.renderFrame(frame(7), true)
+  await renderer.renderFrame(frame(13), true)
+  assert.equal(reads.catalog,1,'one pinned face sheet read, not one read per rendered frame')
+  assert.equal(reads.faces,3,'every distinct mouth shape still renders independently')
+  renderer.clear()
+  await renderer.renderFrame(frame(0), true)
+  assert.equal(reads.catalog,2,'clearing the scene also invalidates cached catalog references')
+  renderer.dispose()
+})
