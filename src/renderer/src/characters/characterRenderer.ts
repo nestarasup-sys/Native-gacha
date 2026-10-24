@@ -683,6 +683,7 @@ export async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, 
     'mouth-open': appearance.mouthOpen ? appearance.mouthOpenCatalogId : undefined
   }
   for (const element of faceElementOrder) {
+    if (gpuPass && gpuPass !== 'catalog') break
     if (element.startsWith('brow') && !appearance.eyebrows) continue
     const componentPart = element === 'eye-left' || element === 'eye-right' || element === 'brow-left' || element === 'brow-right' ? element : null
     if (componentPart) {
