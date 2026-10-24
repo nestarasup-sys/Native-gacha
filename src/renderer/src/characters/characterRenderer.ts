@@ -15,6 +15,9 @@ import type { VideoCharacterRenderAssetProvider } from '../../../shared/videoCha
 import { resolveSavedCharacterSource, characterShapeScale, type CatalogArtwork } from './characterSourceResolver'
 import { getCharacterProportions } from '../../../shared/customizer'
 import { prepareGachaStaticLayers } from './gachaStaticLayers'
+import { createPreparedGachaGpuLayers, type GachaFacePass } from './gachaPreparedGpuLayers'
+export { GPU_FACE_PASSES } from './gachaPreparedGpuLayers'
+export type { GachaFacePass } from './gachaPreparedGpuLayers'
 import { exportImageMemos, loadCachedImage } from './characterImageMemos'
 export { loadCachedImage, configureVideoExportCharacterImageCaches, clearVideoExportCharacterImageCaches, disposeVideoExportCharacterImageCaches } from './characterImageMemos'
 export { withCharacterHeadSize, characterShapeScale } from './characterSourceResolver'
@@ -680,15 +683,6 @@ function alignMouthTransformToClosedBase(transform: FaceComponentAsset['defaultT
 
 type StudioClosedEyeResolver = (openEye: FaceComponentAsset, side: 'left' | 'right') => Promise<FaceComponentAsset | null>
 
-/** Independent catalog draw passes used by the GPU engine. Existing canvas
- * callers omit this parameter and preserve the old painter's order. */
-export type GachaFacePass = 'effects' | 'catalog' | 'details' | 'extras'
-  | 'brow-left' | 'brow-right' | 'eye-left' | 'eye-right'
-  | 'pupil-left' | 'pupil-right'
-export const GPU_FACE_PASSES: readonly GachaFacePass[] = [
-  'effects','catalog','brow-left','brow-right','eye-left','eye-right',
-  'pupil-left','pupil-right','details','extras'
-] as const
 
 export async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, artwork: CatalogArtwork, source: FabricatorProject, items: Partial<Record<FaceSheetKind | FaceElementKind, FaceCatalogItem>>, appearance: CustomizerFaceAppearance, skinTone?: string, studioFaceTransforms?: StudioFaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: StudioFaceMode, resolveClosedEye?: StudioClosedEyeResolver, headOverrides: CustomizerCharacter['customization']['partOverrides'] = {}, highlightedHeadId?: string | null, assetProvider: VideoCharacterRenderAssetProvider = window.desktop, gpuPass?: GachaFacePass): Promise<void> {
   const sourceHead = source.parts.find((part) => /cabe[çc]a|head/i.test(part.name))
@@ -1119,59 +1113,10 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
     outputContext.drawImage(canvas, -canvas.width / 2, -canvas.height / 2)
     return { canvas: output, width: outputWidth, height: outputHeight }
   }
-  // The rig/wardrobe/hair textures are static for a prepared pose; only
-  // the selected face pass is repainted. Individual PT pupils never trigger
-  // a redraw or upload of the body texture.
-  const scaled = (sourceCanvas: HTMLCanvasElement): HTMLCanvasElement => {
-    if (shapeScale.x === 1 && shapeScale.y === 1) return sourceCanvas
-    const result = document.createElement('canvas')
-    result.width = outputWidth
-    result.height = outputHeight
-    const out = result.getContext('2d')
-    if (!out) throw new Error('Canvas de camada proporcional indisponível.')
-    out.translate(outputWidth / 2, outputHeight / 2)
-    out.scale(shapeScale.x, shapeScale.y)
-    out.drawImage(sourceCanvas, -sourceCanvas.width / 2, -sourceCanvas.height / 2)
-    return result
-  }
-  const rigBack = scaled(rigLayers.behindFace)
-  const rigFront = rigLayers.inFrontOfFace ? scaled(rigLayers.inFrontOfFace) : null
-  const renderGpuFacePass = async (
-    pass: GachaFacePass,
-    currentAppearance: CustomizerFaceAppearance | undefined = appearance,
-    studioFaceTransforms?: StudioFaceTransforms,
-    expressionEffects?: FaceExpressionEffects,
-    studioFaceMode?: StudioFaceMode
-  ): Promise<HTMLCanvasElement> => {
-    const faceCanvas = document.createElement('canvas')
-    faceCanvas.width = artwork.width
-    faceCanvas.height = artwork.height
-    const faceContext = faceCanvas.getContext('2d')
-    if (!faceContext) throw new Error('Camada facial Gacha indisponível.')
-    await drawFace(faceContext, currentAppearance, studioFaceTransforms, expressionEffects, studioFaceMode, pass)
-    return scaled(faceCanvas)
-  }
-  const renderGpuLayers = async (
-    currentAppearance: CustomizerFaceAppearance | undefined = appearance,
-    studioFaceTransforms?: StudioFaceTransforms,
-    expressionEffects?: FaceExpressionEffects,
-    studioFaceMode?: StudioFaceMode
-  ): Promise<ReadonlyArray<{ id: string; source: HTMLCanvasElement }>> => {
-    const layers: Array<{id:string;source:HTMLCanvasElement}> = [{id:'rig-behind-face',source:rigBack}]
-    const needFace = Boolean(currentAppearance?.modelSlot === modelSlot)
-    if (needFace) {
-      for (const part of GPU_FACE_PASSES) {
-        layers.push({id:'face:'+part,source:await renderGpuFacePass(part,currentAppearance,studioFaceTransforms,expressionEffects,studioFaceMode)})
-      }
-    } else if (legacyFaceImage) {
-      const legacy = document.createElement('canvas')
-      legacy.width=artwork.width;legacy.height=artwork.height
-      const ctx=legacy.getContext('2d')
-      if(ctx){ctx.drawImage(legacyFaceImage,0,0,legacy.width,legacy.height);layers.push({id:'face:legacy',source:scaled(legacy)})}
-    }
-    if (rigFront) layers.push({id:'rig-front',source:rigFront})
-    return layers
-  }
+  const {renderGpuLayers,renderGpuFacePass,gpuStaticLayers}=createPreparedGachaGpuLayers({
+    rigLayers,shapeScale,outputWidth,outputHeight,artworkWidth:artwork.width,
+    artworkHeight:artwork.height,modelSlot,appearance,legacyFaceImage,drawFace
+  })
   const render = async (...args: Parameters<typeof renderToCanvas>) => {
     const value = await renderToCanvas(...args)
     return { dataUrl: value.canvas.toDataURL('image/png'), width: value.width, height: value.height }
