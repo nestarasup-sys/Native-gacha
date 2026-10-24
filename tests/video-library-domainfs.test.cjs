@@ -23,7 +23,7 @@ test('video imports resolve physical content from active app-data domain storage
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'gacha-video-domainfs-'))
   const dataRoot = path.join(root, 'app-data')
   const userData = path.join(root, 'profile')
-  const libraryRoot = path.join(userData, 'studios', 'Video Studio')
+  const libraryRoot = path.join(userData, 'studios', 'Editor Gacha')
   const source = path.join(root, 'synthetic.mp4')
   const bytes = Buffer.from('synthetic video bytes for the import regression')
   const catalog = new DataPlatform(dataRoot).initialize()
