@@ -45,6 +45,12 @@ export class TransitionRenderer {
     surface: import('./pixiGachaLayerSurface').PixiGachaLayerSurface
   }>>()
   private readonly disabledExperimentalGpu = new Set<string>()
+  private readonly articulatedGpu = new Map<string, {
+    identity: string
+    from: PoseArtwork
+    to: PoseArtwork
+    promise: Promise<import('./pixiGachaArticulatedSession').PixiGachaArticulatedSession>
+  }>()
   private readonly gpuDrawQueues = new Map<string, Promise<void>>()
   private gpuGeneration = 0
 
@@ -121,6 +127,68 @@ export class TransitionRenderer {
       if (this.gpuDrawQueues.get(characterId) === settled) this.gpuDrawQueues.delete(characterId)
     })
     return next
+  }
+
+  /**
+   * Real pose-changing path: load skin/wardrobe/hair textures once and let
+   * WebGL move them with the body bones. The legacy compositor is used only
+   * when the pixel admission gate refuses a frame or the GPU is unavailable.
+   */
+  private async drawExperimentalArticulatedGpu(
+    character: CustomizerCharacter, source: FabricatorProject,
+    from: PoseArtwork, to: PoseArtwork, intermediate: PoseArtwork,
+    appearance: CustomizerFaceAppearance | undefined,
+    transforms: StudioFaceTransforms, effects: FaceExpressionEffects,
+    mode: VideoCharacterState['element']['activeFaceMode'],
+  ): Promise<HTMLCanvasElement | null> {
+    const id = character.id
+    if (!this.gpuPreviewEnabled() || this.disabledExperimentalGpu.has(id)) return null
+    const generation = this.gpuGeneration
+    const previous = this.gpuDrawQueues.get(id) ?? Promise.resolve()
+    const task = previous.then(async (): Promise<HTMLCanvasElement | null> => {
+      if (generation !== this.gpuGeneration || this.disabledExperimentalGpu.has(id)) return null
+      try {
+        const identity = JSON.stringify([character.id,character.updatedAt,character.customization,
+          from.layerOrder,to.layerOrder])
+        let cached = this.articulatedGpu.get(id)
+        if (cached && (cached.identity !== identity || cached.from !== from || cached.to !== to)) {
+          void cached.promise.then(instance => instance.dispose()).catch(()=>{})
+          this.articulatedGpu.delete(id)
+          cached = undefined
+        }
+        if (!cached) {
+          const promise = import('./pixiGachaArticulatedSession').then(
+            ({ PixiGachaArticulatedSession }) =>
+              PixiGachaArticulatedSession.create(character,source,from,to,this.assetProvider))
+          cached={identity,from,to,promise}
+          this.articulatedGpu.set(id,cached)
+        }
+        const session=await cached.promise
+        if (generation !== this.gpuGeneration) return null
+        const gpu=await session.render(intermediate,appearance,transforms,effects,mode)
+        if (generation !== this.gpuGeneration) return null
+        // Capture *while this actor queue is held*; the next face paint must
+        // not overwrite a previous timeline frame before crop/snapshot.
+        const stable=document.createElement('canvas')
+        stable.width=gpu.width; stable.height=gpu.height
+        const context=stable.getContext('2d')
+        if (!context) throw new Error('Não foi possível capturar a pose articulada GPU.')
+        context.drawImage(gpu,0,0)
+        return stable
+      } catch {
+        this.disabledExperimentalGpu.add(id)
+        const pending=this.articulatedGpu.get(id)
+        this.articulatedGpu.delete(id)
+        if (pending) void pending.promise.then(instance=>instance.dispose()).catch(()=>{})
+        return null
+      }
+    })
+    const settled=task.then(()=>undefined,()=>undefined)
+    this.gpuDrawQueues.set(id,settled)
+    void settled.then(()=>{
+      if(this.gpuDrawQueues.get(id)===settled)this.gpuDrawQueues.delete(id)
+    })
+    return task
   }
 
 
@@ -230,6 +298,25 @@ export class TransitionRenderer {
     const artwork = staticPose ? fromPose : mixPoseArtwork(fromPose, toPose, t)
     const baseAppearance = staticPose ? (t < .5 ? aa : ba) : appearance
     const copy: CustomizerCharacter = { ...character, customization: { ...character.customization, faceAppearance: baseAppearance } }
+    const mode = t < .5 ? a.activeFaceMode : b.activeFaceMode
+    // The default continues through the canonical Canvas renderer.
+    // GPU opt-in bypasses prepareSavedCharacterRenderer PER INTERMEDIATE POSE:
+    // skin, fitted garments and hair are transformed as persistent sprites.
+    // Legacy face sets which bake expression pixels need the old path.
+    if (!staticPose && directCanvas && previewCrop
+      && (aa?.setId ?? null) === (ba?.setId ?? null)) {
+      const accelerated = await this.drawExperimentalArticulatedGpu(
+        character,source,fromPose,toPose,artwork,appearance,transforms,effects,mode)
+      if (accelerated) {
+        signal?.throwIfAborted()
+        const snapshot = await snapshotTrimmedPreviewGachaCanvas(accelerated,signal)
+        const geometry = faceRenderGeometry(element,
+          {canvas:accelerated,width:accelerated.width,height:accelerated.height},
+          snapshot.crop,1920,1080)
+        return {element:{...element,...geometry,faceAppearance:appearance,faceTransforms:transforms,
+          activeExpressionEffects:effects},imageDataUrl:transition.from.imageDataUrl,canvasImage:snapshot.canvas}
+      }
+    }
     const renderer = staticPose
       ? await this.preparedStatic.getOrCreate(
           JSON.stringify([
@@ -243,7 +330,6 @@ export class TransitionRenderer {
         )
       : await prepareSavedCharacterRenderer(copy, { source, artwork, assetProvider: this.assetProvider })
     signal?.throwIfAborted()
-    const mode = t < .5 ? a.activeFaceMode : b.activeFaceMode
     if (directCanvas) {
       // The prepared body/wardrobe/front-hair canvases are reused, while the
       // unchanged facial overlay draws dynamic mouth, blink and independent PT
@@ -306,6 +392,10 @@ export class TransitionRenderer {
     this.gpuGeneration++
     this.preparedStatic.clear()
     this.gpuDrawQueues.clear()
+    for (const {promise} of this.articulatedGpu.values()) {
+      void promise.then(instance=>instance.dispose()).catch(()=>{})
+    }
+    this.articulatedGpu.clear()
     for (const pending of this.experimentalGpu.values()) {
       void pending.then(({ surface }) => surface.dispose()).catch(() => {})
     }
