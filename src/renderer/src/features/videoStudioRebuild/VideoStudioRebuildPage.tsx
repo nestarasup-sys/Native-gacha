@@ -106,7 +106,8 @@ export function VideoStudioRebuildPage({onEditorActiveChange}:Props) {
     let graph:GachaGpuStage
     try{graph=new GachaGpuStage(canvas.current)}
     catch(e){setStatus('GPU indisponível: '+String(e));return}
-    const media=new VideoStudioMediaEngine(studio.id,studio.videoTimeline?.videoAssets??[])
+    const media=new VideoStudioMediaEngine(studio.id,studio.videoTimeline?.videoAssets??[],2,
+      {master:studio.videoTimeline?.videoAudio,clips:studio.videoTimeline?.videoClips??[]})
     const instance=new VideoStudioPreviewTransport(engine,graph,media,
       state=>{
         setFrame(state.frame)

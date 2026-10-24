@@ -1,4 +1,5 @@
-import type { VideoStudioAsset } from '../../../../shared/studio'
+import type { VideoStudioAsset, VideoMediaClip, VideoAudioSettings } from '../../../../shared/studio'
+import { videoAudioOutput } from '../../../../shared/videoAudio'
 import type { VideoSceneFrame } from '../../../../shared/videoSceneIR'
 
 type MediaEntry = { element: HTMLVideoElement; source: string; ready: boolean }
@@ -22,6 +23,7 @@ export class VideoStudioMediaEngine {
   private anchor: { frame: number; at: number } | null = null
   private playing = false
   private audioMasterId: string | null = null
+  private audioMasterClipId: string | null = null
   private readonly sessionId = crypto.randomUUID()
   private workerFrame: { frame: number; at: number } | null = null
   private lastWorkerSync = 0
@@ -32,7 +34,8 @@ export class VideoStudioMediaEngine {
   constructor(
     private readonly studioId: string,
     private readonly assets: readonly VideoStudioAsset[],
-    private readonly maxDecoders = 2
+    private readonly maxDecoders = 2,
+    private readonly audio: Readonly<{ master?: VideoAudioSettings; clips: readonly VideoMediaClip[] }> = { clips: [] }
   ) {
     if (!Number.isSafeInteger(maxDecoders) || maxDecoders < 1) throw new RangeError('Limite de decodificadores inválido.')
   }
@@ -102,7 +105,7 @@ export class VideoStudioMediaEngine {
   currentFrame(fallbackFrame: number, scene?: VideoSceneFrame): number {
     if (!this.playing) return fallbackFrame
     if (scene && this.audioMasterId) {
-      const active=scene.videos.find(v=>v.assetId===this.audioMasterId)
+      const active=scene.videos.find(v=>v.clipId===this.audioMasterClipId)
       const media=this.videos.get(this.audioMasterId)?.element
       if (active && media && !media.paused && media.readyState>=2) {
         return Math.max(0,Math.round((media.currentTime*60)-active.sourceTick+scene.frame))
@@ -129,11 +132,19 @@ export class VideoStudioMediaEngine {
     // The independent utility process owns the rational 60 fps timeline clock.
     // Feed it the native media clock when an audible source is ready; never
     // await IPC in requestAnimationFrame or make Play wait for an asset render.
+    const gains=new Map(scene.videos.map(video=>[video.clipId,
+      videoAudioOutput(this.audio.master,
+        this.audio.clips.find(clip=>clip.id===video.clipId)?.audio,playing)] as const))
+    // Only a real audible source may own the AV clock. Muted clips still
+    // decode and render, but must not override timeline timing.
+    const audible=scene.videos.find(video=>!gains.get(video.clipId)?.muted)
+    this.audioMasterId=audible?.assetId??null
+    this.audioMasterClipId=audible?.clipId??null
     const now=performance.now()
     if(!this.workerOnline && now>=this.workerRetryAt)this.workerOnline=true
     if(this.workerOnline && !this.workerSyncPending && now-this.lastWorkerSync>=200) {
       this.lastWorkerSync=now;this.workerSyncPending=true
-      const masterVideo=scene.videos[0]
+      const masterVideo=audible
       const element=masterVideo&&this.videos.get(masterVideo.assetId)?.element
       const audioFrame=element && !element.paused && element.readyState>=2
         ? Math.max(0,Math.round(element.currentTime*60-masterVideo.sourceTick+scene.frame))
@@ -146,7 +157,6 @@ export class VideoStudioMediaEngine {
         .finally(()=>{this.workerSyncPending=false})
     }
     const activeIds=new Set(scene.videos.map(v=>v.assetId))
-    this.audioMasterId=scene.videos[0]?.assetId ?? null
     // Free idle decoder slots: otherwise a timeline with >2 distinct videos
     // eventually becomes unable to open its third clip.
     for(const [id, entry] of this.videos) if(!activeIds.has(id)) {
@@ -163,7 +173,9 @@ export class VideoStudioMediaEngine {
       if (Number.isFinite(element.duration) && Math.abs(element.currentTime-target)>(playing ? .2 : 1/60)) {
         try {element.currentTime=Math.max(0,Math.min(target,element.duration-.001))} catch { /* wait for decoder */ }
       }
-      element.muted=video.assetId!==this.audioMasterId
+      const gain=gains.get(video.clipId)!
+      element.volume=gain.volume
+      element.muted=gain.muted||video.clipId!==this.audioMasterClipId
       if(playing && element.paused) void element.play().catch(()=>undefined)
       if(!playing && !element.paused) element.pause()
     }
@@ -181,7 +193,7 @@ export class VideoStudioMediaEngine {
     this.generation++
     this.loadController.abort()
     this.loadController = new AbortController()
-    this.playing=false;this.anchor=null;this.audioMasterId=null
+    this.playing=false;this.anchor=null;this.audioMasterId=null;this.audioMasterClipId=null
     for(const element of this.loadingElements) {
       element.pause()
       element.removeAttribute('src')
