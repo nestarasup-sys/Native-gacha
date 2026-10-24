@@ -15,6 +15,7 @@ if(process.platform!=='win32')throw Error('Este smoke é Windows-only.')
 const root=path.resolve(__dirname,'../..')
 const main=path.join(root,'out','main','main.js')
 if(!fs.existsSync(main))throw Error('Execute npm run build antes do smoke.')
+const catalogMode=process.argv.includes('--catalog-gpu')
 const runId=randomUUID()
 const runRoot=path.join(root,'out','dev-ai','runs',runId)
 const sandbox=path.join(runRoot,'sandbox')
@@ -31,6 +32,10 @@ const port=()=>new Promise((resolve,reject)=>{
   })
 })
 async function run(){
+  if(catalogMode){
+    const {createCompleteCharacterFixture}=require('../fabricator/complete-character-fixture.cjs')
+    await createCompleteCharacterFixture(path.join(sandbox,'electron-user-data'))
+  }
   const debugPort=await port()
   const electron=require('electron')
   const env={...process.env,GACHA_DEV_AI_TEST:'1',GACHA_DEV_AI_SANDBOX:sandbox,
@@ -84,6 +89,63 @@ async function run(){
       throw Error('Timeout esperando '+description)
     }
     await send('Runtime.enable')
+    if(catalogMode){
+      await evaluate("location.hash='#/video-studio';true")
+      await until("Boolean(document.querySelector('.video-rebuild-library'))",'biblioteca do catálogo')
+      const projectId=randomUUID()
+      await evaluate(`(async()=>{
+        const user=await window.desktop.createCustomizerCharacter('GPU PT synthetic')
+        const appearance={modelSlot:1,eyeState:0,eyebrows:false,noseIndex:0,
+          expressionIndex:0,mouthOpen:false,
+          components:{
+            'eye-left':{assetId:'regEyeL'},
+            'eye-right':{assetId:'regEyeR'},
+            'pupil-left':{assetId:'regPupilL'},
+            'pupil-right':{assetId:'regPupilR'}
+          }}
+        const character={...user,customization:{...user.customization,
+          modelSlot:1,poseSlot:1,partOverrides:user.customization.partOverrides??{},
+          faceAppearance:appearance}}
+        await window.desktop.saveCustomizerCharacter(character)
+        const paint=document.createElement('canvas');paint.width=256;paint.height=384
+        const context=paint.getContext('2d')
+        context.fillStyle='#fff';context.fillRect(0,0,256,384)
+        const dataUrl=paint.toDataURL('image/png')
+        const actorId=crypto.randomUUID(),assetId=crypto.randomUUID()
+        const actor={id:actorId,kind:'character',characterId:character.id,
+          assetId,text:'',poseSlot:1,faceAppearance:appearance,
+          x:0,y:0,width:26,height:82,rotation:0,flipX:false,zIndex:1}
+        const now=new Date().toISOString()
+        await window.desktop.saveVideoStudio({
+          schemaVersion:1,id:'${projectId}',title:'CATALOG GPU SYNTHETIC ${runId}',
+          color:'#526ea9',createdAt:now,updatedAt:now,backgroundColor:'#101725',
+          backgroundAssetId:null,backgroundX:0,backgroundY:0,backgroundWidth:100,
+          backgroundHeight:100,backgroundRotation:0,
+          assets:[{id:assetId,category:'character',name:'PNG fallback',
+            mimeType:'image/png',dataUrl}],
+          elements:[actor],
+          videoTimeline:{schemaVersion:1,frameRate:60,durationFrames:120,
+            playheadFrame:0,playing:false,characterKeys:[],textClips:[],saveMarkers:[],
+            characterBases:{[actorId]:{element:actor,imageDataUrl:dataUrl}}}
+        })
+        return true
+      })()`)
+      await until("Boolean([...document.querySelectorAll('.video-rebuild-cards button')].find(x=>x.textContent.includes('CATALOG GPU SYNTHETIC')))",'personagem salvo de catálogo')
+      await evaluate("(()=>{const b=[...document.querySelectorAll('.video-rebuild-cards button')].find(x=>x.textContent.includes('CATALOG GPU SYNTHETIC'));b.click();return true})()")
+      await until("Boolean(document.querySelector('.video-rebuild-stage canvas'))",'palco WebGL catalogado')
+      await evaluate("(()=>{const e=document.querySelector('input[aria-label=\"Camadas Gacha GPU experimentais\"]');if(!e)throw Error('Toggle experimental ausente');e.click();return true})()")
+      const compiled=await until("(()=>{const s=[...document.querySelectorAll('.video-rebuild-stage-row aside small')].find(e=>e.textContent.includes('catalogTextureCount'))?.textContent;try{return JSON.parse(s).catalogTextureCount>=3}catch{return false}})()",
+        'texturas GPU de corpo e faces reais do Fabricator',18000)
+      assert.equal(compiled,true)
+      const capture=await send('Page.captureScreenshot',{format:'png',captureBeyondViewport:false})
+      fs.writeFileSync(path.join(runRoot,'catalog-gpu-preview.png'),Buffer.from(capture.data,'base64'))
+      const result={ok:true,catalogSpritesReady:true,modelFixture:'Fabricator source+pose+left/right eyes and PT pupils',
+        previewBackend:'webgl2',savedV1:true,fallbackWasAvailable:true,
+        projectIsolation:'synthetic',runId}
+      fs.writeFileSync(path.join(runRoot,'catalog-gpu-smoke.json'),JSON.stringify(result,null,2))
+      console.log(JSON.stringify(result))
+      return
+    }
     await evaluate("location.hash='#/video-studio';true")
     await until("Boolean(document.querySelector('.video-rebuild-library'))",'nova biblioteca')
     await evaluate("(()=>{const b=[...document.querySelectorAll('button')].find(x=>x.textContent.includes('Novo projeto'));if(!b)throw Error('Novo projeto ausente');b.click();return true})()")

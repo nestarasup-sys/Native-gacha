@@ -45,6 +45,8 @@ jobs:
         run: npm run test:video:rebuild:worker:windows
       - name: Smoke rebuilt Video Studio UI with real Windows Chromium (synthetic profile)
         run: npm run test:video:rebuild:ui:windows
+      - name: Verify real Fabricator catalog eye and independent PT pupil GPU layers (Windows)
+        run: npm run test:video:rebuild:catalog:windows
       - name: Capture eleven real UI screens in two Electron processes (synthetic profile)
         run: npm run test:fabricator:real-ui -- --synthetic-complete
       - name: Verify eleven screenshots, persisted identities and SHA256

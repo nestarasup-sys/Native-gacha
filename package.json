@@ -61,7 +61,8 @@
     "test:video:rebuild": "node --test tests/video-studio-rebuild-scheduler.test.cjs tests/video-studio-rebuild-gpu.test.cjs tests/video-studio-rebuild-media-worker.test.cjs tests/video-studio-rebuild-preview-transport.test.cjs tests/video-studio-rebuild-media-lifecycle.test.cjs tests/video-studio-rebuild-no-legacy-editor.test.cjs tests/video-studio-rebuild-history.test.cjs tests/video-studio-rebuild-clip-split.test.cjs tests/video-studio-rebuild-sprite-plan.test.cjs tests/video-studio-rebuild-actor-transform.test.cjs tests/video-studio-rebuild-balloon.test.cjs tests/video-studio-rebuild-timeline-commands.test.cjs tests/video-studio-rebuild-catalog-gpu.test.cjs",
     "test:video:rebuild:worker:windows": "electron scripts/video-studio/media-supervisor-windows-smoke.cjs",
     "test:video:rebuild:worker:bundle": "node -e \"for(const f of ['out/main/main.js','out/main/media-engine-worker.js']) if(!require('node:fs').existsSync(f)){console.error('Missing Electron entry: '+f);process.exitCode=1}\"",
-    "test:video:rebuild:ui:windows": "node scripts/video-studio/windows-rebuild-ui-smoke.cjs"
+    "test:video:rebuild:ui:windows": "node scripts/video-studio/windows-rebuild-ui-smoke.cjs",
+    "test:video:rebuild:catalog:windows": "node scripts/video-studio/windows-rebuild-ui-smoke.cjs --catalog-gpu"
   },
   "dependencies": {
     "better-sqlite3": "^13.0.3",
