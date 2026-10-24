@@ -5,6 +5,7 @@ import type { VideoGachaCanvasState } from './videoGachaCanvasFrame'
 import { compileCharacterTransitions, transitionSampleFrames, type CharacterTransition } from './characterTransitions'
 import { evaluateRealtimeTransitionFallback, type RealtimeTransitionFallback } from './realtimeTransitionFallback'
 import { PreviewTransitionSession } from './previewTransitionSession'
+import { PreviewEndpointWarmup } from './previewEndpointWarmup'
 
 export function useCharacterTransitions(
   studio: StudioDocument | null,
@@ -20,8 +21,16 @@ export function useCharacterTransitions(
     [studio?.id, studio?.elements, timeline?.characterKeys, timeline?.characterBases, timeline?.characterGaps, timeline?.durationFrames],
   )
   const session = useMemo(() => new PreviewTransitionSession(studio?.id ?? ''), [studio?.id])
+  const endpointWarmup = useMemo(() => new PreviewEndpointWarmup(), [studio?.id])
   const [revision, setRevision] = useState(0)
   useEffect(() => { session.activate(); return () => session.dispose() }, [session])
+  useEffect(() => () => endpointWarmup.clear(), [endpointWarmup])
+  const endpointWarmupBucket = Math.floor(frame / 30)
+  useEffect(() => {
+    if (studio && enabled) endpointWarmup.prepare(spans, frame)
+  // Warmup is intentionally updated twice per second, not on every RAF.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [studio?.id, enabled, spans, endpointWarmupBucket, endpointWarmup])
 
   // During Play, use an immediate GPU cross-dissolve of the authored endpoint
   // snapshots. A full Gacha raster may take longer than all 15 timeline frames;
