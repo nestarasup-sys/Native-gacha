@@ -131,18 +131,24 @@ export class TransitionRenderer {
     // Preserve the source pose directly: do not remount the model, wardrobe
     // or hair for every 6-mouth-phase / eye-closed PNG. Real pose transitions
     // keep their old mixed-artwork path to preserve exact interpolation.
-    const staticPose = transition.from === transition.to && fromPose === toPose
+    // A facial-preset change has two *different authored states* but one
+    // identical body pose. Preparing the entire body/wardrobe/hair for every
+    // facial interpolation sample wastes almost the whole 15-frame window.
+    // Keep the prepared body fixed and pass interpolated face data only to
+    // renderToCanvas. Legacy pre-rasterized faces still switch their exact
+    // authored baseline at the discrete midpoint (at most two baselines).
+    const staticPose = fromPose === toPose
     const artwork = staticPose ? fromPose : mixPoseArtwork(fromPose, toPose, t)
-    const copy: CustomizerCharacter = { ...character, customization: { ...character.customization, faceAppearance: appearance } }
+    const baseAppearance = staticPose ? (t < .5 ? aa : ba) : appearance
+    const copy: CustomizerCharacter = { ...character, customization: { ...character.customization, faceAppearance: baseAppearance } }
     const renderer = staticPose
       ? await this.preparedStatic.getOrCreate(
           JSON.stringify([
-            character.id, slot,
+            character.id, character.updatedAt, slot,
             a.poseSlot === undefined ? character.customization.poseSlot : a.poseSlot,
-            // A legacy face set can pre-rasterize a particular expression
-            // index, eye selection or palette into its base. Key the entire
-            // authored appearance, not just setId, or PT eyes may bleed.
-            appearance ?? null
+            // A legacy face can be baked into the prepared body. Base identity
+            // MUST remain exact; fractional interpolations are dynamic only.
+            baseAppearance ?? null
           ]),
           () => prepareSavedCharacterRenderer(copy, { source, artwork, assetProvider: this.assetProvider })
         )

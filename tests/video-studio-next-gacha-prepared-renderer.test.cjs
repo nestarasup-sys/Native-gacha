@@ -21,6 +21,7 @@ const { VideoStudioResourceBudget } = budgetModule
 
 function rig({ budget, width = 128, height = 128 } = {}) {
   const events = { prepared: [], rendered: [], mixedArtwork: 0, loadPose: 0 }
+  const progress = { value: .5 }
   const appearance = { modelSlot: 1, setId: 'face-a', expressionIndex: 0 }
   const character = {
     id: 'character-1', name: 'synthetic',
@@ -58,7 +59,7 @@ function rig({ budget, width = 128, height = 128 } = {}) {
     mixStageElement: (a) => a,
     mixStudioTransforms: (a) => a,
     smoothProgress: (x) => x,
-    transitionProgress: () => 0.5,
+    transitionProgress: () => progress.value,
   }
   const deps = {
     './characterGeometry': {
@@ -81,7 +82,7 @@ function rig({ budget, width = 128, height = 128 } = {}) {
   })
   const transition = (from, to = from) =>
     ({ elementId: 'actor', startFrame: 0, boundaryFrame: 2, from, to })
-  return { renderer, state, transition, events, character, appearance }
+  return { renderer, state, transition, events, character, appearance, progress }
 }
 
 test('same authored pose prepares body/wardrobe/hair once across six mouth/blink draws', async () => {
@@ -162,4 +163,19 @@ test('shared bytes ledger bounds prepared rigs and releases on cache eviction/di
   assert.equal(events.prepared.length, 3, 'evicted rig rebuilt when requested again')
   renderer.dispose()
   assert.equal(budget.snapshot().usedBytes, 0)
+})
+
+test('preset-only change reuses pose/wardrobe/hair rig for all intermediate facial frames', async () => {
+  const { renderer, state, transition, events, character, appearance, progress } = rig()
+  const from = state(1, { ...appearance, setId: 'face-a', expressionIndex: 0 })
+  const to = state(1, { ...appearance, setId: 'face-b', expressionIndex: 4 })
+  for (const t of [.08, .2, .38, .48, .54, .7, .88, .98]) {
+    progress.value = t
+    await renderer.render(transition(from, to), 1, character)
+  }
+  assert.equal(events.mixedArtwork, 0, 'the body must never be re-interpolated for a facial change')
+  assert.equal(events.prepared.length, 2, 'only the authored before/after baked facial baselines need preparation')
+  assert.deepEqual(events.prepared.map(x => x.face), ['face-a', 'face-b'])
+  assert.equal(events.rendered.length, 8, 'all intermediate frames use live dynamic face transforms')
+  renderer.dispose()
 })
