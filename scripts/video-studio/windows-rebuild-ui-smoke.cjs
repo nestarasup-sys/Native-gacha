@@ -146,8 +146,68 @@ async function run(){
     const upper=pixel(.5,.25),lower=pixel(.5,.75)
     if(!(upper[0]>180&&upper[2]<100&&lower[2]>180&&lower[0]<100))
       throw Error('Regressão GPU: personagem invertido ou ausente '+JSON.stringify({upper,lower,bounds}))
+    // Short, progressive Windows gate: four different saved actors and two
+    // authored image keyframes each. This is *synthetic* compositor load, not
+    // real catalog/PT fidelity, and must not be called a 180s stress result.
+    const fourId='gpu-4-actors-'+runId
+    await evaluate(`(async()=>{
+      const stamp=new Date().toISOString()
+      const paints=['#e4574a','#50bbd6','#f7bd4b','#a47be4']
+      const makeArt=(color,alternate)=>{
+        const c=document.createElement('canvas');c.width=48;c.height=48
+        const context=c.getContext('2d')
+        context.fillStyle=alternate?'#ffffff':color
+        context.fillRect(0,0,48,24)
+        context.fillStyle=color
+        context.fillRect(0,24,48,24)
+        return c.toDataURL('image/png')
+      }
+      const elements=paints.map((color,i)=>({
+        id:'actor-'+i,kind:'character',text:'',speakerName:'Synthetic '+i,
+        x:-33+i*22,y:0,width:18,height:62,rotation:0,zIndex:i,flipX:false
+      }))
+      const bases=Object.fromEntries(elements.map((element,i)=>[
+        element.id,{element,imageDataUrl:makeArt(paints[i],false)}
+      ]))
+      const keys=elements.flatMap((element,i)=>[120,240].map((frame,j)=>({
+        id:'key-'+i+'-'+frame,elementId:element.id,frame,
+        poseSlot:null,expressionCollectionId:null,expressionPresetId:null,faceMode:'idle',
+        state:{element:{...element,rotation:j===0?8:0},
+          imageDataUrl:makeArt(paints[i],j===0)}
+      })))
+      const studio={schemaVersion:1,id:'${fourId}',title:'FOUR ACTORS SYNTHETIC ${runId}',
+        color:'#526ea9',createdAt:stamp,updatedAt:stamp,backgroundColor:'#101725',
+        backgroundAssetId:null,backgroundX:0,backgroundY:0,backgroundWidth:100,
+        backgroundHeight:100,backgroundRotation:0,assets:[],elements,
+        videoTimeline:{schemaVersion:1,frameRate:60,durationFrames:300,playheadFrame:0,
+          playing:false,characterKeys:keys,textClips:[],saveMarkers:[],characterBases:bases}}
+      await window.desktop.saveVideoStudio(studio)
+      return true
+    })()`)
+    await evaluate("(()=>{const b=[...document.querySelectorAll('button')].find(x=>x.textContent==='Biblioteca');if(!b)throw Error('Biblioteca ausente');b.click();return true})()")
+    await until("Boolean([...document.querySelectorAll('.video-rebuild-cards button')].find(x=>x.textContent.includes('FOUR ACTORS SYNTHETIC')))",'quatro personagens sintéticos')
+    await evaluate("(()=>{const b=[...document.querySelectorAll('.video-rebuild-cards button')].find(x=>x.textContent.includes('FOUR ACTORS SYNTHETIC'));b.click();return true})()")
+    await until("Boolean(document.querySelector('.video-rebuild-stage canvas'))",'palco GPU quatro personagens')
+    await until("Number(document.querySelector('.video-rebuild-stage-row aside')?.textContent?.match(/Quadros apresentados: (\\d+)/)?.[1])>0",'primeiro quadro com 4 atores')
+    const metrics=async()=>evaluate("(()=>{const s=document.querySelector('.video-rebuild-stage-row aside')?.textContent??'';const m=s.match(/Quadros apresentados: (\\d+) · saltados: (\\d+)/);const bytes=document.querySelector('.video-rebuild-stage-row aside small')?.textContent??'';return {frame:Number(document.querySelector('input[aria-label=\"Frame absoluto\"]')?.value),presented:Number(m?.[1]??0),skipped:Number(m?.[2]??0),textureBytes:JSON.parse(bytes||'{}').retainedEstimatedBytes??0}})()")
+    const start=await metrics()
+    await evaluate("(()=>{const b=[...document.querySelectorAll('.video-rebuild-transport button')].find(x=>x.textContent==='Reproduzir');if(!b)throw Error('Play ausente');b.click();return true})()")
+    const playedAt=Date.now()
+    await delay(5200)
+    const played=await metrics()
+    const elapsed=Date.now()-playedAt
+    if(played.frame<240||played.presented<=start.presented)
+      throw Error('Novo compositor não reproduziu 5s de quatro personagens: '+JSON.stringify({start,played,elapsed}))
+    const syntheticFourActors={
+      timelineFrames:300,characters:4,elapsedMs:elapsed,frameReached:played.frame,
+      presentedFrames:played.presented-start.presented,
+      skippedFrames:played.skipped-start.skipped,
+      presentedFps:Number(((played.presented-start.presented)*1000/elapsed).toFixed(2)),
+      textureBytesEstimated:played.textureBytes,source:'synthetic assets, not full Gacha catalog'
+    }
     const result={ok:true,renderBackend:'webgl2',playedFrame:progress.value,seekFrame:2700,
-      persisted:true,projectIsolation:'synthetic',orientationPixelOracle:'top-red-bottom-blue',runId}
+      persisted:true,projectIsolation:'synthetic',orientationPixelOracle:'top-red-bottom-blue',
+      syntheticFourActors,runId}
     fs.writeFileSync(path.join(runRoot,'rebuild-smoke.json'),JSON.stringify(result,null,2))
     console.log(JSON.stringify(result))
   }finally{
