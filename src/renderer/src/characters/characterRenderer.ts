@@ -1172,21 +1172,33 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
       shapeScaleX: shapeScale.x, shapeScaleY: shapeScale.y,
     }
   }
+  // A facial-only 60 FPS sequence should never allocate a fresh proportion
+  // surface each frame. One prepared pose owns one reusable output buffer;
+  // callers snapshot a frame before advancing the next one.
+  let scaledOutput: HTMLCanvasElement | null = null
+  let scaledContext: CanvasRenderingContext2D | null = null
   const renderToCanvas = async (currentAppearance: CustomizerFaceAppearance | undefined = appearance, studioFaceTransforms?: StudioFaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: StudioFaceMode) => {
     context.clearRect(0, 0, canvas.width, canvas.height)
     context.drawImage(rigLayers.behindFace, 0, 0, canvas.width, canvas.height)
     await paintPreparedFace(context, currentAppearance, studioFaceTransforms, expressionEffects, studioFaceMode)
     if (rigLayers.inFrontOfFace) context.drawImage(rigLayers.inFrontOfFace, 0, 0, canvas.width, canvas.height)
     if (shapeScale.x === 1 && shapeScale.y === 1) return { canvas, width: canvas.width, height: canvas.height }
-    const output = document.createElement('canvas')
-    output.width = outputWidth
-    output.height = outputHeight
-    const outputContext = output.getContext('2d')
-    if (!outputContext) throw new Error('Não foi possível aplicar as proporções do personagem.')
+    if (!scaledOutput) {
+      scaledOutput = document.createElement('canvas')
+      scaledOutput.width = outputWidth
+      scaledOutput.height = outputHeight
+      scaledContext = scaledOutput.getContext('2d')
+      if (!scaledContext) throw new Error('Não foi possível aplicar as proporções do personagem.')
+    }
+    const outputContext = scaledContext!
+    outputContext.save()
+    outputContext.setTransform(1, 0, 0, 1, 0, 0)
+    outputContext.clearRect(0, 0, outputWidth, outputHeight)
     outputContext.translate(outputWidth / 2, outputHeight / 2)
     outputContext.scale(shapeScale.x, shapeScale.y)
     outputContext.drawImage(canvas, -canvas.width / 2, -canvas.height / 2)
-    return { canvas: output, width: outputWidth, height: outputHeight }
+    outputContext.restore()
+    return { canvas: scaledOutput, width: outputWidth, height: outputHeight }
   }
   const render = async (...args: Parameters<typeof renderToCanvas>) => {
     const value = await renderToCanvas(...args)
