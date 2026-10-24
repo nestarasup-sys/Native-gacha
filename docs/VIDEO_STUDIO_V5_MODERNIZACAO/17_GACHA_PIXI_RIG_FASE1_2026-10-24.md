@@ -35,3 +35,9 @@ Transições com **mudança real de pose** continuam usando o compositor canôni
 5. Usar avaliação de frame compartilhada entre preview e export para provar paridade temporal.
 
 **Não declarar ganho numérico antes de medir** num computador real.
+
+## Fase seguinte: benchmark GPU com bundle real e paridade RGBA
+
+O benchmark `npm run bench:video:pixi-rig` agora gera um único bundle clássico via esbuild a partir da entrada TypeScript `pixi-gacha-pose-rig-benchmark.entry.ts`, evitando importações ESM `file://` entre origens Chromium. Ele desenha poses sintéticas com o motor 2D Canvas de referência e com a cena PixiJS, produzindo estatísticas de pixels alterados, erro p99, quantidade de sprites/texturas e tempo da amostra. A comparação ignora RGB invisível somente quando ambos os alphas são zero. O benchmark **não** usa dados reais do usuário e não afirma ganho sem executar em GPU compatível.
+
+A CI verifica que o benchmark é empacotável e testa o comparador de pixels; não executa automaticamente um teste GPU real no runner sem hardware confiável. A preview padrão continua Canvas até a paridade de roupas, cabelo, olhos e pele em assets verdadeiros.
