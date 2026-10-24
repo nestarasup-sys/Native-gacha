@@ -18,6 +18,7 @@ export class PixiGachaPoseSurface {
   private lost = false
   private disposed = false
   private geometrySession: { from: PoseArtwork; to: PoseArtwork; worker: PixiGachaPoseGeometrySession } | null = null
+  private poseFrameSerial = 0
   private readonly onContextLost = (event: Event) => {
     event.preventDefault()
     this.lost = true
@@ -114,18 +115,27 @@ export class PixiGachaPoseSurface {
     this.assertReady()
     this.assertTexturesReady(from)
     this.assertTexturesReady(to)
+    // Latest timeline frame wins. Otherwise a slow earlier Worker reply can
+    // paint *after* a newer seek and visibly jump the character backwards.
+    const serial = ++this.poseFrameSerial
     if (!this.geometrySession || this.geometrySession.from !== from || this.geometrySession.to !== to) {
       this.geometrySession?.worker.dispose()
       this.geometrySession = { from, to, worker: new PixiGachaPoseGeometrySession(from, to) }
+    } else {
+      this.geometrySession.worker.cancelPending(new Error('Frame de pose ultrapassado por outro seek.'))
     }
     const artwork = await this.geometrySession.worker.interpolate(progress, signal)
     this.assertReady()
     signal?.throwIfAborted()
+    if (serial !== this.poseFrameSerial) {
+      throw new Error('Resposta antiga do Worker de pose descartada.')
+    }
     this.rig.setPose(artwork)
     this.app.renderer.render(this.app.stage)
   }
 
   cancelPendingPoseFrames(): void {
+    this.poseFrameSerial++
     this.geometrySession?.worker.cancelPending()
   }
 
@@ -136,6 +146,7 @@ export class PixiGachaPoseSurface {
   dispose(): void {
     if (this.disposed) return
     this.disposed = true
+    this.poseFrameSerial++
     this.geometrySession?.worker.dispose()
     this.geometrySession = null
     this.canvas.removeEventListener('webglcontextlost', this.onContextLost)
