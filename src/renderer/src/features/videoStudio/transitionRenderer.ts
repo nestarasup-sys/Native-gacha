@@ -5,7 +5,7 @@ import type { VideoCharacterRenderAssetProvider } from '../../../../shared/video
 import { faceRenderGeometry, trimTransparentImage } from './characterGeometry'
 import { mixAppearance, mixEffects, mixPoseArtwork, mixStageElement, mixStudioTransforms, smoothProgress, transitionProgress, type PoseArtwork } from '../../../../shared/videoCharacterInterpolation'
 import type { CharacterTransition } from './characterTransitions'
-import { loadStandardExpressionEffects, prepareSavedCharacterRenderer } from '../../characters/characterRenderer'
+import { loadStandardExpressionEffects, prepareSavedCharacterRenderer, type GachaReusableMaterialCache } from '../../characters/characterRenderer'
 import { VideoStudioBoundedMemo } from '../../../../shared/videoStudioNext/boundedMemo'
 import type { VideoStudioResourceBudget } from '../../../../shared/videoStudioNext/resourceBudget'
 import { snapshotTrimmedGachaCanvas, snapshotTrimmedPreviewGachaCanvas, type VideoGachaCanvasState } from './videoGachaCanvasFrame'
@@ -34,6 +34,10 @@ type PreparedGachaRenderer = Awaited<ReturnType<typeof prepareSavedCharacterRend
 /** Session-local reader. No supplier, character, or timeline writes are exposed. */
 export class TransitionRenderer {
   private readonly preparedStatic: VideoStudioBoundedMemo<PreparedGachaRenderer>
+  // Shared by Canvas preview AND the export-surface TransitionRenderer:
+  // selected hair/outfit manifests load once per actor revision, while each
+  // mixed pose continues to validate/draw the exact original bone geometry.
+  private readonly reusableMaterials: GachaReusableMaterialCache = new Map()
   /**
    * Hidden opt-in only. The default editor keeps the exact Canvas composer.
    * Once PixiJS is shown to differ for any character, never retry that actor
@@ -359,9 +363,11 @@ export class TransitionRenderer {
             // MUST remain exact; fractional interpolations are dynamic only.
             baseAppearance ?? null
           ]),
-          () => prepareSavedCharacterRenderer(copy, { source, artwork, assetProvider: this.assetProvider })
+          () => prepareSavedCharacterRenderer(copy, { source, artwork, assetProvider: this.assetProvider,
+            materialCache: this.reusableMaterials })
         )
-      : await prepareSavedCharacterRenderer(copy, { source, artwork, assetProvider: this.assetProvider })
+      : await prepareSavedCharacterRenderer(copy, { source, artwork, assetProvider: this.assetProvider,
+          materialCache: this.reusableMaterials })
     signal?.throwIfAborted()
     if (directCanvas) {
       // The prepared body/wardrobe/front-hair canvases are reused, while the
@@ -424,6 +430,7 @@ export class TransitionRenderer {
   clearPrepared(): void {
     this.gpuGeneration++
     this.preparedStatic.clear()
+    this.reusableMaterials.clear()
     this.gpuDrawQueues.clear()
     for (const {promise} of this.articulatedGpu.values()) {
       void promise.then(instance=>instance.dispose()).catch(()=>{})

@@ -987,16 +987,81 @@ export type PreparedGachaLayerFrame = Readonly<{
   shapeScaleY: number
 }>
 
-export async function prepareSavedCharacterRenderer(character: CustomizerCharacter, renderSource?: { artwork: CatalogArtwork; source: FabricatorProject; assetProvider?: VideoCharacterRenderAssetProvider }): Promise<{ width: number; height: number; render: (appearance?: CustomizerFaceAppearance, studioFaceTransforms?: StudioFaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: StudioFaceMode) => Promise<{ dataUrl: string; width: number; height: number }>; renderToCanvas: (appearance?: CustomizerFaceAppearance, studioFaceTransforms?: StudioFaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: StudioFaceMode) => Promise<{ canvas: HTMLCanvasElement; width: number; height: number }>; renderLayersToCanvas: (appearance?: CustomizerFaceAppearance, studioFaceTransforms?: StudioFaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: StudioFaceMode) => Promise<PreparedGachaLayerFrame> }> {
-  const { modelSlot, assetProvider, source, artwork } = await resolveSavedCharacterSource(character, renderSource)
-  const proportions = getCharacterProportions(character.customization)
+
+/**
+ * Pose-independent, immutable inputs for the canonical Canvas renderer.
+ * A dynamic pose still calculates wardrobe anchors, per-bone transforms and
+ * hair rotation; only the Fabricador asset lookups are shared across frames.
+ */
+export type GachaReusableMaterials = Readonly<{
+  backStyles: HairLayerReference[]
+  frontStyles: HairLayerReference[]
+  wardrobeDetails: Record<string, WardrobeSet>
+}>
+export type GachaReusableMaterialCache = Map<string, Promise<GachaReusableMaterials>>
+
+async function loadGachaReusableMaterials(
+  character: CustomizerCharacter,
+  modelSlot: number,
+  assetProvider: VideoCharacterRenderAssetProvider
+): Promise<GachaReusableMaterials> {
   const hairAppearance = character.customization.hairAppearance
   const [backStyles, posteriorStyles, fringeStyles] = await Promise.all([
     loadHairAppearanceLayers(hairAppearance, modelSlot, 'back', {}, assetProvider),
     loadHairAppearanceLayers(hairAppearance, modelSlot, 'front', {}, assetProvider),
-    loadHairAppearanceLayers(hairAppearance, modelSlot, 'fringe', {}, assetProvider)
+    loadHairAppearanceLayers(hairAppearance, modelSlot, 'fringe', {}, assetProvider),
   ])
-  const frontStyles = [...posteriorStyles, ...fringeStyles]
+  const groups = (character.customization.wardrobeGroups ?? [])
+    .filter(group => group.modelSlot === modelSlot)
+  const sets = new Map<string, Promise<WardrobeSet | null>>()
+  for (const group of groups) {
+    const key = `${group.modelSlot}:${group.setId}`
+    if (!sets.has(key)) sets.set(key, assetProvider.loadWardrobeSet(group.modelSlot, group.setId))
+  }
+  const wardrobeDetails: Record<string, WardrobeSet> = {}
+  await Promise.all([...sets].map(async ([key, request]) => {
+    const set = await request
+    if (!set) throw new Error(`O personagem referencia um conjunto de roupa indisponível (${key}). A fonte não será modificada.`)
+    wardrobeDetails[key] = set
+  }))
+  return { backStyles, frontStyles: [...posteriorStyles, ...fringeStyles], wardrobeDetails }
+}
+
+function gachaMaterialKey(character: CustomizerCharacter, modelSlot: number): string {
+  // Never depend on interpolation progress or facial preset: neither changes
+  // the wardrobe/hair *sources*. Edits to the selected materials invalidate.
+  return JSON.stringify([
+    character.id, character.updatedAt, modelSlot, character.customization.hairAppearance,
+    (character.customization.wardrobeGroups ?? []).filter(group => group.modelSlot === modelSlot),
+  ])
+}
+
+async function materialsForPreparedCharacter(
+  character: CustomizerCharacter, slot: number, assetProvider: VideoCharacterRenderAssetProvider,
+  cache?: GachaReusableMaterialCache,
+): Promise<GachaReusableMaterials> {
+  if (!cache) return loadGachaReusableMaterials(character, slot, assetProvider)
+  const key = gachaMaterialKey(character, slot)
+  let pending = cache.get(key)
+  if (!pending) {
+    pending = loadGachaReusableMaterials(character, slot, assetProvider)
+    cache.set(key, pending)
+    // Bound retained PNG manifests/styles; no session-global unbounded Map.
+    if (cache.size > 6) cache.delete(cache.keys().next().value!)
+    const request = pending
+    void pending.catch(() => {
+      if (cache.get(key) === request) cache.delete(key)
+    })
+  }
+  return pending
+}
+
+export async function prepareSavedCharacterRenderer(character: CustomizerCharacter, renderSource?: { artwork: CatalogArtwork; source: FabricatorProject; assetProvider?: VideoCharacterRenderAssetProvider; materialCache?: GachaReusableMaterialCache }): Promise<{ width: number; height: number; render: (appearance?: CustomizerFaceAppearance, studioFaceTransforms?: StudioFaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: StudioFaceMode) => Promise<{ dataUrl: string; width: number; height: number }>; renderToCanvas: (appearance?: CustomizerFaceAppearance, studioFaceTransforms?: StudioFaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: StudioFaceMode) => Promise<{ canvas: HTMLCanvasElement; width: number; height: number }>; renderLayersToCanvas: (appearance?: CustomizerFaceAppearance, studioFaceTransforms?: StudioFaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: StudioFaceMode) => Promise<PreparedGachaLayerFrame> }> {
+  const { modelSlot, assetProvider, source, artwork } = await resolveSavedCharacterSource(character, renderSource)
+  const proportions = getCharacterProportions(character.customization)
+  const hairAppearance = character.customization.hairAppearance
+  const materials = await materialsForPreparedCharacter(character, modelSlot, assetProvider, renderSource?.materialCache)
+  const { backStyles, frontStyles } = materials
   const baseImage = document.createElement('canvas')
   baseImage.width = artwork.width
   baseImage.height = artwork.height
@@ -1005,15 +1070,7 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
   await renderArtworkWithHair(artwork, source, backStyles, Math.max(artwork.width, artwork.height), character.customization.modelSkinTone, hairAppearance, baseContext, character.customization.partOverrides)
 
   const groups = (character.customization.wardrobeGroups ?? []).filter((group) => group.modelSlot === modelSlot)
-  const details: Record<string, WardrobeSet> = {}
-  await Promise.all(groups.map(async (group) => {
-    const key = `${group.modelSlot}:${group.setId}`
-    if (details[key]) return
-    const set = await assetProvider.loadWardrobeSet(group.modelSlot, group.setId)
-    if (!set) throw new Error(`O personagem referencia um conjunto de roupa indisponível (${key}). A fonte não será modificada.`)
-    details[key] = set
-  }))
-  const wardrobe = await renderWardrobeOverlayCanvases(groups, details, artwork, modelSlot, source, character.customization.modelSkinTone)
+  const wardrobe = await renderWardrobeOverlayCanvases(groups, materials.wardrobeDetails, artwork, modelSlot, source, character.customization.modelSkinTone)
 
   const appearance = character.customization.faceAppearance
   const expressionEffectsByIndex = appearance?.modelSlot === modelSlot
