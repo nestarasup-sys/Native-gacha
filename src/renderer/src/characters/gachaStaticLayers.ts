@@ -41,6 +41,13 @@ export function prepareGachaStaticLayers(
     ? [bodyAndBackHair, bodyAndBackHair.getContext('2d')]
     : newLayerCanvas(width, height)
   if (!back) throw new Error('Canvas da camada inferior Gacha indisponível.')
+  // New neutral layer buffers use default 'low' sampling. Reused source
+  // contexts may have 'high' from part painting: match the historic static
+  // compositor when the wardrobe bitmap is resized into the output canvas.
+  if (adopt) {
+    back.imageSmoothingEnabled = true
+    back.imageSmoothingQuality = 'low'
+  }
   if (!adopt) back.drawImage(bodyAndBackHair, 0, 0, width, height)
   if (wardrobe) back.drawImage(wardrobe, 0, 0, width, height)
   let inFrontOfFace: HTMLCanvasElement | null = null
@@ -51,6 +58,10 @@ export function prepareGachaStaticLayers(
       ? [frontHair!, frontHair!.getContext('2d')]
       : newLayerCanvas(width, height)
     if (!front) throw new Error('Canvas da camada superior Gacha indisponível.')
+    if (reuseFront) {
+      front.imageSmoothingEnabled = true
+      front.imageSmoothingQuality = 'low'
+    }
     if (frontHair && !reuseFront) front.drawImage(frontHair, 0, 0, width, height)
     if (wardrobeOverHair) front.drawImage(wardrobeOverHair, 0, 0, width, height)
     inFrontOfFace = over
