@@ -126,6 +126,10 @@ export class PreviewTransitionSession {
     this.abort = new AbortController()
     this.pending.clear()
     this.demanded.clear()
+    // A new seek or next authored boundary must not be rejected against a
+    // previous transition signature for the same actor.
+    this.activeTransitions.clear()
+    this.lastDisplayed.clear()
     this.plan = null
     this.playbackRequested = false
   }
