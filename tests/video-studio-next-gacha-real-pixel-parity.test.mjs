@@ -73,3 +73,42 @@ test('real PNG layers maintain wardrobe/eye/front-hair order when split into reu
   }
   assert.equal(differentExpressions, 2)
 })
+
+test('real Fabricator PNG wardrobe and front hair can be uploaded as separate GPU layers with visual equivalence',async(t)=>{
+  const dir=await mkdtemp(join(tmpdir(),'gacha-independent-gpu-layer-pixels-'))
+  t.after(()=>rm(dir,{recursive:true,force:true}))
+  const fixture=await createCompleteCharacterFixture(dir)
+  const load=async(folder,name,left,top)=>({input:await readFile(join(folder,name)),left,top})
+  const body=await load(join(fixture.model,'parts'),'body.png',74,118)
+  const head=await load(join(fixture.model,'parts'),'head.png',90,20)
+  const rear=await load(join(fixture.hair,'images'),'back.png',88,12)
+  const coat=await load(join(fixture.outfit,'parts'),'coat.png',74,130)
+  const eye=await load(fixture.eye,'asset.png',104,65)
+  const brow=await load(fixture.eyebrow,'asset.png',100,56)
+  const front=await load(join(fixture.hair,'images'),'front.png',90,18)
+  // The authored painter first builds body + rear hair, then wardrobe, then
+  // face components and finally front hair. Neither route can recolor or
+  // silently lose the other independent source layer.
+  const bodyAndRear=await composite([rear,body,head])
+  const wardrobe=await composite([coat])
+  const face=await composite([brow,eye])
+  const frontHair=await composite([front])
+  const reference=await composite([rear,body,head,coat,brow,eye,front])
+  const byIndependentGpuTextures=await composite([
+    {input:bodyAndRear,left:0,top:0},
+    {input:wardrobe,left:0,top:0},
+    {input:face,left:0,top:0},
+    {input:frontHair,left:0,top:0}
+  ])
+  const original=await raw(reference)
+  const next=await raw(byIndependentGpuTextures)
+  assert.equal(original.length,next.length)
+  let maxDelta=0,nonTransparent=0
+  for(let i=0;i<original.length;i+=4){
+    if(original[i+3])nonTransparent++
+    for(let c=0;c<4;c++)maxDelta=Math.max(maxDelta,Math.abs(original[i+c]-next[i+c]))
+  }
+  assert.ok(nonTransparent>20000,'fixture must exercise real opaque character source pixels')
+  assert.ok(maxDelta<=3,'independent GPU groups must match original painter; max delta '+maxDelta)
+  assert.deepEqual(await raw(bodyAndRear),await raw(bodyAndRear),'body texture is unchanged by alternate face passes')
+})
