@@ -6,7 +6,7 @@ const path=require('node:path')
 const ts=require('typescript')
 
 function harness({gpuFails=false}={}){
- const phases=[], snapshots=[]
+ const phases=[], snapshots=[], statusEvents=[]
  const fakeCanvas={width:4,height:4,phase:''}
  const gpu={disposeCount:0,render(layers){
    if(gpuFails)throw Error('GPU lost')
@@ -30,7 +30,8 @@ function harness({gpuFails=false}={}){
   './videoGachaCanvasFrame':{},
   './pixiGachaLayerSurface':{PixiGachaLayerSurface:gpuFactory},
  }
- const window={__NATIVE_GACHA_GPU_PREVIEW_EXPERIMENTAL__:true,desktop:{}}
+ const window={__NATIVE_GACHA_GPU_PREVIEW_EXPERIMENTAL__:true,desktop:{},
+  dispatchEvent(event){statusEvents.push({type:event.type,...event.detail});return true}}
  const document={createElement(name){
   assert.equal(name,'canvas')
   const output={width:0,height:0,phase:''}
@@ -40,9 +41,10 @@ function harness({gpuFails=false}={}){
   }})
   return output
  }}
- new Function('require','module','exports','window','document',code)(
+ new Function('require','module','exports','window','document','CustomEvent',code)(
  name=>{if(Object.hasOwn(deps,name))return deps[name];throw Error('dependency '+name)},
- mod,mod.exports,window,document)
+ mod,mod.exports,window,document,
+ class CustomEvent {constructor(type,options){this.type=type;this.detail=options.detail}})
  const renderer=new mod.exports.TransitionRenderer({})
  const sharedFace={phase:''}
  const prepared={
@@ -61,7 +63,7 @@ function harness({gpuFails=false}={}){
  const request=mode=>renderer.drawExperimentalGpu('actor',prepared,undefined,{},{
   shadow:{enabled:false},blush:{enabled:false},mouthBlush:{enabled:false},
  },mode)
- return {renderer,gpu,request,phases,snapshots,window}
+ return {renderer,gpu,request,phases,snapshots,statusEvents,window}
 }
 
 test('GPU render requests for the same character serialize mutable face without frame contamination',async()=>{
@@ -97,5 +99,30 @@ test('clearing prepared rig invalidates a running GPU recipe and prevents stale 
  renderer.clearPrepared()
  const result=await work
  assert.equal(result,null)
+ renderer.dispose()
+})
+
+test('successful GPU frames announce actual Pixi output instead of merely showing button ON',async()=>{
+ const {renderer,request,statusEvents}=harness()
+ await request('talk')
+ assert.deepEqual(statusEvents,[{type:'native-gacha-pixi-preview-status',kind:'active',reason:undefined}])
+ renderer.dispose()
+})
+test('a real GPU failure sends a visible Canvas fallback event with a human-readable reason',async()=>{
+ const {renderer,request,statusEvents}=harness({gpuFails:true})
+ await request('talk')
+ assert.equal(statusEvents.length,1)
+ assert.equal(statusEvents[0].type,'native-gacha-pixi-preview-status')
+ assert.equal(statusEvents[0].kind,'fallback')
+ assert.match(statusEvents[0].reason,/contexto WebGL\/GPU/)
+ await request('idle')
+ assert.equal(statusEvents.length,1,'disabled GPU actor must not claim rendering again')
+ renderer.dispose()
+})
+test('turning GPU off prevents a stale render error from emitting a misleading fallback warning',async()=>{
+ const {renderer,request,statusEvents,window}=harness({gpuFails:true})
+ window.__NATIVE_GACHA_GPU_PREVIEW_EXPERIMENTAL__=false
+ assert.equal(await request('talk'),null)
+ assert.deepEqual(statusEvents,[])
  renderer.dispose()
 })

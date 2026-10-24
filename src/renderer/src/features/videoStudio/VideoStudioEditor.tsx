@@ -159,6 +159,24 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
       .__NATIVE_GACHA_GPU_PREVIEW_EXPERIMENTAL__ === true
   )
   const [pixiPreviewRevision, setPixiPreviewRevision] = useState(0)
+  // 'ON' means requested, not confirmed. Runtime events below distinguish
+  // verified Pixi output from a failed GPU automatically using Canvas.
+  const [pixiPreviewStatus, setPixiPreviewStatus] = useState<{
+    kind: 'waiting' | 'active' | 'fallback'
+    reason?: string
+  }>({ kind: 'waiting' })
+  useEffect(() => {
+    const onGpuStatus = (event: Event) => {
+      if ((window as Window & { __NATIVE_GACHA_GPU_PREVIEW_EXPERIMENTAL__?: boolean })
+        .__NATIVE_GACHA_GPU_PREVIEW_EXPERIMENTAL__ !== true) return
+      const detail = (event as CustomEvent<{ kind: 'active' | 'fallback'; reason?: string }>).detail
+      if (!detail || (detail.kind !== 'active' && detail.kind !== 'fallback')) return
+      // A previous failure cannot be hidden by another actor's success.
+      setPixiPreviewStatus(current => current.kind === 'fallback' ? current : detail)
+    }
+    window.addEventListener('native-gacha-pixi-preview-status', onGpuStatus)
+    return () => window.removeEventListener('native-gacha-pixi-preview-status', onGpuStatus)
+  }, [])
   const togglePixiPreview = () => {
     const enabled = !pixiPreviewEnabled
     ;(window as Window & { __NATIVE_GACHA_GPU_PREVIEW_EXPERIMENTAL__?: boolean })
@@ -169,6 +187,7 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
     animationPlayRequestRef.current += 1
     setAnimationPreparing(false)
     setPixiPreviewEnabled(enabled)
+    setPixiPreviewStatus({ kind: 'waiting' })
     setPixiPreviewRevision(revision => revision + 1)
     setNotice(enabled
       ? 'GPU PixiJS experimental ligada. Teste transições de pose e rosto; se a GPU falhar, o Canvas será usado.'
@@ -2286,6 +2305,17 @@ export function VideoStudioEditor({ onEditorActiveChange }: { onEditorActiveChan
                 : 'Testar animações de poses e expressões com PixiJS. Desliga automaticamente se a imagem divergir do Canvas.'}
               onClick={togglePixiPreview}
             ><Icon name="settings" /><span>GPU PixiJS</span><i aria-hidden="true">{pixiPreviewEnabled ? 'ON' : 'OFF'}</i></button>
+            {pixiPreviewEnabled && <small
+              className={`video-studio-gpu-status ${pixiPreviewStatus.kind}`}
+              role={pixiPreviewStatus.kind === 'fallback' ? 'alert' : 'status'}
+              title={pixiPreviewStatus.reason}
+            >
+              {pixiPreviewStatus.kind === 'waiting'
+                ? 'GPU: aguardando animação…'
+                : pixiPreviewStatus.kind === 'active'
+                  ? 'GPU PixiJS renderizando'
+                  : <>GPU falhou — Canvas ativo. {pixiPreviewStatus.reason}</>}
+            </small>}
           </nav>
           <small className={`video-studio-save-indicator${saved ? '' : ' unsaved'}`}><i />{saved ? 'Salvo automaticamente' : 'Salvando alterações…'}</small>
           {error && <small className="video-studio-error-message" role="alert">{error}</small>}

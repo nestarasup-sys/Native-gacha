@@ -63,6 +63,33 @@ export class TransitionRenderer {
         .__NATIVE_GACHA_GPU_PREVIEW_EXPERIMENTAL__ === true
   }
 
+  /**
+   * Report what ACTUALLY rendered, not just the ON position of the toggle.
+   * In particular a fail-closed Canvas fallback must be visible to the user.
+   * This event is per Electron renderer window, never written to a project.
+   */
+  private reportGpuPreview(kind: 'active' | 'fallback', error?: unknown): void {
+    if (!this.gpuPreviewEnabled()
+      || typeof window.dispatchEvent !== 'function'
+      || typeof CustomEvent !== 'function') return
+    const message = error instanceof Error ? error.message : String(error ?? '')
+    let reason: string | undefined
+    if (kind === 'fallback') {
+      reason = /diverg|diferença|pixels|paridade|Canvas original/i.test(message)
+        ? 'A imagem da GPU ficou diferente da original.'
+        : /context|contexto|webgl|perdido/i.test(message)
+          ? 'O contexto WebGL/GPU não está disponível.'
+          : /textura|texture|asset|imagem/i.test(message)
+            ? 'Não foi possível preparar uma textura do personagem.'
+            : /dimens|tamanho|resoluç/i.test(message)
+              ? 'A resolução do personagem não é compatível com a superfície GPU.'
+              : 'O renderizador GPU não conseguiu desenhar este personagem.'
+    }
+    window.dispatchEvent(new CustomEvent('native-gacha-pixi-preview-status', {
+      detail: { kind, reason },
+    }))
+  }
+
   private async drawExperimentalGpu(
     characterId: string,
     renderer: PreparedGachaRenderer,
@@ -110,8 +137,11 @@ export class TransitionRenderer {
         const context = stable.getContext('2d')
         if (!context) throw new Error('Não foi possível capturar o frame GPU Gacha.')
         context.drawImage(gpu, 0, 0)
+        if (generation === this.gpuGeneration) this.reportGpuPreview('active')
         return stable
-      } catch {
+      } catch (error) {
+        if (generation !== this.gpuGeneration) return null
+        this.reportGpuPreview('fallback', error)
         this.disabledExperimentalGpu.add(characterId)
         const failed = this.experimentalGpu.get(characterId)
         this.experimentalGpu.delete(characterId)
@@ -174,8 +204,11 @@ export class TransitionRenderer {
         const context=stable.getContext('2d')
         if (!context) throw new Error('Não foi possível capturar a pose articulada GPU.')
         context.drawImage(gpu,0,0)
+        if (generation === this.gpuGeneration) this.reportGpuPreview('active')
         return stable
-      } catch {
+      } catch (error) {
+        if (generation !== this.gpuGeneration) return null
+        this.reportGpuPreview('fallback', error)
         this.disabledExperimentalGpu.add(id)
         const pending=this.articulatedGpu.get(id)
         this.articulatedGpu.delete(id)

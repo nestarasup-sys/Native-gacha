@@ -63,3 +63,18 @@ test('editor, preview hook and stylesheet compile or parse after toggle integrat
   assert.equal(hookTree.parseDiagnostics.length, 0)
   assert.ok(css.includes('video-studio-gpu-toggle:focus-visible'))
 })
+
+test('GPU indicator distinguishes pending, actual Pixi rendering and visible Canvas fallback alerts',()=>{
+  assert.match(editor,/native-gacha-pixi-preview-status/)
+  assert.match(editor,/setPixiPreviewStatus\(\{ kind: 'waiting' \}\)/)
+  assert.match(editor,/GPU: aguardando animação/)
+  assert.match(editor,/GPU PixiJS renderizando/)
+  assert.match(editor,/GPU falhou — Canvas ativo/)
+  assert.match(editor,/role=\{pixiPreviewStatus.kind === 'fallback' \? 'alert' : 'status'\}/)
+  assert.match(editor,/current.kind === 'fallback' \? current : detail/)
+  assert.match(css,/\.video-studio-gpu-status\.fallback/)
+  const renderer=fs.readFileSync(path.resolve(__dirname,
+    '../src/renderer/src/features/videoStudio/transitionRenderer.ts'),'utf8')
+  assert.match(renderer,/reportGpuPreview\('active'\)/)
+  assert.match(renderer,/reportGpuPreview\('fallback', error\)/)
+})

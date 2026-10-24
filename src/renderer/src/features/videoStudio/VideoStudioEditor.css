@@ -325,6 +325,13 @@
 .video-studio-tool-button.video-studio-gpu-toggle.active>span,
 .video-studio-tool-button.video-studio-gpu-toggle.active>i { color:#6f3ca7; }
 .video-studio-tool-button.video-studio-gpu-toggle:focus-visible { outline:2px solid #8d64c9;outline-offset:2px; }
+.video-studio-gpu-status {
+  display:block;min-width:0;max-width:100%;padding:7px 5px;border:1px solid #d5c9dc;
+  border-radius:8px;background:#f9f6fc;color:#695674;font-size:10px;
+  font-weight:650;line-height:1.35;overflow-wrap:anywhere;text-align:center;
+}
+.video-studio-gpu-status.active { border-color:#89c7a4;background:#edf9f0;color:#216847; }
+.video-studio-gpu-status.fallback { border-color:#ed9090;background:#fff1f0;color:#9d3434; }
 .video-studio-save-indicator { display:flex;align-items:center;gap:6px;margin-top:auto;padding:6px 2px 0;color:#8f8190;font-size:8px; }
 .video-studio-save-indicator i { width:6px;height:6px;border-radius:50%;background:#67b98e; }
 .video-studio-save-indicator.unsaved i { background:#e1a851; }
