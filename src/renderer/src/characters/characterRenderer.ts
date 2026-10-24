@@ -1106,11 +1106,22 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
       if (hasCatalogFaceSelection || hasFaceOverlaySelection) await drawFaceCatalogOverlay(targetContext, artwork, source, activeItems, faceAppearance, character.customization.modelSkinTone, studioFaceTransforms, mouthEffects, studioFaceMode, resolveClosedEye, character.customization.partOverrides, undefined, assetProvider)
     } else if (legacyFaceImage) targetContext.drawImage(legacyFaceImage, 0, 0, canvas.width, canvas.height)
   }
-  const faceLayer = document.createElement('canvas')
-  faceLayer.width = canvas.width
-  faceLayer.height = canvas.height
-  const faceContext = faceLayer.getContext('2d')
-  if (!faceContext) throw new Error('Não foi possível preparar a camada dinâmica do rosto.')
+  // The default Canvas/PNG preview never needs an extra facial buffer.
+  // Create it lazily only when the experimental GPU layer path is selected.
+  let faceLayer: HTMLCanvasElement | null = null
+  let faceContext: CanvasRenderingContext2D | null = null
+  const ensureFaceLayer = () => {
+    if (!faceLayer) {
+      const prepared = document.createElement('canvas')
+      prepared.width = canvas.width
+      prepared.height = canvas.height
+      const context = prepared.getContext('2d')
+      if (!context) throw new Error('Não foi possível preparar a camada dinâmica do rosto.')
+      faceLayer = prepared
+      faceContext = context
+    }
+    return { faceLayer, faceContext: faceContext! }
+  }
   /**
    * Preview-only three-layer output. Caller must paint/snapshot the mutable
    * face layer before another call; behindFace and inFrontOfFace stay stable
@@ -1123,6 +1134,7 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
     expressionEffects?: FaceExpressionEffects,
     studioFaceMode?: StudioFaceMode
   ) => {
+    const { faceLayer, faceContext } = ensureFaceLayer()
     faceContext.clearRect(0, 0, faceLayer.width, faceLayer.height)
     await paintPreparedFace(faceContext, currentAppearance, studioFaceTransforms, expressionEffects, studioFaceMode)
     return {
