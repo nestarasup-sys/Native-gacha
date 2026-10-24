@@ -20,8 +20,8 @@ const DOMAINS = [
   { id: 'fabricator.hair', roots: ['fabricator/hair'] },
   { id: 'customizer.characters', roots: ['customizer/characters'] },
   { id: 'studio.projects', roots: ['studios/Studio Principal'] },
-  { id: 'video-studio.media', roots: ['studios/Video Studio/media-library'] },
-  { id: 'video-studio.backgrounds', roots: ['studios/Video Studio/background-library'] }
+  { id: 'video-studio.media', roots: ['studios/Editor Gacha/media-library'] },
+  { id: 'video-studio.backgrounds', roots: ['studios/Editor Gacha/background-library'] }
 ]
 
 function within(root, target) {

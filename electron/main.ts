@@ -275,7 +275,7 @@ const faceComponentItemPath = (modelSlot: number, id: string) => join(faceCompon
 const hairModelPath = (modelSlot: number) => join(app.getPath('userData'), 'fabricator', 'hair', `model-${modelSlot}`)
 const hairStylePath = (modelSlot: number, id: string) => join(hairModelPath(modelSlot), 'styles', `style-${id}`)
 const characterLibraryPath = () => join(app.getPath('userData'), 'customizer', 'characters')
-const studioLibraryPath = (workspace: 'studio' | 'video' = 'studio') => join(app.getPath('userData'), 'studios', workspace === 'video' ? 'Video Studio' : 'Studio Principal')
+const studioLibraryPath = (workspace: 'studio' | 'video' = 'studio') => join(app.getPath('userData'), 'studios', workspace === 'video' ? 'Editor Gacha' : 'Studio Principal')
 const studioPath = (id: string) => join(studioLibraryPath('studio'), `studio-${id}`)
 const videoLibrary = new VideoLibraryStore(() => studioLibraryPath('video'))
 const videoBackgroundLibrary = new VideoBackgroundLibraryStore(() => studioLibraryPath('video'))

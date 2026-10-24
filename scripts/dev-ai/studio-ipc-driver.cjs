@@ -549,7 +549,7 @@ async function seed(window) {
     },
     deleteOperations: 0, outsideSandboxWritesObserved: 0,
     sandboxRoot: 'out/dev-ai/runs/<run-id>/sandbox',
-    relativeNamespaces: ['electron-user-data/studios/Studio Principal', 'electron-user-data/studios/Video Studio'] }
+    relativeNamespaces: ['electron-user-data/studios/Studio Principal', 'electron-user-data/studios/Editor Gacha'] }
   await writeFile(join(output, 'seed-result.json'), JSON.stringify(result, null, 2))
   console.log(JSON.stringify({ mode, status: 'passed', ...result }))
 }

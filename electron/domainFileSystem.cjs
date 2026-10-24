@@ -19,8 +19,8 @@ const ROOTS = [
   { id: 'fabricator.face-sets', path: 'fabricator/guides-head-extras.json', file: true },
   { id: 'customizer.characters', path: 'customizer/characters' },
   { id: 'studio.projects', path: 'studios/Studio Principal' },
-  { id: 'video-studio.media', path: 'studios/Video Studio/media-library' },
-  { id: 'video-studio.backgrounds', path: 'studios/Video Studio/background-library' }
+  { id: 'video-studio.media', path: 'studios/Editor Gacha/media-library' },
+  { id: 'video-studio.backgrounds', path: 'studios/Editor Gacha/background-library' }
 ].sort((a, b) => b.path.length - a.path.length)
 
 function isWithin(root, target) {
