@@ -143,8 +143,25 @@ async function run(){
         'texturas GPU de corpo e faces reais do Fabricator',18000)
       assert.equal(compiled,true)
       const capture=await send('Page.captureScreenshot',{format:'png',captureBeyondViewport:false})
-      fs.writeFileSync(path.join(runRoot,'catalog-gpu-preview.png'),Buffer.from(capture.data,'base64'))
-      const result={ok:true,catalogSpritesReady:true,modelFixture:'Fabricator source+pose+left/right eyes and PT pupils',
+      const png=Buffer.from(capture.data,'base64')
+      fs.writeFileSync(path.join(runRoot,'catalog-gpu-preview.png'),png)
+      // The source fixture has saturated blue skin/garment pixels while the
+      // persisted V1 fallback is pure white. Counted GPU textures alone could
+      // still be invisible. Assert that *real compositor pixels* reached the
+      // stage, and archive the screenshot for human PT pixel review.
+      const bounds=await evaluate("(()=>{const r=document.querySelector('.video-rebuild-stage canvas').getBoundingClientRect();return{x:r.x,y:r.y,width:r.width,height:r.height,dpr:devicePixelRatio}})()")
+      const sharp=require('sharp')
+      const {data:rgb,info}=await sharp(png).ensureAlpha().raw().toBuffer({resolveWithObject:true})
+      const centerX=Math.floor((bounds.x+bounds.width*.5)*bounds.dpr)
+      const centerY=Math.floor((bounds.y+bounds.height*.64)*bounds.dpr)
+      if(centerX<0||centerY<0||centerX>=info.width||centerY>=info.height)
+        throw Error('Palco Gacha fora da captura real do Chromium.')
+      const pos=(centerY*info.width+centerX)*4
+      const center=Array.from(rgb.subarray(pos,pos+3))
+      const colorRange=Math.max(...center)-Math.min(...center)
+      if(colorRange<35)throw Error('Compositor de catálogo GPU não gerou pixels coloridos de personagem: '+JSON.stringify(center))
+      const result={ok:true,catalogSpritesReady:true,catalogCenterRgb:center,
+        modelFixture:'Fabricator source+pose+left/right eyes and PT pupils',
         previewBackend:'webgl2',savedV1:true,fallbackWasAvailable:true,
         projectIsolation:'synthetic',runId}
       fs.writeFileSync(path.join(runRoot,'catalog-gpu-smoke.json'),JSON.stringify(result,null,2))
