@@ -105,8 +105,49 @@ async function run(){
     await until("Boolean(document.querySelector('.video-rebuild footer')?.textContent?.includes('Cópia gravada'))",'confirmação da gravação')
     const saved=await until("window.desktop.listVideoStudios().then(xs=>xs.length>0).catch(()=>false)",'cópia no serviço de persistência')
     assert.equal(saved,true)
+    // Real Chromium pixel oracle: an asymmetric Gacha PNG has a RED top and
+    // BLUE bottom. A vertical UV inversion is visible only to a pixel oracle,
+    // not to a shader-source/unit test or an empty-project Play smoke.
+    const sampleId='gpu-orientation-'+runId
+    await evaluate(`(async()=>{
+      const stamp=new Date().toISOString()
+      const image=document.createElement('canvas');image.width=32;image.height=32
+      const g=image.getContext('2d')
+      g.fillStyle='#ff0000';g.fillRect(0,0,32,16)
+      g.fillStyle='#0000ff';g.fillRect(0,16,32,16)
+      const actor={id:'upright-actor',kind:'character',text:'',x:0,y:0,width:100,height:100,
+        rotation:0,zIndex:0,flipX:false}
+      const studio={schemaVersion:1,id:'${sampleId}',title:'ORIENTATION SYNTHETIC ${runId}',
+        color:'#526ea9',createdAt:stamp,updatedAt:stamp,backgroundColor:'#000000',
+        backgroundAssetId:null,backgroundX:0,backgroundY:0,backgroundWidth:100,
+        backgroundHeight:100,backgroundRotation:0,assets:[],elements:[actor],
+        videoTimeline:{schemaVersion:1,frameRate:60,durationFrames:120,playheadFrame:0,
+          playing:false,characterKeys:[],textClips:[],saveMarkers:[],
+          characterBases:{[actor.id]:{element:actor,imageDataUrl:image.toDataURL('image/png')}}}}
+      await window.desktop.saveVideoStudio(studio)
+      return true
+    })()`)
+    await evaluate("(()=>{const b=[...document.querySelectorAll('button')].find(x=>x.textContent==='Biblioteca');if(!b)throw Error('Biblioteca ausente');b.click();return true})()")
+    await until("Boolean([...document.querySelectorAll('.video-rebuild-cards button')].find(x=>x.textContent.includes('ORIENTATION SYNTHETIC')))",'cópia sintética orientada')
+    await evaluate("(()=>{const b=[...document.querySelectorAll('.video-rebuild-cards button')].find(x=>x.textContent.includes('ORIENTATION SYNTHETIC'));b.click();return true})()")
+    await until("Boolean(document.querySelector('.video-rebuild-stage canvas'))",'palco sintético')
+    await until("Number(document.querySelector('.video-rebuild-stage-row aside')?.textContent?.match(/Quadros apresentados: (\\d+)/)?.[1])>0",'frame de imagem assimétrica')
+    await delay(250)
+    const bounds=await evaluate("(()=>{const r=document.querySelector('.video-rebuild-stage canvas').getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,dpr:devicePixelRatio}})()")
+    const capture=await send('Page.captureScreenshot',{format:'png',captureBeyondViewport:false})
+    const sharp=require('sharp')
+    const shot=sharp(Buffer.from(capture.data,'base64'))
+    const {data:raw,info}=await shot.ensureAlpha().raw().toBuffer({resolveWithObject:true})
+    const pixel=(fx,fy)=>{
+      const x=Math.floor((bounds.x+bounds.width*fx)*bounds.dpr),y=Math.floor((bounds.y+bounds.height*fy)*bounds.dpr)
+      if(x<0||y<0||x>=info.width||y>=info.height)throw Error('Palco fora da captura '+JSON.stringify({x,y,bounds,info}))
+      return [...raw.subarray((y*info.width+x)*4,(y*info.width+x)*4+3)]
+    }
+    const upper=pixel(.5,.25),lower=pixel(.5,.75)
+    if(!(upper[0]>180&&upper[2]<100&&lower[2]>180&&lower[0]<100))
+      throw Error('Regressão GPU: personagem invertido ou ausente '+JSON.stringify({upper,lower,bounds}))
     const result={ok:true,renderBackend:'webgl2',playedFrame:progress.value,seekFrame:2700,
-      persisted:true,projectIsolation:'synthetic',runId}
+      persisted:true,projectIsolation:'synthetic',orientationPixelOracle:'top-red-bottom-blue',runId}
     fs.writeFileSync(path.join(runRoot,'rebuild-smoke.json'),JSON.stringify(result,null,2))
     console.log(JSON.stringify(result))
   }finally{

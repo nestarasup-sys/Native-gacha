@@ -11,7 +11,7 @@ function setup(){
       const constants={VERTEX_SHADER:1,FRAGMENT_SHADER:2,COMPILE_STATUS:3,LINK_STATUS:4,ARRAY_BUFFER:5,
         STATIC_DRAW:6,BLEND:7,ONE:8,ONE_MINUS_SRC_ALPHA:9,FLOAT:10,TRIANGLE_STRIP:11,TEXTURE_2D:12,
         TEXTURE0:13,RGBA:14,UNSIGNED_BYTE:15,LINEAR:16,TEXTURE_MIN_FILTER:17,TEXTURE_MAG_FILTER:18,
-        TEXTURE_WRAP_S:19,TEXTURE_WRAP_T:20,CLAMP_TO_EDGE:21,UNPACK_PREMULTIPLY_ALPHA_WEBGL:22,
+        TEXTURE_WRAP_S:19,TEXTURE_WRAP_T:20,CLAMP_TO_EDGE:21,UNPACK_PREMULTIPLY_ALPHA_WEBGL:22,UNPACK_FLIP_Y_WEBGL:24,
         COLOR_BUFFER_BIT:23}
       if(Object.hasOwn(constants,k))return constants[k]
       if(k==='getShaderParameter'||k==='getProgramParameter')return()=>true
@@ -126,5 +126,15 @@ test('GPU reallocates a video only when its native resolution changes',()=>{
   assert.equal(log.subUploads,0)
   stage.draw([video])
   assert.equal(log.subUploads,1)
+  stage.dispose()
+})
+
+test('DOM image top must face screen top; explicit unflipped upload also applies to video',()=>{
+  const file=fs.readFileSync(path.resolve(__dirname,'../src/renderer/src/features/videoStudioRebuild/gachaGpuStage.ts'),'utf8')
+  assert.match(file,/v_uv=vec2\(\(a_pos\.x\+\.5\)\*u_flip\+\(u_flip<0\.0\?1\.0:0\.0\),\.5\+a_pos\.y\)/)
+  assert.match(file,/pixelStorei\(gl\.UNPACK_FLIP_Y_WEBGL,false\)/)
+  const {Stage,canvas}=setup(),stage=new Stage(canvas,4096)
+  stage.draw([sprite('top-red-bottom-blue')])
+  stage.draw([sprite('video',8,8,true)])
   stage.dispose()
 })

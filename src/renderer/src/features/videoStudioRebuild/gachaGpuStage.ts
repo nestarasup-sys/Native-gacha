@@ -68,7 +68,8 @@ export class GachaGpuStage {
       'float c=cos(u_angle),s=sin(u_angle); vec2 xy=a_pos*u_size;',
       'vec2 pixel=u_center+vec2(c*xy.x-s*xy.y,s*xy.x+c*xy.y);',
       'gl_Position=vec4(pixel.x*2.0/1920.0-1.0,1.0-pixel.y*2.0/1080.0,0.0,1.0);',
-      'v_uv=vec2((a_pos.x+.5)*u_flip+(u_flip<0.0?1.0:0.0),.5-a_pos.y);',
+      '// DOM image top row is uploaded at texture v=0 when UNPACK_FLIP_Y=false.',
+      'v_uv=vec2((a_pos.x+.5)*u_flip+(u_flip<0.0?1.0:0.0),.5+a_pos.y);',
       '}'
     ].join('\n'))
     const fragment = shader(gl.FRAGMENT_SHADER, [
@@ -123,6 +124,8 @@ export class GachaGpuStage {
     const texture=gl.createTexture()
     if (!texture) throw new Error('Alocação de textura GPU falhou.')
     gl.bindTexture(gl.TEXTURE_2D,texture)
+    // PNG, HTMLCanvas and HTMLVideo share the same top-left pixel origin.
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false)
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL,true)
     gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR)
     gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR)
