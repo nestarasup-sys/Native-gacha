@@ -84,3 +84,18 @@ test('GPU context loss clears leases and restore permits rebuilding textures',()
   assert.equal(log.programs,2,'GPU shaders and buffers must be recreated after context recovery')
   stage.dispose()
 })
+
+test('revised eye replaces just its GPU texture; stable body remains resident',()=>{
+  const {Stage,canvas,log}=setup(),stage=new Stage(canvas,4096)
+  const body={width:16,height:16},oldEye={width:16,height:16},newEye={width:8,height:8}
+  const layer=(id,source)=>({textureId:id,source,element:{x:0,y:0,width:30,height:30,rotation:0,flipX:false}})
+  stage.draw([layer('body',body),layer('eye-left',oldEye)])
+  stage.draw([layer('body',body),layer('eye-left',oldEye)])
+  assert.equal(log.uploads,2)
+  stage.draw([layer('body',body),layer('eye-left',newEye)])
+  assert.equal(log.uploads,3)
+  assert.equal(log.deleted,1)
+  assert.equal(stage.stats().retainedEstimatedBytes,16*16*4+8*8*4)
+  stage.dispose()
+  assert.equal(log.deleted,3)
+})

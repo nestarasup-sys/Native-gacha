@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { StudioDocument, VideoStudioCardSummary } from '../../../../shared/studio'
 import { VideoStudioFrameEngine } from '../../../../shared/videoStudioRebuild/frameEngine'
 import { splitCharacterAt } from '../../../../shared/videoStudioRebuild/rebuildEditor'
+import { RebuildDocumentHistory } from '../../../../shared/videoStudioRebuild/documentHistory'
 import { applyVideoStudioEditorCommand } from '../../../../shared/videoStudioNext/editorCore'
 import { GachaGpuStage } from './gachaGpuStage'
 import { VideoStudioMediaEngine } from './mediaEngine'
@@ -30,6 +31,9 @@ export function VideoStudioRebuildPage({onEditorActiveChange}:Props) {
   const transport=useRef<VideoStudioPreviewTransport|null>(null)
   const [presented,setPresented]=useState(0)
   const [skipped,setSkipped]=useState(0)
+  const history=useRef(new RebuildDocumentHistory())
+  const [,refreshHistory]=useState(0)
+  const changedHistory=()=>refreshHistory(value=>value+1)
 
   const engine=useMemo(()=>studio?.videoTimeline ? new VideoStudioFrameEngine(studio):null,[studio])
   const duration=engine?.durationFrames??1
@@ -46,12 +50,13 @@ export function VideoStudioRebuildPage({onEditorActiveChange}:Props) {
     try{
       const doc=await window.desktop.loadVideoStudio(id)
       if(!doc?.videoTimeline)throw new Error('O projeto não possui timeline de vídeo.')
+      history.current.reset(doc);changedHistory()
       setStudio(doc);setFrame(0);setSelected(doc.elements.find(e=>e.kind==='character')?.id??'')
       setStatus('Novo motor — edição local; use Salvar cópia para persistir.')
     }catch(e){setStatus(String(e))}
   }
   const close=()=>{
-    pause();setStudio(null);setFrame(0)
+    pause();history.current.reset(null);changedHistory();setStudio(null);setFrame(0);setSelected('')
     void window.desktop.listVideoStudios().then(setCards).catch(()=>undefined)
   }
   const blank=()=>{
@@ -65,20 +70,29 @@ export function VideoStudioRebuildPage({onEditorActiveChange}:Props) {
         characterKeys:[],textClips:[],saveMarkers:[],
       }
     }
-    setStudio(doc);setFrame(0);setStatus('Projeto novo em memória. Use Salvar cópia.')
+    history.current.reset(doc);changedHistory()
+    setStudio(doc);setFrame(0);setSelected('');setStatus('Projeto novo em memória. Use Salvar cópia.')
   }
   const copy=async()=>{
     if(!studio)return
     const stamp=now()
     const out:StudioDocument={...studio,id:crypto.randomUUID(),title:studio.title.includes('Novo motor')?studio.title:studio.title+' — Novo motor',
       createdAt:stamp,updatedAt:stamp,videoTimeline:studio.videoTimeline?{...studio.videoTimeline,playheadFrame:Math.min(transport.current?.snapshot().frame??viewFrame,duration),playing:false}:undefined}
-    try{await window.desktop.saveVideoStudio(out);setStudio(out);setStatus('Cópia gravada sem alterar o projeto original.')}
+    try{await window.desktop.saveVideoStudio(out);history.current.reset(out);changedHistory();setStudio(out);setStatus('Cópia gravada sem alterar o projeto original.')}
     catch(e){setStatus('Falha ao salvar cópia: '+String(e))}
   }
   const edit=(action:(doc:StudioDocument)=>StudioDocument)=>{
     if(!studio)return
     pause()
-    try{const next=action(studio);if(next!==studio){setStudio(next);setStatus('Alteração somente local — salve uma cópia para persistir.')}}catch(e){setStatus(String(e))}
+    try{const next=action(studio);if(history.current.record(studio,next)){setStudio(next);changedHistory();setStatus('Alteração somente local — salve uma cópia para persistir.')}}catch(e){setStatus(String(e))}
+  }
+  const stepHistory=(direction:'undo'|'redo')=>{
+    if(!studio)return
+    pause()
+    const restored=direction==='undo'?history.current.undo(studio):history.current.redo(studio)
+    if(!restored)return
+    setStudio(restored);changedHistory()
+    setStatus(direction==='undo'?'Edição desfeita localmente.':'Edição refeita localmente.')
   }
   // The transport, decoder cache, request queue, AV clock and GPU context
   // live OUTSIDE React. React receives only throttled presentation snapshots.
@@ -99,6 +113,8 @@ export function VideoStudioRebuildPage({onEditorActiveChange}:Props) {
       },
       error=>setStatus('Falha da prévia GPU: '+error.message))
     transport.current=instance
+    // Scene recompilation must retain the absolute playhead on Undo/Redo.
+    instance.seek(Math.min(viewFrame,engine.durationFrames-1))
     return()=>{
       if(transport.current===instance)transport.current=null
       instance.dispose()
@@ -139,6 +155,10 @@ export function VideoStudioRebuildPage({onEditorActiveChange}:Props) {
           <p>{studio.elements.filter(e=>e.kind==='character').length} personagens · {studio.videoTimeline?.characterKeys.length??0} chaves</p>
           <h4>Personagens</h4>
           {studio.elements.filter(e=>e.kind==='character').map(e=><button className={selected===e.id?'selected':''} key={e.id} onClick={()=>setSelected(e.id)}>{e.speakerName||e.id.slice(0,8)}</button>)}
+          {selected&&<button onClick={()=>edit(doc=>applyVideoStudioEditorCommand(doc,doc.videoTimeline!,{
+            type:'set-track-settings',trackId:selected,
+            settings:{...doc.videoTimeline?.trackSettings?.[selected],locked:!doc.videoTimeline?.trackSettings?.[selected]?.locked}
+          },now()))}>{studio.videoTimeline?.trackSettings?.[selected]?.locked?'Desbloquear faixa':'Bloquear faixa'}</button>}
           <p className="video-rebuild-note">Prévia GPU de estados visuais salvos. Transições faciais dinâmicas e máscaras PT ainda aguardam compilação de sprites e golden visual.</p>
           <small>{gpuStats}</small>
         </aside>
@@ -147,6 +167,8 @@ export function VideoStudioRebuildPage({onEditorActiveChange}:Props) {
         <div className="video-rebuild-transport">
           <button onClick={togglePlayback}>{playing?'Pausar':'Reproduzir'}</button>
           <button onClick={()=>seek(0)}>Voltar ao início</button>
+          <button disabled={!history.current.canUndo} onClick={()=>stepHistory('undo')}>Desfazer</button>
+          <button disabled={!history.current.canRedo} onClick={()=>stepHistory('redo')}>Refazer</button>
           <label>Frame <input aria-label="Frame absoluto" type="number" min="0" max={duration-1} value={viewFrame} onChange={e=>seek(Math.max(0,Math.min(duration-1,Math.round(Number(e.target.value)||0))))} /></label>
           <button disabled={!selected} onClick={()=>edit(doc=>splitCharacterAt(doc,selected,viewFrame,crypto.randomUUID(),now()))}>Dividir bloco</button>
           <button onClick={()=>edit(doc=>applyVideoStudioEditorCommand(doc,doc.videoTimeline!,{type:'set-character-transitions',enabled:doc.videoTimeline?.animateCharacterTransitions===false},now()))}>Alternar transições</button>

@@ -10,7 +10,7 @@ export type GachaGpuLayer = Readonly<{
   /** Video textures need fresh pixels each frame without allocating a new texture. */
   dynamic?: boolean
 }>
-type CachedTexture = { texture: WebGLTexture; bytes: number; lastUsed: number }
+type CachedTexture = { texture: WebGLTexture; bytes: number; lastUsed: number; source: TexImageSource }
 
 /** WebGL2 textured layers with persistent GPU resources and finite LRU.
  * This first runtime can draw existing authored snapshots; the dedicated
@@ -86,9 +86,16 @@ export class GachaGpuStage {
 
   private texture(id: string, source: TexImageSource): WebGLTexture {
     const cached=this.textures.get(id)
-    if (cached) {
+    if (cached?.source===source) {
       cached.lastUsed=++this.tick
       return cached.texture
+    }
+    // A stable logical sprite ID may refer to an updated catalog revision.
+    // Release only the revised texture, never unrelated body/hair sprites.
+    if (cached) {
+      this.gl.deleteTexture(cached.texture)
+      this.textures.delete(id)
+      this.bytes-=cached.bytes
     }
     const dim=source as {videoWidth?:number;naturalWidth?:number;width?:number;videoHeight?:number;naturalHeight?:number;height?:number}
     const bytes=Number(dim.videoWidth||dim.naturalWidth||dim.width)*Number(dim.videoHeight||dim.naturalHeight||dim.height)*4
@@ -108,7 +115,7 @@ export class GachaGpuStage {
     gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE)
     try {gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,source)}
     catch(error){gl.deleteTexture(texture);throw error}
-    this.textures.set(id,{texture,bytes,lastUsed:++this.tick});this.bytes+=bytes
+    this.textures.set(id,{texture,bytes,lastUsed:++this.tick,source});this.bytes+=bytes
     return texture
   }
 
