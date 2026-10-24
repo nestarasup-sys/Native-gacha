@@ -127,3 +127,88 @@ test('cache accounts PNG bytes and never constructs throwaway HTMLImageElement',
     session.dispose()
   } finally { if (before === undefined) delete global.Image; else global.Image = before }
 })
+
+const eventually = async (predicate, message) => {
+  const start = Date.now()
+  while (!predicate()) {
+    if (Date.now() - start > 2000) throw Error(message)
+    await new Promise(resolve => setTimeout(resolve, 1))
+  }
+}
+
+test('real-time preview requests only demanded absolute frame and does not prewarm 14 images', async () => {
+  const frames = []
+  const session = new Session('studio', { render: async (_span, frame) => {
+    frames.push(frame)
+    return state
+  }, dispose() {} })
+  const ready = []
+  session.requestFrame(spans, 18, [actor], (_id, frame) => ready.push(frame))
+  await eventually(() => ready.length === 1, 'real-time frame did not finish')
+  assert.deepEqual(frames, [18])
+  assert.deepEqual(ready, [18])
+  session.dispose()
+})
+
+test('real-time seeks coalesce stale pending frames instead of queuing 60 per second', async () => {
+  const first = deferred()
+  const frames = []
+  const session = new Session('studio', { render: async (_span, frame) => {
+    frames.push(frame)
+    if (frames.length === 1) await first.promise
+    return state
+  }, dispose() {} })
+  const ready = []
+  session.requestFrame(spans, 17, [actor], (_id, frame) => ready.push(frame))
+  await eventually(() => frames.length === 1, 'first frame did not start')
+  session.requestFrame(spans, 18, [actor], (_id, frame) => ready.push(frame))
+  session.requestFrame(spans, 19, [actor], (_id, frame) => ready.push(frame))
+  first.resolve()
+  await eventually(() => frames.length === 2 && ready.length === 2, 'coalesced frame did not finish')
+  assert.deepEqual(frames, [17, 19])
+  assert.equal(session.metrics().rendered, 2)
+  session.dispose()
+})
+
+test('editing one actor invalidates only that actor; another actor keeps its cache', async () => {
+  const second = { id: 'actor-b', updatedAt: 'v1' }
+  const fromB = { element: { id: 'element-b', characterId: 'actor-b' }, imageDataUrl: 'data:image/png;base64,B' }
+  const a = spans[0]
+  const b = { ...a, elementId: 'element-b', from: fromB, to: fromB }
+  const changes = []
+  const session = new Session('studio', { render: async (span) => {
+    changes.push(span.elementId)
+    return span.from
+  }, dispose() {} })
+  const ready = []
+  const onReady = id => ready.push(id)
+  session.requestFrame([a,b], 18, [actor,second], onReady)
+  await eventually(() => ready.length === 2, 'first two actors not ready')
+  const before = session.get(b, 18, second)
+  const fromA2 = { ...a.from, element: { ...a.from.element, poseSlot: 3 } }
+  const revisedA = { ...a, from: fromA2, to: fromA2 }
+  session.requestFrame([revisedA,b], 18, [actor,second], onReady)
+  await eventually(() => ready.length === 3, 'edited actor not rerendered')
+  assert.deepEqual(changes, ['element', 'element-b', 'element'])
+  assert.strictEqual(session.get(b, 18, second), before)
+  session.dispose()
+})
+
+test('last visible frame remains available inside its own transition while the next frame renders', async () => {
+  const next = deferred()
+  const session = new Session('studio', { render: async (_span, frame) => {
+    if (frame === 19) await next.promise
+    return { ...state, imageDataUrl: 'frame-' + frame }
+  }, dispose() {} })
+  session.requestFrame(spans, 18, [actor], () => {})
+  await eventually(() => session.metrics().rendered === 1, 'initial raster missing')
+  assert.equal(session.get(spans[0], 19, actor, true).imageDataUrl, 'frame-18')
+  assert.equal(session.get(spans[0], 19, actor, false), undefined)
+  session.requestFrame(spans, 19, [actor], () => {})
+  await eventually(() => session.metrics().inFlight > 0, 'second raster not pending')
+  assert.equal(session.get(spans[0], 19, actor, true).imageDataUrl, 'frame-18')
+  next.resolve()
+  await eventually(() => session.metrics().rendered === 2, 'second raster missing')
+  assert.equal(session.get(spans[0], 19, actor).imageDataUrl, 'frame-19')
+  session.dispose()
+})
