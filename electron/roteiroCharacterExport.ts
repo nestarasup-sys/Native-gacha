@@ -119,7 +119,7 @@ export class RoteiroCharacterExportStore {
     const isPupilsLeft = value.role === 'pt' || value.role === 'pt-blink' || value.role === 'pt-talk'
     const visualRole = value.role === 'pt' ? 'base' : value.role === 'pt-blink' ? 'blink' : value.role === 'pt-talk' ? 'talk' : value.role!
     const roleSuffix = visualRole === 'base' ? '' : `_${visualRole}`
-    const filenameExpression = isPupilsLeft ? `pt-${expression}` : expression
+    const filenameExpression = isPupilsLeft ? `pt_${expression}` : expression
     const relativeFile = join('assets', 'characters', character.folderName, `POSE ${value.pose}`, `${filenameExpression}${roleSuffix}.png`)
     if (job.files.has(relativeFile)) throw new Error(`A expressão ${expression} foi gerada mais de uma vez para ${character.characterName}, POSE ${value.pose}.`)
     const target = resolve(job.stageFolder, relativeFile)
