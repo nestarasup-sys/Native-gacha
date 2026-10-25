@@ -3,6 +3,7 @@ import { Icon } from '../../ui/components/Icon'
 import { RoteiroSectionEditor } from './RoteiroSectionEditor'
 import { CharacterPortrait } from '../../ui/components/CharacterPortrait'
 import { RenderedCharacterPortrait } from '../../ui/components/RenderedCharacterPortrait'
+import { buildCharacterExportExpressionNames } from './characterExportNames'
 import type { CustomizerCharacter } from '../../../../shared/customizer'
 import type { RoteiroDocument, RoteiroExportCharacterInfo, RoteiroExportLog, RoteiroReactionBlock, RoteiroSectionContent, RoteiroTikTok, RoteiroUiGifItem, RoteiroVideoReference } from '../../../../shared/roteiros'
 import type { VideoBackgroundLibraryItem, VideoLibraryItem } from '../../../../shared/studio'
@@ -154,22 +155,7 @@ function RoteiroWorkspace({ roteiro, onBack, onUpdate, onDeleteDraftVideo, chara
         const expressionSummaries = character.customization.faceAppearance
           ? (await window.desktop.listFaceExpressionPresets(modelSlot)).filter((preset) => preset.modelSlot === modelSlot).sort((a, b) => (a.expressionIndex ?? 0) - (b.expressionIndex ?? 0))
           : []
-        const nameCounts = new Map<string, number>()
-        for (const preset of expressionSummaries) nameCounts.set(preset.name.trim().toLocaleLowerCase('pt-BR'), (nameCounts.get(preset.name.trim().toLocaleLowerCase('pt-BR')) ?? 0) + 1)
-        const normalPreset = expressionSummaries.find((preset) => preset.name.trim().toLocaleLowerCase('pt-BR') === 'normal')
-        const expressions = [
-          { name: 'normal', presetId: normalPreset?.id ?? null },
-          ...expressionSummaries.filter((preset) => preset.id !== normalPreset?.id).map((preset) => ({ name: nameCounts.get(preset.name.trim().toLocaleLowerCase('pt-BR'))! > 1 ? `${preset.name} ${preset.collectionId ?? 'extra'}` : preset.name, presetId: preset.id }))
-        ]
-        const expressionKey = (value: string) => value.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 72) || 'expressao'
-        const seenExpressionNames = new Set(['normal'])
-        for (const expression of expressions.slice(1)) {
-          let name = expression.name
-          let suffix = 2
-          while (seenExpressionNames.has(expressionKey(name))) name = `${expression.name} ${suffix++}`
-          expression.name = name
-          seenExpressionNames.add(expressionKey(name))
-        }
+        const expressions = buildCharacterExportExpressionNames(expressionSummaries)
         const estimated = cast.reduce((total, item) => total + (item.id === character.id ? renderPoses.length * expressions.length * 6 : 0), 0)
         if (completedFiles + estimated > job.assetCountLimit) throw new Error('O elenco e as poses gerariam mais de 20 mil imagens. Reduza as poses ou expressões salvas antes de exportar.')
         const { loadComponent, loadCatalog } = componentProvider(modelSlot)
@@ -238,19 +224,7 @@ function RoteiroWorkspace({ roteiro, onBack, onUpdate, onDeleteDraftVideo, chara
         let expressions: string[] = []
         if (character.customization.faceAppearance) {
           const presets = (await window.desktop.listFaceExpressionPresets(modelSlot)).filter((preset) => preset.modelSlot === modelSlot).sort((a, b) => (a.expressionIndex ?? 0) - (b.expressionIndex ?? 0))
-          const normal = presets.find((preset) => preset.name.trim().toLocaleLowerCase('pt-BR') === 'normal')
-          const counts = new Map<string, number>()
-          for (const preset of presets) counts.set(preset.name.trim().toLocaleLowerCase('pt-BR'), (counts.get(preset.name.trim().toLocaleLowerCase('pt-BR')) ?? 0) + 1)
-          expressions = [
-            ...presets.filter((preset) => preset.id !== normal?.id).map((preset) => counts.get(preset.name.trim().toLocaleLowerCase('pt-BR'))! > 1 ? `${preset.name} ${preset.collectionId ?? 'extra'}` : preset.name)
-          ]
-          const expressionKey = (value: string) => value.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 72) || 'expressao'
-          const seen = new Set(['normal'])
-          expressions = expressions.map((expression) => {
-            let name = expression, suffix = 2
-            while (seen.has(expressionKey(name))) name = `${expression} ${suffix++}`
-            seen.add(expressionKey(name)); return name
-          })
+          expressions = buildCharacterExportExpressionNames(presets).slice(1).map((item) => item.name)
         }
         return { id, name: character.name, modelSlot, hair: character.hair, outfit: character.outfit, skin: character.skin, hasFaceAppearance: Boolean(character.customization.faceAppearance), poseSlots: poseSlots.length ? poseSlots : [0], expressions }
       })) : undefined
