@@ -156,7 +156,7 @@ function RoteiroWorkspace({ roteiro, onBack, onUpdate, onDeleteDraftVideo, chara
           ? await Promise.all([window.desktop.listFaceExpressionPresets(modelSlot), window.desktop.listFaceExpressionCollections(modelSlot)])
           : [[], []]
         const expressions = buildCharacterExportExpressionNames(
-          expressionSummaries.filter((preset) => preset.modelSlot === modelSlot).sort((a, b) => (a.expressionIndex ?? 0) - (b.expressionIndex ?? 0)),
+          expressionSummaries.filter((preset) => preset.modelSlot === modelSlot && (!preset.collectionId || preset.collectionId === 'standard')).sort((a, b) => (a.expressionIndex ?? 0) - (b.expressionIndex ?? 0)),
           expressionCollections,
         )
         const estimated = cast.reduce((total, item) => total + (item.id === character.id ? renderPoses.length * expressions.length * 6 : 0), 0)
