@@ -29,6 +29,11 @@ function safeDisplayName(value: unknown, label: string): string {
   return value.trim()
 }
 
+function safeExpressionSegment(value: string): string {
+  const cleaned = value.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9_-]+/g, '_').replace(/_+/g, '_').replace(/^[_-]+|[_-]+$/g, '').slice(0, 72).toLowerCase()
+  return cleaned || 'expressao'
+}
+
 function samePath(left: string, right: string): boolean { return process.platform === 'win32' ? left.toLowerCase() === right.toLowerCase() : left === right }
 
 async function exists(path: string): Promise<boolean> {
@@ -110,7 +115,7 @@ export class RoteiroCharacterExportStore {
     const value = input as Partial<RoteiroExportAsset>
     const character = typeof value.characterId === 'string' ? job.namesById.get(value.characterId) : undefined
     if (!character || !Number.isInteger(value.pose) || value.pose! < 1 || value.pose! > 100 || !['base', 'blink', 'talk', 'pt', 'pt-blink', 'pt-talk'].includes(value.role ?? '')) throw new Error('Referência de asset inválida.')
-    const expression = safeSegment(safeDisplayName(value.expression, 'Expressão'), 'expressao').toLowerCase()
+    const expression = safeExpressionSegment(safeDisplayName(value.expression, 'Expressão'))
     if (typeof value.dataUrl !== 'string' || value.dataUrl.length > 36 * 1024 * 1024) throw new Error('Imagem de personagem excede o limite de exportação.')
     const match = /^data:image\/png;base64,([a-z0-9+/=]+)$/i.exec(value.dataUrl)
     if (!match) throw new Error('A exportação aceita somente imagens PNG renderizadas pelo aplicativo.')

@@ -152,10 +152,13 @@ function RoteiroWorkspace({ roteiro, onBack, onUpdate, onDeleteDraftVideo, chara
         const poses = loadedPoses.filter((entry): entry is { summary: NonNullable<(typeof poseSummaries)[number]>; artwork: NonNullable<(typeof entry)['artwork']> } => Boolean(entry.artwork))
         if (poseSummaries.length && poses.length !== poseSummaries.length) throw new Error(`Uma pose salva de “${character.name}” não pôde ser carregada.`)
         const renderPoses = poses.length ? poses : [{ summary: null, artwork: source }]
-        const expressionSummaries = character.customization.faceAppearance
-          ? (await window.desktop.listFaceExpressionPresets(modelSlot)).filter((preset) => preset.modelSlot === modelSlot).sort((a, b) => (a.expressionIndex ?? 0) - (b.expressionIndex ?? 0))
-          : []
-        const expressions = buildCharacterExportExpressionNames(expressionSummaries)
+        const [expressionSummaries, expressionCollections] = character.customization.faceAppearance
+          ? await Promise.all([window.desktop.listFaceExpressionPresets(modelSlot), window.desktop.listFaceExpressionCollections(modelSlot)])
+          : [[], []]
+        const expressions = buildCharacterExportExpressionNames(
+          expressionSummaries.filter((preset) => preset.modelSlot === modelSlot).sort((a, b) => (a.expressionIndex ?? 0) - (b.expressionIndex ?? 0)),
+          expressionCollections,
+        )
         const estimated = cast.reduce((total, item) => total + (item.id === character.id ? renderPoses.length * expressions.length * 6 : 0), 0)
         if (completedFiles + estimated > job.assetCountLimit) throw new Error('O elenco e as poses gerariam mais de 20 mil imagens. Reduza as poses ou expressões salvas antes de exportar.')
         const { loadComponent, loadCatalog } = componentProvider(modelSlot)
@@ -223,8 +226,11 @@ function RoteiroWorkspace({ roteiro, onBack, onUpdate, onDeleteDraftVideo, chara
         const poseSlots = exportSlots === null ? availableSlots : exportSlots.filter((slot): slot is number => slot !== null && availableSlots.includes(slot))
         let expressions: string[] = []
         if (character.customization.faceAppearance) {
-          const presets = (await window.desktop.listFaceExpressionPresets(modelSlot)).filter((preset) => preset.modelSlot === modelSlot).sort((a, b) => (a.expressionIndex ?? 0) - (b.expressionIndex ?? 0))
-          expressions = buildCharacterExportExpressionNames(presets).slice(1).map((item) => item.name)
+          const [presets, collections] = await Promise.all([window.desktop.listFaceExpressionPresets(modelSlot), window.desktop.listFaceExpressionCollections(modelSlot)])
+          expressions = buildCharacterExportExpressionNames(
+            presets.filter((preset) => preset.modelSlot === modelSlot).sort((a, b) => (a.expressionIndex ?? 0) - (b.expressionIndex ?? 0)),
+            collections,
+          ).map((item) => item.name).filter((name) => name !== 'normal')
         }
         return { id, name: character.name, modelSlot, hair: character.hair, outfit: character.outfit, skin: character.skin, hasFaceAppearance: Boolean(character.customization.faceAppearance), poseSlots: poseSlots.length ? poseSlots : [0], expressions }
       })) : undefined
