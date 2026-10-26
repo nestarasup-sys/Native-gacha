@@ -129,6 +129,7 @@ export function EditorV6Page() {
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [availableCharacters, setAvailableCharacters] = useState<CustomizerCharacter[]>([])
+  const [normalizedSourceVersion, setNormalizedSourceVersion] = useState(0)
   const [castPickerOpen, setCastPickerOpen] = useState(false)
   const [castSelection, setCastSelection] = useState<string[]>([])
   const [savingCast, setSavingCast] = useState(false)
@@ -343,12 +344,18 @@ export function EditorV6Page() {
 
   useEffect(() => {
     let cancelled = false
-    void window.desktop.listCustomizerCharacters().then((characters) => {
-      if (!cancelled) setAvailableCharacters(characters)
-    }).catch((reason: unknown) => {
-      if (!cancelled) setError(reason instanceof Error ? reason.message : 'Não foi possível carregar o elenco de personagens.')
-    })
-    return () => { cancelled = true }
+    const refreshCharacters = () => {
+      void window.desktop.listCustomizerCharacters().then((characters) => {
+        if (!cancelled) setAvailableCharacters(characters)
+      }).catch((reason: unknown) => {
+        if (!cancelled) setError(reason instanceof Error ? reason.message : 'Não foi possível carregar o elenco de personagens.')
+      })
+    }
+    const refreshWhenVisible = () => { if (document.visibilityState === 'visible') refreshCharacters() }
+    refreshCharacters()
+    window.addEventListener('focus', refreshCharacters)
+    document.addEventListener('visibilitychange', refreshWhenVisible)
+    return () => { cancelled = true; window.removeEventListener('focus', refreshCharacters); document.removeEventListener('visibilitychange', refreshWhenVisible) }
   }, [])
 
   useEffect(() => {
@@ -444,6 +451,7 @@ export function EditorV6Page() {
       const crops = await Promise.all(characterAssets.map(async (asset) => ({ assetId: asset.id, crop: await trimTransparentImage(asset.dataUrl) })))
       if (cancelled) return
       normalizedStudioIdsRef.current.add(studioId)
+      setNormalizedSourceVersion((version) => version + 1)
       const byAsset = new Map(crops.filter((entry): entry is { assetId: string; crop: TrimmedImage } => entry.crop !== null).map((entry) => [entry.assetId, entry.crop]))
       if (!byAsset.size) return
       updateActiveEditorV6Project((studio) => studio.id !== studioId ? studio : {
@@ -466,6 +474,113 @@ export function EditorV6Page() {
     })()
     return () => { cancelled = true }
   }, [activeEditorV6])
+
+  useEffect(() => {
+    const project = activeEditorV6
+    if (!project || !normalizedStudioIdsRef.current.has(project.id) || !availableCharacters.length) return
+    const characters = new Map(availableCharacters.map((character) => [character.id, character]))
+    type RefreshTarget = { kind: 'element' | 'block'; id: string; state: EditorV6Element }
+    type RefreshGroup = { character: CustomizerCharacter; state: EditorV6Element; targets: RefreshTarget[] }
+    const groups = new Map<string, RefreshGroup>()
+    const addTarget = (kind: RefreshTarget['kind'], id: string, state: EditorV6Element) => {
+      if (state.kind !== 'character' || !state.characterId || !state.assetId) return
+      const character = characters.get(state.characterId)
+      if (!character || state.characterSourceUpdatedAt === character.updatedAt) return
+      const signature = JSON.stringify([character.id, character.updatedAt, state.poseSlot ?? character.customization.poseSlot, state.faceAppearance, state.expressionBase, state.faceTransforms, state.activeFaceMode, state.activeExpressionPresetId, state.activeExpressionPresetUpdatedAt, state.activeExpressionGaze, state.activeExpressionEffects])
+      const group = groups.get(signature) ?? { character, state, targets: [] }
+      group.targets.push({ kind, id, state })
+      groups.set(signature, group)
+    }
+    for (const element of project.elements) addTarget('element', element.id, element)
+    for (const track of project.timeline.tracks) for (const block of track.blocks) if (block.state && block.elementId) addTarget('block', block.id, block.state)
+    if (!groups.size) return
+    pausePlayback()
+    let cancelled = false
+    const projectId = project.id
+    void (async () => {
+      try {
+        const { prepareSavedCharacterRenderer } = await import('../../characters/editorV6CharacterRenderer')
+        const nextElements = new Map<string, EditorV6Element>()
+        const nextBlocks = new Map<string, EditorV6Element>()
+        const refreshedAssets: EditorV6Asset[] = []
+        const staleAssetIds = new Set<string>()
+        const stageWidth = sceneRef.current?.clientWidth ?? 1000
+        const stageHeight = sceneRef.current?.clientHeight ?? 562
+        for (const { character, state, targets } of groups.values()) {
+          if (cancelled) return
+          for (const target of targets) {
+            if (target.state.assetId) staleAssetIds.add(target.state.assetId)
+            for (const id of Object.values(target.state.faceModeAssetIds ?? {})) if (id) staleAssetIds.add(id)
+          }
+          const sourceAppearance = character.customization.faceAppearance
+          const appearanceFallback = sourceAppearance ?? state.faceAppearance ?? state.expressionBase?.appearance
+          const previousBase = appearanceFallback ? resolveEditorV6ExpressionBase(state, appearanceFallback) : undefined
+          const sceneTransforms = Object.fromEntries(Object.entries(state.faceTransforms ?? {}).filter(([key]) => !key.startsWith('expression-component:') && !key.startsWith('expression:')))
+          const expressionBase = sourceAppearance ? { appearance: structuredClone(sourceAppearance), transforms: sceneTransforms } : previousBase
+          const preset = state.activeExpressionPresetId
+            ? await window.desktop.loadFaceExpressionPreset(character.customization.modelSlot ?? 1, state.activeExpressionPresetId)
+            : null
+          const appearance = preset && expressionBase?.appearance
+            ? await buildEditorV6ExpressionAppearance(preset, expressionBase.appearance, (id) => window.desktop.loadFaceCatalogItem(preset.modelSlot, id))
+            : state.faceAppearance ?? expressionBase?.appearance
+          const faceTransforms = preset && appearance && expressionBase
+            ? await buildEditorV6ExpressionTransforms(preset, appearance, expressionBase.transforms,
+              (id) => window.desktop.loadFaceComponentAsset(preset.modelSlot, id),
+              (id) => window.desktop.loadFaceCatalogItem(preset.modelSlot, id), state.activeExpressionGaze ?? 'right')
+            : sourceAppearance ? expressionBase?.transforms ?? state.faceTransforms : state.faceTransforms ?? expressionBase?.transforms
+          const effects = preset?.effects ?? state.activeExpressionEffects
+          const faceMode = editorV6FaceModeForElement(state, appearance)
+          const characterCopy: CustomizerCharacter = { ...character, customization: { ...character.customization, poseSlot: state.poseSlot === undefined ? character.customization.poseSlot : state.poseSlot, faceAppearance: appearance } }
+          const renderer = await prepareSavedCharacterRenderer(characterCopy)
+          let rendered: { dataUrl: string; width: number; height: number }
+          let baked: Awaited<ReturnType<typeof bakeFaceModeAssets>>
+          try {
+            rendered = await renderer.render(appearance, faceTransforms, effects, faceMode)
+            baked = await bakeFaceModeAssets(character.name, renderer, appearance, faceTransforms, effects, faceMode, rendered)
+          } finally { renderer.dispose() }
+          if (cancelled) return
+          const assetId = crypto.randomUUID()
+          const faceModeAssetIds = { ...baked.assetIds, [faceMode]: assetId }
+          refreshedAssets.push({ id: assetId, category: 'character', name: character.name, mimeType: 'image/png', dataUrl: baked.dataUrl, timelineSnapshot: true }, ...baked.extraAssets)
+          for (const target of targets) {
+            const geometry = faceRenderGeometry(target.state, rendered, baked.crop, stageWidth, stageHeight)
+            const next: EditorV6Element = {
+              ...target.state, assetId, faceModeAssetIds, ...geometry,
+              ...(appearance ? { faceAppearance: appearance } : {}),
+              ...(expressionBase ? { expressionBase } : {}),
+              ...(faceTransforms ? { faceTransforms } : {}),
+              ...(effects ? { activeExpressionEffects: effects } : { activeExpressionEffects: undefined }),
+              characterSourceUpdatedAt: character.updatedAt,
+              faceRendererVersion: EDITOR_V6_FACE_RENDER_VERSION,
+              ...(preset ? { activeExpressionPresetUpdatedAt: preset.updatedAt } : {})
+            }
+            if (target.kind === 'element') nextElements.set(target.id, next)
+            else nextBlocks.set(target.id, next)
+          }
+        }
+        if (cancelled) return
+        updateActiveEditorV6Project((current) => {
+          if (current.id !== projectId) return current
+          const timeline = { ...current.timeline, tracks: current.timeline.tracks.map((track) => ({ ...track, blocks: track.blocks.map((block) => {
+            const state = nextBlocks.get(block.id)
+            return state ? { ...block, state, label: state.text.trim().slice(0, 120) || block.label } : block
+          }) })) }
+          const next = {
+            ...current,
+            elements: current.elements.map((element) => nextElements.get(element.id) ?? element),
+            assets: [...current.assets.map((asset) => staleAssetIds.has(asset.id) ? { ...asset, timelineSnapshot: true } : asset), ...refreshedAssets],
+            timeline,
+            updatedAt: new Date().toISOString()
+          }
+          return pruneEditorV6TimelineSnapshots(next)
+        })
+        setSaved(false)
+      } catch (reason) {
+        if (!cancelled) setError(reason instanceof Error ? reason.message : 'Não foi possível atualizar o personagem do Customizador no Editor V6.')
+      }
+    })()
+    return () => { cancelled = true }
+  }, [activeEditorV6, availableCharacters, normalizedSourceVersion, pausePlayback, updateActiveEditorV6Project])
 
   const allocateNumber = () => {
     const highest = editorV6Projects.reduce((max, studio) => Math.max(max, Number(studio.title.match(/^Editor V6\s+(\d+)/i)?.[1] ?? 0)), 0)
