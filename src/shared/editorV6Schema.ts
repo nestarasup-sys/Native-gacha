@@ -2,6 +2,7 @@ import { z } from 'zod'
 import type { EditorV6Asset, EditorV6Document, EditorV6Element } from './editorV6'
 import { isValidCustomizerFaceAppearance } from './customizerValidation'
 import { isEditorV6ExpressionEffects, isEditorV6FaceTransforms } from './editorV6'
+import type { EditorV6MotionBakeRequest } from './editorV6Motion'
 
 const uuid = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)
 const finite = z.number().finite()
@@ -29,6 +30,7 @@ export const editorV6AssetSchema = z.object({
 
 const editorV6ElementSchema = z.object({
   id: uuid,
+  motionSprite: z.never().optional(),
   visible: z.boolean().optional(),
   kind: z.enum(['image', 'character', 'narrator', 'speech', 'thought']),
   assetId: z.string().optional(),
@@ -70,6 +72,13 @@ const editorV6BackgroundSchema = z.object({
   backgroundWidth: finite, backgroundHeight: finite, backgroundRotation: finite
 })
 
+const motionSpriteSchema = z.object({ x: z.number().int().min(0), y: z.number().int().min(0), width: z.number().int().min(1), height: z.number().int().min(1), atlasWidth: z.number().int().min(1).max(8192), atlasHeight: z.number().int().min(1).max(8192) }).refine((rect) => rect.x + rect.width <= rect.atlasWidth && rect.y + rect.height <= rect.atlasHeight && rect.atlasWidth * rect.atlasHeight <= 8_100_000, 'Recorte de atlas inválido.')
+export const editorV6MotionAtlasSchema = z.object({ version: z.literal(1), key: z.string().max(65536), assetId: uuid, frames: z.array(z.object({ offset: z.number().int().min(-7).max(-1), sprite: motionSpriteSchema, x: finite, y: finite, width: finite.positive(), height: finite.positive(), rotation: finite, flipX: z.boolean() })).min(1).max(7) })
+export const editorV6MotionResultSchema = z.object({ asset: editorV6AssetSchema, motion: editorV6MotionAtlasSchema, metrics: z.object({ milliseconds: finite.min(0), preparedRigs: z.number().int().min(1).max(9), samples: z.number().int().min(1).max(7), atlasPixels: z.number().int().min(1).max(8_100_000) }) }).refine((result) => result.asset.id === result.motion.assetId && result.asset.category === 'character' && result.asset.mimeType === 'image/png', 'Atlas de animação inválido.')
+export function parseEditorV6MotionRequest(value: unknown): EditorV6MotionBakeRequest {
+  return z.object({ id: uuid, character: z.object({ id: z.string(), customization: z.object({}).passthrough() }).passthrough(), plan: z.object({ blockId: uuid, elementId: uuid, characterId: z.string(), key: z.string().max(65536), startFrame: finite.min(0), endFrame: z.number().int().min(1).max(1_000_000), from: editorV6ElementSchema, to: editorV6ElementSchema, samples: z.array(z.object({ offset: z.number().int().min(-7).max(-1), progress: finite.gt(0).lt(1) })).min(1).max(7) }) }).parse(value) as unknown as EditorV6MotionBakeRequest
+}
+
 const editorV6TimelineTrackSchema = z.object({
   id: uuid,
   kind: z.enum(['character', 'speech', 'thought', 'video']),
@@ -79,6 +88,7 @@ const editorV6TimelineTrackSchema = z.object({
   locked: z.boolean(),
   hidden: z.boolean().optional(),
   collapsed: z.boolean().optional(),
+  motionEnabled: z.boolean().optional(),
   blocks: z.array(z.object({
     id: uuid,
     elementId: uuid.optional(),
@@ -90,7 +100,8 @@ const editorV6TimelineTrackSchema = z.object({
     characterId: z.string().min(1).max(120).optional(),
     parentBlockId: uuid.optional(),
     relativeStartFrame: z.number().int().min(0).max(1_000_000).optional(),
-    mediaInFrame: z.number().int().min(0).max(1_000_000).optional()
+    mediaInFrame: z.number().int().min(0).max(1_000_000).optional(),
+    motionEnabled: z.boolean().optional(), incomingMotion: editorV6MotionAtlasSchema.optional()
   })).max(1000)
 }).passthrough()
 
@@ -154,6 +165,7 @@ export const editorV6DocumentSchema = z.object({
       if (block.background && (track.kind !== 'video' || block.elementId || block.state || (block.background.backgroundAssetId && assetsById.get(block.background.backgroundAssetId)?.category !== 'background'))) {
         context.addIssue({ code: 'custom', path: ['timeline', 'tracks', trackIndex, 'blocks', blockIndex, 'background'], message: 'O estado de fundo precisa usar uma imagem de fundo válida na faixa Vídeo.' })
       }
+      if (block.incomingMotion && (track.kind !== 'character' || assetsById.get(block.incomingMotion.assetId)?.category !== 'character')) context.addIssue({ code: 'custom', path: ['timeline', 'tracks', trackIndex, 'blocks', blockIndex, 'incomingMotion'], message: 'A animação precisa apontar para um atlas do personagem.' })
       if (block.parentBlockId) {
         const parent = blocksById.get(block.parentBlockId)
         if (!parent || parent.track.kind !== 'video' || track.kind === 'video' || track.kind === 'character' || block.relativeStartFrame === undefined || block.startFrame !== parent.block.startFrame + block.relativeStartFrame || block.startFrame + block.durationFrames > parent.block.startFrame + parent.block.durationFrames) {

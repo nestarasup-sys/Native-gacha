@@ -20,7 +20,8 @@ export default defineConfig({
       rollupOptions: {
         input: {
           preload: resolve(projectRoot, 'electron/preload.ts'),
-          editorV6ExportPreload: resolve(projectRoot, 'electron/editorV6ExportPreload.ts')
+          editorV6ExportPreload: resolve(projectRoot, 'electron/editorV6ExportPreload.ts'),
+          editorV6MotionPreload: resolve(projectRoot, 'electron/editorV6MotionPreload.ts')
         },
         output: { format: 'cjs', entryFileNames: '[name].cjs' }
       }

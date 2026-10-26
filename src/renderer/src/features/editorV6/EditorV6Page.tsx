@@ -5,6 +5,8 @@ import { useEditorV6Store } from './editorV6Store'
 import { createEditorV6Timeline, syncEditorV6TimelineElements } from '../../../../shared/editorV6'
 import { EditorV6Timeline } from './EditorV6Timeline'
 import { EditorV6ExportPanel } from './EditorV6ExportPanel'
+import { useEditorV6Motion } from './motion/useEditorV6Motion'
+import { editorV6MotionPlans, missingEditorV6Motions } from '../../../../shared/editorV6Motion'
 import { SceneSurface, type ScenePointerEvent, type SceneSurfaceInteraction } from './SceneSurface'
 import { addEditorV6ElementAtFrame, editEditorV6DocumentAtBlock, editorV6ClipAtFrame, normalizeEditorV6Timeline, prepareEditorV6PositionAtFrame, moveEditorV6ElementInPeriod, editEditorV6BackgroundAtFrame, pruneEditorV6TimelineSnapshots, repairEditorV6DuplicateAssets, resolveEditorV6SceneAtFrame, frameTimecode, timelineClips } from '../../../../shared/editorV6Timeline'
 import { useEditorV6InspectorState } from './useEditorV6InspectorState'
@@ -116,6 +118,11 @@ export function EditorV6Page() {
   const selectedEditorV6 = editorV6Projects.find((studio) => studio.id === selectedId) ?? null
   const activeEditorV6 = editorV6Projects.find((studio) => studio.id === activeEditorV6Id) ?? null
   const timelineDurationFrames = activeEditorV6?.timeline.durationFrames ?? 300
+  const motion = useEditorV6Motion(activeEditorV6, availableCharacters, !dragRef.current && !editorV6FaceBusy && !editorV6ExpressionBusy, (update) => {
+    if (!activeEditorV6Id) return
+    setEditorV6Projects((projects) => projects.map((project) => project.id === activeEditorV6Id ? pruneEditorV6TimelineSnapshots(update(project)) : project))
+    setSaved(false)
+  })
   const previewScene = useMemo(() => activeEditorV6 ? resolveEditorV6SceneAtFrame(activeEditorV6, playheadFrame) : null, [activeEditorV6, playheadFrame])
   const previewBackground = previewScene?.background ?? { backgroundColor: '#d7b5cd', backgroundAssetId: null, backgroundX: 0, backgroundY: 0, backgroundWidth: 100, backgroundHeight: 100, backgroundRotation: 0 }
   const visibleTimelineElements = previewScene?.elements ?? []
@@ -420,11 +427,15 @@ export function EditorV6Page() {
           elementId: block.elementId ? oldToNewElements.get(block.elementId) : undefined,
           parentBlockId: block.parentBlockId ? oldToNewBlocks.get(block.parentBlockId) : undefined,
           state: block.state ? { ...block.state, id: oldToNewElements.get(block.state.id) ?? block.state.id, assetId: block.state.assetId ? oldToNew.get(block.state.assetId) : undefined } : undefined,
-          background: block.background ? { ...block.background, backgroundAssetId: block.background.backgroundAssetId ? oldToNew.get(block.background.backgroundAssetId) ?? null : null } : undefined
+          background: block.background ? { ...block.background, backgroundAssetId: block.background.backgroundAssetId ? oldToNew.get(block.background.backgroundAssetId) ?? null : null } : undefined,
+          incomingMotion: block.incomingMotion ? { ...block.incomingMotion, assetId: oldToNew.get(block.incomingMotion.assetId)! } : undefined
         }))
       }))
     }
     duplicate.backgroundAssetId = source.backgroundAssetId ? oldToNew.get(source.backgroundAssetId) ?? null : null
+    const originalMotions = new Map(editorV6MotionPlans(source).map((plan) => [oldToNewBlocks.get(plan.blockId)!, plan]))
+    const copiedMotions = new Map(editorV6MotionPlans(duplicate).map((plan) => [plan.blockId, plan]))
+    duplicate.timeline = { ...duplicate.timeline, tracks: duplicate.timeline.tracks.map((track) => ({ ...track, blocks: track.blocks.map((block) => ({ ...block, incomingMotion: block.incomingMotion && originalMotions.get(block.id)?.key === block.incomingMotion.key && copiedMotions.has(block.id) ? { ...block.incomingMotion, key: copiedMotions.get(block.id)!.key } : undefined })) })) }
     try {
       setError(null)
       if (source.exportAudio?.length) await window.desktop.cloneEditorV6ExportAudio(source.id, duplicate.id, source.exportAudio)
@@ -1239,6 +1250,7 @@ export function EditorV6Page() {
   const toggleTimelinePlayback = () => {
     if (dragRef.current) return
     if (isPlaying) { setIsPlaying(false); return }
+    if (activeEditorV6 && missingEditorV6Motions(activeEditorV6).length) { setNotice(motion.error ?? 'Aguarde a preparação das animações antes de reproduzir.'); return }
     if (playheadFrame >= timelineDurationFrames) setPlayheadFrame(0)
     setIsPlaying(true)
   }
@@ -1278,6 +1290,7 @@ export function EditorV6Page() {
           <small className={`studio-save-indicator${saved ? '' : ' unsaved'}`}><i />{saved ? 'Salvo automaticamente' : 'Salvando alterações…'}</small>
           {error && <small className="studio-error-message" role="alert">{error}</small>}
           {notice && <small className="studio-save-notice" role="status">{notice}</small>}
+          {motion.pending > 0 && <small className={motion.error ? 'studio-error-message' : 'studio-save-notice'} role="status">{motion.message}{motion.error && <button type="button" onClick={motion.retry}>Tentar novamente</button>}</small>}
         </aside>}
         <section className="studio-scene-area v6-scene-area" aria-label="Prévia da cena">
           <div className="studio-scene-canvas v6-scene-canvas" ref={sceneRef} style={{ backgroundColor: previewBackground.backgroundColor }} onPointerDown={() => { setSelectedElementId(null); setSelectedTimelineBlockId(null) }}>
@@ -1296,7 +1309,7 @@ export function EditorV6Page() {
         {!fullView && <EditorV6Timeline key={activeEditorV6.id} document={activeEditorV6} frame={playheadFrame} playing={isPlaying} selectedId={selectedTimelineBlockId}
           onSeek={(frame) => { if (dragRef.current) cancelSceneDrag(); setIsPlaying(false); setPlayheadFrame(frame) }} onPlay={toggleTimelinePlayback} onChange={changeScene}
           onSelect={(block) => { setSelectedTimelineBlockId(block.id); setSelectedElementId(block.background ? 'background' : block.elementId ?? null); setActiveTool(block.background ? 'background' : null); setInspectorOpen(true); if (block.state?.kind === 'character') restoreCharacterInspectorView(); else setInspectorTab('editor') }} /> }
-        <EditorV6ExportPanel key={`export-${activeEditorV6.id}`} project={activeEditorV6} open={exportOpen} onClose={() => setExportOpen(false)} onChange={(update) => patchStudio(update, false)} />
+        <EditorV6ExportPanel key={`export-${activeEditorV6.id}`} project={activeEditorV6} open={exportOpen} onClose={() => setExportOpen(false)} onChange={(update) => patchStudio(update, false)} motionError={motion.error} />
         {castPickerOpen && <div className="studio-cast-modal-backdrop" onPointerDown={(event) => { if (event.target === event.currentTarget && !savingCast) setCastPickerOpen(false) }}>
           <section className="studio-cast-modal" role="dialog" aria-modal="true" aria-labelledby="studio-cast-modal-title">
             <header><span><small>EDITAR ELENCO</small><h2 id="studio-cast-modal-title">Personagens do Editor V6</h2></span><button className="studio-cast-modal-close" onClick={() => setCastPickerOpen(false)} aria-label="Fechar" disabled={savingCast} type="button">×</button></header>

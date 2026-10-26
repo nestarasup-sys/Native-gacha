@@ -1,6 +1,7 @@
 import type { CustomizerFaceAppearance } from './customizer'
 import type { FaceCatalogItemSummary, FaceExpressionEffects, FaceTransform } from './fabricator'
 import type { EditorV6ExportAudio, EditorV6ExportOptions, EditorV6ExportStatus } from './editorV6Export'
+import type { EditorV6MotionAtlas, EditorV6MotionBakeRequest, EditorV6MotionBakeResult, EditorV6MotionSprite } from './editorV6Motion'
 
 export type EditorV6Asset = {
   id: string
@@ -76,6 +77,8 @@ export function isEditorV6FaceTransforms(value: unknown): value is EditorV6FaceT
 
 export type EditorV6Element = {
   id: string
+  /** Playback-only atlas crop; never written into an authored state. */
+  motionSprite?: EditorV6MotionSprite
   visible?: boolean
   kind: 'image' | 'character' | 'narrator' | 'speech' | 'thought'
   assetId?: string
@@ -144,6 +147,8 @@ export type EditorV6TimelineBlock = {
   parentBlockId?: string
   relativeStartFrame?: number
   mediaInFrame?: number
+  motionEnabled?: boolean
+  incomingMotion?: EditorV6MotionAtlas
 }
 export type EditorV6TimelineTrack = {
   id: string
@@ -155,6 +160,7 @@ export type EditorV6TimelineTrack = {
   locked: boolean
   hidden?: boolean
   collapsed?: boolean
+  motionEnabled?: boolean
   blocks: EditorV6TimelineBlock[]
 }
 export type EditorV6Timeline = {
@@ -304,5 +310,7 @@ export type EditorV6DesktopApi = {
   revealEditorV6Export: (jobId: string, showReport?: boolean) => Promise<void>
   importEditorV6ExportAudio: (projectId: string) => Promise<EditorV6ExportAudio | null>
   cloneEditorV6ExportAudio: (sourceId: string, targetId: string, clips: EditorV6ExportAudio[]) => Promise<void>
+  bakeEditorV6Motion: (request: EditorV6MotionBakeRequest) => Promise<EditorV6MotionBakeResult>
+  cancelEditorV6Motion: (requestId: string) => Promise<void>
 }
 

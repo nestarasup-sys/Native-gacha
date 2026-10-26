@@ -12,6 +12,7 @@ import { isStudioExpressionEffects, isStudioFaceTransforms } from '../src/shared
 import type { EditorV6Asset } from '../src/shared/editorV6'
 import { isEditorV6Document } from '../src/shared/editorV6Schema'
 import { registerEditorV6ExportHandlers } from './domains/editorV6/exportIpc'
+import { createEditorV6MotionService } from './domains/editorV6/motionIpc'
 import { VideoLibraryStore, configureVideoLibraryStorage } from './videoLibrary'
 import { VideoBackgroundLibraryStore, configureBackgroundLibraryStorage } from './backgroundLibrary'
 import { RoteiroUiGifLibraryStore, configureRoteiroUiGifStorage } from './roteiroUiGifLibrary'
@@ -248,6 +249,7 @@ let dataMigrationRunning = false
 let dataMigrationPauseRequested = false
 let dataMigrationTask: Promise<unknown> | null = null
 let editorV6ExportService: ReturnType<typeof registerEditorV6ExportHandlers> | null = null
+let editorV6MotionService: ReturnType<typeof createEditorV6MotionService> | null = null
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'gacha-video', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } },
@@ -2214,6 +2216,7 @@ app.whenReady().then(async () => {
     toolsDirectory: app.isPackaged ? join(process.resourcesPath, 'video-tools') : resolve(__dirname, '../../resources/video-tools'),
     workerHtml: join(__dirname, '../renderer/editor-v6-export.html'), workerPreload: join(__dirname, '../preload/editorV6ExportPreload.cjs'),
     devUrl: process.env.ELECTRON_RENDERER_URL, tempRoot: app.getPath('temp') })
+  editorV6MotionService = createEditorV6MotionService({ ipcMain, assertTrustedSender, html: join(__dirname, '../renderer/index.html'), preload: join(__dirname, '../preload/editorV6MotionPreload.cjs'), devUrl: process.env.ELECTRON_RENDERER_URL })
   createMainWindow()
 
   app.on('activate', () => {
@@ -2235,11 +2238,13 @@ app.on('before-quit', (event) => {
   if (waitingForPersistenceWritesBeforeQuit) return
   waitingForPersistenceWritesBeforeQuit = true
   editorV6ExportService?.cancelAll()
+  editorV6MotionService?.cancelAll()
   const pendingWrites = [
     ...fabricatorSaveQueues.values(), ...poseSaveWrites, ...hairSaveQueues.values(),
     studioSaveQueues.studio, editorV6SaveQueue, roteirosSaveQueue,
     ...(dataMigrationTask ? [dataMigrationTask] : []),
     ...(editorV6ExportService ? [editorV6ExportService.drain()] : [])
+    ,...(editorV6MotionService ? [editorV6MotionService.drain()] : [])
   ]
   void Promise.allSettled(pendingWrites).then((results) => {
     waitingForPersistenceWritesBeforeQuit = false

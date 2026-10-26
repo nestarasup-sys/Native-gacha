@@ -1,6 +1,7 @@
 /** Frame-based timeline operations shared by preview, prints and persistence. */
 import type { EditorV6BackgroundState, EditorV6Document, EditorV6Element, EditorV6Timeline, EditorV6TimelineBlock, EditorV6TimelineTrack } from './editorV6'
 import { editorV6TrackKindForElement, editorV6TrackLabel } from './editorV6'
+import { editorV6MotionPlans, type EditorV6MotionPlan } from './editorV6Motion'
 
 export type TimelineClip = { track: EditorV6TimelineTrack; block: EditorV6TimelineBlock }
 export const MAX_TIMELINE_FRAME = 1_000_000
@@ -85,7 +86,7 @@ export function editEditorV6BackgroundAtFrame(document: EditorV6Document, frame:
 /** Prepare a character edit at the cursor without committing a click or a cancelled gesture. */
 export function prepareEditorV6PositionAtFrame(document: EditorV6Document, elementId: string, frame: number): { document: EditorV6Document; blockId: string } | null {
   const scene = resolveEditorV6SceneAtFrame(document, frame)
-  const element = scene.elements.find((item) => item.id === elementId)
+  const element = resolveEditorV6StaticElementsAtFrame(document, scene.frame).find((item) => item.id === elementId)
   const clip = editorV6ClipAtFrame(document.timeline, elementId, scene.frame)
   if (!element || element.positionLocked || clip?.track.locked) return null
   if (element.kind !== 'character') return clip ? { document, blockId: clip.block.id } : null
@@ -138,7 +139,7 @@ export function editorV6ClipAtFrame(timeline: EditorV6Timeline, elementId: strin
   return undefined
 }
 
-export function resolveEditorV6ElementsAtFrame(document: EditorV6Document, frame: number): EditorV6Element[] {
+export function resolveEditorV6StaticElementsAtFrame(document: EditorV6Document, frame: number): EditorV6Element[] {
   const compiled = compile(document.timeline)
   const resolved: EditorV6Element[] = []
   for (const base of document.elements) {
@@ -150,6 +151,32 @@ export function resolveEditorV6ElementsAtFrame(document: EditorV6Document, frame
     resolved.push(state.id === base.id ? state : { ...state, id: base.id })
   }
   return resolved.sort((a, b) => a.zIndex - b.zIndex || a.id.localeCompare(b.id))
+}
+
+const motionIndex = new WeakMap<EditorV6Document['timeline'], Map<string, Array<{ plan: EditorV6MotionPlan; block: EditorV6TimelineBlock }>>>()
+export function resolveEditorV6ElementsAtFrame(document: EditorV6Document, frame: number): EditorV6Element[] {
+  let index = motionIndex.get(document.timeline)
+  if (!index) {
+    index = new Map()
+    const blocks = new Map(document.timeline.tracks.flatMap((track) => track.blocks.map((block) => [block.id, block] as const)))
+    for (const plan of editorV6MotionPlans(document)) {
+      const entries = index.get(plan.elementId) ?? []
+      entries.push({ plan, block: blocks.get(plan.blockId)! }); index.set(plan.elementId, entries)
+    }
+    for (const entries of index.values()) entries.sort((a, b) => a.plan.endFrame - b.plan.endFrame)
+    motionIndex.set(document.timeline, index)
+  }
+  return resolveEditorV6StaticElementsAtFrame(document, frame).map((element) => {
+    const entries = index!.get(element.id)
+    if (!entries) return element
+    let left = 0, right = entries.length
+    while (left < right) { const middle = (left + right) >>> 1; if (entries[middle].plan.endFrame <= frame) left = middle + 1; else right = middle }
+    const next = entries[left]
+    if (!next || frame <= next.plan.startFrame || frame >= next.plan.endFrame || next.block.incomingMotion?.key !== next.plan.key) return element
+    const sample = next.block.incomingMotion.frames.find((sample) => sample.offset === frame - next.plan.endFrame)
+    if (!sample) return element
+    return { ...element, assetId: next.block.incomingMotion.assetId, motionSprite: sample.sprite, x: sample.x, y: sample.y, width: sample.width, height: sample.height, rotation: sample.rotation, flipX: sample.flipX, characterScale: 100, characterWidthScale: 100, characterHeightScale: 100 }
+  })
 }
 
 /** Make an inspector edit affect only its selected period; rendered images use copy-on-write. */
@@ -181,7 +208,7 @@ export function editEditorV6DocumentAtBlock(document: EditorV6Document, blockId:
 }
 
 export function pruneEditorV6TimelineSnapshots(document: EditorV6Document): EditorV6Document {
-  const referenced = new Set([document.backgroundAssetId, ...document.elements.map((element) => element.assetId), ...timelineClips(document.timeline).flatMap(({ block }) => [block.state?.assetId, block.background?.backgroundAssetId])])
+  const referenced = new Set([document.backgroundAssetId, ...document.elements.map((element) => element.assetId), ...timelineClips(document.timeline).flatMap(({ block }) => [block.state?.assetId, block.background?.backgroundAssetId, block.incomingMotion?.assetId])])
   const assets = document.assets.filter((asset) => !asset.timelineSnapshot || referenced.has(asset.id))
   return assets.length === document.assets.length ? document : { ...document, assets }
 }

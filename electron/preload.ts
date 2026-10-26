@@ -106,7 +106,9 @@ const editorV6Api: EditorV6DesktopApi = {
   cancelEditorV6Export: (id) => invokeEditorV6('cancelEditorV6Export', id),
   revealEditorV6Export: (id, report) => invokeEditorV6('revealEditorV6Export', id, report),
   importEditorV6ExportAudio: (id) => invokeEditorV6('importEditorV6ExportAudio', id),
-  cloneEditorV6ExportAudio: (source, target, clips) => invokeEditorV6('cloneEditorV6ExportAudio', source, target, clips)
+  cloneEditorV6ExportAudio: (source, target, clips) => invokeEditorV6('cloneEditorV6ExportAudio', source, target, clips),
+  bakeEditorV6Motion: (request) => invokeEditorV6('bakeEditorV6Motion', request),
+  cancelEditorV6Motion: (id) => invokeEditorV6('cancelEditorV6Motion', id)
 }
 
 const videoLibraryApi: VideoLibraryDesktopApi = {

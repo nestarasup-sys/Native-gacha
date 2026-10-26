@@ -5,6 +5,9 @@ import { App } from './ui/App'
 import { AppErrorBoundary } from './ui/components/AppErrorBoundary'
 import './ui/styles.css'
 
+if (window.location.hash === '#/editor-v6-transition-baker') {
+  void import('./features/editorV6/motion/bakeWorker').then((worker) => worker.runEditorV6MotionWorker())
+} else {
 const root = ReactDOM.createRoot(document.getElementById('root')!)
 root.render(
   <React.StrictMode>
@@ -15,3 +18,4 @@ root.render(
     </HashRouter>
   </React.StrictMode>
 )
+}

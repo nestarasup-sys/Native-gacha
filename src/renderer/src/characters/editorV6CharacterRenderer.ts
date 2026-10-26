@@ -1055,7 +1055,7 @@ export async function materialsForPreparedCharacter(
   return pending
 }
 
-export async function prepareSavedCharacterRenderer(character: CustomizerCharacter, renderSource?: { artwork: CatalogArtwork; source: FabricatorProject; assetProvider?: CharacterRenderAssetProvider; materialCache?: GachaReusableMaterialCache }): Promise<{ width: number; height: number; render: (appearance?: CustomizerFaceAppearance, studioFaceTransforms?: EditorV6FaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: EditorV6FaceMode) => Promise<{ dataUrl: string; width: number; height: number }>; renderToCanvas: (appearance?: CustomizerFaceAppearance, studioFaceTransforms?: EditorV6FaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: EditorV6FaceMode) => Promise<{ canvas: HTMLCanvasElement; width: number; height: number }>; renderLayersToCanvas: (appearance?: CustomizerFaceAppearance, studioFaceTransforms?: EditorV6FaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: EditorV6FaceMode) => Promise<PreparedGachaLayerFrame> }> {
+export async function prepareSavedCharacterRenderer(character: CustomizerCharacter, renderSource?: { artwork: CatalogArtwork; source: FabricatorProject; assetProvider?: CharacterRenderAssetProvider; materialCache?: GachaReusableMaterialCache }): Promise<{ width: number; height: number; render: (appearance?: CustomizerFaceAppearance, studioFaceTransforms?: EditorV6FaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: EditorV6FaceMode) => Promise<{ dataUrl: string; width: number; height: number }>; renderToCanvas: (appearance?: CustomizerFaceAppearance, studioFaceTransforms?: EditorV6FaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: EditorV6FaceMode) => Promise<{ canvas: HTMLCanvasElement; width: number; height: number }>; renderLayersToCanvas: (appearance?: CustomizerFaceAppearance, studioFaceTransforms?: EditorV6FaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: EditorV6FaceMode) => Promise<PreparedGachaLayerFrame> ; dispose: () => void }> {
   const { modelSlot, assetProvider, source, artwork } = await resolveSavedCharacterSource(character, renderSource)
   const proportions = getCharacterProportions(character.customization)
   const hairAppearance = character.customization.hairAppearance
@@ -1263,7 +1263,12 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
     const value = await renderToCanvas(...args)
     return { dataUrl: value.canvas.toDataURL('image/png'), width: value.width, height: value.height }
   }
-  return { width: outputWidth, height: outputHeight, render, renderToCanvas, renderLayersToCanvas }
+  const dispose = () => {
+    for (const surface of new Set([baseImage, frontHairImage, wardrobeImage, wardrobeAboveHairImage, canvas, rigLayers.behindFace, rigLayers.inFrontOfFace, faceLayer, scaledOutput])) {
+      if (surface) { surface.width = 1; surface.height = 1 }
+    }
+  }
+  return { width: outputWidth, height: outputHeight, render, renderToCanvas, renderLayersToCanvas, dispose }
 }
 
 export async function renderSavedCharacter(character: CustomizerCharacter, studioFaceTransforms?: EditorV6FaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: EditorV6FaceMode): Promise<{ dataUrl: string; width: number; height: number }> {
