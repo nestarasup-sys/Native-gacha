@@ -22,19 +22,34 @@ Cada cenário foi reproduzido por seis segundos. Confirmei que os quatro persona
 
 | Cenário | Duração | Blocos no projeto | Transições planejadas | Blocos desenhados na timeline | `requestAnimationFrame` médio | Intervalo p95 | Pior intervalo | Long tasks da página |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| Leve | 30 s | 80 | 28 | 50 | 74 Hz | 13,6 ms | 53,0 ms | 1, total 57 ms |
-| Médio | 2 min | 284 | 92 | 47 | 74 Hz | 13,6 ms | 53,3 ms | 1, total 52 ms |
-| Pesado | 5 min | 752 | 284 | 51 | 73,8 Hz | 13,6 ms | 53,0 ms | 1, total 51 ms |
+| Leve | 30 s | 80 | 28 | 50 | 73,5 Hz | 13,7 ms | 66,5 ms | 2, total 114 ms |
+| Médio | 2 min | 284 | 92 | 47 | 73,5 Hz | 13,5 ms | 66,6 ms | 2, total 108 ms |
+| Pesado | 5 min | 752 | 284 | 51 | 73,6 Hz | 13,7 ms | 53,4 ms | 1, total 53 ms |
 
-O custo médio de commit React da `SceneSurface` foi de 0,45 ms no leve, 0,47 ms no médio e 0,48 ms no pesado. O DOM da timeline manteve entre 47 e 51 blocos no viewport, mesmo com 752 blocos no projeto pesado. Isso confirma, nesta rodada, que o scroll da timeline não montou todos os blocos ao mesmo tempo.
+O custo médio de commit React da `SceneSurface` foi de 0,50 ms no leve, 0,51 ms no médio e 0,51 ms no pesado. O DOM da timeline manteve entre 47 e 51 blocos no viewport, mesmo com 752 blocos no projeto pesado. Isso confirma, nesta rodada, que o scroll da timeline não montou todos os blocos ao mesmo tempo.
 
-O preparo dos atlas levou de 550 a 650 ms por transição, com média de aproximadamente 575 ms para sete amostras. O tempo de reprodução é medido depois do preparo: abrir os projetos testados não deixou transições pendentes.
+Durante o Play, o teste observou sprites de transição dos quatro personagens em cada cenário. Nos primeiros seis segundos, encontrou seis dos sete índices internos do atlas por personagem; um índice não apareceu no DOM amostrado por cenário (108 no leve, 146 no médio e 121 no pesado). Como a amostragem observa a cena por `requestAnimationFrame`, isso é um sinal para traçar o agendamento do quadro, não prova isolada da causa.
+
+O preparo dos atlas reais levou de 557 a 659 ms por transição, com média de aproximadamente 605 ms para sete amostras. O tempo de reprodução é medido depois do preparo: abrir os projetos testados não deixou transições pendentes.
 
 ## Leitura dos números
 
-Os cenários mantiveram a reprodução no computador desta rodada, inclusive o projeto pesado. O p95 de 13,6 ms ficou abaixo de um quadro de 30 FPS (33,3 ms). Ainda houve um pico isolado de 53 ms em cada cenário e uma long task de 51 a 57 ms. Portanto, a cena foi fluida na maior parte da amostra, com alguns engasgos curtos; o resultado não indica fluidez perfeita em todos os quadros.
+Os cenários avançaram o relógio durante a reprodução, inclusive o projeto pesado. O p95 ficou entre 13,5 e 13,7 ms, abaixo de um quadro de 30 FPS (33,3 ms). Também ocorreram picos de 53 a 67 ms e long tasks de 53 a 114 ms somadas por cenário; uma amostra de transição não foi observada em cada reprodução. Há espaço para engasgos curtos, então esta rodada não comprova fluidez perfeita em todos os quadros.
 
-Os 73,8 Hz vêm da cadência de `requestAnimationFrame` deste Chromium e deste monitor. O Editor continua avançando a timeline a 30 FPS. A rodada não mede exportação MP4, FFmpeg nem o executável empacotado; ela mede a prévia, a timeline e a preparação das transições no app Electron em desenvolvimento.
+Os 73,5–73,6 Hz vêm da cadência de `requestAnimationFrame` deste Chromium e deste monitor. O Editor continua avançando a timeline a 30 FPS. A rodada não mede exportação MP4, FFmpeg nem o executável empacotado; ela mede a prévia, a timeline e a preparação das transições no app Electron em desenvolvimento.
+
+## O que esta rodada ainda não valida
+
+- As faixas de fala e pensamento estão vinculadas aos quatro personagens nos projetos, mas a troca automática para boca aberta durante fala ainda não está implementada no resolvedor da cena. Pensamento não aciona a boca. Este teste valida a timeline e a cena durante a reprodução, não a animação automática da boca.
+- Não há agendador de piscadas periódicas conectado ao tempo da timeline. O modo `blink` existente é uma renderização facial estática selecionável.
+- O V6 ainda não importa nem reproduz clips de vídeo. O teste de exportação existente usa um WAV de teste sintetizado e comprova a mixagem/sincronização do áudio no MP4, mas não o uso de áudio pessoal nem decode de vídeo importado.
+
+## Outras verificações executadas
+
+- `npm run test:editor-v6:motion`: passou; compositor real no Chromium, sete amostras de atlas, leitura do catálogo e movimento progressivo de peças. A fixture é sintética; os personagens reais foram medidos pelo teste offscreen acima.
+- `npm run test:editor-v6`: 35 testes passaram; um teste opt-in foi ignorado.
+- `npm run test:editor-v6:surface`: passou; preview/captura, comparação de pixels e integração do painel de áudio.
+- `npm run test:editor-v6:export`: build de produção e teste FFmpeg passaram; MP4 de 81 quadros, 77 reutilizados, dois workers paralelos, áudio contínuo na emenda e transição de pose atravessando a emenda Turbo.
 
 ## Arquivos de evidência
 

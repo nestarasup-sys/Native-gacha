@@ -158,9 +158,21 @@ async function main() {
       if (visualSurface.cast !== 4 || visualSurface.sceneCharacterNames.slice().sort().join(',') !== expectedSceneNames.slice().sort().join(',') || !visualSurface.scene || visualSurface.timeline === 0) throw new Error(`${scenario.key}: a interface não desenhou os quatro personagens reais na cena. ${JSON.stringify(visualSurface)}`)
       await evaluate(cdp, 'window.__gv5PerformanceReset?.()')
       await evaluate(cdp, `(() => {
-        const state = { samples: [], last: null, started: performance.now(), active: true }
+        const state = { samples: [], motionFrames: {}, last: null, started: performance.now(), active: true }
         window.__editorV6StressFrames = state
-        const tick = (time) => { if (!state.active) return; if (state.last !== null) state.samples.push(time - state.last); state.last = time; requestAnimationFrame(tick) }
+        const tick = (time) => {
+          if (!state.active) return
+          if (state.last !== null) state.samples.push(time - state.last)
+          state.last = time
+          const scene = document.querySelector('.v6-scene-surface')
+          const frame = Number(scene?.getAttribute('data-frame'))
+          if (Number.isInteger(frame)) for (const character of scene.querySelectorAll('g[data-element-id]')) {
+            if (!character.querySelector('svg[viewBox]')) continue
+            const name = character.getAttribute('aria-label')
+            if (name?.startsWith('STRESS_')) (state.motionFrames[name] ||= new Set()).add(frame)
+          }
+          requestAnimationFrame(tick)
+        }
         requestAnimationFrame(tick)
       })()`)
       await evaluate(cdp, 'document.querySelector(".editor-v6-timeline-actions button[aria-label=Reproduzir]").click()')
@@ -192,17 +204,21 @@ async function main() {
           p50FrameMs: percentile(.5), p95FrameMs: percentile(.95), worstFrameMs: sorted.at(-1) ? +sorted.at(-1).toFixed(2) : 0,
           framesOver33ms: state.samples.filter(frame => frame > 33.34).length,
           framesOver50ms: state.samples.filter(frame => frame > 50).length,
+          motionFramesByCharacter: Object.fromEntries(Object.entries(state.motionFrames).map(([name, frames]) => [name, [...frames].sort((a,b) => a-b)])),
           clockAtStart: ${JSON.stringify(clockAtStart)},
           clockAtEnd: ${JSON.stringify(clockAtEnd)},
           playbackClock: document.querySelector('.v6-preview-time')?.textContent?.trim() ?? null,
           react: window.__gv5PerformanceReport?.() ?? []
         }
       })()`)
+      const expectedMotionNames = captured.map(({ character }) => character.name).sort().join(',')
+      const observedMotionNames = Object.keys(measurement.motionFramesByCharacter).sort().join(',')
+      if (observedMotionNames !== expectedMotionNames) throw new Error(`${scenario.key}: o Play não exibiu as transições de 250 ms dos quatro personagens STRESS. Observados: ${observedMotionNames || 'nenhum'}.`)
       const image = await cdp.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false })
       const screenshotPath = path.join(outputRoot, `${scenario.key}-offscreen.png`)
       await fs.writeFile(screenshotPath, Buffer.from(image.data, 'base64'))
       measurements.push({ ...scenario, project: prepared, visualSurface, motionReadyWaitMs: motionPreparation.durationMs, ...measurement, screenshotPath })
-      console.log(`[V6 stress] ${scenario.key}: ${prepared.blocks} blocos, ${measurement.averageFps} fps estimado por requestAnimationFrame, p95 ${measurement.p95FrameMs} ms.`)
+      console.log(`[V6 stress] ${scenario.key}: ${prepared.blocks} blocos, transições vistas em ${Object.keys(measurement.motionFramesByCharacter).length}/4 personagens, ${measurement.averageFps} fps estimado por requestAnimationFrame, p95 ${measurement.p95FrameMs} ms.`)
 
     }
     const report = {

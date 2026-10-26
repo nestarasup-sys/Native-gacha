@@ -310,6 +310,9 @@ async function writeScenario(root: string, result: ScenarioResult) {
     blocks: document.timeline.tracks.reduce((sum, track) => sum + track.blocks.length, 0),
     tracks: document.timeline.tracks.length, assets: document.assets.length,
     motionTransitions: editorV6MotionPlans(document).length,
+    motionWindows: editorV6MotionPlans(document).map((plan) => ({ characterName: document.elements.find((element) => element.characterId === plan.characterId)?.text ?? plan.characterId, startFrame: plan.startFrame, endFrame: plan.endFrame })),
+    linkedSpeechBlocks: document.timeline.tracks.filter((track) => track.kind === 'speech').flatMap((track) => track.blocks).filter((block) => block.characterId).length,
+    linkedThoughtBlocks: document.timeline.tracks.filter((track) => track.kind === 'thought').flatMap((track) => track.blocks).filter((block) => block.characterId).length,
     missingMotions: missingEditorV6Motions(reopened.data).length,
     overlappingSpeechThought: true,
     durationSeconds: document.timeline.durationFrames / 30
