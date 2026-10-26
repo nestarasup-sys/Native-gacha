@@ -17,11 +17,11 @@ import { Icon } from '../../ui/components/Icon'
 import { CharacterPortrait } from '../../ui/components/CharacterPortrait'
 import { resolveEditorV6TalkMouthId } from '../../../../shared/editorV6'
 import { fitEditorV6CharacterToStage } from '../../../../shared/editorV6CharacterGeometry'
-import type { EditorV6Asset, EditorV6Document, EditorV6Element, EditorV6FaceMode, EditorV6FaceTransform, EditorV6FaceTransforms } from '../../../../shared/editorV6'
+import { editorV6ProjectSummary, type EditorV6Asset, type EditorV6Document, type EditorV6Element, type EditorV6FaceMode, type EditorV6FaceTransform, type EditorV6FaceTransforms, type EditorV6ProjectSummary } from '../../../../shared/editorV6'
 import type { CustomizerCharacter } from '../../../../shared/customizer'
 import type { CustomizerFaceAppearance } from '../../../../shared/customizer'
 import type { FaceCatalogItem, FaceCatalogItemSummary, FaceExpressionEffects, FaceExpressionPreset, FaceExpressionPresetSummary, FaceSheetKind, FabricatorPoseSummary } from '../../../../shared/fabricator'
-type EditorV6Card = EditorV6Document
+type EditorV6Card = EditorV6ProjectSummary
 type Tool = 'background' | 'objects' | null
 type DragState = { id: string; pointerId: number; startX: number; startY: number; originalX: number; originalY: number; width: number; height: number; before: EditorV6Document; prepared: EditorV6Document; blockId: string; frame: number; moved: boolean }
 const STORAGE_KEY = 'gacha-nymi-editor-v6-catalog-v1'
@@ -70,6 +70,11 @@ async function makeStudioThumbnail(studio: EditorV6Document): Promise<string> {
 export function EditorV6Page() {
   const editorV6Projects = useEditorV6Store((state) => state.projects)
   const setEditorV6Projects = useEditorV6Store((state) => state.setProjects)
+  const activeEditorV6Stored = useEditorV6Store((state) => state.activeProject)
+  const setActiveEditorV6Project = useEditorV6Store((state) => state.setActiveProject)
+  const updateActiveEditorV6Project = useEditorV6Store((state) => state.updateActiveProject)
+  const upsertEditorV6Summary = useEditorV6Store((state) => state.upsertSummary)
+  const removeEditorV6Summary = useEditorV6Store((state) => state.removeSummary)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
@@ -111,16 +116,17 @@ export function EditorV6Page() {
   const editorV6FaceRenderRunningRef = useRef(false)
   const editorV6FaceRendererRef = useRef<{ key: string; render: (appearance?: CustomizerFaceAppearance, transforms?: EditorV6FaceTransforms, effects?: FaceExpressionEffects, mode?: EditorV6FaceMode) => Promise<{ dataUrl: string; width: number; height: number }> } | null>(null)
   const saveGenerationRef = useRef(0)
+  const activeLoadGenerationRef = useRef(0)
   const studioSaveQueue = useRef(new SerializedDocumentSaveQueue())
   const expressionSaveSignatureRef = useRef<{ studioId: string; value: string } | null>(null)
   const normalizedStudioIdsRef = useRef(new Set<string>())
   const nextStudioNumber = useRef(1)
   const selectedEditorV6 = editorV6Projects.find((studio) => studio.id === selectedId) ?? null
-  const activeEditorV6 = editorV6Projects.find((studio) => studio.id === activeEditorV6Id) ?? null
+  const activeEditorV6 = activeEditorV6Stored?.id === activeEditorV6Id ? activeEditorV6Stored : null
   const timelineDurationFrames = activeEditorV6?.timeline.durationFrames ?? 300
   const motion = useEditorV6Motion(activeEditorV6, availableCharacters, !dragRef.current && !editorV6FaceBusy && !editorV6ExpressionBusy, (update) => {
     if (!activeEditorV6Id) return
-    setEditorV6Projects((projects) => projects.map((project) => project.id === activeEditorV6Id ? pruneEditorV6TimelineSnapshots(update(project)) : project))
+    updateActiveEditorV6Project((project) => project.id === activeEditorV6Id ? pruneEditorV6TimelineSnapshots(update(project)) : project)
     setSaved(false)
   })
   useEffect(() => { if (motion.pending) setIsPlaying(false) }, [motion.pending])
@@ -131,7 +137,7 @@ export function EditorV6Page() {
   const sceneInteraction = useMemo<SceneSurfaceInteraction>(() => ({ start: (event, id) => sceneInteractionRef.current.start(event, id), move: (event) => sceneInteractionRef.current.move(event), end: (event) => sceneInteractionRef.current.end(event) }), [])
   useEffect(() => {
     if (!activeEditorV6 || new Set(activeEditorV6.assets.map((asset) => asset.id)).size === activeEditorV6.assets.length) return
-    setEditorV6Projects((projects) => projects.map((project) => project.id === activeEditorV6.id ? repairEditorV6DuplicateAssets(project, selectedTimelineBlockId) : project))
+    updateActiveEditorV6Project((project) => project.id === activeEditorV6.id ? repairEditorV6DuplicateAssets(project, selectedTimelineBlockId) : project)
     setSaved(false)
   }, [activeEditorV6, selectedTimelineBlockId])
   const selectedTimelineClip = activeEditorV6 ? timelineClips(activeEditorV6.timeline).find(({ block }) => block.id === selectedTimelineBlockId && block.elementId === selectedElementId)
@@ -248,6 +254,30 @@ export function EditorV6Page() {
   }, [])
 
   useEffect(() => {
+    const generation = ++activeLoadGenerationRef.current
+    if (!activeEditorV6Id) {
+      setActiveEditorV6Project(null)
+      return
+    }
+    setActiveEditorV6Project(null)
+    void window.desktop.loadEditorV6Project(activeEditorV6Id).then((project) => {
+      if (generation !== activeLoadGenerationRef.current) return
+      if (!project) {
+        setError('Esse projeto não foi encontrado na biblioteca local do Editor V6.')
+        setActiveStudioId(null)
+        return
+      }
+      setError(null)
+      setActiveEditorV6Project(project)
+    }).catch((reason: unknown) => {
+      if (generation !== activeLoadGenerationRef.current) return
+      setError(reason instanceof Error ? reason.message : 'Não foi possível abrir o projeto do Editor V6.')
+      setActiveStudioId(null)
+    })
+    return () => { if (activeLoadGenerationRef.current === generation) activeLoadGenerationRef.current += 1 }
+  }, [activeEditorV6Id, setActiveEditorV6Project])
+
+  useEffect(() => {
     let cancelled = false
     void window.desktop.listCustomizerCharacters().then((characters) => {
       if (!cancelled) setAvailableCharacters(characters)
@@ -350,7 +380,7 @@ export function EditorV6Page() {
       normalizedStudioIdsRef.current.add(studioId)
       const byAsset = new Map(crops.filter((entry): entry is { assetId: string; crop: TrimmedImage } => entry.crop !== null).map((entry) => [entry.assetId, entry.crop]))
       if (!byAsset.size) return
-      setEditorV6Projects((current) => current.map((studio) => studio.id !== studioId ? studio : {
+      updateActiveEditorV6Project((studio) => studio.id !== studioId ? studio : {
         ...studio,
         assets: studio.assets.map((asset) => {
           const crop = byAsset.get(asset.id)
@@ -365,7 +395,7 @@ export function EditorV6Page() {
           return crop && block.state ? { ...block, state: fitElementToTrim(block.state, crop) } : block
         }) })) },
         updatedAt: new Date().toISOString()
-      }))
+      })
       setSaved(false)
     })()
     return () => { cancelled = true }
@@ -381,7 +411,7 @@ export function EditorV6Page() {
   const createStudio = async () => {
     const number = allocateNumber()
     const now = new Date().toISOString()
-    const studio: EditorV6Card = {
+    const studio: EditorV6Document = {
       schemaVersion: 1, id: crypto.randomUUID(), title: `Editor V6 ${String(number).padStart(2, '0')}`,
       color: studioColor(number), createdAt: now, updatedAt: now, backgroundColor: '#d7b5cd',
       backgroundAssetId: null, backgroundX: 0, backgroundY: 0, backgroundWidth: 100, backgroundHeight: 100,
@@ -390,17 +420,27 @@ export function EditorV6Page() {
     try {
       setError(null)
       await window.desktop.saveEditorV6Project(studio)
-      setEditorV6Projects((current) => [...current, studio])
+      upsertEditorV6Summary(editorV6ProjectSummary(studio))
       setSelectedId(studio.id)
       setSaved(true)
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível criar o projeto do Editor V6.') }
   }
 
-  const duplicateStudio = async (source: EditorV6Card | null = selectedEditorV6) => {
-    if (!source) return
+  const duplicateStudio = async (sourceSummary: EditorV6Card | null = selectedEditorV6) => {
+    if (!sourceSummary) return
+    let source: EditorV6Document | null
+    try {
+      source = activeEditorV6?.id === sourceSummary.id
+        ? activeEditorV6
+        : await window.desktop.loadEditorV6Project(sourceSummary.id)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Não foi possível carregar o projeto que será duplicado.')
+      return
+    }
+    if (!source) { setError('Não foi possível carregar o projeto que será duplicado.'); return }
     const number = allocateNumber()
     const now = new Date().toISOString()
-    const duplicate: EditorV6Card = {
+    const duplicate: EditorV6Document = {
       ...source, id: crypto.randomUUID(), title: `Editor V6 ${String(number).padStart(2, '0')}`,
       color: studioColor(number), createdAt: now, updatedAt: now,
       assets: source.assets.map((asset) => ({ ...asset, id: crypto.randomUUID() })),
@@ -441,7 +481,7 @@ export function EditorV6Page() {
       setError(null)
       if (source.exportAudio?.length) await window.desktop.cloneEditorV6ExportAudio(source.id, duplicate.id, source.exportAudio)
       await window.desktop.saveEditorV6Project(duplicate)
-      setEditorV6Projects((current) => [...current, duplicate])
+      upsertEditorV6Summary(editorV6ProjectSummary(duplicate))
       setSelectedId(duplicate.id)
       setSaved(true)
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível duplicar o projeto do Editor V6.') }
@@ -461,9 +501,9 @@ export function EditorV6Page() {
       })
       if (generation === saveGenerationRef.current) {
         if (savedDocument.thumbnailDataUrl !== document.thumbnailDataUrl) {
-          setEditorV6Projects((current) => current.map((studio) => studio.id === document.id && studio.updatedAt === document.updatedAt && studio.thumbnailDataUrl !== savedDocument.thumbnailDataUrl
+          updateActiveEditorV6Project((studio) => studio.id === document.id && studio.updatedAt === document.updatedAt && studio.thumbnailDataUrl !== savedDocument.thumbnailDataUrl
             ? { ...studio, thumbnailDataUrl: savedDocument.thumbnailDataUrl }
-            : studio))
+            : studio)
         }
         setSaved(true)
         setError(null)
@@ -491,13 +531,13 @@ export function EditorV6Page() {
 
   const patchStudio = (transform: (studio: EditorV6Document) => EditorV6Document, editSelection = true) => {
     if (!activeEditorV6Id) return
-    setEditorV6Projects((current) => current.map((studio) => {
+    updateActiveEditorV6Project((studio) => {
       if (studio.id !== activeEditorV6Id) return studio
       const selected = timelineClips(studio.timeline).find(({ block }) => block.id === selectedTimelineBlockId && block.elementId === selectedElementId)
         ?? (selectedElementId ? editorV6ClipAtFrame(studio.timeline, selectedElementId, playheadFrame) : undefined)
       const next = editSelection ? editEditorV6DocumentAtBlock(studio, selected?.block.id ?? null, transform) : transform(studio)
       return pruneEditorV6TimelineSnapshots({ ...next, timeline: normalizeEditorV6Timeline(next.timeline) })
-    }))
+    })
     setSaved(false)
   }
 
@@ -566,7 +606,7 @@ export function EditorV6Page() {
       await window.desktop.saveEditorV6Project(nextStudio)
       if (activeEditorV6Id === studioAtImport.id) {
         recordHistory()
-        setEditorV6Projects((current) => current.map((studio) => studio.id === studioAtImport.id ? nextStudio : studio))
+        setActiveEditorV6Project(nextStudio)
         setSaved(true)
       }
       if (category === 'background') {
@@ -939,7 +979,7 @@ export function EditorV6Page() {
     if (!drag) return
     dragRef.current = null
     if (drag.moved) {
-      setEditorV6Projects((projects) => projects.map((project) => project.id === drag.before.id ? { ...drag.before, updatedAt: new Date().toISOString() } : project))
+      updateActiveEditorV6Project((project) => project.id === drag.before.id ? { ...drag.before, updatedAt: new Date().toISOString() } : project)
       setSelectedTimelineBlockId(drag.id === 'background' ? null : editorV6ClipAtFrame(drag.before.timeline, drag.id, drag.frame)?.block.id ?? null)
       setSaved(false)
     }
@@ -986,7 +1026,7 @@ export function EditorV6Page() {
     drag.moved = true
     setPlayheadFrame(drag.frame)
     setSelectedTimelineBlockId(drag.blockId)
-    setEditorV6Projects((projects) => projects.map((project) => project.id === drag.before.id ? { ...next, updatedAt: new Date().toISOString() } : project))
+    updateActiveEditorV6Project((project) => project.id === drag.before.id ? { ...next, updatedAt: new Date().toISOString() } : project)
     setSaved(false)
   }
 
@@ -997,7 +1037,7 @@ export function EditorV6Page() {
     dragRef.current = null
     if (!drag.moved) return
     recordHistory(drag.before)
-    setEditorV6Projects((projects) => projects.map((project) => project.id === drag.before.id ? { ...project, updatedAt: new Date().toISOString() } : project))
+    updateActiveEditorV6Project((project) => project.id === drag.before.id ? { ...project, updatedAt: new Date().toISOString() } : project)
     setSaved(false)
   }
   sceneInteractionRef.current = { start: startDrag, move: moveDrag, end: endDrag }
@@ -1019,8 +1059,9 @@ export function EditorV6Page() {
     if (!target || !window.confirm(`Excluir ${target.title}?`)) return
     try {
       await window.desktop.deleteEditorV6Project(target.id)
-      setEditorV6Projects((current) => current.filter((studio) => studio.id !== target.id))
+      removeEditorV6Summary(target.id)
       setSelectedId((current) => current === target.id ? null : current)
+      if (activeEditorV6Id === target.id) setActiveStudioId(null)
       setSaved(true)
       setError(null)
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível excluir o projeto do Editor V6.') }

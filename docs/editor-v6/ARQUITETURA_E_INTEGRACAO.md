@@ -71,7 +71,7 @@ Isso é uma diferença entre o objetivo já discutido para o editor — importar
 | Node.js no processo main | IPC, arquivos, serviços, SQLite, coordenação de export e subprocessos. Não há um servidor HTTP dedicado para o V6. | Trabalho síncrono pesado no main pode travar o app inteiro; operações longas precisam ser assíncronas ou sair dessa thread. |
 | React 19 + React Router | Painéis, controles, inspector, palco SVG e timeline DOM. Rotas são carregadas sob demanda. | O playhead é estado React local e as linhas da timeline são memoizadas; clips fora do intervalo visível são filtrados. Ainda é preciso medir commits e pintura do palco. |
 | TypeScript 5.9 | Tipagem e compilação dos contratos UI/IPC/documento. | Ajuda a prevenir erros de estrutura; tipos são removidos na execução e não aceleram renderização. |
-| Zustand 5 + Immer 11 | Estado e histórico próprios do V6. A lista de projetos e documentos, incluindo assets, vai para estado de UI. | Seletores e compartilhamento imutável ajudam renderizações localizadas. Immer não reduz o custo de manter centenas de PNGs como Data URLs. |
+| Zustand 5 + Immer 11 | Estado e histórico próprios do V6. A biblioteca guarda resumos; a área de edição mantém o documento ativo e o histórico de desfazer/refazer daquele projeto. | O desenho evita carregar todos os projetos e PNGs para a biblioteca. O projeto ativo e seus snapshots de histórico ainda usam Data URLs e continuam sendo a próxima fronteira de armazenamento. |
 | Zod 4 | Validação de documentos e jobs ao atravessar fronteiras de persistência/IPC. Há limites de 500 assets, 1.000 elementos e 200 faixas. | Validação protege os dados; validar/transportar um documento grande a cada salvamento pode custar. Não há medição de que Zod, sozinho, seja o gargalo. |
 | electron-vite + Vite | Compila bundles separados para main, preload e renderer e serve HMR no desenvolvimento. Workers do renderer usam formato ES. | Ferramentas de build não fazem a cena ficar mais fluida durante a edição. Dividir em bundles e carregar a rota sob demanda ajuda inicialização. |
 | FFmpeg + FFprobe | Subprocessos locais para codificar H.264, juntar trechos, mixar áudio e validar o MP4. | O exportador consulta NVENC, QSV, AMF e depois libopenh264. O encoder detectado depende da máquina/build; “Turbo 2×” ainda divide CPU, GPU, memória e disco. |
@@ -96,7 +96,7 @@ Essas escolhas seguem padrões vistos nos editores pesquisados. Elas não remove
 
 ## Custos concretos a reduzir primeiro
 
-1. **A lista carrega os projetos completos.** `listEditorV6Projects` chama `listEditorV6s`, que abre cada `editorV6.json`, lê todos os PNGs e converte cada um a Base64. A página guarda essa lista completa no estado de projetos. Com vários projetos e imagens grandes, a tela de biblioteca paga o custo de abrir assets que nem foram selecionados.
+1. **Lista e abertura de projeto:** corrigido nesta rodada. `listEditorV6Projects` lê apenas os manifestos leves e devolve resumo; `loadEditorV6Project(id)` lê os PNGs somente para o projeto aberto. A tela mantém os resumos na biblioteca e um documento completo no estado de edição.
 2. **Cada salvamento recodifica o conjunto inteiro de assets.** O auto-save ocorre depois de 650 ms sem mudança. `writeEditorV6` decodifica cada Data URL, normaliza formatos não-PNG e entrega todas as imagens à transação, mesmo quando só mudou um texto ou um bloco. A transação ainda lê/backupeia os caminhos existentes antes de publicar o manifesto.
 3. **Data URL atravessa limites de estado e IPC.** O mesmo PNG pode existir como texto Base64 no estado do renderer, no payload de IPC e em buffers no processo principal. Base64 aumenta o tamanho do dado e cópias transitórias podem elevar a memória de pico.
 4. **A captura do export é intensiva e concorrente.** Turbo cria dois renderizadores ocultos, captura cada imagem em BGRA e alimenta dois processos FFmpeg. O caminho já tem fallback e validação, mas exige uma comparação de tempo/memória no projeto real antes de assumir que duas partes sempre serão melhores.
@@ -109,10 +109,19 @@ Esses pontos são oportunidades arquiteturais observadas no código, não uma al
 
 ### Fase 1 — tirar mídia desnecessária do caminho crítico
 
-- Separar API de **resumo de projetos** da API de **abrir projeto completo**. A biblioteca deve carregar título, datas, miniatura e tamanho; só o projeto selecionado carrega timeline e assets.
+- **Concluído:** separar a API de resumo da API de abrir projeto completo. A biblioteca carrega título, datas e miniatura; só o projeto selecionado carrega timeline e assets.
 - Persistir assets como arquivos binários com IDs/hash no manifesto. O renderer recebe referências tipadas e miniaturas; não precisa manter todos os PNGs como Data URL.
 - Na gravação, publicar somente assets novos ou cujo hash mudou; mudanças de timeline/texto publicam manifesto sem regravar PNGs. Agrupar auto-save durante arraste e garantir fila ordenada com a versão mais recente.
 - Manter a propriedade portátil do projeto e o journal de recuperação. Criar migração por versão para documentos existentes antes de trocar o formato.
+
+### Trabalho iniciado nesta rodada
+
+- A biblioteca agora lista `EditorV6ProjectSummary` sem abrir arquivos PNG. A API `loadEditorV6Project(id)` carrega e valida um único documento ao entrar no editor; a duplicação também abre o documento de origem sob demanda.
+- A store mantém resumos da biblioteca e o documento ativo; ao trocar de projeto, limpa o histórico anterior. Snapshots de desfazer/refazer do projeto ativo ainda permanecem enquanto ele estiver aberto.
+- Foram gerados três projetos de estresse locais e isolados: leve (80 blocos, 18 assets, 1,21 MB), médio (284 blocos, 28 assets, 3,35 MB) e pesado (752 blocos, 48 assets, 10,11 MB), todos com quatro personagens sintéticos, faixas de fala/pensamento sobrepostas e transições com atlas. Os tamanhos são os bytes de disco desta execução, não uma estimativa de RAM nem um benchmark de FPS. O gerador idempotente é `npm run editor-v6:stress-projects`; os documentos ficam em `app-data/runtime/profile/studios/Editor V6` e não são assets de produção versionados.
+- O gerador confirma que os resumos não transportam assets e reabre cada projeto pelo leitor de persistência real, validando os PNGs e atlas de animação.
+
+Ainda falta medir a biblioteca/projeto e alterar a gravação incremental de assets. A separação atual evita carregar projetos não selecionados, mas o projeto ativo ainda pode manter seus PNGs em Base64 durante a sessão.
 
 ### Fase 2 — formalizar integração com os dados do app
 
@@ -159,4 +168,4 @@ Fontes oficiais consultadas:
 
 ## Próxima decisão técnica
 
-Antes de trocar a tecnologia gráfica, registrar a memória e o tempo de três operações usando projetos representativos: abrir biblioteca sem carregar PNGs; abrir projeto e salvar após editar texto versus alterar asset; Play com 1/3 personagens e vários atlas. Em seguida implementar o carregamento sob demanda e a gravação incremental dos assets, porque essas mudanças eliminam trabalho conhecido sem reescrever o motor visual. A pipeline de vídeo deve começar depois, com importação copiada, proxies/cache e clips com tempo de origem, mantendo a experiência de personagem como uma camada da composição.
+Antes de trocar a tecnologia gráfica, registrar a memória e o tempo de três operações usando os projetos de estresse: abrir biblioteca sem carregar PNGs; abrir o projeto e salvar após editar texto versus alterar asset; Play com um/três/quatro personagens e vários atlas. O carregamento sob demanda agora está implementado; o próximo passo é a gravação incremental dos assets, porque isso elimina trabalho conhecido sem reescrever o motor visual. A pipeline de vídeo deve começar depois, com importação copiada, proxies/cache e clips com tempo de origem, mantendo a experiência de personagem como uma camada da composição.

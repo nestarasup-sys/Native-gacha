@@ -1,7 +1,7 @@
 /** Persistência dos documentos e mídias do EditorV6 Principal. */
 import { join, resolve, dirname, basename } from 'node:path'
 import type * as nodeFs from 'node:fs/promises'
-import { createEditorV6Timeline, syncEditorV6TimelineElements, type EditorV6Asset, type EditorV6Document, type EditorV6Timeline } from '../../../src/shared/editorV6'
+import { createEditorV6Timeline, syncEditorV6TimelineElements, type EditorV6Asset, type EditorV6Document, type EditorV6ProjectSummary, type EditorV6Timeline } from '../../../src/shared/editorV6'
 import { publishEditorV6AssetsAndManifest, recoverEditorV6AssetTransaction } from './assetTransaction.ts'
 import { normalizeEditorV6Timeline } from '../../../src/shared/editorV6Timeline'
 
@@ -77,6 +77,30 @@ export function createEditorV6DocumentPersistence(deps: {
     }
   }
 
+  async function readEditorV6Summary(id: string): Promise<EditorV6ProjectSummary | null> {
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) throw new Error('Identificador de EditorV6 inválido.')
+    try {
+      const folder = deps.editorV6Path(id)
+      await recoverEditorV6AssetTransaction(deps.files, folder)
+      const raw = JSON.parse(await readFile(join(folder, 'editorV6.json'), 'utf8')) as Record<string, unknown>
+      if (raw.id !== id) throw new Error(`O manifesto do Editor V6 ${id} tem identificador incompatível.`)
+      const thumbnailDataUrl = typeof raw.thumbnailDataUrl === 'string'
+        && /^data:image\/(jpeg|png);base64,[A-Za-z0-9+/=]+$/.test(raw.thumbnailDataUrl)
+        && raw.thumbnailDataUrl.length <= 1_500_000 ? raw.thumbnailDataUrl : undefined
+      return {
+        id,
+        title: String(raw.title ?? 'Editor V6').slice(0, 100),
+        color: typeof raw.color === 'string' && /^#[0-9a-f]{6}$/i.test(raw.color) ? raw.color : '#d7b5cd',
+        createdAt: typeof raw.createdAt === 'string' ? raw.createdAt : '',
+        updatedAt: typeof raw.updatedAt === 'string' ? raw.updatedAt : '',
+        ...(thumbnailDataUrl ? { thumbnailDataUrl } : {})
+      }
+    } catch (reason) {
+      if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return null
+      throw reason
+    }
+  }
+
   async function writeEditorV6(editorV6: EditorV6Document): Promise<void> {
     if (!deps.validate(editorV6)) throw new Error('Dados do EditorV6 inválidos.')
     const folder = deps.editorV6Path(editorV6.id)
@@ -112,6 +136,7 @@ export function createEditorV6DocumentPersistence(deps: {
 
   return {
     readEditorV6: (id: string) => serialized(id, () => readEditorV6(id)),
+    readEditorV6Summary: (id: string) => serialized(id, () => readEditorV6Summary(id)),
     writeEditorV6: (document: EditorV6Document) => serialized(document.id, () => writeEditorV6(document)),
     removeEditorV6: (id: string) => serialized(id, () => removeEditorV6(id)),
   }

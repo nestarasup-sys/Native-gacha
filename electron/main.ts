@@ -975,7 +975,7 @@ const { listStudios } = createStudioLibraryIndex({
   readStudio
 })
 
-const { readEditorV6, writeEditorV6, removeEditorV6 } = createEditorV6DocumentPersistence({
+const { readEditorV6, readEditorV6Summary, writeEditorV6, removeEditorV6 } = createEditorV6DocumentPersistence({
   files: { readFile, writeFile, mkdir, access, rename, unlink, rm },
   editorV6Path,
   editorV6LibraryPath,
@@ -987,7 +987,7 @@ const { readEditorV6, writeEditorV6, removeEditorV6 } = createEditorV6DocumentPe
 const { listEditorV6s } = createEditorV6LibraryIndex({
   files: { mkdir, readdir },
   editorV6LibraryPath,
-  readEditorV6
+  readEditorV6Summary
 })
 
 function dataUrlBuffer(dataUrl: string): Buffer {
@@ -1152,6 +1152,7 @@ async function registerFabricatorHandlers(): Promise<void> {
   registerEditorV6PrimaryHandlers({
     ipcMain, assertTrustedSender,
     list: () => listEditorV6s(),
+    read: (id) => readEditorV6(id),
     write: (document) => writeEditorV6(document),
     remove: (id) => removeEditorV6(id),
     getPendingWrites: () => editorV6SaveQueue,

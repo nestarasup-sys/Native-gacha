@@ -296,8 +296,17 @@ export type EditorV6Document = {
   exportAudio?: EditorV6ExportAudio[]
 }
 
+/** Metadados leves usados para montar a biblioteca sem carregar os PNGs do projeto. */
+export type EditorV6ProjectSummary = Pick<EditorV6Document, 'id' | 'title' | 'color' | 'createdAt' | 'updatedAt' | 'thumbnailDataUrl'>
+
+export function editorV6ProjectSummary(document: EditorV6Document): EditorV6ProjectSummary {
+  const { id, title, color, createdAt, updatedAt, thumbnailDataUrl } = document
+  return { id, title, color, createdAt, updatedAt, ...(thumbnailDataUrl ? { thumbnailDataUrl } : {}) }
+}
+
 export type EditorV6DesktopApi = {
-  listEditorV6Projects: () => Promise<EditorV6Document[]>
+  listEditorV6Projects: () => Promise<EditorV6ProjectSummary[]>
+  loadEditorV6Project: (id: string) => Promise<EditorV6Document | null>
   saveEditorV6Project: (editorV6: EditorV6Document) => Promise<void>
   deleteEditorV6Project: (id: string) => Promise<void>
   getEditorV6Folder: () => Promise<string>
