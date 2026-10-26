@@ -1,6 +1,6 @@
-import { app, BrowserWindow, ipcMain, type IpcMainInvokeEvent } from 'electron'
+import { app, BrowserWindow, ipcMain, protocol, type IpcMainInvokeEvent } from 'electron'
 import { execFileSync } from 'node:child_process'
-import { readFile, writeFile, readdir } from 'node:fs/promises'
+import { readFile, writeFile, readdir, mkdir, copyFile, stat } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { createEditorV6MotionService } from '../../electron/domains/editorV6/motionIpc'
@@ -14,6 +14,7 @@ import { createEditorV6Timeline, type EditorV6Document, type EditorV6Element } f
 import { editEditorV6BackgroundAtFrame, moveEditorV6ElementInPeriod, prepareEditorV6PositionAtFrame } from '../../src/shared/editorV6Timeline'
 
 const root = resolve(process.argv[2]), folder = resolve(process.argv[3])
+protocol.registerSchemesAsPrivileged([{ scheme: 'gacha-editor-media', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } }])
 const assert = (condition: unknown, message: string) => { if (!condition) throw Error(message) }
 app.setPath('userData', join(folder, 'profile'))
 app.commandLine.appendSwitch('force-device-scale-factor', '1')
@@ -33,7 +34,7 @@ async function main() {
   project = editEditorV6BackgroundAtFrame(project, 30, { backgroundColor: '#0000ff' })
   project = editEditorV6BackgroundAtFrame(project, 45, { backgroundColor: '#00ff00' })
   project.exportAudio = [{ id: randomUUID(), fileName: `${randomUUID()}.wav`, name: 'Tone', sourceFrames: 120, sourceInFrame: 5, startFrame: 10, durationFrames: 80, gain: .75, muted: false }]
-  const factory = createEditorV6WorkerFactory({ ipcMain, html: join(root, 'out/renderer/editor-v6-export.html'), preload: join(root, 'out/preload/editorV6ExportPreload.cjs') })
+  const factory = createEditorV6WorkerFactory({ ipcMain, html: join(root, 'out/renderer/editor-v6-export.html'), preload: join(root, 'out/preload/editorV6ExportPreload.cjs'), mediaPath: (_projectId, fileName) => join(folder, 'media', fileName) })
   let active = 0, peak = 0
   const makeWorker = async (signal: AbortSignal, width = 320, height = 180) => {
     active++; peak = Math.max(peak, active)
@@ -45,7 +46,7 @@ async function main() {
   }
   const options = { startFrame: 5, endFrame: 86, width: 320, height: 180, turbo: true, encoder: 'cpu' as const }
   const output = join(folder, 'turbo.mp4')
-  const base = { ffmpeg, ffprobe, tempRoot: folder, id: randomUUID(), outputPath: output, reportPath: join(folder, 'turbo.report.json'), signal: new AbortController().signal, createWorker: (_part: unknown, signal: AbortSignal) => makeWorker(signal), audioPath: () => audio, progress: () => {} }
+  const base = { ffmpeg, ffprobe, tempRoot: folder, id: randomUUID(), outputPath: output, reportPath: join(folder, 'turbo.report.json'), signal: new AbortController().signal, createWorker: (_part: unknown, signal: AbortSignal) => makeWorker(signal), audioPath: () => audio, mediaPath: (_projectId: string, fileName: string) => join(folder, 'media', fileName), progress: () => {} }
   const report = await runEditorV6Export(project, options, base)
   assert(report.state === 'completed' && !report.fallback, 'Turbo não concluiu com duas partes.')
   assert(report.attempts[0].parts.map((part) => part.frames).sort((a, b) => a - b).join(',') === '40,41', 'Partes perderam ou repetiram quadros.')
@@ -75,6 +76,34 @@ async function main() {
   const silent = { ...project, exportAudio: [] }
   const single = await runEditorV6Export(silent, { ...options, startFrame: 50, endFrame: 51 }, { ...base, id: randomUUID(), outputPath: join(folder, 'single.mp4'), reportPath: join(folder, 'single.report.json') })
   assert(single.totalFrames === 1 && single.attempts[0].parallelism === 1 && !single.fallback, 'Intervalo de um quadro não foi tratado corretamente.')
+  await mkdir(join(folder, 'media'), { recursive: true })
+  const videoId = randomUUID(), videoFileName = `${videoId}.mp4`, videoPath = join(folder, 'media', videoFileName)
+  run(['-f', 'lavfi', '-i', 'testsrc2=size=320x180:rate=30:duration=4', '-f', 'lavfi', '-i', 'sine=frequency=600:sample_rate=48000:duration=4', '-c:v', 'mpeg4', '-q:v', '3', '-c:a', 'aac', '-shortest', videoPath])
+  const audioId = randomUUID(), audioFileName = `${audioId}.wav`
+  await copyFile(audio, join(folder, 'media', audioFileName))
+  const mediaProject: EditorV6Document = { ...silent, id: randomUUID(), media: [
+    { id: videoId, name: 'Test pattern', fileName: videoFileName, kind: 'video', mimeType: 'video/mp4', sourceFrames: 120, hasAudio: true, width: 320, height: 180, sizeBytes: (await stat(videoPath)).size },
+    { id: audioId, name: 'Tone', fileName: audioFileName, kind: 'audio', mimeType: 'audio/wav', sourceFrames: 120, hasAudio: true, sizeBytes: (await stat(join(folder, 'media', audioFileName))).size }
+  ], timeline: { ...createEditorV6Timeline(), durationFrames: 90, tracks: createEditorV6Timeline().tracks.map((track) => track.kind === 'video'
+    ? { ...track, blocks: [{ id: randomUUID(), label: 'Test pattern', mediaId: videoId, mediaInFrame: 15, startFrame: 5, durationFrames: 10, audioEnabled: true, gain: 1 }] }
+    : track.kind === 'audio' ? { ...track, blocks: [{ id: randomUUID(), label: 'Tone', mediaId: audioId, mediaInFrame: 0, startFrame: 0, durationFrames: 90, audioEnabled: true, gain: .5 }] }
+      : { ...track, blocks: track.blocks }) } }
+  project = mediaProject
+  const mediaOutput = join(folder, 'media-timeline.mp4')
+  const mediaReport = await runEditorV6Export(mediaProject, { ...options, startFrame: 0, endFrame: 30 }, { ...base, id: randomUUID(), outputPath: mediaOutput, reportPath: join(folder, 'media-timeline.report.json'), audioPath: (clip) => join(folder, 'media', clip.fileName) })
+  assert(!mediaReport.fallback && mediaReport.videoInputs === 1 && mediaReport.audioClips === 2, 'Mídias da timeline não chegaram ao exportador.')
+  const mediaRgb = run(['-i', mediaOutput, '-vf', "select='eq(n,0)+eq(n,10)'", '-fps_mode', 'passthrough', '-frames:v', '2', '-pix_fmt', 'rgb24', '-f', 'rawvideo', 'pipe:1'])
+  const mediaFrameBytes = 320 * 180 * 3
+  assert(!mediaRgb.subarray(0, mediaFrameBytes).equals(mediaRgb.subarray(mediaFrameBytes, mediaFrameBytes * 2)), 'Vídeo importado não mudou quadro a quadro na composição exportada.')
+  const actorOverVideo = Array.from(mediaRgb.subarray((90 * 320 + 160) * 3, (90 * 320 + 160) * 3 + 3))
+  assert(actorOverVideo[0] > 200 && actorOverVideo[1] > 200 && actorOverVideo[2] < 40, 'O vídeo cobriu o personagem, embora a camada do vídeo deva ficar atrás dos personagens.')
+  const firstPixel = Array.from(mediaRgb.subarray(10 * 3, 10 * 3 + 3))
+  assert(firstPixel.every((channel) => channel < 25), 'A faixa de vídeo vazou para antes do início do clip.')
+  const mediaSound = run(['-i', mediaOutput, '-vn', '-ac', '1', '-ar', '48000', '-f', 'f32le', 'pipe:1'])
+  let mediaRms = 0
+  for (let index = 0; index < 1000; index++) mediaRms += mediaSound.readFloatLE(index * 4) ** 2
+  assert(Math.sqrt(mediaRms / 1000) > .02, 'O áudio dos vídeos/áudios importados não foi mixado no MP4.')
+  project = silent
   const fullHd = await runEditorV6Export(silent, { ...options, startFrame: 45, endFrame: 47, width: 1920, height: 1080 }, { ...base, id: randomUUID(), outputPath: join(folder, '1080p.mp4'), reportPath: join(folder, '1080p.report.json'), createWorker: (_part, signal) => makeWorker(signal, 1920, 1080) })
   assert(fullHd.totalFrames === 2 && !fullHd.fallback && active === 0, 'Exportação 1080p não concluiu com duas partes.')
   // Exercise the actual restricted sandbox preload, IPC queue and hidden bake worker.

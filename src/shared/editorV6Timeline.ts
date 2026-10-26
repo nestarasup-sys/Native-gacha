@@ -1,7 +1,9 @@
 /** Frame-based timeline operations shared by preview, prints and persistence. */
 import type { EditorV6BackgroundState, EditorV6Document, EditorV6Element, EditorV6Timeline, EditorV6TimelineBlock, EditorV6TimelineTrack } from './editorV6'
-import { editorV6TrackKindForElement, editorV6TrackLabel } from './editorV6'
+import { editorV6MediaUrl, editorV6TrackKindForElement, editorV6TrackLabel } from './editorV6'
 import { editorV6MotionPlans, type EditorV6MotionPlan } from './editorV6Motion'
+import { editorV6FaceModeAtFrame } from './editorV6FaceSchedule'
+export { isEditorV6BlinkFrame } from './editorV6FaceSchedule'
 
 export type TimelineClip = { track: EditorV6TimelineTrack; block: EditorV6TimelineBlock }
 export const MAX_TIMELINE_FRAME = 1_000_000
@@ -46,7 +48,7 @@ export function normalizeEditorV6Timeline(timeline: EditorV6Timeline): EditorV6T
   return { ...timeline, durationFrames, tracks }
 }
 
-export type EditorV6ResolvedScene = { frame: number; background: EditorV6BackgroundState; elements: EditorV6Element[] }
+export type EditorV6ResolvedScene = { frame: number; background: EditorV6BackgroundState; elements: EditorV6Element[]; mediaVideo?: { mediaId: string; url: string; startFrame: number; sourceInFrame: number; durationFrames: number; hasAudio: boolean; audioEnabled: boolean; gain: number } }
 const backgroundsCache = new WeakMap<EditorV6Timeline, TimelineClip[]>()
 export function resolveEditorV6BackgroundAtFrame(document: EditorV6Document, frame: number): EditorV6BackgroundState {
   let backgrounds = backgroundsCache.get(document.timeline)
@@ -66,8 +68,22 @@ export function resolveEditorV6BackgroundAtFrame(document: EditorV6Document, fra
 
 export function resolveEditorV6SceneAtFrame(document: EditorV6Document, frame: number): EditorV6ResolvedScene {
   const normalizedFrame = Math.min(Math.max(0, document.timeline.durationFrames - 1), Math.max(0, Math.round(frame)))
-  return { frame: normalizedFrame, background: resolveEditorV6BackgroundAtFrame(document, normalizedFrame), elements: resolveEditorV6ElementsAtFrame(document, normalizedFrame) }
+  let videoClips = videoClipsCache.get(document.timeline)
+  if (!videoClips) {
+    videoClips = timelineClips(document.timeline).filter(({ track, block }) => track.kind === 'video' && !track.hidden && !track.muted && block.mediaId).sort((a, b) => byTime(a.block, b.block))
+    videoClipsCache.set(document.timeline, videoClips)
+  }
+  let left = 0, right = videoClips.length
+  while (left < right) { const middle = (left + right) >>> 1; if (videoClips[middle].block.startFrame <= normalizedFrame) left = middle + 1; else right = middle }
+  let video: EditorV6TimelineBlock | undefined
+  for (let index = left - 1; index >= 0; index--) {
+    const candidate = videoClips[index].block
+    if (normalizedFrame < candidate.startFrame + candidate.durationFrames) { video = candidate; break }
+  }
+  const media = video ? document.media?.find((item) => item.id === video.mediaId && item.kind === 'video') : undefined
+  return { frame: normalizedFrame, background: resolveEditorV6BackgroundAtFrame(document, normalizedFrame), elements: resolveEditorV6ElementsAtFrame(document, normalizedFrame), ...(video && media ? { mediaVideo: { mediaId: media.id, url: editorV6MediaUrl(document.id, media.fileName), startFrame: video.startFrame, sourceInFrame: video.mediaInFrame ?? 0, durationFrames: video.durationFrames, hasAudio: media.hasAudio, audioEnabled: video.audioEnabled !== false, gain: video.gain ?? 1 } } : {}) }
 }
+const videoClipsCache = new WeakMap<EditorV6Timeline, TimelineClip[]>()
 
 /** Background changes are persistent states on the visual lane. */
 export function editEditorV6BackgroundAtFrame(document: EditorV6Document, frame: number, values: Partial<EditorV6BackgroundState>, blockId: string = crypto.randomUUID()): EditorV6Document {
@@ -167,6 +183,13 @@ export function resolveEditorV6ElementsAtFrame(document: EditorV6Document, frame
     motionIndex.set(document.timeline, index)
   }
   return resolveEditorV6StaticElementsAtFrame(document, frame).map((element) => {
+    if (element.kind === 'character' && element.characterId && !element.motionSprite) {
+      const autoMode = editorV6FaceModeAtFrame(document.id, document.timeline, element.characterId, frame)
+      const autoAssetId = autoMode === 'talk-blink'
+        ? element.faceModeAssetIds?.['talk-blink'] ?? element.faceModeAssetIds?.talk
+        : autoMode ? element.faceModeAssetIds?.[autoMode] : undefined
+      if (autoAssetId) element = { ...element, assetId: autoAssetId, motionSprite: undefined }
+    }
     const entries = index!.get(element.id)
     if (!entries) return element
     let left = 0, right = entries.length
@@ -199,6 +222,7 @@ export function editEditorV6DocumentAtBlock(document: EditorV6Document, blockId:
     const snapshot = next.assets.find((asset) => asset.id !== beforeAsset.id && asset.timelineSnapshot && asset.dataUrl === afterAsset.dataUrl)
       ?? { ...afterAsset, id: crypto.randomUUID(), timelineSnapshot: true }
     state.assetId = snapshot.id
+    if (state.faceModeAssetIds) state.faceModeAssetIds = Object.fromEntries(Object.entries(state.faceModeAssetIds).map(([mode, id]) => [mode, id === beforeAsset.id ? snapshot.id : id])) as EditorV6Element['faceModeAssetIds']
     next = { ...next, assets: [...next.assets.filter((asset) => asset.id !== beforeAsset.id && asset.id !== snapshot.id), beforeAsset, snapshot] }
   }
   next = { ...next, elements: next.elements.map((element) => element.id === base.id ? base : element), timeline: { ...next.timeline, tracks: next.timeline.tracks.map((track) => ({
@@ -212,7 +236,9 @@ export function pruneEditorV6TimelineSnapshots(document: EditorV6Document): Edit
   if (timelineClips(document.timeline).some(({ block }) => block.incomingMotion && keys.get(block.id) !== block.incomingMotion.key)) {
     document = { ...document, timeline: { ...document.timeline, tracks: document.timeline.tracks.map((track) => ({ ...track, blocks: track.blocks.map((block) => block.incomingMotion && keys.get(block.id) !== block.incomingMotion.key ? { ...block, incomingMotion: undefined } : block) })) } }
   }
-  const referenced = new Set([document.backgroundAssetId, ...document.elements.map((element) => element.assetId), ...timelineClips(document.timeline).flatMap(({ block }) => [block.state?.assetId, block.background?.backgroundAssetId, block.incomingMotion?.assetId])])
+  const referenced = new Set([document.backgroundAssetId,
+    ...document.elements.flatMap((element) => [element.assetId, ...Object.values(element.faceModeAssetIds ?? {})]),
+    ...timelineClips(document.timeline).flatMap(({ block }) => [block.state?.assetId, ...Object.values(block.state?.faceModeAssetIds ?? {}), block.background?.backgroundAssetId, block.incomingMotion?.assetId])])
   const assets = document.assets.filter((asset) => !asset.timelineSnapshot || referenced.has(asset.id))
   return assets.length === document.assets.length ? document : { ...document, assets }
 }

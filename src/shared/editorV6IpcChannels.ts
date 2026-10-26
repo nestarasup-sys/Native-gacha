@@ -15,6 +15,8 @@ export const editorV6IpcChannels = {
   revealEditorV6Export: 'editor-v6:export:reveal',
   importEditorV6ExportAudio: 'editor-v6:export:import-audio',
   cloneEditorV6ExportAudio: 'editor-v6:export:clone-audio',
+  importEditorV6Media: 'editor-v6:media:import',
+  cloneEditorV6Media: 'editor-v6:media:clone',
   bakeEditorV6Motion: 'editor-v6:motion:bake',
   cancelEditorV6Motion: 'editor-v6:motion:cancel'
 } as const satisfies Record<Exclude<keyof EditorV6DesktopApi, 'flushPendingWrites'>, string>

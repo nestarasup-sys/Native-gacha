@@ -9,9 +9,10 @@ async function initialize() {
   const { project, width, height } = await worker.payload()
   const root = createRoot(document.getElementById('root')!)
   const images = new Map<string, Promise<void>>()
+  const layeredVideo = project.timeline.tracks.some((track) => track.kind === 'video' && track.blocks.some((block) => block.mediaId && project.media?.some((media) => media.id === block.mediaId && media.kind === 'video')))
   let previous = ''
-  ;(window as unknown as { renderEditorV6ExportFrame: (frame: number) => Promise<{ reused: boolean }> }).renderEditorV6ExportFrame = async (frame) => {
-    const scene = resolveEditorV6SceneAtFrame(project, frame), key = editorV6VisualKey(scene)
+  ;(window as unknown as { renderEditorV6ExportFrame: (frame: number, layer?: 'background' | 'foreground') => Promise<{ reused: boolean }> }).renderEditorV6ExportFrame = async (frame, layer) => {
+    const scene = resolveEditorV6SceneAtFrame(project, frame), key = editorV6VisualKey({ ...scene, mediaVideo: undefined })
     if (key === previous) return { reused: true }
     const ids = new Set([scene.background.backgroundAssetId, ...scene.elements.map((element) => element.assetId)])
     for (const asset of project.assets) {
@@ -24,9 +25,9 @@ async function initialize() {
       }
       await prepared
     }
-    flushSync(() => root.render(<SceneSurface scene={scene} assets={project.assets} outputWidth={width} outputHeight={height} />))
+    flushSync(() => root.render(<SceneSurface scene={{ ...scene, mediaVideo: undefined }} assets={project.assets} outputWidth={width} outputHeight={height} renderLayer={layeredVideo ? layer ?? 'background' : 'all'} />))
     await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
-    previous = key
+    if (!layeredVideo || layer === 'foreground') previous = key
     return { reused: false }
   }
   await worker.ready()

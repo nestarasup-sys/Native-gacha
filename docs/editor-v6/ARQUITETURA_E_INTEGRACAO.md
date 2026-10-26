@@ -44,7 +44,7 @@ flowchart LR
 - A janela principal usa `contextIsolation: true`, `nodeIntegration: false` e `sandbox: true`. O preload expõe métodos tipados e específicos, em vez de entregar o `ipcRenderer` inteiro. O processo principal valida o remetente antes de operar nos canais do V6.
 - O V6 pode consultar personagens do Customizer e fontes do Fabricador. Ao colocar um personagem na cena, guarda um snapshot visual e metadados de origem. Alterar a biblioteca depois não atualiza cenas existentes por conta própria, e editar uma cena não grava na origem.
 - Projetos persistem em `userData/studios/Editor V6/editorV6-<id>/`: manifesto `editorV6.json`, PNGs em subpastas próprias, impressões e áudio importado. Há journal transacional para publicar PNGs e manifesto sem deixar uma gravação interrompida em estado ambíguo.
-- `SceneSurface` é a composição visual comum entre prévia e captura de quadros. O renderer de export e o de preparação de animação são BrowserWindows ocultos, com preloads próprios e sandbox. O export passa bitmaps BGRA ao processo FFmpeg.
+- `SceneSurface` desenha os mesmos fundos, personagens e textos na prévia e na captura. Na exportação com vídeo, o renderer oculto captura fundo e foreground separadamente; FFmpeg coloca os clips de vídeo entre as camadas. Os workers usam BrowserWindows ocultos, preloads próprios e sandbox, e enviam BGRA ao FFmpeg.
 - O app geral usa `DataPlatform`, SQLite, `DomainFileSystem`, `better-sqlite3` e objetos de mídia identificados por hash para alguns domínios. Base de Vídeos e Roteiros usam o domínio de bibliotecas que ainda fica fisicamente em `studios/Editor Gacha`.
 
 ## Onde o V6 se separa do Studio e das outras áreas
@@ -55,13 +55,16 @@ O `DomainFileSystem` e a lista `BUILTIN_DOMAINS` ainda **não registram** `studi
 
 Direção: preservar o V6 como domínio de documentos independente e, quando a integração for feita, conectar o armazenamento por um adaptador `editor-v6.*` próprio. O domínio pode usar as ferramentas comuns de arquivo, hash, backup e streaming do app, mas não deve compartilhar documentos, histórico, identificadores de projeto nem regras de edição do Studio. Assets importados continuam pertencendo logicamente ao projeto V6; deduplicação física só é segura se o catálogo preservar essa propriedade e mantiver referências/backup consistentes.
 
-## O que “Vídeo” e “áudio” significam hoje
+## Vídeo e áudio no V6
 
-- A faixa chamada `Vídeo` guarda mudanças visuais de fundo/imagem. O schema de assets do V6 aceita imagens; o relatório do export marca `videoInputs: 0` e `proxies: 0`. O V6 ainda não importa, decodifica ou reproduz clips de vídeo.
-- Existe áudio importado e copiado para o projeto, configurável no painel de exportação. Os clips ficam em `exportAudio`, separados das faixas da timeline. O projeto não tem faixa de áudio na timeline, forma de posicionar vários sons pela timeline nem uma prévia sincronizada de áudio confirmada no caminho de Play.
-- Base de Vídeos/Roteiros usam uma biblioteca de vídeo em outra área do app. O V6 não tem chamadas para importar esses itens e não os usa como mídia de cena.
+- `Importar vídeo` e `Importar áudio` copiam a mídia para a pasta `media/` do próprio projeto. FFprobe confirma o tipo, a duração, as dimensões e os streams antes da cópia. O manifesto guarda IDs, nome original, tipo MIME, quadros de origem e existência de áudio.
+- A faixa visual aceita imagens/fundos e clips de vídeo; a faixa `Áudio` aceita vários clips. Cada clip guarda mídia, quadro de entrada, posição/duração, ganho e ativação do áudio. O vídeo inclui áudio por padrão e pode ser silenciado no Inspector.
+- Na prévia, o vídeo HTML fica entre o fundo e personagens/textos. A reprodução sincroniza os elementos HTML de vídeo/áudio com o relógio da timeline e corrige desvios por seek. O vídeo fica silenciado enquanto a edição está pausada.
+- Na exportação, o Chromium captura a cena de fundo e os elementos transparentes em camadas. O FFmpeg decodifica, dimensiona e recorta os clips de vídeo entre essas camadas, mantendo personagens e textos à frente. As duas partes Turbo recebem apenas o intervalo necessário. O áudio dos clips é mixado uma vez na montagem final.
+- O protocolo `gacha-editor-media://` lê somente arquivos UUID declarados no manifesto do projeto e serve intervalos de bytes. Duplicar projeto também copia as mídias; reabrir não depende do caminho original.
+- Base de Vídeos/Roteiros continua sendo uma biblioteca separada. Trazer uma mídia para o V6 é uma cópia explícita, então o projeto não depende da biblioteca nem do caminho original.
 
-Isso é uma diferença entre o objetivo já discutido para o editor — importar vídeo e áudio desde o começo, com cópia para o projeto — e o produto atual. A interface deve distinguir “imagem de fundo” de “clip de vídeo” quando a importação real for implementada, e os sons precisam virar clips temporizados editáveis em uma faixa apropriada.
+Proxies, thumbnails, waveform, cache de seek e integração com o catálogo SQLite ainda não estão implementados. A reprodução de preview depende dos codecs aceitos pelo Chromium local; o exportador usa FFmpeg. `proxies: 0` é um indicador correto do recurso pendente, não de ausência de clips importados.
 
 ## Tecnologias do app: função real e impacto
 
@@ -89,7 +92,7 @@ No lockfile atual, as versões principais resolvem para Electron 44.9.3 / Chromi
 - O playhead é estado local do `EditorV6Page`, não uma atualização do Zustand global. A timeline memoiza suas linhas; o comentário em `EditorV6Timeline.tsx` confirma que, durante Play, as linhas não precisam redesenhar e só o cursor avança.
 - A timeline filtra blocos e transições pelo intervalo visível. A tela é DOM/CSS, mas não renderiza todos os clips fora da região que o usuário vê.
 - O preparo de animações acontece numa BrowserWindow separada, em fila serial. O cache de trabalho limita número/tamanho, e o Play apenas escolhe um sprite já preparado.
-- O exportador usa o mesmo componente de cena, limita quantos assets prepara em cache, aguarda o pipe do FFmpeg e reutiliza o bitmap para cenas visualmente idênticas. Falhas do caminho Turbo acionam fallback CPU.
+- O exportador limita quantos assets prepara em cache, aguarda o pipe do FFmpeg e reutiliza bitmaps de fundo/foreground para cenas visualmente idênticas. Os quadros do vídeo continuam variando pelo filtro nativo do FFmpeg. Falhas do caminho Turbo acionam fallback CPU.
 - A rota V6 é carregada sob demanda; o build mantém main/preloads/renderer em bundles próprios. A janela e os workers mantêm sandbox e preload de escopo estreito.
 
 Essas escolhas seguem padrões vistos nos editores pesquisados. Elas não removem o custo de abrir, validar e salvar os documentos inteiros com assets em Base64.
@@ -118,7 +121,7 @@ Esses pontos são oportunidades arquiteturais observadas no código, não uma al
 
 - A biblioteca agora lista `EditorV6ProjectSummary` sem abrir arquivos PNG. A API `loadEditorV6Project(id)` carrega e valida um único documento ao entrar no editor; a duplicação também abre o documento de origem sob demanda.
 - A store mantém resumos da biblioteca e o documento ativo; ao trocar de projeto, limpa o histórico anterior. Snapshots de desfazer/refazer do projeto ativo ainda permanecem enquanto ele estiver aberto.
-- Foram gerados três projetos de estresse locais e isolados: leve (80 blocos, 18 assets, 1,21 MB), médio (284 blocos, 28 assets, 3,35 MB) e pesado (752 blocos, 48 assets, 10,11 MB), todos com quatro personagens sintéticos, faixas de fala/pensamento sobrepostas e transições com atlas. Os tamanhos são os bytes de disco desta execução, não uma estimativa de RAM nem um benchmark de FPS. O gerador idempotente é `npm run editor-v6:stress-projects`; os documentos ficam em `app-data/runtime/profile/studios/Editor V6` e não são assets de produção versionados.
+- O gerador `npm run editor-v6:stress-projects` mantém fixtures sintéticas reabríveis: leve (80 blocos, 18 assets, 1,21 MB), médio (284 blocos, 28 assets, 3,35 MB) e pesado (752 blocos, 48 assets, 10,11 MB). Separadamente, `npm run test:editor-v6:stress-offscreen` executa a cena com quatro personagens reais `STRESS_*`; as medições e ressalvas estão em [TESTES_DE_ESTRESSE_OFFSCREEN.md](TESTES_DE_ESTRESSE_OFFSCREEN.md). Tamanhos de disco não são estimativa de RAM nem benchmark de FPS.
 - O gerador confirma que os resumos não transportam assets e reabre cada projeto pelo leitor de persistência real, validando os PNGs e atlas de animação.
 
 Ainda falta medir a biblioteca/projeto e alterar a gravação incremental de assets. A separação atual evita carregar projetos não selecionados, mas o projeto ativo ainda pode manter seus PNGs em Base64 durante a sessão.
@@ -130,13 +133,12 @@ Ainda falta medir a biblioteca/projeto e alterar a gravação incremental de ass
 - Reusar contratos de catálogo para importar uma cópia visual de personagem/pose; não importar ou alterar os documentos do Studio. Ao atualizar uma personagem existente, pedir uma ação explícita e mostrar o que será recalculado.
 - Deixar vídeos e sons como assets de propriedade do projeto. A biblioteca Base de Vídeos pode oferecer uma ação explícita de copiar/importar se isso ajudar o usuário, mas não deve virar dependência necessária para reabrir um projeto.
 
-### Fase 3 — tornar mídia em timeline uma capacidade de primeira classe
+### Fase 3 — mídia em timeline
 
-- Modelar clips com IDs, arquivo de origem, `sourceIn`, início/duração na timeline, stream/codec, volume, mute, transformação e status de proxy. Cada trilha fica em quadros/timestamps definidos pelo projeto e resolve uma composição por tempo.
-- Manter a escolha anterior de copiar vídeo/áudio para dentro do projeto. Preservar o original importado; criar proxies, miniaturas, waveform e índices de seek em cache recriável.
-- Adicionar clips reais de vídeo na faixa de vídeo e som em uma ou mais faixas de áudio. Diálogo/fala/pensamento continuam eventos separados se isso representar melhor a intenção Gacha.
-- Começar preview com poucos decoders ativos e fila de leitura/preparação limitada. Fazer áudio usar o mesmo relógio de reprodução. FFmpeg/FFprobe já são ferramentas presentes para metadados, proxy e export; decidir depois se preview deve usar `<video>`, FFmpeg ou um decoder dedicado com base em compatibilidade e perfil.
-- Preservar uma função única `resolveScene(time)`/`renderScene(frame)` para prévia e export. O preview pode ser aproximação de codec, mas geometria, poses, camadas, texto, volume e duração devem manter resultado verificável.
+- **Implementado:** IDs, arquivo por projeto, quadro de entrada, início/duração, áudio, ganho, mute e referências por manifesto; clips nas faixas visual e de áudio; preview sincronizada; export FFmpeg com sobreposição nativa do vídeo sob personagens/texto.
+- **Pendente:** proxies compatíveis com Chromium, miniaturas, waveform, índice de seek e teste de codec para mostrar um aviso ou gerar proxy quando a prévia não suportar a fonte.
+- **Pendente:** permitir mais de uma faixa de áudio independente, além da faixa atual, se a edição demonstrar que isso é necessário.
+- Manter fundos/personagens/textos como a composição principal comum entre prévia e captura. O FFmpeg aplica a camada de vídeo no export para evitar dependência do decoder HTML no renderizador offscreen.
 
 ### Fase 4 — otimizar desenho somente após medir
 
@@ -168,4 +170,4 @@ Fontes oficiais consultadas:
 
 ## Próxima decisão técnica
 
-Antes de trocar a tecnologia gráfica, registrar a memória e o tempo de três operações usando os projetos de estresse: abrir biblioteca sem carregar PNGs; abrir o projeto e salvar após editar texto versus alterar asset; Play com um/três/quatro personagens e vários atlas. O carregamento sob demanda agora está implementado; o próximo passo é a gravação incremental dos assets, porque isso elimina trabalho conhecido sem reescrever o motor visual. A pipeline de vídeo deve começar depois, com importação copiada, proxies/cache e clips com tempo de origem, mantendo a experiência de personagem como uma camada da composição.
+Antes de trocar a tecnologia gráfica, completar a linha de base de memória, abrir/salvar e playback com diferentes quantidades de personagens. A primeira medição de playback com quatro personagens reais está registrada em [TESTES_DE_ESTRESSE_OFFSCREEN.md](TESTES_DE_ESTRESSE_OFFSCREEN.md); ela revelou picos de tarefa longa na página e uma amostra interna de transição não observada por RAF, que são os próximos alvos de profiling. O carregamento sob demanda e a importação/exportação de vídeo já estão implementados. A gravação incremental dos assets, proxies/cache de preview e testes com codecs variados continuam pendentes.

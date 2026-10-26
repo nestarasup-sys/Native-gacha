@@ -28,6 +28,7 @@ export function planEditorV6Audio(clips: readonly EditorV6ExportAudio[], startFr
 export const editorV6WorkerChannels = { payload: 'editor-v6:export-worker:payload', ready: 'editor-v6:export-worker:ready' } as const
 export type EditorV6WorkerPayload = { project: EditorV6Document; width: number; height: number }
 export type EditorV6WorkerBridge = { payload: () => Promise<EditorV6WorkerPayload>; ready: (error?: string) => Promise<void> }
-export function editorV6VisualKey(scene: { background: unknown; elements: EditorV6Document['elements'] }): string {
-  return JSON.stringify([scene.background, scene.elements.map((element) => [element.id, element.kind, element.assetId, element.text, element.x, element.y, element.width, element.height, element.rotation, element.flipX, element.characterScale, element.characterWidthScale, element.characterHeightScale, element.zIndex, element.motionSprite])])
+export function editorV6VisualKey(scene: { frame?: number; background: unknown; elements: EditorV6Document['elements']; mediaVideo?: { mediaId: string; startFrame: number; sourceInFrame: number } }): string {
+  const mediaFrame = scene.mediaVideo && scene.frame !== undefined ? scene.mediaVideo.sourceInFrame + scene.frame - scene.mediaVideo.startFrame : null
+  return JSON.stringify([scene.background, mediaFrame === null ? null : [scene.mediaVideo?.mediaId, mediaFrame], scene.elements.map((element) => [element.id, element.kind, element.assetId, element.text, element.x, element.y, element.width, element.height, element.rotation, element.flipX, element.characterScale, element.characterWidthScale, element.characterHeightScale, element.zIndex, element.motionSprite])])
 }

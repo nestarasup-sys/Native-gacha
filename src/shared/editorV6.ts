@@ -11,12 +11,28 @@ export type EditorV6Asset = {
   dataUrl: string
   timelineSnapshot?: boolean
 }
+export type EditorV6MediaAsset = {
+  id: string
+  name: string
+  fileName: string
+  kind: 'video' | 'audio'
+  mimeType: string
+  sourceFrames: number
+  hasAudio: boolean
+  width?: number
+  height?: number
+  sizeBytes: number
+}
+export function editorV6MediaUrl(projectId: string, fileName: string): string {
+  return `gacha-editor-media://project/${projectId}/${fileName}`
+}
 
 /** EditorV6-local adjustment shared by a facial category and its variant frames. */
 export type EditorV6FaceTransform = { x: number; y: number; width: number; height: number; rotation: number; sourceTransformOverride?: FaceTransform }
 export type EditorV6FaceTransformCategory = 'eyes' | 'eyebrows' | 'nose' | 'mouth'
 /** EditorV6-local playback state for the character's neutral, blink, or speaking face. */
 export type EditorV6FaceMode = 'idle' | 'blink' | 'talk'
+export type EditorV6FaceRenderMode = EditorV6FaceMode | 'talk-blink'
 
 /** Use the character's talk sheet, its legacy paired sheet, or the model's Dev default. */
 export function resolveEditorV6TalkMouthId(
@@ -92,6 +108,8 @@ export type EditorV6Element = {
   faceAppearance?: CustomizerFaceAppearance
   /** EditorV6-only facial playback state; does not modify the character's Customizer data. */
   activeFaceMode?: EditorV6FaceMode
+  /** Pre-rendered alternatives selected by timeline playback without recomposing the character per frame. */
+  faceModeAssetIds?: Partial<Record<EditorV6FaceRenderMode, string>>
   /** Face-piece transforms are stored per selected catalog sheet on this EditorV6 actor. */
   faceTransforms?: EditorV6FaceTransforms
   /** Character-specific neutral face, shared by every expression collection. */
@@ -123,7 +141,7 @@ export type EditorV6Element = {
   zIndex: number
 }
 
-export type EditorV6TrackKind = 'character' | 'speech' | 'thought' | 'video'
+export type EditorV6TrackKind = 'character' | 'speech' | 'thought' | 'video' | 'audio'
 export type EditorV6BackgroundState = {
   backgroundColor: string
   backgroundAssetId: string | null
@@ -146,9 +164,12 @@ export type EditorV6TimelineBlock = {
   characterId?: string
   parentBlockId?: string
   relativeStartFrame?: number
-  mediaInFrame?: number
   motionEnabled?: boolean
   incomingMotion?: EditorV6MotionAtlas
+  mediaId?: string
+  mediaInFrame?: number
+  audioEnabled?: boolean
+  gain?: number
 }
 export type EditorV6TimelineTrack = {
   id: string
@@ -181,13 +202,13 @@ export function editorV6TrackKindForElement(element: EditorV6Element): EditorV6T
 }
 
 export function editorV6TrackLabel(kind: EditorV6TrackKind, index = 1): string {
-  const labels: Record<EditorV6TrackKind, string> = { character: 'Personagem', speech: 'Fala', thought: 'Pensamento', video: 'Vídeo' }
+  const labels: Record<EditorV6TrackKind, string> = { character: 'Personagem', speech: 'Fala', thought: 'Pensamento', video: 'Vídeo', audio: 'Áudio' }
   return index === 1 ? labels[kind] : `${labels[kind]} ${index}`
 }
 
-/** Creates the three shared lanes and one lane per character in the scene. */
+/** Creates the shared media/comment lanes and one lane per character in the scene. */
 export function createEditorV6Timeline(elements: readonly EditorV6Element[] = []): EditorV6Timeline {
-  const kinds: EditorV6TrackKind[] = ['video', 'speech', 'thought']
+  const kinds: EditorV6TrackKind[] = ['video', 'audio', 'speech', 'thought']
   const tracks: EditorV6TimelineTrack[] = kinds.map((kind) => ({
     id: crypto.randomUUID(), kind, name: editorV6TrackLabel(kind), muted: false, locked: false, blocks: []
   }))
@@ -216,10 +237,10 @@ export function syncEditorV6TimelineElements(timeline: EditorV6Timeline, element
   const reusableShared = new Map<EditorV6TrackKind, EditorV6TimelineTrack>()
   for (const track of timeline.tracks) {
     const previousKind = String(track.kind)
-    const kind = previousKind === 'speech' || previousKind === 'thought' ? previousKind : previousKind === 'video' || previousKind === 'visual' || previousKind === 'audio' ? 'video' : undefined
+    const kind = previousKind === 'speech' || previousKind === 'thought' || previousKind === 'audio' ? previousKind : previousKind === 'video' || previousKind === 'visual' ? 'video' : undefined
     if (kind && !reusableShared.has(kind)) reusableShared.set(kind, { ...track, kind, characterId: undefined, blocks: [] })
   }
-  const tracks: EditorV6TimelineTrack[] = (['video', 'speech', 'thought'] as const).map((kind) => reusableShared.get(kind) ?? ({
+  const tracks: EditorV6TimelineTrack[] = (['video', 'audio', 'speech', 'thought'] as const).map((kind) => reusableShared.get(kind) ?? ({
     id: crypto.randomUUID(), kind, name: editorV6TrackLabel(kind), muted: false, locked: false, blocks: []
   }))
   const characterTracks = new Map<string, EditorV6TimelineTrack>()
@@ -243,7 +264,7 @@ export function syncEditorV6TimelineElements(timeline: EditorV6Timeline, element
     const element = block.elementId ? elementsById.get(block.elementId) : undefined
     if (block.elementId && !element) continue
     const oldKind = String(oldTrack.kind)
-    const destination = element ? destinationFor(element) : tracks.find((track) => track.kind === (oldKind === 'speech' || oldKind === 'thought' ? oldKind : 'video'))!
+    const destination = element ? destinationFor(element) : tracks.find((track) => track.kind === (oldKind === 'speech' || oldKind === 'thought' || oldKind === 'audio' ? oldKind : 'video'))!
     destination.blocks.push(element ? { ...block, state: block.state ?? { ...element }, label: block.state ? block.label : element.text.trim() || editorV6TrackLabel(editorV6TrackKindForElement(element)) } : block)
     if (block.elementId) placedBlocks.add(block.elementId)
   }
@@ -260,7 +281,9 @@ export function syncEditorV6TimelineElements(timeline: EditorV6Timeline, element
   }
   tracks.push(...characterTracks.values())
   const originalOrder = new Map(timeline.tracks.map((track, index) => [track.id, index]))
-  tracks.sort((a, b) => (originalOrder.get(a.id) ?? 10000) - (originalOrder.get(b.id) ?? 10000))
+  const videoOrder = timeline.tracks.findIndex((track) => track.kind === 'video')
+  const order = (track: EditorV6TimelineTrack) => originalOrder.get(track.id) ?? (track.kind === 'audio' ? Math.max(0, videoOrder) + .5 : 10000)
+  tracks.sort((a, b) => order(a) - order(b))
   const endFrame = tracks.flatMap((track) => track.blocks).reduce((end, block) => Math.max(end, block.startFrame + block.durationFrames), timeline.durationFrames)
   return { ...timeline, durationFrames: endFrame, tracks, knownElementIds: elements.map((element) => element.id) }
 }
@@ -291,6 +314,7 @@ export type EditorV6Document = {
   /** Compressed snapshot of the latest saved composition, shown on the EditorV6 card. */
   thumbnailDataUrl?: string
   assets: EditorV6Asset[]
+  media?: EditorV6MediaAsset[]
   elements: EditorV6Element[]
   timeline: EditorV6Timeline
   exportAudio?: EditorV6ExportAudio[]
@@ -319,6 +343,8 @@ export type EditorV6DesktopApi = {
   revealEditorV6Export: (jobId: string, showReport?: boolean) => Promise<void>
   importEditorV6ExportAudio: (projectId: string) => Promise<EditorV6ExportAudio | null>
   cloneEditorV6ExportAudio: (sourceId: string, targetId: string, clips: EditorV6ExportAudio[]) => Promise<void>
+  importEditorV6Media: (projectId: string, kind: EditorV6MediaAsset['kind']) => Promise<EditorV6MediaAsset | null>
+  cloneEditorV6Media: (sourceId: string, targetId: string, media: EditorV6MediaAsset[]) => Promise<void>
   bakeEditorV6Motion: (request: EditorV6MotionBakeRequest) => Promise<EditorV6MotionBakeResult>
   cancelEditorV6Motion: (requestId: string) => Promise<void>
 }

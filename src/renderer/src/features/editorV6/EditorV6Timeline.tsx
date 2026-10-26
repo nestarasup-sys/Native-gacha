@@ -16,7 +16,7 @@ type Props = {
 }
 type Drag = { track: Track; block: Block; pointerId: number; x: number; mode: 'move' | 'resize'; initial: Timeline }
 type TrackAction = 'motion' | 'add' | 'hidden' | 'locked' | 'collapsed' | 'up' | 'down' | 'rename'
-const LABELS = { character: 'Personagem', speech: 'Fala', thought: 'Pensamento', video: 'Vídeo' }
+const LABELS = { character: 'Personagem', speech: 'Fala', thought: 'Pensamento', video: 'Vídeo', audio: 'Áudio' }
 const editableTarget = (target: EventTarget | null) => target instanceof HTMLElement && Boolean(target.closest('input,textarea,select,[contenteditable=true],[role=dialog]'))
 
 function FrameInput({ label, value, onCommit, disabled = false }: { label: string; value: number; onCommit: (value: number) => void; disabled?: boolean }) {
@@ -98,6 +98,7 @@ export function EditorV6Timeline(props: Props) {
   const timeline = draft ?? props.document.timeline
   const width = Math.max(viewport.width - heading, timeline.durationFrames / 30 * pps)
   const selected = useMemo(() => timelineClips(timeline).find(({ block }) => block.id === props.selectedId), [timeline, props.selectedId])
+  const selectedMedia = selected?.block.mediaId ? props.document.media?.find((media) => media.id === selected.block.mediaId) : undefined
   const range = useMemo<[number, number]>(() => [Math.max(0, (viewport.left - heading - 160) / pps * 30), (viewport.left + viewport.width + 160) / pps * 30], [viewport, heading, pps])
 
   const changeTimeline = useCallback((update: (timeline: Timeline) => Timeline) => {
@@ -142,6 +143,7 @@ export function EditorV6Timeline(props: Props) {
     if (action === 'add') {
       const { document, frame } = latest.current
       latest.current.onSeek(frame)
+      if (track.kind === 'audio') { setNotice('Use Importar áudio para copiar uma mídia para o projeto e criar um bloco.'); return }
       if (track.kind === 'character' && track.blocks.some((block) => block.startFrame === frame)) { select(track.blocks.find((block) => block.startFrame === frame)!); return }
       const base = track.kind === 'character' ? document.elements.find((element) => element.characterId === track.characterId && element.kind === 'character') : track.kind === 'video' ? document.elements.find((element) => element.kind === 'image' || element.kind === 'narrator') : undefined
       if (track.kind === 'video' && !base) { setNotice('Adicione uma imagem em Objetos para criar um bloco visual.'); return }
@@ -195,6 +197,8 @@ export function EditorV6Timeline(props: Props) {
     value = Math.max(mode === 'resize' ? block.startFrame + 1 : 0, Math.min(MAX_TIMELINE_FRAME - (mode === 'move' ? block.durationFrames : 0), snapped.frame))
     let startFrame = mode === 'move' ? value : block.startFrame
     let durationFrames = mode === 'resize' ? value - block.startFrame : block.durationFrames
+    const media = block.mediaId ? latest.current.document.media?.find((item) => item.id === block.mediaId) : undefined
+    if (mode === 'resize' && media) durationFrames = Math.min(durationFrames, media.sourceFrames - (block.mediaInFrame ?? 0))
     const persistent = track.kind === 'character' || Boolean(block.background)
     const sorted = track.blocks.filter((clip) => !block.background || clip.background).sort((a, b) => a.startFrame - b.startFrame || a.id.localeCompare(b.id))
     const index = sorted.findIndex((candidate) => candidate.id === block.id)
@@ -299,9 +303,15 @@ export function EditorV6Timeline(props: Props) {
       <FrameInput label="Início (s)" value={selected.block.startFrame} disabled={selected.track.locked} onCommit={(value) => changeTimeline((current) => setEditorV6BlockTiming(current, selected.block.id, { startFrame: value }))} />
       <FrameInput label="Duração (s)" value={selected.block.durationFrames} disabled={selected.track.locked} onCommit={(value) => {
         if (value < 1) return
-        changeTimeline((current) => setEditorV6BlockTiming(current, selected.block.id, { durationFrames: value }))
+        const bounded = selectedMedia ? Math.min(value, selectedMedia.sourceFrames - (selected.block.mediaInFrame ?? 0)) : value
+        changeTimeline((current) => setEditorV6BlockTiming(current, selected.block.id, { durationFrames: bounded }))
       }} />
+      {selectedMedia && <FrameInput label="Início da mídia (s)" value={selected.block.mediaInFrame ?? 0} disabled={selected.track.locked} onCommit={(value) => {
+        const mediaInFrame = Math.max(0, Math.min(selectedMedia.sourceFrames - 1, value))
+        commitBlock({ mediaInFrame, durationFrames: Math.min(selected.block.durationFrames, selectedMedia.sourceFrames - mediaInFrame) })
+      }} />}
       {(selected.track.kind === 'speech' || selected.track.kind === 'thought') && <><label>Personagem<select value={selected.block.characterId ?? ''} disabled={selected.track.locked} onChange={(event) => commitBlock({ characterId: event.target.value || undefined })}><option value="">Sem personagem</option>{characters.map((element) => <option value={element.characterId} key={element.id}>{element.text}</option>)}</select></label><label className="v6-clip-text">Texto<input value={selected.block.state?.text ?? selected.block.label} maxLength={5000} disabled={selected.track.locked} onChange={(event) => patchState({ text: event.target.value })} /></label><label>Vincular a visual<select value={selected.block.parentBlockId ?? ''} disabled={selected.track.locked} onChange={(event) => { const parent = parentOptions.find(({ block }) => block.id === event.target.value)?.block; commitBlock({ parentBlockId: parent?.id, relativeStartFrame: parent ? Math.max(0, selected.block.startFrame - parent.startFrame) : undefined }) }}><option value="">Independente</option>{parentOptions.map(({ block }) => <option key={block.id} value={block.id}>{block.label}</option>)}</select></label></>}
+      {selected.block.mediaId && <><label><input type="checkbox" checked={selected.block.audioEnabled !== false} disabled={selected.track.locked || !selectedMedia?.hasAudio} onChange={(event) => commitBlock({ audioEnabled: event.target.checked })} />{selectedMedia?.hasAudio ? selected.track.kind === 'video' ? 'Áudio do vídeo ativado' : 'Áudio ativado' : 'Arquivo sem áudio'}</label><label>Volume<input type="range" min="0" max="1" step="0.05" value={Math.min(1, selected.block.gain ?? 1)} disabled={selected.track.locked || selected.block.audioEnabled === false || !selectedMedia?.hasAudio} onChange={(event) => commitBlock({ gain: Number(event.target.value) })} /></label></>}
       {selected.track.kind === 'character' && <label><input type="checkbox" checked={selected.block.motionEnabled !== false} disabled={selected.track.locked || selected.track.motionEnabled === false} onChange={(event) => commitBlock({ motionEnabled: event.target.checked })} />Animar entrada (250 ms antes)</label>}
       {selected.track.kind === 'character' && <label className="v6-clip-visible"><input type="checkbox" checked={selected.block.state?.visible !== false} disabled={selected.track.locked} onChange={(event) => patchState({ visible: event.target.checked })} />Visível neste período</label>}
       <button type="button" disabled={selected.track.locked} onClick={() => duplicate(selected.block.id)} title="Duplicar (Ctrl+D)">Duplicar</button>

@@ -253,6 +253,7 @@ let editorV6MotionService: ReturnType<typeof createEditorV6MotionService> | null
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'gacha-video', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } },
+  { scheme: 'gacha-editor-media', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } },
   { scheme: 'gacha-background', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } },
   { scheme: 'gacha-gif', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } }
 ])
@@ -2003,6 +2004,39 @@ function registerVideoAssetProtocol(): void {
   })
 }
 
+function registerEditorV6MediaProtocol(): void {
+  protocol.handle('gacha-editor-media', async (request) => {
+    try {
+      const url = new URL(request.url)
+      const parts = url.pathname.split('/').filter(Boolean)
+      const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+      const file = /^([0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\.(mp4|webm|mov|m4v|mp3|wav|m4a|aac|ogg|flac|opus)$/i.exec(parts[1] ?? '')
+      if (url.hostname !== 'project' || parts.length !== 2 || !uuid.test(parts[0]) || !file) return new Response('Not found', { status: 404 })
+      const folder = editorV6Path(parts[0])
+      const manifest = JSON.parse(await nativeReadFile(join(folder, 'editorV6.json'), 'utf8')) as { id?: unknown; media?: Array<{ id?: unknown; fileName?: unknown; mimeType?: unknown }> }
+      const media = manifest.id === parts[0] ? manifest.media?.find((item) => item.id === file[1] && item.fileName === parts[1]) : undefined
+      const supportedTypes = new Set(['video/mp4', 'video/webm', 'video/quicktime', 'video/x-m4v', 'audio/mpeg', 'audio/wav', 'audio/mp4', 'audio/aac', 'audio/ogg', 'audio/flac', 'audio/opus', 'audio/webm'])
+      if (!media || typeof media.mimeType !== 'string' || !supportedTypes.has(media.mimeType)) return new Response('Not found', { status: 404 })
+      const path = join(folder, 'media', parts[1])
+      const metadata = await nativeStat(path)
+      const headers = new Headers({ 'accept-ranges': 'bytes', 'content-type': media.mimeType, 'cache-control': 'no-store' })
+      const range = request.headers.get('range')
+      if (request.method === 'HEAD') { headers.set('content-length', String(metadata.size)); return new Response(null, { status: 200, headers }) }
+      if (range) {
+        const match = /^bytes=(\d*)-(\d*)$/.exec(range)
+        if (!match || (!match[1] && !match[2])) return new Response(null, { status: 416, headers: { 'content-range': `bytes */${metadata.size}` } })
+        const start = match[1] ? Number(match[1]) : Math.max(0, metadata.size - Number(match[2]))
+        const end = match[2] && match[1] ? Math.min(metadata.size - 1, Number(match[2])) : metadata.size - 1
+        if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || start >= metadata.size || end < start) return new Response(null, { status: 416, headers: { 'content-range': `bytes */${metadata.size}` } })
+        headers.set('content-range', `bytes ${start}-${end}/${metadata.size}`); headers.set('content-length', String(end - start + 1))
+        return new Response(Readable.toWeb(createReadStream(path, { start, end })) as unknown as BodyInit, { status: 206, headers })
+      }
+      headers.set('content-length', String(metadata.size))
+      return new Response(Readable.toWeb(createReadStream(path)) as unknown as BodyInit, { status: 200, headers })
+    } catch { return new Response('Not found', { status: 404 }) }
+  })
+}
+
 function registerVideoBackgroundProtocol(): void {
   protocol.handle('gacha-background', async (request) => {
     try {
@@ -2211,6 +2245,7 @@ app.whenReady().then(async () => {
     session.defaultSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false))
   }
   registerVideoAssetProtocol()
+  registerEditorV6MediaProtocol()
   registerVideoBackgroundProtocol()
   await registerFabricatorHandlers()
   editorV6ExportService = registerEditorV6ExportHandlers({ ipcMain, assertTrustedSender, projectPath: editorV6Path,

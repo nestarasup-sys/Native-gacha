@@ -1,4 +1,4 @@
-import { memo, useMemo, type PointerEvent as ReactPointerEvent } from 'react'
+import { memo, useEffect, useMemo, useRef, type PointerEvent as ReactPointerEvent } from 'react'
 import type { EditorV6Asset, EditorV6Element } from '../../../../shared/editorV6'
 import { editorV6ElementSize } from '../../../../shared/editorV6SceneModel'
 import type { EditorV6ResolvedScene } from '../../../../shared/editorV6Timeline'
@@ -46,6 +46,36 @@ export function wrapSceneText(text: string, width: number, fontSize: number, max
 const transform = (x: number, y: number, rotation: number) => `translate(${(50 + x) * 19.2} ${(50 + y) * 10.8}) rotate(${rotation})`
 const Selection = ({ width, height }: { width: number; height: number }) => <rect x={-width / 2 - 2} y={-height / 2 - 2} width={width + 4} height={height + 4} fill="none" stroke="#e84f88" strokeWidth={2} vectorEffect="non-scaling-stroke" pointerEvents="none" />
 
+const SceneVideoLayer = memo(function SceneVideoLayer({ scene, playing }: { scene: EditorV6ResolvedScene; playing: boolean }) {
+  const ref = useRef<HTMLVideoElement>(null)
+  const media = scene.mediaVideo
+  useEffect(() => {
+    const video = ref.current
+    if (!video || !media) return
+    video.volume = Math.max(0, Math.min(1, media.gain))
+    const target = (media.sourceInFrame + scene.frame - media.startFrame) / 30
+    if (!playing) {
+      video.pause()
+      if (Math.abs(video.currentTime - target) > .015) { try { video.currentTime = target } catch { /* loadedmetadata will retry the paused seek */ } }
+      return
+    }
+    if (video.paused) {
+      if (Math.abs(video.currentTime - target) > .25) { try { video.currentTime = target } catch { /* loadedmetadata will retry the playback seek */ } }
+      void video.play().catch(() => {})
+    } else if (Math.abs(video.currentTime - target) > .18) {
+      try { video.currentTime = target } catch { /* The browser will recover at the next timeline update. */ }
+    }
+  }, [media?.mediaId, media?.startFrame, media?.sourceInFrame, media?.gain, scene.frame, playing])
+  if (!media) return null
+  return <foreignObject x={0} y={0} width={1920} height={1080} data-editor-v6-video={media.mediaId}>
+    <video ref={ref} src={media.url} muted={!playing || !media.audioEnabled} playsInline preload="auto" data-media-id={media.mediaId} data-target-time={(media.sourceInFrame + scene.frame - media.startFrame) / 30} onLoadedMetadata={(event) => {
+      const video = event.currentTarget, target = Number(video.dataset.targetTime)
+      try { video.currentTime = target } catch { /* The browser will seek when it is ready. */ }
+      if (playing) void video.play().catch(() => {})
+    }} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', pointerEvents: 'none' }} />
+  </foreignObject>
+})
+
 const SceneLayer = memo(function SceneLayer({ element, asset, selected, interaction }: { element: EditorV6Element; asset?: EditorV6Asset; selected: boolean; interaction?: SceneSurfaceInteraction }) {
   const size = editorV6ElementSize(element), width = size.width * 19.2, height = size.height * 10.8
   const image = element.kind === 'image' || element.kind === 'character'
@@ -69,16 +99,17 @@ const SceneLayer = memo(function SceneLayer({ element, asset, selected, interact
 })
 
 /** Shared scene drawing for the live Chromium preview and sequential frame captures. */
-export const SceneSurface = memo(function SceneSurface({ scene, assets, selectedId = null, interaction, outputWidth = 1920, outputHeight = 1080 }: { scene: EditorV6ResolvedScene; assets: readonly EditorV6Asset[]; selectedId?: string | null; interaction?: SceneSurfaceInteraction; outputWidth?: number; outputHeight?: number }) {
+export const SceneSurface = memo(function SceneSurface({ scene, assets, selectedId = null, interaction, playing = false, outputWidth = 1920, outputHeight = 1080, renderLayer = 'all' }: { scene: EditorV6ResolvedScene; assets: readonly EditorV6Asset[]; selectedId?: string | null; interaction?: SceneSurfaceInteraction; playing?: boolean; outputWidth?: number; outputHeight?: number; renderLayer?: 'all' | 'background' | 'foreground' }) {
   const assetsById = useMemo(() => new Map(assets.map((asset) => [asset.id, asset])), [assets])
   const background = scene.background, asset = background.backgroundAssetId ? assetsById.get(background.backgroundAssetId) : undefined
   const width = background.backgroundWidth * 19.2, height = background.backgroundHeight * 10.8
   return <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" width={outputWidth} height={outputHeight} className="v6-scene-surface" data-frame={scene.frame} aria-label={`Cena no quadro ${scene.frame}`} style={{ display: 'block', width: '100%', height: '100%', overflow: 'hidden', userSelect: 'none', textRendering: 'geometricPrecision', WebkitFontSmoothing: 'antialiased' }}>
-    <rect width="1920" height="1080" fill={background.backgroundColor} />
-    {asset && <g transform={transform(background.backgroundX, background.backgroundY, background.backgroundRotation)} aria-label="Fundo" style={{ cursor: interaction ? 'move' : undefined, touchAction: 'none' }} onPointerDown={interaction ? (event) => interaction.start(event, 'background') : undefined} onPointerMove={interaction?.move} onPointerUp={interaction?.end} onPointerCancel={interaction?.end}>
+    {renderLayer !== 'foreground' && <rect width="1920" height="1080" fill={background.backgroundColor} />}
+    {renderLayer !== 'foreground' && asset && <g transform={transform(background.backgroundX, background.backgroundY, background.backgroundRotation)} aria-label="Fundo" style={{ cursor: interaction ? 'move' : undefined, touchAction: 'none' }} onPointerDown={interaction ? (event) => interaction.start(event, 'background') : undefined} onPointerMove={interaction?.move} onPointerUp={interaction?.end} onPointerCancel={interaction?.end}>
       <image href={asset.dataUrl} x={-width / 2} y={-height / 2} width={width} height={height} preserveAspectRatio="none" />
       {selectedId === 'background' && <Selection width={width} height={height} />}
     </g>}
-    {scene.elements.map((element) => <SceneLayer key={element.id} element={element} asset={element.assetId ? assetsById.get(element.assetId) : undefined} selected={selectedId === element.id} interaction={interaction} />)}
+    {renderLayer === 'all' && <SceneVideoLayer scene={scene} playing={playing} />}
+    {renderLayer !== 'background' && scene.elements.map((element) => <SceneLayer key={element.id} element={element} asset={element.assetId ? assetsById.get(element.assetId) : undefined} selected={selectedId === element.id} interaction={interaction} />)}
   </svg>
 })

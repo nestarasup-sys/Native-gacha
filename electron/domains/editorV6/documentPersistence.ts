@@ -4,6 +4,7 @@ import type * as nodeFs from 'node:fs/promises'
 import { createEditorV6Timeline, syncEditorV6TimelineElements, type EditorV6Asset, type EditorV6Document, type EditorV6ProjectSummary, type EditorV6Timeline } from '../../../src/shared/editorV6'
 import { publishEditorV6AssetsAndManifest, recoverEditorV6AssetTransaction } from './assetTransaction.ts'
 import { normalizeEditorV6Timeline } from '../../../src/shared/editorV6Timeline'
+import { editorV6MediaAssetSchema } from '../../../src/shared/editorV6Schema'
 
 type Files = Pick<typeof nodeFs, 'readFile' | 'writeFile' | 'mkdir' | 'access' | 'rename' | 'unlink' | 'rm'>
 
@@ -44,6 +45,7 @@ export function createEditorV6DocumentPersistence(deps: {
       backgroundRotation: typeof value.backgroundRotation === 'number' && Number.isFinite(value.backgroundRotation) ? value.backgroundRotation : 0,
       ...(typeof value.thumbnailDataUrl === 'string' && /^data:image\/(jpeg|png);base64,/.test(value.thumbnailDataUrl) && value.thumbnailDataUrl.length <= 1_500_000 ? { thumbnailDataUrl: value.thumbnailDataUrl } : {}),
       assets: Array.isArray(value.assets) ? value.assets as EditorV6Asset[] : [],
+      ...(Array.isArray(value.media) ? { media: value.media as EditorV6Document['media'] } : {}),
       elements,
       ...(Array.isArray(value.exportAudio) ? { exportAudio: value.exportAudio as EditorV6Document['exportAudio'] } : {}),
       timeline: value.timeline && typeof value.timeline === 'object'
@@ -68,7 +70,9 @@ export function createEditorV6DocumentPersistence(deps: {
         const data = await readFile(join(folder, 'assets', categoryFolder, `${asset.id}.${extension}`))
         return { ...asset, dataUrl: `data:${asset.mimeType};base64,${data.toString('base64')}` }
       }))
-      const document = { ...normalized, assets }
+      const media = (normalized.media ?? []).map((item) => editorV6MediaAssetSchema.parse(item))
+      await Promise.all(media.map((item) => deps.files.access(join(folder, 'media', item.fileName))))
+      const document = { ...normalized, assets, media }
       if (!deps.validate(document)) throw new Error(`Os dados do EditorV6 ${id} estão inválidos.`)
       return document
     } catch (reason) {

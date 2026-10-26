@@ -28,6 +28,23 @@ export const editorV6AssetSchema = z.object({
   }
 })
 
+export const editorV6MediaAssetSchema = z.object({
+  id: uuid,
+  name: z.string().min(1).max(255),
+  fileName: z.string().regex(/^[0-9a-f-]{36}\.(mp4|webm|mov|m4v|mp3|wav|m4a|aac|ogg|flac|opus)$/i),
+  kind: z.enum(['video', 'audio']),
+  mimeType: z.enum(['video/mp4', 'video/webm', 'video/quicktime', 'video/x-m4v', 'audio/mpeg', 'audio/wav', 'audio/mp4', 'audio/aac', 'audio/ogg', 'audio/flac', 'audio/opus', 'audio/webm']),
+  sourceFrames: z.number().int().min(1).max(1_000_000),
+  hasAudio: z.boolean(),
+  width: z.number().int().positive().max(16384).optional(),
+  height: z.number().int().positive().max(16384).optional(),
+  sizeBytes: z.number().int().min(1).max(2 * 1024 ** 3)
+}).superRefine((media, context) => {
+  if (media.fileName.split('.')[0].toLowerCase() !== media.id.toLowerCase()) context.addIssue({ code: 'custom', path: ['fileName'], message: 'O nome seguro do arquivo precisa corresponder ao ID da mídia.' })
+  if (media.kind === 'video' && !media.mimeType.startsWith('video/')) context.addIssue({ code: 'custom', path: ['mimeType'], message: 'O tipo de mídia não corresponde ao vídeo.' })
+  if (media.kind === 'audio' && !media.mimeType.startsWith('audio/')) context.addIssue({ code: 'custom', path: ['mimeType'], message: 'O tipo de mídia não corresponde ao áudio.' })
+})
+
 const editorV6ElementSchema = z.object({
   id: uuid,
   motionSprite: z.never().optional(),
@@ -40,6 +57,7 @@ const editorV6ElementSchema = z.object({
   positionLocked: z.boolean().optional(),
   faceAppearance: z.custom(isValidCustomizerFaceAppearance).optional(),
   activeFaceMode: z.enum(['idle', 'blink', 'talk']).optional(),
+  faceModeAssetIds: z.object({ idle: uuid.optional(), blink: uuid.optional(), talk: uuid.optional(), 'talk-blink': uuid.optional() }).optional(),
   faceTransforms: z.custom(isEditorV6FaceTransforms).optional(),
   expressionBase: z.object({
     appearance: z.custom(isValidCustomizerFaceAppearance),
@@ -76,12 +94,12 @@ const motionSpriteSchema = z.object({ x: z.number().int().min(0), y: z.number().
 export const editorV6MotionAtlasSchema = z.object({ version: z.literal(1), key: z.string().max(65536), assetId: uuid, frames: z.array(z.object({ offset: z.number().int().min(-7).max(-1), sprite: motionSpriteSchema, x: finite, y: finite, width: finite.positive(), height: finite.positive(), rotation: finite, flipX: z.boolean() })).min(1).max(7) })
 export const editorV6MotionResultSchema = z.object({ asset: editorV6AssetSchema, motion: editorV6MotionAtlasSchema, metrics: z.object({ milliseconds: finite.min(0), preparedRigs: z.number().int().min(1).max(9), samples: z.number().int().min(1).max(7), atlasPixels: z.number().int().min(1).max(8_100_000) }) }).refine((result) => result.asset.id === result.motion.assetId && result.asset.category === 'character' && result.asset.mimeType === 'image/png', 'Atlas de animação inválido.')
 export function parseEditorV6MotionRequest(value: unknown): EditorV6MotionBakeRequest {
-  return z.object({ id: uuid, character: z.object({ id: z.string(), customization: z.object({}).passthrough() }).passthrough(), plan: z.object({ blockId: uuid, elementId: uuid, characterId: z.string(), key: z.string().max(65536), startFrame: finite.min(0), endFrame: z.number().int().min(1).max(1_000_000), from: editorV6ElementSchema, to: editorV6ElementSchema, samples: z.array(z.object({ offset: z.number().int().min(-7).max(-1), progress: finite.gt(0).lt(1) })).min(1).max(7) }) }).parse(value) as unknown as EditorV6MotionBakeRequest
+  return z.object({ id: uuid, character: z.object({ id: z.string(), customization: z.object({}).passthrough() }).passthrough(), plan: z.object({ blockId: uuid, elementId: uuid, characterId: z.string(), key: z.string().max(65536), startFrame: finite.min(0), endFrame: z.number().int().min(1).max(1_000_000), from: editorV6ElementSchema, to: editorV6ElementSchema, samples: z.array(z.object({ offset: z.number().int().min(-7).max(-1), progress: finite.gt(0).lt(1), faceMode: z.enum(['idle', 'blink', 'talk', 'talk-blink']).optional() })).min(1).max(7) }) }).parse(value) as unknown as EditorV6MotionBakeRequest
 }
 
 const editorV6TimelineTrackSchema = z.object({
   id: uuid,
-  kind: z.enum(['character', 'speech', 'thought', 'video']),
+  kind: z.enum(['character', 'speech', 'thought', 'video', 'audio']),
   characterId: z.string().min(1).max(120).optional(),
   name: z.string().trim().min(1).max(80),
   muted: z.boolean(),
@@ -100,8 +118,8 @@ const editorV6TimelineTrackSchema = z.object({
     characterId: z.string().min(1).max(120).optional(),
     parentBlockId: uuid.optional(),
     relativeStartFrame: z.number().int().min(0).max(1_000_000).optional(),
-    mediaInFrame: z.number().int().min(0).max(1_000_000).optional(),
-    motionEnabled: z.boolean().optional(), incomingMotion: editorV6MotionAtlasSchema.optional()
+    motionEnabled: z.boolean().optional(), incomingMotion: editorV6MotionAtlasSchema.optional(),
+    mediaId: uuid.optional(), mediaInFrame: z.number().int().min(0).max(1_000_000).optional(), audioEnabled: z.boolean().optional(), gain: finite.min(0).max(2).optional()
   })).max(1000)
 }).passthrough()
 
@@ -121,6 +139,7 @@ export const editorV6DocumentSchema = z.object({
   backgroundRotation: finite,
   thumbnailDataUrl: z.string().max(1_500_000).regex(/^data:image\/(jpeg|png);base64,/).optional(),
   assets: z.array(editorV6AssetSchema).max(500),
+  media: z.array(editorV6MediaAssetSchema).max(500).optional(),
   elements: z.array(editorV6ElementSchema).max(1000),
   exportAudio: z.array(editorV6ExportAudioSchema).max(32).optional(),
   timeline: z.object({
@@ -131,6 +150,8 @@ export const editorV6DocumentSchema = z.object({
   })
 }).superRefine((document, context) => {
   const assetsById = new Map(document.assets.map((asset) => [asset.id, asset]))
+  const mediaById = new Map((document.media ?? []).map((media) => [media.id, media]))
+  if (new Set((document.media ?? []).map((media) => media.id)).size !== (document.media ?? []).length) context.addIssue({ code: 'custom', path: ['media'], message: 'Os arquivos de mídia precisam ter identificadores únicos.' })
   if (document.backgroundAssetId) {
     const background = assetsById.get(document.backgroundAssetId)
     if (!background || background.category !== 'background') {
@@ -145,6 +166,10 @@ export const editorV6DocumentSchema = z.object({
     if (element.kind === 'character') {
       const asset = element.assetId ? assetsById.get(element.assetId) : undefined
       if (!element.characterId || !asset || asset.category !== 'character') context.addIssue({ code: 'custom', path: ['elements', index], message: 'O personagem precisa apontar para uma imagem e um personagem de origem.' })
+    }
+    for (const [mode, assetId] of Object.entries(element.faceModeAssetIds ?? {})) {
+      const faceAsset = assetId ? assetsById.get(assetId) : undefined
+      if (assetId && (!faceAsset || faceAsset.category !== 'character')) context.addIssue({ code: 'custom', path: ['elements', index, 'faceModeAssetIds', mode], message: 'A alternativa facial precisa apontar para uma imagem de personagem do projeto.' })
     }
   })
   const elementIds = new Set(document.elements.map((element) => element.id))
@@ -162,10 +187,19 @@ export const editorV6DocumentSchema = z.object({
       if (block.state && (block.state.id !== block.elementId || !elementIds.has(block.state.id) || (block.state.assetId && !assetsById.has(block.state.assetId)))) {
         context.addIssue({ code: 'custom', path: ['timeline', 'tracks', trackIndex, 'blocks', blockIndex, 'state'], message: 'O estado do bloco precisa apontar para uma camada e imagem válidas.' })
       }
+      for (const [mode, assetId] of Object.entries(block.state?.faceModeAssetIds ?? {})) {
+        const faceAsset = assetsById.get(assetId)
+        if (!faceAsset || faceAsset.category !== 'character') context.addIssue({ code: 'custom', path: ['timeline', 'tracks', trackIndex, 'blocks', blockIndex, 'state', 'faceModeAssetIds', mode], message: 'A alternativa facial precisa apontar para uma imagem de personagem do projeto.' })
+      }
       if (block.background && (track.kind !== 'video' || block.elementId || block.state || (block.background.backgroundAssetId && assetsById.get(block.background.backgroundAssetId)?.category !== 'background'))) {
         context.addIssue({ code: 'custom', path: ['timeline', 'tracks', trackIndex, 'blocks', blockIndex, 'background'], message: 'O estado de fundo precisa usar uma imagem de fundo válida na faixa Vídeo.' })
       }
       if (block.incomingMotion && (track.kind !== 'character' || assetsById.get(block.incomingMotion.assetId)?.category !== 'character')) context.addIssue({ code: 'custom', path: ['timeline', 'tracks', trackIndex, 'blocks', blockIndex, 'incomingMotion'], message: 'A animação precisa apontar para um atlas do personagem.' })
+      if (block.mediaId) {
+        const media = mediaById.get(block.mediaId)
+        if (!media || media.kind !== track.kind) context.addIssue({ code: 'custom', path: ['timeline', 'tracks', trackIndex, 'blocks', blockIndex, 'mediaId'], message: 'O bloco precisa apontar para uma mídia compatível com a faixa.' })
+        else if ((block.mediaInFrame ?? 0) + block.durationFrames > media.sourceFrames) context.addIssue({ code: 'custom', path: ['timeline', 'tracks', trackIndex, 'blocks', blockIndex, 'durationFrames'], message: 'O trecho do bloco ultrapassa a mídia importada.' })
+      }
       if (block.parentBlockId) {
         const parent = blocksById.get(block.parentBlockId)
         if (!parent || parent.track.kind !== 'video' || track.kind === 'video' || track.kind === 'character' || block.relativeStartFrame === undefined || block.startFrame !== parent.block.startFrame + block.relativeStartFrame || block.startFrame + block.durationFrames > parent.block.startFrame + parent.block.durationFrames) {

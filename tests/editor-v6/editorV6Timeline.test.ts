@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { createEditorV6Timeline, syncEditorV6TimelineElements, type EditorV6Document, type EditorV6Element } from '../../src/shared/editorV6'
-import { addEditorV6ElementAtFrame, editEditorV6DocumentAtBlock, normalizeEditorV6Timeline, duplicateEditorV6Block, repairEditorV6DuplicateAssets, resolveEditorV6ElementsAtFrame, setEditorV6BlockTiming, snapEditorV6Frame, splitEditorV6Block, timelineClips } from '../../src/shared/editorV6Timeline'
+import { addEditorV6ElementAtFrame, editEditorV6DocumentAtBlock, isEditorV6BlinkFrame, normalizeEditorV6Timeline, duplicateEditorV6Block, repairEditorV6DuplicateAssets, resolveEditorV6ElementsAtFrame, resolveEditorV6SceneAtFrame, setEditorV6BlockTiming, snapEditorV6Frame, splitEditorV6Block, timelineClips } from '../../src/shared/editorV6Timeline'
 import { editorV6DocumentSchema } from '../../src/shared/editorV6Schema'
 
 function fixture(): EditorV6Document {
@@ -11,6 +11,41 @@ function fixture(): EditorV6Document {
 const actorClip = (document: EditorV6Document) => timelineClips(document.timeline).find(({ track }) => track.kind === 'character')!
 
 describe('timeline do Editor V6', () => {
+  it('aciona talk apenas durante falas e agenda piscadas determinísticas por personagem', () => {
+    const document = fixture(), actor = document.elements[0]
+    const blinkId = crypto.randomUUID(), talkId = crypto.randomUUID(), combinedId = crypto.randomUUID()
+    document.assets.push(
+      { id: blinkId, category: 'character', name: 'Alice · blink', mimeType: 'image/png', dataUrl: 'data:image/png;base64,AA==', timelineSnapshot: true },
+      { id: talkId, category: 'character', name: 'Alice · talk', mimeType: 'image/png', dataUrl: 'data:image/png;base64,AA==', timelineSnapshot: true },
+      { id: combinedId, category: 'character', name: 'Alice · talk-blink', mimeType: 'image/png', dataUrl: 'data:image/png;base64,AA==', timelineSnapshot: true }
+    )
+    document.elements[0] = { ...actor, faceModeAssetIds: { blink: blinkId, talk: talkId, 'talk-blink': combinedId } }
+    const characterTrack = document.timeline.tracks.find((track) => track.kind === 'character')!
+    characterTrack.blocks = characterTrack.blocks.map((block) => ({ ...block, state: { ...actor, faceModeAssetIds: { blink: blinkId, talk: talkId, 'talk-blink': combinedId } } }))
+    document.timeline.tracks.find((track) => track.kind === 'speech')!.blocks = [{ id: crypto.randomUUID(), label: 'Fala de Alice', characterId: 'alice', startFrame: 0, durationFrames: 300 }]
+    document.timeline.tracks.find((track) => track.kind === 'thought')!.blocks = [{ id: crypto.randomUUID(), label: 'Pensamento', characterId: 'alice', startFrame: 0, durationFrames: 300 }]
+    const normalFrame = Array.from({ length: 300 }, (_, frame) => frame).find((frame) => !isEditorV6BlinkFrame(document.id, 'alice', frame))!
+    expect(resolveEditorV6ElementsAtFrame(document, normalFrame)[0].assetId).toBe(talkId)
+    const blinkFrame = Array.from({ length: 300 }, (_, frame) => frame).find((frame) => isEditorV6BlinkFrame(document.id, 'alice', frame))!
+    expect(resolveEditorV6ElementsAtFrame(document, blinkFrame)[0].assetId).toBe(combinedId)
+    expect(isEditorV6BlinkFrame(document.id, 'alice', blinkFrame)).toBe(true)
+    const noSpeech = { ...document, timeline: { ...document.timeline, tracks: document.timeline.tracks.map((track) => ({ ...track, blocks: track.kind === 'speech' ? [] : track.blocks })) } }
+    expect(resolveEditorV6ElementsAtFrame(noSpeech, normalFrame)[0].assetId).toBe(actor.assetId)
+    expect(editorV6DocumentSchema.safeParse(document).success).toBe(true)
+  })
+
+  it('resolve vídeo importado no instante ativo e valida o vínculo do arquivo ao projeto', () => {
+    const document = fixture(), videoId = crypto.randomUUID(), fileName = `${videoId}.mp4`
+    document.media = [{ id: videoId, name: 'Cena.mp4', fileName, kind: 'video', mimeType: 'video/mp4', sourceFrames: 180, hasAudio: true, width: 1920, height: 1080, sizeBytes: 1024 }]
+    const track = document.timeline.tracks.find((item) => item.kind === 'video')!
+    track.blocks.push({ id: crypto.randomUUID(), label: 'Cena.mp4', mediaId: videoId, startFrame: 30, durationFrames: 90, mediaInFrame: 15, audioEnabled: true, gain: 1 })
+    document.timeline.durationFrames = 300
+    expect(resolveEditorV6SceneAtFrame(document, 29).mediaVideo).toBeUndefined()
+    expect(resolveEditorV6SceneAtFrame(document, 45).mediaVideo).toMatchObject({ mediaId: videoId, startFrame: 30, sourceInFrame: 15, audioEnabled: true })
+    expect(resolveEditorV6SceneAtFrame(document, 120).mediaVideo).toBeUndefined()
+    expect(editorV6DocumentSchema.safeParse(document).success).toBe(true)
+  })
+
   it('insere uma fala no cursor com texto independente e preserva a precisão de quadros', () => {
     const document = fixture()
     const speech = { ...document.elements[0], id: crypto.randomUUID(), kind: 'speech' as const, characterId: undefined, assetId: undefined, text: 'Olá' }

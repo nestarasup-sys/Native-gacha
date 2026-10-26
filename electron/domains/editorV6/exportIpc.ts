@@ -4,7 +4,8 @@ import { basename, extname, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { editorV6IpcChannels } from '../../../src/shared/editorV6IpcChannels'
-import { editorV6ExportAudioSchema, parseEditorV6Document } from '../../../src/shared/editorV6Schema'
+import { editorV6ExportAudioSchema, editorV6MediaAssetSchema, parseEditorV6Document } from '../../../src/shared/editorV6Schema'
+import type { EditorV6MediaAsset } from '../../../src/shared/editorV6'
 import { missingEditorV6Motions } from '../../../src/shared/editorV6Motion'
 import { planEditorV6Export, type EditorV6ExportAudio, type EditorV6ExportOptions, type EditorV6ExportStatus } from '../../../src/shared/editorV6Export'
 import { createEditorV6WorkerFactory } from './exportWorkers'
@@ -14,10 +15,11 @@ type Job = { owner: number; status: EditorV6ExportStatus; controller: AbortContr
 const uuid = z.string().uuid()
 const terminal = (status: EditorV6ExportStatus) => ['completed', 'cancelled', 'failed'].includes(status.state)
 export function registerEditorV6ExportHandlers(deps: { ipcMain: IpcMain; assertTrustedSender: (event: IpcMainInvokeEvent) => void; projectPath: (id: string) => string; toolsDirectory: string; workerHtml: string; workerPreload: string; devUrl?: string; tempRoot: string }) {
-  const workers = createEditorV6WorkerFactory({ ipcMain: deps.ipcMain, html: deps.workerHtml, preload: deps.workerPreload, devUrl: deps.devUrl })
+  const mediaPath = (projectId: string, fileName: string) => join(deps.projectPath(projectId), 'media', fileName)
+  const workers = createEditorV6WorkerFactory({ ipcMain: deps.ipcMain, html: deps.workerHtml, preload: deps.workerPreload, devUrl: deps.devUrl, mediaPath })
   const ffmpeg = join(deps.toolsDirectory, 'ffmpeg.exe'), ffprobe = join(deps.toolsDirectory, 'ffprobe.exe')
   const jobs = new Map<string, Job>()
-  const audioPath = (projectId: string, clip: EditorV6ExportAudio) => join(deps.projectPath(projectId), 'export-audio', clip.fileName)
+  const audioPath = (projectId: string, clip: EditorV6ExportAudio, media: readonly EditorV6MediaAsset[] = []) => join(deps.projectPath(projectId), media.some((item) => item.fileName === clip.fileName) ? 'media' : 'export-audio', clip.fileName)
   const findJob = (event: IpcMainInvokeEvent, id: string) => {
     deps.assertTrustedSender(event)
     const job = id === 'latest' ? [...jobs.values()].reverse().find((entry) => entry.owner === event.sender.id) : jobs.get(uuid.parse(id))
@@ -43,7 +45,7 @@ export function registerEditorV6ExportHandlers(deps: { ipcMain: IpcMain; assertT
     const abort = () => controller.abort(Error('A janela do editor foi fechada.'))
     event.sender.once('destroyed', abort)
     job.promise = runEditorV6Export(project, options, { ffmpeg, ffprobe, tempRoot: deps.tempRoot, id, outputPath, reportPath, signal: controller.signal,
-      createWorker: (_part, signal) => workers.create({ project, width: options.width, height: options.height }, signal), audioPath: (clip) => audioPath(project.id, clip),
+      createWorker: (_part, signal) => workers.create({ project, width: options.width, height: options.height }, signal), audioPath: (clip) => audioPath(project.id, clip, project.media), mediaPath,
       progress: (patch) => { job.status = { ...job.status, ...patch } }
     }).then((report) => { job.status = { ...job.status, state: 'completed', outputPath, fallback: report.fallback, frames: status.totalFrames, message: 'MP4 exportado e validado.' } }, (error: unknown) => {
       job.status = { ...job.status, state: controller.signal.aborted ? 'cancelled' : 'failed', error: error instanceof Error ? error.message : String(error), message: controller.signal.aborted ? 'Exportação cancelada.' : 'A exportação falhou. Consulte o relatório.' }
@@ -77,6 +79,42 @@ export function registerEditorV6ExportHandlers(deps: { ipcMain: IpcMain; assertT
     const folder = join(deps.projectPath(targetId), 'export-audio')
     await mkdir(folder, { recursive: true })
     for (const clip of clips) await copyFile(audioPath(sourceId, clip), join(folder, clip.fileName))
+  })
+  deps.ipcMain.handle(editorV6IpcChannels.importEditorV6Media, async (event, projectId: string, rawKind: unknown): Promise<EditorV6MediaAsset | null> => {
+    deps.assertTrustedSender(event); uuid.parse(projectId)
+    const kind = z.enum(['video', 'audio']).parse(rawKind)
+    const filters = kind === 'video'
+      ? [{ name: 'Vídeos', extensions: ['mp4', 'webm', 'mov', 'm4v'] }]
+      : [{ name: 'Áudios', extensions: ['mp3', 'wav', 'm4a', 'aac', 'ogg', 'flac', 'opus', 'webm'] }]
+    const result = await dialog.showOpenDialog({ title: `Editor V6: importar ${kind === 'video' ? 'vídeo' : 'áudio'}`, properties: ['openFile'], filters })
+    const source = result.filePaths[0]
+    if (result.canceled || !source) return null
+    const fileStats = await stat(source)
+    if (fileStats.size <= 0 || fileStats.size > 2 * 1024 ** 3) throw Error('O arquivo precisa ter até 2 GB.')
+    const extension = extname(source).slice(1).toLowerCase()
+    const allowed = kind === 'video' ? ['mp4', 'webm', 'mov', 'm4v'] : ['mp3', 'wav', 'm4a', 'aac', 'ogg', 'flac', 'opus', 'webm']
+    if (!allowed.includes(extension)) throw Error('O formato selecionado não é compatível com este tipo de mídia.')
+    const probe = await probeExportMedia(ffprobe, source, new AbortController().signal)
+    const video = probe.streams.find((stream) => stream.codec_type === 'video')
+    const audio = probe.streams.find((stream) => stream.codec_type === 'audio')
+    if (kind === 'video' && !video) throw Error('O arquivo selecionado não contém vídeo.')
+    if (kind === 'audio' && !audio) throw Error('O arquivo selecionado não contém áudio.')
+    const duration = Number(probe.format.duration ?? (kind === 'video' ? video?.duration : audio?.duration) ?? 0)
+    const sourceFrames = Math.max(1, Math.floor(duration * 30))
+    if (!Number.isFinite(duration) || duration <= 0 || sourceFrames > 1_000_000) throw Error('A duração da mídia é inválida ou passa do limite do Editor V6.')
+    const mimeByExtension: Record<string, string> = { mp4: 'video/mp4', webm: kind === 'video' ? 'video/webm' : 'audio/webm', mov: 'video/quicktime', m4v: 'video/x-m4v', mp3: 'audio/mpeg', wav: 'audio/wav', m4a: 'audio/mp4', aac: 'audio/aac', ogg: 'audio/ogg', flac: 'audio/flac', opus: 'audio/opus' }
+    const id = randomUUID(), fileName = `${id}.${extension}`
+    const media = editorV6MediaAssetSchema.parse({ id, name: basename(source), fileName, kind, mimeType: mimeByExtension[extension], sourceFrames, hasAudio: Boolean(audio), ...(video?.width ? { width: video.width, height: video.height } : {}), sizeBytes: fileStats.size })
+    const folder = join(deps.projectPath(projectId), 'media')
+    await mkdir(folder, { recursive: true }); await copyFile(source, join(folder, fileName))
+    return media
+  })
+  deps.ipcMain.handle(editorV6IpcChannels.cloneEditorV6Media, async (event, sourceId: string, targetId: string, rawMedia: unknown) => {
+    deps.assertTrustedSender(event); uuid.parse(sourceId); uuid.parse(targetId)
+    const media = z.array(editorV6MediaAssetSchema).max(500).parse(rawMedia)
+    const sourceFolder = join(deps.projectPath(sourceId), 'media'), targetFolder = join(deps.projectPath(targetId), 'media')
+    await mkdir(targetFolder, { recursive: true })
+    for (const item of media) await copyFile(join(sourceFolder, item.fileName), join(targetFolder, item.fileName))
   })
   return { cancelAll: () => { for (const job of jobs.values()) if (!terminal(job.status)) job.controller.abort(Error('Aplicativo encerrado.')) }, drain: () => Promise.allSettled([...jobs.values()].map((job) => job.promise)) }
 }

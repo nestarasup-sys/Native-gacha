@@ -20,36 +20,36 @@ Para cada personagem, o motor real do Editor V6 gerou dois snapshots de poses do
 
 Cada cenário foi reproduzido por seis segundos. Confirmei que os quatro personagens aparecem como camadas da cena e que o relógio de reprodução avançou até seis segundos.
 
-| Cenário | Duração | Blocos no projeto | Transições planejadas | Blocos desenhados na timeline | `requestAnimationFrame` médio | Intervalo p95 | Pior intervalo | Long tasks da página |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| Leve | 30 s | 80 | 28 | 50 | 73,5 Hz | 13,7 ms | 66,5 ms | 2, total 114 ms |
-| Médio | 2 min | 284 | 92 | 47 | 73,5 Hz | 13,5 ms | 66,6 ms | 2, total 108 ms |
-| Pesado | 5 min | 752 | 284 | 51 | 73,6 Hz | 13,7 ms | 53,4 ms | 1, total 53 ms |
+| Cenário | Duração | Blocos no projeto | Transições planejadas | Blocos desenhados na timeline | `requestAnimationFrame` médio | p50 | p95 | Pior intervalo | Long tasks da página |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Leve | 30 s | 80 | 28 | 50 | 73,8 Hz | 13,3 ms | 13,6 ms | 53,3 ms | 2, total 106 ms |
+| Médio | 2 min | 284 | 92 | 47 | 74,0 Hz | 13,3 ms | 13,6 ms | 53,4 ms | 2, total 100 ms |
+| Pesado | 5 min | 752 | 284 | 51 | 73,5 Hz | 13,3 ms | 13,6 ms | 53,4 ms | 1, total 58 ms |
 
-O custo médio de commit React da `SceneSurface` foi de 0,50 ms no leve, 0,51 ms no médio e 0,51 ms no pesado. O DOM da timeline manteve entre 47 e 51 blocos no viewport, mesmo com 752 blocos no projeto pesado. Isso confirma, nesta rodada, que o scroll da timeline não montou todos os blocos ao mesmo tempo.
+O custo médio de commit React da `SceneSurface` foi de 0,49 ms no leve, 0,48 ms no médio e 0,50 ms no pesado; não houve long task atribuída à cena. A rota do editor teve 363 commits em cada janela de seis segundos, com média de 2,80/2,68/3,04 ms e picos de 40,6/36,5/44,8 ms. O DOM da timeline manteve entre 47 e 51 blocos no viewport, mesmo com 752 blocos no projeto pesado. Isso confirma, nesta rodada, que o scroll da timeline não montou todos os blocos ao mesmo tempo.
 
-Durante o Play, o teste observou sprites de transição dos quatro personagens em cada cenário. Nos primeiros seis segundos, encontrou seis dos sete índices internos do atlas por personagem; um índice não apareceu no DOM amostrado por cenário (108 no leve, 146 no médio e 121 no pesado). Como a amostragem observa a cena por `requestAnimationFrame`, isso é um sinal para traçar o agendamento do quadro, não prova isolada da causa.
+Durante o Play, o teste observou sprites de transição dos quatro personagens em cada cenário. Nos primeiros seis segundos, encontrou seis dos sete índices internos do atlas por personagem; um índice não apareceu no DOM amostrado por cenário (108 no leve, 145 no médio e 121 no pesado). O teste observa a cena por `requestAnimationFrame`, então é preciso investigar possível frame omitido durante playback e considerar que a captura por RAF pode perder uma atualização curta.
 
-O preparo dos atlas reais levou de 557 a 659 ms por transição, com média de aproximadamente 605 ms para sete amostras. O tempo de reprodução é medido depois do preparo: abrir os projetos testados não deixou transições pendentes.
+O preparo de atlas com os personagens reais levou de 554 a 689 ms por transição, com sete amostras e 8.006.184 pixels no atlas (perto do limite configurado de 8,1 MP). O tempo de reprodução é medido depois do preparo: abrir os projetos testados não deixou transições pendentes.
 
 ## Leitura dos números
 
-Os cenários avançaram o relógio durante a reprodução, inclusive o projeto pesado. O p95 ficou entre 13,5 e 13,7 ms, abaixo de um quadro de 30 FPS (33,3 ms). Também ocorreram picos de 53 a 67 ms e long tasks de 53 a 114 ms somadas por cenário; uma amostra de transição não foi observada em cada reprodução. Há espaço para engasgos curtos, então esta rodada não comprova fluidez perfeita em todos os quadros.
+Os cenários avançaram o relógio durante a reprodução, inclusive o projeto pesado, e renderizaram os quatro personagens STRESS. O p95 de RAF ficou em 13,6 ms, abaixo de um quadro de 30 FPS (33,3 ms). Também ocorreram picos de 53 ms, uma amostra interna de transição não foi observada em cada reprodução e a página principal teve long tasks de 58 a 106 ms somadas por cenário. Há espaço para engasgos curtos, então esta rodada não comprova fluidez perfeita em todos os quadros.
 
 Os 73,5–73,6 Hz vêm da cadência de `requestAnimationFrame` deste Chromium e deste monitor. O Editor continua avançando a timeline a 30 FPS. A rodada não mede exportação MP4, FFmpeg nem o executável empacotado; ela mede a prévia, a timeline e a preparação das transições no app Electron em desenvolvimento.
 
 ## O que esta rodada ainda não valida
 
-- As faixas de fala e pensamento estão vinculadas aos quatro personagens nos projetos, mas a troca automática para boca aberta durante fala ainda não está implementada no resolvedor da cena. Pensamento não aciona a boca. Este teste valida a timeline e a cena durante a reprodução, não a animação automática da boca.
-- Não há agendador de piscadas periódicas conectado ao tempo da timeline. O modo `blink` existente é uma renderização facial estática selecionável.
-- O V6 ainda não importa nem reproduz clips de vídeo. O teste de exportação existente usa um WAV de teste sintetizado e comprova a mixagem/sincronização do áudio no MP4, mas não o uso de áudio pessoal nem decode de vídeo importado.
+- O stress run confirma personagens, relógio e sprites de transição. Testes de lógica verificam `talk` por fala, ausência de `talk` por pensamento e piscadas determinísticas; o teste de movimento inclui esses modos no atlas quando coincidem com uma transição. A captura stress não compara pixel a pixel boca/olhos durante as falas.
+- A reprodução foi medida em Electron em desenvolvimento, com a janela fora dos monitores e em uma tela de aproximadamente 75 Hz. O RAF não mede diretamente todos os quadros que o usuário percebe, nem representa hardware mais fraco ou o app empacotado.
+- O stress run não inclui mídia de vídeo/áudio. Um teste Electron separado exportou vídeo sintético em movimento, confirmou que o personagem fica sobre ele, verificou o trecho e o quadro de origem e mixou áudio de vídeo e WAV. Ainda faltam fontes reais de codecs variados e uma comparação visual de cada codec na prévia.
 
 ## Outras verificações executadas
 
 - `npm run test:editor-v6:motion`: passou; compositor real no Chromium, sete amostras de atlas, leitura do catálogo e movimento progressivo de peças. A fixture é sintética; os personagens reais foram medidos pelo teste offscreen acima.
-- `npm run test:editor-v6`: 35 testes passaram; um teste opt-in foi ignorado.
+- `npm run test:editor-v6`: 38 testes passaram; um teste opt-in foi ignorado.
 - `npm run test:editor-v6:surface`: passou; preview/captura, comparação de pixels e integração do painel de áudio.
-- `npm run test:editor-v6:export`: build de produção e teste FFmpeg passaram; MP4 de 81 quadros, 77 reutilizados, dois workers paralelos, áudio contínuo na emenda e transição de pose atravessando a emenda Turbo.
+- `npm run test:editor-v6:export`: build de produção e teste FFmpeg passaram; além do MP4 de 81 quadros/77 reutilizados, verificou vídeo importado quadro a quadro, personagem à frente do vídeo, gap antes do início, entrada de origem, mixagem, dois workers, cancelamento e transição cruzando a emenda Turbo.
 
 ## Arquivos de evidência
 

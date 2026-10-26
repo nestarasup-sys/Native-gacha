@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { createEditorV6Timeline, type EditorV6Document, type EditorV6Element } from '../../src/shared/editorV6'
 import { attachEditorV6Motion, editorV6MotionPlans, missingEditorV6Motions, type EditorV6MotionBakeResult } from '../../src/shared/editorV6Motion'
-import { pruneEditorV6TimelineSnapshots, resolveEditorV6ElementsAtFrame, splitEditorV6Block, setEditorV6BlockTiming, duplicateEditorV6Block } from '../../src/shared/editorV6Timeline'
+import { isEditorV6BlinkFrame, pruneEditorV6TimelineSnapshots, resolveEditorV6ElementsAtFrame, splitEditorV6Block, setEditorV6BlockTiming, duplicateEditorV6Block } from '../../src/shared/editorV6Timeline'
 import { interpolateEditorV6Face, interpolateEditorV6Pose, motionAngle } from '../../src/shared/editorV6MotionInterpolation'
 import { editorV6DocumentSchema } from '../../src/shared/editorV6Schema'
 import { editorV6VisualKey } from '../../src/shared/editorV6Export'
@@ -25,6 +25,18 @@ describe('V6 motion scheduling and portable cache', () => {
     expect(plan.startFrame).toBe(82.5)
     expect(plan.samples.map(s => s.offset)).toEqual([-7,-6,-5,-4,-3,-2,-1])
     expect(plan.samples[0].progress).toBeCloseTo(1 / 15)
+  })
+  it('pré-calcula talk e blink durante a transição sem atualizar o personagem por quadro', () => {
+    const doc = fixture(), speech = doc.timeline.tracks.find((track) => track.kind === 'speech')!
+    speech.blocks = [{ id: crypto.randomUUID(), label: 'Fala durante a troca', characterId: 'alice', startFrame: 86, durationFrames: 2 }]
+    const plan = editorV6MotionPlans(doc)[0]
+    expect(plan.samples.some((sample) => sample.faceMode === 'talk' || sample.faceMode === 'talk-blink')).toBe(true)
+    for (const sample of plan.samples) {
+      const frame = plan.endFrame + sample.offset, talking = frame >= 86 && frame < 88, blinking = isEditorV6BlinkFrame(doc.id, 'alice', frame)
+      expect(sample.faceMode).toBe(talking ? blinking ? 'talk-blink' : 'talk' : blinking ? 'blink' : undefined)
+    }
+    const withoutSpeech = { ...doc, timeline: { ...doc.timeline, tracks: doc.timeline.tracks.map((track) => ({ ...track, blocks: track.kind === 'speech' ? [] : track.blocks })) } }
+    expect(editorV6MotionPlans(withoutSpeech)[0].key).not.toBe(plan.key)
   })
   it('seeks directly into motion and ends exactly at the destination', () => {
     const doc = fixture(), result = bake(doc), ready = attachEditorV6Motion(doc, editorV6MotionPlans(doc)[0].blockId, result)

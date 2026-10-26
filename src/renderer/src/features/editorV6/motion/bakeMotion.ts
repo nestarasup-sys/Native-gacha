@@ -1,7 +1,7 @@
 import type { CharacterRenderAssetProvider } from '../../../../../shared/characterRenderAssets'
 import type { FaceComponentPartId } from '../../../../../shared/customizer'
 import type { FaceElementKind, FaceTransform } from '../../../../../shared/fabricator'
-import type { EditorV6Element, EditorV6FaceTransform } from '../../../../../shared/editorV6'
+import type { EditorV6Element, EditorV6FaceRenderMode, EditorV6FaceTransform } from '../../../../../shared/editorV6'
 import type { EditorV6MotionBakeRequest, EditorV6MotionBakeResult, EditorV6MotionFrame } from '../../../../../shared/editorV6Motion'
 import { interpolateEditorV6Face, interpolateEditorV6Pose, motionAngle, motionEase, motionLerp } from '../../../../../shared/editorV6MotionInterpolation'
 import { editorV6ElementSize } from '../../../../../shared/editorV6SceneModel'
@@ -85,10 +85,10 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
     if (samePose) reusable = renderer
     return renderer
   }
-  const render = async (progress: number) => {
+  const render = async (progress: number, faceMode?: EditorV6FaceRenderMode) => {
     const renderer = await prepare(progress), face = interpolateEditorV6Face(from, to, progress)
     try {
-      const result = await renderer.renderToCanvas(face.appearance, face.transforms, face.effects, face.mode)
+      const result = await renderer.renderToCanvas(face.appearance, face.transforms, face.effects, faceMode ?? face.mode)
       return { ...result, crop: cropOf(result.canvas), dispose: () => { if (!samePose) renderer.dispose() } }
     } catch (error) { if (!samePose) renderer.dispose(); throw error }
   }
@@ -107,7 +107,7 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
     const fromScale = { x: aa.width * 19.2 / fromCrop.width, y: aa.height * 10.8 / fromCrop.height }, toScale = { x: bb.width * 19.2 / toCrop.width, y: bb.height * 10.8 / toCrop.height }
     const frames: EditorV6MotionFrame[] = []
     for (const [index, sample] of request.plan.samples.entries()) {
-      const t = motionEase(sample.progress), frame = await render(t), crop = frame.crop
+      const t = motionEase(sample.progress), frame = await render(t, sample.faceMode), crop = frame.crop
       try {
         const x = index % columns * cellWidth, y = Math.floor(index / columns) * cellHeight, width = Math.max(1, Math.ceil(crop.width * ratio)), height = Math.max(1, Math.ceil(crop.height * ratio))
         context.drawImage(frame.canvas, crop.left, crop.top, crop.width, crop.height, x, y, width, height)

@@ -14,21 +14,41 @@ export async function probeExportMedia(ffprobe: string, path: string, signal: Ab
 }
 type PartReport = EditorV6ExportPart & { encoder: string; rendered: number; reused: number; frames: number; milliseconds: number; path: string; probe?: MediaProbe }
 type AttemptReport = { parts: PartReport[]; encoder: string; parallelism: number; milliseconds?: number; error?: string }
-export type EditorV6ExportReport = { schemaVersion: 1; id: string; state: string; projectId: string; options: EditorV6ExportOptions; fps: 30; totalFrames: number; fallback: boolean; attempts: AttemptReport[]; encoderTests: Array<{ encoder: string; error?: string }>; audioClips: number; videoInputs: 0; proxies: 0; startedAt: string; endedAt?: string; milliseconds?: number; outputPath: string; validation?: unknown; error?: string }
+export type EditorV6ExportReport = { schemaVersion: 1; id: string; state: string; projectId: string; options: EditorV6ExportOptions; fps: 30; totalFrames: number; fallback: boolean; attempts: AttemptReport[]; encoderTests: Array<{ encoder: string; error?: string }>; audioClips: number; videoInputs: number; proxies: 0; startedAt: string; endedAt?: string; milliseconds?: number; outputPath: string; validation?: unknown; error?: string }
 type Dependencies = {
   ffmpeg: string; ffprobe: string; tempRoot: string; reportPath: string; outputPath: string; id: string
   createWorker: (part: EditorV6ExportPart, signal: AbortSignal) => Promise<EditorV6FrameWorker>
   audioPath: (clip: EditorV6ExportAudio) => string
+  mediaPath: (projectId: string, fileName: string) => string
   signal: AbortSignal; progress: (patch: Partial<EditorV6ExportStatus>) => void
 }
 const message = (error: unknown) => error instanceof Error ? error.message : String(error)
 const encodingArgs = (encoder: string, threads: number) => ['-c:v', encoder, ...(encoder === 'libopenh264' ? ['-b:v', '12M', '-rc_mode', 'quality', '-allow_skip_frames', '0', '-threads', String(threads)] : ['-b:v', '12M']), '-pix_fmt', 'yuv420p', '-profile:v', 'high', '-level:v', '4.1', '-g', '60', '-bf', '0', '-video_track_timescale', '30000']
+
+function timelineMediaAudio(project: EditorV6Document): EditorV6ExportAudio[] {
+  const media = new Map((project.media ?? []).filter((asset) => asset.hasAudio).map((asset) => [asset.id, asset]))
+  return project.timeline.tracks.flatMap((track) => track.blocks.flatMap((block) => {
+    const asset = block.mediaId ? media.get(block.mediaId) : undefined
+    if (!asset || (track.kind !== 'audio' && !(track.kind === 'video' && asset.kind === 'video')) || track.muted || track.hidden || block.audioEnabled === false) return []
+    return [{ id: block.id, name: asset.name, fileName: asset.fileName, sourceFrames: asset.sourceFrames, startFrame: block.startFrame, sourceInFrame: block.mediaInFrame ?? 0, durationFrames: block.durationFrames, gain: block.gain ?? 1, muted: false }]
+  }))
+}
+type TimelineVideoClip = { fileName: string; mediaInFrame: number; startFrame: number; endFrame: number }
+function timelineVideoClips(project: EditorV6Document, startFrame: number, endFrame: number): TimelineVideoClip[] {
+  const media = new Map((project.media ?? []).filter((asset) => asset.kind === 'video').map((asset) => [asset.id, asset.fileName]))
+  return project.timeline.tracks.filter((track) => track.kind === 'video' && !track.hidden && !track.muted).flatMap((track) => track.blocks.flatMap((block) => {
+    const fileName = block.mediaId ? media.get(block.mediaId) : undefined
+    const start = Math.max(startFrame, block.startFrame), end = Math.min(endFrame, block.startFrame + block.durationFrames)
+    return fileName && end > start ? [{ fileName, mediaInFrame: (block.mediaInFrame ?? 0) + start - block.startFrame, startFrame: start, endFrame: end }] : []
+  })).sort((a, b) => a.startFrame - b.startFrame || a.fileName.localeCompare(b.fileName))
+}
 export async function runEditorV6Export(project: EditorV6Document, options: EditorV6ExportOptions, deps: Dependencies): Promise<EditorV6ExportReport> {
   const planned = planEditorV6Export(options, project.timeline.durationFrames)
   if (missingEditorV6Motions(project, options.startFrame, options.endFrame).length) throw Error('Aguarde a preparação das animações antes de exportar.')
   if (process.platform !== 'win32') throw Error('Este exportador BGRA está preparado para Windows.')
   const started = performance.now(), totalFrames = options.endFrame - options.startFrame
-  const report: EditorV6ExportReport = { schemaVersion: 1, id: deps.id, projectId: project.id, options, fps: 30, totalFrames, state: 'preparing', fallback: false, attempts: [], encoderTests: [], audioClips: 0, videoInputs: 0, proxies: 0, startedAt: new Date().toISOString(), outputPath: deps.outputPath }
+  const layeredVideo = timelineVideoClips(project, 0, project.timeline.durationFrames).length > 0
+  const report: EditorV6ExportReport = { schemaVersion: 1, id: deps.id, projectId: project.id, options, fps: 30, totalFrames, state: 'preparing', fallback: false, attempts: [], encoderTests: [], audioClips: 0, videoInputs: new Set(timelineVideoClips(project, options.startFrame, options.endFrame).map((clip) => clip.fileName)).size, proxies: 0, startedAt: new Date().toISOString(), outputPath: deps.outputPath }
   await mkdir(deps.tempRoot, { recursive: true })
   const folder = await mkdtemp(join(deps.tempRoot, 'editor-v6-export-'))
   const candidate = join(dirname(deps.outputPath), `.editor-v6-${deps.id}.mp4`)
@@ -53,7 +73,21 @@ export async function runEditorV6Export(project: EditorV6Document, options: Edit
       const result: PartReport = { ...part, path, encoder, rendered: 0, reused: 0, frames: 0, milliseconds: 0 }
       attempt.parts.push(result)
       let worker: EditorV6FrameWorker | undefined
-      const process = spawnExportProcess(deps.ffmpeg, ['-v', 'error', '-y', '-f', 'rawvideo', '-pixel_format', 'bgra', '-video_size', `${options.width}x${options.height}`, '-framerate', '30', '-i', 'pipe:0', '-an', ...encodingArgs(encoder, Math.max(1, Math.min(8, Math.floor(availableParallelism() / parts.length)))), '-frames:v', String(part.endFrame - part.startFrame), path], controller.signal)
+      const videoClips = timelineVideoClips(project, part.startFrame, part.endFrame)
+      const videoInputs = videoClips.flatMap((clip) => ['-ss', String(clip.mediaInFrame / 30), '-t', String((clip.endFrame - clip.startFrame) / 30), '-i', deps.mediaPath(project.id, clip.fileName)])
+      const filters = layeredVideo ? ['[0:v]crop=iw:ih/2:0:0,format=rgba,setsar=1[base]', '[0:v]crop=iw:ih/2:0:ih/2,format=rgba,setsar=1[fg]'] : ['[0:v]setsar=1[base]']
+      let lastVideo = 'base'
+      videoClips.forEach((clip, index) => {
+        const offset = (clip.startFrame - part.startFrame) / 30, end = (clip.endFrame - part.startFrame) / 30
+        const output = index === videoClips.length - 1 && !layeredVideo ? 'vout' : `mix${index}`
+        filters.push(`[${index + 1}:v:0]scale=${options.width}:${options.height}:force_original_aspect_ratio=increase,crop=${options.width}:${options.height},setsar=1,setpts=PTS-STARTPTS+${offset}/TB[clip${index}]`)
+        filters.push(`[${lastVideo}][clip${index}]overlay=0:0:enable='gte(t,${offset})*lt(t,${end})':eof_action=pass:repeatlast=0[${output}]`)
+        lastVideo = output
+      })
+      if (layeredVideo) filters.push(`[${lastVideo}][fg]overlay=0:0:format=auto:eof_action=pass:repeatlast=1[vout]`)
+      const filterArgs = layeredVideo || videoClips.length ? ['-filter_complex', filters.join(';'), '-map', '[vout]'] : ['-map', '0:v:0']
+      const rawHeight = options.height * (layeredVideo ? 2 : 1)
+      const process = spawnExportProcess(deps.ffmpeg, ['-v', 'error', '-y', '-f', 'rawvideo', '-pixel_format', 'bgra', '-video_size', `${options.width}x${rawHeight}`, '-framerate', '30', '-i', 'pipe:0', ...videoInputs, ...filterArgs, '-an', ...encodingArgs(encoder, Math.max(1, Math.min(8, Math.floor(availableParallelism() / parts.length)))), '-frames:v', String(part.endFrame - part.startFrame), path], controller.signal)
       try {
         worker = await deps.createWorker(part, controller.signal)
         let bitmap: Buffer | undefined
@@ -102,7 +136,7 @@ export async function runEditorV6Export(project: EditorV6Document, options: Edit
       deps.progress({ state: 'joining', message: 'Juntando o vídeo e preparando a mixagem de áudio…', frames: totalFrames })
       const list = join(folder, 'parts.txt')
       await writeFile(list, parts.map((part) => `file '${basename(part.path)}'`).join('\n') + '\n')
-      const audio = planEditorV6Audio(project.exportAudio ?? [], options.startFrame, options.endFrame)
+      const audio = planEditorV6Audio([...(project.exportAudio ?? []), ...timelineMediaAudio(project)], options.startFrame, options.endFrame)
       report.audioClips = audio.length
       const filters = audio.map((item, index) => `[${index + 1}:a:0]atrim=start=${item.sourceInFrame / 30}:duration=${item.durationFrames / 30},asetpts=N/SR/TB,aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,volume=${item.clip.gain},adelay=${item.delayFrames * 1600}S:all=1[a${index}]`)
       if (audio.length) filters.push(`${audio.map((_item, index) => `[a${index}]`).join('')}amix=inputs=${audio.length}:normalize=0:duration=longest:dropout_transition=0,asetpts=N/SR/TB,apad=whole_dur=${totalFrames / 30},atrim=duration=${totalFrames / 30},asetpts=N/SR/TB[mix]`)
