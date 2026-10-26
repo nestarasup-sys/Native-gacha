@@ -1,0 +1,283 @@
+{
+  "date": "2026-10-26",
+  "durationPerScenarioMs": 30000,
+  "fps": 30,
+  "physicalPresentedFrameRate": "not-measured",
+  "scenarios": [
+    {
+      "name": "light",
+      "durationMs": 30057.7,
+      "blocks": 80,
+      "tracks": 7,
+      "assets": 22,
+      "mediaAssets": 0,
+      "rafIntervalMs": {
+        "p50": 13.3,
+        "p95": 13.5,
+        "p99": 13.8,
+        "max": 66.7
+      },
+      "rafCallbacksPerSecond": 74.6,
+      "logicalFramesPerSecond": 29.94,
+      "domFrameUpdatesPerSecond": 29.88,
+      "domFrameGapCount": 2,
+      "jsHeapPeakMB": 137.8,
+      "react": {
+        "/editor-v6/surface": {
+          "commits": 901,
+          "p95CommitMs": 0.5,
+          "worstCommitMs": 51.5,
+          "longTaskCount": 0,
+          "longTaskMs": 0
+        },
+        "/editor-v6": {
+          "commits": 906,
+          "p95CommitMs": 3.2,
+          "worstCommitMs": 54.2,
+          "longTaskCount": 2,
+          "longTaskMs": 153
+        },
+        "/editor-v6/timeline": {
+          "commits": 906,
+          "p95CommitMs": 2.3,
+          "worstCommitMs": 8.6,
+          "longTaskCount": 0,
+          "longTaskMs": 0
+        },
+        "/editor-v6/scene": {
+          "commits": 901,
+          "p95CommitMs": 0.8,
+          "worstCommitMs": 51.9,
+          "longTaskCount": 0,
+          "longTaskMs": 0,
+          "sceneResolution": {
+            "samples": 1796,
+            "meanMs": 0.026,
+            "p50Ms": 0,
+            "p95Ms": 0.1,
+            "p99Ms": 0.1,
+            "worstMs": 0.3,
+            "maxElements": 7
+          }
+        }
+      },
+      "interaction": null,
+      "media": null,
+      "maxObservedMediaDriftSeconds": 0.0,
+      "pageErrorCount": 0
+    },
+    {
+      "name": "medium",
+      "durationMs": 30049.4,
+      "blocks": 284,
+      "tracks": 7,
+      "assets": 24,
+      "mediaAssets": 0,
+      "rafIntervalMs": {
+        "p50": 13.3,
+        "p95": 13.5,
+        "p99": 13.8,
+        "max": 79.9
+      },
+      "rafCallbacksPerSecond": 74.3,
+      "logicalFramesPerSecond": 29.95,
+      "domFrameUpdatesPerSecond": 29.92,
+      "domFrameGapCount": 3,
+      "jsHeapPeakMB": 121.2,
+      "react": {
+        "/editor-v6/surface": {
+          "commits": 902,
+          "p95CommitMs": 0.5,
+          "worstCommitMs": 44.6,
+          "longTaskCount": 0,
+          "longTaskMs": 0
+        },
+        "/editor-v6": {
+          "commits": 907,
+          "p95CommitMs": 4.8,
+          "worstCommitMs": 47.3,
+          "longTaskCount": 4,
+          "longTaskMs": 256
+        },
+        "/editor-v6/timeline": {
+          "commits": 907,
+          "p95CommitMs": 3.9,
+          "worstCommitMs": 8.4,
+          "longTaskCount": 0,
+          "longTaskMs": 0
+        },
+        "/editor-v6/scene": {
+          "commits": 902,
+          "p95CommitMs": 0.9,
+          "worstCommitMs": 44.8,
+          "longTaskCount": 0,
+          "longTaskMs": 0,
+          "sceneResolution": {
+            "samples": 1798,
+            "meanMs": 0.039,
+            "p50Ms": 0,
+            "p95Ms": 0.1,
+            "p99Ms": 0.2,
+            "worstMs": 0.3,
+            "maxElements": 7
+          }
+        }
+      },
+      "interaction": {
+        "totalMs": 1084,
+        "seekMs": 73,
+        "editMs": 218,
+        "pauseResumeMs": 1011,
+        "blocksBefore": 5,
+        "blocksAfter": 6,
+        "resumedFrame": 10,
+        "pauseResumeSeekPassed": true
+      },
+      "media": null,
+      "maxObservedMediaDriftSeconds": 0.0,
+      "pageErrorCount": 0
+    },
+    {
+      "name": "heavy",
+      "durationMs": 30057.4,
+      "blocks": 752,
+      "tracks": 7,
+      "assets": 28,
+      "mediaAssets": 0,
+      "rafIntervalMs": {
+        "p50": 13.3,
+        "p95": 13.4,
+        "p99": 13.6,
+        "max": 93.4
+      },
+      "rafCallbacksPerSecond": 74.2,
+      "logicalFramesPerSecond": 29.94,
+      "domFrameUpdatesPerSecond": 29.81,
+      "domFrameGapCount": 3,
+      "jsHeapPeakMB": 134.3,
+      "react": {
+        "/editor-v6/surface": {
+          "commits": 901,
+          "p95CommitMs": 0.7,
+          "worstCommitMs": 44.5,
+          "longTaskCount": 0,
+          "longTaskMs": 0
+        },
+        "/editor-v6": {
+          "commits": 906,
+          "p95CommitMs": 3.5,
+          "worstCommitMs": 45.8,
+          "longTaskCount": 5,
+          "longTaskMs": 331
+        },
+        "/editor-v6/timeline": {
+          "commits": 906,
+          "p95CommitMs": 2.3,
+          "worstCommitMs": 17,
+          "longTaskCount": 0,
+          "longTaskMs": 0
+        },
+        "/editor-v6/scene": {
+          "commits": 901,
+          "p95CommitMs": 1.2,
+          "worstCommitMs": 44.8,
+          "longTaskCount": 0,
+          "longTaskMs": 0,
+          "sceneResolution": {
+            "samples": 1794,
+            "meanMs": 0.108,
+            "p50Ms": 0.1,
+            "p95Ms": 0.2,
+            "p99Ms": 0.3,
+            "worstMs": 0.6,
+            "maxElements": 7
+          }
+        }
+      },
+      "interaction": null,
+      "media": null,
+      "maxObservedMediaDriftSeconds": 0.0,
+      "pageErrorCount": 0
+    },
+    {
+      "name": "multimedia",
+      "durationMs": 30066.8,
+      "blocks": 288,
+      "tracks": 9,
+      "assets": 28,
+      "mediaAssets": 4,
+      "rafIntervalMs": {
+        "p50": 13.3,
+        "p95": 13.5,
+        "p99": 13.5,
+        "max": 93.3
+      },
+      "rafCallbacksPerSecond": 74.1,
+      "logicalFramesPerSecond": 29.93,
+      "domFrameUpdatesPerSecond": 29.83,
+      "domFrameGapCount": 3,
+      "jsHeapPeakMB": 86.9,
+      "react": {
+        "/editor-v6/surface": {
+          "commits": 900,
+          "p95CommitMs": 0.8,
+          "worstCommitMs": 43.5,
+          "longTaskCount": 0,
+          "longTaskMs": 0
+        },
+        "/editor-v6": {
+          "commits": 905,
+          "p95CommitMs": 3.5,
+          "worstCommitMs": 45.2,
+          "longTaskCount": 5,
+          "longTaskMs": 369
+        },
+        "/editor-v6/timeline": {
+          "commits": 905,
+          "p95CommitMs": 2.3,
+          "worstCommitMs": 15.1,
+          "longTaskCount": 0,
+          "longTaskMs": 0
+        },
+        "/editor-v6/scene": {
+          "commits": 900,
+          "p95CommitMs": 1.3,
+          "worstCommitMs": 43.9,
+          "longTaskCount": 0,
+          "longTaskMs": 0,
+          "sceneResolution": {
+            "samples": 1794,
+            "meanMs": 0.054,
+            "p50Ms": 0,
+            "p95Ms": 0.2,
+            "p99Ms": 0.2,
+            "worstMs": 0.4,
+            "maxElements": 7
+          }
+        }
+      },
+      "interaction": null,
+      "media": {
+        "expectedExtensions": [
+          "mp4",
+          "webm",
+          "wav",
+          "ogg"
+        ],
+        "observedExtensions": [
+          "mp4",
+          "ogg",
+          "wav",
+          "webm"
+        ],
+        "missingExtensions": [],
+        "mediaErrors": [],
+        "readyMedia": 1,
+        "maxVideoDriftSeconds": 0,
+        "maxAudioDriftSeconds": 0
+      },
+      "maxObservedMediaDriftSeconds": 0.0647,
+      "pageErrorCount": 0
+    }
+  ]
+}

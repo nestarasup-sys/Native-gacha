@@ -1,63 +1,55 @@
-# Testes offscreen do Editor V6
+# Estresse e diagnóstico do Editor V6
 
-**Data:** 26/10/2026
-**Executável:** `npm run test:editor-v6:stress-offscreen`
+**Execução:** 26/10/2026 · `npm run test:editor-v6:stress-offscreen` · Electron em desenvolvimento, Chromium via CDP.
 
-## O que foi testado
+## Escopo e segurança dos dados
 
-O teste inicia o app Electron completo em modo de desenvolvimento, posiciona a janela nativa fora dos monitores e mantém o Chromium ativo. O runner acessa o renderer por CDP local, cria e abre projetos pela interface normal do Editor V6 e mede a reprodução. O processo usa o IPC do app e o mesmo `SceneSurface` da prévia. Não é reprodução simulada em Vitest.
+O teste roda o app Electron e a interface real do Editor V6, em janela fora da área de trabalho, contra quatro personagens reais `STRESS_*`. Cada cenário dura 30 segundos a 30 FPS. O runner cria um perfil temporário isolado, copiando apenas as pastas locais do Customizador e Fabricador necessárias aos personagens. Não toca nos projetos normais do perfil. Os arquivos de mídia H.264/AAC MP4, VP9/Opus WebM, PCM WAV e Opus OGG são fixtures sintéticas de 40 segundos geradas com FFmpeg local; não são adicionadas ao Git.
 
-Os projetos usam os quatro personagens reais que já existem no Customizador:
+O JSON bruto e o trace completo ficam em `out/editor-v6-stress/` (pasta ignorada pelo Git e pode conter IDs locais). A versão agregada e sem nomes/IDs de personagens está em [benchmarks/ESTRESSE_2026-10-26.json](benchmarks/ESTRESSE_2026-10-26.json).
 
-- `STRESS_Aurora`
-- `STRESS_Nix`
-- `STRESS_Brisa`
-- `STRESS_Dorian`
+## Resultado do benchmark de 30 segundos
 
-Para cada personagem, o motor real do Editor V6 gerou dois snapshots de poses do Fabricador e dois atlas de transição, um em cada direção. Os atlas usam sete amostras por transição de 250 ms. O renderizador recortou os snapshots e calculou a geometria final antes de gravar os projetos; ao abrir, a normalização do app preservou as animações e não reportou transições ausentes.
+| Cenário | Blocos | p50 RAF | p95 RAF | p99 RAF | Maior intervalo | RAF callbacks/s | Quadros lógicos/s | Atualizações DOM/s | Lacunas DOM | Pico heap JS |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Leve | 80 | 13,3 ms | 13,5 ms | 13,8 ms | 66,7 ms | 74,6 | 29,94 | 29,88 | 2 | 137,8 MB |
+| Médio | 284 | 13,3 ms | 13,5 ms | 13,8 ms | 79,9 ms | 74,3 | 29,95 | 29,92 | 3 | 121,2 MB |
+| Pesado | 752 | 13,3 ms | 13,4 ms | 13,6 ms | 93,4 ms | 74,2 | 29,94 | 29,81 | 3 | 134,3 MB |
+| Multimídia | 288 | 13,3 ms | 13,5 ms | 13,5 ms | 93,3 ms | 74,1 | 29,93 | 29,83 | 3 | 86,9 MB |
 
-## Resultados da reprodução
+O RAF roda perto de 74 Hz neste monitor; isso não é o FPS lógico do projeto. A timeline manteve aproximadamente 30 quadros lógicos e 30 atualizações DOM por segundo. O benchmark não mediu os quadros apresentados fisicamente pelo compositor/monitor. Como o Play escolhe o quadro correspondente ao tempo decorrido, atrasos podem pular quadros intermediários para preservar o tempo. As lacunas DOM coincidiram com as lacunas do relógio lógico; não são evidência de que o coletor perdeu uma mutação. Ainda não há medição da apresentação física.
 
-Cada cenário foi reproduzido por seis segundos. Confirmei que os quatro personagens aparecem como camadas da cena e que o relógio de reprodução avançou até seis segundos.
+## Onde estão os custos observados
 
-| Cenário | Duração | Blocos no projeto | Transições planejadas | Blocos desenhados na timeline | `requestAnimationFrame` médio | p50 | p95 | Pior intervalo | Long tasks da página |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| Leve | 30 s | 80 | 28 | 50 | 73,5 Hz | 13,3 ms | 13,6 ms | 66,4 ms | 2, total 117 ms |
-| Médio | 2 min | 284 | 92 | 47 | 73,5 Hz | 13,3 ms | 13,6 ms | 80,0 ms | 2, total 126 ms |
-| Pesado | 5 min | 752 | 284 | 51 | 73,5 Hz | 13,3 ms | 13,7 ms | 66,5 ms | 2, total 115 ms |
+- A composição determinística da cena levou em média 0,026–0,108 ms; pior amostra 0,3–0,6 ms, com até sete elementos. Isso afasta o resolvedor de cena como causa principal dos picos observados nesta rodada.
+- O Profiler da superfície teve p95 de 0,5–0,8 ms, mas commits individuais chegaram a 43,5–51,5 ms. A timeline ficou com p95 2,3–3,9 ms e pior commit 8,4–17 ms.
+- Chromium reportou 2, 4, 5 e 5 long tasks por cenário, totalizando 153, 256, 331 e 369 ms na rota do editor. Elas coincidem com commits longos, mas isso sozinho não prova causalidade. É necessário correlacionar cada `startTime` com a trace do Chromium para achar a tarefa específica.
+- Heap JS amostrado ficou entre 86,9 e 137,8 MB. Amostragem de ~800 ms pode perder picos curtos; não inclui memória nativa/GPU.
+- Os vídeos e áudios passaram por `play` em Chromium para MP4, WebM, WAV e OGG; não houve erros de decodificação. Desvio absoluto máximo observado entre relógio e mídia: ~64,7 ms (menos de dois quadros a 30 FPS). Este é um teste de reprodução sintética nesse Chromium, não garantia de compatibilidade de todos os arquivos/códecs.
+- GC não foi observável via `PerformanceObserver` neste Chromium (`gcSupported: false`). Memória de processo, GPU e compositor também não foram medidos.
+- IPC: listagem 16 chamadas, média 60,6 ms/pior 97,06 ms; load 4, média 117,77/pior 135,65 ms; save 7, média 314,42/pior 475,99 ms. São operações de setup/persistência, não chamadas por quadro. Salvamento continua uma fronteira de desempenho importante para projetos com assets grandes.
+- O trace CDP separado contém 57.436 eventos em cinco segundos. Foi capturado depois do cenário leve, portanto não contaminou as métricas tabuladas. O arquivo local é `out/editor-v6-stress/light-playback-trace.json`.
 
-Após separar o relógio da página, a rota do editor teve 181/183/184 commits em seis segundos, contra 363 em cada cenário na rodada anterior. O tempo React acumulado na rota caiu aproximadamente pela metade: média por commit de 2,80/3,05/3,02 ms, com picos de 39,3/40,3/40,3 ms. A área de prévia (resolução da cena mais superfície SVG) teve custo médio de 0,92/0,98/1,00 ms e não registrou long tasks próprias. A timeline manteve entre 47 e 51 blocos no viewport, mesmo com 752 blocos no projeto pesado.
+## Interação e quadros observados
 
-Durante o Play, o teste observou sprites de transição dos quatro personagens em cada cenário. Nos primeiros seis segundos, encontrou seis dos sete quadros programados: os quadros 108, 146 e 121 não foram observados nos cenários leve, médio e pesado. Como a leitura do DOM ocorre por RAF, ainda é preciso determinar se o playback pulou esses quadros ou se a amostragem coincidiu com a atualização visual.
+O cenário médio completou seek (73 ms), edição/duplicação de bloco (218 ms) e pause/resume (1.011 ms); 5 blocos de fala tornaram-se 6. As quatro personagens tiveram transições durante o Play. Para cada quadro perdido, distinguimos: relógio lógico (frame pedido pelo playback), atualização React/DOM (`data-frame`), RAF que observa DOM e apresentação física. Os três primeiros são capturados; o último exige instrumentação de compositor/hardware e permanece desconhecido. Isso corrige a ambiguidade histórica dos quadros 108, 146 e 121: não se deve tratar uma amostra ausente do observador antigo como prova de falha de apresentação.
 
-Nesta rodada, o preparo dos atlas reais levou de 569,6 a 721,8 ms por transição, em oito transições medidas. Cada atlas tem sete amostras e 8.006.184 pixels (perto do limite de 8,1 MP). O tempo de reprodução é medido depois do preparo: abrir os projetos testados não deixou transições pendentes.
+## Comparação e interpretação
 
-## Leitura dos números
+O registro histórico imediatamente anterior, em execuções curtas, tinha p95 RAF de 13,6–13,7 ms, picos de 66–80 ms e 115–126 ms de long tasks. A nova rodada com 30 segundos elevou picos até 93,4 ms e long tasks até 369 ms. O setup de instrumentação e a duração mudaram, portanto não é comparação controlada nem evidência de regressão ou melhoria. A memoização da camada evita renders React quando os campos visuais não mudam e tem testes de regressão; ainda não demonstrou redução confiável dos piores picos.
 
-Os cenários avançaram o relógio durante a reprodução, inclusive o projeto pesado, e renderizaram os quatro personagens STRESS. O p95 de RAF ficou em 13,6–13,7 ms, abaixo de um quadro de 30 FPS (33,3 ms). A separação do relógio reduziu pela metade o trabalho React acumulado na rota, mas os picos de RAF chegaram a 80 ms, a página ainda teve long tasks de 115–126 ms por cenário e uma amostra de transição não foi observada. Esta rodada não comprova fluidez perfeita em todos os quadros.
+Política atual de recuperação: o relógio usa tempo monotônico e deriva o frame do tempo decorrido, descartando quadros intermediários atrasados, sem acumular lentidão. É adequada para manter sincronismo temporal, mas pode reduzir a suavidade em picos. Repetir quadros preservaria cadência de apresentação ao custo de atrasar timeline e áudio. A escolha deve ser reavaliada com medição de apresentação física.
 
-Os 73,5–74,0 Hz vêm da cadência de `requestAnimationFrame` deste Chromium e deste monitor. O Editor continua avançando a timeline a 30 FPS. A rodada não mede exportação MP4, FFmpeg nem o executável empacotado; ela mede a prévia, a timeline e a preparação das transições no app Electron em desenvolvimento.
+## Execução e validações
 
-## O que esta rodada ainda não valida
+O runner usa electron-vite diretamente num perfil/porta isolados para não disparar a migração `predev` do perfil normal. `GACHA_VIDEO_STRESS_OFFSCREEN=1` exige caminho de dados explícito e absoluto. Cenários exercitados: leve, médio, pesado, multimídia e interação (integrada ao médio). Validação complementar: `npm run typecheck`, `npm run test:editor-v6`, `npm run test:editor-v6:surface`, `npm run test:editor-v6:export`, `npm run test:editor-v6:motion` e `npm run audit:architecture`.
 
-- O stress run confirma personagens, relógio e sprites de transição. Testes de lógica verificam `talk` por fala, ausência de `talk` por pensamento e piscadas determinísticas; o teste de movimento inclui esses modos no atlas quando coincidem com uma transição. A captura stress não compara pixel a pixel boca/olhos durante as falas.
-- A reprodução foi medida em Electron em desenvolvimento, com a janela fora dos monitores e em uma tela de aproximadamente 75 Hz. O RAF não mede diretamente todos os quadros que o usuário percebe, nem representa hardware mais fraco ou o app empacotado.
-- O stress run não inclui mídia de vídeo/áudio. Um teste Electron separado exportou vídeo sintético em movimento, confirmou que o personagem fica sobre ele, verificou o trecho e o quadro de origem e mixou áudio de vídeo e WAV. Ainda faltam fontes reais de codecs variados e uma comparação visual de cada codec na prévia.
+Não foi executado build/lançamento do instalável portátil. Logo, este teste não valida o executável empacotado, GPU em hardware diferente, exportação no cenário de 30 segundos, nem apresentação física sem perdas.
 
-## Outras verificações executadas
+## Próximas medições de maior valor
 
-- `npm run test:editor-v6:motion`: passou; compositor real no Chromium, sete amostras de atlas, leitura do catálogo e movimento progressivo de peças. A fixture é sintética; os personagens reais foram medidos pelo teste offscreen acima.
-- `npm run test:editor-v6`: 38 testes passaram; um teste opt-in foi ignorado.
-- `npm run test:editor-v6:surface`: passou; preview/captura, comparação de pixels e integração do painel de áudio.
-- `npm run test:editor-v6:export`: build de produção e teste FFmpeg passaram; além do MP4 de 81 quadros/77 reutilizados, verificou vídeo importado quadro a quadro, personagem à frente do vídeo, gap antes do início, entrada de origem, mixagem, dois workers, cancelamento e transição cruzando a emenda Turbo.
-
-## Arquivos de evidência
-
-O runner salva as três capturas e os dados completos em `out/editor-v6-stress/`:
-
-- `light-offscreen.png`
-- `medium-offscreen.png`
-- `heavy-offscreen.png`
-- `offscreen-performance.json`
-
-Os projetos `[TESTE]` com as quatro personagens ficam em `app-data/runtime/profile/studios/Editor V6` e são regenerados ao executar o comando acima.
+1. Correlacionar timestamps das long tasks e commits acima de 16,7 ms com o trace CDP e localizar funções/tarefas concretas.
+2. Repetir pelo menos três rodadas idênticas, distinguindo warm-up, tracing e carga do sistema, para quantificar variação.
+3. Obter métrica de quadros apresentados pelo compositor; não inferir isso de RAF nem MutationObserver.
+4. Comparar a memoização com uma rodada A/B controlada usando o mesmo build, fixture, warm-up e máquina.
+5. Medir salvar/abrir com projetos grandes e então desenhar persistência incremental de assets com fixtures legadas e recuperação após interrupção.
