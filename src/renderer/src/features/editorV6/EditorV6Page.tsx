@@ -327,7 +327,7 @@ export function EditorV6Page() {
     if (!editorV6PoseSlots.length) { setEditorV6PoseThumbnails({}); setEditorV6PoseDimensions({}); return }
     let cancelled = false
     void (async () => {
-      const { renderArtwork } = await import('../../characters/characterRenderer')
+      const { renderArtwork } = await import('../../characters/editorV6CharacterRenderer')
       const thumbnails = await Promise.all(editorV6PoseSlots.map(async (pose) => {
         try {
           const artwork = await window.desktop.loadFabricatorPose(pose.sourceModelSlot, pose.slot)
@@ -603,7 +603,7 @@ export function EditorV6Page() {
       const removedCharacterAssetIds = new Set(activeEditorV6.elements.filter((element) => element.kind === 'character' && element.characterId && !selectedIds.has(element.characterId)).map((element) => element.assetId).filter((id): id is string => Boolean(id)))
       const retainedCharacters = new Set(retained.filter((element) => element.kind === 'character').map((element) => element.characterId))
       const additions = availableCharacters.filter((character) => selectedIds.has(character.id) && !retainedCharacters.has(character.id))
-      const { renderSavedCharacter } = await import('../../characters/characterRenderer')
+      const { renderSavedCharacter } = await import('../../characters/editorV6CharacterRenderer')
       const assets: EditorV6Asset[] = []
       const elements: EditorV6Element[] = []
       const stageWidth = sceneRef.current?.clientWidth ?? 1000
@@ -663,7 +663,7 @@ export function EditorV6Page() {
       }
       const key = editorV6CharacterRenderKey(characterCopy)
       if (!editorV6FaceRendererRef.current || editorV6FaceRendererRef.current.key !== key) {
-        const { prepareSavedCharacterRenderer } = await import('../../characters/characterRenderer')
+        const { prepareSavedCharacterRenderer } = await import('../../characters/editorV6CharacterRenderer')
         const renderer = await prepareSavedCharacterRenderer(characterCopy)
         editorV6FaceRendererRef.current = { key, render: renderer.render }
       }
@@ -742,7 +742,7 @@ export function EditorV6Page() {
     if (!activeEditorV6 || selectedElement?.kind !== 'character' || !selectedEditorV6Character || !selectedElement.assetId || editorV6FaceBusy) return
     setEditorV6FaceBusy(true)
     try {
-      const { renderSavedCharacter } = await import('../../characters/characterRenderer')
+      const { renderSavedCharacter } = await import('../../characters/editorV6CharacterRenderer')
       let characterCanvasWidth = selectedElement.characterCanvasWidth
       if (!characterCanvasWidth) {
         const currentPoseCharacter: CustomizerCharacter = { ...selectedEditorV6Character, customization: { ...selectedEditorV6Character.customization, poseSlot: selectedElement.poseSlot === undefined ? selectedEditorV6Character.customization.poseSlot : selectedElement.poseSlot, faceAppearance: selectedElement.faceAppearance ?? selectedEditorV6Character.customization.faceAppearance } }
@@ -864,7 +864,7 @@ export function EditorV6Page() {
         const key = editorV6CharacterRenderKey(job.character)
         try {
           if (!editorV6FaceRendererRef.current || editorV6FaceRendererRef.current.key !== key) {
-            const { prepareSavedCharacterRenderer } = await import('../../characters/characterRenderer')
+            const { prepareSavedCharacterRenderer } = await import('../../characters/editorV6CharacterRenderer')
             const renderer = await prepareSavedCharacterRenderer(job.character)
             if (version !== editorV6FaceRenderVersionRef.current) continue
             editorV6FaceRendererRef.current = { key, render: renderer.render }
