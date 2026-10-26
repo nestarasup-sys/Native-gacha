@@ -56,22 +56,12 @@ function removeFlatBackground(tile: ImageData): void {
   if (corners.some((at) => data[at + 3] <= 24)) return
   const background = [0, 0, 0].map((channel) => corners.reduce((sum, at) => sum + data[at + channel], 0) / corners.length)
   if (corners.some((at) => Math.hypot(data[at] - background[0], data[at + 1] - background[1], data[at + 2] - background[2]) > 90)) return
-  const closeToBackground = (at: number) => Math.hypot(data[at] - background[0], data[at + 1] - background[1], data[at + 2] - background[2]) < 78
-  const stack = new Int32Array(width * height); let count = 0
-  const enqueue = (index: number) => {
+  for (let index = 0; index < width * height; index += 1) {
     const at = index * 4
-    if (data[at + 3] <= 24 || !closeToBackground(at)) return
-    data[at + 3] = 0
-    stack[count++] = index
-  }
-  for (let x = 0; x < width; x += 1) { enqueue(x); enqueue((height - 1) * width + x) }
-  for (let y = 1; y < height - 1; y += 1) { enqueue(y * width); enqueue(y * width + width - 1) }
-  while (count) {
-    const index = stack[--count]; const x = index % width; const y = (index - x) / width
-    if (x > 0) enqueue(index - 1)
-    if (x + 1 < width) enqueue(index + 1)
-    if (y > 0) enqueue(index - width)
-    if (y + 1 < height) enqueue(index + width)
+    if (data[at + 3] <= 24) continue
+    const distance = Math.hypot(data[at] - background[0], data[at + 1] - background[1], data[at + 2] - background[2])
+    if (distance < 65) data[at + 3] = 0
+    else if (distance < 112) data[at + 3] = Math.round(data[at + 3] * (distance - 65) / 47)
   }
 }
 function guessCategory(piece: WorkerPiece, width: number, height: number): WardrobeCategory {
