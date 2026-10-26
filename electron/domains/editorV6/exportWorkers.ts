@@ -8,7 +8,7 @@ import { editorV6WorkerChannels, type EditorV6WorkerPayload } from '../../../src
 import { waitForExport } from './exportProcess'
 
 export type EditorV6FrameWorker = { frame: (frame: number) => Promise<{ reused: boolean; bitmap?: Buffer }>; close: () => void }
-export function createEditorV6WorkerFactory(deps: { ipcMain: Pick<IpcMain, 'handle' | 'removeHandler'>; html: string; preload: string; devUrl?: string; mediaPath?: (projectId: string, fileName: string) => string }) {
+export function createEditorV6WorkerFactory(deps: { ipcMain: Pick<IpcMain, 'handle' | 'removeHandler'>; html: string; preload: string; devUrl?: string; mediaPath?: (projectId: string, fileName: string, libraryVideoId?: string) => string | Promise<string> }) {
   const entries = new Map<number, { payload: EditorV6WorkerPayload; ready: (error?: string) => void }>()
   function entry(event: Electron.IpcMainInvokeEvent) {
     const found = entries.get(event.sender.id)
@@ -26,10 +26,10 @@ export function createEditorV6WorkerFactory(deps: { ipcMain: Pick<IpcMain, 'hand
     if (mediaPath && mediaList?.length) window.webContents.session.protocol.handle('gacha-editor-media', async (request) => {
       try {
         const url = new URL(request.url), parts = url.pathname.split('/').filter(Boolean)
-        if (url.hostname !== 'project' || parts.length !== 2 || parts[0] !== payload.project.id) return new Response('Not found', { status: 404 })
-        const media = mediaList.find((item) => item.fileName === parts[1])
+        if (!['project', 'library'].includes(url.hostname) || parts.length !== 2 || parts[0] !== payload.project.id) return new Response('Not found', { status: 404 })
+        const media = url.hostname === 'library' ? mediaList.find((item) => item.libraryVideoId === parts[1]) : mediaList.find((item) => item.fileName === parts[1])
         if (!media || !/^[0-9a-f-]{36}\.(mp4|webm|mov|m4v|mp3|wav|m4a|aac|ogg|flac|opus)$/i.test(media.fileName)) return new Response('Not found', { status: 404 })
-        const path = mediaPath(payload.project.id, media.fileName), file = await stat(path)
+        const path = await mediaPath(payload.project.id, media.fileName, media.libraryVideoId), file = await stat(path)
         const headers = new Headers({ 'accept-ranges': 'bytes', 'content-type': media.mimeType, 'cache-control': 'no-store' })
         const range = request.headers.get('range')
         if (request.method === 'HEAD') { headers.set('content-length', String(file.size)); return new Response(null, { status: 200, headers }) }

@@ -171,12 +171,12 @@ export class VideoLibraryStore {
       try { await this.cleanupDeleted(catalog) } catch { /* retry from the tombstone on next access */ }
     })
   }
-  async resolveMedia(id: string): Promise<{ path: string; extension: Entry['extension']; durationFrames: Entry['durationFrames'] }> {
+  async resolveMedia(id: string): Promise<{ path: string; name: string; mimeType: Entry['mimeType']; extension: Entry['extension']; size: number; durationFrames: Entry['durationFrames'] }> {
     requireId(id)
     return this.run(async () => {
       const item = (await this.readCatalog()).items.find((entry) => entry.id === id)
       if (!item) throw new Error('Vídeo não encontrado na biblioteca.')
-      return { path: this.mediaPath(item), extension: item.extension, durationFrames: item.durationFrames }
+      return { path: this.mediaPath(item), name: item.name, mimeType: item.mimeType, extension: item.extension, size: item.size, durationFrames: item.durationFrames }
     })
   }
 }

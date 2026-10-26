@@ -2,6 +2,7 @@ import type { EditorV6Document } from './editorV6'
 
 export type EditorV6ExportAudio = {
   id: string; name: string; fileName: string; sourceFrames: number
+  libraryVideoId?: string
   startFrame: number; sourceInFrame: number; durationFrames: number; gain: number; muted: boolean
 }
 export type EditorV6ExportOptions = { startFrame: number; endFrame: number; width: number; height: number; turbo: boolean; encoder: 'auto' | 'cpu' }

@@ -15,6 +15,8 @@ export type EditorV6MediaAsset = {
   id: string
   name: string
   fileName: string
+  /** Existing video from the shared Base Videos catalog; never copied into this project. */
+  libraryVideoId?: string
   kind: 'video' | 'audio'
   mimeType: string
   sourceFrames: number
@@ -23,7 +25,8 @@ export type EditorV6MediaAsset = {
   height?: number
   sizeBytes: number
 }
-export function editorV6MediaUrl(projectId: string, fileName: string): string {
+export function editorV6MediaUrl(projectId: string, fileName: string, libraryVideoId?: string): string {
+  if (libraryVideoId) return `gacha-editor-media://library/${projectId}/${libraryVideoId}`
   return `gacha-editor-media://project/${projectId}/${fileName}`
 }
 
@@ -344,6 +347,7 @@ export type EditorV6DesktopApi = {
   importEditorV6ExportAudio: (projectId: string) => Promise<EditorV6ExportAudio | null>
   cloneEditorV6ExportAudio: (sourceId: string, targetId: string, clips: EditorV6ExportAudio[]) => Promise<void>
   importEditorV6Media: (projectId: string, kind: EditorV6MediaAsset['kind']) => Promise<EditorV6MediaAsset | null>
+  linkEditorV6LibraryVideo: (projectId: string, libraryVideoId: string) => Promise<EditorV6MediaAsset>
   cloneEditorV6Media: (sourceId: string, targetId: string, media: EditorV6MediaAsset[]) => Promise<void>
   bakeEditorV6Motion: (request: EditorV6MotionBakeRequest) => Promise<EditorV6MotionBakeResult>
   cancelEditorV6Motion: (requestId: string) => Promise<void>

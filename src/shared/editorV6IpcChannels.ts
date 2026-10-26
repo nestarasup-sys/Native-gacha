@@ -16,6 +16,7 @@ export const editorV6IpcChannels = {
   importEditorV6ExportAudio: 'editor-v6:export:import-audio',
   cloneEditorV6ExportAudio: 'editor-v6:export:clone-audio',
   importEditorV6Media: 'editor-v6:media:import',
+  linkEditorV6LibraryVideo: 'editor-v6:media:link-library-video',
   cloneEditorV6Media: 'editor-v6:media:clone',
   bakeEditorV6Motion: 'editor-v6:motion:bake',
   cancelEditorV6Motion: 'editor-v6:motion:cancel'

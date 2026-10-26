@@ -71,7 +71,7 @@ export function createEditorV6DocumentPersistence(deps: {
         return { ...asset, dataUrl: `data:${asset.mimeType};base64,${data.toString('base64')}` }
       }))
       const media = (normalized.media ?? []).map((item) => editorV6MediaAssetSchema.parse(item))
-      await Promise.all(media.map((item) => deps.files.access(join(folder, 'media', item.fileName))))
+      await Promise.all(media.filter((item) => !item.libraryVideoId).map((item) => deps.files.access(join(folder, 'media', item.fileName))))
       const document = { ...normalized, assets, media }
       if (!deps.validate(document)) throw new Error(`Os dados do EditorV6 ${id} estão inválidos.`)
       return document

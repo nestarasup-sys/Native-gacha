@@ -67,6 +67,15 @@ describe('timeline do Editor V6', () => {
     expect(editorV6DocumentSchema.safeParse(document).success).toBe(true)
   })
 
+  it('resolve vídeo da Base pelo ID sem exigir cópia na pasta do projeto', () => {
+    const document = fixture(), libraryId = crypto.randomUUID()
+    document.media = [{ id: libraryId, libraryVideoId: libraryId, name: 'Compartilhado.mp4', fileName: `${libraryId}.mp4`, kind: 'video', mimeType: 'video/mp4', sourceFrames: 180, hasAudio: true, width: 1280, height: 720, sizeBytes: 1024 }]
+    document.timeline.tracks.find((track) => track.kind === 'video')!.blocks = [{ id: crypto.randomUUID(), label: 'Compartilhado.mp4', mediaId: libraryId, startFrame: 0, durationFrames: 90, audioEnabled: true }]
+    const scene = resolveEditorV6SceneAtFrame(document, 10)
+    expect(scene.mediaVideo?.url).toBe(`gacha-editor-media://library/${document.id}/${libraryId}`)
+    expect(editorV6DocumentSchema.safeParse(document).success).toBe(true)
+  })
+
   it('insere uma fala no cursor com texto independente e preserva a precisão de quadros', () => {
     const document = fixture()
     const speech = { ...document.elements[0], id: crypto.randomUUID(), kind: 'speech' as const, characterId: undefined, assetId: undefined, text: 'Olá' }

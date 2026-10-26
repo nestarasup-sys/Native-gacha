@@ -81,7 +81,7 @@ export function resolveEditorV6SceneAtFrame(document: EditorV6Document, frame: n
     if (normalizedFrame < candidate.startFrame + candidate.durationFrames) { video = candidate; break }
   }
   const media = video ? document.media?.find((item) => item.id === video.mediaId && item.kind === 'video') : undefined
-  return { frame: normalizedFrame, background: resolveEditorV6BackgroundAtFrame(document, normalizedFrame), elements: resolveEditorV6ElementsAtFrame(document, normalizedFrame, options), ...(video && media ? { mediaVideo: { mediaId: media.id, url: editorV6MediaUrl(document.id, media.fileName), startFrame: video.startFrame, sourceInFrame: video.mediaInFrame ?? 0, durationFrames: video.durationFrames, hasAudio: media.hasAudio, audioEnabled: video.audioEnabled !== false, gain: video.gain ?? 1 } } : {}) }
+  return { frame: normalizedFrame, background: resolveEditorV6BackgroundAtFrame(document, normalizedFrame), elements: resolveEditorV6ElementsAtFrame(document, normalizedFrame, options), ...(video && media ? { mediaVideo: { mediaId: media.id, url: editorV6MediaUrl(document.id, media.fileName, media.libraryVideoId), startFrame: video.startFrame, sourceInFrame: video.mediaInFrame ?? 0, durationFrames: video.durationFrames, hasAudio: media.hasAudio, audioEnabled: video.audioEnabled !== false, gain: video.gain ?? 1 } } : {}) }
 }
 const videoClipsCache = new WeakMap<EditorV6Timeline, TimelineClip[]>()
 

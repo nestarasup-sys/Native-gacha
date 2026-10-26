@@ -34,7 +34,7 @@ async function main() {
   project = editEditorV6BackgroundAtFrame(project, 30, { backgroundColor: '#0000ff' })
   project = editEditorV6BackgroundAtFrame(project, 45, { backgroundColor: '#00ff00' })
   project.exportAudio = [{ id: randomUUID(), fileName: `${randomUUID()}.wav`, name: 'Tone', sourceFrames: 120, sourceInFrame: 5, startFrame: 10, durationFrames: 80, gain: .75, muted: false }]
-  const factory = createEditorV6WorkerFactory({ ipcMain, html: join(root, 'out/renderer/editor-v6-export.html'), preload: join(root, 'out/preload/editorV6ExportPreload.cjs'), mediaPath: (_projectId, fileName) => join(folder, 'media', fileName) })
+  const factory = createEditorV6WorkerFactory({ ipcMain, html: join(root, 'out/renderer/editor-v6-export.html'), preload: join(root, 'out/preload/editorV6ExportPreload.cjs'), mediaPath: (_projectId, fileName, libraryVideoId) => join(folder, libraryVideoId ? 'library' : 'media', fileName) })
   let active = 0, peak = 0
   const makeWorker = async (signal: AbortSignal, width = 320, height = 180, renderProject = project) => {
     active++; peak = Math.max(peak, active)
@@ -104,6 +104,18 @@ async function main() {
   let mediaRms = 0
   for (let index = 0; index < 1000; index++) mediaRms += mediaSound.readFloatLE(index * 4) ** 2
   assert(Math.sqrt(mediaRms / 1000) > .02, 'O áudio dos vídeos/áudios importados não foi mixado no MP4.')
+  const libraryFolder = join(folder, 'library')
+  await mkdir(libraryFolder, { recursive: true })
+  const libraryVideoId = randomUUID(), libraryVideoFileName = `${libraryVideoId}.mp4`
+  await copyFile(videoPath, join(libraryFolder, libraryVideoFileName))
+  const linkedProject: EditorV6Document = {
+    ...mediaProject,
+    media: mediaProject.media!.map((media) => media.id === videoId ? { ...media, id: libraryVideoId, fileName: libraryVideoFileName, libraryVideoId } : media),
+    timeline: { ...mediaProject.timeline, tracks: mediaProject.timeline.tracks.map((track) => track.kind === 'video' ? { ...track, blocks: track.blocks.map((block) => ({ ...block, mediaId: libraryVideoId })) } : track) }
+  }
+  const linkedOutput = join(folder, 'library-linked.mp4')
+  const linkedReport = await runEditorV6Export(linkedProject, { ...options, startFrame: 0, endFrame: 30 }, { ...base, id: randomUUID(), outputPath: linkedOutput, reportPath: join(folder, 'library-linked.report.json'), mediaPath: (_projectId, fileName, libraryId) => join(folder, libraryId ? 'library' : 'media', fileName), audioPath: (clip) => join(folder, clip.libraryVideoId ? 'library' : 'media', clip.fileName) })
+  assert(!linkedReport.fallback && linkedReport.videoInputs === 1 && linkedReport.audioClips === 2, 'Vídeo vinculado por ID não chegou ao preview de exportação e à mixagem de áudio.')
   project = silent
   const fullHd = await runEditorV6Export(silent, { ...options, startFrame: 45, endFrame: 47, width: 1920, height: 1080 }, { ...base, id: randomUUID(), outputPath: join(folder, '1080p.mp4'), reportPath: join(folder, '1080p.report.json'), createWorker: (renderProject, _part, signal) => makeWorker(signal, 1920, 1080, renderProject) })
   assert(fullHd.totalFrames === 2 && !fullHd.fallback && active === 0, 'Exportação 1080p não concluiu com duas partes.')

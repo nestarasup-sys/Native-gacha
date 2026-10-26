@@ -15,12 +15,14 @@ import { probeExportMedia, runEditorV6Export } from './exportRunner'
 type Job = { owner: number; status: EditorV6ExportStatus; controller: AbortController; promise: Promise<void> }
 const uuid = z.string().uuid()
 const terminal = (status: EditorV6ExportStatus) => ['completed', 'cancelled', 'failed'].includes(status.state)
-export function registerEditorV6ExportHandlers(deps: { ipcMain: IpcMain; assertTrustedSender: (event: IpcMainInvokeEvent) => void; projectPath: (id: string) => string; toolsDirectory: string; workerHtml: string; workerPreload: string; devUrl?: string; tempRoot: string; getCharacters: () => Promise<CustomizerCharacter[]>; bakeMotion: (request: EditorV6MotionBakeRequest, signal: AbortSignal) => Promise<EditorV6MotionBakeResult> }) {
-  const mediaPath = (projectId: string, fileName: string) => join(deps.projectPath(projectId), 'media', fileName)
+export function registerEditorV6ExportHandlers(deps: { ipcMain: IpcMain; assertTrustedSender: (event: IpcMainInvokeEvent) => void; projectPath: (id: string) => string; toolsDirectory: string; workerHtml: string; workerPreload: string; devUrl?: string; tempRoot: string; getCharacters: () => Promise<CustomizerCharacter[]>; bakeMotion: (request: EditorV6MotionBakeRequest, signal: AbortSignal) => Promise<EditorV6MotionBakeResult>; resolveLibraryVideo: (id: string) => Promise<{ path: string; name: string; mimeType: EditorV6MediaAsset['mimeType']; extension: string; size: number; durationFrames: number | null }> }) {
+  const mediaPath = async (projectId: string, fileName: string, libraryVideoId?: string) => libraryVideoId ? (await deps.resolveLibraryVideo(libraryVideoId)).path : join(deps.projectPath(projectId), 'media', fileName)
   const workers = createEditorV6WorkerFactory({ ipcMain: deps.ipcMain, html: deps.workerHtml, preload: deps.workerPreload, devUrl: deps.devUrl, mediaPath })
   const ffmpeg = join(deps.toolsDirectory, 'ffmpeg.exe'), ffprobe = join(deps.toolsDirectory, 'ffprobe.exe')
   const jobs = new Map<string, Job>()
-  const audioPath = (projectId: string, clip: EditorV6ExportAudio, media: readonly EditorV6MediaAsset[] = []) => join(deps.projectPath(projectId), media.some((item) => item.fileName === clip.fileName) ? 'media' : 'export-audio', clip.fileName)
+  const audioPath = async (projectId: string, clip: EditorV6ExportAudio, media: readonly EditorV6MediaAsset[] = []) => clip.libraryVideoId
+    ? (await deps.resolveLibraryVideo(clip.libraryVideoId)).path
+    : join(deps.projectPath(projectId), media.some((item) => item.fileName === clip.fileName) ? 'media' : 'export-audio', clip.fileName)
   const findJob = (event: IpcMainInvokeEvent, id: string) => {
     deps.assertTrustedSender(event)
     const job = id === 'latest' ? [...jobs.values()].reverse().find((entry) => entry.owner === event.sender.id) : jobs.get(uuid.parse(id))
@@ -78,7 +80,7 @@ export function registerEditorV6ExportHandlers(deps: { ipcMain: IpcMain; assertT
     const clips = z.array(editorV6ExportAudioSchema).max(32).parse(rawClips)
     const folder = join(deps.projectPath(targetId), 'export-audio')
     await mkdir(folder, { recursive: true })
-    for (const clip of clips) await copyFile(audioPath(sourceId, clip), join(folder, clip.fileName))
+    for (const clip of clips) await copyFile(await audioPath(sourceId, clip), join(folder, clip.fileName))
   })
   deps.ipcMain.handle(editorV6IpcChannels.importEditorV6Media, async (event, projectId: string, rawKind: unknown): Promise<EditorV6MediaAsset | null> => {
     deps.assertTrustedSender(event); uuid.parse(projectId)
@@ -114,7 +116,22 @@ export function registerEditorV6ExportHandlers(deps: { ipcMain: IpcMain; assertT
     const media = z.array(editorV6MediaAssetSchema).max(500).parse(rawMedia)
     const sourceFolder = join(deps.projectPath(sourceId), 'media'), targetFolder = join(deps.projectPath(targetId), 'media')
     await mkdir(targetFolder, { recursive: true })
-    for (const item of media) await copyFile(join(sourceFolder, item.fileName), join(targetFolder, item.fileName))
+    for (const item of media) if (!item.libraryVideoId) await copyFile(join(sourceFolder, item.fileName), join(targetFolder, item.fileName))
+  })
+  deps.ipcMain.handle(editorV6IpcChannels.linkEditorV6LibraryVideo, async (event, projectId: string, rawLibraryVideoId: unknown): Promise<EditorV6MediaAsset> => {
+    deps.assertTrustedSender(event); uuid.parse(projectId)
+    const libraryVideoId = uuid.parse(rawLibraryVideoId)
+    const source = await deps.resolveLibraryVideo(libraryVideoId)
+    if (!['mp4', 'webm', 'mov', 'm4v'].includes(source.extension)) throw Error('O vídeo selecionado tem um formato incompatível.')
+    const fileStats = await stat(source.path)
+    const probe = await probeExportMedia(ffprobe, source.path, new AbortController().signal)
+    const video = probe.streams.find((stream) => stream.codec_type === 'video')
+    const audio = probe.streams.find((stream) => stream.codec_type === 'audio')
+    if (!video) throw Error('O vídeo selecionado não contém uma faixa de vídeo válida.')
+    const duration = Number(probe.format.duration ?? video.duration ?? 0)
+    const sourceFrames = Math.max(1, Math.floor(duration * 30))
+    if (!Number.isFinite(duration) || duration <= 0 || sourceFrames > 1_000_000) throw Error('A duração do vídeo é inválida para o Editor V6.')
+    return editorV6MediaAssetSchema.parse({ id: libraryVideoId, libraryVideoId, name: source.name, fileName: `${libraryVideoId}.${source.extension}`, kind: 'video', mimeType: source.mimeType, sourceFrames, hasAudio: Boolean(audio), ...(video.width ? { width: video.width, height: video.height } : {}), sizeBytes: fileStats.size })
   })
   return { cancelAll: () => { for (const job of jobs.values()) if (!terminal(job.status)) job.controller.abort(Error('Aplicativo encerrado.')) }, drain: () => Promise.allSettled([...jobs.values()].map((job) => job.promise)) }
 }

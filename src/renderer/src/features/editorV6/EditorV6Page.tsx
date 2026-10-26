@@ -5,6 +5,7 @@ import { useEditorV6Store } from './editorV6Store'
 import { createEditorV6Timeline, syncEditorV6TimelineElements } from '../../../../shared/editorV6'
 import { EditorV6Timeline } from './EditorV6Timeline'
 import { EditorV6ExportPanel } from './EditorV6ExportPanel'
+import { EditorV6VideoPickerModal } from './EditorV6VideoPickerModal'
 import { EditorV6PlaybackAudio } from './EditorV6PlaybackAudio'
 import { EditorV6PlaybackScene } from './EditorV6PlaybackScene'
 import { getEditorV6PlaybackFrame, setEditorV6PlaybackFrame } from './editorV6PlaybackClock'
@@ -150,6 +151,7 @@ export function EditorV6Page() {
   const [activeTool, setActiveTool] = useState<Tool>(null)
   const [fullView, setFullView] = useState(false)
   const [exportOpen, setExportOpen] = useState(false)
+  const [videoPickerOpen, setVideoPickerOpen] = useState(false)
   const [saved, setSaved] = useState(true)
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null)
   const [playheadFrame, setPlayheadFrame] = useState(0)
@@ -809,8 +811,9 @@ export function EditorV6Page() {
 
   const importTimelineMedia = async (kind: 'video' | 'audio') => {
     if (!activeEditorV6) return
+    if (kind === 'video') { setVideoPickerOpen(true); return }
     const track = activeEditorV6.timeline.tracks.find((item) => item.kind === kind)
-    if (track?.locked) { setError(`Desbloqueie a faixa ${kind === 'video' ? 'Vídeo' : 'Áudio'} para importar mídia.`); return }
+    if (track?.locked) { setError('Desbloqueie a faixa Áudio para importar mídia.'); return }
     pausePlayback()
     const sourceProject = activeEditorV6
     const frameAtImport = getEditorV6PlaybackFrame()
@@ -834,7 +837,35 @@ export function EditorV6Page() {
       setInspectorTab('editor')
       setSaved(true)
       setError(null)
-    } catch (reason) { setError(reason instanceof Error ? reason.message : `Não foi possível importar ${kind === 'video' ? 'o vídeo' : 'o áudio'}.`) }
+    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível importar o áudio.') }
+  }
+
+  const linkVideoLibraryItem = async (item: import('../../../../shared/studio').VideoLibraryItem) => {
+    const sourceProject = activeEditorV6
+    if (!sourceProject) return
+    const track = sourceProject.timeline.tracks.find((entry) => entry.kind === 'video')
+    if (track?.locked) throw new Error('Desbloqueie a faixa Vídeo antes de adicionar um vídeo.')
+    pausePlayback()
+    const startFrame = Math.min(getEditorV6PlaybackFrame(), sourceProject.timeline.durationFrames)
+    const media = await window.desktop.linkEditorV6LibraryVideo(sourceProject.id, item.id)
+    const durationFrames = Math.max(1, Math.min(media.sourceFrames, 1_000_000 - startFrame))
+    const block = { id: crypto.randomUUID(), mediaId: media.id, mediaInFrame: 0, label: media.name.slice(0, 120), startFrame, durationFrames, audioEnabled: true, gain: 1 }
+    const mediaList = sourceProject.media ?? []
+    const timeline = normalizeEditorV6Timeline({ ...sourceProject.timeline, durationFrames: Math.max(sourceProject.timeline.durationFrames, startFrame + durationFrames), tracks: sourceProject.timeline.tracks.map((entry) => entry.kind === 'video' ? { ...entry, blocks: [...entry.blocks, block] } : entry) })
+    const next: EditorV6Document = { ...sourceProject, media: mediaList.some((entry) => entry.id === media.id) ? mediaList : [...mediaList, media], timeline, updatedAt: new Date().toISOString() }
+    await window.desktop.saveEditorV6Project(next)
+    if (activeEditorV6Id !== sourceProject.id) return
+    recordHistory(sourceProject)
+    setActiveEditorV6Project(next)
+    publishPlayheadFrame(startFrame)
+    setSelectedTimelineBlockId(block.id)
+    setSelectedElementId(null)
+    setActiveTool(null)
+    setInspectorOpen(true)
+    setInspectorTab('editor')
+    setSaved(true)
+    setError(null)
+    setVideoPickerOpen(false)
   }
 
   const selectBackground = (asset: EditorV6Asset) => {
@@ -1566,7 +1597,7 @@ export function EditorV6Page() {
             <button className="studio-tool-button" onClick={() => addTextElement('narrator')} type="button"><Icon name="message" /><span>Narrador</span><i aria-hidden="true">✦</i></button>
             <button className="studio-tool-button" onClick={() => addTextElement('speech')} disabled={!selectedCharacterElement} title={selectedCharacterElement ? `Adicionar fala a ${selectedCharacterElement.text}` : 'Selecione um personagem na cena'} aria-label="Adicionar fala ao personagem selecionado" type="button"><Icon name="message" /><span>Fala</span><i aria-hidden="true">✦</i></button>
             <button className="studio-tool-button" onClick={() => addTextElement('thought')} disabled={!selectedCharacterElement} title={selectedCharacterElement ? `Adicionar pensamento a ${selectedCharacterElement.text}` : 'Selecione um personagem na cena'} aria-label="Adicionar pensamento ao personagem selecionado" type="button"><Icon name="face" /><span>Pensamento</span><i aria-hidden="true">✦</i></button>
-            <button className="studio-tool-button" onClick={() => void importTimelineMedia('video')} type="button"><b>▣</b><span>Importar vídeo</span></button>
+            <button className="studio-tool-button" onClick={() => void importTimelineMedia('video')} type="button"><b>▣</b><span>Selecionar vídeo</span></button>
             <button className="studio-tool-button" onClick={() => void importTimelineMedia('audio')} type="button"><b>♪</b><span>Importar áudio</span></button>
             <span className="studio-tool-separator" />
             <button className="studio-tool-button" onClick={() => { pausePlayback(); setExportOpen(true) }} type="button"><Icon name="download" /><span>Exportar MP4</span></button>
@@ -1595,6 +1626,7 @@ export function EditorV6Page() {
           onSeek={(frame) => { if (dragRef.current) cancelSceneDrag(); pausePlayback(); publishPlayheadFrame(frame) }} onPlay={toggleTimelinePlayback} onChange={changeScene}
           onSelect={(block) => { setSelectedTimelineBlockId(block.id); setSelectedElementId(block.background ? 'background' : block.elementId ?? null); setActiveTool(block.background ? 'background' : null); setInspectorOpen(true); if (block.state?.kind === 'character') restoreCharacterInspectorView(); else setInspectorTab('editor') }} /></Profiler> }
         <EditorV6ExportPanel key={`export-${activeEditorV6.id}`} project={activeEditorV6} open={exportOpen} onClose={() => setExportOpen(false)} onChange={(update) => patchStudio(update, false)} />
+        {videoPickerOpen && <EditorV6VideoPickerModal onClose={() => setVideoPickerOpen(false)} onSelect={linkVideoLibraryItem} />}
         {castPickerOpen && <div className="studio-cast-modal-backdrop" onPointerDown={(event) => { if (event.target === event.currentTarget && !savingCast) setCastPickerOpen(false) }}>
           <section className="studio-cast-modal" role="dialog" aria-modal="true" aria-labelledby="studio-cast-modal-title">
             <header><span><small>EDITAR ELENCO</small><h2 id="studio-cast-modal-title">Personagens do Editor V6</h2></span><button className="studio-cast-modal-close" onClick={() => setCastPickerOpen(false)} aria-label="Fechar" disabled={savingCast} type="button">×</button></header>

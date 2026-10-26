@@ -997,6 +997,13 @@ const { listEditorV6s } = createEditorV6LibraryIndex({
   readEditorV6Summary
 })
 
+async function assertEditorV6VideoNotLinked(videoId: string): Promise<void> {
+  for (const project of await listEditorV6s()) {
+    const manifest = JSON.parse(await readFile(join(editorV6Path(project.id), 'editorV6.json'), 'utf8')) as { media?: Array<{ libraryVideoId?: unknown }> }
+    if (manifest.media?.some((item) => item.libraryVideoId === videoId)) throw new Error(`Este vídeo está vinculado pelo ID ao projeto “${project.title}” do Editor V6. Remova a faixa do projeto antes de excluir o vídeo da Base.`)
+  }
+}
+
 function dataUrlBuffer(dataUrl: string): Buffer {
   const match = /^data:image\/png;base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl)
   if (!match) throw new Error('Arquivo de peça inválido.')
@@ -1268,6 +1275,7 @@ async function registerFabricatorHandlers(): Promise<void> {
     const next = roteirosSaveQueue.catch(() => undefined).then(async () => {
       const reference = dataPlatform.database?.prepare("SELECT 1 FROM roteiro_sections WHERE json_extract(video_asset_json, '$.id') = ? LIMIT 1").get(id)
       if (reference) throw new Error('Este vídeo está sendo usado em uma abertura ou TikTok. Remova a referência no roteiro antes de excluí-lo da biblioteca.')
+      await assertEditorV6VideoNotLinked(id)
       await videoLibrary.delete(id)
     })
     roteirosSaveQueue = next
@@ -1548,7 +1556,7 @@ async function registerFabricatorHandlers(): Promise<void> {
       if (physical) await nativeAccess(physical)
       else await dataFileSystem.access(path)
     },
-    deleteLibraryVideo: (id) => videoLibrary.delete(id)
+    deleteLibraryVideo: async (id) => { await assertEditorV6VideoNotLinked(id); await videoLibrary.delete(id) }
   }))
 
   registerCustomizerCharacterHandlers(ipcMain, assertTrustedSender, customizerService, measureIpc)
@@ -2016,16 +2024,28 @@ function registerEditorV6MediaProtocol(): void {
       const url = new URL(request.url)
       const parts = url.pathname.split('/').filter(Boolean)
       const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-      const file = /^([0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\.(mp4|webm|mov|m4v|mp3|wav|m4a|aac|ogg|flac|opus)$/i.exec(parts[1] ?? '')
-      if (url.hostname !== 'project' || parts.length !== 2 || !uuid.test(parts[0]) || !file) return new Response('Not found', { status: 404 })
-      const folder = editorV6Path(parts[0])
-      const manifest = JSON.parse(await nativeReadFile(join(folder, 'editorV6.json'), 'utf8')) as { id?: unknown; media?: Array<{ id?: unknown; fileName?: unknown; mimeType?: unknown }> }
-      const media = manifest.id === parts[0] ? manifest.media?.find((item) => item.id === file[1] && item.fileName === parts[1]) : undefined
+      if (parts.length !== 2 || !uuid.test(parts[0])) return new Response('Not found', { status: 404 })
+      let path: string, mimeType: string
+      if (url.hostname === 'project') {
+        const file = /^([0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\.(mp4|webm|mov|m4v|mp3|wav|m4a|aac|ogg|flac|opus)$/i.exec(parts[1])
+        if (!file) return new Response('Not found', { status: 404 })
+        const folder = editorV6Path(parts[0])
+        const manifest = JSON.parse(await nativeReadFile(join(folder, 'editorV6.json'), 'utf8')) as { id?: unknown; media?: Array<{ id?: unknown; fileName?: unknown; mimeType?: unknown }> }
+        const media = manifest.id === parts[0] ? manifest.media?.find((item) => item.id === file[1] && item.fileName === parts[1]) : undefined
+        if (!media || typeof media.mimeType !== 'string') return new Response('Not found', { status: 404 })
+        path = join(folder, 'media', parts[1]); mimeType = media.mimeType
+      } else if (url.hostname === 'library' && uuid.test(parts[1])) {
+        const projectFolder = editorV6Path(parts[0])
+        const manifest = JSON.parse(await nativeReadFile(join(projectFolder, 'editorV6.json'), 'utf8')) as { id?: unknown; media?: Array<{ libraryVideoId?: unknown }> }
+        if (manifest.id !== parts[0] || !manifest.media?.some((item) => item.libraryVideoId === parts[1])) return new Response('Not found', { status: 404 })
+        const media = await videoLibrary.resolveMedia(parts[1])
+        path = await dataFileSystem.resolvePhysicalPath(media.path) ?? media.path
+        mimeType = media.mimeType
+      } else return new Response('Not found', { status: 404 })
       const supportedTypes = new Set(['video/mp4', 'video/webm', 'video/quicktime', 'video/x-m4v', 'audio/mpeg', 'audio/wav', 'audio/mp4', 'audio/aac', 'audio/ogg', 'audio/flac', 'audio/opus', 'audio/webm'])
-      if (!media || typeof media.mimeType !== 'string' || !supportedTypes.has(media.mimeType)) return new Response('Not found', { status: 404 })
-      const path = join(folder, 'media', parts[1])
+      if (!supportedTypes.has(mimeType)) return new Response('Not found', { status: 404 })
       const metadata = await nativeStat(path)
-      const headers = new Headers({ 'accept-ranges': 'bytes', 'content-type': media.mimeType, 'cache-control': 'no-store' })
+      const headers = new Headers({ 'accept-ranges': 'bytes', 'content-type': mimeType, 'cache-control': 'no-store' })
       const range = request.headers.get('range')
       if (request.method === 'HEAD') { headers.set('content-length', String(metadata.size)); return new Response(null, { status: 200, headers }) }
       if (range) {
@@ -2259,6 +2279,7 @@ app.whenReady().then(async () => {
     toolsDirectory: app.isPackaged ? join(process.resourcesPath, 'video-tools') : resolve(__dirname, '../../resources/video-tools'),
     workerHtml: join(__dirname, '../renderer/editor-v6-export.html'), workerPreload: join(__dirname, '../preload/editorV6ExportPreload.cjs'),
     devUrl: process.env.ELECTRON_RENDERER_URL, tempRoot: app.getPath('temp'), getCharacters: () => customizerService.list(),
+    resolveLibraryVideo: async (id) => { const item = await videoLibrary.resolveMedia(id); return { ...item, path: await dataFileSystem.resolvePhysicalPath(item.path) ?? item.path } },
     bakeMotion: (request, signal) => editorV6MotionService!.bakeForExport(request, signal) })
   createMainWindow()
 

@@ -32,15 +32,17 @@ export const editorV6MediaAssetSchema = z.object({
   id: uuid,
   name: z.string().min(1).max(255),
   fileName: z.string().regex(/^[0-9a-f-]{36}\.(mp4|webm|mov|m4v|mp3|wav|m4a|aac|ogg|flac|opus)$/i),
+  libraryVideoId: uuid.optional(),
   kind: z.enum(['video', 'audio']),
   mimeType: z.enum(['video/mp4', 'video/webm', 'video/quicktime', 'video/x-m4v', 'audio/mpeg', 'audio/wav', 'audio/mp4', 'audio/aac', 'audio/ogg', 'audio/flac', 'audio/opus', 'audio/webm']),
   sourceFrames: z.number().int().min(1).max(1_000_000),
   hasAudio: z.boolean(),
   width: z.number().int().positive().max(16384).optional(),
   height: z.number().int().positive().max(16384).optional(),
-  sizeBytes: z.number().int().min(1).max(2 * 1024 ** 3)
+  sizeBytes: z.number().int().min(1).max(5 * 1024 ** 3)
 }).superRefine((media, context) => {
   if (media.fileName.split('.')[0].toLowerCase() !== media.id.toLowerCase()) context.addIssue({ code: 'custom', path: ['fileName'], message: 'O nome seguro do arquivo precisa corresponder ao ID da mídia.' })
+  if (media.libraryVideoId && (media.kind !== 'video' || media.id !== media.libraryVideoId || !media.mimeType.startsWith('video/'))) context.addIssue({ code: 'custom', path: ['libraryVideoId'], message: 'A referência da Base de vídeos precisa identificar um vídeo compatível.' })
   if (media.kind === 'video' && !media.mimeType.startsWith('video/')) context.addIssue({ code: 'custom', path: ['mimeType'], message: 'O tipo de mídia não corresponde ao vídeo.' })
   if (media.kind === 'audio' && !media.mimeType.startsWith('audio/')) context.addIssue({ code: 'custom', path: ['mimeType'], message: 'O tipo de mídia não corresponde ao áudio.' })
 })

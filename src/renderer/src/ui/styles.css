@@ -2876,3 +2876,32 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .wardrobe-preview-card>.wardrobe-preview-stage { min-height:110px; }
 
 .v6-motion-range { position: absolute; bottom: 1px; height: 7px; background: repeating-linear-gradient(135deg, #f9b84a 0 3px, #9a681a 3px 6px); z-index: 3; pointer-events: none; }
+
+.v6-video-picker-backdrop { z-index: 1605; }
+.v6-video-picker { width:min(760px,100%);max-height:min(760px,92vh);display:flex;flex-direction:column;overflow:hidden;border:1px solid #e5dced;border-radius:15px;background:#fff;box-shadow:0 22px 75px #20152c42; }
+.v6-video-picker>header { display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding:19px 21px 14px;border-bottom:1px solid #eee8f2; }
+.v6-video-picker>header span { color:#8b6db0;font-size:10px;font-weight:850;letter-spacing:1px; }
+.v6-video-picker>header h2 { margin:4px 0;color:#3f3546;font-size:22px; }
+.v6-video-picker>header p { margin:0;color:#827889;font-size:13px; }
+.v6-video-picker>header>button { width:30px;height:30px;border:1px solid #e7dfeb;border-radius:50%;background:#fff;color:#817589;font-size:24px;cursor:pointer; }
+.v6-video-picker-tabs { display:flex;gap:6px;padding:12px 20px 0;border-bottom:1px solid #ece6f0; }
+.v6-video-picker-tabs>button { min-height:38px;padding:0 15px;border:0;border-bottom:2px solid transparent;background:transparent;color:#82778c;font-size:13px;font-weight:750;cursor:pointer; }
+.v6-video-picker-tabs>button.active { border-color:#7550c8;color:#6541ad; }
+.v6-video-picker-toolbar { display:flex;gap:10px;padding:13px 20px; }
+.v6-video-picker-toolbar>input { min-width:0;flex:1;height:38px;padding:0 12px;border:1px solid #e4dce9;border-radius:8px;color:#493e50;font-size:13px; }
+.v6-video-picker-toolbar>button { flex:none;padding:0 13px;border:1px solid #7550c8;border-radius:8px;background:#7550c8;color:white;font-size:13px;font-weight:750;cursor:pointer; }
+.v6-video-picker-toolbar>button:disabled,.v6-video-picker>footer>button:disabled { opacity:.5;cursor:default; }
+.v6-video-picker-list { min-height:150px;display:flex;flex-direction:column;gap:8px;overflow:auto;padding:3px 20px 16px; }
+.v6-video-picker-list>p { margin:auto;padding:36px 14px;color:#84788d;font-size:14px;text-align:center; }
+.v6-video-picker-item { min-height:66px;display:flex;align-items:center;gap:12px;padding:9px 12px;border:1px solid #e7dfeb;border-radius:10px;background:#fff;text-align:left;cursor:pointer; }
+.v6-video-picker-item:hover:not(:disabled) { border-color:#a987d4;background:#faf7ff; }
+.v6-video-picker-item:disabled { opacity:.55;cursor:progress; }
+.v6-video-picker-badge { flex:none;min-width:84px;padding:6px 8px;border-radius:7px;background:#f1eaff;color:#7048c7;font-size:10px;font-weight:900;text-align:center; }
+.v6-video-picker-info { min-width:0;flex:1;display:grid;gap:4px; }
+.v6-video-picker-info>strong { overflow:hidden;color:#44384b;font-size:14px;text-overflow:ellipsis;white-space:nowrap; }
+.v6-video-picker-info>small { color:#817587;font-size:11px; }
+.v6-video-picker-action { flex:none;color:#6847a6;font-size:12px;font-weight:850; }
+.v6-video-picker>footer { display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 20px 15px;border-top:1px solid #eee8f2; }
+.v6-video-picker>footer>small { color:#82788b;font-size:11px; }
+.v6-video-picker>footer>button { min-height:35px;padding:0 14px;border:1px solid #e6dce9;border-radius:8px;background:#fff;color:#786c7e;font-size:13px;cursor:pointer; }
+@media (max-width:620px) { .v6-video-picker-toolbar { flex-direction:column; } .v6-video-picker-badge { min-width:68px;font-size:9px; } .v6-video-picker-action { font-size:0; } .v6-video-picker-action::after { content:'→';font-size:16px; } }
