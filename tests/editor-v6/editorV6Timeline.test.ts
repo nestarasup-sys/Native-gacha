@@ -26,6 +26,7 @@ describe('timeline do Editor V6', () => {
     document.timeline.tracks.find((track) => track.kind === 'thought')!.blocks = [{ id: crypto.randomUUID(), label: 'Pensamento', characterId: 'alice', startFrame: 0, durationFrames: 300 }]
     const normalFrame = Array.from({ length: 300 }, (_, frame) => frame).find((frame) => !isEditorV6BlinkFrame(document.id, 'alice', frame))!
     expect(resolveEditorV6ElementsAtFrame(document, normalFrame)[0].assetId).toBe(talkId)
+    expect(resolveEditorV6ElementsAtFrame(document, normalFrame, { includeMotion: false })[0].assetId).toBe(talkId)
     const blinkFrame = Array.from({ length: 300 }, (_, frame) => frame).find((frame) => isEditorV6BlinkFrame(document.id, 'alice', frame))!
     expect(resolveEditorV6ElementsAtFrame(document, blinkFrame)[0].assetId).toBe(combinedId)
     expect(isEditorV6BlinkFrame(document.id, 'alice', blinkFrame)).toBe(true)

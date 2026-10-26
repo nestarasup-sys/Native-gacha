@@ -66,7 +66,7 @@ export function resolveEditorV6BackgroundAtFrame(document: EditorV6Document, fra
   }
 }
 
-export function resolveEditorV6SceneAtFrame(document: EditorV6Document, frame: number): EditorV6ResolvedScene {
+export function resolveEditorV6SceneAtFrame(document: EditorV6Document, frame: number, options: { includeMotion?: boolean } = {}): EditorV6ResolvedScene {
   const normalizedFrame = Math.min(Math.max(0, document.timeline.durationFrames - 1), Math.max(0, Math.round(frame)))
   let videoClips = videoClipsCache.get(document.timeline)
   if (!videoClips) {
@@ -81,7 +81,7 @@ export function resolveEditorV6SceneAtFrame(document: EditorV6Document, frame: n
     if (normalizedFrame < candidate.startFrame + candidate.durationFrames) { video = candidate; break }
   }
   const media = video ? document.media?.find((item) => item.id === video.mediaId && item.kind === 'video') : undefined
-  return { frame: normalizedFrame, background: resolveEditorV6BackgroundAtFrame(document, normalizedFrame), elements: resolveEditorV6ElementsAtFrame(document, normalizedFrame), ...(video && media ? { mediaVideo: { mediaId: media.id, url: editorV6MediaUrl(document.id, media.fileName), startFrame: video.startFrame, sourceInFrame: video.mediaInFrame ?? 0, durationFrames: video.durationFrames, hasAudio: media.hasAudio, audioEnabled: video.audioEnabled !== false, gain: video.gain ?? 1 } } : {}) }
+  return { frame: normalizedFrame, background: resolveEditorV6BackgroundAtFrame(document, normalizedFrame), elements: resolveEditorV6ElementsAtFrame(document, normalizedFrame, options), ...(video && media ? { mediaVideo: { mediaId: media.id, url: editorV6MediaUrl(document.id, media.fileName), startFrame: video.startFrame, sourceInFrame: video.mediaInFrame ?? 0, durationFrames: video.durationFrames, hasAudio: media.hasAudio, audioEnabled: video.audioEnabled !== false, gain: video.gain ?? 1 } } : {}) }
 }
 const videoClipsCache = new WeakMap<EditorV6Timeline, TimelineClip[]>()
 
@@ -170,7 +170,20 @@ export function resolveEditorV6StaticElementsAtFrame(document: EditorV6Document,
 }
 
 const motionIndex = new WeakMap<EditorV6Document['timeline'], Map<string, Array<{ plan: EditorV6MotionPlan; block: EditorV6TimelineBlock }>>>()
-export function resolveEditorV6ElementsAtFrame(document: EditorV6Document, frame: number): EditorV6Element[] {
+export function resolveEditorV6ElementsAtFrame(document: EditorV6Document, frame: number, options: { includeMotion?: boolean } = {}): EditorV6Element[] {
+  const resolved = resolveEditorV6StaticElementsAtFrame(document, frame)
+  const applyAutomaticFace = (source: EditorV6Element) => {
+    let element = source
+    if (element.kind === 'character' && element.characterId) {
+      const autoMode = editorV6FaceModeAtFrame(document.id, document.timeline, element.characterId, frame)
+      const autoAssetId = autoMode === 'talk-blink'
+        ? element.faceModeAssetIds?.['talk-blink'] ?? element.faceModeAssetIds?.talk
+        : autoMode ? element.faceModeAssetIds?.[autoMode] : undefined
+      if (autoAssetId) element = { ...element, assetId: autoAssetId, motionSprite: undefined }
+    }
+    return element
+  }
+  if (options.includeMotion === false) return resolved.map(applyAutomaticFace)
   let index = motionIndex.get(document.timeline)
   if (!index) {
     index = new Map()
@@ -182,14 +195,8 @@ export function resolveEditorV6ElementsAtFrame(document: EditorV6Document, frame
     for (const entries of index.values()) entries.sort((a, b) => a.plan.endFrame - b.plan.endFrame)
     motionIndex.set(document.timeline, index)
   }
-  return resolveEditorV6StaticElementsAtFrame(document, frame).map((element) => {
-    if (element.kind === 'character' && element.characterId && !element.motionSprite) {
-      const autoMode = editorV6FaceModeAtFrame(document.id, document.timeline, element.characterId, frame)
-      const autoAssetId = autoMode === 'talk-blink'
-        ? element.faceModeAssetIds?.['talk-blink'] ?? element.faceModeAssetIds?.talk
-        : autoMode ? element.faceModeAssetIds?.[autoMode] : undefined
-      if (autoAssetId) element = { ...element, assetId: autoAssetId, motionSprite: undefined }
-    }
+  return resolved.map((source) => {
+    let element = applyAutomaticFace(source)
     const entries = index!.get(element.id)
     if (!entries) return element
     let left = 0, right = entries.length

@@ -5,7 +5,7 @@ import { join, resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { createEditorV6MotionService } from '../../electron/domains/editorV6/motionIpc'
 import { editorV6IpcChannels } from '../../src/shared/editorV6IpcChannels'
-import { editorV6MotionPlans, attachEditorV6Motion } from '../../src/shared/editorV6Motion'
+import { editorV6MotionPlans } from '../../src/shared/editorV6Motion'
 import type { CustomizerCharacter } from '../../src/shared/customizer'
 import type { FabricatorProject } from '../../src/shared/fabricator'
 import { createEditorV6WorkerFactory } from '../../electron/domains/editorV6/exportWorkers'
@@ -36,17 +36,18 @@ async function main() {
   project.exportAudio = [{ id: randomUUID(), fileName: `${randomUUID()}.wav`, name: 'Tone', sourceFrames: 120, sourceInFrame: 5, startFrame: 10, durationFrames: 80, gain: .75, muted: false }]
   const factory = createEditorV6WorkerFactory({ ipcMain, html: join(root, 'out/renderer/editor-v6-export.html'), preload: join(root, 'out/preload/editorV6ExportPreload.cjs'), mediaPath: (_projectId, fileName) => join(folder, 'media', fileName) })
   let active = 0, peak = 0
-  const makeWorker = async (signal: AbortSignal, width = 320, height = 180) => {
+  const makeWorker = async (signal: AbortSignal, width = 320, height = 180, renderProject = project) => {
     active++; peak = Math.max(peak, active)
     try {
-      const worker = await factory.create({ project, width, height }, signal)
+      const worker = await factory.create({ project: renderProject, width, height }, signal)
       let closed = false
       return { frame: worker.frame, close: () => { if (closed) return; closed = true; active--; worker.close() } }
     } catch (error) { active--; throw error }
   }
   const options = { startFrame: 5, endFrame: 86, width: 320, height: 180, turbo: true, encoder: 'cpu' as const }
   const output = join(folder, 'turbo.mp4')
-  const base = { ffmpeg, ffprobe, tempRoot: folder, id: randomUUID(), outputPath: output, reportPath: join(folder, 'turbo.report.json'), signal: new AbortController().signal, createWorker: (_part: unknown, signal: AbortSignal) => makeWorker(signal), audioPath: () => audio, mediaPath: (_projectId: string, fileName: string) => join(folder, 'media', fileName), progress: () => {} }
+  const progressMessages: string[] = []
+  const base = { ffmpeg, ffprobe, tempRoot: folder, id: randomUUID(), outputPath: output, reportPath: join(folder, 'turbo.report.json'), signal: new AbortController().signal, getCharacters: async () => [], bakeMotion: async () => { throw Error('Unexpected motion bake.') }, createWorker: (renderProject: EditorV6Document, _part: unknown, signal: AbortSignal) => makeWorker(signal, 320, 180, renderProject), audioPath: () => audio, mediaPath: (_projectId: string, fileName: string) => join(folder, 'media', fileName), progress: (patch: { message?: string }) => { if (patch.message) progressMessages.push(patch.message) } }
   const report = await runEditorV6Export(project, options, base)
   assert(report.state === 'completed' && !report.fallback, 'Turbo não concluiu com duas partes.')
   assert(report.attempts[0].parts.map((part) => part.frames).sort((a, b) => a - b).join(',') === '40,41', 'Partes perderam ou repetiram quadros.')
@@ -60,14 +61,14 @@ async function main() {
   const rms = (start: number, count: number) => { let sum = 0; for (let index = start; index < start + count; index++) sum += sound.readFloatLE(index * 4) ** 2; return Math.sqrt(sum / count) }
   assert(rms(0, 1000) < .001 && rms(24000, 1000) > .02 && rms(64000 - 500, 1000) > .02, 'Áudio perdeu atraso, volume ou continuidade na emenda.')
   let injected = false
-  const fallback = await runEditorV6Export(project, options, { ...base, id: randomUUID(), outputPath: join(folder, 'fallback.mp4'), reportPath: join(folder, 'fallback.report.json'), createWorker: (part, signal) => { if (part.index === 1 && !injected) { injected = true; throw Error('Falha simulada na segunda parte.'); } return makeWorker(signal) } })
+  const fallback = await runEditorV6Export(project, options, { ...base, id: randomUUID(), outputPath: join(folder, 'fallback.mp4'), reportPath: join(folder, 'fallback.report.json'), createWorker: (renderProject, part, signal) => { if (part.index === 1 && !injected) { injected = true; throw Error('Falha simulada na segunda parte.'); } return makeWorker(signal, 320, 180, renderProject) } })
   assert(fallback.fallback && fallback.attempts.length === 2 && fallback.attempts[1].parallelism === 1 && active === 0, 'Recuperação segura não reiniciou e concluiu a exportação.')
   const preserved = join(folder, 'preserved.mp4'), controller = new AbortController()
   await writeFile(preserved, 'arquivo anterior')
   let calls = 0, cancelled = false
   try {
-    await runEditorV6Export(project, options, { ...base, id: randomUUID(), outputPath: preserved, reportPath: join(folder, 'cancelled.report.json'), signal: controller.signal, createWorker: async (_part, signal) => {
-      const worker = await makeWorker(signal)
+    await runEditorV6Export(project, options, { ...base, id: randomUUID(), outputPath: preserved, reportPath: join(folder, 'cancelled.report.json'), signal: controller.signal, createWorker: async (renderProject, _part, signal) => {
+      const worker = await makeWorker(signal, 320, 180, renderProject)
       return { ...worker, frame: async (frame) => { const result = await worker.frame(frame); if (++calls >= 2) controller.abort(Error('Cancelamento de teste.')); return result } }
     } })
   } catch { cancelled = true }
@@ -104,7 +105,7 @@ async function main() {
   for (let index = 0; index < 1000; index++) mediaRms += mediaSound.readFloatLE(index * 4) ** 2
   assert(Math.sqrt(mediaRms / 1000) > .02, 'O áudio dos vídeos/áudios importados não foi mixado no MP4.')
   project = silent
-  const fullHd = await runEditorV6Export(silent, { ...options, startFrame: 45, endFrame: 47, width: 1920, height: 1080 }, { ...base, id: randomUUID(), outputPath: join(folder, '1080p.mp4'), reportPath: join(folder, '1080p.report.json'), createWorker: (_part, signal) => makeWorker(signal, 1920, 1080) })
+  const fullHd = await runEditorV6Export(silent, { ...options, startFrame: 45, endFrame: 47, width: 1920, height: 1080 }, { ...base, id: randomUUID(), outputPath: join(folder, '1080p.mp4'), reportPath: join(folder, '1080p.report.json'), createWorker: (renderProject, _part, signal) => makeWorker(signal, 1920, 1080, renderProject) })
   assert(fullHd.totalFrames === 2 && !fullHd.fallback && active === 0, 'Exportação 1080p não concluiu com duas partes.')
   // Exercise the actual restricted sandbox preload, IPC queue and hidden bake worker.
   const owner = new BrowserWindow({ show: false, webPreferences: { sandbox: true, preload: join(root, 'out/preload/preload.cjs') } })
@@ -126,23 +127,18 @@ async function main() {
   assert(plan.endFrame === 50 && plan.startFrame === 42.5, 'Motion fixture does not straddle Turbo seam.')
   const event = { sender: owner.webContents, senderFrame: owner.webContents.mainFrame } as IpcMainInvokeEvent
   const bake = handlers.get(editorV6IpcChannels.bakeEditorV6Motion)!
-  let missingRejected = false
-  try { await runEditorV6Export(motionProject, options, base) } catch (error) { missingRejected = String(error).includes('preparação das animações') }
-  assert(missingRejected, 'Backend accepted export with missing motion frames.')
-  const result = await bake(event, { id: randomUUID(), plan, character })
-  motionProject = attachEditorV6Motion(motionProject, plan.blockId, result)
-  const staticProject = project
-  project = motionProject
-  const motionOutput = join(folder, 'motion-turbo.mp4')
-  const animated = await runEditorV6Export(project, options, { ...base, id: randomUUID(), outputPath: motionOutput, reportPath: join(folder, 'motion.report.json') })
-  assert(!animated.fallback && animated.attempts[0].parts.reduce((sum,p)=>sum+p.rendered,0) >= 7, 'Animated frames were reused or Turbo failed.')
-  const motionRgb = run(['-i',motionOutput,'-vf',"select='between(n,38,42)'",'-fps_mode','passthrough','-frames:v','5','-pix_fmt','rgb24','-f','rawvideo','pipe:1'])
-  const frameBytes = 320*180*3
-  for (let i=1;i<5;i++) assert(!motionRgb.subarray((i-1)*frameBytes,i*frameBytes).equals(motionRgb.subarray(i*frameBytes,(i+1)*frameBytes)), 'Motion froze across the Turbo seam.')
   const cancelId = randomUUID()
   const pending = bake(event,{id:cancelId,plan,character}).then(()=>false,()=>true)
   await handlers.get(editorV6IpcChannels.cancelEditorV6Motion)!(event,cancelId)
   assert(await pending, 'Motion cancellation failed.')
+  const staticProject = project
+  project = motionProject
+  const motionOutput = join(folder, 'motion-turbo.mp4')
+  const animated = await runEditorV6Export(project, options, { ...base, id: randomUUID(), outputPath: motionOutput, reportPath: join(folder, 'motion.report.json'), getCharacters: async () => [character], bakeMotion: (request, signal) => service.bakeForExport(request, signal) })
+  assert(!animated.fallback && animated.motionTransitionsRequired === 1 && animated.motionTransitionsPrepared === 1 && animated.attempts[0].parts.reduce((sum,p)=>sum+p.rendered,0) >= 7 && progressMessages.some((message) => message === 'Preparando transição 1/1 · Alice…'), 'Export did not prepare missing transitions with visible progress before rendering.')
+  const motionRgb = run(['-i',motionOutput,'-vf',"select='between(n,38,42)'",'-fps_mode','passthrough','-frames:v','5','-pix_fmt','rgb24','-f','rawvideo','pipe:1'])
+  const frameBytes = 320*180*3
+  for (let i=1;i<5;i++) assert(!motionRgb.subarray((i-1)*frameBytes,i*frameBytes).equals(motionRgb.subarray(i*frameBytes,(i+1)*frameBytes)), 'Motion froze across the Turbo seam.')
   service.cancelAll(); await service.drain(); owner.destroy()
   project = staticProject
   assert(!(await readdir(folder)).some((name) => name.startsWith('editor-v6-export-') || name.startsWith('.editor-v6-')), 'Temporários de exportação não foram removidos.')

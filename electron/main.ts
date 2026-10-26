@@ -2254,11 +2254,12 @@ app.whenReady().then(async () => {
   registerEditorV6MediaProtocol()
   registerVideoBackgroundProtocol()
   await registerFabricatorHandlers()
+  editorV6MotionService = createEditorV6MotionService({ ipcMain, assertTrustedSender, html: join(__dirname, '../renderer/index.html'), preload: join(__dirname, '../preload/editorV6MotionPreload.cjs'), devUrl: process.env.ELECTRON_RENDERER_URL })
   editorV6ExportService = registerEditorV6ExportHandlers({ ipcMain, assertTrustedSender, projectPath: editorV6Path,
     toolsDirectory: app.isPackaged ? join(process.resourcesPath, 'video-tools') : resolve(__dirname, '../../resources/video-tools'),
     workerHtml: join(__dirname, '../renderer/editor-v6-export.html'), workerPreload: join(__dirname, '../preload/editorV6ExportPreload.cjs'),
-    devUrl: process.env.ELECTRON_RENDERER_URL, tempRoot: app.getPath('temp') })
-  editorV6MotionService = createEditorV6MotionService({ ipcMain, assertTrustedSender, html: join(__dirname, '../renderer/index.html'), preload: join(__dirname, '../preload/editorV6MotionPreload.cjs'), devUrl: process.env.ELECTRON_RENDERER_URL })
+    devUrl: process.env.ELECTRON_RENDERER_URL, tempRoot: app.getPath('temp'), getCharacters: () => customizerService.list(),
+    bakeMotion: (request, signal) => editorV6MotionService!.bakeForExport(request, signal) })
   createMainWindow()
 
   app.on('activate', () => {

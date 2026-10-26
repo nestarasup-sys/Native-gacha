@@ -13,7 +13,7 @@ export function EditorV6PlaybackScene({ project, selectedId, interaction, playin
   fullView: boolean
 }) {
   const frame = useEditorV6PlaybackFrame()
-  const scene = useMemo(() => measureEditorV6SceneResolution(() => resolveEditorV6SceneAtFrame(project, frame)), [project, frame])
+  const scene = useMemo(() => measureEditorV6SceneResolution(() => resolveEditorV6SceneAtFrame(project, frame, { includeMotion: false })), [project, frame])
   return <>
     <Profiler id="/editor-v6/surface" onRender={recordUiCommit}><SceneSurface scene={scene} assets={project.assets} selectedId={fullView ? null : selectedId} interaction={interaction} playing={playing} /></Profiler>
     {!fullView && <span className="v6-preview-time" aria-live="off">{playing ? 'Reproduzindo' : 'Pausado'} · {frameTimecode(frame)}</span>}

@@ -6,7 +6,8 @@ import { z } from 'zod'
 import { editorV6IpcChannels } from '../../../src/shared/editorV6IpcChannels'
 import { editorV6ExportAudioSchema, editorV6MediaAssetSchema, parseEditorV6Document } from '../../../src/shared/editorV6Schema'
 import type { EditorV6MediaAsset } from '../../../src/shared/editorV6'
-import { missingEditorV6Motions } from '../../../src/shared/editorV6Motion'
+import type { CustomizerCharacter } from '../../../src/shared/customizer'
+import type { EditorV6MotionBakeRequest, EditorV6MotionBakeResult } from '../../../src/shared/editorV6Motion'
 import { planEditorV6Export, type EditorV6ExportAudio, type EditorV6ExportOptions, type EditorV6ExportStatus } from '../../../src/shared/editorV6Export'
 import { createEditorV6WorkerFactory } from './exportWorkers'
 import { probeExportMedia, runEditorV6Export } from './exportRunner'
@@ -14,7 +15,7 @@ import { probeExportMedia, runEditorV6Export } from './exportRunner'
 type Job = { owner: number; status: EditorV6ExportStatus; controller: AbortController; promise: Promise<void> }
 const uuid = z.string().uuid()
 const terminal = (status: EditorV6ExportStatus) => ['completed', 'cancelled', 'failed'].includes(status.state)
-export function registerEditorV6ExportHandlers(deps: { ipcMain: IpcMain; assertTrustedSender: (event: IpcMainInvokeEvent) => void; projectPath: (id: string) => string; toolsDirectory: string; workerHtml: string; workerPreload: string; devUrl?: string; tempRoot: string }) {
+export function registerEditorV6ExportHandlers(deps: { ipcMain: IpcMain; assertTrustedSender: (event: IpcMainInvokeEvent) => void; projectPath: (id: string) => string; toolsDirectory: string; workerHtml: string; workerPreload: string; devUrl?: string; tempRoot: string; getCharacters: () => Promise<CustomizerCharacter[]>; bakeMotion: (request: EditorV6MotionBakeRequest, signal: AbortSignal) => Promise<EditorV6MotionBakeResult> }) {
   const mediaPath = (projectId: string, fileName: string) => join(deps.projectPath(projectId), 'media', fileName)
   const workers = createEditorV6WorkerFactory({ ipcMain: deps.ipcMain, html: deps.workerHtml, preload: deps.workerPreload, devUrl: deps.devUrl, mediaPath })
   const ffmpeg = join(deps.toolsDirectory, 'ffmpeg.exe'), ffprobe = join(deps.toolsDirectory, 'ffprobe.exe')
@@ -31,7 +32,6 @@ export function registerEditorV6ExportHandlers(deps: { ipcMain: IpcMain; assertT
     if ([...jobs.values()].some((job) => !terminal(job.status))) throw Error('Aguarde ou cancele a exportação atual antes de iniciar outra.')
     const project = parseEditorV6Document(rawProject)
     planEditorV6Export(options, project.timeline.durationFrames)
-    if (missingEditorV6Motions(project, options.startFrame, options.endFrame).length) throw Error('Aguarde a preparação das animações antes de exportar.')
     const owner = BrowserWindow.fromWebContents(event.sender)
     const saveOptions = { title: 'Editor V6: exportar MP4', defaultPath: project.title.replace(/[<>:"/\\|?*]/g, '_') + '.mp4', filters: [{ name: 'Vídeo MP4', extensions: ['mp4'] }] }
     const destination = owner ? await dialog.showSaveDialog(owner, saveOptions) : await dialog.showSaveDialog(saveOptions)
@@ -44,8 +44,8 @@ export function registerEditorV6ExportHandlers(deps: { ipcMain: IpcMain; assertT
     jobs.set(id, job)
     const abort = () => controller.abort(Error('A janela do editor foi fechada.'))
     event.sender.once('destroyed', abort)
-    job.promise = runEditorV6Export(project, options, { ffmpeg, ffprobe, tempRoot: deps.tempRoot, id, outputPath, reportPath, signal: controller.signal,
-      createWorker: (_part, signal) => workers.create({ project, width: options.width, height: options.height }, signal), audioPath: (clip) => audioPath(project.id, clip, project.media), mediaPath,
+    job.promise = runEditorV6Export(project, options, { ffmpeg, ffprobe, tempRoot: deps.tempRoot, id, outputPath, reportPath, signal: controller.signal, getCharacters: deps.getCharacters, bakeMotion: deps.bakeMotion,
+      createWorker: (renderProject, _part, signal) => workers.create({ project: renderProject, width: options.width, height: options.height }, signal), audioPath: (clip) => audioPath(project.id, clip, project.media), mediaPath,
       progress: (patch) => { job.status = { ...job.status, ...patch } }
     }).then((report) => { job.status = { ...job.status, state: 'completed', outputPath, fallback: report.fallback, frames: status.totalFrames, message: 'MP4 exportado e validado.' } }, (error: unknown) => {
       job.status = { ...job.status, state: controller.signal.aborted ? 'cancelled' : 'failed', error: error instanceof Error ? error.message : String(error), message: controller.signal.aborted ? 'Exportação cancelada.' : 'A exportação falhou. Consulte o relatório.' }

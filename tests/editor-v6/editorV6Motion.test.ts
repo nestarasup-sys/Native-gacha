@@ -44,6 +44,8 @@ describe('V6 motion scheduling and portable cache', () => {
     expect(resolveEditorV6ElementsAtFrame(ready, 82)[0].motionSprite).toBeUndefined()
     expect(resolveEditorV6ElementsAtFrame(ready, 83)[0].motionSprite?.x).toBe(0)
     expect(resolveEditorV6ElementsAtFrame(ready, 89)[0].motionSprite?.x).toBe(60)
+    expect(resolveEditorV6ElementsAtFrame(ready, 83, { includeMotion: false })[0].assetId).toBe(doc.elements[0].assetId)
+    expect(resolveEditorV6ElementsAtFrame(ready, 83, { includeMotion: false })[0].motionSprite).toBeUndefined()
     const scene = (frame: number) => ({ background: ready.backgroundColor, elements: resolveEditorV6ElementsAtFrame(ready, frame) })
     expect(editorV6VisualKey(scene(86))).not.toBe(editorV6VisualKey(scene(87)))
     expect(resolveEditorV6ElementsAtFrame(ready, 90)[0].poseSlot).toBe(2)

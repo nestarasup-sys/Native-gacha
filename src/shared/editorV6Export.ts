@@ -7,7 +7,7 @@ export type EditorV6ExportAudio = {
 export type EditorV6ExportOptions = { startFrame: number; endFrame: number; width: number; height: number; turbo: boolean; encoder: 'auto' | 'cpu' }
 export type EditorV6ExportStatus = {
   id: string; state: 'preparing' | 'rendering' | 'joining' | 'validating' | 'completed' | 'cancelled' | 'failed'
-  frames: number; totalFrames: number; message: string; fallback: boolean; outputPath?: string; reportPath?: string; error?: string
+  frames: number; totalFrames: number; message: string; fallback: boolean; motionProgress?: { completed: number; total: number }; outputPath?: string; reportPath?: string; error?: string
 }
 export type EditorV6ExportPart = { index: number; startFrame: number; endFrame: number }
 export function planEditorV6Export(options: EditorV6ExportOptions, durationFrames: number): EditorV6ExportPart[] {
