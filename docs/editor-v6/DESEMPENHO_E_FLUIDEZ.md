@@ -235,3 +235,79 @@ Também consultei discussões de desenvolvedores e questões de projeto. Elas mo
 ## O que falta para fechar a solução
 
 A hipótese mais forte é: **primeiro desacoplar o preview para 60 Hz, sem mudar timeline/export; controlar o total de atlas; e medir contra um projeto representativo.** Ainda não há gravação/perfil de uma cena Gacha real nem medida de memória do maior projeto. Depois dessa linha de base, o relatório deve dizer qual processo/thread limita cada cenário e decidir se o V6 atual já atende ou se vale implementar um Canvas worker.
+
+## Pesquisa ampliada: tecnologias e integração do aplicativo
+
+Em 26/10/2026, ampliei a leitura do V6 para o repositório inteiro e comparei o desenho com fontes oficiais, código/documentação de outros editores, casos de empresas e relatos de engenharia. A inspeção do repositório é estática; o perfil de desempenho com mídia real ainda falta. O mapa de processos e dados está em [ARQUITETURA_E_INTEGRACAO.md](ARQUITETURA_E_INTEGRACAO.md).
+
+### O papel de cada tecnologia — sem confundir build com runtime
+
+| Camada | Tecnologia real no app | O que faz | O que não resolve sozinha |
+| --- | --- | --- | --- |
+| Desktop e renderização | Electron 44 + Chromium, com React 19 | Abre a janela, compõe a interface e oferece APIs desktop por processos isolados. | Electron não limita as animações a 30 FPS. Um renderer bloqueado, um main ocupado ou cópias pesadas podem engasgar qualquer framework de janela. |
+| Interface e timeline | React, React Router e TypeScript | Painéis, seleção, inspector, timeline DOM/CSS e estado tipado. | TypeScript é removido na compilação; tipagem não reduz o trabalho do renderer. Canvas só ajuda se DOM, layout ou pintura forem medidos como gargalo. |
+| Estado | Zustand + Immer | Guarda a lista de documentos carregados e o histórico do V6; o playhead fica em estado React local da tela. | Trocar de store não diminui automaticamente o tamanho das imagens, payloads IPC ou JSON. Immer mantém referências imutáveis; ele não é codec de imagem nem armazenamento de mídia. |
+| Validação e contratos | Zod 4 + tipos em `src/shared` | Confere shapes de documentos e jobs recebidos pelos canais IPC/persistência. | Validar é trabalho de CPU e cria/normaliza valores; deve ocorrer nas fronteiras importantes, mas não a cada pixel/frame. |
+| App desktop | Node.js no processo main + preload tipado | Arquivos, diálogos, serviços, subprocessos, banco e IPC. | Não é um servidor web/backend remoto. O processo main tem um event loop/UI próprio que não deve receber trabalho CPU longo/síncrono. |
+| Build e distribuição | electron-vite + Vite; Electron Builder | Gera bundles separados de main/preload/renderer, HMR de desenvolvimento e pacote portátil Windows x64. | Build tooling não melhora o fps do app executando. `electron-builder` empacota; não é necessário para timeline, preview ou export. |
+| Imagens do app | Sharp/libvips | Normaliza imagens importadas e suporta alguns fluxos de catálogo. | Não participa do tick normal da animação do V6. Não usar processamento de alta resolução em cada alteração do playhead. |
+| Dados do app | SQLite (`better-sqlite3`) + DataPlatform/CAS | Indexa e persiste alguns domínios do app, com binários fora do banco. | O V6 ainda não usa esse catálogo para seus projetos. SQL síncrono é ótimo para consultas curtas, mas uma consulta lenta no main pode bloquear outros eventos. |
+| Export | FFmpeg + FFprobe subprocessos locais | Codifica H.264, une partes, mistura áudio e valida o MP4. | “Turbo 2×” significa duas partes simultâneas, não export duas vezes mais rápido; captura da cena e cópias BGRA continuam no caminho crítico. O encoder automático tenta encoders de hardware disponíveis e tem fallback CPU. |
+| Verificação | Vitest e scripts específicos | Exercitam regras e fronteiras no desenvolvimento. | Não ficam rodando dentro do app e não aumentam a velocidade em produção. |
+
+O mapa de tecnologias declarado, funções e limites está detalhado em [ARQUITETURA_E_INTEGRACAO.md](ARQUITETURA_E_INTEGRACAO.md). Para escolher tecnologia de frame, as variáveis mais importantes são resolução e quantidade de imagens, memória descomprimida, frequência de render e quantidade de cópias entre GPU e CPU — não a presença de TypeScript ou Vite.
+
+### Fluxo atual entre V6 e o resto do Gacha
+
+O produto principal tem uma cadeia de produção: Fabricador publica poses/peças/expressões; Customizer compõe personagens; Studio Principal usa esses personagens em documentos próprios. O V6 é uma nova área separada. Ele consulta catálogos/personagens por API, tira snapshot do conteúdo escolhido e armazena cenas, histórico e export em seus próprios arquivos. Isso mantém a independência pedida e evita o V6 alterar silenciosamente outras áreas.
+
+Há uma boa decisão de desempenho já aplicada: o playhead é local à página do V6, e `EditorV6Timeline` memoiza as linhas; durante Play, elas só deixam o cursor overlay se mover. Assim o V6 não reproduz diretamente um dos problemas que o WeftCut encontrou ao publicar cada atualização de playhead por uma árvore React ampla. O trabalho da cena ainda roda na cadência atual de 30 FPS.
+
+Há uma plataforma comum de armazenamento no app para domínios que já foram migrados. O V6 ainda não está registrado como domínio nesse catálogo. Ele está sob o perfil local portátil e entra nos backups do perfil, porém não usa ainda o índice, deduplicação ou protocolo de assets do catálogo. A recomendação é integrar o V6 ao **mecanismo** compartilhado de dados e manter um domínio de projeto próprio; isso não exige compartilhar documentos ou estado do Studio.
+
+O app já possui um diagnóstico opt-in de commits React e tarefas longas, mas o mapa de rotas não classifica `/editor-v6`: os dados caem na categoria genérica “outra rota”. Também faltam medidas específicas de fps apresentado, latência de abrir/salvar e bytes/memória dos atlas. Portanto ainda não há números do perfil de V6 para usar como linha de base.
+
+Outro descompasso confirmado: a faixa V6 chamada “Vídeo” atualmente organiza fundos/imagens. O app aceita importar áudio para o exportador, mas os sons ficam em lista própria (`exportAudio`), fora da timeline e sem faixa de áudio. O export reporta zero entradas de vídeo e zero proxies. A biblioteca de Base de Vídeos/Roteiros vive sob o antigo caminho `studios/Editor Gacha`, mas não tem integração de import com o V6. Logo, o requisito discutido de importar vídeo/áudio para projetos próprios ainda depende de uma etapa real de produto e arquitetura.
+
+### Novos exemplos: o que os editores mais maduros ensinam
+
+#### Grandes ferramentas web/desktop separam UI de motor de mídia
+
+O [Adobe UXP](https://developer.adobe.com/uxp/) executa painéis HTML/CSS/JavaScript dentro de Premiere e Media Encoder, com APIs do host para sequências, faixas, clips e export. A Adobe também documenta [plugins híbridos com C++](https://developer.adobe.com/premiere-pro/uxp/introduction/). Isso não significa que o Premiere inteiro seja feito de React/Electron: a interface de extensão é web, enquanto o aplicativo mantém um host/motor próprio. A lição transferível ao V6 é estabilizar o contrato entre UI React e motor de cena/mídia para que um backend nativo pontual possa ser acrescentado depois sem reescrever a edição.
+
+A [Microsoft explica o Clipchamp](https://support.microsoft.com/en-us/clipchamp/how-clipchamp-stores-and-processes-media-files-in-editing-projects) como aplicação Windows/browser com tecnologias web e processamento local; para contas de trabalho, mídia e estado podem ser sincronizados em OneDrive/SharePoint. É evidência de que browser tech atende edição real, mas sua solução de armazenamento cloud/híbrida não atende automaticamente à exigência do V6 de projeto local e mídia copiada para dentro dele.
+
+#### Mais código de referência com Electron/React/TypeScript
+
+- **[WeftCut](https://github.com/WeftCut/WeftCut)** continua sendo a referência técnica mais próxima: Electron 44, React 19, Zustand/Immer, compositor Pixi, WebCodecs e um addon Rust para serviços de mídia. Nos próprios documentos, relata regressões que vieram de atualizar o playhead em estado amplo, leituras de layout dentro do frame, fila/compartilhamento de decoder e readback síncrono. O takeaway para o V6 é localizar estado de alta frequência, cachear medidas, limitar filas e medir operações individuais. Isso não prova que nosso playhead local ou nossa timeline tenham o mesmo defeito.
+- **[Clipzu Desktop](https://github.com/clipzuapp/clipzu-dekstop)** combina Electron, React/TS, Zustand/Immer, timeline Canvas, máquina de interação e FFmpeg. É uma referência de isolamento do arraste e desenho de timeline em alto volume; o próprio projeto informa maturidade beta e suporte validado limitado. É referência de arquitetura, não certificação de robustez.
+- **[OpenScene](https://github.com/Theorvane/openscene)** põe React/timeline e APIs atrás de um preload tipado, e usa FFmpeg local. Assume que preview é “best effort” e o MP4 é autoritativo. O V6 já compartilha `SceneSurface` entre preview/captura, contrato útil para preservar quando adicionar vídeo.
+- **[LosslessCut](https://losslesscut.app/docs/features)** é um editor Electron centrado em corte/concatenação sem recodificar, com thumbnails e waveform. Sua velocidade vem em parte de evitar recodificação quando os cortes permitem stream-copy. Isso serve para tarefas simples de mídia e concatenação; não substitui a codificação do V6, que compõe personagens/texto/transparência e precisa gerar quadros novos.
+- **[Descript](https://www.descript.com/blog/article/the-new-descript-how-we-multiplied-the-apps-speed-and-performance)** relata melhorias ao retirar cópias de frames e redesenhar o engine de mídia. O número 2–3× de export 4K é uma declaração de engenharia do fornecedor, não uma previsão para o V6; eles também passaram a usar infraestrutura cloud em partes do produto.
+
+O editor menor mais parecido pode expor muito bem sua estrutura, mas não fornece prova de que funcionará em milhares de projetos/usuários. Um editor proprietário pode confirmar um padrão arquitetural sem expor o interior inteiro. Por isso a pesquisa combina documentação e repositórios com medições nossas, em vez de tratar README, post ou estrelas do GitHub como benchmark.
+
+### Direção completa sugerida
+
+1. **Primeiro, corrigir o custo de biblioteca e salvamento que já vemos no código:** listar resumo de metadados, abrir os PNGs apenas ao abrir um projeto, e gravar apenas assets que mudaram. Manter arquivos binários com IDs/hash em vez de enviar todo o acervo como Base64 a cada auto-save.
+2. **Medir antes/depois**: tempo para abrir a tela e projeto, memória de pico, duração e bytes do save, p95/p99 do frame de preview e custo do bake. Comparar uma cena estática, uma transição, três personagens e um projeto típico grande. Não existe ainda uma linha de base real.
+3. **Definir o contrato de mídia do V6**: cada import é copiado para o projeto; o original durável fica intacto; proxies, thumbs, waveform e índice de seek são temporários/regeneráveis. Registrar tamanho, fps, codec, streams, tempo de origem e hashes com FFprobe/índices.
+4. **Adicionar clips reais à timeline**: vídeo como faixa visual, fala/pensamento como eventos e sons como uma ou mais faixas sincronizadas. Usar um único relógio de reprodução; limitar quantidade de decoders/frames em cache e permitir qualidade de preview reduzida sem alterar o export.
+5. **Manter funções determinísticas de cena**: a timeline resolve estado e composição em um instante; preview e export chamam o mesmo resolver. A camada que decodifica vídeo pode variar, mas a composição e o contrato de tempo continuam comparáveis.
+6. **Só após medir, escolher Canvas, WebGL/WebGPU, WebCodecs ou C++/Rust.** Canvas atende bem timeline densa e 2D; WebGL/WebGPU podem servir compositor com muitas camadas e texturas; WebCodecs dá acesso a decode/encode do Chromium, mas ainda exige controle de filas, timestamps, memória e mux; addon nativo pode remover cópias/hot loops, mas aumenta construção e suporte por plataforma.
+
+Essa ordem é importante para obter ganhos perceptíveis sem introduzir uma segunda engine, formatos de projeto e dependências nativas antes de comprovar necessidade. Para a próxima etapa de implementação, a melhor primeira entrega é carregamento sob demanda de assets e escrita incremental; a primeira entrega de vídeo vem depois como uma capacidade isolada da área V6.
+
+### Fontes oficiais e primárias adicionadas
+
+- [Performance no Electron](https://www.electronjs.org/docs/latest/tutorial/performance): recomenda perfilar, evitar trabalho longo no main e descarregar trabalho no renderer.
+- [Modelo de processos Electron](https://www.electronjs.org/docs/latest/tutorial/process-model), [IPC](https://www.electronjs.org/docs/latest/tutorial/ipc), [sandbox](https://www.electronjs.org/docs/latest/tutorial/sandbox) e [context isolation](https://www.electronjs.org/docs/latest/tutorial/context-isolation): limites entre renderer, preload e main.
+- [Offscreen no Electron](https://www.electronjs.org/docs/latest/tutorial/offscreen-rendering): distingue captura como bitmap CPU, composição GPU e textura compartilhada que exige integração nativa.
+- [electron-vite](https://electron-vite.org/guide/) e [build de produção](https://electron-vite.org/guide/build): bundling dos três contextos e ciclo de desenvolvimento.
+- [React: `memo`](https://react.dev/reference/react/memo) e [Zustand: `useShallow`](https://zustand.docs.pmnd.rs/learn/guides/prevent-rerenders-with-use-shallow): renderizações devem ser localizadas e confirmadas em perfil.
+- [Immer: recomendações de desempenho](https://immerjs.github.io/immer/performance/): evite busca custosa dentro de drafts e produza uma vez quando o estado já é grande.
+- [Node worker threads](https://nodejs.org/api/worker_threads.html): indicado para CPU intensiva, não para substituir I/O assíncrona.
+- [better-sqlite3 e workers](https://github.com/WiseLibs/better-sqlite3/blob/master/docs/threads.md): consultas curtas podem ficar no main; mover consultas lentas para worker se preciso.
+- [FFmpeg](https://ffmpeg.org/ffmpeg.html) e [encoders](https://ffmpeg.org/ffmpeg-codecs.html): filtros, stream-copy e codificação de hardware dependem do build, encoder e pixel format.
+- [Sharp: performance](https://sharp.pixelplumbing.com/performance/), [Zod: validar dados](https://zod.dev/basics), [Vitest](https://vitest.dev/guide/) e [DevTools: frames, GPU e memória](https://developer.chrome.com/docs/devtools/rendering/performance).
+- [Clipchamp: processamento e armazenamento](https://support.microsoft.com/en-us/clipchamp/how-clipchamp-stores-and-processes-media-files-in-editing-projects), [Premiere UXP](https://developer.adobe.com/uxp/) e [WebCodecs no Clipchamp (W3C)](https://www.w3.org/2021/03/media-production-workshop/talks/slides/soeren-balko-clipchamp-webcodecs.pdf).
