@@ -1,6 +1,6 @@
 # Fluidez e desempenho das animações — avaliação do Editor V6
 
-**Pesquisa iniciada em 26/10/2026.** Este documento reúne a inspeção do código, o hardware detectado, as fontes oficiais consultadas e um plano de decisão por medições. Ele distingue fatos já confirmados de hipóteses que ainda precisam de um perfil com um projeto Gacha representativo.
+**Pesquisa iniciada e ampliada em 26/10/2026.** Este documento reúne a inspeção do código, o hardware detectado, fontes oficiais, documentação e código de outros editores, além de um plano de decisão por medições. Ele distingue fatos já confirmados de hipóteses que ainda precisam de um perfil com um projeto Gacha representativo.
 
 ## Conclusão executiva
 
@@ -14,6 +14,8 @@ Há, porém, dois limites concretos visíveis no código atual:
 2. **O teto de 8,1 milhões de pixels vale por atlas, não pelo projeto inteiro.** Um atlas RGBA de 8,1 MP ocupa aproximadamente 31 MiB descomprimido; PNG comprimido e texto Base64 variam por desenho. Muitos blocos animados podem aumentar o JSON do projeto, memória de CPU/GPU e tempo de carregar/salvar. O limite individual não é uma meta recomendada para todos os atlas.
 
 **Recomendação:** manter Electron + React + TypeScript + FFmpeg. A próxima decisão de tecnologia deve vir de um perfil em cenas reais. A primeira melhoria a avaliar é um modo de preview de 60 FPS, independente da timeline/export de 30 FPS. Em paralelo, adicionar um orçamento global de memória por projeto para os atlas. Prototipar em Canvas2D/OffscreenCanvas só se o perfil mostrar que o desenho SVG/React ou o compositor são o gargalo. Considerar C++ apenas para uma etapa de CPU identificada e isolável. WebGPU ou substituição do app inteiro não são o próximo passo indicado.
+
+A pesquisa comparativa reforçou essa conclusão. Editores desktop e web com a mesma família de tecnologias usam motores de composição dedicados, workers, limites explícitos de fila e memória e, em alguns casos, módulos nativos. Isso não prova que o V6 precise copiar esse nível de complexidade: ele anima imagens de personagem pré-calculadas, um caso mais simples que decodificar várias faixas de vídeo. A lição é separar a interface do trabalho por quadro e medir as cópias de imagem antes de trocar o renderer.
 
 ## O que examinei no projeto
 
@@ -149,6 +151,86 @@ Electron aceita módulos nativos para operações intensivas. Um módulo de geom
 - [Problemas de compatibilidade/performance WebGPU](https://developer.chrome.com/docs/web-platform/webgpu/troubleshooting-tips): GPU bloqueada, aceleração desligada, adaptador ausente e diferenças de plataforma.
 - [FPS, quadros descartados e memória GPU no DevTools](https://developer.chrome.com/docs/devtools/rendering/performance): overlay de frames, estado de GPU raster e consumo de memória.
 - [Chromium Canvas2D](https://developer.chrome.com/blog/canvas2d/): leitura de pixels via `getImageData()` pode ser cara; `willReadFrequently` permite otimização quando leitura é intencional.
+
+## Pesquisa comparativa: editores que usam Electron, React ou Chromium
+
+**Como ler esta comparação:** consultei READMEs, documentação de arquitetura e páginas oficiais dos projetos em 26/10/2026. “Suporta” ou “rápido” em um README é uma declaração do próprio projeto, não um benchmark independente. Estrelas e commits mostram atividade/alcance do repositório, mas não atestam qualidade, estabilidade ou desempenho. Os projetos abaixo servem como evidência de decisões de arquitetura possíveis.
+
+### WeftCut — exemplo técnico mais próximo do V6 em stack e pipeline
+
+[WeftCut](https://github.com/WeftCut/WeftCut) é um editor local em Electron 44, React 19, TypeScript e Zustand/Immer. Seu preview usa PixiJS com WebGPU/WebGL, WebCodecs para decodificar vídeo e Web Audio como relógio. O export usa worker, `OffscreenCanvas`, passagem de cor na GPU e FFmpeg; a aplicação também tem um núcleo Rust integrado via napi-rs para tarefas nativas e decodificação.
+
+O documento de [arquitetura](https://github.com/WeftCut/WeftCut/blob/main/docs/architecture.md) descreve dois princípios fortes: um único ator em TypeScript é dono do estado editável; e o mesmo compositor Pixi/WebCodecs é chamado tanto pelo preview quanto pelo worker de export. O [README e o mapa técnico](https://github.com/WeftCut/WeftCut#tech-stack) descrevem ainda filas de decodificação e separação de responsabilidades. É uma boa referência de como evoluir para vídeo multifaixa e composições complexas mantendo uma fonte visual comum.
+
+**O que aproveitar no V6:** manter o estado/projeto em TypeScript; separar o cálculo determinístico da cena da interface React; deixar o renderer trabalhar com descritores de cena e recursos já preparados; medir filas, retenção de `VideoFrame` e cópias GPU↔CPU; preservar uma fonte visual comum para preview/export. **O que não copiar agora:** Pixi, WebGPU, WebCodecs e Rust formam uma pilha bem maior do que a necessária para trocar sprites pré-calculados de personagens. O próprio projeto exige Node, Rust e ferramentas C++ para compilar seus addons; isso amplia bastante build, suporte por sistema e manutenção. A documentação é detalhada, mas as declarações de desempenho continuam sendo do projeto, sem validação independente nesta pesquisa.
+
+Uma descoberta especialmente útil está nos próprios [documentos de desempenho do preview](https://github.com/WeftCut/WeftCut/blob/main/docs/render.md) e no [benchmark permanente de reprodução](https://github.com/WeftCut/WeftCut/blob/main/docs/playback-perf.md). Eles registram problemas concretos encontrados enquanto o projeto evoluía: publicar o playhead 30–60 vezes por segundo em estado React de alto nível recalculava a árvore inteira e elevava memória; leituras de layout dentro do ciclo por quadro forçavam reflow; várias faixas compartilhando um decoder podiam resetar e expulsar os próprios quadros; um caminho de export fazia readback síncrono de cerca de 20 ms por frame. As soluções descritas incluem um store de playhead restrito a componentes pequenos, medidas de layout em cache, coalescência do scrub, filas/rings limitados e benchmarks repetíveis que medem cada estágio. São exemplos de problemas observados no projeto deles, não defeitos automaticamente presentes no V6. As regras transferíveis são: **não colocar o playhead contínuo no estado React global; evitar leituras de layout no `requestAnimationFrame`; impor limites à fila e à memória; manter um benchmark reproduzível por número de personagens/faixas.**
+
+### Premation — comparação direta para animação e motion graphics
+
+[Premation](https://github.com/isroil01/premation) é um app Electron + React + TypeScript para motion graphics. Ele declara um motor de renderização GPU em WebGPU com fallback WebGL2, timeline de composição, keyframes/curvas e um motor único para viewport e export determinístico. Essa ideia se aproxima do objetivo de transições de pose e expressão: a animação é avaliada por tempo/quadros em um motor previsível, em vez de depender do ritmo de renderização da interface.
+
+O projeto informa estar **pré-1.0 e em desenvolvimento ativo** e exige GPU compatível com WebGPU ou WebGL2, sem rasterizador por software, segundo o [README](https://github.com/isroil01/premation#premation). Portanto é uma referência de desenho de motor, não evidência de que o WebGPU seja necessário, universal ou mais rápido para as cenas do V6. Para o V6, o conceito transferível é o contrato `sceneAt(time/frame) → imagem`, com preview e export pedindo o mesmo estado; o backend gráfico deve ser escolhido depois do perfil.
+
+### Clipzu Desktop — referência de timeline Canvas e integração Electron/FFmpeg
+
+[Clipzu Desktop](https://github.com/clipzuapp/clipzu-dekstop) declara Electron 30, React 18, TypeScript, Zustand/Immer, Canvas para timeline, uma máquina de interação separada, preview Canvas, Web Audio e FFmpeg iniciado de forma assíncrona por processo filho. Ele documenta uma árvore de efeitos/keyframes e um grafo de export que leva as configurações para o FFmpeg, além de salvamento atômico, cache de thumbnails, recuperação de mídia e fila de export.
+
+Isso mostra uma opção intermediária para o V6: React continua cuidando dos painéis, enquanto uma superfície Canvas pode desenhar a régua e os blocos densos e uma máquina pequena trata seleção/arraste. O README também explicita limites de maturidade: **beta para Windows x64**; os runtimes empacotados de macOS/Linux ainda não passaram pela validação de release. As capacidades são documentadas pelo próprio projeto e não são uma medição independente. Fonte: [recursos e stack do Clipzu](https://github.com/clipzuapp/clipzu-dekstop#features).
+
+### OpenScene — um exemplo honesto de preview diferente do arquivo final
+
+[OpenScene](https://github.com/Theorvane/openscene) é desktop Electron/React, com mídia local e export MP4 pelo FFmpeg. O projeto chama o monitor de programa de **best-effort** e declara que o MP4 do FFmpeg é o resultado autoritativo. Está explicitamente marcado como **early**.
+
+Esse contrato pode ser aceitável para um editor que prioriza compatibilidade de codecs, mas o V6 deve tentar manter preview e export consistentes porque suas cenas são controladas pelo próprio aplicativo e o projeto atual já compartilha o `SceneSurface`. Se um trecho usar caminhos de render diferentes, precisa ser documentado e comparado por quadro. Fonte: [arquitetura e limites do OpenScene](https://github.com/Theorvane/openscene#architecture).
+
+### Cutaway — ideias úteis de uma aplicação React/Chromium sem Electron
+
+[Cutaway](https://github.com/S07K/cutaway) roda no navegador, com React, timeline desenhada em Canvas e compositor PixiJS/WebGL. O README afirma que preview e export consomem a mesma cena resolvida. Está em desenvolvimento ativo e lista o ciclo de importar, editar, reproduzir e exportar como funcional; o repositório tem porte e histórico de um projeto ainda pequeno.
+
+Mesmo não sendo Electron, é um exemplo útil de separar o motor de cena do componente visual React e usar Canvas para áreas com muitos elementos interativos. Ele não demonstra que o V6 precise de Pixi: o volume de objetos de personagem e a necessidade de vídeo do V6 devem ser medidos separadamente. Fonte: [README do Cutaway](https://github.com/S07K/cutaway#what-it-does).
+
+### OpenScreen — composição animada desktop, com ressalva de manutenção
+
+[OpenScreen](https://github.com/getopenscreen/openscreen) é uma ferramenta Electron para gravação e montagem de demos, com animações de câmera/cursor, sobreposições, textos, timeline e export. O projeto usa PixiJS e traz vários aspectos de motion que podem servir de referência visual. O repositório original [foi arquivado](https://github.com/siddharthvaddem/openscreen) e encaminha usuários ao fork comunitário mantido; o próprio projeto original avisa que nasceu como side project e não é production grade.
+
+É inspiração para experimentar como camadas e movimento ficam na tela, não para adotar a arquitetura sem revisar. Como o foco é pós-produção de gravação de tela, seu compositor e seu modelo de timeline não são iguais ao modelo de personagem Gacha do V6.
+
+### Descript e Clipchamp — evidência de produtos reais com tecnologia web
+
+O artigo de engenharia do [Descript](https://www.descript.com/blog/article/the-new-descript-how-we-multiplied-the-apps-speed-and-performance) descreve seis anos de produto Electron e depois a reconstrução de peças do motor de mídia para compartilhar um engine entre desktop e web. O texto diz que o caminho anterior copiava frames decodificados do FFmpeg nativo para o WebGL, adicionando duas cópias e limitando a reprodução média a 720p; com WebCodecs/WebGL e retenção de quadros na GPU, a empresa relata exports 4K duas a três vezes mais rápidos. É um caso publicado pela própria empresa, sem conjunto de hardware/benchmark completo no artigo. Além disso, seu novo fluxo usa transcodificação em servidor e streaming sob demanda; essa parte não combina com o requisito local do V6.
+
+O ganho transferível não é “migrar o V6 para WebCodecs” automaticamente: é **evitar cópias de pixels** e só introduzir uma pipeline própria de decode/encode quando vídeo importado ou export for medido como gargalo. Para as animações Gacha pré-calculadas, a pipeline de atlas continua mais simples. Fonte técnica adicional: [sessão de Clipchamp no workshop W3C sobre integração de WebCodecs](https://www.w3.org/2021/03/media-production-workshop/talks/slides/soeren-balko-clipchamp-webcodecs.pdf), que explica a combinação de FFmpeg/WASM para demux/mux e fallback com WebCodecs para encode/decode. Os slides também registram o desafio de coordenar chamadas WebCodecs assíncronas com um processamento FFmpeg originalmente síncrono.
+
+A própria [Microsoft documenta](https://support.microsoft.com/en-us/clipchamp/how-clipchamp-stores-and-processes-media-files-in-editing-projects) que o Clipchamp usa tecnologias de browser tanto na versão web quanto na aplicação Windows e processa preview/export localmente. Isso comprova viabilidade de produto com tecnologias web no desktop, mas não identifica React/Electron como sua stack e não permite transferir números de desempenho ao V6.
+
+### Remotion e bibliotecas de editor — úteis, mas não são NLEs equivalentes
+
+[Remotion](https://www.remotion.dev/docs/client-side-rendering) transforma composições React em quadros de vídeo. A renderização server-side também oferece controle de navegador, renderização em paralelo e FFmpeg; é uma boa referência de saída determinística baseada em tempo/quadro. Ele **não é um editor de timeline profissional tradicional** e sua exportação de quadro completo não deve ser usada como prova de que uma preview interativa ficará fluida.
+
+Projetos como [OpenVideo React Video Editor](https://github.com/openvideodev/react-video-editor) e [React Video Timeline Editor](https://github.com/Ektie/react-video-timeline-editor) oferecem peças/referências de interface para React. Devem ser avaliados pelo contrato de licença, maturidade e integração com o motor existente antes de considerar uma dependência; um componente de timeline não resolve decode, áudio sincronizado, preview, histórico, salvamento ou export.
+
+## Síntese para a arquitetura do Editor V6
+
+| Problema | Padrão encontrado nos projetos/fonte | Direção para o V6 |
+| --- | --- | --- |
+| Muitos blocos na timeline | Canvas para régua/blocos + máquina de interação (Clipzu, Cutaway) | Manter React para painéis; desenhar apenas o que ficar pesado em Canvas; manter hit-test/drag isolados e virtualizar por intervalo visível. |
+| Estado editável e histórico | Ator único e snapshots/ações explícitas (WeftCut, Clipzu) | Ter um modelo determinístico do projeto; mudanças entram como comandos undoáveis; preview não vira dona do projeto. |
+| Movimento de personagem | Um motor de frame/tempo comum à prévia e export (Premation, WeftCut) | Continuar com `sceneAt(frame)`; usar os atlas/sprites preparados para pose/expressão e selecionar sprite pelo relógio. |
+| Preview diferente do export | Alguns projetos aceitam preview aproximado e FFmpeg autoritativo (OpenScene) | Preservar o `SceneSurface` comum; criar comparação visual por quadro ao adicionar backend alternativo. |
+| Imagens/vídeos pesados | Workers, filas limitadas, decode acelerado e evitar CPU↔GPU cópias (WeftCut, Descript, WebCodecs) | Medir número de quadros simultâneos e cópias; fechar frames e liberar texturas; não deixar filas crescerem sem limite. |
+| Export | FFmpeg nativo assíncrono ou WebCodecs/hardware com pipeline complexa | Manter FFmpeg até medir; separar encode do draw/capture; limitar concorrência do Turbo conforme RAM/CPU e permitir caminho seguro. |
+| Integração nativa | Rust/C++ em módulos pequenos para mídia e hot paths (WeftCut, Descript) | Só mover operação já medida; manter timeline e modelo do projeto independentes do binding nativo. |
+
+### O que a pesquisa mudou na recomendação
+
+Não apareceu evidência de que Electron, React ou TypeScript sejam, por si, a causa inevitável de preview travada ou animação lenta. Apareceu evidência de que editores maiores não dependem da árvore React para cada frame e de que cópias desnecessárias de imagens podem limitar resoluções e export.
+
+Para o Editor V6, a evolução com menor risco fica assim: **(1)** preservar o motor canônico e os atlas; **(2)** medir 30/60 FPS, bytes dos atlas e memória acumulada; **(3)** separar o desenho da timeline em Canvas apenas se a quantidade de blocos fizer React/SVG aparecer no perfil; **(4)** experimentar Canvas/OffscreenCanvas para a cena apenas se CPU de renderer ou pintura for o gargalo; **(5)** avaliar WebGL/WebGPU ou WebCodecs apenas se composição/decode/encode dominar; **(6)** avaliar C++/Rust só para uma rotina delimitada. Essa sequência mantém o app funcionando enquanto cada custo é comprovado.
+
+As limitações encontradas nos projetos de terceiros também são parte da evidência: alguns estão em beta/pré-1.0, alguns são protótipos e o OpenScreen original foi arquivado. Não devemos inferir robustez ou FPS a partir de screenshots, marketing, estrelas ou README.
+
+Também consultei discussões de desenvolvedores e questões de projeto. Elas mostram opiniões divergentes sobre consumo de memória e acesso a codecs, mas quase nunca controlam máquina, versão do Chromium, mídia e efeito. Por isso, não usei relatos isolados de fórum para concluir que Electron é lento ou que WebGPU/WebCodecs sempre será mais rápido; eles servem para encontrar hipóteses que devem virar medições do V6.
 
 ## O que falta para fechar a solução
 
