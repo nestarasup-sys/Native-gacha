@@ -1,7 +1,7 @@
 /** Persistência dos documentos e mídias do EditorV6 Principal. */
 import { join, resolve, dirname, basename } from 'node:path'
 import type * as nodeFs from 'node:fs/promises'
-import { createEditorV6Timeline, type EditorV6Asset, type EditorV6Document, type EditorV6Timeline } from '../../../src/shared/editorV6'
+import { createEditorV6Timeline, syncEditorV6TimelineElements, type EditorV6Asset, type EditorV6Document, type EditorV6Timeline } from '../../../src/shared/editorV6'
 import { publishEditorV6AssetsAndManifest, recoverEditorV6AssetTransaction } from './assetTransaction.ts'
 
 type Files = Pick<typeof nodeFs, 'readFile' | 'writeFile' | 'mkdir' | 'access' | 'rename' | 'unlink' | 'rm'>
@@ -44,7 +44,9 @@ export function createEditorV6DocumentPersistence(deps: {
       ...(typeof value.thumbnailDataUrl === 'string' && /^data:image\/(jpeg|png);base64,/.test(value.thumbnailDataUrl) && value.thumbnailDataUrl.length <= 1_500_000 ? { thumbnailDataUrl: value.thumbnailDataUrl } : {}),
       assets: Array.isArray(value.assets) ? value.assets as EditorV6Asset[] : [],
       elements,
-      timeline: value.timeline && typeof value.timeline === 'object' ? value.timeline as EditorV6Timeline : createEditorV6Timeline(elements),
+      timeline: value.timeline && typeof value.timeline === 'object'
+        ? syncEditorV6TimelineElements(value.timeline as EditorV6Timeline, elements)
+        : createEditorV6Timeline(elements),
     }
   }
 

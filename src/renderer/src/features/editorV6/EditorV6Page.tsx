@@ -2,7 +2,7 @@ import { editorV6CharacterRenderKey, editorV6ElementSize, isEditorV6ElementVisib
 import { SerializedDocumentSaveQueue } from '../../../../shared/editorV6DocumentSave'
 import { isPoseSnapshotForModel } from '../../../../shared/characterSourceContinuity'
 import { useEditorV6Store } from './editorV6Store'
-import { createEditorV6Timeline, editorV6TrackKindForElement, editorV6TrackLabel, syncEditorV6TimelineElements, EDITOR_V6_DEFAULT_BLOCK_FRAMES, type EditorV6TrackKind, type EditorV6TimelineBlock, type EditorV6TimelineTrack } from '../../../../shared/editorV6'
+import { createEditorV6Timeline, editorV6TrackKindForElement, syncEditorV6TimelineElements, EDITOR_V6_DEFAULT_BLOCK_FRAMES, type EditorV6TrackKind, type EditorV6TimelineBlock, type EditorV6TimelineTrack } from '../../../../shared/editorV6'
 import { useEditorV6InspectorState } from './useEditorV6InspectorState'
 import { trimTransparentImage, fitElementToTrim, faceRenderGeometry, type TrimmedImage } from '../../characters/characterGeometry'
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
@@ -167,7 +167,6 @@ export function EditorV6Page() {
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null)
   const [playheadFrame, setPlayheadFrame] = useState(0)
   const [isPlaying, setIsPlaying] = useState(false)
-  const [newTrackKind, setNewTrackKind] = useState<EditorV6TrackKind>('character')
   const [selectedTimelineBlockId, setSelectedTimelineBlockId] = useState<string | null>(null)
   const [historyVersion, setHistoryVersion] = useState(0)
   const [canUndo, setCanUndo] = useState(false)
@@ -572,20 +571,13 @@ export function EditorV6Page() {
     setHistoryVersion(value => value + 1)
   }
 
-  const addTimelineTrack = () => {
-    if (!activeEditorV6) return
-    const count = activeEditorV6.timeline.tracks.filter((track) => track.kind === newTrackKind).length + 1
-    changeScene((document) => ({ ...document, timeline: {
-      ...document.timeline,
-      tracks: [...document.timeline.tracks, { id: crypto.randomUUID(), kind: newTrackKind, name: editorV6TrackLabel(newTrackKind, count), muted: false, locked: false, blocks: [] }]
-    }, updatedAt: new Date().toISOString() }))
-  }
-
   const addTimelineBlock = (track: EditorV6TimelineTrack) => {
     if (!activeEditorV6 || track.locked) return
-    const linkedElement = selectedElement && editorV6TrackKindForElement(selectedElement) === track.kind
+    const matchesTrack = (element: typeof selectedElement) => element && editorV6TrackKindForElement(element) === track.kind
+      && (track.kind !== 'character' || element.characterId === track.characterId)
+    const linkedElement = matchesTrack(selectedElement)
       ? selectedElement
-      : activeEditorV6.elements.find((element) => editorV6TrackKindForElement(element) === track.kind)
+      : activeEditorV6.elements.find(matchesTrack)
     const block: EditorV6TimelineBlock = {
       id: crypto.randomUUID(),
       ...(linkedElement ? { elementId: linkedElement.id } : {}),
@@ -610,7 +602,7 @@ export function EditorV6Page() {
   }
 
   const removeTimelineTrack = (track: EditorV6TimelineTrack) => {
-    if (track.blocks.length) return
+    if (track.kind !== 'character' || track.blocks.length || activeEditorV6?.elements.some((element) => element.kind === 'character' && element.characterId === track.characterId)) return
     changeScene((document) => ({ ...document, timeline: {
       ...document.timeline,
       tracks: document.timeline.tracks.filter((candidate) => candidate.id !== track.id)
@@ -1371,16 +1363,13 @@ export function EditorV6Page() {
     if (!activeEditorV6 || !activeTimeline) return null
     const ticks = Array.from({ length: Math.ceil(timelineWidth / TIMELINE_PIXELS_PER_SECOND) + 1 }, (_, index) => index)
     const trackKinds: Array<{ id: EditorV6TrackKind; label: string }> = [
-      { id: 'character', label: 'Personagem' }, { id: 'speech', label: 'Fala' }, { id: 'thought', label: 'Pensamento' },
-      { id: 'visual', label: 'Imagem' }, { id: 'video', label: 'Vídeo' }, { id: 'audio', label: 'Áudio' }
+      { id: 'character', label: 'Personagem' }, { id: 'speech', label: 'Fala' }, { id: 'thought', label: 'Pensamento' }, { id: 'video', label: 'Vídeo' }
     ]
     return <section className="editor-v6-timeline" aria-label="Timeline do Editor V6">
       <header className="editor-v6-timeline-toolbar">
         <div className="editor-v6-timeline-title"><strong>Timeline</strong><span>{frameTimecode(playheadFrame)} / {frameTimecode(timelineDurationFrames)}</span><small>30 FPS</small></div>
         <div className="editor-v6-timeline-actions">
           <button type="button" className="editor-v6-timeline-play" onClick={toggleTimelinePlayback} aria-label={isPlaying ? 'Pausar reprodução' : 'Reproduzir timeline'} title={isPlaying ? 'Pausar' : 'Reproduzir'}>{isPlaying ? 'Ⅱ' : '▶'}</button>
-          <select aria-label="Tipo da nova faixa" value={newTrackKind} onChange={(event) => setNewTrackKind(event.target.value as EditorV6TrackKind)}>{trackKinds.map((kind) => <option key={kind.id} value={kind.id}>{kind.label}</option>)}</select>
-          <button type="button" className="editor-v6-timeline-add-track" onClick={addTimelineTrack}>+ Faixa</button>
         </div>
       </header>
       <div className="editor-v6-timeline-scroll" ref={timelineViewportRef}>
@@ -1399,7 +1388,7 @@ export function EditorV6Page() {
                 <button type="button" onClick={() => addTimelineBlock(track)} disabled={track.locked} title="Adicionar bloco" aria-label={`Adicionar bloco à faixa ${track.name}`}>＋</button>
                 <button type="button" onClick={() => toggleTimelineTrack(track.id, 'muted')} title={track.muted ? 'Ativar faixa' : 'Silenciar faixa'} aria-label={track.muted ? `Ativar ${track.name}` : `Silenciar ${track.name}`}>{track.muted ? '◌' : '◉'}</button>
                 <button type="button" onClick={() => toggleTimelineTrack(track.id, 'locked')} title={track.locked ? 'Desbloquear faixa' : 'Bloquear faixa'} aria-label={track.locked ? `Desbloquear ${track.name}` : `Bloquear ${track.name}`}>{track.locked ? '▣' : '▢'}</button>
-                <button type="button" onClick={() => removeTimelineTrack(track)} disabled={track.blocks.length > 0} title={track.blocks.length ? 'Remova os blocos antes de excluir a faixa' : 'Excluir faixa'} aria-label={`Excluir faixa ${track.name}`}>×</button>
+                <button type="button" onClick={() => removeTimelineTrack(track)} disabled={track.kind !== 'character' || track.blocks.length > 0 || activeEditorV6.elements.some((element) => element.kind === 'character' && element.characterId === track.characterId)} title={track.kind !== 'character' ? 'As três faixas gerais são fixas' : track.blocks.length ? 'Remova os blocos antes de excluir a faixa' : 'Excluir faixa'} aria-label={`Excluir faixa ${track.name}`}>×</button>
               </div>
             </div>
             <div className="editor-v6-timeline-lane" style={{ width: timelineWidth }} onPointerDown={startTimelineScrub} onPointerMove={(event) => { if (timelineScrubRef.current) seekTimeline(event); else moveTimelineBlockDrag(event) }} onPointerUp={(event) => { timelineScrubRef.current = false; endTimelineBlockDrag(event) }} onPointerCancel={(event) => { timelineScrubRef.current = false; endTimelineBlockDrag(event) }}>

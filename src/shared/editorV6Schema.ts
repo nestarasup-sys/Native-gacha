@@ -55,7 +55,8 @@ const editorV6ElementSchema = z.object({
 
 const editorV6TimelineTrackSchema = z.object({
   id: uuid,
-  kind: z.enum(['character', 'speech', 'thought', 'visual', 'video', 'audio']),
+  kind: z.enum(['character', 'speech', 'thought', 'video']),
+  characterId: z.string().min(1).max(120).optional(),
   name: z.string().trim().min(1).max(80),
   muted: z.boolean(),
   locked: z.boolean(),

@@ -117,7 +117,7 @@ export type EditorV6Element = {
   zIndex: number
 }
 
-export type EditorV6TrackKind = 'character' | 'speech' | 'thought' | 'visual' | 'video' | 'audio'
+export type EditorV6TrackKind = 'character' | 'speech' | 'thought' | 'video'
 export type EditorV6TimelineBlock = {
   id: string
   /** Links a timeline clip to a layer in the scene when applicable. */
@@ -129,6 +129,8 @@ export type EditorV6TimelineBlock = {
 export type EditorV6TimelineTrack = {
   id: string
   kind: EditorV6TrackKind
+  /** Set only on a character lane; all instances of the same character share it. */
+  characterId?: string
   name: string
   muted: boolean
   locked: boolean
@@ -147,25 +149,29 @@ export function editorV6TrackKindForElement(element: EditorV6Element): EditorV6T
   if (element.kind === 'character') return 'character'
   if (element.kind === 'speech') return 'speech'
   if (element.kind === 'thought') return 'thought'
-  return 'visual'
+  return 'video'
 }
 
 export function editorV6TrackLabel(kind: EditorV6TrackKind, index = 1): string {
-  const labels: Record<EditorV6TrackKind, string> = {
-    character: 'Personagem', speech: 'Fala', thought: 'Pensamento', visual: 'Imagem', video: 'Vídeo', audio: 'Áudio'
-  }
+  const labels: Record<EditorV6TrackKind, string> = { character: 'Personagem', speech: 'Fala', thought: 'Pensamento', video: 'Vídeo' }
   return `${labels[kind]} ${index}`
 }
 
-/** Creates an initial set of rows and one still-image block for each scene layer. */
+/** Creates the three shared lanes and one lane per character in the scene. */
 export function createEditorV6Timeline(elements: readonly EditorV6Element[] = []): EditorV6Timeline {
-  const kinds: EditorV6TrackKind[] = ['character', 'speech', 'thought', 'visual', 'video', 'audio']
+  const kinds: EditorV6TrackKind[] = ['video', 'speech', 'thought']
   const tracks: EditorV6TimelineTrack[] = kinds.map((kind) => ({
     id: crypto.randomUUID(), kind, name: editorV6TrackLabel(kind), muted: false, locked: false, blocks: []
   }))
   for (const element of elements) {
     const kind = editorV6TrackKindForElement(element)
-    const track = tracks.find((candidate) => candidate.kind === kind)!
+    let track = kind === 'character'
+      ? tracks.find((candidate) => candidate.kind === 'character' && candidate.characterId === element.characterId)
+      : tracks.find((candidate) => candidate.kind === kind)
+    if (!track) {
+      track = { id: crypto.randomUUID(), kind, ...(element.characterId ? { characterId: element.characterId } : {}), name: kind === 'character' ? element.text.trim() || editorV6TrackLabel(kind, tracks.filter((item) => item.kind === kind).length + 1) : editorV6TrackLabel(kind), muted: false, locked: false, blocks: [] }
+      tracks.push(track)
+    }
     track.blocks.push({
       id: crypto.randomUUID(), elementId: element.id,
       label: element.text.trim() || editorV6TrackLabel(kind),
@@ -177,29 +183,53 @@ export function createEditorV6Timeline(elements: readonly EditorV6Element[] = []
 
 export function syncEditorV6TimelineElements(timeline: EditorV6Timeline, elements: readonly EditorV6Element[]): EditorV6Timeline {
   const elementsById = new Map(elements.map((element) => [element.id, element]))
-  const tracks = timeline.tracks.map((track) => ({
-    ...track,
-    blocks: track.blocks.filter((block) => !block.elementId || elementsById.has(block.elementId)).map((block) => {
-      const element = block.elementId ? elementsById.get(block.elementId) : undefined
-      if (!element) return block
-      const kind = editorV6TrackKindForElement(element)
-      return { ...block, label: element.text.trim() || editorV6TrackLabel(kind) }
-    })
+  // Migrate old generic character/visual/audio rows while retaining clip IDs and timing.
+  const reusableShared = new Map<EditorV6TrackKind, EditorV6TimelineTrack>()
+  for (const track of timeline.tracks) {
+    const previousKind = String(track.kind)
+    const kind = previousKind === 'speech' || previousKind === 'thought' ? previousKind : previousKind === 'video' || previousKind === 'visual' || previousKind === 'audio' ? 'video' : undefined
+    if (kind && !reusableShared.has(kind)) reusableShared.set(kind, { ...track, kind, name: editorV6TrackLabel(kind), characterId: undefined, blocks: [] })
+  }
+  const tracks: EditorV6TimelineTrack[] = (['video', 'speech', 'thought'] as const).map((kind) => reusableShared.get(kind) ?? ({
+    id: crypto.randomUUID(), kind, name: editorV6TrackLabel(kind), muted: false, locked: false, blocks: []
   }))
-  for (const element of elements) {
-    if (tracks.some((track) => track.blocks.some((block) => block.elementId === element.id))) continue
+  const characterTracks = new Map<string, EditorV6TimelineTrack>()
+  const activeCharacterIds = new Set(elements.filter((element) => element.kind === 'character' && element.characterId).map((element) => element.characterId!))
+  for (const track of timeline.tracks) if (track.kind === 'character' && track.characterId && activeCharacterIds.has(track.characterId)) characterTracks.set(track.characterId, { ...track, blocks: [] })
+  const destinationFor = (element: EditorV6Element): EditorV6TimelineTrack => {
     const kind = editorV6TrackKindForElement(element)
-    let track = tracks.find((candidate) => candidate.kind === kind)
+    if (kind !== 'character') return tracks.find((track) => track.kind === kind)!
+    if (!element.characterId) return tracks[0]
+    let track = characterTracks.get(element.characterId)
     if (!track) {
-      track = { id: crypto.randomUUID(), kind, name: editorV6TrackLabel(kind), muted: false, locked: false, blocks: [] }
-      tracks.push(track)
+      const oldTrack = timeline.tracks.find((candidate) => candidate.kind === 'character' && candidate.blocks.some((block) => block.elementId === element.id))
+      track = { id: oldTrack?.characterId === element.characterId ? oldTrack.id : crypto.randomUUID(), kind: 'character', characterId: element.characterId, name: element.text.trim() || editorV6TrackLabel('character', characterTracks.size + 1), muted: oldTrack?.muted ?? false, locked: oldTrack?.locked ?? false, blocks: [] }
+      characterTracks.set(element.characterId, track)
     }
+    track.name = element.text.trim() || track.name
+    return track
+  }
+  const placedBlocks = new Set<string>()
+  for (const oldTrack of timeline.tracks) for (const block of oldTrack.blocks) {
+    const element = block.elementId ? elementsById.get(block.elementId) : undefined
+    if (block.elementId && !element) continue
+    if (block.elementId && placedBlocks.has(block.elementId)) continue
+    const oldKind = String(oldTrack.kind)
+    const destination = element ? destinationFor(element) : tracks.find((track) => track.kind === (oldKind === 'speech' || oldKind === 'thought' ? oldKind : 'video'))!
+    destination.blocks.push(element ? { ...block, label: element.text.trim() || editorV6TrackLabel(editorV6TrackKindForElement(element)) } : block)
+    if (block.elementId) placedBlocks.add(block.elementId)
+  }
+  for (const element of elements) {
+    if (placedBlocks.has(element.id)) continue
+    const kind = editorV6TrackKindForElement(element)
+    const track = destinationFor(element)
     track.blocks.push({
       id: crypto.randomUUID(), elementId: element.id,
       label: element.text.trim() || editorV6TrackLabel(kind),
       startFrame: 0, durationFrames: EDITOR_V6_DEFAULT_BLOCK_FRAMES
     })
   }
+  tracks.push(...characterTracks.values())
   const endFrame = tracks.flatMap((track) => track.blocks).reduce((end, block) => Math.max(end, block.startFrame + block.durationFrames), timeline.durationFrames)
   return { ...timeline, durationFrames: endFrame, tracks }
 }
