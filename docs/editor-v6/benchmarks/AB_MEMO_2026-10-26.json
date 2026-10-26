@@ -1,0 +1,555 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-26",
+  "scenario": "heavy",
+  "durationPerRoundMs": 30000,
+  "warmupMs": 2000,
+  "tracingDuringBenchmark": false,
+  "variants": {
+    "memoOn": "SceneLayer memo comparator active",
+    "memoOff": "same build; memo comparator returns false to force renders"
+  },
+  "order": [
+    "on",
+    "off",
+    "off",
+    "on",
+    "on",
+    "off"
+  ],
+  "environment": {
+    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) gacha-nymi-work-app/0.1.0 Chrome/152.0.7977.167 Electron/44.9.3 Safari/537.36",
+    "hardwareConcurrency": 12,
+    "deviceMemory": 16,
+    "viewport": {
+      "width": 1430,
+      "height": 868
+    },
+    "screen": {
+      "width": 1795,
+      "height": 1010,
+      "refreshRate": "landscape-primary"
+    },
+    "host": {
+      "os": "Microsoft Windows 11 Pro 10.0.26300",
+      "cpu": "AMD Ryzen 5 4600G with Radeon Graphics",
+      "logicalProcessors": 12,
+      "ramGB": 15.4,
+      "gpus": [
+        {
+          "Name": "AMD Radeon RX 7600",
+          "DriverVersion": "32.0.32015.7029"
+        }
+      ]
+    }
+  },
+  "rounds": [
+    {
+      "label": "A1",
+      "memoization": "on",
+      "elapsedMs": 30029.9,
+      "rafMs": {
+        "p50": 13.3,
+        "p95": 13.7,
+        "p99": 13.9,
+        "max": 79.8
+      },
+      "rafIntervalsOver33ms": 5,
+      "rafIntervalsOver50ms": 5,
+      "rafIntervalsOver66_7ms": 2,
+      "pageCommits": 903,
+      "pageCommitCumulativeMs": 1991.9,
+      "pageCommitP95Ms": 3,
+      "pageCommitWorstMs": 40.1,
+      "surfaceCommits": 898,
+      "surfaceCommitCumulativeMs": 409.6,
+      "surfaceCommitP95Ms": 0.7,
+      "surfaceCommitWorstMs": 38.2,
+      "sceneCommitCumulativeMs": 673.9,
+      "timelineCommitCumulativeMs": 1282.9,
+      "longTasks": 4,
+      "longTaskMs": 244,
+      "logicalFrames": 2230,
+      "logicalSkippedFrames": 3,
+      "heapPeakMB": 152.2,
+      "motionWindowReached": true,
+      "motionNames": 4,
+      "pageErrors": 0,
+      "runtime": {
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) gacha-nymi-work-app/0.1.0 Chrome/152.0.7977.167 Electron/44.9.3 Safari/537.36",
+        "hardwareConcurrency": 12,
+        "deviceMemory": 16,
+        "viewport": {
+          "width": 1430,
+          "height": 868
+        },
+        "screen": {
+          "width": 1795,
+          "height": 1010,
+          "refreshRate": "landscape-primary"
+        }
+      }
+    },
+    {
+      "label": "B1",
+      "memoization": "off",
+      "elapsedMs": 30036.2,
+      "rafMs": {
+        "p50": 13.3,
+        "p95": 13.7,
+        "p99": 13.8,
+        "max": 66.6
+      },
+      "rafIntervalsOver33ms": 4,
+      "rafIntervalsOver50ms": 4,
+      "rafIntervalsOver66_7ms": 0,
+      "pageCommits": 905,
+      "pageCommitCumulativeMs": 2365.1,
+      "pageCommitP95Ms": 3.3,
+      "pageCommitWorstMs": 38.4,
+      "surfaceCommits": 900,
+      "surfaceCommitCumulativeMs": 918.7,
+      "surfaceCommitP95Ms": 1.5,
+      "surfaceCommitWorstMs": 36.9,
+      "sceneCommitCumulativeMs": 1167.6,
+      "timelineCommitCumulativeMs": 1166.6,
+      "longTasks": 4,
+      "longTaskMs": 225,
+      "logicalFrames": 2235,
+      "logicalSkippedFrames": 1,
+      "heapPeakMB": 90.41,
+      "motionWindowReached": true,
+      "motionNames": 4,
+      "pageErrors": 0,
+      "runtime": {
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) gacha-nymi-work-app/0.1.0 Chrome/152.0.7977.167 Electron/44.9.3 Safari/537.36",
+        "hardwareConcurrency": 12,
+        "deviceMemory": 16,
+        "viewport": {
+          "width": 1430,
+          "height": 868
+        },
+        "screen": {
+          "width": 1795,
+          "height": 1010,
+          "refreshRate": "landscape-primary"
+        }
+      }
+    },
+    {
+      "label": "B2",
+      "memoization": "off",
+      "elapsedMs": 30042.6,
+      "rafMs": {
+        "p50": 13.3,
+        "p95": 13.6,
+        "p99": 13.7,
+        "max": 66.5
+      },
+      "rafIntervalsOver33ms": 5,
+      "rafIntervalsOver50ms": 5,
+      "rafIntervalsOver66_7ms": 0,
+      "pageCommits": 904,
+      "pageCommitCumulativeMs": 2345.9,
+      "pageCommitP95Ms": 3.3,
+      "pageCommitWorstMs": 37.6,
+      "surfaceCommits": 899,
+      "surfaceCommitCumulativeMs": 873.5,
+      "surfaceCommitP95Ms": 1.4,
+      "surfaceCommitWorstMs": 36.1,
+      "sceneCommitCumulativeMs": 1146.8,
+      "timelineCommitCumulativeMs": 1166.5,
+      "longTasks": 4,
+      "longTaskMs": 215,
+      "logicalFrames": 2234,
+      "logicalSkippedFrames": 3,
+      "heapPeakMB": 142.74,
+      "motionWindowReached": true,
+      "motionNames": 4,
+      "pageErrors": 0,
+      "runtime": {
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) gacha-nymi-work-app/0.1.0 Chrome/152.0.7977.167 Electron/44.9.3 Safari/537.36",
+        "hardwareConcurrency": 12,
+        "deviceMemory": 16,
+        "viewport": {
+          "width": 1430,
+          "height": 868
+        },
+        "screen": {
+          "width": 1795,
+          "height": 1010,
+          "refreshRate": "landscape-primary"
+        }
+      }
+    },
+    {
+      "label": "A2",
+      "memoization": "on",
+      "elapsedMs": 30041,
+      "rafMs": {
+        "p50": 13.3,
+        "p95": 13.6,
+        "p99": 13.7,
+        "max": 66.7
+      },
+      "rafIntervalsOver33ms": 5,
+      "rafIntervalsOver50ms": 4,
+      "rafIntervalsOver66_7ms": 0,
+      "pageCommits": 905,
+      "pageCommitCumulativeMs": 1832.6,
+      "pageCommitP95Ms": 2.6,
+      "pageCommitWorstMs": 37.6,
+      "surfaceCommits": 900,
+      "surfaceCommitCumulativeMs": 384.4,
+      "surfaceCommitP95Ms": 0.5,
+      "surfaceCommitWorstMs": 36.1,
+      "sceneCommitCumulativeMs": 626.6,
+      "timelineCommitCumulativeMs": 1170,
+      "longTasks": 4,
+      "longTaskMs": 225,
+      "logicalFrames": 2235,
+      "logicalSkippedFrames": 2,
+      "heapPeakMB": 80.34,
+      "motionWindowReached": true,
+      "motionNames": 4,
+      "pageErrors": 0,
+      "runtime": {
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) gacha-nymi-work-app/0.1.0 Chrome/152.0.7977.167 Electron/44.9.3 Safari/537.36",
+        "hardwareConcurrency": 12,
+        "deviceMemory": 16,
+        "viewport": {
+          "width": 1430,
+          "height": 868
+        },
+        "screen": {
+          "width": 1795,
+          "height": 1010,
+          "refreshRate": "landscape-primary"
+        }
+      }
+    },
+    {
+      "label": "A3",
+      "memoization": "on",
+      "elapsedMs": 30044.8,
+      "rafMs": {
+        "p50": 13.3,
+        "p95": 13.6,
+        "p99": 13.7,
+        "max": 66.6
+      },
+      "rafIntervalsOver33ms": 4,
+      "rafIntervalsOver50ms": 4,
+      "rafIntervalsOver66_7ms": 0,
+      "pageCommits": 905,
+      "pageCommitCumulativeMs": 1791.9,
+      "pageCommitP95Ms": 2.4,
+      "pageCommitWorstMs": 40.2,
+      "surfaceCommits": 900,
+      "surfaceCommitCumulativeMs": 375,
+      "surfaceCommitP95Ms": 0.5,
+      "surfaceCommitWorstMs": 38.7,
+      "sceneCommitCumulativeMs": 627.4,
+      "timelineCommitCumulativeMs": 1133,
+      "longTasks": 4,
+      "longTaskMs": 223,
+      "logicalFrames": 2236,
+      "logicalSkippedFrames": 2,
+      "heapPeakMB": 131.57,
+      "motionWindowReached": true,
+      "motionNames": 4,
+      "pageErrors": 0,
+      "runtime": {
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) gacha-nymi-work-app/0.1.0 Chrome/152.0.7977.167 Electron/44.9.3 Safari/537.36",
+        "hardwareConcurrency": 12,
+        "deviceMemory": 16,
+        "viewport": {
+          "width": 1430,
+          "height": 868
+        },
+        "screen": {
+          "width": 1795,
+          "height": 1010,
+          "refreshRate": "landscape-primary"
+        }
+      }
+    },
+    {
+      "label": "B3",
+      "memoization": "off",
+      "elapsedMs": 30039.4,
+      "rafMs": {
+        "p50": 13.3,
+        "p95": 13.7,
+        "p99": 13.9,
+        "max": 66.5
+      },
+      "rafIntervalsOver33ms": 4,
+      "rafIntervalsOver50ms": 4,
+      "rafIntervalsOver66_7ms": 0,
+      "pageCommits": 904,
+      "pageCommitCumulativeMs": 2419.7,
+      "pageCommitP95Ms": 3.4,
+      "pageCommitWorstMs": 38.6,
+      "surfaceCommits": 899,
+      "surfaceCommitCumulativeMs": 914.8,
+      "surfaceCommitP95Ms": 1.4,
+      "surfaceCommitWorstMs": 37.1,
+      "sceneCommitCumulativeMs": 1173.8,
+      "timelineCommitCumulativeMs": 1214,
+      "longTasks": 4,
+      "longTaskMs": 224,
+      "logicalFrames": 2234,
+      "logicalSkippedFrames": 2,
+      "heapPeakMB": 142.12,
+      "motionWindowReached": true,
+      "motionNames": 4,
+      "pageErrors": 0,
+      "runtime": {
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) gacha-nymi-work-app/0.1.0 Chrome/152.0.7977.167 Electron/44.9.3 Safari/537.36",
+        "hardwareConcurrency": 12,
+        "deviceMemory": 16,
+        "viewport": {
+          "width": 1430,
+          "height": 868
+        },
+        "screen": {
+          "width": 1795,
+          "height": 1010,
+          "refreshRate": "landscape-primary"
+        }
+      }
+    }
+  ],
+  "pairs": [
+    {
+      "pair": 1,
+      "memoOn": "A1",
+      "memoOff": "B1",
+      "scenePixelComparison": {
+        "equalDimensions": true,
+        "width": 1014,
+        "height": 570,
+        "differentPixelChannels": 0,
+        "meanAbsoluteChannelError": 0
+      }
+    },
+    {
+      "pair": 2,
+      "memoOn": "A2",
+      "memoOff": "B2",
+      "scenePixelComparison": {
+        "equalDimensions": true,
+        "width": 1014,
+        "height": 570,
+        "differentPixelChannels": 0,
+        "meanAbsoluteChannelError": 0
+      }
+    },
+    {
+      "pair": 3,
+      "memoOn": "A3",
+      "memoOff": "B3",
+      "scenePixelComparison": {
+        "equalDimensions": true,
+        "width": 1014,
+        "height": 570,
+        "differentPixelChannels": 0,
+        "meanAbsoluteChannelError": 0
+      }
+    }
+  ],
+  "summary": {
+    "memoOn": {
+      "rounds": 3,
+      "metrics": {
+        "rafMs.p95": {
+          "median": 13.6,
+          "min": 13.6,
+          "max": 13.7,
+          "rounds": 3
+        },
+        "rafMs.p99": {
+          "median": 13.7,
+          "min": 13.7,
+          "max": 13.9,
+          "rounds": 3
+        },
+        "rafMs.max": {
+          "median": 66.7,
+          "min": 66.6,
+          "max": 79.8,
+          "rounds": 3
+        },
+        "rafIntervalsOver33ms": {
+          "median": 5,
+          "min": 4,
+          "max": 5,
+          "rounds": 3
+        },
+        "rafIntervalsOver50ms": {
+          "median": 4,
+          "min": 4,
+          "max": 5,
+          "rounds": 3
+        },
+        "rafIntervalsOver66_7ms": {
+          "median": 0,
+          "min": 0,
+          "max": 2,
+          "rounds": 3
+        },
+        "pageCommits": {
+          "median": 905,
+          "min": 903,
+          "max": 905,
+          "rounds": 3
+        },
+        "pageCommitCumulativeMs": {
+          "median": 1832.6,
+          "min": 1791.9,
+          "max": 1991.9,
+          "rounds": 3
+        },
+        "surfaceCommits": {
+          "median": 900,
+          "min": 898,
+          "max": 900,
+          "rounds": 3
+        },
+        "surfaceCommitCumulativeMs": {
+          "median": 384.4,
+          "min": 375,
+          "max": 409.6,
+          "rounds": 3
+        },
+        "surfaceCommitWorstMs": {
+          "median": 38.2,
+          "min": 36.1,
+          "max": 38.7,
+          "rounds": 3
+        },
+        "longTasks": {
+          "median": 4,
+          "min": 4,
+          "max": 4,
+          "rounds": 3
+        },
+        "longTaskMs": {
+          "median": 225,
+          "min": 223,
+          "max": 244,
+          "rounds": 3
+        },
+        "logicalSkippedFrames": {
+          "median": 2,
+          "min": 2,
+          "max": 3,
+          "rounds": 3
+        },
+        "heapPeakMB": {
+          "median": 131.57,
+          "min": 80.34,
+          "max": 152.2,
+          "rounds": 3
+        }
+      }
+    },
+    "memoOff": {
+      "rounds": 3,
+      "metrics": {
+        "rafMs.p95": {
+          "median": 13.7,
+          "min": 13.6,
+          "max": 13.7,
+          "rounds": 3
+        },
+        "rafMs.p99": {
+          "median": 13.8,
+          "min": 13.7,
+          "max": 13.9,
+          "rounds": 3
+        },
+        "rafMs.max": {
+          "median": 66.5,
+          "min": 66.5,
+          "max": 66.6,
+          "rounds": 3
+        },
+        "rafIntervalsOver33ms": {
+          "median": 4,
+          "min": 4,
+          "max": 5,
+          "rounds": 3
+        },
+        "rafIntervalsOver50ms": {
+          "median": 4,
+          "min": 4,
+          "max": 5,
+          "rounds": 3
+        },
+        "rafIntervalsOver66_7ms": {
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "rounds": 3
+        },
+        "pageCommits": {
+          "median": 904,
+          "min": 904,
+          "max": 905,
+          "rounds": 3
+        },
+        "pageCommitCumulativeMs": {
+          "median": 2365.1,
+          "min": 2345.9,
+          "max": 2419.7,
+          "rounds": 3
+        },
+        "surfaceCommits": {
+          "median": 899,
+          "min": 899,
+          "max": 900,
+          "rounds": 3
+        },
+        "surfaceCommitCumulativeMs": {
+          "median": 914.8,
+          "min": 873.5,
+          "max": 918.7,
+          "rounds": 3
+        },
+        "surfaceCommitWorstMs": {
+          "median": 36.9,
+          "min": 36.1,
+          "max": 37.1,
+          "rounds": 3
+        },
+        "longTasks": {
+          "median": 4,
+          "min": 4,
+          "max": 4,
+          "rounds": 3
+        },
+        "longTaskMs": {
+          "median": 224,
+          "min": 215,
+          "max": 225,
+          "rounds": 3
+        },
+        "logicalSkippedFrames": {
+          "median": 2,
+          "min": 1,
+          "max": 3,
+          "rounds": 3
+        },
+        "heapPeakMB": {
+          "median": 142.12,
+          "min": 90.41,
+          "max": 142.74,
+          "rounds": 3
+        }
+      }
+    }
+  },
+  "interpretation": "Compare medians and ranges. Three rounds are small-sample exploratory evidence; differences overlapping ranges are not established improvements. The disabled variant uses the same binary and adds comparator dispatch, so it approximates the pre-memo rendering behavior rather than reconstructing the exact older commit."
+}
