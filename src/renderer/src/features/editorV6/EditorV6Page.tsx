@@ -4,10 +4,11 @@ import { isPoseSnapshotForModel } from '../../../../shared/characterSourceContin
 import { useEditorV6Store } from './editorV6Store'
 import { createEditorV6Timeline, syncEditorV6TimelineElements } from '../../../../shared/editorV6'
 import { EditorV6Timeline } from './EditorV6Timeline'
-import { addEditorV6ElementAtFrame, editEditorV6DocumentAtBlock, editorV6ClipAtFrame, normalizeEditorV6Timeline, pruneEditorV6TimelineSnapshots, repairEditorV6DuplicateAssets, resolveEditorV6ElementsAtFrame, timelineClips } from '../../../../shared/editorV6Timeline'
+import { SceneSurface, type ScenePointerEvent, type SceneSurfaceInteraction } from './SceneSurface'
+import { addEditorV6ElementAtFrame, editEditorV6DocumentAtBlock, editorV6ClipAtFrame, normalizeEditorV6Timeline, prepareEditorV6PositionAtFrame, moveEditorV6ElementInPeriod, editEditorV6BackgroundAtFrame, pruneEditorV6TimelineSnapshots, repairEditorV6DuplicateAssets, resolveEditorV6SceneAtFrame, frameTimecode, timelineClips } from '../../../../shared/editorV6Timeline'
 import { useEditorV6InspectorState } from './useEditorV6InspectorState'
 import { trimTransparentImage, fitElementToTrim, faceRenderGeometry, type TrimmedImage } from '../../characters/characterGeometry'
-import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { buildEditorV6ExpressionAppearance, buildEditorV6ExpressionTransforms, resolveEditorV6ExpressionBase, editorV6ExpressionCollection } from './expressionTransforms'
 import { Icon } from '../../ui/components/Icon'
 import { CharacterPortrait } from '../../ui/components/CharacterPortrait'
@@ -19,7 +20,7 @@ import type { CustomizerFaceAppearance } from '../../../../shared/customizer'
 import type { FaceCatalogItem, FaceCatalogItemSummary, FaceExpressionEffects, FaceExpressionPreset, FaceExpressionPresetSummary, FaceSheetKind, FabricatorPoseSummary } from '../../../../shared/fabricator'
 type EditorV6Card = EditorV6Document
 type Tool = 'background' | 'objects' | null
-type DragState = { id: string; pointerId: number; startX: number; startY: number; originalX: number; originalY: number; width: number; height: number }
+type DragState = { id: string; pointerId: number; startX: number; startY: number; originalX: number; originalY: number; width: number; height: number; before: EditorV6Document; prepared: EditorV6Document; blockId: string; frame: number; moved: boolean }
 const STORAGE_KEY = 'gacha-nymi-editor-v6-catalog-v1'
 const EDITOR_V6_FACE_RENDER_VERSION = 7
 const studioColor = (number: number) => `hsl(${(number * 137.508) % 360} 45% 78%)`
@@ -57,82 +58,9 @@ function makeElement(kind: EditorV6Element['kind'], zIndex: number): EditorV6Ele
   }
 }
 
-function makeCanvasPrint(studio: EditorV6Document, outputWidth = 1920, outputHeight = 1080, mimeType = 'image/png', frame = 0): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const canvas = document.createElement('canvas')
-    canvas.width = outputWidth
-    canvas.height = outputHeight
-    const context = canvas.getContext('2d')
-    if (!context) return reject(new Error('Não foi possível preparar a imagem do print.'))
-    context.scale(outputWidth / 1920, outputHeight / 1080)
-    context.fillStyle = studio.backgroundColor
-    context.fillRect(0, 0, canvas.width, canvas.height)
-    const load = (src: string) => new Promise<HTMLImageElement>((ok, fail) => {
-      const image = new Image()
-      image.onload = () => ok(image)
-      image.onerror = () => fail(new Error('Uma imagem da cena não pôde ser carregada para o print.'))
-      image.src = src
-    })
-    const drawImage = async (src: string, x: number, y: number, width: number, height: number, rotation: number, flipX = false) => {
-      const image = await load(src)
-      context.save()
-      context.translate((50 + x) * 19.2, (50 + y) * 10.8)
-      context.rotate(rotation * Math.PI / 180)
-      if (flipX) context.scale(-1, 1)
-      context.drawImage(image, -width * 9.6, -height * 5.4, width * 19.2, height * 10.8)
-      context.restore()
-    }
-    const drawText = (element: EditorV6Element) => {
-      const cx = (50 + element.x) * 19.2
-      const cy = (50 + element.y) * 10.8
-      const width = element.width * 19.2
-      const height = element.height * 10.8
-      context.save()
-      context.translate(cx, cy)
-      context.rotate(element.rotation * Math.PI / 180)
-      context.fillStyle = element.kind === 'narrator' ? 'rgba(255,255,255,.90)' : 'rgba(255,250,253,.96)'
-      context.strokeStyle = '#604b59'
-      context.lineWidth = 4
-      context.beginPath()
-      context.roundRect(-width / 2, -height / 2, width, height, element.kind === 'narrator' ? 20 : height / 2)
-      context.fill()
-      context.stroke()
-      context.fillStyle = '#352d35'
-      context.font = `600 ${Math.max(22, Math.round(height * .3))}px sans-serif`
-      context.textAlign = 'center'
-      context.textBaseline = 'middle'
-      const words = element.text.split(/\s+/)
-      const lines: string[] = []
-      let line = ''
-      for (const word of words) {
-        const candidate = line ? `${line} ${word}` : word
-        if (context.measureText(candidate).width > width - 36 && line) { lines.push(line); line = word } else line = candidate
-      }
-      if (line) lines.push(line)
-      lines.slice(0, 5).forEach((value, index, values) => context.fillText(value, 0, (index - (values.length - 1) / 2) * Math.max(28, height * .32), width - 30))
-      context.restore()
-    }
-    void (async () => {
-      try {
-        const bg = studio.assets.find((asset) => asset.id === studio.backgroundAssetId)
-        if (bg) await drawImage(bg.dataUrl, studio.backgroundX, studio.backgroundY, studio.backgroundWidth, studio.backgroundHeight, studio.backgroundRotation)
-        for (const element of resolveEditorV6ElementsAtFrame(studio, frame)) {
-          if (element.kind === 'image' || element.kind === 'character') {
-            const asset = studio.assets.find((item) => item.id === element.assetId)
-            if (asset) {
-              const size = editorV6ElementSize(element)
-              await drawImage(asset.dataUrl, element.x, element.y, size.width, size.height, element.rotation, element.kind === 'character' && element.flipX === true)
-            }
-          } else drawText(element)
-        }
-        resolve(canvas.toDataURL(mimeType, mimeType === 'image/jpeg' ? 0.78 : undefined))
-      } catch (reason) { reject(reason) }
-    })()
-  })
-}
-
-function makeStudioThumbnail(studio: EditorV6Document): Promise<string> {
-  return makeCanvasPrint(studio, 480, 270, 'image/jpeg')
+async function makeStudioThumbnail(studio: EditorV6Document): Promise<string> {
+  const { captureEditorV6Frame } = await import('./sceneCapture')
+  return captureEditorV6Frame(studio, 0, 480, 270, 'image/jpeg')
 }
 
 /** Layout do Editor V6. */
@@ -186,7 +114,11 @@ export function EditorV6Page() {
   const selectedEditorV6 = editorV6Projects.find((studio) => studio.id === selectedId) ?? null
   const activeEditorV6 = editorV6Projects.find((studio) => studio.id === activeEditorV6Id) ?? null
   const timelineDurationFrames = activeEditorV6?.timeline.durationFrames ?? 300
-  const visibleTimelineElements = useMemo(() => activeEditorV6 ? resolveEditorV6ElementsAtFrame(activeEditorV6, playheadFrame) : [], [activeEditorV6, playheadFrame])
+  const previewScene = useMemo(() => activeEditorV6 ? resolveEditorV6SceneAtFrame(activeEditorV6, playheadFrame) : null, [activeEditorV6, playheadFrame])
+  const previewBackground = previewScene?.background ?? { backgroundColor: '#d7b5cd', backgroundAssetId: null, backgroundX: 0, backgroundY: 0, backgroundWidth: 100, backgroundHeight: 100, backgroundRotation: 0 }
+  const visibleTimelineElements = previewScene?.elements ?? []
+  const sceneInteractionRef = useRef<SceneSurfaceInteraction>({ start: () => {}, move: () => {}, end: () => {} })
+  const sceneInteraction = useMemo<SceneSurfaceInteraction>(() => ({ start: (event, id) => sceneInteractionRef.current.start(event, id), move: (event) => sceneInteractionRef.current.move(event), end: (event) => sceneInteractionRef.current.end(event) }), [])
   useEffect(() => {
     if (!activeEditorV6 || new Set(activeEditorV6.assets.map((asset) => asset.id)).size === activeEditorV6.assets.length) return
     setEditorV6Projects((projects) => projects.map((project) => project.id === activeEditorV6.id ? repairEditorV6DuplicateAssets(project, selectedTimelineBlockId) : project))
@@ -211,7 +143,7 @@ export function EditorV6Page() {
     ? editorV6FaceDetails[`${selectedEditorV6CharacterModelSlot}:${selectedEditorV6OpenMouthId}`]
     : undefined
   const selectedEditorV6TalkAvailable = Boolean(selectedEditorV6OpenMouth?.pieces.some((piece) => piece.sheet === 'mouth-open' && piece.index === selectedEditorV6FaceAppearance?.expressionIndex))
-  const selectedBackgroundAsset = activeEditorV6?.assets.find((asset) => asset.id === activeEditorV6.backgroundAssetId) ?? null
+  const selectedBackgroundAsset = activeEditorV6?.assets.find((asset) => asset.id === previewBackground.backgroundAssetId) ?? null
   const stageCharacters = activeEditorV6?.elements.filter((element) => element.kind === 'character') ?? []
   const allStageCharactersLocked = stageCharacters.length > 0 && stageCharacters.every((element) => element.positionLocked === true)
   const toggleStageCharacterPositionLock = () => {
@@ -485,7 +417,8 @@ export function EditorV6Page() {
           id: oldToNewBlocks.get(block.id)!,
           elementId: block.elementId ? oldToNewElements.get(block.elementId) : undefined,
           parentBlockId: block.parentBlockId ? oldToNewBlocks.get(block.parentBlockId) : undefined,
-          state: block.state ? { ...block.state, id: oldToNewElements.get(block.state.id) ?? block.state.id, assetId: block.state.assetId ? oldToNew.get(block.state.assetId) : undefined } : undefined
+          state: block.state ? { ...block.state, id: oldToNewElements.get(block.state.id) ?? block.state.id, assetId: block.state.assetId ? oldToNew.get(block.state.assetId) : undefined } : undefined,
+          background: block.background ? { ...block.background, backgroundAssetId: block.background.backgroundAssetId ? oldToNew.get(block.background.backgroundAssetId) ?? null : null } : undefined
         }))
       }))
     }
@@ -528,7 +461,7 @@ export function EditorV6Page() {
   }, [activeEditorV6])
 
   useEffect(() => {
-    if (!activeEditorV6) return
+    if (!activeEditorV6 || dragRef.current) return
     setSaved(false)
     const signature = JSON.stringify(activeEditorV6.elements.filter((element) => element.kind === 'character').map((element) => [element.id, element.activeExpressionCollectionId, element.activeExpressionPresetId]))
     const previous = expressionSaveSignatureRef.current
@@ -541,21 +474,21 @@ export function EditorV6Page() {
     return () => window.clearTimeout(timer)
   }, [activeEditorV6, saveStudio])
 
-  const patchStudio = (transform: (studio: EditorV6Document) => EditorV6Document) => {
+  const patchStudio = (transform: (studio: EditorV6Document) => EditorV6Document, editSelection = true) => {
     if (!activeEditorV6Id) return
     setEditorV6Projects((current) => current.map((studio) => {
       if (studio.id !== activeEditorV6Id) return studio
       const selected = timelineClips(studio.timeline).find(({ block }) => block.id === selectedTimelineBlockId && block.elementId === selectedElementId)
         ?? (selectedElementId ? editorV6ClipAtFrame(studio.timeline, selectedElementId, playheadFrame) : undefined)
-      const next = editEditorV6DocumentAtBlock(studio, selected?.block.id ?? null, transform)
+      const next = editSelection ? editEditorV6DocumentAtBlock(studio, selected?.block.id ?? null, transform) : transform(studio)
       return pruneEditorV6TimelineSnapshots({ ...next, timeline: normalizeEditorV6Timeline(next.timeline) })
     }))
     setSaved(false)
   }
 
-  const recordHistory = () => {
-    if (!activeEditorV6) return
-    const history = useEditorV6Store.getState().record(activeEditorV6.id, activeEditorV6)
+  const recordHistory = (document = activeEditorV6) => {
+    if (!document) return
+    const history = useEditorV6Store.getState().record(document.id, document)
     setCanUndo(history.undo.length > 0)
     setCanRedo(false)
     setHistoryVersion(value => value + 1)
@@ -575,7 +508,7 @@ export function EditorV6Page() {
     const document = useEditorV6Store.getState().undo(activeEditorV6.id, activeEditorV6)
     if (!document) return
     const history = useEditorV6Store.getState().histories[activeEditorV6.id]
-    patchStudio(() => document)
+    patchStudio(() => document, false)
     setCanUndo(Boolean(history?.undo.length))
     setCanRedo(true)
     setHistoryVersion(value => value + 1)
@@ -586,7 +519,7 @@ export function EditorV6Page() {
     const document = useEditorV6Store.getState().redo(activeEditorV6.id, activeEditorV6)
     if (!document) return
     const history = useEditorV6Store.getState().histories[activeEditorV6.id]
-    patchStudio(() => document)
+    patchStudio(() => document, false)
     setCanUndo(Boolean(history?.undo.length))
     setCanRedo(Boolean(history?.redo.length))
     setHistoryVersion(value => value + 1)
@@ -601,7 +534,7 @@ export function EditorV6Page() {
       if (!asset) return
       const studioAtImport = activeEditorV6
       let nextStudio: EditorV6Document = category === 'background'
-        ? { ...studioAtImport, assets: [...studioAtImport.assets, asset], backgroundAssetId: asset.id, backgroundX: 0, backgroundY: 0, backgroundWidth: 100, backgroundHeight: 100, backgroundRotation: 0, updatedAt: new Date().toISOString() }
+        ? editEditorV6BackgroundAtFrame({ ...studioAtImport, assets: [...studioAtImport.assets, asset], updatedAt: new Date().toISOString() }, playheadFrame, { backgroundAssetId: asset.id, backgroundX: 0, backgroundY: 0, backgroundWidth: 100, backgroundHeight: 100, backgroundRotation: 0 })
         : {
             ...studioAtImport,
             assets: [...studioAtImport.assets, asset],
@@ -635,7 +568,7 @@ export function EditorV6Page() {
   }
 
   const selectBackground = (asset: EditorV6Asset) => {
-    changeScene((studio) => ({ ...studio, backgroundAssetId: asset.id, backgroundX: 0, backgroundY: 0, backgroundWidth: 100, backgroundHeight: 100, backgroundRotation: 0, updatedAt: new Date().toISOString() }))
+    changeScene((studio) => ({ ...editEditorV6BackgroundAtFrame(studio, playheadFrame, { backgroundAssetId: asset.id, backgroundX: 0, backgroundY: 0, backgroundWidth: 100, backgroundHeight: 100, backgroundRotation: 0 }), updatedAt: new Date().toISOString() }))
     setSelectedElementId('background')
     setInspectorOpen(true)
     setInspectorTab('editor')
@@ -981,66 +914,83 @@ export function EditorV6Page() {
   }
 
   const updateBackground = (values: Partial<Pick<EditorV6Document, 'backgroundColor' | 'backgroundX' | 'backgroundY' | 'backgroundWidth' | 'backgroundHeight' | 'backgroundRotation'>>, record = true) => {
-    const update = (studio: EditorV6Document) => ({ ...studio, ...values, updatedAt: new Date().toISOString() })
+    const update = (studio: EditorV6Document) => ({ ...editEditorV6BackgroundAtFrame(studio, playheadFrame, values), updatedAt: new Date().toISOString() })
     if (record) changeScene(update)
     else patchStudio(update)
   }
 
-  const startDrag = (event: ReactPointerEvent<HTMLElement>, id: string) => {
-    if (!activeEditorV6 || !sceneRef.current) return
+  const cancelSceneDrag = () => {
+    const drag = dragRef.current
+    if (!drag) return
+    dragRef.current = null
+    if (drag.moved) {
+      setEditorV6Projects((projects) => projects.map((project) => project.id === drag.before.id ? { ...drag.before, updatedAt: new Date().toISOString() } : project))
+      setSelectedTimelineBlockId(drag.id === 'background' ? null : editorV6ClipAtFrame(drag.before.timeline, drag.id, drag.frame)?.block.id ?? null)
+      setSaved(false)
+    }
+  }
+
+  const startDrag = (event: ScenePointerEvent, id: string) => {
+    if (!activeEditorV6 || !sceneRef.current || !previewScene || event.button !== 0) return
     event.preventDefault()
     event.stopPropagation()
-    if (id === 'background') {
-      const rect = sceneRef.current.getBoundingClientRect()
-      recordHistory()
-      setSelectedElementId('background')
-      setActiveTool('background')
-      setInspectorOpen(true)
-      setInspectorTab('editor')
-      dragRef.current = { id, pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, originalX: activeEditorV6.backgroundX, originalY: activeEditorV6.backgroundY, width: rect.width, height: rect.height }
-      event.currentTarget.setPointerCapture(event.pointerId)
-      return
-    }
     setIsPlaying(false)
-    const element = visibleTimelineElements.find((item) => item.id === id) ?? activeEditorV6.elements.find((item) => item.id === id)
-    if (!element) return
-    setSelectedTimelineBlockId(editorV6ClipAtFrame(activeEditorV6.timeline, id, playheadFrame)?.block.id ?? null)
-    if (element.kind === 'character' && element.positionLocked) {
-      setSelectedElementId(id)
-      setActiveTool(null)
-      setInspectorOpen(true)
-      restoreCharacterInspectorView()
-      return
+    setSelectedElementId(id)
+    setActiveTool(id === 'background' ? 'background' : null)
+    setInspectorOpen(true)
+    const element = previewScene.elements.find((item) => item.id === id)
+    const currentClip = id === 'background' ? null : editorV6ClipAtFrame(activeEditorV6.timeline, id, previewScene.frame)
+    setSelectedTimelineBlockId(currentClip?.block.id ?? null)
+    if (element?.kind === 'character') restoreCharacterInspectorView()
+    else setInspectorTab('editor')
+    if (editorV6FaceBusy || editorV6ExpressionBusy || editorV6FaceRenderRunningRef.current) return
+    const frame = previewScene.frame
+    let prepared: EditorV6Document, blockId: string
+    if (id === 'background') {
+      if (activeEditorV6.timeline.tracks.some((track) => track.kind === 'video' && track.locked)) return
+      prepared = editEditorV6BackgroundAtFrame(activeEditorV6, frame, {})
+      blockId = timelineClips(prepared.timeline).find(({ block }) => block.background && block.startFrame === frame)!.block.id
+    } else {
+      const operation = prepareEditorV6PositionAtFrame(activeEditorV6, id, frame)
+      if (!operation || !element) return
+      prepared = operation.document
+      blockId = operation.blockId
     }
     const rect = sceneRef.current.getBoundingClientRect()
-    recordHistory()
-    setSelectedElementId(id)
-    setActiveTool(null)
-    setInspectorOpen(true)
-    if (element.kind === 'character') restoreCharacterInspectorView()
-    else setInspectorTab('editor')
-    dragRef.current = { id, pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, originalX: element.x, originalY: element.y, width: rect.width, height: rect.height }
+    dragRef.current = { id, pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, originalX: id === 'background' ? previewBackground.backgroundX : element!.x, originalY: id === 'background' ? previewBackground.backgroundY : element!.y, width: rect.width, height: rect.height, before: activeEditorV6, prepared, blockId, frame, moved: false }
     event.currentTarget.setPointerCapture(event.pointerId)
   }
 
-  const moveDrag = (event: ReactPointerEvent<HTMLElement>) => {
+  const moveDrag = (event: ScenePointerEvent) => {
     const drag = dragRef.current
     if (!drag || drag.pointerId !== event.pointerId) return
+    if (!drag.moved && Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) < 2) return
     const x = drag.originalX + (event.clientX - drag.startX) / drag.width * 100
     const y = drag.originalY + (event.clientY - drag.startY) / drag.height * 100
-    if (drag.id === 'background') patchStudio((studio) => ({ ...studio, backgroundX: x, backgroundY: y, updatedAt: new Date().toISOString() }))
-    else updateElement(drag.id, { x, y }, false)
+    const next = drag.id === 'background' ? editEditorV6BackgroundAtFrame(drag.prepared, drag.frame, { backgroundX: x, backgroundY: y }, drag.blockId) : moveEditorV6ElementInPeriod(drag.prepared, drag.blockId, x, y)
+    drag.moved = true
+    setPlayheadFrame(drag.frame)
+    setSelectedTimelineBlockId(drag.blockId)
+    setEditorV6Projects((projects) => projects.map((project) => project.id === drag.before.id ? { ...next, updatedAt: new Date().toISOString() } : project))
+    setSaved(false)
   }
 
-  const endDrag = (event: ReactPointerEvent<HTMLElement>) => {
-    if (dragRef.current?.pointerId !== event.pointerId) return
+  const endDrag = (event: ScenePointerEvent) => {
+    const drag = dragRef.current
+    if (drag?.pointerId !== event.pointerId) return
+    if (event.type === 'pointercancel') { cancelSceneDrag(); return }
     dragRef.current = null
+    if (!drag.moved) return
+    recordHistory(drag.before)
+    setEditorV6Projects((projects) => projects.map((project) => project.id === drag.before.id ? { ...project, updatedAt: new Date().toISOString() } : project))
+    setSaved(false)
   }
+  sceneInteractionRef.current = { start: startDrag, move: moveDrag, end: endDrag }
 
   const deleteSelected = () => {
     if (!activeEditorV6) return
     if (selectedElementId === 'background') {
-      changeScene((studio) => ({ ...studio, backgroundAssetId: null, updatedAt: new Date().toISOString() }))
+      changeScene((studio) => ({ ...editEditorV6BackgroundAtFrame(studio, playheadFrame, { backgroundAssetId: null }), updatedAt: new Date().toISOString() }))
       setSelectedElementId(null)
     } else if (selectedElementId) {
       const current = activeEditorV6.elements.find((element) => element.id === selectedElementId)
@@ -1073,7 +1023,8 @@ export function EditorV6Page() {
     if (!activeEditorV6) return
     try {
       if (!await saveStudio(activeEditorV6)) return
-      const image = await makeCanvasPrint(activeEditorV6, 1920, 1080, 'image/png', playheadFrame)
+      const { captureEditorV6Frame } = await import('./sceneCapture')
+      const image = await captureEditorV6Frame(activeEditorV6, playheadFrame, 1920, 1080, 'image/png')
       const path = await window.desktop.saveEditorV6Print(activeEditorV6.id, image)
       if (path) { setError(null); setNotice(`Print salvo em ${path}`) }
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível gerar o print.') }
@@ -1087,6 +1038,7 @@ export function EditorV6Page() {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      if (dragRef.current && (event.key === 'Escape' || ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z'))) { event.preventDefault(); cancelSceneDrag(); return }
       if (event.key === 'Escape' && castPickerOpen && !savingCast) setCastPickerOpen(false)
       else if (event.key === 'Escape' && fullView) setFullView(false)
       if (event.target instanceof HTMLElement && event.target.closest('input,textarea,select,[contenteditable=true]')) return
@@ -1097,23 +1049,18 @@ export function EditorV6Page() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [castPickerOpen, savingCast, fullView, activeEditorV6, historyVersion])
 
-  const imageStyle = (x: number, y: number, width: number, height: number, rotation: number, flipX = false) => ({
-    left: `calc(50% + ${x}%)`, top: `calc(50% + ${y}%)`, width: `${width}%`, height: `${height}%`,
-    transform: `translate(-50%, -50%) rotate(${rotation}deg) scaleX(${flipX ? -1 : 1})`
-  })
-
   const control = (label: string, value: number, onChange: (value: number, record?: boolean) => void, min: number, max: number, suffix = '%', onFinish?: () => void, disabled = false) => (
-    <StudioNumericControl key={label} label={label} value={value} onChange={onChange} onStart={recordHistory} onFinish={onFinish} disabled={disabled} min={min} max={max} suffix={suffix} />
+    <StudioNumericControl key={label} label={label} value={value} onChange={onChange} onStart={() => recordHistory()} onFinish={onFinish} disabled={disabled} min={min} max={max} suffix={suffix} />
   )
 
   const propertyPanel = (): ReactNode => {
     if (!activeEditorV6) return null
     if (activeTool === 'background') return <div className="studio-side-content">
       <h2>Fundos</h2><p>Escolha um fundo salvo ou adicione uma imagem.</p>
-      <label className="studio-color-control">Cor sólida<input type="color" value={activeEditorV6.backgroundColor} onChange={(event) => updateBackground({ backgroundColor: event.target.value })} /></label>
+      <label className="studio-color-control">Cor sólida<input type="color" value={previewBackground.backgroundColor} onChange={(event) => updateBackground({ backgroundColor: event.target.value })} /></label>
       <button className="studio-side-primary" type="button" onClick={() => void importImage('background')}><Icon name="plus" />Adicionar imagem</button>
-      <div className="studio-asset-grid">{activeEditorV6.assets.filter((asset) => asset.category === 'background').map((asset) => <button key={asset.id} className={`studio-asset-card${activeEditorV6.backgroundAssetId === asset.id ? ' active' : ''}`} type="button" onClick={() => selectBackground(asset)}><img src={asset.dataUrl} alt="" /><span>{asset.name}</span></button>)}</div>
-      {selectedBackgroundAsset && selectedElementId === 'background' && <><div className="studio-controls-grid">{control('X', activeEditorV6.backgroundX, (value, record) => updateBackground({ backgroundX: value }, record), -100, 100)}{control('Y', activeEditorV6.backgroundY, (value, record) => updateBackground({ backgroundY: value }, record), -100, 100)}{control('Largura', activeEditorV6.backgroundWidth, (value, record) => updateBackground({ backgroundWidth: value }, record), 1, 300)}{control('Altura', activeEditorV6.backgroundHeight, (value, record) => updateBackground({ backgroundHeight: value }, record), 1, 300)}{control('Rotação', activeEditorV6.backgroundRotation, (value, record) => updateBackground({ backgroundRotation: value }, record), -180, 180, '°')}</div><button className="studio-side-danger" type="button" onClick={deleteSelected}><Icon name="trash" />Remover fundo da cena</button></>}
+      <div className="studio-asset-grid">{activeEditorV6.assets.filter((asset) => asset.category === 'background').map((asset) => <button key={asset.id} className={`studio-asset-card${previewBackground.backgroundAssetId === asset.id ? ' active' : ''}`} type="button" onClick={() => selectBackground(asset)}><img src={asset.dataUrl} alt="" /><span>{asset.name}</span></button>)}</div>
+      {selectedBackgroundAsset && selectedElementId === 'background' && <><div className="studio-controls-grid">{control('X', previewBackground.backgroundX, (value, record) => updateBackground({ backgroundX: value }, record), -100, 100)}{control('Y', previewBackground.backgroundY, (value, record) => updateBackground({ backgroundY: value }, record), -100, 100)}{control('Largura', previewBackground.backgroundWidth, (value, record) => updateBackground({ backgroundWidth: value }, record), 1, 300)}{control('Altura', previewBackground.backgroundHeight, (value, record) => updateBackground({ backgroundHeight: value }, record), 1, 300)}{control('Rotação', previewBackground.backgroundRotation, (value, record) => updateBackground({ backgroundRotation: value }, record), -180, 180, '°')}</div><button className="studio-side-danger" type="button" onClick={deleteSelected}><Icon name="trash" />Remover fundo da cena</button></>}
     </div>
     if (activeTool === 'objects') return <div className="studio-side-content">
       <h2>Objetos</h2><p>Imagens importadas ficam disponíveis neste Studio.</p>
@@ -1137,7 +1084,7 @@ export function EditorV6Page() {
     </div>
     if (selectedElementId === 'background' && selectedBackgroundAsset) return <div className="studio-side-content">
       <h2>Imagem de fundo</h2><p>{selectedBackgroundAsset.name}</p>
-      <div className="studio-controls-grid">{control('X', activeEditorV6.backgroundX, (value, record) => updateBackground({ backgroundX: value }, record), -100, 100)}{control('Y', activeEditorV6.backgroundY, (value, record) => updateBackground({ backgroundY: value }, record), -100, 100)}{control('Largura', activeEditorV6.backgroundWidth, (value, record) => updateBackground({ backgroundWidth: value }, record), 1, 300)}{control('Altura', activeEditorV6.backgroundHeight, (value, record) => updateBackground({ backgroundHeight: value }, record), 1, 300)}{control('Rotação', activeEditorV6.backgroundRotation, (value, record) => updateBackground({ backgroundRotation: value }, record), -180, 180, '°')}</div>
+      <div className="studio-controls-grid">{control('X', previewBackground.backgroundX, (value, record) => updateBackground({ backgroundX: value }, record), -100, 100)}{control('Y', previewBackground.backgroundY, (value, record) => updateBackground({ backgroundY: value }, record), -100, 100)}{control('Largura', previewBackground.backgroundWidth, (value, record) => updateBackground({ backgroundWidth: value }, record), 1, 300)}{control('Altura', previewBackground.backgroundHeight, (value, record) => updateBackground({ backgroundHeight: value }, record), 1, 300)}{control('Rotação', previewBackground.backgroundRotation, (value, record) => updateBackground({ backgroundRotation: value }, record), -180, 180, '°')}</div>
       <button className="studio-side-danger" type="button" onClick={deleteSelected}><Icon name="trash" />Remover fundo</button>
     </div>
     return <div className="studio-side-content"><h2>Cena</h2><p>Escolha uma ferramenta à esquerda ou selecione um elemento na cena.</p><small>{activeEditorV6.elements.length} elemento(s)</small></div>
@@ -1287,18 +1234,18 @@ export function EditorV6Page() {
   </div>
 
   const toggleTimelinePlayback = () => {
+    if (dragRef.current) return
     if (isPlaying) { setIsPlaying(false); return }
     if (playheadFrame >= timelineDurationFrames) setPlayheadFrame(0)
     setIsPlaying(true)
   }
 
   if (activeEditorV6) {
-    const backgroundAsset = activeEditorV6.assets.find((asset) => asset.id === activeEditorV6.backgroundAssetId)
     const inspectorWidth = sceneRef.current ? Math.min(38, 276 / sceneRef.current.clientWidth * 100) : 28
     const selectedBounds = selectedElement
       ? { left: 50 + selectedElement.x - editorV6ElementSize(selectedElement).width / 2, right: 50 + selectedElement.x + editorV6ElementSize(selectedElement).width / 2 }
       : selectedElementId === 'background'
-        ? { left: 50 + activeEditorV6.backgroundX - activeEditorV6.backgroundWidth / 2, right: 50 + activeEditorV6.backgroundX + activeEditorV6.backgroundWidth / 2 }
+        ? { left: 50 + previewBackground.backgroundX - previewBackground.backgroundWidth / 2, right: 50 + previewBackground.backgroundX + previewBackground.backgroundWidth / 2 }
         : null
     const inspectorSide = selectedBounds?.right !== undefined && selectedBounds.right > 100 - inspectorWidth
       ? 'left'
@@ -1328,16 +1275,10 @@ export function EditorV6Page() {
           {error && <small className="studio-error-message" role="alert">{error}</small>}
           {notice && <small className="studio-save-notice" role="status">{notice}</small>}
         </aside>}
-        <section className="studio-scene-area" aria-label="Prévia da cena">
-          <div className="studio-scene-canvas" ref={sceneRef} style={{ backgroundColor: activeEditorV6.backgroundColor }} onPointerDown={() => setSelectedElementId(null)}>
-            {backgroundAsset && <img className={`studio-canvas-background${selectedElementId === 'background' && !fullView ? ' selected' : ''}`} src={backgroundAsset.dataUrl} alt="" style={imageStyle(activeEditorV6.backgroundX, activeEditorV6.backgroundY, activeEditorV6.backgroundWidth, activeEditorV6.backgroundHeight, activeEditorV6.backgroundRotation)} onPointerDown={(event) => startDrag(event, 'background')} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag} />}
-            {[...visibleTimelineElements].sort((a, b) => a.zIndex - b.zIndex).map((element) => {
-              const asset = element.assetId ? activeEditorV6.assets.find((item) => item.id === element.assetId) : undefined
-              const size = editorV6ElementSize(element)
-              return <div key={element.id} className={`studio-canvas-element studio-element-${element.kind}${selectedElementId === element.id && !fullView ? ' selected' : ''}`} style={{ ...imageStyle(element.x, element.y, size.width, size.height, element.rotation, element.kind === 'character' && element.flipX === true), zIndex: element.zIndex + 1 }} onPointerDown={(event) => startDrag(event, element.id)} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag}>
-                {(element.kind === 'image' || element.kind === 'character') && asset ? <img src={asset.dataUrl} alt={asset.name} draggable={false} /> : <span>{element.text}</span>}
-              </div>
-            })}
+        <section className="studio-scene-area v6-scene-area" aria-label="Prévia da cena">
+          <div className="studio-scene-canvas v6-scene-canvas" ref={sceneRef} style={{ backgroundColor: previewBackground.backgroundColor }} onPointerDown={() => { setSelectedElementId(null); setSelectedTimelineBlockId(null) }}>
+            {previewScene && <SceneSurface scene={previewScene} assets={activeEditorV6.assets} selectedId={fullView ? null : selectedElementId} interaction={fullView ? undefined : sceneInteraction} />}
+            {!fullView && <span className="v6-preview-time" aria-live="off">{isPlaying ? 'Reproduzindo' : 'Pausado'} · {frameTimecode(previewScene?.frame ?? 0)}</span>}
             {fullView && <button className="studio-exit-view" onClick={() => setFullView(false)} type="button">Sair da visualização <kbd>Esc</kbd></button>}
             {!fullView && <span className="studio-scene-title">{activeEditorV6.title}</span>}
             {!fullView && inspectorOpen && <aside className={`studio-inspector studio-inspector-${inspectorSide}`} aria-label="Inspector da cena" onPointerDown={(event) => event.stopPropagation()}>
@@ -1349,8 +1290,8 @@ export function EditorV6Page() {
         </section>
         {!fullView && <aside className="studio-editor-rail studio-editor-right" aria-label="Elenco do Editor V6">{castPanel()}</aside>}
         {!fullView && <EditorV6Timeline key={activeEditorV6.id} document={activeEditorV6} frame={playheadFrame} playing={isPlaying} selectedId={selectedTimelineBlockId}
-          onSeek={(frame) => { setIsPlaying(false); setPlayheadFrame(frame) }} onPlay={toggleTimelinePlayback} onChange={changeScene}
-          onSelect={(block) => { setSelectedTimelineBlockId(block.id); setSelectedElementId(block.elementId ?? null); setActiveTool(null); setInspectorOpen(true); if (block.state?.kind === 'character') restoreCharacterInspectorView(); else setInspectorTab('editor') }} /> }
+          onSeek={(frame) => { if (dragRef.current) cancelSceneDrag(); setIsPlaying(false); setPlayheadFrame(frame) }} onPlay={toggleTimelinePlayback} onChange={changeScene}
+          onSelect={(block) => { setSelectedTimelineBlockId(block.id); setSelectedElementId(block.background ? 'background' : block.elementId ?? null); setActiveTool(block.background ? 'background' : null); setInspectorOpen(true); if (block.state?.kind === 'character') restoreCharacterInspectorView(); else setInspectorTab('editor') }} /> }
         {castPickerOpen && <div className="studio-cast-modal-backdrop" onPointerDown={(event) => { if (event.target === event.currentTarget && !savingCast) setCastPickerOpen(false) }}>
           <section className="studio-cast-modal" role="dialog" aria-modal="true" aria-labelledby="studio-cast-modal-title">
             <header><span><small>EDITAR ELENCO</small><h2 id="studio-cast-modal-title">Personagens do Editor V6</h2></span><button className="studio-cast-modal-close" onClick={() => setCastPickerOpen(false)} aria-label="Fechar" disabled={savingCast} type="button">×</button></header>

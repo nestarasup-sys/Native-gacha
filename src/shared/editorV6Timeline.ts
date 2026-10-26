@@ -1,5 +1,5 @@
 /** Frame-based timeline operations shared by preview, prints and persistence. */
-import type { EditorV6Document, EditorV6Element, EditorV6Timeline, EditorV6TimelineBlock, EditorV6TimelineTrack } from './editorV6'
+import type { EditorV6BackgroundState, EditorV6Document, EditorV6Element, EditorV6Timeline, EditorV6TimelineBlock, EditorV6TimelineTrack } from './editorV6'
 import { editorV6TrackKindForElement, editorV6TrackLabel } from './editorV6'
 
 export type TimelineClip = { track: EditorV6TimelineTrack; block: EditorV6TimelineBlock }
@@ -11,10 +11,10 @@ export const frameTimecode = (frame: number): string => {
 const byTime = (a: EditorV6TimelineBlock, b: EditorV6TimelineBlock) => a.startFrame - b.startFrame || a.id.localeCompare(b.id)
 export const timelineClips = (timeline: EditorV6Timeline): TimelineClip[] => timeline.tracks.flatMap((track) => track.blocks.map((block) => ({ track, block })))
 
-export function addEditorV6ElementAtFrame(document: EditorV6Document, element: EditorV6Element, frame: number, blockId = crypto.randomUUID()): EditorV6Document {
+export function addEditorV6ElementAtFrame(document: EditorV6Document, element: EditorV6Element, frame: number, blockId: string = crypto.randomUUID()): EditorV6Document {
   const kind = editorV6TrackKindForElement(element)
   const startFrame = Math.max(0, Math.min(MAX_TIMELINE_FRAME - 1, Math.round(frame)))
-  const durationFrames = Math.min(150, MAX_TIMELINE_FRAME - startFrame)
+  const durationFrames = Math.min(kind === 'character' ? Math.max(1, document.timeline.durationFrames - startFrame) : 150, MAX_TIMELINE_FRAME - startFrame)
   const existing = document.timeline.tracks.find((track) => track.kind === kind && (kind !== 'character' || track.characterId === element.characterId))
   if (existing?.locked) return document
   const track: EditorV6TimelineTrack = existing ?? { id: crypto.randomUUID(), kind, name: kind === 'character' ? element.text.slice(0, 80) || 'Personagem' : editorV6TrackLabel(kind), characterId: kind === 'character' ? element.characterId : undefined, muted: false, locked: false, blocks: [] }
@@ -24,20 +24,81 @@ export function addEditorV6ElementAtFrame(document: EditorV6Document, element: E
 
 /** Character states hold until the next state. Linked comments use video-relative time. */
 export function normalizeEditorV6Timeline(timeline: EditorV6Timeline): EditorV6Timeline {
-  const videoBlocks = new Map(timeline.tracks.filter((track) => track.kind === 'video').flatMap((track) => track.blocks.map((block) => [block.id, block] as const)))
   let tracks = timeline.tracks.map((track) => ({ ...track, blocks: track.blocks.map((original) => {
     const startFrame = Math.min(MAX_TIMELINE_FRAME - 1, Math.max(0, Math.round(original.startFrame)))
-    const block = { ...original, startFrame, durationFrames: Math.max(1, Math.min(Math.round(original.durationFrames), MAX_TIMELINE_FRAME - startFrame)) }
+    return { ...original, startFrame, durationFrames: Math.max(1, Math.min(Math.round(original.durationFrames), MAX_TIMELINE_FRAME - startFrame)) }
+  }) }))
+  const durationFrames = Math.min(MAX_TIMELINE_FRAME, tracks.reduce((end, track) => Math.max(end, ...track.blocks.map((block) => block.startFrame + (track.kind === 'character' || block.background ? 1 : block.durationFrames))), Math.max(1, timeline.durationFrames)))
+  tracks = tracks.map((track) => track.kind !== 'character' ? track : { ...track, blocks: [...track.blocks].sort(byTime).map((block, index, blocks) => ({
+    ...block, durationFrames: Math.max(1, (blocks[index + 1]?.startFrame ?? durationFrames) - block.startFrame)
+  })) })
+  const backgrounds = tracks.flatMap((track) => track.blocks.filter((block) => block.background)).sort(byTime)
+  const backgroundEnds = new Map(backgrounds.map((block, index) => [block.id, backgrounds[index + 1]?.startFrame ?? durationFrames]))
+  tracks = tracks.map((track) => ({ ...track, blocks: track.blocks.map((block) => block.background ? { ...block, durationFrames: Math.max(1, backgroundEnds.get(block.id)! - block.startFrame) } : block) }))
+  const videoBlocks = new Map(tracks.filter((track) => track.kind === 'video').flatMap((track) => track.blocks.map((block) => [block.id, block] as const)))
+  tracks = tracks.map((track) => ({ ...track, blocks: track.blocks.map((block) => {
     const parent = block.parentBlockId ? videoBlocks.get(block.parentBlockId) : undefined
     if (!parent || track.kind === 'video' || track.kind === 'character') return block
     const relativeStartFrame = Math.min(parent.durationFrames - 1, Math.max(0, Math.round(block.relativeStartFrame ?? block.startFrame - parent.startFrame)))
     return { ...block, relativeStartFrame, startFrame: parent.startFrame + relativeStartFrame, durationFrames: Math.max(1, Math.min(block.durationFrames, parent.durationFrames - relativeStartFrame)) }
   }) }))
-  const durationFrames = Math.min(MAX_TIMELINE_FRAME, tracks.reduce((end, track) => Math.max(end, ...track.blocks.map((block) => block.startFrame + (track.kind === 'character' ? 1 : block.durationFrames))), Math.max(1, timeline.durationFrames)))
-  tracks = tracks.map((track) => track.kind !== 'character' ? track : { ...track, blocks: [...track.blocks].sort(byTime).map((block, index, blocks) => ({
-    ...block, durationFrames: Math.max(1, (blocks[index + 1]?.startFrame ?? durationFrames) - block.startFrame)
-  })) })
   return { ...timeline, durationFrames, tracks }
+}
+
+export type EditorV6ResolvedScene = { frame: number; background: EditorV6BackgroundState; elements: EditorV6Element[] }
+const backgroundsCache = new WeakMap<EditorV6Timeline, TimelineClip[]>()
+export function resolveEditorV6BackgroundAtFrame(document: EditorV6Document, frame: number): EditorV6BackgroundState {
+  let backgrounds = backgroundsCache.get(document.timeline)
+  if (!backgrounds) {
+    backgrounds = timelineClips(document.timeline).filter(({ track, block }) => block.background && !track.hidden && !track.muted).sort((a, b) => byTime(a.block, b.block))
+    backgroundsCache.set(document.timeline, backgrounds)
+  }
+  let left = 0, right = backgrounds.length
+  while (left < right) { const middle = (left + right) >>> 1; if (backgrounds[middle].block.startFrame <= frame) left = middle + 1; else right = middle }
+  const background = backgrounds[left - 1]?.block.background
+  return background ?? {
+    backgroundColor: document.backgroundColor, backgroundAssetId: document.backgroundAssetId,
+    backgroundX: document.backgroundX, backgroundY: document.backgroundY,
+    backgroundWidth: document.backgroundWidth, backgroundHeight: document.backgroundHeight, backgroundRotation: document.backgroundRotation
+  }
+}
+
+export function resolveEditorV6SceneAtFrame(document: EditorV6Document, frame: number): EditorV6ResolvedScene {
+  const normalizedFrame = Math.min(Math.max(0, document.timeline.durationFrames - 1), Math.max(0, Math.round(frame)))
+  return { frame: normalizedFrame, background: resolveEditorV6BackgroundAtFrame(document, normalizedFrame), elements: resolveEditorV6ElementsAtFrame(document, normalizedFrame) }
+}
+
+/** Background changes are persistent states on the visual lane. */
+export function editEditorV6BackgroundAtFrame(document: EditorV6Document, frame: number, values: Partial<EditorV6BackgroundState>, blockId: string = crypto.randomUUID()): EditorV6Document {
+  const track = document.timeline.tracks.find((candidate) => candidate.kind === 'video')
+  if (track?.locked) return document
+  const startFrame = Math.min(document.timeline.durationFrames - 1, Math.max(0, Math.round(frame)))
+  const background = { ...resolveEditorV6BackgroundAtFrame(document, startFrame), ...values }
+  const existing = track?.blocks.find((block) => block.background && block.startFrame === startFrame)
+  const name = document.assets.find((asset) => asset.id === background.backgroundAssetId)?.name
+  const block: EditorV6TimelineBlock = { id: existing?.id ?? blockId, label: `Fundo: ${name ?? background.backgroundColor}`.slice(0, 120), startFrame, durationFrames: document.timeline.durationFrames - startFrame, background }
+  const target: EditorV6TimelineTrack = track ?? { id: crypto.randomUUID(), kind: 'video', name: 'Vídeo', muted: false, locked: false, blocks: [] }
+  const blocks = [...target.blocks.filter((item) => item.id !== block.id), block]
+  return { ...document, timeline: normalizeEditorV6Timeline({ ...document.timeline, tracks: track ? document.timeline.tracks.map((item) => item.id === target.id ? { ...item, blocks } : item) : [...document.timeline.tracks, { ...target, blocks }] }) }
+}
+
+/** Prepare a character edit at the cursor without committing a click or a cancelled gesture. */
+export function prepareEditorV6PositionAtFrame(document: EditorV6Document, elementId: string, frame: number): { document: EditorV6Document; blockId: string } | null {
+  const scene = resolveEditorV6SceneAtFrame(document, frame)
+  const element = scene.elements.find((item) => item.id === elementId)
+  const clip = editorV6ClipAtFrame(document.timeline, elementId, scene.frame)
+  if (!element || element.positionLocked || clip?.track.locked) return null
+  if (element.kind !== 'character') return clip ? { document, blockId: clip.block.id } : null
+  if (clip && clip.block.startFrame === scene.frame) return { document, blockId: clip.block.id }
+  const blockId = crypto.randomUUID()
+  return { document: addEditorV6ElementAtFrame(document, element, scene.frame, blockId), blockId }
+}
+
+export function moveEditorV6ElementInPeriod(document: EditorV6Document, blockId: string, x: number, y: number): EditorV6Document {
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return document
+  const clip = timelineClips(document.timeline).find(({ block }) => block.id === blockId)
+  if (!clip?.block.elementId || clip.track.locked) return document
+  return editEditorV6DocumentAtBlock(document, blockId, (working) => ({ ...working, elements: working.elements.map((element) => element.id === clip.block.elementId ? { ...element, x, y } : element) }))
 }
 
 type ElementIndex = { clips: TimelineClip[]; maximumEnds: number[]; character: boolean }
@@ -120,7 +181,7 @@ export function editEditorV6DocumentAtBlock(document: EditorV6Document, blockId:
 }
 
 export function pruneEditorV6TimelineSnapshots(document: EditorV6Document): EditorV6Document {
-  const referenced = new Set([document.backgroundAssetId, ...document.elements.map((element) => element.assetId), ...timelineClips(document.timeline).map(({ block }) => block.state?.assetId)])
+  const referenced = new Set([document.backgroundAssetId, ...document.elements.map((element) => element.assetId), ...timelineClips(document.timeline).flatMap(({ block }) => [block.state?.assetId, block.background?.backgroundAssetId])])
   const assets = document.assets.filter((asset) => !asset.timelineSnapshot || referenced.has(asset.id))
   return assets.length === document.assets.length ? document : { ...document, assets }
 }
@@ -155,18 +216,19 @@ export function snapEditorV6Frame(timeline: EditorV6Timeline, frame: number, cur
 export function setEditorV6BlockTiming(timeline: EditorV6Timeline, blockId: string, values: { startFrame?: number; durationFrames?: number }): EditorV6Timeline {
   const clip = timelineClips(timeline).find(({ block }) => block.id === blockId)
   if (!clip || clip.track.locked) return timeline
-  const sorted = [...clip.track.blocks].sort(byTime), index = sorted.findIndex((block) => block.id === blockId)
+  const persistent = clip.track.kind === 'character' || Boolean(clip.block.background)
+  const sorted = clip.track.blocks.filter((block) => !clip.block.background || block.background).sort(byTime), index = sorted.findIndex((block) => block.id === blockId)
   let startFrame = Math.max(0, Math.min(MAX_TIMELINE_FRAME - 1, Math.round(values.startFrame ?? clip.block.startFrame)))
   let durationFrames = Math.max(1, Math.min(MAX_TIMELINE_FRAME - startFrame, Math.round(values.durationFrames ?? clip.block.durationFrames)))
   let nextStart: number | undefined
-  if (clip.track.kind === 'character') {
+  if (persistent) {
     startFrame = Math.max(sorted[index - 1] ? sorted[index - 1].startFrame + 1 : 0, Math.min(sorted[index + 1] ? sorted[index + 1].startFrame - 1 : MAX_TIMELINE_FRAME - 1, startFrame))
     durationFrames = Math.max(1, Math.min(durationFrames, MAX_TIMELINE_FRAME - startFrame))
     if (values.durationFrames !== undefined && sorted[index + 1]) nextStart = Math.max(startFrame + 1, Math.min(startFrame + durationFrames, sorted[index + 2] ? sorted[index + 2].startFrame - 1 : MAX_TIMELINE_FRAME - 1))
   }
   const parent = clip.block.parentBlockId ? timelineClips(timeline).find(({ block }) => block.id === clip.block.parentBlockId)?.block : undefined
   const tracks = timeline.tracks.map((track) => ({ ...track, blocks: track.blocks.map((block) => block.id === blockId ? { ...block, startFrame, durationFrames, ...(parent ? { relativeStartFrame: Math.max(0, startFrame - parent.startFrame) } : {}) } : block.id === sorted[index + 1]?.id && nextStart !== undefined ? { ...block, startFrame: nextStart } : block) }))
-  return normalizeEditorV6Timeline({ ...timeline, tracks, durationFrames: clip.track.kind === 'character' && values.durationFrames !== undefined && !sorted[index + 1] ? startFrame + durationFrames : Math.max(timeline.durationFrames, startFrame + durationFrames) })
+  return normalizeEditorV6Timeline({ ...timeline, tracks, durationFrames: persistent && values.durationFrames !== undefined && !sorted[index + 1] ? startFrame + durationFrames : Math.max(timeline.durationFrames, startFrame + durationFrames) })
 }
 
 export function splitEditorV6Block(timeline: EditorV6Timeline, blockId: string, frame: number): EditorV6Timeline {
@@ -190,12 +252,13 @@ export function splitEditorV6Block(timeline: EditorV6Timeline, blockId: string, 
 export function duplicateEditorV6Block(timeline: EditorV6Timeline, blockId: string): EditorV6Timeline {
   const clip = timelineClips(timeline).find(({ block }) => block.id === blockId)
   if (!clip || clip.track.locked) return timeline
+  const persistent = clip.track.kind === 'character' || Boolean(clip.block.background)
   const copyId = crypto.randomUUID(), startFrame = clip.block.startFrame + clip.block.durationFrames
   const copy = { ...clip.block, id: copyId, startFrame, ...(clip.block.parentBlockId ? { relativeStartFrame: (clip.block.relativeStartFrame ?? 0) + clip.block.durationFrames } : {}) }
   const tracks = timeline.tracks.map((track) => ({ ...track, blocks: [
-    ...track.blocks.map((block) => track.id === clip.track.id && track.kind === 'character' && block.startFrame >= startFrame ? { ...block, startFrame: block.startFrame + copy.durationFrames } : block),
+    ...track.blocks.map((block) => track.id === clip.track.id && persistent && (!clip.block.background || block.background) && block.startFrame >= startFrame ? { ...block, startFrame: block.startFrame + copy.durationFrames } : block),
     ...(track.id === clip.track.id ? [copy] : []),
     ...track.blocks.filter((block) => block.parentBlockId === blockId).map((block) => ({ ...block, id: crypto.randomUUID(), parentBlockId: copyId, startFrame: startFrame + (block.relativeStartFrame ?? block.startFrame - clip.block.startFrame) }))
   ] }))
-  return normalizeEditorV6Timeline({ ...timeline, durationFrames: Math.max(timeline.durationFrames + (clip.track.kind === 'character' ? copy.durationFrames : 0), startFrame + copy.durationFrames), tracks })
+  return normalizeEditorV6Timeline({ ...timeline, durationFrames: Math.max(timeline.durationFrames + (persistent ? copy.durationFrames : 0), startFrame + copy.durationFrames), tracks })
 }

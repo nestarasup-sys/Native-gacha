@@ -191,17 +191,18 @@ export function EditorV6Timeline(props: Props) {
     value = Math.max(mode === 'resize' ? block.startFrame + 1 : 0, Math.min(MAX_TIMELINE_FRAME - (mode === 'move' ? block.durationFrames : 0), snapped.frame))
     let startFrame = mode === 'move' ? value : block.startFrame
     let durationFrames = mode === 'resize' ? value - block.startFrame : block.durationFrames
-    const sorted = [...track.blocks].sort((a, b) => a.startFrame - b.startFrame || a.id.localeCompare(b.id))
+    const persistent = track.kind === 'character' || Boolean(block.background)
+    const sorted = track.blocks.filter((clip) => !block.background || clip.background).sort((a, b) => a.startFrame - b.startFrame || a.id.localeCompare(b.id))
     const index = sorted.findIndex((candidate) => candidate.id === block.id)
     const next = sorted[index + 1], previous = sorted[index - 1]
-    if (track.kind === 'character') {
+    if (persistent) {
       if (mode === 'move') startFrame = Math.max(previous ? previous.startFrame + 1 : 0, Math.min(next ? next.startFrame - 1 : MAX_TIMELINE_FRAME - 1, startFrame))
       else durationFrames = Math.max(1, Math.min(next && sorted[index + 2] ? sorted[index + 2].startFrame - block.startFrame - 1 : MAX_TIMELINE_FRAME - block.startFrame, durationFrames))
     }
     const parent = block.parentBlockId ? timelineClips(initial).find((clip) => clip.block.id === block.parentBlockId)?.block : undefined
     if (parent) { startFrame = Math.max(parent.startFrame, Math.min(parent.startFrame + parent.durationFrames - 1, startFrame)); durationFrames = Math.max(1, Math.min(durationFrames, parent.startFrame + parent.durationFrames - startFrame)) }
     const updated = { ...block, startFrame, durationFrames, ...(parent ? { relativeStartFrame: startFrame - parent.startFrame } : {}) }
-    const timeline = normalizeEditorV6Timeline({ ...initial, durationFrames: track.kind === 'character' && mode === 'resize' && !next ? startFrame + durationFrames : Math.max(initial.durationFrames, startFrame + durationFrames), tracks: initial.tracks.map((candidate) => candidate.id === track.id ? { ...candidate, blocks: candidate.blocks.map((clip) => clip.id === block.id ? updated : track.kind === 'character' && mode === 'resize' && clip.id === next?.id ? { ...clip, startFrame: block.startFrame + durationFrames } : clip) } : candidate) })
+    const timeline = normalizeEditorV6Timeline({ ...initial, durationFrames: persistent && mode === 'resize' && !next ? startFrame + durationFrames : Math.max(initial.durationFrames, startFrame + durationFrames), tracks: initial.tracks.map((candidate) => candidate.id === track.id ? { ...candidate, blocks: candidate.blocks.map((clip) => clip.id === block.id ? updated : persistent && mode === 'resize' && clip.id === next?.id ? { ...clip, startFrame: block.startFrame + durationFrames } : clip) } : candidate) })
     draftRef.current = timeline
     setDraft(timeline)
     setGuide(snapped.guide)

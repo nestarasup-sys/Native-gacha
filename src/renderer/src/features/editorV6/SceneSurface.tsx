@@ -1,0 +1,84 @@
+import { memo, useMemo, type PointerEvent as ReactPointerEvent } from 'react'
+import type { EditorV6Asset, EditorV6Element } from '../../../../shared/editorV6'
+import { editorV6ElementSize } from '../../../../shared/editorV6SceneModel'
+import type { EditorV6ResolvedScene } from '../../../../shared/editorV6Timeline'
+
+export type ScenePointerEvent = ReactPointerEvent<SVGElement>
+export type SceneSurfaceInteraction = {
+  start: (event: ScenePointerEvent, id: string) => void
+  move: (event: ScenePointerEvent) => void
+  end: (event: ScenePointerEvent) => void
+}
+const FONT = 'Arial, sans-serif'
+let measurement: CanvasRenderingContext2D | null = null
+function measure(text: string, fontSize: number): number {
+  if (!measurement && typeof document !== 'undefined') measurement = document.createElement('canvas').getContext('2d')
+  if (!measurement) return Array.from(text).length * fontSize * .55
+  measurement.font = `600 ${fontSize}px ${FONT}`
+  return measurement.measureText(text).width
+}
+
+/** All wrapping is explicit SVG text, so preview and captured frames have identical layout. */
+export function wrapSceneText(text: string, width: number, fontSize: number, maxLines: number): string[] {
+  const lines: string[] = []
+  let overflow = false
+  const push = (line: string) => { if (lines.length < maxLines) lines.push(line); else overflow = true }
+  for (const paragraph of text.replace(/\r/g, '').split('\n')) {
+    let line = ''
+    for (const word of paragraph.split(/\s+/).filter(Boolean)) {
+      if (line && measure(`${line} ${word}`, fontSize) <= width) { line += ` ${word}`; continue }
+      if (line) { push(line); line = '' }
+      for (const character of Array.from(word)) {
+        if (line && measure(line + character, fontSize) > width) { push(line); line = '' }
+        line += character
+      }
+    }
+    push(line)
+  }
+  if (overflow && lines.length) {
+    let last = lines[lines.length - 1]
+    while (last && measure(`${last}…`, fontSize) > width) last = Array.from(last).slice(0, -1).join('')
+    lines[lines.length - 1] = `${last}…`
+  }
+  return lines
+}
+
+const transform = (x: number, y: number, rotation: number) => `translate(${(50 + x) * 19.2} ${(50 + y) * 10.8}) rotate(${rotation})`
+const Selection = ({ width, height }: { width: number; height: number }) => <rect x={-width / 2 - 2} y={-height / 2 - 2} width={width + 4} height={height + 4} fill="none" stroke="#e84f88" strokeWidth={2} vectorEffect="non-scaling-stroke" pointerEvents="none" />
+
+const SceneLayer = memo(function SceneLayer({ element, asset, selected, interaction }: { element: EditorV6Element; asset?: EditorV6Asset; selected: boolean; interaction?: SceneSurfaceInteraction }) {
+  const size = editorV6ElementSize(element), width = size.width * 19.2, height = size.height * 10.8
+  const image = element.kind === 'image' || element.kind === 'character'
+  const fontSize = Math.max(8, Math.min(32, height * .3, width / 2)), lineHeight = fontSize * 1.22
+  const lines = useMemo(() => image ? [] : wrapSceneText(element.text, Math.max(1, width - 32), fontSize, Math.max(1, Math.floor((height - 18) / lineHeight))), [element.text, image, width, height, fontSize, lineHeight])
+  const clipId = `v6-text-${element.id}`
+  const fill = element.kind === 'thought' ? '#fffafd' : '#ffffff'
+  return <g transform={transform(element.x, element.y, element.rotation)} data-element-id={element.id} aria-label={element.text || asset?.name || 'Objeto'} role={interaction ? 'button' : undefined}
+    style={{ cursor: interaction ? element.positionLocked ? 'default' : 'move' : undefined, touchAction: 'none' }}
+    onPointerDown={interaction ? (event) => interaction.start(event, element.id) : undefined} onPointerMove={interaction?.move} onPointerUp={interaction?.end} onPointerCancel={interaction?.end}>
+    {image && asset ? <image href={asset.dataUrl} x={-width / 2} y={-height / 2} width={width} height={height} preserveAspectRatio={element.kind === 'character' ? 'none' : 'xMidYMid meet'} transform={element.flipX ? 'scale(-1 1)' : undefined} /> : !image && <>
+      {element.kind === 'speech' ? <><ellipse rx={width / 2} ry={height / 2} fill={fill} fillOpacity={.96} stroke="#624d5b" strokeWidth={2} /><path d={`M ${width * .2} ${height * .4} l ${width * .07} ${height * .2} l ${width * .015} ${-height * .25}`} fill={fill} stroke="#624d5b" strokeWidth={2} /></> : element.kind === 'thought' ? <><ellipse rx={width / 2} ry={height / 2} fill={fill} stroke="#624d5b" strokeWidth={2} /><circle cx={width * .32} cy={height * .52} r={8} fill={fill} stroke="#624d5b" strokeWidth={2} /><circle cx={width * .37} cy={height * .65} r={4} fill={fill} stroke="#624d5b" strokeWidth={2} /></> : <rect x={-width / 2} y={-height / 2} width={width} height={height} rx={16} fill={fill} fillOpacity={.94} stroke="#624d5b" strokeWidth={2} />}
+      <defs><clipPath id={clipId}><rect x={-width / 2 + 10} y={-height / 2 + 8} width={Math.max(0, width - 20)} height={Math.max(0, height - 16)} /></clipPath></defs>
+      <text fontFamily={FONT} fontSize={fontSize} fontWeight={600} textAnchor="middle" dominantBaseline="middle" fill="#352d35" clipPath={`url(#${clipId})`}>
+        {lines.map((line, index) => <tspan key={index} x={0} y={(index - (lines.length - 1) / 2) * lineHeight}>{line}</tspan>)}
+      </text>
+    </>}
+    {interaction && <rect x={-width / 2} y={-height / 2} width={width} height={height} fill="transparent" pointerEvents="all" />}
+    {selected && <Selection width={width} height={height} />}
+  </g>
+})
+
+/** Shared scene drawing for the live Chromium preview and sequential frame captures. */
+export const SceneSurface = memo(function SceneSurface({ scene, assets, selectedId = null, interaction, outputWidth = 1920, outputHeight = 1080 }: { scene: EditorV6ResolvedScene; assets: readonly EditorV6Asset[]; selectedId?: string | null; interaction?: SceneSurfaceInteraction; outputWidth?: number; outputHeight?: number }) {
+  const assetsById = useMemo(() => new Map(assets.map((asset) => [asset.id, asset])), [assets])
+  const background = scene.background, asset = background.backgroundAssetId ? assetsById.get(background.backgroundAssetId) : undefined
+  const width = background.backgroundWidth * 19.2, height = background.backgroundHeight * 10.8
+  return <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" width={outputWidth} height={outputHeight} className="v6-scene-surface" data-frame={scene.frame} aria-label={`Cena no quadro ${scene.frame}`} style={{ display: 'block', width: '100%', height: '100%', overflow: 'hidden', userSelect: 'none', textRendering: 'geometricPrecision', WebkitFontSmoothing: 'antialiased' }}>
+    <rect width="1920" height="1080" fill={background.backgroundColor} />
+    {asset && <g transform={transform(background.backgroundX, background.backgroundY, background.backgroundRotation)} aria-label="Fundo" style={{ cursor: interaction ? 'move' : undefined, touchAction: 'none' }} onPointerDown={interaction ? (event) => interaction.start(event, 'background') : undefined} onPointerMove={interaction?.move} onPointerUp={interaction?.end} onPointerCancel={interaction?.end}>
+      <image href={asset.dataUrl} x={-width / 2} y={-height / 2} width={width} height={height} preserveAspectRatio="none" />
+      {selectedId === 'background' && <Selection width={width} height={height} />}
+    </g>}
+    {scene.elements.map((element) => <SceneLayer key={element.id} element={element} asset={element.assetId ? assetsById.get(element.assetId) : undefined} selected={selectedId === element.id} interaction={interaction} />)}
+  </svg>
+})

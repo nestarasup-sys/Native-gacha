@@ -55,6 +55,13 @@ const editorV6ElementSchema = z.object({
   zIndex: finite
 }).passthrough()
 
+const editorV6BackgroundSchema = z.object({
+  backgroundColor: z.string().regex(/^#[0-9a-f]{6}$/i),
+  backgroundAssetId: uuid.nullable(),
+  backgroundX: finite, backgroundY: finite,
+  backgroundWidth: finite, backgroundHeight: finite, backgroundRotation: finite
+})
+
 const editorV6TimelineTrackSchema = z.object({
   id: uuid,
   kind: z.enum(['character', 'speech', 'thought', 'video']),
@@ -71,6 +78,7 @@ const editorV6TimelineTrackSchema = z.object({
     startFrame: z.number().int().min(0).max(1_000_000),
     durationFrames: z.number().int().min(1).max(1_000_000),
     state: editorV6ElementSchema.optional(),
+    background: editorV6BackgroundSchema.optional(),
     characterId: z.string().min(1).max(120).optional(),
     parentBlockId: uuid.optional(),
     relativeStartFrame: z.number().int().min(0).max(1_000_000).optional(),
@@ -133,6 +141,9 @@ export const editorV6DocumentSchema = z.object({
       }
       if (block.state && (block.state.id !== block.elementId || !elementIds.has(block.state.id) || (block.state.assetId && !assetsById.has(block.state.assetId)))) {
         context.addIssue({ code: 'custom', path: ['timeline', 'tracks', trackIndex, 'blocks', blockIndex, 'state'], message: 'O estado do bloco precisa apontar para uma camada e imagem válidas.' })
+      }
+      if (block.background && (track.kind !== 'video' || block.elementId || block.state || (block.background.backgroundAssetId && assetsById.get(block.background.backgroundAssetId)?.category !== 'background'))) {
+        context.addIssue({ code: 'custom', path: ['timeline', 'tracks', trackIndex, 'blocks', blockIndex, 'background'], message: 'O estado de fundo precisa usar uma imagem de fundo válida na faixa Vídeo.' })
       }
       if (block.parentBlockId) {
         const parent = blocksById.get(block.parentBlockId)

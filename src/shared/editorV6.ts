@@ -120,6 +120,15 @@ export type EditorV6Element = {
 }
 
 export type EditorV6TrackKind = 'character' | 'speech' | 'thought' | 'video'
+export type EditorV6BackgroundState = {
+  backgroundColor: string
+  backgroundAssetId: string | null
+  backgroundX: number
+  backgroundY: number
+  backgroundWidth: number
+  backgroundHeight: number
+  backgroundRotation: number
+}
 export type EditorV6TimelineBlock = {
   id: string
   /** Links a timeline clip to a layer in the scene when applicable. */
@@ -129,6 +138,7 @@ export type EditorV6TimelineBlock = {
   durationFrames: number
   /** Immutable visual/text state for this period, independent from other clips. */
   state?: EditorV6Element
+  background?: EditorV6BackgroundState
   characterId?: string
   parentBlockId?: string
   relativeStartFrame?: number

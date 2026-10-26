@@ -47,6 +47,8 @@ Os atalhos de edição da timeline não interceptam a digitação em campos de t
 
 `src/shared/editorV6Timeline.ts` contém as operações e a resolução determinística da cena, sem dependências de React ou Electron. A prévia e os prints usam esse mesmo resolvedor.
 
+A prévia agora usa `SceneSurface`, também reutilizado pelas capturas de quadros e prints. Fundos têm estados persistentes na faixa Vídeo. Arrastar um personagem na prévia cria ou atualiza o estado no quadro do cursor; o histórico registra o gesto inteiro uma vez. Veja [PREVIA.md](PREVIA.md).
+
 O relógio usa `performance.now()` e `requestAnimationFrame`. Cada atualização calcula o quadro correspondente ao tempo decorrido, podendo pular quadros quando a interface atrasa. Não soma atrasos de temporizadores sucessivos.
 
 Os índices de blocos são reutilizados por objeto de timeline. A busca de estados usa pesquisa binária. Os eventos sobrepostos usam também um índice de fim máximo para encerrar a busca pelos blocos inativos.
