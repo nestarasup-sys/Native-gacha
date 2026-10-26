@@ -3,10 +3,10 @@ import type { EditorV6Document, EditorV6Element, EditorV6Timeline as Timeline, E
 import { editorV6MotionPlan } from '../../../../shared/editorV6Motion'
 import { EDITOR_V6_DEFAULT_BLOCK_FRAMES, videoCharacterTrackColor } from '../../../../shared/editorV6'
 import { duplicateEditorV6Block, editorV6ClipAtFrame, frameTimecode, MAX_TIMELINE_FRAME, normalizeEditorV6Timeline, pruneEditorV6TimelineSnapshots, setEditorV6BlockTiming, snapEditorV6Frame, splitEditorV6Block, timelineClips } from '../../../../shared/editorV6Timeline'
+import { useEditorV6PlaybackFrame } from './editorV6PlaybackClock'
 
 type Props = {
   document: EditorV6Document
-  frame: number
   playing: boolean
   selectedId: string | null
   onSeek: (frame: number) => void
@@ -72,8 +72,9 @@ const TimelineRows = memo(function TimelineRows({ timeline, pps, width, heading,
 })
 
 export function EditorV6Timeline(props: Props) {
-  const latest = useRef(props)
-  latest.current = props
+  const playbackFrame = useEditorV6PlaybackFrame()
+  const latest = useRef<Props & { frame: number }>({ ...props, frame: playbackFrame })
+  latest.current = { ...props, frame: playbackFrame }
   const [pps, setPps] = useState(72)
   const [snap, setSnap] = useState(true)
   const [compact, setCompact] = useState(false)
@@ -231,9 +232,9 @@ export function EditorV6Timeline(props: Props) {
   }, [])
   useEffect(() => {
     if (!props.playing || !scroll.current) return
-    const node = scroll.current, x = heading + props.frame / 30 * pps
+    const node = scroll.current, x = heading + playbackFrame / 30 * pps
     if (x > node.scrollLeft + node.clientWidth * .8 || x < node.scrollLeft + heading) node.scrollLeft = Math.max(0, x - node.clientWidth * .5)
-  }, [props.frame, props.playing, heading, pps])
+  }, [playbackFrame, props.playing, heading, pps])
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (editableTarget(event.target) || event.defaultPrevented) return
@@ -276,14 +277,14 @@ export function EditorV6Timeline(props: Props) {
   }
   return <section ref={root} className={`editor-v6-timeline v6-timeline-pro${inspector && selected ? ' with-inspector' : ''}`} aria-label="Timeline do Editor V6" onPointerMove={movePointer} onPointerUp={endPointer} onPointerCancel={cancel}>
     <header className="editor-v6-timeline-toolbar">
-      <div className="editor-v6-timeline-title"><strong>Timeline</strong><span>{frameTimecode(props.frame)} / {frameTimecode(timeline.durationFrames)}</span><small>30 FPS</small></div>
+      <div className="editor-v6-timeline-title"><strong>Timeline</strong><span>{frameTimecode(playbackFrame)} / {frameTimecode(timeline.durationFrames)}</span><small>30 FPS</small></div>
       <div className="editor-v6-timeline-actions">
         <button type="button" onClick={props.onPlay} title="Reproduzir / Pausar (Espaço)" aria-label={props.playing ? 'Pausar' : 'Reproduzir'}>{props.playing ? 'Ⅱ' : '▶'}</button>
         <button type="button" className={snap ? 'active' : ''} aria-pressed={snap} onClick={() => setSnap(!snap)} title="Magnetismo (S). Alt ignora temporariamente.">Snap</button>
         <button type="button" onClick={() => { fitActive.current = false; zoomTo(pps / 1.25) }} title="Diminuir zoom (-)">−</button><button type="button" onClick={() => { fitActive.current = false; zoomTo(pps * 1.25) }} title="Aumentar zoom (+)">＋</button>
         <button type="button" onClick={fit} title="Encaixar timeline / restaurar zoom (Shift+Z)">Fit</button>
         <button type="button" onClick={() => setCompact(!compact)} title="Compactar nomes das faixas">{compact ? '↔' : '⇤'}</button>
-        <button type="button" disabled={!selected || selected.track.locked || props.frame <= selected.block.startFrame || props.frame >= selected.block.startFrame + selected.block.durationFrames} onClick={() => selected && split(selected.block.id)} title="Dividir bloco no cursor (Ctrl+K)">✂ Dividir</button>
+        <button type="button" disabled={!selected || selected.track.locked || playbackFrame <= selected.block.startFrame || playbackFrame >= selected.block.startFrame + selected.block.durationFrames} onClick={() => selected && split(selected.block.id)} title="Dividir bloco no cursor (Ctrl+K)">✂ Dividir</button>
       </div>
     </header>
     <div className="editor-v6-timeline-scroll" ref={scroll} onScroll={(event) => setViewport({ left: event.currentTarget.scrollLeft, width: event.currentTarget.clientWidth })}>
@@ -293,7 +294,7 @@ export function EditorV6Timeline(props: Props) {
           <div className="editor-v6-timeline-ruler" style={{ width, backgroundSize: `${pps}px 100%` }} onPointerDown={onScrub}>{ticks.map((second) => <span key={second} style={{ left: second * pps }}>{second}s</span>)}</div>
         </div>
         <TimelineRows timeline={timeline} pps={pps} width={width} heading={heading} range={range} selectedId={props.selectedId} onPointer={onPointer} onSelect={select} onMenu={onMenu} onTrack={onTrack} onScrub={onScrub} />
-        <div className="v6-cursor-overlay" style={{ left: heading, width, clipPath: `inset(0 0 0 ${viewport.left}px)` }}><i className="v6-main-playhead" style={{ transform: `translateX(${props.frame / 30 * pps}px)` }} />{guide !== undefined && <i className="v6-snap-guide" style={{ left: guide / 30 * pps }} />}</div>
+        <div className="v6-cursor-overlay" style={{ left: heading, width, clipPath: `inset(0 0 0 ${viewport.left}px)` }}><i className="v6-main-playhead" style={{ transform: `translateX(${playbackFrame / 30 * pps}px)` }} />{guide !== undefined && <i className="v6-snap-guide" style={{ left: guide / 30 * pps }} />}</div>
       </div>
     </div>
     {readout && <div className="v6-drag-readout" role="status">Início {frameTimecode(readout.startFrame)} · Fim {frameTimecode(readout.startFrame + readout.durationFrames)} · Duração {frameTimecode(readout.durationFrames)} <kbd>Esc cancela</kbd></div>}
@@ -323,7 +324,7 @@ export function EditorV6Timeline(props: Props) {
       <button type="button" role="menuitem" onClick={() => { latest.current.onSeek(menu.block.startFrame); setMenu(null) }}>Ir ao início</button>
       <button type="button" role="menuitem" onClick={() => { latest.current.onSeek(menu.block.startFrame + menu.block.durationFrames); setMenu(null) }}>Ir ao fim</button>
       <button type="button" role="menuitem" disabled={menu.track.locked} onClick={() => duplicate(menu.block.id)}>Duplicar <kbd>Ctrl+D</kbd></button>
-      <button type="button" role="menuitem" disabled={menu.track.locked || props.frame <= menu.block.startFrame || props.frame >= menu.block.startFrame + menu.block.durationFrames} onClick={() => split(menu.block.id)}>Dividir no cursor <kbd>Ctrl+K</kbd></button>
+      <button type="button" role="menuitem" disabled={menu.track.locked || playbackFrame <= menu.block.startFrame || playbackFrame >= menu.block.startFrame + menu.block.durationFrames} onClick={() => split(menu.block.id)}>Dividir no cursor <kbd>Ctrl+K</kbd></button>
       <button type="button" role="menuitem" disabled={menu.track.locked} onClick={() => remove(menu.block.id)}>Excluir <kbd>Del</kbd></button>
     </div>}
   </section>

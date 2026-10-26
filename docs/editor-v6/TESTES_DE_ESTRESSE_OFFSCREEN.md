@@ -22,19 +22,19 @@ Cada cenário foi reproduzido por seis segundos. Confirmei que os quatro persona
 
 | Cenário | Duração | Blocos no projeto | Transições planejadas | Blocos desenhados na timeline | `requestAnimationFrame` médio | p50 | p95 | Pior intervalo | Long tasks da página |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| Leve | 30 s | 80 | 28 | 50 | 73,8 Hz | 13,3 ms | 13,6 ms | 53,3 ms | 2, total 106 ms |
-| Médio | 2 min | 284 | 92 | 47 | 74,0 Hz | 13,3 ms | 13,6 ms | 53,4 ms | 2, total 100 ms |
-| Pesado | 5 min | 752 | 284 | 51 | 73,5 Hz | 13,3 ms | 13,6 ms | 53,4 ms | 1, total 58 ms |
+| Leve | 30 s | 80 | 28 | 50 | 73,5 Hz | 13,3 ms | 13,6 ms | 66,4 ms | 2, total 117 ms |
+| Médio | 2 min | 284 | 92 | 47 | 73,5 Hz | 13,3 ms | 13,6 ms | 80,0 ms | 2, total 126 ms |
+| Pesado | 5 min | 752 | 284 | 51 | 73,5 Hz | 13,3 ms | 13,7 ms | 66,5 ms | 2, total 115 ms |
 
-O custo médio de commit React da `SceneSurface` foi de 0,49 ms no leve, 0,48 ms no médio e 0,50 ms no pesado; não houve long task atribuída à cena. A rota do editor teve 363 commits em cada janela de seis segundos, com média de 2,80/2,68/3,04 ms e picos de 40,6/36,5/44,8 ms. O DOM da timeline manteve entre 47 e 51 blocos no viewport, mesmo com 752 blocos no projeto pesado. Isso confirma, nesta rodada, que o scroll da timeline não montou todos os blocos ao mesmo tempo.
+Após separar o relógio da página, a rota do editor teve 181/183/184 commits em seis segundos, contra 363 em cada cenário na rodada anterior. O tempo React acumulado na rota caiu aproximadamente pela metade: média por commit de 2,80/3,05/3,02 ms, com picos de 39,3/40,3/40,3 ms. A área de prévia (resolução da cena mais superfície SVG) teve custo médio de 0,92/0,98/1,00 ms e não registrou long tasks próprias. A timeline manteve entre 47 e 51 blocos no viewport, mesmo com 752 blocos no projeto pesado.
 
-Durante o Play, o teste observou sprites de transição dos quatro personagens em cada cenário. Nos primeiros seis segundos, encontrou seis dos sete índices internos do atlas por personagem; um índice não apareceu no DOM amostrado por cenário (108 no leve, 145 no médio e 121 no pesado). O teste observa a cena por `requestAnimationFrame`, então é preciso investigar possível frame omitido durante playback e considerar que a captura por RAF pode perder uma atualização curta.
+Durante o Play, o teste observou sprites de transição dos quatro personagens em cada cenário. Nos primeiros seis segundos, encontrou seis dos sete quadros programados: os quadros 108, 146 e 121 não foram observados nos cenários leve, médio e pesado. Como a leitura do DOM ocorre por RAF, ainda é preciso determinar se o playback pulou esses quadros ou se a amostragem coincidiu com a atualização visual.
 
-O preparo de atlas com os personagens reais levou de 554 a 689 ms por transição, com sete amostras e 8.006.184 pixels no atlas (perto do limite configurado de 8,1 MP). O tempo de reprodução é medido depois do preparo: abrir os projetos testados não deixou transições pendentes.
+Nesta rodada, o preparo dos atlas reais levou de 569,6 a 721,8 ms por transição, em oito transições medidas. Cada atlas tem sete amostras e 8.006.184 pixels (perto do limite de 8,1 MP). O tempo de reprodução é medido depois do preparo: abrir os projetos testados não deixou transições pendentes.
 
 ## Leitura dos números
 
-Os cenários avançaram o relógio durante a reprodução, inclusive o projeto pesado, e renderizaram os quatro personagens STRESS. O p95 de RAF ficou em 13,6 ms, abaixo de um quadro de 30 FPS (33,3 ms). Também ocorreram picos de 53 ms, uma amostra interna de transição não foi observada em cada reprodução e a página principal teve long tasks de 58 a 106 ms somadas por cenário. Há espaço para engasgos curtos, então esta rodada não comprova fluidez perfeita em todos os quadros.
+Os cenários avançaram o relógio durante a reprodução, inclusive o projeto pesado, e renderizaram os quatro personagens STRESS. O p95 de RAF ficou em 13,6–13,7 ms, abaixo de um quadro de 30 FPS (33,3 ms). A separação do relógio reduziu pela metade o trabalho React acumulado na rota, mas os picos de RAF chegaram a 80 ms, a página ainda teve long tasks de 115–126 ms por cenário e uma amostra de transição não foi observada. Esta rodada não comprova fluidez perfeita em todos os quadros.
 
 Os 73,5–74,0 Hz vêm da cadência de `requestAnimationFrame` deste Chromium e deste monitor. O Editor continua avançando a timeline a 30 FPS. A rodada não mede exportação MP4, FFmpeg nem o executável empacotado; ela mede a prévia, a timeline e a preparação das transições no app Electron em desenvolvimento.
 

@@ -72,7 +72,7 @@ Proxies, thumbnails, waveform, cache de seek e integração com o catálogo SQLi
 | --- | --- | --- |
 | Electron + Chromium | Janela, isolamento de processos, APIs desktop e compositor do palco. | O framework oferece GPU, workers e offscreen; uma thread ocupada ou muitas cópias ainda travam a interface. |
 | Node.js no processo main | IPC, arquivos, serviços, SQLite, coordenação de export e subprocessos. Não há um servidor HTTP dedicado para o V6. | Trabalho síncrono pesado no main pode travar o app inteiro; operações longas precisam ser assíncronas ou sair dessa thread. |
-| React 19 + React Router | Painéis, controles, inspector, palco SVG e timeline DOM. Rotas são carregadas sob demanda. | O playhead é estado React local e as linhas da timeline são memoizadas; clips fora do intervalo visível são filtrados. Ainda é preciso medir commits e pintura do palco. |
+| React 19 + React Router | Painéis, controles, inspector, palco SVG e timeline DOM. Rotas são carregadas sob demanda. | O quadro de reprodução usa uma store externa; só prévia, timeline e áudio assinam atualizações contínuas. A página recebe estado em seeks/pausas. Linhas memoizadas e clips fora do viewport filtrados. Ainda é preciso investigar picos e medir pintura apresentada. |
 | TypeScript 5.9 | Tipagem e compilação dos contratos UI/IPC/documento. | Ajuda a prevenir erros de estrutura; tipos são removidos na execução e não aceleram renderização. |
 | Zustand 5 + Immer 11 | Estado e histórico próprios do V6. A biblioteca guarda resumos; a área de edição mantém o documento ativo e o histórico de desfazer/refazer daquele projeto. | O desenho evita carregar todos os projetos e PNGs para a biblioteca. O projeto ativo e seus snapshots de histórico ainda usam Data URLs e continuam sendo a próxima fronteira de armazenamento. |
 | Zod 4 | Validação de documentos e jobs ao atravessar fronteiras de persistência/IPC. Há limites de 500 assets, 1.000 elementos e 200 faixas. | Validação protege os dados; validar/transportar um documento grande a cada salvamento pode custar. Não há medição de que Zod, sozinho, seja o gargalo. |
@@ -89,7 +89,7 @@ No lockfile atual, as versões principais resolvem para Electron 44.9.3 / Chromi
 
 ## Decisões acertadas que o V6 já usa
 
-- O playhead é estado local do `EditorV6Page`, não uma atualização do Zustand global. A timeline memoiza suas linhas; o comentário em `EditorV6Timeline.tsx` confirma que, durante Play, as linhas não precisam redesenhar e só o cursor avança.
+- O playhead usa uma store externa ao Zustand e ao estado de `EditorV6Page`. Prévia, timeline e áudio assinam o relógio; a página atualiza apenas em seek/pausa/edição. A timeline memoiza as linhas e filtra blocos fora do viewport.
 - A timeline filtra blocos e transições pelo intervalo visível. A tela é DOM/CSS, mas não renderiza todos os clips fora da região que o usuário vê.
 - O preparo de animações acontece numa BrowserWindow separada, em fila serial. O cache de trabalho limita número/tamanho, e o Play apenas escolhe um sprite já preparado.
 - O exportador limita quantos assets prepara em cache, aguarda o pipe do FFmpeg e reutiliza bitmaps de fundo/foreground para cenas visualmente idênticas. Os quadros do vídeo continuam variando pelo filtro nativo do FFmpeg. Falhas do caminho Turbo acionam fallback CPU.
@@ -104,7 +104,7 @@ Essas escolhas seguem padrões vistos nos editores pesquisados. Elas não remove
 3. **Data URL atravessa limites de estado e IPC.** O mesmo PNG pode existir como texto Base64 no estado do renderer, no payload de IPC e em buffers no processo principal. Base64 aumenta o tamanho do dado e cópias transitórias podem elevar a memória de pico.
 4. **A captura do export é intensiva e concorrente.** Turbo cria dois renderizadores ocultos, captura cada imagem em BGRA e alimenta dois processos FFmpeg. O caminho já tem fallback e validação, mas exige uma comparação de tempo/memória no projeto real antes de assumir que duas partes sempre serão melhores.
 5. **A fluidez de animação tem uma limitação visível no código.** O relógio atual publica quadros inteiros a 30 FPS. O relatório [DESEMPENHO_E_FLUIDEZ.md](DESEMPENHO_E_FLUIDEZ.md) descreve como comparar isso com preview de 60 Hz sem mudar a timeline/export de 30 FPS.
-6. **Os diagnósticos existentes não classificam a rota V6.** O `performanceDiagnostics.ts` agrega commits React e long tasks quando `sessionStorage.gv5:perf` está ligado, mas sua lista de rotas não inclui `/editor-v6`. A rota cai em “outra rota”; o utilitário também não mede fps apresentado, tempo de abertura/salvamento nem bytes dos atlas. Estender os sinais de medição do V6 é necessário para comparar um antes/depois.
+6. **Os diagnósticos existentes classificam as rotas V6 e registram commits/long tasks.** O `performanceDiagnostics.ts` agrega esses dados quando `sessionStorage.gv5:perf` está ligado e inclui `/editor-v6` e `/editor-v6/scene`. O relatório offscreen também mede RAF e bake. Ainda faltam fps efetivamente apresentado, memória, tempo de abertura/salvamento e bytes dos atlas.
 
 Esses pontos são oportunidades arquiteturais observadas no código, não uma alegação de que todos já causam lentidão perceptível. Priorizar por medição do volume de dados e por um perfil representativo.
 
