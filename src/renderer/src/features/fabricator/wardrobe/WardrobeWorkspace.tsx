@@ -309,19 +309,20 @@ export function WardrobeWorkspace() {
     try {
       const image = await createImageBitmap(file)
       const columns = gridSize; const rows = 3
-      if (!image.width || !image.height || image.width < columns || image.height < rows) {
+      const imageWidth = image.width; const imageHeight = image.height
+      if (!imageWidth || !imageHeight || imageWidth < columns || imageHeight < rows) {
         image.close()
         throw new Error(`A imagem está pequena demais para uma grade ${columns}×${rows}. Use uma imagem com pelo menos ${columns} colunas e 3 linhas de pixels.`)
       }
-      if (image.width * image.height > 32_000_000) { image.close(); throw new Error('A imagem tem mais de 32 milhões de pixels. Reduza as dimensões para continuar.') }
-      const canvas = document.createElement('canvas'); canvas.width = image.width; canvas.height = image.height
+      if (imageWidth * imageHeight > 32_000_000) { image.close(); throw new Error('A imagem tem mais de 32 milhões de pixels. Reduza as dimensões para continuar.') }
+      const canvas = document.createElement('canvas'); canvas.width = imageWidth; canvas.height = imageHeight
       const context = canvas.getContext('2d', { willReadFrequently: true })
       if (!context) throw new Error('Não foi possível ler a grade de roupas.')
       context.drawImage(image, 0, 0)
       image.close()
       const torso = (referenceModel ?? model).parts.find((part) => /tronco|corpo|torso|chest|peito/i.test(part.name))
       if (!torso) throw new Error('Não encontrei uma parte de tronco no modelo salvo.')
-      const cellWidth = image.width / columns; const cellHeight = image.height / rows
+      const cellWidth = imageWidth / columns; const cellHeight = imageHeight / rows
       const components: WardrobeComponent[] = []
       for (let row = 0; row < rows; row += 1) for (let column = 0; column < columns; column += 1) {
         const left = Math.floor(column * cellWidth); const top = Math.floor(row * cellHeight)
