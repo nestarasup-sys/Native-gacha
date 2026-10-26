@@ -55,10 +55,18 @@ function removeFlatBackground(tile: ImageData): void {
   const corners = [0, (width - 1) * 4, ((height - 1) * width) * 4, (height * width - 1) * 4]
   if (corners.some((at) => data[at + 3] <= 24)) return
   const background = [0, 0, 0].map((channel) => corners.reduce((sum, at) => sum + data[at + channel], 0) / corners.length)
-  if (corners.some((at) => Math.hypot(data[at] - background[0], data[at + 1] - background[1], data[at + 2] - background[2]) > 90)) return
+  const greenScreen = background[1] > background[0] * 1.2 && background[1] > background[2] * 1.08 && background[1] > 55
+  if (!greenScreen && corners.some((at) => Math.hypot(data[at] - background[0], data[at + 1] - background[1], data[at + 2] - background[2]) > 90)) return
   for (let index = 0; index < width * height; index += 1) {
     const at = index * 4
     if (data[at + 3] <= 24) continue
+    if (greenScreen) {
+      const red = data[at]; const green = data[at + 1]; const blue = data[at + 2]
+      const dominance = green - Math.max(red * 1.18, blue * 1.08)
+      if (dominance >= 28) data[at + 3] = 0
+      else if (dominance > 8) data[at + 3] = Math.round(data[at + 3] * (28 - dominance) / 20)
+      continue
+    }
     const distance = Math.hypot(data[at] - background[0], data[at + 1] - background[1], data[at + 2] - background[2])
     if (distance < 65) data[at + 3] = 0
     else if (distance < 112) data[at + 3] = Math.round(data[at + 3] * (distance - 65) / 47)
@@ -332,7 +340,7 @@ export function WardrobeWorkspace() {
         const tile = context.getImageData(left, top, tileWidth, tileHeight)
         removeFlatBackground(tile)
         let minX = tile.width; let minY = tile.height; let maxX = -1; let maxY = -1
-        for (let y = 0; y < tile.height; y += 1) for (let x = 0; x < tile.width; x += 1) if (tile.data[(y * tile.width + x) * 4 + 3] > 24) { minX = Math.min(minX, x); minY = Math.min(minY, y); maxX = Math.max(maxX, x); maxY = Math.max(maxY, y) }
+        for (let y = 0; y < tile.height; y += 1) for (let x = 0; x < tile.width; x += 1) if (tile.data[(y * tile.width + x) * 4 + 3] > 56) { minX = Math.min(minX, x); minY = Math.min(minY, y); maxX = Math.max(maxX, x); maxY = Math.max(maxY, y) }
         if (maxX < minX || maxY < minY) continue
         const pieceCanvas = document.createElement('canvas'); pieceCanvas.width = maxX - minX + 1; pieceCanvas.height = maxY - minY + 1
         const pieceContext = pieceCanvas.getContext('2d')!
