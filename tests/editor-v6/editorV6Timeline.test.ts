@@ -34,6 +34,26 @@ describe('timeline do Editor V6', () => {
     expect(editorV6DocumentSchema.safeParse(document).success).toBe(true)
   })
 
+  it('vincula fala e pensamento ao personagem posicionado e só a fala aciona talk', () => {
+    const document = fixture(), actor = document.elements[0]
+    const talkId = crypto.randomUUID()
+    document.assets.push({ id: talkId, category: 'character', name: 'Alice · talk', mimeType: 'image/png', dataUrl: 'data:image/png;base64,AA==', timelineSnapshot: true })
+    document.elements[0] = { ...actor, faceModeAssetIds: { talk: talkId } }
+    const characterTrack = document.timeline.tracks.find((track) => track.kind === 'character')!
+    characterTrack.blocks = characterTrack.blocks.map((block) => ({ ...block, state: { ...document.elements[0] } }))
+    const speech = { id: crypto.randomUUID(), kind: 'speech' as const, characterId: 'alice', text: 'Olá', x: actor.x, y: actor.y, width: 28, height: 16, rotation: 0, zIndex: 2 }
+    const withSpeech = addEditorV6ElementAtFrame(document, speech, 30)
+    const speechBlock = withSpeech.timeline.tracks.find((track) => track.kind === 'speech')!.blocks[0]
+    expect(speechBlock.state).toMatchObject({ characterId: 'alice', x: actor.x, y: actor.y })
+    expect(resolveEditorV6ElementsAtFrame(withSpeech, 30).find((element) => element.kind === 'character')?.assetId).toBe(talkId)
+
+    const thought = { ...speech, id: crypto.randomUUID(), kind: 'thought' as const, text: 'Pensando' }
+    const withThought = addEditorV6ElementAtFrame({ ...document, timeline: { ...document.timeline, tracks: document.timeline.tracks.map((track) => track.kind === 'speech' ? { ...track, blocks: [] } : track) } }, thought, 30)
+    const thoughtBlock = withThought.timeline.tracks.find((track) => track.kind === 'thought')!.blocks[0]
+    expect(thoughtBlock.state).toMatchObject({ characterId: 'alice', x: actor.x, y: actor.y })
+    expect(resolveEditorV6ElementsAtFrame(withThought, 30).find((element) => element.kind === 'character')?.assetId).toBe(actor.assetId)
+  })
+
   it('resolve vídeo importado no instante ativo e valida o vínculo do arquivo ao projeto', () => {
     const document = fixture(), videoId = crypto.randomUUID(), fileName = `${videoId}.mp4`
     document.media = [{ id: videoId, name: 'Cena.mp4', fileName, kind: 'video', mimeType: 'video/mp4', sourceFrames: 180, hasAudio: true, width: 1920, height: 1080, sizeBytes: 1024 }]

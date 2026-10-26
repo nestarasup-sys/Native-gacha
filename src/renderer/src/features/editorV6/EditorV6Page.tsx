@@ -204,6 +204,9 @@ export function EditorV6Page() {
     ?? (selectedElementId ? editorV6ClipAtFrame(activeEditorV6.timeline, selectedElementId, playheadFrame) : undefined) : undefined
   const selectedElement = selectedTimelineClip?.block.state ?? visibleTimelineElements.find((element) => element.id === selectedElementId)
     ?? activeEditorV6?.elements.find((element) => element.id === selectedElementId) ?? null
+  const selectedCharacterElement = selectedElement?.kind === 'character'
+    ? visibleTimelineElements.find((element) => element.kind === 'character' && element.characterId === selectedElement.characterId) ?? selectedElement
+    : null
   const selectedEditorV6Character = selectedElement?.kind === 'character' ? availableCharacters.find((character) => character.id === selectedElement.characterId) ?? null : null
   const selectedEditorV6ExpressionCollectionId = editorV6ExpressionCollection(selectedElement, editorV6ExpressionPresets)
   const selectedEditorV6CharacterModelSlot = selectedEditorV6Character ? selectedEditorV6Character.customization.modelSlot ?? 1 : null
@@ -736,10 +739,18 @@ export function EditorV6Page() {
 
   const addTextElement = (kind: 'narrator' | 'speech' | 'thought') => {
     if (!activeEditorV6) return
+    const character = kind === 'narrator' ? null : selectedCharacterElement
+    if (kind !== 'narrator' && !character?.characterId) {
+      setError('Selecione um personagem na cena antes de adicionar fala ou pensamento.')
+      return
+    }
     pausePlayback()
     const frame = getEditorV6PlaybackFrame()
     if (activeEditorV6.timeline.tracks.some((track) => track.kind === (kind === 'narrator' ? 'video' : kind) && track.locked)) { setError('Desbloqueie a faixa para adicionar um bloco.'); return }
-    const element = makeElement(kind, Math.max(0, ...activeEditorV6.elements.map((item) => item.zIndex)) + 1)
+    const element = {
+      ...makeElement(kind, Math.max(0, ...activeEditorV6.elements.map((item) => item.zIndex)) + 1),
+      ...(character ? { characterId: character.characterId, x: character.x, y: character.y } : {})
+    }
     const blockId = crypto.randomUUID()
     changeScene((studio) => ({ ...addEditorV6ElementAtFrame(studio, element, frame, blockId), updatedAt: new Date().toISOString() }))
     setSelectedElementId(element.id)
@@ -1446,8 +1457,8 @@ export function EditorV6Page() {
           <nav className="studio-tool-list" aria-label="Ferramentas da cena">
             {studioTools.map((tool) => <button className={`studio-tool-button${activeTool === tool.id ? ' active' : ''}`} key={tool.id} onClick={() => { setActiveTool(tool.id); setInspectorOpen(true); setInspectorTab('editor') }} type="button"><Icon name={tool.icon} /><span>{tool.label}</span><i aria-hidden="true">✦</i></button>)}
             <button className="studio-tool-button" onClick={() => addTextElement('narrator')} type="button"><Icon name="message" /><span>Narrador</span><i aria-hidden="true">✦</i></button>
-            <button className="studio-tool-button" onClick={() => addTextElement('speech')} type="button"><Icon name="message" /><span>Fala</span><i aria-hidden="true">✦</i></button>
-            <button className="studio-tool-button" onClick={() => addTextElement('thought')} type="button"><Icon name="face" /><span>Pensamento</span><i aria-hidden="true">✦</i></button>
+            <button className="studio-tool-button" onClick={() => addTextElement('speech')} disabled={!selectedCharacterElement} title={selectedCharacterElement ? `Adicionar fala a ${selectedCharacterElement.text}` : 'Selecione um personagem na cena'} aria-label="Adicionar fala ao personagem selecionado" type="button"><Icon name="message" /><span>Fala</span><i aria-hidden="true">✦</i></button>
+            <button className="studio-tool-button" onClick={() => addTextElement('thought')} disabled={!selectedCharacterElement} title={selectedCharacterElement ? `Adicionar pensamento a ${selectedCharacterElement.text}` : 'Selecione um personagem na cena'} aria-label="Adicionar pensamento ao personagem selecionado" type="button"><Icon name="face" /><span>Pensamento</span><i aria-hidden="true">✦</i></button>
             <button className="studio-tool-button" onClick={() => void importTimelineMedia('video')} type="button"><b>▣</b><span>Importar vídeo</span></button>
             <button className="studio-tool-button" onClick={() => void importTimelineMedia('audio')} type="button"><b>♪</b><span>Importar áudio</span></button>
             <span className="studio-tool-separator" />
