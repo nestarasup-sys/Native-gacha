@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { analyzeTrace, normalizeEvents, makeHierarchy } from '../../scripts/editor-v6/analyze-trace.cjs'
+import { analyzeTrace, normalizeEvents, makeHierarchy, mergeOverlappingIntervals } from '../../scripts/editor-v6/analyze-trace.cjs'
 
 const syncName = 'editor-v6:trace-sync:test:start'
 const alignedTrace = () => ({
@@ -31,6 +31,22 @@ const alignedTrace = () => ({
 })
 
 describe('analisador de trace Chromium do Editor V6', () => {
+  it('une intervalos RAF/long-task com início/fim corretos para ordenações e sobreposições diferentes', () => {
+    const cases = [
+      { name:'A começa antes de B', input:[{type:'raf-gap',startMs:1,durationMs:10},{type:'long-task',startMs:5,durationMs:8}], expected:[{startMs:1,endMs:13,durationMs:12}] },
+      { name:'B começa antes de A', input:[{type:'long-task',startMs:5,durationMs:8},{type:'raf-gap',startMs:1,durationMs:10}], expected:[{startMs:1,endMs:13,durationMs:12}] },
+      { name:'intervalos idênticos', input:[{type:'raf-gap',startMs:4,durationMs:9},{type:'long-task',startMs:4,durationMs:9}], expected:[{startMs:4,endMs:13,durationMs:9}] },
+      { name:'sobreposição parcial', input:[{type:'raf-gap',startMs:0,durationMs:10},{type:'long-task',startMs:9,durationMs:10}], expected:[{startMs:0,endMs:19,durationMs:19}] },
+      { name:'contenção completa', input:[{type:'raf-gap',startMs:0,durationMs:20},{type:'long-task',startMs:5,durationMs:4}], expected:[{startMs:0,endMs:20,durationMs:20}] },
+      { name:'sem sobreposição', input:[{type:'raf-gap',startMs:0,durationMs:5},{type:'long-task',startMs:5,durationMs:5}], expected:[{startMs:0,endMs:5,durationMs:5},{startMs:5,endMs:10,durationMs:5}] }
+    ]
+    for (const sample of cases) {
+      const result = mergeOverlappingIntervals(sample.input)
+      expect(result.map(({startMs,endMs,durationMs})=>({startMs,endMs,durationMs})),sample.name).toEqual(sample.expected)
+    }
+    expect(mergeOverlappingIntervals(cases[0].input)[0].sources).toEqual(['raf-gap','long-task'])
+  })
+
   it('alinha performance.now com ts CDP e associa tarefas, React e RAF na thread renderer', () => {
     const report = analyzeTrace(alignedTrace())
     expect(report.alignment.aligned).toBe(true)

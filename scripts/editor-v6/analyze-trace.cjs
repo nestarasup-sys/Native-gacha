@@ -142,6 +142,24 @@ function getReactCommits(diagnostics) {
   })))
 }
 
+/** Merge diagnostics that overlap in wall time without losing either original endpoint. */
+function mergeOverlappingIntervals(intervals = []) {
+  const merged = []
+  for (const interval of [...intervals].filter((item) => Number.isFinite(item.startMs) && Number.isFinite(item.durationMs) && item.durationMs > 0).sort((a, b) => a.startMs - b.startMs || a.durationMs - b.durationMs)) {
+    const previous = merged.at(-1)
+    const intervalEnd = interval.startMs + interval.durationMs
+    if (previous && interval.startMs < previous.endMs) {
+      previous.startMs = Math.min(previous.startMs, interval.startMs)
+      previous.endMs = Math.max(previous.endMs, intervalEnd)
+      previous.durationMs = previous.endMs - previous.startMs
+      previous.sources = [...new Set([...previous.sources, interval.type])]
+      previous.labels.push(interval.label)
+      previous.type = previous.sources.length > 1 ? 'mixed-spike' : previous.sources[0]
+    } else merged.push({ startMs: interval.startMs, endMs: intervalEnd, durationMs: interval.durationMs, type: interval.type, sources: [interval.type], labels: [interval.label] })
+  }
+  return merged
+}
+
 function analyzeTrace(trace) {
   if (!trace || typeof trace !== 'object' || !Array.isArray(trace.traceEvents)) throw new Error('Trace inválida: esperado objeto JSON com traceEvents[].')
   const events = normalizeEvents(trace.traceEvents)
@@ -174,23 +192,11 @@ function analyzeTrace(trace) {
     ? [...ordinaryRafIntervals].sort((a, b) => a.durationMs - b.durationMs)[Math.floor((ordinaryRafIntervals.length - 1) * .5)].durationMs
     : 16.67
   const rafGapThresholdMs = Math.max(rafBaselineMs * 1.8, 20)
-  const points = []
   const rawPoints = [
     ...longTasks.map((task) => ({ startMs: task.startTime, durationMs: task.duration, type: 'long-task', label: task.route })),
     ...rafIntervals.filter((item) => item.durationMs > rafGapThresholdMs).map((item) => ({ startMs: item.startTimeMs, durationMs: item.durationMs, type: 'raf-gap', label: `${item.durationMs.toFixed(2)} ms RAF gap (limiar ${rafGapThresholdMs.toFixed(2)} ms)` }))
   ].filter((point) => Number.isFinite(point.startMs) && point.durationMs > 0).sort((a,b)=>a.startMs-b.startMs)
-  for (const point of rawPoints) {
-    const sameSpike = points.find((prior) => {
-      const overlap = Math.max(0, Math.min(prior.startMs+prior.durationMs,point.startMs+point.durationMs)-Math.max(prior.startMs,point.startMs))
-      return new Set([...prior.sources,point.type]).size>1 && overlap/Math.min(prior.durationMs,point.durationMs)>=.6
-    })
-    if (sameSpike) {
-      sameSpike.startMs=Math.min(sameSpike.startMs,point.startMs)
-      sameSpike.durationMs=Math.max(sameSpike.startMs+sameSpike.durationMs,point.startMs+point.durationMs)-sameSpike.startMs
-      sameSpike.sources.push(point.type)
-      sameSpike.labels.push(point.label)
-    } else points.push({...point,sources:[point.type],labels:[point.label]})
-  }
+  const points = mergeOverlappingIntervals(rawPoints)
   const peakRows = points.map((point) => {
     const start = toTrace(point.startMs), end = start === null ? null : start + point.durationMs * 1000
     const overlap = start === null ? [] : hierarchicalEvents.filter((event) => event.pid === mainPid && event.tid === mainTid && event.duration > 0 && event.start < end && event.end > start)
@@ -239,7 +245,7 @@ function analyzeTrace(trace) {
       associatedRafIntervalMs: associatedRaf ? +associatedRaf.durationMs.toFixed(3) : null,
       confidence,
       evidence: [
-        `${point.type} veio de ${point.type === 'long-task' ? 'PerformanceObserver' : 'requestAnimationFrame'} no mesmo processo renderer.`,
+        `${point.sources.map((source) => source === 'long-task' ? 'long-task do PerformanceObserver' : 'intervalo de requestAnimationFrame').join(' e ')} no mesmo processo renderer.`,
         alignment.aligned ? `Clock alignment residual máximo ${alignment.maxErrorMs} ms.` : 'Sem clock alignment válido; timestamps não correlacionados.',
         trace.metadata?.dataLossOccurred === true ? 'CDP marcou dataLossOccurred=true; eventos ausentes podem explicar intervalos sem atribuição.' : trace.metadata?.dataLossOccurred === false ? 'CDP confirmou dataLossOccurred=false.' : 'Os metadados CDP não informaram dataLossOccurred; integridade não confirmada por esse sinal.',
         overlap.some((event) => /Layout|Paint|Style|GC/i.test(event.name)) ? 'Há eventos de render/layout/GC sobrepostos; sobreposição não demonstra causalidade.' : 'Não foram encontrados eventos de layout/paint/GC sobrepostos nesta thread.'
@@ -247,7 +253,7 @@ function analyzeTrace(trace) {
     }
   }).sort((a, b) => b.durationMs - a.durationMs).slice(0, 20)
   const processSummary = [...processes].map(([pid, name]) => ({ pid, name, threads: [...threads].filter(([key]) => key.startsWith(`${pid}:`)).map(([key, threadName]) => ({ tid: Number(key.split(':')[1]), name: threadName })) }))
-  const eventCounts = { events: events.length, rendererMain: events.filter((event) => event.pid === mainPid && event.tid === mainTid).length, gc: events.filter((event) => event.pid === mainPid && /\bGC\b|V8\.GC/i.test(event.name)).length, style: events.filter((event) => event.pid === mainPid && /UpdateLayoutTree|RecalculateStyles/i.test(event.name)).length, layout: events.filter((event) => event.pid === mainPid && /Layout/.test(event.name)).length, paint: events.filter((event) => event.pid === mainPid && /Paint|PrePaint|Layerize/.test(event.name)).length }
+  const eventCounts = { events: events.length, rendererMain: events.filter((event) => event.pid === mainPid && event.tid === mainTid).length, gc: events.filter((event) => event.pid === mainPid && /\bGC\b|V8\.GC/i.test(event.name)).length, style: events.filter((event) => event.pid === mainPid && /UpdateLayoutTree|RecalculateStyles/i.test(event.name)).length, layout: events.filter((event) => event.pid === mainPid && /Layout/.test(event.name)).length, paint: events.filter((event) => event.pid === mainPid && /Paint|PrePaint|Layerize/.test(event.name)).length, imageDecode: events.filter((event) => /DecodeImage|ImageDecodeTask/i.test(event.name)).length, imageUpload: events.filter((event) => /UploadImage|ImageUploadTask/i.test(event.name)).length, raster: events.filter((event) => /RasterTask|RasterizerTask/i.test(event.name)).length, compositorWait: events.filter((event) => /WaitForCommitCompletion/.test(event.name)).length }
   return {
     schemaVersion: 1,
     scenario: trace.scenario ?? diagnostics.scenario ?? null,
@@ -271,4 +277,4 @@ if (require.main === module) {
   console.log(`Trace: ${result.eventCounts.events} eventos; renderer ${result.renderer.pid ?? 'n/d'}:${result.renderer.tid ?? 'n/d'}; alinhado=${result.alignment.aligned}; picos=${result.peaks.length}; saída=${output}`)
 }
 
-module.exports = { analyzeTrace, normalizeEvents, findClockAlignment, makeHierarchy, classify }
+module.exports = { analyzeTrace, normalizeEvents, findClockAlignment, makeHierarchy, classify, mergeOverlappingIntervals }
