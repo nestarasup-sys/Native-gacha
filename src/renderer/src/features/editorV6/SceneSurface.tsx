@@ -83,8 +83,11 @@ function sameMotionSprite(left: EditorV6Element['motionSprite'], right: EditorV6
     && left.atlasWidth === right.atlasWidth && left.atlasHeight === right.atlasHeight)
 }
 
-/** Timeline resolution creates new state objects each frame; skip SVG layers whose visual inputs are unchanged. */
+/** Timeline resolution creates new state objects each frame; skip SVG layers whose visual inputs are unchanged.
+ * Assets and nested element fields follow the Editor V6 Immer/immutable update contract, so replacing pixels
+ * replaces the asset object; motionSprite's six fields fully define its crop within that asset. */
 export function sceneLayerPropsEqual(previous: SceneLayerProps, next: SceneLayerProps): boolean {
+  if (typeof window !== 'undefined' && (window as Window & { __editorV6DisableSceneLayerMemo?: boolean }).__editorV6DisableSceneLayerMemo) return false
   if (previous.asset !== next.asset || previous.selected !== next.selected || previous.interaction !== next.interaction) return false
   const left = previous.element, right = next.element
   const keys = Object.keys(left) as Array<keyof EditorV6Element>

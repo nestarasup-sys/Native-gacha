@@ -1,9 +1,12 @@
 /** Opt-in aggregate diagnostics: no user/project names, asset paths or content. */
-type RouteStats = { commits:number; commitMs:number; worstCommitMs:number; longTasks:number; longTaskMs:number; commitSamples:Array<{phase:string;actualDuration:number;baseDuration:number;startTime:number;commitTime:number}>; longTaskSamples:Array<{startTime:number;duration:number}>; sceneResolveSamples:Array<{durationMs:number;elementCount:number}> }
+type RouteStats = { commits:number; commitMs:number; worstCommitMs:number; longTasks:number; longTaskMs:number; commitSamples:Array<{phase:string;actualDuration:number;baseDuration:number;startTime:number;commitTime:number}>; longTaskSamples:Array<{startTime:number;duration:number}>; sceneResolveSamples:Array<{at:number;durationMs:number;elementCount:number}> }
 const routes = new Set(['/', '/customizar', '/estudio', '/editor-v6', '/editor-v6/scene', '/editor-v6/surface', '/editor-v6/timeline', '/roteiros', '/base-videos', '/opcoes', '/fabricador-dev'])
 const stats = new Map<string, RouteStats>()
 const enabled = (() => { try { return typeof window !== 'undefined' && sessionStorage.getItem('gv5:perf') === '1' } catch { return false } })()
 let logicalFrameSamples: Array<{ frame: number; at: number; publishMs: number }> = []
+function traceCaptureEnabled():boolean {
+  return typeof window !== 'undefined' && Boolean((window as Window & { __editorV6TraceCapture?: boolean }).__editorV6TraceCapture)
+}
 function currentRoute(): string {
   const hashRoute = window.location.hash.startsWith('#/') ? window.location.hash.slice(1).split('?')[0] : ''
   return hashRoute || window.location.pathname
@@ -25,7 +28,7 @@ export function snapshotUiPerformance() {
     longTasks:s.longTasks, longTaskMs:+s.longTaskMs.toFixed(2),
     commitSamples:s.commitSamples,
     longTaskSamples:s.longTaskSamples,
-    ...(route === '/editor-v6/scene' ? { sceneResolution: summarizeSceneResolution(s.sceneResolveSamples) } : {}),
+    ...(route === '/editor-v6/scene' ? { sceneResolution: { ...summarizeSceneResolution(s.sceneResolveSamples), samples:s.sceneResolveSamples } } : {}),
     ...(route === '/editor-v6' ? { playback: snapshotPlaybackPerformance() } : {})
   }))
 }
@@ -63,21 +66,26 @@ export function resetUiPerformance(): void {
 export function recordEditorV6PlaybackFrame(frame:number, at:number, publishMs:number):void {
   if (!enabled || !Number.isFinite(frame) || !Number.isFinite(at) || !Number.isFinite(publishMs)) return
   logicalFrameSamples.push({ frame, at:+at.toFixed(2), publishMs:+publishMs.toFixed(3) })
+  if (traceCaptureEnabled()) performance.mark('editor-v6:playback-publish', { detail:{ frame, publishMs:+publishMs.toFixed(3), rafAt:+at.toFixed(3) } })
 }
 /** Measures deterministic timeline-to-scene composition independently from React/Chromium drawing. */
 export function measureEditorV6SceneResolution<T extends { elements: readonly unknown[] }>(resolve:()=>T):T {
   if (!enabled) return resolve()
   const started = performance.now()
-  performance.mark('editor-v6:scene-resolve:start')
+  if (traceCaptureEnabled()) performance.mark('editor-v6:scene-resolve:start')
   const scene = resolve()
   const ended = performance.now()
-  performance.mark('editor-v6:scene-resolve:end')
-  performance.measure('editor-v6:scene-resolve', 'editor-v6:scene-resolve:start', 'editor-v6:scene-resolve:end')
+  if (traceCaptureEnabled()) {
+    performance.mark('editor-v6:scene-resolve:end')
+    performance.measure('editor-v6:scene-resolve', 'editor-v6:scene-resolve:start', 'editor-v6:scene-resolve:end')
+  }
   const samples = entryFor('/editor-v6/scene').sceneResolveSamples
-  if (samples.length < 5000) samples.push({ durationMs:+(ended-started).toFixed(3), elementCount:scene.elements.length })
-  performance.clearMarks('editor-v6:scene-resolve:start')
-  performance.clearMarks('editor-v6:scene-resolve:end')
-  performance.clearMeasures('editor-v6:scene-resolve')
+  if (samples.length < 5000) samples.push({ at:+ended.toFixed(3), durationMs:+(ended-started).toFixed(3), elementCount:scene.elements.length })
+  if (traceCaptureEnabled()) {
+    performance.clearMarks('editor-v6:scene-resolve:start')
+    performance.clearMarks('editor-v6:scene-resolve:end')
+    performance.clearMeasures('editor-v6:scene-resolve')
+  }
   return scene
 }
 export function recordUiCommit(route:string, phase:string, duration:number, baseDuration:number, startTime:number, commitTime:number):void {
@@ -87,6 +95,7 @@ export function recordUiCommit(route:string, phase:string, duration:number, base
   s.commitMs += duration
   s.worstCommitMs = Math.max(s.worstCommitMs, duration)
   if (s.commitSamples.length < 5000) s.commitSamples.push({ phase, actualDuration:+duration.toFixed(3), baseDuration:+baseDuration.toFixed(3), startTime:+startTime.toFixed(2), commitTime:+commitTime.toFixed(2) })
+  if (traceCaptureEnabled()) performance.mark('editor-v6:react-commit', { detail:{ route, phase, actualDuration:+duration.toFixed(3), baseDuration:+baseDuration.toFixed(3), startTime:+startTime.toFixed(3), commitTime:+commitTime.toFixed(3) } })
 }
 /** React Profiler measures commit/render work; Chromium longtasks approximate main-thread blocking. */
 export function installUiPerformanceDiagnostics(): () => void {

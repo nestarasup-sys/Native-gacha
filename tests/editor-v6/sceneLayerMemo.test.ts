@@ -21,4 +21,18 @@ describe('SceneLayer memoização por aparência', () => {
     expect(sceneLayerPropsEqual(previous, { ...previous, selected: true })).toBe(false)
     expect(sceneLayerPropsEqual(previous, { ...previous, element: element({ motionSprite: { ...previous.element.motionSprite!, x: 11 } }) })).toBe(false)
   })
+
+  it('renderiza atlas novo mesmo que o recorte geométrico permaneça idêntico', () => {
+    const previous = { element: element(), asset: { id:'atlas', dataUrl:'data:image/png;base64,AAAA' } as never, selected: false, interaction: undefined }
+    const next = { ...previous, asset: { id:'atlas', dataUrl:'data:image/png;base64,BBBB' } as never }
+    expect(previous.element.motionSprite).toEqual(next.element.motionSprite)
+    expect(sceneLayerPropsEqual(previous, next)).toBe(false)
+  })
+
+  it('invalida as aparências faciais quando campos de expressão, fala ou preset mudam', () => {
+    const previous = { element: element(), asset: undefined, selected: false, interaction: undefined }
+    expect(sceneLayerPropsEqual(previous, { ...previous, element: element({ activeFaceMode:'talk' }) })).toBe(false)
+    expect(sceneLayerPropsEqual(previous, { ...previous, element: element({ activeExpressionPresetId:'preset-2' }) })).toBe(false)
+    expect(sceneLayerPropsEqual(previous, { ...previous, element: element({ activeExpressionGaze:'left' }) })).toBe(false)
+  })
 })

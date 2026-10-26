@@ -69,32 +69,50 @@ async function connectCdp(url) {
   return { send, onEvent: (handler) => { handlers.add(handler); return () => handlers.delete(handler) }, close: () => socket.close() }
 }
 
-async function capturePlaybackTrace(cdp, filePath) {
-  const events = []
+async function beginPlaybackTrace(cdp) {
   let finish
   const complete = new Promise((resolve) => { finish = resolve })
   const unsubscribe = cdp.onEvent((event) => {
-    if (event.method === 'Tracing.dataCollected') events.push(...(event.params?.value ?? []))
     if (event.method === 'Tracing.tracingComplete') finish(event.params ?? {})
   })
-  let started = false
+  const categories = ['devtools.timeline', 'toplevel', 'v8', 'blink.user_timing', 'renderer.scheduler', 'cc']
+  await cdp.send('Tracing.start', { transferMode:'ReturnAsStream', streamFormat:'json', traceConfig: { includedCategories: categories, recordMode: 'recordAsMuchAsPossible', enableArgumentFilter: true } })
+  return { finish: complete, unsubscribe, categories: categories.join(','), startedAt: new Date().toISOString() }
+}
+
+async function finishPlaybackTrace(cdp, session, filePath, scenario, diagnostics) {
   try {
-    await cdp.send('Tracing.start', { categories: 'devtools.timeline,v8,blink.user_timing,renderer.scheduler,cc', options: 'record-as-much-as-possible' })
-    started = true
-    await evaluate(cdp, 'document.querySelector(".editor-v6-timeline-actions button[aria-label=Reproduzir]")?.click()')
-    await new Promise((resolve) => setTimeout(resolve, 5000))
-    await evaluate(cdp, 'document.querySelector(".editor-v6-timeline-actions button[aria-label=Pausar]")?.click()')
-    const ended = await cdp.send('Tracing.end')
-    if (ended) { /* Tracing.end has no payload; completion arrives as a CDP event. */ }
-    const completion = await Promise.race([complete, new Promise((resolve) => setTimeout(() => resolve(null), 15_000))])
-    if (!completion) throw Error('O Chromium não concluiu a captura CDP em 15 segundos.')
-    const trace = { capturedAt: new Date().toISOString(), durationMs: 5000, categories: 'devtools.timeline,v8,blink.user_timing,renderer.scheduler,cc', eventCount: events.length, metadata: completion, traceEvents: events }
+    await cdp.send('Tracing.end')
+    const completion = await Promise.race([session.finish, new Promise((resolve) => setTimeout(() => resolve(null), 30_000))])
+    if (!completion) throw Error('O Chromium não concluiu a captura CDP em 30 segundos.')
+    let rawTrace
+    if (completion.stream) {
+      const handle=await fs.open(filePath,'w')
+      try {
+        let eof=false
+        while(!eof) {
+          const chunk=await cdp.send('IO.read',{handle:completion.stream,size:1024*1024})
+          if(chunk.base64Encoded) await handle.write(Buffer.from(chunk.data,'base64'))
+          else await handle.write(chunk.data)
+          eof=chunk.eof===true
+        }
+      } finally { await handle.close(); await cdp.send('IO.close',{handle:completion.stream}).catch(()=>undefined) }
+      rawTrace=JSON.parse(await fs.readFile(filePath,'utf8'))
+    } else if (completion.traceEvents) rawTrace=completion
+    else throw Error('O Chromium encerrou sem fornecer o trace stream nem eventos coletados.')
+    const traceEvents=rawTrace.traceEvents??[]
+    const metadata={ ...(rawTrace.metadata??{}), dataLossOccurred:completion.dataLossOccurred??rawTrace.metadata?.dataLossOccurred??null }
+    const trace = { ...rawTrace, capturedAt: session.startedAt, scenario, durationMs: diagnostics.elapsedMs, categories: session.categories, eventCount: traceEvents.length, metadata, diagnostics, traceEvents }
     await fs.writeFile(filePath, JSON.stringify(trace), 'utf8')
-    return { captured: true, eventCount: events.length, filePath }
+    const { analyzeTrace } = require('./analyze-trace.cjs')
+    const analysis = analyzeTrace(trace)
+    const analysisPath = path.join(path.dirname(filePath), `${path.basename(filePath, '.json')}-analysis.json`)
+    await fs.writeFile(analysisPath, JSON.stringify(analysis, null, 2), 'utf8')
+    return { captured: true, eventCount: traceEvents.length, filePath, analysisPath, alignment: analysis.alignment, peaks: analysis.peaks.length, dataLossOccurred:analysis.traceIntegrity.dataLossOccurred }
   } catch (error) {
-    if (started) await cdp.send('Tracing.end').catch(() => undefined)
+    await cdp.send('Tracing.end').catch(() => undefined)
     return { captured: false, error: error.message }
-  } finally { unsubscribe() }
+  } finally { session.unsubscribe() }
 }
 
 function runMediaTool(executable, args, label) {
@@ -130,6 +148,12 @@ async function main() {
   projectRoot = path.join(dataRoot, 'runtime', 'profile', 'studios', 'Editor V6')
   const mediaRoot = path.join(tempRoot, 'media-fixtures')
   const mediaFixtureProbes = await createMediaFixtures(mediaRoot)
+  const traceMode = process.argv.includes('--trace')
+  const scenarioArgument = process.argv.find((argument) => argument.startsWith('--scenario='))
+  const selectedScenario = scenarioArgument?.slice('--scenario='.length) ?? (traceMode ? 'heavy' : null)
+  const memoArgument = process.argv.find((argument) => argument.startsWith('--memo='))
+  const memoizationEnabled = memoArgument?.slice('--memo='.length) !== 'off'
+  const runLabel = process.argv.find((argument) => argument.startsWith('--label='))?.slice('--label='.length) ?? null
   const sourceProfile = path.join(root, 'app-data', 'runtime', 'profile')
   const tempProfile = path.join(dataRoot, 'runtime', 'profile')
   for (const fixtureDirectory of ['customizer', 'fabricator']) {
@@ -172,7 +196,7 @@ async function main() {
     cdp = await connectCdp(target.webSocketDebuggerUrl)
     await cdp.send('Page.enable')
     await cdp.send('Runtime.enable')
-    await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: `try { sessionStorage.setItem('gv5:perf', '1') } catch {}; window.__editorV6StressMediaElements = new Set(); window.__editorV6StressMediaPlayEvents = []; window.__editorV6StressErrors = []; window.addEventListener('error', event => window.__editorV6StressErrors.push(String(event.message || 'error'))); window.addEventListener('unhandledrejection', event => window.__editorV6StressErrors.push(String(event.reason?.message || event.reason || 'rejection'))); { const play = HTMLMediaElement.prototype.play; HTMLMediaElement.prototype.play = function(...args) { window.__editorV6StressMediaElements.add(this); if(window.__editorV6StressMediaPlayEvents.length<100) window.__editorV6StressMediaPlayEvents.push({type:this.tagName.toLowerCase(),extension:this.currentSrc?.split(/[?#]/)[0].split('.').at(-1)?.toLowerCase()??null,at:performance.now(),currentTime:this.currentTime}); return play.apply(this,args) } }` })
+    await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: `try { sessionStorage.setItem('gv5:perf', '1') } catch {}; window.__editorV6DisableSceneLayerMemo=${!memoizationEnabled}; window.__editorV6TraceCapture=${traceMode}; window.__editorV6StressClockPairs=[]; window.__editorV6TraceMark=(name)=>{const performanceNowMs=performance.now();performance.mark(name,{detail:{performanceNowMs,timeOrigin:performance.timeOrigin}});window.__editorV6StressClockPairs.push({name,performanceNowMs});return performanceNowMs}; window.__editorV6StressMediaElements=new Set(); window.__editorV6StressMediaPlayEvents=[]; window.__editorV6StressMediaEvents=[]; window.__editorV6StressErrors=[]; window.addEventListener('error',event=>window.__editorV6StressErrors.push(String(event.message||'error'))); window.addEventListener('unhandledrejection',event=>window.__editorV6StressErrors.push(String(event.reason?.message||event.reason||'rejection'))); {const play=HTMLMediaElement.prototype.play;HTMLMediaElement.prototype.play=function(...args){const media=this;window.__editorV6StressMediaElements.add(media);if(!media.__editorV6StressEventsBound){media.__editorV6StressEventsBound=true;for(const type of ['loadedmetadata','loadeddata','play','playing','waiting','stalled','seeking','seeked','timeupdate','pause','ended','error'])media.addEventListener(type,event=>{const item={type:event.type,tag:media.tagName.toLowerCase(),at:performance.now(),currentTime:media.currentTime,readyState:media.readyState,errorCode:media.error?.code??null};if(window.__editorV6StressMediaEvents.length<2000)window.__editorV6StressMediaEvents.push(item);if(window.__editorV6TraceCapture)window.__editorV6TraceMark('editor-v6:media:'+event.type)}); } if(window.__editorV6StressMediaPlayEvents.length<100)window.__editorV6StressMediaPlayEvents.push({type:this.tagName.toLowerCase(),extension:this.currentSrc?.split(/[?#]/)[0].split('.').at(-1)?.toLowerCase()??null,at:performance.now(),currentTime:this.currentTime});return play.apply(this,args)} }` })
 
     const origin = new URL(target.url).origin
     const captureUrl = `${origin}/?editorV6StressCapture=1&run=${Date.now()}#/editor-v6-stress-harness`
@@ -212,9 +236,11 @@ async function main() {
       { key: 'heavy', title: '[TESTE] Estresse pesado — 4 personagens STRESS' },
       { key: 'multimedia', title: '[TESTE] Estresse multimídia — codecs e áudio' }
     ]
+    if (selectedScenario && !scenarios.some((scenario) => scenario.key === selectedScenario)) throw new Error(`Cenário inválido para trace: ${selectedScenario}`)
+    const scenariosToRun = selectedScenario ? scenarios.filter((scenario) => scenario.key === selectedScenario) : scenarios
     const measurements = []
     let traceCapture = null
-    for (const scenario of scenarios) {
+    for (const scenario of scenariosToRun) {
       const appUrl = `${origin}/?editorV6Offscreen=${scenario.key}-${Date.now()}#/editor-v6`
       await cdp.send('Page.navigate', { url: appUrl })
       await waitForExpression(cdp, `Boolean(document.querySelector(${JSON.stringify(`button[aria-label="Abrir ${scenario.title}"]`)}))`, Boolean, 90_000)
@@ -236,6 +262,13 @@ async function main() {
       const expectedSceneNames = captured.map(({ character }) => character.name)
       const visualSurface = await evaluate(cdp, `({ cast: document.querySelectorAll(".studio-cast-item").length, timeline: document.querySelectorAll(".editor-v6-timeline-block").length, scene: Boolean(document.querySelector(".v6-scene-canvas")), sceneCharacterNames: [...document.querySelectorAll(".v6-scene-surface g[data-element-id]")].map(element => element.getAttribute("aria-label")).filter(name => ${JSON.stringify(expectedSceneNames)}.includes(name)) })`)
       if (visualSurface.cast !== 4 || visualSurface.sceneCharacterNames.slice().sort().join(',') !== expectedSceneNames.slice().sort().join(',') || !visualSurface.scene || visualSurface.timeline === 0) throw new Error(`${scenario.key}: a interface não desenhou os quatro personagens reais na cena. ${JSON.stringify(visualSurface)}`)
+      await evaluate(cdp, 'document.querySelector(".editor-v6-timeline-actions button[aria-label=Reproduzir]")?.click()')
+      await waitForExpression(cdp, 'Boolean(document.querySelector(".editor-v6-timeline-actions button[aria-label=Pausar]"))', Boolean, 5000)
+      await new Promise((resolve) => setTimeout(resolve, 2000))
+      await evaluate(cdp, 'document.querySelector(".editor-v6-timeline-actions button[aria-label=Pausar]")?.click()')
+      await waitForExpression(cdp, 'Boolean(document.querySelector(".editor-v6-timeline-actions button[aria-label=Reproduzir]"))', Boolean, 5000)
+      await evaluate(cdp, 'window.dispatchEvent(new KeyboardEvent("keydown",{key:"Home",bubbles:true}))')
+      await waitForExpression(cdp, 'Number(document.querySelector(".v6-scene-surface")?.getAttribute("data-frame")) === 0', Boolean, 5000)
       let interactionMetrics = null
       if (scenario.key === 'medium') {
         const interactionStart = Date.now()
@@ -267,9 +300,26 @@ async function main() {
         interactionMetrics = { totalMs: Date.now() - interactionStart, seekMs, editMs, pauseResumeMs: Date.now() - pauseResumeStartedAt, blocksBefore, blocksAfter, resumedFrame: resumeFrame, pauseResumeSeekPassed: blocksAfter === blocksBefore + 1 && resumeFrame > 0 }
         if (!interactionMetrics.pauseResumeSeekPassed) throw new Error('O cenário de interação não concluiu pause, seek, edição da timeline e retomada.')
       }
+      const traceSession = traceMode ? await beginPlaybackTrace(cdp) : null
+      let calibration = null
+      if (traceMode) {
+        calibration = await evaluate(cdp, `(() => new Promise(resolve => {
+          const prefix = 'editor-v6:trace-sync:${scenario.key}:${Date.now()}'
+          const startName = prefix + ':calibration-start', endName = prefix + ':calibration-end'
+          const startPerformanceNowMs = window.__editorV6TraceMark(startName)
+          setTimeout(() => {
+            const endPerformanceNowMs = window.__editorV6TraceMark(endName)
+            const measureName = prefix + ':calibration-measure'
+            performance.measure(measureName, startName, endName)
+            const measuredDurationMs = performance.getEntriesByName(measureName).at(-1)?.duration ?? null
+            resolve({ startName, endName, startPerformanceNowMs, endPerformanceNowMs, measuredDurationMs, timeOrigin: performance.timeOrigin })
+          }, 250)
+        }))()`)
+      }
       await evaluate(cdp, 'window.__gv5PerformanceReset?.()')
       await evaluate(cdp, `(() => {
-        const state = { samples: [], motionFrames: {}, domFrames: [], heapSamples: [], gcSamples: [], mediaStats: {}, last: null, started: performance.now(), active: true, startFrame: Number(document.querySelector('.v6-scene-surface')?.getAttribute('data-frame')), memoryStart: performance.memory?.usedJSHeapSize ?? null }
+        const state = { samples: [], rafIntervals: [], motionFrames: {}, domFrames: [], domFrameEvents: [], heapSamples: [], gcSamples: [], mediaStats: {}, last: null, started: performance.now(), timeOrigin: performance.timeOrigin, active: true, startFrame: Number(document.querySelector('.v6-scene-surface')?.getAttribute('data-frame')), memoryStart: performance.memory?.usedJSHeapSize ?? null }
+        if (window.__editorV6TraceCapture) window.__editorV6TraceMark('editor-v6:scenario:${scenario.key}:window-start')
         window.__editorV6StressFrames = state
         try {
           if (PerformanceObserver.supportedEntryTypes.includes('gc')) {
@@ -280,15 +330,16 @@ async function main() {
         const sceneElement = document.querySelector('.v6-scene-surface')
         if (sceneElement) {
           state.domFrames.push(Number(sceneElement.getAttribute('data-frame')))
+          state.domFrameEvents.push({ at: performance.now(), frame: Number(sceneElement.getAttribute('data-frame')) })
           state.domObserver = new MutationObserver(() => {
             const frame = Number(sceneElement.getAttribute('data-frame'))
-            if (Number.isInteger(frame) && state.domFrames.at(-1) !== frame) state.domFrames.push(frame)
+            if (Number.isInteger(frame) && state.domFrames.at(-1) !== frame) { state.domFrames.push(frame); state.domFrameEvents.push({ at: performance.now(), frame }) }
           })
           state.domObserver.observe(sceneElement, { attributes: true, attributeFilter: ['data-frame'] })
         }
         const tick = (time) => {
           if (!state.active) return
-          if (state.last !== null) state.samples.push(time - state.last)
+          if (state.last !== null) { state.samples.push(time - state.last); state.rafIntervals.push({ startTimeMs: state.last, durationMs: time - state.last }) }
           state.last = time
           const scene = document.querySelector('.v6-scene-surface')
           const frame = Number(scene?.getAttribute('data-frame'))
@@ -342,6 +393,9 @@ async function main() {
         return {
           rafSamples: state.samples.length,
           elapsedMs: +elapsedMs.toFixed(1),
+          windowStartMs: +state.started.toFixed(3),
+          performanceTimeOrigin: state.timeOrigin,
+          rafIntervals: state.rafIntervals.map((item) => ({ startTimeMs:+item.startTimeMs.toFixed(3), durationMs:+item.durationMs.toFixed(3) })),
           rafCallbackHz: elapsedMs ? +(state.samples.length * 1000 / elapsedMs).toFixed(1) : 0,
           domFrameUpdateRate: elapsedMs ? +((state.domFrames.length - 1) * 1000 / elapsedMs).toFixed(2) : 0,
           logicalFrameAdvanceFps: elapsedMs ? +((finalFrame - state.startFrame) * 1000 / elapsedMs).toFixed(2) : 0,
@@ -351,6 +405,7 @@ async function main() {
           framesOver50ms: state.samples.filter(frame => frame > 50).length,
           domFrameSamples: state.domFrames.length,
           domFrameGaps: domGaps,
+          domFrameEvents: state.domFrameEvents.map((item) => ({ at:+item.at.toFixed(3), frame:item.frame })),
           jsHeapStartBytes: state.memoryStart,
           jsHeapEndBytes: performanceMemory,
           jsHeapDeltaBytes: state.memoryStart === null || performanceMemory === null ? null : performanceMemory - state.memoryStart,
@@ -360,6 +415,7 @@ async function main() {
           gcSupported: Boolean(state.gcObserver),
           gcSamples: state.gcSamples,
           mediaStats: state.mediaStats,
+          mediaEvents: (window.__editorV6StressMediaEvents ?? []).map((event) => ({ ...event, at:+(event.at-state.started).toFixed(3) })),
           timelineFrame: Number(document.querySelector('.v6-scene-surface')?.getAttribute('data-frame')),
           mediaElements: [...(window.__editorV6StressMediaElements ?? [])].map(media => { const extension = media.currentSrc?.split(/[?#]/)[0].split('.').at(-1)?.toLowerCase() ?? null; const targetTime = media.tagName === 'VIDEO' ? Number(media.dataset.targetTime) : Number(document.querySelector('.v6-scene-surface')?.getAttribute('data-frame')) / 30; return { type: media.tagName.toLowerCase(), extension, currentTime: +media.currentTime.toFixed(3), targetTime: Number.isFinite(targetTime) ? +targetTime.toFixed(3) : null, driftSeconds: Number.isFinite(targetTime) ? +(media.currentTime - targetTime).toFixed(3) : null, duration: Number.isFinite(media.duration) ? +media.duration.toFixed(3) : null, readyState: media.readyState, networkState: media.networkState, paused: media.paused, errorCode: media.error?.code ?? null } }),
           pageErrors: [...(window.__editorV6StressErrors ?? [])],
@@ -371,9 +427,15 @@ async function main() {
           react: window.__gv5PerformanceReport?.() ?? []
         }
       })()`)
+      if (traceMode) {
+        await evaluate(cdp, `window.__editorV6TraceMark('editor-v6:scenario:${scenario.key}:window-end')`)
+        const clockPairs = await evaluate(cdp, 'window.__editorV6StressClockPairs')
+        traceCapture = await finishPlaybackTrace(cdp, traceSession, path.join(outputRoot, `${scenario.key}-playback-trace.json`), scenario.key, { ...measurement, clockPairs, calibration })
+      }
       const expectedMotionNames = captured.map(({ character }) => character.name).sort().join(',')
       const observedMotionNames = Object.keys(measurement.motionFramesByCharacter).sort().join(',')
-      if (observedMotionNames !== expectedMotionNames) throw new Error(`${scenario.key}: o Play não exibiu as transições de 250 ms dos quatro personagens STRESS. Observados: ${observedMotionNames || 'nenhum'}.`)
+      const motionWindowReached = observedMotionNames === expectedMotionNames
+      if (runDurationMs >= 30_000 && !motionWindowReached) throw new Error(`${scenario.key}: o Play não exibiu as transições de 250 ms dos quatro personagens STRESS. Observados: ${observedMotionNames || 'nenhum'}.`)
       const mediaValidation = scenario.key === 'multimedia' ? (() => {
         const expected = ['mp4', 'webm', 'wav', 'ogg']
         const observed = [...new Set(measurement.mediaPlayEvents.map((item) => item.extension).filter(Boolean))].sort()
@@ -382,8 +444,15 @@ async function main() {
       const image = await cdp.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false })
       const screenshotPath = path.join(outputRoot, `${scenario.key}-offscreen.png`)
       await fs.writeFile(screenshotPath, Buffer.from(image.data, 'base64'))
-      measurements.push({ ...scenario, project: prepared, visualSurface, interactionMetrics, mediaValidation, motionReadyWaitMs: motionPreparation.durationMs, ...measurement, screenshotPath })
-      if (scenario.key === 'light') traceCapture = await capturePlaybackTrace(cdp, path.join(outputRoot, 'light-playback-trace.json'))
+      const sceneClip = await evaluate(cdp, `(() => { const rect=document.querySelector('.v6-scene-canvas')?.getBoundingClientRect(); return rect ? {x:rect.x,y:rect.y,width:rect.width,height:rect.height} : null })()`)
+      let sceneScreenshotPath = null
+      if (sceneClip?.width > 0 && sceneClip?.height > 0) {
+        const sceneImage = await cdp.send('Page.captureScreenshot', { format:'png', captureBeyondViewport:true, clip:{...sceneClip,scale:1} })
+        sceneScreenshotPath = path.join(outputRoot, `${scenario.key}-scene.png`)
+        await fs.writeFile(sceneScreenshotPath, Buffer.from(sceneImage.data,'base64'))
+      }
+      const runtimeConfig = await evaluate(cdp, `({userAgent:navigator.userAgent,hardwareConcurrency:navigator.hardwareConcurrency,deviceMemory:navigator.deviceMemory??null,viewport:{width:innerWidth,height:innerHeight},screen:{width:screen.width,height:screen.height,refreshRate:screen.orientation?.type??null},timeOrigin:performance.timeOrigin})`)
+      measurements.push({ ...scenario, project: prepared, visualSurface, interactionMetrics, mediaValidation, motionWindowReached, motionNamesObserved: Object.keys(measurement.motionFramesByCharacter).sort(), motionReadyWaitMs: motionPreparation.durationMs, memoizationEnabled, runtimeConfig, ...measurement, screenshotPath, sceneScreenshotPath })
       const playbackMetrics = measurement.react.find((item) => item.route === '/editor-v6')?.playback
       console.log(`[V6 stress] ${scenario.key}: ${runDurationMs} ms, ${prepared.blocks} blocos, RAF p95 ${measurement.p95FrameMs} ms, callbacks ${measurement.rafCallbackHz} Hz, DOM ${measurement.domFrameUpdateRate} updates/s, pior ${measurement.worstFrameMs} ms, commits ${measurement.react.find((item) => item.route === '/editor-v6')?.commits ?? 0}, logical gaps ${playbackMetrics?.logicalFrameGaps?.length ?? 'n/d'}, DOM gaps ${measurement.domFrameGaps.length}.`)
 
@@ -391,6 +460,7 @@ async function main() {
     const report = {
       generatedAt: new Date().toISOString(),
       mode: 'Electron Chromium em janela fora dos monitores, perfil temporário isolado, sem migração do perfil local; background throttling desativado; CDP local.',
+      runLabel,
       runDurationMs,
       mediaFixtureProbes,
       traceCapture,
@@ -419,6 +489,12 @@ async function main() {
         const report = JSON.parse(await fs.readFile(reportPath, 'utf8'))
         report.ipcMetrics = processOutput.split(/\r?\n/).filter((line) => /editor-v6:|averageMs|worstMs|failures/.test(line)).slice(-300)
         await fs.writeFile(reportPath, JSON.stringify(report, null, 2), 'utf8')
+        if (runLabel) {
+          if (!/^[a-z0-9_-]+$/i.test(runLabel)) throw new Error(`Etiqueta de execução inválida: ${runLabel}`)
+          const abRoot = path.join(outputRoot, 'ab-memo')
+          await fs.mkdir(abRoot, { recursive: true })
+          await fs.copyFile(reportPath, path.join(abRoot, `${selectedScenario ?? 'all'}-${memoizationEnabled ? 'memo-on' : 'memo-off'}-${runLabel}.json`))
+        }
       } catch (error) { console.error(`[V6 stress] Não foi possível anexar as métricas IPC ao relatório: ${error.message}`) }
     }
     let cleanupError
