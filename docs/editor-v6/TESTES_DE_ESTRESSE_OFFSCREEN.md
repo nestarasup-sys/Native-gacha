@@ -36,7 +36,7 @@ O preparo de atlas com os personagens reais levou de 554 a 689 ms por transiçã
 
 Os cenários avançaram o relógio durante a reprodução, inclusive o projeto pesado, e renderizaram os quatro personagens STRESS. O p95 de RAF ficou em 13,6 ms, abaixo de um quadro de 30 FPS (33,3 ms). Também ocorreram picos de 53 ms, uma amostra interna de transição não foi observada em cada reprodução e a página principal teve long tasks de 58 a 106 ms somadas por cenário. Há espaço para engasgos curtos, então esta rodada não comprova fluidez perfeita em todos os quadros.
 
-Os 73,5–73,6 Hz vêm da cadência de `requestAnimationFrame` deste Chromium e deste monitor. O Editor continua avançando a timeline a 30 FPS. A rodada não mede exportação MP4, FFmpeg nem o executável empacotado; ela mede a prévia, a timeline e a preparação das transições no app Electron em desenvolvimento.
+Os 73,5–74,0 Hz vêm da cadência de `requestAnimationFrame` deste Chromium e deste monitor. O Editor continua avançando a timeline a 30 FPS. A rodada não mede exportação MP4, FFmpeg nem o executável empacotado; ela mede a prévia, a timeline e a preparação das transições no app Electron em desenvolvimento.
 
 ## O que esta rodada ainda não valida
 
