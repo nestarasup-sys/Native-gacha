@@ -7,7 +7,13 @@ export const editorV6IpcChannels = {
   getEditorV6Folder: 'editor-v6:folder',
   importEditorV6Image: 'editor-v6:import-image',
   saveEditorV6Print: 'editor-v6:save-print',
-  openEditorV6Prints: 'editor-v6:open-prints'
+  openEditorV6Prints: 'editor-v6:open-prints',
+  startEditorV6Export: 'editor-v6:export:start',
+  getEditorV6ExportStatus: 'editor-v6:export:status',
+  cancelEditorV6Export: 'editor-v6:export:cancel',
+  revealEditorV6Export: 'editor-v6:export:reveal',
+  importEditorV6ExportAudio: 'editor-v6:export:import-audio',
+  cloneEditorV6ExportAudio: 'editor-v6:export:clone-audio'
 } as const satisfies Record<Exclude<keyof EditorV6DesktopApi, 'flushPendingWrites'>, string>
 
 export type EditorV6IpcMethod = keyof typeof editorV6IpcChannels

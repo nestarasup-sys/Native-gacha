@@ -6,7 +6,7 @@ O Editor V6 é uma área React/TypeScript executada pelo Chromium do Electron. O
 
 O V6 consulta APIs já existentes do Customizer e Fabricator para escolher personagens, poses, rosto e expressões. Essas chamadas servem como catálogos de origem. Ao inserir um personagem, a composição e o PNG usados na cena ficam salvos no documento do V6; o editor não grava de volta nessas bibliotecas.
 
-A timeline inicial tem faixas de personagem, fala, pensamento, imagem, vídeo e áudio. Blocos de personagem/imagem/texto apontam para camadas da cena; arrastar move o bloco, a alça lateral ajusta a duração e o playhead controla quando cada camada aparece na prévia. Faixas de vídeo e áudio já podem ser organizadas como blocos, mas ainda não importam nem decodificam esses tipos de mídia.
+A timeline tem uma faixa por personagem e três faixas gerais: Vídeo, Fala e Pensamento. Os blocos guardam estados independentes e eventos por intervalo. `SceneSurface` desenha a prévia, os prints e os quadros do exportador. A faixa Vídeo ainda organiza imagens e mudanças de fundo; arquivos de vídeo não são importados ou decodificados por ela.
 
 ## Base iniciada nesta etapa
 
@@ -27,4 +27,4 @@ React, Electron, Chromium, Vite, o design system e APIs de leitura dos catálogo
 
 ## Próxima fatia: vídeo e áudio
 
-O formato já representa FPS, duração, faixas e blocos. O próximo passo é ligar importação de mídia às faixas de vídeo/áudio e renderizar blocos de personagem como imagens paradas com transições faciais/pose. O Electron main deve abrir o diálogo de destino e executar FFmpeg como subprocesso, com progresso, cancelamento e temporários isolados do Studio. Vídeos e áudios importados devem ser copiados para a pasta do projeto. A exportação MP4 em 1080p/30 FPS ainda precisa ser construída; incluir o binário FFmpeg no pacote, sozinho, não implementa essa experiência.
+O exportador MP4 em 1080p/30 FPS está implementado com duas janelas ocultas, bitmaps BGRA, FFmpeg, junção sem recodificar o vídeo e mixagem única do áudio. O painel permite importar trilhas sonoras, que são copiadas para o projeto. Há progresso, cancelamento, validação, relatório e recuperação por um único renderizador CPU. Veja [EXPORTACAO.md](EXPORTACAO.md). A próxima integração é importar vídeos, preparar proxies e sincronizar vídeos/áudio na prévia e na timeline.

@@ -1,6 +1,8 @@
 import { createRoot } from 'react-dom/client'
+import { useState } from 'react'
 import { flushSync } from 'react-dom'
 import { SceneSurface } from '../../src/renderer/src/features/editorV6/SceneSurface'
+import { EditorV6ExportPanel } from '../../src/renderer/src/features/editorV6/EditorV6ExportPanel'
 import { captureEditorV6Frame, captureEditorV6Frames } from '../../src/renderer/src/features/editorV6/sceneCapture'
 import { createEditorV6Timeline, type EditorV6Document, type EditorV6Element } from '../../src/shared/editorV6'
 import { addEditorV6ElementAtFrame, editEditorV6BackgroundAtFrame, editEditorV6DocumentAtBlock, prepareEditorV6PositionAtFrame, resolveEditorV6SceneAtFrame } from '../../src/shared/editorV6Timeline'
@@ -26,6 +28,39 @@ async function pixels(source: string) {
 }
 function pixel(data: Uint8ClampedArray, x: number, y: number) { return Array.from(data.slice((y * 960 + x) * 4, (y * 960 + x) * 4 + 4)).join(',') }
 let expectedCapture = ''
+let panelProject: EditorV6Document
+let closePanelTest: () => void
+;(globalThis as unknown as { checkExportPanel: () => Promise<unknown> }).checkExportPanel = async () => {
+  let imported = 0, started = 0
+  const clip = { id: crypto.randomUUID(), name: 'Trilha de teste.wav', fileName: `${crypto.randomUUID()}.wav`, sourceFrames: 120, sourceInFrame: 0, startFrame: 0, durationFrames: 120, gain: 1, muted: false }
+  const job = { id: crypto.randomUUID(), state: 'completed', frames: 300, totalFrames: 300, message: 'MP4 exportado e validado.', fallback: false }
+  Object.defineProperty(window, 'desktop', { configurable: true, value: {
+    getEditorV6ExportStatus: async (id: string) => { if (id === 'latest') throw Error('Nenhuma exportação anterior.'); return job },
+    importEditorV6ExportAudio: async () => { imported++; return clip },
+    startEditorV6Export: async (project: EditorV6Document, options: { turbo: boolean; width: number }) => { assert(project.exportAudio?.length === 1 && options.turbo && options.width === 1920, 'Painel perdeu trilha de áudio ou configurações do Turbo.'); started++; return job }
+  } })
+  const mount = document.createElement('div')
+  document.body.append(mount)
+  const root = createRoot(mount)
+  function Demo() {
+    const [project, setProject] = useState(panelProject)
+    return <EditorV6ExportPanel project={project} open onClose={() => {}} onChange={setProject} />
+  }
+  flushSync(() => root.render(<Demo />))
+  await new Promise((resolve) => requestAnimationFrame(resolve))
+  assert(document.activeElement?.getAttribute('role') === 'dialog', 'Exportador não recebeu o foco.')
+  const add = Array.from(mount.querySelectorAll('button')).find((button) => button.textContent?.includes('Adicionar áudio'))!
+  add.click()
+  await new Promise((resolve) => requestAnimationFrame(resolve))
+  assert(imported === 1 && mount.textContent?.includes(clip.name), 'O botão de importar áudio não atualizou o projeto.')
+  const start = Array.from(mount.querySelectorAll('button')).find((button) => button.textContent === 'EXPORTAR TURBO 2×')!
+  start.click()
+  await new Promise((resolve) => requestAnimationFrame(resolve))
+  assert(started === 1 && mount.textContent?.includes('MP4 exportado e validado.'), 'Painel não iniciou ou mostrou o resultado da exportação.')
+  closePanelTest = () => { root.unmount(); mount.remove() }
+  return { passed: true, importedAudio: imported, startedExports: started }
+}
+;(globalThis as unknown as { closeExportPanelCheck: () => void }).closeExportPanelCheck = () => closePanelTest()
 ;(globalThis as unknown as { compareNativeSurface: (image: string) => Promise<unknown> }).compareNativeSurface = async (image) => {
   const actual = await pixels(image), expected = await pixels(expectedCapture)
   const textRegions = Array.from(document.querySelectorAll('#surface-test text')).map((node) => node.getBoundingClientRect())
@@ -54,6 +89,7 @@ let expectedCapture = ''
   const speech: EditorV6Element = { id: crypto.randomUUID(), kind: 'speech', text: 'Olá, esta fala aparece no quadro escolhido.\nTexto igual na prévia e na captura.', x: 0, y: -30, width: 38, height: 18, rotation: 0, zIndex: 2 }
   project = addEditorV6ElementAtFrame(project, speech, 60)
   project = editEditorV6BackgroundAtFrame(project, 150, { backgroundColor: '#ffffff' })
+  panelProject = project
   const mount = document.getElementById('surface-test')!
   const root = createRoot(mount)
   flushSync(() => root.render(<SceneSurface scene={resolveEditorV6SceneAtFrame(project, 120)} assets={project.assets} />))

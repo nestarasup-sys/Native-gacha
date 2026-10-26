@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import type { EditorV6Document } from '../../../../shared/editorV6'
 import { resolveEditorV6SceneAtFrame } from '../../../../shared/editorV6Timeline'
 import { SceneSurface } from './SceneSurface'
+import { editorV6VisualKey } from '../../../../shared/editorV6Export'
 
 export function renderEditorV6FrameSvg(document: EditorV6Document, frame: number, width = 1920, height = 1080): string {
   return renderToStaticMarkup(<SceneSurface scene={resolveEditorV6SceneAtFrame(document, frame)} assets={document.assets} outputWidth={width} outputHeight={height} />)
@@ -36,7 +37,7 @@ export async function* captureEditorV6Frames(project: EditorV6Document, options:
   for (let frame = start; frame < end; frame++) {
     options.signal?.throwIfAborted()
     const scene = resolveEditorV6SceneAtFrame(project, frame)
-    const key = JSON.stringify([scene.background, scene.elements.map((element) => [element.id, element.kind, element.assetId, element.text, element.x, element.y, element.width, element.height, element.rotation, element.flipX, element.characterScale, element.characterWidthScale, element.characterHeightScale, element.zIndex])])
+    const key = editorV6VisualKey(scene)
     if (key !== previousKey || !previousImage) {
       previousImage = await captureEditorV6Frame(project, frame, options.width ?? 1920, options.height ?? 1080)
       previousKey = key

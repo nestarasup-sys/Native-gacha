@@ -63,7 +63,7 @@ O salvamento registra os estados e tempos no JSON e continua usando a persistên
 
 A faixa Vídeo atualmente organiza os objetos/imagens e textos visuais já disponíveis no V6. Ela não realiza importação, decodificação ou reprodução de arquivos de vídeo.
 
-Importação de vídeo/áudio, faixa de áudio, reprodução sincronizada de mídias, trechos de arquivo, mixagem, exportação MP4 por FFmpeg, faixas personalizadas e eventos de loading/apresentação ainda precisam ser implementados. Não foram acrescentados botões que simulem esses recursos.
+O [exportador Turbo 2×](EXPORTACAO.md) já produz MP4 e permite importar e misturar trilhas sonoras pelo seu painel. Importação de vídeo, faixa de áudio na timeline, reprodução sincronizada de mídias na prévia, faixas personalizadas e eventos de loading/apresentação ainda precisam ser implementados.
 
 A associação de uma fala a um personagem já fica nos dados do bloco; a troca automática da boca e o piscar automático durante a reprodução ainda precisam ser conectados ao renderizador facial. As mudanças de pose/expressão nesta entrega são cortes entre estados estáticos, sem interpolação animada.
 

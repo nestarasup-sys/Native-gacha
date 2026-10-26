@@ -38,6 +38,9 @@ async function main() {
     await fs.writeFile(path.join(taskRoot, 'native-preview.png'), screenshot.toPNG())
     await fs.writeFile(path.join(taskRoot, 'expected-capture.png'), Buffer.from(result.capture.split(',')[1], 'base64'))
     result.nativePreviewComparison = await window.webContents.executeJavaScript(`globalThis.compareNativeSurface(${JSON.stringify(screenshot.toDataURL())})`)
+    result.exportPanel = await window.webContents.executeJavaScript('globalThis.checkExportPanel()')
+    await fs.writeFile(path.join(taskRoot, 'export-panel.png'), (await window.webContents.capturePage()).toPNG())
+    await window.webContents.executeJavaScript('globalThis.closeExportPanelCheck()')
     const capturePath = path.join(taskRoot, 'scene-surface.png')
     await fs.writeFile(capturePath, Buffer.from(result.capture.split(',')[1], 'base64'))
     delete result.capture

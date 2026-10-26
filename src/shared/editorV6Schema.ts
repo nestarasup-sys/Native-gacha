@@ -5,6 +5,14 @@ import { isEditorV6ExpressionEffects, isEditorV6FaceTransforms } from './editorV
 
 const uuid = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)
 const finite = z.number().finite()
+export const editorV6ExportAudioSchema = z.object({
+  id: uuid, name: z.string().min(1).max(255),
+  fileName: z.string().regex(/^[0-9a-f-]{36}\.(mp3|wav|m4a|aac|ogg|flac|opus|webm)$/i),
+  sourceFrames: z.number().int().min(1).max(1_000_000),
+  startFrame: z.number().int().min(0).max(1_000_000),
+  sourceInFrame: z.number().int().min(0).max(1_000_000),
+  durationFrames: z.number().int().min(1).max(1_000_000), gain: z.number().finite().min(0).max(2), muted: z.boolean()
+}).refine((clip) => clip.sourceInFrame + clip.durationFrames <= clip.sourceFrames, 'O trecho de áudio ultrapassa o arquivo de origem.')
 
 export const editorV6AssetSchema = z.object({
   id: uuid,
@@ -103,6 +111,7 @@ export const editorV6DocumentSchema = z.object({
   thumbnailDataUrl: z.string().max(1_500_000).regex(/^data:image\/(jpeg|png);base64,/).optional(),
   assets: z.array(editorV6AssetSchema).max(500),
   elements: z.array(editorV6ElementSchema).max(1000),
+  exportAudio: z.array(editorV6ExportAudioSchema).max(32).optional(),
   timeline: z.object({
     fps: z.literal(30),
     durationFrames: z.number().int().min(1).max(1_000_000),

@@ -4,6 +4,7 @@ import { isPoseSnapshotForModel } from '../../../../shared/characterSourceContin
 import { useEditorV6Store } from './editorV6Store'
 import { createEditorV6Timeline, syncEditorV6TimelineElements } from '../../../../shared/editorV6'
 import { EditorV6Timeline } from './EditorV6Timeline'
+import { EditorV6ExportPanel } from './EditorV6ExportPanel'
 import { SceneSurface, type ScenePointerEvent, type SceneSurfaceInteraction } from './SceneSurface'
 import { addEditorV6ElementAtFrame, editEditorV6DocumentAtBlock, editorV6ClipAtFrame, normalizeEditorV6Timeline, prepareEditorV6PositionAtFrame, moveEditorV6ElementInPeriod, editEditorV6BackgroundAtFrame, pruneEditorV6TimelineSnapshots, repairEditorV6DuplicateAssets, resolveEditorV6SceneAtFrame, frameTimecode, timelineClips } from '../../../../shared/editorV6Timeline'
 import { useEditorV6InspectorState } from './useEditorV6InspectorState'
@@ -90,6 +91,7 @@ export function EditorV6Page() {
   const [activeEditorV6Id, setActiveStudioId] = useState<string | null>(null)
   const [activeTool, setActiveTool] = useState<Tool>(null)
   const [fullView, setFullView] = useState(false)
+  const [exportOpen, setExportOpen] = useState(false)
   const [saved, setSaved] = useState(true)
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null)
   const [playheadFrame, setPlayheadFrame] = useState(0)
@@ -425,6 +427,7 @@ export function EditorV6Page() {
     duplicate.backgroundAssetId = source.backgroundAssetId ? oldToNew.get(source.backgroundAssetId) ?? null : null
     try {
       setError(null)
+      if (source.exportAudio?.length) await window.desktop.cloneEditorV6ExportAudio(source.id, duplicate.id, source.exportAudio)
       await window.desktop.saveEditorV6Project(duplicate)
       setEditorV6Projects((current) => [...current, duplicate])
       setSelectedId(duplicate.id)
@@ -1041,7 +1044,7 @@ export function EditorV6Page() {
       if (dragRef.current && (event.key === 'Escape' || ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z'))) { event.preventDefault(); cancelSceneDrag(); return }
       if (event.key === 'Escape' && castPickerOpen && !savingCast) setCastPickerOpen(false)
       else if (event.key === 'Escape' && fullView) setFullView(false)
-      if (event.target instanceof HTMLElement && event.target.closest('input,textarea,select,[contenteditable=true]')) return
+      if (event.target instanceof HTMLElement && event.target.closest('input,textarea,select,[contenteditable=true],[role=dialog]')) return
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') { event.preventDefault(); event.shiftKey ? redo() : undo() }
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'y') { event.preventDefault(); redo() }
     }
@@ -1267,6 +1270,7 @@ export function EditorV6Page() {
             <button className="studio-tool-button" onClick={() => addTextElement('speech')} type="button"><Icon name="message" /><span>Fala</span><i aria-hidden="true">✦</i></button>
             <button className="studio-tool-button" onClick={() => addTextElement('thought')} type="button"><Icon name="face" /><span>Pensamento</span><i aria-hidden="true">✦</i></button>
             <span className="studio-tool-separator" />
+            <button className="studio-tool-button" onClick={() => { setIsPlaying(false); setExportOpen(true) }} type="button"><Icon name="download" /><span>Exportar MP4</span></button>
             <button className="studio-tool-button" onClick={() => void exportPrint()} type="button"><Icon name="download" /><span>Print</span><i aria-hidden="true">✦</i></button>
             <button className="studio-tool-button" onClick={() => void openPrints()} type="button"><Icon name="folder" /><span>Pasta</span><i aria-hidden="true">✦</i></button>
             <button className="studio-tool-button studio-view-button" onClick={() => setFullView(true)} type="button"><Icon name="expand" /><span>View</span></button>
@@ -1292,6 +1296,7 @@ export function EditorV6Page() {
         {!fullView && <EditorV6Timeline key={activeEditorV6.id} document={activeEditorV6} frame={playheadFrame} playing={isPlaying} selectedId={selectedTimelineBlockId}
           onSeek={(frame) => { if (dragRef.current) cancelSceneDrag(); setIsPlaying(false); setPlayheadFrame(frame) }} onPlay={toggleTimelinePlayback} onChange={changeScene}
           onSelect={(block) => { setSelectedTimelineBlockId(block.id); setSelectedElementId(block.background ? 'background' : block.elementId ?? null); setActiveTool(block.background ? 'background' : null); setInspectorOpen(true); if (block.state?.kind === 'character') restoreCharacterInspectorView(); else setInspectorTab('editor') }} /> }
+        <EditorV6ExportPanel key={`export-${activeEditorV6.id}`} project={activeEditorV6} open={exportOpen} onClose={() => setExportOpen(false)} onChange={(update) => patchStudio(update, false)} />
         {castPickerOpen && <div className="studio-cast-modal-backdrop" onPointerDown={(event) => { if (event.target === event.currentTarget && !savingCast) setCastPickerOpen(false) }}>
           <section className="studio-cast-modal" role="dialog" aria-modal="true" aria-labelledby="studio-cast-modal-title">
             <header><span><small>EDITAR ELENCO</small><h2 id="studio-cast-modal-title">Personagens do Editor V6</h2></span><button className="studio-cast-modal-close" onClick={() => setCastPickerOpen(false)} aria-label="Fechar" disabled={savingCast} type="button">×</button></header>

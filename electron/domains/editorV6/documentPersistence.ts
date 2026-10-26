@@ -45,6 +45,7 @@ export function createEditorV6DocumentPersistence(deps: {
       ...(typeof value.thumbnailDataUrl === 'string' && /^data:image\/(jpeg|png);base64,/.test(value.thumbnailDataUrl) && value.thumbnailDataUrl.length <= 1_500_000 ? { thumbnailDataUrl: value.thumbnailDataUrl } : {}),
       assets: Array.isArray(value.assets) ? value.assets as EditorV6Asset[] : [],
       elements,
+      ...(Array.isArray(value.exportAudio) ? { exportAudio: value.exportAudio as EditorV6Document['exportAudio'] } : {}),
       timeline: value.timeline && typeof value.timeline === 'object'
         ? normalizeEditorV6Timeline(syncEditorV6TimelineElements(value.timeline as EditorV6Timeline, elements))
         : createEditorV6Timeline(elements),

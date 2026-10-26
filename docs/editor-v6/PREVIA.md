@@ -26,7 +26,7 @@ Os fundos também são estados: escolher uma imagem, alterar a cor ou reposicion
 
 `captureEditorV6Frames` prepara os quadros sequencialmente, sem depender de um relógio de reprodução. Trechos visualmente estáticos reutilizam a imagem preparada. A operação aceita cancelamento. Essa é a base de captura para um futuro codificador de vídeo.
 
-A codificação MP4 por FFmpeg, importação e sincronização de arquivos de vídeo/áudio ainda não foram conectadas ao V6. Esta atualização não adiciona uma exportação de vídeo completa.
+A codificação MP4 está conectada ao exportador [Turbo 2×](EXPORTACAO.md), que monta o próprio `SceneSurface` em janelas ocultas. A trilha sonora pode ser configurada no painel de exportação. Importação de arquivos de vídeo e reprodução de áudio/vídeo sincronizados na prévia ainda precisam ser conectadas ao V6.
 
 ## Verificação
 

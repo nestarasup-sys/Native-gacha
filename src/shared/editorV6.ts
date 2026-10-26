@@ -1,5 +1,6 @@
 import type { CustomizerFaceAppearance } from './customizer'
 import type { FaceCatalogItemSummary, FaceExpressionEffects, FaceTransform } from './fabricator'
+import type { EditorV6ExportAudio, EditorV6ExportOptions, EditorV6ExportStatus } from './editorV6Export'
 
 export type EditorV6Asset = {
   id: string
@@ -286,6 +287,7 @@ export type EditorV6Document = {
   assets: EditorV6Asset[]
   elements: EditorV6Element[]
   timeline: EditorV6Timeline
+  exportAudio?: EditorV6ExportAudio[]
 }
 
 export type EditorV6DesktopApi = {
@@ -296,5 +298,11 @@ export type EditorV6DesktopApi = {
   importEditorV6Image: (category: EditorV6Asset['category']) => Promise<EditorV6Asset | null>
   saveEditorV6Print: (editorV6Id: string, dataUrl: string) => Promise<string | null>
   openEditorV6Prints: (editorV6Id: string) => Promise<void>
+  startEditorV6Export: (project: EditorV6Document, options: EditorV6ExportOptions) => Promise<EditorV6ExportStatus | null>
+  getEditorV6ExportStatus: (jobId: string) => Promise<EditorV6ExportStatus>
+  cancelEditorV6Export: (jobId: string) => Promise<void>
+  revealEditorV6Export: (jobId: string, showReport?: boolean) => Promise<void>
+  importEditorV6ExportAudio: (projectId: string) => Promise<EditorV6ExportAudio | null>
+  cloneEditorV6ExportAudio: (sourceId: string, targetId: string, clips: EditorV6ExportAudio[]) => Promise<void>
 }
 
