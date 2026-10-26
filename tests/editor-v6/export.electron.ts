@@ -86,7 +86,7 @@ async function main() {
     { id: videoId, name: 'Test pattern', fileName: videoFileName, kind: 'video', mimeType: 'video/mp4', sourceFrames: 120, hasAudio: true, width: 320, height: 180, sizeBytes: (await stat(videoPath)).size },
     { id: audioId, name: 'Tone', fileName: audioFileName, kind: 'audio', mimeType: 'audio/wav', sourceFrames: 120, hasAudio: true, sizeBytes: (await stat(join(folder, 'media', audioFileName))).size }
   ], timeline: { ...createEditorV6Timeline(), durationFrames: 90, tracks: createEditorV6Timeline().tracks.map((track) => track.kind === 'video'
-    ? { ...track, blocks: [{ id: randomUUID(), label: 'Test pattern', mediaId: videoId, mediaInFrame: 15, startFrame: 5, durationFrames: 10, audioEnabled: true, gain: 1 }] }
+    ? { ...track, blocks: [{ id: randomUUID(), label: 'Test pattern', mediaId: videoId, mediaInFrame: 15, startFrame: 5, durationFrames: 10, mediaLayout: { x: 20, y: 0, width: 30, height: 30, rotation: 15 }, audioEnabled: true, gain: 1 }] }
     : track.kind === 'audio' ? { ...track, blocks: [{ id: randomUUID(), label: 'Tone', mediaId: audioId, mediaInFrame: 0, startFrame: 0, durationFrames: 90, audioEnabled: true, gain: .5 }] }
       : { ...track, blocks: track.blocks }) } }
   project = mediaProject
@@ -98,6 +98,9 @@ async function main() {
   assert(!mediaRgb.subarray(0, mediaFrameBytes).equals(mediaRgb.subarray(mediaFrameBytes, mediaFrameBytes * 2)), 'Vídeo importado não mudou quadro a quadro na composição exportada.')
   const actorOverVideo = Array.from(mediaRgb.subarray((90 * 320 + 160) * 3, (90 * 320 + 160) * 3 + 3))
   assert(actorOverVideo[0] > 200 && actorOverVideo[1] > 200 && actorOverVideo[2] < 40, 'O vídeo cobriu o personagem, embora a camada do vídeo deva ficar atrás dos personagens.')
+  const videoOutside = Array.from(mediaRgb.subarray(mediaFrameBytes + (10 * 320 + 10) * 3, mediaFrameBytes + (10 * 320 + 10) * 3 + 3))
+  const positionedVideo = Array.from(mediaRgb.subarray(mediaFrameBytes + (90 * 320 + 200) * 3, mediaFrameBytes + (90 * 320 + 200) * 3 + 3))
+  assert(videoOutside.every((channel) => channel < 25) && positionedVideo.some((channel) => channel > 40), 'O vídeo exportado não respeitou o tamanho e a posição configurados na prévia.')
   const firstPixel = Array.from(mediaRgb.subarray(10 * 3, 10 * 3 + 3))
   assert(firstPixel.every((channel) => channel < 25), 'A faixa de vídeo vazou para antes do início do clip.')
   const mediaSound = run(['-i', mediaOutput, '-vn', '-ac', '1', '-ar', '48000', '-f', 'f32le', 'pipe:1'])

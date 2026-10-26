@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { mkdir, mkdtemp, rename, rm, unlink, writeFile } from 'node:fs/promises'
 import { basename, dirname, extname, join, resolve, sep } from 'node:path'
 import { availableParallelism } from 'node:os'
-import type { EditorV6Document } from '../../../src/shared/editorV6'
+import { editorV6DefaultVideoLayout, type EditorV6Document } from '../../../src/shared/editorV6'
 import type { CustomizerCharacter } from '../../../src/shared/customizer'
 import { attachEditorV6Motion, missingEditorV6Motions, type EditorV6MotionBakeRequest, type EditorV6MotionBakeResult } from '../../../src/shared/editorV6Motion'
 import { planEditorV6Audio, planEditorV6Export, type EditorV6ExportAudio, type EditorV6ExportOptions, type EditorV6ExportPart, type EditorV6ExportStatus } from '../../../src/shared/editorV6Export'
@@ -49,13 +49,13 @@ function timelineMediaAudio(project: EditorV6Document): EditorV6ExportAudio[] {
     return [{ id: block.id, name: asset.name, fileName: asset.fileName, ...(asset.libraryVideoId ? { libraryVideoId: asset.libraryVideoId } : {}), sourceFrames: asset.sourceFrames, startFrame: block.startFrame, sourceInFrame: block.mediaInFrame ?? 0, durationFrames: block.durationFrames, gain: block.gain ?? 1, muted: false }]
   }))
 }
-type TimelineVideoClip = { fileName: string; libraryVideoId?: string; mediaInFrame: number; startFrame: number; endFrame: number }
+type TimelineVideoClip = { fileName: string; libraryVideoId?: string; mediaInFrame: number; startFrame: number; endFrame: number; layout: { x: number; y: number; width: number; height: number; rotation: number } }
 function timelineVideoClips(project: EditorV6Document, startFrame: number, endFrame: number): TimelineVideoClip[] {
   const media = new Map((project.media ?? []).filter((asset) => asset.kind === 'video').map((asset) => [asset.id, asset]))
   return project.timeline.tracks.filter((track) => track.kind === 'video' && !track.hidden && !track.muted).flatMap((track) => track.blocks.flatMap((block) => {
     const asset = block.mediaId ? media.get(block.mediaId) : undefined
     const start = Math.max(startFrame, block.startFrame), end = Math.min(endFrame, block.startFrame + block.durationFrames)
-    return asset && end > start ? [{ fileName: asset.fileName, ...(asset.libraryVideoId ? { libraryVideoId: asset.libraryVideoId } : {}), mediaInFrame: (block.mediaInFrame ?? 0) + start - block.startFrame, startFrame: start, endFrame: end }] : []
+    return asset && end > start ? [{ fileName: asset.fileName, ...(asset.libraryVideoId ? { libraryVideoId: asset.libraryVideoId } : {}), mediaInFrame: (block.mediaInFrame ?? 0) + start - block.startFrame, startFrame: start, endFrame: end, layout: block.mediaLayout ?? editorV6DefaultVideoLayout(asset.width, asset.height) }] : []
   })).sort((a, b) => a.startFrame - b.startFrame || a.fileName.localeCompare(b.fileName))
 }
 export async function runEditorV6Export(project: EditorV6Document, options: EditorV6ExportOptions, deps: Dependencies): Promise<EditorV6ExportReport> {
@@ -96,8 +96,11 @@ export async function runEditorV6Export(project: EditorV6Document, options: Edit
       videoClips.forEach((clip, index) => {
         const offset = (clip.startFrame - part.startFrame) / 30, end = (clip.endFrame - part.startFrame) / 30
         const output = index === videoClips.length - 1 && !layeredVideo ? 'vout' : `mix${index}`
-        filters.push(`[${index + 1}:v:0]scale=${options.width}:${options.height}:force_original_aspect_ratio=increase,crop=${options.width}:${options.height},setsar=1,setpts=PTS-STARTPTS+${offset}/TB[clip${index}]`)
-        filters.push(`[${lastVideo}][clip${index}]overlay=0:0:enable='gte(t,${offset})*lt(t,${end})':eof_action=pass:repeatlast=0[${output}]`)
+        const boxWidth = clip.layout.width * options.width / 100, boxHeight = clip.layout.height * options.height / 100
+        const centerX = (50 + clip.layout.x) * options.width / 100, centerY = (50 + clip.layout.y) * options.height / 100
+        const rotation = clip.layout.rotation * Math.PI / 180
+        filters.push(`[${index + 1}:v:0]scale=${boxWidth}:${boxHeight}:force_original_aspect_ratio=decrease:force_divisible_by=2,setsar=1,format=rgba,rotate=${rotation}:ow=rotw(iw):oh=roth(ih):c=none,setpts=PTS-STARTPTS+${offset}/TB[clip${index}]`)
+        filters.push(`[${lastVideo}][clip${index}]overlay=x='${centerX}-overlay_w/2':y='${centerY}-overlay_h/2':enable='gte(t,${offset})*lt(t,${end})':eof_action=pass:repeatlast=0[${output}]`)
         lastVideo = output
       })
       if (layeredVideo) filters.push(`[${lastVideo}][fg]overlay=0:0:format=auto:eof_action=pass:repeatlast=1[vout]`)

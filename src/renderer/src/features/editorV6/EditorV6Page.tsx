@@ -1444,7 +1444,7 @@ export function EditorV6Page() {
           {control('Altura', layout.height, (value, record) => setLayout({ height: value }, record ?? true), 1, 200)}
           {control('Rotação', layout.rotation, (value, record) => setLayout({ rotation: value }, record ?? true), -180, 180, '°')}
           {control('Início da mídia', block.mediaInFrame ?? 0, (value, record) => updateVideoBlock(block.id, { mediaInFrame: Math.round(value) }, record), 0, Math.max(0, selectedTimelineVideo.sourceFrames - 1), ' quadros')}
-          {selectedTimelineVideo.hasAudio && control('Volume', block.gain ?? 1, (value, record) => updateVideoBlock(block.id, { gain: value }, record), 0, 2, '×')}
+          {selectedTimelineVideo.hasAudio && control('Volume', Math.min(1, block.gain ?? 1), (value, record) => updateVideoBlock(block.id, { gain: value }, record ?? true), 0, 1, '×')}
         </div>
         {selectedTimelineVideo.hasAudio && <label className="studio-color-control">Áudio do vídeo<input type="checkbox" checked={block.audioEnabled !== false} onChange={(event) => { recordHistory(); updateVideoBlock(block.id, { audioEnabled: event.target.checked }, false) }} /></label>}
         <small>Duração na timeline: {(block.durationFrames / 30).toFixed(2)} s · o quadro é renderizado centralizado proporcionalmente.</small>

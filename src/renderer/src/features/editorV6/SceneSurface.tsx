@@ -52,7 +52,7 @@ const SceneVideoLayer = memo(function SceneVideoLayer({ scene, playing, selected
   useEffect(() => {
     const video = ref.current
     if (!video || !media) return
-    video.volume = Math.max(0, Math.min(1, media.gain))
+    video.volume = 1
     const target = (media.sourceInFrame + scene.frame - media.startFrame) / 30
     if (!playing) {
       video.pause()
@@ -73,7 +73,7 @@ const SceneVideoLayer = memo(function SceneVideoLayer({ scene, playing, selected
     <foreignObject x={x - width / 2} y={y - height / 2} width={width} height={height} transform={`rotate(${media.layout.rotation} ${x} ${y})`} data-editor-v6-video={media.mediaId}
       style={{ cursor: interaction ? 'move' : undefined, touchAction: 'none' }}
       onPointerDown={interaction ? (event) => interaction.start(event, `media-video:${media.blockId}`) : undefined} onPointerMove={interaction?.move} onPointerUp={interaction?.end} onPointerCancel={interaction?.end}>
-    <video ref={ref} src={media.url} muted={!playing || !media.audioEnabled} playsInline preload="auto" data-media-id={media.mediaId} data-target-time={(media.sourceInFrame + scene.frame - media.startFrame) / 30} onLoadedMetadata={(event) => {
+    <video ref={ref} src={media.url} muted playsInline preload="auto" data-media-id={media.mediaId} data-target-time={(media.sourceInFrame + scene.frame - media.startFrame) / 30} onLoadedMetadata={(event) => {
       const video = event.currentTarget, target = Number(video.dataset.targetTime)
       try { video.currentTime = target } catch { /* The browser will seek when it is ready. */ }
       if (playing) void video.play().catch(() => {})

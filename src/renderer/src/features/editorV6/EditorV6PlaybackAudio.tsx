@@ -24,13 +24,13 @@ export function EditorV6PlaybackAudio({ project, playing }: { project: EditorV6D
     const next = new Map<string, HTMLAudioElement>()
     const nextClips: AudioClip[] = []
     if (project) {
-      const mediaById = new Map((project.media ?? []).filter((media) => media.kind === 'audio').map((media) => [media.id, media]))
+      const mediaById = new Map((project.media ?? []).map((media) => [media.id, media]))
       for (const track of project.timeline.tracks) {
-        if (track.kind !== 'audio') continue
+        if (track.kind !== 'audio' && track.kind !== 'video') continue
         for (const block of track.blocks) {
           const media = block.mediaId ? mediaById.get(block.mediaId) : undefined
-          if (!media) continue
-          const audio = previous.get(block.id) ?? new Audio(editorV6MediaUrl(project.id, media.fileName))
+          if (!media || (track.kind === 'video' && (media.kind !== 'video' || !media.hasAudio))) continue
+          const audio = previous.get(block.id) ?? new Audio(editorV6MediaUrl(project.id, media.fileName, media.kind === 'video' ? media.libraryVideoId : undefined))
           audio.preload = 'auto'
           audio.volume = Math.max(0, Math.min(1, block.gain ?? 1))
           next.set(block.id, audio)
