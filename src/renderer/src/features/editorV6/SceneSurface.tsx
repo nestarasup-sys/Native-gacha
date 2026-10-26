@@ -76,7 +76,25 @@ const SceneVideoLayer = memo(function SceneVideoLayer({ scene, playing }: { scen
   </foreignObject>
 })
 
-const SceneLayer = memo(function SceneLayer({ element, asset, selected, interaction }: { element: EditorV6Element; asset?: EditorV6Asset; selected: boolean; interaction?: SceneSurfaceInteraction }) {
+type SceneLayerProps = { element: EditorV6Element; asset?: EditorV6Asset; selected: boolean; interaction?: SceneSurfaceInteraction }
+function sameMotionSprite(left: EditorV6Element['motionSprite'], right: EditorV6Element['motionSprite']): boolean {
+  if (left === right) return true
+  return Boolean(left && right && left.x === right.x && left.y === right.y && left.width === right.width && left.height === right.height
+    && left.atlasWidth === right.atlasWidth && left.atlasHeight === right.atlasHeight)
+}
+
+/** Timeline resolution creates new state objects each frame; skip SVG layers whose visual inputs are unchanged. */
+export function sceneLayerPropsEqual(previous: SceneLayerProps, next: SceneLayerProps): boolean {
+  if (previous.asset !== next.asset || previous.selected !== next.selected || previous.interaction !== next.interaction) return false
+  const left = previous.element, right = next.element
+  const keys = Object.keys(left) as Array<keyof EditorV6Element>
+  if (keys.length !== Object.keys(right).length) return false
+  return keys.every((key) => key === 'motionSprite'
+    ? sameMotionSprite(left.motionSprite, right.motionSprite)
+    : Object.is(left[key], right[key]))
+}
+
+const SceneLayer = memo(function SceneLayer({ element, asset, selected, interaction }: SceneLayerProps) {
   const size = editorV6ElementSize(element), width = size.width * 19.2, height = size.height * 10.8
   const image = element.kind === 'image' || element.kind === 'character'
   const fontSize = Math.max(8, Math.min(32, height * .3, width / 2)), lineHeight = fontSize * 1.22
@@ -96,7 +114,7 @@ const SceneLayer = memo(function SceneLayer({ element, asset, selected, interact
     {interaction && <rect x={-width / 2} y={-height / 2} width={width} height={height} fill="transparent" pointerEvents="all" />}
     {selected && <Selection width={width} height={height} />}
   </g>
-})
+}, sceneLayerPropsEqual)
 
 /** Shared scene drawing for the live Chromium preview and sequential frame captures. */
 export const SceneSurface = memo(function SceneSurface({ scene, assets, selectedId = null, interaction, playing = false, outputWidth = 1920, outputHeight = 1080, renderLayer = 'all' }: { scene: EditorV6ResolvedScene; assets: readonly EditorV6Asset[]; selectedId?: string | null; interaction?: SceneSurfaceInteraction; playing?: boolean; outputWidth?: number; outputHeight?: number; renderLayer?: 'all' | 'background' | 'foreground' }) {
