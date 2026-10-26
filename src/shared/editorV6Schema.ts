@@ -11,7 +11,8 @@ export const editorV6AssetSchema = z.object({
   category: z.enum(['background', 'object', 'character']),
   name: z.string().max(255),
   mimeType: z.enum(['image/png', 'image/jpeg', 'image/webp']),
-  dataUrl: z.string().max(70_000_000)
+  dataUrl: z.string().max(70_000_000),
+  timelineSnapshot: z.boolean().optional()
 }).superRefine((asset, context) => {
   if (!asset.dataUrl.startsWith(`data:${asset.mimeType};base64,`)) {
     context.addIssue({ code: 'custom', path: ['dataUrl'], message: 'O conteúdo da imagem não corresponde ao formato declarado.' })
@@ -20,6 +21,7 @@ export const editorV6AssetSchema = z.object({
 
 const editorV6ElementSchema = z.object({
   id: uuid,
+  visible: z.boolean().optional(),
   kind: z.enum(['image', 'character', 'narrator', 'speech', 'thought']),
   assetId: z.string().optional(),
   characterId: z.string().optional(),
@@ -60,12 +62,19 @@ const editorV6TimelineTrackSchema = z.object({
   name: z.string().trim().min(1).max(80),
   muted: z.boolean(),
   locked: z.boolean(),
+  hidden: z.boolean().optional(),
+  collapsed: z.boolean().optional(),
   blocks: z.array(z.object({
     id: uuid,
     elementId: uuid.optional(),
     label: z.string().max(120),
     startFrame: z.number().int().min(0).max(1_000_000),
-    durationFrames: z.number().int().min(1).max(1_000_000)
+    durationFrames: z.number().int().min(1).max(1_000_000),
+    state: editorV6ElementSchema.optional(),
+    characterId: z.string().min(1).max(120).optional(),
+    parentBlockId: uuid.optional(),
+    relativeStartFrame: z.number().int().min(0).max(1_000_000).optional(),
+    mediaInFrame: z.number().int().min(0).max(1_000_000).optional()
   })).max(1000)
 }).passthrough()
 
@@ -89,7 +98,8 @@ export const editorV6DocumentSchema = z.object({
   timeline: z.object({
     fps: z.literal(30),
     durationFrames: z.number().int().min(1).max(1_000_000),
-    tracks: z.array(editorV6TimelineTrackSchema).max(200)
+    tracks: z.array(editorV6TimelineTrackSchema).max(200),
+    knownElementIds: z.array(uuid).max(1000).optional()
   })
 }).superRefine((document, context) => {
   const assetsById = new Map(document.assets.map((asset) => [asset.id, asset]))
@@ -110,6 +120,9 @@ export const editorV6DocumentSchema = z.object({
     }
   })
   const elementIds = new Set(document.elements.map((element) => element.id))
+  const blocksById = new Map(document.timeline.tracks.flatMap((track) => track.blocks.map((block) => [block.id, { block, track }] as const)))
+  const allBlockIds = document.timeline.tracks.flatMap((track) => track.blocks.map((block) => block.id))
+  if (new Set(allBlockIds).size !== allBlockIds.length) context.addIssue({ code: 'custom', path: ['timeline'], message: 'Os blocos precisam ter identificadores únicos.' })
   document.timeline.tracks.forEach((track, trackIndex) => {
     track.blocks.forEach((block, blockIndex) => {
       if (block.elementId && !elementIds.has(block.elementId)) {
@@ -117,6 +130,15 @@ export const editorV6DocumentSchema = z.object({
       }
       if (block.startFrame + block.durationFrames > document.timeline.durationFrames) {
         context.addIssue({ code: 'custom', path: ['timeline', 'tracks', trackIndex, 'blocks', blockIndex], message: 'O bloco ultrapassa a duração da timeline.' })
+      }
+      if (block.state && (block.state.id !== block.elementId || !elementIds.has(block.state.id) || (block.state.assetId && !assetsById.has(block.state.assetId)))) {
+        context.addIssue({ code: 'custom', path: ['timeline', 'tracks', trackIndex, 'blocks', blockIndex, 'state'], message: 'O estado do bloco precisa apontar para uma camada e imagem válidas.' })
+      }
+      if (block.parentBlockId) {
+        const parent = blocksById.get(block.parentBlockId)
+        if (!parent || parent.track.kind !== 'video' || track.kind === 'video' || track.kind === 'character' || block.relativeStartFrame === undefined || block.startFrame !== parent.block.startFrame + block.relativeStartFrame || block.startFrame + block.durationFrames > parent.block.startFrame + parent.block.durationFrames) {
+          context.addIssue({ code: 'custom', path: ['timeline', 'tracks', trackIndex, 'blocks', blockIndex, 'parentBlockId'], message: 'O comentário precisa ficar dentro do visual ao qual está vinculado.' })
+        }
       }
     })
   })

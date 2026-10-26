@@ -1,11 +1,13 @@
-import { editorV6CharacterRenderKey, editorV6ElementSize, isEditorV6ElementVisibleAtFrame } from '../../../../shared/editorV6SceneModel'
+import { editorV6CharacterRenderKey, editorV6ElementSize } from '../../../../shared/editorV6SceneModel'
 import { SerializedDocumentSaveQueue } from '../../../../shared/editorV6DocumentSave'
 import { isPoseSnapshotForModel } from '../../../../shared/characterSourceContinuity'
 import { useEditorV6Store } from './editorV6Store'
-import { createEditorV6Timeline, editorV6TrackKindForElement, syncEditorV6TimelineElements, EDITOR_V6_DEFAULT_BLOCK_FRAMES, type EditorV6TrackKind, type EditorV6TimelineBlock, type EditorV6TimelineTrack } from '../../../../shared/editorV6'
+import { createEditorV6Timeline, syncEditorV6TimelineElements } from '../../../../shared/editorV6'
+import { EditorV6Timeline } from './EditorV6Timeline'
+import { addEditorV6ElementAtFrame, editEditorV6DocumentAtBlock, editorV6ClipAtFrame, normalizeEditorV6Timeline, pruneEditorV6TimelineSnapshots, repairEditorV6DuplicateAssets, resolveEditorV6ElementsAtFrame, timelineClips } from '../../../../shared/editorV6Timeline'
 import { useEditorV6InspectorState } from './useEditorV6InspectorState'
 import { trimTransparentImage, fitElementToTrim, faceRenderGeometry, type TrimmedImage } from '../../characters/characterGeometry'
-import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { buildEditorV6ExpressionAppearance, buildEditorV6ExpressionTransforms, resolveEditorV6ExpressionBase, editorV6ExpressionCollection } from './expressionTransforms'
 import { Icon } from '../../ui/components/Icon'
 import { CharacterPortrait } from '../../ui/components/CharacterPortrait'
@@ -18,9 +20,6 @@ import type { FaceCatalogItem, FaceCatalogItemSummary, FaceExpressionEffects, Fa
 type EditorV6Card = EditorV6Document
 type Tool = 'background' | 'objects' | null
 type DragState = { id: string; pointerId: number; startX: number; startY: number; originalX: number; originalY: number; width: number; height: number }
-type TimelineDragState = { trackId: string; blockId: string; pointerId: number; startX: number; startFrame: number; durationFrames: number; mode: 'move' | 'resize' }
-const TIMELINE_PIXELS_PER_SECOND = 72
-
 const STORAGE_KEY = 'gacha-nymi-editor-v6-catalog-v1'
 const EDITOR_V6_FACE_RENDER_VERSION = 7
 const studioColor = (number: number) => `hsl(${(number * 137.508) % 360} 45% 78%)`
@@ -117,7 +116,7 @@ function makeCanvasPrint(studio: EditorV6Document, outputWidth = 1920, outputHei
       try {
         const bg = studio.assets.find((asset) => asset.id === studio.backgroundAssetId)
         if (bg) await drawImage(bg.dataUrl, studio.backgroundX, studio.backgroundY, studio.backgroundWidth, studio.backgroundHeight, studio.backgroundRotation)
-        for (const element of [...studio.elements].filter((item) => isEditorV6ElementVisibleAtFrame(studio, item.id, frame)).sort((a, b) => a.zIndex - b.zIndex)) {
+        for (const element of resolveEditorV6ElementsAtFrame(studio, frame)) {
           if (element.kind === 'image' || element.kind === 'character') {
             const asset = studio.assets.find((item) => item.id === element.assetId)
             if (asset) {
@@ -173,9 +172,6 @@ export function EditorV6Page() {
   const [canRedo, setCanRedo] = useState(false)
   const sceneRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef<DragState | null>(null)
-  const timelineViewportRef = useRef<HTMLDivElement>(null)
-  const timelineDragRef = useRef<TimelineDragState | null>(null)
-  const timelineScrubRef = useRef(false)
   const editorV6FaceTransformsRef = useRef<Record<string, EditorV6FaceTransforms>>({})
   const editorV6FaceRenderTimerRef = useRef<number | null>(null)
   const editorV6FaceRenderVersionRef = useRef(0)
@@ -189,11 +185,17 @@ export function EditorV6Page() {
   const nextStudioNumber = useRef(1)
   const selectedEditorV6 = editorV6Projects.find((studio) => studio.id === selectedId) ?? null
   const activeEditorV6 = editorV6Projects.find((studio) => studio.id === activeEditorV6Id) ?? null
-  const selectedElement = activeEditorV6?.elements.find((element) => element.id === selectedElementId) ?? null
-  const activeTimeline = activeEditorV6?.timeline ?? null
-  const timelineDurationFrames = activeTimeline?.durationFrames ?? 300
-  const timelineWidth = Math.max(600, timelineDurationFrames / 30 * TIMELINE_PIXELS_PER_SECOND)
-  const visibleTimelineElements = activeEditorV6?.elements.filter((element) => isEditorV6ElementVisibleAtFrame(activeEditorV6, element.id, playheadFrame)) ?? []
+  const timelineDurationFrames = activeEditorV6?.timeline.durationFrames ?? 300
+  const visibleTimelineElements = useMemo(() => activeEditorV6 ? resolveEditorV6ElementsAtFrame(activeEditorV6, playheadFrame) : [], [activeEditorV6, playheadFrame])
+  useEffect(() => {
+    if (!activeEditorV6 || new Set(activeEditorV6.assets.map((asset) => asset.id)).size === activeEditorV6.assets.length) return
+    setEditorV6Projects((projects) => projects.map((project) => project.id === activeEditorV6.id ? repairEditorV6DuplicateAssets(project, selectedTimelineBlockId) : project))
+    setSaved(false)
+  }, [activeEditorV6, selectedTimelineBlockId])
+  const selectedTimelineClip = activeEditorV6 ? timelineClips(activeEditorV6.timeline).find(({ block }) => block.id === selectedTimelineBlockId && block.elementId === selectedElementId)
+    ?? (selectedElementId ? editorV6ClipAtFrame(activeEditorV6.timeline, selectedElementId, playheadFrame) : undefined) : undefined
+  const selectedElement = selectedTimelineClip?.block.state ?? visibleTimelineElements.find((element) => element.id === selectedElementId)
+    ?? activeEditorV6?.elements.find((element) => element.id === selectedElementId) ?? null
   const selectedEditorV6Character = selectedElement?.kind === 'character' ? availableCharacters.find((character) => character.id === selectedElement.characterId) ?? null : null
   const selectedEditorV6ExpressionCollectionId = editorV6ExpressionCollection(selectedElement, editorV6ExpressionPresets)
   const selectedEditorV6CharacterModelSlot = selectedEditorV6Character ? selectedEditorV6Character.customization.modelSlot ?? 1 : null
@@ -382,10 +384,18 @@ export function EditorV6Page() {
 
   useEffect(() => {
     if (!isPlaying) return
-    if (playheadFrame >= timelineDurationFrames) { setIsPlaying(false); return }
-    const timer = window.setTimeout(() => setPlayheadFrame(Math.min(timelineDurationFrames, playheadFrame + 1)), 1000 / 30)
-    return () => window.clearTimeout(timer)
-  }, [isPlaying, playheadFrame, timelineDurationFrames])
+    const initialFrame = playheadFrame
+    const started = performance.now()
+    let animation = 0
+    const tick = (now: number) => {
+      const frame = Math.min(timelineDurationFrames, initialFrame + Math.floor((now - started) * 30 / 1000))
+      setPlayheadFrame(frame)
+      if (frame >= timelineDurationFrames) setIsPlaying(false)
+      else animation = requestAnimationFrame(tick)
+    }
+    animation = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(animation)
+  }, [isPlaying, timelineDurationFrames, activeEditorV6Id])
 
   useEffect(() => {
     if (!activeEditorV6 || normalizedStudioIdsRef.current.has(activeEditorV6.id)) return
@@ -408,6 +418,10 @@ export function EditorV6Page() {
           const crop = element.kind === 'character' && element.assetId ? byAsset.get(element.assetId) : undefined
           return crop ? fitElementToTrim(element, crop) : element
         }),
+        timeline: { ...studio.timeline, tracks: studio.timeline.tracks.map((track) => ({ ...track, blocks: track.blocks.map((block) => {
+          const crop = block.state?.kind === 'character' && block.state.assetId ? byAsset.get(block.state.assetId) : undefined
+          return crop && block.state ? { ...block, state: fitElementToTrim(block.state, crop) } : block
+        }) })) },
         updatedAt: new Date().toISOString()
       }))
       setSaved(false)
@@ -459,15 +473,19 @@ export function EditorV6Page() {
       ...duplicate.elements[index], assetId: element.assetId ? oldToNew.get(element.assetId) : undefined
     }))
     const oldToNewElements = new Map(source.elements.map((element, index) => [element.id, duplicate.elements[index].id]))
+    const oldToNewBlocks = new Map(timelineClips(source.timeline).map(({ block }) => [block.id, crypto.randomUUID()]))
     duplicate.timeline = {
       ...source.timeline,
+      knownElementIds: source.timeline.knownElementIds?.map((id) => oldToNewElements.get(id) ?? id),
       tracks: source.timeline.tracks.map((track) => ({
         ...track,
         id: crypto.randomUUID(),
         blocks: track.blocks.map((block) => ({
           ...block,
-          id: crypto.randomUUID(),
-          elementId: block.elementId ? oldToNewElements.get(block.elementId) : undefined
+          id: oldToNewBlocks.get(block.id)!,
+          elementId: block.elementId ? oldToNewElements.get(block.elementId) : undefined,
+          parentBlockId: block.parentBlockId ? oldToNewBlocks.get(block.parentBlockId) : undefined,
+          state: block.state ? { ...block.state, id: oldToNewElements.get(block.state.id) ?? block.state.id, assetId: block.state.assetId ? oldToNew.get(block.state.assetId) : undefined } : undefined
         }))
       }))
     }
@@ -527,7 +545,10 @@ export function EditorV6Page() {
     if (!activeEditorV6Id) return
     setEditorV6Projects((current) => current.map((studio) => {
       if (studio.id !== activeEditorV6Id) return studio
-      return transform(studio)
+      const selected = timelineClips(studio.timeline).find(({ block }) => block.id === selectedTimelineBlockId && block.elementId === selectedElementId)
+        ?? (selectedElementId ? editorV6ClipAtFrame(studio.timeline, selectedElementId, playheadFrame) : undefined)
+      const next = editEditorV6DocumentAtBlock(studio, selected?.block.id ?? null, transform)
+      return pruneEditorV6TimelineSnapshots({ ...next, timeline: normalizeEditorV6Timeline(next.timeline) })
     }))
     setSaved(false)
   }
@@ -571,112 +592,15 @@ export function EditorV6Page() {
     setHistoryVersion(value => value + 1)
   }
 
-  const addTimelineBlock = (track: EditorV6TimelineTrack) => {
-    if (!activeEditorV6 || track.locked) return
-    const matchesTrack = (element: typeof selectedElement) => element && editorV6TrackKindForElement(element) === track.kind
-      && (track.kind !== 'character' || element.characterId === track.characterId)
-    const linkedElement = matchesTrack(selectedElement)
-      ? selectedElement
-      : activeEditorV6.elements.find(matchesTrack)
-    const block: EditorV6TimelineBlock = {
-      id: crypto.randomUUID(),
-      ...(linkedElement ? { elementId: linkedElement.id } : {}),
-      label: linkedElement?.text.trim() || (linkedElement?.kind === 'character' ? linkedElement.text || 'Personagem' : track.name),
-      startFrame: playheadFrame,
-      durationFrames: EDITOR_V6_DEFAULT_BLOCK_FRAMES
-    }
-    changeScene((document) => ({ ...document, timeline: {
-      ...document.timeline,
-      durationFrames: Math.max(document.timeline.durationFrames, block.startFrame + block.durationFrames),
-      tracks: document.timeline.tracks.map((candidate) => candidate.id === track.id ? { ...candidate, blocks: [...candidate.blocks, block] } : candidate)
-    }, updatedAt: new Date().toISOString() }))
-    setSelectedTimelineBlockId(block.id)
-    if (linkedElement) setSelectedElementId(linkedElement.id)
-  }
-
-  const toggleTimelineTrack = (trackId: string, field: 'muted' | 'locked') => {
-    changeScene((document) => ({ ...document, timeline: {
-      ...document.timeline,
-      tracks: document.timeline.tracks.map((track) => track.id === trackId ? { ...track, [field]: !track[field] } : track)
-    }, updatedAt: new Date().toISOString() }))
-  }
-
-  const removeTimelineTrack = (track: EditorV6TimelineTrack) => {
-    if (track.kind !== 'character' || track.blocks.length || activeEditorV6?.elements.some((element) => element.kind === 'character' && element.characterId === track.characterId)) return
-    changeScene((document) => ({ ...document, timeline: {
-      ...document.timeline,
-      tracks: document.timeline.tracks.filter((candidate) => candidate.id !== track.id)
-    }, updatedAt: new Date().toISOString() }))
-  }
-
-  const removeTimelineBlock = (track: EditorV6TimelineTrack, block: EditorV6TimelineBlock) => {
-    if (track.locked) return
-    changeScene((document) => {
-      const remainingTracks = document.timeline.tracks.map((candidate) => candidate.id === track.id
-        ? { ...candidate, blocks: candidate.blocks.filter((item) => item.id !== block.id) }
-        : candidate)
-      const elementStillUsed = block.elementId && remainingTracks.some((candidate) => candidate.blocks.some((item) => item.elementId === block.elementId))
-      return {
-        ...document,
-        elements: block.elementId && !elementStillUsed ? document.elements.filter((element) => element.id !== block.elementId) : document.elements,
-        timeline: { ...document.timeline, tracks: remainingTracks },
-        updatedAt: new Date().toISOString()
-      }
-    })
-    setSelectedTimelineBlockId(null)
-    if (block.elementId === selectedElementId) setSelectedElementId(null)
-  }
-
-  const seekTimeline = (event: ReactPointerEvent<HTMLElement>) => {
-    const rect = event.currentTarget.getBoundingClientRect()
-    const scrollLeft = timelineViewportRef.current?.scrollLeft ?? 0
-    const frame = Math.round(Math.max(0, event.clientX - rect.left + scrollLeft) / TIMELINE_PIXELS_PER_SECOND * 30)
-    setPlayheadFrame(Math.min(timelineDurationFrames, frame))
-  }
-
-  const startTimelineScrub = (event: ReactPointerEvent<HTMLElement>) => {
-    timelineScrubRef.current = true
-    event.currentTarget.setPointerCapture(event.pointerId)
-    seekTimeline(event)
-  }
-
-  const startTimelineBlockDrag = (event: ReactPointerEvent<HTMLElement>, track: EditorV6TimelineTrack, block: EditorV6TimelineBlock, mode: 'move' | 'resize') => {
-    event.stopPropagation()
-    if (track.locked) return
-    recordHistory()
-    setSelectedTimelineBlockId(block.id)
-    if (block.elementId) setSelectedElementId(block.elementId)
-    timelineDragRef.current = { trackId: track.id, blockId: block.id, pointerId: event.pointerId, startX: event.clientX, startFrame: block.startFrame, durationFrames: block.durationFrames, mode }
-    event.currentTarget.setPointerCapture(event.pointerId)
-  }
-
-  const moveTimelineBlockDrag = (event: ReactPointerEvent<HTMLElement>) => {
-    const drag = timelineDragRef.current
-    if (!drag || drag.pointerId !== event.pointerId) return
-    const deltaFrames = Math.round((event.clientX - drag.startX) / TIMELINE_PIXELS_PER_SECOND * 30)
-    const startFrame = drag.mode === 'move' ? Math.max(0, drag.startFrame + deltaFrames) : drag.startFrame
-    const durationFrames = drag.mode === 'resize' ? Math.max(15, drag.durationFrames + deltaFrames) : drag.durationFrames
-    patchStudio((document) => ({ ...document, timeline: {
-      ...document.timeline,
-      durationFrames: Math.max(document.timeline.durationFrames, startFrame + durationFrames),
-      tracks: document.timeline.tracks.map((track) => track.id !== drag.trackId ? track : {
-        ...track,
-        blocks: track.blocks.map((block) => block.id === drag.blockId ? { ...block, startFrame, durationFrames } : block)
-      })
-    }, updatedAt: new Date().toISOString() }))
-  }
-
-  const endTimelineBlockDrag = (event: ReactPointerEvent<HTMLElement>) => {
-    if (timelineDragRef.current?.pointerId === event.pointerId) timelineDragRef.current = null
-  }
-
   const importImage = async (category: EditorV6Asset['category']) => {
     if (!activeEditorV6) return
+    setIsPlaying(false)
+    if (category !== 'background' && activeEditorV6.timeline.tracks.some((track) => track.kind === 'video' && track.locked)) { setError('Desbloqueie a faixa Vídeo para adicionar uma imagem.'); return }
     try {
       const asset = await window.desktop.importEditorV6Image(category)
       if (!asset) return
       const studioAtImport = activeEditorV6
-      const nextStudio: EditorV6Document = category === 'background'
+      let nextStudio: EditorV6Document = category === 'background'
         ? { ...studioAtImport, assets: [...studioAtImport.assets, asset], backgroundAssetId: asset.id, backgroundX: 0, backgroundY: 0, backgroundWidth: 100, backgroundHeight: 100, backgroundRotation: 0, updatedAt: new Date().toISOString() }
         : {
             ...studioAtImport,
@@ -688,6 +612,8 @@ export function EditorV6Page() {
             updatedAt: new Date().toISOString()
           }
 
+      if (category !== 'background') nextStudio = addEditorV6ElementAtFrame(nextStudio, nextStudio.elements.at(-1)!, playheadFrame)
+      nextStudio = { ...nextStudio, timeline: normalizeEditorV6Timeline(syncEditorV6TimelineElements(nextStudio.timeline, nextStudio.elements)) }
       // Persist imported image bytes and their manifest before showing the asset as saved.
       await window.desktop.saveEditorV6Project(nextStudio)
       if (activeEditorV6Id === studioAtImport.id) {
@@ -699,6 +625,7 @@ export function EditorV6Page() {
         setSelectedElementId('background')
       } else {
         setSelectedElementId(nextStudio.elements.at(-1)?.id ?? null)
+        setSelectedTimelineBlockId(editorV6ClipAtFrame(nextStudio.timeline, nextStudio.elements.at(-1)!.id, playheadFrame)?.block.id ?? null)
       }
       setActiveTool(category === 'background' ? 'background' : 'objects')
       setInspectorOpen(true)
@@ -716,9 +643,13 @@ export function EditorV6Page() {
 
   const addTextElement = (kind: 'narrator' | 'speech' | 'thought') => {
     if (!activeEditorV6) return
+    setIsPlaying(false)
+    if (activeEditorV6.timeline.tracks.some((track) => track.kind === (kind === 'narrator' ? 'video' : kind) && track.locked)) { setError('Desbloqueie a faixa para adicionar um bloco.'); return }
     const element = makeElement(kind, Math.max(0, ...activeEditorV6.elements.map((item) => item.zIndex)) + 1)
-    changeScene((studio) => ({ ...studio, elements: [...studio.elements, element], updatedAt: new Date().toISOString() }))
+    const blockId = crypto.randomUUID()
+    changeScene((studio) => ({ ...addEditorV6ElementAtFrame(studio, element, playheadFrame, blockId), updatedAt: new Date().toISOString() }))
     setSelectedElementId(element.id)
+    setSelectedTimelineBlockId(blockId)
     setInspectorOpen(true)
     setInspectorTab('editor')
   }
@@ -1003,7 +934,7 @@ export function EditorV6Page() {
             if (version !== editorV6FaceRenderVersionRef.current) continue
             editorV6FaceRendererRef.current = { key, render: renderer.render }
           }
-          const element = activeEditorV6?.elements.find((candidate) => candidate.id === job.elementId)
+          const element = selectedElement?.id === job.elementId ? selectedElement : activeEditorV6?.elements.find((candidate) => candidate.id === job.elementId)
           const rendered = await editorV6FaceRendererRef.current.render(job.character.customization.faceAppearance, editorV6FaceTransformsRef.current[job.elementId] ?? job.transforms, element?.activeExpressionEffects, element?.activeFaceMode)
           const trimmed = await trimTransparentImage(rendered.dataUrl)
           const studioDataUrl = trimmed?.dataUrl ?? rendered.dataUrl
@@ -1070,8 +1001,10 @@ export function EditorV6Page() {
       event.currentTarget.setPointerCapture(event.pointerId)
       return
     }
-    const element = activeEditorV6.elements.find((item) => item.id === id)
+    setIsPlaying(false)
+    const element = visibleTimelineElements.find((item) => item.id === id) ?? activeEditorV6.elements.find((item) => item.id === id)
     if (!element) return
+    setSelectedTimelineBlockId(editorV6ClipAtFrame(activeEditorV6.timeline, id, playheadFrame)?.block.id ?? null)
     if (element.kind === 'character' && element.positionLocked) {
       setSelectedElementId(id)
       setActiveTool(null)
@@ -1156,6 +1089,7 @@ export function EditorV6Page() {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && castPickerOpen && !savingCast) setCastPickerOpen(false)
       else if (event.key === 'Escape' && fullView) setFullView(false)
+      if (event.target instanceof HTMLElement && event.target.closest('input,textarea,select,[contenteditable=true]')) return
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') { event.preventDefault(); event.shiftKey ? redo() : undo() }
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'y') { event.preventDefault(); redo() }
     }
@@ -1185,9 +1119,12 @@ export function EditorV6Page() {
       <h2>Objetos</h2><p>Imagens importadas ficam disponíveis neste Studio.</p>
       <button className="studio-side-primary" type="button" onClick={() => void importImage('object')}><Icon name="plus" />Importar imagem</button>
       <div className="studio-asset-grid">{activeEditorV6.assets.filter((asset) => asset.category === 'object').map((asset) => <button key={asset.id} className="studio-asset-card" type="button" onClick={() => {
+        if (activeEditorV6.timeline.tracks.some((track) => track.kind === 'video' && track.locked)) { setError('Desbloqueie a faixa Vídeo para adicionar uma imagem.'); return }
         const element: EditorV6Element = { id: crypto.randomUUID(), kind: 'image', assetId: asset.id, text: '', x: 0, y: 0, width: 25, height: 25, rotation: 0, zIndex: Math.max(0, ...activeEditorV6.elements.map((item) => item.zIndex)) + 1 }
-        changeScene((studio) => ({ ...studio, elements: [...studio.elements, element], updatedAt: new Date().toISOString() }))
+        const blockId = crypto.randomUUID()
+        changeScene((studio) => ({ ...addEditorV6ElementAtFrame(studio, element, playheadFrame, blockId), updatedAt: new Date().toISOString() }))
         setSelectedElementId(element.id)
+        setSelectedTimelineBlockId(blockId)
         setInspectorOpen(true)
         setInspectorTab('editor')
       }}><img src={asset.dataUrl} alt="" /><span>{asset.name}</span></button>)}</div>
@@ -1339,7 +1276,7 @@ export function EditorV6Page() {
         const character = availableCharacters.find((item) => item.id === element.characterId)
         const firstName = (character?.name ?? element.text).trim().split(/\s+/)[0] || element.text
         return <article className={`studio-cast-item${selectedElementId === element.id ? ' selected' : ''}`} key={element.id}>
-          <button className="studio-cast-select" onClick={() => { setSelectedElementId(element.id); setActiveTool(null); setInspectorOpen(true); restoreCharacterInspectorView() }} type="button">
+          <button className="studio-cast-select" onClick={() => { setIsPlaying(false); setSelectedElementId(element.id); setSelectedTimelineBlockId(editorV6ClipAtFrame(activeEditorV6!.timeline, element.id, playheadFrame)?.block.id ?? null); setActiveTool(null); setInspectorOpen(true); restoreCharacterInspectorView() }} type="button">
             {character ? <CharacterPortrait character={character} /> : <span className="studio-cast-fallback">{element.text.slice(0, 1)}</span>}
             <span>{firstName}</span>
           </button>
@@ -1349,60 +1286,10 @@ export function EditorV6Page() {
     </section>
   </div>
 
-  const frameTimecode = (frame: number) => {
-    const seconds = Math.floor(frame / 30)
-    return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}:${String(frame % 30).padStart(2, '0')}`
-  }
   const toggleTimelinePlayback = () => {
     if (isPlaying) { setIsPlaying(false); return }
     if (playheadFrame >= timelineDurationFrames) setPlayheadFrame(0)
     setIsPlaying(true)
-  }
-
-  const timelinePanel = () => {
-    if (!activeEditorV6 || !activeTimeline) return null
-    const ticks = Array.from({ length: Math.ceil(timelineWidth / TIMELINE_PIXELS_PER_SECOND) + 1 }, (_, index) => index)
-    const trackKinds: Array<{ id: EditorV6TrackKind; label: string }> = [
-      { id: 'character', label: 'Personagem' }, { id: 'speech', label: 'Fala' }, { id: 'thought', label: 'Pensamento' }, { id: 'video', label: 'Vídeo' }
-    ]
-    return <section className="editor-v6-timeline" aria-label="Timeline do Editor V6">
-      <header className="editor-v6-timeline-toolbar">
-        <div className="editor-v6-timeline-title"><strong>Timeline</strong><span>{frameTimecode(playheadFrame)} / {frameTimecode(timelineDurationFrames)}</span><small>30 FPS</small></div>
-        <div className="editor-v6-timeline-actions">
-          <button type="button" className="editor-v6-timeline-play" onClick={toggleTimelinePlayback} aria-label={isPlaying ? 'Pausar reprodução' : 'Reproduzir timeline'} title={isPlaying ? 'Pausar' : 'Reproduzir'}>{isPlaying ? 'Ⅱ' : '▶'}</button>
-        </div>
-      </header>
-      <div className="editor-v6-timeline-scroll" ref={timelineViewportRef}>
-        <div className="editor-v6-timeline-content" style={{ width: 156 + timelineWidth }}>
-          <div className="editor-v6-timeline-ruler-row">
-            <div className="editor-v6-timeline-track-heading">FAIXAS</div>
-            <div className="editor-v6-timeline-ruler" style={{ width: timelineWidth }} onPointerDown={startTimelineScrub} onPointerMove={(event) => { if (timelineScrubRef.current) seekTimeline(event) }} onPointerUp={() => { timelineScrubRef.current = false }} onPointerCancel={() => { timelineScrubRef.current = false }}>
-              {ticks.map((second) => <span key={second} style={{ left: second * TIMELINE_PIXELS_PER_SECOND }}>{second === 0 ? '0s' : `${second}s`}</span>)}
-              <i className="editor-v6-timeline-playhead" style={{ left: playheadFrame / 30 * TIMELINE_PIXELS_PER_SECOND }} />
-            </div>
-          </div>
-          {activeTimeline.tracks.map((track) => <div className={`editor-v6-timeline-track${track.muted ? ' muted' : ''}${track.locked ? ' locked' : ''}`} key={track.id}>
-            <div className="editor-v6-timeline-track-heading">
-              <strong title={track.name}>{track.name}</strong><small>{trackKinds.find((kind) => kind.id === track.kind)?.label}</small>
-              <div className="editor-v6-track-actions">
-                <button type="button" onClick={() => addTimelineBlock(track)} disabled={track.locked} title="Adicionar bloco" aria-label={`Adicionar bloco à faixa ${track.name}`}>＋</button>
-                <button type="button" onClick={() => toggleTimelineTrack(track.id, 'muted')} title={track.muted ? 'Ativar faixa' : 'Silenciar faixa'} aria-label={track.muted ? `Ativar ${track.name}` : `Silenciar ${track.name}`}>{track.muted ? '◌' : '◉'}</button>
-                <button type="button" onClick={() => toggleTimelineTrack(track.id, 'locked')} title={track.locked ? 'Desbloquear faixa' : 'Bloquear faixa'} aria-label={track.locked ? `Desbloquear ${track.name}` : `Bloquear ${track.name}`}>{track.locked ? '▣' : '▢'}</button>
-                <button type="button" onClick={() => removeTimelineTrack(track)} disabled={track.kind !== 'character' || track.blocks.length > 0 || activeEditorV6.elements.some((element) => element.kind === 'character' && element.characterId === track.characterId)} title={track.kind !== 'character' ? 'As três faixas gerais são fixas' : track.blocks.length ? 'Remova os blocos antes de excluir a faixa' : 'Excluir faixa'} aria-label={`Excluir faixa ${track.name}`}>×</button>
-              </div>
-            </div>
-            <div className="editor-v6-timeline-lane" style={{ width: timelineWidth }} onPointerDown={startTimelineScrub} onPointerMove={(event) => { if (timelineScrubRef.current) seekTimeline(event); else moveTimelineBlockDrag(event) }} onPointerUp={(event) => { timelineScrubRef.current = false; endTimelineBlockDrag(event) }} onPointerCancel={(event) => { timelineScrubRef.current = false; endTimelineBlockDrag(event) }}>
-              {track.blocks.map((block) => <div key={block.id} className={`editor-v6-timeline-block kind-${track.kind}${selectedTimelineBlockId === block.id ? ' selected' : ''}${track.locked ? ' locked' : ''}`} style={{ left: block.startFrame / 30 * TIMELINE_PIXELS_PER_SECOND, width: Math.max(26, block.durationFrames / 30 * TIMELINE_PIXELS_PER_SECOND) }} role="group" tabIndex={0} aria-label={`${block.label}, duração ${frameTimecode(block.durationFrames)}`} title={`${block.label} · ${frameTimecode(block.startFrame)} · ${frameTimecode(block.durationFrames)}`} onPointerDown={(event) => startTimelineBlockDrag(event, track, block, 'move')} onClick={(event) => { event.stopPropagation(); setSelectedTimelineBlockId(block.id); if (block.elementId) setSelectedElementId(block.elementId) }}>
-                <span>{block.label}</span><small>{frameTimecode(block.durationFrames)}</small>
-                <i className="editor-v6-timeline-resize" onPointerDown={(event) => startTimelineBlockDrag(event, track, block, 'resize')} aria-hidden="true" />
-                <button type="button" className="editor-v6-timeline-block-remove" title="Excluir bloco e sua camada quando não houver outro bloco ligado" aria-label={`Excluir bloco ${block.label}`} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); removeTimelineBlock(track, block) }}>×</button>
-              </div>)}
-              <i className="editor-v6-timeline-playhead" style={{ left: playheadFrame / 30 * TIMELINE_PIXELS_PER_SECOND }} />
-            </div>
-          </div>)}
-        </div>
-      </div>
-    </section>
   }
 
   if (activeEditorV6) {
@@ -1461,7 +1348,9 @@ export function EditorV6Page() {
           </div>
         </section>
         {!fullView && <aside className="studio-editor-rail studio-editor-right" aria-label="Elenco do Editor V6">{castPanel()}</aside>}
-        {!fullView && timelinePanel()}
+        {!fullView && <EditorV6Timeline key={activeEditorV6.id} document={activeEditorV6} frame={playheadFrame} playing={isPlaying} selectedId={selectedTimelineBlockId}
+          onSeek={(frame) => { setIsPlaying(false); setPlayheadFrame(frame) }} onPlay={toggleTimelinePlayback} onChange={changeScene}
+          onSelect={(block) => { setSelectedTimelineBlockId(block.id); setSelectedElementId(block.elementId ?? null); setActiveTool(null); setInspectorOpen(true); if (block.state?.kind === 'character') restoreCharacterInspectorView(); else setInspectorTab('editor') }} /> }
         {castPickerOpen && <div className="studio-cast-modal-backdrop" onPointerDown={(event) => { if (event.target === event.currentTarget && !savingCast) setCastPickerOpen(false) }}>
           <section className="studio-cast-modal" role="dialog" aria-modal="true" aria-labelledby="studio-cast-modal-title">
             <header><span><small>EDITAR ELENCO</small><h2 id="studio-cast-modal-title">Personagens do Editor V6</h2></span><button className="studio-cast-modal-close" onClick={() => setCastPickerOpen(false)} aria-label="Fechar" disabled={savingCast} type="button">×</button></header>

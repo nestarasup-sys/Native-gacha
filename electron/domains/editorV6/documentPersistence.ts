@@ -3,6 +3,7 @@ import { join, resolve, dirname, basename } from 'node:path'
 import type * as nodeFs from 'node:fs/promises'
 import { createEditorV6Timeline, syncEditorV6TimelineElements, type EditorV6Asset, type EditorV6Document, type EditorV6Timeline } from '../../../src/shared/editorV6'
 import { publishEditorV6AssetsAndManifest, recoverEditorV6AssetTransaction } from './assetTransaction.ts'
+import { normalizeEditorV6Timeline } from '../../../src/shared/editorV6Timeline'
 
 type Files = Pick<typeof nodeFs, 'readFile' | 'writeFile' | 'mkdir' | 'access' | 'rename' | 'unlink' | 'rm'>
 
@@ -45,7 +46,7 @@ export function createEditorV6DocumentPersistence(deps: {
       assets: Array.isArray(value.assets) ? value.assets as EditorV6Asset[] : [],
       elements,
       timeline: value.timeline && typeof value.timeline === 'object'
-        ? syncEditorV6TimelineElements(value.timeline as EditorV6Timeline, elements)
+        ? normalizeEditorV6Timeline(syncEditorV6TimelineElements(value.timeline as EditorV6Timeline, elements))
         : createEditorV6Timeline(elements),
     }
   }

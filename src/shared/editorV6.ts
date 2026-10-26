@@ -7,6 +7,7 @@ export type EditorV6Asset = {
   name: string
   mimeType: 'image/png' | 'image/jpeg' | 'image/webp'
   dataUrl: string
+  timelineSnapshot?: boolean
 }
 
 /** EditorV6-local adjustment shared by a facial category and its variant frames. */
@@ -74,6 +75,7 @@ export function isEditorV6FaceTransforms(value: unknown): value is EditorV6FaceT
 
 export type EditorV6Element = {
   id: string
+  visible?: boolean
   kind: 'image' | 'character' | 'narrator' | 'speech' | 'thought'
   assetId?: string
   characterId?: string
@@ -125,6 +127,12 @@ export type EditorV6TimelineBlock = {
   label: string
   startFrame: number
   durationFrames: number
+  /** Immutable visual/text state for this period, independent from other clips. */
+  state?: EditorV6Element
+  characterId?: string
+  parentBlockId?: string
+  relativeStartFrame?: number
+  mediaInFrame?: number
 }
 export type EditorV6TimelineTrack = {
   id: string
@@ -134,12 +142,15 @@ export type EditorV6TimelineTrack = {
   name: string
   muted: boolean
   locked: boolean
+  hidden?: boolean
+  collapsed?: boolean
   blocks: EditorV6TimelineBlock[]
 }
 export type EditorV6Timeline = {
   fps: 30
   durationFrames: number
   tracks: EditorV6TimelineTrack[]
+  knownElementIds?: string[]
 }
 
 export const EDITOR_V6_DEFAULT_DURATION_FRAMES = 300
@@ -154,7 +165,7 @@ export function editorV6TrackKindForElement(element: EditorV6Element): EditorV6T
 
 export function editorV6TrackLabel(kind: EditorV6TrackKind, index = 1): string {
   const labels: Record<EditorV6TrackKind, string> = { character: 'Personagem', speech: 'Fala', thought: 'Pensamento', video: 'Vídeo' }
-  return `${labels[kind]} ${index}`
+  return index === 1 ? labels[kind] : `${labels[kind]} ${index}`
 }
 
 /** Creates the three shared lanes and one lane per character in the scene. */
@@ -175,10 +186,11 @@ export function createEditorV6Timeline(elements: readonly EditorV6Element[] = []
     track.blocks.push({
       id: crypto.randomUUID(), elementId: element.id,
       label: element.text.trim() || editorV6TrackLabel(kind),
-      startFrame: 0, durationFrames: EDITOR_V6_DEFAULT_BLOCK_FRAMES
+      state: { ...element },
+      startFrame: 0, durationFrames: kind === 'character' ? EDITOR_V6_DEFAULT_DURATION_FRAMES : EDITOR_V6_DEFAULT_BLOCK_FRAMES
     })
   }
-  return { fps: 30, durationFrames: EDITOR_V6_DEFAULT_DURATION_FRAMES, tracks }
+  return { fps: 30, durationFrames: EDITOR_V6_DEFAULT_DURATION_FRAMES, tracks, knownElementIds: elements.map((element) => element.id) }
 }
 
 export function syncEditorV6TimelineElements(timeline: EditorV6Timeline, elements: readonly EditorV6Element[]): EditorV6Timeline {
@@ -188,7 +200,7 @@ export function syncEditorV6TimelineElements(timeline: EditorV6Timeline, element
   for (const track of timeline.tracks) {
     const previousKind = String(track.kind)
     const kind = previousKind === 'speech' || previousKind === 'thought' ? previousKind : previousKind === 'video' || previousKind === 'visual' || previousKind === 'audio' ? 'video' : undefined
-    if (kind && !reusableShared.has(kind)) reusableShared.set(kind, { ...track, kind, name: editorV6TrackLabel(kind), characterId: undefined, blocks: [] })
+    if (kind && !reusableShared.has(kind)) reusableShared.set(kind, { ...track, kind, characterId: undefined, blocks: [] })
   }
   const tracks: EditorV6TimelineTrack[] = (['video', 'speech', 'thought'] as const).map((kind) => reusableShared.get(kind) ?? ({
     id: crypto.randomUUID(), kind, name: editorV6TrackLabel(kind), muted: false, locked: false, blocks: []
@@ -206,32 +218,34 @@ export function syncEditorV6TimelineElements(timeline: EditorV6Timeline, element
       track = { id: oldTrack?.characterId === element.characterId ? oldTrack.id : crypto.randomUUID(), kind: 'character', characterId: element.characterId, name: element.text.trim() || editorV6TrackLabel('character', characterTracks.size + 1), muted: oldTrack?.muted ?? false, locked: oldTrack?.locked ?? false, blocks: [] }
       characterTracks.set(element.characterId, track)
     }
-    track.name = element.text.trim() || track.name
     return track
   }
   const placedBlocks = new Set<string>()
+  const knownElementIds = new Set(timeline.knownElementIds ?? timeline.tracks.flatMap((track) => track.blocks.flatMap((block) => block.elementId ? [block.elementId] : [])))
   for (const oldTrack of timeline.tracks) for (const block of oldTrack.blocks) {
     const element = block.elementId ? elementsById.get(block.elementId) : undefined
     if (block.elementId && !element) continue
-    if (block.elementId && placedBlocks.has(block.elementId)) continue
     const oldKind = String(oldTrack.kind)
     const destination = element ? destinationFor(element) : tracks.find((track) => track.kind === (oldKind === 'speech' || oldKind === 'thought' ? oldKind : 'video'))!
-    destination.blocks.push(element ? { ...block, label: element.text.trim() || editorV6TrackLabel(editorV6TrackKindForElement(element)) } : block)
+    destination.blocks.push(element ? { ...block, state: block.state ?? { ...element }, label: block.state ? block.label : element.text.trim() || editorV6TrackLabel(editorV6TrackKindForElement(element)) } : block)
     if (block.elementId) placedBlocks.add(block.elementId)
   }
   for (const element of elements) {
-    if (placedBlocks.has(element.id)) continue
+    if (placedBlocks.has(element.id) || knownElementIds.has(element.id)) continue
     const kind = editorV6TrackKindForElement(element)
     const track = destinationFor(element)
     track.blocks.push({
       id: crypto.randomUUID(), elementId: element.id,
       label: element.text.trim() || editorV6TrackLabel(kind),
-      startFrame: 0, durationFrames: EDITOR_V6_DEFAULT_BLOCK_FRAMES
+      state: { ...element },
+      startFrame: 0, durationFrames: kind === 'character' ? timeline.durationFrames : EDITOR_V6_DEFAULT_BLOCK_FRAMES
     })
   }
   tracks.push(...characterTracks.values())
+  const originalOrder = new Map(timeline.tracks.map((track, index) => [track.id, index]))
+  tracks.sort((a, b) => (originalOrder.get(a.id) ?? 10000) - (originalOrder.get(b.id) ?? 10000))
   const endFrame = tracks.flatMap((track) => track.blocks).reduce((end, block) => Math.max(end, block.startFrame + block.durationFrames), timeline.durationFrames)
-  return { ...timeline, durationFrames: endFrame, tracks }
+  return { ...timeline, durationFrames: endFrame, tracks, knownElementIds: elements.map((element) => element.id) }
 }
 
 export const VIDEO_CHARACTER_TRACK_COLORS = ['#7768c8', '#5277b8', '#aa8264', '#478f83', '#b47a43', '#bd6386', '#4b91ad', '#8b6c9c'] as const

@@ -2,6 +2,7 @@
  */
 import type { EditorV6Document, EditorV6Element } from './editorV6'
 import type { CustomizerCharacter } from './customizer'
+import { resolveEditorV6ElementsAtFrame } from './editorV6Timeline'
 
 export type EditorV6SceneSnapshot = Pick<EditorV6Document, 'backgroundColor' | 'backgroundAssetId' | 'backgroundX' | 'backgroundY' | 'backgroundWidth' | 'backgroundHeight' | 'backgroundRotation' | 'assets' | 'elements' | 'timeline'>
 
@@ -40,9 +41,5 @@ export function editorV6ElementSize(element: EditorV6Element): { width: number; 
 }
 
 export function isEditorV6ElementVisibleAtFrame(editorV6: EditorV6Document, elementId: string, frame: number): boolean {
-  const linked = editorV6.timeline.tracks.flatMap((track) => track.blocks
-    .filter((block) => block.elementId === elementId)
-    .map((block) => ({ track, block })))
-  if (!linked.length) return true
-  return linked.some(({ track, block }) => !track.muted && frame >= block.startFrame && frame < block.startFrame + block.durationFrames)
+  return resolveEditorV6ElementsAtFrame(editorV6, frame).some((element) => element.id === elementId)
 }
