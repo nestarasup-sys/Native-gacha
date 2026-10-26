@@ -2,7 +2,7 @@
 
 Este pacote contém o código-fonte commitado do Native Gacha e documentação de contexto para uma IA ou equipe que vá avaliar uma reconstrução em C++ e tecnologias nativas.
 
-- O snapshot de origem é o commit indicado no `README.md` deste diretório.
+- O snapshot vem da branch `Main-desenvolvimento`; o hash exato é informado junto com o ZIP.
 - O aplicativo existente é Electron + React + TypeScript. Ele ainda não foi reimplementado em C++.
 - O **Editor Gacha é um produto novo planejado**, ainda não implementado neste snapshot. O documento `docs/gacha editor plano v1.md` registra o conceito e os requisitos já confirmados.
 - O Studio Principal atual é um módulo separado e **não deve ser usado como modelo de timeline ou editor de vídeo** para o Editor Gacha.
