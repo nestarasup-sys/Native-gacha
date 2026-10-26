@@ -3,7 +3,7 @@
 import type { EditorV6Document, EditorV6Element } from './editorV6'
 import type { CustomizerCharacter } from './customizer'
 
-export type EditorV6SceneSnapshot = Pick<EditorV6Document, 'backgroundColor' | 'backgroundAssetId' | 'backgroundX' | 'backgroundY' | 'backgroundWidth' | 'backgroundHeight' | 'backgroundRotation' | 'assets' | 'elements'>
+export type EditorV6SceneSnapshot = Pick<EditorV6Document, 'backgroundColor' | 'backgroundAssetId' | 'backgroundX' | 'backgroundY' | 'backgroundWidth' | 'backgroundHeight' | 'backgroundRotation' | 'assets' | 'elements' | 'timeline'>
 
 export function snapshotEditorV6Scene(editorV6: EditorV6Document): EditorV6SceneSnapshot {
   return {
@@ -15,7 +15,8 @@ export function snapshotEditorV6Scene(editorV6: EditorV6Document): EditorV6Scene
     backgroundHeight: editorV6.backgroundHeight,
     backgroundRotation: editorV6.backgroundRotation,
     assets: editorV6.assets,
-    elements: editorV6.elements
+    elements: editorV6.elements,
+    timeline: editorV6.timeline
   }
 }
 
@@ -36,4 +37,12 @@ export function editorV6ElementSize(element: EditorV6Element): { width: number; 
     width: element.width * scale * (element.characterWidthScale ?? 100) / 100,
     height: element.height * scale * (element.characterHeightScale ?? 100) / 100
   }
+}
+
+export function isEditorV6ElementVisibleAtFrame(editorV6: EditorV6Document, elementId: string, frame: number): boolean {
+  const linked = editorV6.timeline.tracks.flatMap((track) => track.blocks
+    .filter((block) => block.elementId === elementId)
+    .map((block) => ({ track, block })))
+  if (!linked.length) return true
+  return linked.some(({ track, block }) => !track.muted && frame >= block.startFrame && frame < block.startFrame + block.durationFrames)
 }

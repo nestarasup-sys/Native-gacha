@@ -117,6 +117,93 @@ export type EditorV6Element = {
   zIndex: number
 }
 
+export type EditorV6TrackKind = 'character' | 'speech' | 'thought' | 'visual' | 'video' | 'audio'
+export type EditorV6TimelineBlock = {
+  id: string
+  /** Links a timeline clip to a layer in the scene when applicable. */
+  elementId?: string
+  label: string
+  startFrame: number
+  durationFrames: number
+}
+export type EditorV6TimelineTrack = {
+  id: string
+  kind: EditorV6TrackKind
+  name: string
+  muted: boolean
+  locked: boolean
+  blocks: EditorV6TimelineBlock[]
+}
+export type EditorV6Timeline = {
+  fps: 30
+  durationFrames: number
+  tracks: EditorV6TimelineTrack[]
+}
+
+export const EDITOR_V6_DEFAULT_DURATION_FRAMES = 300
+export const EDITOR_V6_DEFAULT_BLOCK_FRAMES = 150
+
+export function editorV6TrackKindForElement(element: EditorV6Element): EditorV6TrackKind {
+  if (element.kind === 'character') return 'character'
+  if (element.kind === 'speech') return 'speech'
+  if (element.kind === 'thought') return 'thought'
+  return 'visual'
+}
+
+export function editorV6TrackLabel(kind: EditorV6TrackKind, index = 1): string {
+  const labels: Record<EditorV6TrackKind, string> = {
+    character: 'Personagem', speech: 'Fala', thought: 'Pensamento', visual: 'Imagem', video: 'Vídeo', audio: 'Áudio'
+  }
+  return `${labels[kind]} ${index}`
+}
+
+/** Creates an initial set of rows and one still-image block for each scene layer. */
+export function createEditorV6Timeline(elements: readonly EditorV6Element[] = []): EditorV6Timeline {
+  const kinds: EditorV6TrackKind[] = ['character', 'speech', 'thought', 'visual', 'video', 'audio']
+  const tracks: EditorV6TimelineTrack[] = kinds.map((kind) => ({
+    id: crypto.randomUUID(), kind, name: editorV6TrackLabel(kind), muted: false, locked: false, blocks: []
+  }))
+  for (const element of elements) {
+    const kind = editorV6TrackKindForElement(element)
+    const track = tracks.find((candidate) => candidate.kind === kind)!
+    track.blocks.push({
+      id: crypto.randomUUID(), elementId: element.id,
+      label: element.text.trim() || editorV6TrackLabel(kind),
+      startFrame: 0, durationFrames: EDITOR_V6_DEFAULT_BLOCK_FRAMES
+    })
+  }
+  return { fps: 30, durationFrames: EDITOR_V6_DEFAULT_DURATION_FRAMES, tracks }
+}
+
+export function syncEditorV6TimelineElements(timeline: EditorV6Timeline, elements: readonly EditorV6Element[]): EditorV6Timeline {
+  const elementsById = new Map(elements.map((element) => [element.id, element]))
+  const tracks = timeline.tracks.map((track) => ({
+    ...track,
+    blocks: track.blocks.filter((block) => !block.elementId || elementsById.has(block.elementId)).map((block) => {
+      const element = block.elementId ? elementsById.get(block.elementId) : undefined
+      if (!element) return block
+      const kind = editorV6TrackKindForElement(element)
+      return { ...block, label: element.text.trim() || editorV6TrackLabel(kind) }
+    })
+  }))
+  for (const element of elements) {
+    if (tracks.some((track) => track.blocks.some((block) => block.elementId === element.id))) continue
+    const kind = editorV6TrackKindForElement(element)
+    let track = tracks.find((candidate) => candidate.kind === kind)
+    if (!track) {
+      track = { id: crypto.randomUUID(), kind, name: editorV6TrackLabel(kind), muted: false, locked: false, blocks: [] }
+      tracks.push(track)
+    }
+    track.blocks.push({
+      id: crypto.randomUUID(), elementId: element.id,
+      label: element.text.trim() || editorV6TrackLabel(kind),
+      startFrame: 0, durationFrames: EDITOR_V6_DEFAULT_BLOCK_FRAMES
+    })
+  }
+  const endFrame = tracks.flatMap((track) => track.blocks).reduce((end, block) => Math.max(end, block.startFrame + block.durationFrames), timeline.durationFrames)
+  return { ...timeline, durationFrames: endFrame, tracks }
+}
+
 export const VIDEO_CHARACTER_TRACK_COLORS = ['#7768c8', '#5277b8', '#aa8264', '#478f83', '#b47a43', '#bd6386', '#4b91ad', '#8b6c9c'] as const
 
 export function videoCharacterTrackColor(id: string, selected?: string): string {
@@ -144,6 +231,7 @@ export type EditorV6Document = {
   thumbnailDataUrl?: string
   assets: EditorV6Asset[]
   elements: EditorV6Element[]
+  timeline: EditorV6Timeline
 }
 
 export type EditorV6DesktopApi = {

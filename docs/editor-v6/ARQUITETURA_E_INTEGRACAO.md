@@ -4,7 +4,9 @@
 
 O Editor V6 é uma área React/TypeScript executada pelo Chromium do Electron. O Electron main expõe uma API própria pelo preload e persiste cada projeto sob `userData/studios/Editor V6/editorV6-<id>`. Cenas e assets do V6 não são documentos do Studio.
 
-O V6 consulta APIs já existentes do Customizer e Fabricator para escolher personagens, poses, rosto e expressões. Essas chamadas servem como catálogos de origem. Ao inserir um personagem, a composição e o PNG usados na cena ficam salvos no documento do V6; o editor não grava de volta nessas bibliotecas. Não há timeline de vídeo nem exportação MP4 no V6 atual.
+O V6 consulta APIs já existentes do Customizer e Fabricator para escolher personagens, poses, rosto e expressões. Essas chamadas servem como catálogos de origem. Ao inserir um personagem, a composição e o PNG usados na cena ficam salvos no documento do V6; o editor não grava de volta nessas bibliotecas.
+
+A timeline inicial tem faixas de personagem, fala, pensamento, imagem, vídeo e áudio. Blocos de personagem/imagem/texto apontam para camadas da cena; arrastar move o bloco, a alça lateral ajusta a duração e o playhead controla quando cada camada aparece na prévia. Faixas de vídeo e áudio já podem ser organizadas como blocos, mas ainda não importam nem decodificam esses tipos de mídia.
 
 ## Base iniciada nesta etapa
 
@@ -23,6 +25,6 @@ O V6 pode ler bibliotecas de personagens e presets para importar conteúdo, mas 
 
 React, Electron, Chromium, Vite, o design system e APIs de leitura dos catálogos são infraestrutura do aplicativo. Compartilhar essas peças não compartilha os documentos de cena. Mudanças em Customizer/Fabricator não devem sincronizar cenas existentes sem uma ação explícita de atualização/importação.
 
-## Próxima fatia: vídeo
+## Próxima fatia: vídeo e áudio
 
-Antes de exportar, o formato do projeto precisa representar duração, FPS, dimensões, faixas e clipes. A UI deve produzir frames em um processo controlado, enquanto o Electron main abre o diálogo de destino e executa FFmpeg como subprocesso com progresso, cancelamento e limpeza de temporários. Vídeo e áudio importados devem ser copiados para a pasta do projeto. A montagem da timeline e a exportação MP4 1080p/30 FPS são o próximo trabalho funcional; adicionar FFmpeg ao executável portátil, sozinho, não implementa essa experiência.
+O formato já representa FPS, duração, faixas e blocos. O próximo passo é ligar importação de mídia às faixas de vídeo/áudio e renderizar blocos de personagem como imagens paradas com transições faciais/pose. O Electron main deve abrir o diálogo de destino e executar FFmpeg como subprocesso, com progresso, cancelamento e temporários isolados do Studio. Vídeos e áudios importados devem ser copiados para a pasta do projeto. A exportação MP4 em 1080p/30 FPS ainda precisa ser construída; incluir o binário FFmpeg no pacote, sozinho, não implementa essa experiência.
