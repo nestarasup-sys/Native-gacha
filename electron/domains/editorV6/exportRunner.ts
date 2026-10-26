@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { mkdir, mkdtemp, rename, rm, unlink, writeFile } from 'node:fs/promises'
-import { basename, dirname, join, resolve, sep } from 'node:path'
+import { basename, dirname, extname, join, resolve, sep } from 'node:path'
 import { availableParallelism } from 'node:os'
 import type { EditorV6Document } from '../../../src/shared/editorV6'
 import type { CustomizerCharacter } from '../../../src/shared/customizer'
@@ -16,7 +16,7 @@ export async function probeExportMedia(ffprobe: string, path: string, signal: Ab
 }
 type PartReport = EditorV6ExportPart & { encoder: string; rendered: number; reused: number; frames: number; milliseconds: number; path: string; probe?: MediaProbe }
 type AttemptReport = { parts: PartReport[]; encoder: string; parallelism: number; milliseconds?: number; error?: string }
-export type EditorV6ExportReport = { schemaVersion: 1; id: string; state: string; projectId: string; options: EditorV6ExportOptions; fps: 30; totalFrames: number; fallback: boolean; attempts: AttemptReport[]; encoderTests: Array<{ encoder: string; error?: string }>; audioClips: number; videoInputs: number; proxies: 0; motionTransitionsRequired: number; motionTransitionsPrepared: number; startedAt: string; endedAt?: string; milliseconds?: number; outputPath: string; validation?: unknown; error?: string }
+export type EditorV6ExportReport = { schemaVersion: 1; id: string; state: string; projectId: string; options: EditorV6ExportOptions; fps: 30; totalFrames: number; fallback: boolean; attempts: AttemptReport[]; encoderTests: Array<{ encoder: string; error?: string }>; audioClips: number; videoInputs: number; proxies: 0; motionTransitionsRequired: number; motionTransitionsPrepared: number; startedAt: string; endedAt?: string; milliseconds?: number; outputPath: string; deliveryWarning?: string; validation?: unknown; error?: string }
 type Dependencies = {
   ffmpeg: string; ffprobe: string; tempRoot: string; reportPath: string; outputPath: string; id: string
   createWorker: (project: EditorV6Document, part: EditorV6ExportPart, signal: AbortSignal) => Promise<EditorV6FrameWorker>
@@ -25,6 +25,18 @@ type Dependencies = {
   audioPath: (clip: EditorV6ExportAudio) => string
   mediaPath: (projectId: string, fileName: string) => string
   signal: AbortSignal; progress: (patch: Partial<EditorV6ExportStatus>) => void
+}
+
+export async function publishEditorV6Output(candidate: string, requestedPath: string, id: string, move: (from: string, to: string) => Promise<void> = rename): Promise<{ outputPath: string; warning?: string }> {
+  try { await move(candidate, requestedPath); return { outputPath: requestedPath } }
+  catch (error) {
+    const code = (error as NodeJS.ErrnoException)?.code
+    if (!['EPERM', 'EACCES', 'EBUSY', 'EEXIST'].includes(String(code))) throw error
+    const extension = extname(requestedPath) || '.mp4'
+    const recoveryPath = join(dirname(requestedPath), `${basename(requestedPath, extension)} (recuperado-${id.slice(0, 8)})${extension}`)
+    await move(candidate, recoveryPath)
+    return { outputPath: recoveryPath, warning: `O destino escolhido estava ocupado; o vídeo foi salvo como ${basename(recoveryPath)}.` }
+  }
 }
 const message = (error: unknown) => error instanceof Error ? error.message : String(error)
 const encodingArgs = (encoder: string, threads: number) => ['-c:v', encoder, ...(encoder === 'libopenh264' ? ['-b:v', '12M', '-rc_mode', 'quality', '-allow_skip_frames', '0', '-threads', String(threads)] : ['-b:v', '12M']), '-pix_fmt', 'yuv420p', '-profile:v', 'high', '-level:v', '4.1', '-g', '60', '-bf', '0', '-video_track_timescale', '30000']
@@ -192,8 +204,11 @@ export async function runEditorV6Export(project: EditorV6Document, options: Edit
     report.endedAt = new Date().toISOString(); report.milliseconds = performance.now() - started
     await saveReport()
     deps.signal.throwIfAborted()
-    await rename(candidate, deps.outputPath)
+    const publication = await publishEditorV6Output(candidate, deps.outputPath, deps.id)
+    report.outputPath = publication.outputPath
+    report.deliveryWarning = publication.warning
     published = true
+    if (publication.warning) await saveReport()
     return report
   } catch (error) {
     report.state = deps.signal.aborted ? 'cancelled' : 'failed'

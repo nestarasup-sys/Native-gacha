@@ -47,7 +47,7 @@ export function registerEditorV6ExportHandlers(deps: { ipcMain: IpcMain; assertT
     job.promise = runEditorV6Export(project, options, { ffmpeg, ffprobe, tempRoot: deps.tempRoot, id, outputPath, reportPath, signal: controller.signal, getCharacters: deps.getCharacters, bakeMotion: deps.bakeMotion,
       createWorker: (renderProject, _part, signal) => workers.create({ project: renderProject, width: options.width, height: options.height }, signal), audioPath: (clip) => audioPath(project.id, clip, project.media), mediaPath,
       progress: (patch) => { job.status = { ...job.status, ...patch } }
-    }).then((report) => { job.status = { ...job.status, state: 'completed', outputPath, fallback: report.fallback, frames: status.totalFrames, message: 'MP4 exportado e validado.' } }, (error: unknown) => {
+    }).then((report) => { job.status = { ...job.status, state: 'completed', outputPath: report.outputPath, fallback: report.fallback, frames: status.totalFrames, message: report.deliveryWarning ?? 'MP4 exportado e validado.' } }, (error: unknown) => {
       job.status = { ...job.status, state: controller.signal.aborted ? 'cancelled' : 'failed', error: error instanceof Error ? error.message : String(error), message: controller.signal.aborted ? 'Exportação cancelada.' : 'A exportação falhou. Consulte o relatório.' }
     }).finally(() => { if (!event.sender.isDestroyed()) event.sender.removeListener('destroyed', abort) })
     for (const [key, entry] of jobs) if (jobs.size > 20 && terminal(entry.status)) jobs.delete(key)
