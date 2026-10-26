@@ -58,7 +58,7 @@ export class FabricatorWardrobeCatalog {
           const set = JSON.parse(await this.files.readFile(join(setFolder, 'wardrobe.json'), 'utf8')) as WardrobeSet
           if (set.schemaVersion === 1 && (set.edition === undefined || set.edition === 1 || set.edition === 2)
             && set.modelSlot === modelSlot && set.id === entry.name.slice(4) && Array.isArray(set.components)) {
-            sets.push({ id: set.id, modelSlot, modelName: set.modelName, name: set.name,
+            sets.push({ id: set.id, modelSlot, modelName: set.modelName, name: set.name, importKind: set.importKind,
               updatedAt: set.updatedAt, edition: set.edition ?? 1, componentCount: set.components.length })
           } else {
             issues.push({ id: entry.name.slice(4), reason: 'Manifesto incompatível ou inválido; nenhum arquivo foi alterado.' })

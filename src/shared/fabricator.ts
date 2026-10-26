@@ -119,6 +119,8 @@ export type WardrobeComponent = {
 }
 export type WardrobeSet = {
   schemaVersion: 1
+  /** Importador usado para identificar conjuntos criados por uma grade de roupas. */
+  importKind?: 'torso-grid-4x3'
   /** Conjuntos antigos sem edição pertencem ao editor original. */
   edition?: WardrobeEdition
   id: string
@@ -134,7 +136,7 @@ export type WardrobeSetSave = Omit<WardrobeSet, 'components'> & { components: Ar
 /** Listing warnings expose only the affected set and reason, never file paths or contents. */
 export type WardrobeCatalogListing = { sets: WardrobeSetSummary[]; issues: Array<{ id: string; reason: string }> }
 
-export type WardrobeSetSummary = Pick<WardrobeSet, 'id' | 'modelSlot' | 'modelName' | 'name' | 'updatedAt'> & { edition: WardrobeEdition; componentCount: number }
+export type WardrobeSetSummary = Pick<WardrobeSet, 'id' | 'modelSlot' | 'modelName' | 'name' | 'updatedAt' | 'importKind'> & { edition: WardrobeEdition; componentCount: number }
 export type WardrobeAssetSave = { id: string; dataUrl: string }
 export type FaceSheetKind = 'eyes' | 'eyebrows' | 'nose' | 'mouth-closed' | 'mouth-open'
 export type FaceElementKind = 'eye-left' | 'eye-right' | 'brow-left' | 'brow-right' | 'nose' | 'mouth'

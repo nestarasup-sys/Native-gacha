@@ -1,0 +1,3 @@
+.wardrobe-set-row.grid-import { border-color:#b7d9d2;background:#eef9f6;color:#236c5e; }
+.wardrobe-set-row.grid-import:hover,.wardrobe-set-row.grid-import.active { border-color:#58ae9b;background:#dff4ee;color:#175b4e; }
+.wardrobe-set-row.grid-import .wardrobe-set-icon { background:#d5eee7;color:#21806b; }
