@@ -11,10 +11,11 @@ import { SceneSurface, type ScenePointerEvent, type SceneSurfaceInteraction } fr
 import { addEditorV6ElementAtFrame, editEditorV6DocumentAtBlock, editorV6ClipAtFrame, normalizeEditorV6Timeline, prepareEditorV6PositionAtFrame, moveEditorV6ElementInPeriod, editEditorV6BackgroundAtFrame, pruneEditorV6TimelineSnapshots, repairEditorV6DuplicateAssets, resolveEditorV6SceneAtFrame, frameTimecode, timelineClips } from '../../../../shared/editorV6Timeline'
 import { useEditorV6InspectorState } from './useEditorV6InspectorState'
 import { trimTransparentImage, fitElementToTrim, faceRenderGeometry, type TrimmedImage } from '../../characters/characterGeometry'
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { Profiler, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { buildEditorV6ExpressionAppearance, buildEditorV6ExpressionTransforms, resolveEditorV6ExpressionBase, editorV6ExpressionCollection } from './expressionTransforms'
 import { Icon } from '../../ui/components/Icon'
 import { CharacterPortrait } from '../../ui/components/CharacterPortrait'
+import { recordUiCommit } from '../../ui/performanceDiagnostics'
 import { resolveEditorV6TalkMouthId } from '../../../../shared/editorV6'
 import { fitEditorV6CharacterToStage } from '../../../../shared/editorV6CharacterGeometry'
 import { editorV6ProjectSummary, type EditorV6Asset, type EditorV6Document, type EditorV6Element, type EditorV6FaceMode, type EditorV6FaceTransform, type EditorV6FaceTransforms, type EditorV6ProjectSummary } from '../../../../shared/editorV6'
@@ -1336,7 +1337,7 @@ export function EditorV6Page() {
         </aside>}
         <section className="studio-scene-area v6-scene-area" aria-label="Prévia da cena">
           <div className="studio-scene-canvas v6-scene-canvas" ref={sceneRef} style={{ backgroundColor: previewBackground.backgroundColor }} onPointerDown={() => { setSelectedElementId(null); setSelectedTimelineBlockId(null) }}>
-            {previewScene && <SceneSurface scene={previewScene} assets={activeEditorV6.assets} selectedId={fullView ? null : selectedElementId} interaction={fullView ? undefined : sceneInteraction} />}
+            {previewScene && <Profiler id="/editor-v6/scene" onRender={recordUiCommit}><SceneSurface scene={previewScene} assets={activeEditorV6.assets} selectedId={fullView ? null : selectedElementId} interaction={fullView ? undefined : sceneInteraction} /></Profiler>}
             {!fullView && <span className="v6-preview-time" aria-live="off">{isPlaying ? 'Reproduzindo' : 'Pausado'} · {frameTimecode(previewScene?.frame ?? 0)}</span>}
             {fullView && <button className="studio-exit-view" onClick={() => setFullView(false)} type="button">Sair da visualização <kbd>Esc</kbd></button>}
             {!fullView && <span className="studio-scene-title">{activeEditorV6.title}</span>}

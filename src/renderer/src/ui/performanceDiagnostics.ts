@@ -1,8 +1,12 @@
 /** Opt-in aggregate diagnostics: no user/project names, asset paths or content. */
 type RouteStats = { commits:number; commitMs:number; worstCommitMs:number; longTasks:number; longTaskMs:number }
-const routes = new Set(['/', '/customizar', '/estudio', '/roteiros', '/base-videos', '/opcoes', '/fabricador-dev'])
+const routes = new Set(['/', '/customizar', '/estudio', '/editor-v6', '/editor-v6/scene', '/roteiros', '/base-videos', '/opcoes', '/fabricador-dev'])
 const stats = new Map<string, RouteStats>()
 const enabled = (() => { try { return typeof window !== 'undefined' && sessionStorage.getItem('gv5:perf') === '1' } catch { return false } })()
+function currentRoute(): string {
+  const hashRoute = window.location.hash.startsWith('#/') ? window.location.hash.slice(1).split('?')[0] : ''
+  return hashRoute || window.location.pathname
+}
 function entryFor(route: string): RouteStats {
   const key = routes.has(route) ? route : '(outra rota)'
   const existing = stats.get(key)
@@ -19,6 +23,9 @@ export function snapshotUiPerformance() {
     longTasks:s.longTasks, longTaskMs:+s.longTaskMs.toFixed(2)
   }))
 }
+export function resetUiPerformance(): void {
+  stats.clear()
+}
 export function recordUiCommit(route:string, _phase:string, duration:number):void {
   if (!enabled || !Number.isFinite(duration) || duration < 0) return
   const s = entryFor(route)
@@ -33,20 +40,25 @@ export function installUiPerformanceDiagnostics(): () => void {
   if (typeof PerformanceObserver !== 'undefined' && PerformanceObserver.supportedEntryTypes?.includes('longtask')) {
     observer = new PerformanceObserver(list => {
       for (const task of list.getEntries()) {
-        const s = entryFor(window.location.pathname)
+        const s = entryFor(currentRoute())
         s.longTasks++
         s.longTaskMs += task.duration
       }
     })
     observer.observe({ entryTypes: ['longtask'] })
   }
-  const diagnosticWindow = window as Window & { __gv5PerformanceReport?: () => ReturnType<typeof snapshotUiPerformance> }
+  const diagnosticWindow = window as Window & {
+    __gv5PerformanceReport?: () => ReturnType<typeof snapshotUiPerformance>
+    __gv5PerformanceReset?: () => void
+  }
   diagnosticWindow.__gv5PerformanceReport = snapshotUiPerformance
+  diagnosticWindow.__gv5PerformanceReset = resetUiPerformance
   const print = () => console.table(snapshotUiPerformance())
   window.addEventListener('pagehide', print)
   return () => {
     observer?.disconnect()
     window.removeEventListener('pagehide', print)
     delete diagnosticWindow.__gv5PerformanceReport
+    delete diagnosticWindow.__gv5PerformanceReset
   }
 }

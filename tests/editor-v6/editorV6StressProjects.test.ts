@@ -1,11 +1,13 @@
 import { createHash } from 'node:crypto'
 import { access, mkdir, readFile, readdir, rename, rm, unlink, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import sharp from 'sharp'
 import { describe, expect, it } from 'vitest'
 import { editorV6DocumentSchema, isEditorV6Document } from '../../src/shared/editorV6Schema'
 import { editorV6MotionPlans, missingEditorV6Motions } from '../../src/shared/editorV6Motion'
 import type { EditorV6Asset, EditorV6Document, EditorV6Element, EditorV6TimelineBlock, EditorV6TimelineTrack } from '../../src/shared/editorV6'
+import type { EditorV6MotionFrame } from '../../src/shared/editorV6Motion'
+import type { CustomizerCharacter } from '../../src/shared/customizer'
 import { createEditorV6DocumentPersistence } from '../../electron/domains/editorV6/documentPersistence'
 import { createEditorV6LibraryIndex } from '../../electron/domains/editorV6/libraryIndex'
 
@@ -24,9 +26,14 @@ type Scenario = {
 
 type FixtureAsset = { asset: EditorV6Asset; bytes: Buffer }
 type ScenarioResult = { scenario: Scenario; document: EditorV6Document; files: Map<string, Buffer> }
+type CapturedCharacter = {
+  character: CustomizerCharacter
+  poses: Array<{ poseSlot: number; dataUrl: string; width: number; height: number; geometry: { x: number; y: number; width: number; height: number } }>
+  transitions: Array<{ fromPoseSlot: number; toPoseSlot: number; assetDataUrl: string; frames: EditorV6MotionFrame[]; metrics: { milliseconds: number; preparedRigs: number; samples: number; atlasPixels: number } }>
+}
 
 const createdAt = '2026-10-26T12:00:00.000Z'
-const actorNames = ['Luna', 'Kael', 'Mika', 'Ravi']
+const actorPositions = [-36, -12, 12, 36]
 const colors = [
   { hair: '#442a68', skin: '#ffd8c3', clothes: '#8b62cf', accent: '#f6c95e' },
   { hair: '#bd463f', skin: '#f4c5a4', clothes: '#307f91', accent: '#f0dd88' },
@@ -35,9 +42,9 @@ const colors = [
 ]
 
 const scenarios: Scenario[] = [
-  { key: 'light', title: '[TESTE] Estresse leve — 4 personagens', durationFrames: 900, posesPerCharacter: 2, characterBlocks: 8, speechBlocks: 28, thoughtBlocks: 12, backgroundBlocks: 4, imageWidth: 512, imageHeight: 768 },
-  { key: 'medium', title: '[TESTE] Estresse médio — 4 personagens', durationFrames: 3600, posesPerCharacter: 4, characterBlocks: 24, speechBlocks: 112, thoughtBlocks: 56, backgroundBlocks: 16, imageWidth: 800, imageHeight: 1200 },
-  { key: 'heavy', title: '[TESTE] Estresse pesado — 4 personagens', durationFrames: 9000, posesPerCharacter: 8, characterBlocks: 72, speechBlocks: 280, thoughtBlocks: 140, backgroundBlocks: 40, imageWidth: 1280, imageHeight: 1920 }
+  { key: 'light', title: '[TESTE] Estresse leve — 4 personagens STRESS', durationFrames: 900, posesPerCharacter: 2, characterBlocks: 8, speechBlocks: 28, thoughtBlocks: 12, backgroundBlocks: 4, imageWidth: 512, imageHeight: 768 },
+  { key: 'medium', title: '[TESTE] Estresse médio — 4 personagens STRESS', durationFrames: 3600, posesPerCharacter: 4, characterBlocks: 24, speechBlocks: 112, thoughtBlocks: 56, backgroundBlocks: 16, imageWidth: 800, imageHeight: 1200 },
+  { key: 'heavy', title: '[TESTE] Estresse pesado — 4 personagens STRESS', durationFrames: 9000, posesPerCharacter: 8, characterBlocks: 72, speechBlocks: 280, thoughtBlocks: 140, backgroundBlocks: 40, imageWidth: 1280, imageHeight: 1920 }
 ]
 
 function uuid(seed: string): string {
@@ -49,32 +56,6 @@ function uuid(seed: string): string {
 }
 
 function dataUrl(bytes: Buffer): string { return `data:image/png;base64,${bytes.toString('base64')}` }
-
-function characterSvg(actor: number, pose: number): string {
-  const palette = colors[actor]
-  const lean = ((pose % 3) - 1) * 18
-  const armLift = pose % 2 ? -42 : 12
-  const fringe = pose % 2 ? 'M153 244 Q220 150 286 235 Q252 216 227 265 Q197 221 153 244Z' : 'M153 244 Q194 173 252 216 Q276 194 307 243 Q268 226 244 269 Q205 222 153 244Z'
-  const mouth = pose % 3 === 2 ? '<ellipse cx="230" cy="382" rx="12" ry="17" fill="#743c54"/>' : '<path d="M214 383 Q230 397 247 382" fill="none" stroke="#743c54" stroke-width="7" stroke-linecap="round"/>'
-  const eyes = pose % 4 === 3
-    ? '<path d="M176 331q15-10 29 0M253 331q15-10 29 0" fill="none" stroke="#372d4c" stroke-width="8" stroke-linecap="round"/>'
-    : '<ellipse cx="191" cy="330" rx="16" ry="25" fill="#392c5b"/><ellipse cx="269" cy="330" rx="16" ry="25" fill="#392c5b"/><ellipse cx="196" cy="322" rx="5" ry="8" fill="white"/><ellipse cx="274" cy="322" rx="5" ry="8" fill="white"/>'
-  const accessory = actor % 2 ? `<path d="M286 178l30 8-21 34z" fill="${palette.accent}"/><circle cx="298" cy="195" r="7" fill="white"/>` : `<circle cx="174" cy="190" r="23" fill="${palette.accent}"/><circle cx="174" cy="190" r="8" fill="white"/>`
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="480" height="960" viewBox="0 0 480 960">
-    <defs><linearGradient id="cloth" x2="0" y2="1"><stop stop-color="${palette.clothes}"/><stop offset="1" stop-color="#30264d"/></linearGradient><linearGradient id="hair" x2="1" y2="1"><stop stop-color="${palette.hair}"/><stop offset="1" stop-color="${palette.accent}"/></linearGradient></defs>
-    <ellipse cx="235" cy="923" rx="126" ry="20" fill="#29233a" opacity=".16"/>
-    <path d="M166 566Q110 616 ${118 + lean} 738L143 906Q185 932 222 908L236 736 256 909Q304 934 343 902L353 720Q354 611 292 563Z" fill="url(#cloth)" stroke="#392e4e" stroke-width="12"/>
-    <path d="M183 591L234 675 278 588 296 752 148 751Z" fill="${palette.accent}" opacity=".85"/><path d="M166 783h134M161 815h139M153 849h145" stroke="#fff" stroke-opacity=".45" stroke-width="8"/>
-    <path d="M170 576Q106 608 ${102 + lean} ${690 + armLift}L78 ${719 + armLift}Q86 ${741 + armLift} 110 ${736 + armLift}L217 650Z" fill="${palette.skin}" stroke="#bd8178" stroke-width="9"/>
-    <path d="M292 576Q356 610 ${370 - lean} ${690 - armLift}L397 ${714 - armLift}Q390 ${740 - armLift} 366 ${735 - armLift}L254 650Z" fill="${palette.skin}" stroke="#bd8178" stroke-width="9"/>
-    <path d="M153 226Q131 90 230 80Q339 91 316 248L303 436Q293 529 236 555Q165 526 155 431Z" fill="url(#hair)" stroke="#37294f" stroke-width="14"/>
-    <ellipse cx="230" cy="335" rx="91" ry="116" fill="${palette.skin}"/>
-    <path d="${fringe}" fill="url(#hair)" stroke="#37294f" stroke-width="8"/><path d="M153 252Q108 353 154 510Q107 473 119 326Q122 261 153 252ZM304 241Q367 344 308 514Q365 464 348 321Q337 265 304 241Z" fill="url(#hair)" stroke="#37294f" stroke-width="8"/>
-    ${eyes}<ellipse cx="161" cy="370" rx="16" ry="8" fill="#ed8493" opacity=".55"/><ellipse cx="298" cy="370" rx="16" ry="8" fill="#ed8493" opacity=".55"/>${mouth}${accessory}
-    <path d="M180 548l50 63 47-63" fill="${palette.accent}"/><path d="M203 612l27 31 26-31" fill="#fff" opacity=".88"/>
-    <path d="M177 238Q184 148 240 140" fill="none" stroke="#fff" stroke-opacity=".36" stroke-width="13" stroke-linecap="round"/>
-  </svg>`
-}
 
 function backgroundSvg(index: number): string {
   const palettes = [['#b8d7ee', '#f4d3e4', '#f9e8c0'], ['#8fc9bd', '#97b4de', '#f1dcaa'], ['#f4b7a3', '#d8b2e1', '#fff0bd'], ['#9fb7dc', '#b2decb', '#f7d4a1']]
@@ -100,28 +81,36 @@ function asset(seed: string, category: EditorV6Asset['category'], name: string, 
   return { asset: { id: uuid(`${seed}:asset`), category, name, mimeType: 'image/png', dataUrl: dataUrl(bytes), ...(timelineSnapshot ? { timelineSnapshot: true } : {}) }, bytes }
 }
 
-async function buildScenario(scenario: Scenario): Promise<ScenarioResult> {
+function bytesFromDataUrl(value: string): Buffer {
+  const encoded = value.match(/^data:image\/(?:png|jpeg|webp);base64,([\s\S]+)$/)?.[1]
+  if (!encoded) throw new Error('O teste offscreen retornou uma imagem fora do formato PNG/JPEG/WebP base64.')
+  return Buffer.from(encoded, 'base64')
+}
+
+async function buildScenario(scenario: Scenario, capturedCharacters: CapturedCharacter[]): Promise<ScenarioResult> {
   const key = scenario.key
   const files = new Map<string, Buffer>()
   const assets: FixtureAsset[] = []
-  const characterAssets: FixtureAsset[][] = []
-  const atlasAssets: FixtureAsset[] = []
+  const characterAssets: Array<Array<FixtureAsset & { poseSlot: number }>> = []
+  const transitionAssets = new Map<string, FixtureAsset & { frames: EditorV6MotionFrame[] }>()
 
-  for (let actor = 0; actor < 4; actor++) {
-    const poses: FixtureAsset[] = []
-    for (let pose = 0; pose < scenario.posesPerCharacter; pose++) {
-      const bytes = await raster(characterSvg(actor, pose), scenario.imageWidth, scenario.imageHeight)
-      const item = asset(`${key}:character:${actor}:pose:${pose}`, 'character', `${actorNames[actor]} · pose ${String(pose + 1).padStart(2, '0')}`, bytes, pose > 0)
-      poses.push(item); assets.push(item)
+  for (let actor = 0; actor < capturedCharacters.length; actor++) {
+    const captured = capturedCharacters[actor]
+    if (captured.poses.length < 2 || captured.transitions.length < 2) throw new Error(`${captured.character.name}: faltam snapshots ou transições reais no bundle offscreen.`)
+    const poses: Array<FixtureAsset & { poseSlot: number }> = []
+    for (let pose = 0; pose < 2; pose++) {
+      const source = captured.poses[pose]
+      const bytes = bytesFromDataUrl(source.dataUrl)
+      const item = asset(`${key}:character:${captured.character.id}:pose:${source.poseSlot}`, 'character', `${captured.character.name} · pose ${source.poseSlot}`, bytes, pose > 0)
+      poses.push({ ...item, poseSlot: source.poseSlot }); assets.push(item)
     }
     characterAssets.push(poses)
-    const tileWidth = 160, tileHeight = 320
-    const tileBytes = await Promise.all(poses.map(({ bytes }) => sharp(bytes).resize(tileWidth, tileHeight, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } }).png().toBuffer()))
-    const atlasBytes = await sharp({ create: { width: tileWidth * tileBytes.length, height: tileHeight, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
-      .composite(tileBytes.map((input, index) => ({ input, left: index * tileWidth, top: 0 })))
-      .png({ compressionLevel: 8 }).toBuffer()
-    const atlas = asset(`${key}:character:${actor}:motion-atlas`, 'character', `${actorNames[actor]} · atlas de poses`, atlasBytes, true)
-    assets.push(atlas); atlasAssets.push(atlas)
+    for (const transition of captured.transitions) {
+      const bytes = bytesFromDataUrl(transition.assetDataUrl)
+      const item = asset(`${key}:character:${captured.character.id}:motion:${transition.fromPoseSlot}-${transition.toPoseSlot}`, 'character', `${captured.character.name} · transição ${transition.fromPoseSlot}→${transition.toPoseSlot}`, bytes, true)
+      assets.push(item)
+      transitionAssets.set(`${captured.character.id}:${transition.fromPoseSlot}->${transition.toPoseSlot}`, { ...item, frames: transition.frames })
+    }
   }
 
   const backgroundCount = key === 'light' ? 2 : key === 'medium' ? 4 : 8
@@ -137,12 +126,16 @@ async function buildScenario(scenario: Scenario): Promise<ScenarioResult> {
   }
 
   const elements: EditorV6Element[] = []
-  const actors: EditorV6Element[] = actorNames.map((name, index) => {
+  const actors: EditorV6Element[] = capturedCharacters.map(({ character }, index) => {
+    const name = character.name
+    const basePose = characterAssets[index][0]
+    const geometry = capturedCharacters[index].poses.find((pose) => pose.poseSlot === basePose.poseSlot)!.geometry
     const element: EditorV6Element = {
-      id: uuid(`${key}:element:actor:${index}`), kind: 'character', assetId: characterAssets[index][0].asset.id,
-      characterId: `stress-${key}-character-${index + 1}`, characterSourceUpdatedAt: createdAt,
-      poseSlot: 0, activeExpressionPresetId: 'stress-neutral', text: `Stress ${name}`,
-      x: 15 + index * 23, y: 68, width: 20, height: 49, rotation: 0, zIndex: 20 + index
+      id: uuid(`${key}:element:actor:${index}`), kind: 'character', assetId: basePose.asset.id,
+      characterId: character.id, characterSourceUpdatedAt: character.updatedAt,
+      faceAppearance: character.customization.faceAppearance,
+      poseSlot: basePose.poseSlot, text: name,
+      x: actorPositions[index] + geometry.x, y: geometry.y, width: geometry.width, height: geometry.height, rotation: 0, zIndex: 20 + index
     }
     elements.push(element)
     return element
@@ -150,7 +143,7 @@ async function buildScenario(scenario: Scenario): Promise<ScenarioResult> {
   const propsElements: EditorV6Element[] = props.map((item, index) => {
     const element: EditorV6Element = {
       id: uuid(`${key}:element:prop:${index}`), kind: 'image', assetId: item.asset.id,
-      text: `Adereço ${index + 1}`, x: 12 + index * 25, y: 89, width: 9, height: 9, rotation: index % 2 ? 12 : -8, zIndex: 8 + index
+      text: `Adereço ${index + 1}`, x: actorPositions[index], y: 32, width: 9, height: 9, rotation: index % 2 ? 12 : -8, zIndex: 8 + index
     }
     elements.push(element)
     return element
@@ -182,23 +175,24 @@ async function buildScenario(scenario: Scenario): Promise<ScenarioResult> {
   const characterTracks: EditorV6TimelineTrack[] = []
   for (let actor = 0; actor < actors.length; actor++) {
     const element = actors[actor], poses = characterAssets[actor]
-    const track: EditorV6TimelineTrack = { id: uuid(`${key}:track:character:${actor}`), kind: 'character', characterId: element.characterId, name: `Stress ${actorNames[actor]}`, muted: false, locked: false, motionEnabled: true, blocks: [] }
+    const track: EditorV6TimelineTrack = { id: uuid(`${key}:track:character:${actor}`), kind: 'character', characterId: element.characterId, name: element.text, muted: false, locked: false, motionEnabled: true, blocks: [] }
     for (let index = 0; index < scenario.characterBlocks; index++) {
       const startFrame = Math.floor(index * durationFrames / scenario.characterBlocks)
       const endFrame = index + 1 === scenario.characterBlocks ? durationFrames : Math.floor((index + 1) * durationFrames / scenario.characterBlocks)
-      const poseIndex = (index + actor) % poses.length
-      const nextState: EditorV6Element = { ...element, assetId: poses[poseIndex].asset.id, poseSlot: poseIndex, activeExpressionPresetId: `stress-expression-${poseIndex % 5}` }
-      track.blocks.push({ id: uuid(`${key}:block:character:${actor}:${index}`), elementId: element.id, characterId: element.characterId, label: `${actorNames[actor]} · preset ${poseIndex + 1}`, startFrame, durationFrames: endFrame - startFrame, state: nextState })
+      const poseIndex = (index + actor) % Math.min(2, scenario.posesPerCharacter)
+      const geometry = capturedCharacters[actor].poses.find((pose) => pose.poseSlot === poses[poseIndex].poseSlot)!.geometry
+      const nextState: EditorV6Element = { ...element, assetId: poses[poseIndex].asset.id, poseSlot: poses[poseIndex].poseSlot, x: actorPositions[actor] + geometry.x, y: geometry.y, width: geometry.width, height: geometry.height }
+      track.blocks.push({ id: uuid(`${key}:block:character:${actor}:${index}`), elementId: element.id, characterId: element.characterId, label: `${element.text} · pose ${poses[poseIndex].poseSlot}`, startFrame, durationFrames: endFrame - startFrame, state: nextState })
     }
     characterTracks.push(track)
   }
 
   const speechEvents: Array<{ startFrame: number; durationFrames: number; parent: EditorV6TimelineBlock }> = []
   const addComment = (kind: 'speech' | 'thought', index: number, startFrame: number, durationFrames: number, parent: EditorV6TimelineBlock, actorIndex: number) => {
-    const name = actorNames[actorIndex]
+    const name = actors[actorIndex].text
     const element: EditorV6Element = {
       id: uuid(`${key}:element:${kind}:${index}`), kind, text: kind === 'speech' ? `${name}: fala de estresse ${index + 1}` : `${name}: pensamento paralelo ${index + 1}`,
-      x: 15 + actorIndex * 23, y: 22 + (kind === 'thought' ? 13 : 0), width: 28, height: 13, rotation: 0, zIndex: 60 + index
+      x: actorPositions[actorIndex], y: kind === 'thought' ? -15 : -29, width: 26, height: 13, rotation: 0, zIndex: 60 + index
     }
     elements.push(element)
     const track = kind === 'speech' ? speechTrack : thoughtTrack
@@ -251,7 +245,6 @@ async function buildScenario(scenario: Scenario): Promise<ScenarioResult> {
     assets: assets.map(({ asset }) => asset), elements, timeline
   }
 
-  const atlasByCharacter = new Map(actors.map((element, index) => [element.characterId!, { asset: atlasAssets[index].asset, poseCount: characterAssets[index].length, tileWidth: 160, tileHeight: 320 }]))
   const plans = editorV6MotionPlans(document)
   const planByBlock = new Map(plans.map((plan) => [plan.blockId, plan]))
   document.timeline = {
@@ -259,26 +252,14 @@ async function buildScenario(scenario: Scenario): Promise<ScenarioResult> {
     tracks: document.timeline.tracks.map((track) => ({ ...track, blocks: track.blocks.map((block) => {
       const plan = planByBlock.get(block.id)
       if (!plan) return block
-      const atlas = atlasByCharacter.get(plan.characterId)
-      if (!atlas) return block
-      const fromPose = Number(plan.from.poseSlot ?? 0) % atlas.poseCount
-      const toPose = Number(plan.to.poseSlot ?? 0) % atlas.poseCount
-      let delta = (toPose - fromPose + atlas.poseCount) % atlas.poseCount
-      if (delta > atlas.poseCount / 2) delta -= atlas.poseCount
-      const frames = plan.samples.map((sample) => {
-        const pose = (fromPose + Math.round(delta * sample.progress) + atlas.poseCount) % atlas.poseCount
-        return {
-          offset: sample.offset,
-          sprite: { x: pose * atlas.tileWidth, y: 0, width: atlas.tileWidth, height: atlas.tileHeight, atlasWidth: atlas.tileWidth * atlas.poseCount, atlasHeight: atlas.tileHeight },
-          x: plan.from.x + (plan.to.x - plan.from.x) * sample.progress,
-          y: plan.from.y + (plan.to.y - plan.from.y) * sample.progress,
-          width: plan.from.width + (plan.to.width - plan.from.width) * sample.progress,
-          height: plan.from.height + (plan.to.height - plan.from.height) * sample.progress,
-          rotation: plan.from.rotation + (plan.to.rotation - plan.from.rotation) * sample.progress,
-          flipX: Boolean(plan.to.flipX)
-        }
-      })
-      return { ...block, incomingMotion: { version: 1 as const, key: plan.key, assetId: atlas.asset.id, frames } }
+      const fromPose = Number(plan.from.poseSlot)
+      const toPose = Number(plan.to.poseSlot)
+      const transition = transitionAssets.get(`${plan.characterId}:${fromPose}->${toPose}`)
+      if (!transition) throw new Error(`${scenario.title}: faltou transição real ${fromPose}→${toPose} para ${plan.characterId}.`)
+      const actorIndex = capturedCharacters.findIndex(({ character }) => character.id === plan.characterId)
+      const offsetX = actorPositions[actorIndex]
+      const frames = transition.frames.map((frame) => ({ ...frame, x: frame.x + offsetX }))
+      return { ...block, incomingMotion: { version: 1 as const, key: plan.key, assetId: transition.asset.id, frames } }
     }) }))
   }
 
@@ -301,6 +282,11 @@ async function writeScenario(root: string, result: ScenarioResult) {
   const folder = join(root, `editorV6-${document.id}`)
   for (const relative of ['assets/backgrounds', 'assets/characters', 'assets/objects', 'prints']) await mkdir(join(folder, relative), { recursive: true })
   const categoryFolder = (category: EditorV6Asset['category']) => category === 'background' ? 'backgrounds' : category === 'character' ? 'characters' : 'objects'
+  for (const category of ['background', 'character', 'object'] as const) {
+    const directory = join(folder, 'assets', categoryFolder(category))
+    const current = new Set(document.assets.filter((item) => item.category === category).map((item) => `${item.id}.png`))
+    for (const filename of await readdir(directory)) if (filename.toLowerCase().endsWith('.png') && !current.has(filename)) await unlink(join(directory, filename))
+  }
   for (const item of document.assets) {
     const bytes = files.get(item.id)
     if (!bytes) throw new Error(`PNG da fixture não encontrado: ${item.name}`)
@@ -317,11 +303,14 @@ async function writeScenario(root: string, result: ScenarioResult) {
   const reopened = editorV6DocumentSchema.safeParse({ ...stored, assets: persistedAssets })
   if (!reopened.success) throw new Error(`${scenario.title}: falhou a validação após reler os PNGs.`)
   return {
-    title: document.title, id: document.id, folder,
+    key: scenario.key, title: document.title, id: document.id, folder,
     characters: document.elements.filter((element) => element.kind === 'character').length,
+    characterNames: document.elements.filter((element) => element.kind === 'character').map((element) => element.text),
+    characterIds: document.elements.filter((element) => element.kind === 'character').map((element) => element.characterId),
     blocks: document.timeline.tracks.reduce((sum, track) => sum + track.blocks.length, 0),
     tracks: document.timeline.tracks.length, assets: document.assets.length,
     motionTransitions: editorV6MotionPlans(document).length,
+    missingMotions: missingEditorV6Motions(reopened.data).length,
     overlappingSpeechThought: true,
     durationSeconds: document.timeline.durationFrames / 30
   }
@@ -329,14 +318,23 @@ async function writeScenario(root: string, result: ScenarioResult) {
 
 const enabled = process.env.GACHA_EDITOR_V6_STRESS_FIXTURES === '1'
 describe.skipIf(!enabled)('projetos de estresse do Editor V6', () => {
-  it('cria e valida os projetos leve, médio e pesado, com quatro personagens e blocos sobrepostos', async () => {
+  it('cria e valida projetos com os quatro personagens reais, imagens e transições renderizadas no Electron', async () => {
     const root = process.env.GACHA_EDITOR_V6_STRESS_ROOT
     if (!root) throw new Error('O gerador precisa de uma pasta raiz explícita para os projetos de estresse.')
+    const bundlePath = process.env.GACHA_EDITOR_V6_STRESS_CHARACTERS_BUNDLE
+    if (!bundlePath) throw new Error('Capture os personagens e as animações em uma janela Electron offscreen antes de gerar os projetos.')
+    const capturedCharacters = JSON.parse(await readFile(bundlePath, 'utf8')) as CapturedCharacter[]
+    const expectedNames = ['STRESS_Aurora', 'STRESS_Nix', 'STRESS_Brisa', 'STRESS_Dorian']
+    expect(capturedCharacters.map(({ character }) => character.name)).toEqual(expectedNames)
+    expect(new Set(capturedCharacters.map(({ character }) => character.id)).size).toBe(4)
+    expect(capturedCharacters.every((entry) => entry.poses.length === 2 && entry.transitions.length === 2)).toBe(true)
     await mkdir(root, { recursive: true })
     const output = []
-    for (const scenario of scenarios) output.push(await writeScenario(root, await buildScenario(scenario)))
+    for (const scenario of scenarios) output.push(await writeScenario(root, await buildScenario(scenario, capturedCharacters)))
     expect(output).toHaveLength(3)
     expect(output.map((item) => item.characters)).toEqual([4, 4, 4])
+    expect(output.every((item) => item.characterNames.join(',') === expectedNames.join(','))).toBe(true)
+    expect(output.every((item) => new Set(item.characterIds).size === 4)).toBe(true)
     expect(output[0].blocks).toBeLessThan(output[1].blocks)
     expect(output[1].blocks).toBeLessThan(output[2].blocks)
 
@@ -360,6 +358,12 @@ describe.skipIf(!enabled)('projetos de estresse do Editor V6', () => {
       expect(reopened!.assets.every((asset) => asset.dataUrl.startsWith('data:image/png;base64,'))).toBe(true)
       expect(missingEditorV6Motions(reopened!)).toHaveLength(0)
     }
-    console.log(JSON.stringify(output.map(({ folder: _folder, ...summary }) => summary), null, 2))
+    const reportSummaries = output.map(({ folder: _folder, ...summary }) => summary)
+    const reportPath = process.env.GACHA_EDITOR_V6_STRESS_SUMMARY_PATH
+    if (reportPath) {
+      await mkdir(dirname(reportPath), { recursive: true })
+      await writeFile(reportPath, JSON.stringify(reportSummaries, null, 2), 'utf8')
+    }
+    console.log(JSON.stringify(reportSummaries, null, 2))
   }, 120_000)
 })

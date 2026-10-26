@@ -378,6 +378,8 @@ Nesta rodada foram lidos documentos de arquitetura e renderização, repositóri
 - **[Discussões de desenvolvedores sobre timelines](https://www.reddit.com/r/webdev/comments/1ufhge5/building_a_browser-based_video_editor_taught_me/):** um autor relata que zoom, snapping, sincronismo de quadro e virtualização de blocos deram mais trabalho que decodificar vídeo. Outros tópicos citam híbridos Canvas + DOM, mantendo Canvas para a régua/fundo e HTML para os blocos interativos. São relatos subjetivos, usados como pistas de investigação, nunca como medida de FPS.
 - **[WebCodecs: especificação W3C](https://www.w3.org/TR/webcodecs/) e [MDN](https://developer.mozilla.org/en-US/docs/Web/API/WebCodecs_API):** acelerador de hardware não significa sempre menor latência ou mais velocidade. Pode aumentar a latência inicial, variar com o codec e até perder desempenho em resoluções menores; o suporte e os formatos aceitos dependem do equipamento. A API fornece encode/decode, mas não demux/mux de arquivo por si só.
 
+Resultados executados no app com os quatro personagens STRESS e três tamanhos de projeto: [testes de estresse offscreen](TESTES_DE_ESTRESSE_OFFSCREEN.md).
+
 ### Regras práticas que saem da pesquisa
 
 1. **React não precisa redesenhar os painéis a cada pose intermediária.** Use-o para inspector, botões, painel e mudanças discretas. Um renderer de cena isolado pode receber o instante atual e atualizar sprites; o cursor pode atualizar uma camada leve. No V6, `setPlayheadFrame` ainda atualiza o estado de `EditorV6Page`, então a renderização da página e seus filhos é um alvo imediato de perfil; a timeline tem memoização parcial, mas a cena muda a cada quadro.
