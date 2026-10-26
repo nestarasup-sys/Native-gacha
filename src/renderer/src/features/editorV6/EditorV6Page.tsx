@@ -123,6 +123,7 @@ export function EditorV6Page() {
     setEditorV6Projects((projects) => projects.map((project) => project.id === activeEditorV6Id ? pruneEditorV6TimelineSnapshots(update(project)) : project))
     setSaved(false)
   })
+  useEffect(() => { if (motion.pending) setIsPlaying(false) }, [motion.pending])
   const previewScene = useMemo(() => activeEditorV6 ? resolveEditorV6SceneAtFrame(activeEditorV6, playheadFrame) : null, [activeEditorV6, playheadFrame])
   const previewBackground = previewScene?.background ?? { backgroundColor: '#d7b5cd', backgroundAssetId: null, backgroundX: 0, backgroundY: 0, backgroundWidth: 100, backgroundHeight: 100, backgroundRotation: 0 }
   const visibleTimelineElements = previewScene?.elements ?? []
@@ -433,7 +434,7 @@ export function EditorV6Page() {
       }))
     }
     duplicate.backgroundAssetId = source.backgroundAssetId ? oldToNew.get(source.backgroundAssetId) ?? null : null
-    const originalMotions = new Map(editorV6MotionPlans(source).map((plan) => [oldToNewBlocks.get(plan.blockId)!, plan]))
+    const originalMotions = new Map<string, ReturnType<typeof editorV6MotionPlans>[number]>(editorV6MotionPlans(source).map((plan) => [oldToNewBlocks.get(plan.blockId)!, plan]))
     const copiedMotions = new Map(editorV6MotionPlans(duplicate).map((plan) => [plan.blockId, plan]))
     duplicate.timeline = { ...duplicate.timeline, tracks: duplicate.timeline.tracks.map((track) => ({ ...track, blocks: track.blocks.map((block) => ({ ...block, incomingMotion: block.incomingMotion && originalMotions.get(block.id)?.key === block.incomingMotion.key && copiedMotions.has(block.id) ? { ...block.incomingMotion, key: copiedMotions.get(block.id)!.key } : undefined })) })) }
     try {

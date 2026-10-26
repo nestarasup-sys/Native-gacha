@@ -1,8 +1,13 @@
-import { app, ipcMain } from 'electron'
+import { app, BrowserWindow, ipcMain, type IpcMainInvokeEvent } from 'electron'
 import { execFileSync } from 'node:child_process'
 import { readFile, writeFile, readdir } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
+import { createEditorV6MotionService } from '../../electron/domains/editorV6/motionIpc'
+import { editorV6IpcChannels } from '../../src/shared/editorV6IpcChannels'
+import { editorV6MotionPlans, attachEditorV6Motion } from '../../src/shared/editorV6Motion'
+import type { CustomizerCharacter } from '../../src/shared/customizer'
+import type { FabricatorProject } from '../../src/shared/fabricator'
 import { createEditorV6WorkerFactory } from '../../electron/domains/editorV6/exportWorkers'
 import { runEditorV6Export } from '../../electron/domains/editorV6/exportRunner'
 import { createEditorV6Timeline, type EditorV6Document, type EditorV6Element } from '../../src/shared/editorV6'
@@ -72,9 +77,48 @@ async function main() {
   assert(single.totalFrames === 1 && single.attempts[0].parallelism === 1 && !single.fallback, 'Intervalo de um quadro não foi tratado corretamente.')
   const fullHd = await runEditorV6Export(silent, { ...options, startFrame: 45, endFrame: 47, width: 1920, height: 1080 }, { ...base, id: randomUUID(), outputPath: join(folder, '1080p.mp4'), reportPath: join(folder, '1080p.report.json'), createWorker: (_part, signal) => makeWorker(signal, 1920, 1080) })
   assert(fullHd.totalFrames === 2 && !fullHd.fallback && active === 0, 'Exportação 1080p não concluiu com duas partes.')
+  // Exercise the actual restricted sandbox preload, IPC queue and hidden bake worker.
+  const owner = new BrowserWindow({ show: false, webPreferences: { sandbox: true, preload: join(root, 'out/preload/preload.cjs') } })
+  await owner.loadURL('data:text/html,<html><body>isolated preload check</body></html>')
+  assert(await owner.webContents.executeJavaScript('typeof window.desktop?.bakeEditorV6Motion === "function"'), 'Main sandbox preload failed to load; app pages would be empty.')
+  const bluePath = join(folder, 'blue.png')
+  run(['-f','lavfi','-i','color=c=blue:s=16x16','-frames:v','1',bluePath])
+  const blue = `data:image/png;base64,${(await readFile(bluePath)).toString('base64')}`
+  const source: FabricatorProject = { schemaVersion: 1, slot: 1, name: 'Synthetic', sourceName: 'test', sourceAssetName: 'test', sourceDataUrl: '', width: 100, height: 100, tolerance: 0, updatedAt: new Date().toISOString(), joints: [], layerOrder: ['head','arm'], parts: [{ id: 'head', name: 'head', x: 35,y: 20,width: 30,height: 60,rotation: 0,dataUrl: project.assets[0].dataUrl },{id: 'arm',name: 'arm',x: 10,y: 50,width: 10,height: 10,rotation: 0,dataUrl: blue}] }
+  const target = { ...source, parts: source.parts.map(p => p.id === 'arm' ? { ...p, x: 80 } : p) }
+  const character: CustomizerCharacter = { id: 'alice',name: 'Alice',hair: '#000000',outfit: '#000000',skin: '#ffffff',createdAt: source.updatedAt,updatedAt: source.updatedAt,customization: { modelSlot: 1,poseSlot: null,partOverrides: {},layerOrder: [] } }
+  ipcMain.handle('fabricator:load-slot', () => source)
+  ipcMain.handle('fabricator:poses:load', (_event, _slot, pose) => pose === 1 ? source : target)
+  const handlers = new Map<string, (event: IpcMainInvokeEvent, ...args: any[]) => any>()
+  const service = createEditorV6MotionService({ ipcMain: { handle: (channel, handler) => { handlers.set(channel, handler); ipcMain.handle(channel, handler) } }, assertTrustedSender: () => {}, html: join(root, 'out/renderer/index.html'), preload: join(root, 'out/preload/editorV6MotionPreload.cjs') })
+  let motionProject = prepareEditorV6PositionAtFrame(project, actor.id, 50)!.document
+  motionProject = { ...motionProject, timeline: { ...motionProject.timeline, tracks: motionProject.timeline.tracks.map(t => t.kind !== 'character' ? t : { ...t, blocks: t.blocks.map(b => ({ ...b, state: { ...b.state!, poseSlot: b.startFrame === 50 ? 2 : 1 } })) }) } }
+  const plan = editorV6MotionPlans(motionProject)[0]
+  assert(plan.endFrame === 50 && plan.startFrame === 42.5, 'Motion fixture does not straddle Turbo seam.')
+  const event = { sender: owner.webContents, senderFrame: owner.webContents.mainFrame } as IpcMainInvokeEvent
+  const bake = handlers.get(editorV6IpcChannels.bakeEditorV6Motion)!
+  let missingRejected = false
+  try { await runEditorV6Export(motionProject, options, base) } catch (error) { missingRejected = String(error).includes('preparação das animações') }
+  assert(missingRejected, 'Backend accepted export with missing motion frames.')
+  const result = await bake(event, { id: randomUUID(), plan, character })
+  motionProject = attachEditorV6Motion(motionProject, plan.blockId, result)
+  const staticProject = project
+  project = motionProject
+  const motionOutput = join(folder, 'motion-turbo.mp4')
+  const animated = await runEditorV6Export(project, options, { ...base, id: randomUUID(), outputPath: motionOutput, reportPath: join(folder, 'motion.report.json') })
+  assert(!animated.fallback && animated.attempts[0].parts.reduce((sum,p)=>sum+p.rendered,0) >= 7, 'Animated frames were reused or Turbo failed.')
+  const motionRgb = run(['-i',motionOutput,'-vf',"select='between(n,38,42)'",'-fps_mode','passthrough','-frames:v','5','-pix_fmt','rgb24','-f','rawvideo','pipe:1'])
+  const frameBytes = 320*180*3
+  for (let i=1;i<5;i++) assert(!motionRgb.subarray((i-1)*frameBytes,i*frameBytes).equals(motionRgb.subarray(i*frameBytes,(i+1)*frameBytes)), 'Motion froze across the Turbo seam.')
+  const cancelId = randomUUID()
+  const pending = bake(event,{id:cancelId,plan,character}).then(()=>false,()=>true)
+  await handlers.get(editorV6IpcChannels.cancelEditorV6Motion)!(event,cancelId)
+  assert(await pending, 'Motion cancellation failed.')
+  service.cancelAll(); await service.drain(); owner.destroy()
+  project = staticProject
   assert(!(await readdir(folder)).some((name) => name.startsWith('editor-v6-export-') || name.startsWith('.editor-v6-')), 'Temporários de exportação não foram removidos.')
   factory.dispose()
-  const summary = { passed: true, peakWorkers: peak, frames: 81, reused: report.attempts[0].parts.reduce((sum, part) => sum + part.reused, 0), audioContinuousAtSeam: true, fallback: fallback.fallback, cancelledDestinationPreserved: true, singleFrame: true, fullHd: true, output }
+  const summary = { passed: true, peakWorkers: peak, frames: 81, reused: report.attempts[0].parts.reduce((sum, part) => sum + part.reused, 0), audioContinuousAtSeam: true, fallback: fallback.fallback, cancelledDestinationPreserved: true, singleFrame: true, fullHd: true, sandboxPreloads: true, motionAcrossTurboSeam: true, motionCancelled: true, output }
   await writeFile(join(folder, 'result.json'), JSON.stringify(summary))
   console.log(JSON.stringify(summary, null, 2))
   app.exit(0)

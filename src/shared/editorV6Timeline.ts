@@ -208,6 +208,10 @@ export function editEditorV6DocumentAtBlock(document: EditorV6Document, blockId:
 }
 
 export function pruneEditorV6TimelineSnapshots(document: EditorV6Document): EditorV6Document {
+  const keys = new Map(editorV6MotionPlans(document).map((plan) => [plan.blockId, plan.key]))
+  if (timelineClips(document.timeline).some(({ block }) => block.incomingMotion && keys.get(block.id) !== block.incomingMotion.key)) {
+    document = { ...document, timeline: { ...document.timeline, tracks: document.timeline.tracks.map((track) => ({ ...track, blocks: track.blocks.map((block) => block.incomingMotion && keys.get(block.id) !== block.incomingMotion.key ? { ...block, incomingMotion: undefined } : block) })) } }
+  }
   const referenced = new Set([document.backgroundAssetId, ...document.elements.map((element) => element.assetId), ...timelineClips(document.timeline).flatMap(({ block }) => [block.state?.assetId, block.background?.backgroundAssetId, block.incomingMotion?.assetId])])
   const assets = document.assets.filter((asset) => !asset.timelineSnapshot || referenced.has(asset.id))
   return assets.length === document.assets.length ? document : { ...document, assets }

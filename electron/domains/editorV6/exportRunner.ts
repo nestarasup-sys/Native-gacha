@@ -2,6 +2,7 @@ import { mkdir, mkdtemp, rename, rm, unlink, writeFile } from 'node:fs/promises'
 import { basename, dirname, join, resolve, sep } from 'node:path'
 import { availableParallelism } from 'node:os'
 import type { EditorV6Document } from '../../../src/shared/editorV6'
+import { missingEditorV6Motions } from '../../../src/shared/editorV6Motion'
 import { planEditorV6Audio, planEditorV6Export, type EditorV6ExportAudio, type EditorV6ExportOptions, type EditorV6ExportPart, type EditorV6ExportStatus } from '../../../src/shared/editorV6Export'
 import { runExportCommand, spawnExportProcess, waitForExport } from './exportProcess'
 import type { EditorV6FrameWorker } from './exportWorkers'
@@ -24,6 +25,7 @@ const message = (error: unknown) => error instanceof Error ? error.message : Str
 const encodingArgs = (encoder: string, threads: number) => ['-c:v', encoder, ...(encoder === 'libopenh264' ? ['-b:v', '12M', '-rc_mode', 'quality', '-allow_skip_frames', '0', '-threads', String(threads)] : ['-b:v', '12M']), '-pix_fmt', 'yuv420p', '-profile:v', 'high', '-level:v', '4.1', '-g', '60', '-bf', '0', '-video_track_timescale', '30000']
 export async function runEditorV6Export(project: EditorV6Document, options: EditorV6ExportOptions, deps: Dependencies): Promise<EditorV6ExportReport> {
   const planned = planEditorV6Export(options, project.timeline.durationFrames)
+  if (missingEditorV6Motions(project, options.startFrame, options.endFrame).length) throw Error('Aguarde a preparação das animações antes de exportar.')
   if (process.platform !== 'win32') throw Error('Este exportador BGRA está preparado para Windows.')
   const started = performance.now(), totalFrames = options.endFrame - options.startFrame
   const report: EditorV6ExportReport = { schemaVersion: 1, id: deps.id, projectId: project.id, options, fps: 30, totalFrames, state: 'preparing', fallback: false, attempts: [], encoderTests: [], audioClips: 0, videoInputs: 0, proxies: 0, startedAt: new Date().toISOString(), outputPath: deps.outputPath }

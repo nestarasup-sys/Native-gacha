@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { editorV6IpcChannels } from '../../../src/shared/editorV6IpcChannels'
 import { editorV6ExportAudioSchema, parseEditorV6Document } from '../../../src/shared/editorV6Schema'
+import { missingEditorV6Motions } from '../../../src/shared/editorV6Motion'
 import { planEditorV6Export, type EditorV6ExportAudio, type EditorV6ExportOptions, type EditorV6ExportStatus } from '../../../src/shared/editorV6Export'
 import { createEditorV6WorkerFactory } from './exportWorkers'
 import { probeExportMedia, runEditorV6Export } from './exportRunner'
@@ -28,6 +29,7 @@ export function registerEditorV6ExportHandlers(deps: { ipcMain: IpcMain; assertT
     if ([...jobs.values()].some((job) => !terminal(job.status))) throw Error('Aguarde ou cancele a exportação atual antes de iniciar outra.')
     const project = parseEditorV6Document(rawProject)
     planEditorV6Export(options, project.timeline.durationFrames)
+    if (missingEditorV6Motions(project, options.startFrame, options.endFrame).length) throw Error('Aguarde a preparação das animações antes de exportar.')
     const owner = BrowserWindow.fromWebContents(event.sender)
     const saveOptions = { title: 'Editor V6: exportar MP4', defaultPath: project.title.replace(/[<>:"/\\|?*]/g, '_') + '.mp4', filters: [{ name: 'Vídeo MP4', extensions: ['mp4'] }] }
     const destination = owner ? await dialog.showSaveDialog(owner, saveOptions) : await dialog.showSaveDialog(saveOptions)

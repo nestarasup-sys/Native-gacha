@@ -14,6 +14,7 @@
     "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test:editor-v6": "vitest run --config vitest.editor-v6.config.ts",
+    "test:editor-v6:motion": "node scripts/editor-v6/check-motion.cjs",
     "test:editor-v6:surface": "node scripts/editor-v6/check-scene-surface.cjs",
     "test:editor-v6:export": "npm run build && node scripts/editor-v6/check-export.cjs",
     "package:win:portable": "npm run build && electron-builder --win portable --x64",

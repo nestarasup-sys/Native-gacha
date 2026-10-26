@@ -18,8 +18,9 @@ export const editorV6MotionChannels = { payload: 'editor-v6:motion-worker:payloa
 export type EditorV6MotionBridge = { payload: () => Promise<EditorV6MotionBakeRequest>; provider: CharacterRenderAssetProvider; complete: (result?: EditorV6MotionBakeResult, error?: string) => Promise<void> }
 
 function faceSignature(element: EditorV6Element) {
-  const appearance = element.faceAppearance ? { ...element.faceAppearance, eyeState: undefined, mouthOpen: undefined } : undefined
-  return JSON.stringify([element.poseSlot ?? null, element.activeExpressionPresetId ?? null, element.activeExpressionPresetUpdatedAt, element.activeExpressionGaze, appearance, element.faceTransforms, element.activeExpressionEffects])
+  const entries = Object.entries(element.faceAppearance ?? {}).filter(([key, value]) => key !== 'eyeState' && key !== 'mouthOpen' && value !== undefined)
+  const appearance = entries.length ? Object.fromEntries(entries) : undefined
+  return JSON.stringify([element.poseSlot === undefined ? 'character-default' : element.poseSlot, element.activeExpressionPresetId ?? null, element.activeExpressionPresetUpdatedAt, element.activeExpressionGaze, appearance, element.faceTransforms, element.activeExpressionEffects])
 }
 export function editorV6MotionPlan(track: EditorV6TimelineTrack, previous: EditorV6TimelineBlock, next: EditorV6TimelineBlock): EditorV6MotionPlan | null {
   const from = previous.state, to = next.state

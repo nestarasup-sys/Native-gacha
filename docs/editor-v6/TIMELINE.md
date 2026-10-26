@@ -65,7 +65,7 @@ A faixa Vídeo atualmente organiza os objetos/imagens e textos visuais já dispo
 
 O [exportador Turbo 2×](EXPORTACAO.md) já produz MP4 e permite importar e misturar trilhas sonoras pelo seu painel. Importação de vídeo, faixa de áudio na timeline, reprodução sincronizada de mídias na prévia, faixas personalizadas e eventos de loading/apresentação ainda precisam ser implementados.
 
-A associação de uma fala a um personagem já fica nos dados do bloco; a troca automática da boca e o piscar automático durante a reprodução ainda precisam ser conectados ao renderizador facial. As mudanças de pose/expressão nesta entrega são cortes entre estados estáticos, sem interpolação animada.
+A associação de uma fala a um personagem já fica nos dados do bloco; a troca automática da boca e o piscar automático durante a reprodução ainda precisam ser conectados ao renderizador facial. As mudanças de pose/expressão agora usam transições nos 250 ms anteriores à próxima mudança, com controle por faixa e por bloco. Veja [ANIMACOES.md](ANIMACOES.md).
 
 ## Verificação
 

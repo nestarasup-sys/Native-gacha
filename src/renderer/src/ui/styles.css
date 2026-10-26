@@ -2874,3 +2874,5 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .wardrobe-comparison>div>div>small { color:#776e78;font-size:10px;font-weight:750; }
 .wardrobe-comparison img { image-rendering:auto;user-select:none; }
 .wardrobe-preview-card>.wardrobe-preview-stage { min-height:110px; }
+
+.v6-motion-range { position: absolute; bottom: 1px; height: 7px; background: repeating-linear-gradient(135deg, #f9b84a 0 3px, #9a681a 3px 6px); z-index: 3; pointer-events: none; }

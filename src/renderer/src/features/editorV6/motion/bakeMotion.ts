@@ -18,9 +18,9 @@ function cropOf(canvas: HTMLCanvasElement): Crop {
 }
 function cachedProvider(provider: CharacterRenderAssetProvider): CharacterRenderAssetProvider {
   const cache = new Map<string, Promise<unknown>>()
-  return new Proxy(provider, { get: (target, property) => (...args: unknown[]) => {
+  return new Proxy({} as CharacterRenderAssetProvider, { get: (_target, property) => (...args: unknown[]) => {
     const key = JSON.stringify([property, args]); let result = cache.get(key)
-    if (!result) { result = (target[property as keyof CharacterRenderAssetProvider] as (...args: unknown[]) => Promise<unknown>)(...args); cache.set(key, result) }
+    if (!result) { result = (provider[property as keyof CharacterRenderAssetProvider] as (...args: unknown[]) => Promise<unknown>)(...args); cache.set(key, result) }
     return result
   } })
 }
@@ -73,7 +73,8 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
   }
   const [fromPose, toPose, from, to] = await Promise.all([pose(request.plan.from), pose(request.plan.to), prepareFace(structuredClone(request.plan.from), request, provider), prepareFace(structuredClone(request.plan.to), request, provider)])
   calibratePair(from, to)
-  const samePose = JSON.stringify([fromPose.parts.map((part) => [part.id, part.x, part.y, part.width, part.height, part.rotation]), fromPose.joints]) === JSON.stringify([toPose.parts.map((part) => [part.id, part.x, part.y, part.width, part.height, part.rotation]), toPose.joints])
+  const poseSignature = (pose: typeof fromPose) => JSON.stringify([pose.width, pose.height, pose.parts, pose.joints, pose.layerOrder, pose.hiddenPartIds])
+  const samePose = poseSignature(fromPose) === poseSignature(toPose)
   const materials: GachaReusableMaterialCache = new Map()
   let preparedRigs = 0, reusable: Renderer | undefined
   const prepare = async (progress: number) => {

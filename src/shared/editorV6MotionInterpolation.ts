@@ -1,17 +1,33 @@
 import type { CustomizerFaceAppearance, FaceComponentPartId } from './customizer'
 import type { EditorV6Element, EditorV6FaceTransforms } from './editorV6'
-import type { FaceExpressionEffect, FaceExpressionEffects, FaceTransform, FabricatorProject } from './fabricator'
+import type { FaceExpressionEffect, FaceExpressionEffects, FaceTransform, FabricatorProject, ModelPart } from './fabricator'
 type CatalogArtwork = Pick<FabricatorProject, 'width' | 'height' | 'parts' | 'layerOrder' | 'hiddenPartIds'> & Partial<Pick<FabricatorProject, 'joints'>>
 export const motionEase = (value: number) => { const t = Math.max(0, Math.min(1, value)); return t * t * (3 - 2 * t) }
 export const motionLerp = (from: number, to: number, t: number) => from + (to - from) * t
-export const motionAngle = (from: number, to: number, t: number) => from + (((to - from + 540) % 360) - 180) * t
+export const motionAngle = (from: number, to: number, t: number) => from + ((((to - from) % 360 + 540) % 360) - 180) * t
 const point = (a: { x: number; y: number }, b: { x: number; y: number }, t: number) => ({ x: motionLerp(a.x, b.x, t), y: motionLerp(a.y, b.y, t) })
+/** Preserve a part's authored pivot while rotating; linear centers collapse a swinging limb inward. */
+function interpolatePart(a: ModelPart, b: ModelPart, t: number): ModelPart {
+  const width = motionLerp(a.width, b.width, t), height = motionLerp(a.height, b.height, t), rotation = motionAngle(a.rotation, b.rotation, t)
+  let x = motionLerp(a.x, b.x, t), y = motionLerp(a.y, b.y, t)
+  const anchor = a.jointAnchor && b.jointAnchor ? point(a.jointAnchor, b.jointAnchor, t) : undefined
+  if (anchor && a.jointAnchor && b.jointAnchor && a.width > 0 && a.height > 0 && b.width > 0 && b.height > 0) {
+    const local = (part: ModelPart) => {
+      const angle = -part.rotation * Math.PI / 180, dx = part.x + part.width / 2 - part.jointAnchor!.x, dy = part.y + part.height / 2 - part.jointAnchor!.y
+      return { x: (dx * Math.cos(angle) - dy * Math.sin(angle)) / part.width, y: (dx * Math.sin(angle) + dy * Math.cos(angle)) / part.height }
+    }
+    const offset = point(local(a), local(b), t), angle = rotation * Math.PI / 180
+    x = anchor.x + offset.x * width * Math.cos(angle) - offset.y * height * Math.sin(angle) - width / 2
+    y = anchor.y + offset.x * width * Math.sin(angle) + offset.y * height * Math.cos(angle) - height / 2
+  }
+  return { ...(t < .5 ? a : b), x, y, width, height, rotation, ...(anchor ? { jointAnchor: anchor } : {}) }
+}
 export function interpolateEditorV6Pose(from: CatalogArtwork, to: CatalogArtwork, t: number): CatalogArtwork {
   const targets = new Map(to.parts.map((part) => [part.id, part]))
   if (from.width !== to.width || from.height !== to.height || from.parts.length !== to.parts.length || from.parts.some((part) => !targets.has(part.id))) throw Error('As duas poses precisam pertencer ao mesmo rig e tamanho de modelo.')
   const targetJoints = new Map(to.joints?.map((joint) => [joint.id, joint]))
   return { ...from, layerOrder: t < .5 ? from.layerOrder : to.layerOrder, hiddenPartIds: t < .5 ? from.hiddenPartIds : to.hiddenPartIds,
-    parts: from.parts.map((a) => { const b = targets.get(a.id)!; return { ...(t < .5 ? a : b), x: motionLerp(a.x, b.x, t), y: motionLerp(a.y, b.y, t), width: motionLerp(a.width, b.width, t), height: motionLerp(a.height, b.height, t), rotation: motionAngle(a.rotation, b.rotation, t), ...(a.jointAnchor && b.jointAnchor ? { jointAnchor: point(a.jointAnchor, b.jointAnchor, t) } : {}) } }),
+    parts: from.parts.map((a) => interpolatePart(a, targets.get(a.id)!, t)),
     joints: from.joints?.map((a) => { const b = targetJoints.get(a.id) ?? a; return { ...a, parentAnchor: point(a.parentAnchor, b.parentAnchor, t), childAnchor: point(a.childAnchor, b.childAnchor, t), ...(a.pivot && b.pivot ? { pivot: point(a.pivot, b.pivot, t) } : {}) } }) }
 }
 function faceTransform(a: FaceTransform, b: FaceTransform, t: number): FaceTransform { return { ...a, ...point(a, b, t), scaleX: motionLerp(a.scaleX, b.scaleX, t), scaleY: motionLerp(a.scaleY, b.scaleY, t), rotation: motionAngle(a.rotation, b.rotation, t), flipX: t < .5 ? a.flipX : b.flipX } }

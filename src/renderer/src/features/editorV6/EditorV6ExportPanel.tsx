@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { EditorV6Document } from '../../../../shared/editorV6'
 import { frameTimecode } from '../../../../shared/editorV6Timeline'
 import { planEditorV6Export, type EditorV6ExportAudio, type EditorV6ExportOptions, type EditorV6ExportStatus } from '../../../../shared/editorV6Export'
@@ -7,6 +7,13 @@ import { missingEditorV6Motions } from '../../../../shared/editorV6Motion'
 let rememberedJob: EditorV6ExportStatus | null = null
 const finished = (job: EditorV6ExportStatus) => ['completed', 'cancelled', 'failed'].includes(job.state)
 export function EditorV6ExportPanel({ project, open, onClose, onChange, motionError }: { project: EditorV6Document; open: boolean; onClose: () => void; onChange: (update: (project: EditorV6Document) => EditorV6Document) => void; motionError?: string }) {
+  const dialog = useRef<HTMLElement>(null)
+  useLayoutEffect(() => {
+    if (!open) return
+    const previous = document.activeElement
+    dialog.current?.focus()
+    return () => { if (previous instanceof HTMLElement && previous.isConnected) previous.focus() }
+  }, [open])
   const [job, setJob] = useState(rememberedJob)
   const [options, setOptions] = useState<EditorV6ExportOptions>({ startFrame: 0, endFrame: project.timeline.durationFrames, width: 1920, height: 1080, turbo: true, encoder: 'auto' })
   const [busy, setBusy] = useState(false)
@@ -50,7 +57,7 @@ export function EditorV6ExportPanel({ project, open, onClose, onChange, motionEr
   const frames = (value: string, maximum = 1_000_000) => Math.max(0, Math.min(maximum, Math.round(Number(value) * 30) || 0))
   if (!open) return null
   return <div className="v6-export-backdrop" onPointerDown={(event) => { if (event.target === event.currentTarget && !busy) onClose() }}>
-    <section className="v6-export-panel" role="dialog" aria-modal="true" aria-labelledby="v6-export-title">
+    <section ref={dialog} tabIndex={-1} className="v6-export-panel" role="dialog" aria-modal="true" aria-labelledby="v6-export-title">
       <header><div><small>EDITOR V6 · MP4</small><h2 id="v6-export-title">Exportar vídeo</h2></div><button type="button" onClick={onClose} disabled={busy} aria-label="Fechar exportador">×</button></header>
       <p>Duas partes em paralelo no Turbo. O ganho de velocidade depende do computador e da cena.</p>
       <fieldset disabled={busy || active}><legend>Vídeo</legend><div className="v6-export-grid">
@@ -71,8 +78,9 @@ export function EditorV6ExportPanel({ project, open, onClose, onChange, motionEr
         </div>)}</div><button type="button" disabled={(project.exportAudio?.length ?? 0) >= 32} onClick={() => void importAudio()}>＋ Adicionar áudio</button>
       </fieldset>
       {job && <div className={`v6-export-progress state-${job.state}`} role="status"><strong>{job.message}</strong><progress value={job.frames} max={job.totalFrames || 1} /><span>{job.frames} / {job.totalFrames} quadros{job.fallback ? ' · Recuperação pelo modo seguro' : ''}</span>{job.error && <p>{job.error}</p>}{active && <small>Você pode fechar este painel. Mantenha o aplicativo aberto até terminar.</small>}{finished(job) && <button type="button" onClick={() => void window.desktop.revealEditorV6Export(job.id).catch((reason: unknown) => setError(String(reason)))}>{job.state === 'completed' ? 'Mostrar MP4 e relatório' : 'Mostrar relatório'}</button>}</div>}
+      {motionsPending && <p role="status">{motionError ?? 'Preparando animações do intervalo escolhido…'}</p>}
       {error && <p role="alert" className="v6-export-error">{error}</p>}
-      <footer>{active ? <button type="button" disabled={busy} onClick={() => void cancel()}>Cancelar exportação</button> : <button className="v6-export-primary" type="button" disabled={busy} onClick={() => void start()}>{busy ? 'Preparando…' : options.turbo ? 'EXPORTAR TURBO 2×' : 'EXPORTAR MP4'}</button>}<button type="button" disabled={busy} onClick={onClose}>Fechar painel</button></footer>
+      <footer>{active ? <button type="button" disabled={busy} onClick={() => void cancel()}>Cancelar exportação</button> : <button className="v6-export-primary" type="button" disabled={busy || motionsPending} onClick={() => void start()}>{busy ? 'Preparando…' : options.turbo ? 'EXPORTAR TURBO 2×' : 'EXPORTAR MP4'}</button>}<button type="button" disabled={busy} onClick={onClose}>Fechar painel</button></footer>
     </section>
   </div>
 }

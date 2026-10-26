@@ -18,14 +18,14 @@ export function useEditorV6Motion(project: EditorV6Document | null, characters: 
   const key = current ? JSON.stringify([current.key, character?.updatedAt]) : ''
   useEffect(() => {
     if (!enabled || !current || failure.current?.key === key) return
-    if (!character) { setStatus('O personagem da animação não foi encontrado no Customizador.'); return }
+    if (!character) { const error = 'O personagem da animação não foi encontrado no Customizador.'; failure.current = { key, error }; setStatus(error); return }
     let stopped = false, requestId: string | null = null
     const timer = window.setTimeout(() => {
       setStatus(`Preparando animação de ${current.from.text}…`)
-      const cached = cache.get(current.key)
+      const cached = cache.get(key)
       const operation = cached ? Promise.resolve(cached) : window.desktop.bakeEditorV6Motion({ id: requestId = crypto.randomUUID(), plan: current, character })
       void operation.then((result) => {
-        remember(current.key, result)
+        remember(key, result)
         if (!stopped) { failure.current = null; updateRef.current((document) => attachEditorV6Motion(document, current.blockId, result)); setStatus('') }
       }).catch((error: unknown) => {
         if (!stopped) { const message = error instanceof Error ? error.message : String(error); failure.current = { key, error: message }; setStatus(message) }

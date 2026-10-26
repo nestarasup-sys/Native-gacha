@@ -2243,8 +2243,8 @@ app.on('before-quit', (event) => {
     ...fabricatorSaveQueues.values(), ...poseSaveWrites, ...hairSaveQueues.values(),
     studioSaveQueues.studio, editorV6SaveQueue, roteirosSaveQueue,
     ...(dataMigrationTask ? [dataMigrationTask] : []),
-    ...(editorV6ExportService ? [editorV6ExportService.drain()] : [])
-    ,...(editorV6MotionService ? [editorV6MotionService.drain()] : [])
+    ...(editorV6ExportService ? [editorV6ExportService.drain()] : []),
+    ...(editorV6MotionService ? [editorV6MotionService.drain()] : [])
   ]
   void Promise.allSettled(pendingWrites).then((results) => {
     waitingForPersistenceWritesBeforeQuit = false
