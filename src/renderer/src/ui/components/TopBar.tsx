@@ -3,6 +3,7 @@ import { Icon } from './Icon'
 
 const sections = [
   { label: 'Studio', path: '/estudio', icon: 'camera' },
+  { label: 'EDITOR V6', path: '/editor-v6', icon: 'sparkles' },
   { label: 'Roteiros', path: '/roteiros', icon: 'message' },
   { label: 'Base de vídeos', path: '/base-videos', icon: 'frame' },
   { label: 'Customizar', path: '/customizar', icon: 'bow' },

@@ -9,6 +9,8 @@ import type { FaceAssetKind, FaceAssetSave, FaceCatalogItem, FaceCatalogItemSave
 import { hairCategories } from '../src/shared/hairCategories'
 import type { StudioAsset, StudioDocument } from '../src/shared/studio'
 import { isStudioExpressionEffects, isStudioFaceTransforms } from '../src/shared/studio'
+import type { EditorV6Asset, EditorV6Document } from '../src/shared/editorV6'
+import { isEditorV6ExpressionEffects, isEditorV6FaceTransforms } from '../src/shared/editorV6'
 import { VideoLibraryStore, configureVideoLibraryStorage } from './videoLibrary'
 import { VideoBackgroundLibraryStore, configureBackgroundLibraryStorage } from './backgroundLibrary'
 import { RoteiroUiGifLibraryStore, configureRoteiroUiGifStorage } from './roteiroUiGifLibrary'
@@ -54,11 +56,15 @@ import { registerStudioPrimaryHandlers } from './domains/studio/primaryIpc'
 import { createStudioLibraryIndex } from './domains/studio/libraryIndex'
 import { createStudioDocumentPersistence } from './domains/studio/documentPersistence'
 import { studioIpcChannels } from '../src/shared/studioIpcChannels'
+import { editorV6IpcChannels } from '../src/shared/editorV6IpcChannels'
 import type { AssetNamespace } from './domains/fabricator/versionedAssetResolver'
 import { inspectFabricatorStorage } from '../src/shared/fabricatorStorageCompatibility'
 import { fabricatorIpcChannels } from '../src/shared/fabricatorIpcChannels'
 import { captureFabricatorRealScreens, captureCustomizerStudioRealScreens, captureCustomizerStudioReopened } from './domains/fabricator/visualUiCapture'
 import { registerModelSourceDownloadHandlers } from './domains/fabricator/modelSourceExportIpc'
+import { registerEditorV6PrimaryHandlers } from './domains/editorV6/primaryIpc'
+import { createEditorV6LibraryIndex } from './domains/editorV6/libraryIndex'
+import { createEditorV6DocumentPersistence } from './domains/editorV6/documentPersistence'
 
 let configuredAppDataRoot: string | null = null
 let roteirosSaveQueue: Promise<void> = Promise.resolve()
@@ -277,10 +283,13 @@ const hairStylePath = (modelSlot: number, id: string) => join(hairModelPath(mode
 const characterLibraryPath = () => join(app.getPath('userData'), 'customizer', 'characters')
 const studioLibraryPath = (workspace: 'studio' | 'video' = 'studio') => join(app.getPath('userData'), 'studios', workspace === 'video' ? 'Editor Gacha' : 'Studio Principal')
 const studioPath = (id: string) => join(studioLibraryPath('studio'), `studio-${id}`)
+const editorV6LibraryPath = () => join(app.getPath('userData'), 'studios', 'Editor V6')
+const editorV6Path = (id: string) => join(editorV6LibraryPath(), `editorV6-${id}`)
 const videoLibrary = new VideoLibraryStore(() => studioLibraryPath('video'))
 const videoBackgroundLibrary = new VideoBackgroundLibraryStore(() => studioLibraryPath('video'))
 const roteiroUiGifLibrary = new RoteiroUiGifLibraryStore(() => studioLibraryPath('video'))
 const studioSaveQueues = { studio: Promise.resolve() as Promise<void> }
+let editorV6SaveQueue: Promise<void> = Promise.resolve()
 const characterManifestPath = () => join(characterLibraryPath(), 'characters.json')
 const fabricatorSaveQueues = new Map<number, Promise<void>>()
 let poseSaveQueue: Promise<void> = Promise.resolve()
@@ -962,6 +971,64 @@ const { listStudios } = createStudioLibraryIndex({
   readStudio
 })
 
+function isEditorV6Document(value: unknown): value is EditorV6Document {
+  if (!value || typeof value !== 'object') return false
+  const editorV6 = value as Partial<EditorV6Document>
+  const assets = editorV6.assets
+  const elements = editorV6.elements
+  return editorV6.schemaVersion === 1
+    && typeof editorV6.id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(editorV6.id)
+    && typeof editorV6.title === 'string' && editorV6.title.trim().length > 0 && editorV6.title.length <= 100
+    && typeof editorV6.color === 'string' && /^(#[0-9a-f]{6}|hsl\([\d.]+\s+[\d.]+%\s+[\d.]+%\))$/i.test(editorV6.color)
+    && typeof editorV6.createdAt === 'string' && Number.isFinite(Date.parse(editorV6.createdAt))
+    && typeof editorV6.updatedAt === 'string' && Number.isFinite(Date.parse(editorV6.updatedAt))
+    && typeof editorV6.backgroundColor === 'string' && /^#[0-9a-f]{6}$/i.test(editorV6.backgroundColor)
+    && (editorV6.backgroundAssetId === null || typeof editorV6.backgroundAssetId === 'string')
+    && (editorV6.thumbnailDataUrl === undefined || typeof editorV6.thumbnailDataUrl === 'string' && /^data:image\/(jpeg|png);base64,/.test(editorV6.thumbnailDataUrl) && editorV6.thumbnailDataUrl.length <= 1_500_000)
+    && [editorV6.backgroundX, editorV6.backgroundY, editorV6.backgroundWidth, editorV6.backgroundHeight, editorV6.backgroundRotation].every(Number.isFinite)
+    && Array.isArray(assets) && assets.length <= 500
+    && assets.every((asset) => isEditorV6Asset(asset))
+    && Array.isArray(elements) && elements.length <= 1000
+    && (editorV6.backgroundAssetId === null || assets.some((asset) => asset.id === editorV6.backgroundAssetId && asset.category === 'background'))
+    && elements.every((element) => Boolean(element && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(element.id) && typeof element.text === 'string'
+      && ['image', 'character', 'narrator', 'speech', 'thought'].includes(element.kind)
+      && isEditorV6FaceTransforms(element.faceTransforms)
+      && (element.expressionBase === undefined || Boolean(element.expressionBase && element.expressionBase.appearance && isValidCustomizerFaceAppearance(element.expressionBase.appearance)
+        && element.expressionBase.transforms && isEditorV6FaceTransforms(element.expressionBase.transforms)))
+      && (element.activeExpressionPresetId === undefined || element.activeExpressionPresetId === null || typeof element.activeExpressionPresetId === 'string' && isValidWardrobeId(element.activeExpressionPresetId))
+      && isEditorV6ExpressionEffects(element.activeExpressionEffects)
+      && (element.activeExpressionCollectionId === undefined || typeof element.activeExpressionCollectionId === 'string' && isValidWardrobeId(element.activeExpressionCollectionId))
+      && (element.characterSourceUpdatedAt === undefined || (typeof element.characterSourceUpdatedAt === 'string' && Number.isFinite(Date.parse(element.characterSourceUpdatedAt))))
+      && (element.kind !== 'image' || assets.some((asset) => asset.id === element.assetId && asset.category === 'object'))
+      && (element.kind !== 'character' || (typeof element.characterId === 'string' && assets.some((asset) => asset.id === element.assetId && asset.category === 'character')))
+      && [element.x, element.y, element.width, element.height, element.rotation, element.zIndex].every(Number.isFinite)))
+}
+
+function isEditorV6Asset(value: unknown): value is EditorV6Asset {
+  if (!value || typeof value !== 'object') return false
+  const asset = value as Partial<EditorV6Asset>
+  return typeof asset.id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(asset.id)
+    && (asset.category === 'background' || asset.category === 'object' || asset.category === 'character')
+    && typeof asset.name === 'string' && asset.name.length <= 255
+    && (asset.mimeType === 'image/png' || asset.mimeType === 'image/jpeg' || asset.mimeType === 'image/webp')
+    && typeof asset.dataUrl === 'string' && asset.dataUrl.startsWith(`data:${asset.mimeType};base64,`) && asset.dataUrl.length <= 70_000_000
+}
+
+const { readEditorV6, writeEditorV6, removeEditorV6 } = createEditorV6DocumentPersistence({
+  files: { readFile, writeFile, mkdir, access, rename, unlink, rm },
+  editorV6Path,
+  editorV6LibraryPath,
+  validate: isEditorV6Document,
+  decodeImage: importedImageDataUrlBuffer,
+  normalizeImage: normalizeImageBuffer
+})
+
+const { listEditorV6s } = createEditorV6LibraryIndex({
+  files: { mkdir, readdir },
+  editorV6LibraryPath,
+  readEditorV6
+})
+
 function dataUrlBuffer(dataUrl: string): Buffer {
   const match = /^data:image\/png;base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl)
   if (!match) throw new Error('Arquivo de peça inválido.')
@@ -1104,7 +1171,7 @@ async function registerFabricatorHandlers(): Promise<void> {
       ...fabricatorSaveQueues.values(), ...poseSaveWrites, ...hairSaveQueues.values(),
       animatorSaveQueue, wardrobeSaveQueue, faceSaveQueue, expressionPresetSaveQueue,
       faceGuideSaveQueue, customizerService.pendingWrites,
-      studioSaveQueues.studio, roteirosSaveQueue
+      studioSaveQueues.studio, editorV6SaveQueue, roteirosSaveQueue
     ]
     const results = await Promise.allSettled(pendingWrites)
     const failedWrite = results.find((result): result is PromiseRejectedResult => result.status === 'rejected')
@@ -1118,6 +1185,16 @@ async function registerFabricatorHandlers(): Promise<void> {
     remove: (id) => removeStudio(id),
     getPendingWrites: () => studioSaveQueues.studio,
     setPendingWrites: (pending) => { studioSaveQueues.studio = pending },
+    measure: (label, operation) => measureIpc(label, operation)
+  })
+
+  registerEditorV6PrimaryHandlers({
+    ipcMain, assertTrustedSender,
+    list: () => listEditorV6s(),
+    write: (document) => writeEditorV6(document),
+    remove: (id) => removeEditorV6(id),
+    getPendingWrites: () => editorV6SaveQueue,
+    setPendingWrites: (pending) => { editorV6SaveQueue = pending },
     measure: (label, operation) => measureIpc(label, operation)
   })
 
@@ -1166,6 +1243,46 @@ async function registerFabricatorHandlers(): Promise<void> {
     } else await mkdir(printsFolder, { recursive: true })
     const error = await shell.openPath(folderToOpen)
     if (error) throw new Error(`Não foi possível abrir a pasta de prints: ${error}`)
+  })
+
+  ipcMain.handle(editorV6IpcChannels.getEditorV6Folder, (event): string => {
+    assertTrustedSender(event)
+    return editorV6LibraryPath()
+  })
+  ipcMain.handle(editorV6IpcChannels.importEditorV6Image, async (event, category: EditorV6Asset['category']): Promise<EditorV6Asset | null> => {
+    assertTrustedSender(event)
+    if (category !== 'background' && category !== 'object') throw new Error('Categoria de imagem inválida para o Editor V6.')
+    const result = await dialog.showOpenDialog({
+      title: `Editor V6: ${category === 'background' ? 'adicionar imagem de fundo' : 'adicionar objeto à cena'}`,
+      properties: ['openFile'],
+      filters: [{ name: 'Imagens', extensions: ['png', 'jpg', 'jpeg', 'webp'] }]
+    })
+    if (result.canceled || !result.filePaths[0]) return null
+    const path = result.filePaths[0]
+    if ((await stat(path)).size > 50 * 1024 * 1024) throw new Error('A imagem excede o limite de 50 MB.')
+    const canonical = await normalizeImageBuffer(await readFile(path))
+    return { id: randomUUID(), category, name: basename(path), mimeType: 'image/png', dataUrl: `data:image/png;base64,${canonical.bytes.toString('base64')}` }
+  })
+  ipcMain.handle(editorV6IpcChannels.saveEditorV6Print, async (event, id: string, dataUrl: string): Promise<string | null> => {
+    assertTrustedSender(event)
+    if (typeof id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) throw new Error('Identificador de projeto V6 inválido.')
+    const bytes = dataUrlBuffer(dataUrl)
+    if (bytes.length > 50 * 1024 * 1024) throw new Error('O print excede o limite de 50 MB.')
+    const printsFolder = join(editorV6Path(id), 'prints')
+    await mkdir(printsFolder, { recursive: true })
+    const printPath = join(printsFolder, `print-${new Date().toISOString().replace(/[:.]/g, '-')}-${randomUUID().slice(0, 8)}.png`)
+    await writeFile(printPath, bytes)
+    return printPath
+  })
+  ipcMain.handle(editorV6IpcChannels.openEditorV6Prints, async (event, id: string): Promise<void> => {
+    assertTrustedSender(event)
+    if (typeof id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) throw new Error('Identificador de projeto V6 inválido.')
+    const projectFolder = resolve(editorV6Path(id))
+    const printsFolder = resolve(projectFolder, 'prints')
+    if (dirname(printsFolder) !== projectFolder) throw new Error('Pasta de prints do Editor V6 inválida.')
+    await mkdir(printsFolder, { recursive: true })
+    const error = await shell.openPath(printsFolder)
+    if (error) throw new Error(`Não foi possível abrir a pasta de prints do Editor V6: ${error}`)
   })
 
   ipcMain.handle('video-library:list', async (event) => { assertTrustedSender(event); return videoLibrary.list() })
@@ -2039,7 +2156,7 @@ app.whenReady().then(async () => {
     const pending = [
       ...fabricatorSaveQueues.values(), ...poseSaveWrites, ...hairSaveQueues.values(), animatorSaveQueue,
       wardrobeSaveQueue, faceSaveQueue, expressionPresetSaveQueue, faceGuideSaveQueue, customizerService.pendingWrites,
-      studioSaveQueues.studio
+      studioSaveQueues.studio, editorV6SaveQueue
     ]
     const results = await Promise.allSettled(pending)
     const failed = results.find((result): result is PromiseRejectedResult => result.status === 'rejected')
@@ -2156,7 +2273,7 @@ app.on('before-quit', (event) => {
   waitingForPersistenceWritesBeforeQuit = true
   const pendingWrites = [
     ...fabricatorSaveQueues.values(), ...poseSaveWrites, ...hairSaveQueues.values(),
-    studioSaveQueues.studio, roteirosSaveQueue,
+    studioSaveQueues.studio, editorV6SaveQueue, roteirosSaveQueue,
     ...(dataMigrationTask ? [dataMigrationTask] : [])
   ]
   void Promise.allSettled(pendingWrites).then((results) => {

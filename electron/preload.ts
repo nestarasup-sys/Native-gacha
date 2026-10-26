@@ -1,9 +1,11 @@
 import { createFabricatorInvoker, fabricatorIpcChannels } from '../src/shared/fabricatorIpcChannels'
 import { createStudioInvoker } from '../src/shared/studioIpcChannels'
+import { createEditorV6Invoker } from '../src/shared/editorV6IpcChannels'
 import { contextBridge, ipcRenderer } from 'electron'
 import type { FabricatorDesktopApi, FabricatorModelSourcePublishRequest } from '../src/shared/fabricator'
 import type { CustomizerDesktopApi } from '../src/shared/customizer'
 import type { StudioDesktopApi, VideoLibraryDesktopApi } from '../src/shared/studio'
+import type { EditorV6DesktopApi } from '../src/shared/editorV6'
 import type { RoteirosDesktopApi } from '../src/shared/roteiros'
 
 const invokeFabricator = createFabricatorInvoker(ipcRenderer)
@@ -90,6 +92,17 @@ const studioApi: StudioDesktopApi = {
   openStudioPrints: (studioId) => invokeStudio('openStudioPrints', studioId)
 }
 
+const invokeEditorV6 = createEditorV6Invoker(ipcRenderer)
+const editorV6Api: EditorV6DesktopApi = {
+  listEditorV6Projects: () => invokeEditorV6('listEditorV6Projects'),
+  saveEditorV6Project: (document) => invokeEditorV6('saveEditorV6Project', document),
+  deleteEditorV6Project: (id) => invokeEditorV6('deleteEditorV6Project', id),
+  getEditorV6Folder: () => invokeEditorV6('getEditorV6Folder'),
+  importEditorV6Image: (category) => invokeEditorV6('importEditorV6Image', category),
+  saveEditorV6Print: (id, dataUrl) => invokeEditorV6('saveEditorV6Print', id, dataUrl),
+  openEditorV6Prints: (id) => invokeEditorV6('openEditorV6Prints', id)
+}
+
 const videoLibraryApi: VideoLibraryDesktopApi = {
   listVideoLibrary: () => ipcRenderer.invoke('video-library:list'),
   importVideoLibrary: () => ipcRenderer.invoke('video-library:import'),
@@ -151,6 +164,7 @@ contextBridge.exposeInMainWorld('desktop', {
   ...fabricatorApi,
   ...customizerApi,
   ...studioApi,
+  ...editorV6Api,
   ...videoLibraryApi,
   ...roteirosApi
 })

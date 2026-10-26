@@ -6,6 +6,7 @@ import { AppErrorBoundary } from './components/AppErrorBoundary'
 
 const LazyCustomizerPage = lazy(async () => ({ default: (await import('../features/customizer/CustomizerPage')).CustomizerPage }))
 const LazyStudioPage = lazy(async () => ({ default: (await import('../features/studio/StudioPage')).StudioPage }))
+const LazyEditorV6Page = lazy(async () => ({ default: (await import('../features/editorV6/EditorV6Page')).EditorV6Page }))
 const LazyOptionsPage = lazy(async () => ({ default: (await import('../features/options/OptionsPage')).OptionsPage }))
 const LazyFabricatorPage = lazy(async () => ({ default: (await import('../features/fabricator/FabricatorPage')).FabricatorPage }))
 const LazyBaseVideosPage = lazy(async () => ({ default: (await import('../features/roteiros/BaseVideosPage')).BaseVideosPage }))
@@ -26,6 +27,7 @@ export function App() {
               <Route path="/" element={<Navigate to="/customizar" replace />} />
               <Route path="/customizar" element={<LazyCustomizerPage />} />
               <Route path="/estudio" element={<LazyStudioPage />} />
+              <Route path="/editor-v6" element={<LazyEditorV6Page />} />
               <Route path="/roteiros" element={<LazyRoteirosPage />} />
               <Route path="/base-videos" element={<LazyBaseVideosPage />} />
               <Route path="/opcoes" element={<LazyOptionsPage />} />
