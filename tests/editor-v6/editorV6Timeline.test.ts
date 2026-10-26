@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { createEditorV6Timeline, syncEditorV6TimelineElements, type EditorV6Document, type EditorV6Element } from '../../src/shared/editorV6'
-import { addEditorV6ElementAtFrame, editEditorV6DocumentAtBlock, isEditorV6BlinkFrame, normalizeEditorV6Timeline, duplicateEditorV6Block, repairEditorV6DuplicateAssets, resolveEditorV6ElementsAtFrame, resolveEditorV6SceneAtFrame, setEditorV6BlockTiming, snapEditorV6Frame, splitEditorV6Block, timelineClips } from '../../src/shared/editorV6Timeline'
+import { addEditorV6ElementAtFrame, editEditorV6DocumentAtBlock, isEditorV6BlinkFrame, normalizeEditorV6Timeline, duplicateEditorV6Block, repairEditorV6DuplicateAssets, repairEditorV6FaceModeAssetReferences, resolveEditorV6ElementsAtFrame, resolveEditorV6SceneAtFrame, setEditorV6BlockTiming, snapEditorV6Frame, splitEditorV6Block, timelineClips } from '../../src/shared/editorV6Timeline'
 import { editorV6DocumentSchema } from '../../src/shared/editorV6Schema'
 
 function fixture(): EditorV6Document {
@@ -93,6 +93,21 @@ describe('timeline do Editor V6', () => {
     expect(new Set(repaired.assets.map((asset) => asset.id)).size).toBe(2)
     const image = resolveEditorV6ElementsAtFrame(repaired, 30)[0].assetId
     expect(repaired.assets.find((asset) => asset.id === image)?.dataUrl).toBe('data:image/png;base64,AQ==')
+    expect(editorV6DocumentSchema.safeParse(repaired).success).toBe(true)
+  })
+
+  it('remove referências faciais órfãs sem apagar modos cujos assets continuam válidos', () => {
+    const document = fixture(), actor = document.elements[0], clip = actorClip(document)
+    const blinkId = crypto.randomUUID()
+    document.assets.push({ id: blinkId, category: 'character', name: 'Alice · blink', mimeType: 'image/png', dataUrl: 'data:image/png;base64,AA==', timelineSnapshot: true })
+    const withStaleReferences = {
+      ...document,
+      elements: [{ ...actor, faceModeAssetIds: { idle: actor.assetId!, blink: blinkId, talk: crypto.randomUUID(), 'talk-blink': crypto.randomUUID() } }],
+      timeline: { ...document.timeline, tracks: document.timeline.tracks.map((track) => track.id === clip.track.id ? { ...track, blocks: track.blocks.map((block) => ({ ...block, state: { ...actor, faceModeAssetIds: { idle: actor.assetId!, blink: blinkId, talk: crypto.randomUUID() } } })) } : track) }
+    }
+    const repaired = repairEditorV6FaceModeAssetReferences(withStaleReferences)
+    expect(repaired.elements[0].faceModeAssetIds).toEqual({ idle: actor.assetId, blink: blinkId })
+    expect(actorClip(repaired).block.state?.faceModeAssetIds).toEqual({ idle: actor.assetId, blink: blinkId })
     expect(editorV6DocumentSchema.safeParse(repaired).success).toBe(true)
   })
 

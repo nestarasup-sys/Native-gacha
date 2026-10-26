@@ -250,6 +250,33 @@ export function pruneEditorV6TimelineSnapshots(document: EditorV6Document): Edit
   return assets.length === document.assets.length ? document : { ...document, assets }
 }
 
+/** Drop optional facial mode links whose image was removed by an edit or legacy cleanup. */
+export function repairEditorV6FaceModeAssetReferences(document: EditorV6Document): EditorV6Document {
+  const characterAssets = new Set(document.assets.filter((asset) => asset.category === 'character').map((asset) => asset.id))
+  const repairElement = (element: EditorV6Element): EditorV6Element => {
+    if (!element.faceModeAssetIds) return element
+    const previous = element.faceModeAssetIds
+    const faceModeAssetIds = Object.fromEntries(Object.entries(previous).filter(([, assetId]) => assetId && characterAssets.has(assetId))) as NonNullable<EditorV6Element['faceModeAssetIds']>
+    return Object.keys(faceModeAssetIds).length === Object.keys(previous).length ? element : { ...element, faceModeAssetIds }
+  }
+  const elements = document.elements.map(repairElement)
+  let changed = elements.some((element, index) => element !== document.elements[index])
+  const tracks = document.timeline.tracks.map((track) => {
+    let trackChanged = false
+    const blocks = track.blocks.map((block) => {
+      if (!block.state) return block
+      const state = repairElement(block.state)
+      if (state === block.state) return block
+      trackChanged = true
+      return { ...block, state }
+    })
+    if (!trackChanged) return track
+    changed = true
+    return { ...track, blocks }
+  })
+  return changed ? { ...document, elements, timeline: { ...document.timeline, tracks } } : document
+}
+
 /** Recover duplicate image IDs from a live editor session without dropping either image. */
 export function repairEditorV6DuplicateAssets(document: EditorV6Document, selectedBlockId: string | null): EditorV6Document {
   const seen = new Set<string>(), replaced = new Map<string, string>()

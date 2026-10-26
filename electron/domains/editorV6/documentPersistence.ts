@@ -4,7 +4,7 @@ import type * as nodeFs from 'node:fs/promises'
 import { createEditorV6Timeline, syncEditorV6TimelineElements, type EditorV6Asset, type EditorV6Document, type EditorV6ProjectSummary, type EditorV6Timeline } from '../../../src/shared/editorV6'
 import { publishEditorV6AssetsAndManifest, recoverEditorV6AssetTransaction } from './assetTransaction.ts'
 import { normalizeEditorV6Timeline } from '../../../src/shared/editorV6Timeline'
-import { editorV6MediaAssetSchema } from '../../../src/shared/editorV6Schema'
+import { editorV6DocumentSchema, editorV6MediaAssetSchema } from '../../../src/shared/editorV6Schema'
 
 type Files = Pick<typeof nodeFs, 'readFile' | 'writeFile' | 'mkdir' | 'access' | 'rename' | 'unlink' | 'rm'>
 
@@ -106,7 +106,11 @@ export function createEditorV6DocumentPersistence(deps: {
   }
 
   async function writeEditorV6(editorV6: EditorV6Document): Promise<void> {
-    if (!deps.validate(editorV6)) throw new Error('Dados do EditorV6 inválidos.')
+    if (!deps.validate(editorV6)) {
+      const parsed = editorV6DocumentSchema.safeParse(editorV6)
+      const details = parsed.success ? '' : parsed.error.issues.slice(0, 8).map((issue) => `${issue.path.join('.') || 'projeto'}: ${issue.message}`).join('; ')
+      throw new Error(`Dados do EditorV6 inválidos.${details ? ` ${details}` : ''}`)
+    }
     const folder = deps.editorV6Path(editorV6.id)
     await Promise.all([
       mkdir(join(folder, 'assets', 'backgrounds'), { recursive: true }),
