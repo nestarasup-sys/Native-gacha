@@ -318,6 +318,11 @@ export function WardrobeWorkspace() {
     setProcessing(true); setError(''); setImportPickerOpen(false)
     try {
       const image = await createImageBitmap(file)
+      const columns = gridSize; const rows = 3
+      if (!image.width || !image.height || image.width < columns || image.height < rows) {
+        image.close()
+        throw new Error(`A imagem está pequena demais para uma grade ${columns}×${rows}. Use uma imagem com pelo menos ${columns} colunas e 3 linhas de pixels.`)
+      }
       if (image.width * image.height > 32_000_000) { image.close(); throw new Error('A imagem tem mais de 32 milhões de pixels. Reduza as dimensões para continuar.') }
       const canvas = document.createElement('canvas'); canvas.width = image.width; canvas.height = image.height
       const context = canvas.getContext('2d', { willReadFrequently: true })
@@ -326,11 +331,14 @@ export function WardrobeWorkspace() {
       image.close()
       const torso = (referenceModel ?? model).parts.find((part) => /tronco|corpo|torso|chest|peito/i.test(part.name))
       if (!torso) throw new Error('Não encontrei uma parte de tronco no modelo salvo.')
-      const columns = gridSize; const rows = 3
       const cellWidth = image.width / columns; const cellHeight = image.height / rows
       const components: WardrobeComponent[] = []
       for (let row = 0; row < rows; row += 1) for (let column = 0; column < columns; column += 1) {
-        const tile = context.getImageData(Math.floor(column * cellWidth), Math.floor(row * cellHeight), Math.ceil(cellWidth), Math.ceil(cellHeight))
+        const left = Math.floor(column * cellWidth); const top = Math.floor(row * cellHeight)
+        const right = Math.floor((column + 1) * cellWidth); const bottom = Math.floor((row + 1) * cellHeight)
+        const tileWidth = right - left; const tileHeight = bottom - top
+        if (tileWidth <= 0 || tileHeight <= 0) continue
+        const tile = context.getImageData(left, top, tileWidth, tileHeight)
         removeFlatBackground(tile)
         let minX = tile.width; let minY = tile.height; let maxX = -1; let maxY = -1
         for (let y = 0; y < tile.height; y += 1) for (let x = 0; x < tile.width; x += 1) if (tile.data[(y * tile.width + x) * 4 + 3] > 24) { minX = Math.min(minX, x); minY = Math.min(minY, y); maxX = Math.max(maxX, x); maxY = Math.max(maxY, y) }
