@@ -62,7 +62,7 @@ describe('timeline do Editor V6', () => {
     track.blocks.push({ id: crypto.randomUUID(), label: 'Cena.mp4', mediaId: videoId, startFrame: 30, durationFrames: 90, mediaInFrame: 15, audioEnabled: true, gain: 1 })
     document.timeline.durationFrames = 300
     expect(resolveEditorV6SceneAtFrame(document, 29).mediaVideo).toBeUndefined()
-    expect(resolveEditorV6SceneAtFrame(document, 45).mediaVideo).toMatchObject({ mediaId: videoId, startFrame: 30, sourceInFrame: 15, audioEnabled: true })
+    expect(resolveEditorV6SceneAtFrame(document, 45).mediaVideo).toMatchObject({ mediaId: videoId, startFrame: 30, sourceInFrame: 15, audioEnabled: true, layout: { x: 0, y: 0, width: 40, height: 40, rotation: 0 } })
     expect(resolveEditorV6SceneAtFrame(document, 120).mediaVideo).toBeUndefined()
     expect(editorV6DocumentSchema.safeParse(document).success).toBe(true)
   })
@@ -74,6 +74,16 @@ describe('timeline do Editor V6', () => {
     const scene = resolveEditorV6SceneAtFrame(document, 10)
     expect(scene.mediaVideo?.url).toBe(`gacha-editor-media://library/${document.id}/${libraryId}`)
     expect(editorV6DocumentSchema.safeParse(document).success).toBe(true)
+  })
+
+  it('preserva a posição, o tamanho e a rotação do vídeo na cena e valida seus limites', () => {
+    const document = fixture(), videoId = crypto.randomUUID()
+    document.media = [{ id: videoId, name: 'Cena.mp4', fileName: `${videoId}.mp4`, kind: 'video', mimeType: 'video/mp4', sourceFrames: 180, hasAudio: false, sizeBytes: 1024 }]
+    document.timeline.tracks.find((track) => track.kind === 'video')!.blocks = [{ id: crypto.randomUUID(), label: 'Cena.mp4', mediaId: videoId, startFrame: 0, durationFrames: 90, mediaLayout: { x: 12, y: -8, width: 55, height: 36, rotation: 15 } }]
+    expect(resolveEditorV6SceneAtFrame(document, 10).mediaVideo?.layout).toEqual({ x: 12, y: -8, width: 55, height: 36, rotation: 15 })
+    expect(editorV6DocumentSchema.safeParse(document).success).toBe(true)
+    document.timeline.tracks.find((track) => track.kind === 'video')!.blocks[0].mediaLayout!.width = 0
+    expect(editorV6DocumentSchema.safeParse(document).success).toBe(false)
   })
 
   it('insere uma fala no cursor com texto independente e preserva a precisão de quadros', () => {

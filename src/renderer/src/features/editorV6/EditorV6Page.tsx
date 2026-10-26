@@ -2,7 +2,7 @@ import { editorV6CharacterRenderKey, editorV6ElementSize } from '../../../../sha
 import { SerializedDocumentSaveQueue } from '../../../../shared/editorV6DocumentSave'
 import { isPoseSnapshotForModel } from '../../../../shared/characterSourceContinuity'
 import { useEditorV6Store } from './editorV6Store'
-import { createEditorV6Timeline, syncEditorV6TimelineElements } from '../../../../shared/editorV6'
+import { createEditorV6Timeline, EDITOR_V6_DEFAULT_VIDEO_LAYOUT, editorV6DefaultVideoLayout, syncEditorV6TimelineElements } from '../../../../shared/editorV6'
 import { EditorV6Timeline } from './EditorV6Timeline'
 import { EditorV6ExportPanel } from './EditorV6ExportPanel'
 import { EditorV6VideoPickerModal } from './EditorV6VideoPickerModal'
@@ -21,13 +21,13 @@ import { CharacterPortrait } from '../../ui/components/CharacterPortrait'
 import { recordEditorV6PlaybackFrame, recordUiCommit } from '../../ui/performanceDiagnostics'
 import { resolveEditorV6TalkMouthId } from '../../../../shared/editorV6'
 import { fitEditorV6CharacterToStage } from '../../../../shared/editorV6CharacterGeometry'
-import { editorV6ProjectSummary, type EditorV6Asset, type EditorV6Document, type EditorV6Element, type EditorV6FaceMode, type EditorV6FaceRenderMode, type EditorV6FaceTransform, type EditorV6FaceTransforms, type EditorV6ProjectSummary } from '../../../../shared/editorV6'
+import { editorV6ProjectSummary, type EditorV6Asset, type EditorV6Document, type EditorV6Element, type EditorV6FaceMode, type EditorV6FaceRenderMode, type EditorV6FaceTransform, type EditorV6FaceTransforms, type EditorV6ProjectSummary, type EditorV6TimelineBlock, type EditorV6VideoLayout } from '../../../../shared/editorV6'
 import type { CustomizerCharacter } from '../../../../shared/customizer'
 import type { CustomizerFaceAppearance } from '../../../../shared/customizer'
 import type { FaceCatalogItem, FaceCatalogItemSummary, FaceExpressionEffects, FaceExpressionPreset, FaceExpressionPresetSummary, FaceSheetKind, FabricatorPoseSummary } from '../../../../shared/fabricator'
 type EditorV6Card = EditorV6ProjectSummary
 type Tool = 'background' | 'objects' | null
-type DragState = { id: string; pointerId: number; startX: number; startY: number; originalX: number; originalY: number; width: number; height: number; before: EditorV6Document; prepared: EditorV6Document; blockId: string; frame: number; moved: boolean }
+type DragState = { id: string; target: 'element' | 'background' | 'video'; videoLayout?: EditorV6VideoLayout; pointerId: number; startX: number; startY: number; originalX: number; originalY: number; width: number; height: number; before: EditorV6Document; prepared: EditorV6Document; blockId: string; frame: number; moved: boolean }
 const STORAGE_KEY = 'gacha-nymi-editor-v6-catalog-v1'
 const EDITOR_V6_FACE_RENDER_VERSION = 7
 const studioColor = (number: number) => `hsl(${(number * 137.508) % 360} 45% 78%)`
@@ -198,6 +198,8 @@ export function EditorV6Page() {
   }, [activeEditorV6, selectedTimelineBlockId])
   const selectedTimelineClip = activeEditorV6 ? timelineClips(activeEditorV6.timeline).find(({ block }) => block.id === selectedTimelineBlockId && block.elementId === selectedElementId)
     ?? (selectedElementId ? editorV6ClipAtFrame(activeEditorV6.timeline, selectedElementId, playheadFrame) : undefined) : undefined
+  const selectedTimelineVideoClip = activeEditorV6 ? timelineClips(activeEditorV6.timeline).find(({ track, block }) => track.kind === 'video' && block.id === selectedTimelineBlockId && block.mediaId) : undefined
+  const selectedTimelineVideo = selectedTimelineVideoClip?.block.mediaId ? activeEditorV6?.media?.find((media) => media.id === selectedTimelineVideoClip.block.mediaId) : undefined
   const selectedElement = selectedTimelineClip?.block.state ?? visibleTimelineElements.find((element) => element.id === selectedElementId)
     ?? activeEditorV6?.elements.find((element) => element.id === selectedElementId) ?? null
   const selectedCharacterElement = selectedElement?.kind === 'character'
@@ -1236,6 +1238,12 @@ export function EditorV6Page() {
     else patchStudio(update)
   }
 
+  const updateVideoBlock = (blockId: string, values: Partial<Pick<EditorV6TimelineBlock, 'mediaLayout' | 'audioEnabled' | 'gain' | 'mediaInFrame'>>, record = true) => {
+    const update = (studio: EditorV6Document) => ({ ...studio, timeline: normalizeEditorV6Timeline({ ...studio.timeline, tracks: studio.timeline.tracks.map((track) => ({ ...track, blocks: track.blocks.map((block) => block.id === blockId ? { ...block, ...values } : block) })) }), updatedAt: new Date().toISOString() })
+    if (record) changeScene(update)
+    else patchStudio(update)
+  }
+
   const updateBackground = (values: Partial<Pick<EditorV6Document, 'backgroundColor' | 'backgroundX' | 'backgroundY' | 'backgroundWidth' | 'backgroundHeight' | 'backgroundRotation'>>, record = true) => {
     const frame = getEditorV6PlaybackFrame()
     const update = (studio: EditorV6Document) => ({ ...editEditorV6BackgroundAtFrame(studio, frame, values), updatedAt: new Date().toISOString() })
@@ -1249,7 +1257,7 @@ export function EditorV6Page() {
     dragRef.current = null
     if (drag.moved) {
       updateActiveEditorV6Project((project) => project.id === drag.before.id ? { ...drag.before, updatedAt: new Date().toISOString() } : project)
-      setSelectedTimelineBlockId(drag.id === 'background' ? null : editorV6ClipAtFrame(drag.before.timeline, drag.id, drag.frame)?.block.id ?? null)
+      setSelectedTimelineBlockId(drag.target === 'background' ? null : drag.target === 'video' ? drag.blockId : editorV6ClipAtFrame(drag.before.timeline, drag.id, drag.frame)?.block.id ?? null)
       setSaved(false)
     }
   }
@@ -1261,18 +1269,26 @@ export function EditorV6Page() {
     pausePlayback()
     const currentScene = resolveEditorV6SceneAtFrame(activeEditorV6, getEditorV6PlaybackFrame(), { includeMotion: false })
     const currentBackground = currentScene.background
-    setSelectedElementId(id)
-    setActiveTool(id === 'background' ? 'background' : null)
+    const videoBlockId = id.startsWith('media-video:') ? id.slice('media-video:'.length) : null
+    const target: DragState['target'] = videoBlockId ? 'video' : id === 'background' ? 'background' : 'element'
+    setSelectedElementId(target === 'video' ? null : id)
+    setActiveTool(target === 'background' ? 'background' : null)
     setInspectorOpen(true)
-    const element = currentScene.elements.find((item) => item.id === id)
-    const currentClip = id === 'background' ? null : editorV6ClipAtFrame(activeEditorV6.timeline, id, currentScene.frame)
+    const element = target === 'element' ? currentScene.elements.find((item) => item.id === id) : undefined
+    const videoClip = videoBlockId ? timelineClips(activeEditorV6.timeline).find(({ track, block }) => track.kind === 'video' && block.id === videoBlockId) : undefined
+    if (target === 'video' && (!videoClip || videoClip.track.locked)) return
+    const currentClip = target === 'background' || target === 'video' ? null : editorV6ClipAtFrame(activeEditorV6.timeline, id, currentScene.frame)
     setSelectedTimelineBlockId(currentClip?.block.id ?? null)
+    if (videoClip) setSelectedTimelineBlockId(videoClip.block.id)
     if (element?.kind === 'character') restoreCharacterInspectorView()
     else setInspectorTab('editor')
     if (editorV6FaceBusy || editorV6ExpressionBusy || editorV6FaceRenderRunningRef.current) return
     const frame = currentScene.frame
     let prepared: EditorV6Document, blockId: string
-    if (id === 'background') {
+    if (target === 'video' && videoClip) {
+      prepared = activeEditorV6
+      blockId = videoClip.block.id
+    } else if (target === 'background') {
       if (activeEditorV6.timeline.tracks.some((track) => track.kind === 'video' && track.locked)) return
       prepared = editEditorV6BackgroundAtFrame(activeEditorV6, frame, {})
       blockId = timelineClips(prepared.timeline).find(({ block }) => block.background && block.startFrame === frame)!.block.id
@@ -1283,7 +1299,9 @@ export function EditorV6Page() {
       blockId = operation.blockId
     }
     const rect = sceneRef.current.getBoundingClientRect()
-    dragRef.current = { id, pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, originalX: id === 'background' ? currentBackground.backgroundX : element!.x, originalY: id === 'background' ? currentBackground.backgroundY : element!.y, width: rect.width, height: rect.height, before: activeEditorV6, prepared, blockId, frame, moved: false }
+    const videoAsset = videoClip?.block.mediaId ? activeEditorV6.media?.find((media) => media.id === videoClip.block.mediaId) : undefined
+    const videoLayout = videoClip?.block.mediaLayout ?? editorV6DefaultVideoLayout(videoAsset?.width, videoAsset?.height)
+    dragRef.current = { id, target, ...(target === 'video' ? { videoLayout } : {}), pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, originalX: target === 'background' ? currentBackground.backgroundX : target === 'video' ? videoLayout.x : element!.x, originalY: target === 'background' ? currentBackground.backgroundY : target === 'video' ? videoLayout.y : element!.y, width: rect.width, height: rect.height, before: activeEditorV6, prepared, blockId, frame, moved: false }
     event.currentTarget.setPointerCapture(event.pointerId)
   }
 
@@ -1293,7 +1311,9 @@ export function EditorV6Page() {
     if (!drag.moved && Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) < 2) return
     const x = drag.originalX + (event.clientX - drag.startX) / drag.width * 100
     const y = drag.originalY + (event.clientY - drag.startY) / drag.height * 100
-    const next = drag.id === 'background' ? editEditorV6BackgroundAtFrame(drag.prepared, drag.frame, { backgroundX: x, backgroundY: y }, drag.blockId) : moveEditorV6ElementInPeriod(drag.prepared, drag.blockId, x, y)
+    const next = drag.target === 'background' ? editEditorV6BackgroundAtFrame(drag.prepared, drag.frame, { backgroundX: x, backgroundY: y }, drag.blockId)
+      : drag.target === 'video' ? { ...drag.prepared, timeline: normalizeEditorV6Timeline({ ...drag.prepared.timeline, tracks: drag.prepared.timeline.tracks.map((track) => ({ ...track, blocks: track.blocks.map((block) => block.id === drag.blockId ? { ...block, mediaLayout: { ...(block.mediaLayout ?? drag.videoLayout ?? EDITOR_V6_DEFAULT_VIDEO_LAYOUT), x, y } } : block) })) }) }
+        : moveEditorV6ElementInPeriod(drag.prepared, drag.blockId, x, y)
     drag.moved = true
     publishPlayheadFrame(drag.frame)
     setSelectedTimelineBlockId(drag.blockId)
@@ -1319,6 +1339,10 @@ export function EditorV6Page() {
       const frame = getEditorV6PlaybackFrame()
       changeScene((studio) => ({ ...editEditorV6BackgroundAtFrame(studio, frame, { backgroundAssetId: null }), updatedAt: new Date().toISOString() }))
       setSelectedElementId(null)
+    } else if (selectedTimelineVideoClip) {
+      const blockId = selectedTimelineVideoClip.block.id
+      changeScene((studio) => ({ ...studio, timeline: { ...studio.timeline, tracks: studio.timeline.tracks.map((track) => ({ ...track, blocks: track.blocks.filter((block) => block.id !== blockId) })) }, updatedAt: new Date().toISOString() }))
+      setSelectedTimelineBlockId(null)
     } else if (selectedElementId) {
       const current = activeEditorV6.elements.find((element) => element.id === selectedElementId)
       if (current?.kind === 'character') removeStageCharacter(current)
@@ -1407,6 +1431,26 @@ export function EditorV6Page() {
       }}><img src={asset.dataUrl} alt="" /><span>{asset.name}</span></button>)}</div>
       {selectedElementId && selectedElement && <ElementControls element={selectedElement} update={(values, record) => updateElement(selectedElement.id, values, record)} remove={deleteSelected} control={control} />}
     </div>
+    if (selectedTimelineVideoClip && selectedTimelineVideo && activeEditorV6) {
+      const block = selectedTimelineVideoClip.block
+      const layout = block.mediaLayout ?? editorV6DefaultVideoLayout(selectedTimelineVideo.width, selectedTimelineVideo.height)
+      const setLayout = (values: Partial<typeof layout>, record: boolean) => updateVideoBlock(block.id, { mediaLayout: { ...layout, ...values } }, record)
+      return <div className="studio-side-content">
+        <h2>Vídeo selecionado</h2><p>{selectedTimelineVideo.name}</p>
+        <div className="studio-controls-grid">
+          {control('X', layout.x, (value, record) => setLayout({ x: value }, record ?? true), -200, 200)}
+          {control('Y', layout.y, (value, record) => setLayout({ y: value }, record ?? true), -200, 200)}
+          {control('Largura', layout.width, (value, record) => setLayout({ width: value }, record ?? true), 1, 200)}
+          {control('Altura', layout.height, (value, record) => setLayout({ height: value }, record ?? true), 1, 200)}
+          {control('Rotação', layout.rotation, (value, record) => setLayout({ rotation: value }, record ?? true), -180, 180, '°')}
+          {control('Início da mídia', block.mediaInFrame ?? 0, (value, record) => updateVideoBlock(block.id, { mediaInFrame: Math.round(value) }, record), 0, Math.max(0, selectedTimelineVideo.sourceFrames - 1), ' quadros')}
+          {selectedTimelineVideo.hasAudio && control('Volume', block.gain ?? 1, (value, record) => updateVideoBlock(block.id, { gain: value }, record), 0, 2, '×')}
+        </div>
+        {selectedTimelineVideo.hasAudio && <label className="studio-color-control">Áudio do vídeo<input type="checkbox" checked={block.audioEnabled !== false} onChange={(event) => { recordHistory(); updateVideoBlock(block.id, { audioEnabled: event.target.checked }, false) }} /></label>}
+        <small>Duração na timeline: {(block.durationFrames / 30).toFixed(2)} s · o quadro é renderizado centralizado proporcionalmente.</small>
+        <button className="studio-side-danger" type="button" onClick={deleteSelected}><Icon name="trash" />Remover vídeo da timeline</button>
+      </div>
+    }
     if (selectedElement && activeEditorV6) return <div className="studio-side-content">
       <h2>{selectedElement.kind === 'character' ? selectedElement.text : selectedElement.kind === 'image' ? 'Objeto selecionado' : selectedElement.kind === 'narrator' ? 'Narrador' : selectedElement.kind === 'speech' ? 'Balão de fala' : 'Balão de pensamento'}</h2>
       {selectedElement.kind !== 'image' && selectedElement.kind !== 'character' && <label className="studio-text-control">Texto<textarea value={selectedElement.text} onChange={(event) => updateElement(selectedElement.id, { text: event.target.value })} rows={3} /></label>}
@@ -1611,7 +1655,7 @@ export function EditorV6Page() {
         </aside>}
         <section className="studio-scene-area v6-scene-area" aria-label="Prévia da cena">
           <div className="studio-scene-canvas v6-scene-canvas" ref={sceneRef} style={{ backgroundColor: previewBackground.backgroundColor }} onPointerDown={() => { setSelectedElementId(null); setSelectedTimelineBlockId(null) }}>
-            <Profiler id="/editor-v6/scene" onRender={recordUiCommit}><EditorV6PlaybackScene project={activeEditorV6} selectedId={selectedElementId} interaction={fullView ? undefined : sceneInteraction} playing={isPlaying} fullView={fullView} /></Profiler>
+            <Profiler id="/editor-v6/scene" onRender={recordUiCommit}><EditorV6PlaybackScene project={activeEditorV6} selectedId={selectedElementId ?? selectedTimelineBlockId} interaction={fullView ? undefined : sceneInteraction} playing={isPlaying} fullView={fullView} /></Profiler>
             {fullView && <button className="studio-exit-view" onClick={() => setFullView(false)} type="button">Sair da visualização <kbd>Esc</kbd></button>}
             {!fullView && <span className="studio-scene-title">{activeEditorV6.title}</span>}
             {!fullView && inspectorOpen && <aside className={`studio-inspector studio-inspector-${inspectorSide}`} aria-label="Inspector da cena" onPointerDown={(event) => event.stopPropagation()}>

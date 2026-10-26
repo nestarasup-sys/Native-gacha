@@ -1,6 +1,6 @@
 /** Frame-based timeline operations shared by preview, prints and persistence. */
-import type { EditorV6BackgroundState, EditorV6Document, EditorV6Element, EditorV6Timeline, EditorV6TimelineBlock, EditorV6TimelineTrack } from './editorV6'
-import { editorV6MediaUrl, editorV6TrackKindForElement, editorV6TrackLabel } from './editorV6'
+import type { EditorV6BackgroundState, EditorV6Document, EditorV6Element, EditorV6Timeline, EditorV6TimelineBlock, EditorV6TimelineTrack, EditorV6VideoLayout } from './editorV6'
+import { editorV6DefaultVideoLayout, editorV6MediaUrl, editorV6TrackKindForElement, editorV6TrackLabel } from './editorV6'
 import { editorV6MotionPlans, type EditorV6MotionPlan } from './editorV6Motion'
 import { editorV6FaceModeAtFrame } from './editorV6FaceSchedule'
 export { isEditorV6BlinkFrame } from './editorV6FaceSchedule'
@@ -48,7 +48,7 @@ export function normalizeEditorV6Timeline(timeline: EditorV6Timeline): EditorV6T
   return { ...timeline, durationFrames, tracks }
 }
 
-export type EditorV6ResolvedScene = { frame: number; background: EditorV6BackgroundState; elements: EditorV6Element[]; mediaVideo?: { mediaId: string; url: string; startFrame: number; sourceInFrame: number; durationFrames: number; hasAudio: boolean; audioEnabled: boolean; gain: number } }
+export type EditorV6ResolvedScene = { frame: number; background: EditorV6BackgroundState; elements: EditorV6Element[]; mediaVideo?: { blockId: string; mediaId: string; url: string; layout: EditorV6VideoLayout; startFrame: number; sourceInFrame: number; durationFrames: number; hasAudio: boolean; audioEnabled: boolean; gain: number } }
 const backgroundsCache = new WeakMap<EditorV6Timeline, TimelineClip[]>()
 export function resolveEditorV6BackgroundAtFrame(document: EditorV6Document, frame: number): EditorV6BackgroundState {
   let backgrounds = backgroundsCache.get(document.timeline)
@@ -81,7 +81,7 @@ export function resolveEditorV6SceneAtFrame(document: EditorV6Document, frame: n
     if (normalizedFrame < candidate.startFrame + candidate.durationFrames) { video = candidate; break }
   }
   const media = video ? document.media?.find((item) => item.id === video.mediaId && item.kind === 'video') : undefined
-  return { frame: normalizedFrame, background: resolveEditorV6BackgroundAtFrame(document, normalizedFrame), elements: resolveEditorV6ElementsAtFrame(document, normalizedFrame, options), ...(video && media ? { mediaVideo: { mediaId: media.id, url: editorV6MediaUrl(document.id, media.fileName, media.libraryVideoId), startFrame: video.startFrame, sourceInFrame: video.mediaInFrame ?? 0, durationFrames: video.durationFrames, hasAudio: media.hasAudio, audioEnabled: video.audioEnabled !== false, gain: video.gain ?? 1 } } : {}) }
+  return { frame: normalizedFrame, background: resolveEditorV6BackgroundAtFrame(document, normalizedFrame), elements: resolveEditorV6ElementsAtFrame(document, normalizedFrame, options), ...(video && media ? { mediaVideo: { blockId: video.id, mediaId: media.id, url: editorV6MediaUrl(document.id, media.fileName, media.libraryVideoId), layout: video.mediaLayout ?? editorV6DefaultVideoLayout(media.width, media.height), startFrame: video.startFrame, sourceInFrame: video.mediaInFrame ?? 0, durationFrames: video.durationFrames, hasAudio: media.hasAudio, audioEnabled: video.audioEnabled !== false, gain: video.gain ?? 1 } } : {}) }
 }
 const videoClipsCache = new WeakMap<EditorV6Timeline, TimelineClip[]>()
 

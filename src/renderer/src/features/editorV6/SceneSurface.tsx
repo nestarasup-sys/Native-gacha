@@ -46,7 +46,7 @@ export function wrapSceneText(text: string, width: number, fontSize: number, max
 const transform = (x: number, y: number, rotation: number) => `translate(${(50 + x) * 19.2} ${(50 + y) * 10.8}) rotate(${rotation})`
 const Selection = ({ width, height }: { width: number; height: number }) => <rect x={-width / 2 - 2} y={-height / 2 - 2} width={width + 4} height={height + 4} fill="none" stroke="#e84f88" strokeWidth={2} vectorEffect="non-scaling-stroke" pointerEvents="none" />
 
-const SceneVideoLayer = memo(function SceneVideoLayer({ scene, playing }: { scene: EditorV6ResolvedScene; playing: boolean }) {
+const SceneVideoLayer = memo(function SceneVideoLayer({ scene, playing, selectedId, interaction }: { scene: EditorV6ResolvedScene; playing: boolean; selectedId: string | null; interaction?: SceneSurfaceInteraction }) {
   const ref = useRef<HTMLVideoElement>(null)
   const media = scene.mediaVideo
   useEffect(() => {
@@ -67,13 +67,20 @@ const SceneVideoLayer = memo(function SceneVideoLayer({ scene, playing }: { scen
     }
   }, [media?.mediaId, media?.startFrame, media?.sourceInFrame, media?.gain, scene.frame, playing])
   if (!media) return null
-  return <foreignObject x={0} y={0} width={1920} height={1080} data-editor-v6-video={media.mediaId}>
+  const width = media.layout.width * 19.2, height = media.layout.height * 10.8
+  const x = (50 + media.layout.x) * 19.2, y = (50 + media.layout.y) * 10.8
+  return <>
+    <foreignObject x={x - width / 2} y={y - height / 2} width={width} height={height} transform={`rotate(${media.layout.rotation} ${x} ${y})`} data-editor-v6-video={media.mediaId}
+      style={{ cursor: interaction ? 'move' : undefined, touchAction: 'none' }}
+      onPointerDown={interaction ? (event) => interaction.start(event, `media-video:${media.blockId}`) : undefined} onPointerMove={interaction?.move} onPointerUp={interaction?.end} onPointerCancel={interaction?.end}>
     <video ref={ref} src={media.url} muted={!playing || !media.audioEnabled} playsInline preload="auto" data-media-id={media.mediaId} data-target-time={(media.sourceInFrame + scene.frame - media.startFrame) / 30} onLoadedMetadata={(event) => {
       const video = event.currentTarget, target = Number(video.dataset.targetTime)
       try { video.currentTime = target } catch { /* The browser will seek when it is ready. */ }
       if (playing) void video.play().catch(() => {})
-    }} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', pointerEvents: 'none' }} />
-  </foreignObject>
+    }} style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block', pointerEvents: 'none' }} />
+    </foreignObject>
+    {selectedId === media.blockId && <rect x={x - width / 2} y={y - height / 2} width={width} height={height} transform={`rotate(${media.layout.rotation} ${x} ${y})`} fill="none" stroke="#e84f88" strokeWidth={3} vectorEffect="non-scaling-stroke" pointerEvents="none" />}
+  </>
 })
 
 type SceneLayerProps = { element: EditorV6Element; asset?: EditorV6Asset; selected: boolean; interaction?: SceneSurfaceInteraction }
@@ -130,7 +137,7 @@ export const SceneSurface = memo(function SceneSurface({ scene, assets, selected
       <image href={asset.dataUrl} x={-width / 2} y={-height / 2} width={width} height={height} preserveAspectRatio="none" />
       {selectedId === 'background' && <Selection width={width} height={height} />}
     </g>}
-    {renderLayer === 'all' && <SceneVideoLayer scene={scene} playing={playing} />}
+    {renderLayer === 'all' && <SceneVideoLayer scene={scene} playing={playing} selectedId={selectedId} interaction={interaction} />}
     {renderLayer !== 'background' && scene.elements.map((element) => <SceneLayer key={element.id} element={element} asset={element.assetId ? assetsById.get(element.assetId) : undefined} selected={selectedId === element.id} interaction={interaction} />)}
   </svg>
 })

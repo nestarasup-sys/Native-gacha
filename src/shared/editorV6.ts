@@ -154,6 +154,15 @@ export type EditorV6BackgroundState = {
   backgroundHeight: number
   backgroundRotation: number
 }
+export type EditorV6VideoLayout = { x: number; y: number; width: number; height: number; rotation: number }
+export const EDITOR_V6_DEFAULT_VIDEO_LAYOUT: EditorV6VideoLayout = { x: 0, y: 0, width: 40, height: 40, rotation: 0 }
+export function editorV6DefaultVideoLayout(width?: number, height?: number): EditorV6VideoLayout {
+  const aspect = width && height && width > 0 && height > 0 ? width / height : 16 / 9
+  const stageAspect = 1920 / 1080
+  return aspect >= stageAspect
+    ? { ...EDITOR_V6_DEFAULT_VIDEO_LAYOUT, height: Math.round(40 * stageAspect / aspect * 10000) / 10000 }
+    : { ...EDITOR_V6_DEFAULT_VIDEO_LAYOUT, width: Math.round(40 * aspect / stageAspect * 10000) / 10000 }
+}
 export type EditorV6TimelineBlock = {
   id: string
   /** Links a timeline clip to a layer in the scene when applicable. */
@@ -170,6 +179,8 @@ export type EditorV6TimelineBlock = {
   motionEnabled?: boolean
   incomingMotion?: EditorV6MotionAtlas
   mediaId?: string
+  /** Position and size of the video layer on the 1920×1080 scene. */
+  mediaLayout?: EditorV6VideoLayout
   mediaInFrame?: number
   audioEnabled?: boolean
   gain?: number
