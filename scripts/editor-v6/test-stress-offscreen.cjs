@@ -154,6 +154,7 @@ async function main() {
   const memoArgument = process.argv.find((argument) => argument.startsWith('--memo='))
   const memoizationEnabled = memoArgument?.slice('--memo='.length) !== 'off'
   const runLabel = process.argv.find((argument) => argument.startsWith('--label='))?.slice('--label='.length) ?? null
+  const experiment = process.argv.find((argument) => argument.startsWith('--experiment='))?.slice('--experiment='.length) ?? 'baseline'
   const sourceProfile = path.join(root, 'app-data', 'runtime', 'profile')
   const tempProfile = path.join(dataRoot, 'runtime', 'profile')
   for (const fixtureDirectory of ['customizer', 'fabricator']) {
@@ -221,7 +222,8 @@ async function main() {
         GACHA_EDITOR_V6_STRESS_ROOT: projectRoot,
         GACHA_EDITOR_V6_STRESS_CHARACTERS_BUNDLE: bundlePath,
         GACHA_EDITOR_V6_STRESS_MEDIA_ROOT: mediaRoot,
-        GACHA_EDITOR_V6_STRESS_SUMMARY_PATH: projectSummaryPath
+        GACHA_EDITOR_V6_STRESS_SUMMARY_PATH: projectSummaryPath,
+        GACHA_EDITOR_V6_STRESS_EXPERIMENT: experiment
       },
       timeout: 180_000,
       windowsHide: true
@@ -318,7 +320,10 @@ async function main() {
       }
       await evaluate(cdp, 'window.__gv5PerformanceReset?.()')
       await evaluate(cdp, `(() => {
-        const state = { samples: [], rafIntervals: [], motionFrames: {}, domFrames: [], domFrameEvents: [], heapSamples: [], gcSamples: [], mediaStats: {}, last: null, started: performance.now(), timeOrigin: performance.timeOrigin, active: true, startFrame: Number(document.querySelector('.v6-scene-surface')?.getAttribute('data-frame')), memoryStart: performance.memory?.usedJSHeapSize ?? null }
+        const observedWindows = ${JSON.stringify(prepared.motionWindows.filter((window) => window.startFrame < runDurationMs * 30 / 1000 + 10))}
+        const motionWindowsByFrame = Object.create(null)
+        for (const motionWindow of observedWindows) for (let sampleFrame=Math.floor(motionWindow.startFrame)+1;sampleFrame<=Math.ceil(motionWindow.endFrame)-1;sampleFrame++) (motionWindowsByFrame[sampleFrame] ||= []).push(motionWindow)
+        const state = { samples: [], rafIntervals: [], motionFrames: {}, motionFrameEvents: [], motionBoundaryEvents: [], visualChangeEvents: [], sceneMutationEvents: [], domFrames: [], domFrameEvents: [], heapSamples: [], gcSamples: [], mediaStats: {}, motionWindowsByFrame, activeMotionWindows: new Set(), lastMotionFrameByWindow: new Map(), visualStateByCharacter: new Map(), last: null, started: performance.now(), timeOrigin: performance.timeOrigin, active: true, startFrame: Number(document.querySelector('.v6-scene-surface')?.getAttribute('data-frame')), memoryStart: performance.memory?.usedJSHeapSize ?? null }
         if (window.__editorV6TraceCapture) window.__editorV6TraceMark('editor-v6:scenario:${scenario.key}:window-start')
         window.__editorV6StressFrames = state
         try {
@@ -336,6 +341,16 @@ async function main() {
             if (Number.isInteger(frame) && state.domFrames.at(-1) !== frame) { state.domFrames.push(frame); state.domFrameEvents.push({ at: performance.now(), frame }) }
           })
           state.domObserver.observe(sceneElement, { attributes: true, attributeFilter: ['data-frame'] })
+          if (window.__editorV6TraceCapture) {
+            state.sceneMutationObserver = new MutationObserver((records) => {
+              const frame = Number(sceneElement.getAttribute('data-frame'))
+              for (const record of records) {
+                if (state.sceneMutationEvents.length >= 10000) break
+                state.sceneMutationEvents.push({ at:+performance.now().toFixed(3), frame, type:record.type, attribute:record.attributeName ?? null, added:record.addedNodes?.length ?? 0, removed:record.removedNodes?.length ?? 0 })
+              }
+            })
+            state.sceneMutationObserver.observe(sceneElement, { attributes:true, childList:true, subtree:true, attributeOldValue:false })
+          }
         }
         const tick = (time) => {
           if (!state.active) return
@@ -344,9 +359,37 @@ async function main() {
           const scene = document.querySelector('.v6-scene-surface')
           const frame = Number(scene?.getAttribute('data-frame'))
           if (Number.isInteger(frame)) for (const character of scene.querySelectorAll('g[data-element-id]')) {
-            if (!character.querySelector('svg[viewBox]')) continue
             const name = character.getAttribute('aria-label')
-            if (name?.startsWith('STRESS_')) (state.motionFrames[name] ||= new Set()).add(frame)
+            if (!name?.startsWith('STRESS_')) continue
+            const sprite = character.querySelector('svg[viewBox]')
+            const image = character.querySelector('image')
+            const viewBox = sprite?.getAttribute('viewBox') ?? null
+            const href = image?.getAttribute('href') ?? image?.getAttributeNS('http://www.w3.org/1999/xlink','href') ?? null
+            if (sprite) (state.motionFrames[name] ||= new Set()).add(frame)
+            const previous = state.visualStateByCharacter.get(name)
+            if (previous && (previous.href !== href || previous.viewBox !== viewBox)) {
+              if (state.visualChangeEvents.length < 10000) state.visualChangeEvents.push({ at:+time.toFixed(3), frame, characterName:name, imageSourceChanged:previous.href !== href, spriteCropChanged:previous.viewBox !== viewBox })
+            }
+            state.visualStateByCharacter.set(name,{href,viewBox})
+          }
+          if (Number.isInteger(frame)) for (const motionWindow of state.motionWindowsByFrame[frame] ?? []) {
+            const finalSampleFrame = Math.ceil(motionWindow.endFrame) - 1
+            const key = motionWindow.characterName + ':' + motionWindow.startFrame + ':' + motionWindow.endFrame
+            if (!state.activeMotionWindows.has(key)) {
+              state.activeMotionWindows.add(key)
+              const item = { type:'start', at:+time.toFixed(3), frame, characterName:motionWindow.characterName, startFrame:motionWindow.startFrame, boundaryFrame:motionWindow.endFrame, framesToBoundary:+(motionWindow.endFrame-frame).toFixed(2) }
+              state.motionBoundaryEvents.push(item)
+              if (globalThis.__editorV6TraceCapture) globalThis.__editorV6TraceMark('editor-v6:motion:start:' + motionWindow.characterName + ':' + motionWindow.endFrame)
+            }
+            if (state.lastMotionFrameByWindow.get(key) !== frame && state.motionFrameEvents.length < 20000) {
+              state.lastMotionFrameByWindow.set(key,frame)
+              state.motionFrameEvents.push({ at:+time.toFixed(3), frame, characterName:motionWindow.characterName, framesToBoundary:+(motionWindow.endFrame-frame).toFixed(2) })
+            }
+            if (frame >= finalSampleFrame && !motionWindow.__editorV6MotionEndRecorded) {
+              motionWindow.__editorV6MotionEndRecorded = true
+              state.motionBoundaryEvents.push({ type:'end', at:+time.toFixed(3), frame, characterName:motionWindow.characterName, startFrame:motionWindow.startFrame, boundaryFrame:motionWindow.endFrame, framesToBoundary:+(motionWindow.endFrame-frame).toFixed(2) })
+              if (globalThis.__editorV6TraceCapture) globalThis.__editorV6TraceMark('editor-v6:motion:end:' + motionWindow.characterName + ':' + motionWindow.endFrame)
+            }
           }
           if (state.samples.length % 60 === 0 && performance.memory) state.heapSamples.push({ at: +(performance.now() - state.started).toFixed(1), usedBytes: performance.memory.usedJSHeapSize })
           for (const media of window.__editorV6StressMediaElements ?? []) {
@@ -385,6 +428,7 @@ async function main() {
         const percentile = (p) => sorted.length ? +sorted[Math.min(sorted.length - 1, Math.floor((sorted.length - 1) * p))].toFixed(2) : 0
         const mean = state.samples.length ? state.samples.reduce((a,b) => a+b,0) / state.samples.length : 0
         state.domObserver?.disconnect()
+        state.sceneMutationObserver?.disconnect()
         const domGaps = state.domFrames.slice(1).flatMap((frame, index) => frame > state.domFrames[index] + 1 ? [{ from: state.domFrames[index], to: frame, skipped: frame - state.domFrames[index] - 1 }] : [])
         state.gcObserver?.disconnect()
         const elapsedMs = performance.now() - state.started
@@ -406,6 +450,10 @@ async function main() {
           domFrameSamples: state.domFrames.length,
           domFrameGaps: domGaps,
           domFrameEvents: state.domFrameEvents.map((item) => ({ at:+item.at.toFixed(3), frame:item.frame })),
+          motionFrameEvents: state.motionFrameEvents,
+          motionBoundaryEvents: state.motionBoundaryEvents,
+          visualChangeEvents: state.visualChangeEvents,
+          sceneMutationEvents: state.sceneMutationEvents,
           jsHeapStartBytes: state.memoryStart,
           jsHeapEndBytes: performanceMemory,
           jsHeapDeltaBytes: state.memoryStart === null || performanceMemory === null ? null : performanceMemory - state.memoryStart,
@@ -432,10 +480,10 @@ async function main() {
         const clockPairs = await evaluate(cdp, 'window.__editorV6StressClockPairs')
         traceCapture = await finishPlaybackTrace(cdp, traceSession, path.join(outputRoot, `${scenario.key}-playback-trace.json`), scenario.key, { ...measurement, clockPairs, calibration })
       }
-      const expectedMotionNames = captured.map(({ character }) => character.name).sort().join(',')
+      const expectedMotionNames = [...new Set(prepared.motionWindows.map((window) => window.characterName))].sort().join(',')
       const observedMotionNames = Object.keys(measurement.motionFramesByCharacter).sort().join(',')
-      const motionWindowReached = observedMotionNames === expectedMotionNames
-      if (runDurationMs >= 30_000 && !motionWindowReached) throw new Error(`${scenario.key}: o Play não exibiu as transições de 250 ms dos quatro personagens STRESS. Observados: ${observedMotionNames || 'nenhum'}.`)
+      const motionWindowReached = expectedMotionNames.split(',').filter(Boolean).every((name) => observedMotionNames.includes(name))
+      if (runDurationMs >= 30_000 && expectedMotionNames && !motionWindowReached) throw new Error(`${scenario.key}: o Play não exibiu as transições esperadas (${expectedMotionNames}). Observados: ${observedMotionNames || 'nenhum'}.`)
       const mediaValidation = scenario.key === 'multimedia' ? (() => {
         const expected = ['mp4', 'webm', 'wav', 'ogg']
         const observed = [...new Set(measurement.mediaPlayEvents.map((item) => item.extension).filter(Boolean))].sort()
@@ -461,6 +509,7 @@ async function main() {
       generatedAt: new Date().toISOString(),
       mode: 'Electron Chromium em janela fora dos monitores, perfil temporário isolado, sem migração do perfil local; background throttling desativado; CDP local.',
       runLabel,
+      experiment,
       runDurationMs,
       mediaFixtureProbes,
       traceCapture,

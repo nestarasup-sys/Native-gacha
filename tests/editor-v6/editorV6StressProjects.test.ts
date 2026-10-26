@@ -22,6 +22,9 @@ type Scenario = {
   backgroundBlocks: number
   imageWidth: number
   imageHeight: number
+  transitionActorCount?: number
+  instantTransitions?: boolean
+  staggerFrames?: number
 }
 
 type FixtureAsset = { asset: EditorV6Asset; bytes: Buffer }
@@ -47,6 +50,21 @@ const scenarios: Scenario[] = [
   { key: 'heavy', title: '[TESTE] Estresse pesado — 4 personagens STRESS', durationFrames: 18000, posesPerCharacter: 8, characterBlocks: 72, speechBlocks: 280, thoughtBlocks: 140, backgroundBlocks: 40, imageWidth: 1280, imageHeight: 1920 },
   { key: 'multimedia', title: '[TESTE] Estresse multimídia — codecs e áudio', durationFrames: 7200, posesPerCharacter: 8, characterBlocks: 24, speechBlocks: 112, thoughtBlocks: 56, backgroundBlocks: 16, imageWidth: 800, imageHeight: 1200 }
 ]
+
+const stressExperiment = process.env.GACHA_EDITOR_V6_STRESS_EXPERIMENT ?? 'baseline'
+const experimentProfiles: Record<string, Partial<Scenario>> = {
+  baseline: {},
+  frames200: { characterBlocks: 90 },
+  frames300: { characterBlocks: 60 },
+  static: { transitionActorCount: 0 },
+  instant: { instantTransitions: true },
+  'isolated-one': { transitionActorCount: 1, backgroundBlocks: 1, speechBlocks: 0, thoughtBlocks: 0 },
+  'isolated-four': { transitionActorCount: 4, backgroundBlocks: 1, speechBlocks: 0, thoughtBlocks: 0 },
+  staggered: { staggerFrames: 12 }
+}
+if (!experimentProfiles[stressExperiment]) throw new Error(`Experimento de estresse desconhecido: ${stressExperiment}`)
+const heavyIndex = scenarios.findIndex((scenario) => scenario.key === 'heavy')
+scenarios[heavyIndex] = { ...scenarios[heavyIndex], ...experimentProfiles[stressExperiment] }
 
 function uuid(seed: string): string {
   const hex = createHash('sha256').update(`editor-v6-stress:${seed}`).digest('hex').slice(0, 32).split('')
@@ -215,11 +233,13 @@ async function buildScenario(scenario: Scenario, capturedCharacters: CapturedCha
   const characterTracks: EditorV6TimelineTrack[] = []
   for (let actor = 0; actor < actors.length; actor++) {
     const element = actors[actor], poses = characterAssets[actor]
-    const track: EditorV6TimelineTrack = { id: uuid(`${key}:track:character:${actor}`), kind: 'character', characterId: element.characterId, name: element.text, muted: false, locked: false, motionEnabled: true, blocks: [] }
+    const track: EditorV6TimelineTrack = { id: uuid(`${key}:track:character:${actor}`), kind: 'character', characterId: element.characterId, name: element.text, muted: false, locked: false, motionEnabled: !scenario.instantTransitions, blocks: [] }
     for (let index = 0; index < scenario.characterBlocks; index++) {
-      const startFrame = Math.floor(index * durationFrames / scenario.characterBlocks)
-      const endFrame = index + 1 === scenario.characterBlocks ? durationFrames : Math.floor((index + 1) * durationFrames / scenario.characterBlocks)
-      const poseIndex = (index + actor) % Math.min(2, scenario.posesPerCharacter)
+      const offset = index === 0 ? 0 : (scenario.staggerFrames ?? 0) * actor
+      const startFrame = index === 0 ? 0 : Math.floor(index * durationFrames / scenario.characterBlocks) + offset
+      const endFrame = index + 1 === scenario.characterBlocks ? durationFrames : Math.floor((index + 1) * durationFrames / scenario.characterBlocks) + offset
+      const shouldTransition = actor < (scenario.transitionActorCount ?? actors.length)
+      const poseIndex = shouldTransition ? (index + actor) % Math.min(2, scenario.posesPerCharacter) : actor % Math.min(2, scenario.posesPerCharacter)
       const geometry = capturedCharacters[actor].poses.find((pose) => pose.poseSlot === poses[poseIndex].poseSlot)!.geometry
       const nextState: EditorV6Element = { ...element, assetId: poses[poseIndex].asset.id, poseSlot: poses[poseIndex].poseSlot, x: actorPositions[actor] + geometry.x, y: geometry.y, width: geometry.width, height: geometry.height }
       track.blocks.push({ id: uuid(`${key}:block:character:${actor}:${index}`), elementId: element.id, characterId: element.characterId, label: `${element.text} · pose ${poses[poseIndex].poseSlot}`, startFrame, durationFrames: endFrame - startFrame, state: nextState })
@@ -313,7 +333,7 @@ async function buildScenario(scenario: Scenario, capturedCharacters: CapturedCha
   if (!checked.success) throw new Error(`${scenario.title}: ${checked.error.issues.slice(0, 5).map((issue) => `${issue.path.join('.')}: ${issue.message}`).join('; ')}`)
   if (missingEditorV6Motions(checked.data).length) throw new Error(`${scenario.title}: uma transição de pose ficou sem atlas.`)
   const overlapping = checked.data.timeline.tracks.find((track) => track.kind === 'speech')!.blocks.some((speech) => checked.data.timeline.tracks.find((track) => track.kind === 'thought')!.blocks.some((thought) => speech.startFrame < thought.startFrame + thought.durationFrames && thought.startFrame < speech.startFrame + speech.durationFrames))
-  if (!overlapping) throw new Error(`${scenario.title}: faltaram blocos sobrepostos de fala e pensamento.`)
+  if (scenario.speechBlocks > 0 && scenario.thoughtBlocks > 0 && !overlapping) throw new Error(`${scenario.title}: faltaram blocos sobrepostos de fala e pensamento.`)
   return { scenario, document: checked.data, files }
 }
 
@@ -358,11 +378,12 @@ async function writeScenario(root: string, result: ScenarioResult) {
     blocks: document.timeline.tracks.reduce((sum, track) => sum + track.blocks.length, 0),
     tracks: document.timeline.tracks.length, assets: document.assets.length, media: document.media?.length ?? 0,
     motionTransitions: editorV6MotionPlans(document).length,
+    stressExperiment,
     motionWindows: editorV6MotionPlans(document).map((plan) => ({ characterName: document.elements.find((element) => element.characterId === plan.characterId)?.text ?? plan.characterId, startFrame: plan.startFrame, endFrame: plan.endFrame })),
     linkedSpeechBlocks: document.timeline.tracks.filter((track) => track.kind === 'speech').flatMap((track) => track.blocks).filter((block) => block.characterId).length,
     linkedThoughtBlocks: document.timeline.tracks.filter((track) => track.kind === 'thought').flatMap((track) => track.blocks).filter((block) => block.characterId).length,
     missingMotions: missingEditorV6Motions(reopened.data).length,
-    overlappingSpeechThought: true,
+    overlappingSpeechThought: scenario.speechBlocks > 0 && scenario.thoughtBlocks > 0,
     durationSeconds: document.timeline.durationFrames / 30
   }
 }
