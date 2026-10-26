@@ -54,7 +54,7 @@ function removeFlatBackground(tile: ImageData): void {
   const { width, height, data } = tile
   const corners = [0, (width - 1) * 4, ((height - 1) * width) * 4, (height * width - 1) * 4]
   if (corners.some((at) => data[at + 3] <= 24)) return
-  const background = [0, 0, 0].map((channel) => corners.reduce((sum, at) => sum + data[at + channel], 0) / corners.length)
+  const background = [0, 1, 2].map((channel) => corners.reduce((sum, at) => sum + data[at + channel], 0) / corners.length)
   const greenScreen = background[1] > background[0] * 1.2 && background[1] > background[2] * 1.08 && background[1] > 55
   if (!greenScreen && corners.some((at) => Math.hypot(data[at] - background[0], data[at + 1] - background[1], data[at + 2] - background[2]) > 90)) return
   for (let index = 0; index < width * height; index += 1) {
@@ -71,6 +71,29 @@ function removeFlatBackground(tile: ImageData): void {
     if (distance < 65) data[at + 3] = 0
     else if (distance < 112) data[at + 3] = Math.round(data[at + 3] * (distance - 65) / 47)
   }
+}
+function findGridRowBoundaries(image: ImageData, rowCount: number): number[] {
+  const { width, height, data } = image
+  const rowInk = new Uint32Array(height)
+  for (let y = 0; y < height; y += 1) for (let x = 0; x < width; x += 1) {
+    if (data[(y * width + x) * 4 + 3] > 56) rowInk[y] += 1
+  }
+  const minimumRowHeight = Math.floor(height * 0.22)
+  const boundaries = [0]
+  for (let row = 1; row < rowCount; row += 1) {
+    const target = Math.round(row * height / rowCount)
+    const remainingRows = rowCount - row
+    const low = Math.max(boundaries[row - 1] + minimumRowHeight, target - Math.round(height * 0.14))
+    const high = Math.min(height - remainingRows * minimumRowHeight, target + Math.round(height * 0.14))
+    let bestY = target; let bestInk = Number.POSITIVE_INFINITY
+    for (let y = low; y <= high; y += 1) {
+      const ink = rowInk[y - 1] + rowInk[y] + rowInk[y + 1]
+      if (ink < bestInk || (ink === bestInk && Math.abs(y - target) < Math.abs(bestY - target))) { bestY = y; bestInk = ink }
+    }
+    boundaries.push(bestY)
+  }
+  boundaries.push(height)
+  return boundaries
 }
 function guessCategory(piece: WorkerPiece, width: number, height: number): WardrobeCategory {
   const cx = (piece.x + piece.width / 2) / width; const cy = (piece.y + piece.height / 2) / height
@@ -145,7 +168,7 @@ export function WardrobeWorkspace() {
   const bodyDragRef = useRef<BodyDrag | null>(null)
   const [testPosePickerOpen, setTestPosePickerOpen] = useState(false)
   const [importPickerOpen, setImportPickerOpen] = useState(false)
-  const [gridSize, setGridSize] = useState<3 | 4>(4)
+  const gridSizeRef = useRef<3 | 4>(4)
   const gridInputRef = useRef<HTMLInputElement>(null)
   const [testPoseSlots, setTestPoseSlots] = useState<FabricatorPoseSummary[]>([])
   const [testPose, setTestPose] = useState<FabricatorPose | null>(null)
@@ -316,6 +339,7 @@ export function WardrobeWorkspace() {
     setProcessing(true); setError(''); setImportPickerOpen(false)
     try {
       const image = await createImageBitmap(file)
+      const gridSize = gridSizeRef.current
       const columns = gridSize; const rows = 3
       const imageWidth = image.width; const imageHeight = image.height
       if (!imageWidth || !imageHeight || imageWidth < columns || imageHeight < rows) {
@@ -328,17 +352,20 @@ export function WardrobeWorkspace() {
       if (!context) throw new Error('Não foi possível ler a grade de roupas.')
       context.drawImage(image, 0, 0)
       image.close()
+      const sourcePixels = context.getImageData(0, 0, imageWidth, imageHeight)
+      removeFlatBackground(sourcePixels)
+      context.putImageData(sourcePixels, 0, 0)
       const torso = (referenceModel ?? model).parts.find((part) => /tronco|corpo|torso|chest|peito/i.test(part.name))
       if (!torso) throw new Error('Não encontrei uma parte de tronco no modelo salvo.')
-      const cellWidth = imageWidth / columns; const cellHeight = imageHeight / rows
+      const rowBoundaries = findGridRowBoundaries(sourcePixels, rows)
+      const cellWidth = imageWidth / columns
       const components: WardrobeComponent[] = []
       for (let row = 0; row < rows; row += 1) for (let column = 0; column < columns; column += 1) {
-        const left = Math.floor(column * cellWidth); const top = Math.floor(row * cellHeight)
-        const right = Math.floor((column + 1) * cellWidth); const bottom = Math.floor((row + 1) * cellHeight)
+        const left = Math.floor(column * cellWidth); const top = rowBoundaries[row]
+        const right = Math.floor((column + 1) * cellWidth); const bottom = rowBoundaries[row + 1]
         const tileWidth = right - left; const tileHeight = bottom - top
         if (tileWidth <= 0 || tileHeight <= 0) continue
         const tile = context.getImageData(left, top, tileWidth, tileHeight)
-        removeFlatBackground(tile)
         let minX = tile.width; let minY = tile.height; let maxX = -1; let maxY = -1
         for (let y = 0; y < tile.height; y += 1) for (let x = 0; x < tile.width; x += 1) if (tile.data[(y * tile.width + x) * 4 + 3] > 56) { minX = Math.min(minX, x); minY = Math.min(minY, y); maxX = Math.max(maxX, x); maxY = Math.max(maxY, y) }
         if (maxX < minX || maxY < minY) continue
@@ -655,6 +682,6 @@ export function WardrobeWorkspace() {
         {draft ? <>{selected && <div className="wardrobe-fields"><div className="wardrobe-field-title"><strong>Editar peça · camada do modelo {getBodyLayer(model, selected.attachedPartId) + 1}</strong><button title="Subir camada" aria-label="Subir camada" disabled={selectedIndex === (draft?.components.length ?? 0) - 1} onClick={() => moveComponentLayer(selected.id, 1)} type="button">↑</button><button title="Descer camada" aria-label="Descer camada" disabled={selectedIndex <= 0} onClick={() => moveComponentLayer(selected.id, -1)} type="button">↓</button><button title="Remover esta peça do conjunto" onClick={() => { setDraft((current) => current ? { ...current, components: current.components.filter((component) => component.id !== selected.id) } : current); setSelectedId(draft.components.find((component) => component.id !== selected.id)?.id ?? null); setDirty(true) }} type="button"><Icon name="trash" /></button></div><label>Nome<input value={selected.name} onChange={(event) => updateComponent(selected.id, { name: event.target.value })} /></label><label>Categoria<select value={selected.category} onChange={(event) => updateComponent(selected.id, { category: event.target.value as WardrobeCategory })}>{categories.map((category) => <option key={category} value={category}>{categoryNames[category]}</option>)}</select></label>{(selected.category === 'oculos' || selected.category === 'acessorio-cabeca') && <label className="wardrobe-option-toggle"><input type="checkbox" checked={selected.renderAboveHair ?? false} onChange={(event) => updateComponent(selected.id, { renderAboveHair: event.target.checked })} /><span>Exibir por cima de todos os cabelos</span></label>}<label>Parte correspondente<select value={selected.attachedPartId} onChange={(event) => updateComponent(selected.id, { attachedPartId: event.target.value })}><option value="" disabled>Escolha a parte do corpo</option>{model?.parts.map((part) => <option key={part.id} value={part.id}>{part.name}{part.sourceTransform ? '' : ' · calibrar origem'}</option>)}</select></label>{(() => { const linkedPart = model?.parts.find((part) => part.id === selected.attachedPartId); return linkedPart && !linkedPart.sourceTransform ? <button className="pose-button secondary wardrobe-calibrate-button" onClick={() => { setTestPose(null); setCalibratingPartId(linkedPart.id); setError('') }} type="button"><Icon name="frame" /> Calibrar origem na folha</button> : null })()}<WardrobeGlueControls component={selected} target={selectedBone} suggested={suggestedBone} status={glueStatus} onChooseTarget={(id) => updateComponent(selected.id, { attachedPartId: id })} onFix={fixSelectedBinding} onRelease={releaseSelectedBinding} /><div className="wardrobe-quick-controls"><div className="wardrobe-nudge-pad"><button aria-label="Mover para cima" title="Mover para cima" onClick={() => nudgeSelected(0, -5)} type="button">↑</button><button aria-label="Mover para esquerda" title="Mover para esquerda" onClick={() => nudgeSelected(-5, 0)} type="button">←</button><span>mover</span><button aria-label="Mover para direita" title="Mover para direita" onClick={() => nudgeSelected(5, 0)} type="button">→</button><button aria-label="Mover para baixo" title="Mover para baixo" onClick={() => nudgeSelected(0, 5)} type="button">↓</button></div><div className="wardrobe-quick-actions"><button title="Diminuir tamanho em 10%" onClick={() => resizeSelected(.9)} type="button">− Tamanho</button><button title="Aumentar tamanho em 10%" onClick={() => resizeSelected(1.1)} type="button">+ Tamanho</button><button title="Girar 15 graus para a esquerda" onClick={() => updateComponent(selected.id, { rotation: selected.rotation - 15 })} type="button">↶ 15°</button><button title="Girar 15 graus para a direita" onClick={() => updateComponent(selected.id, { rotation: selected.rotation + 15 })} type="button">↷ 15°</button><button className="wardrobe-origin-button" onClick={restoreSelectedOrigin} type="button">Voltar à posição original</button></div></div><section className="wardrobe-scale-controls" aria-label="Escala horizontal e vertical"><div className="wardrobe-scale-heading"><strong>Escala da peça</strong><label className="wardrobe-aspect-lock"><input type="checkbox" checked={lockAspectRatio} onChange={(event) => setLockAspectRatio(event.target.checked)} /><span>Manter proporção</span></label></div><label className="wardrobe-scale-row"><span><b>↔ Horizontal</b><output>{Math.round(selected.width / (selected.originWidth ?? selected.width) * 100)}%</output></span><input aria-label="Escala horizontal" type="range" min="10" max="300" step="1" value={Math.max(10, Math.min(300, Math.round(selected.width / (selected.originWidth ?? selected.width) * 100)))} onChange={(event) => scaleSelectedAxis('width', (selected.originWidth ?? selected.width) * Number(event.target.value) / 100)} /></label><label className="wardrobe-scale-row"><span><b>↕ Vertical</b><output>{Math.round(selected.height / (selected.originHeight ?? selected.height) * 100)}%</output></span><input aria-label="Escala vertical" type="range" min="10" max="300" step="1" value={Math.max(10, Math.min(300, Math.round(selected.height / (selected.originHeight ?? selected.height) * 100)))} onChange={(event) => scaleSelectedAxis('height', (selected.originHeight ?? selected.height) * Number(event.target.value) / 100)} /></label></section><div className="wardrobe-number-grid">{([['x', 'X'], ['y', 'Y'], ['width', 'Largura'], ['height', 'Altura'], ['rotation', 'Ângulo']] as const).map(([field, label]) => <label key={field}>{label}<input type="number" step={field === 'rotation' ? 1 : 2} value={Number(selected[field].toFixed(1))} onChange={(event) => { const value = Number(event.target.value); if (field === 'width' || field === 'height') scaleSelectedAxis(field, value); else updateComponent(selected.id, { [field]: value }) }} /></label>)}</div><small className="wardrobe-note">Este vínculo ficará salvo para a futura integração em Customizar.</small></div>}{!selected && <div className="wardrobe-edit-empty"><Icon name="shirt" /><strong>Escolha uma peça</strong><small>Selecione no catálogo para ajustar posição, tamanho e vínculo.</small></div>}</> : <div className="wardrobe-edit-empty"><Icon name="sparkles" /><strong>Pré-encaixe automático</strong><small>A folha é separada por transparência. Depois você revisa categoria, peça do corpo e posição de cada recorte.</small></div>}
       </aside>
     </div>
-    {importPickerOpen && <div className="pose-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setImportPickerOpen(false) }}><section className="pose-model-picker" role="dialog" aria-modal="true" aria-labelledby="wardrobe-import-title"><header><span><small>BIBLIOTECA DE ROUPAS</small><strong id="wardrobe-import-title">Como deseja importar?</strong></span><button onClick={() => setImportPickerOpen(false)} aria-label="Fechar" type="button">×</button></header><p>Escolha como separar as peças da imagem.</p><div className="pose-model-options"><button className="pose-model-option" onClick={() => { setImportPickerOpen(false); inputRef.current?.click() }} type="button"><span className="pose-model-number"><Icon name="sparkles" /></span><span><b>Separar automaticamente</b><small>Detecta peças pelas áreas transparentes da folha.</small></span><Icon name="chevronRight" /></button><button className="pose-model-option" onClick={() => { setGridSize(4); gridInputRef.current?.click() }} type="button"><span className="pose-model-number">4×3</span><span><b>Roupas para tronco · grade 4×3</b><small>Até 12 roupas, com remoção automática do fundo.</small></span><Icon name="chevronRight" /></button><button className="pose-model-option" onClick={() => { setGridSize(3); gridInputRef.current?.click() }} type="button"><span className="pose-model-number">3×3</span><span><b>Roupas para tronco · grade 3×3</b><small>Até 9 roupas, com remoção automática do fundo.</small></span><Icon name="chevronRight" /></button></div></section></div>}{testPosePickerOpen && <div className="pose-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !testPoseLoading) setTestPosePickerOpen(false) }}><section className="pose-model-picker" role="dialog" aria-modal="true" aria-labelledby="wardrobe-test-picker-title"><header><span><small>TESTE DE ROUPA</small><strong id="wardrobe-test-picker-title">Escolha uma pose</strong></span><button onClick={() => setTestPosePickerOpen(false)} aria-label="Fechar" type="button">×</button></header><p>A roupa será exibida sobre uma cópia visual da pose. A pose salva não será modificada.</p><div className="pose-model-options">{testPoseLoading && <div className="pose-model-none">Carregando poses…</div>}{testPoseSlots.map((pose) => pose && <button key={`pose-${pose.slot}`} className="pose-model-option" disabled={testPoseLoading} onClick={() => void loadTestPose(pose.slot)} type="button"><span className="pose-model-number">{String(pose.slot).padStart(2, '0')}</span><span><b>{pose.name}</b><small>{pose.partCount} peças · {new Date(pose.updatedAt).toLocaleDateString('pt-BR')}</small></span><Icon name="chevronRight" /></button>)}{!testPoseLoading && testPoseSlots.length === 0 && <div className="pose-model-none">Este modelo ainda não tem poses salvas.</div>}</div></section></div>}
+    {importPickerOpen && <div className="pose-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setImportPickerOpen(false) }}><section className="pose-model-picker" role="dialog" aria-modal="true" aria-labelledby="wardrobe-import-title"><header><span><small>BIBLIOTECA DE ROUPAS</small><strong id="wardrobe-import-title">Como deseja importar?</strong></span><button onClick={() => setImportPickerOpen(false)} aria-label="Fechar" type="button">×</button></header><p>Escolha como separar as peças da imagem.</p><div className="pose-model-options"><button className="pose-model-option" onClick={() => { setImportPickerOpen(false); inputRef.current?.click() }} type="button"><span className="pose-model-number"><Icon name="sparkles" /></span><span><b>Separar automaticamente</b><small>Detecta peças pelas áreas transparentes da folha.</small></span><Icon name="chevronRight" /></button><button className="pose-model-option" onClick={() => { gridSizeRef.current = 4; gridInputRef.current?.click() }} type="button"><span className="pose-model-number">4×3</span><span><b>Roupas para tronco · grade 4×3</b><small>Até 12 roupas, com remoção automática do fundo.</small></span><Icon name="chevronRight" /></button><button className="pose-model-option" onClick={() => { gridSizeRef.current = 3; gridInputRef.current?.click() }} type="button"><span className="pose-model-number">3×3</span><span><b>Roupas para tronco · grade 3×3</b><small>Até 9 roupas, com remoção automática do fundo.</small></span><Icon name="chevronRight" /></button></div></section></div>}{testPosePickerOpen && <div className="pose-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !testPoseLoading) setTestPosePickerOpen(false) }}><section className="pose-model-picker" role="dialog" aria-modal="true" aria-labelledby="wardrobe-test-picker-title"><header><span><small>TESTE DE ROUPA</small><strong id="wardrobe-test-picker-title">Escolha uma pose</strong></span><button onClick={() => setTestPosePickerOpen(false)} aria-label="Fechar" type="button">×</button></header><p>A roupa será exibida sobre uma cópia visual da pose. A pose salva não será modificada.</p><div className="pose-model-options">{testPoseLoading && <div className="pose-model-none">Carregando poses…</div>}{testPoseSlots.map((pose) => pose && <button key={`pose-${pose.slot}`} className="pose-model-option" disabled={testPoseLoading} onClick={() => void loadTestPose(pose.slot)} type="button"><span className="pose-model-number">{String(pose.slot).padStart(2, '0')}</span><span><b>{pose.name}</b><small>{pose.partCount} peças · {new Date(pose.updatedAt).toLocaleDateString('pt-BR')}</small></span><Icon name="chevronRight" /></button>)}{!testPoseLoading && testPoseSlots.length === 0 && <div className="pose-model-none">Este modelo ainda não tem poses salvas.</div>}</div></section></div>}
   </section>
 }
