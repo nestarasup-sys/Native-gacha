@@ -1,7 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, protocol, session, shell, type IpcMainInvokeEvent, type MessageBoxOptions } from 'electron'
 import { createReadStream, existsSync, lstatSync, mkdirSync, readFileSync, realpathSync } from 'node:fs'
 import { mkdir as nativeMkdir, readFile as nativeReadFile, writeFile as nativeWriteFile, readdir as nativeReaddir, unlink as nativeUnlink, rename as nativeRename, stat as nativeStat, access as nativeAccess, rm as nativeRm, copyFile as nativeCopyFile } from 'node:fs/promises'
-import { basename, dirname, extname, join, relative, resolve, sep } from 'node:path'
+import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
 import { Readable } from 'node:stream'
 import { fileURLToPath } from 'node:url'
@@ -175,9 +175,15 @@ configureDevAiDataRoot()
 function configureLocalAppDataRoot(): string | null {
   if (process.env.GACHA_DEV_AI_TEST === '1') return null
 
-  const defaultRoot = app.isPackaged
+  const stressRoot = process.env.GACHA_VIDEO_STRESS_OFFSCREEN === '1'
+    ? process.env.GACHA_EDITOR_V6_STRESS_DATA_ROOT
+    : undefined
+  if (process.env.GACHA_VIDEO_STRESS_OFFSCREEN === '1' && (!stressRoot || !isAbsolute(stressRoot))) {
+    throw new Error('O teste offscreen precisa de um perfil temporário absoluto; o perfil normal foi protegido.')
+  }
+  const defaultRoot = stressRoot ?? (app.isPackaged
     ? join(dirname(process.execPath), 'app-data')
-    : join(app.getAppPath(), 'app-data')
+    : join(app.getAppPath(), 'app-data'))
   const dataRoot = resolve(defaultRoot)
   const legacyUserData = join(dataRoot, 'user-data')
   const profileRoot = join(dataRoot, 'runtime', 'profile')

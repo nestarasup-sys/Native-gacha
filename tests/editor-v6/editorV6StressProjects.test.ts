@@ -5,14 +5,14 @@ import sharp from 'sharp'
 import { describe, expect, it } from 'vitest'
 import { editorV6DocumentSchema, isEditorV6Document } from '../../src/shared/editorV6Schema'
 import { editorV6MotionPlans, missingEditorV6Motions } from '../../src/shared/editorV6Motion'
-import type { EditorV6Asset, EditorV6Document, EditorV6Element, EditorV6TimelineBlock, EditorV6TimelineTrack } from '../../src/shared/editorV6'
+import type { EditorV6Asset, EditorV6Document, EditorV6Element, EditorV6MediaAsset, EditorV6TimelineBlock, EditorV6TimelineTrack } from '../../src/shared/editorV6'
 import type { EditorV6MotionFrame } from '../../src/shared/editorV6Motion'
 import type { CustomizerCharacter } from '../../src/shared/customizer'
 import { createEditorV6DocumentPersistence } from '../../electron/domains/editorV6/documentPersistence'
 import { createEditorV6LibraryIndex } from '../../electron/domains/editorV6/libraryIndex'
 
 type Scenario = {
-  key: 'light' | 'medium' | 'heavy'
+  key: 'light' | 'medium' | 'heavy' | 'multimedia'
   title: string
   durationFrames: number
   posesPerCharacter: number
@@ -42,9 +42,10 @@ const colors = [
 ]
 
 const scenarios: Scenario[] = [
-  { key: 'light', title: '[TESTE] Estresse leve — 4 personagens STRESS', durationFrames: 900, posesPerCharacter: 2, characterBlocks: 8, speechBlocks: 28, thoughtBlocks: 12, backgroundBlocks: 4, imageWidth: 512, imageHeight: 768 },
-  { key: 'medium', title: '[TESTE] Estresse médio — 4 personagens STRESS', durationFrames: 3600, posesPerCharacter: 4, characterBlocks: 24, speechBlocks: 112, thoughtBlocks: 56, backgroundBlocks: 16, imageWidth: 800, imageHeight: 1200 },
-  { key: 'heavy', title: '[TESTE] Estresse pesado — 4 personagens STRESS', durationFrames: 9000, posesPerCharacter: 8, characterBlocks: 72, speechBlocks: 280, thoughtBlocks: 140, backgroundBlocks: 40, imageWidth: 1280, imageHeight: 1920 }
+  { key: 'light', title: '[TESTE] Estresse leve — 4 personagens STRESS', durationFrames: 7200, posesPerCharacter: 2, characterBlocks: 8, speechBlocks: 28, thoughtBlocks: 12, backgroundBlocks: 4, imageWidth: 512, imageHeight: 768 },
+  { key: 'medium', title: '[TESTE] Estresse médio — 4 personagens STRESS', durationFrames: 10800, posesPerCharacter: 4, characterBlocks: 24, speechBlocks: 112, thoughtBlocks: 56, backgroundBlocks: 16, imageWidth: 800, imageHeight: 1200 },
+  { key: 'heavy', title: '[TESTE] Estresse pesado — 4 personagens STRESS', durationFrames: 18000, posesPerCharacter: 8, characterBlocks: 72, speechBlocks: 280, thoughtBlocks: 140, backgroundBlocks: 40, imageWidth: 1280, imageHeight: 1920 },
+  { key: 'multimedia', title: '[TESTE] Estresse multimídia — codecs e áudio', durationFrames: 7200, posesPerCharacter: 8, characterBlocks: 24, speechBlocks: 112, thoughtBlocks: 56, backgroundBlocks: 16, imageWidth: 800, imageHeight: 1200 }
 ]
 
 function uuid(seed: string): string {
@@ -166,6 +167,45 @@ async function buildScenario(scenario: Scenario, capturedCharacters: CapturedCha
     videoTrack.blocks.push(block); backgroundBlocks.push(block)
   }
 
+  const mediaAssets: EditorV6MediaAsset[] = []
+  const audioTracks: EditorV6TimelineTrack[] = []
+  if (key === 'multimedia') {
+    const mediaRoot = process.env.GACHA_EDITOR_V6_STRESS_MEDIA_ROOT
+    if (!mediaRoot) throw new Error('O cenário multimídia precisa de fixtures FFmpeg temporárias.')
+    const mediaDefinitions = [
+      { seed: 'video-h264', file: 'video-h264.mp4', kind: 'video' as const, mimeType: 'video/mp4', hasAudio: true, width: 320, height: 180 },
+      { seed: 'video-vp9', file: 'video-vp9.webm', kind: 'video' as const, mimeType: 'video/webm', hasAudio: true, width: 320, height: 180 },
+      { seed: 'audio-left', file: 'audio-left.wav', kind: 'audio' as const, mimeType: 'audio/wav', hasAudio: false },
+      { seed: 'audio-right', file: 'audio-right.ogg', kind: 'audio' as const, mimeType: 'audio/ogg', hasAudio: false }
+    ]
+    for (const definition of mediaDefinitions) {
+      const bytes = await readFile(join(mediaRoot, definition.file))
+      const media: EditorV6MediaAsset = {
+        id: uuid(`${key}:${definition.seed}`), name: definition.file,
+        fileName: `${uuid(`${key}:${definition.seed}`)}.${definition.file.split('.').at(-1)}`,
+        kind: definition.kind, mimeType: definition.mimeType, sourceFrames: 1200,
+        hasAudio: definition.hasAudio, sizeBytes: bytes.length,
+        ...('width' in definition ? { width: definition.width, height: definition.height } : {})
+      }
+      mediaAssets.push(media); files.set(media.fileName, bytes)
+      if (definition.kind === 'video') {
+        const index = mediaAssets.filter((item) => item.kind === 'video').length - 1
+        videoTrack.blocks.push({
+          id: uuid(`${key}:block:${definition.seed}`), mediaId: media.id,
+          mediaInFrame: 0, audioEnabled: true, gain: 1,
+          label: definition.file, startFrame: index * 600, durationFrames: 600
+        })
+      } else {
+        const trackIndex = mediaAssets.filter((item) => item.kind === 'audio').length
+        audioTracks.push({
+          id: uuid(`${key}:track:audio:${trackIndex}`), kind: 'audio', name: `Áudio ${trackIndex}`,
+          muted: false, locked: false,
+          blocks: [{ id: uuid(`${key}:block:${definition.seed}`), mediaId: media.id, mediaInFrame: 0, audioEnabled: true, gain: .6, label: definition.file, startFrame: 0, durationFrames: 1200 }]
+        })
+      }
+    }
+  }
+
   for (let index = 0; index < propsElements.length; index++) {
     const startFrame = Math.floor(index * durationFrames / propsElements.length)
     const element = propsElements[index]
@@ -232,7 +272,7 @@ async function buildScenario(scenario: Scenario, capturedCharacters: CapturedCha
   thoughtTrack.blocks.sort((left, right) => left.startFrame - right.startFrame || left.id.localeCompare(right.id))
   const timeline = {
     fps: 30 as const, durationFrames,
-    tracks: [videoTrack, speechTrack, thoughtTrack, ...characterTracks],
+    tracks: [videoTrack, ...audioTracks, speechTrack, thoughtTrack, ...characterTracks],
     knownElementIds: elements.map((element) => element.id)
   }
 
@@ -242,7 +282,7 @@ async function buildScenario(scenario: Scenario, capturedCharacters: CapturedCha
     schemaVersion: 1, id: projectId, title: scenario.title, color: key === 'light' ? '#a5c4eb' : key === 'medium' ? '#e9bd82' : '#d88791',
     createdAt, updatedAt: createdAt,
     backgroundColor: '#d7b5cd', backgroundAssetId, backgroundX: 0, backgroundY: 0, backgroundWidth: 100, backgroundHeight: 100, backgroundRotation: 0,
-    assets: assets.map(({ asset }) => asset), elements, timeline
+    assets: assets.map(({ asset }) => asset), ...(mediaAssets.length ? { media: mediaAssets } : {}), elements, timeline
   }
 
   const plans = editorV6MotionPlans(document)
@@ -292,6 +332,14 @@ async function writeScenario(root: string, result: ScenarioResult) {
     if (!bytes) throw new Error(`PNG da fixture não encontrado: ${item.name}`)
     await writeFile(join(folder, 'assets', categoryFolder(item.category), `${item.id}.png`), bytes)
   }
+  if (document.media?.length) {
+    await mkdir(join(folder, 'media'), { recursive: true })
+    for (const item of document.media) {
+      const bytes = files.get(item.fileName)
+      if (!bytes) throw new Error(`Mídia de fixture não encontrada: ${item.name}`)
+      await writeFile(join(folder, 'media', item.fileName), bytes)
+    }
+  }
   const { assets, ...metadata } = document
   const stored = { ...metadata, title: document.title.trim(), assets: assets.map(({ dataUrl: _dataUrl, ...item }) => ({ ...item, mimeType: 'image/png' as const })) }
   await writeFile(join(folder, 'editorV6.json'), JSON.stringify(stored, null, 2), 'utf8')
@@ -308,7 +356,7 @@ async function writeScenario(root: string, result: ScenarioResult) {
     characterNames: document.elements.filter((element) => element.kind === 'character').map((element) => element.text),
     characterIds: document.elements.filter((element) => element.kind === 'character').map((element) => element.characterId),
     blocks: document.timeline.tracks.reduce((sum, track) => sum + track.blocks.length, 0),
-    tracks: document.timeline.tracks.length, assets: document.assets.length,
+    tracks: document.timeline.tracks.length, assets: document.assets.length, media: document.media?.length ?? 0,
     motionTransitions: editorV6MotionPlans(document).length,
     motionWindows: editorV6MotionPlans(document).map((plan) => ({ characterName: document.elements.find((element) => element.characterId === plan.characterId)?.text ?? plan.characterId, startFrame: plan.startFrame, endFrame: plan.endFrame })),
     linkedSpeechBlocks: document.timeline.tracks.filter((track) => track.kind === 'speech').flatMap((track) => track.blocks).filter((block) => block.characterId).length,
@@ -334,12 +382,13 @@ describe.skipIf(!enabled)('projetos de estresse do Editor V6', () => {
     await mkdir(root, { recursive: true })
     const output = []
     for (const scenario of scenarios) output.push(await writeScenario(root, await buildScenario(scenario, capturedCharacters)))
-    expect(output).toHaveLength(3)
-    expect(output.map((item) => item.characters)).toEqual([4, 4, 4])
+    expect(output).toHaveLength(4)
+    expect(output.map((item) => item.characters)).toEqual([4, 4, 4, 4])
     expect(output.every((item) => item.characterNames.join(',') === expectedNames.join(','))).toBe(true)
     expect(output.every((item) => new Set(item.characterIds).size === 4)).toBe(true)
     expect(output[0].blocks).toBeLessThan(output[1].blocks)
     expect(output[1].blocks).toBeLessThan(output[2].blocks)
+    expect(output[3].media).toBe(4)
 
     const persistence = createEditorV6DocumentPersistence({
       files: { access, mkdir, readFile, rename, unlink, rm, writeFile },
@@ -353,12 +402,13 @@ describe.skipIf(!enabled)('projetos de estresse do Editor V6', () => {
     const summaries = await library.listEditorV6s()
     const fixtureIds = new Set(scenarios.map((scenario) => uuid(`${scenario.key}:project`)))
     const fixtureSummaries = summaries.filter((summary) => fixtureIds.has(summary.id))
-    expect(fixtureSummaries).toHaveLength(3)
+    expect(fixtureSummaries).toHaveLength(4)
     expect(fixtureSummaries.every((summary) => !('assets' in summary))).toBe(true)
     for (const id of fixtureIds) {
       const reopened = await persistence.readEditorV6(id)
       expect(reopened).not.toBeNull()
       expect(reopened!.assets.every((asset) => asset.dataUrl.startsWith('data:image/png;base64,'))).toBe(true)
+      if (id === uuid('multimedia:project')) expect(reopened!.media).toHaveLength(4)
       expect(missingEditorV6Motions(reopened!)).toHaveLength(0)
     }
     const reportSummaries = output.map(({ folder: _folder, ...summary }) => summary)
