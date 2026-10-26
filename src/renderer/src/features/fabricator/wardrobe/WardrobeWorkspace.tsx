@@ -380,7 +380,8 @@ export function WardrobeWorkspace() {
         const width = pieceCanvas.width; const height = pieceCanvas.height
         const x = torso.x + (torso.width - width) / 2; const y = torso.y + (torso.height - height) / 2
         const id = crypto.randomUUID()
-        components.push({ id, name: `Roupa tronco ${String(components.length + 1).padStart(2, '0')}`, category: 'camisa', x, y, width, height, rotation: 0, attachedPartId: torso.id, originX: x, originY: y, originWidth: width, originHeight: height, dataUrl: pieceCanvas.toDataURL('image/png'), glue: { version: 1, mode: 'loose' } })
+        const shirt: WardrobeComponent = { id, name: `Roupa tronco ${String(components.length + 1).padStart(2, '0')}`, category: 'camisa', x, y, width, height, rotation: 0, attachedPartId: torso.id, originX: x, originY: y, originWidth: width, originHeight: height, dataUrl: pieceCanvas.toDataURL('image/png'), glue: { version: 1, mode: 'loose' } }
+        components.push(fixWardrobeGlue(shirt, torso))
       }
       if (!components.length) throw new Error(`A grade ${columns}×${rows} não contém peças visíveis. Confira as células da imagem.`)
       setDraft({ schemaVersion: 1, edition: 1, importKind: gridSize === 4 ? 'torso-grid-4x3' : 'torso-grid-3x3', id: crypto.randomUUID(), modelSlot, modelName: model.name, name: file.name.replace(/\.[^.]+$/, ''), width: model.width, height: model.height, components, updatedAt: new Date().toISOString() })

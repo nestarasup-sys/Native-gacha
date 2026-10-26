@@ -112,7 +112,7 @@ export type WardrobeComponent = {
   /** Relação congelada com o osso, atualizada junto com os ajustes manuais. */
   binding?: WardrobeBinding
   /** Optional explicit adhesion. Absence keeps legacy wardrobe sets readable. */
-  glue?: { version: 1; mode: 'fixed' | 'loose'; sourceFrame?: { x: number; y: number; width: number; height: number; rotation: number } }
+  glue?: { version: 1; mode: 'fixed' | 'loose'; explicitRelease?: true; sourceFrame?: { x: number; y: number; width: number; height: number; rotation: number } }
   /** Head accessories enabled here are composited above front and back hair. */
   renderAboveHair?: boolean
   dataUrl: string

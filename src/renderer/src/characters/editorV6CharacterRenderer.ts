@@ -4,7 +4,7 @@ import type { CustomizerCharacter, CustomizerFaceAppearance, CustomizerWardrobeC
 import { resolveEditorV6TalkMouthId, type EditorV6FaceMode, type EditorV6FaceTransforms } from '../../../shared/editorV6'
 import { mapWardrobeComponentToPose, wardrobePosePadding } from '../../../shared/wardrobePose'
 import { normalizeLayerOrder } from '../../../shared/modelRig'
-import { validateWardrobeFlow } from '../../../shared/assetFlow'
+import { bindLegacyTorsoGridWardrobeSet, validateWardrobeFlow } from '../../../shared/assetFlow'
 import { wardrobeAdjustmentMatrix } from '../../../shared/wardrobeAdjustment'
 import { eyeInteriorMaskSource } from '../ui/image/eyeInteriorMask'
 import { tintSkinPixels } from './skinTint'
@@ -297,6 +297,8 @@ export async function renderWardrobeOverlayCanvases(
   highlight?: AdjustmentPreviewHighlight | null
 ): Promise<{ canvas: HTMLCanvasElement | null; aboveHairCanvas: HTMLCanvasElement | null }> {
   if (!groups.length || modelSlot === null || !source) return { canvas: null, aboveHairCanvas: null }
+  const renderDetails: Record<string, WardrobeSet> = {}
+  for (const [key, set] of Object.entries(details)) renderDetails[key] = bindLegacyTorsoGridWardrobeSet(set, source)
   const output = createCharacterCanvas()
   const pixelScale = Math.min(maxSize / Math.max(artwork.width, artwork.height), Math.sqrt(MAX_CHARACTER_PREVIEW_PIXELS / (artwork.width * artwork.height)))
   output.width = Math.max(1, Math.ceil(artwork.width * pixelScale))
@@ -314,12 +316,12 @@ export async function renderWardrobeOverlayCanvases(
   let hasAboveHairAccessories = false
 
   const selections = groups.flatMap((group) => {
-    const set = details[`${group.modelSlot}:${group.setId}`]
+    const set = renderDetails[`${group.modelSlot}:${group.setId}`]
     if (!set || group.modelSlot !== modelSlot || group.hidden) return []
     const accepted = clothingCategories[clothingCategories.Inferior.some((item) => item.id === group.category) ? 'Inferior' : 'Superior']
       .find((category) => category.id === group.category)?.source
     if (!accepted) return []
-    const components = wardrobeComponentsForGroup(group, details)
+    const components = wardrobeComponentsForGroup(group, renderDetails)
     return [{ group, set, components }]
   })
   const equippedComponents = new Map<string, WardrobeSet['components']>()

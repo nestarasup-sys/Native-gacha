@@ -1,5 +1,6 @@
 import type { FabricatorProject, FabricatorPose, WardrobeSet } from './fabricator'
 import type { CharacterCustomization, CustomizerWardrobeGroup } from './customizer'
+import { fixWardrobeGlue } from './wardrobeGlue.ts'
 
 export type AssetFlowIssueCode =
   | 'model-slot-mismatch' | 'missing-source-bone' | 'missing-pose-bone'
@@ -19,6 +20,24 @@ export type WardrobeFlowCheck = {
   ok: boolean
   issues: AssetFlowIssue[]
   resolved: number
+}
+
+/**
+ * Grid-imported torso shirts have a known target bone. Bind older grid sets
+ * created before the importer did this itself, without writing to the catalog.
+ * An explicit user release always wins and keeps that shirt out of posed renders.
+ */
+export function bindLegacyTorsoGridWardrobeSet(set: WardrobeSet, source: Pick<FabricatorProject, 'parts'>): WardrobeSet {
+  if (!set.importKind?.startsWith('torso-grid-')) return set
+  let changed = false
+  const components = set.components.map((component) => {
+    if (component.category !== 'camisa' || component.glue?.mode === 'fixed' || component.glue?.explicitRelease) return component
+    const torso = source.parts.find((part) => part.id === component.attachedPartId)
+    if (!torso) return component
+    changed = true
+    return fixWardrobeGlue(component, torso)
+  })
+  return changed ? { ...set, components } : set
 }
 
 /**
