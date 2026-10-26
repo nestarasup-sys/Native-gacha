@@ -13,6 +13,8 @@
     "prepreview": "node scripts/prepare-app-data.cjs",
     "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test:editor-v6": "vitest run --config vitest.editor-v6.config.ts",
+    "package:win:portable": "npm run build && electron-builder --win portable --x64",
     "test": "node --test tests/app-data-migration.test.cjs tests/studio-character-geometry.test.cjs tests/data-platform.test.cjs tests/video-library-domainfs.test.cjs tests/video-cas-shadow.test.cjs",
     "test:data-runtime": "node scripts/test-data-runtime.cjs",
     "audit:gv5-import": "node scripts/diagnostics/audit-gv5-import.cjs",
@@ -42,10 +44,13 @@
   },
   "dependencies": {
     "better-sqlite3": "^13.0.3",
+    "immer": "^11.2.9",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-router": "^8.4.0",
-    "sharp": "^0.35.5"
+    "sharp": "^0.35.5",
+    "zod": "^4.6.7",
+    "zustand": "^5.0.16"
   },
   "devDependencies": {
     "@electron/rebuild": "^4.2.1",
@@ -54,10 +59,28 @@
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^5.0.0",
     "electron": "^44.7.1",
+    "electron-builder": "^26.18.0",
     "electron-vite": "^5.0.0",
-    "typescript": "^5.9.0"
+    "typescript": "^5.9.0",
+    "vitest": "^5.0.5"
   },
   "engines": {
     "node": ">=22.22.0"
+  },
+  "build": {
+    "appId": "com.gachanymi.workapp",
+    "productName": "Gacha Nymi",
+    "directories": { "output": "release" },
+    "win": {
+      "target": [{ "target": "portable", "arch": ["x64"] }],
+      "artifactName": "${productName}-${version}-Portable.${ext}"
+    },
+    "extraResources": [
+      {
+        "from": "resources/video-tools",
+        "to": "video-tools",
+        "filter": ["ffmpeg.exe", "ffprobe.exe", "FFMPEG_LICENSE.txt", "BUILD_INFO.json", "SOURCE_INFO.txt"]
+      }
+    ]
   }
 }

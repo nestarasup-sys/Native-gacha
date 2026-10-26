@@ -1,7 +1,7 @@
 import { editorV6CharacterRenderKey, editorV6ElementSize } from '../../../../shared/editorV6SceneModel'
 import { SerializedDocumentSaveQueue } from '../../../../shared/editorV6DocumentSave'
 import { isPoseSnapshotForModel } from '../../../../shared/characterSourceContinuity'
-import { recordEditorV6History, undoEditorV6History, redoEditorV6History } from '../../../../shared/editorV6History'
+import { useEditorV6Store } from './editorV6Store'
 import { useEditorV6InspectorState } from './useEditorV6InspectorState'
 import { trimTransparentImage, fitElementToTrim, faceRenderGeometry, type TrimmedImage } from '../../characters/characterGeometry'
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
@@ -15,7 +15,6 @@ import type { CustomizerCharacter } from '../../../../shared/customizer'
 import type { CustomizerFaceAppearance } from '../../../../shared/customizer'
 import type { FaceCatalogItem, FaceCatalogItemSummary, FaceExpressionEffects, FaceExpressionPreset, FaceExpressionPresetSummary, FaceSheetKind, FabricatorPoseSummary } from '../../../../shared/fabricator'
 type EditorV6Card = EditorV6Document
-type EditorV6Snapshot = Pick<EditorV6Document, 'backgroundColor' | 'backgroundAssetId' | 'backgroundX' | 'backgroundY' | 'backgroundWidth' | 'backgroundHeight' | 'backgroundRotation' | 'assets' | 'elements'>
 type Tool = 'background' | 'objects' | null
 type DragState = { id: string; pointerId: number; startX: number; startY: number; originalX: number; originalY: number; width: number; height: number }
 
@@ -136,7 +135,8 @@ function makeStudioThumbnail(studio: EditorV6Document): Promise<string> {
 
 /** Layout do Editor V6. */
 export function EditorV6Page() {
-  const [editorV6Projects, setEditorV6Projects] = useState<EditorV6Card[]>([])
+  const editorV6Projects = useEditorV6Store((state) => state.projects)
+  const setEditorV6Projects = useEditorV6Store((state) => state.setProjects)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
@@ -167,8 +167,6 @@ export function EditorV6Page() {
   const [canRedo, setCanRedo] = useState(false)
   const sceneRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef<DragState | null>(null)
-  const undoRef = useRef<EditorV6Snapshot[]>([])
-  const redoRef = useRef<EditorV6Snapshot[]>([])
   const editorV6FaceTransformsRef = useRef<Record<string, EditorV6FaceTransforms>>({})
   const editorV6FaceRenderTimerRef = useRef<number | null>(null)
   const editorV6FaceRenderVersionRef = useRef(0)
@@ -359,8 +357,7 @@ export function EditorV6Page() {
 
   useEffect(() => {
     if (!activeEditorV6Id) return
-    undoRef.current = []
-    redoRef.current = []
+    useEditorV6Store.getState().clear(activeEditorV6Id)
     setCanUndo(false)
     setCanRedo(false)
     setHistoryVersion((value) => value + 1)
@@ -498,9 +495,7 @@ export function EditorV6Page() {
 
   const recordHistory = () => {
     if (!activeEditorV6) return
-    const history = recordEditorV6History({ undo: undoRef.current, redo: redoRef.current }, activeEditorV6)
-    undoRef.current = history.undo
-    redoRef.current = history.redo
+    const history = useEditorV6Store.getState().record(activeEditorV6.id, activeEditorV6)
     setCanUndo(history.undo.length > 0)
     setCanRedo(false)
     setHistoryVersion(value => value + 1)
@@ -514,25 +509,23 @@ export function EditorV6Page() {
 
   const undo = () => {
     if (!activeEditorV6) return
-    const result = undoEditorV6History({ undo: undoRef.current, redo: redoRef.current }, activeEditorV6)
-    if (!result) return
-    undoRef.current = result.history.undo
-    redoRef.current = result.history.redo
-    patchStudio(() => result.document)
-    setCanUndo(result.history.undo.length > 0)
+    const document = useEditorV6Store.getState().undo(activeEditorV6.id, activeEditorV6)
+    if (!document) return
+    const history = useEditorV6Store.getState().histories[activeEditorV6.id]
+    patchStudio(() => document)
+    setCanUndo(Boolean(history?.undo.length))
     setCanRedo(true)
     setHistoryVersion(value => value + 1)
   }
 
   const redo = () => {
     if (!activeEditorV6) return
-    const result = redoEditorV6History({ undo: undoRef.current, redo: redoRef.current }, activeEditorV6)
-    if (!result) return
-    undoRef.current = result.history.undo
-    redoRef.current = result.history.redo
-    patchStudio(() => result.document)
-    setCanUndo(true)
-    setCanRedo(result.history.redo.length > 0)
+    const document = useEditorV6Store.getState().redo(activeEditorV6.id, activeEditorV6)
+    if (!document) return
+    const history = useEditorV6Store.getState().histories[activeEditorV6.id]
+    patchStudio(() => document)
+    setCanUndo(Boolean(history?.undo.length))
+    setCanRedo(Boolean(history?.redo.length))
     setHistoryVersion(value => value + 1)
   }
 

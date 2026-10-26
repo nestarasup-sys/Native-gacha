@@ -9,8 +9,8 @@ import type { FaceAssetKind, FaceAssetSave, FaceCatalogItem, FaceCatalogItemSave
 import { hairCategories } from '../src/shared/hairCategories'
 import type { StudioAsset, StudioDocument } from '../src/shared/studio'
 import { isStudioExpressionEffects, isStudioFaceTransforms } from '../src/shared/studio'
-import type { EditorV6Asset, EditorV6Document } from '../src/shared/editorV6'
-import { isEditorV6ExpressionEffects, isEditorV6FaceTransforms } from '../src/shared/editorV6'
+import type { EditorV6Asset } from '../src/shared/editorV6'
+import { isEditorV6Document } from '../src/shared/editorV6Schema'
 import { VideoLibraryStore, configureVideoLibraryStorage } from './videoLibrary'
 import { VideoBackgroundLibraryStore, configureBackgroundLibraryStorage } from './backgroundLibrary'
 import { RoteiroUiGifLibraryStore, configureRoteiroUiGifStorage } from './roteiroUiGifLibrary'
@@ -970,49 +970,6 @@ const { listStudios } = createStudioLibraryIndex({
   studioLibraryPath,
   readStudio
 })
-
-function isEditorV6Document(value: unknown): value is EditorV6Document {
-  if (!value || typeof value !== 'object') return false
-  const editorV6 = value as Partial<EditorV6Document>
-  const assets = editorV6.assets
-  const elements = editorV6.elements
-  return editorV6.schemaVersion === 1
-    && typeof editorV6.id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(editorV6.id)
-    && typeof editorV6.title === 'string' && editorV6.title.trim().length > 0 && editorV6.title.length <= 100
-    && typeof editorV6.color === 'string' && /^(#[0-9a-f]{6}|hsl\([\d.]+\s+[\d.]+%\s+[\d.]+%\))$/i.test(editorV6.color)
-    && typeof editorV6.createdAt === 'string' && Number.isFinite(Date.parse(editorV6.createdAt))
-    && typeof editorV6.updatedAt === 'string' && Number.isFinite(Date.parse(editorV6.updatedAt))
-    && typeof editorV6.backgroundColor === 'string' && /^#[0-9a-f]{6}$/i.test(editorV6.backgroundColor)
-    && (editorV6.backgroundAssetId === null || typeof editorV6.backgroundAssetId === 'string')
-    && (editorV6.thumbnailDataUrl === undefined || typeof editorV6.thumbnailDataUrl === 'string' && /^data:image\/(jpeg|png);base64,/.test(editorV6.thumbnailDataUrl) && editorV6.thumbnailDataUrl.length <= 1_500_000)
-    && [editorV6.backgroundX, editorV6.backgroundY, editorV6.backgroundWidth, editorV6.backgroundHeight, editorV6.backgroundRotation].every(Number.isFinite)
-    && Array.isArray(assets) && assets.length <= 500
-    && assets.every((asset) => isEditorV6Asset(asset))
-    && Array.isArray(elements) && elements.length <= 1000
-    && (editorV6.backgroundAssetId === null || assets.some((asset) => asset.id === editorV6.backgroundAssetId && asset.category === 'background'))
-    && elements.every((element) => Boolean(element && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(element.id) && typeof element.text === 'string'
-      && ['image', 'character', 'narrator', 'speech', 'thought'].includes(element.kind)
-      && isEditorV6FaceTransforms(element.faceTransforms)
-      && (element.expressionBase === undefined || Boolean(element.expressionBase && element.expressionBase.appearance && isValidCustomizerFaceAppearance(element.expressionBase.appearance)
-        && element.expressionBase.transforms && isEditorV6FaceTransforms(element.expressionBase.transforms)))
-      && (element.activeExpressionPresetId === undefined || element.activeExpressionPresetId === null || typeof element.activeExpressionPresetId === 'string' && isValidWardrobeId(element.activeExpressionPresetId))
-      && isEditorV6ExpressionEffects(element.activeExpressionEffects)
-      && (element.activeExpressionCollectionId === undefined || typeof element.activeExpressionCollectionId === 'string' && isValidWardrobeId(element.activeExpressionCollectionId))
-      && (element.characterSourceUpdatedAt === undefined || (typeof element.characterSourceUpdatedAt === 'string' && Number.isFinite(Date.parse(element.characterSourceUpdatedAt))))
-      && (element.kind !== 'image' || assets.some((asset) => asset.id === element.assetId && asset.category === 'object'))
-      && (element.kind !== 'character' || (typeof element.characterId === 'string' && assets.some((asset) => asset.id === element.assetId && asset.category === 'character')))
-      && [element.x, element.y, element.width, element.height, element.rotation, element.zIndex].every(Number.isFinite)))
-}
-
-function isEditorV6Asset(value: unknown): value is EditorV6Asset {
-  if (!value || typeof value !== 'object') return false
-  const asset = value as Partial<EditorV6Asset>
-  return typeof asset.id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(asset.id)
-    && (asset.category === 'background' || asset.category === 'object' || asset.category === 'character')
-    && typeof asset.name === 'string' && asset.name.length <= 255
-    && (asset.mimeType === 'image/png' || asset.mimeType === 'image/jpeg' || asset.mimeType === 'image/webp')
-    && typeof asset.dataUrl === 'string' && asset.dataUrl.startsWith(`data:${asset.mimeType};base64,`) && asset.dataUrl.length <= 70_000_000
-}
 
 const { readEditorV6, writeEditorV6, removeEditorV6 } = createEditorV6DocumentPersistence({
   files: { readFile, writeFile, mkdir, access, rename, unlink, rm },
