@@ -4,8 +4,7 @@ Este pacote contém o código-fonte commitado do Native Gacha e documentação d
 
 - O snapshot vem da branch `Main-desenvolvimento`; o hash exato é informado junto com o ZIP.
 - O aplicativo existente é Electron + React + TypeScript. Ele ainda não foi reimplementado em C++.
-- O **Editor Gacha é um produto novo planejado**, ainda não implementado neste snapshot. O documento `docs/gacha editor plano v1.md` registra o conceito e os requisitos já confirmados.
-- O Studio Principal atual é um módulo separado e **não deve ser usado como modelo de timeline ou editor de vídeo** para o Editor Gacha.
+- O Studio Principal é um módulo próprio de composição de cenas.
 - O arquivo ZIP não deve incluir `.git`, dependências instaladas, builds, binários FFmpeg nem `app-data`. `app-data` é perfil/runtime que pode conter personagens, projetos e mídia privada. Os testes usam fixtures sintéticas para explicar os contratos sem expor dados pessoais.
 
 ## Por onde começar

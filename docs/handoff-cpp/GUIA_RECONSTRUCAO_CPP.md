@@ -40,11 +40,11 @@ O backend atual é local: processo principal Electron, serviços Node, SQLite e 
 - **Fabricador DEV** (`src/renderer/src/features/fabricator`, `electron/domains/fabricator`): autor de modelos, poses, roupas, cabelo, componentes faciais, expressões e ferramentas de animação/presets. Proprietário dos catálogos de origem.
 - **Customizador** (`src/renderer/src/features/customizer`, `electron/domains/customizer`): cria personagens com IDs estáveis e guarda escolhas e ajustes por personagem. Não grava alterações nos catálogos do Fabricador.
 - **Renderer compartilhado** (`src/renderer/src/characters`, `src/shared/characterRenderAssets.ts`): resolve assets e compõe corpo, roupas, cabelo e rosto. Trate-o como contrato visual importante; crie fixtures golden para comparar pixels durante a migração.
-- **Studio Principal** (`src/renderer/src/features/studio`, `electron/domains/studio`): compõe cenas com personagens e elementos. Consome personagens e é proprietário do estado de suas cenas. Não é o Editor Gacha nem referência para timeline/engine de vídeo.
+- **Studio Principal** (`src/renderer/src/features/studio`, `electron/domains/studio`): compõe cenas com personagens e elementos. Consome personagens e é proprietário do estado de suas cenas.
 - **Roteiros e Base de Vídeos** (`src/renderer/src/features/roteiros`, `electron/domains/baseVideos`, `electron/roteiro*`, `electron/videoLibrary.ts`): roteiros, projetos, bibliotecas compartilhadas de vídeo/fundos e exportação de personagens. A biblioteca de mídia existe independentemente do Video Studio removido.
 - **Opções e dados** (`src/renderer/src/features/options`, `electron/dataPlatform.cjs`, `electron/domainFileSystem.cjs`, `electron/dataBackups.cjs`, `docs/APP_DATA_ESCALAVEL.md`): migração local guiada, catálogo, armazenamento por conteúdo, backups e restauração.
 
-O **Video Studio foi removido** da versão atual desta branch. Não reintroduza suas telas ou engine antiga como parte da reconstrução dos módulos existentes. O Editor Gacha planejado é novo e precisa de projeto, modelo de timeline e arquitetura próprios.
+O **Video Studio foi removido** da versão atual desta branch. Não reintroduza suas telas ou engine antiga como parte da reconstrução dos módulos existentes. Base de Vídeos e Roteiros continuam mantendo suas bibliotecas e fluxos próprios de mídia.
 
 ## Regras de propriedade e compatibilidade
 
@@ -58,50 +58,6 @@ O **Video Studio foi removido** da versão atual desta branch. Não reintroduza 
 8. Logs não registram texto de projetos, personagens, caminhos privados ou conteúdo de mídia.
 
 Consulte `docs/APP_DATA_PORTABLE.md`, `docs/APP_DATA_ESCALAVEL.md`, `electron/dataMigration.cjs`, `electron/dataPlatform.cjs`, `electron/domainFileSystem.cjs` e testes de migração/continuidade.
-
-## Especificação inicial do Editor Gacha
-
-Este módulo é futuro. Requisitos confirmados no plano:
-
-- Timeline com faixas independentes de personagem, fala, pensamento, vídeo e áudio; blocos podem se sobrepor entre faixas.
-- Estados visuais são imagens paradas (pose/expressão) durante o bloco. Troca direta é válida; animação só ocorre se configurada.
-- Fala identifica o personagem e ativa Talk durante o bloco. Talk é boca aberta parada por padrão; movimento de boca só se configurado.
-- Pensamento não ativa Talk nem abre a boca.
-- Piscada automática troca a imagem dos olhos sem mover corpo/cabeça.
-- Transições entre pose/preset: duração inicial de 250 ms.
-- Vídeo e áudio importados são copiados para o projeto; áudio do vídeo fica ligado por padrão e pode ser silenciado.
-- Exportação inicial: MP4, 1920×1080, 30 FPS.
-- Animador DEV e Animador Preset DEV são protótipos, não especificação final.
-
-Plano e questões em aberto: `docs/gacha editor plano v1.md`. Este pacote não contém uma implementação de editor de vídeo.
-
-## Arquitetura-alvo recomendada para o Editor Gacha nativo
-
-```text
-Qt Quick/QML UI
-    ├── timeline virtualizada (apenas faixas/blocos visíveis)
-    ├── inspector e biblioteca de mídia
-    └── preview de cena
-C++ core (sem UI)
-    ├── modelo versionado do projeto e comandos undo/redo
-    ├── avaliação temporal determinística por timestamp
-    ├── composição de personagem/cena
-    └── importação e regras de sincronismo
-Workers/processos isolados
-    ├── FFmpeg decode/proxy/thumbnails/waveform
-    └── render/export MP4 com fila limitada e cancelamento
-SQLite + asset store
-    ├── metadados, índices, estado e referências
-    └── mídia original, proxies e cache recriável separados
-```
-
-- Guardar tempo como ticks inteiros ou unidade racional estável; evitar ponto flutuante acumulado. O plano sugere 48.000 ticks/s: 30 FPS alinham a 1.600 ticks/quadro e 250 ms a 12.000 ticks.
-- Consultar blocos ativos com índice por intervalo; não percorrer/ordenar todos os blocos a cada quadro.
-- Playback baseado em relógio absoluto e timestamps de áudio/vídeo; atrasos não podem gerar drift acumulativo.
-- Preview, timeline, waveform, thumbnails e encoder usam caches limitados por bytes e filas com backpressure.
-- Export não depende da taxa da tela. Renderizar frames determinísticos em lotes e codificar em worker/processo; informar progresso, cancelar, limpar temporários e manter UI responsiva.
-- Preview pausado, scrub, playback e export chamam a mesma avaliação de quadro para resultados equivalentes.
-- Autosave agrupado para mudanças de conteúdo; movimentar playhead não é alteração do projeto nem dispara gravação.
 
 ## Migração incremental proposta
 
@@ -125,11 +81,7 @@ Portar o compositor conforme o código observado. Criar fixtures sintéticas e c
 
 Reconstruir Fabricador, Customizador, Studio Principal, Roteiros/Base de Vídeos e Opções. Cada módulo deve ter dono de dados, comandos claros e persistência testável, sem gravações incidentais em outro domínio. Video Studio não está no escopo atual.
 
-### 5 — Novo Editor Gacha
-
-Implementar núcleo temporal e projeto isolados; depois timeline e preview; depois playback; exportação por último. Comparar FFmpeg isolado com opções aceleradas no hardware alvo antes de escolher o padrão.
-
-### 6 — Validação e corte
+### 5 — Validação e corte
 
 Validar cópias de bancos, golden images, falhas/crash/cancelamento/rollback, memória e tempo. Só então oferecer migração para dados reais. Manter backup/export do formato anterior até estabilidade comprovada.
 
@@ -139,7 +91,7 @@ Validar cópias de bancos, golden images, falhas/crash/cancelamento/rollback, me
 - Importação legada sem perda de IDs/slots, geometria ou resolução.
 - Licenciamento/distribuição de Qt, FFmpeg e codecs.
 - Desempenho em máquinas mais limitadas, sobretudo em mídia, timelines longas e caches de imagens grandes.
-- Requisitos do Editor Gacha ainda incompletos: prototipar e validar as interações antes de congelar o modelo da timeline.
+- Requisitos funcionais ainda incompletos devem ser prototipados e validados antes de congelar modelos de dados.
 
 C++ por si só não elimina travamentos, exportação lenta ou incompatibilidades; threading, filas, limites de memória, codecs e benchmarks determinam o resultado.
 
