@@ -351,7 +351,10 @@ export async function renderWardrobeOverlayCanvases(
       const targetBone = artwork.parts.find((part) => part.id === component.attachedPartId)
       if (!sourceBone || !targetBone) continue
       const { kneeOverlap, edgePadding } = wardrobePosePadding(component, equippedComponents.get(`${group.modelSlot}:${group.setId}`) ?? [])
-      if (component.glue?.mode === 'loose') continue
+      // Keep the Editor V6 composition consistent with the Customizer: newly
+      // imported pieces can be loose while being fitted, but still have a bone
+      // and source geometry. Only an explicit Soltar action hides the garment.
+      if (component.glue?.mode === 'loose' && component.glue.explicitRelease) continue
       const transform = mapWardrobeComponentToPose(component, sourceBone, targetBone, kneeOverlap, edgePadding)
       mapped.push({ component, transform, center: transform.origin, sequence: sequence++ })
     }
