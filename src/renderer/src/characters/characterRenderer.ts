@@ -350,7 +350,11 @@ export async function renderWardrobeOverlayCanvases(
       const targetBone = artwork.parts.find((part) => part.id === component.attachedPartId)
       if (!sourceBone || !targetBone) continue
       const { kneeOverlap, edgePadding } = wardrobePosePadding(component, equippedComponents.get(`${group.modelSlot}:${group.setId}`) ?? [])
-      if (component.glue?.mode === 'loose') continue
+      // Newly imported pieces can be "loose" while they are still being fitted
+      // in Roupas Dev. They still have an attachedPartId and usable sheet
+      // geometry, so map them from that bone into the current pose. Only a
+      // deliberate Soltar action should hide a piece from the posed character.
+      if (component.glue?.mode === 'loose' && component.glue.explicitRelease) continue
       const transform = mapWardrobeComponentToPose(component, sourceBone, targetBone, kneeOverlap, edgePadding)
       mapped.push({ component, transform, center: transform.origin, sequence: sequence++ })
     }
