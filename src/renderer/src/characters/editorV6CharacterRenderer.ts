@@ -1283,5 +1283,6 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
 
 export async function renderSavedCharacter(character: CustomizerCharacter, studioFaceTransforms?: EditorV6FaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: EditorV6FaceRenderMode): Promise<{ dataUrl: string; width: number; height: number }> {
   const renderer = await prepareSavedCharacterRenderer(character)
-  return renderer.render(character.customization.faceAppearance, studioFaceTransforms, expressionEffects, studioFaceMode)
+  try { return await renderer.render(character.customization.faceAppearance, studioFaceTransforms, expressionEffects, studioFaceMode) }
+  finally { renderer.dispose() }
 }
