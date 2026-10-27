@@ -601,16 +601,41 @@ export function FabricatorPage() {
     }, project)
   }
 
-  const importSlot = async (slot: number) => {
-    if (slots[slot - 1] && !window.confirm(`Substituir o modelo do slot ${slot}? O projeto atual será trocado.`)) return
+  const importSlot = async (slot: number, preserveExisting = false) => {
+    const reimporting = preserveExisting && Boolean(slots[slot - 1])
+    if (slots[slot - 1] && !reimporting && !window.confirm(`Substituir o modelo do slot ${slot}? O projeto atual será trocado.`)) return
     if (project) {
       if (savedTimer.current) clearTimeout(savedTimer.current)
       try { await persistProject(project) } catch (reason) { setError(reason instanceof Error ? `Falha ao salvar antes da importação: ${reason.message}` : 'Falha ao salvar antes da importação.'); return }
     }
     setError('')
     try {
-      const selected = await window.desktop.importFabricatorModel(slot)
+      const selected = await window.desktop.importFabricatorModel(slot, reimporting ? 'reimport' : 'import')
       if (!selected) return
+      if (reimporting) {
+        const existing = await window.desktop.loadFabricatorSlot(slot)
+        if (!existing) throw new Error('O modelo salvo não foi encontrado. Nenhuma configuração foi alterada.')
+        const updated: FabricatorProject = {
+          ...existing,
+          sourceName: selected.sourceName,
+          sourceAssetName: selected.sourceAssetName,
+          sourceDataUrl: selected.sourceDataUrl
+        }
+        await persistProject(updated)
+        if (activeSlot !== slot || projectRef.current?.slot !== slot) {
+          let loadedHistory = emptyHistory()
+          try { loadedHistory = await window.desktop.loadFabricatorHistory(slot) } catch { setError('A imagem foi reimportada, mas não foi possível carregar o histórico salvo.') }
+          historyRef.current = loadedHistory
+          setHistory(loadedHistory)
+          setActiveSlot(slot)
+          setSelectedIds(updated.parts[0] ? [updated.parts[0].id] : [])
+        }
+        projectRef.current = updated
+        setProject(updated)
+        setChromaValue(updated.tolerance)
+        broadcastModelSourceUpdate({ slot, sourceAssetName: selected.sourceAssetName })
+        return
+      }
       chromaWorkerRef.current?.terminate(); chromaWorkerRef.current = null; setChromaApplying(false)
       mixerSessionRef.current += 1
       setActiveSlot(slot); setProject(null); setSelectedIds([]); dirtyAssets.current.clear(); dirtyChromaBases.current.clear(); mixerSurfacesRef.current.clear(); mixerStrokeRef.current = null; setMixerActive(false); setMixerPainting(false)
@@ -973,7 +998,7 @@ export function FabricatorPage() {
       <p className="model-eyebrow">BIBLIOTECA DE MODELOS</p>
       <h1>{slots[activeSlot - 1] ? 'Abrindo projeto…' : 'Sua mesa de montagem'}</h1>
       <p>Importe uma folha de peças. O Nymi remove o fundo, recorta cada elemento e abre o canvas para você montar e articular o modelo.</p>
-      <button className="model-primary-button" onClick={() => void importSlot(activeSlot)} type="button"><Icon name="plus" /> Importar imagem</button>
+      <button className="model-primary-button" onClick={() => void importSlot(activeSlot, true)} type="button"><Icon name={slots[activeSlot - 1] ? 'reset' : 'plus'} /> {slots[activeSlot - 1] ? 'Reimportar imagem' : 'Importar imagem'}</button>
       <span className="model-supported-formats">PNG · JPG · WEBP · processamento local</span>
     </div>
   )
@@ -1008,7 +1033,7 @@ export function FabricatorPage() {
               })}
             </div>
             {slots[activeSlot - 1] && <button className="model-delete-compact" onClick={() => void deleteSlot(activeSlot)} disabled={deletingSlot === activeSlot} title="Excluir permanentemente este modelo" type="button"><Icon name="trash" /><span>{deletingSlot === activeSlot ? 'Excluindo…' : 'Excluir modelo'}</span></button>}
-            <button className="model-import-compact" onClick={() => void importSlot(activeSlot)} disabled={deletingSlot !== null} type="button"><Icon name="plus" /><span>Importar</span></button>
+            <button className="model-import-compact" onClick={() => void importSlot(activeSlot, true)} disabled={deletingSlot !== null || processing || chromaApplying || historyBusy || modelSourcePublishing} title={slots[activeSlot - 1] ? 'Substituir a imagem original preservando peças, poses, juntas e demais configurações' : 'Importar folha para este slot'} type="button"><Icon name={slots[activeSlot - 1] ? 'reset' : 'plus'} /><span>{slots[activeSlot - 1] ? 'Reimportar' : 'Importar'}</span></button>
           </header>
 
           {!project ? (

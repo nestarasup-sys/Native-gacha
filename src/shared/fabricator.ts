@@ -388,7 +388,7 @@ export type AnimatorAnimationAsset = { id: string; dataUrl: string }
 
 export type FabricatorDesktopApi = {
   listFabricatorSlots: () => Promise<FabricatorSlotSummary[]>
-  importFabricatorModel: (slot: number) => Promise<{ sourceName: string; sourceAssetName: string; sourceDataUrl: string } | null>
+  importFabricatorModel: (slot: number, mode?: 'import' | 'reimport') => Promise<{ sourceName: string; sourceAssetName: string; sourceDataUrl: string } | null>
   loadFabricatorSlot: (slot: number) => Promise<FabricatorProject | null>
   saveFabricatorProject: (project: FabricatorProjectSave, changedAssets: FabricatorAssetSave[]) => Promise<void>
   /** Publica uma folha PNG definitiva, suas peças e o novo manifesto num único slot. */

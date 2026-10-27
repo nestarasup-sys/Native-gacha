@@ -11,7 +11,7 @@ import type { RoteirosDesktopApi } from '../src/shared/roteiros'
 const invokeFabricator = createFabricatorInvoker(ipcRenderer)
 const fabricatorApi: FabricatorDesktopApi = {
   listFabricatorSlots: () => invokeFabricator('listFabricatorSlots'),
-  importFabricatorModel: (slot) => ipcRenderer.invoke('fabricator:import-model', slot),
+  importFabricatorModel: (slot, mode) => ipcRenderer.invoke('fabricator:import-model', slot, mode),
   loadFabricatorSlot: (slot) => invokeFabricator('loadFabricatorSlot', slot),
   saveFabricatorProject: (project, changedAssets) => ipcRenderer.invoke('fabricator:save-project', project, changedAssets),
   publishFabricatorModelSource: (project, sourceDataUrl, changedAssets) => ipcRenderer.invoke(fabricatorIpcChannels.publishFabricatorModelSource, { project, sourceDataUrl, changedAssets } satisfies FabricatorModelSourcePublishRequest),

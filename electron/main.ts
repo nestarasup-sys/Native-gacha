@@ -1576,11 +1576,12 @@ async function registerFabricatorHandlers(): Promise<void> {
     }
   })
 
-  ipcMain.handle('fabricator:import-model', async (event, slot: number) => {
+  ipcMain.handle('fabricator:import-model', async (event, slot: number, mode: 'import' | 'reimport' = 'import') => {
     assertTrustedSender(event)
     if (!isValidSlot(slot)) throw new Error('Slot inválido.')
+    if (mode !== 'import' && mode !== 'reimport') throw new Error('Modo de importação inválido.')
     const result = await dialog.showOpenDialog({
-      title: 'Importar folha de modelo',
+      title: mode === 'reimport' ? 'Reimportar imagem original do modelo' : 'Importar folha de modelo',
       properties: ['openFile'],
       filters: [{ name: 'Imagens', extensions: ['png', 'jpg', 'jpeg', 'webp'] }]
     })
@@ -1595,6 +1596,12 @@ async function registerFabricatorHandlers(): Promise<void> {
     const bytes = await readFile(path)
     const canonical = await normalizeImageBuffer(bytes)
     if (canonical.bitDepth > 8) throw new Error('O Fabricador processa a folha em 8 bits. O PNG de 16 bits não foi alterado; converta uma cópia para 8 bits para importar neste editor.')
+    if (mode === 'reimport') {
+      const existing = JSON.parse(await readFile(join(slotPath(slot), 'project.json'), 'utf8')) as { width?: number; height?: number }
+      if (canonical.width !== existing.width || canonical.height !== existing.height) {
+        throw new Error(`Para preservar as configurações do modelo, a imagem precisa ter ${existing.width} × ${existing.height} pixels.`)
+      }
+    }
     const sourceDataUrl = `data:image/png;base64,${canonical.bytes.toString('base64')}`
     const destination = slotPath(slot)
     const sourceAssetName = `source-${randomUUID()}.png`
