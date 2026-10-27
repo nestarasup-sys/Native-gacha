@@ -281,9 +281,14 @@ export const clothingCategories: Record<'Superior' | 'Inferior', Array<{ id: Clo
 }
 
 export function wardrobeComponentsForGroup(group: CustomizerWardrobeGroup, details: Record<string, WardrobeSet>): WardrobeSet['components'] {
+  const components = details[`${group.modelSlot}:${group.setId}`]?.components
+  if (!components) return []
+  // A stable component ID is authoritative. Its catalog category may have been
+  // edited after the character equipped it; filtering by the stale group
+  // category made valid saved clothes look deleted.
+  if (group.componentId) return components.filter((component) => component.id === group.componentId)
   const accepted = Object.values(clothingCategories).flat().find((category) => category.id === group.category)?.source
-  return details[`${group.modelSlot}:${group.setId}`]?.components.filter((component) => accepted?.includes(component.category)
-    && (!group.componentId || group.componentId === component.id)) ?? []
+  return components.filter((component) => accepted?.includes(component.category))
 }
 
 export async function renderWardrobeOverlayCanvases(

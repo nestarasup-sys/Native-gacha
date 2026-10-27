@@ -7,15 +7,27 @@ type Adjustment = Partial<Pick<CustomizerWardrobeGroup, 'offsetX' | 'offsetY' | 
 type Selection = { modelSlot: number; setId: string; category: CustomizerWardrobeCategory; componentId: string }
 type Bone = Pick<ModelPart, 'id' | 'x' | 'y' | 'width' | 'height' | 'rotation'>
 
+/** Keep a character's picker slot aligned with the source component after its category changes. */
+export function wardrobeGroupCategoryForSource(
+  sourceCategory: WardrobeCategory,
+  currentCategory: CustomizerWardrobeCategory
+): CustomizerWardrobeCategory {
+  if (sourceCategory === 'calca-coxa' || sourceCategory === 'calca-canela' || sourceCategory === 'shorts') return 'calca'
+  if (sourceCategory === 'saia' && (currentCategory === 'saia-superior' || currentCategory === 'saia-inferior')) return currentCategory
+  return sourceCategory
+}
+
 export function toggleWardrobeVisibility(group: CustomizerWardrobeGroup): CustomizerWardrobeGroup {
   if (group.hidden) { const { opacity: _opacity, ...visible } = group; return { ...visible, hidden: false } }
   return { ...group, hidden: true }
 }
 
 export function matchesWardrobeComponent(group: CustomizerWardrobeGroup, selected: Selection): boolean {
-  return group.modelSlot === selected.modelSlot && group.setId === selected.setId
-    && group.category === selected.category
-    && (!group.componentId || group.componentId === selected.componentId)
+  if (group.modelSlot !== selected.modelSlot || group.setId !== selected.setId) return false
+  // Category is editable catalog metadata. Once a character stores a stable
+  // component ID, that ID remains the identity even if the category changes.
+  if (group.componentId) return group.componentId === selected.componentId
+  return group.category === selected.category
 }
 
 /** Expands legacy whole-category placement only when its source component list is known. */
@@ -52,7 +64,7 @@ export function updateWardrobeComponentGroups(
 /** All per-component palette mutations are isolated from Fabricador manifests. */
 export function recolorWardrobeComponents(
   groups: readonly CustomizerWardrobeGroup[],
-  modelSlot: number, setId: string, category: CustomizerWardrobeCategory,
+  modelSlot: number, setId: string, _category: CustomizerWardrobeCategory,
   componentIds: readonly string[],
   change: { kind: 'replace'; colors: NonNullable<CustomizerWardrobeGroup['colors']> }
     | { kind: 'role'; role: keyof NonNullable<CustomizerWardrobeGroup['colors']>; value: string }
@@ -60,7 +72,7 @@ export function recolorWardrobeComponents(
 ): CustomizerWardrobeGroup[] {
   const ids = new Set(componentIds)
   return groups.map(group => {
-    if (group.modelSlot !== modelSlot || group.setId !== setId || group.category !== category
+    if (group.modelSlot !== modelSlot || group.setId !== setId
         || !group.componentId || !ids.has(group.componentId)) return group
     if (change.kind === 'clear') { const { colors: _colors, ...rest } = group; return rest }
     return { ...group, colors: change.kind === 'replace' ? change.colors
@@ -78,8 +90,8 @@ export function selectWardrobePanelComponents(
 ): CustomizerWardrobeGroup[] {
   const known = new Set(panelComponentKeys)
   const after = groups.filter(group => {
-    if (group.modelSlot !== modelSlot || group.category !== category) return true
-    if (!group.componentId) return false // Legacy category-wide entry for this slot.
+    if (group.modelSlot !== modelSlot) return true
+    if (!group.componentId) return group.category !== category // Legacy category-wide entry for this slot.
     return !known.has(`${group.modelSlot}:${group.setId}:${group.componentId}`)
   })
   if (next) after.push(...next.componentIds.map(componentId => ({

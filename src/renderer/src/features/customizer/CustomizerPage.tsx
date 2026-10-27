@@ -18,7 +18,7 @@ import { type StudioFaceTransforms } from '../../../../shared/studio'
 import { usePreviewBackground } from '../../ui/hooks/usePreviewBackground'
 import { DesignBanner } from '../../ui/components/DesignBanner'
 import { anchorWardrobeAdjustments, editWardrobeAdjustment, moveWardrobeAdjustment } from '../../../../shared/wardrobeAdjustment'
-import { toggleWardrobeVisibility, updateWardrobeComponentGroups, matchesWardrobeComponent, recolorWardrobeComponents, selectWardrobePanelComponents } from '../../../../shared/wardrobePlacementModel'
+import { toggleWardrobeVisibility, updateWardrobeComponentGroups, matchesWardrobeComponent, recolorWardrobeComponents, selectWardrobePanelComponents, wardrobeGroupCategoryForSource } from '../../../../shared/wardrobePlacementModel'
 import { applyCharacterBodyShape } from '../../../../shared/bodyShape'
 import { characterRenderSize, configureCharacterSampling, MAX_CHARACTER_PREVIEW_PIXELS } from './renderResolution'
 import { renderArtwork, loadStandardExpressionEffects, loadSkinTintedImage, loadCachedImage, withCharacterHeadSize, loadHairAppearanceLayers, renderArtworkWithHair, renderWardrobeOverlay, isRightFaceAsset, renderFaceOverlay, renderFrontHairOverlay, characterShapeScale, drawFaceCatalogOverlay, loadHairTintedImage, resolvedHairColors, clothingCategories, wardrobeComponentsForGroup, customizerHairParts, hairAppearanceStyleId } from '../../characters/characterRenderer'
@@ -974,8 +974,17 @@ export function CustomizerPage() {
         for (const { key, set } of restored) if (set) next[key] = set
         return next
       })
-      let migratedGroups = groupsToRestore
-      if (groupsToRestore.some((group) => !group.adjustmentReference)) {
+      const setsByKey = new Map<string, WardrobeSet>()
+      for (const { key, set } of restored) if (set) setsByKey.set(key, set)
+      let migratedGroups = groupsToRestore.map((group) => {
+        const component = group.componentId
+          ? setsByKey.get(`${group.modelSlot}:${group.setId}`)?.components.find((entry) => entry.id === group.componentId)
+          : undefined
+        if (!component) return group
+        const category = wardrobeGroupCategoryForSource(component.category, group.category)
+        return category === group.category ? group : { ...group, category }
+      })
+      if (migratedGroups.some((group) => !group.adjustmentReference)) {
         const modelSlot = selectedCharacter.customization.modelSlot ?? 1
         const source = await window.desktop.loadFabricatorSlot(modelSlot)
         const poseSlot = selectedCharacter.customization.poseSlot
@@ -984,7 +993,7 @@ export function CustomizerPage() {
         if (source && artwork) {
           const shaped = applyCharacterBodyShape(withCharacterHeadSize(artwork, getCharacterProportions(selectedCharacter.customization)), getCharacterBodyDimensions(selectedCharacter.customization))
           const details = Object.fromEntries(restored.filter((entry): entry is typeof entry & { set: WardrobeSet } => !!entry.set).map(({ key, set }) => [key, set]))
-          migratedGroups = anchorWardrobeAdjustments(groupsToRestore, modelSlot, shaped.parts, (group) => wardrobeComponentsForGroup(group, details))
+          migratedGroups = anchorWardrobeAdjustments(migratedGroups, modelSlot, shaped.parts, (group) => wardrobeComponentsForGroup(group, details))
         }
       }
       if (cancelled) return
