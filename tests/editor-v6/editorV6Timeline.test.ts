@@ -139,15 +139,15 @@ describe('timeline do Editor V6', () => {
     expect(editorV6DocumentSchema.safeParse(JSON.parse(JSON.stringify(document))).success).toBe(true)
   })
 
-  it('reconstrói o estado ao saltar para qualquer quadro sem reproduzir desde o início', () => {
+  it('compartilha posição ao saltar e mantém os demais estados por bloco', () => {
     const document = fixture(), original = actorClip(document)
     document.timeline = splitEditorV6Block(document.timeline, original.block.id, 90)
     const secondId = actorClip(document).track.blocks[1].id
     const edited = editEditorV6DocumentAtBlock(document, secondId, (working) => ({ ...working, elements: working.elements.map((element) => ({ ...element, x: 25, poseSlot: 3 })) }))
     expect(resolveEditorV6ElementsAtFrame(edited, 150)[0]).toMatchObject({ x: 25, poseSlot: 3 })
-    expect(resolveEditorV6ElementsAtFrame(edited, 45)[0].x).toBe(0)
+    expect(resolveEditorV6ElementsAtFrame(edited, 45)[0].x).toBe(25)
     expect(resolveEditorV6ElementsAtFrame(edited, 90)[0].x).toBe(25)
-    expect(edited.elements[0].x).toBe(0)
+    expect(edited.elements[0].x).toBe(25)
   })
 
   it('mantém a imagem da pose anterior ao editar a imagem de outro período', () => {

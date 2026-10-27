@@ -96,7 +96,7 @@ async function main() {
   const mediaRgb = run(['-i', mediaOutput, '-vf', "select='eq(n,0)+eq(n,10)'", '-fps_mode', 'passthrough', '-frames:v', '2', '-pix_fmt', 'rgb24', '-f', 'rawvideo', 'pipe:1'])
   const mediaFrameBytes = 320 * 180 * 3
   assert(!mediaRgb.subarray(0, mediaFrameBytes).equals(mediaRgb.subarray(mediaFrameBytes, mediaFrameBytes * 2)), 'Vídeo importado não mudou quadro a quadro na composição exportada.')
-  const actorOverVideo = Array.from(mediaRgb.subarray((90 * 320 + 160) * 3, (90 * 320 + 160) * 3 + 3))
+  const actorOverVideo = Array.from(mediaRgb.subarray((90 * 320 + 230) * 3, (90 * 320 + 230) * 3 + 3))
   assert(actorOverVideo[0] > 200 && actorOverVideo[1] > 200 && actorOverVideo[2] < 40, 'O vídeo cobriu o personagem, embora a camada do vídeo deva ficar atrás dos personagens.')
   const videoOutside = Array.from(mediaRgb.subarray(mediaFrameBytes + (10 * 320 + 10) * 3, mediaFrameBytes + (10 * 320 + 10) * 3 + 3))
   const positionedVideo = Array.from(mediaRgb.subarray(mediaFrameBytes + (90 * 320 + 200) * 3, mediaFrameBytes + (90 * 320 + 200) * 3 + 3))

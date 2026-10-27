@@ -11,26 +11,26 @@ function fixture(): EditorV6Document {
 }
 
 describe('preview e posicionamento do Editor V6', () => {
-  it('registra posição no instante escolhido sem alterar os quadros anteriores', () => {
+  it('compartilha a posição em todos os quadros do personagem', () => {
     const document = fixture(), id = document.elements[0].id
     const operation = prepareEditorV6PositionAtFrame(document, id, 120)!
     const moved = moveEditorV6ElementInPeriod(operation.document, operation.blockId, 25, -10)
-    expect(resolveEditorV6SceneAtFrame(moved, 119).elements[0]).toMatchObject({ x: 0, y: 0 })
+    expect(resolveEditorV6SceneAtFrame(moved, 119).elements[0]).toMatchObject({ x: 25, y: -10 })
     expect(resolveEditorV6SceneAtFrame(moved, 120).elements[0]).toMatchObject({ x: 25, y: -10 })
     expect(resolveEditorV6SceneAtFrame(moved, 250).elements[0]).toMatchObject({ x: 25, y: -10 })
     expect(document.elements[0]).toMatchObject({ x: 0, y: 0 })
     expect(moved.timeline.durationFrames).toBe(300)
   })
 
-  it('preserva os estados seguintes e reutiliza o estado existente no mesmo quadro', () => {
+  it('mantém uma única posição ao editar blocos anteriores e seguintes', () => {
     const document = fixture(), id = document.elements[0].id
     const later = prepareEditorV6PositionAtFrame(document, id, 240)!
     const laterMoved = moveEditorV6ElementInPeriod(later.document, later.blockId, -20, 0)
     const earlier = prepareEditorV6PositionAtFrame(laterMoved, id, 90)!
     const result = moveEditorV6ElementInPeriod(earlier.document, earlier.blockId, 20, 0)
-    expect(resolveEditorV6SceneAtFrame(result, 89).elements[0].x).toBe(0)
+    expect(resolveEditorV6SceneAtFrame(result, 89).elements[0].x).toBe(20)
     expect(resolveEditorV6SceneAtFrame(result, 150).elements[0].x).toBe(20)
-    expect(resolveEditorV6SceneAtFrame(result, 240).elements[0].x).toBe(-20)
+    expect(resolveEditorV6SceneAtFrame(result, 240).elements[0].x).toBe(20)
     expect(prepareEditorV6PositionAtFrame(result, id, 90)!.blockId).toBe(earlier.blockId)
     expect(timelineClips(result.timeline)).toHaveLength(3)
   })
