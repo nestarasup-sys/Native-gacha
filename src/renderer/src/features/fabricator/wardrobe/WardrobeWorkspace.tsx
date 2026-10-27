@@ -121,6 +121,36 @@ function guessName(category: WardrobeCategory, x: number, width: number): string
   if (category === 'calca-coxa') return `Calça · coxa ${side}`
   return `Calça · canela ${side}`
 }
+function automaticCategoryForBone(part: ModelPart, current: WardrobeCategory): WardrobeCategory | null {
+  const name = part.name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+  if (/antebraco|forearm|braco inferior|lower arm/.test(name)) return current === 'luvas' ? current : 'manga-inferior'
+  if (/(^|\s)(mao|maos|hand|hands)(\s|$)/.test(name)) return 'luvas'
+  if (/braco|upper arm/.test(name)) return current === 'luvas' ? current : 'manga-superior'
+  if (/coxa|thigh/.test(name)) return current === 'shorts' ? current : 'calca-coxa'
+  if (/canela|panturrilha|calf|shin|perna inferior|lower leg/.test(name)) {
+    return current === 'meia' || current === 'sapato' ? current : 'calca-canela'
+  }
+  if (/(^|\s)(pe|pes|foot|feet)(\s|$)/.test(name)) return current === 'meia' ? current : 'sapato'
+  if (/quadril|cintura|hip|waist/.test(name)) {
+    return current === 'cinto' || current === 'saia' || current === 'shorts' ? current : 'cinto'
+  }
+  if (/tronco|corpo|torso|chest|peito/.test(name)) {
+    return ['camisa', 'jaqueta', 'capa', 'cinto', 'saia'].includes(current) ? current : 'camisa'
+  }
+  if (/cabeca|head|face|rosto/.test(name)) {
+    return current === 'oculos' || current === 'acessorio-cabeca' ? current : 'acessorio-cabeca'
+  }
+  return null
+}
+function guessNameForBone(category: WardrobeCategory, part: ModelPart, model: FabricatorProject): string {
+  const label = part.name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+  const frame = part.sourceTransform ?? part
+  const centerX = frame.x + frame.width / 2
+  const hasLeftSide = /esquerda|esquerdo|left/.test(label)
+  const hasRightSide = /direita|direito|right/.test(label)
+  const sideX = hasLeftSide ? 0 : hasRightSide ? model.width : centerX
+  return guessName(category, sideX, model.width)
+}
 function getBodyLayer(model: FabricatorProject | null, partId: string): number {
   if (!model) return 0
   const order = model.layerOrder ?? model.parts.map((part) => part.id)
@@ -396,6 +426,17 @@ export function WardrobeWorkspace() {
       if (component.id !== id) return component
       const updated = { ...component, ...values }
       if (values.category && values.category !== 'oculos' && values.category !== 'acessorio-cabeca') updated.renderAboveHair = false
+      if (values.attachedPartId !== undefined && values.attachedPartId !== component.attachedPartId && referenceModel) {
+        const bone = referenceBone(values.attachedPartId)
+        if (bone) {
+          const category = automaticCategoryForBone(bone, component.category)
+          if (category) {
+            updated.category = category
+            updated.name = guessNameForBone(category, bone, referenceModel)
+            if (category !== 'oculos' && category !== 'acessorio-cabeca') updated.renderAboveHair = false
+          }
+        }
+      }
       if ((values.category === 'sapato' || values.category === 'luvas') && values.attachedPartId === undefined && referenceModel) {
         const target = guessBone(values.category, updated.x + updated.width / 2, current.width, referenceModel)
         updated.attachedPartId = target?.id ?? ''
