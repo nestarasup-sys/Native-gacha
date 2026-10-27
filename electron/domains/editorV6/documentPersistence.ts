@@ -3,7 +3,7 @@ import { join, resolve, dirname, basename } from 'node:path'
 import type * as nodeFs from 'node:fs/promises'
 import { createEditorV6Timeline, syncEditorV6TimelineElements, type EditorV6Asset, type EditorV6Document, type EditorV6ProjectSummary, type EditorV6Timeline } from '../../../src/shared/editorV6'
 import { publishEditorV6AssetsAndManifest, recoverEditorV6AssetTransaction } from './assetTransaction.ts'
-import { normalizeEditorV6Timeline } from '../../../src/shared/editorV6Timeline'
+import { normalizeEditorV6CharacterPositions, normalizeEditorV6Timeline } from '../../../src/shared/editorV6Timeline'
 import { editorV6DocumentSchema, editorV6MediaAssetSchema } from '../../../src/shared/editorV6Schema'
 
 type Files = Pick<typeof nodeFs, 'readFile' | 'writeFile' | 'mkdir' | 'access' | 'rename' | 'unlink' | 'rm'>
@@ -30,6 +30,9 @@ export function createEditorV6DocumentPersistence(deps: {
 
   function normalizeEditorV6(value: Record<string, unknown>, id: string): EditorV6Document {
     const elements = Array.isArray(value.elements) ? value.elements as EditorV6Document['elements'] : []
+    const timeline = value.timeline && typeof value.timeline === 'object'
+      ? normalizeEditorV6Timeline(syncEditorV6TimelineElements(value.timeline as EditorV6Timeline, elements))
+      : createEditorV6Timeline(elements)
     return {
       schemaVersion: 1, id,
       title: String(value.title ?? 'Editor V6').slice(0, 100),
@@ -48,9 +51,7 @@ export function createEditorV6DocumentPersistence(deps: {
       ...(Array.isArray(value.media) ? { media: value.media as EditorV6Document['media'] } : {}),
       elements,
       ...(Array.isArray(value.exportAudio) ? { exportAudio: value.exportAudio as EditorV6Document['exportAudio'] } : {}),
-      timeline: value.timeline && typeof value.timeline === 'object'
-        ? normalizeEditorV6Timeline(syncEditorV6TimelineElements(value.timeline as EditorV6Timeline, elements))
-        : createEditorV6Timeline(elements),
+      timeline,
     }
   }
 
@@ -60,7 +61,7 @@ export function createEditorV6DocumentPersistence(deps: {
       const folder = deps.editorV6Path(id)
       await recoverEditorV6AssetTransaction(deps.files, folder)
       const raw = JSON.parse(await readFile(join(folder, 'editorV6.json'), 'utf8')) as Record<string, unknown>
-      const normalized = normalizeEditorV6(raw, id)
+      const normalized = normalizeEditorV6CharacterPositions(normalizeEditorV6(raw, id))
       const assets = await Promise.all(normalized.assets.map(async (asset) => {
         if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(asset.id)
           || !['background', 'object', 'character'].includes(asset.category)

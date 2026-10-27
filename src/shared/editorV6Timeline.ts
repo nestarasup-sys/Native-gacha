@@ -114,8 +114,75 @@ export function prepareEditorV6PositionAtFrame(document: EditorV6Document, eleme
 export function moveEditorV6ElementInPeriod(document: EditorV6Document, blockId: string, x: number, y: number): EditorV6Document {
   if (!Number.isFinite(x) || !Number.isFinite(y)) return document
   const clip = timelineClips(document.timeline).find(({ block }) => block.id === blockId)
-  if (!clip?.block.elementId || clip.track.locked) return document
+  if (!clip?.block.elementId || clip.track.kind !== 'character' || clip.track.locked) return document
   return editEditorV6DocumentAtBlock(document, blockId, (working) => ({ ...working, elements: working.elements.map((element) => element.id === clip.block.elementId ? { ...element, x, y } : element) }))
+}
+
+/** Aligns a legacy project's character blocks to the actor's earliest saved position. */
+export function normalizeEditorV6CharacterPositions(document: EditorV6Document): EditorV6Document {
+  const positions = new Map<string, { x: number; y: number }>()
+  for (const track of document.timeline.tracks) {
+    if (track.kind !== 'character' || !track.characterId || positions.has(track.characterId)) continue
+    const first = [...track.blocks].filter((block) => block.state?.kind === 'character').sort(byTime)[0]
+    const base = document.elements.find((element) => element.kind === 'character' && element.characterId === track.characterId)
+    const source = first?.state ?? base
+    if (source && Number.isFinite(source.x) && Number.isFinite(source.y)) positions.set(track.characterId, { x: source.x, y: source.y })
+  }
+  if (!positions.size) return document
+
+  let changed = false
+  const elements = document.elements.map((element) => {
+    const position = element.kind === 'character' && element.characterId ? positions.get(element.characterId) : undefined
+    if (!position || (element.x === position.x && element.y === position.y)) return element
+    changed = true
+    return { ...element, ...position }
+  })
+  const tracks = document.timeline.tracks.map((track) => {
+    const position = track.kind === 'character' && track.characterId ? positions.get(track.characterId) : undefined
+    if (!position) return track
+    let trackChanged = false
+    const blocks = track.blocks.map((block) => {
+      const state = block.state
+      if (!state || state.kind !== 'character' || (state.x === position.x && state.y === position.y)) return block
+      trackChanged = true
+      return { ...block, state: { ...state, ...position } }
+    })
+    if (!trackChanged) return track
+    changed = true
+    return { ...track, blocks }
+  })
+  return changed ? pruneEditorV6TimelineSnapshots({ ...document, elements, timeline: { ...document.timeline, tracks } }) : document
+}
+
+/** Position is actor-level data: every pose/expression block uses the same scene coordinates. */
+export function setEditorV6CharacterPosition(document: EditorV6Document, elementId: string, position: { x?: number; y?: number }): EditorV6Document {
+  if ((position.x !== undefined && !Number.isFinite(position.x)) || (position.y !== undefined && !Number.isFinite(position.y))) return document
+  const clip = timelineClips(document.timeline).find(({ block }) => block.elementId === elementId && block.state?.kind === 'character')
+  if (clip?.track.locked) return document
+  const base = document.elements.find((element) => element.id === elementId && element.kind === 'character')
+  const characterId = clip?.track.characterId ?? base?.characterId
+  if (!characterId) return document
+  const current = base ?? clip?.block.state
+  if (!current) return document
+  const x = position.x ?? current.x
+  const y = position.y ?? current.y
+  const elements = document.elements.map((element) => element.kind === 'character' && element.characterId === characterId
+    ? { ...element, x, y }
+    : element)
+  const tracks = document.timeline.tracks.map((track) => {
+    if (track.kind !== 'character' || track.characterId !== characterId) return track
+    let trackChanged = false
+    const blocks = track.blocks.map((block) => {
+      const state = block.state
+      if (state?.kind !== 'character' || (block.elementId !== elementId && state.characterId !== characterId)) return block
+      if (state.x === x && state.y === y) return block
+      trackChanged = true
+      return { ...block, state: { ...state, x, y } }
+    })
+    return trackChanged ? { ...track, blocks } : track
+  })
+  const changed = elements.some((element, index) => element !== document.elements[index]) || tracks.some((track, index) => track !== document.timeline.tracks[index])
+  return changed ? { ...document, elements, timeline: { ...document.timeline, tracks } } : document
 }
 
 type ElementIndex = { clips: TimelineClip[]; maximumEnds: number[]; character: boolean }
@@ -235,6 +302,9 @@ export function editEditorV6DocumentAtBlock(document: EditorV6Document, blockId:
   next = { ...next, elements: next.elements.map((element) => element.id === base.id ? base : element), timeline: { ...next.timeline, tracks: next.timeline.tracks.map((track) => ({
     ...track, blocks: track.blocks.map((block) => block.id === blockId ? { ...block, state, label: state.text.trim().slice(0, 120) || block.label } : block)
   })) } }
+  if (clip.track.kind === 'character' && state.kind === 'character' && (state.x !== before.x || state.y !== before.y)) {
+    next = setEditorV6CharacterPosition(next, base.id, { x: state.x, y: state.y })
+  }
   return pruneEditorV6TimelineSnapshots(next)
 }
 
