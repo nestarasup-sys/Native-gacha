@@ -5,6 +5,7 @@ import { isEditorV6BlinkFrame, pruneEditorV6TimelineSnapshots, resolveEditorV6El
 import { interpolateEditorV6Face, interpolateEditorV6Pose, motionAngle } from '../../src/shared/editorV6MotionInterpolation'
 import { editorV6DocumentSchema } from '../../src/shared/editorV6Schema'
 import { editorV6VisualKey } from '../../src/shared/editorV6Export'
+import { isEditorV6BlinkRenderMode } from '../../src/shared/editorV6FaceSchedule'
 
 function fixture() {
   const actor: EditorV6Element = { id: crypto.randomUUID(), kind: 'character', characterId: 'alice', assetId: crypto.randomUUID(), text: 'Alice', x: 0, y: 0, width: 20, height: 30, rotation: 0, zIndex: 1, poseSlot: 1 }
@@ -20,6 +21,13 @@ function bake(document: EditorV6Document): EditorV6MotionBakeResult {
   return { asset: { id: assetId, category: 'character', name: 'Motion', mimeType: 'image/png', dataUrl: 'data:image/png;base64,AA==', timelineSnapshot: true }, motion: { version: 1, key: plan.key, assetId, frames: plan.samples.map((s, i) => ({ offset: s.offset, sprite: { x: i * 10, y: 0, width: 10, height: 10, atlasWidth: 70, atlasHeight: 10 }, x: i, y: 0, width: 20, height: 30, rotation: 0, flipX: false })) }, metrics: { milliseconds: 1, preparedRigs: 9, samples: 7, atlasPixels: 700 } }
 }
 describe('V6 motion scheduling and portable cache', () => {
+  it('keeps closed eyes active in the combined talk-blink face mode', () => {
+    expect(isEditorV6BlinkRenderMode('blink')).toBe(true)
+    expect(isEditorV6BlinkRenderMode('talk-blink')).toBe(true)
+    expect(isEditorV6BlinkRenderMode('talk')).toBe(false)
+    expect(isEditorV6BlinkRenderMode(undefined)).toBe(false)
+  })
+
   it('preserves the exact 250ms and samples seven integer frames', () => {
     const plan = editorV6MotionPlans(fixture())[0]
     expect(plan.startFrame).toBe(82.5)

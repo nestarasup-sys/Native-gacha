@@ -29,7 +29,7 @@ type EditorV6Card = EditorV6ProjectSummary
 type Tool = 'background' | 'objects' | null
 type DragState = { id: string; target: 'element' | 'background' | 'video'; videoLayout?: EditorV6VideoLayout; pointerId: number; startX: number; startY: number; originalX: number; originalY: number; width: number; height: number; before: EditorV6Document; prepared: EditorV6Document; blockId: string; frame: number; moved: boolean }
 const STORAGE_KEY = 'gacha-nymi-editor-v6-catalog-v1'
-const EDITOR_V6_FACE_RENDER_VERSION = 7
+const EDITOR_V6_FACE_RENDER_VERSION = 8
 const studioColor = (number: number) => `hsl(${(number * 137.508) % 360} 45% 78%)`
 const defaultStudioEyeTransform: EditorV6FaceTransform = { x: 0, y: 0, width: 100, height: 100, rotation: 0 }
 function editorV6FaceModeForElement(element: EditorV6Element | null, appearance: CustomizerFaceAppearance | undefined): EditorV6FaceMode {
@@ -185,6 +185,12 @@ export function EditorV6Page() {
   const nextStudioNumber = useRef(1)
   const selectedEditorV6 = editorV6Projects.find((studio) => studio.id === selectedId) ?? null
   const activeEditorV6 = activeEditorV6Stored?.id === activeEditorV6Id ? activeEditorV6Stored : null
+  const availableCharacterById = new Map(availableCharacters.map((character) => [character.id, character]))
+  const faceAssetRefreshRequired = Boolean(activeEditorV6 && [
+    ...activeEditorV6.elements,
+    ...activeEditorV6.timeline.tracks.flatMap((track) => track.blocks.flatMap((block) => block.state ? [block.state] : []))
+  ].some((state) => state.kind === 'character' && (state.faceRendererVersion !== EDITOR_V6_FACE_RENDER_VERSION
+    || Boolean(availableCharacterById.get(state.characterId ?? '') && state.characterSourceUpdatedAt !== availableCharacterById.get(state.characterId ?? '')!.updatedAt))))
   const timelineDurationFrames = activeEditorV6?.timeline.durationFrames ?? 300
   const previewScene = useMemo(() => activeEditorV6 ? resolveEditorV6SceneAtFrame(activeEditorV6, playheadFrame, { includeMotion: false }) : null, [activeEditorV6, playheadFrame])
   const previewBackground = previewScene?.background ?? { backgroundColor: '#d7b5cd', backgroundAssetId: null, backgroundX: 0, backgroundY: 0, backgroundWidth: 100, backgroundHeight: 100, backgroundRotation: 0 }
@@ -486,17 +492,20 @@ export function EditorV6Page() {
     type RefreshTarget = { kind: 'element' | 'block'; id: string; state: EditorV6Element }
     type RefreshGroup = { character: CustomizerCharacter; state: EditorV6Element; targets: RefreshTarget[] }
     const groups = new Map<string, RefreshGroup>()
+    const missingCharacterNames = new Set<string>()
     const addTarget = (kind: RefreshTarget['kind'], id: string, state: EditorV6Element) => {
       if (state.kind !== 'character' || !state.characterId || !state.assetId) return
       const character = characters.get(state.characterId)
-      if (!character || state.characterSourceUpdatedAt === character.updatedAt) return
-      const signature = JSON.stringify([character.id, character.updatedAt, state.poseSlot ?? character.customization.poseSlot, state.faceAppearance, state.expressionBase, state.faceTransforms, state.activeFaceMode, state.activeExpressionPresetId, state.activeExpressionPresetUpdatedAt, state.activeExpressionGaze, state.activeExpressionEffects])
+      if (!character) { if (state.faceRendererVersion !== EDITOR_V6_FACE_RENDER_VERSION) missingCharacterNames.add(state.text); return }
+      if (state.faceRendererVersion === EDITOR_V6_FACE_RENDER_VERSION && state.characterSourceUpdatedAt === character.updatedAt) return
+      const signature = JSON.stringify([character.id, character.updatedAt, EDITOR_V6_FACE_RENDER_VERSION, state.poseSlot ?? character.customization.poseSlot, state.faceAppearance, state.expressionBase, state.faceTransforms, state.activeFaceMode, state.activeExpressionPresetId, state.activeExpressionPresetUpdatedAt, state.activeExpressionGaze, state.activeExpressionEffects])
       const group = groups.get(signature) ?? { character, state, targets: [] }
       group.targets.push({ kind, id, state })
       groups.set(signature, group)
     }
     for (const element of project.elements) addTarget('element', element.id, element)
     for (const track of project.timeline.tracks) for (const block of track.blocks) if (block.state && block.elementId) addTarget('block', block.id, block.state)
+    if (missingCharacterNames.size) setError(`Não foi possível atualizar as piscadas de ${[...missingCharacterNames].join(', ')} porque o personagem não está disponível no Customizador.`)
     if (!groups.size) return
     pausePlayback()
     let cancelled = false
@@ -1644,12 +1653,13 @@ export function EditorV6Page() {
             <button className="studio-tool-button" onClick={() => void importTimelineMedia('video')} type="button"><b>▣</b><span>Selecionar vídeo</span></button>
             <button className="studio-tool-button" onClick={() => void importTimelineMedia('audio')} type="button"><b>♪</b><span>Importar áudio</span></button>
             <span className="studio-tool-separator" />
-            <button className="studio-tool-button" onClick={() => { pausePlayback(); setExportOpen(true) }} type="button"><Icon name="download" /><span>Exportar MP4</span></button>
+            <button className="studio-tool-button" onClick={() => { pausePlayback(); setExportOpen(true) }} disabled={faceAssetRefreshRequired} title={faceAssetRefreshRequired ? 'Atualizando imagens de piscar e fala para este projeto' : undefined} type="button"><Icon name="download" /><span>{faceAssetRefreshRequired ? 'Atualizando piscadas…' : 'Exportar MP4'}</span></button>
             <button className="studio-tool-button" onClick={() => void exportPrint()} type="button"><Icon name="download" /><span>Print</span><i aria-hidden="true">✦</i></button>
             <button className="studio-tool-button" onClick={() => void openPrints()} type="button"><Icon name="folder" /><span>Pasta</span><i aria-hidden="true">✦</i></button>
             <button className="studio-tool-button studio-view-button" onClick={() => setFullView(true)} type="button"><Icon name="expand" /><span>View</span></button>
           </nav>
           <small className={`studio-save-indicator${saved ? '' : ' unsaved'}`}><i />{saved ? 'Salvo automaticamente' : 'Salvando alterações…'}</small>
+          {faceAssetRefreshRequired && <small className="studio-save-notice" role="status">Atualizando imagens faciais para preservar piscadas em poses e expressões.</small>}
           {error && <small className="studio-error-message" role="alert">{error}</small>}
           {notice && <small className="studio-save-notice" role="status">{notice}</small>}
         </aside>}

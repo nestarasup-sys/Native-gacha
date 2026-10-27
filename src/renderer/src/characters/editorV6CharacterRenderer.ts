@@ -2,6 +2,7 @@ import type { FaceCatalogItem, FaceCatalogItemSummary, FaceComponentAsset, FaceC
 import { hairCategories } from '../../../shared/hairCategories'
 import type { CustomizerCharacter, CustomizerFaceAppearance, CustomizerWardrobeCategory, CustomizerWardrobeGroup, FaceComponentPartId, FacePalettePartId, HairColorOverrides, HairColorRole, HairPartId } from '../../../shared/customizer'
 import { resolveEditorV6TalkMouthId, type EditorV6FaceRenderMode, type EditorV6FaceTransforms } from '../../../shared/editorV6'
+import { isEditorV6BlinkRenderMode } from '../../../shared/editorV6FaceSchedule'
 import { mapWardrobeComponentToPose, wardrobePosePadding } from '../../../shared/wardrobePose'
 import { normalizeLayerOrder } from '../../../shared/modelRig'
 import { bindLegacyTorsoGridWardrobeSet, validateWardrobeFlow } from '../../../shared/assetFlow'
@@ -800,7 +801,8 @@ export async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, 
   }))
 
   const closedEyeAssets = new Map<FaceComponentPartId, FaceComponentAsset>()
-  if (studioFaceMode === 'blink') {
+  const blinking = isEditorV6BlinkRenderMode(studioFaceMode)
+  if (blinking) {
     for (const side of ['left', 'right'] as const) {
       const part = `eye-${side}` as const
       const openEye = loaded.get(part)
@@ -828,8 +830,8 @@ export async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, 
   for (const part of layerOrder) {
     const category = part.startsWith('eye') ? 'eye' : part.startsWith('pupil') ? 'pupil' : 'eyebrow'
     const isRight = part.endsWith('right')
-    if (studioFaceMode === 'blink' && category === 'pupil') continue
-    const asset = category === 'eye' && studioFaceMode === 'blink' ? closedEyeAssets.get(part) ?? loaded.get(part) : loaded.get(part)
+    if (blinking && category === 'pupil') continue
+    const asset = category === 'eye' && blinking ? closedEyeAssets.get(part) ?? loaded.get(part) : loaded.get(part)
     const selectedPart = appearance.components?.[part]
     if (!asset || !selectedPart) continue
     // Fabricator Dev owns placement and scale; the Customizer only chooses the asset.
@@ -1150,7 +1152,7 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
   ): Promise<void> => {
     let faceAppearance = currentAppearance && studioFaceMode ? {
       ...currentAppearance,
-      eyeState: studioFaceMode === 'blink' || studioFaceMode === 'talk-blink' ? 2 as const : currentAppearance.eyeState === 1 ? 1 as const : 0 as const,
+      eyeState: isEditorV6BlinkRenderMode(studioFaceMode) ? 2 as const : currentAppearance.eyeState === 1 ? 1 as const : 0 as const,
       mouthOpen: studioFaceMode === 'talk' || studioFaceMode === 'talk-blink'
     } : currentAppearance
     if ((studioFaceMode === 'talk' || studioFaceMode === 'talk-blink') && faceAppearance && !faceAppearance.mouthOpenCatalogId) {
@@ -1167,7 +1169,7 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
       ]
       const hasCatalogFaceSelection = selections.some(([, id]) => Boolean(id)) || Object.values(faceAppearance.components ?? {}).some((component) => component?.assetId)
       const hasFaceOverlaySelection = Object.values(faceAppearance.faceDetails ?? {}).some(Boolean) || Object.values(faceAppearance.headExtras ?? {}).some(Boolean)
-      if (studioFaceMode === 'blink' && !hasCatalogFaceSelection && !legacyFaceImage) throw new Error('Blink precisa dos assets faciais separados do catálogo de rosto ou de Olhos Dev.')
+      if (isEditorV6BlinkRenderMode(studioFaceMode) && !hasCatalogFaceSelection && !legacyFaceImage) throw new Error('Blink precisa dos assets faciais separados do catálogo de rosto ou de Olhos Dev.')
       const activeItems: Partial<Record<FaceSheetKind | FaceElementKind, FaceCatalogItem>> = {}
       await Promise.all(selections.filter((entry): entry is [FaceSheetKind | FaceElementKind, string] => Boolean(entry[1])).map(async ([category, id]) => {
         let item = faceItems[category]?.id === id ? faceItems[category] : null

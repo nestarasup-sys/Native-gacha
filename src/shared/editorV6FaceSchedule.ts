@@ -1,5 +1,9 @@
 import type { EditorV6FaceRenderMode, EditorV6Timeline } from './editorV6'
 
+export function isEditorV6BlinkRenderMode(mode: EditorV6FaceRenderMode | undefined): boolean {
+  return mode === 'blink' || mode === 'talk-blink'
+}
+
 const speechIndex = new WeakMap<EditorV6Timeline, Map<string, Array<{ start: number; end: number }>>>()
 
 function speechIntervals(timeline: EditorV6Timeline): Map<string, Array<{ start: number; end: number }>> {
