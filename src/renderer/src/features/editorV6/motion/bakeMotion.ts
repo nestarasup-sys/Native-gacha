@@ -3,6 +3,7 @@ import type { FaceComponentPartId } from '../../../../../shared/customizer'
 import type { FaceElementKind, FaceTransform } from '../../../../../shared/fabricator'
 import type { EditorV6Element, EditorV6FaceRenderMode, EditorV6FaceTransform } from '../../../../../shared/editorV6'
 import type { EditorV6MotionBakeRequest, EditorV6MotionBakeResult, EditorV6MotionFrame } from '../../../../../shared/editorV6Motion'
+import { editorV6FaceModeDuringMotion } from '../../../../../shared/editorV6FaceSchedule'
 import { interpolateEditorV6Face, interpolateEditorV6Pose, motionAngle, motionEase, motionLerp } from '../../../../../shared/editorV6MotionInterpolation'
 import { editorV6ElementSize } from '../../../../../shared/editorV6SceneModel'
 import { loadStandardExpressionEffects, prepareSavedCharacterRenderer, type GachaReusableMaterialCache } from '../../../characters/editorV6CharacterRenderer'
@@ -88,7 +89,7 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
   const render = async (progress: number, faceMode?: EditorV6FaceRenderMode) => {
     const renderer = await prepare(progress), face = interpolateEditorV6Face(from, to, progress)
     try {
-      const result = await renderer.renderToCanvas(face.appearance, face.transforms, face.effects, faceMode ?? face.mode)
+      const result = await renderer.renderToCanvas(face.appearance, face.transforms, face.effects, editorV6FaceModeDuringMotion(faceMode ?? face.mode))
       return { ...result, crop: cropOf(result.canvas), dispose: () => { if (!samePose) renderer.dispose() } }
     } catch (error) { if (!samePose) renderer.dispose(); throw error }
   }

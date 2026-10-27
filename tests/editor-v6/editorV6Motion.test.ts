@@ -5,7 +5,7 @@ import { isEditorV6BlinkFrame, pruneEditorV6TimelineSnapshots, resolveEditorV6El
 import { interpolateEditorV6Face, interpolateEditorV6Pose, motionAngle } from '../../src/shared/editorV6MotionInterpolation'
 import { editorV6DocumentSchema } from '../../src/shared/editorV6Schema'
 import { editorV6VisualKey } from '../../src/shared/editorV6Export'
-import { isEditorV6BlinkRenderMode } from '../../src/shared/editorV6FaceSchedule'
+import { editorV6FaceModeAtFrame, editorV6FaceModeDuringMotion, isEditorV6BlinkRenderMode } from '../../src/shared/editorV6FaceSchedule'
 
 function fixture() {
   const actor: EditorV6Element = { id: crypto.randomUUID(), kind: 'character', characterId: 'alice', assetId: crypto.randomUUID(), text: 'Alice', x: 0, y: 0, width: 20, height: 30, rotation: 0, zIndex: 1, poseSlot: 1 }
@@ -26,6 +26,9 @@ describe('V6 motion scheduling and portable cache', () => {
     expect(isEditorV6BlinkRenderMode('talk-blink')).toBe(true)
     expect(isEditorV6BlinkRenderMode('talk')).toBe(false)
     expect(isEditorV6BlinkRenderMode(undefined)).toBe(false)
+    expect(editorV6FaceModeDuringMotion('blink')).toBeUndefined()
+    expect(editorV6FaceModeDuringMotion('talk-blink')).toBe('talk')
+    expect(editorV6FaceModeDuringMotion('talk')).toBe('talk')
   })
 
   it('preserves the exact 250ms and samples seven integer frames', () => {
@@ -47,17 +50,41 @@ describe('V6 motion scheduling and portable cache', () => {
     expect(editorV6MotionPlans(changed)[0].key).not.toBe(beforePlan.key)
     expect(missingEditorV6Motions(changed)).toHaveLength(1)
   })
-  it('pré-calcula talk e blink durante a transição sem atualizar o personagem por quadro', () => {
+  it('mantém a fala e suprime piscadas durante a transição sem atualizar o personagem por quadro', () => {
     const doc = fixture(), speech = doc.timeline.tracks.find((track) => track.kind === 'speech')!
     speech.blocks = [{ id: crypto.randomUUID(), label: 'Fala durante a troca', characterId: 'alice', startFrame: 86, durationFrames: 2 }]
     const plan = editorV6MotionPlans(doc)[0]
-    expect(plan.samples.some((sample) => sample.faceMode === 'talk' || sample.faceMode === 'talk-blink')).toBe(true)
+    expect(plan.samples.some((sample) => sample.faceMode === 'talk')).toBe(true)
     for (const sample of plan.samples) {
-      const frame = plan.endFrame + sample.offset, talking = frame >= 86 && frame < 88, blinking = isEditorV6BlinkFrame(doc.id, 'alice', frame)
-      expect(sample.faceMode).toBe(talking ? blinking ? 'talk-blink' : 'talk' : blinking ? 'blink' : undefined)
+      const frame = plan.endFrame + sample.offset, talking = frame >= 86 && frame < 88
+      expect(sample.faceMode).toBe(talking ? 'talk' : undefined)
+      expect(sample.faceMode === 'blink' || sample.faceMode === 'talk-blink').toBe(false)
     }
     const withoutSpeech = { ...doc, timeline: { ...doc.timeline, tracks: doc.timeline.tracks.map((track) => ({ ...track, blocks: track.kind === 'speech' ? [] : track.blocks })) } }
     expect(editorV6MotionPlans(withoutSpeech)[0].key).not.toBe(plan.key)
+  })
+  it('uses open eyes for automatic blink frames inside pose and expression motion', () => {
+    const doc = fixture()
+    const blinkRunStart = Array.from({ length: 250 }, (_, index) => index + 20).find((frame) => isEditorV6BlinkFrame(doc.id, 'alice', frame) && !isEditorV6BlinkFrame(doc.id, 'alice', frame - 1))!
+    const characterTrack = doc.timeline.tracks.find((track) => track.kind === 'character')!
+    const transitionEnd = blinkRunStart + 7
+    characterTrack.blocks[0] = { ...characterTrack.blocks[0], durationFrames: transitionEnd }
+    characterTrack.blocks[1] = { ...characterTrack.blocks[1], startFrame: transitionEnd }
+    const speech = doc.timeline.tracks.find((track) => track.kind === 'speech')!
+    const speakingBlinkFrame = blinkRunStart + 1
+    speech.blocks = [{ id: crypto.randomUUID(), label: 'Fala durante a piscada', characterId: 'alice', startFrame: speakingBlinkFrame, durationFrames: 1 }]
+
+    const plan = editorV6MotionPlans(doc)[0]
+    expect(editorV6FaceModeAtFrame(doc.id, doc.timeline, 'alice', speakingBlinkFrame)).toBe('talk-blink')
+    const speakingSample = plan.samples.find((sample) => plan.endFrame + sample.offset === speakingBlinkFrame)
+    expect(speakingSample?.faceMode).toBe('talk')
+    const otherBlinkSamples = plan.samples.filter((sample) => {
+      const frame = plan.endFrame + sample.offset
+      return isEditorV6BlinkFrame(doc.id, 'alice', frame) && frame !== speakingBlinkFrame
+    })
+    expect(otherBlinkSamples.length).toBeGreaterThan(0)
+    expect(otherBlinkSamples.every((sample) => sample.faceMode === undefined)).toBe(true)
+    expect(plan.samples.every((sample) => sample.faceMode !== 'blink' && sample.faceMode !== 'talk-blink')).toBe(true)
   })
   it('seeks directly into motion and ends exactly at the destination', () => {
     const doc = fixture(), result = bake(doc), ready = attachEditorV6Motion(doc, editorV6MotionPlans(doc)[0].blockId, result)

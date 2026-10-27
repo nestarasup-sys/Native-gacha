@@ -2,7 +2,7 @@
 import type { CustomizerCharacter } from './customizer'
 import type { EditorV6Asset, EditorV6Document, EditorV6Element, EditorV6FaceRenderMode, EditorV6TimelineBlock, EditorV6TimelineTrack } from './editorV6'
 import type { CharacterRenderAssetProvider } from './characterRenderAssets'
-import { editorV6FaceModeAtFrame } from './editorV6FaceSchedule'
+import { editorV6FaceModeAtFrame, editorV6FaceModeDuringMotion } from './editorV6FaceSchedule'
 
 export const EDITOR_V6_MOTION_VERSION = 1
 export const EDITOR_V6_MOTION_MS = 250
@@ -52,7 +52,7 @@ export function editorV6MotionPlans(document: EditorV6Document): EditorV6MotionP
       if (plan) {
         const samples = plan.samples.map((sample) => {
           const frame = plan.endFrame + sample.offset
-          const faceMode = editorV6FaceModeAtFrame(document.id, document.timeline, plan.characterId, frame)
+          const faceMode = editorV6FaceModeDuringMotion(editorV6FaceModeAtFrame(document.id, document.timeline, plan.characterId, frame))
           return { ...sample, ...(faceMode ? { faceMode } : {}) }
         })
         plans.push({ ...plan, samples, key: motionKey(plan.from, plan.to, samples) })

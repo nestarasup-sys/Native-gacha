@@ -4,6 +4,13 @@ export function isEditorV6BlinkRenderMode(mode: EditorV6FaceRenderMode | undefin
   return mode === 'blink' || mode === 'talk-blink'
 }
 
+/** Keep eyes open throughout a baked pose/expression transition, even while speech continues. */
+export function editorV6FaceModeDuringMotion(mode: EditorV6FaceRenderMode | undefined): EditorV6FaceRenderMode | undefined {
+  if (mode === 'talk-blink') return 'talk'
+  if (mode === 'blink') return undefined
+  return mode
+}
+
 const speechIndex = new WeakMap<EditorV6Timeline, Map<string, Array<{ start: number; end: number }>>>()
 
 function speechIntervals(timeline: EditorV6Timeline): Map<string, Array<{ start: number; end: number }>> {
