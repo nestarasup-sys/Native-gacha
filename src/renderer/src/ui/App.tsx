@@ -9,7 +9,7 @@ const LazyStudioPage = lazy(async () => ({ default: (await import('../features/s
 const LazyEditorV6Page = lazy(async () => ({ default: (await import('../features/editorV6/EditorV6Page')).EditorV6Page }))
 const LazyOptionsPage = lazy(async () => ({ default: (await import('../features/options/OptionsPage')).OptionsPage }))
 const LazyFabricatorPage = lazy(async () => ({ default: (await import('../features/fabricator/FabricatorPage')).FabricatorPage }))
-const LazyBaseVideosPage = lazy(async () => ({ default: (await import('../features/roteiros/BaseVideosPage')).BaseVideosPage }))
+const LazyBaseVideosPage = lazy(async () => ({ default: (await import('../features/baseVideos/BaseVideosPage')).BaseVideosPage }))
 const LazyRoteirosPage = lazy(async () => ({ default: (await import('../features/roteiros/RoteirosPage')).RoteirosPage }))
 
 export function App() {

@@ -1,3 +1,6 @@
+import type { VideoTimeline } from './baseVideos'
+import type { VideoLibraryReference } from './mediaLibrary'
+
 export type RoteiroTikTok = {
   id: string
   title: string
@@ -12,14 +15,7 @@ export type RoteiroTikTok = {
   additionalContext?: string
 }
 
-export type RoteiroVideoReference = {
-  id: string
-  name: string
-  mimeType: 'video/mp4' | 'video/webm' | 'video/quicktime' | 'video/x-m4v'
-  extension: 'mp4' | 'webm' | 'mov' | 'm4v'
-  size: number
-  durationFrames: number
-}
+export type RoteiroVideoReference = VideoLibraryReference
 
 export type RoteiroReactionBlock = {
   id: string
@@ -41,21 +37,7 @@ export type RoteiroSectionContent = {
   additionalContext?: string
 }
 
-export type RoteiroTimeline = 'unspecified' | 'past' | 'present' | 'future'
-
-export type BaseVideoDetails = {
-  videoId: string
-  videoNumber?: number
-  categoryId?: string | null
-  description: string
-  timeline: RoteiroTimeline
-  sceneEndSeconds?: number
-  firstGroupReactionSeconds?: number
-  secondGroupReactionSeconds?: number
-  additionalContext?: string
-}
-
-export type BaseVideoCategory = { id: string; name: string; color: string; createdAt: string }
+export type RoteiroTimeline = VideoTimeline
 export type RoteiroExportLog = { id: string; roteiroId: string; createdAt: string; action: string; status: 'success' | 'error'; details: string }
 
 export type RoteiroDocument = {
@@ -87,18 +69,9 @@ export type RoteiroUiGifItem = { id: string; name: string; size: number; created
 export type RoteirosDesktopApi = {
   listRoteiros: () => Promise<RoteiroDocument[]>
   saveRoteiros: (roteiros: RoteiroDocument[]) => Promise<void>
-  listBaseVideoDetails: () => Promise<BaseVideoDetails[]>
-  saveBaseVideoDetails: (details: BaseVideoDetails) => Promise<void>
-  listBaseVideoCategories: () => Promise<BaseVideoCategory[]>
-  createBaseVideoCategory: (name: string) => Promise<BaseVideoCategory>
-  renameBaseVideoCategory: (id: string, name: string) => Promise<BaseVideoCategory>
-  deleteBaseVideoCategory: (id: string) => Promise<void>
   listRoteiroExportLogs: (roteiroId: string) => Promise<RoteiroExportLog[]>
   appendRoteiroExportLog: (roteiroId: string, entry: RoteiroExportLog) => Promise<void>
   clearRoteiroExportLogs: (roteiroId: string) => Promise<void>
-  deleteBaseVideoDetails: (videoId: string) => Promise<void>
-  deleteBaseVideo: (videoId: string) => Promise<void>
-  publishBaseVideo: (videoId: string) => Promise<number>
   startRoteiroCharacterExport: (request: { id: string; title: string; characters: Array<{ id: string; name: string }> }) => Promise<{ jobId: string; folderName: string; assetCountLimit: number }>
   writeRoteiroCharacterExportAsset: (jobId: string, asset: { characterId: string; pose: number; expression: string; role: 'base' | 'blink' | 'talk' | 'pt' | 'pt-blink' | 'pt-talk'; dataUrl: string }) => Promise<void>
   finishRoteiroCharacterExport: (jobId: string) => Promise<{ folderName: string; path: string; characters: number; files: number }>

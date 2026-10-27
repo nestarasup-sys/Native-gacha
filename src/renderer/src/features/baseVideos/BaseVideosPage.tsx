@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { BaseVideoCategory, BaseVideoDetails, RoteiroTimeline } from '../../../../shared/roteiros'
-import type { VideoLibraryItem } from '../../../../shared/studio'
+import type { BaseVideoCategory, BaseVideoDetails, VideoTimeline } from '../../../../shared/baseVideos'
+import type { VideoLibraryItem } from '../../../../shared/mediaLibrary'
 import { Icon } from '../../ui/components/Icon'
 
 const emptyDetails = (videoId: string): BaseVideoDetails => ({ videoId, categoryId: null, description: '', additionalContext: '', timeline: 'unspecified' })
@@ -25,7 +25,7 @@ async function recognizeDuration(item: VideoLibraryItem): Promise<VideoLibraryIt
       media.load()
     })
     if (!Number.isFinite(seconds) || seconds <= 0 || seconds > 60 * 60 * 24) throw new Error(`A duração de “${item.name}” não é válida.`)
-    return await window.desktop.finishVideoLibraryImport(item.id, Math.max(1, Math.ceil(seconds * 60)))
+    return await window.desktop.mediaLibrary.finishImport(item.id, Math.max(1, Math.ceil(seconds * 60)))
   } finally {
     media.pause()
     media.removeAttribute('src')
@@ -65,7 +65,7 @@ export function BaseVideosPage() {
 
   useEffect(() => {
     let cancelled = false
-    void Promise.all([window.desktop.listVideoLibrary(), window.desktop.listBaseVideoDetails(), window.desktop.listBaseVideoCategories()]).then(([library, saved, loadedCategories]) => {
+    void Promise.all([window.desktop.mediaLibrary.list(), window.desktop.baseVideos.listDetails(), window.desktop.baseVideos.listCategories()]).then(([library, saved, loadedCategories]) => {
       if (cancelled) return
       const savedById = Object.fromEntries(saved.map((entry) => [entry.videoId, entry]))
       const merged = Object.fromEntries(library.map((item) => [item.id, savedById[item.id] ?? emptyDetails(item.id)]))
@@ -104,7 +104,7 @@ export function BaseVideosPage() {
       const details = pendingSaves.current.get(videoId)
       if (!details) return
       if (updateUi) setSaveStatusById((current) => ({ ...current, [videoId]: 'saving' }))
-      const request = window.desktop.saveBaseVideoDetails(details).catch((reason: unknown) => {
+      const request = window.desktop.baseVideos.saveDetails(details).catch((reason: unknown) => {
         if (updateUi) { setSaveStatusById((current) => ({ ...current, [videoId]: 'error' })); setError(reason instanceof Error ? reason.message : 'Não foi possível salvar este vídeo.') }
         throw reason
       })
@@ -144,7 +144,7 @@ export function BaseVideosPage() {
     if (!categoryVideoId || !categoryName.trim() || busy) return
     setBusy(true); setCategoryError(null)
     try {
-      const category = await window.desktop.createBaseVideoCategory(categoryName)
+      const category = await window.desktop.baseVideos.createCategory(categoryName)
       setCategories((current) => [...current, category].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')))
       updateDetails(categoryVideoId, { categoryId: category.id })
       setCategoryName('')
@@ -156,7 +156,7 @@ export function BaseVideosPage() {
     if (!categoryEditValue.trim() || busy) return
     setBusy(true); setCategoryError(null)
     try {
-      const renamed = await window.desktop.renameBaseVideoCategory(id, categoryEditValue)
+      const renamed = await window.desktop.baseVideos.renameCategory(id, categoryEditValue)
       setCategories((current) => current.map((category) => category.id === id ? renamed : category).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')))
       setCategoryEditingId(null)
     } catch (reason) { setCategoryError(reason instanceof Error ? reason.message : 'Não foi possível renomear a categoria.') }
@@ -168,7 +168,7 @@ export function BaseVideosPage() {
     setBusy(true); setCategoryError(null)
     try {
       for (const [videoId, details] of Object.entries(detailsById)) if (details.categoryId === category.id) await flushPendingSave(videoId)
-      await window.desktop.deleteBaseVideoCategory(category.id)
+      await window.desktop.baseVideos.deleteCategory(category.id)
       setCategories((current) => current.filter((entry) => entry.id !== category.id))
       for (const [videoId, details] of Object.entries(detailsById)) if (details.categoryId === category.id) updateDetails(videoId, { categoryId: null })
       if (categoryEditingId === category.id) setCategoryEditingId(null)
@@ -204,11 +204,11 @@ export function BaseVideosPage() {
     setBusy(true); setError(null)
     let imported: VideoLibraryItem | null = null
     try {
-      const importedItem = await window.desktop.importVideoLibrary()
+      const importedItem = await window.desktop.mediaLibrary.import()
       if (!importedItem) return
       imported = importedItem
       const details = emptyDetails(importedItem.id)
-      await window.desktop.saveBaseVideoDetails(details)
+      await window.desktop.baseVideos.saveDetails(details)
       setItems((current) => [importedItem, ...current.filter((item) => item.id !== importedItem.id)])
       setDetailsById((current) => ({ ...current, [importedItem.id]: details }))
       setActiveView('drafts')
@@ -219,7 +219,7 @@ export function BaseVideosPage() {
         setError(reason instanceof Error ? reason.message : 'O vídeo foi importado como rascunho, mas não foi possível reconhecer sua duração.')
       }
     } catch (reason) {
-      if (imported) await window.desktop.deleteBaseVideo(imported.id).catch((cleanupReason: unknown) => console.error('Falha ao limpar a importação incompleta do vídeo.', cleanupReason))
+      if (imported) await window.desktop.baseVideos.deleteVideo(imported.id).catch((cleanupReason: unknown) => console.error('Falha ao limpar a importação incompleta do vídeo.', cleanupReason))
       setError(reason instanceof Error ? reason.message : 'Não foi possível adicionar o vídeo.')
     } finally { setBusy(false) }
   }
@@ -229,7 +229,7 @@ export function BaseVideosPage() {
     setPublishErrors((current) => ({ ...current, [videoId]: '' }))
     try {
       await flushPendingSave(videoId)
-      const videoNumber = await window.desktop.publishBaseVideo(videoId)
+      const videoNumber = await window.desktop.baseVideos.publish(videoId)
       setDetailsById((current) => ({ ...current, [videoId]: { ...(current[videoId] ?? emptyDetails(videoId)), videoNumber } }))
       setActiveView('main')
     } catch (reason) {
@@ -251,7 +251,7 @@ export function BaseVideosPage() {
     try {
       for (const id of selectedIds) {
         await flushPendingSave(id)
-        await window.desktop.deleteBaseVideo(id)
+        await window.desktop.baseVideos.deleteVideo(id)
         deletedIds.push(id)
       }
       setItems((current) => current.filter((item) => !deletedIds.includes(item.id)))
@@ -269,7 +269,7 @@ export function BaseVideosPage() {
     if (!renameTarget || !renameValue.trim() || busy) return
     setBusy(true); setError(null)
     try {
-      const renamed = await window.desktop.renameVideoLibraryItem(renameTarget.id, renameValue)
+      const renamed = await window.desktop.mediaLibrary.rename(renameTarget.id, renameValue)
       setItems((current) => current.map((item) => item.id === renamed.id ? { ...item, name: renamed.name } : item))
       setRenameTarget(null)
     } catch (reason) {
@@ -297,7 +297,7 @@ export function BaseVideosPage() {
       return
     }
     recognizingDurations.current.add(item.id)
-    void window.desktop.finishVideoLibraryImport(item.id, Math.max(1, Math.ceil(seconds * 60))).then((ready) => {
+    void window.desktop.mediaLibrary.finishImport(item.id, Math.max(1, Math.ceil(seconds * 60))).then((ready) => {
       setItems((current) => current.map((candidate) => candidate.id === item.id ? ready : candidate))
       setPublishErrors((current) => ({ ...current, [item.id]: '' }))
     }).catch((reason) => setPublishErrors((current) => ({ ...current, [item.id]: reason instanceof Error ? reason.message : 'Não foi possível salvar a duração do vídeo.' }))).finally(() => recognizingDurations.current.delete(item.id))
@@ -307,7 +307,7 @@ export function BaseVideosPage() {
     if (busy) return
     setBusy(true); setLoaded(false); setLoadError(null)
     try {
-      const [library, saved, loadedCategories] = await Promise.all([window.desktop.listVideoLibrary(), window.desktop.listBaseVideoDetails(), window.desktop.listBaseVideoCategories()])
+      const [library, saved, loadedCategories] = await Promise.all([window.desktop.mediaLibrary.list(), window.desktop.baseVideos.listDetails(), window.desktop.baseVideos.listCategories()])
       const savedById = Object.fromEntries(saved.map((entry) => [entry.videoId, entry]))
       setItems(library)
       setDetailsById(Object.fromEntries(library.map((item) => [item.id, savedById[item.id] ?? emptyDetails(item.id)])))
@@ -344,7 +344,7 @@ export function BaseVideosPage() {
             <div className="base-video-category-row"><span className={`base-video-category-current${saveStatusById[item.id] === 'error' ? ' save-error' : ''}`} role="status">{saveStatusById[item.id] === 'saving' ? 'Salvando alterações…' : saveStatusById[item.id] === 'error' ? 'Erro ao salvar' : <><span className="base-video-category-dot" style={{ backgroundColor: currentCategory?.color ?? '#b6aebd' }} />{currentCategory?.name ?? 'Sem categoria'}</>}</span><div className="base-video-category-row-actions">{saveStatusById[item.id] === 'error' && pendingSaves.current.has(item.id) && <button className="base-video-save-retry" type="button" onClick={() => void persistPendingSave(item.id).catch(() => undefined)}>Tentar salvar</button>}<button className="base-video-category-button" type="button" disabled={busy} onClick={() => { setCategoryVideoId(item.id); setCategoryName(''); setCategoryEditingId(null); setCategoryError(null) }}>Categoria</button></div></div>
             <label className="roteiro-video-description"><span>Descrição do que acontece no vídeo</span><textarea value={details.description} disabled={busy} onChange={(event) => updateDetails(item.id, { description: event.target.value })} placeholder="Descreva o que acontece neste vídeo…" maxLength={20000} /></label>
             <div className="roteiro-scene-settings">
-              <label className="roteiro-timeline-field"><span>Linha do tempo</span><select disabled={busy} value={details.timeline} onChange={(event) => updateDetails(item.id, { timeline: event.target.value as RoteiroTimeline })}><option value="unspecified">Indefinido</option><option value="past">Passado</option><option value="present">Presente</option><option value="future">Futuro</option></select></label>
+              <label className="roteiro-timeline-field"><span>Linha do tempo</span><select disabled={busy} value={details.timeline} onChange={(event) => updateDetails(item.id, { timeline: event.target.value as VideoTimeline })}><option value="unspecified">Indefinido</option><option value="past">Passado</option><option value="present">Presente</option><option value="future">Futuro</option></select></label>
               <label className="roteiro-scene-end-field"><span>Fim da cena da descrição</span><div className="roteiro-timing-input"><input disabled={busy} aria-label={`Fim da descrição de ${item.name} em segundos`} type="number" min="0" max="86400" step="0.01" value={details.sceneEndSeconds ?? ''} onChange={(event) => updateSeconds(item.id, 'sceneEndSeconds', event.target.value)} placeholder="0" /><small>segundos</small></div></label>
               <section className="roteiro-group-reaction first"><header><strong>Primeira reação em grupo</strong><span>REAÇÃO 1</span></header><div className="roteiro-timing-input"><input disabled={busy} aria-label={`Primeira reação de ${item.name} em segundos`} type="number" min="0" max="86400" step="0.01" value={details.firstGroupReactionSeconds ?? ''} onChange={(event) => updateSeconds(item.id, 'firstGroupReactionSeconds', event.target.value)} placeholder="0" /><button disabled={busy} type="button" onClick={(event) => captureTime(item.id, 'firstGroupReactionSeconds', event.currentTarget.closest('.base-video-card')?.querySelector('video') ?? null)}>Tempo real</button><small>segundos</small></div></section>
               <section className="roteiro-group-reaction second"><header><strong>Segunda reação em grupo</strong><span>REAÇÃO 2</span></header><div className="roteiro-timing-input"><input disabled={busy} aria-label={`Segunda reação de ${item.name} em segundos`} type="number" min="0" max="86400" step="0.01" value={details.secondGroupReactionSeconds ?? ''} onChange={(event) => updateSeconds(item.id, 'secondGroupReactionSeconds', event.target.value)} placeholder="0" /><button disabled={busy} type="button" onClick={(event) => captureTime(item.id, 'secondGroupReactionSeconds', event.currentTarget.closest('.base-video-card')?.querySelector('video') ?? null)}>Tempo real</button><small>segundos</small></div></section>

@@ -1,8 +1,10 @@
 import type { FabricatorDesktopApi } from '../../shared/fabricator'
 import type { CustomizerDesktopApi } from '../../shared/customizer'
-import type { StudioDesktopApi, VideoLibraryDesktopApi } from '../../shared/studio'
+import type { StudioDesktopApi, VideoBackgroundLibraryDesktopApi } from '../../shared/studio'
 import type { EditorV6DesktopApi } from '../../shared/editorV6'
 import type { RoteirosDesktopApi } from '../../shared/roteiros'
+import type { BaseVideosDesktopApi } from '../../shared/baseVideos'
+import type { MediaLibraryDesktopApi } from '../../shared/mediaLibrary'
 
 declare global {
   interface Window {
@@ -29,7 +31,10 @@ declare global {
       verifyDataBackup: (id: string) => Promise<{ id: string; valid: boolean; fileCount: number; byteLength: number; createdAt: string; verifiedAt: string; databaseSchema: number }>
       restoreDataBackup: (id: string) => Promise<{ cancelled?: boolean; safetyBackupId?: string; restoreId?: string; backupId?: string; fileCount?: number; byteLength?: number }>
       deleteDataBackup: (id: string) => Promise<{ deleted: boolean }>
-    } & FabricatorDesktopApi & CustomizerDesktopApi & StudioDesktopApi & EditorV6DesktopApi & VideoLibraryDesktopApi & RoteirosDesktopApi
+      baseVideos: BaseVideosDesktopApi
+      mediaLibrary: MediaLibraryDesktopApi
+      videoBackgrounds: VideoBackgroundLibraryDesktopApi
+    } & FabricatorDesktopApi & CustomizerDesktopApi & StudioDesktopApi & EditorV6DesktopApi & RoteirosDesktopApi
   }
 }
 

@@ -197,14 +197,30 @@ Editor V6
 - Manter o perfil pessoal fora dos testes; usar fixtures sintéticas para falhas, ordenação e recuperação.
 - Alterações localizadas devem ficar em commits pequenos e descritivos; manter `ABRIR_DESENVOLVIMENTO.bat` fora dos commits se continuar modificado.
 
-## 6. Próxima tarefa recomendada
+## 6. Primeira etapa de implementação
 
-Começar pelo **Ciclo 1, etapa 1: contratos e APIs separados**, antes de mexer em persistência ou mover dados. A primeira alteração deve criar contratos próprios de `mediaLibrary` e `baseVideos`, retirar esses tipos/métodos de `roteiros.ts` e `studio.ts` por migração compatível, e atualizar os consumidores para os namespaces certos. Em seguida, mover `BaseVideosPage` para `features/baseVideos/`.
+Em 27/10/2026 foi aplicado um primeiro corte de separação no código:
 
-Esse é o menor corte que torna a separação visível no código e estabelece uma base segura para remover o SQL cruzado e a fila compartilhada. A validação seguinte deve concentrar-se nos vínculos por ID, exclusão protegida e numeração atual, antes de qualquer migração de banco.
+- Contratos de Base de Vídeos movidos para `src/shared/baseVideos.ts`.
+- Biblioteca reutilizável de vídeos e snapshots por ID movidos para `src/shared/mediaLibrary.ts`.
+- API do renderer agora expõe `desktop.baseVideos` e `desktop.mediaLibrary`; os nomes IPC existentes continuam iguais.
+- Tipos e métodos de Base de Vídeos foram removidos do contrato `RoteirosDesktopApi`.
+- `BaseVideosPage` foi movida para `features/baseVideos/`.
+- Roteiros e Editor V6 usam as APIs com namespace explícito; Editor V6 e Roteiros ainda podem selecionar a mesma mídia por ID.
+- Contrato de biblioteca de fundos foi separado como `desktop.videoBackgrounds`.
+- Schema SQLite, formatos de persistência, IDs, arquivos no perfil e regras de exclusão não foram alterados.
 
-## 7. Verificações desta investigação
+Este corte separa propriedade dos contratos e chamadas entre domínios, mas não migra a biblioteca física. A Base de Vídeos ainda classifica/publica itens da biblioteca de mídia; Roteiros guarda snapshots com IDs para preservar vínculos existentes. A próxima etapa deve extrair operações de referência e exclusão para um serviço de relacionamento explícito, removendo SQL de Roteiros de dentro do repositório de Base de Vídeos sem enfraquecer a proteção de dados.
+
+## 7. Próxima tarefa recomendada
+
+Continuar o **Ciclo 1, etapa 2: remover dependências de persistência cruzadas**. Inventariar chamadas de exclusão e consultas de referência, criar uma interface de referências consumida por Roteiros, Editor V6 e Base de Vídeos, e retirar gradualmente o SQL de `roteiro_sections` do repositório de Base de Vídeos. Preservar inicialmente a fila de gravação compartilhada até que a ordenação e o risco de corrida estejam cobertos por validação isolada.
+
+Depois, validar vínculos por ID, exclusão protegida e numeração atual, antes de qualquer migração de banco. A biblioteca física não deve ser duplicada só para obter separação de domínios: isso duplicaria arquivos e quebraria links existentes.
+
+## 8. Verificações e validação
 
 - Leitura do código atual de rotas, TopBar, preload, contratos compartilhados, BaseVideos, Roteiros, Editor V6 picker, VideoLibrary, serviços e repositórios.
 - Leitura do schema SQLite e dos ADRs/documentos de arquitetura existentes.
-- Não rodei testes/build e não alterei código ou dados do app nesta investigação.
+- A inspeção inicial foi somente leitura; a primeira etapa de código acima não alterou dados do perfil.
+- Não rodei testes, typecheck ou build nesta etapa.

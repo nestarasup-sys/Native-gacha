@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { VideoLibraryItem } from '../../../../shared/studio'
-import type { BaseVideoDetails } from '../../../../shared/roteiros'
+import type { VideoLibraryItem } from '../../../../shared/mediaLibrary'
+import type { BaseVideoDetails } from '../../../../shared/baseVideos'
 
 const emptyDetails = (videoId: string): BaseVideoDetails => ({ videoId, categoryId: null, description: '', additionalContext: '', timeline: 'unspecified' })
 
@@ -19,7 +19,7 @@ async function recognizeDuration(item: VideoLibraryItem): Promise<VideoLibraryIt
       video.load()
     })
     if (!Number.isFinite(seconds) || seconds <= 0 || seconds > 60 * 60 * 24) throw new Error(`A duração de “${item.name}” não é válida.`)
-    return await window.desktop.finishVideoLibraryImport(item.id, Math.max(1, Math.ceil(seconds * 30)))
+    return await window.desktop.mediaLibrary.finishImport(item.id, Math.max(1, Math.ceil(seconds * 30)))
   } finally { video.pause(); video.removeAttribute('src'); video.load() }
 }
 
@@ -35,7 +35,7 @@ export function EditorV6VideoPickerModal({ onClose, onSelect }: { onClose: () =>
   const refresh = async () => {
     setLoading(true)
     try {
-      const [library, savedDetails] = await Promise.all([window.desktop.listVideoLibrary(), window.desktop.listBaseVideoDetails()])
+      const [library, savedDetails] = await Promise.all([window.desktop.mediaLibrary.list(), window.desktop.baseVideos.listDetails()])
       setItems(library)
       setDetails(Object.fromEntries(savedDetails.map((item) => [item.videoId, item])))
       setError('')
@@ -64,13 +64,13 @@ export function EditorV6VideoPickerModal({ onClose, onSelect }: { onClose: () =>
     setBusy(true); setError('')
     let imported: VideoLibraryItem | null = null
     try {
-      imported = await window.desktop.importVideoLibrary()
+      imported = await window.desktop.mediaLibrary.import()
       if (!imported) return
       try {
-        await window.desktop.saveBaseVideoDetails(emptyDetails(imported.id))
+        await window.desktop.baseVideos.saveDetails(emptyDetails(imported.id))
         setDetails((current) => ({ ...current, [imported!.id]: emptyDetails(imported!.id) }))
       } catch (reason) {
-        await window.desktop.deleteBaseVideo(imported.id).catch(() => undefined)
+        await window.desktop.baseVideos.deleteVideo(imported.id).catch(() => undefined)
         throw reason
       }
       setItems((current) => [imported!, ...current.filter((item) => item.id !== imported!.id)])

@@ -4,9 +4,11 @@ import { createEditorV6Invoker } from '../src/shared/editorV6IpcChannels'
 import { contextBridge, ipcRenderer } from 'electron'
 import type { FabricatorDesktopApi, FabricatorModelSourcePublishRequest } from '../src/shared/fabricator'
 import type { CustomizerDesktopApi } from '../src/shared/customizer'
-import type { StudioDesktopApi, VideoLibraryDesktopApi } from '../src/shared/studio'
+import type { StudioDesktopApi, VideoBackgroundLibraryDesktopApi } from '../src/shared/studio'
 import type { EditorV6DesktopApi } from '../src/shared/editorV6'
 import type { RoteirosDesktopApi } from '../src/shared/roteiros'
+import type { BaseVideosDesktopApi } from '../src/shared/baseVideos'
+import type { MediaLibraryDesktopApi } from '../src/shared/mediaLibrary'
 
 const invokeFabricator = createFabricatorInvoker(ipcRenderer)
 const fabricatorApi: FabricatorDesktopApi = {
@@ -116,32 +118,38 @@ const editorV6Api: EditorV6DesktopApi = {
   cancelEditorV6Motion: (id) => invokeEditorV6('cancelEditorV6Motion', id)
 }
 
-const videoLibraryApi: VideoLibraryDesktopApi = {
-  listVideoLibrary: () => ipcRenderer.invoke('video-library:list'),
-  importVideoLibrary: () => ipcRenderer.invoke('video-library:import'),
-  finishVideoLibraryImport: (id, durationFrames) => ipcRenderer.invoke('video-library:finish', id, durationFrames),
-  deleteVideoLibraryItem: (id) => ipcRenderer.invoke('video-library:delete', id),
-  renameVideoLibraryItem: (id, name) => ipcRenderer.invoke('video-library:rename', id, name),
+const mediaLibraryApi: MediaLibraryDesktopApi = {
+  list: () => ipcRenderer.invoke('video-library:list'),
+  import: () => ipcRenderer.invoke('video-library:import'),
+  finishImport: (id, durationFrames) => ipcRenderer.invoke('video-library:finish', id, durationFrames),
+  delete: (id) => ipcRenderer.invoke('video-library:delete', id),
+  rename: (id, name) => ipcRenderer.invoke('video-library:rename', id, name)
+}
+
+const videoBackgroundsApi: VideoBackgroundLibraryDesktopApi = {
   listVideoBackgroundLibrary: () => ipcRenderer.invoke('background-library:list'),
   importVideoBackground: () => ipcRenderer.invoke('background-library:import'),
   deleteVideoBackground: (id) => ipcRenderer.invoke('background-library:delete', id)
 }
 
+const baseVideosApi: BaseVideosDesktopApi = {
+  listDetails: () => ipcRenderer.invoke('base-videos:list-details'),
+  saveDetails: (details) => ipcRenderer.invoke('base-videos:save-details', details),
+  listCategories: () => ipcRenderer.invoke('base-videos:categories:list'),
+  createCategory: (name) => ipcRenderer.invoke('base-videos:categories:create', name),
+  renameCategory: (id, name) => ipcRenderer.invoke('base-videos:categories:rename', id, name),
+  deleteCategory: (id) => ipcRenderer.invoke('base-videos:categories:delete', id),
+  deleteDetails: (videoId) => ipcRenderer.invoke('base-videos:delete-details', videoId),
+  deleteVideo: (videoId) => ipcRenderer.invoke('base-videos:delete', videoId),
+  publish: (videoId) => ipcRenderer.invoke('base-videos:publish', videoId)
+}
+
 const roteirosApi: RoteirosDesktopApi = {
   listRoteiros: () => ipcRenderer.invoke('roteiros:list'),
   saveRoteiros: (roteiros) => ipcRenderer.invoke('roteiros:save', roteiros),
-  listBaseVideoDetails: () => ipcRenderer.invoke('base-videos:list-details'),
-  saveBaseVideoDetails: (details) => ipcRenderer.invoke('base-videos:save-details', details),
-  listBaseVideoCategories: () => ipcRenderer.invoke('base-videos:categories:list'),
-  createBaseVideoCategory: (name) => ipcRenderer.invoke('base-videos:categories:create', name),
-  renameBaseVideoCategory: (id, name) => ipcRenderer.invoke('base-videos:categories:rename', id, name),
-  deleteBaseVideoCategory: (id) => ipcRenderer.invoke('base-videos:categories:delete', id),
   listRoteiroExportLogs: (roteiroId) => ipcRenderer.invoke('roteiros:export-logs:list', roteiroId),
   appendRoteiroExportLog: (roteiroId, entry) => ipcRenderer.invoke('roteiros:export-logs:append', roteiroId, entry),
   clearRoteiroExportLogs: (roteiroId) => ipcRenderer.invoke('roteiros:export-logs:clear', roteiroId),
-  deleteBaseVideoDetails: (videoId) => ipcRenderer.invoke('base-videos:delete-details', videoId),
-  deleteBaseVideo: (videoId) => ipcRenderer.invoke('base-videos:delete', videoId),
-  publishBaseVideo: (videoId) => ipcRenderer.invoke('base-videos:publish', videoId),
   startRoteiroCharacterExport: (request) => ipcRenderer.invoke('roteiros:characters-export:start', request),
   writeRoteiroCharacterExportAsset: (jobId, asset) => ipcRenderer.invoke('roteiros:characters-export:asset', jobId, asset),
   finishRoteiroCharacterExport: (jobId) => ipcRenderer.invoke('roteiros:characters-export:finish', jobId),
@@ -178,6 +186,8 @@ contextBridge.exposeInMainWorld('desktop', {
   ...customizerApi,
   ...studioApi,
   ...editorV6Api,
-  ...videoLibraryApi,
+  mediaLibrary: mediaLibraryApi,
+  videoBackgrounds: videoBackgroundsApi,
+  baseVideos: baseVideosApi,
   ...roteirosApi
 })

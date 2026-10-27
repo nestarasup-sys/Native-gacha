@@ -910,7 +910,7 @@ export function EditorV6Page() {
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível importar o áudio.') }
   }
 
-  const linkVideoLibraryItem = async (item: import('../../../../shared/studio').VideoLibraryItem) => {
+  const linkVideoLibraryItem = async (item: import('../../../../shared/mediaLibrary').VideoLibraryItem) => {
     const sourceProject = activeEditorV6
     if (!sourceProject) return
     const track = sourceProject.timeline.tracks.find((entry) => entry.kind === 'video')

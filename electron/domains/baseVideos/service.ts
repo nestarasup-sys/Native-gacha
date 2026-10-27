@@ -1,7 +1,7 @@
 /** Casos de uso da Base de Vídeos: sem Electron, janelas ou conhecimento do preload. */
 import { randomUUID } from 'node:crypto'
 import type { Database } from 'better-sqlite3'
-import type { BaseVideoCategory, BaseVideoDetails } from '../../../src/shared/roteiros'
+import type { BaseVideoCategory, BaseVideoDetails } from '../../../src/shared/baseVideos'
 import { BaseVideoRepository } from './repository.ts'
 import { assertBaseVideoId, nextCategoryColor, normalizeCategoryName, validateVideoDetails } from './validation.ts'
 

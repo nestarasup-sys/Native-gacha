@@ -1,6 +1,6 @@
 /** Persistência da Base de Vídeos; todas as queries ficam fora dos handlers IPC. */
 import type { Database } from 'better-sqlite3'
-import type { BaseVideoCategory, BaseVideoDetails } from '../../../src/shared/roteiros'
+import type { BaseVideoCategory, BaseVideoDetails } from '../../../src/shared/baseVideos'
 
 export class BaseVideoRepository {
   private readonly db: Database

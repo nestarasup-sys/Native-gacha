@@ -6,7 +6,8 @@ import { RenderedCharacterPortrait } from '../../ui/components/RenderedCharacter
 import { buildCharacterExportExpressionNames } from './characterExportNames'
 import type { CustomizerCharacter } from '../../../../shared/customizer'
 import type { RoteiroDocument, RoteiroExportCharacterInfo, RoteiroExportLog, RoteiroReactionBlock, RoteiroSectionContent, RoteiroTikTok, RoteiroUiGifItem, RoteiroVideoReference } from '../../../../shared/roteiros'
-import type { VideoBackgroundLibraryItem, VideoLibraryItem } from '../../../../shared/studio'
+import type { VideoBackgroundLibraryItem } from '../../../../shared/studio'
+import type { VideoLibraryItem } from '../../../../shared/mediaLibrary'
 
 /** Workspace de Roteiros isolado do App shell. Contratos e persistência permanecem inalterados. */
 
@@ -252,19 +253,19 @@ function RoteiroWorkspace({ roteiro, onBack, onUpdate, onDeleteDraftVideo, chara
   }
   const openBackgroundPicker = async () => {
     setBackgroundPickerOpen(true); setBackgroundSearch('')
-    try { setBackgrounds(await window.desktop.listVideoBackgroundLibrary()) }
+    try { setBackgrounds(await window.desktop.videoBackgrounds.listVideoBackgroundLibrary()) }
     catch (reason) { setRoteiroExportError(reason instanceof Error ? reason.message : 'Não foi possível carregar a biblioteca de fundos.') }
   }
   const importRoteiroBackground = async () => {
     try {
-      const item = await window.desktop.importVideoBackground()
+      const item = await window.desktop.videoBackgrounds.importVideoBackground()
       if (item) { setBackgrounds((current) => [item, ...current]); onUpdate({ ...roteiro, backgroundAssetId: item.id }) }
     } catch (reason) { setRoteiroExportError(reason instanceof Error ? reason.message : 'Não foi possível importar o fundo.') }
   }
   const deleteRoteiroBackground = async (item: VideoBackgroundLibraryItem) => {
     if (!window.confirm(`Excluir permanentemente “${item.name}” da biblioteca? Essa ação não pode ser desfeita.`)) return
     try {
-      await window.desktop.deleteVideoBackground(item.id)
+      await window.desktop.videoBackgrounds.deleteVideoBackground(item.id)
       setBackgrounds((current) => current.filter((entry) => entry.id !== item.id))
       if (roteiro.backgroundAssetId === item.id) onUpdate({ ...roteiro, backgroundAssetId: null })
       setRoteiroExportError('')
@@ -392,7 +393,7 @@ export function RoteirosPage() {
   useEffect(() => {
     let cancelled = false
     void window.desktop.listCustomizerCharacters().then((items) => { if (!cancelled) setCharacters(items) }).catch(() => undefined)
-    void window.desktop.listVideoLibrary().then((items) => { if (!cancelled) { setLibraryItems(items); setLibraryLoaded(true) } }).catch(() => { if (!cancelled) setLibraryLoaded(true) })
+    void window.desktop.mediaLibrary.list().then((items) => { if (!cancelled) { setLibraryItems(items); setLibraryLoaded(true) } }).catch(() => { if (!cancelled) setLibraryLoaded(true) })
     return () => { cancelled = true }
   }, [])
 
@@ -447,7 +448,7 @@ export function RoteirosPage() {
     setRoteiros(nextRoteiros)
     const stillReferenced = nextRoteiros.some((item) => item.opening?.video?.id === videoId || item.tiktoks.some((tiktok) => tiktok.video?.id === videoId))
     if (stillReferenced) return false
-    await window.desktop.deleteBaseVideo(videoId)
+    await window.desktop.baseVideos.deleteVideo(videoId)
     return true
   }
 

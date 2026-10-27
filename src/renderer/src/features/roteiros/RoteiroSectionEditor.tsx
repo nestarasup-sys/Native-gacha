@@ -3,8 +3,9 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Icon } from '../../ui/components/Icon'
 import { RenderedCharacterPortrait } from '../../ui/components/RenderedCharacterPortrait'
 import type { CustomizerCharacter } from '../../../../shared/customizer'
-import type { BaseVideoDetails, RoteiroReactionBlock, RoteiroSectionContent, RoteiroVideoReference } from '../../../../shared/roteiros'
-import type { VideoLibraryItem } from '../../../../shared/studio'
+import type { RoteiroReactionBlock, RoteiroSectionContent, RoteiroVideoReference } from '../../../../shared/roteiros'
+import type { BaseVideoDetails } from '../../../../shared/baseVideos'
+import type { VideoLibraryItem } from '../../../../shared/mediaLibrary'
 
 function roteiroVideoReference(item: VideoLibraryItem): RoteiroVideoReference {
   if (item.durationFrames === null) throw new Error('A duração do vídeo ainda não foi reconhecida.')
@@ -50,7 +51,7 @@ export function RoteiroSectionEditor({ title, content, characters, characterIds,
     setBusy(true)
     setError(null)
     try {
-      const imported = await window.desktop.importVideoLibrary()
+      const imported = await window.desktop.mediaLibrary.import()
       if (!imported) return
       let ready = imported
       if (ready.durationFrames === null) {
@@ -67,7 +68,7 @@ export function RoteiroSectionEditor({ title, content, characters, characterIds,
             media.load()
           })
           if (!Number.isFinite(seconds) || seconds <= 0 || seconds > 60 * 60 * 24) throw new Error('A duração do vídeo não é válida.')
-          ready = await window.desktop.finishVideoLibraryImport(ready.id, Math.max(1, Math.ceil(seconds * 60)))
+          ready = await window.desktop.mediaLibrary.finishImport(ready.id, Math.max(1, Math.ceil(seconds * 60)))
         } finally { media.pause(); media.removeAttribute('src'); media.load() }
       }
       onUpdate({ ...content, video: roteiroVideoReference(ready) })
@@ -81,7 +82,7 @@ export function RoteiroSectionEditor({ title, content, characters, characterIds,
     setPickerItems([])
     setPickerQuery(''); setPickerTimeline('all'); setPickerSort('number'); setPickerPreviewId(null)
     try {
-      const [library, details] = await Promise.all([window.desktop.listVideoLibrary(), window.desktop.listBaseVideoDetails()])
+      const [library, details] = await Promise.all([window.desktop.mediaLibrary.list(), window.desktop.baseVideos.listDetails()])
       const numberById = Object.fromEntries(details.flatMap((item: BaseVideoDetails) => item.videoNumber === undefined ? [] : [[item.videoId, item.videoNumber]])) as Record<string, number>
       setPickerDetails(Object.fromEntries(details.map((item) => [item.videoId, item])))
       setPickerNumbers(numberById)
@@ -118,7 +119,7 @@ export function RoteiroSectionEditor({ title, content, characters, characterIds,
     setLibraryActionMessage(null)
     const nextContent = { ...content, video: null }
     try {
-      const details = await window.desktop.listBaseVideoDetails()
+      const details = await window.desktop.baseVideos.listDetails()
       const existing = details.find((item) => item.videoId === video.id)
       if (existing?.videoNumber !== undefined) {
         onUpdate(nextContent)
@@ -174,8 +175,8 @@ export function RoteiroSectionEditor({ title, content, characters, characterIds,
       secondGroupReactionSeconds: content.secondGroupReactionSeconds
     }
     try {
-      await window.desktop.saveBaseVideoDetails(details)
-      const saved = await window.desktop.listBaseVideoDetails()
+      await window.desktop.baseVideos.saveDetails(details)
+      const saved = await window.desktop.baseVideos.listDetails()
       const existing = saved.find((item) => item.videoId === video.id)
       const hasFilledContent = Boolean(details.description.trim()
         || details.additionalContext.trim()
@@ -191,7 +192,7 @@ export function RoteiroSectionEditor({ title, content, characters, characterIds,
         return
       }
       if (destination === 'base') {
-        const number = await window.desktop.publishBaseVideo(video.id)
+        const number = await window.desktop.baseVideos.publish(video.id)
         setLibraryActionMessage(`Enviado para a Base de vídeos como VÍDEO ${String(number).padStart(2, '0')}.`)
       } else {
         setLibraryActionMessage(existing?.videoNumber === undefined

@@ -146,18 +146,6 @@ export type StudioDocument = {
   elements: StudioElement[]
 }
 
-export type VideoLibraryItem = {
-  id: string
-  name: string
-  mimeType: 'video/mp4' | 'video/webm' | 'video/quicktime' | 'video/x-m4v'
-  extension: 'mp4' | 'webm' | 'mov' | 'm4v'
-  size: number
-  durationFrames: number | null
-  createdAt: string
-  available: boolean
-  studios: Array<{ id: string; title: string }>
-}
-
 export type VideoBackgroundLibraryItem = {
   id: string
   name: string
@@ -180,13 +168,8 @@ export type StudioDesktopApi = {
   openStudioPrints: (studioId: string) => Promise<void>
 }
 
-/** Shared video and background libraries used by Base Videos and Roteiros. */
-export type VideoLibraryDesktopApi = {
-  listVideoLibrary: () => Promise<VideoLibraryItem[]>
-  importVideoLibrary: () => Promise<VideoLibraryItem | null>
-  finishVideoLibraryImport: (id: string, durationFrames: number) => Promise<VideoLibraryItem>
-  deleteVideoLibraryItem: (id: string) => Promise<void>
-  renameVideoLibraryItem: (id: string, name: string) => Promise<VideoLibraryItem>
+/** Background media library used by Roteiros. Video files have their own mediaLibrary API. */
+export type VideoBackgroundLibraryDesktopApi = {
   listVideoBackgroundLibrary: () => Promise<VideoBackgroundLibraryItem[]>
   importVideoBackground: () => Promise<VideoBackgroundLibraryItem | null>
   deleteVideoBackground: (id: string) => Promise<void>
