@@ -102,7 +102,7 @@ export function parseEditorV6MotionRequest(value: unknown): EditorV6MotionBakeRe
 
 const editorV6TimelineTrackSchema = z.object({
   id: uuid,
-  kind: z.enum(['character', 'speech', 'thought', 'video', 'audio']),
+  kind: z.enum(['character', 'speech', 'thought', 'object', 'video', 'audio']),
   characterId: z.string().min(1).max(120).optional(),
   name: z.string().trim().min(1).max(80),
   muted: z.boolean(),
@@ -205,7 +205,7 @@ export const editorV6DocumentSchema = z.object({
       }
       if (block.parentBlockId) {
         const parent = blocksById.get(block.parentBlockId)
-        if (!parent || parent.track.kind !== 'video' || track.kind === 'video' || track.kind === 'character' || block.relativeStartFrame === undefined || block.startFrame !== parent.block.startFrame + block.relativeStartFrame || block.startFrame + block.durationFrames > parent.block.startFrame + parent.block.durationFrames) {
+        if (!parent || parent.track.kind !== 'video' || track.kind === 'video' || track.kind === 'character' || track.kind === 'object' || block.relativeStartFrame === undefined || block.startFrame !== parent.block.startFrame + block.relativeStartFrame || block.startFrame + block.durationFrames > parent.block.startFrame + parent.block.durationFrames) {
           context.addIssue({ code: 'custom', path: ['timeline', 'tracks', trackIndex, 'blocks', blockIndex, 'parentBlockId'], message: 'O comentário precisa ficar dentro do visual ao qual está vinculado.' })
         }
       }

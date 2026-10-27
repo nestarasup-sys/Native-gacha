@@ -835,7 +835,8 @@ export function EditorV6Page() {
   const importImage = async (category: EditorV6Asset['category']) => {
     if (!activeEditorV6) return
     pausePlayback()
-    if (category !== 'background' && activeEditorV6.timeline.tracks.some((track) => track.kind === 'video' && track.locked)) { setError('Desbloqueie a faixa Vídeo para adicionar uma imagem.'); return }
+    const targetTrackKind = category === 'object' ? 'object' : 'video'
+    if (category !== 'background' && activeEditorV6.timeline.tracks.some((track) => track.kind === targetTrackKind && track.locked)) { setError(category === 'object' ? 'Desbloqueie a faixa Objetos para adicionar uma imagem.' : 'Desbloqueie a faixa Vídeo para adicionar uma imagem.'); return }
     try {
       const frameAtImport = getEditorV6PlaybackFrame()
       const asset = await window.desktop.importEditorV6Image(category)
@@ -1486,7 +1487,7 @@ export function EditorV6Page() {
       <h2>Objetos</h2><p>Imagens importadas ficam disponíveis neste Studio.</p>
       <button className="studio-side-primary" type="button" onClick={() => void importImage('object')}><Icon name="plus" />Importar imagem</button>
       <div className="studio-asset-grid">{activeEditorV6.assets.filter((asset) => asset.category === 'object').map((asset) => <button key={asset.id} className="studio-asset-card" type="button" onClick={() => {
-        if (activeEditorV6.timeline.tracks.some((track) => track.kind === 'video' && track.locked)) { setError('Desbloqueie a faixa Vídeo para adicionar uma imagem.'); return }
+        if (activeEditorV6.timeline.tracks.some((track) => track.kind === 'object' && track.locked)) { setError('Desbloqueie a faixa Objetos para adicionar uma imagem.'); return }
         const element: EditorV6Element = { id: crypto.randomUUID(), kind: 'image', assetId: asset.id, text: '', x: 0, y: 0, width: 25, height: 25, rotation: 0, zIndex: Math.max(0, ...activeEditorV6.elements.map((item) => item.zIndex)) + 1 }
         const blockId = crypto.randomUUID()
         const frame = getEditorV6PlaybackFrame()

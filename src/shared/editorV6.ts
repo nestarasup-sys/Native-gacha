@@ -146,7 +146,7 @@ export type EditorV6Element = {
   zIndex: number
 }
 
-export type EditorV6TrackKind = 'character' | 'speech' | 'thought' | 'video' | 'audio'
+export type EditorV6TrackKind = 'character' | 'speech' | 'thought' | 'object' | 'video' | 'audio'
 export type EditorV6BackgroundState = {
   backgroundColor: string
   backgroundAssetId: string | null
@@ -214,17 +214,18 @@ export function editorV6TrackKindForElement(element: EditorV6Element): EditorV6T
   if (element.kind === 'character') return 'character'
   if (element.kind === 'speech') return 'speech'
   if (element.kind === 'thought') return 'thought'
+  if (element.kind === 'image') return 'object'
   return 'video'
 }
 
 export function editorV6TrackLabel(kind: EditorV6TrackKind, index = 1): string {
-  const labels: Record<EditorV6TrackKind, string> = { character: 'Personagem', speech: 'Fala', thought: 'Pensamento', video: 'Vídeo', audio: 'Áudio' }
+  const labels: Record<EditorV6TrackKind, string> = { character: 'Personagem', speech: 'Fala', thought: 'Pensamento', object: 'Objetos', video: 'Vídeo', audio: 'Áudio' }
   return index === 1 ? labels[kind] : `${labels[kind]} ${index}`
 }
 
-/** Creates the shared media/comment lanes and one lane per character in the scene. */
+/** Creates shared lanes and character lanes in the default visual stacking order. */
 export function createEditorV6Timeline(elements: readonly EditorV6Element[] = []): EditorV6Timeline {
-  const kinds: EditorV6TrackKind[] = ['video', 'audio', 'speech', 'thought']
+  const kinds: EditorV6TrackKind[] = ['video', 'speech', 'thought']
   const tracks: EditorV6TimelineTrack[] = kinds.map((kind) => ({
     id: crypto.randomUUID(), kind, name: editorV6TrackLabel(kind), muted: false, locked: false, blocks: []
   }))
@@ -244,6 +245,11 @@ export function createEditorV6Timeline(elements: readonly EditorV6Element[] = []
       startFrame: 0, durationFrames: kind === 'character' ? EDITOR_V6_DEFAULT_DURATION_FRAMES : EDITOR_V6_DEFAULT_BLOCK_FRAMES
     })
   }
+  for (const kind of ['object', 'audio'] as const) if (!tracks.some((track) => track.kind === kind)) tracks.push({
+    id: crypto.randomUUID(), kind, name: editorV6TrackLabel(kind), muted: false, locked: false, blocks: []
+  })
+  const defaultOrder: Record<EditorV6TrackKind, number> = { video: 0, speech: 1, thought: 2, character: 3, object: 4, audio: 5 }
+  tracks.sort((left, right) => defaultOrder[left.kind] - defaultOrder[right.kind])
   return { fps: 30, durationFrames: EDITOR_V6_DEFAULT_DURATION_FRAMES, tracks, knownElementIds: elements.map((element) => element.id) }
 }
 
@@ -253,12 +259,22 @@ export function syncEditorV6TimelineElements(timeline: EditorV6Timeline, element
   const reusableShared = new Map<EditorV6TrackKind, EditorV6TimelineTrack>()
   for (const track of timeline.tracks) {
     const previousKind = String(track.kind)
-    const kind = previousKind === 'speech' || previousKind === 'thought' || previousKind === 'audio' ? previousKind : previousKind === 'video' || previousKind === 'visual' ? 'video' : undefined
+    const kind = previousKind === 'speech' || previousKind === 'thought' || previousKind === 'object' || previousKind === 'audio' ? previousKind : previousKind === 'video' || previousKind === 'visual' ? 'video' : undefined
     if (kind && !reusableShared.has(kind)) reusableShared.set(kind, { ...track, kind, characterId: undefined, blocks: [] })
   }
-  const tracks: EditorV6TimelineTrack[] = (['video', 'audio', 'speech', 'thought'] as const).map((kind) => reusableShared.get(kind) ?? ({
+  const tracks: EditorV6TimelineTrack[] = (['video', 'speech', 'thought', 'object', 'audio'] as const).map((kind) => reusableShared.get(kind) ?? ({
     id: crypto.randomUUID(), kind, name: editorV6TrackLabel(kind), muted: false, locked: false, blocks: []
   }))
+  if (!timeline.tracks.some((track) => track.kind === 'object')) {
+    const previousVisualTrack = timeline.tracks.find((track) => track.kind === 'video')
+    const objectTrack = tracks.find((track) => track.kind === 'object')
+    if (previousVisualTrack && objectTrack) {
+      objectTrack.muted = previousVisualTrack.muted
+      objectTrack.locked = previousVisualTrack.locked
+      objectTrack.hidden = previousVisualTrack.hidden
+      objectTrack.collapsed = previousVisualTrack.collapsed
+    }
+  }
   const characterTracks = new Map<string, EditorV6TimelineTrack>()
   const activeCharacterIds = new Set(elements.filter((element) => element.kind === 'character' && element.characterId).map((element) => element.characterId!))
   for (const track of timeline.tracks) if (track.kind === 'character' && track.characterId && activeCharacterIds.has(track.characterId)) characterTracks.set(track.characterId, { ...track, blocks: [] })
@@ -280,7 +296,7 @@ export function syncEditorV6TimelineElements(timeline: EditorV6Timeline, element
     const element = block.elementId ? elementsById.get(block.elementId) : undefined
     if (block.elementId && !element) continue
     const oldKind = String(oldTrack.kind)
-    const destination = element ? destinationFor(element) : tracks.find((track) => track.kind === (oldKind === 'speech' || oldKind === 'thought' || oldKind === 'audio' ? oldKind : 'video'))!
+    const destination = element ? destinationFor(element) : tracks.find((track) => track.kind === (oldKind === 'speech' || oldKind === 'thought' || oldKind === 'object' || oldKind === 'audio' ? oldKind : 'video'))!
     destination.blocks.push(element ? { ...block, state: block.state ?? { ...element }, label: block.state ? block.label : element.text.trim() || editorV6TrackLabel(editorV6TrackKindForElement(element)) } : block)
     if (block.elementId) placedBlocks.add(block.elementId)
   }
@@ -298,8 +314,23 @@ export function syncEditorV6TimelineElements(timeline: EditorV6Timeline, element
   tracks.push(...characterTracks.values())
   const originalOrder = new Map(timeline.tracks.map((track, index) => [track.id, index]))
   const videoOrder = timeline.tracks.findIndex((track) => track.kind === 'video')
-  const order = (track: EditorV6TimelineTrack) => originalOrder.get(track.id) ?? (track.kind === 'audio' ? Math.max(0, videoOrder) + .5 : 10000)
+  const audioOrder = timeline.tracks.findIndex((track) => track.kind === 'audio')
+  const lastCharacterOrder = timeline.tracks.reduce((last, track, index) => track.kind === 'character' ? index : last, -1)
+  const order = (track: EditorV6TimelineTrack) => originalOrder.get(track.id)
+    ?? (track.kind === 'audio' ? Math.max(0, videoOrder) + .5
+      : track.kind === 'object' ? lastCharacterOrder >= 0 ? lastCharacterOrder + .5 : audioOrder >= 0 ? audioOrder - .5 : 10000
+        : 10000)
   tracks.sort((a, b) => order(a) - order(b))
+  if (!timeline.tracks.some((track) => track.kind === 'object')) {
+    const objectIndex = tracks.findIndex((track) => track.kind === 'object')
+    const objectTrack = tracks.splice(objectIndex, 1)[0]
+    if (objectTrack) {
+      const lastCharacterIndex = tracks.reduce((last, track, index) => track.kind === 'character' ? index : last, -1)
+      const audioIndex = tracks.findIndex((track) => track.kind === 'audio')
+      const insertionIndex = Math.max(lastCharacterIndex + 1, audioIndex >= 0 ? audioIndex : tracks.length)
+      tracks.splice(insertionIndex, 0, objectTrack)
+    }
+  }
   const endFrame = tracks.flatMap((track) => track.blocks).reduce((end, block) => Math.max(end, block.startFrame + block.durationFrames), timeline.durationFrames)
   return { ...timeline, durationFrames: endFrame, tracks, knownElementIds: elements.map((element) => element.id) }
 }

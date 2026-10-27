@@ -16,7 +16,7 @@ type Props = {
 }
 type Drag = { track: Track; block: Block; pointerId: number; x: number; mode: 'move' | 'resize'; initial: Timeline }
 type TrackAction = 'motion' | 'add' | 'hidden' | 'locked' | 'collapsed' | 'up' | 'down' | 'rename'
-const LABELS = { character: 'Personagem', speech: 'Fala', thought: 'Pensamento', video: 'Vídeo', audio: 'Áudio' }
+const LABELS = { character: 'Personagem', speech: 'Fala', thought: 'Pensamento', object: 'Objetos', video: 'Vídeo', audio: 'Áudio' }
 const editableTarget = (target: EventTarget | null) => target instanceof HTMLElement && Boolean(target.closest('input,textarea,select,[contenteditable=true],[role=dialog]'))
 
 function FrameInput({ label, value, onCommit, disabled = false }: { label: string; value: number; onCommit: (value: number) => void; disabled?: boolean }) {
@@ -146,8 +146,13 @@ export function EditorV6Timeline(props: Props) {
       latest.current.onSeek(frame)
       if (track.kind === 'audio') { setNotice('Use Importar áudio para copiar uma mídia para o projeto e criar um bloco.'); return }
       if (track.kind === 'character' && track.blocks.some((block) => block.startFrame === frame)) { select(track.blocks.find((block) => block.startFrame === frame)!); return }
-      const base = track.kind === 'character' ? document.elements.find((element) => element.characterId === track.characterId && element.kind === 'character') : track.kind === 'video' ? document.elements.find((element) => element.kind === 'image' || element.kind === 'narrator') : undefined
-      if (track.kind === 'video' && !base) { setNotice('Adicione uma imagem em Objetos para criar um bloco visual.'); return }
+      const base = track.kind === 'character'
+        ? document.elements.find((element) => element.characterId === track.characterId && element.kind === 'character')
+        : track.kind === 'object'
+          ? document.elements.filter((element) => element.kind === 'image').find((element) => editorV6ClipAtFrame(document.timeline, element.id, frame)) ?? document.elements.find((element) => element.kind === 'image')
+          : track.kind === 'video' ? document.elements.find((element) => element.kind === 'narrator') : undefined
+      if (track.kind === 'object' && !base) { setNotice('Importe uma imagem em Objetos para criar um bloco.'); return }
+      if (track.kind === 'video' && !base) { setNotice('Use Selecionar vídeo para adicionar clipes à faixa Vídeo.'); return }
       const element: EditorV6Element = base ? { ...(editorV6ClipAtFrame(document.timeline, base.id, frame)?.block.state ?? base) } : {
         id: crypto.randomUUID(), kind: track.kind === 'thought' ? 'thought' : 'speech', text: 'Digite aqui', x: 0, y: 0, width: 28, height: 16, rotation: 0, zIndex: Math.max(0, ...document.elements.map((item) => item.zIndex)) + 1
       }

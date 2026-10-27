@@ -22,7 +22,18 @@ export function addEditorV6ElementAtFrame(document: EditorV6Document, element: E
   if (existing?.locked) return document
   const track: EditorV6TimelineTrack = existing ?? { id: crypto.randomUUID(), kind, name: kind === 'character' ? element.text.slice(0, 80) || 'Personagem' : editorV6TrackLabel(kind), characterId: kind === 'character' ? element.characterId : undefined, muted: false, locked: false, blocks: [] }
   const block: EditorV6TimelineBlock = { id: blockId, elementId: element.id, state: { ...element }, label: element.text.trim().slice(0, 120) || track.name, startFrame, durationFrames }
-  return { ...document, elements: document.elements.some((item) => item.id === element.id) ? document.elements : [...document.elements, element], timeline: normalizeEditorV6Timeline({ ...document.timeline, knownElementIds: [...new Set([...(document.timeline.knownElementIds ?? []), element.id])], durationFrames: Math.max(document.timeline.durationFrames, startFrame + durationFrames), tracks: existing ? document.timeline.tracks.map((candidate) => candidate.id === track.id ? { ...candidate, blocks: [...candidate.blocks, block] } : candidate) : [...document.timeline.tracks, { ...track, blocks: [block] }] }) }
+  let tracks = existing
+    ? document.timeline.tracks.map((candidate) => candidate.id === track.id ? { ...candidate, blocks: [...candidate.blocks, block] } : candidate)
+    : [...document.timeline.tracks]
+  if (!existing) {
+    if (kind === 'object') {
+      const lastCharacter = tracks.reduce((last, candidate, index) => candidate.kind === 'character' ? index : last, -1)
+      const audioIndex = tracks.findIndex((candidate) => candidate.kind === 'audio')
+      const insertionIndex = Math.max(lastCharacter + 1, audioIndex >= 0 ? audioIndex : tracks.length)
+      tracks.splice(insertionIndex, 0, { ...track, blocks: [block] })
+    } else tracks.push({ ...track, blocks: [block] })
+  }
+  return { ...document, elements: document.elements.some((item) => item.id === element.id) ? document.elements : [...document.elements, element], timeline: normalizeEditorV6Timeline({ ...document.timeline, knownElementIds: [...new Set([...(document.timeline.knownElementIds ?? []), element.id])], durationFrames: Math.max(document.timeline.durationFrames, startFrame + durationFrames), tracks }) }
 }
 
 /** Character states hold until the next state. Linked comments use video-relative time. */
