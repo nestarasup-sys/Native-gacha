@@ -15,18 +15,21 @@ O painel pode ser fechado durante a exportação. O trabalho continua enquanto o
 3. O codificador é escolhido antes de renderizar. A seleção automática testa NVENC, QSV e AMF e usa OpenH264 por CPU se necessário. O FFmpeg já incluído no projeto fornece OpenH264; não exige baixar outro binário.
 4. Duas janelas Electron ocultas e offscreen recebem o documento completo. Cada uma carrega uma página exclusiva de exportação e desenha apenas seu intervalo com o próprio `SceneSurface` da prévia.
 5. O worker resolve o quadro diretamente, prepara as imagens e espera o desenho do Chromium. Estados anteriores ao início da segunda parte continuam disponíveis.
-6. O main captura o bitmap BGRA e o envia por pipe ao FFmpeg, com espera de escrita para limitar a fila. As partes são MP4/H.264 sem áudio.
-7. Se a composição visual não mudou, o worker sinaliza reaproveitamento e o main reutiliza o bitmap anterior. Essa otimização atende aos estados estáticos atualmente suportados pelo V6.
-8. As partes precisam usar o mesmo codificador e os mesmos parâmetros de stream, incluindo o hash dos dados de inicialização H.264.
-9. O FFmpeg concatena as partes com `-c:v copy`. O áudio é recortado sobre o intervalo inteiro, deslocado por amostras, misturado uma única vez e codificado em AAC a 48 kHz. Silêncio completa os trechos sem áudio.
-10. FFprobe verifica contagem de quadros, resolução, FPS e duração. O exportador também verifica a duração do áudio e decodifica três quadros próximos de cada emenda para detectar erros técnicos.
-11. O relatório é salvo e o arquivo candidato só substitui o destino depois da validação. Cancelamento e falhas anteriores à publicação preservam um MP4 que já existia no destino.
+6. Antes de abrir os workers, o main define uma única decisão `layeredVideo` usando somente vídeos válidos, visíveis, não silenciados e que cruzem o intervalo exportado. Envia essa decisão ao renderer e ao FFmpeg. Assim, ambos concordam se o bitmap terá fundo e elementos em camadas; faixas ocultas, silenciadas ou fora do intervalo não ativam essa composição.
+7. O main captura o bitmap BGRA e o envia por pipe ao FFmpeg, com espera de escrita para limitar a fila. As partes são MP4/H.264 sem áudio. Se há vídeo, o FFmpeg compõe o vídeo da timeline entre as camadas capturadas.
+8. Se a composição visual não mudou, o worker sinaliza reaproveitamento e o main reutiliza o bitmap anterior. Essa otimização atende aos estados estáticos atualmente suportados pelo V6.
+9. As partes precisam usar o mesmo codificador e os mesmos parâmetros de stream, incluindo o hash dos dados de inicialização H.264.
+10. O FFmpeg concatena as partes com `-c:v copy`. O áudio é recortado sobre o intervalo inteiro, deslocado por amostras, misturado uma única vez e codificado em AAC a 48 kHz. Silêncio completa os trechos sem áudio.
+11. FFprobe verifica contagem de quadros, resolução, FPS e duração. O exportador também verifica a duração do áudio e decodifica três quadros próximos de cada emenda para detectar erros técnicos.
+12. O relatório é salvo e o arquivo candidato só substitui o destino depois da validação. Cancelamento e falhas anteriores à publicação preservam um MP4 que já existia no destino.
 
 Se a tentativa Turbo falhar durante renderização, compatibilidade, junção ou validação, os dois trabalhos são encerrados e a exportação reinicia uma vez com um renderizador e OpenH264 por CPU. Cancelamento explícito não aciona essa recuperação.
 
 ## Relatórios e isolamento
 
 Os relatórios ficam em `exports/<job-id>.report.json` dentro do projeto. Registram intervalo, encoder testado/usado, tentativas, quadros por parte, capturas reaproveitadas, tempos, áudio, validação e erros. O botão de resultado mostra o MP4 ou relatório no Explorador.
+
+Cada parte inclui `frameTiming`, que resume por fase os tempos `workerStartupMs`, `sceneResolutionMs`, `assetPreparationMs`, `reactCommitMs`, `rafWaitMs`, `ipcDrawMs`, `captureMs`, `backgroundCaptureMs`, `foregroundCaptureMs`, `frameRoundTripMs`, `ffmpegWriteMs` e `ffmpegFinalizeMs`. São durações medidas com `performance.now()` no processo que executa cada etapa; não são timestamps absolutos e não devem ser alinhadas diretamente entre processos. P50/P95 usam baldes de 0,1 ms até 200 ms; o máximo e a soma permanecem mais precisos. Fases sem trabalho positivo não ganham amostras. A instrumentação separa o tempo dos estágios, mas ainda não atribui ao FFmpeg o custo de codificação de cada quadro enquanto ele trabalha em paralelo.
 
 Os intermediários ficam em uma pasta temporária exclusiva. O caminho absoluto é conferido antes da limpeza recursiva. Não há imagens PNG intermediárias por quadro nem gravação da reprodução da tela do usuário.
 
@@ -47,7 +50,7 @@ O preload dos workers expõe apenas a obtenção do documento e a confirmação 
 
 `npm run test:editor-v6` cobre divisão de intervalos pares/ímpares, resolução, áudio recortado/deslocado e referências seguras.
 
-`npm run test:editor-v6:export` compila e executa o fluxo real no Electron/Chromium e FFmpeg incluídos, com perfil e arquivos temporários isolados. Confere duas partes simultâneas, 81 quadros em 40+41, estado anterior ao início da segunda parte, cores BGRA, áudio contínuo na emenda, recuperação após falha simulada, cancelamento preservando o destino, intervalo de um quadro e saída 1080p. A contagem de quadros e amostras de áudio são verificadas no MP4 produzido.
+`npm run test:editor-v6:export` compila e executa o fluxo real no Electron/Chromium e FFmpeg incluídos, com perfil e arquivos temporários isolados. Confere duas partes simultâneas, 81 quadros em 40+41, estado anterior ao início da segunda parte, cores BGRA, continuidade em transição de pose, talk e pensamento, faixa de vídeo oculta, áudio contínuo na emenda, recuperação após falha simulada, cancelamento preservando o destino, intervalo de um quadro e saída 1080p. Também verifica que o relatório contém tempos por fase. A contagem de quadros e amostras de áudio são verificadas no MP4 produzido.
 
 `npm run test:editor-v6:surface` confere o desenho comum da cena e a ligação do painel de exportação/importação de áudio.
 
@@ -55,4 +58,4 @@ O preload dos workers expõe apenas a obtenção do documento e a confirmação 
 
 Turbo 2× significa dois trabalhos simultâneos; não garante reduzir o tempo pela metade. GPU só é usada na codificação quando um encoder compatível passa no teste inicial. As verificações técnicas não substituem revisão visual de todas as cenas.
 
-O V6 ainda não importa vídeos para a timeline. Portanto, esta versão não prepara proxies, não extrai áudio de vídeos e não sincroniza vídeos na prévia. O relatório registra zero entradas de vídeo/proxies. O áudio adicionado no painel é trilha sonora da exportação; ainda não há faixa de áudio nem reprodução dessa trilha na prévia. Animações contínuas ou vídeos futuros precisarão atualizar a decisão de reaproveitamento de imagens.
+O V6 pode compor vídeos presentes na timeline e mixar as faixas de áudio habilitadas, mas ainda não prepara proxies. A reprodução de vídeos usa o Chromium na prévia; na exportação, o FFmpeg compõe o vídeo sob os elementos capturados pelo renderer. Os quadros de vídeo impedem reaproveitar a composição inteira como imagem estática. Os tempos no relatório indicam onde o exportador espera; não medem por si só a latência de apresentação física no monitor.

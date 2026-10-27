@@ -5,7 +5,7 @@ import { editorV6DefaultVideoLayout, type EditorV6Document } from '../../../src/
 import type { CustomizerCharacter } from '../../../src/shared/customizer'
 import { missingEditorV6Motions, type EditorV6MotionBakeRequest, type EditorV6MotionBakeResult } from '../../../src/shared/editorV6Motion'
 import { prepareExportMotions } from './prepareMotions'
-import { planEditorV6Audio, planEditorV6Export, type EditorV6ExportAudio, type EditorV6ExportOptions, type EditorV6ExportPart, type EditorV6ExportStatus } from '../../../src/shared/editorV6Export'
+import { planEditorV6Audio, planEditorV6Export, type EditorV6ExportAudio, type EditorV6ExportOptions, type EditorV6ExportPart, type EditorV6ExportStatus, type EditorV6FrameTimings } from '../../../src/shared/editorV6Export'
 import { runExportCommand, spawnExportProcess, waitForExport } from './exportProcess'
 import type { EditorV6FrameWorker } from './exportWorkers'
 type StreamProbe = { codec_type: string; codec_name: string; profile?: string; pix_fmt?: string; width?: number; height?: number; r_frame_rate?: string; time_base?: string; nb_read_frames?: string; nb_frames?: string; duration?: string; extradata_hash?: string }
@@ -14,12 +14,15 @@ export async function probeExportMedia(ffprobe: string, path: string, signal: Ab
   const result = await runExportCommand(ffprobe, ['-v', 'error', ...(count ? ['-count_frames'] : []), '-show_streams', '-show_format', '-show_data_hash', 'sha256', '-of', 'json', path], signal)
   return JSON.parse(result.stdout) as MediaProbe
 }
-type PartReport = EditorV6ExportPart & { encoder: string; rendered: number; reused: number; frames: number; milliseconds: number; path: string; probe?: MediaProbe }
+type TimingPhase = keyof EditorV6FrameTimings | 'workerStartupMs' | 'ffmpegFinalizeMs'
+type TimingAccumulator = { count: number; totalMs: number; maxMs: number; histogram: number[] }
+type FrameTimingReport = Partial<Record<TimingPhase, { samples: number; totalMs: number; p50Ms: number; p95Ms: number; maxMs: number }>>
+type PartReport = EditorV6ExportPart & { encoder: string; rendered: number; reused: number; frames: number; milliseconds: number; frameTiming?: FrameTimingReport; path: string; probe?: MediaProbe }
 type AttemptReport = { parts: PartReport[]; encoder: string; parallelism: number; milliseconds?: number; error?: string }
 export type EditorV6ExportReport = { schemaVersion: 1; id: string; state: string; projectId: string; options: EditorV6ExportOptions; fps: 30; totalFrames: number; fallback: boolean; attempts: AttemptReport[]; encoderTests: Array<{ encoder: string; error?: string }>; audioClips: number; videoInputs: number; proxies: 0; motionTransitionsRequired: number; motionTransitionsPrepared: number; motionPreparation?: Awaited<ReturnType<typeof prepareExportMotions>>['stats']; startedAt: string; endedAt?: string; milliseconds?: number; outputPath: string; deliveryWarning?: string; validation?: unknown; error?: string }
 type Dependencies = {
   ffmpeg: string; ffprobe: string; tempRoot: string; reportPath: string; outputPath: string; id: string
-  createWorker: (project: EditorV6Document, part: EditorV6ExportPart, signal: AbortSignal) => Promise<EditorV6FrameWorker>
+  createWorker: (project: EditorV6Document, part: EditorV6ExportPart, signal: AbortSignal, layeredVideo: boolean) => Promise<EditorV6FrameWorker>
   getCharacters: () => Promise<CustomizerCharacter[]>
   bakeMotion: (request: EditorV6MotionBakeRequest, signal: AbortSignal) => Promise<EditorV6MotionBakeResult>
   audioPath: (clip: EditorV6ExportAudio) => string | Promise<string>
@@ -39,6 +42,33 @@ export async function publishEditorV6Output(candidate: string, requestedPath: st
   }
 }
 const message = (error: unknown) => error instanceof Error ? error.message : String(error)
+const TIMING_BUCKET_MS = .1
+const TIMING_BUCKETS = 2001
+function newTimingAccumulators(): Record<TimingPhase, TimingAccumulator> {
+  return Object.fromEntries((['workerStartupMs', 'sceneResolutionMs', 'assetPreparationMs', 'reactCommitMs', 'rafWaitMs', 'ipcDrawMs', 'captureMs', 'backgroundCaptureMs', 'foregroundCaptureMs', 'frameRoundTripMs', 'ffmpegWriteMs', 'ffmpegFinalizeMs'] as const).map((phase) => [phase, { count: 0, totalMs: 0, maxMs: 0, histogram: Array<number>(TIMING_BUCKETS).fill(0) }])) as Record<TimingPhase, TimingAccumulator>
+}
+function recordTiming(accumulators: Record<TimingPhase, TimingAccumulator>, phase: TimingPhase, milliseconds: number) {
+  if (!Number.isFinite(milliseconds) || milliseconds <= 0) return
+  const stats = accumulators[phase], bucket = Math.min(TIMING_BUCKETS - 1, Math.floor(milliseconds / TIMING_BUCKET_MS))
+  stats.count++; stats.totalMs += milliseconds; stats.maxMs = Math.max(stats.maxMs, milliseconds); stats.histogram[bucket]++
+}
+function summarizeTimings(accumulators: Record<TimingPhase, TimingAccumulator>): FrameTimingReport {
+  const report: FrameTimingReport = {}
+  for (const [phase, stats] of Object.entries(accumulators) as Array<[TimingPhase, TimingAccumulator]>) {
+    if (!stats.count) continue
+    const percentile = (fraction: number) => {
+      const target = Math.ceil(stats.count * fraction)
+      let accumulated = 0
+      for (let bucket = 0; bucket < stats.histogram.length; bucket++) {
+        accumulated += stats.histogram[bucket]
+        if (accumulated >= target) return Number((bucket * TIMING_BUCKET_MS).toFixed(1))
+      }
+      return 0
+    }
+    report[phase] = { samples: stats.count, totalMs: Math.round(stats.totalMs * 100) / 100, p50Ms: percentile(.5) as number, p95Ms: percentile(.95) as number, maxMs: Math.round(stats.maxMs * 100) / 100 }
+  }
+  return report
+}
 const encodingArgs = (encoder: string, threads: number) => ['-c:v', encoder, ...(encoder === 'libopenh264' ? ['-b:v', '12M', '-rc_mode', 'quality', '-allow_skip_frames', '0', '-threads', String(threads)] : ['-b:v', '12M']), '-pix_fmt', 'yuv420p', '-profile:v', 'high', '-level:v', '4.1', '-g', '60', '-bf', '0', '-video_track_timescale', '30000']
 
 function timelineMediaAudio(project: EditorV6Document): EditorV6ExportAudio[] {
@@ -62,7 +92,7 @@ export async function runEditorV6Export(project: EditorV6Document, options: Edit
   const planned = planEditorV6Export(options, project.timeline.durationFrames)
   if (process.platform !== 'win32') throw Error('Este exportador BGRA está preparado para Windows.')
   const started = performance.now(), totalFrames = options.endFrame - options.startFrame
-  const layeredVideo = timelineVideoClips(project, 0, project.timeline.durationFrames).length > 0
+  const layeredVideo = timelineVideoClips(project, options.startFrame, options.endFrame).length > 0
   const report: EditorV6ExportReport = { schemaVersion: 1, id: deps.id, projectId: project.id, options, fps: 30, totalFrames, state: 'preparing', fallback: false, attempts: [], encoderTests: [], audioClips: 0, videoInputs: new Set(timelineVideoClips(project, options.startFrame, options.endFrame).map((clip) => clip.fileName)).size, proxies: 0, motionTransitionsRequired: 0, motionTransitionsPrepared: 0, startedAt: new Date().toISOString(), outputPath: deps.outputPath }
   await mkdir(deps.tempRoot, { recursive: true })
   const folder = await mkdtemp(join(deps.tempRoot, 'editor-v6-export-'))
@@ -86,6 +116,7 @@ export async function runEditorV6Export(project: EditorV6Document, options: Edit
     const tasks = parts.map(async (part): Promise<PartReport> => {
       const beganPart = performance.now(), path = join(folder, `attempt-${report.attempts.length}-part-${part.index}.mp4`)
       const result: PartReport = { ...part, path, encoder, rendered: 0, reused: 0, frames: 0, milliseconds: 0 }
+      const timingAccumulators = newTimingAccumulators()
       attempt.parts.push(result)
       let worker: EditorV6FrameWorker | undefined
       const videoClips = timelineVideoClips(project, part.startFrame, part.endFrame)
@@ -108,24 +139,34 @@ export async function runEditorV6Export(project: EditorV6Document, options: Edit
       const rawHeight = options.height * (layeredVideo ? 2 : 1)
       const process = spawnExportProcess(deps.ffmpeg, ['-v', 'error', '-y', '-f', 'rawvideo', '-pixel_format', 'bgra', '-video_size', `${options.width}x${rawHeight}`, '-framerate', '30', '-i', 'pipe:0', ...videoInputs, ...filterArgs, '-an', ...encodingArgs(encoder, Math.max(1, Math.min(8, Math.floor(availableParallelism() / parts.length)))), '-frames:v', String(part.endFrame - part.startFrame), path], controller.signal)
       try {
-        worker = await deps.createWorker(project, part, controller.signal)
+        const workerStarted = performance.now()
+        worker = await deps.createWorker(project, part, controller.signal, layeredVideo)
+        recordTiming(timingAccumulators, 'workerStartupMs', performance.now() - workerStarted)
         let bitmap: Buffer | undefined
         for (let frame = part.startFrame; frame < part.endFrame; frame++) {
           controller.signal.throwIfAborted()
+          const frameStarted = performance.now()
           const rendered = await worker.frame(frame)
+          recordTiming(timingAccumulators, 'frameRoundTripMs', performance.now() - frameStarted)
+          for (const [phase, milliseconds] of Object.entries(rendered.timings ?? {}) as Array<[TimingPhase, number]>) recordTiming(timingAccumulators, phase, milliseconds)
           if (rendered.reused && bitmap) result.reused++
           else { if (!rendered.bitmap) throw Error('O renderizador não entregou o bitmap.'); bitmap = rendered.bitmap; result.rendered++ }
+          const writeStarted = performance.now()
           await waitForExport(new Promise<void>((resolve, reject) => process.child.stdin.write(bitmap!, (error) => error ? reject(error) : resolve())), controller.signal, 60000, 'enviar quadro ao FFmpeg')
+          recordTiming(timingAccumulators, 'ffmpegWriteMs', performance.now() - writeStarted)
           result.frames++; done++
           deps.progress({ frames: done })
         }
+        const finalizeStarted = performance.now()
         process.child.stdin.end()
         await waitForExport(process.done, controller.signal, 120000, 'finalizar parte')
+        recordTiming(timingAccumulators, 'ffmpegFinalizeMs', performance.now() - finalizeStarted)
         result.probe = await probeExportMedia(deps.ffprobe, path, controller.signal)
         if (Number(result.probe.streams.find((stream) => stream.codec_type === 'video')?.nb_frames) !== part.endFrame - part.startFrame) throw Error('Uma parte não contém todos os quadros previstos.')
         result.milliseconds = performance.now() - beganPart
+        result.frameTiming = summarizeTimings(timingAccumulators)
         return result
-      } catch (error) { controller.abort(error); throw error }
+      } catch (error) { result.frameTiming = summarizeTimings(timingAccumulators); controller.abort(error); throw error }
       finally { worker?.close(); if (process.child.exitCode === null) process.child.kill(); await process.done.catch(() => {}) }
     })
     try {

@@ -27,9 +27,18 @@ export function planEditorV6Audio(clips: readonly EditorV6ExportAudio[], startFr
   })
 }
 export const editorV6WorkerChannels = { payload: 'editor-v6:export-worker:payload', ready: 'editor-v6:export-worker:ready' } as const
-export type EditorV6WorkerPayload = { project: EditorV6Document; width: number; height: number }
+export type EditorV6WorkerPayload = { project: EditorV6Document; width: number; height: number; layeredVideo: boolean }
 export type EditorV6WorkerBridge = { payload: () => Promise<EditorV6WorkerPayload>; ready: (error?: string) => Promise<void> }
-export function editorV6VisualKey(scene: { frame?: number; background: unknown; elements: EditorV6Document['elements']; mediaVideo?: { mediaId: string; startFrame: number; sourceInFrame: number } }): string {
+export type EditorV6FrameTimings = Partial<Record<'sceneResolutionMs' | 'assetPreparationMs' | 'reactCommitMs' | 'rafWaitMs' | 'ipcDrawMs' | 'captureMs' | 'backgroundCaptureMs' | 'foregroundCaptureMs' | 'frameRoundTripMs' | 'ffmpegWriteMs', number>>
+export type EditorV6RenderFrameResult = { reused: boolean; layerReused?: boolean; timings?: EditorV6FrameTimings }
+type EditorV6VisualKeyInput = { frame?: number; background: unknown; elements: EditorV6Document['elements']; mediaVideo?: { mediaId: string; startFrame: number; sourceInFrame: number } }
+function editorV6ElementVisualKeys(elements: EditorV6Document['elements']) {
+  return elements.map((element) => [element.id, element.kind, element.assetId, element.text, element.x, element.y, element.width, element.height, element.rotation, element.flipX, element.characterScale, element.characterWidthScale, element.characterHeightScale, element.zIndex, element.motionSprite])
+}
+export function editorV6LayerVisualKeys(scene: Pick<EditorV6VisualKeyInput, 'background' | 'elements'>) {
+  return { background: JSON.stringify(scene.background), foreground: JSON.stringify(editorV6ElementVisualKeys(scene.elements)) }
+}
+export function editorV6VisualKey(scene: EditorV6VisualKeyInput): string {
   const mediaFrame = scene.mediaVideo && scene.frame !== undefined ? scene.mediaVideo.sourceInFrame + scene.frame - scene.mediaVideo.startFrame : null
-  return JSON.stringify([scene.background, mediaFrame === null ? null : [scene.mediaVideo?.mediaId, mediaFrame], scene.elements.map((element) => [element.id, element.kind, element.assetId, element.text, element.x, element.y, element.width, element.height, element.rotation, element.flipX, element.characterScale, element.characterWidthScale, element.characterHeightScale, element.zIndex, element.motionSprite])])
+  return JSON.stringify([scene.background, mediaFrame === null ? null : [scene.mediaVideo?.mediaId, mediaFrame], editorV6ElementVisualKeys(scene.elements)])
 }
