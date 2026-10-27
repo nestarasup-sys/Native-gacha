@@ -508,10 +508,9 @@ export function WardrobeGarmentEditorModal({ component, bodyReference, onClose, 
   const handlePointerCancel = (event: ReactPointerEvent<HTMLCanvasElement>) => finishStroke(event, true)
   const hasUndo = historyRef.current.undo.length > 0
   const hasRedo = historyRef.current.redo.length > 0
-  void historyRevision
 
   return createPortal(<div className="wardrobe-image-editor-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onClose() }}>
-    <section className="wardrobe-image-editor" role="dialog" aria-modal="true" aria-labelledby="wardrobe-image-editor-title">
+    <section className="wardrobe-image-editor" data-history-version={historyRevision} role="dialog" aria-modal="true" aria-labelledby="wardrobe-image-editor-title">
       <header className="wardrobe-image-editor-header">
         <div className="wardrobe-image-editor-title"><span className="wardrobe-image-editor-icon"><Icon name="edit" /></span><span><small>EDIÇÃO DA PEÇA</small><strong id="wardrobe-image-editor-title">{component.name}</strong><em>Alterações só entram no conjunto ao clicar em Aplicar.</em></span></div>
         <button type="button" className="wardrobe-image-editor-close" aria-label="Fechar editor" disabled={busy} onClick={onClose}>×</button>
