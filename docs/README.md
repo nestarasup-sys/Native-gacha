@@ -7,6 +7,7 @@
 - [Estrutura escalável dos dados](APP_DATA_ESCALAVEL.md): catálogo, migração e backup.
 - [ADR-001: Electron modular](architecture/ADR-001-modular-electron.md): limites entre camadas.
 - [ADR-002: fluxo de personagens](architecture/ADR-002-fluxo-personagens.md) e [contrato de produção](architecture/CHARACTER_PRODUCTION_CONTRACT.md): Fabricador, Customizador e Studio Principal.
+- [Investigação de refatoração (27/10/2026)](architecture/INVESTIGACAO_REFATORACAO_APP_2026-10-27.md): Base de Vídeos/Roteiros e mapa do restante do app.
 - [Registro de importação](IMPORTAR_ZIP.md): proveniência histórica e cuidados de publicação.
 
 ## Histórico
