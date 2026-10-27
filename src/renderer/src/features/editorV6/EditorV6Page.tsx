@@ -31,6 +31,7 @@ type DragState = { id: string; target: 'element' | 'background' | 'video'; video
 const STORAGE_KEY = 'gacha-nymi-editor-v6-catalog-v1'
 const EDITOR_V6_FACE_RENDER_VERSION = 8
 const studioColor = (number: number) => `hsl(${(number * 137.508) % 360} 45% 78%)`
+const editorV6PoseRevisionKey = (modelSlot: number, poseSlot: number) => `${modelSlot}:${poseSlot}`
 const defaultStudioEyeTransform: EditorV6FaceTransform = { x: 0, y: 0, width: 100, height: 100, rotation: 0 }
 function editorV6FaceModeForElement(element: EditorV6Element | null, appearance: CustomizerFaceAppearance | undefined): EditorV6FaceMode {
   if (element?.activeFaceMode) return element.activeFaceMode
@@ -130,6 +131,7 @@ export function EditorV6Page() {
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [availableCharacters, setAvailableCharacters] = useState<CustomizerCharacter[]>([])
+  const [poseSourceSnapshot, setPoseSourceSnapshot] = useState<{ projectId: string; revisions: Record<string, string> } | null>(null)
   const [normalizedSourceVersion, setNormalizedSourceVersion] = useState(0)
   const [castPickerOpen, setCastPickerOpen] = useState(false)
   const [castSelection, setCastSelection] = useState<string[]>([])
@@ -186,11 +188,26 @@ export function EditorV6Page() {
   const selectedEditorV6 = editorV6Projects.find((studio) => studio.id === selectedId) ?? null
   const activeEditorV6 = activeEditorV6Stored?.id === activeEditorV6Id ? activeEditorV6Stored : null
   const availableCharacterById = new Map(availableCharacters.map((character) => [character.id, character]))
-  const faceAssetRefreshRequired = Boolean(activeEditorV6 && [
+  const activePoseSourceSnapshot = poseSourceSnapshot?.projectId === activeEditorV6Id ? poseSourceSnapshot : null
+  const activeCharacterStates = activeEditorV6 ? [
     ...activeEditorV6.elements,
     ...activeEditorV6.timeline.tracks.flatMap((track) => track.blocks.flatMap((block) => block.state ? [block.state] : []))
-  ].some((state) => state.kind === 'character' && (state.faceRendererVersion !== EDITOR_V6_FACE_RENDER_VERSION
-    || Boolean(availableCharacterById.get(state.characterId ?? '') && state.characterSourceUpdatedAt !== availableCharacterById.get(state.characterId ?? '')!.updatedAt))))
+  ] : []
+  const poseRefreshRequired = activeCharacterStates.some((state) => {
+    if (state.kind !== 'character' || !state.characterId) return false
+    const character = availableCharacterById.get(state.characterId)
+    if (!character) return false
+    const poseSlot = state.poseSlot === undefined ? character.customization.poseSlot : state.poseSlot
+    if (typeof poseSlot !== 'number') return false
+    if (!activePoseSourceSnapshot) return true
+    return state.poseSourceRevision !== (activePoseSourceSnapshot.revisions[editorV6PoseRevisionKey(character.customization.modelSlot ?? 1, poseSlot)] ?? 'missing')
+  })
+  const faceAssetRefreshRequired = Boolean(activeEditorV6 && (poseRefreshRequired || activeCharacterStates.some((state) => {
+    if (state.kind !== 'character') return false
+    const character = availableCharacterById.get(state.characterId ?? '')
+    return state.faceRendererVersion !== EDITOR_V6_FACE_RENDER_VERSION
+      || Boolean(character && state.characterSourceUpdatedAt !== character.updatedAt)
+  })))
   const timelineDurationFrames = activeEditorV6?.timeline.durationFrames ?? 300
   const previewScene = useMemo(() => activeEditorV6 ? resolveEditorV6SceneAtFrame(activeEditorV6, playheadFrame, { includeMotion: false }) : null, [activeEditorV6, playheadFrame])
   const previewBackground = previewScene?.background ?? { backgroundColor: '#d7b5cd', backgroundAssetId: null, backgroundX: 0, backgroundY: 0, backgroundWidth: 100, backgroundHeight: 100, backgroundRotation: 0 }
@@ -369,6 +386,38 @@ export function EditorV6Page() {
   }, [])
 
   useEffect(() => {
+    const projectId = activeEditorV6Id
+    if (!projectId) { setPoseSourceSnapshot(null); return }
+    let cancelled = false
+    const refreshPoseSourceSnapshot = async () => {
+      const modelSlots = [...new Set(availableCharacters.map((character) => character.customization.modelSlot ?? 1))]
+      try {
+        const catalogs = await Promise.all(modelSlots.map(async (modelSlot) => ({ modelSlot, poses: await window.desktop.listFabricatorPoseSlots(modelSlot) })))
+        if (cancelled) return
+        const revisions: Record<string, string> = {}
+        for (const { modelSlot, poses } of catalogs) poses.forEach((pose, index) => {
+          const slot = pose?.slot ?? index + 1
+          revisions[editorV6PoseRevisionKey(modelSlot, slot)] = pose?.updatedAt ?? 'missing'
+        })
+        setPoseSourceSnapshot({ projectId, revisions })
+      } catch (reason) {
+        if (!cancelled) setError(reason instanceof Error ? reason.message : 'Não foi possível verificar as versões das poses salvas.')
+      }
+    }
+    const refreshWhenVisible = () => { if (document.visibilityState === 'visible') void refreshPoseSourceSnapshot() }
+    void refreshPoseSourceSnapshot()
+    window.addEventListener('focus', refreshWhenVisible)
+    window.addEventListener('fabricator:assets-updated', refreshWhenVisible)
+    document.addEventListener('visibilitychange', refreshWhenVisible)
+    return () => {
+      cancelled = true
+      window.removeEventListener('focus', refreshWhenVisible)
+      window.removeEventListener('fabricator:assets-updated', refreshWhenVisible)
+      document.removeEventListener('visibilitychange', refreshWhenVisible)
+    }
+  }, [activeEditorV6Id, availableCharacters])
+
+  useEffect(() => {
     const modelSlot = selectedEditorV6CharacterModelSlot
     if (modelSlot === null) { setEditorV6FaceItems([]); return }
     let cancelled = false
@@ -487,25 +536,30 @@ export function EditorV6Page() {
 
   useEffect(() => {
     const project = activeEditorV6
-    if (!project || !normalizedStudioIdsRef.current.has(project.id) || !availableCharacters.length) return
+    if (!project || !normalizedStudioIdsRef.current.has(project.id) || !availableCharacters.length || activePoseSourceSnapshot?.projectId !== project.id) return
     const characters = new Map(availableCharacters.map((character) => [character.id, character]))
     type RefreshTarget = { kind: 'element' | 'block'; id: string; state: EditorV6Element }
-    type RefreshGroup = { character: CustomizerCharacter; state: EditorV6Element; targets: RefreshTarget[] }
+    type RefreshGroup = { character: CustomizerCharacter; state: EditorV6Element; targets: RefreshTarget[]; poseRevision?: string }
     const groups = new Map<string, RefreshGroup>()
     const missingCharacterNames = new Set<string>()
     const addTarget = (kind: RefreshTarget['kind'], id: string, state: EditorV6Element) => {
       if (state.kind !== 'character' || !state.characterId || !state.assetId) return
       const character = characters.get(state.characterId)
       if (!character) { if (state.faceRendererVersion !== EDITOR_V6_FACE_RENDER_VERSION) missingCharacterNames.add(state.text); return }
-      if (state.faceRendererVersion === EDITOR_V6_FACE_RENDER_VERSION && state.characterSourceUpdatedAt === character.updatedAt) return
-      const signature = JSON.stringify([character.id, character.updatedAt, EDITOR_V6_FACE_RENDER_VERSION, state.poseSlot ?? character.customization.poseSlot, state.faceAppearance, state.expressionBase, state.faceTransforms, state.activeFaceMode, state.activeExpressionPresetId, state.activeExpressionPresetUpdatedAt, state.activeExpressionGaze, state.activeExpressionEffects])
-      const group = groups.get(signature) ?? { character, state, targets: [] }
+      const poseSlot = state.poseSlot === undefined ? character.customization.poseSlot : state.poseSlot
+      const poseRevision = typeof poseSlot === 'number'
+        ? activePoseSourceSnapshot.revisions[editorV6PoseRevisionKey(character.customization.modelSlot ?? 1, poseSlot)] ?? 'missing'
+        : undefined
+      const poseChanged = typeof poseSlot === 'number' && state.poseSourceRevision !== poseRevision
+      if (!poseChanged && state.faceRendererVersion === EDITOR_V6_FACE_RENDER_VERSION && state.characterSourceUpdatedAt === character.updatedAt) return
+      const signature = JSON.stringify([character.id, character.updatedAt, EDITOR_V6_FACE_RENDER_VERSION, poseRevision, poseSlot, state.faceAppearance, state.expressionBase, state.faceTransforms, state.activeFaceMode, state.activeExpressionPresetId, state.activeExpressionPresetUpdatedAt, state.activeExpressionGaze, state.activeExpressionEffects])
+      const group = groups.get(signature) ?? { character, state, targets: [], ...(poseRevision ? { poseRevision } : {}) }
       group.targets.push({ kind, id, state })
       groups.set(signature, group)
     }
     for (const element of project.elements) addTarget('element', element.id, element)
     for (const track of project.timeline.tracks) for (const block of track.blocks) if (block.state && block.elementId) addTarget('block', block.id, block.state)
-    if (missingCharacterNames.size) setError(`Não foi possível atualizar as piscadas de ${[...missingCharacterNames].join(', ')} porque o personagem não está disponível no Customizador.`)
+    if (missingCharacterNames.size) setError(`Não foi possível atualizar ${[...missingCharacterNames].join(', ')} porque o personagem não está disponível no Customizador.`)
     if (!groups.size) return
     pausePlayback()
     let cancelled = false
@@ -519,7 +573,7 @@ export function EditorV6Page() {
         const staleAssetIds = new Set<string>()
         const stageWidth = sceneRef.current?.clientWidth ?? 1000
         const stageHeight = sceneRef.current?.clientHeight ?? 562
-        for (const { character, state, targets } of groups.values()) {
+        for (const { character, state, targets, poseRevision } of groups.values()) {
           if (cancelled) return
           for (const target of targets) {
             if (target.state.assetId) staleAssetIds.add(target.state.assetId)
@@ -565,6 +619,7 @@ export function EditorV6Page() {
               ...(effects ? { activeExpressionEffects: effects } : { activeExpressionEffects: undefined }),
               characterSourceUpdatedAt: character.updatedAt,
               faceRendererVersion: EDITOR_V6_FACE_RENDER_VERSION,
+              ...(poseRevision ? { poseSourceRevision: poseRevision } : {}),
               ...(preset ? { activeExpressionPresetUpdatedAt: preset.updatedAt } : {})
             }
             if (target.kind === 'element') nextElements.set(target.id, next)
@@ -589,11 +644,11 @@ export function EditorV6Page() {
         })
         setSaved(false)
       } catch (reason) {
-        if (!cancelled) setError(reason instanceof Error ? reason.message : 'Não foi possível atualizar o personagem do Customizador no Editor V6.')
+        if (!cancelled) setError(reason instanceof Error ? reason.message : 'Não foi possível atualizar o personagem e as poses salvas no Editor V6.')
       }
     })()
     return () => { cancelled = true }
-  }, [activeEditorV6, availableCharacters, normalizedSourceVersion, pausePlayback, updateActiveEditorV6Project])
+  }, [activeEditorV6, activePoseSourceSnapshot, availableCharacters, normalizedSourceVersion, pausePlayback, updateActiveEditorV6Project])
 
   const allocateNumber = () => {
     const highest = editorV6Projects.reduce((max, studio) => Math.max(max, Number(studio.title.match(/^Editor V6\s+(\d+)/i)?.[1] ?? 0)), 0)
@@ -944,7 +999,9 @@ export function EditorV6Page() {
           const asset: EditorV6Asset = { id: crypto.randomUUID(), category: 'character', name: character.name, mimeType: 'image/png', dataUrl: baked.dataUrl }
           const { width, height, characterCanvasWidth } = fitEditorV6CharacterToStage(referenceRendered, { width: referenceWidth, height: referenceHeight }, rendered, { width: imageWidth, height: imageHeight }, stageWidth, stageHeight)
           assets.push(asset, ...baked.extraAssets)
-          elements.push({ id: crypto.randomUUID(), kind: 'character', assetId: asset.id, faceModeAssetIds: { ...baked.assetIds, idle: asset.id }, characterId: character.id, characterSourceUpdatedAt: character.updatedAt, faceRendererVersion: EDITOR_V6_FACE_RENDER_VERSION, activeExpressionCollectionId: 'standard', activeExpressionPresetId: null, activeFaceMode: 'idle', characterScale: 100, characterWidthScale: 100, characterHeightScale: 100, ...(character.customization.faceAppearance ? { expressionBase: { appearance: structuredClone(character.customization.faceAppearance), transforms: {} } } : {}), characterCanvasWidth, text: character.name, x: 0, y: 0, width, height, rotation: 0, zIndex: ++zIndex })
+          const poseSlot = character.customization.poseSlot
+          const poseSourceRevision = typeof poseSlot === 'number' ? activePoseSourceSnapshot?.revisions[editorV6PoseRevisionKey(character.customization.modelSlot ?? 1, poseSlot)] ?? 'missing' : undefined
+          elements.push({ id: crypto.randomUUID(), kind: 'character', assetId: asset.id, faceModeAssetIds: { ...baked.assetIds, idle: asset.id }, characterId: character.id, characterSourceUpdatedAt: character.updatedAt, ...(poseSourceRevision ? { poseSourceRevision } : {}), faceRendererVersion: EDITOR_V6_FACE_RENDER_VERSION, activeExpressionCollectionId: 'standard', activeExpressionPresetId: null, activeFaceMode: 'idle', characterScale: 100, characterWidthScale: 100, characterHeightScale: 100, ...(character.customization.faceAppearance ? { expressionBase: { appearance: structuredClone(character.customization.faceAppearance), transforms: {} } } : {}), characterCanvasWidth, text: character.name, x: 0, y: 0, width, height, rotation: 0, zIndex: ++zIndex })
         } finally { renderer.dispose() }
       }
       const nextElements = [...retained, ...elements]
@@ -983,7 +1040,7 @@ export function EditorV6Page() {
         ...selectedEditorV6Character,
         customization: { ...selectedEditorV6Character.customization, poseSlot: selectedElement.poseSlot === undefined ? selectedEditorV6Character.customization.poseSlot : selectedElement.poseSlot, faceAppearance: appearance }
       }
-      const key = editorV6CharacterRenderKey(characterCopy)
+      const key = editorV6CharacterRenderKey(characterCopy, selectedElement.poseSourceRevision)
       if (!editorV6FaceRendererRef.current || editorV6FaceRendererRef.current.key !== key) {
         const { prepareSavedCharacterRenderer } = await import('../../characters/editorV6CharacterRenderer')
         const renderer = await prepareSavedCharacterRenderer(characterCopy)
@@ -1094,7 +1151,7 @@ export function EditorV6Page() {
       const assetId = selectedElement.assetId
       changeScene((studio) => ({
         ...studio,
-        elements: studio.elements.map((element) => element.id === elementId ? { ...element, poseSlot, faceModeAssetIds: { ...baked.assetIds, [baseMode]: assetId }, characterCanvasWidth, width, height, characterSourceUpdatedAt: selectedEditorV6Character.updatedAt } : element),
+        elements: studio.elements.map((element) => element.id === elementId ? { ...element, poseSlot, ...(typeof poseSlot === 'number' ? { poseSourceRevision: activePoseSourceSnapshot?.revisions[editorV6PoseRevisionKey(selectedEditorV6Character.customization.modelSlot ?? 1, poseSlot)] ?? 'missing' } : { poseSourceRevision: undefined }), faceModeAssetIds: { ...baked.assetIds, [baseMode]: assetId }, characterCanvasWidth, width, height, characterSourceUpdatedAt: selectedEditorV6Character.updatedAt } : element),
         assets: [...studio.assets.map((asset) => asset.id === assetId ? { ...asset, dataUrl: baked.dataUrl, mimeType: 'image/png' as const } : asset), ...baked.extraAssets],
         updatedAt: new Date().toISOString()
       }))
@@ -1190,7 +1247,8 @@ export function EditorV6Page() {
         const job = editorV6FaceRenderPendingRef.current
         editorV6FaceRenderPendingRef.current = null
         const version = editorV6FaceRenderVersionRef.current
-        const key = editorV6CharacterRenderKey(job.character)
+        const renderElement = selectedElement?.id === job.elementId ? selectedElement : activeEditorV6?.elements.find((candidate) => candidate.id === job.elementId)
+        const key = editorV6CharacterRenderKey(job.character, renderElement?.poseSourceRevision)
         try {
           if (!editorV6FaceRendererRef.current || editorV6FaceRendererRef.current.key !== key) {
             const { prepareSavedCharacterRenderer } = await import('../../characters/editorV6CharacterRenderer')
@@ -1199,7 +1257,7 @@ export function EditorV6Page() {
             editorV6FaceRendererRef.current?.renderer.dispose()
             editorV6FaceRendererRef.current = { key, renderer }
           }
-          const element = selectedElement?.id === job.elementId ? selectedElement : activeEditorV6?.elements.find((candidate) => candidate.id === job.elementId)
+          const element = renderElement
           const transforms = editorV6FaceTransformsRef.current[job.elementId] ?? job.transforms
           const effects = element?.activeExpressionEffects
           const baseMode = editorV6FaceModeForElement(element ?? null, job.character.customization.faceAppearance)
@@ -1653,13 +1711,13 @@ export function EditorV6Page() {
             <button className="studio-tool-button" onClick={() => void importTimelineMedia('video')} type="button"><b>▣</b><span>Selecionar vídeo</span></button>
             <button className="studio-tool-button" onClick={() => void importTimelineMedia('audio')} type="button"><b>♪</b><span>Importar áudio</span></button>
             <span className="studio-tool-separator" />
-            <button className="studio-tool-button" onClick={() => { pausePlayback(); setExportOpen(true) }} disabled={faceAssetRefreshRequired} title={faceAssetRefreshRequired ? 'Atualizando imagens de piscar e fala para este projeto' : undefined} type="button"><Icon name="download" /><span>{faceAssetRefreshRequired ? 'Atualizando piscadas…' : 'Exportar MP4'}</span></button>
+            <button className="studio-tool-button" onClick={() => { pausePlayback(); setExportOpen(true) }} disabled={faceAssetRefreshRequired} title={faceAssetRefreshRequired ? 'Atualizando a pose salva deste personagem' : undefined} type="button"><Icon name="download" /><span>{faceAssetRefreshRequired ? 'Atualizando personagem…' : 'Exportar MP4'}</span></button>
             <button className="studio-tool-button" onClick={() => void exportPrint()} type="button"><Icon name="download" /><span>Print</span><i aria-hidden="true">✦</i></button>
             <button className="studio-tool-button" onClick={() => void openPrints()} type="button"><Icon name="folder" /><span>Pasta</span><i aria-hidden="true">✦</i></button>
             <button className="studio-tool-button studio-view-button" onClick={() => setFullView(true)} type="button"><Icon name="expand" /><span>View</span></button>
           </nav>
           <small className={`studio-save-indicator${saved ? '' : ' unsaved'}`}><i />{saved ? 'Salvo automaticamente' : 'Salvando alterações…'}</small>
-          {faceAssetRefreshRequired && <small className="studio-save-notice" role="status">Atualizando imagens faciais para preservar piscadas em poses e expressões.</small>}
+          {faceAssetRefreshRequired && <small className="studio-save-notice" role="status">Atualizando a pose salva para a prévia e a exportação usarem a versão mais recente.</small>}
           {error && <small className="studio-error-message" role="alert">{error}</small>}
           {notice && <small className="studio-save-notice" role="status">{notice}</small>}
         </aside>}

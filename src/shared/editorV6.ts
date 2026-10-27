@@ -104,6 +104,8 @@ export type EditorV6Element = {
   characterId?: string
   /** Customizer revision used to compose this actor's stored image. */
   characterSourceUpdatedAt?: string
+  /** Saved Fabricator pose revision used to compose this actor's stored image. */
+  poseSourceRevision?: string
   flipX?: boolean
   /** Prevents mouse dragging this character inside this EditorV6. */
   positionLocked?: boolean

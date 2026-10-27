@@ -24,7 +24,7 @@ function faceSignature(element: EditorV6Element) {
   return JSON.stringify([element.poseSlot === undefined ? 'character-default' : element.poseSlot, element.activeExpressionPresetId ?? null, element.activeExpressionPresetUpdatedAt, element.activeExpressionGaze, appearance, element.faceTransforms, element.activeExpressionEffects])
 }
 function motionKey(from: EditorV6Element, to: EditorV6Element, samples: EditorV6MotionPlan['samples']) {
-  const endpoint = (element: EditorV6Element) => [faceSignature(element), element.assetId, element.characterId, element.characterSourceUpdatedAt, element.activeFaceMode, element.faceRendererVersion, element.x, element.y, element.width, element.height, element.rotation, element.flipX, element.characterScale, element.characterWidthScale, element.characterHeightScale, element.characterCanvasWidth]
+  const endpoint = (element: EditorV6Element) => [faceSignature(element), element.assetId, element.characterId, element.characterSourceUpdatedAt, element.poseSourceRevision, element.activeFaceMode, element.faceRendererVersion, element.x, element.y, element.width, element.height, element.rotation, element.flipX, element.characterScale, element.characterWidthScale, element.characterHeightScale, element.characterCanvasWidth]
   return JSON.stringify([EDITOR_V6_MOTION_VERSION, endpoint(from), endpoint(to), samples])
 }
 export function editorV6MotionPlan(track: EditorV6TimelineTrack, previous: EditorV6TimelineBlock, next: EditorV6TimelineBlock): EditorV6MotionPlan | null {

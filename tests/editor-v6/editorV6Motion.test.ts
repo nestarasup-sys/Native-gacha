@@ -34,6 +34,19 @@ describe('V6 motion scheduling and portable cache', () => {
     expect(plan.samples.map(s => s.offset)).toEqual([-7,-6,-5,-4,-3,-2,-1])
     expect(plan.samples[0].progress).toBeCloseTo(1 / 15)
   })
+  it('invalidates baked transitions when the saved pose changes', () => {
+    const doc = fixture(), beforePlan = editorV6MotionPlans(doc)[0]
+    const ready = attachEditorV6Motion(doc, beforePlan.blockId, bake(doc))
+    const changedTimeline = {
+      ...ready.timeline,
+      tracks: ready.timeline.tracks.map((track) => track.kind === 'character'
+        ? { ...track, blocks: track.blocks.map((block) => block.state ? { ...block, state: { ...block.state, poseSourceRevision: '2026-10-26T12:01:00.000Z' } } : block) }
+        : track)
+    }
+    const changed = { ...ready, timeline: changedTimeline }
+    expect(editorV6MotionPlans(changed)[0].key).not.toBe(beforePlan.key)
+    expect(missingEditorV6Motions(changed)).toHaveLength(1)
+  })
   it('pré-calcula talk e blink durante a transição sem atualizar o personagem por quadro', () => {
     const doc = fixture(), speech = doc.timeline.tracks.find((track) => track.kind === 'speech')!
     speech.blocks = [{ id: crypto.randomUUID(), label: 'Fala durante a troca', characterId: 'alice', startFrame: 86, durationFrames: 2 }]
