@@ -14,6 +14,7 @@ import { WardrobePoseAuditPanel } from './WardrobePoseAuditPanel'
 import { useWardrobeComparisonPose } from './useWardrobeComparisonPose'
 import { WardrobeComparisonPreview } from './WardrobeComparisonPreview'
 import { suggestWardrobeBone } from './boneSelection'
+import { guessWardrobeCategory, guessWardrobeName, wardrobeSheetContentBounds } from './wardrobeAutoDetection'
 import { normalizeEditableImageFile } from '../normalizeImage'
 import { applyWardrobeWarpBrush, createWardrobeWarpMesh, drawWardrobeWarp, type WardrobeWarpBounds, type WardrobeWarpMesh, type WardrobeWarpPoint, wardrobeWarpPadding } from './wardrobeMeshWarp'
 import { WardrobeGarmentEditorModal } from './WardrobeGarmentEditorModal'
@@ -124,32 +125,6 @@ function findGridRowBoundaries(image: ImageData, rowCount: number): number[] {
   boundaries.push(height)
   return boundaries
 }
-function guessCategory(piece: WorkerPiece, width: number, height: number): WardrobeCategory {
-  const cx = (piece.x + piece.width / 2) / width; const cy = (piece.y + piece.height / 2) / height
-  if (cy < .19 && Math.abs(cx - .5) > .1) return 'manga-superior'
-  if (cy < .39 && cx > .34 && cx < .66) return 'camisa'
-  if (cy > .62) return 'calca-canela'
-  if (cy > .34) return 'calca-coxa'
-  return 'manga-inferior'
-}
-function guessName(category: WardrobeCategory, x: number, width: number): string {
-  if (category === 'camisa') return 'Camisa'
-  if (category === 'jaqueta') return 'Jaqueta'
-  if (category === 'capa') return 'Capa'
-  if (category === 'cinto') return 'Cinto'
-  if (category === 'oculos') return 'Óculos'
-  if (category === 'acessorio-cabeca') return 'Acessório de cabeça'
-  if (category === 'saia') return 'Saia'
-  if (category === 'shorts') return 'Bermuda'
-  if (category === 'meia') return `Meia ${x < width / 2 ? 'esquerda' : 'direita'}`
-  if (category === 'sapato') return `Sapato ${x < width / 2 ? 'esquerdo' : 'direito'}`
-  const side = x < width / 2 ? 'esquerda' : 'direita'
-  if (category === 'luvas') return `Luvas ${side}`
-  if (category === 'manga-superior') return `Manga superior ${side}`
-  if (category === 'manga-inferior') return `Manga inferior ${side}`
-  if (category === 'calca-coxa') return `Calça · coxa ${side}`
-  return `Calça · canela ${side}`
-}
 function automaticCategoryForBone(part: ModelPart, current: WardrobeCategory): WardrobeCategory | null {
   const name = part.name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
   if (/antebraco|forearm|braco inferior|lower arm/.test(name)) return current === 'luvas' ? current : 'manga-inferior'
@@ -178,7 +153,7 @@ function guessNameForBone(category: WardrobeCategory, part: ModelPart, model: Fa
   const hasLeftSide = /esquerda|esquerdo|left/.test(label)
   const hasRightSide = /direita|direito|right/.test(label)
   const sideX = hasLeftSide ? 0 : hasRightSide ? model.width : centerX
-  return guessName(category, sideX, model.width)
+  return guessWardrobeName(category, sideX, model.width)
 }
 function getBodyLayer(model: FabricatorProject | null, partId: string): number {
   if (!model) return 0
@@ -519,14 +494,16 @@ export function WardrobeWorkspace() {
         setProcessing(false); worker.terminate(); workerRef.current = null
         if (message.type === 'error') { setError(message.message); return }
         if (!message.pieces.length) { setError('Não encontrei peças visíveis. Confira se a folha tem transparência entre as peças.'); return }
+        const contentBounds = wardrobeSheetContentBounds(message.pieces, message.width, message.height)
         const components = message.pieces.map((piece) => {
-          const category = guessCategory(piece, message.width, message.height)
+          const category = guessWardrobeCategory(piece, contentBounds)
           const { png, ...metadata } = piece
-          const bone = guessBone(category, piece.x + piece.width / 2, message.width, referenceModel ?? model)
+          const contentCenterX = piece.x + piece.width / 2 - contentBounds.x
+          const bone = guessBone(category, contentCenterX, contentBounds.width, referenceModel ?? model)
           const positioned: WardrobeComponent = { ...metadata, category, attachedPartId: bone?.id ?? '', rotation: 0, originX: metadata.x, originY: metadata.y, originWidth: metadata.width, originHeight: metadata.height, dataUrl: dataUrl(png) }
           positioned.glue = { version: 1, mode: 'loose' }
           positioned.binding = undefined
-          return { ...positioned, name: guessName(category, piece.x + piece.width / 2, message.width) }
+          return { ...positioned, name: guessWardrobeName(category, contentCenterX, contentBounds.width) }
         })
         const unbound = components.filter((component) => !component.attachedPartId)
         if (unbound.length) {
@@ -1064,6 +1041,6 @@ export function WardrobeWorkspace() {
       </aside>
     </div>
     {garmentEditorOpen && selected && <WardrobeGarmentEditorModal key={selected.id} component={selected} bodyReference={editorBodyReference} onClose={() => setGarmentEditorOpen(false)} onApply={(imageUrl) => { if (imageUrl !== selected.dataUrl) { dirtyWarpImageIdsRef.current.add(selected.id); warpSessionsRef.current.delete(selected.id); updateComponent(selected.id, { dataUrl: imageUrl, hasDeformationOriginal: undefined, deformationOriginalDataUrl: undefined, deformationOriginalFrame: undefined, isDeformed: false }) } setGarmentEditorOpen(false) }} />}
-    {importPickerOpen && <div className="pose-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setImportPickerOpen(false) }}><section className="pose-model-picker" role="dialog" aria-modal="true" aria-labelledby="wardrobe-import-title"><header><span><small>BIBLIOTECA DE ROUPAS</small><strong id="wardrobe-import-title">Como deseja importar?</strong></span><button onClick={() => setImportPickerOpen(false)} aria-label="Fechar" type="button">×</button></header><p>Escolha como separar as peças da imagem.</p><div className="pose-model-options"><button className="pose-model-option" onClick={() => { setImportPickerOpen(false); inputRef.current?.click() }} type="button"><span className="pose-model-number"><Icon name="sparkles" /></span><span><b>Separar automaticamente</b><small>Detecta peças pelas áreas transparentes da folha.</small></span><Icon name="chevronRight" /></button><button className="pose-model-option" onClick={() => { gridSizeRef.current = 4; gridInputRef.current?.click() }} type="button"><span className="pose-model-number">4×3</span><span><b>Roupas para tronco · grade 4×3</b><small>Até 12 roupas, com remoção automática do fundo.</small></span><Icon name="chevronRight" /></button><button className="pose-model-option" onClick={() => { gridSizeRef.current = 3; gridInputRef.current?.click() }} type="button"><span className="pose-model-number">3×3</span><span><b>Roupas para tronco · grade 3×3</b><small>Até 9 roupas, com remoção automática do fundo.</small></span><Icon name="chevronRight" /></button></div></section></div>}{testPosePickerOpen && <div className="pose-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !testPoseLoading) setTestPosePickerOpen(false) }}><section className="pose-model-picker" role="dialog" aria-modal="true" aria-labelledby="wardrobe-test-picker-title"><header><span><small>TESTE DE ROUPA</small><strong id="wardrobe-test-picker-title">Escolha uma pose</strong></span><button onClick={() => setTestPosePickerOpen(false)} aria-label="Fechar" type="button">×</button></header><p>A roupa será exibida sobre uma cópia visual da pose. A pose salva não será modificada.</p><div className="pose-model-options">{testPoseLoading && <div className="pose-model-none">Carregando poses…</div>}{testPoseSlots.map((pose) => pose && <button key={`pose-${pose.slot}`} className="pose-model-option" disabled={testPoseLoading} onClick={() => void loadTestPose(pose.slot)} type="button"><span className="pose-model-number">{String(pose.slot).padStart(2, '0')}</span><span><b>{pose.name}</b><small>{pose.partCount} peças · {new Date(pose.updatedAt).toLocaleDateString('pt-BR')}</small></span><Icon name="chevronRight" /></button>)}{!testPoseLoading && testPoseSlots.length === 0 && <div className="pose-model-none">Este modelo ainda não tem poses salvas.</div>}</div></section></div>}
+    {importPickerOpen && <div className="pose-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setImportPickerOpen(false) }}><section className="pose-model-picker" role="dialog" aria-modal="true" aria-labelledby="wardrobe-import-title"><header><span><small>BIBLIOTECA DE ROUPAS</small><strong id="wardrobe-import-title">Como deseja importar?</strong></span><button onClick={() => setImportPickerOpen(false)} aria-label="Fechar" type="button">×</button></header><p>Na folha automática, organize os acessórios na faixa de cima e as roupas do corpo abaixo.</p><div className="pose-model-options"><button className="pose-model-option" onClick={() => { setImportPickerOpen(false); inputRef.current?.click() }} type="button"><span className="pose-model-number"><Icon name="sparkles" /></span><span><b>Separar automaticamente</b><small>Separa os recortes transparentes, detecta acessórios no topo e sugere tronco, braços, pernas, meias e sapatos abaixo.</small></span><Icon name="chevronRight" /></button><button className="pose-model-option" onClick={() => { gridSizeRef.current = 4; gridInputRef.current?.click() }} type="button"><span className="pose-model-number">4×3</span><span><b>Roupas para tronco · grade 4×3</b><small>Até 12 roupas, com remoção automática do fundo.</small></span><Icon name="chevronRight" /></button><button className="pose-model-option" onClick={() => { gridSizeRef.current = 3; gridInputRef.current?.click() }} type="button"><span className="pose-model-number">3×3</span><span><b>Roupas para tronco · grade 3×3</b><small>Até 9 roupas, com remoção automática do fundo.</small></span><Icon name="chevronRight" /></button></div></section></div>}{testPosePickerOpen && <div className="pose-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !testPoseLoading) setTestPosePickerOpen(false) }}><section className="pose-model-picker" role="dialog" aria-modal="true" aria-labelledby="wardrobe-test-picker-title"><header><span><small>TESTE DE ROUPA</small><strong id="wardrobe-test-picker-title">Escolha uma pose</strong></span><button onClick={() => setTestPosePickerOpen(false)} aria-label="Fechar" type="button">×</button></header><p>A roupa será exibida sobre uma cópia visual da pose. A pose salva não será modificada.</p><div className="pose-model-options">{testPoseLoading && <div className="pose-model-none">Carregando poses…</div>}{testPoseSlots.map((pose) => pose && <button key={`pose-${pose.slot}`} className="pose-model-option" disabled={testPoseLoading} onClick={() => void loadTestPose(pose.slot)} type="button"><span className="pose-model-number">{String(pose.slot).padStart(2, '0')}</span><span><b>{pose.name}</b><small>{pose.partCount} peças · {new Date(pose.updatedAt).toLocaleDateString('pt-BR')}</small></span><Icon name="chevronRight" /></button>)}{!testPoseLoading && testPoseSlots.length === 0 && <div className="pose-model-none">Este modelo ainda não tem poses salvas.</div>}</div></section></div>}
   </section>
 }

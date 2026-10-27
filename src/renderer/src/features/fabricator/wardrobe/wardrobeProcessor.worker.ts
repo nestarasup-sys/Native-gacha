@@ -68,6 +68,9 @@ scope.onmessage = async ({ data }: MessageEvent<WardrobeProcessRequest>) => {
     const visited = new Uint8Array(visible.length)
     const queue = new Int32Array(visible.length)
     const pieces: Piece[] = []
+    // Scale the speck filter with the source image. Small top-lane accessories
+    // should survive at modest resolutions, while single-pixel noise is ignored.
+    const minimumComponentPixels = Math.max(12, Math.min(96, Math.floor(width * height * 0.00001)))
     for (let start = 0; start < visible.length; start += 1) {
       if (!visible[start] || visited[start]) continue
       let read = 0; let write = 0; let minX = width; let minY = height; let maxX = 0; let maxY = 0
@@ -82,7 +85,7 @@ scope.onmessage = async ({ data }: MessageEvent<WardrobeProcessRequest>) => {
         if (y > 0) visit(at - width)
         if (y + 1 < height) visit(at + width)
       }
-      if (write < 120) continue
+      if (write < minimumComponentPixels || (maxX - minX <= 1 && maxY - minY <= 1 && write < 32)) continue
       const pad = 3; const left = Math.max(0, minX - pad); const top = Math.max(0, minY - pad)
       const w = Math.min(width - left, maxX - minX + 1 + pad * 2); const h = Math.min(height - top, maxY - minY + 1 + pad * 2)
       const crop = new OffscreenCanvas(w, h); const cropContext = crop.getContext('2d')
