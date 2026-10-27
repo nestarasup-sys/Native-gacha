@@ -8,7 +8,7 @@ if errorlevel 1 (
 )
 
 rem Native Gacha usa uma porta diferente do G-V5 legado (Vite: 5173).
-set "NATIVE_GACHA_DEV_PORT=5187"
+set "NATIVE_GACHA_DEV_PORT=5188"
 
 where node >nul 2>&1
 if errorlevel 1 (
