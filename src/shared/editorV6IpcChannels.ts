@@ -19,6 +19,7 @@ export const editorV6IpcChannels = {
   linkEditorV6LibraryVideo: 'editor-v6:media:link-library-video',
   cloneEditorV6Media: 'editor-v6:media:clone',
   bakeEditorV6Motion: 'editor-v6:motion:bake',
+  prepareEditorV6Motion: 'editor-v6:motion:prepare',
   cancelEditorV6Motion: 'editor-v6:motion:cancel'
 } as const satisfies Record<Exclude<keyof EditorV6DesktopApi, 'flushPendingWrites'>, string>
 

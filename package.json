@@ -21,6 +21,7 @@
     "editor-v6:analyze-memo-ab": "node scripts/editor-v6/analyze-memo-ab.cjs",
     "editor-v6:analyze-trace": "node scripts/editor-v6/analyze-trace.cjs",
     "test:editor-v6:motion": "node scripts/editor-v6/check-motion.cjs",
+    "test:editor-v6:motion-service": "node scripts/editor-v6/check-motion-service.cjs",
     "test:editor-v6:surface": "node scripts/editor-v6/check-scene-surface.cjs",
     "test:editor-v6:export": "npm run build && node scripts/editor-v6/check-export.cjs",
     "package:win:portable": "npm run build && electron-builder --win portable --x64",

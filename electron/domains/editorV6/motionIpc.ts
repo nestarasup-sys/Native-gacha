@@ -5,16 +5,39 @@ import { editorV6MotionChannels, type EditorV6MotionBakeRequest, type EditorV6Mo
 import { editorV6MotionResultSchema, parseEditorV6MotionRequest } from '../../../src/shared/editorV6Schema'
 import { isCustomizerCharacter } from '../customizer/validation'
 import { waitForExport } from './exportProcess'
+import { createMotionDiskCache, motionCacheKey } from './motionCache'
 
-export function createEditorV6MotionService(deps: { ipcMain: Pick<IpcMain, 'handle'>; assertTrustedSender: (event: IpcMainInvokeEvent) => void; html: string; preload: string; devUrl?: string }) {
-  const workers = new Map<number, { request: EditorV6MotionBakeRequest; resolve: (result: EditorV6MotionBakeResult) => void; reject: (error: Error) => void }>()
+type Active = { request: EditorV6MotionBakeRequest; resolve: (result: EditorV6MotionBakeResult) => void; reject: (error: Error) => void }
+type Lane = { window?: BrowserWindow; active?: Active; delivery?: EditorV6MotionBakeRequest; waiting?: (request: EditorV6MotionBakeRequest | null) => void; idle?: ReturnType<typeof setTimeout>; tail: Promise<void>; count: number }
+const retiredWorkers = new Set<number>()
+function retire(id: number) {
+  retiredWorkers.add(id)
+  while (retiredWorkers.size > 128) retiredWorkers.delete(retiredWorkers.values().next().value!)
+}
+
+export function createEditorV6MotionService(deps: { ipcMain: Pick<IpcMain, 'handle'>; assertTrustedSender: (event: IpcMainInvokeEvent) => void; html: string; preload: string; devUrl?: string; cacheDirectory?: string; concurrency?: 1 | 2 }) {
+  const workers = new Map<number, Lane>()
   const jobs = new Map<string, { owner: number; controller: AbortController; promise: Promise<EditorV6MotionBakeResult> }>()
   const cache = new Map<string, EditorV6MotionBakeResult>()
-  let tail = Promise.resolve()
-  const worker = (event: IpcMainInvokeEvent) => { const job = workers.get(event.sender.id); if (!job || event.senderFrame !== event.sender.mainFrame) throw Error('Preparador de animação não autorizado.'); return job }
-  deps.ipcMain.handle(editorV6MotionChannels.payload, (event) => worker(event).request)
+  const disk = deps.cacheDirectory ? createMotionDiskCache(deps.cacheDirectory) : undefined
+  const lanes: Lane[] = Array.from({ length: deps.concurrency ?? 1 }, () => ({ tail: Promise.resolve(), count: 0 }))
+  let stopped = false
+  const worker = (event: IpcMainInvokeEvent) => {
+    const lane = workers.get(event.sender.id)
+    if (!lane || event.senderFrame !== event.sender.mainFrame) throw Error('Preparador de animação não autorizado.')
+    return lane
+  }
+  deps.ipcMain.handle(editorV6MotionChannels.payload, (event) => {
+    if (stopped || retiredWorkers.has(event.sender.id)) return null
+    const lane = worker(event)
+    if (lane.delivery) { const request = lane.delivery; lane.delivery = undefined; return request }
+    if (lane.waiting) throw Error('O preparador já está esperando trabalho.')
+    return new Promise<EditorV6MotionBakeRequest | null>((resolve) => { lane.waiting = resolve })
+  })
   deps.ipcMain.handle(editorV6MotionChannels.complete, (event, rawResult, error?: string) => {
-    const job = worker(event)
+    if (stopped || retiredWorkers.has(event.sender.id)) return
+    const job = worker(event).active
+    if (!job) throw Error('O preparador não tem uma transição ativa.')
     if (error) { job.reject(Error(String(error).slice(0, 5000))); return }
     try {
       const result = editorV6MotionResultSchema.parse(rawResult)
@@ -22,43 +45,71 @@ export function createEditorV6MotionService(deps: { ipcMain: Pick<IpcMain, 'hand
       job.resolve(result)
     } catch (reason) { job.reject(reason instanceof Error ? reason : Error(String(reason))) }
   })
-  const render = async (request: EditorV6MotionBakeRequest, signal: AbortSignal) => {
+  function close(lane: Lane) {
+    clearTimeout(lane.idle)
+    const window = lane.window
+    lane.waiting?.(null)
+    lane.window = undefined; lane.delivery = undefined; lane.waiting = undefined
+    if (window && !window.isDestroyed()) { retire(window.webContents.id); workers.delete(window.webContents.id); window.destroy() }
+  }
+  async function render(lane: Lane, request: EditorV6MotionBakeRequest, signal: AbortSignal) {
     signal.throwIfAborted()
-    const window = new BrowserWindow({ show: false, width: 320, height: 180, webPreferences: { preload: deps.preload, contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: false, offscreen: true, devTools: false } })
-    const id = window.webContents.id
-    let resolve!: (result: EditorV6MotionBakeResult) => void, reject!: (error: Error) => void
+    clearTimeout(lane.idle)
+    let resolve!: Active['resolve'], reject!: Active['reject']
     const completion = new Promise<EditorV6MotionBakeResult>((yes, no) => { resolve = yes; reject = no })
     void completion.catch(() => {})
-    workers.set(id, { request, resolve, reject })
-    const close = () => { workers.delete(id); if (!window.isDestroyed()) window.destroy() }
-    signal.addEventListener('abort', close, { once: true })
-    window.once('closed', () => reject(Error('O preparador de animação foi encerrado.')))
+    lane.active = { request, resolve, reject }
+    const abort = () => close(lane)
+    signal.addEventListener('abort', abort, { once: true })
     try {
-      await waitForExport(deps.devUrl ? window.loadURL(deps.devUrl.split('#')[0] + '#/editor-v6-transition-baker') : window.loadFile(deps.html, { hash: '/editor-v6-transition-baker' }), signal, 60000, 'abrir preparação de animações')
-      return await waitForExport(completion, signal, 180000, 'preparar animação do personagem')
-    } finally { signal.removeEventListener('abort', close); close() }
+      if (!lane.window || lane.window.isDestroyed()) {
+        const window = new BrowserWindow({ show: false, width: 320, height: 180, webPreferences: { preload: deps.preload, contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: false, offscreen: true, devTools: false } })
+        lane.window = window; lane.delivery = request
+        workers.set(window.webContents.id, lane)
+        const workerId = window.webContents.id
+        window.once('closed', () => {
+          retire(workerId); workers.delete(workerId)
+          if (lane.window === window) {
+            lane.window = undefined; lane.waiting?.(null); lane.waiting = undefined
+            lane.active?.reject(Error('O preparador de animação foi encerrado.'))
+          }
+        })
+        await waitForExport(deps.devUrl ? window.loadURL(deps.devUrl.split('#')[0] + '#/editor-v6-transition-baker') : window.loadFile(deps.html, { hash: '/editor-v6-transition-baker' }), signal, 60000, 'abrir preparação de animações')
+      } else if (lane.waiting) { const deliver = lane.waiting; lane.waiting = undefined; deliver(request) }
+      else lane.delivery = request
+      const result = await waitForExport(completion, signal, 180000, 'preparar animação do personagem')
+      lane.idle = setTimeout(() => close(lane), 30_000)
+      lane.idle.unref()
+      return result
+    } catch (error) { close(lane); throw error }
+    finally { lane.active = undefined; signal.removeEventListener('abort', abort) }
   }
   const validateRequest = (request: EditorV6MotionBakeRequest) => {
     const { plan, character } = request
     if (!isCustomizerCharacter(character) || character.id !== plan.characterId || plan.from.characterId !== plan.characterId || plan.to.characterId !== plan.characterId || plan.from.id !== plan.elementId || plan.to.id !== plan.elementId || plan.endFrame <= plan.startFrame || plan.endFrame - plan.startFrame > 7.50001 || plan.samples.some((sample) => Math.abs(sample.progress - (plan.endFrame + sample.offset - plan.startFrame) / (plan.endFrame - plan.startFrame)) > 1e-6)) throw Error('Dados de animação incompatíveis com o personagem.')
   }
-  const remember = (request: EditorV6MotionBakeRequest, result: EditorV6MotionBakeResult) => {
-    const key = `${request.plan.key}:${request.character.updatedAt}`
+  const remember = (key: string, result: EditorV6MotionBakeResult) => {
     cache.delete(key); cache.set(key, result)
     const bytes = () => [...cache.values()].reduce((total, item) => total + item.asset.dataUrl.length, 0)
     while (cache.size > 8 || bytes() > 24_000_000) cache.delete(cache.keys().next().value!)
   }
   const enqueueBake = (request: EditorV6MotionBakeRequest, signal: AbortSignal) => {
-    const key = `${request.plan.key}:${request.character.updatedAt}`
-    const cached = cache.get(key)
-    if (cached) { cache.delete(key); cache.set(key, cached); return Promise.resolve(cached) }
-    const promise = tail.catch(() => {}).then(async () => {
+    if (stopped) return Promise.reject(Error('O preparador está encerrando.'))
+    const key = motionCacheKey(request)
+    const lane = lanes.reduce((best, candidate) => candidate.count < best.count ? candidate : best)
+    lane.count++
+    const promise = lane.tail.catch(() => {}).then(async () => {
       signal.throwIfAborted()
-      const result = await render(request, signal)
-      remember(request, result)
+      if (stopped) throw Error('O preparador está encerrando.')
+      const cached = cache.get(key) ?? await disk?.read(request)
+      signal.throwIfAborted()
+      if (cached) { remember(key, cached); return cached }
+      const result = await render(lane, request, signal)
+      remember(key, result)
+      await disk?.write(request, result).catch((error) => console.warn('Cache de transições indisponível:', error instanceof Error ? error.message : String(error)))
       return result
-    })
-    tail = promise.then(() => {}, () => {})
+    }).finally(() => { lane.count--; if (signal.aborted) close(lane) })
+    lane.tail = promise.then(() => {}, () => {})
     return promise
   }
   const bakeForExport = (rawRequest: EditorV6MotionBakeRequest, signal: AbortSignal) => {
@@ -66,7 +117,7 @@ export function createEditorV6MotionService(deps: { ipcMain: Pick<IpcMain, 'hand
     validateRequest(request)
     return enqueueBake(request, signal)
   }
-  deps.ipcMain.handle(editorV6IpcChannels.bakeEditorV6Motion, async (event, rawRequest) => {
+  const bakeOwned = async (event: IpcMainInvokeEvent, rawRequest: unknown, cacheOnly: boolean) => {
     deps.assertTrustedSender(event)
     const request = parseEditorV6MotionRequest(rawRequest)
     validateRequest(request)
@@ -75,9 +126,15 @@ export function createEditorV6MotionService(deps: { ipcMain: Pick<IpcMain, 'hand
     event.sender.once('destroyed', abort)
     const promise = enqueueBake(request, controller.signal)
     jobs.set(request.id, { owner: event.sender.id, controller, promise })
-    try { return await promise }
+    try { const result = await promise; return cacheOnly ? undefined : result }
     finally { jobs.delete(request.id); if (!event.sender.isDestroyed()) event.sender.removeListener('destroyed', abort) }
-  })
+  }
+  deps.ipcMain.handle(editorV6IpcChannels.bakeEditorV6Motion, (event, request) => bakeOwned(event, request, false))
+  deps.ipcMain.handle(editorV6IpcChannels.prepareEditorV6Motion, (event, request) => bakeOwned(event, request, true))
   deps.ipcMain.handle(editorV6IpcChannels.cancelEditorV6Motion, (event, id) => { deps.assertTrustedSender(event); const job = jobs.get(z.string().uuid().parse(id)); if (job && job.owner === event.sender.id) job.controller.abort(Error('Preparação de animação substituída.')) })
-  return { bakeForExport, cancelAll: () => { for (const job of jobs.values()) job.controller.abort(Error('Aplicativo encerrado.')) }, drain: () => Promise.allSettled([...jobs.values()].map((job) => job.promise)) }
+  return { bakeForExport, releaseIdle: () => { for (const lane of lanes) if (lane.count === 0) close(lane) }, cancelAll: () => {
+    stopped = true
+    for (const job of jobs.values()) job.controller.abort(Error('Aplicativo encerrado.'))
+    for (const lane of lanes) { lane.active?.reject(Error('Aplicativo encerrado.')); close(lane) }
+  }, drain: () => Promise.allSettled(lanes.map((lane) => lane.tail)) }
 }

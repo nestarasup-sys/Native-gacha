@@ -17,11 +17,19 @@ function cropOf(canvas: HTMLCanvasElement): Crop {
   if (right < left) return { left: 0, top: 0, width: 1, height: 1 }
   return { left, top, width: right - left + 1, height: bottom - top + 1 }
 }
-function cachedProvider(provider: CharacterRenderAssetProvider): CharacterRenderAssetProvider {
+function cachedProvider(provider: CharacterRenderAssetProvider, sharedOnly = false): CharacterRenderAssetProvider {
   const cache = new Map<string, Promise<unknown>>()
   return new Proxy({} as CharacterRenderAssetProvider, { get: (_target, property) => (...args: unknown[]) => {
+    if (sharedOnly && !['loadFabricatorSlot', 'loadFabricatorPose', 'loadHairStyle', 'loadWardrobeSet'].includes(String(property))) {
+      return (provider[property as keyof CharacterRenderAssetProvider] as (...args: unknown[]) => Promise<unknown>)(...args)
+    }
     const key = JSON.stringify([property, args]); let result = cache.get(key)
-    if (!result) { result = (provider[property as keyof CharacterRenderAssetProvider] as (...args: unknown[]) => Promise<unknown>)(...args); cache.set(key, result) }
+    if (!result) {
+      result = (provider[property as keyof CharacterRenderAssetProvider] as (...args: unknown[]) => Promise<unknown>)(...args)
+      cache.set(key, result)
+      void result.catch(() => { if (cache.get(key) === result) cache.delete(key) })
+      while (cache.size > 32) cache.delete(cache.keys().next().value!)
+    }
     return result
   } })
 }
@@ -61,8 +69,12 @@ function calibratePair(from: EditorV6Element, to: EditorV6Element) {
 }
 
 /** Bake seven or fewer canonical rig samples into one bounded PNG atlas, off the UI thread. */
-export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, rawProvider: CharacterRenderAssetProvider): Promise<EditorV6MotionBakeResult> {
-  const began = performance.now(), provider = cachedProvider(rawProvider), slot = request.character.customization.modelSlot ?? 1
+export type EditorV6BakeSession = { provider: CharacterRenderAssetProvider; materials: GachaReusableMaterialCache }
+export function createEditorV6BakeSession(provider: CharacterRenderAssetProvider): EditorV6BakeSession {
+  return { provider: cachedProvider(provider, true), materials: new Map() }
+}
+export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, rawProvider: CharacterRenderAssetProvider, session?: EditorV6BakeSession): Promise<EditorV6MotionBakeResult> {
+  const began = performance.now(), provider = cachedProvider(session?.provider ?? rawProvider), slot = request.character.customization.modelSlot ?? 1
   const source = await provider.loadFabricatorSlot(slot)
   if (!source) throw Error('O modelo do personagem não está disponível para animar.')
   const pose = async (state: EditorV6Element) => {
@@ -76,7 +88,7 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
   calibratePair(from, to)
   const poseSignature = (pose: typeof fromPose) => JSON.stringify([pose.width, pose.height, pose.parts, pose.joints, pose.layerOrder, pose.hiddenPartIds])
   const samePose = poseSignature(fromPose) === poseSignature(toPose)
-  const materials: GachaReusableMaterialCache = new Map()
+  const materials: GachaReusableMaterialCache = session?.materials ?? new Map()
   let preparedRigs = 0, reusable: Renderer | undefined
   const prepare = async (progress: number) => {
     if (samePose && reusable) return reusable
@@ -123,5 +135,5 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
     const assetId = crypto.randomUUID(), atlasPixels = atlas.width * atlas.height, dataUrl = atlas.toDataURL('image/png')
     atlas.width = atlas.height = 1
     return { asset: { id: assetId, category: 'character', name: 'Transição de personagem', mimeType: 'image/png', dataUrl, timelineSnapshot: true }, motion: { version: 1, key: request.plan.key, assetId, frames }, metrics: { milliseconds: performance.now() - began, preparedRigs, samples: count, atlasPixels } }
-  } finally { reusable?.dispose(); materials.clear() }
+  } finally { reusable?.dispose(); if (!session || materials.size > 4) materials.clear() }
 }

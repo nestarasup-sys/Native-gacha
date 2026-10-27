@@ -1,10 +1,10 @@
-import { randomUUID } from 'node:crypto'
 import { mkdir, mkdtemp, rename, rm, unlink, writeFile } from 'node:fs/promises'
 import { basename, dirname, extname, join, resolve, sep } from 'node:path'
 import { availableParallelism } from 'node:os'
 import { editorV6DefaultVideoLayout, type EditorV6Document } from '../../../src/shared/editorV6'
 import type { CustomizerCharacter } from '../../../src/shared/customizer'
-import { attachEditorV6Motion, missingEditorV6Motions, type EditorV6MotionBakeRequest, type EditorV6MotionBakeResult } from '../../../src/shared/editorV6Motion'
+import { missingEditorV6Motions, type EditorV6MotionBakeRequest, type EditorV6MotionBakeResult } from '../../../src/shared/editorV6Motion'
+import { prepareExportMotions } from './prepareMotions'
 import { planEditorV6Audio, planEditorV6Export, type EditorV6ExportAudio, type EditorV6ExportOptions, type EditorV6ExportPart, type EditorV6ExportStatus } from '../../../src/shared/editorV6Export'
 import { runExportCommand, spawnExportProcess, waitForExport } from './exportProcess'
 import type { EditorV6FrameWorker } from './exportWorkers'
@@ -16,7 +16,7 @@ export async function probeExportMedia(ffprobe: string, path: string, signal: Ab
 }
 type PartReport = EditorV6ExportPart & { encoder: string; rendered: number; reused: number; frames: number; milliseconds: number; path: string; probe?: MediaProbe }
 type AttemptReport = { parts: PartReport[]; encoder: string; parallelism: number; milliseconds?: number; error?: string }
-export type EditorV6ExportReport = { schemaVersion: 1; id: string; state: string; projectId: string; options: EditorV6ExportOptions; fps: 30; totalFrames: number; fallback: boolean; attempts: AttemptReport[]; encoderTests: Array<{ encoder: string; error?: string }>; audioClips: number; videoInputs: number; proxies: 0; motionTransitionsRequired: number; motionTransitionsPrepared: number; startedAt: string; endedAt?: string; milliseconds?: number; outputPath: string; deliveryWarning?: string; validation?: unknown; error?: string }
+export type EditorV6ExportReport = { schemaVersion: 1; id: string; state: string; projectId: string; options: EditorV6ExportOptions; fps: 30; totalFrames: number; fallback: boolean; attempts: AttemptReport[]; encoderTests: Array<{ encoder: string; error?: string }>; audioClips: number; videoInputs: number; proxies: 0; motionTransitionsRequired: number; motionTransitionsPrepared: number; motionPreparation?: Awaited<ReturnType<typeof prepareExportMotions>>['stats']; startedAt: string; endedAt?: string; milliseconds?: number; outputPath: string; deliveryWarning?: string; validation?: unknown; error?: string }
 type Dependencies = {
   ffmpeg: string; ffprobe: string; tempRoot: string; reportPath: string; outputPath: string; id: string
   createWorker: (project: EditorV6Document, part: EditorV6ExportPart, signal: AbortSignal) => Promise<EditorV6FrameWorker>
@@ -138,22 +138,17 @@ export async function runEditorV6Export(project: EditorV6Document, options: Edit
   }
   try {
     deps.signal.throwIfAborted()
-    const missingMotions = missingEditorV6Motions(project, options.startFrame, options.endFrame)
-    report.motionTransitionsRequired = missingMotions.length
-    if (missingMotions.length) {
-      const characters = new Map((await deps.getCharacters()).map((character) => [character.id, character]))
-      for (let index = 0; index < missingMotions.length; index++) {
-        deps.signal.throwIfAborted()
-        const plan = missingMotions[index]
-        const character = characters.get(plan.characterId)
-        if (!character) throw Error(`Não foi possível preparar a transição: personagem ${plan.from.text} não encontrado.`)
-        deps.progress({ state: 'preparing', frames: 0, motionProgress: { completed: index, total: missingMotions.length }, message: `Preparando transição ${index + 1}/${missingMotions.length} · ${plan.from.text}…` })
-        const result = await deps.bakeMotion({ id: randomUUID(), plan, character }, deps.signal)
-        project = attachEditorV6Motion(project, plan.blockId, result)
-        report.motionTransitionsPrepared = index + 1
-        deps.progress({ state: 'preparing', frames: 0, motionProgress: { completed: index + 1, total: missingMotions.length }, message: `Transições preparadas ${index + 1}/${missingMotions.length}` })
+    const prepared = await prepareExportMotions(project, options.startFrame, options.endFrame, {
+      signal: deps.signal, characters: await deps.getCharacters(), bake: deps.bakeMotion,
+      progress: (completed, total, name) => {
+        report.motionTransitionsRequired = total; report.motionTransitionsPrepared = completed
+        deps.progress({ state: 'preparing', frames: 0, motionProgress: { completed, total }, message: completed === total ? 'Transições prontas.' : `Preparando transição ${completed + 1}/${total} · ${name}…` })
       }
-    }
+    })
+    project = prepared.project
+    report.motionTransitionsRequired = prepared.stats.total
+    report.motionTransitionsPrepared = prepared.stats.total
+    report.motionPreparation = prepared.stats
     if (missingEditorV6Motions(project, options.startFrame, options.endFrame).length) throw Error('Não foi possível preparar todas as transições deste intervalo.')
     await saveReport()
     await mkdir(dirname(deps.outputPath), { recursive: true })

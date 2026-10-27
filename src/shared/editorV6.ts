@@ -394,6 +394,7 @@ export type EditorV6DesktopApi = {
   linkEditorV6LibraryVideo: (projectId: string, libraryVideoId: string) => Promise<EditorV6MediaAsset>
   cloneEditorV6Media: (sourceId: string, targetId: string, media: EditorV6MediaAsset[]) => Promise<void>
   bakeEditorV6Motion: (request: EditorV6MotionBakeRequest) => Promise<EditorV6MotionBakeResult>
+  prepareEditorV6Motion: (request: EditorV6MotionBakeRequest) => Promise<void>
   cancelEditorV6Motion: (requestId: string) => Promise<void>
 }
 

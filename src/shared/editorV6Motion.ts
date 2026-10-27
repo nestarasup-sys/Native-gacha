@@ -16,7 +16,7 @@ export type EditorV6MotionPlan = {
 export type EditorV6MotionBakeRequest = { id: string; plan: EditorV6MotionPlan; character: CustomizerCharacter }
 export type EditorV6MotionBakeResult = { asset: EditorV6Asset; motion: EditorV6MotionAtlas; metrics: { milliseconds: number; preparedRigs: number; samples: number; atlasPixels: number } }
 export const editorV6MotionChannels = { payload: 'editor-v6:motion-worker:payload', complete: 'editor-v6:motion-worker:complete' } as const
-export type EditorV6MotionBridge = { payload: () => Promise<EditorV6MotionBakeRequest>; provider: CharacterRenderAssetProvider; complete: (result?: EditorV6MotionBakeResult, error?: string) => Promise<void> }
+export type EditorV6MotionBridge = { payload: () => Promise<EditorV6MotionBakeRequest | null>; provider: CharacterRenderAssetProvider; complete: (result?: EditorV6MotionBakeResult, error?: string) => Promise<void> }
 
 function faceSignature(element: EditorV6Element) {
   const entries = Object.entries(element.faceAppearance ?? {}).filter(([key, value]) => key !== 'eyeState' && key !== 'mouthOpen' && value !== undefined)
@@ -67,7 +67,7 @@ export function missingEditorV6Motions(document: EditorV6Document, startFrame = 
   const blocks = new Map(document.timeline.tracks.flatMap((track) => track.blocks.map((block) => [block.id, block] as const)))
   return editorV6MotionPlans(document).filter((plan) => plan.startFrame < endFrame && plan.endFrame > startFrame && (blocks.get(plan.blockId)?.incomingMotion?.key !== plan.key || !ids.has(blocks.get(plan.blockId)?.incomingMotion?.assetId ?? '')))
 }
-export function attachEditorV6Motion(document: EditorV6Document, blockId: string, result: EditorV6MotionBakeResult): EditorV6Document {
+export function attachEditorV6Motion(document: EditorV6Document, blockId: string, result: Pick<EditorV6MotionBakeResult, 'asset' | 'motion'>): EditorV6Document {
   if (!editorV6MotionPlans(document).some((plan) => plan.blockId === blockId && plan.key === result.motion.key)) return document
   return { ...document, assets: document.assets.some((asset) => asset.id === result.asset.id) ? document.assets : [...document.assets, result.asset], timeline: { ...document.timeline, tracks: document.timeline.tracks.map((track) => ({ ...track, blocks: track.blocks.map((block) => block.id === blockId ? { ...block, incomingMotion: result.motion } : block) })) } }
 }

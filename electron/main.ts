@@ -1958,6 +1958,7 @@ function createMainWindow(): void {
 
   let closeAfterFlush = false
   let flushingBeforeClose = false
+  window.on('closed', () => editorV6MotionService?.releaseIdle())
   window.on('close', (event) => {
     if (closeAfterFlush) return
     event.preventDefault()
@@ -2274,7 +2275,7 @@ app.whenReady().then(async () => {
   registerEditorV6MediaProtocol()
   registerVideoBackgroundProtocol()
   await registerFabricatorHandlers()
-  editorV6MotionService = createEditorV6MotionService({ ipcMain, assertTrustedSender, html: join(__dirname, '../renderer/index.html'), preload: join(__dirname, '../preload/editorV6MotionPreload.cjs'), devUrl: process.env.ELECTRON_RENDERER_URL })
+  editorV6MotionService = createEditorV6MotionService({ ipcMain, assertTrustedSender, html: join(__dirname, '../renderer/index.html'), preload: join(__dirname, '../preload/editorV6MotionPreload.cjs'), devUrl: process.env.ELECTRON_RENDERER_URL, cacheDirectory: join(app.getPath('userData'), 'cache', 'editor-v6-motion-v2') })
   editorV6ExportService = registerEditorV6ExportHandlers({ ipcMain, assertTrustedSender, projectPath: editorV6Path,
     toolsDirectory: app.isPackaged ? join(process.resourcesPath, 'video-tools') : resolve(__dirname, '../../resources/video-tools'),
     workerHtml: join(__dirname, '../renderer/editor-v6-export.html'), workerPreload: join(__dirname, '../preload/editorV6ExportPreload.cjs'),

@@ -112,6 +112,7 @@ const editorV6Api: EditorV6DesktopApi = {
   linkEditorV6LibraryVideo: (id, libraryId) => invokeEditorV6('linkEditorV6LibraryVideo', id, libraryId),
   cloneEditorV6Media: (source, target, media) => invokeEditorV6('cloneEditorV6Media', source, target, media),
   bakeEditorV6Motion: (request) => invokeEditorV6('bakeEditorV6Motion', request),
+  prepareEditorV6Motion: (request) => invokeEditorV6('prepareEditorV6Motion', request),
   cancelEditorV6Motion: (id) => invokeEditorV6('cancelEditorV6Motion', id)
 }
 

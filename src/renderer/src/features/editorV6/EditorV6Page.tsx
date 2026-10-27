@@ -5,6 +5,7 @@ import { useEditorV6Store } from './editorV6Store'
 import { createEditorV6Timeline, EDITOR_V6_DEFAULT_VIDEO_LAYOUT, editorV6DefaultVideoLayout, syncEditorV6TimelineElements } from '../../../../shared/editorV6'
 import { EditorV6Timeline } from './EditorV6Timeline'
 import { EditorV6ExportPanel } from './EditorV6ExportPanel'
+import { useMotionPreparation } from './motion/useMotionPreparation'
 import { EditorV6VideoPickerModal } from './EditorV6VideoPickerModal'
 import { EditorV6PlaybackAudio } from './EditorV6PlaybackAudio'
 import { EditorV6PlaybackScene } from './EditorV6PlaybackScene'
@@ -163,6 +164,7 @@ export function EditorV6Page() {
     if (syncEditor) setPlayheadFrame((current) => current === nextFrame ? current : nextFrame)
   }, [])
   const [isPlaying, setIsPlaying] = useState(false)
+  const [motionExportBusy, setMotionExportBusy] = useState(false)
   const pausePlayback = useCallback(() => {
     publishPlayheadFrame(getEditorV6PlaybackFrame())
     setIsPlaying(false)
@@ -187,6 +189,7 @@ export function EditorV6Page() {
   const nextStudioNumber = useRef(1)
   const selectedEditorV6 = editorV6Projects.find((studio) => studio.id === selectedId) ?? null
   const activeEditorV6 = activeEditorV6Stored?.id === activeEditorV6Id ? activeEditorV6Stored : null
+  useMotionPreparation(activeEditorV6, availableCharacters, saved && !isPlaying && !motionExportBusy)
   const availableCharacterById = new Map(availableCharacters.map((character) => [character.id, character]))
   const activePoseSourceSnapshot = poseSourceSnapshot?.projectId === activeEditorV6Id ? poseSourceSnapshot : null
   const activeCharacterStates = activeEditorV6 ? [
@@ -1738,7 +1741,7 @@ export function EditorV6Page() {
         {!fullView && <Profiler id="/editor-v6/timeline" onRender={recordUiCommit}><EditorV6Timeline key={activeEditorV6.id} document={activeEditorV6} playing={isPlaying} selectedId={selectedTimelineBlockId}
           onSeek={(frame) => { if (dragRef.current) cancelSceneDrag(); pausePlayback(); publishPlayheadFrame(frame) }} onPlay={toggleTimelinePlayback} onChange={changeScene}
           onSelect={(block) => { setSelectedTimelineBlockId(block.id); setSelectedElementId(block.background ? 'background' : block.elementId ?? null); setActiveTool(block.background ? 'background' : null); setInspectorOpen(true); if (block.state?.kind === 'character') restoreCharacterInspectorView(); else setInspectorTab('editor') }} /></Profiler> }
-        <EditorV6ExportPanel key={`export-${activeEditorV6.id}`} project={activeEditorV6} open={exportOpen} onClose={() => setExportOpen(false)} onChange={(update) => patchStudio(update, false)} />
+        <EditorV6ExportPanel key={`export-${activeEditorV6.id}`} project={activeEditorV6} open={exportOpen} onClose={() => setExportOpen(false)} onChange={(update) => patchStudio(update, false)} onActivity={setMotionExportBusy} />
         {videoPickerOpen && <EditorV6VideoPickerModal onClose={() => setVideoPickerOpen(false)} onSelect={linkVideoLibraryItem} />}
         {castPickerOpen && <div className="studio-cast-modal-backdrop" onPointerDown={(event) => { if (event.target === event.currentTarget && !savingCast) setCastPickerOpen(false) }}>
           <section className="studio-cast-modal" role="dialog" aria-modal="true" aria-labelledby="studio-cast-modal-title">

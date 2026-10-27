@@ -109,7 +109,9 @@ let closePanelTest: () => void
   assert(different === 0, `Prévia e captura divergiram em ${different} canais de pixel.`)
   assert(pixel(capturedPixels, 720, 270) === '0,255,0,255', 'Estado do personagem não corresponde ao quadro 120.')
   const earlier = await pixels(await captureEditorV6Frame(project, 30, 960, 540))
-  assert(pixel(earlier, 480, 270) === '255,0,0,255', 'O quadro anterior perdeu a imagem original.')
+  // Character position is shared by all periods; image state still changes at frame 90.
+  assert(pixel(earlier, 720, 270) === '255,0,0,255', 'O quadro anterior perdeu a imagem original na posição compartilhada.')
+  assert(pixel(earlier, 480, 270) === '0,0,255,255', 'O quadro anterior manteve uma posição antiga do personagem.')
   assert(pixel(earlier, 10, 10) === '0,0,255,255', 'O fundo inicial mudou retroativamente.')
   const later = await pixels(await captureEditorV6Frame(project, 200, 960, 540))
   assert(pixel(later, 10, 10) === '255,255,255,255', 'O fundo não mudou no instante escolhido.')

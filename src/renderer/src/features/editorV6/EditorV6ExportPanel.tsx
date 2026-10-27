@@ -5,7 +5,7 @@ import { planEditorV6Export, type EditorV6ExportAudio, type EditorV6ExportOption
 
 let rememberedJob: EditorV6ExportStatus | null = null
 const finished = (job: EditorV6ExportStatus) => ['completed', 'cancelled', 'failed'].includes(job.state)
-export function EditorV6ExportPanel({ project, open, onClose, onChange }: { project: EditorV6Document; open: boolean; onClose: () => void; onChange: (update: (project: EditorV6Document) => EditorV6Document) => void }) {
+export function EditorV6ExportPanel({ project, open, onClose, onChange, onActivity }: { project: EditorV6Document; open: boolean; onClose: () => void; onChange: (update: (project: EditorV6Document) => EditorV6Document) => void; onActivity?: (active: boolean) => void }) {
   const dialog = useRef<HTMLElement>(null)
   useLayoutEffect(() => {
     if (!open) return
@@ -18,6 +18,7 @@ export function EditorV6ExportPanel({ project, open, onClose, onChange }: { proj
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const active = Boolean(job && !finished(job))
+  useEffect(() => { onActivity?.(active || busy); return () => onActivity?.(false) }, [active, busy, onActivity])
   const setStatus = (value: EditorV6ExportStatus) => { rememberedJob = value; setJob(value) }
   useEffect(() => {
     if (!job || finished(job)) return
