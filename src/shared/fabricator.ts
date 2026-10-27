@@ -115,6 +115,14 @@ export type WardrobeComponent = {
   glue?: { version: 1; mode: 'fixed' | 'loose'; explicitRelease?: true; sourceFrame?: { x: number; y: number; width: number; height: number; rotation: number } }
   /** Head accessories enabled here are composited above front and back hair. */
   renderAboveHair?: boolean
+  /** True once the first deformation has captured an undeformed backup image. */
+  hasDeformationOriginal?: true
+  /** Geometry captured immediately before the first deformation, for exact restoration. */
+  deformationOriginalFrame?: { x: number; y: number; width: number; height: number; originX?: number; originY?: number; originWidth?: number; originHeight?: number }
+  /** Whether the current image currently contains a committed deformation. */
+  isDeformed?: boolean
+  /** Runtime-only source image loaded from the original-image sidecar PNG. */
+  deformationOriginalDataUrl?: string
   dataUrl: string
 }
 export type WardrobeSet = {
@@ -132,7 +140,7 @@ export type WardrobeSet = {
   components: WardrobeComponent[]
   updatedAt: string
 }
-export type WardrobeSetSave = Omit<WardrobeSet, 'components'> & { components: Array<Omit<WardrobeComponent, 'dataUrl'>> }
+export type WardrobeSetSave = Omit<WardrobeSet, 'components'> & { components: Array<Omit<WardrobeComponent, 'dataUrl' | 'deformationOriginalDataUrl'>> }
 /** Listing warnings expose only the affected set and reason, never file paths or contents. */
 export type WardrobeCatalogListing = { sets: WardrobeSetSummary[]; issues: Array<{ id: string; reason: string }> }
 

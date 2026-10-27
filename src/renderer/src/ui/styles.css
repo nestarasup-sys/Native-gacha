@@ -2815,6 +2815,8 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .wardrobe-image-edit-button svg { width:14px;height:14px; }
 .wardrobe-image-edit-button:hover:not(:disabled) { border-color:#cf6d92;background:#ffedf3; }
 .wardrobe-image-edit-button:disabled { opacity:.45;cursor:default; }
+.wardrobe-deformation-restore { border-color:#b8d8ce;background:#f0faf5;color:#24775f; }
+.wardrobe-deformation-restore:hover:not(:disabled) { border-color:#69ae98;background:#e5f6ee; }
 @media (max-width:760px) {
   .wardrobe-image-editor-backdrop { padding:7px; }
   .wardrobe-image-editor { width:100%;height:96vh; }
