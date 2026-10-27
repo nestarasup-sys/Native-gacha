@@ -154,6 +154,21 @@ async function main() {
   const motionRgb = run(['-i',motionOutput,'-vf',"select='between(n,38,42)'",'-fps_mode','passthrough','-frames:v','5','-pix_fmt','rgb24','-f','rawvideo','pipe:1'])
   const frameBytes = 320*180*3
   for (let i=1;i<5;i++) assert(!motionRgb.subarray((i-1)*frameBytes,i*frameBytes).equals(motionRgb.subarray(i*frameBytes,(i+1)*frameBytes)), 'Motion froze across the Turbo seam.')
+  const videoMotionProject: EditorV6Document = {
+    ...motionProject, backgroundColor: '#2050c0', media: mediaProject.media,
+    timeline: { ...motionProject.timeline, tracks: motionProject.timeline.tracks.map((track) => track.kind === 'video'
+      ? { ...track, blocks: [{ ...mediaProject.timeline.tracks.find((candidate) => candidate.kind === 'video')!.blocks[0], startFrame: 0, durationFrames: 90, mediaInFrame: 0 }] }
+      : track) }
+  }
+  const videoMotionOutput = join(folder, 'video-motion-turbo.mp4')
+  const videoMotion = await runEditorV6Export(videoMotionProject, options, { ...base, id: randomUUID(), outputPath: videoMotionOutput, reportPath: join(folder, 'video-motion.report.json'), getCharacters: async () => [character], bakeMotion: (request, signal) => service.bakeForExport(request, signal) })
+  assert(!videoMotion.fallback && videoMotion.motionTransitionsRequired === 1 && videoMotion.videoInputs === 1, 'A transição com vídeo na composição não concluiu o export.')
+  const transitionFrames = run(['-i', videoMotionOutput, '-vf', "select='between(n,38,44)'", '-fps_mode', 'passthrough', '-frames:v', '7', '-pix_fmt', 'rgb24', '-f', 'rawvideo', 'pipe:1'])
+  for (let index = 0; index < 7; index++) {
+    const offset = index * frameBytes + (10 * 320 + 10) * 3
+    const backgroundPixel = Array.from(transitionFrames.subarray(offset, offset + 3))
+    assert(backgroundPixel[0] < 45 && backgroundPixel[1] > 55 && backgroundPixel[2] > 150, `A tela piscou para fora do personagem no quadro de início da transição ${index}.`)
+  }
   service.cancelAll(); await service.drain(); owner.destroy()
   project = staticProject
   assert(!(await readdir(folder)).some((name) => name.startsWith('editor-v6-export-') || name.startsWith('.editor-v6-')), 'Temporários de exportação não foram removidos.')

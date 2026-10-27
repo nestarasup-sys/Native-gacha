@@ -19,7 +19,12 @@ async function initialize() {
       if (!ids.has(asset.id)) continue
       let prepared = images.get(asset.id)
       if (!prepared) {
-        prepared = new Promise<void>((resolve, reject) => { const image = new Image(); image.onload = () => resolve(); image.onerror = () => reject(Error(`Não foi possível preparar ${asset.name}.`)); image.src = asset.dataUrl })
+        prepared = new Promise<void>((resolve, reject) => {
+          const image = new Image()
+          image.onerror = () => reject(Error(`Não foi possível preparar ${asset.name}.`))
+          image.onload = () => { void image.decode().then(resolve, () => reject(Error(`Não foi possível decodificar ${asset.name}.`))) }
+          image.src = asset.dataUrl
+        })
         if (images.size >= 32) images.delete(images.keys().next().value!)
         images.set(asset.id, prepared)
       }
