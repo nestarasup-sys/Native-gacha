@@ -1,32 +1,46 @@
 /** Casos de uso independentes de Electron. Todas as gravações compartilham uma fila. */
-import type { CustomizerCharacter } from '../../../src/shared/customizer.ts'
+import type { CustomizerCharacter, CustomizerWardrobeGroup } from '../../../src/shared/customizer.ts'
 import type { CustomizerCharacterRepository } from './repository.ts'
 import { isCustomizerCharacter } from './validation.ts'
+
+export type AssertWardrobeGroupsAvailable = (groups: readonly CustomizerWardrobeGroup[]) => Promise<void>
 
 export class CustomizerCharacterService {
   private saveQueue: Promise<void> = Promise.resolve()
   private readonly repository: Pick<CustomizerCharacterRepository, 'list' | 'save'>
   private readonly newId: () => string
   private readonly now: () => string
+  private readonly assertWardrobeGroupsAvailable: AssertWardrobeGroupsAvailable
 
-  constructor(repository: Pick<CustomizerCharacterRepository, 'list' | 'save'>, newId: () => string, now: () => string) {
+  constructor(
+    repository: Pick<CustomizerCharacterRepository, 'list' | 'save'>,
+    newId: () => string,
+    now: () => string,
+    assertWardrobeGroupsAvailable: AssertWardrobeGroupsAvailable = async () => undefined
+  ) {
     this.repository = repository
     this.newId = newId
     this.now = now
+    this.assertWardrobeGroupsAvailable = assertWardrobeGroupsAvailable
   }
 
   /** Backup externo deve aguardar a mesma fila usada pelos handlers. */
   get pendingWrites(): Promise<void> { return this.saveQueue }
 
-  private enqueue(operation: () => Promise<void>): Promise<void> {
+  private enqueue<T>(operation: () => Promise<T>): Promise<T> {
     const next = this.saveQueue.catch(() => undefined).then(operation)
-    this.saveQueue = next
+    this.saveQueue = next.then(() => undefined, () => undefined)
     return next
   }
 
   async list(): Promise<CustomizerCharacter[]> {
-    await this.saveQueue.catch(() => undefined)
+    await this.saveQueue
     return this.repository.list()
+  }
+
+  /** Serializa verificações de referências com toda gravação de personagens. */
+  withCharactersLocked<T>(operation: (characters: readonly CustomizerCharacter[]) => Promise<T>): Promise<T> {
+    return this.enqueue(async () => operation(await this.repository.list()))
   }
 
   save(character: unknown): Promise<void> {
@@ -35,6 +49,10 @@ export class CustomizerCharacterService {
       const characters = await this.repository.list()
       const index = characters.findIndex((item) => item.id === character.id)
       if (index < 0) throw new Error('Personagem não encontrado.')
+      const previous = characters[index]
+      const existingReferences = new Set((previous.customization.wardrobeGroups ?? []).map((group) => `${group.modelSlot}:${group.setId}:${group.componentId ?? ''}`))
+      const addedReferences = (character.customization.wardrobeGroups ?? []).filter((group) => !existingReferences.has(`${group.modelSlot}:${group.setId}:${group.componentId ?? ''}`))
+      await this.assertWardrobeGroupsAvailable(addedReferences)
       characters[index] = { ...character, name: character.name.trim(), updatedAt: this.now() }
       await this.repository.save(characters)
     })

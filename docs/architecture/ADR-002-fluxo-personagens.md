@@ -48,6 +48,8 @@ Video Studio: fora do escopo desta etapa.
 - `electron/domains/fabricator/modelCatalog.ts` e `modelIpc.ts`: leitura isolada de modelos e dois canais públicos existentes.
 - `src/shared/modelRig.ts` e `wardrobePose.ts`: regras de geometria/roupa comuns a Fabricador e Customizador; reexports legados mantidos temporariamente.
 - `src/renderer/src/ui/hooks/usePreviewBackground.ts` e `ui/image/eyeInteriorMask.ts`: utilidades de interface fora da tela do Fabricador, sem alterar seus algoritmos.
+- `electron/domains/fabricator/wardrobeReferences.ts`: exclusão de conjunto e remoção de peças agora verificam os personagens que as referenciam; as operações são serializadas com gravações do Customizador para evitar corrida. Novas roupas também são validadas antes de salvar o personagem.
+- Referências órfãs de versões anteriores são preservadas, não apagadas automaticamente. O Customizador mostra um aviso local com ação explícita para desvinculá-las; não transforma a condição em erro global repetitivo. A origem precisa ser restaurada para voltar a renderizar a peça.
 
 ## Fronteiras a adotar daqui em diante
 

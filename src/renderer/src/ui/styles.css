@@ -1239,6 +1239,9 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .customizer-catalog-empty { min-height:120px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:#9c929b;font-size:12px;text-align:center; }
 .customizer-catalog-empty button { min-height:30px;padding:0 10px;border:1px solid #eee9ed;border-radius:8px;background:#fff;color:#776b77;font-size:11px;cursor:pointer; }
 .customizer-catalog-error { margin:0 0 10px;color:#b6405d;font-size:11px; }
+.customizer-wardrobe-reference-notice { display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px;border:1px solid #f2d6df;border-radius:9px;background:#fff8fb;color:#825267;font-size:11px; }
+.customizer-wardrobe-reference-notice button { flex:0 0 auto;min-height:30px;padding:0 10px;border:1px solid #e8bbca;border-radius:7px;background:#fff;color:#9e3e64;font-size:11px;font-weight:700;cursor:pointer; }
+.customizer-wardrobe-reference-notice button:disabled { opacity:.6;cursor:wait; }
 .customizer-preview-pan-surface { cursor:grab;touch-action:none; }
 .customizer-preview-pan-surface:active { cursor:grabbing; }
 .customizer-selected-artwork { position:absolute;inset:72px 68px 58px;z-index:1;width:calc(100% - 136px);height:calc(100% - 130px);object-fit:contain;pointer-events:none; }

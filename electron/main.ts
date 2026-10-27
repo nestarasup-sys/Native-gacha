@@ -38,6 +38,7 @@ import { starterCharacters } from './domains/customizer/starterCharacters'
 import { FabricatorModelCatalog } from './domains/fabricator/modelCatalog'
 import { registerFabricatorModelCatalogHandlers } from './domains/fabricator/modelIpc'
 import { FabricatorWardrobeCatalog } from './domains/fabricator/wardrobeCatalog'
+import { assertReferencedWardrobeComponentsRemain, assertWardrobeSetHasNoCharacterReferences } from './domains/fabricator/wardrobeReferences'
 import { createFabricatorCatalogListings, legacyHairStyle } from './domains/fabricator/catalogListings'
 import { registerFabricatorWardrobeCatalogHandlers } from './domains/fabricator/wardrobeCatalogIpc'
 import { createFaceGuidePersistence, isFaceGuideProfile } from './domains/fabricator/faceGuidePersistence'
@@ -324,7 +325,18 @@ const customizerRepository = new CustomizerCharacterRepository(
 const customizerService = new CustomizerCharacterService(
   customizerRepository,
   randomUUID,
-  () => new Date().toISOString()
+  () => new Date().toISOString(),
+  async (groups) => {
+    const requested = new Map<string, typeof groups[number]>()
+    for (const group of groups) requested.set(`${group.modelSlot}:${group.setId}`, group)
+    const resolved = await Promise.all(Array.from(requested, async ([key, group]) => [key, group, await readWardrobeSet(group.modelSlot, group.setId)] as const))
+    for (const [key, group, set] of resolved) {
+      if (!set) throw new Error(`A roupa ${key} não está mais disponível no Fabricador Dev. Atualize a biblioteca e selecione um conjunto salvo.`)
+      if (group.componentId && !set.components.some((component) => component.id === group.componentId)) {
+        throw new Error(`A peça ${group.componentId} não existe mais no conjunto ${key}. Atualize a biblioteca antes de equipá-la.`)
+      }
+    }
+  }
 )
 
 const wardrobeCategories: WardrobeCategory[] = ['camisa', 'jaqueta', 'manga-superior', 'manga-inferior', 'luvas', 'capa', 'cinto', 'oculos', 'acessorio-cabeca', 'saia', 'calca-coxa', 'calca-canela', 'shorts', 'meia', 'sapato']
@@ -1731,9 +1743,15 @@ async function registerFabricatorHandlers(): Promise<void> {
 
   ipcMain.handle(fabricatorIpcChannels.saveWardrobeSet, async (event, modelSlot: number, set: WardrobeSetSave, assets: WardrobeAssetSave[]): Promise<void> => {
     assertTrustedSender(event)
-    const next = wardrobeSaveQueue.catch(() => undefined).then(() => writeWardrobeSet(modelSlot, set, assets))
-    wardrobeSaveQueue = next
-    await next
+    if (!isValidModelSlot(modelSlot) || !set || set.modelSlot !== modelSlot || !isValidWardrobeId(set.id) || !Array.isArray(set.components)) {
+      throw new Error('Conjunto de roupa inválido.')
+    }
+    await customizerService.withCharactersLocked(async (characters) => {
+      assertReferencedWardrobeComponentsRemain(characters, modelSlot, set.id, new Set(set.components.map((component) => component.id)))
+      const next = wardrobeSaveQueue.catch(() => undefined).then(() => writeWardrobeSet(modelSlot, set, assets))
+      wardrobeSaveQueue = next
+      await next
+    })
   })
 
   ipcMain.handle(fabricatorIpcChannels.deleteWardrobeSet, async (event, modelSlot: number, id: string): Promise<void> => {
@@ -1742,9 +1760,12 @@ async function registerFabricatorHandlers(): Promise<void> {
     const base = resolve(wardrobeModelPath(modelSlot))
     const target = resolve(wardrobeSetPath(modelSlot, id))
     if (dirname(target) !== base || basename(target) !== `set-${id}`) throw new Error('Caminho de exclusão inválido.')
-    const next = wardrobeSaveQueue.catch(() => undefined).then(() => rm(target, { recursive: true, force: true }))
-    wardrobeSaveQueue = next
-    await next
+    await customizerService.withCharactersLocked(async (characters) => {
+      assertWardrobeSetHasNoCharacterReferences(characters, modelSlot, id)
+      const next = wardrobeSaveQueue.catch(() => undefined).then(() => rm(target, { recursive: true, force: true }))
+      wardrobeSaveQueue = next
+      await next
+    })
   })
 
   const catalogListings = createFabricatorCatalogListings({

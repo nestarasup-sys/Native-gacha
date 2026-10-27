@@ -495,6 +495,8 @@ export function CustomizerPage() {
   const [adjustmentPreviewHighlight, setAdjustmentPreviewHighlight] = useState<AdjustmentPreviewHighlight | null>(null)
   const [activeHairColorRole, setActiveHairColorRole] = useState<HairColorRole>('base')
   const [selectedClothing, setSelectedClothing] = useState<SelectedWardrobeComponent | null>(null)
+  const [unavailableWardrobeSetKeys, setUnavailableWardrobeSetKeys] = useState<string[]>([])
+  const [repairingWardrobeLinks, setRepairingWardrobeLinks] = useState(false)
   const [wardrobeTransformDraft, setWardrobeTransformDraft] = useState<Pick<CustomizerWardrobeGroup, 'offsetX' | 'offsetY' | 'scaleX' | 'scaleY' | 'rotation'> | null>(null)
   const [selectedWardrobeUrl, setSelectedWardrobeUrl] = useState<string | null>(null)
   const [selectedWardrobeAboveHairUrl, setSelectedWardrobeAboveHairUrl] = useState<string | null>(null)
@@ -956,19 +958,19 @@ export function CustomizerPage() {
   }, [activeModule, headPanelTab, wardrobeSets])
 
   useEffect(() => {
+    setUnavailableWardrobeSetKeys([])
     if (!selectedCharacter || !characterWardrobeGroups.length) return
     let cancelled = false
     const groupsToRestore = [...characterWardrobeGroups]
     void (async () => {
+      // Keep legacy references intact if their source vanished; this must not become a recurring global catalog error.
       const restored = await Promise.all(groupsToRestore.map(async (group) => {
         const key = `${group.modelSlot}:${group.setId}`
         const set = await window.desktop.loadWardrobeSet(group.modelSlot, group.setId)
         return { group, key, set }
       }))
-      if (!cancelled && restored.some(({ set }) => !set)) {
-        setCatalogError(`Há roupas equipadas sem conjunto disponível no Fabricador Dev: ${restored.filter(({ set }) => !set).map(({ key }) => key).join(', ')}. Verifique a biblioteca antes de editar o personagem.`)
-      }
       if (cancelled) return
+      setUnavailableWardrobeSetKeys(Array.from(new Set(restored.filter(({ set }) => !set).map(({ key }) => key))))
       setWardrobeDetails((current) => {
         const next = { ...current }
         for (const { key, set } of restored) if (set) next[key] = set
@@ -984,7 +986,7 @@ export function CustomizerPage() {
         const category = wardrobeGroupCategoryForSource(component.category, group.category)
         return category === group.category ? group : { ...group, category }
       })
-      if (migratedGroups.some((group) => !group.adjustmentReference)) {
+      if (migratedGroups.some((group) => !group.adjustmentReference && setsByKey.has(`${group.modelSlot}:${group.setId}`))) {
         const modelSlot = selectedCharacter.customization.modelSlot ?? 1
         const source = await window.desktop.loadFabricatorSlot(modelSlot)
         const poseSlot = selectedCharacter.customization.poseSlot
@@ -1405,6 +1407,26 @@ export function CustomizerPage() {
 
   function wardrobeGroupKey(group: Pick<CustomizerWardrobeGroup, 'modelSlot' | 'setId' | 'category' | 'componentId'>) {
     return `${group.modelSlot}:${group.setId}:${group.category}:${group.componentId ?? ''}`
+  }
+
+  async function removeUnavailableWardrobeLinks() {
+    if (!selectedCharacter || !unavailableWardrobeSetKeys.length || repairingWardrobeLinks) return
+    if (!window.confirm(`Este personagem tem roupa(s) cuja fonte não existe mais. Remover somente os vínculos indisponíveis? As outras roupas e configurações serão mantidas.`)) return
+    const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
+    const unavailable = new Set(unavailableWardrobeSetKeys)
+    const wardrobeGroups = (current.customization.wardrobeGroups ?? []).filter((group) => !unavailable.has(`${group.modelSlot}:${group.setId}`))
+    if (wardrobeGroups.length === (current.customization.wardrobeGroups ?? []).length) {
+      setUnavailableWardrobeSetKeys([])
+      return
+    }
+    setRepairingWardrobeLinks(true)
+    try {
+      await saveCharacter({ ...current, customization: { ...current.customization, wardrobeGroups }, updatedAt: new Date().toISOString() })
+      const latest = charactersRef.current.find((character) => character.id === current.id)
+      if (!latest?.customization.wardrobeGroups?.some((group) => unavailable.has(`${group.modelSlot}:${group.setId}`))) setUnavailableWardrobeSetKeys([])
+    } finally {
+      setRepairingWardrobeLinks(false)
+    }
   }
 
   async function applyUpperWardrobePanel(panel: WardrobePanel, candidate: WardrobePanelCandidate | null) {
@@ -2160,6 +2182,7 @@ export function CustomizerPage() {
     <div className="customizer-wardrobe-catalog">
       {wardrobeLoading ? <div className="customizer-catalog-empty">Carregando roupas…</div> : <>
         {catalogError && <p className="customizer-catalog-error" role="alert">{catalogError}</p>}
+        {unavailableWardrobeSetKeys.length > 0 && <div className="customizer-wardrobe-reference-notice" role="status"><span>{unavailableWardrobeSetKeys.length} conjunto(s) de roupa não estão disponíveis. Os vínculos foram preservados, mas essas roupas não podem aparecer.</span><button type="button" disabled={repairingWardrobeLinks} onClick={() => void removeUnavailableWardrobeLinks()}>{repairingWardrobeLinks ? 'Salvando…' : 'Remover vínculos indisponíveis'}</button></div>}
         {wardrobeLibraryPanel ? renderUpperWardrobeLibrary() : renderUpperWardrobePanels()}
       </>}
     </div>
