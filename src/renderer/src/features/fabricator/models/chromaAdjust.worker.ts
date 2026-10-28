@@ -1,18 +1,11 @@
 import { despillGreenFringes, sampleBackground } from './chroma'
-
-type AdjustRequest = {
-  id: number
-  sourceDataUrl: string
-  tolerance: number
-  parts: Array<{ id: string; dataUrl: string }>
-}
-type AdjustedPart = { id: string; png: ArrayBuffer }
+import type { ChromaAdjustMessage, ChromaAdjustRequest } from './chromaAdjustProtocol'
 const workerScope = self as unknown as {
-  onmessage: ((event: MessageEvent<AdjustRequest>) => void) | null
-  postMessage: (message: unknown, transfer?: Transferable[]) => void
+  onmessage: ((event: MessageEvent<ChromaAdjustRequest>) => void) | null
+  postMessage: (message: ChromaAdjustMessage, transfer?: Transferable[]) => void
 }
 
-workerScope.onmessage = async (event: MessageEvent<AdjustRequest>) => {
+workerScope.onmessage = async (event: MessageEvent<ChromaAdjustRequest>) => {
   const { id, sourceDataUrl, tolerance, parts } = event.data
   try {
     const source = await createImageBitmap(await (await fetch(sourceDataUrl)).blob())
@@ -24,7 +17,7 @@ workerScope.onmessage = async (event: MessageEvent<AdjustRequest>) => {
     const background = sampleBackground(sample.data, sample.width, sample.height)
     source.close()
 
-    const adjusted: AdjustedPart[] = []
+    const adjusted: Extract<ChromaAdjustMessage, { type: 'complete' }>['parts'] = []
     for (const part of parts) {
       const image = await createImageBitmap(await (await fetch(part.dataUrl)).blob())
       const canvas = new OffscreenCanvas(image.width, image.height)

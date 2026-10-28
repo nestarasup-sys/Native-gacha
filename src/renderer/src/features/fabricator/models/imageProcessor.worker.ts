@@ -1,13 +1,12 @@
 import { despillGreenFringes, sampleBackground } from './chroma'
+import type { ImageProcessorMessage, ImageProcessorRequest } from './imageProcessorProtocol'
 
-type ProcessRequest = { id: number; sourceDataUrl: string; tolerance: number }
-type ProcessedPart = { id: string; name: string; x: number; y: number; width: number; height: number; png: ArrayBuffer; basePng: ArrayBuffer }
 const workerScope = self as unknown as {
-  onmessage: ((event: MessageEvent<ProcessRequest>) => void) | null
-  postMessage: (message: unknown, transfer?: Transferable[]) => void
+  onmessage: ((event: MessageEvent<ImageProcessorRequest>) => void) | null
+  postMessage: (message: ImageProcessorMessage, transfer?: Transferable[]) => void
 }
 
-workerScope.onmessage = async (event: MessageEvent<ProcessRequest>) => {
+workerScope.onmessage = async (event: MessageEvent<ImageProcessorRequest>) => {
   const { id, sourceDataUrl, tolerance } = event.data
   try {
     const source = await createImageBitmap(await (await fetch(sourceDataUrl)).blob())
@@ -44,7 +43,7 @@ workerScope.onmessage = async (event: MessageEvent<ProcessRequest>) => {
     const total = source.width * source.height
     const visited = new Uint8Array(total)
     const queue = new Int32Array(total)
-    const parts: ProcessedPart[] = []
+    const parts: Extract<ImageProcessorMessage, { type: 'complete' }>['parts'] = []
     let progress = 0
     for (let start = 0; start < total; start += 1) {
       if (!keyed[start] || visited[start]) continue

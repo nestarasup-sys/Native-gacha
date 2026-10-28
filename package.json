@@ -36,7 +36,7 @@
     "test:asset-flow": "node scripts/audit-wardrobe-flow.mjs",
     "test:geometry": "node --test tests/shared-body-shape.test.cjs tests/studio-character-geometry.test.cjs",
     "test:character-flow": "node --experimental-strip-types --test tests/character-production-flow.test.mjs",
-    "test:fabricator": "node --experimental-strip-types --test tests/fabricator-model-catalog.test.mjs tests/fabricator-wardrobe-catalog.test.mjs",
+    "test:fabricator": "node --experimental-strip-types --test tests/fabricator-model-catalog.test.mjs tests/fabricator-wardrobe-catalog.test.mjs tests/fabricator-image-processing-contract.test.mjs",
     "test:model-source": "node --experimental-strip-types --test tests/model-source-publish.test.mjs tests/model-source-dimensions.test.cjs tests/model-source-download.test.mjs",
     "test:fabricator:contracts": "node --experimental-strip-types --test tests/fabricator-model-writer.test.mjs tests/fabricator-model-views.test.mjs tests/fabricator-view-boundaries.test.cjs tests/model-source-publish.test.mjs",
     "test:fabricator:visual": "node --experimental-strip-types --test tests/fabricator-visual-geometry.test.mjs tests/model-source-events.test.mjs",

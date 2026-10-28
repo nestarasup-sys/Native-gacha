@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FabricatorAssetSave, FabricatorHistoryAction, FabricatorHistoryState, FabricatorProject, FabricatorSlotSummary, ModelPart } from '../../../../shared/fabricator'
 import { Icon, type IconName } from '../../ui/components/Icon'
 import { usePreviewBackground } from './usePreviewBackground'
-import { autoConnectParts, modelRigSegmentKind, normalizeLayerOrder, normalizePartAnchors, orderedParts, partJointAnchor, reorderLayer, sourcePointFromCanvas } from './models/rig'
+import { modelRigSegmentKind, normalizeLayerOrder, orderedParts, partJointAnchor, reorderLayer, sourcePointFromCanvas } from './models/rig'
 import { connectFabricatorParts, isTorsoPart, moveFabricatorPartBranch, rotateFabricatorPartBranch, toggleFabricatorJointFixed } from './models/rigEditing'
 import { headSizePercent, isHeadPart, resizeHeadPart } from './models/resize'
 import { PoseWorkspace } from './PoseWorkspace'
@@ -18,6 +18,9 @@ import { ModelSourceEditor } from './ModelSourceEditor'
 import { broadcastModelSourceUpdate } from './models/modelSourceEvents'
 import { splitImage, mergeImages } from './models/partImages'
 import { pngDataUrlFromBuffer } from './models/imageData'
+import type { ImageProcessorMessage, ImageProcessorRequest } from './models/imageProcessorProtocol'
+import type { ChromaAdjustMessage, ChromaAdjustRequest } from './models/chromaAdjustProtocol'
+import { createImportedModelProject } from './models/processedModelProject'
 import { paintSeamMixerSegment as applySeamMixerSegment, type SeamMixerSurface } from './models/seamMixer'
 import { serializeFabricatorProject } from './models/projectSerialization'
 import { persistFabricatorProjectSnapshot } from './projectPersistence'
@@ -38,14 +41,6 @@ const sections: { id: string; label: string; icon: IconName }[] = [
   { id: 'Modelos', label: 'Modelos Dev', icon: 'sparkles' }, { id: 'Poses', label: 'Poses Dev', icon: 'expand' }, { id: 'Roupas', label: 'Roupas Dev', icon: 'shirt' }, { id: 'Olhos', label: 'Olhos Dev', icon: 'face' }, { id: 'Rosto', label: 'Rosto Dev', icon: 'face' }, { id: 'Preset Expressão Dev', label: 'Preset Expressão Dev', icon: 'face' }, { id: 'Animador Rosto Dev', label: 'Animador Rosto Dev', icon: 'face' }, { id: 'Cabeças extra', label: 'Cabeças extra dev', icon: 'face' }, { id: 'Cabelos Dev', label: 'Cabelos Dev', icon: 'bow' }, { id: 'Animador Dev', label: 'Animador Dev', icon: 'body' }, { id: 'Design Dev', label: 'Design Dev', icon: 'flower' }
 ]
 
-type ProcessedPart = Omit<ModelPart, 'dataUrl' | 'chromaBaseDataUrl'> & { png: ArrayBuffer; basePng: ArrayBuffer }
-type ProcessorMessage =
-  | { type: 'progress'; id: number; value: number }
-  | { type: 'complete'; id: number; width: number; height: number; parts: ProcessedPart[] }
-  | { type: 'error'; id: number; message: string }
-type ChromaAdjustMessage =
-  | { type: 'complete'; id: number; parts: Array<{ id: string; png: ArrayBuffer }> }
-  | { type: 'error'; id: number; message: string }
 type DragState = { partId: string; pointerId: number; x: number; y: number }
 type AnchorDragState = { partId: string; pointerId: number; x: number; y: number; offsetX: number }
 type PanState = { pointerId: number; x: number; y: number; originX: number; originY: number }
@@ -483,33 +478,26 @@ export function FabricatorPage() {
     workerRef.current = worker
     const id = ++requestId.current
     setProcessing(true); setProgress(1); setError('')
-    worker.onmessage = (event: MessageEvent<ProcessorMessage>) => {
+    worker.onmessage = (event: MessageEvent<ImageProcessorMessage>) => {
       if (event.data.id !== id || id !== requestId.current) return
       const message = event.data
       if (message.type === 'progress') { setProgress(message.value); return }
       worker.terminate(); workerRef.current = null; setProcessing(false)
       if (message.type === 'error') { setError(message.message); return }
       if (message.parts.length === 0) { setError('Nenhuma peça foi encontrada. Aumente a tolerância ou escolha outra imagem.'); return }
-      const parts: ModelPart[] = message.parts.map(({ png, basePng, ...part }) => ({ ...part, rotation: 0, chromaBaseSaved: true, dataUrl: pngDataUrlFromBuffer(png), chromaBaseDataUrl: pngDataUrlFromBuffer(basePng) }))
-      for (const part of parts) { dirtyAssets.current.set(part.id, part.dataUrl); if (part.chromaBaseDataUrl) dirtyChromaBases.current.set(part.id, part.chromaBaseDataUrl) }
-      const detectedJoints = autoConnectParts(parts)
-      const rig = normalizePartAnchors(parts, detectedJoints)
-      const sourceParts = rig.parts.map((part) => ({ ...part, sourceTransform: { x: part.x, y: part.y, width: part.width, height: part.height, rotation: part.rotation, anchorVersion: 1 as const, ...(part.jointAnchor ? { jointAnchor: { ...part.jointAnchor } } : {}) } }))
-      const nextProject: FabricatorProject = {
-        schemaVersion: 1, chromaVersion: 2, chromaBaseTolerance: 0, slot: metadata.slot, name: metadata.name, sourceName: metadata.sourceName,
-        sourceAssetName: metadata.sourceAssetName, sourceDataUrl, width: message.width, height: message.height,
-        tolerance, parts: sourceParts, joints: rig.joints, layerOrder: parts.map((part) => part.id), hiddenPartIds: [], updatedAt: new Date().toISOString()
-      }
-      if (recordBefore) recordHistorySnapshot(recordBefore, 'reset', nextProject)
+      const imported = createImportedModelProject(message, sourceDataUrl, tolerance, metadata)
+      for (const [partId, dataUrl] of imported.dirtyAssets) dirtyAssets.current.set(partId, dataUrl)
+      for (const [partId, dataUrl] of imported.dirtyChromaBases) dirtyChromaBases.current.set(partId, dataUrl)
+      if (recordBefore) recordHistorySnapshot(recordBefore, 'reset', imported.project)
       setChromaValue(tolerance)
-      projectRef.current = nextProject
-      setProject(nextProject); setSelectedIds(parts[0] ? [parts[0].id] : [])
+      projectRef.current = imported.project
+      setProject(imported.project); setSelectedIds(imported.project.parts[0] ? [imported.project.parts[0].id] : [])
     }
     worker.onerror = () => {
       if (id !== requestId.current) return
       worker.terminate(); workerRef.current = null; setProcessing(false); setError('O processamento da imagem falhou.')
     }
-    worker.postMessage({ id, sourceDataUrl, tolerance })
+    worker.postMessage({ id, sourceDataUrl, tolerance } satisfies ImageProcessorRequest)
   }
 
 
@@ -594,7 +582,7 @@ export function FabricatorPage() {
       sourceDataUrl: project.sourceDataUrl,
       tolerance,
       parts: project.parts.map(({ id: partId, dataUrl, chromaBaseDataUrl }) => ({ id: partId, dataUrl: chromaBaseDataUrl ?? dataUrl }))
-    })
+    } satisfies ChromaAdjustRequest)
   }
 
   const resetModel = async () => {
