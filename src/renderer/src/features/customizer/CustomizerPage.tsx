@@ -7,8 +7,8 @@ import { useCustomizerBodyAppearance } from './useCustomizerBodyAppearance'
 import { useCustomizerCharacterSourceSelection } from './useCustomizerCharacterSourceSelection'
 import { CustomizerModelPicker } from './CustomizerModelPicker'
 import { CustomizerClothesAdjustmentPanel } from './CustomizerClothesAdjustmentPanel'
-import { upperWardrobePanels, upperWardrobePageTwoPanels, accessoryWardrobePanels, lowerWardrobePanels, lowerWardrobePageTwoPanels, wardrobeComponentMatchesPanel, isWardrobePanelCandidateSelected, renderWardrobeThumbnail } from './wardrobePanelModel'
-import type { WardrobePanel, WardrobePanelCandidate } from './wardrobePanelModel'
+import { upperWardrobePanels, upperWardrobePageTwoPanels, accessoryWardrobePanels, lowerWardrobePanels, lowerWardrobePageTwoPanels, wardrobePanelCandidates, isWardrobePanelCandidateSelected, renderWardrobeThumbnail } from './wardrobePanelModel'
+import type { WardrobePanel } from './wardrobePanelModel'
 import { HairAssetPreview, WardrobePanelCandidatePreview } from './CustomizerAssetPreviews'
 import { customizerFaceParts, customizerSkinTonePresets, facePartCatalogId, facePartColorControls, facePartSourceId, hasSelectedFaceAsset, mirroredFaceThumbnailIds, sameFaceAssetPair, skinTonePresets, wrapSlotIndex } from './customizerFaceCatalogModel'
 import type { FaceLibraryPartId } from './customizerFaceCatalogModel'
@@ -25,7 +25,7 @@ import { adjustableHairPartIds, hairAppearancePartStyleId } from './customizerHa
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { RenderedCharacterPortrait } from '../../ui/components/RenderedCharacterPortrait'
 import { Icon } from '../../ui/components/Icon'
-import type { FaceCatalogItem, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSummary, FaceComponentKind, FaceDetailKind, FaceSheetKind, FabricatorPose, FabricatorProject, HairStyleSummary, WardrobeSet, WardrobeSetSummary } from '../../../../shared/fabricator'
+import type { FaceCatalogItem, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSummary, FaceComponentKind, FaceDetailKind, FaceSheetKind, FabricatorPose, FabricatorProject, HairStyleSummary, WardrobeSet } from '../../../../shared/fabricator'
 import { resolvePoseCategory } from '../../../../shared/fabricator'
 import { hairCategories, hairStyleSupportsCategory } from '../../../../shared/hairCategories'
 import type { CustomizerCharacter, CustomizerFaceAppearance, CustomizerWardrobeGroup, FaceComponentPartId, FacePalettePartId, HairColorOverrides, HairColorRole, HairPartId } from '../../../../shared/customizer'
@@ -1441,38 +1441,10 @@ export function CustomizerPage() {
     </section>
   }
 
-  const upperWardrobeCandidates = (panel: WardrobePanel): WardrobePanelCandidate[] => {
-    const wardrobeCandidates = wardrobeSets
-    .filter((summary) => summary.modelSlot === selectedCatalogModelSlot)
-    .flatMap((summary) => {
-      const set = wardrobeDetails[`${summary.modelSlot}:${summary.id}`]
-      if (!set) return []
-      const components = set.components.filter((component) => wardrobeComponentMatchesPanel(component, panel))
-      if (!components.length) return []
-      if (panel.id === 'pants-left') {
-        const representative = components.find((component) => component.category === 'calca-coxa') ?? components[0]
-        return [{ summary, set, component: representative, components }]
-      }
-      return components.map((component) => ({ summary, set, component, components: [component] }))
-    })
-    if (panel.id !== 'glasses' || selectedCatalogModelSlot === null) return wardrobeCandidates
-    const headExtraCandidates = faceComponentAssets
-      .filter((summary) => summary.kind === 'head-extra' && summary.modelSlot === selectedCatalogModelSlot)
-      .flatMap((summary): WardrobePanelCandidate[] => {
-        const asset = faceComponentDetails[summary.id]
-        if (!asset || asset.kind !== 'head-extra') return []
-        const component: WardrobeSet['components'][number] = { id: asset.id, name: asset.name, category: 'oculos', attachedPartId: 'head', x: 0, y: 0, width: asset.width, height: asset.height, rotation: asset.defaultTransform.rotation, dataUrl: asset.dataUrl }
-        const set: WardrobeSet = { schemaVersion: 1, edition: 2, id: `head-extra:${asset.id}`, modelSlot: summary.modelSlot, modelName: '', name: asset.name, width: asset.width, height: asset.height, components: [component], updatedAt: asset.updatedAt }
-        const wardrobeSummary: WardrobeSetSummary = { id: set.id, modelSlot: set.modelSlot, modelName: set.modelName, name: set.name, updatedAt: set.updatedAt, edition: 2, componentCount: 1 }
-        return [{ summary: wardrobeSummary, set, component, components: [component], headExtraAsset: asset }]
-      })
-    return [...headExtraCandidates, ...wardrobeCandidates]
-  }
-
   const renderUpperWardrobeLibrary = () => {
     if (!wardrobeLibraryPanel) return null
     const panel = wardrobeLibraryPanel
-    const candidates = upperWardrobeCandidates(panel)
+    const candidates = wardrobePanelCandidates(panel, selectedCatalogModelSlot, wardrobeSets, wardrobeDetails, faceComponentAssets, faceComponentDetails)
     const slots: Array<(typeof candidates)[number] | null> = [null, ...candidates]
     const pageSize = 20
     const pageCount = Math.max(1, Math.ceil(slots.length / pageSize))
@@ -1513,7 +1485,7 @@ export function CustomizerPage() {
       : pageTwo ? upperWardrobePageTwoPanels : upperWardrobePanels
     return <div className={`customizer-hair-layout customizer-upper-wardrobe-layout${clothingSection === 'Superior' && pageTwo ? ' page-two' : ''}${clothingSection === 'Inferior' && pageTwo ? ' lower-page-two' : ''}`} aria-label={`Peças de roupa ${clothingSection.toLowerCase()} · página ${page}`}>
     {panels.map((panel) => {
-      const candidates = upperWardrobeCandidates(panel)
+      const candidates = wardrobePanelCandidates(panel, selectedCatalogModelSlot, wardrobeSets, wardrobeDetails, faceComponentAssets, faceComponentDetails)
       const appliedGroups = selectedCharacter?.customization.wardrobeGroups ?? []
       const selectedIndex = candidates.findIndex((candidate) => isWardrobePanelCandidateSelected(candidate, panel, appliedGroups, selectedCharacter?.customization.faceAppearance))
       const currentCandidate = selectedIndex >= 0 ? candidates[selectedIndex] : null

@@ -1,7 +1,7 @@
 /** Contratos de peças por painel: nomes esquerda/direita, seleção e miniaturas.
  * Os PNGs continuam fontes permanentes do Fabricador DEV; nenhuma escrita aqui.
  */
-import type { FaceComponentAsset, WardrobeCategory, WardrobeSet, WardrobeSetSummary } from '../../../../shared/fabricator'
+import type { FaceComponentAsset, FaceComponentAssetSummary, WardrobeCategory, WardrobeSet, WardrobeSetSummary } from '../../../../shared/fabricator'
 import type { CustomizerFaceAppearance, CustomizerWardrobeGroup, CustomizerWardrobePaletteKey } from '../../../../shared/customizer'
 import type { ClothingGroupCategory } from '../../characters/characterRenderer'
 import { loadCachedImage } from '../../characters/characterRenderer'
@@ -48,6 +48,42 @@ export function wardrobeComponentMatchesPanel(component: WardrobeSet['components
 }
 
 export type WardrobePanelCandidate = { summary: WardrobeSetSummary; set: WardrobeSet; component: WardrobeSet['components'][number]; components: WardrobeSet['components']; headExtraAsset?: FaceComponentAsset }
+
+export function wardrobePanelCandidates(
+  panel: WardrobePanel,
+  selectedModelSlot: number | null,
+  wardrobeSets: WardrobeSetSummary[],
+  wardrobeDetails: Record<string, WardrobeSet>,
+  faceComponentAssets: FaceComponentAssetSummary[],
+  faceComponentDetails: Record<string, FaceComponentAsset>
+): WardrobePanelCandidate[] {
+  const wardrobeCandidates = wardrobeSets
+    .filter((summary) => summary.modelSlot === selectedModelSlot)
+    .flatMap((summary) => {
+      const set = wardrobeDetails[`${summary.modelSlot}:${summary.id}`]
+      if (!set) return []
+      const components = set.components.filter((component) => wardrobeComponentMatchesPanel(component, panel))
+      if (!components.length) return []
+      if (panel.id === 'pants-left') {
+        const representative = components.find((component) => component.category === 'calca-coxa') ?? components[0]
+        return [{ summary, set, component: representative, components }]
+      }
+      return components.map((component) => ({ summary, set, component, components: [component] }))
+    })
+
+  if (panel.id !== 'glasses' || selectedModelSlot === null) return wardrobeCandidates
+  const headExtraCandidates = faceComponentAssets
+    .filter((summary) => summary.kind === 'head-extra' && summary.modelSlot === selectedModelSlot)
+    .flatMap((summary): WardrobePanelCandidate[] => {
+      const asset = faceComponentDetails[summary.id]
+      if (!asset || asset.kind !== 'head-extra') return []
+      const component: WardrobeSet['components'][number] = { id: asset.id, name: asset.name, category: 'oculos', attachedPartId: 'head', x: 0, y: 0, width: asset.width, height: asset.height, rotation: asset.defaultTransform.rotation, dataUrl: asset.dataUrl }
+      const set: WardrobeSet = { schemaVersion: 1, edition: 2, id: `head-extra:${asset.id}`, modelSlot: summary.modelSlot, modelName: '', name: asset.name, width: asset.width, height: asset.height, components: [component], updatedAt: asset.updatedAt }
+      const wardrobeSummary: WardrobeSetSummary = { id: set.id, modelSlot: set.modelSlot, modelName: set.modelName, name: set.name, updatedAt: set.updatedAt, edition: 2, componentCount: 1 }
+      return [{ summary: wardrobeSummary, set, component, components: [component], headExtraAsset: asset }]
+    })
+  return [...headExtraCandidates, ...wardrobeCandidates]
+}
 
 export function isWardrobePanelCandidateSelected(candidate: WardrobePanelCandidate, panel: WardrobePanel, groups: CustomizerWardrobeGroup[], appearance?: CustomizerFaceAppearance): boolean {
   if (candidate.headExtraAsset) return appearance?.modelSlot === candidate.summary.modelSlot && appearance.headExtras?.glasses === candidate.headExtraAsset.id
