@@ -10,10 +10,10 @@ export function useWardrobeComparisonPose(modelSlot: number, enabled: boolean): 
     if(!enabled) return
     void (async()=>{
       try {
-        const summaries=(await window.desktop.listFabricatorPoseSlots(modelSlot)).filter(p=>p!==null)
+        const summaries=(await window.desktop.fabricator.listFabricatorPoseSlots(modelSlot)).filter(p=>p!==null)
         const first=summaries.find(p=>p.slot===1) ?? summaries[0]
         if(!first)return
-        const loaded=await window.desktop.loadFabricatorPose(modelSlot,first.slot)
+        const loaded=await window.desktop.fabricator.loadFabricatorPose(modelSlot,first.slot)
         if(live)setPose(loaded)
       } catch { if(live)setPose(null) }
     })()

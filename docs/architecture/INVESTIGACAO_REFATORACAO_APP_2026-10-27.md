@@ -20,7 +20,7 @@ A **Biblioteca de Mídia** é dona dos arquivos de vídeo e seus IDs. Base de V�
 
 O restante já tem módulos por domínio e armazenamento local com SQLite, arquivos e CAS. O `electron/main.ts` agora registra somente o flush transversal de gravações; a maior concentração está nas páginas React extensas que combinam estado e coordenação de operações. O plano prioriza limites de propriedade, segurança dos dados e redução de responsabilidades por fluxo.
 
-**Próximos passos:** continuar mapeando as transições de estado do Customizador, Studio e Editor V6; migrar os consumidores dos métodos raiz de `window.desktop` para os namespaces de domínio sem retirar aliases enquanto houver leitores; e revisar os fluxos de montagem e edição de imagem que permanecem na página do Fabricador. O flush transversal permanece no composition root. A composição compartilha algoritmos visuais de baixo nível; a orquestração e os modos de render continuam próprios de Studio e Editor V6 até existir comparação visual das saídas reais.
+**Próximos passos:** mapear e agrupar as APIs de gerenciamento de dados usadas por Opções; classificar a normalização de imagem usada pelo Fabricador como capacidade compartilhada; e manter os aliases raiz enquanto scripts de diagnóstico ainda os consomem. O flush transversal permanece no composition root. A composição compartilha algoritmos visuais de baixo nível; a orquestração e os modos de render continuam próprios de Studio e Editor V6 até existir comparação visual das saídas reais.
 
 ## 1. Estado observado
 
@@ -544,12 +544,14 @@ Este corte separa propriedade dos contratos e chamadas entre domínios, mas não
 - `StudioPage` usa os grupos do Studio para documentos/arquivos, do Customizador para personagens e do Fabricador para poses/catálogos faciais. O Customizador usa seus próprios métodos de personagens e o namespace do Fabricador para ler modelos, poses, cabelo, roupas e rosto.
 - O Editor V6 usa `editorV6` para projetos, exportação, mídia e prints; `customizer` para o elenco; e `fabricator` para poses e catálogos faciais. Os namespaces preexistentes `mediaLibrary` e `baseVideos` continuam sendo usados para suas respectivas bibliotecas.
 - Roteiros usa `roteiros` para documentos, logs, exportações e GIFs; `customizer` para personagens; e `fabricator` para poses e catálogos. Continua usando `mediaLibrary`, `baseVideos` e `videoBackgrounds` para dados que pertencem a essas áreas.
+- O Fabricador usa `fabricator` para seus métodos de modelo, poses, cabelo, roupas, rosto, animações e configurações do Design Dev; as consultas a personagens no Animador usam `customizer`. `FabricatorDesignSettings` agora pertence ao contrato em `src/shared/fabricator.ts`; a carga continua desconhecida até a normalização dos dados locais no renderer, enquanto a gravação já tem formato tipado.
+- A auditoria do renderer encontrou somente operações de dados de Opções e `normalizeImageForImport` ainda no nível raiz. Os scripts de autoria e diagnóstico continuam usando aliases raiz, então eles permanecem expostos durante a migração.
 - Os formatos persistidos e a propriedade dos dados não mudaram. Os métodos raiz permanecem disponíveis para as demais áreas e para os scripts de diagnóstico já existentes.
-- `typecheck`, `audit:architecture` e `build` passaram; nenhuma chamada raiz das APIs de domínio permaneceu nas telas do Studio, Customizador, Editor V6 e Roteiros.
+- `typecheck`, `audit:architecture` e `build` passaram; nenhuma chamada raiz das APIs de domínio permaneceu nas telas do Studio, Customizador, Editor V6, Roteiros e Fabricador.
 
 ## 7. Próxima tarefa recomendada
 
-Continuar migrando consumidores dos métodos raiz de `window.desktop` para os namespaces de domínio nos fluxos do Fabricador e das Opções. Manter os aliases antigos enquanto existirem consumidores e só removê-los após busca completa e validação dos scripts de diagnóstico. Em paralelo, continuar mapeando as filas de gravação e referências de catálogos entre renderer, preload, handlers IPC e repositórios.
+Agrupar as operações de armazenamento, backups e migração usadas por Opções em um contrato de dados explícito, e definir o dono da normalização de imagens. Manter os aliases antigos enquanto existirem consumidores e só removê-los após busca completa e validação dos scripts de diagnóstico. Em paralelo, continuar mapeando as filas de gravação e referências de catálogos entre renderer, preload, handlers IPC e repositórios.
 
 ## 8. Verificações e validação
 

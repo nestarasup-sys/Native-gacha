@@ -17,7 +17,7 @@ export function useModelSourceRefresh(
     let sequence = 0
     const unsubscribe = subscribeModelSourceUpdate(slot, update => {
       const requested = ++sequence
-      void window.desktop.loadFabricatorSlot(slot).then(project => {
+      void window.desktop.fabricator.loadFabricatorSlot(slot).then(project => {
         // sourceAssetName muda a cada publicação: cache antigo jamais substitui o novo.
         if (active && requested === sequence && project?.sourceAssetName === update.sourceAssetName) {
           consumer.current(project)

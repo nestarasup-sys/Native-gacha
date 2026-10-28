@@ -23,7 +23,7 @@ export function useFabricatorModelAppearance(deps: {
   const persistExternalAppearance = useCallback(async (snapshot: FabricatorProject) => {
     const previous = appearanceSaveQueue.current
     const current = previous.catch(() => undefined).then(async () => {
-      await window.desktop.saveFabricatorProject(serializeFabricatorProject(snapshot), [])
+      await window.desktop.fabricator.saveFabricatorProject(serializeFabricatorProject(snapshot), [])
       window.dispatchEvent(new Event('fabricator:assets-updated'))
       setSlots((items) => items.map((item) => item?.slot === snapshot.slot ? { ...item, updatedAt: snapshot.updatedAt } : item))
       if (!pendingAppearanceSave.current) {
@@ -85,7 +85,7 @@ export function useFabricatorModelAppearance(deps: {
       return
     }
     let active = true
-    void window.desktop.loadFabricatorSlot(visibleAppearanceSlot).then((loaded) => {
+    void window.desktop.fabricator.loadFabricatorSlot(visibleAppearanceSlot).then((loaded) => {
       if (active) {
         setOtherAppearanceProject(loaded)
         setAppearanceSaveState('saved')

@@ -103,7 +103,7 @@ export function useFaceGuides(profile: FaceGuideProfile, reportError: Dispatch<S
     loadedProfileRef.current = null
     setLoadedProfile(null)
 
-    void window.desktop.loadFaceGuides(profile).then(async (saved) => {
+    void window.desktop.fabricator.loadFaceGuides(profile).then(async (saved) => {
       if (cancelled) return
       let next: FaceGuideMap
       if (saved !== null) {
@@ -111,7 +111,7 @@ export function useFaceGuides(profile: FaceGuideProfile, reportError: Dispatch<S
       } else if (profile === 'shared') {
         const legacySnapshots = await Promise.all(legacyFaceGuideProfiles.map(async (legacyProfile) => ({
           profile: legacyProfile,
-          saved: await window.desktop.loadFaceGuides(legacyProfile),
+          saved: await window.desktop.fabricator.loadFaceGuides(legacyProfile),
           local: guidesRef.current[legacyProfile]
         })))
         const candidates: LegacyGuideCandidate[] = []
@@ -135,12 +135,12 @@ export function useFaceGuides(profile: FaceGuideProfile, reportError: Dispatch<S
         // written, so later edits have one durable source of truth.
         if (profile !== 'shared') {
           if (Object.keys(next).length === 0) {
-            const previous = await window.desktop.loadFaceGuides(previousProfiles[profile])
+            const previous = await window.desktop.fabricator.loadFaceGuides(previousProfiles[profile])
             if (previous) next = normalizeGuides(previous)
           }
           if (Object.keys(next).length === 0) next = readStoredGuides(profile)
         }
-        await window.desktop.saveFaceGuides(profile, next)
+        await window.desktop.fabricator.saveFaceGuides(profile, next)
       }
       if (cancelled) return
       guidesRef.current = { ...guidesRef.current, [profile]: next }
@@ -172,7 +172,7 @@ export function useFaceGuides(profile: FaceGuideProfile, reportError: Dispatch<S
     guidesRef.current = { ...guidesRef.current, [profile]: nextProfile }
     setGuidesByProfile(guidesRef.current)
     writeStoredGuides(profile, nextProfile)
-    void window.desktop.saveFaceGuides(profile, nextProfile).catch((reason) =>
+    void window.desktop.fabricator.saveFaceGuides(profile, nextProfile).catch((reason) =>
       reportError(reason instanceof Error ? reason.message : String(reason)))
   }, [profile, reportError])
 

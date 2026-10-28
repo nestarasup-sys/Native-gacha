@@ -90,7 +90,7 @@ export function HeadExtrasWorkspace({ baseModelSlot }: { baseModelSlot: number }
   }
 
   useEffect(() => {
-    void window.desktop.listFabricatorSlots().then((slots) => {
+    void window.desktop.fabricator.listFabricatorSlots().then((slots) => {
       setModels(slots)
       const preferredExists = Boolean(slots[baseModelSlot - 1])
       const first = slots.findIndex(Boolean)
@@ -101,7 +101,7 @@ export function HeadExtrasWorkspace({ baseModelSlot }: { baseModelSlot: number }
   useEffect(() => {
     let cancelled = false
     setModel(null)
-    void window.desktop.loadFabricatorSlot(modelSlot).then((project) => { if (!cancelled) setModel(projectForOriginalPreview(project)) }).catch((reason) => { if (!cancelled) setError(String(reason)) })
+    void window.desktop.fabricator.loadFabricatorSlot(modelSlot).then((project) => { if (!cancelled) setModel(projectForOriginalPreview(project)) }).catch((reason) => { if (!cancelled) setError(String(reason)) })
     return () => { cancelled = true }
   }, [modelSlot])
 
@@ -113,9 +113,9 @@ export function HeadExtrasWorkspace({ baseModelSlot }: { baseModelSlot: number }
     dragRef.current = null
     setDragging(false)
     setSelectedId(null)
-    void window.desktop.listFaceComponentAssets(modelSlot).then(async (allSummaries) => {
+    void window.desktop.fabricator.listFaceComponentAssets(modelSlot).then(async (allSummaries) => {
       const summaries = allSummaries.filter((summary) => summary.kind === 'head-extra')
-      const loaded = await Promise.all(summaries.map((summary) => window.desktop.loadFaceComponentAsset(modelSlot, summary.id)))
+      const loaded = await Promise.all(summaries.map((summary) => window.desktop.fabricator.loadFaceComponentAsset(modelSlot, summary.id)))
       if (cancelled) return
       const valid = loaded.filter((asset): asset is FaceComponentAsset => Boolean(asset?.kind === 'head-extra'))
       setAssets(summaries)
@@ -140,7 +140,7 @@ export function HeadExtrasWorkspace({ baseModelSlot }: { baseModelSlot: number }
       const now = new Date().toISOString()
       const transform = initialExtraTransform(head, image.width, image.height)
       const asset: FaceComponentAssetSave = { schemaVersion: 1, id, modelSlot, kind: 'head-extra', name: file.name.replace(/\.[^.]+$/, '') || 'Óculos', width: image.width, height: image.height, defaultTransform: transform, updatedAt: now }
-      await window.desktop.saveFaceComponentAsset(modelSlot, asset, image.dataUrl)
+      await window.desktop.fabricator.saveFaceComponentAsset(modelSlot, asset, image.dataUrl)
       window.dispatchEvent(new Event('fabricator:assets-updated'))
       const saved: FaceComponentAsset = { ...asset, dataUrl: image.dataUrl }
       setAssets((current) => [{ schemaVersion: 1, id, modelSlot, kind: 'head-extra', name: asset.name, width: image.width, height: image.height, updatedAt: now }, ...current])
@@ -167,7 +167,7 @@ export function HeadExtrasWorkspace({ baseModelSlot }: { baseModelSlot: number }
     setAssets((current) => current.map((asset) => asset.id === next.id ? { ...asset, name: next.name, updatedAt: next.updatedAt } : asset))
     try {
       const { dataUrl, ...save } = next
-      const queuedSave = saveQueueRef.current.catch(() => undefined).then(() => window.desktop.saveFaceComponentAsset(next.modelSlot, save, dataUrl))
+      const queuedSave = saveQueueRef.current.catch(() => undefined).then(() => window.desktop.fabricator.saveFaceComponentAsset(next.modelSlot, save, dataUrl))
       saveQueueRef.current = queuedSave
       await queuedSave
       window.dispatchEvent(new Event('fabricator:assets-updated'))
@@ -178,7 +178,7 @@ export function HeadExtrasWorkspace({ baseModelSlot }: { baseModelSlot: number }
     if (!selected || !window.confirm(`Excluir “${selected.name}” desta biblioteca?`)) return
     setBusy(true); setError('')
     try {
-      await window.desktop.deleteFaceComponentAsset(modelSlot, selected.id)
+      await window.desktop.fabricator.deleteFaceComponentAsset(modelSlot, selected.id)
       const remaining = assets.filter((asset) => asset.id !== selected.id)
       setAssets(remaining)
       const nextDetails = { ...detailsRef.current }; delete nextDetails[selected.id]

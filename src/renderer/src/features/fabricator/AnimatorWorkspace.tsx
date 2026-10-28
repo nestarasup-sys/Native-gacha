@@ -459,7 +459,7 @@ export function AnimatorWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
 
   useEffect(() => {
     let live = true
-    void Promise.all([window.desktop.listFabricatorSlots(), window.desktop.listCustomizerCharacters(), window.desktop.listAnimatorModelSlots()]).then(([slots, savedCharacters, savedAnimationSlots]) => {
+    void Promise.all([window.desktop.fabricator.listFabricatorSlots(), window.desktop.customizer.listCustomizerCharacters(), window.desktop.fabricator.listAnimatorModelSlots()]).then(([slots, savedCharacters, savedAnimationSlots]) => {
       if (!live) return
       setModels(slots); setCharacters(savedCharacters); setAnimationSourceSlots(savedAnimationSlots)
       const preferredExists = Boolean(slots[baseModelSlot - 1])
@@ -472,14 +472,14 @@ export function AnimatorWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
     let live = true
     if (modelSlot === null) { setSource(null); setBaseProject(null); return }
     setSource(null); setBaseProject(null); setPlaying(false)
-    void window.desktop.loadFabricatorSlot(modelSlot).then(async (project) => {
+    void window.desktop.fabricator.loadFabricatorSlot(modelSlot).then(async (project) => {
       if (!live) return
       setSource(projectForOriginalPreview(project))
       if (!project) { setBaseProject(null); return }
       const character = selectedCharacter?.customization.modelSlot === modelSlot ? selectedCharacter : null
       const poseSlot = character?.customization.poseSlot
       if (poseSlot !== null && poseSlot !== undefined) {
-        const pose = await window.desktop.loadFabricatorPose(modelSlot, poseSlot)
+        const pose = await window.desktop.fabricator.loadFabricatorPose(modelSlot, poseSlot)
         if (live) setBaseProject(pose ? makePoseProject(project, pose) : projectForOriginalPreview(project))
       } else setBaseProject(project)
     }).catch((reason: unknown) => { if (live) setError(reason instanceof Error ? reason.message : 'Não foi possível carregar o modelo selecionado.') })
@@ -490,7 +490,7 @@ export function AnimatorWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
     let live = true
     if (modelSlot === null) return
     setLoading(true); setAnimation(null); setCurrentTransforms({}); setCurrentJoints([]); savedAnimationRef.current = null
-    void Promise.all([window.desktop.listAnimatorAnimations(modelSlot), window.desktop.loadAnimatorDraft(modelSlot)]).then(([items, savedDraft]) => {
+    void Promise.all([window.desktop.fabricator.listAnimatorAnimations(modelSlot), window.desktop.fabricator.loadAnimatorDraft(modelSlot)]).then(([items, savedDraft]) => {
       if (!live) return
       setSummaries(items); setDraft(savedDraft)
       if (savedDraft) {
@@ -511,15 +511,15 @@ export function AnimatorWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
       const sets = await Promise.all(groups.filter((group) => group.modelSlot === model).map(async (group) => {
         const key = `${model}:${group.setId}`
         const cached = wardrobeDetails[key]
-        return [key, cached ?? await window.desktop.loadWardrobeSet(model, group.setId)] as const
+        return [key, cached ?? await window.desktop.fabricator.loadWardrobeSet(model, group.setId)] as const
       }))
       const appearance = selectedCharacter.customization.hairAppearance
       const hairIds = appearance?.modelSlot === model ? [appearance.frontStyleId, appearance.backStyleId, appearance.styleId].filter((id): id is string => Boolean(id)) : []
-      const styles = await Promise.all(hairIds.map(async (id) => [`${model}:${id}`, hairStyles[`${model}:${id}`] ?? await window.desktop.loadHairStyle(model, id)] as const))
+      const styles = await Promise.all(hairIds.map(async (id) => [`${model}:${id}`, hairStyles[`${model}:${id}`] ?? await window.desktop.fabricator.loadHairStyle(model, id)] as const))
       const face = selectedCharacter.customization.faceAppearance
-      const legacyFace = face?.modelSlot === model && face.setId && !faceSets[`${model}:${face.setId}`] ? await window.desktop.loadFaceSet(model, face.setId) : null
+      const legacyFace = face?.modelSlot === model && face.setId && !faceSets[`${model}:${face.setId}`] ? await window.desktop.fabricator.loadFaceSet(model, face.setId) : null
       const ids = face?.modelSlot === model ? [face.eyeCatalogId, face.eyebrowCatalogId, face.noseCatalogId, face.mouthClosedCatalogId, face.mouthOpenCatalogId].filter((id): id is string => Boolean(id)) : []
-      const items = await Promise.all(ids.map(async (id) => [`${model}:${id}`, faceItems[`${model}:${id}`] ?? await window.desktop.loadFaceCatalogItem(model, id)] as const))
+      const items = await Promise.all(ids.map(async (id) => [`${model}:${id}`, faceItems[`${model}:${id}`] ?? await window.desktop.fabricator.loadFaceCatalogItem(model, id)] as const))
       if (!live) return
       setWardrobeDetails((current) => ({ ...current, ...Object.fromEntries(sets.filter((entry): entry is [string, WardrobeSet] => Boolean(entry[1]))) }))
       setHairStyles((current) => { const next = { ...current }; for (const [key, style] of styles) if (style) next[key] = style; return next })
@@ -575,14 +575,14 @@ export function AnimatorWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
     const stateIsDirty = Boolean(frame && (JSON.stringify(frame.transforms) !== JSON.stringify(editorState.transforms) || JSON.stringify(frame.joints) !== JSON.stringify(editorState.joints)))
     const documentIsDirty = savedAnimationRef.current === null || JSON.stringify(serializeAnimation(snapshot)) !== savedAnimationRef.current || stateIsDirty
     if (!documentIsDirty) {
-      const existing = await window.desktop.loadAnimatorDraft(snapshot.sourceModelSlot)
-      if (existing?.editingSlot === targetSlot) await window.desktop.deleteAnimatorDraft(snapshot.sourceModelSlot)
+      const existing = await window.desktop.fabricator.loadAnimatorDraft(snapshot.sourceModelSlot)
+      if (existing?.editingSlot === targetSlot) await window.desktop.fabricator.deleteAnimatorDraft(snapshot.sourceModelSlot)
       setDraft(null)
       return
     }
     const serialized = serializeDraft(snapshot, targetSlot, editorState, stateIsDirty)
     const assets: AnimatorAnimationAsset[] = draftAssetsPersisted.current ? [] : snapshot.parts.flatMap((part) => pendingAssets.current.has(part.id) ? [{ id: part.id, dataUrl: pendingAssets.current.get(part.id)! }] : [])
-    const next = writeQueue.current.catch(() => undefined).then(() => window.desktop.saveAnimatorDraft(snapshot.sourceModelSlot, serialized, assets))
+    const next = writeQueue.current.catch(() => undefined).then(() => window.desktop.fabricator.saveAnimatorDraft(snapshot.sourceModelSlot, serialized, assets))
     writeQueue.current = next
     await next
     draftAssetsPersisted.current = true
@@ -601,7 +601,7 @@ export function AnimatorWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
     }
     if (draft && !animation) {
       if (!window.confirm('Existe um rascunho recuperável. Descartar e começar uma animação nova?')) return
-      await window.desktop.deleteAnimatorDraft(modelSlot!)
+      await window.desktop.fabricator.deleteAnimatorDraft(modelSlot!)
       setDraft(null)
     }
     const occupied = new Set(summaries.map((item) => item.slot))
@@ -627,18 +627,18 @@ export function AnimatorWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
     let replacementStarted = false
     try {
       const [poseSummaries, summariesBefore] = await Promise.all([
-        window.desktop.listFabricatorPoseSlots(modelSlot),
-        window.desktop.listAnimatorAnimations(modelSlot)
+        window.desktop.fabricator.listFabricatorPoseSlots(modelSlot),
+        window.desktop.fabricator.listAnimatorAnimations(modelSlot)
       ])
       const oldBreathing = await Promise.all(summariesBefore.filter((item) => item.name.startsWith('Respiração ·')).map(async (item) => {
-        const saved = await window.desktop.loadAnimatorAnimation(modelSlot, item.slot)
+        const saved = await window.desktop.fabricator.loadAnimatorAnimation(modelSlot, item.slot)
         if (!saved) throw new Error(`Não consegui ler a animação de respiração no slot ${item.slot}; não alterei nenhum slot.`)
         return saved
       }))
       previousBreathing = oldBreathing
       const poses = await Promise.all(poseSummaries.map(async (summary) => {
         if (!summary) return null
-        const pose = await window.desktop.loadFabricatorPose(modelSlot, summary.slot)
+        const pose = await window.desktop.fabricator.loadFabricatorPose(modelSlot, summary.slot)
         return pose ? { pose, category: resolvePoseCategory(pose) } : null
       }))
       const standing = poses.find((entry) => entry?.category.toLocaleLowerCase('pt-BR').includes('parad'))
@@ -655,25 +655,25 @@ export function AnimatorWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
       ]
       const newAnimations = await Promise.all(plans.map((plan, index) => makeBreathingAnimation(source, plan.pose, freeSlots[index], characterId || null, plan.variation)))
       replacementStarted = true
-      for (const old of oldBreathing) await window.desktop.deleteAnimatorAnimation(modelSlot, old.slot)
+      for (const old of oldBreathing) await window.desktop.fabricator.deleteAnimatorAnimation(modelSlot, old.slot)
       for (const animation of newAnimations) {
         const assets: AnimatorAnimationAsset[] = animation.parts.map((part) => ({ id: part.id, dataUrl: part.dataUrl }))
-        await window.desktop.saveAnimatorAnimation(modelSlot, animation.slot, serializeAnimation(animation), assets)
+        await window.desktop.fabricator.saveAnimatorAnimation(modelSlot, animation.slot, serializeAnimation(animation), assets)
         createdSlots.push(animation.slot)
       }
-      const updated = await window.desktop.listAnimatorAnimations(modelSlot)
+      const updated = await window.desktop.fabricator.listAnimatorAnimations(modelSlot)
       setSummaries(updated)
       setSaveMessage('8 variações de respiração salvas')
       setBreathingDialog(false)
     } catch (reason) {
       // This batch owns only the empty slots reserved above; roll back its partial writes.
-      await Promise.all(createdSlots.map((slot) => window.desktop.deleteAnimatorAnimation(modelSlot, slot).catch(() => undefined)))
+      await Promise.all(createdSlots.map((slot) => window.desktop.fabricator.deleteAnimatorAnimation(modelSlot, slot).catch(() => undefined)))
       // If a write failed after replacement began, restore the old breathing set.
       if (replacementStarted) for (const old of previousBreathing) {
         const assets: AnimatorAnimationAsset[] = old.parts.map((part) => ({ id: part.id, dataUrl: part.dataUrl }))
-        await window.desktop.saveAnimatorAnimation(modelSlot, old.slot, serializeAnimation(old), assets).catch(() => undefined)
+        await window.desktop.fabricator.saveAnimatorAnimation(modelSlot, old.slot, serializeAnimation(old), assets).catch(() => undefined)
       }
-      if (replacementStarted) setSummaries(await window.desktop.listAnimatorAnimations(modelSlot).catch(() => summaries))
+      if (replacementStarted) setSummaries(await window.desktop.fabricator.listAnimatorAnimations(modelSlot).catch(() => summaries))
       setError(reason instanceof Error ? reason.message : 'Não foi possível criar as animações de respiração.')
     } finally { setBreathingSaving(false) }
   }
@@ -688,16 +688,16 @@ export function AnimatorWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
       } else await persistDraftNow()
     }
     else if (draft && draft.editingSlot !== slot && !window.confirm('Há um rascunho recuperável. Descartar esse rascunho para abrir outro slot?')) return
-    else if (draft && draft.editingSlot !== slot) { await window.desktop.deleteAnimatorDraft(modelSlot!); setDraft(null) }
+    else if (draft && draft.editingSlot !== slot) { await window.desktop.fabricator.deleteAnimatorDraft(modelSlot!); setDraft(null) }
     else if (draft && draft.editingSlot === slot && !window.confirm('Este slot tem um rascunho recuperável. Abrir a versão salva e descartar o rascunho?')) return
-    else if (draft && draft.editingSlot === slot) { await window.desktop.deleteAnimatorDraft(modelSlot!); setDraft(null) }
+    else if (draft && draft.editingSlot === slot) { await window.desktop.fabricator.deleteAnimatorDraft(modelSlot!); setDraft(null) }
     setPlaying(false); setActiveSlot(slot); setError('')
     const loadId = ++animationLoadId.current
     const summary = summaries.find((item) => item.slot === slot)
     if (!summary) { setLoading(false); setAnimation(null); setSelectedFrameId(''); setCurrentTransforms({}); setCurrentJoints([]); setSelectedPartId(''); return }
     setLoading(true); setAnimation(null); setCurrentTransforms({}); setCurrentJoints([]); savedAnimationRef.current = null
     try {
-      const loaded = await window.desktop.loadAnimatorAnimation(summary.sourceModelSlot, slot)
+      const loaded = await window.desktop.fabricator.loadAnimatorAnimation(summary.sourceModelSlot, slot)
       if (loadId !== animationLoadId.current) return
       if (!loaded) throw new Error('A animação não pôde ser carregada.')
       const first = loaded.frames[0]
@@ -706,7 +706,7 @@ export function AnimatorWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
       setAnimation(loaded); setSelectedFrameId(first.id); setCurrentTransforms(first.transforms); setCurrentJoints(first.joints); setSelectedPartId(loaded.parts[0]?.id ?? '')
       setCharacterId(characters.find((character) => character.id === loaded.characterId && character.customization.modelSlot === loaded.sourceModelSlot)?.id ?? '')
       setModelSlot(loaded.sourceModelSlot); setUndoStack([]); setRedoStack([]); playheadRef.current = 0; setPlayhead(0)
-      const currentModel = await window.desktop.loadFabricatorSlot(loaded.sourceModelSlot)
+      const currentModel = await window.desktop.fabricator.loadFabricatorSlot(loaded.sourceModelSlot)
       if (loadId !== animationLoadId.current) return
       if (currentModel && (currentModel.updatedAt !== loaded.sourceModelUpdatedAt || currentModel.name !== loaded.sourceModelName || currentModel.parts.length !== loaded.sourceModelPartCount)) setError('A origem deste modelo mudou desde a criação. A animação continua usando a cópia original salva.')
       if (!currentModel) setError('O modelo de origem foi removido. A cópia guardada na animação continua disponível para edição.')
@@ -729,9 +729,9 @@ export function AnimatorWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
       }
       const updated = { ...snapshot, updatedAt: new Date().toISOString(), thumbnailDataUrl: snapshot.frames[0]?.thumbnailDataUrl ?? snapshot.thumbnailDataUrl }
       const assets: AnimatorAnimationAsset[] = updated.parts.flatMap((part) => pendingAssets.current.has(part.id) ? [{ id: part.id, dataUrl: pendingAssets.current.get(part.id)! }] : [])
-      await window.desktop.saveAnimatorAnimation(updated.sourceModelSlot, updated.slot, serializeAnimation(updated), assets)
-      const savedDraft = await window.desktop.loadAnimatorDraft(updated.sourceModelSlot)
-      if (savedDraft?.editingSlot === updated.slot) await window.desktop.deleteAnimatorDraft(updated.sourceModelSlot)
+      await window.desktop.fabricator.saveAnimatorAnimation(updated.sourceModelSlot, updated.slot, serializeAnimation(updated), assets)
+      const savedDraft = await window.desktop.fabricator.loadAnimatorDraft(updated.sourceModelSlot)
+      if (savedDraft?.editingSlot === updated.slot) await window.desktop.fabricator.deleteAnimatorDraft(updated.sourceModelSlot)
       pendingAssets.current = new Map(updated.parts.map((part) => [part.id, part.dataUrl]))
       draftAssetsPersisted.current = false
       savedAnimationRef.current = JSON.stringify(serializeAnimation(updated))
@@ -801,9 +801,9 @@ export function AnimatorWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
     if (saving || !animation || !window.confirm(`Excluir a animação “${animation.name}” do slot ${animation.slot}?`)) return
     if (draftTimer.current) clearTimeout(draftTimer.current)
     try {
-      await window.desktop.deleteAnimatorAnimation(animation.sourceModelSlot, animation.slot)
-      const savedDraft = await window.desktop.loadAnimatorDraft(animation.sourceModelSlot)
-      if (savedDraft?.editingSlot === animation.slot) await window.desktop.deleteAnimatorDraft(animation.sourceModelSlot)
+      await window.desktop.fabricator.deleteAnimatorAnimation(animation.sourceModelSlot, animation.slot)
+      const savedDraft = await window.desktop.fabricator.loadAnimatorDraft(animation.sourceModelSlot)
+      if (savedDraft?.editingSlot === animation.slot) await window.desktop.fabricator.deleteAnimatorDraft(animation.sourceModelSlot)
       setSummaries((current) => current.filter((item) => item.slot !== animation.slot)); setAnimation(null); setCurrentTransforms({}); setCurrentJoints([]); setSelectedFrameId(''); setSelectedPartId(''); setSaveMessage(''); setDraft(null); savedAnimationRef.current = null
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível excluir a animação.') }
   }
@@ -1002,7 +1002,7 @@ export function AnimatorWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
     const assets: AnimatorAnimationAsset[] = draftAssetsPersisted.current ? [] : snapshot.parts.flatMap((part) => pendingAssets.current.has(part.id) ? [{ id: part.id, dataUrl: pendingAssets.current.get(part.id)! }] : [])
     setSaveMessage(dirtyFrame ? 'Frame alterado · rascunho automático' : 'Rascunho automático')
     draftTimer.current = setTimeout(() => {
-      const next = writeQueue.current.catch(() => undefined).then(() => window.desktop.saveAnimatorDraft(snapshot.sourceModelSlot, serialized, assets))
+      const next = writeQueue.current.catch(() => undefined).then(() => window.desktop.fabricator.saveAnimatorDraft(snapshot.sourceModelSlot, serialized, assets))
       writeQueue.current = next
       void next.then(() => { draftAssetsPersisted.current = true; setDraft(serialized) }).catch((reason: unknown) => setError(reason instanceof Error ? `Não foi possível salvar o rascunho: ${reason.message}` : 'Não foi possível salvar o rascunho.'))
     }, 350)
@@ -1030,7 +1030,7 @@ export function AnimatorWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
       if (!documentIsDirty) return
       const serialized = serializeDraft(active, active.slot, current!, dirtyFrameRef.current)
       const assets = active.parts.flatMap((part) => pendingAssets.current.has(part.id) ? [{ id: part.id, dataUrl: pendingAssets.current.get(part.id)! }] : [])
-      void window.desktop.saveAnimatorDraft(active.sourceModelSlot, serialized, assets).catch(() => undefined)
+      void window.desktop.fabricator.saveAnimatorDraft(active.sourceModelSlot, serialized, assets).catch(() => undefined)
     }
   }, [])
 
@@ -1075,7 +1075,7 @@ export function AnimatorWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
     {breathingDialog && <div className="animator-dialog-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !breathingSaving) setBreathingDialog(false) }}><section className="animator-breathing-dialog" role="dialog" aria-modal="true" aria-labelledby="animator-breathing-title"><header><span><strong id="animator-breathing-title">Animações de respiração</strong><small>Quatro estilos para cada pose. Substitui somente as respirações anteriores.</small></span><button className="pose-icon-button" onClick={() => setBreathingDialog(false)} disabled={breathingSaving} type="button" aria-label="Fechar">×</button></header><div className="animator-breathing-groups">{(['Parado', 'Sentado'] as const).map((category) => <article key={category}><strong>{category}</strong><div>{breathingVariations.map((variation, index) => <div className="animator-breathing-variation" key={variation.key}><span><b>{index + 1}</b>{variation.name}</span><small>{(variation.cycleMs / 1000).toFixed(1)} s · loop suave</small></div>)}</div></article>)}</div><p>O movimento anima o tronco, os braços e um leve balanço da cabeça. Quadris e pernas ficam ancorados; sua animação manual e outros slots são preservados.</p><footer><button className="pose-button secondary" onClick={() => setBreathingDialog(false)} disabled={breathingSaving} type="button">Cancelar</button><button className="pose-button primary" onClick={() => void createBreathingSet()} disabled={breathingSaving || loading || !source} type="button"><Icon name={breathingSaving ? 'sparkles' : 'check'} />{breathingSaving ? 'Atualizando…' : 'Substituir respirações'}</button></footer></section></div>}
     {nameDialog && <div className="animator-dialog-backdrop"><form className="animator-name-dialog" onSubmit={submitNameDialog} role="dialog" aria-modal="true" aria-labelledby="animator-name-title"><strong id="animator-name-title">{nameDialog.mode === 'rename' ? 'Renomear animação' : 'Duplicar animação'}</strong><input autoFocus maxLength={80} value={nameDialog.value} onChange={(event) => setNameDialog((current) => current ? { ...current, value: event.target.value } : current)} aria-label="Nome da animação" /><div><button className="pose-button secondary" onClick={() => setNameDialog(null)} type="button">Cancelar</button><button className="pose-button primary" disabled={!nameDialog.value.trim() || saving} type="submit">{nameDialog.mode === 'rename' ? 'Renomear' : 'Duplicar'}</button></div></form></div>}
     {error && <div className="animator-error" role="alert"><span>{error}</span><button onClick={() => setError('')} type="button">Fechar</button></div>}
-    {draft && !animation && <div className="pose-recovery"><span><strong>Rascunho de animação recuperável</strong><small>{draft.animation.name} · {draft.animation.frames.length} frames</small></span><div><button onClick={() => { void window.desktop.deleteAnimatorDraft(modelSlot!).then(() => setDraft(null)) }} type="button">Descartar</button><button className="pose-recover-button" onClick={() => {
+    {draft && !animation && <div className="pose-recovery"><span><strong>Rascunho de animação recuperável</strong><small>{draft.animation.name} · {draft.animation.frames.length} frames</small></span><div><button onClick={() => { void window.desktop.fabricator.deleteAnimatorDraft(modelSlot!).then(() => setDraft(null)) }} type="button">Descartar</button><button className="pose-recover-button" onClick={() => {
       const restoredParts = draft.animation.parts as unknown as PosePart[]
       const restored = { ...draft.animation, slot: draft.editingSlot ?? (slots.findIndex((item) => !item) + 1 || 1), parts: restoredParts } as AnimatorAnimation
       pendingAssets.current = new Map(restoredParts.map((part) => [part.id, part.dataUrl])); draftAssetsPersisted.current = true

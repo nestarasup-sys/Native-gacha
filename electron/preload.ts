@@ -13,6 +13,8 @@ import type { DataMigrationPauseResult, DataMigrationProgress, DataMigrationResu
 
 const invokeFabricator = createFabricatorInvoker(ipcRenderer)
 const fabricatorApi: FabricatorDesktopApi = {
+  loadFabricatorDesignSettings: () => ipcRenderer.invoke('fabricator:design-settings:load'),
+  saveFabricatorDesignSettings: (settings) => ipcRenderer.invoke('fabricator:design-settings:save', settings),
   listFabricatorSlots: () => invokeFabricator('listFabricatorSlots'),
   importFabricatorModel: (slot, mode) => ipcRenderer.invoke('fabricator:import-model', slot, mode),
   loadFabricatorSlot: (slot) => invokeFabricator('loadFabricatorSlot', slot),
@@ -167,8 +169,6 @@ contextBridge.exposeInMainWorld('desktop', {
   platform: process.platform,
   appName: 'Gacha Nymi',
   normalizeImageForImport: (bytes: Uint8Array) => ipcRenderer.invoke('app:image:normalize', bytes),
-  loadFabricatorDesignSettings: () => ipcRenderer.invoke('fabricator:design-settings:load'),
-  saveFabricatorDesignSettings: (settings: unknown) => ipcRenderer.invoke('fabricator:design-settings:save', settings),
   getAppDataStorageSummary: (): Promise<DataStorageSummary> => ipcRenderer.invoke('app:data-storage-summary'),
   getDataMigrationSummary: (): Promise<DataMigrationSummary> => ipcRenderer.invoke('app:data-migration:prepare'),
   runDataMigration: (): Promise<DataMigrationResult> => ipcRenderer.invoke('app:data-migration:run-all'),

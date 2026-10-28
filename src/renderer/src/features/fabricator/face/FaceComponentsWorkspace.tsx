@@ -350,7 +350,7 @@ export function FaceComponentsWorkspace({ mode, baseModelSlot }: { mode: FaceWor
     await saveChains.current.get(key)?.catch(() => undefined)
   }
 
-  useEffect(() => { void window.desktop.listFabricatorSlots().then((slots) => { setModels(slots); const preferredExists = Boolean(slots[baseModelSlot - 1]); const first = slots.findIndex(Boolean); if (!preferredExists && first >= 0) setModelSlot(first + 1) }).catch((reason) => setError(String(reason))) }, [baseModelSlot])
+  useEffect(() => { void window.desktop.fabricator.listFabricatorSlots().then((slots) => { setModels(slots); const preferredExists = Boolean(slots[baseModelSlot - 1]); const first = slots.findIndex(Boolean); if (!preferredExists && first >= 0) setModelSlot(first + 1) }).catch((reason) => setError(String(reason))) }, [baseModelSlot])
   useEffect(() => { if (mode !== 'eyes') return; try { window.localStorage.setItem(FACE_IMPORT_ANCHORS_STORAGE_KEY, JSON.stringify(importAnchorsByModel)) } catch { setError('Não foi possível salvar a fixação de importação neste computador.') } }, [mode, importAnchorsByModel])
   useEffect(() => { if (mode !== 'face') return; try { window.localStorage.setItem(FACE_DETAIL_SELECTION_STORAGE_KEY, JSON.stringify(faceDetailSelectionsByModel)) } catch { /* Saved assets remain available in the library. */ } }, [mode, faceDetailSelectionsByModel])
   useEffect(() => {
@@ -415,10 +415,10 @@ export function FaceComponentsWorkspace({ mode, baseModelSlot }: { mode: FaceWor
       ? categories.map((category) => category.kind)
       : faceDetailCategories.map((category) => category.kind)
     void Promise.all([
-      window.desktop.loadFabricatorSlot(modelSlot),
-      Promise.all(visibleKinds.map((kind) => window.desktop.listFaceComponentAssets(modelSlot, kind))).then((lists) => lists.flat())
+      window.desktop.fabricator.loadFabricatorSlot(modelSlot),
+      Promise.all(visibleKinds.map((kind) => window.desktop.fabricator.listFaceComponentAssets(modelSlot, kind))).then((lists) => lists.flat())
     ]).then(async ([project, visibleList]) => {
-      const loaded = await Promise.all(visibleList.map((entry) => window.desktop.loadFaceComponentAsset(modelSlot, entry.id)))
+      const loaded = await Promise.all(visibleList.map((entry) => window.desktop.fabricator.loadFaceComponentAsset(modelSlot, entry.id)))
       if (!active) return
       const loadedAssets = loaded.filter((item): item is FaceComponentAsset => Boolean(item))
       const assetKinds = new Map(loadedAssets.map((item) => [item.id, item.kind]))
@@ -437,11 +437,11 @@ export function FaceComponentsWorkspace({ mode, baseModelSlot }: { mode: FaceWor
     let active = true
     setMouthCatalog([]); setMouthDetails({}); setNoseCatalog([]); setNoseDetails({})
     if (mode !== 'face') return () => { active = false }
-    void window.desktop.listFaceCatalog(modelSlot).then(async (list) => {
+    void window.desktop.fabricator.listFaceCatalog(modelSlot).then(async (list) => {
       const relevant = list.filter((item) => item.category === 'nose' || item.category === 'mouth-closed' || item.category === 'mouth-open')
       const mouths = relevant.filter((item) => item.category === 'mouth-closed' || item.category === 'mouth-open')
       const noses = relevant.filter((item) => item.category === 'nose')
-      const loaded = await Promise.all(relevant.map((item) => window.desktop.loadFaceCatalogItem(modelSlot, item.id)))
+      const loaded = await Promise.all(relevant.map((item) => window.desktop.fabricator.loadFaceCatalogItem(modelSlot, item.id)))
       if (!active) return
       setMouthCatalog(mouths)
       setNoseCatalog(noses)
@@ -512,7 +512,7 @@ export function FaceComponentsWorkspace({ mode, baseModelSlot }: { mode: FaceWor
             name: `${baseName} · ${category.names[index]}`.slice(0, 120), width: piece.width, height: piece.height,
             defaultTransform: transform, rightSidePositioned: index === 1, pairId: sourceSheetPairId, updatedAt: new Date().toISOString()
           }
-          await window.desktop.saveFaceComponentAsset(modelSlot, asset, piece.dataUrl)
+          await window.desktop.fabricator.saveFaceComponentAsset(modelSlot, asset, piece.dataUrl)
           savedIds.push(asset.id)
           assigned[side] = asset.id
           imported.push({ ...asset, dataUrl: piece.dataUrl })
@@ -524,7 +524,7 @@ export function FaceComponentsWorkspace({ mode, baseModelSlot }: { mode: FaceWor
       setSelectedPart('eye-left'); setLibraryCategory('eye'); setOpenModal(null)
       setNotice('Olho aberto, pupila e olho fechado importados. Ajuste cada peça na Biblioteca.')
     } catch (reason) {
-      await Promise.allSettled(savedIds.map((id) => window.desktop.deleteFaceComponentAsset(modelSlot, id)))
+      await Promise.allSettled(savedIds.map((id) => window.desktop.fabricator.deleteFaceComponentAsset(modelSlot, id)))
       setError(reason instanceof Error ? reason.message : String(reason))
     } finally { setBusy(false) }
   }
@@ -553,9 +553,9 @@ export function FaceComponentsWorkspace({ mode, baseModelSlot }: { mode: FaceWor
           rotation: -leftTransform.rotation, flipX: !leftTransform.flipX
         }
       }
-      await window.desktop.saveFaceComponentAsset(modelSlot, left, image.dataUrl)
+      await window.desktop.fabricator.saveFaceComponentAsset(modelSlot, left, image.dataUrl)
       savedIds.push(left.id)
-      await window.desktop.saveFaceComponentAsset(modelSlot, right, image.dataUrl)
+      await window.desktop.fabricator.saveFaceComponentAsset(modelSlot, right, image.dataUrl)
       savedIds.push(right.id)
 
       const imported = [left, right].map((asset) => ({ ...asset, dataUrl: image.dataUrl }))
@@ -565,7 +565,7 @@ export function FaceComponentsWorkspace({ mode, baseModelSlot }: { mode: FaceWor
       setSelectedPart('brow-left'); setLibraryCategory('eyebrow'); setOpenModal(null)
       setNotice('Sobrancelha importada. O lado direito foi criado espelhado; ajuste cada lado na Biblioteca.')
     } catch (reason) {
-      await Promise.allSettled(savedIds.map((id) => window.desktop.deleteFaceComponentAsset(modelSlot, id)))
+      await Promise.allSettled(savedIds.map((id) => window.desktop.fabricator.deleteFaceComponentAsset(modelSlot, id)))
       setError(reason instanceof Error ? reason.message : String(reason))
     } finally { setBusy(false) }
   }
@@ -592,7 +592,7 @@ export function FaceComponentsWorkspace({ mode, baseModelSlot }: { mode: FaceWor
         defaultTransform: initialFaceDetailTransform(kind, head, image.width, image.height),
         updatedAt: new Date().toISOString()
       }
-      await window.desktop.saveFaceComponentAsset(modelSlot, asset, image.dataUrl)
+      await window.desktop.fabricator.saveFaceComponentAsset(modelSlot, asset, image.dataUrl)
       const saved = { ...asset, dataUrl: image.dataUrl }
       setAssets((current) => [asset, ...current])
       setDetails((current) => ({ ...current, [asset.id]: saved }))
@@ -618,7 +618,7 @@ export function FaceComponentsWorkspace({ mode, baseModelSlot }: { mode: FaceWor
         flipX: !source.defaultTransform.flipX
       }, updatedAt: new Date().toISOString()
     }
-    await window.desktop.saveFaceComponentAsset(modelSlot, copy, source.dataUrl)
+    await window.desktop.fabricator.saveFaceComponentAsset(modelSlot, copy, source.dataUrl)
     const loaded: FaceComponentAsset = { ...copy, dataUrl: source.dataUrl }
     componentDetailsRef.current = { ...componentDetailsRef.current, [copy.id]: loaded }
     selectedAssetsRef.current = { ...selectedAssetsRef.current, [side]: copy.id }
@@ -682,7 +682,7 @@ export function FaceComponentsWorkspace({ mode, baseModelSlot }: { mode: FaceWor
         transforms: { [kind === 'nose' ? 'nose' : 'mouth']: initialCatalogTransform(head, { category: kind, pieces: processed.pieces }) },
         eyeLinked: true, browLinked: true, selectedNose: 0, selectedExpression: 0, updatedAt: new Date().toISOString()
       }
-      await window.desktop.saveFaceCatalogItem(modelSlot, catalogSaveData(item), [
+      await window.desktop.fabricator.saveFaceCatalogItem(modelSlot, catalogSaveData(item), [
         { id: `sheet-${kind}`, dataUrl: item.sheet.dataUrl },
         ...item.pieces.map((piece) => ({ id: piece.id, dataUrl: piece.dataUrl }))
       ])
@@ -713,7 +713,7 @@ export function FaceComponentsWorkspace({ mode, baseModelSlot }: { mode: FaceWor
         const next: FaceCatalogItem = { ...original, transforms: { ...original.transforms, nose: { ...current, ...patch } }, updatedAt: new Date().toISOString() }
         catalogDetailsRef.current = { ...catalogDetailsRef.current, [next.id]: next }
         setNoseDetails((items) => ({ ...items, [next.id]: next }))
-        queueSave(`catalog:${next.modelSlot}:${next.id}`, () => window.desktop.saveFaceCatalogItem(next.modelSlot, catalogSaveData(next), catalogImagesForSave(next)))
+        queueSave(`catalog:${next.modelSlot}:${next.id}`, () => window.desktop.fabricator.saveFaceCatalogItem(next.modelSlot, catalogSaveData(next), catalogImagesForSave(next)))
         return
       }
       const mouthItems = Object.values(catalogDetailsRef.current).filter((item) => item.modelSlot === original.modelSlot && (item.category === 'mouth-closed' || item.category === 'mouth-open'))
@@ -733,7 +733,7 @@ export function FaceComponentsWorkspace({ mode, baseModelSlot }: { mode: FaceWor
       })
       catalogDetailsRef.current = { ...catalogDetailsRef.current, ...Object.fromEntries(updates.map((item) => [item.id, item])) }
       setMouthDetails((items) => ({ ...items, ...Object.fromEntries(updates.map((item) => [item.id, item])) }))
-      for (const item of updates) queueSave(`catalog:${item.modelSlot}:${item.id}`, () => window.desktop.saveFaceCatalogItem(item.modelSlot, catalogSaveData(item), catalogImagesForSave(item)))
+      for (const item of updates) queueSave(`catalog:${item.modelSlot}:${item.id}`, () => window.desktop.fabricator.saveFaceCatalogItem(item.modelSlot, catalogSaveData(item), catalogImagesForSave(item)))
       return
     }
     if (!selectedAsset) return
@@ -783,7 +783,7 @@ export function FaceComponentsWorkspace({ mode, baseModelSlot }: { mode: FaceWor
     setDetails((items) => ({ ...items, [next.id]: next }))
     queueSave(`component:${next.modelSlot}:${next.id}`, () => {
       const { dataUrl, ...saved } = next
-      return window.desktop.saveFaceComponentAsset(next.modelSlot, saved, dataUrl)
+      return window.desktop.fabricator.saveFaceComponentAsset(next.modelSlot, saved, dataUrl)
     })
   }
 
@@ -904,7 +904,7 @@ export function FaceComponentsWorkspace({ mode, baseModelSlot }: { mode: FaceWor
     catalogDetailsRef.current = { ...catalogDetailsRef.current, [next.id]: next }
     if (next.category === 'nose') setNoseDetails((items) => ({ ...items, [next.id]: next }))
     else setMouthDetails((items) => ({ ...items, [next.id]: next }))
-    queueSave(`catalog:${next.modelSlot}:${next.id}`, () => window.desktop.saveFaceCatalogItem(next.modelSlot, catalogSaveData(next), catalogImagesForSave(next)))
+    queueSave(`catalog:${next.modelSlot}:${next.id}`, () => window.desktop.fabricator.saveFaceCatalogItem(next.modelSlot, catalogSaveData(next), catalogImagesForSave(next)))
   }
 
   function updateCatalogOpacity(value: number) {
@@ -913,7 +913,7 @@ export function FaceComponentsWorkspace({ mode, baseModelSlot }: { mode: FaceWor
     const next = { ...original, opacity: clamp(value, 0, 1), updatedAt: new Date().toISOString() }
     catalogDetailsRef.current = { ...catalogDetailsRef.current, [next.id]: next }
     setNoseDetails((items) => ({ ...items, [next.id]: next }))
-    queueSave(`catalog:${next.modelSlot}:${next.id}`, () => window.desktop.saveFaceCatalogItem(next.modelSlot, catalogSaveData(next), catalogImagesForSave(next)))
+    queueSave(`catalog:${next.modelSlot}:${next.id}`, () => window.desktop.fabricator.saveFaceCatalogItem(next.modelSlot, catalogSaveData(next), catalogImagesForSave(next)))
   }
 
   function beginPreviewDrag(event: ReactPointerEvent<HTMLImageElement>, key: string, invertX = false, pupil = false, rotation = 0) {
@@ -960,8 +960,8 @@ export function FaceComponentsWorkspace({ mode, baseModelSlot }: { mode: FaceWor
       for (const id of markedForDeletion) {
         const isCatalogItem = [...noseCatalog, ...mouthCatalog].some((item) => item.id === id)
         await flushSave(`${isCatalogItem ? 'catalog' : 'component'}:${modelSlot}:${id}`)
-        if (isCatalogItem) await window.desktop.deleteFaceCatalogItem(modelSlot, id)
-        else await window.desktop.deleteFaceComponentAsset(modelSlot, id)
+        if (isCatalogItem) await window.desktop.fabricator.deleteFaceCatalogItem(modelSlot, id)
+        else await window.desktop.fabricator.deleteFaceComponentAsset(modelSlot, id)
         removed.push(id)
       }
       setNotice(`${removed.length} ${removed.length === 1 ? 'peça excluída' : 'peças excluídas'} da biblioteca.`)

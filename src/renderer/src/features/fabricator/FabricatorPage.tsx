@@ -136,7 +136,7 @@ export function FabricatorPage() {
       snapshot,
       dirtyAssets.current,
       dirtyChromaBases.current,
-      (serialized, changedAssets) => window.desktop.saveFabricatorProject(serialized, changedAssets)
+      (serialized, changedAssets) => window.desktop.fabricator.saveFabricatorProject(serialized, changedAssets)
     )
     for (const asset of assets) {
       if (dirtyAssets.current.get(asset.id) === asset.dataUrl) dirtyAssets.current.delete(asset.id)
@@ -158,7 +158,7 @@ export function FabricatorPage() {
     : visibleAppearanceSaveState === 'error' ? 'Erro ao salvar' : 'Salvo localmente'
 
   useEffect(() => {
-    void window.desktop.listFabricatorSlots()
+    void window.desktop.fabricator.listFabricatorSlots()
       .then((items) => { setSlots(items); setSlotsLoaded(true) })
       .catch((reason: unknown) => { setSlotsLoaded(true); setError(reason instanceof Error ? reason.message : 'Não foi possível abrir a biblioteca.') })
     return () => {
@@ -374,11 +374,11 @@ export function FabricatorPage() {
     const summary = slots[slot - 1]
     if (!summary) { setSlotSwitching(false); return }
     try {
-      const loaded = await window.desktop.loadFabricatorSlot(slot)
+      const loaded = await window.desktop.fabricator.loadFabricatorSlot(slot)
       if (generation !== slotSelectionGeneration.current) return
       if (!loaded) throw new Error('O projeto salvo não pôde ser carregado.')
       let loadedHistory: FabricatorHistoryState = { undo: [], redo: [] }
-      try { loadedHistory = await window.desktop.loadFabricatorHistory(slot) } catch {
+      try { loadedHistory = await window.desktop.fabricator.loadFabricatorHistory(slot) } catch {
         if (generation !== slotSelectionGeneration.current) return
         setError('O modelo abriu, mas o histórico persistido não pôde ser carregado.')
       }
@@ -426,7 +426,7 @@ export function FabricatorPage() {
       setProcessing(false); setProgress(0)
     }
     try {
-      await window.desktop.deleteFabricatorSlot(slot)
+      await window.desktop.fabricator.deleteFabricatorSlot(slot)
       setSlots((current) => current.map((item, index) => index === slot - 1 ? null : item))
       if (activeSlot === slot) {
         projectRef.current = null
@@ -467,7 +467,7 @@ export function FabricatorPage() {
       if (savedTimer.current) clearTimeout(savedTimer.current)
       savedTimer.current = null
       await persistProject(source)
-      await window.desktop.duplicateFabricatorSlot(source.slot, targetSlot)
+      await window.desktop.fabricator.duplicateFabricatorSlot(source.slot, targetSlot)
       const updatedAt = new Date().toISOString()
       setSlots((current) => current.map((summary, index) => index + 1 === targetSlot
         ? { slot: targetSlot, name: source.name, sourceName: source.sourceName, partCount: source.parts.length, updatedAt }
@@ -544,7 +544,7 @@ export function FabricatorPage() {
         dataUrl: part.dataUrl,
         ...(part.chromaBaseDataUrl ? { chromaBaseDataUrl: part.chromaBaseDataUrl } : {})
       }))
-      const newSourceName = await window.desktop.publishFabricatorModelSource(serialized, result.sourceDataUrl, changedAssets)
+      const newSourceName = await window.desktop.fabricator.publishFabricatorModelSource(serialized, result.sourceDataUrl, changedAssets)
       const published: FabricatorProject = { ...next, sourceAssetName: newSourceName }
       clearHistory()
       dirtyAssets.current.clear()
@@ -640,11 +640,11 @@ export function FabricatorPage() {
     if (selectionGeneration !== slotSelectionGeneration.current) return
     setError('')
     try {
-      const selected = await window.desktop.importFabricatorModel(slot, reimporting ? 'reimport' : 'import')
+      const selected = await window.desktop.fabricator.importFabricatorModel(slot, reimporting ? 'reimport' : 'import')
       if (!selected) return
       if (reimporting) {
         const current = projectRef.current
-        const existing = current?.slot === slot ? current : await window.desktop.loadFabricatorSlot(slot)
+        const existing = current?.slot === slot ? current : await window.desktop.fabricator.loadFabricatorSlot(slot)
         if (!existing) throw new Error('O modelo salvo não foi encontrado. Nenhuma configuração foi alterada.')
         const updated: FabricatorProject = {
           ...existing,
@@ -659,7 +659,7 @@ export function FabricatorPage() {
         }
         if (activeSlot !== slot || projectRef.current?.slot !== slot) {
           let loadedHistory: FabricatorHistoryState = { undo: [], redo: [] }
-          try { loadedHistory = await window.desktop.loadFabricatorHistory(slot) } catch {
+          try { loadedHistory = await window.desktop.fabricator.loadFabricatorHistory(slot) } catch {
             if (selectionGeneration !== slotSelectionGeneration.current) return
             setError('A imagem foi reimportada, mas não foi possível carregar o histórico salvo.')
           }

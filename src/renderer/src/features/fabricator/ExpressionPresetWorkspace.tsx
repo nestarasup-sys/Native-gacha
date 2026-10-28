@@ -308,17 +308,17 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
     setSwitchingExpression(false)
     setPresetId(crypto.randomUUID())
     void Promise.all([
-      window.desktop.loadFabricatorSlot(modelSlot),
-      Promise.all([window.desktop.listFaceComponentAssets(modelSlot, 'eye'), window.desktop.listFaceComponentAssets(modelSlot, 'pupil'), window.desktop.listFaceComponentAssets(modelSlot, 'eyebrow')]).then((lists) => lists.flat()),
-      window.desktop.listFaceCatalog(modelSlot),
-      window.desktop.listFaceExpressionPresets(modelSlot),
-      window.desktop.listFaceExpressionCollections(modelSlot),
-      window.desktop.loadFaceExpressionWorkspaceDraft(modelSlot)
+      window.desktop.fabricator.loadFabricatorSlot(modelSlot),
+      Promise.all([window.desktop.fabricator.listFaceComponentAssets(modelSlot, 'eye'), window.desktop.fabricator.listFaceComponentAssets(modelSlot, 'pupil'), window.desktop.fabricator.listFaceComponentAssets(modelSlot, 'eyebrow')]).then((lists) => lists.flat()),
+      window.desktop.fabricator.listFaceCatalog(modelSlot),
+      window.desktop.fabricator.listFaceExpressionPresets(modelSlot),
+      window.desktop.fabricator.listFaceExpressionCollections(modelSlot),
+      window.desktop.fabricator.loadFaceExpressionWorkspaceDraft(modelSlot)
     ]).then(async ([model, components, catalogs, savedPresets, savedCollections, diskWorkspaceDraft]) => {
       const facialCatalogs = catalogs.filter((item) => item.category === 'nose' || item.category === 'mouth-closed' || item.category === 'mouth-open')
       const [loadedComponents, loadedCatalogs] = await Promise.all([
-        Promise.all(components.map((asset) => window.desktop.loadFaceComponentAsset(modelSlot, asset.id))),
-        Promise.all(facialCatalogs.map((item) => window.desktop.loadFaceCatalogItem(modelSlot, item.id)))
+        Promise.all(components.map((asset) => window.desktop.fabricator.loadFaceComponentAsset(modelSlot, asset.id))),
+        Promise.all(facialCatalogs.map((item) => window.desktop.fabricator.loadFaceCatalogItem(modelSlot, item.id)))
       ])
       if (cancelled) return
       const readyComponents = loadedComponents.filter((asset): asset is FaceComponentAsset => Boolean(asset))
@@ -374,7 +374,7 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
       // start from the selected Olhos DEV asset defaults on first edit.
       setPresets(loadedPresets)
       const firstPresetSummary = loadedPresets.find((preset) => preset.collectionId === EXPRESSION_COLLECTION_ID && preset.expressionIndex === 0)
-      const selectedPreset = firstPresetSummary ? await window.desktop.loadFaceExpressionPreset(modelSlot, firstPresetSummary.id) : null
+      const selectedPreset = firstPresetSummary ? await window.desktop.fabricator.loadFaceExpressionPreset(modelSlot, firstPresetSummary.id) : null
       if (cancelled) return
       setBaseComposition(initial)
       setBaseTransforms(initialTransforms)
@@ -451,7 +451,7 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
     if (workspaceSaveTimer.current) clearTimeout(workspaceSaveTimer.current)
     workspaceSaveTimer.current = setTimeout(() => {
       workspaceSaveTimer.current = null
-      void window.desktop.saveFaceExpressionWorkspaceDraft(modelSlot, workspaceDraft).then(() => {
+      void window.desktop.fabricator.saveFaceExpressionWorkspaceDraft(modelSlot, workspaceDraft).then(() => {
         if (latestWorkspaceDraft.current?.updatedAt === workspaceDraft.updatedAt) setWorkspaceSaveStatus('saved')
       }).catch((reason) => {
         if (latestWorkspaceDraft.current?.updatedAt === workspaceDraft.updatedAt) {
@@ -470,7 +470,7 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
     if (workspaceSaveTimer.current) clearTimeout(workspaceSaveTimer.current)
     workspaceSaveTimer.current = null
     const latest = latestWorkspaceDraft.current
-    if (latest?.modelSlot === modelSlot) void window.desktop.saveFaceExpressionWorkspaceDraft(modelSlot, latest).catch(() => undefined)
+    if (latest?.modelSlot === modelSlot) void window.desktop.fabricator.saveFaceExpressionWorkspaceDraft(modelSlot, latest).catch(() => undefined)
   }, [modelSlot])
 
   useEffect(() => {
@@ -597,7 +597,7 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
       for (const index of keys) {
         const key = expressionWorkingCopyKey(selectedCollectionId, index)
         const summary = existingByIndex.get(index)
-        const saved = summary ? await window.desktop.loadFaceExpressionPreset(modelSlot, summary.id) : null
+        const saved = summary ? await window.desktop.fabricator.loadFaceExpressionPreset(modelSlot, summary.id) : null
         const workingCopy = index === selectedExpressionIndex
           ? { id: presetId, composition, transforms, noseOpacity, effects }
           : workingCopies[key]
@@ -636,7 +636,7 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
       // One server-side transaction: all preset JSONs commit together, or the
       // durable journal restores and verifies the previous bytes on reopening.
       // Never attempt parallel best-effort rollbacks from the React renderer.
-      await window.desktop.saveFaceExpressionPresetBatch(modelSlot, nextPresets)
+      await window.desktop.fabricator.saveFaceExpressionPresetBatch(modelSlot, nextPresets)
 
       setBaseComposition(draft); setBaseTransforms(nextBaseTransforms); setBaseNoseOpacity(draftNoseOpacity)
       setWorkingCopies((current) => ({ ...current, ...nextCopies }))
@@ -644,7 +644,7 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
       if (active) {
         setPresetId(active.id); setComposition(active.composition); setTransforms(active.transforms); setPtPupils(structuredClone(active.ptPupils ?? {})); setNoseOpacity(active.noseOpacity); setEffects(active.effects)
       }
-      setPresets(await window.desktop.listFaceExpressionPresets(modelSlot))
+      setPresets(await window.desktop.fabricator.listFaceExpressionPresets(modelSlot))
       setOpen(false)
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Não foi possível aplicar a composição às expressões.')
@@ -860,7 +860,7 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
         return
       }
       const summary = expressionPresetByIndex.get(index)
-      const saved = summary ? await window.desktop.loadFaceExpressionPreset(modelSlot, summary.id) : null
+      const saved = summary ? await window.desktop.fabricator.loadFaceExpressionPreset(modelSlot, summary.id) : null
       if (saved) {
         setPresetId(saved.id); setComposition(saved.selections); setTransforms(cloneTransforms(saved.transforms)); setPtPupils(structuredClone(saved.ptPupils ?? {})); setNoseOpacity(saved.noseOpacity); setEffects(cloneEffects(saved.effects))
         return
@@ -900,7 +900,7 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
   const saveCurrentPreset = async () => {
     setSaving(true); setError(null)
     try {
-      const existing = await window.desktop.loadFaceExpressionPreset(modelSlot, presetId)
+      const existing = await window.desktop.fabricator.loadFaceExpressionPreset(modelSlot, presetId)
       const sameComposition = existing && JSON.stringify(existing.selections) === JSON.stringify(composition)
       const referenceTransforms = sameComposition && existing.referenceTransforms
         ? existing.referenceTransforms
@@ -914,10 +914,10 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
         ptPupilMotion:compilePtPupilMotion(ptPupils,referenceTransforms,authoredMetrics(composition,componentAssets,catalogItems)),
         noseOpacity, effects: cloneEffects(effects), updatedAt: new Date().toISOString()
       }
-      await window.desktop.saveFaceExpressionPreset(modelSlot, saved)
+      await window.desktop.fabricator.saveFaceExpressionPreset(modelSlot, saved)
       setPresetId(saved.id)
       setWorkingCopies((current) => ({ ...current, [expressionWorkingCopyKey(selectedCollectionId, selectedExpressionIndex)]: { id: saved.id, composition: saved.selections, transforms: saved.transforms, ptPupils:structuredClone(saved.ptPupils ?? {}), noseOpacity: saved.noseOpacity, effects: cloneEffects(saved.effects) } }))
-      setPresets(await window.desktop.listFaceExpressionPresets(modelSlot))
+      setPresets(await window.desktop.fabricator.listFaceExpressionPresets(modelSlot))
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível salvar este preset.') }
     finally { setSaving(false) }
   }
@@ -940,7 +940,7 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
         return
       }
       const summary = presets.find((preset) => preset.collectionId === collectionId && preset.expressionIndex === 0)
-      const saved = summary ? await window.desktop.loadFaceExpressionPreset(modelSlot, summary.id) : null
+      const saved = summary ? await window.desktop.fabricator.loadFaceExpressionPreset(modelSlot, summary.id) : null
       if (saved) {
         setPresetId(saved.id); setComposition(saved.selections); setTransforms(saved.transforms); setPtPupils(structuredClone(saved.ptPupils ?? {})); setNoseOpacity(saved.noseOpacity); setEffects(cloneEffects(saved.effects))
       } else {
@@ -959,7 +959,7 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
     const collection: FaceExpressionCollection = { schemaVersion: 1, id: crypto.randomUUID(), modelSlot, name, createdAt: now, updatedAt: now }
     setSaving(true); setError(null)
     try {
-      await window.desktop.saveFaceExpressionCollection(modelSlot, collection)
+      await window.desktop.fabricator.saveFaceExpressionCollection(modelSlot, collection)
       setCollections((current) => [...current, collection].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')))
       setWorkingCopies((current) => ({ ...current, [expressionWorkingCopyKey(selectedCollectionId, selectedExpressionIndex)]: {
         id: presetId, composition: structuredClone(composition), transforms: cloneTransforms(transforms), ptPupils:structuredClone(ptPupils), noseOpacity, effects: cloneEffects(effects)

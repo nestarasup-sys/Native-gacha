@@ -22,12 +22,12 @@ export function useWardrobePoseAudit(model: FabricatorProject | null, set: Wardr
     setResults([])
     setError('')
     try {
-      const slots = (await window.desktop.listFabricatorPoseSlots(model.slot))
+      const slots = (await window.desktop.fabricator.listFabricatorPoseSlots(model.slot))
         .filter(slot => slot !== null)
       const found: WardrobePoseAuditResult[] = []
       for(const summary of slots) {
         if (ticket.current !== mine) return
-        const pose = await window.desktop.loadFabricatorPose(model.slot,summary.slot)
+        const pose = await window.desktop.fabricator.loadFabricatorPose(model.slot,summary.slot)
         if (!pose) {
           found.push({slot:summary.slot,name:summary.name,status:'incompatible',
             warnings:['Pose não pôde ser carregada.'],checkedComponents:0})

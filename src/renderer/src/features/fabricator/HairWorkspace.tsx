@@ -150,7 +150,7 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
 
   useEffect(() => {
     let cancelled = false
-    void window.desktop.listFabricatorSlots().then((slots) => {
+    void window.desktop.fabricator.listFabricatorSlots().then((slots) => {
       if (cancelled) return
       setModels(slots)
       const firstAvailable = slots.find((slot): slot is NonNullable<typeof slot> => slot !== null)
@@ -172,7 +172,7 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
     setDirty(false)
     setError('')
     setLoadingProject(true)
-    void window.desktop.loadFabricatorSlot(modelSlot).then((loaded) => {
+    void window.desktop.fabricator.loadFabricatorSlot(modelSlot).then((loaded) => {
       if (cancelled) return
       setProject(projectForOriginalPreview(loaded))
       if (!loaded) setError('Este slot ainda não tem um modelo salvo.')
@@ -186,8 +186,8 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
     if (!head) return
     let cancelled = false
     setLoadingHair(true)
-    void Promise.all([window.desktop.loadHairWorkspace(modelSlot), window.desktop.listHairStyles(modelSlot)]).then(async ([saved, summaries]) => {
-      const styles = (await Promise.all(summaries.map((summary) => window.desktop.loadHairStyle(modelSlot, summary.id, true))))
+    void Promise.all([window.desktop.fabricator.loadHairWorkspace(modelSlot), window.desktop.fabricator.listHairStyles(modelSlot)]).then(async ([saved, summaries]) => {
+      const styles = (await Promise.all(summaries.map((summary) => window.desktop.fabricator.loadHairStyle(modelSlot, summary.id, true))))
         .filter((style): style is HairStyle => Boolean(style))
       if (cancelled) return
       const legacy = styles.find((style) => style.id === 'legacy-workspace')
@@ -366,7 +366,7 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
       fringe ? { id: 'fringe' as const, dataUrl: fringe.dataUrl } : null,
       sourceImageDataUrl ? { id: 'source' as const, dataUrl: sourceImageDataUrl } : null
     ].filter((asset): asset is NonNullable<typeof asset> => asset !== null)
-    await window.desktop.saveHairStyle(modelSlot, saved, assets)
+    await window.desktop.fabricator.saveHairStyle(modelSlot, saved, assets)
     return {
       ...saved,
       front: saved.front && front ? { ...front } : null,
@@ -410,7 +410,7 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
     if (!window.confirm(`Excluir permanentemente o conjunto “${styleName || activeStyle.name}”? Todas as peças, a folha original, os backups de gravação e a cópia de rascunho deste conjunto serão removidos. Personagens que usam este conjunto perderão essa referência.${dirtyMessage}`)) return
     setSaving(true); setError(''); setNotice('')
     try {
-      await window.desktop.deleteHairStyle(modelSlot, activeStyleId)
+      await window.desktop.fabricator.deleteHairStyle(modelSlot, activeStyleId)
       setHairWorkspace(emptyHairWorkspace(modelSlot))
       setDirty(false)
       setHairStyles((current) => current.filter((item) => item.id !== activeStyleId))
@@ -453,7 +453,7 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
         window.dispatchEvent(new Event('fabricator:assets-updated'))
         setNotice(`${category.label}, seu PNG e a folha original foram removidos. As outras peças do conjunto foram mantidas.`)
       } else {
-        await window.desktop.deleteHairStyle(modelSlot, savedSet.id)
+        await window.desktop.fabricator.deleteHairStyle(modelSlot, savedSet.id)
         setHairStyles((current) => current.filter((style) => style.id !== savedSet.id))
         setHairWorkspace(emptyHairWorkspace(modelSlot))
         setActiveStyleId(null)

@@ -13,8 +13,6 @@ declare global {
       platform: string
       appName: string
       normalizeImageForImport: (bytes: Uint8Array) => Promise<{ dataUrl: string; width: number; height: number; bitDepth: 8 | 16; sourceBytes: number; outputBytes: number }>
-      loadFabricatorDesignSettings: () => Promise<unknown | null>
-      saveFabricatorDesignSettings: (settings: unknown) => Promise<void>
       getAppDataStorageSummary: () => Promise<DataStorageSummary>
       getDataMigrationSummary: () => Promise<DataMigrationSummary>
       runDataMigration: () => Promise<DataMigrationResult>

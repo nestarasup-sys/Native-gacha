@@ -1,13 +1,8 @@
 import { useSyncExternalStore } from 'react'
+import type { FabricatorDesignBannerSlide, FabricatorDesignSettings } from '../../../shared/fabricator'
 
-export type DesignBannerSlide = {
-  id: string
-  title: string
-  subtitle: string
-  imageDataUrl: string | null
-}
-
-export type DesignSettings = { bannerSlides: DesignBannerSlide[] }
+export type DesignBannerSlide = FabricatorDesignBannerSlide
+export type DesignSettings = FabricatorDesignSettings
 
 const STORAGE_KEY = 'nymi.design.settings.v1'
 const CHANGE_EVENT = 'nymi-design-settings-changed'
@@ -58,9 +53,9 @@ function initializeSettings(): Promise<void> {
       const text = window.localStorage.getItem(STORAGE_KEY)
       if (text) legacy = normalizeSettings(JSON.parse(text) as unknown)
     } catch { /* The app-data copy remains the source of truth. */ }
-    const stored = await window.desktop.loadFabricatorDesignSettings()
+    const stored = await window.desktop.fabricator.loadFabricatorDesignSettings()
     if (settingsRevision === 0) cachedSettingsSnapshot = stored ? normalizeSettings(stored) : legacy ?? defaultDesignSettings
-    if (!stored) await window.desktop.saveFabricatorDesignSettings(cachedSettingsSnapshot)
+    if (!stored) await window.desktop.fabricator.saveFabricatorDesignSettings(cachedSettingsSnapshot)
     if (settingsRevision === 0) {
       try { window.localStorage.removeItem(STORAGE_KEY) } catch { /* Keep the legacy copy if the profile is unavailable. */ }
     }
@@ -79,7 +74,7 @@ export function saveDesignSettings(settings: DesignSettings): void {
   window.dispatchEvent(new Event(CHANGE_EVENT))
   saveQueue = saveQueue.catch(() => undefined).then(async () => {
     await initializeSettings()
-    await window.desktop.saveFabricatorDesignSettings(normalized)
+    await window.desktop.fabricator.saveFabricatorDesignSettings(normalized)
     if (settingsRevision === revision) {
       try { window.localStorage.removeItem(STORAGE_KEY) } catch { /* app-data remains authoritative */ }
     }

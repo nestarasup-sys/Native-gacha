@@ -19,7 +19,7 @@ export function ExpressionCharacterPreview({modelSlot,preset,gaze,onClose}:Props
   const [error,setError] = useState('')
   useEffect(()=>{
     let active=true
-    void window.desktop.listCustomizerCharacters().then(items=>{
+    void window.desktop.customizer.listCustomizerCharacters().then(items=>{
       if(!active)return
       const compatible=items.filter(item=>item.customization.modelSlot===modelSlot)
       setCharacters(compatible)
@@ -40,10 +40,10 @@ export function ExpressionCharacterPreview({modelSlot,preset,gaze,onClose}:Props
     void (async()=>{
       try {
         const base=character.customization.faceAppearance!
-        const next=await buildStudioExpressionAppearance(preset,base,id=>window.desktop.loadFaceCatalogItem(modelSlot,id))
+        const next=await buildStudioExpressionAppearance(preset,base,id=>window.desktop.fabricator.loadFaceCatalogItem(modelSlot,id))
         const transforms=await buildStudioExpressionTransforms(preset,next,{},
-          id=>window.desktop.loadFaceComponentAsset(modelSlot,id),
-          id=>window.desktop.loadFaceCatalogItem(modelSlot,id),gaze)
+          id=>window.desktop.fabricator.loadFaceComponentAsset(modelSlot,id),
+          id=>window.desktop.fabricator.loadFaceCatalogItem(modelSlot,id),gaze)
         const [neutral,expression]=await Promise.all([
           renderSavedCharacter(character),
           renderSavedCharacter({...character,customization:{...character.customization,faceAppearance:next}},transforms,preset.effects,'idle')

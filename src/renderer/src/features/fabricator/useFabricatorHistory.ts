@@ -48,7 +48,7 @@ export function useFabricatorHistory(deps: FabricatorHistoryDependencies) {
       return dataUrl || chromaBaseDataUrl ? [{ id: part.id, dataUrl: dataUrl ?? part.dataUrl, ...(chromaBaseDataUrl ? { chromaBaseDataUrl } : {}) }] : []
     })
     deps.setSaveState('saving')
-    void window.desktop.saveFabricatorHistory(currentProject.slot, forDisk, currentForDisk, changedAssets).then(() => {
+    void window.desktop.fabricator.saveFabricatorHistory(currentProject.slot, forDisk, currentForDisk, changedAssets).then(() => {
       for (const asset of changedAssets) if (deps.dirtyAssets.current.get(asset.id) === asset.dataUrl) deps.dirtyAssets.current.delete(asset.id)
       deps.setSaveState('saved')
       deps.setSlots((current) => current.map((item, index) => index + 1 === currentProject.slot ? { slot: currentProject.slot, name: currentProject.name, sourceName: currentProject.sourceName, partCount: currentProject.parts.length, updatedAt: currentProject.updatedAt } : item))

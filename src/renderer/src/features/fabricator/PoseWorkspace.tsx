@@ -143,21 +143,21 @@ export function PoseWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
     setLoading(true)
     try {
       const [modelSlots, poseSummaries] = await Promise.all([
-        window.desktop.listFabricatorSlots(),
-        window.desktop.listFabricatorPoseSlots()
+        window.desktop.fabricator.listFabricatorSlots(),
+        window.desktop.fabricator.listFabricatorPoseSlots()
       ])
       const preferredModelSlot = modelSlots.some((slot) => slot?.slot === baseModelSlot)
         ? baseModelSlot
         : modelSlots.find((slot) => slot)?.slot ?? poseSummaries[0]?.sourceModelSlot ?? 1
-      const draft = await window.desktop.loadFabricatorPoseDraft(preferredModelSlot)
+      const draft = await window.desktop.fabricator.loadFabricatorPoseDraft(preferredModelSlot)
       const displayedModelSlot = draft?.project.sourceModelSlot ?? preferredModelSlot
-      const sourceModel = await window.desktop.loadFabricatorSlot(displayedModelSlot)
+      const sourceModel = await window.desktop.fabricator.loadFabricatorSlot(displayedModelSlot)
       setModels(modelSlots)
       setAllPoseSlots(poseSummaries)
       setSelectedModelSlot(displayedModelSlot)
-      const configuredExportSlots = await window.desktop.getFabricatorExportPoseSlots(displayedModelSlot)
+      const configuredExportSlots = await window.desktop.fabricator.getFabricatorExportPoseSlots(displayedModelSlot)
       const initialExportSlots = configuredExportSlots ?? defaultExportPoseSlots(poseSummaries, displayedModelSlot)
-      if (configuredExportSlots === null) await window.desktop.saveFabricatorExportPoseSlots(displayedModelSlot, initialExportSlots)
+      if (configuredExportSlots === null) await window.desktop.fabricator.saveFabricatorExportPoseSlots(displayedModelSlot, initialExportSlots)
       setExportPoseSlots(initialExportSlots)
       setRecoveredDraft(draft)
       setSourcePreview(sourceModel ? poseFromModel(sourceModel) : null)
@@ -184,7 +184,7 @@ export function PoseWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
       return dataUrl ? [{ id: part.id, dataUrl }] : []
     })
     const serialized = toDraftSave(snapshot, targetSlot)
-    const write = writeQueue.current.catch(() => undefined).then(() => window.desktop.saveFabricatorPoseDraft(snapshot.sourceModelSlot, serialized, assets))
+    const write = writeQueue.current.catch(() => undefined).then(() => window.desktop.fabricator.saveFabricatorPoseDraft(snapshot.sourceModelSlot, serialized, assets))
     writeQueue.current = write
     return write.then(() => {
       for (const asset of assets) if (pendingAssets.current.get(asset.id) === asset.dataUrl) pendingAssets.current.delete(asset.id)
@@ -250,9 +250,9 @@ export function PoseWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
   const discardDraft = async () => {
     if (draftTimer.current) clearTimeout(draftTimer.current)
     const sourceModelSlot = projectRef.current?.sourceModelSlot ?? recoveredDraft?.project.sourceModelSlot ?? selectedModelSlot
-    try { await window.desktop.deleteFabricatorPoseDraft(sourceModelSlot) } catch { /* O conteúdo em memória continua editável. */ }
+    try { await window.desktop.fabricator.deleteFabricatorPoseDraft(sourceModelSlot) } catch { /* O conteúdo em memória continua editável. */ }
     try {
-      const sourceModel = await window.desktop.loadFabricatorSlot(sourceModelSlot)
+      const sourceModel = await window.desktop.fabricator.loadFabricatorSlot(sourceModelSlot)
       setSourcePreview(sourceModel ? poseFromModel(sourceModel) : null)
     } catch { setSourcePreview(null) }
     pendingAssets.current.clear()
@@ -282,7 +282,7 @@ export function PoseWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
     setSavingExportPoseSlots(true)
     setError('')
     try {
-      await window.desktop.saveFabricatorExportPoseSlots(selectedModelSlot, next)
+      await window.desktop.fabricator.saveFabricatorExportPoseSlots(selectedModelSlot, next)
       setExportPoseSlots(next)
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Não foi possível salvar os slots de poses para exportação.')
@@ -290,7 +290,7 @@ export function PoseWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
   }
 
   const beginNewPose = async (modelSlot: number) => {
-    const model = await window.desktop.loadFabricatorSlot(modelSlot)
+    const model = await window.desktop.fabricator.loadFabricatorSlot(modelSlot)
     if (!model) { setError('Não foi possível carregar esse modelo.'); return }
     const next = poseFromModel(model)
     pendingAssets.current = new Map(next.parts.map((part) => [part.id, part.dataUrl]))
@@ -326,7 +326,7 @@ export function PoseWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
     }
     setLoading(true)
     try {
-      const saved = await window.desktop.loadFabricatorPose(selectedModelSlot, slot)
+      const saved = await window.desktop.fabricator.loadFabricatorPose(selectedModelSlot, slot)
       if (!saved) throw new Error('O slot de pose não pôde ser carregado.')
       const { slot: _slot, ...editable } = saved
       // The draft is stored in a different folder from the saved pose, so copy
@@ -375,10 +375,10 @@ export function PoseWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
         return dataUrl ? [{ id: part.id, dataUrl }] : []
       })
       const saved: FabricatorPose = { ...snapshot, slot, category: resolvePoseCategory({ ...snapshot, slot }), updatedAt: new Date().toISOString() }
-      await window.desktop.saveFabricatorPose(snapshot.sourceModelSlot, slot, toSavedPose(saved, slot), assets)
+      await window.desktop.fabricator.saveFabricatorPose(snapshot.sourceModelSlot, slot, toSavedPose(saved, slot), assets)
       window.dispatchEvent(new Event('fabricator:assets-updated'))
       for (const asset of assets) if (pendingAssets.current.get(asset.id) === asset.dataUrl) pendingAssets.current.delete(asset.id)
-      await window.desktop.deleteFabricatorPoseDraft(snapshot.sourceModelSlot)
+      await window.desktop.fabricator.deleteFabricatorPoseDraft(snapshot.sourceModelSlot)
       setRecoveredDraft(null)
       setEditingSlot(slot)
       editingSlotRef.current = slot
@@ -397,10 +397,10 @@ export function PoseWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
     if (!editingSlot || !project) return
     if (!window.confirm(`Excluir permanentemente a pose “${project.name}” do slot ${editingSlot}?`)) return
     try {
-      await window.desktop.deleteFabricatorPose(selectedModelSlot, editingSlot)
+      await window.desktop.fabricator.deleteFabricatorPose(selectedModelSlot, editingSlot)
       const nextExportSlots = exportPoseSlots.map((slot) => slot === editingSlot ? null : slot)
       if (nextExportSlots.some((slot, index) => slot !== exportPoseSlots[index])) {
-        await window.desktop.saveFabricatorExportPoseSlots(selectedModelSlot, nextExportSlots)
+        await window.desktop.fabricator.saveFabricatorExportPoseSlots(selectedModelSlot, nextExportSlots)
         setExportPoseSlots(nextExportSlots)
       }
       await discardDraft()
@@ -498,18 +498,18 @@ export function PoseWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
     setSelectingModel(false)
     setLoading(true)
     try {
-      const draft = await window.desktop.loadFabricatorPoseDraft(modelSlot)
+      const draft = await window.desktop.fabricator.loadFabricatorPoseDraft(modelSlot)
       setRecoveredDraft(draft)
       if (draft) setActiveSlot(draft.editingSlot ?? 1)
-      const sourceModel = await window.desktop.loadFabricatorSlot(modelSlot)
-      const savedExportSlots = await window.desktop.getFabricatorExportPoseSlots(modelSlot)
+      const sourceModel = await window.desktop.fabricator.loadFabricatorSlot(modelSlot)
+      const savedExportSlots = await window.desktop.fabricator.getFabricatorExportPoseSlots(modelSlot)
       const initialExportSlots = savedExportSlots ?? defaultExportPoseSlots(allPoseSlots, modelSlot)
-      if (savedExportSlots === null) await window.desktop.saveFabricatorExportPoseSlots(modelSlot, initialExportSlots)
+      if (savedExportSlots === null) await window.desktop.fabricator.saveFabricatorExportPoseSlots(modelSlot, initialExportSlots)
       setExportPoseSlots(initialExportSlots)
       if (sourceModel) setSourcePreview(poseFromModel(sourceModel))
       else {
         const firstSavedPose = allPoseSlots.find((pose) => pose?.sourceModelSlot === modelSlot)
-        const savedPose = firstSavedPose ? await window.desktop.loadFabricatorPose(modelSlot, firstSavedPose.slot) : null
+        const savedPose = firstSavedPose ? await window.desktop.fabricator.loadFabricatorPose(modelSlot, firstSavedPose.slot) : null
         setSourcePreview(savedPose ? (({ slot: _slot, ...pose }) => pose)(savedPose) : null)
       }
       setError('')

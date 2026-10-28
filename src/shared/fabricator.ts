@@ -411,7 +411,19 @@ export type AnimatorAnimationDraft = {
 }
 export type AnimatorAnimationAsset = { id: string; dataUrl: string }
 
+export type FabricatorDesignBannerSlide = {
+  id: string
+  title: string
+  subtitle: string
+  imageDataUrl: string | null
+}
+
+export type FabricatorDesignSettings = { bannerSlides: FabricatorDesignBannerSlide[] }
+
 export type FabricatorDesktopApi = {
+  /** Leitura permanece desconhecida para que o renderer normalize dados locais legados antes de usá-los. */
+  loadFabricatorDesignSettings: () => Promise<unknown | null>
+  saveFabricatorDesignSettings: (settings: FabricatorDesignSettings) => Promise<void>
   listFabricatorSlots: () => Promise<FabricatorSlotSummary[]>
   importFabricatorModel: (slot: number, mode?: 'import' | 'reimport') => Promise<{ sourceName: string; sourceAssetName: string; sourceDataUrl: string } | null>
   loadFabricatorSlot: (slot: number) => Promise<FabricatorProject | null>

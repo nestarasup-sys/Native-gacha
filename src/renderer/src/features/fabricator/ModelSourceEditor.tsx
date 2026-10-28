@@ -759,7 +759,7 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
     setDownloadInfo('')
     try {
       const result = await compile()
-      const path = await window.desktop.downloadFabricatorModelSource(draft.slot, result.previewDataUrl)
+      const path = await window.desktop.fabricator.downloadFabricatorModelSource(draft.slot, result.previewDataUrl)
       setDownloadInfo('PNG salvo em Downloads: ' + path)
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Não foi possível baixar a imagem.')

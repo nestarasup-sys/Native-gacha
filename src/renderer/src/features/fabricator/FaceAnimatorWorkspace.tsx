@@ -116,13 +116,13 @@ export function FaceAnimatorWorkspace({ modelSlot }: { modelSlot: number }) {
     void (async () => {
       try {
         const [model, summaries, componentSummaries, catalogSummaries] = await Promise.all([
-          window.desktop.loadFabricatorSlot(modelSlot), window.desktop.listFaceExpressionPresets(modelSlot),
-          window.desktop.listFaceComponentAssets(modelSlot), window.desktop.listFaceCatalog(modelSlot)
+          window.desktop.fabricator.loadFabricatorSlot(modelSlot), window.desktop.fabricator.listFaceExpressionPresets(modelSlot),
+          window.desktop.fabricator.listFaceComponentAssets(modelSlot), window.desktop.fabricator.listFaceCatalog(modelSlot)
         ])
         const [loadedPresets, loadedComponents, loadedCatalog] = await Promise.all([
-          Promise.all(summaries.map((entry) => window.desktop.loadFaceExpressionPreset(modelSlot, entry.id))),
-          Promise.all(componentSummaries.map((entry) => window.desktop.loadFaceComponentAsset(modelSlot, entry.id))),
-          Promise.all(catalogSummaries.map((entry) => window.desktop.loadFaceCatalogItem(modelSlot, entry.id)))
+          Promise.all(summaries.map((entry) => window.desktop.fabricator.loadFaceExpressionPreset(modelSlot, entry.id))),
+          Promise.all(componentSummaries.map((entry) => window.desktop.fabricator.loadFaceComponentAsset(modelSlot, entry.id))),
+          Promise.all(catalogSummaries.map((entry) => window.desktop.fabricator.loadFaceCatalogItem(modelSlot, entry.id)))
         ])
         if (!active) return
         setProject(projectForOriginalPreview(model))
@@ -395,7 +395,7 @@ export function FaceAnimatorWorkspace({ modelSlot }: { modelSlot: number }) {
       stream = null
       if (exportCancelRef.current) { setExportStatus('Exportação cancelada.'); return }
       setExportStatus('Abrindo local para salvar…')
-      const saved = await window.desktop.saveFaceAnimationExport(modelSlot, new Uint8Array(await blob.arrayBuffer()))
+      const saved = await window.desktop.fabricator.saveFaceAnimationExport(modelSlot, new Uint8Array(await blob.arrayBuffer()))
       setExportStatus(saved ? 'Vídeo exportado com sucesso.' : 'Salvamento cancelado.')
       setExportProgress(saved ? 1 : 0)
     } catch (reason) {

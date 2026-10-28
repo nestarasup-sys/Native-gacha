@@ -305,7 +305,7 @@ export function WardrobeWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
     setModel(null); setSets([]); setCatalogIssues([]); setDraft(null); setActiveSetId(null); setSelectedId(null)
     setError('')
     try {
-      const [savedModels, reference, library] = await Promise.all([window.desktop.listFabricatorSlots(), window.desktop.loadFabricatorSlot(targetSlot), window.desktop.listWardrobeSetsDetailed(targetSlot)])
+      const [savedModels, reference, library] = await Promise.all([window.desktop.fabricator.listFabricatorSlots(), window.desktop.fabricator.loadFabricatorSlot(targetSlot), window.desktop.fabricator.listWardrobeSetsDetailed(targetSlot)])
       if (requestRef.current !== requestId) return
       setModels(savedModels)
       const firstAvailableModel = savedModels.find((slot) => slot)
@@ -313,7 +313,7 @@ export function WardrobeWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
       let recoveredModel = reference
       if (reference) {
         try {
-          const history = await window.desktop.loadFabricatorHistory(targetSlot)
+          const history = await window.desktop.fabricator.loadFabricatorHistory(targetSlot)
           if (history) recoveredModel = recoverWardrobeReferenceModel(reference, history)
         } catch { /* Keep calibration available if no history can be read. */ }
       }
@@ -364,7 +364,7 @@ export function WardrobeWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
     const requestId = ++requestRef.current
     setOpeningSet(true)
     try {
-      const loaded = await window.desktop.loadWardrobeSet(modelSlot, id)
+      const loaded = await window.desktop.fabricator.loadWardrobeSet(modelSlot, id)
       if (requestRef.current !== requestId) return
       if (!loaded) throw new Error('Não foi possível encontrar este conjunto.')
       const incompatible = loaded.components.filter((component) => {
@@ -487,7 +487,7 @@ export function WardrobeWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
       : part)
     const calibrated = { ...model, parts, updatedAt: new Date().toISOString() }
     setModel(calibrated); setCalibratingPartId(null); setError('')
-    try { await window.desktop.saveFabricatorProject(serializeModel(calibrated), []) }
+    try { await window.desktop.fabricator.saveFabricatorProject(serializeModel(calibrated), []) }
     catch (reason) { setError(reason instanceof Error ? `Calibração aplicada nesta sessão, mas não foi salva: ${reason.message}` : 'Calibração aplicada nesta sessão, mas não foi salva.') }
   }
   const handleArtboardPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -763,17 +763,17 @@ export function WardrobeWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
          }
          return assets
        })
-       await window.desktop.saveWardrobeSet(modelSlot, serialized, images)
+       await window.desktop.fabricator.saveWardrobeSet(modelSlot, serialized, images)
       window.dispatchEvent(new Event('fabricator:assets-updated'))
       dirtyWarpImageIdsRef.current.clear()
-      setDraft(set); setActiveSetId(set.id); setDirty(false); setSets(await window.desktop.listWardrobeSets(modelSlot))
+      setDraft(set); setActiveSetId(set.id); setDirty(false); setSets(await window.desktop.fabricator.listWardrobeSets(modelSlot))
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível salvar o conjunto.') }
     finally { setSaving(false) }
   }
   const deleteSet = async () => {
     if (processing || saving || openingSet) return
     if (!activeSetId || !window.confirm(`Excluir permanentemente o conjunto “${draft?.name ?? activeSetId}”?`)) return
-    try { await window.desktop.deleteWardrobeSet(modelSlot, activeSetId); clearWardrobeWarpState(); setDraft(null); setActiveSetId(null); setSelectedId(null); setDirty(false); setSets(await window.desktop.listWardrobeSets(modelSlot)) }
+    try { await window.desktop.fabricator.deleteWardrobeSet(modelSlot, activeSetId); clearWardrobeWarpState(); setDraft(null); setActiveSetId(null); setSelectedId(null); setDirty(false); setSets(await window.desktop.fabricator.listWardrobeSets(modelSlot)) }
     catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível excluir o conjunto.') }
   }
   const openTestPosePicker = async () => {
@@ -792,7 +792,7 @@ export function WardrobeWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
     setTestPosePickerOpen(true)
     setTestPoseLoading(true)
     try {
-      const slots = await window.desktop.listFabricatorPoseSlots(requestedModelSlot)
+      const slots = await window.desktop.fabricator.listFabricatorPoseSlots(requestedModelSlot)
       if (requestId !== testPoseRequestRef.current) return
       setTestPoseSlots(slots.filter((slot): slot is NonNullable<typeof slot> => slot !== null))
     }
@@ -804,7 +804,7 @@ export function WardrobeWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
     const requestedModelSlot = modelSlot
     setTestPoseLoading(true)
     try {
-      const pose = await window.desktop.loadFabricatorPose(requestedModelSlot, slot)
+      const pose = await window.desktop.fabricator.loadFabricatorPose(requestedModelSlot, slot)
       if (requestId !== testPoseRequestRef.current) return
       if (!pose || pose.sourceModelSlot !== requestedModelSlot || pose.slot !== slot) throw new Error('Esta pose não está mais disponível para o modelo selecionado.')
       setTestDragOffsets({}); setBodyOffsets({}); setMoveBodyMode(false); setTestPose(pose); setTestPosePickerOpen(false); setError('')
