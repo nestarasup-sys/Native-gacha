@@ -26,11 +26,16 @@ const writeFile = (path: string, data: string | NodeJS.ArrayBufferView, options?
 const formats = { mp4: 'video/mp4', webm: 'video/webm', mov: 'video/quicktime', m4v: 'video/x-m4v' } as const
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const maxFrames = 60 * 60 * 60 * 24
-type Entry = Omit<VideoLibraryItem, 'available' | 'studios'> & { sha256?: string }
+type Entry = Omit<VideoLibraryItem, 'available'> & { sha256?: string }
 type Catalog = { schemaVersion: 1; items: Entry[]; deleted: Array<{ id: string; extension: Entry['extension'] }> }
 const validId = (id: unknown): id is string => typeof id === 'string' && uuid.test(id)
 const requireId = (id: unknown) => { if (!validId(id)) throw new Error('Identificador de vídeo ou roteiro inválido.') }
 const exists = async (path: string) => { try { await access(path); return true } catch (reason) { if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return false; throw reason } }
+function toLibraryItem(entry: Entry, available: boolean): VideoLibraryItem {
+  const item = { ...entry } as Entry & { studios?: unknown }
+  delete item.studios
+  return { ...item, available }
+}
 function validEntry(value: unknown): value is Entry {
   if (!value || typeof value !== 'object') return false
   const item = value as Entry
@@ -103,8 +108,8 @@ export class VideoLibraryStore {
     return this.run(async () => {
       const catalog = await this.readCatalog()
       await this.cleanupDeleted(catalog)
-      return Promise.all(catalog.items.sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map(async (item) => ({ ...item,
-        available: await exists(this.mediaPath(item)), studios: [] })))
+      return Promise.all(catalog.items.sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map(async (item) =>
+        toLibraryItem(item, await exists(this.mediaPath(item)))))
     })
   }
   async importFile(source: string): Promise<VideoLibraryItem> {
@@ -128,7 +133,7 @@ export class VideoLibraryStore {
         if (!catalogContainsItem) await unlink(mediaPath).catch(() => undefined)
         throw error
       }
-      return { ...item, available: true, studios: [] }
+      return toLibraryItem(item, true)
     })
   }
   async finishImport(id: string, durationFrames: number): Promise<VideoLibraryItem> {
@@ -140,7 +145,7 @@ export class VideoLibraryStore {
       if (!item) throw new Error('Este vídeo foi removido da biblioteca.')
       item.durationFrames = durationFrames
       await this.writeCatalog(catalog)
-      return { ...item, available: await exists(this.mediaPath(item)), studios: [] }
+      return toLibraryItem(item, await exists(this.mediaPath(item)))
     })
   }
   async rename(id: string, name: string): Promise<VideoLibraryItem> {
@@ -153,7 +158,7 @@ export class VideoLibraryStore {
       if (!item) throw new Error('Vídeo não encontrado na biblioteca.')
       item.name = nextName
       await this.writeCatalog(catalog)
-      return { ...item, available: await exists(this.mediaPath(item)), studios: [] }
+      return toLibraryItem(item, await exists(this.mediaPath(item)))
     })
   }
   async delete(id: string): Promise<void> {

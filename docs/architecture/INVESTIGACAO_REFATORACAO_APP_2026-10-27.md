@@ -4,7 +4,9 @@
 
 **Última atualização:** 2026-10-28
 
-**Base da reauditoria:** branch local `Dev-V2`, criada sobre `Main-desenvolvimento` no commit `6c2997223430ded043043222469b1fc20a63084f`.
+**Base histórica da reauditoria:** branch local `Dev-V2`, criada sobre `Main-desenvolvimento` no commit `6c2997223430ded043043222469b1fc20a63084f`.
+
+**Base desta etapa:** commit `2068c1e` (`feat(hair-dev): manage hair as sets`), branch local `Dev-V2`.
 
 **Escopo:** registrar a arquitetura atual de todas as áreas e conduzir a refatoração por domínio, sem quebrar dados ou fluxos existentes.
 
@@ -112,7 +114,7 @@ O renderer não abre SQLite nem acessa o disco diretamente. `electron/main.ts` c
 | Estado “Rascunho/Base” | A tela calcula isso pela presença de `video_number` em `base_video_details`; não há tabela de rascunhos separada. | “Rascunho” é um estado de publicação dentro do mesmo catálogo, não uma biblioteca física independente. |
 | Consumidores | Roteiros e Editor V6 escolhem e consultam itens via `desktop.mediaLibrary`; metadados editoriais via `desktop.baseVideos`. | A relação por ID fica clara e não duplica o arquivo. |
 | Exclusão | Os canais da Base e da Biblioteca compartilham a mesma proteção de referências. | A regra é comum; novos consumidores precisam registrar seu leitor no serviço da biblioteca. |
-| Tipo legado | `VideoLibraryItem` ainda mantém o campo `studios` em `src/shared/mediaLibrary.ts`. | O contrato foi movido para o domínio de mídia, mas o campo antigo merece remoção apenas após verificar todos os consumidores e dados. |
+| Campo removido | O antigo campo `studios` foi retirado de `VideoLibraryItem` e das respostas da biblioteca de vídeos. | A busca incluiu Base de Vídeos, Roteiros, Editor V6, preload, IPC e persistência; nenhuma área consumia o campo. O Studio mantém seu campo `studios` próprio para fundos de imagem, com vínculos reais. Propriedades desconhecidas em catálogos legados não são removidas do disco. |
 
 ### Propriedade recomendada
 
@@ -143,7 +145,7 @@ Editor V6
 3. **Mover a UI — concluído:** BaseVideosPage tem pasta própria e preserva sua rota/layout.
 4. **Desacoplar referências — concluído nesta etapa:** leitores ficam nos domínios donos e uma proteção comum verifica Roteiros e Editor V6 antes da exclusão.
 5. **Concluído — separar concorrência por responsabilidade:** salvamentos de referências e exclusão passam por um coordenador curto, mantendo `roteirosSaveQueue` e a fila do Editor V6 para o restante das operações.
-6. **Consolidar a biblioteca de mídia:** mover API e tipo hoje pendurados em `studio.ts` para `mediaLibrary`, removendo os campos `studios` apenas após verificar compatibilidade de todos os consumidores e documentos persistidos.
+6. **Concluído nesta etapa — consolidar o contrato da biblioteca de vídeos:** `VideoLibraryItem` não carrega mais `studios`, antes sintetizado como lista vazia; o DTO filtra essa propriedade se ela estiver em um catálogo antigo, sem regravar ou descartar os dados persistidos. O campo homônimo da biblioteca de fundos do Studio é separado e permanece em uso.
 7. **Somente depois avaliar o schema:** manter `base_video_details`, tabelas de Roteiros e IDs atuais. Não é necessário separar SQLite por arquivo para obter isolamento de domínio. Qualquer normalização de `video_asset_json` para uma tabela relacional exige inventário de documentos legados, migração testável e rollback.
 
 ### Critérios de aceitação
@@ -204,7 +206,7 @@ Editor V6
 
 - **Concluído:** isolar contratos e APIs por namespace, mover a UI e centralizar a verificação das referências.
 - **Concluído:** coordenar gravações de Roteiros e Editor V6 com exclusão de mídia; preservar as filas e a ordem existentes por domínio.
-- **Pendente:** retirar o campo `studios` do contrato de mídia após inventariar consumidores legados.
+- **Concluído nesta etapa:** retirar `studios` do contrato da biblioteca de vídeos após mapear seus consumidores e confirmar que a persistência não depende dele.
 - Preservar caminho, IDs, JSON, schema SQLite e vínculos atuais.
 
 ### Ciclo 2 — Composição Electron e domínio de Roteiros

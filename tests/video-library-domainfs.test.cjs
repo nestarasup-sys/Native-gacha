@@ -39,7 +39,10 @@ test('video imports resolve physical content from active app-data domain storage
     const imported = await library.importFile(source)
     assert.equal(imported.durationFrames, null)
     assert.equal(imported.sha256, createHash('sha256').update(bytes).digest('hex'))
-    assert.equal((await library.list())[0].available, true)
+    assert.equal(Object.hasOwn(imported, 'studios'), false)
+    const listed = await library.list()
+    assert.equal(listed[0].available, true)
+    assert.equal(Object.hasOwn(listed[0], 'studios'), false)
 
     const logicalMedia = path.join(libraryRoot, 'media-library', 'videos', `${imported.id}.mp4`)
     const physicalMedia = await adapter.resolvePhysicalPath(logicalMedia)
@@ -49,7 +52,18 @@ test('video imports resolve physical content from active app-data domain storage
 
     const ready = await library.finishImport(imported.id, 600)
     assert.equal(ready.durationFrames, 600)
-    assert.equal((await library.list())[0].durationFrames, 600)
+    assert.equal(Object.hasOwn(ready, 'studios'), false)
+
+    // Old/unknown catalog properties are kept on disk, but aren't part of the
+    // current video-library IPC contract.
+    const catalogPath = path.join(libraryRoot, 'media-library', 'catalog.json')
+    const legacyCatalog = JSON.parse(await adapter.readFile(catalogPath, 'utf8'))
+    legacyCatalog.items[0].studios = [{ id: 'legacy', title: 'Legacy' }]
+    await adapter.writeFile(catalogPath, JSON.stringify(legacyCatalog, null, 2), 'utf8')
+    const afterLegacyRead = await library.list()
+    assert.equal(Object.hasOwn(afterLegacyRead[0], 'studios'), false)
+    const preservedCatalog = JSON.parse(await adapter.readFile(catalogPath, 'utf8'))
+    assert.deepEqual(preservedCatalog.items[0].studios, [{ id: 'legacy', title: 'Legacy' }])
   } finally {
     catalog.close()
     await fs.rm(root, { recursive: true, force: true })

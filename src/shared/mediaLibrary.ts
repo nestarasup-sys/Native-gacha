@@ -8,8 +8,6 @@ export type VideoLibraryItem = {
   durationFrames: number | null
   createdAt: string
   available: boolean
-  /** Campo legado mantido no DTO durante a separação dos contratos. */
-  studios: Array<{ id: string; title: string }>
 }
 
 /** Snapshot da referência persistida em um documento; o arquivo sempre se resolve pelo id. */
