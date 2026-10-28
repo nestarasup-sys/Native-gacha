@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, protocol, session, shell, type IpcMainInvokeEvent, type MessageBoxOptions } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, protocol, session, shell, type IpcMainInvokeEvent } from 'electron'
 import { createReadStream, existsSync, lstatSync, mkdirSync, readFileSync, realpathSync } from 'node:fs'
 import { mkdir as nativeMkdir, readFile as nativeReadFile, writeFile as nativeWriteFile, readdir as nativeReaddir, unlink as nativeUnlink, rename as nativeRename, stat as nativeStat, access as nativeAccess, rm as nativeRm, copyFile as nativeCopyFile } from 'node:fs/promises'
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
@@ -21,6 +21,7 @@ import { DomainFileSystem } from './domainFileSystem.cjs'
 import { DataMigrationService } from './dataMigration.cjs'
 import { DataBackupService } from './dataBackups.cjs'
 import { registerDataMigrationHandlers } from './domains/storage/dataMigrationIpc'
+import { registerDataBackupHandlers } from './domains/storage/dataBackupIpc'
 import { configureAssetImageStorage, readAssetImage, writeAssetImageSource } from './assetImageOverrides'
 import { migrateElectronProfile } from './electronProfileMigration.cjs'
 import { normalizeImageBuffer } from './imageIngestion.cjs'
@@ -1986,65 +1987,24 @@ app.whenReady().then(async () => {
       for (const window of BrowserWindow.getAllWindows()) if (!window.isDestroyed()) window.webContents.send('app:data-migration:progress', progress)
     }
   })
-  ipcMain.handle('app:data-storage-summary', async (event) => {
-    assertTrustedSender(event)
-    return { disk: await getAppDataUsage(app.getPath('appData')), catalog: dataPlatform.storageSummary() }
-  })
-  ipcMain.handle('app:data-backups:list', async (event) => {
-    assertTrustedSender(event)
-    if (!dataBackupService) throw new Error('Serviço de backup ainda não inicializado.')
-    return dataBackupService.listBackups()
-  })
-  ipcMain.handle('app:data-backups:create', async (event) => {
-    assertTrustedSender(event)
-    if (!dataBackupService) throw new Error('Serviço de backup ainda não inicializado.')
-    const window = BrowserWindow.fromWebContents(event.sender)
-    if (window && !window.webContents.isLoading()) await window.webContents.executeJavaScript('window.desktop?.flushPendingWrites?.()')
-    const pending = [
-      ...fabricatorSaveQueues.values(), ...poseSaveWrites, ...hairSaveQueues.values(), animatorSaveQueue,
-      wardrobeSaveQueue, faceSaveQueue, expressionPresetSaveQueue, faceGuideSaveQueue, customizerService.pendingWrites,
-      studioSaveQueues.studio, editorV6SaveQueue
-    ]
-    const results = await Promise.allSettled(pending)
-    const failed = results.find((result): result is PromiseRejectedResult => result.status === 'rejected')
-    if (failed) throw failed.reason
-    return dataBackupService.createBackup()
-  })
-  ipcMain.handle('app:data-backups:verify', async (event, id: string) => {
-    assertTrustedSender(event)
-    if (!dataBackupService) throw new Error('Serviço de backup ainda não inicializado.')
-    return dataBackupService.verifyBackup(id)
-  })
-  ipcMain.handle('app:data-backups:restore', async (event, id: string) => {
-    assertTrustedSender(event)
-    if (!dataBackupService) throw new Error('Serviço de backup ainda não inicializado.')
-    const owner = BrowserWindow.fromWebContents(event.sender)
-    const options: MessageBoxOptions = {
-      type: 'warning', title: 'Restaurar dados',
-      message: 'O app será reiniciado usando este backup. Antes disso, criará uma cópia de segurança do estado atual. A restauração só será concluída após o novo app abrir.',
-      detail: 'Esse processo substitui as bibliotecas e os projetos atuais pelos dados do backup escolhido.',
-      buttons: ['Restaurar e reiniciar', 'Cancelar'], defaultId: 1, cancelId: 1
-    }
-    const choice = owner ? await dialog.showMessageBox(owner, options) : await dialog.showMessageBox(options)
-    if (choice.response !== 0) return { cancelled: true }
-    const safety = await dataBackupService.createBackup()
-    const staged = await dataBackupService.stageRestore(id)
-    app.relaunch()
-    app.quit()
-    return { cancelled: false, safetyBackupId: safety.id, ...staged }
-  })
-  ipcMain.handle('app:data-backups:delete', async (event, id: string) => {
-    assertTrustedSender(event)
-    if (!dataBackupService) throw new Error('Serviço de backup ainda não inicializado.')
-    const owner = BrowserWindow.fromWebContents(event.sender)
-    const options: MessageBoxOptions = {
-      type: 'warning', title: 'Excluir backup', message: 'Excluir este backup permanentemente?',
-      detail: 'A exclusão não altera os dados atuais do aplicativo.', buttons: ['Excluir backup', 'Cancelar'], defaultId: 1, cancelId: 1
-    }
-    const choice = owner ? await dialog.showMessageBox(owner, options) : await dialog.showMessageBox(options)
-    if (choice.response !== 0) return { deleted: false }
-    await dataBackupService.deleteBackup(id)
-    return { deleted: true }
+  registerDataBackupHandlers({
+    ipcMain, assertTrustedSender,
+    getStorageSummary: async () => ({ disk: await getAppDataUsage(app.getPath('appData')), catalog: dataPlatform.storageSummary() }),
+    getService: () => dataBackupService,
+    flushPendingWrites: async (event) => {
+      const window = BrowserWindow.fromWebContents(event.sender)
+      if (window && !window.webContents.isLoading()) await window.webContents.executeJavaScript('window.desktop?.flushPendingWrites?.()')
+      const pending = [
+        ...fabricatorSaveQueues.values(), ...poseSaveWrites, ...hairSaveQueues.values(), animatorSaveQueue,
+        wardrobeSaveQueue, faceSaveQueue, expressionPresetSaveQueue, faceGuideSaveQueue, customizerService.pendingWrites,
+        studioSaveQueues.studio, editorV6SaveQueue
+      ]
+      const results = await Promise.allSettled(pending)
+      const failed = results.find((result): result is PromiseRejectedResult => result.status === 'rejected')
+      if (failed) throw failed.reason
+    },
+    relaunch: () => app.relaunch(),
+    quit: () => app.quit()
   })
   dataMigrationIpc = registerDataMigrationHandlers({
     ipcMain, assertTrustedSender,
