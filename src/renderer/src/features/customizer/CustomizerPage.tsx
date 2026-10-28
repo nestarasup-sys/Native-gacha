@@ -7,12 +7,12 @@ import { useCustomizerBodyAppearance } from './useCustomizerBodyAppearance'
 import { useCustomizerCharacterSourceSelection } from './useCustomizerCharacterSourceSelection'
 import { CustomizerModelPicker } from './CustomizerModelPicker'
 import { CustomizerClothesAdjustmentPanel } from './CustomizerClothesAdjustmentPanel'
+import { CustomizerHeadAdjustmentPanel } from './CustomizerHeadAdjustmentPanel'
 import { buildClothesAdjustmentEntries } from './customizerClothesAdjustmentModel'
-import { hasHeadAdjustmentItem, headAdjustmentPreviewUrl } from './customizerHeadAdjustmentModel'
 import { upperWardrobePanels, upperWardrobePageTwoPanels, accessoryWardrobePanels, lowerWardrobePanels, lowerWardrobePageTwoPanels, wardrobePanelCandidates, isWardrobePanelCandidateSelected, renderWardrobeThumbnail } from './wardrobePanelModel'
 import type { WardrobePanel } from './wardrobePanelModel'
 import { HairAssetPreview, WardrobePanelCandidatePreview } from './CustomizerAssetPreviews'
-import { customizerFaceParts, customizerSkinTonePresets, facePartCatalogId, facePartColorControls, facePartSourceId, hasSelectedFaceAsset, mirroredFaceThumbnailIds, sameFaceAssetPair, skinTonePresets, wrapSlotIndex } from './customizerFaceCatalogModel'
+import { customizerFaceParts, customizerSkinTonePresets, facePartCatalogId, facePartColorControls, facePartSourceId, hasSelectedFaceAsset, sameFaceAssetPair, skinTonePresets, wrapSlotIndex } from './customizerFaceCatalogModel'
 import type { FaceLibraryPartId } from './customizerFaceCatalogModel'
 import { hairColorControls, hairPalettePresets, MouthBlushControls, NoseOpacityControl, NoseSkinTonePalette, PiecePaletteStrip } from './CustomizerAppearanceControls'
 import { renderCustomizerBasePreview } from './customizerCharacterPreview'
@@ -23,14 +23,14 @@ import { useCustomizerWardrobeAdjustment } from './useCustomizerWardrobeAdjustme
 import { useCustomizerWardrobePanelActions } from './useCustomizerWardrobePanelActions'
 import { useCustomizerHeadAdjustment } from './useCustomizerHeadAdjustment'
 import { sampleOriginalSkinTone } from './customizerPreviewImages'
-import { CustomizerCategoryIcon, clothesAdjustmentDefinitions, customizerClothesTabs, customizerHeadTabs, customizerModuleByTab, customizerModuleNames, customizerOtherTabs, customizerTopTabs, headAdjustmentItems, headAdjustmentItemsFor } from './customizerNavigation'
+import { CustomizerCategoryIcon, clothesAdjustmentDefinitions, customizerClothesTabs, customizerHeadTabs, customizerModuleByTab, customizerModuleNames, customizerOtherTabs, customizerTopTabs, headAdjustmentItemsFor } from './customizerNavigation'
 import { adjustableHairPartIds, hairAppearancePartStyleId } from './customizerHairAppearanceModel'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { RenderedCharacterPortrait } from '../../ui/components/RenderedCharacterPortrait'
 import { Icon } from '../../ui/components/Icon'
 import type { FaceCatalogItem, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSummary, FaceComponentKind, FaceDetailKind, FaceSheetKind, FabricatorPose, FabricatorProject, HairStyleSummary, WardrobeSet } from '../../../../shared/fabricator'
 import { resolvePoseCategory } from '../../../../shared/fabricator'
-import type { CustomizerCharacter, CustomizerFaceAppearance, CustomizerWardrobeGroup, FaceComponentPartId, FacePalettePartId, HairColorOverrides, HairColorRole, HairPartId } from '../../../../shared/customizer'
+import type { CustomizerCharacter, CustomizerFaceAppearance, CustomizerWardrobeGroup, FacePalettePartId, HairColorOverrides, HairColorRole, HairPartId } from '../../../../shared/customizer'
 import { characterBodyDimensionLimits, characterProportionLimits, defaultCharacterProportions, getCharacterBodyDimensions, getCharacterProportions, type CharacterProportions } from '../../../../shared/customizer'
 import { usePreviewBackground } from '../../ui/hooks/usePreviewBackground'
 import { DesignBanner } from '../../ui/components/DesignBanner'
@@ -1570,56 +1570,20 @@ export function CustomizerPage() {
       />
     }
     const items = headAdjustmentItemsFor(headCategorySelection)
-    const selectedId = headAdjustSelection
-    const previewFor = (id: string) => headAdjustmentPreviewUrl(id, selectedCharacter, {
-      hair: hairDetails,
-      faceComponents: faceComponentDetails,
-      wardrobe: wardrobeDetails,
-      faceCatalog: faceCatalogDetails
-    })
-    const selectedItem = items.find((item) => item.id === selectedId)
-    const appliedItems = items.filter((item) => hasHeadAdjustmentItem(item.id))
-    const selectedWardrobeGroup = selectedId === 'oculos' || selectedId === 'acessorio-cabeca' ? [...(selectedCharacter?.customization.wardrobeGroups ?? [])].reverse().find((group) => group.category === selectedId) : undefined
-    const selectedOverride = selectedId ? selectedCharacter?.customization.partOverrides?.[`head:${selectedId}`] : undefined
-    const transform = { x: selectedWardrobeGroup?.offsetX ?? selectedOverride?.x ?? 0, y: selectedWardrobeGroup?.offsetY ?? selectedOverride?.y ?? 0, scaleX: selectedWardrobeGroup?.scaleX ?? selectedOverride?.scaleX ?? 1, scaleY: selectedWardrobeGroup?.scaleY ?? selectedOverride?.scaleY ?? 1, rotation: selectedWardrobeGroup?.rotation ?? selectedOverride?.rotation ?? 0 }
-    const selectedDimmed = Boolean(selectedWardrobeGroup?.hidden ?? selectedOverride?.hidden)
-    const changeTransform = (patch: Partial<typeof transform>) => void updateHeadAdjustment('transform', { ...transform, ...patch })
-    const moveBy = (x: number, y: number) => changeTransform({ x: transform.x + x, y: transform.y + y })
     const headLabel = customizerHeadTabs.find((tab) => tab.id === headCategorySelection)?.label ?? 'categoria selecionada'
-    return <section className="customizer-adjust-picker customizer-clothes-adjust-detail" aria-label={`Ajustes de cabeça · ${headLabel}`}>
-        <header className="customizer-adjust-heading customizer-clothes-adjust-detail-heading">
-          <button className={`customizer-adjust-reset ${selectedDimmed ? 'is-restore' : 'is-delete'}`} type="button" onClick={() => void updateHeadAdjustment('toggle-hidden')} disabled={!selectedCharacter || !selectedId || !hasHeadAdjustmentItem(selectedId)} title={selectedDimmed ? 'Restaurar item selecionado' : 'Excluir item selecionado'} aria-label={selectedDimmed ? 'Restaurar item selecionado' : 'Excluir item selecionado'}><Icon name={selectedDimmed ? 'undo' : 'trash'} /><span>{selectedDimmed ? 'RESTAURAR' : 'EXCLUIR'}</span></button>
-          <h2>Ajustar cabeça · {headLabel}</h2>
-        </header>
-        {!selectedCharacter && <p className="customizer-adjust-hint">Selecione um personagem para ver os itens de cabeça.</p>}
-        {selectedCharacter && <div className="customizer-clothes-adjust-workspace">
-          <section className="customizer-clothes-adjust-parts" aria-label="Itens de cabeça aplicados">
-            <header><strong>Itens da cabeça</strong><small>{appliedItems.length} item(ns)</small></header>
-            {appliedItems.length ? <div className="customizer-clothes-adjust-part-grid">
-              {appliedItems.map((item) => {
-                const override = selectedCharacter.customization.partOverrides?.[`head:${item.id}`]
-                const dimmed = Boolean(override?.hidden || selectedCharacter.customization.wardrobeGroups?.some((group) => group.category === item.id && group.hidden))
-                const preview = previewFor(item.id)
-                return <div key={item.id} className={`customizer-clothes-adjust-part${selectedId === item.id ? ' selected' : ''}${dimmed ? ' dimmed' : ''}`}>
-                  <button type="button" className="customizer-clothes-adjust-part-select" aria-pressed={selectedId === item.id} onClick={() => { setHeadAdjustSelection(item.id); selectAdjustmentPreviewTarget({ scope: 'head', id: item.id }) }}>
-                    <span className="customizer-clothes-adjust-part-preview">{preview ? <img src={preview} alt="" style={{ transform: mirroredFaceThumbnailIds.has(item.id as FaceComponentPartId) ? 'scaleX(-1)' : undefined }} /> : <Icon name={item.icon} />}</span>
-                    <strong title={item.label}>{item.label}</strong><small>Somente neste personagem</small>
-                  </button>
-                </div>
-              })}
-            </div> : <p className="customizer-clothes-adjust-empty">Nenhum item aplicado em <strong>{headLabel}</strong> neste personagem. Escolha um item nesta categoria para ajustar separadamente.</p>}
-          </section>
-          {selectedItem && hasHeadAdjustmentItem(selectedItem.id) ? <section className="customizer-clothes-adjust-controls" aria-label="Controles do item de cabeça selecionado">
-            <div className="customizer-clothes-adjust-position">
-              <div className="customizer-clothes-adjust-pad" aria-label="Mover o item">
-                <button type="button" aria-label="Mover para cima" onClick={() => moveBy(0, -1)}>↑</button><button type="button" aria-label="Mover para a esquerda" onClick={() => moveBy(-1, 0)}>←</button><span><Icon name="move" /></span><button type="button" aria-label="Mover para a direita" onClick={() => moveBy(1, 0)}>→</button><button type="button" aria-label="Mover para baixo" onClick={() => moveBy(0, 1)}>↓</button>
-              </div>
-            </div>
-            <div className="customizer-clothes-adjust-axis-grid">{([{ key: 'scaleX', label: 'Largura' }, { key: 'scaleY', label: 'Altura' }] as const).map(({ key, label }) => <div className="customizer-clothes-adjust-axis" key={key}><strong>{label} <output>{Math.round(transform[key] * 100)}%</output></strong><button type="button" aria-label={`Diminuir ${label.toLowerCase()}`} onClick={() => changeTransform({ [key]: Math.max(.05, Number((transform[key] - .02).toFixed(2))) })}>−</button><button type="button" aria-label={`Aumentar ${label.toLowerCase()}`} onClick={() => changeTransform({ [key]: Math.min(5, Number((transform[key] + .02).toFixed(2))) })}>+</button></div>)}</div>
-            <div className="customizer-clothes-adjust-rotation"><strong>Rotação <output>{Math.round(transform.rotation)}°</output></strong><button type="button" aria-label="Girar para a esquerda" onClick={() => changeTransform({ rotation: transform.rotation - 1 })}>↶</button><button type="button" aria-label="Girar para a direita" onClick={() => changeTransform({ rotation: transform.rotation + 1 })}>↷</button></div>
-          </section> : <div className="customizer-clothes-adjust-empty-controls">Selecione um item aplicado na lista para ajustar.</div>}
-        </div>}
-    </section>
+    return <CustomizerHeadAdjustmentPanel
+      character={selectedCharacter}
+      label={headLabel}
+      items={items}
+      selectedId={headAdjustSelection}
+      details={{ hair: hairDetails, faceComponents: faceComponentDetails, wardrobe: wardrobeDetails, faceCatalog: faceCatalogDetails }}
+      onSelect={(id) => {
+        setHeadAdjustSelection(id)
+        selectAdjustmentPreviewTarget({ scope: 'head', id })
+      }}
+      onToggleHidden={() => { void updateHeadAdjustment('toggle-hidden') }}
+      onTransform={(transform) => { void updateHeadAdjustment('transform', transform) }}
+    />
   }
 
   if (activeModule !== null && customizerModuleNames.includes(activeModule)) {

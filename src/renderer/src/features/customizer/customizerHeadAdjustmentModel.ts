@@ -3,6 +3,13 @@ import type { CustomizerCharacter, FaceComponentPartId, HairPartId } from '../..
 import { hairCategories } from '../../../../shared/hairCategories'
 import { hairAppearancePartStyleId } from './customizerHairAppearanceModel'
 
+export type HeadAdjustmentPreviewDetails = {
+  hair: Record<string, HairStyle>
+  faceComponents: Record<string, FaceComponentAsset>
+  wardrobe: Record<string, WardrobeSet>
+  faceCatalog: Record<string, FaceCatalogItem>
+}
+
 export function hasHeadAdjustmentItem(character: CustomizerCharacter | null, id: string): boolean {
   const appearance = character?.customization.faceAppearance
   if (hairCategories.some((part) => part.id === id)) return Boolean(hairAppearancePartStyleId(character?.customization.hairAppearance, id as HairPartId))
@@ -18,12 +25,7 @@ export function hasHeadAdjustmentItem(character: CustomizerCharacter | null, id:
 export function headAdjustmentPreviewUrl(
   id: string,
   character: CustomizerCharacter | null,
-  details: {
-    hair: Record<string, HairStyle>
-    faceComponents: Record<string, FaceComponentAsset>
-    wardrobe: Record<string, WardrobeSet>
-    faceCatalog: Record<string, FaceCatalogItem>
-  }
+  details: HeadAdjustmentPreviewDetails
 ): string | null {
   if (!character) return null
   const appearance = character.customization.faceAppearance

@@ -79,6 +79,8 @@ export const headAdjustmentItems = [
   { id: 'acessorio-cabeca', label: 'Acessório de cabeça', icon: 'sparkles' }
 ] as const
 
+export type HeadAdjustmentItem = (typeof headAdjustmentItems)[number]
+
 export function CustomizerCategoryIcon({ category }: { category: string }) {
   const common = { fill: 'none', stroke: 'currentColor', strokeWidth: 1.7, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const }
   return <svg viewBox="0 0 48 48" aria-hidden="true" {...common}>
