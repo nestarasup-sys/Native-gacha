@@ -1210,8 +1210,6 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .customizer-preview-pan-surface:active { cursor:grabbing; }
 .customizer-selected-artwork { position:absolute;inset:72px 68px 58px;z-index:1;width:calc(100% - 136px);height:calc(100% - 130px);object-fit:contain;pointer-events:none; }
 .customizer-wardrobe-overlay { position:absolute;inset:72px 68px 58px;z-index:2;width:calc(100% - 136px);height:calc(100% - 130px);object-fit:contain;pointer-events:none;user-select:none;-webkit-user-drag:none; }
-.customizer-wardrobe-overlay.draggable { pointer-events:auto;cursor:grab;touch-action:none; }
-.customizer-wardrobe-overlay.draggable:active { cursor:grabbing; }
 .customizer-face-overlay { position:absolute;inset:72px 68px 58px;z-index:3;width:calc(100% - 136px);height:calc(100% - 130px);object-fit:contain;pointer-events:none;user-select:none;-webkit-user-drag:none; }
 .customizer-front-hair-overlay { position:absolute;inset:72px 68px 58px;z-index:4;width:calc(100% - 136px);height:calc(100% - 130px);object-fit:contain;pointer-events:none;user-select:none;-webkit-user-drag:none; }
 .customizer-wardrobe-above-hair-overlay { position:absolute;inset:72px 68px 58px;z-index:5;width:calc(100% - 136px);height:calc(100% - 130px);object-fit:contain;pointer-events:none;user-select:none;-webkit-user-drag:none; }
