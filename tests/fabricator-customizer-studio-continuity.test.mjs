@@ -121,6 +121,34 @@ test('catálogos faciais ficam isolados e mantêm carregamento legado e cancelam
  assert.match(catalog,/if \(cancelled\) return/,'respostas antigas não atualizam o catálogo após a troca de modelo')
  assert.match(catalog,/!cancelled && activeModule === 'Cabeça'/,'erros de rostos continuam relevantes apenas na área facial')
 })
+test('cores e prévias do modelo base atravessam os workspaces pelo contexto e salvamento serializado',async()=>{
+ const consumers=[
+  'src/renderer/src/features/fabricator/PoseWorkspace.tsx',
+  'src/renderer/src/features/fabricator/wardrobe/WardrobeWorkspace.tsx',
+  'src/renderer/src/features/fabricator/face/FaceComponentsWorkspace.tsx',
+  'src/renderer/src/features/fabricator/face/HeadExtrasWorkspace.tsx',
+  'src/renderer/src/features/fabricator/HairWorkspace.tsx',
+  'src/renderer/src/features/fabricator/AnimatorWorkspace.tsx',
+  'src/renderer/src/features/fabricator/ExpressionPresetWorkspace.tsx',
+  'src/renderer/src/features/fabricator/FaceAnimatorWorkspace.tsx'
+ ]
+ const [page,appearance,context,...workspaces]=await Promise.all([
+  readFile('src/renderer/src/features/fabricator/FabricatorPage.tsx','utf8'),
+  readFile('src/renderer/src/features/fabricator/useFabricatorModelAppearance.ts','utf8'),
+  readFile('src/renderer/src/features/fabricator/ModelAppearanceContext.tsx','utf8'),
+  ...consumers.map(path=>readFile(path,'utf8'))
+ ])
+ assert.match(page,/useFabricatorModelAppearance\(/)
+ assert.match(page,/projectRef\.current\?\.slot === current\.slot/,'o modelo aberto continua usando seu próprio histórico e autosave')
+ assert.match(page,/scheduleExternalAppearanceSave\(next\)/)
+ assert.match(page,/ModelAppearanceProvider slot=\{appearanceProject\?\.slot/)
+ assert.match(appearance,/appearanceSaveQueue\.current/)
+ assert.match(appearance,/saveFabricatorProject\(serializeFabricatorProject\(snapshot\), \[\]\)/,'cores externas não reenviam assets das peças')
+ assert.match(appearance,/setTimeout\(\(\) => \{ void flushExternalAppearanceSave\(\) \}, 500\)/)
+ assert.match(appearance,/flushExternalAppearanceSave\(\)\.finally/,'troca de modelo aguarda as cores pendentes antes de mudar o alvo')
+ assert.match(context,/useModelAppearanceTarget/)
+ for(const workspace of workspaces) assert.match(workspace,/useModelAppearanceTarget\(/)
+})
 test('preview unificado preserva identidade do modelo/pose, cores da personagem e cache do modelo',async()=>{
  const loadedSource={status:'ready',sourceProject:{slot:5,modelSkinTone:'#dba47d',modelOutlineColor:'#352522'},artwork:{width:200,height:300}}
  const cachedModel={slot:5,name:'Modelo em cache'}
