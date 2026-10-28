@@ -10,7 +10,9 @@
 
 **Base histórica do primeiro ciclo:** commit `805798f` (`refactor(media): remove obsolete video studios field`), branch local `Dev-V2`.
 
-**Escopo:** registrar a arquitetura atual de todas as áreas e conduzir a refatoração por domínio, sem quebrar dados ou fluxos existentes.
+**Objetivo:** manter um mapa atualizado dos fluxos, contratos e responsáveis por dados em todas as áreas do Native-gacha; refatorar em etapas pequenas sustentadas por evidência; simplificar módulos e remover código obsoleto somente após confirmar seus consumidores; e fortalecer as conexões entre áreas sem quebrar telas, IPC, formatos persistidos ou dados do usuário. Cada etapa deve registrar o caminho afetado, a mudança estrutural, as verificações executadas e um commit local revisável.
+
+**Escopo:** diagnóstico arquitetural e melhorias incrementais de código e contratos. Mudanças de schema, migrações de dados, exclusões de assets ou alterações visuais compartilhadas exigem mapeamento e verificação próprios antes de serem incluídas.
 
 ## Resumo
 
@@ -20,7 +22,7 @@ A **Biblioteca de Mídia** é dona dos arquivos de vídeo e seus IDs. Base de V�
 
 O restante já tem módulos por domínio e armazenamento local com SQLite, arquivos e CAS. O `electron/main.ts` agora registra somente o flush transversal de gravações; a maior concentração está nas páginas React extensas que combinam estado e coordenação de operações. O plano prioriza limites de propriedade, segurança dos dados e redução de responsabilidades por fluxo.
 
-**Próximos passos:** mapear e agrupar as APIs de gerenciamento de dados usadas por Opções; classificar a normalização de imagem usada pelo Fabricador como capacidade compartilhada; e manter os aliases raiz enquanto scripts de diagnóstico ainda os consomem. O flush transversal permanece no composition root. A composição compartilha algoritmos visuais de baixo nível; a orquestração e os modos de render continuam próprios de Studio e Editor V6 até existir comparação visual das saídas reais.
+**Próximos passos:** classificar a normalização de imagem usada pelo Fabricador como capacidade compartilhada; e continuar mapeando as filas de gravação e referências de catálogos entre renderer, preload, handlers IPC e repositórios. O flush transversal permanece no composition root. A composição compartilha algoritmos visuais de baixo nível; a orquestração e os modos de render continuam próprios de Studio e Editor V6 até existir comparação visual das saídas reais.
 
 ## 1. Estado observado
 
@@ -545,13 +547,13 @@ Este corte separa propriedade dos contratos e chamadas entre domínios, mas não
 - O Editor V6 usa `editorV6` para projetos, exportação, mídia e prints; `customizer` para o elenco; e `fabricator` para poses e catálogos faciais. Os namespaces preexistentes `mediaLibrary` e `baseVideos` continuam sendo usados para suas respectivas bibliotecas.
 - Roteiros usa `roteiros` para documentos, logs, exportações e GIFs; `customizer` para personagens; e `fabricator` para poses e catálogos. Continua usando `mediaLibrary`, `baseVideos` e `videoBackgrounds` para dados que pertencem a essas áreas.
 - O Fabricador usa `fabricator` para seus métodos de modelo, poses, cabelo, roupas, rosto, animações e configurações do Design Dev; as consultas a personagens no Animador usam `customizer`. `FabricatorDesignSettings` agora pertence ao contrato em `src/shared/fabricator.ts`; a carga continua desconhecida até a normalização dos dados locais no renderer, enquanto a gravação já tem formato tipado.
-- A auditoria do renderer encontrou somente operações de dados de Opções e `normalizeImageForImport` ainda no nível raiz. Os scripts de autoria e diagnóstico continuam usando aliases raiz, então eles permanecem expostos durante a migração.
+- Opções usa `dataManagement` para armazenamento, migração e backups. `normalizeImageForImport` continua no nível raiz até definir se essa capacidade pertence ao domínio de imagens ou ao Fabricador. Os aliases raiz das APIs de domínio continuam disponíveis durante a migração e para scripts de autoria/diagnóstico.
 - Os formatos persistidos e a propriedade dos dados não mudaram. Os métodos raiz permanecem disponíveis para as demais áreas e para os scripts de diagnóstico já existentes.
 - `typecheck`, `audit:architecture` e `build` passaram; nenhuma chamada raiz das APIs de domínio permaneceu nas telas do Studio, Customizador, Editor V6, Roteiros e Fabricador.
 
 ## 7. Próxima tarefa recomendada
 
-Agrupar as operações de armazenamento, backups e migração usadas por Opções em um contrato de dados explícito, e definir o dono da normalização de imagens. Manter os aliases antigos enquanto existirem consumidores e só removê-los após busca completa e validação dos scripts de diagnóstico. Em paralelo, continuar mapeando as filas de gravação e referências de catálogos entre renderer, preload, handlers IPC e repositórios.
+Definir o dono da normalização de imagens e migrar seus consumidores para o namespace apropriado. Manter os aliases antigos enquanto existirem consumidores e só removê-los após busca completa e validação dos scripts de diagnóstico. Em paralelo, continuar mapeando as filas de gravação e referências de catálogos entre renderer, preload, handlers IPC e repositórios.
 
 ## 8. Verificações e validação
 

@@ -9,7 +9,7 @@ import type { EditorV6DesktopApi } from '../src/shared/editorV6'
 import type { RoteirosDesktopApi } from '../src/shared/roteiros'
 import type { BaseVideosDesktopApi } from '../src/shared/baseVideos'
 import type { MediaLibraryDesktopApi } from '../src/shared/mediaLibrary'
-import type { DataMigrationPauseResult, DataMigrationProgress, DataMigrationResult, DataMigrationSummary, DataStorageSummary } from '../src/shared/dataManagement'
+import type { DataManagementDesktopApi, DataMigrationProgress } from '../src/shared/dataManagement'
 
 const invokeFabricator = createFabricatorInvoker(ipcRenderer)
 const fabricatorApi: FabricatorDesktopApi = {
@@ -165,25 +165,29 @@ const roteirosApi: RoteirosDesktopApi = {
   deleteRoteiroUiGif: (id) => ipcRenderer.invoke('roteiros:ui-gifs:delete', id)
 }
 
-contextBridge.exposeInMainWorld('desktop', {
-  platform: process.platform,
-  appName: 'Gacha Nymi',
-  normalizeImageForImport: (bytes: Uint8Array) => ipcRenderer.invoke('app:image:normalize', bytes),
-  getAppDataStorageSummary: (): Promise<DataStorageSummary> => ipcRenderer.invoke('app:data-storage-summary'),
-  getDataMigrationSummary: (): Promise<DataMigrationSummary> => ipcRenderer.invoke('app:data-migration:prepare'),
-  runDataMigration: (): Promise<DataMigrationResult> => ipcRenderer.invoke('app:data-migration:run-all'),
-  pauseDataMigration: (): Promise<DataMigrationPauseResult> => ipcRenderer.invoke('app:data-migration:pause'),
+const dataManagementApi: DataManagementDesktopApi = {
+  getAppDataStorageSummary: () => ipcRenderer.invoke('app:data-storage-summary'),
+  getDataMigrationSummary: () => ipcRenderer.invoke('app:data-migration:prepare'),
+  runDataMigration: () => ipcRenderer.invoke('app:data-migration:run-all'),
+  pauseDataMigration: () => ipcRenderer.invoke('app:data-migration:pause'),
   restartAfterDataMigration: () => ipcRenderer.invoke('app:data-migration:restart'),
-  onDataMigrationProgress: (callback: (progress: DataMigrationProgress) => void) => {
+  onDataMigrationProgress: (callback) => {
     const listener = (_event: Electron.IpcRendererEvent, progress: DataMigrationProgress) => callback(progress)
     ipcRenderer.on('app:data-migration:progress', listener)
     return () => ipcRenderer.removeListener('app:data-migration:progress', listener)
   },
   listDataBackups: () => ipcRenderer.invoke('app:data-backups:list'),
   createDataBackup: () => ipcRenderer.invoke('app:data-backups:create'),
-  verifyDataBackup: (id: string) => ipcRenderer.invoke('app:data-backups:verify', id),
-  restoreDataBackup: (id: string) => ipcRenderer.invoke('app:data-backups:restore', id),
-  deleteDataBackup: (id: string) => ipcRenderer.invoke('app:data-backups:delete', id),
+  verifyDataBackup: (id) => ipcRenderer.invoke('app:data-backups:verify', id),
+  restoreDataBackup: (id) => ipcRenderer.invoke('app:data-backups:restore', id),
+  deleteDataBackup: (id) => ipcRenderer.invoke('app:data-backups:delete', id)
+}
+
+contextBridge.exposeInMainWorld('desktop', {
+  platform: process.platform,
+  appName: 'Gacha Nymi',
+  normalizeImageForImport: (bytes: Uint8Array) => ipcRenderer.invoke('app:image:normalize', bytes),
+  dataManagement: dataManagementApi,
   fabricator: fabricatorApi,
   customizer: customizerApi,
   studio: studioApi,
@@ -196,5 +200,6 @@ contextBridge.exposeInMainWorld('desktop', {
   mediaLibrary: mediaLibraryApi,
   videoBackgrounds: videoBackgroundsApi,
   baseVideos: baseVideosApi,
+  ...dataManagementApi,
   ...roteirosApi
 })

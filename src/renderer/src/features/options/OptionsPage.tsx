@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { DataMigrationProgress as MigrationProgress, DataMigrationSummary as MigrationSummary, DataStorageSummary as StorageSummary } from '../../../../shared/dataManagement'
+import type { DataBackupSummary, DataMigrationProgress as MigrationProgress, DataMigrationSummary as MigrationSummary, DataStorageSummary as StorageSummary } from '../../../../shared/dataManagement'
 
-type StoredBackup = Awaited<ReturnType<Window['desktop']['listDataBackups']>>[number]
+type StoredBackup = DataBackupSummary
 
 const groupLabels: Record<string, string> = {
   characters: 'Personagens', libraries: 'Bibliotecas do Fabricador', projects: 'Projetos dos Studios',
@@ -39,28 +39,28 @@ export function OptionsPage() {
   const [backupError, setBackupError] = useState<string | null>(null)
   const refresh = useCallback(async () => {
     setLoading(true); setError(null)
-    try { setSummary(await window.desktop.getAppDataStorageSummary()) }
+    try { setSummary(await window.desktop.dataManagement.getAppDataStorageSummary()) }
     catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível medir o armazenamento local.') }
     finally { setLoading(false) }
   }, [])
   useEffect(() => { void refresh() }, [refresh])
   const refreshMigration = useCallback(async () => {
-    try { setMigration(await window.desktop.getDataMigrationSummary()); setMigrationError(null) }
+    try { setMigration(await window.desktop.dataManagement.getDataMigrationSummary()); setMigrationError(null) }
     catch (reason) { setMigrationError(reason instanceof Error ? reason.message : 'Não foi possível inventariar os domínios.') }
   }, [])
   useEffect(() => {
     void refreshMigration()
-    return window.desktop.onDataMigrationProgress(setProgress)
+    return window.desktop.dataManagement.onDataMigrationProgress(setProgress)
   }, [refreshMigration])
   const refreshBackups = useCallback(async () => {
-    try { setBackups(await window.desktop.listDataBackups()); setBackupError(null) }
+    try { setBackups(await window.desktop.dataManagement.listDataBackups()); setBackupError(null) }
     catch (reason) { setBackupError(reason instanceof Error ? reason.message : 'Não foi possível listar os backups.') }
   }, [])
   useEffect(() => { void refreshBackups() }, [refreshBackups])
   const runMigration = useCallback(async () => {
     setMigrationBusy(true); setPauseRequested(false); setMigrationError(null); setProgress(null)
     try {
-      await window.desktop.runDataMigration()
+      await window.desktop.dataManagement.runDataMigration()
       await refreshMigration()
       await refresh()
     } catch (reason) { setMigrationError(reason instanceof Error ? reason.message : 'A migração foi interrompida; os dados de origem foram preservados.') }
@@ -68,18 +68,18 @@ export function OptionsPage() {
   }, [refresh, refreshMigration])
   const requestPause = useCallback(async () => {
     setPauseRequested(true)
-    try { await window.desktop.pauseDataMigration() }
+    try { await window.desktop.dataManagement.pauseDataMigration() }
     catch (reason) { setMigrationError(reason instanceof Error ? reason.message : 'Não foi possível pausar a migração.') }
   }, [])
   const restart = useCallback(async () => {
     setMigrationError(null)
-    try { await window.desktop.restartAfterDataMigration() }
+    try { await window.desktop.dataManagement.restartAfterDataMigration() }
     catch (reason) { setMigrationError(reason instanceof Error ? reason.message : 'Não foi possível reiniciar o aplicativo.') }
   }, [])
   const createBackup = useCallback(async () => {
     setBackupBusy(true); setBackupError(null); setBackupMessage(null)
     try {
-      const created = await window.desktop.createDataBackup()
+      const created = await window.desktop.dataManagement.createDataBackup()
       setBackupMessage(`Backup ${created.id} criado e verificado · ${created.fileCount.toLocaleString('pt-BR')} arquivos · ${formatBytes(created.byteLength)}.`)
       await refreshBackups()
       await refresh()
@@ -89,7 +89,7 @@ export function OptionsPage() {
   const verifyBackup = useCallback(async (backup: StoredBackup) => {
     setBackupBusy(true); setBackupError(null); setBackupMessage(null)
     try {
-      const result = await window.desktop.verifyDataBackup(backup.id)
+      const result = await window.desktop.dataManagement.verifyDataBackup(backup.id)
       setBackupMessage(result.valid ? `Backup íntegro: ${result.fileCount.toLocaleString('pt-BR')} arquivos e catálogo SQLite verificados.` : 'O backup não passou na validação.')
       await refreshBackups()
     } catch (reason) { setBackupError(reason instanceof Error ? reason.message : 'A verificação falhou.') }
@@ -98,7 +98,7 @@ export function OptionsPage() {
   const restoreBackup = useCallback(async (backup: StoredBackup) => {
     setBackupBusy(true); setBackupError(null); setBackupMessage(null)
     try {
-      const result = await window.desktop.restoreDataBackup(backup.id)
+      const result = await window.desktop.dataManagement.restoreDataBackup(backup.id)
       if (result.cancelled) setBackupMessage('Restauração cancelada; os dados atuais não foram alterados.')
       else setBackupMessage('Backup preparado. O aplicativo vai reiniciar para aplicar e verificar a restauração.')
     } catch (reason) { setBackupError(reason instanceof Error ? reason.message : 'Não foi possível preparar a restauração.') }
@@ -107,7 +107,7 @@ export function OptionsPage() {
   const deleteBackup = useCallback(async (backup: StoredBackup) => {
     setBackupBusy(true); setBackupError(null); setBackupMessage(null)
     try {
-      const result = await window.desktop.deleteDataBackup(backup.id)
+      const result = await window.desktop.dataManagement.deleteDataBackup(backup.id)
       setBackupMessage(result.deleted ? 'Backup excluído.' : 'Exclusão cancelada.')
       await refreshBackups()
       await refresh()

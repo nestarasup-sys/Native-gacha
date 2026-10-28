@@ -38,3 +38,46 @@ export type DataMigrationProgress = {
   completedBytes: number
   totalBytes: number
 }
+
+export type DataBackupSummary = {
+  id: string
+  createdAt: string
+  fileCount: number
+  byteLength: number
+  verifiedAt: string | null
+}
+
+export type DataBackupVerification = {
+  id: string
+  valid: boolean
+  fileCount: number
+  byteLength: number
+  createdAt: string
+  verifiedAt: string
+  databaseSchema: number
+}
+
+export type DataBackupRestoreResult = {
+  cancelled?: boolean
+  safetyBackupId?: string
+  restoreId?: string
+  backupId?: string
+  fileCount?: number
+  byteLength?: number
+}
+
+export type DataBackupDeleteResult = { deleted: boolean }
+
+export type DataManagementDesktopApi = {
+  getAppDataStorageSummary: () => Promise<DataStorageSummary>
+  getDataMigrationSummary: () => Promise<DataMigrationSummary>
+  runDataMigration: () => Promise<DataMigrationResult>
+  pauseDataMigration: () => Promise<DataMigrationPauseResult>
+  restartAfterDataMigration: () => Promise<void>
+  onDataMigrationProgress: (callback: (progress: DataMigrationProgress) => void) => () => void
+  listDataBackups: () => Promise<DataBackupSummary[]>
+  createDataBackup: () => Promise<DataBackupVerification>
+  verifyDataBackup: (id: string) => Promise<DataBackupVerification>
+  restoreDataBackup: (id: string) => Promise<DataBackupRestoreResult>
+  deleteDataBackup: (id: string) => Promise<DataBackupDeleteResult>
+}
