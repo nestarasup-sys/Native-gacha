@@ -3,16 +3,13 @@ import { autoConnectParts, createJoint, normalizePartAnchors } from './rig'
 import { moveFabricatorPartBranch } from './rigEditing'
 import { loadImageFromDataUrl } from './imageData'
 
-type SegmentKind = 'torso' | 'upper-arm' | 'forearm' | 'thigh' | 'lower-leg'
+type SegmentKind = 'upper-arm' | 'forearm' | 'thigh' | 'lower-leg'
 type Side = 'left' | 'right' | null
-type Pair = { parent: ModelPart; child: ModelPart; parentEdgeSide?: Side }
+type Pair = { parent: ModelPart; child: ModelPart }
 type Point = { x: number; y: number }
-// A small overlap prevents sub-pixel gaps from exposing the transparent canvas.
-const JOINT_OVERLAP = 4
 export type ContourJointResult = { project: FabricatorProject; alignedCount: number; pairCount: number }
 
 function segmentKind(name: string): SegmentKind | null {
-  if (/tronco|corpo|torso/i.test(name)) return 'torso'
   if (/antebra[cç]o|forearm|lower[\s_-]?arm|(?:bra[cç]o).*(?:inferior|lower)/i.test(name)) return 'forearm'
   if (/coxa|thigh/i.test(name)) return 'thigh'
   if (/canela|panturrilha|shin|calf|(?:perna).*(?:inferior|lower)/i.test(name)) return 'lower-leg'
@@ -33,16 +30,6 @@ function center(part: ModelPart): Point {
 function bodyPairs(parts: ModelPart[]): Pair[] {
   const pairs: Pair[] = []
   const usedChildren = new Set<string>()
-  const torsos = parts.filter((part) => segmentKind(part.name) === 'torso')
-  const thighs = parts.filter((part) => segmentKind(part.name) === 'thigh')
-  for (const torso of torsos) {
-    for (const thigh of thighs) {
-      if (sideOf(torso) && sideOf(thigh) && sideOf(torso) !== sideOf(thigh)) continue
-      if (usedChildren.has(thigh.id)) continue
-      pairs.push({ parent: torso, child: thigh, parentEdgeSide: center(thigh).x < center(torso).x ? 'left' : 'right' })
-      usedChildren.add(thigh.id)
-    }
-  }
   const connectKind = (parentKind: SegmentKind, childKind: SegmentKind) => {
     const parents = parts.filter((part) => segmentKind(part.name) === parentKind)
     const children = parts.filter((part) => segmentKind(part.name) === childKind)
@@ -69,7 +56,7 @@ function bodyPairs(parts: ModelPart[]): Pair[] {
   return pairs
 }
 
-async function endpoint(part: ModelPart, edge: 'top' | 'bottom', side: Side = null): Promise<Point | null> {
+async function endpoint(part: ModelPart, edge: 'top' | 'bottom'): Promise<Point | null> {
   const image = await loadImageFromDataUrl(part.dataUrl, `Não foi possível ler o contorno de ${part.name}.`)
   const width = image.naturalWidth || image.width
   const height = image.naturalHeight || image.height
@@ -88,8 +75,6 @@ async function endpoint(part: ModelPart, edge: 'top' | 'bottom', side: Side = nu
     let rowCount = 0
     let rowXTotal = 0
     for (let x = 0; x < width; x++) {
-      if (side === 'left' && x >= width / 2) continue
-      if (side === 'right' && x < width / 2) continue
       if (pixels[(y * width + x) * 4 + 3] <= 16) continue
       rowCount++
       rowXTotal += x + 0.5
@@ -112,7 +97,7 @@ async function endpoint(part: ModelPart, edge: 'top' | 'bottom', side: Side = nu
   }
 }
 
-/** Connects named body segments and overlaps each downstream piece slightly to hide transparent seams. */
+/** Connects named limb segments and shifts only the downstream piece until their visible end contours meet. */
 export async function connectBodyContourJoints(project: FabricatorProject): Promise<ContourJointResult> {
   const pairs = bodyPairs(project.parts)
   let joints = [...project.joints.filter((joint) => !joint.suggested), ...autoConnectParts(project.parts)]
@@ -126,26 +111,19 @@ export async function connectBodyContourJoints(project: FabricatorProject): Prom
   const normalizedRig = normalizePartAnchors(project.parts, joints)
   let next: FabricatorProject = { ...project, parts: normalizedRig.parts, joints: normalizedRig.joints }
   let alignedCount = 0
-  for (const { parent: originalParent, child: originalChild, parentEdgeSide } of pairs) {
+  for (const { parent: originalParent, child: originalChild } of pairs) {
     const parent = next.parts.find((part) => part.id === originalParent.id)
     const child = next.parts.find((part) => part.id === originalChild.id)
     if (!parent || !child) continue
     const incoming = next.joints.find((joint) => joint.childPartId === child.id)
     if (incoming && !incoming.suggested && incoming.parentPartId !== parent.id) continue
-    const [parentEnd, childStart] = await Promise.all([endpoint(parent, 'bottom', parentEdgeSide), endpoint(child, 'top')])
+    const [parentEnd, childStart] = await Promise.all([endpoint(parent, 'bottom'), endpoint(child, 'top')])
     if (!parentEnd || !childStart) continue
     const dx = parentEnd.x - childStart.x
     const dy = parentEnd.y - childStart.y
     const maxShift = Math.max(40, Math.max(parent.width, parent.height, child.width, child.height) * 0.9)
     if (Math.hypot(dx, dy) > maxShift) continue
-    const parentCenter = center(parent)
-    const childCenter = center(child)
-    const towardParentX = parentCenter.x - childCenter.x
-    const towardParentY = parentCenter.y - childCenter.y
-    const centerDistance = Math.hypot(towardParentX, towardParentY) || 1
-    const overlapX = towardParentX / centerDistance * JOINT_OVERLAP
-    const overlapY = towardParentY / centerDistance * JOINT_OVERLAP
-    next = moveFabricatorPartBranch(next, child.id, dx + overlapX, dy + overlapY)
+    next = moveFabricatorPartBranch(next, child.id, dx, dy)
     alignedCount++
   }
   const normalized = normalizePartAnchors(next.parts, next.joints)
