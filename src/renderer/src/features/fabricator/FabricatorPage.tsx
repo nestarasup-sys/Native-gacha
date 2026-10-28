@@ -17,7 +17,8 @@ import { FaceAnimatorWorkspace } from './FaceAnimatorWorkspace'
 import { ModelSourceEditor } from './ModelSourceEditor'
 import { broadcastModelSourceUpdate } from './models/modelSourceEvents'
 import { splitImage, mergeImages } from './models/partImages'
-import { loadImageFromDataUrl, pngDataUrlFromBuffer } from './models/imageData'
+import { pngDataUrlFromBuffer } from './models/imageData'
+import { paintSeamMixerSegment as applySeamMixerSegment, type SeamMixerSurface } from './models/seamMixer'
 import { cleanSavedPartEdges } from './models/chromaCleanup'
 import { serializeFabricatorProject } from './models/projectSerialization'
 import { persistFabricatorProjectSnapshot } from './projectPersistence'
@@ -39,7 +40,6 @@ type ChromaAdjustMessage =
 type DragState = { partId: string; pointerId: number; x: number; y: number }
 type AnchorDragState = { partId: string; pointerId: number; x: number; y: number; offsetX: number }
 type PanState = { pointerId: number; x: number; y: number; originX: number; originY: number }
-type MixerSurface = { canvas: HTMLCanvasElement; context: CanvasRenderingContext2D }
 type MixerStrokeState = { pointerId: number; x: number; y: number }
 type PanelTab = 'parts' | 'layers' | 'joints'
 
@@ -83,7 +83,7 @@ export function FabricatorPage() {
   const panRef = useRef<PanState | null>(null)
   const mixerStrokeRef = useRef<MixerStrokeState | null>(null)
   const mixerTouchedRef = useRef<Map<string, Uint8Array>>(new Map())
-  const mixerSurfacesRef = useRef<Map<string, MixerSurface>>(new Map())
+  const mixerSurfacesRef = useRef<Map<string, SeamMixerSurface>>(new Map())
   const mixerQueueRef = useRef<Promise<void>>(Promise.resolve())
   const mixerSessionRef = useRef(0)
   const layerDragRef = useRef<string | null>(null)
@@ -605,137 +605,31 @@ export function FabricatorPage() {
     if (!project || !scale || session !== mixerSessionRef.current) return
     const stage = stageRef.current
     if (!stage) return
-    const bounds = stage.getBoundingClientRect()
-    const candidates = canvasParts.slice().reverse().filter((part) => !hiddenPartIds.includes(part.id))
-    const imageDataById = new Map<string, ImageData>()
-    const affectedParts = new Map<string, ModelPart>()
-    const getImageData = async (part: ModelPart) => {
-      let surface = mixerSurfacesRef.current.get(part.id)
-      if (!surface) {
-        const image = await loadImageFromDataUrl(part.dataUrl, 'Não foi possível abrir o recorte.')
-        if (session !== mixerSessionRef.current) return null
-        const canvas = document.createElement('canvas')
-        canvas.width = image.naturalWidth; canvas.height = image.naturalHeight
-        const context = canvas.getContext('2d', { willReadFrequently: true })
-        if (!context) return null
-        context.drawImage(image, 0, 0)
-        surface = { canvas, context }
-        mixerSurfacesRef.current.set(part.id, surface)
-      }
-      let imageData = imageDataById.get(part.id)
-      if (!imageData) {
-        imageData = surface.context.getImageData(0, 0, surface.canvas.width, surface.canvas.height)
-        imageDataById.set(part.id, imageData)
-      }
-      return imageData
-    }
-    const getLocalPoint = (part: ModelPart, x: number, y: number) => {
-      const centerX = part.x + part.width / 2
-      const centerY = part.y + part.height / 2
-      const radians = -part.rotation * Math.PI / 180
-      const offsetX = x - centerX
-      const offsetY = y - centerY
-      return {
-        x: centerX + offsetX * Math.cos(radians) - offsetY * Math.sin(radians) - part.x,
-        y: centerY + offsetX * Math.sin(radians) + offsetY * Math.cos(radians) - part.y
-      }
-    }
-    const distance = Math.hypot(toX - fromX, toY - fromY)
-    const steps = Math.max(1, Math.ceil(distance / 10))
-    const radius = 24 / scale
-
-    for (let step = 0; step <= steps; step += 1) {
-      const screenX = fromX + (toX - fromX) * (step / steps)
-      const screenY = fromY + (toY - fromY) * (step / steps)
-      const boardX = (screenX - bounds.left - bounds.width / 2 - pan.x) / scale + project.width / 2
-      const boardY = (screenY - bounds.top - bounds.height / 2 - pan.y) / scale + project.height / 2
-
-      for (let candidateIndex = 0; candidateIndex < candidates.length; candidateIndex += 1) {
-        const part = candidates[candidateIndex]
-        const { x: localX, y: localY } = getLocalPoint(part, boardX, boardY)
-        if (localX < 0 || localY < 0 || localX >= part.width || localY >= part.height) continue
-
-        const imageData = await getImageData(part)
-        if (!imageData) return
-        const width = imageData.width
-        const height = imageData.height
-        const pixelX = Math.floor(localX / part.width * width)
-        const pixelY = Math.floor(localY / part.height * height)
-        if (imageData.data[(pixelY * width + pixelX) * 4 + 3] === 0) continue
-
-        // The mixer is a seam tool: only soften pixels where another visible
-        // piece exists underneath. This per-pixel mask protects the rest of
-        // the brush footprint from fading isolated parts.
-        const lowerLayers: Array<{ part: ModelPart; imageData: ImageData }> = []
-        for (let lowerIndex = candidateIndex + 1; lowerIndex < candidates.length; lowerIndex += 1) {
-          const lowerPart = candidates[lowerIndex]
-          const lowerData = await getImageData(lowerPart)
-          if (!lowerData) return
-          lowerLayers.push({ part: lowerPart, imageData: lowerData })
-        }
-        if (!lowerLayers.length) break
-
-        let touched = touchedPixels.get(part.id)
-        if (!touched) { touched = new Uint8Array(width * height); touchedPixels.set(part.id, touched) }
-        const centerPixelX = localX / part.width * width
-        const centerPixelY = localY / part.height * height
-        const radiusX = radius / part.width * width
-        const radiusY = radius / part.height * height
-        const minX = Math.max(0, Math.floor(centerPixelX - radiusX))
-        const maxX = Math.min(width - 1, Math.ceil(centerPixelX + radiusX))
-        const minY = Math.max(0, Math.floor(centerPixelY - radiusY))
-        const maxY = Math.min(height - 1, Math.ceil(centerPixelY + radiusY))
-        let changed = false
-        for (let y = minY; y <= maxY; y += 1) for (let x = minX; x <= maxX; x += 1) {
-          const dx = (x + 0.5 - centerPixelX) / radiusX
-          const dy = (y + 0.5 - centerPixelY) / radiusY
-          const radial = dx * dx + dy * dy
-          const index = y * width + x
-          if (radial > 1 || touched[index]) continue
-          const pixelLocalX = (x + 0.5) / width * part.width
-          const pixelLocalY = (y + 0.5) / height * part.height
-          const rotation = part.rotation * Math.PI / 180
-          const partCenterX = part.x + part.width / 2
-          const partCenterY = part.y + part.height / 2
-          const relativeX = pixelLocalX - part.width / 2
-          const relativeY = pixelLocalY - part.height / 2
-          const pixelBoardX = partCenterX + relativeX * Math.cos(rotation) - relativeY * Math.sin(rotation)
-          const pixelBoardY = partCenterY + relativeX * Math.sin(rotation) + relativeY * Math.cos(rotation)
-          const coveredByLowerLayer = lowerLayers.some(({ part: lowerPart, imageData: lowerData }) => {
-            const lowerPoint = getLocalPoint(lowerPart, pixelBoardX, pixelBoardY)
-            if (lowerPoint.x < 0 || lowerPoint.y < 0 || lowerPoint.x >= lowerPart.width || lowerPoint.y >= lowerPart.height) return false
-            const lowerX = Math.floor(lowerPoint.x / lowerPart.width * lowerData.width)
-            const lowerY = Math.floor(lowerPoint.y / lowerPart.height * lowerData.height)
-            return lowerData.data[(lowerY * lowerData.width + lowerX) * 4 + 3] > 0
-          })
-          if (!coveredByLowerLayer) continue
-          touched[index] = 1
-          const alphaOffset = index * 4 + 3
-          const alpha = imageData.data[alphaOffset]
-          if (alpha === 0) continue
-          const falloff = 1 - radial
-          imageData.data[alphaOffset] = Math.round(alpha * (1 - 0.3 * falloff))
-          changed = true
-        }
-        if (changed) affectedParts.set(part.id, part)
-        break
-      }
-    }
-
-    if (session !== mixerSessionRef.current || affectedParts.size === 0) return
-    const changedAssets = new Map<string, string>()
-    for (const [partId] of affectedParts) {
-      const surface = mixerSurfacesRef.current.get(partId)
-      const imageData = imageDataById.get(partId)
-      if (!surface || !imageData) continue
-      surface.context.putImageData(imageData, 0, 0)
-      const dataUrl = surface.canvas.toDataURL('image/png')
-      dirtyAssets.current.set(partId, dataUrl)
-      changedAssets.set(partId, dataUrl)
-    }
-    if (changedAssets.size > 0) updateProject((current) => ({ ...current, parts: current.parts.map((part) => changedAssets.has(part.id) ? { ...part, dataUrl: changedAssets.get(part.id)! } : part) }), 'mixer')
+    const stageBounds = stage.getBoundingClientRect()
+    const changedAssets = await applySeamMixerSegment({
+      fromX,
+      fromY,
+      toX,
+      toY,
+      projectSize: project,
+      scale,
+      pan,
+      stageBounds,
+      candidates: frontToBackLayers.filter((part) => !hiddenPartIds.includes(part.id)),
+      touchedPixels,
+      surfaces: mixerSurfacesRef.current,
+      session,
+      getCurrentSession: () => mixerSessionRef.current
+    })
+    if (!changedAssets?.size) return
+    for (const [partId, dataUrl] of changedAssets) dirtyAssets.current.set(partId, dataUrl)
+    updateProject((current) => ({
+      ...current,
+      parts: current.parts.map((part) => changedAssets.has(part.id)
+        ? { ...part, dataUrl: changedAssets.get(part.id)! }
+        : part)
+    }), 'mixer')
   }
-
   const queueMixerSegment = (fromX: number, fromY: number, toX: number, toY: number) => {
     const touchedPixels = mixerTouchedRef.current
     const session = mixerSessionRef.current
