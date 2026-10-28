@@ -1,5 +1,4 @@
 import { studioCharacterRenderKey, studioElementSize } from '../../../../shared/studioSceneModel'
-import { SerializedDocumentSaveQueue } from '../../../../shared/serializedDocumentSave'
 import { isPoseSnapshotForModel } from '../../../../shared/characterSourceContinuity'
 import { recordStudioHistory, undoStudioHistory, redoStudioHistory } from '../../../../shared/studioHistory'
 import { useStudioInspectorState } from '../../characters/useStudioInspectorState'
@@ -11,6 +10,7 @@ import { Icon } from '../../ui/components/Icon'
 import { NumericRangeField } from '../../ui/components/NumericRangeField'
 import { SceneElementControls } from '../../ui/components/SceneElementControls'
 import { SceneCastPickerModal } from '../../ui/components/SceneCastPickerModal'
+import { useSerializedSceneDocumentSave } from '../../ui/hooks/useSerializedSceneDocumentSave'
 import { isLegacySceneCatalogId, loadLegacySceneCatalog } from '../../ui/legacySceneCatalog'
 import { createSceneTextElement, sceneCatalogColor, sceneEditorTools } from '../../ui/sceneEditorDefaults'
 import { CharacterPortrait } from '../../ui/components/CharacterPortrait'
@@ -157,13 +157,30 @@ export function StudioPage() {
   const studioFaceRenderPendingRef = useRef<{ studioId: string; elementId: string; assetId: string; character: CustomizerCharacter; transforms: StudioFaceTransforms } | null>(null)
   const studioFaceRenderRunningRef = useRef(false)
   const studioFaceRendererRef = useRef<{ key: string; render: (appearance?: CustomizerFaceAppearance, transforms?: StudioFaceTransforms, effects?: FaceExpressionEffects, mode?: StudioFaceMode) => Promise<{ dataUrl: string; width: number; height: number }> } | null>(null)
-  const saveGenerationRef = useRef(0)
-  const studioSaveQueue = useRef(new SerializedDocumentSaveQueue())
   const expressionSaveSignatureRef = useRef<{ studioId: string; value: string } | null>(null)
   const normalizedStudioIdsRef = useRef(new Set<string>())
   const nextStudioNumber = useRef(1)
   const selectedStudio = studios.find((studio) => studio.id === selectedId) ?? null
   const activeStudio = studios.find((studio) => studio.id === activeStudioId) ?? null
+  const writeStudioDocument = useCallback((studio: StudioDocument) => window.desktop.saveStudio(studio), [])
+  const onStudioDocumentSaved = useCallback((document: StudioDocument, savedDocument: StudioDocument) => {
+    if (savedDocument.thumbnailDataUrl !== document.thumbnailDataUrl) {
+      setStudios((current) => current.map((studio) => studio.id === document.id && studio.updatedAt === document.updatedAt && studio.thumbnailDataUrl !== savedDocument.thumbnailDataUrl
+        ? { ...studio, thumbnailDataUrl: savedDocument.thumbnailDataUrl }
+        : studio))
+    }
+    setSaved(true)
+    setError(null)
+  }, [])
+  const onStudioDocumentSaveError = useCallback((reason: unknown) => {
+    setError(reason instanceof Error ? reason.message : 'Não foi possível salvar o Studio neste dispositivo.')
+  }, [])
+  const { save: saveStudio, writeInOrder: writeStudioInOrder } = useSerializedSceneDocumentSave(activeStudio, {
+    createThumbnail: makeStudioThumbnail,
+    write: writeStudioDocument,
+    onSaved: onStudioDocumentSaved,
+    onError: onStudioDocumentSaveError
+  })
   const selectedElement = activeStudio?.elements.find((element) => element.id === selectedElementId) ?? null
   const selectedStudioCharacter = selectedElement?.kind === 'character' ? availableCharacters.find((character) => character.id === selectedElement.characterId) ?? null : null
   const selectedStudioExpressionCollectionId = studioExpressionCollection(selectedElement, studioExpressionPresets)
@@ -586,34 +603,6 @@ export function StudioPage() {
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível duplicar o Studio.') }
   }
 
-  const saveStudio = useCallback(async (document = activeStudio) => {
-    if (!document) return true
-    const generation = ++saveGenerationRef.current
-    try {
-      // Enfileirar antes de preparar a miniatura: uma geração PNG lenta não pode
-      // fazer um snapshot antigo ser gravado depois de um novo.
-      const savedDocument = await studioSaveQueue.current.run(async () => {
-        const thumbnailDataUrl = await makeStudioThumbnail(document).catch(() => document.thumbnailDataUrl)
-        const next = { ...document, ...(thumbnailDataUrl ? { thumbnailDataUrl } : {}), updatedAt: new Date().toISOString() }
-        await window.desktop.saveStudio(next)
-        return next
-      })
-      if (generation === saveGenerationRef.current) {
-        if (savedDocument.thumbnailDataUrl !== document.thumbnailDataUrl) {
-          setStudios((current) => current.map((studio) => studio.id === document.id && studio.updatedAt === document.updatedAt && studio.thumbnailDataUrl !== savedDocument.thumbnailDataUrl
-            ? { ...studio, thumbnailDataUrl: savedDocument.thumbnailDataUrl }
-            : studio))
-        }
-        setSaved(true)
-        setError(null)
-      }
-      return true
-    } catch (reason) {
-      if (generation === saveGenerationRef.current) setError(reason instanceof Error ? reason.message : 'Não foi possível salvar o Studio neste dispositivo.')
-      return false
-    }
-  }, [activeStudio])
-
   useEffect(() => {
     if (!activeStudio) return
     setSaved(false)
@@ -693,7 +682,7 @@ export function StudioPage() {
           }
 
       // Persist imported image bytes and their manifest before showing the asset as saved.
-      await studioSaveQueue.current.run(() => window.desktop.saveStudio(nextStudio))
+      await writeStudioInOrder(nextStudio)
       if (activeStudioId === studioAtImport.id) {
         recordHistory()
         setStudios((current) => current.map((studio) => studio.id === studioAtImport.id ? nextStudio : studio))

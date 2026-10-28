@@ -1,5 +1,4 @@
 import { editorV6CharacterRenderKey, editorV6ElementSize } from '../../../../shared/editorV6SceneModel'
-import { SerializedDocumentSaveQueue } from '../../../../shared/serializedDocumentSave'
 import { isPoseSnapshotForModel } from '../../../../shared/characterSourceContinuity'
 import { useEditorV6Store } from './editorV6Store'
 import { createEditorV6Timeline, EDITOR_V6_DEFAULT_VIDEO_LAYOUT, editorV6DefaultVideoLayout, syncEditorV6TimelineElements } from '../../../../shared/editorV6'
@@ -25,6 +24,7 @@ import { Icon } from '../../ui/components/Icon'
 import { NumericRangeField } from '../../ui/components/NumericRangeField'
 import { SceneElementControls } from '../../ui/components/SceneElementControls'
 import { SceneCastPickerModal } from '../../ui/components/SceneCastPickerModal'
+import { useSerializedSceneDocumentSave } from '../../ui/hooks/useSerializedSceneDocumentSave'
 import { isLegacySceneCatalogId, loadLegacySceneCatalog } from '../../ui/legacySceneCatalog'
 import { createSceneTextElement, sceneCatalogColor, sceneEditorTools } from '../../ui/sceneEditorDefaults'
 import { CharacterPortrait } from '../../ui/components/CharacterPortrait'
@@ -56,7 +56,7 @@ function samePoseRevisionSnapshot(left: Record<string, string>, right: Record<st
   return keys.length === Object.keys(right).length && keys.every((key) => left[key] === right[key])
 }
 const defaultStudioEyeTransform: EditorV6FaceTransform = { x: 0, y: 0, width: 100, height: 100, rotation: 0 }
-async function makeStudioThumbnail(studio: EditorV6Document): Promise<string> {
+async function makeEditorV6Thumbnail(studio: EditorV6Document): Promise<string> {
   const { captureEditorV6Frame } = await import('./sceneCapture')
   return captureEditorV6Frame(studio, 0, 480, 270, 'image/jpeg')
 }
@@ -123,14 +123,31 @@ export function EditorV6Page() {
   const editorV6FaceRenderPendingRef = useRef<{ studioId: string; elementId: string; assetId: string; character: CustomizerCharacter; transforms: EditorV6FaceTransforms } | null>(null)
   const editorV6FaceRenderRunningRef = useRef(false)
   const editorV6FaceRendererRef = useRef<{ key: string; renderer: PreparedEditorV6FaceRenderer } | null>(null)
-  const saveGenerationRef = useRef(0)
   const activeLoadGenerationRef = useRef(0)
-  const editorV6SaveQueue = useRef(new SerializedDocumentSaveQueue())
   const expressionSaveSignatureRef = useRef<{ studioId: string; value: string } | null>(null)
   const normalizedStudioIdsRef = useRef(new Set<string>())
   const nextStudioNumber = useRef(1)
   const selectedEditorV6 = editorV6Projects.find((studio) => studio.id === selectedId) ?? null
   const activeEditorV6 = activeEditorV6Stored?.id === activeEditorV6Id ? activeEditorV6Stored : null
+  const writeEditorV6Document = useCallback((document: EditorV6Document) => window.desktop.saveEditorV6Project(document), [])
+  const onEditorV6DocumentSaved = useCallback((document: EditorV6Document, savedDocument: EditorV6Document) => {
+    if (savedDocument.thumbnailDataUrl !== document.thumbnailDataUrl) {
+      updateActiveEditorV6Project((project) => project.id === document.id && project.updatedAt === document.updatedAt && project.thumbnailDataUrl !== savedDocument.thumbnailDataUrl
+        ? { ...project, thumbnailDataUrl: savedDocument.thumbnailDataUrl }
+        : project)
+    }
+    setSaved(true)
+    setError(null)
+  }, [updateActiveEditorV6Project])
+  const onEditorV6DocumentSaveError = useCallback((reason: unknown) => {
+    setError(reason instanceof Error ? reason.message : 'Não foi possível salvar o projeto do Editor V6 neste dispositivo.')
+  }, [])
+  const { save: saveActiveEditorV6Project, writeInOrder: writeEditorV6DocumentInOrder } = useSerializedSceneDocumentSave(activeEditorV6, {
+    createThumbnail: makeEditorV6Thumbnail,
+    write: writeEditorV6Document,
+    onSaved: onEditorV6DocumentSaved,
+    onError: onEditorV6DocumentSaveError
+  })
   const availableCharacterById = useMemo(() => new Map(availableCharacters.map((character) => [character.id, character])), [availableCharacters])
   const fabricatorModelSlots = useMemo(() => [...new Set(availableCharacters.map((character) => character.customization.modelSlot ?? 1))].sort((left, right) => left - right), [availableCharacters])
   const fabricatorModelSlotsKey = fabricatorModelSlots.join(',')
@@ -597,34 +614,6 @@ export function EditorV6Page() {
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível duplicar o projeto do Editor V6.') }
   }
 
-  const saveStudio = useCallback(async (document = activeEditorV6) => {
-    if (!document) return true
-    const generation = ++saveGenerationRef.current
-    try {
-      // Enfileirar antes de preparar a miniatura: uma geração PNG lenta não pode
-      // fazer um snapshot antigo ser gravado depois de um novo.
-      const savedDocument = await editorV6SaveQueue.current.run(async () => {
-        const thumbnailDataUrl = await makeStudioThumbnail(document).catch(() => document.thumbnailDataUrl)
-        const next = { ...document, ...(thumbnailDataUrl ? { thumbnailDataUrl } : {}), updatedAt: new Date().toISOString() }
-        await window.desktop.saveEditorV6Project(next)
-        return next
-      })
-      if (generation === saveGenerationRef.current) {
-        if (savedDocument.thumbnailDataUrl !== document.thumbnailDataUrl) {
-          updateActiveEditorV6Project((studio) => studio.id === document.id && studio.updatedAt === document.updatedAt && studio.thumbnailDataUrl !== savedDocument.thumbnailDataUrl
-            ? { ...studio, thumbnailDataUrl: savedDocument.thumbnailDataUrl }
-            : studio)
-        }
-        setSaved(true)
-        setError(null)
-      }
-      return true
-    } catch (reason) {
-      if (generation === saveGenerationRef.current) setError(reason instanceof Error ? reason.message : 'Não foi possível salvar o projeto do Editor V6 neste dispositivo.')
-      return false
-    }
-  }, [activeEditorV6])
-
   useEffect(() => {
     if (!activeEditorV6 || dragRef.current) return
     setSaved(false)
@@ -632,12 +621,12 @@ export function EditorV6Page() {
     const previous = expressionSaveSignatureRef.current
     expressionSaveSignatureRef.current = { studioId: activeEditorV6.id, value: signature }
     if (previous?.studioId === activeEditorV6.id && previous.value !== signature) {
-      void saveStudio(activeEditorV6)
+      void saveActiveEditorV6Project(activeEditorV6)
       return
     }
-    const timer = window.setTimeout(() => { void saveStudio(activeEditorV6) }, 650)
+    const timer = window.setTimeout(() => { void saveActiveEditorV6Project(activeEditorV6) }, 650)
     return () => window.clearTimeout(timer)
-  }, [activeEditorV6, saveStudio])
+  }, [activeEditorV6, saveActiveEditorV6Project])
 
   const patchStudio = (transform: (studio: EditorV6Document) => EditorV6Document, editSelection = true) => {
     if (!activeEditorV6Id) return
@@ -716,7 +705,7 @@ export function EditorV6Page() {
       if (category !== 'background') nextStudio = addEditorV6ElementAtFrame(nextStudio, nextStudio.elements.at(-1)!, frameAtImport)
       nextStudio = { ...nextStudio, timeline: normalizeEditorV6Timeline(syncEditorV6TimelineElements(nextStudio.timeline, nextStudio.elements)) }
       // Persist imported image bytes and their manifest before showing the asset as saved.
-      await editorV6SaveQueue.current.run(() => window.desktop.saveEditorV6Project(nextStudio))
+      await writeEditorV6DocumentInOrder(nextStudio)
       if (activeEditorV6Id === studioAtImport.id) {
         recordHistory()
         setActiveEditorV6Project(nextStudio)
@@ -751,7 +740,7 @@ export function EditorV6Page() {
       const block = { id: crypto.randomUUID(), mediaId: media.id, mediaInFrame: 0, label: media.name.slice(0, 120), startFrame, durationFrames, audioEnabled: true, gain: 1 }
       const timeline = normalizeEditorV6Timeline({ ...sourceProject.timeline, durationFrames: Math.max(sourceProject.timeline.durationFrames, startFrame + durationFrames), tracks: sourceProject.timeline.tracks.map((item) => item.kind === kind ? { ...item, blocks: [...item.blocks, block] } : item) })
       const next: EditorV6Document = { ...sourceProject, media: [...(sourceProject.media ?? []), media], timeline, updatedAt: new Date().toISOString() }
-      await editorV6SaveQueue.current.run(() => window.desktop.saveEditorV6Project(next))
+      await writeEditorV6DocumentInOrder(next)
       if (activeEditorV6Id !== sourceProject.id) return
       recordHistory(sourceProject)
       setActiveEditorV6Project(next)
@@ -779,7 +768,7 @@ export function EditorV6Page() {
     const mediaList = sourceProject.media ?? []
     const timeline = normalizeEditorV6Timeline({ ...sourceProject.timeline, durationFrames: Math.max(sourceProject.timeline.durationFrames, startFrame + durationFrames), tracks: sourceProject.timeline.tracks.map((entry) => entry.kind === 'video' ? { ...entry, blocks: [...entry.blocks, block] } : entry) })
     const next: EditorV6Document = { ...sourceProject, media: mediaList.some((entry) => entry.id === media.id) ? mediaList : [...mediaList, media], timeline, updatedAt: new Date().toISOString() }
-    await editorV6SaveQueue.current.run(() => window.desktop.saveEditorV6Project(next))
+    await writeEditorV6DocumentInOrder(next)
     if (activeEditorV6Id !== sourceProject.id) return
     recordHistory(sourceProject)
     setActiveEditorV6Project(next)
@@ -1292,7 +1281,7 @@ export function EditorV6Page() {
   }
 
   const leaveStudio = async () => {
-    if (!await saveStudio(activeEditorV6)) return
+    if (!await saveActiveEditorV6Project(activeEditorV6)) return
     pausePlayback()
     setActiveStudioId(null)
     setActiveTool(null)
@@ -1303,7 +1292,7 @@ export function EditorV6Page() {
   const exportPrint = async () => {
     if (!activeEditorV6) return
     try {
-      if (!await saveStudio(activeEditorV6)) return
+      if (!await saveActiveEditorV6Project(activeEditorV6)) return
       const { captureEditorV6Frame } = await import('./sceneCapture')
       const image = await captureEditorV6Frame(activeEditorV6, getEditorV6PlaybackFrame(), 1920, 1080, 'image/png')
       const path = await window.desktop.saveEditorV6Print(activeEditorV6.id, image)
@@ -1558,7 +1547,7 @@ export function EditorV6Page() {
         {!fullView && <aside className="studio-editor-rail studio-editor-left" aria-label="Ferramentas do Editor V6">
           <div className="studio-editor-quick-actions">
             <button className="studio-round-action" onClick={() => void leaveStudio()} title="Salvar automaticamente e voltar" aria-label="Voltar para Editor V6" type="button"><span>←</span></button>
-            <button className="studio-round-action" onClick={() => void saveStudio(activeEditorV6)} title="Salvar agora no computador" aria-label="Salvar Editor V6" type="button"><Icon name="save" /></button>
+            <button className="studio-round-action" onClick={() => void saveActiveEditorV6Project(activeEditorV6)} title="Salvar agora no computador" aria-label="Salvar Editor V6" type="button"><Icon name="save" /></button>
           </div>
           <div className="studio-editor-quick-actions studio-history-actions">
             <button className="studio-round-action" disabled={!canUndo} onClick={undo} title="Desfazer (Ctrl+Z)" aria-label="Desfazer" type="button"><Icon name="undo" /></button>
