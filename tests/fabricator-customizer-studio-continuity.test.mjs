@@ -84,6 +84,16 @@ test('Customizador e Studio usam a barreira de continuidade compartilhada',async
  assert.match(page,/prepareCustomizerArtworkPreview\(/)
  assert.match(selection,/prepareCustomizerArtworkPreview\(/)
 })
+test('hidratação de roupas tem dono próprio e protege alterações feitas durante a leitura',async()=>{
+ const [page,hydration]=await Promise.all([
+  readFile('src/renderer/src/features/customizer/CustomizerPage.tsx','utf8'),
+  readFile('src/renderer/src/features/customizer/useCustomizerWardrobeHydration.ts','utf8')
+ ])
+ assert.match(page,/useCustomizerWardrobeHydration\(/)
+ assert.match(hydration,/loadWardrobeSet\(group\.modelSlot, group\.setId\)/)
+ assert.match(hydration,/window\.confirm\(/,'links só são removidos depois de confirmação explícita')
+ assert.match(hydration,/JSON\.stringify\(current\.customization\.wardrobeGroups\) === JSON\.stringify\(groupsToRestore\)/,'migração não sobrescreve roupas editadas durante o carregamento')
+})
 test('preview unificado preserva identidade do modelo/pose, cores da personagem e cache do modelo',async()=>{
  const loadedSource={status:'ready',sourceProject:{slot:5,modelSkinTone:'#dba47d',modelOutlineColor:'#352522'},artwork:{width:200,height:300}}
  const cachedModel={slot:5,name:'Modelo em cache'}

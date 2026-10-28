@@ -22,6 +22,7 @@ import { useCustomizerHairPreview } from './useCustomizerHairPreview'
 import { useCustomizerWardrobePreview } from './useCustomizerWardrobePreview'
 import { useCustomizerWardrobeAdjustment } from './useCustomizerWardrobeAdjustment'
 import { useCustomizerWardrobePanelActions } from './useCustomizerWardrobePanelActions'
+import { useCustomizerWardrobeHydration } from './useCustomizerWardrobeHydration'
 import { useCustomizerHeadAdjustment } from './useCustomizerHeadAdjustment'
 import { MODEL_SKIN_BASE_TONE, isValidSkinTone } from '../../../../shared/skinTones'
 import { useCustomizerAdjustmentPreview } from './useCustomizerAdjustmentPreview'
@@ -39,11 +40,10 @@ import { Icon } from '../../ui/components/Icon'
 import type { FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSummary, FaceDetailKind, FaceSheetKind, FabricatorProject, HairStyleSummary, WardrobeSet } from '../../../../shared/fabricator'
 import { resolvePoseCategory } from '../../../../shared/fabricator'
 import type { CustomizerFaceAppearance, CustomizerWardrobeGroup, FacePalettePartId, HairColorOverrides, HairColorRole, HairPartId } from '../../../../shared/customizer'
-import { characterBodyDimensionLimits, characterProportionLimits, defaultCharacterProportions, getCharacterBodyDimensions, getCharacterProportions, type CharacterProportions } from '../../../../shared/customizer'
+import { characterBodyDimensionLimits, characterProportionLimits, defaultCharacterProportions, type CharacterProportions } from '../../../../shared/customizer'
 import { usePreviewBackground } from '../../ui/hooks/usePreviewBackground'
 import { DesignBanner } from '../../ui/components/DesignBanner'
 import { anchorWardrobeAdjustments } from '../../../../shared/wardrobeAdjustment'
-import { wardrobeGroupCategoryForSource } from '../../../../shared/wardrobePlacementModel'
 import { applyCharacterBodyShape } from '../../../../shared/bodyShape'
 import { loadStandardExpressionEffects, withCharacterHeadSize, isRightFaceAsset, characterShapeScale, resolvedHairColors, clothingCategories, wardrobeComponentsForGroup, customizerHairParts } from '../../characters/characterRenderer'
 import type { CatalogArtwork, SelectedWardrobeComponent } from '../../characters/characterRenderer'
@@ -123,8 +123,6 @@ export function CustomizerPage() {
   const { headPanelTab, headCategorySelection, selectHeadTab } = useCustomizerHeadNavigation()
   const [activeHairColorRole, setActiveHairColorRole] = useState<HairColorRole>('base')
   const [selectedClothing, setSelectedClothing] = useState<SelectedWardrobeComponent | null>(null)
-  const [unavailableWardrobeSetKeys, setUnavailableWardrobeSetKeys] = useState<string[]>([])
-  const [repairingWardrobeLinks, setRepairingWardrobeLinks] = useState(false)
   const [selectedWardrobeUrl, setSelectedWardrobeUrl] = useState<string | null>(null)
   const [selectedWardrobeAboveHairUrl, setSelectedWardrobeAboveHairUrl] = useState<string | null>(null)
   const [selectedArtworkProject, setSelectedArtworkProject] = useState<CatalogArtwork | null>(null)
@@ -211,7 +209,6 @@ export function CustomizerPage() {
   })
   const previewStyle = { '--preview-background': previewBackground, '--character-scale-x': activeShapeScale.x, '--character-scale-y': activeShapeScale.y } as import('react').CSSProperties
   const customizerPreviewStyle = { ...previewStyle, '--preview-zoom': customizerPreviewZoom, '--preview-pan-x': `${customizerPreviewPan.x}px`, '--preview-pan-y': `${customizerPreviewPan.y}px` } as import('react').CSSProperties
-  const characterWardrobeGroups = selectedCharacter?.customization.wardrobeGroups ?? []
   const characterFaceAppearance = selectedCharacter?.customization.faceAppearance
   const characterHairAppearance = selectedCharacter?.customization.hairAppearance
 
@@ -229,7 +226,6 @@ export function CustomizerPage() {
     }
     return () => { cancelled = true }
   }, [selectedSourceModelProject])
-  const characterWardrobeHydrationKey = characterWardrobeGroups.map((group) => `${group.modelSlot}:${group.setId}:${group.category}:${group.componentId ?? ''}`).sort().join('|')
   const visibleCharacters = characters
     .filter((character) => character.name.toLowerCase().includes(rosterQuery.trim().toLowerCase()))
 
@@ -537,72 +533,10 @@ export function CustomizerPage() {
     return () => { cancelled = true }
   }, [activeModule, headPanelTab, wardrobeSets])
 
-  useEffect(() => {
-    setUnavailableWardrobeSetKeys([])
-    if (!selectedCharacter || !characterWardrobeGroups.length) return
-    let cancelled = false
-    const groupsToRestore = [...characterWardrobeGroups]
-    void (async () => {
-      // Keep legacy references intact if their source vanished; this must not become a recurring global catalog error.
-      const restored = await Promise.all(groupsToRestore.map(async (group) => {
-        const key = `${group.modelSlot}:${group.setId}`
-        const set = await window.desktop.loadWardrobeSet(group.modelSlot, group.setId)
-        return { group, key, set }
-      }))
-      if (cancelled) return
-      setUnavailableWardrobeSetKeys(Array.from(new Set(restored.filter(({ set }) => !set).map(({ key }) => key))))
-      setWardrobeDetails((current) => {
-        const next = { ...current }
-        for (const { key, set } of restored) if (set) next[key] = set
-        return next
-      })
-      const setsByKey = new Map<string, WardrobeSet>()
-      for (const { key, set } of restored) if (set) setsByKey.set(key, set)
-      let migratedGroups = groupsToRestore.map((group) => {
-        const component = group.componentId
-          ? setsByKey.get(`${group.modelSlot}:${group.setId}`)?.components.find((entry) => entry.id === group.componentId)
-          : undefined
-        if (!component) return group
-        const category = wardrobeGroupCategoryForSource(component.category, group.category)
-        return category === group.category ? group : { ...group, category }
-      })
-      if (migratedGroups.some((group) => !group.adjustmentReference && setsByKey.has(`${group.modelSlot}:${group.setId}`))) {
-        const modelSlot = selectedCharacter.customization.modelSlot ?? 1
-        const poseSlot = selectedCharacter.customization.poseSlot
-        const source = await loadCustomizerArtworkSource(modelSlot, poseSlot, {
-          loadModel: window.desktop.loadFabricatorSlot,
-          loadPose: window.desktop.loadFabricatorPose
-        })
-        if (source.status === 'ready') {
-          const { artwork } = source
-          const shaped = applyCharacterBodyShape(withCharacterHeadSize(artwork, getCharacterProportions(selectedCharacter.customization)), getCharacterBodyDimensions(selectedCharacter.customization))
-          const details = Object.fromEntries(restored.filter((entry): entry is typeof entry & { set: WardrobeSet } => !!entry.set).map(({ key, set }) => [key, set]))
-          migratedGroups = anchorWardrobeAdjustments(migratedGroups, modelSlot, shaped.parts, (group) => wardrobeComponentsForGroup(group, details))
-        }
-      }
-      if (cancelled) return
-      if (JSON.stringify(migratedGroups) !== JSON.stringify(groupsToRestore)) {
-        const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
-        // Hydration must not overwrite an edit made while assets were loading.
-        if (JSON.stringify(current.customization.wardrobeGroups) === JSON.stringify(groupsToRestore)) {
-          await saveCharacter({ ...current, customization: { ...current.customization, wardrobeGroups: migratedGroups }, updatedAt: new Date().toISOString() })
-        }
-      }
-      for (const { group, set } of restored) {
-        if (!set) continue
-        const category = Object.values(clothingCategories).flat().find((definition) => definition.id === group.category)
-        if (!category) continue
-        const thumbnailKey = `${group.modelSlot}:${group.setId}:${group.category}`
-        if (wardrobeThumbnails[thumbnailKey]) continue
-        const thumbnail = await renderWardrobeThumbnail(set, category.source)
-        if (cancelled) return
-        if (thumbnail) setWardrobeThumbnails((current) => ({ ...current, [thumbnailKey]: thumbnail }))
-      }
-    })().catch((reason: unknown) => {
-      if (!cancelled) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível restaurar as roupas deste personagem.')
-    })
-    return () => { cancelled = true }
-  }, [selectedCharacter?.id, characterWardrobeHydrationKey])
+  const { unavailableWardrobeSetKeys, repairingWardrobeLinks, removeUnavailableWardrobeLinks } = useCustomizerWardrobeHydration({
+    selectedCharacter, charactersRef, saveCharacter, wardrobeThumbnails,
+    setWardrobeDetails, setWardrobeThumbnails, setCatalogError
+  })
 
   useCustomizerWardrobePreview({
     characterId: selectedCharacter?.id,
@@ -914,26 +848,6 @@ export function CustomizerPage() {
       ? { ...base, noseCatalogId: undefined, noseIndex: 0 }
       : { ...base, mouthClosedCatalogId: undefined, mouthOpenCatalogId: undefined, expressionIndex: 0 }
     await saveCharacterCustomization({ faceAppearance: hasSelectedFaceAsset(faceAppearance) ? faceAppearance : undefined })
-  }
-
-  async function removeUnavailableWardrobeLinks() {
-    if (!selectedCharacter || !unavailableWardrobeSetKeys.length || repairingWardrobeLinks) return
-    if (!window.confirm(`Este personagem tem roupa(s) cuja fonte não existe mais. Remover somente os vínculos indisponíveis? As outras roupas e configurações serão mantidas.`)) return
-    const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
-    const unavailable = new Set(unavailableWardrobeSetKeys)
-    const wardrobeGroups = (current.customization.wardrobeGroups ?? []).filter((group) => !unavailable.has(`${group.modelSlot}:${group.setId}`))
-    if (wardrobeGroups.length === (current.customization.wardrobeGroups ?? []).length) {
-      setUnavailableWardrobeSetKeys([])
-      return
-    }
-    setRepairingWardrobeLinks(true)
-    try {
-      await saveCharacter({ ...current, customization: { ...current.customization, wardrobeGroups }, updatedAt: new Date().toISOString() })
-      const latest = charactersRef.current.find((character) => character.id === current.id)
-      if (!latest?.customization.wardrobeGroups?.some((group) => unavailable.has(`${group.modelSlot}:${group.setId}`))) setUnavailableWardrobeSetKeys([])
-    } finally {
-      setRepairingWardrobeLinks(false)
-    }
   }
 
   async function submitCharacterDialog(event: import('react').FormEvent<HTMLFormElement>) {
