@@ -3,7 +3,7 @@ import type { FabricatorAssetSave, FabricatorHistoryAction, FabricatorHistorySta
 import { Icon, type IconName } from '../../ui/components/Icon'
 import { usePreviewBackground } from './usePreviewBackground'
 import { autoConnectParts, normalizeLayerOrder, normalizePartAnchors, orderedParts, partJointAnchor, reorderLayer, sourcePointFromCanvas } from './models/rig'
-import { connectFabricatorParts, moveFabricatorPartBranch, rotateFabricatorPartBranch, toggleFabricatorJointFixed } from './models/rigEditing'
+import { connectFabricatorParts, isTorsoPart, moveFabricatorPartBranch, rotateFabricatorPartBranch, toggleFabricatorJointFixed } from './models/rigEditing'
 import { headSizePercent, isHeadPart, resizeHeadPart } from './models/resize'
 import { PoseWorkspace } from './PoseWorkspace'
 import { WardrobeWorkspace } from './wardrobe/WardrobeWorkspace'
@@ -185,7 +185,7 @@ export function FabricatorPage() {
     })
   }, [project])
   const jointMarkers = useMemo(() => jointedParts
-    .filter(({ part }) => !/tronco|corpo/i.test(part.name))
+    .filter(({ part }) => !isTorsoPart(part))
     .map((item) => ({ ...item, fixed: Boolean(project?.joints.some((joint) => joint.childPartId === item.part.id && joint.fixed)) }))
     .sort((a, b) => Number(selectedIds.includes(a.part.id)) - Number(selectedIds.includes(b.part.id))), [jointedParts, project?.joints, selectedIds])
   const hiddenPartIds = project?.hiddenPartIds ?? []
@@ -577,6 +577,14 @@ export function FabricatorPage() {
 
   const updatePartPosition = (partId: string, dx: number, dy: number) => updateProject((current) => moveFabricatorPartBranch(current, partId, dx, dy))
 
+  const setPartCoordinate = (partId: string, axis: 'x' | 'y', rawValue: string) => {
+    updateProject((current) => {
+      const target = current.parts.find((part) => part.id === partId)
+      if (!target || isTorsoPart(target)) return current
+      return { ...current, parts: current.parts.map((part) => part.id === partId ? { ...part, [axis]: Number(rawValue) || 0 } : part) }
+    })
+  }
+
   const toggleJointFix = (partId: string) => updateProject((current) => toggleFabricatorJointFixed(current, partId))
 
   const rotateBranch = (jointId: string, amount: number) => updateProject((current) => rotateFabricatorPartBranch(current, jointId, amount))
@@ -639,6 +647,11 @@ export function FabricatorPage() {
   const beginPartDrag = (event: React.PointerEvent<HTMLImageElement>, part: ModelPart) => {
     if (mixerActive) { startMixerStroke(event); return }
     if (connectMode || !project) return
+    if (isTorsoPart(part)) {
+      event.preventDefault(); event.stopPropagation()
+      setSelectedIds([part.id])
+      return
+    }
     event.preventDefault(); event.stopPropagation()
     event.currentTarget.setPointerCapture(event.pointerId)
     startHistoryGesture('edit')
@@ -799,7 +812,7 @@ export function FabricatorPage() {
                   {panelTab === 'parts' && <div className="model-panel-body">
                     <label className="model-part-search"><Icon name="search" /><input placeholder="Buscar peça…" value={filter} onChange={(event) => setFilter(event.target.value)} /></label>
                     <div className="model-part-grid">{visibleParts.map((part) => <button key={part.id} className={`model-part-card${selectedIds.includes(part.id) ? ' selected' : ''}`} onClick={(event) => handlePartClick(part.id, event.ctrlKey || event.metaKey)} type="button" title={`${part.name} · selecione ou arraste no canvas`}><span className="model-part-thumb"><img src={part.dataUrl} alt="" /></span><span className="model-part-card-name">{part.name}</span><small>{Math.round(part.width)} × {Math.round(part.height)}</small></button>)}{visibleParts.length === 0 && <p className="model-no-parts">Nenhuma peça encontrada.</p>}</div>
-                    {selectedPart && <div className="model-selected-tools"><div className="model-selected-name">{renamingPartId === selectedPart.id ? <input autoFocus value={selectedPart.name} onBlur={() => setRenamingPartId(null)} onChange={(event) => updateProject((current) => ({ ...current, parts: current.parts.map((part) => part.id === selectedPart.id ? { ...part, name: event.target.value } : part) }))} onKeyDown={(event) => { if (event.key === 'Enter') setRenamingPartId(null) }} /> : <><strong>{selectedPart.name}</strong><button title="Renomear peça" onClick={() => setRenamingPartId(selectedPart.id)} type="button"><Icon name="edit" /></button></>}</div><div className="model-transform-controls"><strong>Transformação</strong><label>X<input type="number" step="1" value={Number(selectedPart.x.toFixed(1))} onChange={(event) => updateProject((current) => ({ ...current, parts: current.parts.map((part) => part.id === selectedPart.id ? { ...part, x: Number(event.target.value) || 0 } : part) }))} /></label><label>Y<input type="number" step="1" value={Number(selectedPart.y.toFixed(1))} onChange={(event) => updateProject((current) => ({ ...current, parts: current.parts.map((part) => part.id === selectedPart.id ? { ...part, y: Number(event.target.value) || 0 } : part) }))} /></label><label>Rotação<input type="number" step="1" value={Number(selectedPart.rotation.toFixed(1))} onChange={(event) => updateProject((current) => ({ ...current, parts: current.parts.map((part) => part.id === selectedPart.id ? { ...part, rotation: Number(event.target.value) || 0 } : part) }))} /></label></div>{isHeadPart(selectedPart) && <div className="model-head-resize">
+                    {selectedPart && <div className="model-selected-tools"><div className="model-selected-name">{renamingPartId === selectedPart.id ? <input autoFocus value={selectedPart.name} onBlur={() => setRenamingPartId(null)} onChange={(event) => updateProject((current) => ({ ...current, parts: current.parts.map((part) => part.id === selectedPart.id ? { ...part, name: event.target.value } : part) }))} onKeyDown={(event) => { if (event.key === 'Enter') setRenamingPartId(null) }} /> : <><strong>{selectedPart.name}</strong><button title="Renomear peça" onClick={() => setRenamingPartId(selectedPart.id)} type="button"><Icon name="edit" /></button></>}</div><div className="model-transform-controls"><strong>Transformação</strong><label title={isTorsoPart(selectedPart) ? "O tronco fica fixo como âncora da montagem." : undefined}>X<input type="number" step="1" value={Number(selectedPart.x.toFixed(1))} disabled={isTorsoPart(selectedPart)} onChange={(event) => setPartCoordinate(selectedPart.id, "x", event.target.value)} /></label><label title={isTorsoPart(selectedPart) ? "O tronco fica fixo como âncora da montagem." : undefined}>Y<input type="number" step="1" value={Number(selectedPart.y.toFixed(1))} disabled={isTorsoPart(selectedPart)} onChange={(event) => setPartCoordinate(selectedPart.id, "y", event.target.value)} /></label><label>Rotação<input type="number" step="1" value={Number(selectedPart.rotation.toFixed(1))} onChange={(event) => updateProject((current) => ({ ...current, parts: current.parts.map((part) => part.id === selectedPart.id ? { ...part, rotation: Number(event.target.value) || 0 } : part) }))} /></label></div>{isTorsoPart(selectedPart) && <small style={{ color: "#a9b5c4" }}>O tronco fica fixo como âncora; monte as demais peças ao redor dele.</small>}{isHeadPart(selectedPart) && <div className="model-head-resize">
                       <div className="model-head-resize-heading"><div><strong>Formato da cabeça</strong><small>Ajuste cada direção sem soltar o encaixe do pescoço.</small></div><button type="button" onClick={() => updateProject((current) => resizeHeadPart(resizeHeadPart(current, selectedPart.id, 'width', 100), selectedPart.id, 'height', 100))}>Restaurar 100%</button></div>
                       {(['width', 'height'] as const).map((axis) => <label className="model-head-resize-row" key={axis}><span>{axis === 'width' ? 'Largura' : 'Altura'}</span><input type="range" min="20" max="300" step="1" value={headSizePercent(selectedPart, axis)} onPointerDown={() => startHistoryGesture('edit')} onPointerUp={finishHistoryGesture} onPointerCancel={finishHistoryGesture} onChange={(event) => updateProject((current) => resizeHeadPart(current, selectedPart.id, axis, Number(event.target.value)))} /><span className="model-head-resize-number"><input type="number" min="20" max="300" step="1" value={headSizePercent(selectedPart, axis)} onChange={(event) => updateProject((current) => resizeHeadPart(current, selectedPart.id, axis, Number(event.target.value)))} />%</span></label>)}
                     </div>}<div className="model-action-row"><button className="model-tool-button" onClick={() => void splitSelected('vertical')} disabled={selectedPart.rotation !== 0 || selectedPart.width < 2} type="button">Dividir ↔</button><button className="model-tool-button" onClick={() => void splitSelected('horizontal')} disabled={selectedPart.rotation !== 0 || selectedPart.height < 2} type="button">Dividir ↕</button><button className="model-tool-button danger" onClick={() => removePart(selectedPart.id)} type="button">Excluir</button></div>{selectedPartIds.length > 1 && <button className="model-merge-button" onClick={() => void mergeSelected()} type="button">Mesclar {selectedPartIds.length} peças selecionadas</button>}</div>}

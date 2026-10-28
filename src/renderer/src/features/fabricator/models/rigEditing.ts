@@ -1,6 +1,10 @@
-import type { FabricatorProject, JointLink } from '../../../../../shared/fabricator'
+import type { FabricatorProject, JointLink, ModelPart } from '../../../../../shared/fabricator'
 import { createJoint, jointPivot } from './rig'
 import { rotatePointAroundOrigin } from './geometry'
+
+export function isTorsoPart(part: ModelPart | null | undefined): boolean {
+  return Boolean(part && /tronco|corpo/i.test(part.name))
+}
 
 export function connectFabricatorParts(project: FabricatorProject, parentPartId: string, childPartId: string, createId: () => string): FabricatorProject {
   const parent = project.parts.find((part) => part.id === parentPartId)
@@ -27,6 +31,10 @@ export function connectFabricatorParts(project: FabricatorProject, parentPartId:
 }
 
 export function moveFabricatorPartBranch(project: FabricatorProject, partId: string, dx: number, dy: number): FabricatorProject {
+  const torso = project.parts.find(isTorsoPart)
+  const source = project.parts.find((part) => part.id === partId)
+  if (!source || isTorsoPart(source)) return project
+
   const movingIds = new Set<string>([partId])
   let addedPart = true
   while (addedPart) {
@@ -38,6 +46,7 @@ export function moveFabricatorPartBranch(project: FabricatorProject, partId: str
       }
     }
   }
+  if (torso) movingIds.delete(torso.id)
 
   return {
     ...project,
@@ -45,13 +54,24 @@ export function moveFabricatorPartBranch(project: FabricatorProject, partId: str
       ? { ...part, x: part.x + dx, y: part.y + dy, ...(part.jointAnchor ? { jointAnchor: { x: part.jointAnchor.x + dx, y: part.jointAnchor.y + dy } } : {}) }
       : part),
     joints: project.joints.map((joint) => {
-      const hasMovedEndpoint = movingIds.has(joint.parentPartId) || movingIds.has(joint.childPartId)
-      const pivot = hasMovedEndpoint ? jointPivot(joint) : null
+      const parentMoved = movingIds.has(joint.parentPartId)
+      const childMoved = movingIds.has(joint.childPartId)
+      if (!parentMoved && !childMoved) return joint
+      const parentAnchor = parentMoved
+        ? { x: joint.parentAnchor.x + dx, y: joint.parentAnchor.y + dy }
+        : joint.parentAnchor
+      const childAnchor = childMoved
+        ? { x: joint.childAnchor.x + dx, y: joint.childAnchor.y + dy }
+        : joint.childAnchor
+      const torsoAnchor = torso && (joint.parentPartId === torso.id || joint.childPartId === torso.id)
+      const pivot = torsoAnchor
+        ? { x: (parentAnchor.x + childAnchor.x) / 2, y: (parentAnchor.y + childAnchor.y) / 2 }
+        : { x: jointPivot(joint).x + dx, y: jointPivot(joint).y + dy }
       return {
         ...joint,
-        ...(movingIds.has(joint.parentPartId) ? { parentAnchor: { x: joint.parentAnchor.x + dx, y: joint.parentAnchor.y + dy } } : {}),
-        ...(movingIds.has(joint.childPartId) ? { childAnchor: { x: joint.childAnchor.x + dx, y: joint.childAnchor.y + dy } } : {}),
-        ...(pivot ? { pivot: { x: pivot.x + dx, y: pivot.y + dy } } : {})
+        ...(parentMoved ? { parentAnchor } : {}),
+        ...(childMoved ? { childAnchor } : {}),
+        pivot
       }
     })
   }
@@ -66,6 +86,8 @@ export function toggleFabricatorJointFixed(project: FabricatorProject, childPart
 export function rotateFabricatorPartBranch(project: FabricatorProject, jointId: string, amount: number): FabricatorProject {
   const joint = project.joints.find((item) => item.id === jointId)
   if (!joint) return project
+  const child = project.parts.find((part) => part.id === joint.childPartId)
+  if (isTorsoPart(child)) return project
 
   const affected = new Set<string>([joint.childPartId])
   let changed = true

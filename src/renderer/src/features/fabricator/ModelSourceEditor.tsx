@@ -5,6 +5,8 @@ import { isHeadPart } from './models/resize'
 import { normalizePartAnchors } from './models/rig'
 import { composeModelSource, sourceRect, validateModelSourceChroma, validateModelSourceDimensions, MAX_CHROMA_TOLERANCE, type ModelSourceDimensions, type ModelSourceResult } from './models/modelSource'
 import { cropModelSourcePart, eraseModelSourceBrush, splitModelSourcePart, worldPointInsideCrop, worldPointToPart, type ModelSourceCrop, type ModelSourcePoint } from './models/modelSourceEditing'
+import { applyImageWarpBrush, type ImageWarpPoint } from './models/imageMeshWarp'
+import { createModelSourceWarpSession, drawModelSourceWarp, modelSourceWarpDataUrl, type ModelSourceWarpSession } from './models/modelSourceWarp'
 
 type Props = {
   project: FabricatorProject
@@ -12,8 +14,9 @@ type Props = {
   onPublish: (result: ModelSourceResult) => Promise<void>
 }
 type PreviewMode = 'part' | 'sheet'
-type EditTool = 'select' | 'erase' | 'crop' | 'split' | 'outline'
+type EditTool = 'select' | 'erase' | 'crop' | 'split' | 'outline' | 'deform'
 type DrawingGesture = { tool: Exclude<EditTool, 'select'>; start: ModelSourcePoint; current: ModelSourcePoint; points: ModelSourcePoint[] }
+type WarpDrag = { pointerId: number; partId: string; last: ImageWarpPoint; originalX: Float32Array; originalY: Float32Array; changed: boolean }
 type UndoSnapshot = { project: FabricatorProject; dimensions: ModelSourceDimensions; tolerance: number; selectedId: string }
 type MutationResult = { project: FabricatorProject; selectedId: string; status: string }
 
@@ -52,6 +55,10 @@ function orderAfterSplit(order: string[] | undefined, originalId: string, retain
   return next
 }
 
+function isThighPart(part: ModelPart): boolean {
+  return /coxa|thigh/i.test(part.name)
+}
+
 export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
   const [draft, setDraft] = useState(project)
   const [selectedId, setSelectedId] = useState(project.parts[0]?.id ?? '')
@@ -68,10 +75,18 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
   const [tool, setTool] = useState<EditTool>('select')
   const [zoom, setZoom] = useState(1)
   const [brushSize, setBrushSize] = useState(18)
+  const [warpRadius, setWarpRadius] = useState(28)
+  const [warpStrength, setWarpStrength] = useState(70)
   const [gesture, setGesture] = useState<DrawingGesture | null>(null)
+  const [warpSession, setWarpSession] = useState<ModelSourceWarpSession | null>(null)
+  const [warpCursor, setWarpCursor] = useState<ModelSourcePoint | null>(null)
   const [undoCount, setUndoCount] = useState(0)
   const drag = useRef<{ id: string; originX: number; originY: number; clientX: number; clientY: number } | null>(null)
   const surface = useRef<HTMLDivElement>(null)
+  const warpCanvas = useRef<HTMLCanvasElement>(null)
+  const warpSessionRef = useRef<ModelSourceWarpSession | null>(null)
+  const warpDrag = useRef<WarpDrag | null>(null)
+  const warpDrawFrame = useRef<number | null>(null)
   const gestureRef = useRef<DrawingGesture | null>(null)
   const undoStack = useRef<UndoSnapshot[]>([])
 
@@ -79,6 +94,7 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
   const selectedRect = selected ? sourceRect(selected, dimensions[selected.id]) : null
   const baseline = selected ? sourceRect(selected) : null
   const isHead = Boolean(selected && isHeadPart(selected))
+  const isThigh = Boolean(selected && isThighPart(selected))
   const edited = draft !== project || Object.keys(dimensions).length > 0 || chromaTolerance !== project.tolerance
   const structureChanged = draft.parts.length !== project.parts.length
     || project.parts.some(part => !draft.parts.some(item => item.id === part.id))
@@ -89,6 +105,7 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
   const surfaceWidth = Math.max(1, logicalWidth * previewScale)
   const surfaceHeight = Math.max(1, logicalHeight * previewScale)
   const previewPart = previewParts.find(part => part.id === selectedId) ?? selected
+  warpSessionRef.current = warpSession
 
   useEffect(() => {
     let active = true
@@ -107,6 +124,48 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
     }, 180)
     return () => { active = false; window.clearTimeout(handle) }
   }, [draft, dimensions, chromaTolerance])
+
+  useEffect(() => {
+    if (mode !== 'part' || tool !== 'deform' || !selected || !isThighPart(selected) || !previewPart) {
+      warpSessionRef.current = null
+      setWarpSession(null)
+      warpDrag.current = null
+      setWarpCursor(null)
+      return
+    }
+    let active = true
+    warpSessionRef.current = null
+    setWarpSession(null)
+    void createModelSourceWarpSession(selected.id, previewPart.dataUrl, previewPart.chromaBaseDataUrl).then(session => {
+      if (!active) return
+      warpSessionRef.current = session
+      setWarpSession(session)
+      setError('')
+    }).catch(reason => {
+      if (!active) return
+      setError(reason instanceof Error ? reason.message : 'Não foi possível preparar a coxa para deformar.')
+    })
+    return () => {
+      active = false
+      if (warpSessionRef.current?.sourceUrl === previewPart.dataUrl) warpSessionRef.current = null
+      warpDrag.current = null
+    }
+  }, [mode, tool, selected?.id, previewPart?.dataUrl, previewPart?.chromaBaseDataUrl])
+
+  useEffect(() => {
+    if (mode !== 'part' || tool !== 'deform' || !warpSession || warpSession.partId !== selectedId || warpSession.sourceUrl !== previewPart?.dataUrl) return
+    const canvas = warpCanvas.current
+    if (!canvas) return
+    try {
+      drawModelSourceWarp(canvas, warpSession.image, warpSession.mesh)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Não foi possível atualizar a prévia deformada.')
+    }
+  }, [mode, tool, selectedId, previewPart?.dataUrl, warpSession, logicalWidth, logicalHeight])
+
+  useEffect(() => () => {
+    if (warpDrawFrame.current !== null) cancelAnimationFrame(warpDrawFrame.current)
+  }, [])
 
   const setRect = (part: ModelPart, next: { x: number; y: number; width: number; height: number }) => {
     const original = sourceRect(part)
@@ -212,8 +271,121 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
       y: clamp((event.clientY - bounds.top) * logicalHeight / bounds.height, 0, logicalHeight)
     }
   }
+  const drawWarpPreview = () => {
+    const session = warpSessionRef.current
+    const canvas = warpCanvas.current
+    if (!session || !canvas || session.partId !== selectedId) return
+    drawModelSourceWarp(canvas, session.image, session.mesh)
+  }
+  const scheduleWarpPreview = () => {
+    if (warpDrawFrame.current !== null) return
+    warpDrawFrame.current = requestAnimationFrame(() => {
+      warpDrawFrame.current = null
+      try { drawWarpPreview() } catch (reason) {
+        setError(reason instanceof Error ? reason.message : 'Não foi possível atualizar a prévia deformada.')
+      }
+    })
+  }
+  const startWarp = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const session = warpSessionRef.current
+    if (mode !== 'part' || tool !== 'deform' || !selected || !isThighPart(selected) || !session || session.partId !== selected.id || busy || downloading || event.button !== 0) return
+    const point = pointerPoint(event)
+    if (!point) return
+    setError('')
+    warpDrag.current = {
+      pointerId: event.pointerId,
+      partId: selected.id,
+      last: point,
+      originalX: new Float32Array(session.mesh.offsetX),
+      originalY: new Float32Array(session.mesh.offsetY),
+      changed: false
+    }
+    setWarpCursor(point)
+    event.currentTarget.setPointerCapture(event.pointerId)
+    event.preventDefault()
+  }
+  const moveWarp = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const point = pointerPoint(event)
+    setWarpCursor(point)
+    const drag = warpDrag.current
+    const session = warpSessionRef.current
+    if (!point || !drag || drag.pointerId !== event.pointerId || !session || drag.partId !== session.partId || busy) return
+    const delta = { x: point.x - drag.last.x, y: point.y - drag.last.y }
+    const distance = Math.hypot(delta.x, delta.y)
+    if (distance <= 0.001) return
+    const bounds = { x: 0, y: 0, width: logicalWidth, height: logicalHeight, rotation: 0 }
+    const steps = Math.max(1, Math.ceil(distance / Math.max(1, warpRadius * 0.2)))
+    for (let step = 1; step <= steps; step += 1) {
+      const previous = { x: drag.last.x + delta.x * ((step - 1) / steps), y: drag.last.y + delta.y * ((step - 1) / steps) }
+      const next = { x: drag.last.x + delta.x * (step / steps), y: drag.last.y + delta.y * (step / steps) }
+      applyImageWarpBrush(session.mesh, session.image, bounds, next, { x: next.x - previous.x, y: next.y - previous.y }, warpRadius, warpStrength / 100)
+    }
+    drag.last = point
+    drag.changed = true
+    event.preventDefault()
+    scheduleWarpPreview()
+  }
+  const finishWarp = async (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.type === 'pointerup') moveWarp(event)
+    const drag = warpDrag.current
+    if (!drag || drag.pointerId !== event.pointerId) return
+    warpDrag.current = null
+    try { event.currentTarget.releasePointerCapture(event.pointerId) } catch { /* A captura pode já ter sido liberada pelo navegador. */ }
+    const session = warpSessionRef.current
+    if (!session || session.partId !== drag.partId) return
+    if (event.type === 'pointercancel') {
+      session.mesh.offsetX.set(drag.originalX)
+      session.mesh.offsetY.set(drag.originalY)
+      drawWarpPreview()
+      setWarpCursor(null)
+      return
+    }
+    if (!drag.changed) {
+      setWarpCursor(null)
+      return
+    }
+    setBusy(true)
+    setError('')
+    try {
+      const result = await compile()
+      const part = result.parts.find(item => item.id === drag.partId)
+      if (!part) throw new Error('A coxa selecionada não está mais no modelo.')
+      const updatedPart: ModelPart = {
+        ...part,
+        dataUrl: modelSourceWarpDataUrl(session.image, session.mesh),
+        chromaBaseDataUrl: modelSourceWarpDataUrl(session.baseImage, session.mesh),
+        chromaBaseSaved: true
+      }
+      const materialized: FabricatorProject = {
+        ...draft,
+        sourceDataUrl: result.sourceDataUrl,
+        parts: result.parts.map(item => item.id === part.id ? updatedPart : item),
+        tolerance: result.tolerance,
+        joints: result.joints,
+        layerOrder: result.layerOrder,
+        hiddenPartIds: result.hiddenPartIds
+      }
+      saveUndoSnapshot()
+      setDraft(materialized)
+      setDimensions({})
+      setChromaTolerance(result.tolerance)
+      setSelectedId(part.id)
+      setWarpSession(null)
+      warpSessionRef.current = null
+      setWarpCursor(null)
+      setStatus('Deformação aplicada à coxa no rascunho. Use “Salvar no original” para publicar ou Desfazer para voltar.')
+      setDownloadInfo('')
+    } catch (reason) {
+      session.mesh.offsetX.set(drag.originalX)
+      session.mesh.offsetY.set(drag.originalY)
+      drawWarpPreview()
+      setError(reason instanceof Error ? reason.message : 'Não foi possível aplicar a deformação.')
+    } finally {
+      setBusy(false)
+    }
+  }
   const startDrawing = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (mode !== 'part' || tool === 'select' || !selected || busy || downloading || event.button !== 0) return
+    if (mode !== 'part' || tool === 'select' || tool === 'deform' || !selected || busy || downloading || event.button !== 0) return
     const point = pointerPoint(event)
     if (!point) return
     setError('')
@@ -251,8 +423,10 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
   const cancelDrawing = () => {
     gestureRef.current = null
     setGesture(null)
+    setWarpCursor(null)
   }
   const setEditTool = (next: EditTool) => {
+    if (next === 'deform' && (!selected || !isThighPart(selected))) return
     setTool(next)
     cancelDrawing()
   }
@@ -385,13 +559,13 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
     setBusy(true)
     try {
       const result = await compile()
-      let message = 'Salvar esta imagem como o Model Source oficial? A folha, as peças e o Chroma Key serão atualizados. O histórico anterior será encerrado e um backup interno será mantido.'
+      let message = 'Salvar estas edições no modelo original? A folha, as peças deformadas e o Chroma Key serão atualizados. O histórico anterior será encerrado e um backup interno será mantido.'
       message += '\n\nPoses e roupas já salvas podem manter imagens ou vínculos anteriores; revise as que usam as peças editadas.'
       if (structureChanged) message += '\n\nA estrutura mudou. Uma divisão conserva o ID original e mantém as juntas nesse lado; o lado novo começa sem conexões. Uma exclusão limpa suas juntas e camadas deste modelo.'
       if (!window.confirm(message)) return
       await onPublish(result)
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Falha ao salvar imagem definitiva.')
+      setError(reason instanceof Error ? reason.message : 'Falha ao salvar as edições no modelo original.')
     } finally {
       setBusy(false)
     }
@@ -421,7 +595,7 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
     <div role="presentation" style={{ position: 'fixed', inset: 0, zIndex: 11000, background: 'rgba(0,0,0,.82)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
       <section role="dialog" aria-modal="true" aria-label="Editar imagem original — Model Source" style={{ width: 'min(1320px, 98vw)', maxHeight: '94vh', background: '#111824', color: '#f4f6fa', border: '1px solid #516078', borderRadius: 16, display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 16px 80px rgba(0,0,0,.5)' }}>
         <header style={{ padding: '16px 22px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #303c4c' }}>
-          <div><strong style={{ fontSize: 18 }}>Editar imagem original · Model Source</strong><p style={{ margin: '5px 0 0', color: '#abb7c7', fontSize: 12 }}>Selecione uma peça para isolá-la, ampliar e editar. Poses DEV continua usando o modelo montado.</p></div>
+          <div><strong style={{ fontSize: 18 }}>Editar imagem original · Model Source</strong><p style={{ margin: '5px 0 0', color: '#abb7c7', fontSize: 12 }}>Selecione uma peça para isolá-la, ampliar e editar. Deformações de coxa só vão ao original ao clicar em “Salvar no original”.</p></div>
           <button type="button" disabled={busy || downloading} onClick={onClose} aria-label="Fechar editor" style={{ ...field, width: 40, cursor: 'pointer' }}>✕</button>
         </header>
         <div style={{ display: 'grid', gridTemplateColumns: '220px minmax(0, 1fr) 235px', gap: 12, padding: 14, minHeight: 0, overflowY: 'auto' }}>
@@ -453,9 +627,18 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
               <button type="button" style={toolButton(tool === 'crop', busy || downloading || !selected)} disabled={busy || downloading || !selected} onClick={() => setEditTool('crop')}>Cortar</button>
               <button type="button" style={toolButton(tool === 'split', busy || downloading || !selected)} disabled={busy || downloading || !selected} onClick={() => setEditTool('split')}>Dividir com linha</button>
               <button type="button" style={toolButton(tool === 'outline', busy || downloading || !selected)} disabled={busy || downloading || !selected} onClick={() => setEditTool('outline')}>Apagar contorno</button>
+              <button type="button" title={isThigh ? 'Arraste sobre a coxa para deformar' : 'A ferramenta está disponível somente nas coxas'} style={toolButton(tool === 'deform', busy || downloading || !isThigh)} disabled={busy || downloading || !isThigh} onClick={() => setEditTool('deform')}>〰 Deformar coxa</button>
               {(tool === 'erase' || tool === 'outline') && <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: '#a9b5c4' }}>Pincel {brushSize}px
                 <input aria-label="Tamanho do pincel" type="range" min={4} max={80} step={1} value={brushSize} onChange={event => setBrushSize(Number(event.target.value))} disabled={busy || downloading} />
               </label>}
+              {tool === 'deform' && isThigh && <>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: '#a9b5c4' }}>Raio {warpRadius}px
+                  <input aria-label="Raio do pincel de deformação" type="range" min={6} max={120} step={1} value={warpRadius} onChange={event => setWarpRadius(Number(event.target.value))} disabled={busy || downloading} />
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: '#a9b5c4' }}>Força {warpStrength}%
+                  <input aria-label="Força do pincel de deformação" type="range" min={10} max={100} step={1} value={warpStrength} onChange={event => setWarpStrength(Number(event.target.value))} disabled={busy || downloading} />
+                </label>
+              </>}
             </div>}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', minHeight: 20, gap: 8 }}>
               <small style={{ color: '#aabbd0' }}>
@@ -465,6 +648,7 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
                     : tool === 'split' ? 'Trace uma linha; ela será prolongada até as bordas da peça.'
                       : tool === 'erase' ? 'Pinte a área que deseja apagar.'
                         : tool === 'outline' ? 'Pinte sobre o contorno escuro para removê-lo automaticamente.'
+                      : tool === 'deform' ? warpSession ? 'Arraste sobre a coxa para deformar. Cada traço fica no rascunho; “Salvar no original” publica.' : 'Preparando a coxa para deformar…'
                           : 'Prévia isolada · Ctrl + roda do mouse também altera o zoom'}
               </small>
               {mode === 'part' && gesture && <div style={{ display: 'flex', gap: 5 }}>
@@ -479,21 +663,25 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
               <div style={{ width: 'max-content', height: 'max-content', margin: '0 auto' }}>
                 <div
                   ref={surface}
-                  onPointerDown={startDrawing}
-                  onPointerMove={moveDrawing}
-                  onPointerUp={finishDrawing}
-                  onPointerCancel={cancelDrawing}
+                  onPointerDown={tool === 'deform' ? startWarp : startDrawing}
+                  onPointerMove={tool === 'deform' ? moveWarp : moveDrawing}
+                  onPointerUp={tool === 'deform' ? event => { void finishWarp(event) } : finishDrawing}
+                  onPointerCancel={tool === 'deform' ? event => { void finishWarp(event) } : cancelDrawing}
+                  onPointerLeave={() => { if (!warpDrag.current) setWarpCursor(null) }}
                   style={{ position: 'relative', flex: '0 0 auto', width: surfaceWidth, height: surfaceHeight, ...checker, cursor: mode === 'part' && tool !== 'select' ? 'crosshair' : 'default', touchAction: 'none', userSelect: 'none', overflow: 'hidden' }}
                 >
                   {mode === 'sheet'
                     ? preview && <img src={preview} alt="Prévia da imagem original editada" draggable={false} style={{ width: '100%', height: '100%', objectFit: 'fill', display: 'block', pointerEvents: 'none' }} />
-                    : previewPart && <img src={previewPart.dataUrl} alt={'Prévia isolada: ' + previewPart.name} draggable={false} style={{ width: '100%', height: '100%', objectFit: 'fill', display: 'block', pointerEvents: 'none' }} />}
+                    : tool === 'deform' && warpSession?.partId === selectedId
+                      ? <canvas ref={warpCanvas} aria-label={'Prévia deformável: ' + (selected?.name ?? 'coxa')} style={{ width: '100%', height: '100%', objectFit: 'fill', display: 'block', pointerEvents: 'none' }} />
+                      : previewPart && <img src={previewPart.dataUrl} alt={'Prévia isolada: ' + previewPart.name} draggable={false} style={{ width: '100%', height: '100%', objectFit: 'fill', display: 'block', pointerEvents: 'none' }} />}
                   {mode === 'sheet' && selectedRect && <div aria-label={isHead ? 'Arraste a cabeça para mover na folha original' : 'Peça selecionada'} onPointerDown={startHeadDrag} onPointerMove={moveHeadDrag} onPointerUp={stopHeadDrag} onPointerCancel={stopHeadDrag} style={{ position: 'absolute', left: selectedRect.x * previewScale, top: selectedRect.y * previewScale, width: selectedRect.width * previewScale, height: selectedRect.height * previewScale, border: '2px dashed #3b89ff', boxSizing: 'border-box', cursor: isHead ? 'grab' : 'default', touchAction: 'none', userSelect: 'none' }} />}
                   {mode === 'part' && gesture && <svg aria-hidden="true" width="100%" height="100%" viewBox={'0 0 ' + logicalWidth + ' ' + logicalHeight} preserveAspectRatio="none" style={{ position: 'absolute', inset: 0, overflow: 'visible', pointerEvents: 'none' }}>
                     {gesture.tool === 'crop' && <rect x={Math.min(gesture.start.x, gesture.current.x)} y={Math.min(gesture.start.y, gesture.current.y)} width={Math.abs(gesture.current.x - gesture.start.x)} height={Math.abs(gesture.current.y - gesture.start.y)} fill="rgba(59,137,255,.18)" stroke="#61a5ff" strokeWidth="2" vectorEffect="non-scaling-stroke" />}
                     {gesture.tool === 'split' && <line x1={gesture.start.x} y1={gesture.start.y} x2={gesture.current.x} y2={gesture.current.y} stroke="#ff6677" strokeWidth="3" vectorEffect="non-scaling-stroke" />}
                     {(gesture.tool === 'erase' || gesture.tool === 'outline') && <polyline points={gesture.points.map(point => point.x + ',' + point.y).join(' ')} fill="none" stroke={gesture.tool === 'outline' ? '#ffc857' : '#ff6677'} strokeWidth={brushSize} strokeLinecap="round" strokeLinejoin="round" opacity=".75" vectorEffect="non-scaling-stroke" />}
                   </svg>}
+                  {mode === 'part' && tool === 'deform' && warpCursor && <div aria-hidden="true" style={{ position: 'absolute', left: warpCursor.x * previewScale - warpRadius * previewScale, top: warpCursor.y * previewScale - warpRadius * previewScale, width: warpRadius * 2 * previewScale, height: warpRadius * 2 * previewScale, border: '1px solid #67c4ff', borderRadius: '50%', background: 'rgba(59,137,255,.10)', boxSizing: 'border-box', pointerEvents: 'none' }} />}
                 </div>
               </div>
             </div>
@@ -535,7 +723,7 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
         <footer style={{ padding: '14px 18px', display: 'flex', justifyContent: 'flex-end', gap: 10, borderTop: '1px solid #303c4c' }}>
           <button type="button" onClick={onClose} disabled={busy || downloading} style={{ ...field, width: 'auto', cursor: 'pointer' }}>Cancelar</button>
           <button type="button" onClick={() => void download()} disabled={busy || downloading || Boolean(error)} style={{ ...field, width: 'auto', cursor: 'pointer', background: '#344865' }}>{downloading ? 'Exportando…' : 'Baixar PNG em Downloads'}</button>
-          <button type="button" onClick={() => void save()} disabled={!edited || busy || downloading || Boolean(error)} style={{ ...field, width: 'auto', background: '#1d66bd', cursor: 'pointer', opacity: !edited || busy || downloading || error ? .55 : 1 }}>{busy ? 'Publicando…' : 'Salvar imagem definitiva'}</button>
+          <button type="button" onClick={() => void save()} disabled={!edited || busy || downloading || Boolean(error)} style={{ ...field, width: 'auto', background: '#1d66bd', cursor: 'pointer', opacity: !edited || busy || downloading || error ? .55 : 1 }}>{busy ? 'Publicando…' : 'Salvar no original'}</button>
         </footer>
       </section>
     </div>
