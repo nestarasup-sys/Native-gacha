@@ -16,7 +16,7 @@ A **Biblioteca de Mídia** é dona dos arquivos de vídeo e seus IDs. Base de V�
 
 O restante já tem módulos por domínio e armazenamento local com SQLite, arquivos e CAS. Os maiores pontos de concentração são `electron/main.ts`, que ainda registra 38 handlers IPC inline, e páginas React extensas que combinam estado e coordenação de operações. O plano prioriza limites de propriedade, segurança dos dados e redução de responsabilidades por fluxo.
 
-**Próximos passos:** continuar a modularização por responsabilidade das páginas grandes, começando pelo Customizador e avançando para Fabricador, Studio e Editor V6. A composição compartilha algoritmos visuais de baixo nível; a orquestração e os modos de render continuam próprios de Studio e Editor V6 até existir comparação visual das saídas reais.
+**Próximos passos:** continuar a modularização por responsabilidade das páginas grandes, avançando agora pelos comandos do Fabricador e pelos fluxos restantes de Studio e Editor V6. A composição compartilha algoritmos visuais de baixo nível; a orquestração e os modos de render continuam próprios de Studio e Editor V6 até existir comparação visual das saídas reais.
 
 ## 1. Estado observado
 
@@ -31,7 +31,7 @@ O restante já tem módulos por domínio e armazenamento local com SQLite, arqui
 - O shell tem sete rotas de produto: Customizador, Studio principal, Editor V6, Roteiros, Base de Vídeos, Opções e Fabricador DEV.
 - `electron/domains/` contém módulos para Base de Vídeos, Customizador, Editor V6, Fabricador, Roteiros, armazenamento compartilhado e Studio. `src/shared/` guarda contratos e regras usadas por mais de um processo.
 - `electron/main.ts` tem 2.153 linhas após as extrações mais recentes e ainda registra 38 handlers IPC diretamente; também compõe serviços que já foram separados em módulos.
-- As páginas mais extensas são Customizador (1.817 linhas), Editor V6 (1.622), Studio (1.414) e Fabricador Dev (1.035). Roteiros tem 535, Base de Vídeos 362 e Opções 216 linhas. Esses números localizam concentração de responsabilidades, mas não são por si só motivo para dividir arquivos.
+- As páginas mais extensas são Customizador (1.817 linhas), Editor V6 (1.622), Studio (1.414) e Fabricador Dev (965). Roteiros tem 535, Base de Vídeos 362 e Opções 216 linhas. Esses números localizam concentração de responsabilidades, mas não são por si só motivo para dividir arquivos.
 - A auditoria estática de dependências mantém em zero os imports de runtime entre os pares de features listados em `scripts/architecture/boundaries-baseline.json`.
 
 ### Mapa resumido
@@ -183,7 +183,7 @@ Editor V6
 
 1. **Composition root inchado:** `electron/main.ts` tem 2.153 linhas e registra 38 `ipcMain.handle` diretamente. Ele faz mais do que inicializar o app: mantém persistência e fluxos de arquivos e catálogos. A direção é extrair handlers e casos de uso restantes para domínios, mantendo `main.ts` como composição e ciclo de vida.
 2. **Preload amplo:** `electron/preload.ts` reúne os métodos de Fabricador, Customizador, Studio, Editor V6, mídia e Roteiros; `desktop.d.ts` espelha essa união. Base de Vídeos e Biblioteca de Mídia já têm namespaces próprios; os demais contratos ainda podem ficar mais explícitos sem trocar imediatamente os canais IPC.
-3. **Páginas longas:** Customizador (1.817 linhas), Editor V6 (1.586), Studio (1.352) e Fabricador Dev (1.035) ainda concentram estado e operações. A refatoração deve extrair casos de uso, seletores, hooks e componentes por responsabilidade, sem dividir apenas para reduzir contagem de linhas.
+3. **Páginas longas:** Customizador (1.817 linhas), Editor V6 (1.622), Studio (1.414) e Fabricador Dev (965) ainda concentram estado e operações. A refatoração deve extrair casos de uso, seletores, hooks e componentes por responsabilidade, sem dividir apenas para reduzir contagem de linhas.
 4. **Núcleo de renderização de personagem:** Fabricador, Customizador, Studio e Editor V6 consomem modelos e composições em contextos diferentes. Um núcleo compartilhado exige contratos claros e fixtures visuais douradas antes de trocar os caminhos atuais.
 5. **Persistência heterogênea:** algumas áreas já usam serviços/repositórios/filas, outras gravam diretamente no `main.ts`. Cada domínio precisa declarar quem é dono do formato, fila, backup, recuperação e validade de referências.
 6. **Storage distribuído:** bibliotecas e projetos usam caminhos legados em `app-data/runtime/profile/...` sobre a infraestrutura DataPlatform/CAS. Não renomear diretórios por estética; caminhos fazem parte da compatibilidade e dos dados do usuário.
@@ -251,6 +251,7 @@ Editor V6
 - `MAX_CHROMA_TOLERANCE`, declarado em `models/modelSource.ts`, agora fornece o limite da validação e das faixas de chroma tanto na página de Modelos quanto no editor da fonte.
 - `features/fabricator/models/projectSerialization.ts` aplica o contrato `FabricatorProjectSave` nos três caminhos que persistem metadados de modelo: autosave, histórico e publicação da fonte editada.
 - `features/fabricator/projectPersistence.ts` coordena os assets alterados e a recuperação sinalizada por `FABRICATOR_MISSING_ASSETS`. `modelWriter.ts` agora valida também a imagem de base quando `chromaBaseSaved` está ativo; a recuperação restaura principal e base sob o mesmo ID.
+- `features/fabricator/models/rigEditing.ts` agora reúne conectar peças, mover ramos fixados, alternar fixação e girar ramos. `FabricatorPage` mantém os gestos e a seleção; a transformação do rig recebe o projeto atual e devolve o próximo snapshot, com geração de ID injetada na conexão manual.
 - Fabricador: separar workspaces e comandos de catálogo; preservar transações, histórico e snapshots.
 - Studio e Editor V6: separar estado/documento, timeline/cena, exportação e painel; não compartilhar engines por semelhança visual sem contrato explícito.
 

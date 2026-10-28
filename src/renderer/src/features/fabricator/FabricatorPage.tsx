@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FabricatorAssetSave, FabricatorHistoryAction, FabricatorHistorySaveState, FabricatorHistoryState, FabricatorProject, FabricatorSlotSummary, ModelPart } from '../../../../shared/fabricator'
 import { Icon, type IconName } from '../../ui/components/Icon'
 import { usePreviewBackground } from './usePreviewBackground'
-import { autoConnectParts, createJoint, jointPivot, normalizeLayerOrder, normalizePartAnchors, orderedParts, partJointAnchor, reorderLayer, sourcePointFromCanvas } from './models/rig'
+import { autoConnectParts, normalizeLayerOrder, normalizePartAnchors, orderedParts, partJointAnchor, reorderLayer, sourcePointFromCanvas } from './models/rig'
+import { connectFabricatorParts, moveFabricatorPartBranch, rotateFabricatorPartBranch, toggleFabricatorJointFixed } from './models/rigEditing'
 import { headSizePercent, isHeadPart, resizeHeadPart } from './models/resize'
 import { PoseWorkspace } from './PoseWorkspace'
 import { WardrobeWorkspace } from './wardrobe/WardrobeWorkspace'
@@ -16,7 +17,6 @@ import { FaceAnimatorWorkspace } from './FaceAnimatorWorkspace'
 import { ModelSourceEditor } from './ModelSourceEditor'
 import { broadcastModelSourceUpdate } from './models/modelSourceEvents'
 import { splitImage, mergeImages } from './models/partImages'
-import { rotatePointAroundOrigin } from './models/geometry'
 import { loadImageFromDataUrl, pngDataUrlFromBuffer } from './models/imageData'
 import { cleanSavedPartEdges } from './models/chromaCleanup'
 import { serializeFabricatorProject } from './models/projectSerialization'
@@ -605,23 +605,7 @@ export function FabricatorPage() {
     if (connectMode) {
       if (!connectFromId) { setConnectFromId(partId); setSelectedIds([partId]); return }
       if (connectFromId !== partId && project) {
-        const parent = project.parts.find((part) => part.id === connectFromId)
-        const child = project.parts.find((part) => part.id === partId)
-        if (parent && child && !project.joints.some((joint) => joint.parentPartId === parent.id && joint.childPartId === child.id)) {
-          updateProject((current) => {
-            const currentParent = current.parts.find((part) => part.id === parent.id) ?? parent
-            const currentChild = current.parts.find((part) => part.id === child.id) ?? child
-            const created = createJoint(currentParent, currentChild)
-            const parentAnchor = currentParent.jointAnchor ?? created.parentAnchor
-            const childAnchor = currentChild.jointAnchor ?? created.childAnchor
-            const joint = { ...created, parentAnchor, childAnchor, pivot: { x: (parentAnchor.x + childAnchor.x) / 2, y: (parentAnchor.y + childAnchor.y) / 2 } }
-            return {
-              ...current,
-              parts: current.parts.map((part) => part.id === parent.id ? { ...part, jointAnchor: parentAnchor } : part.id === child.id ? { ...part, jointAnchor: childAnchor } : part),
-              joints: [...current.joints, joint]
-            }
-          })
-        }
+        updateProject((current) => connectFabricatorParts(current, connectFromId, partId, () => crypto.randomUUID()))
         setConnectFromId(null); setConnectMode(false); setSelectedIds([partId]); return
       }
     }
@@ -630,69 +614,11 @@ export function FabricatorPage() {
       : [partId])
   }
 
-  const updatePartPosition = (partId: string, dx: number, dy: number) => {
-    updateProject((current) => {
-      // A fixed joint carries its whole child branch. Without walking the
-      // hierarchy, moving (for example) the torso would leave forearms and
-      // lower legs behind even when their parent pieces were fixed together.
-      const movingIds = new Set<string>([partId])
-      let addedPart = true
-      while (addedPart) {
-        addedPart = false
-        for (const joint of current.joints) {
-          if (joint.fixed && movingIds.has(joint.parentPartId) && !movingIds.has(joint.childPartId)) {
-            movingIds.add(joint.childPartId)
-            addedPart = true
-          }
-        }
-      }
-      return {
-        ...current,
-        parts: current.parts.map((part) => movingIds.has(part.id) ? { ...part, x: part.x + dx, y: part.y + dy, ...(part.jointAnchor ? { jointAnchor: { x: part.jointAnchor.x + dx, y: part.jointAnchor.y + dy } } : {}) } : part),
-        joints: current.joints.map((joint) => ({
-          ...joint,
-          ...(movingIds.has(joint.parentPartId) ? { parentAnchor: { x: joint.parentAnchor.x + dx, y: joint.parentAnchor.y + dy } } : {}),
-          ...(movingIds.has(joint.childPartId) ? { childAnchor: { x: joint.childAnchor.x + dx, y: joint.childAnchor.y + dy } } : {}),
-          ...((movingIds.has(joint.parentPartId) || movingIds.has(joint.childPartId)) ? { pivot: { x: jointPivot(joint).x + dx, y: jointPivot(joint).y + dy } } : {})
-        }))
-      }
-    })
-  }
+  const updatePartPosition = (partId: string, dx: number, dy: number) => updateProject((current) => moveFabricatorPartBranch(current, partId, dx, dy))
 
-  const toggleJointFix = (partId: string) => updateProject((current) => {
-    const incoming = current.joints.find((joint) => joint.childPartId === partId)
-    if (!incoming) return current
-    // Fixing preserves the pose and intentional overlaps. The fixed flag links
-    // this pair for subsequent movement without snapping either pivot or image.
-    return { ...current, joints: current.joints.map((joint) => joint.id === incoming.id ? { ...joint, fixed: !joint.fixed } : joint) }
-  })
+  const toggleJointFix = (partId: string) => updateProject((current) => toggleFabricatorJointFixed(current, partId))
 
-  const rotateBranch = (jointId: string, amount: number) => {
-    if (!project) return
-    const joint = project.joints.find((item) => item.id === jointId)
-    if (!joint) return
-    const affected = new Set<string>([joint.childPartId])
-    let changed = true
-    while (changed) {
-      changed = false
-      for (const item of project.joints) if (affected.has(item.parentPartId) && !affected.has(item.childPartId)) { affected.add(item.childPartId); changed = true }
-    }
-    const origin = jointPivot(joint)
-    updateProject((current) => ({
-      ...current,
-      parts: current.parts.map((part) => {
-        if (!affected.has(part.id)) return part
-        const center = rotatePointAroundOrigin({ x: part.x + part.width / 2, y: part.y + part.height / 2 }, origin, amount)
-        return { ...part, x: center.x - part.width / 2, y: center.y - part.height / 2, rotation: (part.rotation + amount) % 360, ...(part.jointAnchor ? { jointAnchor: rotatePointAroundOrigin(part.jointAnchor, origin, amount) } : {}) }
-      }),
-      joints: current.joints.map((item) => ({
-        ...item,
-        ...((affected.has(item.parentPartId) || affected.has(item.childPartId)) ? { pivot: rotatePointAroundOrigin(jointPivot(item), origin, amount) } : {}),
-        ...(affected.has(item.parentPartId) ? { parentAnchor: rotatePointAroundOrigin(item.parentAnchor, origin, amount) } : {}),
-        ...(affected.has(item.childPartId) ? { childAnchor: rotatePointAroundOrigin(item.childAnchor, origin, amount) } : {})
-      }))
-    }))
-  }
+  const rotateBranch = (jointId: string, amount: number) => updateProject((current) => rotateFabricatorPartBranch(current, jointId, amount))
 
   const paintMixerSegment = async (fromX: number, fromY: number, toX: number, toY: number, touchedPixels: Map<string, Uint8Array>, session: number) => {
     if (!project || !scale || session !== mixerSessionRef.current) return

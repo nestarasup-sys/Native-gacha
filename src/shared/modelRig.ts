@@ -15,11 +15,11 @@ function edgePoint(part: ModelPart, target: ModelPart): Point {
     : { x: origin.x + dx * part.height / (2 * Math.max(1, Math.abs(dy))), y: origin.y + Math.sign(dy || 1) * part.height / 2 }
 }
 
-export function createJoint(parent: ModelPart, child: ModelPart, suggested = false): JointLink {
+export function createJoint(parent: ModelPart, child: ModelPart, suggested = false, createId: () => string = () => crypto.randomUUID()): JointLink {
   const parentAnchor = parent.jointAnchor ?? edgePoint(parent, child)
   const childAnchor = child.jointAnchor ?? edgePoint(child, parent)
   return {
-    id: crypto.randomUUID(), parentPartId: parent.id, childPartId: child.id,
+    id: createId(), parentPartId: parent.id, childPartId: child.id,
     parentAnchor, childAnchor,
     pivot: { x: (parentAnchor.x + childAnchor.x) / 2, y: (parentAnchor.y + childAnchor.y) / 2 },
     suggested
