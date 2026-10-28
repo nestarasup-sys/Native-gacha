@@ -12,9 +12,12 @@ type Props = {
   onSave: (contoursByPart: Record<string, ModelSkinContourStroke[]>) => void
 }
 
-type DrawingStroke = { pointerId: number; points: ModelSkinContourPoint[] }
+type DrawingStroke = { pointerId: number; start: ModelSkinContourPoint }
+// Keep the invisible recoloring barrier wider than its subtle editor overlay.
 const GUIDE_WIDTH_PIXELS = 5
-const MAX_STROKE_POINTS = 4096
+const GUIDE_PREVIEW_WIDTH_PIXELS = 1.25
+const GUIDE_PREVIEW_OPACITY = 0.38
+const GUIDE_ENDPOINT_RADIUS_PIXELS = 2
 
 function strokePoints(points: ModelSkinContourPoint[], width: number, height: number): string {
   return points.map(point => `${point.x * width},${point.y * height}`).join(' ')
@@ -53,7 +56,6 @@ export function ModelSkinContourEditor({ parts, skinTone, outlineColor, onClose,
   const imageWidth = selectedPart?.width ?? 1
   const imageHeight = selectedPart?.height ?? 1
   const previewMaxWidth = Math.min(620, 540 * imageWidth / imageHeight)
-  const guideWidth = Math.max(1, GUIDE_WIDTH_PIXELS / Math.max(1, Math.min(imageWidth, imageHeight)))
 
   const pointFromEvent = (event: PointerEvent<SVGSVGElement>): ModelSkinContourPoint => {
     const bounds = event.currentTarget.getBoundingClientRect()
@@ -67,20 +69,17 @@ export function ModelSkinContourEditor({ parts, skinTone, outlineColor, onClose,
     if (event.button !== 0 || !selectedPart) return
     event.preventDefault()
     event.stopPropagation()
-    const points = [pointFromEvent(event)]
-    drawingRef.current = { pointerId: event.pointerId, points }
+    const start = pointFromEvent(event)
+    drawingRef.current = { pointerId: event.pointerId, start }
     event.currentTarget.setPointerCapture(event.pointerId)
-    setCurrentStroke(points)
+    setLimitMessage('')
+    setCurrentStroke([start])
   }
 
   const continueStroke = (event: PointerEvent<SVGSVGElement>) => {
     const drawing = drawingRef.current
-    if (!drawing || drawing.pointerId !== event.pointerId || drawing.points.length >= MAX_STROKE_POINTS) return
-    const point = pointFromEvent(event)
-    const previous = drawing.points[drawing.points.length - 1]
-    if (Math.hypot((point.x - previous.x) * imageWidth, (point.y - previous.y) * imageHeight) < 1.5) return
-    drawing.points.push(point)
-    setCurrentStroke([...drawing.points])
+    if (!drawing || drawing.pointerId !== event.pointerId) return
+    setCurrentStroke([drawing.start, pointFromEvent(event)])
   }
 
   const finishStroke = (event: PointerEvent<SVGSVGElement>) => {
@@ -88,9 +87,12 @@ export function ModelSkinContourEditor({ parts, skinTone, outlineColor, onClose,
     if (!drawing || drawing.pointerId !== event.pointerId) return
     drawingRef.current = null
     setCurrentStroke([])
-    if (drawing.points.length < 2 || !selectedPart) return
+    if (!selectedPart) return
+    const end = pointFromEvent(event)
+    const points = [drawing.start, end]
+    if (Math.hypot((end.x - drawing.start.x) * imageWidth, (end.y - drawing.start.y) * imageHeight) < 1.5) return
     const saved = draftByPart[selectedPart.id] ?? []
-    if (saved.length >= MAX_MODEL_SKIN_CONTOUR_STROKES || countModelSkinContourPoints(saved) + drawing.points.length > MAX_MODEL_SKIN_CONTOUR_POINTS) {
+    if (saved.length >= MAX_MODEL_SKIN_CONTOUR_STROKES || countModelSkinContourPoints(saved) + points.length > MAX_MODEL_SKIN_CONTOUR_POINTS) {
       setLimitMessage('Esta peça atingiu o limite de traços. Apague um traço para continuar.')
       return
     }
@@ -98,7 +100,7 @@ export function ModelSkinContourEditor({ parts, skinTone, outlineColor, onClose,
     const width = Math.min(0.12, Math.max(0.001, GUIDE_WIDTH_PIXELS / Math.max(1, Math.min(imageWidth, imageHeight))))
     setDraftByPart(current => ({
       ...current,
-      [selectedPart.id]: [...(current[selectedPart.id] ?? []), { points: drawing.points, width }]
+      [selectedPart.id]: [...(current[selectedPart.id] ?? []), { points, width }]
     }))
   }
 
@@ -154,17 +156,20 @@ export function ModelSkinContourEditor({ parts, skinTone, outlineColor, onClose,
                 <img src={previewUrl ?? selectedPart.dataUrl} alt={`Prévia de ${selectedPart.name}`} draggable={false} />
                 <svg viewBox={`0 0 ${imageWidth} ${imageHeight}`} preserveAspectRatio="none" aria-label={`Desenhe o contorno artificial em ${selectedPart.name}`} onPointerDown={beginStroke} onPointerMove={continueStroke} onPointerUp={finishStroke} onPointerCancel={cancelStroke}>
                   {selectedContours.map((stroke, index) => <g key={index} pointerEvents="none">
-                    <polyline points={strokePoints(stroke.points, imageWidth, imageHeight)} fill="none" stroke="#ffffff" strokeWidth={stroke.width * Math.min(imageWidth, imageHeight) + 2} strokeLinecap="round" strokeLinejoin="round" />
-                    <polyline points={strokePoints(stroke.points, imageWidth, imageHeight)} fill="none" stroke="#00a8ff" strokeWidth={stroke.width * Math.min(imageWidth, imageHeight)} strokeLinecap="round" strokeLinejoin="round" />
+                    <polyline points={strokePoints(stroke.points, imageWidth, imageHeight)} fill="none" stroke="#00a8ff" strokeOpacity={GUIDE_PREVIEW_OPACITY} strokeWidth={GUIDE_PREVIEW_WIDTH_PIXELS} strokeLinecap="round" strokeLinejoin="round" />
                   </g>)}
-                  {currentStroke.length > 1 && <>
-                    <polyline points={strokePoints(currentStroke, imageWidth, imageHeight)} fill="none" stroke="#ffffff" strokeWidth={guideWidth + 2} strokeLinecap="round" strokeLinejoin="round" pointerEvents="none" />
-                    <polyline points={strokePoints(currentStroke, imageWidth, imageHeight)} fill="none" stroke="#00a8ff" strokeWidth={guideWidth} strokeLinecap="round" strokeLinejoin="round" pointerEvents="none" />
-                  </>}
+                  {currentStroke.length > 0 && <g pointerEvents="none">
+                    {currentStroke.length > 1 && <>
+                      <polyline points={strokePoints(currentStroke, imageWidth, imageHeight)} fill="none" stroke="#00a8ff" strokeOpacity={GUIDE_PREVIEW_OPACITY} strokeWidth={GUIDE_PREVIEW_WIDTH_PIXELS} strokeLinecap="round" strokeLinejoin="round" />
+                    </>}
+                    {currentStroke.map((point, index) => <g key={index}>
+                      <circle cx={point.x * imageWidth} cy={point.y * imageHeight} r={GUIDE_ENDPOINT_RADIUS_PIXELS} fill="#00a8ff" fillOpacity={GUIDE_PREVIEW_OPACITY} />
+                    </g>)}
+                  </g>}
                 </svg>
               </div>
             </div>
-            <p className="model-skin-contour-hint">Segure e arraste para traçar a linha. Encoste as duas pontas no contorno existente para fechar a abertura.</p>
+            <p className="model-skin-contour-hint">Clique na primeira borda, arraste até a outra e solte. O guia será uma linha reta entre os pontos.</p>
             {limitMessage && <p className="model-skin-contour-limit" role="status">{limitMessage}</p>}
           </> : <p className="model-skin-contour-empty">Este modelo não tem peças anatômicas para editar.</p>}
         </main>
