@@ -120,7 +120,7 @@ test('prévia de poses e renderizador compartilham a ordem completa mesmo com pa
   assert.equal(order.indexOf('body'),1,'membro oculto ainda conta na ordem de sobreposição')
   assert.equal(order.indexOf('arm-right'),2)
   const preview=await readFile('src/renderer/src/features/fabricator/wardrobe/WardrobeWorkspace.tsx','utf8')
-  const customizer=await readFile('src/renderer/src/characters/characterRenderer.ts','utf8')
+  const customizer=await readFile('src/renderer/src/characters/characterWardrobeRenderer.ts','utf8')
   assert.match(preview,/previewPoseOrder = testPose \? normalizeLayerOrder/)
   assert.match(preview,/previewPoseOrder\.indexOf\(part\.id\)/)
   assert.match(preview,/previewPoseOrder\.indexOf\(component\.attachedPartId\)/)

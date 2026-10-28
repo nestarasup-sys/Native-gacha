@@ -10,26 +10,24 @@ const B='12345678-aaaa-4abc-8abc-123456789abd'
 const fixture = async t => {
   const root=await fs.mkdtemp(join(tmpdir(),'native-studio-index-'))
   t.after(()=>fs.rm(root,{recursive:true,force:true}))
-  const folders={studio:join(root,'Studio Principal')}
-  for(const folder of Object.values(folders)){
-    await fs.mkdir(join(folder,'studio-'+A),{recursive:true})
-    await fs.mkdir(join(folder,'studio-'+B),{recursive:true})
-    await fs.mkdir(join(folder,'studio-untrusted'),{recursive:true})
-  }
+  const folder=join(root,'Studio Principal')
+  await fs.mkdir(join(folder,'studio-'+A),{recursive:true})
+  await fs.mkdir(join(folder,'studio-'+B),{recursive:true})
+  await fs.mkdir(join(folder,'studio-untrusted'),{recursive:true})
   const seen=[]
-  const readStudio=async(id, workspace)=>{
-    seen.push(workspace+':'+id)
-    if(workspace==='studio'&&id===A)return {id,title:'Zeta',createdAt:'2026-01-01T00:00:00Z'}
-    if(workspace==='studio'&&id===B)return {id,title:'Alpha',createdAt:'2026-01-01T00:00:00Z'}
+  const readStudio=async(id)=>{
+    seen.push(id)
+    if(id===A)return {id,title:'Zeta',createdAt:'2026-01-01T00:00:00Z'}
+    if(id===B)return {id,title:'Alpha',createdAt:'2026-01-01T00:00:00Z'}
     return null
   }
-  return {root,folders,seen,index:createStudioLibraryIndex({
-    files:fs,studioLibraryPath:workspace=>folders[workspace],readStudio
+  return {root,folder,seen,index:createStudioLibraryIndex({
+    files:fs,studioLibraryPath:()=>folder,readStudio
   })}
 }
 test('índice Studio ignora diretórios inválidos e ordena cenas sem mudar seus IDs',async t=>{
   const {index,seen}=await fixture(t)
   const all=await index.listStudios()
   assert.deepEqual(all.map(x=>x.id),[B,A])
-  assert.deepEqual(seen.sort(),['studio:'+A,'studio:'+B].sort())
+  assert.deepEqual(seen.sort(),[A,B].sort())
 })

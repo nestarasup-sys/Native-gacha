@@ -11,6 +11,10 @@ const compiled = ts.transpileModule(readFileSync(file,'utf8'), {
 const mod={exports:{}}
 new Function('exports','module','require',compiled)(mod.exports,mod,(specifier) => {
   if (specifier === './resize') return { isHeadPart: part => /cabe[çc]a|head/i.test(part.name) }
+  if (specifier === './imageData') return {
+    loadImageFromDataUrl: () => { throw new Error('O fixture só valida dimensões; imagem não deve ser carregada.') },
+    pngDataUrlFromBuffer: () => { throw new Error('O fixture só valida dimensões; PNG não deve ser convertido.') }
+  }
   throw new Error('Import inesperado no domínio: ' + specifier)
 })
 const {sourceRect,validateModelSourceDimensions,validateModelSourceChroma}=mod.exports

@@ -1,8 +1,17 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { readFile } from 'node:fs/promises'
+import { readFile, readdir } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { fabricatorIpcChannels, createFabricatorInvoker } from '../src/shared/fabricatorIpcChannels.ts'
+
+async function typescriptFiles(folder) {
+ const entries=await readdir(folder,{withFileTypes:true})
+ const nested=await Promise.all(entries.map(entry=>{
+  const path=resolve(folder,entry.name)
+  return entry.isDirectory()?typescriptFiles(path):entry.isFile()&&entry.name.endsWith('.ts')?[path]:[]
+ }))
+ return nested.flat()
+}
 
 test('canais IPC tipados não são duplicados e mantêm compatibilidade legada',()=>{
  const values=Object.values(fabricatorIpcChannels)
@@ -22,9 +31,7 @@ test('invocação tipada preserva ordem dos argumentos e resultado assíncrono',
 })
 test('main e preload usam mapa central para canais da biblioteca Fabricador',async()=>{
  const root=resolve('.')
- const files=['electron/preload.ts','electron/domains/fabricator/poseIpc.ts',
- 'electron/domains/fabricator/animatorIpc.ts','electron/domains/fabricator/modelIpc.ts',
- 'electron/domains/fabricator/modelSourceExportIpc.ts','electron/domains/fabricator/wardrobeCatalogIpc.ts','electron/main.ts']
+ const files=['electron/preload.ts','electron/main.ts',...await typescriptFiles(resolve(root,'electron/domains/fabricator'))]
  const sources=await Promise.all(files.map(f=>readFile(resolve(root,f),'utf8')))
  const joined=sources.join('\n')
  for(const key of Object.keys(fabricatorIpcChannels)){

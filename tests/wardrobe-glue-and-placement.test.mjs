@@ -97,11 +97,11 @@ test('Customizador separa seleção legada por ID e muda só a peça escolhida',
 })
 
 test('interface usa grude real, sem bolinha azul, sem mudar a folha desmontada',async()=>{
-  const [workspace,controls,renderer,customizer]=await Promise.all([
+  const [workspace,controls,renderer,customizerAdjustment]=await Promise.all([
     readFile('src/renderer/src/features/fabricator/wardrobe/WardrobeWorkspace.tsx','utf8'),
     readFile('src/renderer/src/features/fabricator/wardrobe/WardrobeGlueControls.tsx','utf8'),
-    readFile('src/renderer/src/characters/characterRenderer.ts','utf8'),
-    readFile('src/renderer/src/features/customizer/CustomizerPage.tsx','utf8')
+    readFile('src/renderer/src/characters/characterWardrobeRenderer.ts','utf8'),
+    readFile('src/renderer/src/features/customizer/useCustomizerWardrobeAdjustment.ts','utf8')
   ])
   assert.match(workspace,/selectOriginalModelSource\(model\)/)
   assert.match(workspace,/fixWardrobeGlue\(piece, bone\)/)
@@ -111,7 +111,7 @@ test('interface usa grude real, sem bolinha azul, sem mudar a folha desmontada',
   assert.match(controls,/Fixar nesta parte/)
   assert.match(controls,/Soltar/)
   assert.match(renderer,/component\.glue\?\.mode === 'loose'/)
-  assert.match(customizer,/updateWardrobeComponentGroups\(/)
+  assert.match(customizerAdjustment,/updateWardrobeComponentGroups\(/)
 })
 
 test('paletas de roupas são alteradas apenas no componente e lado escolhidos',()=>{

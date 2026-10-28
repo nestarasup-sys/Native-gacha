@@ -113,7 +113,7 @@ test('joelhos descobertos no original continuam descobertos após projetar só o
 })
 
 test('renderizador deve usar um pivô por peça, nunca o centro médio do grupo visível',async()=>{
-  const renderer=await readFile('src/renderer/src/characters/characterRenderer.ts','utf8')
+  const renderer=await readFile('src/renderer/src/characters/characterWardrobeRenderer.ts','utf8')
   const editor=await readFile('src/renderer/src/features/fabricator/wardrobe/WardrobeWorkspace.tsx','utf8')
   const preview=await readFile('src/renderer/src/features/fabricator/wardrobe/WardrobeComparisonPreview.tsx','utf8')
   assert.match(renderer,/center: transform\.origin/)

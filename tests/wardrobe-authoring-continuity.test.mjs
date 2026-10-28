@@ -47,15 +47,15 @@ test('offsets do Fabricador passam para pose montada com escala não uniforme',(
 })
 test('face, roupa e pose usam serviços compartilhados sem importar páginas de outras áreas',async()=>{
  const {readFile}=await import('node:fs/promises')
- const [mapping,renderer,customizer,studio]=await Promise.all([
+ const [mapping,renderer,customizerWardrobePreview,studio]=await Promise.all([
   readFile('src/shared/wardrobePose.ts','utf8'),
-  readFile('src/renderer/src/characters/characterRenderer.ts','utf8'),
-  readFile('src/renderer/src/features/customizer/CustomizerPage.tsx','utf8'),
+  readFile('src/renderer/src/characters/characterWardrobeRenderer.ts','utf8'),
+  readFile('src/renderer/src/features/customizer/useCustomizerWardrobePreview.ts','utf8'),
   readFile('src/renderer/src/features/studio/StudioPage.tsx','utf8')
  ])
  assert.match(mapping,/const current = bindWardrobeComponent\(component, sourceBone\)/)
  assert.match(renderer,/mapWardrobeComponentToPose\(component, sourceBone, targetBone/)
- assert.match(customizer,/renderWardrobeOverlay\(/)
+ assert.match(customizerWardrobePreview,/renderWardrobeOverlay\(/)
  assert.match(studio,/import\('\.\.\/\.\.\/characters\/characterRenderer'\)/)
  assert.doesNotMatch(renderer,/CustomizerPage|FabricatorPage/)
 })

@@ -144,7 +144,10 @@ test('manifestos fora do catálogo autorizado não podem escolher um caminho de 
 })
 
 test('todos os manifestos usados pelo processo principal estão registrados para a transação', async () => {
-  const main = await fs.readFile(new URL('../electron/main.ts', import.meta.url), 'utf8')
-  const used = [...main.matchAll(/manifestName:\s*['"]([^'"]+)['"]/g)].map((match) => match[1])
+  const sources = await Promise.all([
+    fs.readFile(new URL('../electron/main.ts', import.meta.url), 'utf8'),
+    fs.readFile(new URL('../electron/domains/fabricator/wardrobePersistence.ts', import.meta.url), 'utf8')
+  ])
+  const used = sources.flatMap(source => [...source.matchAll(/manifestName:\s*['"]([^'"]+)['"]/g)].map(match => match[1]))
   assert.deepEqual([...new Set(used)].sort(), [...catalogManifestNames].sort())
 })

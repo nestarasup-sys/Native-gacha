@@ -23,13 +23,13 @@ async function sandbox(t){
  const profile=join(root,'profile')
  await native.mkdir(profile,{recursive:true})
  const platform=new DataPlatform(join(root,'app-data')).initialize()
- for(const domain of ['fabricator.wardrobe','studio.projects','video-studio.projects'])
+ for(const domain of ['fabricator.wardrobe','studio.projects'])
    platform.setDomainState(domain,'active',{syntheticOnly:true})
  t.after(async()=>{platform.close();await native.rm(root,{recursive:true,force:true})})
  const io=new DomainFileSystem(platform,profile)
  const files=Object.fromEntries(['mkdir','access','readFile','writeFile','rename','unlink','rm','readdir']
    .map(method=>[method,(...args)=>io[method](...args)]))
- return {root,profile,platform,files}
+ return {root,profile,platform,files,io}
 }
 const png=async color=>sharp({create:{width:8,height:8,channels:4,background:color}}).png().toBuffer()
 
@@ -53,29 +53,29 @@ test('SQLite ativo: salvar manga esquerda/direita em paralelo e recuperar sem co
  assert.deepEqual(await files.readFile(join(imageFolder,'sleeve-right.png')),colors[1])
  assert.notDeepEqual(colors[0],colors[1])
 })
-test('SQLite ativo: Studio e Video Studio têm documentos independentes e salvamento por versão',async t=>{
- const {profile,files}=await sandbox(t)
+test('DomainFS ativo: Studio Principal publica e reidrata assets pelo domínio',async t=>{
+ const {root,profile,platform,files,io}=await sandbox(t)
  const image=await png('#bb66cc')
- const makeDoc=(title,id=UUID)=>({
-   schemaVersion:1,id,title,color:'#aabbcc',createdAt:'2026-10-22T08:00:00Z',updatedAt:'2026-10-22T08:00:00Z',
+ const makeDoc=(title)=>({
+   schemaVersion:1,id:UUID,title,color:'#aabbcc',createdAt:'2026-10-22T08:00:00Z',updatedAt:'2026-10-22T08:00:00Z',
    backgroundColor:'#ffffff',backgroundAssetId:null,backgroundX:0,backgroundY:0,backgroundWidth:100,
    backgroundHeight:100,backgroundRotation:0,assets:[{
      id:'12345678-aaaa-4abc-8abc-123456789abd',category:'background',name:'Image',mimeType:'image/png',
      dataUrl:'data:image/png;base64,'+image.toString('base64')
    }],elements:[]
  })
+ const libraryPath=join(profile,'studios','Studio Principal')
+ const studioPath=id=>join(libraryPath,'studio-'+id)
  const doc=createStudioDocumentPersistence({
-   files,studioPath:(id,space)=>join(profile,'studios',space==='studio'?'Studio Principal':'Video Studio','studio-'+id),
-   studioLibraryPath:space=>join(profile,'studios',space==='studio'?'Studio Principal':'Video Studio'),
-   prepareVideoDelete:async()=>{},validate:value=>value?.schemaVersion===1,
+   files,studioPath,studioLibraryPath:()=>libraryPath,validate:value=>value?.schemaVersion===1,
    decodeImage:uri=>Buffer.from(uri.split(',')[1],'base64'),
-   normalizeImage:async bytes=>({bytes}),ensureVideoAssets:async()=>{},
+   normalizeImage:async bytes=>({bytes}),
  })
- const prior=doc.writeStudio(makeDoc('studio-v1'),'studio')
- const latest=doc.writeStudio(makeDoc('studio-v2'),'studio')
- const video=doc.writeStudio(makeDoc('video-separado'),'video')
- await Promise.all([prior,latest,video])
- assert.equal((await doc.readStudio(UUID,'studio'))?.title,'studio-v2')
- assert.equal((await doc.readStudio(UUID,'video'))?.title,'video-separado')
- assert.ok((await doc.readStudio(UUID,'studio'))?.assets[0].dataUrl.startsWith('data:image/png;base64,'))
+ await doc.writeStudio(makeDoc('Studio Principal'))
+ const restored=await doc.readStudio(UUID)
+ assert.equal(platform.getDomainState('studio.projects').state,'active')
+ assert.equal(restored?.title,'Studio Principal')
+ assert.equal(restored?.assets[0]?.dataUrl,'data:image/png;base64,'+image.toString('base64'))
+ const physicalManifest=await io.resolvePhysicalPath(join(studioPath(UUID),'studio.json'))
+ assert.ok(physicalManifest?.startsWith(join(root,'app-data')))
 })

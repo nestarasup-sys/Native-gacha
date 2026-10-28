@@ -70,9 +70,9 @@ test('auditoria mostra anexos órfãos sem apagar roupas ou snapshot antigo',()=
  assert.deepEqual(result.missingAttachments,['scarf'])
  assert.deepEqual(p,original)
 })
-test('telas Customizador e Studio usam a barreira de continuidade compartilhada',async()=>{
- const customizer=await readFile('src/renderer/src/features/customizer/CustomizerPage.tsx','utf8')
+test('Customizador e Studio usam a barreira de continuidade compartilhada',async()=>{
+ const artworkSource=await readFile('src/renderer/src/features/customizer/customizerArtworkSource.ts','utf8')
  const studio=await readFile('src/renderer/src/features/studio/StudioPage.tsx','utf8')
- assert.match(customizer,/selectCharacterArtwork\(sourceProject, poseArtwork, pose\?\.slot \?\? null\)/)
+ assert.match(artworkSource,/selectCharacterArtwork\(sourceProject, pose, poseSlot\)/)
  assert.match(studio,/isPoseSnapshotForModel\(artwork, pose.sourceModelSlot, pose.slot\)/)
 })

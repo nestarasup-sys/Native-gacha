@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { SerializedDocumentSaveQueue } from '../src/shared/serializedDocumentSave.ts'
 
-test('Studio e Video Studio não invertem ordem quando salvamento antigo leva mais tempo',async()=>{
+test('fila de documentos não inverte ordem quando salvamento antigo leva mais tempo',async()=>{
  const saves = []
  const queue = new SerializedDocumentSaveQueue()
  const slow = queue.run(async()=>{
@@ -25,16 +25,17 @@ test('falha de um save não bloqueia o próximo, nem mascara a exceção',async(
  await queue.idle()
  assert.equal(queue.pending,0)
 })
-test('Studio e Editor V6 enfileiram salvamentos antes de chamar seus canais IPC',async()=>{
+test('Studio e Editor V6 usam a fila compartilhada antes de chamar seus canais IPC',async()=>{
  const {readFile}=await import('node:fs/promises')
-  const [studio,editorV6]=await Promise.all([
+  const [studio,editorV6,saveHook]=await Promise.all([
    readFile('src/renderer/src/features/studio/StudioPage.tsx','utf8'),
-   readFile('src/renderer/src/features/editorV6/EditorV6Page.tsx','utf8')
+   readFile('src/renderer/src/features/editorV6/EditorV6Page.tsx','utf8'),
+   readFile('src/renderer/src/ui/hooks/useSerializedSceneDocumentSave.ts','utf8')
  ])
- assert.ok(studio.includes("from '../../../../shared/serializedDocumentSave'"))
- assert.ok(editorV6.includes("from '../../../../shared/serializedDocumentSave'"))
- assert.ok(studio.includes('studioSaveQueue.current.run(async () =>'))
- assert.ok(studio.includes('await window.desktop.saveStudio(next)'))
- assert.ok(editorV6.includes('studioSaveQueue.current.run(async () =>'))
- assert.ok(editorV6.includes('await window.desktop.saveEditorV6Project(next)'))
+ assert.match(studio,/useSerializedSceneDocumentSave\(activeStudio, \{/)
+ assert.match(editorV6,/useSerializedSceneDocumentSave\(activeEditorV6, \{/)
+ assert.match(studio,/window\.desktop\.saveStudio\(studio\)/)
+ assert.match(editorV6,/window\.desktop\.saveEditorV6Project\(document\)/)
+ assert.match(saveHook,/new SerializedDocumentSaveQueue\(\)/)
+ assert.match(saveHook,/queue\.current\.run\(/)
 })

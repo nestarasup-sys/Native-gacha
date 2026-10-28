@@ -1,7 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { selectOriginalModelSource, selectMountedModelSource } from '../src/shared/fabricatorModelViews.ts'
-import { comparePixelBuffers } from '../src/shared/videoVisualOracle.ts'
 import { interpolateFrames } from '../src/renderer/src/features/fabricator/models/animationInterpolation.ts'
 
 /** Rasterizador sintético de caixas, não screenshots do Canvas/Electron.
@@ -58,13 +57,13 @@ test('geometria visual da imagem original permanece igual ao fixture golden',()=
  const src=selectOriginalModelSource(model)
  const parts=src.parts.map(p=>({...p,symbol:model.parts.find(x=>x.id===p.id).symbol}))
  const actual=raster(parts)
- assert.equal(comparePixelBuffers(actual,golden(sourceGolden),WIDTH,HEIGHT).changedPixels,0)
+ assert.deepEqual(actual,golden(sourceGolden))
 })
 test('modelo montado tem golden independente e Poses DEV não usa folha bruta',()=>{
  const mounted=selectMountedModelSource(model)
- assert.equal(comparePixelBuffers(raster(mounted.parts),golden(mountedGolden),WIDTH,HEIGHT).changedPixels,0)
+ assert.deepEqual(raster(mounted.parts),golden(mountedGolden))
  assert.equal(mounted.joints[0].childPartId,'head')
- assert.equal(comparePixelBuffers(golden(sourceGolden),golden(mountedGolden),WIDTH,HEIGHT).changedPixels>0,true)
+ assert.notDeepEqual(golden(sourceGolden),golden(mountedGolden))
 })
 test('animação interpola cabeça e tronco sem alterar o PNG original ou catálogo',()=>{
  const frames=[

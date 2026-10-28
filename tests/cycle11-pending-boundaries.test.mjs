@@ -10,8 +10,8 @@ test('main do Electron delega leitura, escrita e reidratação Studio', async()=
   assert.match(repo,/async function writeStudio\(/)
   assert.match(repo,/async function readStudio\(/)
   assert.match(repo,/await publishStudioAssetsAndManifest\(/)
-  assert.match(repo,/VIDEO_FRAME_DATA_URL_CACHE_LIMIT/)
-  assert.match(repo,/Quadro de vídeo corrompido/)
+  assert.match(repo,/recoverStudioAssetTransaction\(deps\.files, folder\)/)
+  assert.match(repo,/data:\$\{asset\.mimeType\};base64,/)
 })
 test('Customizador separa bibliotecas do Fabricador do estado do personagem', async()=>{
   const page=await readFile('src/renderer/src/features/customizer/CustomizerPage.tsx','utf8')
