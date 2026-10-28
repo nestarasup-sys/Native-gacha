@@ -3,7 +3,7 @@ import { useModelSourceRefresh } from './models/useModelSourceRefresh'
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import type { FaceCatalogItem, FaceComponentAsset, FaceExpressionEffect, FaceExpressionPreset, FaceExpressionTransforms, FaceTransform, FabricatorProject } from '../../../../shared/fabricator'
 import { Icon } from '../../ui/components/Icon'
-import { eyeInteriorMask } from './face/eyeInteriorMask'
+import { eyeInteriorMask } from '../../ui/image/eyeInteriorMask'
 import { useModelAppearanceTarget, useModelPartAppearancePreview } from './ModelAppearanceContext'
 
 type TransitionRecipe = { id: string; name: string; from: string; to: string; durationMs: number; easing: 'smooth' | 'linear' }
