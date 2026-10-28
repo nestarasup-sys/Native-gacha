@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { CSSProperties, PointerEvent as ReactPointerEvent, WheelEvent as ReactWheelEvent } from 'react'
 import type { FabricatorProject, ModelPart } from '../../../../shared/fabricator'
 import { isHeadPart } from './models/resize'
+import { normalizePartAnchors } from './models/rig'
 import { composeModelSource, sourceRect, validateModelSourceChroma, validateModelSourceDimensions, MAX_CHROMA_TOLERANCE, type ModelSourceDimensions, type ModelSourceResult } from './models/modelSource'
 import { cropModelSourcePart, eraseModelSourceBrush, splitModelSourcePart, worldPointInsideCrop, worldPointToPart, type ModelSourceCrop, type ModelSourcePoint } from './models/modelSourceEditing'
 
@@ -272,17 +273,25 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
         height: drawnCrop.height * part.height / Math.max(1, selectedRect.height)
       }
       const nextPart = await cropModelSourcePart(part, crop)
-      const joints = materialized.joints.filter(joint => {
-        if (joint.parentPartId === part.id && !worldPointInsideCrop(part, joint.parentAnchor, crop)) return false
-        if (joint.childPartId === part.id && !worldPointInsideCrop(part, joint.childAnchor, crop)) return false
-        return true
-      })
-      const removed = materialized.joints.length - joints.length
+      const attachedJoint = materialized.joints.find(joint => joint.parentPartId === part.id || joint.childPartId === part.id)
+      const attachedAnchor = attachedJoint
+        ? attachedJoint.parentPartId === part.id ? attachedJoint.parentAnchor : attachedJoint.childAnchor
+        : undefined
+      const previousAnchor = part.jointAnchor ?? attachedAnchor
+      const anchorKept = previousAnchor ? worldPointInsideCrop(part, previousAnchor, crop) : true
+      const center = { x: nextPart.x + nextPart.width / 2, y: nextPart.y + nextPart.height / 2 }
+      const croppedPart = previousAnchor
+        ? { ...nextPart, jointAnchor: anchorKept ? previousAnchor : center }
+        : nextPart
+      const updatedParts = materialized.parts.map(item => item.id === part.id ? croppedPart : item)
+      const rig = normalizePartAnchors(updatedParts, materialized.joints)
       return {
-        project: { ...materialized, parts: materialized.parts.map(item => item.id === part.id ? nextPart : item), joints },
+        project: { ...materialized, parts: rig.parts, joints: rig.joints },
         selectedId: part.id,
-        status: removed
-          ? 'Corte aplicado. ' + removed + (removed === 1 ? ' ligação fora da área cortada foi removida.' : ' ligações fora da área cortada foram removidas.')
+        status: attachedJoint && !anchorKept
+          ? 'Corte aplicado. A conexão foi mantida e o pivô reposicionado dentro da peça.'
+          : attachedJoint
+            ? 'Corte aplicado; a conexão e o pivô foram preservados.'
           : 'Corte aplicado à peça selecionada.'
       }
     })
@@ -295,27 +304,33 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
       const points = pointsForPart(gesture.points, part, selectedRect.width, selectedRect.height)
       const start = points[0]
       const end = points[points.length - 1]
-      const reference = part.jointAnchor ? worldPointToPart(part, part.jointAnchor) : { x: part.width / 2, y: part.height / 2 }
+      const connectedJoint = materialized.joints.find(joint => joint.parentPartId === part.id || joint.childPartId === part.id)
+      const attachedAnchor = connectedJoint
+        ? connectedJoint.parentPartId === part.id ? connectedJoint.parentAnchor : connectedJoint.childAnchor
+        : undefined
+      const reference = part.jointAnchor
+        ? worldPointToPart(part, part.jointAnchor)
+        : attachedAnchor ? worldPointToPart(part, attachedAnchor) : { x: part.width / 2, y: part.height / 2 }
       const split = await splitModelSourcePart(part, start, end, reference)
       const retained = split.parts[split.retainedSide]
       const created = split.parts[1 - split.retainedSide]
       const parts = materialized.parts.flatMap(item => item.id === part.id ? [retained, created] : [item])
+      const rig = normalizePartAnchors(parts, materialized.joints)
       const validIds = new Set(parts.map(item => item.id))
       const hidden = new Set(materialized.hiddenPartIds ?? [])
       if (hidden.has(part.id)) hidden.add(created.id)
-      const removedLinks = materialized.joints.filter(joint => joint.parentPartId === part.id || joint.childPartId === part.id).length
       return {
         project: {
           ...materialized,
-          parts,
-          joints: materialized.joints.filter(joint => joint.parentPartId !== part.id && joint.childPartId !== part.id),
+          parts: rig.parts,
+          joints: rig.joints,
           layerOrder: orderAfterSplit(materialized.layerOrder, part.id, retained.id, created.id),
           hiddenPartIds: [...hidden].filter(id => validIds.has(id))
         },
         selectedId: retained.id,
-        status: 'Peça dividida em duas. ' + (removedLinks
-          ? removedLinks + (removedLinks === 1 ? ' ligação do Fabricador foi removida' : ' ligações do Fabricador foram removidas') + ' para evitar pivôs incorretos.'
-          : 'Nenhuma ligação do Fabricador precisava ser removida.')
+        status: connectedJoint
+          ? 'Peça dividida. A conexão foi mantida no lado que conserva o ID original; o novo lado ficou sem conexão.'
+          : 'Peça dividida em duas.'
       }
     })
   }
@@ -372,7 +387,7 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
       const result = await compile()
       let message = 'Salvar esta imagem como o Model Source oficial? A folha, as peças e o Chroma Key serão atualizados. O histórico anterior será encerrado e um backup interno será mantido.'
       message += '\n\nPoses e roupas já salvas podem manter imagens ou vínculos anteriores; revise as que usam as peças editadas.'
-      if (structureChanged) message += '\n\nA estrutura mudou. Uma divisão conserva o ID original em um lado, cria um ID para o outro e remove as juntas dessa peça; uma exclusão limpa suas juntas e camadas deste modelo.'
+      if (structureChanged) message += '\n\nA estrutura mudou. Uma divisão conserva o ID original e mantém as juntas nesse lado; o lado novo começa sem conexões. Uma exclusão limpa suas juntas e camadas deste modelo.'
       if (!window.confirm(message)) return
       await onPublish(result)
     } catch (reason) {
