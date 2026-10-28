@@ -1158,18 +1158,26 @@ const { isValidAnimatorSlot, writeAnimatorAnimation, readAnimatorAnimation, writ
   files: { mkdir, access, readdir, unlink, readFile, writeFile, rename }
 })
 
+function collectPendingPersistenceWrites(): Promise<unknown>[] {
+  return [
+    ...(fabricatorProjectIpc?.getPendingWrites() ?? []), ...poseSaveWrites, ...(fabricatorHairIpc?.getPendingWrites() ?? []),
+    animatorSaveQueue, ...(fabricatorWardrobeIpc?.getPendingWrites() ?? []), faceSaveQueue, expressionPresetSaveQueue,
+    faceGuideSaveQueue, customizerService.pendingWrites,
+    studioSaveQueues.studio, editorV6SaveQueue, roteirosSaveQueue,
+    ...(poseMigration ? [poseMigration] : [])
+  ]
+}
+
+async function flushPendingPersistenceWrites(): Promise<void> {
+  const results = await Promise.allSettled(collectPendingPersistenceWrites())
+  const failedWrite = results.find((result): result is PromiseRejectedResult => result.status === 'rejected')
+  if (failedWrite) throw failedWrite.reason
+}
+
 async function registerFabricatorHandlers(): Promise<void> {
   ipcMain.handle(studioIpcChannels.flushPendingWrites, async (event): Promise<void> => {
     assertTrustedSender(event)
-    const pendingWrites = [
-      ...(fabricatorProjectIpc?.getPendingWrites() ?? []), ...poseSaveWrites, ...(fabricatorHairIpc?.getPendingWrites() ?? []),
-      animatorSaveQueue, ...(fabricatorWardrobeIpc?.getPendingWrites() ?? []), faceSaveQueue, expressionPresetSaveQueue,
-      faceGuideSaveQueue, customizerService.pendingWrites,
-      studioSaveQueues.studio, editorV6SaveQueue, roteirosSaveQueue
-    ]
-    const results = await Promise.allSettled(pendingWrites)
-    const failedWrite = results.find((result): result is PromiseRejectedResult => result.status === 'rejected')
-    if (failedWrite) throw failedWrite.reason
+    await flushPendingPersistenceWrites()
   })
 
   registerStudioPrimaryHandlers({
@@ -1661,14 +1669,7 @@ app.whenReady().then(async () => {
     flushPendingWrites: async (event) => {
       const window = BrowserWindow.fromWebContents(event.sender)
       if (window && !window.webContents.isLoading()) await window.webContents.executeJavaScript('window.desktop?.flushPendingWrites?.()')
-      const pending = [
-        ...(fabricatorProjectIpc?.getPendingWrites() ?? []), ...poseSaveWrites, ...(fabricatorHairIpc?.getPendingWrites() ?? []), animatorSaveQueue,
-        ...(fabricatorWardrobeIpc?.getPendingWrites() ?? []), faceSaveQueue, expressionPresetSaveQueue, faceGuideSaveQueue, customizerService.pendingWrites,
-        studioSaveQueues.studio, editorV6SaveQueue
-      ]
-      const results = await Promise.allSettled(pending)
-      const failed = results.find((result): result is PromiseRejectedResult => result.status === 'rejected')
-      if (failed) throw failed.reason
+      await flushPendingPersistenceWrites()
     },
     relaunch: () => app.relaunch(),
     quit: () => app.quit()
@@ -1724,8 +1725,7 @@ app.on('before-quit', (event) => {
   editorV6MotionService?.cancelAll()
   const dataMigrationTask = dataMigrationIpc?.getActiveTask()
   const pendingWrites = [
-    ...(fabricatorProjectIpc?.getPendingWrites() ?? []), ...poseSaveWrites, ...(fabricatorHairIpc?.getPendingWrites() ?? []),
-    studioSaveQueues.studio, editorV6SaveQueue, roteirosSaveQueue,
+    ...collectPendingPersistenceWrites(),
     ...(dataMigrationTask ? [dataMigrationTask] : []),
     ...(editorV6ExportService ? [editorV6ExportService.drain()] : []),
     ...(editorV6MotionService ? [editorV6MotionService.drain()] : [])
