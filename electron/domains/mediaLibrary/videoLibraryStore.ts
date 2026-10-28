@@ -2,8 +2,8 @@ import { constants } from 'node:fs'
 import { access as nativeAccess, copyFile as nativeCopyFile, mkdir as nativeMkdir, readFile as nativeReadFile, rename as nativeRename, stat as nativeStat, unlink as nativeUnlink, writeFile as nativeWriteFile } from 'node:fs/promises'
 import { basename, dirname, extname, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import type { VideoLibraryItem } from '../src/shared/mediaLibrary'
-import type { DomainFileSystem } from './domainFileSystem.cjs'
+import type { VideoLibraryItem } from '../../../src/shared/mediaLibrary'
+import type { DomainFileSystem } from '../../domainFileSystem.cjs'
 import { sha256File } from './videoCasShadow'
 
 type StorageAdapter = Pick<DomainFileSystem, 'access' | 'copyFile' | 'mkdir' | 'readFile' | 'rename' | 'stat' | 'unlink' | 'writeFile'>
@@ -42,7 +42,7 @@ function validEntry(value: unknown): value is Entry {
     && (item.sha256 === undefined || /^[a-f0-9]{64}$/.test(item.sha256))
 }
 
-/** Originals belong to the library; each script owns an independent file copy. */
+/** Owns shared video originals and their stable IDs for all consuming areas. */
 export class VideoLibraryStore {
   private queue: Promise<unknown> = Promise.resolve()
   constructor(private readonly workspacePath: () => string) {}

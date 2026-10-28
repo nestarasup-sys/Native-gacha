@@ -13,7 +13,7 @@ import type { EditorV6Asset } from '../src/shared/editorV6'
 import { isEditorV6Document } from '../src/shared/editorV6Schema'
 import { registerEditorV6ExportHandlers } from './domains/editorV6/exportIpc'
 import { createEditorV6MotionService } from './domains/editorV6/motionIpc'
-import { VideoLibraryStore, configureVideoLibraryStorage } from './videoLibrary'
+import { VideoLibraryStore, configureVideoLibraryStorage } from './domains/mediaLibrary/videoLibraryStore'
 import { VideoBackgroundLibraryStore, configureBackgroundLibraryStorage } from './backgroundLibrary'
 import { RoteiroUiGifLibraryStore, configureRoteiroUiGifStorage } from './roteiroUiGifLibrary'
 import { DataPlatform, getAppDataUsage } from './dataPlatform.cjs'
@@ -77,6 +77,8 @@ import { createRoteiroUiGifsService } from './domains/roteiros/uiGifsService'
 import { registerRoteiroUiGifsHandlers } from './domains/roteiros/uiGifsIpc'
 import { createBackgroundLibraryService } from './domains/mediaLibrary/backgroundLibraryService'
 import { registerBackgroundLibraryHandlers } from './domains/mediaLibrary/backgroundLibraryIpc'
+import { createVideoLibraryService } from './domains/mediaLibrary/videoLibraryService'
+import { registerVideoLibraryHandlers } from './domains/mediaLibrary/videoLibraryIpc'
 import { createEditorV6VideoReferenceLookup } from './domains/editorV6/videoReferences'
 
 let configuredAppDataRoot: string | null = null
@@ -1349,22 +1351,17 @@ async function registerFabricatorHandlers(): Promise<void> {
     if (error) throw new Error(`Não foi possível abrir a pasta de prints do Editor V6: ${error}`)
   })
 
-  ipcMain.handle('video-library:list', async (event) => { assertTrustedSender(event); return videoLibrary.list() })
-  ipcMain.handle('video-library:import', async (event) => {
-    assertTrustedSender(event)
-    const result = await dialog.showOpenDialog({ title: 'Biblioteca de vídeos: importar', properties: ['openFile'], filters: [{ name: 'Vídeos', extensions: ['mp4', 'webm', 'mov', 'm4v'] }] })
-    if (result.canceled || !result.filePaths[0]) return null
-    return videoLibrary.importFile(result.filePaths[0])
+  const videoLibraryService = createVideoLibraryService({
+    library: videoLibrary,
+    openImportDialog: async () => {
+      const result = await dialog.showOpenDialog({ title: 'Biblioteca de vídeos: importar', properties: ['openFile'], filters: [{ name: 'Vídeos', extensions: ['mp4', 'webm', 'mov', 'm4v'] }] })
+      return result.canceled ? null : result.filePaths[0] ?? null
+    },
+    enqueueWrite: enqueueRoteirosWrite,
+    coordinateReferenceChange: coordinateVideoReferenceChange,
+    assertNoReferences: assertNoVideoReferences
   })
-  ipcMain.handle('video-library:finish', async (event, id: string, durationFrames: number) => { assertTrustedSender(event); return videoLibrary.finishImport(id, durationFrames) })
-  ipcMain.handle('video-library:rename', async (event, id: string, name: string) => { assertTrustedSender(event); return videoLibrary.rename(id, name) })
-  ipcMain.handle('video-library:delete', async (event, id: string) => {
-    assertTrustedSender(event)
-    await enqueueRoteirosWrite(() => coordinateVideoReferenceChange(async () => {
-      await assertNoVideoReferences(id)
-      await videoLibrary.delete(id)
-    }))
-  })
+  registerVideoLibraryHandlers({ ipcMain, assertTrustedSender, service: videoLibraryService })
   const backgroundLibraryService = createBackgroundLibraryService({
     openImportDialog: async () => {
       const result = await dialog.showOpenDialog({ title: 'Biblioteca de fundos: importar', properties: ['openFile'], filters: [{ name: 'Imagens', extensions: ['png', 'jpg', 'jpeg', 'webp'] }] })

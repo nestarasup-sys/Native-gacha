@@ -12,16 +12,16 @@ const {
 } = require('../scripts/dev-ai/baseline.cjs')
 
 test('catalog: every audit is registered and unsafe audits excluded from unattended suites', () => {
-  assert.equal(audits.length, 7)
+  assert.equal(audits.length, 6)
   assert.equal(new Set(audits.map(a => a.id)).size, audits.length)
   for (const entry of audits) {
     assert.match(entry.file, /^scripts\/audit-[\w-]+\.(mjs|cjs)$/)
     assert.ok(entry.requires.length > 0)
     if (entry.suite === 'fast') assert.equal(entry.data, 'synthetic')
   }
-  assert.equal(selected('fast').length, 6)
+  assert.equal(selected('fast').length, 5)
   assert.throws(() => selected('isolation'), /Suite desconhecida/)
-  assert.equal(selected('all').length, 6)
+  assert.equal(selected('all').length, 5)
   assert.throws(() => selected('ipc'), /Suite desconhecida/)
   assert.ok(audits.some(a => a.id === 'animator-rig' && a.data === 'real-by-default' && a.suite === 'manual'))
 })

@@ -13,7 +13,7 @@ function load(relativePath,deps={}){
   new Function('require','module','exports',compiled)((name)=>name in deps?deps[name]:require(name),mod,mod.exports)
   return mod.exports
 }
-const cas=load('electron/videoCasShadow.ts')
+const cas=load('electron/domains/mediaLibrary/videoCasShadow.ts')
 
 test('CAS shadow deduplicates identical bytes without removing legacy source',async()=>{
   const root=fs.mkdtempSync(path.join(os.tmpdir(),'gv5-cas-'))

@@ -12,7 +12,7 @@ const { createHash } = require('node:crypto')
 const videoCasShadow = { sha256File: async (filePath) => createHash('sha256').update(await fs.readFile(filePath)).digest('hex') }
 
 function loadVideoLibrary() {
-  const source = require('node:fs').readFileSync(path.resolve(__dirname, '../electron/videoLibrary.ts'), 'utf8')
+  const source = require('node:fs').readFileSync(path.resolve(__dirname, '../electron/domains/mediaLibrary/videoLibraryStore.ts'), 'utf8')
   const compiled = ts.transpile(source, { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 })
   const mod = { exports: {} }
   new Function('require', 'module', 'exports', compiled)((name) => name === './videoCasShadow' ? videoCasShadow : require(name), mod, mod.exports)
