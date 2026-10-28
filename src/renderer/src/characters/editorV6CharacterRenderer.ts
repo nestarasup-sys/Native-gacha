@@ -1,4 +1,4 @@
-import type { FaceCatalogItem, FaceCatalogItemSummary, FaceComponentAsset, FaceDetailKind, FaceElementKind, FaceExpressionEffects, FaceSheetKind, FabricatorProject, HairStyle, WardrobeSet } from '../../../shared/fabricator'
+import type { FaceCatalogItem, FaceCatalogItemSummary, FaceComponentAsset, FaceDetailKind, FaceElementKind, FaceExpressionEffects, FaceSheetKind, FabricatorProject } from '../../../shared/fabricator'
 import type { CustomizerCharacter, CustomizerFaceAppearance, CustomizerWardrobeGroup, FaceComponentPartId, FacePalettePartId, HairColorOverrides } from '../../../shared/customizer'
 import { resolveEditorV6TalkMouthId, type EditorV6FaceRenderMode, type EditorV6FaceTransforms } from '../../../shared/editorV6'
 import { isEditorV6BlinkRenderMode } from '../../../shared/editorV6FaceSchedule'
@@ -12,6 +12,8 @@ import { prepareGachaStaticLayers } from './gachaStaticLayers'
 import { loadCachedImage } from './editorV6CharacterImageMemos'
 import { createCharacterImageTint } from './characterImageTint'
 import { createCharacterLayerRenderer } from './characterLayerRenderer'
+import { loadPreparedCharacterMaterials } from './preparedCharacterMaterials'
+import type { GachaReusableMaterialCache, GachaReusableMaterials } from './preparedCharacterMaterials'
 import { alignMouthTransformToClosedBase, createClosedEyeAssetResolver, faceElementOrder, isRightFaceAsset as resolveIsRightFaceAsset, transferEyeCloseAdjustment, type ClosedEyeAssetResolver } from './characterFaceCatalogSupport'
 import { createCharacterCanvas, isCharacterCanvasWorker } from './canvasSurface'
 import { createCharacterWardrobeRenderer } from './characterWardrobeRenderer'
@@ -20,6 +22,7 @@ import { loadStandardExpressionEffects, type StandardExpressionEffects } from '.
 export { loadCachedImage } from './editorV6CharacterImageMemos'
 export { withCharacterHeadSize, characterShapeScale } from './characterSourceResolver'
 export type { CatalogArtwork } from './characterSourceResolver'
+export type { GachaReusableMaterialCache, GachaReusableMaterials }
 
 export { loadStandardExpressionEffects }
 export type { StandardExpressionEffects }
@@ -337,72 +340,11 @@ export type PreparedGachaLayerFrame = Readonly<{
 }>
 
 
-/**
- * Pose-independent, immutable inputs for the canonical Canvas renderer.
- * A dynamic pose still calculates wardrobe anchors, per-bone transforms and
- * hair rotation; only the Fabricador asset lookups are shared across frames.
- */
-export type GachaReusableMaterials = Readonly<{
-  backStyles: HairLayerReference[]
-  frontStyles: HairLayerReference[]
-  wardrobeDetails: Record<string, WardrobeSet>
-}>
-export type GachaReusableMaterialCache = Map<string, Promise<GachaReusableMaterials>>
-
-async function loadGachaReusableMaterials(
-  character: CustomizerCharacter,
-  modelSlot: number,
-  assetProvider: CharacterRenderAssetProvider
-): Promise<GachaReusableMaterials> {
-  const hairAppearance = character.customization.hairAppearance
-  const [backStyles, posteriorStyles, fringeStyles] = await Promise.all([
-    loadHairAppearanceLayers(hairAppearance, modelSlot, 'back', {}, assetProvider),
-    loadHairAppearanceLayers(hairAppearance, modelSlot, 'front', {}, assetProvider),
-    loadHairAppearanceLayers(hairAppearance, modelSlot, 'fringe', {}, assetProvider),
-  ])
-  const groups = (character.customization.wardrobeGroups ?? [])
-    .filter(group => group.modelSlot === modelSlot)
-  const sets = new Map<string, Promise<WardrobeSet | null>>()
-  for (const group of groups) {
-    const key = `${group.modelSlot}:${group.setId}`
-    if (!sets.has(key)) sets.set(key, assetProvider.loadWardrobeSet(group.modelSlot, group.setId))
-  }
-  const wardrobeDetails: Record<string, WardrobeSet> = {}
-  await Promise.all([...sets].map(async ([key, request]) => {
-    const set = await request
-    if (!set) throw new Error(`O personagem referencia um conjunto de roupa indisponível (${key}). A fonte não será modificada.`)
-    wardrobeDetails[key] = set
-  }))
-  return { backStyles, frontStyles: [...posteriorStyles, ...fringeStyles], wardrobeDetails }
-}
-
-function gachaMaterialKey(character: CustomizerCharacter, modelSlot: number): string {
-  // Never depend on interpolation progress or facial preset: neither changes
-  // the wardrobe/hair *sources*. Edits to the selected materials invalidate.
-  return JSON.stringify([
-    character.id, character.updatedAt, modelSlot, character.customization.hairAppearance,
-    (character.customization.wardrobeGroups ?? []).filter(group => group.modelSlot === modelSlot),
-  ])
-}
-
 export async function materialsForPreparedCharacter(
   character: CustomizerCharacter, slot: number, assetProvider: CharacterRenderAssetProvider,
   cache?: GachaReusableMaterialCache,
 ): Promise<GachaReusableMaterials> {
-  if (!cache) return loadGachaReusableMaterials(character, slot, assetProvider)
-  const key = gachaMaterialKey(character, slot)
-  let pending = cache.get(key)
-  if (!pending) {
-    pending = loadGachaReusableMaterials(character, slot, assetProvider)
-    cache.set(key, pending)
-    // Bound retained PNG manifests/styles; no session-global unbounded Map.
-    if (cache.size > 6) cache.delete(cache.keys().next().value!)
-    const request = pending
-    void pending.catch(() => {
-      if (cache.get(key) === request) cache.delete(key)
-    })
-  }
-  return pending
+  return loadPreparedCharacterMaterials(character, slot, assetProvider, loadHairAppearanceLayers, cache)
 }
 
 export async function prepareSavedCharacterRenderer(character: CustomizerCharacter, renderSource?: { artwork: CatalogArtwork; source: FabricatorProject; assetProvider?: CharacterRenderAssetProvider; materialCache?: GachaReusableMaterialCache }): Promise<{ width: number; height: number; render: (appearance?: CustomizerFaceAppearance, studioFaceTransforms?: EditorV6FaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: EditorV6FaceRenderMode) => Promise<{ dataUrl: string; width: number; height: number }>; renderToCanvas: (appearance?: CustomizerFaceAppearance, studioFaceTransforms?: EditorV6FaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: EditorV6FaceRenderMode) => Promise<{ canvas: HTMLCanvasElement; width: number; height: number }>; renderLayersToCanvas: (appearance?: CustomizerFaceAppearance, studioFaceTransforms?: EditorV6FaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: EditorV6FaceRenderMode) => Promise<PreparedGachaLayerFrame> ; dispose: () => void }> {

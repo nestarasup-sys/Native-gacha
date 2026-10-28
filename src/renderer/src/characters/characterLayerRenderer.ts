@@ -9,6 +9,15 @@ import { drawPreviewImageWithHalo } from './characterCanvasDrawing'
 import { faceElementOrder } from './characterFaceCatalogSupport'
 
 export type HairCatalogSide = 'front' | 'back'
+export type HairLayerSide = HairCatalogSide | 'fringe'
+export type HairLayerReference = { style: HairStyle; side: HairLayerSide; part: HairPartId }
+export type HairAppearanceLayerLoader = (
+  appearance: NonNullable<CustomizerCharacter['customization']['hairAppearance']> | undefined,
+  modelSlot: number,
+  side: HairLayerSide,
+  cached?: Record<string, HairStyle>,
+  assetProvider?: CharacterRenderAssetProvider
+) => Promise<HairLayerReference[]>
 
 export type CharacterLayerImageLoaders = {
   loadCachedImage: (source: string | CanvasImageSource) => Promise<HTMLImageElement>
@@ -18,9 +27,6 @@ export type CharacterLayerImageLoaders = {
 
 export function createCharacterLayerRenderer(loaders: CharacterLayerImageLoaders) {
   const { loadCachedImage, loadHairTintedImage, loadSkinTintedImage } = loaders
-  type HairLayerSide = HairCatalogSide | 'fringe'
-
-  type HairLayerReference = { style: HairStyle; side: HairLayerSide; part: HairPartId }
 
   const customizerHairParts = hairCategories
 
