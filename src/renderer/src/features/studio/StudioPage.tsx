@@ -8,6 +8,7 @@ import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPoi
 import { buildStudioExpressionAppearance, buildStudioExpressionTransforms, resolveStudioExpressionBase, studioExpressionCollection } from './expressionTransforms'
 import { Icon } from '../../ui/components/Icon'
 import { NumericRangeField } from '../../ui/components/NumericRangeField'
+import { isLegacySceneCatalogId, loadLegacySceneCatalog } from '../../ui/legacySceneCatalog'
 import { CharacterPortrait } from '../../ui/components/CharacterPortrait'
 import { resolveStudioTalkMouthId } from '../../../../shared/studio'
 import { fitStudioCharacterToStage } from '../../../../shared/studioCharacterGeometry'
@@ -34,21 +35,6 @@ const studioTools = [
   { id: 'background', label: 'Fundo', icon: 'frame' },
   { id: 'objects', label: 'Objetos', icon: 'sparkles' }
 ] as const
-const isUuid = (value: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
-
-function loadLegacyStudios(): Array<{ id: string; title: string; color: string }> {
-  try {
-    const saved: unknown = JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? '[]')
-    if (!Array.isArray(saved)) return []
-    return saved.filter((item): item is { id: string; title: string; color: string } => Boolean(item && typeof item === 'object'
-      && typeof item.id === 'string' && typeof item.title === 'string' && typeof item.color === 'string'))
-  } catch { return [] }
-}
-
-
-
-
-
 function makeElement(kind: StudioElement['kind'], zIndex: number): StudioElement {
   return {
     id: crypto.randomUUID(), kind, text: kind === 'narrator' ? 'Texto do narrador' : 'Digite aqui',
@@ -308,10 +294,10 @@ export function StudioPage() {
       try {
         const existing = await window.desktop.listStudios()
         const knownIds = new Set(existing.map((studio) => studio.id))
-        const legacy = loadLegacyStudios()
+        const legacy = loadLegacySceneCatalog(STORAGE_KEY)
         const now = new Date().toISOString()
         for (const old of legacy) {
-          if (knownIds.has(old.id) || !isUuid(old.id)) continue
+          if (knownIds.has(old.id) || !isLegacySceneCatalogId(old.id)) continue
           await window.desktop.saveStudio({
             schemaVersion: 1, ...old, createdAt: now, updatedAt: now, backgroundColor: '#d7b5cd',
             backgroundAssetId: null, backgroundX: 0, backgroundY: 0, backgroundWidth: 100, backgroundHeight: 100,
