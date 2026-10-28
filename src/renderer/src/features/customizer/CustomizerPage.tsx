@@ -23,6 +23,7 @@ import { useCustomizerWardrobeAdjustment } from './useCustomizerWardrobeAdjustme
 import { useCustomizerWardrobePanelActions } from './useCustomizerWardrobePanelActions'
 import { useCustomizerHeadAdjustment } from './useCustomizerHeadAdjustment'
 import { useCustomizerAdjustmentPreview } from './useCustomizerAdjustmentPreview'
+import { useCustomizerHeadNavigation } from './useCustomizerHeadNavigation'
 import { sampleOriginalSkinTone } from './customizerPreviewImages'
 import { CustomizerCategoryIcon, clothesAdjustmentDefinitions, customizerClothesTabs, customizerHeadTabs, customizerModuleByTab, customizerModuleNames, customizerOtherTabs, customizerTopTabs, headAdjustmentItemsFor } from './customizerNavigation'
 import { hairAppearancePartStyleId } from './customizerHairAppearanceModel'
@@ -110,8 +111,7 @@ export function CustomizerPage() {
     faceLibraryPart, setFaceLibraryPart, faceLibraryPage, setFaceLibraryPage,
     faceCatalogLibraryPart, setFaceCatalogLibraryPart, faceCatalogLibraryPage, setFaceCatalogLibraryPage
   } = useCustomizerAssetLibraryState<WardrobePanel, FaceLibraryPartId>()
-  const [headPanelTab, setHeadPanelTab] = useState<'hair' | 'eyes' | 'face' | 'extra' | 'adjust'>('hair')
-  const [headCategorySelection, setHeadCategorySelection] = useState<'hair' | 'eyes' | 'face' | 'extra'>('hair')
+  const { headPanelTab, headCategorySelection, selectHeadTab } = useCustomizerHeadNavigation()
   const [activeHairColorRole, setActiveHairColorRole] = useState<HairColorRole>('base')
   const [selectedClothing, setSelectedClothing] = useState<SelectedWardrobeComponent | null>(null)
   const [unavailableWardrobeSetKeys, setUnavailableWardrobeSetKeys] = useState<string[]>([])
@@ -713,11 +713,9 @@ export function CustomizerPage() {
       mouthOpen: item.category === 'mouth-open' ? true : item.category === 'mouth-closed' ? false : sameModel ? previous.mouthOpen : false
     }
     if (item.category === 'eyes' || item.category === 'eyebrows') {
-      setHeadPanelTab('eyes')
-      setHeadCategorySelection('eyes')
+      selectHeadTab('eyes')
     } else {
-      setHeadPanelTab('face')
-      setHeadCategorySelection('face')
+      selectHeadTab('face')
     }
     await saveCharacterCustomization({ faceAppearance: appearance })
   }
@@ -1631,11 +1629,7 @@ export function CustomizerPage() {
               ><CustomizerCategoryIcon category={tab.id} /><span>{tab.label}</span></button>)}
             </nav>
             {selectedCustomizerTopTab === 'cabeca' && <nav className="customizer-head-category-tabs" aria-label="Categorias de cabeça" role="tablist">
-              {customizerHeadTabs.map((tab) => <button key={tab.id} className={headPanelTab === tab.id || headPanelTab === 'adjust' && headCategorySelection === tab.id ? 'active' : ''} onClick={() => {
-                const nextTab = tab.id === 'adjust' && headPanelTab === 'adjust' ? headCategorySelection : tab.id
-                setHeadPanelTab(nextTab)
-                if (nextTab !== 'adjust') setHeadCategorySelection(nextTab)
-              }} aria-selected={headPanelTab === tab.id} role="tab" type="button"><Icon name={tab.icon} /><span>{tab.label}</span></button>)}
+              {customizerHeadTabs.map((tab) => <button key={tab.id} className={headPanelTab === tab.id || headPanelTab === 'adjust' && headCategorySelection === tab.id ? 'active' : ''} onClick={() => selectHeadTab(tab.id)} aria-selected={headPanelTab === tab.id} role="tab" type="button"><Icon name={tab.icon} /><span>{tab.label}</span></button>)}
             </nav>}
             {selectedCustomizerTopTab === 'roupas' && <nav className="customizer-clothes-category-tabs" aria-label="Categorias de roupas" role="tablist">
               {customizerClothesTabs.map((tab) => <button key={tab.id} className={clothesPanelTab === tab.id || clothesPanelTab === 'adjust' && clothesCategorySelection === tab.id ? 'active' : ''} onClick={() => {
