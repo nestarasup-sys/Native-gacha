@@ -191,7 +191,7 @@ const imagesApi: ImageImportDesktopApi = {
 contextBridge.exposeInMainWorld('desktop', {
   platform: process.platform,
   appName: 'Gacha Nymi',
-  normalizeImageForImport: imagesApi.normalizeForImport,
+  flushPendingWrites: () => studioApi.flushPendingWrites(),
   images: imagesApi,
   dataManagement: dataManagementApi,
   fabricator: fabricatorApi,
@@ -199,13 +199,7 @@ contextBridge.exposeInMainWorld('desktop', {
   studio: studioApi,
   editorV6: editorV6Api,
   roteiros: roteirosApi,
-  ...fabricatorApi,
-  ...customizerApi,
-  ...studioApi,
-  ...editorV6Api,
   mediaLibrary: mediaLibraryApi,
   videoBackgrounds: videoBackgroundsApi,
   baseVideos: baseVideosApi,
-  ...dataManagementApi,
-  ...roteirosApi
 })

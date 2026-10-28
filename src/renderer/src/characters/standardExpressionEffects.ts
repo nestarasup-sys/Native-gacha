@@ -4,7 +4,7 @@ import { legacyStandardExpressionEffects } from '../../../shared/legacyExpressio
 
 export type StandardExpressionEffects = Record<number, FaceExpressionEffects>
 
-export async function loadStandardExpressionEffects(modelSlot: number, assetProvider: CharacterRenderAssetProvider = window.desktop): Promise<StandardExpressionEffects> {
+export async function loadStandardExpressionEffects(modelSlot: number, assetProvider: CharacterRenderAssetProvider = window.desktop.fabricator): Promise<StandardExpressionEffects> {
   const summaries = await assetProvider.listFaceExpressionPresets(modelSlot)
   const standard = summaries.filter((preset) => (preset.collectionId ?? 'standard') === 'standard'
     && Number.isInteger(preset.expressionIndex) && preset.expressionIndex! >= 0 && preset.expressionIndex! < 21)

@@ -13,7 +13,7 @@ declare global {
     desktop: {
       platform: string
       appName: string
-      normalizeImageForImport: ImageImportDesktopApi['normalizeForImport']
+      flushPendingWrites: StudioDesktopApi['flushPendingWrites']
       images: ImageImportDesktopApi
       dataManagement: DataManagementDesktopApi
       fabricator: FabricatorDesktopApi
@@ -24,7 +24,7 @@ declare global {
       baseVideos: BaseVideosDesktopApi
       mediaLibrary: MediaLibraryDesktopApi
       videoBackgrounds: VideoBackgroundLibraryDesktopApi
-    } & DataManagementDesktopApi & FabricatorDesktopApi & CustomizerDesktopApi & StudioDesktopApi & EditorV6DesktopApi & RoteirosDesktopApi
+    }
   }
 }
 

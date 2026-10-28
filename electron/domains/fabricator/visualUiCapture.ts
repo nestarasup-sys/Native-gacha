@@ -121,7 +121,7 @@ async function sampleElectronPerformance(win: BrowserWindow): Promise<{ sampledF
 
 /** Click the REAL Roupas DEV UI: Soltar → Fixar → Salvar, then reload by IPC. */
 async function exerciseGlueWorkflow(win: BrowserWindow): Promise<void> {
-  const before = await win.webContents.executeJavaScript("window.desktop.loadWardrobeSet(1, 'uniform')") as {components: Array<{id:string;dataUrl:string}>} | null
+  const before = await win.webContents.executeJavaScript("window.desktop.fabricator.loadWardrobeSet(1, 'uniform')") as {components: Array<{id:string;dataUrl:string}>} | null
   if (!before?.components.length) throw Error('Fixture de roupa não carregou para o teste de grude.')
   const waitStatus = async (expected: string) => {
     for(let attempt=0; attempt<50; attempt++) {
@@ -150,7 +150,7 @@ async function exerciseGlueWorkflow(win: BrowserWindow): Promise<void> {
   type SavedWardrobe = { components: Array<{ id: string; dataUrl: string; glue?: { mode: string } }> }
   let saved: SavedWardrobe | null = null
   for(let attempt=0;attempt<50;attempt++){
-    const loaded = await win.webContents.executeJavaScript("window.desktop.loadWardrobeSet(1, 'uniform')") as SavedWardrobe | null
+    const loaded = await win.webContents.executeJavaScript("window.desktop.fabricator.loadWardrobeSet(1, 'uniform')") as SavedWardrobe | null
     saved = loaded
     if(loaded?.components[0]?.glue?.mode==='fixed') break
     await new Promise(resolve=>setTimeout(resolve,100))
@@ -180,7 +180,7 @@ async function compareScreenshot(image: Buffer, baselinePath: string): Promise<n
 export async function captureFabricatorRealScreens(win: BrowserWindow, output: string, baseline?: string): Promise<void> {
   await mkdir(output, { recursive: true })
   const hasSyntheticPupils=process.env.GACHA_DEV_AI_TEST==='1' && await win.webContents.executeJavaScript(`(async()=>{
-    const pupils=await window.desktop.listFaceComponentAssets(1,'pupil')
+    const pupils=await window.desktop.fabricator.listFaceComponentAssets(1,'pupil')
     return pupils.some(item=>item.id==='regPupilL')
   })()`) as boolean
   if (hasSyntheticPupils) {
@@ -199,8 +199,8 @@ export async function captureFabricatorRealScreens(win: BrowserWindow, output: s
   for (const [key, label] of sections) {
     const expressionSnapshot = key==='expressoes'
       ? await win.webContents.executeJavaScript(`(async()=>{
-          const list=await window.desktop.listFaceExpressionPresets(1)
-          return Promise.all(list.map(item=>window.desktop.loadFaceExpressionPreset(1,item.id)))
+          const list=await window.desktop.fabricator.listFaceExpressionPresets(1)
+          return Promise.all(list.map(item=>window.desktop.fabricator.loadFaceExpressionPreset(1,item.id)))
         })()`) as unknown[]
       : null
     const clicked = await win.webContents.executeJavaScript(`(() => {
@@ -258,7 +258,7 @@ export async function captureFabricatorRealScreens(win: BrowserWindow, output: s
         throw Error('Arrastar a pupila à direita congelou ou inverteu a imagem: '+JSON.stringify(pathPixels))
       }
       await new Promise(resolve=>setTimeout(resolve,650))
-      const saved = await win.webContents.executeJavaScript(`window.desktop.loadFaceComponentAsset(1,'regPupilL').then(item=>item?.defaultTransform.x ?? null)`) as number|null
+      const saved = await win.webContents.executeJavaScript(`window.desktop.fabricator.loadFaceComponentAsset(1,'regPupilL').then(item=>item?.defaultTransform.x ?? null)`) as number|null
       if(saved===null || saved<=2)throw Error('Olhos DEV não persistiu deslocamento positivo da pupila sintética.')
       await writeFile(join(output,'eyes-pupil-drag.json'),JSON.stringify({savedX:saved,observedPath:pathPixels},null,2))
     }
@@ -322,8 +322,8 @@ export async function captureFabricatorRealScreens(win: BrowserWindow, output: s
       await waitFor(win,'[aria-label="Testar expressão em personagem do Customizador"]')
       await win.webContents.executeJavaScript("document.querySelector('[aria-label=\"Fechar teste de expressão\"]')?.click()")
       const current = await win.webContents.executeJavaScript(`(async()=>{
-        const list=await window.desktop.listFaceExpressionPresets(1)
-        return Promise.all(list.map(item=>window.desktop.loadFaceExpressionPreset(1,item.id)))
+        const list=await window.desktop.fabricator.listFaceExpressionPresets(1)
+        return Promise.all(list.map(item=>window.desktop.fabricator.loadFaceExpressionPreset(1,item.id)))
       })()`) as unknown[]
       if (JSON.stringify(current)!==JSON.stringify(expressionSnapshot)) {
         throw Error('Abertura ou PT do Presets DEV sobrescreveu expressões publicadas.')
@@ -349,7 +349,7 @@ export async function captureFabricatorRealScreens(win: BrowserWindow, output: s
         win.webContents.sendInputEvent({type:'mouseUp',x:target.x+30,y:target.y+10,button:'left'})
         let authored: {x:number;y:number;rotation:number}|null=null
         for(let attempt=0;attempt<35;attempt++){
-          authored=await win.webContents.executeJavaScript("window.desktop.loadFaceExpressionWorkspaceDraft(1).then(d=>d?.current?.ptPupils?.left ?? null)") as {x:number;y:number;rotation:number}|null
+          authored=await win.webContents.executeJavaScript("window.desktop.fabricator.loadFaceExpressionWorkspaceDraft(1).then(d=>d?.current?.ptPupils?.left ?? null)") as {x:number;y:number;rotation:number}|null
           if(authored && Number.isFinite(authored.x) && Number.isFinite(authored.y))break
           await new Promise(resolve=>setTimeout(resolve,200))
         }
@@ -359,9 +359,9 @@ export async function captureFabricatorRealScreens(win: BrowserWindow, output: s
         let saved: {id:string;ptPupils?:{left?:{x:number;y:number;rotation:number}};transforms:unknown}|null=null
         for(let attempt=0;attempt<35;attempt++){
           saved=await win.webContents.executeJavaScript(`(async()=>{
-            const list=await window.desktop.listFaceExpressionPresets(1)
+            const list=await window.desktop.fabricator.listFaceExpressionPresets(1)
             const entry=list.find(item=>item.collectionId==='standard'&&item.expressionIndex===0)
-            return entry?window.desktop.loadFaceExpressionPreset(1,entry.id):null
+            return entry?window.desktop.fabricator.loadFaceExpressionPreset(1,entry.id):null
           })()`) as {id:string;ptPupils?:{left?:{x:number;y:number;rotation:number}};transforms:unknown}|null
           if(saved?.ptPupils?.left)break
           await new Promise(resolve=>setTimeout(resolve,200))
@@ -370,7 +370,7 @@ export async function captureFabricatorRealScreens(win: BrowserWindow, output: s
             || Math.abs(saved.ptPupils.left.y-authored.y)>1e-6) {
           throw Error('Publicação de PT perdeu as coordenadas que a UI arrastou.')
         }
-        const ptSource=await win.webContents.executeJavaScript("window.desktop.loadFaceExpressionWorkspaceDraft(1).then(d=>d?.current?.transforms ?? null)") as unknown
+        const ptSource=await win.webContents.executeJavaScript("window.desktop.fabricator.loadFaceExpressionWorkspaceDraft(1).then(d=>d?.current?.transforms ?? null)") as unknown
         if(JSON.stringify(saved.transforms)!==JSON.stringify(ptSource)){
           throw Error('Editar somente pupilas PT alterou os transforms normais.')
         }
@@ -499,7 +499,7 @@ export async function captureCustomizerStudioRealScreens(win: BrowserWindow, out
   const deadline = Date.now() + 20000
   let character: { id: string; name: string; customization: Record<string, unknown>; updatedAt: string } | null = null
   while (Date.now() < deadline) {
-    character = await win.webContents.executeJavaScript(`window.desktop.listCustomizerCharacters().then(list => list.find(item => item.name === ${JSON.stringify(name)}) ?? null)`) as { id: string; name: string; customization: Record<string, unknown>; updatedAt: string } | null
+    character = await win.webContents.executeJavaScript(`window.desktop.customizer.listCustomizerCharacters().then(list => list.find(item => item.name === ${JSON.stringify(name)}) ?? null)`) as { id: string; name: string; customization: Record<string, unknown>; updatedAt: string } | null
     if (character) break
     await new Promise(resolve => setTimeout(resolve, 200))
   }
@@ -507,10 +507,10 @@ export async function captureCustomizerStudioRealScreens(win: BrowserWindow, out
   const id = character.id
   // Usa o MESMO contrato de personalização que a UI invoca, sem editar modelo-fonte.
   const changed = await win.webContents.executeJavaScript(`(async () => {
-    const list = await window.desktop.listCustomizerCharacters()
+    const list = await window.desktop.customizer.listCustomizerCharacters()
     const character = list.find(item => item.id === ${JSON.stringify(id)})
     if (!character) return false
-    const wardrobe = await window.desktop.loadWardrobeSet(1, 'uniform')
+    const wardrobe = await window.desktop.fabricator.loadWardrobeSet(1, 'uniform')
     if (!wardrobe || wardrobe.components.length !== 3 ||
         new Set(wardrobe.components.map(component => component.dataUrl)).size !== 3) {
       throw new Error('Roupas Dev retornou manga duplicada ou perdeu componente.')
@@ -519,7 +519,7 @@ export async function captureCustomizerStudioRealScreens(win: BrowserWindow, out
       modelSlot: 1, setId: wardrobe.id, category: component.category,
       componentId: component.id, offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1, rotation: 0
     }))
-    await window.desktop.saveCustomizerCharacter({
+    await window.desktop.customizer.saveCustomizerCharacter({
       ...character,
       customization: { ...character.customization, modelSlot: 1, poseSlot: 1, wardrobeGroups },
       updatedAt: new Date().toISOString()
@@ -563,12 +563,12 @@ export async function captureCustomizerStudioRealScreens(win: BrowserWindow, out
   // it had before the visibility change. No source assets are written.
   const setSyntheticPieceHidden = async (pieceId: string, hidden: boolean) => {
     const applied = await win.webContents.executeJavaScript(`(async () => {
-      const list = await window.desktop.listCustomizerCharacters()
+      const list = await window.desktop.customizer.listCustomizerCharacters()
       const character = list.find(item => item.id === ${JSON.stringify(id)})
       if (!character) return false
       const wardrobeGroups = (character.customization.wardrobeGroups ?? []).map(group =>
         group.componentId === ${JSON.stringify(pieceId)} ? { ...group, hidden: ${hidden} } : group)
-      await window.desktop.saveCustomizerCharacter({
+      await window.desktop.customizer.saveCustomizerCharacter({
         ...character,customization:{...character.customization,wardrobeGroups},
         updatedAt:new Date().toISOString()
       })
@@ -615,10 +615,10 @@ export async function captureCustomizerStudioRealScreens(win: BrowserWindow, out
   // carrying on with Studio and the reopen check.
   const changeSyntheticPose = async (slot: number) => {
     const applied = await win.webContents.executeJavaScript(
-      "(async () => { const list = await window.desktop.listCustomizerCharacters();" +
+      "(async () => { const list = await window.desktop.customizer.listCustomizerCharacters();" +
       " const character = list.find(item => item.id === " + JSON.stringify(id) + ");" +
       " if (!character) return false;" +
-      " await window.desktop.saveCustomizerCharacter({...character, customization: {...character.customization, poseSlot: " + slot + "}, updatedAt: new Date().toISOString()}); return true; })()"
+      " await window.desktop.customizer.saveCustomizerCharacter({...character, customization: {...character.customization, poseSlot: " + slot + "}, updatedAt: new Date().toISOString()}); return true; })()"
     ) as boolean
     if (!applied) throw Error('Falha ao selecionar pose sintética ' + slot)
     await win.webContents.executeJavaScript("window.location.hash = '#/estudio'")
@@ -696,7 +696,7 @@ export async function captureCustomizerStudioRealScreens(win: BrowserWindow, out
   await waitFor(win, '.studio-cast-modal-option.selected')
   await win.webContents.executeJavaScript("document.querySelector('.studio-cast-modal-save')?.click()")
   await waitFor(win, '.studio-cast-item', 30000)
-  const studios = await win.webContents.executeJavaScript('window.desktop.listStudios()') as Array<{ id: string; title: string; elements: Array<{ characterId?: string }> }>
+  const studios = await win.webContents.executeJavaScript('window.desktop.studio.listStudios()') as Array<{ id: string; title: string; elements: Array<{ characterId?: string }> }>
   const studio = studios.find(item => item.elements.some(element => element.characterId === id))
   if (!studio) throw Error('Elenco não persistiu no Studio Principal.')
   await capture('Studio Principal — elenco salvo', 'studio.png')
@@ -730,7 +730,7 @@ export async function captureCustomizerStudioReopened(win: BrowserWindow, output
   }
   if(ptEvidence){
     const saved=await win.webContents.executeJavaScript(
-      `window.desktop.loadFaceExpressionPreset(1,${JSON.stringify(ptEvidence.id)})`
+      `window.desktop.fabricator.loadFaceExpressionPreset(1,${JSON.stringify(ptEvidence.id)})`
     ) as {ptPupils?:{left?:{x:number;y:number;rotation:number}};ptPupilMotion?:unknown;transforms:unknown}|null
     if(!saved?.ptPupilMotion || JSON.stringify(saved.ptPupils)!==JSON.stringify(ptEvidence.ptPupils)
        || JSON.stringify(saved.transforms)!==JSON.stringify(ptEvidence.normalTransforms)) {
@@ -739,7 +739,7 @@ export async function captureCustomizerStudioReopened(win: BrowserWindow, output
   }
   await win.webContents.executeJavaScript("window.location.hash = '#/customizar'")
   await waitFor(win, '.roster-panel')
-  const characters = await win.webContents.executeJavaScript('window.desktop.listCustomizerCharacters()') as Array<{ id: string; name: string; customization: { modelSlot: number; poseSlot: number; wardrobeGroups?: Array<{ setId: string; componentId?: string }> } }>
+  const characters = await win.webContents.executeJavaScript('window.desktop.customizer.listCustomizerCharacters()') as Array<{ id: string; name: string; customization: { modelSlot: number; poseSlot: number; wardrobeGroups?: Array<{ setId: string; componentId?: string }> } }>
   const saved = characters.find(item => item.id === flow.characterId && item.name === flow.name)
   if (!saved || saved.customization.modelSlot !== 1 || saved.customization.poseSlot !== 1) throw Error('Customizador perdeu a personalização após reiniciar.')
   const garmentIds = ['coat', 'sleeve-left', 'sleeve-right']
@@ -747,14 +747,14 @@ export async function captureCustomizerStudioReopened(win: BrowserWindow, output
   if (!garmentIds.every(id => equipped.some(group => group.setId === 'uniform' && group.componentId === id))) {
     throw Error('Customizador perdeu a roupa individual após reiniciar.')
   }
-  const garment = await win.webContents.executeJavaScript("window.desktop.loadWardrobeSet(1, 'uniform')") as { components: Array<{ id: string; dataUrl: string }> } | null
+  const garment = await win.webContents.executeJavaScript("window.desktop.fabricator.loadWardrobeSet(1, 'uniform')") as { components: Array<{ id: string; dataUrl: string }> } | null
   if (!garment || garment.components.length !== 3 ||
       new Set(garment.components.map(piece => piece.dataUrl)).size !== 3) {
     throw Error('Mangas e camisa foram duplicadas após reabrir o Electron.')
   }
   await win.webContents.executeJavaScript("window.location.hash = '#/estudio'")
   await waitFor(win, '.studio-page')
-  const studios = await win.webContents.executeJavaScript('window.desktop.listStudios()') as Array<{ id: string; elements: Array<{ characterId?: string; assetId?: string }>; assets: Array<{ id: string; dataUrl: string }> }>
+  const studios = await win.webContents.executeJavaScript('window.desktop.studio.listStudios()') as Array<{ id: string; elements: Array<{ characterId?: string; assetId?: string }>; assets: Array<{ id: string; dataUrl: string }> }>
   const scene = studios.find(item => item.id === flow.studioId)
   if (!scene || !scene.elements.some(item => item.characterId === flow.characterId)) throw Error('Studio perdeu elenco após reiniciar.')
   if (scene.elements.some(element => element.characterId === flow.characterId &&

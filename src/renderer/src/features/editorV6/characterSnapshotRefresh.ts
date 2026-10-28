@@ -154,7 +154,7 @@ export async function renderEditorV6CharacterRefresh(
     if (isCancelled()) return null
     const firstJob = rendererJobs[0]
     const source = await memoizedPromise(sourceCache, firstJob.sourceKey, () => resolveSavedCharacterSource(firstJob.characterCopy), 8)
-    const renderer = await prepareSavedCharacterRenderer(firstJob.characterCopy, { ...source, assetProvider: window.desktop, materialCache })
+    const renderer = await prepareSavedCharacterRenderer(firstJob.characterCopy, { ...source, assetProvider: window.desktop.fabricator, materialCache })
     type FaceBake = { rendered: { width: number; height: number }; crop: TrimmedImage | null; faceModeAssetIds: Partial<Record<EditorV6FaceRenderMode, string>> }
     const faceVariants = new Map<string, FaceBake>()
     try {

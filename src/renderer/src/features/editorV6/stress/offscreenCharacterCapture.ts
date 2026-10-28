@@ -76,7 +76,7 @@ export async function publishEditorV6StressCharacters(): Promise<void> {
         }
         const plan = editorV6MotionPlan(track, track.blocks[0], track.blocks[1])
         if (!plan) throw new Error(`${candidate.name}: o plano de transição de ${fromPoseSlot} para ${toPoseSlot} ficou vazio.`)
-        const baked = await bakeEditorV6Motion({ id: crypto.randomUUID(), plan, character: candidate }, window.desktop)
+        const baked = await bakeEditorV6Motion({ id: crypto.randomUUID(), plan, character: candidate }, window.desktop.fabricator)
         transitions.push({ fromPoseSlot, toPoseSlot, assetDataUrl: baked.asset.dataUrl, frames: baked.motion.frames, metrics: baked.metrics })
         console.info(`[V6 stress] ${candidate.name} transição ${fromPoseSlot}→${toPoseSlot}: ${baked.metrics.milliseconds.toFixed(1)} ms, ${baked.metrics.samples} quadros`)
       }

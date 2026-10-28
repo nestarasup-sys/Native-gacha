@@ -49,7 +49,7 @@ export function createCharacterLayerRenderer(loaders: CharacterLayerImageLoaders
     })
   }
 
-  async function loadHairAppearanceLayers(appearance: NonNullable<CustomizerCharacter['customization']['hairAppearance']> | undefined, modelSlot: number, side: HairLayerSide, cached: Record<string, HairStyle> = {}, assetProvider: CharacterRenderAssetProvider = window.desktop): Promise<HairLayerReference[]> {
+  async function loadHairAppearanceLayers(appearance: NonNullable<CustomizerCharacter['customization']['hairAppearance']> | undefined, modelSlot: number, side: HairLayerSide, cached: Record<string, HairStyle> = {}, assetProvider: CharacterRenderAssetProvider = window.desktop.fabricator): Promise<HairLayerReference[]> {
     if (!appearance || appearance.modelSlot !== modelSlot) return []
     const ids = hairAppearanceStyleIds(appearance, side)
     const styles = await Promise.all(ids.map(async ({ id }) => cached[`${modelSlot}:${id}`] ?? await assetProvider.loadHairStyle(modelSlot, id)))

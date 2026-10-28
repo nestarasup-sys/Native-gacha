@@ -39,7 +39,7 @@ export async function resolveSavedCharacterSource(
   renderSource?: { artwork: CatalogArtwork; source: FabricatorProject; assetProvider?: CharacterRenderAssetProvider }
 ): Promise<{ modelSlot: number; assetProvider: CharacterRenderAssetProvider; source: FabricatorProject; artwork: CatalogArtwork }> {
   const modelSlot = character.customization.modelSlot ?? 1
-  const assetProvider = renderSource?.assetProvider ?? window.desktop
+  const assetProvider = renderSource?.assetProvider ?? window.desktop.fabricator
   const source = renderSource?.source ?? await assetProvider.loadFabricatorSlot(modelSlot)
   if (!source) throw new Error(`O modelo de ${character.name} não está disponível.`)
   const pose = renderSource?.artwork ?? (character.customization.poseSlot === null ? null : await assetProvider.loadFabricatorPose(modelSlot, character.customization.poseSlot))
