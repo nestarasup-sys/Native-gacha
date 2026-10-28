@@ -40,7 +40,7 @@ function createFakeContourBarrier(width: number, height: number, contours: Model
 }
 
 /** Fill removed skin inside contours; artificial strokes close intentionally open joints. */
-export function fillEnclosedTransparentSkin(image: ImageData, baseTone = MODEL_SKIN_BASE_TONE, fakeContours: ModelSkinContourStroke[] = []): number {
+export function fillEnclosedTransparentSkin(image: ImageData, baseTone = MODEL_SKIN_BASE_TONE, fakeContours: ModelSkinContourStroke[] = [], fillOpenJointEnds = true): number {
   if (!isValidSkinTone(baseTone) || image.width < 1 || image.height < 1) return 0
   const { data, width, height } = image
   const count = width * height
@@ -84,37 +84,39 @@ export function fillEnclosedTransparentSkin(image: ImageData, baseTone = MODEL_S
     data[offset + 3] = 255
     filled++
   }
-  // Limb crops intentionally have open ends where the upper/lower pieces join.
-  // Exterior flood fill leaks through those ends, so restore transparent pixels
-  // between the two visible sides of each body scanline as well.
-  const fillBetweenSides = (start: number, end: number, stride: number) => {
-    let first = -1
-    let last = -1
-    for (let pixel = start; pixel !== end; pixel += stride) {
-      if (data[pixel * 4 + 3] <= 16) continue
-      if (first < 0) first = pixel
-      last = pixel
+  if (fillOpenJointEnds) {
+    // Legacy images without per-joint guides use scanlines as a fallback.
+    // Model-part previews disable this pass so saved barriers bound the fill
+    // and cannot create skin slivers at the sides of a joint.
+    const fillBetweenSides = (start: number, end: number, stride: number) => {
+      let first = -1
+      let last = -1
+      for (let pixel = start; pixel !== end; pixel += stride) {
+        if (data[pixel * 4 + 3] <= 16) continue
+        if (first < 0) first = pixel
+        last = pixel
+      }
+      if (first < 0 || last - first <= stride) return
+      for (let pixel = first + stride; pixel < last; pixel += stride) {
+        const offset = pixel * 4
+        if (data[offset + 3] > 16) continue
+        data[offset] = target[0]
+        data[offset + 1] = target[1]
+        data[offset + 2] = target[2]
+        data[offset + 3] = 255
+        filled++
+      }
     }
-    if (first < 0 || last - first <= stride) return
-    for (let pixel = first + stride; pixel < last; pixel += stride) {
-      const offset = pixel * 4
-      if (data[offset + 3] > 16) continue
-      data[offset] = target[0]
-      data[offset + 1] = target[1]
-      data[offset + 2] = target[2]
-      data[offset + 3] = 255
-      filled++
-    }
+    for (let y = 0; y < height; y++) fillBetweenSides(y * width, (y + 1) * width, 1)
   }
-  for (let y = 0; y < height; y++) fillBetweenSides(y * width, (y + 1) * width, 1)
   return filled
 }
 
 /** Recolor body artwork while retaining dark ink contours and filling removed skin interiors. */
-export function tintSkinPixels(image: ImageData, tone: string, fakeContours: ModelSkinContourStroke[] = []): void {
+export function tintSkinPixels(image: ImageData, tone: string, fakeContours: ModelSkinContourStroke[] = [], fillOpenJointEnds = true): void {
   if (!isValidSkinTone(tone)) return
 
-  fillEnclosedTransparentSkin(image, MODEL_SKIN_BASE_TONE, fakeContours)
+  fillEnclosedTransparentSkin(image, MODEL_SKIN_BASE_TONE, fakeContours, fillOpenJointEnds)
 
   const { data, width, height } = image
   const count = width * height
@@ -237,7 +239,7 @@ export function tintModelOutlinePixels(image: ImageData, color: string, mask = f
 /** Apply model-level body colors together so the contour mask comes from the original pixels. */
 export function tintModelBodyPixels(image: ImageData, skinTone?: string, outlineColor?: string, fakeContours: ModelSkinContourStroke[] = []): void {
   const outlineMask = isValidSkinTone(outlineColor) ? findModelOutlinePixels(image) : null
-  if (isValidSkinTone(skinTone)) tintSkinPixels(image, skinTone, fakeContours)
-  else fillEnclosedTransparentSkin(image, MODEL_SKIN_BASE_TONE, fakeContours)
+  if (isValidSkinTone(skinTone)) tintSkinPixels(image, skinTone, fakeContours, false)
+  else fillEnclosedTransparentSkin(image, MODEL_SKIN_BASE_TONE, fakeContours, false)
   if (outlineColor && outlineMask) tintModelOutlinePixels(image, outlineColor, outlineMask)
 }

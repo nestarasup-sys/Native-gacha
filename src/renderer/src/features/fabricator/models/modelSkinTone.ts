@@ -18,7 +18,7 @@ export async function createModelBodyAppearancePreview(part: ModelPart, tone?: s
   context.drawImage(image, 0, 0, canvas.width, canvas.height)
   const pixels = context.getImageData(0, 0, canvas.width, canvas.height)
   if (isValidSkinTone(tone) || isValidSkinTone(outlineColor)) tintModelBodyPixels(pixels, tone, outlineColor, part.fakeSkinContours)
-  else if (!fillEnclosedTransparentSkin(pixels, MODEL_SKIN_BASE_TONE, part.fakeSkinContours)) return null
+  else if (!fillEnclosedTransparentSkin(pixels, MODEL_SKIN_BASE_TONE, part.fakeSkinContours, false)) return null
   context.putImageData(pixels, 0, 0)
   return canvas.toDataURL('image/png')
 }
