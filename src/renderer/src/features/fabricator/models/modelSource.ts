@@ -48,7 +48,7 @@ export function validateModelSourceDimensions(project: FabricatorProject, update
 }
 export function validateModelSourceChroma(tolerance: number): void {
   if (!Number.isInteger(tolerance) || tolerance < 0 || tolerance > MAX_CHROMA_TOLERANCE) {
-    throw new Error('O Chroma Key deve ficar entre 0 e 280.')
+    throw new Error(`O Chroma Key deve ficar entre 0 e ${MAX_CHROMA_TOLERANCE}.`)
   }
 }
 function resizePng(image: HTMLImageElement, width: number, height: number): HTMLCanvasElement {
