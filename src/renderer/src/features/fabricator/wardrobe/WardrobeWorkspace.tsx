@@ -195,6 +195,7 @@ export function WardrobeWorkspace() {
   const inputRef = useRef<HTMLInputElement>(null)
   const workerRef = useRef<Worker | null>(null)
   const requestRef = useRef(0)
+  const testPoseRequestRef = useRef(0)
   const pieceDragRef = useRef<PieceDrag | null>(null)
   const previewPanDragRef = useRef<PreviewPanDrag | null>(null)
   const previewRef = useRef<HTMLDivElement>(null)
@@ -445,6 +446,7 @@ export function WardrobeWorkspace() {
   }, [sourceParts, draft?.id])
   useEffect(() => () => {
     requestRef.current++
+    testPoseRequestRef.current++
     workerRef.current?.terminate()
     if (warpDrawFrameRef.current !== null) cancelAnimationFrame(warpDrawFrameRef.current)
     warpSessionsRef.current.clear()
@@ -454,6 +456,9 @@ export function WardrobeWorkspace() {
   const openSet = async (id: string) => {
     if (!model || processing || saving || openingSet) return
     if (dirty && !window.confirm('Há alterações não salvas neste conjunto. Descartar e abrir outro?')) return
+    testPoseRequestRef.current += 1
+    setTestPoseLoading(false)
+    setTestPosePickerOpen(false)
     setDeformMode(false)
     const requestId = ++requestRef.current
     setOpeningSet(true)
@@ -932,32 +937,38 @@ export function WardrobeWorkspace() {
       setError(`Calibre a origem na folha original antes do teste: ${missingOrigins.join(', ')}. Selecione cada peça do conjunto e use “Calibrar origem”.`)
       return
     }
+    const requestId = ++testPoseRequestRef.current
+    const requestedModelSlot = modelSlot
     setError('')
     setTestPosePickerOpen(true)
     setTestPoseLoading(true)
     try {
-      const slots = await window.desktop.listFabricatorPoseSlots(modelSlot)
+      const slots = await window.desktop.listFabricatorPoseSlots(requestedModelSlot)
+      if (requestId !== testPoseRequestRef.current) return
       setTestPoseSlots(slots.filter((slot): slot is NonNullable<typeof slot> => slot !== null))
     }
-    catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível carregar as poses deste modelo.') }
-    finally { setTestPoseLoading(false) }
+    catch (reason) { if (requestId === testPoseRequestRef.current) setError(reason instanceof Error ? reason.message : 'Não foi possível carregar as poses deste modelo.') }
+    finally { if (requestId === testPoseRequestRef.current) setTestPoseLoading(false) }
   }
   const loadTestPose = async (slot: number) => {
+    const requestId = ++testPoseRequestRef.current
+    const requestedModelSlot = modelSlot
     setTestPoseLoading(true)
     try {
-      const pose = await window.desktop.loadFabricatorPose(modelSlot, slot)
-      if (!pose) throw new Error('Esta pose não está mais disponível.')
+      const pose = await window.desktop.loadFabricatorPose(requestedModelSlot, slot)
+      if (requestId !== testPoseRequestRef.current) return
+      if (!pose || pose.sourceModelSlot !== requestedModelSlot || pose.slot !== slot) throw new Error('Esta pose não está mais disponível para o modelo selecionado.')
       setTestDragOffsets({}); setBodyOffsets({}); setMoveBodyMode(false); setTestPose(pose); setTestPosePickerOpen(false); setError('')
-    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível abrir esta pose.') }
-    finally { setTestPoseLoading(false) }
+    } catch (reason) { if (requestId === testPoseRequestRef.current) setError(reason instanceof Error ? reason.message : 'Não foi possível abrir esta pose.') }
+    finally { if (requestId === testPoseRequestRef.current) setTestPoseLoading(false) }
   }
-  const exitTestPose = () => { setTestPose(null); setTestDragOffsets({}) }
+  const exitTestPose = () => { testPoseRequestRef.current += 1; setTestPose(null); setTestPoseLoading(false); setTestDragOffsets({}) }
 
   const renderComponentList = () => <div className="wardrobe-component-list">{draft?.components.map((component) => <button key={component.id} className={`wardrobe-component-row${selectedId === component.id ? ' active' : ''}`} onClick={() => setSelectedId(component.id)} type="button"><img src={component.dataUrl} alt="" /><span><b>{component.name}</b><small>{categoryNames[component.category]}</small></span></button>)}</div>
   return <section className="fabricator-workspace wardrobe-workspace" aria-label="Biblioteca de roupas">
     <header className="wardrobe-toolbar">
       <div className="wardrobe-title"><span className="model-slot-logo"><Icon name="shirt" /></span><span><strong>Roupas Dev</strong><small>Todos os conjuntos e categorias por modelo</small></span></div>
-      <label className="wardrobe-model-select">Modelo<select value={modelSlot} disabled={processing || saving || openingSet} onChange={(event) => { if (dirty && !window.confirm('Há alterações não salvas. Descartar e trocar de modelo?')) return; setTestPose(null); setModelSlot(Number(event.target.value)) }}>{models.map((item, index) => <option key={index + 1} value={index + 1} disabled={!item}>{String(index + 1).padStart(2, '0')} · {item?.name ?? 'Vazio'}</option>)}</select></label>
+      <label className="wardrobe-model-select">Modelo<select value={modelSlot} disabled={processing || saving || openingSet || testPoseLoading} onChange={(event) => { if (dirty && !window.confirm('Há alterações não salvas. Descartar e trocar de modelo?')) return; testPoseRequestRef.current += 1; setTestPoseLoading(false); setTestPosePickerOpen(false); setTestPoseSlots([]); setTestPose(null); setModelSlot(Number(event.target.value)) }}>{models.map((item, index) => <option key={index + 1} value={index + 1} disabled={!item}>{String(index + 1).padStart(2, '0')} · {item?.name ?? 'Vazio'}</option>)}</select></label>
       {draft && <input aria-label="Nome do conjunto" className="wardrobe-name-input" value={draft.name} onChange={(event) => { setDirty(true); setDraft((current) => current ? { ...current, name: event.target.value } : current) }} placeholder="Nome do conjunto" />}
       <div className="wardrobe-toolbar-actions"><span className={`wardrobe-save-state${dirty ? ' pending' : ''}`}><i />{dirty ? 'Alterações não salvas' : model ? `${model.parts.length} peças no modelo` : 'Escolha um modelo salvo'}</span><button className="pose-button secondary" disabled={!model || processing || saving || openingSet || !sourceParts} onClick={() => { if (dirty && !window.confirm('Descartar as alterações atuais e importar outra folha?')) return; setImportPickerOpen(true) }} type="button"><Icon name="plus" /> Importar</button>{testPose ? <button className="pose-button danger" onClick={exitTestPose} type="button"><Icon name="eyeOff" /> Sair do teste</button> : <button className="pose-button secondary" disabled={!model || !draft?.components.length} onClick={() => void openTestPosePicker()} type="button"><Icon name="eye" /> Testar pose</button>}<button className="pose-button primary" disabled={!draft || draft.edition === 2 || saving || processing || openingSet || !sourceParts} onClick={() => void save()} type="button"><Icon name="check" />{saving ? 'Salvando…' : activeSetId ? 'Salvar alterações' : 'Salvar conjunto'}</button>{activeSetId && <button className="pose-icon-button" title="Excluir conjunto" disabled={processing || saving || openingSet} onClick={() => void deleteSet()} type="button"><Icon name="trash" /></button>}<input ref={inputRef} hidden type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => { void importSheet(event.target.files?.[0]); event.currentTarget.value = '' }} /><input ref={gridInputRef} hidden type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => { void importTorsoGrid(event.target.files?.[0]); event.currentTarget.value = '' }} /></div>
     </header>
@@ -1041,6 +1052,6 @@ export function WardrobeWorkspace() {
       </aside>
     </div>
     {garmentEditorOpen && selected && <WardrobeGarmentEditorModal key={selected.id} component={selected} bodyReference={editorBodyReference} onClose={() => setGarmentEditorOpen(false)} onApply={(imageUrl) => { if (imageUrl !== selected.dataUrl) { dirtyWarpImageIdsRef.current.add(selected.id); warpSessionsRef.current.delete(selected.id); updateComponent(selected.id, { dataUrl: imageUrl, hasDeformationOriginal: undefined, deformationOriginalDataUrl: undefined, deformationOriginalFrame: undefined, isDeformed: false }) } setGarmentEditorOpen(false) }} />}
-    {importPickerOpen && <div className="pose-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setImportPickerOpen(false) }}><section className="pose-model-picker" role="dialog" aria-modal="true" aria-labelledby="wardrobe-import-title"><header><span><small>BIBLIOTECA DE ROUPAS</small><strong id="wardrobe-import-title">Como deseja importar?</strong></span><button onClick={() => setImportPickerOpen(false)} aria-label="Fechar" type="button">×</button></header><p>Na folha automática, organize os acessórios na faixa de cima e as roupas do corpo abaixo.</p><div className="pose-model-options"><button className="pose-model-option" onClick={() => { setImportPickerOpen(false); inputRef.current?.click() }} type="button"><span className="pose-model-number"><Icon name="sparkles" /></span><span><b>Separar automaticamente</b><small>Separa os recortes transparentes, detecta acessórios no topo e sugere tronco, braços, pernas, meias e sapatos abaixo.</small></span><Icon name="chevronRight" /></button><button className="pose-model-option" onClick={() => { gridSizeRef.current = 4; gridInputRef.current?.click() }} type="button"><span className="pose-model-number">4×3</span><span><b>Roupas para tronco · grade 4×3</b><small>Até 12 roupas, com remoção automática do fundo.</small></span><Icon name="chevronRight" /></button><button className="pose-model-option" onClick={() => { gridSizeRef.current = 3; gridInputRef.current?.click() }} type="button"><span className="pose-model-number">3×3</span><span><b>Roupas para tronco · grade 3×3</b><small>Até 9 roupas, com remoção automática do fundo.</small></span><Icon name="chevronRight" /></button></div></section></div>}{testPosePickerOpen && <div className="pose-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !testPoseLoading) setTestPosePickerOpen(false) }}><section className="pose-model-picker" role="dialog" aria-modal="true" aria-labelledby="wardrobe-test-picker-title"><header><span><small>TESTE DE ROUPA</small><strong id="wardrobe-test-picker-title">Escolha uma pose</strong></span><button onClick={() => setTestPosePickerOpen(false)} aria-label="Fechar" type="button">×</button></header><p>A roupa será exibida sobre uma cópia visual da pose. A pose salva não será modificada.</p><div className="pose-model-options">{testPoseLoading && <div className="pose-model-none">Carregando poses…</div>}{testPoseSlots.map((pose) => pose && <button key={`pose-${pose.slot}`} className="pose-model-option" disabled={testPoseLoading} onClick={() => void loadTestPose(pose.slot)} type="button"><span className="pose-model-number">{String(pose.slot).padStart(2, '0')}</span><span><b>{pose.name}</b><small>{pose.partCount} peças · {new Date(pose.updatedAt).toLocaleDateString('pt-BR')}</small></span><Icon name="chevronRight" /></button>)}{!testPoseLoading && testPoseSlots.length === 0 && <div className="pose-model-none">Este modelo ainda não tem poses salvas.</div>}</div></section></div>}
+    {importPickerOpen && <div className="pose-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setImportPickerOpen(false) }}><section className="pose-model-picker" role="dialog" aria-modal="true" aria-labelledby="wardrobe-import-title"><header><span><small>BIBLIOTECA DE ROUPAS</small><strong id="wardrobe-import-title">Como deseja importar?</strong></span><button onClick={() => setImportPickerOpen(false)} aria-label="Fechar" type="button">×</button></header><p>Na folha automática, organize os acessórios na faixa de cima e as roupas do corpo abaixo.</p><div className="pose-model-options"><button className="pose-model-option" onClick={() => { setImportPickerOpen(false); inputRef.current?.click() }} type="button"><span className="pose-model-number"><Icon name="sparkles" /></span><span><b>Separar automaticamente</b><small>Separa os recortes transparentes, detecta acessórios no topo e sugere tronco, braços, pernas, meias e sapatos abaixo.</small></span><Icon name="chevronRight" /></button><button className="pose-model-option" onClick={() => { gridSizeRef.current = 4; gridInputRef.current?.click() }} type="button"><span className="pose-model-number">4×3</span><span><b>Roupas para tronco · grade 4×3</b><small>Até 12 roupas, com remoção automática do fundo.</small></span><Icon name="chevronRight" /></button><button className="pose-model-option" onClick={() => { gridSizeRef.current = 3; gridInputRef.current?.click() }} type="button"><span className="pose-model-number">3×3</span><span><b>Roupas para tronco · grade 3×3</b><small>Até 9 roupas, com remoção automática do fundo.</small></span><Icon name="chevronRight" /></button></div></section></div>}{testPosePickerOpen && <div className="pose-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) { testPoseRequestRef.current += 1; setTestPoseLoading(false); setTestPosePickerOpen(false) } }}><section className="pose-model-picker" role="dialog" aria-modal="true" aria-labelledby="wardrobe-test-picker-title"><header><span><small>TESTE DE ROUPA</small><strong id="wardrobe-test-picker-title">Escolha uma pose</strong></span><button onClick={() => { testPoseRequestRef.current += 1; setTestPoseLoading(false); setTestPosePickerOpen(false) }} aria-label="Fechar" type="button">×</button></header><p>A roupa será exibida sobre uma cópia visual da pose. A pose salva não será modificada.</p><div className="pose-model-options">{testPoseLoading && <div className="pose-model-none">Carregando poses…</div>}{testPoseSlots.map((pose) => pose && <button key={`pose-${pose.slot}`} className="pose-model-option" disabled={testPoseLoading} onClick={() => void loadTestPose(pose.slot)} type="button"><span className="pose-model-number">{String(pose.slot).padStart(2, '0')}</span><span><b>{pose.name}</b><small>{pose.partCount} peças · {new Date(pose.updatedAt).toLocaleDateString('pt-BR')}</small></span><Icon name="chevronRight" /></button>)}{!testPoseLoading && testPoseSlots.length === 0 && <div className="pose-model-none">Este modelo ainda não tem poses salvas.</div>}</div></section></div>}
   </section>
 }
