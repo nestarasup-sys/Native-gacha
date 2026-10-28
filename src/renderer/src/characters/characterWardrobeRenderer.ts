@@ -7,6 +7,7 @@ import { wardrobeAdjustmentMatrix } from '../../../shared/wardrobeAdjustment'
 import type { CatalogArtwork } from './characterSourceResolver'
 import { configureCharacterSampling, MAX_CHARACTER_PREVIEW_PIXELS } from './renderResolution'
 import { createCharacterCanvas } from './canvasSurface'
+import { drawPreviewImageWithHalo } from './characterCanvasDrawing'
 
 export type ClothingGroupCategory = CustomizerWardrobeCategory
 export type SelectedWardrobeComponent = { modelSlot: number; setId: string; category: ClothingGroupCategory; componentId: string }
@@ -16,19 +17,6 @@ export type CharacterWardrobeImageLoaders = {
   loadCachedImage: (source: string | CanvasImageSource) => Promise<HTMLImageElement>
   loadHairTintedImage: (source: string, overrides: HairColorOverrides | undefined) => Promise<HTMLImageElement>
   loadSkinTintedImage: (source: string, tone: string) => Promise<HTMLImageElement>
-}
-
-export function drawPreviewImageWithHalo(context: CanvasRenderingContext2D, image: CanvasImageSource, dx: number, dy: number, highlighted: boolean, width?: number, height?: number) {
-  const draw = () => width === undefined || height === undefined ? context.drawImage(image, dx, dy) : context.drawImage(image, dx, dy, width, height)
-  if (highlighted) {
-    // Render the pink canvas shadow behind the exact piece, then redraw it cleanly.
-    context.save()
-    context.shadowColor = 'rgba(255, 71, 163, .98)'
-    context.shadowBlur = 9
-    draw()
-    context.restore()
-  }
-  draw()
 }
 
 export function createCharacterWardrobeRenderer(loaders: CharacterWardrobeImageLoaders) {
