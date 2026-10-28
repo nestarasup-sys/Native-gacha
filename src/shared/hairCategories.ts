@@ -19,5 +19,8 @@ export const hairCategories: ReadonlyArray<{ id: HairPartId; label: string; side
 
 export function hairStyleSupportsCategory(style: HairStyle | HairStyleSummary, category: HairPartId): boolean {
   const side = hairCategories.find((item) => item.id === category)?.side
-  return Boolean(side && style[side] && (style.category === category || (!style.category && legacyCategoryBySide[side] === category)))
+  if (!side || !style[side]) return false
+  const assignedCategory = style.categoryBySide?.[side]
+  if (assignedCategory) return assignedCategory === category
+  return style.category ? style.category === category : legacyCategoryBySide[side] === category
 }

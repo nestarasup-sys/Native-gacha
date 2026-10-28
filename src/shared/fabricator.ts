@@ -315,24 +315,31 @@ export type HairStyle = {
   name: string
   /** Absent on legacy styles, which remain visible in every compatible category. */
   category?: import('./customizer').HairPartId
+  /** Category assigned to each piece in a multi-piece hair set. */
+  categoryBySide?: Partial<Record<'front' | 'back' | 'fringe', import('./customizer').HairPartId>>
   front: { dataUrl: string; width: number; height: number } | null
   back: { dataUrl: string; width: number; height: number } | null
   fringe?: { dataUrl: string; width: number; height: number } | null
   transforms: { front: HairTransform; back: HairTransform; fringe?: HairTransform }
+  sourceImageDataUrl?: string
+  sourceImageSaved?: boolean
+  sourceAppliesToDraft?: boolean
+  chromaTolerance?: number
+  chromaMode?: 'auto' | 'green' | 'checker'
   createdAt: string
   updatedAt: string
 }
-export type HairStyleSave = Omit<HairStyle, 'front' | 'back' | 'fringe'> & {
+export type HairStyleSave = Omit<HairStyle, 'front' | 'back' | 'fringe' | 'sourceImageDataUrl'> & {
   front: Omit<NonNullable<HairStyle['front']>, 'dataUrl'> | null
   back: Omit<NonNullable<HairStyle['back']>, 'dataUrl'> | null
   fringe?: Omit<NonNullable<HairStyle['fringe']>, 'dataUrl'> | null
 }
-export type HairStyleSummary = Omit<HairStyle, 'front' | 'back' | 'fringe'> & {
+export type HairStyleSummary = Omit<HairStyle, 'front' | 'back' | 'fringe' | 'sourceImageDataUrl'> & {
   front: Omit<NonNullable<HairStyle['front']>, 'dataUrl'> | null
   back: Omit<NonNullable<HairStyle['back']>, 'dataUrl'> | null
   fringe?: Omit<NonNullable<HairStyle['fringe']>, 'dataUrl'> | null
 }
-export type HairStyleAsset = { id: 'front' | 'back' | 'fringe'; dataUrl: string }
+export type HairStyleAsset = { id: 'front' | 'back' | 'fringe' | 'source'; dataUrl: string }
 export type PoseWardrobeAttachment = { setId: string; category: WardrobeCategory; attachedPartId: string; referenceAnchor: { x: number; y: number }; referenceRotation: number }
 export type WardrobePosePart = PosePart & { wardrobeAttachment?: PoseWardrobeAttachment }
 export type FabricatorPose = {
@@ -466,7 +473,7 @@ export type FabricatorDesktopApi = {
   loadHairWorkspace: (modelSlot: number) => Promise<HairWorkspace | null>
   saveHairWorkspace: (modelSlot: number, workspace: HairWorkspaceSave, assets: HairWorkspaceAsset[]) => Promise<void>
   listHairStyles: (modelSlot: number) => Promise<HairStyleSummary[]>
-  loadHairStyle: (modelSlot: number, id: string) => Promise<HairStyle | null>
+  loadHairStyle: (modelSlot: number, id: string, includeSource?: boolean) => Promise<HairStyle | null>
   saveHairStyle: (modelSlot: number, style: HairStyleSave, assets: HairStyleAsset[]) => Promise<void>
   deleteHairStyle: (modelSlot: number, id: string) => Promise<void>
 }

@@ -775,16 +775,50 @@ class DataPlatform {
     if (!normalized) throw new Error('Não é permitido remover a raiz de um domínio.')
     const db = this.assertReady()
     const prefix = `${escapeLike(normalized)}/%`
+    const objectHashes = new Set()
     const txn = db.transaction(() => {
-      const files = db.prepare(`SELECT relative_path FROM domain_files WHERE domain_id=? AND (relative_path=? OR relative_path LIKE ? ESCAPE '\\')`)
+      const files = db.prepare(`SELECT relative_path, object_sha256 FROM domain_files WHERE domain_id=? AND (relative_path=? OR relative_path LIKE ? ESCAPE '\\')`)
         .all(domainId, normalized, prefix)
       const dirs = db.prepare(`SELECT relative_path FROM domain_directories WHERE domain_id=? AND (relative_path=? OR relative_path LIKE ? ESCAPE '\\')`)
         .all(domainId, normalized, prefix)
       if (!recursive && (files.some((row) => row.relative_path !== normalized) || dirs.some((row) => row.relative_path !== normalized))) throw new Error('Diretório não está vazio.')
+      const imageRefs = db.prepare(`SELECT object_sha256 FROM domain_image_refs WHERE domain_id=? AND relative_path IN (
+        SELECT relative_path FROM domain_files WHERE domain_id=? AND (relative_path=? OR relative_path LIKE ? ESCAPE '\\'))`)
+        .all(domainId, domainId, normalized, prefix)
+      for (const row of files) if (row.object_sha256) objectHashes.add(row.object_sha256)
+      for (const row of imageRefs) objectHashes.add(row.object_sha256)
       db.prepare(`DELETE FROM domain_files WHERE domain_id=? AND (relative_path=? OR relative_path LIKE ? ESCAPE '\\')`).run(domainId, normalized, prefix)
       db.prepare(`DELETE FROM domain_directories WHERE domain_id=? AND (relative_path=? OR relative_path LIKE ? ESCAPE '\\')`).run(domainId, normalized, prefix)
     })
     txn()
+    for (const hash of objectHashes) this.removeUnreferencedObject(hash)
+  }
+
+  removeUnreferencedObject(hash) {
+    if (typeof hash !== 'string' || !/^[a-f0-9]{64}$/.test(hash)) throw new Error('Hash de objeto inválido.')
+    const db = this.assertReady()
+    const row = db.prepare('SELECT relative_path FROM objects WHERE sha256=?').get(hash)
+    if (!row) return
+    const isReferenced = db.prepare(`SELECT 1 FROM asset_objects WHERE sha256=?
+      UNION SELECT 1 FROM domain_files WHERE object_sha256=?
+      UNION SELECT 1 FROM domain_image_refs WHERE object_sha256=? LIMIT 1`).get(hash, hash, hash)
+    if (isReferenced) return
+    const objectRoot = path.join(this.root, 'media', 'objects', 'sha256')
+    const absolute = path.resolve(this.root, row.relative_path)
+    if (!isWithin(objectRoot, absolute)) throw new Error('Objeto fora do armazenamento canônico.')
+    try {
+      const parent = path.dirname(absolute)
+      const realParent = fs.realpathSync(parent)
+      if (!isWithin(objectRoot, realParent)) throw new Error('Pasta do objeto fora do armazenamento canônico.')
+      fs.unlinkSync(absolute)
+    }
+    catch (error) { if (error.code !== 'ENOENT') throw error }
+    db.prepare(`DELETE FROM objects WHERE sha256=?
+      AND NOT EXISTS (SELECT 1 FROM asset_objects WHERE sha256=?)
+      AND NOT EXISTS (SELECT 1 FROM domain_files WHERE object_sha256=?)
+      AND NOT EXISTS (SELECT 1 FROM domain_image_refs WHERE object_sha256=?)`).run(hash, hash, hash, hash)
+    // Empty hash shards are harmless and can be reused by the next image write.
+    try { fs.rmdirSync(path.dirname(absolute)) } catch { /* keep the shard if it cannot be removed */ }
   }
 
   renameDomainPath(domainId, fromPath, toPath) {

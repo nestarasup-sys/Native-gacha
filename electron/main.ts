@@ -819,6 +819,18 @@ async function readHairWorkspace(modelSlot: number): Promise<HairWorkspace | nul
   }
 }
 
+async function clearHairWorkspace(modelSlot: number): Promise<void> {
+  if (!isValidModelSlot(modelSlot)) throw new Error('Modelo inválido.')
+  const folder = hairModelPath(modelSlot)
+  const images = join(folder, 'images')
+  // Recover or reject a pending write before removing its journal and duplicate assets.
+  await catalogPersistence.recoverCatalogManifest(folder, images)
+  await rm(join(folder, 'hair.json'), { force: true })
+  await rm(join(folder, 'hair.json.tmp'), { force: true })
+  await rm(join(folder, 'hair.json.backup'), { force: true })
+  await rm(images, { recursive: true, force: true })
+}
+
 type LegacyHairCatalogState = 'active' | 'dismissed' | null
 const legacyHairCatalogStatePath = (modelSlot: number) => join(hairModelPath(modelSlot), 'hair-legacy-catalog-state-v1')
 
@@ -851,6 +863,19 @@ function validHairStyle(modelSlot: number, style: HairStyleSave): boolean {
     const category = hairCategories.find((item) => item.id === style.category)
     if (!category || !style[category.side]) return false
   }
+  if (style.categoryBySide !== undefined && (!style.categoryBySide || Array.isArray(style.categoryBySide) || typeof style.categoryBySide !== 'object')) return false
+  if (style.categoryBySide !== undefined) {
+    for (const side of ['front', 'back', 'fringe'] as const) {
+      const categoryId = style.categoryBySide[side]
+      if (categoryId !== undefined && !hairCategories.some((item) => item.id === categoryId && item.side === side)) return false
+      if (categoryId !== undefined && !style[side]) return false
+    }
+  }
+  if (style.sourceImageSaved !== undefined && typeof style.sourceImageSaved !== 'boolean') return false
+  if (style.sourceAppliesToDraft !== undefined && typeof style.sourceAppliesToDraft !== 'boolean') return false
+  if (style.sourceAppliesToDraft === true && style.sourceImageSaved !== true) return false
+  if (style.chromaTolerance !== undefined && (!Number.isFinite(style.chromaTolerance) || style.chromaTolerance < 0 || style.chromaTolerance > 100)) return false
+  if (style.chromaMode !== undefined && !['auto', 'green', 'checker'].includes(style.chromaMode)) return false
   for (const side of ['front', 'back', 'fringe'] as const) {
     const asset = style[side]
     const transform = style.transforms[side]
@@ -867,17 +892,18 @@ async function writeHairStyle(modelSlot: number, style: HairStyleSave, assets: H
   invalidateCatalogPng('hair', `${modelSlot}:style:${style.id}`)
   if (!validHairStyle(modelSlot, style)) throw new Error('Estilo de cabelo inválido.')
   const expected = new Set<string>((['front', 'back', 'fringe'] as const).filter(side => style[side] != null))
+  if (style.sourceImageSaved) expected.add('source')
   if (assets.some(asset => !expected.has(asset.id)) || new Set(assets.map(asset => asset.id)).size !== assets.length) throw new Error('Imagens do cabelo inválidas.')
   const folder = hairStylePath(modelSlot, style.id)
   await catalogPersistence.saveCatalog({
     folder, imageFolder: join(folder, 'images'), manifestName: 'hair-style.json', manifest: style,
     images: assets.map(asset => ({ id: asset.id, bytes: dataUrlBuffer(asset.dataUrl) })),
-    expected, prune: ['front', 'back', 'fringe'],
+    expected, prune: ['front', 'back', 'fringe', 'source'],
     missingMessage: id => `Imagem de cabelo ausente: ${id}.`
   })
 }
 
-async function readHairStyle(modelSlot: number, id: string): Promise<HairStyle | null> {
+async function readHairStyle(modelSlot: number, id: string, includeSource = false): Promise<HairStyle | null> {
   if (!isValidModelSlot(modelSlot) || !isValidWardrobeId(id)) throw new Error('Estilo de cabelo inválido.')
   try {
     const folder = hairStylePath(modelSlot, id)
@@ -890,7 +916,10 @@ async function readHairStyle(modelSlot: number, id: string): Promise<HairStyle |
     const loadPart = async (side: 'front' | 'back' | 'fringe') => saved[side]
       ? { ...saved[side]!, dataUrl: `data:image/png;base64,${(await readCatalogPng('hair', identity, version, join(folder, 'images', `${side}.png`))).toString('base64')}` }
       : null
-    return { ...saved, front: await loadPart('front'), back: await loadPart('back'), fringe: await loadPart('fringe') }
+    const sourceImageDataUrl = includeSource && saved.sourceImageSaved
+      ? `data:image/png;base64,${(await readCatalogPng('hair', identity, version, join(folder, 'images', 'source.png'))).toString('base64')}`
+      : undefined
+    return { ...saved, front: await loadPart('front'), back: await loadPart('back'), fringe: await loadPart('fringe'), ...(sourceImageDataUrl ? { sourceImageDataUrl } : {}) }
   } catch (reason) {
     if ((reason as NodeJS.ErrnoException).code === 'ENOENT') {
       if (id === 'legacy-workspace') {
@@ -1395,6 +1424,7 @@ async function registerFabricatorHandlers(): Promise<void> {
     hairModelPath, hairStylePath,
     readWorkspace: readHairWorkspace,
     writeWorkspace: writeHairWorkspace,
+    clearWorkspace: clearHairWorkspace,
     listStyles: (modelSlot) => catalogListings.listHair(modelSlot),
     readStyle: readHairStyle,
     writeStyle: writeHairStyle,

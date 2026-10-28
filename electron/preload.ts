@@ -72,7 +72,7 @@ const fabricatorApi: FabricatorDesktopApi = {
   loadHairWorkspace: (modelSlot) => invokeFabricator('loadHairWorkspace', modelSlot),
   saveHairWorkspace: (modelSlot, workspace, assets) => invokeFabricator('saveHairWorkspace', modelSlot, workspace, assets),
   listHairStyles: (modelSlot) => invokeFabricator('listHairStyles', modelSlot),
-  loadHairStyle: (modelSlot, id) => invokeFabricator('loadHairStyle', modelSlot, id),
+  loadHairStyle: (modelSlot, id, includeSource) => invokeFabricator('loadHairStyle', modelSlot, id, includeSource),
   saveHairStyle: (modelSlot, style, assets) => invokeFabricator('saveHairStyle', modelSlot, style, assets),
   deleteHairStyle: (modelSlot, id) => invokeFabricator('deleteHairStyle', modelSlot, id)
 }

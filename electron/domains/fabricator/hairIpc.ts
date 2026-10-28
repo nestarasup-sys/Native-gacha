@@ -12,8 +12,9 @@ type HairIpcDependencies = {
   hairStylePath: (modelSlot: number, id: string) => string
   readWorkspace: (modelSlot: number) => Promise<HairWorkspace | null>
   writeWorkspace: (modelSlot: number, workspace: HairWorkspaceSave, assets: HairWorkspaceAsset[]) => Promise<void>
+  clearWorkspace: (modelSlot: number) => Promise<void>
   listStyles: (modelSlot: number) => Promise<HairStyleSummary[]>
-  readStyle: (modelSlot: number, id: string) => Promise<HairStyle | null>
+  readStyle: (modelSlot: number, id: string, includeSource?: boolean) => Promise<HairStyle | null>
   writeStyle: (modelSlot: number, style: HairStyleSave, assets: HairStyleAsset[]) => Promise<void>
   setLegacyHairCatalogState: (modelSlot: number, state: 'active'|'dismissed') => Promise<void>
   removeDirectory: (path: string) => Promise<void>
@@ -41,14 +42,15 @@ export function registerFabricatorHairHandlers(deps: HairIpcDependencies) {
     deps.assertTrustedSender(event)
     return deps.listStyles(modelSlot)
   })
-  deps.ipcMain.handle(fabricatorIpcChannels.loadHairStyle, async (event, modelSlot: number, id: string): Promise<HairStyle | null> => {
+  deps.ipcMain.handle(fabricatorIpcChannels.loadHairStyle, async (event, modelSlot: number, id: string, includeSource = false): Promise<HairStyle | null> => {
     deps.assertTrustedSender(event)
-    return deps.readStyle(modelSlot, id)
+    return deps.readStyle(modelSlot, id, includeSource === true)
   })
   deps.ipcMain.handle(fabricatorIpcChannels.saveHairStyle, async (event, modelSlot: number, style: HairStyleSave, assets: HairStyleAsset[]): Promise<void> => {
     deps.assertTrustedSender(event)
     await queueSave(modelSlot, async () => {
       await deps.writeStyle(modelSlot, style, assets)
+      await deps.clearWorkspace(modelSlot)
       await deps.setLegacyHairCatalogState(modelSlot, 'active')
     })
   })
@@ -59,7 +61,14 @@ export function registerFabricatorHairHandlers(deps: HairIpcDependencies) {
     const target = resolve(deps.hairStylePath(modelSlot, id))
     if (dirname(target) !== base || basename(target) !== `style-${id}`) throw new Error('Caminho de exclusão inválido.')
     await queueSave(modelSlot, async () => {
-      await deps.setLegacyHairCatalogState(modelSlot, id === 'legacy-workspace' ? 'dismissed' : 'active')
+      if (id === 'legacy-workspace') {
+        await deps.clearWorkspace(modelSlot)
+        await deps.removeDirectory(target)
+        await deps.setLegacyHairCatalogState(modelSlot, 'dismissed')
+        return
+      }
+      await deps.setLegacyHairCatalogState(modelSlot, 'active')
+      await deps.clearWorkspace(modelSlot)
       await deps.removeDirectory(target)
     })
   })
