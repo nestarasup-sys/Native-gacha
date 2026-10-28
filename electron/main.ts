@@ -16,7 +16,7 @@ import { createEditorV6MotionService } from './domains/editorV6/motionIpc'
 import { VideoLibraryStore, configureVideoLibraryStorage } from './videoLibrary'
 import { VideoBackgroundLibraryStore, configureBackgroundLibraryStorage } from './backgroundLibrary'
 import { RoteiroUiGifLibraryStore, configureRoteiroUiGifStorage } from './roteiroUiGifLibrary'
-import type { RoteiroExportCharacterInfo, RoteiroExportLog } from '../src/shared/roteiros'
+import type { RoteiroExportCharacterInfo } from '../src/shared/roteiros'
 import { RoteiroCharacterExportStore } from './roteiroCharacterExport'
 import { RoteiroProjectExportStore } from './roteiroProjectExport'
 import { DataPlatform, getAppDataUsage } from './dataPlatform.cjs'
@@ -72,6 +72,8 @@ import { createVideoReferenceChangeCoordinator, createVideoReferenceGuard } from
 import { createRoteirosVideoReferenceLookup } from './domains/roteiros/videoReferences'
 import { createRoteirosDocumentService } from './domains/roteiros/service'
 import { registerRoteirosDocumentHandlers } from './domains/roteiros/documentIpc'
+import { createRoteiroExportLogsService } from './domains/roteiros/exportLogsService'
+import { registerRoteiroExportLogsHandlers } from './domains/roteiros/exportLogsIpc'
 import { createEditorV6VideoReferenceLookup } from './domains/editorV6/videoReferences'
 
 let configuredAppDataRoot: string | null = null
@@ -1449,59 +1451,26 @@ async function registerFabricatorHandlers(): Promise<void> {
     finally { roteiroCharacterExportJobOwners.delete(jobId) }
   })
 
+  const waitForRoteirosWrites = () => roteirosSaveQueue.catch(() => undefined)
+  const enqueueRoteirosWrite = <T>(operation: () => Promise<T> | T): Promise<T> => {
+    const next = roteirosSaveQueue.catch(() => undefined).then(operation)
+    roteirosSaveQueue = next.then(() => undefined)
+    return next
+  }
   const roteiroDocumentService = createRoteirosDocumentService({
     getDatabase: () => dataPlatform.database,
-    waitForPendingWrites: () => roteirosSaveQueue.catch(() => undefined),
-    enqueueWrite: <T>(operation: () => Promise<T> | T): Promise<T> => {
-      const next = roteirosSaveQueue.catch(() => undefined).then(operation)
-      roteirosSaveQueue = next
-      return next
-    },
+    waitForPendingWrites: waitForRoteirosWrites,
+    enqueueWrite: enqueueRoteirosWrite,
     coordinateVideoReferenceChange,
     assertLibraryVideoReferencesAvailable
   })
   registerRoteirosDocumentHandlers({ ipcMain, assertTrustedSender, service: roteiroDocumentService })
-  ipcMain.handle('roteiros:export-logs:list', async (event, roteiroId: unknown): Promise<RoteiroExportLog[]> => {
-    assertTrustedSender(event)
-    if (typeof roteiroId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(roteiroId)) throw new Error('Identificador de roteiro inválido.')
-    await roteirosSaveQueue.catch(() => undefined)
-    const db = dataPlatform.database
-    if (!db) throw new Error('Catálogo de dados não inicializado.')
-    return (db.prepare('SELECT id, roteiro_id, created_at, action, status, details FROM roteiro_export_logs WHERE roteiro_id=? ORDER BY created_at DESC, id DESC LIMIT 50').all(roteiroId) as Array<{ id: string; roteiro_id: string; created_at: string; action: string; status: 'success' | 'error'; details: string }>).map((row) => ({ id: row.id, roteiroId: row.roteiro_id, createdAt: row.created_at, action: row.action, status: row.status, details: row.details }))
+  const roteiroExportLogsService = createRoteiroExportLogsService({
+    getDatabase: () => dataPlatform.database,
+    waitForPendingWrites: waitForRoteirosWrites,
+    enqueueWrite: enqueueRoteirosWrite
   })
-
-  ipcMain.handle('roteiros:export-logs:append', async (event, roteiroId: unknown, value: unknown): Promise<void> => {
-    assertTrustedSender(event)
-    if (typeof roteiroId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(roteiroId)
-      || !value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Dados do log de exportação inválidos.')
-    const entry = value as RoteiroExportLog
-    if (entry.roteiroId !== roteiroId || typeof entry.id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(entry.id)
-      || typeof entry.createdAt !== 'string' || !Number.isFinite(Date.parse(entry.createdAt))
-      || typeof entry.action !== 'string' || !entry.action.trim() || entry.action.length > 120
-      || !['success', 'error'].includes(entry.status) || typeof entry.details !== 'string' || entry.details.length > 5000) throw new Error('Dados do log de exportação inválidos.')
-    const db = dataPlatform.database
-    if (!db) throw new Error('Catálogo de dados não inicializado.')
-    const next = roteirosSaveQueue.catch(() => undefined).then(() => {
-      const save = db.transaction(() => {
-        db.prepare('INSERT INTO roteiro_export_logs(id, roteiro_id, created_at, action, status, details) VALUES (?, ?, ?, ?, ?, ?)').run(entry.id, roteiroId, entry.createdAt, entry.action.trim(), entry.status, entry.details)
-        db.prepare('DELETE FROM roteiro_export_logs WHERE roteiro_id=? AND id NOT IN (SELECT id FROM roteiro_export_logs WHERE roteiro_id=? ORDER BY created_at DESC, id DESC LIMIT 50)').run(roteiroId, roteiroId)
-      })
-      save()
-    })
-    roteirosSaveQueue = next
-    await next
-  })
-
-  ipcMain.handle('roteiros:export-logs:clear', async (event, roteiroId: unknown): Promise<void> => {
-    assertTrustedSender(event)
-    if (typeof roteiroId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(roteiroId)) throw new Error('Identificador de roteiro inválido.')
-    const db = dataPlatform.database
-    if (!db) throw new Error('Catálogo de dados não inicializado.')
-    const next = roteirosSaveQueue.catch(() => undefined).then(() => { db.prepare('DELETE FROM roteiro_export_logs WHERE roteiro_id=?').run(roteiroId) })
-    roteirosSaveQueue = next
-    await next
-  })
-
+  registerRoteiroExportLogsHandlers({ ipcMain, assertTrustedSender, service: roteiroExportLogsService })
   // Módulo Base de Vídeos: IPC → casos de uso → repositório SQLite.
   // Compartilha a fila existente de Roteiros para conservar a ordem das gravações.
   registerBaseVideoHandlers(ipcMain, assertTrustedSender, new BaseVideoService({
