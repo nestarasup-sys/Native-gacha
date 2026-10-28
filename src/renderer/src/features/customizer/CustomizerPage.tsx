@@ -3,6 +3,7 @@ import { useCustomizerCharacterRoster } from './useCustomizerCharacterRoster'
 import { useCustomizerModelBrowserState } from './useCustomizerModelBrowserState'
 import { useCustomizerAssetLibraryState } from './useCustomizerAssetLibraryState'
 import { useCustomizerCharacterCommands } from './useCustomizerCharacterCommands'
+import { useCustomizerBodyAppearance } from './useCustomizerBodyAppearance'
 import { CustomizerClothesAdjustmentPanel } from './CustomizerClothesAdjustmentPanel'
 import { upperWardrobePanels, upperWardrobePageTwoPanels, accessoryWardrobePanels, lowerWardrobePanels, lowerWardrobePageTwoPanels, wardrobeComponentMatchesPanel, isWardrobePanelCandidateSelected, renderWardrobeThumbnail } from './wardrobePanelModel'
 import type { WardrobePanel, WardrobePanelCandidate } from './wardrobePanelModel'
@@ -21,7 +22,7 @@ import type { FaceCatalogItem, FaceCatalogItemSummary, FaceComponentAsset, FaceC
 import { resolvePoseCategory } from '../../../../shared/fabricator'
 import { hairCategories, hairStyleSupportsCategory } from '../../../../shared/hairCategories'
 import type { CustomizerCharacter, CustomizerFaceAppearance, CustomizerWardrobeGroup, FaceComponentPartId, FacePalettePartId, HairColorOverrides, HairColorRole, HairPartId } from '../../../../shared/customizer'
-import { characterBodyDimensionLimits, characterProportionLimits, defaultCharacterBodyDimensions, defaultCharacterProportions, getCharacterBodyDimensions, getCharacterProportions, type CharacterBodyDimensions, type CharacterProportions } from '../../../../shared/customizer'
+import { characterBodyDimensionLimits, characterProportionLimits, defaultCharacterProportions, getCharacterBodyDimensions, getCharacterProportions, type CharacterProportions } from '../../../../shared/customizer'
 import { usePreviewBackground } from '../../ui/hooks/usePreviewBackground'
 import { DesignBanner } from '../../ui/components/DesignBanner'
 import { anchorWardrobeAdjustments, editWardrobeAdjustment, moveWardrobeAdjustment } from '../../../../shared/wardrobeAdjustment'
@@ -112,8 +113,6 @@ export function CustomizerPage() {
   const [selectedWardrobeUrl, setSelectedWardrobeUrl] = useState<string | null>(null)
   const [selectedWardrobeAboveHairUrl, setSelectedWardrobeAboveHairUrl] = useState<string | null>(null)
   const [selectedArtworkProject, setSelectedArtworkProject] = useState<CatalogArtwork | null>(null)
-  const [proportionEdit, setProportionEdit] = useState<{ characterId: string; values: CharacterProportions } | null>(null)
-  const [bodyDimensionEdit, setBodyDimensionEdit] = useState<{ characterId: string; values: CharacterBodyDimensions } | null>(null)
   const [selectedSourceModelProject, setSelectedSourceModelProject] = useState<FabricatorProject | null>(null)
   const [originalSkinTone, setOriginalSkinTone] = useState<string | null>(null)
   const [selectedArtworkUrl, setSelectedArtworkUrl] = useState<string | null>(null)
@@ -132,6 +131,16 @@ export function CustomizerPage() {
   const adjustmentLastTargetRef = useRef<AdjustmentPreviewHighlight | null>(null)
   const wardrobeTransformDirty = useRef(false)
   const selectedCharacter = characters.find((character) => character.id === selectedCharacterId) ?? characters[0] ?? null
+  const { selectCharacter, saveCharacter, saveCharacterCustomization } = useCustomizerCharacterCommands({
+    charactersRef, characterSaveQueue, setCharacters, selectedCharacter,
+    setSelectedCharacterId, setActiveModule, setCharactersError, setCharacterSaveState,
+    anchorWardrobe: (groups) => anchorCurrentWardrobe(groups)
+  })
+  const {
+    activeProportions, activeBodyDimensions,
+    changeProportion, commitProportions, commitProportion,
+    changeBodyDimension, commitBodyDimension, restoreBodyDimensions
+  } = useCustomizerBodyAppearance({ selectedCharacter, charactersRef, saveCharacterCustomization })
   const activeHeadPreviewHighlight = activeModule === 'Cabeça' && headPanelTab === 'adjust' && adjustmentPreviewHighlight?.scope === 'head' ? adjustmentPreviewHighlight.id : null
   const activeFacePreviewHighlight = activeHeadPreviewHighlight && !adjustableHairPartIds.has(activeHeadPreviewHighlight) ? activeHeadPreviewHighlight : null
   const activeHairPreviewHighlight = activeHeadPreviewHighlight && adjustableHairPartIds.has(activeHeadPreviewHighlight) ? activeHeadPreviewHighlight : null
@@ -147,12 +156,6 @@ export function CustomizerPage() {
   }
   useEffect(() => { adjustmentLastTargetRef.current = null; setAdjustmentPreviewHighlight(null) }, [selectedCharacter?.id, activeModule, headPanelTab, headCategorySelection, clothesPanelTab, clothesCategorySelection])
   const selectedSkinTone = selectedCharacter?.customization.modelSkinTone
-  const activeProportions = proportionEdit && selectedCharacter && proportionEdit.characterId === selectedCharacter.id
-    ? proportionEdit.values
-    : getCharacterProportions(selectedCharacter?.customization)
-  const activeBodyDimensions = useMemo(() => bodyDimensionEdit && selectedCharacter && bodyDimensionEdit.characterId === selectedCharacter.id
-    ? bodyDimensionEdit.values
-    : getCharacterBodyDimensions(selectedCharacter?.customization), [bodyDimensionEdit, selectedCharacter?.id, selectedCharacter?.customization.bodyDimensions])
   const activeShapeScale = characterShapeScale(activeProportions)
   const displayArtworkProject = useMemo(() => selectedArtworkProject ? applyCharacterBodyShape(withCharacterHeadSize(selectedArtworkProject, activeProportions), activeBodyDimensions) : null, [selectedArtworkProject, activeProportions.head, activeProportions.headWidth, activeProportions.headHeight, activeBodyDimensions])
   const previewStyle = { '--preview-background': previewBackground, '--character-scale-x': activeShapeScale.x, '--character-scale-y': activeShapeScale.y } as import('react').CSSProperties
@@ -677,53 +680,6 @@ export function CustomizerPage() {
       (group) => wardrobeComponentsForGroup(group, wardrobeDetails))
   }
 
-
-  const { selectCharacter, saveCharacter, saveCharacterCustomization } = useCustomizerCharacterCommands({
-    charactersRef, characterSaveQueue, setCharacters, selectedCharacter,
-    setSelectedCharacterId, setActiveModule, setCharactersError, setCharacterSaveState,
-    anchorWardrobe: (groups) => anchorCurrentWardrobe(groups)
-  })
-
-  function changeProportion(key: keyof CharacterProportions, value: number) {
-    if (!selectedCharacter) return
-    const { min, max } = characterProportionLimits[key]
-    setProportionEdit({ characterId: selectedCharacter.id, values: { ...activeProportions, [key]: Math.min(max, Math.max(min, Math.round(value))) } })
-  }
-
-  function commitProportions(values: CharacterProportions) {
-    if (!selectedCharacter) return
-    setProportionEdit({ characterId: selectedCharacter.id, values })
-    const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
-    const saved = getCharacterProportions(current.customization)
-    if ((Object.keys(values) as Array<keyof CharacterProportions>).every((key) => saved[key] === values[key])) return
-    void saveCharacterCustomization({ proportions: values })
-  }
-
-  function commitProportion(key: keyof CharacterProportions, value: number) {
-    const { min, max } = characterProportionLimits[key]
-    commitProportions({ ...activeProportions, [key]: Math.min(max, Math.max(min, Math.round(value))) })
-  }
-
-  function commitBodyDimensions(values: CharacterBodyDimensions) {
-    if (!selectedCharacter) return
-    const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
-    const saved = getCharacterBodyDimensions(current.customization)
-    if ((Object.keys(values) as Array<keyof CharacterBodyDimensions>).every((key) => saved[key] === values[key])) return
-    void saveCharacterCustomization({ bodyDimensions: values })
-  }
-
-  function commitBodyDimension(key: keyof CharacterBodyDimensions, value: number) {
-    const { min, max } = characterBodyDimensionLimits[key]
-    const values = { ...activeBodyDimensions, [key]: Math.min(max, Math.max(min, Math.round(value))) }
-    setBodyDimensionEdit(selectedCharacter ? { characterId: selectedCharacter.id, values } : null)
-    commitBodyDimensions(values)
-  }
-
-  function changeBodyDimension(key: keyof CharacterBodyDimensions, value: number) {
-    if (!selectedCharacter) return
-    const { min, max } = characterBodyDimensionLimits[key]
-    setBodyDimensionEdit({ characterId: selectedCharacter.id, values: { ...activeBodyDimensions, [key]: Math.min(max, Math.max(min, Math.round(value))) } })
-  }
 
   async function chooseFaceCatalogItem(summary: FaceCatalogItemSummary, variantIndex?: number) {
     const item = faceCatalogDetails[`${summary.modelSlot}:${summary.id}`] ?? await window.desktop.loadFaceCatalogItem(summary.modelSlot, summary.id)
@@ -2180,7 +2136,7 @@ export function CustomizerPage() {
               })}</div>
             </section>}
             {selectedCustomizerTopTab === 'modelos' && <section className="customizer-body-shape" aria-label="Ajuste de largura e altura das partes do corpo">
-              <header><span><strong>Corpo · tronco e membros</strong><small>As peças acompanham as juntas, com ajustes separados para coxas e pernas inferiores.</small></span><button onClick={() => { setBodyDimensionEdit(selectedCharacter ? { characterId: selectedCharacter.id, values: { ...defaultCharacterBodyDimensions } } : null); commitBodyDimensions({ ...defaultCharacterBodyDimensions }) }} disabled={!selectedCharacter} type="button">Restaurar</button></header>
+              <header><span><strong>Corpo · tronco e membros</strong><small>As peças acompanham as juntas, com ajustes separados para coxas e pernas inferiores.</small></span><button onClick={restoreBodyDimensions} disabled={!selectedCharacter} type="button">Restaurar</button></header>
               <div className="customizer-body-shape-grid">{([
                 { name: 'Tronco', width: 'torsoWidth', height: 'torsoHeight' },
                 { name: 'Braços', width: 'armsWidth', height: 'armsHeight' },
