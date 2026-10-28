@@ -9,7 +9,6 @@ import type { FaceAssetKind, FaceAssetSave, FaceCatalogItem, FaceCatalogItemSave
 import { hairCategories } from '../src/shared/hairCategories'
 import type { StudioAsset, StudioDocument } from '../src/shared/studio'
 import { isStudioExpressionEffects, isStudioFaceTransforms } from '../src/shared/studio'
-import type { EditorV6Asset } from '../src/shared/editorV6'
 import { isEditorV6Document } from '../src/shared/editorV6Schema'
 import { registerEditorV6ExportHandlers } from './domains/editorV6/exportIpc'
 import { createEditorV6MotionService } from './domains/editorV6/motionIpc'
@@ -57,16 +56,17 @@ import { createExpressionBatchTransaction } from './domains/fabricator/expressio
 import { isPortableExpressionMotion, isPtPupilOverrides, isPtPupilMotion } from '../src/shared/portableExpression'
 import { registerExpressionPresetHandlers } from './domains/fabricator/expressionIpc'
 import { registerStudioPrimaryHandlers } from './domains/studio/primaryIpc'
+import { registerStudioFileHandlers } from './domains/studio/fileIpc'
 import { createStudioLibraryIndex } from './domains/studio/libraryIndex'
 import { createStudioDocumentPersistence } from './domains/studio/documentPersistence'
 import { studioIpcChannels } from '../src/shared/studioIpcChannels'
-import { editorV6IpcChannels } from '../src/shared/editorV6IpcChannels'
 import type { AssetNamespace } from './domains/fabricator/versionedAssetResolver'
 import { inspectFabricatorStorage } from '../src/shared/fabricatorStorageCompatibility'
 import { fabricatorIpcChannels } from '../src/shared/fabricatorIpcChannels'
 import { captureFabricatorRealScreens, captureCustomizerStudioRealScreens, captureCustomizerStudioReopened } from './domains/fabricator/visualUiCapture'
 import { registerModelSourceDownloadHandlers } from './domains/fabricator/modelSourceExportIpc'
 import { registerEditorV6PrimaryHandlers } from './domains/editorV6/primaryIpc'
+import { registerEditorV6FileHandlers } from './domains/editorV6/fileIpc'
 import { createEditorV6LibraryIndex } from './domains/editorV6/libraryIndex'
 import { createEditorV6DocumentPersistence } from './domains/editorV6/documentPersistence'
 import { createVideoReferenceChangeCoordinator, createVideoReferenceGuard } from './domains/mediaLibrary/videoReferences'
@@ -1276,91 +1276,24 @@ async function registerFabricatorHandlers(): Promise<void> {
     measure: (label, operation) => measureIpc(label, operation)
   })
 
-  ipcMain.handle('studio:folder', (event): string => {
-    assertTrustedSender(event)
-    return join(app.getPath('appData'), 'projects', 'studio')
+  registerStudioFileHandlers({
+    ipcMain, assertTrustedSender,
+    appDataPath: () => app.getPath('appData'), tempPath: () => app.getPath('temp'), studioPath,
+    dataFileSystem: {
+      locate: (path) => dataFileSystem.locate(path),
+      isLegacyDomain: (domainId) => dataPlatform.getDomainState(domainId).state === 'legacy',
+      materializeDirectory: (sourcePath, destinationPath) => dataFileSystem.materializeDirectory(sourcePath, destinationPath)
+    },
+    files: { stat, readFile, mkdir, writeFile, rm },
+    normalizeImage: normalizeImageBuffer, dataUrlBuffer, createId: randomUUID,
+    openPath: (path) => shell.openPath(path)
   })
-  ipcMain.handle('studio:import-image', async (event, category: StudioAsset['category']): Promise<StudioAsset | null> => {
-    assertTrustedSender(event)
-    if (category !== 'background' && category !== 'object') throw new Error('Categoria de imagem inválida.')
-    const result = await dialog.showOpenDialog({
-      title: `Studio: ${category === 'background' ? 'adicionar imagem de fundo' : 'adicionar objeto à cena'}`,
-      properties: ['openFile'],
-      filters: [{ name: 'Imagens', extensions: ['png', 'jpg', 'jpeg', 'webp'] }]
-    })
-    if (result.canceled || !result.filePaths[0]) return null
-    const path = result.filePaths[0]
-    const size = (await stat(path)).size
-    if (size > 50 * 1024 * 1024) throw new Error('A imagem excede o limite de 50 MB.')
-    const canonical = await normalizeImageBuffer(await readFile(path))
-    return { id: randomUUID(), category, name: basename(path), mimeType: 'image/png', dataUrl: `data:image/png;base64,${canonical.bytes.toString('base64')}` }
-  })
-  ipcMain.handle('studio:save-print', async (event, id: string, dataUrl: string): Promise<string | null> => {
-    assertTrustedSender(event)
-    if (typeof id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) throw new Error('Identificador de Studio inválido.')
-    const bytes = dataUrlBuffer(dataUrl)
-    if (bytes.length > 50 * 1024 * 1024) throw new Error('O print excede o limite de 50 MB.')
-    const printsFolder = join(studioPath(id), 'prints')
-    await mkdir(printsFolder, { recursive: true })
-    const printPath = join(printsFolder, `print-${new Date().toISOString().replace(/[:.]/g, '-')}-${randomUUID().slice(0, 8)}.png`)
-    await writeFile(printPath, bytes)
-    return printPath
-  })
-  ipcMain.handle('studio:open-prints', async (event, id: string): Promise<void> => {
-    assertTrustedSender(event)
-    if (typeof id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) throw new Error('Identificador de Studio inválido.')
-    const studioFolder = resolve(studioPath(id))
-    const printsFolder = resolve(studioFolder, 'prints')
-    if (dirname(printsFolder) !== studioFolder) throw new Error('Pasta de prints inválida.')
-    let folderToOpen = printsFolder
-    const location = dataFileSystem.locate(printsFolder)
-    if (location && dataPlatform.getDomainState(location.domainId).state !== 'legacy') {
-      folderToOpen = join(app.getPath('temp'), 'exports', 'studio', `studio-${id}`, 'prints')
-      await rm(folderToOpen, { recursive: true, force: true })
-      await dataFileSystem.materializeDirectory(printsFolder, folderToOpen)
-    } else await mkdir(printsFolder, { recursive: true })
-    const error = await shell.openPath(folderToOpen)
-    if (error) throw new Error(`Não foi possível abrir a pasta de prints: ${error}`)
-  })
-
-  ipcMain.handle(editorV6IpcChannels.getEditorV6Folder, (event): string => {
-    assertTrustedSender(event)
-    return editorV6LibraryPath()
-  })
-  ipcMain.handle(editorV6IpcChannels.importEditorV6Image, async (event, category: EditorV6Asset['category']): Promise<EditorV6Asset | null> => {
-    assertTrustedSender(event)
-    if (category !== 'background' && category !== 'object') throw new Error('Categoria de imagem inválida para o Editor V6.')
-    const result = await dialog.showOpenDialog({
-      title: `Editor V6: ${category === 'background' ? 'adicionar imagem de fundo' : 'adicionar objeto à cena'}`,
-      properties: ['openFile'],
-      filters: [{ name: 'Imagens', extensions: ['png', 'jpg', 'jpeg', 'webp'] }]
-    })
-    if (result.canceled || !result.filePaths[0]) return null
-    const path = result.filePaths[0]
-    if ((await stat(path)).size > 50 * 1024 * 1024) throw new Error('A imagem excede o limite de 50 MB.')
-    const canonical = await normalizeImageBuffer(await readFile(path))
-    return { id: randomUUID(), category, name: basename(path), mimeType: 'image/png', dataUrl: `data:image/png;base64,${canonical.bytes.toString('base64')}` }
-  })
-  ipcMain.handle(editorV6IpcChannels.saveEditorV6Print, async (event, id: string, dataUrl: string): Promise<string | null> => {
-    assertTrustedSender(event)
-    if (typeof id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) throw new Error('Identificador de projeto V6 inválido.')
-    const bytes = dataUrlBuffer(dataUrl)
-    if (bytes.length > 50 * 1024 * 1024) throw new Error('O print excede o limite de 50 MB.')
-    const printsFolder = join(editorV6Path(id), 'prints')
-    await mkdir(printsFolder, { recursive: true })
-    const printPath = join(printsFolder, `print-${new Date().toISOString().replace(/[:.]/g, '-')}-${randomUUID().slice(0, 8)}.png`)
-    await writeFile(printPath, bytes)
-    return printPath
-  })
-  ipcMain.handle(editorV6IpcChannels.openEditorV6Prints, async (event, id: string): Promise<void> => {
-    assertTrustedSender(event)
-    if (typeof id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) throw new Error('Identificador de projeto V6 inválido.')
-    const projectFolder = resolve(editorV6Path(id))
-    const printsFolder = resolve(projectFolder, 'prints')
-    if (dirname(printsFolder) !== projectFolder) throw new Error('Pasta de prints do Editor V6 inválida.')
-    await mkdir(printsFolder, { recursive: true })
-    const error = await shell.openPath(printsFolder)
-    if (error) throw new Error(`Não foi possível abrir a pasta de prints do Editor V6: ${error}`)
+  registerEditorV6FileHandlers({
+    ipcMain, assertTrustedSender,
+    libraryPath: editorV6LibraryPath, projectPath: editorV6Path,
+    files: { stat, readFile, mkdir, writeFile },
+    normalizeImage: normalizeImageBuffer, dataUrlBuffer, createId: randomUUID,
+    openPath: (path) => shell.openPath(path)
   })
 
   const videoLibraryService = createVideoLibraryService({
