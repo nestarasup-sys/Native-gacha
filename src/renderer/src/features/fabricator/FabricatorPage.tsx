@@ -19,6 +19,7 @@ import { splitImage, mergeImages } from './models/partImages'
 import { rotatePointAroundOrigin } from './models/geometry'
 import { loadImageFromDataUrl, pngDataUrlFromBuffer } from './models/imageData'
 import { cleanSavedPartEdges } from './models/chromaCleanup'
+import { serializeFabricatorProject } from './models/projectSerialization'
 import { MAX_CHROMA_TOLERANCE, type ModelSourceResult } from './models/modelSource'
 
 const sections: { id: string; label: string; icon: IconName }[] = [
@@ -108,8 +109,7 @@ export function FabricatorPage() {
       ? [{ id: part.id, dataUrl: part.dataUrl, chromaBaseDataUrl: part.chromaBaseDataUrl! }]
       : [])
     assets = [...assets, ...baseAssets]
-    const { sourceDataUrl: _sourceDataUrl, parts, ...metadata } = snapshot
-    const serialized = { ...metadata, parts: parts.map(({ dataUrl: _dataUrl, chromaBaseDataUrl: _baseDataUrl, ...part }) => part) }
+    const serialized = serializeFabricatorProject(snapshot)
     try {
       await window.desktop.saveFabricatorProject(serialized, assets)
     } catch (reason) {
@@ -143,8 +143,7 @@ export function FabricatorPage() {
       undo: bounded.undo.map(({ action, project: snapshot }) => { const { sourceDataUrl: _sourceDataUrl, ...project } = snapshot; return { action, project } }),
       redo: bounded.redo.map(({ action, project: snapshot }) => { const { sourceDataUrl: _sourceDataUrl, ...project } = snapshot; return { action, project } })
     }
-    const { sourceDataUrl: _sourceDataUrl, parts, ...metadata } = currentProject
-    const currentForDisk = { ...metadata, parts: parts.map(({ dataUrl: _dataUrl, chromaBaseDataUrl: _baseDataUrl, ...part }) => part) }
+    const currentForDisk = serializeFabricatorProject(currentProject)
     const changedAssets = parts.flatMap((part) => {
       const dataUrl = dirtyAssets.current.get(part.id)
       const chromaBaseDataUrl = dirtyChromaBases.current.get(part.id)
@@ -461,8 +460,7 @@ export function FabricatorPage() {
     try {
       await persistProject(current)
       const next: FabricatorProject = { ...current, sourceDataUrl: result.sourceDataUrl, parts: result.parts, tolerance: result.tolerance, chromaBaseTolerance: 0, chromaVersion: 2, updatedAt: new Date().toISOString() }
-      const { sourceDataUrl: _sourceDataUrl, parts, ...metadata } = next
-      const serialized = { ...metadata, parts: parts.map(({ dataUrl: _dataUrl, chromaBaseDataUrl: _baseData, ...part }) => part) }
+      const serialized = serializeFabricatorProject(next)
       const changedAssets: FabricatorAssetSave[] = result.parts.map(part => ({
         id: part.id,
         dataUrl: part.dataUrl,
