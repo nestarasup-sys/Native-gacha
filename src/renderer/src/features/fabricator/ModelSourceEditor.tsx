@@ -4,7 +4,7 @@ import type { FabricatorProject, ModelPart } from '../../../../shared/fabricator
 import { isHeadPart } from './models/resize'
 import { normalizePartAnchors } from './models/rig'
 import { composeModelSource, sourceRect, validateModelSourceChroma, validateModelSourceDimensions, MAX_CHROMA_TOLERANCE, type ModelSourceDimensions, type ModelSourceResult } from './models/modelSource'
-import { cropModelSourcePart, eraseModelSourceBrush, removeModelSourceColor, sampleModelSourceColor, splitModelSourcePart, worldPointInsideCrop, worldPointToPart, type ModelSourceCrop, type ModelSourcePoint } from './models/modelSourceEditing'
+import { cropModelSourcePart, eraseModelSourceBrush, removeModelSourceColor, rotateModelSourcePart, sampleModelSourceColor, splitModelSourcePart, worldPointInsideCrop, worldPointToPart, type ModelSourceCrop, type ModelSourcePoint, type ModelSourceQuarterTurn } from './models/modelSourceEditing'
 import { applyImageWarpBrush, type ImageWarpPoint } from './models/imageMeshWarp'
 import { createModelSourceWarpSession, drawModelSourceWarp, modelSourceWarpDataUrl, warpModelSkinContours, type ModelSourceWarpSession } from './models/modelSourceWarp'
 import { isModelSkinPart } from './models/modelSkinTone'
@@ -48,6 +48,11 @@ const toolButton = (active: boolean, disabled: boolean): CSSProperties => ({
   background: active ? '#24558b' : '#1b2230',
   opacity: disabled ? .5 : 1
 })
+
+function sourceOverlapArea(a: ReturnType<typeof sourceRect>, b: ReturnType<typeof sourceRect>): number {
+  return Math.max(0, Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x))
+    * Math.max(0, Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y))
+}
 
 function cropFromGesture(gesture: DrawingGesture): ModelSourceCrop {
   const x = Math.floor(Math.min(gesture.start.x, gesture.current.x))
@@ -286,6 +291,51 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
     } finally {
       setBusy(false)
     }
+  }
+  const rotateSelectedPart = (degrees: ModelSourceQuarterTurn) => {
+    if (!selected || busy || downloading) return
+    setTool('select')
+    cancelDrawing()
+    setGuides({ partId: selected.id, lines: [] })
+    void runMutation(async (materialized) => {
+      const part = materialized.parts.find((item) => item.id === selected.id)
+      if (!part) throw new Error('A peça selecionada não está mais no modelo.')
+      const previousRect = sourceRect(part)
+      const rotatedPart = await rotateModelSourcePart(part, degrees)
+      const rotatedRect = sourceRect(rotatedPart)
+      if (rotatedRect.x < 0 || rotatedRect.y < 0 || rotatedRect.x + rotatedRect.width > materialized.width || rotatedRect.y + rotatedRect.height > materialized.height) {
+        throw new Error('A rotação ultrapassaria os limites da folha original. Reduza o tamanho da peça ou escolha outra peça.')
+      }
+      for (const other of materialized.parts) {
+        if (other.id === part.id) continue
+        const otherRect = sourceRect(other)
+        if (sourceOverlapArea(rotatedRect, otherRect) > sourceOverlapArea(previousRect, otherRect) + 1) {
+          throw new Error(`A rotação invadiria a área de ${other.name}. A peça não foi alterada.`)
+        }
+      }
+      const radians = degrees * Math.PI / 180
+      const center = { x: part.x + part.width / 2, y: part.y + part.height / 2 }
+      const rotateAnchor = (point: { x: number; y: number }) => {
+        const dx = point.x - center.x
+        const dy = point.y - center.y
+        return {
+          x: center.x + dx * Math.cos(radians) - dy * Math.sin(radians),
+          y: center.y + dx * Math.sin(radians) + dy * Math.cos(radians)
+        }
+      }
+      const parts = materialized.parts.map((item) => item.id === part.id ? rotatedPart : item)
+      const joints = materialized.joints.map((joint) => {
+        const parentAnchor = joint.parentPartId === part.id ? rotateAnchor(joint.parentAnchor) : joint.parentAnchor
+        const childAnchor = joint.childPartId === part.id ? rotateAnchor(joint.childAnchor) : joint.childAnchor
+        return { ...joint, parentAnchor, childAnchor, pivot: { x: (parentAnchor.x + childAnchor.x) / 2, y: (parentAnchor.y + childAnchor.y) / 2 } }
+      })
+      const rig = normalizePartAnchors(parts, joints)
+      return {
+        project: { ...materialized, parts: rig.parts, joints: rig.joints },
+        selectedId: part.id,
+        status: `Imagem da peça girada ${degrees > 0 ? '90° à direita' : '90° à esquerda'}. A edição pode ser desfeita e só vai ao modelo original ao salvar.`
+      }
+    })
   }
   const scalePointToPart = (point: ModelSourcePoint, part: ModelPart, width: number, height: number): ModelSourcePoint => ({
     x: point.x * part.width / Math.max(1, width),
@@ -728,7 +778,7 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
     <div role="presentation" style={{ position: 'fixed', inset: 0, zIndex: 11000, background: 'rgba(0,0,0,.82)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
       <section role="dialog" aria-modal="true" aria-label="Editar imagem original — Model Source" style={{ width: 'min(1320px, 98vw)', maxHeight: '94vh', background: '#111824', color: '#f4f6fa', border: '1px solid #516078', borderRadius: 16, display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 16px 80px rgba(0,0,0,.5)' }}>
         <header style={{ padding: '16px 22px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #303c4c' }}>
-          <div><strong style={{ fontSize: 18 }}>Editar imagem original · Model Source</strong><p style={{ margin: '5px 0 0', color: '#abb7c7', fontSize: 12 }}>Selecione uma peça para isolá-la, ampliar e editar. Deformações de coxa só vão ao original ao clicar em “Salvar no original”.</p></div>
+          <div><strong style={{ fontSize: 18 }}>Editar imagem original · Model Source</strong><p style={{ margin: '5px 0 0', color: '#abb7c7', fontSize: 12 }}>Selecione uma peça para isolá-la, ampliar e editar. Rotações e outras edições só vão ao original ao clicar em “Salvar no original”.</p></div>
           <button type="button" disabled={busy || downloading} onClick={onClose} aria-label="Fechar editor" style={{ ...field, width: 40, cursor: 'pointer' }}>✕</button>
         </header>
         <div style={{ display: 'grid', gridTemplateColumns: '220px minmax(0, 1fr) 235px', gap: 12, padding: 14, minHeight: 0, overflowY: 'auto' }}>
@@ -776,6 +826,8 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
             </div>
             {mode === 'part' && <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }} aria-label="Ferramentas da peça">
               <button type="button" style={toolButton(tool === 'select', busy || downloading || !selected)} disabled={busy || downloading || !selected} onClick={() => setEditTool('select')}>Selecionar</button>
+              <button type="button" aria-label="Girar a imagem da peça 90 graus à esquerda" title="Girar a imagem da peça 90° à esquerda; o pivô da junta acompanha" style={toolButton(false, busy || downloading || !selected)} disabled={busy || downloading || !selected} onClick={() => rotateSelectedPart(-90)}>↶ Girar 90°</button>
+              <button type="button" aria-label="Girar a imagem da peça 90 graus à direita" title="Girar a imagem da peça 90° à direita; o pivô da junta acompanha" style={toolButton(false, busy || downloading || !selected)} disabled={busy || downloading || !selected} onClick={() => rotateSelectedPart(90)}>↷ Girar 90°</button>
               <button type="button" style={toolButton(tool === 'erase', busy || downloading || !selected)} disabled={busy || downloading || !selected} onClick={() => setEditTool('erase')}>Apagar</button>
               <button type="button" style={toolButton(tool === 'crop', busy || downloading || !selected)} disabled={busy || downloading || !selected} onClick={() => setEditTool('crop')}>Cortar</button>
               <button type="button" style={toolButton(tool === 'split', busy || downloading || !selected)} disabled={busy || downloading || !selected} onClick={() => setEditTool('split')}>Dividir com linha</button>

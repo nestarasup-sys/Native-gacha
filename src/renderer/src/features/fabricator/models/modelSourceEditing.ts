@@ -7,6 +7,29 @@ export type ModelSourcePoint = { x: number; y: number }
 export type ModelSourceCrop = { x: number; y: number; width: number; height: number }
 export type ModelSourceSplit = { parts: [ModelPart, ModelPart]; retainedSide: 0 | 1 }
 export type BrushResult = { part: ModelPart; removedPixels: number }
+export type ModelSourceQuarterTurn = -90 | 90
+
+function rotatePoint(point: ModelSourcePoint, center: ModelSourcePoint, degrees: ModelSourceQuarterTurn): ModelSourcePoint {
+  const radians = degrees * Math.PI / 180
+  const dx = point.x - center.x
+  const dy = point.y - center.y
+  return {
+    x: center.x + dx * Math.cos(radians) - dy * Math.sin(radians),
+    y: center.y + dx * Math.sin(radians) + dy * Math.cos(radians)
+  }
+}
+
+function rotateCanvas(source: HTMLCanvasElement, degrees: ModelSourceQuarterTurn): HTMLCanvasElement {
+  const canvas = document.createElement('canvas')
+  canvas.width = source.height
+  canvas.height = source.width
+  const context = canvas.getContext('2d')
+  if (!context) throw new Error('Canvas indisponível para girar a peça.')
+  context.translate(canvas.width / 2, canvas.height / 2)
+  context.rotate(degrees * Math.PI / 180)
+  context.drawImage(source, -source.width / 2, -source.height / 2)
+  return canvas
+}
 
 function imageCanvas(image: HTMLImageElement, width: number, height: number): HTMLCanvasElement {
   const canvas = document.createElement('canvas')
@@ -27,6 +50,51 @@ async function normalizedImages(part: ModelPart): Promise<{ display: HTMLCanvasE
   return {
     display: imageCanvas(displayImage, part.width, part.height),
     base: imageCanvas(baseImage, part.width, part.height)
+  }
+}
+
+/** Rotates the pixels and source rectangle together, preserving the part center and its pivots. */
+export async function rotateModelSourcePart(part: ModelPart, degrees: ModelSourceQuarterTurn): Promise<ModelPart> {
+  const { display, base } = await normalizedImages(part)
+  const [rotatedDisplay, rotatedBase] = [rotateCanvas(display, degrees), rotateCanvas(base, degrees)]
+  const originalSource = sourceRect(part)
+  const sourceWidth = originalSource.height
+  const sourceHeight = originalSource.width
+  const sourceX = Math.round(originalSource.x + (originalSource.width - sourceWidth) / 2)
+  const sourceY = Math.round(originalSource.y + (originalSource.height - sourceHeight) / 2)
+  const sourceCenter = { x: originalSource.x + originalSource.width / 2, y: originalSource.y + originalSource.height / 2 }
+  const originalSourceAnchor = part.sourceTransform?.jointAnchor ?? sourceCenter
+  const sourceJointAnchor = rotatePoint(originalSourceAnchor, sourceCenter, degrees)
+  const modelCenter = { x: part.x + part.width / 2, y: part.y + part.height / 2 }
+  const jointAnchor = part.jointAnchor ? rotatePoint(part.jointAnchor, modelCenter, degrees) : undefined
+  const fakeSkinContours = part.fakeSkinContours?.map((stroke) => ({
+    ...stroke,
+    points: stroke.points.map((point) => degrees === 90
+      ? { x: Math.max(0, Math.min(1, 1 - point.y)), y: Math.max(0, Math.min(1, point.x)) }
+      : { x: Math.max(0, Math.min(1, point.y)), y: Math.max(0, Math.min(1, 1 - point.x)) })
+  }))
+  return {
+    ...part,
+    x: part.x + (part.width - part.height) / 2,
+    y: part.y + (part.height - part.width) / 2,
+    width: part.height,
+    height: part.width,
+    resizeBase: { width: part.height, height: part.width },
+    ...(jointAnchor ? { jointAnchor } : {}),
+    sourceTransform: {
+      ...part.sourceTransform,
+      x: sourceX,
+      y: sourceY,
+      width: sourceWidth,
+      height: sourceHeight,
+      rotation: part.sourceTransform?.rotation ?? part.rotation,
+      jointAnchor: sourceJointAnchor,
+      anchorVersion: 1
+    },
+    fakeSkinContours,
+    dataUrl: rotatedDisplay.toDataURL('image/png'),
+    chromaBaseDataUrl: rotatedBase.toDataURL('image/png'),
+    chromaBaseSaved: true
   }
 }
 
