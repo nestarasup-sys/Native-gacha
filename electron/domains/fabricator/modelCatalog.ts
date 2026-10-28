@@ -3,6 +3,7 @@
  */
 import { extname, join } from 'node:path'
 import { inspectFabricatorStorage } from '../../../src/shared/fabricatorStorageCompatibility.ts'
+import { isValidSkinTone } from '../../../src/shared/skinTones.ts'
 import { VersionedAssetResolver } from './versionedAssetResolver.ts'
 import type { FabricatorProject, FabricatorSlotSummary, ModelPart } from '../../../src/shared/fabricator'
 
@@ -76,7 +77,12 @@ export class FabricatorModelCatalog {
             () => this.files.readFile(join(folder, 'parts', `${part.id}.base.png`)))).toString('base64')}`
         } : {})
       })))
-      return { ...manifest, sourceDataUrl, parts }
+      return {
+        ...manifest,
+        modelSkinTone: isValidSkinTone(manifest.modelSkinTone) ? manifest.modelSkinTone : undefined,
+        sourceDataUrl,
+        parts
+      }
     } catch { return null }
   }
 }

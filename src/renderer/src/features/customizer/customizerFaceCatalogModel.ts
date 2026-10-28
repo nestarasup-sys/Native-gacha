@@ -1,6 +1,9 @@
 import type { FaceCatalogItem, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSummary, FaceComponentKind, FaceSheetKind } from '../../../../shared/fabricator'
 import type { CustomizerFaceAppearance, FaceComponentPartId, HairColorRole } from '../../../../shared/customizer'
 import { isRightFaceAsset } from '../../../../shared/faceLibrarySelection'
+import { customizerSkinTonePresets, skinTonePresets } from '../../../../shared/skinTones'
+
+export { customizerSkinTonePresets, skinTonePresets }
 
 export type FaceLibraryPartId = FaceComponentPartId
 
@@ -18,19 +21,6 @@ export const facePartColorControls: Array<{ id: HairColorRole; label: string; fa
   { id: 'outline', label: 'Contorno', fallback: '#251e2c' }, { id: 'highlight', label: 'Luzes', fallback: '#d6b7c7' },
   { id: 'accent', label: 'Acento', fallback: '#bd7198' }
 ]
-
-const skinTonePresets = [
-  { id: '#f5ddcb', name: 'Porcelana' },
-  { id: '#edc5a5', name: 'Clara' },
-  { id: '#dba47d', name: 'Pêssego' },
-  { id: '#c88961', name: 'Dourada' },
-  { id: '#a96d4c', name: 'Média' },
-  { id: '#754a36', name: 'Escura' },
-  { id: '#493027', name: 'Retinta' }
-] as const
-
-export const customizerSkinTonePresets = [skinTonePresets[0], skinTonePresets[1], skinTonePresets[2], skinTonePresets[4], skinTonePresets[6]]
-export { skinTonePresets }
 
 export const mirroredFaceThumbnailIds = new Set<FaceComponentPartId>(['eye-right', 'pupil-right', 'brow-right'])
 

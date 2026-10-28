@@ -91,6 +91,7 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
   const { modelSlot, assetProvider, source, artwork } = await resolveSavedCharacterSource(character, renderSource)
   const proportions = getCharacterProportions(character.customization)
   const hairAppearance = character.customization.hairAppearance
+  const skinTone = character.customization.modelSkinTone ?? source.modelSkinTone
   const materials = await materialsForPreparedCharacter(character, modelSlot, assetProvider, renderSource?.materialCache)
   const { backStyles, frontStyles } = materials
   const baseImage = createCharacterCanvas()
@@ -98,10 +99,10 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
   baseImage.height = artwork.height
   const baseContext = baseImage.getContext('2d')
   if (!baseContext) throw new Error(`Não foi possível montar a prévia de ${character.name}.`)
-  await renderArtworkWithHair(artwork, source, backStyles, Math.max(artwork.width, artwork.height), character.customization.modelSkinTone, hairAppearance, baseContext, character.customization.partOverrides)
+  await renderArtworkWithHair(artwork, source, backStyles, Math.max(artwork.width, artwork.height), skinTone, hairAppearance, baseContext, character.customization.partOverrides)
 
   const groups = (character.customization.wardrobeGroups ?? []).filter((group) => group.modelSlot === modelSlot)
-  const wardrobe = await renderWardrobeOverlayCanvases(groups, materials.wardrobeDetails, artwork, modelSlot, source, character.customization.modelSkinTone)
+  const wardrobe = await renderWardrobeOverlayCanvases(groups, materials.wardrobeDetails, artwork, modelSlot, source, skinTone)
 
   const appearance = character.customization.faceAppearance
   const expressionEffectsByIndex = appearance?.modelSlot === modelSlot
@@ -205,7 +206,7 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
       }
       const mouthEffects = expressionEffects ?? expressionEffectsByIndex[faceAppearance.expressionIndex]
       if (!hasCatalogFaceSelection && legacyFaceImage && faceAppearance.setId === appearance?.setId) targetContext.drawImage(legacyFaceImage, 0, 0, canvas.width, canvas.height)
-      if (hasCatalogFaceSelection || hasFaceOverlaySelection) await drawFaceCatalogOverlay(targetContext, artwork, source, activeItems, faceAppearance, character.customization.modelSkinTone, studioFaceTransforms, mouthEffects, studioFaceMode, resolveClosedEye, character.customization.partOverrides, undefined, assetProvider)
+      if (hasCatalogFaceSelection || hasFaceOverlaySelection) await drawFaceCatalogOverlay(targetContext, artwork, source, activeItems, faceAppearance, skinTone, studioFaceTransforms, mouthEffects, studioFaceMode, resolveClosedEye, character.customization.partOverrides, undefined, assetProvider)
     } else if (legacyFaceImage) targetContext.drawImage(legacyFaceImage, 0, 0, canvas.width, canvas.height)
   }
   // The default Canvas/PNG preview never needs an extra facial buffer.

@@ -46,6 +46,8 @@ export type FabricatorProject = {
   tolerance: number
   /** Menor tolerância recuperável a partir da base de cada peça. */
   chromaBaseTolerance?: number
+  /** Tom padrão do modelo após remover a pele original; escolhas dos personagens podem sobrescrever. */
+  modelSkinTone?: string
   parts: ModelPart[]
   joints: JointLink[]
   /** Ordem de desenho do fundo para a frente. Ausente em modelos antigos. */

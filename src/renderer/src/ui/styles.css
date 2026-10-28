@@ -2290,6 +2290,10 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .model-import-compact:hover, .model-primary-button:hover { background: #ffe8f0; }
 .model-import-compact svg { width: 14px; height: 14px; }
 .model-editor-toolbar { min-height: 60px; display: flex; align-items: center; gap: 12px; padding: 7px 15px; border-bottom: 1px solid #f0ebef; }
+.model-skin-tone-bar { display: grid; grid-template-columns: auto minmax(250px, 340px) minmax(0, 1fr); align-items: center; gap: 10px; padding: 6px 15px; border-bottom: 1px solid #f0ebef; background: #fff7fb; }
+.model-skin-tone-bar > strong { color: #75304f; font-size: 12px; white-space: nowrap; }
+.model-skin-tone-bar > small { color: #958b96; font-size: 10px; }
+.model-skin-tone-bar .customizer-model-skin-tone-row { grid-template-columns: repeat(6, minmax(28px, 1fr)) 38px; }
 .model-current-title { min-width: 86px; flex: 0 0 auto; display: flex; align-items: center; }
 .model-eyebrow { margin: 0; color: #aaa1aa; font-size: 12px; font-weight: 800; letter-spacing: 1.1px; }
 .model-toolbar-actions { min-width: 0; display: flex; flex: 1 1 auto; flex-wrap: nowrap; align-items: center; justify-content: flex-end; gap: 7px; }
@@ -2529,6 +2533,8 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
   .pose-editor-body { grid-template-columns: minmax(0, 1fr) minmax(250px, 40%); }
   .pose-canvas-footer > span:first-child { display: none; }
   .model-toolbar-actions { gap: 5px; }
+  .model-skin-tone-bar { grid-template-columns: auto minmax(0, 1fr); }
+  .model-skin-tone-bar > small { grid-column: 2; }
   .model-chroma-control { width: 100%; min-width: 100%; flex-basis: 100%; order: -1; }
   .model-chroma-control > small { white-space: normal; }
   .model-slot-title { display: none; }
@@ -2541,6 +2547,12 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
   .model-part-actions { padding-right: 6px; padding-left: 6px; }
   .model-part-search { margin-right: 6px; margin-left: 6px; }
   .model-part-grid { margin-right: 5px; margin-left: 5px; }
+}
+
+@media (max-width: 560px) {
+  .model-skin-tone-bar { grid-template-columns: minmax(0, 1fr); gap: 5px; }
+  .model-skin-tone-bar > small { grid-column: auto; }
+  .model-skin-tone-bar .customizer-model-skin-tone-row { grid-template-columns: repeat(6, minmax(28px, 1fr)) 38px; }
 }
 
 /* Área de roupas: biblioteca por modelo, prévia ampla e edição por peça. */

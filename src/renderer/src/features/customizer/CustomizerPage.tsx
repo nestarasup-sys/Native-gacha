@@ -22,6 +22,7 @@ import { useCustomizerWardrobePreview } from './useCustomizerWardrobePreview'
 import { useCustomizerWardrobeAdjustment } from './useCustomizerWardrobeAdjustment'
 import { useCustomizerWardrobePanelActions } from './useCustomizerWardrobePanelActions'
 import { useCustomizerHeadAdjustment } from './useCustomizerHeadAdjustment'
+import { MODEL_SKIN_BASE_TONE, isValidSkinTone } from '../../../../shared/skinTones'
 import { useCustomizerAdjustmentPreview } from './useCustomizerAdjustmentPreview'
 import { useCustomizerHeadNavigation } from './useCustomizerHeadNavigation'
 import { useCustomizerWardrobeNavigation } from './useCustomizerWardrobeNavigation'
@@ -188,6 +189,12 @@ export function CustomizerPage() {
     clothesCategorySelection
   })
   const selectedSkinTone = selectedCharacter?.customization.modelSkinTone
+  const sourceModelSkinTone = selectedSourceModelProject?.slot === selectedCatalogModelSlot
+    && isValidSkinTone(selectedSourceModelProject.modelSkinTone)
+    ? selectedSourceModelProject.modelSkinTone
+    : undefined
+  const effectiveModelSkinTone = selectedSkinTone ?? sourceModelSkinTone
+    ?? (originalSkinTone === MODEL_SKIN_BASE_TONE ? MODEL_SKIN_BASE_TONE : undefined)
   const activeShapeScale = characterShapeScale(activeProportions)
   const displayArtworkProject = useMemo(() => selectedArtworkProject ? applyCharacterBodyShape(withCharacterHeadSize(selectedArtworkProject, activeProportions), activeBodyDimensions) : null, [selectedArtworkProject, activeProportions.head, activeProportions.headWidth, activeProportions.headHeight, activeBodyDimensions])
   const { headAdjustSelection, setHeadAdjustSelection, updateHeadAdjustment } = useCustomizerHeadAdjustment({
@@ -325,12 +332,16 @@ export function CustomizerPage() {
         if (source.status === 'invalid-pose') throw new Error('Não foi possível carregar a prévia deste personagem.')
         const { sourceProject, artwork } = source
         if (!cancelled && previewLoadRequest.current === requestId) { setSelectedArtworkProject(artwork); setSelectedSourceModelProject(sourceProject) }
+        const sampledBaseTone = isValidSkinTone(sourceProject.modelSkinTone)
+          ? sourceProject.modelSkinTone
+          : await sampleOriginalSkinTone(sourceProject)
         const artworkUrl = await renderCustomizerBasePreview(artwork, {
           proportions: activeProportions,
           bodyDimensions: activeBodyDimensions,
           extent: previewExtent,
           zoom: customizerPreviewZoom,
           skinTone: selectedCharacter.customization.modelSkinTone
+            ?? (sampledBaseTone === MODEL_SKIN_BASE_TONE ? sampledBaseTone : undefined)
         })
         if (!cancelled && previewLoadRequest.current === requestId) setSelectedArtworkUrl(artworkUrl)
       } catch (reason) {
@@ -490,7 +501,7 @@ export function CustomizerPage() {
     legacyFaceDetails: faceDetails,
     artwork: displayArtworkProject,
     source: selectedSourceModelProject,
-    skinTone: selectedCharacter?.customization.modelSkinTone,
+    skinTone: effectiveModelSkinTone,
     headOverrides: selectedCharacter?.customization.partOverrides,
     previewExtent,
     zoom: customizerPreviewZoom,
@@ -506,7 +517,7 @@ export function CustomizerPage() {
     source: selectedSourceModelProject,
     hairAppearance: characterHairAppearance,
     hairDetails,
-    skinTone: selectedCharacter?.customization.modelSkinTone,
+    skinTone: effectiveModelSkinTone,
     headOverrides: selectedCharacter?.customization.partOverrides,
     previewExtent,
     zoom: customizerPreviewZoom,
@@ -613,7 +624,7 @@ export function CustomizerPage() {
 
   useCustomizerWardrobePreview({
     characterId: selectedCharacter?.id,
-    modelSkinTone: selectedCharacter?.customization.modelSkinTone,
+    modelSkinTone: effectiveModelSkinTone,
     wardrobeGroups: selectedCharacter?.customization.wardrobeGroups,
     wardrobeDetails,
     artwork: displayArtworkProject,
@@ -1151,7 +1162,7 @@ export function CustomizerPage() {
     const selectedSlot = selectedIndex >= 0 ? selectedIndex + 1 : 0
     const slotCount = choices.length + 1
     const colors = activeFaceAppearance?.facePalettes?.[part.id] ?? {}
-    const skinTone = activeFaceAppearance?.noseSkinTone ?? selectedSkinTone
+    const skinTone = activeFaceAppearance?.noseSkinTone ?? effectiveModelSkinTone
     const catalogOpacity = selected?.type === 'catalog' ? faceCatalogDetails[`${selected.summary.modelSlot}:${selected.summary.id}`]?.opacity ?? 1 : 1
     const chooseAt = (index: number) => {
       if (!selectedCharacter) return
@@ -1538,14 +1549,14 @@ export function CustomizerPage() {
             {selectedCustomizerTopTab === 'modelos' && <section className="customizer-model-skin-tones" aria-label="Cor de pele do modelo">
               <strong>Cor de pele</strong>
               <div className="customizer-model-skin-tone-row" role="group" aria-label="Escolher cor de pele">
-                <button className={'customizer-model-skin-tone' + (!selectedSkinTone ? ' selected' : '')} style={{ '--skin-tone': originalSkinTone ?? skinTonePresets[0].id } as React.CSSProperties} onClick={() => void saveCharacterCustomization({ modelSkinTone: undefined })} aria-label="Cor original do modelo" aria-pressed={!selectedSkinTone} title="Cor original do modelo" type="button" disabled={!selectedCharacter}><span />{!selectedSkinTone && <Icon name="check" />}</button>
+                <button className={'customizer-model-skin-tone' + (!selectedSkinTone ? ' selected' : '')} style={{ '--skin-tone': originalSkinTone ?? sourceModelSkinTone ?? skinTonePresets[0].id } as React.CSSProperties} onClick={() => void saveCharacterCustomization({ modelSkinTone: undefined })} aria-label="Cor base do modelo" aria-pressed={!selectedSkinTone} title="Cor base do modelo" type="button" disabled={!selectedCharacter}><span />{!selectedSkinTone && <Icon name="check" />}</button>
                 {customizerSkinTonePresets.map((preset) => {
                   const selected = selectedSkinTone === preset.id
                   return <button key={preset.id} className={'customizer-model-skin-tone' + (selected ? ' selected' : '')} style={{ '--skin-tone': preset.id } as React.CSSProperties} onClick={() => void saveCharacterCustomization({ modelSkinTone: preset.id })} aria-label={`Tom de pele ${preset.name}`} aria-pressed={selected} title={preset.name} type="button" disabled={!selectedCharacter}><span />{selected && <Icon name="check" />}</button>
                 })}
                 <label className={'customizer-model-skin-picker' + (selectedSkinTone && !customizerSkinTonePresets.some((preset) => preset.id === selectedSkinTone) ? ' selected' : '')} title="Escolher uma cor personalizada">
-                  <input type="color" aria-label="Escolher cor de pele personalizada" value={selectedSkinTone ?? originalSkinTone ?? skinTonePresets[0].id} onChange={(event) => void saveCharacterCustomization({ modelSkinTone: event.target.value })} disabled={!selectedCharacter} />
-                  <span className="customizer-model-skin-picker-swatch" style={{ '--skin-tone': selectedSkinTone ?? originalSkinTone ?? skinTonePresets[0].id } as React.CSSProperties}><Icon name="brush" /></span>
+                  <input type="color" aria-label="Escolher cor de pele personalizada" value={selectedSkinTone ?? originalSkinTone ?? sourceModelSkinTone ?? skinTonePresets[0].id} onChange={(event) => void saveCharacterCustomization({ modelSkinTone: event.target.value })} disabled={!selectedCharacter} />
+                  <span className="customizer-model-skin-picker-swatch" style={{ '--skin-tone': selectedSkinTone ?? originalSkinTone ?? sourceModelSkinTone ?? skinTonePresets[0].id } as React.CSSProperties}><Icon name="brush" /></span>
                 </label>
               </div>
             </section>}

@@ -2,9 +2,11 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react'
 import { resolvePoseCategory, type FabricatorPoseSummary, type FabricatorProject, type FabricatorSlotSummary } from '../../../../shared/fabricator'
 import type { CustomizerCharacter, CharacterBodyDimensions, CharacterProportions } from '../../../../shared/customizer'
+import { MODEL_SKIN_BASE_TONE, isValidSkinTone } from '../../../../shared/skinTones'
 import type { CatalogArtwork } from '../../characters/characterRenderer'
 import { renderCustomizerBasePreview } from './customizerCharacterPreview'
 import { loadCustomizerArtworkSource } from './customizerArtworkSource'
+import { sampleOriginalSkinTone } from './customizerPreviewImages'
 
 type PreviewExtent = { width: number; height: number; density: number }
 type Customization = CustomizerCharacter['customization']
@@ -60,12 +62,16 @@ export function useCustomizerCharacterSourceSelection(deps: {
       if (source.status === 'missing-model') throw new Error('O modelo de referência não está disponível no Fabricador Dev.')
       if (source.status === 'invalid-pose') throw new Error(firstPose ? 'Não foi possível abrir a pose inicial deste modelo.' : 'Não foi possível abrir este modelo.')
       const { sourceProject, artwork } = source
+      const sampledTone = isValidSkinTone(sourceProject.modelSkinTone)
+        ? sourceProject.modelSkinTone
+        : await sampleOriginalSkinTone(sourceProject)
       const artworkUrl = await renderCustomizerBasePreview(artwork, {
         proportions: activeProportions,
         bodyDimensions: activeBodyDimensions,
         extent: previewExtent,
         zoom: customizerPreviewZoom,
         skinTone: selectedCharacter?.customization.modelSkinTone
+          ?? (sampledTone === MODEL_SKIN_BASE_TONE ? sampledTone : undefined)
       })
       if (previewLoadRequest.current === requestId) { setSelectedArtworkProject(artwork); setSelectedSourceModelProject(sourceProject); setSelectedArtworkUrl(artworkUrl) }
     } catch (reason) {
@@ -93,12 +99,16 @@ export function useCustomizerCharacterSourceSelection(deps: {
       if (source.status === 'missing-model') throw new Error('O modelo de referência desta pose não está disponível.')
       if (source.status === 'invalid-pose') throw new Error('Não foi possível abrir esta pose.')
       const { sourceProject, artwork } = source
+      const sampledTone = isValidSkinTone(sourceProject.modelSkinTone)
+        ? sourceProject.modelSkinTone
+        : await sampleOriginalSkinTone(sourceProject)
       const artworkUrl = await renderCustomizerBasePreview(artwork, {
         proportions: activeProportions,
         bodyDimensions: activeBodyDimensions,
         extent: previewExtent,
         zoom: customizerPreviewZoom,
         skinTone: selectedCharacter?.customization.modelSkinTone
+          ?? (sampledTone === MODEL_SKIN_BASE_TONE ? sampledTone : undefined)
       })
       if (previewLoadRequest.current === requestId) { setSelectedArtworkProject(artwork); setSelectedSourceModelProject(sourceProject); setSelectedArtworkUrl(artworkUrl) }
     } catch (reason) {

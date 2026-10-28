@@ -7,6 +7,8 @@ import { composeModelSource, sourceRect, validateModelSourceChroma, validateMode
 import { cropModelSourcePart, eraseModelSourceBrush, removeModelSourceColor, sampleModelSourceColor, splitModelSourcePart, worldPointInsideCrop, worldPointToPart, type ModelSourceCrop, type ModelSourcePoint } from './models/modelSourceEditing'
 import { applyImageWarpBrush, type ImageWarpPoint } from './models/imageMeshWarp'
 import { createModelSourceWarpSession, drawModelSourceWarp, modelSourceWarpDataUrl, type ModelSourceWarpSession } from './models/modelSourceWarp'
+import { isModelSkinPart } from './models/modelSkinTone'
+import { MODEL_SKIN_BASE_TONE } from '../../../../shared/skinTones'
 
 type Props = {
   project: FabricatorProject
@@ -59,10 +61,6 @@ function orderAfterSplit(order: string[] | undefined, originalId: string, retain
 
 function isThighPart(part: ModelPart): boolean {
   return /coxa|thigh/i.test(part.name)
-}
-
-function isBodyPart(part: ModelPart): boolean {
-  return /cabe[çc]a|head|tronco|corpo|torso|body|bra[cç]o|arm|antebra[cç]o|forearm|coxa|thigh|perna|canela|panturrilha|leg|calf|shin|(?:^|[\s_-])p[eé]s?(?:$|[\s_-])|foot|feet|m[aã]os?|hands?/i.test(part.name)
 }
 
 export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
@@ -627,7 +625,7 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
   const removeOriginalSkinColor = () => {
     if (!skinColor || busy || downloading) return
     void runMutation(async materialized => {
-      const bodyParts = materialized.parts.filter(isBodyPart)
+      const bodyParts = materialized.parts.filter(isModelSkinPart)
       if (!bodyParts.length) throw new Error('Não encontrei peças anatômicas pelo nome para remover a cor da pele.')
       const replacements = new Map<string, ModelPart>()
       let removedPixels = 0
@@ -641,7 +639,11 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
         return null
       }
       return {
-        project: { ...materialized, parts: materialized.parts.map(part => replacements.get(part.id) ?? part) },
+        project: {
+          ...materialized,
+          modelSkinTone: materialized.modelSkinTone ?? MODEL_SKIN_BASE_TONE,
+          parts: materialized.parts.map(part => replacements.get(part.id) ?? part)
+        },
         selectedId,
         status: `${removedPixels.toLocaleString('pt-BR')} pixels da pele removidos nas peças do corpo; os contornos escuros foram preservados. A edição pode ser desfeita.`
       }

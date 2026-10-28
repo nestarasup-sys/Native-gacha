@@ -9,6 +9,7 @@ export type ModelSourceResult = {
   previewDataUrl: string
   parts: ModelPart[]
   tolerance: number
+  modelSkinTone?: FabricatorProject['modelSkinTone']
   joints: FabricatorProject['joints']
   layerOrder?: FabricatorProject['layerOrder']
   hiddenPartIds?: FabricatorProject['hiddenPartIds']
@@ -162,6 +163,7 @@ export async function composeModelSource(
     previewDataUrl: preview.toDataURL('image/png'),
     parts: adjusted,
     tolerance,
+    modelSkinTone: project.modelSkinTone,
     joints: project.joints,
     layerOrder: project.layerOrder,
     hiddenPartIds: project.hiddenPartIds

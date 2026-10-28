@@ -1,5 +1,7 @@
 import type { FabricatorProject } from '../../../../shared/fabricator'
+import { MODEL_SKIN_BASE_TONE, isValidSkinTone } from '../../../../shared/skinTones'
 import { loadCachedImage } from '../../characters/characterRenderer'
+import { fillEnclosedTransparentSkin } from '../../characters/skinTint'
 
 /** Decode a replacement before swapping the visible preview image, avoiding a blank frame. */
 export function preparePreviewImage(source: string | null): Promise<boolean> {
@@ -18,6 +20,7 @@ export function preparePreviewImage(source: string | null): Promise<boolean> {
 }
 
 export async function sampleOriginalSkinTone(project: FabricatorProject): Promise<string | null> {
+  if (isValidSkinTone(project.modelSkinTone)) return project.modelSkinTone
   const head = project.parts.find((part) => /cabe[çc]a|head/i.test(part.name))
   if (!head) return null
   const image = await loadCachedImage(head.dataUrl)
@@ -43,7 +46,9 @@ export async function sampleOriginalSkinTone(project: FabricatorProject): Promis
     colors.set(key, entry)
   }
   const dominant = [...colors.values()].sort((a, b) => b.count - a.count)[0]
-  if (!dominant) return null
+  if (!dominant) return fillEnclosedTransparentSkin(context.getImageData(0, 0, canvas.width, canvas.height)) > 0
+    ? MODEL_SKIN_BASE_TONE
+    : null
   return '#' + [dominant.red, dominant.green, dominant.blue]
     .map((value) => Math.round(value / dominant.count).toString(16).padStart(2, '0')).join('')
 }
