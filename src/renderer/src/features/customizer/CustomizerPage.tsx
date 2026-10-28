@@ -24,6 +24,7 @@ import { useCustomizerWardrobePanelActions } from './useCustomizerWardrobePanelA
 import { useCustomizerHeadAdjustment } from './useCustomizerHeadAdjustment'
 import { useCustomizerAdjustmentPreview } from './useCustomizerAdjustmentPreview'
 import { useCustomizerHeadNavigation } from './useCustomizerHeadNavigation'
+import { useCustomizerWardrobeNavigation } from './useCustomizerWardrobeNavigation'
 import { sampleOriginalSkinTone } from './customizerPreviewImages'
 import { CustomizerCategoryIcon, clothesAdjustmentDefinitions, customizerClothesTabs, customizerHeadTabs, customizerModuleByTab, customizerModuleNames, customizerOtherTabs, customizerTopTabs, headAdjustmentItemsFor } from './customizerNavigation'
 import { hairAppearancePartStyleId } from './customizerHairAppearanceModel'
@@ -91,11 +92,7 @@ export function CustomizerPage() {
     selectedPosePage, setSelectedPosePage, modelThumbnails, setModelThumbnails,
     poseThumbnails, setPoseThumbnails
   } = useCustomizerModelBrowserState()
-  const [clothingSection, setClothingSection] = useState<'Customizar' | 'Superior' | 'Inferior'>('Superior')
-  const [clothesPanelTab, setClothesPanelTab] = useState<(typeof customizerClothesTabs)[number]['id']>('upper')
-  const [clothesCategorySelection, setClothesCategorySelection] = useState<Exclude<(typeof customizerClothesTabs)[number]['id'], 'adjust'>>('upper')
-  const [upperWardrobePage, setUpperWardrobePage] = useState<1 | 2>(1)
-  const [lowerWardrobePage, setLowerWardrobePage] = useState<1 | 2>(1)
+  const { clothingSection, clothesPanelTab, clothesCategorySelection, upperWardrobePage, lowerWardrobePage, selectClothesTab } = useCustomizerWardrobeNavigation()
   const [otherPanelTab, setOtherPanelTab] = useState<(typeof customizerOtherTabs)[number]['id']>('extra')
   const {
     wardrobeSets, setWardrobeSets, wardrobeLoading, setWardrobeLoading,
@@ -1632,18 +1629,7 @@ export function CustomizerPage() {
               {customizerHeadTabs.map((tab) => <button key={tab.id} className={headPanelTab === tab.id || headPanelTab === 'adjust' && headCategorySelection === tab.id ? 'active' : ''} onClick={() => selectHeadTab(tab.id)} aria-selected={headPanelTab === tab.id} role="tab" type="button"><Icon name={tab.icon} /><span>{tab.label}</span></button>)}
             </nav>}
             {selectedCustomizerTopTab === 'roupas' && <nav className="customizer-clothes-category-tabs" aria-label="Categorias de roupas" role="tablist">
-              {customizerClothesTabs.map((tab) => <button key={tab.id} className={clothesPanelTab === tab.id || clothesPanelTab === 'adjust' && clothesCategorySelection === tab.id ? 'active' : ''} onClick={() => {
-                if (tab.id === clothesPanelTab && (tab.id === 'upper' || tab.id === 'lower')) {
-                  if (tab.id === 'upper') setUpperWardrobePage((page) => page === 1 ? 2 : 1)
-                  else setLowerWardrobePage((page) => page === 1 ? 2 : 1)
-                  setWardrobeLibraryPanel(null)
-                }
-                const nextTab = tab.id === 'adjust' && clothesPanelTab === 'adjust' ? clothesCategorySelection : tab.id
-                setClothesPanelTab(nextTab)
-                if (nextTab !== 'adjust') setClothesCategorySelection(nextTab)
-                if (nextTab === 'upper') setClothingSection('Superior')
-                else if (nextTab === 'lower') setClothingSection('Inferior')
-              }} aria-selected={clothesPanelTab === tab.id} role="tab" type="button"><Icon name={tab.icon} />{tab.id === 'upper' || tab.id === 'lower' ? <span className="customizer-upper-tab-label"><span>{tab.label}</span><small>{tab.id === 'upper' ? upperWardrobePage : lowerWardrobePage}/2</small></span> : <span>{tab.label}</span>}</button>)}
+              {customizerClothesTabs.map((tab) => <button key={tab.id} className={clothesPanelTab === tab.id || clothesPanelTab === 'adjust' && clothesCategorySelection === tab.id ? 'active' : ''} onClick={() => selectClothesTab(tab.id, () => setWardrobeLibraryPanel(null))} aria-selected={clothesPanelTab === tab.id} role="tab" type="button"><Icon name={tab.icon} />{tab.id === 'upper' || tab.id === 'lower' ? <span className="customizer-upper-tab-label"><span>{tab.label}</span><small>{tab.id === 'upper' ? upperWardrobePage : lowerWardrobePage}/2</small></span> : <span>{tab.label}</span>}</button>)}
             </nav>}
             {selectedCustomizerTopTab === 'outros' && <nav className="customizer-other-category-tabs" aria-label="Categorias de outros itens" role="tablist">
               {customizerOtherTabs.map((tab) => <button key={tab.id} className={otherPanelTab === tab.id ? 'active' : ''} onClick={() => setOtherPanelTab(tab.id)} aria-selected={otherPanelTab === tab.id} role="tab" type="button"><Icon name={tab.icon} /><span>{tab.label}</span></button>)}
