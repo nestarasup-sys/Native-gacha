@@ -1,4 +1,4 @@
-import type { FaceComponentAssetSummary, FaceElementKind, FaceSet, FabricatorProject, HairStyle } from '../../../shared/fabricator'
+import type { FaceSet, FabricatorProject, HairStyle } from '../../../shared/fabricator'
 import type { CharacterRenderAssetProvider } from '../../../shared/characterRenderAssets'
 import type { CustomizerCharacter, CustomizerFaceAppearance, HairColorOverrides, HairPartId } from '../../../shared/customizer'
 import { hairCategories } from '../../../shared/hairCategories'
@@ -6,13 +6,9 @@ import type { CatalogArtwork } from './characterSourceResolver'
 import { configureCharacterSampling, MAX_CHARACTER_PREVIEW_PIXELS } from './renderResolution'
 import { createCharacterCanvas } from './canvasSurface'
 import { drawPreviewImageWithHalo } from './characterCanvasDrawing'
+import { faceElementOrder } from './characterFaceCatalogSupport'
 
 export type HairCatalogSide = 'front' | 'back'
-export const faceElementOrder: FaceElementKind[] = ['brow-left', 'brow-right', 'eye-left', 'eye-right', 'nose', 'mouth']
-
-export function isRightFaceAsset(asset: FaceComponentAssetSummary): boolean {
-  return asset.rightSidePositioned === true || / · (?:Olho|Olho aberto|Olho fechado|Pupila|Sobrancelha) direit[oa]$/i.test(asset.name)
-}
 
 export type CharacterLayerImageLoaders = {
   loadCachedImage: (source: string | CanvasImageSource) => Promise<HTMLImageElement>

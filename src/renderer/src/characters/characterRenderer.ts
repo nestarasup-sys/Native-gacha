@@ -11,7 +11,8 @@ import { getCharacterProportions } from '../../../shared/customizer'
 import { prepareGachaStaticLayers } from './gachaStaticLayers'
 import { loadCachedImage } from './characterImageMemos'
 import { createCharacterImageTint } from './characterImageTint'
-import { createCharacterLayerRenderer, faceElementOrder, isRightFaceAsset as resolveIsRightFaceAsset } from './characterLayerRenderer'
+import { createCharacterLayerRenderer } from './characterLayerRenderer'
+import { alignMouthTransformToClosedBase, createClosedEyeAssetResolver, faceElementOrder, isRightFaceAsset as resolveIsRightFaceAsset, transferEyeCloseAdjustment, type ClosedEyeAssetResolver } from './characterFaceCatalogSupport'
 import { createCharacterCanvas, isCharacterCanvasWorker } from './canvasSurface'
 import { createCharacterWardrobeRenderer } from './characterWardrobeRenderer'
 import { drawPreviewImageWithHalo } from './characterCanvasDrawing'
@@ -71,49 +72,7 @@ export const wardrobeComponentsForGroup = characterWardrobeRenderer.wardrobeComp
 export const renderWardrobeOverlayCanvases = characterWardrobeRenderer.renderWardrobeOverlayCanvases
 export const renderWardrobeOverlay = characterWardrobeRenderer.renderWardrobeOverlay
 
-function componentSheetName(name: string): string {
-  return name.replace(/(?:\s*[·-]\s*(?:Olho(?:\s+(?:aberto|fechado))?|Pupila|Sobrancelha)(?:\s+(?:esquerda|direita|esquerdo|direito))?)+$/i, '').trim().toLocaleLowerCase()
-}
-
-function closedEyeSimilarity(openEye: FaceComponentAsset, closedEye: FaceComponentAsset): number {
-  const open = openEye.defaultTransform
-  const closed = closedEye.defaultTransform
-  const renderedOpenWidth = openEye.width * open.scaleX
-  const renderedOpenHeight = openEye.height * open.scaleY
-  const renderedClosedWidth = closedEye.width * closed.scaleX
-  const renderedClosedHeight = closedEye.height * closed.scaleY
-  return Math.hypot(closed.x - open.x, closed.y - open.y)
-    + Math.abs(Math.log(renderedClosedWidth / renderedOpenWidth)) * 15
-    + Math.abs(Math.log(renderedClosedHeight / renderedOpenHeight)) * 15
-    + Math.abs(closed.rotation - open.rotation) / 10
-}
-
-function transferEyeCloseAdjustment(openBase: FaceComponentAsset['defaultTransform'], openCurrent: FaceComponentAsset['defaultTransform'], closedBase: FaceComponentAsset['defaultTransform']): FaceComponentAsset['defaultTransform'] {
-  return {
-    ...closedBase,
-    x: closedBase.x + openCurrent.x - openBase.x,
-    y: closedBase.y + openCurrent.y - openBase.y,
-    scaleX: closedBase.scaleX * openCurrent.scaleX / openBase.scaleX,
-    scaleY: closedBase.scaleY * openCurrent.scaleY / openBase.scaleY,
-    rotation: closedBase.rotation + openCurrent.rotation - openBase.rotation,
-    flipX: Boolean(closedBase.flipX) !== (Boolean(openCurrent.flipX) !== Boolean(openBase.flipX))
-  }
-}
-
-function alignMouthTransformToClosedBase(transform: FaceComponentAsset['defaultTransform'], closedItem: FaceCatalogItem | undefined, activeItem: FaceCatalogItem): FaceComponentAsset['defaultTransform'] {
-  const closedBase = closedItem?.transforms.mouth
-  const activeBase = activeItem.transforms.mouth
-  if (!closedBase || !activeBase || closedBase.scaleX <= 0 || closedBase.scaleY <= 0) return transform
-  return {
-    ...transform,
-    scaleX: transform.scaleX * activeBase.scaleX / closedBase.scaleX,
-    scaleY: transform.scaleY * activeBase.scaleY / closedBase.scaleY
-  }
-}
-
-type StudioClosedEyeResolver = (openEye: FaceComponentAsset, side: 'left' | 'right') => Promise<FaceComponentAsset | null>
-
-export async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, artwork: CatalogArtwork, source: FabricatorProject, items: Partial<Record<FaceSheetKind | FaceElementKind, FaceCatalogItem>>, appearance: CustomizerFaceAppearance, skinTone?: string, studioFaceTransforms?: StudioFaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: StudioFaceMode, resolveClosedEye?: StudioClosedEyeResolver, headOverrides: CustomizerCharacter['customization']['partOverrides'] = {}, highlightedHeadId?: string | null, assetProvider: CharacterRenderAssetProvider = window.desktop): Promise<void> {
+export async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, artwork: CatalogArtwork, source: FabricatorProject, items: Partial<Record<FaceSheetKind | FaceElementKind, FaceCatalogItem>>, appearance: CustomizerFaceAppearance, skinTone?: string, studioFaceTransforms?: StudioFaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: StudioFaceMode, resolveClosedEye?: ClosedEyeAssetResolver, headOverrides: CustomizerCharacter['customization']['partOverrides'] = {}, highlightedHeadId?: string | null, assetProvider: CharacterRenderAssetProvider = window.desktop): Promise<void> {
   const sourceHead = source.parts.find((part) => /cabe[çc]a|head/i.test(part.name))
   const targetHead = artwork.parts.find((part) => /cabe[çc]a|head/i.test(part.name))
   if (!sourceHead || !targetHead || sourceHead.width <= 0 || sourceHead.height <= 0) return
@@ -489,22 +448,7 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
   let faceItems: Partial<Record<FaceSheetKind | FaceElementKind, FaceCatalogItem>> = {}
   const faceItemPromises = new Map<string, Promise<FaceCatalogItem | null>>()
   let faceCatalogSummariesPromise: Promise<FaceCatalogItemSummary[]> | null = null
-  let closedEyeAssetsPromise: Promise<FaceComponentAsset[]> | null = null
-  const resolveClosedEye: StudioClosedEyeResolver = async (openEye, side) => {
-    if (!closedEyeAssetsPromise) {
-      closedEyeAssetsPromise = assetProvider.listFaceComponentAssets(modelSlot, 'eye-closed').then(async (summaries) => {
-        const details = await Promise.all(summaries.map((summary) => assetProvider.loadFaceComponentAsset(modelSlot, summary.id)))
-        return details.filter((asset): asset is FaceComponentAsset => Boolean(asset?.kind === 'eye-closed'))
-      })
-    }
-    const candidates = (await closedEyeAssetsPromise).filter((asset) => isRightFaceAsset(asset) === (side === 'right'))
-    const openBaseName = componentSheetName(openEye.name)
-    const paired = candidates.filter((asset) => Boolean(openEye.pairId && openEye.pairId === asset.pairId))
-    if (paired.length) return paired.sort((left, right) => closedEyeSimilarity(openEye, left) - closedEyeSimilarity(openEye, right))[0]
-    const sameSheet = candidates.filter((asset) => componentSheetName(asset.name) === openBaseName)
-    if (sameSheet.length) return sameSheet.sort((left, right) => closedEyeSimilarity(openEye, left) - closedEyeSimilarity(openEye, right))[0]
-    return candidates.length === 1 ? candidates[0] : null
-  }
+  const resolveClosedEye = createClosedEyeAssetResolver(modelSlot, assetProvider)
   let legacyFaceUrl: string | null = null
   if (appearance?.modelSlot === modelSlot) {
     const hasCatalogFaceSelection = Boolean(appearance.eyeCatalogId || appearance.eyeLeftCatalogId || appearance.eyeRightCatalogId || appearance.eyebrowCatalogId || appearance.eyebrowLeftCatalogId || appearance.eyebrowRightCatalogId || appearance.noseCatalogId || appearance.mouthClosedCatalogId || appearance.mouthOpenCatalogId || Object.values(appearance.components ?? {}).some((component) => component?.assetId))
