@@ -37,3 +37,11 @@ export function isRoteiroDocument(value: unknown): value is RoteiroDocument {
       && isVideo(item.video) && isContent({ video: item.video ?? null, blocks: item.blocks ?? [], description: item.description, timeline: item.timeline, sceneEndSeconds: item.sceneEndSeconds, firstGroupReactionSeconds: item.firstGroupReactionSeconds, secondGroupReactionSeconds: item.secondGroupReactionSeconds, additionalContext: item.additionalContext }, roteiro.characterIds ?? [])))
 }
 
+/** Valida o lote atômico completo e protege IDs duplicados entre documentos. */
+export function isRoteiroDocumentList(value: unknown): value is RoteiroDocument[] {
+  return Array.isArray(value) && value.length <= 2000 && value.every(isRoteiroDocument)
+    && new Set(value.map((roteiro) => roteiro.id)).size === value.length
+    && new Set(value.flatMap((roteiro) => roteiro.tiktoks.map((tiktok) => tiktok.id))).size
+      === value.reduce((total, roteiro) => total + roteiro.tiktoks.length, 0)
+}
+
