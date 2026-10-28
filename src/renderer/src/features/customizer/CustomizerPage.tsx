@@ -16,6 +16,7 @@ import { customizerFaceParts, customizerFaceCatalogLayoutParts, customizerSkinTo
 import type { FaceCatalogChoice, FaceCatalogLayoutPart, FaceLibraryPartId } from './customizerFaceCatalogModel'
 import { hairColorControls, hairPalettePresets, MouthBlushControls, NoseOpacityControl, NoseSkinTonePalette, PiecePaletteStrip } from './CustomizerAppearanceControls'
 import { renderCustomizerBasePreview } from './customizerCharacterPreview'
+import { prepareCustomizerArtworkPreview } from './customizerArtworkPreview'
 import { useCustomizerFacePreview } from './useCustomizerFacePreview'
 import { useCustomizerHairPreview } from './useCustomizerHairPreview'
 import { useCustomizerWardrobePreview } from './useCustomizerWardrobePreview'
@@ -299,29 +300,32 @@ export function CustomizerPage() {
     setPreviewLoading(true)
     void (async () => {
       try {
-        const source = await loadCustomizerArtworkSource(model.slot, pose?.slot ?? null, {
-          loadModel: window.desktop.loadFabricatorSlot,
-          loadPose: window.desktop.loadFabricatorPose
-        })
-        if (source.status === 'missing-model') throw new Error('O modelo de referência não está disponível no Fabricador Dev.')
-        if (source.status === 'invalid-pose') throw new Error('Não foi possível carregar a prévia deste personagem.')
-        const { sourceProject, artwork } = source
-        if (!cancelled && previewLoadRequest.current === requestId) { setSelectedArtworkProject(artwork); setSelectedSourceModelProject(sourceProject) }
-        const sampledBaseTone = isValidSkinTone(sourceProject.modelSkinTone)
-          ? sourceProject.modelSkinTone
-          : await sampleOriginalSkinTone(sourceProject)
-        const artworkUrl = await renderCustomizerBasePreview(artwork, {
+        const source = await prepareCustomizerArtworkPreview({
+          modelSlot: model.slot,
+          poseSlot: pose?.slot ?? null,
+          appearance: selectedCharacter.customization,
           proportions: activeProportions,
           bodyDimensions: activeBodyDimensions,
           extent: previewExtent,
           zoom: customizerPreviewZoom,
-          skinTone: selectedCharacter.customization.modelSkinTone
-            ?? (sampledBaseTone === MODEL_SKIN_BASE_TONE ? sampledBaseTone : undefined),
-          outlineColor: isValidSkinTone(selectedCharacter.customization.modelOutlineColor)
-            ? selectedCharacter.customization.modelOutlineColor
-            : sourceProject.modelOutlineColor
+          onSourceResolved: ({ sourceProject, artwork }) => {
+            if (!cancelled && previewLoadRequest.current === requestId) {
+              setSelectedArtworkProject(artwork)
+              setSelectedSourceModelProject(sourceProject)
+            }
+          }
+        }, {
+          loadSource: (slot, selectedPose, cachedModel) => loadCustomizerArtworkSource(slot, selectedPose, {
+            loadModel: window.desktop.loadFabricatorSlot,
+            loadPose: window.desktop.loadFabricatorPose
+          }, cachedModel),
+          sampleOriginalSkinTone,
+          renderBasePreview: renderCustomizerBasePreview
         })
-        if (!cancelled && previewLoadRequest.current === requestId) setSelectedArtworkUrl(artworkUrl)
+        if (source.status === 'missing-model') throw new Error('O modelo de referência não está disponível no Fabricador Dev.')
+        if (source.status === 'invalid-pose') throw new Error('Não foi possível carregar a prévia deste personagem.')
+        const { previewUrl } = source
+        if (!cancelled && previewLoadRequest.current === requestId) setSelectedArtworkUrl(previewUrl)
       } catch (reason) {
         if (!cancelled && previewLoadRequest.current === requestId) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível carregar a prévia.')
       } finally {

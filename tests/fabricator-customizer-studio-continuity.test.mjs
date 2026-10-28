@@ -3,6 +3,8 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { selectCharacterArtwork, auditCharacterContinuity, isPoseSnapshotForModel } from '../src/shared/characterSourceContinuity.ts'
 import { selectOriginalModelSource, selectMountedModelSource } from '../src/shared/fabricatorModelViews.ts'
+import { MODEL_SKIN_BASE_TONE } from '../src/shared/skinTones.ts'
+import { prepareCustomizerArtworkPreview } from '../src/renderer/src/features/customizer/customizerArtworkPreview.ts'
 
 const pic = 'data:image/png;base64,U05BUFNIT1Q='
 function model() {
@@ -71,8 +73,67 @@ test('auditoria mostra anexos órfãos sem apagar roupas ou snapshot antigo',()=
  assert.deepEqual(p,original)
 })
 test('Customizador e Studio usam a barreira de continuidade compartilhada',async()=>{
- const artworkSource=await readFile('src/renderer/src/features/customizer/customizerArtworkSource.ts','utf8')
- const studio=await readFile('src/renderer/src/features/studio/StudioPage.tsx','utf8')
+ const [artworkSource,studio,page,selection]=await Promise.all([
+  readFile('src/renderer/src/features/customizer/customizerArtworkSource.ts','utf8'),
+  readFile('src/renderer/src/features/studio/StudioPage.tsx','utf8'),
+  readFile('src/renderer/src/features/customizer/CustomizerPage.tsx','utf8'),
+  readFile('src/renderer/src/features/customizer/useCustomizerCharacterSourceSelection.ts','utf8')
+ ])
  assert.match(artworkSource,/selectCharacterArtwork\(sourceProject, pose, poseSlot\)/)
  assert.match(studio,/isPoseSnapshotForModel\(artwork, pose.sourceModelSlot, pose.slot\)/)
+ assert.match(page,/prepareCustomizerArtworkPreview\(/)
+ assert.match(selection,/prepareCustomizerArtworkPreview\(/)
+})
+test('preview unificado preserva identidade do modelo/pose, cores da personagem e cache do modelo',async()=>{
+ const loadedSource={status:'ready',sourceProject:{slot:5,modelSkinTone:'#dba47d',modelOutlineColor:'#352522'},artwork:{width:200,height:300}}
+ const cachedModel={slot:5,name:'Modelo em cache'}
+ const proportions={scale:1.2,head:1,headWidth:1,headHeight:1,width:1,height:1}
+ const bodyDimensions={}
+ const extent={width:500,height:600,density:2}
+ let loadedArgs
+ let renderArgs
+ let resolvedSource
+ let sampled=0
+ const result=await prepareCustomizerArtworkPreview({
+  modelSlot:5,poseSlot:3,cachedModel,appearance:{modelSkinTone:'#c88961',modelOutlineColor:'#123456'},
+  proportions,bodyDimensions,extent,zoom:1.5,onSourceResolved:source=>{resolvedSource=source}
+ },{
+  loadSource:async(...args)=>{loadedArgs=args;return loadedSource},
+  sampleOriginalSkinTone:async()=>{sampled++;return '#ffccaa'},
+  renderBasePreview:async(artwork,options)=>{renderArgs={artwork,options};return 'preview:data'}
+ })
+ assert.deepEqual(loadedArgs,[5,3,cachedModel])
+ assert.equal(resolvedSource,loadedSource,'expõe modelo e arte antes de concluir o render do preview')
+ assert.equal(sampled,0,'usa a cor base já salva no modelo sem recapturar o PNG')
+ assert.equal(renderArgs.artwork,loadedSource.artwork)
+ assert.equal(renderArgs.options.skinTone,'#c88961')
+ assert.equal(renderArgs.options.outlineColor,'#123456')
+ assert.equal(renderArgs.options.proportions,proportions)
+ assert.equal(renderArgs.options.bodyDimensions,bodyDimensions)
+ assert.equal(result.previewUrl,'preview:data')
+})
+test('preview unificado usa a pele base fixa e o contorno-fonte quando a personagem não tem cor própria',async()=>{
+ const sourceProject={slot:2,modelSkinTone:undefined,modelOutlineColor:'#352522'}
+ let options
+ const result=await prepareCustomizerArtworkPreview({
+  modelSlot:2,poseSlot:null,appearance:{modelOutlineColor:'inválida'},
+  proportions:{},bodyDimensions:{},extent:{width:300,height:400,density:1},zoom:1
+ },{
+  loadSource:async()=>({status:'ready',sourceProject,artwork:{width:100,height:200}}),
+  sampleOriginalSkinTone:async()=>MODEL_SKIN_BASE_TONE,
+  renderBasePreview:async(_artwork,previewOptions)=>{options=previewOptions;return 'preview:data'}
+ })
+ assert.equal(options.skinTone,MODEL_SKIN_BASE_TONE)
+ assert.equal(options.outlineColor,'#352522')
+ assert.equal(result.status,'ready')
+})
+test('preview unificado não tenta renderizar uma pose inválida',async()=>{
+ const result=await prepareCustomizerArtworkPreview({
+  modelSlot:8,poseSlot:4,proportions:{},bodyDimensions:{},extent:{width:300,height:400,density:1},zoom:1
+ },{
+  loadSource:async()=>({status:'invalid-pose'}),
+  sampleOriginalSkinTone:async()=>{throw new Error('não deve ler pele sem fonte válida')},
+  renderBasePreview:async()=>{throw new Error('não deve renderizar pose inválida')}
+ })
+ assert.deepEqual(result,{status:'invalid-pose'})
 })
