@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FabricatorAssetSave, FabricatorHistoryAction, FabricatorHistoryState, FabricatorProject, FabricatorSlotSummary, ModelPart } from '../../../../shared/fabricator'
 import { Icon, type IconName } from '../../ui/components/Icon'
-import { usePreviewBackground } from './usePreviewBackground'
+import { usePreviewBackground } from '../../ui/hooks/usePreviewBackground'
 import { modelRigSegmentKind, normalizeLayerOrder, orderedParts, partJointAnchor, reorderLayer, sourcePointFromCanvas } from './models/rig'
 import { connectFabricatorParts, isTorsoPart, moveFabricatorPartBranch, rotateFabricatorPartBranch, toggleFabricatorJointFixed } from './models/rigEditing'
 import { headSizePercent, isHeadPart, resizeHeadPart } from './models/resize'

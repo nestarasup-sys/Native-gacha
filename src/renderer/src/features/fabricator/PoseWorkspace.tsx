@@ -3,7 +3,7 @@ import type { FabricatorPose, FabricatorPoseDraft, FabricatorPoseDraftSave, Fabr
 import { resolvePoseCategory } from '../../../../shared/fabricator'
 import { defaultExportPoseSlots, poseFromModel } from './models/poseProjection'
 import { Icon } from '../../ui/components/Icon'
-import { usePreviewBackground } from './usePreviewBackground'
+import { usePreviewBackground } from '../../ui/hooks/usePreviewBackground'
 import { isModelRigConnectionCompatible, normalizeLayerOrder, orderedParts, partJointAnchor, repairIncompatibleModelRigJoints } from './models/rig'
 import { rotatePointAroundOrigin } from './models/geometry'
 import { useModelAppearanceTarget, useModelPartAppearancePreview } from './ModelAppearanceContext'

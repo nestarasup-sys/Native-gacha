@@ -8,7 +8,7 @@ import { defaultCharacterBodyDimensions, type CustomizerCharacter, type Customiz
 import { Icon } from '../../ui/components/Icon'
 import { normalizeLayerOrder, orderedParts, partJointAnchor } from './models/rig'
 import { rotatePointAroundOrigin } from './models/geometry'
-import { usePreviewBackground } from './usePreviewBackground'
+import { usePreviewBackground } from '../../ui/hooks/usePreviewBackground'
 import { mapWardrobeComponentToPose } from './wardrobe/poseTransform'
 import { applyCharacterBodyShape } from '../../../../shared/bodyShape'
 import { isModelBodyPartName, tintModelBodyPixels } from '../../characters/skinTint'

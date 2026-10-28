@@ -7,7 +7,7 @@ import { hairCategories, type HairAssetSide } from '../../../../shared/hairCateg
 import { emptyHairTransform, normalizeHairTransforms } from '../../../../shared/hairPersistence'
 import { HairPiecePreview as HairPiece } from './HairPiecePreview'
 import { Icon } from '../../ui/components/Icon'
-import { usePreviewBackground } from './usePreviewBackground'
+import { usePreviewBackground } from '../../ui/hooks/usePreviewBackground'
 import { normalizeEditableImageFile } from './normalizeImage'
 import { useModelAppearanceTarget, useModelPartAppearancePreview } from './ModelAppearanceContext'
 

@@ -4,7 +4,7 @@ import { pupilDeltaFromDrag, pupilSourceMirrored } from '../../../../../shared/f
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
 import type { FaceAssetKind, FaceCatalogItem, FaceCatalogItemSave, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSave, FaceComponentAssetSummary, FaceComponentKind, FaceDetailKind, FaceGuideProfile, FaceGuideSettings, FaceTransform, FabricatorProject, FabricatorSlotSummary, ModelPart } from '../../../../../shared/fabricator'
 import { Icon } from '../../../ui/components/Icon'
-import { usePreviewBackground } from '../usePreviewBackground'
+import { usePreviewBackground } from '../../../ui/hooks/usePreviewBackground'
 import { processFaceSheet } from './processFaceSheet'
 import { splitEyeSheet } from './splitEyeSheet'
 import { defaultFaceGuide, useFaceGuides } from './useFaceGuides'
