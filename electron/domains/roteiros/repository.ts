@@ -41,6 +41,19 @@ export class RoteirosRepository {
     return new Set(rows.flatMap((row) => typeof row.video_id === 'string' ? [row.video_id] : []))
   }
 
+  listLibraryAssetReferenceIds(): { backgroundIds: Set<string>; uiGifIds: Set<string> } {
+    const rows = this.db.prepare('SELECT DISTINCT background_asset_id, ui_gif_asset_id FROM roteiros').all() as Array<{ background_asset_id: unknown; ui_gif_asset_id: unknown }>
+    return {
+      backgroundIds: new Set(rows.flatMap((row) => typeof row.background_asset_id === 'string' ? [row.background_asset_id] : [])),
+      uiGifIds: new Set(rows.flatMap((row) => typeof row.ui_gif_asset_id === 'string' ? [row.ui_gif_asset_id] : []))
+    }
+  }
+
+  findLibraryAssetReference(kind: 'background' | 'uiGif', assetId: string): { id: string; title: string } | undefined {
+    const column = kind === 'background' ? 'background_asset_id' : 'ui_gif_asset_id'
+    return this.db.prepare(`SELECT id, title FROM roteiros WHERE ${column}=? LIMIT 1`).get(assetId) as { id: string; title: string } | undefined
+  }
+
   save(documents: RoteiroDocument[]): void {
     const now = new Date().toISOString()
     const save = this.db.transaction((items: RoteiroDocument[]) => {

@@ -1,6 +1,7 @@
 /** Coordena leitura e gravação dos documentos sem depender do processo Electron. */
 import type { Database } from 'better-sqlite3'
 import type { RoteiroDocument } from '../../../src/shared/roteiros'
+import { collectRoteirosBackgroundReferenceIds, collectRoteirosUiGifReferenceIds } from './assetReferences.ts'
 import { collectRoteirosVideoReferenceIds } from './videoReferences.ts'
 import { RoteirosRepository } from './repository.ts'
 import { isRoteiroDocumentList } from './validation.ts'
@@ -11,6 +12,8 @@ export type RoteirosDocumentServiceDependencies = {
   enqueueWrite: <T>(operation: () => Promise<T> | T) => Promise<T>
   coordinateVideoReferenceChange: <T>(operation: () => Promise<T> | T) => Promise<T>
   assertLibraryVideoReferencesAvailable: (videoIds: readonly string[]) => Promise<void>
+  assertLibraryBackgroundReferencesAvailable: (assetIds: readonly string[]) => Promise<void>
+  assertLibraryUiGifReferencesAvailable: (assetIds: readonly string[]) => Promise<void>
 }
 
 export function createRoteirosDocumentService(deps: RoteirosDocumentServiceDependencies) {
@@ -32,7 +35,12 @@ export function createRoteirosDocumentService(deps: RoteirosDocumentServiceDepen
         const data = repository()
         const existingVideoIds = data.listVideoReferenceIds()
         const addedVideoIds = [...collectRoteirosVideoReferenceIds(documents)].filter((id) => !existingVideoIds.has(id))
+        const existingAssets = data.listLibraryAssetReferenceIds()
+        const addedBackgroundIds = [...collectRoteirosBackgroundReferenceIds(documents)].filter((id) => !existingAssets.backgroundIds.has(id))
+        const addedUiGifIds = [...collectRoteirosUiGifReferenceIds(documents)].filter((id) => !existingAssets.uiGifIds.has(id))
         await deps.assertLibraryVideoReferencesAvailable(addedVideoIds)
+        await deps.assertLibraryBackgroundReferencesAvailable(addedBackgroundIds)
+        await deps.assertLibraryUiGifReferencesAvailable(addedUiGifIds)
         data.save(documents)
       }))
     }

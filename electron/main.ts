@@ -74,10 +74,26 @@ import { createRoteirosDocumentService } from './domains/roteiros/service'
 import { registerRoteirosDocumentHandlers } from './domains/roteiros/documentIpc'
 import { createRoteiroExportLogsService } from './domains/roteiros/exportLogsService'
 import { registerRoteiroExportLogsHandlers } from './domains/roteiros/exportLogsIpc'
+import { createRoteiroBackgroundReferenceGuard, createRoteiroUiGifReferenceGuard } from './domains/roteiros/assetReferences'
+import { createRoteiroUiGifsService } from './domains/roteiros/uiGifsService'
+import { registerRoteiroUiGifsHandlers } from './domains/roteiros/uiGifsIpc'
+import { createBackgroundLibraryService } from './domains/mediaLibrary/backgroundLibraryService'
+import { registerBackgroundLibraryHandlers } from './domains/mediaLibrary/backgroundLibraryIpc'
 import { createEditorV6VideoReferenceLookup } from './domains/editorV6/videoReferences'
 
 let configuredAppDataRoot: string | null = null
 let roteirosSaveQueue: Promise<void> = Promise.resolve()
+
+function waitForRoteirosWrites(): Promise<void> {
+  return roteirosSaveQueue.catch(() => undefined)
+}
+
+function enqueueRoteirosWrite<T>(operation: () => Promise<T> | T): Promise<T> {
+  const next = roteirosSaveQueue.catch(() => undefined).then(operation)
+  roteirosSaveQueue = next.then(() => undefined)
+  return next
+}
+
 let roteiroCharacterExportStore: RoteiroCharacterExportStore | null = null
 let roteiroProjectExportStore: RoteiroProjectExportStore | null = null
 const roteiroCharacterExportJobOwners = new Map<string, number>()
@@ -318,6 +334,30 @@ const assertLibraryVideoReferencesAvailable = async (videoIds: readonly string[]
 }
 const videoBackgroundLibrary = new VideoBackgroundLibraryStore(() => studioLibraryPath('video'))
 const roteiroUiGifLibrary = new RoteiroUiGifLibraryStore(() => studioLibraryPath('video'))
+const getRoteiroUiGifDefaultPath = () => {
+  const roots = [join(app.getAppPath(), 'src', 'renderer', 'public', 'assets', 'ui', 'loading.gif'), join(app.getAppPath(), 'out', 'renderer', 'assets', 'ui', 'loading.gif')]
+  return roots.find((path) => existsSync(path))
+}
+const assertLibraryBackgroundReferencesAvailable = async (assetIds: readonly string[]): Promise<void> => {
+  if (assetIds.length === 0) return
+  const availableAssets = new Map((await videoBackgroundLibrary.list()).map((item) => [item.id, item]))
+  const unavailable = assetIds.find((id) => !availableAssets.get(id)?.available)
+  if (unavailable) {
+    const item = availableAssets.get(unavailable)
+    throw new Error(`O fundo${item ? ` “${item.name}”` : ''} não está disponível na biblioteca. Reimporte-o ou remova o vínculo antes de salvar.`)
+  }
+}
+const assertLibraryUiGifReferencesAvailable = async (assetIds: readonly string[]): Promise<void> => {
+  if (assetIds.length === 0) return
+  const defaultGifPath = getRoteiroUiGifDefaultPath()
+  if (!defaultGifPath) throw new Error('O GIF padrão do Gacha V5 não foi encontrado na instalação.')
+  const availableAssets = new Map((await roteiroUiGifLibrary.list(defaultGifPath)).map((item) => [item.id, item]))
+  const unavailable = assetIds.find((id) => !availableAssets.get(id)?.available)
+  if (unavailable) {
+    const item = availableAssets.get(unavailable)
+    throw new Error(`O GIF${item ? ` “${item.name}”` : ''} não está disponível na biblioteca. Reimporte-o ou remova o vínculo antes de salvar.`)
+  }
+}
 const studioSaveQueues = { studio: Promise.resolve() as Promise<void> }
 let editorV6SaveQueue: Promise<void> = Promise.resolve()
 const characterManifestPath = () => join(characterLibraryPath(), 'characters.json')
@@ -1327,47 +1367,32 @@ async function registerFabricatorHandlers(): Promise<void> {
   ipcMain.handle('video-library:rename', async (event, id: string, name: string) => { assertTrustedSender(event); return videoLibrary.rename(id, name) })
   ipcMain.handle('video-library:delete', async (event, id: string) => {
     assertTrustedSender(event)
-    const next = roteirosSaveQueue.catch(() => undefined).then(() => coordinateVideoReferenceChange(async () => {
+    await enqueueRoteirosWrite(() => coordinateVideoReferenceChange(async () => {
       await assertNoVideoReferences(id)
       await videoLibrary.delete(id)
     }))
-    roteirosSaveQueue = next
-    await next
   })
-  ipcMain.handle('background-library:list', async (event) => { assertTrustedSender(event); return videoBackgroundLibrary.list() })
-  ipcMain.handle('background-library:import', async (event) => {
-    assertTrustedSender(event)
-    const result = await dialog.showOpenDialog({ title: 'Biblioteca de fundos: importar', properties: ['openFile'], filters: [{ name: 'Imagens', extensions: ['png', 'jpg', 'jpeg', 'webp'] }] })
-    if (result.canceled || !result.filePaths[0]) return null
-    return videoBackgroundLibrary.importFile(result.filePaths[0])
+  const backgroundLibraryService = createBackgroundLibraryService({
+    openImportDialog: async () => {
+      const result = await dialog.showOpenDialog({ title: 'Biblioteca de fundos: importar', properties: ['openFile'], filters: [{ name: 'Imagens', extensions: ['png', 'jpg', 'jpeg', 'webp'] }] })
+      return result.canceled ? null : result.filePaths[0] ?? null
+    },
+    library: videoBackgroundLibrary,
+    assertRoteiroUnreferenced: createRoteiroBackgroundReferenceGuard(() => dataPlatform.database),
+    enqueueWrite: enqueueRoteirosWrite
   })
-  ipcMain.handle('background-library:delete', async (event, id: string) => {
-    assertTrustedSender(event)
-    if (typeof id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) throw new Error('Identificador de fundo inválido.')
-    const reference = dataPlatform.database?.prepare('SELECT id, title FROM roteiros WHERE background_asset_id=? LIMIT 1').get(id) as { id: string; title: string } | undefined
-    if (reference) throw new Error(`Este fundo está selecionado no roteiro “${reference.title}”. Troque ou remova o fundo antes de excluí-lo permanentemente.`)
-    return videoBackgroundLibrary.delete(id)
+  registerBackgroundLibraryHandlers({ ipcMain, assertTrustedSender, service: backgroundLibraryService })
+  const roteiroUiGifsService = createRoteiroUiGifsService({
+    getDefaultGifPath: getRoteiroUiGifDefaultPath,
+    openImportDialog: async () => {
+      const result = await dialog.showOpenDialog({ title: 'Biblioteca de GIFs: adicionar', properties: ['openFile'], filters: [{ name: 'GIF animado', extensions: ['gif'] }] })
+      return result.canceled ? null : result.filePaths[0] ?? null
+    },
+    library: roteiroUiGifLibrary,
+    assertUnreferenced: createRoteiroUiGifReferenceGuard(() => dataPlatform.database),
+    enqueueWrite: enqueueRoteirosWrite
   })
-  ipcMain.handle('roteiros:ui-gifs:list', async (event) => {
-    assertTrustedSender(event)
-    const roots = [join(app.getAppPath(), 'src', 'renderer', 'public', 'assets', 'ui', 'loading.gif'), join(app.getAppPath(), 'out', 'renderer', 'assets', 'ui', 'loading.gif')]
-    const defaultGifPath = roots.find((path) => existsSync(path))
-    if (!defaultGifPath) throw new Error('O GIF padrão do Gacha V5 não foi encontrado na instalação.')
-    return roteiroUiGifLibrary.list(defaultGifPath)
-  })
-  ipcMain.handle('roteiros:ui-gifs:import', async (event) => {
-    assertTrustedSender(event)
-    const result = await dialog.showOpenDialog({ title: 'Biblioteca de GIFs: adicionar', properties: ['openFile'], filters: [{ name: 'GIF animado', extensions: ['gif'] }] })
-    if (result.canceled || !result.filePaths[0]) return null
-    return roteiroUiGifLibrary.importFile(result.filePaths[0])
-  })
-  ipcMain.handle('roteiros:ui-gifs:delete', async (event, id: string) => {
-    assertTrustedSender(event)
-    if (typeof id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) throw new Error('Identificador de GIF inválido.')
-    const reference = dataPlatform.database?.prepare('SELECT id, title FROM roteiros WHERE ui_gif_asset_id=? LIMIT 1').get(id) as { id: string; title: string } | undefined
-    if (reference) throw new Error(`Este GIF está selecionado no roteiro “${reference.title}”. Remova a associação ao roteiro antes de excluí-lo permanentemente.`)
-    return roteiroUiGifLibrary.delete(id)
-  })
+  registerRoteiroUiGifsHandlers({ ipcMain, assertTrustedSender, service: roteiroUiGifsService })
   const getRoteiroCharacterExportStore = () => {
     if (!roteiroCharacterExportStore) {
       const root = configuredAppDataRoot ?? join(app.getPath('userData'), 'app-data')
@@ -1451,18 +1476,14 @@ async function registerFabricatorHandlers(): Promise<void> {
     finally { roteiroCharacterExportJobOwners.delete(jobId) }
   })
 
-  const waitForRoteirosWrites = () => roteirosSaveQueue.catch(() => undefined)
-  const enqueueRoteirosWrite = <T>(operation: () => Promise<T> | T): Promise<T> => {
-    const next = roteirosSaveQueue.catch(() => undefined).then(operation)
-    roteirosSaveQueue = next.then(() => undefined)
-    return next
-  }
   const roteiroDocumentService = createRoteirosDocumentService({
     getDatabase: () => dataPlatform.database,
     waitForPendingWrites: waitForRoteirosWrites,
     enqueueWrite: enqueueRoteirosWrite,
     coordinateVideoReferenceChange,
-    assertLibraryVideoReferencesAvailable
+    assertLibraryVideoReferencesAvailable,
+    assertLibraryBackgroundReferencesAvailable,
+    assertLibraryUiGifReferencesAvailable
   })
   registerRoteirosDocumentHandlers({ ipcMain, assertTrustedSender, service: roteiroDocumentService })
   const roteiroExportLogsService = createRoteiroExportLogsService({
@@ -1475,11 +1496,7 @@ async function registerFabricatorHandlers(): Promise<void> {
   // Compartilha a fila existente de Roteiros para conservar a ordem das gravações.
   registerBaseVideoHandlers(ipcMain, assertTrustedSender, new BaseVideoService({
     getDatabase: () => dataPlatform.database,
-    enqueueWrite: <T>(operation: () => Promise<T> | T): Promise<T> => {
-      const next = roteirosSaveQueue.catch(() => undefined).then(operation)
-      roteirosSaveQueue = next.then(() => undefined)
-      return next
-    },
+    enqueueWrite: enqueueRoteirosWrite,
     coordinateVideoReferenceChange,
     resolveMedia: (id) => videoLibrary.resolveMedia(id),
     assertMediaAccessible: async (path) => {
