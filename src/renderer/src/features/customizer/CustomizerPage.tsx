@@ -21,6 +21,7 @@ import { useCustomizerHairPreview } from './useCustomizerHairPreview'
 import { useCustomizerWardrobePreview } from './useCustomizerWardrobePreview'
 import { useCustomizerWardrobeAdjustment } from './useCustomizerWardrobeAdjustment'
 import { useCustomizerWardrobePanelActions } from './useCustomizerWardrobePanelActions'
+import { useCustomizerHeadAdjustment } from './useCustomizerHeadAdjustment'
 import { sampleOriginalSkinTone } from './customizerPreviewImages'
 import { CustomizerCategoryIcon, clothesAdjustmentDefinitions, customizerClothesTabs, customizerHeadTabs, customizerModuleByTab, customizerModuleNames, customizerOtherTabs, customizerTopTabs, headAdjustmentItems, headAdjustmentItemsFor } from './customizerNavigation'
 import { adjustableHairPartIds, hairAppearancePartStyleId } from './customizerHairAppearanceModel'
@@ -33,8 +34,8 @@ import type { CustomizerCharacter, CustomizerFaceAppearance, CustomizerWardrobeG
 import { characterBodyDimensionLimits, characterProportionLimits, defaultCharacterProportions, getCharacterBodyDimensions, getCharacterProportions, type CharacterProportions } from '../../../../shared/customizer'
 import { usePreviewBackground } from '../../ui/hooks/usePreviewBackground'
 import { DesignBanner } from '../../ui/components/DesignBanner'
-import { anchorWardrobeAdjustments, editWardrobeAdjustment } from '../../../../shared/wardrobeAdjustment'
-import { toggleWardrobeVisibility, wardrobeGroupCategoryForSource } from '../../../../shared/wardrobePlacementModel'
+import { anchorWardrobeAdjustments } from '../../../../shared/wardrobeAdjustment'
+import { wardrobeGroupCategoryForSource } from '../../../../shared/wardrobePlacementModel'
 import { applyCharacterBodyShape } from '../../../../shared/bodyShape'
 import { renderArtwork, loadStandardExpressionEffects, withCharacterHeadSize, isRightFaceAsset, characterShapeScale, resolvedHairColors, clothingCategories, wardrobeComponentsForGroup, customizerHairParts, hairAppearanceStyleId } from '../../characters/characterRenderer'
 import type { CatalogArtwork, HairCatalogSide, AdjustmentPreviewHighlight, SelectedWardrobeComponent } from '../../characters/characterRenderer'
@@ -110,7 +111,6 @@ export function CustomizerPage() {
   } = useCustomizerAssetLibraryState<WardrobePanel, FaceLibraryPartId>()
   const [headPanelTab, setHeadPanelTab] = useState<'hair' | 'eyes' | 'face' | 'extra' | 'adjust'>('hair')
   const [headCategorySelection, setHeadCategorySelection] = useState<'hair' | 'eyes' | 'face' | 'extra'>('hair')
-  const [headAdjustSelection, setHeadAdjustSelection] = useState<string | null>(null)
   const [adjustmentPreviewHighlight, setAdjustmentPreviewHighlight] = useState<AdjustmentPreviewHighlight | null>(null)
   const [activeHairColorRole, setActiveHairColorRole] = useState<HairColorRole>('base')
   const [selectedClothing, setSelectedClothing] = useState<SelectedWardrobeComponent | null>(null)
@@ -184,6 +184,15 @@ export function CustomizerPage() {
   const selectedSkinTone = selectedCharacter?.customization.modelSkinTone
   const activeShapeScale = characterShapeScale(activeProportions)
   const displayArtworkProject = useMemo(() => selectedArtworkProject ? applyCharacterBodyShape(withCharacterHeadSize(selectedArtworkProject, activeProportions), activeBodyDimensions) : null, [selectedArtworkProject, activeProportions.head, activeProportions.headWidth, activeProportions.headHeight, activeBodyDimensions])
+  const { headAdjustSelection, setHeadAdjustSelection, restoreHeadAdjustments, updateHeadAdjustment } = useCustomizerHeadAdjustment({
+    selectedCharacter,
+    charactersRef,
+    displayArtworkParts: displayArtworkProject?.parts ?? [],
+    anchorWardrobe: anchorCurrentWardrobe,
+    saveCharacterCustomization,
+    adjustmentLastTargetRef,
+    setAdjustmentPreviewHighlight
+  })
   const previewStyle = { '--preview-background': previewBackground, '--character-scale-x': activeShapeScale.x, '--character-scale-y': activeShapeScale.y } as import('react').CSSProperties
   const customizerPreviewStyle = { ...previewStyle, '--preview-zoom': customizerPreviewZoom, '--preview-pan-x': `${customizerPreviewPan.x}px`, '--preview-pan-y': `${customizerPreviewPan.y}px` } as import('react').CSSProperties
   const characterWardrobeGroups = selectedCharacter?.customization.wardrobeGroups ?? []
@@ -1539,49 +1548,6 @@ export function CustomizerPage() {
       </>}
     </div>
   )
-
-  const restoreHeadAdjustments = () => {
-    setHeadAdjustSelection(null)
-    adjustmentLastTargetRef.current = null
-    setAdjustmentPreviewHighlight(null)
-    if (!selectedCharacter) return
-    void saveCharacterCustomization((current) => ({
-      partOverrides: Object.fromEntries(Object.entries(current.partOverrides ?? {}).filter(([key]) => !key.startsWith('head:')))
-    }))
-  }
-
-  const updateHeadAdjustment = async (operation: 'transform' | 'toggle-hidden', values?: { x?: number; y?: number; scaleX?: number; scaleY?: number; rotation?: number }) => {
-    if (!selectedCharacter || !headAdjustSelection) return
-    setAdjustmentPreviewHighlight(null)
-    const wardrobeCategory = headAdjustSelection === 'oculos' || headAdjustSelection === 'acessorio-cabeca' ? headAdjustSelection : null
-    const currentCharacter = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
-    const originalGroups = currentCharacter.customization.wardrobeGroups ?? []
-    const anchoredGroups = anchorCurrentWardrobe(originalGroups)
-    const wardrobeGroup = wardrobeCategory ? [...anchoredGroups].reverse().find((group) => group.category === wardrobeCategory) : undefined
-    if (wardrobeGroup) {
-      const displayed = [...originalGroups].reverse().find((group) => group.category === wardrobeCategory) ?? wardrobeGroup
-      const wardrobeGroups = anchoredGroups.map((group) => {
-        if (group !== wardrobeGroup) return group
-        if (operation === 'transform') return editWardrobeAdjustment(group,
-          displayArtworkProject?.parts.find((bone) => bone.id === group.adjustmentReference?.boneId),
-          { offsetX: values?.x, offsetY: values?.y, scaleX: values?.scaleX, scaleY: values?.scaleY, rotation: values?.rotation }, displayed)
-        return toggleWardrobeVisibility(group)
-      })
-      await saveCharacterCustomization({ wardrobeGroups })
-      return
-    }
-    const key = `head:${headAdjustSelection}`
-    await saveCharacterCustomization((current) => {
-      const existing = current.partOverrides?.[key] ?? {}
-      const next = { ...existing }
-      if (operation === 'transform' && values) Object.assign(next, values)
-      else {
-        next.hidden = !existing.hidden
-        if (!next.hidden) delete next.opacity
-      }
-      return { partOverrides: { ...current.partOverrides, [key]: next } }
-    })
-  }
 
   const renderAdjustmentPicker = (area: 'head' | 'clothes') => {
     const isHead = area === 'head'
