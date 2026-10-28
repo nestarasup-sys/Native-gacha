@@ -299,6 +299,12 @@ Este corte separa propriedade dos contratos e chamadas entre domínios, mas não
 - O catálogo agora contém sete auditorias registradas, seis rápidas e uma manual. Os testes que conferem esses metadados foram ajustados, mas não foram executados nesta etapa.
 - Studio e Editor V6 agora usam `src/shared/serializedDocumentSave.ts`; o algoritmo de fila era idêntico em dois módulos e continua instanciado separadamente por tela, preservando os canais e as políticas próprias de cada documento.
 
+### Mapa do ciclo 3 — composição de personagens
+
+- `characterRenderer.ts` serve Customizador, Studio, Roteiros e previews do Fabricador. `editorV6CharacterRenderer.ts` contém praticamente a mesma composição; a diferença de implementação está concentrada em tipos faciais, modo `talk-blink`, cache de imagem e descarte explícito de canvases.
+- Extraí o LRU de decodificação para `characters/characterImageCache.ts`. Os dois renderizadores agora compartilham a regra e o limite de 512 itens, mantendo instâncias separadas para que a pressão de memória e a política de descarte do Editor V6 não mudem.
+- O próximo passo do ciclo é extrair uma API de composição comum que aceite as políticas faciais de cada editor e respeite o `dispose()` do Editor V6. Não trocar o renderizador de nenhum consumidor até comparar os fixtures visuais existentes.
+
 ## 7. Próxima tarefa recomendada
 
 Continuar pelo **Ciclo 3**: comparar os caminhos de composição de personagem e formalizar um núcleo compartilhado para modelos, poses, expressões, roupas e overrides. Usar os fixtures visuais dourados como critério de equivalência antes de migrar qualquer consumidor.
