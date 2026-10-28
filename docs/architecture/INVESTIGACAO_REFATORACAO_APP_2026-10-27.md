@@ -31,7 +31,7 @@ O restante já tem módulos por domínio e armazenamento local com SQLite, arqui
 - O shell tem sete rotas de produto: Customizador, Studio principal, Editor V6, Roteiros, Base de Vídeos, Opções e Fabricador DEV.
 - `electron/domains/` contém módulos para Base de Vídeos, Customizador, Editor V6, Fabricador, Roteiros, armazenamento compartilhado e Studio. `src/shared/` guarda contratos e regras usadas por mais de um processo.
 - `electron/main.ts` tem 2.153 linhas após as extrações mais recentes e ainda registra 38 handlers IPC diretamente; também compõe serviços que já foram separados em módulos.
-- As páginas mais extensas são Customizador (1.817 linhas), Editor V6 (1.586), Studio (1.352) e Fabricador Dev (1.035). Roteiros tem 535, Base de Vídeos 362 e Opções 216 linhas. Esses números localizam concentração de responsabilidades, mas não são por si só motivo para dividir arquivos.
+- As páginas mais extensas são Customizador (1.817 linhas), Editor V6 (1.625), Studio (1.416) e Fabricador Dev (1.035). Roteiros tem 535, Base de Vídeos 362 e Opções 216 linhas. Esses números localizam concentração de responsabilidades, mas não são por si só motivo para dividir arquivos.
 - A auditoria estática de dependências mantém em zero os imports de runtime entre os pares de features listados em `scripts/architecture/boundaries-baseline.json`.
 
 ### Mapa resumido
@@ -411,9 +411,15 @@ Este corte separa propriedade dos contratos e chamadas entre domínios, mas não
 - `features/editorV6/editorV6Selection.ts` concentra a precedência por bloco/elemento/quadro e monta o alvo do inspector a partir do documento atual e da cena visível. O resultado é memoizado pelas referências de documento, cena, seleção e playhead; uma leitura do quadro e do vídeo usa a mesma lista de clips.
 - O estado continua local ao Editor V6. Não houve mudança no formato dos blocos, no histórico nem na seleção feita pela timeline.
 
+### Etapa aplicada — transformação de duplicação do Editor V6
+
+- A página remapeava IDs de assets, elementos, trilhas e blocos e atualizava referências cruzadas e chaves de movimento ao duplicar um projeto. Essa transformação pura foi movida para `features/editorV6/editorV6ProjectDuplication.ts`, com a criação de IDs injetada para deixar a regra independente do navegador.
+- Leitura do projeto, numeração e metadados do novo catálogo continuam no fluxo da página. A clonagem dos arquivos de áudio e mídia continua usando os mesmos canais IPC antes de salvar o documento duplicado.
+- A operação mantém os mesmos campos, ordem de geração dos IDs, fallbacks de referências e política de regeneração de chaves de movimento. Nenhum contrato IPC, formato persistido ou schema mudou.
+
 ## 7. Próxima tarefa recomendada
 
-Continuar pelo **Ciclo 4** com módulos focados de UI e coordenação no Customizador, Fabricador, Studio e Editor V6. O próximo passo é mapear estado e operações de cena em Studio/Editor V6 para encontrar fronteiras de extração que preservem o histórico e o comportamento temporal. Em paralelo, preparar fixtures visuais sintéticas que capturem as saídas reais dessas áreas antes de compartilhar mais da orquestração de renderização.
+Continuar pelo **Ciclo 4** com módulos focados de UI e coordenação no Customizador, Fabricador, Studio e Editor V6. No Editor V6, mapear agora o ciclo de salvamento automático e histórico ao redor de `SerializedDocumentSaveQueue`, incluindo quem inicia gravações, gera miniaturas e resolve falhas. Escolher a próxima extração somente depois de confirmar essa sequência e seus consumidores. Em paralelo, preparar fixtures visuais sintéticas que capturem as saídas reais dessas áreas antes de compartilhar mais da orquestração de renderização.
 
 ## 8. Verificações e validação
 

@@ -10,7 +10,7 @@ import { EditorV6VideoPickerModal } from './EditorV6VideoPickerModal'
 import { EditorV6PlaybackAudio } from './EditorV6PlaybackAudio'
 import { EditorV6PlaybackScene } from './EditorV6PlaybackScene'
 import { getEditorV6PlaybackFrame, setEditorV6PlaybackFrame } from './editorV6PlaybackClock'
-import { editorV6MotionPlans } from '../../../../shared/editorV6Motion'
+import { duplicateEditorV6ProjectDocument } from './editorV6ProjectDuplication'
 import type { ScenePointerEvent, SceneSurfaceInteraction } from './SceneSurface'
 import { addEditorV6ElementAtFrame, editEditorV6DocumentAtBlock, editorV6ClipAtFrame, normalizeEditorV6Timeline, prepareEditorV6PositionAtFrame, moveEditorV6ElementInPeriod, editEditorV6BackgroundAtFrame, pruneEditorV6TimelineSnapshots, repairEditorV6DuplicateAssets, repairEditorV6FaceModeAssetReferences, resolveEditorV6SceneAtFrame, timelineClips } from '../../../../shared/editorV6Timeline'
 import { useEditorV6InspectorState } from './useEditorV6InspectorState'
@@ -579,44 +579,13 @@ export function EditorV6Page() {
     if (!source) { setError('Não foi possível carregar o projeto que será duplicado.'); return }
     const number = allocateNumber()
     const now = new Date().toISOString()
-    const duplicate: EditorV6Document = {
-      ...source, id: crypto.randomUUID(), title: `Editor V6 ${String(number).padStart(2, '0')}`,
-      color: sceneCatalogColor(number), createdAt: now, updatedAt: now,
-      assets: source.assets.map((asset) => ({ ...asset, id: crypto.randomUUID() })),
-      elements: source.elements.map((element) => ({
-        ...element, id: crypto.randomUUID(), assetId: element.assetId
-          ? source.assets.find((asset) => asset.id === element.assetId)?.id
-          : undefined
-      }))
-    }
-    const oldToNew = new Map(source.assets.map((asset, index) => [asset.id, duplicate.assets[index]?.id ?? '']))
-    duplicate.elements = source.elements.map((element, index) => ({
-      ...duplicate.elements[index], assetId: element.assetId ? oldToNew.get(element.assetId) : undefined,
-      faceModeAssetIds: element.faceModeAssetIds ? Object.fromEntries(Object.entries(element.faceModeAssetIds).map(([mode, id]) => [mode, id ? oldToNew.get(id) : undefined])) as EditorV6Element['faceModeAssetIds'] : undefined
-    }))
-    const oldToNewElements = new Map(source.elements.map((element, index) => [element.id, duplicate.elements[index].id]))
-    const oldToNewBlocks = new Map(timelineClips(source.timeline).map(({ block }) => [block.id, crypto.randomUUID()]))
-    duplicate.timeline = {
-      ...source.timeline,
-      knownElementIds: source.timeline.knownElementIds?.map((id) => oldToNewElements.get(id) ?? id),
-      tracks: source.timeline.tracks.map((track) => ({
-        ...track,
-        id: crypto.randomUUID(),
-        blocks: track.blocks.map((block) => ({
-          ...block,
-          id: oldToNewBlocks.get(block.id)!,
-          elementId: block.elementId ? oldToNewElements.get(block.elementId) : undefined,
-          parentBlockId: block.parentBlockId ? oldToNewBlocks.get(block.parentBlockId) : undefined,
-          state: block.state ? { ...block.state, id: oldToNewElements.get(block.state.id) ?? block.state.id, assetId: block.state.assetId ? oldToNew.get(block.state.assetId) : undefined, faceModeAssetIds: block.state.faceModeAssetIds ? Object.fromEntries(Object.entries(block.state.faceModeAssetIds).map(([mode, id]) => [mode, id ? oldToNew.get(id) : undefined])) as EditorV6Element['faceModeAssetIds'] : undefined } : undefined,
-          background: block.background ? { ...block.background, backgroundAssetId: block.background.backgroundAssetId ? oldToNew.get(block.background.backgroundAssetId) ?? null : null } : undefined,
-          incomingMotion: block.incomingMotion ? { ...block.incomingMotion, assetId: oldToNew.get(block.incomingMotion.assetId)! } : undefined
-        }))
-      }))
-    }
-    duplicate.backgroundAssetId = source.backgroundAssetId ? oldToNew.get(source.backgroundAssetId) ?? null : null
-    const originalMotions = new Map<string, ReturnType<typeof editorV6MotionPlans>[number]>(editorV6MotionPlans(source).map((plan) => [oldToNewBlocks.get(plan.blockId)!, plan]))
-    const copiedMotions = new Map(editorV6MotionPlans(duplicate).map((plan) => [plan.blockId, plan]))
-    duplicate.timeline = { ...duplicate.timeline, tracks: duplicate.timeline.tracks.map((track) => ({ ...track, blocks: track.blocks.map((block) => ({ ...block, incomingMotion: block.incomingMotion && originalMotions.get(block.id)?.key === block.incomingMotion.key && copiedMotions.has(block.id) ? { ...block.incomingMotion, key: copiedMotions.get(block.id)!.key } : undefined })) })) }
+    const duplicate = duplicateEditorV6ProjectDocument(source, {
+      id: crypto.randomUUID(),
+      title: `Editor V6 ${String(number).padStart(2, '0')}`,
+      color: sceneCatalogColor(number),
+      createdAt: now,
+      updatedAt: now
+    }, () => crypto.randomUUID())
     try {
       setError(null)
       if (source.exportAudio?.length) await window.desktop.cloneEditorV6ExportAudio(source.id, duplicate.id, source.exportAudio)
