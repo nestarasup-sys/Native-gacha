@@ -15,24 +15,13 @@ export function useCustomizerHeadAdjustment(deps: {
   displayArtworkParts: CatalogArtwork['parts']
   anchorWardrobe: (groups: CustomizerWardrobeGroup[]) => CustomizerWardrobeGroup[]
   saveCharacterCustomization: (patch: CharacterPatch) => Promise<void>
-  adjustmentLastTargetRef: MutableRefObject<AdjustmentPreviewHighlight | null>
   setAdjustmentPreviewHighlight: Dispatch<SetStateAction<AdjustmentPreviewHighlight | null>>
 }) {
   const {
     selectedCharacter, charactersRef, displayArtworkParts, anchorWardrobe,
-    saveCharacterCustomization, adjustmentLastTargetRef, setAdjustmentPreviewHighlight
+    saveCharacterCustomization, setAdjustmentPreviewHighlight
   } = deps
   const [headAdjustSelection, setHeadAdjustSelection] = useState<string | null>(null)
-
-  function restoreHeadAdjustments() {
-    setHeadAdjustSelection(null)
-    adjustmentLastTargetRef.current = null
-    setAdjustmentPreviewHighlight(null)
-    if (!selectedCharacter) return
-    void saveCharacterCustomization((current) => ({
-      partOverrides: Object.fromEntries(Object.entries(current.partOverrides ?? {}).filter(([key]) => !key.startsWith('head:')))
-    }))
-  }
 
   async function updateHeadAdjustment(operation: 'transform' | 'toggle-hidden', values?: HeadTransform) {
     if (!selectedCharacter || !headAdjustSelection) return
@@ -68,5 +57,5 @@ export function useCustomizerHeadAdjustment(deps: {
     })
   }
 
-  return { headAdjustSelection, setHeadAdjustSelection, restoreHeadAdjustments, updateHeadAdjustment }
+  return { headAdjustSelection, setHeadAdjustSelection, updateHeadAdjustment }
 }

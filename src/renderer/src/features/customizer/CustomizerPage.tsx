@@ -184,13 +184,12 @@ export function CustomizerPage() {
   const selectedSkinTone = selectedCharacter?.customization.modelSkinTone
   const activeShapeScale = characterShapeScale(activeProportions)
   const displayArtworkProject = useMemo(() => selectedArtworkProject ? applyCharacterBodyShape(withCharacterHeadSize(selectedArtworkProject, activeProportions), activeBodyDimensions) : null, [selectedArtworkProject, activeProportions.head, activeProportions.headWidth, activeProportions.headHeight, activeBodyDimensions])
-  const { headAdjustSelection, setHeadAdjustSelection, restoreHeadAdjustments, updateHeadAdjustment } = useCustomizerHeadAdjustment({
+  const { headAdjustSelection, setHeadAdjustSelection, updateHeadAdjustment } = useCustomizerHeadAdjustment({
     selectedCharacter,
     charactersRef,
     displayArtworkParts: displayArtworkProject?.parts ?? [],
     anchorWardrobe: anchorCurrentWardrobe,
     saveCharacterCustomization,
-    adjustmentLastTargetRef,
     setAdjustmentPreviewHighlight
   })
   const previewStyle = { '--preview-background': previewBackground, '--character-scale-x': activeShapeScale.x, '--character-scale-y': activeShapeScale.y } as import('react').CSSProperties
@@ -1550,15 +1549,13 @@ export function CustomizerPage() {
   )
 
   const renderAdjustmentPicker = (area: 'head' | 'clothes') => {
-    const isHead = area === 'head'
-    const scopeDefinitions = isHead ? [] : clothesAdjustmentDefinitions(clothesCategorySelection)
-    const adjustmentLabel = customizerClothesTabs.find((tab) => tab.id === clothesCategorySelection)?.label ?? 'categoria selecionada'
-    const adjustmentComponents = buildClothesAdjustmentEntries(selectedCharacter?.customization.wardrobeGroups ?? [], wardrobeDetails, scopeDefinitions)
-    const selectedAdjustmentComponent = !isHead && selectedClothing
-      ? adjustmentComponents.find((entry) => entry.group.modelSlot === selectedClothing.modelSlot && entry.group.setId === selectedClothing.setId && entry.group.category === selectedClothing.category && entry.component.id === selectedClothing.componentId)
-      : undefined
-
-    if (!isHead) {
+    if (area === 'clothes') {
+      const scopeDefinitions = clothesAdjustmentDefinitions(clothesCategorySelection)
+      const adjustmentLabel = customizerClothesTabs.find((tab) => tab.id === clothesCategorySelection)?.label ?? 'categoria selecionada'
+      const adjustmentComponents = buildClothesAdjustmentEntries(selectedCharacter?.customization.wardrobeGroups ?? [], wardrobeDetails, scopeDefinitions)
+      const selectedAdjustmentComponent = selectedClothing
+        ? adjustmentComponents.find((entry) => entry.group.modelSlot === selectedClothing.modelSlot && entry.group.setId === selectedClothing.setId && entry.group.category === selectedClothing.category && entry.component.id === selectedClothing.componentId)
+        : undefined
       const transform = wardrobeTransformDraft ?? { offsetX:0,offsetY:0,scaleX:1,scaleY:1,rotation:0 }
       return <CustomizerClothesAdjustmentPanel
         label={adjustmentLabel} hasCharacter={Boolean(selectedCharacter)}
@@ -1572,26 +1569,24 @@ export function CustomizerPage() {
         onToggleHidden={() => { void updateClothesAdjustComponent('toggle-hidden') }}
       />
     }
-      const items = headAdjustmentItemsFor(headCategorySelection)
+    const items = headAdjustmentItemsFor(headCategorySelection)
     const selectedId = headAdjustSelection
-    const reset = restoreHeadAdjustments
     const previewFor = (id: string) => headAdjustmentPreviewUrl(id, selectedCharacter, {
       hair: hairDetails,
       faceComponents: faceComponentDetails,
       wardrobe: wardrobeDetails,
       faceCatalog: faceCatalogDetails
     })
-    if (isHead) {
-      const selectedItem = items.find((item) => item.id === selectedId)
-      const appliedItems = items.filter((item) => hasHeadAdjustmentItem(item.id))
-      const selectedWardrobeGroup = selectedId === 'oculos' || selectedId === 'acessorio-cabeca' ? [...(selectedCharacter?.customization.wardrobeGroups ?? [])].reverse().find((group) => group.category === selectedId) : undefined
-      const selectedOverride = selectedId ? selectedCharacter?.customization.partOverrides?.[`head:${selectedId}`] : undefined
-      const transform = { x: selectedWardrobeGroup?.offsetX ?? selectedOverride?.x ?? 0, y: selectedWardrobeGroup?.offsetY ?? selectedOverride?.y ?? 0, scaleX: selectedWardrobeGroup?.scaleX ?? selectedOverride?.scaleX ?? 1, scaleY: selectedWardrobeGroup?.scaleY ?? selectedOverride?.scaleY ?? 1, rotation: selectedWardrobeGroup?.rotation ?? selectedOverride?.rotation ?? 0 }
-      const selectedDimmed = Boolean(selectedWardrobeGroup?.hidden ?? selectedOverride?.hidden)
-      const changeTransform = (patch: Partial<typeof transform>) => void updateHeadAdjustment('transform', { ...transform, ...patch })
-      const moveBy = (x: number, y: number) => changeTransform({ x: transform.x + x, y: transform.y + y })
-      const headLabel = customizerHeadTabs.find((tab) => tab.id === headCategorySelection)?.label ?? 'categoria selecionada'
-      return <section className="customizer-adjust-picker customizer-clothes-adjust-detail" aria-label={`Ajustes de cabeça · ${headLabel}`}>
+    const selectedItem = items.find((item) => item.id === selectedId)
+    const appliedItems = items.filter((item) => hasHeadAdjustmentItem(item.id))
+    const selectedWardrobeGroup = selectedId === 'oculos' || selectedId === 'acessorio-cabeca' ? [...(selectedCharacter?.customization.wardrobeGroups ?? [])].reverse().find((group) => group.category === selectedId) : undefined
+    const selectedOverride = selectedId ? selectedCharacter?.customization.partOverrides?.[`head:${selectedId}`] : undefined
+    const transform = { x: selectedWardrobeGroup?.offsetX ?? selectedOverride?.x ?? 0, y: selectedWardrobeGroup?.offsetY ?? selectedOverride?.y ?? 0, scaleX: selectedWardrobeGroup?.scaleX ?? selectedOverride?.scaleX ?? 1, scaleY: selectedWardrobeGroup?.scaleY ?? selectedOverride?.scaleY ?? 1, rotation: selectedWardrobeGroup?.rotation ?? selectedOverride?.rotation ?? 0 }
+    const selectedDimmed = Boolean(selectedWardrobeGroup?.hidden ?? selectedOverride?.hidden)
+    const changeTransform = (patch: Partial<typeof transform>) => void updateHeadAdjustment('transform', { ...transform, ...patch })
+    const moveBy = (x: number, y: number) => changeTransform({ x: transform.x + x, y: transform.y + y })
+    const headLabel = customizerHeadTabs.find((tab) => tab.id === headCategorySelection)?.label ?? 'categoria selecionada'
+    return <section className="customizer-adjust-picker customizer-clothes-adjust-detail" aria-label={`Ajustes de cabeça · ${headLabel}`}>
         <header className="customizer-adjust-heading customizer-clothes-adjust-detail-heading">
           <button className={`customizer-adjust-reset ${selectedDimmed ? 'is-restore' : 'is-delete'}`} type="button" onClick={() => void updateHeadAdjustment('toggle-hidden')} disabled={!selectedCharacter || !selectedId || !hasHeadAdjustmentItem(selectedId)} title={selectedDimmed ? 'Restaurar item selecionado' : 'Excluir item selecionado'} aria-label={selectedDimmed ? 'Restaurar item selecionado' : 'Excluir item selecionado'}><Icon name={selectedDimmed ? 'undo' : 'trash'} /><span>{selectedDimmed ? 'RESTAURAR' : 'EXCLUIR'}</span></button>
           <h2>Ajustar cabeça · {headLabel}</h2>
@@ -1624,28 +1619,6 @@ export function CustomizerPage() {
             <div className="customizer-clothes-adjust-rotation"><strong>Rotação <output>{Math.round(transform.rotation)}°</output></strong><button type="button" aria-label="Girar para a esquerda" onClick={() => changeTransform({ rotation: transform.rotation - 1 })}>↶</button><button type="button" aria-label="Girar para a direita" onClick={() => changeTransform({ rotation: transform.rotation + 1 })}>↷</button></div>
           </section> : <div className="customizer-clothes-adjust-empty-controls">Selecione um item aplicado na lista para ajustar.</div>}
         </div>}
-      </section>
-    }
-    return <section className="customizer-adjust-picker" aria-label={isHead ? 'Ajustes de cabeça' : 'Ajustes de roupas'}>
-      <header className="customizer-adjust-heading">
-        <button className="customizer-adjust-reset" type="button" onClick={reset} disabled={!selectedCharacter} title="Restaurar ajustes deste personagem"><Icon name="reset" /><span>RESTAURAR</span></button>
-        <h2>Selecione um item para ajustar</h2>
-      </header>
-      {!selectedCharacter && <p className="customizer-adjust-hint">Selecione um personagem para ver as peças dele.</p>}
-      <div className="customizer-adjust-grid">
-        {items.map((item) => {
-          const applied = isHead ? hasHeadAdjustmentItem(item.id) : Boolean(selectedCharacter?.customization.wardrobeGroups?.some((group) => group.category === item.id))
-          const selected = selectedId === item.id
-          const preview = previewFor(item.id)
-          return <button key={item.id} className={`customizer-adjust-card${selected ? ' selected' : ''}${applied ? ' applied' : ''}`} type="button" disabled={!selectedCharacter} aria-pressed={selected} onClick={() => { setHeadAdjustSelection(item.id); selectAdjustmentPreviewTarget({ scope: 'head', id: item.id }) }} title={`${item.label}${applied ? ' · aplicado neste personagem' : ' · sem peça aplicada'}`}>
-            <span className="customizer-adjust-card-label">{item.label}</span>
-            <span className="customizer-adjust-card-preview">{preview ? <img src={preview} alt="" style={{ transform: mirroredFaceThumbnailIds.has(item.id as FaceComponentPartId) ? 'scaleX(-1)' : undefined }} /> : <Icon name={item.icon} />}{applied && <i><Icon name="check" /></i>}</span>
-            <small>{applied ? 'Aplicado' : 'Sem peça'}</small>
-          </button>
-        })}
-      </div>
-      {selectedId && <div className="customizer-adjust-selection" role="status">Categoria selecionada: <strong>{items.find((item) => item.id === selectedId)?.label}</strong>{!items.some((item) => item.id === selectedId && (isHead ? hasHeadAdjustmentItem(item.id) : selectedCharacter?.customization.wardrobeGroups?.some((group) => group.category === item.id))) && <span> · nenhuma peça aplicada neste personagem</span>}</div>}
-      <p className="customizer-adjust-scope">Os ajustes desta área pertencem somente ao personagem selecionado.</p>
     </section>
   }
 
