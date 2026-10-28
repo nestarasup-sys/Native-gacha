@@ -558,9 +558,23 @@ Este corte separa propriedade dos contratos e chamadas entre domínios, mas não
 - As filas continuam pertencendo aos mesmos serviços e módulos. Não houve mudança nos canais IPC, nos formatos persistidos ou na ordem das gravações.
 - `tests/pending-persistence-inventory.test.mjs` protege a cobertura e o uso comum do inventário para que os três fluxos não voltem a divergir.
 
+### Mapa parcial — referências de catálogos e assets entre áreas
+
+| Fonte dona do asset | Quem mantém o vínculo | Forma do vínculo e proteção atual |
+| --- | --- | --- |
+| Fabricador: conjuntos de roupas | Customizador; Studio e Editor V6 consomem o personagem | O personagem guarda `modelSlot`, `setId` e, quando disponível, `componentId`; o serviço verifica referências novas, e a edição/exclusão do conjunto mantém os personagens bloqueados enquanto consulta e grava (`withCharactersLocked`). |
+| Biblioteca de vídeos | Roteiros, Editor V6 e Base de Vídeos | Roteiros guarda o ID no SQLite e Editor V6 guarda `libraryVideoId` no manifesto. Um coordenador serializa criação/remoção de vínculos e a exclusão consulta os dois consumidores antes de remover o vídeo. |
+| Biblioteca de fundos e GIFs | Roteiros | Os documentos guardam IDs no SQLite; o salvamento valida assets novos e a exclusão consulta referências salvas, usando a fila de escrita de Roteiros. |
+| Fabricador: cabelos | Personagem do Customizador; Studio e Editor V6 renderizam o personagem | `hairAppearance` guarda `modelSlot` e IDs legados ou por peça. O renderer resolve esses IDs no Fabricador; hoje o salvamento do personagem não verifica esses vínculos e a exclusão do cabelo não consulta personagens. |
+| Fabricador: rosto, catálogo facial e componentes | Personagem do Customizador e presets/rascunho de Expressões DEV; Studio, Editor V6 e Animador DEV renderizam esses dados | O personagem guarda IDs de conjunto, catálogo, componentes, detalhes e acessórios. Presets e rascunho de expressão também guardam IDs de componentes e itens de catálogo. Hoje as exclusões desses recursos não consultam esses consumidores nem compartilham uma barreira de gravação com eles. |
+| Personagem do Customizador | Studio e Editor V6 | As cenas guardam `characterId` e uma imagem PNG derivada (`assetId`); Studio também salva a base de expressão. A combinação permite exibir o snapshot e atualizar a arte a partir do personagem fonte. |
+
+- Evidências principais: `electron/domains/fabricator/wardrobeReferences.ts`, `wardrobeIpc.ts`, `electron/domains/customizer/service.ts`, `electron/domains/fabricator/hairIpc.ts`, `faceCatalogIpc.ts`, `roteiros/assetReferences.ts`, `mediaLibrary/videoReferences.ts`, `roteiros/videoReferences.ts`, `editorV6/videoReferences.ts`, `StudioPage.tsx` e `EditorV6Page.tsx`.
+- A lacuna em cabelos e rosto é uma hipótese de integridade confirmada pelos contratos e caminhos de exclusão: IDs persistidos continuam sendo lidos pelos renderizadores, mas esses handlers podem remover a fonte sem consultar os leitores. A correção exige inventariar e serializar os escritores de Customizador e Expressões, além de validar novos vínculos, antes de ativar bloqueios de exclusão.
+
 ## 7. Próxima tarefa recomendada
 
-Continuar rastreando as referências de catálogos e assets entre Fabricador, Customizador, Studio e Editor V6, incluindo quem pode remover cada asset e como consumidores preservam vínculos. Mudanças de ownership ou formato persistido devem incluir inventário dos consumidores e estratégia de recuperação antes de qualquer alteração.
+Implementar proteção consistente para exclusão e criação de vínculos de cabelo e assets faciais. Antes da mudança, inventariar os escritores de personagens, presets e rascunhos por slot; depois, serializar a alteração do vínculo com a exclusão, validar IDs novos e testar links legados, seleção por peça e renderização em Studio/Editor V6. Preservar os formatos persistidos e os vínculos existentes.
 
 ## 8. Verificações e validação
 
@@ -577,3 +591,4 @@ Continuar rastreando as referências de catálogos e assets entre Fabricador, Cu
 - Nesta etapa, `npm run test:refactor` passou com 278 testes e `npm test` passou com 27 testes. `npm run typecheck`, `npm run audit:architecture` (335 arquivos TS/TSX, sem imports locais ausentes ou violações de fronteira) e `git diff --check` também passaram. Os fixtures usaram diretórios temporários e conteúdo sintético; nenhum perfil ou mídia pessoal foi acessado.
 - Nesta etapa, `npm run test:refactor` passou com 282 testes e `npm test` com 27. `npm run typecheck`, `npm run audit:architecture` (339 arquivos TS/TSX, sem erros de sintaxe, imports ausentes ou violações de fronteira), `npm run build` e `git diff --check` também passaram. A hidratação das roupas, do preview inicial, do catálogo facial e do estado de aparência compartilhada migrou para hooks; nenhum perfil ou mídia pessoal foi acessado.
 - Nesta etapa, o inventário único de gravações pendentes foi ligado ao flush, ao backup e ao encerramento; o teste sintético confirma as filas incluídas e a reutilização do mesmo coletor.
+- Nesta etapa, `node --test tests/pending-persistence-inventory.test.mjs`, `npm run typecheck`, `npm run audit:architecture` (342 arquivos TS/TSX) e `npm run build` passaram. O mapeamento de referências de catálogo foi somente leitura; nenhum dado de perfil ou mídia foi acessado.
