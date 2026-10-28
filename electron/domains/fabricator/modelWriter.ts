@@ -3,7 +3,7 @@
  */
 import { join } from 'node:path'
 import type { FabricatorAssetSave, FabricatorProjectSave } from '../../../src/shared/fabricator'
-import { areModelPartSkinContoursValid } from '../../../src/shared/modelSkinContours'
+import { areModelPartSkinContoursValid } from '../../../src/shared/modelSkinContours.ts'
 import type { mkdir as nativeMkdir, readFile as nativeReadFile, writeFile as nativeWriteFile, rename as nativeRename, readdir as nativeReaddir, access as nativeAccess, unlink as nativeUnlink } from 'node:fs/promises'
 
 export type FabricatorModelWriterDependencies = {

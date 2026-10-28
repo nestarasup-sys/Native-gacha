@@ -3,7 +3,7 @@
  */
 import { join } from 'node:path'
 import type { AnimatorAnimation, AnimatorAnimationAsset, AnimatorAnimationDraft, AnimatorAnimationSave, PosePart } from '../../../src/shared/fabricator'
-import { areModelPartSkinContoursValid, isValidModelSkinContours } from '../../../src/shared/modelSkinContours'
+import { areModelPartSkinContoursValid, isValidModelSkinContours } from '../../../src/shared/modelSkinContours.ts'
 import type * as nodeFs from 'node:fs/promises'
 
 export type AnimatorPersistenceDependencies = {
