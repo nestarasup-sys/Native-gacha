@@ -3,6 +3,7 @@ import { SerializedDocumentSaveQueue } from '../../../../shared/serializedDocume
 import { isPoseSnapshotForModel } from '../../../../shared/characterSourceContinuity'
 import { recordStudioHistory, undoStudioHistory, redoStudioHistory } from '../../../../shared/studioHistory'
 import { useStudioInspectorState } from '../../characters/useStudioInspectorState'
+import { StudioSceneCanvas } from './StudioSceneCanvas'
 import { trimTransparentImage, fitElementToTrim, faceRenderGeometry, type TrimmedImage } from '../../characters/characterGeometry'
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { buildStudioExpressionAppearance, buildStudioExpressionTransforms, resolveStudioExpressionBase, studioExpressionCollection } from './expressionTransforms'
@@ -1166,11 +1167,6 @@ export function StudioPage() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [castPickerOpen, savingCast, fullView, activeStudio, historyVersion])
 
-  const imageStyle = (x: number, y: number, width: number, height: number, rotation: number, flipX = false) => ({
-    left: `calc(50% + ${x}%)`, top: `calc(50% + ${y}%)`, width: `${width}%`, height: `${height}%`,
-    transform: `translate(-50%, -50%) rotate(${rotation}deg) scaleX(${flipX ? -1 : 1})`
-  })
-
   const control = (label: string, value: number, onChange: (value: number, record?: boolean) => void, min: number, max: number, suffix = '%', onFinish?: () => void, disabled = false) => (
     <NumericRangeField key={label} label={label} value={value} onChange={onChange} onStart={recordHistory} onFinish={onFinish} disabled={disabled} min={min} max={max} suffix={suffix} />
   )
@@ -1353,7 +1349,6 @@ export function StudioPage() {
   </div>
 
   if (activeStudio) {
-    const backgroundAsset = activeStudio.assets.find((asset) => asset.id === activeStudio.backgroundAssetId)
     const inspectorWidth = sceneRef.current ? Math.min(38, 276 / sceneRef.current.clientWidth * 100) : 28
     const selectedBounds = selectedElement
       ? { left: 50 + selectedElement.x - studioElementSize(selectedElement).width / 2, right: 50 + selectedElement.x + studioElementSize(selectedElement).width / 2 }
@@ -1388,25 +1383,13 @@ export function StudioPage() {
           {error && <small className="studio-error-message" role="alert">{error}</small>}
           {notice && <small className="studio-save-notice" role="status">{notice}</small>}
         </aside>}
-        <section className="studio-scene-area" aria-label="Prévia da cena">
-          <div className="studio-scene-canvas" ref={sceneRef} style={{ backgroundColor: activeStudio.backgroundColor }} onPointerDown={() => setSelectedElementId(null)}>
-            {backgroundAsset && <img className={`studio-canvas-background${selectedElementId === 'background' && !fullView ? ' selected' : ''}`} src={backgroundAsset.dataUrl} alt="" style={imageStyle(activeStudio.backgroundX, activeStudio.backgroundY, activeStudio.backgroundWidth, activeStudio.backgroundHeight, activeStudio.backgroundRotation)} onPointerDown={(event) => startDrag(event, 'background')} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag} />}
-            {[...activeStudio.elements].sort((a, b) => a.zIndex - b.zIndex).map((element) => {
-              const asset = element.assetId ? activeStudio.assets.find((item) => item.id === element.assetId) : undefined
-              const size = studioElementSize(element)
-              return <div key={element.id} className={`studio-canvas-element studio-element-${element.kind}${selectedElementId === element.id && !fullView ? ' selected' : ''}`} style={{ ...imageStyle(element.x, element.y, size.width, size.height, element.rotation, element.kind === 'character' && element.flipX === true), zIndex: element.zIndex + 1 }} onPointerDown={(event) => startDrag(event, element.id)} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag}>
-                {(element.kind === 'image' || element.kind === 'character') && asset ? <img src={asset.dataUrl} alt={asset.name} draggable={false} /> : <span>{element.text}</span>}
-              </div>
-            })}
-            {fullView && <button className="studio-exit-view" onClick={() => setFullView(false)} type="button">Sair da visualização <kbd>Esc</kbd></button>}
-            {!fullView && <span className="studio-scene-title">{activeStudio.title}</span>}
-            {!fullView && inspectorOpen && <aside className={`studio-inspector studio-inspector-${inspectorSide}`} aria-label="Inspector da cena" onPointerDown={(event) => event.stopPropagation()}>
+        <StudioSceneCanvas studio={activeStudio} sceneRef={sceneRef} selectedElementId={selectedElementId} fullView={fullView} onCanvasPointerDown={() => setSelectedElementId(null)} onStartDrag={startDrag} onMoveDrag={moveDrag} onEndDrag={endDrag} onExitFullView={() => setFullView(false)}>
+          {!fullView && inspectorOpen && <aside className={`studio-inspector studio-inspector-${inspectorSide}`} aria-label="Inspector da cena" onPointerDown={(event) => event.stopPropagation()}>
               <header className="studio-inspector-tabs"><button className={inspectorTab === 'editor' ? 'active' : ''} onClick={() => { setInspectorTab('editor'); rememberCharacterInspectorView('editor') }} type="button">Editor</button><button className={inspectorTab === 'custom' && inspectorCustomView === 'face' ? 'active' : ''} onClick={() => { setInspectorTab('custom'); setInspectorCustomView('face'); rememberCharacterInspectorView('custom', 'face') }} type="button">Custom</button><button className="studio-inspector-close" onClick={() => setInspectorOpen(false)} aria-label="Fechar inspector" title="Fechar" type="button">×</button></header>
               <button className={`studio-inspector-presets${inspectorTab === 'custom' && inspectorCustomView === 'presets' ? ' active' : ''}`} onClick={() => { setStudioPresetCategory('expression'); setInspectorTab('custom'); setInspectorCustomView('presets'); rememberCharacterInspectorView('custom', 'presets') }} type="button"><Icon name="sparkles" />Presets</button>
               {inspectorTab === 'editor' ? <div className="studio-inspector-content">{propertyPanel()}</div> : <div className="studio-inspector-content">{inspectorCustomView === 'presets' ? presetsPanel() : customPanel()}</div>}
             </aside>}
-          </div>
-        </section>
+        </StudioSceneCanvas>
         {!fullView && <aside className="studio-editor-rail studio-editor-right" aria-label="Elenco do Studio">{castPanel()}</aside>}
         {castPickerOpen && <SceneCastPickerModal title="Personagens do Studio" characters={availableCharacters} selection={castSelection} saving={savingCast} onToggle={(characterId, selected) => setCastSelection((current) => selected ? current.filter((id) => id !== characterId) : [...current, characterId])} onClose={() => setCastPickerOpen(false)} onSave={() => void saveCastSelection()} />}
       </main>
