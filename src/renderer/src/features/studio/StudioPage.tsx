@@ -10,6 +10,7 @@ import { Icon } from '../../ui/components/Icon'
 import { NumericRangeField } from '../../ui/components/NumericRangeField'
 import { SceneElementControls } from '../../ui/components/SceneElementControls'
 import { isLegacySceneCatalogId, loadLegacySceneCatalog } from '../../ui/legacySceneCatalog'
+import { createSceneTextElement, sceneCatalogColor, sceneEditorTools } from '../../ui/sceneEditorDefaults'
 import { CharacterPortrait } from '../../ui/components/CharacterPortrait'
 import { resolveStudioTalkMouthId } from '../../../../shared/studio'
 import { fitStudioCharacterToStage } from '../../../../shared/studioCharacterGeometry'
@@ -24,7 +25,6 @@ type DragState = { id: string; pointerId: number; startX: number; startY: number
 
 const STORAGE_KEY = 'gacha-nymi-studio-catalog-v1'
 const STUDIO_FACE_RENDER_VERSION = 7
-const studioColor = (number: number) => `hsl(${(number * 137.508) % 360} 45% 78%)`
 const defaultStudioEyeTransform: StudioFaceTransform = { x: 0, y: 0, width: 100, height: 100, rotation: 0 }
 function studioFaceModeForElement(element: StudioElement | null, appearance: CustomizerFaceAppearance | undefined): StudioFaceMode {
   if (element?.activeFaceMode) return element.activeFaceMode
@@ -32,18 +32,6 @@ function studioFaceModeForElement(element: StudioElement | null, appearance: Cus
   if (appearance?.mouthOpen) return 'talk'
   return 'idle'
 }
-const studioTools = [
-  { id: 'background', label: 'Fundo', icon: 'frame' },
-  { id: 'objects', label: 'Objetos', icon: 'sparkles' }
-] as const
-function makeElement(kind: StudioElement['kind'], zIndex: number): StudioElement {
-  return {
-    id: crypto.randomUUID(), kind, text: kind === 'narrator' ? 'Texto do narrador' : 'Digite aqui',
-    x: 0, y: 0, width: kind === 'narrator' ? 32 : 28, height: kind === 'narrator' ? 12 : 16,
-    rotation: 0, zIndex
-  }
-}
-
 function makeCanvasPrint(studio: StudioDocument, outputWidth = 1920, outputHeight = 1080, mimeType = 'image/png'): Promise<string> {
   return new Promise((resolve, reject) => {
     const canvas = document.createElement('canvas')
@@ -555,7 +543,7 @@ export function StudioPage() {
     const now = new Date().toISOString()
     const studio: StudioCard = {
       schemaVersion: 1, id: crypto.randomUUID(), title: `Studio ${String(number).padStart(2, '0')}`,
-      color: studioColor(number), createdAt: now, updatedAt: now, backgroundColor: '#d7b5cd',
+      color: sceneCatalogColor(number), createdAt: now, updatedAt: now, backgroundColor: '#d7b5cd',
       backgroundAssetId: null, backgroundX: 0, backgroundY: 0, backgroundWidth: 100, backgroundHeight: 100,
       backgroundRotation: 0, assets: [], elements: []
     }
@@ -574,7 +562,7 @@ export function StudioPage() {
     const now = new Date().toISOString()
     const duplicate: StudioCard = {
       ...source, id: crypto.randomUUID(), title: `Studio ${String(number).padStart(2, '0')}`,
-      color: studioColor(number), createdAt: now, updatedAt: now,
+      color: sceneCatalogColor(number), createdAt: now, updatedAt: now,
       assets: source.assets.map((asset) => ({ ...asset, id: crypto.randomUUID() })),
       elements: source.elements.map((element) => ({
         ...element, id: crypto.randomUUID(), assetId: element.assetId
@@ -730,7 +718,7 @@ export function StudioPage() {
 
   const addTextElement = (kind: 'narrator' | 'speech' | 'thought') => {
     if (!activeStudio) return
-    const element = makeElement(kind, Math.max(0, ...activeStudio.elements.map((item) => item.zIndex)) + 1)
+    const element = createSceneTextElement(kind, Math.max(0, ...activeStudio.elements.map((item) => item.zIndex)) + 1)
     changeScene((studio) => ({ ...studio, elements: [...studio.elements, element], updatedAt: new Date().toISOString() }))
     setSelectedElementId(element.id)
     setInspectorOpen(true)
@@ -1386,7 +1374,7 @@ export function StudioPage() {
             <button className="studio-round-action" disabled={!canRedo} onClick={redo} title="Refazer (Ctrl+Y)" aria-label="Refazer" type="button"><Icon name="redo" /></button>
           </div>
           <nav className="studio-tool-list" aria-label="Ferramentas da cena">
-            {studioTools.map((tool) => <button className={`studio-tool-button${activeTool === tool.id ? ' active' : ''}`} key={tool.id} onClick={() => { setActiveTool(tool.id); setInspectorOpen(true); setInspectorTab('editor') }} type="button"><Icon name={tool.icon} /><span>{tool.label}</span><i aria-hidden="true">✦</i></button>)}
+            {sceneEditorTools.map((tool) => <button className={`studio-tool-button${activeTool === tool.id ? ' active' : ''}`} key={tool.id} onClick={() => { setActiveTool(tool.id); setInspectorOpen(true); setInspectorTab('editor') }} type="button"><Icon name={tool.icon} /><span>{tool.label}</span><i aria-hidden="true">✦</i></button>)}
             <button className="studio-tool-button" onClick={() => addTextElement('narrator')} type="button"><Icon name="message" /><span>Narrador</span><i aria-hidden="true">✦</i></button>
             <button className="studio-tool-button" onClick={() => addTextElement('speech')} type="button"><Icon name="message" /><span>Fala</span><i aria-hidden="true">✦</i></button>
             <button className="studio-tool-button" onClick={() => addTextElement('thought')} type="button"><Icon name="face" /><span>Pensamento</span><i aria-hidden="true">✦</i></button>

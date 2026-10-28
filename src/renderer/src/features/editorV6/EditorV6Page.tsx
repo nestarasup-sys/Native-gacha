@@ -24,6 +24,7 @@ import { Icon } from '../../ui/components/Icon'
 import { NumericRangeField } from '../../ui/components/NumericRangeField'
 import { SceneElementControls } from '../../ui/components/SceneElementControls'
 import { isLegacySceneCatalogId, loadLegacySceneCatalog } from '../../ui/legacySceneCatalog'
+import { createSceneTextElement, sceneCatalogColor, sceneEditorTools } from '../../ui/sceneEditorDefaults'
 import { CharacterPortrait } from '../../ui/components/CharacterPortrait'
 import { recordEditorV6PlaybackFrame, recordUiCommit } from '../../ui/performanceDiagnostics'
 import { resolveEditorV6TalkMouthId } from '../../../../shared/editorV6'
@@ -36,7 +37,6 @@ type EditorV6Card = EditorV6ProjectSummary
 type Tool = 'background' | 'objects' | null
 type DragState = { id: string; target: 'element' | 'background' | 'video'; videoLayout?: EditorV6VideoLayout; pointerId: number; startX: number; startY: number; originalX: number; originalY: number; width: number; height: number; before: EditorV6Document; prepared: EditorV6Document; blockId: string; frame: number; moved: boolean }
 const STORAGE_KEY = 'gacha-nymi-editor-v6-catalog-v1'
-const studioColor = (number: number) => `hsl(${(number * 137.508) % 360} 45% 78%)`
 const editorV6PoseRevisionKey = (modelSlot: number, poseSlot: number) => `${modelSlot}:${poseSlot}`
 function sameCustomizerCharacterCatalog(left: CustomizerCharacter[], right: CustomizerCharacter[]): boolean {
   return left.length === right.length && left.every((character, index) => {
@@ -54,18 +54,6 @@ function samePoseRevisionSnapshot(left: Record<string, string>, right: Record<st
   return keys.length === Object.keys(right).length && keys.every((key) => left[key] === right[key])
 }
 const defaultStudioEyeTransform: EditorV6FaceTransform = { x: 0, y: 0, width: 100, height: 100, rotation: 0 }
-const studioTools = [
-  { id: 'background', label: 'Fundo', icon: 'frame' },
-  { id: 'objects', label: 'Objetos', icon: 'sparkles' }
-] as const
-function makeElement(kind: EditorV6Element['kind'], zIndex: number): EditorV6Element {
-  return {
-    id: crypto.randomUUID(), kind, text: kind === 'narrator' ? 'Texto do narrador' : 'Digite aqui',
-    x: 0, y: 0, width: kind === 'narrator' ? 32 : 28, height: kind === 'narrator' ? 12 : 16,
-    rotation: 0, zIndex
-  }
-}
-
 async function makeStudioThumbnail(studio: EditorV6Document): Promise<string> {
   const { captureEditorV6Frame } = await import('./sceneCapture')
   return captureEditorV6Frame(studio, 0, 480, 270, 'image/jpeg')
@@ -563,7 +551,7 @@ export function EditorV6Page() {
     const now = new Date().toISOString()
     const studio: EditorV6Document = {
       schemaVersion: 1, id: crypto.randomUUID(), title: `Editor V6 ${String(number).padStart(2, '0')}`,
-      color: studioColor(number), createdAt: now, updatedAt: now, backgroundColor: '#d7b5cd',
+      color: sceneCatalogColor(number), createdAt: now, updatedAt: now, backgroundColor: '#d7b5cd',
       backgroundAssetId: null, backgroundX: 0, backgroundY: 0, backgroundWidth: 100, backgroundHeight: 100,
       backgroundRotation: 0, assets: [], elements: [], timeline: createEditorV6Timeline()
     }
@@ -592,7 +580,7 @@ export function EditorV6Page() {
     const now = new Date().toISOString()
     const duplicate: EditorV6Document = {
       ...source, id: crypto.randomUUID(), title: `Editor V6 ${String(number).padStart(2, '0')}`,
-      color: studioColor(number), createdAt: now, updatedAt: now,
+      color: sceneCatalogColor(number), createdAt: now, updatedAt: now,
       assets: source.assets.map((asset) => ({ ...asset, id: crypto.randomUUID() })),
       elements: source.elements.map((element) => ({
         ...element, id: crypto.randomUUID(), assetId: element.assetId
@@ -855,7 +843,7 @@ export function EditorV6Page() {
     const frame = getEditorV6PlaybackFrame()
     if (activeEditorV6.timeline.tracks.some((track) => track.kind === (kind === 'narrator' ? 'video' : kind) && track.locked)) { setError('Desbloqueie a faixa para adicionar um bloco.'); return }
     const element = {
-      ...makeElement(kind, Math.max(0, ...activeEditorV6.elements.map((item) => item.zIndex)) + 1),
+      ...createSceneTextElement(kind, Math.max(0, ...activeEditorV6.elements.map((item) => item.zIndex)) + 1),
       ...(character ? { characterId: character.characterId, x: character.x, y: character.y } : {})
     }
     const blockId = crypto.randomUUID()
@@ -1607,7 +1595,7 @@ export function EditorV6Page() {
             <button className="studio-round-action" disabled={!canRedo} onClick={redo} title="Refazer (Ctrl+Y)" aria-label="Refazer" type="button"><Icon name="redo" /></button>
           </div>
           <nav className="studio-tool-list" aria-label="Ferramentas da cena">
-            {studioTools.map((tool) => <button className={`studio-tool-button${activeTool === tool.id ? ' active' : ''}`} key={tool.id} onClick={() => { setActiveTool(tool.id); setInspectorOpen(true); setInspectorTab('editor') }} type="button"><Icon name={tool.icon} /><span>{tool.label}</span><i aria-hidden="true">✦</i></button>)}
+            {sceneEditorTools.map((tool) => <button className={`studio-tool-button${activeTool === tool.id ? ' active' : ''}`} key={tool.id} onClick={() => { setActiveTool(tool.id); setInspectorOpen(true); setInspectorTab('editor') }} type="button"><Icon name={tool.icon} /><span>{tool.label}</span><i aria-hidden="true">✦</i></button>)}
             <button className="studio-tool-button" onClick={() => addTextElement('narrator')} type="button"><Icon name="message" /><span>Narrador</span><i aria-hidden="true">✦</i></button>
             <button className="studio-tool-button" onClick={() => addTextElement('speech')} disabled={!selectedCharacterElement} title={selectedCharacterElement ? `Adicionar fala a ${selectedCharacterElement.text}` : 'Selecione um personagem na cena'} aria-label="Adicionar fala ao personagem selecionado" type="button"><Icon name="message" /><span>Fala</span><i aria-hidden="true">✦</i></button>
             <button className="studio-tool-button" onClick={() => addTextElement('thought')} disabled={!selectedCharacterElement} title={selectedCharacterElement ? `Adicionar pensamento a ${selectedCharacterElement.text}` : 'Selecione um personagem na cena'} aria-label="Adicionar pensamento ao personagem selecionado" type="button"><Icon name="face" /><span>Pensamento</span><i aria-hidden="true">✦</i></button>
