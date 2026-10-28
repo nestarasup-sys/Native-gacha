@@ -14,9 +14,11 @@ type Props = {
   onPublish: (result: ModelSourceResult) => Promise<void>
 }
 type PreviewMode = 'part' | 'sheet'
-type EditTool = 'select' | 'erase' | 'crop' | 'split' | 'outline' | 'deform'
-type DrawingGesture = { tool: Exclude<EditTool, 'select'>; start: ModelSourcePoint; current: ModelSourcePoint; points: ModelSourcePoint[] }
+type EditTool = 'select' | 'erase' | 'crop' | 'split' | 'outline' | 'deform' | 'guide'
+type DrawingGesture = { tool: 'erase' | 'crop' | 'split' | 'outline'; start: ModelSourcePoint; current: ModelSourcePoint; points: ModelSourcePoint[] }
 type WarpDrag = { pointerId: number; partId: string; last: ImageWarpPoint; originalX: Float32Array; originalY: Float32Array; changed: boolean }
+type GuideLine = { id: string; start: ModelSourcePoint; end: ModelSourcePoint }
+type GuideStroke = { pointerId: number; partId: string; start: ModelSourcePoint; end: ModelSourcePoint }
 type UndoSnapshot = { project: FabricatorProject; dimensions: ModelSourceDimensions; tolerance: number; selectedId: string }
 type MutationResult = { project: FabricatorProject; selectedId: string; status: string }
 
@@ -80,6 +82,8 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
   const [gesture, setGesture] = useState<DrawingGesture | null>(null)
   const [warpSession, setWarpSession] = useState<ModelSourceWarpSession | null>(null)
   const [warpCursor, setWarpCursor] = useState<ModelSourcePoint | null>(null)
+  const [guides, setGuides] = useState<{ partId: string; lines: GuideLine[] }>({ partId: project.parts[0]?.id ?? '', lines: [] })
+  const [guideStroke, setGuideStroke] = useState<GuideStroke | null>(null)
   const [undoCount, setUndoCount] = useState(0)
   const drag = useRef<{ id: string; originX: number; originY: number; clientX: number; clientY: number } | null>(null)
   const surface = useRef<HTMLDivElement>(null)
@@ -87,6 +91,7 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
   const warpSessionRef = useRef<ModelSourceWarpSession | null>(null)
   const warpDrag = useRef<WarpDrag | null>(null)
   const warpDrawFrame = useRef<number | null>(null)
+  const guideDrag = useRef<Pick<GuideStroke, 'pointerId' | 'partId' | 'start'> | null>(null)
   const gestureRef = useRef<DrawingGesture | null>(null)
   const undoStack = useRef<UndoSnapshot[]>([])
 
@@ -105,6 +110,7 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
   const surfaceWidth = Math.max(1, logicalWidth * previewScale)
   const surfaceHeight = Math.max(1, logicalHeight * previewScale)
   const previewPart = previewParts.find(part => part.id === selectedId) ?? selected
+  const visibleGuideLines = guides.partId === selectedId ? guides.lines : []
   warpSessionRef.current = warpSession
 
   useEffect(() => {
@@ -166,6 +172,13 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
   useEffect(() => () => {
     if (warpDrawFrame.current !== null) cancelAnimationFrame(warpDrawFrame.current)
   }, [])
+
+  useEffect(() => {
+    if (guides.partId === selectedId) return
+    guideDrag.current = null
+    setGuideStroke(null)
+    setGuides({ partId: selectedId, lines: [] })
+  }, [selectedId, guides.partId])
 
   const setRect = (part: ModelPart, next: { x: number; y: number; width: number; height: number }) => {
     const original = sourceRect(part)
@@ -263,13 +276,56 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
   })
   const pointsForPart = (points: ModelSourcePoint[], part: ModelPart, width: number, height: number) =>
     points.map(point => scalePointToPart(point, part, width, height))
-  const pointerPoint = (event: ReactPointerEvent<HTMLDivElement>): ModelSourcePoint | null => {
+  const pointerPoint = (event: Pick<ReactPointerEvent<HTMLElement>, 'clientX' | 'clientY'>): ModelSourcePoint | null => {
     const bounds = surface.current?.getBoundingClientRect()
     if (!bounds || !bounds.width || !bounds.height) return null
     return {
       x: clamp((event.clientX - bounds.left) * logicalWidth / bounds.width, 0, logicalWidth),
       y: clamp((event.clientY - bounds.top) * logicalHeight / bounds.height, 0, logicalHeight)
     }
+  }
+  const beginGuideStroke = (pointerId: number, start: ModelSourcePoint) => {
+    if (!selected || tool !== 'guide' || mode !== 'part' || busy || downloading) return
+    guideDrag.current = { pointerId, partId: selected.id, start }
+    setGuideStroke({ pointerId, partId: selected.id, start, end: start })
+    surface.current?.setPointerCapture(pointerId)
+  }
+  const startGuide = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (tool !== 'guide' || mode !== 'part' || busy || downloading || event.button !== 0) return
+    const point = pointerPoint(event)
+    if (!point) return
+    event.preventDefault()
+    beginGuideStroke(event.pointerId, point)
+  }
+  const extendGuide = (event: ReactPointerEvent<SVGCircleElement>, start: ModelSourcePoint) => {
+    if (tool !== 'guide' || mode !== 'part' || busy || downloading || event.button !== 0) return
+    event.preventDefault()
+    event.stopPropagation()
+    beginGuideStroke(event.pointerId, start)
+  }
+  const moveGuide = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = guideDrag.current
+    if (!drag || drag.pointerId !== event.pointerId || drag.partId !== selectedId || tool !== 'guide') return
+    const point = pointerPoint(event)
+    if (!point) return
+    setGuideStroke({ pointerId: drag.pointerId, partId: drag.partId, start: drag.start, end: point })
+  }
+  const finishGuide = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = guideDrag.current
+    if (!drag || drag.pointerId !== event.pointerId) return
+    const end = event.type === 'pointerup' ? pointerPoint(event) : null
+    guideDrag.current = null
+    setGuideStroke(null)
+    try { surface.current?.releasePointerCapture(event.pointerId) } catch { /* A captura pode já ter sido liberada pelo navegador. */ }
+    if (!end || drag.partId !== selectedId || Math.hypot(end.x - drag.start.x, end.y - drag.start.y) < 2) return
+    const line = { id: crypto.randomUUID(), start: drag.start, end }
+    setGuides(current => ({ partId: drag.partId, lines: [...(current.partId === drag.partId ? current.lines : []), line] }))
+  }
+  const cancelGuide = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (guideDrag.current?.pointerId !== event.pointerId) return
+    guideDrag.current = null
+    setGuideStroke(null)
+    try { surface.current?.releasePointerCapture(event.pointerId) } catch { /* A captura pode já ter sido liberada pelo navegador. */ }
   }
   const drawWarpPreview = () => {
     const session = warpSessionRef.current
@@ -385,7 +441,7 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
     }
   }
   const startDrawing = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (mode !== 'part' || tool === 'select' || tool === 'deform' || !selected || busy || downloading || event.button !== 0) return
+    if (mode !== 'part' || tool === 'select' || tool === 'deform' || tool === 'guide' || !selected || busy || downloading || event.button !== 0) return
     const point = pointerPoint(event)
     if (!point) return
     setError('')
@@ -423,6 +479,8 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
   const cancelDrawing = () => {
     gestureRef.current = null
     setGesture(null)
+    guideDrag.current = null
+    setGuideStroke(null)
     setWarpCursor(null)
   }
   const setEditTool = (next: EditTool) => {
@@ -628,6 +686,8 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
               <button type="button" style={toolButton(tool === 'split', busy || downloading || !selected)} disabled={busy || downloading || !selected} onClick={() => setEditTool('split')}>Dividir com linha</button>
               <button type="button" style={toolButton(tool === 'outline', busy || downloading || !selected)} disabled={busy || downloading || !selected} onClick={() => setEditTool('outline')}>Apagar contorno</button>
               <button type="button" title={isThigh ? 'Arraste sobre a coxa para deformar' : 'A ferramenta está disponível somente nas coxas'} style={toolButton(tool === 'deform', busy || downloading || !isThigh)} disabled={busy || downloading || !isThigh} onClick={() => setEditTool('deform')}>〰 Deformar coxa</button>
+              <button type="button" title="Desenhe guias temporárias e estenda-as pelas bolinhas das pontas" style={toolButton(tool === 'guide', busy || downloading || !selected)} disabled={busy || downloading || !selected} onClick={() => setEditTool(tool === 'guide' ? 'select' : 'guide')}>／ Linha temporária</button>
+              {tool === 'guide' && visibleGuideLines.length > 0 && <button type="button" style={toolButton(false, busy || downloading)} disabled={busy || downloading} onClick={() => setGuides({ partId: selectedId, lines: [] })}>Limpar guias</button>}
               {(tool === 'erase' || tool === 'outline') && <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: '#a9b5c4' }}>Pincel {brushSize}px
                 <input aria-label="Tamanho do pincel" type="range" min={4} max={80} step={1} value={brushSize} onChange={event => setBrushSize(Number(event.target.value))} disabled={busy || downloading} />
               </label>}
@@ -649,8 +709,10 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
                       : tool === 'erase' ? 'Pinte a área que deseja apagar.'
                         : tool === 'outline' ? 'Pinte sobre o contorno escuro para removê-lo automaticamente.'
                       : tool === 'deform' ? warpSession ? 'Arraste sobre a coxa para deformar. Cada traço fica no rascunho; “Salvar no original” publica.' : 'Preparando a coxa para deformar…'
+                        : tool === 'guide' ? 'Segure e arraste para criar uma linha. Arraste uma bolinha para continuar a linha; outras ferramentas travam as guias.'
                           : 'Prévia isolada · Ctrl + roda do mouse também altera o zoom'}
               </small>
+              {mode === 'part' && visibleGuideLines.length > 0 && tool !== 'guide' && <small style={{ color: '#a5fff4', whiteSpace: 'nowrap' }}>Guias travadas</small>}
               {mode === 'part' && gesture && <div style={{ display: 'flex', gap: 5 }}>
                 {gesture.tool === 'crop' && <button type="button" style={toolButton(false, busy || downloading)} disabled={busy || downloading} onClick={applyCrop}>Aplicar corte</button>}
                 {gesture.tool === 'split' && <button type="button" style={toolButton(false, busy || downloading)} disabled={busy || downloading} onClick={applySplit}>Dividir peça</button>}
@@ -663,10 +725,10 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
               <div style={{ width: 'max-content', height: 'max-content', margin: '0 auto' }}>
                 <div
                   ref={surface}
-                  onPointerDown={tool === 'deform' ? startWarp : startDrawing}
-                  onPointerMove={tool === 'deform' ? moveWarp : moveDrawing}
-                  onPointerUp={tool === 'deform' ? event => { void finishWarp(event) } : finishDrawing}
-                  onPointerCancel={tool === 'deform' ? event => { void finishWarp(event) } : cancelDrawing}
+                  onPointerDown={tool === 'guide' ? startGuide : tool === 'deform' ? startWarp : startDrawing}
+                  onPointerMove={tool === 'guide' ? moveGuide : tool === 'deform' ? moveWarp : moveDrawing}
+                  onPointerUp={tool === 'guide' ? finishGuide : tool === 'deform' ? event => { void finishWarp(event) } : finishDrawing}
+                  onPointerCancel={tool === 'guide' ? cancelGuide : tool === 'deform' ? event => { void finishWarp(event) } : cancelDrawing}
                   onPointerLeave={() => { if (!warpDrag.current) setWarpCursor(null) }}
                   style={{ position: 'relative', flex: '0 0 auto', width: surfaceWidth, height: surfaceHeight, ...checker, cursor: mode === 'part' && tool !== 'select' ? 'crosshair' : 'default', touchAction: 'none', userSelect: 'none', overflow: 'hidden' }}
                 >
@@ -676,6 +738,13 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
                       ? <canvas ref={warpCanvas} aria-label={'Prévia deformável: ' + (selected?.name ?? 'coxa')} style={{ width: '100%', height: '100%', objectFit: 'fill', display: 'block', pointerEvents: 'none' }} />
                       : previewPart && <img src={previewPart.dataUrl} alt={'Prévia isolada: ' + previewPart.name} draggable={false} style={{ width: '100%', height: '100%', objectFit: 'fill', display: 'block', pointerEvents: 'none' }} />}
                   {mode === 'sheet' && selectedRect && <div aria-label={isHead ? 'Arraste a cabeça para mover na folha original' : 'Peça selecionada'} onPointerDown={startHeadDrag} onPointerMove={moveHeadDrag} onPointerUp={stopHeadDrag} onPointerCancel={stopHeadDrag} style={{ position: 'absolute', left: selectedRect.x * previewScale, top: selectedRect.y * previewScale, width: selectedRect.width * previewScale, height: selectedRect.height * previewScale, border: '2px dashed #3b89ff', boxSizing: 'border-box', cursor: isHead ? 'grab' : 'default', touchAction: 'none', userSelect: 'none' }} />}
+                  {mode === 'part' && (visibleGuideLines.length > 0 || guideStroke?.partId === selectedId) && <svg aria-label="Linhas temporárias de referência" width="100%" height="100%" viewBox={'0 0 ' + logicalWidth + ' ' + logicalHeight} preserveAspectRatio="none" style={{ position: 'absolute', inset: 0, overflow: 'visible', pointerEvents: 'none' }}>
+                    {visibleGuideLines.map(line => <g key={line.id}>
+                      <line x1={line.start.x} y1={line.start.y} x2={line.end.x} y2={line.end.y} stroke="#70d6d0" strokeWidth="2" strokeDasharray="6 4" vectorEffect="non-scaling-stroke" />
+                      {[line.start, line.end].map((point, index) => <circle key={index} cx={point.x} cy={point.y} r={6 / previewScale} fill="#14252d" stroke="#a5fff4" strokeWidth="2" vectorEffect="non-scaling-stroke" pointerEvents={tool === 'guide' ? 'all' : 'none'} aria-label={tool === 'guide' ? 'Arraste para criar uma linha conectada' : 'Guia temporária travada'} onPointerDown={event => extendGuide(event, point)} style={{ cursor: tool === 'guide' ? 'crosshair' : 'default' }} />)}
+                    </g>)}
+                    {guideStroke?.partId === selectedId && <line x1={guideStroke.start.x} y1={guideStroke.start.y} x2={guideStroke.end.x} y2={guideStroke.end.y} stroke="#a5fff4" strokeWidth="2" strokeDasharray="3 3" vectorEffect="non-scaling-stroke" />}
+                  </svg>}
                   {mode === 'part' && gesture && <svg aria-hidden="true" width="100%" height="100%" viewBox={'0 0 ' + logicalWidth + ' ' + logicalHeight} preserveAspectRatio="none" style={{ position: 'absolute', inset: 0, overflow: 'visible', pointerEvents: 'none' }}>
                     {gesture.tool === 'crop' && <rect x={Math.min(gesture.start.x, gesture.current.x)} y={Math.min(gesture.start.y, gesture.current.y)} width={Math.abs(gesture.current.x - gesture.start.x)} height={Math.abs(gesture.current.y - gesture.start.y)} fill="rgba(59,137,255,.18)" stroke="#61a5ff" strokeWidth="2" vectorEffect="non-scaling-stroke" />}
                     {gesture.tool === 'split' && <line x1={gesture.start.x} y1={gesture.start.y} x2={gesture.current.x} y2={gesture.current.y} stroke="#ff6677" strokeWidth="3" vectorEffect="non-scaling-stroke" />}
