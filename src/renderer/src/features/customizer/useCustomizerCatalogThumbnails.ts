@@ -40,8 +40,8 @@ export function useCustomizerCatalogThumbnails(deps: CatalogThumbnailDependencie
         let artwork: CatalogArtwork | null = null
         const firstPose = catalogPoses.find((pose) => pose?.sourceModelSlot === model.slot && pose.slot === 1)
         try {
-          if (firstPose) artwork = await window.desktop.loadFabricatorPose(model.slot, 1)
-          if (!artwork) artwork = await window.desktop.loadFabricatorSlot(model.slot)
+          if (firstPose) artwork = await window.desktop.fabricator.loadFabricatorPose(model.slot, 1)
+          if (!artwork) artwork = await window.desktop.fabricator.loadFabricatorSlot(model.slot)
           if (!artwork) continue
           const thumbnail = await renderArtwork(artwork, 144)
           if (cancelled) return
@@ -67,7 +67,7 @@ export function useCustomizerCatalogThumbnails(deps: CatalogThumbnailDependencie
         const cacheKey = `pose-tight-v2:${key}:${pose.updatedAt}`
         if (thumbnailCache.current.has(cacheKey)) continue
         try {
-          const artwork: FabricatorPose | null = await window.desktop.loadFabricatorPose(pose.sourceModelSlot, pose.slot)
+          const artwork: FabricatorPose | null = await window.desktop.fabricator.loadFabricatorPose(pose.sourceModelSlot, pose.slot)
           if (!artwork) continue
           const thumbnail = await renderArtwork(artwork, 420, undefined, true)
           if (cancelled) return

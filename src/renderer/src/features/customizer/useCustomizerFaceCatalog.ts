@@ -31,10 +31,10 @@ export function useCustomizerFaceCatalog(deps: {
     if (selectedModelSlot === null) { setFaceCatalogItems([]); return }
     let cancelled = false
     setFaceLoading(true)
-    void window.desktop.listFaceCatalog(selectedModelSlot).then(async (summaries) => {
+    void window.desktop.fabricator.listFaceCatalog(selectedModelSlot).then(async (summaries) => {
       if (cancelled) return
       setFaceCatalogItems(summaries)
-      const loaded = await Promise.all(summaries.map(async (summary) => ({ key: `${summary.modelSlot}:${summary.id}`, item: await window.desktop.loadFaceCatalogItem(summary.modelSlot, summary.id) })))
+      const loaded = await Promise.all(summaries.map(async (summary) => ({ key: `${summary.modelSlot}:${summary.id}`, item: await window.desktop.fabricator.loadFaceCatalogItem(summary.modelSlot, summary.id) })))
       if (cancelled) return
       setFaceCatalogDetails((current) => {
         const next = { ...current }
@@ -62,8 +62,8 @@ export function useCustomizerFaceCatalog(deps: {
     if (selectedModelSlot === null) { setFaceComponentAssets([]); setFaceComponentDetails({}); setFaceComponentLoading(false); return }
     let cancelled = false
     setFaceComponentLoading(true)
-    void window.desktop.listFaceComponentAssets(selectedModelSlot).then(async (summaries) => {
-      const details = await Promise.all(summaries.map((summary) => window.desktop.loadFaceComponentAsset(selectedModelSlot, summary.id)))
+    void window.desktop.fabricator.listFaceComponentAssets(selectedModelSlot).then(async (summaries) => {
+      const details = await Promise.all(summaries.map((summary) => window.desktop.fabricator.loadFaceComponentAsset(selectedModelSlot, summary.id)))
       if (cancelled) return
       setFaceComponentAssets(summaries)
       setFaceComponentDetails(Object.fromEntries(details.filter((item): item is FaceComponentAsset => Boolean(item)).map((item) => [item.id, item])))
@@ -76,7 +76,7 @@ export function useCustomizerFaceCatalog(deps: {
     let cancelled = false
     const key = `${appearance.modelSlot}:${appearance.setId}`
     if (faceDetails[key]) return
-    void window.desktop.loadFaceSet(appearance.modelSlot, appearance.setId).then((face) => {
+    void window.desktop.fabricator.loadFaceSet(appearance.modelSlot, appearance.setId).then((face) => {
       if (!cancelled && face) setFaceDetails((current) => ({ ...current, [key]: face }))
     }).catch((reason: unknown) => {
       if (!cancelled) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível carregar o rosto legado.')

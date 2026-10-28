@@ -41,7 +41,7 @@ export function useCustomizerWardrobeHydration(deps: {
       // Keep legacy references intact if their source vanished; this must not become a recurring global catalog error.
       const restored = await Promise.all(groupsToRestore.map(async (group) => {
         const key = `${group.modelSlot}:${group.setId}`
-        const set = await window.desktop.loadWardrobeSet(group.modelSlot, group.setId)
+        const set = await window.desktop.fabricator.loadWardrobeSet(group.modelSlot, group.setId)
         return { group, key, set }
       }))
       if (cancelled) return
@@ -65,8 +65,8 @@ export function useCustomizerWardrobeHydration(deps: {
         const modelSlot = selectedCharacter.customization.modelSlot ?? 1
         const poseSlot = selectedCharacter.customization.poseSlot
         const source = await loadCustomizerArtworkSource(modelSlot, poseSlot, {
-          loadModel: window.desktop.loadFabricatorSlot,
-          loadPose: window.desktop.loadFabricatorPose
+          loadModel: window.desktop.fabricator.loadFabricatorSlot,
+          loadPose: window.desktop.fabricator.loadFabricatorPose
         })
         if (source.status === 'ready') {
           const { artwork } = source

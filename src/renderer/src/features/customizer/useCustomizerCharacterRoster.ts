@@ -18,7 +18,7 @@ export function useCustomizerCharacterRoster() {
 
   useEffect(() => {
     let cancelled = false
-    void window.desktop.listCustomizerCharacters().then((loaded) => {
+    void window.desktop.customizer.listCustomizerCharacters().then((loaded) => {
       if (cancelled) return
       charactersRef.current = loaded
       setCharacters(loaded)

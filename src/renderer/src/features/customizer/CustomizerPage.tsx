@@ -230,7 +230,7 @@ export function CustomizerPage() {
 
   useEffect(() => {
     let cancelled = false
-    void Promise.all([window.desktop.listFabricatorSlots(), window.desktop.listFabricatorPoseSlots()])
+    void Promise.all([window.desktop.fabricator.listFabricatorSlots(), window.desktop.fabricator.listFabricatorPoseSlots()])
       .then(async ([models, poses]) => {
         if (cancelled) return
         setCatalogModels(models)
@@ -315,7 +315,7 @@ export function CustomizerPage() {
     if (!wardrobeCatalogVisible || selectedCatalogModelSlot === null) return
     let cancelled = false
     setWardrobeLoading(true)
-    void window.desktop.listWardrobeSets(selectedCatalogModelSlot).then((sets) => {
+    void window.desktop.fabricator.listWardrobeSets(selectedCatalogModelSlot).then((sets) => {
       if (!cancelled) setWardrobeSets(sets)
     }).catch((reason: unknown) => {
       if (!cancelled) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível carregar o catálogo de roupas.')
@@ -335,8 +335,8 @@ export function CustomizerPage() {
     if (selectedCatalogModelSlot === null || !(activeModule === 'Cabelos' || activeModule === 'Cabeça' && headPanelTab === 'hair')) { setHairStyles([]); return }
     let cancelled = false
     setHairLoading(true)
-    void window.desktop.listHairStyles(selectedCatalogModelSlot).then(async (summaries) => {
-      const styles = await Promise.all(summaries.map((summary) => window.desktop.loadHairStyle(selectedCatalogModelSlot, summary.id)))
+    void window.desktop.fabricator.listHairStyles(selectedCatalogModelSlot).then(async (summaries) => {
+      const styles = await Promise.all(summaries.map((summary) => window.desktop.fabricator.loadHairStyle(selectedCatalogModelSlot, summary.id)))
       if (cancelled) return
       setHairStyles(summaries)
       setHairDetails((current) => {
@@ -391,7 +391,7 @@ export function CustomizerPage() {
       for (const summary of wardrobeSets) {
         let set: WardrobeSet | null = null
         try {
-          set = await window.desktop.loadWardrobeSet(summary.modelSlot, summary.id)
+          set = await window.desktop.fabricator.loadWardrobeSet(summary.modelSlot, summary.id)
           if (!set || cancelled) continue
           setWardrobeDetails((current) => ({ ...current, [`${summary.modelSlot}:${summary.id}`]: set! }))
           for (const group of Object.values(clothingCategories).flat()) {
@@ -441,7 +441,7 @@ export function CustomizerPage() {
 
 
   async function chooseFaceCatalogItem(summary: FaceCatalogItemSummary, variantIndex?: number) {
-    const item = faceCatalogDetails[`${summary.modelSlot}:${summary.id}`] ?? await window.desktop.loadFaceCatalogItem(summary.modelSlot, summary.id)
+    const item = faceCatalogDetails[`${summary.modelSlot}:${summary.id}`] ?? await window.desktop.fabricator.loadFaceCatalogItem(summary.modelSlot, summary.id)
     if (!item || !selectedCharacter) return
     setFaceCatalogDetails((current) => ({ ...current, [`${summary.modelSlot}:${summary.id}`]: item }))
     const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
@@ -453,7 +453,7 @@ export function CustomizerPage() {
     const sameModel = previous?.modelSlot === item.modelSlot
     const migrated: Partial<Pick<CustomizerFaceAppearance, 'eyeCatalogId' | 'eyebrowCatalogId' | 'noseCatalogId' | 'mouthClosedCatalogId' | 'mouthOpenCatalogId'>> = {}
     if (sameModel && previous?.setId) {
-      const legacySet = await window.desktop.loadFaceSet(previous.modelSlot, previous.setId)
+      const legacySet = await window.desktop.fabricator.loadFaceSet(previous.modelSlot, previous.setId)
       for (const kind of Object.keys(field) as FaceSheetKind[]) {
         if (!legacySet?.sheets[kind]) continue
         const legacyItemId = `legacy_${legacySet.id}_${kind}`
@@ -499,7 +499,7 @@ export function CustomizerPage() {
       : faceComponentAssets.find((candidate) => sameFaceAssetPair(leftSummary, candidate, faceComponentDetails)) ?? leftSummary
     const selectedAssets = new Map<string, FaceComponentAsset>()
     for (const candidate of new Set([leftSummary, rightSummary])) {
-      const asset = faceComponentDetails[candidate.id] ?? await window.desktop.loadFaceComponentAsset(candidate.modelSlot, candidate.id)
+      const asset = faceComponentDetails[candidate.id] ?? await window.desktop.fabricator.loadFaceComponentAsset(candidate.modelSlot, candidate.id)
       if (asset) selectedAssets.set(candidate.id, asset)
     }
     const item = selectedAssets.get((part.side === 'right' ? rightSummary : leftSummary).id)
@@ -735,7 +735,7 @@ export function CustomizerPage() {
     setCharactersError('')
     try {
       if (dialogMode === 'create') {
-        const character = await window.desktop.createCustomizerCharacter(name)
+        const character = await window.desktop.customizer.createCustomizerCharacter(name)
         charactersRef.current = [...charactersRef.current, character]
         setCharacters((current) => [...current, character])
         setSelectedCharacterId(character.id)
@@ -754,7 +754,7 @@ export function CustomizerPage() {
   async function deleteSelectedCharacter() {
     if (!selectedCharacter || !window.confirm(`Excluir ${selectedCharacter.name}? Esta ação não remove modelos nem poses do Fabricador Dev.`)) return
     try {
-      await window.desktop.deleteCustomizerCharacter(selectedCharacter.id)
+      await window.desktop.customizer.deleteCustomizerCharacter(selectedCharacter.id)
       const remaining = characters.filter((character) => character.id !== selectedCharacter.id)
       charactersRef.current = remaining
       setCharacters(remaining)

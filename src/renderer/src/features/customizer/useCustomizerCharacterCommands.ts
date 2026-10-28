@@ -35,7 +35,7 @@ export function useCustomizerCharacterCommands(deps: {
     setCharacters(charactersRef.current)
     const previousWrite = characterSaveQueue.current.get(next.id)
     const write = (previousWrite ? previousWrite.catch(() => undefined) : Promise.resolve())
-      .then(() => window.desktop.saveCustomizerCharacter(next))
+      .then(() => window.desktop.customizer.saveCustomizerCharacter(next))
     characterSaveQueue.current.set(next.id, write)
     try {
       await write
@@ -45,7 +45,7 @@ export function useCustomizerCharacterCommands(deps: {
       setCharacterSaveState('error')
       setCharactersError(reason instanceof Error ? reason.message : 'Não foi possível salvar o personagem.')
       if (characterSaveQueue.current.get(next.id) === write) {
-        const latest = await window.desktop.listCustomizerCharacters().catch(() => null)
+        const latest = await window.desktop.customizer.listCustomizerCharacters().catch(() => null)
         if (latest) {
           charactersRef.current = latest
           setCharacters(latest)

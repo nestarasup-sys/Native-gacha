@@ -93,8 +93,8 @@ export function useCustomizerInitialArtworkPreview(deps: {
           }
         }, {
           loadSource: (slot, selectedPose, cachedModel) => loadCustomizerArtworkSource(slot, selectedPose, {
-            loadModel: window.desktop.loadFabricatorSlot,
-            loadPose: window.desktop.loadFabricatorPose
+            loadModel: window.desktop.fabricator.loadFabricatorSlot,
+            loadPose: window.desktop.fabricator.loadFabricatorPose
           }, cachedModel),
           sampleOriginalSkinTone,
           renderBasePreview: renderCustomizerBasePreview

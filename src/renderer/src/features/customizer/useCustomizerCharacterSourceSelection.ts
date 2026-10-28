@@ -54,8 +54,8 @@ export function useCustomizerCharacterSourceSelection(deps: {
       zoom: customizerPreviewZoom
     }, {
       loadSource: (slot, selectedPose, cached) => loadCustomizerArtworkSource(slot, selectedPose, {
-        loadModel: window.desktop.loadFabricatorSlot,
-        loadPose: window.desktop.loadFabricatorPose
+        loadModel: window.desktop.fabricator.loadFabricatorSlot,
+        loadPose: window.desktop.fabricator.loadFabricatorPose
       }, cached),
       sampleOriginalSkinTone,
       renderBasePreview: renderCustomizerBasePreview
