@@ -5,7 +5,6 @@ import { isEditorV6BlinkRenderMode } from '../../../shared/editorV6FaceSchedule'
 import { eyeInteriorMaskSource } from '../ui/image/eyeInteriorMask'
 import { configureCharacterSampling } from './renderResolution'
 import { drawFaceExpressionEffects } from './expressionEffectRender'
-import { legacyStandardExpressionEffects } from '../../../shared/legacyExpressionEffects'
 import type { CharacterRenderAssetProvider } from '../../../shared/characterRenderAssets'
 import { resolveSavedCharacterSource, characterShapeScale, type CatalogArtwork } from './characterSourceResolver'
 import { getCharacterProportions } from '../../../shared/customizer'
@@ -17,34 +16,13 @@ import { alignMouthTransformToClosedBase, createClosedEyeAssetResolver, faceElem
 import { createCharacterCanvas, isCharacterCanvasWorker } from './canvasSurface'
 import { createCharacterWardrobeRenderer } from './characterWardrobeRenderer'
 import { drawPreviewImageWithHalo } from './characterCanvasDrawing'
+import { loadStandardExpressionEffects, type StandardExpressionEffects } from './standardExpressionEffects'
 export { loadCachedImage } from './editorV6CharacterImageMemos'
 export { withCharacterHeadSize, characterShapeScale } from './characterSourceResolver'
 export type { CatalogArtwork } from './characterSourceResolver'
 
-export type StandardExpressionEffects = Record<number, FaceExpressionEffects>
-
-export async function loadStandardExpressionEffects(modelSlot: number, assetProvider: CharacterRenderAssetProvider = window.desktop): Promise<StandardExpressionEffects> {
-  const summaries = await assetProvider.listFaceExpressionPresets(modelSlot)
-  const standard = summaries.filter((preset) => (preset.collectionId ?? 'standard') === 'standard'
-    && Number.isInteger(preset.expressionIndex) && preset.expressionIndex! >= 0 && preset.expressionIndex! < 21)
-  const loaded = await Promise.all(standard.map((summary) => assetProvider.loadFaceExpressionPreset(modelSlot, summary.id)))
-  const effectsByIndex: StandardExpressionEffects = {}
-  for (const preset of loaded) {
-    if (!preset || !Number.isInteger(preset.expressionIndex)) continue
-    const fallback = legacyStandardExpressionEffects({ ...preset, collectionId: preset.collectionId ?? 'standard' })
-    const effects = preset.effects ?? fallback
-    if (!effects) continue
-    // Customizer's checkbox controls the mouth blush. Keep the other authored
-    // expression effects exclusive to Editor V6 presets.
-    effectsByIndex[preset.expressionIndex!] = {
-      ...structuredClone(effects),
-      shadow: { ...effects.shadow, enabled: false },
-      blush: { ...effects.blush, enabled: false },
-      mouthBlush: { ...effects.mouthBlush }
-    }
-  }
-  return effectsByIndex
-}
+export { loadStandardExpressionEffects }
+export type { StandardExpressionEffects }
 
 export const isRightFaceAsset = resolveIsRightFaceAsset
 
