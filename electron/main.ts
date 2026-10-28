@@ -5,7 +5,7 @@ import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } 
 import { createHash, randomUUID } from 'node:crypto'
 import { Readable } from 'node:stream'
 import { fileURLToPath } from 'node:url'
-import type { FaceAssetKind, FaceAssetSave, FaceCatalogItem, FaceCatalogItemSave, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSave, FaceComponentAssetSummary, FaceElementKind, FaceExpressionPreset, FaceExpressionTransforms, FaceExpressionWorkspaceDraft, FaceSet, FaceSetSave, FaceSheetKind, FaceTransform, FabricatorAssetSave, FabricatorHistoryEntry, FabricatorHistorySaveEntry, FabricatorHistorySaveState, FabricatorHistoryState, FabricatorPoseDraftSave, FabricatorPoseSave, FabricatorProject, FabricatorProjectSave, HairStyle, HairStyleAsset, HairStyleSave, HairStyleSummary, HairWorkspace, HairWorkspaceAsset, HairWorkspaceSave, ModelPart, WardrobeAssetSave, WardrobeCategory, WardrobeSet, WardrobeSetSave } from '../src/shared/fabricator'
+import type { FaceAssetKind, FaceAssetSave, FaceCatalogItem, FaceCatalogItemSave, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSave, FaceComponentAssetSummary, FaceElementKind, FaceExpressionPreset, FaceExpressionTransforms, FaceExpressionWorkspaceDraft, FaceSet, FaceSetSave, FaceSheetKind, FaceTransform, FabricatorAssetSave, FabricatorHistoryEntry, FabricatorHistorySaveEntry, FabricatorHistorySaveState, FabricatorHistoryState, FabricatorPoseDraftSave, FabricatorPoseSave, FabricatorProject, FabricatorProjectSave, HairStyle, HairStyleAsset, HairStyleSave, HairWorkspace, HairWorkspaceAsset, HairWorkspaceSave, ModelPart, WardrobeAssetSave, WardrobeCategory, WardrobeSet, WardrobeSetSave } from '../src/shared/fabricator'
 import { hairCategories } from '../src/shared/hairCategories'
 import type { StudioAsset, StudioDocument } from '../src/shared/studio'
 import { isStudioExpressionEffects, isStudioFaceTransforms } from '../src/shared/studio'
@@ -41,6 +41,7 @@ import { createFabricatorCatalogListings, legacyHairStyle } from './domains/fabr
 import { registerFabricatorWardrobeCatalogHandlers } from './domains/fabricator/wardrobeCatalogIpc'
 import { createFaceGuidePersistence, isFaceGuideProfile } from './domains/fabricator/faceGuidePersistence'
 import { registerFabricatorFaceCatalogHandlers } from './domains/fabricator/faceCatalogIpc'
+import { registerFabricatorHairHandlers } from './domains/fabricator/hairIpc'
 import { registerFaceGuideHandlers } from './domains/fabricator/faceGuidesIpc'
 import { publishModelSource, type ModelSourcePublishRequest } from './domains/fabricator/modelSource'
 import { recoverModelSourceSlot } from './domains/fabricator/modelSourceRecovery'
@@ -275,6 +276,7 @@ const faceGuidePersistence = createFaceGuidePersistence({ mkdir, readFile, write
 let dataMigration: InstanceType<typeof DataMigrationService> | null = null
 let dataBackupService: InstanceType<typeof DataBackupService> | null = null
 let dataMigrationIpc: ReturnType<typeof registerDataMigrationHandlers> | null = null
+let fabricatorHairIpc: ReturnType<typeof registerFabricatorHairHandlers> | null = null
 let editorV6ExportService: ReturnType<typeof registerEditorV6ExportHandlers> | null = null
 let editorV6MotionService: ReturnType<typeof createEditorV6MotionService> | null = null
 
@@ -367,7 +369,6 @@ let wardrobeSaveQueue: Promise<void> = Promise.resolve()
 let faceSaveQueue: Promise<void> = Promise.resolve()
 let expressionPresetSaveQueue: Promise<void> = Promise.resolve()
 let faceGuideSaveQueue: Promise<void> = Promise.resolve()
-const hairSaveQueues = new Map<number, Promise<void>>()
 
 function queueFaceSave(operation: () => Promise<void>): Promise<void> {
   const next = faceSaveQueue.catch(() => undefined).then(operation)
@@ -1244,7 +1245,7 @@ async function registerFabricatorHandlers(): Promise<void> {
   ipcMain.handle(studioIpcChannels.flushPendingWrites, async (event): Promise<void> => {
     assertTrustedSender(event)
     const pendingWrites = [
-      ...fabricatorSaveQueues.values(), ...poseSaveWrites, ...hairSaveQueues.values(),
+      ...fabricatorSaveQueues.values(), ...poseSaveWrites, ...(fabricatorHairIpc?.getPendingWrites() ?? []),
       animatorSaveQueue, wardrobeSaveQueue, faceSaveQueue, expressionPresetSaveQueue,
       faceGuideSaveQueue, customizerService.pendingWrites,
       studioSaveQueues.studio, editorV6SaveQueue, roteirosSaveQueue
@@ -1676,47 +1677,17 @@ async function registerFabricatorHandlers(): Promise<void> {
     queueSave: queueFaceGuideSave
   })
 
-  ipcMain.handle(fabricatorIpcChannels.loadHairWorkspace, async (event, modelSlot: number): Promise<HairWorkspace | null> => {
-    assertTrustedSender(event)
-    return readHairWorkspace(modelSlot)
-  })
-
-  ipcMain.handle(fabricatorIpcChannels.saveHairWorkspace, async (event, modelSlot: number, workspace: HairWorkspaceSave, assets: HairWorkspaceAsset[]): Promise<void> => {
-    assertTrustedSender(event)
-    const previous = hairSaveQueues.get(modelSlot) ?? Promise.resolve()
-    const current = previous.catch(() => undefined).then(() => writeHairWorkspace(modelSlot, workspace, assets))
-    hairSaveQueues.set(modelSlot, current)
-    try { await current } finally { if (hairSaveQueues.get(modelSlot) === current) hairSaveQueues.delete(modelSlot) }
-  })
-
-  ipcMain.handle(fabricatorIpcChannels.listHairStyles, async (event, modelSlot: number): Promise<HairStyleSummary[]> => {
-    assertTrustedSender(event)
-    return catalogListings.listHair(modelSlot)
-  })
-
-  ipcMain.handle(fabricatorIpcChannels.loadHairStyle, async (event, modelSlot: number, id: string): Promise<HairStyle | null> => {
-    assertTrustedSender(event)
-    return readHairStyle(modelSlot, id)
-  })
-
-  ipcMain.handle(fabricatorIpcChannels.saveHairStyle, async (event, modelSlot: number, style: HairStyleSave, assets: HairStyleAsset[]): Promise<void> => {
-    assertTrustedSender(event)
-    const previous = hairSaveQueues.get(modelSlot) ?? Promise.resolve()
-    const current = previous.catch(() => undefined).then(() => writeHairStyle(modelSlot, style, assets))
-    hairSaveQueues.set(modelSlot, current)
-    try { await current } finally { if (hairSaveQueues.get(modelSlot) === current) hairSaveQueues.delete(modelSlot) }
-  })
-
-  ipcMain.handle(fabricatorIpcChannels.deleteHairStyle, async (event, modelSlot: number, id: string): Promise<void> => {
-    assertTrustedSender(event)
-    if (!isValidModelSlot(modelSlot) || !isValidWardrobeId(id)) throw new Error('Estilo de cabelo inválido.')
-    const base = resolve(join(hairModelPath(modelSlot), 'styles'))
-    const target = resolve(hairStylePath(modelSlot, id))
-    if (dirname(target) !== base || basename(target) !== `style-${id}`) throw new Error('Caminho de exclusão inválido.')
-    const previous = hairSaveQueues.get(modelSlot) ?? Promise.resolve()
-    const current = previous.catch(() => undefined).then(() => rm(target, { recursive: true, force: true }))
-    hairSaveQueues.set(modelSlot, current)
-    try { await current } finally { if (hairSaveQueues.get(modelSlot) === current) hairSaveQueues.delete(modelSlot) }
+  fabricatorHairIpc = registerFabricatorHairHandlers({
+    ipcMain, assertTrustedSender,
+    isValidModelSlot,
+    isValidHairStyleId: isValidWardrobeId,
+    hairModelPath, hairStylePath,
+    readWorkspace: readHairWorkspace,
+    writeWorkspace: writeHairWorkspace,
+    listStyles: (modelSlot) => catalogListings.listHair(modelSlot),
+    readStyle: readHairStyle,
+    writeStyle: writeHairStyle,
+    removeDirectory: (path) => rm(path, { recursive: true, force: true })
   })
 }
 
@@ -1995,7 +1966,7 @@ app.whenReady().then(async () => {
       const window = BrowserWindow.fromWebContents(event.sender)
       if (window && !window.webContents.isLoading()) await window.webContents.executeJavaScript('window.desktop?.flushPendingWrites?.()')
       const pending = [
-        ...fabricatorSaveQueues.values(), ...poseSaveWrites, ...hairSaveQueues.values(), animatorSaveQueue,
+        ...fabricatorSaveQueues.values(), ...poseSaveWrites, ...(fabricatorHairIpc?.getPendingWrites() ?? []), animatorSaveQueue,
         wardrobeSaveQueue, faceSaveQueue, expressionPresetSaveQueue, faceGuideSaveQueue, customizerService.pendingWrites,
         studioSaveQueues.studio, editorV6SaveQueue
       ]
@@ -2057,7 +2028,7 @@ app.on('before-quit', (event) => {
   editorV6MotionService?.cancelAll()
   const dataMigrationTask = dataMigrationIpc?.getActiveTask()
   const pendingWrites = [
-    ...fabricatorSaveQueues.values(), ...poseSaveWrites, ...hairSaveQueues.values(),
+    ...fabricatorSaveQueues.values(), ...poseSaveWrites, ...(fabricatorHairIpc?.getPendingWrites() ?? []),
     studioSaveQueues.studio, editorV6SaveQueue, roteirosSaveQueue,
     ...(dataMigrationTask ? [dataMigrationTask] : []),
     ...(editorV6ExportService ? [editorV6ExportService.drain()] : []),
