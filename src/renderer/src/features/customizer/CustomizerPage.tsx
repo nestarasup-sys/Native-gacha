@@ -16,7 +16,8 @@ import { hairColorControls, hairPalettePresets, MouthBlushControls, NoseOpacityC
 import { renderCustomizerBasePreview } from './customizerCharacterPreview'
 import { useCustomizerFacePreview } from './useCustomizerFacePreview'
 import { useCustomizerHairPreview } from './useCustomizerHairPreview'
-import { preparePreviewImage, sampleOriginalSkinTone } from './customizerPreviewImages'
+import { useCustomizerWardrobePreview } from './useCustomizerWardrobePreview'
+import { sampleOriginalSkinTone } from './customizerPreviewImages'
 import { CustomizerCategoryIcon, clothesAdjustmentDefinitions, customizerClothesTabs, customizerHeadTabs, customizerModuleByTab, customizerModuleNames, customizerOtherTabs, customizerTopTabs, headAdjustmentItems, headAdjustmentItemsFor } from './customizerNavigation'
 import { adjustableHairPartIds, hairAppearancePartStyleId } from './customizerHairAppearanceModel'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -32,8 +33,7 @@ import { DesignBanner } from '../../ui/components/DesignBanner'
 import { anchorWardrobeAdjustments, editWardrobeAdjustment, moveWardrobeAdjustment } from '../../../../shared/wardrobeAdjustment'
 import { toggleWardrobeVisibility, updateWardrobeComponentGroups, matchesWardrobeComponent, recolorWardrobeComponents, selectWardrobePanelComponents, wardrobeGroupCategoryForSource } from '../../../../shared/wardrobePlacementModel'
 import { applyCharacterBodyShape } from '../../../../shared/bodyShape'
-import { characterRenderSize } from './renderResolution'
-import { renderArtwork, loadStandardExpressionEffects, withCharacterHeadSize, renderWardrobeOverlay, isRightFaceAsset, characterShapeScale, resolvedHairColors, clothingCategories, wardrobeComponentsForGroup, customizerHairParts, hairAppearanceStyleId } from '../../characters/characterRenderer'
+import { renderArtwork, loadStandardExpressionEffects, withCharacterHeadSize, isRightFaceAsset, characterShapeScale, resolvedHairColors, clothingCategories, wardrobeComponentsForGroup, customizerHairParts, hairAppearanceStyleId } from '../../characters/characterRenderer'
 import type { CatalogArtwork, HairCatalogSide, AdjustmentPreviewHighlight, ClothingGroupCategory, SelectedWardrobeComponent } from '../../characters/characterRenderer'
 
 const proportionControls: Array<{ key: keyof CharacterProportions; label: string; description: string }> = [
@@ -628,33 +628,23 @@ export function CustomizerPage() {
     return () => { cancelled = true }
   }, [selectedCharacter?.id, characterWardrobeHydrationKey])
 
-  useEffect(() => {
-    let cancelled = false
-    const groups = selectedCharacter?.customization.wardrobeGroups ?? []
-    if (!displayArtworkProject || !groups.length) {
-      setSelectedWardrobeUrl(null)
-      setSelectedWardrobeAboveHairUrl(null)
-      return
-    }
-    const previewGroups = wardrobeTransformDraft && selectedClothing
-      ? groups.map((group) => group.modelSlot === selectedClothing.modelSlot && group.setId === selectedClothing.setId && group.category === selectedClothing.category && (group.componentId === selectedClothing.componentId || !group.componentId) ? { ...group, componentId: selectedClothing.componentId, ...wardrobeTransformDraft } : group)
-      : groups
-    void renderWardrobeOverlay(previewGroups, wardrobeDetails, displayArtworkProject, selectedCatalogModelSlot, selectedSourceModelProject, selectedCharacter?.customization.modelSkinTone, characterRenderSize(displayArtworkProject.width, displayArtworkProject.height, previewExtent.width, previewExtent.height, customizerPreviewZoom, previewExtent.density), activeWardrobePreviewHighlight).then(async (result) => {
-      const [wardrobeReady, aboveHairReady] = await Promise.all([preparePreviewImage(result.imageUrl), preparePreviewImage(result.aboveHairImageUrl)])
-      if (!wardrobeReady || !aboveHairReady) return
-      if (!cancelled) {
-        setSelectedWardrobeUrl(result.imageUrl)
-        setSelectedWardrobeAboveHairUrl(result.aboveHairImageUrl)
-      }
-    }).catch((reason: unknown) => {
-      if (!cancelled) {
-        setSelectedWardrobeUrl(null)
-        setSelectedWardrobeAboveHairUrl(null)
-        setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível compor as roupas do personagem.')
-      }
-    })
-    return () => { cancelled = true }
-  }, [selectedCharacter?.id, selectedCharacter?.customization.modelSkinTone, selectedCharacter?.customization.wardrobeGroups, wardrobeDetails, displayArtworkProject, selectedCatalogModelSlot, selectedSourceModelProject, selectedClothing?.modelSlot, selectedClothing?.setId, selectedClothing?.category, selectedClothing?.componentId, wardrobeTransformDraft, previewExtent, customizerPreviewZoom, activeWardrobePreviewHighlight])
+  useCustomizerWardrobePreview({
+    characterId: selectedCharacter?.id,
+    modelSkinTone: selectedCharacter?.customization.modelSkinTone,
+    wardrobeGroups: selectedCharacter?.customization.wardrobeGroups,
+    wardrobeDetails,
+    artwork: displayArtworkProject,
+    selectedModelSlot: selectedCatalogModelSlot,
+    source: selectedSourceModelProject,
+    selectedClothing,
+    transformDraft: wardrobeTransformDraft,
+    previewExtent,
+    zoom: customizerPreviewZoom,
+    highlight: activeWardrobePreviewHighlight,
+    setSelectedWardrobeUrl,
+    setSelectedWardrobeAboveHairUrl,
+    setCatalogError
+  })
 
   function anchorCurrentWardrobe(groups: CustomizerWardrobeGroup[]): CustomizerWardrobeGroup[] {
     if (!displayArtworkProject || !selectedSourceModelProject) return groups
