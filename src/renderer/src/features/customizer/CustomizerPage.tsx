@@ -4,6 +4,7 @@ import { useCustomizerModelBrowserState } from './useCustomizerModelBrowserState
 import { useCustomizerAssetLibraryState } from './useCustomizerAssetLibraryState'
 import { useCustomizerCharacterCommands } from './useCustomizerCharacterCommands'
 import { useCustomizerBodyAppearance } from './useCustomizerBodyAppearance'
+import { useCustomizerCharacterSourceSelection } from './useCustomizerCharacterSourceSelection'
 import { CustomizerModelPicker } from './CustomizerModelPicker'
 import { CustomizerClothesAdjustmentPanel } from './CustomizerClothesAdjustmentPanel'
 import { upperWardrobePanels, upperWardrobePageTwoPanels, accessoryWardrobePanels, lowerWardrobePanels, lowerWardrobePageTwoPanels, wardrobeComponentMatchesPanel, isWardrobePanelCandidateSelected, renderWardrobeThumbnail } from './wardrobePanelModel'
@@ -19,7 +20,7 @@ import { adjustableHairPartIds, hairAppearancePartStyleId } from './customizerHa
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { RenderedCharacterPortrait } from '../../ui/components/RenderedCharacterPortrait'
 import { Icon } from '../../ui/components/Icon'
-import type { FaceCatalogItem, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSummary, FaceComponentKind, FaceDetailKind, FaceElementKind, FaceSheetKind, FabricatorPose, FabricatorPoseSummary, FabricatorProject, FabricatorSlotSummary, HairStyle, HairStyleSummary, WardrobeCategory, WardrobeSet, WardrobeSetSummary } from '../../../../shared/fabricator'
+import type { FaceCatalogItem, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSummary, FaceComponentKind, FaceDetailKind, FaceElementKind, FaceSheetKind, FabricatorPose, FabricatorProject, HairStyle, HairStyleSummary, WardrobeCategory, WardrobeSet, WardrobeSetSummary } from '../../../../shared/fabricator'
 import { resolvePoseCategory } from '../../../../shared/fabricator'
 import { hairCategories, hairStyleSupportsCategory } from '../../../../shared/hairCategories'
 import type { CustomizerCharacter, CustomizerFaceAppearance, CustomizerWardrobeGroup, FaceComponentPartId, FacePalettePartId, HairColorOverrides, HairColorRole, HairPartId } from '../../../../shared/customizer'
@@ -142,6 +143,13 @@ export function CustomizerPage() {
     changeProportion, commitProportions, commitProportion,
     changeBodyDimension, commitBodyDimension, restoreBodyDimensions
   } = useCustomizerBodyAppearance({ selectedCharacter, charactersRef, saveCharacterCustomization })
+  const { selectCatalogModel, selectCatalogPose } = useCustomizerCharacterSourceSelection({
+    selectedCharacter, selectedSourceModelProject, catalogPoses, selectedPoseCategory,
+    activeProportions, activeBodyDimensions, previewExtent, customizerPreviewZoom, previewLoadRequest,
+    saveCharacterCustomization, setSelectedCatalogModelSlot, setSelectedCatalogPoseSlot,
+    setSelectedPoseCategory, setSelectedPosePage, setSelectedArtworkLabel, setSelectedArtworkUrl,
+    setSelectedArtworkProject, setSelectedSourceModelProject, setPreviewLoading, setCatalogError
+  })
   const activeHeadPreviewHighlight = activeModule === 'Cabeça' && headPanelTab === 'adjust' && adjustmentPreviewHighlight?.scope === 'head' ? adjustmentPreviewHighlight.id : null
   const activeFacePreviewHighlight = activeHeadPreviewHighlight && !adjustableHairPartIds.has(activeHeadPreviewHighlight) ? activeHeadPreviewHighlight : null
   const activeHairPreviewHighlight = activeHeadPreviewHighlight && adjustableHairPartIds.has(activeHeadPreviewHighlight) ? activeHeadPreviewHighlight : null
@@ -1169,60 +1177,6 @@ export function CustomizerPage() {
       setCharactersError('')
     } catch (reason) {
       setCharactersError(reason instanceof Error ? reason.message : 'Não foi possível excluir o personagem.')
-    }
-  }
-
-  async function selectCatalogModel(model: NonNullable<FabricatorSlotSummary>) {
-    const requestId = ++previewLoadRequest.current
-    setSelectedCatalogModelSlot(model.slot)
-    setSelectedPosePage(0)
-    setSelectedArtworkLabel(model.name)
-    setSelectedArtworkUrl(null)
-    setPreviewLoading(true)
-    setCatalogError('')
-    try {
-      const firstPose = catalogPoses.find((pose) => pose?.sourceModelSlot === model.slot && pose.slot === 1)
-      setSelectedCatalogPoseSlot(firstPose?.slot ?? null)
-      setSelectedPoseCategory(firstPose ? resolvePoseCategory(firstPose) : 'Parado')
-      await saveCharacterCustomization({ modelSlot: model.slot, poseSlot: firstPose?.slot ?? null })
-      const sourceProject = await window.desktop.loadFabricatorSlot(model.slot)
-      if (!sourceProject) throw new Error('O modelo de referência não está disponível no Fabricador Dev.')
-      const poseArtwork = firstPose ? await window.desktop.loadFabricatorPose(model.slot, firstPose.slot) : null
-      const artwork = selectCharacterArtwork(sourceProject, poseArtwork, firstPose?.slot ?? null)
-      if (!artwork) throw new Error(firstPose ? 'Não foi possível abrir a pose inicial deste modelo.' : 'Não foi possível abrir este modelo.')
-      const artworkUrl = await renderArtwork(applyCharacterBodyShape(withCharacterHeadSize(artwork, activeProportions), activeBodyDimensions), characterRenderSize(artwork.width, artwork.height, previewExtent.width, previewExtent.height, customizerPreviewZoom, previewExtent.density), selectedCharacter?.customization.modelSkinTone)
-      if (!await preparePreviewImage(artworkUrl)) throw new Error('A prévia nova não pôde ser decodificada; mantendo a imagem anterior.')
-      if (previewLoadRequest.current === requestId) { setSelectedArtworkProject(artwork); setSelectedSourceModelProject(sourceProject); setSelectedArtworkUrl(artworkUrl) }
-    } catch (reason) {
-      if (previewLoadRequest.current === requestId) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível abrir este modelo.')
-    } finally {
-      if (previewLoadRequest.current === requestId) setPreviewLoading(false)
-    }
-  }
-
-  async function selectCatalogPose(pose: NonNullable<FabricatorPoseSummary>) {
-    const requestId = ++previewLoadRequest.current
-    const nextCategory = resolvePoseCategory(pose)
-    if (nextCategory !== selectedPoseCategory) setSelectedPosePage(0)
-    setSelectedCatalogPoseSlot(pose.slot)
-    setSelectedPoseCategory(nextCategory)
-    setSelectedArtworkLabel(pose.name)
-    setPreviewLoading(true)
-    setCatalogError('')
-    try {
-      await saveCharacterCustomization({ modelSlot: pose.sourceModelSlot, poseSlot: pose.slot })
-      const sourceProject = selectedSourceModelProject?.slot === pose.sourceModelSlot ? selectedSourceModelProject : await window.desktop.loadFabricatorSlot(pose.sourceModelSlot)
-      if (!sourceProject) throw new Error('O modelo de referência desta pose não está disponível.')
-      const poseArtwork = await window.desktop.loadFabricatorPose(pose.sourceModelSlot, pose.slot)
-      const artwork = selectCharacterArtwork(sourceProject, poseArtwork, pose.slot)
-      if (!artwork) throw new Error('Não foi possível abrir esta pose.')
-      const artworkUrl = await renderArtwork(applyCharacterBodyShape(withCharacterHeadSize(artwork, activeProportions), activeBodyDimensions), characterRenderSize(artwork.width, artwork.height, previewExtent.width, previewExtent.height, customizerPreviewZoom, previewExtent.density), selectedCharacter?.customization.modelSkinTone)
-      if (!await preparePreviewImage(artworkUrl)) throw new Error('A prévia nova não pôde ser decodificada; mantendo a imagem anterior.')
-      if (previewLoadRequest.current === requestId) { setSelectedArtworkProject(artwork); setSelectedSourceModelProject(sourceProject); setSelectedArtworkUrl(artworkUrl) }
-    } catch (reason) {
-      if (previewLoadRequest.current === requestId) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível abrir esta pose.')
-    } finally {
-      if (previewLoadRequest.current === requestId) setPreviewLoading(false)
     }
   }
 
