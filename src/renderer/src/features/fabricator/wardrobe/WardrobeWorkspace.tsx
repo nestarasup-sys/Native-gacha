@@ -15,6 +15,7 @@ import { useWardrobeComparisonPose } from './useWardrobeComparisonPose'
 import { WardrobeComparisonPreview } from './WardrobeComparisonPreview'
 import { suggestWardrobeBone } from './boneSelection'
 import { guessWardrobeCategory, guessWardrobeCategoryForBone, guessWardrobeName, guessWardrobeNameForBone, wardrobeSheetContentBounds } from './wardrobeAutoDetection'
+import { findGridRowBoundaries, findVisibleGridContentBounds, removeGridFlatBackground } from './wardrobeGridImage'
 import { normalizeEditableImageFile } from '../normalizeImage'
 import { applyWardrobeWarpBrush, createWardrobeWarpMesh, drawWardrobeWarp, type WardrobeWarpBounds, type WardrobeWarpMesh, type WardrobeWarpPoint, wardrobeWarpPadding } from './wardrobeMeshWarp'
 import { WardrobeGarmentEditorModal } from './WardrobeGarmentEditorModal'
@@ -80,51 +81,6 @@ function dataUrl(buffer: ArrayBuffer): string {
 }
 function deformationOriginalAssetId(componentId: string): string { return `${componentId}_deform_original` }
 function readFile(file: File): Promise<string> { return normalizeEditableImageFile(file).then((image) => image.dataUrl) }
-function removeFlatBackground(tile: ImageData): void {
-  const { width, height, data } = tile
-  const corners = [0, (width - 1) * 4, ((height - 1) * width) * 4, (height * width - 1) * 4]
-  if (corners.some((at) => data[at + 3] <= 24)) return
-  const background = [0, 1, 2].map((channel) => corners.reduce((sum, at) => sum + data[at + channel], 0) / corners.length)
-  const greenScreen = background[1] > background[0] * 1.2 && background[1] > background[2] * 1.08 && background[1] > 55
-  if (!greenScreen && corners.some((at) => Math.hypot(data[at] - background[0], data[at + 1] - background[1], data[at + 2] - background[2]) > 90)) return
-  for (let index = 0; index < width * height; index += 1) {
-    const at = index * 4
-    if (data[at + 3] <= 24) continue
-    if (greenScreen) {
-      const red = data[at]; const green = data[at + 1]; const blue = data[at + 2]
-      const dominance = green - Math.max(red * 1.18, blue * 1.08)
-      if (dominance >= 28) data[at + 3] = 0
-      else if (dominance > 8) data[at + 3] = Math.round(data[at + 3] * (28 - dominance) / 20)
-      continue
-    }
-    const distance = Math.hypot(data[at] - background[0], data[at + 1] - background[1], data[at + 2] - background[2])
-    if (distance < 65) data[at + 3] = 0
-    else if (distance < 112) data[at + 3] = Math.round(data[at + 3] * (distance - 65) / 47)
-  }
-}
-function findGridRowBoundaries(image: ImageData, rowCount: number): number[] {
-  const { width, height, data } = image
-  const rowInk = new Uint32Array(height)
-  for (let y = 0; y < height; y += 1) for (let x = 0; x < width; x += 1) {
-    if (data[(y * width + x) * 4 + 3] > 56) rowInk[y] += 1
-  }
-  const minimumRowHeight = Math.floor(height * 0.22)
-  const boundaries = [0]
-  for (let row = 1; row < rowCount; row += 1) {
-    const target = Math.round(row * height / rowCount)
-    const remainingRows = rowCount - row
-    const low = Math.max(boundaries[row - 1] + minimumRowHeight, target - Math.round(height * 0.14))
-    const high = Math.min(height - remainingRows * minimumRowHeight, target + Math.round(height * 0.14))
-    let bestY = target; let bestInk = Number.POSITIVE_INFINITY
-    for (let y = low; y <= high; y += 1) {
-      const ink = rowInk[y - 1] + rowInk[y] + rowInk[y + 1]
-      if (ink < bestInk || (ink === bestInk && Math.abs(y - target) < Math.abs(bestY - target))) { bestY = y; bestInk = ink }
-    }
-    boundaries.push(bestY)
-  }
-  boundaries.push(height)
-  return boundaries
-}
 function getBodyLayer(model: FabricatorProject | null, partId: string): number {
   if (!model) return 0
   const order = model.layerOrder ?? model.parts.map((part) => part.id)
@@ -513,7 +469,7 @@ export function WardrobeWorkspace() {
       context.drawImage(image, 0, 0)
       image.close()
       const sourcePixels = context.getImageData(0, 0, imageWidth, imageHeight)
-      removeFlatBackground(sourcePixels)
+      removeGridFlatBackground(sourcePixels)
       context.putImageData(sourcePixels, 0, 0)
       const torso = (referenceModel ?? model).parts.find((part) => /tronco|corpo|torso|chest|peito/i.test(part.name))
       if (!torso) throw new Error('Não encontrei uma parte de tronco no modelo salvo.')
@@ -526,14 +482,13 @@ export function WardrobeWorkspace() {
         const tileWidth = right - left; const tileHeight = bottom - top
         if (tileWidth <= 0 || tileHeight <= 0) continue
         const tile = context.getImageData(left, top, tileWidth, tileHeight)
-        let minX = tile.width; let minY = tile.height; let maxX = -1; let maxY = -1
-        for (let y = 0; y < tile.height; y += 1) for (let x = 0; x < tile.width; x += 1) if (tile.data[(y * tile.width + x) * 4 + 3] > 56) { minX = Math.min(minX, x); minY = Math.min(minY, y); maxX = Math.max(maxX, x); maxY = Math.max(maxY, y) }
-        if (maxX < minX || maxY < minY) continue
-        const pieceCanvas = document.createElement('canvas'); pieceCanvas.width = maxX - minX + 1; pieceCanvas.height = maxY - minY + 1
+        const bounds = findVisibleGridContentBounds(tile)
+        if (!bounds) continue
+        const pieceCanvas = document.createElement('canvas'); pieceCanvas.width = bounds.maxX - bounds.minX + 1; pieceCanvas.height = bounds.maxY - bounds.minY + 1
         const pieceContext = pieceCanvas.getContext('2d')!
         const cropped = pieceContext.createImageData(pieceCanvas.width, pieceCanvas.height)
         for (let y = 0; y < pieceCanvas.height; y += 1) {
-          const from = ((minY + y) * tile.width + minX) * 4
+          const from = ((bounds.minY + y) * tile.width + bounds.minX) * 4
           cropped.data.set(tile.data.subarray(from, from + pieceCanvas.width * 4), y * pieceCanvas.width * 4)
         }
         pieceContext.putImageData(cropped, 0, 0)
