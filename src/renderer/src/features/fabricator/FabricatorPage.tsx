@@ -18,6 +18,7 @@ import { ModelSourceEditor } from './ModelSourceEditor'
 import { broadcastModelSourceUpdate } from './models/modelSourceEvents'
 import { splitImage, mergeImages } from './models/partImages'
 import { rotatePointAroundOrigin } from './models/geometry'
+import { loadImageFromDataUrl, pngDataUrlFromBuffer } from './models/imageData'
 import type { ModelSourceResult } from './models/modelSource'
 
 const sections: { id: string; label: string; icon: IconName }[] = [
@@ -39,31 +40,12 @@ type MixerSurface = { canvas: HTMLCanvasElement; context: CanvasRenderingContext
 type MixerStrokeState = { pointerId: number; x: number; y: number }
 type PanelTab = 'parts' | 'layers' | 'joints'
 
-function bytesToDataUrl(buffer: ArrayBuffer): string {
-  const bytes = new Uint8Array(buffer)
-  let binary = ''
-  const chunk = 0x8000
-  for (let offset = 0; offset < bytes.length; offset += chunk) {
-    binary += String.fromCharCode(...bytes.subarray(offset, Math.min(offset + chunk, bytes.length)))
-  }
-  return `data:image/png;base64,${btoa(binary)}`
-}
-
 const DEFAULT_CHROMA_TOLERANCE = 74
 const MAX_CHROMA_TOLERANCE = 280
 const emptyHistory = (): FabricatorHistoryState => ({ undo: [], redo: [] })
 
-async function imageFromDataUrl(dataUrl: string): Promise<HTMLImageElement> {
-  return new Promise((resolve, reject) => {
-    const image = new Image()
-    image.onload = () => resolve(image)
-    image.onerror = () => reject(new Error('Não foi possível abrir o recorte.'))
-    image.src = dataUrl
-  })
-}
-
 async function cleanSavedPartEdges(parts: ModelPart[], sourceDataUrl: string, tolerance: number): Promise<ModelPart[]> {
-  const source = await imageFromDataUrl(sourceDataUrl)
+  const source = await loadImageFromDataUrl(sourceDataUrl, 'Não foi possível abrir o recorte.')
   const sampleCanvas = document.createElement('canvas')
   sampleCanvas.width = 128; sampleCanvas.height = 128
   const sampleContext = sampleCanvas.getContext('2d', { willReadFrequently: true })
@@ -73,7 +55,7 @@ async function cleanSavedPartEdges(parts: ModelPart[], sourceDataUrl: string, to
 
   const cleaned: ModelPart[] = []
   for (const part of parts) {
-    const image = await imageFromDataUrl(part.dataUrl)
+    const image = await loadImageFromDataUrl(part.dataUrl, 'Não foi possível abrir o recorte.')
     const canvas = document.createElement('canvas')
     canvas.width = image.naturalWidth; canvas.height = image.naturalHeight
     const context = canvas.getContext('2d', { willReadFrequently: true })
@@ -478,7 +460,7 @@ export function FabricatorPage() {
       worker.terminate(); workerRef.current = null; setProcessing(false)
       if (message.type === 'error') { setError(message.message); return }
       if (message.parts.length === 0) { setError('Nenhuma peça foi encontrada. Aumente a tolerância ou escolha outra imagem.'); return }
-      const parts: ModelPart[] = message.parts.map(({ png, basePng, ...part }) => ({ ...part, rotation: 0, chromaBaseSaved: true, dataUrl: bytesToDataUrl(png), chromaBaseDataUrl: bytesToDataUrl(basePng) }))
+      const parts: ModelPart[] = message.parts.map(({ png, basePng, ...part }) => ({ ...part, rotation: 0, chromaBaseSaved: true, dataUrl: pngDataUrlFromBuffer(png), chromaBaseDataUrl: pngDataUrlFromBuffer(basePng) }))
       for (const part of parts) { dirtyAssets.current.set(part.id, part.dataUrl); if (part.chromaBaseDataUrl) dirtyChromaBases.current.set(part.id, part.chromaBaseDataUrl) }
       const detectedJoints = autoConnectParts(parts)
       const rig = normalizePartAnchors(parts, detectedJoints)
@@ -549,7 +531,7 @@ export function FabricatorPage() {
       if (event.data.id !== id) return
       worker.terminate(); chromaWorkerRef.current = null; setChromaApplying(false)
       if (event.data.type === 'error') { setError(`Chroma key: ${event.data.message}`); return }
-      const updatedAssets = new Map(event.data.parts.map(({ id: partId, png }) => [partId, bytesToDataUrl(png)]))
+      const updatedAssets = new Map(event.data.parts.map(({ id: partId, png }) => [partId, pngDataUrlFromBuffer(png)]))
       for (const [partId, dataUrl] of updatedAssets) dirtyAssets.current.set(partId, dataUrl)
       mixerSurfacesRef.current.clear()
       updateProject((current) => current.slot !== slot ? current : {
@@ -771,7 +753,7 @@ export function FabricatorPage() {
     const getImageData = async (part: ModelPart) => {
       let surface = mixerSurfacesRef.current.get(part.id)
       if (!surface) {
-        const image = await imageFromDataUrl(part.dataUrl)
+        const image = await loadImageFromDataUrl(part.dataUrl, 'Não foi possível abrir o recorte.')
         if (session !== mixerSessionRef.current) return null
         const canvas = document.createElement('canvas')
         canvas.width = image.naturalWidth; canvas.height = image.naturalHeight

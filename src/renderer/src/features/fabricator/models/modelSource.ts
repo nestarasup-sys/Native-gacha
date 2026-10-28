@@ -1,6 +1,7 @@
 /** Model Source: folha-base oficial e recortes editados antes da montagem. */
 import type { FabricatorProject, ModelPart } from '../../../../../shared/fabricator'
 import { isHeadPart } from './resize'
+import { loadImageFromDataUrl, pngDataUrlFromBuffer } from './imageData'
 
 export type ModelSourceDimensions = Record<string, { width: number; height: number; x?: number; y?: number }>
 export type ModelSourceResult = { sourceDataUrl: string; previewDataUrl: string; parts: ModelPart[]; tolerance: number }
@@ -50,14 +51,6 @@ export function validateModelSourceChroma(tolerance: number): void {
     throw new Error('O Chroma Key deve ficar entre 0 e 280.')
   }
 }
-async function imageFromDataUrl(dataUrl: string): Promise<HTMLImageElement> {
-  return new Promise((resolve, reject) => {
-    const image = new Image()
-    image.onload = () => resolve(image)
-    image.onerror = () => reject(new Error('Não foi possível decodificar uma das peças.'))
-    image.src = dataUrl
-  })
-}
 function resizePng(image: HTMLImageElement, width: number, height: number): HTMLCanvasElement {
   const canvas = document.createElement('canvas')
   canvas.width = width
@@ -72,14 +65,6 @@ function resizePng(image: HTMLImageElement, width: number, height: number): HTML
 type SourceChromaResponse =
   | { type: 'complete'; id: number; parts: Array<{ id: string; png: ArrayBuffer }> }
   | { type: 'error'; id: number; message: string }
-function bytesToPng(buffer: ArrayBuffer): string {
-  const bytes = new Uint8Array(buffer)
-  let binary = ''
-  for (let offset = 0; offset < bytes.length; offset += 32768) {
-    binary += String.fromCharCode(...bytes.subarray(offset, offset + 32768))
-  }
-  return 'data:image/png;base64,' + btoa(binary)
-}
 async function applyChroma(sourceDataUrl: string, tolerance: number, parts: ModelPart[]): Promise<Map<string, string>> {
   const worker = new Worker(new URL('./chromaAdjust.worker.ts', import.meta.url), { type: 'module' })
   return new Promise((resolve, reject) => {
@@ -87,7 +72,7 @@ async function applyChroma(sourceDataUrl: string, tolerance: number, parts: Mode
       if (event.data.id !== 1) return
       worker.terminate()
       if (event.data.type === 'error') reject(new Error(event.data.message))
-      else resolve(new Map(event.data.parts.map(part => [part.id, bytesToPng(part.png)])))
+      else resolve(new Map(event.data.parts.map(part => [part.id, pngDataUrlFromBuffer(part.png)])))
     }
     worker.onerror = () => { worker.terminate(); reject(new Error('Não foi possível aplicar o Chroma Key.')) }
     worker.postMessage({
@@ -118,11 +103,11 @@ export async function composeModelSource(
     const baseline = sourceRect(part)
     const edited = rect.x !== baseline.x || rect.y !== baseline.y
       || rect.width !== baseline.width || rect.height !== baseline.height
-    const sourceImage = await imageFromDataUrl(part.chromaBaseDataUrl ?? part.dataUrl)
+    const sourceImage = await loadImageFromDataUrl(part.chromaBaseDataUrl ?? part.dataUrl, 'Não foi possível decodificar uma das peças.')
     const rawPart = resizePng(sourceImage, rect.width, rect.height)
     rawContext.drawImage(rawPart, rect.x, rect.y)
     if (!edited) { resized.push(part); continue }
-    const originalImage = await imageFromDataUrl(part.dataUrl)
+    const originalImage = await loadImageFromDataUrl(part.dataUrl, 'Não foi possível decodificar uma das peças.')
     const displayPart = resizePng(originalImage, rect.width, rect.height)
     // Preserve a montagem corrente. Só x/y de origem mudam ao mover a cabeça.
     resized.push({
@@ -162,7 +147,7 @@ export async function composeModelSource(
   if (!view) throw new Error('Canvas indisponível para renderizar a prévia.')
   for (const part of adjusted) {
     const rect = sourceRect(part, edits[part.id])
-    view.drawImage(await imageFromDataUrl(part.dataUrl), rect.x, rect.y, rect.width, rect.height)
+    view.drawImage(await loadImageFromDataUrl(part.dataUrl, 'Não foi possível decodificar uma das peças.'), rect.x, rect.y, rect.width, rect.height)
   }
   return { sourceDataUrl, previewDataUrl: preview.toDataURL('image/png'), parts: adjusted, tolerance }
 }

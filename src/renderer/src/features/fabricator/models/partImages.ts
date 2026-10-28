@@ -1,19 +1,11 @@
 import type { ModelPart } from '../../../../../shared/fabricator'
-
-async function imageFromDataUrl(dataUrl: string): Promise<HTMLImageElement> {
-  return new Promise((resolve, reject) => {
-    const image = new Image()
-    image.onload = () => resolve(image)
-    image.onerror = () => reject(new Error('Não foi possível abrir o recorte.'))
-    image.src = dataUrl
-  })
-}
+import { loadImageFromDataUrl } from './imageData'
 
 const makeId = () => crypto.randomUUID()
 
 export async function splitImage(part: ModelPart, axis: 'horizontal' | 'vertical'): Promise<ModelPart[]> {
-  const image = await imageFromDataUrl(part.dataUrl)
-  const baseImage = await imageFromDataUrl(part.chromaBaseDataUrl ?? part.dataUrl)
+  const image = await loadImageFromDataUrl(part.dataUrl, 'Não foi possível abrir o recorte.')
+  const baseImage = await loadImageFromDataUrl(part.chromaBaseDataUrl ?? part.dataUrl, 'Não foi possível abrir o recorte.')
   const firstWidth = axis === 'vertical' ? Math.floor(part.width / 2) : part.width
   const firstHeight = axis === 'horizontal' ? Math.floor(part.height / 2) : part.height
   const regions = axis === 'vertical'
@@ -42,8 +34,8 @@ export async function mergeImages(parts: ModelPart[]): Promise<ModelPart> {
   const baseContext = baseCanvas.getContext('2d')
   if (!baseContext) throw new Error('Não foi possível mesclar as bases do chroma.')
   for (const part of parts) {
-    const image = await imageFromDataUrl(part.dataUrl)
-    const baseImage = await imageFromDataUrl(part.chromaBaseDataUrl ?? part.dataUrl)
+    const image = await loadImageFromDataUrl(part.dataUrl, 'Não foi possível abrir o recorte.')
+    const baseImage = await loadImageFromDataUrl(part.chromaBaseDataUrl ?? part.dataUrl, 'Não foi possível abrir o recorte.')
     context.save()
     context.translate(part.x - x + part.width / 2, part.y - y + part.height / 2)
     context.rotate(part.rotation * Math.PI / 180)
