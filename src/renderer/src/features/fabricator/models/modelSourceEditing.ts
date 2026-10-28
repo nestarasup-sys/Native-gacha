@@ -375,3 +375,62 @@ export async function eraseModelSourceBrush(
     removedPixels: display.removedPixels
   }
 }
+
+export async function sampleModelSourceColor(
+  part: ModelPart,
+  point: ModelSourcePoint,
+  displayWidth: number,
+  displayHeight: number
+): Promise<string | null> {
+  const image = await loadImageFromDataUrl(part.chromaBaseDataUrl ?? part.dataUrl, 'Não foi possível amostrar a cor desta peça.')
+  const canvas = imageCanvas(image, part.width, part.height)
+  const context = canvas.getContext('2d', { willReadFrequently: true })
+  if (!context || !canvas.width || !canvas.height) return null
+  const x = Math.max(0, Math.min(canvas.width - 1, Math.floor(point.x * canvas.width / Math.max(1, displayWidth))))
+  const y = Math.max(0, Math.min(canvas.height - 1, Math.floor(point.y * canvas.height / Math.max(1, displayHeight))))
+  const [red, green, blue, alpha] = context.getImageData(x, y, 1, 1).data
+  if (alpha < 32) return null
+  return '#' + [red, green, blue].map(channel => channel.toString(16).padStart(2, '0')).join('')
+}
+
+function removeSelectedColor(source: HTMLCanvasElement, color: string, tolerance: number): { canvas: HTMLCanvasElement; removedPixels: number } {
+  const context = source.getContext('2d', { willReadFrequently: true })
+  if (!context) throw new Error('Canvas indisponível para remover a cor da pele.')
+  const image = context.getImageData(0, 0, source.width, source.height)
+  const red = Number.parseInt(color.slice(1, 3), 16)
+  const green = Number.parseInt(color.slice(3, 5), 16)
+  const blue = Number.parseInt(color.slice(5, 7), 16)
+  const targetBrightness = brightness(red, green, blue)
+  const preserveDarkInkBelow = Math.max(32, Math.min(72, targetBrightness * 0.35))
+  const maxDistance = Math.max(0, Math.min(180, tolerance))
+  let removedPixels = 0
+
+  for (let offset = 0; offset < image.data.length; offset += 4) {
+    if (image.data[offset + 3] < 32) continue
+    const pixelBrightness = brightness(image.data[offset], image.data[offset + 1], image.data[offset + 2])
+    if (pixelBrightness < preserveDarkInkBelow) continue
+    const distance = Math.hypot(image.data[offset] - red, image.data[offset + 1] - green, image.data[offset + 2] - blue)
+    if (distance > maxDistance) continue
+    image.data[offset + 3] = 0
+    removedPixels += 1
+  }
+  context.putImageData(image, 0, 0)
+  return { canvas: source, removedPixels }
+}
+
+export async function removeModelSourceColor(part: ModelPart, color: string, tolerance: number): Promise<BrushResult> {
+  if (!/^#[0-9a-f]{6}$/i.test(color)) throw new Error('Escolha ou amostre uma cor válida antes de remover a pele.')
+  if (!Number.isFinite(tolerance) || tolerance < 0 || tolerance > 180) throw new Error('A semelhança da cor está fora do intervalo permitido.')
+  const images = await normalizedImages(part)
+  const display = removeSelectedColor(images.display, color, tolerance)
+  const base = removeSelectedColor(images.base, color, tolerance)
+  return {
+    part: {
+      ...part,
+      chromaBaseSaved: true,
+      dataUrl: display.canvas.toDataURL('image/png'),
+      chromaBaseDataUrl: base.canvas.toDataURL('image/png')
+    },
+    removedPixels: Math.max(display.removedPixels, base.removedPixels)
+  }
+}

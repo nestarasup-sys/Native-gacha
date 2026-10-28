@@ -4,7 +4,7 @@ import type { FabricatorProject, ModelPart } from '../../../../shared/fabricator
 import { isHeadPart } from './models/resize'
 import { normalizePartAnchors } from './models/rig'
 import { composeModelSource, sourceRect, validateModelSourceChroma, validateModelSourceDimensions, MAX_CHROMA_TOLERANCE, type ModelSourceDimensions, type ModelSourceResult } from './models/modelSource'
-import { cropModelSourcePart, eraseModelSourceBrush, splitModelSourcePart, worldPointInsideCrop, worldPointToPart, type ModelSourceCrop, type ModelSourcePoint } from './models/modelSourceEditing'
+import { cropModelSourcePart, eraseModelSourceBrush, removeModelSourceColor, sampleModelSourceColor, splitModelSourcePart, worldPointInsideCrop, worldPointToPart, type ModelSourceCrop, type ModelSourcePoint } from './models/modelSourceEditing'
 import { applyImageWarpBrush, type ImageWarpPoint } from './models/imageMeshWarp'
 import { createModelSourceWarpSession, drawModelSourceWarp, modelSourceWarpDataUrl, type ModelSourceWarpSession } from './models/modelSourceWarp'
 
@@ -61,6 +61,10 @@ function isThighPart(part: ModelPart): boolean {
   return /coxa|thigh/i.test(part.name)
 }
 
+function isBodyPart(part: ModelPart): boolean {
+  return /cabe[çc]a|head|tronco|corpo|torso|body|bra[cç]o|arm|antebra[cç]o|forearm|coxa|thigh|perna|canela|panturrilha|leg|calf|shin|(?:^|[\s_-])p[eé]s?(?:$|[\s_-])|foot|feet|m[aã]os?|hands?/i.test(part.name)
+}
+
 export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
   const [draft, setDraft] = useState(project)
   const [selectedId, setSelectedId] = useState(project.parts[0]?.id ?? '')
@@ -79,6 +83,10 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
   const [brushSize, setBrushSize] = useState(18)
   const [warpRadius, setWarpRadius] = useState(28)
   const [warpStrength, setWarpStrength] = useState(70)
+  const [skinRemovalOpen, setSkinRemovalOpen] = useState(false)
+  const [skinColor, setSkinColor] = useState<string | null>(null)
+  const [skinColorTolerance, setSkinColorTolerance] = useState(58)
+  const [samplingSkinColor, setSamplingSkinColor] = useState(false)
   const [gesture, setGesture] = useState<DrawingGesture | null>(null)
   const [warpSession, setWarpSession] = useState<ModelSourceWarpSession | null>(null)
   const [warpCursor, setWarpCursor] = useState<ModelSourcePoint | null>(null)
@@ -284,6 +292,29 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
       y: clamp((event.clientY - bounds.top) * logicalHeight / bounds.height, 0, logicalHeight)
     }
   }
+  const sampleSkinColor = async (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!samplingSkinColor || mode !== 'part' || !previewPart || busy || downloading) return
+    const point = pointerPoint(event)
+    if (!point) return
+    event.preventDefault()
+    event.stopPropagation()
+    setSamplingSkinColor(false)
+    setBusy(true)
+    try {
+      const color = await sampleModelSourceColor(previewPart, point, logicalWidth, logicalHeight)
+      if (!color) {
+        setError('Clique em uma área opaca da pele para selecionar a cor original.')
+        return
+      }
+      setSkinColor(color)
+      setError('')
+      setStatus('Cor original selecionada: ' + color + '.')
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Não foi possível selecionar a cor da prévia.')
+    } finally {
+      setBusy(false)
+    }
+  }
   const beginGuideStroke = (pointerId: number, start: ModelSourcePoint) => {
     if (!selected || tool !== 'guide' || mode !== 'part' || busy || downloading) return
     guideDrag.current = { pointerId, partId: selected.id, start }
@@ -485,8 +516,15 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
   }
   const setEditTool = (next: EditTool) => {
     if (next === 'deform' && (!selected || !isThighPart(selected))) return
+    setSamplingSkinColor(false)
     setTool(next)
     cancelDrawing()
+  }
+  const handlePreviewPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (samplingSkinColor) { void sampleSkinColor(event); return }
+    if (tool === 'guide') { startGuide(event); return }
+    if (tool === 'deform') { startWarp(event); return }
+    startDrawing(event)
   }
   const applyCrop = () => {
     if (!selected || !selectedRect || gesture?.tool !== 'crop') return
@@ -586,6 +624,29 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
       }
     })
   }
+  const removeOriginalSkinColor = () => {
+    if (!skinColor || busy || downloading) return
+    void runMutation(async materialized => {
+      const bodyParts = materialized.parts.filter(isBodyPart)
+      if (!bodyParts.length) throw new Error('Não encontrei peças anatômicas pelo nome para remover a cor da pele.')
+      const replacements = new Map<string, ModelPart>()
+      let removedPixels = 0
+      for (const part of bodyParts) {
+        const result = await removeModelSourceColor(part, skinColor, skinColorTolerance)
+        replacements.set(part.id, result.part)
+        removedPixels += result.removedPixels
+      }
+      if (!removedPixels) {
+        setStatus('A cor selecionada não foi encontrada dentro da semelhança atual. Selecione outra cor ou aumente a semelhança.')
+        return null
+      }
+      return {
+        project: { ...materialized, parts: materialized.parts.map(part => replacements.get(part.id) ?? part) },
+        selectedId,
+        status: `${removedPixels.toLocaleString('pt-BR')} pixels da pele removidos nas peças do corpo; os contornos escuros foram preservados. A edição pode ser desfeita.`
+      }
+    })
+  }
   const deleteSelected = () => {
     if (!selected || draft.parts.length <= 1) return
     void runMutation(async materialized => {
@@ -617,7 +678,7 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
     setBusy(true)
     try {
       const result = await compile()
-      let message = 'Salvar estas edições no modelo original? A folha, as peças deformadas e o Chroma Key serão atualizados. O histórico anterior será encerrado e um backup interno será mantido.'
+      let message = 'Salvar estas edições no modelo original? A folha, as peças editadas e o Chroma Key serão atualizados. O histórico anterior será encerrado e um backup interno será mantido.'
       message += '\n\nPoses e roupas já salvas podem manter imagens ou vínculos anteriores; revise as que usam as peças editadas.'
       if (structureChanged) message += '\n\nA estrutura mudou. Uma divisão conserva o ID original e mantém as juntas nesse lado; o lado novo começa sem conexões. Uma exclusão limpa suas juntas e camadas deste modelo.'
       if (!window.confirm(message)) return
@@ -662,7 +723,7 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
             {draft.parts.map(part => {
               const rect = sourceRect(part, dimensions[part.id])
               return (
-              <button key={part.id} type="button" style={{ ...card, borderColor: part.id === selectedId ? '#64a5ff' : '#3c4554' }} disabled={busy || downloading} onClick={() => { setSelectedId(part.id); setMode('part'); setTool('select'); cancelDrawing(); setError('') }}>
+              <button key={part.id} type="button" style={{ ...card, borderColor: part.id === selectedId ? '#64a5ff' : '#3c4554' }} disabled={busy || downloading} onClick={() => { setSamplingSkinColor(false); setSelectedId(part.id); setMode('part'); setTool('select'); cancelDrawing(); setError('') }}>
                   <img src={part.dataUrl} alt="" style={{ objectFit: 'contain', width: 38, height: 40 }} />
                   <span style={{ minWidth: 0, flex: 1 }}><b style={{ display: 'block', fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis' }}>{part.name}</b><small style={{ color: '#a9b5c4' }}>{dimensions[part.id] ? 'Modificada · ' : ''}{Math.round(rect.width)} × {Math.round(rect.height)}</small></span>
                 </button>
@@ -672,7 +733,18 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
           <main style={{ display: 'flex', minWidth: 0, flexDirection: 'column', gap: 8 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
               <button type="button" style={toolButton(mode === 'part', busy || downloading)} disabled={busy || downloading} onClick={() => { setMode('part'); cancelDrawing() }}>Peça selecionada</button>
-              <button type="button" style={toolButton(mode === 'sheet', busy || downloading)} disabled={busy || downloading} onClick={() => { setMode('sheet'); setTool('select'); cancelDrawing() }}>Folha completa</button>
+              <button type="button" style={toolButton(mode === 'sheet', busy || downloading)} disabled={busy || downloading} onClick={() => { setSamplingSkinColor(false); setMode('sheet'); setTool('select'); cancelDrawing() }}>Folha completa</button>
+              <button type="button" title="Escolha uma cor da pele original e remova esse tom das peças anatômicas" style={toolButton(skinRemovalOpen, busy || downloading || draft.parts.length === 0)} disabled={busy || downloading || draft.parts.length === 0} onClick={() => {
+                const open = !skinRemovalOpen
+                setSkinRemovalOpen(open)
+                setSamplingSkinColor(false)
+                if (open) {
+                  setMode('part')
+                  setTool('select')
+                  cancelDrawing()
+                  setStatus('Escolha a cor manualmente ou use “Selecionar na prévia” para amostrar a pele original.')
+                }
+              }}>Remover pele original</button>
               <span style={{ color: '#a9b5c4', fontSize: 12, marginLeft: 'auto' }}>Zoom</span>
               <button type="button" aria-label="Diminuir zoom" style={toolButton(false, busy || downloading)} disabled={busy || downloading} onClick={() => changeZoom(zoom - .25)}>−</button>
               <input aria-label="Zoom da prévia" type="range" min={.5} max={4} step={.1} value={zoom} disabled={busy || downloading} onChange={event => changeZoom(Number(event.target.value))} style={{ width: 110 }} />
@@ -700,6 +772,29 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
                 </label>
               </>}
             </div>}
+            {skinRemovalOpen && <section aria-label="Remover a cor da pele original" style={{ display: 'grid', gap: 8, padding: 10, border: '1px solid #46556b', borderRadius: 9, background: '#1a2230' }}>
+              <strong style={{ fontSize: 12 }}>Remover a cor original da pele</strong>
+              <small style={{ color: '#aabbd0', lineHeight: 1.4 }}>A cor escolhida será removida das peças anatômicas; os contornos escuros ficam preservados. A alteração continua no rascunho até “Salvar no original”.</small>
+              <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12 }}>
+                  Cor da pele
+                  <input aria-label="Selecionar cor original da pele" type="color" value={skinColor ?? '#f3d9c1'} disabled={busy || downloading} onChange={event => { setSkinColor(event.target.value); setSamplingSkinColor(false); setError('') }} style={{ width: 36, height: 30, padding: 2, border: '1px solid #64748b', borderRadius: 5, background: '#1b2230', cursor: 'pointer' }} />
+                </label>
+                <button type="button" style={toolButton(samplingSkinColor, busy || downloading || mode !== 'part' || !previewPart)} disabled={busy || downloading || mode !== 'part' || !previewPart} onClick={() => {
+                  const sampling = !samplingSkinColor
+                  setSamplingSkinColor(sampling)
+                  setTool('select')
+                  cancelDrawing()
+                  setStatus(sampling ? 'Clique em uma área da pele na prévia da peça para selecionar a cor original.' : 'Seleção de cor cancelada.')
+                }}>{samplingSkinColor ? 'Cancelar seleção' : 'Selecionar na prévia'}</button>
+                <small style={{ color: '#aabbd0' }}>{skinColor ? skinColor.toUpperCase() : 'Nenhuma cor selecionada'}</small>
+              </div>
+              <label style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8, color: '#aabbd0', fontSize: 12 }}>
+                Semelhança {skinColorTolerance}
+                <input aria-label="Semelhança da cor da pele" type="range" min={0} max={180} step={1} value={skinColorTolerance} disabled={busy || downloading} onChange={event => setSkinColorTolerance(Number(event.target.value))} style={{ flex: '1 1 160px' }} />
+              </label>
+              <button type="button" style={{ ...toolButton(false, busy || downloading || !skinColor || samplingSkinColor), width: '100%' }} disabled={busy || downloading || !skinColor || samplingSkinColor} onClick={removeOriginalSkinColor}>Remover cor e manter contornos</button>
+            </section>}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', minHeight: 20, gap: 8 }}>
               <small style={{ color: '#aabbd0' }}>
                 {mode === 'sheet'
@@ -725,12 +820,12 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
               <div style={{ width: 'max-content', height: 'max-content', margin: '0 auto' }}>
                 <div
                   ref={surface}
-                  onPointerDown={tool === 'guide' ? startGuide : tool === 'deform' ? startWarp : startDrawing}
+                  onPointerDown={handlePreviewPointerDown}
                   onPointerMove={tool === 'guide' ? moveGuide : tool === 'deform' ? moveWarp : moveDrawing}
                   onPointerUp={tool === 'guide' ? finishGuide : tool === 'deform' ? event => { void finishWarp(event) } : finishDrawing}
                   onPointerCancel={tool === 'guide' ? cancelGuide : tool === 'deform' ? event => { void finishWarp(event) } : cancelDrawing}
                   onPointerLeave={() => { if (!warpDrag.current) setWarpCursor(null) }}
-                  style={{ position: 'relative', flex: '0 0 auto', width: surfaceWidth, height: surfaceHeight, ...checker, cursor: mode === 'part' && tool !== 'select' ? 'crosshair' : 'default', touchAction: 'none', userSelect: 'none', overflow: 'hidden' }}
+                  style={{ position: 'relative', flex: '0 0 auto', width: surfaceWidth, height: surfaceHeight, ...checker, cursor: samplingSkinColor ? 'copy' : mode === 'part' && tool !== 'select' ? 'crosshair' : 'default', touchAction: 'none', userSelect: 'none', overflow: 'hidden' }}
                 >
                   {mode === 'sheet'
                     ? preview && <img src={preview} alt="Prévia da imagem original editada" draggable={false} style={{ width: '100%', height: '100%', objectFit: 'fill', display: 'block', pointerEvents: 'none' }} />
