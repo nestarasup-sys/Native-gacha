@@ -819,6 +819,30 @@ async function readHairWorkspace(modelSlot: number): Promise<HairWorkspace | nul
   }
 }
 
+type LegacyHairCatalogState = 'active' | 'dismissed' | null
+const legacyHairCatalogStatePath = (modelSlot: number) => join(hairModelPath(modelSlot), 'hair-legacy-catalog-state-v1')
+
+async function readLegacyHairCatalogState(modelSlot: number): Promise<LegacyHairCatalogState> {
+  if (!isValidModelSlot(modelSlot)) throw new Error('Modelo inválido.')
+  try {
+    const state = (await readFile(legacyHairCatalogStatePath(modelSlot), 'utf8')).trim()
+    if (state === 'active' || state === 'dismissed') return state
+    throw new Error('Estado de catálogo legado de cabelo inválido.')
+  } catch (reason) {
+    if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return null
+    throw reason
+  }
+}
+
+async function writeLegacyHairCatalogState(modelSlot: number, state: Exclude<LegacyHairCatalogState, null>): Promise<void> {
+  if (!isValidModelSlot(modelSlot)) throw new Error('Modelo inválido.')
+  const folder = hairModelPath(modelSlot)
+  await mkdir(folder, { recursive: true })
+  const previous = await readLegacyHairCatalogState(modelSlot)
+  const next = state === 'active' && previous === 'dismissed' ? 'dismissed' : state
+  await writeFile(legacyHairCatalogStatePath(modelSlot), next, 'utf8')
+}
+
 function validHairStyle(modelSlot: number, style: HairStyleSave): boolean {
   if (!isValidModelSlot(modelSlot) || style?.schemaVersion !== 1 || style.modelSlot !== modelSlot || !isValidWardrobeId(style.id)
     || typeof style.name !== 'string' || !style.name.trim() || style.name.length > 80 || !style.transforms) return false
@@ -870,10 +894,8 @@ async function readHairStyle(modelSlot: number, id: string): Promise<HairStyle |
   } catch (reason) {
     if ((reason as NodeJS.ErrnoException).code === 'ENOENT') {
       if (id === 'legacy-workspace') {
-        // Respect a migration/deletion previously recorded by older builds.
-        // The virtual legacy entry must not return after the migrated entry
-        // was deliberately removed by the user.
-        try { await access(join(hairModelPath(modelSlot),'hair-style-migration-v1')); return null }
+        if (await readLegacyHairCatalogState(modelSlot) === 'dismissed') return null
+        try { await access(join(hairModelPath(modelSlot), 'hair-style-migration-v1')); return null }
         catch(markerError) { if ((markerError as NodeJS.ErrnoException).code !== 'ENOENT') throw markerError }
         return legacyHairStyle(modelSlot,await readHairWorkspace(modelSlot))
       }
@@ -1320,7 +1342,8 @@ async function registerFabricatorHandlers(): Promise<void> {
     faceModelPath,hairModelPath,
     validFace:validFaceSet,validHair:validHairStyle,
     recover:(folder,images)=>catalogPersistence.recoverCatalogManifest(folder,images),
-    readLegacyHair:readHairWorkspace
+    readLegacyHair:readHairWorkspace,
+    readLegacyHairCatalogState
   })
   registerFabricatorFaceCatalogHandlers(ipcMain, assertTrustedSender, {
     isValidModelSlot, isValidWardrobeId, isValidFaceCatalogId,
@@ -1369,6 +1392,7 @@ async function registerFabricatorHandlers(): Promise<void> {
     listStyles: (modelSlot) => catalogListings.listHair(modelSlot),
     readStyle: readHairStyle,
     writeStyle: writeHairStyle,
+    setLegacyHairCatalogState: writeLegacyHairCatalogState,
     removeDirectory: (path) => rm(path, { recursive: true, force: true })
   })
 }

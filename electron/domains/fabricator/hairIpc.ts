@@ -15,6 +15,7 @@ type HairIpcDependencies = {
   listStyles: (modelSlot: number) => Promise<HairStyleSummary[]>
   readStyle: (modelSlot: number, id: string) => Promise<HairStyle | null>
   writeStyle: (modelSlot: number, style: HairStyleSave, assets: HairStyleAsset[]) => Promise<void>
+  setLegacyHairCatalogState: (modelSlot: number, state: 'active'|'dismissed') => Promise<void>
   removeDirectory: (path: string) => Promise<void>
 }
 
@@ -46,7 +47,10 @@ export function registerFabricatorHairHandlers(deps: HairIpcDependencies) {
   })
   deps.ipcMain.handle(fabricatorIpcChannels.saveHairStyle, async (event, modelSlot: number, style: HairStyleSave, assets: HairStyleAsset[]): Promise<void> => {
     deps.assertTrustedSender(event)
-    await queueSave(modelSlot, () => deps.writeStyle(modelSlot, style, assets))
+    await queueSave(modelSlot, async () => {
+      await deps.writeStyle(modelSlot, style, assets)
+      await deps.setLegacyHairCatalogState(modelSlot, 'active')
+    })
   })
   deps.ipcMain.handle(fabricatorIpcChannels.deleteHairStyle, async (event, modelSlot: number, id: string): Promise<void> => {
     deps.assertTrustedSender(event)
@@ -54,7 +58,10 @@ export function registerFabricatorHairHandlers(deps: HairIpcDependencies) {
     const base = resolve(join(deps.hairModelPath(modelSlot), 'styles'))
     const target = resolve(deps.hairStylePath(modelSlot, id))
     if (dirname(target) !== base || basename(target) !== `style-${id}`) throw new Error('Caminho de exclusão inválido.')
-    await queueSave(modelSlot, () => deps.removeDirectory(target))
+    await queueSave(modelSlot, async () => {
+      await deps.setLegacyHairCatalogState(modelSlot, id === 'legacy-workspace' ? 'dismissed' : 'active')
+      await deps.removeDirectory(target)
+    })
   })
 
   return { getPendingWrites: () => [...saveQueues.values()] }

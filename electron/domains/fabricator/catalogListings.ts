@@ -1,6 +1,6 @@
 /** Read-side catalog services for Fabricador faces and hair styles.
- * No implicit legacy-hair migration: older workspaces are exposed virtually
- * until the user explicitly chooses to save a modern hair style.
+ * Legacy hair remains visible as a fallback until the user saves or deletes
+ * catalog content. The source workspace and older migrated assets stay intact.
  * File adapter retains existing DomainFileSystem / SQLite behavior.
  */
 import { join } from 'node:path'
@@ -19,6 +19,7 @@ type Deps = {
   validHair:(slot:number, hair:HairStyleSave)=>boolean
   recover:(folder:string, images:string)=>Promise<void>
   readLegacyHair:(slot:number)=>Promise<HairWorkspace|null>
+  readLegacyHairCatalogState?:(slot:number)=>Promise<'active'|'dismissed'|null>
 }
 const missing=(e:unknown)=>(e as NodeJS.ErrnoException)?.code==='ENOENT'
 export function legacyHairStyle(slot:number,legacy:HairWorkspace|null):HairStyle|null {
@@ -66,22 +67,24 @@ export function createFabricatorCatalogListings(deps:Deps) {
         if(deps.validHair(modelSlot,style) && style.id===entry.name.slice(6)) styles.push(style)
       }catch(reason){if(!missing(reason) && !(reason instanceof SyntaxError))throw reason}
     }
-    // Before this fix a LIST call silently copied a full legacy workspace,
-    // wrote a new PNG library, and created hair-style-migration-v1. That made
-    // read-only browsing mutate personal assets. Keep this as a virtual style
-    // while its source workspace continues to exist.
-    if(!styles.some(item=>item.id==='legacy-workspace')) {
-      // Respect the historical migration marker: a user who previously
-      // deleted the migrated style must not see it unexpectedly resurrected.
+    const catalogStyles=styles.filter(item=>item.id!=='legacy-workspace')
+    const legacyStyle=styles.find(item=>item.id==='legacy-workspace')
+    const legacyCatalogState=await deps.readLegacyHairCatalogState?.(modelSlot) ?? null
+    if(catalogStyles.length===0 && legacyCatalogState===null) {
+      // Preserve an older, physically migrated legacy style when it exists.
+      if(legacyStyle) return [legacyStyle]
+
+      // A migration marker means an older build already handled (or the user
+      // deleted) the virtual style, so do not recreate it from the workspace.
       let migrated=false
       try { await deps.files.readFile(join(deps.hairModelPath(modelSlot),'hair-style-migration-v1'),'utf8');migrated=true }
       catch(reason){if(!missing(reason))throw reason}
       if(!migrated) {
         const legacy=legacyHairStyle(modelSlot,await deps.readLegacyHair(modelSlot))
-        if(legacy) styles.push(legacy)
+        if(legacy) catalogStyles.push(legacy)
       }
     }
-    return styles.sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt))
+    return catalogStyles.sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt))
   }
   return {listFaces,listHair}
 }

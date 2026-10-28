@@ -31,7 +31,7 @@ O código-fonte foi importado como **arquivos Git**, não como um ZIP: Electron,
 3. Cor/offsets/expressão-base do personagem pertencem ao Customizador. A atuação e os overrides específicos pertencem à cena Studio; não regravar a biblioteca.
 4. Mantemos `schemaVersion:1`, aliases legados e chaves opcionais: qualquer conversão compatível acontece em memória. Não existe migração destrutiva em tempo de leitura.
 5. `CustomizerCharacterRepository` grava o manifesto mediante arquivo `.tmp` e `.backup`; `documentPersistence.ts`, `catalogPersistence.ts` e jornais específicos cuidam de seus respectivos domínios. Nenhuma promessa de transação distribuída global entre arquivos e SQLite.
-6. A nova `catalogListings.ts` lista cabelo legado por **entrada virtual**, sem copiar imagens, escrever manifestos ou `hair-style-migration-v1` na mera consulta. Um marcador histórico já presente impede ressurgimento acidental de estilo excluído.
+6. `catalogListings.ts` expõe o cabelo legado como **entrada virtual** sem copiar imagens nem escrever na consulta. O primeiro salvamento no catálogo registra `hair-legacy-catalog-state-v1=active`; excluir o legado registra `dismissed`, estado que não é desfeito por salvamentos posteriores. Isso oculta o fallback duplicado sem alterar `hair.json` ou os PNGs. O marcador histórico `hair-style-migration-v1` continua sendo respeitado para compatibilidade.
 
 **Provas de contrato:** `tests/character-contract-acceptance.test.mjs` abre biblioteca antiga e atual, altera apenas personagem, salva/reabre com `CustomizerCharacterRepository` e compara hashes dos manifestos/PNGs do Fabricador, pose, roupa, cabelo e rosto; `tests/fabricator-customizer-studio-continuity.test.mjs`, `tests/fabricator-source-pose-studio-e2e.test.mjs`, `tests/model-source-process-crash.test.mjs` cobrem snapshots, restart e falhas. O workflow Windows Electron cria/reabre personagem e Studio com perfil isolado. **Os testes de continuidade não provam que assets pessoais anteriores já estejam íntegros.**
 
@@ -41,7 +41,7 @@ O código-fonte foi importado como **arquivos Git**, não como um ZIP: Electron,
 - `modelCatalog.ts`, `modelIpc.ts`, `modelWriter.ts`: catálogo e publicação do modelo.
 - `posePersistence.ts`, `poseIpc.ts`, `animatorPersistence.ts`: pose/animador por contrato de dependência.
 - `wardrobeCatalog.ts`, `wardrobeCatalogIpc.ts`: listagem isolada com diagnóstico por conjunto.
-- `catalogListings.ts`: listagem de rostos e cabelos fora do `electron/main.ts`, por filesystem injetado; cabelo legado só virtual, mantendo fluxo de carga da peça pelo ID.
+- `catalogListings.ts`: listagem de rostos e cabelos fora do `electron/main.ts`, por filesystem injetado; o legado pode ser virtual ou já estar fisicamente migrado, mas deixa de ser listado ao ativar o catálogo ou excluí-lo. Referências diretas continuam carregando enquanto o legado não for excluído.
 - `catalogPersistence.ts` + `catalogImageTransaction.ts`, `modelSourceJournal.ts`, `studioAssetTransaction.ts`, `expressionBatchTransaction.ts`: backups, validação e recuperação; dados de origem não são apagados em falhas sem provas.
 - `CustomizerCharacterRepository`: gravação e compatibilidade de biblioteca por personagem.
 - Os handlers `fabricator:face:list`, `fabricator:listHairStyles` (via canal tipado original), poses, roupas e catálogos não foram renomeados. O `main.ts` só delega as listagens. O restante da persistência de domínios já extraída mantém compatibilidade JSON/SQLite/IPC.
