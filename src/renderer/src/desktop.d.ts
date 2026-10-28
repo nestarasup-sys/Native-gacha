@@ -6,13 +6,15 @@ import type { RoteirosDesktopApi } from '../../shared/roteiros'
 import type { BaseVideosDesktopApi } from '../../shared/baseVideos'
 import type { MediaLibraryDesktopApi } from '../../shared/mediaLibrary'
 import type { DataManagementDesktopApi } from '../../shared/dataManagement'
+import type { ImageImportDesktopApi } from '../../shared/imageImport'
 
 declare global {
   interface Window {
     desktop: {
       platform: string
       appName: string
-      normalizeImageForImport: (bytes: Uint8Array) => Promise<{ dataUrl: string; width: number; height: number; bitDepth: 8 | 16; sourceBytes: number; outputBytes: number }>
+      normalizeImageForImport: ImageImportDesktopApi['normalizeForImport']
+      images: ImageImportDesktopApi
       dataManagement: DataManagementDesktopApi
       fabricator: FabricatorDesktopApi
       customizer: CustomizerDesktopApi

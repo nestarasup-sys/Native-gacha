@@ -11,7 +11,7 @@ type NormalizedImage = {
   outputBytes: number
 }
 
-export function registerFabricatorImageNormalizationHandler(deps: {
+export function registerImageNormalizationHandler(deps: {
   ipcMain: Pick<IpcMain, 'handle'>
   assertTrustedSender: (event: IpcMainInvokeEvent) => void
   normalizeImage: (bytes: Buffer) => Promise<NormalizedImage>

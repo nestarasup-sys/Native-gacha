@@ -1,9 +1,11 @@
-export type CanonicalImageImport = { dataUrl: string; width: number; height: number; bitDepth: 8 | 16; sourceBytes: number; outputBytes: number }
+import type { CanonicalImageImport } from '../../../../shared/imageImport'
+
+export type { CanonicalImageImport } from '../../../../shared/imageImport'
 
 export async function normalizeImageFile(file: File): Promise<CanonicalImageImport> {
   if (!file || file.size <= 0 || file.size > 50 * 1024 * 1024) throw new Error('A imagem deve ter entre 1 byte e 50 MB.')
   const source = new Uint8Array(await file.arrayBuffer())
-  return window.desktop.normalizeImageForImport(source)
+  return window.desktop.images.normalizeForImport(source)
 }
 
 export async function normalizeEditableImageFile(file: File): Promise<CanonicalImageImport> {

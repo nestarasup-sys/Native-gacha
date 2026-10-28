@@ -44,7 +44,7 @@ import { registerFabricatorFaceCatalogHandlers } from './domains/fabricator/face
 import { registerFabricatorHairHandlers } from './domains/fabricator/hairIpc'
 import { registerFaceGuideHandlers } from './domains/fabricator/faceGuidesIpc'
 import { registerFabricatorFaceAnimationExportHandler } from './domains/fabricator/faceAnimationExportIpc'
-import { registerFabricatorImageNormalizationHandler } from './domains/fabricator/imageNormalizationIpc'
+import { registerImageNormalizationHandler } from './domains/images/imageNormalizationIpc'
 import { AmbiguousModelSourceRecoveryError, recoverModelSourceSlot } from './domains/fabricator/modelSourceRecovery'
 import { createFabricatorModelWriter } from './domains/fabricator/modelWriter'
 import { createFabricatorHistoryPersistence } from './domains/fabricator/historyPersistence'
@@ -1631,7 +1631,7 @@ app.whenReady().then(async () => {
   dataBackupService = new DataBackupService({ dataRoot: app.getPath('appData'), catalog: dataPlatform })
   await dataBackupService.applyPendingRestore()
   dataPlatform.initialize()
-  registerFabricatorImageNormalizationHandler({
+  registerImageNormalizationHandler({
     ipcMain, assertTrustedSender, normalizeImage: normalizeImageBuffer
   })
   const designSettingsService = createFabricatorDesignSettingsService({

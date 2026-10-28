@@ -10,6 +10,7 @@ import type { RoteirosDesktopApi } from '../src/shared/roteiros'
 import type { BaseVideosDesktopApi } from '../src/shared/baseVideos'
 import type { MediaLibraryDesktopApi } from '../src/shared/mediaLibrary'
 import type { DataManagementDesktopApi, DataMigrationProgress } from '../src/shared/dataManagement'
+import type { ImageImportDesktopApi } from '../src/shared/imageImport'
 
 const invokeFabricator = createFabricatorInvoker(ipcRenderer)
 const fabricatorApi: FabricatorDesktopApi = {
@@ -183,10 +184,15 @@ const dataManagementApi: DataManagementDesktopApi = {
   deleteDataBackup: (id) => ipcRenderer.invoke('app:data-backups:delete', id)
 }
 
+const imagesApi: ImageImportDesktopApi = {
+  normalizeForImport: (bytes) => ipcRenderer.invoke('app:image:normalize', bytes)
+}
+
 contextBridge.exposeInMainWorld('desktop', {
   platform: process.platform,
   appName: 'Gacha Nymi',
-  normalizeImageForImport: (bytes: Uint8Array) => ipcRenderer.invoke('app:image:normalize', bytes),
+  normalizeImageForImport: imagesApi.normalizeForImport,
+  images: imagesApi,
   dataManagement: dataManagementApi,
   fabricator: fabricatorApi,
   customizer: customizerApi,
