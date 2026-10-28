@@ -10,6 +10,7 @@ import { EditorV6PlaybackAudio } from './EditorV6PlaybackAudio'
 import { EditorV6PlaybackScene } from './EditorV6PlaybackScene'
 import { getEditorV6PlaybackFrame, setEditorV6PlaybackFrame } from './editorV6PlaybackClock'
 import { duplicateEditorV6ProjectDocument } from './editorV6ProjectDuplication'
+import { addEditorV6ImageAsset, addEditorV6TimelineMedia } from './editorV6MediaChanges'
 import type { ScenePointerEvent, SceneSurfaceInteraction } from './SceneSurface'
 import { addEditorV6ElementAtFrame, editEditorV6DocumentAtBlock, editorV6ClipAtFrame, normalizeEditorV6Timeline, prepareEditorV6PositionAtFrame, moveEditorV6ElementInPeriod, editEditorV6BackgroundAtFrame, pruneEditorV6TimelineSnapshots, repairEditorV6DuplicateAssets, repairEditorV6FaceModeAssetReferences, resolveEditorV6SceneAtFrame, timelineClips } from '../../../../shared/editorV6Timeline'
 import { useEditorV6InspectorState } from './useEditorV6InspectorState'
@@ -92,7 +93,12 @@ export function EditorV6Page() {
   } = useEditorV6InspectorState()
   const [studioFolder, setEditorV6Folder] = useState('')
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [activeEditorV6Id, setActiveStudioId] = useState<string | null>(null)
+  const [activeEditorV6Id, setActiveEditorV6IdState] = useState<string | null>(null)
+  const activeEditorV6IdRef = useRef<string | null>(null)
+  const setActiveEditorV6Id = useCallback((id: string | null) => {
+    activeEditorV6IdRef.current = id
+    setActiveEditorV6IdState(id)
+  }, [])
   const [activeTool, setActiveTool] = useState<Tool>(null)
   const [fullView, setFullView] = useState(false)
   const [exportOpen, setExportOpen] = useState(false)
@@ -325,7 +331,7 @@ export function EditorV6Page() {
       if (generation !== activeLoadGenerationRef.current) return
       if (!project) {
         setError('Esse projeto não foi encontrado na biblioteca local do Editor V6.')
-        setActiveStudioId(null)
+        setActiveEditorV6Id(null)
         return
       }
       setError(null)
@@ -333,10 +339,10 @@ export function EditorV6Page() {
     }).catch((reason: unknown) => {
       if (generation !== activeLoadGenerationRef.current) return
       setError(reason instanceof Error ? reason.message : 'Não foi possível abrir o projeto do Editor V6.')
-      setActiveStudioId(null)
+      setActiveEditorV6Id(null)
     })
     return () => { if (activeLoadGenerationRef.current === generation) activeLoadGenerationRef.current += 1 }
-  }, [activeEditorV6Id, pausePlayback, publishPlayheadFrame, setActiveEditorV6Project])
+  }, [activeEditorV6Id, pausePlayback, publishPlayheadFrame, setActiveEditorV6Id, setActiveEditorV6Project])
 
   useEffect(() => {
     let cancelled = false
@@ -653,6 +659,32 @@ export function EditorV6Page() {
     setHistoryVersion(value => value + 1)
   }
 
+  const loadLatestEditorV6Project = async (projectId: string) => {
+    const current = useEditorV6Store.getState().activeProject
+    return current?.id === projectId ? current : window.desktop.loadEditorV6Project(projectId)
+  }
+
+  const persistImportedEditorV6Document = async (source: EditorV6Document, next: EditorV6Document) => {
+    const isActive = activeEditorV6IdRef.current === source.id && useEditorV6Store.getState().activeProject?.id === source.id
+    if (isActive) {
+      recordHistory(source)
+      setActiveEditorV6Project(next)
+      markEditorV6Unsaved()
+    }
+    await writeEditorV6DocumentInOrder(next)
+    const current = useEditorV6Store.getState().activeProject
+    upsertEditorV6Summary(editorV6ProjectSummary(current?.id === next.id ? current : next))
+    const isStillCurrent = isActive
+      && activeEditorV6IdRef.current === next.id
+      && current?.id === next.id
+      && current.updatedAt === next.updatedAt
+    if (isStillCurrent) {
+      setSaved(true)
+      setError(null)
+    }
+    return isStillCurrent
+  }
+
   const changeScene = (transform: (studio: EditorV6Document) => EditorV6Document) => {
     if (!activeEditorV6) return
     recordHistory()
@@ -684,48 +716,33 @@ export function EditorV6Page() {
     setHistoryVersion(value => value + 1)
   }
 
-  const importImage = async (category: EditorV6Asset['category']) => {
+  const importImage = async (category: 'background' | 'object') => {
     if (!activeEditorV6) return
     pausePlayback()
     const targetTrackKind = category === 'object' ? 'object' : 'video'
     if (category !== 'background' && activeEditorV6.timeline.tracks.some((track) => track.kind === targetTrackKind && track.locked)) { setError(category === 'object' ? 'Desbloqueie a faixa Objetos para adicionar uma imagem.' : 'Desbloqueie a faixa Vídeo para adicionar uma imagem.'); return }
+    const projectId = activeEditorV6.id
     try {
       const frameAtImport = getEditorV6PlaybackFrame()
       const asset = await window.desktop.importEditorV6Image(category)
       if (!asset) return
-      const studioAtImport = activeEditorV6
-      let nextStudio: EditorV6Document = category === 'background'
-        ? editEditorV6BackgroundAtFrame({ ...studioAtImport, assets: [...studioAtImport.assets, asset], updatedAt: new Date().toISOString() }, frameAtImport, { backgroundAssetId: asset.id, backgroundX: 0, backgroundY: 0, backgroundWidth: 100, backgroundHeight: 100, backgroundRotation: 0 })
-        : {
-            ...studioAtImport,
-            assets: [...studioAtImport.assets, asset],
-            elements: [...studioAtImport.elements, {
-              id: crypto.randomUUID(), kind: 'image', assetId: asset.id, text: '', x: 0, y: 0, width: 25, height: 25, rotation: 0,
-              zIndex: Math.max(0, ...studioAtImport.elements.map((item) => item.zIndex)) + 1
-            }],
-            updatedAt: new Date().toISOString()
-          }
-
-      if (category !== 'background') nextStudio = addEditorV6ElementAtFrame(nextStudio, nextStudio.elements.at(-1)!, frameAtImport)
-      nextStudio = { ...nextStudio, timeline: normalizeEditorV6Timeline(syncEditorV6TimelineElements(nextStudio.timeline, nextStudio.elements)) }
-      // Persist imported image bytes and their manifest before showing the asset as saved.
-      markEditorV6Unsaved()
-      await writeEditorV6DocumentInOrder(nextStudio)
-      if (activeEditorV6Id === studioAtImport.id) {
-        recordHistory()
-        setActiveEditorV6Project(nextStudio)
-        setSaved(true)
+      const currentProject = await loadLatestEditorV6Project(projectId)
+      if (!currentProject) { setError('Não foi possível carregar o projeto para adicionar a imagem.'); return }
+      if (category !== 'background' && currentProject.timeline.tracks.some((track) => track.kind === targetTrackKind && track.locked)) {
+        setError(category === 'object' ? 'Desbloqueie a faixa Objetos para adicionar uma imagem.' : 'Desbloqueie a faixa Vídeo para adicionar uma imagem.')
+        return
       }
+      const nextProject = addEditorV6ImageAsset(currentProject, asset, category, frameAtImport, () => crypto.randomUUID())
+      if (!await persistImportedEditorV6Document(currentProject, nextProject)) return
       if (category === 'background') {
         setSelectedElementId('background')
       } else {
-        setSelectedElementId(nextStudio.elements.at(-1)?.id ?? null)
-        setSelectedTimelineBlockId(editorV6ClipAtFrame(nextStudio.timeline, nextStudio.elements.at(-1)!.id, frameAtImport)?.block.id ?? null)
+        setSelectedElementId(nextProject.elements.at(-1)?.id ?? null)
+        setSelectedTimelineBlockId(editorV6ClipAtFrame(nextProject.timeline, nextProject.elements.at(-1)!.id, frameAtImport)?.block.id ?? null)
       }
       setActiveTool(category === 'background' ? 'background' : 'objects')
       setInspectorOpen(true)
       setInspectorTab('editor')
-      setError(null)
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível importar a imagem.') }
   }
 
@@ -735,58 +752,43 @@ export function EditorV6Page() {
     const track = activeEditorV6.timeline.tracks.find((item) => item.kind === kind)
     if (track?.locked) { setError('Desbloqueie a faixa Áudio para importar mídia.'); return }
     pausePlayback()
-    const sourceProject = activeEditorV6
+    const projectId = activeEditorV6.id
     const frameAtImport = getEditorV6PlaybackFrame()
     try {
-      const media = await window.desktop.importEditorV6Media(sourceProject.id, kind)
+      const media = await window.desktop.importEditorV6Media(projectId, kind)
       if (!media) return
-      const startFrame = Math.min(frameAtImport, sourceProject.timeline.durationFrames)
-      const durationFrames = Math.max(1, Math.min(media.sourceFrames, 1_000_000 - startFrame))
-      const block = { id: crypto.randomUUID(), mediaId: media.id, mediaInFrame: 0, label: media.name.slice(0, 120), startFrame, durationFrames, audioEnabled: true, gain: 1 }
-      const timeline = normalizeEditorV6Timeline({ ...sourceProject.timeline, durationFrames: Math.max(sourceProject.timeline.durationFrames, startFrame + durationFrames), tracks: sourceProject.timeline.tracks.map((item) => item.kind === kind ? { ...item, blocks: [...item.blocks, block] } : item) })
-      const next: EditorV6Document = { ...sourceProject, media: [...(sourceProject.media ?? []), media], timeline, updatedAt: new Date().toISOString() }
-      markEditorV6Unsaved()
-      await writeEditorV6DocumentInOrder(next)
-      if (activeEditorV6Id !== sourceProject.id) return
-      recordHistory(sourceProject)
-      setActiveEditorV6Project(next)
+      const currentProject = await loadLatestEditorV6Project(projectId)
+      if (!currentProject) { setError('Não foi possível carregar o projeto para adicionar a mídia.'); return }
+      const { document: nextProject, block, startFrame } = addEditorV6TimelineMedia(currentProject, media, frameAtImport, () => crypto.randomUUID())
+      if (!await persistImportedEditorV6Document(currentProject, nextProject)) return
       publishPlayheadFrame(startFrame)
       setSelectedTimelineBlockId(block.id)
       setSelectedElementId(null)
       setActiveTool(null)
       setInspectorOpen(true)
       setInspectorTab('editor')
-      setSaved(true)
-      setError(null)
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível importar o áudio.') }
   }
 
   const linkVideoLibraryItem = async (item: import('../../../../shared/mediaLibrary').VideoLibraryItem) => {
-    const sourceProject = activeEditorV6
-    if (!sourceProject) return
-    const track = sourceProject.timeline.tracks.find((entry) => entry.kind === 'video')
+    const activeProject = activeEditorV6
+    if (!activeProject) return
+    const projectId = activeProject.id
+    const track = activeProject.timeline.tracks.find((entry) => entry.kind === 'video')
     if (track?.locked) throw new Error('Desbloqueie a faixa Vídeo antes de adicionar um vídeo.')
     pausePlayback()
-    const startFrame = Math.min(getEditorV6PlaybackFrame(), sourceProject.timeline.durationFrames)
-    const media = await window.desktop.linkEditorV6LibraryVideo(sourceProject.id, item.id)
-    const durationFrames = Math.max(1, Math.min(media.sourceFrames, 1_000_000 - startFrame))
-    const block = { id: crypto.randomUUID(), mediaId: media.id, mediaInFrame: 0, label: media.name.slice(0, 120), startFrame, durationFrames, audioEnabled: true, gain: 1 }
-    const mediaList = sourceProject.media ?? []
-    const timeline = normalizeEditorV6Timeline({ ...sourceProject.timeline, durationFrames: Math.max(sourceProject.timeline.durationFrames, startFrame + durationFrames), tracks: sourceProject.timeline.tracks.map((entry) => entry.kind === 'video' ? { ...entry, blocks: [...entry.blocks, block] } : entry) })
-    const next: EditorV6Document = { ...sourceProject, media: mediaList.some((entry) => entry.id === media.id) ? mediaList : [...mediaList, media], timeline, updatedAt: new Date().toISOString() }
-    markEditorV6Unsaved()
-    await writeEditorV6DocumentInOrder(next)
-    if (activeEditorV6Id !== sourceProject.id) return
-    recordHistory(sourceProject)
-    setActiveEditorV6Project(next)
+    const frameAtImport = getEditorV6PlaybackFrame()
+    const media = await window.desktop.linkEditorV6LibraryVideo(projectId, item.id)
+    const currentProject = await loadLatestEditorV6Project(projectId)
+    if (!currentProject) throw new Error('Não foi possível carregar o projeto para adicionar o vídeo.')
+    const { document: nextProject, block, startFrame } = addEditorV6TimelineMedia(currentProject, media, frameAtImport, () => crypto.randomUUID())
+    if (!await persistImportedEditorV6Document(currentProject, nextProject)) return
     publishPlayheadFrame(startFrame)
     setSelectedTimelineBlockId(block.id)
     setSelectedElementId(null)
     setActiveTool(null)
     setInspectorOpen(true)
     setInspectorTab('editor')
-    setSaved(true)
-    setError(null)
     setVideoPickerOpen(false)
   }
 
@@ -1281,7 +1283,7 @@ export function EditorV6Page() {
       await window.desktop.deleteEditorV6Project(target.id)
       removeEditorV6Summary(target.id)
       setSelectedId((current) => current === target.id ? null : current)
-      if (activeEditorV6Id === target.id) { pausePlayback(); setActiveStudioId(null) }
+      if (activeEditorV6Id === target.id) { pausePlayback(); setActiveEditorV6Id(null) }
       setSaved(true)
       setError(null)
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível excluir o projeto do Editor V6.') }
@@ -1290,7 +1292,7 @@ export function EditorV6Page() {
   const leaveStudio = async () => {
     if (!await saveActiveEditorV6Project(activeEditorV6)) return
     pausePlayback()
-    setActiveStudioId(null)
+    setActiveEditorV6Id(null)
     setActiveTool(null)
     setSelectedElementId(null)
     setFullView(false)
@@ -1611,8 +1613,8 @@ export function EditorV6Page() {
       {loading ? <section className="studio-empty-state"><strong>Carregando projetos…</strong></section> : editorV6Projects.length ? (
         <section className="studio-grid" aria-label="Projetos do Editor V6">
           {editorV6Projects.map((studio) => <article className={`studio-card${selectedId === studio.id ? ' selected' : ''}`} key={studio.id}>
-            <header className="studio-card-heading"><button className="studio-card-open" onClick={() => { setSelectedId(studio.id); setActiveStudioId(studio.id) }} aria-label={`Abrir ${studio.title}`} type="button">{studio.title}</button><div className="studio-card-actions"><button className="studio-card-action" onClick={() => void duplicateStudio(studio)} aria-label={`Duplicar ${studio.title}`} title={`Duplicar ${studio.title}`} type="button"><span className="studio-duplicate-icon" aria-hidden="true">▢</span></button><button className="studio-card-action danger" onClick={() => void deleteStudio(studio)} aria-label={`Excluir ${studio.title}`} title={`Excluir ${studio.title}`} type="button"><Icon name="trash" /></button></div></header>
-            <button className="studio-cover" style={{ backgroundColor: studio.color, ...(studio.thumbnailDataUrl ? { backgroundImage: `url(${studio.thumbnailDataUrl})` } : {}) }} onClick={() => { setSelectedId(studio.id); setActiveStudioId(studio.id) }} aria-label={`Abrir ${studio.title}`} type="button" />
+            <header className="studio-card-heading"><button className="studio-card-open" onClick={() => { setSelectedId(studio.id); setActiveEditorV6Id(studio.id) }} aria-label={`Abrir ${studio.title}`} type="button">{studio.title}</button><div className="studio-card-actions"><button className="studio-card-action" onClick={() => void duplicateStudio(studio)} aria-label={`Duplicar ${studio.title}`} title={`Duplicar ${studio.title}`} type="button"><span className="studio-duplicate-icon" aria-hidden="true">▢</span></button><button className="studio-card-action danger" onClick={() => void deleteStudio(studio)} aria-label={`Excluir ${studio.title}`} title={`Excluir ${studio.title}`} type="button"><Icon name="trash" /></button></div></header>
+            <button className="studio-cover" style={{ backgroundColor: studio.color, ...(studio.thumbnailDataUrl ? { backgroundImage: `url(${studio.thumbnailDataUrl})` } : {}) }} onClick={() => { setSelectedId(studio.id); setActiveEditorV6Id(studio.id) }} aria-label={`Abrir ${studio.title}`} type="button" />
           </article>)}
         </section>
       ) : <section className="studio-empty-state"><span><Icon name="camera" /></span><strong>Nenhum projeto criado</strong><small>Crie um projeto para começar.</small></section>}

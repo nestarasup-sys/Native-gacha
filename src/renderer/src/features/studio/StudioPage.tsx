@@ -3,8 +3,9 @@ import { isPoseSnapshotForModel } from '../../../../shared/characterSourceContin
 import { recordStudioHistory, undoStudioHistory, redoStudioHistory } from '../../../../shared/studioHistory'
 import { useStudioInspectorState } from '../../characters/useStudioInspectorState'
 import { StudioSceneCanvas } from './StudioSceneCanvas'
+import { addStudioImageAsset } from './studioImageChanges'
 import { trimTransparentImage, fitElementToTrim, faceRenderGeometry, type TrimmedImage } from '../../characters/characterGeometry'
-import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { buildStudioExpressionAppearance, buildStudioExpressionTransforms, resolveStudioExpressionBase, studioExpressionCollection } from './expressionTransforms'
 import { Icon } from '../../ui/components/Icon'
 import { NumericRangeField } from '../../ui/components/NumericRangeField'
@@ -162,6 +163,10 @@ export function StudioPage() {
   const nextStudioNumber = useRef(1)
   const selectedStudio = studios.find((studio) => studio.id === selectedId) ?? null
   const activeStudio = studios.find((studio) => studio.id === activeStudioId) ?? null
+  const studiosRef = useRef(studios)
+  const activeStudioIdRef = useRef(activeStudioId)
+  useLayoutEffect(() => { studiosRef.current = studios }, [studios])
+  useLayoutEffect(() => { activeStudioIdRef.current = activeStudioId }, [activeStudioId])
   const writeStudioDocument = useCallback((studio: StudioDocument) => window.desktop.saveStudio(studio), [])
   const onStudioDocumentSaved = useCallback((document: StudioDocument, savedDocument: StudioDocument) => {
     if (savedDocument.thumbnailDataUrl !== document.thumbnailDataUrl) {
@@ -627,9 +632,9 @@ export function StudioPage() {
     markStudioUnsaved()
   }
 
-  const recordHistory = () => {
-    if (!activeStudio) return
-    const history = recordStudioHistory({ undo: undoRef.current, redo: redoRef.current }, activeStudio)
+  const recordHistory = (document = activeStudio) => {
+    if (!document) return
+    const history = recordStudioHistory({ undo: undoRef.current, redo: redoRef.current }, document)
     undoRef.current = history.undo
     redoRef.current = history.redo
     setCanUndo(history.undo.length > 0)
@@ -667,41 +672,40 @@ export function StudioPage() {
     setHistoryVersion(value => value + 1)
   }
 
-  const importImage = async (category: StudioAsset['category']) => {
+  const importImage = async (category: 'background' | 'object') => {
     if (!activeStudio) return
+    const studioId = activeStudio.id
     try {
       const asset = await window.desktop.importStudioImage(category)
       if (!asset) return
-      const studioAtImport = activeStudio
-      const nextStudio: StudioDocument = category === 'background'
-        ? { ...studioAtImport, assets: [...studioAtImport.assets, asset], backgroundAssetId: asset.id, backgroundX: 0, backgroundY: 0, backgroundWidth: 100, backgroundHeight: 100, backgroundRotation: 0, updatedAt: new Date().toISOString() }
-        : {
-            ...studioAtImport,
-            assets: [...studioAtImport.assets, asset],
-            elements: [...studioAtImport.elements, {
-              id: crypto.randomUUID(), kind: 'image', assetId: asset.id, text: '', x: 0, y: 0, width: 25, height: 25, rotation: 0,
-              zIndex: Math.max(0, ...studioAtImport.elements.map((item) => item.zIndex)) + 1
-            }],
-            updatedAt: new Date().toISOString()
-          }
-
-      // Persist imported image bytes and their manifest before showing the asset as saved.
-      markStudioUnsaved()
+      const studioAtImport = studiosRef.current.find((studio) => studio.id === studioId)
+      if (!studioAtImport) { setError('Não foi possível carregar o Studio para adicionar a imagem.'); return }
+      const nextStudio = addStudioImageAsset(studioAtImport, asset, category, () => crypto.randomUUID())
+      const isActive = activeStudioIdRef.current === studioId
+      const nextStudios = studiosRef.current.map((studio) => studio.id === studioId ? nextStudio : studio)
+      studiosRef.current = nextStudios
+      setStudios(nextStudios)
+      if (isActive) {
+        recordHistory(studioAtImport)
+        markStudioUnsaved()
+      }
       await writeStudioInOrder(nextStudio)
-      if (activeStudioId === studioAtImport.id) {
-        recordHistory()
-        setStudios((current) => current.map((studio) => studio.id === studioAtImport.id ? nextStudio : studio))
+      const currentStudio = studiosRef.current.find((studio) => studio.id === studioId)
+      const isStillCurrent = isActive
+        && activeStudioIdRef.current === studioId
+        && currentStudio?.updatedAt === nextStudio.updatedAt
+      if (isStillCurrent) {
         setSaved(true)
+        setError(null)
+        if (category === 'background') {
+          setSelectedElementId('background')
+        } else {
+          setSelectedElementId(nextStudio.elements.at(-1)?.id ?? null)
+        }
+        setActiveTool(category === 'background' ? 'background' : 'objects')
+        setInspectorOpen(true)
+        setInspectorTab('editor')
       }
-      if (category === 'background') {
-        setSelectedElementId('background')
-      } else {
-        setSelectedElementId(nextStudio.elements.at(-1)?.id ?? null)
-      }
-      setActiveTool(category === 'background' ? 'background' : 'objects')
-      setInspectorOpen(true)
-      setInspectorTab('editor')
-      setError(null)
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível importar a imagem.') }
   }
 
