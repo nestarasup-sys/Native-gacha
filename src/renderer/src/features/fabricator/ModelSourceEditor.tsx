@@ -6,7 +6,7 @@ import { normalizePartAnchors } from './models/rig'
 import { composeModelSource, sourceRect, validateModelSourceChroma, validateModelSourceDimensions, MAX_CHROMA_TOLERANCE, type ModelSourceDimensions, type ModelSourceResult } from './models/modelSource'
 import { cropModelSourcePart, eraseModelSourceBrush, removeModelSourceColor, sampleModelSourceColor, splitModelSourcePart, worldPointInsideCrop, worldPointToPart, type ModelSourceCrop, type ModelSourcePoint } from './models/modelSourceEditing'
 import { applyImageWarpBrush, type ImageWarpPoint } from './models/imageMeshWarp'
-import { createModelSourceWarpSession, drawModelSourceWarp, modelSourceWarpDataUrl, type ModelSourceWarpSession } from './models/modelSourceWarp'
+import { createModelSourceWarpSession, drawModelSourceWarp, modelSourceWarpDataUrl, warpModelSkinContours, type ModelSourceWarpSession } from './models/modelSourceWarp'
 import { isModelSkinPart } from './models/modelSkinTone'
 import { MODEL_SKIN_BASE_TONE } from '../../../../shared/skinTones'
 
@@ -450,6 +450,7 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
         ...part,
         dataUrl: modelSourceWarpDataUrl(session.image, session.mesh),
         chromaBaseDataUrl: modelSourceWarpDataUrl(session.baseImage, session.mesh),
+        fakeSkinContours: warpModelSkinContours(part.fakeSkinContours, session.image, session.mesh),
         chromaBaseSaved: true
       }
       const materialized: FabricatorProject = {

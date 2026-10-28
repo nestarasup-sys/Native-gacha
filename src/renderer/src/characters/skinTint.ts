@@ -1,3 +1,4 @@
+import type { ModelSkinContourStroke } from '../../../shared/fabricator'
 import { MODEL_SKIN_BASE_TONE, isValidSkinTone } from '../../../shared/skinTones'
 
 const MODEL_BODY_PART_NAME = /cabe[çc]a|head|tronco|corpo|torso|body|bra[cç]o|arm|antebra[cç]o|forearm|coxa|thigh|perna|canela|panturrilha|leg|calf|shin|(?:^|[\s_-])p[eé]s?(?:$|[\s_-])|foot|feet|m[aã]o(?:s)?|hands?/i
@@ -6,17 +7,50 @@ export function isModelBodyPartName(name: string): boolean {
   return MODEL_BODY_PART_NAME.test(name)
 }
 
-/** Fill removed skin inside closed silhouettes and across open joint ends. */
-export function fillEnclosedTransparentSkin(image: ImageData, baseTone = MODEL_SKIN_BASE_TONE): number {
+function createFakeContourBarrier(width: number, height: number, contours: ModelSkinContourStroke[] = []): Uint8Array | null {
+  if (!contours.length || width < 1 || height < 1) return null
+  const barrier = new Uint8Array(width * height)
+  const markCircle = (x: number, y: number, radius: number) => {
+    const radiusSquared = (radius + 0.5) ** 2
+    for (let cy = Math.max(0, Math.floor(y - radius)); cy <= Math.min(height - 1, Math.ceil(y + radius)); cy++) {
+      for (let cx = Math.max(0, Math.floor(x - radius)); cx <= Math.min(width - 1, Math.ceil(x + radius)); cx++) {
+        if ((cx - x) ** 2 + (cy - y) ** 2 <= radiusSquared) barrier[cy * width + cx] = 1
+      }
+    }
+  }
+  for (const contour of contours) {
+    if (contour.points.length < 2 || !Number.isFinite(contour.width)) continue
+    const radius = Math.max(0.75, Math.min(16, contour.width * Math.min(width, height) / 2))
+    const points = contour.points.map(point => ({
+      x: Math.max(0, Math.min(width - 1, point.x * (width - 1))),
+      y: Math.max(0, Math.min(height - 1, point.y * (height - 1)))
+    }))
+    for (let index = 0; index < points.length - 1; index++) {
+      const start = points[index]
+      const end = points[index + 1]
+      const distance = Math.hypot(end.x - start.x, end.y - start.y)
+      const steps = Math.max(1, Math.ceil(distance * 2))
+      for (let step = 0; step <= steps; step++) {
+        const amount = step / steps
+        markCircle(start.x + (end.x - start.x) * amount, start.y + (end.y - start.y) * amount, radius)
+      }
+    }
+  }
+  return barrier
+}
+
+/** Fill removed skin inside contours; artificial strokes close intentionally open joints. */
+export function fillEnclosedTransparentSkin(image: ImageData, baseTone = MODEL_SKIN_BASE_TONE, fakeContours: ModelSkinContourStroke[] = []): number {
   if (!isValidSkinTone(baseTone) || image.width < 1 || image.height < 1) return 0
   const { data, width, height } = image
   const count = width * height
+  const barrier = createFakeContourBarrier(width, height, fakeContours)
   const outside = new Uint8Array(count)
   const queue = new Int32Array(count)
   let head = 0
   let tail = 0
   const enqueue = (pixel: number) => {
-    if (outside[pixel] || data[pixel * 4 + 3] > 16) return
+    if (outside[pixel] || barrier?.[pixel] || data[pixel * 4 + 3] > 16) return
     outside[pixel] = 1
     queue[tail++] = pixel
   }
@@ -77,10 +111,10 @@ export function fillEnclosedTransparentSkin(image: ImageData, baseTone = MODEL_S
 }
 
 /** Recolor body artwork while retaining dark ink contours and filling removed skin interiors. */
-export function tintSkinPixels(image: ImageData, tone: string): void {
+export function tintSkinPixels(image: ImageData, tone: string, fakeContours: ModelSkinContourStroke[] = []): void {
   if (!isValidSkinTone(tone)) return
 
-  fillEnclosedTransparentSkin(image)
+  fillEnclosedTransparentSkin(image, MODEL_SKIN_BASE_TONE, fakeContours)
 
   const { data, width, height } = image
   const count = width * height
@@ -201,9 +235,9 @@ export function tintModelOutlinePixels(image: ImageData, color: string, mask = f
 }
 
 /** Apply model-level body colors together so the contour mask comes from the original pixels. */
-export function tintModelBodyPixels(image: ImageData, skinTone?: string, outlineColor?: string): void {
+export function tintModelBodyPixels(image: ImageData, skinTone?: string, outlineColor?: string, fakeContours: ModelSkinContourStroke[] = []): void {
   const outlineMask = isValidSkinTone(outlineColor) ? findModelOutlinePixels(image) : null
-  if (isValidSkinTone(skinTone)) tintSkinPixels(image, skinTone)
-  else fillEnclosedTransparentSkin(image)
+  if (isValidSkinTone(skinTone)) tintSkinPixels(image, skinTone, fakeContours)
+  else fillEnclosedTransparentSkin(image, MODEL_SKIN_BASE_TONE, fakeContours)
   if (outlineColor && outlineMask) tintModelOutlinePixels(image, outlineColor, outlineMask)
 }

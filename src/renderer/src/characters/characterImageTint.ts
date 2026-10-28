@@ -1,4 +1,5 @@
 import type { HairColorOverrides, HairColorRole } from '../../../shared/customizer'
+import type { ModelSkinContourStroke } from '../../../shared/fabricator'
 import { isValidSkinTone } from '../../../shared/skinTones'
 import { tintModelBodyPixels, tintSkinPixels } from './skinTint'
 import { createCharacterCanvas, isCharacterCanvasWorker } from './canvasSurface'
@@ -157,10 +158,10 @@ export function createCharacterImageTint(loadCachedImage: CharacterImageLoader) 
     return tinted
   }
 
-  function loadModelBodyTintedImage(source: string, skinTone?: string, outlineColor?: string): Promise<HTMLImageElement> {
+  function loadModelBodyTintedImage(source: string, skinTone?: string, outlineColor?: string, fakeContours?: ModelSkinContourStroke[]): Promise<HTMLImageElement> {
     const validTone = isValidSkinTone(skinTone) ? skinTone : undefined
     const validOutline = isValidSkinTone(outlineColor) ? outlineColor : undefined
-    const key = `${validTone ?? ''}:${validOutline ?? ''}:${source}`
+    const key = `${validTone ?? ''}:${validOutline ?? ''}:${JSON.stringify(fakeContours ?? [])}:${source}`
     const cached = modelBodyTintImageCache.get(key)
     if (cached) return cached
     const createTinted = () => loadCachedImage(source).then((sourceImage) => {
@@ -171,7 +172,7 @@ export function createCharacterImageTint(loadCachedImage: CharacterImageLoader) 
       if (!context || !canvas.width || !canvas.height) return sourceImage
       context.drawImage(sourceImage, 0, 0)
       const pixels = context.getImageData(0, 0, canvas.width, canvas.height)
-      tintModelBodyPixels(pixels, validTone, validOutline)
+      tintModelBodyPixels(pixels, validTone, validOutline, fakeContours)
       context.putImageData(pixels, 0, 0)
       if (isCharacterCanvasWorker()) return canvas as unknown as HTMLImageElement
       const output = new Image()

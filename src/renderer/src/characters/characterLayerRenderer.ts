@@ -1,4 +1,4 @@
-import type { FaceSet, FabricatorProject, HairStyle } from '../../../shared/fabricator'
+import type { FaceSet, FabricatorProject, HairStyle, ModelSkinContourStroke } from '../../../shared/fabricator'
 import type { CharacterRenderAssetProvider } from '../../../shared/characterRenderAssets'
 import type { CustomizerCharacter, CustomizerFaceAppearance, HairColorOverrides, HairPartId } from '../../../shared/customizer'
 import { hairCategories } from '../../../shared/hairCategories'
@@ -24,7 +24,7 @@ export type CharacterLayerImageLoaders = {
   loadCachedImage: (source: string | CanvasImageSource) => Promise<HTMLImageElement>
   loadHairTintedImage: (source: string, overrides: HairColorOverrides | undefined) => Promise<HTMLImageElement>
   loadSkinTintedImage: (source: string, tone: string) => Promise<HTMLImageElement>
-  loadModelBodyTintedImage: (source: string, skinTone?: string, outlineColor?: string) => Promise<HTMLImageElement>
+  loadModelBodyTintedImage: (source: string, skinTone?: string, outlineColor?: string, fakeContours?: ModelSkinContourStroke[]) => Promise<HTMLImageElement>
 }
 
 export function createCharacterLayerRenderer(loaders: CharacterLayerImageLoaders) {
@@ -81,7 +81,7 @@ export function createCharacterLayerRenderer(loaders: CharacterLayerImageLoaders
     for (const { part } of parts) {
       try {
         const image = isModelBodyPartName(part.name) && (skinTone || outlineColor)
-          ? await loadModelBodyTintedImage(part.dataUrl, skinTone, outlineColor)
+          ? await loadModelBodyTintedImage(part.dataUrl, skinTone, outlineColor, part.fakeSkinContours)
           : skinTone ? await loadSkinTintedImage(part.dataUrl, skinTone) : await loadCachedImage(part.dataUrl)
         context.save()
         try {
@@ -178,7 +178,7 @@ export function createCharacterLayerRenderer(loaders: CharacterLayerImageLoaders
       if (!hidden.has(part.id)) {
         try {
           const image = isModelBodyPartName(part.name) && (skinTone || outlineColor)
-            ? await loadModelBodyTintedImage(part.dataUrl, skinTone, outlineColor)
+            ? await loadModelBodyTintedImage(part.dataUrl, skinTone, outlineColor, part.fakeSkinContours)
             : skinTone ? await loadSkinTintedImage(part.dataUrl, skinTone) : await loadCachedImage(part.dataUrl)
           context.save()
           context.translate((part.x + part.width / 2) * scale, (part.y + part.height / 2) * scale)

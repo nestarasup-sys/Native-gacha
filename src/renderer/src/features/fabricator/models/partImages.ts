@@ -1,4 +1,5 @@
 import type { ModelPart } from '../../../../../shared/fabricator'
+import { cropModelSkinContours, limitModelSkinContours } from '../../../../../shared/modelSkinContours'
 import { loadImageFromDataUrl } from './imageData'
 
 const makeId = () => crypto.randomUUID()
@@ -20,7 +21,7 @@ export async function splitImage(part: ModelPart, axis: 'horizontal' | 'vertical
     baseCanvas.getContext('2d')?.drawImage(baseImage, region.x, region.y, region.width, region.height, 0, 0, region.width, region.height)
     const sourceX = (part.sourceTransform?.x ?? part.x) + region.x
     const sourceY = (part.sourceTransform?.y ?? part.y) + region.y
-    return { ...part, id: makeId(), name: `${part.name} ${index === 0 ? 'A' : 'B'}`, x: part.x + region.x, y: part.y + region.y, width: region.width, height: region.height, rotation: 0, jointAnchor: { x: part.x + region.x + region.width / 2, y: part.y + region.y + region.height / 2 }, sourceTransform: part.sourceTransform ? { x: sourceX, y: sourceY, width: region.width, height: region.height, rotation: part.sourceTransform.rotation, anchorVersion: 1, jointAnchor: { x: sourceX + region.width / 2, y: sourceY + region.height / 2 } } : undefined, chromaBaseSaved: true, chromaBaseDataUrl: baseCanvas.toDataURL('image/png'), dataUrl: canvas.toDataURL('image/png') }
+    return { ...part, id: makeId(), name: `${part.name} ${index === 0 ? 'A' : 'B'}`, x: part.x + region.x, y: part.y + region.y, width: region.width, height: region.height, rotation: 0, jointAnchor: { x: part.x + region.x + region.width / 2, y: part.y + region.y + region.height / 2 }, sourceTransform: part.sourceTransform ? { x: sourceX, y: sourceY, width: region.width, height: region.height, rotation: part.sourceTransform.rotation, anchorVersion: 1, jointAnchor: { x: sourceX + region.width / 2, y: sourceY + region.height / 2 } } : undefined, fakeSkinContours: cropModelSkinContours(part.fakeSkinContours, part.width, part.height, region), chromaBaseSaved: true, chromaBaseDataUrl: baseCanvas.toDataURL('image/png'), dataUrl: canvas.toDataURL('image/png') }
   }))
 }
 
@@ -47,6 +48,21 @@ export async function mergeImages(parts: ModelPart[]): Promise<ModelPart> {
     baseContext.drawImage(baseImage, -part.width / 2, -part.height / 2, part.width, part.height)
     baseContext.restore()
   }
-  return { id: makeId(), name: 'Peças mescladas', x, y, width: canvas.width, height: canvas.height, rotation: 0, chromaBaseSaved: true, chromaBaseDataUrl: baseCanvas.toDataURL('image/png'), dataUrl: canvas.toDataURL('image/png') }
+  const fakeSkinContours = limitModelSkinContours(parts.flatMap((part) => (part.fakeSkinContours ?? []).map((stroke) => {
+    const radians = part.rotation * Math.PI / 180
+    const partCenterX = part.x + part.width / 2
+    const partCenterY = part.y + part.height / 2
+    return {
+      width: stroke.width * Math.min(part.width, part.height) / Math.min(canvas.width, canvas.height),
+      points: stroke.points.map((point) => {
+        const dx = point.x * part.width - part.width / 2
+        const dy = point.y * part.height - part.height / 2
+        const worldX = partCenterX + dx * Math.cos(radians) - dy * Math.sin(radians)
+        const worldY = partCenterY + dx * Math.sin(radians) + dy * Math.cos(radians)
+        return { x: (worldX - x) / canvas.width, y: (worldY - y) / canvas.height }
+      })
+    }
+  })))
+  return { id: makeId(), name: 'Peças mescladas', x, y, width: canvas.width, height: canvas.height, rotation: 0, fakeSkinContours: fakeSkinContours?.length ? fakeSkinContours : undefined, chromaBaseSaved: true, chromaBaseDataUrl: baseCanvas.toDataURL('image/png'), dataUrl: canvas.toDataURL('image/png') }
 }
 

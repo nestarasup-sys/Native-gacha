@@ -1,5 +1,6 @@
 import { loadImageFromDataUrl } from './imageData'
-import { createImageWarpMesh, drawImageWarp, type ImageWarpMesh } from './imageMeshWarp'
+import type { ModelSkinContourStroke } from '../../../../../shared/fabricator'
+import { createImageWarpMesh, drawImageWarp, mapImageWarpPoint, type ImageWarpMesh } from './imageMeshWarp'
 
 export type ModelSourceWarpSession = {
   partId: string
@@ -50,4 +51,22 @@ export function modelSourceWarpDataUrl(image: HTMLImageElement, mesh: ImageWarpM
   const canvas = document.createElement('canvas')
   drawModelSourceWarp(canvas, image, mesh)
   return canvas.toDataURL('image/png')
+}
+
+export function warpModelSkinContours(
+  contours: ModelSkinContourStroke[] | undefined,
+  image: HTMLImageElement,
+  mesh: ImageWarpMesh
+): ModelSkinContourStroke[] | undefined {
+  if (!contours?.length || !image.naturalWidth || !image.naturalHeight) return contours
+  return contours.map(stroke => ({
+    ...stroke,
+    points: stroke.points.map(point => {
+      const mapped = mapImageWarpPoint(image, mesh, { x: point.x * image.naturalWidth, y: point.y * image.naturalHeight })
+      return {
+        x: Math.max(0, Math.min(1, mapped.x / image.naturalWidth)),
+        y: Math.max(0, Math.min(1, mapped.y / image.naturalHeight))
+      }
+    })
+  }))
 }

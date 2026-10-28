@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import type { access as nativeAccess, mkdir as nativeMkdir, readFile as nativeReadFile, readdir as nativeReaddir, rename as nativeRename, unlink as nativeUnlink, writeFile as nativeWriteFile } from 'node:fs/promises'
 import { extname, join } from 'node:path'
 import type { FabricatorHistoryEntry, FabricatorHistorySaveEntry, FabricatorHistorySaveState, FabricatorHistoryState, FabricatorProject, ModelPart } from '../../../src/shared/fabricator'
+import { areModelPartSkinContoursValid, isValidModelSkinContours } from '../../../src/shared/modelSkinContours'
 
 type StoredHistoryEntry = {
   action: FabricatorHistoryEntry['action']
@@ -45,6 +46,7 @@ export function createFabricatorHistoryPersistence(deps: FabricatorHistoryPersis
     const serializeEntry = async (entry: FabricatorHistorySaveEntry): Promise<StoredHistoryEntry> => {
       const snapshot = entry.project
       if (snapshot.slot !== slot || snapshot.schemaVersion !== 1 || snapshot.parts.length > 500) throw new Error('Snapshot de histórico inválido.')
+      if (!areModelPartSkinContoursValid(snapshot.parts)) throw new Error('Contornos artificiais inválidos no histórico.')
       if (!/^source-[a-f0-9-]+\.(png|jpe?g|webp)$/i.test(snapshot.sourceAssetName)) throw new Error('Imagem original no histórico inválida.')
       await access(join(slotPath(slot), snapshot.sourceAssetName))
       const parts = await Promise.all(snapshot.parts.map(async (part) => {
@@ -103,8 +105,10 @@ export function createFabricatorHistoryPersistence(deps: FabricatorHistoryPersis
       const source = await readFile(join(slotPath(slot), entry.project.sourceAssetName))
       const extension = extname(entry.project.sourceAssetName).toLowerCase()
       const mime = extension === '.png' ? 'image/png' : extension === '.webp' ? 'image/webp' : 'image/jpeg'
+      const contoursValid = areModelPartSkinContoursValid(entry.parts.map(({ part }) => part))
       const parts = await Promise.all(entry.parts.map(async ({ part, hash, chromaBaseHash }) => ({
         ...part,
+        fakeSkinContours: contoursValid && isValidModelSkinContours(part.fakeSkinContours) ? part.fakeSkinContours : undefined,
         dataUrl: `data:image/png;base64,${(await readAsset(hash, 'png')).toString('base64')}`,
         ...(chromaBaseHash ? { chromaBaseDataUrl: `data:image/png;base64,${(await readAsset(chromaBaseHash, 'png')).toString('base64')}` } : {})
       })))

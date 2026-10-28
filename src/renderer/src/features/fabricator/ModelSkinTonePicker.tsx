@@ -5,16 +5,18 @@ import { Icon } from '../../ui/components/Icon'
 type Props = {
   value?: string
   outlineColor?: string
+  contourPartCount: number
   disabled: boolean
   onSelect: (tone: string) => void
   onOutlineSelect: (color: string | undefined) => void
+  onEditContours: () => void
 }
 
-export function ModelSkinTonePicker({ value, outlineColor, disabled, onSelect, onOutlineSelect }: Props) {
+export function ModelSkinTonePicker({ value, outlineColor, contourPartCount, disabled, onSelect, onOutlineSelect, onEditContours }: Props) {
   const tone = isValidSkinTone(value) ? value : MODEL_SKIN_BASE_TONE
   const baseSelected = value === undefined || tone.toLowerCase() === MODEL_SKIN_BASE_TONE
   return <section className="model-skin-tone-bar" aria-label="Cores do corpo deste modelo">
-    <strong>Cor da pele</strong>
+    <div className="model-skin-tone-heading"><strong>Cor da pele</strong><button type="button" className="model-fake-contour-trigger" disabled={disabled} onClick={onEditContours} title="Desenhar contornos artificiais para fechar juntas abertas na recoloração"><Icon name="brush" />Contorno falso{contourPartCount ? ` · ${contourPartCount}` : ''}</button></div>
     <div className="customizer-model-skin-tone-row" role="group" aria-label="Escolher cor de pele padrão para este modelo">
       <button className={'customizer-model-skin-tone' + (baseSelected ? ' selected' : '')} style={{ '--skin-tone': MODEL_SKIN_BASE_TONE } as CSSProperties} type="button" disabled={disabled} aria-label="Base fixa do modelo" aria-pressed={baseSelected} title="Base fixa (Porcelana)" onClick={() => onSelect(MODEL_SKIN_BASE_TONE)}><span />{baseSelected && <Icon name="check" />}</button>
       {customizerSkinTonePresets.map((preset) => {

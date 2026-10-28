@@ -11,6 +11,10 @@ export type JointLink = {
   suggested?: boolean
 }
 
+export type ModelSkinContourPoint = { x: number; y: number }
+/** Invisible recoloring guide stored as normalized points in the part image. */
+export type ModelSkinContourStroke = { points: ModelSkinContourPoint[]; width: number }
+
 export type ModelPart = {
   id: string
   name: string
@@ -29,6 +33,8 @@ export type ModelPart = {
   jointAnchor?: { x: number; y: number }
   /** Transformação imutável da peça na folha desmontada original. */
   sourceTransform?: { x: number; y: number; width?: number; height?: number; rotation: number; jointAnchor?: { x: number; y: number }; anchorVersion?: 1 }
+  /** Guias invisíveis que fecham juntas abertas para recoloração da pele. */
+  fakeSkinContours?: ModelSkinContourStroke[]
   selected?: boolean
 }
 

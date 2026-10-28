@@ -77,6 +77,21 @@ export function selectMountedModelSource(project: FabricatorProject): MountedMod
   }
 }
 
+/**
+ * Poses and animations are image snapshots. When a snapshot still uses the
+ * exact source image, keep its model-owned recoloring guides in sync with the
+ * current model. If the snapshot image changed, its own local guides remain
+ * authoritative because the current model's coordinates may no longer fit.
+ */
+export function applyCurrentModelSkinContours(parts: readonly ModelPart[], sourceParts: readonly ModelPart[]): ModelPart[] {
+  const sourceById = new Map(sourceParts.map(part => [part.id, part]))
+  return parts.map(part => {
+    const source = sourceById.get(part.id)
+    if (!source || source.dataUrl !== part.dataUrl || source.fakeSkinContours === part.fakeSkinContours) return part
+    return { ...part, fakeSkinContours: source.fakeSkinContours }
+  })
+}
+
 
 /** Projeta a geometria para a folha original sem perder a topologia do rig.
  * Transformações de joints usam os eixos locais da peça, para o Animador DEV

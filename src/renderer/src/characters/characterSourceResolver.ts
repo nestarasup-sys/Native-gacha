@@ -3,6 +3,7 @@
  * em memória; Os fluxos do Studio e do Customizador compartilham a geometria.
  */
 import type { FabricatorProject } from '../../../shared/fabricator'
+import { applyCurrentModelSkinContours } from '../../../shared/fabricatorModelViews'
 import type { CustomizerCharacter } from '../../../shared/customizer'
 import { getCharacterBodyDimensions, getCharacterProportions, type CharacterProportions } from '../../../shared/customizer'
 import { applyCharacterBodyShape } from '../../../shared/bodyShape'
@@ -43,6 +44,11 @@ export async function resolveSavedCharacterSource(
   if (!source) throw new Error(`O modelo de ${character.name} não está disponível.`)
   const pose = renderSource?.artwork ?? (character.customization.poseSlot === null ? null : await assetProvider.loadFabricatorPose(modelSlot, character.customization.poseSlot))
   const proportions = getCharacterProportions(character.customization)
-  const artwork = applyCharacterBodyShape(withCharacterHeadSize(pose ?? source, proportions), getCharacterBodyDimensions(character.customization))
+  const sourceArtwork = pose ?? source
+  const artworkWithModelContours = {
+    ...sourceArtwork,
+    parts: applyCurrentModelSkinContours(sourceArtwork.parts, source.parts)
+  }
+  const artwork = applyCharacterBodyShape(withCharacterHeadSize(artworkWithModelContours, proportions), getCharacterBodyDimensions(character.customization))
   return { modelSlot, assetProvider, source, artwork }
 }

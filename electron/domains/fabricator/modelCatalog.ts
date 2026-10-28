@@ -3,6 +3,7 @@
  */
 import { extname, join } from 'node:path'
 import { inspectFabricatorStorage } from '../../../src/shared/fabricatorStorageCompatibility.ts'
+import { areModelPartSkinContoursValid, isValidModelSkinContours } from '../../../src/shared/modelSkinContours.ts'
 import { isValidSkinTone } from '../../../src/shared/skinTones.ts'
 import { VersionedAssetResolver } from './versionedAssetResolver.ts'
 import type { FabricatorProject, FabricatorSlotSummary, ModelPart } from '../../../src/shared/fabricator'
@@ -68,15 +69,20 @@ export class FabricatorModelCatalog {
       const extension = extname(manifest.sourceFile).toLowerCase()
       const mime = extension === '.png' ? 'image/png' : extension === '.webp' ? 'image/webp' : 'image/jpeg'
       const sourceDataUrl = `data:${mime};base64,${Buffer.from(sourceBytes).toString('base64')}`
-      const parts = await Promise.all(manifest.parts.map(async (part) => ({
-        ...part,
-        dataUrl: `data:image/png;base64,${Buffer.from(await this.resolver.resolve('model', slot + ':part:' + part.id, version,
-          () => this.files.readAssetImage(join(folder, 'parts', `${part.id}.png`)))).toString('base64')}`,
-        ...(part.chromaBaseSaved ? {
-          chromaBaseDataUrl: `data:image/png;base64,${Buffer.from(await this.resolver.resolve('model', slot + ':chroma:' + part.id, version,
-            () => this.files.readFile(join(folder, 'parts', `${part.id}.base.png`)))).toString('base64')}`
-        } : {})
-      })))
+      const contoursValid = areModelPartSkinContoursValid(manifest.parts)
+      const parts = await Promise.all(manifest.parts.map(async (part) => {
+        const fakeSkinContours = contoursValid && isValidModelSkinContours(part.fakeSkinContours) ? part.fakeSkinContours : undefined
+        return {
+          ...part,
+          fakeSkinContours,
+          dataUrl: `data:image/png;base64,${Buffer.from(await this.resolver.resolve('model', slot + ':part:' + part.id, version,
+            () => this.files.readAssetImage(join(folder, 'parts', `${part.id}.png`)))).toString('base64')}`,
+          ...(part.chromaBaseSaved ? {
+            chromaBaseDataUrl: `data:image/png;base64,${Buffer.from(await this.resolver.resolve('model', slot + ':chroma:' + part.id, version,
+              () => this.files.readFile(join(folder, 'parts', `${part.id}.base.png`)))).toString('base64')}`
+          } : {})
+        }
+      }))
       return {
         ...manifest,
         modelSkinTone: isValidSkinTone(manifest.modelSkinTone) ? manifest.modelSkinTone : undefined,

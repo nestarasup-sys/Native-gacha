@@ -1,4 +1,4 @@
-import { projectForOriginalPreview } from '../../../../shared/fabricatorModelViews'
+import { applyCurrentModelSkinContours, projectForOriginalPreview } from '../../../../shared/fabricatorModelViews'
 import { interpolateFrames, shortestAngle } from './models/animationInterpolation'
 import { useModelSourceRefresh } from './models/useModelSourceRefresh'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -11,6 +11,7 @@ import { rotatePointAroundOrigin } from './models/geometry'
 import { usePreviewBackground } from './usePreviewBackground'
 import { mapWardrobeComponentToPose } from './wardrobe/poseTransform'
 import { applyCharacterBodyShape } from '../../../../shared/bodyShape'
+import { isModelBodyPartName, tintModelBodyPixels } from '../../characters/skinTint'
 
 const SLOT_COUNT = 12
 const HISTORY_LIMIT = 40
@@ -48,14 +49,14 @@ function loadImage(source: string): Promise<HTMLImageElement> {
 }
 
 function makePoseProject(source: FabricatorProject, pose: FabricatorPose): FabricatorProject {
-  return { ...source, width: pose.width, height: pose.height, parts: pose.parts, joints: pose.joints, layerOrder: pose.layerOrder, hiddenPartIds: pose.hiddenPartIds }
+  return { ...source, width: pose.width, height: pose.height, parts: applyCurrentModelSkinContours(pose.parts, source.parts), joints: pose.joints, layerOrder: pose.layerOrder, hiddenPartIds: pose.hiddenPartIds }
 }
 
-function projectFromAnimation(animation: AnimatorAnimation): FabricatorProject {
+function projectFromAnimation(animation: AnimatorAnimation, currentModel?: FabricatorProject | null): FabricatorProject {
   return {
     schemaVersion: 1, chromaVersion: 0, slot: animation.sourceModelSlot, name: animation.sourceModelName,
     sourceName: animation.sourceModelName, sourceAssetName: '', sourceDataUrl: '', width: animation.width, height: animation.height,
-    tolerance: 0, parts: animation.parts, joints: animation.joints, layerOrder: animation.layerOrder,
+    tolerance: 0, parts: applyCurrentModelSkinContours(animation.parts, currentModel?.parts ?? []), joints: animation.joints, layerOrder: animation.layerOrder,
     hiddenPartIds: animation.hiddenPartIds, updatedAt: animation.sourceModelUpdatedAt
   }
 }
@@ -326,7 +327,7 @@ export function AnimatorWorkspace() {
   const playheadRef = useRef(0)
   const directionRef = useRef<1 | -1>(1)
   const selectedCharacter = characters.find((character) => character.id === characterId) ?? null
-  const rigProject = animation ? projectFromAnimation(animation) : source
+  const rigProject = animation ? projectFromAnimation(animation, source) : source
   const diagnostics = useMemo(() => {
     if (!rigProject) return []
     const used = new Set<string>()
@@ -348,7 +349,7 @@ export function AnimatorWorkspace() {
   const playbackState = useMemo(() => animation ? interpolateFrames(animation.frames, playhead, animation.interpolation, animation.loopMode, playDirection) : null, [animation, playhead, playDirection])
   const displayTransforms = playing && playbackState ? playbackState.transforms : currentTransforms
   const displayJoints = playing && playbackState ? playbackState.joints : currentJoints
-  const displayBase = animation ? projectFromAnimation(animation) : baseProject
+  const displayBase = animation ? projectFromAnimation(animation, source) : baseProject
   const tintParts = displayBase?.parts
   const displayProject = displayBase ? applyFrameState(displayBase, displayTransforms, displayJoints.length ? displayJoints : displayBase.joints) : null
   const parts = useMemo(() => displayProject ? orderedParts(displayProject.parts, displayProject.layerOrder).filter((part) => !displayProject.hiddenPartIds?.includes(part.id)) : [], [displayProject])
@@ -527,23 +528,19 @@ export function AnimatorWorkspace() {
   useEffect(() => {
     let live = true
     const tone = selectedCharacter?.customization.modelSkinTone
-    if (!tone || !tintParts) { setTintedParts({}); return }
+    const outlineColor = selectedCharacter?.customization.modelOutlineColor ?? displayBase?.modelOutlineColor
+    if ((!tone && !outlineColor) || !tintParts) { setTintedParts({}); return }
     void Promise.all(tintParts.map(async (part) => {
+      if (!isModelBodyPartName(part.name)) return [part.id, part.dataUrl] as const
       const image = await loadImage(part.dataUrl)
       const canvas = document.createElement('canvas'); canvas.width = image.naturalWidth || image.width; canvas.height = image.naturalHeight || image.height
       const context = canvas.getContext('2d', { willReadFrequently: true }); if (!context) return [part.id, part.dataUrl] as const
       context.drawImage(image, 0, 0); const pixels = context.getImageData(0, 0, canvas.width, canvas.height)
-      const color = [1, 3, 5].map((index) => Number.parseInt(tone.slice(index, index + 2), 16))
-      for (let i = 0; i < pixels.data.length; i += 4) {
-        const r = pixels.data[i], g = pixels.data[i + 1], b = pixels.data[i + 2]
-        if (pixels.data[i + 3] < 16 || r <= 108 || r <= g || g <= b || r - g < 2 || g - b < 2 || r - b >= 105) continue
-        const shade = Math.max(.42, Math.min(1.08, (r * .299 + g * .587 + b * .114) / 244))
-        pixels.data[i] = Math.min(255, Math.round(color[0] * shade)); pixels.data[i + 1] = Math.min(255, Math.round(color[1] * shade)); pixels.data[i + 2] = Math.min(255, Math.round(color[2] * shade))
-      }
+      tintModelBodyPixels(pixels, tone, outlineColor, part.fakeSkinContours)
       context.putImageData(pixels, 0, 0); return [part.id, canvas.toDataURL('image/png')] as const
     })).then((entries) => { if (live) setTintedParts(Object.fromEntries(entries)) }).catch((reason: unknown) => { if (live) setError(reason instanceof Error ? reason.message : 'Não foi possível colorir a pele da prévia.') })
     return () => { live = false }
-  }, [tintParts, selectedCharacter?.customization.modelSkinTone])
+  }, [tintParts, selectedCharacter?.customization.modelSkinTone, selectedCharacter?.customization.modelOutlineColor, displayBase?.modelOutlineColor])
 
   useEffect(() => {
     const element = stageRef.current

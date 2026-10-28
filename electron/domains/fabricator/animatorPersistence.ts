@@ -3,6 +3,7 @@
  */
 import { join } from 'node:path'
 import type { AnimatorAnimation, AnimatorAnimationAsset, AnimatorAnimationDraft, AnimatorAnimationSave, PosePart } from '../../../src/shared/fabricator'
+import { areModelPartSkinContoursValid, isValidModelSkinContours } from '../../../src/shared/modelSkinContours'
 import type * as nodeFs from 'node:fs/promises'
 
 export type AnimatorPersistenceDependencies = {
@@ -24,6 +25,7 @@ function isValidAnimatorSlot(slot: number): boolean { return isValidPoseSlot(slo
 
 function validateAnimatorDocument(modelSlot: number, document: Pick<AnimatorAnimation, 'schemaVersion' | 'sourceModelSlot' | 'parts' | 'frames' | 'interpolation' | 'loopMode' | 'speed' | 'thumbnailDataUrl'>): void {
   if (!isValidModelSlot(modelSlot) || document.schemaVersion !== 1 || document.sourceModelSlot !== modelSlot || !Array.isArray(document.parts) || document.parts.length === 0 || document.parts.length > 500 || !Array.isArray(document.frames) || document.frames.length === 0 || document.frames.length > 300) throw new Error('Animação inválida.')
+  if (!areModelPartSkinContoursValid(document.parts)) throw new Error('Contornos artificiais inválidos na animação.')
   if (!['smooth', 'stepped'].includes(document.interpolation) || !['once', 'loop', 'pingpong'].includes(document.loopMode) || !Number.isFinite(document.speed) || document.speed < 0.1 || document.speed > 4) throw new Error('Configurações da animação inválidas.')
   const partIds = new Set(document.parts.map((part) => part.id))
   if (partIds.size !== document.parts.length || [...partIds].some((id) => !/^[a-zA-Z0-9_-]{1,80}$/.test(id))) throw new Error('Identificadores de peças da animação inválidos.')
@@ -56,7 +58,8 @@ async function writeAnimatorParts(folder: string, parts: Array<Omit<PosePart, 'd
 }
 
 async function readAnimatorParts(folder: string, parts: Array<Omit<PosePart, 'dataUrl'>>): Promise<PosePart[]> {
-  return Promise.all(parts.map(async (part) => ({ ...part, dataUrl: `data:image/png;base64,${(await readAssetImage(join(folder, 'parts', `${part.id}.png`))).toString('base64')}` })))
+  const contoursValid = areModelPartSkinContoursValid(parts)
+  return Promise.all(parts.map(async (part) => ({ ...part, fakeSkinContours: contoursValid && isValidModelSkinContours(part.fakeSkinContours) ? part.fakeSkinContours : undefined, dataUrl: `data:image/png;base64,${(await readAssetImage(join(folder, 'parts', `${part.id}.png`))).toString('base64')}` })))
 }
 
 async function writeAnimatorAnimation(modelSlot: number, slot: number, animation: AnimatorAnimationSave, assets: AnimatorAnimationAsset[]): Promise<void> {

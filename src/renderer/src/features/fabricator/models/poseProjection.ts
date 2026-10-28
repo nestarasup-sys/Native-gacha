@@ -26,7 +26,7 @@ export function poseFromModel(model: FabricatorProject): DraftProject {
     height: model.height,
     parts: mounted.parts.map((part) => ({
       id: part.id, name: part.name, x: part.x, y: part.y, width: part.width, height: part.height,
-      rotation: part.rotation, jointAnchor: part.jointAnchor ? { ...part.jointAnchor } : undefined, sourceTransform: part.sourceTransform ? { ...part.sourceTransform, ...(part.sourceTransform.jointAnchor ? { jointAnchor: { ...part.sourceTransform.jointAnchor } } : {}) } : undefined, dataUrl: part.dataUrl
+      rotation: part.rotation, jointAnchor: part.jointAnchor ? { ...part.jointAnchor } : undefined, sourceTransform: part.sourceTransform ? { ...part.sourceTransform, ...(part.sourceTransform.jointAnchor ? { jointAnchor: { ...part.sourceTransform.jointAnchor } } : {}) } : undefined, fakeSkinContours: part.fakeSkinContours, dataUrl: part.dataUrl
     })),
     joints: mounted.joints.map((joint) => structuredClone(joint)),
     layerOrder: normalizeLayerOrder(mounted.parts, mounted.layerOrder),

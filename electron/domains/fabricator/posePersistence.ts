@@ -4,6 +4,7 @@
 import { join } from 'node:path'
 import type { FabricatorAssetSave, FabricatorPose, FabricatorPoseDraft, FabricatorPoseDraftSave, FabricatorPoseSave, ModelPart, PosePart } from '../../../src/shared/fabricator.ts'
 import { resolvePoseCategory } from '../../../src/shared/fabricator.ts'
+import { areModelPartSkinContoursValid, isValidModelSkinContours } from '../../../src/shared/modelSkinContours.ts'
 import { applyModelHeadShape } from '../../../src/shared/headShape.ts'
 import type * as nodeFs from 'node:fs/promises'
 
@@ -49,8 +50,10 @@ async function writePoseAssets(folder: string, parts: Array<Omit<PosePart, 'data
 
 async function readPoseAssets(folder: string, parts: Array<Omit<PosePart, 'dataUrl'>>): Promise<PosePart[]> {
   const partsFolder = join(folder, 'parts')
+  const contoursValid = areModelPartSkinContoursValid(parts)
   return Promise.all(parts.map(async (part) => ({
     ...part,
+    fakeSkinContours: contoursValid && isValidModelSkinContours(part.fakeSkinContours) ? part.fakeSkinContours : undefined,
     dataUrl: `data:image/png;base64,${(await readAssetImage(join(partsFolder, `${part.id}.png`))).toString('base64')}`
   })))
 }
@@ -68,6 +71,7 @@ async function preserveAndWritePoseManifest(path: string, document: FabricatorPo
 
 async function writePoseProject(modelSlot: number, slot: number, project: FabricatorPoseSave, assets: FabricatorAssetSave[]): Promise<void> {
   if (!isValidModelSlot(modelSlot) || project.sourceModelSlot !== modelSlot || !isValidPoseSlot(slot) || project.slot !== slot || project.schemaVersion !== 1 || project.parts.length === 0 || project.parts.length > 500) throw new Error('Pose inválida.')
+  if (!areModelPartSkinContoursValid(project.parts)) throw new Error('Contornos artificiais inválidos na pose.')
   if (project.category !== undefined && (typeof project.category !== 'string' || !project.category.trim() || project.category.trim().length > 32 || /[\r\n\t]/.test(project.category))) throw new Error('Categoria de pose inválida.')
   const folder = poseSlotPath(modelSlot, slot)
   // A edição automática salva primeiro no diretório de rascunho e consome as
@@ -103,6 +107,7 @@ async function writePoseDraft(modelSlot: number, draft: FabricatorPoseDraftSave,
   if (!isValidModelSlot(modelSlot) || draft.project.sourceModelSlot !== modelSlot) throw new Error('Modelo do rascunho inválido.')
   if (draft.editingSlot !== null && !isValidPoseSlot(draft.editingSlot)) throw new Error('Rascunho de pose inválido.')
   if (draft.project.schemaVersion !== 1 || draft.project.parts.length === 0 || draft.project.parts.length > 500) throw new Error('Rascunho de pose inválido.')
+  if (!areModelPartSkinContoursValid(draft.project.parts)) throw new Error('Contornos artificiais inválidos no rascunho de pose.')
   if (draft.project.category !== undefined && (typeof draft.project.category !== 'string' || !draft.project.category.trim() || draft.project.category.trim().length > 32 || /[\r\n\t]/.test(draft.project.category))) throw new Error('Categoria de pose inválida.')
   const folder = poseDraftPath(modelSlot)
   await writePoseAssets(folder, draft.project.parts, assets)

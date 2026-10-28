@@ -1,4 +1,5 @@
 import type { ModelPart } from '../../../../../shared/fabricator'
+import { cropModelSkinContours } from '../../../../../shared/modelSkinContours'
 import { loadImageFromDataUrl } from './imageData'
 import { sourceRect } from './modelSource'
 
@@ -111,6 +112,7 @@ export async function cropModelSourcePart(part: ModelPart, crop: ModelSourceCrop
     resizeBase: { width: bounds.width, height: bounds.height },
     ...(oldAnchor ? { jointAnchor: keepAnchor ? oldAnchor : center } : {}),
     ...(sourceTransform ? { sourceTransform } : {}),
+    fakeSkinContours: cropModelSkinContours(part.fakeSkinContours, part.width, part.height, bounds),
     chromaBaseSaved: true,
     dataUrl: cropCanvas(images.display, bounds).toDataURL('image/png'),
     chromaBaseDataUrl: cropCanvas(images.base, bounds).toDataURL('image/png')
@@ -229,6 +231,7 @@ async function maskedPart(part: ModelPart, polygon: ModelSourcePoint[], crop: Mo
     id,
     name: keepId ? part.name : part.name + ' - parte',
     ...(sourceTransform ? { sourceTransform } : {}),
+    fakeSkinContours: cropModelSkinContours(part.fakeSkinContours, part.width, part.height, crop, polygon),
     dataUrl: makeMasked(images.display),
     chromaBaseDataUrl: makeMasked(images.base),
     ...(part.jointAnchor || !keepId ? { jointAnchor: anchorInside && part.jointAnchor ? part.jointAnchor : center } : {})

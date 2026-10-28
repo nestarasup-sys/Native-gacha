@@ -1,4 +1,4 @@
-import type { FabricatorProject, WardrobeCategory, WardrobeSet } from '../../../shared/fabricator'
+import type { FabricatorProject, ModelSkinContourStroke, WardrobeCategory, WardrobeSet } from '../../../shared/fabricator'
 import type { CustomizerWardrobeCategory, CustomizerWardrobeGroup, HairColorOverrides } from '../../../shared/customizer'
 import { mapWardrobeComponentToPose, wardrobePosePadding } from '../../../shared/wardrobePose'
 import { normalizeLayerOrder } from '../../../shared/modelRig'
@@ -18,7 +18,7 @@ export type CharacterWardrobeImageLoaders = {
   loadCachedImage: (source: string | CanvasImageSource) => Promise<HTMLImageElement>
   loadHairTintedImage: (source: string, overrides: HairColorOverrides | undefined) => Promise<HTMLImageElement>
   loadSkinTintedImage: (source: string, tone: string) => Promise<HTMLImageElement>
-  loadModelBodyTintedImage: (source: string, skinTone?: string, outlineColor?: string) => Promise<HTMLImageElement>
+  loadModelBodyTintedImage: (source: string, skinTone?: string, outlineColor?: string, fakeContours?: ModelSkinContourStroke[]) => Promise<HTMLImageElement>
 }
 
 export function createCharacterWardrobeRenderer(loaders: CharacterWardrobeImageLoaders) {
@@ -145,7 +145,7 @@ export function createCharacterWardrobeRenderer(loaders: CharacterWardrobeImageL
           // model layers. Keep that duplicate body in sync with the tinted base
           // preview, otherwise the original skin pixels cover the selected tone.
           const image = isModelBodyPartName(part.name) && (skinTone || source.modelOutlineColor)
-            ? await loadModelBodyTintedImage(part.dataUrl, skinTone, source.modelOutlineColor)
+            ? await loadModelBodyTintedImage(part.dataUrl, skinTone, source.modelOutlineColor, part.fakeSkinContours)
             : skinTone ? await loadSkinTintedImage(part.dataUrl, skinTone) : await loadCachedImage(part.dataUrl)
           outputContext.save()
           outputContext.translate(part.x + part.width / 2, part.y + part.height / 2)

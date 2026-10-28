@@ -32,6 +32,39 @@ function meshPoint(image: HTMLImageElement, column: number, row: number): ImageW
   return { x: column * image.naturalWidth / IMAGE_WARP_COLUMNS, y: row * image.naturalHeight / IMAGE_WARP_ROWS }
 }
 
+/** Maps a source pixel through the same two triangles used to render the warp mesh. */
+export function mapImageWarpPoint(image: HTMLImageElement, mesh: ImageWarpMesh, point: ImageWarpPoint): ImageWarpPoint {
+  const width = image.naturalWidth
+  const height = image.naturalHeight
+  if (width <= 0 || height <= 0) return point
+  const gridX = Math.max(0, Math.min(IMAGE_WARP_COLUMNS, point.x * IMAGE_WARP_COLUMNS / width))
+  const gridY = Math.max(0, Math.min(IMAGE_WARP_ROWS, point.y * IMAGE_WARP_ROWS / height))
+  const column = Math.min(IMAGE_WARP_COLUMNS - 1, Math.floor(gridX))
+  const row = Math.min(IMAGE_WARP_ROWS - 1, Math.floor(gridY))
+  const x = gridX - column
+  const y = gridY - row
+  const topLeft = meshIndex(column, row)
+  const topRight = meshIndex(column + 1, row)
+  const bottomRight = meshIndex(column + 1, row + 1)
+  const bottomLeft = meshIndex(column, row + 1)
+  let offsetX: number
+  let offsetY: number
+  if (x >= y) {
+    const topLeftWeight = 1 - x
+    const topRightWeight = x - y
+    const bottomRightWeight = y
+    offsetX = mesh.offsetX[topLeft] * topLeftWeight + mesh.offsetX[topRight] * topRightWeight + mesh.offsetX[bottomRight] * bottomRightWeight
+    offsetY = mesh.offsetY[topLeft] * topLeftWeight + mesh.offsetY[topRight] * topRightWeight + mesh.offsetY[bottomRight] * bottomRightWeight
+  } else {
+    const topLeftWeight = 1 - y
+    const bottomRightWeight = x
+    const bottomLeftWeight = y - x
+    offsetX = mesh.offsetX[topLeft] * topLeftWeight + mesh.offsetX[bottomRight] * bottomRightWeight + mesh.offsetX[bottomLeft] * bottomLeftWeight
+    offsetY = mesh.offsetY[topLeft] * topLeftWeight + mesh.offsetY[bottomRight] * bottomRightWeight + mesh.offsetY[bottomLeft] * bottomLeftWeight
+  }
+  return { x: point.x + offsetX, y: point.y + offsetY }
+}
+
 function pointToWorld(point: ImageWarpPoint, image: HTMLImageElement, bounds: ImageWarpBounds): ImageWarpPoint {
   const radians = bounds.rotation * Math.PI / 180
   const cos = Math.cos(radians)

@@ -25,6 +25,7 @@ import { useFabricatorHistory } from './useFabricatorHistory'
 import { prepareLoadedFabricatorProject } from './models/projectHydration'
 import { MAX_CHROMA_TOLERANCE, type ModelSourceResult } from './models/modelSource'
 import { ModelSkinTonePicker } from './ModelSkinTonePicker'
+import { ModelSkinContourEditor } from './ModelSkinContourEditor'
 import { cachedModelBodyAppearancePreview } from './models/modelSkinTone'
 import { connectBodyContourJoints } from './models/contourJoints'
 import { isValidSkinTone } from '../../../../shared/skinTones'
@@ -62,6 +63,7 @@ export function FabricatorPage() {
   const [processing, setProcessing] = useState(false)
   const [chromaApplying, setChromaApplying] = useState(false)
   const [modelSourceOpen, setModelSourceOpen] = useState(false)
+  const [skinContourEditorOpen, setSkinContourEditorOpen] = useState(false)
   const [modelSourcePublishing, setModelSourcePublishing] = useState(false)
   const [chromaValue, setChromaValue] = useState(DEFAULT_CHROMA_TOLERANCE)
   const [deletingSlot, setDeletingSlot] = useState<number | null>(null)
@@ -136,6 +138,8 @@ export function FabricatorPage() {
   }, [])
 
   useEffect(() => { projectRef.current = project }, [project])
+
+  useEffect(() => { if (!project) setSkinContourEditorOpen(false) }, [project])
 
   useEffect(() => {
     if (activeSection !== 'Modelos') return
@@ -797,6 +801,11 @@ export function FabricatorPage() {
       </aside>
 
       {modelSourceOpen && project && <ModelSourceEditor project={project} onClose={() => { if (!modelSourcePublishing) setModelSourceOpen(false) }} onPublish={publishEditedModelSource} />}
+      {skinContourEditorOpen && project && <ModelSkinContourEditor key={project.slot} parts={project.parts} skinTone={project.modelSkinTone} outlineColor={project.modelOutlineColor} onClose={() => setSkinContourEditorOpen(false)} onSave={(contoursByPart) => updateProject(current => ({ ...current, parts: current.parts.map(part => {
+        if (!(part.id in contoursByPart)) return part
+        const fakeSkinContours = contoursByPart[part.id]
+        return { ...part, fakeSkinContours: fakeSkinContours.length ? fakeSkinContours : undefined }
+      }) }))} />}
       {activeSection === 'Design Dev' ? <DesignWorkspace /> : activeSection === 'Poses' ? <PoseWorkspace /> : activeSection === 'Roupas' ? <WardrobeWorkspace /> : activeSection === 'Olhos' ? <FaceComponentsWorkspace mode="eyes" /> : activeSection === 'Rosto' ? <FaceComponentsWorkspace mode="face" /> : activeSection === 'Preset Expressão Dev' ? <ExpressionPresetWorkspace modelSlot={activeSlot} /> : activeSection === 'Animador Rosto Dev' ? <FaceAnimatorWorkspace modelSlot={activeSlot} /> : activeSection === 'Cabeças extra' ? <HeadExtrasWorkspace /> : activeSection === 'Cabelos Dev' ? <HairWorkspace /> : activeSection === 'Animador Dev' ? <AnimatorWorkspace /> : (
         <section className="fabricator-model-editor" aria-label="Editor de modelos">
           <header className="model-slotbar">
@@ -844,7 +853,7 @@ export function FabricatorPage() {
                   <button className={`model-tool-button model-pivot-visibility${showJointPivots ? ' active' : ''}`} aria-pressed={showJointPivots} onClick={() => setShowJointPivots((visible) => !visible)} disabled={processing || chromaApplying || historyBusy} title={showJointPivots ? 'Ocultar bolinhas das juntas' : 'Mostrar bolinhas das juntas'} type="button"><Icon name={showJointPivots ? 'eye' : 'eyeOff'} /><span>{showJointPivots ? 'Ocultar bolinhas' : 'Mostrar bolinhas'}</span></button>
                 </div>
               </div>
-              <ModelSkinTonePicker value={project.modelSkinTone} outlineColor={project.modelOutlineColor} disabled={processing || chromaApplying || historyBusy || modelSourcePublishing} onSelect={(tone) => updateProject((current) => ({ ...current, modelSkinTone: tone }))} onOutlineSelect={(color) => updateProject((current) => ({ ...current, modelOutlineColor: color }))} />
+              <ModelSkinTonePicker value={project.modelSkinTone} outlineColor={project.modelOutlineColor} contourPartCount={project.parts.filter(part => part.fakeSkinContours?.length).length} disabled={processing || chromaApplying || historyBusy || modelSourcePublishing} onSelect={(tone) => updateProject((current) => ({ ...current, modelSkinTone: tone }))} onOutlineSelect={(color) => updateProject((current) => ({ ...current, modelOutlineColor: color }))} onEditContours={() => setSkinContourEditorOpen(true)} />
               <div className={`model-editor-content${processing || chromaApplying || historyBusy ? ' chroma-applying' : ''}`} aria-busy={processing || chromaApplying || historyBusy}>
                 <section className="model-canvas-column" aria-label="Prévia e montagem">
                   <div className="model-canvas-topline"><span><i /> CANVAS DE MONTAGEM</span><span>{project.width} × {project.height}</span></div>
