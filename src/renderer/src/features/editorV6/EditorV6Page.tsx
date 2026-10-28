@@ -14,6 +14,7 @@ import { editorV6MotionPlans } from '../../../../shared/editorV6Motion'
 import type { ScenePointerEvent, SceneSurfaceInteraction } from './SceneSurface'
 import { addEditorV6ElementAtFrame, editEditorV6DocumentAtBlock, editorV6ClipAtFrame, normalizeEditorV6Timeline, prepareEditorV6PositionAtFrame, moveEditorV6ElementInPeriod, editEditorV6BackgroundAtFrame, pruneEditorV6TimelineSnapshots, repairEditorV6DuplicateAssets, repairEditorV6FaceModeAssetReferences, resolveEditorV6SceneAtFrame, timelineClips } from '../../../../shared/editorV6Timeline'
 import { useEditorV6InspectorState } from './useEditorV6InspectorState'
+import { resolveEditorV6InspectorSelection } from './editorV6Selection'
 import { trimTransparentImage, fitElementToTrim, faceRenderGeometry, type TrimmedImage } from '../../characters/characterGeometry'
 import { bakeFaceModeAssets, EDITOR_V6_FACE_RENDER_VERSION, editorV6FaceModeForElement, trimTransparentCanvas } from './faceModeAssets'
 import type { PreparedEditorV6FaceRenderer } from './faceModeAssets'
@@ -167,15 +168,15 @@ export function EditorV6Page() {
     updateActiveEditorV6Project((project) => project.id === activeEditorV6.id ? repairEditorV6DuplicateAssets(project, selectedTimelineBlockId) : project)
     setSaved(false)
   }, [activeEditorV6, selectedTimelineBlockId])
-  const selectedTimelineClip = activeEditorV6 ? timelineClips(activeEditorV6.timeline).find(({ block }) => block.id === selectedTimelineBlockId && block.elementId === selectedElementId)
-    ?? (selectedElementId ? editorV6ClipAtFrame(activeEditorV6.timeline, selectedElementId, playheadFrame) : undefined) : undefined
-  const selectedTimelineVideoClip = activeEditorV6 ? timelineClips(activeEditorV6.timeline).find(({ track, block }) => track.kind === 'video' && block.id === selectedTimelineBlockId && block.mediaId) : undefined
-  const selectedTimelineVideo = selectedTimelineVideoClip?.block.mediaId ? activeEditorV6?.media?.find((media) => media.id === selectedTimelineVideoClip.block.mediaId) : undefined
-  const selectedElement = selectedTimelineClip?.block.state ?? visibleTimelineElements.find((element) => element.id === selectedElementId)
-    ?? activeEditorV6?.elements.find((element) => element.id === selectedElementId) ?? null
-  const selectedCharacterElement = selectedElement?.kind === 'character'
-    ? visibleTimelineElements.find((element) => element.kind === 'character' && element.characterId === selectedElement.characterId) ?? selectedElement
-    : null
+  const editorV6Selection = useMemo(() => resolveEditorV6InspectorSelection({
+    project: activeEditorV6,
+    visibleElements: visibleTimelineElements,
+    backgroundAssetId: previewBackground.backgroundAssetId,
+    selectedTimelineBlockId,
+    selectedElementId,
+    playheadFrame
+  }), [activeEditorV6, visibleTimelineElements, previewBackground.backgroundAssetId, selectedTimelineBlockId, selectedElementId, playheadFrame])
+  const { selectedTimelineVideoClip, selectedTimelineVideo, selectedElement, selectedCharacterElement, selectedBackgroundAsset } = editorV6Selection
   const selectedEditorV6Character = selectedElement?.kind === 'character' ? availableCharacters.find((character) => character.id === selectedElement.characterId) ?? null : null
   const selectedEditorV6ExpressionCollectionId = editorV6ExpressionCollection(selectedElement, editorV6ExpressionPresets)
   const selectedEditorV6CharacterModelSlot = selectedEditorV6Character ? selectedEditorV6Character.customization.modelSlot ?? 1 : null
@@ -191,7 +192,6 @@ export function EditorV6Page() {
     ? editorV6FaceDetails[`${selectedEditorV6CharacterModelSlot}:${selectedEditorV6OpenMouthId}`]
     : undefined
   const selectedEditorV6TalkAvailable = Boolean(selectedEditorV6OpenMouth?.pieces.some((piece) => piece.sheet === 'mouth-open' && piece.index === selectedEditorV6FaceAppearance?.expressionIndex))
-  const selectedBackgroundAsset = activeEditorV6?.assets.find((asset) => asset.id === previewBackground.backgroundAssetId) ?? null
   const stageCharacters = activeEditorV6?.elements.filter((element) => element.kind === 'character') ?? []
 
   useEffect(() => () => {

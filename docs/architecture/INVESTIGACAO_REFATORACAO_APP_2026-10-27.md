@@ -405,6 +405,12 @@ Este corte separa propriedade dos contratos e chamadas entre domínios, mas não
 - O componente recebe o mesmo ref do canvas e callbacks de seleção/arraste; o inspector permanece composto pela página e renderizado como filho. A responsabilidade de render temporal do Editor V6 segue em `EditorV6PlaybackScene`.
 - `StudioPage.tsx` diminuiu 16 linhas e ficou com 1.352. Os dados e a lógica de histórico não mudaram.
 
+### Etapa aplicada — seletor de cena no Editor V6
+
+- A escolha do bloco selecionado, elemento visível, personagem, vídeo e fundo estava espalhada em derivações dentro da página.
+- `features/editorV6/editorV6Selection.ts` concentra a precedência por bloco/elemento/quadro e monta o alvo do inspector a partir do documento atual e da cena visível. O resultado é memoizado pelas referências de documento, cena, seleção e playhead; uma leitura do quadro e do vídeo usa a mesma lista de clips.
+- O estado continua local ao Editor V6. Não houve mudança no formato dos blocos, no histórico nem na seleção feita pela timeline.
+
 ## 7. Próxima tarefa recomendada
 
 Continuar pelo **Ciclo 4** com módulos focados de UI e coordenação no Customizador, Fabricador, Studio e Editor V6. O próximo passo é mapear estado e operações de cena em Studio/Editor V6 para encontrar fronteiras de extração que preservem o histórico e o comportamento temporal. Em paralelo, preparar fixtures visuais sintéticas que capturem as saídas reais dessas áreas antes de compartilhar mais da orquestração de renderização.
