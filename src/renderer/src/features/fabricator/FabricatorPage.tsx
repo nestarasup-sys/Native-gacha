@@ -19,10 +19,10 @@ import { broadcastModelSourceUpdate } from './models/modelSourceEvents'
 import { splitImage, mergeImages } from './models/partImages'
 import { pngDataUrlFromBuffer } from './models/imageData'
 import { paintSeamMixerSegment as applySeamMixerSegment, type SeamMixerSurface } from './models/seamMixer'
-import { cleanSavedPartEdges } from './models/chromaCleanup'
 import { serializeFabricatorProject } from './models/projectSerialization'
 import { persistFabricatorProjectSnapshot } from './projectPersistence'
 import { useFabricatorHistory } from './useFabricatorHistory'
+import { prepareLoadedFabricatorProject } from './models/projectHydration'
 import { MAX_CHROMA_TOLERANCE, type ModelSourceResult } from './models/modelSource'
 
 const sections: { id: string; label: string; icon: IconName }[] = [
@@ -270,47 +270,16 @@ export function FabricatorPage() {
       }
       if (generation !== slotSelectionGeneration.current) return
       replaceHistory(loadedHistory)
-      const rig = normalizePartAnchors(loaded.parts, loaded.joints)
-      let loadedParts = rig.parts
-      let chromaVersion = loaded.chromaVersion ?? 0
-      if (chromaVersion < 2) {
-        try {
-          loadedParts = await cleanSavedPartEdges(rig.parts, loaded.sourceDataUrl, loaded.tolerance)
-          if (generation !== slotSelectionGeneration.current) return
-          for (const part of loadedParts) {
-            const previous = rig.parts.find((item) => item.id === part.id)
-            if (previous?.dataUrl !== part.dataUrl) dirtyAssets.current.set(part.id, part.dataUrl)
-          }
-          chromaVersion = 2
-        } catch {
-          if (generation !== slotSelectionGeneration.current) return
-          setError('O modelo abriu, mas não foi possível corrigir automaticamente o contorno verde.')
-        }
-      }
-      const historicalBaselines = [loaded, ...loadedHistory.undo, ...loadedHistory.redo]
-        .map((entry) => 'project' in entry ? entry.project : entry)
-        .filter((candidate) => candidate.parts.length === loaded.parts.length && loaded.parts.every((part) => candidate.parts.some((item) => item.id === part.id)))
-        .sort((a, b) => a.tolerance - b.tolerance)
-      const historicalBaseline = historicalBaselines[0]
-      const chromaBaseTolerance = loaded.chromaBaseTolerance ?? (loaded.parts.every((part) => part.chromaBaseDataUrl) ? 0 : historicalBaseline?.tolerance ?? loaded.tolerance)
-      const partsWithBases = loadedParts.map((part) => {
-        const storedPart = loaded.parts.find((item) => item.id === part.id)
-        const historicalPart = historicalBaseline?.parts.find((item) => item.id === part.id)
-        const chromaBaseDataUrl = storedPart?.chromaBaseDataUrl ?? historicalPart?.dataUrl ?? part.dataUrl
-        const chromaBaseSaved = storedPart?.chromaBaseSaved ?? Boolean(historicalPart)
-        if (chromaBaseSaved && !storedPart?.chromaBaseDataUrl && chromaBaseDataUrl) dirtyChromaBases.current.set(part.id, chromaBaseDataUrl)
-        return { ...part, chromaBaseSaved, chromaBaseDataUrl }
-      })
-      if (generation !== slotSelectionGeneration.current) return
-      const loadedProject: FabricatorProject = {
-        ...loaded,
-        chromaVersion,
-        chromaBaseTolerance,
-        parts: partsWithBases,
-        layerOrder: normalizeLayerOrder(loaded.parts, loaded.layerOrder),
-        hiddenPartIds: loaded.hiddenPartIds ?? [],
-        joints: rig.joints
-      }
+      const prepared = await prepareLoadedFabricatorProject(
+        loaded,
+        loadedHistory,
+        () => generation === slotSelectionGeneration.current
+      )
+      if (!prepared || generation !== slotSelectionGeneration.current) return
+      for (const [partId, dataUrl] of prepared.dirtyAssets) dirtyAssets.current.set(partId, dataUrl)
+      for (const [partId, dataUrl] of prepared.dirtyChromaBases) dirtyChromaBases.current.set(partId, dataUrl)
+      if (prepared.warning) setError(prepared.warning)
+      const loadedProject = prepared.project
       projectRef.current = loadedProject
       setProject(loadedProject); setSelectedIds(loaded.parts[0] ? [loaded.parts[0].id] : [])
       setChromaValue(loaded.tolerance)
