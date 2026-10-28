@@ -1,10 +1,10 @@
 import { projectForOriginalPreview, selectOriginalModelSource } from '../../../../../shared/fabricatorModelViews'
 import { useModelSourceRefresh } from '../models/useModelSourceRefresh'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
-import type { FabricatorHistoryState, FabricatorPose, FabricatorPoseSummary, FabricatorProject, FabricatorProjectSave, FabricatorSlotSummary, ModelPart, WardrobeCategory, WardrobeComponent, WardrobeSet, WardrobeSetSave, WardrobeSetSummary } from '../../../../../shared/fabricator'
+import type { FabricatorPose, FabricatorPoseSummary, FabricatorProject, FabricatorProjectSave, FabricatorSlotSummary, ModelPart, WardrobeCategory, WardrobeComponent, WardrobeSet, WardrobeSetSave, WardrobeSetSummary } from '../../../../../shared/fabricator'
 import { Icon } from '../../../ui/components/Icon'
 import { usePreviewBackground } from '../usePreviewBackground'
-import { normalizeLayerOrder, orderedParts, partJointAnchor, sourcePointFromCanvas } from '../models/rig'
+import { normalizeLayerOrder, orderedParts, partJointAnchor } from '../models/rig'
 import { bindWardrobeComponent, mapWardrobeComponentToPose, poseDeltaToSource, wardrobePosePadding, rebaseWardrobeSetToOriginalSheet } from './poseTransform'
 import { editWardrobeGlue, fixWardrobeGlue, releaseWardrobeGlue, suggestWardrobeGlueTarget, wardrobeGlueState } from '../../../../../shared/wardrobeGlue'
 import { WardrobeGlueControls } from './WardrobeGlueControls'
@@ -18,6 +18,7 @@ import { guessWardrobeCategoryForBone, guessWardrobeNameForBone } from './wardro
 import { createWardrobeTorsoGridComponents } from './wardrobeGridImport'
 import { createWardrobeComponentsFromProcessedSheet } from './wardrobeSheetImport'
 import type { WardrobeProcessorResponse } from './wardrobeProcessorProtocol'
+import { recoverWardrobeReferenceModel } from './wardrobeReferenceRecovery'
 import { normalizeEditableImageFile } from '../normalizeImage'
 import { applyWardrobeWarpBrush, createWardrobeWarpMesh, drawWardrobeWarp, type WardrobeWarpBounds, type WardrobeWarpMesh, type WardrobeWarpPoint, wardrobeWarpPadding } from './wardrobeMeshWarp'
 import { WardrobeGarmentEditorModal } from './WardrobeGarmentEditorModal'
@@ -307,35 +308,11 @@ export function WardrobeWorkspace() {
       const firstAvailableModel = savedModels.find((slot) => slot)
       if (!reference && firstAvailableModel && firstAvailableModel.slot !== targetSlot) { setModels(savedModels); setModelSlot(firstAvailableModel.slot); return }
       let recoveredModel = reference
-      let history: FabricatorHistoryState | null = null
       if (reference) {
-        try { history = await window.desktop.loadFabricatorHistory(targetSlot) } catch { /* Keep calibration available if no history can be read. */ }
-        if (history) {
-          const original = history.undo[0]?.project
-          const originalParts = new Map((original?.parts ?? []).map((part) => [part.id, part]))
-          const recoveredParts = reference.parts.map((part) => {
-            const sourcePart = originalParts.get(part.id)
-            const baseTransform = part.sourceTransform ?? (sourcePart
-              ? { x: sourcePart.x, y: sourcePart.y, width: sourcePart.width, height: sourcePart.height, rotation: sourcePart.rotation }
-              : undefined)
-            if (!baseTransform) return part
-            const completeTransform = { ...baseTransform, width: baseTransform.width ?? sourcePart?.width ?? part.width, height: baseTransform.height ?? sourcePart?.height ?? part.height }
-            if (part.sourceTransform?.anchorVersion === 1 && part.sourceTransform.width && part.sourceTransform.height) return part
-            // Keep the user's current rig pivot, but express it in the original sheet's coordinates.
-            const currentAnchor = partJointAnchor(part, reference.joints)
-            const sourcePoint = currentAnchor
-              ? sourcePointFromCanvas({ ...part, sourceTransform: completeTransform }, currentAnchor)
-              : null
-            const fallbackAnchor = sourcePart ? partJointAnchor(sourcePart, original?.joints ?? []) : completeTransform.jointAnchor
-            const jointAnchor = sourcePoint ?? fallbackAnchor
-            return { ...part, sourceTransform: { ...completeTransform, anchorVersion: 1 as const, ...(jointAnchor ? { jointAnchor: { ...jointAnchor } } : {}) } }
-          })
-          if (recoveredParts.some((part, index) => part !== reference.parts[index])) {
-            recoveredModel = { ...reference, parts: recoveredParts }
-            // Restore the reference for this session. Opening the combined
-            // clothing library must not publish changes to the body model.
-          }
-        }
+        try {
+          const history = await window.desktop.loadFabricatorHistory(targetSlot)
+          if (history) recoveredModel = recoverWardrobeReferenceModel(reference, history)
+        } catch { /* Keep calibration available if no history can be read. */ }
       }
       if (requestRef.current !== requestId) return
       setModels(savedModels); setModel(recoveredModel); setSets(library.sets); setCatalogIssues(library.issues)
