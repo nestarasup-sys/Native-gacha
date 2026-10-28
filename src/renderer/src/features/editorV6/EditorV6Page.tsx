@@ -22,6 +22,7 @@ import { Profiler, useCallback, useEffect, useMemo, useRef, useState, type React
 import { buildEditorV6ExpressionAppearance, buildEditorV6ExpressionTransforms, resolveEditorV6ExpressionBase, editorV6ExpressionCollection } from './expressionTransforms'
 import { Icon } from '../../ui/components/Icon'
 import { NumericRangeField } from '../../ui/components/NumericRangeField'
+import { SceneElementControls } from '../../ui/components/SceneElementControls'
 import { isLegacySceneCatalogId, loadLegacySceneCatalog } from '../../ui/legacySceneCatalog'
 import { CharacterPortrait } from '../../ui/components/CharacterPortrait'
 import { recordEditorV6PlaybackFrame, recordUiCommit } from '../../ui/performanceDiagnostics'
@@ -1398,7 +1399,7 @@ export function EditorV6Page() {
         setInspectorOpen(true)
         setInspectorTab('editor')
       }}><img src={asset.dataUrl} alt="" /><span>{asset.name}</span></button>)}</div>
-      {selectedElementId && selectedElement && <ElementControls element={selectedElement} update={(values, record) => updateElement(selectedElement.id, values, record)} remove={deleteSelected} control={control} />}
+      {selectedElementId && selectedElement && <SceneElementControls element={selectedElement} update={(values, record) => updateElement(selectedElement.id, values, record)} remove={deleteSelected} control={control} positionNote="A posição X e Y é compartilhada por todos os blocos deste personagem." />}
     </div>
     if (selectedTimelineVideoClip && selectedTimelineVideo && activeEditorV6) {
       const block = selectedTimelineVideoClip.block
@@ -1423,7 +1424,7 @@ export function EditorV6Page() {
     if (selectedElement && activeEditorV6) return <div className="studio-side-content">
       <h2>{selectedElement.kind === 'character' ? selectedElement.text : selectedElement.kind === 'image' ? 'Objeto selecionado' : selectedElement.kind === 'narrator' ? 'Narrador' : selectedElement.kind === 'speech' ? 'Balão de fala' : 'Balão de pensamento'}</h2>
       {selectedElement.kind !== 'image' && selectedElement.kind !== 'character' && <label className="studio-text-control">Texto<textarea value={selectedElement.text} onChange={(event) => updateElement(selectedElement.id, { text: event.target.value })} rows={3} /></label>}
-      <ElementControls element={selectedElement} update={(values, record) => updateElement(selectedElement.id, values, record)} remove={deleteSelected} control={control} />
+      <SceneElementControls element={selectedElement} update={(values, record) => updateElement(selectedElement.id, values, record)} remove={deleteSelected} control={control} positionNote="A posição X e Y é compartilhada por todos os blocos deste personagem." />
     </div>
     if (selectedElementId === 'background' && selectedBackgroundAsset) return <div className="studio-side-content">
       <h2>Imagem de fundo</h2><p>{selectedBackgroundAsset.name}</p>
@@ -1677,34 +1678,4 @@ export function EditorV6Page() {
       ) : <section className="studio-empty-state"><span><Icon name="camera" /></span><strong>Nenhum projeto criado</strong><small>Crie um projeto para começar.</small></section>}
     </main>
   )
-}
-
-function ElementControls({ element, update, remove, control }: {
-  element: EditorV6Element
-  update: (values: Partial<EditorV6Element>, record?: boolean) => void
-  remove: () => void
-  control: (label: string, value: number, onChange: (value: number, record?: boolean) => void, min: number, max: number, suffix?: string) => ReactNode
-}) {
-  return <>
-    <div className="studio-controls-grid">
-      {control('X', element.x, (value, record) => update({ x: value }, record), -100, 100)}
-      {control('Y', element.y, (value, record) => update({ y: value }, record), -100, 100)}
-      {element.kind === 'character' && control('Scale', element.characterScale ?? 100, (value, record) => update({ characterScale: value }, record), 1, 300)}
-      {element.kind === 'character'
-        ? <>
-          {control('Largura', element.characterWidthScale ?? 100, (value, record) => update({ characterWidthScale: value }, record), 1, 300)}
-          {control('Altura', element.characterHeightScale ?? 100, (value, record) => update({ characterHeightScale: value }, record), 1, 300)}
-        </>
-        : <>
-          {control('Largura', element.width, (value, record) => update({ width: value }, record), 1, 200)}
-          {control('Altura', element.height, (value, record) => update({ height: value }, record), 1, 200)}
-        </>}
-      {control('Rotação', element.rotation, (value, record) => update({ rotation: value }, record), -180, 180, '°')}
-    </div>
-    {element.kind === 'character' && <small>A posição X e Y é compartilhada por todos os blocos deste personagem.</small>}
-    {element.kind === 'character' && <button className="studio-side-primary studio-character-reset" type="button" onClick={() => update({ x: 0, y: 0, characterScale: 100, characterWidthScale: 100, characterHeightScale: 100, rotation: 0, flipX: false })}><Icon name="reset" />Restaurar ajustes</button>}
-    {element.kind === 'character' && <div className="studio-layer-actions studio-character-actions"><button type="button" onClick={() => update({ flipX: !element.flipX })}><Icon name="flipHorizontal" />Espelhar personagem</button><button type="button" onClick={() => update({ zIndex: Math.max(0, element.zIndex - 1) })}>Para trás</button><button type="button" onClick={() => update({ zIndex: element.zIndex + 1 })}>Para frente</button></div>}
-    {element.kind === 'image' && <div className="studio-layer-actions"><button type="button" onClick={() => update({ zIndex: element.zIndex + 1 })}>Para frente</button><button type="button" onClick={() => update({ zIndex: Math.max(0, element.zIndex - 1) })}>Para trás</button></div>}
-    <button className="studio-side-danger" type="button" onClick={remove}><Icon name="trash" />Excluir da cena</button>
-  </>
 }
