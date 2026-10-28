@@ -50,6 +50,7 @@ export function FabricatorPage() {
   const [activeSection, setActiveSection] = useState('Modelos')
   const [slots, setSlots] = useState<FabricatorSlotSummary[]>(Array.from({ length: 10 }, () => null))
   const [slotsLoaded, setSlotsLoaded] = useState(false)
+  const [slotSwitching, setSlotSwitching] = useState(false)
   const [activeSlot, setActiveSlot] = useState(1)
   const [project, setProject] = useState<FabricatorProject | null>(null)
   const [history, setHistory] = useState<FabricatorHistoryState>(emptyHistory)
@@ -96,6 +97,7 @@ export function FabricatorPage() {
   const workerRef = useRef<Worker | null>(null)
   const chromaWorkerRef = useRef<Worker | null>(null)
   const requestId = useRef(0)
+  const slotSelectionGeneration = useRef(0)
   const dirtyAssets = useRef<Map<string, string>>(new Map())
   const dirtyChromaBases = useRef<Map<string, string>>(new Map())
   const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -305,23 +307,41 @@ export function FabricatorPage() {
   })
 
   const selectSlot = async (slot: number) => {
-    if (project) {
-      if (savedTimer.current) clearTimeout(savedTimer.current)
-      try { await persistProject(project) } catch (reason) { setError(reason instanceof Error ? `Falha ao salvar antes de trocar de slot: ${reason.message}` : 'Falha ao salvar antes de trocar de slot.'); return }
-    }
+    const generation = ++slotSelectionGeneration.current
+    setSlotSwitching(true)
+    requestId.current += 1
     workerRef.current?.terminate(); workerRef.current = null
-    chromaWorkerRef.current?.terminate(); chromaWorkerRef.current = null; setChromaApplying(false)
+    chromaWorkerRef.current?.terminate(); chromaWorkerRef.current = null
+    setProcessing(false); setProgress(0); setChromaApplying(false)
+    const projectToSave = projectRef.current ?? project
+    if (projectToSave) {
+      if (savedTimer.current) clearTimeout(savedTimer.current)
+      try { await persistProject(projectToSave) } catch (reason) {
+        if (generation === slotSelectionGeneration.current) {
+          setError(reason instanceof Error ? `Falha ao salvar antes de trocar de slot: ${reason.message}` : 'Falha ao salvar antes de trocar de slot.')
+          setSlotSwitching(false)
+        }
+        return
+      }
+    }
+    if (generation !== slotSelectionGeneration.current) return
     mixerSessionRef.current += 1
     historyGestureRef.current = false; historyGestureChangedRef.current = false; historyGestureSnapshotRef.current = null
     historyRef.current = emptyHistory(); setHistory(historyRef.current)
+    projectRef.current = null
     setActiveSlot(slot); setProject(null); setSelectedIds([]); setError(''); dirtyAssets.current.clear(); dirtyChromaBases.current.clear(); mixerSurfacesRef.current.clear(); mixerStrokeRef.current = null; setMixerActive(false); setMixerPainting(false); setZoom(1); setPan({ x: 0, y: 0 })
     const summary = slots[slot - 1]
-    if (!summary) return
+    if (!summary) { setSlotSwitching(false); return }
     try {
       const loaded = await window.desktop.loadFabricatorSlot(slot)
+      if (generation !== slotSelectionGeneration.current) return
       if (!loaded) throw new Error('O projeto salvo não pôde ser carregado.')
       let loadedHistory = emptyHistory()
-      try { loadedHistory = await window.desktop.loadFabricatorHistory(slot) } catch { setError('O modelo abriu, mas o histórico persistido não pôde ser carregado.') }
+      try { loadedHistory = await window.desktop.loadFabricatorHistory(slot) } catch {
+        if (generation !== slotSelectionGeneration.current) return
+        setError('O modelo abriu, mas o histórico persistido não pôde ser carregado.')
+      }
+      if (generation !== slotSelectionGeneration.current) return
       historyRef.current = loadedHistory; setHistory(loadedHistory)
       const rig = normalizePartAnchors(loaded.parts, loaded.joints)
       let loadedParts = rig.parts
@@ -329,12 +349,14 @@ export function FabricatorPage() {
       if (chromaVersion < 2) {
         try {
           loadedParts = await cleanSavedPartEdges(rig.parts, loaded.sourceDataUrl, loaded.tolerance)
+          if (generation !== slotSelectionGeneration.current) return
           for (const part of loadedParts) {
             const previous = rig.parts.find((item) => item.id === part.id)
             if (previous?.dataUrl !== part.dataUrl) dirtyAssets.current.set(part.id, part.dataUrl)
           }
           chromaVersion = 2
         } catch {
+          if (generation !== slotSelectionGeneration.current) return
           setError('O modelo abriu, mas não foi possível corrigir automaticamente o contorno verde.')
         }
       }
@@ -352,7 +374,8 @@ export function FabricatorPage() {
         if (chromaBaseSaved && !storedPart?.chromaBaseDataUrl && chromaBaseDataUrl) dirtyChromaBases.current.set(part.id, chromaBaseDataUrl)
         return { ...part, chromaBaseSaved, chromaBaseDataUrl }
       })
-      setProject({
+      if (generation !== slotSelectionGeneration.current) return
+      const loadedProject: FabricatorProject = {
         ...loaded,
         chromaVersion,
         chromaBaseTolerance,
@@ -360,9 +383,17 @@ export function FabricatorPage() {
         layerOrder: normalizeLayerOrder(loaded.parts, loaded.layerOrder),
         hiddenPartIds: loaded.hiddenPartIds ?? [],
         joints: rig.joints
-      }); setSelectedIds(loaded.parts[0] ? [loaded.parts[0].id] : [])
+      }
+      projectRef.current = loadedProject
+      setProject(loadedProject); setSelectedIds(loaded.parts[0] ? [loaded.parts[0].id] : [])
       setChromaValue(loaded.tolerance)
-    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Falha ao abrir modelo.') }
+      setSlotSwitching(false)
+    } catch (reason) {
+      if (generation === slotSelectionGeneration.current) {
+        setError(reason instanceof Error ? reason.message : 'Falha ao abrir modelo.')
+        setSlotSwitching(false)
+      }
+    }
   }
 
   useEffect(() => {
@@ -377,22 +408,30 @@ export function FabricatorPage() {
     if (!window.confirm(`Excluir permanentemente “${summary.name}” do slot ${slot}? A imagem original e todas as peças salvas serão apagadas.`)) return
     setDeletingSlot(slot)
     if (activeSlot === slot) {
+      slotSelectionGeneration.current += 1
+      requestId.current += 1
       if (savedTimer.current) clearTimeout(savedTimer.current)
       workerRef.current?.terminate(); workerRef.current = null
       chromaWorkerRef.current?.terminate(); chromaWorkerRef.current = null; setChromaApplying(false)
-      setProcessing(false)
+      setProcessing(false); setProgress(0)
     }
     try {
       await window.desktop.deleteFabricatorSlot(slot)
       setSlots((current) => current.map((item, index) => index === slot - 1 ? null : item))
       if (activeSlot === slot) {
         workerRef.current?.terminate(); workerRef.current = null
+        projectRef.current = null
         setProcessing(false); setProgress(0); setProject(null); setSelectedIds([]); dirtyAssets.current.clear(); dirtyChromaBases.current.clear(); setError('')
       }
     } catch (reason) {
       setError(reason instanceof Error ? `Não foi possível excluir o modelo: ${reason.message}` : 'Não foi possível excluir o modelo.')
       if (activeSlot === slot) {
-        if (project) setProject({ ...project, updatedAt: new Date().toISOString() })
+        const currentProject = projectRef.current ?? project
+        if (currentProject) {
+          const restored = { ...currentProject, updatedAt: new Date().toISOString() }
+          projectRef.current = restored
+          setProject(restored)
+        }
         else await selectSlot(slot)
       }
     } finally {
@@ -407,7 +446,7 @@ export function FabricatorPage() {
     const id = ++requestId.current
     setProcessing(true); setProgress(1); setError('')
     worker.onmessage = (event: MessageEvent<ProcessorMessage>) => {
-      if (event.data.id !== id) return
+      if (event.data.id !== id || id !== requestId.current) return
       const message = event.data
       if (message.type === 'progress') { setProgress(message.value); return }
       worker.terminate(); workerRef.current = null; setProcessing(false)
@@ -428,7 +467,10 @@ export function FabricatorPage() {
       projectRef.current = nextProject
       setProject(nextProject); setSelectedIds(parts[0] ? [parts[0].id] : [])
     }
-    worker.onerror = () => { worker.terminate(); workerRef.current = null; setProcessing(false); setError('O processamento da imagem falhou.') }
+    worker.onerror = () => {
+      if (id !== requestId.current) return
+      worker.terminate(); workerRef.current = null; setProcessing(false); setError('O processamento da imagem falhou.')
+    }
     worker.postMessage({ id, sourceDataUrl, tolerance })
   }
 
@@ -480,7 +522,7 @@ export function FabricatorPage() {
     const tolerance = chromaValue
     setChromaApplying(true); setError('')
     worker.onmessage = (event: MessageEvent<ChromaAdjustMessage>) => {
-      if (event.data.id !== id) return
+      if (event.data.id !== id || id !== requestId.current) return
       worker.terminate(); chromaWorkerRef.current = null; setChromaApplying(false)
       if (event.data.type === 'error') { setError(`Chroma key: ${event.data.message}`); return }
       const updatedAssets = new Map(event.data.parts.map(({ id: partId, png }) => [partId, pngDataUrlFromBuffer(png)]))
@@ -493,6 +535,7 @@ export function FabricatorPage() {
       })
     }
     worker.onerror = () => {
+      if (id !== requestId.current) return
       worker.terminate(); chromaWorkerRef.current = null; setChromaApplying(false)
       setError('O ajuste do chroma key falhou. Suas posições e conexões foram preservadas.')
     }
@@ -530,18 +573,22 @@ export function FabricatorPage() {
   }
 
   const importSlot = async (slot: number, preserveExisting = false) => {
+    const selectionGeneration = slotSelectionGeneration.current
     const reimporting = preserveExisting && Boolean(slots[slot - 1])
     if (slots[slot - 1] && !reimporting && !window.confirm(`Substituir o modelo do slot ${slot}? O projeto atual será trocado.`)) return
-    if (project) {
+    const projectToSave = projectRef.current ?? project
+    if (projectToSave) {
       if (savedTimer.current) clearTimeout(savedTimer.current)
-      try { await persistProject(project) } catch (reason) { setError(reason instanceof Error ? `Falha ao salvar antes da importação: ${reason.message}` : 'Falha ao salvar antes da importação.'); return }
+      try { await persistProject(projectToSave) } catch (reason) { setError(reason instanceof Error ? `Falha ao salvar antes da importação: ${reason.message}` : 'Falha ao salvar antes da importação.'); return }
     }
+    if (selectionGeneration !== slotSelectionGeneration.current) return
     setError('')
     try {
       const selected = await window.desktop.importFabricatorModel(slot, reimporting ? 'reimport' : 'import')
       if (!selected) return
       if (reimporting) {
-        const existing = await window.desktop.loadFabricatorSlot(slot)
+        const current = projectRef.current
+        const existing = current?.slot === slot ? current : await window.desktop.loadFabricatorSlot(slot)
         if (!existing) throw new Error('O modelo salvo não foi encontrado. Nenhuma configuração foi alterada.')
         const updated: FabricatorProject = {
           ...existing,
@@ -550,9 +597,17 @@ export function FabricatorPage() {
           sourceDataUrl: selected.sourceDataUrl
         }
         await persistProject(updated)
+        if (selectionGeneration !== slotSelectionGeneration.current) {
+          broadcastModelSourceUpdate({ slot, sourceAssetName: selected.sourceAssetName })
+          return
+        }
         if (activeSlot !== slot || projectRef.current?.slot !== slot) {
           let loadedHistory = emptyHistory()
-          try { loadedHistory = await window.desktop.loadFabricatorHistory(slot) } catch { setError('A imagem foi reimportada, mas não foi possível carregar o histórico salvo.') }
+          try { loadedHistory = await window.desktop.loadFabricatorHistory(slot) } catch {
+            if (selectionGeneration !== slotSelectionGeneration.current) return
+            setError('A imagem foi reimportada, mas não foi possível carregar o histórico salvo.')
+          }
+          if (selectionGeneration !== slotSelectionGeneration.current) return
           historyRef.current = loadedHistory
           setHistory(loadedHistory)
           setActiveSlot(slot)
@@ -566,6 +621,7 @@ export function FabricatorPage() {
       }
       chromaWorkerRef.current?.terminate(); chromaWorkerRef.current = null; setChromaApplying(false)
       mixerSessionRef.current += 1
+      projectRef.current = null
       setActiveSlot(slot); setProject(null); setSelectedIds([]); dirtyAssets.current.clear(); dirtyChromaBases.current.clear(); mixerSurfacesRef.current.clear(); mixerStrokeRef.current = null; setMixerActive(false); setMixerPainting(false)
       const name = selected.sourceName.replace(/\.[^.]+$/, '') || `Modelo ${slot}`
       const recordBefore = project?.slot === slot ? project : undefined
@@ -886,11 +942,15 @@ export function FabricatorPage() {
                 </button>
               })}
             </div>
-            {slots[activeSlot - 1] && <button className="model-delete-compact" onClick={() => void deleteSlot(activeSlot)} disabled={deletingSlot === activeSlot} title="Excluir permanentemente este modelo" type="button"><Icon name="trash" /><span>{deletingSlot === activeSlot ? 'Excluindo…' : 'Excluir modelo'}</span></button>}
-            <button className="model-import-compact" onClick={() => void importSlot(activeSlot, true)} disabled={deletingSlot !== null || processing || chromaApplying || historyBusy || modelSourcePublishing} title={slots[activeSlot - 1] ? 'Substituir a imagem original preservando peças, poses, juntas e demais configurações' : 'Importar folha para este slot'} type="button"><Icon name={slots[activeSlot - 1] ? 'reset' : 'plus'} /><span>{slots[activeSlot - 1] ? 'Reimportar' : 'Importar'}</span></button>
+            {slots[activeSlot - 1] && <button className="model-delete-compact" onClick={() => void deleteSlot(activeSlot)} disabled={slotSwitching || deletingSlot === activeSlot} title="Excluir permanentemente este modelo" type="button"><Icon name="trash" /><span>{deletingSlot === activeSlot ? 'Excluindo…' : 'Excluir modelo'}</span></button>}
+            <button className="model-import-compact" onClick={() => void importSlot(activeSlot, true)} disabled={slotSwitching || deletingSlot !== null || processing || chromaApplying || historyBusy || modelSourcePublishing} title={slots[activeSlot - 1] ? 'Substituir a imagem original preservando peças, poses, juntas e demais configurações' : 'Importar folha para este slot'} type="button"><Icon name={slots[activeSlot - 1] ? 'reset' : 'plus'} /><span>{slots[activeSlot - 1] ? 'Reimportar' : 'Importar'}</span></button>
           </header>
 
-          {!project ? (
+          {slotSwitching ? (
+            <div className="model-editor-content model-editor-empty" aria-busy="true">
+              <div className="model-processing"><div className="model-spinner" /><p className="model-eyebrow">BIBLIOTECA DE MODELOS</p><h2>Abrindo slot {String(activeSlot).padStart(2, '0')}…</h2><p>Salvando o projeto atual e carregando o próximo.</p></div>
+            </div>
+          ) : !project ? (
             <div className="model-editor-content model-editor-empty">
               {processing ? <div className="model-processing"><div className="model-spinner" /><p className="model-eyebrow">PROCESSANDO LOCALMENTE</p><h2>Separando as peças…</h2><p>Removendo o fundo e encontrando cada área da imagem.</p><div className="model-progress"><span style={{ width: `${progress}%` }} /></div><small>{progress}%</small></div> : renderEmptyState()}
             </div>

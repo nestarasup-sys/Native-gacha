@@ -10,11 +10,12 @@ export async function persistFabricatorProjectSnapshot(
   dirtyChromaBases: Map<string, string>,
   saveProject: SaveProject
 ): Promise<FabricatorAssetSave[]> {
-  let assets: FabricatorAssetSave[] = Array.from(dirtyAssets, ([id, dataUrl]) => ({
+  const snapshotPartIds = new Set(snapshot.parts.map((part) => part.id))
+  let assets: FabricatorAssetSave[] = Array.from(dirtyAssets).flatMap(([id, dataUrl]) => snapshotPartIds.has(id) ? [{
     id,
     dataUrl,
     ...(dirtyChromaBases.has(id) ? { chromaBaseDataUrl: dirtyChromaBases.get(id)! } : {})
-  }))
+  }] : [])
   const baseAssets = snapshot.parts.flatMap((part) => dirtyChromaBases.has(part.id) && !dirtyAssets.has(part.id)
     ? [{ id: part.id, dataUrl: part.dataUrl, chromaBaseDataUrl: dirtyChromaBases.get(part.id)! }]
     : [])
