@@ -1,5 +1,5 @@
 import type { FabricatorProject, JointLink, ModelPart } from '../../../../../shared/fabricator'
-import { createJoint, jointPivot } from './rig'
+import { autoConnectParts, createJoint, jointPivot } from './rig'
 import { rotatePointAroundOrigin } from './geometry'
 
 export function isTorsoPart(part: ModelPart | null | undefined): boolean {
@@ -77,9 +77,75 @@ export function moveFabricatorPartBranch(project: FabricatorProject, partId: str
   }
 }
 
-export function toggleFabricatorJointFixed(project: FabricatorProject, childPartId: string): FabricatorProject {
+function inferredParentPart(project: FabricatorProject, childPartId: string): ModelPart | undefined {
+  const child = project.parts.find((part) => part.id === childPartId)
+  if (!child) return undefined
+
+  const descendants = new Set<string>([childPartId])
+  let addedDescendant = true
+  while (addedDescendant) {
+    addedDescendant = false
+    for (const joint of project.joints) {
+      if (descendants.has(joint.parentPartId) && !descendants.has(joint.childPartId)) {
+        descendants.add(joint.childPartId)
+        addedDescendant = true
+      }
+    }
+  }
+
+  const childSide = bodySide(child.name)
+  const sameSide = (part: ModelPart) => !childSide || !bodySide(part.name) || bodySide(part.name) === childSide
+  const nearest = (parts: ModelPart[]) => parts.sort((a, b) => {
+    const distance = (part: ModelPart) => Math.hypot(
+      part.x + part.width / 2 - (child.x + child.width / 2),
+      part.y + part.height / 2 - (child.y + child.height / 2)
+    )
+    return distance(a) - distance(b)
+  })[0]
+  const safeCandidate = (part: ModelPart | undefined) => part && !descendants.has(part.id) ? part : undefined
+  const lowerArm = /antebra[cç]o|forearm|lower[\s_-]?arm|bra[cç]o.*(?:inferior|lower)/i.test(child.name)
+  const lowerLeg = /canela|panturrilha|shin|calf|perna.*(?:inferior|lower)/i.test(child.name)
+  const upperArm = /bra[cç]o|arm/i.test(child.name) && !lowerArm
+  const thigh = /coxa|thigh|perna.*(?:superior|upper)/i.test(child.name)
+  const head = /cabe[cç]a|head/i.test(child.name)
+  const namedParent = lowerArm
+    ? nearest(project.parts.filter((part) => part.id !== childPartId && /bra[cç]o|arm/i.test(part.name) && !/antebra[cç]o|forearm|lower[\s_-]?arm|bra[cç]o.*(?:inferior|lower)/i.test(part.name) && sameSide(part)))
+    : lowerLeg
+      ? nearest(project.parts.filter((part) => part.id !== childPartId && /coxa|thigh|perna.*(?:superior|upper)/i.test(part.name) && sameSide(part)))
+      : upperArm || thigh || head
+        ? project.parts.find((part) => isTorsoPart(part) && part.id !== childPartId)
+        : undefined
+  const safeNamedParent = safeCandidate(namedParent)
+  if (safeNamedParent) return safeNamedParent
+
+  const suggestedParentId = autoConnectParts(project.parts).find((joint) => joint.childPartId === childPartId)?.parentPartId
+  const suggestedParent = project.parts.find((part) => part.id === suggestedParentId)
+  if (suggestedParent && !descendants.has(suggestedParent.id)) return suggestedParent
+
+  const candidates = project.parts.filter((part) => part.id !== childPartId && !descendants.has(part.id))
+  return candidates.find(isTorsoPart) ?? nearest(candidates)
+}
+
+function bodySide(name: string): 'left' | 'right' | null {
+  if (/esquerd[oa]|left/i.test(name)) return 'left'
+  if (/direit[oa]|right/i.test(name)) return 'right'
+  return null
+}
+
+export function toggleFabricatorJointFixed(project: FabricatorProject, childPartId: string, createId: () => string = () => crypto.randomUUID()): FabricatorProject {
   const incoming = project.joints.find((joint) => joint.childPartId === childPartId)
-  if (!incoming) return project
+  if (!incoming) {
+    const child = project.parts.find((part) => part.id === childPartId)
+    if (!child || isTorsoPart(child)) return project
+
+    const parent = inferredParentPart(project, childPartId)
+    if (!parent) return project
+
+    const connected = connectFabricatorParts(project, parent.id, childPartId, createId)
+    const createdJoint = connected.joints.find((joint) => joint.childPartId === childPartId)
+    if (!createdJoint) return project
+    return { ...connected, joints: connected.joints.map((joint) => joint.id === createdJoint.id ? { ...joint, fixed: true } : joint) }
+  }
   return { ...project, joints: project.joints.map((joint) => joint.id === incoming.id ? { ...joint, fixed: !joint.fixed } : joint) }
 }
 
