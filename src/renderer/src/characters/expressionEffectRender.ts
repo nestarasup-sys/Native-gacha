@@ -1,5 +1,6 @@
 import type { FaceCatalogItem, FaceElementKind, FaceExpressionEffect, FaceExpressionEffects, FaceSheetKind, FabricatorProject } from '../../../shared/fabricator'
 import type { CustomizerFaceAppearance } from '../../../shared/customizer'
+import type { EditorV6FaceTransforms } from '../../../shared/editorV6'
 import type { StudioFaceTransforms } from '../../../shared/studio'
 
 type Artwork = Pick<FabricatorProject, 'width' | 'height'>
@@ -29,7 +30,7 @@ function radialBlob(context: CanvasRenderingContext2D, x: number, y: number, wid
 }
 
 /** Paint expression effects against the actual Studio head and active mouth transform. */
-export async function drawFaceExpressionEffects(context: CanvasRenderingContext2D, artwork: Artwork, sourceHead: HeadPart, head: HeadPart, appearance: CustomizerFaceAppearance, items: Partial<Record<FaceSheetKind | FaceElementKind, FaceCatalogItem>>, effects?: FaceExpressionEffects, studioTransforms?: StudioFaceTransforms): Promise<void> {
+export async function drawFaceExpressionEffects(context: CanvasRenderingContext2D, artwork: Artwork, sourceHead: HeadPart, head: HeadPart, appearance: CustomizerFaceAppearance, items: Partial<Record<FaceSheetKind | FaceElementKind, FaceCatalogItem>>, effects?: FaceExpressionEffects, studioTransforms?: StudioFaceTransforms | EditorV6FaceTransforms): Promise<void> {
   const mouthBlush: FaceExpressionEffect | undefined = appearance.mouthBlushEnabled
     ? {
       softness: .78, size: .12, width: .12, height: .0624, rotation: 0, offsetY: 0, aspectRatio: .52,
