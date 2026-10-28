@@ -12,8 +12,8 @@ import { buildClothesAdjustmentEntries } from './customizerClothesAdjustmentMode
 import { upperWardrobePanels, upperWardrobePageTwoPanels, accessoryWardrobePanels, lowerWardrobePanels, lowerWardrobePageTwoPanels, wardrobePanelCandidates, isWardrobePanelCandidateSelected, renderWardrobeThumbnail } from './wardrobePanelModel'
 import type { WardrobePanel } from './wardrobePanelModel'
 import { HairAssetPreview, WardrobePanelCandidatePreview } from './CustomizerAssetPreviews'
-import { customizerFaceParts, customizerSkinTonePresets, facePartCatalogId, facePartColorControls, facePartSourceId, hasSelectedFaceAsset, sameFaceAssetPair, skinTonePresets, wrapSlotIndex } from './customizerFaceCatalogModel'
-import type { FaceLibraryPartId } from './customizerFaceCatalogModel'
+import { customizerFaceParts, customizerFaceCatalogLayoutParts, customizerSkinTonePresets, facePartCatalogId, facePartColorControls, facePartSourceId, hasSelectedFaceAsset, sameFaceAssetPair, skinTonePresets, wrapSlotIndex, createCustomizerFaceCatalogModel } from './customizerFaceCatalogModel'
+import type { FaceCatalogChoice, FaceCatalogLayoutPart, FaceLibraryPartId } from './customizerFaceCatalogModel'
 import { hairColorControls, hairPalettePresets, MouthBlushControls, NoseOpacityControl, NoseSkinTonePalette, PiecePaletteStrip } from './CustomizerAppearanceControls'
 import { renderCustomizerBasePreview } from './customizerCharacterPreview'
 import { useCustomizerFacePreview } from './useCustomizerFacePreview'
@@ -33,7 +33,7 @@ import { hairStyleSupportsCategory } from '../../../../shared/hairCategories'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { RenderedCharacterPortrait } from '../../ui/components/RenderedCharacterPortrait'
 import { Icon } from '../../ui/components/Icon'
-import type { FaceCatalogItem, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSummary, FaceComponentKind, FaceDetailKind, FaceSheetKind, FabricatorProject, HairStyleSummary, WardrobeSet } from '../../../../shared/fabricator'
+import type { FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSummary, FaceDetailKind, FaceSheetKind, FabricatorProject, HairStyleSummary, WardrobeSet } from '../../../../shared/fabricator'
 import { resolvePoseCategory } from '../../../../shared/fabricator'
 import type { CustomizerFaceAppearance, CustomizerWardrobeGroup, FacePalettePartId, HairColorOverrides, HairColorRole, HairPartId } from '../../../../shared/customizer'
 import { characterBodyDimensionLimits, characterProportionLimits, defaultCharacterProportions, getCharacterBodyDimensions, getCharacterProportions, type CharacterProportions } from '../../../../shared/customizer'
@@ -999,6 +999,13 @@ export function CustomizerPage() {
     setSelectedPosePage((current) => Math.max(0, Math.min(posePageCount - 1, current + direction)))
   }
   const activeFaceAppearance = characterFaceAppearance?.modelSlot === selectedCatalogModelSlot ? characterFaceAppearance : undefined
+  const faceCatalogModel = useMemo(() => createCustomizerFaceCatalogModel({
+    faceCatalogItems,
+    faceCatalogDetails,
+    faceComponentAssets,
+    faceComponentDetails,
+    appearance: activeFaceAppearance
+  }), [faceCatalogItems, faceCatalogDetails, faceComponentAssets, faceComponentDetails, activeFaceAppearance])
   const renderHairCustomizer = () => {
     const appearance = characterHairAppearance?.modelSlot === selectedCatalogModelSlot ? characterHairAppearance : undefined
     const colorOverrides = appearance?.colors ?? {}
@@ -1100,50 +1107,6 @@ export function CustomizerPage() {
       </section>
   }
 
-  const faceOptionsForCategory = (category: FaceComponentKind) => {
-    const candidates = faceComponentAssets.filter((asset) => asset.kind === category)
-    return candidates.filter((asset) => !isRightFaceAsset(asset) || !candidates.some((candidate) =>
-      !isRightFaceAsset(candidate) && sameFaceAssetPair(candidate, asset, faceComponentDetails)
-    ))
-  }
-
-  const faceCatalogLayoutParts = [
-    { id: 'nose', label: 'Nariz', help: 'Nenhuma peça salva' },
-    { id: 'eye-highlight-left', label: 'Destaque do olho esquerdo', help: 'Nenhuma peça salva' },
-    { id: 'mouth', label: 'Boca', help: 'Fechada ou aberta' },
-    { id: 'eye-highlight-right', label: 'Destaque do olho direito', help: 'Nenhuma peça salva' },
-    { id: 'blush', label: 'Blush', help: 'Nenhuma peça salva' },
-    { id: 'facial-shadow', label: 'Sombra facial', help: 'Nenhuma peça salva' }
-  ] as const
-  type FaceCatalogLayoutPart = typeof faceCatalogLayoutParts[number]['id']
-  type FaceCatalogChoice =
-    | { type: 'catalog'; summary: FaceCatalogItemSummary; piece: FaceCatalogItem['pieces'][number] }
-    | { type: 'detail'; summary: FaceComponentAssetSummary; asset: FaceComponentAsset }
-  const faceCatalogChoicesFor = (category: FaceSheetKind) => faceCatalogItems
-    .filter((summary) => summary.category === category)
-    .flatMap((summary) => faceCatalogDetails[`${summary.modelSlot}:${summary.id}`]?.pieces
-      .filter((piece) => piece.sheet === category)
-      .map((piece) => ({ type: 'catalog' as const, summary, piece })) ?? [])
-  const faceCatalogChoicesForPart = (part: FaceCatalogLayoutPart) => part === 'nose'
-    ? faceCatalogChoicesFor('nose')
-    : part === 'mouth'
-      ? faceCatalogChoicesFor(activeFaceAppearance?.mouthOpen ? 'mouth-open' : 'mouth-closed')
-      : faceComponentAssets.filter((summary) => summary.kind === part).flatMap((summary): FaceCatalogChoice[] => {
-        const asset = faceComponentDetails[summary.id]
-        return asset && asset.kind === part ? [{ type: 'detail', summary, asset }] : []
-      })
-  const faceCatalogSelectedId = (part: FaceCatalogLayoutPart) => part === 'nose'
-    ? activeFaceAppearance?.noseCatalogId
-    : part === 'mouth'
-      ? activeFaceAppearance?.mouthOpen ? activeFaceAppearance.mouthOpenCatalogId : activeFaceAppearance?.mouthClosedCatalogId
-      : activeFaceAppearance?.faceDetails?.[part]
-  const faceCatalogSelectedVariant = (part: FaceCatalogLayoutPart) => part === 'nose'
-    ? activeFaceAppearance?.noseIndex ?? 0
-    : part === 'mouth' ? activeFaceAppearance?.expressionIndex ?? 0 : 0
-  const faceCatalogChoiceSelected = (part: FaceCatalogLayoutPart, choice: FaceCatalogChoice) => {
-    if (choice.type === 'detail') return choice.summary.id === faceCatalogSelectedId(part)
-    return choice.summary.id === faceCatalogSelectedId(part) && choice.piece.index === faceCatalogSelectedVariant(part)
-  }
   const chooseFaceCatalogChoice = (part: FaceCatalogLayoutPart, choice: FaceCatalogChoice) => {
     if (choice.type === 'detail') void chooseFaceDetailCatalogItem(part as FaceDetailKind, choice.summary)
     else void chooseFaceCatalogItem(choice.summary, choice.piece.index)
@@ -1180,10 +1143,10 @@ export function CustomizerPage() {
     onChange={(patch) => void updateCharacterMouthBlush(patch)}
   />
 
-  const renderFaceCatalogCard = (part: typeof faceCatalogLayoutParts[number]) => {
-    const choices = faceCatalogChoicesForPart(part.id)
-    const selectedId = faceCatalogSelectedId(part.id)
-    const selectedIndex = choices.findIndex((choice) => faceCatalogChoiceSelected(part.id, choice))
+  const renderFaceCatalogCard = (part: typeof customizerFaceCatalogLayoutParts[number]) => {
+    const choices = faceCatalogModel.choicesForPart(part.id)
+    const selectedId = faceCatalogModel.selectedIdForPart(part.id)
+    const selectedIndex = choices.findIndex((choice) => faceCatalogModel.isChoiceSelected(part.id, choice))
     const selected = selectedIndex >= 0 ? choices[selectedIndex] : null
     const selectedSlot = selectedIndex >= 0 ? selectedIndex + 1 : 0
     const slotCount = choices.length + 1
@@ -1230,15 +1193,15 @@ export function CustomizerPage() {
 
   const renderFaceCatalogLibrary = () => {
     if (!faceCatalogLibraryPart) return null
-    const part = faceCatalogLayoutParts.find((entry) => entry.id === faceCatalogLibraryPart)!
-    const choices = faceCatalogChoicesForPart(part.id)
+    const part = customizerFaceCatalogLayoutParts.find((entry) => entry.id === faceCatalogLibraryPart)!
+    const choices = faceCatalogModel.choicesForPart(part.id)
     const pageSize = 20
     const slots: Array<FaceCatalogChoice | null> = [null, ...choices]
     const pageCount = Math.max(1, Math.ceil(slots.length / pageSize))
     const page = Math.min(faceCatalogLibraryPage, pageCount - 1)
     const visible = slots.slice(page * pageSize, (page + 1) * pageSize)
-    const selectedId = faceCatalogSelectedId(part.id)
-    const selectedIndex = choices.findIndex((choice) => faceCatalogChoiceSelected(part.id, choice))
+    const selectedId = faceCatalogModel.selectedIdForPart(part.id)
+    const selectedIndex = choices.findIndex((choice) => faceCatalogModel.isChoiceSelected(part.id, choice))
     return <section className={`customizer-hair-library customizer-face-layout-library${part.id === 'mouth' ? ' customizer-face-layout-library-mouth' : ''}`} aria-labelledby="customizer-face-layout-library-title">
       <header className={`customizer-hair-library-heading${part.id === 'mouth' ? ' customizer-hair-library-heading-mouth' : ''}`}>
         <button className="customizer-hair-library-remove" type="button" onClick={() => void clearFaceCatalogPart(part.id)} disabled={!selectedId} aria-label={`Remover ${part.label}`} title={`Remover ${part.label}`}><Icon name="trash" /></button>
@@ -1253,7 +1216,7 @@ export function CustomizerPage() {
       <div className="customizer-hair-library-grid" aria-label={`Biblioteca de ${part.label}`}>
         {visible.map((choice) => {
           if (!choice) return <button className={`customizer-hair-library-item${selectedIndex < 0 ? ' selected' : ''}`} key="empty-slot" title="Slot vazio" aria-label={`Slot vazio · remover ${part.label} do personagem`} aria-pressed={selectedIndex < 0} type="button" onClick={() => { void clearFaceCatalogPart(part.id); setFaceCatalogLibraryPart(null) }} />
-          const selected = faceCatalogChoiceSelected(part.id, choice)
+          const selected = faceCatalogModel.isChoiceSelected(part.id, choice)
           const itemId = choice.type === 'catalog' ? `${choice.summary.id}:${choice.piece.id}` : choice.summary.id
           const imageUrl = choice.type === 'catalog' ? choice.piece.dataUrl : choice.asset.dataUrl
           const itemIndex = choice.type === 'catalog' ? ` · ${choice.piece.index + 1}` : ''
@@ -1273,13 +1236,13 @@ export function CustomizerPage() {
     {selectedCatalogModelSlot === null ? <div className="customizer-catalog-empty">Escolha um modelo para ver as peças faciais.</div>
       : faceLoading || faceComponentLoading ? <div className="customizer-catalog-empty">Carregando catálogo facial…</div>
         : faceCatalogLibraryPart ? renderFaceCatalogLibrary()
-          : <div className="customizer-hair-layout customizer-face-layout customizer-face-layout-catalog">{faceCatalogLayoutParts.map(renderFaceCatalogCard)}</div>}
+          : <div className="customizer-hair-layout customizer-face-layout customizer-face-layout-catalog">{customizerFaceCatalogLayoutParts.map(renderFaceCatalogCard)}</div>}
   </section>
 
   const renderFaceCustomizer = () => {
     const appearance = characterFaceAppearance?.modelSlot === selectedCatalogModelSlot ? characterFaceAppearance : undefined
     const renderPart = (part: typeof customizerFaceParts[number]) => {
-      const options = faceOptionsForCategory(part.category)
+      const options = faceCatalogModel.optionsForCategory(part.category)
       const selectedId = facePartCatalogId(appearance, part)
       const selectedAsset = selectedId ? faceComponentAssets.find((summary) => summary.id === selectedId) : undefined
       const selectedOption = selectedAsset && isRightFaceAsset(selectedAsset)
@@ -1329,7 +1292,7 @@ export function CustomizerPage() {
     if (!faceLibraryPart) return null
     const part = customizerFaceParts.find((entry) => entry.id === faceLibraryPart)
     if (!part) return null
-    const options = faceOptionsForCategory(part.category)
+    const options = faceCatalogModel.optionsForCategory(part.category)
     const pageSize = 20
     const slots: Array<FaceComponentAssetSummary | null> = [null, ...options]
     const pageCount = Math.max(1, Math.ceil(slots.length / pageSize))

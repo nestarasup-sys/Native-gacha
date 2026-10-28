@@ -1,4 +1,4 @@
-import type { FaceComponentAsset, FaceComponentAssetSummary, FaceComponentKind } from '../../../../shared/fabricator'
+import type { FaceCatalogItem, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSummary, FaceComponentKind, FaceSheetKind } from '../../../../shared/fabricator'
 import type { CustomizerFaceAppearance, FaceComponentPartId, HairColorRole } from '../../../../shared/customizer'
 import { isRightFaceAsset } from '../../../../shared/faceLibrarySelection'
 
@@ -63,4 +63,74 @@ export function sameFaceAssetPair(left: FaceComponentAssetSummary, right: FaceCo
   const rightDetail = details[right.id]
   const baseName = (name: string) => name.replace(/ · (?:Olho|Olho aberto|Olho fechado|Pupila|Sobrancelha) (?:esquerd[oa]|direit[oa])$/i, '')
   return Boolean(leftDetail && rightDetail && !isRightFaceAsset(left) && baseName(left.name) === baseName(right.name) && leftDetail.dataUrl === rightDetail.dataUrl)
+}
+
+export const customizerFaceCatalogLayoutParts = [
+  { id: 'nose', label: 'Nariz', help: 'Nenhuma peça salva' },
+  { id: 'eye-highlight-left', label: 'Destaque do olho esquerdo', help: 'Nenhuma peça salva' },
+  { id: 'mouth', label: 'Boca', help: 'Fechada ou aberta' },
+  { id: 'eye-highlight-right', label: 'Destaque do olho direito', help: 'Nenhuma peça salva' },
+  { id: 'blush', label: 'Blush', help: 'Nenhuma peça salva' },
+  { id: 'facial-shadow', label: 'Sombra facial', help: 'Nenhuma peça salva' }
+] as const
+
+export type FaceCatalogLayoutPart = typeof customizerFaceCatalogLayoutParts[number]['id']
+export type FaceCatalogChoice =
+  | { type: 'catalog'; summary: FaceCatalogItemSummary; piece: FaceCatalogItem['pieces'][number] }
+  | { type: 'detail'; summary: FaceComponentAssetSummary; asset: FaceComponentAsset }
+
+type FaceCatalogModelInput = {
+  faceCatalogItems: FaceCatalogItemSummary[]
+  faceCatalogDetails: Record<string, FaceCatalogItem>
+  faceComponentAssets: FaceComponentAssetSummary[]
+  faceComponentDetails: Record<string, FaceComponentAsset>
+  appearance: CustomizerFaceAppearance | undefined
+}
+
+/** Builds the shared choice and selection model for the face catalog's two views. */
+export function createCustomizerFaceCatalogModel({
+  faceCatalogItems,
+  faceCatalogDetails,
+  faceComponentAssets,
+  faceComponentDetails,
+  appearance
+}: FaceCatalogModelInput) {
+  const optionsForCategory = (category: FaceComponentKind) => {
+    const candidates = faceComponentAssets.filter((asset) => asset.kind === category)
+    return candidates.filter((asset) => !isRightFaceAsset(asset) || !candidates.some((candidate) =>
+      !isRightFaceAsset(candidate) && sameFaceAssetPair(candidate, asset, faceComponentDetails)
+    ))
+  }
+
+  const choicesForSheet = (category: FaceSheetKind): FaceCatalogChoice[] => faceCatalogItems
+    .filter((summary) => summary.category === category)
+    .flatMap((summary) => faceCatalogDetails[`${summary.modelSlot}:${summary.id}`]?.pieces
+      .filter((piece) => piece.sheet === category)
+      .map((piece) => ({ type: 'catalog' as const, summary, piece })) ?? [])
+
+  const choicesForPart = (part: FaceCatalogLayoutPart): FaceCatalogChoice[] => part === 'nose'
+    ? choicesForSheet('nose')
+    : part === 'mouth'
+      ? choicesForSheet(appearance?.mouthOpen ? 'mouth-open' : 'mouth-closed')
+      : faceComponentAssets.filter((summary) => summary.kind === part).flatMap((summary): FaceCatalogChoice[] => {
+        const asset = faceComponentDetails[summary.id]
+        return asset && asset.kind === part ? [{ type: 'detail', summary, asset }] : []
+      })
+
+  const selectedIdForPart = (part: FaceCatalogLayoutPart) => part === 'nose'
+    ? appearance?.noseCatalogId
+    : part === 'mouth'
+      ? appearance?.mouthOpen ? appearance.mouthOpenCatalogId : appearance?.mouthClosedCatalogId
+      : appearance?.faceDetails?.[part]
+
+  const selectedVariantForPart = (part: FaceCatalogLayoutPart) => part === 'nose'
+    ? appearance?.noseIndex ?? 0
+    : part === 'mouth' ? appearance?.expressionIndex ?? 0 : 0
+
+  const isChoiceSelected = (part: FaceCatalogLayoutPart, choice: FaceCatalogChoice) => {
+    if (choice.type === 'detail') return choice.summary.id === selectedIdForPart(part)
+    return choice.summary.id === selectedIdForPart(part) && choice.piece.index === selectedVariantForPart(part)
+  }
+
+  return { optionsForCategory, choicesForPart, selectedIdForPart, isChoiceSelected }
 }
