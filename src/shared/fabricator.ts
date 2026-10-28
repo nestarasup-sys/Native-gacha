@@ -48,6 +48,8 @@ export type FabricatorProject = {
   chromaBaseTolerance?: number
   /** Tom padrão do modelo após remover a pele original; escolhas dos personagens podem sobrescrever. */
   modelSkinTone?: string
+  /** Cor padrão do contorno do modelo; personagens podem sobrescrever sem alterar a fonte. */
+  modelOutlineColor?: string
   parts: ModelPart[]
   joints: JointLink[]
   /** Ordem de desenho do fundo para a frente. Ausente em modelos antigos. */

@@ -1,5 +1,6 @@
 import type { HairColorOverrides, HairColorRole } from '../../../shared/customizer'
-import { tintSkinPixels } from './skinTint'
+import { isValidSkinTone } from '../../../shared/skinTones'
+import { tintModelBodyPixels, tintSkinPixels } from './skinTint'
 import { createCharacterCanvas, isCharacterCanvasWorker } from './canvasSurface'
 
 export type HairTintOptions = { preserveNearWhite?: boolean; allowNearWhiteRoles?: readonly HairColorRole[] }
@@ -7,6 +8,7 @@ type CharacterImageLoader = (source: string | CanvasImageSource) => Promise<HTML
 
 export function createCharacterImageTint(loadCachedImage: CharacterImageLoader) {
   const skinTintImageCache = new Map<string, Promise<HTMLImageElement>>()
+  const modelBodyTintImageCache = new Map<string, Promise<HTMLImageElement>>()
   const hairTintImageCache = new Map<string, Promise<HTMLImageElement>>()
 
   function hairHue(red: number, green: number, blue: number): number {
@@ -155,6 +157,38 @@ export function createCharacterImageTint(loadCachedImage: CharacterImageLoader) 
     return tinted
   }
 
+  function loadModelBodyTintedImage(source: string, skinTone?: string, outlineColor?: string): Promise<HTMLImageElement> {
+    const validTone = isValidSkinTone(skinTone) ? skinTone : undefined
+    const validOutline = isValidSkinTone(outlineColor) ? outlineColor : undefined
+    const key = `${validTone ?? ''}:${validOutline ?? ''}:${source}`
+    const cached = modelBodyTintImageCache.get(key)
+    if (cached) return cached
+    const createTinted = () => loadCachedImage(source).then((sourceImage) => {
+      const canvas = createCharacterCanvas()
+      canvas.width = sourceImage.naturalWidth || sourceImage.width
+      canvas.height = sourceImage.naturalHeight || sourceImage.height
+      const context = canvas.getContext('2d', { willReadFrequently: true })
+      if (!context || !canvas.width || !canvas.height) return sourceImage
+      context.drawImage(sourceImage, 0, 0)
+      const pixels = context.getImageData(0, 0, canvas.width, canvas.height)
+      tintModelBodyPixels(pixels, validTone, validOutline)
+      context.putImageData(pixels, 0, 0)
+      if (isCharacterCanvasWorker()) return canvas as unknown as HTMLImageElement
+      const output = new Image()
+      output.src = canvas.toDataURL('image/png')
+      if (output.decode) return output.decode().then(() => output)
+      return new Promise<HTMLImageElement>((resolve, reject) => {
+        output.onload = () => resolve(output)
+        output.onerror = () => reject(new Error('Não foi possível aplicar as cores do corpo.'))
+      })
+    })
+    const tinted = createTinted()
+    modelBodyTintImageCache.set(key, tinted)
+    if (modelBodyTintImageCache.size > 80) modelBodyTintImageCache.delete(modelBodyTintImageCache.keys().next().value!)
+    void tinted.catch(() => modelBodyTintImageCache.delete(key))
+    return tinted
+  }
 
-  return { loadHairTintedImage, loadSkinTintedImage }
+
+  return { loadHairTintedImage, loadSkinTintedImage, loadModelBodyTintedImage }
 }

@@ -71,7 +71,10 @@ export function useCustomizerCharacterSourceSelection(deps: {
         extent: previewExtent,
         zoom: customizerPreviewZoom,
         skinTone: selectedCharacter?.customization.modelSkinTone
-          ?? (sampledTone === MODEL_SKIN_BASE_TONE ? sampledTone : undefined)
+          ?? (sampledTone === MODEL_SKIN_BASE_TONE ? sampledTone : undefined),
+        outlineColor: isValidSkinTone(selectedCharacter?.customization.modelOutlineColor)
+          ? selectedCharacter?.customization.modelOutlineColor
+          : sourceProject.modelOutlineColor
       })
       if (previewLoadRequest.current === requestId) { setSelectedArtworkProject(artwork); setSelectedSourceModelProject(sourceProject); setSelectedArtworkUrl(artworkUrl) }
     } catch (reason) {
@@ -108,7 +111,10 @@ export function useCustomizerCharacterSourceSelection(deps: {
         extent: previewExtent,
         zoom: customizerPreviewZoom,
         skinTone: selectedCharacter?.customization.modelSkinTone
-          ?? (sampledTone === MODEL_SKIN_BASE_TONE ? sampledTone : undefined)
+          ?? (sampledTone === MODEL_SKIN_BASE_TONE ? sampledTone : undefined),
+        outlineColor: isValidSkinTone(selectedCharacter?.customization.modelOutlineColor)
+          ? selectedCharacter?.customization.modelOutlineColor
+          : sourceProject.modelOutlineColor
       })
       if (previewLoadRequest.current === requestId) { setSelectedArtworkProject(artwork); setSelectedSourceModelProject(sourceProject); setSelectedArtworkUrl(artworkUrl) }
     } catch (reason) {

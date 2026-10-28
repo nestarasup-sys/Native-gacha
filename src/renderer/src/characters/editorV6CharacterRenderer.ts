@@ -6,6 +6,7 @@ import { configureCharacterSampling } from './renderResolution'
 import type { CharacterRenderAssetProvider } from '../../../shared/characterRenderAssets'
 import { resolveSavedCharacterSource, characterShapeScale, type CatalogArtwork } from './characterSourceResolver'
 import { getCharacterProportions } from '../../../shared/customizer'
+import { isValidSkinTone } from '../../../shared/skinTones'
 import { prepareGachaStaticLayers } from './gachaStaticLayers'
 import { loadCachedImage } from './editorV6CharacterImageMemos'
 import { createCharacterImageTint } from './characterImageTint'
@@ -33,6 +34,7 @@ export type { HairTintOptions } from './characterImageTint'
 const characterImageTint = createCharacterImageTint(loadCachedImage)
 export const loadHairTintedImage = characterImageTint.loadHairTintedImage
 export const loadSkinTintedImage = characterImageTint.loadSkinTintedImage
+export const loadModelBodyTintedImage = characterImageTint.loadModelBodyTintedImage
 
 const characterFaceCatalogRenderer = createCharacterFaceCatalogRenderer(
   { loadCachedImage, loadHairTintedImage, loadSkinTintedImage },
@@ -41,7 +43,7 @@ const characterFaceCatalogRenderer = createCharacterFaceCatalogRenderer(
 
 export type { HairCatalogSide } from './characterLayerRenderer'
 
-const characterLayerRenderer = createCharacterLayerRenderer({ loadCachedImage, loadHairTintedImage, loadSkinTintedImage })
+const characterLayerRenderer = createCharacterLayerRenderer({ loadCachedImage, loadHairTintedImage, loadSkinTintedImage, loadModelBodyTintedImage })
 export const customizerHairParts = characterLayerRenderer.customizerHairParts
 export const hairAppearanceStyleId = characterLayerRenderer.hairAppearanceStyleId
 export const loadHairAppearanceLayers = characterLayerRenderer.loadHairAppearanceLayers
@@ -52,7 +54,7 @@ export const renderFrontHairOverlay = characterLayerRenderer.renderFrontHairOver
 export const renderFaceOverlay = characterLayerRenderer.renderFaceOverlay
 export type { AdjustmentPreviewHighlight, ClothingGroupCategory, SelectedWardrobeComponent } from './characterWardrobeRenderer'
 
-const characterWardrobeRenderer = createCharacterWardrobeRenderer({ loadCachedImage, loadHairTintedImage, loadSkinTintedImage })
+const characterWardrobeRenderer = createCharacterWardrobeRenderer({ loadCachedImage, loadHairTintedImage, loadSkinTintedImage, loadModelBodyTintedImage })
 export const clothingCategories = characterWardrobeRenderer.clothingCategories
 export const wardrobeComponentsForGroup = characterWardrobeRenderer.wardrobeComponentsForGroup
 export const renderWardrobeOverlayCanvases = characterWardrobeRenderer.renderWardrobeOverlayCanvases
@@ -91,7 +93,9 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
   const { modelSlot, assetProvider, source, artwork } = await resolveSavedCharacterSource(character, renderSource)
   const proportions = getCharacterProportions(character.customization)
   const hairAppearance = character.customization.hairAppearance
-  const skinTone = character.customization.modelSkinTone ?? source.modelSkinTone
+  const skinTone = isValidSkinTone(character.customization.modelSkinTone) ? character.customization.modelSkinTone : source.modelSkinTone
+  const outlineColor = isValidSkinTone(character.customization.modelOutlineColor) ? character.customization.modelOutlineColor : source.modelOutlineColor
+  const appearanceSource = { ...source, modelOutlineColor: outlineColor }
   const materials = await materialsForPreparedCharacter(character, modelSlot, assetProvider, renderSource?.materialCache)
   const { backStyles, frontStyles } = materials
   const baseImage = createCharacterCanvas()
@@ -99,10 +103,10 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
   baseImage.height = artwork.height
   const baseContext = baseImage.getContext('2d')
   if (!baseContext) throw new Error(`Não foi possível montar a prévia de ${character.name}.`)
-  await renderArtworkWithHair(artwork, source, backStyles, Math.max(artwork.width, artwork.height), skinTone, hairAppearance, baseContext, character.customization.partOverrides)
+  await renderArtworkWithHair(artwork, appearanceSource, backStyles, Math.max(artwork.width, artwork.height), skinTone, hairAppearance, baseContext, character.customization.partOverrides)
 
   const groups = (character.customization.wardrobeGroups ?? []).filter((group) => group.modelSlot === modelSlot)
-  const wardrobe = await renderWardrobeOverlayCanvases(groups, materials.wardrobeDetails, artwork, modelSlot, source, skinTone)
+  const wardrobe = await renderWardrobeOverlayCanvases(groups, materials.wardrobeDetails, artwork, modelSlot, appearanceSource, skinTone)
 
   const appearance = character.customization.faceAppearance
   const expressionEffectsByIndex = appearance?.modelSlot === modelSlot

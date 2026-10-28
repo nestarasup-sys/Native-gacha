@@ -12,6 +12,8 @@ export type CharacterCustomization = {
   poseSlot: number | null
   /** Optional per-character skin tint applied to the read-only model preview. */
   modelSkinTone?: string
+  /** Optional per-character model outline color; falls back to the selected Fabricator model. */
+  modelOutlineColor?: string
   /** Proportions belong to this character; Fabricator models and poses stay unchanged. */
   proportions?: CharacterProportions
   /** Per-character body shaping for the Customizer model preview. */

@@ -80,6 +80,7 @@ export class FabricatorModelCatalog {
       return {
         ...manifest,
         modelSkinTone: isValidSkinTone(manifest.modelSkinTone) ? manifest.modelSkinTone : undefined,
+        modelOutlineColor: isValidSkinTone(manifest.modelOutlineColor) ? manifest.modelOutlineColor : undefined,
         sourceDataUrl,
         parts
       }

@@ -1,5 +1,11 @@
 import { MODEL_SKIN_BASE_TONE, isValidSkinTone } from '../../../shared/skinTones'
 
+const MODEL_BODY_PART_NAME = /cabe[çc]a|head|tronco|corpo|torso|body|bra[cç]o|arm|antebra[cç]o|forearm|coxa|thigh|perna|canela|panturrilha|leg|calf|shin|(?:^|[\s_-])p[eé]s?(?:$|[\s_-])|foot|feet|m[aã]o(?:s)?|hands?/i
+
+export function isModelBodyPartName(name: string): boolean {
+  return MODEL_BODY_PART_NAME.test(name)
+}
+
 /** Fill transparent pockets enclosed by ink with a stable color before recoloring. */
 export function fillEnclosedTransparentSkin(image: ImageData, baseTone = MODEL_SKIN_BASE_TONE): number {
   if (!isValidSkinTone(baseTone) || image.width < 1 || image.height < 1) return 0
@@ -117,4 +123,64 @@ export function tintSkinPixels(image: ImageData, tone: string): void {
     data[offset + 1] = Math.min(255, Math.round(target[1] * shade))
     data[offset + 2] = Math.min(255, Math.round(target[2] * shade))
   }
+}
+
+function findModelOutlinePixels(image: ImageData): Uint8Array {
+  const { data, width, height } = image
+  const count = width * height
+  const outline = new Uint8Array(count)
+  const luminance = new Float32Array(count)
+  for (let pixel = 0; pixel < count; pixel++) {
+    const offset = pixel * 4
+    if (data[offset + 3] <= 16) continue
+    luminance[pixel] = data[offset] * 0.299 + data[offset + 1] * 0.587 + data[offset + 2] * 0.114
+  }
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const pixel = y * width + x
+      const offset = pixel * 4
+      if (data[offset + 3] <= 16 || luminance[pixel] > 178) continue
+      if (luminance[pixel] <= 102) {
+        outline[pixel] = 1
+        continue
+      }
+      let touchesOutlineContrast = false
+      for (let ny = Math.max(0, y - 1); ny <= Math.min(height - 1, y + 1); ny++) {
+        for (let nx = Math.max(0, x - 1); nx <= Math.min(width - 1, x + 1); nx++) {
+          const neighbor = ny * width + nx
+          if (data[neighbor * 4 + 3] <= 16 || luminance[neighbor] - luminance[pixel] >= 34) {
+            touchesOutlineContrast = true
+            break
+          }
+        }
+        if (touchesOutlineContrast) break
+      }
+      if (touchesOutlineContrast) outline[pixel] = 1
+    }
+  }
+  return outline
+}
+
+/** Recolor dark model ink while retaining each pixel's shade and alpha. */
+export function tintModelOutlinePixels(image: ImageData, color: string, mask = findModelOutlinePixels(image)): void {
+  if (!isValidSkinTone(color)) return
+  const { data } = image
+  const target = [1, 3, 5].map((index) => Number.parseInt(color.slice(index, index + 2), 16))
+  for (let pixel = 0; pixel < mask.length; pixel++) {
+    if (!mask[pixel]) continue
+    const offset = pixel * 4
+    const sourceLuminance = data[offset] * 0.299 + data[offset + 1] * 0.587 + data[offset + 2] * 0.114
+    const shade = Math.min(1.15, Math.max(0.42, sourceLuminance / 88))
+    data[offset] = Math.min(255, Math.round(target[0] * shade))
+    data[offset + 1] = Math.min(255, Math.round(target[1] * shade))
+    data[offset + 2] = Math.min(255, Math.round(target[2] * shade))
+  }
+}
+
+/** Apply model-level body colors together so the contour mask comes from the original pixels. */
+export function tintModelBodyPixels(image: ImageData, skinTone?: string, outlineColor?: string): void {
+  const outlineMask = isValidSkinTone(outlineColor) ? findModelOutlinePixels(image) : null
+  if (isValidSkinTone(skinTone)) tintSkinPixels(image, skinTone)
+  else fillEnclosedTransparentSkin(image)
+  if (outlineColor && outlineMask) tintModelOutlinePixels(image, outlineColor, outlineMask)
 }

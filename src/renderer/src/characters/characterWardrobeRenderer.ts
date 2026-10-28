@@ -8,6 +8,7 @@ import type { CatalogArtwork } from './characterSourceResolver'
 import { configureCharacterSampling, MAX_CHARACTER_PREVIEW_PIXELS } from './renderResolution'
 import { createCharacterCanvas } from './canvasSurface'
 import { drawPreviewImageWithHalo } from './characterCanvasDrawing'
+import { isModelBodyPartName } from './skinTint'
 
 export type ClothingGroupCategory = CustomizerWardrobeCategory
 export type SelectedWardrobeComponent = { modelSlot: number; setId: string; category: ClothingGroupCategory; componentId: string }
@@ -17,10 +18,11 @@ export type CharacterWardrobeImageLoaders = {
   loadCachedImage: (source: string | CanvasImageSource) => Promise<HTMLImageElement>
   loadHairTintedImage: (source: string, overrides: HairColorOverrides | undefined) => Promise<HTMLImageElement>
   loadSkinTintedImage: (source: string, tone: string) => Promise<HTMLImageElement>
+  loadModelBodyTintedImage: (source: string, skinTone?: string, outlineColor?: string) => Promise<HTMLImageElement>
 }
 
 export function createCharacterWardrobeRenderer(loaders: CharacterWardrobeImageLoaders) {
-  const { loadCachedImage, loadHairTintedImage, loadSkinTintedImage } = loaders
+  const { loadCachedImage, loadHairTintedImage, loadSkinTintedImage, loadModelBodyTintedImage } = loaders
   const clothingCategories: Record<'Superior' | 'Inferior', Array<{ id: ClothingGroupCategory; label: string; source: WardrobeCategory[] }>> = {
     Superior: [
       { id: 'camisa', label: 'Camisas', source: ['camisa'] },
@@ -142,7 +144,9 @@ export function createCharacterWardrobeRenderer(loaders: CharacterWardrobeImageL
           // The wardrobe composite redraws the body to interleave garments with
           // model layers. Keep that duplicate body in sync with the tinted base
           // preview, otherwise the original skin pixels cover the selected tone.
-          const image = skinTone ? await loadSkinTintedImage(part.dataUrl, skinTone) : await loadCachedImage(part.dataUrl)
+          const image = isModelBodyPartName(part.name) && (skinTone || source.modelOutlineColor)
+            ? await loadModelBodyTintedImage(part.dataUrl, skinTone, source.modelOutlineColor)
+            : skinTone ? await loadSkinTintedImage(part.dataUrl, skinTone) : await loadCachedImage(part.dataUrl)
           outputContext.save()
           outputContext.translate(part.x + part.width / 2, part.y + part.height / 2)
           outputContext.rotate(part.rotation * Math.PI / 180)

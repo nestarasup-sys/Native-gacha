@@ -16,13 +16,16 @@ export async function renderCustomizerBasePreview(
     extent: PreviewExtent
     zoom: number
     skinTone?: string
+    outlineColor?: string
   }
 ): Promise<string> {
   const shapedArtwork = applyCharacterBodyShape(withCharacterHeadSize(artwork, options.proportions), options.bodyDimensions)
   const imageUrl = await renderArtwork(
     shapedArtwork,
     characterRenderSize(artwork.width, artwork.height, options.extent.width, options.extent.height, options.zoom, options.extent.density),
-    options.skinTone
+    options.skinTone,
+    false,
+    options.outlineColor
   )
   if (!imageUrl) throw new Error('A prévia nova não pôde ser renderizada; mantendo a imagem anterior.')
   if (!await preparePreviewImage(imageUrl)) throw new Error('A prévia nova não pôde ser decodificada; mantendo a imagem anterior.')

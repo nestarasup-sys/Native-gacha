@@ -25,7 +25,8 @@ import { useFabricatorHistory } from './useFabricatorHistory'
 import { prepareLoadedFabricatorProject } from './models/projectHydration'
 import { MAX_CHROMA_TOLERANCE, type ModelSourceResult } from './models/modelSource'
 import { ModelSkinTonePicker } from './ModelSkinTonePicker'
-import { cachedModelSkinTonePreview } from './models/modelSkinTone'
+import { cachedModelBodyAppearancePreview } from './models/modelSkinTone'
+import { connectBodyContourJoints } from './models/contourJoints'
 import { isValidSkinTone } from '../../../../shared/skinTones'
 
 const sections: { id: string; label: string; icon: IconName }[] = [
@@ -56,7 +57,7 @@ export function FabricatorPage() {
   const [slotSwitching, setSlotSwitching] = useState(false)
   const [activeSlot, setActiveSlot] = useState(1)
   const [project, setProject] = useState<FabricatorProject | null>(null)
-  const [skinTonePreviewUrls, setSkinTonePreviewUrls] = useState<Record<string, string>>({})
+  const [bodyAppearancePreviewUrls, setBodyAppearancePreviewUrls] = useState<Record<string, string>>({})
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [processing, setProcessing] = useState(false)
   const [chromaApplying, setChromaApplying] = useState(false)
@@ -70,6 +71,8 @@ export function FabricatorPage() {
   const [filter, setFilter] = useState('')
   const [connectMode, setConnectMode] = useState(false)
   const [connectFromId, setConnectFromId] = useState<string | null>(null)
+  const [contourConnecting, setContourConnecting] = useState(false)
+  const [jointConnectMessage, setJointConnectMessage] = useState('')
   const [panelTab, setPanelTab] = useState<PanelTab>('parts')
   const [layerDragId, setLayerDragId] = useState<string | null>(null)
   const [showJointPivots, setShowJointPivots] = useState(true)
@@ -163,25 +166,26 @@ export function FabricatorPage() {
 
   useEffect(() => {
     if (!project) {
-      setSkinTonePreviewUrls({})
+      setBodyAppearancePreviewUrls({})
       return
     }
     let active = true
     const slot = project.slot
     const tone = isValidSkinTone(project.modelSkinTone) ? project.modelSkinTone : undefined
+    const outlineColor = isValidSkinTone(project.modelOutlineColor) ? project.modelOutlineColor : undefined
     void (async () => {
       const previews: Record<string, string> = {}
       for (const part of project.parts) {
-        const preview = await cachedModelSkinTonePreview(slot, part, tone)
+        const preview = await cachedModelBodyAppearancePreview(slot, part, tone, outlineColor)
         if (!active) return
         if (preview) previews[`${slot}:${part.id}`] = preview
       }
-      if (active) setSkinTonePreviewUrls(previews)
+      if (active) setBodyAppearancePreviewUrls(previews)
     })().catch((reason: unknown) => {
       if (active) setError(reason instanceof Error ? reason.message : 'Não foi possível aplicar a cor de pele do modelo.')
     })
     return () => { active = false }
-  }, [project?.slot, project?.modelSkinTone, project?.parts])
+  }, [project?.slot, project?.modelSkinTone, project?.modelOutlineColor, project?.parts])
 
   useEffect(() => {
     if (connectMode && mixerActive) setMixerActive(false)
@@ -192,7 +196,7 @@ export function FabricatorPage() {
   const normalizedPartFilter = useMemo(() => filter.toLowerCase(), [filter])
   const visibleParts = useMemo(() => (project?.parts ?? []).filter((part) => part.name.toLowerCase().includes(normalizedPartFilter)), [project, normalizedPartFilter])
   const canvasParts = useMemo(() => project ? orderedParts(project.parts, project.layerOrder) : [], [project])
-  const partPreviewSource = (part: ModelPart) => skinTonePreviewUrls[`${project?.slot}:${part.id}`] ?? part.dataUrl
+  const partPreviewSource = (part: ModelPart) => bodyAppearancePreviewUrls[`${project?.slot}:${part.id}`] ?? part.dataUrl
   const frontToBackLayers = useMemo(() => canvasParts.slice().reverse(), [canvasParts])
   const jointedParts = useMemo(() => {
     if (!project) return []
@@ -410,6 +414,7 @@ export function FabricatorPage() {
         ...current,
         sourceDataUrl: result.sourceDataUrl,
         modelSkinTone: result.modelSkinTone,
+        modelOutlineColor: result.modelOutlineColor,
         parts: result.parts,
         joints: result.joints,
         layerOrder: result.layerOrder,
@@ -617,6 +622,28 @@ export function FabricatorPage() {
 
   const rotateBranch = (jointId: string, amount: number) => updateProject((current) => rotateFabricatorPartBranch(current, jointId, amount))
 
+  const autoConnectBodyContours = async () => {
+    const snapshot = projectRef.current
+    if (!snapshot || contourConnecting) return
+    setContourConnecting(true)
+    setJointConnectMessage('')
+    try {
+      const result = await connectBodyContourJoints(snapshot)
+      if (projectRef.current !== snapshot) {
+        setJointConnectMessage('O modelo mudou durante o cálculo. Execute a conexão automática novamente.')
+        return
+      }
+      updateProject(() => result.project)
+      setJointConnectMessage(result.pairCount
+        ? `Juntas automáticas concluídas: ${result.alignedCount} de ${result.pairCount} contornos anatômicos alinhados.`
+        : 'Não encontrei pares identificáveis de braço superior/antebraço ou coxa/canela.')
+    } catch (reason) {
+      setJointConnectMessage(reason instanceof Error ? reason.message : 'Não foi possível conectar os contornos das juntas.')
+    } finally {
+      setContourConnecting(false)
+    }
+  }
+
   const paintMixerSegment = async (fromX: number, fromY: number, toX: number, toY: number, touchedPixels: Map<string, Uint8Array>, session: number) => {
     if (!project || !scale || session !== mixerSessionRef.current) return
     const stage = stageRef.current
@@ -817,7 +844,7 @@ export function FabricatorPage() {
                   <button className={`model-tool-button model-pivot-visibility${showJointPivots ? ' active' : ''}`} aria-pressed={showJointPivots} onClick={() => setShowJointPivots((visible) => !visible)} disabled={processing || chromaApplying || historyBusy} title={showJointPivots ? 'Ocultar bolinhas das juntas' : 'Mostrar bolinhas das juntas'} type="button"><Icon name={showJointPivots ? 'eye' : 'eyeOff'} /><span>{showJointPivots ? 'Ocultar bolinhas' : 'Mostrar bolinhas'}</span></button>
                 </div>
               </div>
-              <ModelSkinTonePicker value={project.modelSkinTone} disabled={processing || chromaApplying || historyBusy || modelSourcePublishing} onSelect={(tone) => updateProject((current) => ({ ...current, modelSkinTone: tone }))} />
+              <ModelSkinTonePicker value={project.modelSkinTone} outlineColor={project.modelOutlineColor} disabled={processing || chromaApplying || historyBusy || modelSourcePublishing} onSelect={(tone) => updateProject((current) => ({ ...current, modelSkinTone: tone }))} onOutlineSelect={(color) => updateProject((current) => ({ ...current, modelOutlineColor: color }))} />
               <div className={`model-editor-content${processing || chromaApplying || historyBusy ? ' chroma-applying' : ''}`} aria-busy={processing || chromaApplying || historyBusy}>
                 <section className="model-canvas-column" aria-label="Prévia e montagem">
                   <div className="model-canvas-topline"><span><i /> CANVAS DE MONTAGEM</span><span>{project.width} × {project.height}</span></div>
@@ -848,7 +875,7 @@ export function FabricatorPage() {
                     <div className="model-source-info"><span><Icon name="frame" /> Fonte</span><small title={project.sourceName}>{project.sourceName}</small></div>
                   </div>}
                   {panelTab === 'layers' && <div className="model-panel-body model-layer-panel"><p className="model-panel-intro">Arraste uma linha ou use as setas. O item no topo fica na frente. Fixar mantém a posição e a sobreposição atuais, e faz esse par acompanhar os próximos movimentos.</p><div className="model-layer-list">{frontToBackLayers.map((part, index) => { const joint = project.joints.find((item) => item.childPartId === part.id); const fixed = Boolean(joint?.fixed); return <div key={part.id} draggable className={`model-layer-row${selectedIds.includes(part.id) ? ' selected' : ''}${layerDragId === part.id ? ' dragging' : ''}`} onDragStart={(event) => { layerDragRef.current = part.id; event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', part.id); setLayerDragId(part.id) }} onDragEnd={() => { layerDragRef.current = null; setLayerDragId(null) }} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'move' }} onDrop={(event) => { event.preventDefault(); const sourceId = event.dataTransfer.getData('text/plain') || layerDragRef.current; if (sourceId) dropLayer(sourceId, part.id); layerDragRef.current = null; setLayerDragId(null) }}><button className="model-layer-select" onClick={() => setSelectedIds([part.id])} type="button"><span className="model-layer-thumb"><img src={partPreviewSource(part)} alt="" /></span><span><strong>{part.name}</strong><small>Camada {frontToBackLayers.length - index} · {hiddenPartIds.includes(part.id) ? 'Oculta' : 'Visível'}{joint ? ` · ${fixed ? 'Fixada' : 'Solta'}` : ''}</small></span></button><div className="model-layer-controls"><button title="Mover para frente" aria-label={`Mover ${part.name} para frente`} disabled={index === 0} onClick={() => moveLayer(part.id, -1)} type="button">↑</button><button title="Mover para trás" aria-label={`Mover ${part.name} para trás`} disabled={index === frontToBackLayers.length - 1} onClick={() => moveLayer(part.id, 1)} type="button">↓</button><button className={`model-layer-fix${fixed ? ' fixed' : ''}`} title={joint ? fixed ? 'Desfixar do pai' : 'Fixar ao pai' : 'Esta peça não tem junta com uma peça-pai'} aria-label={joint ? fixed ? `Desfixar ${part.name} do pai` : `Fixar ${part.name} ao pai` : `${part.name} não tem junta pai`} aria-pressed={fixed} disabled={!joint} onClick={() => toggleJointFix(part.id)} type="button"><Icon name="link" /></button><button title={hiddenPartIds.includes(part.id) ? 'Mostrar peça' : 'Ocultar peça'} aria-label={hiddenPartIds.includes(part.id) ? `Mostrar ${part.name}` : `Ocultar ${part.name}`} aria-pressed={!hiddenPartIds.includes(part.id)} onClick={() => toggleLayerVisibility(part.id)} type="button">{hiddenPartIds.includes(part.id) ? '○' : '◉'}</button></div></div>})}</div></div>}
-                  {panelTab === 'joints' && <div className="model-panel-body model-joint-panel"><button className="model-auto-connect" onClick={() => updateProject((current) => { const rig = normalizePartAnchors(current.parts, [...current.joints.filter((joint) => !joint.suggested), ...autoConnectParts(current.parts)]); return { ...current, parts: rig.parts, joints: rig.joints } })} type="button"><Icon name="sparkles" /><span><strong>Conectar automaticamente</strong><small>Detectar cabeça, braços, pernas e encaixes</small></span></button><button className={`model-tool-button model-manual-connect${connectMode ? ' active' : ''}`} onClick={() => { setConnectMode((value) => !value); setConnectFromId(null) }} type="button"><span className="model-link-dot" />{connectMode ? 'Selecione duas peças no canvas' : 'Ligar peças manualmente'}</button>{connectMode && <p className="model-connect-hint">Clique primeiro na peça que ficará parada e depois na peça que ela movimenta.</p>}<p className="model-panel-intro">Cada peça conectada tem uma única bolinha. Todas as conexões dessa peça usam o mesmo pivô; selecione a peça para destacar e arraste essa bolinha. O tronco é o centro e não recebe bolinha.</p><div className="model-joint-legend"><span><i className="loose" />Solta</span><span><i className="selected" />Selecionada</span><span><i className="fixed" />Fixada</span></div><div className="model-joint-list"><div className="model-joint-list-heading"><strong>Conexões do esqueleto</strong><small>{project.joints.length}</small></div>{project.joints.length === 0 ? <p className="model-joint-empty">Ainda não há conexões. Use a sugestão automática ou ligue duas peças manualmente.</p> : project.joints.map((joint) => { const parent = project.parts.find((part) => part.id === joint.parentPartId); const child = project.parts.find((part) => part.id === joint.childPartId); return <div className="model-joint-row" key={joint.id}><span className="model-joint-row-name"><b>{parent?.name ?? 'Peça'}</b><Icon name="chevronRight" /><b>{child?.name ?? 'Peça'}</b>{joint.suggested && <small>AUTO</small>}</span><span className="model-joint-controls"><button title="Girar ramo à esquerda" onClick={() => rotateBranch(joint.id, -15)} type="button">−15°</button><button title="Girar ramo à direita" onClick={() => rotateBranch(joint.id, 15)} type="button">+15°</button><button title="Desconectar" onClick={() => updateProject((current) => ({ ...current, joints: current.joints.filter((item) => item.id !== joint.id) }))} type="button">×</button></span></div>})}</div></div>}
+                  {panelTab === 'joints' && <div className="model-panel-body model-joint-panel"><button className="model-auto-connect" onClick={() => { void autoConnectBodyContours() }} disabled={contourConnecting || processing || chromaApplying || historyBusy || modelSourcePublishing} type="button"><Icon name="sparkles" /><span><strong>{contourConnecting ? 'Conectando contornos…' : 'Conectar automaticamente'}</strong><small>Juntas e contornos de braços e pernas</small></span></button>{jointConnectMessage && <p className="model-connect-hint" role="status">{jointConnectMessage}</p>}<button className={`model-tool-button model-manual-connect${connectMode ? ' active' : ''}`} onClick={() => { setConnectMode((value) => !value); setConnectFromId(null) }} type="button"><span className="model-link-dot" />{connectMode ? 'Selecione duas peças no canvas' : 'Ligar peças manualmente'}</button>{connectMode && <p className="model-connect-hint">Clique primeiro na peça que ficará parada e depois na peça que ela movimenta.</p>}<p className="model-panel-intro">Cada peça conectada tem uma única bolinha. Todas as conexões dessa peça usam o mesmo pivô; selecione a peça para destacar e arraste essa bolinha. O tronco é o centro e não recebe bolinha.</p><div className="model-joint-legend"><span><i className="loose" />Solta</span><span><i className="selected" />Selecionada</span><span><i className="fixed" />Fixada</span></div><div className="model-joint-list"><div className="model-joint-list-heading"><strong>Conexões do esqueleto</strong><small>{project.joints.length}</small></div>{project.joints.length === 0 ? <p className="model-joint-empty">Ainda não há conexões. Use a sugestão automática ou ligue duas peças manualmente.</p> : project.joints.map((joint) => { const parent = project.parts.find((part) => part.id === joint.parentPartId); const child = project.parts.find((part) => part.id === joint.childPartId); return <div className="model-joint-row" key={joint.id}><span className="model-joint-row-name"><b>{parent?.name ?? 'Peça'}</b><Icon name="chevronRight" /><b>{child?.name ?? 'Peça'}</b>{joint.suggested && <small>AUTO</small>}</span><span className="model-joint-controls"><button title="Girar ramo à esquerda" onClick={() => rotateBranch(joint.id, -15)} type="button">−15°</button><button title="Girar ramo à direita" onClick={() => rotateBranch(joint.id, 15)} type="button">+15°</button><button title="Desconectar" onClick={() => updateProject((current) => ({ ...current, joints: current.joints.filter((item) => item.id !== joint.id) }))} type="button">×</button></span></div>})}</div></div>}
                 </aside>
               </div>
             </>

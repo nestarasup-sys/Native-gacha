@@ -7,6 +7,7 @@ import { configureCharacterSampling, MAX_CHARACTER_PREVIEW_PIXELS } from './rend
 import { createCharacterCanvas } from './canvasSurface'
 import { drawPreviewImageWithHalo } from './characterCanvasDrawing'
 import { faceElementOrder } from './characterFaceCatalogSupport'
+import { isModelBodyPartName } from './skinTint'
 
 export type HairCatalogSide = 'front' | 'back'
 export type HairLayerSide = HairCatalogSide | 'fringe'
@@ -23,10 +24,11 @@ export type CharacterLayerImageLoaders = {
   loadCachedImage: (source: string | CanvasImageSource) => Promise<HTMLImageElement>
   loadHairTintedImage: (source: string, overrides: HairColorOverrides | undefined) => Promise<HTMLImageElement>
   loadSkinTintedImage: (source: string, tone: string) => Promise<HTMLImageElement>
+  loadModelBodyTintedImage: (source: string, skinTone?: string, outlineColor?: string) => Promise<HTMLImageElement>
 }
 
 export function createCharacterLayerRenderer(loaders: CharacterLayerImageLoaders) {
-  const { loadCachedImage, loadHairTintedImage, loadSkinTintedImage } = loaders
+  const { loadCachedImage, loadHairTintedImage, loadSkinTintedImage, loadModelBodyTintedImage } = loaders
 
   const customizerHairParts = hairCategories
 
@@ -59,7 +61,7 @@ export function createCharacterLayerRenderer(loaders: CharacterLayerImageLoaders
   }
 
 
-  async function renderArtwork(artwork: CatalogArtwork, maxSize: number, skinTone?: string, trimTransparent = false): Promise<string | null> {
+  async function renderArtwork(artwork: CatalogArtwork, maxSize: number, skinTone?: string, trimTransparent = false, outlineColor?: string): Promise<string | null> {
     if (artwork.width <= 0 || artwork.height <= 0) return null
     const scale = Math.min(maxSize / artwork.width, maxSize / artwork.height)
     const canvas = createCharacterCanvas()
@@ -78,7 +80,9 @@ export function createCharacterLayerRenderer(loaders: CharacterLayerImageLoaders
 
     for (const { part } of parts) {
       try {
-        const image = skinTone ? await loadSkinTintedImage(part.dataUrl, skinTone) : await loadCachedImage(part.dataUrl)
+        const image = isModelBodyPartName(part.name) && (skinTone || outlineColor)
+          ? await loadModelBodyTintedImage(part.dataUrl, skinTone, outlineColor)
+          : skinTone ? await loadSkinTintedImage(part.dataUrl, skinTone) : await loadCachedImage(part.dataUrl)
         context.save()
         try {
           context.translate((part.x + part.width / 2) * scale, (part.y + part.height / 2) * scale)
@@ -118,13 +122,14 @@ export function createCharacterLayerRenderer(loaders: CharacterLayerImageLoaders
   }
 
   async function renderArtworkWithHair(artwork: CatalogArtwork, source: FabricatorProject, backStyles: HairStyle | HairLayerReference[] | null, maxSize: number, skinTone?: string, hairAppearance?: CustomizerCharacter['customization']['hairAppearance'], targetContext?: CanvasRenderingContext2D, headOverrides: CustomizerCharacter['customization']['partOverrides'] = {}, highlightedHeadId?: string | null): Promise<string | null> {
+    const outlineColor = source.modelOutlineColor
     const hairLayers: HairLayerReference[] = Array.isArray(backStyles) ? backStyles : backStyles ? [{ style: backStyles, side: 'back', part: 'backHair' }] : []
     const validHairLayers = hairLayers.filter((layer) => layer.side === 'back' && layer.style.modelSlot === source.slot && Boolean(layer.style.back))
-    if (!validHairLayers.length && !targetContext) return renderArtwork(artwork, maxSize, skinTone)
+    if (!validHairLayers.length && !targetContext) return renderArtwork(artwork, maxSize, skinTone, false, outlineColor)
     const sourceHead = source.parts.find((part) => /cabe[çc]a|head/i.test(part.name))
     const targetHead = artwork.parts.find((part) => /cabe[çc]a|head/i.test(part.name))
     if (!sourceHead || !targetHead || !sourceHead.width || !sourceHead.height) {
-      const fallback = await renderArtwork(artwork, maxSize, skinTone)
+      const fallback = await renderArtwork(artwork, maxSize, skinTone, false, outlineColor)
       if (targetContext && fallback) targetContext.drawImage(await loadCachedImage(fallback), 0, 0, targetContext.canvas.width, targetContext.canvas.height)
       return targetContext ? null : fallback
     }
@@ -172,7 +177,9 @@ export function createCharacterLayerRenderer(loaders: CharacterLayerImageLoaders
       if (!part) continue
       if (!hidden.has(part.id)) {
         try {
-          const image = skinTone ? await loadSkinTintedImage(part.dataUrl, skinTone) : await loadCachedImage(part.dataUrl)
+          const image = isModelBodyPartName(part.name) && (skinTone || outlineColor)
+            ? await loadModelBodyTintedImage(part.dataUrl, skinTone, outlineColor)
+            : skinTone ? await loadSkinTintedImage(part.dataUrl, skinTone) : await loadCachedImage(part.dataUrl)
           context.save()
           context.translate((part.x + part.width / 2) * scale, (part.y + part.height / 2) * scale)
           context.rotate(part.rotation * Math.PI / 180)

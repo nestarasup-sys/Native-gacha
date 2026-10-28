@@ -3,9 +3,9 @@
 ## Fonte de verdade
 
 - **Fabricador DEV** produz e armazena modelos, poses, roupas, cabelos e peças faciais. Catálogos não são alterados por operações de personalização.
-- Cada `project.json` pode guardar `modelSkinTone` como cor padrão daquele slot. Para pele removida, o preview preenche interiores transparentes fechados por contornos com a base fixa Porcelana (`#f5ddcb`) e aplica esse tom sem regravar os PNGs de contorno.
+- Cada `project.json` pode guardar `modelSkinTone` e `modelOutlineColor` como cores padrão daquele slot. Para pele removida, o preview preenche interiores transparentes fechados com a base Porcelana (`#f5ddcb`) e aplica as cores a todas as peças anatômicas sem regravar os PNGs originais.
 - **Customizador** guarda somente as referências de catálogo e ajustes específicos de cada personagem: pose, roupa, cabelo, cores, corpo, rosto e transformações.
-- O Customizador usa `modelSkinTone` do modelo como padrão quando o personagem não tem uma substituição em `customization.modelSkinTone`; a escolha do personagem continua sendo propriedade do Customizador.
+- O Customizador usa as cores padrão do modelo quando o personagem não tem substituições em `customization.modelSkinTone` e `customization.modelOutlineColor`; as escolhas do personagem continuam sendo propriedade do Customizador.
 - **Studio** consome o personagem persistido e o renderer compartilhado em `src/renderer/src/characters/characterRenderer.ts`. Não pode importar a tela `CustomizerPage.tsx`.
 - **Video Studio** está congelado. Caminhos de importação legados são mantidos como fachadas; não reescrever o renderer de vídeo durante esta refatoração.
 

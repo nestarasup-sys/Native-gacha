@@ -16,6 +16,7 @@ type Props = {
   onPublish: (result: ModelSourceResult) => Promise<void>
 }
 type PreviewMode = 'part' | 'sheet'
+type PreviewBackground = 'checker' | 'white' | 'dark' | 'green' | 'magenta'
 type EditTool = 'select' | 'erase' | 'crop' | 'split' | 'outline' | 'deform' | 'guide'
 type DrawingGesture = { tool: 'erase' | 'crop' | 'split' | 'outline'; start: ModelSourcePoint; current: ModelSourcePoint; points: ModelSourcePoint[] }
 type WarpDrag = { pointerId: number; partId: string; last: ImageWarpPoint; originalX: Float32Array; originalY: Float32Array; changed: boolean }
@@ -30,6 +31,12 @@ const checker: CSSProperties = {
   backgroundColor: '#d2d8e2',
   backgroundImage: 'conic-gradient(#fff 25%, transparent 0 50%, #fff 0 75%, transparent 0)',
   backgroundSize: '20px 20px'
+}
+const previewBackgroundColors: Record<Exclude<PreviewBackground, 'checker'>, string> = {
+  white: '#ffffff',
+  dark: '#18202b',
+  green: '#20a65a',
+  magenta: '#d946a6'
 }
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
 const toolButton = (active: boolean, disabled: boolean): CSSProperties => ({
@@ -76,6 +83,7 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
   const [downloading, setDownloading] = useState(false)
   const [downloadInfo, setDownloadInfo] = useState('')
   const [mode, setMode] = useState<PreviewMode>('part')
+  const [previewBackground, setPreviewBackground] = useState<PreviewBackground>('checker')
   const [tool, setTool] = useState<EditTool>('select')
   const [zoom, setZoom] = useState(1)
   const [brushSize, setBrushSize] = useState(18)
@@ -116,6 +124,9 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
   const surfaceWidth = Math.max(1, logicalWidth * previewScale)
   const surfaceHeight = Math.max(1, logicalHeight * previewScale)
   const previewPart = previewParts.find(part => part.id === selectedId) ?? selected
+  const previewBackgroundStyle = previewBackground === 'checker'
+    ? checker
+    : { backgroundColor: previewBackgroundColors[previewBackground] }
   const visibleGuideLines = guides.partId === selectedId ? guides.lines : []
   warpSessionRef.current = warpSession
 
@@ -736,6 +747,15 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
               <button type="button" style={toolButton(mode === 'part', busy || downloading)} disabled={busy || downloading} onClick={() => { setMode('part'); cancelDrawing() }}>Peça selecionada</button>
               <button type="button" style={toolButton(mode === 'sheet', busy || downloading)} disabled={busy || downloading} onClick={() => { setSamplingSkinColor(false); setMode('sheet'); setTool('select'); cancelDrawing() }}>Folha completa</button>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: '#a9b5c4' }}>Fundo
+                <select aria-label="Fundo da prévia" value={previewBackground} disabled={busy || downloading} onChange={event => setPreviewBackground(event.target.value as PreviewBackground)} style={{ ...field, width: 'auto', padding: '7px 8px' }}>
+                  <option value="checker">Xadrez / transparência</option>
+                  <option value="white">Branco</option>
+                  <option value="dark">Escuro</option>
+                  <option value="green">Verde</option>
+                  <option value="magenta">Magenta</option>
+                </select>
+              </label>
               <button type="button" title="Escolha uma cor da pele original e remova esse tom das peças anatômicas" style={toolButton(skinRemovalOpen, busy || downloading || draft.parts.length === 0)} disabled={busy || downloading || draft.parts.length === 0} onClick={() => {
                 const open = !skinRemovalOpen
                 setSkinRemovalOpen(open)
@@ -827,7 +847,7 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
                   onPointerUp={tool === 'guide' ? finishGuide : tool === 'deform' ? event => { void finishWarp(event) } : finishDrawing}
                   onPointerCancel={tool === 'guide' ? cancelGuide : tool === 'deform' ? event => { void finishWarp(event) } : cancelDrawing}
                   onPointerLeave={() => { if (!warpDrag.current) setWarpCursor(null) }}
-                  style={{ position: 'relative', flex: '0 0 auto', width: surfaceWidth, height: surfaceHeight, ...checker, cursor: samplingSkinColor ? 'copy' : mode === 'part' && tool !== 'select' ? 'crosshair' : 'default', touchAction: 'none', userSelect: 'none', overflow: 'hidden' }}
+                  style={{ position: 'relative', flex: '0 0 auto', width: surfaceWidth, height: surfaceHeight, ...previewBackgroundStyle, cursor: samplingSkinColor ? 'copy' : mode === 'part' && tool !== 'select' ? 'crosshair' : 'default', touchAction: 'none', userSelect: 'none', overflow: 'hidden' }}
                 >
                   {mode === 'sheet'
                     ? preview && <img src={preview} alt="Prévia da imagem original editada" draggable={false} style={{ width: '100%', height: '100%', objectFit: 'fill', display: 'block', pointerEvents: 'none' }} />

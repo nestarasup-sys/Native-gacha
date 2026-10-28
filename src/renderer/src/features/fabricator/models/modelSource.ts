@@ -10,6 +10,7 @@ export type ModelSourceResult = {
   parts: ModelPart[]
   tolerance: number
   modelSkinTone?: FabricatorProject['modelSkinTone']
+  modelOutlineColor?: FabricatorProject['modelOutlineColor']
   joints: FabricatorProject['joints']
   layerOrder?: FabricatorProject['layerOrder']
   hiddenPartIds?: FabricatorProject['hiddenPartIds']
@@ -164,6 +165,7 @@ export async function composeModelSource(
     parts: adjusted,
     tolerance,
     modelSkinTone: project.modelSkinTone,
+    modelOutlineColor: project.modelOutlineColor,
     joints: project.joints,
     layerOrder: project.layerOrder,
     hiddenPartIds: project.hiddenPartIds

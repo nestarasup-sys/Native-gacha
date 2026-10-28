@@ -27,6 +27,7 @@ export function createFabricatorModelWriter(deps: FabricatorModelWriterDependenc
   return async function writeFabricatorProject(project: FabricatorProjectSave, changedAssets: FabricatorAssetSave[], folderOverride?: string): Promise<void> {
   if (!isValidSlot(project.slot) || project.schemaVersion !== 1 || project.parts.length > 500) throw new Error('Projeto inválido.')
   if (project.modelSkinTone !== undefined && !/^#[0-9a-f]{6}$/i.test(project.modelSkinTone)) throw new Error('Cor de pele do modelo inválida.')
+  if (project.modelOutlineColor !== undefined && !/^#[0-9a-f]{6}$/i.test(project.modelOutlineColor)) throw new Error('Cor do contorno do modelo inválida.')
   const folder = folderOverride ?? slotPath(project.slot)
   const partsFolder = join(folder, 'parts')
   await mkdir(partsFolder, { recursive: true })
@@ -69,6 +70,7 @@ export function createFabricatorModelWriter(deps: FabricatorModelWriterDependenc
     tolerance: project.tolerance,
     chromaBaseTolerance: project.chromaBaseTolerance,
     modelSkinTone: project.modelSkinTone,
+    modelOutlineColor: project.modelOutlineColor,
     joints: project.joints,
     layerOrder: project.layerOrder,
     hiddenPartIds: project.hiddenPartIds,
