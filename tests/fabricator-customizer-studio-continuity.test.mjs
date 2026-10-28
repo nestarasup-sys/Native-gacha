@@ -73,15 +73,17 @@ test('auditoria mostra anexos órfãos sem apagar roupas ou snapshot antigo',()=
  assert.deepEqual(p,original)
 })
 test('Customizador e Studio usam a barreira de continuidade compartilhada',async()=>{
- const [artworkSource,studio,page,selection]=await Promise.all([
+ const [artworkSource,studio,page,initialPreview,selection]=await Promise.all([
   readFile('src/renderer/src/features/customizer/customizerArtworkSource.ts','utf8'),
   readFile('src/renderer/src/features/studio/StudioPage.tsx','utf8'),
   readFile('src/renderer/src/features/customizer/CustomizerPage.tsx','utf8'),
+  readFile('src/renderer/src/features/customizer/useCustomizerInitialArtworkPreview.ts','utf8'),
   readFile('src/renderer/src/features/customizer/useCustomizerCharacterSourceSelection.ts','utf8')
  ])
  assert.match(artworkSource,/selectCharacterArtwork\(sourceProject, pose, poseSlot\)/)
  assert.match(studio,/isPoseSnapshotForModel\(artwork, pose.sourceModelSlot, pose.slot\)/)
- assert.match(page,/prepareCustomizerArtworkPreview\(/)
+ assert.match(page,/useCustomizerInitialArtworkPreview\(/)
+ assert.match(initialPreview,/prepareCustomizerArtworkPreview\(/)
  assert.match(selection,/prepareCustomizerArtworkPreview\(/)
 })
 test('hidratação de roupas tem dono próprio e protege alterações feitas durante a leitura',async()=>{
@@ -93,6 +95,18 @@ test('hidratação de roupas tem dono próprio e protege alterações feitas dur
  assert.match(hydration,/loadWardrobeSet\(group\.modelSlot, group\.setId\)/)
  assert.match(hydration,/window\.confirm\(/,'links só são removidos depois de confirmação explícita')
  assert.match(hydration,/JSON\.stringify\(current\.customization\.wardrobeGroups\) === JSON\.stringify\(groupsToRestore\)/,'migração não sobrescreve roupas editadas durante o carregamento')
+})
+test('preview inicial restaura modelo/pose e cede a requisição para seleção manual mais recente',async()=>{
+ const [page,initialPreview,manualSelection]=await Promise.all([
+  readFile('src/renderer/src/features/customizer/CustomizerPage.tsx','utf8'),
+  readFile('src/renderer/src/features/customizer/useCustomizerInitialArtworkPreview.ts','utf8'),
+  readFile('src/renderer/src/features/customizer/useCustomizerCharacterSourceSelection.ts','utf8')
+ ])
+ assert.match(page,/useCustomizerInitialArtworkPreview\(/)
+ assert.match(initialPreview,/item\?\.sourceModelSlot === model\.slot && item\.slot === requestedPose/)
+ assert.match(initialPreview,/onSourceResolved:/,'a fonte chega aos previews conectados antes da renderização terminar')
+ assert.match(initialPreview,/previewLoadRequest\.current === requestId/)
+ assert.match(manualSelection,/const requestId = \+\+previewLoadRequest\.current/)
 })
 test('preview unificado preserva identidade do modelo/pose, cores da personagem e cache do modelo',async()=>{
  const loadedSource={status:'ready',sourceProject:{slot:5,modelSkinTone:'#dba47d',modelOutlineColor:'#352522'},artwork:{width:200,height:300}}

@@ -15,8 +15,7 @@ import { HairAssetPreview, WardrobePanelCandidatePreview } from './CustomizerAss
 import { customizerFaceParts, customizerFaceCatalogLayoutParts, customizerSkinTonePresets, facePartCatalogId, facePartColorControls, facePartSourceId, hasSelectedFaceAsset, sameFaceAssetPair, skinTonePresets, wrapSlotIndex, createCustomizerFaceCatalogModel } from './customizerFaceCatalogModel'
 import type { FaceCatalogChoice, FaceCatalogLayoutPart, FaceLibraryPartId } from './customizerFaceCatalogModel'
 import { hairColorControls, hairPalettePresets, MouthBlushControls, NoseOpacityControl, NoseSkinTonePalette, PiecePaletteStrip } from './CustomizerAppearanceControls'
-import { renderCustomizerBasePreview } from './customizerCharacterPreview'
-import { prepareCustomizerArtworkPreview } from './customizerArtworkPreview'
+import { useCustomizerInitialArtworkPreview } from './useCustomizerInitialArtworkPreview'
 import { useCustomizerFacePreview } from './useCustomizerFacePreview'
 import { useCustomizerHairPreview } from './useCustomizerHairPreview'
 import { useCustomizerWardrobePreview } from './useCustomizerWardrobePreview'
@@ -30,7 +29,6 @@ import { useCustomizerHeadNavigation } from './useCustomizerHeadNavigation'
 import { useCustomizerWardrobeNavigation } from './useCustomizerWardrobeNavigation'
 import { useCustomizerPreviewViewport } from './useCustomizerPreviewViewport'
 import { sampleOriginalSkinTone } from './customizerPreviewImages'
-import { loadCustomizerArtworkSource } from './customizerArtworkSource'
 import { CustomizerCategoryIcon, clothesAdjustmentDefinitions, customizerClothesTabs, customizerHeadTabs, customizerModuleByTab, customizerModuleNames, customizerOtherTabs, customizerTopTabs, headAdjustmentItemsFor } from './customizerNavigation'
 import { hairAppearancePartStyleId } from './customizerHairAppearanceModel'
 import { hairStyleSupportsCategory } from '../../../../shared/hairCategories'
@@ -250,86 +248,14 @@ export function CustomizerPage() {
     }
   }, [])
 
-  useEffect(() => {
-    if (catalogLoading) return
-    if (!selectedCharacter) {
-      setSelectedCatalogModelSlot(null)
-      setSelectedCatalogPoseSlot(null)
-      setSelectedPoseCategory('Parado')
-      setSelectedPosePage(0)
-      setSelectedArtworkUrl(null)
-      setSelectedArtworkLabel('')
-      setSelectedArtworkProject(null)
-      setSelectedSourceModelProject(null)
-      setSelectedWardrobeUrl(null)
-      setSelectedWardrobeAboveHairUrl(null)
-      setPreviewLoading(false)
-      return
-    }
-    const model = catalogModels.find((item) => item?.slot === selectedCharacter.customization.modelSlot)
-      ?? catalogModels.find((item) => item?.slot === 1)
-      ?? catalogModels.find((item) => item !== null)
-    if (!model) {
-      setSelectedCatalogModelSlot(null)
-      setSelectedCatalogPoseSlot(null)
-      setSelectedPoseCategory('Parado')
-      setSelectedPosePage(0)
-      setSelectedArtworkUrl(null)
-      setSelectedArtworkLabel('')
-      setSelectedArtworkProject(null)
-      setSelectedSourceModelProject(null)
-      setSelectedWardrobeUrl(null)
-      setSelectedWardrobeAboveHairUrl(null)
-      setPreviewLoading(false)
-      return
-    }
-    const requestedPose = selectedCharacter.customization.poseSlot
-    const pose = requestedPose === null ? null : catalogPoses.find((item) => item?.sourceModelSlot === model.slot && item.slot === requestedPose)
-    const requestId = ++previewLoadRequest.current
-    let cancelled = false
-    setSelectedCatalogModelSlot(model.slot)
-    setSelectedPosePage(0)
-    setSelectedCatalogPoseSlot(pose?.slot ?? null)
-    setSelectedPoseCategory(pose ? resolvePoseCategory(pose) : 'Parado')
-    setSelectedArtworkLabel(pose?.name ?? model.name)
-    setSelectedArtworkUrl(null)
-    setPreviewLoading(true)
-    void (async () => {
-      try {
-        const source = await prepareCustomizerArtworkPreview({
-          modelSlot: model.slot,
-          poseSlot: pose?.slot ?? null,
-          appearance: selectedCharacter.customization,
-          proportions: activeProportions,
-          bodyDimensions: activeBodyDimensions,
-          extent: previewExtent,
-          zoom: customizerPreviewZoom,
-          onSourceResolved: ({ sourceProject, artwork }) => {
-            if (!cancelled && previewLoadRequest.current === requestId) {
-              setSelectedArtworkProject(artwork)
-              setSelectedSourceModelProject(sourceProject)
-            }
-          }
-        }, {
-          loadSource: (slot, selectedPose, cachedModel) => loadCustomizerArtworkSource(slot, selectedPose, {
-            loadModel: window.desktop.loadFabricatorSlot,
-            loadPose: window.desktop.loadFabricatorPose
-          }, cachedModel),
-          sampleOriginalSkinTone,
-          renderBasePreview: renderCustomizerBasePreview
-        })
-        if (source.status === 'missing-model') throw new Error('O modelo de referência não está disponível no Fabricador Dev.')
-        if (source.status === 'invalid-pose') throw new Error('Não foi possível carregar a prévia deste personagem.')
-        const { previewUrl } = source
-        if (!cancelled && previewLoadRequest.current === requestId) setSelectedArtworkUrl(previewUrl)
-      } catch (reason) {
-        if (!cancelled && previewLoadRequest.current === requestId) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível carregar a prévia.')
-      } finally {
-        if (!cancelled && previewLoadRequest.current === requestId) setPreviewLoading(false)
-      }
-    })()
-    return () => { cancelled = true }
-  }, [catalogLoading, catalogModels, catalogPoses, selectedCharacter?.id, selectedCharacter?.customization.modelSkinTone, selectedCharacter?.customization.modelOutlineColor, previewExtent, customizerPreviewZoom])
+  useCustomizerInitialArtworkPreview({
+    catalogLoading, catalogModels, catalogPoses, selectedCharacter,
+    activeProportions, activeBodyDimensions, previewExtent, zoom: customizerPreviewZoom,
+    previewLoadRequest, setSelectedCatalogModelSlot, setSelectedCatalogPoseSlot,
+    setSelectedPoseCategory, setSelectedPosePage, setSelectedArtworkLabel,
+    setSelectedArtworkUrl, setSelectedArtworkProject, setSelectedSourceModelProject,
+    setSelectedWardrobeUrl, setSelectedWardrobeAboveHairUrl, setPreviewLoading, setCatalogError
+  })
 
   useEffect(() => {
     setSelectedClothing(null)
