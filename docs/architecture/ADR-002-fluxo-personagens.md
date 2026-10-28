@@ -48,25 +48,24 @@ Video Studio: fora do escopo desta etapa.
 - `electron/domains/fabricator/modelCatalog.ts` e `modelIpc.ts`: leitura isolada de modelos e dois canais públicos existentes.
 - `src/shared/modelRig.ts` e `wardrobePose.ts`: regras de geometria/roupa comuns a Fabricador e Customizador; reexports legados mantidos temporariamente.
 - `src/renderer/src/ui/hooks/usePreviewBackground.ts` e `ui/image/eyeInteriorMask.ts`: utilidades de interface fora da tela do Fabricador, sem alterar seus algoritmos.
+- `src/renderer/src/ui/components/DesignBanner.tsx`: componente compartilhado por Fabricador e Customizador; não depende de uma página do Fabricador.
+- `src/renderer/src/characters/characterRenderer.ts`: renderizador compartilhado consumido por Customizador, Studio e previews; Studio o carrega dinamicamente nos fluxos que precisam renderizar personagens.
 - `electron/domains/fabricator/wardrobeReferences.ts`: exclusão de conjunto e remoção de peças agora verificam os personagens que as referenciam; as operações são serializadas com gravações do Customizador para evitar corrida. Novas roupas também são validadas antes de salvar o personagem.
 - Referências órfãs de versões anteriores são preservadas, não apagadas automaticamente. O Customizador mostra um aviso local com ação explícita para desvinculá-las; não transforma a condição em erro global repetitivo. A origem precisa ser restaurada para voltar a renderizar a peça.
 
-## Fronteiras a adotar daqui em diante
+## Fronteiras atuais
 
 ```text
-features/fabricator ─┐
-                     ├──> src/shared/{fabricator, modelRig, wardrobePose, assetFlow}
-features/customizer ─┘
-features/studio ──────> contratos compartilhados + serviço de composição (futuro)
-        │
-        └──> NÃO importar CustomizerPage para reaproveitar renderizador (dívida legada existente)
+features/fabricator ──> src/shared + capacidades compartilhadas de ui/characters
+features/customizer ──> src/shared + ui/components + characters/characterRenderer
+features/studio ──────> contratos compartilhados + characters/characterRenderer
 ```
 
-O componente `DesignBanner`, importado do Fabricador pelo Customizador, ainda é uma exceção conhecida. O Studio também possui seis imports dinâmicos da página `CustomizerPage.tsx`. **Não foram modificados agora** por exigirem extração cuidadosa do motor de renderização com fixtures visuais reais.
+O Customizador e o Studio não importam páginas do Fabricador ou do Customizador para reutilizar lógica. `DesignBanner` pertence a `ui/components`, e o renderer de personagens pertence a `characters`. A varredura AST de 2026-10-28 encontrou zero imports runtime entre diretórios `features/*` e zero imports relativos não resolvidos. Imports dinâmicos do Studio apontam diretamente para `characters/characterRenderer.ts`.
 
 ## Proteção contra regressões
 
-- A baseline de imports runtime Customizador → Fabricador foi reduzida de **5 para 1**; a auditoria deve reprovar aumento futuro.
+- A baseline AST de imports runtime entre funcionalidades está em **zero**; `scripts/architecture/check-boundaries.cjs` reprova novas ligações entre features.
 - Testes de Customizador exercitam migração em memória, seed original, CRUD, concorrência, recuperação de backup, rollback em falha e autenticação IPC.
 - Testes do catálogo do Fabricador exercitam slots, reidratação de assets, caminhos inseguros e autenticação IPC.
 - `scripts/audit-wardrobe-flow.mjs` cobre encaixes de roupas, vínculo de ossos e ajustes isolados por personagem.
@@ -75,7 +74,5 @@ O componente `DesignBanner`, importado do Fabricador pelo Customizador, ainda é
 ## Próximas extrações recomendadas
 
 1. Separar persistência de **roupas e rostos do Fabricador**, mantendo o formato e o backup existentes; testar referências usadas por Customizador.
-2. Extrair **serviço de renderização de personagens** fora de `CustomizerPage.tsx`; usar oráculo visual para garantir resultados idênticos em Customizador e Studio. Não mexer no Video Studio nesta etapa.
-3. Reduzir a exceção de `DesignBanner` e o import Fabricador → Customizador (geometria de corpo).
-4. Modularizar **persistência do Studio Principal**, independente dos handlers compartilhados do Video Studio.
-5. Rodar compilação, typecheck e testes de interface em uma cópia sintética do perfil no Windows antes de substituir a instalação atual.
+2. Validar paridade visual do `characterRenderer` compartilhado entre Customizador e Studio com fixtures reproduzíveis antes de alterar sua composição.
+3. Modularizar **persistência do Studio Principal**, independente dos handlers compartilhados do Video Studio.
