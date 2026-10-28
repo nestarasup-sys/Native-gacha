@@ -103,9 +103,17 @@ for (const noseOpacity of [0, .15, .5, 1, undefined]) {
   const withMouth = await expressionAppearance({ ...nosePreset, selections: { ...nosePreset.selections, mouth: mouthPreset.selections.mouth } }, personalized, async () => ({ pieces: [{ sheet: 'mouth-open', index: 12 }] }))
   assert.deepEqual(withMouth, { ...before, mouthOpen: true, expressionIndex: 12 }, 'Only the available mouth variant may change; colors and opacity remain personalized')
 }
+const toModuleUrl = (source) => `data:text/javascript;base64,${Buffer.from(source).toString('base64')}`
+const transpileSharedModule = async (path) => ts.transpileModule(await readFile(new URL(path, import.meta.url), 'utf8'), {
+  compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext }
+}).outputText
+const faceMouthModuleUrl = toModuleUrl(await transpileSharedModule('../src/shared/faceMouthSelection.ts'))
+const sceneFaceValidationModuleUrl = toModuleUrl(await transpileSharedModule('../src/shared/sceneFaceValidation.ts'))
 const sharedSource = await readFile(new URL('../src/shared/studio.ts', import.meta.url), 'utf8')
 const sharedCompiled = ts.transpileModule(sharedSource, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText
-const { isStudioFaceTransforms } = await import(`data:text/javascript;base64,${Buffer.from(sharedCompiled).toString('base64')}`)
+  .replace("from './faceMouthSelection'", `from '${faceMouthModuleUrl}'`)
+  .replace("from './sceneFaceValidation'", `from '${sceneFaceValidationModuleUrl}'`)
+const { isStudioFaceTransforms } = await import(toModuleUrl(sharedCompiled))
 assert.ok(isStudioFaceTransforms(JSON.parse(JSON.stringify(first))), 'Applied expressions must survive the Studio save/load boundary')
 assert.equal(isStudioFaceTransforms({ ...first, invalid: first.eyes }), false)
 assert.equal(isStudioFaceTransforms({ 'expression-component:eye-left': { ...first.eyes, sourceTransformOverride: { ...base, scaleX: -1 } } }), false)
