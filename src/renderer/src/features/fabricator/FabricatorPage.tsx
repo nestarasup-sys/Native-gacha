@@ -17,10 +17,9 @@ import { FaceAnimatorWorkspace } from './FaceAnimatorWorkspace'
 import { ModelSourceEditor } from './ModelSourceEditor'
 import { broadcastModelSourceUpdate } from './models/modelSourceEvents'
 import { splitImage, mergeImages } from './models/partImages'
-import { pngDataUrlFromBuffer } from './models/imageData'
 import type { ImageProcessorMessage, ImageProcessorRequest } from './models/imageProcessorProtocol'
-import type { ChromaAdjustMessage, ChromaAdjustRequest } from './models/chromaAdjustProtocol'
 import { createImportedModelProject } from './models/processedModelProject'
+import { startChromaAdjustWorker, ChromaAdjustTaskError, type ChromaAdjustTask } from './models/runChromaAdjustWorker'
 import { paintSeamMixerSegment as applySeamMixerSegment, type SeamMixerSurface } from './models/seamMixer'
 import { serializeFabricatorProject } from './models/projectSerialization'
 import { persistFabricatorProjectSnapshot } from './projectPersistence'
@@ -105,13 +104,18 @@ export function FabricatorPage() {
   const mixerSessionRef = useRef(0)
   const layerDragRef = useRef<string | null>(null)
   const workerRef = useRef<Worker | null>(null)
-  const chromaWorkerRef = useRef<Worker | null>(null)
+  const chromaTaskRef = useRef<ChromaAdjustTask | null>(null)
   const requestId = useRef(0)
   const slotSelectionGeneration = useRef(0)
   const dirtyAssets = useRef<Map<string, string>>(new Map())
   const dirtyChromaBases = useRef<Map<string, string>>(new Map())
   const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const initialSlotLoad = useRef(false)
+  const cancelChromaTask = useCallback(() => {
+    const task = chromaTaskRef.current
+    chromaTaskRef.current = null
+    task?.cancel()
+  }, [])
   const {
     history, historyBusy, clearHistory, replaceHistory,
     recordHistorySnapshot, startHistoryGesture, finishHistoryGesture,
@@ -153,10 +157,12 @@ export function FabricatorPage() {
       .then((items) => { setSlots(items); setSlotsLoaded(true) })
       .catch((reason: unknown) => { setSlotsLoaded(true); setError(reason instanceof Error ? reason.message : 'Não foi possível abrir a biblioteca.') })
     return () => {
-      workerRef.current?.terminate(); chromaWorkerRef.current?.terminate()
+      requestId.current += 1
+      workerRef.current?.terminate()
+      cancelChromaTask()
       if (savedTimer.current) clearTimeout(savedTimer.current)
     }
-  }, [])
+  }, [cancelChromaTask])
 
   useEffect(() => { projectRef.current = project }, [project])
 
@@ -341,7 +347,7 @@ export function FabricatorPage() {
     setSlotSwitching(true)
     requestId.current += 1
     workerRef.current?.terminate(); workerRef.current = null
-    chromaWorkerRef.current?.terminate(); chromaWorkerRef.current = null
+    cancelChromaTask()
     setProcessing(false); setProgress(0); setChromaApplying(false)
     const projectToSave = projectRef.current ?? project
     if (projectToSave) {
@@ -411,14 +417,13 @@ export function FabricatorPage() {
       requestId.current += 1
       if (savedTimer.current) clearTimeout(savedTimer.current)
       workerRef.current?.terminate(); workerRef.current = null
-      chromaWorkerRef.current?.terminate(); chromaWorkerRef.current = null; setChromaApplying(false)
+      cancelChromaTask(); setChromaApplying(false)
       setProcessing(false); setProgress(0)
     }
     try {
       await window.desktop.deleteFabricatorSlot(slot)
       setSlots((current) => current.map((item, index) => index === slot - 1 ? null : item))
       if (activeSlot === slot) {
-        workerRef.current?.terminate(); workerRef.current = null
         projectRef.current = null
         setProcessing(false); setProgress(0); setProject(null); setSelectedIds([]); dirtyAssets.current.clear(); dirtyChromaBases.current.clear(); setError('')
       }
@@ -552,18 +557,22 @@ export function FabricatorPage() {
 
   const applyChromaKey = () => {
     if (!project || chromaApplying || processing || historyBusy || chromaValue === project.tolerance) return
-    chromaWorkerRef.current?.terminate()
-    const worker = new Worker(new URL('./models/chromaAdjust.worker.ts', import.meta.url), { type: 'module' })
-    chromaWorkerRef.current = worker
     const id = ++requestId.current
+    cancelChromaTask()
     const slot = project.slot
     const tolerance = chromaValue
+    const task = startChromaAdjustWorker({
+      id,
+      sourceDataUrl: project.sourceDataUrl,
+      tolerance,
+      parts: project.parts.map(({ id: partId, dataUrl, chromaBaseDataUrl }) => ({ id: partId, dataUrl: chromaBaseDataUrl ?? dataUrl }))
+    })
+    chromaTaskRef.current = task
     setChromaApplying(true); setError('')
-    worker.onmessage = (event: MessageEvent<ChromaAdjustMessage>) => {
-      if (event.data.id !== id || id !== requestId.current) return
-      worker.terminate(); chromaWorkerRef.current = null; setChromaApplying(false)
-      if (event.data.type === 'error') { setError(`Chroma key: ${event.data.message}`); return }
-      const updatedAssets = new Map(event.data.parts.map(({ id: partId, png }) => [partId, pngDataUrlFromBuffer(png)]))
+    void task.result.then((updatedAssets) => {
+      if (id !== requestId.current) return
+      if (chromaTaskRef.current === task) chromaTaskRef.current = null
+      setChromaApplying(false)
       for (const [partId, dataUrl] of updatedAssets) dirtyAssets.current.set(partId, dataUrl)
       mixerSurfacesRef.current.clear()
       updateProject((current) => current.slot !== slot ? current : {
@@ -571,18 +580,17 @@ export function FabricatorPage() {
         tolerance,
         parts: current.parts.map((part) => updatedAssets.has(part.id) ? { ...part, dataUrl: updatedAssets.get(part.id)! } : part)
       })
-    }
-    worker.onerror = () => {
+    }).catch((reason: unknown) => {
       if (id !== requestId.current) return
-      worker.terminate(); chromaWorkerRef.current = null; setChromaApplying(false)
+      if (chromaTaskRef.current === task) chromaTaskRef.current = null
+      setChromaApplying(false)
+      if (reason instanceof ChromaAdjustTaskError && reason.kind === 'cancelled') return
+      if (reason instanceof ChromaAdjustTaskError && reason.kind === 'worker') {
+        setError(`Chroma key: ${reason.message}`)
+        return
+      }
       setError('O ajuste do chroma key falhou. Suas posições e conexões foram preservadas.')
-    }
-    worker.postMessage({
-      id,
-      sourceDataUrl: project.sourceDataUrl,
-      tolerance,
-      parts: project.parts.map(({ id: partId, dataUrl, chromaBaseDataUrl }) => ({ id: partId, dataUrl: chromaBaseDataUrl ?? dataUrl }))
-    } satisfies ChromaAdjustRequest)
+    })
   }
 
   const resetModel = async () => {
@@ -599,7 +607,7 @@ export function FabricatorPage() {
       setProject((current) => current ? { ...current, updatedAt: new Date().toISOString() } : current)
       return
     }
-    chromaWorkerRef.current?.terminate(); chromaWorkerRef.current = null; setChromaApplying(false)
+    cancelChromaTask(); setChromaApplying(false)
     setChromaValue(DEFAULT_CHROMA_TOLERANCE)
     dirtyAssets.current.clear(); dirtyChromaBases.current.clear()
     runProcessor(project.sourceDataUrl, DEFAULT_CHROMA_TOLERANCE, {
@@ -656,7 +664,7 @@ export function FabricatorPage() {
         broadcastModelSourceUpdate({ slot, sourceAssetName: selected.sourceAssetName })
         return
       }
-      chromaWorkerRef.current?.terminate(); chromaWorkerRef.current = null; setChromaApplying(false)
+      cancelChromaTask(); setChromaApplying(false)
       mixerSessionRef.current += 1
       projectRef.current = null
       setActiveSlot(slot); setProject(null); setSelectedIds([]); dirtyAssets.current.clear(); dirtyChromaBases.current.clear(); mixerSurfacesRef.current.clear(); mixerStrokeRef.current = null; setMixerActive(false); setMixerPainting(false)

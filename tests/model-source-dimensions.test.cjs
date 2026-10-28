@@ -15,6 +15,9 @@ new Function('exports','module','require',compiled)(mod.exports,mod,(specifier) 
     loadImageFromDataUrl: () => { throw new Error('O fixture só valida dimensões; imagem não deve ser carregada.') },
     pngDataUrlFromBuffer: () => { throw new Error('O fixture só valida dimensões; PNG não deve ser convertido.') }
   }
+  if (specifier === './runChromaAdjustWorker') return {
+    startChromaAdjustWorker: () => { throw new Error('O fixture só valida dimensões; worker não deve ser iniciado.') }
+  }
   throw new Error('Import inesperado no domínio: ' + specifier)
 })
 const {sourceRect,validateModelSourceDimensions,validateModelSourceChroma}=mod.exports

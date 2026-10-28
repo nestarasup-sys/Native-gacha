@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { createImportedModelProject } from '../src/renderer/src/features/fabricator/models/processedModelProject.ts'
+import { ChromaAdjustTaskError, startChromaAdjustWorker } from '../src/renderer/src/features/fabricator/models/runChromaAdjustWorker.ts'
 
 const imageBuffer = value => Uint8Array.of(value).buffer
 
@@ -49,16 +50,76 @@ test('monta o projeto importado com bases, ordem, juntas e assets pendentes pres
 })
 
 test('página e workers compartilham os contratos de mensagem definidos pelo domínio', async () => {
-  const [page, imageWorker, chromaWorker] = await Promise.all([
+  const [page, imageWorker, chromaWorker, modelSource, chromaRunner] = await Promise.all([
     readFile(new URL('../src/renderer/src/features/fabricator/FabricatorPage.tsx', import.meta.url), 'utf8'),
     readFile(new URL('../src/renderer/src/features/fabricator/models/imageProcessor.worker.ts', import.meta.url), 'utf8'),
-    readFile(new URL('../src/renderer/src/features/fabricator/models/chromaAdjust.worker.ts', import.meta.url), 'utf8')
+    readFile(new URL('../src/renderer/src/features/fabricator/models/chromaAdjust.worker.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../src/renderer/src/features/fabricator/models/modelSource.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../src/renderer/src/features/fabricator/models/runChromaAdjustWorker.ts', import.meta.url), 'utf8')
   ])
 
   assert.match(page, /MessageEvent<ImageProcessorMessage>/)
   assert.match(page, /satisfies ImageProcessorRequest/)
   assert.match(imageWorker, /MessageEvent<ImageProcessorRequest>/)
-  assert.match(page, /MessageEvent<ChromaAdjustMessage>/)
-  assert.match(page, /satisfies ChromaAdjustRequest/)
+  assert.match(page, /startChromaAdjustWorker/)
+  assert.match(modelSource, /startChromaAdjustWorker/)
+  assert.match(chromaRunner, /MessageEvent<ChromaAdjustMessage>/)
+  assert.match(chromaRunner, /satisfies ChromaAdjustRequest/)
   assert.match(chromaWorker, /MessageEvent<ChromaAdjustRequest>/)
+  assert.doesNotMatch(page, /new Worker\(new URL\('\.\/models\/chromaAdjust\.worker/)
+  assert.doesNotMatch(modelSource, /new Worker\(new URL\('\.\/chromaAdjust\.worker/)
 })
+
+test('worker compartilhado ignora respostas antigas, converte os PNGs e termina ao concluir', async () => {
+  const worker = createWorkerDouble()
+  const task = startChromaAdjustWorker({
+    id: 9,
+    sourceDataUrl: 'data:image/png;base64,SOURCE',
+    tolerance: 74,
+    parts: [{ id: 'head', dataUrl: 'data:image/png;base64,BASE' }]
+  }, () => worker)
+
+  assert.equal(worker.posted.id, 9)
+  worker.onmessage({ data: { type: 'complete', id: 8, parts: [] } })
+  assert.equal(worker.terminated, false)
+  worker.onmessage({ data: { type: 'complete', id: 9, parts: [{ id: 'head', png: imageBuffer(5) }] } })
+
+  assert.deepEqual(await task.result, new Map([['head', 'data:image/png;base64,BQ==']]))
+  assert.equal(worker.terminated, true)
+})
+
+test('worker compartilhado diferencia falha, erro do worker e cancelamento sem terminar duas vezes', async () => {
+  const failedWorker = createWorkerDouble()
+  const failedTask = startChromaAdjustWorker({ id: 1, sourceDataUrl: 'source', tolerance: 20, parts: [] }, () => failedWorker)
+  const failure = assert.rejects(failedTask.result, error => error instanceof ChromaAdjustTaskError && error.kind === 'worker' && error.message === 'falha de pixels')
+  failedWorker.onmessage({ data: { type: 'error', id: 1, message: 'falha de pixels' } })
+  await failure
+  assert.equal(failedWorker.terminated, true)
+
+  const runtimeWorker = createWorkerDouble()
+  const runtimeTask = startChromaAdjustWorker({ id: 3, sourceDataUrl: 'source', tolerance: 20, parts: [] }, () => runtimeWorker)
+  const runtimeFailure = assert.rejects(runtimeTask.result, error => error instanceof ChromaAdjustTaskError && error.kind === 'runtime' && error.message === 'Não foi possível aplicar o Chroma Key.')
+  runtimeWorker.onerror(new Event('error'))
+  await runtimeFailure
+  assert.equal(runtimeWorker.terminated, true)
+
+  const cancelledWorker = createWorkerDouble()
+  const cancelledTask = startChromaAdjustWorker({ id: 2, sourceDataUrl: 'source', tolerance: 20, parts: [] }, () => cancelledWorker)
+  const cancellation = assert.rejects(cancelledTask.result, error => error instanceof ChromaAdjustTaskError && error.kind === 'cancelled')
+  cancelledTask.cancel()
+  cancelledTask.cancel()
+  await cancellation
+  assert.equal(cancelledWorker.terminateCount, 1)
+})
+
+function createWorkerDouble() {
+  return {
+    onmessage: null,
+    onerror: null,
+    posted: null,
+    terminated: false,
+    terminateCount: 0,
+    postMessage(request) { this.posted = request },
+    terminate() { this.terminateCount += 1; this.terminated = true }
+  }
+}

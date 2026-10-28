@@ -1,7 +1,8 @@
 /** Model Source: folha-base oficial e recortes editados antes da montagem. */
 import type { FabricatorProject, ModelPart } from '../../../../../shared/fabricator'
 import { isHeadPart } from './resize'
-import { loadImageFromDataUrl, pngDataUrlFromBuffer } from './imageData'
+import { loadImageFromDataUrl } from './imageData'
+import { startChromaAdjustWorker } from './runChromaAdjustWorker'
 
 export type ModelSourceDimensions = Record<string, { width: number; height: number; x?: number; y?: number }>
 export type ModelSourceResult = {
@@ -72,24 +73,14 @@ function resizePng(image: HTMLImageElement, width: number, height: number): HTML
   context.drawImage(image, 0, 0, width, height)
   return canvas
 }
-type SourceChromaResponse =
-  | { type: 'complete'; id: number; parts: Array<{ id: string; png: ArrayBuffer }> }
-  | { type: 'error'; id: number; message: string }
 async function applyChroma(sourceDataUrl: string, tolerance: number, parts: ModelPart[]): Promise<Map<string, string>> {
-  const worker = new Worker(new URL('./chromaAdjust.worker.ts', import.meta.url), { type: 'module' })
-  return new Promise((resolve, reject) => {
-    worker.onmessage = (event: MessageEvent<SourceChromaResponse>) => {
-      if (event.data.id !== 1) return
-      worker.terminate()
-      if (event.data.type === 'error') reject(new Error(event.data.message))
-      else resolve(new Map(event.data.parts.map(part => [part.id, pngDataUrlFromBuffer(part.png)])))
-    }
-    worker.onerror = () => { worker.terminate(); reject(new Error('Não foi possível aplicar o Chroma Key.')) }
-    worker.postMessage({
-      id: 1, sourceDataUrl, tolerance,
-      parts: parts.map(part => ({ id: part.id, dataUrl: part.chromaBaseDataUrl ?? part.dataUrl }))
-    })
+  const task = startChromaAdjustWorker({
+    id: 1,
+    sourceDataUrl,
+    tolerance,
+    parts: parts.map(part => ({ id: part.id, dataUrl: part.chromaBaseDataUrl ?? part.dataUrl }))
   })
+  return task.result
 }
 
 /** Renderiza duas folhas: fonte original editada (para reprocessamento) e preview transparente exportável. */
