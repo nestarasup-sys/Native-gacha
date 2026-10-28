@@ -1,10 +1,10 @@
 /** Seleção de modelos/poses do Fabricador e atualização do preview do personagem. */
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react'
-import { selectCharacterArtwork } from '../../../../shared/characterSourceContinuity'
 import { resolvePoseCategory, type FabricatorPoseSummary, type FabricatorProject, type FabricatorSlotSummary } from '../../../../shared/fabricator'
 import type { CustomizerCharacter, CharacterBodyDimensions, CharacterProportions } from '../../../../shared/customizer'
 import type { CatalogArtwork } from '../../characters/characterRenderer'
 import { renderCustomizerBasePreview } from './customizerCharacterPreview'
+import { loadCustomizerArtworkSource } from './customizerArtworkSource'
 
 type PreviewExtent = { width: number; height: number; density: number }
 type Customization = CustomizerCharacter['customization']
@@ -53,11 +53,13 @@ export function useCustomizerCharacterSourceSelection(deps: {
       setSelectedCatalogPoseSlot(firstPose?.slot ?? null)
       setSelectedPoseCategory(firstPose ? resolvePoseCategory(firstPose) : 'Parado')
       await saveCharacterCustomization({ modelSlot: model.slot, poseSlot: firstPose?.slot ?? null })
-      const sourceProject = await window.desktop.loadFabricatorSlot(model.slot)
-      if (!sourceProject) throw new Error('O modelo de referência não está disponível no Fabricador Dev.')
-      const poseArtwork = firstPose ? await window.desktop.loadFabricatorPose(model.slot, firstPose.slot) : null
-      const artwork = selectCharacterArtwork(sourceProject, poseArtwork, firstPose?.slot ?? null)
-      if (!artwork) throw new Error(firstPose ? 'Não foi possível abrir a pose inicial deste modelo.' : 'Não foi possível abrir este modelo.')
+      const source = await loadCustomizerArtworkSource(model.slot, firstPose?.slot ?? null, {
+        loadModel: window.desktop.loadFabricatorSlot,
+        loadPose: window.desktop.loadFabricatorPose
+      })
+      if (source.status === 'missing-model') throw new Error('O modelo de referência não está disponível no Fabricador Dev.')
+      if (source.status === 'invalid-pose') throw new Error(firstPose ? 'Não foi possível abrir a pose inicial deste modelo.' : 'Não foi possível abrir este modelo.')
+      const { sourceProject, artwork } = source
       const artworkUrl = await renderCustomizerBasePreview(artwork, {
         proportions: activeProportions,
         bodyDimensions: activeBodyDimensions,
@@ -84,11 +86,13 @@ export function useCustomizerCharacterSourceSelection(deps: {
     setCatalogError('')
     try {
       await saveCharacterCustomization({ modelSlot: pose.sourceModelSlot, poseSlot: pose.slot })
-      const sourceProject = selectedSourceModelProject?.slot === pose.sourceModelSlot ? selectedSourceModelProject : await window.desktop.loadFabricatorSlot(pose.sourceModelSlot)
-      if (!sourceProject) throw new Error('O modelo de referência desta pose não está disponível.')
-      const poseArtwork = await window.desktop.loadFabricatorPose(pose.sourceModelSlot, pose.slot)
-      const artwork = selectCharacterArtwork(sourceProject, poseArtwork, pose.slot)
-      if (!artwork) throw new Error('Não foi possível abrir esta pose.')
+      const source = await loadCustomizerArtworkSource(pose.sourceModelSlot, pose.slot, {
+        loadModel: window.desktop.loadFabricatorSlot,
+        loadPose: window.desktop.loadFabricatorPose
+      }, selectedSourceModelProject)
+      if (source.status === 'missing-model') throw new Error('O modelo de referência desta pose não está disponível.')
+      if (source.status === 'invalid-pose') throw new Error('Não foi possível abrir esta pose.')
+      const { sourceProject, artwork } = source
       const artworkUrl = await renderCustomizerBasePreview(artwork, {
         proportions: activeProportions,
         bodyDimensions: activeBodyDimensions,

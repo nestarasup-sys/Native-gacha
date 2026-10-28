@@ -1,4 +1,3 @@
-import { selectCharacterArtwork } from '../../../../shared/characterSourceContinuity'
 import { useCustomizerCharacterRoster } from './useCustomizerCharacterRoster'
 import { useCustomizerModelBrowserState } from './useCustomizerModelBrowserState'
 import { useCustomizerAssetLibraryState } from './useCustomizerAssetLibraryState'
@@ -26,6 +25,7 @@ import { useCustomizerAdjustmentPreview } from './useCustomizerAdjustmentPreview
 import { useCustomizerHeadNavigation } from './useCustomizerHeadNavigation'
 import { useCustomizerWardrobeNavigation } from './useCustomizerWardrobeNavigation'
 import { sampleOriginalSkinTone } from './customizerPreviewImages'
+import { loadCustomizerArtworkSource } from './customizerArtworkSource'
 import { CustomizerCategoryIcon, clothesAdjustmentDefinitions, customizerClothesTabs, customizerHeadTabs, customizerModuleByTab, customizerModuleNames, customizerOtherTabs, customizerTopTabs, headAdjustmentItemsFor } from './customizerNavigation'
 import { hairAppearancePartStyleId } from './customizerHairAppearanceModel'
 import { hairStyleSupportsCategory } from '../../../../shared/hairCategories'
@@ -306,11 +306,13 @@ export function CustomizerPage() {
     setPreviewLoading(true)
     void (async () => {
       try {
-        const sourceProject = await window.desktop.loadFabricatorSlot(model.slot)
-        if (!sourceProject) throw new Error('O modelo de referência não está disponível no Fabricador Dev.')
-        const poseArtwork = pose ? await window.desktop.loadFabricatorPose(model.slot, pose.slot) : null
-        const artwork = selectCharacterArtwork(sourceProject, poseArtwork, pose?.slot ?? null)
-        if (!artwork) throw new Error('Não foi possível carregar a prévia deste personagem.')
+        const source = await loadCustomizerArtworkSource(model.slot, pose?.slot ?? null, {
+          loadModel: window.desktop.loadFabricatorSlot,
+          loadPose: window.desktop.loadFabricatorPose
+        })
+        if (source.status === 'missing-model') throw new Error('O modelo de referência não está disponível no Fabricador Dev.')
+        if (source.status === 'invalid-pose') throw new Error('Não foi possível carregar a prévia deste personagem.')
+        const { sourceProject, artwork } = source
         if (!cancelled && previewLoadRequest.current === requestId) { setSelectedArtworkProject(artwork); setSelectedSourceModelProject(sourceProject) }
         const artworkUrl = await renderCustomizerBasePreview(artwork, {
           proportions: activeProportions,
@@ -614,11 +616,13 @@ export function CustomizerPage() {
       })
       if (migratedGroups.some((group) => !group.adjustmentReference && setsByKey.has(`${group.modelSlot}:${group.setId}`))) {
         const modelSlot = selectedCharacter.customization.modelSlot ?? 1
-        const source = await window.desktop.loadFabricatorSlot(modelSlot)
         const poseSlot = selectedCharacter.customization.poseSlot
-        const pose = poseSlot === null ? null : await window.desktop.loadFabricatorPose(modelSlot, poseSlot)
-        const artwork = selectCharacterArtwork(source, pose, poseSlot)
-        if (source && artwork) {
+        const source = await loadCustomizerArtworkSource(modelSlot, poseSlot, {
+          loadModel: window.desktop.loadFabricatorSlot,
+          loadPose: window.desktop.loadFabricatorPose
+        })
+        if (source.status === 'ready') {
+          const { artwork } = source
           const shaped = applyCharacterBodyShape(withCharacterHeadSize(artwork, getCharacterProportions(selectedCharacter.customization)), getCharacterBodyDimensions(selectedCharacter.customization))
           const details = Object.fromEntries(restored.filter((entry): entry is typeof entry & { set: WardrobeSet } => !!entry.set).map(({ key, set }) => [key, set]))
           migratedGroups = anchorWardrobeAdjustments(migratedGroups, modelSlot, shaped.parts, (group) => wardrobeComponentsForGroup(group, details))
