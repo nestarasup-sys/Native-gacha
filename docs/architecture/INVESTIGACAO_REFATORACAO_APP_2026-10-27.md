@@ -301,11 +301,12 @@ Este corte separa propriedade dos contratos e chamadas entre domínios, mas não
 
 ### Mapa do ciclo 3 — composição de personagens
 
-- `characterRenderer.ts` serve Customizador, Studio, Roteiros e previews do Fabricador. `editorV6CharacterRenderer.ts` contém praticamente a mesma composição; a diferença de implementação está concentrada em tipos faciais, modo `talk-blink`, cache de imagem e descarte explícito de canvases.
+- `characterRenderer.ts` serve Customizador, Studio, Roteiros e previews do Fabricador. `editorV6CharacterRenderer.ts` contém praticamente a mesma composição; suas diferenças funcionais restantes estão nas políticas faciais, no modo `talk-blink` e no descarte explícito de canvases.
 - Extraí o LRU de decodificação para `characters/characterImageCache.ts`. Os dois renderizadores agora compartilham a regra e o limite de 512 itens, mantendo instâncias separadas para que a pressão de memória e a política de descarte do Editor V6 não mudem.
 - Studio e Editor V6 também usam agora `src/shared/faceMouthSelection.ts` para resolver a mesma peça de boca; os nomes antigos `resolveStudioTalkMouthId` e `resolveEditorV6TalkMouthId` continuam exportados como aliases de compatibilidade.
 - `characters/characterWardrobeRenderer.ts` agora é dona do catálogo de categorias, seleção de peças, composição das roupas e realce visual. Os dois renderizadores injetam seus próprios carregadores de imagem, preservando caches separados; seus exports públicos continuam compatíveis.
-- A composição de roupas foi movida sem alterar a implementação: uma comparação estática confirmou que o corpo extraído corresponde aos dois caminhos anteriores, descontando comentários e `export`. O próximo passo é mapear as diferenças restantes de rosto, cabelo e ciclo de vida antes de unificar essas políticas.
+- `characters/characterImageTint.ts` também centraliza a recoloração de cabelo/pele. Cada renderizador cria sua própria instância do algoritmo e mantém os caches de imagens tingidas isolados.
+- A composição de roupas foi movida sem alterar a implementação: uma comparação estática confirmou que o corpo extraído corresponde aos dois caminhos anteriores, descontando comentários e `export`. Ainda falta mapear a composição de rosto/cabelo e o ciclo de vida antes de unificar essas políticas.
 - `fabricator-complete-character-golden.test.mjs` confere pixels de uma composição sintética independente com Sharp; ele não executa os renderizadores de produção. Ainda falta um golden visual que compare as saídas reais de Studio e Editor V6, então a migração dessas políticas permanece condicionada a essa evidência.
 
 ### Etapa aplicada — domínio da Biblioteca de Mídia
