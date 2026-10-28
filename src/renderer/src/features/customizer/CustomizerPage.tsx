@@ -4,6 +4,7 @@ import { useCustomizerModelBrowserState } from './useCustomizerModelBrowserState
 import { useCustomizerAssetLibraryState } from './useCustomizerAssetLibraryState'
 import { useCustomizerCharacterCommands } from './useCustomizerCharacterCommands'
 import { useCustomizerBodyAppearance } from './useCustomizerBodyAppearance'
+import { CustomizerModelPicker } from './CustomizerModelPicker'
 import { CustomizerClothesAdjustmentPanel } from './CustomizerClothesAdjustmentPanel'
 import { upperWardrobePanels, upperWardrobePageTwoPanels, accessoryWardrobePanels, lowerWardrobePanels, lowerWardrobePageTwoPanels, wardrobeComponentMatchesPanel, isWardrobePanelCandidateSelected, renderWardrobeThumbnail } from './wardrobePanelModel'
 import type { WardrobePanel, WardrobePanelCandidate } from './wardrobePanelModel'
@@ -13,7 +14,7 @@ import type { FaceLibraryPartId } from './customizerFaceCatalogModel'
 import { hairColorControls, hairPalettePresets, MouthBlushControls, NoseOpacityControl, NoseSkinTonePalette, PiecePaletteStrip } from './CustomizerAppearanceControls'
 import { renderCustomizerFacePreview } from './customizerFacePreview'
 import { preparePreviewImage, sampleOriginalSkinTone } from './customizerPreviewImages'
-import { CustomizerCategoryIcon, clothesAdjustmentDefinitions, customizerClothesTabs, customizerHeadTabs, customizerOtherTabs, customizerTopTabs, headAdjustmentItems, headAdjustmentItemsFor, modules } from './customizerNavigation'
+import { CustomizerCategoryIcon, clothesAdjustmentDefinitions, customizerClothesTabs, customizerHeadTabs, customizerModuleByTab, customizerModuleNames, customizerOtherTabs, customizerTopTabs, headAdjustmentItems, headAdjustmentItemsFor } from './customizerNavigation'
 import { adjustableHairPartIds, hairAppearancePartStyleId } from './customizerHairAppearanceModel'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { RenderedCharacterPortrait } from '../../ui/components/RenderedCharacterPortrait'
@@ -1241,7 +1242,6 @@ export function CustomizerPage() {
   const showAdjacentPosePage = (direction: -1 | 1) => {
     setSelectedPosePage((current) => Math.max(0, Math.min(posePageCount - 1, current + direction)))
   }
-  const selectedModelName = availableModels.find((model) => model.slot === selectedCatalogModelSlot)?.name
   const activeFaceAppearance = characterFaceAppearance?.modelSlot === selectedCatalogModelSlot ? characterFaceAppearance : undefined
   const wardrobePreviewDraggable = false
 
@@ -2008,7 +2008,7 @@ export function CustomizerPage() {
     </section>
   }
 
-  if (activeModule !== null && modules.some((module) => module.name === activeModule)) {
+  if (activeModule !== null && customizerModuleNames.includes(activeModule)) {
     return (
       <div className="customizer-models-view">
         <div className="customizer-models-columns">
@@ -2048,8 +2048,7 @@ export function CustomizerPage() {
                 className={selectedCustomizerTopTab === tab.id ? 'active' : ''}
                 onClick={() => {
                   setSelectedCustomizerTopTab(tab.id)
-                  const moduleByTab: Record<string, string> = { modelos: 'Modelos', corpo: 'Modelos', cabeca: 'Cabeça', roupas: 'Roupas', outros: 'Acessórios', perfil: 'Perfil' }
-                  setActiveModule(moduleByTab[tab.id])
+                  setActiveModule(customizerModuleByTab[tab.id])
                 }}
                 aria-selected={selectedCustomizerTopTab === tab.id}
                 role="tab"
@@ -2082,6 +2081,7 @@ export function CustomizerPage() {
             </nav>}
             </div>
             <div className={`customizer-sidebar-scroll-content${selectedCustomizerTopTab === 'cabeca' && (headPanelTab === 'hair' || headPanelTab === 'eyes' || headPanelTab === 'face') ? ' customizer-sidebar-scroll-content-hair' : ''}${selectedCustomizerTopTab === 'roupas' && (clothesPanelTab === 'upper' || clothesPanelTab === 'lower' || clothesPanelTab === 'adjust') ? ' customizer-sidebar-scroll-content-clothes-upper' : ''}`} aria-label={`Conteúdo de ${customizerTopTabs.find((tab) => tab.id === selectedCustomizerTopTab)?.label ?? 'personalização'}`}>
+            {catalogError && <p className="customizer-catalog-error" role="alert">{catalogError}</p>}
             {selectedCustomizerTopTab === 'cabeca' && headPanelTab === 'hair' && (hairLibraryPart ? renderHairLibrary() : renderHairCustomizer())}
             {selectedCustomizerTopTab === 'cabeca' && headPanelTab === 'eyes' && (faceLibraryPart ? renderFaceLibrary() : renderFaceCustomizer())}
             {selectedCustomizerTopTab === 'cabeca' && headPanelTab === 'face' && renderFaceCatalogCustomizer()}
@@ -2089,6 +2089,7 @@ export function CustomizerPage() {
             {selectedCustomizerTopTab === 'cabeca' && headPanelTab === 'adjust' && renderAdjustmentPicker('head')}
             {selectedCustomizerTopTab === 'roupas' && (clothesPanelTab === 'upper' || clothesPanelTab === 'lower') && renderWardrobeCatalog()}
             {selectedCustomizerTopTab === 'roupas' && clothesPanelTab === 'adjust' && renderAdjustmentPicker('clothes')}
+            {selectedCustomizerTopTab === 'modelos' && <CustomizerModelPicker models={availableModels} thumbnails={modelThumbnails} selectedSlot={selectedCatalogModelSlot} loading={catalogLoading} onSelect={(model) => void selectCatalogModel(model)} />}
             {selectedCustomizerTopTab === 'modelos' && <section className="customizer-model-skin-tones" aria-label="Cor de pele do modelo">
               <strong>Cor de pele</strong>
               <div className="customizer-model-skin-tone-row" role="group" aria-label="Escolher cor de pele">
@@ -2122,7 +2123,7 @@ export function CustomizerPage() {
                 </div>
               </div>
             </section>}
-            {selectedCustomizerTopTab === 'modelos' && <section className="customizer-proportions" aria-label="Proporções do personagem">
+            {selectedCustomizerTopTab === 'corpo' && <section className="customizer-proportions" aria-label="Proporções do personagem">
               <header><strong>Proporções</strong><button onClick={() => commitProportions({ ...defaultCharacterProportions })} disabled={!selectedCharacter} type="button">Restaurar</button></header>
               <div className="customizer-proportions-grid">{proportionControls.map(({ key, label, description }) => {
                 const limits = characterProportionLimits[key]
@@ -2136,7 +2137,7 @@ export function CustomizerPage() {
                 </div>
               })}</div>
             </section>}
-            {selectedCustomizerTopTab === 'modelos' && <section className="customizer-body-shape" aria-label="Ajuste de largura e altura das partes do corpo">
+            {selectedCustomizerTopTab === 'corpo' && <section className="customizer-body-shape" aria-label="Ajuste de largura e altura das partes do corpo">
               <header><span><strong>Corpo · tronco e membros</strong><small>As peças acompanham as juntas, com ajustes separados para coxas e pernas inferiores.</small></span><button onClick={restoreBodyDimensions} disabled={!selectedCharacter} type="button">Restaurar</button></header>
               <div className="customizer-body-shape-grid">{([
                 { name: 'Tronco', width: 'torsoWidth', height: 'torsoHeight' },
@@ -2153,87 +2154,6 @@ export function CustomizerPage() {
               </fieldset>)}</div>
               <label className="customizer-body-balance"><span><b>Harmonia corporal</b><output>{activeBodyDimensions.balance}%</output></span><small>Coxas maiores aumentam um pouco o tronco; tronco maior aumenta um pouco braços e pernas. Em 0%, só o controle escolhido muda de tamanho.</small><input aria-label="Harmonia corporal" type="range" min="0" max="100" step="1" value={activeBodyDimensions.balance} disabled={!selectedCharacter} onChange={(event) => changeBodyDimension('balance', Number(event.target.value))} onPointerUp={(event) => commitBodyDimension('balance', Number(event.currentTarget.value))} onPointerCancel={(event) => commitBodyDimension('balance', Number(event.currentTarget.value))} onKeyUp={(event) => commitBodyDimension('balance', Number(event.currentTarget.value))} onBlur={(event) => commitBodyDimension('balance', Number(event.currentTarget.value))} /></label>
             </section>}
-            </div>
-            <div className="customizer-models-content" hidden>
-            <div className="customizer-models-options-grid">
-              {modules.map((module, index) => (
-                <button
-                  className={`customizer-model-option${activeModule === module.name ? ' selected' : ''}`}
-                  key={module.name}
-                  onClick={() => {
-                    setActiveModule(module.name)
-                    if (module.name === 'Modelos' && selectedCatalogModelSlot !== null) {
-                      const selectedModel = availableModels.find((model) => model.slot === selectedCatalogModelSlot)
-                      if (selectedModel) void selectCatalogModel(selectedModel)
-                    }
-                  }}
-                  aria-pressed={activeModule === module.name}
-                  title={module.detail}
-                  type="button"
-                >
-                  <span className="customizer-model-option-icon"><Icon name={module.icon} /></span>
-                  <span className="customizer-model-option-name">{module.name}</span>
-                  {index === 0 && <span className="customizer-model-option-new">NOVO</span>}
-                </button>
-              ))}
-            </div>
-            <section className="customizer-catalog-panel" aria-label={'Catálogo de ' + activeModule}>
-              <header className="customizer-catalog-heading">
-                <div><p className="eyebrow">CATÁLOGO</p><h2>{activeModule === 'Poses' ? selectedModelName ?? 'Escolha um modelo' : activeModule}</h2></div>
-                {activeModule === 'Modelos' && <small>{availableModels.length} modelos</small>}
-                {activeModule === 'Poses' && selectedCatalogModelSlot !== null && <small>{availablePoses.length} poses</small>}
-              </header>
-              {catalogError && <p className="customizer-catalog-error" role="alert">{catalogError}</p>}
-              {activeModule === 'Modelos' && (
-                catalogLoading ? <div className="customizer-catalog-empty">Carregando modelos…</div>
-                  : availableModels.length === 0 ? <div className="customizer-catalog-empty">Nenhum modelo salvo ainda.</div>
-                    : <div className="customizer-catalog-grid customizer-model-catalog">
-                      {availableModels.map((model) => (
-                        <button className={'customizer-catalog-card model-catalog-card' + (selectedCatalogModelSlot === model.slot ? ' selected' : '')} key={model.slot} onClick={() => void selectCatalogModel(model)} aria-label={'Selecionar ' + model.name} aria-pressed={selectedCatalogModelSlot === model.slot} title={model.name} type="button">
-                          {modelThumbnails[model.slot] ? <img src={modelThumbnails[model.slot]} alt="" /> : <span className="customizer-catalog-placeholder"><Icon name="body" /></span>}
-                        </button>
-                      ))}
-                    </div>
-              )}
-              {activeModule === 'Modelos' && selectedCharacter && selectedCatalogModelSlot !== null && <section className="customizer-skin-tones" aria-label="Cor de pele do personagem">
-                <header><strong>Cor da pele</strong><small>Salva somente em {selectedCharacter.name}</small></header>
-                <div className="customizer-skin-tone-options" role="group" aria-label="Escolher tom de pele">
-                  {skinTonePresets.map((preset) => {
-                    const selected = selectedCharacter.customization.modelSkinTone === preset.id
-                    return <button key={preset.id} className={'customizer-skin-tone' + (selected ? ' selected' : '')} style={{ '--skin-tone': preset.id } as React.CSSProperties} onClick={() => void saveCharacterCustomization({ modelSkinTone: preset.id })} aria-label={`Tom de pele ${preset.name}`} aria-pressed={selected} title={preset.name} type="button"><span />{selected && <Icon name="check" />}</button>
-                  })}
-                </div>
-              </section>}
-              {activeModule === 'Poses' && (
-                selectedCatalogModelSlot === null ? <div className="customizer-catalog-empty"><span>Selecione um modelo para ver as poses dele.</span><button onClick={() => setActiveModule('Modelos')} type="button">Ver modelos</button></div>
-                  : catalogLoading ? <div className="customizer-catalog-empty">Carregando poses…</div>
-                    : availablePoses.length === 0 ? <div className="customizer-catalog-empty">Este modelo ainda não tem poses salvas.</div>
-                      : <div className="customizer-catalog-grid customizer-pose-catalog">
-                        {availablePoses.map((pose) => {
-                          const key = pose.sourceModelSlot + ':' + pose.slot
-                          return <button className={'customizer-catalog-card pose-catalog-card' + (selectedCatalogPoseSlot === pose.slot ? ' selected' : '')} key={key} onClick={() => void selectCatalogPose(pose)} aria-pressed={selectedCatalogPoseSlot === pose.slot} title={pose.name} type="button">
-                            {poseThumbnails[key] ? <img src={poseThumbnails[key]} alt="" /> : <span className="customizer-catalog-placeholder"><Icon name="body" /></span>}
-                            <span className="customizer-pose-caption"><b>Pose {String(pose.slot).padStart(2, '0')}</b><small>{pose.name}</small></span>
-                          </button>
-                        })}
-                      </div>
-              )}
-              {activeModule === 'Cabeça' && <div className="customizer-head-workspace">
-                <nav className="customizer-head-tabs" aria-label="Categorias da cabeça" role="tablist">
-                  {customizerHeadTabs.map((tab) => <button key={tab.id} className={headPanelTab === tab.id || headPanelTab === 'adjust' && headCategorySelection === tab.id ? 'active' : ''} onClick={() => {
-                    const nextTab = tab.id === 'adjust' && headPanelTab === 'adjust' ? headCategorySelection : tab.id
-                    setHeadPanelTab(nextTab)
-                    if (nextTab !== 'adjust') setHeadCategorySelection(nextTab)
-                  }} aria-selected={headPanelTab === tab.id} role="tab" type="button"><Icon name={tab.icon} /><span>{tab.label}</span></button>)}
-                </nav>
-                {headPanelTab === 'hair' && renderHairCatalog()}
-                {headPanelTab === 'extra' && <div className="customizer-head-placeholder"><Icon name="sparkles" /><strong>Extras da cabeça</strong><span>Escolha os óculos no painel lateral.</span></div>}
-                {headPanelTab === 'adjust' && renderAdjustmentPicker('head')}
-              </div>}
-              {activeModule === 'Cabelos' && renderHairCatalog()}
-              {/* O catálogo de roupas é renderizado no painel lateral visível. */}
-              {activeModule !== 'Modelos' && activeModule !== 'Poses' && activeModule !== 'Roupas' && <div className="customizer-catalog-empty">O catálogo de {activeModule} aparecerá aqui.</div>}
-            </section>
             </div>
           </section>
         </div>
@@ -2321,15 +2241,7 @@ export function CustomizerPage() {
               key={tab.id}
               onClick={() => {
                 setSelectedCustomizerTopTab(tab.id)
-                const moduleByTab: Record<string, string> = {
-                  modelos: 'Modelos',
-                  corpo: 'Modelos',
-                  cabeca: 'Cabeça',
-                  roupas: 'Roupas',
-                  outros: 'Acessórios',
-                  perfil: 'Perfil'
-                }
-                setActiveModule(moduleByTab[tab.id])
+                setActiveModule(customizerModuleByTab[tab.id])
               }}
               type="button"
             ><CustomizerCategoryIcon category={tab.id} /><span>{tab.label}</span></button>)}

@@ -1,16 +1,4 @@
-import type { IconName } from '../../ui/components/Icon'
 import { clothingCategories } from '../../characters/characterRenderer'
-
-export const modules: { name: string; icon: IconName; detail: string }[] = [
-  { name: 'Modelos', icon: 'sparkles', detail: 'Looks prontos para começar' },
-  { name: 'Poses', icon: 'body', detail: 'Pose, proporções e detalhes' },
-  { name: 'Cabeça', icon: 'face', detail: 'Rosto, cabelo e expressões' },
-  { name: 'Cabelos', icon: 'bow', detail: 'Biblioteca de cabelos do personagem' },
-  { name: 'Roupas', icon: 'shirt', detail: 'Monte um visual único' },
-  { name: 'Acessórios', icon: 'flower', detail: 'Peças e objetos de cena' },
-  { name: 'Objetos', icon: 'box', detail: 'Itens para compor a cena' },
-  { name: 'Perfil', icon: 'user', detail: 'Informações do personagem' }
-]
 
 export const customizerTopTabs: { id: string; label: string }[] = [
   { id: 'modelos', label: 'Modelos' },
@@ -20,6 +8,11 @@ export const customizerTopTabs: { id: string; label: string }[] = [
   { id: 'outros', label: 'Outros' },
   { id: 'perfil', label: 'Perfil' }
 ]
+
+export const customizerModuleByTab: Record<string, string> = {
+  modelos: 'Modelos', corpo: 'Modelos', cabeca: 'Cabeça', roupas: 'Roupas', outros: 'Acessórios', perfil: 'Perfil'
+}
+export const customizerModuleNames = [...new Set(Object.values(customizerModuleByTab))]
 
 export const customizerHeadTabs = [
   { id: 'hair', label: 'Cabelo', icon: 'bow' },
