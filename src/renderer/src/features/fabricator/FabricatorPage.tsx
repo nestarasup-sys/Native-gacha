@@ -26,6 +26,7 @@ import { prepareLoadedFabricatorProject } from './models/projectHydration'
 import { MAX_CHROMA_TOLERANCE, type ModelSourceResult } from './models/modelSource'
 import { ModelSkinTonePicker } from './ModelSkinTonePicker'
 import { ModelSkinContourEditor } from './ModelSkinContourEditor'
+import { DuplicateModelDialog } from './DuplicateModelDialog'
 import { TemporaryThighWarpPreview } from './TemporaryThighWarpPreview'
 import { cachedModelBodyAppearancePreview } from './models/modelSkinTone'
 import { connectBodyContourJoints } from './models/contourJoints'
@@ -71,6 +72,10 @@ export function FabricatorPage() {
   const [modelSourceOpen, setModelSourceOpen] = useState(false)
   const [skinContourEditorOpen, setSkinContourEditorOpen] = useState(false)
   const [modelSourcePublishing, setModelSourcePublishing] = useState(false)
+  const [duplicateModalOpen, setDuplicateModalOpen] = useState(false)
+  const [duplicateTargetSlot, setDuplicateTargetSlot] = useState<number | null>(null)
+  const [duplicatingModel, setDuplicatingModel] = useState(false)
+  const [duplicateError, setDuplicateError] = useState('')
   const [chromaValue, setChromaValue] = useState(DEFAULT_CHROMA_TOLERANCE)
   const [deletingSlot, setDeletingSlot] = useState<number | null>(null)
   const [progress, setProgress] = useState(0)
@@ -525,6 +530,40 @@ export function FabricatorPage() {
     }
   }
 
+  const openDuplicateModelDialog = () => {
+    const source = projectRef.current ?? project
+    if (!source) return
+    const firstEmptySlot = slots.findIndex((summary, index) => !summary && index + 1 !== source.slot)
+    setDuplicateTargetSlot(firstEmptySlot < 0 ? null : firstEmptySlot + 1)
+    setDuplicateError('')
+    setDuplicateModalOpen(true)
+  }
+
+  const duplicateModel = async () => {
+    const source = projectRef.current ?? project
+    const targetSlot = duplicateTargetSlot
+    if (!source || !targetSlot || targetSlot === source.slot || slots[targetSlot - 1]) return
+    setDuplicatingModel(true)
+    setDuplicateError('')
+    try {
+      if (savedTimer.current) clearTimeout(savedTimer.current)
+      savedTimer.current = null
+      await persistProject(source)
+      await window.desktop.duplicateFabricatorSlot(source.slot, targetSlot)
+      const updatedAt = new Date().toISOString()
+      setSlots((current) => current.map((summary, index) => index + 1 === targetSlot
+        ? { slot: targetSlot, name: source.name, sourceName: source.sourceName, partCount: source.parts.length, updatedAt }
+        : summary))
+      window.dispatchEvent(new Event('fabricator:assets-updated'))
+      setDuplicateModalOpen(false)
+      setDuplicateTargetSlot(null)
+    } catch (reason) {
+      setDuplicateError(reason instanceof Error ? reason.message : 'Não foi possível duplicar o modelo.')
+    } finally {
+      setDuplicatingModel(false)
+    }
+  }
+
   const runProcessor = (sourceDataUrl: string, tolerance: number, metadata: { slot: number; name: string; sourceName: string; sourceAssetName: string }, recordBefore?: FabricatorProject) => {
     workerRef.current?.terminate()
     const worker = new Worker(new URL('./models/imageProcessor.worker.ts', import.meta.url), { type: 'module' })
@@ -942,6 +981,10 @@ export function FabricatorPage() {
     </div>
   )
 
+  const duplicateDestinationSlots = slots.flatMap((summary, index) =>
+    !summary && index + 1 !== project?.slot ? [index + 1] : []
+  )
+
   return (
     <main className="fabricator-layout" aria-label="Fabricador Dev">
       <aside className="fabricator-sidebar">
@@ -959,6 +1002,17 @@ export function FabricatorPage() {
       </aside>
 
       {modelSourceOpen && project && <ModelSourceEditor project={project} onClose={() => { if (!modelSourcePublishing) setModelSourceOpen(false) }} onPublish={publishEditedModelSource} />}
+      {duplicateModalOpen && project && <DuplicateModelDialog
+        modelName={project.name}
+        sourceSlot={project.slot}
+        destinationSlots={duplicateDestinationSlots}
+        targetSlot={duplicateTargetSlot}
+        busy={duplicatingModel}
+        error={duplicateError}
+        onSelectSlot={(slot) => { setDuplicateTargetSlot(slot); setDuplicateError('') }}
+        onCancel={() => setDuplicateModalOpen(false)}
+        onDuplicate={() => void duplicateModel()}
+      />}
       {skinContourEditorOpen && project && <ModelSkinContourEditor key={project.slot} parts={project.parts} skinTone={project.modelSkinTone} outlineColor={project.modelOutlineColor} onClose={() => setSkinContourEditorOpen(false)} onSave={(contoursByPart) => updateProject(current => ({ ...current, parts: current.parts.map(part => {
         if (!(part.id in contoursByPart)) return part
         const fakeSkinContours = contoursByPart[part.id]
@@ -996,6 +1050,7 @@ export function FabricatorPage() {
               })}
             </div>
             {slots[activeSlot - 1] && <button className="model-delete-compact" onClick={() => void deleteSlot(activeSlot)} disabled={slotSwitching || deletingSlot === activeSlot} title="Excluir permanentemente este modelo" type="button"><Icon name="trash" /><span>{deletingSlot === activeSlot ? 'Excluindo…' : 'Excluir modelo'}</span></button>}
+            {project?.slot === activeSlot && <button className="model-duplicate-compact" onClick={openDuplicateModelDialog} disabled={slotSwitching || deletingSlot !== null || processing || chromaApplying || historyBusy || modelSourcePublishing} title="Criar uma cópia deste modelo em outro slot vazio" type="button"><Icon name="box" /><span>Duplicar modelo</span></button>}
             <button className="model-import-compact" onClick={() => void importSlot(activeSlot, true)} disabled={slotSwitching || deletingSlot !== null || processing || chromaApplying || historyBusy || modelSourcePublishing} title={slots[activeSlot - 1] ? 'Substituir a imagem original preservando peças, poses, juntas e demais configurações' : 'Importar folha para este slot'} type="button"><Icon name={slots[activeSlot - 1] ? 'reset' : 'plus'} /><span>{slots[activeSlot - 1] ? 'Reimportar' : 'Importar'}</span></button>
           </header>
 

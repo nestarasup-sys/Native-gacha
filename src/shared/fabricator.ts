@@ -409,6 +409,7 @@ export type FabricatorDesktopApi = {
   importFabricatorModel: (slot: number, mode?: 'import' | 'reimport') => Promise<{ sourceName: string; sourceAssetName: string; sourceDataUrl: string } | null>
   loadFabricatorSlot: (slot: number) => Promise<FabricatorProject | null>
   saveFabricatorProject: (project: FabricatorProjectSave, changedAssets: FabricatorAssetSave[]) => Promise<void>
+  duplicateFabricatorSlot: (sourceSlot: number, targetSlot: number) => Promise<void>
   /** Publica uma folha PNG definitiva, suas peças e o novo manifesto num único slot. */
   publishFabricatorModelSource: (project: FabricatorProjectSave, sourceDataUrl: string, changedAssets: FabricatorAssetSave[]) => Promise<string>
   /** Exporta a visualização do modelo em PNG para Downloads, sem modificar o projeto. */
