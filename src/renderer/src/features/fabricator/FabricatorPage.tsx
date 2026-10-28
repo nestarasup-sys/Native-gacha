@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { FabricatorAssetSave, FabricatorHistoryAction, FabricatorHistorySaveState, FabricatorHistoryState, FabricatorProject, FabricatorSlotSummary, ModelPart } from '../../../../shared/fabricator'
+import type { FabricatorAssetSave, FabricatorHistoryAction, FabricatorHistoryState, FabricatorProject, FabricatorSlotSummary, ModelPart } from '../../../../shared/fabricator'
 import { Icon, type IconName } from '../../ui/components/Icon'
 import { usePreviewBackground } from './usePreviewBackground'
 import { autoConnectParts, normalizeLayerOrder, normalizePartAnchors, orderedParts, partJointAnchor, reorderLayer, sourcePointFromCanvas } from './models/rig'
@@ -21,6 +21,7 @@ import { loadImageFromDataUrl, pngDataUrlFromBuffer } from './models/imageData'
 import { cleanSavedPartEdges } from './models/chromaCleanup'
 import { serializeFabricatorProject } from './models/projectSerialization'
 import { persistFabricatorProjectSnapshot } from './projectPersistence'
+import { useFabricatorHistory } from './useFabricatorHistory'
 import { MAX_CHROMA_TOLERANCE, type ModelSourceResult } from './models/modelSource'
 
 const sections: { id: string; label: string; icon: IconName }[] = [
@@ -43,7 +44,6 @@ type MixerStrokeState = { pointerId: number; x: number; y: number }
 type PanelTab = 'parts' | 'layers' | 'joints'
 
 const DEFAULT_CHROMA_TOLERANCE = 74
-const emptyHistory = (): FabricatorHistoryState => ({ undo: [], redo: [] })
 
 export function FabricatorPage() {
   const [previewBackground] = usePreviewBackground()
@@ -53,7 +53,6 @@ export function FabricatorPage() {
   const [slotSwitching, setSlotSwitching] = useState(false)
   const [activeSlot, setActiveSlot] = useState(1)
   const [project, setProject] = useState<FabricatorProject | null>(null)
-  const [history, setHistory] = useState<FabricatorHistoryState>(emptyHistory)
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [processing, setProcessing] = useState(false)
   const [chromaApplying, setChromaApplying] = useState(false)
@@ -72,7 +71,6 @@ export function FabricatorPage() {
   const [showJointPivots, setShowJointPivots] = useState(true)
   const [mixerActive, setMixerActive] = useState(false)
   const [mixerPainting, setMixerPainting] = useState(false)
-  const [historyBusy, setHistoryBusy] = useState(false)
   const [zoom, setZoom] = useState(1)
   const [pan, setPan] = useState({ x: 0, y: 0 })
   const [panning, setPanning] = useState(false)
@@ -80,11 +78,6 @@ export function FabricatorPage() {
   const [renamingPartId, setRenamingPartId] = useState<string | null>(null)
   const stageRef = useRef<HTMLDivElement>(null)
   const projectRef = useRef<FabricatorProject | null>(null)
-  const historyRef = useRef<FabricatorHistoryState>(emptyHistory())
-  const historyGestureRef = useRef(false)
-  const historyGestureChangedRef = useRef(false)
-  const historyGestureSnapshotRef = useRef<FabricatorProject | null>(null)
-  const historyGestureActionRef = useRef<FabricatorHistoryAction>('edit')
   const dragRef = useRef<DragState | null>(null)
   const anchorDragRef = useRef<AnchorDragState | null>(null)
   const panRef = useRef<PanState | null>(null)
@@ -102,6 +95,15 @@ export function FabricatorPage() {
   const dirtyChromaBases = useRef<Map<string, string>>(new Map())
   const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const initialSlotLoad = useRef(false)
+  const {
+    history, historyBusy, clearHistory, replaceHistory,
+    recordHistorySnapshot, startHistoryGesture, finishHistoryGesture,
+    resetHistoryGesture, trackProjectChange, restoreHistory
+  } = useFabricatorHistory({
+    projectRef, dirtyAssets, dirtyChromaBases,
+    setProject, setSelectedIds, setSaveState, setError, setSlots,
+    processing, chromaApplying
+  })
 
   const persistProject = useCallback(async (snapshot: FabricatorProject) => {
     const assets = await persistFabricatorProjectSnapshot(
@@ -118,80 +120,6 @@ export function FabricatorPage() {
     window.dispatchEvent(new Event('fabricator:assets-updated'))
     setSlots((current) => current.map((item, index) => index + 1 === snapshot.slot ? { slot: snapshot.slot, name: snapshot.name, sourceName: snapshot.sourceName, partCount: snapshot.parts.length, updatedAt: snapshot.updatedAt } : item))
   }, [])
-
-  const publishHistory = (next: FabricatorHistoryState, currentProject: FabricatorProject) => {
-    const bounded = { undo: next.undo.slice(-50), redo: next.redo.slice(-50) }
-    historyRef.current = bounded
-    setHistory(bounded)
-    const forDisk: FabricatorHistorySaveState = {
-      undo: bounded.undo.map(({ action, project: snapshot }) => { const { sourceDataUrl: _sourceDataUrl, ...project } = snapshot; return { action, project } }),
-      redo: bounded.redo.map(({ action, project: snapshot }) => { const { sourceDataUrl: _sourceDataUrl, ...project } = snapshot; return { action, project } })
-    }
-    const currentForDisk = serializeFabricatorProject(currentProject)
-    const changedAssets = currentProject.parts.flatMap((part) => {
-      const dataUrl = dirtyAssets.current.get(part.id)
-      const chromaBaseDataUrl = dirtyChromaBases.current.get(part.id)
-      return dataUrl || chromaBaseDataUrl ? [{ id: part.id, dataUrl: dataUrl ?? part.dataUrl, ...(chromaBaseDataUrl ? { chromaBaseDataUrl } : {}) }] : []
-    })
-    setSaveState('saving')
-    void window.desktop.saveFabricatorHistory(currentProject.slot, forDisk, currentForDisk, changedAssets).then(() => {
-      for (const asset of changedAssets) if (dirtyAssets.current.get(asset.id) === asset.dataUrl) dirtyAssets.current.delete(asset.id)
-      setSaveState('saved')
-      setSlots((current) => current.map((item, index) => index + 1 === currentProject.slot ? { slot: currentProject.slot, name: currentProject.name, sourceName: currentProject.sourceName, partCount: currentProject.parts.length, updatedAt: currentProject.updatedAt } : item))
-    }).catch((reason: unknown) => {
-      setError(reason instanceof Error ? `Falha ao salvar o histórico: ${reason.message}` : 'Falha ao salvar o histórico local.')
-      setSaveState('error')
-    })
-  }
-
-  const recordHistorySnapshot = (snapshot: FabricatorProject, action: FabricatorHistoryAction, currentProject: FabricatorProject) => {
-    const current = historyRef.current
-    publishHistory({ undo: [...current.undo, { action, project: snapshot }].slice(-50), redo: [] }, currentProject)
-  }
-
-  const startHistoryGesture = (action: FabricatorHistoryAction) => {
-    if (historyGestureRef.current) return
-    historyGestureRef.current = true
-    historyGestureChangedRef.current = false
-    historyGestureSnapshotRef.current = projectRef.current
-    historyGestureActionRef.current = action
-  }
-
-  const finishHistoryGesture = () => {
-    const snapshot = historyGestureSnapshotRef.current
-    const changed = historyGestureChangedRef.current
-    const action = historyGestureActionRef.current
-    historyGestureRef.current = false
-    historyGestureChangedRef.current = false
-    historyGestureSnapshotRef.current = null
-    if (snapshot && changed && projectRef.current) recordHistorySnapshot(snapshot, action, projectRef.current)
-  }
-
-  const restoreHistory = async (direction: 'undo' | 'redo') => {
-    const currentProject = projectRef.current
-    const currentHistory = historyRef.current
-    const sourceStack = currentHistory[direction]
-    const entry = sourceStack[sourceStack.length - 1]
-    if (!currentProject || !entry || historyBusy || processing || chromaApplying) return
-    setHistoryBusy(true)
-    try {
-      const target = entry.project
-      const nextHistory: FabricatorHistoryState = direction === 'undo'
-        ? { undo: currentHistory.undo.slice(0, -1), redo: [...currentHistory.redo, { action: entry.action, project: currentProject }].slice(-50) }
-        : { undo: [...currentHistory.undo, { action: entry.action, project: currentProject }].slice(-50), redo: currentHistory.redo.slice(0, -1) }
-      for (const part of target.parts) {
-        dirtyAssets.current.set(part.id, part.dataUrl)
-        if (part.chromaBaseDataUrl && part.chromaBaseSaved) dirtyChromaBases.current.set(part.id, part.chromaBaseDataUrl)
-      }
-      projectRef.current = target
-      setProject(target); setSelectedIds((ids) => { const valid = ids.filter((id) => target.parts.some((part) => part.id === id)); return valid.length ? valid : target.parts[0] ? [target.parts[0].id] : [] })
-      publishHistory(nextHistory, target)
-    } catch (reason) {
-      setError(reason instanceof Error ? `Não foi possível restaurar o histórico: ${reason.message}` : 'Não foi possível restaurar esse estado.')
-    } finally {
-      setHistoryBusy(false)
-    }
-  }
 
   useEffect(() => {
     void window.desktop.listFabricatorSlots()
@@ -280,8 +208,7 @@ export function FabricatorPage() {
     }
     projectRef.current = normalized
     setProject(normalized)
-    if (historyGestureRef.current) historyGestureChangedRef.current = true
-    else recordHistorySnapshot(current, action, normalized)
+    trackProjectChange(current, normalized, action)
   }
 
   const moveLayer = (partId: string, direction: -1 | 1) => {
@@ -326,8 +253,8 @@ export function FabricatorPage() {
     }
     if (generation !== slotSelectionGeneration.current) return
     mixerSessionRef.current += 1
-    historyGestureRef.current = false; historyGestureChangedRef.current = false; historyGestureSnapshotRef.current = null
-    historyRef.current = emptyHistory(); setHistory(historyRef.current)
+    resetHistoryGesture()
+    clearHistory()
     projectRef.current = null
     setActiveSlot(slot); setProject(null); setSelectedIds([]); setError(''); dirtyAssets.current.clear(); dirtyChromaBases.current.clear(); mixerSurfacesRef.current.clear(); mixerStrokeRef.current = null; setMixerActive(false); setMixerPainting(false); setZoom(1); setPan({ x: 0, y: 0 })
     const summary = slots[slot - 1]
@@ -336,13 +263,13 @@ export function FabricatorPage() {
       const loaded = await window.desktop.loadFabricatorSlot(slot)
       if (generation !== slotSelectionGeneration.current) return
       if (!loaded) throw new Error('O projeto salvo não pôde ser carregado.')
-      let loadedHistory = emptyHistory()
+      let loadedHistory: FabricatorHistoryState = { undo: [], redo: [] }
       try { loadedHistory = await window.desktop.loadFabricatorHistory(slot) } catch {
         if (generation !== slotSelectionGeneration.current) return
         setError('O modelo abriu, mas o histórico persistido não pôde ser carregado.')
       }
       if (generation !== slotSelectionGeneration.current) return
-      historyRef.current = loadedHistory; setHistory(loadedHistory)
+      replaceHistory(loadedHistory)
       const rig = normalizePartAnchors(loaded.parts, loaded.joints)
       let loadedParts = rig.parts
       let chromaVersion = loaded.chromaVersion ?? 0
@@ -492,8 +419,7 @@ export function FabricatorPage() {
       }))
       const newSourceName = await window.desktop.publishFabricatorModelSource(serialized, result.sourceDataUrl, changedAssets)
       const published: FabricatorProject = { ...next, sourceAssetName: newSourceName }
-      historyRef.current = emptyHistory()
-      setHistory(historyRef.current)
+      clearHistory()
       dirtyAssets.current.clear()
       dirtyChromaBases.current.clear()
       mixerSurfacesRef.current.clear()
@@ -602,14 +528,13 @@ export function FabricatorPage() {
           return
         }
         if (activeSlot !== slot || projectRef.current?.slot !== slot) {
-          let loadedHistory = emptyHistory()
+          let loadedHistory: FabricatorHistoryState = { undo: [], redo: [] }
           try { loadedHistory = await window.desktop.loadFabricatorHistory(slot) } catch {
             if (selectionGeneration !== slotSelectionGeneration.current) return
             setError('A imagem foi reimportada, mas não foi possível carregar o histórico salvo.')
           }
           if (selectionGeneration !== slotSelectionGeneration.current) return
-          historyRef.current = loadedHistory
-          setHistory(loadedHistory)
+          replaceHistory(loadedHistory)
           setActiveSlot(slot)
           setSelectedIds(updated.parts[0] ? [updated.parts[0].id] : [])
         }
@@ -625,7 +550,7 @@ export function FabricatorPage() {
       setActiveSlot(slot); setProject(null); setSelectedIds([]); dirtyAssets.current.clear(); dirtyChromaBases.current.clear(); mixerSurfacesRef.current.clear(); mixerStrokeRef.current = null; setMixerActive(false); setMixerPainting(false)
       const name = selected.sourceName.replace(/\.[^.]+$/, '') || `Modelo ${slot}`
       const recordBefore = project?.slot === slot ? project : undefined
-      if (!recordBefore) { historyRef.current = emptyHistory(); setHistory(historyRef.current) }
+      if (!recordBefore) clearHistory()
       runProcessor(selected.sourceDataUrl, 74, { slot, name, sourceName: selected.sourceName, sourceAssetName: selected.sourceAssetName }, recordBefore)
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível importar a imagem.') }
   }
