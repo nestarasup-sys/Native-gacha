@@ -20,6 +20,7 @@ import { rotatePointAroundOrigin } from './models/geometry'
 import { loadImageFromDataUrl, pngDataUrlFromBuffer } from './models/imageData'
 import { cleanSavedPartEdges } from './models/chromaCleanup'
 import { serializeFabricatorProject } from './models/projectSerialization'
+import { persistFabricatorProjectSnapshot } from './projectPersistence'
 import { MAX_CHROMA_TOLERANCE, type ModelSourceResult } from './models/modelSource'
 
 const sections: { id: string; label: string; icon: IconName }[] = [
@@ -101,31 +102,12 @@ export function FabricatorPage() {
   const initialSlotLoad = useRef(false)
 
   const persistProject = useCallback(async (snapshot: FabricatorProject) => {
-    let assets: FabricatorAssetSave[] = Array.from(dirtyAssets.current, ([id, dataUrl]) => ({
-      id, dataUrl,
-      ...(dirtyChromaBases.current.has(id) ? { chromaBaseDataUrl: dirtyChromaBases.current.get(id)! } : {})
-    }))
-    const baseAssets = snapshot.parts.flatMap((part) => dirtyChromaBases.current.has(part.id) && !dirtyAssets.current.has(part.id)
-      ? [{ id: part.id, dataUrl: part.dataUrl, chromaBaseDataUrl: part.chromaBaseDataUrl! }]
-      : [])
-    assets = [...assets, ...baseAssets]
-    const serialized = serializeFabricatorProject(snapshot)
-    try {
-      await window.desktop.saveFabricatorProject(serialized, assets)
-    } catch (reason) {
-      const message = reason instanceof Error ? reason.message : String(reason)
-      const missing = /FABRICATOR_MISSING_ASSETS:([a-zA-Z0-9_,.-]+)/.exec(message)?.[1]?.split(',') ?? []
-      if (!missing.length) throw reason
-      const recoverable = missing.flatMap((id) => {
-        const part = snapshot.parts.find((item) => item.id === id)
-        return part ? [{ id, dataUrl: part.dataUrl }] : []
-      })
-      if (recoverable.length !== missing.length) throw reason
-      for (const asset of recoverable) dirtyAssets.current.set(asset.id, asset.dataUrl)
-      const byId = new Map([...assets, ...recoverable].map((asset) => [asset.id, asset]))
-      assets = Array.from(byId.values())
-      await window.desktop.saveFabricatorProject(serialized, assets)
-    }
+    const assets = await persistFabricatorProjectSnapshot(
+      snapshot,
+      dirtyAssets.current,
+      dirtyChromaBases.current,
+      (serialized, changedAssets) => window.desktop.saveFabricatorProject(serialized, changedAssets)
+    )
     for (const asset of assets) {
       if (dirtyAssets.current.get(asset.id) === asset.dataUrl) dirtyAssets.current.delete(asset.id)
       if (asset.chromaBaseDataUrl && dirtyChromaBases.current.get(asset.id) === asset.chromaBaseDataUrl) dirtyChromaBases.current.delete(asset.id)

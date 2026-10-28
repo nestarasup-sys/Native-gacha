@@ -46,10 +46,15 @@ export function createFabricatorModelWriter(deps: FabricatorModelWriterDependenc
   // saves per slot also prevents an older save from deleting a newer asset.
   const missingAssets: string[] = []
   for (const part of parts) {
-    try { await access(join(partsFolder, `${part.id}.png`)) } catch (reason) {
-      if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason
-      missingAssets.push(part.id)
+    const requiredFiles = [`${part.id}.png`, ...(part.chromaBaseSaved ? [`${part.id}.base.png`] : [])]
+    let missing = false
+    for (const file of requiredFiles) {
+      try { await access(join(partsFolder, file)) } catch (reason) {
+        if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason
+        missing = true
+      }
     }
+    if (missing) missingAssets.push(part.id)
   }
   if (missingAssets.length) throw new Error(`FABRICATOR_MISSING_ASSETS:${missingAssets.join(',')}`)
   const projectDocument = {
