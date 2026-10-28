@@ -29,7 +29,7 @@ O restante já tem módulos por domínio e armazenamento local com SQLite, arqui
 - O shell tem sete rotas de produto: Customizador, Studio principal, Editor V6, Roteiros, Base de Vídeos, Opções e Fabricador DEV.
 - `electron/domains/` contém módulos para Base de Vídeos, Customizador, Editor V6, Fabricador, Roteiros, armazenamento compartilhado e Studio. `src/shared/` guarda contratos e regras usadas por mais de um processo.
 - `electron/main.ts` tem 2.153 linhas após as extrações mais recentes e ainda registra 38 handlers IPC diretamente; também compõe serviços que já foram separados em módulos.
-- As páginas mais extensas são Customizador (2.201 linhas), Editor V6 (1.788), Studio (1.564) e Fabricador Dev (1.107). Roteiros tem 535, Base de Vídeos 362 e Opções 216 linhas. Esses números localizam concentração de responsabilidades, mas não são por si só motivo para dividir arquivos.
+- As páginas mais extensas são Customizador (2.189 linhas), Editor V6 (1.788), Studio (1.564) e Fabricador Dev (1.107). Roteiros tem 535, Base de Vídeos 362 e Opções 216 linhas. Esses números localizam concentração de responsabilidades, mas não são por si só motivo para dividir arquivos.
 - A auditoria estática de dependências mantém em zero os imports de runtime entre os pares de features listados em `scripts/architecture/boundaries-baseline.json`.
 
 ### Mapa resumido
@@ -179,7 +179,7 @@ Editor V6
 
 1. **Composition root inchado:** `electron/main.ts` tem 2.153 linhas e registra 38 `ipcMain.handle` diretamente. Ele faz mais do que inicializar o app: mantém persistência e fluxos de arquivos e catálogos. A direção é extrair handlers e casos de uso restantes para domínios, mantendo `main.ts` como composição e ciclo de vida.
 2. **Preload amplo:** `electron/preload.ts` reúne os métodos de Fabricador, Customizador, Studio, Editor V6, mídia e Roteiros; `desktop.d.ts` espelha essa união. Base de Vídeos e Biblioteca de Mídia já têm namespaces próprios; os demais contratos ainda podem ficar mais explícitos sem trocar imediatamente os canais IPC.
-3. **Páginas longas:** Customizador (2.201 linhas), Editor V6 (1.788), Studio (1.564) e Fabricador Dev (1.107) ainda concentram estado e operações. A refatoração deve extrair casos de uso, seletores, hooks e componentes por responsabilidade, sem dividir apenas para reduzir contagem de linhas.
+3. **Páginas longas:** Customizador (2.189 linhas), Editor V6 (1.788), Studio (1.564) e Fabricador Dev (1.107) ainda concentram estado e operações. A refatoração deve extrair casos de uso, seletores, hooks e componentes por responsabilidade, sem dividir apenas para reduzir contagem de linhas.
 4. **Núcleo de renderização de personagem:** Fabricador, Customizador, Studio e Editor V6 consomem modelos e composições em contextos diferentes. Um núcleo compartilhado exige contratos claros e fixtures visuais douradas antes de trocar os caminhos atuais.
 5. **Persistência heterogênea:** algumas áreas já usam serviços/repositórios/filas, outras gravam diretamente no `main.ts`. Cada domínio precisa declarar quem é dono do formato, fila, backup, recuperação e validade de referências.
 6. **Storage distribuído:** bibliotecas e projetos usam caminhos legados em `app-data/runtime/profile/...` sobre a infraestrutura DataPlatform/CAS. Não renomear diretórios por estética; caminhos fazem parte da compatibilidade e dos dados do usuário.
@@ -226,7 +226,8 @@ Editor V6
 - `useCustomizerFacePreview.ts` coordena o preview facial e mantém os dois formatos de origem: catálogo atual e conjunto legado; a página continua dona dos dados e da seleção.
 - Seleções manuais de modelo e pose agora usam `selectCharacterArtwork`, a mesma regra da carga inicial, para validar que o snapshot da pose pertence aos IDs de modelo/pose antes de renderizá-lo. Uma pose ausente/incompatível deixa de cair silenciosamente na imagem do modelo.
 - `CustomizerModelPicker.tsx` devolve a seleção de modelo à aba visível “Modelos”; proporções e dimensões ficam na aba “Corpo”. O catálogo e menu duplicados sob `hidden` foram removidos após confirmar que seus únicos consumidores estavam no próprio bloco oculto; erros do catálogo agora aparecem na lateral ativa. `customizerModuleByTab` mantém a associação entre abas e áreas em um único ponto, compartilhado pelos dois menus.
-- Próxima extração do Customizador: separar a coordenação dos previews de cabelo e roupa, preservando suas camadas e a interação de arraste.
+- `useCustomizerHairPreview.ts` monta e atualiza as camadas de cabelo traseira e frontal, incorporando também `partOverrides` nas dependências para evitar uma prévia desatualizada após ajustes de partes.
+- Próxima extração do Customizador: separar a coordenação do preview e dos ajustes de roupa, preservando camadas e interação de arraste.
 - Fabricador: separar workspaces e comandos de catálogo; preservar transações, histórico e snapshots.
 - Studio e Editor V6: separar estado/documento, timeline/cena, exportação e painel; não compartilhar engines por semelhança visual sem contrato explícito.
 

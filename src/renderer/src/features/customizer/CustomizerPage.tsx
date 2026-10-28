@@ -15,13 +15,14 @@ import type { FaceLibraryPartId } from './customizerFaceCatalogModel'
 import { hairColorControls, hairPalettePresets, MouthBlushControls, NoseOpacityControl, NoseSkinTonePalette, PiecePaletteStrip } from './CustomizerAppearanceControls'
 import { renderCustomizerBasePreview } from './customizerCharacterPreview'
 import { useCustomizerFacePreview } from './useCustomizerFacePreview'
+import { useCustomizerHairPreview } from './useCustomizerHairPreview'
 import { preparePreviewImage, sampleOriginalSkinTone } from './customizerPreviewImages'
 import { CustomizerCategoryIcon, clothesAdjustmentDefinitions, customizerClothesTabs, customizerHeadTabs, customizerModuleByTab, customizerModuleNames, customizerOtherTabs, customizerTopTabs, headAdjustmentItems, headAdjustmentItemsFor } from './customizerNavigation'
 import { adjustableHairPartIds, hairAppearancePartStyleId } from './customizerHairAppearanceModel'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { RenderedCharacterPortrait } from '../../ui/components/RenderedCharacterPortrait'
 import { Icon } from '../../ui/components/Icon'
-import type { FaceCatalogItem, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSummary, FaceComponentKind, FaceDetailKind, FaceSheetKind, FabricatorPose, FabricatorProject, HairStyle, HairStyleSummary, WardrobeCategory, WardrobeSet, WardrobeSetSummary } from '../../../../shared/fabricator'
+import type { FaceCatalogItem, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSummary, FaceComponentKind, FaceDetailKind, FaceSheetKind, FabricatorPose, FabricatorProject, HairStyleSummary, WardrobeCategory, WardrobeSet, WardrobeSetSummary } from '../../../../shared/fabricator'
 import { resolvePoseCategory } from '../../../../shared/fabricator'
 import { hairCategories, hairStyleSupportsCategory } from '../../../../shared/hairCategories'
 import type { CustomizerCharacter, CustomizerFaceAppearance, CustomizerWardrobeGroup, FaceComponentPartId, FacePalettePartId, HairColorOverrides, HairColorRole, HairPartId } from '../../../../shared/customizer'
@@ -32,7 +33,7 @@ import { anchorWardrobeAdjustments, editWardrobeAdjustment, moveWardrobeAdjustme
 import { toggleWardrobeVisibility, updateWardrobeComponentGroups, matchesWardrobeComponent, recolorWardrobeComponents, selectWardrobePanelComponents, wardrobeGroupCategoryForSource } from '../../../../shared/wardrobePlacementModel'
 import { applyCharacterBodyShape } from '../../../../shared/bodyShape'
 import { characterRenderSize } from './renderResolution'
-import { renderArtwork, loadStandardExpressionEffects, withCharacterHeadSize, loadHairAppearanceLayers, renderArtworkWithHair, renderWardrobeOverlay, isRightFaceAsset, renderFrontHairOverlay, characterShapeScale, resolvedHairColors, clothingCategories, wardrobeComponentsForGroup, customizerHairParts, hairAppearanceStyleId } from '../../characters/characterRenderer'
+import { renderArtwork, loadStandardExpressionEffects, withCharacterHeadSize, renderWardrobeOverlay, isRightFaceAsset, characterShapeScale, resolvedHairColors, clothingCategories, wardrobeComponentsForGroup, customizerHairParts, hairAppearanceStyleId } from '../../characters/characterRenderer'
 import type { CatalogArtwork, HairCatalogSide, AdjustmentPreviewHighlight, ClothingGroupCategory, SelectedWardrobeComponent } from '../../characters/characterRenderer'
 
 const proportionControls: Array<{ key: keyof CharacterProportions; label: string; description: string }> = [
@@ -518,35 +519,22 @@ export function CustomizerPage() {
     setCatalogError
   })
 
-  useEffect(() => {
-    let cancelled = false
-    const artwork = displayArtworkProject
-    const source = selectedSourceModelProject
-    const appearance = selectedCharacter?.customization.hairAppearance
-    if (!artwork || !source) return
-    void (async () => {
-      const [backStyles, posteriorStyles, fringeStyles] = await Promise.all([
-        loadHairAppearanceLayers(appearance, source.slot, 'back', hairDetails),
-        loadHairAppearanceLayers(appearance, source.slot, 'front', hairDetails),
-        loadHairAppearanceLayers(appearance, source.slot, 'fringe', hairDetails)
-      ])
-      const frontStyles = [...posteriorStyles, ...fringeStyles]
-      if (cancelled) return
-      const newlyLoaded: Record<string, HairStyle> = {}
-      for (const layer of [...backStyles, ...frontStyles]) if (!hairDetails[`${source.slot}:${layer.style.id}`]) newlyLoaded[`${source.slot}:${layer.style.id}`] = layer.style
-      if (Object.keys(newlyLoaded).length) setHairDetails((current) => ({ ...current, ...newlyLoaded }))
-      const [url, frontUrl] = await Promise.all([
-        renderArtworkWithHair(artwork, source, backStyles, characterRenderSize(artwork.width, artwork.height, previewExtent.width, previewExtent.height, customizerPreviewZoom, previewExtent.density), selectedCharacter?.customization.modelSkinTone, appearance?.modelSlot === source.slot ? appearance : undefined, undefined, selectedCharacter?.customization.partOverrides, activeHairPreviewHighlight),
-        renderFrontHairOverlay(artwork, source, frontStyles, characterRenderSize(artwork.width, artwork.height, previewExtent.width, previewExtent.height, customizerPreviewZoom, previewExtent.density), appearance?.modelSlot === source.slot ? appearance : undefined, undefined, selectedCharacter?.customization.partOverrides, activeHairPreviewHighlight)
-      ])
-      const [artworkReady, frontHairReady] = await Promise.all([preparePreviewImage(url), preparePreviewImage(frontUrl)])
-      if (!artworkReady || !frontHairReady) return
-      if (!cancelled) { setSelectedArtworkUrl(url); setSelectedFrontHairUrl(frontUrl) }
-    })().catch((reason: unknown) => {
-      if (!cancelled) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível montar o cabelo do personagem.')
-    })
-    return () => { cancelled = true }
-  }, [displayArtworkProject, selectedSourceModelProject, selectedCharacter?.id, selectedCharacter?.customization.hairAppearance, selectedCharacter?.customization.modelSkinTone, hairDetails, previewExtent, customizerPreviewZoom, activeHairPreviewHighlight])
+  useCustomizerHairPreview({
+    characterId: selectedCharacter?.id,
+    artwork: displayArtworkProject,
+    source: selectedSourceModelProject,
+    hairAppearance: characterHairAppearance,
+    hairDetails,
+    skinTone: selectedCharacter?.customization.modelSkinTone,
+    headOverrides: selectedCharacter?.customization.partOverrides,
+    previewExtent,
+    zoom: customizerPreviewZoom,
+    highlight: activeHairPreviewHighlight,
+    setHairDetails,
+    setSelectedArtworkUrl,
+    setSelectedFrontHairUrl,
+    setCatalogError
+  })
 
   useEffect(() => {
     const wardrobeCatalogVisible = activeModule === 'Roupas' || activeModule === 'Cabeça' && headPanelTab === 'extra'
