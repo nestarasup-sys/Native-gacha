@@ -5,7 +5,7 @@ import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } 
 import { createHash, randomUUID } from 'node:crypto'
 import { Readable } from 'node:stream'
 import { fileURLToPath } from 'node:url'
-import type { FaceAssetKind, FaceAssetSave, FaceCatalogItem, FaceCatalogItemSave, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSave, FaceComponentAssetSummary, FaceElementKind, FaceExpressionPreset, FaceExpressionTransforms, FaceExpressionWorkspaceDraft, FaceGuideProfile, FaceSet, FaceSetSave, FaceSetSummary, FaceSheetKind, FaceTransform, FabricatorAssetSave, FabricatorHistoryEntry, FabricatorHistorySaveEntry, FabricatorHistorySaveState, FabricatorHistoryState, FabricatorPoseDraftSave, FabricatorPoseSave, FabricatorProject, FabricatorProjectSave, HairStyle, HairStyleAsset, HairStyleSave, HairStyleSummary, HairWorkspace, HairWorkspaceAsset, HairWorkspaceSave, ModelPart, WardrobeAssetSave, WardrobeCategory, WardrobeSet, WardrobeSetSave } from '../src/shared/fabricator'
+import type { FaceAssetKind, FaceAssetSave, FaceCatalogItem, FaceCatalogItemSave, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSave, FaceComponentAssetSummary, FaceElementKind, FaceExpressionPreset, FaceExpressionTransforms, FaceExpressionWorkspaceDraft, FaceSet, FaceSetSave, FaceSheetKind, FaceTransform, FabricatorAssetSave, FabricatorHistoryEntry, FabricatorHistorySaveEntry, FabricatorHistorySaveState, FabricatorHistoryState, FabricatorPoseDraftSave, FabricatorPoseSave, FabricatorProject, FabricatorProjectSave, HairStyle, HairStyleAsset, HairStyleSave, HairStyleSummary, HairWorkspace, HairWorkspaceAsset, HairWorkspaceSave, ModelPart, WardrobeAssetSave, WardrobeCategory, WardrobeSet, WardrobeSetSave } from '../src/shared/fabricator'
 import { hairCategories } from '../src/shared/hairCategories'
 import type { StudioAsset, StudioDocument } from '../src/shared/studio'
 import { isStudioExpressionEffects, isStudioFaceTransforms } from '../src/shared/studio'
@@ -38,6 +38,8 @@ import { assertReferencedWardrobeComponentsRemain, assertWardrobeSetHasNoCharact
 import { createFabricatorCatalogListings, legacyHairStyle } from './domains/fabricator/catalogListings'
 import { registerFabricatorWardrobeCatalogHandlers } from './domains/fabricator/wardrobeCatalogIpc'
 import { createFaceGuidePersistence, isFaceGuideProfile } from './domains/fabricator/faceGuidePersistence'
+import { registerFabricatorFaceCatalogHandlers } from './domains/fabricator/faceCatalogIpc'
+import { registerFaceGuideHandlers } from './domains/fabricator/faceGuidesIpc'
 import { publishModelSource, type ModelSourcePublishRequest } from './domains/fabricator/modelSource'
 import { recoverModelSourceSlot } from './domains/fabricator/modelSourceRecovery'
 import { createFabricatorModelWriter } from './domains/fabricator/modelWriter'
@@ -366,6 +368,18 @@ let faceSaveQueue: Promise<void> = Promise.resolve()
 let expressionPresetSaveQueue: Promise<void> = Promise.resolve()
 let faceGuideSaveQueue: Promise<void> = Promise.resolve()
 const hairSaveQueues = new Map<number, Promise<void>>()
+
+function queueFaceSave(operation: () => Promise<void>): Promise<void> {
+  const next = faceSaveQueue.catch(() => undefined).then(operation)
+  faceSaveQueue = next
+  return next
+}
+
+function queueFaceGuideSave(operation: () => Promise<void>): Promise<void> {
+  const next = faceGuideSaveQueue.catch(() => undefined).then(operation)
+  faceGuideSaveQueue = next
+  return next
+}
 // O acesso do Customizador passa pelo mesmo DomainFileSystem legado, sem migrar dados.
 const customizerRepository = new CustomizerCharacterRepository(
   characterManifestPath,
@@ -695,9 +709,6 @@ function validFaceComponentAsset(modelSlot: number, asset: FaceComponentAssetSav
     && transform.scaleX > 0 && transform.scaleY > 0 && transform.scaleX <= 20 && transform.scaleY <= 20
     && typeof asset.updatedAt === 'string'
 }
-
-async function readFaceGuides(profile: FaceGuideProfile) { return faceGuidePersistence.read(profile) }
-async function writeFaceGuides(profile: FaceGuideProfile, guides: unknown): Promise<void> { return faceGuidePersistence.write(profile, guides) }
 
 async function listFaceComponentAssets(modelSlot: number, kind?: FaceAssetKind): Promise<FaceComponentAssetSummary[]> {
   if (!isValidModelSlot(modelSlot)) throw new Error('Modelo inválido.')
@@ -1614,60 +1625,14 @@ async function registerFabricatorHandlers(): Promise<void> {
     recover:(folder,images)=>catalogPersistence.recoverCatalogManifest(folder,images),
     readLegacyHair:readHairWorkspace
   })
-  ipcMain.handle('fabricator:face:list', async (event, modelSlot: number): Promise<FaceSetSummary[]> => {
-    assertTrustedSender(event)
-    return catalogListings.listFaces(modelSlot)
-  })
-
-  ipcMain.handle('fabricator:face:load', async (event, modelSlot: number, id: string): Promise<FaceSet | null> => {
-    assertTrustedSender(event)
-    return readFaceSet(modelSlot, id)
-  })
-
-  ipcMain.handle('fabricator:face:save', async (event, modelSlot: number, set: FaceSetSave, assets: FaceAssetSave[]): Promise<void> => {
-    assertTrustedSender(event)
-    const next = faceSaveQueue.catch(() => undefined).then(() => writeFaceSet(modelSlot, set, assets))
-    faceSaveQueue = next
-    await next
-  })
-
-  ipcMain.handle('fabricator:face:delete', async (event, modelSlot: number, id: string): Promise<void> => {
-    assertTrustedSender(event)
-    if (!isValidModelSlot(modelSlot) || !isValidWardrobeId(id)) throw new Error('Rosto inválido.')
-    const base = resolve(faceModelPath(modelSlot))
-    const target = resolve(faceSetPath(modelSlot, id))
-    if (dirname(target) !== base || basename(target) !== `set-${id}`) throw new Error('Caminho de exclusão inválido.')
-    const next = faceSaveQueue.catch(() => undefined).then(() => rm(target, { recursive: true, force: true }))
-    faceSaveQueue = next
-    await next
-  })
-
-  ipcMain.handle('fabricator:face-catalog:list', async (event, modelSlot: number): Promise<FaceCatalogItemSummary[]> => {
-    assertTrustedSender(event)
-    return listFaceCatalogItems(modelSlot)
-  })
-
-  ipcMain.handle('fabricator:face-catalog:load', async (event, modelSlot: number, id: string): Promise<FaceCatalogItem | null> => {
-    assertTrustedSender(event)
-    return readFaceCatalogItem(modelSlot, id)
-  })
-
-  ipcMain.handle('fabricator:face-catalog:save', async (event, modelSlot: number, item: FaceCatalogItemSave, assets: FaceAssetSave[]): Promise<void> => {
-    assertTrustedSender(event)
-    const next = faceSaveQueue.catch(() => undefined).then(() => writeFaceCatalogItem(modelSlot, item, assets))
-    faceSaveQueue = next
-    await next
-  })
-
-  ipcMain.handle('fabricator:face-catalog:delete', async (event, modelSlot: number, id: string): Promise<void> => {
-    assertTrustedSender(event)
-    if (!isValidModelSlot(modelSlot) || !isValidFaceCatalogId(id)) throw new Error('Peça facial inválida.')
-    const base = resolve(faceCatalogPath(modelSlot))
-    const target = resolve(faceCatalogItemPath(modelSlot, id))
-    if (dirname(target) !== base || basename(target) !== `item-${id}`) throw new Error('Caminho de exclusão inválido.')
-    const next = faceSaveQueue.catch(() => undefined).then(() => rm(target, { recursive: true, force: true }))
-    faceSaveQueue = next
-    await next
+  registerFabricatorFaceCatalogHandlers(ipcMain, assertTrustedSender, {
+    isValidModelSlot, isValidWardrobeId, isValidFaceCatalogId,
+    listFaceSets: (modelSlot) => catalogListings.listFaces(modelSlot),
+    readFaceSet, writeFaceSet, faceModelPath, faceSetPath,
+    listFaceCatalogItems, readFaceCatalogItem, writeFaceCatalogItem, faceCatalogPath, faceCatalogItemPath,
+    listFaceComponentAssets, readFaceComponentAsset, writeFaceComponentAsset, faceComponentPath, faceComponentItemPath,
+    removeDirectory: (path) => rm(path, { recursive: true, force: true }),
+    queueSave: queueFaceSave
   })
 
   registerExpressionPresetHandlers(ipcMain, assertTrustedSender, {
@@ -1704,41 +1669,11 @@ async function registerFabricatorHandlers(): Promise<void> {
     await writeFile(destination, Buffer.from(data))
     return true
   })
-  ipcMain.handle(fabricatorIpcChannels.listFaceComponentAssets, async (event, modelSlot: number, kind?: FaceAssetKind): Promise<FaceComponentAssetSummary[]> => {
-    assertTrustedSender(event)
-    return listFaceComponentAssets(modelSlot, kind)
-  })
-  ipcMain.handle(fabricatorIpcChannels.loadFaceComponentAsset, async (event, modelSlot: number, id: string): Promise<FaceComponentAsset | null> => {
-    assertTrustedSender(event)
-    return readFaceComponentAsset(modelSlot, id)
-  })
-  ipcMain.handle(fabricatorIpcChannels.saveFaceComponentAsset, async (event, modelSlot: number, asset: FaceComponentAssetSave, dataUrl: string): Promise<void> => {
-    assertTrustedSender(event)
-    const next = faceSaveQueue.catch(() => undefined).then(() => writeFaceComponentAsset(modelSlot, asset, dataUrl))
-    faceSaveQueue = next
-    await next
-  })
-  ipcMain.handle(fabricatorIpcChannels.deleteFaceComponentAsset, async (event, modelSlot: number, id: string): Promise<void> => {
-    assertTrustedSender(event)
-    if (!isValidModelSlot(modelSlot) || !isValidWardrobeId(id)) throw new Error('Asset facial inválido.')
-    const base = resolve(faceComponentPath(modelSlot))
-    const target = resolve(faceComponentItemPath(modelSlot, id))
-    if (dirname(target) !== base || basename(target) !== `item-${id}`) throw new Error('Caminho de exclusão inválido.')
-    const next = faceSaveQueue.catch(() => undefined).then(() => rm(target, { recursive: true, force: true }))
-    faceSaveQueue = next
-    await next
-  })
-  ipcMain.handle('fabricator:face-guides:load', async (event, profile: string) => {
-    assertTrustedSender(event)
-    if (!isFaceGuideProfile(profile)) throw new Error('Perfil de guias inválido.')
-    return readFaceGuides(profile)
-  })
-  ipcMain.handle('fabricator:face-guides:save', async (event, profile: string, guides: unknown): Promise<void> => {
-    assertTrustedSender(event)
-    if (!isFaceGuideProfile(profile)) throw new Error('Perfil de guias inválido.')
-    const next = faceGuideSaveQueue.catch(() => undefined).then(() => writeFaceGuides(profile, guides))
-    faceGuideSaveQueue = next
-    await next
+  registerFaceGuideHandlers(ipcMain, assertTrustedSender, {
+    isProfile: isFaceGuideProfile,
+    read: (profile) => faceGuidePersistence.read(profile),
+    write: (profile, guides) => faceGuidePersistence.write(profile, guides),
+    queueSave: queueFaceGuideSave
   })
 
   ipcMain.handle(fabricatorIpcChannels.loadHairWorkspace, async (event, modelSlot: number): Promise<HairWorkspace | null> => {

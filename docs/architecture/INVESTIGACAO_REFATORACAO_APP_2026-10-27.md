@@ -12,7 +12,7 @@ O aplicativo tem sete áreas em uma shell Electron/React. A separação de Base 
 
 A **Biblioteca de Mídia** é dona dos arquivos de vídeo e seus IDs. Base de Vídeos guarda estado editorial e numeração; Roteiros e Editor V6 guardam referências por ID. Uma coordenação curta agora serializa alterações nesses vínculos nas três áreas, evitando que um autosave atrasado recoloque a referência depois de excluir o vídeo.
 
-O restante já tem módulos por domínio e armazenamento local com SQLite, arquivos e CAS. Os maiores pontos de concentração são `electron/main.ts`, que ainda registra 52 handlers IPC inline, e páginas React extensas que combinam estado e coordenação de operações. O plano prioriza limites de propriedade, segurança dos dados e redução de responsabilidades por fluxo.
+O restante já tem módulos por domínio e armazenamento local com SQLite, arquivos e CAS. Os maiores pontos de concentração são `electron/main.ts`, que ainda registra 38 handlers IPC inline, e páginas React extensas que combinam estado e coordenação de operações. O plano prioriza limites de propriedade, segurança dos dados e redução de responsabilidades por fluxo.
 
 **Próximos passos:** concluir a modularização por responsabilidade das páginas grandes, começando pelo Customizador. A composição compartilha algoritmos visuais de baixo nível; a orquestração e os modos de render continuam próprios de Studio e Editor V6 até existir comparação visual das saídas reais.
 
@@ -28,7 +28,7 @@ O restante já tem módulos por domínio e armazenamento local com SQLite, arqui
 
 - O shell tem sete rotas de produto: Customizador, Studio principal, Editor V6, Roteiros, Base de Vídeos, Opções e Fabricador DEV.
 - `electron/domains/` contém módulos para Base de Vídeos, Customizador, Editor V6, Fabricador, Roteiros, armazenamento compartilhado e Studio. `src/shared/` guarda contratos e regras usadas por mais de um processo.
-- `electron/main.ts` tem 2.097 linhas após as extrações mais recentes e ainda registra 52 handlers IPC diretamente; também compõe serviços que já foram separados em módulos.
+- `electron/main.ts` tem 2.038 linhas após as extrações mais recentes e ainda registra 38 handlers IPC diretamente; também compõe serviços que já foram separados em módulos.
 - As páginas mais extensas são Customizador (2.536 linhas), Editor V6 (1.706), Studio (1.487) e Fabricador Dev (1.045). Roteiros tem 535, Base de Vídeos 362 e Opções 216 linhas. Esses números localizam concentração de responsabilidades, mas não são por si só motivo para dividir arquivos.
 - A auditoria estática de dependências mantém em zero os imports de runtime entre os pares de features listados em `scripts/architecture/boundaries-baseline.json`.
 
@@ -171,7 +171,7 @@ Editor V6
 
 - **Shell visual:** `src/renderer/src/ui/App.tsx` define sete rotas e lazy-load; `TopBar` escolhe a área; `AppErrorBoundary` e o fallback Suspense tratam falha/carregamento por rota.
 - **Contrato desktop:** `electron/preload.ts` constrói o objeto protegido `window.desktop`; contratos de domínio ficam em `src/shared/` e a declaração global em `desktop.d.ts`. As APIs de Base, mídia, Studio e Editor V6 já têm nomes próprios; ainda há APIs de Fabricador, Roteiros, Customizador e Opções no objeto raiz.
-- **Composição:** `electron/main.ts` inicializa Electron, filesystem, migrações e bibliotecas, registra IPC, conecta serviços e conserva 52 handlers inline. Os módulos em `electron/domains/` já removem vários desses fluxos da raiz.
+- **Composição:** `electron/main.ts` inicializa Electron, filesystem, migrações e bibliotecas, registra IPC, conecta serviços e conserva 38 handlers inline. Os módulos em `electron/domains/` já removem vários desses fluxos da raiz.
 - **Dados:** `electron/dataPlatform.cjs` possui schema e catálogo SQLite centralizados; `DomainFileSystem` permite caminhos lógicos sobre armazenamento físico/CAS; cada domínio mantém manifestos e arquivos próprios. Os nomes antigos dos diretórios são parte da compatibilidade.
 - **Renderização compartilhada:** `characters/` já compartilha cache de imagem, materiais preparados, tintura, presets de expressão e composição de camadas, roupas e rosto de catálogo. Os renderizadores mantêm suas próprias fachadas, políticas e ciclo de vida. Ainda falta comparar saídas reais de Studio e Editor V6 antes de unificar a orquestração completa.
 
@@ -320,6 +320,12 @@ Este corte separa propriedade dos contratos e chamadas entre domínios, mas não
 
 - `VideoLibraryStore` e o helper de hash/CAS agora ficam em `electron/domains/mediaLibrary/`; `videoLibraryService.ts` coordena importação, metadados e exclusão, enquanto `videoLibraryIpc.ts` registra os cinco canais existentes.
 - A exclusão continua na ordem fila Roteiros → coordenador de vínculos → busca de referências em Roteiros/Editor V6 → tombstone do store. Importar mantém o mesmo seletor e filtros; `video-library:*`, IDs, catálogo JSON, pasta `studios/Editor Gacha/media-library` e integração com Base/Roteiros/Editor V6 foram preservados.
+
+### Etapa aplicada — IPC do catálogo facial do Fabricador
+
+- `faceCatalogIpc.ts` agora registra os 12 canais de conjuntos faciais, peças de catálogo e assets individuais; `faceGuidesIpc.ts` registra leitura e gravação das guias. `main.ts` injeta os serviços atuais, validadores, caminhos e filas de escrita.
+- Os canais, validações de origem, mensagens, limites de caminho, filas e formatos persistidos foram preservados. A mudança separa o registro IPC da composição Electron sem mover nem reescrever dados.
+- `electron/main.ts` passou de 2.097 para 2.038 linhas e de 52 para 38 handlers inline.
 
 ## 7. Próxima tarefa recomendada
 
