@@ -31,7 +31,7 @@ O restante já tem módulos por domínio e armazenamento local com SQLite, arqui
 - O shell tem sete rotas de produto: Customizador, Studio principal, Editor V6, Roteiros, Base de Vídeos, Opções e Fabricador DEV.
 - `electron/domains/` contém módulos para Base de Vídeos, Customizador, Editor V6, Fabricador, Roteiros, armazenamento compartilhado e Studio. `src/shared/` guarda contratos e regras usadas por mais de um processo.
 - `electron/main.ts` tem 2.153 linhas após as extrações mais recentes e ainda registra 38 handlers IPC diretamente; também compõe serviços que já foram separados em módulos.
-- As páginas mais extensas são Customizador (1.817 linhas), Editor V6 (1.788), Studio (1.564) e Fabricador Dev (1.035). Roteiros tem 535, Base de Vídeos 362 e Opções 216 linhas. Esses números localizam concentração de responsabilidades, mas não são por si só motivo para dividir arquivos.
+- As páginas mais extensas são Customizador (1.817 linhas), Editor V6 (1.646), Studio (1.427) e Fabricador Dev (1.035). Roteiros tem 535, Base de Vídeos 362 e Opções 216 linhas. Esses números localizam concentração de responsabilidades, mas não são por si só motivo para dividir arquivos.
 - A auditoria estática de dependências mantém em zero os imports de runtime entre os pares de features listados em `scripts/architecture/boundaries-baseline.json`.
 
 ### Mapa resumido
@@ -183,7 +183,7 @@ Editor V6
 
 1. **Composition root inchado:** `electron/main.ts` tem 2.153 linhas e registra 38 `ipcMain.handle` diretamente. Ele faz mais do que inicializar o app: mantém persistência e fluxos de arquivos e catálogos. A direção é extrair handlers e casos de uso restantes para domínios, mantendo `main.ts` como composição e ciclo de vida.
 2. **Preload amplo:** `electron/preload.ts` reúne os métodos de Fabricador, Customizador, Studio, Editor V6, mídia e Roteiros; `desktop.d.ts` espelha essa união. Base de Vídeos e Biblioteca de Mídia já têm namespaces próprios; os demais contratos ainda podem ficar mais explícitos sem trocar imediatamente os canais IPC.
-3. **Páginas longas:** Customizador (1.817 linhas), Editor V6 (1.788), Studio (1.564) e Fabricador Dev (1.035) ainda concentram estado e operações. A refatoração deve extrair casos de uso, seletores, hooks e componentes por responsabilidade, sem dividir apenas para reduzir contagem de linhas.
+3. **Páginas longas:** Customizador (1.817 linhas), Editor V6 (1.646), Studio (1.427) e Fabricador Dev (1.035) ainda concentram estado e operações. A refatoração deve extrair casos de uso, seletores, hooks e componentes por responsabilidade, sem dividir apenas para reduzir contagem de linhas.
 4. **Núcleo de renderização de personagem:** Fabricador, Customizador, Studio e Editor V6 consomem modelos e composições em contextos diferentes. Um núcleo compartilhado exige contratos claros e fixtures visuais douradas antes de trocar os caminhos atuais.
 5. **Persistência heterogênea:** algumas áreas já usam serviços/repositórios/filas, outras gravam diretamente no `main.ts`. Cada domínio precisa declarar quem é dono do formato, fila, backup, recuperação e validade de referências.
 6. **Storage distribuído:** bibliotecas e projetos usam caminhos legados em `app-data/runtime/profile/...` sobre a infraestrutura DataPlatform/CAS. Não renomear diretórios por estética; caminhos fazem parte da compatibilidade e dos dados do usuário.
@@ -363,9 +363,15 @@ Este corte separa propriedade dos contratos e chamadas entre domínios, mas não
 - Os canais, validações de origem, mensagens, limites de caminho, filas e formatos persistidos foram preservados. A mudança separa o registro IPC da composição Electron sem mover nem reescrever dados.
 - Na etapa da extração de IPC facial, `electron/main.ts` passou de 2.097 para 2.038 linhas e de 52 para 38 handlers inline; a contagem atual do inventário é 2.153 linhas, mantendo 38 handlers inline.
 
+### Etapa aplicada — controle numérico compartilhado entre Studio e Editor V6
+
+- As páginas repetiam o mesmo campo numérico com slider, incluindo rascunho de digitação, limite mínimo/máximo, confirmação por Enter ou blur e eventos de início/fim do histórico.
+- `NumericRangeField.tsx` agora concentra esse comportamento visual na camada comum de UI. Cada página continua injetando seu próprio início de histórico e acabamento de edição; as regras dos documentos e da timeline continuam nos seus domínios.
+- As páginas do Studio e Editor V6 diminuíram 68 linhas cada; o inventário atual é 1.427 e 1.646 linhas, respectivamente. A mudança não altera persistência, IPC ou renderização.
+
 ## 7. Próxima tarefa recomendada
 
-Continuar pelo **Ciclo 4** com módulos focados de UI e coordenação no Customizador, Fabricador, Studio e Editor V6. Em paralelo, preparar fixtures visuais sintéticas que capturem as saídas reais de Studio e Editor V6; só então decidir se as fachadas de renderização podem compartilhar mais da orquestração.
+Continuar pelo **Ciclo 4** com módulos focados de UI e coordenação no Customizador, Fabricador, Studio e Editor V6. O próximo passo é mapear estado e operações de cena em Studio/Editor V6 para encontrar fronteiras de extração que preservem o histórico e o comportamento temporal. Em paralelo, preparar fixtures visuais sintéticas que capturem as saídas reais dessas áreas antes de compartilhar mais da orquestração de renderização.
 
 ## 8. Verificações e validação
 
