@@ -1,7 +1,7 @@
 /** Seleção de modelos e projeção de montagem para Poses DEV, sem estado React. */
 import type { FabricatorPose, FabricatorPoseSummary, FabricatorProject } from '../../../../../shared/fabricator'
 import { selectMountedModelSource } from '../../../../../shared/fabricatorModelViews'
-import { normalizeLayerOrder } from './rig'
+import { normalizeLayerOrder, repairIncompatibleModelRigJoints } from './rig'
 
 type DraftProject = Omit<FabricatorPose, 'slot'>
 const EXPORT_POSE_SLOT_COUNT = 5
@@ -28,7 +28,7 @@ export function poseFromModel(model: FabricatorProject): DraftProject {
       id: part.id, name: part.name, x: part.x, y: part.y, width: part.width, height: part.height,
       rotation: part.rotation, jointAnchor: part.jointAnchor ? { ...part.jointAnchor } : undefined, sourceTransform: part.sourceTransform ? { ...part.sourceTransform, ...(part.sourceTransform.jointAnchor ? { jointAnchor: { ...part.sourceTransform.jointAnchor } } : {}) } : undefined, fakeSkinContours: part.fakeSkinContours, dataUrl: part.dataUrl
     })),
-    joints: mounted.joints.map((joint) => structuredClone(joint)),
+    joints: repairIncompatibleModelRigJoints(mounted.parts, mounted.joints.map((joint) => structuredClone(joint))),
     layerOrder: normalizeLayerOrder(mounted.parts, mounted.layerOrder),
     hiddenPartIds: [...mounted.hiddenPartIds],
     updatedAt: new Date().toISOString()

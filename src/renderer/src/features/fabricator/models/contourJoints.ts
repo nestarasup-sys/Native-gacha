@@ -1,5 +1,5 @@
 import type { FabricatorProject, ModelPart } from '../../../../../shared/fabricator'
-import { autoConnectParts, createJoint, normalizePartAnchors } from './rig'
+import { autoConnectParts, createJoint, modelRigSegmentKind, modelRigSide, normalizePartAnchors, repairIncompatibleModelRigJoints } from './rig'
 import { moveFabricatorPartBranch } from './rigEditing'
 import { loadImageFromDataUrl } from './imageData'
 
@@ -10,17 +10,12 @@ type Point = { x: number; y: number }
 export type ContourJointResult = { project: FabricatorProject; alignedCount: number; pairCount: number }
 
 function segmentKind(name: string): SegmentKind | null {
-  if (/antebra[cç]o|forearm|lower[\s_-]?arm|(?:bra[cç]o).*(?:inferior|lower)/i.test(name)) return 'forearm'
-  if (/coxa|thigh/i.test(name)) return 'thigh'
-  if (/canela|panturrilha|shin|calf|(?:perna).*(?:inferior|lower)/i.test(name)) return 'lower-leg'
-  if (/bra[cç]o|arm/i.test(name)) return 'upper-arm'
-  return null
+  const kind = modelRigSegmentKind(name)
+  return kind === 'upper-arm' || kind === 'forearm' || kind === 'thigh' || kind === 'lower-leg' ? kind : null
 }
 
 function sideOf(part: ModelPart): Side {
-  if (/(?:esquerd[oa]|left|(?:^|[\s_-])l(?:$|[\s_-]))/i.test(part.name)) return 'left'
-  if (/(?:direit[oa]|right|(?:^|[\s_-])r(?:$|[\s_-]))/i.test(part.name)) return 'right'
-  return null
+  return modelRigSide(part.name)
 }
 
 function center(part: ModelPart): Point {
@@ -100,12 +95,26 @@ async function endpoint(part: ModelPart, edge: 'top' | 'bottom'): Promise<Point 
 /** Connects named limb segments and shifts only the downstream piece until their visible end contours meet. */
 export async function connectBodyContourJoints(project: FabricatorProject): Promise<ContourJointResult> {
   const pairs = bodyPairs(project.parts)
-  let joints = [...project.joints.filter((joint) => !joint.suggested), ...autoConnectParts(project.parts)]
+  const fixedByChild = new Set(project.joints.filter((joint) => joint.fixed).map((joint) => joint.childPartId))
+  const previousByChild = new Map(project.joints.map((joint) => [joint.childPartId, joint]))
+  let joints = repairIncompatibleModelRigJoints(project.parts, project.joints.filter((joint) => !joint.suggested))
+  for (const suggested of autoConnectParts(project.parts)) {
+    if (joints.some((joint) => joint.childPartId === suggested.childPartId)) continue
+    const previous = previousByChild.get(suggested.childPartId)
+    joints.push({
+      ...suggested,
+      ...(previous ? { id: previous.id } : {}),
+      ...(fixedByChild.has(suggested.childPartId) ? { fixed: true } : {})
+    })
+  }
   for (const { parent, child } of pairs) {
-    const incoming = joints.find((joint) => joint.childPartId === child.id)
+    const incomingIndex = joints.findIndex((joint) => joint.childPartId === child.id)
+    const incoming = incomingIndex < 0 ? undefined : joints[incomingIndex]
     if (!incoming) joints.push(createJoint(parent, child, true))
-    else if (incoming.suggested && incoming.parentPartId !== parent.id) {
-      joints = [...joints.filter((joint) => joint.id !== incoming.id), createJoint(parent, child, true)]
+    else if (incoming.parentPartId !== parent.id) {
+      const replacement = createJoint(parent, child, true, () => incoming.id)
+      joints = joints.filter((joint) => joint.childPartId !== child.id)
+      joints.push({ ...replacement, fixed: incoming.fixed })
     }
   }
   const normalizedRig = normalizePartAnchors(project.parts, joints)

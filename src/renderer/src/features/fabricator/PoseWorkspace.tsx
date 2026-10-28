@@ -4,7 +4,7 @@ import { resolvePoseCategory } from '../../../../shared/fabricator'
 import { defaultExportPoseSlots, poseFromModel } from './models/poseProjection'
 import { Icon } from '../../ui/components/Icon'
 import { usePreviewBackground } from './usePreviewBackground'
-import { normalizeLayerOrder, orderedParts, partJointAnchor } from './models/rig'
+import { isModelRigConnectionCompatible, normalizeLayerOrder, orderedParts, partJointAnchor, repairIncompatibleModelRigJoints } from './models/rig'
 import { rotatePointAroundOrigin } from './models/geometry'
 import { useModelAppearanceTarget, useModelPartAppearancePreview } from './ModelAppearanceContext'
 
@@ -30,10 +30,14 @@ function isMovablePosePart(project: DraftProject, partId: string): boolean {
 
 function fixedPoseBranch(project: DraftProject, rootId: string): Set<string> {
   const movingIds = new Set([rootId])
+  const parts = new Map(project.parts.map((part) => [part.id, part]))
   let changed = true
   while (changed) {
     changed = false
     for (const joint of project.joints) if (joint.fixed && movingIds.has(joint.parentPartId) && !movingIds.has(joint.childPartId)) {
+      const parent = parts.get(joint.parentPartId)
+      const child = parts.get(joint.childPartId)
+      if (!parent || !child || !isModelRigConnectionCompatible(parent, child)) continue
       movingIds.add(joint.childPartId)
       changed = true
     }
@@ -125,10 +129,14 @@ export function PoseWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
   const categoryOptions = Array.from(new Set(['Parado', 'Sentado', ...allPoseSlots.filter((pose): pose is NonNullable<FabricatorPoseSummary> => pose?.sourceModelSlot === selectedModelSlot).map(resolvePoseCategory), ...(project ? [resolvePoseCategory({ ...project, slot: editingSlot ?? undefined })] : [])]))
 
   const publishProject = useCallback((next: DraftProject | null, isDirty = true) => {
-    projectRef.current = next
-    dirtyRef.current = isDirty
-    setProject(next)
-    setDirty(isDirty)
+    const joints = next ? repairIncompatibleModelRigJoints(next.parts, next.joints) : []
+    const repaired = Boolean(next && (joints.length !== next.joints.length || joints.some((joint, index) => joint.parentPartId !== next.joints[index]?.parentPartId)))
+    const normalized = next ? { ...next, joints } : null
+    const nextDirty = isDirty || repaired
+    projectRef.current = normalized
+    dirtyRef.current = nextDirty
+    setProject(normalized)
+    setDirty(nextDirty)
   }, [])
 
   const loadLibraries = useCallback(async () => {
@@ -431,7 +439,11 @@ export function PoseWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
       let changed = true
       while (changed) {
         changed = false
-        for (const joint of current.joints) if (joint.fixed && affected.has(joint.parentPartId) && !affected.has(joint.childPartId)) {
+        for (const joint of current.joints) {
+          if (!joint.fixed || !affected.has(joint.parentPartId) || affected.has(joint.childPartId)) continue
+          const parent = current.parts.find((part) => part.id === joint.parentPartId)
+          const child = current.parts.find((part) => part.id === joint.childPartId)
+          if (!parent || !child || !isModelRigConnectionCompatible(parent, child)) continue
           affected.add(joint.childPartId)
           changed = true
         }
