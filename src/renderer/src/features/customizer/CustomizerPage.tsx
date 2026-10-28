@@ -8,6 +8,7 @@ import { useCustomizerCharacterSourceSelection } from './useCustomizerCharacterS
 import { CustomizerModelPicker } from './CustomizerModelPicker'
 import { CustomizerClothesAdjustmentPanel } from './CustomizerClothesAdjustmentPanel'
 import { buildClothesAdjustmentEntries } from './customizerClothesAdjustmentModel'
+import { hasHeadAdjustmentItem, headAdjustmentPreviewUrl } from './customizerHeadAdjustmentModel'
 import { upperWardrobePanels, upperWardrobePageTwoPanels, accessoryWardrobePanels, lowerWardrobePanels, lowerWardrobePageTwoPanels, wardrobePanelCandidates, isWardrobePanelCandidateSelected, renderWardrobeThumbnail } from './wardrobePanelModel'
 import type { WardrobePanel } from './wardrobePanelModel'
 import { HairAssetPreview, WardrobePanelCandidatePreview } from './CustomizerAssetPreviews'
@@ -28,7 +29,6 @@ import { RenderedCharacterPortrait } from '../../ui/components/RenderedCharacter
 import { Icon } from '../../ui/components/Icon'
 import type { FaceCatalogItem, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSummary, FaceComponentKind, FaceDetailKind, FaceSheetKind, FabricatorPose, FabricatorProject, HairStyleSummary, WardrobeSet } from '../../../../shared/fabricator'
 import { resolvePoseCategory } from '../../../../shared/fabricator'
-import { hairCategories, hairStyleSupportsCategory } from '../../../../shared/hairCategories'
 import type { CustomizerCharacter, CustomizerFaceAppearance, CustomizerWardrobeGroup, FaceComponentPartId, FacePalettePartId, HairColorOverrides, HairColorRole, HairPartId } from '../../../../shared/customizer'
 import { characterBodyDimensionLimits, characterProportionLimits, defaultCharacterProportions, getCharacterBodyDimensions, getCharacterProportions, type CharacterProportions } from '../../../../shared/customizer'
 import { usePreviewBackground } from '../../ui/hooks/usePreviewBackground'
@@ -1540,18 +1540,6 @@ export function CustomizerPage() {
     </div>
   )
 
-  const hasHeadAdjustmentItem = (id: string) => {
-    const appearance = selectedCharacter?.customization.faceAppearance
-    if (hairCategories.some((part) => part.id === id)) return Boolean(hairAppearancePartStyleId(selectedCharacter?.customization.hairAppearance, id as HairPartId))
-    if (id === 'eye-left' || id === 'eye-right' || id === 'pupil-left' || id === 'pupil-right' || id === 'brow-left' || id === 'brow-right') {
-      return Boolean(appearance?.components?.[id as FaceComponentPartId]?.assetId || (id.startsWith('eye') ? appearance?.eyeCatalogId || appearance?.eyeLeftCatalogId || appearance?.eyeRightCatalogId || appearance?.setId : id.startsWith('brow') ? appearance?.eyebrowCatalogId || appearance?.eyebrowLeftCatalogId || appearance?.eyebrowRightCatalogId || appearance?.setId : false))
-    }
-    if (id === 'nose') return Boolean(appearance?.noseCatalogId || appearance?.setId)
-    if (id === 'mouth') return Boolean(appearance?.mouthClosedCatalogId || appearance?.mouthOpenCatalogId || appearance?.setId)
-    if (id === 'oculos' || id === 'acessorio-cabeca') return Boolean(appearance?.headExtras?.[id === 'oculos' ? 'glasses' : 'head-accessory'] || selectedCharacter?.customization.wardrobeGroups?.some((group) => group.category === id))
-    return Boolean(appearance?.faceDetails?.[id as FaceDetailKind])
-  }
-
   const restoreHeadAdjustments = () => {
     setHeadAdjustSelection(null)
     adjustmentLastTargetRef.current = null
@@ -1621,45 +1609,12 @@ export function CustomizerPage() {
       const items = headAdjustmentItemsFor(headCategorySelection)
     const selectedId = headAdjustSelection
     const reset = restoreHeadAdjustments
-    const previewFor = (id: string): string | null => {
-      if (!selectedCharacter) return null
-      if (isHead) {
-        const appearance = selectedCharacter.customization.faceAppearance
-        const hairPart = hairCategories.find((part) => part.id === id)
-        if (hairPart) {
-          const styleId = hairAppearancePartStyleId(selectedCharacter.customization.hairAppearance, hairPart.id)
-          const modelSlot = selectedCharacter.customization.hairAppearance?.modelSlot
-          return styleId && modelSlot ? hairDetails[`${modelSlot}:${styleId}`]?.[hairPart.side]?.dataUrl ?? null : null
-        }
-        const facePart = id as FaceComponentPartId
-        const componentId = appearance?.components?.[facePart]?.assetId
-        if (componentId) return faceComponentDetails[componentId]?.dataUrl ?? null
-        const detailId = appearance?.faceDetails?.[id as FaceDetailKind]
-        if (detailId) return faceComponentDetails[detailId]?.dataUrl ?? null
-        if (id === 'oculos' || id === 'acessorio-cabeca') {
-          const wardrobeGroup = [...(selectedCharacter.customization.wardrobeGroups ?? [])].reverse().find((group) => group.category === id)
-          if (wardrobeGroup) {
-            const wardrobeSet = wardrobeDetails[`${wardrobeGroup.modelSlot}:${wardrobeGroup.setId}`]
-            const component = wardrobeSet?.components.find((entry) => entry.id === wardrobeGroup.componentId)
-              ?? wardrobeSet?.components.find((entry) => entry.category === wardrobeGroup.category)
-            if (component?.dataUrl) return component.dataUrl
-          }
-        }
-        const extraId = appearance?.headExtras?.[id === 'oculos' ? 'glasses' : 'head-accessory']
-        if (extraId) return faceComponentDetails[extraId]?.dataUrl ?? null
-        const catalogId = id === 'eye-right' || id === 'pupil-right' ? appearance?.eyeRightCatalogId ?? appearance?.eyeCatalogId
-          : id.startsWith('eye-') || id.startsWith('pupil-') ? appearance?.eyeLeftCatalogId ?? appearance?.eyeCatalogId
-          : id === 'brow-right' ? appearance?.eyebrowRightCatalogId ?? appearance?.eyebrowCatalogId
-            : id.startsWith('brow-') ? appearance?.eyebrowLeftCatalogId ?? appearance?.eyebrowCatalogId
-            : id === 'nose' ? appearance?.noseCatalogId : id === 'mouth' ? appearance?.mouthClosedCatalogId : undefined
-        const catalog = catalogId ? faceCatalogDetails[`${appearance?.modelSlot}:${catalogId}`] : undefined
-        return catalog?.pieces[0]?.dataUrl ?? null
-      }
-      const group = selectedCharacter.customization.wardrobeGroups?.find((entry) => entry.category === id)
-      if (!group) return null
-      const set = wardrobeDetails[`${group.modelSlot}:${group.setId}`]
-      return set?.components.find((component) => component.id === group.componentId)?.dataUrl ?? set?.components.find((component) => component.category === group.category)?.dataUrl ?? null
-    }
+    const previewFor = (id: string) => headAdjustmentPreviewUrl(id, selectedCharacter, {
+      hair: hairDetails,
+      faceComponents: faceComponentDetails,
+      wardrobe: wardrobeDetails,
+      faceCatalog: faceCatalogDetails
+    })
     if (isHead) {
       const selectedItem = items.find((item) => item.id === selectedId)
       const appliedItems = items.filter((item) => hasHeadAdjustmentItem(item.id))
