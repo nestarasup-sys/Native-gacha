@@ -1,5 +1,6 @@
 import { useCustomizerCharacterRoster } from './useCustomizerCharacterRoster'
 import { useCustomizerModelBrowserState } from './useCustomizerModelBrowserState'
+import { useCustomizerCatalogThumbnails } from './useCustomizerCatalogThumbnails'
 import { useCustomizerAssetLibraryState } from './useCustomizerAssetLibraryState'
 import { useCustomizerCharacterCommands } from './useCustomizerCharacterCommands'
 import { useCustomizerBodyAppearance } from './useCustomizerBodyAppearance'
@@ -32,7 +33,7 @@ import { hairStyleSupportsCategory } from '../../../../shared/hairCategories'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { RenderedCharacterPortrait } from '../../ui/components/RenderedCharacterPortrait'
 import { Icon } from '../../ui/components/Icon'
-import type { FaceCatalogItem, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSummary, FaceComponentKind, FaceDetailKind, FaceSheetKind, FabricatorPose, FabricatorProject, HairStyleSummary, WardrobeSet } from '../../../../shared/fabricator'
+import type { FaceCatalogItem, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSummary, FaceComponentKind, FaceDetailKind, FaceSheetKind, FabricatorProject, HairStyleSummary, WardrobeSet } from '../../../../shared/fabricator'
 import { resolvePoseCategory } from '../../../../shared/fabricator'
 import type { CustomizerFaceAppearance, CustomizerWardrobeGroup, FacePalettePartId, HairColorOverrides, HairColorRole, HairPartId } from '../../../../shared/customizer'
 import { characterBodyDimensionLimits, characterProportionLimits, defaultCharacterProportions, getCharacterBodyDimensions, getCharacterProportions, type CharacterProportions } from '../../../../shared/customizer'
@@ -41,7 +42,7 @@ import { DesignBanner } from '../../ui/components/DesignBanner'
 import { anchorWardrobeAdjustments } from '../../../../shared/wardrobeAdjustment'
 import { wardrobeGroupCategoryForSource } from '../../../../shared/wardrobePlacementModel'
 import { applyCharacterBodyShape } from '../../../../shared/bodyShape'
-import { renderArtwork, loadStandardExpressionEffects, withCharacterHeadSize, isRightFaceAsset, characterShapeScale, resolvedHairColors, clothingCategories, wardrobeComponentsForGroup, customizerHairParts } from '../../characters/characterRenderer'
+import { loadStandardExpressionEffects, withCharacterHeadSize, isRightFaceAsset, characterShapeScale, resolvedHairColors, clothingCategories, wardrobeComponentsForGroup, customizerHairParts } from '../../characters/characterRenderer'
 import type { CatalogArtwork, SelectedWardrobeComponent } from '../../characters/characterRenderer'
 
 const proportionControls: Array<{ key: keyof CharacterProportions; label: string; description: string }> = [
@@ -93,6 +94,17 @@ export function CustomizerPage() {
     selectedPosePage, setSelectedPosePage, modelThumbnails, setModelThumbnails,
     poseThumbnails, setPoseThumbnails
   } = useCustomizerModelBrowserState()
+  useCustomizerCatalogThumbnails({
+    activeModule,
+    selectedCustomizerTopTab,
+    selectedCatalogModelSlot,
+    catalogLoading,
+    catalogModels,
+    catalogPoses,
+    setModelThumbnails,
+    setPoseThumbnails,
+    setCatalogError
+  })
   const { clothingSection, clothesPanelTab, clothesCategorySelection, upperWardrobePage, lowerWardrobePage, selectClothesTab } = useCustomizerWardrobeNavigation()
   const [otherPanelTab, setOtherPanelTab] = useState<(typeof customizerOtherTabs)[number]['id']>('extra')
   const {
@@ -124,7 +136,6 @@ export function CustomizerPage() {
   const [selectedFrontHairUrl, setSelectedFrontHairUrl] = useState<string | null>(null)
   const [selectedArtworkLabel, setSelectedArtworkLabel] = useState('')
   const [previewLoading, setPreviewLoading] = useState(true)
-  const thumbnailCache = useRef(new Set<string>())
   const hairPaletteStripRef = useRef<HTMLDivElement>(null)
   const wardrobePaletteStripRefs = useRef<Record<string, HTMLDivElement | null>>({})
   const previewLoadRequest = useRef(0)
@@ -382,58 +393,6 @@ export function CustomizerPage() {
     saveCharacterCustomization,
     setAdjustmentPreviewHighlight
   })
-
-  useEffect(() => {
-    if (activeModule !== 'Modelos' || catalogLoading) return
-    let cancelled = false
-    void (async () => {
-      for (const model of catalogModels) {
-        if (!model || thumbnailCache.current.has(`model:${model.slot}`)) continue
-        let artwork: CatalogArtwork | null = null
-        const firstPose = catalogPoses.find((pose) => pose?.sourceModelSlot === model.slot && pose.slot === 1)
-        try {
-          if (firstPose) artwork = await window.desktop.loadFabricatorPose(model.slot, 1)
-          if (!artwork) artwork = await window.desktop.loadFabricatorSlot(model.slot)
-          if (!artwork) continue
-          const thumbnail = await renderArtwork(artwork, 144)
-          if (cancelled) return
-          if (thumbnail) {
-            thumbnailCache.current.add(`model:${model.slot}`)
-            setModelThumbnails((current) => ({ ...current, [model.slot]: thumbnail }))
-          }
-        } catch (reason) {
-          if (!cancelled) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível gerar uma miniatura do modelo.')
-        }
-      }
-    })()
-    return () => { cancelled = true }
-  }, [activeModule, catalogLoading, catalogModels, catalogPoses])
-
-  useEffect(() => {
-    if ((activeModule !== 'Poses' && selectedCustomizerTopTab !== 'modelos') || selectedCatalogModelSlot === null || catalogLoading) return
-    let cancelled = false
-    const modelPoses = catalogPoses.filter((pose): pose is NonNullable<typeof pose> => pose?.sourceModelSlot === selectedCatalogModelSlot)
-    void (async () => {
-      for (const pose of modelPoses) {
-        const key = `${pose.sourceModelSlot}:${pose.slot}`
-        const cacheKey = `pose-tight-v2:${key}:${pose.updatedAt}`
-        if (thumbnailCache.current.has(cacheKey)) continue
-        try {
-          const artwork: FabricatorPose | null = await window.desktop.loadFabricatorPose(pose.sourceModelSlot, pose.slot)
-          if (!artwork) continue
-          const thumbnail = await renderArtwork(artwork, 420, undefined, true)
-          if (cancelled) return
-          if (thumbnail) {
-            thumbnailCache.current.add(cacheKey)
-            setPoseThumbnails((current) => ({ ...current, [key]: thumbnail }))
-          }
-        } catch (reason) {
-          if (!cancelled) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível gerar uma miniatura da pose.')
-        }
-      }
-    })()
-    return () => { cancelled = true }
-  }, [activeModule, catalogLoading, catalogPoses, selectedCatalogModelSlot, selectedCustomizerTopTab])
 
   useEffect(() => {
     const wardrobeCatalogVisible = activeModule === 'Roupas' || activeModule === 'Cabeça' && headPanelTab === 'extra'
