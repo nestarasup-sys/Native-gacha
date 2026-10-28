@@ -1,11 +1,11 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, protocol, session, shell, type IpcMainInvokeEvent } from 'electron'
 import { createReadStream, existsSync, lstatSync, mkdirSync, readFileSync, realpathSync } from 'node:fs'
 import { mkdir as nativeMkdir, readFile as nativeReadFile, writeFile as nativeWriteFile, readdir as nativeReaddir, unlink as nativeUnlink, rename as nativeRename, stat as nativeStat, access as nativeAccess, rm as nativeRm, copyFile as nativeCopyFile } from 'node:fs/promises'
-import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
-import { createHash, randomUUID } from 'node:crypto'
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { randomUUID } from 'node:crypto'
 import { Readable } from 'node:stream'
 import { fileURLToPath } from 'node:url'
-import type { FaceAssetKind, FaceAssetSave, FaceCatalogItem, FaceCatalogItemSave, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSave, FaceComponentAssetSummary, FaceElementKind, FaceExpressionPreset, FaceExpressionTransforms, FaceExpressionWorkspaceDraft, FaceSet, FaceSetSave, FaceSheetKind, FaceTransform, FabricatorAssetSave, FabricatorHistoryEntry, FabricatorHistorySaveEntry, FabricatorHistorySaveState, FabricatorHistoryState, FabricatorPoseDraftSave, FabricatorPoseSave, FabricatorProject, FabricatorProjectSave, HairStyle, HairStyleAsset, HairStyleSave, HairWorkspace, HairWorkspaceAsset, HairWorkspaceSave, ModelPart, WardrobeAssetSave, WardrobeCategory, WardrobeSet, WardrobeSetSave } from '../src/shared/fabricator'
+import type { FaceAssetKind, FaceAssetSave, FaceCatalogItem, FaceCatalogItemSave, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSave, FaceComponentAssetSummary, FaceElementKind, FaceExpressionPreset, FaceExpressionTransforms, FaceExpressionWorkspaceDraft, FaceSet, FaceSetSave, FaceSheetKind, FaceTransform, FabricatorPoseDraftSave, FabricatorPoseSave, FabricatorProjectSave, HairStyle, HairStyleAsset, HairStyleSave, HairWorkspace, HairWorkspaceAsset, HairWorkspaceSave, ModelPart, WardrobeAssetSave, WardrobeCategory, WardrobeSet, WardrobeSetSave } from '../src/shared/fabricator'
 import { hairCategories } from '../src/shared/hairCategories'
 import type { StudioAsset, StudioDocument } from '../src/shared/studio'
 import { isStudioExpressionEffects, isStudioFaceTransforms } from '../src/shared/studio'
@@ -42,9 +42,10 @@ import { createFaceGuidePersistence, isFaceGuideProfile } from './domains/fabric
 import { registerFabricatorFaceCatalogHandlers } from './domains/fabricator/faceCatalogIpc'
 import { registerFabricatorHairHandlers } from './domains/fabricator/hairIpc'
 import { registerFaceGuideHandlers } from './domains/fabricator/faceGuidesIpc'
-import { publishModelSource, type ModelSourcePublishRequest } from './domains/fabricator/modelSource'
 import { recoverModelSourceSlot } from './domains/fabricator/modelSourceRecovery'
 import { createFabricatorModelWriter } from './domains/fabricator/modelWriter'
+import { createFabricatorHistoryPersistence } from './domains/fabricator/historyPersistence'
+import { registerFabricatorProjectHandlers } from './domains/fabricator/projectIpc'
 import { createPosePersistence } from './domains/fabricator/posePersistence'
 import { createAnimatorPersistence } from './domains/fabricator/animatorPersistence'
 import { registerFabricatorPoseHandlers } from './domains/fabricator/poseIpc'
@@ -279,6 +280,7 @@ let dataMigration: InstanceType<typeof DataMigrationService> | null = null
 let dataBackupService: InstanceType<typeof DataBackupService> | null = null
 let dataMigrationIpc: ReturnType<typeof registerDataMigrationHandlers> | null = null
 let fabricatorHairIpc: ReturnType<typeof registerFabricatorHairHandlers> | null = null
+let fabricatorProjectIpc: ReturnType<typeof registerFabricatorProjectHandlers> | null = null
 let editorV6ExportService: ReturnType<typeof registerEditorV6ExportHandlers> | null = null
 let editorV6MotionService: ReturnType<typeof createEditorV6MotionService> | null = null
 
@@ -362,7 +364,6 @@ const assertLibraryUiGifReferencesAvailable = async (assetIds: readonly string[]
 const studioSaveQueues = { studio: Promise.resolve() as Promise<void> }
 let editorV6SaveQueue: Promise<void> = Promise.resolve()
 const characterManifestPath = () => join(characterLibraryPath(), 'characters.json')
-const fabricatorSaveQueues = new Map<number, Promise<void>>()
 let poseSaveQueue: Promise<void> = Promise.resolve()
 const poseSaveWrites = new Set<Promise<void>>()
 let poseMigration: Promise<void> | null = null
@@ -1120,105 +1121,19 @@ function importedImageDataUrlBuffer(dataUrl: string): Buffer {
   return Buffer.from(match[2], 'base64')
 }
 
-type StoredHistoryEntry = {
-  action: FabricatorHistoryEntry['action']
-  project: Omit<FabricatorProject, 'sourceDataUrl' | 'parts'>
-  parts: Array<{ part: Omit<ModelPart, 'dataUrl' | 'chromaBaseDataUrl'>; hash: string; chromaBaseHash?: string }>
-}
-
-async function writeFabricatorHistory(slot: number, history: FabricatorHistorySaveState): Promise<void> {
-  if (!isValidSlot(slot) || !Array.isArray(history.undo) || !Array.isArray(history.redo) || history.undo.length > 50 || history.redo.length > 50) throw new Error('Histórico inválido.')
-  const folder = join(slotPath(slot), 'history')
-  const assetsFolder = join(folder, 'assets')
-  await mkdir(assetsFolder, { recursive: true })
-  const referencedAssets = new Set<string>()
-  const storeAsset = async (bytes: Buffer, extension: string): Promise<string> => {
-    const hash = createHash('sha256').update(bytes).digest('hex')
-    const filename = `${hash}.${extension}`
-    referencedAssets.add(filename)
-    try { await access(join(assetsFolder, filename)) } catch { await writeFile(join(assetsFolder, filename), bytes) }
-    return hash
-  }
-  const serializeEntry = async (entry: FabricatorHistorySaveEntry): Promise<StoredHistoryEntry> => {
-    const snapshot = entry.project
-    if (snapshot.slot !== slot || snapshot.schemaVersion !== 1 || snapshot.parts.length > 500) throw new Error('Snapshot de histórico inválido.')
-    if (!/^source-[a-f0-9-]+\.(png|jpe?g|webp)$/i.test(snapshot.sourceAssetName)) throw new Error('Imagem original no histórico inválida.')
-    await access(join(slotPath(slot), snapshot.sourceAssetName))
-    const parts = await Promise.all(snapshot.parts.map(async (part) => {
-      if (!/^[a-zA-Z0-9_-]{1,80}$/.test(part.id)) throw new Error('Peça de histórico inválida.')
-      return {
-        part: (({ dataUrl: _dataUrl, chromaBaseDataUrl: _baseDataUrl, ...metadata }) => metadata)(part),
-        hash: await storeAsset(dataUrlBuffer(part.dataUrl), 'png'),
-        ...(part.chromaBaseDataUrl ? { chromaBaseHash: await storeAsset(dataUrlBuffer(part.chromaBaseDataUrl), 'png') } : {})
-      }
-    }))
-    const { parts: _parts, ...metadata } = snapshot
-    return { action: entry.action, project: metadata, parts }
-  }
-  const stored = {
-    version: 1,
-    undo: await Promise.all(history.undo.map(serializeEntry)),
-    redo: await Promise.all(history.redo.map(serializeEntry))
-  }
-  const temporaryManifest = join(folder, 'history.json.tmp')
-  await writeFile(temporaryManifest, JSON.stringify(stored), 'utf8')
-  await rename(temporaryManifest, join(folder, 'history.json'))
-  for (const filename of await readdir(assetsFolder)) if (!referencedAssets.has(filename)) await unlink(join(assetsFolder, filename))
-  const keptSources = new Set([
-    ...stored.undo.map((entry) => entry.project.sourceAssetName),
-    ...stored.redo.map((entry) => entry.project.sourceAssetName)
-  ])
-  try {
-    const current = JSON.parse(await readFile(join(slotPath(slot), 'project.json'), 'utf8')) as { sourceFile?: string }
-    if (current.sourceFile) keptSources.add(current.sourceFile)
-  } catch { /* The current project may not yet have a manifest. */ }
-  for (const filename of await readdir(slotPath(slot))) {
-    if (/^source-[a-f0-9-]+\.(png|jpe?g|webp)$/i.test(filename) && !keptSources.has(filename)) await unlink(join(slotPath(slot), filename))
-  }
-}
-
-async function readFabricatorHistory(slot: number): Promise<FabricatorHistoryState> {
-  const folder = join(slotPath(slot), 'history')
-  const assetsFolder = join(folder, 'assets')
-  const stored = JSON.parse(await readFile(join(folder, 'history.json'), 'utf8')) as {
-    version: number
-    undo: StoredHistoryEntry[]
-    redo: StoredHistoryEntry[]
-  }
-  if (stored.version !== 1 || !Array.isArray(stored.undo) || !Array.isArray(stored.redo) || stored.undo.length > 50 || stored.redo.length > 50) throw new Error('Arquivo de histórico inválido.')
-  const cache = new Map<string, Buffer>()
-  const readAsset = async (hash: string, extension: string) => {
-    if (!/^[a-f0-9]{64}$/i.test(hash)) throw new Error('Referência de histórico inválida.')
-    const key = `${hash}.${extension}`
-    let bytes = cache.get(key)
-    if (!bytes) { bytes = await readFile(join(assetsFolder, key)); cache.set(key, bytes) }
-    return bytes
-  }
-  const restoreEntry = async (entry: StoredHistoryEntry): Promise<FabricatorHistoryEntry> => {
-    if (!['edit', 'mixer', 'reset'].includes(entry.action) || entry.project.slot !== slot) throw new Error('Snapshot de histórico inválido.')
-    if (!/^source-[a-f0-9-]+\.(png|jpe?g|webp)$/i.test(entry.project.sourceAssetName)) throw new Error('Imagem original do histórico inválida.')
-    const source = await readFile(join(slotPath(slot), entry.project.sourceAssetName))
-    const extension = extname(entry.project.sourceAssetName).toLowerCase()
-    const mime = extension === '.png' ? 'image/png' : extension === '.webp' ? 'image/webp' : 'image/jpeg'
-    const parts = await Promise.all(entry.parts.map(async ({ part, hash, chromaBaseHash }) => ({
-      ...part,
-      dataUrl: `data:image/png;base64,${(await readAsset(hash, 'png')).toString('base64')}`,
-      ...(chromaBaseHash ? { chromaBaseDataUrl: `data:image/png;base64,${(await readAsset(chromaBaseHash, 'png')).toString('base64')}` } : {})
-    })))
-    return {
-      action: entry.action,
-      project: { ...entry.project, sourceDataUrl: `data:${mime};base64,${source.toString('base64')}`, parts }
-    }
-  }
-  return { undo: await Promise.all(stored.undo.map(restoreEntry)), redo: await Promise.all(stored.redo.map(restoreEntry)) }
-}
-
 const writeFabricatorProject = createFabricatorModelWriter({
   slotPath,
   isValidSlot,
   dataUrlBuffer,
   writeAssetImageSource,
   files: { mkdir, readFile, writeFile, rename, readdir, access, unlink }
+})
+
+const fabricatorHistoryPersistence = createFabricatorHistoryPersistence({
+  slotPath,
+  isValidSlot,
+  dataUrlBuffer,
+  files: { access, mkdir, readFile, readdir, rename, unlink, writeFile }
 })
 
 const { writePoseProject, readPoseProject, writePoseDraft, readPoseDraft } = createPosePersistence({
@@ -1247,7 +1162,7 @@ async function registerFabricatorHandlers(): Promise<void> {
   ipcMain.handle(studioIpcChannels.flushPendingWrites, async (event): Promise<void> => {
     assertTrustedSender(event)
     const pendingWrites = [
-      ...fabricatorSaveQueues.values(), ...poseSaveWrites, ...(fabricatorHairIpc?.getPendingWrites() ?? []),
+      ...(fabricatorProjectIpc?.getPendingWrites() ?? []), ...poseSaveWrites, ...(fabricatorHairIpc?.getPendingWrites() ?? []),
       animatorSaveQueue, wardrobeSaveQueue, faceSaveQueue, expressionPresetSaveQueue,
       faceGuideSaveQueue, customizerService.pendingWrites,
       studioSaveQueues.studio, editorV6SaveQueue, roteirosSaveQueue
@@ -1397,110 +1312,28 @@ async function registerFabricatorHandlers(): Promise<void> {
     }
   })
 
-  ipcMain.handle('fabricator:import-model', async (event, slot: number, mode: 'import' | 'reimport' = 'import') => {
-    assertTrustedSender(event)
-    if (!isValidSlot(slot)) throw new Error('Slot inválido.')
-    if (mode !== 'import' && mode !== 'reimport') throw new Error('Modo de importação inválido.')
-    const result = await dialog.showOpenDialog({
-      title: mode === 'reimport' ? 'Reimportar imagem original do modelo' : 'Importar folha de modelo',
-      properties: ['openFile'],
-      filters: [{ name: 'Imagens', extensions: ['png', 'jpg', 'jpeg', 'webp'] }]
-    })
-    if (result.canceled || !result.filePaths[0]) return null
-    const path = result.filePaths[0]
-    const extension = extname(path).toLowerCase()
-    const supportedExtensions = new Set(['.png', '.jpg', '.jpeg', '.webp'])
-    if (!supportedExtensions.has(extension)) throw new Error('Formato incompatível. Use PNG, JPG ou WebP.')
-    const fileStat = await stat(path)
-    if (fileStat.size > 50 * 1024 * 1024) throw new Error('A imagem excede o limite de 50 MB.')
-    if (fileStat.size === 0) throw new Error('O arquivo de imagem está vazio.')
-    const bytes = await readFile(path)
-    const canonical = await normalizeImageBuffer(bytes)
-    if (canonical.bitDepth > 8) throw new Error('O Fabricador processa a folha em 8 bits. O PNG de 16 bits não foi alterado; converta uma cópia para 8 bits para importar neste editor.')
-    if (mode === 'reimport') {
-      const existing = JSON.parse(await readFile(join(slotPath(slot), 'project.json'), 'utf8')) as { width?: number; height?: number }
-      if (canonical.width !== existing.width || canonical.height !== existing.height) {
-        throw new Error(`Para preservar as configurações do modelo, a imagem precisa ter ${existing.width} × ${existing.height} pixels.`)
-      }
-    }
-    const sourceDataUrl = `data:image/png;base64,${canonical.bytes.toString('base64')}`
-    const destination = slotPath(slot)
-    const sourceAssetName = `source-${randomUUID()}.png`
-    await mkdir(destination, { recursive: true })
-    await writeFile(join(destination, sourceAssetName), canonical.bytes)
-    return { sourceName: basename(path), sourceAssetName, sourceDataUrl }
+  fabricatorProjectIpc = registerFabricatorProjectHandlers({
+    ipcMain,
+    assertTrustedSender,
+    isValidSlot,
+    libraryPath,
+    slotPath,
+    writeProject: writeFabricatorProject,
+    history: fabricatorHistoryPersistence,
+    openImportDialog: async (mode) => {
+      const result = await dialog.showOpenDialog({
+        title: mode === 'reimport' ? 'Reimportar imagem original do modelo' : 'Importar folha de modelo',
+        properties: ['openFile'],
+        filters: [{ name: 'Imagens', extensions: ['png', 'jpg', 'jpeg', 'webp'] }]
+      })
+      return result.canceled ? null : result.filePaths[0] ?? null
+    },
+    normalizeImage: normalizeImageBuffer,
+    createId: randomUUID,
+    files: { stat, readFile, mkdir, writeFile, readdir, rename, rm, access, unlink }
   })
-
-  ipcMain.handle('fabricator:save-project', async (event, project: FabricatorProjectSave, changedAssets: FabricatorAssetSave[]): Promise<void> => {
-    assertTrustedSender(event)
-    if (!isValidSlot(project.slot)) throw new Error('Projeto inválido.')
-    const slot = project.slot
-    const previous = fabricatorSaveQueues.get(slot) ?? Promise.resolve()
-    const current = previous.catch(() => undefined).then(() => writeFabricatorProject(project, changedAssets))
-    fabricatorSaveQueues.set(slot, current)
-    try { await current } finally {
-      if (fabricatorSaveQueues.get(slot) === current) fabricatorSaveQueues.delete(slot)
-    }
-  })
-
 
   registerModelSourceDownloadHandlers(ipcMain, assertTrustedSender, () => app.getPath('downloads'))
-
-  ipcMain.handle(fabricatorIpcChannels.publishFabricatorModelSource, async (event, request: ModelSourcePublishRequest): Promise<string> => {
-    assertTrustedSender(event)
-    if (!request || !isValidSlot(request.project?.slot)) throw new Error('Slot inválido.')
-    const slot = request.project.slot
-    const previous = fabricatorSaveQueues.get(slot) ?? Promise.resolve()
-    const job = previous.catch(() => undefined).then(async () => {
-      await recoverModelSourceSlot(slot, slotPath, { readdir, readFile, rename, rm })
-      return publishModelSource(request, slotPath, writeFabricatorProject, { mkdir, readFile, writeFile, readdir, rename, rm })
-    })
-    const queue = job.then(() => undefined)
-    fabricatorSaveQueues.set(slot, queue)
-    try { return await job } finally {
-      if (fabricatorSaveQueues.get(slot) === queue) fabricatorSaveQueues.delete(slot)
-    }
-  })
-
-  ipcMain.handle('fabricator:load-history', async (event, slot: number): Promise<FabricatorHistoryState> => {
-    assertTrustedSender(event)
-    if (!isValidSlot(slot)) throw new Error('Slot inválido.')
-    try { return await readFabricatorHistory(slot) } catch (reason) {
-      if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return { undo: [], redo: [] }
-      throw reason
-    }
-  })
-
-  ipcMain.handle('fabricator:save-history', async (event, slot: number, history: FabricatorHistorySaveState, current: FabricatorProjectSave, changedAssets: FabricatorAssetSave[]): Promise<void> => {
-    assertTrustedSender(event)
-    if (!isValidSlot(slot) || current.slot !== slot) throw new Error('Slot inválido.')
-    const previous = fabricatorSaveQueues.get(slot) ?? Promise.resolve()
-    const save = previous.catch(() => undefined).then(async () => {
-      await writeFabricatorHistory(slot, history)
-      await writeFabricatorProject(current, changedAssets)
-    })
-    fabricatorSaveQueues.set(slot, save)
-    try { await save } finally {
-      if (fabricatorSaveQueues.get(slot) === save) fabricatorSaveQueues.delete(slot)
-    }
-  })
-
-  ipcMain.handle('fabricator:delete-slot', async (event, slot: number): Promise<void> => {
-    assertTrustedSender(event)
-    if (!isValidSlot(slot)) throw new Error('Slot inválido.')
-    const previous = fabricatorSaveQueues.get(slot) ?? Promise.resolve()
-    const current = previous.catch(() => undefined).then(async () => {
-      const base = resolve(libraryPath())
-      const target = resolve(slotPath(slot))
-      if (dirname(target) !== base || basename(target) !== `slot-${slot}`) throw new Error('Caminho de exclusão inválido.')
-      await rm(target, { recursive: true, force: true })
-    })
-    fabricatorSaveQueues.set(slot, current)
-    try { await current } finally {
-      if (fabricatorSaveQueues.get(slot) === current) fabricatorSaveQueues.delete(slot)
-    }
-  })
-
   registerFabricatorPoseHandlers({
     ipcMain, assertTrustedSender, ensureLegacyPoseMigration, isValidModelSlot, isValidPoseSlot,
     slotCount, poseSlotCount, poseSlotPath, poseModelPath, poseDraftPath,
@@ -1859,7 +1692,7 @@ app.whenReady().then(async () => {
       const window = BrowserWindow.fromWebContents(event.sender)
       if (window && !window.webContents.isLoading()) await window.webContents.executeJavaScript('window.desktop?.flushPendingWrites?.()')
       const pending = [
-        ...fabricatorSaveQueues.values(), ...poseSaveWrites, ...(fabricatorHairIpc?.getPendingWrites() ?? []), animatorSaveQueue,
+        ...(fabricatorProjectIpc?.getPendingWrites() ?? []), ...poseSaveWrites, ...(fabricatorHairIpc?.getPendingWrites() ?? []), animatorSaveQueue,
         wardrobeSaveQueue, faceSaveQueue, expressionPresetSaveQueue, faceGuideSaveQueue, customizerService.pendingWrites,
         studioSaveQueues.studio, editorV6SaveQueue
       ]
@@ -1921,7 +1754,7 @@ app.on('before-quit', (event) => {
   editorV6MotionService?.cancelAll()
   const dataMigrationTask = dataMigrationIpc?.getActiveTask()
   const pendingWrites = [
-    ...fabricatorSaveQueues.values(), ...poseSaveWrites, ...(fabricatorHairIpc?.getPendingWrites() ?? []),
+    ...(fabricatorProjectIpc?.getPendingWrites() ?? []), ...poseSaveWrites, ...(fabricatorHairIpc?.getPendingWrites() ?? []),
     studioSaveQueues.studio, editorV6SaveQueue, roteirosSaveQueue,
     ...(dataMigrationTask ? [dataMigrationTask] : []),
     ...(editorV6ExportService ? [editorV6ExportService.drain()] : []),
