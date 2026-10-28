@@ -6,7 +6,7 @@ export function isModelBodyPartName(name: string): boolean {
   return MODEL_BODY_PART_NAME.test(name)
 }
 
-/** Fill transparent pockets enclosed by ink with a stable color before recoloring. */
+/** Fill removed skin inside closed silhouettes and across open joint ends. */
 export function fillEnclosedTransparentSkin(image: ImageData, baseTone = MODEL_SKIN_BASE_TONE): number {
   if (!isValidSkinTone(baseTone) || image.width < 1 || image.height < 1) return 0
   const { data, width, height } = image
@@ -50,6 +50,29 @@ export function fillEnclosedTransparentSkin(image: ImageData, baseTone = MODEL_S
     data[offset + 3] = 255
     filled++
   }
+  // Limb crops intentionally have open ends where the upper/lower pieces join.
+  // Exterior flood fill leaks through those ends, so restore transparent pixels
+  // between the two visible sides of each body scanline as well.
+  const fillBetweenSides = (start: number, end: number, stride: number) => {
+    let first = -1
+    let last = -1
+    for (let pixel = start; pixel !== end; pixel += stride) {
+      if (data[pixel * 4 + 3] <= 16) continue
+      if (first < 0) first = pixel
+      last = pixel
+    }
+    if (first < 0 || last - first <= stride) return
+    for (let pixel = first + stride; pixel < last; pixel += stride) {
+      const offset = pixel * 4
+      if (data[offset + 3] > 16) continue
+      data[offset] = target[0]
+      data[offset + 1] = target[1]
+      data[offset + 2] = target[2]
+      data[offset + 3] = 255
+      filled++
+    }
+  }
+  for (let y = 0; y < height; y++) fillBetweenSides(y * width, (y + 1) * width, 1)
   return filled
 }
 
