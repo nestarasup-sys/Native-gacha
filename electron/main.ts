@@ -53,6 +53,8 @@ import { FabricatorCatalogAssetService } from './domains/fabricator/catalogAsset
 import { createFabricatorCatalogPersistence } from './domains/fabricator/catalogPersistence'
 import { createFabricatorExpressionStorage } from './domains/fabricator/expressionStorage'
 import { createExpressionBatchTransaction } from './domains/fabricator/expressionBatchTransaction'
+import { createFabricatorDesignSettingsService } from './domains/fabricator/designSettingsService'
+import { registerFabricatorDesignSettingsHandlers } from './domains/fabricator/designSettingsIpc'
 import { isPortableExpressionMotion, isPtPupilOverrides, isPtPupilMotion } from '../src/shared/portableExpression'
 import { registerExpressionPresetHandlers } from './domains/fabricator/expressionIpc'
 import { registerStudioPrimaryHandlers } from './domains/studio/primaryIpc'
@@ -1818,33 +1820,6 @@ function registerVideoBackgroundProtocol(): void {
   })
 }
 
-let fabricatorDesignSettingsActivation: Promise<void> | null = null
-async function activateFabricatorDesignSettingsDomain(): Promise<void> {
-  if (fabricatorDesignSettingsActivation) return fabricatorDesignSettingsActivation
-  fabricatorDesignSettingsActivation = (async () => {
-    const domainId = 'fabricator.design-settings'
-    const current = dataPlatform.getDomainState(domainId).state
-    if (current === 'active' || current === 'verified') return
-    if (current !== 'legacy') throw new Error(`O armazenamento de Design Dev está em estado ${current}; a gravação foi interrompida.`)
-
-    // Preserve and copy a pre-catalog settings file before switching this new
-    // domain to app-data. The source remains untouched for rollback.
-    const legacyPath = join(app.getPath('userData'), 'fabricator', 'design-settings', 'settings.json')
-    let legacy: Buffer | null = null
-    try { legacy = await nativeReadFile(legacyPath) }
-    catch (reason) { if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason }
-    dataPlatform.setDomainState(domainId, 'active', { activatedAt: new Date().toISOString(), legacySourcePreserved: Boolean(legacy) })
-    try {
-      if (legacy) await writeFile(legacyPath, legacy)
-    } catch (reason) {
-      dataPlatform.setDomainState(domainId, 'legacy', { activationFailed: true, sourcePreserved: true })
-      throw reason
-    }
-  })()
-  try { await fabricatorDesignSettingsActivation }
-  catch (reason) { fabricatorDesignSettingsActivation = null; throw reason }
-}
-
 app.whenReady().then(async () => {
   dataBackupService = new DataBackupService({ dataRoot: app.getPath('appData'), catalog: dataPlatform })
   await dataBackupService.applyPendingRestore()
@@ -1856,33 +1831,18 @@ app.whenReady().then(async () => {
     return { dataUrl: `data:image/png;base64,${canonical.bytes.toString('base64')}`, width: canonical.width,
       height: canonical.height, bitDepth: canonical.bitDepth, sourceBytes: canonical.sourceBytes, outputBytes: canonical.outputBytes }
   })
-  ipcMain.handle('fabricator:design-settings:load', async (event) => {
-    assertTrustedSender(event)
-    await activateFabricatorDesignSettingsDomain()
-    const target = join(app.getPath('userData'), 'fabricator', 'design-settings', 'settings.json')
-    try { return JSON.parse(await readFile(target, 'utf8')) as unknown }
-    catch (reason) { if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return null; throw reason }
-  })
-  ipcMain.handle('fabricator:design-settings:save', async (event, settings: unknown) => {
-    assertTrustedSender(event)
-    await activateFabricatorDesignSettingsDomain()
-    if (!settings || typeof settings !== 'object' || Array.isArray(settings)) throw new Error('Configuração de Design Dev inválida.')
-    const value = settings as { bannerSlides?: unknown[] }
-    if (!Array.isArray(value.bannerSlides) || value.bannerSlides.length < 1 || value.bannerSlides.length > 8) throw new Error('O Design Dev deve ter entre 1 e 8 slides.')
-    const serialized = JSON.stringify(settings)
-    if (serialized.length > 70_000_000) throw new Error('As imagens do Design Dev excedem o limite de armazenamento.')
-    for (const raw of value.bannerSlides) {
-      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('Slide do Design Dev inválido.')
-      const slide = raw as { id?: unknown; title?: unknown; subtitle?: unknown; imageDataUrl?: unknown }
-      if (typeof slide.id !== 'string' || slide.id.length > 160 || typeof slide.title !== 'string' || slide.title.length > 80
-        || typeof slide.subtitle !== 'string' || slide.subtitle.length > 120
-        || (slide.imageDataUrl !== null && (typeof slide.imageDataUrl !== 'string' || !/^data:image\/(png|jpeg|webp);base64,/.test(slide.imageDataUrl)))) {
-        throw new Error('Dados ou imagem inválidos em um slide do Design Dev.')
-      }
+  const designSettingsService = createFabricatorDesignSettingsService({
+    userDataRoot: app.getPath('userData'),
+    catalog: dataPlatform,
+    files: {
+      readLegacy: (path) => nativeReadFile(path),
+      writeLegacyCopy: (path, bytes) => writeFile(path, bytes),
+      readText: (path) => readFile(path, 'utf8'),
+      mkdir: (path, options) => mkdir(path, options),
+      writeText: (path, text) => writeFile(path, text, 'utf8')
     }
-    await mkdir(join(app.getPath('userData'), 'fabricator', 'design-settings'), { recursive: true })
-    await writeFile(join(app.getPath('userData'), 'fabricator', 'design-settings', 'settings.json'), JSON.stringify(settings, null, 2), 'utf8')
   })
+  registerFabricatorDesignSettingsHandlers({ ipcMain, assertTrustedSender, service: designSettingsService })
   dataMigration = new DataMigrationService({
     dataRoot: app.getPath('appData'),
     userDataRoot: app.getPath('userData'),
