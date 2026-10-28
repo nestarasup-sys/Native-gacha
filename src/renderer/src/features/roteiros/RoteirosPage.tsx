@@ -58,12 +58,12 @@ function RoteiroWorkspace({ roteiro, onBack, onUpdate, onDeleteDraftVideo, chara
   const addExportLog = (action: string, status: RoteiroExportLog['status'], details: string) => {
     const entry: RoteiroExportLog = { id: crypto.randomUUID(), roteiroId: roteiro.id, createdAt: new Date().toISOString(), action, status, details }
     setExportLogs((current) => [entry, ...current].slice(0, 50))
-    void window.desktop.appendRoteiroExportLog(roteiro.id, entry).then(() => setExportLogsError('')).catch((reason: unknown) => setExportLogsError(reason instanceof Error ? reason.message : 'Não foi possível salvar o log de exportação.'))
+    void window.desktop.roteiros.appendRoteiroExportLog(roteiro.id, entry).then(() => setExportLogsError('')).catch((reason: unknown) => setExportLogsError(reason instanceof Error ? reason.message : 'Não foi possível salvar o log de exportação.'))
   }
   useEffect(() => {
     let cancelled = false
     setExportLogs([]); setExportLogsError('')
-    void window.desktop.listRoteiroExportLogs(roteiro.id).then((entries) => {
+    void window.desktop.roteiros.listRoteiroExportLogs(roteiro.id).then((entries) => {
       if (!cancelled) setExportLogs((current) => [...new Map([...entries, ...current].map((entry) => [entry.id, entry])).values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 50))
     }).catch((reason: unknown) => { if (!cancelled) setExportLogsError(reason instanceof Error ? reason.message : 'Não foi possível carregar os logs de exportação.') })
     return () => { cancelled = true }
@@ -71,7 +71,7 @@ function RoteiroWorkspace({ roteiro, onBack, onUpdate, onDeleteDraftVideo, chara
   const clearExportLogs = async () => {
     if (exportLogsBusy) return
     setExportLogsBusy(true); setExportLogsError('')
-    try { await window.desktop.clearRoteiroExportLogs(roteiro.id); setExportLogs([]) }
+    try { await window.desktop.roteiros.clearRoteiroExportLogs(roteiro.id); setExportLogs([]) }
     catch (reason) { setExportLogsError(reason instanceof Error ? reason.message : 'Não foi possível limpar os logs de exportação.') }
     finally { setExportLogsBusy(false) }
   }
@@ -129,7 +129,7 @@ function RoteiroWorkspace({ roteiro, onBack, onUpdate, onDeleteDraftVideo, chara
     setExportingCharacters(true); setCharacterExportError(''); setCharacterExportStatus('Preparando exportação…')
     let jobId: string | null = null
     try {
-      const job = await window.desktop.startRoteiroCharacterExport({ id: roteiro.id, title: roteiro.title, characters: cast.map(({ id, name }) => ({ id, name })) })
+      const job = await window.desktop.roteiros.startRoteiroCharacterExport({ id: roteiro.id, title: roteiro.title, characters: cast.map(({ id, name }) => ({ id, name })) })
       jobId = job.jobId
       const [{ prepareSavedCharacterRenderer }, { appearanceWithPupilsLookingLeft, buildStudioExpressionAppearance, buildStudioExpressionTransforms, presetWithPupilsLookingLeft }] = await Promise.all([
         import('../../characters/characterRenderer'), import('../../characters/studioExpressionTransforms')
@@ -137,24 +137,24 @@ function RoteiroWorkspace({ roteiro, onBack, onUpdate, onDeleteDraftVideo, chara
       let completedFiles = 0
       let omittedVariants = 0
       const componentProvider = (modelSlot: number) => ({
-        loadComponent: (id: string) => window.desktop.loadFaceComponentAsset(modelSlot, id),
-        loadCatalog: (id: string) => window.desktop.loadFaceCatalogItem(modelSlot, id)
+        loadComponent: (id: string) => window.desktop.fabricator.loadFaceComponentAsset(modelSlot, id),
+        loadCatalog: (id: string) => window.desktop.fabricator.loadFaceCatalogItem(modelSlot, id)
       })
       for (const character of cast) {
         const modelSlot = character.customization.modelSlot ?? 1
         setCharacterExportStatus(`Preparando ${character.name}…`)
-        const source = await window.desktop.loadFabricatorSlot(modelSlot)
+        const source = await window.desktop.fabricator.loadFabricatorSlot(modelSlot)
         if (!source) throw new Error(`O modelo base do personagem “${character.name}” não está disponível.`)
-        const allPoseSummaries = (await window.desktop.listFabricatorPoseSlots(modelSlot)).filter((pose): pose is NonNullable<typeof pose> => Boolean(pose)).sort((a, b) => a.slot - b.slot)
-        const exportSlots = await window.desktop.getFabricatorExportPoseSlots(modelSlot)
+        const allPoseSummaries = (await window.desktop.fabricator.listFabricatorPoseSlots(modelSlot)).filter((pose): pose is NonNullable<typeof pose> => Boolean(pose)).sort((a, b) => a.slot - b.slot)
+        const exportSlots = await window.desktop.fabricator.getFabricatorExportPoseSlots(modelSlot)
         const poseSummaries = exportSlots === null ? allPoseSummaries : exportSlots.filter((slot): slot is number => slot !== null).map((slot) => allPoseSummaries.find((pose) => pose.slot === slot)).filter((pose): pose is NonNullable<typeof pose> => Boolean(pose))
         if (exportSlots !== null && poseSummaries.length !== exportSlots.filter((slot) => slot !== null).length) throw new Error(`Uma pose escolhida nos slots de exportação para “${character.name}” foi removida. Revise Poses Dev e tente novamente.`)
-        const loadedPoses = await Promise.all(poseSummaries.map(async (summary) => ({ summary, artwork: await window.desktop.loadFabricatorPose(modelSlot, summary.slot) })))
+        const loadedPoses = await Promise.all(poseSummaries.map(async (summary) => ({ summary, artwork: await window.desktop.fabricator.loadFabricatorPose(modelSlot, summary.slot) })))
         const poses = loadedPoses.filter((entry): entry is { summary: NonNullable<(typeof poseSummaries)[number]>; artwork: NonNullable<(typeof entry)['artwork']> } => Boolean(entry.artwork))
         if (poseSummaries.length && poses.length !== poseSummaries.length) throw new Error(`Uma pose salva de “${character.name}” não pôde ser carregada.`)
         const renderPoses = poses.length ? poses : [{ summary: null, artwork: source }]
         const [expressionSummaries, expressionCollections] = character.customization.faceAppearance
-          ? await Promise.all([window.desktop.listFaceExpressionPresets(modelSlot), window.desktop.listFaceExpressionCollections(modelSlot)])
+          ? await Promise.all([window.desktop.fabricator.listFaceExpressionPresets(modelSlot), window.desktop.fabricator.listFaceExpressionCollections(modelSlot)])
           : [[], []]
         const expressions = buildCharacterExportExpressionNames(
           expressionSummaries.filter((preset) => preset.modelSlot === modelSlot && (!preset.collectionId || preset.collectionId === 'standard')).sort((a, b) => (a.expressionIndex ?? 0) - (b.expressionIndex ?? 0)),
@@ -172,7 +172,7 @@ function RoteiroWorkspace({ roteiro, onBack, onUpdate, onDeleteDraftVideo, chara
             let ptTransforms: Record<string, import('../../../../shared/studio').StudioFaceTransform> | null = null
             let effects: import('../../../../shared/fabricator').FaceExpressionEffects | undefined
             if (expression.presetId && appearance) {
-              const preset = await window.desktop.loadFaceExpressionPreset(modelSlot, expression.presetId)
+              const preset = await window.desktop.fabricator.loadFaceExpressionPreset(modelSlot, expression.presetId)
               if (!preset) throw new Error(`O preset “${expression.name}” de ${character.name} não pôde ser carregado.`)
               appearance = await buildStudioExpressionAppearance(preset, appearance, loadCatalog)
               transforms = await buildStudioExpressionTransforms(preset, appearance, {}, loadComponent, loadCatalog)
@@ -198,18 +198,18 @@ function RoteiroWorkspace({ roteiro, onBack, onUpdate, onDeleteDraftVideo, chara
                 omittedVariants += 1
                 continue
               }
-              await window.desktop.writeRoteiroCharacterExportAsset(job.jobId, { characterId: character.id, pose: poseIndex + 1, expression: expression.name, role: variant.role, dataUrl: rendered.dataUrl })
+              await window.desktop.roteiros.writeRoteiroCharacterExportAsset(job.jobId, { characterId: character.id, pose: poseIndex + 1, expression: expression.name, role: variant.role, dataUrl: rendered.dataUrl })
               completedFiles += 1
             }
           }
         }
       }
-      const result = await window.desktop.finishRoteiroCharacterExport(job.jobId)
+      const result = await window.desktop.roteiros.finishRoteiroCharacterExport(job.jobId)
       jobId = null
       setCharacterExportStatus(`Exportação concluída: ${result.characters} personagem(ns), ${result.files} imagens em ${result.path}${omittedVariants ? ` · ${omittedVariants} variantes faciais indisponíveis foram omitidas` : ''}`)
       addExportLog('Exportar personagens', 'success', `${result.characters} personagem(ns), ${result.files} imagens · ${result.path}${omittedVariants ? ` · ${omittedVariants} variantes omitidas` : ''}`)
     } catch (reason) {
-      if (jobId) await window.desktop.cancelRoteiroCharacterExport(jobId).catch(() => undefined)
+      if (jobId) await window.desktop.roteiros.cancelRoteiroCharacterExport(jobId).catch(() => undefined)
       setCharacterExportStatus('')
       const message = reason instanceof Error ? reason.message : 'Não foi possível exportar os personagens deste roteiro.'
       setCharacterExportError(message); addExportLog('Exportar personagens', 'error', message)
@@ -222,12 +222,12 @@ function RoteiroWorkspace({ roteiro, onBack, onUpdate, onDeleteDraftVideo, chara
         const character = characters.find((item) => item.id === id)
         if (!character) return null
         const modelSlot = character.customization.modelSlot ?? 1
-        const [allPoseSummaries, exportSlots] = await Promise.all([window.desktop.listFabricatorPoseSlots(modelSlot), window.desktop.getFabricatorExportPoseSlots(modelSlot)])
+        const [allPoseSummaries, exportSlots] = await Promise.all([window.desktop.fabricator.listFabricatorPoseSlots(modelSlot), window.desktop.fabricator.getFabricatorExportPoseSlots(modelSlot)])
         const availableSlots = allPoseSummaries.filter((pose): pose is NonNullable<typeof pose> => Boolean(pose)).sort((a, b) => a.slot - b.slot).map((pose) => pose.slot)
         const poseSlots = exportSlots === null ? availableSlots : exportSlots.filter((slot): slot is number => slot !== null && availableSlots.includes(slot))
         let expressions: string[] = []
         if (character.customization.faceAppearance) {
-          const [presets, collections] = await Promise.all([window.desktop.listFaceExpressionPresets(modelSlot), window.desktop.listFaceExpressionCollections(modelSlot)])
+          const [presets, collections] = await Promise.all([window.desktop.fabricator.listFaceExpressionPresets(modelSlot), window.desktop.fabricator.listFaceExpressionCollections(modelSlot)])
           expressions = buildCharacterExportExpressionNames(
             presets.filter((preset) => preset.modelSlot === modelSlot).sort((a, b) => (a.expressionIndex ?? 0) - (b.expressionIndex ?? 0)),
             collections,
@@ -235,7 +235,7 @@ function RoteiroWorkspace({ roteiro, onBack, onUpdate, onDeleteDraftVideo, chara
         }
         return { id, name: character.name, modelSlot, hair: character.hair, outfit: character.outfit, skin: character.skin, hasFaceAppearance: Boolean(character.customization.faceAppearance), poseSlots: poseSlots.length ? poseSlots : [0], expressions }
       })) : undefined
-      const result = await window.desktop.exportRoteiroAssets({ roteiro, kind, ...(characterInfo ? { characters: characterInfo.filter((item): item is RoteiroExportCharacterInfo => Boolean(item)) } : {}) })
+      const result = await window.desktop.roteiros.exportRoteiroAssets({ roteiro, kind, ...(characterInfo ? { characters: characterInfo.filter((item): item is RoteiroExportCharacterInfo => Boolean(item)) } : {}) })
       const label = kind === 'background' ? 'Fundo' : kind === 'videos' ? 'Vídeos' : kind === 'gif' ? 'GIF' : 'Roteiro'
       setRoteiroExportMessage(`${label} exportado${kind === 'videos' && result.files !== 1 ? 's' : ''}: ${result.files} arquivo(s) · ${result.path}`)
       addExportLog(`Exportar ${label.toLocaleLowerCase('pt-BR')}`, 'success', `${result.files} arquivo(s) · ${result.path}`)
@@ -247,7 +247,7 @@ function RoteiroWorkspace({ roteiro, onBack, onUpdate, onDeleteDraftVideo, chara
   }
   const openExportFolder = async (kind: 'characters' | 'background' | 'videos' | 'script' | 'ui') => {
     setOpeningExportFolder(kind); setRoteiroExportError('')
-    try { await window.desktop.openRoteiroExportFolder({ roteiro, kind }) }
+    try { await window.desktop.roteiros.openRoteiroExportFolder({ roteiro, kind }) }
     catch (reason) { setRoteiroExportError(reason instanceof Error ? reason.message : 'Não foi possível abrir a pasta de exportação.') }
     finally { setOpeningExportFolder(null) }
   }
@@ -273,18 +273,18 @@ function RoteiroWorkspace({ roteiro, onBack, onUpdate, onDeleteDraftVideo, chara
   }
   const openGifPicker = async () => {
     setGifPickerOpen(true); setGifSearch(''); setGifLibraryError('')
-    try { setGifs(await window.desktop.listRoteiroUiGifs()) }
+    try { setGifs(await window.desktop.roteiros.listRoteiroUiGifs()) }
     catch (reason) { setGifLibraryError(reason instanceof Error ? reason.message : 'Não foi possível carregar a biblioteca de GIFs.') }
   }
   const importRoteiroGif = async () => {
     try {
-      const item = await window.desktop.importRoteiroUiGif()
+      const item = await window.desktop.roteiros.importRoteiroUiGif()
       if (item) { setGifs((current) => [item, ...current]); onUpdate({ ...roteiro, uiGifAssetId: item.id }) }
     } catch (reason) { setGifLibraryError(reason instanceof Error ? reason.message : 'Não foi possível importar o GIF.') }
   }
   const deleteRoteiroGif = async (item: RoteiroUiGifItem) => {
     if (!window.confirm(`Excluir permanentemente “${item.name}” da biblioteca de GIFs?`)) return
-    try { await window.desktop.deleteRoteiroUiGif(item.id); setGifs((current) => current.filter((entry) => entry.id !== item.id)) }
+    try { await window.desktop.roteiros.deleteRoteiroUiGif(item.id); setGifs((current) => current.filter((entry) => entry.id !== item.id)) }
     catch (reason) { setGifLibraryError(reason instanceof Error ? reason.message : 'Não foi possível excluir o GIF.') }
   }
   const openCastPicker = () => {
@@ -392,14 +392,14 @@ export function RoteirosPage() {
 
   useEffect(() => {
     let cancelled = false
-    void window.desktop.listCustomizerCharacters().then((items) => { if (!cancelled) setCharacters(items) }).catch(() => undefined)
+    void window.desktop.customizer.listCustomizerCharacters().then((items) => { if (!cancelled) setCharacters(items) }).catch(() => undefined)
     void window.desktop.mediaLibrary.list().then((items) => { if (!cancelled) { setLibraryItems(items); setLibraryLoaded(true) } }).catch(() => { if (!cancelled) setLibraryLoaded(true) })
     return () => { cancelled = true }
   }, [])
 
   useEffect(() => {
     let cancelled = false
-    void window.desktop.listRoteiros().then((items) => {
+    void window.desktop.roteiros.listRoteiros().then((items) => {
       if (!cancelled) {
         setRoteiros(items)
         setRoteirosLoaded(true)
@@ -413,7 +413,7 @@ export function RoteirosPage() {
     if (!roteirosLoaded) return
     const revision = ++saveRevision.current
     setRoteiroSaveStatus('saving')
-    void window.desktop.saveRoteiros(roteiros).then(() => { if (revision === saveRevision.current) setRoteiroSaveStatus('saved') }).catch((error) => {
+    void window.desktop.roteiros.saveRoteiros(roteiros).then(() => { if (revision === saveRevision.current) setRoteiroSaveStatus('saved') }).catch((error) => {
       console.error('Não foi possível salvar os roteiros.', error)
       if (revision === saveRevision.current) setRoteiroSaveStatus('error')
     })
@@ -444,7 +444,7 @@ export function RoteirosPage() {
 
   const deleteDraftVideoFromRoteiro = async (updatedRoteiro: SidebarRoteiro, videoId: string) => {
     const nextRoteiros = roteiros.map((item) => item.id === updatedRoteiro.id ? updatedRoteiro : item)
-    await window.desktop.saveRoteiros(nextRoteiros)
+    await window.desktop.roteiros.saveRoteiros(nextRoteiros)
     setRoteiros(nextRoteiros)
     const stillReferenced = nextRoteiros.some((item) => item.opening?.video?.id === videoId || item.tiktoks.some((tiktok) => tiktok.video?.id === videoId))
     if (stillReferenced) return false
@@ -516,7 +516,7 @@ export function RoteirosPage() {
     </aside>
     <section className="roteiros-main-empty" aria-label={`Área ${active.label}`}>
       <header className="roteiros-area-titlebar"><div className="roteiros-title-content">{activeArea === 'roteiros' && <div className="roteiros-title-actions"><button className="add" onClick={() => { setDeleteMode(false); setDeleteSelection([]); setNewTitle(''); setNewCharacterIds([]); setCreateOpen(true) }} disabled={!roteirosLoaded} title="Adicionar roteiro" type="button">Adicionar</button><button className={deleteMode ? deleteSelection.length ? 'confirm-delete' : 'cancel-delete' : 'delete'} onClick={handleDeleteButton} disabled={!roteirosLoaded || (!deleteMode && roteiros.length === 0)} title={deleteMode ? deleteSelection.length ? `Confirmar exclusão de ${deleteSelection.length} roteiro(s)` : 'Voltar sem excluir roteiros' : 'Selecionar roteiros para excluir'} type="button">{deleteMode ? deleteSelection.length ? 'Confirmar' : 'Voltar' : 'Excluir'}</button></div>}<h1>{active.label}</h1></div></header>
-      {activeArea === 'roteiros' && <div className="roteiro-main-library" aria-label="Lista de roteiros" ref={roteiroListRef}><div className="roteiro-library-toolbar"><label><Icon name="search" /><input value={roteiroSearch} onChange={(event) => setRoteiroSearch(event.target.value)} placeholder="Buscar roteiro…" /></label><span className={`roteiro-save-indicator ${roteirosLoadError ? 'error' : roteiroSaveStatus}`} role="status">{roteirosLoadError ? 'Falha ao carregar' : !roteirosLoaded ? 'Carregando roteiros…' : roteiroSaveStatus === 'saving' ? 'Salvando…' : roteiroSaveStatus === 'error' ? 'Falha ao salvar' : 'Tudo salvo'}</span>{roteirosLoadError && <button className="roteiro-save-retry" type="button" onClick={() => { setRoteirosLoadError(''); void window.desktop.listRoteiros().then((items) => { setRoteiros(items); setRoteirosLoaded(true) }).catch((reason: unknown) => setRoteirosLoadError(reason instanceof Error ? reason.message : 'Não foi possível carregar os roteiros salvos.')) }}>Tentar carregar</button>}{roteiroSaveStatus === 'error' && !roteirosLoadError && <button className="roteiro-save-retry" type="button" onClick={() => { void window.desktop.saveRoteiros(roteiros).then(() => setRoteiroSaveStatus('saved')).catch(() => setRoteiroSaveStatus('error')) }}>Tentar novamente</button>}</div>{roteirosLoaded && <div className="roteiro-main-cards">{visibleRoteiros.map((roteiro) => {
+      {activeArea === 'roteiros' && <div className="roteiro-main-library" aria-label="Lista de roteiros" ref={roteiroListRef}><div className="roteiro-library-toolbar"><label><Icon name="search" /><input value={roteiroSearch} onChange={(event) => setRoteiroSearch(event.target.value)} placeholder="Buscar roteiro…" /></label><span className={`roteiro-save-indicator ${roteirosLoadError ? 'error' : roteiroSaveStatus}`} role="status">{roteirosLoadError ? 'Falha ao carregar' : !roteirosLoaded ? 'Carregando roteiros…' : roteiroSaveStatus === 'saving' ? 'Salvando…' : roteiroSaveStatus === 'error' ? 'Falha ao salvar' : 'Tudo salvo'}</span>{roteirosLoadError && <button className="roteiro-save-retry" type="button" onClick={() => { setRoteirosLoadError(''); void window.desktop.roteiros.listRoteiros().then((items) => { setRoteiros(items); setRoteirosLoaded(true) }).catch((reason: unknown) => setRoteirosLoadError(reason instanceof Error ? reason.message : 'Não foi possível carregar os roteiros salvos.')) }}>Tentar carregar</button>}{roteiroSaveStatus === 'error' && !roteirosLoadError && <button className="roteiro-save-retry" type="button" onClick={() => { void window.desktop.roteiros.saveRoteiros(roteiros).then(() => setRoteiroSaveStatus('saved')).catch(() => setRoteiroSaveStatus('error')) }}>Tentar novamente</button>}</div>{roteirosLoaded && <div className="roteiro-main-cards">{visibleRoteiros.map((roteiro) => {
         const roteiroCharacters = roteiro.characterIds.map((id) => characters.find((character) => character.id === id)).filter((character): character is CustomizerCharacter => Boolean(character))
         const markedForDelete = deleteSelection.includes(roteiro.id)
         const refs = [roteiro.opening?.video, ...roteiro.tiktoks.map((item) => item.video)].filter((item): item is RoteiroVideoReference => Boolean(item))
