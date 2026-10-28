@@ -14,15 +14,15 @@ import { WardrobePoseAuditPanel } from './WardrobePoseAuditPanel'
 import { useWardrobeComparisonPose } from './useWardrobeComparisonPose'
 import { WardrobeComparisonPreview } from './WardrobeComparisonPreview'
 import { suggestWardrobeBone } from './boneSelection'
-import { guessWardrobeCategory, guessWardrobeCategoryForBone, guessWardrobeName, guessWardrobeNameForBone, wardrobeSheetContentBounds } from './wardrobeAutoDetection'
+import { guessWardrobeCategoryForBone, guessWardrobeNameForBone } from './wardrobeAutoDetection'
 import { createWardrobeTorsoGridComponents } from './wardrobeGridImport'
+import { createWardrobeComponentsFromProcessedSheet } from './wardrobeSheetImport'
+import type { WardrobeProcessorResponse } from './wardrobeProcessorProtocol'
 import { normalizeEditableImageFile } from '../normalizeImage'
 import { applyWardrobeWarpBrush, createWardrobeWarpMesh, drawWardrobeWarp, type WardrobeWarpBounds, type WardrobeWarpMesh, type WardrobeWarpPoint, wardrobeWarpPadding } from './wardrobeMeshWarp'
 import { WardrobeGarmentEditorModal } from './WardrobeGarmentEditorModal'
 import './wardrobe.css'
 
-type WorkerPiece = Omit<WardrobeComponent, 'category' | 'attachedPartId' | 'rotation' | 'dataUrl'> & { png: ArrayBuffer }
-type WorkerMessage = { type: 'complete'; id: number; width: number; height: number; pieces: WorkerPiece[] } | { type: 'error'; id: number; message: string }
 type PieceDrag = { pointerId: number; componentId: string; pointerX: number; pointerY: number; originX: number; originY: number }
 type PreviewPanDrag = { pointerId: number; pointerX: number; pointerY: number; originX: number; originY: number }
 type SourceReferencePart = { x: number; y: number; width: number; height: number; imageDataUrl: string }
@@ -74,11 +74,6 @@ const categoryNames: Record<WardrobeCategory, string> = {
   camisa: 'Camisas', jaqueta: 'Jaquetas', 'manga-superior': 'Mangas superiores', 'manga-inferior': 'Mangas inferiores', luvas: 'Luvas', capa: 'Capa', cinto: 'Cinto', oculos: 'Óculos', 'acessorio-cabeca': 'Acessórios de cabeça', saia: 'Saia', 'calca-coxa': 'Calças · coxas', 'calca-canela': 'Calças · canelas', shorts: 'Shorts', meia: 'Meias', sapato: 'Sapatos'
 }
 const categories = Object.keys(categoryNames) as WardrobeCategory[]
-function dataUrl(buffer: ArrayBuffer): string {
-  let binary = ''; const bytes = new Uint8Array(buffer)
-  for (let start = 0; start < bytes.length; start += 0x8000) binary += String.fromCharCode(...bytes.subarray(start, Math.min(bytes.length, start + 0x8000)))
-  return `data:image/png;base64,${btoa(binary)}`
-}
 function deformationOriginalAssetId(componentId: string): string { return `${componentId}_deform_original` }
 function readFile(file: File): Promise<string> { return normalizeEditableImageFile(file).then((image) => image.dataUrl) }
 function getBodyLayer(model: FabricatorProject | null, partId: string): number {
@@ -419,23 +414,13 @@ export function WardrobeWorkspace() {
       const worker = new Worker(new URL('./wardrobeProcessor.worker.ts', import.meta.url), { type: 'module' })
       workerRef.current = worker
       const id = ++requestRef.current
-      worker.onmessage = (event: MessageEvent<WorkerMessage>) => {
+      worker.onmessage = (event: MessageEvent<WardrobeProcessorResponse>) => {
         const message = event.data
         if (message.id !== id) return
         setProcessing(false); worker.terminate(); workerRef.current = null
         if (message.type === 'error') { setError(message.message); return }
         if (!message.pieces.length) { setError('Não encontrei peças visíveis. Confira se a folha tem transparência entre as peças.'); return }
-        const contentBounds = wardrobeSheetContentBounds(message.pieces, message.width, message.height)
-        const components = message.pieces.map((piece) => {
-          const category = guessWardrobeCategory(piece, contentBounds)
-          const { png, ...metadata } = piece
-          const contentCenterX = piece.x + piece.width / 2 - contentBounds.x
-          const bone = guessBone(category, contentCenterX, contentBounds.width, referenceModel ?? model)
-          const positioned: WardrobeComponent = { ...metadata, category, attachedPartId: bone?.id ?? '', rotation: 0, originX: metadata.x, originY: metadata.y, originWidth: metadata.width, originHeight: metadata.height, dataUrl: dataUrl(png) }
-          positioned.glue = { version: 1, mode: 'loose' }
-          positioned.binding = undefined
-          return { ...positioned, name: guessWardrobeName(category, contentCenterX, contentBounds.width) }
-        })
+        const components = createWardrobeComponentsFromProcessedSheet(message.pieces, message.width, message.height, referenceModel ?? model)
         const unbound = components.filter((component) => !component.attachedPartId)
         if (unbound.length) {
           setError(`${unbound.length} peça(s) sem osso correspondente na referência original. Selecione o osso de cada peça antes de salvar; não faremos um encaixe arbitrário.`)

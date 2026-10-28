@@ -1,7 +1,7 @@
-type WardrobeProcessRequest = { id: number; dataUrl: string; normalizeTo?: { width: number; height: number } }
-type Piece = { id: string; name: string; x: number; y: number; width: number; height: number; png: ArrayBuffer }
-const scope = self as unknown as { onmessage: ((event: MessageEvent<WardrobeProcessRequest>) => void) | null; postMessage: (message: unknown, transfer?: Transferable[]) => void }
-scope.onmessage = async ({ data }: MessageEvent<WardrobeProcessRequest>) => {
+import type { WardrobeProcessorPiece, WardrobeProcessorRequest, WardrobeProcessorResponse } from './wardrobeProcessorProtocol'
+
+const scope = self as unknown as { onmessage: ((event: MessageEvent<WardrobeProcessorRequest>) => void) | null; postMessage: (message: WardrobeProcessorResponse, transfer?: Transferable[]) => void }
+scope.onmessage = async ({ data }: MessageEvent<WardrobeProcessorRequest>) => {
   try {
     const bitmap = await createImageBitmap(await (await fetch(data.dataUrl)).blob())
     let width = bitmap.width
@@ -67,7 +67,7 @@ scope.onmessage = async ({ data }: MessageEvent<WardrobeProcessRequest>) => {
     for (let i = 0; i < visible.length; i += 1) visible[i] = pixels[i * 4 + 3] > 24 ? 1 : 0
     const visited = new Uint8Array(visible.length)
     const queue = new Int32Array(visible.length)
-    const pieces: Piece[] = []
+    const pieces: WardrobeProcessorPiece[] = []
     // Scale the speck filter with the source image. Small top-lane accessories
     // should survive at modest resolutions, while single-pixel noise is ignored.
     const minimumComponentPixels = Math.max(12, Math.min(96, Math.floor(width * height * 0.00001)))
