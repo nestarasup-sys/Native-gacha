@@ -1186,9 +1186,9 @@ export function CustomizerPage() {
       await saveCharacterCustomization({ modelSlot: model.slot, poseSlot: firstPose?.slot ?? null })
       const sourceProject = await window.desktop.loadFabricatorSlot(model.slot)
       if (!sourceProject) throw new Error('O modelo de referência não está disponível no Fabricador Dev.')
-      let artwork: CatalogArtwork | null = firstPose ? await window.desktop.loadFabricatorPose(model.slot, 1) : null
-      if (!artwork) artwork = sourceProject
-      if (!artwork) throw new Error('Não foi possível abrir este modelo.')
+      const poseArtwork = firstPose ? await window.desktop.loadFabricatorPose(model.slot, firstPose.slot) : null
+      const artwork = selectCharacterArtwork(sourceProject, poseArtwork, firstPose?.slot ?? null)
+      if (!artwork) throw new Error(firstPose ? 'Não foi possível abrir a pose inicial deste modelo.' : 'Não foi possível abrir este modelo.')
       const artworkUrl = await renderArtwork(applyCharacterBodyShape(withCharacterHeadSize(artwork, activeProportions), activeBodyDimensions), characterRenderSize(artwork.width, artwork.height, previewExtent.width, previewExtent.height, customizerPreviewZoom, previewExtent.density), selectedCharacter?.customization.modelSkinTone)
       if (!await preparePreviewImage(artworkUrl)) throw new Error('A prévia nova não pôde ser decodificada; mantendo a imagem anterior.')
       if (previewLoadRequest.current === requestId) { setSelectedArtworkProject(artwork); setSelectedSourceModelProject(sourceProject); setSelectedArtworkUrl(artworkUrl) }
@@ -1212,7 +1212,8 @@ export function CustomizerPage() {
       await saveCharacterCustomization({ modelSlot: pose.sourceModelSlot, poseSlot: pose.slot })
       const sourceProject = selectedSourceModelProject?.slot === pose.sourceModelSlot ? selectedSourceModelProject : await window.desktop.loadFabricatorSlot(pose.sourceModelSlot)
       if (!sourceProject) throw new Error('O modelo de referência desta pose não está disponível.')
-      const artwork = await window.desktop.loadFabricatorPose(pose.sourceModelSlot, pose.slot)
+      const poseArtwork = await window.desktop.loadFabricatorPose(pose.sourceModelSlot, pose.slot)
+      const artwork = selectCharacterArtwork(sourceProject, poseArtwork, pose.slot)
       if (!artwork) throw new Error('Não foi possível abrir esta pose.')
       const artworkUrl = await renderArtwork(applyCharacterBodyShape(withCharacterHeadSize(artwork, activeProportions), activeBodyDimensions), characterRenderSize(artwork.width, artwork.height, previewExtent.width, previewExtent.height, customizerPreviewZoom, previewExtent.density), selectedCharacter?.customization.modelSkinTone)
       if (!await preparePreviewImage(artworkUrl)) throw new Error('A prévia nova não pôde ser decodificada; mantendo a imagem anterior.')
