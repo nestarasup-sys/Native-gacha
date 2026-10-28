@@ -59,11 +59,6 @@ export class BaseVideoRepository {
     this.db.prepare('DELETE FROM base_video_details WHERE video_id=?').run(id)
   }
 
-  assertNotReferencedByRoteiros(id: string): void {
-    const reference = this.db.prepare("SELECT 1 FROM roteiro_sections WHERE json_extract(video_asset_json, '$.id') = ? LIMIT 1").get(id)
-    if (reference) throw new Error('Este vídeo está sendo usado em uma abertura ou TikTok. Remova a referência no roteiro antes de excluí-lo da biblioteca.')
-  }
-
   /** Atribui um número uma vez, mantendo a transação e a sequência originais. */
   publish(id: string): number {
     return this.db.transaction((videoId: string) => {

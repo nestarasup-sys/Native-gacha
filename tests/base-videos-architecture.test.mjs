@@ -4,6 +4,9 @@ import assert from 'node:assert/strict'
 import { DatabaseSync } from 'node:sqlite'
 import { BaseVideoService } from '../electron/domains/baseVideos/service.ts'
 import { registerBaseVideoHandlers } from '../electron/domains/baseVideos/ipc.ts'
+import { createVideoReferenceGuard } from '../electron/domains/mediaLibrary/videoReferences.ts'
+import { createRoteirosVideoReferenceLookup } from '../electron/domains/roteiros/videoReferences.ts'
+import { createEditorV6VideoReferenceLookup } from '../electron/domains/editorV6/videoReferences.ts'
 import { assertBaseVideoId, nextCategoryColor, normalizeCategoryName, validateVideoDetails } from '../electron/domains/baseVideos/validation.ts'
 
 const A = 'a2189020-8327-4327-a4a6-442ed9902123'
@@ -46,6 +49,7 @@ function fixture() {
     },
     resolveMedia: async (id) => { calls.push(`resolve:${id}`); const result = media.get(id); if (!result) throw new Error('Mídia não encontrada.'); return result },
     assertMediaAccessible: async (path) => { calls.push(`access:${path}`); if (path.endsWith('missing')) throw new Error('Arquivo ausente.') },
+    assertNoVideoReferences: createVideoReferenceGuard([createRoteirosVideoReferenceLookup(() => sql)]),
     deleteLibraryVideo: async (id) => { calls.push(`delete:${id}`); if (id === C) throw new Error('Falha na biblioteca.') }
   })
   return { db, service, calls, media }
@@ -123,6 +127,14 @@ test('exclusão: roteiro referenciando mídia impede apagar; ordem biblioteca �
   await service.deleteVideo(A)
   assert.equal(calls.at(-1), `delete:${A}`)
   assert.equal(service.listDetails().length, 0)
+})
+
+test('proteção de mídia: vínculo do Editor V6 impede excluir o vídeo', async () => {
+  const assertNoReferences = createVideoReferenceGuard([createEditorV6VideoReferenceLookup({
+    listProjects: async () => [{ id: 'project-1', title: 'Cena de teste' }],
+    readManifest: async () => JSON.stringify({ media: [{ libraryVideoId: A }] })
+  })])
+  await assert.rejects(assertNoReferences(A), /projeto “Cena de teste” do Editor V6/)
 })
 
 test('IPC: os nove canais verificam origem em cada chamada antes da regra', async (t) => {

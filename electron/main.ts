@@ -68,6 +68,9 @@ import { registerModelSourceDownloadHandlers } from './domains/fabricator/modelS
 import { registerEditorV6PrimaryHandlers } from './domains/editorV6/primaryIpc'
 import { createEditorV6LibraryIndex } from './domains/editorV6/libraryIndex'
 import { createEditorV6DocumentPersistence } from './domains/editorV6/documentPersistence'
+import { createVideoReferenceGuard } from './domains/mediaLibrary/videoReferences'
+import { createRoteirosVideoReferenceLookup } from './domains/roteiros/videoReferences'
+import { createEditorV6VideoReferenceLookup } from './domains/editorV6/videoReferences'
 
 let configuredAppDataRoot: string | null = null
 let roteirosSaveQueue: Promise<void> = Promise.resolve()
@@ -1033,12 +1036,13 @@ const { listEditorV6s } = createEditorV6LibraryIndex({
   readEditorV6Summary
 })
 
-async function assertEditorV6VideoNotLinked(videoId: string): Promise<void> {
-  for (const project of await listEditorV6s()) {
-    const manifest = JSON.parse(await readFile(join(editorV6Path(project.id), 'editorV6.json'), 'utf8')) as { media?: Array<{ libraryVideoId?: unknown }> }
-    if (manifest.media?.some((item) => item.libraryVideoId === videoId)) throw new Error(`Este vídeo está vinculado pelo ID ao projeto “${project.title}” do Editor V6. Remova a faixa do projeto antes de excluir o vídeo da Base.`)
-  }
-}
+const assertNoVideoReferences = createVideoReferenceGuard([
+  createRoteirosVideoReferenceLookup(() => dataPlatform.database),
+  createEditorV6VideoReferenceLookup({
+    listProjects: listEditorV6s,
+    readManifest: (projectId) => readFile(join(editorV6Path(projectId), 'editorV6.json'), 'utf8')
+  })
+])
 
 function dataUrlBuffer(dataUrl: string): Buffer {
   const match = /^data:image\/png;base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl)
@@ -1309,9 +1313,7 @@ async function registerFabricatorHandlers(): Promise<void> {
   ipcMain.handle('video-library:delete', async (event, id: string) => {
     assertTrustedSender(event)
     const next = roteirosSaveQueue.catch(() => undefined).then(async () => {
-      const reference = dataPlatform.database?.prepare("SELECT 1 FROM roteiro_sections WHERE json_extract(video_asset_json, '$.id') = ? LIMIT 1").get(id)
-      if (reference) throw new Error('Este vídeo está sendo usado em uma abertura ou TikTok. Remova a referência no roteiro antes de excluí-lo da biblioteca.')
-      await assertEditorV6VideoNotLinked(id)
+      await assertNoVideoReferences(id)
       await videoLibrary.delete(id)
     })
     roteirosSaveQueue = next
@@ -1592,7 +1594,8 @@ async function registerFabricatorHandlers(): Promise<void> {
       if (physical) await nativeAccess(physical)
       else await dataFileSystem.access(path)
     },
-    deleteLibraryVideo: async (id) => { await assertEditorV6VideoNotLinked(id); await videoLibrary.delete(id) }
+    assertNoVideoReferences,
+    deleteLibraryVideo: async (id) => { await videoLibrary.delete(id) }
   }))
 
   registerCustomizerCharacterHandlers(ipcMain, assertTrustedSender, customizerService, measureIpc)
