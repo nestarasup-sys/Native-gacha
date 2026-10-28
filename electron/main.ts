@@ -45,7 +45,7 @@ import { registerFabricatorHairHandlers } from './domains/fabricator/hairIpc'
 import { registerFaceGuideHandlers } from './domains/fabricator/faceGuidesIpc'
 import { registerFabricatorFaceAnimationExportHandler } from './domains/fabricator/faceAnimationExportIpc'
 import { registerFabricatorImageNormalizationHandler } from './domains/fabricator/imageNormalizationIpc'
-import { recoverModelSourceSlot } from './domains/fabricator/modelSourceRecovery'
+import { AmbiguousModelSourceRecoveryError, recoverModelSourceSlot } from './domains/fabricator/modelSourceRecovery'
 import { createFabricatorModelWriter } from './domains/fabricator/modelWriter'
 import { createFabricatorHistoryPersistence } from './domains/fabricator/historyPersistence'
 import { registerFabricatorProjectHandlers } from './domains/fabricator/projectIpc'
@@ -1268,13 +1268,19 @@ async function registerFabricatorHandlers(): Promise<void> {
 
   registerCustomizerCharacterHandlers(ipcMain, assertTrustedSender, customizerService, measureIpc)
 
-  // A leitura do catálogo também recupera um slot que ficou sem nome após queda
-  // entre as duas renomeações da publicação. Não remove nem escolhe backups ambíguos.
+  // Uma recuperação ambígua em um slot não pode esconder os demais modelos.
+  // A abertura do slot específico continua exibindo o erro para recuperação manual.
   const recoverSlot = (slot: number) =>
     recoverModelSourceSlot(slot, slotPath, { readdir, readFile, rename, rm })
   registerFabricatorModelCatalogHandlers(ipcMain, assertTrustedSender, {
     listSlots: async () => {
-      for (let slot = 1; slot <= slotCount; slot += 1) await recoverSlot(slot)
+      for (let slot = 1; slot <= slotCount; slot += 1) {
+        try { await recoverSlot(slot) }
+        catch (reason) {
+          if (!(reason instanceof AmbiguousModelSourceRecoveryError)) throw reason
+          console.error(`Recuperação manual pendente no slot ${slot}; os outros slots continuarão disponíveis.`, reason)
+        }
+      }
       return fabricatorModelCatalog.listSlots()
     },
     loadSlot: async (slot) => {

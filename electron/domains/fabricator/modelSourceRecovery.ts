@@ -53,6 +53,13 @@ async function settleCompletedJournal(
 
 export type ModelSourceRecoveryResult = 'intact' | 'restored' | 'missing'
 
+export class AmbiguousModelSourceRecoveryError extends Error {
+  constructor() {
+    super('Há múltiplos backups ou uma publicação pendente inconsistente. Recuperação manual necessária.')
+    this.name = 'AmbiguousModelSourceRecoveryError'
+  }
+}
+
 export async function recoverModelSourceSlot(
   slot: number,
   slotPath: (slot: number) => string,
@@ -111,7 +118,7 @@ export async function recoverModelSourceSlot(
   const selected = expected
     ? valid.find(candidate => candidate === expected)
     : valid.length === 1 ? valid[0] : null
-  if (!selected) throw new Error('Há múltiplos backups ou uma publicação pendente inconsistente. Recuperação manual necessária.')
+  if (!selected) throw new AmbiguousModelSourceRecoveryError()
   try {
     if (emptyLogicalSlot) {
       // Remove apenas placeholder vazio e somente após validar o marcador e backup.
