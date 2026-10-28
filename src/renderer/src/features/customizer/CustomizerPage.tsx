@@ -7,6 +7,7 @@ import { useCustomizerBodyAppearance } from './useCustomizerBodyAppearance'
 import { useCustomizerCharacterSourceSelection } from './useCustomizerCharacterSourceSelection'
 import { CustomizerModelPicker } from './CustomizerModelPicker'
 import { CustomizerClothesAdjustmentPanel } from './CustomizerClothesAdjustmentPanel'
+import { buildClothesAdjustmentEntries } from './customizerClothesAdjustmentModel'
 import { upperWardrobePanels, upperWardrobePageTwoPanels, accessoryWardrobePanels, lowerWardrobePanels, lowerWardrobePageTwoPanels, wardrobePanelCandidates, isWardrobePanelCandidateSelected, renderWardrobeThumbnail } from './wardrobePanelModel'
 import type { WardrobePanel } from './wardrobePanelModel'
 import { HairAssetPreview, WardrobePanelCandidatePreview } from './CustomizerAssetPreviews'
@@ -1597,47 +1598,8 @@ export function CustomizerPage() {
   const renderAdjustmentPicker = (area: 'head' | 'clothes') => {
     const isHead = area === 'head'
     const scopeDefinitions = isHead ? [] : clothesAdjustmentDefinitions(clothesCategorySelection)
-    const scopeCategoryIds = new Set(scopeDefinitions.map((item) => item.id))
     const adjustmentLabel = customizerClothesTabs.find((tab) => tab.id === clothesCategorySelection)?.label ?? 'categoria selecionada'
-    const selectedGroups = !isHead ? (selectedCharacter?.customization.wardrobeGroups ?? []).filter((group) => scopeCategoryIds.has(group.category)) : []
-    const setOrder = new Map<string, number>()
-    selectedGroups.forEach((group) => {
-      const key = `${group.modelSlot}:${group.setId}`
-      if (!setOrder.has(key)) setOrder.set(key, setOrder.size)
-    })
-    const sideOrder = (component: WardrobeSet['components'][number]) => {
-      const side = `${component.name} ${component.attachedPartId}`.toLocaleLowerCase()
-      const isLeft = /\besquerd[oa]\b|\bleft\b/.test(side)
-      const isRight = /\bdireit[oa]\b|\bright\b/.test(side)
-      return isLeft && !isRight ? 0 : isRight && !isLeft ? 1 : 2
-    }
-    const sortedAdjustmentComponents = selectedGroups.flatMap((group) => {
-      const set = wardrobeDetails[`${group.modelSlot}:${group.setId}`]
-      if (!set) return []
-      const definition = scopeDefinitions.find((item) => item.id === group.category)
-      const acceptedCategories = definition?.source ?? []
-      const parts = group.componentId
-        ? set.components.filter((component) => component.id === group.componentId)
-        : set.components.filter((component) => acceptedCategories.includes(component.category))
-      return parts.map((component) => ({ group: { ...group, componentId: component.id }, component, set, categoryOrder: scopeDefinitions.findIndex((item) => item.id === group.category), sourceOrder: acceptedCategories.indexOf(component.category) }))
-    }).filter((entry, index, list) => list.findIndex((candidate) => candidate.group.modelSlot === entry.group.modelSlot && candidate.group.setId === entry.group.setId && candidate.group.category === entry.group.category && candidate.component.id === entry.component.id) === index)
-      .sort((a, b) => {
-        const setKeyA = `${a.group.modelSlot}:${a.group.setId}`
-        const setKeyB = `${b.group.modelSlot}:${b.group.setId}`
-        const setOrderDifference = (setOrder.get(setKeyA) ?? 0) - (setOrder.get(setKeyB) ?? 0)
-        if (setOrderDifference) return setOrderDifference
-        const categoryOrderDifference = a.categoryOrder - b.categoryOrder
-        if (categoryOrderDifference) return categoryOrderDifference
-        const sourceOrderDifference = a.sourceOrder - b.sourceOrder
-        if (sourceOrderDifference) return sourceOrderDifference
-        return sideOrder(a.component) - sideOrder(b.component)
-      })
-    const arePairSiblings = (a: (typeof sortedAdjustmentComponents)[number], b: (typeof sortedAdjustmentComponents)[number]) =>
-      a.group.modelSlot === b.group.modelSlot && a.group.setId === b.group.setId && a.group.category === b.group.category && sideOrder(a.component) === 0 && sideOrder(b.component) === 1
-    const adjustmentComponents = sortedAdjustmentComponents.map((entry, index, entries) => ({
-      ...entry,
-      pairStart: sideOrder(entry.component) === 0 && entries.slice(index + 1).some((candidate) => arePairSiblings(entry, candidate))
-    }))
+    const adjustmentComponents = buildClothesAdjustmentEntries(selectedCharacter?.customization.wardrobeGroups ?? [], wardrobeDetails, scopeDefinitions)
     const selectedAdjustmentComponent = !isHead && selectedClothing
       ? adjustmentComponents.find((entry) => entry.group.modelSlot === selectedClothing.modelSlot && entry.group.setId === selectedClothing.setId && entry.group.category === selectedClothing.category && entry.component.id === selectedClothing.componentId)
       : undefined

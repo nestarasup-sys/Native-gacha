@@ -1,15 +1,9 @@
-import type { WardrobeComponent, WardrobeSet } from '../../../../shared/fabricator'
 import type { CustomizerWardrobeGroup } from '../../../../shared/customizer'
 import type { SelectedWardrobeComponent } from '../../characters/characterRenderer'
 import { Icon } from '../../ui/components/Icon'
+import type { ClothingAdjustEntry } from './customizerClothesAdjustmentModel'
 
 type Transform = Pick<CustomizerWardrobeGroup,'offsetX'|'offsetY'|'scaleX'|'scaleY'|'rotation'>
-export type ClothingAdjustEntry = {
-  group: CustomizerWardrobeGroup
-  component: WardrobeComponent
-  set: WardrobeSet
-  pairStart: boolean
-}
 type Props = {
   label: string
   hasCharacter: boolean
