@@ -9,6 +9,7 @@ import { HairPiecePreview as HairPiece } from './HairPiecePreview'
 import { Icon } from '../../ui/components/Icon'
 import { usePreviewBackground } from './usePreviewBackground'
 import { normalizeEditableImageFile } from './normalizeImage'
+import { useModelAppearanceTarget, useModelPartAppearancePreview } from './ModelAppearanceContext'
 
 type HairSide = HairAssetSide
 type HairAsset = NonNullable<HairWorkspaceData['front']>
@@ -76,10 +77,12 @@ function processHairSheet(dataUrl: string, tolerance: number, mode: 'auto' | 'gr
   })
 }
 
-export function HairWorkspace() {
+export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
   const [background] = usePreviewBackground()
   const [models, setModels] = useState<FabricatorSlotSummary[]>([])
-  const [modelSlot, setModelSlot] = useState(1)
+  const [modelSlot, setModelSlot] = useState(baseModelSlot)
+  useModelAppearanceTarget(modelSlot)
+  const appearancePreviewForPart = useModelPartAppearancePreview(modelSlot)
   const [project, setProject] = useState<FabricatorProject | null>(null)
   useModelSourceRefresh(modelSlot, fresh => setProject(projectForOriginalPreview(fresh)))
   const [hairWorkspace, setHairWorkspace] = useState<HairWorkspaceData | null>(null)
@@ -120,7 +123,7 @@ export function HairWorkspace() {
       if (!cancelled) setError(reason instanceof Error ? reason.message : 'Não foi possível carregar os modelos.')
     }).finally(() => { if (!cancelled) setLoadingModels(false) })
     return () => { cancelled = true }
-  }, [])
+  }, [baseModelSlot])
 
   useEffect(() => {
     let cancelled = false
@@ -371,7 +374,7 @@ export function HairWorkspace() {
         <div className="hair-dev-preview-stage" style={{ backgroundColor: background }} onWheel={(event) => { event.preventDefault(); setZoom((value) => Math.max(.5, Math.min(3, value * (event.deltaY < 0 ? 1.1 : .9)))) }}>
           {head && <div className="hair-dev-head-stage" style={{ aspectRatio: head.width + ' / ' + head.height, transform: 'scale(' + zoom + ')' }} onPointerMove={moveHair} onPointerUp={finishDrag} onPointerCancel={finishDrag}>
             {hairWorkspace?.back && visibleDraft('back') && <HairPiece side="back" asset={hairWorkspace.back} transform={hairWorkspace.transforms.back} head={head} selected={selectedSide === 'back'} onPointerDown={startDrag} disabled={saving || loadingHair || processingChroma} onErase={(dataUrl) => updateHairPixels('back', dataUrl)} />}
-            <img className="hair-dev-head-base" src={head.dataUrl} alt="Cabeça do modelo de referência" draggable={false} />
+            <img className="hair-dev-head-base" src={appearancePreviewForPart(head)} alt="Cabeça do modelo de referência" draggable={false} />
             {hairWorkspace?.front && visibleDraft('front') && <HairPiece side="front" asset={hairWorkspace.front} transform={hairWorkspace.transforms.front} head={head} selected={selectedSide === 'front'} onPointerDown={startDrag} disabled={saving || loadingHair || processingChroma} onErase={(dataUrl) => updateHairPixels('front', dataUrl)} />}
             {hairWorkspace?.fringe && hairWorkspace.transforms.fringe && visibleDraft('fringe') && <HairPiece side="fringe" asset={hairWorkspace.fringe} transform={hairWorkspace.transforms.fringe} head={head} selected={selectedSide === 'fringe'} onPointerDown={startDrag} disabled={saving || loadingHair || processingChroma} onErase={(dataUrl) => updateHairPixels('fringe', dataUrl)} />}
           </div>}

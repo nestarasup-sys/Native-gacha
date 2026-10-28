@@ -2,6 +2,7 @@ import type { FabricatorPose, FabricatorProject, ModelPart, WardrobeSet } from '
 import { selectOriginalModelSource } from '../../../../../shared/fabricatorModelViews'
 import { normalizeLayerOrder } from '../models/rig'
 import { mapWardrobeComponentToPose, wardrobePosePadding } from '../../../../../shared/wardrobePose'
+import { useModelPartAppearancePreview } from '../ModelAppearanceContext'
 
 type Props = { model: FabricatorProject; outfit: WardrobeSet; pose: FabricatorPose; onClose: () => void }
 type DisplayBone = Pick<ModelPart,'x' | 'y' | 'width' | 'height'> & { rotation?: number }
@@ -12,6 +13,7 @@ const size = (width: number, height: number) => {
 
 /** Both panels use the SAME source frames and shared pose matrix as Customizer. */
 export function WardrobeComparisonPreview({model,outfit,pose,onClose}:Props) {
+  const appearancePreviewForPart = useModelPartAppearancePreview(model.slot)
   const original=selectOriginalModelSource(model)
   const left=size(original.width,original.height),right=size(pose.width,pose.height)
   const order=normalizeLayerOrder(model.parts,model.layerOrder)
@@ -32,7 +34,7 @@ export function WardrobeComparisonPreview({model,outfit,pose,onClose}:Props) {
     <div style={{display:'flex',gap:12,flexWrap:'wrap',justifyContent:'center'}}>
       <div><small>Original desmontado</small>
         <div style={{position:'relative',width:left.width,height:left.height,background:'var(--preview-background, #ddd)',overflow:'hidden'}}>
-          {original.parts.map(part=><img key={part.id} src={part.dataUrl} alt="" draggable={false}
+          {original.parts.map(part=><img key={part.id} src={appearancePreviewForPart(part)} alt="" draggable={false}
             style={baseStyle(part,left.scale,2+Math.max(0,order.indexOf(part.id))*stride)}/>)}
           {outfit.components.map((piece,index)=><img key={piece.id} src={piece.dataUrl} alt="" draggable={false}
             style={{position:'absolute',left:piece.x*left.scale,top:piece.y*left.scale,
@@ -45,7 +47,7 @@ export function WardrobeComparisonPreview({model,outfit,pose,onClose}:Props) {
       <div><small>{pose.name} · Pose DEV</small>
         <div style={{position:'relative',width:right.width,height:right.height,background:'var(--preview-background, #ddd)',overflow:'hidden'}}>
           {pose.parts.filter(part=>!(pose.hiddenPartIds??[]).includes(part.id)).map(part=><img key={part.id}
-            src={part.dataUrl} alt="" draggable={false}
+            src={appearancePreviewForPart(part)} alt="" draggable={false}
             style={baseStyle(part,right.scale,2+Math.max(0,poseOrder.indexOf(part.id))*stride)}/>)}
           {outfit.components.map((piece,index)=>{
             if(piece.glue?.mode==='loose')return null

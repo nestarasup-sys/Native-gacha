@@ -4,6 +4,7 @@
 
 - **Fabricador DEV** produz e armazena modelos, poses, roupas, cabelos e peças faciais. Catálogos não são alterados por operações de personalização.
 - Cada `project.json` pode guardar `modelSkinTone` e `modelOutlineColor` como cores padrão daquele slot. Para pele removida, o preview preenche interiores transparentes fechados com a base Porcelana (`#f5ddcb`) e aplica as cores a todas as peças anatômicas sem regravar os PNGs originais.
+- Em todas as áreas do Fabricador DEV, os controles de pele e contorno apontam para o modelo-base selecionado pela área. Os previews usam as mesmas cores salvas no slot de Modelos e refletem alterações sem gravar imagens coloridas nos PNGs de origem.
 - Cada peça anatômica pode guardar `fakeSkinContours`: traços-guia normalizados que fecham aberturas intencionais no algoritmo de preenchimento. Eles são metadados opcionais da peça, não alteram o PNG nem aparecem na imagem final. O Fabricador permite editar esses traços por peça; o renderer compartilhado os aplica no Customizador, Studio e Editor V6. Modelos e snapshots antigos sem esse campo continuam válidos.
 - **Customizador** guarda somente as referências de catálogo e ajustes específicos de cada personagem: pose, roupa, cabelo, cores, corpo, rosto e transformações.
 - O Customizador usa as cores padrão do modelo quando o personagem não tem substituições em `customization.modelSkinTone` e `customization.modelOutlineColor`; as escolhas do personagem continuam sendo propriedade do Customizador.

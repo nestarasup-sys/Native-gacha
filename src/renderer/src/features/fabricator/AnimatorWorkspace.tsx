@@ -12,6 +12,7 @@ import { usePreviewBackground } from './usePreviewBackground'
 import { mapWardrobeComponentToPose } from './wardrobe/poseTransform'
 import { applyCharacterBodyShape } from '../../../../shared/bodyShape'
 import { isModelBodyPartName, tintModelBodyPixels } from '../../characters/skinTint'
+import { useModelAppearanceSettings, useModelAppearanceTarget, useModelPartAppearancePreview } from './ModelAppearanceContext'
 
 const SLOT_COUNT = 12
 const HISTORY_LIMIT = 40
@@ -273,11 +274,14 @@ function serializeDraft(animation: AnimatorAnimation, editingSlot: number | null
   }
 }
 
-export function AnimatorWorkspace() {
+export function AnimatorWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
   const [models, setModels] = useState<FabricatorSlotSummary[]>([])
   const [animationSourceSlots, setAnimationSourceSlots] = useState<number[]>([])
   const [characters, setCharacters] = useState<CustomizerCharacter[]>([])
   const [modelSlot, setModelSlot] = useState<number | null>(null)
+  useModelAppearanceTarget(modelSlot)
+  const sharedModelAppearance = useModelAppearanceSettings(modelSlot)
+  const appearancePreviewForPart = useModelPartAppearancePreview(modelSlot)
   const [characterId, setCharacterId] = useState('')
   const [source, setSource] = useState<FabricatorProject | null>(null)
   useModelSourceRefresh(modelSlot, fresh => setSource(projectForOriginalPreview(fresh)))
@@ -458,10 +462,11 @@ export function AnimatorWorkspace() {
     void Promise.all([window.desktop.listFabricatorSlots(), window.desktop.listCustomizerCharacters(), window.desktop.listAnimatorModelSlots()]).then(([slots, savedCharacters, savedAnimationSlots]) => {
       if (!live) return
       setModels(slots); setCharacters(savedCharacters); setAnimationSourceSlots(savedAnimationSlots)
-      setModelSlot(slots.find((slot) => slot)?.slot ?? savedAnimationSlots[0] ?? 1)
+      const preferredExists = Boolean(slots[baseModelSlot - 1])
+      setModelSlot(preferredExists ? baseModelSlot : slots.find((slot) => slot)?.slot ?? savedAnimationSlots[0] ?? 1)
     }).catch((reason: unknown) => { if (live) setError(reason instanceof Error ? reason.message : 'Não foi possível carregar modelos e personagens.') }).finally(() => { if (live) setLoading(false) })
     return () => { live = false }
-  }, [])
+  }, [baseModelSlot])
 
   useEffect(() => {
     let live = true
@@ -527,8 +532,8 @@ export function AnimatorWorkspace() {
 
   useEffect(() => {
     let live = true
-    const tone = selectedCharacter?.customization.modelSkinTone
-    const outlineColor = selectedCharacter?.customization.modelOutlineColor ?? displayBase?.modelOutlineColor
+    const tone = selectedCharacter?.customization.modelSkinTone ?? sharedModelAppearance?.modelSkinTone ?? displayBase?.modelSkinTone
+    const outlineColor = selectedCharacter?.customization.modelOutlineColor ?? sharedModelAppearance?.modelOutlineColor ?? displayBase?.modelOutlineColor
     if ((!tone && !outlineColor) || !tintParts) { setTintedParts({}); return }
     void Promise.all(tintParts.map(async (part) => {
       if (!isModelBodyPartName(part.name)) return [part.id, part.dataUrl] as const
@@ -540,7 +545,7 @@ export function AnimatorWorkspace() {
       context.putImageData(pixels, 0, 0); return [part.id, canvas.toDataURL('image/png')] as const
     })).then((entries) => { if (live) setTintedParts(Object.fromEntries(entries)) }).catch((reason: unknown) => { if (live) setError(reason instanceof Error ? reason.message : 'Não foi possível colorir a pele da prévia.') })
     return () => { live = false }
-  }, [tintParts, selectedCharacter?.customization.modelSkinTone, selectedCharacter?.customization.modelOutlineColor, displayBase?.modelOutlineColor])
+  }, [tintParts, selectedCharacter?.customization.modelSkinTone, selectedCharacter?.customization.modelOutlineColor, sharedModelAppearance?.modelSkinTone, sharedModelAppearance?.modelOutlineColor, displayBase?.modelSkinTone, displayBase?.modelOutlineColor])
 
   useEffect(() => {
     const element = stageRef.current
@@ -1081,7 +1086,7 @@ export function AnimatorWorkspace() {
         <div className="animator-preview-heading"><span><i />{animation ? `PRÉVIA · ${animation.name}` : 'PRÉVIA DO MODELO'}</span><span>{displayProject ? `${displayProject.width} × ${displayProject.height}` : 'Escolha um modelo salvo'}</span><button onClick={() => setLargePreview((value) => !value)} title={largePreview ? 'Voltar ao editor' : 'Ampliar prévia'} type="button"><Icon name="frame" /></button></div>
         <div ref={stageRef} className={`animator-stage${dragMode === 'move' ? ' move-tool-active' : ''}`} style={{ '--preview-background': background } as CSSProperties} onPointerDown={beginPan} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag}>
           {displayProject && <div className="animator-artboard" style={{ width: displayProject.width * stageScale, height: displayProject.height * stageScale, left: `calc(50% + ${pan.x}px)`, top: `calc(50% + ${pan.y}px)` }}>
-            {parts.map((part, index) => <img key={part.id} className={`animator-part${selectedPartId === part.id ? ' selected' : ''}${selectedCanTransform && selectedPartId === part.id ? ' can-transform' : ''}`} src={tintedParts[part.id] ?? part.dataUrl} alt={part.name} draggable={false} onClick={(event) => { event.stopPropagation(); setSelectedPartId(part.id) }} onPointerDown={(event) => beginDrag(event, part)} style={{ left: part.x * scale, top: part.y * scale, width: part.width * scale, height: part.height * scale, zIndex: (layerIndex.get(part.id) ?? index) * layerStride + 2, transform: `rotate(${part.rotation}deg)` }} />)}
+            {parts.map((part, index) => <img key={part.id} className={`animator-part${selectedPartId === part.id ? ' selected' : ''}${selectedCanTransform && selectedPartId === part.id ? ' can-transform' : ''}`} src={tintedParts[part.id] ?? appearancePreviewForPart(part)} alt={part.name} draggable={false} onClick={(event) => { event.stopPropagation(); setSelectedPartId(part.id) }} onPointerDown={(event) => beginDrag(event, part)} style={{ left: part.x * scale, top: part.y * scale, width: part.width * scale, height: part.height * scale, zIndex: (layerIndex.get(part.id) ?? index) * layerStride + 2, transform: `rotate(${part.rotation}deg)` }} />)}
             {garmentLayers.map((garment) => <div key={garment.key} className="animator-garment-root" style={{ left: garment.centerX * scale, top: garment.centerY * scale, zIndex: garment.zIndex, opacity: garment.opacity, transform: `translate(${garment.groupX * scale}px, ${garment.groupY * scale}px) rotate(${garment.groupRotation}deg) scale(${garment.groupScaleX}, ${garment.groupScaleY})` }}><div className="animator-garment-bone" style={{ left: (garment.originX - garment.centerX) * scale, top: (garment.originY - garment.centerY) * scale, transform: garment.matrix }}><img className="animator-garment-image" src={garment.dataUrl} alt="Roupa do personagem" draggable={false} style={{ left: garment.localLeft * scale, top: garment.localTop * scale, width: garment.width * scale, height: garment.height * scale, transform: `rotate(${garment.rotation}deg)` }} /></div></div>)}
             {headOverlays.map((overlay) => <img key={overlay.key} className="animator-accessory" src={overlay.dataUrl} alt="" draggable={false} style={{ left: overlay.x * scale, top: overlay.y * scale, width: overlay.width * scale, height: overlay.height * scale, zIndex: overlay.zIndex, transform: `translate(-50%, -50%) rotate(${overlay.rotation}deg) scaleX(${overlay.flipX ? -1 : 1})` }} />)}
           </div>}

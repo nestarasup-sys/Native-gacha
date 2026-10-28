@@ -8,6 +8,7 @@ import { normalizeEditableImageFile } from '../normalizeImage'
 import { defaultFaceGuide, useFaceGuides } from './useFaceGuides'
 import './face-components.css'
 import './head-extras.css'
+import { useModelAppearanceTarget, useModelPartAppearancePreview } from '../ModelAppearanceContext'
 
 const headPart = (model: FabricatorProject | null) => model?.parts.find((part) => /cabe[çc]a|head/i.test(part.name)) ?? null
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value))
@@ -59,10 +60,12 @@ function processHeadExtraImage(dataUrl: string): Promise<{ dataUrl: string; widt
 }
 
 /** Biblioteca de peças extras que se encaixam sobre a cabeça do modelo. */
-export function HeadExtrasWorkspace() {
+export function HeadExtrasWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
   const [previewBackground] = usePreviewBackground()
   const [models, setModels] = useState<FabricatorSlotSummary[]>([])
-  const [modelSlot, setModelSlot] = useState(1)
+  const [modelSlot, setModelSlot] = useState(baseModelSlot)
+  useModelAppearanceTarget(modelSlot)
+  const appearancePreviewForPart = useModelPartAppearancePreview(modelSlot)
   const [model, setModel] = useState<FabricatorProject | null>(null)
   useModelSourceRefresh(modelSlot, fresh => setModel(projectForOriginalPreview(fresh)))
   const [assets, setAssets] = useState<FaceComponentAssetSummary[]>([])
@@ -89,10 +92,11 @@ export function HeadExtrasWorkspace() {
   useEffect(() => {
     void window.desktop.listFabricatorSlots().then((slots) => {
       setModels(slots)
+      const preferredExists = Boolean(slots[baseModelSlot - 1])
       const first = slots.findIndex(Boolean)
-      if (first >= 0) setModelSlot(first + 1)
+      if (!preferredExists && first >= 0) setModelSlot(first + 1)
     }).catch((reason) => setError(String(reason)))
-  }, [])
+  }, [baseModelSlot])
 
   useEffect(() => {
     let cancelled = false
@@ -258,7 +262,7 @@ export function HeadExtrasWorkspace() {
       </aside>
       <main className="face-components-stage-column">
         <div className="face-components-stage" ref={stageRef} style={{ '--preview-background': previewBackground } as CSSProperties}>
-          {head && previewScale > 0 && <div className="face-components-preview-canvas" style={{ width: head.width * previewScale, height: head.height * previewScale }}><img className="face-components-head" src={head.dataUrl} alt="Cabeça do modelo" />{selected && previewStyle && <img className={`face-component-layer face-component-layer-draggable${dragging ? ' is-dragging' : ''}`} src={selected.dataUrl} alt={selected.name} style={previewStyle} draggable={false} title="Arraste para posicionar os óculos" onPointerDown={beginPreviewDrag} onPointerMove={movePreviewDrag} onPointerUp={endPreviewDrag} onPointerCancel={endPreviewDrag} onLostPointerCapture={endPreviewDrag} />}{guide.visible && <HeadGuideOverlay head={head} guide={guide} />}</div>}
+          {head && previewScale > 0 && <div className="face-components-preview-canvas" style={{ width: head.width * previewScale, height: head.height * previewScale }}><img className="face-components-head" src={appearancePreviewForPart(head)} alt="Cabeça do modelo" />{selected && previewStyle && <img className={`face-component-layer face-component-layer-draggable${dragging ? ' is-dragging' : ''}`} src={selected.dataUrl} alt={selected.name} style={previewStyle} draggable={false} title="Arraste para posicionar os óculos" onPointerDown={beginPreviewDrag} onPointerMove={movePreviewDrag} onPointerUp={endPreviewDrag} onPointerCancel={endPreviewDrag} onLostPointerCapture={endPreviewDrag} />}{guide.visible && <HeadGuideOverlay head={head} guide={guide} />}</div>}
           {!head && <p className="head-extra-empty">Selecione um modelo que tenha uma peça de cabeça para visualizar os extras.</p>}
         </div><div className="face-components-stage-footer" aria-live="polite">{notice}</div>
       </main>

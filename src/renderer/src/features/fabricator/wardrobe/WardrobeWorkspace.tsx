@@ -22,6 +22,7 @@ import { recoverWardrobeReferenceModel } from './wardrobeReferenceRecovery'
 import { normalizeEditableImageFile } from '../normalizeImage'
 import { applyWardrobeWarpBrush, createWardrobeWarpMesh, drawWardrobeWarp, type WardrobeWarpBounds, type WardrobeWarpMesh, type WardrobeWarpPoint, wardrobeWarpPadding } from './wardrobeMeshWarp'
 import { WardrobeGarmentEditorModal } from './WardrobeGarmentEditorModal'
+import { useModelAppearanceTarget, useModelPartAppearancePreview } from '../ModelAppearanceContext'
 import './wardrobe.css'
 
 type PieceDrag = { pointerId: number; componentId: string; pointerX: number; pointerY: number; originX: number; originY: number }
@@ -90,10 +91,12 @@ function serializeModel(model: FabricatorProject): FabricatorProjectSave {
 function guessBone(category: WardrobeCategory, x: number, width: number, model: FabricatorProject): ModelPart | undefined {
   return suggestWardrobeBone(category, x, width, model).bone ?? undefined
 }
-export function WardrobeWorkspace() {
+export function WardrobeWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
   const [previewBackground, setPreviewBackground] = usePreviewBackground()
   const [models, setModels] = useState<FabricatorSlotSummary[]>(Array.from({ length: 10 }, () => null))
-  const [modelSlot, setModelSlot] = useState(1)
+  const [modelSlot, setModelSlot] = useState(baseModelSlot)
+  useModelAppearanceTarget(modelSlot)
+  const appearancePreviewForPart = useModelPartAppearancePreview(modelSlot)
   const [model, setModel] = useState<FabricatorProject | null>(null)
   useModelSourceRefresh(modelSlot, fresh => setModel(fresh))
   const [sets, setSets] = useState<WardrobeSetSummary[]>([])
@@ -859,9 +862,9 @@ export function WardrobeWorkspace() {
           const source = sourceParts[part.id]
           if (!source) return null
           const offset = moveBodyMode ? bodyOffsets[part.id] ?? zeroOffset : zeroOffset
-          return <img key={part.id} className={`wardrobe-reference-body-part${moveBodyMode ? ' movable' : ''}`} src={source.imageDataUrl} alt={part.name} title={moveBodyMode ? `Arraste ${part.name} para conferir o vínculo` : undefined} draggable={false} onPointerDown={moveBodyMode ? (event) => beginBodyDrag(event, part.id) : undefined} onPointerMove={moveBodyMode ? moveBodyDrag : undefined} onPointerUp={moveBodyMode ? finishBodyDrag : undefined} onPointerCancel={moveBodyMode ? finishBodyDrag : undefined} style={{ left: (source.x + offset.x) * scale, top: (source.y + offset.y) * scale, width: source.width * scale, height: source.height * scale, outline: selected?.attachedPartId === part.id ? '2px solid #27a7a5' : undefined, transform: `rotate(${part.sourceTransform?.rotation ?? part.rotation}deg)`, zIndex: moveBodyMode ? 1000 + model.parts.indexOf(part) : 1 }} />
+          return <img key={part.id} className={`wardrobe-reference-body-part${moveBodyMode ? ' movable' : ''}`} src={appearancePreviewForPart(part)} alt={part.name} title={moveBodyMode ? `Arraste ${part.name} para conferir o vínculo` : undefined} draggable={false} onPointerDown={moveBodyMode ? (event) => beginBodyDrag(event, part.id) : undefined} onPointerMove={moveBodyMode ? moveBodyDrag : undefined} onPointerUp={moveBodyMode ? finishBodyDrag : undefined} onPointerCancel={moveBodyMode ? finishBodyDrag : undefined} style={{ left: (source.x + offset.x) * scale, top: (source.y + offset.y) * scale, width: source.width * scale, height: source.height * scale, outline: selected?.attachedPartId === part.id ? '2px solid #27a7a5' : undefined, transform: `rotate(${part.sourceTransform?.rotation ?? part.rotation}deg)`, zIndex: moveBodyMode ? 1000 + model.parts.indexOf(part) : 1 }} />
         })}
-        {testPose && previewPoseParts.map((part) => <img key={part.id} className="wardrobe-pose-body-part" src={part.dataUrl} alt={part.name} draggable={false} style={{ left: part.x * scale, top: part.y * scale, width: part.width * scale, height: part.height * scale, zIndex: 2 + previewPoseOrder.indexOf(part.id) * previewLayerStride, transform: `rotate(${part.rotation}deg)` }} />)}
+        {testPose && previewPoseParts.map((part) => <img key={part.id} className="wardrobe-pose-body-part" src={appearancePreviewForPart(part)} alt={part.name} draggable={false} style={{ left: part.x * scale, top: part.y * scale, width: part.width * scale, height: part.height * scale, zIndex: 2 + previewPoseOrder.indexOf(part.id) * previewLayerStride, transform: `rotate(${part.rotation}deg)` }} />)}
         {draft?.components.map((component, index) => {
           const layer = getBodyLayer(model, component.attachedPartId)
           const layerBand = testPose ? previewLayerStride : draft.components.length + 1

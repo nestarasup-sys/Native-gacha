@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import type { FaceCatalogItem, FaceComponentAsset, FaceExpressionEffect, FaceExpressionPreset, FaceExpressionTransforms, FaceTransform, FabricatorProject } from '../../../../shared/fabricator'
 import { Icon } from '../../ui/components/Icon'
 import { eyeInteriorMask } from './face/eyeInteriorMask'
+import { useModelAppearanceTarget, useModelPartAppearancePreview } from './ModelAppearanceContext'
 
 type TransitionRecipe = { id: string; name: string; from: string; to: string; durationMs: number; easing: 'smooth' | 'linear' }
 const expressions = ['Aliviada', 'Animada', 'Apaixonada', 'Cansada', 'Ciumenta', 'Confusa', 'Decepcionada', 'Desconfiada', 'Envergonhada', 'Impressionada', 'Indignada', 'Irritada', 'Nojo', 'Normal', 'Orgulhosa', 'Preocupada', 'Séria', 'Sorrindo de canto', 'Sorriso maligno', 'Surpresa', 'Triste/magoada']
@@ -72,6 +73,8 @@ function drawFacialLayer(context: CanvasRenderingContext2D, image: CanvasImageSo
 }
 
 export function FaceAnimatorWorkspace({ modelSlot }: { modelSlot: number }) {
+  useModelAppearanceTarget(modelSlot)
+  const appearancePreviewForPart = useModelPartAppearancePreview(modelSlot)
   const [project, setProject] = useState<FabricatorProject | null>(null)
   useModelSourceRefresh(modelSlot, fresh => setProject(projectForOriginalPreview(fresh)))
   const [presets, setPresets] = useState<FaceExpressionPreset[]>([])
@@ -226,6 +229,7 @@ export function FaceAnimatorWorkspace({ modelSlot }: { modelSlot: number }) {
 
   const exportExpressionSequence = async () => {
     if (!head) return
+    const appearanceHeadDataUrl = appearancePreviewForPart(head)
     const orderedPresets = expressions.map((name) => presetsByName.get(name))
     const missing = expressions.filter((name) => !presetsByName.has(name))
     if (missing.length) { setExportError(`Faltam presets no conjunto Padrão: ${missing.join(', ')}.`); return }
@@ -253,7 +257,7 @@ export function FaceAnimatorWorkspace({ modelSlot }: { modelSlot: number }) {
         const eye = assets[id]
         return eye ? [id, await eyeInteriorMask(eye.dataUrl)] as const : [id, ''] as const
       })))
-      const dataUrls = new Set<string>([head.dataUrl])
+      const dataUrls = new Set<string>([appearanceHeadDataUrl])
       for (const entry of orderedPresets as FaceExpressionPreset[]) {
         for (const id of [...Object.values(entry.selections.eyes), ...Object.values(entry.selections.pupils), ...Object.values(entry.selections.eyebrows)]) {
           const image = id ? assets[id] : undefined
@@ -269,7 +273,7 @@ export function FaceAnimatorWorkspace({ modelSlot }: { modelSlot: number }) {
       const loadedImages = new Map<string, HTMLImageElement>()
       await Promise.all([...dataUrls].map(async (url) => loadedImages.set(url, await loadExportImage(url))))
       if (exportCancelRef.current) { setExportStatus('Exportação cancelada.'); return }
-      const headImage = loadedImages.get(head.dataUrl)!
+      const headImage = loadedImages.get(appearanceHeadDataUrl)!
       const scratchByEye = new Map<string, { canvas: HTMLCanvasElement; context: CanvasRenderingContext2D }>()
       stream = frameCanvas.captureStream(30)
       const mimeType = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'].find((candidate) => MediaRecorder.isTypeSupported(candidate))
@@ -415,7 +419,7 @@ export function FaceAnimatorWorkspace({ modelSlot }: { modelSlot: number }) {
     {(exportStatus || exportError) && <div className={`face-animator-export-status${exportError ? ' error' : ''}`} role="status" aria-live="polite"><span>{exportError || exportStatus}</span>{exporting && <div><i style={{ width: `${Math.round(exportProgress * 100)}%` }} /></div>}</div>}
     <div className="face-animator-layout">
       <aside className="face-animator-recipes"><header><strong>Pré combinações</strong><small>Transições prontas do conjunto Padrão</small></header>{recipes.map((item) => <button key={item.id} type="button" className={selectedId === item.id ? 'active' : ''} onClick={() => selectRecipe(item)}><Icon name="face" /><span><strong>{item.name}</strong><small>{item.durationMs} ms · Suave</small></span></button>)}</aside>
-      <main className="face-animator-stage-column"><div className="face-animator-stage-heading"><span>PRÉVIA ANIMADA</span><span>{fromPreset && toPreset ? `${fromPreset.name} → ${toPreset.name}` : 'Aguardando presets'}</span></div><div className="face-animator-stage">{loadError ? <div className="face-animator-empty">{loadError}</div> : head ? <div className="expression-head-canvas face-animator-head" style={{ aspectRatio: `${head.width} / ${head.height}` }}><img className="expression-head-base" src={head.dataUrl} alt="Cabeça do modelo" />{renderEffects()}{renderComponent('eye', 'left')}{renderComponent('eye', 'right')}{renderComponent('pupil', 'left')}{renderComponent('pupil', 'right')}{renderComponent('eyebrow', 'left')}{renderComponent('eyebrow', 'right')}{renderCatalog('nose')}{renderCatalog('mouth')}</div> : <div className="face-animator-empty">Importe uma cabeça no slot {modelSlot} e salve presets no conjunto Padrão de Preset Expressão Dev.</div>}</div><div className="face-animator-playback"><button className="face-animator-play" type="button" disabled={!fromPreset || !toPreset} onClick={() => { if (progress >= 1) setProgress(0); setPlaying((value) => !value) }}>{playing ? '❚❚ Pausar' : '▶ Reproduzir'}</button><input type="range" min="0" max="1" step="0.001" value={progress} onChange={(event) => { setPlaying(false); setProgress(Number(event.target.value)) }} aria-label="Posição da transição"/><span>{Math.round(progress * 100)}%</span></div><div className="face-animator-track"><div><strong>{recipe.from}</strong><small>Início</small></div><span className="face-animator-track-line"><i style={{ left: `${progress * 100}%` }} /></span><div><strong>{recipe.to}</strong><small>Fim</small></div></div></main>
+      <main className="face-animator-stage-column"><div className="face-animator-stage-heading"><span>PRÉVIA ANIMADA</span><span>{fromPreset && toPreset ? `${fromPreset.name} → ${toPreset.name}` : 'Aguardando presets'}</span></div><div className="face-animator-stage">{loadError ? <div className="face-animator-empty">{loadError}</div> : head ? <div className="expression-head-canvas face-animator-head" style={{ aspectRatio: `${head.width} / ${head.height}` }}><img className="expression-head-base" src={appearancePreviewForPart(head)} alt="Cabeça do modelo" />{renderEffects()}{renderComponent('eye', 'left')}{renderComponent('eye', 'right')}{renderComponent('pupil', 'left')}{renderComponent('pupil', 'right')}{renderComponent('eyebrow', 'left')}{renderComponent('eyebrow', 'right')}{renderCatalog('nose')}{renderCatalog('mouth')}</div> : <div className="face-animator-empty">Importe uma cabeça no slot {modelSlot} e salve presets no conjunto Padrão de Preset Expressão Dev.</div>}</div><div className="face-animator-playback"><button className="face-animator-play" type="button" disabled={!fromPreset || !toPreset} onClick={() => { if (progress >= 1) setProgress(0); setPlaying((value) => !value) }}>{playing ? '❚❚ Pausar' : '▶ Reproduzir'}</button><input type="range" min="0" max="1" step="0.001" value={progress} onChange={(event) => { setPlaying(false); setProgress(Number(event.target.value)) }} aria-label="Posição da transição"/><span>{Math.round(progress * 100)}%</span></div><div className="face-animator-track"><div><strong>{recipe.from}</strong><small>Início</small></div><span className="face-animator-track-line"><i style={{ left: `${progress * 100}%` }} /></span><div><strong>{recipe.to}</strong><small>Fim</small></div></div></main>
       <aside className="face-animator-inspector"><header><strong>Composição da transição</strong><small>Os presets de origem ficam intactos</small></header><label>Expressão inicial<select value={recipe.from} onChange={(event) => { setActiveRecipe((current) => ({ ...current, from: event.target.value, name: `${event.target.value} → ${current.to}` })); setProgress(0); setPlaying(false) }}><option value={recipe.from}>{recipe.from}</option>{expressions.filter((name) => name !== recipe.from).map((name) => <option key={name}>{name}</option>)}</select></label><label>Expressão final<select value={recipe.to} onChange={(event) => { setActiveRecipe((current) => ({ ...current, to: event.target.value, name: `${current.from} → ${event.target.value}` })); setProgress(0); setPlaying(false) }}><option value={recipe.to}>{recipe.to}</option>{expressions.filter((name) => name !== recipe.to).map((name) => <option key={name}>{name}</option>)}</select></label><div className="face-animator-effects-summary"><strong>Camadas animadas</strong>{[['Olhos e sobrancelhas', 'Posição · escala · rotação'], ['Pupilas', 'Posição · escala · rotação'], ['Nariz e boca', 'Posição · escala · rotação · opacidade'], ['Blush, sombra e blush da boca', 'Cor · intensidade · posição · forma']].map(([title, detail]) => <div key={title}><Icon name="check" /><span><b>{title}</b><small>{detail}</small></span></div>)}</div><p>Transformações e efeitos fazem interpolação suave. Quando os assets dos presets são diferentes, a composição troca no ponto médio da transição.</p></aside>
     </div>
   </section>

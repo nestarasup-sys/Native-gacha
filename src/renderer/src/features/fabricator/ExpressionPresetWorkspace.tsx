@@ -9,6 +9,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties, type Keyboard
 import type { FaceCatalogItem, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSummary, FaceExpressionCollection, FaceExpressionPreset, FaceExpressionPresetSummary, FaceExpressionEffects, FaceExpressionTransforms, FaceExpressionWorkspaceDraft, FaceExpressionWorkspaceEntry, FaceTransform, PtPupilOverrides, FabricatorProject } from '../../../../shared/fabricator'
 import { Icon, type IconName } from '../../ui/components/Icon'
 import { eyeInteriorMask } from './face/eyeInteriorMask'
+import { useModelAppearanceTarget, useModelPartAppearancePreview } from './ModelAppearanceContext'
 
 type Side = 'left' | 'right'
 type PickerCategory = 'eyes' | 'pupils' | 'eyebrows' | 'nose' | 'mouth'
@@ -242,6 +243,8 @@ function buildCatalogOptions(summaries: FaceCatalogItemSummary[], items: Record<
 }
 
 export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) {
+  useModelAppearanceTarget(modelSlot)
+  const appearancePreviewForPart = useModelPartAppearancePreview(modelSlot)
   const [project, setProject] = useState<FabricatorProject | null>(null)
   useModelSourceRefresh(modelSlot, fresh => setProject(projectForOriginalPreview(fresh)))
   const [componentSummaries, setComponentSummaries] = useState<FaceComponentAssetSummary[]>([])
@@ -1146,7 +1149,7 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
     </aside>
     <main className="expression-head-stage" aria-label="Prévia da cabeça">
       {loading ? <span>Carregando cabeça e biblioteca facial…</span> : head ? <div ref={previewCanvas} className="expression-head-canvas" style={{ aspectRatio: `${head.width} / ${head.height}` }}>
-        <img className="expression-head-base" src={head.dataUrl} alt="Cabeça do modelo" />
+        <img className="expression-head-base" src={appearancePreviewForPart(head)} alt="Cabeça do modelo" />
         <div className="expression-head-effects" aria-label="Prévia dos efeitos da expressão" style={{ WebkitMaskImage: `url(${head.dataUrl})`, maskImage: `url(${head.dataUrl})` }}>{(['shadow', 'blush', 'mouthBlush'] as const).map((key) => {
           const effect = effects[key]
           if (!effect.enabled) return null

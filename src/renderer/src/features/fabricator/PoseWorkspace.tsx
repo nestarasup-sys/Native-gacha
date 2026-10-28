@@ -6,6 +6,7 @@ import { Icon } from '../../ui/components/Icon'
 import { usePreviewBackground } from './usePreviewBackground'
 import { normalizeLayerOrder, orderedParts, partJointAnchor } from './models/rig'
 import { rotatePointAroundOrigin } from './models/geometry'
+import { useModelAppearanceTarget, useModelPartAppearancePreview } from './ModelAppearanceContext'
 
 type DraftProject = Omit<FabricatorPose, 'slot'>
 type PanelTab = 'parts' | 'layers' | 'joints'
@@ -77,13 +78,15 @@ function toDraftSave(project: DraftProject, editingSlot: number | null): Fabrica
   }
 }
 
-export function PoseWorkspace() {
+export function PoseWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
   const [previewBackground] = usePreviewBackground()
   const [models, setModels] = useState<FabricatorSlotSummary[]>(Array.from({ length: 10 }, () => null))
   const [allPoseSlots, setAllPoseSlots] = useState<FabricatorPoseSummary[]>([])
   const [exportPoseSlots, setExportPoseSlots] = useState<Array<number | null>>(Array.from({ length: EXPORT_POSE_SLOT_COUNT }, () => null))
   const [savingExportPoseSlots, setSavingExportPoseSlots] = useState(false)
-  const [selectedModelSlot, setSelectedModelSlot] = useState(1)
+  const [selectedModelSlot, setSelectedModelSlot] = useState(baseModelSlot)
+  useModelAppearanceTarget(selectedModelSlot)
+  const appearancePreviewForPart = useModelPartAppearancePreview(selectedModelSlot)
   const [activeSlot, setActiveSlot] = useState(1)
   const [project, setProject] = useState<DraftProject | null>(null)
   const [sourcePreview, setSourcePreview] = useState<DraftProject | null>(null)
@@ -135,7 +138,9 @@ export function PoseWorkspace() {
         window.desktop.listFabricatorSlots(),
         window.desktop.listFabricatorPoseSlots()
       ])
-      const preferredModelSlot = modelSlots.find((slot) => slot)?.slot ?? poseSummaries[0]?.sourceModelSlot ?? 1
+      const preferredModelSlot = modelSlots.some((slot) => slot?.slot === baseModelSlot)
+        ? baseModelSlot
+        : modelSlots.find((slot) => slot)?.slot ?? poseSummaries[0]?.sourceModelSlot ?? 1
       const draft = await window.desktop.loadFabricatorPoseDraft(preferredModelSlot)
       const displayedModelSlot = draft?.project.sourceModelSlot ?? preferredModelSlot
       const sourceModel = await window.desktop.loadFabricatorSlot(displayedModelSlot)
@@ -153,7 +158,7 @@ export function PoseWorkspace() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [baseModelSlot])
 
   useEffect(() => { void loadLibraries() }, [loadLibraries])
 
@@ -599,7 +604,7 @@ export function PoseWorkspace() {
                 const offsetX = attachment && currentAnchor ? currentAnchor.x - attachment.referenceAnchor.x : 0
                 const offsetY = attachment && currentAnchor ? currentAnchor.y - attachment.referenceAnchor.y : 0
                 const bodyRotation = attachment && bone ? bone.rotation - attachment.referenceRotation : 0
-                const image = <img key={part.id} className={`pose-part${attachment ? ' pose-wardrobe-part' : ''}${selectedId === part.id ? ' selected' : ''}${project && !attachment && !isMovablePosePart(project, part.id) ? ' move-locked' : ''}`} src={part.dataUrl} alt={part.name} draggable={false} onClick={(event) => { event.stopPropagation(); setSelectedId(part.id) }} onPointerDown={(event) => startPartDrag(event, part)} style={attachment ? { left: 0, top: 0, width: part.width * scale, height: part.height * scale, transform: `rotate(${part.rotation}deg)` } : { left: part.x * scale, top: part.y * scale, width: part.width * scale, height: part.height * scale, zIndex: index + 1, transform: `rotate(${part.rotation}deg)` }} />
+                const image = <img key={part.id} className={`pose-part${attachment ? ' pose-wardrobe-part' : ''}${selectedId === part.id ? ' selected' : ''}${project && !attachment && !isMovablePosePart(project, part.id) ? ' move-locked' : ''}`} src={appearancePreviewForPart(part)} alt={part.name} draggable={false} onClick={(event) => { event.stopPropagation(); setSelectedId(part.id) }} onPointerDown={(event) => startPartDrag(event, part)} style={attachment ? { left: 0, top: 0, width: part.width * scale, height: part.height * scale, transform: `rotate(${part.rotation}deg)` } : { left: part.x * scale, top: part.y * scale, width: part.width * scale, height: part.height * scale, zIndex: index + 1, transform: `rotate(${part.rotation}deg)` }} />
                 return attachment
                   ? <div key={part.id} className="pose-wardrobe-anchor" style={{ left: (part.x + offsetX) * scale, top: (part.y + offsetY) * scale, width: part.width * scale, height: part.height * scale, zIndex: index + 1, transformOrigin: `${(attachment.referenceAnchor.x - part.x) * scale}px ${(attachment.referenceAnchor.y - part.y) * scale}px`, transform: `rotate(${bodyRotation}deg)` }}>{image}</div>
                   : image
@@ -652,7 +657,7 @@ export function PoseWorkspace() {
             <nav className="pose-tabs" aria-label="Painel da pose">{([['parts', 'Peças'], ['layers', 'Camadas'], ['joints', 'Rig']] as const).map(([key, label]) => <button key={key} className={tab === key ? 'active' : ''} onClick={() => setTab(key)} type="button">{label}</button>)}</nav>
             {project && tab === 'parts' && <div className="pose-tool-content">
               <label className="pose-search"><Icon name="search" /><input value={partFilter} onChange={(event) => setPartFilter(event.target.value)} placeholder="Localizar peça" /></label>
-              <div className="pose-piece-list">{filteredParts.map((part) => <button key={part.id} className={`pose-piece-row${selectedId === part.id ? ' selected' : ''}`} onClick={() => setSelectedId(part.id)} type="button"><span className="pose-piece-thumb"><img src={part.dataUrl} alt="" /></span><span><b>{part.name}</b><small>{Math.round(part.rotation)}°</small></span></button>)}</div>
+              <div className="pose-piece-list">{filteredParts.map((part) => <button key={part.id} className={`pose-piece-row${selectedId === part.id ? ' selected' : ''}`} onClick={() => setSelectedId(part.id)} type="button"><span className="pose-piece-thumb"><img src={appearancePreviewForPart(part)} alt="" /></span><span><b>{part.name}</b><small>{Math.round(part.rotation)}°</small></span></button>)}</div>
               {selectedPart && <div className="pose-transform-controls">
                 <div className="pose-control-heading"><strong>Posição e rotação</strong><span>A bolinha destacada é o pivô usado no modelo.</span></div>
                 <div className="pose-number-row"><label>X<input aria-label="Posição X" title={selectedCanMove ? 'Mover esta peça e as filhas conectadas' : 'Cabeça e tronco não podem ser movidos por esta ferramenta'} disabled={!selectedCanMove} type="number" step="1" value={Number(selectedPart.x.toFixed(1))} onChange={(event) => setPartPosition(selectedPart.id, 'x', Number(event.target.value))} /></label><label>Y<input aria-label="Posição Y" title={selectedCanMove ? 'Mover esta peça e as filhas conectadas' : 'Cabeça e tronco não podem ser movidos por esta ferramenta'} disabled={!selectedCanMove} type="number" step="1" value={Number(selectedPart.y.toFixed(1))} onChange={(event) => setPartPosition(selectedPart.id, 'y', Number(event.target.value))} /></label></div>
@@ -667,7 +672,7 @@ export function PoseWorkspace() {
                 </div>
               </div>}
             </div>}
-            {project && tab === 'layers' && <div className="pose-tool-content pose-layer-list">{[...parts].reverse().map((part, index, ordered) => <div key={part.id} className={`pose-layer-row${selectedId === part.id ? ' selected' : ''}`}><button className="pose-layer-select" onClick={() => setSelectedId(part.id)} type="button"><span className="pose-piece-thumb"><img src={part.dataUrl} alt="" /></span><span><b>{part.name}</b><small>Camada {ordered.length - index}</small></span></button><div><button title="Trazer para frente" disabled={index === 0} onClick={() => changeLayer(part.id, -1)} type="button">↑</button><button title="Enviar para trás" disabled={index === ordered.length - 1} onClick={() => changeLayer(part.id, 1)} type="button">↓</button><button title={project.hiddenPartIds.includes(part.id) ? 'Mostrar peça' : 'Ocultar peça'} onClick={() => changeProject((current) => ({ ...current, hiddenPartIds: current.hiddenPartIds.includes(part.id) ? current.hiddenPartIds.filter((id) => id !== part.id) : [...current.hiddenPartIds, part.id] }))} type="button"><Icon name={project.hiddenPartIds.includes(part.id) ? 'eyeOff' : 'eye'} /></button></div></div>)}</div>}
+            {project && tab === 'layers' && <div className="pose-tool-content pose-layer-list">{[...parts].reverse().map((part, index, ordered) => <div key={part.id} className={`pose-layer-row${selectedId === part.id ? ' selected' : ''}`}><button className="pose-layer-select" onClick={() => setSelectedId(part.id)} type="button"><span className="pose-piece-thumb"><img src={appearancePreviewForPart(part)} alt="" /></span><span><b>{part.name}</b><small>Camada {ordered.length - index}</small></span></button><div><button title="Trazer para frente" disabled={index === 0} onClick={() => changeLayer(part.id, -1)} type="button">↑</button><button title="Enviar para trás" disabled={index === ordered.length - 1} onClick={() => changeLayer(part.id, 1)} type="button">↓</button><button title={project.hiddenPartIds.includes(part.id) ? 'Mostrar peça' : 'Ocultar peça'} onClick={() => changeProject((current) => ({ ...current, hiddenPartIds: current.hiddenPartIds.includes(part.id) ? current.hiddenPartIds.filter((id) => id !== part.id) : [...current.hiddenPartIds, part.id] }))} type="button"><Icon name={project.hiddenPartIds.includes(part.id) ? 'eyeOff' : 'eye'} /></button></div></div>)}</div>}
             {project && tab === 'joints' && <div className="pose-tool-content pose-rig-list"><p>Estas conexões vêm de Modelos. Selecione uma peça em Peças e use “Peça + conectadas” para girar o ramo pela mesma bolinha.</p>{project.joints.map((joint) => {
               const parent = project.parts.find((part) => part.id === joint.parentPartId)
               const child = project.parts.find((part) => part.id === joint.childPartId)

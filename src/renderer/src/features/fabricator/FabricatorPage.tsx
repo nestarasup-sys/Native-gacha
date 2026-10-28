@@ -29,6 +29,7 @@ import { ModelSkinContourEditor } from './ModelSkinContourEditor'
 import { cachedModelBodyAppearancePreview } from './models/modelSkinTone'
 import { connectBodyContourJoints } from './models/contourJoints'
 import { isValidSkinTone } from '../../../../shared/skinTones'
+import { ModelAppearanceProvider } from './ModelAppearanceContext'
 
 const sections: { id: string; label: string; icon: IconName }[] = [
   { id: 'Modelos', label: 'Modelos Dev', icon: 'sparkles' }, { id: 'Poses', label: 'Poses Dev', icon: 'expand' }, { id: 'Roupas', label: 'Roupas Dev', icon: 'shirt' }, { id: 'Olhos', label: 'Olhos Dev', icon: 'face' }, { id: 'Rosto', label: 'Rosto Dev', icon: 'face' }, { id: 'Preset Expressão Dev', label: 'Preset Expressão Dev', icon: 'face' }, { id: 'Animador Rosto Dev', label: 'Animador Rosto Dev', icon: 'face' }, { id: 'Cabeças extra', label: 'Cabeças extra dev', icon: 'face' }, { id: 'Cabelos Dev', label: 'Cabelos Dev', icon: 'bow' }, { id: 'Animador Dev', label: 'Animador Dev', icon: 'body' }, { id: 'Design Dev', label: 'Design Dev', icon: 'flower' }
@@ -58,6 +59,10 @@ export function FabricatorPage() {
   const [slotSwitching, setSlotSwitching] = useState(false)
   const [activeSlot, setActiveSlot] = useState(1)
   const [project, setProject] = useState<FabricatorProject | null>(null)
+  const [appearanceTargetSlot, setAppearanceTargetSlotState] = useState<number | null>(null)
+  const [otherAppearanceProject, setOtherAppearanceProject] = useState<FabricatorProject | null>(null)
+  const [appearanceSaveState, setAppearanceSaveState] = useState<'saved' | 'saving' | 'error'>('saved')
+  const [appearanceSaveError, setAppearanceSaveError] = useState('')
   const [bodyAppearancePreviewUrls, setBodyAppearancePreviewUrls] = useState<Record<string, string>>({})
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [processing, setProcessing] = useState(false)
@@ -103,6 +108,10 @@ export function FabricatorPage() {
   const dirtyAssets = useRef<Map<string, string>>(new Map())
   const dirtyChromaBases = useRef<Map<string, string>>(new Map())
   const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const appearanceSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const pendingAppearanceSave = useRef<FabricatorProject | null>(null)
+  const appearanceSaveQueue = useRef<Promise<unknown>>(Promise.resolve())
+  const appearanceTargetRef = useRef<number | null>(null)
   const initialSlotLoad = useRef(false)
   const {
     history, historyBusy, clearHistory, replaceHistory,
@@ -130,12 +139,104 @@ export function FabricatorPage() {
     setSlots((current) => current.map((item, index) => index + 1 === snapshot.slot ? { slot: snapshot.slot, name: snapshot.name, sourceName: snapshot.sourceName, partCount: snapshot.parts.length, updatedAt: snapshot.updatedAt } : item))
   }, [])
 
+  const persistExternalAppearance = useCallback(async (snapshot: FabricatorProject) => {
+    const previous = appearanceSaveQueue.current
+    const current = previous.catch(() => undefined).then(async () => {
+      await window.desktop.saveFabricatorProject(serializeFabricatorProject(snapshot), [])
+      window.dispatchEvent(new Event('fabricator:assets-updated'))
+      setSlots((items) => items.map((item) => item?.slot === snapshot.slot ? { ...item, updatedAt: snapshot.updatedAt } : item))
+      if (!pendingAppearanceSave.current) {
+        setAppearanceSaveState('saved')
+        setAppearanceSaveError('')
+      }
+    })
+    appearanceSaveQueue.current = current
+    try {
+      await current
+    } catch (reason) {
+      setAppearanceSaveState('error')
+      setAppearanceSaveError(reason instanceof Error ? reason.message : 'Não foi possível salvar as cores deste modelo.')
+    }
+  }, [])
+
+  const flushExternalAppearanceSave = useCallback(async () => {
+    if (appearanceSaveTimer.current) clearTimeout(appearanceSaveTimer.current)
+    appearanceSaveTimer.current = null
+    const snapshot = pendingAppearanceSave.current
+    if (snapshot) {
+      pendingAppearanceSave.current = null
+      await persistExternalAppearance(snapshot)
+    }
+    await appearanceSaveQueue.current.catch(() => undefined)
+  }, [persistExternalAppearance])
+
+  const setAppearanceTargetSlot = useCallback((slot: number | null) => {
+    if (slot === null) return
+    if (appearanceTargetRef.current === slot) {
+      void flushExternalAppearanceSave()
+      return
+    }
+    appearanceTargetRef.current = slot
+    void flushExternalAppearanceSave().finally(() => {
+      if (appearanceTargetRef.current === slot) setAppearanceTargetSlotState(slot)
+    })
+  }, [flushExternalAppearanceSave])
+
+  const scheduleExternalAppearanceSave = useCallback((snapshot: FabricatorProject) => {
+    pendingAppearanceSave.current = snapshot
+    setAppearanceSaveState('saving')
+    setAppearanceSaveError('')
+    if (appearanceSaveTimer.current) clearTimeout(appearanceSaveTimer.current)
+    appearanceSaveTimer.current = setTimeout(() => { void flushExternalAppearanceSave() }, 500)
+  }, [flushExternalAppearanceSave])
+
+  const visibleAppearanceSlot = activeSection === 'Modelos' ? activeSlot : appearanceTargetSlot ?? activeSlot
+  const appearanceProject = project?.slot === visibleAppearanceSlot
+    ? project
+    : otherAppearanceProject?.slot === visibleAppearanceSlot ? otherAppearanceProject : null
+  const appearanceUsesEditorProject = appearanceProject?.slot === project?.slot
+  const visibleAppearanceSaveState = appearanceUsesEditorProject ? saveState : appearanceSaveState
+  const visibleAppearanceSaveLabel = visibleAppearanceSaveState === 'saving'
+    ? appearanceUsesEditorProject ? 'Salvando…' : 'Salvando cores…'
+    : visibleAppearanceSaveState === 'error' ? 'Erro ao salvar' : 'Salvo localmente'
+
+  useEffect(() => {
+    if (visibleAppearanceSlot === project?.slot) {
+      setOtherAppearanceProject(null)
+      setAppearanceSaveState('saved')
+      setAppearanceSaveError('')
+      return
+    }
+    let active = true
+    void window.desktop.loadFabricatorSlot(visibleAppearanceSlot).then((loaded) => {
+      if (active) {
+        setOtherAppearanceProject(loaded)
+        setAppearanceSaveState('saved')
+        setAppearanceSaveError('')
+      }
+    }).catch((reason: unknown) => {
+      if (active) {
+        setOtherAppearanceProject(null)
+        setAppearanceSaveState('error')
+        setAppearanceSaveError(reason instanceof Error ? reason.message : 'Não foi possível carregar as cores deste modelo.')
+      }
+    })
+    return () => { active = false }
+  }, [visibleAppearanceSlot, project?.slot])
+
   useEffect(() => {
     void window.desktop.listFabricatorSlots()
       .then((items) => { setSlots(items); setSlotsLoaded(true) })
       .catch((reason: unknown) => { setSlotsLoaded(true); setError(reason instanceof Error ? reason.message : 'Não foi possível abrir a biblioteca.') })
-    return () => { workerRef.current?.terminate(); chromaWorkerRef.current?.terminate(); if (savedTimer.current) clearTimeout(savedTimer.current) }
-  }, [])
+    return () => {
+      workerRef.current?.terminate(); chromaWorkerRef.current?.terminate()
+      if (savedTimer.current) clearTimeout(savedTimer.current)
+      if (appearanceSaveTimer.current) clearTimeout(appearanceSaveTimer.current)
+      const pendingAppearance = pendingAppearanceSave.current
+      pendingAppearanceSave.current = null
+      if (pendingAppearance) void persistExternalAppearance(pendingAppearance)
+    }
+  }, [persistExternalAppearance])
 
   useEffect(() => { projectRef.current = project }, [project])
 
@@ -169,17 +270,17 @@ export function FabricatorPage() {
   }, [persistProject, project])
 
   useEffect(() => {
-    if (!project) {
+    if (!appearanceProject) {
       setBodyAppearancePreviewUrls({})
       return
     }
     let active = true
-    const slot = project.slot
-    const tone = isValidSkinTone(project.modelSkinTone) ? project.modelSkinTone : undefined
-    const outlineColor = isValidSkinTone(project.modelOutlineColor) ? project.modelOutlineColor : undefined
+    const slot = appearanceProject.slot
+    const tone = isValidSkinTone(appearanceProject.modelSkinTone) ? appearanceProject.modelSkinTone : undefined
+    const outlineColor = isValidSkinTone(appearanceProject.modelOutlineColor) ? appearanceProject.modelOutlineColor : undefined
     void (async () => {
       const previews: Record<string, string> = {}
-      for (const part of project.parts) {
+      for (const part of appearanceProject.parts) {
         const preview = await cachedModelBodyAppearancePreview(slot, part, tone, outlineColor)
         if (!active) return
         if (preview) previews[`${slot}:${part.id}`] = preview
@@ -189,7 +290,7 @@ export function FabricatorPage() {
       if (active) setError(reason instanceof Error ? reason.message : 'Não foi possível aplicar a cor de pele do modelo.')
     })
     return () => { active = false }
-  }, [project?.slot, project?.modelSkinTone, project?.modelOutlineColor, project?.parts])
+  }, [appearanceProject?.slot, appearanceProject?.modelSkinTone, appearanceProject?.modelOutlineColor, appearanceProject?.parts])
 
   useEffect(() => {
     if (connectMode && mixerActive) setMixerActive(false)
@@ -246,6 +347,18 @@ export function FabricatorPage() {
     trackProjectChange(current, normalized, action)
   }
 
+  const updateModelAppearance = (field: 'modelSkinTone' | 'modelOutlineColor', value: string | undefined) => {
+    const current = appearanceProject
+    if (!current) return
+    if (projectRef.current?.slot === current.slot) {
+      updateProject((latest) => ({ ...latest, [field]: value }))
+      return
+    }
+    const next = { ...current, [field]: value, updatedAt: new Date().toISOString() }
+    setOtherAppearanceProject(next)
+    scheduleExternalAppearanceSave(next)
+  }
+
   const moveLayer = (partId: string, direction: -1 | 1) => {
     updateProject((current) => {
       const topDown = normalizeLayerOrder(current.parts, current.layerOrder).reverse()
@@ -270,6 +383,8 @@ export function FabricatorPage() {
 
   const selectSlot = async (slot: number) => {
     const generation = ++slotSelectionGeneration.current
+    await flushExternalAppearanceSave()
+    if (generation !== slotSelectionGeneration.current) return
     setSlotSwitching(true)
     requestId.current += 1
     workerRef.current?.terminate(); workerRef.current = null
@@ -793,7 +908,7 @@ export function FabricatorPage() {
         </div>
         <nav className="fabricator-section-list" aria-label="Seções do Fabricador Dev">
           {sections.map((section) => (
-            <button aria-pressed={activeSection === section.id} className={`fabricator-section-button${activeSection === section.id ? ' active' : ''}`} key={section.id} onClick={() => setActiveSection(section.id)} type="button">
+            <button aria-pressed={activeSection === section.id} className={`fabricator-section-button${activeSection === section.id ? ' active' : ''}`} key={section.id} onClick={() => { setActiveSection(section.id); setAppearanceTargetSlot(activeSlot) }} type="button">
               <Icon name={section.icon} /><span>{section.label}</span>
             </button>
           ))}
@@ -806,7 +921,26 @@ export function FabricatorPage() {
         const fakeSkinContours = contoursByPart[part.id]
         return { ...part, fakeSkinContours: fakeSkinContours.length ? fakeSkinContours : undefined }
       }) }))} />}
-      {activeSection === 'Design Dev' ? <DesignWorkspace /> : activeSection === 'Poses' ? <PoseWorkspace /> : activeSection === 'Roupas' ? <WardrobeWorkspace /> : activeSection === 'Olhos' ? <FaceComponentsWorkspace mode="eyes" /> : activeSection === 'Rosto' ? <FaceComponentsWorkspace mode="face" /> : activeSection === 'Preset Expressão Dev' ? <ExpressionPresetWorkspace modelSlot={activeSlot} /> : activeSection === 'Animador Rosto Dev' ? <FaceAnimatorWorkspace modelSlot={activeSlot} /> : activeSection === 'Cabeças extra' ? <HeadExtrasWorkspace /> : activeSection === 'Cabelos Dev' ? <HairWorkspace /> : activeSection === 'Animador Dev' ? <AnimatorWorkspace /> : (
+      <ModelAppearanceProvider slot={appearanceProject?.slot ?? null} previewUrls={bodyAppearancePreviewUrls} modelSkinTone={appearanceProject?.modelSkinTone} modelOutlineColor={appearanceProject?.modelOutlineColor} setTargetSlot={setAppearanceTargetSlot}>
+        <section className="fabricator-workspace-shell">
+          {activeSection !== 'Modelos' && appearanceProject && <div className="fabricator-shared-appearance">
+            <div className="fabricator-shared-appearance-heading">
+              <span><small>MODELO BASE · SLOT {String(appearanceProject.slot).padStart(2, '0')}</small><strong>{appearanceProject.name}</strong></span>
+              <span className={`model-save-state ${visibleAppearanceSaveState}`}><i />{visibleAppearanceSaveLabel}</span>
+            </div>
+            <ModelSkinTonePicker
+              value={appearanceProject.modelSkinTone}
+              outlineColor={appearanceProject.modelOutlineColor}
+              contourPartCount={appearanceProject.parts.filter(part => part.fakeSkinContours?.length).length}
+              disabled={!appearanceProject || (slotSwitching && appearanceProject.slot === activeSlot)}
+              showContourButton={false}
+              onSelect={(tone) => updateModelAppearance('modelSkinTone', tone)}
+              onOutlineSelect={(color) => updateModelAppearance('modelOutlineColor', color)}
+              onEditContours={() => undefined}
+            />
+            {appearanceSaveError && !appearanceUsesEditorProject && <small className="fabricator-shared-appearance-error" role="status">Não foi possível salvar as cores: {appearanceSaveError}</small>}
+          </div>}
+      {activeSection === 'Design Dev' ? <DesignWorkspace /> : activeSection === 'Poses' ? <PoseWorkspace baseModelSlot={activeSlot} /> : activeSection === 'Roupas' ? <WardrobeWorkspace baseModelSlot={activeSlot} /> : activeSection === 'Olhos' ? <FaceComponentsWorkspace mode="eyes" baseModelSlot={activeSlot} /> : activeSection === 'Rosto' ? <FaceComponentsWorkspace mode="face" baseModelSlot={activeSlot} /> : activeSection === 'Preset Expressão Dev' ? <ExpressionPresetWorkspace modelSlot={activeSlot} /> : activeSection === 'Animador Rosto Dev' ? <FaceAnimatorWorkspace modelSlot={activeSlot} /> : activeSection === 'Cabeças extra' ? <HeadExtrasWorkspace baseModelSlot={activeSlot} /> : activeSection === 'Cabelos Dev' ? <HairWorkspace baseModelSlot={activeSlot} /> : activeSection === 'Animador Dev' ? <AnimatorWorkspace baseModelSlot={activeSlot} /> : (
         <section className="fabricator-model-editor" aria-label="Editor de modelos">
           <header className="model-slotbar">
             <div className="model-slot-title"><span className="model-slot-logo"><Icon name="sparkles" /></span><span><strong>Modelos</strong><small>10 espaços de trabalho</small></span></div>
@@ -893,6 +1027,8 @@ export function FabricatorPage() {
           {processing && project && <div className="model-processing-overlay"><div className="model-spinner" /><span>Reanalisando imagem · {progress}%</span></div>}
         </section>
       )}
+      </section>
+      </ModelAppearanceProvider>
     </main>
   )
 }

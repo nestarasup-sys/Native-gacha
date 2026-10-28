@@ -13,6 +13,7 @@ import { alignImportedFacePiece, captureFaceImportAnchor, fitClosedEyeToOpen, va
 import { removeEyebrowGreen } from './removeEyebrowGreen'
 import './face-components.css'
 import { normalizeEditableImageFile } from '../normalizeImage'
+import { useModelAppearanceTarget, useModelPartAppearancePreview } from '../ModelAppearanceContext'
 
 type PartId = 'eye-left' | 'eye-right' | 'pupil-left' | 'pupil-right' | 'eye-closed-left' | 'eye-closed-right' | 'brow-left' | 'brow-right'
 type CatalogKind = 'nose' | 'mouth-closed' | 'mouth-open'
@@ -162,11 +163,13 @@ function FaceTransformControls({ head, transform, sourceWidth, sourceHeight, pup
   </div>
 }
 
-export function FaceComponentsWorkspace({ mode }: { mode: FaceWorkspaceMode }) {
+export function FaceComponentsWorkspace({ mode, baseModelSlot }: { mode: FaceWorkspaceMode; baseModelSlot: number }) {
   const [previewBackground] = usePreviewBackground()
   const guideProfile: FaceGuideProfile = mode === 'eyes' ? 'eyes' : 'face'
   const [models, setModels] = useState<FabricatorSlotSummary[]>([])
-  const [modelSlot, setModelSlot] = useState(1)
+  const [modelSlot, setModelSlot] = useState(baseModelSlot)
+  useModelAppearanceTarget(modelSlot)
+  const appearancePreviewForPart = useModelPartAppearancePreview(modelSlot)
   const [importAnchorsByModel, setImportAnchorsByModel] = useState<FaceImportAnchors>(readFaceImportAnchors)
   const [model, setModel] = useState<FabricatorProject | null>(null)
   useModelSourceRefresh(modelSlot, fresh => setModel(projectForOriginalPreview(fresh)))
@@ -347,7 +350,7 @@ export function FaceComponentsWorkspace({ mode }: { mode: FaceWorkspaceMode }) {
     await saveChains.current.get(key)?.catch(() => undefined)
   }
 
-  useEffect(() => { void window.desktop.listFabricatorSlots().then((slots) => { setModels(slots); const first = slots.findIndex(Boolean); if (first >= 0) setModelSlot(first + 1) }).catch((reason) => setError(String(reason))) }, [])
+  useEffect(() => { void window.desktop.listFabricatorSlots().then((slots) => { setModels(slots); const preferredExists = Boolean(slots[baseModelSlot - 1]); const first = slots.findIndex(Boolean); if (!preferredExists && first >= 0) setModelSlot(first + 1) }).catch((reason) => setError(String(reason))) }, [baseModelSlot])
   useEffect(() => { if (mode !== 'eyes') return; try { window.localStorage.setItem(FACE_IMPORT_ANCHORS_STORAGE_KEY, JSON.stringify(importAnchorsByModel)) } catch { setError('Não foi possível salvar a fixação de importação neste computador.') } }, [mode, importAnchorsByModel])
   useEffect(() => { if (mode !== 'face') return; try { window.localStorage.setItem(FACE_DETAIL_SELECTION_STORAGE_KEY, JSON.stringify(faceDetailSelectionsByModel)) } catch { /* Saved assets remain available in the library. */ } }, [mode, faceDetailSelectionsByModel])
   useEffect(() => {
@@ -1100,7 +1103,7 @@ export function FaceComponentsWorkspace({ mode }: { mode: FaceWorkspaceMode }) {
       <main className="face-components-stage-column">
         <div className="face-components-stage" ref={stageRef} style={{ '--preview-background': previewBackground } as CSSProperties}>
           {head && previewScale > 0 && <div className="face-components-preview-canvas" style={{ width: head.width * previewScale, height: head.height * previewScale }}>
-            <img className="face-components-head" src={head.dataUrl} alt="Cabeça do modelo" />
+            <img className="face-components-head" src={appearancePreviewForPart(head)} alt="Cabeça do modelo" />
             {mode === 'eyes' && (libraryCategory === 'eye-closed'
               ? ['eye-closed-left','eye-closed-right','brow-left','brow-right']
               : ['eye-left','eye-right','pupil-left','pupil-right','brow-left','brow-right'] as PartId[]).map((id) => renderPart(id as PartId, true, selectedAssets))}
