@@ -5,7 +5,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'nod
 import { randomUUID } from 'node:crypto'
 import { Readable } from 'node:stream'
 import { fileURLToPath } from 'node:url'
-import type { FaceAssetKind, FaceAssetSave, FaceCatalogItem, FaceCatalogItemSave, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSave, FaceComponentAssetSummary, FaceElementKind, FaceExpressionPreset, FaceExpressionTransforms, FaceExpressionWorkspaceDraft, FaceSet, FaceSetSave, FaceSheetKind, FaceTransform, FabricatorPoseDraftSave, FabricatorPoseSave, FabricatorProjectSave, HairStyle, HairStyleAsset, HairStyleSave, HairWorkspace, HairWorkspaceAsset, HairWorkspaceSave, ModelPart, WardrobeAssetSave, WardrobeCategory, WardrobeSet, WardrobeSetSave } from '../src/shared/fabricator'
+import type { FaceAssetKind, FaceAssetSave, FaceCatalogItem, FaceCatalogItemSave, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSave, FaceComponentAssetSummary, FaceElementKind, FaceExpressionPreset, FaceExpressionTransforms, FaceExpressionWorkspaceDraft, FaceSet, FaceSetSave, FaceSheetKind, FaceTransform, FabricatorPoseDraftSave, FabricatorPoseSave, FabricatorProjectSave, HairStyle, HairStyleAsset, HairStyleSave, HairWorkspace, HairWorkspaceAsset, HairWorkspaceSave, ModelPart } from '../src/shared/fabricator'
 import { hairCategories } from '../src/shared/hairCategories'
 import type { StudioAsset, StudioDocument } from '../src/shared/studio'
 import { isStudioExpressionEffects, isStudioFaceTransforms } from '../src/shared/studio'
@@ -35,9 +35,10 @@ import { starterCharacters } from './domains/customizer/starterCharacters'
 import { FabricatorModelCatalog } from './domains/fabricator/modelCatalog'
 import { registerFabricatorModelCatalogHandlers } from './domains/fabricator/modelIpc'
 import { FabricatorWardrobeCatalog } from './domains/fabricator/wardrobeCatalog'
-import { assertReferencedWardrobeComponentsRemain, assertWardrobeSetHasNoCharacterReferences } from './domains/fabricator/wardrobeReferences'
 import { createFabricatorCatalogListings, legacyHairStyle } from './domains/fabricator/catalogListings'
 import { registerFabricatorWardrobeCatalogHandlers } from './domains/fabricator/wardrobeCatalogIpc'
+import { createFabricatorWardrobePersistence } from './domains/fabricator/wardrobePersistence'
+import { registerFabricatorWardrobeHandlers } from './domains/fabricator/wardrobeIpc'
 import { createFaceGuidePersistence, isFaceGuideProfile } from './domains/fabricator/faceGuidePersistence'
 import { registerFabricatorFaceCatalogHandlers } from './domains/fabricator/faceCatalogIpc'
 import { registerFabricatorHairHandlers } from './domains/fabricator/hairIpc'
@@ -65,7 +66,6 @@ import { createStudioDocumentPersistence } from './domains/studio/documentPersis
 import { studioIpcChannels } from '../src/shared/studioIpcChannels'
 import type { AssetNamespace } from './domains/fabricator/versionedAssetResolver'
 import { inspectFabricatorStorage } from '../src/shared/fabricatorStorageCompatibility'
-import { fabricatorIpcChannels } from '../src/shared/fabricatorIpcChannels'
 import { captureFabricatorRealScreens, captureCustomizerStudioRealScreens, captureCustomizerStudioReopened } from './domains/fabricator/visualUiCapture'
 import { registerModelSourceDownloadHandlers } from './domains/fabricator/modelSourceExportIpc'
 import { registerEditorV6PrimaryHandlers } from './domains/editorV6/primaryIpc'
@@ -281,6 +281,7 @@ let dataBackupService: InstanceType<typeof DataBackupService> | null = null
 let dataMigrationIpc: ReturnType<typeof registerDataMigrationHandlers> | null = null
 let fabricatorHairIpc: ReturnType<typeof registerFabricatorHairHandlers> | null = null
 let fabricatorProjectIpc: ReturnType<typeof registerFabricatorProjectHandlers> | null = null
+let fabricatorWardrobeIpc: ReturnType<typeof registerFabricatorWardrobeHandlers> | null = null
 let editorV6ExportService: ReturnType<typeof registerEditorV6ExportHandlers> | null = null
 let editorV6MotionService: ReturnType<typeof createEditorV6MotionService> | null = null
 
@@ -307,7 +308,6 @@ const animatorDraftPath = (modelSlot: number) => join(animatorModelPath(modelSlo
 const wardrobeLibraryPath = () => join(app.getPath('userData'), 'fabricator', 'wardrobe')
 const wardrobeModelPath = (modelSlot: number) => join(wardrobeLibraryPath(), `model-${modelSlot}`)
 const wardrobeSetPath = (modelSlot: number, id: string) => join(wardrobeModelPath(modelSlot), `set-${id}`)
-const wardrobeDeformationOriginalId = (componentId: string) => `${componentId}_deform_original`
 const faceModelPath = (modelSlot: number) => join(app.getPath('userData'), 'fabricator', 'faces', `model-${modelSlot}`)
 const faceSetPath = (modelSlot: number, id: string) => join(faceModelPath(modelSlot), `set-${id}`)
 const faceCatalogPath = (modelSlot: number) => join(faceModelPath(modelSlot), 'catalog')
@@ -368,7 +368,6 @@ let poseSaveQueue: Promise<void> = Promise.resolve()
 const poseSaveWrites = new Set<Promise<void>>()
 let poseMigration: Promise<void> | null = null
 let animatorSaveQueue: Promise<void> = Promise.resolve()
-let wardrobeSaveQueue: Promise<void> = Promise.resolve()
 let faceSaveQueue: Promise<void> = Promise.resolve()
 let expressionPresetSaveQueue: Promise<void> = Promise.resolve()
 let faceGuideSaveQueue: Promise<void> = Promise.resolve()
@@ -409,7 +408,6 @@ const customizerService = new CustomizerCharacterService(
   }
 )
 
-const wardrobeCategories: WardrobeCategory[] = ['camisa', 'jaqueta', 'manga-superior', 'manga-inferior', 'luvas', 'capa', 'cinto', 'oculos', 'acessorio-cabeca', 'saia', 'calca-coxa', 'calca-canela', 'shorts', 'meia', 'sapato']
 const isValidWardrobeId = (id: string) => /^[a-zA-Z0-9_-]{1,80}$/.test(id)
 const isValidFaceCatalogId = (id: string) => /^[a-zA-Z0-9_-]{1,120}$/.test(id)
 const faceSheetKinds: FaceSheetKind[] = ['eyes', 'eyebrows', 'nose', 'mouth-closed', 'mouth-open']
@@ -883,44 +881,6 @@ async function readHairStyle(modelSlot: number, id: string): Promise<HairStyle |
   }
 }
 
-async function recoverWardrobeManifest(folder: string): Promise<void> {
-  await catalogPersistence.recoverWardrobeManifest(folder)
-}
-
-async function writeWardrobeSet(modelSlot: number, set: WardrobeSetSave, assets: WardrobeAssetSave[]): Promise<void> {
-  invalidateCatalogPng('wardrobe', `${modelSlot}:${set.id}`)
-  if (!isValidModelSlot(modelSlot) || set.schemaVersion !== 1 || (set.edition !== undefined && set.edition !== 1 && set.edition !== 2) || set.modelSlot !== modelSlot || !isValidWardrobeId(set.id) || !Array.isArray(set.components) || set.components.length < 1 || set.components.length > 100) throw new Error('Conjunto de roupa inválido.')
-  const ids = new Set(set.components.map(component => component.id))
-  if (ids.size !== set.components.length || set.components.some(component => !isValidWardrobeId(component.id) || !wardrobeCategories.includes(component.category) || !isValidWardrobeId(component.attachedPartId)
-    || component.hasDeformationOriginal !== undefined && component.hasDeformationOriginal !== true
-    || component.isDeformed !== undefined && typeof component.isDeformed !== 'boolean'
-    || component.isDeformed === true && component.hasDeformationOriginal !== true
-    || component.deformationOriginalFrame !== undefined && ![
-      component.deformationOriginalFrame.x, component.deformationOriginalFrame.y,
-      component.deformationOriginalFrame.width, component.deformationOriginalFrame.height,
-      component.deformationOriginalFrame.originX ?? 0, component.deformationOriginalFrame.originY ?? 0,
-      component.deformationOriginalFrame.originWidth ?? 0, component.deformationOriginalFrame.originHeight ?? 0
-    ].every(Number.isFinite)
-    || component.deformationOriginalFrame !== undefined && (component.deformationOriginalFrame.width <= 0 || component.deformationOriginalFrame.height <= 0))) throw new Error('Peças do conjunto inválidas.')
-  const backupIds = set.components.filter(component => component.hasDeformationOriginal === true).map(component => wardrobeDeformationOriginalId(component.id))
-  const expected = new Set([...ids, ...backupIds])
-  if (expected.size !== ids.size + backupIds.length || Array.from(expected).some(id => !isValidWardrobeId(id))) throw new Error('Cópias originais das roupas inválidas.')
-  const folder = wardrobeSetPath(modelSlot, set.id)
-  await catalogPersistence.saveCatalog({
-    folder, imageFolder: join(folder, 'parts'), manifestName: 'wardrobe.json', manifest: set,
-    // O contrato legado ignora assets extras não presentes no conjunto.
-    images: assets.filter(asset => expected.has(asset.id)).map(asset => ({ id: asset.id, bytes: dataUrlBuffer(asset.dataUrl) })),
-    expected, prune: 'all',
-    missingMessage: id => {
-      const component = set.components.find(part => part.id === id)
-      const original = set.components.find(part => wardrobeDeformationOriginalId(part.id) === id)
-      return original
-        ? `Cópia original ausente para restaurar a deformação de: ${original.name ?? original.id}.`
-        : `Imagem ausente no conjunto: ${component?.name ?? id} (${id}).`
-    }
-  })
-}
-
 // Assets versionados são usados apenas nas bibliotecas oficiais; rascunhos não entram em cache.
 const catalogAssets = new FabricatorCatalogAssetService(readAssetImage)
 function readCatalogPng(namespace: AssetNamespace, identity: string, version: string, imagePath: string): Promise<Buffer> {
@@ -930,35 +890,22 @@ function invalidateCatalogPng(namespace: AssetNamespace, identity: string): void
   catalogAssets.invalidate(namespace, identity)
 }
 
-async function readWardrobeSet(modelSlot: number, id: string): Promise<WardrobeSet | null> {
-  if (!isValidModelSlot(modelSlot) || !isValidWardrobeId(id)) throw new Error('Conjunto de roupa inválido.')
-  try {
-    await wardrobeSaveQueue.catch(() => undefined)
-    const folder = wardrobeSetPath(modelSlot, id)
-    await recoverWardrobeManifest(folder)
-    const set = JSON.parse(await readFile(join(folder, 'wardrobe.json'), 'utf8')) as WardrobeSetSave
-    if (!inspectFabricatorStorage('wardrobe', set).compatible) return null
-    if (set.schemaVersion !== 1 || (set.edition !== undefined && set.edition !== 1 && set.edition !== 2) || set.modelSlot !== modelSlot || set.id !== id || !Array.isArray(set.components) || set.components.length > 100) return null
-    const version = `${set.updatedAt}:${set.edition ?? 1}`
-    const identity = `${modelSlot}:${id}`
-    const components = await Promise.all(set.components.map(async (component) => {
-      const dataUrl = `data:image/png;base64,${(await readCatalogPng('wardrobe', identity, version, join(folder, 'parts', `${component.id}.png`))).toString('base64')}`
-      const deformationOriginalDataUrl = component.hasDeformationOriginal === true
-        ? `data:image/png;base64,${(await readCatalogPng('wardrobe', identity, version, join(folder, 'parts', `${wardrobeDeformationOriginalId(component.id)}.png`))).toString('base64')}`
-        : undefined
-      return {
-        ...component,
-        category: (component.category as string) === 'cinto-saia-1' ? 'cinto' as const : (component.category as string) === 'cinto-saia-2' ? 'saia' as const : component.category,
-        renderAboveHair: (component.category === 'oculos' || component.category === 'acessorio-cabeca') && component.renderAboveHair === true,
-        dataUrl,
-        deformationOriginalDataUrl
-      }
-    }))
-    return { ...set, components }
-  } catch (reason) {
-    if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return null
-    throw reason
-  }
+const wardrobePersistence = createFabricatorWardrobePersistence({
+  isValidModelSlot,
+  isValidWardrobeId,
+  wardrobeSetPath,
+  deformationOriginalId: (componentId) => `${componentId}_deform_original`,
+  dataUrlBuffer,
+  saveCatalog: (options) => catalogPersistence.saveCatalog(options),
+  recoverWardrobeManifest: (folder) => catalogPersistence.recoverWardrobeManifest(folder),
+  isCompatible: (value) => inspectFabricatorStorage('wardrobe', value).compatible,
+  readCatalogPng: (identity, version, path) => readCatalogPng('wardrobe', identity, version, path),
+  invalidateCatalogPng: (identity) => invalidateCatalogPng('wardrobe', identity),
+  files: { readFile, rm }
+})
+
+async function readWardrobeSet(modelSlot: number, id: string) {
+  return wardrobePersistence.read(modelSlot, id)
 }
 
 function queuePoseWrite(operation: () => Promise<void>): Promise<void> {
@@ -1163,7 +1110,7 @@ async function registerFabricatorHandlers(): Promise<void> {
     assertTrustedSender(event)
     const pendingWrites = [
       ...(fabricatorProjectIpc?.getPendingWrites() ?? []), ...poseSaveWrites, ...(fabricatorHairIpc?.getPendingWrites() ?? []),
-      animatorSaveQueue, wardrobeSaveQueue, faceSaveQueue, expressionPresetSaveQueue,
+      animatorSaveQueue, ...(fabricatorWardrobeIpc?.getPendingWrites() ?? []), faceSaveQueue, expressionPresetSaveQueue,
       faceGuideSaveQueue, customizerService.pendingWrites,
       studioSaveQueues.studio, editorV6SaveQueue, roteirosSaveQueue
     ]
@@ -1354,36 +1301,15 @@ async function registerFabricatorHandlers(): Promise<void> {
       new FabricatorWardrobeCatalog(wardrobeModelPath, { readdir, readFile }, slotCount,
         (folder) => catalogPersistence.recoverWardrobeManifest(folder)))
 
-  ipcMain.handle(fabricatorIpcChannels.loadWardrobeSet, async (event, modelSlot: number, id: string): Promise<WardrobeSet | null> => {
-    assertTrustedSender(event)
-    return readWardrobeSet(modelSlot, id)
-  })
-
-  ipcMain.handle(fabricatorIpcChannels.saveWardrobeSet, async (event, modelSlot: number, set: WardrobeSetSave, assets: WardrobeAssetSave[]): Promise<void> => {
-    assertTrustedSender(event)
-    if (!isValidModelSlot(modelSlot) || !set || set.modelSlot !== modelSlot || !isValidWardrobeId(set.id) || !Array.isArray(set.components)) {
-      throw new Error('Conjunto de roupa inválido.')
-    }
-    await customizerService.withCharactersLocked(async (characters) => {
-      assertReferencedWardrobeComponentsRemain(characters, modelSlot, set.id, new Set(set.components.map((component) => component.id)))
-      const next = wardrobeSaveQueue.catch(() => undefined).then(() => writeWardrobeSet(modelSlot, set, assets))
-      wardrobeSaveQueue = next
-      await next
-    })
-  })
-
-  ipcMain.handle(fabricatorIpcChannels.deleteWardrobeSet, async (event, modelSlot: number, id: string): Promise<void> => {
-    assertTrustedSender(event)
-    if (!isValidModelSlot(modelSlot) || !isValidWardrobeId(id)) throw new Error('Conjunto de roupa inválido.')
-    const base = resolve(wardrobeModelPath(modelSlot))
-    const target = resolve(wardrobeSetPath(modelSlot, id))
-    if (dirname(target) !== base || basename(target) !== `set-${id}`) throw new Error('Caminho de exclusão inválido.')
-    await customizerService.withCharactersLocked(async (characters) => {
-      assertWardrobeSetHasNoCharacterReferences(characters, modelSlot, id)
-      const next = wardrobeSaveQueue.catch(() => undefined).then(() => rm(target, { recursive: true, force: true }))
-      wardrobeSaveQueue = next
-      await next
-    })
+  fabricatorWardrobeIpc = registerFabricatorWardrobeHandlers({
+    ipcMain,
+    assertTrustedSender,
+    isValidModelSlot,
+    isValidWardrobeId,
+    wardrobeModelPath,
+    wardrobeSetPath,
+    persistence: wardrobePersistence,
+    withCharactersLocked: (operation) => customizerService.withCharactersLocked(operation)
   })
 
   const catalogListings = createFabricatorCatalogListings({
@@ -1693,7 +1619,7 @@ app.whenReady().then(async () => {
       if (window && !window.webContents.isLoading()) await window.webContents.executeJavaScript('window.desktop?.flushPendingWrites?.()')
       const pending = [
         ...(fabricatorProjectIpc?.getPendingWrites() ?? []), ...poseSaveWrites, ...(fabricatorHairIpc?.getPendingWrites() ?? []), animatorSaveQueue,
-        wardrobeSaveQueue, faceSaveQueue, expressionPresetSaveQueue, faceGuideSaveQueue, customizerService.pendingWrites,
+        ...(fabricatorWardrobeIpc?.getPendingWrites() ?? []), faceSaveQueue, expressionPresetSaveQueue, faceGuideSaveQueue, customizerService.pendingWrites,
         studioSaveQueues.studio, editorV6SaveQueue
       ]
       const results = await Promise.allSettled(pending)
