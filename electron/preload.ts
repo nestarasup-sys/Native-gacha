@@ -9,6 +9,7 @@ import type { EditorV6DesktopApi } from '../src/shared/editorV6'
 import type { RoteirosDesktopApi } from '../src/shared/roteiros'
 import type { BaseVideosDesktopApi } from '../src/shared/baseVideos'
 import type { MediaLibraryDesktopApi } from '../src/shared/mediaLibrary'
+import type { DataMigrationPauseResult, DataMigrationProgress, DataMigrationResult, DataMigrationSummary, DataStorageSummary } from '../src/shared/dataManagement'
 
 const invokeFabricator = createFabricatorInvoker(ipcRenderer)
 const fabricatorApi: FabricatorDesktopApi = {
@@ -167,13 +168,13 @@ contextBridge.exposeInMainWorld('desktop', {
   normalizeImageForImport: (bytes: Uint8Array) => ipcRenderer.invoke('app:image:normalize', bytes),
   loadFabricatorDesignSettings: () => ipcRenderer.invoke('fabricator:design-settings:load'),
   saveFabricatorDesignSettings: (settings: unknown) => ipcRenderer.invoke('fabricator:design-settings:save', settings),
-  getAppDataStorageSummary: () => ipcRenderer.invoke('app:data-storage-summary'),
-  getDataMigrationSummary: () => ipcRenderer.invoke('app:data-migration:prepare'),
-  runDataMigration: () => ipcRenderer.invoke('app:data-migration:run-all'),
-  pauseDataMigration: () => ipcRenderer.invoke('app:data-migration:pause'),
+  getAppDataStorageSummary: (): Promise<DataStorageSummary> => ipcRenderer.invoke('app:data-storage-summary'),
+  getDataMigrationSummary: (): Promise<DataMigrationSummary> => ipcRenderer.invoke('app:data-migration:prepare'),
+  runDataMigration: (): Promise<DataMigrationResult> => ipcRenderer.invoke('app:data-migration:run-all'),
+  pauseDataMigration: (): Promise<DataMigrationPauseResult> => ipcRenderer.invoke('app:data-migration:pause'),
   restartAfterDataMigration: () => ipcRenderer.invoke('app:data-migration:restart'),
-  onDataMigrationProgress: (callback: (progress: { domainId: string; completedFiles: number; totalFiles: number; completedBytes: number; totalBytes: number }) => void) => {
-    const listener = (_event: Electron.IpcRendererEvent, progress: { domainId: string; completedFiles: number; totalFiles: number; completedBytes: number; totalBytes: number }) => callback(progress)
+  onDataMigrationProgress: (callback: (progress: DataMigrationProgress) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, progress: DataMigrationProgress) => callback(progress)
     ipcRenderer.on('app:data-migration:progress', listener)
     return () => ipcRenderer.removeListener('app:data-migration:progress', listener)
   },

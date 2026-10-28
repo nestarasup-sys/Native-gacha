@@ -5,6 +5,7 @@ import type { EditorV6DesktopApi } from '../../shared/editorV6'
 import type { RoteirosDesktopApi } from '../../shared/roteiros'
 import type { BaseVideosDesktopApi } from '../../shared/baseVideos'
 import type { MediaLibraryDesktopApi } from '../../shared/mediaLibrary'
+import type { DataMigrationPauseResult, DataMigrationProgress, DataMigrationResult, DataMigrationSummary, DataStorageSummary } from '../../shared/dataManagement'
 
 declare global {
   interface Window {
@@ -14,18 +15,12 @@ declare global {
       normalizeImageForImport: (bytes: Uint8Array) => Promise<{ dataUrl: string; width: number; height: number; bitDepth: 8 | 16; sourceBytes: number; outputBytes: number }>
       loadFabricatorDesignSettings: () => Promise<unknown | null>
       saveFabricatorDesignSettings: (settings: unknown) => Promise<void>
-      getAppDataStorageSummary: () => Promise<{
-        disk: { measuredAt: string; groups: Record<string, { files: number; bytes: number; unreadable: number }> }
-        catalog: { assets: number; archivedAssets: number; uniqueObjects: number; referencedObjects: number; objectBytes: number; unreferencedObjects: number }
-      }>
-      getDataMigrationSummary: () => Promise<{
-        domains: Array<{ domainId: string; state: string; fileCount: number; directoryCount: number; byteLength: number; inventorySha256: string | null }>
-        availableBytes: number; estimatedRequiredBytes: number; hasEnoughSpace: boolean
-      }>
-      runDataMigration: () => Promise<{ outcomes: Array<{ domainId: string; state: string; fileCount: number; byteLength: number }>; paused: boolean; summary: Awaited<ReturnType<Window['desktop']['getDataMigrationSummary']>> }>
-      pauseDataMigration: () => Promise<{ paused: boolean }>
+      getAppDataStorageSummary: () => Promise<DataStorageSummary>
+      getDataMigrationSummary: () => Promise<DataMigrationSummary>
+      runDataMigration: () => Promise<DataMigrationResult>
+      pauseDataMigration: () => Promise<DataMigrationPauseResult>
       restartAfterDataMigration: () => Promise<void>
-      onDataMigrationProgress: (callback: (progress: { domainId: string; completedFiles: number; totalFiles: number; completedBytes: number; totalBytes: number }) => void) => () => void
+      onDataMigrationProgress: (callback: (progress: DataMigrationProgress) => void) => () => void
       listDataBackups: () => Promise<Array<{ id: string; createdAt: string; fileCount: number; byteLength: number; verifiedAt: string | null }>>
       createDataBackup: () => Promise<{ id: string; valid: boolean; fileCount: number; byteLength: number; createdAt: string; verifiedAt: string; databaseSchema: number }>
       verifyDataBackup: (id: string) => Promise<{ id: string; valid: boolean; fileCount: number; byteLength: number; createdAt: string; verifiedAt: string; databaseSchema: number }>

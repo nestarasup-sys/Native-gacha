@@ -1,12 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
+import type { DataMigrationProgress as MigrationProgress, DataMigrationSummary as MigrationSummary, DataStorageSummary as StorageSummary } from '../../../../shared/dataManagement'
 
-type StorageGroup = { files: number; bytes: number; unreadable: number }
-type StorageSummary = {
-  disk: { measuredAt: string; groups: Record<string, StorageGroup> }
-  catalog: { assets: number; archivedAssets: number; uniqueObjects: number; referencedObjects: number; objectBytes: number; unreferencedObjects: number }
-}
-type MigrationSummary = Awaited<ReturnType<Window['desktop']['getDataMigrationSummary']>>
-type MigrationProgress = Parameters<Parameters<Window['desktop']['onDataMigrationProgress']>[0]>[0]
 type StoredBackup = Awaited<ReturnType<Window['desktop']['listDataBackups']>>[number]
 
 const groupLabels: Record<string, string> = {

@@ -20,6 +20,7 @@ import { DataPlatform, getAppDataUsage } from './dataPlatform.cjs'
 import { DomainFileSystem } from './domainFileSystem.cjs'
 import { DataMigrationService } from './dataMigration.cjs'
 import { DataBackupService } from './dataBackups.cjs'
+import { registerDataMigrationHandlers } from './domains/storage/dataMigrationIpc'
 import { configureAssetImageStorage, readAssetImage, writeAssetImageSource } from './assetImageOverrides'
 import { migrateElectronProfile } from './electronProfileMigration.cjs'
 import { normalizeImageBuffer } from './imageIngestion.cjs'
@@ -272,9 +273,7 @@ const copyFile = dataFileSystem.copyFile.bind(dataFileSystem) as typeof nativeCo
 const faceGuidePersistence = createFaceGuidePersistence({ mkdir, readFile, writeFile, rename }, () => app.getPath('userData'))
 let dataMigration: InstanceType<typeof DataMigrationService> | null = null
 let dataBackupService: InstanceType<typeof DataBackupService> | null = null
-let dataMigrationRunning = false
-let dataMigrationPauseRequested = false
-let dataMigrationTask: Promise<unknown> | null = null
+let dataMigrationIpc: ReturnType<typeof registerDataMigrationHandlers> | null = null
 let editorV6ExportService: ReturnType<typeof registerEditorV6ExportHandlers> | null = null
 let editorV6MotionService: ReturnType<typeof createEditorV6MotionService> | null = null
 
@@ -2047,44 +2046,11 @@ app.whenReady().then(async () => {
     await dataBackupService.deleteBackup(id)
     return { deleted: true }
   })
-  ipcMain.handle('app:data-migration:prepare', async (event) => {
-    assertTrustedSender(event)
-    if (!dataMigration) throw new Error('Serviço de migração ainda não inicializado.')
-    return dataMigration.prepare()
-  })
-  ipcMain.handle('app:data-migration:run-all', async (event) => {
-    assertTrustedSender(event)
-    if (!dataMigration) throw new Error('Serviço de migração ainda não inicializado.')
-    if (dataMigrationRunning) throw new Error('Uma migração já está em andamento.')
-    dataMigrationRunning = true
-    dataMigrationPauseRequested = false
-    const outcomes: Array<{ domainId: string; state: string; fileCount: number; byteLength: number }> = []
-    const task = (async () => {
-      const prepared = await dataMigration.prepare()
-      if (!prepared.hasEnoughSpace) throw new Error('Espaço livre insuficiente para validar os dados com segurança.')
-      for (const domain of prepared.domains) {
-        if (dataMigrationPauseRequested) break
-        if (domain.state === 'active' || domain.state === 'verified') continue
-        outcomes.push(await dataMigration.migrateDomain(domain.domainId))
-      }
-      return { outcomes, paused: dataMigrationPauseRequested, summary: await dataMigration.prepare() }
-    })()
-    dataMigrationTask = task
-    try { return await task }
-    finally { dataMigrationRunning = false; dataMigrationTask = null }
-  })
-  ipcMain.handle('app:data-migration:pause', async (event) => {
-    assertTrustedSender(event)
-    dataMigrationPauseRequested = true
-    return { paused: dataMigrationRunning }
-  })
-  ipcMain.handle('app:data-migration:restart', async (event) => {
-    assertTrustedSender(event)
-    if (dataMigrationRunning) throw new Error('Aguarde a migração atual terminar antes de reiniciar.')
-    const summary = await dataMigration?.prepare()
-    if (!summary || summary.domains.some((domain) => domain.state !== 'active' && domain.state !== 'verified')) throw new Error('Ainda há domínios que não foram migrados.')
-    app.relaunch()
-    app.quit()
+  dataMigrationIpc = registerDataMigrationHandlers({
+    ipcMain, assertTrustedSender,
+    getService: () => dataMigration,
+    relaunch: () => app.relaunch(),
+    quit: () => app.quit()
   })
   if (process.env.GACHA_DEV_AI_TEST === '1') {
     // Defense in depth for fixture-only Electron tests: no renderer-originated
@@ -2129,6 +2095,7 @@ app.on('before-quit', (event) => {
   waitingForPersistenceWritesBeforeQuit = true
   editorV6ExportService?.cancelAll()
   editorV6MotionService?.cancelAll()
+  const dataMigrationTask = dataMigrationIpc?.getActiveTask()
   const pendingWrites = [
     ...fabricatorSaveQueues.values(), ...poseSaveWrites, ...hairSaveQueues.values(),
     studioSaveQueues.studio, editorV6SaveQueue, roteirosSaveQueue,
