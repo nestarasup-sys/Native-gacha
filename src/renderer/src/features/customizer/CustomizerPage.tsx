@@ -14,6 +14,7 @@ import { customizerFaceParts, customizerSkinTonePresets, facePartCatalogId, face
 import type { FaceLibraryPartId } from './customizerFaceCatalogModel'
 import { hairColorControls, hairPalettePresets, MouthBlushControls, NoseOpacityControl, NoseSkinTonePalette, PiecePaletteStrip } from './CustomizerAppearanceControls'
 import { renderCustomizerFacePreview } from './customizerFacePreview'
+import { renderCustomizerBasePreview } from './customizerCharacterPreview'
 import { preparePreviewImage, sampleOriginalSkinTone } from './customizerPreviewImages'
 import { CustomizerCategoryIcon, clothesAdjustmentDefinitions, customizerClothesTabs, customizerHeadTabs, customizerModuleByTab, customizerModuleNames, customizerOtherTabs, customizerTopTabs, headAdjustmentItems, headAdjustmentItemsFor } from './customizerNavigation'
 import { adjustableHairPartIds, hairAppearancePartStyleId } from './customizerHairAppearanceModel'
@@ -293,8 +294,13 @@ export function CustomizerPage() {
         const artwork = selectCharacterArtwork(sourceProject, poseArtwork, pose?.slot ?? null)
         if (!artwork) throw new Error('Não foi possível carregar a prévia deste personagem.')
         if (!cancelled && previewLoadRequest.current === requestId) { setSelectedArtworkProject(artwork); setSelectedSourceModelProject(sourceProject) }
-        const artworkUrl = await renderArtwork(applyCharacterBodyShape(withCharacterHeadSize(artwork, activeProportions), activeBodyDimensions), characterRenderSize(artwork.width, artwork.height, previewExtent.width, previewExtent.height, customizerPreviewZoom, previewExtent.density), selectedCharacter.customization.modelSkinTone)
-        if (!await preparePreviewImage(artworkUrl)) throw new Error('A prévia nova não pôde ser decodificada; mantendo a imagem anterior.')
+        const artworkUrl = await renderCustomizerBasePreview(artwork, {
+          proportions: activeProportions,
+          bodyDimensions: activeBodyDimensions,
+          extent: previewExtent,
+          zoom: customizerPreviewZoom,
+          skinTone: selectedCharacter.customization.modelSkinTone
+        })
         if (!cancelled && previewLoadRequest.current === requestId) setSelectedArtworkUrl(artworkUrl)
       } catch (reason) {
         if (!cancelled && previewLoadRequest.current === requestId) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível carregar a prévia.')

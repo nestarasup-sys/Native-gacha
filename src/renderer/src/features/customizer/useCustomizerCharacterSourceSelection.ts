@@ -1,13 +1,10 @@
 /** Seleção de modelos/poses do Fabricador e atualização do preview do personagem. */
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react'
 import { selectCharacterArtwork } from '../../../../shared/characterSourceContinuity'
-import { applyCharacterBodyShape } from '../../../../shared/bodyShape'
 import { resolvePoseCategory, type FabricatorPoseSummary, type FabricatorProject, type FabricatorSlotSummary } from '../../../../shared/fabricator'
 import type { CustomizerCharacter, CharacterBodyDimensions, CharacterProportions } from '../../../../shared/customizer'
-import { renderArtwork, withCharacterHeadSize } from '../../characters/characterRenderer'
 import type { CatalogArtwork } from '../../characters/characterRenderer'
-import { characterRenderSize } from './renderResolution'
-import { preparePreviewImage } from './customizerPreviewImages'
+import { renderCustomizerBasePreview } from './customizerCharacterPreview'
 
 type PreviewExtent = { width: number; height: number; density: number }
 type Customization = CustomizerCharacter['customization']
@@ -43,13 +40,6 @@ export function useCustomizerCharacterSourceSelection(deps: {
     setSelectedSourceModelProject, setPreviewLoading, setCatalogError
   } = deps
 
-  async function renderSelectionPreview(artwork: CatalogArtwork) {
-    const shapedArtwork = applyCharacterBodyShape(withCharacterHeadSize(artwork, activeProportions), activeBodyDimensions)
-    const artworkUrl = await renderArtwork(shapedArtwork, characterRenderSize(artwork.width, artwork.height, previewExtent.width, previewExtent.height, customizerPreviewZoom, previewExtent.density), selectedCharacter?.customization.modelSkinTone)
-    if (!await preparePreviewImage(artworkUrl)) throw new Error('A prévia nova não pôde ser decodificada; mantendo a imagem anterior.')
-    return artworkUrl
-  }
-
   async function selectCatalogModel(model: NonNullable<FabricatorSlotSummary>) {
     const requestId = ++previewLoadRequest.current
     setSelectedCatalogModelSlot(model.slot)
@@ -68,7 +58,13 @@ export function useCustomizerCharacterSourceSelection(deps: {
       const poseArtwork = firstPose ? await window.desktop.loadFabricatorPose(model.slot, firstPose.slot) : null
       const artwork = selectCharacterArtwork(sourceProject, poseArtwork, firstPose?.slot ?? null)
       if (!artwork) throw new Error(firstPose ? 'Não foi possível abrir a pose inicial deste modelo.' : 'Não foi possível abrir este modelo.')
-      const artworkUrl = await renderSelectionPreview(artwork)
+      const artworkUrl = await renderCustomizerBasePreview(artwork, {
+        proportions: activeProportions,
+        bodyDimensions: activeBodyDimensions,
+        extent: previewExtent,
+        zoom: customizerPreviewZoom,
+        skinTone: selectedCharacter?.customization.modelSkinTone
+      })
       if (previewLoadRequest.current === requestId) { setSelectedArtworkProject(artwork); setSelectedSourceModelProject(sourceProject); setSelectedArtworkUrl(artworkUrl) }
     } catch (reason) {
       if (previewLoadRequest.current === requestId) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível abrir este modelo.')
@@ -93,7 +89,13 @@ export function useCustomizerCharacterSourceSelection(deps: {
       const poseArtwork = await window.desktop.loadFabricatorPose(pose.sourceModelSlot, pose.slot)
       const artwork = selectCharacterArtwork(sourceProject, poseArtwork, pose.slot)
       if (!artwork) throw new Error('Não foi possível abrir esta pose.')
-      const artworkUrl = await renderSelectionPreview(artwork)
+      const artworkUrl = await renderCustomizerBasePreview(artwork, {
+        proportions: activeProportions,
+        bodyDimensions: activeBodyDimensions,
+        extent: previewExtent,
+        zoom: customizerPreviewZoom,
+        skinTone: selectedCharacter?.customization.modelSkinTone
+      })
       if (previewLoadRequest.current === requestId) { setSelectedArtworkProject(artwork); setSelectedSourceModelProject(sourceProject); setSelectedArtworkUrl(artworkUrl) }
     } catch (reason) {
       if (previewLoadRequest.current === requestId) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível abrir esta pose.')
