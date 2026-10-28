@@ -21,6 +21,7 @@ export function useSerializedSceneDocumentSave<TDocument extends SaveableSceneDo
   const generation = useRef(0)
   const { createThumbnail, write, onSaved, onError } = options
 
+  const invalidatePendingSaves = useCallback(() => { generation.current += 1 }, [])
   const writeInOrder = useCallback((document: TDocument) => queue.current.run(() => write(document)), [write])
   const save = useCallback(async (document = activeDocument) => {
     if (!document) return true
@@ -44,5 +45,5 @@ export function useSerializedSceneDocumentSave<TDocument extends SaveableSceneDo
     }
   }, [activeDocument, createThumbnail, onError, onSaved, write])
 
-  return { save, writeInOrder }
+  return { save, writeInOrder, invalidatePendingSaves }
 }

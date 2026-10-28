@@ -429,9 +429,15 @@ Este corte separa propriedade dos contratos e chamadas entre domínios, mas não
 - `ui/hooks/useSerializedSceneDocumentSave.ts` agora concentra essa política e expõe a mesma fila para gravações de importação. Cada tela injeta seu renderizador de miniatura, canal de escrita e atualização de estado; os tipos de documento e as regras visuais continuam separados.
 - As páginas diminuíram 11 linhas cada: Studio ficou com 1.405 e Editor V6 com 1.614. A mudança não altera IDs, payloads nem persistência.
 
+### Etapa aplicada — invalidação imediata de resultados de autosave
+
+- A geração do salvamento só avançava quando o próximo autosave começava, depois do debounce de 650 ms. Uma escrita já iniciada podia terminar nesse intervalo e marcar como salvo um documento que acabara de mudar.
+- O hook agora expõe `invalidatePendingSaves`; as telas avançam a geração no mesmo momento em que marcam alterações e antes de gravar uma importação. A gravação antiga ainda termina na fila, mas seu callback de sucesso/falha deixa de atualizar o estado mais recente.
+- A gravação seguinte continua usando o documento atual e a mesma fila. Nenhum campo persistido ou canal IPC mudou.
+
 ## 7. Próxima tarefa recomendada
 
-Continuar pelo **Ciclo 4** com módulos focados de UI e coordenação no Customizador, Fabricador, Studio e Editor V6. A próxima análise no Editor V6 deve cobrir snapshots capturados antes de operações assíncronas, atualização do estado enquanto uma gravação está pendente e o indicador `saved`; escolher uma extração somente depois de mapear esses casos juntos. Em paralelo, preparar fixtures visuais sintéticas que capturem as saídas reais dessas áreas antes de compartilhar mais da orquestração de renderização.
+Continuar pelo **Ciclo 4** com módulos focados de UI e coordenação no Customizador, Fabricador, Studio e Editor V6. A próxima análise deve mapear os snapshots capturados antes de operações assíncronas e o que acontece se o documento mudar enquanto uma gravação de importação aguarda na fila; definir uma atualização que preserve tanto a importação quanto as edições mais recentes. Em paralelo, preparar fixtures visuais sintéticas que capturem as saídas reais dessas áreas antes de compartilhar mais da orquestração de renderização.
 
 ## 8. Verificações e validação
 

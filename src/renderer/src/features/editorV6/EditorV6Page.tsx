@@ -142,12 +142,16 @@ export function EditorV6Page() {
   const onEditorV6DocumentSaveError = useCallback((reason: unknown) => {
     setError(reason instanceof Error ? reason.message : 'Não foi possível salvar o projeto do Editor V6 neste dispositivo.')
   }, [])
-  const { save: saveActiveEditorV6Project, writeInOrder: writeEditorV6DocumentInOrder } = useSerializedSceneDocumentSave(activeEditorV6, {
+  const { save: saveActiveEditorV6Project, writeInOrder: writeEditorV6DocumentInOrder, invalidatePendingSaves: invalidateEditorV6PendingSaves } = useSerializedSceneDocumentSave(activeEditorV6, {
     createThumbnail: makeEditorV6Thumbnail,
     write: writeEditorV6Document,
     onSaved: onEditorV6DocumentSaved,
     onError: onEditorV6DocumentSaveError
   })
+  const markEditorV6Unsaved = useCallback(() => {
+    invalidateEditorV6PendingSaves()
+    setSaved(false)
+  }, [invalidateEditorV6PendingSaves])
   const availableCharacterById = useMemo(() => new Map(availableCharacters.map((character) => [character.id, character])), [availableCharacters])
   const fabricatorModelSlots = useMemo(() => [...new Set(availableCharacters.map((character) => character.customization.modelSlot ?? 1))].sort((left, right) => left - right), [availableCharacters])
   const fabricatorModelSlotsKey = fabricatorModelSlots.join(',')
@@ -183,8 +187,8 @@ export function EditorV6Page() {
   useEffect(() => {
     if (!activeEditorV6 || new Set(activeEditorV6.assets.map((asset) => asset.id)).size === activeEditorV6.assets.length) return
     updateActiveEditorV6Project((project) => project.id === activeEditorV6.id ? repairEditorV6DuplicateAssets(project, selectedTimelineBlockId) : project)
-    setSaved(false)
-  }, [activeEditorV6, selectedTimelineBlockId])
+    markEditorV6Unsaved()
+  }, [activeEditorV6, selectedTimelineBlockId, markEditorV6Unsaved])
   const editorV6Selection = useMemo(() => resolveEditorV6InspectorSelection({
     project: activeEditorV6,
     visibleElements: visibleTimelineElements,
@@ -511,10 +515,10 @@ export function EditorV6Page() {
         }) })) },
         updatedAt: new Date().toISOString()
       })
-      setSaved(false)
+      markEditorV6Unsaved()
     })()
     return () => { cancelled = true }
-  }, [activeEditorV6])
+  }, [activeEditorV6, markEditorV6Unsaved])
 
   useEffect(() => {
     const project = activeEditorV6
@@ -549,13 +553,13 @@ export function EditorV6Page() {
           }
           return pruneEditorV6TimelineSnapshots(next)
         })
-        setSaved(false)
+        markEditorV6Unsaved()
       } catch (reason) {
         if (!cancelled) setError(reason instanceof Error ? reason.message : 'Não foi possível atualizar o personagem e as poses salvas no Editor V6.')
       }
     })()
     return () => { cancelled = true }
-  }, [activeEditorV6, activePoseSourceSnapshot, availableCharacters, normalizedSourceVersion, pausePlayback, updateActiveEditorV6Project])
+  }, [activeEditorV6, activePoseSourceSnapshot, availableCharacters, normalizedSourceVersion, pausePlayback, updateActiveEditorV6Project, markEditorV6Unsaved])
 
   const allocateNumber = () => {
     const highest = editorV6Projects.reduce((max, studio) => Math.max(max, Number(studio.title.match(/^Editor V6\s+(\d+)/i)?.[1] ?? 0)), 0)
@@ -616,7 +620,7 @@ export function EditorV6Page() {
 
   useEffect(() => {
     if (!activeEditorV6 || dragRef.current) return
-    setSaved(false)
+    markEditorV6Unsaved()
     const signature = JSON.stringify(activeEditorV6.elements.filter((element) => element.kind === 'character').map((element) => [element.id, element.activeExpressionCollectionId, element.activeExpressionPresetId]))
     const previous = expressionSaveSignatureRef.current
     expressionSaveSignatureRef.current = { studioId: activeEditorV6.id, value: signature }
@@ -626,7 +630,7 @@ export function EditorV6Page() {
     }
     const timer = window.setTimeout(() => { void saveActiveEditorV6Project(activeEditorV6) }, 650)
     return () => window.clearTimeout(timer)
-  }, [activeEditorV6, saveActiveEditorV6Project])
+  }, [activeEditorV6, markEditorV6Unsaved, saveActiveEditorV6Project])
 
   const patchStudio = (transform: (studio: EditorV6Document) => EditorV6Document, editSelection = true) => {
     if (!activeEditorV6Id) return
@@ -638,7 +642,7 @@ export function EditorV6Page() {
       const next = editSelection ? editEditorV6DocumentAtBlock(studio, selected?.block.id ?? null, transform) : transform(studio)
       return pruneEditorV6TimelineSnapshots(repairEditorV6FaceModeAssetReferences({ ...next, timeline: normalizeEditorV6Timeline(next.timeline) }))
     })
-    setSaved(false)
+    markEditorV6Unsaved()
   }
 
   const recordHistory = (document = activeEditorV6) => {
@@ -705,6 +709,7 @@ export function EditorV6Page() {
       if (category !== 'background') nextStudio = addEditorV6ElementAtFrame(nextStudio, nextStudio.elements.at(-1)!, frameAtImport)
       nextStudio = { ...nextStudio, timeline: normalizeEditorV6Timeline(syncEditorV6TimelineElements(nextStudio.timeline, nextStudio.elements)) }
       // Persist imported image bytes and their manifest before showing the asset as saved.
+      markEditorV6Unsaved()
       await writeEditorV6DocumentInOrder(nextStudio)
       if (activeEditorV6Id === studioAtImport.id) {
         recordHistory()
@@ -740,6 +745,7 @@ export function EditorV6Page() {
       const block = { id: crypto.randomUUID(), mediaId: media.id, mediaInFrame: 0, label: media.name.slice(0, 120), startFrame, durationFrames, audioEnabled: true, gain: 1 }
       const timeline = normalizeEditorV6Timeline({ ...sourceProject.timeline, durationFrames: Math.max(sourceProject.timeline.durationFrames, startFrame + durationFrames), tracks: sourceProject.timeline.tracks.map((item) => item.kind === kind ? { ...item, blocks: [...item.blocks, block] } : item) })
       const next: EditorV6Document = { ...sourceProject, media: [...(sourceProject.media ?? []), media], timeline, updatedAt: new Date().toISOString() }
+      markEditorV6Unsaved()
       await writeEditorV6DocumentInOrder(next)
       if (activeEditorV6Id !== sourceProject.id) return
       recordHistory(sourceProject)
@@ -768,6 +774,7 @@ export function EditorV6Page() {
     const mediaList = sourceProject.media ?? []
     const timeline = normalizeEditorV6Timeline({ ...sourceProject.timeline, durationFrames: Math.max(sourceProject.timeline.durationFrames, startFrame + durationFrames), tracks: sourceProject.timeline.tracks.map((entry) => entry.kind === 'video' ? { ...entry, blocks: [...entry.blocks, block] } : entry) })
     const next: EditorV6Document = { ...sourceProject, media: mediaList.some((entry) => entry.id === media.id) ? mediaList : [...mediaList, media], timeline, updatedAt: new Date().toISOString() }
+    markEditorV6Unsaved()
     await writeEditorV6DocumentInOrder(next)
     if (activeEditorV6Id !== sourceProject.id) return
     recordHistory(sourceProject)
@@ -1175,7 +1182,7 @@ export function EditorV6Page() {
     if (drag.moved) {
       updateActiveEditorV6Project((project) => project.id === drag.before.id ? { ...drag.before, updatedAt: new Date().toISOString() } : project)
       setSelectedTimelineBlockId(drag.target === 'background' ? null : drag.target === 'video' ? drag.blockId : editorV6ClipAtFrame(drag.before.timeline, drag.id, drag.frame)?.block.id ?? null)
-      setSaved(false)
+      markEditorV6Unsaved()
     }
   }
 
@@ -1235,7 +1242,7 @@ export function EditorV6Page() {
     publishPlayheadFrame(drag.frame)
     setSelectedTimelineBlockId(drag.blockId)
     updateActiveEditorV6Project((project) => project.id === drag.before.id ? { ...next, updatedAt: new Date().toISOString() } : project)
-    setSaved(false)
+    markEditorV6Unsaved()
   }
 
   const endDrag = (event: ScenePointerEvent) => {
@@ -1246,7 +1253,7 @@ export function EditorV6Page() {
     if (!drag.moved) return
     recordHistory(drag.before)
     updateActiveEditorV6Project((project) => project.id === drag.before.id ? { ...project, updatedAt: new Date().toISOString() } : project)
-    setSaved(false)
+    markEditorV6Unsaved()
   }
   sceneInteractionRef.current = { start: startDrag, move: moveDrag, end: endDrag }
 

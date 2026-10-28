@@ -175,12 +175,16 @@ export function StudioPage() {
   const onStudioDocumentSaveError = useCallback((reason: unknown) => {
     setError(reason instanceof Error ? reason.message : 'Não foi possível salvar o Studio neste dispositivo.')
   }, [])
-  const { save: saveStudio, writeInOrder: writeStudioInOrder } = useSerializedSceneDocumentSave(activeStudio, {
+  const { save: saveStudio, writeInOrder: writeStudioInOrder, invalidatePendingSaves: invalidateStudioPendingSaves } = useSerializedSceneDocumentSave(activeStudio, {
     createThumbnail: makeStudioThumbnail,
     write: writeStudioDocument,
     onSaved: onStudioDocumentSaved,
     onError: onStudioDocumentSaveError
   })
+  const markStudioUnsaved = useCallback(() => {
+    invalidateStudioPendingSaves()
+    setSaved(false)
+  }, [invalidateStudioPendingSaves])
   const selectedElement = activeStudio?.elements.find((element) => element.id === selectedElementId) ?? null
   const selectedStudioCharacter = selectedElement?.kind === 'character' ? availableCharacters.find((character) => character.id === selectedElement.characterId) ?? null : null
   const selectedStudioExpressionCollectionId = studioExpressionCollection(selectedElement, studioExpressionPresets)
@@ -443,10 +447,10 @@ export function StudioPage() {
         }),
         updatedAt: new Date().toISOString()
       }))
-      setSaved(false)
+      markStudioUnsaved()
     })()
     return () => { cancelled = true }
-  }, [activeStudio])
+  }, [activeStudio, markStudioUnsaved])
 
   useEffect(() => {
     if (!activeStudio || !normalizedStudioIdsRef.current.has(activeStudio.id) || !availableCharacters.length) return
@@ -542,13 +546,13 @@ export function StudioPage() {
             updatedAt: new Date().toISOString()
           }
         }))
-        setSaved(false)
+        markStudioUnsaved()
       } catch (reason) {
         if (!cancelled) setError(reason instanceof Error ? reason.message : 'Não foi possível atualizar o personagem do Studio.')
       }
     })()
     return () => { cancelled = true }
-  }, [activeStudio, availableCharacters, normalizedStudioVersion, sceneExpressionPresetVersions, assetLibraryRevision])
+  }, [activeStudio, availableCharacters, normalizedStudioVersion, sceneExpressionPresetVersions, assetLibraryRevision, markStudioUnsaved])
 
   const allocateNumber = () => {
     const highest = studios.reduce((max, studio) => Math.max(max, Number(studio.title.match(/^Studio\s+(\d+)/i)?.[1] ?? 0)), 0)
@@ -605,7 +609,7 @@ export function StudioPage() {
 
   useEffect(() => {
     if (!activeStudio) return
-    setSaved(false)
+    markStudioUnsaved()
     const signature = JSON.stringify(activeStudio.elements.filter((element) => element.kind === 'character').map((element) => [element.id, element.activeExpressionCollectionId, element.activeExpressionPresetId]))
     const previous = expressionSaveSignatureRef.current
     expressionSaveSignatureRef.current = { studioId: activeStudio.id, value: signature }
@@ -615,12 +619,12 @@ export function StudioPage() {
     }
     const timer = window.setTimeout(() => { void saveStudio(activeStudio) }, 650)
     return () => window.clearTimeout(timer)
-  }, [activeStudio, saveStudio])
+  }, [activeStudio, markStudioUnsaved, saveStudio])
 
   const patchStudio = (transform: (studio: StudioDocument) => StudioDocument) => {
     if (!activeStudioId) return
     setStudios((current) => current.map((studio) => studio.id === activeStudioId ? transform(studio) : studio))
-    setSaved(false)
+    markStudioUnsaved()
   }
 
   const recordHistory = () => {
@@ -682,6 +686,7 @@ export function StudioPage() {
           }
 
       // Persist imported image bytes and their manifest before showing the asset as saved.
+      markStudioUnsaved()
       await writeStudioInOrder(nextStudio)
       if (activeStudioId === studioAtImport.id) {
         recordHistory()
