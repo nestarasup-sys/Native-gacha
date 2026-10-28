@@ -1,5 +1,6 @@
 import type { EditorV6Asset, EditorV6Document, EditorV6Element, EditorV6MediaAsset, EditorV6TimelineBlock } from '../../../../shared/editorV6'
-import { addEditorV6ElementAtFrame, editEditorV6BackgroundAtFrame, normalizeEditorV6Timeline, syncEditorV6TimelineElements } from '../../../../shared/editorV6Timeline'
+import { syncEditorV6TimelineElements } from '../../../../shared/editorV6'
+import { addEditorV6ElementAtFrame, editEditorV6BackgroundAtFrame, normalizeEditorV6Timeline } from '../../../../shared/editorV6Timeline'
 
 export function addEditorV6ImageAsset(document: EditorV6Document, asset: EditorV6Asset, category: 'background' | 'object', frame: number, createId: () => string): EditorV6Document {
   let next: EditorV6Document = category === 'background'

@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import type { Dispatch, SetStateAction } from 'react'
 import type { WardrobeSet } from '../../../../shared/fabricator'
-import type { CustomizerCharacter, CustomizerWardrobeGroup } from '../../../../shared/customizer'
+import type { CustomizerWardrobeGroup } from '../../../../shared/customizer'
 import { renderWardrobeOverlay } from '../../characters/characterRenderer'
 import type { AdjustmentPreviewHighlight, CatalogArtwork, SelectedWardrobeComponent } from '../../characters/characterRenderer'
 import type { FabricatorProject } from '../../../../shared/fabricator'

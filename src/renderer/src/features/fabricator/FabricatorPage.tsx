@@ -128,7 +128,7 @@ export function FabricatorPage() {
       redo: bounded.redo.map(({ action, project: snapshot }) => { const { sourceDataUrl: _sourceDataUrl, ...project } = snapshot; return { action, project } })
     }
     const currentForDisk = serializeFabricatorProject(currentProject)
-    const changedAssets = parts.flatMap((part) => {
+    const changedAssets = currentProject.parts.flatMap((part) => {
       const dataUrl = dirtyAssets.current.get(part.id)
       const chromaBaseDataUrl = dirtyChromaBases.current.get(part.id)
       return dataUrl || chromaBaseDataUrl ? [{ id: part.id, dataUrl: dataUrl ?? part.dataUrl, ...(chromaBaseDataUrl ? { chromaBaseDataUrl } : {}) }] : []

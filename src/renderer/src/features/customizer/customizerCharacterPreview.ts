@@ -24,6 +24,7 @@ export async function renderCustomizerBasePreview(
     characterRenderSize(artwork.width, artwork.height, options.extent.width, options.extent.height, options.zoom, options.extent.density),
     options.skinTone
   )
+  if (!imageUrl) throw new Error('A prévia nova não pôde ser renderizada; mantendo a imagem anterior.')
   if (!await preparePreviewImage(imageUrl)) throw new Error('A prévia nova não pôde ser decodificada; mantendo a imagem anterior.')
   return imageUrl
 }

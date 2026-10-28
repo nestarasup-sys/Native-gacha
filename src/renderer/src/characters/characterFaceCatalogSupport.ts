@@ -1,4 +1,4 @@
-import type { FaceCatalogItem, FaceComponentAsset, FaceComponentAssetSummary, FaceElementKind } from '../../../shared/fabricator'
+import type { FaceCatalogItem, FaceComponentAsset, FaceElementKind } from '../../../shared/fabricator'
 import type { CharacterRenderAssetProvider } from '../../../shared/characterRenderAssets'
 import { isRightFaceAsset } from '../../../shared/faceLibrarySelection'
 

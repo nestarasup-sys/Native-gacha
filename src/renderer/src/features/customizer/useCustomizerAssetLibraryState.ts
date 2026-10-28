@@ -4,7 +4,7 @@
 import { useState } from 'react'
 import type { FaceCatalogItemSummary, FaceCatalogItem, FaceComponentAssetSummary, FaceComponentAsset, FaceSet, HairStyleSummary, HairStyle, WardrobeSetSummary, WardrobeSet } from '../../../../shared/fabricator'
 import type { HairPartId } from '../../../../shared/customizer'
-import type { StandardExpressionEffects, HairCatalogSide } from '../../characters/characterRenderer'
+import type { StandardExpressionEffects } from '../../characters/characterRenderer'
 
 export function useCustomizerAssetLibraryState<W, F>() {
   const [wardrobeSets, setWardrobeSets] = useState<WardrobeSetSummary[]>([])
@@ -23,7 +23,6 @@ export function useCustomizerAssetLibraryState<W, F>() {
   const [faceComponentLoading, setFaceComponentLoading] = useState(false)
   const [hairStyles, setHairStyles] = useState<HairStyleSummary[]>([])
   const [hairDetails, setHairDetails] = useState<Record<string, HairStyle>>({})
-  const [hairCatalogSide, setHairCatalogSide] = useState<HairCatalogSide>('front')
   const [hairLoading, setHairLoading] = useState(false)
   const [hairLibraryPart, setHairLibraryPart] = useState<HairPartId | null>(null)
   const [hairLibraryPage, setHairLibraryPage] = useState(0)
@@ -40,7 +39,7 @@ export function useCustomizerAssetLibraryState<W, F>() {
     faceComponentDetails, setFaceComponentDetails, faceDetails, setFaceDetails,
     faceLoading, setFaceLoading, faceComponentLoading, setFaceComponentLoading,
     hairStyles, setHairStyles, hairDetails, setHairDetails,
-    hairCatalogSide, setHairCatalogSide, hairLoading, setHairLoading,
+    hairLoading, setHairLoading,
     hairLibraryPart, setHairLibraryPart, hairLibraryPage, setHairLibraryPage,
     faceLibraryPart, setFaceLibraryPart, faceLibraryPage, setFaceLibraryPage,
     faceCatalogLibraryPart, setFaceCatalogLibraryPart, faceCatalogLibraryPage, setFaceCatalogLibraryPage

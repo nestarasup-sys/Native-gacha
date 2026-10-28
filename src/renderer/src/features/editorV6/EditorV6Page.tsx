@@ -851,7 +851,7 @@ export function EditorV6Page() {
           const imageHeight = baked.crop?.height ?? rendered.height
           const referenceCharacter = character.customization.poseSlot === null ? character : { ...character, customization: { ...character.customization, poseSlot: null } }
           const referenceRendered = referenceCharacter === character ? rendered : await renderSavedCharacter(referenceCharacter, undefined, undefined, 'idle')
-          const referenceCrop = referenceCharacter === character ? baked.crop : await trimTransparentImage(referenceRendered.dataUrl)
+          const referenceCrop = 'dataUrl' in referenceRendered ? await trimTransparentImage(referenceRendered.dataUrl) : baked.crop
           const referenceWidth = referenceCrop?.width ?? referenceRendered.width
           const referenceHeight = referenceCrop?.height ?? referenceRendered.height
           const asset: EditorV6Asset = { id: crypto.randomUUID(), category: 'character', name: character.name, mimeType: 'image/png', dataUrl: baked.dataUrl }
