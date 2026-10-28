@@ -17,6 +17,7 @@ import { renderCustomizerBasePreview } from './customizerCharacterPreview'
 import { useCustomizerFacePreview } from './useCustomizerFacePreview'
 import { useCustomizerHairPreview } from './useCustomizerHairPreview'
 import { useCustomizerWardrobePreview } from './useCustomizerWardrobePreview'
+import { useCustomizerWardrobeAdjustment } from './useCustomizerWardrobeAdjustment'
 import { sampleOriginalSkinTone } from './customizerPreviewImages'
 import { CustomizerCategoryIcon, clothesAdjustmentDefinitions, customizerClothesTabs, customizerHeadTabs, customizerModuleByTab, customizerModuleNames, customizerOtherTabs, customizerTopTabs, headAdjustmentItems, headAdjustmentItemsFor } from './customizerNavigation'
 import { adjustableHairPartIds, hairAppearancePartStyleId } from './customizerHairAppearanceModel'
@@ -31,7 +32,7 @@ import { characterBodyDimensionLimits, characterProportionLimits, defaultCharact
 import { usePreviewBackground } from '../../ui/hooks/usePreviewBackground'
 import { DesignBanner } from '../../ui/components/DesignBanner'
 import { anchorWardrobeAdjustments, editWardrobeAdjustment } from '../../../../shared/wardrobeAdjustment'
-import { toggleWardrobeVisibility, updateWardrobeComponentGroups, matchesWardrobeComponent, recolorWardrobeComponents, selectWardrobePanelComponents, wardrobeGroupCategoryForSource } from '../../../../shared/wardrobePlacementModel'
+import { toggleWardrobeVisibility, recolorWardrobeComponents, selectWardrobePanelComponents, wardrobeGroupCategoryForSource } from '../../../../shared/wardrobePlacementModel'
 import { applyCharacterBodyShape } from '../../../../shared/bodyShape'
 import { renderArtwork, loadStandardExpressionEffects, withCharacterHeadSize, isRightFaceAsset, characterShapeScale, resolvedHairColors, clothingCategories, wardrobeComponentsForGroup, customizerHairParts, hairAppearanceStyleId } from '../../characters/characterRenderer'
 import type { CatalogArtwork, HairCatalogSide, AdjustmentPreviewHighlight, ClothingGroupCategory, SelectedWardrobeComponent } from '../../characters/characterRenderer'
@@ -113,7 +114,6 @@ export function CustomizerPage() {
   const [selectedClothing, setSelectedClothing] = useState<SelectedWardrobeComponent | null>(null)
   const [unavailableWardrobeSetKeys, setUnavailableWardrobeSetKeys] = useState<string[]>([])
   const [repairingWardrobeLinks, setRepairingWardrobeLinks] = useState(false)
-  const [wardrobeTransformDraft, setWardrobeTransformDraft] = useState<Pick<CustomizerWardrobeGroup, 'offsetX' | 'offsetY' | 'scaleX' | 'scaleY' | 'rotation'> | null>(null)
   const [selectedWardrobeUrl, setSelectedWardrobeUrl] = useState<string | null>(null)
   const [selectedWardrobeAboveHairUrl, setSelectedWardrobeAboveHairUrl] = useState<string | null>(null)
   const [selectedArtworkProject, setSelectedArtworkProject] = useState<CatalogArtwork | null>(null)
@@ -350,12 +350,16 @@ export function CustomizerPage() {
     }
   }, [activeModule, clothesPanelTab, clothesCategorySelection, selectedCharacter?.id, selectedCharacter?.customization.wardrobeGroups, selectedClothing?.modelSlot, selectedClothing?.setId, selectedClothing?.category, selectedClothing?.componentId, wardrobeDetails])
 
-  useEffect(() => {
-    const group = selectedClothing
-      ? selectedCharacter?.customization.wardrobeGroups?.find((item) => item.modelSlot === selectedClothing.modelSlot && item.setId === selectedClothing.setId && item.category === selectedClothing.category && (item.componentId === selectedClothing.componentId || !item.componentId))
-      : undefined
-    setWardrobeTransformDraft(group ? { offsetX: group.offsetX, offsetY: group.offsetY, scaleX: group.scaleX, scaleY: group.scaleY, rotation: group.rotation } : null)
-  }, [selectedCharacter?.id, selectedCharacter?.customization.wardrobeGroups, selectedClothing?.modelSlot, selectedClothing?.setId, selectedClothing?.category, selectedClothing?.componentId])
+  const { wardrobeTransformDraft, updateClothesAdjustComponent } = useCustomizerWardrobeAdjustment({
+    selectedCharacter,
+    selectedClothing,
+    charactersRef,
+    wardrobeDetails,
+    displayArtworkParts: displayArtworkProject?.parts ?? [],
+    anchorWardrobe: anchorCurrentWardrobe,
+    saveCharacterCustomization,
+    setAdjustmentPreviewHighlight
+  })
 
   useEffect(() => {
     if (activeModule !== 'Modelos' || catalogLoading) return
@@ -1686,21 +1690,6 @@ export function CustomizerPage() {
       }
       return { partOverrides: { ...current.partOverrides, [key]: next } }
     })
-  }
-
-  const updateClothesAdjustComponent = async (operation: 'transform' | 'toggle-hidden', values?: Partial<Pick<CustomizerWardrobeGroup, 'offsetX' | 'offsetY' | 'scaleX' | 'scaleY' | 'rotation'>>) => {
-    if (!selectedCharacter || !selectedClothing) return
-    setAdjustmentPreviewHighlight(null)
-    const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
-    const originalGroups = current.customization.wardrobeGroups ?? []
-    const groups = anchorCurrentWardrobe(originalGroups)
-    const selectedSet = wardrobeDetails[`${selectedClothing.modelSlot}:${selectedClothing.setId}`]
-    const sourceCategories: WardrobeCategory[] = clothingCategories.Inferior.concat(clothingCategories.Superior).find((item) => item.id === selectedClothing.category)?.source ?? []
-    const selection = { modelSlot: selectedClothing.modelSlot, setId: selectedClothing.setId, category: selectedClothing.category, componentId: selectedClothing.componentId }
-    const nextGroups = updateWardrobeComponentGroups(groups, originalGroups, selection, operation, values, sourceCategories, selectedSet?.components, displayArtworkProject?.parts ?? [])
-    const adjusted = nextGroups.find((group) => matchesWardrobeComponent(group, selection))
-    if (values && adjusted) setWardrobeTransformDraft({ offsetX: adjusted.offsetX, offsetY: adjusted.offsetY, scaleX: adjusted.scaleX, scaleY: adjusted.scaleY, rotation: adjusted.rotation })
-    await saveCharacterCustomization({ wardrobeGroups: nextGroups })
   }
 
   const renderAdjustmentPicker = (area: 'head' | 'clothes') => {
