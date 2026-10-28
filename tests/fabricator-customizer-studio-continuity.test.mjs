@@ -108,6 +108,19 @@ test('preview inicial restaura modelo/pose e cede a requisição para seleção 
  assert.match(initialPreview,/previewLoadRequest\.current === requestId/)
  assert.match(manualSelection,/const requestId = \+\+previewLoadRequest\.current/)
 })
+test('catálogos faciais ficam isolados e mantêm carregamento legado e cancelamento',async()=>{
+ const [page,catalog]=await Promise.all([
+  readFile('src/renderer/src/features/customizer/CustomizerPage.tsx','utf8'),
+  readFile('src/renderer/src/features/customizer/useCustomizerFaceCatalog.ts','utf8')
+ ])
+ assert.match(page,/useCustomizerFaceCatalog\(/)
+ assert.match(catalog,/window\.desktop\.listFaceCatalog\(selectedModelSlot\)/)
+ assert.match(catalog,/window\.desktop\.listFaceComponentAssets\(selectedModelSlot\)/)
+ assert.match(catalog,/loadStandardExpressionEffects\(selectedModelSlot\)/)
+ assert.match(catalog,/if \(faceDetails\[key\]\) return/,'detalhes legados já carregados não são buscados novamente')
+ assert.match(catalog,/if \(cancelled\) return/,'respostas antigas não atualizam o catálogo após a troca de modelo')
+ assert.match(catalog,/!cancelled && activeModule === 'Cabeça'/,'erros de rostos continuam relevantes apenas na área facial')
+})
 test('preview unificado preserva identidade do modelo/pose, cores da personagem e cache do modelo',async()=>{
  const loadedSource={status:'ready',sourceProject:{slot:5,modelSkinTone:'#dba47d',modelOutlineColor:'#352522'},artwork:{width:200,height:300}}
  const cachedModel={slot:5,name:'Modelo em cache'}

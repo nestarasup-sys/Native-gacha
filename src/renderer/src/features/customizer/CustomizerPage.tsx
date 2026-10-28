@@ -17,6 +17,7 @@ import type { FaceCatalogChoice, FaceCatalogLayoutPart, FaceLibraryPartId } from
 import { hairColorControls, hairPalettePresets, MouthBlushControls, NoseOpacityControl, NoseSkinTonePalette, PiecePaletteStrip } from './CustomizerAppearanceControls'
 import { useCustomizerInitialArtworkPreview } from './useCustomizerInitialArtworkPreview'
 import { useCustomizerFacePreview } from './useCustomizerFacePreview'
+import { useCustomizerFaceCatalog } from './useCustomizerFaceCatalog'
 import { useCustomizerHairPreview } from './useCustomizerHairPreview'
 import { useCustomizerWardrobePreview } from './useCustomizerWardrobePreview'
 import { useCustomizerWardrobeAdjustment } from './useCustomizerWardrobeAdjustment'
@@ -43,7 +44,7 @@ import { usePreviewBackground } from '../../ui/hooks/usePreviewBackground'
 import { DesignBanner } from '../../ui/components/DesignBanner'
 import { anchorWardrobeAdjustments } from '../../../../shared/wardrobeAdjustment'
 import { applyCharacterBodyShape } from '../../../../shared/bodyShape'
-import { loadStandardExpressionEffects, withCharacterHeadSize, isRightFaceAsset, characterShapeScale, resolvedHairColors, clothingCategories, wardrobeComponentsForGroup, customizerHairParts } from '../../characters/characterRenderer'
+import { withCharacterHeadSize, isRightFaceAsset, characterShapeScale, resolvedHairColors, clothingCategories, wardrobeComponentsForGroup, customizerHairParts } from '../../characters/characterRenderer'
 import type { CatalogArtwork, SelectedWardrobeComponent } from '../../characters/characterRenderer'
 
 const proportionControls: Array<{ key: keyof CharacterProportions; label: string; description: string }> = [
@@ -322,63 +323,13 @@ export function CustomizerPage() {
     return () => { cancelled = true }
   }, [activeModule, headPanelTab, selectedCatalogModelSlot])
 
-  useEffect(() => {
-    if (selectedCatalogModelSlot === null) { setFaceCatalogItems([]); return }
-    let cancelled = false
-    setFaceLoading(true)
-    void window.desktop.listFaceCatalog(selectedCatalogModelSlot).then(async (summaries) => {
-      if (cancelled) return
-      setFaceCatalogItems(summaries)
-      const loaded = await Promise.all(summaries.map(async (summary) => ({ key: `${summary.modelSlot}:${summary.id}`, item: await window.desktop.loadFaceCatalogItem(summary.modelSlot, summary.id) })))
-      if (cancelled) return
-      setFaceCatalogDetails((current) => {
-        const next = { ...current }
-        for (const entry of loaded) if (entry.item) next[entry.key] = entry.item
-        return next
-      })
-    }).catch((reason: unknown) => {
-      if (!cancelled && activeModule === 'Cabeça') setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível carregar os rostos salvos.')
-    }).finally(() => { if (!cancelled) setFaceLoading(false) })
-    return () => { cancelled = true }
-  }, [selectedCatalogModelSlot, activeModule])
-
-  useEffect(() => {
-    if (selectedCatalogModelSlot === null) { setStandardExpressionEffects({}); return }
-    let cancelled = false
-    void loadStandardExpressionEffects(selectedCatalogModelSlot).then((effects) => {
-      if (!cancelled) setStandardExpressionEffects(effects)
-    }).catch((reason: unknown) => {
-      if (!cancelled) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível carregar os ajustes das expressões.')
-    })
-    return () => { cancelled = true }
-  }, [selectedCatalogModelSlot])
-
-  useEffect(() => {
-    if (selectedCatalogModelSlot === null) { setFaceComponentAssets([]); setFaceComponentDetails({}); setFaceComponentLoading(false); return }
-    let cancelled = false
-    setFaceComponentLoading(true)
-    void window.desktop.listFaceComponentAssets(selectedCatalogModelSlot).then(async (summaries) => {
-      const details = await Promise.all(summaries.map((summary) => window.desktop.loadFaceComponentAsset(selectedCatalogModelSlot, summary.id)))
-      if (cancelled) return
-      setFaceComponentAssets(summaries)
-      setFaceComponentDetails(Object.fromEntries(details.filter((item): item is FaceComponentAsset => Boolean(item)).map((item) => [item.id, item])))
-    }).catch((reason: unknown) => { if (!cancelled) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível carregar os assets faciais.') }).finally(() => { if (!cancelled) setFaceComponentLoading(false) })
-    return () => { cancelled = true }
-  }, [selectedCatalogModelSlot])
-
-  useEffect(() => {
-    const appearance = characterFaceAppearance
-    if (!appearance?.setId || appearance.modelSlot !== selectedCatalogModelSlot) return
-    let cancelled = false
-    const key = `${appearance.modelSlot}:${appearance.setId}`
-    if (faceDetails[key]) return
-    void window.desktop.loadFaceSet(appearance.modelSlot, appearance.setId).then((face) => {
-      if (!cancelled && face) setFaceDetails((current) => ({ ...current, [key]: face }))
-    }).catch((reason: unknown) => {
-      if (!cancelled) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível carregar o rosto legado.')
-    })
-    return () => { cancelled = true }
-  }, [characterFaceAppearance, faceDetails, selectedCatalogModelSlot])
+  useCustomizerFaceCatalog({
+    selectedModelSlot: selectedCatalogModelSlot, activeModule,
+    appearance: characterFaceAppearance, faceDetails,
+    setFaceCatalogItems, setFaceCatalogDetails, setStandardExpressionEffects,
+    setFaceComponentAssets, setFaceComponentDetails, setFaceDetails,
+    setFaceLoading, setFaceComponentLoading, setCatalogError
+  })
 
   useEffect(() => {
     if (selectedCatalogModelSlot === null || !(activeModule === 'Cabelos' || activeModule === 'Cabeça' && headPanelTab === 'hair')) { setHairStyles([]); return }
