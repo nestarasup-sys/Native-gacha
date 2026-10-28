@@ -22,9 +22,10 @@ import { useCustomizerWardrobePreview } from './useCustomizerWardrobePreview'
 import { useCustomizerWardrobeAdjustment } from './useCustomizerWardrobeAdjustment'
 import { useCustomizerWardrobePanelActions } from './useCustomizerWardrobePanelActions'
 import { useCustomizerHeadAdjustment } from './useCustomizerHeadAdjustment'
+import { useCustomizerAdjustmentPreview } from './useCustomizerAdjustmentPreview'
 import { sampleOriginalSkinTone } from './customizerPreviewImages'
 import { CustomizerCategoryIcon, clothesAdjustmentDefinitions, customizerClothesTabs, customizerHeadTabs, customizerModuleByTab, customizerModuleNames, customizerOtherTabs, customizerTopTabs, headAdjustmentItemsFor } from './customizerNavigation'
-import { adjustableHairPartIds, hairAppearancePartStyleId } from './customizerHairAppearanceModel'
+import { hairAppearancePartStyleId } from './customizerHairAppearanceModel'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { RenderedCharacterPortrait } from '../../ui/components/RenderedCharacterPortrait'
 import { Icon } from '../../ui/components/Icon'
@@ -38,7 +39,7 @@ import { anchorWardrobeAdjustments } from '../../../../shared/wardrobeAdjustment
 import { wardrobeGroupCategoryForSource } from '../../../../shared/wardrobePlacementModel'
 import { applyCharacterBodyShape } from '../../../../shared/bodyShape'
 import { renderArtwork, loadStandardExpressionEffects, withCharacterHeadSize, isRightFaceAsset, characterShapeScale, resolvedHairColors, clothingCategories, wardrobeComponentsForGroup, customizerHairParts, hairAppearanceStyleId } from '../../characters/characterRenderer'
-import type { CatalogArtwork, HairCatalogSide, AdjustmentPreviewHighlight, SelectedWardrobeComponent } from '../../characters/characterRenderer'
+import type { CatalogArtwork, HairCatalogSide, SelectedWardrobeComponent } from '../../characters/characterRenderer'
 
 const proportionControls: Array<{ key: keyof CharacterProportions; label: string; description: string }> = [
   { key: 'scale', label: 'Escala geral', description: 'Aumenta ou diminui o personagem inteiro' },
@@ -111,7 +112,6 @@ export function CustomizerPage() {
   } = useCustomizerAssetLibraryState<WardrobePanel, FaceLibraryPartId>()
   const [headPanelTab, setHeadPanelTab] = useState<'hair' | 'eyes' | 'face' | 'extra' | 'adjust'>('hair')
   const [headCategorySelection, setHeadCategorySelection] = useState<'hair' | 'eyes' | 'face' | 'extra'>('hair')
-  const [adjustmentPreviewHighlight, setAdjustmentPreviewHighlight] = useState<AdjustmentPreviewHighlight | null>(null)
   const [activeHairColorRole, setActiveHairColorRole] = useState<HairColorRole>('base')
   const [selectedClothing, setSelectedClothing] = useState<SelectedWardrobeComponent | null>(null)
   const [unavailableWardrobeSetKeys, setUnavailableWardrobeSetKeys] = useState<string[]>([])
@@ -133,7 +133,6 @@ export function CustomizerPage() {
   const customizerPreviewStageRef = useRef<HTMLDivElement>(null)
   const mainPreviewStageRef = useRef<HTMLDivElement>(null)
   const customizerPreviewPanDragRef = useRef<{ pointerId: number; startX: number; startY: number; originX: number; originY: number } | null>(null)
-  const adjustmentLastTargetRef = useRef<AdjustmentPreviewHighlight | null>(null)
   const selectedCharacter = characters.find((character) => character.id === selectedCharacterId) ?? characters[0] ?? null
   const { selectCharacter, saveCharacter, saveCharacterCustomization } = useCustomizerCharacterCommands({
     charactersRef, characterSaveQueue, setCharacters, selectedCharacter,
@@ -167,20 +166,18 @@ export function CustomizerPage() {
     setSelectedPoseCategory, setSelectedPosePage, setSelectedArtworkLabel, setSelectedArtworkUrl,
     setSelectedArtworkProject, setSelectedSourceModelProject, setPreviewLoading, setCatalogError
   })
-  const activeHeadPreviewHighlight = activeModule === 'Cabeça' && headPanelTab === 'adjust' && adjustmentPreviewHighlight?.scope === 'head' ? adjustmentPreviewHighlight.id : null
-  const activeFacePreviewHighlight = activeHeadPreviewHighlight && !adjustableHairPartIds.has(activeHeadPreviewHighlight) ? activeHeadPreviewHighlight : null
-  const activeHairPreviewHighlight = activeHeadPreviewHighlight && adjustableHairPartIds.has(activeHeadPreviewHighlight) ? activeHeadPreviewHighlight : null
-  const activeClothingPreviewHighlight = activeModule === 'Roupas' && clothesPanelTab === 'adjust' && adjustmentPreviewHighlight?.scope === 'clothing' ? adjustmentPreviewHighlight : null
-  const activeWardrobePreviewHighlight = activeClothingPreviewHighlight ?? (activeHeadPreviewHighlight === 'oculos' || activeHeadPreviewHighlight === 'acessorio-cabeca' ? { scope: 'head' as const, id: activeHeadPreviewHighlight } : null)
-  const selectAdjustmentPreviewTarget = (target: AdjustmentPreviewHighlight) => {
-    const previous = adjustmentLastTargetRef.current
-    const sameTarget = previous?.scope === target.scope && (target.scope === 'head'
-      ? previous.scope === 'head' && previous.id === target.id
-      : previous.scope === 'clothing' && previous.piece.modelSlot === target.piece.modelSlot && previous.piece.setId === target.piece.setId && previous.piece.category === target.piece.category && previous.piece.componentId === target.piece.componentId)
-    adjustmentLastTargetRef.current = target
-    if (!sameTarget) setAdjustmentPreviewHighlight(target)
-  }
-  useEffect(() => { adjustmentLastTargetRef.current = null; setAdjustmentPreviewHighlight(null) }, [selectedCharacter?.id, activeModule, headPanelTab, headCategorySelection, clothesPanelTab, clothesCategorySelection])
+  const {
+    setAdjustmentPreviewHighlight,
+    activeFacePreviewHighlight, activeHairPreviewHighlight, activeWardrobePreviewHighlight,
+    selectAdjustmentPreviewTarget
+  } = useCustomizerAdjustmentPreview({
+    characterId: selectedCharacter?.id,
+    activeModule,
+    headPanelTab,
+    headCategorySelection,
+    clothesPanelTab,
+    clothesCategorySelection
+  })
   const selectedSkinTone = selectedCharacter?.customization.modelSkinTone
   const activeShapeScale = characterShapeScale(activeProportions)
   const displayArtworkProject = useMemo(() => selectedArtworkProject ? applyCharacterBodyShape(withCharacterHeadSize(selectedArtworkProject, activeProportions), activeBodyDimensions) : null, [selectedArtworkProject, activeProportions.head, activeProportions.headWidth, activeProportions.headHeight, activeBodyDimensions])
