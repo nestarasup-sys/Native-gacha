@@ -31,8 +31,10 @@ test('Studio e Editor V6 enfileiram salvamentos antes de chamar seus canais IPC'
    readFile('src/renderer/src/features/studio/StudioPage.tsx','utf8'),
    readFile('src/renderer/src/features/editorV6/EditorV6Page.tsx','utf8')
  ])
+ assert.ok(studio.includes("from '../../../../shared/serializedDocumentSave'"))
+ assert.ok(editorV6.includes("from '../../../../shared/serializedDocumentSave'"))
  assert.ok(studio.includes('studioSaveQueue.current.run(async () =>'))
  assert.ok(studio.includes('await window.desktop.saveStudio(next)'))
-  assert.ok(editorV6.includes('studioSaveQueue.current.run(async () =>'))
-  assert.ok(editorV6.includes('await window.desktop.saveEditorV6Project(next)'))
+ assert.ok(editorV6.includes('studioSaveQueue.current.run(async () =>'))
+ assert.ok(editorV6.includes('await window.desktop.saveEditorV6Project(next)'))
 })

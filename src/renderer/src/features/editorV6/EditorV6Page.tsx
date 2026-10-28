@@ -1,5 +1,5 @@
 import { editorV6CharacterRenderKey, editorV6ElementSize } from '../../../../shared/editorV6SceneModel'
-import { SerializedDocumentSaveQueue } from '../../../../shared/editorV6DocumentSave'
+import { SerializedDocumentSaveQueue } from '../../../../shared/serializedDocumentSave'
 import { isPoseSnapshotForModel } from '../../../../shared/characterSourceContinuity'
 import { useEditorV6Store } from './editorV6Store'
 import { createEditorV6Timeline, EDITOR_V6_DEFAULT_VIDEO_LAYOUT, editorV6DefaultVideoLayout, syncEditorV6TimelineElements } from '../../../../shared/editorV6'

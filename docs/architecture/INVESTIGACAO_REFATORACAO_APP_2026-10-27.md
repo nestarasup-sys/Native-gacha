@@ -297,6 +297,7 @@ Este corte separa propriedade dos contratos e chamadas entre domínios, mas não
 - Os diretórios físicos legados `video-studio.media` e `video-studio.backgrounds` permanecem em `DomainFileSystem`, `DataPlatform` e `dataMigration`. São caminhos de dados existentes e não foram renomeados, apagados nem migrados.
 - A antiga auditoria de isolamento de Studio/Video Studio foi retirada, sem substituição por um teste visual Studio/Editor V6 nesta etapa. O catálogo mantém as auditorias rápidas com código atual; uma nova auditoria visual das telas atuais pode ser criada quando a interface e seus seletores estiverem mapeados.
 - O catálogo agora contém sete auditorias registradas, seis rápidas e uma manual. Os testes que conferem esses metadados foram ajustados, mas não foram executados nesta etapa.
+- Studio e Editor V6 agora usam `src/shared/serializedDocumentSave.ts`; o algoritmo de fila era idêntico em dois módulos e continua instanciado separadamente por tela, preservando os canais e as políticas próprias de cada documento.
 
 ## 7. Próxima tarefa recomendada
 
