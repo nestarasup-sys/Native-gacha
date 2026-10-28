@@ -303,6 +303,7 @@ Este corte separa propriedade dos contratos e chamadas entre domínios, mas não
 
 - `characterRenderer.ts` serve Customizador, Studio, Roteiros e previews do Fabricador. `editorV6CharacterRenderer.ts` contém praticamente a mesma composição; a diferença de implementação está concentrada em tipos faciais, modo `talk-blink`, cache de imagem e descarte explícito de canvases.
 - Extraí o LRU de decodificação para `characters/characterImageCache.ts`. Os dois renderizadores agora compartilham a regra e o limite de 512 itens, mantendo instâncias separadas para que a pressão de memória e a política de descarte do Editor V6 não mudem.
+- Studio e Editor V6 também usam agora `src/shared/faceMouthSelection.ts` para resolver a mesma peça de boca; os nomes antigos `resolveStudioTalkMouthId` e `resolveEditorV6TalkMouthId` continuam exportados como aliases de compatibilidade.
 - O próximo passo do ciclo é extrair uma API de composição comum que aceite as políticas faciais de cada editor e respeite o `dispose()` do Editor V6. Não trocar o renderizador de nenhum consumidor até comparar os fixtures visuais existentes.
 
 ## 7. Próxima tarefa recomendada

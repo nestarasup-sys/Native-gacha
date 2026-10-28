@@ -1,7 +1,8 @@
 import type { CustomizerFaceAppearance } from './customizer'
-import type { FaceCatalogItemSummary, FaceExpressionEffects, FaceTransform } from './fabricator'
+import type { FaceExpressionEffects, FaceTransform } from './fabricator'
 import type { EditorV6ExportAudio, EditorV6ExportOptions, EditorV6ExportStatus } from './editorV6Export'
 import type { EditorV6MotionAtlas, EditorV6MotionBakeRequest, EditorV6MotionBakeResult, EditorV6MotionSprite } from './editorV6Motion'
+export { resolveTalkMouthCatalogId as resolveEditorV6TalkMouthId } from './faceMouthSelection'
 
 export type EditorV6Asset = {
   id: string
@@ -36,21 +37,6 @@ export type EditorV6FaceTransformCategory = 'eyes' | 'eyebrows' | 'nose' | 'mout
 /** EditorV6-local playback state for the character's neutral, blink, or speaking face. */
 export type EditorV6FaceMode = 'idle' | 'blink' | 'talk'
 export type EditorV6FaceRenderMode = EditorV6FaceMode | 'talk-blink'
-
-/** Use the character's talk sheet, its legacy paired sheet, or the model's Dev default. */
-export function resolveEditorV6TalkMouthId(
-  appearance: Pick<CustomizerFaceAppearance, 'mouthOpenCatalogId' | 'mouthClosedCatalogId'> | undefined,
-  catalog: readonly FaceCatalogItemSummary[]
-): string | undefined {
-  if (appearance?.mouthOpenCatalogId) return appearance.mouthOpenCatalogId
-  const legacyClosed = appearance?.mouthClosedCatalogId?.match(/^legacy_(.+)_mouth-closed$/)
-  const legacyTalkId = legacyClosed ? `legacy_${legacyClosed[1]}_mouth-open` : undefined
-  const legacyTalk = legacyTalkId && catalog.find((item) => item.id === legacyTalkId && item.category === 'mouth-open')
-  if (legacyTalk) return legacyTalk.id
-  return catalog
-    .filter((item) => item.category === 'mouth-open')
-    .sort((left, right) => left.name.localeCompare(right.name, 'pt-BR') || left.id.localeCompare(right.id))[0]?.id
-}
 
 /** Keys are category:itemId; bare category keys remain supported for older EditorV6 data. */
 export type EditorV6FaceTransforms = Record<string, EditorV6FaceTransform>
