@@ -7,6 +7,8 @@ import { CustomizerClothesAdjustmentPanel } from './CustomizerClothesAdjustmentP
 import { upperWardrobePanels, upperWardrobePageTwoPanels, accessoryWardrobePanels, lowerWardrobePanels, lowerWardrobePageTwoPanels, wardrobeComponentMatchesPanel, isWardrobePanelCandidateSelected, renderWardrobeThumbnail } from './wardrobePanelModel'
 import type { WardrobePanel, WardrobePanelCandidate } from './wardrobePanelModel'
 import { HairAssetPreview, WardrobePanelCandidatePreview } from './CustomizerAssetPreviews'
+import { customizerFaceParts, customizerSkinTonePresets, facePartCatalogId, facePartColorControls, facePartSourceId, hasSelectedFaceAsset, mirroredFaceThumbnailIds, sameFaceAssetPair, skinTonePresets, wrapSlotIndex } from './customizerFaceCatalogModel'
+import type { FaceLibraryPartId } from './customizerFaceCatalogModel'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { RenderedCharacterPortrait } from '../../ui/components/RenderedCharacterPortrait'
 import { Icon, type IconName } from '../../ui/components/Icon'
@@ -54,57 +56,6 @@ const hairPalettePresets: Array<{ name: string; colors: HairColorOverrides }> = 
   { name: 'Verde musgo', colors: { base: '#6e8556', fade: '#4a633e', outline: '#2c4130', highlight: '#a9bc7b', accent: '#d6d0a3' } },
   { name: 'Turquesa', colors: { base: '#399f9e', fade: '#2a7079', outline: '#204753', highlight: '#8bd8cf', accent: '#c0eee1' } }
 ]
-type FaceLibraryPartId = FaceComponentPartId
-const customizerFaceParts: Array<{ id: FaceLibraryPartId; label: string; category: FaceComponentKind; element?: 'eye-left' | 'eye-right' | 'brow-left' | 'brow-right'; side: 'left' | 'right' }> = [
-  { id: 'eye-left', label: 'Olho esquerdo', category: 'eye', element: 'eye-left', side: 'left' },
-  { id: 'eye-right', label: 'Olho direito', category: 'eye', element: 'eye-right', side: 'right' },
-  { id: 'pupil-left', label: 'Pupila esquerda', category: 'pupil', side: 'left' },
-  { id: 'pupil-right', label: 'Pupila direita', category: 'pupil', side: 'right' },
-  { id: 'brow-left', label: 'Sobrancelha esquerda', category: 'eyebrow', element: 'brow-left', side: 'left' },
-  { id: 'brow-right', label: 'Sobrancelha direita', category: 'eyebrow', element: 'brow-right', side: 'right' }
-]
-const facePartColorControls: Array<{ id: HairColorRole; label: string; fallback: string }> = [
-  { id: 'base', label: 'Base', fallback: '#55404d' }, { id: 'fade', label: 'Degradê', fallback: '#8a687e' },
-  { id: 'outline', label: 'Contorno', fallback: '#251e2c' }, { id: 'highlight', label: 'Luzes', fallback: '#d6b7c7' },
-  { id: 'accent', label: 'Acento', fallback: '#bd7198' }
-]
-function facePartCatalogId(appearance: CustomizerFaceAppearance | undefined, part: typeof customizerFaceParts[number]): string | null | undefined {
-  return appearance?.components?.[part.id]?.assetId
-}
-function facePartSourceId(part: typeof customizerFaceParts[number]): FaceLibraryPartId {
-  return part.id
-}
-function hasSelectedFaceAsset(appearance: CustomizerFaceAppearance): boolean {
-  return Boolean(appearance.setId
-    || appearance.eyeCatalogId || appearance.eyeLeftCatalogId || appearance.eyeRightCatalogId
-    || appearance.eyebrowCatalogId || appearance.eyebrowLeftCatalogId || appearance.eyebrowRightCatalogId
-    || appearance.noseCatalogId || appearance.mouthClosedCatalogId || appearance.mouthOpenCatalogId
-    || Object.values(appearance.components ?? {}).some((component) => component?.assetId)
-    || Object.values(appearance.faceDetails ?? {}).some(Boolean)
-    || Object.values(appearance.headExtras ?? {}).some(Boolean))
-}
-function wrapSlotIndex(index: number, slotCount: number): number {
-  return slotCount > 0 ? (index % slotCount + slotCount) % slotCount : 0
-}
-function sameFaceAssetPair(left: FaceComponentAssetSummary, right: FaceComponentAssetSummary, details: Record<string, FaceComponentAsset>): boolean {
-  if (left.kind !== right.kind || !isRightFaceAsset(right)) return false
-  if (left.pairId || right.pairId) return Boolean(left.pairId && left.pairId === right.pairId || right.pairId === left.id)
-  const leftDetail = details[left.id]
-  const rightDetail = details[right.id]
-  const baseName = (name: string) => name.replace(/ · (?:Olho|Olho aberto|Olho fechado|Pupila|Sobrancelha) (?:esquerd[oa]|direit[oa])$/i, '')
-  return Boolean(leftDetail && rightDetail && !isRightFaceAsset(left) && baseName(left.name) === baseName(right.name) && leftDetail.dataUrl === rightDetail.dataUrl)
-}
-const skinTonePresets = [
-  { id: '#f5ddcb', name: 'Porcelana' },
-  { id: '#edc5a5', name: 'Clara' },
-  { id: '#dba47d', name: 'Pêssego' },
-  { id: '#c88961', name: 'Dourada' },
-  { id: '#a96d4c', name: 'Média' },
-  { id: '#754a36', name: 'Escura' },
-  { id: '#493027', name: 'Retinta' }
-] as const
-const customizerSkinTonePresets = [skinTonePresets[0], skinTonePresets[1], skinTonePresets[2], skinTonePresets[4], skinTonePresets[6]]
-
 async function sampleOriginalSkinTone(project: FabricatorProject): Promise<string | null> {
   const head = project.parts.find((part) => /cabe[çc]a|head/i.test(part.name))
   if (!head) return null
@@ -160,8 +111,6 @@ function preparePreviewImage(source: string | null): Promise<boolean> {
   })
 }
 
-
-const mirroredFaceThumbnailIds = new Set<FaceComponentPartId>(['eye-right', 'pupil-right', 'brow-right'])
 
 function NoseOpacityControl({ value, disabled, onChange }: { value: number; disabled: boolean; onChange: (value: number) => void }) {
   const [open, setOpen] = useState(false)

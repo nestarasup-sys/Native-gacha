@@ -1,11 +1,10 @@
 import type { FaceCatalogItem, FaceComponentAsset, FaceComponentAssetSummary, FaceElementKind } from '../../../shared/fabricator'
 import type { CharacterRenderAssetProvider } from '../../../shared/characterRenderAssets'
+import { isRightFaceAsset } from '../../../shared/faceLibrarySelection'
+
+export { isRightFaceAsset }
 
 export const faceElementOrder: FaceElementKind[] = ['brow-left', 'brow-right', 'eye-left', 'eye-right', 'nose', 'mouth']
-
-export function isRightFaceAsset(asset: FaceComponentAssetSummary): boolean {
-  return asset.rightSidePositioned === true || / · (?:Olho|Olho aberto|Olho fechado|Pupila|Sobrancelha) direit[oa]$/i.test(asset.name)
-}
 
 export function transferEyeCloseAdjustment(openBase: FaceComponentAsset['defaultTransform'], openCurrent: FaceComponentAsset['defaultTransform'], closedBase: FaceComponentAsset['defaultTransform']): FaceComponentAsset['defaultTransform'] {
   return {

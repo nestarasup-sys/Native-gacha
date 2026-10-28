@@ -1,5 +1,9 @@
 import type { FaceComponentAssetSummary } from './fabricator'
 
+export function isRightFaceAsset(asset: FaceComponentAssetSummary): boolean {
+  return asset.rightSidePositioned === true || / · (?:Olho|Olho aberto|Olho fechado|Pupila|Sobrancelha) direit[oa]$/i.test(asset.name)
+}
+
 /** Olhos DEV selection identity is local to the user's editor.
  * Using the same key when constructing a NEW Presets DEV set does not modify
  * previously saved expressions or copy their transform deltas.

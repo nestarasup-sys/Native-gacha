@@ -14,7 +14,7 @@ A **Biblioteca de Mídia** é dona dos arquivos de vídeo e seus IDs. Base de V�
 
 O restante já tem módulos por domínio e armazenamento local com SQLite, arquivos e CAS. Os maiores pontos de concentração são `electron/main.ts`, que ainda registra 52 handlers IPC inline, e páginas React extensas que combinam estado e coordenação de operações. O plano prioriza limites de propriedade, segurança dos dados e redução de responsabilidades por fluxo.
 
-**Próximos passos:** mapear e consolidar a composição de personagens entre Fabricador, Customizador, Studio, Roteiros e Editor V6, usando fixtures visuais antes de trocar os renderizadores.
+**Próximos passos:** concluir a modularização por responsabilidade das páginas grandes, começando pelo Customizador. A composição compartilha algoritmos visuais de baixo nível; a orquestração e os modos de render continuam próprios de Studio e Editor V6 até existir comparação visual das saídas reais.
 
 ## 1. Estado observado
 
@@ -29,7 +29,7 @@ O restante já tem módulos por domínio e armazenamento local com SQLite, arqui
 - O shell tem sete rotas de produto: Customizador, Studio principal, Editor V6, Roteiros, Base de Vídeos, Opções e Fabricador DEV.
 - `electron/domains/` contém módulos para Base de Vídeos, Customizador, Editor V6, Fabricador, Roteiros, armazenamento compartilhado e Studio. `src/shared/` guarda contratos e regras usadas por mais de um processo.
 - `electron/main.ts` tem 2.097 linhas após as extrações mais recentes e ainda registra 52 handlers IPC diretamente; também compõe serviços que já foram separados em módulos.
-- As páginas mais extensas são Customizador (2.776 linhas), Editor V6 (1.788), Studio (1.564) e Fabricador Dev (1.107). Roteiros tem 535, Base de Vídeos 362 e Opções 216 linhas. Esses números localizam concentração de responsabilidades, mas não são por si só motivo para dividir arquivos.
+- As páginas mais extensas são Customizador (2.536 linhas), Editor V6 (1.706), Studio (1.487) e Fabricador Dev (1.045). Roteiros tem 535, Base de Vídeos 362 e Opções 216 linhas. Esses números localizam concentração de responsabilidades, mas não são por si só motivo para dividir arquivos.
 - A auditoria estática de dependências mantém em zero os imports de runtime entre os pares de features listados em `scripts/architecture/boundaries-baseline.json`.
 
 ### Mapa resumido
@@ -173,13 +173,13 @@ Editor V6
 - **Contrato desktop:** `electron/preload.ts` constrói o objeto protegido `window.desktop`; contratos de domínio ficam em `src/shared/` e a declaração global em `desktop.d.ts`. As APIs de Base, mídia, Studio e Editor V6 já têm nomes próprios; ainda há APIs de Fabricador, Roteiros, Customizador e Opções no objeto raiz.
 - **Composição:** `electron/main.ts` inicializa Electron, filesystem, migrações e bibliotecas, registra IPC, conecta serviços e conserva 52 handlers inline. Os módulos em `electron/domains/` já removem vários desses fluxos da raiz.
 - **Dados:** `electron/dataPlatform.cjs` possui schema e catálogo SQLite centralizados; `DomainFileSystem` permite caminhos lógicos sobre armazenamento físico/CAS; cada domínio mantém manifestos e arquivos próprios. Os nomes antigos dos diretórios são parte da compatibilidade.
-- **Renderização compartilhada:** `src/shared/` contém contratos/regras puras de geometria, seleção, timelines e expressões; há consumers visuais separados nas features. Ainda falta comparar e consolidar os caminhos de composição do personagem usando os fixtures dourados antes de compartilhar implementação.
+- **Renderização compartilhada:** `characters/` já compartilha cache de imagem, materiais preparados, tintura, presets de expressão e composição de camadas, roupas e rosto de catálogo. Os renderizadores mantêm suas próprias fachadas, políticas e ciclo de vida. Ainda falta comparar saídas reais de Studio e Editor V6 antes de unificar a orquestração completa.
 
 ### Dívida estrutural geral
 
 1. **Composition root inchado:** `electron/main.ts` tem 2.097 linhas e registra 52 `ipcMain.handle` diretamente. Ele faz mais do que inicializar o app: mantém persistência e fluxos de arquivos e catálogos. A direção é extrair handlers e casos de uso restantes para domínios, mantendo `main.ts` como composição e ciclo de vida.
 2. **Preload amplo:** `electron/preload.ts` reúne os métodos de Fabricador, Customizador, Studio, Editor V6, mídia e Roteiros; `desktop.d.ts` espelha essa união. Base de Vídeos e Biblioteca de Mídia já têm namespaces próprios; os demais contratos ainda podem ficar mais explícitos sem trocar imediatamente os canais IPC.
-3. **Páginas longas:** Customizador (2.776 linhas), Editor V6 (1.788), Studio (1.564) e Fabricador Dev (1.107) ainda concentram estado e operações. A refatoração deve extrair casos de uso, seletores, hooks e componentes por responsabilidade, sem dividir apenas para reduzir contagem de linhas.
+3. **Páginas longas:** Customizador (2.536 linhas), Editor V6 (1.706), Studio (1.487) e Fabricador Dev (1.045) ainda concentram estado e operações. A refatoração deve extrair casos de uso, seletores, hooks e componentes por responsabilidade, sem dividir apenas para reduzir contagem de linhas.
 4. **Núcleo de renderização de personagem:** Fabricador, Customizador, Studio e Editor V6 consomem modelos e composições em contextos diferentes. Um núcleo compartilhado exige contratos claros e fixtures visuais douradas antes de trocar os caminhos atuais.
 5. **Persistência heterogênea:** algumas áreas já usam serviços/repositórios/filas, outras gravam diretamente no `main.ts`. Cada domínio precisa declarar quem é dono do formato, fila, backup, recuperação e validade de referências.
 6. **Storage distribuído:** bibliotecas e projetos usam caminhos legados em `app-data/runtime/profile/...` sobre a infraestrutura DataPlatform/CAS. Não renomear diretórios por estética; caminhos fazem parte da compatibilidade e dos dados do usuário.
@@ -206,13 +206,14 @@ Editor V6
 
 ### Ciclo 3 — Renderização de personagens compartilhada
 
-- Criar um núcleo independente de tela para resolver modelo, pose, expressão, roupas, cabelo, rosto e overrides do personagem.
-- Usar o mesmo núcleo nos consumidores necessários sem importar páginas React entre features.
-- Comparar resultados com fixtures douradas existentes de personagem/expressão/roupa antes de trocar os renderizadores.
+- **Aplicado em parte:** cache de imagens, materiais preparados, tintura, presets de expressão e desenho de camadas, roupas e rosto de catálogo foram movidos para módulos reutilizáveis sob `characters/`.
+- As fachadas continuam mantendo as políticas de Studio/Editor V6, inclusive piscar, boca falada e descarte de canvas.
+- **Pendente antes de unificar a orquestração:** comparar as saídas reais dos dois renderizadores com fixtures visuais douradas; o teste sintético existente não executa essas fachadas.
 
 ### Ciclo 4 — Modularização das páginas grandes
 
 - Customizador: roster, comandos, navegador de modelo e biblioteca de assets já têm hooks próprios. `CustomizerAssetPreviews.tsx` agora é dona da prévia recortada de cabelo e da prévia de candidatos de roupa; a cache local continua junto ao componente que a consome.
+- `customizerFaceCatalogModel.ts` concentra seleção/pareamento de assets faciais, slots, partes e presets de pele/cor que antes estavam junto à página. A regra pura de identificação do lado direito agora pertence a `src/shared/faceLibrarySelection.ts`, preservando os reexports que os renderizadores já expunham.
 - Continuar separando renderização do personagem e painéis do Customizador sem alterar o estado persistido.
 - Fabricador: separar workspaces e comandos de catálogo; preservar transações, histórico e snapshots.
 - Studio e Editor V6: separar estado/documento, timeline/cena, exportação e painel; não compartilhar engines por semelhança visual sem contrato explícito.
@@ -322,11 +323,12 @@ Este corte separa propriedade dos contratos e chamadas entre domínios, mas não
 
 ## 7. Próxima tarefa recomendada
 
-Continuar pelo **Ciclo 3**: comparar os caminhos de composição de personagem e formalizar um núcleo compartilhado para modelos, poses, expressões, roupas e overrides. Usar os fixtures visuais dourados como critério de equivalência antes de migrar qualquer consumidor.
+Continuar pelo **Ciclo 4** com módulos focados de UI e coordenação no Customizador, Fabricador, Studio e Editor V6. Em paralelo, preparar fixtures visuais sintéticas que capturem as saídas reais de Studio e Editor V6; só então decidir se as fachadas de renderização podem compartilhar mais da orquestração.
 
 ## 8. Verificações e validação
 
 - Leitura do código atual de rotas, TopBar, preload, contratos compartilhados, Base de Vídeos, Roteiros, Editor V6, VideoLibrary, boot Electron, módulos de domínio, renderizadores, schema SQLite e ADRs.
 - A etapa anterior moveu as consultas de referência para os domínios donos e `npm run test:base-videos` passou com 7 verificações sintéticas. Nenhum perfil ou mídia real foi usado.
 - Nas etapas recentes, `git diff --check` e `node --experimental-strip-types --check` nos arquivos TypeScript alterados passaram. `npm run typecheck` e `npm run audit:architecture` não iniciaram porque as dependências locais (`tsc`/pacote `typescript`) não estão instaladas; os testes de regressão não foram executados.
+- No ciclo 4, a extração de previews foi copiada do componente existente; a seleção facial e seus presets foram movidos sem mudar as regras. `git diff --check` é a verificação estática desta etapa; TypeScript/TSX ainda não foi validado pelo compilador porque as dependências locais não estão disponíveis.
 - Typecheck, auditoria de arquitetura, build e regressões das etapas recentes ficam pendentes até as dependências do projeto estarem disponíveis.
