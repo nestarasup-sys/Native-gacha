@@ -12,9 +12,9 @@ O aplicativo tem sete áreas em uma shell Electron/React. A separação de Base 
 
 A **Biblioteca de Mídia** é dona dos arquivos de vídeo e seus IDs. Base de Vídeos guarda estado editorial e numeração; Roteiros e Editor V6 guardam referências por ID. Uma coordenação curta agora serializa alterações nesses vínculos nas três áreas, evitando que um autosave atrasado recoloque a referência depois de excluir o vídeo.
 
-O restante já tem módulos por domínio e armazenamento local com SQLite, arquivos e CAS. Os maiores pontos de concentração são `electron/main.ts`, que ainda registra 63 handlers IPC inline, e páginas React extensas que combinam estado e coordenação de operações. O plano prioriza limites de propriedade, segurança dos dados e redução de responsabilidades por fluxo.
+O restante já tem módulos por domínio e armazenamento local com SQLite, arquivos e CAS. Os maiores pontos de concentração são `electron/main.ts`, que ainda registra 57 handlers IPC inline, e páginas React extensas que combinam estado e coordenação de operações. O plano prioriza limites de propriedade, segurança dos dados e redução de responsabilidades por fluxo.
 
-**Próximos passos:** concluir a extração das exportações de Roteiros; depois modularizar composição de personagens e páginas grandes com fixtures visuais existentes.
+**Próximos passos:** mapear e consolidar a composição de personagens entre Fabricador, Customizador, Studio, Roteiros e Editor V6, usando fixtures visuais antes de trocar os renderizadores.
 
 ## 1. Estado observado
 
@@ -28,7 +28,7 @@ O restante já tem módulos por domínio e armazenamento local com SQLite, arqui
 
 - O shell tem sete rotas de produto: Customizador, Studio principal, Editor V6, Roteiros, Base de Vídeos, Opções e Fabricador DEV.
 - `electron/domains/` contém módulos para Base de Vídeos, Customizador, Editor V6, Fabricador, Roteiros, armazenamento compartilhado e Studio. `src/shared/` guarda contratos e regras usadas por mais de um processo.
-- `electron/main.ts` tem 2.294 linhas nesta revisão e ainda registra 63 handlers IPC diretamente; também compõe serviços que já foram separados em módulos.
+- `electron/main.ts` tem 2.221 linhas nesta revisão e ainda registra 57 handlers IPC diretamente; também compõe serviços que já foram separados em módulos.
 - As páginas mais extensas são Customizador (2.776 linhas), Editor V6 (1.788), Studio (1.564) e Fabricador Dev (1.107). Roteiros tem 535, Base de Vídeos 362 e Opções 216 linhas. Esses números localizam concentração de responsabilidades, mas não são por si só motivo para dividir arquivos.
 - A auditoria estática de dependências mantém em zero os imports de runtime entre os pares de features listados em `scripts/architecture/boundaries-baseline.json`.
 
@@ -163,7 +163,7 @@ Editor V6
 | Customizador | `features/customizer/CustomizerPage.tsx`; instâncias de personagens e escolhas/overrides individuais. | `domains/customizer/` tem validação, serviço, repositório e IPC; lê catálogos do Fabricador e alimenta Studio, Roteiros e Editor V6. | Renderização e coordenação de estado ainda estão concentradas na página. |
 | Studio principal | `features/studio/StudioPage.tsx`; documento de cena e composição. | `domains/studio/` tem IPC primário, índice e persistência; usa personagens do Customizador e armazenamento visual comum. | Separar estado, cena e painéis sem trocar a persistência de projetos. |
 | Editor V6 | `features/editorV6/EditorV6Page.tsx`; projetos, timeline, preview e exportação. | `domains/editorV6/` cobre IPC, manifesto/índice, journal de assets, motions e workers/processo de exportação; usa biblioteca por ID. | Manter engine, preview, timeline e export em fronteiras estáveis. |
-| Roteiros | `features/roteiros/RoteirosPage.tsx`; documentos, seções, elenco, falas/pensamentos e exportações. | `domains/roteiros/` tem serviços, repositórios SQLite, validação e IPC de documentos, logs e GIFs; usa Biblioteca/Base por ID, fundos compartilhados e personagens do Customizador/Fabricador na exportação. | Handler de exportação e coordenação de saída ainda ficam parcialmente inline em `main.ts`. |
+| Roteiros | `features/roteiros/RoteirosPage.tsx`; documentos, seções, elenco, falas/pensamentos e exportações. | `domains/roteiros/` tem serviços, repositórios SQLite, validação e IPC de documentos, logs, bibliotecas e exportações; usa Biblioteca/Base por ID, fundos compartilhados e personagens do Customizador/Fabricador. | A renderização dos personagens é feita no renderer; o processo principal valida e recebe os arquivos PNG antes de publicar o projeto exportado. |
 | Base de Vídeos | `features/baseVideos/BaseVideosPage.tsx`; publicação, numeração, descrição, categorias e vistas de rascunho. | `domains/baseVideos/` tem serviço, repositório, validação e IPC; metadados relacionam ao ID da Biblioteca em SQLite. | Feature e namespace próprios; exclusão coordenada com consumidores dos vídeos. |
 | Opções/Dados | `features/options/OptionsPage.tsx`; backups, inventário, migração e configurações. | `DataPlatform`, `DataMigrationService`, `DataBackupService` e `DomainFileSystem` coordenam SQLite, CAS e arquivos. | Infraestrutura crítica; migrações reais continuam explícitas e verificáveis. |
 
@@ -171,13 +171,13 @@ Editor V6
 
 - **Shell visual:** `src/renderer/src/ui/App.tsx` define sete rotas e lazy-load; `TopBar` escolhe a área; `AppErrorBoundary` e o fallback Suspense tratam falha/carregamento por rota.
 - **Contrato desktop:** `electron/preload.ts` constrói o objeto protegido `window.desktop`; contratos de domínio ficam em `src/shared/` e a declaração global em `desktop.d.ts`. As APIs de Base, mídia, Studio e Editor V6 já têm nomes próprios; ainda há APIs de Fabricador, Roteiros, Customizador e Opções no objeto raiz.
-- **Composição:** `electron/main.ts` inicializa Electron, filesystem, migrações e bibliotecas, registra IPC, conecta serviços e conserva 63 handlers inline. Os módulos em `electron/domains/` já removem vários desses fluxos da raiz.
+- **Composição:** `electron/main.ts` inicializa Electron, filesystem, migrações e bibliotecas, registra IPC, conecta serviços e conserva 57 handlers inline. Os módulos em `electron/domains/` já removem vários desses fluxos da raiz.
 - **Dados:** `electron/dataPlatform.cjs` possui schema e catálogo SQLite centralizados; `DomainFileSystem` permite caminhos lógicos sobre armazenamento físico/CAS; cada domínio mantém manifestos e arquivos próprios. Os nomes antigos dos diretórios são parte da compatibilidade.
 - **Renderização compartilhada:** `src/shared/` contém contratos/regras puras de geometria, seleção, timelines e expressões; há consumers visuais separados nas features. Ainda falta comparar e consolidar os caminhos de composição do personagem usando os fixtures dourados antes de compartilhar implementação.
 
 ### Dívida estrutural geral
 
-1. **Composition root inchado:** `electron/main.ts` tem 2.294 linhas e registra 63 `ipcMain.handle` diretamente. Ele faz mais do que inicializar o app: mantém persistência e fluxos de Roteiros, arquivos, vídeo e catálogos. A direção é extrair handlers e casos de uso restantes para domínios, mantendo `main.ts` como composição e ciclo de vida.
+1. **Composition root inchado:** `electron/main.ts` tem 2.221 linhas e registra 57 `ipcMain.handle` diretamente. Ele faz mais do que inicializar o app: mantém persistência e fluxos de Roteiros, arquivos, vídeo e catálogos. A direção é extrair handlers e casos de uso restantes para domínios, mantendo `main.ts` como composição e ciclo de vida.
 2. **Preload amplo:** `electron/preload.ts` reúne os métodos de Fabricador, Customizador, Studio, Editor V6, mídia e Roteiros; `desktop.d.ts` espelha essa união. Base de Vídeos e Biblioteca de Mídia já têm namespaces próprios; os demais contratos ainda podem ficar mais explícitos sem trocar imediatamente os canais IPC.
 3. **Páginas longas:** Customizador (2.776 linhas), Editor V6 (1.788), Studio (1.564) e Fabricador Dev (1.107) ainda concentram estado e operações. A refatoração deve extrair casos de uso, seletores, hooks e componentes por responsabilidade, sem dividir apenas para reduzir contagem de linhas.
 4. **Núcleo de renderização de personagem:** Fabricador, Customizador, Studio e Editor V6 consomem modelos e composições em contextos diferentes. Um núcleo compartilhado exige contratos claros e fixtures visuais douradas antes de trocar os caminhos atuais.
@@ -199,7 +199,7 @@ Editor V6
 - **Concluído:** extrair `roteiros:list/save` em validação de lote, serviço, repositório e handlers IPC pequenos.
 - **Concluído:** extrair logs de exportação com validação, serviço, repositório e handlers IPC pequenos.
 - **Concluído nesta etapa:** extrair os canais de GIFs e fundos para serviços e IPC por domínio, preservando nomes, validação de origem e vínculos por ID.
-- Pendente: extrair as exportações e a coordenação de saída de `main.ts` em serviços e IPC pequenos.
+- **Concluído nesta etapa:** extrair validação, armazenamento, handlers de exportação e propriedade dos jobs por janela para `domains/roteiros/`.
 - Manter funções puras de validação fora do Electron.
 - Adotar contratos explícitos de comandos/consultas e autorização IPC uniforme.
 - Eliminar SQL de um domínio dentro do repositório de outro.
@@ -282,13 +282,20 @@ Este corte separa propriedade dos contratos e chamadas entre domínios, mas não
 - Excluir fundo ou GIF e salvar Roteiros agora compartilham a fila de escrita. O serviço impede excluir um item referenciado, e novos vínculos são conferidos na biblioteca antes de gravar; referências antigas continuam editáveis mesmo se o arquivo estiver ausente.
 - IDs, canais IPC, schema SQLite, catálogo e caminhos físicos foram preservados. `electron/main.ts` tem 2.294 linhas e 63 handlers inline; a extração reduz responsabilidades da raiz, ainda que a coordenação necessária tenha aumentado algumas linhas de composição.
 
+### Etapa aplicada — exportações de Roteiros
+
+- Os armazenadores de exportação foram organizados em `domains/roteiros/characterExportStore.ts` e `projectExportStore.ts`; validação e coordenação ficam em `exportService.ts`, e os canais são registrados por `exportIpc.ts`.
+- Os seis canais continuam iguais. A validação dos personagens para o TXT foi movida para o serviço; a propriedade de cada job continua limitada à janela que o iniciou, e jobs abandonados são cancelados quando essa janela fecha.
+- Formatos do projeto, manifesto, limite de arquivos, localização temporária, proteção dos arquivos existentes e rollback continuam no mesmo código de armazenamento, sem alteração dos caminhos ou do projeto exportado.
+- `electron/main.ts` tem 2.221 linhas e 57 handlers inline, contra 63 após a extração das bibliotecas. Ele ainda compõe os resolvers da Biblioteca de Mídia, GIFs e fundos para os exports.
+
 ## 7. Próxima tarefa recomendada
 
-Continuar o **Ciclo 2** extraindo os handlers de exportação e coordenação de saída de `electron/main.ts`. Preservar vínculos por ID, filas, formatos e backup; a biblioteca física não deve ser duplicada para obter separação de domínios.
+Continuar pelo **Ciclo 3**: comparar os caminhos de composição de personagem e formalizar um núcleo compartilhado para modelos, poses, expressões, roupas e overrides. Usar os fixtures visuais dourados como critério de equivalência antes de migrar qualquer consumidor.
 
 ## 8. Verificações e validação
 
 - Leitura do código atual de rotas, TopBar, preload, contratos compartilhados, Base de Vídeos, Roteiros, Editor V6, VideoLibrary, boot Electron, módulos de domínio, renderizadores, schema SQLite e ADRs.
 - A etapa anterior moveu as consultas de referência para os domínios donos e `npm run test:base-videos` passou com 7 verificações sintéticas. Nenhum perfil ou mídia real foi usado.
 - Nas etapas recentes, `git diff --check` e `node --experimental-strip-types --check` nos arquivos TypeScript alterados passaram. `npm run typecheck` e `npm run audit:architecture` não iniciaram porque as dependências locais (`tsc`/pacote `typescript`) não estão instaladas; os testes de regressão não foram executados.
-- Typecheck, auditoria de arquitetura, build e regressões das três etapas recentes ficam pendentes até as dependências do projeto estarem disponíveis.
+- Typecheck, auditoria de arquitetura, build e regressões das etapas recentes ficam pendentes até as dependências do projeto estarem disponíveis.

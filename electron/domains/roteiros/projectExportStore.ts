@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { copyFile, lstat, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { basename, dirname, join, relative, resolve, sep } from 'node:path'
-import type { RoteiroDocument, RoteiroExportCharacterInfo, RoteiroSectionContent, RoteiroVideoReference } from '../src/shared/roteiros'
+import type { RoteiroDocument, RoteiroExportCharacterInfo, RoteiroSectionContent, RoteiroVideoReference } from '../../../src/shared/roteiros'
 
 const idPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const rootDefault = 'C:\\TRABALHO 2\\EDITOR V4\\EDITOR V4\\projects'

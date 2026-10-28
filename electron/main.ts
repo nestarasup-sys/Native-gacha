@@ -16,9 +16,6 @@ import { createEditorV6MotionService } from './domains/editorV6/motionIpc'
 import { VideoLibraryStore, configureVideoLibraryStorage } from './videoLibrary'
 import { VideoBackgroundLibraryStore, configureBackgroundLibraryStorage } from './backgroundLibrary'
 import { RoteiroUiGifLibraryStore, configureRoteiroUiGifStorage } from './roteiroUiGifLibrary'
-import type { RoteiroExportCharacterInfo } from '../src/shared/roteiros'
-import { RoteiroCharacterExportStore } from './roteiroCharacterExport'
-import { RoteiroProjectExportStore } from './roteiroProjectExport'
 import { DataPlatform, getAppDataUsage } from './dataPlatform.cjs'
 import { DomainFileSystem } from './domainFileSystem.cjs'
 import { DataMigrationService } from './dataMigration.cjs'
@@ -29,7 +26,6 @@ import { normalizeImageBuffer } from './imageIngestion.cjs'
 import { measureIpc } from './ipcPerformance'
 import { BaseVideoService } from './domains/baseVideos/service'
 import { registerBaseVideoHandlers } from './domains/baseVideos/ipc'
-import { isRoteiroDocument } from './domains/roteiros/validation'
 import { isValidCustomizerFaceAppearance } from './domains/customizer/validation'
 import { CustomizerCharacterRepository } from './domains/customizer/repository'
 import { CustomizerCharacterService } from './domains/customizer/service'
@@ -74,6 +70,8 @@ import { createRoteirosDocumentService } from './domains/roteiros/service'
 import { registerRoteirosDocumentHandlers } from './domains/roteiros/documentIpc'
 import { createRoteiroExportLogsService } from './domains/roteiros/exportLogsService'
 import { registerRoteiroExportLogsHandlers } from './domains/roteiros/exportLogsIpc'
+import { createRoteiroExportService } from './domains/roteiros/exportService'
+import { registerRoteiroExportHandlers } from './domains/roteiros/exportIpc'
 import { createRoteiroBackgroundReferenceGuard, createRoteiroUiGifReferenceGuard } from './domains/roteiros/assetReferences'
 import { createRoteiroUiGifsService } from './domains/roteiros/uiGifsService'
 import { registerRoteiroUiGifsHandlers } from './domains/roteiros/uiGifsIpc'
@@ -93,11 +91,6 @@ function enqueueRoteirosWrite<T>(operation: () => Promise<T> | T): Promise<T> {
   roteirosSaveQueue = next.then(() => undefined)
   return next
 }
-
-let roteiroCharacterExportStore: RoteiroCharacterExportStore | null = null
-let roteiroProjectExportStore: RoteiroProjectExportStore | null = null
-const roteiroCharacterExportJobOwners = new Map<string, number>()
-
 
 function configureDevAiDataRoot(): void {
   const privateCopyTest = process.env.GACHA_DEV_AI_PRIVATE_TEST === '1'
@@ -1393,88 +1386,23 @@ async function registerFabricatorHandlers(): Promise<void> {
     enqueueWrite: enqueueRoteirosWrite
   })
   registerRoteiroUiGifsHandlers({ ipcMain, assertTrustedSender, service: roteiroUiGifsService })
-  const getRoteiroCharacterExportStore = () => {
-    if (!roteiroCharacterExportStore) {
-      const root = configuredAppDataRoot ?? join(app.getPath('userData'), 'app-data')
-      roteiroCharacterExportStore = new RoteiroCharacterExportStore(join(root, 'temp', 'roteiro-character-export'))
+  const roteiroExportService = createRoteiroExportService({
+    getAppDataRoot: () => configuredAppDataRoot ?? join(app.getPath('userData'), 'app-data'),
+    resolveBackground: async (id) => {
+      const resolved = await videoBackgroundLibrary.resolve(id)
+      return await dataFileSystem.resolvePhysicalPath(resolved.path) ?? resolved.path
+    },
+    resolveGif: async (id) => {
+      const resolved = await roteiroUiGifLibrary.resolve(id)
+      return await dataFileSystem.resolvePhysicalPath(resolved) ?? resolved
+    },
+    resolveVideo: async (video) => {
+      const resolved = await videoLibrary.resolveMedia(video.id)
+      if (resolved.extension !== video.extension || resolved.durationFrames !== null && resolved.durationFrames !== video.durationFrames) throw new Error(`O vídeo “${video.name}” não corresponde ao arquivo da biblioteca.`)
+      return await dataFileSystem.resolvePhysicalPath(resolved.path) ?? resolved.path
     }
-    return roteiroCharacterExportStore
-  }
-  function assertRoteiroExportOwner(event: IpcMainInvokeEvent, jobId: unknown): asserts jobId is string {
-    if (typeof jobId !== 'string' || roteiroCharacterExportJobOwners.get(jobId) !== event.sender.id) throw new Error('Esta exportação não pertence a esta janela.')
-  }
-  const getRoteiroProjectExportStore = () => {
-    if (!roteiroProjectExportStore) roteiroProjectExportStore = new RoteiroProjectExportStore(
-      async (id) => { const resolved = await videoBackgroundLibrary.resolve(id); return await dataFileSystem.resolvePhysicalPath(resolved.path) ?? resolved.path },
-      async (id) => { const resolved = await roteiroUiGifLibrary.resolve(id); return await dataFileSystem.resolvePhysicalPath(resolved) ?? resolved },
-      async (video) => {
-        const resolved = await videoLibrary.resolveMedia(video.id)
-        if (resolved.extension !== video.extension || resolved.durationFrames !== null && resolved.durationFrames !== video.durationFrames) throw new Error(`O vídeo “${video.name}” não corresponde ao arquivo da biblioteca.`)
-        return await dataFileSystem.resolvePhysicalPath(resolved.path) ?? resolved.path
-      }
-    )
-    return roteiroProjectExportStore
-  }
-  ipcMain.handle('roteiros:assets-export', async (event, request: unknown) => {
-    assertTrustedSender(event)
-    if (!request || typeof request !== 'object' || Array.isArray(request)) throw new Error('Solicitação de exportação inválida.')
-    const value = request as { roteiro?: unknown; kind?: unknown; characters?: unknown }
-    if (!isRoteiroDocument(value.roteiro) || !['background', 'videos', 'script', 'gif'].includes(String(value.kind))) throw new Error('Roteiro ou tipo de exportação inválido.')
-    const roteiro = value.roteiro
-    let characters: RoteiroExportCharacterInfo[] = []
-    if (value.characters !== undefined) {
-      if (!Array.isArray(value.characters) || value.characters.length > 500 || !value.characters.every((item) => Boolean(item && typeof item === 'object'
-        && typeof item.id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(item.id)
-        && roteiro.characterIds.includes(item.id) && typeof item.name === 'string' && item.name.trim().length > 0 && item.name.length <= 100
-        && Number.isInteger(item.modelSlot) && item.modelSlot >= 1 && item.modelSlot <= 100
-        && typeof item.hair === 'string' && item.hair.length <= 255 && typeof item.outfit === 'string' && item.outfit.length <= 255 && typeof item.skin === 'string' && item.skin.length <= 255
-        && typeof item.hasFaceAppearance === 'boolean' && Array.isArray(item.poseSlots) && item.poseSlots.length <= 100 && item.poseSlots.every((slot: unknown) => Number.isInteger(slot) && (slot as number) >= 0 && (slot as number) <= 100)
-        && Array.isArray(item.expressions) && item.expressions.length <= 500 && item.expressions.every((name: unknown) => typeof name === 'string' && name.length > 0 && name.length <= 100)))
-        || new Set(value.characters.map((item: RoteiroExportCharacterInfo) => item.id)).size !== value.characters.length) throw new Error('Dados de personagens inválidos para o TXT.')
-      characters = value.characters as RoteiroExportCharacterInfo[]
-    }
-    return getRoteiroProjectExportStore().export(roteiro, value.kind as 'background' | 'videos' | 'script' | 'gif', characters)
   })
-  ipcMain.handle('roteiros:export-folder:open', async (event, request: unknown) => {
-    assertTrustedSender(event)
-    if (!request || typeof request !== 'object' || Array.isArray(request)) throw new Error('Solicitação para abrir pasta inválida.')
-    const value = request as { roteiro?: unknown; kind?: unknown }
-    if (!isRoteiroDocument(value.roteiro) || !['characters', 'background', 'videos', 'script', 'ui'].includes(String(value.kind))) throw new Error('Roteiro ou pasta de exportação inválida.')
-    const folder = await getRoteiroProjectExportStore().ensureExportFolder(value.roteiro, value.kind as 'characters' | 'background' | 'videos' | 'script' | 'ui')
-    const error = await shell.openPath(folder)
-    if (error) throw new Error(`Não foi possível abrir a pasta: ${error}`)
-  })
-  ipcMain.handle('roteiros:characters-export:start', async (event, request: unknown) => {
-    assertTrustedSender(event)
-    const result = await getRoteiroCharacterExportStore().start(request)
-    roteiroCharacterExportJobOwners.set(result.jobId, event.sender.id)
-    event.sender.once('destroyed', () => {
-      const abandoned = [...roteiroCharacterExportJobOwners].filter(([, owner]) => owner === event.sender.id).map(([id]) => id)
-      for (const id of abandoned) {
-        roteiroCharacterExportJobOwners.delete(id)
-        void getRoteiroCharacterExportStore().cancel(id).catch(() => undefined)
-      }
-    })
-    return result
-  })
-  ipcMain.handle('roteiros:characters-export:asset', async (event, jobId: unknown, asset: unknown) => {
-    assertTrustedSender(event)
-    assertRoteiroExportOwner(event, jobId)
-    await getRoteiroCharacterExportStore().writeAsset(jobId, asset)
-  })
-  ipcMain.handle('roteiros:characters-export:finish', async (event, jobId: unknown) => {
-    assertTrustedSender(event)
-    assertRoteiroExportOwner(event, jobId)
-    const result = await getRoteiroCharacterExportStore().finish(jobId)
-    roteiroCharacterExportJobOwners.delete(jobId)
-    return result
-  })
-  ipcMain.handle('roteiros:characters-export:cancel', async (event, jobId: unknown) => {
-    assertTrustedSender(event)
-    assertRoteiroExportOwner(event, jobId)
-    try { await getRoteiroCharacterExportStore().cancel(jobId) }
-    finally { roteiroCharacterExportJobOwners.delete(jobId) }
-  })
+  registerRoteiroExportHandlers({ ipcMain, assertTrustedSender, openPath: (path) => shell.openPath(path), service: roteiroExportService })
 
   const roteiroDocumentService = createRoteirosDocumentService({
     getDatabase: () => dataPlatform.database,
