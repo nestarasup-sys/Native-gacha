@@ -5,6 +5,7 @@ import { defaultExportPoseSlots, poseFromModel } from './models/poseProjection'
 import { Icon } from '../../ui/components/Icon'
 import { usePreviewBackground } from './usePreviewBackground'
 import { normalizeLayerOrder, orderedParts, partJointAnchor } from './models/rig'
+import { rotatePointAroundOrigin } from './models/geometry'
 
 type DraftProject = Omit<FabricatorPose, 'slot'>
 type PanelTab = 'parts' | 'layers' | 'joints'
@@ -19,13 +20,6 @@ const emptyHistory = (): PoseHistory => ({ undo: [], redo: [] })
 
 function cloneProject(project: DraftProject): DraftProject {
   return structuredClone(project)
-}
-
-function rotatePoint(point: { x: number; y: number }, origin: { x: number; y: number }, angle: number) {
-  const radians = angle * Math.PI / 180
-  const x = point.x - origin.x
-  const y = point.y - origin.y
-  return { x: origin.x + x * Math.cos(radians) - y * Math.sin(radians), y: origin.y + x * Math.sin(radians) + y * Math.cos(radians) }
 }
 
 function isMovablePosePart(project: DraftProject, partId: string): boolean {
@@ -440,14 +434,14 @@ export function PoseWorkspace() {
     }
     const parts = current.parts.map((part) => {
       if (!affected.has(part.id)) return part
-      const center = rotatePoint({ x: part.x + part.width / 2, y: part.y + part.height / 2 }, origin, amount)
+      const center = rotatePointAroundOrigin({ x: part.x + part.width / 2, y: part.y + part.height / 2 }, origin, amount)
       const anchor = partJointAnchor(part, current.joints)
       return {
         ...part,
         x: center.x - part.width / 2,
         y: center.y - part.height / 2,
         rotation: part.rotation + amount,
-        ...(anchor ? { jointAnchor: rotatePoint(anchor, origin, amount) } : {})
+        ...(anchor ? { jointAnchor: rotatePointAroundOrigin(anchor, origin, amount) } : {})
       }
     })
     const partById = new Map(parts.map((part) => [part.id, part]))

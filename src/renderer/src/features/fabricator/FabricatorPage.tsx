@@ -17,6 +17,7 @@ import { FaceAnimatorWorkspace } from './FaceAnimatorWorkspace'
 import { ModelSourceEditor } from './ModelSourceEditor'
 import { broadcastModelSourceUpdate } from './models/modelSourceEvents'
 import { splitImage, mergeImages } from './models/partImages'
+import { rotatePointAroundOrigin } from './models/geometry'
 import type { ModelSourceResult } from './models/modelSource'
 
 const sections: { id: string; label: string; icon: IconName }[] = [
@@ -51,13 +52,6 @@ function bytesToDataUrl(buffer: ArrayBuffer): string {
 const DEFAULT_CHROMA_TOLERANCE = 74
 const MAX_CHROMA_TOLERANCE = 280
 const emptyHistory = (): FabricatorHistoryState => ({ undo: [], redo: [] })
-
-function rotatePoint(point: { x: number; y: number }, origin: { x: number; y: number }, angle: number) {
-  const radians = angle * Math.PI / 180
-  const x = point.x - origin.x
-  const y = point.y - origin.y
-  return { x: origin.x + x * Math.cos(radians) - y * Math.sin(radians), y: origin.y + x * Math.sin(radians) + y * Math.cos(radians) }
-}
 
 async function imageFromDataUrl(dataUrl: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
@@ -754,14 +748,14 @@ export function FabricatorPage() {
       ...current,
       parts: current.parts.map((part) => {
         if (!affected.has(part.id)) return part
-        const center = rotatePoint({ x: part.x + part.width / 2, y: part.y + part.height / 2 }, origin, amount)
-        return { ...part, x: center.x - part.width / 2, y: center.y - part.height / 2, rotation: (part.rotation + amount) % 360, ...(part.jointAnchor ? { jointAnchor: rotatePoint(part.jointAnchor, origin, amount) } : {}) }
+        const center = rotatePointAroundOrigin({ x: part.x + part.width / 2, y: part.y + part.height / 2 }, origin, amount)
+        return { ...part, x: center.x - part.width / 2, y: center.y - part.height / 2, rotation: (part.rotation + amount) % 360, ...(part.jointAnchor ? { jointAnchor: rotatePointAroundOrigin(part.jointAnchor, origin, amount) } : {}) }
       }),
       joints: current.joints.map((item) => ({
         ...item,
-        ...((affected.has(item.parentPartId) || affected.has(item.childPartId)) ? { pivot: rotatePoint(jointPivot(item), origin, amount) } : {}),
-        ...(affected.has(item.parentPartId) ? { parentAnchor: rotatePoint(item.parentAnchor, origin, amount) } : {}),
-        ...(affected.has(item.childPartId) ? { childAnchor: rotatePoint(item.childAnchor, origin, amount) } : {})
+        ...((affected.has(item.parentPartId) || affected.has(item.childPartId)) ? { pivot: rotatePointAroundOrigin(jointPivot(item), origin, amount) } : {}),
+        ...(affected.has(item.parentPartId) ? { parentAnchor: rotatePointAroundOrigin(item.parentAnchor, origin, amount) } : {}),
+        ...(affected.has(item.childPartId) ? { childAnchor: rotatePointAroundOrigin(item.childAnchor, origin, amount) } : {})
       }))
     }))
   }

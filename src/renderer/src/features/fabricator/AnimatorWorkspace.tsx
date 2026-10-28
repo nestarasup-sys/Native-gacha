@@ -7,6 +7,7 @@ import { resolvePoseCategory, type AnimatorAnimation, type AnimatorAnimationAsse
 import { defaultCharacterBodyDimensions, type CustomizerCharacter, type CustomizerWardrobeGroup } from '../../../../shared/customizer'
 import { Icon } from '../../ui/components/Icon'
 import { normalizeLayerOrder, orderedParts, partJointAnchor } from './models/rig'
+import { rotatePointAroundOrigin } from './models/geometry'
 import { usePreviewBackground } from './usePreviewBackground'
 import { mapWardrobeComponentToPose } from './wardrobe/poseTransform'
 import { applyCharacterBodyShape } from '../../../../shared/bodyShape'
@@ -74,12 +75,6 @@ function applyFrameState(base: FabricatorProject, transforms: Record<string, Ani
   }
 }
 
-function rotatePoint(point: { x: number; y: number }, origin: { x: number; y: number }, degrees: number) {
-  const radians = degrees * Math.PI / 180
-  const x = point.x - origin.x, y = point.y - origin.y
-  return { x: origin.x + x * Math.cos(radians) - y * Math.sin(radians), y: origin.y + x * Math.sin(radians) + y * Math.cos(radians) }
-}
-
 function rotateFramePart(base: FabricatorProject, state: FrameHistoryState, partId: string, delta: number, includeChildren: boolean): FrameHistoryState {
   if (!delta) return state
   const project = applyFrameState(base, state.transforms, state.joints)
@@ -96,10 +91,10 @@ function rotateFramePart(base: FabricatorProject, state: FrameHistoryState, part
   }
   const nextParts = project.parts.map((part) => {
     if (!affected.has(part.id)) return part
-    const center = rotatePoint({ x: part.x + part.width / 2, y: part.y + part.height / 2 }, origin, delta)
+    const center = rotatePointAroundOrigin({ x: part.x + part.width / 2, y: part.y + part.height / 2 }, origin, delta)
     const anchor = partJointAnchor(part, project.joints)
     const jointAnchor = anchor ?? { x: part.x + part.width / 2, y: part.y + part.height / 2 }
-    return { ...part, x: center.x - part.width / 2, y: center.y - part.height / 2, rotation: part.rotation + delta, jointAnchor: rotatePoint(jointAnchor, origin, delta) }
+    return { ...part, x: center.x - part.width / 2, y: center.y - part.height / 2, rotation: part.rotation + delta, jointAnchor: rotatePointAroundOrigin(jointAnchor, origin, delta) }
   })
   const nextById = new Map(nextParts.map((part) => [part.id, part]))
   const nextJoints = project.joints.map((joint) => {
