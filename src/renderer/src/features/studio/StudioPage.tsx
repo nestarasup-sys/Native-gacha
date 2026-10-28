@@ -167,7 +167,7 @@ export function StudioPage() {
   const activeStudioIdRef = useRef(activeStudioId)
   useLayoutEffect(() => { studiosRef.current = studios }, [studios])
   useLayoutEffect(() => { activeStudioIdRef.current = activeStudioId }, [activeStudioId])
-  const writeStudioDocument = useCallback((studio: StudioDocument) => window.desktop.saveStudio(studio), [])
+  const writeStudioDocument = useCallback((studio: StudioDocument) => window.desktop.studio.saveStudio(studio), [])
   const onStudioDocumentSaved = useCallback((document: StudioDocument, savedDocument: StudioDocument) => {
     if (savedDocument.thumbnailDataUrl !== document.thumbnailDataUrl) {
       setStudios((current) => current.map((studio) => studio.id === document.id && studio.updatedAt === document.updatedAt && studio.thumbnailDataUrl !== savedDocument.thumbnailDataUrl
@@ -244,8 +244,8 @@ export function StudioPage() {
     const refreshExpressionLibrary = () => {
       setStudioExpressionLoading(true)
       void Promise.all([
-        window.desktop.listFaceExpressionCollections(selectedStudioCharacterModelSlot),
-        window.desktop.listFaceExpressionPresets(selectedStudioCharacterModelSlot)
+        window.desktop.fabricator.listFaceExpressionCollections(selectedStudioCharacterModelSlot),
+        window.desktop.fabricator.listFaceExpressionPresets(selectedStudioCharacterModelSlot)
       ]).then(([collections, presets]) => {
         if (cancelled) return
         setStudioExpressionCollections(collections)
@@ -284,7 +284,7 @@ export function StudioPage() {
     })))
     if (!slots.length) { setSceneExpressionPresetVersions({}); return }
     const refresh = () => {
-      void Promise.all(slots.map(async (modelSlot) => [modelSlot, await window.desktop.listFaceExpressionPresets(modelSlot)] as const))
+      void Promise.all(slots.map(async (modelSlot) => [modelSlot, await window.desktop.fabricator.listFaceExpressionPresets(modelSlot)] as const))
         .then((results) => {
           if (cancelled) return
           const versions: Record<string, string> = {}
@@ -309,20 +309,20 @@ export function StudioPage() {
     let cancelled = false
     void (async () => {
       try {
-        const existing = await window.desktop.listStudios()
+        const existing = await window.desktop.studio.listStudios()
         const knownIds = new Set(existing.map((studio) => studio.id))
         const legacy = loadLegacySceneCatalog(STORAGE_KEY)
         const now = new Date().toISOString()
         for (const old of legacy) {
           if (knownIds.has(old.id) || !isLegacySceneCatalogId(old.id)) continue
-          await window.desktop.saveStudio({
+          await window.desktop.studio.saveStudio({
             schemaVersion: 1, ...old, createdAt: now, updatedAt: now, backgroundColor: '#d7b5cd',
             backgroundAssetId: null, backgroundX: 0, backgroundY: 0, backgroundWidth: 100, backgroundHeight: 100,
             backgroundRotation: 0, assets: [], elements: []
           })
         }
-        const loaded = await window.desktop.listStudios()
-        const folder = await window.desktop.getStudioFolder()
+        const loaded = await window.desktop.studio.listStudios()
+        const folder = await window.desktop.studio.getStudioFolder()
         if (cancelled) return
         setStudios(loaded)
         setStudioFolder(folder)
@@ -341,7 +341,7 @@ export function StudioPage() {
     let request = 0
     const refreshCharacters = () => {
       const currentRequest = ++request
-      void window.desktop.listCustomizerCharacters().then((characters) => {
+      void window.desktop.customizer.listCustomizerCharacters().then((characters) => {
         if (!cancelled && currentRequest === request) setAvailableCharacters(characters)
       }).catch((reason: unknown) => {
         if (!cancelled && currentRequest === request) setError(reason instanceof Error ? reason.message : 'Não foi possível carregar o elenco de personagens.')
@@ -368,10 +368,10 @@ export function StudioPage() {
     if (modelSlot === null) { setStudioFaceItems([]); return }
     let cancelled = false
     setStudioFaceLoading(true)
-    void window.desktop.listFaceCatalog(modelSlot).then(async (summaries) => {
+    void window.desktop.fabricator.listFaceCatalog(modelSlot).then(async (summaries) => {
       if (cancelled) return
       setStudioFaceItems(summaries)
-      const items = await Promise.all(summaries.map(async (summary) => ({ key: `${summary.modelSlot}:${summary.id}`, item: await window.desktop.loadFaceCatalogItem(summary.modelSlot, summary.id) })))
+      const items = await Promise.all(summaries.map(async (summary) => ({ key: `${summary.modelSlot}:${summary.id}`, item: await window.desktop.fabricator.loadFaceCatalogItem(summary.modelSlot, summary.id) })))
       if (cancelled) return
       setStudioFaceDetails((current) => {
         const next = { ...current }
@@ -391,7 +391,7 @@ export function StudioPage() {
       const { renderArtwork } = await import('../../characters/characterRenderer')
       const thumbnails = await Promise.all(studioPoseSlots.map(async (pose) => {
         try {
-          const artwork = await window.desktop.loadFabricatorPose(pose.sourceModelSlot, pose.slot)
+          const artwork = await window.desktop.fabricator.loadFabricatorPose(pose.sourceModelSlot, pose.slot)
           if (!isPoseSnapshotForModel(artwork, pose.sourceModelSlot, pose.slot)) return null
           const thumbnail = await renderArtwork(artwork, 180)
           return thumbnail ? { slot: pose.slot, thumbnail, width: artwork.width, height: artwork.height } : null
@@ -410,7 +410,7 @@ export function StudioPage() {
     const modelSlot = selectedStudioCharacterModelSlot
     if (modelSlot === null) { setStudioPoseSlots([]); return }
     let cancelled = false
-    void window.desktop.listFabricatorPoseSlots(modelSlot).then((poses) => {
+    void window.desktop.fabricator.listFabricatorPoseSlots(modelSlot).then((poses) => {
       if (!cancelled) setStudioPoseSlots(poses.filter((pose): pose is NonNullable<typeof pose> => Boolean(pose)))
     }).catch((reason: unknown) => {
       if (!cancelled) setError(reason instanceof Error ? reason.message : 'Não foi possível carregar as poses do modelo.')
@@ -484,7 +484,7 @@ export function StudioPage() {
         const updates: Array<{ previous: StudioElement; next: StudioElement; asset: StudioAsset }> = []
         for (const { element, character, shouldRecomposeExpression, assetRevisionKey, assetsChanged } of pending) {
           const savedPreset = element.activeExpressionPresetId
-            ? await window.desktop.loadFaceExpressionPreset(character.customization.modelSlot ?? 1, element.activeExpressionPresetId)
+            ? await window.desktop.fabricator.loadFaceExpressionPreset(character.customization.modelSlot ?? 1, element.activeExpressionPresetId)
             : null
           if (element.activeExpressionPresetId && !savedPreset) continue
           const sourceAppearance = character.customization.faceAppearance
@@ -498,15 +498,15 @@ export function StudioPage() {
             : previousBase
           const appearance = shouldRecomposeExpression
             ? savedPreset && expressionBase
-              ? await buildStudioExpressionAppearance(savedPreset, expressionBase.appearance, (id) => window.desktop.loadFaceCatalogItem(savedPreset.modelSlot, id))
+              ? await buildStudioExpressionAppearance(savedPreset, expressionBase.appearance, (id) => window.desktop.fabricator.loadFaceCatalogItem(savedPreset.modelSlot, id))
               : expressionBase?.appearance ?? element.faceAppearance
             : element.faceAppearance ?? expressionBase?.appearance
           const faceMode = studioFaceModeForElement(element, element.faceAppearance ?? expressionBase?.appearance)
           const faceTransforms = shouldRecomposeExpression
             ? savedPreset && appearance && expressionBase
               ? await buildStudioExpressionTransforms(savedPreset, appearance, expressionBase.transforms,
-                (id) => window.desktop.loadFaceComponentAsset(savedPreset.modelSlot, id),
-                (id) => window.desktop.loadFaceCatalogItem(savedPreset.modelSlot, id), element.activeExpressionGaze ?? 'right')
+                (id) => window.desktop.fabricator.loadFaceComponentAsset(savedPreset.modelSlot, id),
+                (id) => window.desktop.fabricator.loadFaceCatalogItem(savedPreset.modelSlot, id), element.activeExpressionGaze ?? 'right')
               : expressionBase?.transforms ?? element.faceTransforms
             : element.faceTransforms ?? expressionBase?.transforms
           const expressionEffects = shouldRecomposeExpression ? savedPreset?.effects : element.activeExpressionEffects
@@ -577,7 +577,7 @@ export function StudioPage() {
     }
     try {
       setError(null)
-      await window.desktop.saveStudio(studio)
+      await window.desktop.studio.saveStudio(studio)
       setStudios((current) => [...current, studio])
       setSelectedId(studio.id)
       setSaved(true)
@@ -605,7 +605,7 @@ export function StudioPage() {
     duplicate.backgroundAssetId = source.backgroundAssetId ? oldToNew.get(source.backgroundAssetId) ?? null : null
     try {
       setError(null)
-      await window.desktop.saveStudio(duplicate)
+      await window.desktop.studio.saveStudio(duplicate)
       setStudios((current) => [...current, duplicate])
       setSelectedId(duplicate.id)
       setSaved(true)
@@ -676,7 +676,7 @@ export function StudioPage() {
     if (!activeStudio) return
     const studioId = activeStudio.id
     try {
-      const asset = await window.desktop.importStudioImage(category)
+      const asset = await window.desktop.studio.importStudioImage(category)
       if (!asset) return
       const studioAtImport = studiosRef.current.find((studio) => studio.id === studioId)
       if (!studioAtImport) { setError('Não foi possível carregar o Studio para adicionar a imagem.'); return }
@@ -840,21 +840,21 @@ export function StudioPage() {
     setStudioExpressionBusy(true)
     setError(null)
     try {
-      const preset: FaceExpressionPreset | null = await window.desktop.loadFaceExpressionPreset(summary.modelSlot, summary.id)
+      const preset: FaceExpressionPreset | null = await window.desktop.fabricator.loadFaceExpressionPreset(summary.modelSlot, summary.id)
       if (!preset || preset.modelSlot !== selectedStudioCharacterModelSlot) throw new Error('Este preset não está disponível para o modelo selecionado.')
       const characterAppearance = selectedStudioCharacter.customization.faceAppearance ?? selectedStudioFaceAppearance
       if (!characterAppearance) throw new Error('A personagem ainda não tem uma aparência facial para ajustar.')
       const faceMode = studioFaceModeForElement(selectedElement, selectedStudioFaceAppearance)
       const base = { ...resolveStudioExpressionBase(selectedElement, characterAppearance), appearance: structuredClone(characterAppearance) }
       const appearance = base.appearance
-      let nextAppearance = await buildStudioExpressionAppearance(preset, appearance, (id) => window.desktop.loadFaceCatalogItem(preset.modelSlot, id))
+      let nextAppearance = await buildStudioExpressionAppearance(preset, appearance, (id) => window.desktop.fabricator.loadFaceCatalogItem(preset.modelSlot, id))
       if (faceMode === 'talk' && selectedStudioOpenMouthId && !nextAppearance.mouthOpenCatalogId) {
         nextAppearance = { ...nextAppearance, mouthOpenCatalogId: selectedStudioOpenMouthId }
       }
       const faceTransforms = await buildStudioExpressionTransforms(
         preset, nextAppearance, base.transforms,
-        (id) => window.desktop.loadFaceComponentAsset(preset.modelSlot, id),
-        (id) => window.desktop.loadFaceCatalogItem(preset.modelSlot, id),
+        (id) => window.desktop.fabricator.loadFaceComponentAsset(preset.modelSlot, id),
+        (id) => window.desktop.fabricator.loadFaceCatalogItem(preset.modelSlot, id),
         gaze
       )
 
@@ -913,7 +913,7 @@ export function StudioPage() {
   const chooseStudioFaceSheet = async (summary: FaceCatalogItemSummary) => {
     if (!selectedStudioCharacter) return
     const key = `${summary.modelSlot}:${summary.id}`
-    const item = studioFaceDetails[key] ?? await window.desktop.loadFaceCatalogItem(summary.modelSlot, summary.id)
+    const item = studioFaceDetails[key] ?? await window.desktop.fabricator.loadFaceCatalogItem(summary.modelSlot, summary.id)
     if (!item) return
     setStudioFaceDetails((current) => ({ ...current, [key]: item }))
     const previous = selectedStudioFaceAppearance
@@ -1122,7 +1122,7 @@ export function StudioPage() {
   const deleteStudio = async (target: StudioCard | null = selectedStudio) => {
     if (!target || !window.confirm(`Excluir ${target.title}?`)) return
     try {
-      await window.desktop.deleteStudio(target.id)
+      await window.desktop.studio.deleteStudio(target.id)
       setStudios((current) => current.filter((studio) => studio.id !== target.id))
       setSelectedId((current) => current === target.id ? null : current)
       setSaved(true)
@@ -1143,14 +1143,14 @@ export function StudioPage() {
     try {
       if (!await saveStudio(activeStudio)) return
       const image = await makeCanvasPrint(activeStudio)
-      const path = await window.desktop.saveStudioPrint(activeStudio.id, image)
+      const path = await window.desktop.studio.saveStudioPrint(activeStudio.id, image)
       if (path) { setError(null); setNotice(`Print salvo em ${path}`) }
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível gerar o print.') }
   }
 
   const openPrints = async () => {
     if (!activeStudio) return
-    try { await window.desktop.openStudioPrints(activeStudio.id) }
+    try { await window.desktop.studio.openStudioPrints(activeStudio.id) }
     catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível abrir a pasta de prints.') }
   }
 

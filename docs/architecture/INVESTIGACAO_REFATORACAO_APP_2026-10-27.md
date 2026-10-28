@@ -6,7 +6,9 @@
 
 **Base histórica da reauditoria:** branch local `Dev-V2`, criada sobre `Main-desenvolvimento` no commit `6c2997223430ded043043222469b1fc20a63084f`.
 
-**Base desta etapa:** commit `805798f` (`refactor(media): remove obsolete video studios field`), branch local `Dev-V2`.
+**Snapshot revalidado nesta etapa:** branch local `Dev-V2`, commit `c98f630` (`refactor(fabricator): use shared preview background hook`), antes da atualização incremental do contrato IPC descrita abaixo.
+
+**Base histórica do primeiro ciclo:** commit `805798f` (`refactor(media): remove obsolete video studios field`), branch local `Dev-V2`.
 
 **Escopo:** registrar a arquitetura atual de todas as áreas e conduzir a refatoração por domínio, sem quebrar dados ou fluxos existentes.
 
@@ -18,7 +20,7 @@ A **Biblioteca de Mídia** é dona dos arquivos de vídeo e seus IDs. Base de V�
 
 O restante já tem módulos por domínio e armazenamento local com SQLite, arquivos e CAS. O `electron/main.ts` agora registra somente o flush transversal de gravações; a maior concentração está nas páginas React extensas que combinam estado e coordenação de operações. O plano prioriza limites de propriedade, segurança dos dados e redução de responsabilidades por fluxo.
 
-**Próximos passos:** continuar mapeando as transições de estado do Customizador, Studio e Editor V6; no Fabricador, revisar os fluxos de montagem e edição de imagem que permanecem na página. Extrair componentes, hooks e casos de uso quando houver responsabilidades misturadas. O flush transversal permanece no composition root. A composição compartilha algoritmos visuais de baixo nível; a orquestração e os modos de render continuam próprios de Studio e Editor V6 até existir comparação visual das saídas reais.
+**Próximos passos:** continuar mapeando as transições de estado do Customizador, Studio e Editor V6; migrar os consumidores dos métodos raiz de `window.desktop` para os namespaces de domínio sem retirar aliases enquanto houver leitores; e revisar os fluxos de montagem e edição de imagem que permanecem na página do Fabricador. O flush transversal permanece no composition root. A composição compartilha algoritmos visuais de baixo nível; a orquestração e os modos de render continuam próprios de Studio e Editor V6 até existir comparação visual das saídas reais.
 
 ## 1. Estado observado
 
@@ -30,12 +32,12 @@ O restante já tem módulos por domínio e armazenamento local com SQLite, arqui
 
 ### Inventário da reauditoria
 
-Contagens de arquivos conferidas neste ciclo sobre `805798f`; a contagem da página do Customizador já inclui a extração feita nesta etapa.
+Contagens revalidadas na branch local `Dev-V2`, snapshot `c98f630`.
 
 - O shell tem sete rotas de produto: Customizador, Studio principal, Editor V6, Roteiros, Base de Vídeos, Opções e Fabricador DEV.
 - `electron/domains/` contém módulos para Base de Vídeos, Customizador, Editor V6, Fabricador, Roteiros, armazenamento compartilhado e Studio. `src/shared/` guarda contratos e regras usadas por mais de um processo.
-- `electron/main.ts` tem 1.648 linhas após as extrações de migração, inventário, backup, cabelo, arquivos do Studio/Editor V6, configurações, projetos/histórico, roupas e exportação/normalização de imagens do Fabricador; registra somente o handler IPC transversal de flush e compõe os serviços. Os handlers `protocol.handle` são protocolos de mídia, com responsabilidades próprias.
-- As páginas de rota mais extensas são Editor V6 (1.553), Customizador (1.501 após extrair o carregamento do catálogo facial), Studio (1.352) e Fabricador Dev (1.059 após extrair o controlador de aparência compartilhada); Roteiros tem 511, Base de Vídeos 337 e Opções 205 linhas. Dentro do Fabricador, os workspaces maiores são Expressões (1.251), peças faciais (1.171), Animador (1.058) e Roupas (888). Esses números localizam concentração de responsabilidades, mas não são por si só motivo para dividir arquivos.
+- `electron/main.ts` tem 1.747 linhas após as extrações de migração, inventário, backup, cabelo, arquivos do Studio/Editor V6, configurações, projetos/histórico, roupas e exportação/normalização de imagens do Fabricador; registra somente o handler IPC transversal de flush e compõe os serviços. Os handlers `protocol.handle` são protocolos de mídia, com responsabilidades próprias.
+- As páginas de rota mais extensas são Editor V6 (1.623), Customizador (1.501), Studio (1.414) e Fabricador Dev (1.065); Roteiros tem 535, Base de Vídeos 362 e Opções 210 linhas. Dentro do Fabricador, os workspaces maiores são Expressões (1.280), peças faciais (1.205), Animador (1.115) e Roupas (906). Esses números localizam concentração de responsabilidades, mas não são por si só motivo para dividir arquivos.
 - A auditoria estática de dependências mantém em zero os imports de runtime entre os pares de features listados em `scripts/architecture/boundaries-baseline.json`.
 
 ### Mapa resumido
@@ -187,15 +189,15 @@ Editor V6
 ### Camadas transversais
 
 - **Shell visual:** `src/renderer/src/ui/App.tsx` define sete rotas e lazy-load; `TopBar` escolhe a área; `AppErrorBoundary` e o fallback Suspense tratam falha/carregamento por rota.
-- **Contrato desktop:** `electron/preload.ts` constrói o objeto protegido `window.desktop`; contratos de domínio ficam em `src/shared/` e a declaração global em `desktop.d.ts`. As APIs de Base, mídia, Studio e Editor V6 já têm nomes próprios; ainda há APIs de Fabricador, Roteiros, Customizador e Opções no objeto raiz.
+- **Contrato desktop:** `electron/preload.ts` constrói o objeto protegido `window.desktop`; contratos de domínio ficam em `src/shared/` e a declaração global em `desktop.d.ts`. Base, Biblioteca de Mídia e fundos já têm propriedades próprias. Esta etapa acrescenta namespaces tipados para Fabricador, Customizador, Studio, Editor V6 e Roteiros, preservando temporariamente as chamadas planas existentes. `StudioPage` já usa os namespaces de Studio, Customizador e Fabricador nos seus fluxos.
 - **Composição:** `electron/main.ts` inicializa Electron, filesystem, migrações e bibliotecas, registra IPC, conecta serviços e mantém somente o handler transversal de flush; `dataMigrationIpc` registra as quatro operações de migração e expõe a tarefa ativa para o encerramento aguardar, `dataBackupIpc` registra o inventário e as cinco operações de backup, `fabricator/hairIpc` registra seis canais e mantém a fila de cabelo consultável pelo backup e pelo encerramento, `fabricator/projectIpc` registra operações de projetos e `fabricator/wardrobeIpc` coordena os três canais de roupa. `faceAnimationExportIpc` e `imageNormalizationIpc` guardam os comandos de arquivo/imagem do Fabricador, sem renomear seus canais existentes. As persistências de projeto, histórico e roupa ficam em módulos do domínio. Os módulos de arquivo do Studio/Editor V6 coordenam seleção de imagens e abertura de prints; `designSettingsService` cuida da ativação segura do domínio legado, leitura, validação e gravação. `main.ts` injeta caminhos, acesso ao storage, normalização e callbacks de ciclo de vida; continua responsável por criar serviços, coordenar filas antes do backup e finalizar migrações após a abertura saudável.
 - **Dados:** `electron/dataPlatform.cjs` possui schema e catálogo SQLite centralizados; `DomainFileSystem` permite caminhos lógicos sobre armazenamento físico/CAS; cada domínio mantém manifestos e arquivos próprios. Os nomes antigos dos diretórios são parte da compatibilidade.
 - **Renderização compartilhada:** `characters/` já compartilha cache de imagem, materiais preparados, tintura, presets de expressão e composição de camadas, roupas e rosto de catálogo. Os renderizadores mantêm suas próprias fachadas, políticas e ciclo de vida. Ainda falta comparar saídas reais de Studio e Editor V6 antes de unificar a orquestração completa.
 
 ### Dívida estrutural geral
 
-1. **Composition root inchado:** `electron/main.ts` tem 1.687 linhas e registra um `ipcMain.handle` diretamente. Esse canal reúne filas de vários domínios para backup e encerramento; essa coordenação permanece no composition root. A maior redução futura vem de separar a composição de serviços e inicialização sem deslocar propriedade entre domínios.
-2. **Preload amplo:** `electron/preload.ts` reúne os métodos de Fabricador, Customizador, Studio, Editor V6, mídia e Roteiros; `desktop.d.ts` espelha essa união. Base de Vídeos e Biblioteca de Mídia já têm namespaces próprios; os demais contratos ainda podem ficar mais explícitos sem trocar imediatamente os canais IPC.
+1. **Composition root inchado:** `electron/main.ts` tem 1.747 linhas e registra um `ipcMain.handle` diretamente. Esse canal reúne filas de vários domínios para backup e encerramento; essa coordenação permanece no composition root. A maior redução futura vem de separar a composição de serviços e inicialização sem deslocar propriedade entre domínios.
+2. **Preload amplo:** `electron/preload.ts` preserva os métodos raiz para compatibilidade e agora também oferece agrupamentos por domínio. Os consumidores ainda precisam migrar gradualmente para os namespaces; os nomes e a validação dos canais IPC permanecem os mesmos.
 3. **Páginas longas:** Customizador, Editor V6, Studio e Fabricador Dev ainda concentram estado e operações. A refatoração deve extrair casos de uso, seletores, hooks e componentes por responsabilidade, sem dividir apenas para reduzir contagem de linhas.
 4. **Núcleo de renderização de personagem:** Fabricador, Customizador, Studio e Editor V6 consomem modelos e composições em contextos diferentes. Um núcleo compartilhado exige contratos claros e fixtures visuais douradas antes de trocar os caminhos atuais.
 5. **Persistência heterogênea:** algumas áreas já usam serviços/repositórios/filas, outras gravam diretamente no `main.ts`. Cada domínio precisa declarar quem é dono do formato, fila, backup, recuperação e validade de referências.
@@ -535,9 +537,16 @@ Este corte separa propriedade dos contratos e chamadas entre domínios, mas não
 - A montagem do projeto, o registro no histórico, a inclusão dos assets pendentes e as mensagens de domínio continuam na tela. O processamento de pixels e o fluxo de persistência não mudaram.
 - Testes com worker sintético verificam progresso, resposta antiga, resultado completo, erro, cancelamento e o uso do runner pela página.
 
+### Etapa aplicada — namespaces no contrato IPC do Studio
+
+- O mapa confirmou que `preload.ts` já mantinha objetos tipados por domínio, mas os espalhava no objeto raiz `window.desktop`; Studio misturava chamadas próprias, leituras do Customizador e leituras do Fabricador no mesmo nível.
+- O preload agora também expõe `fabricator`, `customizer`, `studio`, `editorV6` e `roteiros` como grupos tipados, mantendo as chamadas planas antigas para compatibilidade gradual. Os objetos apontam para as mesmas funções, sem novos handlers ou canais IPC.
+- `StudioPage` usa os grupos do Studio para documentos/arquivos, do Customizador para personagens e do Fabricador para poses/catálogos faciais. Os formatos persistidos e a propriedade dos dados não mudaram.
+- `typecheck`, `audit:architecture` e `build` passaram; nenhuma chamada antiga do objeto raiz permaneceu em `StudioPage`.
+
 ## 7. Próxima tarefa recomendada
 
-Continuar pelo **Ciclo 4** com módulos focados de UI e coordenação no Customizador, Fabricador, Studio e Editor V6. A próxima etapa é reduzir a coordenação restante nas páginas do Customizador e do Fabricador após mapear quem atualiza o catálogo-fonte, a instância personalizada e o documento de cena durante operações assíncronas. Em paralelo, preparar fixtures visuais sintéticas que capturem as saídas reais de Studio e Editor V6 antes de compartilhar mais da orquestração de renderização.
+Continuar migrando consumidores dos métodos raiz de `window.desktop` para os namespaces de domínio, começando pelos fluxos que leem dados de outras áreas, como Editor V6 e Customizador. Manter os aliases antigos enquanto existirem consumidores e só removê-los após busca completa e validação dos scripts de diagnóstico. Em paralelo, continuar mapeando as filas de gravação e referências de catálogos entre renderer, preload, handlers IPC e repositórios.
 
 ## 8. Verificações e validação
 

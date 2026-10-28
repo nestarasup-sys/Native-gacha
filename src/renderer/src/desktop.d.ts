@@ -26,6 +26,11 @@ declare global {
       verifyDataBackup: (id: string) => Promise<{ id: string; valid: boolean; fileCount: number; byteLength: number; createdAt: string; verifiedAt: string; databaseSchema: number }>
       restoreDataBackup: (id: string) => Promise<{ cancelled?: boolean; safetyBackupId?: string; restoreId?: string; backupId?: string; fileCount?: number; byteLength?: number }>
       deleteDataBackup: (id: string) => Promise<{ deleted: boolean }>
+      fabricator: FabricatorDesktopApi
+      customizer: CustomizerDesktopApi
+      studio: StudioDesktopApi
+      editorV6: EditorV6DesktopApi
+      roteiros: RoteirosDesktopApi
       baseVideos: BaseVideosDesktopApi
       mediaLibrary: MediaLibraryDesktopApi
       videoBackgrounds: VideoBackgroundLibraryDesktopApi
