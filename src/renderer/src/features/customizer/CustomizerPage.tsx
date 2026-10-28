@@ -10,22 +10,22 @@ import { HairAssetPreview, WardrobePanelCandidatePreview } from './CustomizerAss
 import { customizerFaceParts, customizerSkinTonePresets, facePartCatalogId, facePartColorControls, facePartSourceId, hasSelectedFaceAsset, mirroredFaceThumbnailIds, sameFaceAssetPair, skinTonePresets, wrapSlotIndex } from './customizerFaceCatalogModel'
 import type { FaceLibraryPartId } from './customizerFaceCatalogModel'
 import { hairColorControls, hairPalettePresets, MouthBlushControls, NoseOpacityControl, NoseSkinTonePalette, PiecePaletteStrip } from './CustomizerAppearanceControls'
+import { renderCustomizerFacePreview } from './customizerFacePreview'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { RenderedCharacterPortrait } from '../../ui/components/RenderedCharacterPortrait'
 import { Icon, type IconName } from '../../ui/components/Icon'
-import type { FaceCatalogItem, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSummary, FaceComponentKind, FaceDetailKind, FaceElementKind, FaceExpressionEffects, FaceSheetKind, FabricatorPose, FabricatorPoseSummary, FabricatorProject, FabricatorSlotSummary, HairStyle, HairStyleSummary, WardrobeCategory, WardrobeSet, WardrobeSetSummary } from '../../../../shared/fabricator'
+import type { FaceCatalogItem, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSummary, FaceComponentKind, FaceDetailKind, FaceElementKind, FaceSheetKind, FabricatorPose, FabricatorPoseSummary, FabricatorProject, FabricatorSlotSummary, HairStyle, HairStyleSummary, WardrobeCategory, WardrobeSet, WardrobeSetSummary } from '../../../../shared/fabricator'
 import { resolvePoseCategory } from '../../../../shared/fabricator'
 import { hairCategories, hairStyleSupportsCategory } from '../../../../shared/hairCategories'
 import type { CustomizerCharacter, CustomizerFaceAppearance, CustomizerWardrobeGroup, FaceComponentPartId, FacePalettePartId, HairColorOverrides, HairColorRole, HairPartId } from '../../../../shared/customizer'
 import { characterBodyDimensionLimits, characterProportionLimits, defaultCharacterBodyDimensions, defaultCharacterProportions, getCharacterBodyDimensions, getCharacterProportions, type CharacterBodyDimensions, type CharacterProportions } from '../../../../shared/customizer'
-import { type StudioFaceTransforms } from '../../../../shared/studio'
 import { usePreviewBackground } from '../../ui/hooks/usePreviewBackground'
 import { DesignBanner } from '../../ui/components/DesignBanner'
 import { anchorWardrobeAdjustments, editWardrobeAdjustment, moveWardrobeAdjustment } from '../../../../shared/wardrobeAdjustment'
 import { toggleWardrobeVisibility, updateWardrobeComponentGroups, matchesWardrobeComponent, recolorWardrobeComponents, selectWardrobePanelComponents, wardrobeGroupCategoryForSource } from '../../../../shared/wardrobePlacementModel'
 import { applyCharacterBodyShape } from '../../../../shared/bodyShape'
-import { characterRenderSize, configureCharacterSampling, MAX_CHARACTER_PREVIEW_PIXELS } from './renderResolution'
-import { renderArtwork, loadStandardExpressionEffects, loadCachedImage, withCharacterHeadSize, loadHairAppearanceLayers, renderArtworkWithHair, renderWardrobeOverlay, isRightFaceAsset, renderFaceOverlay, renderFrontHairOverlay, characterShapeScale, drawFaceCatalogOverlay, resolvedHairColors, clothingCategories, wardrobeComponentsForGroup, customizerHairParts, hairAppearanceStyleId } from '../../characters/characterRenderer'
+import { characterRenderSize } from './renderResolution'
+import { renderArtwork, loadStandardExpressionEffects, loadCachedImage, withCharacterHeadSize, loadHairAppearanceLayers, renderArtworkWithHair, renderWardrobeOverlay, isRightFaceAsset, renderFaceOverlay, renderFrontHairOverlay, characterShapeScale, resolvedHairColors, clothingCategories, wardrobeComponentsForGroup, customizerHairParts, hairAppearanceStyleId } from '../../characters/characterRenderer'
 import type { CatalogArtwork, HairCatalogSide, AdjustmentPreviewHighlight, ClothingGroupCategory, SelectedWardrobeComponent } from '../../characters/characterRenderer'
 
 async function sampleOriginalSkinTone(project: FabricatorProject): Promise<string | null> {
@@ -92,19 +92,6 @@ function hairAppearancePartStyleId(appearance: NonNullable<CustomizerCharacter['
   return null
 }
 
-
-async function renderFaceCatalogOverlay(artwork: CatalogArtwork, source: FabricatorProject, items: Partial<Record<FaceSheetKind | FaceElementKind, FaceCatalogItem>>, appearance: CustomizerFaceAppearance, skinTone?: string, studioFaceTransforms?: StudioFaceTransforms, maxSize = Math.max(artwork.width, artwork.height), expressionEffects?: FaceExpressionEffects, headOverrides: CustomizerCharacter['customization']['partOverrides'] = {}, highlightedHeadId?: string | null): Promise<string | null> {
-  const canvas = document.createElement('canvas')
-  const pixelScale = Math.min(maxSize / Math.max(artwork.width, artwork.height), Math.sqrt(MAX_CHARACTER_PREVIEW_PIXELS / (artwork.width * artwork.height)))
-  canvas.width = Math.max(1, Math.ceil(artwork.width * pixelScale))
-  canvas.height = Math.max(1, Math.ceil(artwork.height * pixelScale))
-  const context = canvas.getContext('2d')
-  if (context) configureCharacterSampling(context)
-  if (!context) return null
-  context.scale(pixelScale, pixelScale)
-  await drawFaceCatalogOverlay(context, artwork, source, items, appearance, skinTone, studioFaceTransforms, expressionEffects, undefined, undefined, headOverrides, highlightedHeadId)
-  return canvas.toDataURL('image/png')
-}
 
 const modules: { name: string; icon: IconName; detail: string }[] = [
   { name: 'Modelos', icon: 'sparkles', detail: 'Looks prontos para começar' },
@@ -685,7 +672,17 @@ export function CustomizerPage() {
     }
     if (!displayArtworkProject || !selectedSourceModelProject || !appearance || (!hasCatalogSelection && !face)) { setSelectedFaceUrl(null); return }
     const render = hasCatalogSelection
-      ? renderFaceCatalogOverlay(displayArtworkProject, selectedSourceModelProject, catalogItems, appearance, selectedCharacter?.customization.modelSkinTone, undefined, characterRenderSize(displayArtworkProject.width, displayArtworkProject.height, previewExtent.width, previewExtent.height, customizerPreviewZoom, previewExtent.density), standardExpressionEffects[appearance.expressionIndex], selectedCharacter?.customization.partOverrides, activeFacePreviewHighlight)
+      ? renderCustomizerFacePreview({
+        artwork: displayArtworkProject,
+        source: selectedSourceModelProject,
+        items: catalogItems,
+        appearance,
+        skinTone: selectedCharacter?.customization.modelSkinTone,
+        maxSize: characterRenderSize(displayArtworkProject.width, displayArtworkProject.height, previewExtent.width, previewExtent.height, customizerPreviewZoom, previewExtent.density),
+        expressionEffects: standardExpressionEffects[appearance.expressionIndex],
+        headOverrides: selectedCharacter?.customization.partOverrides,
+        highlightedHeadId: activeFacePreviewHighlight
+      })
       : renderFaceOverlay(displayArtworkProject, selectedSourceModelProject, face, appearance, characterRenderSize(displayArtworkProject.width, displayArtworkProject.height, previewExtent.width, previewExtent.height, customizerPreviewZoom, previewExtent.density), selectedCharacter?.customization.partOverrides, activeFacePreviewHighlight)
     void render.then(async (url) => {
       if (!await preparePreviewImage(url)) return
