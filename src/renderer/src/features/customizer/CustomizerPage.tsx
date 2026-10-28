@@ -13,15 +13,15 @@ import { HairAssetPreview, WardrobePanelCandidatePreview } from './CustomizerAss
 import { customizerFaceParts, customizerSkinTonePresets, facePartCatalogId, facePartColorControls, facePartSourceId, hasSelectedFaceAsset, mirroredFaceThumbnailIds, sameFaceAssetPair, skinTonePresets, wrapSlotIndex } from './customizerFaceCatalogModel'
 import type { FaceLibraryPartId } from './customizerFaceCatalogModel'
 import { hairColorControls, hairPalettePresets, MouthBlushControls, NoseOpacityControl, NoseSkinTonePalette, PiecePaletteStrip } from './CustomizerAppearanceControls'
-import { renderCustomizerFacePreview } from './customizerFacePreview'
 import { renderCustomizerBasePreview } from './customizerCharacterPreview'
+import { useCustomizerFacePreview } from './useCustomizerFacePreview'
 import { preparePreviewImage, sampleOriginalSkinTone } from './customizerPreviewImages'
 import { CustomizerCategoryIcon, clothesAdjustmentDefinitions, customizerClothesTabs, customizerHeadTabs, customizerModuleByTab, customizerModuleNames, customizerOtherTabs, customizerTopTabs, headAdjustmentItems, headAdjustmentItemsFor } from './customizerNavigation'
 import { adjustableHairPartIds, hairAppearancePartStyleId } from './customizerHairAppearanceModel'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { RenderedCharacterPortrait } from '../../ui/components/RenderedCharacterPortrait'
 import { Icon } from '../../ui/components/Icon'
-import type { FaceCatalogItem, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSummary, FaceComponentKind, FaceDetailKind, FaceElementKind, FaceSheetKind, FabricatorPose, FabricatorProject, HairStyle, HairStyleSummary, WardrobeCategory, WardrobeSet, WardrobeSetSummary } from '../../../../shared/fabricator'
+import type { FaceCatalogItem, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSummary, FaceComponentKind, FaceDetailKind, FaceSheetKind, FabricatorPose, FabricatorProject, HairStyle, HairStyleSummary, WardrobeCategory, WardrobeSet, WardrobeSetSummary } from '../../../../shared/fabricator'
 import { resolvePoseCategory } from '../../../../shared/fabricator'
 import { hairCategories, hairStyleSupportsCategory } from '../../../../shared/hairCategories'
 import type { CustomizerCharacter, CustomizerFaceAppearance, CustomizerWardrobeGroup, FaceComponentPartId, FacePalettePartId, HairColorOverrides, HairColorRole, HairPartId } from '../../../../shared/customizer'
@@ -32,7 +32,7 @@ import { anchorWardrobeAdjustments, editWardrobeAdjustment, moveWardrobeAdjustme
 import { toggleWardrobeVisibility, updateWardrobeComponentGroups, matchesWardrobeComponent, recolorWardrobeComponents, selectWardrobePanelComponents, wardrobeGroupCategoryForSource } from '../../../../shared/wardrobePlacementModel'
 import { applyCharacterBodyShape } from '../../../../shared/bodyShape'
 import { characterRenderSize } from './renderResolution'
-import { renderArtwork, loadStandardExpressionEffects, withCharacterHeadSize, loadHairAppearanceLayers, renderArtworkWithHair, renderWardrobeOverlay, isRightFaceAsset, renderFaceOverlay, renderFrontHairOverlay, characterShapeScale, resolvedHairColors, clothingCategories, wardrobeComponentsForGroup, customizerHairParts, hairAppearanceStyleId } from '../../characters/characterRenderer'
+import { renderArtwork, loadStandardExpressionEffects, withCharacterHeadSize, loadHairAppearanceLayers, renderArtworkWithHair, renderWardrobeOverlay, isRightFaceAsset, renderFrontHairOverlay, characterShapeScale, resolvedHairColors, clothingCategories, wardrobeComponentsForGroup, customizerHairParts, hairAppearanceStyleId } from '../../characters/characterRenderer'
 import type { CatalogArtwork, HairCatalogSide, AdjustmentPreviewHighlight, ClothingGroupCategory, SelectedWardrobeComponent } from '../../characters/characterRenderer'
 
 const proportionControls: Array<{ key: keyof CharacterProportions; label: string; description: string }> = [
@@ -502,42 +502,21 @@ export function CustomizerPage() {
     return () => { cancelled = true }
   }, [activeModule, headPanelTab, selectedCatalogModelSlot])
 
-  useEffect(() => {
-    let cancelled = false
-    const appearance = characterFaceAppearance
-    const hasCatalogSelection = Boolean(appearance?.eyeCatalogId || appearance?.eyeLeftCatalogId || appearance?.eyeRightCatalogId || appearance?.eyebrowCatalogId || appearance?.eyebrowLeftCatalogId || appearance?.eyebrowRightCatalogId || appearance?.noseCatalogId || appearance?.mouthClosedCatalogId || appearance?.mouthOpenCatalogId || Object.values(appearance?.components ?? {}).some((component) => component?.assetId) || Object.values(appearance?.faceDetails ?? {}).some(Boolean) || Object.values(appearance?.headExtras ?? {}).some(Boolean))
-    const face = appearance?.setId ? faceDetails[`${appearance.modelSlot}:${appearance.setId}`] : null
-    const catalogItems: Partial<Record<FaceSheetKind | FaceElementKind, FaceCatalogItem>> = {}
-    if (appearance && hasCatalogSelection) {
-      const ids: Partial<Record<FaceSheetKind | FaceElementKind, string | undefined>> = { eyes: appearance.eyeCatalogId, 'eye-left': appearance.eyeLeftCatalogId ?? undefined, 'eye-right': appearance.eyeRightCatalogId ?? undefined, eyebrows: appearance.eyebrowCatalogId, 'brow-left': appearance.eyebrowLeftCatalogId ?? undefined, 'brow-right': appearance.eyebrowRightCatalogId ?? undefined, nose: appearance.noseCatalogId, 'mouth-closed': appearance.mouthClosedCatalogId, 'mouth-open': appearance.mouthOpenCatalogId }
-      for (const [category, id] of Object.entries(ids) as Array<[FaceSheetKind | FaceElementKind, string | undefined]>) {
-        if (!id) continue
-        const item = faceCatalogDetails[`${appearance.modelSlot}:${id}`]
-        if (item) catalogItems[category] = item
-      }
-    }
-    if (!displayArtworkProject || !selectedSourceModelProject || !appearance || (!hasCatalogSelection && !face)) { setSelectedFaceUrl(null); return }
-    const render = hasCatalogSelection
-      ? renderCustomizerFacePreview({
-        artwork: displayArtworkProject,
-        source: selectedSourceModelProject,
-        items: catalogItems,
-        appearance,
-        skinTone: selectedCharacter?.customization.modelSkinTone,
-        maxSize: characterRenderSize(displayArtworkProject.width, displayArtworkProject.height, previewExtent.width, previewExtent.height, customizerPreviewZoom, previewExtent.density),
-        expressionEffects: standardExpressionEffects[appearance.expressionIndex],
-        headOverrides: selectedCharacter?.customization.partOverrides,
-        highlightedHeadId: activeFacePreviewHighlight
-      })
-      : renderFaceOverlay(displayArtworkProject, selectedSourceModelProject, face, appearance, characterRenderSize(displayArtworkProject.width, displayArtworkProject.height, previewExtent.width, previewExtent.height, customizerPreviewZoom, previewExtent.density), selectedCharacter?.customization.partOverrides, activeFacePreviewHighlight)
-    void render.then(async (url) => {
-      if (!await preparePreviewImage(url)) return
-      if (!cancelled) setSelectedFaceUrl(url)
-    }).catch((reason: unknown) => {
-      if (!cancelled) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível montar o rosto do personagem.')
-    })
-    return () => { cancelled = true }
-  }, [characterFaceAppearance, faceCatalogDetails, faceDetails, displayArtworkProject, selectedSourceModelProject, selectedCharacter?.customization.modelSkinTone, selectedCharacter?.customization.partOverrides, previewExtent, customizerPreviewZoom, standardExpressionEffects, activeFacePreviewHighlight])
+  useCustomizerFacePreview({
+    appearance: characterFaceAppearance,
+    catalogDetails: faceCatalogDetails,
+    legacyFaceDetails: faceDetails,
+    artwork: displayArtworkProject,
+    source: selectedSourceModelProject,
+    skinTone: selectedCharacter?.customization.modelSkinTone,
+    headOverrides: selectedCharacter?.customization.partOverrides,
+    previewExtent,
+    zoom: customizerPreviewZoom,
+    expressionEffects: standardExpressionEffects,
+    highlight: activeFacePreviewHighlight,
+    setSelectedFaceUrl,
+    setCatalogError
+  })
 
   useEffect(() => {
     let cancelled = false
