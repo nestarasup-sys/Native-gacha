@@ -125,7 +125,7 @@ export function EditorV6Page() {
   const editorV6FaceRendererRef = useRef<{ key: string; renderer: PreparedEditorV6FaceRenderer } | null>(null)
   const saveGenerationRef = useRef(0)
   const activeLoadGenerationRef = useRef(0)
-  const studioSaveQueue = useRef(new SerializedDocumentSaveQueue())
+  const editorV6SaveQueue = useRef(new SerializedDocumentSaveQueue())
   const expressionSaveSignatureRef = useRef<{ studioId: string; value: string } | null>(null)
   const normalizedStudioIdsRef = useRef(new Set<string>())
   const nextStudioNumber = useRef(1)
@@ -603,7 +603,7 @@ export function EditorV6Page() {
     try {
       // Enfileirar antes de preparar a miniatura: uma geração PNG lenta não pode
       // fazer um snapshot antigo ser gravado depois de um novo.
-      const savedDocument = await studioSaveQueue.current.run(async () => {
+      const savedDocument = await editorV6SaveQueue.current.run(async () => {
         const thumbnailDataUrl = await makeStudioThumbnail(document).catch(() => document.thumbnailDataUrl)
         const next = { ...document, ...(thumbnailDataUrl ? { thumbnailDataUrl } : {}), updatedAt: new Date().toISOString() }
         await window.desktop.saveEditorV6Project(next)
@@ -716,7 +716,7 @@ export function EditorV6Page() {
       if (category !== 'background') nextStudio = addEditorV6ElementAtFrame(nextStudio, nextStudio.elements.at(-1)!, frameAtImport)
       nextStudio = { ...nextStudio, timeline: normalizeEditorV6Timeline(syncEditorV6TimelineElements(nextStudio.timeline, nextStudio.elements)) }
       // Persist imported image bytes and their manifest before showing the asset as saved.
-      await window.desktop.saveEditorV6Project(nextStudio)
+      await editorV6SaveQueue.current.run(() => window.desktop.saveEditorV6Project(nextStudio))
       if (activeEditorV6Id === studioAtImport.id) {
         recordHistory()
         setActiveEditorV6Project(nextStudio)
@@ -751,7 +751,7 @@ export function EditorV6Page() {
       const block = { id: crypto.randomUUID(), mediaId: media.id, mediaInFrame: 0, label: media.name.slice(0, 120), startFrame, durationFrames, audioEnabled: true, gain: 1 }
       const timeline = normalizeEditorV6Timeline({ ...sourceProject.timeline, durationFrames: Math.max(sourceProject.timeline.durationFrames, startFrame + durationFrames), tracks: sourceProject.timeline.tracks.map((item) => item.kind === kind ? { ...item, blocks: [...item.blocks, block] } : item) })
       const next: EditorV6Document = { ...sourceProject, media: [...(sourceProject.media ?? []), media], timeline, updatedAt: new Date().toISOString() }
-      await window.desktop.saveEditorV6Project(next)
+      await editorV6SaveQueue.current.run(() => window.desktop.saveEditorV6Project(next))
       if (activeEditorV6Id !== sourceProject.id) return
       recordHistory(sourceProject)
       setActiveEditorV6Project(next)
@@ -779,7 +779,7 @@ export function EditorV6Page() {
     const mediaList = sourceProject.media ?? []
     const timeline = normalizeEditorV6Timeline({ ...sourceProject.timeline, durationFrames: Math.max(sourceProject.timeline.durationFrames, startFrame + durationFrames), tracks: sourceProject.timeline.tracks.map((entry) => entry.kind === 'video' ? { ...entry, blocks: [...entry.blocks, block] } : entry) })
     const next: EditorV6Document = { ...sourceProject, media: mediaList.some((entry) => entry.id === media.id) ? mediaList : [...mediaList, media], timeline, updatedAt: new Date().toISOString() }
-    await window.desktop.saveEditorV6Project(next)
+    await editorV6SaveQueue.current.run(() => window.desktop.saveEditorV6Project(next))
     if (activeEditorV6Id !== sourceProject.id) return
     recordHistory(sourceProject)
     setActiveEditorV6Project(next)

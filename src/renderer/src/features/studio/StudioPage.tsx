@@ -693,7 +693,7 @@ export function StudioPage() {
           }
 
       // Persist imported image bytes and their manifest before showing the asset as saved.
-      await window.desktop.saveStudio(nextStudio)
+      await studioSaveQueue.current.run(() => window.desktop.saveStudio(nextStudio))
       if (activeStudioId === studioAtImport.id) {
         recordHistory()
         setStudios((current) => current.map((studio) => studio.id === studioAtImport.id ? nextStudio : studio))

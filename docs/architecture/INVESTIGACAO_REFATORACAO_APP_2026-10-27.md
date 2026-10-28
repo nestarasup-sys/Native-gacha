@@ -163,8 +163,8 @@ Editor V6
 |---|---|---|---|
 | Fabricador Dev | `features/fabricator/FabricatorPage.tsx`; catálogo autoral de modelos, poses, roupas, cabelo, rosto, presets e animações. | `domains/fabricator/` concentra catálogos, IPC, persistência versionada, transações e recuperação; é fonte do Customizador e de outros renderizadores. | Vários domínios já foram extraídos; a página ainda coordena workspaces e comandos. |
 | Customizador | `features/customizer/CustomizerPage.tsx`; instâncias de personagens e escolhas/overrides individuais. | `domains/customizer/` tem validação, serviço, repositório e IPC; lê catálogos do Fabricador e alimenta Studio, Roteiros e Editor V6. | Renderização e coordenação de estado ainda estão concentradas na página. |
-| Studio principal | `features/studio/StudioPage.tsx`; documento de cena e composição. | `domains/studio/` tem IPC primário, índice e persistência; usa personagens do Customizador e armazenamento visual comum. | Separar estado, cena e painéis sem trocar a persistência de projetos. |
-| Editor V6 | `features/editorV6/EditorV6Page.tsx`; projetos, timeline, preview e exportação. | `domains/editorV6/` cobre IPC, manifesto/índice, journal de assets, motions e workers/processo de exportação; usa biblioteca por ID. | Manter engine, preview, timeline e export em fronteiras estáveis. |
+| Studio principal | `features/studio/StudioPage.tsx`; documento de cena e composição. | `domains/studio/` tem IPC primário, índice e persistência; usa personagens do Customizador e armazenamento visual comum. | Autosave e importação de imagem compartilham a mesma fila do renderer antes do IPC. |
+| Editor V6 | `features/editorV6/EditorV6Page.tsx`; projetos, timeline, preview e exportação. | `domains/editorV6/` cobre IPC, manifesto/índice, journal de assets, motions e workers/processo de exportação; usa biblioteca por ID. | Autosave e importação de imagem/áudio/vídeo compartilham a mesma fila do renderer antes do IPC. |
 | Roteiros | `features/roteiros/RoteirosPage.tsx`; documentos, seções, elenco, falas/pensamentos e exportações. | `domains/roteiros/` tem serviços, repositórios SQLite, validação e IPC de documentos, logs, bibliotecas e exportações; usa Biblioteca/Base por ID, fundos compartilhados e personagens do Customizador/Fabricador. | A renderização dos personagens é feita no renderer; o processo principal valida e recebe os arquivos PNG antes de publicar o projeto exportado. |
 | Base de Vídeos | `features/baseVideos/BaseVideosPage.tsx`; publicação, numeração, descrição, categorias e vistas de rascunho. | `domains/baseVideos/` tem serviço, repositório, validação e IPC; metadados relacionam ao ID da Biblioteca em SQLite. | Feature e namespace próprios; exclusão coordenada com consumidores dos vídeos. |
 | Opções/Dados | `features/options/OptionsPage.tsx`; backups, inventário, migração e configurações. | `DataPlatform`, `DataMigrationService`, `DataBackupService` e `DomainFileSystem` coordenam SQLite, CAS e arquivos. | Infraestrutura crítica; migrações reais continuam explícitas e verificáveis. |
@@ -417,9 +417,15 @@ Este corte separa propriedade dos contratos e chamadas entre domínios, mas não
 - Leitura do projeto, numeração e metadados do novo catálogo continuam no fluxo da página. A clonagem dos arquivos de áudio e mídia continua usando os mesmos canais IPC antes de salvar o documento duplicado.
 - A operação mantém os mesmos campos, ordem de geração dos IDs, fallbacks de referências e política de regeneração de chaves de movimento. Nenhum contrato IPC, formato persistido ou schema mudou.
 
+### Etapa aplicada — ordem comum para autosave e importações
+
+- O autosave de Studio e Editor V6 já entrava em `SerializedDocumentSaveQueue` antes de gerar a miniatura. As gravações que persistem uma importação na cena contornavam a fila; uma miniatura lenta podia deixar um snapshot antigo chegar ao IPC depois da importação.
+- As importações de imagem no Studio e de imagem/áudio/vídeo no Editor V6 agora usam a mesma fila local que o autosave. A fila do processo principal continua serializando os handlers e a persistência por projeto; a mudança garante que as chamadas partam do renderer na ordem em que foram solicitadas.
+- A numeração, o histórico, os canais IPC, o formato do documento e as rotinas de armazenamento permanecem iguais. No Editor V6, a fila recebeu o nome `editorV6SaveQueue` para refletir seu dono.
+
 ## 7. Próxima tarefa recomendada
 
-Continuar pelo **Ciclo 4** com módulos focados de UI e coordenação no Customizador, Fabricador, Studio e Editor V6. No Editor V6, mapear agora o ciclo de salvamento automático e histórico ao redor de `SerializedDocumentSaveQueue`, incluindo quem inicia gravações, gera miniaturas e resolve falhas. Escolher a próxima extração somente depois de confirmar essa sequência e seus consumidores. Em paralelo, preparar fixtures visuais sintéticas que capturem as saídas reais dessas áreas antes de compartilhar mais da orquestração de renderização.
+Continuar pelo **Ciclo 4** com módulos focados de UI e coordenação no Customizador, Fabricador, Studio e Editor V6. A próxima análise no Editor V6 deve cobrir snapshots capturados antes de operações assíncronas, atualização do estado enquanto uma gravação está pendente e o indicador `saved`; escolher uma extração somente depois de mapear esses casos juntos. Em paralelo, preparar fixtures visuais sintéticas que capturem as saídas reais dessas áreas antes de compartilhar mais da orquestração de renderização.
 
 ## 8. Verificações e validação
 
