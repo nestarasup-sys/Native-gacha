@@ -31,6 +31,40 @@ function emptyHairWorkspace(modelSlot: number): HairWorkspaceData {
   return { schemaVersion: 1, modelSlot, front: null, back: null, fringe: null, transforms: { front: emptyHairTransform(), back: emptyHairTransform(), fringe: emptyHairTransform() }, categoryBySide: defaultCategories, chromaTolerance: 70, chromaMode: 'auto', updatedAt: new Date().toISOString() }
 }
 
+function removeHairSides(workspace: HairWorkspaceData, sides: readonly HairSide[]): HairWorkspaceData {
+  const removed = new Set(sides)
+  const next: HairWorkspaceData = {
+    ...workspace,
+    front: removed.has('front') ? null : workspace.front,
+    back: removed.has('back') ? null : workspace.back,
+    fringe: removed.has('fringe') ? null : workspace.fringe,
+    transforms: {
+      ...workspace.transforms,
+      ...(removed.has('front') ? { front: emptyHairTransform() } : {}),
+      ...(removed.has('back') ? { back: emptyHairTransform() } : {}),
+      ...(removed.has('fringe') ? { fringe: emptyHairTransform() } : {})
+    },
+    categoryBySide: {
+      ...workspace.categoryBySide,
+      ...(removed.has('front') ? { front: defaultCategories.front } : {}),
+      ...(removed.has('back') ? { back: defaultCategories.back } : {}),
+      ...(removed.has('fringe') ? { fringe: defaultCategories.fringe } : {})
+    },
+    updatedAt: new Date().toISOString()
+  }
+
+  if (next.front || next.back || next.fringe) {
+    return { ...next, sourceImageSaved: Boolean(workspace.sourceImageDataUrl), sourceAppliesToDraft: false }
+  }
+
+  const { sourceImageDataUrl: _sourceImageDataUrl, ...withoutSourceImage } = next
+  return { ...withoutSourceImage, sourceImageSaved: false, sourceAppliesToDraft: false }
+}
+
+function hairStyleSides(style: HairStyle): HairSide[] {
+  return (['front', 'back', 'fringe'] as const).filter((side) => style[side] !== null && style[side] !== undefined)
+}
+
 function readFileDataUrl(file: File): Promise<string> {
   return normalizeEditableImageFile(file).then((image) => image.dataUrl)
 }
@@ -210,7 +244,7 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
       const side = selectedSide
       updateWorkspace((current) => ({ ...current, [side]: asset, categoryBySide: { ...current.categoryBySide, [side]: selectedCategory }, sourceAppliesToDraft: false, transforms: { ...current.transforms, [side]: initialTransform(side, head, asset) } }))
       setActiveStyleId(null)
-      setNotice(`${category.label} importado. Ajuste a posição e salve nesta categoria.`)
+      setNotice(`${category.label} importado. Ajuste a posição e use Salvar para gravar o rascunho e esta peça no catálogo.`)
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível importar a peça de cabelo.') }
   }
 
@@ -269,51 +303,55 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
     updateWorkspace((current) => ({ ...current, transforms: { ...current.transforms, [selectedSide]: { ...(current.transforms[selectedSide] ?? initialTransform(selectedSide, head, selectedAsset)), ...patch } } }))
   }
 
-  async function persistWorkspace() {
-    if (!hairWorkspace) return
-    const { front, back, fringe, sourceImageDataUrl, ...rest } = hairWorkspace
+  async function persistWorkspace(workspace: HairWorkspaceData | null = hairWorkspace) {
+    if (!workspace) return
+    const { front, back, fringe, sourceImageDataUrl, ...rest } = workspace
     const saved: HairWorkspaceSave = { ...rest, sourceImageSaved: Boolean(sourceImageDataUrl), front: front ? { width: front.width, height: front.height } : null, back: back ? { width: back.width, height: back.height } : null, fringe: fringe ? { width: fringe.width, height: fringe.height } : null }
     const assets = [front ? { id: 'front' as const, dataUrl: front.dataUrl } : null, back ? { id: 'back' as const, dataUrl: back.dataUrl } : null, fringe ? { id: 'fringe' as const, dataUrl: fringe.dataUrl } : null, sourceImageDataUrl ? { id: 'source' as const, dataUrl: sourceImageDataUrl } : null].filter((asset): asset is NonNullable<typeof asset> => asset !== null)
     await window.desktop.saveHairWorkspace(modelSlot, { ...saved, transforms: normalizeHairTransforms(saved) }, assets)
   }
 
   async function saveHair() {
-    if (!hairWorkspace) return
+    if (!hairWorkspace || saving) return
     setSaving(true); setError(''); setNotice('')
+    let workspaceSaved = false
     try {
-      await persistWorkspace()
+      await persistWorkspace(hairWorkspace)
+      workspaceSaved = true
+      setDirty(false)
+      if (selectedAsset) {
+        const detail = await saveStyle(hairWorkspace, selectedAsset)
+        setHairStyles((current) => [detail, ...current.filter((style) => style.id !== detail.id && style.id !== 'legacy-workspace')])
+        setActiveStyleId(detail.id)
+      }
       window.dispatchEvent(new Event('fabricator:assets-updated'))
-      setDirty(false); setNotice('Rascunho, folha original e ajustes salvos para este modelo.')
-    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível salvar os cabelos.') }
+      setNotice(selectedAsset ? `Rascunho e ${category.label} salvos no catálogo deste modelo.` : 'Rascunho, folha original e ajustes salvos para este modelo.')
+    } catch (reason) {
+      const message = reason instanceof Error ? reason.message : 'Não foi possível salvar os cabelos.'
+      setError(workspaceSaved && selectedAsset ? `Rascunho salvo, mas não foi possível salvar ${category.label} no catálogo: ${message}` : message)
+    }
     finally { setSaving(false) }
   }
 
-  async function saveStyle() {
-    if (!hairWorkspace || !selectedAsset || saving) return
-    setSaving(true); setError(''); setNotice('')
-    try {
-      const id = canUpdateActiveStyle ? activeStyleId! : crypto.randomUUID()
-      const existing = canUpdateActiveStyle ? activeStyle : undefined
-      const savedCategoryCount = hairStyles.filter((style) => style.id !== 'legacy-workspace' && hairStyleSupportsCategory(style, selectedCategory)).length
-      const { front, back, fringe, sourceImageDataUrl: _source, sourceImageSaved: _sourceSaved, sourceAppliesToDraft: _sourceApplies, chromaTolerance: _tolerance, chromaMode: _mode, categoryBySide: _categories, ...rest } = hairWorkspace
-      const now = new Date().toISOString()
-      const saved: HairStyleSave = {
-        ...rest, id, category: selectedCategory, name: existing?.name ?? `${category.label} ${String(savedCategoryCount + 1).padStart(2, '0')}`,
-        front: selectedSide === 'front' && front ? { width: front.width, height: front.height } : null,
-        back: selectedSide === 'back' && back ? { width: back.width, height: back.height } : null,
-        fringe: selectedSide === 'fringe' && fringe ? { width: fringe.width, height: fringe.height } : null,
-        createdAt: existing?.createdAt ?? now, updatedAt: now
-      }
-      const assets = [{ id: selectedSide, dataUrl: selectedAsset.dataUrl }]
-      await persistWorkspace()
-      saved.transforms = normalizeHairTransforms(saved)
-      await window.desktop.saveHairStyle(modelSlot, saved, assets)
-      window.dispatchEvent(new Event('fabricator:assets-updated'))
-      const detail: HairStyle = { ...saved, front: saved.front && front ? { ...front } : null, back: saved.back && back ? { ...back } : null, fringe: saved.fringe && fringe ? { ...fringe } : null }
-      setHairStyles((current) => [detail, ...current.filter((style) => style.id !== id && style.id !== 'legacy-workspace')])
-      setActiveStyleId(id); setDirty(false); setNotice('Cabelo salvo no catálogo deste modelo e disponível em Customizar.')
-    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível salvar o cabelo no catálogo.') }
-    finally { setSaving(false) }
+  async function saveStyle(workspace: HairWorkspaceData, asset: HairAsset): Promise<HairStyle> {
+    const existingByAsset = hairStyles.find((style) => style.id !== 'legacy-workspace'
+      && style.category === selectedCategory
+      && style[selectedSide]?.dataUrl === asset.dataUrl)
+    const existing = (canUpdateActiveStyle && activeStyle?.id !== 'legacy-workspace' ? activeStyle : undefined) ?? existingByAsset
+    const id = existing?.id ?? crypto.randomUUID()
+    const savedCategoryCount = hairStyles.filter((style) => style.id !== 'legacy-workspace' && hairStyleSupportsCategory(style, selectedCategory)).length
+    const { front, back, fringe, sourceImageDataUrl: _source, sourceImageSaved: _sourceSaved, sourceAppliesToDraft: _sourceApplies, chromaTolerance: _tolerance, chromaMode: _mode, categoryBySide: _categories, ...rest } = workspace
+    const now = new Date().toISOString()
+    const saved: HairStyleSave = {
+      ...rest, id, category: selectedCategory, name: existing?.name ?? `${category.label} ${String(savedCategoryCount + 1).padStart(2, '0')}`,
+      front: selectedSide === 'front' && front ? { width: front.width, height: front.height } : null,
+      back: selectedSide === 'back' && back ? { width: back.width, height: back.height } : null,
+      fringe: selectedSide === 'fringe' && fringe ? { width: fringe.width, height: fringe.height } : null,
+      createdAt: existing?.createdAt ?? now, updatedAt: now
+    }
+    saved.transforms = normalizeHairTransforms(saved)
+    await window.desktop.saveHairStyle(modelSlot, saved, [{ id: selectedSide, dataUrl: asset.dataUrl }])
+    return { ...saved, front: saved.front && front ? { ...front } : null, back: saved.back && back ? { ...back } : null, fringe: saved.fringe && fringe ? { ...fringe } : null }
   }
 
   function openStyle(style: HairStyle) {
@@ -322,14 +360,43 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
     setActiveStyleId(style.id); setDirty(false); setError(''); setNotice(style.category ? `Editando ${style.name}.` : `Cabelo antigo aberto. Ao salvar, será criada uma cópia em ${category.label}.`)
   }
 
-  async function deleteStyle(style: HairStyle) {
-    if (!window.confirm(`Excluir ${style.name} do catálogo deste modelo? Personagens que já usam esse cabelo deixarão de encontrá-lo.`)) return
+  async function deleteSelectedAsset() {
+    if (!hairWorkspace || saving) return
+    const style = hairStyles.find((item) => item.id === activeStyleId)
+    const sides = style?.id === 'legacy-workspace' ? hairStyleSides(style) : [selectedSide]
+    const nextWorkspace = removeHairSides(hairWorkspace, sides)
+    const removedSource = Boolean(hairWorkspace.sourceImageDataUrl && !nextWorkspace.front && !nextWorkspace.back && !nextWorkspace.fringe)
+    const description = style?.id === 'legacy-workspace'
+      ? `Excluir ${style.name} e remover todas as peças dele deste modelo?`
+      : style
+        ? `Excluir ${style.name} do catálogo e remover ${category.label} do rascunho deste modelo? Personagens que já usam esse cabelo deixarão de encontrá-lo.`
+        : `Remover ${category.label} do rascunho deste modelo?`
+    const sourceMessage = removedSource
+      ? ' A folha original também será apagada, pois não restará nenhuma peça.'
+      : hairWorkspace.sourceImageDataUrl
+        ? ' A folha original será mantida enquanto outras peças ainda existirem.'
+        : ''
+    if (!window.confirm(description + sourceMessage)) return
+
+    let workspaceSaved = false
     try {
-      await window.desktop.deleteHairStyle(modelSlot, style.id)
-      setHairStyles((current) => current.filter((item) => item.id !== style.id && item.id !== 'legacy-workspace'))
-      if (activeStyleId === style.id) setActiveStyleId(null)
-      setNotice(`${style.name} foi excluído do catálogo.`)
-    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível excluir o cabelo.') }
+      await persistWorkspace(nextWorkspace)
+      workspaceSaved = true
+      if (style) await window.desktop.deleteHairStyle(modelSlot, style.id)
+      setHairWorkspace(nextWorkspace)
+      setDirty(false)
+      if (style) setHairStyles((current) => current.filter((item) => item.id !== style.id && item.id !== 'legacy-workspace'))
+      setActiveStyleId(null)
+      window.dispatchEvent(new Event('fabricator:assets-updated'))
+      setNotice(style ? `${style.name} foi excluído do catálogo e do rascunho.` : `${category.label} foi removido do rascunho.`)
+    } catch (reason) {
+      if (workspaceSaved) {
+        setHairWorkspace(nextWorkspace)
+        setDirty(false)
+      }
+      const message = reason instanceof Error ? reason.message : 'Não foi possível excluir o cabelo.'
+      setError(workspaceSaved && style ? `A peça saiu do rascunho, mas não foi possível apagar o asset do catálogo: ${message}` : message)
+    }
   }
 
   function flipSelectedHair() {
@@ -346,17 +413,17 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
       <span className="model-slot-logo"><Icon name="bow" /></span>
       <span><strong>Cabelos Dev</strong><small>Monte os cabelos para cada modelo</small></span>
       <label>Modelo de referência<select value={modelSlot} onChange={(event) => { if (dirty && !window.confirm('Há alterações não salvas. Descartar e trocar de modelo?')) return; setModelSlot(Number(event.target.value)) }} disabled={loadingModels}>{models.map((model, index) => model && <option key={model.slot} value={model.slot}>Modelo {String(index + 1).padStart(2, '0')} · {model.name}</option>)}</select></label>
-      <button className="hair-dev-save" onClick={() => void saveHair()} disabled={!hairWorkspace || !dirty || saving || loadingHair} title="Salvar a edição de trabalho deste modelo" type="button"><Icon name="check" />Salvar rascunho</button>
+      <button className="hair-dev-save" onClick={() => void saveHair()} disabled={!hairWorkspace || (!dirty && !selectedAsset) || saving || loadingHair} title="Salvar o rascunho e a peça da categoria selecionada no catálogo" type="button"><Icon name="check" />Salvar</button>
     </header>
     <div className="hair-dev-body">
       <aside className="hair-dev-library" aria-label="Biblioteca de cabelos">
         <header><strong>Biblioteca</strong><small>{hairStyles.length} assets</small></header>
         <div className="hair-dev-library-actions">
           <button type="button" onClick={() => singleFileInputRef.current?.click()} disabled={!head || loadingHair || saving}><Icon name="plus" /> Importar</button>
-          <button type="button" onClick={() => { const style = hairStyles.find((item) => item.id === activeStyleId); if (style) void deleteStyle(style) }} disabled={!activeStyleId || saving}><Icon name="trash" /> Excluir</button>
+          <button type="button" onClick={() => void deleteSelectedAsset()} disabled={(!activeStyleId && !selectedAsset) || saving || loadingHair}><Icon name="trash" /> Excluir</button>
         </div>
         <input ref={singleFileInputRef} className="hair-dev-file" type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => void importSinglePiece(event)} />
-        <small className="hair-dev-library-hint">Importe uma peça PNG ou WebP com fundo transparente. O rascunho guarda a montagem; o catálogo salva a peça da categoria selecionada.</small>
+        <small className="hair-dev-library-hint">Importe uma peça PNG ou WebP com fundo transparente. Salvar grava o rascunho e a peça da categoria selecionada no catálogo.</small>
         {(selectedSide === 'front' || selectedCategory === 'backHair') && <><button className="hair-dev-sheet-import" onClick={() => fileInputRef.current?.click()} disabled={!head || loadingHair || saving} type="button">Importar folha Posterior/Traseiro</button><input ref={fileInputRef} className="hair-dev-file" type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => void importSheet(event)} /></>}
         <nav className="hair-dev-library-tabs" aria-label="Categorias da biblioteca" role="tablist">
           {hairCategories.map((item) => <button key={item.id} type="button" role="tab" aria-selected={selectedCategory === item.id} className={selectedCategory === item.id ? 'active' : ''} onClick={() => { setSelectedCategory(item.id); setActiveStyleId(null) }}>{item.label}</button>)}
@@ -368,7 +435,6 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
             {!categoryStyles.length && <small>Nenhum asset salvo nesta categoria</small>}
           </div>
         </section>
-        <button className="hair-dev-catalog-save" onClick={() => void saveStyle()} disabled={!selectedAsset || saving || loadingHair} type="button"><Icon name="check" />{canUpdateActiveStyle ? 'Salvar alterações' : 'Salvar peça no catálogo'}</button>
       </aside>
       <section className="hair-dev-preview" aria-label="Prévia da cabeça">
         <div className="hair-dev-preview-heading"><strong>PRÉVIA DA CABEÇA</strong><span>{head ? Math.round(head.width) + ' × ' + Math.round(head.height) : ''}</span></div>
