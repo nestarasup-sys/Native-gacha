@@ -4,7 +4,15 @@ import { isHeadPart } from './resize'
 import { loadImageFromDataUrl, pngDataUrlFromBuffer } from './imageData'
 
 export type ModelSourceDimensions = Record<string, { width: number; height: number; x?: number; y?: number }>
-export type ModelSourceResult = { sourceDataUrl: string; previewDataUrl: string; parts: ModelPart[]; tolerance: number }
+export type ModelSourceResult = {
+  sourceDataUrl: string
+  previewDataUrl: string
+  parts: ModelPart[]
+  tolerance: number
+  joints: FabricatorProject['joints']
+  layerOrder?: FabricatorProject['layerOrder']
+  hiddenPartIds?: FabricatorProject['hiddenPartIds']
+}
 
 const MAX_DIMENSION = 8192
 export const MAX_CHROMA_TOLERANCE = 280
@@ -149,5 +157,13 @@ export async function composeModelSource(
     const rect = sourceRect(part, edits[part.id])
     view.drawImage(await loadImageFromDataUrl(part.dataUrl, 'Não foi possível decodificar uma das peças.'), rect.x, rect.y, rect.width, rect.height)
   }
-  return { sourceDataUrl, previewDataUrl: preview.toDataURL('image/png'), parts: adjusted, tolerance }
+  return {
+    sourceDataUrl,
+    previewDataUrl: preview.toDataURL('image/png'),
+    parts: adjusted,
+    tolerance,
+    joints: project.joints,
+    layerOrder: project.layerOrder,
+    hiddenPartIds: project.hiddenPartIds
+  }
 }

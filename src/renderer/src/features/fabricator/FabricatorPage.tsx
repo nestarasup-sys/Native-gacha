@@ -379,7 +379,18 @@ export function FabricatorPage() {
     if (savedTimer.current) clearTimeout(savedTimer.current)
     try {
       await persistProject(current)
-      const next: FabricatorProject = { ...current, sourceDataUrl: result.sourceDataUrl, parts: result.parts, tolerance: result.tolerance, chromaBaseTolerance: 0, chromaVersion: 2, updatedAt: new Date().toISOString() }
+      const next: FabricatorProject = {
+        ...current,
+        sourceDataUrl: result.sourceDataUrl,
+        parts: result.parts,
+        joints: result.joints,
+        layerOrder: result.layerOrder,
+        hiddenPartIds: result.hiddenPartIds,
+        tolerance: result.tolerance,
+        chromaBaseTolerance: 0,
+        chromaVersion: 2,
+        updatedAt: new Date().toISOString()
+      }
       const serialized = serializeFabricatorProject(next)
       const changedAssets: FabricatorAssetSave[] = result.parts.map(part => ({
         id: part.id,
