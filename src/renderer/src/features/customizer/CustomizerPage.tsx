@@ -13,6 +13,7 @@ import { hairColorControls, hairPalettePresets, MouthBlushControls, NoseOpacityC
 import { renderCustomizerFacePreview } from './customizerFacePreview'
 import { preparePreviewImage, sampleOriginalSkinTone } from './customizerPreviewImages'
 import { CustomizerCategoryIcon, clothesAdjustmentDefinitions, customizerClothesTabs, customizerHeadTabs, customizerOtherTabs, customizerTopTabs, headAdjustmentItems, headAdjustmentItemsFor, modules } from './customizerNavigation'
+import { adjustableHairPartIds, hairAppearancePartStyleId } from './customizerHairAppearanceModel'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { RenderedCharacterPortrait } from '../../ui/components/RenderedCharacterPortrait'
 import { Icon } from '../../ui/components/Icon'
@@ -38,14 +39,6 @@ const proportionControls: Array<{ key: keyof CharacterProportions; label: string
   { key: 'width', label: 'Largura', description: 'Estica ou comprime o personagem na horizontal' },
   { key: 'height', label: 'Altura', description: 'Estica ou comprime o personagem na vertical' }
 ]
-
-const adjustableHairPartIds = new Set<string>(['backHair', 'rearHair', 'ponytail', 'frontHair', 'ahoge'])
-function hairAppearancePartStyleId(appearance: NonNullable<CustomizerCharacter['customization']['hairAppearance']> | undefined, part: HairPartId): string | null {
-  if (appearance?.parts && Object.prototype.hasOwnProperty.call(appearance.parts, part)) return appearance.parts[part] ?? null
-  if (part === 'backHair') return hairAppearanceStyleId(appearance, 'back')
-  if (part === 'rearHair') return appearance?.parts?.frontHair ?? hairAppearanceStyleId(appearance, 'front')
-  return null
-}
 
 export function CustomizerPage() {
   const {
