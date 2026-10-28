@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { createImportedModelProject } from '../src/renderer/src/features/fabricator/models/processedModelProject.ts'
 import { ChromaAdjustTaskError, startChromaAdjustWorker } from '../src/renderer/src/features/fabricator/models/runChromaAdjustWorker.ts'
+import { ImageProcessorTaskError, startImageProcessorWorker } from '../src/renderer/src/features/fabricator/models/runImageProcessorWorker.ts'
 
 const imageBuffer = value => Uint8Array.of(value).buffer
 
@@ -49,25 +50,61 @@ test('monta o projeto importado com bases, ordem, juntas e assets pendentes pres
   assert.equal(result.dirtyChromaBases.size, 2)
 })
 
-test('página e workers compartilham os contratos de mensagem definidos pelo domínio', async () => {
-  const [page, imageWorker, chromaWorker, modelSource, chromaRunner] = await Promise.all([
+test('tela e workers compartilham os contratos de mensagem definidos pelo domínio', async () => {
+  const [page, imageWorker, chromaWorker, modelSource, chromaRunner, imageRunner] = await Promise.all([
     readFile(new URL('../src/renderer/src/features/fabricator/FabricatorPage.tsx', import.meta.url), 'utf8'),
     readFile(new URL('../src/renderer/src/features/fabricator/models/imageProcessor.worker.ts', import.meta.url), 'utf8'),
     readFile(new URL('../src/renderer/src/features/fabricator/models/chromaAdjust.worker.ts', import.meta.url), 'utf8'),
     readFile(new URL('../src/renderer/src/features/fabricator/models/modelSource.ts', import.meta.url), 'utf8'),
-    readFile(new URL('../src/renderer/src/features/fabricator/models/runChromaAdjustWorker.ts', import.meta.url), 'utf8')
+    readFile(new URL('../src/renderer/src/features/fabricator/models/runChromaAdjustWorker.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../src/renderer/src/features/fabricator/models/runImageProcessorWorker.ts', import.meta.url), 'utf8')
   ])
 
-  assert.match(page, /MessageEvent<ImageProcessorMessage>/)
-  assert.match(page, /satisfies ImageProcessorRequest/)
+  assert.match(page, /startImageProcessorWorker/)
+  assert.match(imageRunner, /MessageEvent<ImageProcessorMessage>/)
+  assert.match(imageRunner, /satisfies ImageProcessorRequest/)
   assert.match(imageWorker, /MessageEvent<ImageProcessorRequest>/)
   assert.match(page, /startChromaAdjustWorker/)
   assert.match(modelSource, /startChromaAdjustWorker/)
   assert.match(chromaRunner, /MessageEvent<ChromaAdjustMessage>/)
   assert.match(chromaRunner, /satisfies ChromaAdjustRequest/)
   assert.match(chromaWorker, /MessageEvent<ChromaAdjustRequest>/)
+  assert.doesNotMatch(page, /new Worker\(new URL\('\.\/models\/imageProcessor\.worker/)
   assert.doesNotMatch(page, /new Worker\(new URL\('\.\/models\/chromaAdjust\.worker/)
   assert.doesNotMatch(modelSource, /new Worker\(new URL\('\.\/chromaAdjust\.worker/)
+})
+
+test('processador de imagem filtra IDs, encaminha progresso e resolve o resultado completo', async () => {
+  const worker = createWorkerDouble()
+  const progress = []
+  const task = startImageProcessorWorker({ id: 7, sourceDataUrl: 'source', tolerance: 74 }, value => progress.push(value), () => worker)
+  const complete = { type: 'complete', id: 7, width: 80, height: 90, parts: [] }
+
+  assert.equal(worker.posted.id, 7)
+  worker.onmessage({ data: { type: 'progress', id: 8, value: 50 } })
+  worker.onmessage({ data: { type: 'progress', id: 7, value: 42 } })
+  worker.onmessage({ data: complete })
+
+  assert.deepEqual(progress, [42])
+  assert.deepEqual(await task.result, complete)
+  assert.equal(worker.terminated, true)
+})
+
+test('processador de imagem encerra em erro e cancelamento e não termina duas vezes', async () => {
+  const failedWorker = createWorkerDouble()
+  const failedTask = startImageProcessorWorker({ id: 1, sourceDataUrl: 'source', tolerance: 74 }, () => {}, () => failedWorker)
+  const failure = assert.rejects(failedTask.result, error => error instanceof ImageProcessorTaskError && error.kind === 'worker' && error.message === 'sem peças')
+  failedWorker.onmessage({ data: { type: 'error', id: 1, message: 'sem peças' } })
+  await failure
+  assert.equal(failedWorker.terminateCount, 1)
+
+  const cancelledWorker = createWorkerDouble()
+  const cancelledTask = startImageProcessorWorker({ id: 2, sourceDataUrl: 'source', tolerance: 74 }, () => {}, () => cancelledWorker)
+  const cancellation = assert.rejects(cancelledTask.result, error => error instanceof ImageProcessorTaskError && error.kind === 'cancelled')
+  cancelledTask.cancel()
+  cancelledTask.cancel()
+  await cancellation
+  assert.equal(cancelledWorker.terminateCount, 1)
 })
 
 test('worker compartilhado ignora respostas antigas, converte os PNGs e termina ao concluir', async () => {

@@ -17,9 +17,9 @@ import { FaceAnimatorWorkspace } from './FaceAnimatorWorkspace'
 import { ModelSourceEditor } from './ModelSourceEditor'
 import { broadcastModelSourceUpdate } from './models/modelSourceEvents'
 import { splitImage, mergeImages } from './models/partImages'
-import type { ImageProcessorMessage, ImageProcessorRequest } from './models/imageProcessorProtocol'
 import { createImportedModelProject } from './models/processedModelProject'
 import { startChromaAdjustWorker, ChromaAdjustTaskError, type ChromaAdjustTask } from './models/runChromaAdjustWorker'
+import { startImageProcessorWorker, ImageProcessorTaskError, type ImageProcessorTask } from './models/runImageProcessorWorker'
 import { paintSeamMixerSegment as applySeamMixerSegment, type SeamMixerSurface } from './models/seamMixer'
 import { serializeFabricatorProject } from './models/projectSerialization'
 import { persistFabricatorProjectSnapshot } from './projectPersistence'
@@ -103,7 +103,7 @@ export function FabricatorPage() {
   const mixerQueueRef = useRef<Promise<void>>(Promise.resolve())
   const mixerSessionRef = useRef(0)
   const layerDragRef = useRef<string | null>(null)
-  const workerRef = useRef<Worker | null>(null)
+  const imageProcessingTaskRef = useRef<ImageProcessorTask | null>(null)
   const chromaTaskRef = useRef<ChromaAdjustTask | null>(null)
   const requestId = useRef(0)
   const slotSelectionGeneration = useRef(0)
@@ -111,6 +111,11 @@ export function FabricatorPage() {
   const dirtyChromaBases = useRef<Map<string, string>>(new Map())
   const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const initialSlotLoad = useRef(false)
+  const cancelImageProcessingTask = useCallback(() => {
+    const task = imageProcessingTaskRef.current
+    imageProcessingTaskRef.current = null
+    task?.cancel()
+  }, [])
   const cancelChromaTask = useCallback(() => {
     const task = chromaTaskRef.current
     chromaTaskRef.current = null
@@ -158,11 +163,11 @@ export function FabricatorPage() {
       .catch((reason: unknown) => { setSlotsLoaded(true); setError(reason instanceof Error ? reason.message : 'Não foi possível abrir a biblioteca.') })
     return () => {
       requestId.current += 1
-      workerRef.current?.terminate()
+      cancelImageProcessingTask()
       cancelChromaTask()
       if (savedTimer.current) clearTimeout(savedTimer.current)
     }
-  }, [cancelChromaTask])
+  }, [cancelChromaTask, cancelImageProcessingTask])
 
   useEffect(() => { projectRef.current = project }, [project])
 
@@ -346,7 +351,7 @@ export function FabricatorPage() {
     if (generation !== slotSelectionGeneration.current) return
     setSlotSwitching(true)
     requestId.current += 1
-    workerRef.current?.terminate(); workerRef.current = null
+    cancelImageProcessingTask()
     cancelChromaTask()
     setProcessing(false); setProgress(0); setChromaApplying(false)
     const projectToSave = projectRef.current ?? project
@@ -416,7 +421,7 @@ export function FabricatorPage() {
       slotSelectionGeneration.current += 1
       requestId.current += 1
       if (savedTimer.current) clearTimeout(savedTimer.current)
-      workerRef.current?.terminate(); workerRef.current = null
+      cancelImageProcessingTask()
       cancelChromaTask(); setChromaApplying(false)
       setProcessing(false); setProgress(0)
     }
@@ -478,31 +483,36 @@ export function FabricatorPage() {
   }
 
   const runProcessor = (sourceDataUrl: string, tolerance: number, metadata: { slot: number; name: string; sourceName: string; sourceAssetName: string }, recordBefore?: FabricatorProject) => {
-    workerRef.current?.terminate()
-    const worker = new Worker(new URL('./models/imageProcessor.worker.ts', import.meta.url), { type: 'module' })
-    workerRef.current = worker
     const id = ++requestId.current
+    cancelImageProcessingTask()
+    const task = startImageProcessorWorker({ id, sourceDataUrl, tolerance }, setProgress)
+    imageProcessingTaskRef.current = task
     setProcessing(true); setProgress(1); setError('')
-    worker.onmessage = (event: MessageEvent<ImageProcessorMessage>) => {
-      if (event.data.id !== id || id !== requestId.current) return
-      const message = event.data
-      if (message.type === 'progress') { setProgress(message.value); return }
-      worker.terminate(); workerRef.current = null; setProcessing(false)
-      if (message.type === 'error') { setError(message.message); return }
+    void task.result.then((message) => {
+      if (id !== requestId.current) return
+      if (imageProcessingTaskRef.current === task) imageProcessingTaskRef.current = null
+      setProcessing(false)
       if (message.parts.length === 0) { setError('Nenhuma peça foi encontrada. Aumente a tolerância ou escolha outra imagem.'); return }
-      const imported = createImportedModelProject(message, sourceDataUrl, tolerance, metadata)
+      let imported: ReturnType<typeof createImportedModelProject>
+      try {
+        imported = createImportedModelProject(message, sourceDataUrl, tolerance, metadata)
+      } catch (reason) {
+        setError(reason instanceof Error ? reason.message : 'Não foi possível montar o modelo importado.')
+        return
+      }
       for (const [partId, dataUrl] of imported.dirtyAssets) dirtyAssets.current.set(partId, dataUrl)
       for (const [partId, dataUrl] of imported.dirtyChromaBases) dirtyChromaBases.current.set(partId, dataUrl)
       if (recordBefore) recordHistorySnapshot(recordBefore, 'reset', imported.project)
       setChromaValue(tolerance)
       projectRef.current = imported.project
       setProject(imported.project); setSelectedIds(imported.project.parts[0] ? [imported.project.parts[0].id] : [])
-    }
-    worker.onerror = () => {
+    }, (reason: unknown) => {
       if (id !== requestId.current) return
-      worker.terminate(); workerRef.current = null; setProcessing(false); setError('O processamento da imagem falhou.')
-    }
-    worker.postMessage({ id, sourceDataUrl, tolerance } satisfies ImageProcessorRequest)
+      if (imageProcessingTaskRef.current === task) imageProcessingTaskRef.current = null
+      setProcessing(false)
+      if (reason instanceof ImageProcessorTaskError && reason.kind === 'cancelled') return
+      setError(reason instanceof ImageProcessorTaskError && reason.kind === 'worker' ? reason.message : 'O processamento da imagem falhou.')
+    })
   }
 
 
