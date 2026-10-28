@@ -1,4 +1,4 @@
-import type { WardrobeCategory, WardrobeComponent } from '../../../../../shared/fabricator'
+import type { FabricatorProject, ModelPart, WardrobeCategory, WardrobeComponent } from '../../../../../shared/fabricator'
 
 export type WardrobeSheetBounds = { x: number; y: number; width: number; height: number }
 type PieceGeometry = Pick<WardrobeComponent, 'x' | 'y' | 'width' | 'height'>
@@ -68,4 +68,35 @@ export function guessWardrobeName(category: WardrobeCategory, x: number, width: 
   if (category === 'manga-inferior') return `Manga inferior ${side}`
   if (category === 'calca-coxa') return `Calça · coxa ${side}`
   return `Calça · canela ${side}`
+}
+
+export function guessWardrobeCategoryForBone(part: Pick<ModelPart, 'name'>, current: WardrobeCategory): WardrobeCategory | null {
+  const name = part.name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+  if (/antebraco|forearm|braco inferior|lower arm/.test(name)) return current === 'luvas' ? current : 'manga-inferior'
+  if (/(^|\s)(mao|maos|hand|hands)(\s|$)/.test(name)) return 'luvas'
+  if (/braco|upper arm/.test(name)) return current === 'luvas' ? current : 'manga-superior'
+  if (/coxa|thigh/.test(name)) return current === 'shorts' ? current : 'calca-coxa'
+  if (/canela|panturrilha|calf|shin|perna inferior|lower leg/.test(name)) {
+    return current === 'meia' || current === 'sapato' ? current : 'calca-canela'
+  }
+  if (/(^|\s)(pe|pes|foot|feet)(\s|$)/.test(name)) return current === 'meia' ? current : 'sapato'
+  if (/quadril|cintura|hip|waist/.test(name)) {
+    return current === 'cinto' || current === 'saia' || current === 'shorts' ? current : 'cinto'
+  }
+  if (/tronco|corpo|torso|chest|peito/.test(name)) {
+    return ['camisa', 'jaqueta', 'capa', 'cinto', 'saia'].includes(current) ? current : 'camisa'
+  }
+  if (/cabeca|head|face|rosto/.test(name)) {
+    return current === 'oculos' || current === 'acessorio-cabeca' ? current : 'acessorio-cabeca'
+  }
+  return null
+}
+
+export function guessWardrobeNameForBone(category: WardrobeCategory, part: Pick<ModelPart, 'name' | 'x' | 'width' | 'sourceTransform'>, model: Pick<FabricatorProject, 'width'>): string {
+  const label = part.name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+  const centerX = (part.sourceTransform?.x ?? part.x) + (part.sourceTransform?.width ?? part.width) / 2
+  const hasLeftSide = /esquerda|esquerdo|left/.test(label)
+  const hasRightSide = /direita|direito|right/.test(label)
+  const sideX = hasLeftSide ? 0 : hasRightSide ? model.width : centerX
+  return guessWardrobeName(category, sideX, model.width)
 }
