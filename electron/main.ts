@@ -68,8 +68,8 @@ import { registerModelSourceDownloadHandlers } from './domains/fabricator/modelS
 import { registerEditorV6PrimaryHandlers } from './domains/editorV6/primaryIpc'
 import { createEditorV6LibraryIndex } from './domains/editorV6/libraryIndex'
 import { createEditorV6DocumentPersistence } from './domains/editorV6/documentPersistence'
-import { createVideoReferenceGuard } from './domains/mediaLibrary/videoReferences'
-import { createRoteirosVideoReferenceLookup } from './domains/roteiros/videoReferences'
+import { createVideoReferenceChangeCoordinator, createVideoReferenceGuard } from './domains/mediaLibrary/videoReferences'
+import { collectRoteirosVideoReferenceIds, createRoteirosVideoReferenceLookup } from './domains/roteiros/videoReferences'
 import { createEditorV6VideoReferenceLookup } from './domains/editorV6/videoReferences'
 
 let configuredAppDataRoot: string | null = null
@@ -302,6 +302,16 @@ const studioPath = (id: string) => join(studioLibraryPath('studio'), `studio-${i
 const editorV6LibraryPath = () => join(app.getPath('userData'), 'studios', 'Editor V6')
 const editorV6Path = (id: string) => join(editorV6LibraryPath(), `editorV6-${id}`)
 const videoLibrary = new VideoLibraryStore(() => studioLibraryPath('video'))
+const coordinateVideoReferenceChange = createVideoReferenceChangeCoordinator()
+const assertLibraryVideoReferencesAvailable = async (videoIds: readonly string[]): Promise<void> => {
+  if (videoIds.length === 0) return
+  const availableVideos = new Map((await videoLibrary.list()).map((item) => [item.id, item]))
+  const unavailable = videoIds.find((id) => !availableVideos.get(id)?.available)
+  if (unavailable) {
+    const item = availableVideos.get(unavailable)
+    throw new Error(`O vídeo${item ? ` “${item.name}”` : ''} não está disponível na biblioteca. Reimporte-o ou remova o vínculo antes de salvar.`)
+  }
+}
 const videoBackgroundLibrary = new VideoBackgroundLibraryStore(() => studioLibraryPath('video'))
 const roteiroUiGifLibrary = new RoteiroUiGifLibraryStore(() => studioLibraryPath('video'))
 const studioSaveQueues = { studio: Promise.resolve() as Promise<void> }
@@ -1026,6 +1036,7 @@ const { readEditorV6, readEditorV6Summary, writeEditorV6, removeEditorV6 } = cre
   editorV6Path,
   editorV6LibraryPath,
   validate: isEditorV6Document,
+  assertLibraryVideoReferencesAvailable,
   decodeImage: importedImageDataUrlBuffer,
   normalizeImage: normalizeImageBuffer
 })
@@ -1207,7 +1218,7 @@ async function registerFabricatorHandlers(): Promise<void> {
     ipcMain, assertTrustedSender,
     list: () => listEditorV6s(),
     read: (id) => readEditorV6(id),
-    write: (document) => writeEditorV6(document),
+    write: (document) => coordinateVideoReferenceChange(() => writeEditorV6(document)),
     remove: (id) => removeEditorV6(id),
     getPendingWrites: () => editorV6SaveQueue,
     setPendingWrites: (pending) => { editorV6SaveQueue = pending },
@@ -1312,10 +1323,10 @@ async function registerFabricatorHandlers(): Promise<void> {
   ipcMain.handle('video-library:rename', async (event, id: string, name: string) => { assertTrustedSender(event); return videoLibrary.rename(id, name) })
   ipcMain.handle('video-library:delete', async (event, id: string) => {
     assertTrustedSender(event)
-    const next = roteirosSaveQueue.catch(() => undefined).then(async () => {
+    const next = roteirosSaveQueue.catch(() => undefined).then(() => coordinateVideoReferenceChange(async () => {
       await assertNoVideoReferences(id)
       await videoLibrary.delete(id)
-    })
+    }))
     roteirosSaveQueue = next
     await next
   })
@@ -1478,14 +1489,21 @@ async function registerFabricatorHandlers(): Promise<void> {
       || new Set(roteiros.flatMap((roteiro: RoteiroDocument) => roteiro.tiktoks.map((tiktok) => tiktok.id))).size !== roteiros.reduce((total: number, roteiro: RoteiroDocument) => total + roteiro.tiktoks.length, 0)) {
       throw new Error('A lista de roteiros enviada para salvar é inválida.')
     }
-    const next = roteirosSaveQueue.catch(() => undefined).then(() => {
+    const next = roteirosSaveQueue.catch(() => undefined).then(() => coordinateVideoReferenceChange(async () => {
       const db = dataPlatform.database
       if (!db) throw new Error('Catálogo de dados não inicializado.')
+      const oldSections = db.prepare('SELECT section_id, video_asset_json FROM roteiro_sections').all() as Array<{ section_id: string; video_asset_json: string | null }>
+      const existingVideoIds = new Set(oldSections.flatMap(({ video_asset_json }) => {
+        if (!video_asset_json) return []
+        const reference = JSON.parse(video_asset_json) as { id?: unknown }
+        return typeof reference?.id === 'string' ? [reference.id] : []
+      }))
+      const addedVideoIds = [...collectRoteirosVideoReferenceIds(roteiros as RoteiroDocument[])].filter((id) => !existingVideoIds.has(id))
+      await assertLibraryVideoReferencesAvailable(addedVideoIds)
       const now = new Date().toISOString()
-      const save = db.transaction((documents: RoteiroDocument[]) => {
+      const save = db.transaction((documents: RoteiroDocument[], oldSections: Array<{ section_id: string; video_asset_json: string | null }>) => {
         const oldRoteiros = db.prepare('SELECT id, title, video_title, character_ids_json, position FROM roteiros').all() as Array<{ id: string; title: string; video_title: string; character_ids_json: string; position: number }>
         const oldTikToks = db.prepare('SELECT id, roteiro_id, title, video_title, position FROM roteiro_tiktoks').all() as Array<{ id: string; roteiro_id: string; title: string; video_title: string; position: number }>
-        const oldSections = db.prepare('SELECT section_id FROM roteiro_sections').all() as Array<{ section_id: string }>
         const routeIds = new Set(documents.map((item) => item.id))
         const tikTokIds = new Set(documents.flatMap((item) => item.tiktoks.map((tiktok) => tiktok.id)))
         const sectionIds = new Set(documents.flatMap((item) => [`${item.id}:opening`, ...item.tiktoks.map((tiktok) => tiktok.id)]))
@@ -1532,8 +1550,8 @@ async function registerFabricatorHandlers(): Promise<void> {
           })
         })
       })
-      save(roteiros as RoteiroDocument[])
-    })
+      save(roteiros as RoteiroDocument[], oldSections)
+    }))
     roteirosSaveQueue = next
     await next
   })
@@ -1588,6 +1606,7 @@ async function registerFabricatorHandlers(): Promise<void> {
       roteirosSaveQueue = next.then(() => undefined)
       return next
     },
+    coordinateVideoReferenceChange,
     resolveMedia: (id) => videoLibrary.resolveMedia(id),
     assertMediaAccessible: async (path) => {
       const physical = await dataFileSystem.resolvePhysicalPath(path)

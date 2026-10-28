@@ -11,6 +11,7 @@ export interface BaseVideoDependencies {
   enqueueWrite<T>(operation: () => Promise<T> | T): Promise<T>
   resolveMedia(videoId: string): Promise<{ path: string; durationFrames: number | null }>
   assertMediaAccessible(path: string): Promise<void>
+  coordinateVideoReferenceChange<T>(operation: () => Promise<T> | T): Promise<T>
   assertNoVideoReferences(videoId: string): Promise<void>
   deleteLibraryVideo(videoId: string): Promise<void>
 }
@@ -64,14 +65,14 @@ export class BaseVideoService {
 
   deleteVideo(videoId: unknown): Promise<void> {
     assertBaseVideoId(videoId)
-    return this.deps.enqueueWrite(async () => {
+    return this.deps.enqueueWrite(() => this.deps.coordinateVideoReferenceChange(async () => {
       const repository = this.repository()
       await this.deps.assertNoVideoReferences(videoId)
       // A exclusão lógica ocorre ANTES da remoção de metadados, preservando
       // a recuperação se o processo terminar entre os dois armazenamentos.
       await this.deps.deleteLibraryVideo(videoId)
       repository.deleteDetails(videoId)
-    })
+    }))
   }
 
   async publishVideo(videoId: unknown): Promise<number> {

@@ -416,6 +416,7 @@ describe.skipIf(!enabled)('projetos de estresse do Editor V6', () => {
       editorV6Path: (id) => join(root, `editorV6-${id}`),
       editorV6LibraryPath: () => root,
       validate: isEditorV6Document,
+      assertLibraryVideoReferencesAvailable: async () => undefined,
       decodeImage: (url) => Buffer.from(url.slice(url.indexOf(',') + 1), 'base64'),
       normalizeImage: async (bytes) => ({ bytes })
     })

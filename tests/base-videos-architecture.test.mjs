@@ -49,6 +49,7 @@ function fixture() {
     },
     resolveMedia: async (id) => { calls.push(`resolve:${id}`); const result = media.get(id); if (!result) throw new Error('Mídia não encontrada.'); return result },
     assertMediaAccessible: async (path) => { calls.push(`access:${path}`); if (path.endsWith('missing')) throw new Error('Arquivo ausente.') },
+    coordinateVideoReferenceChange: async (operation) => operation(),
     assertNoVideoReferences: createVideoReferenceGuard([createRoteirosVideoReferenceLookup(() => sql)]),
     deleteLibraryVideo: async (id) => { calls.push(`delete:${id}`); if (id === C) throw new Error('Falha na biblioteca.') }
   })

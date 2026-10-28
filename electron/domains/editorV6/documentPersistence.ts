@@ -5,6 +5,7 @@ import { createEditorV6Timeline, syncEditorV6TimelineElements, type EditorV6Asse
 import { publishEditorV6AssetsAndManifest, recoverEditorV6AssetTransaction } from './assetTransaction.ts'
 import { normalizeEditorV6CharacterPositions, normalizeEditorV6Timeline } from '../../../src/shared/editorV6Timeline'
 import { editorV6DocumentSchema, editorV6MediaAssetSchema } from '../../../src/shared/editorV6Schema'
+import { collectEditorV6VideoReferenceIds } from './videoReferences.ts'
 
 type Files = Pick<typeof nodeFs, 'readFile' | 'writeFile' | 'mkdir' | 'access' | 'rename' | 'unlink' | 'rm'>
 
@@ -13,6 +14,7 @@ export function createEditorV6DocumentPersistence(deps: {
   editorV6Path: (id: string) => string
   editorV6LibraryPath: () => string
   validate: (document: unknown) => document is EditorV6Document
+  assertLibraryVideoReferencesAvailable: (videoIds: readonly string[]) => Promise<void>
   decodeImage: (dataUrl: string) => Buffer
   normalizeImage: (bytes: Buffer) => Promise<{ bytes: Buffer }>
 }) {
@@ -113,6 +115,16 @@ export function createEditorV6DocumentPersistence(deps: {
       throw new Error(`Dados do EditorV6 inválidos.${details ? ` ${details}` : ''}`)
     }
     const folder = deps.editorV6Path(editorV6.id)
+    await recoverEditorV6AssetTransaction(deps.files, folder)
+    let previousManifest: Record<string, unknown> = {}
+    try {
+      previousManifest = JSON.parse(await readFile(join(folder, 'editorV6.json'), 'utf8')) as Record<string, unknown>
+    } catch (reason) {
+      if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason
+    }
+    const previousVideoIds = collectEditorV6VideoReferenceIds(previousManifest)
+    const addedVideoIds = [...collectEditorV6VideoReferenceIds(editorV6)].filter((id) => !previousVideoIds.has(id))
+    if (addedVideoIds.length) await deps.assertLibraryVideoReferencesAvailable(addedVideoIds)
     await Promise.all([
       mkdir(join(folder, 'assets', 'backgrounds'), { recursive: true }),
       mkdir(join(folder, 'assets', 'objects'), { recursive: true }),
