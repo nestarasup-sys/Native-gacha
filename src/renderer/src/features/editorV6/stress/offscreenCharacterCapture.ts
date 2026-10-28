@@ -42,7 +42,7 @@ function makeBlock(element: EditorV6Element, startFrame: number, id: string): Ed
 export async function publishEditorV6StressCharacters(): Promise<void> {
   window.__editorV6StressCapture = { status: 'ready' }
   try {
-    const allCharacters = await window.desktop.listCustomizerCharacters()
+    const allCharacters = await window.desktop.customizer.listCustomizerCharacters()
     const characters = expectedNames.map((name) => allCharacters.find((candidate) => candidate.name === name))
     if (characters.some((character) => !character)) throw new Error(`O Customizador precisa conter estes quatro personagens: ${expectedNames.join(', ')}.`)
 

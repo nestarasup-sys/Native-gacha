@@ -537,17 +537,18 @@ Este corte separa propriedade dos contratos e chamadas entre domínios, mas não
 - A montagem do projeto, o registro no histórico, a inclusão dos assets pendentes e as mensagens de domínio continuam na tela. O processamento de pixels e o fluxo de persistência não mudaram.
 - Testes com worker sintético verificam progresso, resposta antiga, resultado completo, erro, cancelamento e o uso do runner pela página.
 
-### Etapa aplicada — namespaces no contrato IPC do Studio e Customizador
+### Etapa aplicada — namespaces no contrato IPC do Studio, Customizador e Editor V6
 
 - O mapa confirmou que `preload.ts` já mantinha objetos tipados por domínio, mas os espalhava no objeto raiz `window.desktop`; Studio misturava chamadas próprias, leituras do Customizador e leituras do Fabricador no mesmo nível.
 - O preload agora também expõe `fabricator`, `customizer`, `studio`, `editorV6` e `roteiros` como grupos tipados, mantendo as chamadas planas antigas para compatibilidade gradual. Os objetos apontam para as mesmas funções, sem novos handlers ou canais IPC.
 - `StudioPage` usa os grupos do Studio para documentos/arquivos, do Customizador para personagens e do Fabricador para poses/catálogos faciais. O Customizador usa seus próprios métodos de personagens e o namespace do Fabricador para ler modelos, poses, cabelo, roupas e rosto.
+- O Editor V6 usa `editorV6` para projetos, exportação, mídia e prints; `customizer` para o elenco; e `fabricator` para poses e catálogos faciais. Os namespaces preexistentes `mediaLibrary` e `baseVideos` continuam sendo usados para suas respectivas bibliotecas.
 - Os formatos persistidos e a propriedade dos dados não mudaram. Os métodos raiz permanecem disponíveis para as demais áreas e para os scripts de diagnóstico já existentes.
-- `typecheck`, `audit:architecture` e `build` passaram; nenhuma chamada raiz das APIs de domínio permaneceu nas telas do Studio e do Customizador.
+- `typecheck`, `audit:architecture` e `build` passaram; nenhuma chamada raiz das APIs de domínio permaneceu nas telas do Studio, Customizador e Editor V6.
 
 ## 7. Próxima tarefa recomendada
 
-Continuar migrando consumidores dos métodos raiz de `window.desktop` para os namespaces de domínio, seguindo pelo Editor V6 e Roteiros. Manter os aliases antigos enquanto existirem consumidores e só removê-los após busca completa e validação dos scripts de diagnóstico. Em paralelo, continuar mapeando as filas de gravação e referências de catálogos entre renderer, preload, handlers IPC e repositórios.
+Continuar migrando consumidores dos métodos raiz de `window.desktop` para os namespaces de domínio, seguindo por Roteiros e pelos fluxos internos restantes do Fabricador. Manter os aliases antigos enquanto existirem consumidores e só removê-los após busca completa e validação dos scripts de diagnóstico. Em paralelo, continuar mapeando as filas de gravação e referências de catálogos entre renderer, preload, handlers IPC e repositórios.
 
 ## 8. Verificações e validação
 

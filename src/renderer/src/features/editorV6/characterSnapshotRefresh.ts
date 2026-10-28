@@ -90,9 +90,9 @@ export async function renderEditorV6CharacterRefresh(
   const nextBlocks = new Map<string, EditorV6Element>()
   const refreshedAssets: EditorV6Asset[] = []
   const staleAssetIds = new Set<string>()
-  const expressionPresetCache = new Map<string, ReturnType<typeof window.desktop.loadFaceExpressionPreset>>()
-  const faceCatalogCache = new Map<string, ReturnType<typeof window.desktop.loadFaceCatalogItem>>()
-  const faceComponentCache = new Map<string, ReturnType<typeof window.desktop.loadFaceComponentAsset>>()
+  const expressionPresetCache = new Map<string, ReturnType<typeof window.desktop.fabricator.loadFaceExpressionPreset>>()
+  const faceCatalogCache = new Map<string, ReturnType<typeof window.desktop.fabricator.loadFaceCatalogItem>>()
+  const faceComponentCache = new Map<string, ReturnType<typeof window.desktop.fabricator.loadFaceComponentAsset>>()
   const sourceCache = new Map<string, ReturnType<typeof resolveSavedCharacterSource>>()
   const materialCache: import('../../characters/editorV6CharacterRenderer').GachaReusableMaterialCache = new Map()
   type RefreshRenderJob = {
@@ -122,15 +122,15 @@ export async function renderEditorV6CharacterRefresh(
     const sceneTransforms = Object.fromEntries(Object.entries(state.faceTransforms ?? {}).filter(([key]) => !key.startsWith('expression-component:') && !key.startsWith('expression:')))
     const expressionBase = sourceAppearance ? { appearance: structuredClone(sourceAppearance), transforms: sceneTransforms } : previousBase
     const preset = state.activeExpressionPresetId
-      ? await memoizedPromise(expressionPresetCache, `${character.customization.modelSlot ?? 1}:${state.activeExpressionPresetId}`, () => window.desktop.loadFaceExpressionPreset(character.customization.modelSlot ?? 1, state.activeExpressionPresetId!))
+      ? await memoizedPromise(expressionPresetCache, `${character.customization.modelSlot ?? 1}:${state.activeExpressionPresetId}`, () => window.desktop.fabricator.loadFaceExpressionPreset(character.customization.modelSlot ?? 1, state.activeExpressionPresetId!))
       : null
     const appearance = preset && expressionBase?.appearance
-      ? await buildEditorV6ExpressionAppearance(preset, expressionBase.appearance, (id) => memoizedPromise(faceCatalogCache, `${preset.modelSlot}:${id}`, () => window.desktop.loadFaceCatalogItem(preset.modelSlot, id)))
+      ? await buildEditorV6ExpressionAppearance(preset, expressionBase.appearance, (id) => memoizedPromise(faceCatalogCache, `${preset.modelSlot}:${id}`, () => window.desktop.fabricator.loadFaceCatalogItem(preset.modelSlot, id)))
       : state.faceAppearance ?? expressionBase?.appearance
     const faceTransforms = preset && appearance && expressionBase
       ? await buildEditorV6ExpressionTransforms(preset, appearance, expressionBase.transforms,
-        (id) => memoizedPromise(faceComponentCache, `${preset.modelSlot}:${id}`, () => window.desktop.loadFaceComponentAsset(preset.modelSlot, id)),
-        (id) => memoizedPromise(faceCatalogCache, `${preset.modelSlot}:${id}`, () => window.desktop.loadFaceCatalogItem(preset.modelSlot, id)), state.activeExpressionGaze ?? 'right')
+        (id) => memoizedPromise(faceComponentCache, `${preset.modelSlot}:${id}`, () => window.desktop.fabricator.loadFaceComponentAsset(preset.modelSlot, id)),
+        (id) => memoizedPromise(faceCatalogCache, `${preset.modelSlot}:${id}`, () => window.desktop.fabricator.loadFaceCatalogItem(preset.modelSlot, id)), state.activeExpressionGaze ?? 'right')
       : sourceAppearance ? expressionBase?.transforms ?? state.faceTransforms : state.faceTransforms ?? expressionBase?.transforms
     const effects = preset?.effects ?? state.activeExpressionEffects
     const faceMode = editorV6FaceModeForElement(state, appearance)

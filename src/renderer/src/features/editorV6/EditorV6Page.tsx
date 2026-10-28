@@ -135,7 +135,7 @@ export function EditorV6Page() {
   const nextStudioNumber = useRef(1)
   const selectedEditorV6 = editorV6Projects.find((studio) => studio.id === selectedId) ?? null
   const activeEditorV6 = activeEditorV6Stored?.id === activeEditorV6Id ? activeEditorV6Stored : null
-  const writeEditorV6Document = useCallback((document: EditorV6Document) => window.desktop.saveEditorV6Project(document), [])
+  const writeEditorV6Document = useCallback((document: EditorV6Document) => window.desktop.editorV6.saveEditorV6Project(document), [])
   const onEditorV6DocumentSaved = useCallback((document: EditorV6Document, savedDocument: EditorV6Document) => {
     if (savedDocument.thumbnailDataUrl !== document.thumbnailDataUrl) {
       updateActiveEditorV6Project((project) => project.id === document.id && project.updatedAt === document.updatedAt && project.thumbnailDataUrl !== savedDocument.thumbnailDataUrl
@@ -262,8 +262,8 @@ export function EditorV6Page() {
     const refreshExpressionLibrary = () => {
       setEditorV6ExpressionLoading(true)
       void Promise.all([
-        window.desktop.listFaceExpressionCollections(selectedEditorV6CharacterModelSlot),
-        window.desktop.listFaceExpressionPresets(selectedEditorV6CharacterModelSlot)
+        window.desktop.fabricator.listFaceExpressionCollections(selectedEditorV6CharacterModelSlot),
+        window.desktop.fabricator.listFaceExpressionPresets(selectedEditorV6CharacterModelSlot)
       ]).then(([collections, presets]) => {
         if (cancelled) return
         setEditorV6ExpressionCollections(collections)
@@ -291,20 +291,20 @@ export function EditorV6Page() {
     let cancelled = false
     void (async () => {
       try {
-        const existing = await window.desktop.listEditorV6Projects()
+        const existing = await window.desktop.editorV6.listEditorV6Projects()
         const knownIds = new Set(existing.map((studio) => studio.id))
         const legacy = loadLegacySceneCatalog(STORAGE_KEY)
         const now = new Date().toISOString()
         for (const old of legacy) {
           if (knownIds.has(old.id) || !isLegacySceneCatalogId(old.id)) continue
-          await window.desktop.saveEditorV6Project({
+          await window.desktop.editorV6.saveEditorV6Project({
             schemaVersion: 1, ...old, createdAt: now, updatedAt: now, backgroundColor: '#d7b5cd',
             backgroundAssetId: null, backgroundX: 0, backgroundY: 0, backgroundWidth: 100, backgroundHeight: 100,
             backgroundRotation: 0, assets: [], elements: [], timeline: createEditorV6Timeline()
           })
         }
-        const loaded = await window.desktop.listEditorV6Projects()
-        const folder = await window.desktop.getEditorV6Folder()
+        const loaded = await window.desktop.editorV6.listEditorV6Projects()
+        const folder = await window.desktop.editorV6.getEditorV6Folder()
         if (cancelled) return
         setEditorV6Projects(loaded)
         setEditorV6Folder(folder)
@@ -327,7 +327,7 @@ export function EditorV6Page() {
       return
     }
     setActiveEditorV6Project(null)
-    void window.desktop.loadEditorV6Project(activeEditorV6Id).then((project) => {
+    void window.desktop.editorV6.loadEditorV6Project(activeEditorV6Id).then((project) => {
       if (generation !== activeLoadGenerationRef.current) return
       if (!project) {
         setError('Esse projeto não foi encontrado na biblioteca local do Editor V6.')
@@ -351,7 +351,7 @@ export function EditorV6Page() {
     const refreshCharacters = () => {
       if (requestRunning) { requestQueued = true; return }
       requestRunning = true
-      void window.desktop.listCustomizerCharacters().then((characters) => {
+      void window.desktop.customizer.listCustomizerCharacters().then((characters) => {
         if (!cancelled) setAvailableCharacters((current) => sameCustomizerCharacterCatalog(current, characters) ? current : characters)
       }).catch((reason: unknown) => {
         if (!cancelled) setError(reason instanceof Error ? reason.message : 'Não foi possível carregar o elenco de personagens.')
@@ -381,7 +381,7 @@ export function EditorV6Page() {
           requestQueued = false
           const modelSlots = fabricatorModelSlots
           try {
-            const catalogs = await Promise.all(modelSlots.map(async (modelSlot) => ({ modelSlot, poses: await window.desktop.listFabricatorPoseSlots(modelSlot) })))
+            const catalogs = await Promise.all(modelSlots.map(async (modelSlot) => ({ modelSlot, poses: await window.desktop.fabricator.listFabricatorPoseSlots(modelSlot) })))
             if (cancelled) return
             const revisions: Record<string, string> = {}
             for (const { modelSlot, poses } of catalogs) poses.forEach((pose, index) => {
@@ -414,10 +414,10 @@ export function EditorV6Page() {
     if (modelSlot === null) { setEditorV6FaceItems([]); return }
     let cancelled = false
     setEditorV6FaceLoading(true)
-    void window.desktop.listFaceCatalog(modelSlot).then(async (summaries) => {
+    void window.desktop.fabricator.listFaceCatalog(modelSlot).then(async (summaries) => {
       if (cancelled) return
       setEditorV6FaceItems(summaries)
-      const items = await Promise.all(summaries.map(async (summary) => ({ key: `${summary.modelSlot}:${summary.id}`, item: await window.desktop.loadFaceCatalogItem(summary.modelSlot, summary.id) })))
+      const items = await Promise.all(summaries.map(async (summary) => ({ key: `${summary.modelSlot}:${summary.id}`, item: await window.desktop.fabricator.loadFaceCatalogItem(summary.modelSlot, summary.id) })))
       if (cancelled) return
       setEditorV6FaceDetails((current) => {
         const next = { ...current }
@@ -437,7 +437,7 @@ export function EditorV6Page() {
       const { renderArtwork } = await import('../../characters/editorV6CharacterRenderer')
       const thumbnails = await Promise.all(editorV6PoseSlots.map(async (pose) => {
         try {
-          const artwork = await window.desktop.loadFabricatorPose(pose.sourceModelSlot, pose.slot)
+          const artwork = await window.desktop.fabricator.loadFabricatorPose(pose.sourceModelSlot, pose.slot)
           if (!isPoseSnapshotForModel(artwork, pose.sourceModelSlot, pose.slot)) return null
           const thumbnail = await renderArtwork(artwork, 180)
           return thumbnail ? { slot: pose.slot, thumbnail, width: artwork.width, height: artwork.height } : null
@@ -456,7 +456,7 @@ export function EditorV6Page() {
     const modelSlot = selectedEditorV6CharacterModelSlot
     if (modelSlot === null) { setEditorV6PoseSlots([]); return }
     let cancelled = false
-    void window.desktop.listFabricatorPoseSlots(modelSlot).then((poses) => {
+    void window.desktop.fabricator.listFabricatorPoseSlots(modelSlot).then((poses) => {
       if (!cancelled) setEditorV6PoseSlots(poses.filter((pose): pose is NonNullable<typeof pose> => Boolean(pose)))
     }).catch((reason: unknown) => {
       if (!cancelled) setError(reason instanceof Error ? reason.message : 'Não foi possível carregar as poses do modelo.')
@@ -585,7 +585,7 @@ export function EditorV6Page() {
     }
     try {
       setError(null)
-      await window.desktop.saveEditorV6Project(studio)
+      await window.desktop.editorV6.saveEditorV6Project(studio)
       upsertEditorV6Summary(editorV6ProjectSummary(studio))
       setSelectedId(studio.id)
       setSaved(true)
@@ -598,7 +598,7 @@ export function EditorV6Page() {
     try {
       source = activeEditorV6?.id === sourceSummary.id
         ? activeEditorV6
-        : await window.desktop.loadEditorV6Project(sourceSummary.id)
+        : await window.desktop.editorV6.loadEditorV6Project(sourceSummary.id)
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Não foi possível carregar o projeto que será duplicado.')
       return
@@ -615,9 +615,9 @@ export function EditorV6Page() {
     }, () => crypto.randomUUID())
     try {
       setError(null)
-      if (source.exportAudio?.length) await window.desktop.cloneEditorV6ExportAudio(source.id, duplicate.id, source.exportAudio)
-      if (source.media?.length) await window.desktop.cloneEditorV6Media(source.id, duplicate.id, source.media)
-      await window.desktop.saveEditorV6Project(duplicate)
+      if (source.exportAudio?.length) await window.desktop.editorV6.cloneEditorV6ExportAudio(source.id, duplicate.id, source.exportAudio)
+      if (source.media?.length) await window.desktop.editorV6.cloneEditorV6Media(source.id, duplicate.id, source.media)
+      await window.desktop.editorV6.saveEditorV6Project(duplicate)
       upsertEditorV6Summary(editorV6ProjectSummary(duplicate))
       setSelectedId(duplicate.id)
       setSaved(true)
@@ -661,7 +661,7 @@ export function EditorV6Page() {
 
   const loadLatestEditorV6Project = async (projectId: string) => {
     const current = useEditorV6Store.getState().activeProject
-    return current?.id === projectId ? current : window.desktop.loadEditorV6Project(projectId)
+    return current?.id === projectId ? current : window.desktop.editorV6.loadEditorV6Project(projectId)
   }
 
   const persistImportedEditorV6Document = async (source: EditorV6Document, next: EditorV6Document) => {
@@ -724,7 +724,7 @@ export function EditorV6Page() {
     const projectId = activeEditorV6.id
     try {
       const frameAtImport = getEditorV6PlaybackFrame()
-      const asset = await window.desktop.importEditorV6Image(category)
+      const asset = await window.desktop.editorV6.importEditorV6Image(category)
       if (!asset) return
       const currentProject = await loadLatestEditorV6Project(projectId)
       if (!currentProject) { setError('Não foi possível carregar o projeto para adicionar a imagem.'); return }
@@ -755,7 +755,7 @@ export function EditorV6Page() {
     const projectId = activeEditorV6.id
     const frameAtImport = getEditorV6PlaybackFrame()
     try {
-      const media = await window.desktop.importEditorV6Media(projectId, kind)
+      const media = await window.desktop.editorV6.importEditorV6Media(projectId, kind)
       if (!media) return
       const currentProject = await loadLatestEditorV6Project(projectId)
       if (!currentProject) { setError('Não foi possível carregar o projeto para adicionar a mídia.'); return }
@@ -778,7 +778,7 @@ export function EditorV6Page() {
     if (track?.locked) throw new Error('Desbloqueie a faixa Vídeo antes de adicionar um vídeo.')
     pausePlayback()
     const frameAtImport = getEditorV6PlaybackFrame()
-    const media = await window.desktop.linkEditorV6LibraryVideo(projectId, item.id)
+    const media = await window.desktop.editorV6.linkEditorV6LibraryVideo(projectId, item.id)
     const currentProject = await loadLatestEditorV6Project(projectId)
     if (!currentProject) throw new Error('Não foi possível carregar o projeto para adicionar o vídeo.')
     const { document: nextProject, block, startFrame } = addEditorV6TimelineMedia(currentProject, media, frameAtImport, () => crypto.randomUUID())
@@ -943,21 +943,21 @@ export function EditorV6Page() {
     setEditorV6ExpressionBusy(true)
     setError(null)
     try {
-      const preset: FaceExpressionPreset | null = await window.desktop.loadFaceExpressionPreset(summary.modelSlot, summary.id)
+      const preset: FaceExpressionPreset | null = await window.desktop.fabricator.loadFaceExpressionPreset(summary.modelSlot, summary.id)
       if (!preset || preset.modelSlot !== selectedEditorV6CharacterModelSlot) throw new Error('Este preset não está disponível para o modelo selecionado.')
       const characterAppearance = selectedEditorV6Character.customization.faceAppearance ?? selectedEditorV6FaceAppearance
       if (!characterAppearance) throw new Error('A personagem ainda não tem uma aparência facial para ajustar.')
       const faceMode = editorV6FaceModeForElement(selectedElement, selectedEditorV6FaceAppearance)
       const base = { ...resolveEditorV6ExpressionBase(selectedElement, characterAppearance), appearance: structuredClone(characterAppearance) }
       const appearance = base.appearance
-      let nextAppearance = await buildEditorV6ExpressionAppearance(preset, appearance, (id) => window.desktop.loadFaceCatalogItem(preset.modelSlot, id))
+      let nextAppearance = await buildEditorV6ExpressionAppearance(preset, appearance, (id) => window.desktop.fabricator.loadFaceCatalogItem(preset.modelSlot, id))
       if (faceMode === 'talk' && selectedEditorV6OpenMouthId && !nextAppearance.mouthOpenCatalogId) {
         nextAppearance = { ...nextAppearance, mouthOpenCatalogId: selectedEditorV6OpenMouthId }
       }
       const faceTransforms = await buildEditorV6ExpressionTransforms(
         preset, nextAppearance, base.transforms,
-        (id) => window.desktop.loadFaceComponentAsset(preset.modelSlot, id),
-        (id) => window.desktop.loadFaceCatalogItem(preset.modelSlot, id),
+        (id) => window.desktop.fabricator.loadFaceComponentAsset(preset.modelSlot, id),
+        (id) => window.desktop.fabricator.loadFaceCatalogItem(preset.modelSlot, id),
         gaze
       )
 
@@ -1022,7 +1022,7 @@ export function EditorV6Page() {
   const chooseStudioFaceSheet = async (summary: FaceCatalogItemSummary) => {
     if (!selectedEditorV6Character) return
     const key = `${summary.modelSlot}:${summary.id}`
-    const item = editorV6FaceDetails[key] ?? await window.desktop.loadFaceCatalogItem(summary.modelSlot, summary.id)
+    const item = editorV6FaceDetails[key] ?? await window.desktop.fabricator.loadFaceCatalogItem(summary.modelSlot, summary.id)
     if (!item) return
     setEditorV6FaceDetails((current) => ({ ...current, [key]: item }))
     const previous = selectedEditorV6FaceAppearance
@@ -1280,7 +1280,7 @@ export function EditorV6Page() {
   const deleteStudio = async (target: EditorV6Card | null = selectedEditorV6) => {
     if (!target || !window.confirm(`Excluir ${target.title}?`)) return
     try {
-      await window.desktop.deleteEditorV6Project(target.id)
+      await window.desktop.editorV6.deleteEditorV6Project(target.id)
       removeEditorV6Summary(target.id)
       setSelectedId((current) => current === target.id ? null : current)
       if (activeEditorV6Id === target.id) { pausePlayback(); setActiveEditorV6Id(null) }
@@ -1304,14 +1304,14 @@ export function EditorV6Page() {
       if (!await saveActiveEditorV6Project(activeEditorV6)) return
       const { captureEditorV6Frame } = await import('./sceneCapture')
       const image = await captureEditorV6Frame(activeEditorV6, getEditorV6PlaybackFrame(), 1920, 1080, 'image/png')
-      const path = await window.desktop.saveEditorV6Print(activeEditorV6.id, image)
+      const path = await window.desktop.editorV6.saveEditorV6Print(activeEditorV6.id, image)
       if (path) { setError(null); setNotice(`Print salvo em ${path}`) }
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível gerar o print.') }
   }
 
   const openPrints = async () => {
     if (!activeEditorV6) return
-    try { await window.desktop.openEditorV6Prints(activeEditorV6.id) }
+    try { await window.desktop.editorV6.openEditorV6Prints(activeEditorV6.id) }
     catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível abrir a pasta de prints.') }
   }
 

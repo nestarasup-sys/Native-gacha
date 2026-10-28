@@ -12,7 +12,7 @@ export function useMotionPreparation(project: EditorV6Document | null, character
     const cancelRequest = () => {
       generation++; window.clearTimeout(timer)
       const id = requestId; requestId = undefined
-      if (id) void window.desktop.cancelEditorV6Motion(id).catch(() => {})
+      if (id) void window.desktop.editorV6.cancelEditorV6Motion(id).catch(() => {})
     }
     async function prepare(epoch: number) {
       const unique = new Map(missingEditorV6Motions(project!).map((plan) => [plan.key, plan]))
@@ -25,7 +25,7 @@ export function useMotionPreparation(project: EditorV6Document | null, character
         const id = crypto.randomUUID()
         requestId = id
         try {
-          await window.desktop.prepareEditorV6Motion({ id, plan, character })
+          await window.desktop.editorV6.prepareEditorV6Motion({ id, plan, character })
           if (disposed || epoch !== generation) return
           done.current.add(key)
           while (done.current.size > 256) done.current.delete(done.current.values().next().value!)

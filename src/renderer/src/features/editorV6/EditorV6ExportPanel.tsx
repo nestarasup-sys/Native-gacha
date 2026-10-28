@@ -24,7 +24,7 @@ export function EditorV6ExportPanel({ project, open, onClose, onChange, onActivi
     if (!job || finished(job)) return
     let stopped = false, timer = 0
     const poll = async () => {
-      try { const value = await window.desktop.getEditorV6ExportStatus(job.id); if (!stopped) setStatus(value) }
+      try { const value = await window.desktop.editorV6.getEditorV6ExportStatus(job.id); if (!stopped) setStatus(value) }
       catch (reason) { if (!stopped) setError(reason instanceof Error ? reason.message : String(reason)) }
       if (!stopped) timer = window.setTimeout(() => { void poll() }, 500)
     }
@@ -34,20 +34,20 @@ export function EditorV6ExportPanel({ project, open, onClose, onChange, onActivi
   const updateAudio = (id: string, values: Partial<EditorV6ExportAudio>) => onChange((document) => ({ ...document, exportAudio: document.exportAudio?.map((clip) => clip.id === id ? { ...clip, ...values } : clip), updatedAt: new Date().toISOString() }))
   const importAudio = async () => {
     setBusy(true); setError('')
-    try { const clip = await window.desktop.importEditorV6ExportAudio(project.id); if (clip) onChange((document) => ({ ...document, exportAudio: [...(document.exportAudio ?? []), clip], updatedAt: new Date().toISOString() })) }
+    try { const clip = await window.desktop.editorV6.importEditorV6ExportAudio(project.id); if (clip) onChange((document) => ({ ...document, exportAudio: [...(document.exportAudio ?? []), clip], updatedAt: new Date().toISOString() })) }
     catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
     finally { setBusy(false) }
   }
   const start = async () => {
     setBusy(true); setError('')
-    try { planEditorV6Export(options, project.timeline.durationFrames); const value = await window.desktop.startEditorV6Export(project, options); if (value) setStatus(value) }
+    try { planEditorV6Export(options, project.timeline.durationFrames); const value = await window.desktop.editorV6.startEditorV6Export(project, options); if (value) setStatus(value) }
     catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
     finally { setBusy(false) }
   }
   const cancel = async () => {
     if (!job) return
     setBusy(true)
-    try { await window.desktop.cancelEditorV6Export(job.id); setStatus(await window.desktop.getEditorV6ExportStatus(job.id)) }
+    try { await window.desktop.editorV6.cancelEditorV6Export(job.id); setStatus(await window.desktop.editorV6.getEditorV6ExportStatus(job.id)) }
     catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
     finally { setBusy(false) }
   }
@@ -75,7 +75,7 @@ export function EditorV6ExportPanel({ project, open, onClose, onChange, onActivi
           <button type="button" onClick={() => onChange((document) => ({ ...document, exportAudio: document.exportAudio?.filter((item) => item.id !== clip.id), updatedAt: new Date().toISOString() }))}>Remover</button>
         </div>)}</div><button type="button" disabled={(project.exportAudio?.length ?? 0) >= 32} onClick={() => void importAudio()}>＋ Adicionar áudio</button>
       </fieldset>
-      {job && <div className={`v6-export-progress state-${job.state}`} role="status"><strong>{job.message}</strong>{job.motionProgress && <span>Transições: {job.motionProgress.completed} / {job.motionProgress.total}</span>}<progress value={job.frames} max={job.totalFrames || 1} /><span>{job.frames} / {job.totalFrames} quadros{job.fallback ? ' · Recuperação pelo modo seguro' : ''}</span>{job.error && <p>{job.error}</p>}{active && <small>Você pode fechar este painel. Mantenha o aplicativo aberto até terminar.</small>}{finished(job) && <button type="button" onClick={() => void window.desktop.revealEditorV6Export(job.id).catch((reason: unknown) => setError(String(reason)))}>{job.state === 'completed' ? 'Mostrar MP4 e relatório' : 'Mostrar relatório'}</button>}</div>}
+      {job && <div className={`v6-export-progress state-${job.state}`} role="status"><strong>{job.message}</strong>{job.motionProgress && <span>Transições: {job.motionProgress.completed} / {job.motionProgress.total}</span>}<progress value={job.frames} max={job.totalFrames || 1} /><span>{job.frames} / {job.totalFrames} quadros{job.fallback ? ' · Recuperação pelo modo seguro' : ''}</span>{job.error && <p>{job.error}</p>}{active && <small>Você pode fechar este painel. Mantenha o aplicativo aberto até terminar.</small>}{finished(job) && <button type="button" onClick={() => void window.desktop.editorV6.revealEditorV6Export(job.id).catch((reason: unknown) => setError(String(reason)))}>{job.state === 'completed' ? 'Mostrar MP4 e relatório' : 'Mostrar relatório'}</button>}</div>}
       {error && <p role="alert" className="v6-export-error">{error}</p>}
       <footer>{active ? <button type="button" disabled={busy} onClick={() => void cancel()}>Cancelar exportação</button> : <button className="v6-export-primary" type="button" disabled={busy} onClick={() => void start()}>{busy ? 'Abrindo exportação…' : options.turbo ? 'EXPORTAR TURBO 2×' : 'EXPORTAR MP4'}</button>}<button type="button" disabled={busy} onClick={onClose}>Fechar painel</button></footer>
     </section>
