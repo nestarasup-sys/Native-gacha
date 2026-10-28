@@ -6,6 +6,7 @@ import { useCustomizerCharacterCommands } from './useCustomizerCharacterCommands
 import { CustomizerClothesAdjustmentPanel } from './CustomizerClothesAdjustmentPanel'
 import { upperWardrobePanels, upperWardrobePageTwoPanels, accessoryWardrobePanels, lowerWardrobePanels, lowerWardrobePageTwoPanels, wardrobeComponentMatchesPanel, isWardrobePanelCandidateSelected, renderWardrobeThumbnail } from './wardrobePanelModel'
 import type { WardrobePanel, WardrobePanelCandidate } from './wardrobePanelModel'
+import { HairAssetPreview, WardrobePanelCandidatePreview } from './CustomizerAssetPreviews'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { RenderedCharacterPortrait } from '../../ui/components/RenderedCharacterPortrait'
 import { Icon, type IconName } from '../../ui/components/Icon'
@@ -21,10 +22,8 @@ import { anchorWardrobeAdjustments, editWardrobeAdjustment, moveWardrobeAdjustme
 import { toggleWardrobeVisibility, updateWardrobeComponentGroups, matchesWardrobeComponent, recolorWardrobeComponents, selectWardrobePanelComponents, wardrobeGroupCategoryForSource } from '../../../../shared/wardrobePlacementModel'
 import { applyCharacterBodyShape } from '../../../../shared/bodyShape'
 import { characterRenderSize, configureCharacterSampling, MAX_CHARACTER_PREVIEW_PIXELS } from './renderResolution'
-import { renderArtwork, loadStandardExpressionEffects, loadSkinTintedImage, loadCachedImage, withCharacterHeadSize, loadHairAppearanceLayers, renderArtworkWithHair, renderWardrobeOverlay, isRightFaceAsset, renderFaceOverlay, renderFrontHairOverlay, characterShapeScale, drawFaceCatalogOverlay, loadHairTintedImage, resolvedHairColors, clothingCategories, wardrobeComponentsForGroup, customizerHairParts, hairAppearanceStyleId } from '../../characters/characterRenderer'
-import type { CatalogArtwork, HairTintOptions, HairCatalogSide, AdjustmentPreviewHighlight, ClothingGroupCategory, SelectedWardrobeComponent } from '../../characters/characterRenderer'
-
-const hairPreviewImageCache = new Map<string, Promise<string>>()
+import { renderArtwork, loadStandardExpressionEffects, loadCachedImage, withCharacterHeadSize, loadHairAppearanceLayers, renderArtworkWithHair, renderWardrobeOverlay, isRightFaceAsset, renderFaceOverlay, renderFrontHairOverlay, characterShapeScale, drawFaceCatalogOverlay, resolvedHairColors, clothingCategories, wardrobeComponentsForGroup, customizerHairParts, hairAppearanceStyleId } from '../../characters/characterRenderer'
+import type { CatalogArtwork, HairCatalogSide, AdjustmentPreviewHighlight, ClothingGroupCategory, SelectedWardrobeComponent } from '../../characters/characterRenderer'
 
 const hairColorControls: Array<{ id: HairColorRole; label: string; fallback: string }> = [
   { id: 'base', label: 'Cor base', fallback: '#9b563e' },
@@ -161,65 +160,6 @@ function preparePreviewImage(source: string | null): Promise<boolean> {
   })
 }
 
-function loadHairPreviewImage(source: string): Promise<string> {
-  const cached = hairPreviewImageCache.get(source)
-  if (cached) return cached
-  const preview = loadCachedImage(source).then((image) => {
-    const width = image.naturalWidth || image.width
-    const height = image.naturalHeight || image.height
-    if (!width || !height) return source
-    const canvas = document.createElement('canvas')
-    canvas.width = width
-    canvas.height = height
-    const context = canvas.getContext('2d', { willReadFrequently: true })
-    if (!context) return source
-    context.drawImage(image, 0, 0)
-    const pixels = context.getImageData(0, 0, width, height).data
-    let left = width
-    let top = height
-    let right = -1
-    let bottom = -1
-    for (let y = 0; y < height; y += 1) {
-      for (let x = 0; x < width; x += 1) {
-        if (pixels[(y * width + x) * 4 + 3] === 0) continue
-        left = Math.min(left, x)
-        top = Math.min(top, y)
-        right = Math.max(right, x)
-        bottom = Math.max(bottom, y)
-      }
-    }
-    if (right < left || bottom < top || (left === 0 && top === 0 && right === width - 1 && bottom === height - 1)) return source
-    const contentWidth = right - left + 1
-    const contentHeight = bottom - top + 1
-    const padding = Math.max(2, Math.ceil(Math.max(contentWidth, contentHeight) * 0.045))
-    const output = document.createElement('canvas')
-    output.width = contentWidth + padding * 2
-    output.height = contentHeight + padding * 2
-    const outputContext = output.getContext('2d')
-    if (!outputContext) return source
-    outputContext.drawImage(image, left, top, contentWidth, contentHeight, padding, padding, contentWidth, contentHeight)
-    return output.toDataURL('image/png')
-  })
-  hairPreviewImageCache.set(source, preview)
-  if (hairPreviewImageCache.size > 40) hairPreviewImageCache.delete(hairPreviewImageCache.keys().next().value!)
-  void preview.catch(() => hairPreviewImageCache.delete(source))
-  return preview
-}
-
-function HairAssetPreview({ source, alt, colors, tintOptions, skinTone, opacity = 1, flipX = false }: { source: string; alt: string; colors?: HairColorOverrides; tintOptions?: HairTintOptions; skinTone?: string; opacity?: number; flipX?: boolean }) {
-  const [previewSource, setPreviewSource] = useState(source)
-  const colorKey = JSON.stringify([colors, tintOptions])
-  useEffect(() => {
-    let cancelled = false
-    setPreviewSource(source)
-    const tintedImage = skinTone ? loadSkinTintedImage(source, skinTone) : loadHairTintedImage(source, colors, tintOptions)
-    void tintedImage.then((image) => loadHairPreviewImage(image.src)).then((trimmed) => {
-      if (!cancelled) setPreviewSource(trimmed)
-    }).catch(() => undefined)
-    return () => { cancelled = true }
-  }, [source, colorKey, skinTone])
-  return <img src={previewSource} alt={alt} style={{ opacity: Math.min(1, Math.max(0, opacity)), transform: flipX ? 'scaleX(-1)' : undefined }} />
-}
 
 const mirroredFaceThumbnailIds = new Set<FaceComponentPartId>(['eye-right', 'pupil-right', 'brow-right'])
 
@@ -285,17 +225,6 @@ function hairAppearancePartStyleId(appearance: NonNullable<CustomizerCharacter['
   return null
 }
 
-function WardrobePanelCandidatePreview({ candidate, colors }: { candidate: WardrobePanelCandidate; colors?: HairColorOverrides }) {
-  const [source, setSource] = useState<string | null>(null)
-  const componentIds = candidate.components.map((component) => component.id)
-  useEffect(() => {
-    let active = true
-    void renderWardrobeThumbnail(candidate.set, candidate.components.map((component) => component.category), componentIds, 512)
-      .then((thumbnail) => { if (active) setSource(thumbnail) })
-    return () => { active = false }
-  }, [candidate.set, componentIds.join(':')])
-  return <HairAssetPreview source={source ?? candidate.component.dataUrl} colors={colors} alt={candidate.component.name} />
-}
 
 async function renderFaceCatalogOverlay(artwork: CatalogArtwork, source: FabricatorProject, items: Partial<Record<FaceSheetKind | FaceElementKind, FaceCatalogItem>>, appearance: CustomizerFaceAppearance, skinTone?: string, studioFaceTransforms?: StudioFaceTransforms, maxSize = Math.max(artwork.width, artwork.height), expressionEffects?: FaceExpressionEffects, headOverrides: CustomizerCharacter['customization']['partOverrides'] = {}, highlightedHeadId?: string | null): Promise<string | null> {
   const canvas = document.createElement('canvas')

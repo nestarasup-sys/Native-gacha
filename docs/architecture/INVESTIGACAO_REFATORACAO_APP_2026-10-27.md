@@ -212,7 +212,8 @@ Editor V6
 
 ### Ciclo 4 — Modularização das páginas grandes
 
-- Customizador: separar carregamento, comandos de personagem, navegador de modelo, renderização e painéis.
+- Customizador: roster, comandos, navegador de modelo e biblioteca de assets já têm hooks próprios. `CustomizerAssetPreviews.tsx` agora é dona da prévia recortada de cabelo e da prévia de candidatos de roupa; a cache local continua junto ao componente que a consome.
+- Continuar separando renderização do personagem e painéis do Customizador sem alterar o estado persistido.
 - Fabricador: separar workspaces e comandos de catálogo; preservar transações, histórico e snapshots.
 - Studio e Editor V6: separar estado/documento, timeline/cena, exportação e painel; não compartilhar engines por semelhança visual sem contrato explícito.
 
