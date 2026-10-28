@@ -3,6 +3,10 @@ import type { FaceGuideProfile, FaceGuideSettings } from '../../../../../shared/
 
 type FaceGuideMap = Partial<Record<number, FaceGuideSettings>>
 type ProfileMaps = Record<FaceGuideProfile, FaceGuideMap>
+type LegacyFaceGuideProfile = Exclude<FaceGuideProfile, 'shared'>
+type LegacyGuideCandidate = { profile: LegacyFaceGuideProfile; slot: number; guide: FaceGuideSettings; sourcePriority: number }
+
+const legacyFaceGuideProfiles: LegacyFaceGuideProfile[] = ['eyes', 'face', 'head-extras']
 
 export const defaultFaceGuide: FaceGuideSettings = {
   visible: true, verticalX: 50, horizontalY: 45, lowerHorizontalY: 65, angle: 12
@@ -11,14 +15,16 @@ export const defaultFaceGuide: FaceGuideSettings = {
 const storageKeys: Record<FaceGuideProfile, string> = {
   eyes: 'gacha-nymi:eyes-dev-guides',
   face: 'gacha-nymi:rosto-dev-guides',
-  'head-extras': 'gacha-nymi:head-extra-dev-guides'
+  'head-extras': 'gacha-nymi:head-extra-dev-guides',
+  shared: 'gacha-nymi:shared-head-guides'
 }
 const legacyStorageKeys: Record<FaceGuideProfile, string[]> = {
   eyes: ['gacha-nymi:face-dev-guides', 'gacha-nymi:rosto-dev-guides'],
   face: ['gacha-nymi:face-dev-guides'],
-  'head-extras': ['gacha-nymi:rosto-dev-guides', 'gacha-nymi:face-dev-guides']
+  'head-extras': ['gacha-nymi:rosto-dev-guides', 'gacha-nymi:face-dev-guides'],
+  shared: []
 }
-const previousProfiles: Record<FaceGuideProfile, FaceGuideProfile> = {
+const previousProfiles: Record<LegacyFaceGuideProfile, LegacyFaceGuideProfile> = {
   eyes: 'face', face: 'eyes', 'head-extras': 'face'
 }
 const clamp = (value: unknown, fallback: number, min: number, max: number) =>
@@ -41,6 +47,32 @@ function normalizeGuides(value: unknown): FaceGuideMap {
   }))
 }
 
+function guideCustomizationScore(guide: FaceGuideSettings): number {
+  return Number(guide.visible !== defaultFaceGuide.visible)
+    + Number(guide.verticalX !== defaultFaceGuide.verticalX)
+    + Number(guide.horizontalY !== defaultFaceGuide.horizontalY)
+    + Number(guide.lowerHorizontalY !== defaultFaceGuide.lowerHorizontalY)
+    + Number(guide.angle !== defaultFaceGuide.angle)
+}
+
+function mergeLegacyGuides(candidates: LegacyGuideCandidate[]): FaceGuideMap {
+  const bySlot = new Map<number, LegacyGuideCandidate[]>()
+  for (const candidate of candidates) {
+    const slotCandidates = bySlot.get(candidate.slot) ?? []
+    slotCandidates.push(candidate)
+    bySlot.set(candidate.slot, slotCandidates)
+  }
+  const profilePriority: Record<LegacyFaceGuideProfile, number> = { eyes: 0, face: 1, 'head-extras': 2 }
+  return Object.fromEntries([...bySlot.entries()].map(([slot, slotCandidates]) => {
+    // Prefer the most configured existing guide. Ties favor durable data, then
+    // Eyes DEV, Rosto DEV and Cabeças Extra DEV in that order.
+    slotCandidates.sort((left, right) => guideCustomizationScore(right.guide) - guideCustomizationScore(left.guide)
+      || left.sourcePriority - right.sourcePriority
+      || profilePriority[left.profile] - profilePriority[right.profile])
+    return [slot, slotCandidates[0].guide]
+  }))
+}
+
 function readStoredGuides(profile: FaceGuideProfile): FaceGuideMap {
   try {
     for (const key of [storageKeys[profile], ...legacyStorageKeys[profile]]) {
@@ -60,7 +92,7 @@ function writeStoredGuides(profile: FaceGuideProfile, guides: FaceGuideMap): voi
 
 export function useFaceGuides(profile: FaceGuideProfile, reportError: Dispatch<SetStateAction<string>>) {
   const [guidesByProfile, setGuidesByProfile] = useState<ProfileMaps>(() => ({
-    eyes: readStoredGuides('eyes'), face: readStoredGuides('face'), 'head-extras': readStoredGuides('head-extras')
+    eyes: readStoredGuides('eyes'), face: readStoredGuides('face'), 'head-extras': readStoredGuides('head-extras'), shared: readStoredGuides('shared')
   }))
   const guidesRef = useRef(guidesByProfile)
   const loadedProfileRef = useRef<FaceGuideProfile | null>(null)
@@ -73,15 +105,41 @@ export function useFaceGuides(profile: FaceGuideProfile, reportError: Dispatch<S
 
     void window.desktop.loadFaceGuides(profile).then(async (saved) => {
       if (cancelled) return
-      let next = saved ? normalizeGuides(saved) : guidesRef.current[profile]
-      if (!saved) {
-        // The previous shared profile may be the only durable copy from versions
-        // that stored eye and face guides together. Copy it once, then diverge.
-        if (Object.keys(next).length === 0) {
-          const previous = await window.desktop.loadFaceGuides(previousProfiles[profile])
-          if (previous) next = normalizeGuides(previous)
+      let next: FaceGuideMap
+      if (saved !== null) {
+        next = normalizeGuides(saved)
+      } else if (profile === 'shared') {
+        const legacySnapshots = await Promise.all(legacyFaceGuideProfiles.map(async (legacyProfile) => ({
+          profile: legacyProfile,
+          saved: await window.desktop.loadFaceGuides(legacyProfile),
+          local: guidesRef.current[legacyProfile]
+        })))
+        const candidates: LegacyGuideCandidate[] = []
+        for (const snapshot of legacySnapshots) {
+          const durable = snapshot.saved === null ? {} : normalizeGuides(snapshot.saved)
+          for (const [slot, guide] of Object.entries(durable)) {
+            if (guide) candidates.push({ profile: snapshot.profile, slot: Number(slot), guide, sourcePriority: 0 })
+          }
+          for (const [slot, guide] of Object.entries(snapshot.local)) {
+            if (guide) candidates.push({ profile: snapshot.profile, slot: Number(slot), guide, sourcePriority: 1 })
+          }
         }
-        if (Object.keys(next).length === 0) next = readStoredGuides(profile)
+        next = mergeLegacyGuides(candidates)
+      } else {
+        next = guidesRef.current[profile]
+      }
+
+      if (saved === null) {
+        // Older profiles keep their original one-time compatibility fallback.
+        // The shared profile above imports all existing profiles before it is
+        // written, so later edits have one durable source of truth.
+        if (profile !== 'shared') {
+          if (Object.keys(next).length === 0) {
+            const previous = await window.desktop.loadFaceGuides(previousProfiles[profile])
+            if (previous) next = normalizeGuides(previous)
+          }
+          if (Object.keys(next).length === 0) next = readStoredGuides(profile)
+        }
         await window.desktop.saveFaceGuides(profile, next)
       }
       if (cancelled) return

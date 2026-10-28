@@ -165,7 +165,7 @@ function FaceTransformControls({ head, transform, sourceWidth, sourceHeight, pup
 
 export function FaceComponentsWorkspace({ mode, baseModelSlot }: { mode: FaceWorkspaceMode; baseModelSlot: number }) {
   const [previewBackground] = usePreviewBackground()
-  const guideProfile: FaceGuideProfile = mode === 'eyes' ? 'eyes' : 'face'
+  const guideProfile: FaceGuideProfile = 'shared'
   const [models, setModels] = useState<FabricatorSlotSummary[]>([])
   const [modelSlot, setModelSlot] = useState(baseModelSlot)
   useModelAppearanceTarget(modelSlot)

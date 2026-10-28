@@ -78,7 +78,7 @@ export function HeadExtrasWorkspace({ baseModelSlot }: { baseModelSlot: number }
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('Importe óculos ou outro extra para a cabeça.')
-  const { guidesByModel, guidesLoaded, updateGuide: persistGuide } = useFaceGuides('head-extras', setError)
+  const { guidesByModel, guidesLoaded, updateGuide: persistGuide } = useFaceGuides('shared', setError)
   const stageRef = useRef<HTMLDivElement>(null)
   const [stageSize, setStageSize] = useState({ width: 0, height: 0 })
   const head = useMemo(() => headPart(model), [model])

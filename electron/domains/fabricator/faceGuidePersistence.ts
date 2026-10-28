@@ -9,7 +9,7 @@ export type FaceGuideValues = Partial<Record<number, FaceGuideSettings>>
 const isMissing = (reason: unknown): boolean => (reason as NodeJS.ErrnoException)?.code === 'ENOENT'
 
 export function isFaceGuideProfile(value: unknown): value is FaceGuideProfile {
-  return value === 'eyes' || value === 'face' || value === 'head-extras'
+  return value === 'eyes' || value === 'face' || value === 'head-extras' || value === 'shared'
 }
 
 export function isFaceGuideValues(value: unknown): value is FaceGuideValues {

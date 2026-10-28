@@ -40,3 +40,8 @@ O Studio/Video Studio continuam consumindo o preset salvo sobre a base do Custom
 3. Abrir um conjunto novo no Presets DEV e verificar se sua posição neutra corresponde ao Olhos DEV. Normal pode ser editado; PT não sobrescreve nada.
 4. Salvar, sair, reabrir o preset, retornar à base e conferir expressões no Studio/Video Studio com outro personagem.
 5. Não usar `Restaurar` em presets antigos sem conferir sua composição; o restaurar é deliberado, não uma migração.
+
+## Atualização posterior — guias da prévia de cabeça
+
+- Olhos DEV, Rosto DEV e Cabeças Extra DEV usam o perfil persistente `shared` para as guias da cabeça, separado por slot de modelo. Ajustar ou restaurar os guias em qualquer uma dessas áreas atualiza a configuração que as outras leem.
+- Na primeira leitura, o perfil compartilhado combina os dados antigos de `eyes`, `face` e `head-extras` sem apagar os arquivos existentes. Para slots com valores diferentes, a migração escolhe o perfil com mais campos personalizados; em empate, favorece o dado persistente e depois `eyes`, `face` e `head-extras`. Depois dessa cópia inicial, o arquivo compartilhado é a fonte de gravação.
