@@ -6,7 +6,7 @@
 
 **Base histórica da reauditoria:** branch local `Dev-V2`, criada sobre `Main-desenvolvimento` no commit `6c2997223430ded043043222469b1fc20a63084f`.
 
-**Base desta etapa:** commit `2068c1e` (`feat(hair-dev): manage hair as sets`), branch local `Dev-V2`.
+**Base desta etapa:** commit `805798f` (`refactor(media): remove obsolete video studios field`), branch local `Dev-V2`.
 
 **Escopo:** registrar a arquitetura atual de todas as áreas e conduzir a refatoração por domínio, sem quebrar dados ou fluxos existentes.
 
@@ -30,10 +30,12 @@ O restante já tem módulos por domínio e armazenamento local com SQLite, arqui
 
 ### Inventário da reauditoria
 
+Contagens de arquivos conferidas neste ciclo sobre `805798f`; a contagem da página do Customizador já inclui a extração feita nesta etapa.
+
 - O shell tem sete rotas de produto: Customizador, Studio principal, Editor V6, Roteiros, Base de Vídeos, Opções e Fabricador DEV.
 - `electron/domains/` contém módulos para Base de Vídeos, Customizador, Editor V6, Fabricador, Roteiros, armazenamento compartilhado e Studio. `src/shared/` guarda contratos e regras usadas por mais de um processo.
-- `electron/main.ts` tem 1.687 linhas após as extrações de migração, inventário, backup, cabelo, arquivos do Studio/Editor V6, configurações, projetos/histórico, roupas e exportação/normalização de imagens do Fabricador; registra somente o handler IPC transversal de flush e compõe os serviços.
-- As páginas de rota mais extensas são Customizador (1.707 linhas após centralizar o modelo facial), Editor V6 (1.623), Studio (1.414) e Fabricador Dev (809); Roteiros tem 535, Base de Vídeos 362 e Opções 216 linhas. Dentro do Fabricador, os workspaces maiores são Expressões (1.277), peças faciais (1.202), Animador (1.113) e Roupas (903 após extrair as importações e a recuperação da referência). Esses números localizam concentração de responsabilidades, mas não são por si só motivo para dividir arquivos.
+- `electron/main.ts` tem 1.648 linhas após as extrações de migração, inventário, backup, cabelo, arquivos do Studio/Editor V6, configurações, projetos/histórico, roupas e exportação/normalização de imagens do Fabricador; registra somente o handler IPC transversal de flush e compõe os serviços. Os handlers `protocol.handle` são protocolos de mídia, com responsabilidades próprias.
+- As páginas de rota mais extensas são Customizador (1.641 linhas após extrair a viewport), Editor V6 (1.553), Studio (1.352) e Fabricador Dev (1.087); Roteiros tem 511, Base de Vídeos 337 e Opções 205 linhas. Dentro do Fabricador, os workspaces maiores são Expressões (1.251), peças faciais (1.171), Animador (1.058) e Roupas (888). Esses números localizam concentração de responsabilidades, mas não são por si só motivo para dividir arquivos.
 - A auditoria estática de dependências mantém em zero os imports de runtime entre os pares de features listados em `scripts/architecture/boundaries-baseline.json`.
 
 ### Mapa resumido
@@ -268,6 +270,7 @@ Editor V6
 - `useCustomizerAdjustmentPreview.ts` coordena o alvo selecionado, limpa destaques ao trocar personagem/módulo/categoria e direciona o preview para rosto, cabelo ou roupas. Os hooks de ajuste continuam usando o mesmo setter para limpar o destaque durante a gravação.
 - `useCustomizerHeadNavigation.ts` concentra a aba de cabeça, a categoria de ajuste e a regra de voltar de “Ajustar” à categoria anterior; seleções feitas pelo catálogo facial usam o mesmo caminho.
 - `useCustomizerWardrobeNavigation.ts` concentra categoria, seção e página das roupas; mantém a alternância de “Ajustar” e limpa a biblioteca ao alternar entre as duas páginas de uma categoria.
+- `useCustomizerPreviewViewport.ts` concentra medição, zoom e arraste da viewport compartilhada pelos dois canvases de prévia. A página mantém a decisão contextual sobre quando arrastar (há arte carregada) e reinicia o pan ao trocar de personagem; dimensões, densidade, limites de zoom e captura do ponteiro permanecem iguais.
 - Próxima revisão do Customizador: decidir com o produto o destino de “Outros” e “Perfil”, que hoje não têm conteúdo associado.
 - `features/fabricator/models/geometry.ts` concentra a rotação de ponto em torno de uma origem, usada por Modelos, Poses e Animador. As telas continuam controlando quais peças, âncoras e pivôs entram em cada operação.
 - `features/fabricator/models/imageData.ts` centraliza decodificação de imagens e conversão de bytes PNG para data URL. Os chamadores preservam a mensagem de erro específica de cada fluxo.
@@ -487,3 +490,5 @@ Continuar pelo **Ciclo 4** com módulos focados de UI e coordenação no Customi
 - Na etapa anterior, o protocolo do worker de separação e a conversão dos recortes foram centralizados; `npm run typecheck`, `npm run audit:architecture` (320 arquivos TS/TSX, sem erros de sintaxe, importações locais ausentes ou violações de fronteira) e `git diff --check` passaram. Testes e build não foram executados naquela etapa.
 - Nesta atualização, a recuperação de referência de modelos legados foi isolada sem alterar persistência; `npm run typecheck`, `npm run audit:architecture` (321 arquivos TS/TSX, sem erros de sintaxe, importações locais ausentes ou violações de fronteira) e `git diff --check` passaram. Testes e build não foram executados nesta etapa.
 - Nesta atualização, o catálogo facial e a biblioteca passaram a compartilhar o mesmo modelo derivado de escolhas; `npm run typecheck`, `npm run audit:architecture` (321 arquivos TS/TSX, sem erros de sintaxe, importações locais ausentes ou violações de fronteira) e `git diff --check` passaram. Testes e build não foram executados nesta etapa.
+- Nesta etapa, `useCustomizerPreviewViewport.ts` assumiu medição, zoom e pan compartilhados dos dois previews. `npm run test:customizer` (11 testes), `npm run typecheck`, `npm run audit:architecture` (334 arquivos TS/TSX), `npm run build` e `git diff --check` passaram.
+- O conjunto adicional de seis testes de continuidade terminou com 29 aprovações e quatro falhas em asserções estáticas: uma ainda procura um limite de cache removido em `documentPersistence.ts`, outra procura `selectCharacterArtwork` diretamente em `CustomizerPage` (agora fica em `customizerArtworkSource.ts`) e duas procuram regras de roupa em `characterRenderer.ts` (agora ficam em `characterWardrobeRenderer.ts`). Os padrões estavam ausentes nos arquivos apontados já no commit-base `805798f`; esses testes precisam acompanhar a arquitetura atual e não foram usados como aprovação desta etapa.
