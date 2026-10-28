@@ -70,7 +70,6 @@ test('SQLite ativo: Studio e Video Studio têm documentos independentes e salvam
    prepareVideoDelete:async()=>{},validate:value=>value?.schemaVersion===1,
    decodeImage:uri=>Buffer.from(uri.split(',')[1],'base64'),
    normalizeImage:async bytes=>({bytes}),ensureVideoAssets:async()=>{},
-   videoStudioCardSummary:(value,id)=>({id,title:value.title,color:value.color,createdAt:value.createdAt,updatedAt:value.updatedAt})
  })
  const prior=doc.writeStudio(makeDoc('studio-v1'),'studio')
  const latest=doc.writeStudio(makeDoc('studio-v2'),'studio')

@@ -12,27 +12,25 @@ const {
 } = require('../scripts/dev-ai/baseline.cjs')
 
 test('catalog: every audit is registered and unsafe audits excluded from unattended suites', () => {
-  assert.equal(audits.length, 15)
+  assert.equal(audits.length, 7)
   assert.equal(new Set(audits.map(a => a.id)).size, audits.length)
   for (const entry of audits) {
     assert.match(entry.file, /^scripts\/audit-[\w-]+\.(mjs|cjs)$/)
     assert.ok(entry.requires.length > 0)
-    if (['fast', 'isolation', 'ipc'].includes(entry.suite)) assert.equal(entry.data, 'synthetic')
+    if (entry.suite === 'fast') assert.equal(entry.data, 'synthetic')
   }
-  assert.equal(selected('fast').length, 9)
-  assert.deepEqual(selected('isolation').map(a => a.id), ['studio-isolation'])
-  assert.equal(selected('all').length, 11)
-  assert.deepEqual(selected('ipc').map(a => a.id), ['studio-ipc-real'])
-  assert.equal(audits.find(a => a.id === 'studio-ipc-real').mode, 'electron-controller')
+  assert.equal(selected('fast').length, 6)
+  assert.throws(() => selected('isolation'), /Suite desconhecida/)
+  assert.equal(selected('all').length, 6)
+  assert.throws(() => selected('ipc'), /Suite desconhecida/)
   assert.ok(audits.some(a => a.id === 'animator-rig' && a.data === 'real-by-default' && a.suite === 'manual'))
 })
 
 test('CLI only accepts fixed suites and commands', () => {
   assert.equal(parseArgs([]).suite, 'fast')
-  assert.equal(parseArgs(['--suite', 'isolation']).suite, 'isolation')
+  assert.equal(parseArgs(['--suite', 'all']).suite, 'all')
   assert.equal(parseArgs(['--list']).list, true)
-  assert.equal(parseArgs(['--suite', 'ipc']).suite, 'ipc')
-  assert.throws(() => parseArgs(['--suite', 'private-path']), /fast\|isolation\|ipc\|all/)
+  assert.throws(() => parseArgs(['--suite', 'private-path']), /fast\|all/)
   assert.throws(() => parseArgs(['--exec', 'rm -rf']), /não reconhecido/)
   assert.throws(() => npmCommand('arbitrary-command'), /não permitido/)
   const npm = npmCommand('build')
@@ -137,14 +135,14 @@ test('static feature boundary scanner detects cross-feature imports on synthetic
   const root = mkdtempSync(join(tmpdir(), 'gacha-boundaries-'))
   try {
     const studio = join(root, 'src/renderer/src/features/studio')
-    const video = join(root, 'src/renderer/src/features/videoStudio')
+    const video = join(root, 'src/renderer/src/features/motionEditor')
     mkdirSync(studio, { recursive: true })
     mkdirSync(video, { recursive: true })
     writeFileSync(join(studio, 'helper.ts'), 'export const hello = 1')
     writeFileSync(join(video, 'page.ts'), "import { hello } from '../studio/helper'\\n")
     const report = scan(root)
     assert.equal(report.crossFeature.length, 1)
-    assert.equal(report.crossFeature[0].fromFeature, 'videoStudio')
+    assert.equal(report.crossFeature[0].fromFeature, 'motionEditor')
     assert.equal(report.crossFeature[0].toFeature, 'studio')
   } finally { rmSync(root, { recursive: true, force: true }) }
 })

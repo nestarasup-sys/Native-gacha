@@ -27,13 +27,13 @@ test('AST edges classify cross-feature runtime vs type and resolve Vite asset qu
   const root = mkdtempSync(join(tmpdir(), 'gacha-ast-boundaries-'))
   try {
     const normal = join(root, 'src/renderer/src/features/studio')
-    const video = join(root, 'src/renderer/src/features/videoStudio')
+    const video = join(root, 'src/renderer/src/features/timeline')
     mkdirSync(normal, { recursive: true })
     mkdirSync(video, { recursive: true })
     writeFileSync(join(normal, 'types.ts'), 'export type T = { id: string }')
     writeFileSync(join(normal, 'helper.ts'), 'export const value = 2')
     writeFileSync(join(video, 'style.css'), '.video { color: red }')
-    writeFileSync(join(video, 'Video.tsx'), `
+    writeFileSync(join(video, 'Timeline.tsx'), `
       import type { T } from '../studio/types'
       import { value } from '../studio/helper'
       import style from './style.css?inline'

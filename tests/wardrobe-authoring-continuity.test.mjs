@@ -45,18 +45,19 @@ test('offsets do Fabricador passam para pose montada com escala não uniforme',(
  assert.equal(output.renderWidth*output.scaleX,72)
  assert.equal(output.renderHeight*output.scaleY,120)
 })
-test('face, roupa e pose são resolvidos sem importar páginas Customizador ou Fabricador',async()=>{
+test('face, roupa e pose usam serviços compartilhados sem importar páginas de outras áreas',async()=>{
  const {readFile}=await import('node:fs/promises')
- const [mapping,renderer,customizer,video]=await Promise.all([
+ const [mapping,renderer,customizer,studio]=await Promise.all([
   readFile('src/shared/wardrobePose.ts','utf8'),
   readFile('src/renderer/src/characters/characterRenderer.ts','utf8'),
   readFile('src/renderer/src/features/customizer/CustomizerPage.tsx','utf8'),
-  readFile('src/renderer/src/features/videoStudio/transitionRenderer.ts','utf8')
+  readFile('src/renderer/src/features/studio/StudioPage.tsx','utf8')
  ])
  assert.match(mapping,/const current = bindWardrobeComponent\(component, sourceBone\)/)
  assert.match(renderer,/mapWardrobeComponentToPose\(component, sourceBone, targetBone/)
  assert.match(customizer,/renderWardrobeOverlay\(/)
- assert.match(video,/prepareSavedCharacterRenderer/)
+ assert.match(studio,/import\('\.\.\/\.\.\/characters\/characterRenderer'\)/)
+ assert.doesNotMatch(renderer,/CustomizerPage|FabricatorPage/)
 })
 
 test('escala horizontal e vertical divergentes no Fabricador não reverte ao tamanho do PNG original',()=>{

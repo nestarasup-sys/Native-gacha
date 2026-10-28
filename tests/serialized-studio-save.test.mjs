@@ -25,13 +25,14 @@ test('falha de um save não bloqueia o próximo, nem mascara a exceção',async(
  await queue.idle()
  assert.equal(queue.pending,0)
 })
-test('ambos os Studios usam fila pura nos comandos de salvar, sem alterar IPC legado',async()=>{
+test('Studio e Editor V6 enfileiram salvamentos antes de chamar seus canais IPC',async()=>{
  const {readFile}=await import('node:fs/promises')
- const [studio,video]=await Promise.all([
+  const [studio,editorV6]=await Promise.all([
    readFile('src/renderer/src/features/studio/StudioPage.tsx','utf8'),
-   readFile('src/renderer/src/features/videoStudio/VideoStudioEditor.tsx','utf8')
+   readFile('src/renderer/src/features/editorV6/EditorV6Page.tsx','utf8')
  ])
  assert.ok(studio.includes('studioSaveQueue.current.run(async () =>'))
  assert.ok(studio.includes('await window.desktop.saveStudio(next)'))
- assert.match(video,/studioSaveQueue\.current\.run\(\(\) => persistence\.save\(/)
+  assert.ok(editorV6.includes('studioSaveQueue.current.run(async () =>'))
+  assert.ok(editorV6.includes('await window.desktop.saveEditorV6Project(next)'))
 })

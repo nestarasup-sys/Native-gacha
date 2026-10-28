@@ -31,7 +31,6 @@ async function setup(t,overrides={}){
     decodeImage:dataUrl=>Buffer.from(dataUrl.slice(dataUrl.indexOf(',')+1),'base64'),
     normalizeImage:async bytes=>({bytes}),
     ensureVideoAssets:async()=>{ensureCalls++},
-    videoStudioCardSummary:(value,sid)=>({id:sid,title:value.title,color:value.color,createdAt:value.createdAt,updatedAt:value.updatedAt}),
     ...overrides
   }
   return {root,studioPath,persistence:createStudioDocumentPersistence(deps),getEnsureCalls:()=>ensureCalls}

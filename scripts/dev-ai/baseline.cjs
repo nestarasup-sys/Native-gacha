@@ -23,7 +23,7 @@ function parseArgs(argv) {
     else if (argv[i] === '--help' || argv[i] === '-h') options.help = true
     else throw new Error(`Argumento não reconhecido: ${argv[i]}`)
   }
-  if (!['fast', 'isolation', 'ipc', 'all'].includes(options.suite)) throw new Error('Use --suite fast|isolation|ipc|all')
+  if (!['fast', 'all'].includes(options.suite)) throw new Error('Use --suite fast|all')
   return options
 }
 
@@ -198,7 +198,7 @@ function npmCommand(script) {
 async function main(argv = process.argv.slice(2)) {
   const opts = parseArgs(argv)
   if (opts.help) {
-    console.log('Uso: node scripts/dev-ai/baseline.cjs [--list] [--suite fast|isolation|ipc|all]')
+    console.log('Uso: node scripts/dev-ai/baseline.cjs [--list] [--suite fast|all]')
     console.log('Não instala dependências, não lê APPDATA real e não executa auditorias que requerem mídia pessoal.')
     return 0
   }
@@ -222,7 +222,7 @@ async function main(argv = process.argv.slice(2)) {
     policies: {
       network: 'not-invoked-by-runner; NOT OS-level blocked',
       filesystem: 'child HOME/APPDATA isolated; legacy fast tests may write under out/',
-      electron: 'per-case adapter; studio-isolation uses fixture-preload, studio-ipc-real uses production preload and real IPC in synthetic userData'
+      electron: 'per-case adapter; only audits currently registered in the catalog are invoked'
     },
     cases: [], status: 'inconclusive'
   }

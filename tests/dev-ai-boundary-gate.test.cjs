@@ -26,7 +26,7 @@ test('legacy imports stay visible without automatically approving their design',
 test('new edge and increased occurrence fail without changing policy', () => {
   const expanded = { ...existing, crossFeatureCount: 4, crossFeature: [
     ...existing.crossFeature, { ...original.edges[0], line: 22 },
-    { ...original.edges[0], from: 'src/renderer/src/features/videoStudio/Other.ts', line: 1 }
+    { ...original.edges[0], from: 'src/renderer/src/features/editorV6/Other.ts', line: 1 }
   ] }
   const result = evaluateBoundaryDebt(expanded, original)
   assert.equal(result.status, 'failed')

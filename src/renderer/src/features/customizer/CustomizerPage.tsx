@@ -2770,7 +2770,3 @@ export function CustomizerPage() {
     </div>
   )
 }
-
-// Compatibilidade: chamadas antigas continuam disponíveis sem carregar a tela no Studio.
-export { renderArtwork, prepareSavedCharacterRenderer, renderSavedCharacter, loadStandardExpressionEffects } from '../../characters/characterRenderer'
-export type { CatalogArtwork } from '../../characters/characterRenderer'

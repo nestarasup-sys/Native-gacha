@@ -17,10 +17,10 @@ test('Poses DEV consome a montagem, sem trocar pelo PNG original', () => {
   assert.match(views, /kind: 'mounted'/)
   assert.doesNotMatch(poses, /selectOriginalModelSource/)
 })
-test('Video Studio e Customizador continuam fora do domínio de salvamento do Fabricador', () => {
+test('Customizador continua fora do domínio de salvamento do Fabricador', () => {
   const writer = read('electron/domains/fabricator/modelWriter.ts')
   const source = read('electron/domains/fabricator/modelSource.ts')
   assert.doesNotMatch(writer, /\b(?:ipcMain|BrowserWindow|webContents)\b/)
   assert.doesNotMatch(source, /\b(?:ipcMain|BrowserWindow|webContents)\b/)
-  assert.doesNotMatch(writer, /features\/videoStudio|features\/customizer/)
+  assert.doesNotMatch(writer, /features\/customizer/)
 })

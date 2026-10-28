@@ -24,13 +24,13 @@ test('geometria de rosto idêntica para elementos em 16:9',()=>{
  assert.equal(result.width,28)
  assert.equal(result.height,40*1920/1080*480/400)
 })
-test('os dois Studios compartilham crop e geometry, sem cópias locais independentes',async()=>{
- const [studio,video]=await Promise.all([
+test('Studio e Editor V6 usam a geometria compartilhada, sem cópias locais independentes',async()=>{
+ const [studio,editorV6]=await Promise.all([
   readFile('src/renderer/src/features/studio/StudioPage.tsx','utf8'),
-  readFile('src/renderer/src/features/videoStudio/VideoStudioEditor.tsx','utf8')
+  readFile('src/renderer/src/features/editorV6/EditorV6Page.tsx','utf8')
  ])
  assert.match(studio,/from '\.\.\/\.\.\/characters\/characterGeometry'/)
- assert.match(video,/fitElementToTrim/)
+ assert.match(editorV6,/from '\.\.\/\.\.\/characters\/characterGeometry'/)
  assert.doesNotMatch(studio,/function trimTransparentImage\(/)
- assert.doesNotMatch(video,/function fitElementToTrim\(/)
+ assert.doesNotMatch(editorV6,/function fitElementToTrim\(/)
 })

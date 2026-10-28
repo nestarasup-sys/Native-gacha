@@ -218,16 +218,16 @@ test('presets legados continuam transferindo usando referências; erro visível 
   assert.equal(isPortableExpressionMotion({version:1,layers:{eyeLeft:{dx:Infinity,dy:0,sx:1,sy:1,rotation:0,flip:false}}}),false)
 })
 
-test('Studio e Video Studio persistem o estado de PT sem escrever outro preset',async()=>{
+test('Studio e Editor V6 persistem a direção do olhar sem escrever outro preset',async()=>{
   const paths=['src/renderer/src/features/studio/StudioPage.tsx',
-    'src/renderer/src/features/videoStudio/VideoStudioEditor.tsx',
+    'src/renderer/src/features/editorV6/EditorV6Page.tsx',
     'src/renderer/src/features/fabricator/ExpressionPresetWorkspace.tsx']
-  const [studio,video,editor]=await Promise.all(paths.map(path=>readFile(path,'utf8')))
+  const [studio,editorV6,editor]=await Promise.all(paths.map(path=>readFile(path,'utf8')))
   assert.match(studio,/activeExpressionGaze: gaze/)
-  assert.match(video,/activeExpressionGaze: gaze/)
-  assert.match(video,/PT: /)
+  assert.match(editorV6,/activeExpressionGaze: gaze/)
+  assert.ok(editorV6.includes('aria-label={`Pupilas à esquerda: ${preset.name}`}'))
   assert.match(studio,/element\.activeExpressionGaze \?\? 'right'/)
-  assert.match(video,/stateElement\.activeExpressionGaze \?\? 'right'/)
+  assert.match(editorV6,/selectedElement\.activeExpressionGaze === 'left'/)
   assert.match(editor,/setPreviewGaze\(pupilsLeft\?'left':'right'\)/)
   assert.doesNotMatch(editor,/turnPupilsLeft\(/)
   assert.match(editor,/ExpressionCharacterPreview/)

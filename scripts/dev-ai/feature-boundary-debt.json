@@ -57,42 +57,6 @@
       "maxOccurrences": 1,
       "classification": "extract-pure-shape",
       "rationale": "Extract shared geometry utilities with an explicit API."
-    },
-    {
-      "from": "src/renderer/src/features/studio/StudioPage.tsx",
-      "to": "src/renderer/src/features/customizer/CustomizerPage.tsx",
-      "importKind": "dynamic-import",
-      "typeOnly": false,
-      "maxOccurrences": 6,
-      "classification": "prohibited-feature-page-import",
-      "rationale": "Dynamic import of entire Customizer page to reuse rendering; extract dedicated render service."
-    },
-    {
-      "from": "src/renderer/src/features/videoStudio/VideoStudioEditor.tsx",
-      "to": "src/renderer/src/features/studio/expressionTransforms.ts",
-      "importKind": "import",
-      "typeOnly": false,
-      "maxOccurrences": 1,
-      "classification": "extract-pure-expression",
-      "rationale": "Promote expression transforms to shared capability without Studio editor state."
-    },
-    {
-      "from": "src/renderer/src/features/videoStudio/VideoStudioEditor.tsx",
-      "to": "src/renderer/src/features/customizer/CustomizerPage.tsx",
-      "importKind": "dynamic-import",
-      "typeOnly": false,
-      "maxOccurrences": 8,
-      "classification": "prohibited-feature-page-import",
-      "rationale": "Dynamic import of entire Customizer page; promote export to dedicated render service."
-    },
-    {
-      "from": "src/renderer/src/features/videoStudio/transitionRenderer.ts",
-      "to": "src/renderer/src/features/customizer/CustomizerPage.tsx",
-      "importKind": "dynamic-import",
-      "typeOnly": false,
-      "maxOccurrences": 1,
-      "classification": "prohibited-feature-page-import",
-      "rationale": "Rendering utility imports a UI page at runtime; isolate pure rendering contract."
     }
   ]
 }

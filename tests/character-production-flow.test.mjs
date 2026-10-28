@@ -60,12 +60,13 @@ test('dois personagens compartilham catálogo sem sobrescrever suas configuraç�
   assert.ok(fitted.width > 0 && fitted.height > 0)
 })
 
-test('Studio não importa a tela do Customizador e compatibilidade pública permanece', async () => {
+test('Studio usa o renderizador compartilhado sem compatibilidade exportada pela página Customizador', async () => {
   const studio = await readFile(new URL('../src/renderer/src/features/studio/StudioPage.tsx', import.meta.url), 'utf8')
   const customizer = await readFile(new URL('../src/renderer/src/features/customizer/CustomizerPage.tsx', import.meta.url), 'utf8')
   const renderer = await readFile(new URL('../src/renderer/src/characters/characterRenderer.ts', import.meta.url), 'utf8')
   assert.equal(studio.includes("import('../customizer/CustomizerPage')"), false)
   assert.equal(studio.split("import('../../characters/characterRenderer')").length - 1, 6)
-  assert.equal(customizer.includes("export { renderArtwork, prepareSavedCharacterRenderer, renderSavedCharacter, loadStandardExpressionEffects } from"), true)
+  assert.doesNotMatch(customizer, /^export \{ renderArtwork, prepareSavedCharacterRenderer, renderSavedCharacter, loadStandardExpressionEffects \} from/m)
+  assert.doesNotMatch(customizer, /^export type \{ CatalogArtwork \} from/m)
   assert.match(renderer, /export async function prepareSavedCharacterRenderer/)
 })

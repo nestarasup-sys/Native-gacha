@@ -6,7 +6,6 @@ const root = path.resolve(__dirname, '../..')
 const budgets = {
   'src/renderer/src/features/customizer/CustomizerPage.tsx': 2830,
   'electron/main.ts': 2500,
-  'src/renderer/src/features/videoStudio/VideoStudioEditor.tsx': 2520,
   'src/renderer/src/features/studio/StudioPage.tsx': 1590,
   'src/renderer/src/features/fabricator/FabricatorPage.tsx': 1085,
   'src/renderer/src/ui/App.tsx': 100,
