@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FabricatorAssetSave, FabricatorHistoryAction, FabricatorHistoryState, FabricatorProject, FabricatorSlotSummary, ModelPart } from '../../../../shared/fabricator'
 import { Icon, type IconName } from '../../ui/components/Icon'
 import { usePreviewBackground } from './usePreviewBackground'
-import { autoConnectParts, normalizeLayerOrder, normalizePartAnchors, orderedParts, partJointAnchor, reorderLayer, sourcePointFromCanvas } from './models/rig'
+import { autoConnectParts, modelRigSegmentKind, normalizeLayerOrder, normalizePartAnchors, orderedParts, partJointAnchor, reorderLayer, sourcePointFromCanvas } from './models/rig'
 import { connectFabricatorParts, isTorsoPart, moveFabricatorPartBranch, rotateFabricatorPartBranch, toggleFabricatorJointFixed } from './models/rigEditing'
 import { headSizePercent, isHeadPart, resizeHeadPart } from './models/resize'
 import { PoseWorkspace } from './PoseWorkspace'
@@ -26,6 +26,7 @@ import { prepareLoadedFabricatorProject } from './models/projectHydration'
 import { MAX_CHROMA_TOLERANCE, type ModelSourceResult } from './models/modelSource'
 import { ModelSkinTonePicker } from './ModelSkinTonePicker'
 import { ModelSkinContourEditor } from './ModelSkinContourEditor'
+import { TemporaryThighWarpPreview } from './TemporaryThighWarpPreview'
 import { cachedModelBodyAppearancePreview } from './models/modelSkinTone'
 import { connectBodyContourJoints } from './models/contourJoints'
 import { isValidSkinTone } from '../../../../shared/skinTones'
@@ -85,6 +86,11 @@ export function FabricatorPage() {
   const [showJointPivots, setShowJointPivots] = useState(true)
   const [mixerActive, setMixerActive] = useState(false)
   const [mixerPainting, setMixerPainting] = useState(false)
+  const [thighDeformationActive, setThighDeformationActive] = useState(false)
+  const [temporaryThighDeformationIds, setTemporaryThighDeformationIds] = useState<Set<string>>(() => new Set())
+  const [thighDeformationRadius, setThighDeformationRadius] = useState(28)
+  const [thighDeformationStrength, setThighDeformationStrength] = useState(70)
+  const [temporaryThighResetToken, setTemporaryThighResetToken] = useState(0)
   const [zoom, setZoom] = useState(1)
   const [pan, setPan] = useState({ x: 0, y: 0 })
   const [panning, setPanning] = useState(false)
@@ -302,6 +308,29 @@ export function FabricatorPage() {
   const visibleParts = useMemo(() => (project?.parts ?? []).filter((part) => part.name.toLowerCase().includes(normalizedPartFilter)), [project, normalizedPartFilter])
   const canvasParts = useMemo(() => project ? orderedParts(project.parts, project.layerOrder) : [], [project])
   const partPreviewSource = (part: ModelPart) => bodyAppearancePreviewUrls[`${project?.slot}:${part.id}`] ?? part.dataUrl
+  const canDeformThigh = Boolean(project?.parts.some((part) => modelRigSegmentKind(part.name) === 'thigh'))
+  const updateTemporaryThighDeformation = useCallback((partId: string, warped: boolean) => {
+    setTemporaryThighDeformationIds((current) => {
+      if (current.has(partId) === warped) return current
+      const next = new Set(current)
+      if (warped) next.add(partId)
+      else next.delete(partId)
+      return next
+    })
+  }, [])
+  const reportTemporaryThighError = useCallback((message: string) => setError(message), [])
+  const resetTemporaryThighDeformation = useCallback(() => {
+    setTemporaryThighResetToken((current) => current + 1)
+    setTemporaryThighDeformationIds(new Set())
+  }, [])
+  const toggleThighDeformation = useCallback(() => {
+    if (!thighDeformationActive) {
+      setMixerActive(false)
+      setConnectMode(false)
+      setConnectFromId(null)
+    }
+    setThighDeformationActive(!thighDeformationActive)
+  }, [thighDeformationActive])
   const frontToBackLayers = useMemo(() => canvasParts.slice().reverse(), [canvasParts])
   const jointedParts = useMemo(() => {
     if (!project) return []
@@ -328,6 +357,17 @@ export function FabricatorPage() {
   const measuredWidth = Math.max(stageSize.width, stageRef.current?.clientWidth ?? 0)
   const measuredHeight = Math.max(stageSize.height, stageRef.current?.clientHeight ?? 0)
   const scale = project ? Math.max(0.05, Math.min((measuredWidth - 48) / project.width, (measuredHeight - 48) / project.height)) * zoom : 1
+  const toModelPoint = useCallback((clientX: number, clientY: number) => {
+    const stage = stageRef.current
+    if (!stage || !project || scale <= 0) return null
+    const rect = stage.getBoundingClientRect()
+    const x = clientX - rect.left - stage.clientLeft
+    const y = clientY - rect.top - stage.clientTop
+    return {
+      x: (x - stage.clientWidth / 2 - pan.x) / scale + project.width / 2,
+      y: (y - stage.clientHeight / 2 - pan.y) / scale + project.height / 2
+    }
+  }, [pan.x, pan.y, project?.height, project?.width, scale])
 
   const updateProject = (updater: (current: FabricatorProject) => FabricatorProject, action: FabricatorHistoryAction = 'edit') => {
     const current = projectRef.current
@@ -818,7 +858,8 @@ export function FabricatorPage() {
     stroke.x = event.clientX; stroke.y = event.clientY
   }
 
-  const beginPartDrag = (event: React.PointerEvent<HTMLImageElement>, part: ModelPart) => {
+  const beginPartDrag = (event: React.PointerEvent<HTMLElement>, part: ModelPart) => {
+    if (thighDeformationActive) return
     if (mixerActive) { startMixerStroke(event); return }
     if (connectMode || !project) return
     if (isTorsoPart(part)) {
@@ -835,6 +876,7 @@ export function FabricatorPage() {
 
   const beginPan = (event: React.PointerEvent<HTMLDivElement>) => {
     if (!project || (event.target instanceof Element && event.target.closest('.model-stage-tools'))) return
+    if (thighDeformationActive) return
     if (mixerActive) { startMixerStroke(event); return }
     if (event.target instanceof Element && event.target.closest('.model-canvas-part, .model-joint-anchor')) return
     event.preventDefault()
@@ -882,6 +924,7 @@ export function FabricatorPage() {
   }
 
   const beginAnchorDrag = (event: React.PointerEvent<SVGCircleElement>, partId: string, displayOffset: number) => {
+    if (thighDeformationActive) return
     if (mixerActive) { startMixerStroke(event); return }
     event.stopPropagation(); event.currentTarget.setPointerCapture(event.pointerId)
     startHistoryGesture('edit')
@@ -908,7 +951,7 @@ export function FabricatorPage() {
         </div>
         <nav className="fabricator-section-list" aria-label="Seções do Fabricador Dev">
           {sections.map((section) => (
-            <button aria-pressed={activeSection === section.id} className={`fabricator-section-button${activeSection === section.id ? ' active' : ''}`} key={section.id} onClick={() => { setActiveSection(section.id); setAppearanceTargetSlot(activeSlot) }} type="button">
+            <button aria-pressed={activeSection === section.id} className={`fabricator-section-button${activeSection === section.id ? ' active' : ''}`} key={section.id} onClick={() => { setActiveSection(section.id); setAppearanceTargetSlot(activeSlot); if (section.id !== 'Modelos') { setThighDeformationActive(false); setTemporaryThighDeformationIds(new Set()) } }} type="button">
               <Icon name={section.icon} /><span>{section.label}</span>
             </button>
           ))}
@@ -987,20 +1030,34 @@ export function FabricatorPage() {
                   <button className={`model-tool-button model-pivot-visibility${showJointPivots ? ' active' : ''}`} aria-pressed={showJointPivots} onClick={() => setShowJointPivots((visible) => !visible)} disabled={processing || chromaApplying || historyBusy} title={showJointPivots ? 'Ocultar bolinhas das juntas' : 'Mostrar bolinhas das juntas'} type="button"><Icon name={showJointPivots ? 'eye' : 'eyeOff'} /><span>{showJointPivots ? 'Ocultar bolinhas' : 'Mostrar bolinhas'}</span></button>
                 </div>
               </div>
-              <ModelSkinTonePicker value={project.modelSkinTone} outlineColor={project.modelOutlineColor} contourPartCount={project.parts.filter(part => part.fakeSkinContours?.length).length} disabled={processing || chromaApplying || historyBusy || modelSourcePublishing} onSelect={(tone) => updateProject((current) => ({ ...current, modelSkinTone: tone }))} onOutlineSelect={(color) => updateProject((current) => ({ ...current, modelOutlineColor: color }))} onEditContours={() => setSkinContourEditorOpen(true)} />
+              <ModelSkinTonePicker value={project.modelSkinTone} outlineColor={project.modelOutlineColor} contourPartCount={project.parts.filter(part => part.fakeSkinContours?.length).length} disabled={processing || chromaApplying || historyBusy || modelSourcePublishing} thighDeformationActive={thighDeformationActive} hasTemporaryThighDeformation={temporaryThighDeformationIds.size > 0} thighDeformationDisabled={!canDeformThigh} thighDeformationRadius={thighDeformationRadius} thighDeformationStrength={thighDeformationStrength} onToggleThighDeformation={toggleThighDeformation} onResetTemporaryThighDeformation={resetTemporaryThighDeformation} onThighDeformationRadiusChange={setThighDeformationRadius} onThighDeformationStrengthChange={setThighDeformationStrength} onSelect={(tone) => updateProject((current) => ({ ...current, modelSkinTone: tone }))} onOutlineSelect={(color) => updateProject((current) => ({ ...current, modelOutlineColor: color }))} onEditContours={() => setSkinContourEditorOpen(true)} />
               <div className={`model-editor-content${processing || chromaApplying || historyBusy ? ' chroma-applying' : ''}`} aria-busy={processing || chromaApplying || historyBusy}>
                 <section className="model-canvas-column" aria-label="Prévia e montagem">
                   <div className="model-canvas-topline"><span><i /> CANVAS DE MONTAGEM</span><span>{project.width} × {project.height}</span></div>
-                  <div ref={stageRef} className={`model-stage${panning ? ' panning' : ''}${mixerActive ? ' mixer-active' : ''}${mixerPainting ? ' mixer-painting' : ''}`} style={{ '--preview-background': previewBackground } as import('react').CSSProperties} onPointerDown={beginPan} onPointerMove={(event) => { moveMixerStroke(event); movePan(event); movePartDrag(event); moveAnchorDrag(event) }} onPointerUp={(event) => { if (dragRef.current?.pointerId === event.pointerId) dragRef.current = null; if (anchorDragRef.current?.pointerId === event.pointerId) anchorDragRef.current = null; if (panRef.current?.pointerId === event.pointerId) { panRef.current = null; setPanning(false) } if (mixerStrokeRef.current?.pointerId === event.pointerId) { mixerStrokeRef.current = null; setMixerPainting(false) } void mixerQueueRef.current.then(() => finishHistoryGesture()) }} onPointerCancel={() => { dragRef.current = null; anchorDragRef.current = null; panRef.current = null; mixerStrokeRef.current = null; setPanning(false); setMixerPainting(false); void mixerQueueRef.current.then(() => finishHistoryGesture()) }}>
+                  <div ref={stageRef} className={`model-stage${panning ? ' panning' : ''}${mixerActive ? ' mixer-active' : ''}${mixerPainting ? ' mixer-painting' : ''}${thighDeformationActive ? ' thigh-deform-active' : ''}`} style={{ '--preview-background': previewBackground } as import('react').CSSProperties} onPointerDown={beginPan} onPointerMove={(event) => { moveMixerStroke(event); movePan(event); movePartDrag(event); moveAnchorDrag(event) }} onPointerUp={(event) => { if (dragRef.current?.pointerId === event.pointerId) dragRef.current = null; if (anchorDragRef.current?.pointerId === event.pointerId) anchorDragRef.current = null; if (panRef.current?.pointerId === event.pointerId) { panRef.current = null; setPanning(false) } if (mixerStrokeRef.current?.pointerId === event.pointerId) { mixerStrokeRef.current = null; setMixerPainting(false) } void mixerQueueRef.current.then(() => finishHistoryGesture()) }} onPointerCancel={() => { dragRef.current = null; anchorDragRef.current = null; panRef.current = null; mixerStrokeRef.current = null; setPanning(false); setMixerPainting(false); void mixerQueueRef.current.then(() => finishHistoryGesture()) }}>
                     <div className="model-artboard" style={{ width: `${project.width * scale}px`, height: `${project.height * scale}px`, left: `calc(50% + ${pan.x}px)`, top: `calc(50% + ${pan.y}px)` }}>
-                      {canvasParts.filter((part) => !hiddenPartIds.includes(part.id)).map((part) => <img key={part.id} className={`model-canvas-part${selectedIds.includes(part.id) ? ' selected' : ''}${connectFromId === part.id ? ' connect-source' : ''}`} src={partPreviewSource(part)} alt={part.name} draggable={false} onClick={(event) => { event.stopPropagation(); if (!mixerActive) handlePartClick(part.id, event.ctrlKey || event.metaKey) }} onPointerDown={(event) => beginPartDrag(event, part)} style={{ left: part.x * scale, top: part.y * scale, width: part.width * scale, height: part.height * scale, transform: `rotate(${part.rotation}deg)` }} />)}
+                      {canvasParts.filter((part) => !hiddenPartIds.includes(part.id)).map((part) => {
+                        const className = `model-canvas-part${selectedIds.includes(part.id) ? ' selected' : ''}${connectFromId === part.id ? ' connect-source' : ''}`
+                        const style = { left: part.x * scale, top: part.y * scale, width: part.width * scale, height: part.height * scale, transform: `rotate(${part.rotation}deg)` }
+                        const onClick = (event: React.MouseEvent<HTMLElement>) => { event.stopPropagation(); if (!mixerActive && !thighDeformationActive) handlePartClick(part.id, event.ctrlKey || event.metaKey) }
+                        const selectPart = () => setSelectedIds([part.id])
+                        const onPointerDown = (event: React.PointerEvent<HTMLElement>) => {
+                          if (thighDeformationActive) {
+                            if (modelRigSegmentKind(part.name) === 'thigh') selectPart()
+                            return
+                          }
+                          beginPartDrag(event, part)
+                        }
+                        if (modelRigSegmentKind(part.name) === 'thigh') return <TemporaryThighWarpPreview key={`${project.slot}:${part.id}`} part={part} sourceUrl={partPreviewSource(part)} className={className} style={style} active={thighDeformationActive} radius={thighDeformationRadius} strength={thighDeformationStrength} resetToken={temporaryThighResetToken} toModelPoint={toModelPoint} onWarpStateChange={updateTemporaryThighDeformation} onWarpStart={selectPart} onError={reportTemporaryThighError} onClick={onClick} onPointerDown={onPointerDown} />
+                        return <img key={part.id} className={className} src={partPreviewSource(part)} alt={part.name} draggable={false} onClick={onClick} onPointerDown={onPointerDown} style={style} />
+                      })}
                       <svg className="model-joint-layer" viewBox={`0 0 ${project.width} ${project.height}`} preserveAspectRatio="none" aria-label="Conexões entre as peças">
-                        {showJointPivots && jointMarkers.map(({ part, anchor, offset, fixed }) => <circle key={part.id} className={`model-joint-anchor${fixed ? ' fixed' : selectedIds.includes(part.id) ? ' selected' : ''}`} cx={anchor.x + offset / scale} cy={anchor.y} r={Math.max(selectedIds.includes(part.id) ? 11 : 8, (selectedIds.includes(part.id) ? 13 : 10) / scale)} aria-label={`Pivô de ${part.name}`} onPointerDown={(event) => beginAnchorDrag(event, part.id, offset)} />)}
+                        {showJointPivots && !thighDeformationActive && jointMarkers.map(({ part, anchor, offset, fixed }) => <circle key={part.id} className={`model-joint-anchor${fixed ? ' fixed' : selectedIds.includes(part.id) ? ' selected' : ''}`} cx={anchor.x + offset / scale} cy={anchor.y} r={Math.max(selectedIds.includes(part.id) ? 11 : 8, (selectedIds.includes(part.id) ? 13 : 10) / scale)} aria-label={`Pivô de ${part.name}`} onPointerDown={(event) => beginAnchorDrag(event, part.id, offset)} />)}
                       </svg>
                     </div>
                     <div className="model-stage-tools"><span>{Math.round(zoom * 100)}%</span><button onClick={() => setZoom((value) => Math.min(2.4, value + 0.15))} title="Aumentar zoom" type="button"><Icon name="zoomIn" /></button><button onClick={() => setZoom((value) => Math.max(0.5, value - 0.15))} title="Diminuir zoom" type="button"><Icon name="zoomOut" /></button><button onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }) }} title="Centralizar prévia" type="button"><Icon name="frame" /></button></div>
                   </div>
-                  <div className="model-canvas-footer"><span>{mixerActive ? <><kbd>Misturador ativo</kbd> passe sobre a junta; ele afeta a camada visível mais alta</> : <><kbd>Arraste o fundo</kbd> para mover a prévia <i /> <kbd>Arraste a peça</kbd> para posicionar <i /> <kbd>Ctrl</kbd> + clique para selecionar várias</>}</span><span>{project.parts.length} peças <i /> {project.joints.length} conexões</span></div>
+                  <div className="model-canvas-footer"><span>{thighDeformationActive ? <><kbd>Deformação temporária</kbd> arraste sobre as coxas; use ↶ para voltar ao normal</> : mixerActive ? <><kbd>Misturador ativo</kbd> passe sobre a junta; ele afeta a camada visível mais alta</> : <><kbd>Arraste o fundo</kbd> para mover a prévia <i /> <kbd>Arraste a peça</kbd> para posicionar <i /> <kbd>Ctrl</kbd> + clique para selecionar várias</>}</span><span>{project.parts.length} peças <i /> {project.joints.length} conexões</span></div>
                 </section>
 
                 <aside className="model-parts-panel model-work-panel" aria-label="Painel de edição">
