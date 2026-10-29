@@ -13,6 +13,7 @@ import { EditorV6PropertyPanel } from './EditorV6PropertyPanel'
 import { getEditorV6PlaybackFrame, setEditorV6PlaybackFrame } from './editorV6PlaybackClock'
 import { duplicateEditorV6ProjectDocument } from './editorV6ProjectDuplication'
 import { createEditorV6ProjectCreationCommands } from './editorV6ProjectCreation'
+import { planEditorV6CastSelection, retainEditorV6CastAssets } from './editorV6CastSelection'
 import { addEditorV6ImageAsset, addEditorV6TimelineMedia } from './editorV6MediaChanges'
 import { importEditorV6ImageToProject, importEditorV6MediaToTimeline } from './editorV6MediaImport'
 import { addEditorV6ElementAtFrame, editorV6ClipAtFrame, normalizeEditorV6Timeline, timelineClips } from '../../../../shared/editorV6TimelineCore'
@@ -535,18 +536,14 @@ export function EditorV6Page() {
     if (!activeEditorV6 || savingCast) return
     setSavingCast(true)
     try {
-      const selectedIds = new Set(castSelection)
-      const retained = activeEditorV6.elements.filter((element) => element.kind !== 'character' || !element.characterId || selectedIds.has(element.characterId))
-      const removedCharacterAssetIds = new Set(activeEditorV6.elements.filter((element) => element.kind === 'character' && element.characterId && !selectedIds.has(element.characterId)).map((element) => element.assetId).filter((id): id is string => Boolean(id)))
-      const retainedCharacters = new Set(retained.filter((element) => element.kind === 'character').map((element) => element.characterId))
-      const additions = availableCharacters.filter((character) => selectedIds.has(character.id) && !retainedCharacters.has(character.id))
+      const castPlan = planEditorV6CastSelection(activeEditorV6.elements, availableCharacters, castSelection)
       const { prepareSavedCharacterRenderer, renderSavedCharacter } = await import('../../characters/editorV6CharacterRenderer')
       const assets: EditorV6Asset[] = []
       const elements: EditorV6Element[] = []
       const stageWidth = sceneRef.current?.clientWidth ?? 1000
       const stageHeight = sceneRef.current?.clientHeight ?? 562
-      let zIndex = Math.max(0, ...retained.map((item) => item.zIndex))
-      for (const character of additions) {
+      let zIndex = Math.max(0, ...castPlan.retainedElements.map((item) => item.zIndex))
+      for (const character of castPlan.charactersToAdd) {
         const renderer = await prepareSavedCharacterRenderer(character)
         try {
           const rendered = await renderer.renderToCanvas(undefined, undefined, undefined, 'idle')
@@ -566,12 +563,10 @@ export function EditorV6Page() {
           elements.push({ id: crypto.randomUUID(), kind: 'character', assetId: asset.id, faceModeAssetIds: { ...baked.assetIds, idle: asset.id }, characterId: character.id, characterSourceUpdatedAt: character.updatedAt, ...(poseSourceRevision ? { poseSourceRevision } : {}), faceRendererVersion: EDITOR_V6_FACE_RENDER_VERSION, activeExpressionCollectionId: 'standard', activeExpressionPresetId: null, activeFaceMode: 'idle', characterScale: 100, characterWidthScale: 100, characterHeightScale: 100, ...(character.customization.faceAppearance ? { expressionBase: { appearance: structuredClone(character.customization.faceAppearance), transforms: {} } } : {}), characterCanvasWidth, text: character.name, x: 0, y: 0, width, height, rotation: 0, zIndex: ++zIndex })
         } finally { renderer.dispose() }
       }
-      const nextElements = [...retained, ...elements]
-      const retainedAssetIds = new Set(retained.map((element) => element.assetId).filter((id): id is string => Boolean(id)))
       changeScene((studio) => ({
         ...studio,
-        elements: nextElements,
-        assets: [...studio.assets.filter((asset) => !removedCharacterAssetIds.has(asset.id) || retainedAssetIds.has(asset.id)), ...assets],
+        elements: [...castPlan.retainedElements, ...elements],
+        assets: [...retainEditorV6CastAssets(studio.assets, castPlan), ...assets],
         updatedAt: new Date().toISOString()
       }))
       setCastPickerOpen(false)
