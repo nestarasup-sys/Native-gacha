@@ -84,6 +84,12 @@ function readFaceImportAnchors(): FaceImportAnchors {
   } catch { return {} }
 }
 const readImage = normalizeEditableImageFile
+function throwIfEyeSheetImportAborted(signal: AbortSignal) {
+  if (!signal.aborted) return
+  const error = new Error('Importação cancelada.')
+  error.name = 'AbortError'
+  throw error
+}
 function catalogSaveData(item: FaceCatalogItem): FaceCatalogItemSave {
   const { dataUrl: _sheetData, ...sheet } = item.sheet
   return { ...item, sheet, pieces: item.pieces.map(({ dataUrl: _pieceData, ...piece }) => piece) }
@@ -195,6 +201,8 @@ export function FaceComponentsWorkspace({ mode, baseModelSlot }: { mode: FaceWor
   const [markedForDeletion, setMarkedForDeletion] = useState<string[]>([])
   const componentDetailsRef = useRef(details)
   const selectedAssetsRef = useRef(selectedAssets)
+  const eyeSheetImportController = useRef<AbortController | null>(null)
+  const eyeSheetImportContextCancelled = useRef(false)
   const preparingPair = useRef(new Map<string, Promise<FaceComponentAsset>>())
   const hydratedComponentSlot = useRef<number | null>(null)
   const catalogDetailsRef = useRef<Record<string, FaceCatalogItem>>({})
@@ -318,6 +326,18 @@ export function FaceComponentsWorkspace({ mode, baseModelSlot }: { mode: FaceWor
   catalogDetailsRef.current = { ...noseDetails, ...mouthDetails }
 
   useEffect(() => registerPendingWriteFlusher(flushAllSaves), [flushAllSaves])
+  useEffect(() => () => {
+    const controller = eyeSheetImportController.current
+    eyeSheetImportController.current = null
+    if (!controller) return
+    eyeSheetImportContextCancelled.current = true
+    controller.abort()
+  }, [mode, modelSlot])
+  useEffect(() => {
+    if (!eyeSheetImportContextCancelled.current) return
+    eyeSheetImportContextCancelled.current = false
+    setBusy(false)
+  }, [mode, modelSlot])
 
   useEffect(() => { void window.desktop.fabricator.listFabricatorSlots().then((slots) => { setModels(slots); const preferredExists = Boolean(slots[baseModelSlot - 1]); const first = slots.findIndex(Boolean); if (!preferredExists && first >= 0) setModelSlot(first + 1) }).catch((reason) => setError(String(reason))) }, [baseModelSlot])
   useEffect(() => { if (mode !== 'eyes') return; try { window.localStorage.setItem(FACE_IMPORT_ANCHORS_STORAGE_KEY, JSON.stringify(importAnchorsByModel)) } catch { setError('Não foi possível salvar a fixação de importação neste computador.') } }, [mode, importAnchorsByModel])
@@ -444,16 +464,21 @@ export function FaceComponentsWorkspace({ mode, baseModelSlot }: { mode: FaceWor
   async function importEyeSheet(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0]; event.target.value = ''
     if (!file || !head) return
+    const controller = new AbortController()
+    eyeSheetImportController.current = controller
     setBusy(true); setError('')
     const savedIds: string[] = []
     try {
       const canonicalSheet = await normalizeEditableImageFile(file)
-      const pieces = await splitEyeSheet(canonicalSheet.dataUrl)
+      throwIfEyeSheetImportAborted(controller.signal)
+      const pieces = await splitEyeSheet(canonicalSheet.dataUrl, controller.signal)
+      throwIfEyeSheetImportAborted(controller.signal)
       const baseName = file.name.replace(/\.[^.]+$/, '').slice(0, 90) || 'Olhos'
       const imported: FaceComponentAsset[] = []
       const assigned: Partial<Record<PartId, string>> = {}
       const sourceSheetPairId = crypto.randomUUID()
       for (const piece of pieces) {
+        throwIfEyeSheetImportAborted(controller.signal)
         const category = categories.find((entry) => entry.kind === piece.kind)!
         for (const [index, side] of category.parts.entries()) {
           const baseTransform = initialTransform(piece.kind, head, piece.width, piece.height)
@@ -475,6 +500,7 @@ export function FaceComponentsWorkspace({ mode, baseModelSlot }: { mode: FaceWor
           }
           await window.desktop.fabricator.saveFaceComponentAsset(modelSlot, asset, piece.dataUrl)
           savedIds.push(asset.id)
+          throwIfEyeSheetImportAborted(controller.signal)
           assigned[side] = asset.id
           imported.push({ ...asset, dataUrl: piece.dataUrl })
         }
@@ -486,8 +512,11 @@ export function FaceComponentsWorkspace({ mode, baseModelSlot }: { mode: FaceWor
       setNotice('Olho aberto, pupila e olho fechado importados. Ajuste cada peça na Biblioteca.')
     } catch (reason) {
       await Promise.allSettled(savedIds.map((id) => window.desktop.fabricator.deleteFaceComponentAsset(modelSlot, id)))
-      setError(reason instanceof Error ? reason.message : String(reason))
-    } finally { setBusy(false) }
+      if (!controller.signal.aborted && !(reason instanceof Error && reason.name === 'AbortError')) setError(reason instanceof Error ? reason.message : String(reason))
+    } finally {
+      if (eyeSheetImportController.current === controller) eyeSheetImportController.current = null
+      if (!controller.signal.aborted) setBusy(false)
+    }
   }
 
   async function importEyebrow(event: ChangeEvent<HTMLInputElement>) {
