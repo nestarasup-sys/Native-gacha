@@ -6,7 +6,11 @@ import type {
   FaceComponentAsset, FaceComponentAssetSave, FaceComponentAssetSummary,
   FaceSet, FaceSetSave, FaceSetSummary
 } from '../../../src/shared/fabricator'
-import { fabricatorIpcChannels } from '../../../src/shared/fabricatorIpcChannels'
+import { fabricatorIpcChannels } from '../../../src/shared/fabricatorIpcChannels.ts'
+import {
+  assertFaceCatalogItemHasNoReferences, assertFaceComponentHasNoReferences, assertFaceSetHasNoReferences
+} from './faceReferences.ts'
+import type { FaceReferenceSnapshot } from './faceReferences.ts'
 
 type Dependencies = {
   isValidModelSlot: (slot: number) => boolean
@@ -27,6 +31,8 @@ type Dependencies = {
   writeFaceComponentAsset: (modelSlot: number, asset: FaceComponentAssetSave, dataUrl: string) => Promise<void>
   faceComponentPath: (modelSlot: number) => string
   faceComponentItemPath: (modelSlot: number, id: string) => string
+  hasStoredFaceCatalogItem: (modelSlot: number, id: string) => Promise<boolean>
+  withReferenceSnapshot: <T>(modelSlot: number, operation: (snapshot: FaceReferenceSnapshot) => Promise<T>) => Promise<T>
   removeDirectory: (path: string) => Promise<void>
   queueSave: (operation: () => Promise<void>) => Promise<void>
 }
@@ -57,7 +63,11 @@ export function registerFabricatorFaceCatalogHandlers(
     const base = resolve(deps.faceModelPath(modelSlot))
     const target = resolve(deps.faceSetPath(modelSlot, id))
     if (dirname(target) !== base || basename(target) !== `set-${id}`) throw new Error('Caminho de exclusão inválido.')
-    return deps.queueSave(() => deps.removeDirectory(target))
+    return deps.queueSave(() => deps.withReferenceSnapshot(modelSlot, async (snapshot) => {
+      await deps.readFaceSet(modelSlot, id)
+      assertFaceSetHasNoReferences(snapshot, modelSlot, id)
+      await deps.removeDirectory(target)
+    }))
   })
 
   ipc.handle('fabricator:face-catalog:list', async (event, modelSlot: number): Promise<FaceCatalogItemSummary[]> => {
@@ -81,7 +91,14 @@ export function registerFabricatorFaceCatalogHandlers(
     const base = resolve(deps.faceCatalogPath(modelSlot))
     const target = resolve(deps.faceCatalogItemPath(modelSlot, id))
     if (dirname(target) !== base || basename(target) !== `item-${id}`) throw new Error('Caminho de exclusão inválido.')
-    return deps.queueSave(() => deps.removeDirectory(target))
+    return deps.queueSave(() => deps.withReferenceSnapshot(modelSlot, async (snapshot) => {
+      await deps.readFaceCatalogItem(modelSlot, id)
+      assertFaceCatalogItemHasNoReferences(snapshot, modelSlot, id)
+      if (!await deps.hasStoredFaceCatalogItem(modelSlot, id)) {
+        throw new Error('Esta peça pertence a um conjunto facial legado. Edite e salve a categoria no catálogo antes de excluí-la individualmente.')
+      }
+      await deps.removeDirectory(target)
+    }))
   })
 
   ipc.handle(fabricatorIpcChannels.listFaceComponentAssets, async (event, modelSlot: number, kind?: FaceAssetKind): Promise<FaceComponentAssetSummary[]> => {
@@ -105,6 +122,10 @@ export function registerFabricatorFaceCatalogHandlers(
     const base = resolve(deps.faceComponentPath(modelSlot))
     const target = resolve(deps.faceComponentItemPath(modelSlot, id))
     if (dirname(target) !== base || basename(target) !== `item-${id}`) throw new Error('Caminho de exclusão inválido.')
-    return deps.queueSave(() => deps.removeDirectory(target))
+    return deps.queueSave(() => deps.withReferenceSnapshot(modelSlot, async (snapshot) => {
+      const asset = await deps.readFaceComponentAsset(modelSlot, id)
+      assertFaceComponentHasNoReferences(snapshot, modelSlot, id, asset?.name ?? id)
+      await deps.removeDirectory(target)
+    }))
   })
 }

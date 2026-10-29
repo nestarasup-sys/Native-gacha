@@ -10,7 +10,7 @@
 
 **Base histórica do primeiro ciclo:** commit `805798f` (`refactor(media): remove obsolete video studios field`), branch local `Dev-V2`.
 
-**Objetivo:** manter um mapa atualizado dos fluxos, contratos e responsáveis por dados em todas as áreas do Native-gacha; refatorar em etapas pequenas sustentadas por evidência; simplificar módulos e remover código obsoleto somente após confirmar seus consumidores; e fortalecer as conexões entre áreas sem quebrar telas, IPC, formatos persistidos ou dados do usuário. Cada etapa deve registrar o caminho afetado, a mudança estrutural, as verificações executadas e um commit local revisável.
+**Objetivo:** mapear a arquitetura e os fluxos de dados do Native-gacha; priorizar e executar uma refatoração incremental em etapas pequenas, simplificando módulos e conexões entre áreas. Remover código legado somente quando seu desuso estiver confirmado, preservar dados e comportamento existente, verificar cada etapa e registrar cada mudança em um commit local revisável.
 
 **Escopo:** diagnóstico arquitetural e melhorias incrementais de código e contratos. Mudanças de schema, migrações de dados, exclusões de assets ou alterações visuais compartilhadas exigem mapeamento e verificação próprios antes de serem incluídas.
 
@@ -22,7 +22,7 @@ A **Biblioteca de Mídia** é dona dos arquivos de vídeo e seus IDs. Base de V�
 
 O restante já tem módulos por domínio e armazenamento local com SQLite, arquivos e CAS. O `electron/main.ts` agora registra somente o flush transversal de gravações; a maior concentração está nas páginas React extensas que combinam estado e coordenação de operações. O plano prioriza limites de propriedade, segurança dos dados e redução de responsabilidades por fluxo.
 
-**Próximos passos:** continuar mapeando as filas de gravação e referências de catálogos entre renderer, preload, handlers IPC e repositórios. O flush transversal permanece no composition root. A composição compartilha algoritmos visuais de baixo nível; a orquestração e os modos de render continuam próprios de Studio e Editor V6 até existir comparação visual das saídas reais.
+**Próximos passos:** continuar mapeando referências de catálogos e assets entre renderer, preload, handlers IPC e repositórios; verificar em especial os vínculos numéricos de poses do Fabricador mantidos por personagens e áreas consumidoras. O flush transversal permanece no composition root. A composição compartilha algoritmos visuais de baixo nível; a orquestração e os modos de render continuam próprios de Studio e Editor V6 até existir comparação visual das saídas reais.
 
 ## 1. Estado observado
 
@@ -566,16 +566,18 @@ Este corte separa propriedade dos contratos e chamadas entre domínios, mas não
 | Biblioteca de vídeos | Roteiros, Editor V6 e Base de Vídeos | Roteiros guarda o ID no SQLite e Editor V6 guarda `libraryVideoId` no manifesto. Um coordenador serializa criação/remoção de vínculos e a exclusão consulta os dois consumidores antes de remover o vídeo. |
 | Biblioteca de fundos e GIFs | Roteiros | Os documentos guardam IDs no SQLite; o salvamento valida assets novos e a exclusão consulta referências salvas, usando a fila de escrita de Roteiros. |
 | Fabricador: cabelos | Personagem do Customizador; Studio e Editor V6 renderizam o personagem | `hairAppearance` guarda `modelSlot` e IDs legados ou por peça. O helper em `src/shared/hairCategories.ts` é usado pela renderização e pela checagem de referências; novos vínculos são validados contra o Fabricador e a exclusão serializa com gravações do Customizador. |
-| Fabricador: rosto, catálogo facial e componentes | Personagem do Customizador e presets/rascunho de Expressões DEV; Studio, Editor V6 e Animador DEV renderizam esses dados | O personagem guarda IDs de conjunto, catálogo, componentes, detalhes e acessórios. Presets e rascunho de expressão também guardam IDs de componentes e itens de catálogo. As exclusões ainda não consultam esses consumidores nem compartilham uma barreira de gravação com eles. |
+| Fabricador: rosto, catálogo facial e componentes | Personagem do Customizador e presets/rascunho de Expressões DEV; Studio, Editor V6 e Animador DEV renderizam esses dados | O personagem guarda IDs de conjunto, catálogo, componentes, detalhes e acessórios. Presets e rascunho de expressão também guardam IDs de componentes e itens de catálogo. Novos vínculos são validados; exclusões consultam personagens, presets, rascunho e pares de assets sob as filas de gravação correspondentes. |
 | Personagem do Customizador | Studio e Editor V6 | As cenas guardam `characterId` e uma imagem PNG derivada (`assetId`); Studio também salva a base de expressão. A combinação permite exibir o snapshot e atualizar a arte a partir do personagem fonte. |
 
 - Evidências principais: `electron/domains/fabricator/wardrobeReferences.ts`, `wardrobeIpc.ts`, `electron/domains/customizer/service.ts`, `electron/domains/fabricator/hairIpc.ts`, `faceCatalogIpc.ts`, `roteiros/assetReferences.ts`, `mediaLibrary/videoReferences.ts`, `roteiros/videoReferences.ts`, `editorV6/videoReferences.ts`, `StudioPage.tsx` e `EditorV6Page.tsx`.
 - A antiga lacuna de cabelos foi corrigida sem mudar dados existentes: `collectCustomizerHairStyleReferences` reaproveita a resolução usada pelo renderer, valida somente referências novas e bloqueia exclusão sob `withCharactersLocked`. Personagens legados com um ID já ausente ainda podem receber outras edições.
-- A lacuna restante em rosto e catálogo facial exige inventariar e serializar os escritores de Customizador, Expressões e rascunhos por slot, além de validar vínculos novos, antes de ativar bloqueios de exclusão.
+- A proteção facial usa `collectCustomizerFaceAssetReferences` compartilhado pela validação do serviço e pela checagem de exclusão. A seleção moderna torna um `setId` antigo inativo nos mesmos casos em que os renderizadores escolhem catálogo/componentes; IDs virtuais `legacy_<setId>_<categoria>` continuam protegendo o conjunto legado de origem.
+- `faceCatalogIpc.ts` coordena exclusões com `withCharactersLocked` e `queueExpressionWork`; `expressionIpc.ts` valida novos IDs em presets, salvamentos em lote e rascunhos. A remoção de componentes também protege assets pareados; uma peça virtual de conjunto legado sem diretório próprio agora retorna erro explícito em vez de sucesso sem exclusão.
+- Vínculos quebrados já existentes permanecem editáveis em campos não relacionados. Formatos persistidos, canais IPC, IDs e ownership dos assets não mudaram.
 
 ## 7. Próxima tarefa recomendada
 
-Implementar proteção consistente para exclusão e criação de vínculos dos assets faciais. Inventariar os escritores de personagens, presets e rascunhos por slot; serializar cada alteração de vínculo com a exclusão; validar IDs novos; e cobrir conjuntos legados, seleção por peça e renderização em Studio/Editor V6. Preservar formatos persistidos e vínculos existentes.
+Mapear o ciclo dos vínculos numéricos de poses do Fabricador: personagem guarda `modelSlot`/`poseSlot`, e Customizador, Studio e Editor V6 carregam o snapshot pelo slot. Verificar como a exclusão de uma pose afeta cada consumidor e definir, com evidência no código, se a regra adequada é bloquear exclusão, limpar vínculos ou manter um snapshot recuperável. Preservar os formatos e o comportamento de poses legadas até concluir essa análise.
 
 ## 8. Verificações e validação
 
@@ -594,3 +596,4 @@ Implementar proteção consistente para exclusão e criação de vínculos dos a
 - Nesta etapa, o inventário único de gravações pendentes foi ligado ao flush, ao backup e ao encerramento; o teste sintético confirma as filas incluídas e a reutilização do mesmo coletor.
 - Nesta etapa, `node --test tests/pending-persistence-inventory.test.mjs`, `npm run typecheck`, `npm run audit:architecture` (342 arquivos TS/TSX) e `npm run build` passaram. O mapeamento de referências de catálogo foi somente leitura; nenhum dado de perfil ou mídia foi acessado.
 - Nesta etapa, 16 testes de `customizer-architecture` e `fabricator-hair-reference-integrity` passaram; também passaram `npm run typecheck`, `npm run audit:architecture` (343 arquivos TS/TSX), `npm run build` e `git diff --check`. Os testes usaram armazenamento temporário e personagens sintéticos.
+- Nesta etapa, 24 testes de `customizer-architecture`, `fabricator-hair-reference-integrity` e `fabricator-face-reference-integrity` passaram. `npm run typecheck`, `npm run audit:architecture` (345 arquivos TS/TSX, sem imports locais ausentes ou violações de fronteira), `npm run build` e `git diff --check` também passaram. A cobertura inclui vínculos de personagens, presets e rascunhos, IDs virtuais legados, assets pareados, validação de novos IDs e `setId` inativo; fixtures sintéticas e armazenamento temporário foram usados.

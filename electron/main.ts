@@ -7,6 +7,7 @@ import { Readable } from 'node:stream'
 import { fileURLToPath } from 'node:url'
 import type { FaceAssetKind, FaceAssetSave, FaceCatalogItem, FaceCatalogItemSave, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSave, FaceComponentAssetSummary, FaceElementKind, FaceExpressionPreset, FaceExpressionTransforms, FaceExpressionWorkspaceDraft, FaceSet, FaceSetSave, FaceSheetKind, FaceTransform, FabricatorPoseDraftSave, FabricatorPoseSave, FabricatorProjectSave, HairStyle, HairStyleAsset, HairStyleSave, HairWorkspace, HairWorkspaceAsset, HairWorkspaceSave, ModelPart } from '../src/shared/fabricator'
 import { hairCategories } from '../src/shared/hairCategories'
+import type { CustomizerFaceAssetReference } from '../src/shared/customizerFaceAssetReferences'
 import type { StudioAsset, StudioDocument } from '../src/shared/studio'
 import { isStudioExpressionEffects, isStudioFaceTransforms } from '../src/shared/studio'
 import { isEditorV6Document } from '../src/shared/editorV6Schema'
@@ -397,23 +398,26 @@ const customizerService = new CustomizerCharacterService(
   customizerRepository,
   randomUUID,
   () => new Date().toISOString(),
-  async (groups) => {
-    const requested = new Map<string, typeof groups[number]>()
-    for (const group of groups) requested.set(`${group.modelSlot}:${group.setId}`, group)
-    const resolved = await Promise.all(Array.from(requested, async ([key, group]) => [key, group, await readWardrobeSet(group.modelSlot, group.setId)] as const))
-    for (const [key, group, set] of resolved) {
-      if (!set) throw new Error(`A roupa ${key} não está mais disponível no Fabricador Dev. Atualize a biblioteca e selecione um conjunto salvo.`)
-      if (group.componentId && !set.components.some((component) => component.id === group.componentId)) {
-        throw new Error(`A peça ${group.componentId} não existe mais no conjunto ${key}. Atualize a biblioteca antes de equipá-la.`)
+  {
+    assertWardrobeGroupsAvailable: async (groups) => {
+      const requested = new Map<string, typeof groups[number]>()
+      for (const group of groups) requested.set(`${group.modelSlot}:${group.setId}`, group)
+      const resolved = await Promise.all(Array.from(requested, async ([key, group]) => [key, group, await readWardrobeSet(group.modelSlot, group.setId)] as const))
+      for (const [key, group, set] of resolved) {
+        if (!set) throw new Error(`A roupa ${key} não está mais disponível no Fabricador Dev. Atualize a biblioteca e selecione um conjunto salvo.`)
+        if (group.componentId && !set.components.some((component) => component.id === group.componentId)) {
+          throw new Error(`A peça ${group.componentId} não existe mais no conjunto ${key}. Atualize a biblioteca antes de equipá-la.`)
+        }
       }
-    }
-  },
-  async (references) => {
-    for (const { modelSlot, id } of references) {
-      if (!await readHairStyle(modelSlot, id)) {
-        throw new Error(`O cabelo ${modelSlot}:${id} não está mais disponível no Fabricador Dev. Atualize a biblioteca e escolha um cabelo salvo.`)
+    },
+    assertHairStylesAvailable: async (references) => {
+      for (const { modelSlot, id } of references) {
+        if (!await readHairStyle(modelSlot, id)) {
+          throw new Error(`O cabelo ${modelSlot}:${id} não está mais disponível no Fabricador Dev. Atualize a biblioteca e escolha um cabelo salvo.`)
+        }
       }
-    }
+    },
+    assertFaceAssetsAvailable: assertFaceAssetReferencesAvailable
   }
 )
 
@@ -1116,6 +1120,26 @@ const assertNoVideoReferences = createVideoReferenceGuard([
   })
 ])
 
+async function assertFaceAssetReferencesAvailable(references: readonly CustomizerFaceAssetReference[]): Promise<void> {
+  for (const reference of references) {
+    if (reference.assetType === 'face-set') {
+      if (!await readFaceSet(reference.modelSlot, reference.id)) {
+        throw new Error(`O conjunto facial ${reference.modelSlot}:${reference.id} não está mais disponível no Fabricador Dev.`)
+      }
+    } else if (reference.assetType === 'face-catalog') {
+      const item = await readFaceCatalogItem(reference.modelSlot, reference.id)
+      if (!item || item.category !== reference.category) {
+        throw new Error(`A peça facial ${reference.modelSlot}:${reference.id} não está mais disponível para ${reference.category} no Fabricador Dev.`)
+      }
+    } else {
+      const asset = await readFaceComponentAsset(reference.modelSlot, reference.id)
+      if (!asset || asset.kind !== reference.kind) {
+        throw new Error(`O asset facial ${reference.modelSlot}:${reference.id} não está mais disponível para ${reference.kind} no Fabricador Dev.`)
+      }
+    }
+  }
+}
+
 function dataUrlBuffer(dataUrl: string): Buffer {
   const match = /^data:image\/png;base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl)
   if (!match) throw new Error('Arquivo de peça inválido.')
@@ -1401,6 +1425,22 @@ async function registerFabricatorHandlers(): Promise<void> {
     readFaceSet, writeFaceSet, faceModelPath, faceSetPath,
     listFaceCatalogItems, readFaceCatalogItem, writeFaceCatalogItem, faceCatalogPath, faceCatalogItemPath,
     listFaceComponentAssets, readFaceComponentAsset, writeFaceComponentAsset, faceComponentPath, faceComponentItemPath,
+    hasStoredFaceCatalogItem: async (modelSlot, id) => {
+      try { await access(join(faceCatalogItemPath(modelSlot, id), 'item.json')); return true }
+      catch (reason) { if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return false; throw reason }
+    },
+    withReferenceSnapshot: (modelSlot, operation) => customizerService.withCharactersLocked((characters) => queueExpressionWork(async () => {
+      await expressionBatch.recover(modelSlot)
+      const summaries = await listFaceExpressionPresets(modelSlot)
+      const loadedPresets = await Promise.all(summaries.map(({ id }) => readFaceExpressionPreset(modelSlot, id)))
+      const expressionPresets = loadedPresets.filter((preset): preset is FaceExpressionPreset => Boolean(preset))
+      return operation({
+        characters,
+        expressionPresets,
+        expressionDraft: await readFaceExpressionWorkspaceDraft(modelSlot),
+        faceComponents: await listFaceComponentAssets(modelSlot)
+      })
+    })),
     removeDirectory: (path) => rm(path, { recursive: true, force: true }),
     queueSave: queueFaceSave
   })
@@ -1419,7 +1459,11 @@ async function registerFabricatorHandlers(): Promise<void> {
     validSlot: isValidModelSlot,
     validId: isValidWardrobeId,
     loadDraft: readFaceExpressionWorkspaceDraft,
-    saveDraft: writeFaceExpressionWorkspaceDraft
+    saveDraft: writeFaceExpressionWorkspaceDraft,
+    assertFaceAssetsAvailable: async (modelSlot, references) => {
+      if (references.some((reference) => reference.modelSlot !== modelSlot)) throw new Error('Referência facial fora do modelo atual.')
+      await assertFaceAssetReferencesAvailable(references)
+    }
   })
 
   registerFabricatorFaceAnimationExportHandler({

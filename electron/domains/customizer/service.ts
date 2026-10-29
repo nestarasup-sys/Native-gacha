@@ -1,33 +1,42 @@
 /** Casos de uso independentes de Electron. Todas as gravações compartilham uma fila. */
 import type { CustomizerCharacter, CustomizerWardrobeGroup } from '../../../src/shared/customizer.ts'
 import { collectCustomizerHairStyleReferences } from '../../../src/shared/hairCategories.ts'
+import { collectCustomizerFaceAssetReferences, customizerFaceAssetReferenceKey, type CustomizerFaceAssetReference } from '../../../src/shared/customizerFaceAssetReferences.ts'
 import type { CustomizerCharacterRepository } from './repository.ts'
 import { isCustomizerCharacter } from './validation.ts'
 
 export type AssertWardrobeGroupsAvailable = (groups: readonly CustomizerWardrobeGroup[]) => Promise<void>
 export type HairStyleReference = ReturnType<typeof collectCustomizerHairStyleReferences>[number]
 export type AssertHairStylesAvailable = (references: readonly HairStyleReference[]) => Promise<void>
+export type AssertFaceAssetsAvailable = (references: readonly CustomizerFaceAssetReference[]) => Promise<void>
+
+export type CustomizerCharacterReferenceChecks = {
+  assertWardrobeGroupsAvailable?: AssertWardrobeGroupsAvailable
+  assertHairStylesAvailable?: AssertHairStylesAvailable
+  assertFaceAssetsAvailable?: AssertFaceAssetsAvailable
+}
 
 export class CustomizerCharacterService {
   private saveQueue: Promise<void> = Promise.resolve()
   private readonly repository: Pick<CustomizerCharacterRepository, 'list' | 'save'>
   private readonly newId: () => string
   private readonly now: () => string
-  private readonly assertWardrobeGroupsAvailable: AssertWardrobeGroupsAvailable
-  private readonly assertHairStylesAvailable: AssertHairStylesAvailable
+  private readonly referenceChecks: Required<CustomizerCharacterReferenceChecks>
 
   constructor(
     repository: Pick<CustomizerCharacterRepository, 'list' | 'save'>,
     newId: () => string,
     now: () => string,
-    assertWardrobeGroupsAvailable: AssertWardrobeGroupsAvailable = async () => undefined,
-    assertHairStylesAvailable: AssertHairStylesAvailable = async () => undefined
+    referenceChecks: CustomizerCharacterReferenceChecks = {}
   ) {
     this.repository = repository
     this.newId = newId
     this.now = now
-    this.assertWardrobeGroupsAvailable = assertWardrobeGroupsAvailable
-    this.assertHairStylesAvailable = assertHairStylesAvailable
+    this.referenceChecks = {
+      assertWardrobeGroupsAvailable: referenceChecks.assertWardrobeGroupsAvailable ?? (async () => undefined),
+      assertHairStylesAvailable: referenceChecks.assertHairStylesAvailable ?? (async () => undefined),
+      assertFaceAssetsAvailable: referenceChecks.assertFaceAssetsAvailable ?? (async () => undefined)
+    }
   }
 
   /** Backup externo deve aguardar a mesma fila usada pelos handlers. */
@@ -61,8 +70,12 @@ export class CustomizerCharacterService {
       const existingHairReferences = new Set(collectCustomizerHairStyleReferences(previous).map(({ modelSlot, id }) => `${modelSlot}:${id}`))
       const addedHairReferences = collectCustomizerHairStyleReferences(character)
         .filter(({ modelSlot, id }) => !existingHairReferences.has(`${modelSlot}:${id}`))
-      await this.assertWardrobeGroupsAvailable(addedReferences)
-      await this.assertHairStylesAvailable(addedHairReferences)
+      const existingFaceReferences = new Set(collectCustomizerFaceAssetReferences(previous).map(customizerFaceAssetReferenceKey))
+      const addedFaceReferences = collectCustomizerFaceAssetReferences(character)
+        .filter((reference) => !existingFaceReferences.has(customizerFaceAssetReferenceKey(reference)))
+      await this.referenceChecks.assertWardrobeGroupsAvailable(addedReferences)
+      await this.referenceChecks.assertHairStylesAvailable(addedHairReferences)
+      await this.referenceChecks.assertFaceAssetsAvailable(addedFaceReferences)
       characters[index] = { ...character, name: character.name.trim(), updatedAt: this.now() }
       await this.repository.save(characters)
     })

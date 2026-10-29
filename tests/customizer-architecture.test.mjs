@@ -25,7 +25,11 @@ async function fixture(t, seeds = [], options = {}) {
   let sequence = 0
   const newId = () => `synthetic-${++sequence}`
   const repo = new CustomizerCharacterRepository(() => target, { access, readFile, writeFile, rename, unlink, mkdir }, seeds, newId, () => NOW)
-  const service = new CustomizerCharacterService(repo, newId, () => NOW, options.assertWardrobeGroupsAvailable, options.assertHairStylesAvailable)
+  const service = new CustomizerCharacterService(repo, newId, () => NOW, {
+    assertWardrobeGroupsAvailable: options.assertWardrobeGroupsAvailable,
+    assertHairStylesAvailable: options.assertHairStylesAvailable,
+    assertFaceAssetsAvailable: options.assertFaceAssetsAvailable
+  })
   return { dir, target, repo, service }
 }
 
@@ -89,6 +93,31 @@ test('salvar um novo cabelo consulta o catálogo antes de gravar o vínculo', as
   assert.equal((await service.list())[0].customization.hairAppearance, undefined)
 })
 
+test('salvar novas referências faciais valida cada tipo de asset no Fabricador', async (t) => {
+  const expected = [
+    { assetType: 'face-catalog', modelSlot: 1, id: 'nose-catalog', category: 'nose' },
+    { assetType: 'face-component', modelSlot: 1, id: 'blush-asset', kind: 'blush' }
+  ]
+  const { service } = await fixture(t, [], {
+    assertFaceAssetsAvailable: async references => {
+      assert.deepEqual(references, expected)
+      throw new Error('asset facial ausente')
+    }
+  })
+  const character = await service.create('Lia')
+  await assert.rejects(service.save({
+    ...character,
+    customization: {
+      ...character.customization,
+      faceAppearance: {
+        modelSlot: 1, setId: 'face-legacy', noseCatalogId: 'nose-catalog', faceDetails: { blush: 'blush-asset' },
+        eyeState: 0, eyebrows: true, noseIndex: 0, expressionIndex: 0, mouthOpen: false
+      }
+    }
+  }), /asset facial ausente/)
+  assert.equal((await service.list())[0].customization.faceAppearance, undefined)
+})
+
 test('referência legada já existente não impede editar outros dados do personagem', async (t) => {
   let validationCalls = 0
   const { repo, service: initialService } = await fixture(t)
@@ -98,8 +127,9 @@ test('referência legada já existente não impede editar outros dados do person
     customization: { ...created.customization, hairAppearance: { modelSlot: 1, styleId: 'cabelo-removido' } }
   }
   await initialService.save(linked)
-  const service = new CustomizerCharacterService(repo, () => 'unused-id', () => NOW, undefined,
-    async references => { validationCalls += 1; assert.deepEqual(references, []) })
+  const service = new CustomizerCharacterService(repo, () => 'unused-id', () => NOW, {
+    assertHairStylesAvailable: async references => { validationCalls += 1; assert.deepEqual(references, []) }
+  })
   await service.save({ ...linked, name: 'Lia editada' })
   assert.equal((await service.list())[0].name, 'Lia editada')
   assert.equal(validationCalls, 1)

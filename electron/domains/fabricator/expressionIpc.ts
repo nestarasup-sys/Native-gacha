@@ -5,6 +5,10 @@ import { basename, dirname, resolve } from 'node:path'
 import type { IpcMain, IpcMainInvokeEvent } from 'electron'
 import type { FaceExpressionCollection, FaceExpressionPreset, FaceExpressionPresetSummary,
   FaceExpressionWorkspaceDraft } from '../../../src/shared/fabricator'
+import {
+  addedFaceExpressionDraftReferences, addedFaceExpressionPresetReferences
+} from './faceReferences.ts'
+import type { FaceExpressionAssetReference } from './faceReferences.ts'
 
 type Dependencies = {
   queue: <T>(task: () => Promise<T>) => Promise<T>
@@ -21,6 +25,7 @@ type Dependencies = {
   validId: (id: string) => boolean
   loadDraft: (modelSlot: number) => Promise<FaceExpressionWorkspaceDraft | null>
   saveDraft: (modelSlot: number, draft: FaceExpressionWorkspaceDraft) => Promise<void>
+  assertFaceAssetsAvailable: (modelSlot: number, references: readonly FaceExpressionAssetReference[]) => Promise<void>
 }
 
 export function registerExpressionPresetHandlers(
@@ -30,6 +35,29 @@ export function registerExpressionPresetHandlers(
 ): void {
   const run = <T>(slot: number, action: () => Promise<T>) =>
     deps.queue(async () => { await deps.recover(slot); return action() })
+  const savePreset = async (slot: number, preset: FaceExpressionPreset): Promise<void> => {
+    if (!preset || typeof preset !== 'object' || !deps.validId(preset.id)) return deps.savePreset(slot, preset)
+    const existing = await deps.loadPreset(slot, preset.id)
+    await deps.assertFaceAssetsAvailable(slot, addedFaceExpressionPresetReferences([preset], [existing]))
+    return deps.savePreset(slot, preset)
+  }
+  const saveBatch = async (slot: number, presets: FaceExpressionPreset[]): Promise<void> => {
+    if (!Array.isArray(presets)) return deps.saveBatch(slot, presets)
+    const existing = await Promise.all(presets.map((preset) => preset && typeof preset === 'object' && deps.validId(preset.id)
+      ? deps.loadPreset(slot, preset.id)
+      : Promise.resolve(null)))
+    const references = addedFaceExpressionPresetReferences(presets, existing)
+    await deps.assertFaceAssetsAvailable(slot, references)
+    return deps.saveBatch(slot, presets)
+  }
+  const saveDraft = async (slot: number, draft: FaceExpressionWorkspaceDraft): Promise<void> => {
+    if (!draft || typeof draft !== 'object' || !draft.current || !draft.workingCopies || typeof draft.workingCopies !== 'object') {
+      return deps.saveDraft(slot, draft)
+    }
+    const existing = await deps.loadDraft(slot)
+    await deps.assertFaceAssetsAvailable(slot, addedFaceExpressionDraftReferences(draft, existing))
+    return deps.saveDraft(slot, draft)
+  }
   ipc.handle('fabricator:expression-presets:list', (event, slot: number) => {
     assertTrustedSender(event)
     return run(slot, () => deps.listPresets(slot))
@@ -48,11 +76,11 @@ export function registerExpressionPresetHandlers(
   })
   ipc.handle('fabricator:expression-presets:save', (event, slot: number, preset: FaceExpressionPreset) => {
     assertTrustedSender(event)
-    return run(slot, () => deps.savePreset(slot,preset))
+    return run(slot, () => savePreset(slot,preset))
   })
   ipc.handle('fabricator:expression-presets:save-batch', (event, slot: number, presets: FaceExpressionPreset[]) => {
     assertTrustedSender(event)
-    return run(slot, () => deps.saveBatch(slot,presets))
+    return run(slot, () => saveBatch(slot,presets))
   })
   ipc.handle('fabricator:expression-presets:delete', (event, slot: number, id: string) => {
     assertTrustedSender(event)
@@ -69,6 +97,6 @@ export function registerExpressionPresetHandlers(
   })
   ipc.handle('fabricator:expression-workspace:save', (event, slot: number, draft: FaceExpressionWorkspaceDraft) => {
     assertTrustedSender(event)
-    return run(slot, () => deps.saveDraft(slot,draft))
+    return run(slot, () => saveDraft(slot,draft))
   })
 }
