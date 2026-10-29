@@ -23,6 +23,8 @@ import { useStudioStageInteraction } from './useStudioStageInteraction'
 import { useStudioHistory } from './useStudioHistory'
 import { makeCanvasPrint } from './studioCanvasPrint'
 import { mapConcurrentStudioItems } from './studioConcurrentAssetLoader'
+import { mergeStudioFaceDetails } from './studioFaceDetailCache'
+import { studioFaceCatalogSelectionIds } from './studioFaceCatalogSelection'
 import { useStudioAutosave, useStudioDocumentPersistence } from './useStudioDocumentPersistence'
 import { useStudioImageImport } from './useStudioImageImport'
 import type { StudioAsset, StudioDocument, StudioElement, StudioFaceTransform, StudioFaceTransforms } from '../../../../shared/studio'
@@ -56,7 +58,8 @@ export function StudioPage() {
     setStudioPoseSlots, studioPoseThumbnails, setStudioPoseThumbnails, studioPoseDimensions,
     setStudioPoseDimensions, inspectorOpen, setInspectorOpen, studioFaceCategory,
     setStudioFaceCategory, studioFaceItems, setStudioFaceItems, studioFaceDetails,
-    setStudioFaceDetails, studioFaceLoading, setStudioFaceLoading, studioFaceBusy,
+    setStudioFaceDetails, studioFaceLoading, setStudioFaceLoading, studioFaceDetailsLoading,
+    setStudioFaceDetailsLoading, studioFaceBusy,
     setStudioFaceBusy
   } = useStudioInspectorState()
   const [studioFolder, setStudioFolder] = useState('')
@@ -68,6 +71,8 @@ export function StudioPage() {
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null)
   const sceneRef = useRef<HTMLDivElement>(null)
   const studioFaceTransformsRef = useRef<Record<string, StudioFaceTransforms>>({})
+  const studioFaceDetailsRef = useRef(studioFaceDetails)
+  const studioFaceDetailsModelSlotRef = useRef<number | null>(null)
   const normalizedStudioIdsRef = useRef(new Set<string>())
   const nextStudioNumber = useRef(1)
   const selectedStudio = studios.find((studio) => studio.id === selectedId) ?? null
@@ -264,29 +269,63 @@ export function StudioPage() {
   }, [])
 
   useEffect(() => {
+    studioFaceDetailsRef.current = studioFaceDetails
+  }, [studioFaceDetails])
+
+  useEffect(() => {
     const modelSlot = selectedStudioCharacterModelSlot
-    if (modelSlot === null) { setStudioFaceItems([]); return }
+    if (modelSlot === null) {
+      setStudioFaceItems([])
+      studioFaceDetailsModelSlotRef.current = null
+      studioFaceDetailsRef.current = {}
+      setStudioFaceDetails({})
+      setStudioFaceLoading(false)
+      return
+    }
     let cancelled = false
+    studioFaceDetailsModelSlotRef.current = modelSlot
     setStudioFaceLoading(true)
-    void window.desktop.fabricator.listFaceCatalog(modelSlot).then(async (summaries) => {
-      if (cancelled) return
-      setStudioFaceItems(summaries)
-      const items = await mapConcurrentStudioItems(
-        summaries,
-        async (summary) => ({ key: `${summary.modelSlot}:${summary.id}`, item: await window.desktop.fabricator.loadFaceCatalogItem(summary.modelSlot, summary.id) }),
-        () => cancelled
-      )
-      if (cancelled) return
-      setStudioFaceDetails((current) => {
-        const next = { ...current }
-        for (const { key, item } of items) if (item) next[key] = item
-        return next
-      })
+    setStudioFaceItems([])
+    studioFaceDetailsRef.current = {}
+    setStudioFaceDetails({})
+    void window.desktop.fabricator.listFaceCatalog(modelSlot).then((summaries) => {
+      if (!cancelled) setStudioFaceItems(summaries)
     }).catch((reason: unknown) => {
       if (!cancelled) setError(reason instanceof Error ? reason.message : 'Não foi possível carregar o catálogo de rosto.')
     }).finally(() => { if (!cancelled) setStudioFaceLoading(false) })
     return () => { cancelled = true }
   }, [selectedStudioCharacterModelSlot])
+
+  useEffect(() => {
+    const modelSlot = selectedStudioCharacterModelSlot
+    const ids = studioFaceCatalogSelectionIds(selectedStudioFaceAppearance, selectedStudioOpenMouthId)
+    if (modelSlot === null || !ids.length) {
+      setStudioFaceDetailsLoading(false)
+      return
+    }
+    let cancelled = false
+    const missingIds = ids.filter((id) => !studioFaceDetailsRef.current[`${modelSlot}:${id}`])
+    if (!missingIds.length) {
+      setStudioFaceDetailsLoading(false)
+      return
+    }
+    setStudioFaceDetailsLoading(true)
+    void mapConcurrentStudioItems(
+      missingIds,
+      async (id) => ({ key: `${modelSlot}:${id}`, item: await window.desktop.fabricator.loadFaceCatalogItem(modelSlot, id) }),
+      () => cancelled
+    ).then((items) => {
+      if (cancelled) return
+      const loaded = Object.fromEntries(items.filter(({ item }) => item).map(({ key, item }) => [key, item!]))
+      const pinnedKeys = ids.map((id) => `${modelSlot}:${id}`)
+      const next = mergeStudioFaceDetails(studioFaceDetailsRef.current, loaded, pinnedKeys)
+      studioFaceDetailsRef.current = next
+      setStudioFaceDetails((current) => mergeStudioFaceDetails(current, loaded, pinnedKeys))
+    }).catch((reason: unknown) => {
+      if (!cancelled) setError(reason instanceof Error ? reason.message : 'Não foi possível carregar as folhas faciais selecionadas.')
+    }).finally(() => { if (!cancelled) setStudioFaceDetailsLoading(false) })
+    return () => { cancelled = true }
+  }, [selectedStudioCharacterModelSlot, selectedStudioFaceAppearance, selectedStudioOpenMouthId])
 
   useEffect(() => {
     const modelSlot = selectedStudioCharacterModelSlot
@@ -674,8 +713,14 @@ export function StudioPage() {
     setError,
     loadCatalogItem: async (modelSlot, id) => {
       const key = `${modelSlot}:${id}`
-      const item = studioFaceDetails[key] ?? await window.desktop.fabricator.loadFaceCatalogItem(modelSlot, id)
-      if (item) setStudioFaceDetails((current) => ({ ...current, [key]: item }))
+      const item = studioFaceDetailsRef.current[key] ?? await window.desktop.fabricator.loadFaceCatalogItem(modelSlot, id)
+      if (item && studioFaceDetailsModelSlotRef.current === modelSlot) {
+        const loaded = { [key]: item }
+        const pinnedKeys = studioFaceCatalogSelectionIds(selectedStudioFaceAppearance, selectedStudioOpenMouthId)
+          .map((selectedId) => `${modelSlot}:${selectedId}`)
+        studioFaceDetailsRef.current = mergeStudioFaceDetails(studioFaceDetailsRef.current, loaded, pinnedKeys)
+        setStudioFaceDetails((current) => mergeStudioFaceDetails(current, loaded, pinnedKeys))
+      }
       return item
     },
     applyAppearance: applyStudioFaceAppearance
@@ -885,7 +930,7 @@ export function StudioPage() {
       category={studioFaceCategory} sheetKind={sheetKind} selectedItemId={selectedItemId}
       catalogItems={catalogItems} activeItem={activeItem} appearance={selectedStudioFaceAppearance}
       faceMode={selectedStudioFaceMode} faceBusy={studioFaceBusy} expressionBusy={studioExpressionBusy}
-      catalogLoading={studioFaceLoading} talkAvailable={selectedStudioTalkAvailable}
+      catalogLoading={studioFaceLoading} detailsLoading={studioFaceDetailsLoading} talkAvailable={selectedStudioTalkAvailable}
       emptyEyesMessage="Escolha uma folha de olhos para ver as três variantes."
       onCategoryChange={setStudioFaceCategory} onFaceModeChange={(mode) => { void applyStudioFaceMode(mode) }}
       onSheetSelect={(summary) => { void chooseStudioFaceSheet(summary) }} onAppearanceChange={updateStudioFaceVariant}

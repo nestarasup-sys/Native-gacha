@@ -24,6 +24,7 @@ export function useStudioInspectorState() {
   const [studioFaceItems, setStudioFaceItems] = useState<FaceCatalogItemSummary[]>([])
   const [studioFaceDetails, setStudioFaceDetails] = useState<Record<string, FaceCatalogItem>>({})
   const [studioFaceLoading, setStudioFaceLoading] = useState(false)
+  const [studioFaceDetailsLoading, setStudioFaceDetailsLoading] = useState(false)
   const [studioFaceBusy, setStudioFaceBusy] = useState(false)
 
   return {
@@ -61,6 +62,8 @@ export function useStudioInspectorState() {
     setStudioFaceDetails,
     studioFaceLoading,
     setStudioFaceLoading,
+    studioFaceDetailsLoading,
+    setStudioFaceDetailsLoading,
     studioFaceBusy,
     setStudioFaceBusy,
     characterInspectorViewRef
