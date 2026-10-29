@@ -10,8 +10,9 @@ import type { FaceCatalogItem, FaceCatalogItemSummary, FaceComponentAsset, FaceC
 import { ExpressionEffectCanvas } from '../../characters/ExpressionEffectCanvas'
 import { Icon, type IconName } from '../../ui/components/Icon'
 import { registerPendingWriteFlusher } from '../../ui/pendingPersistence'
-import { eyeInteriorMask } from '../../ui/image/eyeInteriorMask'
 import { useModelAppearanceTarget, useModelPartAppearancePreview } from './ModelAppearanceContext'
+import { useEyeInteriorMasks } from '../../ui/hooks/useEyeInteriorMasks'
+import { selectedExpressionEyeAssets } from './eyePreviewSelection'
 
 type Side = 'left' | 'right'
 type PickerCategory = 'eyes' | 'pupils' | 'eyebrows' | 'nose' | 'mouth'
@@ -253,7 +254,6 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
   const [componentAssets, setComponentAssets] = useState<Record<string, FaceComponentAsset>>({})
   const [catalogSummaries, setCatalogSummaries] = useState<FaceCatalogItemSummary[]>([])
   const [catalogItems, setCatalogItems] = useState<Record<string, FaceCatalogItem>>({})
-  const [eyeMasks, setEyeMasks] = useState<Record<string, string>>({})
   const [composition, setComposition] = useState<ExpressionComposition>(emptyComposition)
   const [draft, setDraft] = useState<ExpressionComposition>(emptyComposition)
   const [transforms, setTransforms] = useState<FaceExpressionTransforms>(emptyTransforms())
@@ -489,16 +489,6 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
   }, [workspaceReady, loading, switchingExpression, modelSlot, selectedCollectionId, selectedExpressionIndex, presetId, composition, transforms, ptPupils, noseOpacity, effects, workingCopies, customExpressionNames, persistWorkspaceDraft])
 
   useEffect(() => {
-    let cancelled = false
-    const eyes = Object.values(componentAssets).filter((asset) => asset.kind === 'eye')
-    void Promise.all(eyes.map(async (asset) => [asset.id, await eyeInteriorMask(asset.dataUrl)] as const)).then((entries) => {
-      if (cancelled) return
-      setEyeMasks((current) => ({ ...current, ...Object.fromEntries(entries) }))
-    }).catch(() => undefined)
-    return () => { cancelled = true }
-  }, [componentAssets])
-
-  useEffect(() => {
     if (!open) return
     const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') { setDraft(composition); setDraftTransforms(cloneTransforms(transforms)); setDraftNoseOpacity(noseOpacity); setOpen(false) } }
     window.addEventListener('keydown', closeOnEscape)
@@ -507,6 +497,8 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
 
   const head = useMemo(() => project?.parts.find((part) => /cabe[çc]a|head/i.test(part.name)) ?? null, [project])
   const visibleComposition = open ? draft : composition
+  const visibleEyeAssets = useMemo(() => selectedExpressionEyeAssets(visibleComposition.eyes, componentAssets), [visibleComposition.eyes, componentAssets])
+  const eyeMasks = useEyeInteriorMasks(visibleEyeAssets)
   const visibleTransforms = useMemo(() => {
     const raw=open ? draftTransforms : transforms
     if (open || previewGaze==='right')return raw

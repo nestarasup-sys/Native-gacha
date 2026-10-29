@@ -7,6 +7,8 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import type { FaceCatalogItem, FaceComponentAsset, FaceExpressionEffect, FaceExpressionPreset, FaceExpressionTransforms, FaceTransform, FabricatorProject } from '../../../../shared/fabricator'
 import { Icon } from '../../ui/components/Icon'
 import { eyeInteriorMask } from '../../ui/image/eyeInteriorMask'
+import { useEyeInteriorMasks } from '../../ui/hooks/useEyeInteriorMasks'
+import { selectedExpressionEyeAssets } from './eyePreviewSelection'
 import { useModelAppearanceTarget, useModelPartAppearancePreview } from './ModelAppearanceContext'
 
 type TransitionRecipe = { id: string; name: string; from: string; to: string; durationMs: number; easing: 'smooth' | 'linear' }
@@ -63,7 +65,6 @@ export function FaceAnimatorWorkspace({ modelSlot }: { modelSlot: number }) {
   const [presets, setPresets] = useState<FaceExpressionPreset[]>([])
   const [assets, setAssets] = useState<Record<string, FaceComponentAsset>>({})
   const [catalog, setCatalog] = useState<Record<string, FaceCatalogItem>>({})
-  const [eyeMasks, setEyeMasks] = useState<Record<string, string>>({})
   const [selectedId, setSelectedId] = useState(recipes[0].id)
   const [activeRecipe, setActiveRecipe] = useState<TransitionRecipe>(recipes[0])
   const [progress, setProgress] = useState(0)
@@ -86,6 +87,9 @@ export function FaceAnimatorWorkspace({ modelSlot }: { modelSlot: number }) {
   const canExportSequence = Boolean(head) && expressions.every((name) => presetsByName.has(name))
   const eased = recipe.easing === 'smooth' ? progress * progress * (3 - 2 * progress) : progress
   const discretePreset = eased < .5 ? fromPreset : toPreset
+  const visibleEyes = discretePreset?.selections.eyes
+  const visibleEyeAssets = useMemo(() => visibleEyes ? selectedExpressionEyeAssets(visibleEyes, assets) : [], [visibleEyes, assets])
+  const eyeMasks = useEyeInteriorMasks(visibleEyeAssets)
   const transforms = useMemo(() => {
     if (!fromPreset || !toPreset) return fromPreset?.transforms ?? toPreset?.transforms
     return Object.fromEntries(transformKeys.map((key) => [key, interpolateTransform(fromPreset.transforms[key], toPreset.transforms[key], eased)])) as FaceExpressionTransforms
@@ -116,15 +120,6 @@ export function FaceAnimatorWorkspace({ modelSlot }: { modelSlot: number }) {
     })()
     return () => { active = false }
   }, [modelSlot])
-
-  useEffect(() => {
-    let active = true
-    const eyeAssets = Object.values(assets).filter((asset) => asset.kind === 'eye')
-    void Promise.all(eyeAssets.map(async (asset) => [asset.id, await eyeInteriorMask(asset.dataUrl)] as const)).then((entries) => {
-      if (active) setEyeMasks(Object.fromEntries(entries))
-    })
-    return () => { active = false }
-  }, [assets])
 
   useEffect(() => {
     if (!playing) { if (frameRef.current !== null) cancelAnimationFrame(frameRef.current); frameRef.current = null; return }

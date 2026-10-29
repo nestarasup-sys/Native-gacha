@@ -946,3 +946,11 @@ Continua a auditoria das operações IPC iniciadas pelo usuário e da cobertura 
 - O debounce de 55 ms, a coalescência dos sliders, a verificação de versão antes de publicar o resultado, a espera por uma renderização em andamento antes de trocar a expressão e a atualização de geometria foram preservados. A versão do renderizador ficou em um único local compartilhado pela página e pelo hook.
 - IPC, estrutura do documento, IDs, assets e persistência não mudaram. O teste arquitetural agora confirma que a página e o hook carregam o renderizador compartilhado sob demanda, sem depender de contagem fixa de chamadas no arquivo da página.
 - Verificação: `npm run test:refactor` passou com 340 testes; `npm test` com 27; também passaram `npm run typecheck`, `npm run audit:architecture` (371 arquivos TS/TSX) e `npm run build`.
+
+## 31. Etapa aplicada — máscaras de olhos sob demanda no Fabricador
+
+- Preset Expressão DEV, Face Animator e Olhos DEV calculavam máscaras para todos os olhos carregados, embora suas prévias desenhem no máximo o par visível. Esse trabalho percorre cada pixel e serializa uma nova imagem PNG; ativos de outras expressões ou pares não eram usados na prévia atual.
+- `useEyeInteriorMasks.ts` agora concentra o ciclo de máscara nos três workspaces. Ele calcula só os olhos visíveis, reutiliza o resultado quando o PNG não mudou, cancela resultados de seleções antigas e remove da memória local os IDs que saíram da prévia. `eyePreviewSelection.ts` resolve IDs repetidos e ignora referências ausentes ou que apontem para pupilas.
+- A prévia continua usando o PNG original enquanto a máscara é calculada e então troca para a máscara da esclera. A cache compartilhada existente segue limitada a 48 imagens. O exportador do Face Animator ainda prepara as máscaras de todos os olhos usados pela sequência completa, pois eles são necessários para renderizar o vídeo. Nenhum asset é alterado ou salvo.
+- Os testes cobrem seleção de um olho, de um par, deduplicação e referências inválidas. Composição, seleção persistida, IPC, formato de assets e renderizadores do Customizador, Studio e Editor V6 não mudaram.
+- Verificação: o teste focado de expressões passou com 12 testes; `npm run test:refactor` com 341; `npm test` com 27; também passaram `npm run typecheck`, `npm run audit:architecture` (373 arquivos TS/TSX) e `npm run build`.

@@ -8,6 +8,8 @@ import { buildStudioExpressionTransforms, buildStudioExpressionAppearance, resol
   from '../src/renderer/src/characters/studioExpressionTransforms.ts'
 import { buildEditorV6ExpressionTransforms }
   from '../src/renderer/src/characters/editorV6ExpressionTransforms.ts'
+import { selectedExpressionEyeAssets, selectedEyeAssetsByIds }
+  from '../src/renderer/src/features/fabricator/eyePreviewSelection.ts'
 
 const tf=(x=0,y=0,sx=1,sy=1,rotation=0)=>({x,y,scaleX:sx,scaleY:sy,rotation})
 const transforms=()=>({eyeLeft:tf(10,20),eyeRight:tf(10,20),pupilLeft:tf(0,0),pupilRight:tf(0,0),
@@ -23,6 +25,18 @@ const metrics={eyeLeft:{width:70,height:34},eyeRight:{width:70,height:34},
   pupilLeft:{width:70,height:34},pupilRight:{width:70,height:34},
   browLeft:{width:60,height:22},browRight:{width:60,height:22},
   nose:{width:20,height:22},mouth:{width:35,height:24}}
+
+test('máscaras de prévia selecionam apenas olhos visíveis e únicos', () => {
+  const leftEye = { id: 'eye-left', kind: 'eye', dataUrl: 'left' }
+  const sharedEye = { id: 'eye-shared', kind: 'eye', dataUrl: 'shared' }
+  const pupil = { id: 'pupil', kind: 'pupil', dataUrl: 'pupil' }
+  const assets = { [leftEye.id]: leftEye, [sharedEye.id]: sharedEye, [pupil.id]: pupil }
+
+  assert.deepEqual(selectedExpressionEyeAssets({ left: leftEye.id, right: leftEye.id }, assets), [leftEye])
+  assert.deepEqual(selectedExpressionEyeAssets({ left: leftEye.id, right: sharedEye.id }, assets), [leftEye, sharedEye])
+  assert.deepEqual(selectedExpressionEyeAssets({ left: pupil.id, right: 'missing' }, assets), [])
+  assert.deepEqual(selectedEyeAssetsByIds([leftEye.id, sharedEye.id, leftEye.id], assets), [leftEye, sharedEye])
+})
 const neutral=transforms()
 const authored=transforms()
 authored.eyeLeft={...authored.eyeLeft,x:17,y:15,rotation:13}

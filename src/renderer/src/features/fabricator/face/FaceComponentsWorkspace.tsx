@@ -5,11 +5,12 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, ty
 import type { FaceAssetKind, FaceCatalogItem, FaceCatalogItemSave, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSave, FaceComponentAssetSummary, FaceComponentKind, FaceDetailKind, FaceGuideProfile, FaceGuideSettings, FaceTransform, FabricatorProject, FabricatorSlotSummary, ModelPart } from '../../../../../shared/fabricator'
 import { Icon } from '../../../ui/components/Icon'
 import { usePreviewBackground } from '../../../ui/hooks/usePreviewBackground'
+import { useEyeInteriorMasks } from '../../../ui/hooks/useEyeInteriorMasks'
 import { registerPendingWriteFlusher } from '../../../ui/pendingPersistence'
 import { processFaceSheet } from './processFaceSheet'
 import { splitEyeSheet } from './splitEyeSheet'
 import { defaultFaceGuide, useFaceGuides } from './useFaceGuides'
-import { eyeInteriorMask } from '../../../ui/image/eyeInteriorMask'
+import { selectedEyeAssetsByIds } from '../eyePreviewSelection'
 import { alignImportedFacePiece, captureFaceImportAnchor, fitClosedEyeToOpen, validFaceImportAnchor, type AlignableFaceKind, type FaceImportAnchor } from './faceImportAlignment'
 import { removeEyebrowGreen } from './removeEyebrowGreen'
 import './face-components.css'
@@ -176,7 +177,6 @@ export function FaceComponentsWorkspace({ mode, baseModelSlot }: { mode: FaceWor
   useModelSourceRefresh(modelSlot, fresh => setModel(projectForOriginalPreview(fresh)))
   const [assets, setAssets] = useState<FaceComponentAssetSummary[]>([])
   const [details, setDetails] = useState<Record<string, FaceComponentAsset>>({})
-  const [eyeMasks, setEyeMasks] = useState<Record<string, string>>({})
   const [selectedPart, setSelectedPart] = useState<PartId>('eye-left')
   const [libraryCategory, setLibraryCategory] = useState<LibraryCategory>(() => mode === 'eyes' ? 'eye' : 'nose')
   const [selectedAssets, setSelectedAssets] = useState<Partial<Record<PartId, string>>>({})
@@ -209,23 +209,11 @@ export function FaceComponentsWorkspace({ mode, baseModelSlot }: { mode: FaceWor
   const [draggingPreview, setDraggingPreview] = useState(false)
   const stageRef = useRef<HTMLDivElement>(null)
   const [stageSize, setStageSize] = useState({ width: 0, height: 0 })
-  useEffect(() => {
-    let cancelled = false
-    const eyeAssets = Object.values(details).filter((asset) => asset.kind === 'eye')
-    void Promise.all(eyeAssets.map(async (asset) => [asset.id, await eyeInteriorMask(asset.dataUrl)] as const)).then((entries) => {
-      if (cancelled) return
-      setEyeMasks((current) => {
-        let changed = false
-        const next = { ...current }
-        for (const [id, mask] of entries) {
-          if (next[id] !== mask) { next[id] = mask; changed = true }
-        }
-        return changed ? next : current
-      })
-    })
-    return () => { cancelled = true }
-  }, [details])
   const head = useMemo(() => model?.parts.find((part) => /cabe[çc]a|head/i.test(part.name)) ?? null, [model])
+  const visibleEyeAssets = useMemo(() => selectedEyeAssetsByIds([
+    selectedAssets['eye-left'], selectedAssets['eye-right'] ?? selectedAssets['eye-left']
+  ], details), [selectedAssets, details])
+  const eyeMasks = useEyeInteriorMasks(visibleEyeAssets)
   const guide = guidesByModel[modelSlot] ?? defaultFaceGuide
   const previewScale = head && stageSize.width > 0 && stageSize.height > 0
     ? Math.min((stageSize.width - 24) / head.width, (stageSize.height - 24) / head.height) * .9
