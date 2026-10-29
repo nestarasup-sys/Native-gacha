@@ -10,7 +10,8 @@ import { EditorV6PlaybackScene } from './EditorV6PlaybackScene'
 import { SceneCastPanel } from '../../ui/components/SceneCastPanel'
 import { EditorV6PresetPanel } from './EditorV6PresetPanel'
 import { EditorV6PropertyPanel } from './EditorV6PropertyPanel'
-import { getEditorV6PlaybackFrame, setEditorV6PlaybackFrame } from './editorV6PlaybackClock'
+import { getEditorV6PlaybackFrame } from './editorV6PlaybackClock'
+import { useEditorV6Playback } from './useEditorV6Playback'
 import { duplicateEditorV6ProjectDocument } from './editorV6ProjectDuplication'
 import { createEditorV6ProjectCreationCommands } from './editorV6ProjectCreation'
 import { planEditorV6CastSelection, retainEditorV6CastAssets } from './editorV6CastSelection'
@@ -38,7 +39,7 @@ import { Icon } from '../../ui/components/Icon'
 import { NumericRangeField } from '../../ui/components/NumericRangeField'
 import { SceneCastPickerModal } from '../../ui/components/SceneCastPickerModal'
 import { createSceneTextElement, sceneCatalogColor, sceneEditorTools } from '../../ui/sceneEditorDefaults'
-import { recordEditorV6PlaybackFrame, recordUiCommit } from '../../ui/performanceDiagnostics'
+import { recordUiCommit } from '../../ui/performanceDiagnostics'
 import { useEditorV6DocumentPersistence } from './useEditorV6DocumentPersistence'
 import { editorV6PoseRevisionKey, useEditorV6CharacterSources } from './useEditorV6CharacterSources'
 import { resolveEditorV6CharacterSourceRefresh } from './editorV6CharacterSourceModel'
@@ -92,18 +93,7 @@ export function EditorV6Page() {
   const [videoPickerOpen, setVideoPickerOpen] = useState(false)
   const [saved, setSaved] = useState(true)
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null)
-  const [playheadFrame, setPlayheadFrame] = useState(0)
-  const publishPlayheadFrame = useCallback((frame: number, syncEditor = true) => {
-    const nextFrame = Math.max(0, Math.floor(frame))
-    setEditorV6PlaybackFrame(nextFrame)
-    if (syncEditor) setPlayheadFrame((current) => current === nextFrame ? current : nextFrame)
-  }, [])
-  const [isPlaying, setIsPlaying] = useState(false)
   const [motionExportBusy, setMotionExportBusy] = useState(false)
-  const pausePlayback = useCallback(() => {
-    publishPlayheadFrame(getEditorV6PlaybackFrame())
-    setIsPlaying(false)
-  }, [publishPlayheadFrame])
   const [selectedTimelineBlockId, setSelectedTimelineBlockId] = useState<string | null>(null)
   const [historyVersion, setHistoryVersion] = useState(0)
   const [canUndo, setCanUndo] = useState(false)
@@ -116,6 +106,8 @@ export function EditorV6Page() {
   const editorV6SaveTimerRef = useRef<number | null>(null)
   const selectedEditorV6 = editorV6Projects.find((studio) => studio.id === selectedId) ?? null
   const activeEditorV6 = activeEditorV6Stored?.id === activeEditorV6Id ? activeEditorV6Stored : null
+  const timelineDurationFrames = activeEditorV6?.timeline.durationFrames ?? 300
+  const { playheadFrame, isPlaying, publishPlayheadFrame, pausePlayback, resetPlayback, startPlayback } = useEditorV6Playback(activeEditorV6Id, timelineDurationFrames)
   const sceneCharacterProjection = useMemo(
     () => projectSceneCharacters(activeEditorV6?.elements ?? []),
     [activeEditorV6?.elements]
@@ -159,7 +151,6 @@ export function EditorV6Page() {
   useMotionPreparation(activeEditorV6, availableCharacters,
     saved && !isPlaying && !motionExportBusy && !faceAssetRefreshRequired
     && activePoseSourceSnapshot?.projectId === activeEditorV6Id)
-  const timelineDurationFrames = activeEditorV6?.timeline.durationFrames ?? 300
   const previewScene = useMemo(() => activeEditorV6 ? resolveEditorV6SceneAtFrame(activeEditorV6, playheadFrame, { includeMotion: false }) : null, [activeEditorV6, playheadFrame])
   const previewBackground = previewScene?.background ?? { backgroundColor: '#d7b5cd', backgroundAssetId: null, backgroundX: 0, backgroundY: 0, backgroundWidth: 100, backgroundHeight: 100, backgroundRotation: 0 }
   const visibleTimelineElements = previewScene?.elements ?? []
@@ -237,31 +228,13 @@ export function EditorV6Page() {
   useEffect(() => {
     if (!activeEditorV6Id) return
     useEditorV6Store.getState().clear(activeEditorV6Id)
-    publishPlayheadFrame(0)
-    setIsPlaying(false)
+    resetPlayback()
     setSelectedTimelineBlockId(null)
     setCanUndo(false)
     setCanRedo(false)
     setHistoryVersion((value) => value + 1)
     setSelectedElementId(null)
-  }, [activeEditorV6Id, publishPlayheadFrame])
-
-  useEffect(() => {
-    if (!isPlaying) return
-    const initialFrame = getEditorV6PlaybackFrame()
-    const started = performance.now()
-    let animation = 0
-    const tick = (now: number) => {
-      const frame = Math.min(timelineDurationFrames, initialFrame + Math.floor((now - started) * 30 / 1000))
-      const publishStarted = performance.now()
-      publishPlayheadFrame(frame, frame >= timelineDurationFrames)
-      recordEditorV6PlaybackFrame(frame, now, performance.now() - publishStarted)
-      if (frame >= timelineDurationFrames) setIsPlaying(false)
-      else animation = requestAnimationFrame(tick)
-    }
-    animation = requestAnimationFrame(tick)
-    return () => cancelAnimationFrame(animation)
-  }, [isPlaying, timelineDurationFrames, activeEditorV6Id, publishPlayheadFrame])
+  }, [activeEditorV6Id, resetPlayback])
 
   useEditorV6CharacterSnapshotRefresh({
     project: activeEditorV6,
@@ -897,8 +870,7 @@ export function EditorV6Page() {
   const toggleTimelinePlayback = () => {
     if (dragRef.current) return
     if (isPlaying) { pausePlayback(); return }
-    if (getEditorV6PlaybackFrame() >= timelineDurationFrames) publishPlayheadFrame(0)
-    setIsPlaying(true)
+    startPlayback()
   }
 
   if (activeEditorV6) {
