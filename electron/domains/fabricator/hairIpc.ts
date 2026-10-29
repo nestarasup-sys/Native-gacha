@@ -1,7 +1,9 @@
 import type { IpcMain, IpcMainInvokeEvent } from 'electron'
 import { basename, dirname, join, resolve } from 'node:path'
-import { fabricatorIpcChannels } from '../../../src/shared/fabricatorIpcChannels'
+import { fabricatorIpcChannels } from '../../../src/shared/fabricatorIpcChannels.ts'
+import type { CustomizerCharacter } from '../../../src/shared/customizer'
 import type { HairStyle, HairStyleAsset, HairStyleSave, HairStyleSummary, HairWorkspace, HairWorkspaceAsset, HairWorkspaceSave } from '../../../src/shared/fabricator'
+import { assertHairStyleHasNoCharacterReferences } from './hairReferences.ts'
 
 type HairIpcDependencies = {
   ipcMain: Pick<IpcMain, 'handle'>
@@ -18,6 +20,7 @@ type HairIpcDependencies = {
   writeStyle: (modelSlot: number, style: HairStyleSave, assets: HairStyleAsset[]) => Promise<void>
   setLegacyHairCatalogState: (modelSlot: number, state: 'active'|'dismissed') => Promise<void>
   removeDirectory: (path: string) => Promise<void>
+  withCharactersLocked: <T>(operation: (characters: readonly CustomizerCharacter[]) => Promise<T>) => Promise<T>
 }
 
 export function registerFabricatorHairHandlers(deps: HairIpcDependencies) {
@@ -60,7 +63,8 @@ export function registerFabricatorHairHandlers(deps: HairIpcDependencies) {
     const base = resolve(join(deps.hairModelPath(modelSlot), 'styles'))
     const target = resolve(deps.hairStylePath(modelSlot, id))
     if (dirname(target) !== base || basename(target) !== `style-${id}`) throw new Error('Caminho de exclusão inválido.')
-    await queueSave(modelSlot, async () => {
+    await queueSave(modelSlot, () => deps.withCharactersLocked(async (characters) => {
+      assertHairStyleHasNoCharacterReferences(characters, modelSlot, id)
       if (id === 'legacy-workspace') {
         await deps.clearWorkspace(modelSlot)
         await deps.removeDirectory(target)
@@ -70,7 +74,7 @@ export function registerFabricatorHairHandlers(deps: HairIpcDependencies) {
       await deps.setLegacyHairCatalogState(modelSlot, 'active')
       await deps.clearWorkspace(modelSlot)
       await deps.removeDirectory(target)
-    })
+    }))
   })
 
   return { getPendingWrites: () => [...saveQueues.values()] }

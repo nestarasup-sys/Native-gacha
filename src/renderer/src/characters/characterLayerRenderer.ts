@@ -1,7 +1,7 @@
 import type { FaceSet, FabricatorProject, HairStyle, ModelSkinContourStroke } from '../../../shared/fabricator'
 import type { CharacterRenderAssetProvider } from '../../../shared/characterRenderAssets'
 import type { CustomizerCharacter, CustomizerFaceAppearance, HairColorOverrides, HairPartId } from '../../../shared/customizer'
-import { hairCategories } from '../../../shared/hairCategories'
+import { hairAppearanceStyleId, hairAppearanceStyleIds, hairCategories } from '../../../shared/hairCategories'
 import type { CatalogArtwork } from './characterSourceResolver'
 import { configureCharacterSampling, MAX_CHARACTER_PREVIEW_PIXELS } from './renderResolution'
 import { createCharacterCanvas } from './canvasSurface'
@@ -32,28 +32,11 @@ export function createCharacterLayerRenderer(loaders: CharacterLayerImageLoaders
 
   const customizerHairParts = hairCategories
 
-  const hairAppearanceStyleId = (appearance: NonNullable<CustomizerCharacter['customization']['hairAppearance']> | undefined, side: HairCatalogSide): string | null => {
-    if (!appearance) return null
-    const key = side === 'front' ? 'frontStyleId' : 'backStyleId'
-    return key in appearance ? appearance[key] ?? null : appearance.styleId ?? null
-  }
-
-  function hairAppearanceStyleIds(appearance: NonNullable<CustomizerCharacter['customization']['hairAppearance']> | undefined, side: HairLayerSide): Array<{ id: string; part: HairPartId }> {
-    return customizerHairParts.filter((part) => part.side === side).flatMap((part) => {
-      const hasPartOverride = Boolean(appearance?.parts && Object.prototype.hasOwnProperty.call(appearance.parts, part.id))
-      const legacyFrontPart = part.id === 'rearHair' && appearance?.parts && Object.prototype.hasOwnProperty.call(appearance.parts, 'frontHair')
-        ? appearance.parts.frontHair
-        : null
-      const id = hasPartOverride ? appearance?.parts?.[part.id] ?? null : part.id === 'backHair' ? hairAppearanceStyleId(appearance, 'back') : part.id === 'rearHair' ? legacyFrontPart ?? hairAppearanceStyleId(appearance, 'front') : null
-      return id ? [{ id, part: part.id }] : []
-    })
-  }
-
   async function loadHairAppearanceLayers(appearance: NonNullable<CustomizerCharacter['customization']['hairAppearance']> | undefined, modelSlot: number, side: HairLayerSide, cached: Record<string, HairStyle> = {}, assetProvider: CharacterRenderAssetProvider = window.desktop.fabricator): Promise<HairLayerReference[]> {
     if (!appearance || appearance.modelSlot !== modelSlot) return []
     const ids = hairAppearanceStyleIds(appearance, side)
     const styles = await Promise.all(ids.map(async ({ id }) => cached[`${modelSlot}:${id}`] ?? await assetProvider.loadHairStyle(modelSlot, id)))
-    return styles.flatMap((style, index) => style ? [{ style, side, part: ids[index].part }] : [])
+    return styles.flatMap((style, index) => style ? [{ style, side: ids[index].side, part: ids[index].part }] : [])
   }
 
   function resolvedHairColors(appearance: CustomizerCharacter['customization']['hairAppearance'], part: HairPartId): HairColorOverrides {

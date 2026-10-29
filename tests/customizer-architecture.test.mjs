@@ -18,14 +18,14 @@ const valid = (id = 'test-1') => ({
   createdAt: NOW, updatedAt: NOW
 })
 
-async function fixture(t, seeds = []) {
+async function fixture(t, seeds = [], options = {}) {
   const dir = await mkdtemp(join(tmpdir(), 'gv5-customizer-'))
   t.after(() => rm(dir, { recursive: true, force: true }))
   const target = join(dir, 'customizer', 'characters', 'characters.json')
   let sequence = 0
   const newId = () => `synthetic-${++sequence}`
   const repo = new CustomizerCharacterRepository(() => target, { access, readFile, writeFile, rename, unlink, mkdir }, seeds, newId, () => NOW)
-  const service = new CustomizerCharacterService(repo, newId, () => NOW)
+  const service = new CustomizerCharacterService(repo, newId, () => NOW, options.assertWardrobeGroupsAvailable, options.assertHairStylesAvailable)
   return { dir, target, repo, service }
 }
 
@@ -72,6 +72,37 @@ test('criar, editar e excluir conserva formato e campos existentes', async (t) =
   assert.equal(JSON.parse(await readFile(target, 'utf8'))[0].customization.hairAppearance.styleId, 'cabelo-1')
   await service.delete(created.id)
   assert.deepEqual(await service.list(), [])
+})
+
+test('salvar um novo cabelo consulta o catálogo antes de gravar o vínculo', async (t) => {
+  const { service } = await fixture(t, [], {
+    assertHairStylesAvailable: async references => {
+      assert.deepEqual(references, [{ modelSlot: 1, id: 'cabelo-ausente' }])
+      throw new Error('cabelo ausente')
+    }
+  })
+  const character = await service.create('Lia')
+  await assert.rejects(service.save({
+    ...character,
+    customization: { ...character.customization, hairAppearance: { modelSlot: 1, styleId: 'cabelo-ausente' } }
+  }), /cabelo ausente/)
+  assert.equal((await service.list())[0].customization.hairAppearance, undefined)
+})
+
+test('referência legada já existente não impede editar outros dados do personagem', async (t) => {
+  let validationCalls = 0
+  const { repo, service: initialService } = await fixture(t)
+  const created = await initialService.create('Lia')
+  const linked = {
+    ...created,
+    customization: { ...created.customization, hairAppearance: { modelSlot: 1, styleId: 'cabelo-removido' } }
+  }
+  await initialService.save(linked)
+  const service = new CustomizerCharacterService(repo, () => 'unused-id', () => NOW, undefined,
+    async references => { validationCalls += 1; assert.deepEqual(references, []) })
+  await service.save({ ...linked, name: 'Lia editada' })
+  assert.equal((await service.list())[0].name, 'Lia editada')
+  assert.equal(validationCalls, 1)
 })
 
 test('gravação sequencial e listagem aguarda gravações pendentes', async (t) => {

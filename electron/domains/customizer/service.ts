@@ -1,9 +1,12 @@
 /** Casos de uso independentes de Electron. Todas as gravações compartilham uma fila. */
 import type { CustomizerCharacter, CustomizerWardrobeGroup } from '../../../src/shared/customizer.ts'
+import { collectCustomizerHairStyleReferences } from '../../../src/shared/hairCategories.ts'
 import type { CustomizerCharacterRepository } from './repository.ts'
 import { isCustomizerCharacter } from './validation.ts'
 
 export type AssertWardrobeGroupsAvailable = (groups: readonly CustomizerWardrobeGroup[]) => Promise<void>
+export type HairStyleReference = ReturnType<typeof collectCustomizerHairStyleReferences>[number]
+export type AssertHairStylesAvailable = (references: readonly HairStyleReference[]) => Promise<void>
 
 export class CustomizerCharacterService {
   private saveQueue: Promise<void> = Promise.resolve()
@@ -11,17 +14,20 @@ export class CustomizerCharacterService {
   private readonly newId: () => string
   private readonly now: () => string
   private readonly assertWardrobeGroupsAvailable: AssertWardrobeGroupsAvailable
+  private readonly assertHairStylesAvailable: AssertHairStylesAvailable
 
   constructor(
     repository: Pick<CustomizerCharacterRepository, 'list' | 'save'>,
     newId: () => string,
     now: () => string,
-    assertWardrobeGroupsAvailable: AssertWardrobeGroupsAvailable = async () => undefined
+    assertWardrobeGroupsAvailable: AssertWardrobeGroupsAvailable = async () => undefined,
+    assertHairStylesAvailable: AssertHairStylesAvailable = async () => undefined
   ) {
     this.repository = repository
     this.newId = newId
     this.now = now
     this.assertWardrobeGroupsAvailable = assertWardrobeGroupsAvailable
+    this.assertHairStylesAvailable = assertHairStylesAvailable
   }
 
   /** Backup externo deve aguardar a mesma fila usada pelos handlers. */
@@ -52,7 +58,11 @@ export class CustomizerCharacterService {
       const previous = characters[index]
       const existingReferences = new Set((previous.customization.wardrobeGroups ?? []).map((group) => `${group.modelSlot}:${group.setId}:${group.componentId ?? ''}`))
       const addedReferences = (character.customization.wardrobeGroups ?? []).filter((group) => !existingReferences.has(`${group.modelSlot}:${group.setId}:${group.componentId ?? ''}`))
+      const existingHairReferences = new Set(collectCustomizerHairStyleReferences(previous).map(({ modelSlot, id }) => `${modelSlot}:${id}`))
+      const addedHairReferences = collectCustomizerHairStyleReferences(character)
+        .filter(({ modelSlot, id }) => !existingHairReferences.has(`${modelSlot}:${id}`))
       await this.assertWardrobeGroupsAvailable(addedReferences)
+      await this.assertHairStylesAvailable(addedHairReferences)
       characters[index] = { ...character, name: character.name.trim(), updatedAt: this.now() }
       await this.repository.save(characters)
     })

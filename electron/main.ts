@@ -407,6 +407,13 @@ const customizerService = new CustomizerCharacterService(
         throw new Error(`A peça ${group.componentId} não existe mais no conjunto ${key}. Atualize a biblioteca antes de equipá-la.`)
       }
     }
+  },
+  async (references) => {
+    for (const { modelSlot, id } of references) {
+      if (!await readHairStyle(modelSlot, id)) {
+        throw new Error(`O cabelo ${modelSlot}:${id} não está mais disponível no Fabricador Dev. Atualize a biblioteca e escolha um cabelo salvo.`)
+      }
+    }
   }
 )
 
@@ -1437,7 +1444,8 @@ async function registerFabricatorHandlers(): Promise<void> {
     readStyle: readHairStyle,
     writeStyle: writeHairStyle,
     setLegacyHairCatalogState: writeLegacyHairCatalogState,
-    removeDirectory: (path) => rm(path, { recursive: true, force: true })
+    removeDirectory: (path) => rm(path, { recursive: true, force: true }),
+    withCharactersLocked: (operation) => customizerService.withCharactersLocked(operation)
   })
 }
 
