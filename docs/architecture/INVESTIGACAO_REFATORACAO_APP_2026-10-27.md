@@ -1,5 +1,15 @@
 # Mapa do aplicativo e plano de refatoração progressiva
 
+## Reauditoria geral — 2026-10-29
+
+Objetivo ativo: refatoração geral de todos os domínios, incluindo organização, redundâncias, segurança, inicialização, renderização, memória, processamento e persistência. As etapas abaixo registram progresso; não certificam conclusão do aplicativo inteiro.
+
+- Base desta rodada: `Dev-V2`, `68e83f4`, árvore limpa. Reutilizar este mapa e os contratos existentes; preservar formatos e dados pessoais.
+- Baseline executado: auditoria de arquitetura sem violações, typecheck, 27 testes gerais, 330 testes de refatoração e build de produção aprovados. Editor V6: 70 testes aprovados após duas regressões novas; um teste permanece ignorado pela configuração existente.
+- Correção aplicada: indexação compartilhada de fala consolida intervalos sobrepostos/contidos/adjacentes por personagem antes da busca binária. Antes, um balão curto contido em outro podia desligar a fala cedo. A consulta permanece O(log n), e o índice continua vinculado à timeline via WeakMap. Os testes comparam todos os frames com a união direta dos balões e verificam limites, personagens distintos, tracks ocultas/mutadas e imutabilidade.
+- Evidência sintética de armazenamento nesta máquina: 2.600 assets, inserção em lote 305,2 ms e busca p95 9,75 ms no baseline. Estes números não representam FPS, inicialização ou consumo real do Chromium.
+- Pendências de escopo geral: medir inicialização/FPS/memória com fixtures; revisar transporte e vida útil de imagens; auditar filas e cancelamento por domínio; reduzir responsabilidades das páginas e do composition root; investigar dependências/código sem consumidores; revisar segurança e recuperação dos workers; executar aceitação visual e exportação com fixtures após mudanças de renderização. Priorizar conforme evidências, sem ampliar thresholds para passar verificações.
+
 **Data:** 2026-10-27
 
 **Última atualização:** 2026-10-29

@@ -27,7 +27,18 @@ function speechIntervals(timeline: EditorV6Timeline): Map<string, Array<{ start:
         index.set(characterId, intervals)
       }
     }
-    for (const intervals of index.values()) intervals.sort((a, b) => a.start - b.start)
+    for (const [characterId, intervals] of index) {
+      intervals.sort((a, b) => a.start - b.start)
+      const merged: typeof intervals = []
+      for (const interval of intervals) {
+        const previous = merged.at(-1)
+        // Binary search requires disjoint intervals; nested balloons must not
+        // hide the remaining duration of a longer speech interval.
+        if (previous && interval.start <= previous.end) previous.end = Math.max(previous.end, interval.end)
+        else merged.push({ ...interval })
+      }
+      index.set(characterId, merged)
+    }
     speechIndex.set(timeline, index)
   }
   return index
