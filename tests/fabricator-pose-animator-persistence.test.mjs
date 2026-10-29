@@ -43,9 +43,9 @@ async function fixture(t) {
     files: fs
   }
   return {
-    pose: createPosePersistence({ ...deps, poseSlotPath, poseDraftPath, modelHeadParts: async () => [] }),
+    pose: createPosePersistence({ ...deps, poseSlotPath, poseDraftPath, modelSlotPath: modelPath, modelHeadParts: async () => [] }),
     animator: createAnimatorPersistence({ ...deps, animatorSlotPath, animatorDraftPath }),
-    paths: {poseSlotPath,poseDraftPath,animatorSlotPath,animatorDraftPath}
+    paths: {poseSlotPath,poseDraftPath,animatorSlotPath,animatorDraftPath,modelPath}
   }
 }
 
@@ -65,6 +65,25 @@ test('Poses DEV salva e relê o rascunho sem renomear peças', async t => {
   const loaded = await store.readPoseDraft(1)
   assert.equal(loaded.project.parts[0].id,'head')
   assert.equal(loaded.project.parts[0].dataUrl,png)
+})
+test('rascunho de pose recupera a imagem do slot editado antes da imagem do modelo', async t => {
+  const {pose: store,paths} = await fixture(t)
+  const editedPng = 'data:image/png;base64,' + Buffer.from('EDITEDPOSE').toString('base64')
+  await fs.mkdir(join(paths.modelPath(1),'parts'), {recursive:true})
+  await fs.writeFile(join(paths.modelPath(1),'parts','head.png'), Buffer.from('BASEMODEL'))
+  await store.writePoseProject(1,2,{...pose,parts:[part]},[{id:'head',dataUrl:editedPng}])
+  await store.writePoseDraft(1,{editingSlot:2,updatedAt:pose.updatedAt,project:{...pose,slot:undefined,parts:[part]}},[])
+  const loaded = await store.readPoseDraft(1)
+  assert.equal(loaded.project.parts[0].dataUrl,editedPng)
+})
+test('rascunho de pose nova recupera imagem ausente do modelo base', async t => {
+  const {pose: store,paths} = await fixture(t)
+  const basePng = 'data:image/png;base64,' + Buffer.from('BASEMODEL').toString('base64')
+  await fs.mkdir(join(paths.modelPath(1),'parts'), {recursive:true})
+  await fs.writeFile(join(paths.modelPath(1),'parts','head.png'), Buffer.from('BASEMODEL'))
+  await store.writePoseDraft(1,{editingSlot:null,updatedAt:pose.updatedAt,project:{...pose,slot:undefined,parts:[part]}},[])
+  const loaded = await store.readPoseDraft(1)
+  assert.equal(loaded.project.parts[0].dataUrl,basePng)
 })
 test('Animador DEV salva e relê frames e fontes PNG por slot', async t => {
   const {animator: store,paths} = await fixture(t)

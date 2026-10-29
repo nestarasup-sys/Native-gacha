@@ -289,6 +289,7 @@ let dataMigration: InstanceType<typeof DataMigrationService> | null = null
 let dataBackupService: InstanceType<typeof DataBackupService> | null = null
 let dataBackupIpc: ReturnType<typeof registerDataBackupHandlers> | null = null
 let dataMigrationIpc: ReturnType<typeof registerDataMigrationHandlers> | null = null
+let roteiroExportIpc: ReturnType<typeof registerRoteiroExportHandlers> | null = null
 let fabricatorHairIpc: ReturnType<typeof registerFabricatorHairHandlers> | null = null
 let fabricatorProjectIpc: ReturnType<typeof registerFabricatorProjectHandlers> | null = null
 let fabricatorWardrobeIpc: ReturnType<typeof registerFabricatorWardrobeHandlers> | null = null
@@ -1228,7 +1229,7 @@ const fabricatorHistoryPersistence = createFabricatorHistoryPersistence({
 })
 
 const { writePoseProject, readPoseProject, writePoseDraft, readPoseDraft } = createPosePersistence({
-  poseSlotPath, poseDraftPath, modelHeadParts, isValidModelSlot, isValidPoseSlot,
+  poseSlotPath, poseDraftPath, modelSlotPath: slotPath, modelHeadParts, isValidModelSlot, isValidPoseSlot,
   dataUrlBuffer, writeAssetImageSource, readAssetImage,
   files: { mkdir, access, copyFile, readdir, unlink, readFile, writeFile, rename }
 })
@@ -1370,7 +1371,7 @@ async function registerFabricatorHandlers(): Promise<void> {
       return await dataFileSystem.resolvePhysicalPath(resolved.path) ?? resolved.path
     }
   })
-  registerRoteiroExportHandlers({ ipcMain, assertTrustedSender, openPath: (path) => shell.openPath(path), service: roteiroExportService })
+  roteiroExportIpc = registerRoteiroExportHandlers({ ipcMain, assertTrustedSender, openPath: (path) => shell.openPath(path), service: roteiroExportService })
 
   const roteiroDocumentService = createRoteirosDocumentService({
     getDatabase: () => dataPlatform.database,
@@ -1841,6 +1842,7 @@ app.on('before-quit', (event) => {
   const pendingWrites = [
     ...collectPendingPersistenceWrites(),
     ...(dataBackupIpc?.getActiveTasks() ?? []),
+    ...(roteiroExportIpc ? [roteiroExportIpc.drain()] : []),
     ...(dataMigrationTask ? [dataMigrationTask] : []),
     ...(editorV6ExportService ? [editorV6ExportService.drain()] : []),
     ...(editorV6MotionService ? [editorV6MotionService.drain()] : [])
@@ -1849,6 +1851,7 @@ app.on('before-quit', (event) => {
     waitingForPersistenceWritesBeforeQuit = false
     const failed = results.some((result) => result.status === 'rejected')
     if (failed) {
+      roteiroExportIpc?.resumeAfterFailedShutdown()
       // Do not report successful shutdown after a persistence failure.
       // Keep the application available for retry/recovery instead.
       if (!BrowserWindow.getAllWindows().some((window) => !window.isDestroyed())) createMainWindow()

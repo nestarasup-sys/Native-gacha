@@ -263,7 +263,7 @@ export class RoteiroCharacterExportStore {
   async cancel(jobId: string): Promise<void> {
     const job = this.jobs.get(jobId)
     if (!job) return
-    this.jobs.delete(jobId)
     await rm(job.stageFolder, { recursive: true, force: true })
+    this.jobs.delete(jobId)
   }
 }

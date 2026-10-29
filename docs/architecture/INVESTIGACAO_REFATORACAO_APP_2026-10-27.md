@@ -678,7 +678,7 @@ Este corte separa propriedade dos contratos e chamadas entre domínios, mas não
 
 ## 12. Próxima tarefa recomendada
 
-Em andamento: auditar operações IPC manuais iniciadas por ações de usuário e a cobertura do inventário do processo principal, além dos autosaves já drenados. Registrar para cada domínio o comportamento de falha/recuperação e completar a matriz de persistência do aplicativo. A auditoria desta rodada incluiu os jobs assíncronos de backup no ciclo de encerramento; ainda faltam as demais operações manuais de outros domínios.
+Em andamento: auditar operações IPC manuais iniciadas por ações de usuário e a cobertura do inventário do processo principal, além dos autosaves já drenados. Registrar para cada domínio o comportamento de falha/recuperação e completar a matriz de persistência do aplicativo. A auditoria agora cobre jobs de backup, exportações de Roteiros e recuperação de imagens de poses no autosave; ainda faltam operações manuais dos outros domínios e a recuperação após interrupção forçada de algumas publicações.
 
 ## 13. Verificações e validação
 
@@ -719,3 +719,18 @@ Em andamento: auditar operações IPC manuais iniciadas por ações de usuário 
 - `dataBackupIpc.ts` agora registra as operações mutáveis em andamento e as expõe a `electron/main.ts`. O `before-quit` aguarda esses jobs junto das filas existentes; falhas continuam acionando o caminho atual de encerramento seguro. A restauração usa a mesma rotina de flush do backup manual antes de criar a cópia de segurança. O backup/restauração em si, os canais, os manifestos e os dados não mudaram.
 - A caixa de confirmação nativa passou a ser injetada pelo composition root, deixando o módulo IPC testável sem iniciar Electron. `npm run test:data-backup-ipc` cobre criação desde o flush até a conclusão, verificação, exclusão e restauração na ordem flush → cópia de segurança → staging, além da inclusão dos jobs no encerramento.
 - Nenhum backup real foi criado, verificado, removido ou restaurado nesta etapa. Os testes direcionados, a suíte de refatoração, typecheck, auditoria de arquitetura e build foram executados sobre código e fixtures sintéticas.
+
+## 16. Etapa aplicada — exportações de Roteiros no ciclo de encerramento
+
+- O caminho visual é `RoteirosPage` → `window.desktop.roteiros` → `exportIpc.ts` → `exportService.ts` → `projectExportStore.ts` ou `characterExportStore.ts`. As exportações de fundo/vídeo/GIF/roteiro publicam arquivos controlados por manifesto na pasta do Editor V4, com temporários e rollback em falha capturada. A exportação de personagens monta PNGs em `app-data/temp/roteiro-character-export/<jobId>` e só os publica no destino após `finish` validar todos os personagens.
+- Antes, o IPC cancelava jobs abandonados com `void cancelCharacterExport(...)` quando a janela era destruída, e o encerramento não aguardava exportações de uma chamada nem operações de asset/finalização. Uma saída limpa podia interromper a publicação em andamento ou terminar antes de apagar o staging.
+- O IPC agora serializa `asset`, `finish` e `cancel` por job, registra as operações de arquivo, impede novas ações enquanto drena, cancela os jobs ainda abertos e expõe `drain()` ao `before-quit`. A exclusão do job da memória só ocorre depois de remover o staging com sucesso, permitindo nova tentativa se a limpeza falhar. Se outra rotina impedir o encerramento, a API reabre após a falha.
+- Canais, IDs, formato de exportação e destino não mudaram. Nenhum projeto real do Editor V4 ou diretório de exportação foi acessado ou alterado.
+- `npm run test:roteiros` cobre exports de uma chamada, cancelamento atrás de gravação de PNG, concorrência entre finalização e cancelamento, janela destruída e integração com `before-quit`. Rollback cobre erros normais da publicação; interrupção forçada do processo durante o swap de arquivos ainda não tem journal de recuperação e permanece mapeada como dívida distinta.
+
+## 17. Etapa aplicada — recuperação de imagens em Poses DEV e cancelamento de pré-cálculo
+
+- O rascunho de Poses DEV guarda metadados JSON separados dos PNGs. O renderer envia somente imagens pendentes; quando a pasta do rascunho é recriada e um PNG não está no payload, o gravador antes falhava mesmo com a peça ainda presente na pose salva ou no modelo base.
+- `posePersistence.ts` agora procura a imagem ausente no slot da pose em edição e, em seguida, no modelo-fonte, antes de publicar o manifesto do rascunho. Para uma peça editada, o slot salvo tem precedência para manter exatamente sua imagem; poses novas usam a fonte do modelo. IDs, JSON e formato dos PNGs permanecem iguais.
+- No Editor V6, cancelar a preparação antecipada de animação enquanto o usuário interage é resultado normal. O job marca explicitamente esse cancelamento e a chamada de cache não o propaga como falha IPC. Preparações de exportação continuam propagando erros reais.
+- `npm run test:fabricator:persistence` cobre recuperação do slot e da fonte em fixtures PNG sintéticas. `npm run test:editor-v6` e `npm run test:editor-v6:motion-service` verificam cancelamento e retomada; o teste do harness foi alinhado à forma real do preload (`desktop.editorV6`). Nenhum dado de modelo ou pose do usuário foi acessado.

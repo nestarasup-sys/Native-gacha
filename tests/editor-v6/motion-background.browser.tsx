@@ -11,8 +11,10 @@ Object.assign(globalThis, { runBackgroundCheck: async () => {
   window.setTimeout = ((callback: TimerHandler, ms?: number, ...args: unknown[]) => nativeTimeout(callback, ms === 2500 ? 30 : ms === 150 ? 0 : ms, ...args)) as typeof window.setTimeout
   let calls = 0, cancellations = 0, finish: (() => void) | undefined, automatic = false
   Object.defineProperty(window, 'desktop', { configurable: true, value: {
-    prepareEditorV6Motion: async () => { calls++; if (!automatic) await new Promise<void>((resolve) => { finish = resolve }) },
-    cancelEditorV6Motion: async () => { cancellations++; finish?.(); finish = undefined },
+    editorV6: {
+      prepareEditorV6Motion: async () => { calls++; if (!automatic) await new Promise<void>((resolve) => { finish = resolve }) },
+      cancelEditorV6Motion: async () => { cancellations++; finish?.(); finish = undefined },
+    }
   } })
   const actor: EditorV6Element = { id: crypto.randomUUID(), kind: 'character', characterId: 'alice', text: 'Alice', x: 0, y: 0, width: 20, height: 30, rotation: 0, zIndex: 1, poseSlot: 1 }
   const stamp = new Date().toISOString()

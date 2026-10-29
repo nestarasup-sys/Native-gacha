@@ -17,7 +17,7 @@ function retire(id: number) {
 
 export function createEditorV6MotionService(deps: { ipcMain: Pick<IpcMain, 'handle'>; assertTrustedSender: (event: IpcMainInvokeEvent) => void; html: string; preload: string; devUrl?: string; cacheDirectory?: string; concurrency?: 1 | 2 }) {
   const workers = new Map<number, Lane>()
-  const jobs = new Map<string, { owner: number; controller: AbortController; promise: Promise<EditorV6MotionBakeResult> }>()
+  const jobs = new Map<string, { owner: number; controller: AbortController; cancelled: boolean }>()
   const cache = new Map<string, EditorV6MotionBakeResult>()
   const disk = deps.cacheDirectory ? createMotionDiskCache(deps.cacheDirectory) : undefined
   const lanes: Lane[] = Array.from({ length: deps.concurrency ?? 1 }, () => ({ tail: Promise.resolve(), count: 0 }))
@@ -122,22 +122,31 @@ export function createEditorV6MotionService(deps: { ipcMain: Pick<IpcMain, 'hand
     const request = parseEditorV6MotionRequest(rawRequest)
     validateRequest(request)
     if (jobs.has(request.id)) throw Error('Identificador de preparação repetido.')
-    const controller = new AbortController(), abort = () => controller.abort(Error('Preparação de animação cancelada.'))
+    const controller = new AbortController()
+    const job = { owner: event.sender.id, controller, cancelled: false }
+    const abort = () => { job.cancelled = true; controller.abort(Error('Preparação de animação cancelada.')) }
     event.sender.once('destroyed', abort)
     const promise = enqueueBake(request, controller.signal)
-    jobs.set(request.id, { owner: event.sender.id, controller, promise })
+    jobs.set(request.id, job)
     try { const result = await promise; return cacheOnly ? undefined : result }
     catch (reason) {
       // The background warm-up is routinely superseded by user input. Its
       // cancellation is a normal outcome, not a failed IPC request.
-      if (cacheOnly && controller.signal.aborted) return undefined
+      if (cacheOnly && (job.cancelled || controller.signal.aborted)) return undefined
       throw reason
     }
     finally { jobs.delete(request.id); if (!event.sender.isDestroyed()) event.sender.removeListener('destroyed', abort) }
   }
   deps.ipcMain.handle(editorV6IpcChannels.bakeEditorV6Motion, (event, request) => bakeOwned(event, request, false))
   deps.ipcMain.handle(editorV6IpcChannels.prepareEditorV6Motion, (event, request) => bakeOwned(event, request, true))
-  deps.ipcMain.handle(editorV6IpcChannels.cancelEditorV6Motion, (event, id) => { deps.assertTrustedSender(event); const job = jobs.get(z.string().uuid().parse(id)); if (job && job.owner === event.sender.id) job.controller.abort(Error('Preparação de animação substituída.')) })
+  deps.ipcMain.handle(editorV6IpcChannels.cancelEditorV6Motion, (event, id) => {
+    deps.assertTrustedSender(event)
+    const job = jobs.get(z.string().uuid().parse(id))
+    if (job && job.owner === event.sender.id) {
+      job.cancelled = true
+      job.controller.abort(Error('Preparação de animação substituída.'))
+    }
+  })
   return { bakeForExport, releaseIdle: () => { for (const lane of lanes) if (lane.count === 0) close(lane) }, cancelAll: () => {
     stopped = true
     for (const job of jobs.values()) job.controller.abort(Error('Aplicativo encerrado.'))

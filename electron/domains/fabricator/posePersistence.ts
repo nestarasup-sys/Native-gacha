@@ -11,6 +11,7 @@ import type * as nodeFs from 'node:fs/promises'
 export type PosePersistenceDependencies = {
   poseSlotPath: (modelSlot: number, slot: number) => string
   poseDraftPath: (modelSlot: number) => string
+  modelSlotPath: (modelSlot: number) => string
   modelHeadParts: (slot: number) => Promise<Array<Pick<ModelPart, 'id' | 'name' | 'width' | 'height' | 'resizeBase'>>>
   isValidModelSlot: (slot: number) => boolean
   isValidPoseSlot: (slot: number) => boolean
@@ -21,10 +22,10 @@ export type PosePersistenceDependencies = {
 }
 
 export function createPosePersistence(deps: PosePersistenceDependencies) {
-  const { poseSlotPath, poseDraftPath, modelHeadParts, isValidModelSlot, isValidPoseSlot, dataUrlBuffer, writeAssetImageSource, readAssetImage } = deps
+  const { poseSlotPath, poseDraftPath, modelSlotPath, modelHeadParts, isValidModelSlot, isValidPoseSlot, dataUrlBuffer, writeAssetImageSource, readAssetImage } = deps
   const { mkdir, access, copyFile, readdir, unlink, readFile, writeFile, rename } = deps.files
 
-async function writePoseAssets(folder: string, parts: Array<Omit<PosePart, 'dataUrl'>>, assets: FabricatorAssetSave[], fallbackFolder?: string): Promise<void> {
+async function writePoseAssets(folder: string, parts: Array<Omit<PosePart, 'dataUrl'>>, assets: FabricatorAssetSave[], fallbackFolders: string[] = []): Promise<void> {
   const partsFolder = join(folder, 'parts')
   await mkdir(partsFolder, { recursive: true })
   const partIds = new Set(parts.map((part) => part.id))
@@ -37,11 +38,16 @@ async function writePoseAssets(folder: string, parts: Array<Omit<PosePart, 'data
     const target = join(partsFolder, `${part.id}.png`)
     try { await access(target) } catch (reason) {
       if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason
-      if (!fallbackFolder) throw new Error(`Imagem ausente na pose: ${part.name} (${part.id}).`)
-      try { await copyFile(join(fallbackFolder, 'parts', `${part.id}.png`), target) } catch (fallbackReason) {
-        if ((fallbackReason as NodeJS.ErrnoException).code === 'ENOENT') throw new Error(`Imagem ausente na pose e no rascunho: ${part.name} (${part.id}).`)
-        throw fallbackReason
+      let copied = false
+      for (const fallbackFolder of fallbackFolders) {
+        try { await copyFile(join(fallbackFolder, 'parts', `${part.id}.png`), target); copied = true; break } catch (fallbackReason) {
+          if ((fallbackReason as NodeJS.ErrnoException).code === 'ENOENT') continue
+          throw fallbackReason
+        }
       }
+      if (!copied) throw new Error(fallbackFolders.length
+        ? `Imagem ausente na pose e nas fontes salvas: ${part.name} (${part.id}).`
+        : `Imagem ausente na pose: ${part.name} (${part.id}).`)
     }
   }
   const keepFiles = new Set(parts.map((part) => `${part.id}.png`))
@@ -77,7 +83,7 @@ async function writePoseProject(modelSlot: number, slot: number, project: Fabric
   // A edição automática salva primeiro no diretório de rascunho e consome as
   // imagens pendentes no renderer. Ao salvar no slot, copie as partes já
   // persistidas no rascunho para que o slot independente tenha sua biblioteca.
-  await writePoseAssets(folder, project.parts, assets, poseDraftPath(modelSlot))
+  await writePoseAssets(folder, project.parts, assets, [poseDraftPath(modelSlot)])
   const temporary = join(folder, 'pose.json.tmp')
   await writeFile(temporary, JSON.stringify({ ...project, category: resolvePoseCategory(project) }), 'utf8')
   await rename(temporary, join(folder, 'pose.json'))
@@ -110,7 +116,14 @@ async function writePoseDraft(modelSlot: number, draft: FabricatorPoseDraftSave,
   if (!areModelPartSkinContoursValid(draft.project.parts)) throw new Error('Contornos artificiais inválidos no rascunho de pose.')
   if (draft.project.category !== undefined && (typeof draft.project.category !== 'string' || !draft.project.category.trim() || draft.project.category.trim().length > 32 || /[\r\n\t]/.test(draft.project.category))) throw new Error('Categoria de pose inválida.')
   const folder = poseDraftPath(modelSlot)
-  await writePoseAssets(folder, draft.project.parts, assets)
+  // Recover from persisted sources if a renderer autosave omits an image while
+  // the draft folder is being recreated. An edited pose is the exact source;
+  // the model is the fallback for new poses and older incomplete slots.
+  const fallbackFolders = [
+    ...(draft.editingSlot === null ? [] : [poseSlotPath(modelSlot, draft.editingSlot)]),
+    modelSlotPath(modelSlot)
+  ]
+  await writePoseAssets(folder, draft.project.parts, assets, fallbackFolders)
   const temporary = join(folder, 'draft.json.tmp')
   await writeFile(temporary, JSON.stringify({ ...draft, project: { ...draft.project, category: resolvePoseCategory({ ...draft.project, slot: draft.editingSlot ?? undefined }) } }), 'utf8')
   await rename(temporary, join(folder, 'draft.json'))

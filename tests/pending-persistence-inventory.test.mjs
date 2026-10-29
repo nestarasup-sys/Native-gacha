@@ -27,4 +27,5 @@ test('flush, backup e encerramento drenam persistências e aguardam operações 
   assert.equal((main.match(/fabricatorProjectIpc\?\.getPendingWrites\(\)/g) ?? []).length, 1)
   assert.match(main, /\.\.\.collectPendingPersistenceWrites\(\),[\s\S]*?dataMigrationTask/)
   assert.ok(main.includes('...(dataBackupIpc?.getActiveTasks() ?? [])'), 'o encerramento deve aguardar operações manuais de backup em andamento')
+  assert.ok(main.includes('...(roteiroExportIpc ? [roteiroExportIpc.drain()] : [])'), 'o encerramento deve drenar os jobs de exportação de Roteiros')
 })
