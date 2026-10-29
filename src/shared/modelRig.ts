@@ -1,6 +1,12 @@
 import type { JointLink, ModelPart } from './fabricator'
 
 type Point = { x: number; y: number }
+
+/** Shared anatomy predicate used by both rig editing and canvas interaction. */
+export function isTorsoPart(part: Pick<ModelPart, 'name'> | null | undefined): boolean {
+  return Boolean(part && /tronco|corpo/i.test(part.name))
+}
+
 export type ModelRigSegmentKind = 'head' | 'upper-arm' | 'forearm' | 'thigh' | 'lower-leg' | 'hand' | 'foot'
 export type ModelRigPair = { parent: ModelPart; child: ModelPart }
 

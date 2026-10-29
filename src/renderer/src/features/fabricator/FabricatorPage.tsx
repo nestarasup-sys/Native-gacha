@@ -2,8 +2,9 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import type { FabricatorAssetSave, FabricatorHistoryAction, FabricatorHistoryState, FabricatorProject, FabricatorSlotSummary, ModelPart } from '../../../../shared/fabricator'
 import { Icon, type IconName } from '../../ui/components/Icon'
 import { usePreviewBackground } from '../../ui/hooks/usePreviewBackground'
-import { modelRigSegmentKind, normalizeLayerOrder, orderedParts, partJointAnchor, reorderLayer, sourcePointFromCanvas } from './models/rig'
+import { modelRigSegmentKind, normalizeLayerOrder, orderedParts, partJointAnchor, reorderLayer } from './models/rig'
 import { connectFabricatorParts, isTorsoPart, moveFabricatorPartBranch, rotateFabricatorPartBranch, toggleFabricatorJointFixed } from './models/rigEditing'
+import { createFabricatorCanvasInteraction, type AnchorDragState, type DragState, type MixerStrokeState, type PanState } from './canvasInteraction'
 import { headSizePercent, isHeadPart, resizeHeadPart } from './models/resize'
 import { ModelSourceEditor } from './ModelSourceEditor'
 import { broadcastModelSourceUpdate } from './models/modelSourceEvents'
@@ -48,10 +49,6 @@ const sections: { id: string; label: string; icon: IconName }[] = [
   { id: 'Modelos', label: 'Modelos Dev', icon: 'sparkles' }, { id: 'Poses', label: 'Poses Dev', icon: 'expand' }, { id: 'Roupas', label: 'Roupas Dev', icon: 'shirt' }, { id: 'Olhos', label: 'Olhos Dev', icon: 'face' }, { id: 'Rosto', label: 'Rosto Dev', icon: 'face' }, { id: 'Preset Expressão Dev', label: 'Preset Expressão Dev', icon: 'face' }, { id: 'Animador Rosto Dev', label: 'Animador Rosto Dev', icon: 'face' }, { id: 'Cabeças extra', label: 'Cabeças extra dev', icon: 'face' }, { id: 'Cabelos Dev', label: 'Cabelos Dev', icon: 'bow' }, { id: 'Animador Dev', label: 'Animador Dev', icon: 'body' }, { id: 'Design Dev', label: 'Design Dev', icon: 'flower' }
 ]
 
-type DragState = { partId: string; pointerId: number; x: number; y: number }
-type AnchorDragState = { partId: string; pointerId: number; x: number; y: number; offsetX: number }
-type PanState = { pointerId: number; x: number; y: number; originX: number; originY: number }
-type MixerStrokeState = { pointerId: number; x: number; y: number }
 type PanelTab = 'parts' | 'layers' | 'joints'
 
 const DEFAULT_CHROMA_TOLERANCE = 74
@@ -808,78 +805,13 @@ export function FabricatorPage() {
     stroke.x = event.clientX; stroke.y = event.clientY
   }
 
-  const beginPartDrag = (event: React.PointerEvent<HTMLElement>, part: ModelPart) => {
-    if (thighDeformationActive) return
-    if (mixerActive) { startMixerStroke(event); return }
-    if (connectMode || !project) return
-    if (isTorsoPart(part)) {
-      event.preventDefault(); event.stopPropagation()
-      setSelectedIds([part.id])
-      return
-    }
-    event.preventDefault(); event.stopPropagation()
-    event.currentTarget.setPointerCapture(event.pointerId)
-    startHistoryGesture('edit')
-    setSelectedIds((current) => current.includes(part.id) ? current : [part.id])
-    dragRef.current = { partId: part.id, pointerId: event.pointerId, x: event.clientX, y: event.clientY }
-  }
-
-  const beginPan = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (!project || (event.target instanceof Element && event.target.closest('.model-stage-tools'))) return
-    if (thighDeformationActive) return
-    if (mixerActive) { startMixerStroke(event); return }
-    if (event.target instanceof Element && event.target.closest('.model-canvas-part, .model-joint-anchor')) return
-    event.preventDefault()
-    event.currentTarget.setPointerCapture(event.pointerId)
-    panRef.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, originX: pan.x, originY: pan.y }
-    setPanning(true)
-  }
-
-  const movePan = (event: React.PointerEvent<HTMLDivElement>) => {
-    const drag = panRef.current
-    if (!drag || drag.pointerId !== event.pointerId) return
-    setPan({ x: drag.originX + event.clientX - drag.x, y: drag.originY + event.clientY - drag.y })
-  }
-
-  const movePartDrag = (event: React.PointerEvent<HTMLDivElement>) => {
-    const drag = dragRef.current
-    if (!drag || !project || drag.pointerId !== event.pointerId || !scale) return
-    const dx = (event.clientX - drag.x) / scale; const dy = (event.clientY - drag.y) / scale
-    if (Math.abs(dx) + Math.abs(dy) > 0) updatePartPosition(drag.partId, dx, dy)
-    drag.x = event.clientX; drag.y = event.clientY
-  }
-
-  const moveAnchorDrag = (event: React.PointerEvent<HTMLDivElement>) => {
-    const drag = anchorDragRef.current
-    if (!drag || !project || drag.pointerId !== event.pointerId || !scale) return
-    const dx = (event.clientX - drag.x) / scale + drag.offsetX; const dy = (event.clientY - drag.y) / scale
-    updateProject((current) => {
-      const part = current.parts.find((item) => item.id === drag.partId)
-      if (!part) return current
-      const anchor = partJointAnchor(part, current.joints)
-      if (!anchor) return current
-      const movedAnchor = { x: anchor.x + dx, y: anchor.y + dy }
-      const sourceAnchor = sourcePointFromCanvas(part, movedAnchor)
-      return {
-        ...current,
-        parts: current.parts.map((item) => item.id === drag.partId ? { ...item, jointAnchor: movedAnchor, ...(sourceAnchor && item.sourceTransform ? { sourceTransform: { ...item.sourceTransform, jointAnchor: sourceAnchor, anchorVersion: 1 as const } } : {}) } : item),
-        joints: current.joints.map((joint) => {
-          const parentAnchor = joint.parentPartId === drag.partId ? movedAnchor : joint.parentAnchor
-          const childAnchor = joint.childPartId === drag.partId ? movedAnchor : joint.childAnchor
-          return { ...joint, parentAnchor, childAnchor, pivot: { x: (parentAnchor.x + childAnchor.x) / 2, y: (parentAnchor.y + childAnchor.y) / 2 } }
-        })
-      }
-    })
-    drag.x = event.clientX; drag.y = event.clientY; drag.offsetX = 0
-  }
-
-  const beginAnchorDrag = (event: React.PointerEvent<SVGCircleElement>, partId: string, displayOffset: number) => {
-    if (thighDeformationActive) return
-    if (mixerActive) { startMixerStroke(event); return }
-    event.stopPropagation(); event.currentTarget.setPointerCapture(event.pointerId)
-    startHistoryGesture('edit')
-    anchorDragRef.current = { partId, pointerId: event.pointerId, x: event.clientX, y: event.clientY, offsetX: displayOffset / scale }
-  }
+  const canvasInteraction = createFabricatorCanvasInteraction({
+    project, dragRef, anchorDragRef, panRef, mixerStrokeRef,
+    setSelectedIds, connectMode, mixerActive, thighDeformationActive, pan,
+    setPan, setPanning, setMixerPainting, scale, mixerQueueRef,
+    startHistoryGesture, finishHistoryGesture, updateProject, updatePartPosition,
+    startMixerStroke, moveMixerStroke
+  })
 
   const renderEmptyState = () => (
     <div className="model-empty-state">
@@ -992,7 +924,7 @@ export function FabricatorPage() {
               <div className={`model-editor-content${processing || chromaApplying || historyBusy ? ' chroma-applying' : ''}`} aria-busy={processing || chromaApplying || historyBusy}>
                 <section className="model-canvas-column" aria-label="Prévia e montagem">
                   <div className="model-canvas-topline"><span><i /> CANVAS DE MONTAGEM</span><span>{project.width} × {project.height}</span></div>
-                  <div ref={stageRef} className={`model-stage${panning ? ' panning' : ''}${mixerActive ? ' mixer-active' : ''}${mixerPainting ? ' mixer-painting' : ''}${thighDeformationActive ? ' thigh-deform-active' : ''}`} style={{ '--preview-background': previewBackground } as import('react').CSSProperties} onPointerDown={beginPan} onPointerMove={(event) => { moveMixerStroke(event); movePan(event); movePartDrag(event); moveAnchorDrag(event) }} onPointerUp={(event) => { if (dragRef.current?.pointerId === event.pointerId) dragRef.current = null; if (anchorDragRef.current?.pointerId === event.pointerId) anchorDragRef.current = null; if (panRef.current?.pointerId === event.pointerId) { panRef.current = null; setPanning(false) } if (mixerStrokeRef.current?.pointerId === event.pointerId) { mixerStrokeRef.current = null; setMixerPainting(false) } void mixerQueueRef.current.then(() => finishHistoryGesture()) }} onPointerCancel={() => { dragRef.current = null; anchorDragRef.current = null; panRef.current = null; mixerStrokeRef.current = null; setPanning(false); setMixerPainting(false); void mixerQueueRef.current.then(() => finishHistoryGesture()) }}>
+                  <div ref={stageRef} className={`model-stage${panning ? ' panning' : ''}${mixerActive ? ' mixer-active' : ''}${mixerPainting ? ' mixer-painting' : ''}${thighDeformationActive ? ' thigh-deform-active' : ''}`} style={{ '--preview-background': previewBackground } as import('react').CSSProperties} onPointerDown={canvasInteraction.beginPan} onPointerMove={canvasInteraction.onPointerMove} onPointerUp={canvasInteraction.onPointerUp} onPointerCancel={canvasInteraction.onPointerCancel}>
                     <div className="model-artboard" style={{ width: `${project.width * scale}px`, height: `${project.height * scale}px`, left: `calc(50% + ${pan.x}px)`, top: `calc(50% + ${pan.y}px)` }}>
                       {canvasParts.filter((part) => !hiddenPartIds.includes(part.id)).map((part) => {
                         const className = `model-canvas-part${selectedIds.includes(part.id) ? ' selected' : ''}${connectFromId === part.id ? ' connect-source' : ''}`
@@ -1004,13 +936,13 @@ export function FabricatorPage() {
                             if (modelRigSegmentKind(part.name) === 'thigh') selectPart()
                             return
                           }
-                          beginPartDrag(event, part)
+                          canvasInteraction.beginPartDrag(event, part)
                         }
                         if (modelRigSegmentKind(part.name) === 'thigh') return <TemporaryThighWarpPreview key={`${project.slot}:${part.id}`} part={part} sourceUrl={partPreviewSource(part)} className={className} style={style} active={thighDeformationActive} radius={thighDeformationRadius} strength={thighDeformationStrength} resetToken={temporaryThighResetToken} toModelPoint={toModelPoint} onWarpStateChange={updateTemporaryThighDeformation} onWarpStart={selectPart} onError={reportTemporaryThighError} onClick={onClick} onPointerDown={onPointerDown} />
                         return <img key={part.id} className={className} src={partPreviewSource(part)} alt={part.name} draggable={false} onClick={onClick} onPointerDown={onPointerDown} style={style} />
                       })}
                       <svg className="model-joint-layer" viewBox={`0 0 ${project.width} ${project.height}`} preserveAspectRatio="none" aria-label="Conexões entre as peças">
-                        {showJointPivots && !thighDeformationActive && jointMarkers.map(({ part, anchor, offset, fixed }) => <circle key={part.id} className={`model-joint-anchor${fixed ? ' fixed' : selectedIds.includes(part.id) ? ' selected' : ''}`} cx={anchor.x + offset / scale} cy={anchor.y} r={Math.max(selectedIds.includes(part.id) ? 11 : 8, (selectedIds.includes(part.id) ? 13 : 10) / scale)} aria-label={`Pivô de ${part.name}`} onPointerDown={(event) => beginAnchorDrag(event, part.id, offset)} />)}
+                        {showJointPivots && !thighDeformationActive && jointMarkers.map(({ part, anchor, offset, fixed }) => <circle key={part.id} className={`model-joint-anchor${fixed ? ' fixed' : selectedIds.includes(part.id) ? ' selected' : ''}`} cx={anchor.x + offset / scale} cy={anchor.y} r={Math.max(selectedIds.includes(part.id) ? 11 : 8, (selectedIds.includes(part.id) ? 13 : 10) / scale)} aria-label={`Pivô de ${part.name}`} onPointerDown={(event) => canvasInteraction.beginAnchorDrag(event, part.id, offset)} />)}
                       </svg>
                     </div>
                     <div className="model-stage-tools"><span>{Math.round(zoom * 100)}%</span><button onClick={() => setZoom((value) => Math.min(2.4, value + 0.15))} title="Aumentar zoom" type="button"><Icon name="zoomIn" /></button><button onClick={() => setZoom((value) => Math.max(0.5, value - 0.15))} title="Diminuir zoom" type="button"><Icon name="zoomOut" /></button><button onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }) }} title="Centralizar prévia" type="button"><Icon name="frame" /></button></div>

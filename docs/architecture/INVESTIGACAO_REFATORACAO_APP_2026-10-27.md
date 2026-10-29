@@ -1540,3 +1540,10 @@ Continua a auditoria das operações IPC iniciadas pelo usuário e da cobertura 
 - As opções `sandbox`, `contextIsolation`, `nodeIntegration`, caminhos, modo offscreen, ordem dos callbacks e regra de não fechar se o flush falhar foram preservadas. Falhas ao abrir o aviso de salvamento agora são registradas sem gerar uma rejeição não tratada.
 - Quatro testes com uma janela em memória cobrem isolamento da janela normal, modo DEV AI, janela offscreen, flush concorrente e nova tentativa depois de falha. O novo teste está em `npm run test:refactor`.
 - `main.ts` passou de 1.036 para 994 linhas. Passaram `npm run typecheck`, `npm run audit:architecture` (468 arquivos TS/TSX), `npm run test:refactor` (500 testes principais e 18 auxiliares), build e `git diff --check`.
+
+## 106. Etapa aplicada — gestos do canvas do Fabricador separados da página
+
+- `FabricatorPage.tsx` implementava junto da tela a captura do ponteiro, o arraste de peças e pivôs, o pan do canvas e a finalização do histórico de gestos. `canvasInteraction.ts` agora coordena esses eventos e recebe explicitamente os setters e ações de projeto necessários.
+- `isTorsoPart` foi movido para `src/shared/modelRig.ts`, mantendo o reexport antigo por `rigEditing.ts`. O editor de juntas e o controlador do canvas usam a mesma regra para deixar o tronco fixo. O arraste do pivô ainda atualiza o ponto da peça, sua transformação de origem e as juntas conectadas.
+- `FabricatorPage.tsx` passou de 1.050 para 982 linhas. Três testes sintéticos cobrem movimento ajustado à escala, proteção do tronco, atualização de pivôs e pan/limpeza do ponteiro.
+- Sem mudança de interface, dados persistidos, histórico ou contratos IPC. Passaram typecheck, auditoria de arquitetura (469 arquivos TS/TSX), `npm run test:refactor` (500 testes principais e 21 auxiliares), build e `git diff --check`.

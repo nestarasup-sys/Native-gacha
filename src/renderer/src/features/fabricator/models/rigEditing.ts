@@ -1,10 +1,8 @@
 import type { FabricatorProject, JointLink, ModelPart } from '../../../../../shared/fabricator'
-import { autoConnectParts, createJoint, inferAnatomicalJointPairs, isModelRigConnectionCompatible, jointPivot } from './rig'
+import { autoConnectParts, createJoint, inferAnatomicalJointPairs, isModelRigConnectionCompatible, isTorsoPart, jointPivot } from './rig'
 import { rotatePointAroundOrigin } from './geometry'
 
-export function isTorsoPart(part: ModelPart | null | undefined): boolean {
-  return Boolean(part && /tronco|corpo/i.test(part.name))
-}
+export { isTorsoPart }
 
 export function connectFabricatorParts(project: FabricatorProject, parentPartId: string, childPartId: string, createId: () => string): FabricatorProject {
   const parent = project.parts.find((part) => part.id === parentPartId)
