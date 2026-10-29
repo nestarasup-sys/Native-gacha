@@ -1151,3 +1151,11 @@ Continua a auditoria das operações IPC iniciadas pelo usuário e da cobertura 
 - A conversão agora ignora movimento se o palco estiver sem largura/altura válida ou se as coordenadas forem não finitas, evitando inserir coordenadas inválidas no documento. `StudioPage.tsx` passou de 1.312 para 1.267 linhas físicas (45 a menos).
 - Cinco regressões sintéticas cobrem conversão, dimensões inválidas, atualização isolada do fundo e elemento, imutabilidade e delegação da tela ao hook.
 - Verificação: `npm run test:refactor` passou com 391 testes; `npm test` com 29; também passaram typecheck, auditoria de arquitetura (406 arquivos TS/TSX, sem violações), auditoria de orçamento estático, build e `git diff --check`.
+
+## 56. Etapa aplicada — histórico de desfazer/refazer do Studio isolado
+
+- `StudioPage.tsx` coordenava diretamente as pilhas de desfazer/refazer, seus estados de interface e a aplicação dos snapshots. `useStudioHistory.ts` agora possui essa coordenação; o modelo puro já existente em `shared/studioHistory.ts` continua dono da regra de snapshots.
+- Os snapshots permanecem imutáveis e limitados a 30 versões. Trocar de Studio limpa o histórico, uma nova edição descarta o ramo de refazer, os atalhos Ctrl+Z/Ctrl+Y continuam usando o mesmo estado, e restaurar uma cena ainda atualiza o documento pelo `patchStudio` e pelo autosave existente. A seleção visual continua sendo resetada pela página ao trocar de Studio.
+- `StudioPage.tsx` passou de 1.267 para 1.226 linhas físicas. Não houve mudança nos dados persistidos, canais IPC, ativos, schema ou formato do histórico.
+- Quatro regressões sintéticas cobrem gravação/limpeza do ramo, ida e volta de desfazer/refazer, limite do histórico e delegação/reset por documento.
+- Verificação: `npm run test:refactor` passou com 395 testes; `npm test` com 29; também passaram typecheck, auditoria de arquitetura (407 arquivos TS/TSX, sem violações), auditoria de orçamento estático, build e `git diff --check`.

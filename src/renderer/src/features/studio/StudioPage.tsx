@@ -1,6 +1,5 @@
 import { studioElementSize } from '../../../../shared/studioSceneModel'
 import { isPoseSnapshotForModel } from '../../../../shared/characterSourceContinuity'
-import { recordStudioHistory, undoStudioHistory, redoStudioHistory } from '../../../../shared/studioHistory'
 import { useStudioInspectorState } from '../../characters/useStudioInspectorState'
 import { StudioSceneCanvas } from './StudioSceneCanvas'
 import { addStudioImageAsset } from './studioImageChanges'
@@ -25,12 +24,12 @@ import { SceneFaceCatalogPanel } from '../../characters/SceneFaceCatalogPanel'
 import { sceneFaceModeForElement } from '../../characters/sceneFaceMode'
 import { createDefaultSceneFaceTransform, resolveSceneFaceTransform, sceneFaceCatalogItemId, sceneFaceSheetKind } from '../../characters/sceneFaceSelection'
 import { useStudioStageInteraction } from './useStudioStageInteraction'
+import { useStudioHistory } from './useStudioHistory'
 import type { StudioAsset, StudioDocument, StudioElement, StudioFaceTransform, StudioFaceTransforms } from '../../../../shared/studio'
 import type { CustomizerCharacter } from '../../../../shared/customizer'
 import type { CustomizerFaceAppearance } from '../../../../shared/customizer'
 import type { FabricatorPoseSummary } from '../../../../shared/fabricator'
 type StudioCard = StudioDocument
-type StudioSnapshot = Pick<StudioDocument, 'backgroundColor' | 'backgroundAssetId' | 'backgroundX' | 'backgroundY' | 'backgroundWidth' | 'backgroundHeight' | 'backgroundRotation' | 'assets' | 'elements'>
 type Tool = 'background' | 'objects' | null
 
 const STORAGE_KEY = 'gacha-nymi-studio-catalog-v1'
@@ -145,12 +144,7 @@ export function StudioPage() {
   const [fullView, setFullView] = useState(false)
   const [saved, setSaved] = useState(true)
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null)
-  const [historyVersion, setHistoryVersion] = useState(0)
-  const [canUndo, setCanUndo] = useState(false)
-  const [canRedo, setCanRedo] = useState(false)
   const sceneRef = useRef<HTMLDivElement>(null)
-  const undoRef = useRef<StudioSnapshot[]>([])
-  const redoRef = useRef<StudioSnapshot[]>([])
   const studioFaceTransformsRef = useRef<Record<string, StudioFaceTransforms>>({})
   const expressionSaveSignatureRef = useRef<{ studioId: string; value: string } | null>(null)
   const normalizedStudioIdsRef = useRef(new Set<string>())
@@ -460,11 +454,6 @@ export function StudioPage() {
 
   useEffect(() => {
     if (!activeStudioId) return
-    undoRef.current = []
-    redoRef.current = []
-    setCanUndo(false)
-    setCanRedo(false)
-    setHistoryVersion((value) => value + 1)
     setSelectedElementId(null)
   }, [activeStudioId])
 
@@ -680,6 +669,10 @@ export function StudioPage() {
     markStudioUnsaved()
   }
 
+  const { historyVersion, canUndo, canRedo, recordHistory, undo, redo } = useStudioHistory({
+    activeStudio, activeStudioId, patchStudio
+  })
+
   const {
     renderFace: renderStudioFace,
     schedulePreview: scheduleStudioFacePreview,
@@ -690,44 +683,10 @@ export function StudioPage() {
     transformsRef: studioFaceTransformsRef, patchStudio, setError
   })
 
-  const recordHistory = (document = activeStudio) => {
-    if (!document) return
-    const history = recordStudioHistory({ undo: undoRef.current, redo: redoRef.current }, document)
-    undoRef.current = history.undo
-    redoRef.current = history.redo
-    setCanUndo(history.undo.length > 0)
-    setCanRedo(false)
-    setHistoryVersion(value => value + 1)
-  }
-
   const changeScene = (transform: (studio: StudioDocument) => StudioDocument) => {
     if (!activeStudio) return
     recordHistory()
     patchStudio(transform)
-  }
-
-  const undo = () => {
-    if (!activeStudio) return
-    const result = undoStudioHistory({ undo: undoRef.current, redo: redoRef.current }, activeStudio)
-    if (!result) return
-    undoRef.current = result.history.undo
-    redoRef.current = result.history.redo
-    patchStudio(() => result.document)
-    setCanUndo(result.history.undo.length > 0)
-    setCanRedo(true)
-    setHistoryVersion(value => value + 1)
-  }
-
-  const redo = () => {
-    if (!activeStudio) return
-    const result = redoStudioHistory({ undo: undoRef.current, redo: redoRef.current }, activeStudio)
-    if (!result) return
-    undoRef.current = result.history.undo
-    redoRef.current = result.history.redo
-    patchStudio(() => result.document)
-    setCanUndo(true)
-    setCanRedo(result.history.redo.length > 0)
-    setHistoryVersion(value => value + 1)
   }
 
   const importImage = (category: 'background' | 'object') => trackStudioOperation(async () => {
