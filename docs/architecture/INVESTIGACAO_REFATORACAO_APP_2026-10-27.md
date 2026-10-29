@@ -1638,3 +1638,15 @@ Continua a auditoria das operações IPC iniciadas pelo usuário e da cobertura 
 - `CustomizerHairWorkspace.tsx` agora apresenta essas subáreas a partir de dados, estado e callbacks explícitos. A página conecta o componente aos hooks existentes; seleção do personagem, catálogo, persistência, estados de carregamento e atualizações de cor continuam nos mesmos donos. A página diminuiu 104 linhas.
 - A estrutura visual, rótulos, ações, desativação dos controles sem personagem, paginação e cores por personagem foram preservados. Não mudaram IPC, contratos, persistência ou dados do usuário.
 - Um teste de arquitetura garante que a página compõe o workspace e que o novo componente não acessa IPC nem `localStorage`. Passaram os 529 testes principais e todas as suítes auxiliares de `npm run test:refactor`, 17 testes do Customizador, `npm run typecheck`, `npm run audit:architecture` (482 arquivos TS/TSX, sem violações), `npm run build` e `git diff --check`.
+
+## 120. Etapa aplicada — geometria das peças faciais isolada da tela
+
+- `FaceComponentsWorkspace.tsx` misturava seleção e estado com o cálculo visual de olhos, pupilas e lados espelhados. A mesma função definia recorte da pupila, transformações do olho, área arrastável e quais pixels de um par eram usados.
+- `facePartPreviewModel.ts` agora resolve essa geometria como um modelo puro e testável; `FacePartPreview.tsx` apresenta o modelo e conecta os mesmos eventos de arraste. Seleção, filas de gravação, IPC, catálogos e ordem das camadas permanecem na tela e nos módulos existentes. O workspace diminuiu 63 linhas.
+- Seis testes cobrem ausência de seleção, ativo direito próprio, fallback espelhado, máscara e escala da pupila e orientação da pupila direita; um teste verifica a delegação da tela. Não houve mudança nos dados, IDs, formatos ou contratos persistidos.
+
+## 121. Etapa aplicada — sobreposição de cabelo e rosto do Animador extraída
+
+- `AnimatorWorkspace.tsx` calculava junto à composição da tela a posição do cabelo e das peças faciais sobre a cabeça animada, incluindo seleção de variantes, fallback legado e ordem de desenho.
+- `animatorHeadOverlays.ts` agora reúne o cálculo geométrico e a resolução dos overlays. O Animador conserva o `useMemo` e fornece os projetos, personagem e catálogos carregados. A página diminuiu 48 linhas; não houve mudança na seleção dos assets, no contrato do personagem ou na persistência.
+- Seis testes cobrem escala/rotação da cabeça, camadas de cabelo, variantes do rosto, fallback para conjuntos legados, slot e ausência da cabeça. No total passaram os 541 testes principais e as suítes auxiliares de `npm run test:refactor`, além de `npm run test:fabricator:face-workspace` (40 testes), `npm run test:fabricator:visual` (23 testes), `npm run typecheck`, `npm run audit:architecture` (485 arquivos TS/TSX, sem violações), `npm run build` e `git diff --check`.

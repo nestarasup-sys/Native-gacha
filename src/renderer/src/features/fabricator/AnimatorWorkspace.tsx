@@ -3,7 +3,7 @@ import { interpolateFrames, shortestAngle } from './models/animationInterpolatio
 import { useModelSourceRefresh } from './models/useModelSourceRefresh'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, FormEvent, PointerEvent as ReactPointerEvent } from 'react'
-import { resolvePoseCategory, type AnimatorAnimation, type AnimatorAnimationAsset, type AnimatorAnimationDraft, type AnimatorFrame, type AnimatorAnimationSummary, type AnimatorFrameTransform, type FaceCatalogItem, type FaceElementKind, type FaceSet, type FaceSheetKind, type FabricatorProject, type FabricatorSlotSummary, type HairStyle, type JointLink, type PosePart, type WardrobeSet } from '../../../../shared/fabricator'
+import { resolvePoseCategory, type AnimatorAnimation, type AnimatorAnimationAsset, type AnimatorAnimationDraft, type AnimatorFrame, type AnimatorAnimationSummary, type AnimatorFrameTransform, type FaceCatalogItem, type FaceSet, type FabricatorProject, type FabricatorSlotSummary, type HairStyle, type JointLink, type PosePart, type WardrobeSet } from '../../../../shared/fabricator'
 import type { CustomizerCharacter, CustomizerWardrobeGroup } from '../../../../shared/customizer'
 import { Icon } from '../../ui/components/Icon'
 import { normalizeLayerOrder, orderedParts, partJointAnchor } from './models/rig'
@@ -27,10 +27,10 @@ import { isModelBodyPartName, tintModelBodyPixels } from '../../characters/skinT
 import { useModelAppearanceSettings, useModelAppearanceTarget, useModelPartAppearancePreview } from './ModelAppearanceContext'
 import { registerPendingWriteFlusher } from '../../ui/pendingPersistence'
 import { breathingVariations, createBreathingAnimation } from './models/animatorBreathingModel'
+import { buildAnimatorHeadOverlays } from './models/animatorHeadOverlays'
 
 const SLOT_COUNT = 12
 const HISTORY_LIMIT = 40
-const faceOrder: FaceElementKind[] = ['brow-left', 'brow-right', 'eye-left', 'eye-right', 'nose', 'mouth']
 const wardrobeCategories: Record<CustomizerWardrobeGroup['category'], string[]> = {
   camisa: ['camisa'], jaqueta: ['jaqueta'], 'manga-superior': ['manga-superior'], 'manga-inferior': ['manga-inferior'],
   luvas: ['luvas'], capa: ['capa'], cinto: ['cinto'], saia: ['saia'], 'saia-superior': ['saia'], 'saia-inferior': ['saia'],
@@ -39,19 +39,6 @@ const wardrobeCategories: Record<CustomizerWardrobeGroup['category'], string[]> 
 
 type Gesture = { pointerId: number; partId: string; startX: number; startY: number; lastAngle: number; rotationDelta: number; before: FrameHistoryState; pivotX: number; pivotY: number; scale: number; mode: 'rotate' | 'move' }
 type PanGesture = { pointerId: number; startX: number; startY: number; originX: number; originY: number }
-
-function mapHeadOverlay(sourceHead: PosePart, targetHead: PosePart, x: number, y: number, width: number, height: number, rotation: number, scaleX: number, scaleY: number, flipX = false) {
-  const localX = x / Math.max(1, sourceHead.width) * targetHead.width, localY = y / Math.max(1, sourceHead.height) * targetHead.height
-  const radians = targetHead.rotation * Math.PI / 180
-  return {
-    x: targetHead.x + targetHead.width / 2 + (localX - targetHead.width / 2) * Math.cos(radians) - (localY - targetHead.height / 2) * Math.sin(radians),
-    y: targetHead.y + targetHead.height / 2 + (localX - targetHead.width / 2) * Math.sin(radians) + (localY - targetHead.height / 2) * Math.cos(radians),
-    width: width * scaleX / Math.max(1, sourceHead.width) * targetHead.width,
-    height: height * scaleY / Math.max(1, sourceHead.height) * targetHead.height,
-    rotation: targetHead.rotation + rotation,
-    flipX
-  }
-}
 
 export function AnimatorWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
   const [models, setModels] = useState<FabricatorSlotSummary[]>([])
@@ -148,52 +135,16 @@ export function AnimatorWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
   const [faceSets, setFaceSets] = useState<Record<string, FaceSet>>({})
   const [faceItems, setFaceItems] = useState<Record<string, FaceCatalogItem>>({})
   const [tintedParts, setTintedParts] = useState<Record<string, string>>({})
-  const headOverlays = useMemo(() => {
-    if (!rigProject || !displayProject || !selectedCharacter) return []
-    const sourceHead = rigProject.parts.find((part) => /cabe[çc]a|head/i.test(part.name))
-    const targetHead = displayProject.parts.find((part) => /cabe[çc]a|head/i.test(part.name))
-    if (!sourceHead || !targetHead) return []
-    const result: Array<{ key: string; dataUrl: string; x: number; y: number; width: number; height: number; rotation: number; flipX: boolean; zIndex: number }> = []
-    const hair = selectedCharacter.customization.hairAppearance
-    if (hair?.modelSlot === rigProject.slot) {
-      const backId = 'backStyleId' in hair ? hair.backStyleId ?? null : hair.styleId ?? null
-      const frontId = 'frontStyleId' in hair ? hair.frontStyleId ?? null : hair.styleId ?? null
-      const backStyle = backId ? hairStyles[`${rigProject.slot}:${backId}`] : null
-      const frontStyle = frontId ? hairStyles[`${rigProject.slot}:${frontId}`] : null
-      for (const side of ['back', 'front'] as const) {
-        const asset = side === 'back' ? backStyle?.back : frontStyle?.front
-        const style = side === 'back' ? backStyle : frontStyle
-        if (!asset || !style) continue
-        const transform = style.transforms[side]
-        const placement = mapHeadOverlay(sourceHead, targetHead, transform.x, transform.y, asset.width, asset.height, transform.rotation, transform.scaleX, transform.scaleY, transform.flipX)
-        result.push({ key: `hair-${side}`, dataUrl: asset.dataUrl, ...placement, zIndex: side === 'back' ? 0 : (layerIndex.get(targetHead.id) ?? 0) * layerStride + layerStride - 1 })
-      }
-    }
-    const appearance = selectedCharacter.customization.faceAppearance
-    if (appearance?.modelSlot === rigProject.slot) {
-      const catalog: Partial<Record<FaceSheetKind, FaceCatalogItem>> = {
-        eyes: appearance.eyeCatalogId ? faceItems[`${rigProject.slot}:${appearance.eyeCatalogId}`] : undefined,
-        eyebrows: appearance.eyebrowCatalogId ? faceItems[`${rigProject.slot}:${appearance.eyebrowCatalogId}`] : undefined,
-        nose: appearance.noseCatalogId ? faceItems[`${rigProject.slot}:${appearance.noseCatalogId}`] : undefined,
-        'mouth-open': appearance.mouthOpenCatalogId ? faceItems[`${rigProject.slot}:${appearance.mouthOpenCatalogId}`] : undefined,
-        'mouth-closed': appearance.mouthClosedCatalogId ? faceItems[`${rigProject.slot}:${appearance.mouthClosedCatalogId}`] : undefined
-      }
-      const legacy = appearance.setId ? faceSets[`${rigProject.slot}:${appearance.setId}`] : null
-      for (const element of faceOrder) {
-        if (element.startsWith('brow') && !appearance.eyebrows) continue
-        const sheet: FaceSheetKind = element.startsWith('eye') ? 'eyes' : element.startsWith('brow') ? 'eyebrows' : element === 'nose' ? 'nose' : appearance.mouthOpen ? 'mouth-open' : 'mouth-closed'
-        const index = sheet === 'eyes' ? appearance.eyeState : sheet === 'nose' ? appearance.noseIndex : sheet.startsWith('mouth') ? appearance.expressionIndex : 0
-        const side = element.endsWith('left') ? 'left' : element.endsWith('right') ? 'right' : undefined
-        const item = catalog[sheet]
-        const piece = item?.pieces.find((candidate) => candidate.sheet === sheet && candidate.index === index && candidate.side === side) ?? legacy?.pieces.find((candidate) => candidate.sheet === sheet && candidate.index === index && candidate.side === side)
-        const transform = item?.transforms[element] ?? legacy?.transforms[element]
-        if (!piece || !transform) continue
-        const placement = mapHeadOverlay(sourceHead, targetHead, transform.x, transform.y, piece.width, piece.height, transform.rotation, transform.scaleX, transform.scaleY)
-        result.push({ key: `face-${element}`, dataUrl: piece.dataUrl, ...placement, zIndex: (layerIndex.get(targetHead.id) ?? 0) * layerStride + layerStride - 2 })
-      }
-    }
-    return result
-  }, [rigProject, displayProject, selectedCharacter, hairStyles, faceItems, faceSets, layerIndex, layerStride])
+  const headOverlays = useMemo(() => buildAnimatorHeadOverlays({
+    rigProject,
+    displayProject,
+    selectedCharacter,
+    hairStyles,
+    faceItems,
+    faceSets,
+    layerIndex,
+    layerStride
+  }), [rigProject, displayProject, selectedCharacter, hairStyles, faceItems, faceSets, layerIndex, layerStride])
   const garmentLayers = useMemo(() => {
     if (!rigProject || !displayProject || !selectedCharacter) return []
     const entries: Array<{ key: string; dataUrl: string; originX: number; originY: number; centerX: number; centerY: number; matrix: string; localLeft: number; localTop: number; width: number; height: number; rotation: number; groupX: number; groupY: number; groupScaleX: number; groupScaleY: number; groupRotation: number; opacity: number; zIndex: number }> = []

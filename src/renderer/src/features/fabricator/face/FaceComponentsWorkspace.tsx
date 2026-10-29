@@ -1,6 +1,5 @@
 import { projectForOriginalPreview } from '../../../../../shared/fabricatorModelViews'
 import { useModelSourceRefresh } from '../models/useModelSourceRefresh'
-import { pupilSourceMirrored } from '../../../../../shared/facePupilGeometry'
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties } from 'react'
 import type { FaceAssetKind, FaceCatalogItem, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSave, FaceComponentAssetSummary, FaceComponentKind, FaceDetailKind, FaceGuideProfile, FaceGuideSettings, FaceTransform, FabricatorProject, FabricatorSlotSummary, ModelPart } from '../../../../../shared/fabricator'
 import { Icon } from '../../../ui/components/Icon'
@@ -27,6 +26,7 @@ import { deriveFacePairTransformMetrics } from './facePairTransformModel'
 import { planEyeSeparation, planFacePairMove, planFacePairResize } from './facePairTransformEdits'
 import { alignFaceCatalogMouthPreviewTransform, faceCatalogImagesForImport, faceCatalogImagesForSave, faceCatalogItemForSave, planFaceCatalogOpacityEdit, planFaceCatalogTransformEdits, planFaceCatalogVariantEdit } from './faceCatalogEdits'
 import { useFacePreviewDrag } from './useFacePreviewDrag'
+import { FacePartPreview } from './FacePartPreview'
 
 type CatalogKind = 'nose' | 'mouth-closed' | 'mouth-open'
 type LibraryCategory = FaceComponentKind | FaceDetailKind | 'nose' | 'mouth'
@@ -776,85 +776,6 @@ export function FaceComponentsWorkspace({ mode, baseModelSlot }: { mode: FaceWor
     }
   }
 
-  function renderPart(id: PartId, mirror: boolean, overrides: Partial<Record<PartId, string>>) {
-    if (!head) return null
-    const category = partCategory(id)
-    const rightSide = id.endsWith('right')
-    const leftId = overrides[category.parts[0]] ?? selectedAssets[category.parts[0]]
-    const ownId = overrides[id] ?? selectedAssets[id]
-    const assetId = ownId ?? (rightSide && mirror && linked[category.kind] ? leftId : undefined)
-    const asset = assetId ? details[assetId] : undefined
-    const leftAsset = leftId ? details[leftId] : undefined
-    if (!asset) return null
-    // Linking edits must not silently substitute the LEFT pixels for an
-    // explicitly saved RIGHT asset. Presets DEV renders the saved ID itself.
-    const imageAsset = rightSide && mirror && linked[category.kind] && !ownId ? leftAsset ?? asset : asset
-    const openEyeId = rightSide ? selectedAssets['eye-right'] ?? selectedAssets['eye-left'] : selectedAssets['eye-left']
-    const openEye = category.kind === 'eye-closed' && openEyeId ? details[openEyeId] : undefined
-    const leftOpen = details[selectedAssets['eye-left'] ?? '']
-    const renderedOpenEye = openEye && rightSide && linked.eye && leftOpen
-      ? { ...openEye, width: leftOpen.width } : openEye
-    const transform = renderedOpenEye ? fitClosedEyeToOpen({ ...asset, width: imageAsset.width }, renderedOpenEye, head, rightSide) : asset.defaultTransform
-    const physicalRight = rightSide && asset.rightSidePositioned === true
-    const rightEyeId = selectedAssets['eye-right']
-    const leftEyeId = selectedAssets['eye-left']
-    const eyeAsset = category.kind === 'pupil' ? details[rightSide && rightEyeId ? rightEyeId : leftEyeId ?? ''] : undefined
-    const eyeTransform = eyeAsset?.defaultTransform
-    const pupilEyeImage = rightSide && linked.eye ? leftOpen ?? eyeAsset : eyeAsset
-    const eyeWidth = eyeAsset && pupilEyeImage ? pupilEyeImage.width * eyeTransform!.scaleX : head.width * .19
-    const eyeHeight = eyeAsset && pupilEyeImage ? pupilEyeImage.height * eyeTransform!.scaleY : head.height * .17
-    let localX = transform.x
-    let localY = transform.y
-    if (category.kind === 'pupil') {
-      const eyeX = eyeTransform?.x ?? head.width * .37
-      localX = (rightSide && (!rightEyeId || !eyeAsset?.rightSidePositioned) ? head.width - eyeX : eyeX) + (pupilSourceMirrored(rightSide?'right':'left',physicalRight) ? -transform.x : transform.x)
-      localY = (eyeTransform?.y ?? head.height * .46) + transform.y
-    }
-    const mirroredPosition = rightSide && !physicalRight && category.kind !== 'pupil'
-    const x = mirroredPosition ? head.width - localX : localX
-    const shouldFlip = Boolean(transform.flipX) !== (rightSide && !physicalRight && category.kind !== 'pupil')
-    const width = category.kind === 'pupil' ? eyeWidth * transform.scaleX : imageAsset.width * transform.scaleX
-    const height = category.kind === 'pupil' ? eyeHeight * transform.scaleY : imageAsset.height * transform.scaleY
-    const style: CSSProperties = { left: `${x / head.width * 100}%`, top: `${localY / head.height * 100}%`, width: `${width / head.width * 100}%`, height: `${height / head.height * 100}%`, transform: `translate(-50%,-50%) rotate(${transform.rotation * (mirroredPosition ? -1 : 1)}deg) scaleX(${shouldFlip ? -1 : 1})` }
-    const dragKey = `${id}:${assetId}`
-    const canDrag = dragKey === activePreviewKey && !openEye
-    if (category.kind === 'pupil' && eyeAsset && eyeTransform) {
-      const eyePartId = rightSide ? 'eye-right' : 'eye-left'
-      const selectedEyeId = overrides[eyePartId] ?? selectedAssets[eyePartId] ?? (rightSide ? selectedAssets['eye-left'] : undefined)
-      const sideEye = selectedEyeId ? details[selectedEyeId] : undefined
-      const maskImage = sideEye // match the saved Olhos DEV asset used by Presets DEV
-      if (sideEye && maskImage) {
-        const eyeTransform = sideEye.defaultTransform
-        const eyePhysicalRight = rightSide && sideEye.rightSidePositioned === true
-        const eyeMirrored = rightSide && !eyePhysicalRight
-        const eyeX = eyeMirrored ? head.width - eyeTransform.x : eyeTransform.x
-        const eyeRotation = eyeTransform.rotation * (eyeMirrored ? -1 : 1)
-        const eyeFlip = Boolean(eyeTransform.flipX) !== eyeMirrored
-        const maskStyle: CSSProperties = {
-          left: `${eyeX / head.width * 100}%`, top: `${eyeTransform.y / head.height * 100}%`,
-          width: `${maskImage.width * eyeTransform.scaleX / head.width * 100}%`,
-          height: `${maskImage.height * eyeTransform.scaleY / head.height * 100}%`,
-          transform: `translate(-50%,-50%) rotate(${eyeRotation}deg) scaleX(${eyeFlip ? -1 : 1})`,
-          maskImage: `url(${eyeMasks[maskImage.id] ?? maskImage.dataUrl})`, WebkitMaskImage: `url(${eyeMasks[maskImage.id] ?? maskImage.dataUrl})`
-        }
-        const pupilOffsetX = pupilSourceMirrored(rightSide?'right':'left',physicalRight) ? -transform.x : transform.x
-        const eyeFlipDirection = eyeFlip ? -1 : 1
-        const pupilRotation = transform.rotation * (rightSide && !physicalRight ? -1 : 1) * eyeFlipDirection
-        const pupilFlip = Boolean(transform.flipX) !== eyeFlip
-        const pupilStyle: CSSProperties = {
-          left: `${50 + pupilOffsetX / (eyeFlipDirection * eyeTransform.scaleX * maskImage.width) * 100}%`,
-          top: `${50 + transform.y / (eyeTransform.scaleY * maskImage.height) * 100}%`,
-          width: `${transform.scaleX * 100}%`, height: `${transform.scaleY * 100}%`,
-          transform: `translate(-50%,-50%) rotate(${pupilRotation}deg) scaleX(${pupilFlip ? -1 : 1})`
-        }
-        return <div key={`${id}-${assetId}`} className={`face-component-pupil-mask${canDrag ? ` face-component-pupil-mask-draggable${draggingPreview ? ' is-dragging' : ''}` : ''}`} style={maskStyle}>
-          <img className="face-component-pupil-image" src={imageAsset.dataUrl} alt={category.names[rightSide ? 1 : 0]} style={pupilStyle} draggable={false} title={canDrag ? 'Arraste a pupila dentro do olho' : undefined} onPointerDown={canDrag ? (event) => beginPreviewDrag(event, dragKey, pupilSourceMirrored(rightSide?'right':'left',physicalRight), true, eyeRotation) : undefined} onPointerMove={canDrag ? movePreviewDrag : undefined} onPointerUp={canDrag ? endPreviewDrag : undefined} onPointerCancel={canDrag ? endPreviewDrag : undefined} onLostPointerCapture={canDrag ? endPreviewDrag : undefined} />
-        </div>
-      }
-    }
-    return <img key={`${id}-${assetId}`} className={`face-component-layer${canDrag ? ` face-component-layer-draggable${draggingPreview ? ' is-dragging' : ''}` : ''}`} src={imageAsset.dataUrl} alt={category.names[rightSide ? 1 : 0]} style={style} draggable={false} title={canDrag ? 'Arraste para mover esta peça' : undefined} onPointerDown={canDrag ? (event) => beginPreviewDrag(event, dragKey, mirroredPosition || category.kind === 'pupil' && pupilSourceMirrored(rightSide?'right':'left',physicalRight), category.kind === 'pupil') : undefined} onPointerMove={canDrag ? movePreviewDrag : undefined} onPointerUp={canDrag ? endPreviewDrag : undefined} onPointerCancel={canDrag ? endPreviewDrag : undefined} onLostPointerCapture={canDrag ? endPreviewDrag : undefined} />
-  }
-
   const workspaceTitle = mode === 'eyes' ? 'Olhos Dev' : 'Rosto Dev'
   const workspaceAssetsCount = mode === 'eyes'
     ? assets.filter((asset) => categories.some((category) => category.kind === asset.kind)).length
@@ -893,7 +814,22 @@ export function FaceComponentsWorkspace({ mode, baseModelSlot }: { mode: FaceWor
             <img className="face-components-head" src={appearancePreviewForPart(head)} alt="Cabeça do modelo" />
             {mode === 'eyes' && (libraryCategory === 'eye-closed'
               ? ['eye-closed-left','eye-closed-right','brow-left','brow-right']
-              : ['eye-left','eye-right','pupil-left','pupil-right','brow-left','brow-right'] as PartId[]).map((id) => renderPart(id as PartId, true, selectedAssets))}
+              : ['eye-left','eye-right','pupil-left','pupil-right','brow-left','brow-right'] as PartId[]).map((id) => <FacePartPreview
+                key={id}
+                id={id as PartId}
+                mirror
+                overrides={selectedAssets}
+                selectedAssets={selectedAssets}
+                details={details}
+                linked={linked}
+                head={head}
+                eyeMasks={eyeMasks}
+                activePreviewKey={activePreviewKey}
+                dragging={draggingPreview}
+                onBeginDrag={beginPreviewDrag}
+                onMoveDrag={movePreviewDrag}
+                onEndDrag={endPreviewDrag}
+              />)}
             {mode === 'face' && nosePiece && noseStyle && <img className={`face-component-layer${libraryCategory === 'nose' ? ` face-component-layer-draggable${draggingPreview ? ' is-dragging' : ''}` : ''}`} src={nosePiece.dataUrl} alt="Nariz selecionado" style={noseStyle} draggable={false} title={libraryCategory === 'nose' ? 'Arraste para mover esta peça' : undefined} onPointerDown={libraryCategory === 'nose' && selectedNose ? (event) => beginPreviewDrag(event, `nose:${selectedNose.id}`) : undefined} onPointerMove={libraryCategory === 'nose' ? movePreviewDrag : undefined} onPointerUp={libraryCategory === 'nose' ? endPreviewDrag : undefined} onPointerCancel={libraryCategory === 'nose' ? endPreviewDrag : undefined} onLostPointerCapture={libraryCategory === 'nose' ? endPreviewDrag : undefined} />}
             {mode === 'face' && mouthPiece && mouthStyle && <img className={`face-component-layer${libraryCategory === 'mouth' ? ` face-component-layer-draggable${draggingPreview ? ' is-dragging' : ''}` : ''}`} src={mouthPiece.dataUrl} alt="Boca selecionada" style={mouthStyle} draggable={false} title={libraryCategory === 'mouth' ? 'Arraste para mover esta peça' : undefined} onPointerDown={libraryCategory === 'mouth' && selectedMouth ? (event) => beginPreviewDrag(event, `${selectedMouth.category}:${selectedMouth.id}`) : undefined} onPointerMove={libraryCategory === 'mouth' ? movePreviewDrag : undefined} onPointerUp={libraryCategory === 'mouth' ? endPreviewDrag : undefined} onPointerCancel={libraryCategory === 'mouth' ? endPreviewDrag : undefined} onLostPointerCapture={libraryCategory === 'mouth' ? endPreviewDrag : undefined} />}
             {previewFaceDetailLayers.map(({ kind, asset, style }) => {
