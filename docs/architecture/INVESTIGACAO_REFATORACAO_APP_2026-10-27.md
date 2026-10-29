@@ -2,6 +2,14 @@
 
 ## Reauditoria geral — 2026-10-29
 
+### Recoloração e política única de retenção
+
+- `characterImagePromiseCache` concentra LRU, orçamento estimado, atualização após conclusão e limpeza por identidade. O loader de origem e os três caches de recoloração usam a mesma política; os algoritmos de pixels e suas chaves foram preservados.
+- Pele: antes sem limite; agora 80 entradas/64 MiB estimados. Corpo: 80 entradas/64 MiB; cabelo: 40 entradas/64 MiB. Hits promovem a entrada na ordem LRU. Cada instância dos renderizadores continua independente.
+- A estimativa inclui chave, fonte PNG gerada quando diferente da chave e RGBA. Canvases dos workers usam width/height quando naturalWidth/naturalHeight não existem. Nenhuma imagem ou canvas evicto é limpo ou destruído enquanto consumidores podem segurá-lo.
+- Testes novos verificam canvas de worker, string PNG gerada, limite/reutilização da pele e evicção de resultados grandes nas três funções públicas de recoloração. Os testes anteriores de corrida/LRU do loader continuam passando. Esses testes de integração usam fallback de canvas sem contexto para isolar retenção; não certificam aparência visual ou algoritmos de pixels.
+- Validação: 81 testes Editor V6 aprovados (um ignorado existente), 330 de refatoração, typecheck, auditoria de arquitetura e build. Sem benchmark de RSS/GPU neste ciclo; a melhora comprovada é a retenção limitada por política, não uma porcentagem de redução do processo.
+
 ### Cache de imagens decodificadas
 
 - Os consumidores foram mapeados: Customizador/Studio/Roteiros/Fabricador usam uma instância; Editor V6 usa outra. Ambas mantêm o contrato Promise<HTMLImageElement> e sua independência.

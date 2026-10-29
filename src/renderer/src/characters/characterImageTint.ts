@@ -3,14 +3,15 @@ import type { ModelSkinContourStroke } from '../../../shared/fabricator'
 import { isValidSkinTone } from '../../../shared/skinTones'
 import { tintModelBodyPixels, tintSkinPixels } from './skinTint'
 import { createCharacterCanvas, isCharacterCanvasWorker } from './canvasSurface'
+import { createCharacterImagePromiseCache } from './characterImagePromiseCache'
 
 export type HairTintOptions = { preserveNearWhite?: boolean; allowNearWhiteRoles?: readonly HairColorRole[] }
 type CharacterImageLoader = (source: string | CanvasImageSource) => Promise<HTMLImageElement>
 
 export function createCharacterImageTint(loadCachedImage: CharacterImageLoader) {
-  const skinTintImageCache = new Map<string, Promise<HTMLImageElement>>()
-  const modelBodyTintImageCache = new Map<string, Promise<HTMLImageElement>>()
-  const hairTintImageCache = new Map<string, Promise<HTMLImageElement>>()
+  const skinTintImageCache = createCharacterImagePromiseCache({ maxEntries: 80, maxBytes: 64 * 1024 * 1024 })
+  const modelBodyTintImageCache = createCharacterImagePromiseCache({ maxEntries: 80, maxBytes: 64 * 1024 * 1024 })
+  const hairTintImageCache = createCharacterImagePromiseCache({ maxEntries: 40, maxBytes: 64 * 1024 * 1024 })
 
   function hairHue(red: number, green: number, blue: number): number {
     const maximum = Math.max(red, green, blue)
@@ -124,8 +125,6 @@ export function createCharacterImageTint(loadCachedImage: CharacterImageLoader) 
     })
     const tinted = createTinted()
     hairTintImageCache.set(key, tinted)
-    if (hairTintImageCache.size > 40) hairTintImageCache.delete(hairTintImageCache.keys().next().value!)
-    void tinted.catch(() => hairTintImageCache.delete(key))
     return tinted
   }
 
@@ -154,7 +153,6 @@ export function createCharacterImageTint(loadCachedImage: CharacterImageLoader) 
     })
     const tinted = createTinted()
     skinTintImageCache.set(key, tinted)
-    void tinted.catch(() => skinTintImageCache.delete(key))
     return tinted
   }
 
@@ -185,8 +183,6 @@ export function createCharacterImageTint(loadCachedImage: CharacterImageLoader) 
     })
     const tinted = createTinted()
     modelBodyTintImageCache.set(key, tinted)
-    if (modelBodyTintImageCache.size > 80) modelBodyTintImageCache.delete(modelBodyTintImageCache.keys().next().value!)
-    void tinted.catch(() => modelBodyTintImageCache.delete(key))
     return tinted
   }
 
