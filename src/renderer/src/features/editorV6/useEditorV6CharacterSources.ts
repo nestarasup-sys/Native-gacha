@@ -1,39 +1,18 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { CustomizerCharacter } from '../../../../shared/customizer'
-import type { FabricatorPoseSummary } from '../../../../shared/fabricator'
+import {
+  createEditorV6PoseRevisionSnapshot,
+  sameCustomizerCharacterCatalog,
+  samePoseRevisionSnapshot
+} from './editorV6CharacterSourceModel.ts'
+import type { PoseRevisionSnapshot } from './editorV6CharacterSourceModel.ts'
 
-type PoseRevisionSnapshot = { projectId: string; revisions: Record<string, string> }
-type PoseCatalog = { modelSlot: number; poses: FabricatorPoseSummary[] }
-
-export const editorV6PoseRevisionKey = (modelSlot: number, poseSlot: number) => `${modelSlot}:${poseSlot}`
-
-export function sameCustomizerCharacterCatalog(left: CustomizerCharacter[], right: CustomizerCharacter[]): boolean {
-  return left.length === right.length && left.every((character, index) => {
-    const candidate = right[index]
-    if (!candidate) return false
-    return candidate.id === character.id
-      && candidate.updatedAt === character.updatedAt
-      && candidate.name === character.name
-      && (candidate.customization.modelSlot ?? 1) === (character.customization.modelSlot ?? 1)
-      && JSON.stringify(candidate.customization) === JSON.stringify(character.customization)
-  })
-}
-
-export function samePoseRevisionSnapshot(left: Record<string, string>, right: Record<string, string>): boolean {
-  const keys = Object.keys(left)
-  return keys.length === Object.keys(right).length && keys.every((key) => left[key] === right[key])
-}
-
-export function createEditorV6PoseRevisionSnapshot(catalogs: PoseCatalog[]): Record<string, string> {
-  const revisions: Record<string, string> = {}
-  for (const { modelSlot, poses } of catalogs) {
-    poses.forEach((pose, index) => {
-      const slot = pose?.slot ?? index + 1
-      revisions[editorV6PoseRevisionKey(modelSlot, slot)] = pose?.updatedAt ?? 'missing'
-    })
-  }
-  return revisions
-}
+export {
+  createEditorV6PoseRevisionSnapshot,
+  editorV6PoseRevisionKey,
+  sameCustomizerCharacterCatalog,
+  samePoseRevisionSnapshot
+} from './editorV6CharacterSourceModel.ts'
 
 /** Loads the live character catalog and tracks the pose revisions used by this project. */
 export function useEditorV6CharacterSources(projectId: string | null, reportError: (message: string) => void) {

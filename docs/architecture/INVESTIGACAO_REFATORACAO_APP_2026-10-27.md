@@ -1412,3 +1412,12 @@ Continua a auditoria das operações IPC iniciadas pelo usuário e da cobertura 
 - Não houve mudança de IPC, schema, formato de asset ou destino dos arquivos. O plano tornou validações geométricas anteriores à primeira gravação, evitando gravar uma parte da folha antes de descobrir que outra peça excederia o limite de escala.
 - `FaceComponentsWorkspace.tsx` passou de 1.130 para 1.049 linhas. Dois testes novos verificam planos de geometria/pareamento e gravação em lote; junto dos testes do worker, os 13 casos focados passaram. `npm run test:refactor` passou com 478 testes principais e mais 14 casos das suítes específicas executadas em sequência; os novos testes estão incluídos na suíte principal.
 - Verificação: `npm run typecheck`, `npm run build`, `npm run audit:architecture` (450 arquivos TS/TSX, sem dependências entre features nem violações), validação do `package.json` e `git diff --check` passaram.
+
+## 89. Etapa aplicada — atualização das fontes de personagem isolada do Editor V6
+
+- `EditorV6Page.tsx` decidia inline se os personagens da cena e dos estados da timeline estavam com as poses e imagens faciais atualizadas. Essa decisão controla a preparação de movimento e a disponibilidade da exportação, mas misturava regra derivada de domínio à composição da página.
+- `editorV6CharacterSourceModel.ts` agora reúne os estados de personagem do projeto e resolve quando a revisão da pose, a versão do renderizador facial ou a data de atualização do personagem exige renovar a imagem em cache. O cálculo é puro e não depende de React, IPC ou filesystem.
+- `useEditorV6CharacterSources.ts` continua responsável por carregar o catálogo vivo e as revisões do Fabricador; os helpers antes exportados por esse hook são reexportados do novo modelo para preservar os importadores existentes. A página usa o resultado do seletor para manter o mesmo bloqueio de preparação/exportação.
+- Não houve alteração no projeto salvo, nos IDs, na persistência, nos contratos IPC ou nas regras de atualização já existentes.
+- Três testes sintéticos cobrem revisões atuais e desatualizadas na cena e timeline, snapshot ainda ausente, renderizador antigo, personagem removido e projeto vazio. A suíte focada `tests/editor-v6-data-sources.test.mjs` passou com 10 testes.
+- Verificação integrada: os 10 testes focados e `npm run test:refactor` passaram; também passaram `npm run typecheck`, `npm run build`, `npm run audit:architecture` (451 arquivos TS/TSX, sem violações) e `git diff --check`.

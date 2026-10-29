@@ -36,6 +36,7 @@ import { createSceneTextElement, sceneCatalogColor, sceneEditorTools } from '../
 import { recordEditorV6PlaybackFrame, recordUiCommit } from '../../ui/performanceDiagnostics'
 import { useEditorV6DocumentPersistence } from './useEditorV6DocumentPersistence'
 import { editorV6PoseRevisionKey, useEditorV6CharacterSources } from './useEditorV6CharacterSources'
+import { resolveEditorV6CharacterSourceRefresh } from './editorV6CharacterSourceModel'
 import { useEditorV6ProjectLibrary } from './useEditorV6ProjectLibrary'
 import { fitEditorV6CharacterToStage } from '../../../../shared/editorV6CharacterGeometry'
 import { editorV6ProjectSummary, type EditorV6Asset, type EditorV6Document, type EditorV6Element, type EditorV6FaceTransform, type EditorV6FaceTransforms, type EditorV6ProjectSummary, type EditorV6TimelineBlock } from '../../../../shared/editorV6'
@@ -141,25 +142,12 @@ export function EditorV6Page() {
     writeDocument: writeEditorV6Document,
     createTimeline: createEditorV6Timeline
   })
-  const activeCharacterStates = useMemo(() => activeEditorV6 ? [
-    ...activeEditorV6.elements,
-    ...activeEditorV6.timeline.tracks.flatMap((track) => track.blocks.flatMap((block) => block.state ? [block.state] : []))
-  ] : [], [activeEditorV6])
-  const poseRefreshRequired = useMemo(() => activeCharacterStates.some((state) => {
-    if (state.kind !== 'character' || !state.characterId) return false
-    const character = availableCharacterById.get(state.characterId)
-    if (!character) return false
-    const poseSlot = state.poseSlot === undefined ? character.customization.poseSlot : state.poseSlot
-    if (typeof poseSlot !== 'number') return false
-    if (!activePoseSourceSnapshot) return true
-    return state.poseSourceRevision !== (activePoseSourceSnapshot.revisions[editorV6PoseRevisionKey(character.customization.modelSlot ?? 1, poseSlot)] ?? 'missing')
-  }), [activeCharacterStates, availableCharacterById, activePoseSourceSnapshot])
-  const faceAssetRefreshRequired = useMemo(() => Boolean(activeEditorV6 && (poseRefreshRequired || activeCharacterStates.some((state) => {
-    if (state.kind !== 'character') return false
-    const character = availableCharacterById.get(state.characterId ?? '')
-    return state.faceRendererVersion !== EDITOR_V6_FACE_RENDER_VERSION
-      || Boolean(character && state.characterSourceUpdatedAt !== character.updatedAt)
-  }))), [activeEditorV6, poseRefreshRequired, activeCharacterStates, availableCharacterById])
+  const { faceAssetRefreshRequired } = useMemo(() => resolveEditorV6CharacterSourceRefresh({
+    project: activeEditorV6,
+    characterById: availableCharacterById,
+    poseSourceSnapshot: activePoseSourceSnapshot,
+    faceRendererVersion: EDITOR_V6_FACE_RENDER_VERSION
+  }), [activeEditorV6, availableCharacterById, activePoseSourceSnapshot])
   useMotionPreparation(activeEditorV6, availableCharacters,
     saved && !isPlaying && !motionExportBusy && !faceAssetRefreshRequired
     && activePoseSourceSnapshot?.projectId === activeEditorV6Id)

@@ -7,6 +7,7 @@ import {
   sameCustomizerCharacterCatalog,
   samePoseRevisionSnapshot
 } from '../src/renderer/src/features/editorV6/useEditorV6CharacterSources.ts'
+import { resolveEditorV6CharacterSourceRefresh } from '../src/renderer/src/features/editorV6/editorV6CharacterSourceModel.ts'
 import { loadEditorV6PoseThumbnails } from '../src/renderer/src/features/editorV6/editorV6PoseCatalog.ts'
 
 const validId = (value) => `00000000-0000-4000-8000-${String(value).padStart(12, '0')}`
@@ -101,6 +102,87 @@ test('compara revisões e catálogos sem trocar referências se os dados não mu
   assert.equal(samePoseRevisionSnapshot(revisions, { ...revisions, '2:4': 'pose-v3' }), false)
 })
 
+test('decide refresh com revisões atuais e states de personagens nos blocos da timeline', () => {
+  const character = {
+    id: 'character', name: 'Chloe', updatedAt: 'character-v2',
+    customization: { modelSlot: 2, poseSlot: 4 }
+  }
+  const project = {
+    id: 'project',
+    elements: [{
+      id: 'scene-character', kind: 'character', characterId: 'character',
+      poseSourceRevision: 'pose-v2', characterSourceUpdatedAt: 'character-v2', faceRendererVersion: 8
+    }],
+    timeline: { tracks: [{ blocks: [{ state: {
+      id: 'timeline-character', kind: 'character', characterId: 'character', poseSlot: 5,
+      poseSourceRevision: 'pose-v1', characterSourceUpdatedAt: 'character-v2', faceRendererVersion: 8
+    } }] }] }
+  }
+  const input = {
+    project,
+    characterById: new Map([[character.id, character]]),
+    poseSourceSnapshot: { projectId: 'project', revisions: { '2:4': 'pose-v2', '2:5': 'pose-v1' } },
+    faceRendererVersion: 8
+  }
+
+  const state = resolveEditorV6CharacterSourceRefresh(input)
+  assert.equal(state.characterStates.length, 2)
+  assert.equal(state.poseRefreshRequired, false)
+  assert.equal(state.faceAssetRefreshRequired, false)
+
+  const changedTimelineRevision = resolveEditorV6CharacterSourceRefresh({
+    ...input,
+    poseSourceSnapshot: { ...input.poseSourceSnapshot, revisions: { ...input.poseSourceSnapshot.revisions, '2:5': 'pose-v2' } }
+  })
+  assert.equal(changedTimelineRevision.poseRefreshRequired, true)
+  assert.equal(changedTimelineRevision.faceAssetRefreshRequired, true)
+})
+
+test('mantém refresh pendente enquanto o snapshot de pose não chegou e detecta renderer antigo', () => {
+  const character = { id: 'character', updatedAt: 'character-v2', customization: { modelSlot: 3, poseSlot: 7 } }
+  const characterState = {
+    id: 'scene-character', kind: 'character', characterId: 'character',
+    poseSourceRevision: 'missing', characterSourceUpdatedAt: 'character-v2', faceRendererVersion: 8
+  }
+  const base = {
+    project: { id: 'project', elements: [characterState], timeline: { tracks: [] } },
+    characterById: new Map([[character.id, character]]),
+    poseSourceSnapshot: null,
+    faceRendererVersion: 8
+  }
+
+  assert.equal(resolveEditorV6CharacterSourceRefresh(base).poseRefreshRequired, true)
+  assert.equal(resolveEditorV6CharacterSourceRefresh(base).faceAssetRefreshRequired, true)
+
+  const oldRenderer = resolveEditorV6CharacterSourceRefresh({
+    ...base,
+    poseSourceSnapshot: { projectId: 'project', revisions: { '3:7': 'missing' } },
+    project: { ...base.project, elements: [{ ...characterState, faceRendererVersion: 7 }] }
+  })
+  assert.equal(oldRenderer.poseRefreshRequired, false)
+  assert.equal(oldRenderer.faceAssetRefreshRequired, true)
+})
+
+test('não bloqueia personagens sem fonte viva e devolve estado vazio sem projeto', () => {
+  const missingCharacter = {
+    id: 'scene-character', kind: 'character', characterId: 'removed-character',
+    poseSlot: 3, characterSourceUpdatedAt: 'old', faceRendererVersion: 8
+  }
+  const input = {
+    project: { id: 'project', elements: [missingCharacter], timeline: { tracks: [] } },
+    characterById: new Map(),
+    poseSourceSnapshot: null,
+    faceRendererVersion: 8
+  }
+
+  assert.deepEqual(resolveEditorV6CharacterSourceRefresh(input), {
+    characterStates: [missingCharacter], poseRefreshRequired: false, faceAssetRefreshRequired: false
+  })
+  assert.deepEqual(resolveEditorV6CharacterSourceRefresh({ ...input, project: null }), {
+    characterStates: [], poseRefreshRequired: false, faceAssetRefreshRequired: false
+  })
+})
+
 test('catálogo de poses limita leituras, conserva ordem e rejeita snapshots incompatíveis', async () => {
   const poses = Array.from({ length: 8 }, (_, index) => ({
     slot: index + 1,
@@ -168,16 +250,20 @@ test('catálogo de poses cancelado não inicia leituras', async () => {
   assert.equal(loads, 0)
 })
 
-test('página delega biblioteca e fontes de personagem aos hooks da feature', async () => {
-  const [page, projectHook, characterHook] = await Promise.all([
+test('página delega biblioteca e frescor da fonte de personagem a módulos da feature', async () => {
+  const [page, projectHook, characterHook, sourceModel] = await Promise.all([
     readFile('src/renderer/src/features/editorV6/EditorV6Page.tsx', 'utf8'),
     readFile('src/renderer/src/features/editorV6/useEditorV6ProjectLibrary.ts', 'utf8'),
-    readFile('src/renderer/src/features/editorV6/useEditorV6CharacterSources.ts', 'utf8')
+    readFile('src/renderer/src/features/editorV6/useEditorV6CharacterSources.ts', 'utf8'),
+    readFile('src/renderer/src/features/editorV6/editorV6CharacterSourceModel.ts', 'utf8')
   ])
   assert.match(page, /useEditorV6ProjectLibrary\(/)
   assert.match(page, /useEditorV6CharacterSources\(/)
+  assert.match(page, /resolveEditorV6CharacterSourceRefresh\(/)
+  assert.doesNotMatch(page, /const activeCharacterStates|const poseRefreshRequired/)
   assert.doesNotMatch(page, /window\.desktop\.customizer\.listCustomizerCharacters\(|window\.desktop\.editorV6\.listEditorV6Projects\(|window\.desktop\.editorV6\.loadEditorV6Project\(activeEditorV6Id\)/)
   assert.match(projectHook, /activeLoadGenerationRef/)
   assert.match(characterHook, /fabricator:assets-updated/)
   assert.match(characterHook, /addEventListener\('visibilitychange'/)
+  assert.doesNotMatch(sourceModel, /window\.desktop|useEffect|useMemo/)
 })
