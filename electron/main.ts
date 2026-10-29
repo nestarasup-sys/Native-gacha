@@ -25,6 +25,7 @@ import { DataMigrationService } from './dataMigration.cjs'
 import { DataBackupService } from './dataBackups.cjs'
 import { registerDataMigrationHandlers } from './domains/storage/dataMigrationIpc'
 import { registerDataBackupHandlers } from './domains/storage/dataBackupIpc'
+import { registerPendingPersistenceFlushIpc } from './domains/storage/pendingPersistenceIpc'
 import { createKeyedOperationQueue } from './domains/storage/keyedOperationQueue'
 import { configureAssetImageStorage, readAssetImage, writeAssetImageSource } from './assetImageOverrides'
 import { migrateElectronProfile } from './electronProfileMigration.cjs'
@@ -78,7 +79,6 @@ import { createStudioPaths } from './domains/studio/paths'
 import { registerStudioFileHandlers } from './domains/studio/fileIpc'
 import { createStudioLibraryIndex } from './domains/studio/libraryIndex'
 import { createStudioDocumentPersistence } from './domains/studio/documentPersistence'
-import { studioIpcChannels } from '../src/shared/studioIpcChannels'
 import type { AssetNamespace } from './domains/fabricator/versionedAssetResolver'
 import { inspectFabricatorStorage } from '../src/shared/fabricatorStorageCompatibility'
 import { registerModelSourceDownloadHandlers } from './domains/fabricator/modelSourceExportIpc'
@@ -742,13 +742,16 @@ async function flushPendingPersistenceWrites(): Promise<void> {
 }
 
 async function registerFabricatorHandlers(): Promise<void> {
-  ipcMain.handle(studioIpcChannels.flushPendingWrites, async (event): Promise<void> => {
-    assertTrustedSender(event)
-    const owner = BrowserWindow.fromWebContents(event.sender)
-    if (owner && !owner.isDestroyed() && !owner.webContents.isLoading()) {
-      await owner.webContents.executeJavaScript('window.__flushPendingRendererWrites()')
-    }
-    await flushPendingPersistenceWrites()
+  registerPendingPersistenceFlushIpc({
+    ipcMain,
+    assertTrustedSender,
+    flushRendererWrites: async (event) => {
+      const owner = BrowserWindow.fromWebContents(event.sender)
+      if (owner && !owner.isDestroyed() && !owner.webContents.isLoading()) {
+        await owner.webContents.executeJavaScript('window.__flushPendingRendererWrites()')
+      }
+    },
+    flushMainWrites: flushPendingPersistenceWrites
   })
 
   registerStudioPrimaryHandlers({

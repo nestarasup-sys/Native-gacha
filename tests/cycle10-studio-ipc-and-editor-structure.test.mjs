@@ -148,16 +148,18 @@ test('invocador Studio respeita a correspondência de métodos e argumentos',asy
   ])
 })
 test('preload e handlers do Studio não duplicam strings IPC fora do contrato',async()=>{
-  const [preload,main,domain,fileDomain,editorFileDomain]=await Promise.all([
+  const [preload,main,flushIpc,domain,fileDomain,editorFileDomain]=await Promise.all([
     readFile('electron/preload.ts','utf8'),
     readFile('electron/main.ts','utf8'),
+    readFile('electron/domains/storage/pendingPersistenceIpc.ts','utf8'),
     readFile('electron/domains/studio/primaryIpc.ts','utf8'),
     readFile('electron/domains/studio/fileIpc.ts','utf8'),
     readFile('electron/domains/editorV6/fileIpc.ts','utf8')
   ])
   assert.match(preload,/createStudioInvoker/)
   assert.match(preload,/invokeStudio\('saveStudio'/)
-  assert.match(main,/studioIpcChannels\.flushPendingWrites/)
+  assert.match(main,/registerPendingPersistenceFlushIpc\(/)
+  assert.match(flushIpc,/studioIpcChannels\.flushPendingWrites/)
   assert.match(domain,/studioIpcChannels\.deleteStudio/)
   assert.match(domain,/studioIpcChannels\.saveStudio/)
   assert.match(domain,/studioIpcChannels\.listStudios/)

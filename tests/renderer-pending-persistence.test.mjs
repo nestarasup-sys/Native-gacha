@@ -190,14 +190,15 @@ test('Roteiros flushes the latest snapshot and waits for document IPC writes', a
 
 test('main flushes renderer writes before its IPC inventory and navigation waits for renderer flush', async () => {
   const main = await readFile('electron/main.ts', 'utf8')
+  const flushIpc = await readFile('electron/domains/storage/pendingPersistenceIpc.ts', 'utf8')
   const topBar = await readFile('src/renderer/src/ui/components/TopBar.tsx', 'utf8')
   const fabricatorPage = await readFile('src/renderer/src/features/fabricator/FabricatorPage.tsx', 'utf8')
-  const handlerStart = main.indexOf("ipcMain.handle(studioIpcChannels.flushPendingWrites")
-  const handlerEnd = main.indexOf('\n  })', handlerStart)
-  const handler = main.slice(handlerStart, handlerEnd)
 
-  assert.ok(handlerStart >= 0 && handlerEnd > handlerStart, 'main deve registrar o flush IPC')
-  assert.ok(handler.indexOf('window.__flushPendingRendererWrites()') < handler.indexOf('flushPendingPersistenceWrites()'), 'renderer deve drenar os timers antes do inventário principal')
+  assert.match(main, /registerPendingPersistenceFlushIpc\(/, 'main deve compor o registro do flush IPC')
+  assert.match(main, /flushRendererWrites: async \(event\) => \{[\s\S]*?window\.__flushPendingRendererWrites\(\)/)
+  assert.match(main, /flushMainWrites: flushPendingPersistenceWrites/)
+  assert.match(flushIpc, /ipcMain\.handle\(studioIpcChannels\.flushPendingWrites/)
+  assert.match(flushIpc, /await flushRendererWrites\(event\)[\s\S]*?await flushMainWrites\(\)/, 'renderer deve drenar os timers antes do inventário principal')
   assert.match(topBar, /flushPendingRendererWrites\(\)\.then\(\(\) =>[\s\S]*?navigate\(path\)/)
   assert.match(fabricatorPage, /flushPendingRendererWrites\(\)\.then\(\(\) =>[\s\S]*?setActiveSection\(section\.id\)/)
 })
