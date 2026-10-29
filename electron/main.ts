@@ -1,9 +1,9 @@
 import { createEditorV6Paths } from './domains/editorV6/paths'
 import { registerMediaProtocols } from './mediaProtocols'
 import { app, BrowserWindow, dialog, ipcMain, Menu, protocol, session, shell, type IpcMainInvokeEvent } from 'electron'
-import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync } from 'node:fs'
+import { existsSync } from 'node:fs'
 import { mkdir as nativeMkdir, readFile as nativeReadFile, writeFile as nativeWriteFile, readdir as nativeReaddir, unlink as nativeUnlink, rename as nativeRename, stat as nativeStat, access as nativeAccess, rm as nativeRm, copyFile as nativeCopyFile } from 'node:fs/promises'
-import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { FABRICATOR_MODEL_SLOT_COUNT, FABRICATOR_POSE_SLOT_COUNT, type FaceExpressionPreset, type FabricatorPoseDraftSave, type FabricatorPoseSave, type FabricatorProjectSave, type ModelPart } from '../src/shared/fabricator'
@@ -28,7 +28,6 @@ import { registerDataBackupHandlers } from './domains/storage/dataBackupIpc'
 import { registerPendingPersistenceFlushIpc } from './domains/storage/pendingPersistenceIpc'
 import { createKeyedOperationQueue } from './domains/storage/keyedOperationQueue'
 import { configureAssetImageStorage, readAssetImage, writeAssetImageSource } from './assetImageOverrides'
-import { migrateElectronProfile } from './electronProfileMigration.cjs'
 import { normalizeImageBuffer } from './imageIngestion.cjs'
 import { measureIpc } from './ipcPerformance'
 import { restrictRendererNavigation } from './windowNavigation'
@@ -90,6 +89,7 @@ import { createVideoReferenceChangeCoordinator, createVideoReferenceGuard } from
 import { createRoteirosVideoReferenceLookup } from './domains/roteiros/videoReferences'
 import { createRoteirosWriteQueue } from './domains/roteiros/writeQueue'
 import { registerRoteirosIpc, type RoteirosIpcLifecycle } from './application/registerRoteirosIpc'
+import { configureDevAiDataRoot, configureLocalAppDataRoot } from './application/appDataBootstrap'
 import { createEditorV6VideoReferenceLookup } from './domains/editorV6/videoReferences'
 
 let configuredAppDataRoot: string | null = null
@@ -103,144 +103,8 @@ function runDataMaintenance<T>(operation: () => Promise<T>): Promise<T> {
 const waitForRoteirosWrites = roteirosWriteQueue.waitForPendingWrites
 const enqueueRoteirosWrite = roteirosWriteQueue.enqueue
 
-function configureDevAiDataRoot(): void {
-  const privateCopyTest = process.env.GACHA_DEV_AI_PRIVATE_TEST === '1'
-  if (privateCopyTest && process.env.GACHA_DEV_AI_TEST !== '1') {
-    throw new Error('O modo privado DEV AI exige o runner local isolado.')
-  }
-  if (process.env.GACHA_DEV_AI_TEST !== '1') return
-  if (app.isPackaged || app.isReady()) throw new Error('DEV AI IPC só pode configurar o root antes do boot em build de desenvolvimento.')
-  const requestedSandbox = process.env.GACHA_DEV_AI_SANDBOX
-  if (!requestedSandbox || !resolve(requestedSandbox)) throw new Error('Root sintético DEV AI ausente.')
-
-  if (privateCopyTest) {
-    const privateRoot = resolve(process.env.GACHA_DEV_AI_PRIVATE_ROOT ?? '')
-    const allowedRoot = resolve(process.env.GACHA_DEV_AI_PRIVATE_ALLOWED_ROOT ?? '')
-    const sandbox = resolve(requestedSandbox)
-    const userData = join(privateRoot, 'userData')
-    const markerPath = join(privateRoot, 'private-copy-marker.json')
-    const relativePrivate = relative(allowedRoot, privateRoot)
-    const relativeSandbox = relative(privateRoot, sandbox)
-    const isWithin = (root: string, path: string): boolean => {
-      const pathRelative = relative(root, path)
-      return !!pathRelative && pathRelative !== '..' && !pathRelative.startsWith(`..${sep}`)
-    }
-    const sameCanonicalPath = (left: string, right: string): boolean => process.platform === 'win32'
-      ? left.toLowerCase() === right.toLowerCase()
-      : left === right
-    if (!relativePrivate || !isWithin(allowedRoot, privateRoot) || relativeSandbox !== 'userData'
-      || !sameCanonicalPath(sandbox, userData)) {
-      throw new Error('Cópia privada DEV AI fora da raiz local autorizada.')
-    }
-    const marker = existsSync(markerPath) ? JSON.parse(readFileSync(markerPath, 'utf8')) as {
-      schemaVersion?: number; privateDataCopy?: boolean; verifiedSha256?: boolean; sourceBackup?: string; copyMode?: string
-    } : null
-    const sourceBackup = marker?.sourceBackup ? resolve(marker.sourceBackup) : ''
-    const backupManifest = sourceBackup ? join(sourceBackup, 'backup-manifest.json') : ''
-    if (marker?.schemaVersion !== 1 || marker.privateDataCopy !== true || marker.verifiedSha256 !== true
-      || !['baseline', 'wardrobe-reset'].includes(marker.copyMode ?? '')
-      || !isWithin(allowedRoot, sourceBackup) || sourceBackup.toLowerCase() === privateRoot.toLowerCase()
-      || !existsSync(backupManifest) || !existsSync(sandbox)) {
-      throw new Error('Cópia privada DEV AI sem backup local validado.')
-    }
-    for (const path of [allowedRoot, privateRoot, markerPath, sourceBackup, backupManifest, sandbox]) {
-      if (!existsSync(path) || lstatSync(path).isSymbolicLink() || !sameCanonicalPath(realpathSync(path), path)) {
-        throw new Error('Path não canônico ou symlink recusado no teste privado.')
-      }
-    }
-    const sessionData = join(privateRoot, 'session-data')
-    mkdirSync(sessionData, { recursive: true })
-    if (lstatSync(sessionData).isSymbolicLink() || !sameCanonicalPath(realpathSync(sessionData), sessionData)) {
-      throw new Error('Diretório de sessão privado inválido.')
-    }
-    // appData deve conter userData: requisito da migração segura e dos backups.
-    app.setPath('appData', privateRoot)
-    app.setPath('userData', userData)
-    app.setPath('sessionData', sessionData)
-    return
-  }
-
-  const repoRoot = resolve(__dirname, '../..')
-  const runsRoot = resolve(repoRoot, 'out', 'dev-ai', 'runs')
-  const sandbox = resolve(requestedSandbox)
-  const runRoot = dirname(sandbox)
-  const relativeRun = relative(runsRoot, runRoot)
-  if (!relativeRun || relativeRun === '..' || relativeRun.startsWith(`..${sep}`) || relativeRun.includes(sep)
-    || basename(sandbox) !== 'sandbox' || !existsSync(sandbox)) {
-    throw new Error('Root sintético DEV AI fora do diretório autorizado.')
-  }
-
-  const sameCanonicalPath = (left: string, right: string): boolean => process.platform === 'win32'
-    ? left.toLowerCase() === right.toLowerCase()
-    : left === right
-  for (const path of [resolve(repoRoot, 'out'), resolve(repoRoot, 'out', 'dev-ai'), runsRoot, runRoot, sandbox]) {
-    if (!existsSync(path) || lstatSync(path).isSymbolicLink() || !sameCanonicalPath(realpathSync(path), path)) {
-      throw new Error('Root sintético DEV AI ausente, não canônico ou ligado por symlink.')
-    }
-  }
-  const markerPath = join(runRoot, '.dev-ai-sandbox.json')
-  if (!existsSync(markerPath) || lstatSync(markerPath).isSymbolicLink() || !sameCanonicalPath(realpathSync(markerPath), markerPath)) {
-    throw new Error('Marcador do sandbox DEV AI ausente ou inválido.')
-  }
-  const marker = JSON.parse(readFileSync(markerPath, 'utf8')) as { schemaVersion?: number; runId?: string; syntheticOnly?: boolean }
-  if (marker.schemaVersion !== 1 || marker.runId !== basename(runRoot) || marker.syntheticOnly !== true) {
-    throw new Error('Marcador do sandbox DEV AI não identifica uma execução sintética válida.')
-  }
-
-  const userData = join(sandbox, 'electron-user-data')
-  const sessionData = join(sandbox, 'electron-session-data')
-  mkdirSync(userData, { recursive: true })
-  mkdirSync(sessionData, { recursive: true })
-  // O appData nativo aponta ao perfil Windows real; neste teste deve ser o
-  // sandbox previamente autenticado pelo marcador. Mantém a regra within().
-  app.setPath('appData', sandbox)
-  app.setPath('userData', userData)
-  app.setPath('sessionData', sessionData)
-}
-
-configureDevAiDataRoot()
-
-function configureLocalAppDataRoot(): string | null {
-  if (process.env.GACHA_DEV_AI_TEST === '1') return null
-
-  const stressRoot = process.env.GACHA_VIDEO_STRESS_OFFSCREEN === '1'
-    ? process.env.GACHA_EDITOR_V6_STRESS_DATA_ROOT
-    : undefined
-  if (process.env.GACHA_VIDEO_STRESS_OFFSCREEN === '1' && (!stressRoot || !isAbsolute(stressRoot))) {
-    throw new Error('O teste offscreen precisa de um perfil temporário absoluto; o perfil normal foi protegido.')
-  }
-  const defaultRoot = stressRoot ?? (app.isPackaged
-    ? join(dirname(process.execPath), 'app-data')
-    : join(app.getAppPath(), 'app-data'))
-  const dataRoot = resolve(defaultRoot)
-  const legacyUserData = join(dataRoot, 'user-data')
-  const profileRoot = join(dataRoot, 'runtime', 'profile')
-  const sessionDataRoot = join(dataRoot, 'cache', 'electron-session')
-  const paths = [dataRoot, join(dataRoot, 'runtime'), profileRoot, join(dataRoot, 'cache'), sessionDataRoot,
-    join(dataRoot, 'logs'), join(dataRoot, 'crash-dumps'), join(dataRoot, 'temp')]
-  for (const path of paths) {
-    mkdirSync(path, { recursive: true })
-    if (lstatSync(path).isSymbolicLink() || resolve(path) !== realpathSync(path)) {
-      throw new Error(`Diretório local de dados não canônico: ${path}`)
-    }
-  }
-
-  // Keep Chromium's persistent profile and session storage inside the portable
-  // app-data root, separate from the app's domain data and from each other.
-  migrateElectronProfile({ dataRoot, legacyRoot: legacyUserData, profileRoot, sessionRoot: sessionDataRoot })
-  app.setPath('appData', dataRoot)
-  app.setPath('userData', profileRoot)
-  app.setPath('sessionData', sessionDataRoot)
-  app.setPath('logs', join(dataRoot, 'logs'))
-  app.setPath('crashDumps', join(dataRoot, 'crash-dumps'))
-  app.setPath('temp', join(dataRoot, 'temp'))
-  process.env.TEMP = join(dataRoot, 'temp')
-  process.env.TMP = join(dataRoot, 'temp')
-  process.env.TMPDIR = join(dataRoot, 'temp')
-  return dataRoot
-}
-
-configuredAppDataRoot = configureLocalAppDataRoot()
+configureDevAiDataRoot({ app, repositoryRoot: resolve(__dirname, '../..') })
+configuredAppDataRoot = configureLocalAppDataRoot({ app })
 
 // Local, opt-in harness for Windows media stress runs. It keeps the
 // normal app-data profile and app IPC, but lets an external local runner drive
