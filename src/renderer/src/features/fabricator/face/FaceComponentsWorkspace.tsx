@@ -16,6 +16,7 @@ import { removeEyebrowGreen } from './removeEyebrowGreen'
 import './face-components.css'
 import { normalizeEditableImageFile } from '../normalizeImage'
 import { useModelAppearanceTarget, useModelPartAppearancePreview } from '../ModelAppearanceContext'
+import { isRightLibraryAsset, libraryBaseName, sameLibraryPair, visibleFaceLibraryAssets } from './faceLibraryModel'
 
 type PartId = 'eye-left' | 'eye-right' | 'pupil-left' | 'pupil-right' | 'eye-closed-left' | 'eye-closed-right' | 'brow-left' | 'brow-right'
 type CatalogKind = 'nose' | 'mouth-closed' | 'mouth-open'
@@ -50,13 +51,6 @@ const initialTransform = (kind: FaceComponentKind, head: ModelPart, width: numbe
   rotation: 0
 })
 const partCategory = (id: PartId) => categories.find((category) => category.parts.includes(id))!
-const isRightLibraryAsset = (asset: FaceComponentAssetSummary) => asset.rightSidePositioned === true || / · (?:Olho|Olho aberto|Olho fechado|Pupila|Sobrancelha) direit[oa]$/.test(asset.name)
-const libraryBaseName = (name: string) => name.replace(/ · (?:Olho|Olho aberto|Olho fechado|Pupila|Sobrancelha) (?:esquerd[oa]|direit[oa])$/, '')
-function sameLibraryPair(left: FaceComponentAsset, right: FaceComponentAsset): boolean {
-  if (left.kind !== right.kind || !isRightLibraryAsset(right)) return false
-  if (left.pairId || right.pairId) return Boolean(left.pairId && left.pairId === right.pairId || right.pairId === left.id)
-  return libraryBaseName(left.name) === libraryBaseName(right.name) && left.dataUrl === right.dataUrl
-}
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value))
 type ComponentSelection = { parts: Partial<Record<PartId, string>>; linked: Partial<Record<FaceComponentKind, boolean>>; moveTogether?: Partial<Record<FaceComponentKind, boolean>> }
 function readComponentSelections(): Record<number, ComponentSelection> {
@@ -219,11 +213,7 @@ export function FaceComponentsWorkspace({ mode, baseModelSlot }: { mode: FaceWor
     ? Math.min((stageSize.width - 24) / head.width, (stageSize.height - 24) / head.height) * .9
     : 0
   const selectedCategory = partCategory(selectedPart)
-  const libraryAssets = assets.filter((asset) => !isRightLibraryAsset(asset) || !assets.some((candidate) => {
-    const left = details[candidate.id]
-    const right = details[asset.id]
-    return left && right && !isRightLibraryAsset(candidate) && sameLibraryPair(left, right)
-  }))
+  const libraryAssets = useMemo(() => visibleFaceLibraryAssets(assets, details), [assets, details])
   const visibleDeletableAssets = libraryAssets.filter((asset) => mode === 'eyes'
     ? categories.some((category) => category.kind === asset.kind)
     : faceDetailCategories.some((category) => category.kind === asset.kind))
