@@ -16,6 +16,7 @@ import {
   findFabricatorPoseReferenceOwners
 } from '../src/shared/fabricatorPoseReferences.ts'
 import { CustomizerCharacterService } from '../electron/domains/customizer/service.ts'
+import { createFabricatorPoseReferenceIntegrity } from '../electron/domains/fabricator/poseReferenceIntegrity.ts'
 import { assertPoseHasNoReferences, createPoseReferenceChangeCoordinator } from '../electron/domains/fabricator/poseReferences.ts'
 import { registerEditorV6PrimaryHandlers } from '../electron/domains/editorV6/primaryIpc.ts'
 import { registerStudioPrimaryHandlers } from '../electron/domains/studio/primaryIpc.ts'
@@ -44,6 +45,21 @@ const sceneElement = (id, poseSlot, changes = {}) => ({
   id, kind: 'character', characterId: 'character-1', poseSlot, text: `Ator ${id}`,
   ...changes
 })
+
+function createPoseIntegrity(overrides = {}) {
+  return createFabricatorPoseReferenceIntegrity({
+    isValidModelSlot: (slot) => Number.isInteger(slot) && slot >= 1 && slot <= 10,
+    isValidPoseSlot: (slot) => Number.isInteger(slot) && slot >= 1 && slot <= 12,
+    readPose: async () => ({ id: 'pose' }),
+    listCharacters: async () => [character()],
+    withCharactersLocked: (operation) => operation([character()]),
+    listStudioDocuments: async () => [],
+    readStudioDocument: async () => null,
+    listEditorV6Documents: async () => [],
+    readEditorV6Document: async () => null,
+    ...overrides
+  })
+}
 
 test('inventário inclui personagens, poses explícitas de cena e blocos do Editor V6', () => {
   const characters = [character()]
@@ -88,6 +104,85 @@ test('mudança de modelo identifica como novos os vínculos de pose que mudaram 
   assert.deepEqual(addedFabricatorPoseReferences(next, previous).map(({ modelSlot, poseSlot }) => [modelSlot, poseSlot]), [
     [4, 3], [4, 5]
   ])
+})
+
+test('serviço de integridade bloqueia referências inválidas e poses ausentes', async () => {
+  const reads = []
+  const integrity = createPoseIntegrity({ readPose: async (modelSlot, poseSlot) => {
+    reads.push([modelSlot, poseSlot])
+    return poseSlot === 3 ? { id: 'pose' } : null
+  } })
+  await integrity.assertPoseReferencesAvailable([{ modelSlot: 2, poseSlot: 3, ownerKey: 'character:1', owner: 'personagem “Lia”' }])
+  await assert.rejects(integrity.assertPoseReferencesAvailable([
+    { modelSlot: null, poseSlot: 3, ownerKey: 'scene:1', owner: 'Studio “Cena”' }
+  ]), /identificar o modelo e a pose/)
+  await assert.rejects(integrity.assertPoseReferencesAvailable([
+    { modelSlot: 2, poseSlot: 4, ownerKey: 'scene:2', owner: 'Editor V6 “Teste”' }
+  ]), /2:4.*não está mais disponível/)
+  assert.deepEqual(reads, [[2, 3], [2, 4]])
+})
+
+test('snapshot de referências lê as três áreas sob o bloqueio do elenco', async () => {
+  const editorDocument = {
+    id: 'editor-1', title: 'Animação', elements: [],
+    timeline: { tracks: [{ id: 'track-1', characterId: 'character-1', blocks: [{ id: 'block-1', label: 'Pose 6', state: sceneElement('state-6', 6) }] }] }
+  }
+  const order = []
+  const integrity = createPoseIntegrity({
+    withCharactersLocked: async (operation) => { order.push('lock'); try { return await operation([character()]) } finally { order.push('unlock') } },
+    listStudioDocuments: async () => { order.push('studio'); return [{ id: 'studio-1', title: 'Cena', elements: [sceneElement('element-5', 5)] }] },
+    listEditorV6Documents: async () => { order.push('editor'); return [editorDocument] }
+  })
+
+  const refs = await integrity.withPoseReferenceSnapshot(async (references) => references)
+  assert.deepEqual(order.slice(0, 1), ['lock'])
+  assert.deepEqual(order.slice(-1), ['unlock'])
+  assert.deepEqual(order.slice(1, 3).sort(), ['editor', 'studio'])
+  assert.deepEqual(refs.map(({ modelSlot, poseSlot }) => [modelSlot, poseSlot]), [[2, 3], [2, 5], [2, 6]])
+})
+
+test('mudança de modelo valida vínculos de pose dependentes e rejeita identidade trocada', async () => {
+  const reads = []
+  let listCount = 0
+  const integrity = createPoseIntegrity({
+    readPose: async (modelSlot, poseSlot) => { reads.push([modelSlot, poseSlot]); return { id: 'pose' } },
+    listStudioDocuments: async () => { listCount += 1; return [{ id: 'studio-1', title: 'Cena', elements: [sceneElement('linked-studio', 5)] }] },
+    listEditorV6Documents: async () => [{
+      id: 'editor-1', title: 'Animação', elements: [sceneElement('linked-editor', 6)], timeline: { tracks: [] }
+    }]
+  })
+
+  await integrity.assertDependentCharacterPoseReferencesAvailable(character(2, 3), character(4, 3))
+  assert.deepEqual(reads, [[4, 5], [4, 6]])
+  await integrity.assertDependentCharacterPoseReferencesAvailable(character(4, 3), character(4, 8))
+  await assert.rejects(integrity.assertDependentCharacterPoseReferencesAvailable(
+    character(2, 3), { ...character(4, 3), id: 'other-character' }
+  ), /confirmar a identidade/)
+  assert.equal(listCount, 1)
+  assert.deepEqual(reads, [[4, 5], [4, 6]])
+})
+
+test('Studio e Editor V6 validam somente referências novas em relação ao documento salvo', async () => {
+  const poseReads = []
+  const existingStudio = { id: 'studio-1', title: 'Cena', elements: [sceneElement('existing', 5)] }
+  const nextStudio = { ...existingStudio, elements: [...existingStudio.elements, sceneElement('new', 7)] }
+  const existingEditor = {
+    id: 'editor-1', title: 'Animação', elements: [],
+    timeline: { tracks: [{ id: 'track-1', characterId: 'character-1', blocks: [{ id: 'existing-block', label: 'Pose existente', state: sceneElement('state-6', 6) }] }] }
+  }
+  const nextEditor = {
+    ...existingEditor,
+    timeline: { tracks: [{ ...existingEditor.timeline.tracks[0], blocks: [...existingEditor.timeline.tracks[0].blocks, { id: 'new-block', label: 'Pose nova', state: sceneElement('state-8', 8) }] }] }
+  }
+  const integrity = createPoseIntegrity({
+    readPose: async (modelSlot, poseSlot) => { poseReads.push([modelSlot, poseSlot]); return { id: 'pose' } },
+    readStudioDocument: async () => existingStudio,
+    readEditorV6Document: async () => existingEditor
+  })
+
+  await integrity.assertStudioPoseReferencesAvailable(nextStudio)
+  await integrity.assertEditorV6PoseReferencesAvailable(nextEditor)
+  assert.deepEqual(poseReads, [[2, 7], [2, 8]])
 })
 
 test('referências corrompidas falham fechadas em vez de liberar uma exclusão', () => {

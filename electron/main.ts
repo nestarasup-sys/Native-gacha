@@ -11,7 +11,6 @@ import { FABRICATOR_MODEL_SLOT_COUNT, FABRICATOR_POSE_SLOT_COUNT, type FaceExpre
 import type { CustomizerCharacter } from '../src/shared/customizer'
 import type { CustomizerFaceAssetReference } from '../src/shared/customizerFaceAssetReferences'
 import type { FabricatorPoseReference } from '../src/shared/fabricatorPoseReferences'
-import { addedFabricatorPoseReferences, collectCustomizerPoseReferences, collectEditorV6PoseReferences, collectStudioPoseReferences } from '../src/shared/fabricatorPoseReferences'
 import type { EditorV6Document } from '../src/shared/editorV6'
 import type { StudioDocument } from '../src/shared/studio'
 import { isStudioDocument } from '../src/shared/studioValidation'
@@ -61,6 +60,7 @@ import { createFabricatorHistoryPersistence } from './domains/fabricator/history
 import { registerFabricatorProjectHandlers } from './domains/fabricator/projectIpc'
 import { createPosePersistence } from './domains/fabricator/posePersistence'
 import { createPoseReferenceChangeCoordinator } from './domains/fabricator/poseReferences'
+import { createFabricatorPoseReferenceIntegrity } from './domains/fabricator/poseReferenceIntegrity'
 import { createAnimatorPersistence } from './domains/fabricator/animatorPersistence'
 import { registerFabricatorPoseHandlers } from './domains/fabricator/poseIpc'
 import { registerFabricatorAnimatorHandlers } from './domains/fabricator/animatorIpc'
@@ -381,6 +381,23 @@ const poseSaveWrites = new Set<Promise<void>>()
 let poseMigration: Promise<void> | null = null
 let faceGuideIpc: ReturnType<typeof registerFaceGuideHandlers> | null = null
 let fabricatorFaceCatalogIpc: ReturnType<typeof registerFabricatorFaceCatalogHandlers> | null = null
+// O Customizador recebe estes guards antes de o armazenamento de poses ser montado;
+// os callbacks só rodam depois da inicialização completa do composition root.
+let poseReferenceIntegrity: ReturnType<typeof createFabricatorPoseReferenceIntegrity> | null = null
+function getPoseReferenceIntegrity() {
+  if (!poseReferenceIntegrity) throw new Error('A validação de vínculos de pose ainda não foi inicializada.')
+  return poseReferenceIntegrity
+}
+const assertFabricatorPoseReferencesAvailable = (references: readonly FabricatorPoseReference[]): Promise<void> =>
+  getPoseReferenceIntegrity().assertPoseReferencesAvailable(references)
+const assertDependentCharacterPoseReferencesAvailable = (previous: CustomizerCharacter, next: CustomizerCharacter): Promise<void> =>
+  getPoseReferenceIntegrity().assertDependentCharacterPoseReferencesAvailable(previous, next)
+const withPoseReferenceSnapshot = <T>(operation: (references: readonly FabricatorPoseReference[]) => Promise<T>): Promise<T> =>
+  getPoseReferenceIntegrity().withPoseReferenceSnapshot(operation)
+const assertStudioPoseReferencesAvailable = (document: StudioDocument): Promise<void> =>
+  getPoseReferenceIntegrity().assertStudioPoseReferencesAvailable(document)
+const assertEditorV6PoseReferencesAvailable = (document: EditorV6Document): Promise<void> =>
+  getPoseReferenceIntegrity().assertEditorV6PoseReferencesAvailable(document)
 // O acesso do Customizador passa pelo mesmo DomainFileSystem legado, sem migrar dados.
 const customizerRepository = new CustomizerCharacterRepository(
   characterManifestPath,
@@ -638,66 +655,6 @@ async function assertFaceAssetReferencesAvailable(references: readonly Customize
   }
 }
 
-async function assertFabricatorPoseReferencesAvailable(references: readonly FabricatorPoseReference[]): Promise<void> {
-  for (const reference of references) {
-    if (reference.modelSlot === null || !isValidModelSlot(reference.modelSlot) || !isValidPoseSlot(reference.poseSlot)) {
-      throw new Error(`Não foi possível identificar o modelo e a pose usados por ${reference.owner}. Reabra e selecione uma pose salva.`)
-    }
-    if (!await readPoseProject(reference.modelSlot, reference.poseSlot)) {
-      throw new Error(`A pose ${reference.modelSlot}:${reference.poseSlot} usada por ${reference.owner} não está mais disponível no Fabricador Dev.`)
-    }
-  }
-}
-
-async function assertDependentCharacterPoseReferencesAvailable(previous: CustomizerCharacter, next: CustomizerCharacter): Promise<void> {
-  if (previous.id !== next.id) throw new Error('Não foi possível confirmar a identidade do personagem ao alterar o modelo.')
-  if (previous.customization.modelSlot === next.customization.modelSlot) return
-  const [studios, editorDocuments] = await Promise.all([
-    listStudioPoseReferenceDocuments(), listEditorV6PoseReferenceDocuments()
-  ])
-  const previousReferences = [
-    ...collectStudioPoseReferences(studios, [previous]),
-    ...collectEditorV6PoseReferences(editorDocuments, [previous])
-  ]
-  const nextReferences = [
-    ...collectStudioPoseReferences(studios, [next]),
-    ...collectEditorV6PoseReferences(editorDocuments, [next])
-  ]
-  await assertFabricatorPoseReferencesAvailable(addedFabricatorPoseReferences(nextReferences, previousReferences))
-}
-
-function withPoseReferenceSnapshot<T>(operation: (references: readonly FabricatorPoseReference[]) => Promise<T>): Promise<T> {
-  return customizerService.withCharactersLocked(async (characters) => {
-    const [studios, editorDocuments] = await Promise.all([
-      listStudioPoseReferenceDocuments(), listEditorV6PoseReferenceDocuments()
-    ])
-    const references = [
-      ...collectCustomizerPoseReferences(characters),
-      ...collectStudioPoseReferences(studios, characters),
-      ...collectEditorV6PoseReferences(editorDocuments, characters)
-    ]
-    return operation(references)
-  })
-}
-
-async function assertStudioPoseReferencesAvailable(document: StudioDocument): Promise<void> {
-  const [previous, characters] = await Promise.all([
-    readStudioPoseReferences(document.id), customizerService.list()
-  ])
-  const nextReferences = collectStudioPoseReferences([document], characters)
-  const previousReferences = previous ? collectStudioPoseReferences([previous], characters) : []
-  await assertFabricatorPoseReferencesAvailable(addedFabricatorPoseReferences(nextReferences, previousReferences))
-}
-
-async function assertEditorV6PoseReferencesAvailable(document: EditorV6Document): Promise<void> {
-  const [previous, characters] = await Promise.all([
-    readEditorV6PoseReferences(document.id), customizerService.list()
-  ])
-  const nextReferences = collectEditorV6PoseReferences([document], characters)
-  const previousReferences = previous ? collectEditorV6PoseReferences([previous], characters) : []
-  await assertFabricatorPoseReferencesAvailable(addedFabricatorPoseReferences(nextReferences, previousReferences))
-}
-
 function dataUrlBuffer(dataUrl: string): Buffer {
   const match = /^data:image\/png;base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl)
   if (!match) throw new Error('Arquivo de peça inválido.')
@@ -729,6 +686,17 @@ const { writePoseProject, readPoseProject, writePoseDraft, readPoseDraft } = cre
   poseSlotPath, poseDraftPath, modelSlotPath: slotPath, modelHeadParts, isValidModelSlot, isValidPoseSlot,
   dataUrlBuffer, writeAssetImageSource, readAssetImage,
   files: { mkdir, access, copyFile, readdir, unlink, readFile, writeFile, rename }
+})
+poseReferenceIntegrity = createFabricatorPoseReferenceIntegrity({
+  isValidModelSlot,
+  isValidPoseSlot,
+  readPose: (modelSlot, poseSlot) => readPoseProject(modelSlot, poseSlot),
+  listCharacters: () => customizerService.list(),
+  withCharactersLocked: (operation) => customizerService.withCharactersLocked(operation),
+  listStudioDocuments: listStudioPoseReferenceDocuments,
+  readStudioDocument: readStudioPoseReferences,
+  listEditorV6Documents: listEditorV6PoseReferenceDocuments,
+  readEditorV6Document: readEditorV6PoseReferences
 })
 
 async function modelHeadParts(modelSlot: number): Promise<Array<Pick<ModelPart, 'id' | 'name' | 'width' | 'height' | 'resizeBase'>>> {
