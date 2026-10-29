@@ -97,6 +97,7 @@ import { registerRoteiroExportHandlers } from './domains/roteiros/exportIpc'
 import { createRoteiroBackgroundReferenceGuard, createRoteiroUiGifReferenceGuard } from './domains/roteiros/assetReferences'
 import { createRoteiroUiGifsService } from './domains/roteiros/uiGifsService'
 import { registerRoteiroUiGifsHandlers } from './domains/roteiros/uiGifsIpc'
+import { createRoteirosWriteQueue } from './domains/roteiros/writeQueue'
 import { createBackgroundLibraryService } from './domains/mediaLibrary/backgroundLibraryService'
 import { registerBackgroundLibraryHandlers } from './domains/mediaLibrary/backgroundLibraryIpc'
 import { createVideoLibraryService } from './domains/mediaLibrary/videoLibraryService'
@@ -104,22 +105,15 @@ import { registerVideoLibraryHandlers } from './domains/mediaLibrary/videoLibrar
 import { createEditorV6VideoReferenceLookup } from './domains/editorV6/videoReferences'
 
 let configuredAppDataRoot: string | null = null
-let roteirosSaveQueue: Promise<void> = Promise.resolve()
+const roteirosWriteQueue = createRoteirosWriteQueue()
 const dataMaintenanceQueue = createKeyedOperationQueue()
 
 function runDataMaintenance<T>(operation: () => Promise<T>): Promise<T> {
   return dataMaintenanceQueue.run('app-data-maintenance', operation)
 }
 
-function waitForRoteirosWrites(): Promise<void> {
-  return roteirosSaveQueue.catch(() => undefined)
-}
-
-function enqueueRoteirosWrite<T>(operation: () => Promise<T> | T): Promise<T> {
-  const next = roteirosSaveQueue.catch(() => undefined).then(operation)
-  roteirosSaveQueue = next.then(() => undefined)
-  return next
-}
+const waitForRoteirosWrites = roteirosWriteQueue.waitForPendingWrites
+const enqueueRoteirosWrite = roteirosWriteQueue.enqueue
 
 function configureDevAiDataRoot(): void {
   const privateCopyTest = process.env.GACHA_DEV_AI_PRIVATE_TEST === '1'
@@ -730,7 +724,7 @@ function collectPendingPersistenceWrites(): Promise<unknown>[] {
     ...videoLibrary.getPendingWrites(), ...videoBackgroundLibrary.getPendingWrites(),
     ...roteiroUiGifLibrary.getPendingWrites(),
     ...(migrationTask ? [migrationTask] : []),
-    studioSaveQueues.studio, editorV6SaveQueue, roteirosSaveQueue,
+    studioSaveQueues.studio, editorV6SaveQueue, ...roteirosWriteQueue.getPendingWrites(),
     ...(poseMigration ? [poseMigration] : [])
   ]
 }

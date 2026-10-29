@@ -28,7 +28,7 @@ test('flush, backup e encerramento drenam persistências e aguardam operações 
     'studioSaveQueues.studio',
     'editorV6SaveQueue',
     'editorV6ExportService?.getPendingWrites()',
-    'roteirosSaveQueue'
+    'roteirosWriteQueue.getPendingWrites()'
   ]) assert.ok(inventory.includes(owner), `inventário sem a fila ${owner}`)
 
   assert.match(main, /flushMainWrites: flushPendingPersistenceWrites/)
