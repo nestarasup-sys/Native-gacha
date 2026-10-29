@@ -2,7 +2,7 @@
  */
 import type { EditorV6Document, EditorV6Element } from './editorV6'
 import type { CustomizerCharacter } from './customizer'
-import { resolveEditorV6ElementsAtFrame } from './editorV6Timeline'
+import { resolveEditorV6ElementsAtFrame } from './editorV6TimelineScene'
 
 export type EditorV6SceneSnapshot = Pick<EditorV6Document, 'backgroundColor' | 'backgroundAssetId' | 'backgroundX' | 'backgroundY' | 'backgroundWidth' | 'backgroundHeight' | 'backgroundRotation' | 'assets' | 'elements' | 'timeline'>
 

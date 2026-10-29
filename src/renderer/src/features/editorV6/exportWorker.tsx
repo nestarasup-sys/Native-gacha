@@ -1,7 +1,8 @@
 import { createRoot } from 'react-dom/client'
 import { flushSync } from 'react-dom'
 import { SceneSurface } from './SceneSurface'
-import { editorV6ClipAtFrame, resolveEditorV6SceneAtFrame } from '../../../../shared/editorV6Timeline'
+import { editorV6ClipAtFrame } from '../../../../shared/editorV6TimelineCore'
+import { resolveEditorV6SceneAtFrame } from '../../../../shared/editorV6TimelineScene'
 import { editorV6FaceModeAtFrame } from '../../../../shared/editorV6FaceSchedule'
 import { EDITOR_V6_MOUTH_LOOP_SAMPLE_SCALES, editorV6LayerVisualKeys, editorV6VisualKey, type EditorV6ExportMouthLoops, type EditorV6FrameTimings, type EditorV6RenderFrameResult, type EditorV6WorkerBridge } from '../../../../shared/editorV6Export'
 

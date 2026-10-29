@@ -2,7 +2,8 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState, type PointerEv
 import type { EditorV6Document, EditorV6Element, EditorV6Timeline as Timeline, EditorV6TimelineBlock as Block, EditorV6TimelineTrack as Track } from '../../../../shared/editorV6'
 import { editorV6MotionPlan } from '../../../../shared/editorV6Motion'
 import { EDITOR_V6_DEFAULT_BLOCK_FRAMES, orderEditorV6TimelineTracks, videoCharacterTrackColor } from '../../../../shared/editorV6'
-import { duplicateEditorV6Block, editorV6ClipAtFrame, frameTimecode, MAX_TIMELINE_FRAME, normalizeEditorV6Timeline, pruneEditorV6TimelineSnapshots, setEditorV6BlockTiming, snapEditorV6Frame, splitEditorV6Block, timelineClips } from '../../../../shared/editorV6Timeline'
+import { editorV6ClipAtFrame, frameTimecode, MAX_TIMELINE_FRAME, normalizeEditorV6Timeline, timelineClips } from '../../../../shared/editorV6TimelineCore'
+import { duplicateEditorV6Block, pruneEditorV6TimelineSnapshots, setEditorV6BlockTiming, snapEditorV6Frame, splitEditorV6Block } from '../../../../shared/editorV6TimelineEdits'
 import { useEditorV6PlaybackFrame } from './editorV6PlaybackClock'
 
 type Props = {

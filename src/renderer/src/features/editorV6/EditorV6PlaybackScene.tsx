@@ -1,6 +1,7 @@
 import { Profiler, useMemo } from 'react'
 import type { EditorV6Document } from '../../../../shared/editorV6'
-import { frameTimecode, resolveEditorV6SceneAtFrame } from '../../../../shared/editorV6Timeline'
+import { frameTimecode } from '../../../../shared/editorV6TimelineCore'
+import { resolveEditorV6SceneAtFrame } from '../../../../shared/editorV6TimelineScene'
 import { SceneSurface, type SceneSurfaceInteraction } from './SceneSurface'
 import { useEditorV6PlaybackFrame } from './editorV6PlaybackClock'
 import { measureEditorV6SceneResolution, recordUiCommit } from '../../ui/performanceDiagnostics'

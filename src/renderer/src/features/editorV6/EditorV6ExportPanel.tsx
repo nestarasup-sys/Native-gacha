@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { EditorV6Document } from '../../../../shared/editorV6'
-import { frameTimecode } from '../../../../shared/editorV6Timeline'
+import { frameTimecode } from '../../../../shared/editorV6TimelineCore'
 import { planEditorV6Export, type EditorV6ExportAudio, type EditorV6ExportOptions, type EditorV6ExportStatus } from '../../../../shared/editorV6Export'
 
 let rememberedJob: EditorV6ExportStatus | null = null

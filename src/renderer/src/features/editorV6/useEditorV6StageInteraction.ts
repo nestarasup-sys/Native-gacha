@@ -3,10 +3,9 @@ import type { EditorV6Document, EditorV6VideoLayout } from '../../../../shared/e
 import {
   EDITOR_V6_DEFAULT_VIDEO_LAYOUT, editorV6DefaultVideoLayout
 } from '../../../../shared/editorV6'
-import {
-  editEditorV6BackgroundAtFrame, editorV6ClipAtFrame, moveEditorV6ElementInPeriod,
-  normalizeEditorV6Timeline, prepareEditorV6PositionAtFrame, resolveEditorV6SceneAtFrame, timelineClips
-} from '../../../../shared/editorV6Timeline'
+import { editorV6ClipAtFrame, normalizeEditorV6Timeline, timelineClips } from '../../../../shared/editorV6TimelineCore'
+import { moveEditorV6ElementInPeriod } from '../../../../shared/editorV6TimelineEdits'
+import { editEditorV6BackgroundAtFrame, prepareEditorV6PositionAtFrame, resolveEditorV6SceneAtFrame } from '../../../../shared/editorV6TimelineScene'
 import { getEditorV6PlaybackFrame } from './editorV6PlaybackClock'
 import type { ScenePointerEvent, SceneSurfaceInteraction } from './SceneSurface'
 

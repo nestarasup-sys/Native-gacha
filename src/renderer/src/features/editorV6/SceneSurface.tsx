@@ -1,7 +1,7 @@
 import { memo, useEffect, useMemo, useRef, type PointerEvent as ReactPointerEvent } from 'react'
 import type { EditorV6Asset, EditorV6Element } from '../../../../shared/editorV6'
 import { editorV6ElementSize } from '../../../../shared/editorV6SceneModel'
-import type { EditorV6ResolvedScene } from '../../../../shared/editorV6Timeline'
+import type { EditorV6ResolvedScene } from '../../../../shared/editorV6TimelineScene'
 
 export type ScenePointerEvent = ReactPointerEvent<SVGElement>
 export type SceneSurfaceInteraction = {

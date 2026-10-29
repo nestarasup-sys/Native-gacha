@@ -1,5 +1,5 @@
 import { editorV6MotionPlans } from '../../../../shared/editorV6Motion'
-import { timelineClips } from '../../../../shared/editorV6Timeline'
+import { timelineClips } from '../../../../shared/editorV6TimelineCore'
 import type { EditorV6Document, EditorV6Element } from '../../../../shared/editorV6'
 
 export type EditorV6DuplicateIdentity = Pick<EditorV6Document, 'id' | 'title' | 'color' | 'createdAt' | 'updatedAt'>

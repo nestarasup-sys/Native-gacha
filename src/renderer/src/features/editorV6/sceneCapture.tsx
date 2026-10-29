@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import type { EditorV6Document } from '../../../../shared/editorV6'
-import { resolveEditorV6SceneAtFrame } from '../../../../shared/editorV6Timeline'
+import { resolveEditorV6SceneAtFrame } from '../../../../shared/editorV6TimelineScene'
 import { SceneSurface } from './SceneSurface'
 import { editorV6VisualKey } from '../../../../shared/editorV6Export'
 

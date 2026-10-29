@@ -1,4 +1,4 @@
-import { editorV6ClipAtFrame, timelineClips, type TimelineClip } from '../../../../shared/editorV6Timeline'
+import { editorV6ClipAtFrame, timelineClips, type TimelineClip } from '../../../../shared/editorV6TimelineCore'
 import type { EditorV6Asset, EditorV6Document, EditorV6Element, EditorV6MediaAsset } from '../../../../shared/editorV6'
 
 type EditorV6SelectionInput = {

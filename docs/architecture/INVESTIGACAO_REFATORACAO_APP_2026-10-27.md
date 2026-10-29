@@ -1561,3 +1561,10 @@ Continua a auditoria das operações IPC iniciadas pelo usuário e da cobertura 
 - `faceWorkspaceSelectionStorage.ts` agora é dono das chaves, da leitura segura, da validação de slots/guias, da compatibilidade com pupilas antigas e da gravação por modelo. A precedência permanece: seleções atuais substituem os valores migrados; gravar um slot preserva os demais.
 - As quatro chaves e seus formatos JSON não mudaram. Nenhum perfil local foi lido nos testes; fixtures em memória cobrem migração, precedência, preservação de slots, JSON inválido e descarte de âncoras inválidas. `FaceComponentsWorkspace.tsx` passou de 1.074 para 1.040 linhas.
 - Passaram `npm run test:refactor` (500 testes principais e 28 auxiliares), `npm run typecheck`, `npm run audit:architecture` (471 arquivos TS/TSX sem violações), build e `git diff --check`.
+
+## 109. Etapa aplicada — timeline do Editor V6 separada por responsabilidade
+
+- `editorV6Timeline.ts` reunia normalização e busca de blocos, composição de cena/fundo/movimento, edição temporal, reparo de referências e limpeza de snapshots em 464 linhas. A página, o processo principal e diversos consumidores importavam o mesmo módulo amplo.
+- A implementação foi organizada em `editorV6TimelineCore.ts` (normalização, operações básicas e resolução estática), `editorV6TimelineScene.ts` (fundo, cena, movimento e preparação de posição) e `editorV6TimelineEdits.ts` (edições, temporização, reparos e snapshots). As áreas de aplicação e persistência agora importam a responsabilidade usada diretamente.
+- `editorV6Timeline.ts` permanece como fachada de reexportação para compatibilidade; os testes e integrações que ainda importam o caminho antigo continuam funcionando. A extração não mudou algoritmos, IPC, schema, dados persistidos nem a ordem de gravação. Não se atribui ganho de desempenho a esta etapa.
+- Passaram `npm run test:editor-v6` (143 testes, 1 ignorado), `npm run test:refactor` (500 testes principais e todas as suítes auxiliares), `npm run typecheck`, `npm run audit:architecture`, build e `git diff --check`.

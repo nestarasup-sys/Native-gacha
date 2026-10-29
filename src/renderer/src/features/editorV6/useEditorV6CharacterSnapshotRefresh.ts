@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { CustomizerCharacter } from '../../../../shared/customizer'
 import type { EditorV6Document } from '../../../../shared/editorV6'
-import { pruneEditorV6TimelineSnapshots } from '../../../../shared/editorV6Timeline'
+import { pruneEditorV6TimelineSnapshots } from '../../../../shared/editorV6TimelineEdits'
 import { trimTransparentImage, type TrimmedImage } from '../../characters/characterGeometry'
 import { mapConcurrentItems } from '../../ui/mapConcurrentItems'
 import type { PoseRevisionSnapshot } from './editorV6CharacterSourceModel'
