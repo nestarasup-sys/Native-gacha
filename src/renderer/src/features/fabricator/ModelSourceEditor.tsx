@@ -109,6 +109,7 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
   const guideDrag = useRef<Pick<GuideStroke, 'pointerId' | 'partId' | 'start'> | null>(null)
   const gestureRef = useRef<DrawingGesture | null>(null)
   const undoStack = useRef<UndoSnapshot[]>([])
+  const pixelEditAbort = useRef<AbortController | null>(null)
 
   const selected = draft.parts.find(part => part.id === selectedId)
   const selectedRect = selected ? sourceRect(selected, dimensions[selected.id]) : null
@@ -189,6 +190,8 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
   }, [mode, tool, selectedId, previewPart?.dataUrl, warpSession, logicalWidth, logicalHeight])
 
   useEffect(() => () => {
+    pixelEditAbort.current?.abort()
+    pixelEditAbort.current = null
     if (warpDrawFrame.current !== null) cancelAnimationFrame(warpDrawFrame.current)
   }, [])
 
@@ -287,6 +290,16 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
       setError(reason instanceof Error ? reason.message : 'Não foi possível editar a peça.')
     } finally {
       setBusy(false)
+    }
+  }
+  const runPixelEdit = async <T,>(edit: (signal: AbortSignal) => Promise<T>): Promise<T> => {
+    pixelEditAbort.current?.abort()
+    const controller = new AbortController()
+    pixelEditAbort.current = controller
+    try {
+      return await edit(controller.signal)
+    } finally {
+      if (pixelEditAbort.current === controller) pixelEditAbort.current = null
     }
   }
   const rotateSelectedPart = (degrees: ModelSourceQuarterTurn) => {
@@ -638,7 +651,7 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
       const part = materialized.parts.find(item => item.id === selected.id)
       if (!part) throw new Error('A peça selecionada não está mais no modelo.')
       const points = pointsForPart(gesture.points, part, selectedRect.width, selectedRect.height)
-      const result = await eraseModelSourceBrush(part, points, brushSize * part.width / Math.max(1, selectedRect.width), outlineOnly)
+      const result = await runPixelEdit(signal => eraseModelSourceBrush(part, points, brushSize * part.width / Math.max(1, selectedRect.width), outlineOnly, signal))
       if (!result.removedPixels) {
         setStatus(outlineOnly ? 'O pincel não encontrou contorno escuro/contrastado neste traço.' : 'O pincel não alcançou pixels visíveis.')
         return null
@@ -660,7 +673,7 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
       const replacements = new Map<string, ModelPart>()
       let removedPixels = 0
       for (const part of bodyParts) {
-        const result = await removeModelSourceColor(part, skinColor, skinColorTolerance)
+        const result = await runPixelEdit(signal => removeModelSourceColor(part, skinColor, skinColorTolerance, signal))
         replacements.set(part.id, result.part)
         removedPixels += result.removedPixels
       }

@@ -4,6 +4,8 @@ import { readFile } from 'node:fs/promises'
 import { createImportedModelProject } from '../src/renderer/src/features/fabricator/models/processedModelProject.ts'
 import { ChromaAdjustTaskError, startChromaAdjustWorker } from '../src/renderer/src/features/fabricator/models/runChromaAdjustWorker.ts'
 import { ImageProcessorTaskError, startImageProcessorWorker } from '../src/renderer/src/features/fabricator/models/runImageProcessorWorker.ts'
+import { ModelSourcePixelEditTaskError, startModelSourcePixelEditWorker } from '../src/renderer/src/features/fabricator/models/runModelSourcePixelEditWorker.ts'
+import { applyModelSourceBrushPixels, modelSourceBrushRegion, removeModelSourceColorPixels } from '../src/renderer/src/features/fabricator/models/modelSourcePixelOperations.ts'
 
 const imageBuffer = value => Uint8Array.of(value).buffer
 
@@ -51,13 +53,16 @@ test('monta o projeto importado com bases, ordem, juntas e assets pendentes pres
 })
 
 test('tela e workers compartilham os contratos de mensagem definidos pelo domínio', async () => {
-  const [page, imageWorker, chromaWorker, modelSource, chromaRunner, imageRunner] = await Promise.all([
+  const [page, imageWorker, chromaWorker, modelSource, chromaRunner, imageRunner, pixelWorker, pixelRunner, pixelEditing] = await Promise.all([
     readFile(new URL('../src/renderer/src/features/fabricator/FabricatorPage.tsx', import.meta.url), 'utf8'),
     readFile(new URL('../src/renderer/src/features/fabricator/models/imageProcessor.worker.ts', import.meta.url), 'utf8'),
     readFile(new URL('../src/renderer/src/features/fabricator/models/chromaAdjust.worker.ts', import.meta.url), 'utf8'),
     readFile(new URL('../src/renderer/src/features/fabricator/models/modelSource.ts', import.meta.url), 'utf8'),
     readFile(new URL('../src/renderer/src/features/fabricator/models/runChromaAdjustWorker.ts', import.meta.url), 'utf8'),
-    readFile(new URL('../src/renderer/src/features/fabricator/models/runImageProcessorWorker.ts', import.meta.url), 'utf8')
+    readFile(new URL('../src/renderer/src/features/fabricator/models/runImageProcessorWorker.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../src/renderer/src/features/fabricator/models/modelSourcePixelEdit.worker.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../src/renderer/src/features/fabricator/models/runModelSourcePixelEditWorker.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../src/renderer/src/features/fabricator/models/modelSourceEditing.ts', import.meta.url), 'utf8')
   ])
 
   assert.match(page, /startImageProcessorWorker/)
@@ -69,9 +74,127 @@ test('tela e workers compartilham os contratos de mensagem definidos pelo domín
   assert.match(chromaRunner, /MessageEvent<ChromaAdjustMessage>/)
   assert.match(chromaRunner, /satisfies ChromaAdjustRequest/)
   assert.match(chromaWorker, /MessageEvent<ChromaAdjustRequest>/)
+  assert.match(pixelEditing, /startModelSourcePixelEditWorker/)
+  assert.match(pixelRunner, /MessageEvent<ModelSourcePixelEditMessage>/)
+  assert.match(pixelWorker, /MessageEvent<ModelSourcePixelEditRequest>/)
+  assert.match(pixelWorker, /applyModelSourceBrushPixels/)
+  assert.match(pixelWorker, /removeModelSourceColorPixels/)
+  assert.doesNotMatch(pixelEditing, /function applyBrush\(/)
+  assert.doesNotMatch(pixelEditing, /function removeSelectedColor\(/)
   assert.doesNotMatch(page, /new Worker\(new URL\('\.\/models\/imageProcessor\.worker/)
   assert.doesNotMatch(page, /new Worker\(new URL\('\.\/models\/chromaAdjust\.worker/)
   assert.doesNotMatch(modelSource, /new Worker\(new URL\('\.\/chromaAdjust\.worker/)
+})
+
+function rgbaImage(width, height, color = [240, 200, 170, 255]) {
+  const data = new Uint8ClampedArray(width * height * 4)
+  for (let offset = 0; offset < data.length; offset += 4) data.set(color, offset)
+  return { width, height, data }
+}
+
+function cropRgba(image, region) {
+  const data = new Uint8ClampedArray(region.width * region.height * 4)
+  for (let y = 0; y < region.height; y += 1) {
+    const source = ((region.y + y) * image.width + region.x) * 4
+    data.set(image.data.subarray(source, source + region.width * 4), y * region.width * 4)
+  }
+  return { width: region.width, height: region.height, data }
+}
+
+test('região do pincel é calculada linearmente sem expandir pontos em argumentos', () => {
+  const points = Array.from({ length: 50_000 }, (_, index) => ({ x: index % 100, y: Math.floor(index / 100) % 100 }))
+  const region = modelSourceBrushRegion(100, 100, points, 18, true)
+
+  assert.deepEqual(region, { x: 0, y: 0, width: 100, height: 100 })
+})
+
+test('borracha remove só os pixels cobertos pelo círculo e mantém o restante intacto', () => {
+  const source = rgbaImage(11, 11)
+  const points = [{ x: 5, y: 5 }]
+  const region = modelSourceBrushRegion(source.width, source.height, points, 4, false)
+  const image = cropRgba(source, region)
+  const removed = applyModelSourceBrushPixels(image, points, 4, false, region)
+  const pixelAlpha = (x, y) => image.data[(y * image.width + x) * 4 + 3]
+
+  assert.ok(removed > 0)
+  assert.equal(pixelAlpha(2, 2), 0)
+  assert.equal(pixelAlpha(0, 0), 255)
+})
+
+test('pincel de contorno apaga tinta escura e preserva pele e preenchimento interno', () => {
+  const source = rgbaImage(15, 15, [0, 0, 0, 0])
+  for (let y = 4; y <= 10; y += 1) for (let x = 4; x <= 10; x += 1) {
+    const edge = x === 4 || x === 10 || y === 4 || y === 10
+    source.data.set(edge ? [70, 34, 32, 255] : [240, 200, 170, 255], (y * source.width + x) * 4)
+  }
+  const points = [{ x: 4, y: 7 }]
+  const region = modelSourceBrushRegion(source.width, source.height, points, 2, true)
+  const image = cropRgba(source, region)
+  const removed = applyModelSourceBrushPixels(image, points, 2, true, region)
+  const localAlpha = (x, y) => image.data[((y - region.y) * image.width + x - region.x) * 4 + 3]
+
+  assert.ok(removed > 0)
+  assert.equal(localAlpha(4, 7), 0)
+  assert.equal(localAlpha(7, 7), 255)
+})
+
+test('remoção de cor mantém contorno escuro e cores que não correspondem ao tom escolhido', () => {
+  const image = rgbaImage(3, 1)
+  image.data.set([25, 18, 18, 255], 0)
+  image.data.set([242, 198, 168, 255], 4)
+  image.data.set([20, 80, 220, 255], 8)
+
+  assert.equal(removeModelSourceColorPixels(image, '#f2c6a8', 5), 1)
+  assert.equal(image.data[3], 255)
+  assert.equal(image.data[7], 0)
+  assert.equal(image.data[11], 255)
+})
+
+test('worker de pixels ignora respostas antigas, converte as duas bases e termina', async () => {
+  const worker = createWorkerDouble()
+  const task = startModelSourcePixelEditWorker({
+    id: 18,
+    operation: 'brush',
+    part: { width: 10, height: 20, displayDataUrl: 'data:image/png;base64,DISPLAY', baseDataUrl: 'data:image/png;base64,BASE' },
+    points: [{ x: 2, y: 3 }], size: 8, outlineOnly: false
+  }, () => worker)
+
+  assert.equal(worker.posted.id, 18)
+  worker.onmessage({ data: { type: 'complete', id: 17, displayPng: imageBuffer(1), basePng: imageBuffer(2), removedPixels: 1 } })
+  assert.equal(worker.terminated, false)
+  worker.onmessage({ data: { type: 'complete', id: 18, displayPng: imageBuffer(5), basePng: imageBuffer(6), removedPixels: 14 } })
+
+  assert.deepEqual(await task.result, {
+    displayDataUrl: 'data:image/png;base64,BQ==',
+    baseDataUrl: 'data:image/png;base64,Bg==',
+    removedPixels: 14
+  })
+  assert.equal(worker.terminateCount, 1)
+})
+
+test('worker de pixels distingue erro e cancelamento e respeita AbortSignal', async () => {
+  const failedWorker = createWorkerDouble()
+  const failed = startModelSourcePixelEditWorker({ id: 20, operation: 'remove-color', part: { width: 1, height: 1, displayDataUrl: 'data:image/png;base64,AA==', baseDataUrl: 'data:image/png;base64,AA==' }, color: '#ffffff', tolerance: 2 }, () => failedWorker)
+  const failure = assert.rejects(failed.result, error => error instanceof ModelSourcePixelEditTaskError && error.kind === 'worker' && error.message === 'dados inválidos')
+  failedWorker.onmessage({ data: { type: 'error', id: 20, message: 'dados inválidos' } })
+  await failure
+  assert.equal(failedWorker.terminateCount, 1)
+
+  const worker = createWorkerDouble()
+  const controller = new AbortController()
+  const cancelled = startModelSourcePixelEditWorker({ id: 21, operation: 'remove-color', part: { width: 1, height: 1, displayDataUrl: 'data:image/png;base64,AA==', baseDataUrl: 'data:image/png;base64,AA==' }, color: '#ffffff', tolerance: 2 }, () => worker, controller.signal)
+  const cancellation = assert.rejects(cancelled.result, error => error instanceof ModelSourcePixelEditTaskError && error.kind === 'cancelled' && error.name === 'AbortError')
+  controller.abort()
+  await cancellation
+  worker.onmessage({ data: { type: 'complete', id: 21, displayPng: imageBuffer(1), basePng: imageBuffer(2), removedPixels: 0 } })
+  assert.equal(worker.terminateCount, 1)
+
+  const alreadyAborted = new AbortController()
+  alreadyAborted.abort()
+  const skipped = startModelSourcePixelEditWorker({ id: 22, operation: 'remove-color', part: { width: 1, height: 1, displayDataUrl: 'data:image/png;base64,AA==', baseDataUrl: 'data:image/png;base64,AA==' }, color: '#ffffff', tolerance: 2 }, () => {
+    throw new Error('Worker não deve iniciar para tarefa cancelada.')
+  }, alreadyAborted.signal)
+  await assert.rejects(skipped.result, error => error instanceof ModelSourcePixelEditTaskError && error.kind === 'cancelled')
 })
 
 test('processador de imagem filtra IDs, encaminha progresso e resolve o resultado completo', async () => {
@@ -171,6 +294,7 @@ function createWorkerDouble() {
   return {
     onmessage: null,
     onerror: null,
+    onmessageerror: null,
     posted: null,
     terminated: false,
     terminateCount: 0,

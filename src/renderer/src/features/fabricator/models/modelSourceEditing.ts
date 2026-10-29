@@ -2,12 +2,16 @@ import type { ModelPart } from '../../../../../shared/fabricator'
 import { cropModelSkinContours } from '../../../../../shared/modelSkinContours'
 import { loadImageFromDataUrl } from './imageData'
 import { sourceRect } from './modelSource'
+import { startModelSourcePixelEditWorker } from './runModelSourcePixelEditWorker'
+import type { ModelSourcePixelPoint } from './modelSourcePixelOperations'
 
-export type ModelSourcePoint = { x: number; y: number }
+export type ModelSourcePoint = ModelSourcePixelPoint
 export type ModelSourceCrop = { x: number; y: number; width: number; height: number }
 export type ModelSourceSplit = { parts: [ModelPart, ModelPart]; retainedSide: 0 | 1 }
 export type BrushResult = { part: ModelPart; removedPixels: number }
 export type ModelSourceQuarterTurn = -90 | 90
+
+let pixelEditRequestId = 0
 
 function rotatePoint(point: ModelSourcePoint, center: ModelSourcePoint, degrees: ModelSourceQuarterTurn): ModelSourcePoint {
   const radians = degrees * Math.PI / 180
@@ -323,127 +327,29 @@ export async function splitModelSourcePart(
   return { parts: [pieces[0], pieces[1]], retainedSide }
 }
 
-function brightness(red: number, green: number, blue: number): number {
-  return (red * 299 + green * 587 + blue * 114) / 1000
-}
-
-function colorDistance(data: Uint8ClampedArray, a: number, b: number): number {
-  const red = data[a] - data[b]
-  const green = data[a + 1] - data[b + 1]
-  const blue = data[a + 2] - data[b + 2]
-  return Math.sqrt(red * red + green * green + blue * blue)
-}
-
-function applyBrush(
-  source: HTMLCanvasElement,
-  points: ModelSourcePoint[],
-  size: number,
-  outlineOnly: boolean
-): { canvas: HTMLCanvasElement; removedPixels: number } {
-  const width = source.width
-  const height = source.height
-  const radius = Math.max(1, Math.min(128, size / 2))
-  const padding = outlineOnly ? Math.ceil(radius + 5) : Math.ceil(radius)
-  const minX = Math.max(0, Math.floor(Math.min(...points.map(point => point.x)) - padding))
-  const minY = Math.max(0, Math.floor(Math.min(...points.map(point => point.y)) - padding))
-  const maxX = Math.min(width, Math.ceil(Math.max(...points.map(point => point.x)) + padding))
-  const maxY = Math.min(height, Math.ceil(Math.max(...points.map(point => point.y)) + padding))
-  if (maxX <= minX || maxY <= minY) return { canvas: source, removedPixels: 0 }
-  const context = source.getContext('2d')
-  if (!context) throw new Error('Canvas indisponível para aplicar o pincel.')
-  const image = context.getImageData(minX, minY, maxX - minX, maxY - minY)
-  const localWidth = image.width
-  const localHeight = image.height
-  const mask = new Uint8Array(localWidth * localHeight)
-  const markCircle = (point: ModelSourcePoint) => {
-    const cx = point.x - minX
-    const cy = point.y - minY
-    const left = Math.max(0, Math.floor(cx - radius))
-    const right = Math.min(localWidth - 1, Math.ceil(cx + radius))
-    const top = Math.max(0, Math.floor(cy - radius))
-    const bottom = Math.min(localHeight - 1, Math.ceil(cy + radius))
-    for (let y = top; y <= bottom; y += 1) for (let x = left; x <= right; x += 1) {
-      if ((x - cx) ** 2 + (y - cy) ** 2 <= radius ** 2) mask[y * localWidth + x] = 1
-    }
-  }
-  if (points.length === 1) markCircle(points[0])
-  for (let index = 1; index < points.length; index += 1) {
-    const from = points[index - 1]
-    const to = points[index]
-    const distance = Math.hypot(to.x - from.x, to.y - from.y)
-    const steps = Math.max(1, Math.ceil(distance / Math.max(1, radius / 2)))
-    for (let step = 0; step <= steps; step += 1) {
-      const amount = step / steps
-      markCircle({ x: from.x + (to.x - from.x) * amount, y: from.y + (to.y - from.y) * amount })
-    }
-  }
-  let removedPixels = 0
-  const indexAt = (x: number, y: number) => (y * localWidth + x) * 4
-  for (let y = 0; y < localHeight; y += 1) for (let x = 0; x < localWidth; x += 1) {
-    const pixelIndex = y * localWidth + x
-    if (!mask[pixelIndex]) continue
-    const offset = pixelIndex * 4
-    if (image.data[offset + 3] < 32) continue
-    if (!outlineOnly) {
-      image.data[offset + 3] = 0
-      removedPixels += 1
-      continue
-    }
-    let nearTransparent = false
-    for (let dy = -4; dy <= 4 && !nearTransparent; dy += 1) for (let dx = -4; dx <= 4; dx += 1) {
-      if (Math.hypot(dx, dy) > 4 || (dx === 0 && dy === 0)) continue
-      const nx = x + dx
-      const ny = y + dy
-      if (nx < 0 || ny < 0 || nx >= localWidth || ny >= localHeight || image.data[indexAt(nx, ny) + 3] < 32) {
-        nearTransparent = true
-        break
-      }
-    }
-    if (!nearTransparent) continue
-    let outlineLike = false
-    for (let distance = 2; distance <= 5 && !outlineLike; distance += 1) {
-      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, 1], [1, -1], [-1, -1]]) {
-        const nx = x + dx * distance
-        const ny = y + dy * distance
-        if (nx < 0 || ny < 0 || nx >= localWidth || ny >= localHeight) continue
-        const insideIndex = indexAt(nx, ny)
-        if (image.data[insideIndex + 3] < 160) continue
-        const contrast = colorDistance(image.data, offset, insideIndex)
-        const darkerInside = brightness(image.data[insideIndex], image.data[insideIndex + 1], image.data[insideIndex + 2])
-          - brightness(image.data[offset], image.data[offset + 1], image.data[offset + 2])
-        if (contrast >= 42 && darkerInside >= 18) {
-          outlineLike = true
-          break
-        }
-      }
-    }
-    if (outlineLike) {
-      image.data[offset + 3] = 0
-      removedPixels += 1
-    }
-  }
-  context.putImageData(image, minX, minY)
-  return { canvas: source, removedPixels }
-}
-
 export async function eraseModelSourceBrush(
   part: ModelPart,
   points: ModelSourcePoint[],
   size: number,
-  outlineOnly: boolean
+  outlineOnly: boolean,
+  signal?: AbortSignal
 ): Promise<BrushResult> {
   if (points.length === 0) return { part, removedPixels: 0 }
-  const images = await normalizedImages(part)
-  const display = applyBrush(images.display, points, size, outlineOnly)
-  const base = applyBrush(images.base, points, size, outlineOnly)
+  const task = startModelSourcePixelEditWorker({
+    id: ++pixelEditRequestId,
+    operation: 'brush',
+    part: { width: part.width, height: part.height, displayDataUrl: part.dataUrl, baseDataUrl: part.chromaBaseDataUrl ?? part.dataUrl },
+    points, size, outlineOnly
+  }, undefined, signal)
+  const edited = await task.result
   return {
     part: {
       ...part,
       chromaBaseSaved: true,
-      dataUrl: display.canvas.toDataURL('image/png'),
-      chromaBaseDataUrl: base.canvas.toDataURL('image/png')
+      dataUrl: edited.displayDataUrl,
+      chromaBaseDataUrl: edited.baseDataUrl
     },
-    removedPixels: display.removedPixels
+    removedPixels: edited.removedPixels
   }
 }
 
@@ -464,44 +370,23 @@ export async function sampleModelSourceColor(
   return '#' + [red, green, blue].map(channel => channel.toString(16).padStart(2, '0')).join('')
 }
 
-function removeSelectedColor(source: HTMLCanvasElement, color: string, tolerance: number): { canvas: HTMLCanvasElement; removedPixels: number } {
-  const context = source.getContext('2d', { willReadFrequently: true })
-  if (!context) throw new Error('Canvas indisponível para remover a cor da pele.')
-  const image = context.getImageData(0, 0, source.width, source.height)
-  const red = Number.parseInt(color.slice(1, 3), 16)
-  const green = Number.parseInt(color.slice(3, 5), 16)
-  const blue = Number.parseInt(color.slice(5, 7), 16)
-  const targetBrightness = brightness(red, green, blue)
-  const preserveDarkInkBelow = Math.max(32, Math.min(72, targetBrightness * 0.35))
-  const maxDistance = Math.max(0, Math.min(180, tolerance))
-  let removedPixels = 0
-
-  for (let offset = 0; offset < image.data.length; offset += 4) {
-    if (image.data[offset + 3] < 32) continue
-    const pixelBrightness = brightness(image.data[offset], image.data[offset + 1], image.data[offset + 2])
-    if (pixelBrightness < preserveDarkInkBelow) continue
-    const distance = Math.hypot(image.data[offset] - red, image.data[offset + 1] - green, image.data[offset + 2] - blue)
-    if (distance > maxDistance) continue
-    image.data[offset + 3] = 0
-    removedPixels += 1
-  }
-  context.putImageData(image, 0, 0)
-  return { canvas: source, removedPixels }
-}
-
-export async function removeModelSourceColor(part: ModelPart, color: string, tolerance: number): Promise<BrushResult> {
+export async function removeModelSourceColor(part: ModelPart, color: string, tolerance: number, signal?: AbortSignal): Promise<BrushResult> {
   if (!/^#[0-9a-f]{6}$/i.test(color)) throw new Error('Escolha ou amostre uma cor válida antes de remover a pele.')
   if (!Number.isFinite(tolerance) || tolerance < 0 || tolerance > 180) throw new Error('A semelhança da cor está fora do intervalo permitido.')
-  const images = await normalizedImages(part)
-  const display = removeSelectedColor(images.display, color, tolerance)
-  const base = removeSelectedColor(images.base, color, tolerance)
+  const task = startModelSourcePixelEditWorker({
+    id: ++pixelEditRequestId,
+    operation: 'remove-color',
+    part: { width: part.width, height: part.height, displayDataUrl: part.dataUrl, baseDataUrl: part.chromaBaseDataUrl ?? part.dataUrl },
+    color, tolerance
+  }, undefined, signal)
+  const edited = await task.result
   return {
     part: {
       ...part,
       chromaBaseSaved: true,
-      dataUrl: display.canvas.toDataURL('image/png'),
-      chromaBaseDataUrl: base.canvas.toDataURL('image/png')
+      dataUrl: edited.displayDataUrl,
+      chromaBaseDataUrl: edited.baseDataUrl
     },
-    removedPixels: Math.max(display.removedPixels, base.removedPixels)
+    removedPixels: edited.removedPixels
   }
 }
