@@ -119,14 +119,18 @@ export function compilePtPupilMotion(overrides: PtPupilOverrides | undefined,
   }
   return {version:1,layers}
 }
-/** Only PT position/rotation differ: normal scale/flip always remain inherited. */
+/** PT keeps normal pupil scale/flip while preserving its position relative to each eye's rendered size. */
 export function applyPtPupilMotion(normal: FaceTransform, neutral: FaceTransform,
-  layer: NonNullable<PtPupilMotion['layers']['left']>, metric: ExpressionMetric): FaceTransform {
+  layer: NonNullable<PtPupilMotion['layers']['left']>, metric: ExpressionMetric,
+  authoredEye: Pick<FaceTransform, 'scaleX' | 'scaleY'>,
+  targetEye: Pick<FaceTransform, 'scaleX' | 'scaleY'>): FaceTransform {
   if (!validTransform(normal) || !validTransform(neutral) || !validMetric(metric)
-      || ![layer.dx,layer.dy,layer.rotation].every(Number.isFinite)) throw Error('Movimento PT inválido.')
+      || ![layer.dx,layer.dy,layer.rotation,authoredEye.scaleX,authoredEye.scaleY,targetEye.scaleX,targetEye.scaleY].every(Number.isFinite)
+      || authoredEye.scaleX <= 0 || authoredEye.scaleY <= 0 || targetEye.scaleX <= 0 || targetEye.scaleY <= 0) throw Error('Movimento PT inválido.')
   const direction=Boolean(layer.sourceMirrored)!==Boolean(metric.mirrored)?-1:1
-  return {...normal,x:neutral.x+layer.dx*metric.width*direction,
-    y:neutral.y+layer.dy*metric.height,rotation:neutral.rotation+layer.rotation*direction}
+  return {...normal,x:neutral.x+layer.dx*metric.width*(targetEye.scaleX/authoredEye.scaleX)*direction,
+    y:neutral.y+layer.dy*metric.height*(targetEye.scaleY/authoredEye.scaleY),
+    rotation:neutral.rotation+layer.rotation*direction}
 }
 export function expressionGazeX(
   basePupilX: number,

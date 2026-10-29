@@ -225,9 +225,11 @@ export async function buildEditorV6ExpressionTransforms(
     const key=`expression-component:${part}`
     const current=result[key]?.sourceTransformOverride ?? baseline
     const manual=preset.ptPupilMotion?.layers[side]
+    const authoredEye=preset.transforms[side==='left'?'eyeLeft':'eyeRight']
     put(key,manual
       ? applyPtPupilMotion(current,baseline,manual,
-        {width:eye.width,height:eye.height,mirrored:side==='right' && asset.rightSidePositioned!==true})
+        {width:eye.width,height:eye.height,mirrored:side==='right' && asset.rightSidePositioned!==true},
+        authoredEye,eyeBase)
       : {...current,x:resolvePresetPupilGaze(current.x,baseline.x,eye.width,eyeBase.scaleX,
           side,asset.rightSidePositioned===true,gaze,
           Boolean(eyeBase.flipX)!==(side==='right' && eye.rightSidePositioned!==true))})

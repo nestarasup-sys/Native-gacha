@@ -6,6 +6,8 @@ import { compilePortableExpression, applyPortableExpressionLayer,
   isPtPupilOverrides, isPtPupilMotion } from '../src/shared/portableExpression.ts'
 import { buildStudioExpressionTransforms, buildStudioExpressionAppearance, resolveStudioExpressionBase }
   from '../src/renderer/src/characters/studioExpressionTransforms.ts'
+import { buildEditorV6ExpressionTransforms }
+  from '../src/renderer/src/characters/editorV6ExpressionTransforms.ts'
 
 const tf=(x=0,y=0,sx=1,sy=1,rotation=0)=>({x,y,scaleX:sx,scaleY:sy,rotation})
 const transforms=()=>({eyeLeft:tf(10,20),eyeRight:tf(10,20),pupilLeft:tf(0,0),pupilRight:tf(0,0),
@@ -147,6 +149,8 @@ test('PT manuais são isoladas por expressão, por lado e herdam todos os outros
   const prior=structuredClone(actor.appearance)
   const normal=await buildStudioExpressionTransforms(serialized,actor.appearance,{},actor.loadComponent,actor.loadCatalog,'right')
   const pt=await buildStudioExpressionTransforms(serialized,actor.appearance,{},actor.loadComponent,actor.loadCatalog,'left')
+  const editorV6=await buildEditorV6ExpressionTransforms(serialized,actor.appearance,{},actor.loadComponent,actor.loadCatalog,'left')
+  assert.deepEqual(editorV6,pt,'Editor V6 transfere a mesma posição PT que a prévia compartilhada')
   for(const key of Object.keys(normal)){
     if(key.includes('pupil-'))continue
     assert.deepEqual(pt[key],normal[key],'PT inherits regular layer '+key)
@@ -155,8 +159,9 @@ test('PT manuais são isoladas por expressão, por lado e herdam todos os outros
     const id='expression-component:pupil-'+side
     const pupil=pt[id].sourceTransformOverride
     const base=actor.appearance.components['pupil-'+side].transform
-    assert.ok(Math.abs(pupil.x-(base.x+manual.x/70*82))<1e-7)
-    assert.ok(Math.abs(pupil.y-(base.y+manual.y/34*41))<1e-7)
+    const eye=actor.appearance.components['eye-'+side]
+    assert.ok(Math.abs(pupil.x-(base.x+manual.x/70*82*eye.transform.scaleX))<1e-7)
+    assert.ok(Math.abs(pupil.y-(base.y+manual.y/34*41*eye.transform.scaleY))<1e-7)
     assert.equal(pupil.rotation,manual.rotation)
     assert.equal(pupil.scaleX,normal[id].sourceTransformOverride.scaleX)
     assert.equal(pupil.scaleY,normal[id].sourceTransformOverride.scaleY)
