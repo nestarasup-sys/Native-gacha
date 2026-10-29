@@ -1045,3 +1045,11 @@ Continua a auditoria das operações IPC iniciadas pelo usuário e da cobertura 
 - `dataPlatform.cjs` continua sendo a fachada pública com os mesmos exports e métodos; consumidores existentes, `dataPlatform.d.cts`, canais IPC, caminhos, schema SQLite e formatos persistidos não mudaram. A extração removeu 285 linhas físicas da fachada (1.132 para 847), sem afirmar ganho de desempenho.
 - Teste de compatibilidade comprova que os exports antigos são as mesmas implementações dos novos módulos. Os blocos extraídos foram comparados com o original; as funções foram movidas sem alteração.
 - Verificação: `tests/data-platform.test.cjs` passou com 19 testes; `npm run test:data-runtime` passou; `npm test` passou com 28; `npm run test:refactor` passou com 346. Também passaram typecheck, auditoria de arquitetura (387 arquivos TS/TSX), build e `git diff --check`. Fixtures usam diretórios temporários; nenhum dado local do usuário foi inspecionado.
+
+## 43. Etapa aplicada — validação de presets faciais no domínio do Fabricador
+
+- `electron/main.ts` mantinha a validação completa de presets e rascunhos faciais junto da composição do Electron. `expressionValidation.ts` agora é o módulo dono dessas regras puras e recebe a validação do slot como dependência explícita.
+- A mesma validação continua sendo usada na leitura/escrita do armazenamento e na transação em lote. IDs, limites numéricos, seleções, transformações legadas, movimento portátil, pupilas PT e efeitos mantêm os critérios existentes; a validação de efeitos chama diretamente a implementação compartilhada que `isStudioExpressionEffects` já reexportava.
+- Não mudaram arquivos JSON, referências, filas, canais IPC ou o comportamento do editor. `electron/main.ts` passou de 1.419 para 1.346 linhas físicas (1.336 para 1.264 com conteúdo), deixando a composição sem as regras de validação do domínio.
+- Regressões verificam preset atual, movimento e pupilas PT, seleção facial, limites geométricos, rascunho, cópias de trabalho e valores inválidos. A validação não altera o objeto recebido.
+- Verificação: `npm run test:refactor` passou com 348 testes; a suíte focada de compatibilidade passou com 14; também passaram typecheck, auditoria de arquitetura (388 arquivos TS/TSX), build e `git diff --check`.
