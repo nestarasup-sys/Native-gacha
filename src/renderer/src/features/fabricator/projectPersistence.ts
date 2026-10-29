@@ -1,5 +1,5 @@
 import type { FabricatorAssetSave, FabricatorProject, FabricatorProjectSave } from '../../../../shared/fabricator'
-import { serializeFabricatorProject } from './models/projectSerialization'
+import { serializeFabricatorProject } from './models/projectSerialization.ts'
 
 type SaveProject = (project: FabricatorProjectSave, changedAssets: FabricatorAssetSave[]) => Promise<void>
 

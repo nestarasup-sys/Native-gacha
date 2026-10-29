@@ -92,10 +92,13 @@ test('Pose drafts register a flush for the latest project and wait for queued wr
 
 test('Fabricator model projects register a flusher while secondary appearance previews stay read-only', async () => {
   const fabricator = await readFile('src/renderer/src/features/fabricator/FabricatorPage.tsx', 'utf8')
+  const persistence = await readFile('src/renderer/src/features/fabricator/projectSaveCoordinator.ts', 'utf8')
   const appearance = await readFile('src/renderer/src/features/fabricator/useFabricatorModelAppearance.ts', 'utf8')
   assert.match(fabricator, /registerPendingWriteFlusher\(flushProjectWrites\)/)
-  assert.match(fabricator, /if \(hadPendingTimer && projectRef\.current\) await persistProject\(projectRef\.current\)/)
-  assert.match(fabricator, /await projectWriteQueue\.current/)
+  assert.match(fabricator, /projectSaveCoordinator\.scheduleSave\(project\)/)
+  assert.match(persistence, /if \(hadPendingTimer && deps\.projectRef\.current\) await persistProject\(deps\.projectRef\.current\)/)
+  assert.match(persistence, /await writeQueue/)
+  assert.match(persistence, /waitForProjectWrites = \(\) => writeQueue\.catch\(\(\) => undefined\)/)
   assert.match(appearance, /loadFabricatorSlot\(visibleAppearanceSlot\)/)
   assert.match(appearance, /setAppearanceLoadError/)
   assert.doesNotMatch(appearance, /registerPendingWriteFlusher|saveFabricatorProject|appearanceSaveQueue/)

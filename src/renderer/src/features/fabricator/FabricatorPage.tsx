@@ -13,7 +13,7 @@ import { startChromaAdjustWorker, ChromaAdjustTaskError, type ChromaAdjustTask }
 import { startImageProcessorWorker, ImageProcessorTaskError, type ImageProcessorTask } from './models/runImageProcessorWorker'
 import { paintSeamMixerSegment as applySeamMixerSegment, type SeamMixerSurface } from './models/seamMixer'
 import { serializeFabricatorProject } from './models/projectSerialization'
-import { persistFabricatorProjectSnapshot } from './projectPersistence'
+import { createFabricatorProjectSaveCoordinator } from './projectSaveCoordinator'
 import { useFabricatorHistory } from './useFabricatorHistory'
 import { prepareLoadedFabricatorProject } from './models/projectHydration'
 import { MAX_CHROMA_TOLERANCE, type ModelSourceResult } from './models/modelSource'
@@ -116,8 +116,6 @@ export function FabricatorPage() {
   const slotSelectionGeneration = useRef(0)
   const dirtyAssets = useRef<Map<string, string>>(new Map())
   const dirtyChromaBases = useRef<Map<string, string>>(new Map())
-  const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const projectWriteQueue = useRef<Promise<void>>(Promise.resolve())
   const initialSlotLoad = useRef(false)
   const cancelImageProcessingTask = useCallback(() => {
     const task = imageProcessingTaskRef.current
@@ -139,39 +137,19 @@ export function FabricatorPage() {
     processing, chromaApplying
   })
 
-  const persistProject = useCallback((snapshot: FabricatorProject) => {
-    const current = projectWriteQueue.current.catch(() => undefined).then(async () => {
-      const assets = await persistFabricatorProjectSnapshot(
-        snapshot,
-        dirtyAssets.current,
-        dirtyChromaBases.current,
-        (serialized, changedAssets) => window.desktop.fabricator.saveFabricatorProject(serialized, changedAssets)
-      )
-      for (const asset of assets) {
-        if (dirtyAssets.current.get(asset.id) === asset.dataUrl) dirtyAssets.current.delete(asset.id)
-        if (asset.chromaBaseDataUrl && dirtyChromaBases.current.get(asset.id) === asset.chromaBaseDataUrl) dirtyChromaBases.current.delete(asset.id)
-      }
-      setSaveState('saved')
+  const projectSaveCoordinator = useMemo(() => createFabricatorProjectSaveCoordinator({
+    projectRef, dirtyAssets, dirtyChromaBases,
+    saveProject: (serialized, changedAssets) => window.desktop.fabricator.saveFabricatorProject(serialized, changedAssets),
+    setSaveState,
+    setError,
+    onProjectSaved: (snapshot) => {
       window.dispatchEvent(new Event('fabricator:assets-updated'))
-      setSlots((items) => items.map((item, index) => index + 1 === snapshot.slot ? { slot: snapshot.slot, name: snapshot.name, sourceName: snapshot.sourceName, partCount: snapshot.parts.length, updatedAt: snapshot.updatedAt } : item))
-    })
-    projectWriteQueue.current = current
-    return current
-  }, [])
-
-  const flushProjectWrites = useCallback(async () => {
-    const hadPendingTimer = savedTimer.current !== null
-    if (savedTimer.current) clearTimeout(savedTimer.current)
-    savedTimer.current = null
-    try {
-      if (hadPendingTimer && projectRef.current) await persistProject(projectRef.current)
-      await projectWriteQueue.current
-    } catch (reason) {
-      setSaveState('error')
-      setError(reason instanceof Error ? `Falha ao salvar o projeto: ${reason.message}` : 'Falha ao salvar o projeto.')
-      throw reason
+      setSlots((items) => items.map((item, index) => index + 1 === snapshot.slot
+        ? { slot: snapshot.slot, name: snapshot.name, sourceName: snapshot.sourceName, partCount: snapshot.parts.length, updatedAt: snapshot.updatedAt }
+        : item))
     }
-  }, [persistProject])
+  }), [])
+  const { persistProject, flushProjectWrites, cancelScheduledSave, waitForProjectWrites } = projectSaveCoordinator
 
   useEffect(() => registerPendingWriteFlusher(flushProjectWrites), [flushProjectWrites])
 
@@ -185,8 +163,6 @@ export function FabricatorPage() {
       requestId.current += 1
       cancelImageProcessingTask()
       cancelChromaTask()
-      if (savedTimer.current) clearTimeout(savedTimer.current)
-      savedTimer.current = null
     }
   }, [cancelChromaTask, cancelImageProcessingTask])
 
@@ -208,23 +184,7 @@ export function FabricatorPage() {
     return () => { observer.disconnect() }
   }, [activeSection, project])
 
-  useEffect(() => {
-    if (!project) { setSaveState('saved'); return }
-    setSaveState('saving')
-    if (savedTimer.current) clearTimeout(savedTimer.current)
-    const timer = setTimeout(() => {
-      if (savedTimer.current === timer) savedTimer.current = null
-      void persistProject(projectRef.current ?? project).catch((reason: unknown) => {
-        setSaveState('error')
-        setError(reason instanceof Error ? `Falha ao salvar: ${reason.message}` : 'Falha ao salvar o projeto.')
-      })
-    }, 700)
-    savedTimer.current = timer
-    return () => {
-      clearTimeout(timer)
-      if (savedTimer.current === timer) savedTimer.current = null
-    }
-  }, [persistProject, project])
+  useEffect(() => projectSaveCoordinator.scheduleSave(project), [project, projectSaveCoordinator])
 
   useEffect(() => {
     if (!appearanceProject) {
@@ -370,8 +330,7 @@ export function FabricatorPage() {
     setProcessing(false); setProgress(0); setChromaApplying(false)
     const projectToSave = projectRef.current ?? project
     if (projectToSave) {
-      if (savedTimer.current) clearTimeout(savedTimer.current)
-      savedTimer.current = null
+      cancelScheduledSave()
       try { await persistProject(projectToSave) } catch (reason) {
         if (generation === slotSelectionGeneration.current) {
           setError(reason instanceof Error ? `Falha ao salvar antes de trocar de slot: ${reason.message}` : 'Falha ao salvar antes de trocar de slot.')
@@ -444,14 +403,13 @@ export function FabricatorPage() {
     if (activeSlot === slot) {
       slotSelectionGeneration.current += 1
       requestId.current += 1
-      if (savedTimer.current) clearTimeout(savedTimer.current)
-      savedTimer.current = null
+      cancelScheduledSave()
       cancelImageProcessingTask()
       cancelChromaTask(); setChromaApplying(false)
       setProcessing(false); setProgress(0)
     }
     try {
-      await projectWriteQueue.current.catch(() => undefined)
+      await waitForProjectWrites()
       await window.desktop.fabricator.deleteFabricatorSlot(slot)
       setSlots((current) => current.map((item, index) => index === slot - 1 ? null : item))
       if (activeSlot === slot) {
@@ -490,8 +448,7 @@ export function FabricatorPage() {
     setDuplicatingModel(true)
     setDuplicateError('')
     try {
-      if (savedTimer.current) clearTimeout(savedTimer.current)
-      savedTimer.current = null
+      cancelScheduledSave()
       await persistProject(source)
       await window.desktop.fabricator.duplicateFabricatorSlot(source.slot, targetSlot)
       const updatedAt = new Date().toISOString()
@@ -547,8 +504,7 @@ export function FabricatorPage() {
     if (!current || modelSourcePublishing || processing || chromaApplying || historyBusy) throw new Error('O modelo não está disponível para edição.')
     setModelSourcePublishing(true)
     setSaveState('saving')
-    if (savedTimer.current) clearTimeout(savedTimer.current)
-    savedTimer.current = null
+    cancelScheduledSave()
     try {
       await persistProject(current)
       const next: FabricatorProject = {
@@ -634,8 +590,7 @@ export function FabricatorPage() {
     if (!project || processing || chromaApplying || historyBusy) return
     const originalName = project.sourceName.replace(/\.[^.]+$/, '') || `Modelo ${project.slot}`
     if (!window.confirm('Resetar este modelo para a importação original? Isso vai apagar os recortes, posições, camadas, juntas e ajustes atuais.')) return
-    if (savedTimer.current) clearTimeout(savedTimer.current)
-    savedTimer.current = null
+    cancelScheduledSave()
     setProcessing(true)
     try {
       await persistProject(project)
@@ -666,8 +621,7 @@ export function FabricatorPage() {
     if (slots[slot - 1] && !reimporting && !window.confirm(`Substituir o modelo do slot ${slot}? O projeto atual será trocado.`)) return
     const projectToSave = projectRef.current ?? project
     if (projectToSave) {
-      if (savedTimer.current) clearTimeout(savedTimer.current)
-      savedTimer.current = null
+      cancelScheduledSave()
       try { await persistProject(projectToSave) } catch (reason) { setError(reason instanceof Error ? `Falha ao salvar antes da importação: ${reason.message}` : 'Falha ao salvar antes da importação.'); return }
     }
     if (selectionGeneration !== slotSelectionGeneration.current) return

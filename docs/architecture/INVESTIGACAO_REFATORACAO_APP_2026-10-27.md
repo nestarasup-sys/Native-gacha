@@ -1067,3 +1067,10 @@ Continua a auditoria das operações IPC iniciadas pelo usuário e da cobertura 
 - Os nomes em disco e o formato não mudaram. Os testes com raiz sintética cobrem todas as rotas do Fabricador, manifesto do Customizador, Studio Principal, Editor Gacha e projetos do Editor V6; também garantem que a resolução continua acompanhando o caminho de dados atual.
 - `electron/main.ts` passou de 1.346 para 1.332 linhas físicas. Nenhum diretório ou dado local foi lido, movido ou regravado nesta extração.
 - Verificação: testes de caminhos (5), suíte ampla de refatoração, typecheck, auditoria de arquitetura, build, `npm test` e `git diff --check`.
+
+## 46. Etapa aplicada — autosave do modelo-base fora da página
+
+- `FabricatorPage.tsx` mantinha junto da interface a fila de gravação, o debounce, a drenagem antes de fechar/navegar e a limpeza de assets modificados. `projectSaveCoordinator.ts` agora coordena esses casos e continua delegando a serialização, recuperação de assets ausentes e gravação IPC a `projectPersistence.ts` e ao preload já existente.
+- A página registra o mesmo flusher global. Troca de slot, exclusão, duplicação, publicação da imagem original, reset e importação continuam aguardando ou cancelando a mesma fila nos pontos anteriores. O canal IPC, o payload serializado e os JSON persistidos não mudaram.
+- `FabricatorPage.tsx` passou de 1.091 para 1.045 linhas físicas (46 a menos). Quatro regressões cobrem flush do snapshot mais recente, serialização das gravações após falha, cancelamento do timer e preservação de um asset alterado durante uma gravação em curso.
+- Verificação: testes do coordenador (4), inventário de persistência pendente, suíte ampla de refatoração, typecheck, auditoria de arquitetura, build, `npm test` e `git diff --check`.
