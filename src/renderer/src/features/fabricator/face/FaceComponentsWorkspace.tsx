@@ -22,6 +22,7 @@ import { useModelAppearanceTarget, useModelPartAppearancePreview } from '../Mode
 import { isRightLibraryAsset, libraryBaseName, sameLibraryPair, visibleFaceLibraryAssets } from './faceLibraryModel'
 import { createFaceSaveQueue, type FaceSaveQueue } from './faceSaveQueue'
 import { loadFaceCatalogWorkspaceData, loadFaceComponentWorkspaceData } from './faceWorkspaceData'
+import { deriveFacePairTransformMetrics } from './facePairTransformModel'
 import { useFacePreviewDrag } from './useFacePreviewDrag'
 
 type CatalogKind = 'nose' | 'mouth-closed' | 'mouth-open'
@@ -225,19 +226,15 @@ export function FaceComponentsWorkspace({ mode, baseModelSlot }: { mode: FaceWor
   const rightPairAsset = rightPairId ? details[rightPairId] : undefined
   const movementLeftAsset = libraryCategory === 'eye-closed' ? details[selectedAssets['eye-left'] ?? ''] : leftPairAsset
   const movementRightAsset = libraryCategory === 'eye-closed' ? details[selectedAssets['eye-right'] ?? ''] : rightPairAsset
-  const rightPairX = head && movementLeftAsset ? movementRightAsset && movementRightAsset.id !== movementLeftAsset.id
-    ? movementRightAsset.rightSidePositioned || libraryCategory === 'pupil' ? movementRightAsset.defaultTransform.x : head.width - movementRightAsset.defaultTransform.x
-    : libraryCategory === 'pupil' ? -movementLeftAsset.defaultTransform.x : head.width - movementLeftAsset.defaultTransform.x : 0
-  const pairX = movementLeftAsset ? (movementLeftAsset.defaultTransform.x + rightPairX) / 2 : 0
-  const eyeSeparation = libraryCategory === 'eye' && movementLeftAsset ? Math.max(0, rightPairX - movementLeftAsset.defaultTransform.x) : 0
-  const eyeSeparationMax = head ? Math.max(1, 2 * Math.min(pairX, head.width - pairX)) : 1
-  const pairY = movementLeftAsset ? (movementLeftAsset.defaultTransform.y + (movementRightAsset && movementRightAsset.id !== movementLeftAsset.id ? movementRightAsset.defaultTransform.y : movementLeftAsset.defaultTransform.y)) / 2 : 0
-  const pairHeightAsset = libraryCategory === 'eye-closed' ? leftPairAsset : movementLeftAsset
   const leftEyeForPupil = details[selectedAssets['eye-left'] ?? '']
-  const pairWidthSource = movementLeftAsset?.kind === 'pupil' ? leftEyeForPupil ? leftEyeForPupil.width * leftEyeForPupil.defaultTransform.scaleX : head ? head.width * .19 : 1 : movementLeftAsset?.width ?? 1
-  const pairHeightSource = pairHeightAsset?.kind === 'pupil' ? leftEyeForPupil ? leftEyeForPupil.height * leftEyeForPupil.defaultTransform.scaleY : head ? head.height * .17 : 1 : pairHeightAsset?.height ?? 1
-  const pairWidthPercent = head && movementLeftAsset ? pairWidthSource * movementLeftAsset.defaultTransform.scaleX / head.width * 100 : 0
-  const pairHeightPercent = head && pairHeightAsset ? pairHeightSource * pairHeightAsset.defaultTransform.scaleY / head.height * 100 : 0
+  const { pairHeightAsset, pairX, pairY, eyeSeparation, eyeSeparationMax, pairWidthPercent, pairHeightPercent } = deriveFacePairTransformMetrics({
+    head,
+    category: libraryCategory,
+    movementLeftAsset,
+    movementRightAsset,
+    leftPairAsset,
+    leftEyeForPupil
+  })
   const selectedMouth = selectedMouthId && mouthDetails[selectedMouthId]?.category === mouthKind ? mouthDetails[selectedMouthId] : undefined
   const selectedNose = selectedNoseId ? noseDetails[selectedNoseId] : undefined
   const selectedCatalogItem = libraryCategory === 'nose' ? selectedNose : libraryCategory === 'mouth' ? selectedMouth : undefined

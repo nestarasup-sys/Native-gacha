@@ -1461,3 +1461,10 @@ Continua a auditoria das operações IPC iniciadas pelo usuário e da cobertura 
 - Cada segmento mantém referências locais aos canvases usados até terminar, então uma entrada removida durante a execução ainda recebe os pixels modificados do traço. A página resolve peças, visibilidade e ordem de camadas a partir do projeto mais recente antes de iniciar o segmento, evitando recarregar uma imagem antiga após uma expulsão do cache.
 - O limite cobre apenas canvases persistentes do cache; buffers temporários `ImageData` de um traço ainda dependem das peças que ele examina. Não houve alteração no algoritmo visual do pincel, nos assets salvos ou na persistência.
 - Testes cobrem LRU, orçamento de bytes, substituição, descarte de superfícies grandes, limpeza da contabilidade e o caminho de uso do canvas durante uma expulsão. Typecheck, build, auditoria de arquitetura, suíte `test:refactor` e `git diff --check` passaram.
+
+## 95. Etapa aplicada — geometria dos pares de Olhos/Rosto DEV isolada
+
+- `FaceComponentsWorkspace.tsx` calculava diretamente a posição média, separação dos olhos e percentuais de largura/altura usados pelos controles de pares. A regra também precisa distinguir assets espelhados dos posicionados à direita, pupilas dimensionadas em relação ao olho selecionado e olhos fechados dimensionados pela própria imagem.
+- `facePairTransformModel.ts` agora concentra esses cálculos em uma função pura. A tela continua apresentando os mesmos controles e delega a ela os assets e a categoria atuais; IDs, transformações salvas, seleção, persistência e aparência não mudaram.
+- Os testes sintéticos cobrem pares espelhados e posicionados à direita, proporções de pupila com fallback, altura própria do olho fechado e a delegação da página ao modelo.
+- Verificação: `tests/face-pupil-editor-continuity.test.mjs` passou com 12 testes; `npm run test:refactor` passou com 493 testes principais e as suítes auxiliares incluídas no comando; também passaram `npm run typecheck`, `npm run build` e `npm run audit:architecture` (459 arquivos TS/TSX, sem erros de sintaxe, imports ausentes ou violações de fronteira).
