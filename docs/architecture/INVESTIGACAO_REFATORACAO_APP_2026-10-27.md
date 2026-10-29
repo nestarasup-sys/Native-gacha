@@ -137,7 +137,7 @@ O aplicativo tem sete áreas em uma shell Electron/React. A separação de Base 
 
 A **Biblioteca de Mídia** é dona dos arquivos de vídeo e seus IDs. Base de Vídeos guarda estado editorial e numeração; Roteiros e Editor V6 guardam referências por ID. Uma coordenação curta agora serializa alterações nesses vínculos nas três áreas, evitando que um autosave atrasado recoloque a referência depois de excluir o vídeo.
 
-O restante já tem módulos por domínio e armazenamento local com SQLite, arquivos e CAS. O `electron/main.ts` agora registra somente o flush transversal de gravações; a maior concentração está nas páginas React extensas que combinam estado e coordenação de operações. O plano prioriza limites de propriedade, segurança dos dados e redução de responsabilidades por fluxo.
+O restante já tem módulos por domínio e armazenamento local com SQLite, arquivos e CAS. `electron/main.ts` é o composition root: instancia serviços, injeta recursos nativos e registra as IPCs pelos registradores donos de cada domínio; mantém diretamente o flush transversal e a coordenação de referências entre domínios. A validação de documentos de Studio e Editor V6 fica em schemas compartilhados. A maior concentração de responsabilidades permanece nas páginas React e workspaces extensos; cada extração deve seguir o dono do estado e da persistência.
 
 **Próximos passos:** referências, filas e persistência dos catálogos faciais agora têm escopo explícito por `modelSlot` ou perfil. As gravações do catálogo facial mantêm a ordem fila do slot → lock de personagens → fila de expressões; os guias faciais são serializados por perfil e entram no inventário de flush, backup e encerramento. O próximo ciclo continua a auditoria das operações IPC manuais iniciadas por ações do usuário e completa a matriz de falhas e recuperação de cada domínio. O flush transversal permanece no composition root. A orquestração e os modos de render de Studio e Editor V6 continuam separados até existir comparação visual das saídas reais.
 
@@ -151,12 +151,12 @@ O restante já tem módulos por domínio e armazenamento local com SQLite, arqui
 
 ### Inventário da reauditoria
 
-Contagens revalidadas na branch local `Dev-V2`, snapshot `c98f630`.
+Contagens revalidadas na branch local `Dev-V2`, base desta etapa `3785da5`. As contagens de páginas abaixo usam linhas com conteúdo; a quantidade de linhas físicas de `main.ts` também é registrada.
 
 - O shell tem sete rotas de produto: Customizador, Studio principal, Editor V6, Roteiros, Base de Vídeos, Opções e Fabricador DEV.
 - `electron/domains/` contém módulos para Base de Vídeos, Customizador, Editor V6, Fabricador, imagens compartilhadas, Roteiros, armazenamento compartilhado e Studio. `src/shared/` guarda contratos e regras usadas por mais de um processo.
-- `electron/main.ts` tem 1.747 linhas após as extrações de migração, inventário, backup, cabelo, arquivos do Studio/Editor V6, configurações, projetos/histórico, roupas e exportação de imagens; registra somente o handler IPC transversal de flush e compõe os serviços. A normalização de imagens fica no domínio compartilhado `electron/domains/images`. Os handlers `protocol.handle` são protocolos de mídia, com responsabilidades próprias.
-- As páginas de rota mais extensas são Editor V6 (1.623), Customizador (1.501), Studio (1.414) e Fabricador Dev (1.065); Roteiros tem 535, Base de Vídeos 362 e Opções 210 linhas. Dentro do Fabricador, os workspaces maiores são Expressões (1.280), peças faciais (1.205), Animador (1.115) e Roupas (906). Esses números localizam concentração de responsabilidades, mas não são por si só motivo para dividir arquivos.
+- `electron/main.ts` tem 1.419 linhas físicas (1.336 com conteúdo) após as extrações já registradas. É o composition root e ainda mantém a montagem de serviços, guardas transversais de poses/vídeos, caminhos e protocolos; a validação de Studio desta etapa saiu para `src/shared/studioValidation.ts`. A normalização de imagens fica no domínio compartilhado `electron/domains/images`.
+- As páginas com maior volume de conteúdo são Studio (1.349), Editor V6 (1.324), Customizador (1.189) e Fabricador Dev (1.035); Roteiros tem 545 e Base de Vídeos 346. Dentro do Fabricador, os workspaces maiores são Expressões (1.245), peças faciais (1.193), Animador (1.082), Model Source (955) e Roupas (888). Esses números localizam concentração de responsabilidades, mas não são por si só motivo para dividir arquivos.
 - A auditoria estática de dependências mantém em zero os imports de runtime entre os pares de features listados em `scripts/architecture/boundaries-baseline.json`.
 
 ### Mapa resumido
@@ -1014,7 +1014,7 @@ Continua a auditoria das operações IPC iniciadas pelo usuário e da cobertura 
 - `EditorV6Page.tsx` ainda montava os painéis de elenco e presets dentro da própria página, misturando marcação visual ao gerenciamento da cena e às ações do Fabricador.
 - `EditorV6CastPanel.tsx` agora apresenta o elenco e encaminha seleção, bloqueio de posição, adição e remoção para os callbacks do editor. `EditorV6PresetPanel.tsx` apresenta poses/expressões e encaminha as ações correspondentes; a página continua dona do documento, do histórico, da persistência e das operações de renderização.
 - O filtro e a ordenação de presets por conjunto viraram o seletor puro `editorV6ExpressionPresetsForCollection()`. O teste confirma a ordem crescente, o descarte de índices inválidos e que a entrada não é alterada.
-- A página caiu de 1.454 para 1.392 linhas. O markup, rótulos, classes CSS, disponibilidade dos botões e callbacks existentes foram mantidos; esta etapa organiza o código e não promete ganho de renderização.
+- A página caiu de 1.454 para 1.392 linhas com conteúdo. O markup, rótulos, classes CSS, disponibilidade dos botões e callbacks existentes foram mantidos; esta etapa organiza o código e não promete ganho de renderização.
 - Verificação: teste focado do seletor passou com 36 testes; `npm run test:editor-v6` passou com 137 testes e 1 ignorado; `npm run typecheck`, `npm run audit:architecture` (381 arquivos TS/TSX), `npm run build` e `git diff --check` passaram.
 
 ## 39. Etapa aplicada — motor de transformações faciais compartilhado
@@ -1028,5 +1028,12 @@ Continua a auditoria das operações IPC iniciadas pelo usuário e da cobertura 
 
 - `EditorV6Page.tsx` ainda implementava no corpo da página as operações de aplicar a expressão base, carregar/aplicar um preset, alternar fala/piscada, escolher uma folha facial e alterar uma variante. Essas regras dependem do personagem/peça selecionados, mas não da composição visual da página.
 - `editorV6FaceActions.ts` agora agrupa essas cinco ações e recebe explicitamente a seleção atual, o carregador de catálogo e o callback que publica a aparência. A página continua dona da renderização/bake, documento, histórico, seleção e salvamento; o callback preserva a mesma ordem e os mesmos metadados enviados para a cena.
-- `EditorV6Page.tsx` passou de 1.392 para 1.324 linhas. A mudança apenas organiza as responsabilidades: não altera canais IPC, IDs, formatos salvos, fluxo de renderização ou política de persistência.
+- `EditorV6Page.tsx` passou de 1.392 para 1.324 linhas com conteúdo. A mudança apenas organiza as responsabilidades: não altera canais IPC, IDs, formatos salvos, fluxo de renderização ou política de persistência.
 - Verificação: `npm run test:refactor` passou com 344 testes; `npm run test:editor-v6` passou com 137 testes e 1 ignorado; `npm test` passou com 27; também passaram typecheck, auditoria de arquitetura (383 arquivos TS/TSX), build e `git diff --check`.
+
+## 41. Etapa aplicada — validação do documento de Studio no módulo compartilhado
+
+- `electron/main.ts` continha a validação de `StudioDocument` e `StudioAsset` junto da composição de Electron. O Editor V6 já valida o documento em schema compartilhado, então o Studio ainda mantinha sua fronteira de entrada dentro do processo principal.
+- `src/shared/studioValidation.ts` agora é dono dessa validação. A regra continua exigindo os mesmos limites, UUIDs, relações entre elementos/assets, transformações faciais, datas e tipos de mídia. O módulo usa o validador facial compartilhado existente; não altera o JSON nem migra documentos.
+- `electron/main.ts` injeta `isStudioDocument` na persistência como antes e ficou com 1.419 linhas físicas (1.336 com conteúdo), 43 linhas físicas a menos. Guardas interdomínio e registro dos serviços continuam no composition root.
+- Fixture sintética verifica documento válido, referência de fundo incorreta, asset de personagem ausente, geometria não finita e transformação facial inválida. `npm run test:refactor` passou com 345 testes; `npm test` com 27; também passaram typecheck, auditoria de arquitetura (384 arquivos TS/TSX), build e `git diff --check`.
