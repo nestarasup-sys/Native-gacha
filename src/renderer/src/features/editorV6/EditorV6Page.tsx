@@ -31,33 +31,17 @@ import { Icon } from '../../ui/components/Icon'
 import { NumericRangeField } from '../../ui/components/NumericRangeField'
 import { SceneElementControls } from '../../ui/components/SceneElementControls'
 import { SceneCastPickerModal } from '../../ui/components/SceneCastPickerModal'
-import { isLegacySceneCatalogId, loadLegacySceneCatalog } from '../../ui/legacySceneCatalog'
 import { createSceneTextElement, sceneCatalogColor, sceneEditorTools } from '../../ui/sceneEditorDefaults'
 import { recordEditorV6PlaybackFrame, recordUiCommit } from '../../ui/performanceDiagnostics'
 import { useEditorV6DocumentPersistence } from './useEditorV6DocumentPersistence'
+import { editorV6PoseRevisionKey, useEditorV6CharacterSources } from './useEditorV6CharacterSources'
+import { useEditorV6ProjectLibrary } from './useEditorV6ProjectLibrary'
 import { fitEditorV6CharacterToStage } from '../../../../shared/editorV6CharacterGeometry'
 import { editorV6ProjectSummary, type EditorV6Asset, type EditorV6Document, type EditorV6Element, type EditorV6FaceTransform, type EditorV6FaceTransforms, type EditorV6ProjectSummary, type EditorV6TimelineBlock } from '../../../../shared/editorV6'
 import type { CustomizerCharacter } from '../../../../shared/customizer'
 import type { CustomizerFaceAppearance } from '../../../../shared/customizer'
 type EditorV6Card = EditorV6ProjectSummary
 type Tool = 'background' | 'objects' | null
-const STORAGE_KEY = 'gacha-nymi-editor-v6-catalog-v1'
-const editorV6PoseRevisionKey = (modelSlot: number, poseSlot: number) => `${modelSlot}:${poseSlot}`
-function sameCustomizerCharacterCatalog(left: CustomizerCharacter[], right: CustomizerCharacter[]): boolean {
-  return left.length === right.length && left.every((character, index) => {
-    const candidate = right[index]
-    if (!candidate) return false
-    return candidate.id === character.id
-      && candidate.updatedAt === character.updatedAt
-      && candidate.name === character.name
-      && (candidate.customization.modelSlot ?? 1) === (character.customization.modelSlot ?? 1)
-      && JSON.stringify(candidate.customization) === JSON.stringify(character.customization)
-  })
-}
-function samePoseRevisionSnapshot(left: Record<string, string>, right: Record<string, string>): boolean {
-  const keys = Object.keys(left)
-  return keys.length === Object.keys(right).length && keys.every((key) => left[key] === right[key])
-}
 const defaultStudioEyeTransform: EditorV6FaceTransform = createDefaultSceneFaceTransform()
 
 /** Layout do Editor V6. */
@@ -72,8 +56,6 @@ export function EditorV6Page() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
-  const [availableCharacters, setAvailableCharacters] = useState<CustomizerCharacter[]>([])
-  const [poseSourceSnapshot, setPoseSourceSnapshot] = useState<{ projectId: string; revisions: Record<string, string> } | null>(null)
   const [normalizedSourceVersion, setNormalizedSourceVersion] = useState(0)
   const [castPickerOpen, setCastPickerOpen] = useState(false)
   const [castSelection, setCastSelection] = useState<string[]>([])
@@ -95,6 +77,9 @@ export function EditorV6Page() {
     activeEditorV6IdRef.current = id
     setActiveEditorV6IdState(id)
   }, [])
+  const {
+    availableCharacters, availableCharacterById, activePoseSourceSnapshot
+  } = useEditorV6CharacterSources(activeEditorV6Id, setError)
   const [activeTool, setActiveTool] = useState<Tool>(null)
   const [fullView, setFullView] = useState(false)
   const [exportOpen, setExportOpen] = useState(false)
@@ -120,7 +105,6 @@ export function EditorV6Page() {
   const sceneRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef<EditorV6StageDrag | null>(null)
   const editorV6FaceTransformsRef = useRef<Record<string, EditorV6FaceTransforms>>({})
-  const activeLoadGenerationRef = useRef(0)
   const expressionSaveSignatureRef = useRef<{ studioId: string; value: string } | null>(null)
   const normalizedStudioIdsRef = useRef(new Set<string>())
   const nextStudioNumber = useRef(1)
@@ -144,10 +128,19 @@ export function EditorV6Page() {
     setError,
     updateActiveProject: updateActiveEditorV6Project
   })
-  const availableCharacterById = useMemo(() => new Map(availableCharacters.map((character) => [character.id, character])), [availableCharacters])
-  const fabricatorModelSlots = useMemo(() => [...new Set(availableCharacters.map((character) => character.customization.modelSlot ?? 1))].sort((left, right) => left - right), [availableCharacters])
-  const fabricatorModelSlotsKey = fabricatorModelSlots.join(',')
-  const activePoseSourceSnapshot = poseSourceSnapshot?.projectId === activeEditorV6Id ? poseSourceSnapshot : null
+  useEditorV6ProjectLibrary({
+    activeProjectId: activeEditorV6Id,
+    setProjects: setEditorV6Projects,
+    setFolder: setEditorV6Folder,
+    setLoading,
+    setError,
+    setActiveProjectId: setActiveEditorV6Id,
+    setActiveProject: setActiveEditorV6Project,
+    pausePlayback,
+    publishPlayheadFrame,
+    writeDocument: writeEditorV6Document,
+    createTimeline: createEditorV6Timeline
+  })
   const activeCharacterStates = useMemo(() => activeEditorV6 ? [
     ...activeEditorV6.elements,
     ...activeEditorV6.timeline.tracks.flatMap((track) => track.blocks.flatMap((block) => block.state ? [block.state] : []))
@@ -271,128 +264,6 @@ export function EditorV6Page() {
       document.removeEventListener('visibilitychange', refreshWhenVisible)
     }
   }, [selectedEditorV6CharacterModelSlot])
-
-  useEffect(() => {
-    let cancelled = false
-    void (async () => {
-      try {
-        const existing = await window.desktop.editorV6.listEditorV6Projects()
-        const knownIds = new Set(existing.map((studio) => studio.id))
-        const legacy = loadLegacySceneCatalog(STORAGE_KEY)
-        const now = new Date().toISOString()
-        for (const old of legacy) {
-          if (knownIds.has(old.id) || !isLegacySceneCatalogId(old.id)) continue
-          await writeEditorV6Document({
-            schemaVersion: 1, ...old, createdAt: now, updatedAt: now, backgroundColor: '#d7b5cd',
-            backgroundAssetId: null, backgroundX: 0, backgroundY: 0, backgroundWidth: 100, backgroundHeight: 100,
-            backgroundRotation: 0, assets: [], elements: [], timeline: createEditorV6Timeline()
-          })
-        }
-        const loaded = await window.desktop.editorV6.listEditorV6Projects()
-        const folder = await window.desktop.editorV6.getEditorV6Folder()
-        if (cancelled) return
-        setEditorV6Projects(loaded)
-        setEditorV6Folder(folder)
-        if (legacy.length) window.localStorage.removeItem(STORAGE_KEY)
-      } catch (reason) {
-        if (!cancelled) setError(reason instanceof Error ? reason.message : 'Não foi possível carregar os projetos do Editor V6.')
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
-    })()
-    return () => { cancelled = true }
-  }, [])
-
-  useEffect(() => {
-    const generation = ++activeLoadGenerationRef.current
-    if (!activeEditorV6Id) {
-      pausePlayback()
-      publishPlayheadFrame(0)
-      setActiveEditorV6Project(null)
-      return
-    }
-    setActiveEditorV6Project(null)
-    void window.desktop.editorV6.loadEditorV6Project(activeEditorV6Id).then((project) => {
-      if (generation !== activeLoadGenerationRef.current) return
-      if (!project) {
-        setError('Esse projeto não foi encontrado na biblioteca local do Editor V6.')
-        setActiveEditorV6Id(null)
-        return
-      }
-      setError(null)
-      setActiveEditorV6Project(project)
-    }).catch((reason: unknown) => {
-      if (generation !== activeLoadGenerationRef.current) return
-      setError(reason instanceof Error ? reason.message : 'Não foi possível abrir o projeto do Editor V6.')
-      setActiveEditorV6Id(null)
-    })
-    return () => { if (activeLoadGenerationRef.current === generation) activeLoadGenerationRef.current += 1 }
-  }, [activeEditorV6Id, pausePlayback, publishPlayheadFrame, setActiveEditorV6Id, setActiveEditorV6Project])
-
-  useEffect(() => {
-    let cancelled = false
-    let requestRunning = false
-    let requestQueued = false
-    const refreshCharacters = () => {
-      if (requestRunning) { requestQueued = true; return }
-      requestRunning = true
-      void window.desktop.customizer.listCustomizerCharacters().then((characters) => {
-        if (!cancelled) setAvailableCharacters((current) => sameCustomizerCharacterCatalog(current, characters) ? current : characters)
-      }).catch((reason: unknown) => {
-        if (!cancelled) setError(reason instanceof Error ? reason.message : 'Não foi possível carregar o elenco de personagens.')
-      }).finally(() => {
-        requestRunning = false
-        if (requestQueued && !cancelled) { requestQueued = false; refreshCharacters() }
-      })
-    }
-    const refreshWhenVisible = () => { if (document.visibilityState === 'visible') refreshCharacters() }
-    refreshCharacters()
-    window.addEventListener('focus', refreshCharacters)
-    document.addEventListener('visibilitychange', refreshWhenVisible)
-    return () => { cancelled = true; window.removeEventListener('focus', refreshCharacters); document.removeEventListener('visibilitychange', refreshWhenVisible) }
-  }, [])
-
-  useEffect(() => {
-    const projectId = activeEditorV6Id
-    if (!projectId) { setPoseSourceSnapshot(null); return }
-    let cancelled = false
-    let requestRunning = false
-    let requestQueued = false
-    const refreshPoseSourceSnapshot = async () => {
-      if (requestRunning) { requestQueued = true; return }
-      requestRunning = true
-      try {
-        do {
-          requestQueued = false
-          const modelSlots = fabricatorModelSlots
-          try {
-            const catalogs = await Promise.all(modelSlots.map(async (modelSlot) => ({ modelSlot, poses: await window.desktop.fabricator.listFabricatorPoseSlots(modelSlot) })))
-            if (cancelled) return
-            const revisions: Record<string, string> = {}
-            for (const { modelSlot, poses } of catalogs) poses.forEach((pose, index) => {
-              const slot = pose?.slot ?? index + 1
-              revisions[editorV6PoseRevisionKey(modelSlot, slot)] = pose?.updatedAt ?? 'missing'
-            })
-            setPoseSourceSnapshot((current) => current?.projectId === projectId && samePoseRevisionSnapshot(current.revisions, revisions)
-              ? current : { projectId, revisions })
-          } catch (reason) {
-            if (!cancelled) setError(reason instanceof Error ? reason.message : 'Não foi possível verificar as versões das poses salvas.')
-          }
-        } while (requestQueued && !cancelled)
-      } finally { requestRunning = false }
-    }
-    const refreshWhenVisible = () => { if (document.visibilityState === 'visible') void refreshPoseSourceSnapshot() }
-    void refreshPoseSourceSnapshot()
-    window.addEventListener('focus', refreshWhenVisible)
-    window.addEventListener('fabricator:assets-updated', refreshWhenVisible)
-    document.addEventListener('visibilitychange', refreshWhenVisible)
-    return () => {
-      cancelled = true
-      window.removeEventListener('focus', refreshWhenVisible)
-      window.removeEventListener('fabricator:assets-updated', refreshWhenVisible)
-      document.removeEventListener('visibilitychange', refreshWhenVisible)
-    }
-  }, [activeEditorV6Id, fabricatorModelSlotsKey])
 
   useEffect(() => {
     if (!editorV6PoseSlots.length) { setEditorV6PoseThumbnails({}); setEditorV6PoseDimensions({}); return }
