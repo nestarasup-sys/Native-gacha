@@ -166,7 +166,7 @@ export function EditorV6Page() {
     void pending.then(() => { if (editorV6SavePromiseRef.current === pending) editorV6SavePromiseRef.current = null })
     return pending
   }, [activeEditorV6, saveEditorV6Document])
-  const flushEditorV6Writes = useCallback(async () => {
+  const flushEditorV6DocumentWrites = useCallback(async () => {
     const hadPendingTimer = editorV6SaveTimerRef.current !== null
     if (editorV6SaveTimerRef.current !== null) window.clearTimeout(editorV6SaveTimerRef.current)
     editorV6SaveTimerRef.current = null
@@ -177,12 +177,20 @@ export function EditorV6Page() {
       if (latest && (hadPendingTimer || !saved) && !await saveActiveEditorV6Project(latest)) throw new Error('Não foi possível salvar o projeto do Editor V6 antes de continuar.')
       const inFlightSave = editorV6SavePromiseRef.current
       if (inFlightSave && !await inFlightSave) throw new Error('Não foi possível concluir o salvamento do Editor V6.')
-      await editorV6PendingOperations.flush()
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Não foi possível salvar o projeto do Editor V6 antes de continuar.')
       throw reason
     }
   }, [saved, saveActiveEditorV6Project])
+  const flushEditorV6Writes = useCallback(async () => {
+    try {
+      await editorV6PendingOperations.flush()
+      await flushEditorV6DocumentWrites()
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Não foi possível salvar o projeto do Editor V6 antes de continuar.')
+      throw reason
+    }
+  }, [editorV6PendingOperations, flushEditorV6DocumentWrites])
   useEffect(() => registerPendingWriteFlusher(flushEditorV6Writes), [flushEditorV6Writes])
   const markEditorV6Unsaved = useCallback(() => {
     invalidateEditorV6PendingSaves()
@@ -1317,15 +1325,17 @@ export function EditorV6Page() {
 
   const deleteStudio = async (target: EditorV6Card | null = selectedEditorV6) => {
     if (!target || !window.confirm(`Excluir ${target.title}?`)) return
-    try {
-      if (target.id === activeEditorV6IdRef.current) await flushEditorV6Writes()
-      await trackEditorV6Operation(() => window.desktop.editorV6.deleteEditorV6Project(target.id))
-      removeEditorV6Summary(target.id)
-      setSelectedId((current) => current === target.id ? null : current)
-      if (activeEditorV6Id === target.id) { pausePlayback(); setActiveEditorV6Id(null) }
-      setSaved(true)
-      setError(null)
-    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível excluir o projeto do Editor V6.') }
+    await trackEditorV6Operation(async () => {
+      try {
+        if (target.id === activeEditorV6IdRef.current) await flushEditorV6DocumentWrites()
+        await window.desktop.editorV6.deleteEditorV6Project(target.id)
+        removeEditorV6Summary(target.id)
+        setSelectedId((current) => current === target.id ? null : current)
+        if (activeEditorV6Id === target.id) { pausePlayback(); setActiveEditorV6Id(null) }
+        setSaved(true)
+        setError(null)
+      } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível excluir o projeto do Editor V6.') }
+    })
   }
 
   const leaveStudio = async () => {
@@ -1337,24 +1347,25 @@ export function EditorV6Page() {
     setFullView(false)
   }
 
-  const exportPrint = async () => {
+  const exportPrint = () => {
     if (!activeEditorV6) return
-    try {
-      await flushEditorV6Writes()
-      await trackEditorV6Operation(async () => {
+    const project = activeEditorV6
+    return trackEditorV6Operation(async () => {
+      try {
+        await flushEditorV6DocumentWrites()
         const { captureEditorV6Frame } = await import('./sceneCapture')
-        const image = await captureEditorV6Frame(activeEditorV6, getEditorV6PlaybackFrame(), 1920, 1080, 'image/png')
-        const path = await window.desktop.editorV6.saveEditorV6Print(activeEditorV6.id, image)
+        const image = await captureEditorV6Frame(project, getEditorV6PlaybackFrame(), 1920, 1080, 'image/png')
+        const path = await window.desktop.editorV6.saveEditorV6Print(project.id, image)
         if (path) { setError(null); setNotice(`Print salvo em ${path}`) }
-      })
-    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível gerar o print.') }
+      } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível gerar o print.') }
+    })
   }
 
-  const openPrints = async () => {
+  const openPrints = () => trackEditorV6Operation(async () => {
     if (!activeEditorV6) return
     try { await window.desktop.editorV6.openEditorV6Prints(activeEditorV6.id) }
     catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível abrir a pasta de prints.') }
-  }
+  })
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {

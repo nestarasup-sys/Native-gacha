@@ -137,7 +137,9 @@ test('Studio and Editor V6 flush debounced documents and wait for renderer IPC w
   for (const operation of ['duplicateStudio', 'importImage', 'importTimelineMedia', 'linkVideoLibraryItem']) {
     assert.match(editor, new RegExp(`const ${operation} =[^\\n]*trackEditorV6Operation\\(async \\(\\) =>`), `${operation} deve permanecer pendente até salvar o documento relacionado`)
   }
-  assert.match(editor, /await trackEditorV6Operation\(async \(\) => \{[\s\S]*?saveEditorV6Print/)
+  assert.match(editor, /const deleteStudio = async \([\s\S]*?trackEditorV6Operation\(async \(\) => \{[\s\S]*?deleteEditorV6Project/)
+  assert.match(editor, /const exportPrint = \(\) => \{[\s\S]*?return trackEditorV6Operation\(async \(\) => \{[\s\S]*?flushEditorV6DocumentWrites\(\)[\s\S]*?saveEditorV6Print/)
+  assert.match(editor, /const openPrints = \(\) => trackEditorV6Operation\(async \(\) =>/)
   assert.match(exportPanel, /trackOperation\(async \(\) => \{ const clip = await window\.desktop\.editorV6\.importEditorV6ExportAudio/)
   assert.match(exportPanel, /trackOperation\(async \(\) => \{ planEditorV6Export/)
 })

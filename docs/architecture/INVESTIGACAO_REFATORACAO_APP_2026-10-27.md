@@ -678,7 +678,7 @@ Este corte separa propriedade dos contratos e chamadas entre domínios, mas não
 
 ## 12. Próxima tarefa recomendada
 
-Em andamento: auditar operações IPC manuais iniciadas por ações de usuário e a cobertura do inventário do processo principal, além dos autosaves já drenados. Registrar para cada domínio o comportamento de falha/recuperação e completar a matriz de persistência do aplicativo. A auditoria agora cobre jobs de backup, exportações de Roteiros, imagens de poses, ações compostas de mídia do Editor V6 e arquivos de print/materialização do Studio no fechamento; ainda faltam operações manuais dos outros domínios e a recuperação após interrupção forçada de algumas publicações.
+Em andamento: auditar operações IPC manuais iniciadas por ações de usuário e a cobertura do inventário do processo principal, além dos autosaves já drenados. Registrar para cada domínio o comportamento de falha/recuperação e completar a matriz de persistência do aplicativo. A auditoria agora cobre jobs de backup, exportações de Roteiros, imagens de poses, ações compostas e prints do Editor V6 e arquivos de print/materialização do Studio no fechamento; ainda faltam operações manuais dos outros domínios e a recuperação após interrupção forçada de algumas publicações.
 
 ## 13. Verificações e validação
 
@@ -749,3 +749,10 @@ Em andamento: auditar operações IPC manuais iniciadas por ações de usuário 
 - O flush da tela aguardava o autosave e os IPCs iniciados, mas não acompanhava a ação inteira de importar imagem, gerar print, excluir o Studio ou materializar a pasta. O print era gravado em `fileIpc.ts`, fora da lista do processo principal, então um encerramento durante essa escrita podia interrompê-la.
 - `StudioPage` agora usa o rastreador de operações pendentes para esperar essas ações até completarem. O IPC de arquivos registra a gravação e a materialização dos prints em `getPendingWrites`, e `electron/main.ts` inclui essa fila no flush, backup e encerramento. O diálogo de importação foi injetado como dependência para permitir teste isolado do domínio.
 - Os canais, paths, PNGs e documentos existentes permanecem iguais. `tests/cycle10-studio-ipc-and-editor-structure.test.mjs` usa gates e dependências sintéticas para provar que escrita e materialização continuam no inventário até terminar; nenhum Studio ou print real foi lido ou alterado.
+
+## 20. Etapa aplicada — prints do Editor V6 e drenagem das ações compostas
+
+- `EditorV6Page` já registrava importações, duplicação e vínculo de vídeos até o save do documento. A auditoria encontrou duas ações compostas que iniciavam um flush antes de se registrarem: excluir o projeto e capturar um print. O fechamento podia concluir esse flush antes da continuação da ação.
+- A página separa `flushEditorV6DocumentWrites` do flush completo. Exportar print e excluir entram no rastreador antes de esperar o salvamento do documento, sem o rastreador esperar a si próprio; a navegação e o botão de salvar continuam usando o flush completo.
+- `editorV6/fileIpc.ts` agora expõe a gravação e a criação da pasta de prints por `getPendingWrites`; `electron/main.ts` inclui essas operações no mesmo inventário de backup e encerramento. O diálogo foi injetado para testar o módulo sem Electron real. Canais, IDs, paths e formatos de PNG não mudaram.
+- `tests/cycle10-studio-ipc-and-editor-structure.test.mjs` mantém escrita/criação em gates sintéticos e verifica que os dois handlers ficam pendentes até concluir; `tests/renderer-pending-persistence.test.mjs` cobre as ações compostas do renderer. Nenhum projeto ou print real foi acessado.
