@@ -2,6 +2,14 @@
 
 ## Reauditoria geral — 2026-10-29
 
+### Validação Electron integrada e falha intermitente aberta
+
+- Executados em perfis temporários: check-motion passou (7 amostras, 90.000 pixels de atlas); motion-service passou com reutilização de janela/cache, recuperação de cancelamento e agendamento em background. Raster SHA256: 79db53ee3662e72a5bb737ed9fb0eb72e391ce74945c9681bb2fcb56b5aacdd2. Avisos de GPU apareceram ao finalizar check-motion; o processo encerrou com código zero.
+- O teste de exportação ainda verificava o antigo método desktop.bakeEditorV6Motion. Atualizado para o contrato atual desktop.editorV6.bakeEditorV6Motion, sem restaurar API obsoleta no produto.
+- A exportação integrada teve duas execuções completas aprovadas e uma falha intermitente na emenda Turbo. As aprovadas verificaram 81 quadros, 78 reaproveitados, pico de dois workers, áudio contínuo, fallback induzido, destino preservado ao cancelar, quadro único, 1080p e transição de pose na emenda.
+- Falha aberta: fixture editor-v6-export-check-3VMdcG/turbo.mp4, quadros de saída 39/40/41: pixels do personagem em (240,90) [252,252,0]/[255,255,255]/[255,255,255]. Contagem total de pixels amarelos: 4608/0/0. Isso comprova perda visual intermitente da segunda parte; causa ainda não demonstrada. Não declarar estabilidade completa nem reduzir critérios do teste.
+- check-export agora mantém out/editor-v6-export-check/result.json com estado running/failed ou resultado aprovado, evitando um relatório verde antigo após falha. A fixture sintética é preservada para análise. Próxima ação: instrumentar estado resolvido, DOM/SVG e captura bruta no começo de cada parte para localizar em qual camada os pixels se perdem.
+
 ### Protocolo de mídia do Editor V6 no domínio dono
 
 - `editorV6/mediaProtocol.ts` concentra validação de URL, vínculo no manifesto, MIME permitido e autorização de mídia local/biblioteca. `main.ts` registra o protocolo e injeta leitura nativa do manifesto, caminho de projeto e resolução física/CAS. O domínio não importa Electron nem consulta tabelas de outros domínios.

@@ -57,7 +57,7 @@ async function main() {
   const rgb = run(['-i', output, '-vf', "select='eq(n,39)+eq(n,40)+eq(n,41)'", '-fps_mode', 'passthrough', '-frames:v', '3', '-pix_fmt', 'rgb24', '-f', 'rawvideo', 'pipe:1'])
   const pixel = (frame: number, x: number, y: number) => Array.from(rgb.subarray(frame * 320 * 180 * 3 + (y * 320 + x) * 3, frame * 320 * 180 * 3 + (y * 320 + x) * 3 + 3))
   assert(pixel(0, 10, 10)[2] > 200 && pixel(1, 10, 10)[1] > 200 && pixel(2, 10, 10)[1] > 200, 'Emenda avançou, repetiu quadros ou trocou os canais BGRA.')
-  assert(pixel(1, 240, 90)[0] > 200 && pixel(1, 240, 90)[1] > 200 && pixel(1, 240, 90)[2] < 40, 'A segunda parte perdeu o estado do personagem anterior ao seu início.')
+  assert(pixel(1, 240, 90)[0] > 200 && pixel(1, 240, 90)[1] > 200 && pixel(1, 240, 90)[2] < 40, `A segunda parte perdeu o estado do personagem anterior ao seu início. Pixels antes/na/depois da emenda: ${[0, 1, 2].map(frame => pixel(frame, 240, 90).join(',')).join(' | ')}`)
   const talkPath = join(folder, 'talk.png')
   run(['-f', 'lavfi', '-i', 'color=c=red:s=16x16', '-frames:v', '1', talkPath])
   const talkAssetId = randomUUID(), thoughtId = randomUUID()
@@ -170,7 +170,7 @@ async function main() {
   // Exercise the actual restricted sandbox preload, IPC queue and hidden bake worker.
   const owner = new BrowserWindow({ show: false, webPreferences: { sandbox: true, preload: join(root, 'out/preload/preload.cjs') } })
   await owner.loadURL('data:text/html,<html><body>isolated preload check</body></html>')
-  assert(await owner.webContents.executeJavaScript('typeof window.desktop?.bakeEditorV6Motion === "function"'), 'Main sandbox preload failed to load; app pages would be empty.')
+  assert(await owner.webContents.executeJavaScript('typeof window.desktop?.editorV6?.bakeEditorV6Motion === "function"'), 'Main sandbox preload did not expose the Editor V6 motion contract.')
   const bluePath = join(folder, 'blue.png')
   run(['-f','lavfi','-i','color=c=blue:s=16x16','-frames:v','1',bluePath])
   const blue = `data:image/png;base64,${(await readFile(bluePath)).toString('base64')}`
