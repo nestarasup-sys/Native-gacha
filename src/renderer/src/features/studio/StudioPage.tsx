@@ -2,17 +2,13 @@ import { studioElementSize } from '../../../../shared/studioSceneModel'
 import { isPoseSnapshotForModel } from '../../../../shared/characterSourceContinuity'
 import { useStudioInspectorState } from '../../characters/useStudioInspectorState'
 import { StudioSceneCanvas } from './StudioSceneCanvas'
-import { addStudioImageAsset } from './studioImageChanges'
 import { trimTransparentImage, fitElementToTrim, faceRenderGeometry, type TrimmedImage } from '../../characters/characterGeometry'
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { buildStudioExpressionAppearance, buildStudioExpressionTransforms, resolveStudioExpressionBase, studioExpressionCollection } from './expressionTransforms'
 import { Icon } from '../../ui/components/Icon'
 import { NumericRangeField } from '../../ui/components/NumericRangeField'
 import { SceneElementControls } from '../../ui/components/SceneElementControls'
 import { SceneCastPickerModal } from '../../ui/components/SceneCastPickerModal'
-import { useSerializedSceneDocumentSave } from '../../ui/hooks/useSerializedSceneDocumentSave'
-import { registerPendingWriteFlusher } from '../../ui/pendingPersistence'
-import { createPendingOperationTracker } from '../../ui/pendingOperations'
 import { isLegacySceneCatalogId, loadLegacySceneCatalog } from '../../ui/legacySceneCatalog'
 import { createSceneTextElement, sceneCatalogColor, sceneEditorTools } from '../../ui/sceneEditorDefaults'
 import { CharacterPortrait } from '../../ui/components/CharacterPortrait'
@@ -25,6 +21,9 @@ import { sceneFaceModeForElement } from '../../characters/sceneFaceMode'
 import { createDefaultSceneFaceTransform, resolveSceneFaceTransform, sceneFaceCatalogItemId, sceneFaceSheetKind } from '../../characters/sceneFaceSelection'
 import { useStudioStageInteraction } from './useStudioStageInteraction'
 import { useStudioHistory } from './useStudioHistory'
+import { makeCanvasPrint } from './studioCanvasPrint'
+import { useStudioAutosave, useStudioDocumentPersistence } from './useStudioDocumentPersistence'
+import { useStudioImageImport } from './useStudioImageImport'
 import type { StudioAsset, StudioDocument, StudioElement, StudioFaceTransform, StudioFaceTransforms } from '../../../../shared/studio'
 import type { CustomizerCharacter } from '../../../../shared/customizer'
 import type { CustomizerFaceAppearance } from '../../../../shared/customizer'
@@ -34,84 +33,6 @@ type Tool = 'background' | 'objects' | null
 
 const STORAGE_KEY = 'gacha-nymi-studio-catalog-v1'
 const defaultStudioEyeTransform: StudioFaceTransform = createDefaultSceneFaceTransform()
-function makeCanvasPrint(studio: StudioDocument, outputWidth = 1920, outputHeight = 1080, mimeType = 'image/png'): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const canvas = document.createElement('canvas')
-    canvas.width = outputWidth
-    canvas.height = outputHeight
-    const context = canvas.getContext('2d')
-    if (!context) return reject(new Error('Não foi possível preparar a imagem do print.'))
-    context.scale(outputWidth / 1920, outputHeight / 1080)
-    context.fillStyle = studio.backgroundColor
-    context.fillRect(0, 0, canvas.width, canvas.height)
-    const load = (src: string) => new Promise<HTMLImageElement>((ok, fail) => {
-      const image = new Image()
-      image.onload = () => ok(image)
-      image.onerror = () => fail(new Error('Uma imagem da cena não pôde ser carregada para o print.'))
-      image.src = src
-    })
-    const drawImage = async (src: string, x: number, y: number, width: number, height: number, rotation: number, flipX = false) => {
-      const image = await load(src)
-      context.save()
-      context.translate((50 + x) * 19.2, (50 + y) * 10.8)
-      context.rotate(rotation * Math.PI / 180)
-      if (flipX) context.scale(-1, 1)
-      context.drawImage(image, -width * 9.6, -height * 5.4, width * 19.2, height * 10.8)
-      context.restore()
-    }
-    const drawText = (element: StudioElement) => {
-      const cx = (50 + element.x) * 19.2
-      const cy = (50 + element.y) * 10.8
-      const width = element.width * 19.2
-      const height = element.height * 10.8
-      context.save()
-      context.translate(cx, cy)
-      context.rotate(element.rotation * Math.PI / 180)
-      context.fillStyle = element.kind === 'narrator' ? 'rgba(255,255,255,.90)' : 'rgba(255,250,253,.96)'
-      context.strokeStyle = '#604b59'
-      context.lineWidth = 4
-      context.beginPath()
-      context.roundRect(-width / 2, -height / 2, width, height, element.kind === 'narrator' ? 20 : height / 2)
-      context.fill()
-      context.stroke()
-      context.fillStyle = '#352d35'
-      context.font = `600 ${Math.max(22, Math.round(height * .3))}px sans-serif`
-      context.textAlign = 'center'
-      context.textBaseline = 'middle'
-      const words = element.text.split(/\s+/)
-      const lines: string[] = []
-      let line = ''
-      for (const word of words) {
-        const candidate = line ? `${line} ${word}` : word
-        if (context.measureText(candidate).width > width - 36 && line) { lines.push(line); line = word } else line = candidate
-      }
-      if (line) lines.push(line)
-      lines.slice(0, 5).forEach((value, index, values) => context.fillText(value, 0, (index - (values.length - 1) / 2) * Math.max(28, height * .32), width - 30))
-      context.restore()
-    }
-    void (async () => {
-      try {
-        const bg = studio.assets.find((asset) => asset.id === studio.backgroundAssetId)
-        if (bg) await drawImage(bg.dataUrl, studio.backgroundX, studio.backgroundY, studio.backgroundWidth, studio.backgroundHeight, studio.backgroundRotation)
-        for (const element of [...studio.elements].sort((a, b) => a.zIndex - b.zIndex)) {
-          if (element.kind === 'image' || element.kind === 'character') {
-            const asset = studio.assets.find((item) => item.id === element.assetId)
-            if (asset) {
-              const size = studioElementSize(element)
-              await drawImage(asset.dataUrl, element.x, element.y, size.width, size.height, element.rotation, element.kind === 'character' && element.flipX === true)
-            }
-          } else drawText(element)
-        }
-        resolve(canvas.toDataURL(mimeType, mimeType === 'image/jpeg' ? 0.78 : undefined))
-      } catch (reason) { reject(reason) }
-    })()
-  })
-}
-
-function makeStudioThumbnail(studio: StudioDocument): Promise<string> {
-  return makeCanvasPrint(studio, 480, 270, 'image/jpeg')
-}
-
 /** Layout do Studio Principal. */
 export function StudioPage() {
   const [studios, setStudios] = useState<StudioCard[]>([])
@@ -146,84 +67,28 @@ export function StudioPage() {
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null)
   const sceneRef = useRef<HTMLDivElement>(null)
   const studioFaceTransformsRef = useRef<Record<string, StudioFaceTransforms>>({})
-  const expressionSaveSignatureRef = useRef<{ studioId: string; value: string } | null>(null)
   const normalizedStudioIdsRef = useRef(new Set<string>())
   const nextStudioNumber = useRef(1)
   const selectedStudio = studios.find((studio) => studio.id === selectedId) ?? null
   const activeStudio = studios.find((studio) => studio.id === activeStudioId) ?? null
-  const studiosRef = useRef(studios)
-  const activeStudioIdRef = useRef(activeStudioId)
-  const studioIpcWritesRef = useRef(new Set<Promise<unknown>>())
-  const studioPendingOperations = useMemo(() => createPendingOperationTracker(), [])
-  const trackStudioOperation = studioPendingOperations.track
-  const studioSaveTimerRef = useRef<number | null>(null)
-  const studioSavePromiseRef = useRef<Promise<boolean> | null>(null)
-  useLayoutEffect(() => { studiosRef.current = studios }, [studios])
-  useLayoutEffect(() => { activeStudioIdRef.current = activeStudioId }, [activeStudioId])
-  const trackStudioIpcWrite = useCallback(<T,>(operation: Promise<T>) => {
-    studioIpcWritesRef.current.add(operation)
-    void operation.then(() => studioIpcWritesRef.current.delete(operation), () => studioIpcWritesRef.current.delete(operation))
-    return operation
-  }, [])
-  const writeStudioDocument = useCallback((studio: StudioDocument) => trackStudioIpcWrite(window.desktop.studio.saveStudio(studio)), [trackStudioIpcWrite])
-  const onStudioDocumentSaved = useCallback((document: StudioDocument, savedDocument: StudioDocument) => {
-    if (savedDocument.thumbnailDataUrl !== document.thumbnailDataUrl) {
-      setStudios((current) => current.map((studio) => studio.id === document.id && studio.updatedAt === document.updatedAt && studio.thumbnailDataUrl !== savedDocument.thumbnailDataUrl
-        ? { ...studio, thumbnailDataUrl: savedDocument.thumbnailDataUrl }
-        : studio))
-    }
-    setSaved(true)
-    setError(null)
-  }, [])
-  const onStudioDocumentSaveError = useCallback((reason: unknown) => {
-    setError(reason instanceof Error ? reason.message : 'Não foi possível salvar o Studio neste dispositivo.')
-  }, [])
-  const { save: saveStudioDocument, writeInOrder: writeStudioInOrder, invalidatePendingSaves: invalidateStudioPendingSaves } = useSerializedSceneDocumentSave(activeStudio, {
-    createThumbnail: makeStudioThumbnail,
-    write: writeStudioDocument,
-    onSaved: onStudioDocumentSaved,
-    onError: onStudioDocumentSaveError
+  const autosaveSignature = JSON.stringify(activeStudio?.elements
+    .filter((element) => element.kind === 'character')
+    .map((element) => [element.id, element.activeExpressionCollectionId, element.activeExpressionPresetId]) ?? [])
+  const {
+    studiosRef,
+    activeStudioIdRef,
+    saveTimerRef: studioSaveTimerRef,
+    trackOperation: trackStudioOperation,
+    trackIpcWrite: trackStudioIpcWrite,
+    writeDocument: writeStudioDocument,
+    writeInOrder: writeStudioInOrder,
+    saveActiveStudio: saveStudio,
+    flushDocumentWrites: flushStudioDocumentWrites,
+    flushWrites: flushStudioWrites,
+    markUnsaved: markStudioUnsaved
+  } = useStudioDocumentPersistence({
+    studios, activeStudio, activeStudioId, saved, setStudios, setSaved, setError
   })
-  const saveStudio = useCallback((document = activeStudio) => {
-    const pending = saveStudioDocument(document)
-    studioSavePromiseRef.current = pending
-    void pending.then(() => { if (studioSavePromiseRef.current === pending) studioSavePromiseRef.current = null })
-    return pending
-  }, [activeStudio, saveStudioDocument])
-  const flushStudioDocumentWrites = useCallback(async () => {
-    const hadPendingTimer = studioSaveTimerRef.current !== null
-    if (studioSaveTimerRef.current !== null) window.clearTimeout(studioSaveTimerRef.current)
-    studioSaveTimerRef.current = null
-    try {
-      const activeId = activeStudioIdRef.current
-      const latest = activeId ? studiosRef.current.find((studio) => studio.id === activeId) ?? null : null
-      if (latest && (hadPendingTimer || !saved) && !await saveStudio(latest)) throw new Error('Não foi possível salvar o Studio antes de continuar.')
-      const inFlightSave = studioSavePromiseRef.current
-      if (inFlightSave && !await inFlightSave) throw new Error('Não foi possível concluir o salvamento do Studio.')
-      while (studioIpcWritesRef.current.size > 0) {
-        const results = await Promise.allSettled([...studioIpcWritesRef.current])
-        const failure = results.find((result): result is PromiseRejectedResult => result.status === 'rejected')
-        if (failure) throw failure.reason
-      }
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Não foi possível salvar o Studio antes de continuar.')
-      throw reason
-    }
-  }, [saved, saveStudio])
-  const flushStudioWrites = useCallback(async () => {
-    try {
-      await studioPendingOperations.flush()
-      await flushStudioDocumentWrites()
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Não foi possível concluir as operações do Studio antes de continuar.')
-      throw reason
-    }
-  }, [flushStudioDocumentWrites, studioPendingOperations])
-  useEffect(() => registerPendingWriteFlusher(flushStudioWrites), [flushStudioWrites])
-  const markStudioUnsaved = useCallback(() => {
-    invalidateStudioPendingSaves()
-    setSaved(false)
-  }, [invalidateStudioPendingSaves])
   const selectedElement = activeStudio?.elements.find((element) => element.id === selectedElementId) ?? null
   const selectedStudioCharacter = selectedElement?.kind === 'character' ? availableCharacters.find((character) => character.id === selectedElement.characterId) ?? null : null
   const selectedStudioExpressionCollectionId = studioExpressionCollection(selectedElement, studioExpressionPresets)
@@ -641,27 +506,10 @@ export function StudioPage() {
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível duplicar o Studio.') }
   }
 
-  useEffect(() => {
-    if (!activeStudio) return
-    markStudioUnsaved()
-    const signature = JSON.stringify(activeStudio.elements.filter((element) => element.kind === 'character').map((element) => [element.id, element.activeExpressionCollectionId, element.activeExpressionPresetId]))
-    const previous = expressionSaveSignatureRef.current
-    expressionSaveSignatureRef.current = { studioId: activeStudio.id, value: signature }
-    if (previous?.studioId === activeStudio.id && previous.value !== signature) {
-      void saveStudio(activeStudio)
-      return
-    }
-    if (studioSaveTimerRef.current !== null) window.clearTimeout(studioSaveTimerRef.current)
-    const timer = window.setTimeout(() => {
-      if (studioSaveTimerRef.current === timer) studioSaveTimerRef.current = null
-      void saveStudio(activeStudio)
-    }, 650)
-    studioSaveTimerRef.current = timer
-    return () => {
-      window.clearTimeout(timer)
-      if (studioSaveTimerRef.current === timer) studioSaveTimerRef.current = null
-    }
-  }, [activeStudio, markStudioUnsaved, saveStudio])
+  useStudioAutosave({
+    activeStudio, autosaveSignature, saveTimerRef: studioSaveTimerRef,
+    save: saveStudio, markUnsaved: markStudioUnsaved
+  })
 
   const patchStudio = (transform: (studio: StudioDocument) => StudioDocument) => {
     if (!activeStudioId) return
@@ -671,6 +519,13 @@ export function StudioPage() {
 
   const { historyVersion, canUndo, canRedo, recordHistory, undo, redo } = useStudioHistory({
     activeStudio, activeStudioId, patchStudio
+  })
+
+  const importImage = useStudioImageImport({
+    activeStudio, studiosRef, activeStudioIdRef, setStudios,
+    trackOperation: trackStudioOperation, writeInOrder: writeStudioInOrder,
+    recordHistory, markUnsaved: markStudioUnsaved, setSaved, setError,
+    setSelectedElementId, setActiveTool, setInspectorOpen, setInspectorTab
   })
 
   const {
@@ -688,43 +543,6 @@ export function StudioPage() {
     recordHistory()
     patchStudio(transform)
   }
-
-  const importImage = (category: 'background' | 'object') => trackStudioOperation(async () => {
-    if (!activeStudio) return
-    const studioId = activeStudio.id
-    try {
-      const asset = await window.desktop.studio.importStudioImage(category)
-      if (!asset) return
-      const studioAtImport = studiosRef.current.find((studio) => studio.id === studioId)
-      if (!studioAtImport) { setError('Não foi possível carregar o Studio para adicionar a imagem.'); return }
-      const nextStudio = addStudioImageAsset(studioAtImport, asset, category, () => crypto.randomUUID())
-      const isActive = activeStudioIdRef.current === studioId
-      const nextStudios = studiosRef.current.map((studio) => studio.id === studioId ? nextStudio : studio)
-      studiosRef.current = nextStudios
-      setStudios(nextStudios)
-      if (isActive) {
-        recordHistory(studioAtImport)
-        markStudioUnsaved()
-      }
-      await writeStudioInOrder(nextStudio)
-      const currentStudio = studiosRef.current.find((studio) => studio.id === studioId)
-      const isStillCurrent = isActive
-        && activeStudioIdRef.current === studioId
-        && currentStudio?.updatedAt === nextStudio.updatedAt
-      if (isStillCurrent) {
-        setSaved(true)
-        setError(null)
-        if (category === 'background') {
-          setSelectedElementId('background')
-        } else {
-          setSelectedElementId(nextStudio.elements.at(-1)?.id ?? null)
-        }
-        setActiveTool(category === 'background' ? 'background' : 'objects')
-        setInspectorOpen(true)
-        setInspectorTab('editor')
-      }
-    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível importar a imagem.') }
-  })
 
   const selectBackground = (asset: StudioAsset) => {
     changeScene((studio) => ({ ...studio, backgroundAssetId: asset.id, backgroundX: 0, backgroundY: 0, backgroundWidth: 100, backgroundHeight: 100, backgroundRotation: 0, updatedAt: new Date().toISOString() }))
