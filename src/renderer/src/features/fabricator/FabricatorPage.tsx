@@ -1,19 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FabricatorAssetSave, FabricatorHistoryAction, FabricatorHistoryState, FabricatorProject, FabricatorSlotSummary, ModelPart } from '../../../../shared/fabricator'
 import { Icon, type IconName } from '../../ui/components/Icon'
 import { usePreviewBackground } from '../../ui/hooks/usePreviewBackground'
 import { modelRigSegmentKind, normalizeLayerOrder, orderedParts, partJointAnchor, reorderLayer, sourcePointFromCanvas } from './models/rig'
 import { connectFabricatorParts, isTorsoPart, moveFabricatorPartBranch, rotateFabricatorPartBranch, toggleFabricatorJointFixed } from './models/rigEditing'
 import { headSizePercent, isHeadPart, resizeHeadPart } from './models/resize'
-import { PoseWorkspace } from './PoseWorkspace'
-import { WardrobeWorkspace } from './wardrobe/WardrobeWorkspace'
-import { FaceComponentsWorkspace } from './face/FaceComponentsWorkspace'
-import { HeadExtrasWorkspace } from './face/HeadExtrasWorkspace'
-import { HairWorkspace } from './HairWorkspace'
-import { AnimatorWorkspace } from './AnimatorWorkspace'
-import { DesignWorkspace } from './DesignWorkspace'
-import { ExpressionPresetWorkspace } from './ExpressionPresetWorkspace'
-import { FaceAnimatorWorkspace } from './FaceAnimatorWorkspace'
 import { ModelSourceEditor } from './ModelSourceEditor'
 import { broadcastModelSourceUpdate } from './models/modelSourceEvents'
 import { splitImage, mergeImages } from './models/partImages'
@@ -36,6 +27,21 @@ import { isValidSkinTone } from '../../../../shared/skinTones'
 import { ModelAppearanceProvider } from './ModelAppearanceContext'
 import { useFabricatorModelAppearance } from './useFabricatorModelAppearance'
 import { flushPendingRendererWrites, registerPendingWriteFlusher } from '../../ui/pendingPersistence'
+// Several workspaces share selectors; preserve their availability before any
+// lazy workspace mounts, regardless of the order in which areas are opened.
+import './wardrobe/wardrobe.css'
+import './face/face-components.css'
+import './face/head-extras.css'
+
+const PoseWorkspace = lazy(async () => ({ default: (await import('./PoseWorkspace')).PoseWorkspace }))
+const WardrobeWorkspace = lazy(async () => ({ default: (await import('./wardrobe/WardrobeWorkspace')).WardrobeWorkspace }))
+const FaceComponentsWorkspace = lazy(async () => ({ default: (await import('./face/FaceComponentsWorkspace')).FaceComponentsWorkspace }))
+const HeadExtrasWorkspace = lazy(async () => ({ default: (await import('./face/HeadExtrasWorkspace')).HeadExtrasWorkspace }))
+const HairWorkspace = lazy(async () => ({ default: (await import('./HairWorkspace')).HairWorkspace }))
+const AnimatorWorkspace = lazy(async () => ({ default: (await import('./AnimatorWorkspace')).AnimatorWorkspace }))
+const DesignWorkspace = lazy(async () => ({ default: (await import('./DesignWorkspace')).DesignWorkspace }))
+const ExpressionPresetWorkspace = lazy(async () => ({ default: (await import('./ExpressionPresetWorkspace')).ExpressionPresetWorkspace }))
+const FaceAnimatorWorkspace = lazy(async () => ({ default: (await import('./FaceAnimatorWorkspace')).FaceAnimatorWorkspace }))
 
 const sections: { id: string; label: string; icon: IconName }[] = [
   { id: 'Modelos', label: 'Modelos Dev', icon: 'sparkles' }, { id: 'Poses', label: 'Poses Dev', icon: 'expand' }, { id: 'Roupas', label: 'Roupas Dev', icon: 'shirt' }, { id: 'Olhos', label: 'Olhos Dev', icon: 'face' }, { id: 'Rosto', label: 'Rosto Dev', icon: 'face' }, { id: 'Preset Expressão Dev', label: 'Preset Expressão Dev', icon: 'face' }, { id: 'Animador Rosto Dev', label: 'Animador Rosto Dev', icon: 'face' }, { id: 'Cabeças extra', label: 'Cabeças extra dev', icon: 'face' }, { id: 'Cabelos Dev', label: 'Cabelos Dev', icon: 'bow' }, { id: 'Animador Dev', label: 'Animador Dev', icon: 'body' }, { id: 'Design Dev', label: 'Design Dev', icon: 'flower' }
@@ -974,6 +980,7 @@ export function FabricatorPage() {
       <ModelAppearanceProvider slot={appearanceProject?.slot ?? null} previewUrls={bodyAppearancePreviewUrls} modelSkinTone={appearanceProject?.modelSkinTone} modelOutlineColor={appearanceProject?.modelOutlineColor} setTargetSlot={setAppearanceTargetSlot}>
         <section className="fabricator-workspace-shell">
           {activeSection !== 'Modelos' && appearanceLoadError && <small className="fabricator-appearance-error" role="status">Não foi possível carregar a prévia do modelo base: {appearanceLoadError}</small>}
+      <Suspense fallback={<div role="status" aria-busy="true">Carregando área…</div>}>
       {activeSection === 'Design Dev' ? <DesignWorkspace /> : activeSection === 'Poses' ? <PoseWorkspace baseModelSlot={activeSlot} /> : activeSection === 'Roupas' ? <WardrobeWorkspace baseModelSlot={activeSlot} /> : activeSection === 'Olhos' ? <FaceComponentsWorkspace mode="eyes" baseModelSlot={activeSlot} /> : activeSection === 'Rosto' ? <FaceComponentsWorkspace mode="face" baseModelSlot={activeSlot} /> : activeSection === 'Preset Expressão Dev' ? <ExpressionPresetWorkspace modelSlot={activeSlot} /> : activeSection === 'Animador Rosto Dev' ? <FaceAnimatorWorkspace modelSlot={activeSlot} /> : activeSection === 'Cabeças extra' ? <HeadExtrasWorkspace baseModelSlot={activeSlot} /> : activeSection === 'Cabelos Dev' ? <HairWorkspace baseModelSlot={activeSlot} /> : activeSection === 'Animador Dev' ? <AnimatorWorkspace baseModelSlot={activeSlot} /> : (
         <section className="fabricator-model-editor" aria-label="Editor de modelos">
           <header className="model-slotbar">
@@ -1076,6 +1083,7 @@ export function FabricatorPage() {
           {processing && project && <div className="model-processing-overlay"><div className="model-spinner" /><span>Reanalisando imagem · {progress}%</span></div>}
         </section>
       )}
+      </Suspense>
       </section>
       </ModelAppearanceProvider>
     </main>

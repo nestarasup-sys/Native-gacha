@@ -2,6 +2,13 @@
 
 ## Reauditoria geral — 2026-10-29
 
+### Carregamento dos workspaces do Fabricador
+
+- A página importava estaticamente nove workspaces especializados embora a seção inicial seja Modelos. Os componentes agora são React.lazy no escopo do módulo, com Suspense local dentro do provider de aparência. A seção é montada somente quando selecionada; permanece o flush de gravações antes da troca e o tratamento de erros da rota.
+- Os três CSSs de workspaces permanecem carregados pela página: existem seletores compartilhados e carregar CSS só após visitar uma seção poderia mudar a aparência conforme a ordem de navegação. Os estilos não foram reescritos.
+- Build de produção: módulo FabricatorPage de 1.018,25 kB para 292,87 kB (aproximadamente 71,2% menor, sem compressão). Workspaces especializados agora têm chunks próprios entre 9,61 kB e 172,04 kB, além de dependências compartilhadas. Isso mede divisão do bundle, não redução total do instalador nem tempo/FPS/memória real; o grafo compartilhado também muda.
+- Aprovados 330 testes de refatoração, typecheck, auditoria de arquitetura e build. A versão final conserva os CSSs eager e compilou novamente. Navegação real com fixtures e medição de carregamento continuam pendentes; não houve acesso a rascunhos pessoais.
+
 ### Fechamento dos renderizadores de exportação
 
 - `exportWorkers` agora centraliza fechamento explícito, abort e evento externo closed no mesmo cleanup idempotente: remove entrada autorizada e listener de abort, solta a referência ao bitmap de camadas e rejeita preparação ainda pendente.
