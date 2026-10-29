@@ -127,6 +127,12 @@ export function createEditorV6MotionService(deps: { ipcMain: Pick<IpcMain, 'hand
     const promise = enqueueBake(request, controller.signal)
     jobs.set(request.id, { owner: event.sender.id, controller, promise })
     try { const result = await promise; return cacheOnly ? undefined : result }
+    catch (reason) {
+      // The background warm-up is routinely superseded by user input. Its
+      // cancellation is a normal outcome, not a failed IPC request.
+      if (cacheOnly && controller.signal.aborted) return undefined
+      throw reason
+    }
     finally { jobs.delete(request.id); if (!event.sender.isDestroyed()) event.sender.removeListener('destroyed', abort) }
   }
   deps.ipcMain.handle(editorV6IpcChannels.bakeEditorV6Motion, (event, request) => bakeOwned(event, request, false))

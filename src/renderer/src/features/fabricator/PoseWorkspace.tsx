@@ -7,6 +7,7 @@ import { usePreviewBackground } from '../../ui/hooks/usePreviewBackground'
 import { registerPendingWriteFlusher } from '../../ui/pendingPersistence'
 import { isModelRigConnectionCompatible, normalizeLayerOrder, orderedParts, partJointAnchor, repairIncompatibleModelRigJoints } from './models/rig'
 import { rotatePointAroundOrigin } from './models/geometry'
+import { pendingPoseAssets, poseAssetSnapshot } from './models/poseAssetSnapshots'
 import { useModelAppearanceTarget, useModelPartAppearancePreview } from './ModelAppearanceContext'
 
 type DraftProject = Omit<FabricatorPose, 'slot'>
@@ -180,10 +181,7 @@ export function PoseWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
   }, [project])
 
   const writeDraft = useCallback((snapshot: DraftProject, targetSlot: number | null) => {
-    const assets = snapshot.parts.flatMap((part) => {
-      const dataUrl = pendingAssets.current.get(part.id)
-      return dataUrl ? [{ id: part.id, dataUrl }] : []
-    })
+    const assets = pendingPoseAssets(snapshot.parts, pendingAssets.current)
     const serialized = toDraftSave(snapshot, targetSlot)
     const write = writeQueue.current.catch(() => undefined).then(() => window.desktop.fabricator.saveFabricatorPoseDraft(snapshot.sourceModelSlot, serialized, assets))
     writeQueue.current = write
@@ -307,7 +305,7 @@ export function PoseWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
     const model = await window.desktop.fabricator.loadFabricatorSlot(modelSlot)
     if (!model) { setError('Não foi possível carregar esse modelo.'); return }
     const next = poseFromModel(model)
-    pendingAssets.current = new Map(next.parts.map((part) => [part.id, part.dataUrl]))
+    pendingAssets.current = poseAssetSnapshot(next.parts)
     setSourcePreview(null)
     setSelectedModelSlot(modelSlot)
     setSourcePreview(null)
@@ -345,7 +343,7 @@ export function PoseWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
       const { slot: _slot, ...editable } = saved
       // The draft is stored in a different folder from the saved pose, so copy
       // the pose's part images into the draft library on its next autosave.
-      pendingAssets.current = new Map(editable.parts.map((part) => [part.id, part.dataUrl]))
+      pendingAssets.current = poseAssetSnapshot(editable.parts)
       setSourcePreview(null)
       setEditingSlot(slot)
       editingSlotRef.current = slot
@@ -362,6 +360,9 @@ export function PoseWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
 
   const recoverDraft = () => {
     if (!recoveredDraft) return
+    // Reenvie o snapshot ao reabrir o rascunho para que o próximo autosave
+    // consiga recriar os PNGs sem depender da pasta temporária anterior.
+    pendingAssets.current = poseAssetSnapshot(recoveredDraft.project.parts)
     setEditingSlot(recoveredDraft.editingSlot)
     setSelectedModelSlot(recoveredDraft.project.sourceModelSlot)
     setSourcePreview(null)
@@ -386,14 +387,15 @@ export function PoseWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
         slot = slots.findIndex((item) => !item) + 1
         if (slot === 0) { setError('Os 12 slots de pose estão preenchidos. Exclua uma pose para liberar espaço.'); return }
       }
-      const assets = snapshot.parts.flatMap((part) => {
-        const dataUrl = pendingAssets.current.get(part.id)
-        return dataUrl ? [{ id: part.id, dataUrl }] : []
-      })
+      const assets = pendingPoseAssets(snapshot.parts, pendingAssets.current)
       const saved: FabricatorPose = { ...snapshot, slot, category: resolvePoseCategory({ ...snapshot, slot }), updatedAt: new Date().toISOString() }
       await window.desktop.fabricator.saveFabricatorPose(snapshot.sourceModelSlot, slot, toSavedPose(saved, slot), assets)
       window.dispatchEvent(new Event('fabricator:assets-updated'))
       for (const asset of assets) if (pendingAssets.current.get(asset.id) === asset.dataUrl) pendingAssets.current.delete(asset.id)
+      // Salvar a pose remove a pasta do rascunho. Se o usuário continuar
+      // editando, o próximo autosave precisa recriar seus PNGs a partir deste
+      // snapshot, sem depender da pasta temporária que será removida abaixo.
+      pendingAssets.current = poseAssetSnapshot(snapshot.parts)
       await window.desktop.fabricator.deleteFabricatorPoseDraft(snapshot.sourceModelSlot)
       setRecoveredDraft(null)
       setEditingSlot(slot)

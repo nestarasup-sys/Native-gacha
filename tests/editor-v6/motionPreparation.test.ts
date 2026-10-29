@@ -7,13 +7,15 @@ import type { CustomizerCharacter } from '../../src/shared/customizer'
 import { editorV6MotionPlans, missingEditorV6Motions, type EditorV6MotionBakeRequest, type EditorV6MotionBakeResult } from '../../src/shared/editorV6Motion'
 import { prepareExportMotions } from '../../electron/domains/editorV6/prepareMotions'
 import { createMotionDiskCache, motionCacheKey } from '../../electron/domains/editorV6/motionCache'
+import { createEditorV6MotionService } from '../../electron/domains/editorV6/motionIpc'
+import { editorV6IpcChannels } from '../../src/shared/editorV6IpcChannels'
 
 function fixture() {
   const stamp = '2026-10-26T12:00:00.000Z'
   const actor: EditorV6Element = { id: crypto.randomUUID(), kind: 'character', characterId: 'alice', assetId: crypto.randomUUID(), text: 'Alice', x: 0, y: 0, width: 20, height: 30, rotation: 0, zIndex: 1, poseSlot: 1 }
   const project: EditorV6Document = { schemaVersion: 1, id: crypto.randomUUID(), title: 'Test', color: '#ffffff', createdAt: stamp, updatedAt: stamp, backgroundColor: '#ffffff', backgroundAssetId: null, backgroundX: 0, backgroundY: 0, backgroundWidth: 100, backgroundHeight: 100, backgroundRotation: 0, elements: [actor], assets: [{ id: actor.assetId!, category: 'character', name: 'Alice', mimeType: 'image/png', dataUrl: 'data:image/png;base64,AA==' }], timeline: createEditorV6Timeline([actor]) }
   project.timeline.tracks.find((track) => track.kind === 'character')!.blocks = [1, 2, 1, 2].map((poseSlot, index) => ({ id: crypto.randomUUID(), elementId: actor.id, label: 'Pose', startFrame: index * 60, durationFrames: 60, state: { ...actor, poseSlot } }))
-  const character: CustomizerCharacter = { id: 'alice', name: 'Alice', createdAt: stamp, updatedAt: stamp, hair: '', outfit: '', skin: '', customization: { modelSlot: 1, poseSlot: null, partOverrides: {}, layerOrder: [] } }
+  const character: CustomizerCharacter = { id: 'alice', name: 'Alice', createdAt: stamp, updatedAt: stamp, hair: '#000000', outfit: '#000000', skin: '#000000', customization: { modelSlot: 1, poseSlot: null, partOverrides: {}, layerOrder: [] } }
   const request: EditorV6MotionBakeRequest = { id: crypto.randomUUID(), plan: editorV6MotionPlans(project)[0], character }
   return { project, character, request }
 }
@@ -23,6 +25,25 @@ function resultFor(request: EditorV6MotionBakeRequest): EditorV6MotionBakeResult
 }
 
 describe('transition preparation reuse', () => {
+  it('treats a superseded background preparation as a normal cancellation', async () => {
+    const { request } = fixture()
+    const handlers = new Map<string, (event: IpcMainInvokeEvent, ...args: any[]) => any>()
+    const service = createEditorV6MotionService({
+      ipcMain: { handle: (channel, listener) => { handlers.set(channel, listener) } },
+      assertTrustedSender: () => {}, html: 'unused.html', preload: 'unused.cjs'
+    })
+    const event = {
+      sender: { id: 7, isDestroyed: () => false, once: () => {}, removeListener: () => {} },
+      senderFrame: {}
+    } as unknown as IpcMainInvokeEvent
+    const prepare = handlers.get(editorV6IpcChannels.prepareEditorV6Motion)!
+    const cancel = handlers.get(editorV6IpcChannels.cancelEditorV6Motion)!
+    const pending = prepare(event, request)
+    await cancel(event, request.id)
+    await expect(pending).resolves.toBeUndefined()
+    await service.drain()
+  })
+
   it('bakes identical transitions once, shares the atlas and preserves all blocks', async () => {
     const { project, character } = fixture()
     let calls = 0
