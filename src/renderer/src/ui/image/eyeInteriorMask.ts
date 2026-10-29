@@ -1,15 +1,11 @@
 import { createCharacterCanvas, isCharacterCanvasWorker } from '../../characters/canvasSurface'
+import { createEyeInteriorMaskCache } from './eyeInteriorMaskCache'
 
 type EyeMaskImage = string | CanvasImageSource
-const maskCache = new Map<string, Promise<HTMLCanvasElement | null>>()
-const MAX_CACHED_MASKS = 48
 
 /** Builds an alpha mask from the light inner eye area, leaving its dark outline outside the mask. */
-async function buildEyeInteriorMask(dataUrl: string): Promise<HTMLCanvasElement | null> {
-  const cached = maskCache.get(dataUrl)
-  if (cached) return cached
-
-  const pending = (async () => {
+async function createEyeInteriorMaskCanvas(dataUrl: string): Promise<HTMLCanvasElement | null> {
+  try {
     const response = await fetch(dataUrl)
     const bitmap = await createImageBitmap(await response.blob())
     try {
@@ -39,15 +35,15 @@ async function buildEyeInteriorMask(dataUrl: string): Promise<HTMLCanvasElement 
     } finally {
       bitmap.close()
     }
-  })().catch(() => null)
-
-  maskCache.set(dataUrl, pending)
-  while (maskCache.size > MAX_CACHED_MASKS) {
-    const oldestKey = maskCache.keys().next().value
-    if (oldestKey === undefined) break
-    maskCache.delete(oldestKey)
+  } catch {
+    return null
   }
-  return pending
+}
+
+const maskCache = createEyeInteriorMaskCache(createEyeInteriorMaskCanvas)
+
+function buildEyeInteriorMask(dataUrl: string): Promise<HTMLCanvasElement | null> {
+  return maskCache.load(dataUrl)
 }
 
 export async function eyeInteriorMask(dataUrl: string): Promise<string> {

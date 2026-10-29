@@ -43,6 +43,7 @@
     "test:concurrency-limiter": "node --experimental-strip-types --test tests/concurrency-limiter.test.mjs",
     "test:customizer": "node --experimental-strip-types --test tests/customizer-architecture.test.mjs",
     "test:customizer:preview-cache": "node --experimental-strip-types --test tests/customizer-preview-cache.test.mjs",
+    "test:eye-interior-mask-cache": "node --experimental-strip-types --test tests/eye-interior-mask-cache.test.mjs",
     "test:fabricator-catalog": "node --experimental-strip-types --test tests/fabricator-model-catalog.test.mjs",
     "test:asset-flow": "node scripts/audit-wardrobe-flow.mjs",
     "test:geometry": "node --test tests/shared-body-shape.test.cjs tests/studio-character-geometry.test.cjs",

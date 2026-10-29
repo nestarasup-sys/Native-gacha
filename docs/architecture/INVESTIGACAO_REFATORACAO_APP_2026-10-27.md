@@ -1338,3 +1338,10 @@ Continua a auditoria das operações IPC iniciadas pelo usuário e da cobertura 
 - O Customizador aplica um teto de 24 MiB e 40 entradas, contabilizando a chave de origem e a string de prévia. Resultados acima do orçamento continuam sendo mostrados por quem os solicitou; apenas deixam de ficar retidos no cache. O Animador conserva seus limites anteriores de 48 imagens e 64 MiB.
 - IDs, persistência, arquivos-fonte, IPC e aparência das prévias não mudaram. A contagem de bytes é uma estimativa de memória retida, não uma medição do heap do Chromium.
 - Testes: `npm run test:refactor` passou com 469 testes; `npm run test:fabricator:face-workspace` passou com 21; `npm run test:customizer:preview-cache` passou com 1. Também passaram `npm run typecheck`, `npm run build`, `npm run audit:architecture` (439 arquivos TS/TSX, sem violações) e `git diff --check`.
+
+## 80. Etapa aplicada — cache das máscaras de olhos limitado pela área dos canvases
+
+- `eyeInteriorMask.ts` mantinha até 48 `Promise<HTMLCanvasElement>` sem considerar a resolução de cada máscara. Como cada canvas mantém um buffer RGBA, imagens grandes podiam reter muita memória; esse helper alimenta Rosto DEV, Face Animator e a renderização do catálogo facial.
+- O cache agora usa `createBoundedImageCache` e `eyeInteriorMaskCache.ts` estima cada canvas em `largura × altura × 4`, com os mesmos 48 slots e um orçamento de 64 MiB. A chave de origem também entra na estimativa. Falhas continuam produzindo `null` e o caminho consumidor preserva o fallback para a imagem original.
+- O bitmap ainda é fechado no `finally` após a geração da máscara. Canvas acima do orçamento continua sendo retornado à chamada atual, mas não fica armazenado para usos futuros. As saídas continuam iguais: string PNG no renderer e canvas no caminho de worker.
+- Verificação: `npm run test:eye-interior-mask-cache` passou; `npm run test:refactor` passou com 469 testes; também passaram typecheck, build, auditoria de arquitetura (440 arquivos TS/TSX, sem violações) e `git diff --check`.
