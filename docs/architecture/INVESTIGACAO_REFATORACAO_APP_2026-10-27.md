@@ -1547,3 +1547,10 @@ Continua a auditoria das operações IPC iniciadas pelo usuário e da cobertura 
 - `isTorsoPart` foi movido para `src/shared/modelRig.ts`, mantendo o reexport antigo por `rigEditing.ts`. O editor de juntas e o controlador do canvas usam a mesma regra para deixar o tronco fixo. O arraste do pivô ainda atualiza o ponto da peça, sua transformação de origem e as juntas conectadas.
 - `FabricatorPage.tsx` passou de 1.050 para 982 linhas. Três testes sintéticos cobrem movimento ajustado à escala, proteção do tronco, atualização de pivôs e pan/limpeza do ponteiro.
 - Sem mudança de interface, dados persistidos, histórico ou contratos IPC. Passaram typecheck, auditoria de arquitetura (469 arquivos TS/TSX), `npm run test:refactor` (500 testes principais e 21 auxiliares), build e `git diff --check`.
+
+## 107. Etapa aplicada — gestos do preview de Expressão DEV isolados
+
+- `ExpressionPresetWorkspace.tsx` concentrava o ciclo de ponteiro para mover olhos, pupilas, sobrancelhas, nariz e boca, além do arraste e dos atalhos de teclado do blush. `expressionPreviewInteraction.ts` agora coordena essas interações a partir de dependências explícitas da página.
+- A conversão do arraste para coordenadas do modelo continua usando `pupilDeltaFromDrag`; o olhar PT segue alterando apenas os overrides de pupila, sem deslocar a expressão base. Os gestos do blush continuam limitados aos mesmos valores e a captura do ponteiro é liberada no término, cancelamento ou perda de captura.
+- `ExpressionPresetWorkspace.tsx` passou de 1.057 para 968 linhas. Testes sintéticos cobrem escala da cabeça, captura do ponteiro, pupila PT e movimentação/limites do blush. A verificação de continuidade agora acompanha o módulo que é dono da conversão geométrica.
+- Sem mudança de interface, formato persistido, seleção de peças ou contrato IPC. Passaram `npm run test:refactor` (500 testes principais e 24 auxiliares), `npm run typecheck`, `npm run audit:architecture` (470 arquivos TS/TSX sem violações), build e `git diff --check`.

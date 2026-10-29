@@ -86,12 +86,14 @@ test('seleções quebradas ou JSON truncado não sobrescrevem conjuntos existent
 })
 
 test('ambos os editores usam o mesmo inversor, incluindo pupila PT sem clamping nem alteração da normal',async()=>{
-  const [dragHook,presets,core]=await Promise.all([
+  const [dragHook,presets,previewInteraction,core]=await Promise.all([
     readFile('src/renderer/src/features/fabricator/face/useFacePreviewDrag.ts','utf8'),
     readFile('src/renderer/src/features/fabricator/ExpressionPresetWorkspace.tsx','utf8'),
+    readFile('src/renderer/src/features/fabricator/expressionPreviewInteraction.ts','utf8'),
     readFile('src/shared/facePupilGeometry.ts','utf8')])
   assert.match(dragHook,/pupilDeltaFromDrag\(/)
-  assert.match(presets,/pupilDeltaFromDrag\(/)
+  assert.match(presets,/createExpressionPreviewInteraction\(/)
+  assert.match(previewInteraction,/pupilDeltaFromDrag\(/)
   assert.match(dragHook,/current\.pupil \? \{ x, y \}/)
   assert.doesNotMatch(dragHook,/head\.width \* \.25/)
   assert.doesNotMatch(dragHook,/head\.height \* \.25/)
