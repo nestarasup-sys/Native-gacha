@@ -1,4 +1,5 @@
 import type { WardrobeCategory, WardrobeSet, WardrobeSetSummary } from '../../../../shared/fabricator'
+import { mapConcurrentItems } from '../../ui/mapConcurrentItems.ts'
 
 export type CustomizerWardrobeThumbnailCategory = { id: string; source: WardrobeCategory[] }
 
@@ -28,32 +29,22 @@ export async function loadCustomizerWardrobeCatalog({
   onError,
   concurrency = 3
 }: CustomizerWardrobeCatalogDependencies): Promise<void> {
-  const workerCount = Math.max(1, Math.min(summaries.length, Math.floor(Number.isFinite(concurrency) ? concurrency : 3)))
-  let nextIndex = 0
-
-  const worker = async () => {
-    while (!isCancelled()) {
-      const index = nextIndex++
-      if (index >= summaries.length) return
-      const summary = summaries[index]
-      try {
-        const set = await loadSet(summary)
-        if (!set || isCancelled()) continue
-        onSetLoaded(summary, set)
-        for (const category of categories) {
-          if (isCancelled()) return
-          if (!set.components.some((component) => category.source.includes(component.category))) continue
-          const key = `${summary.modelSlot}:${summary.id}:${category.id}`
-          if (hasThumbnail(key)) continue
-          const thumbnail = await renderThumbnail(set, category.source)
-          if (isCancelled()) return
-          if (thumbnail) onThumbnailLoaded(key, thumbnail)
-        }
-      } catch (reason) {
-        if (!isCancelled()) onError(reason)
+  await mapConcurrentItems(summaries, async (summary) => {
+    try {
+      const set = await loadSet(summary)
+      if (!set || isCancelled()) return
+      onSetLoaded(summary, set)
+      for (const category of categories) {
+        if (isCancelled()) break
+        if (!set.components.some((component) => category.source.includes(component.category))) continue
+        const key = `${summary.modelSlot}:${summary.id}:${category.id}`
+        if (hasThumbnail(key)) continue
+        const thumbnail = await renderThumbnail(set, category.source)
+        if (isCancelled()) break
+        if (thumbnail) onThumbnailLoaded(key, thumbnail)
       }
+    } catch (reason) {
+      if (!isCancelled()) onError(reason)
     }
-  }
-
-  await Promise.all(Array.from({ length: workerCount }, worker))
+  }, isCancelled, concurrency)
 }

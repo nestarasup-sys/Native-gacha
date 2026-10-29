@@ -48,7 +48,7 @@ test('Studio mantém a lista de opções leve e carrega detalhes das folhas sele
   assert.match(page, /mergeStudioFaceDetails/)
   assert.match(page, /studioFaceDetailsModelSlotRef\.current === modelSlot/)
   assert.match(page, /detailsLoading=\{studioFaceDetailsLoading\}/)
-  assert.doesNotMatch(page, /mapConcurrentStudioItems\(\s*summaries/)
+  assert.doesNotMatch(page, /mapConcurrentItems\(\s*summaries/)
   assert.doesNotMatch(page, /Promise\.all\(summaries\.map\(async \(summary\).*loadFaceCatalogItem/)
 })
 

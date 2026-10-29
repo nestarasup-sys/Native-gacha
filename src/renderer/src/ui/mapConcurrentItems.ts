@@ -1,5 +1,5 @@
-/** Runs image-heavy Studio reads with a small per-workflow concurrency ceiling. */
-export async function mapConcurrentStudioItems<T, R>(
+/** Maps ordered work with a bounded number of active tasks and cooperative cancellation. */
+export async function mapConcurrentItems<T, R>(
   items: readonly T[],
   operation: (item: T, index: number) => Promise<R>,
   isCancelled: () => boolean,

@@ -28,6 +28,7 @@ import { planEditorV6CharacterRefresh, renderEditorV6CharacterRefresh } from './
 import { Profiler, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { editorV6ExpressionCollection } from './expressionTransforms'
 import { Icon } from '../../ui/components/Icon'
+import { mapConcurrentItems } from '../../ui/mapConcurrentItems'
 import { NumericRangeField } from '../../ui/components/NumericRangeField'
 import { SceneElementControls } from '../../ui/components/SceneElementControls'
 import { SceneCastPickerModal } from '../../ui/components/SceneCastPickerModal'
@@ -266,18 +267,20 @@ export function EditorV6Page() {
   }, [selectedEditorV6CharacterModelSlot])
 
   useEffect(() => {
-    if (!editorV6PoseSlots.length) { setEditorV6PoseThumbnails({}); setEditorV6PoseDimensions({}); return }
+    const modelSlot = selectedEditorV6CharacterModelSlot
+    const poses = editorV6PoseSlots.filter((pose) => pose.sourceModelSlot === modelSlot)
+    if (modelSlot === null || !poses.length) { setEditorV6PoseThumbnails({}); setEditorV6PoseDimensions({}); return }
     let cancelled = false
     void (async () => {
       const { renderArtwork } = await import('../../characters/editorV6CharacterRenderer')
-      const thumbnails = await Promise.all(editorV6PoseSlots.map(async (pose) => {
+      const thumbnails = await mapConcurrentItems(poses, async (pose) => {
         try {
           const artwork = await window.desktop.fabricator.loadFabricatorPose(pose.sourceModelSlot, pose.slot)
           if (!isPoseSnapshotForModel(artwork, pose.sourceModelSlot, pose.slot)) return null
           const thumbnail = await renderArtwork(artwork, 180)
           return thumbnail ? { slot: pose.slot, thumbnail, width: artwork.width, height: artwork.height } : null
         } catch { return null }
-      }))
+      }, () => cancelled)
       if (!cancelled) {
         const ready = thumbnails.filter((entry): entry is NonNullable<typeof entry> => entry !== null)
         setEditorV6PoseThumbnails(Object.fromEntries(ready.map((entry) => [entry.slot, entry.thumbnail])))
@@ -285,11 +288,12 @@ export function EditorV6Page() {
       }
     })().catch(() => { if (!cancelled) { setEditorV6PoseThumbnails({}); setEditorV6PoseDimensions({}) } })
     return () => { cancelled = true }
-  }, [editorV6PoseSlots])
+  }, [editorV6PoseSlots, selectedEditorV6CharacterModelSlot])
 
   useEffect(() => {
     const modelSlot = selectedEditorV6CharacterModelSlot
     if (modelSlot === null) { setEditorV6PoseSlots([]); return }
+    setEditorV6PoseSlots([])
     let cancelled = false
     void window.desktop.fabricator.listFabricatorPoseSlots(modelSlot).then((poses) => {
       if (!cancelled) setEditorV6PoseSlots(poses.filter((pose): pose is NonNullable<typeof pose> => Boolean(pose)))
@@ -334,7 +338,10 @@ export function EditorV6Page() {
     const studioId = activeEditorV6.id
     void (async () => {
       const characterAssets = activeEditorV6.assets.filter((asset) => asset.category === 'character' && activeEditorV6.elements.some((element) => element.kind === 'character' && element.assetId === asset.id))
-      const crops = await Promise.all(characterAssets.map(async (asset) => ({ assetId: asset.id, crop: await trimTransparentImage(asset.dataUrl) })))
+      const crops = await mapConcurrentItems(characterAssets,
+        async (asset) => ({ assetId: asset.id, crop: await trimTransparentImage(asset.dataUrl) }),
+        () => cancelled
+      )
       if (cancelled) return
       normalizedStudioIdsRef.current.add(studioId)
       setNormalizedSourceVersion((version) => version + 1)

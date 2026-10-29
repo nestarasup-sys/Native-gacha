@@ -130,5 +130,5 @@ test('página do Customizador delega a carga de detalhes e miniaturas ao hook da
   assert.match(hook, /listWardrobeSets\(selectedModelSlot\)/)
   assert.match(hook, /loadCustomizerWardrobeCatalog\(/)
   assert.match(loader, /concurrency = 3/)
-  assert.match(loader, /while \(!isCancelled\(\)\)/)
+  assert.match(loader, /mapConcurrentItems\(/)
 })

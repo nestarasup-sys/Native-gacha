@@ -22,11 +22,11 @@ import { createDefaultSceneFaceTransform, resolveSceneFaceTransform, sceneFaceCa
 import { useStudioStageInteraction } from './useStudioStageInteraction'
 import { useStudioHistory } from './useStudioHistory'
 import { makeCanvasPrint } from './studioCanvasPrint'
-import { mapConcurrentStudioItems } from './studioConcurrentAssetLoader'
 import { mergeStudioFaceDetails } from './studioFaceDetailCache'
 import { studioFaceCatalogSelectionIds } from './studioFaceCatalogSelection'
 import { useStudioAutosave, useStudioDocumentPersistence } from './useStudioDocumentPersistence'
 import { useStudioImageImport } from './useStudioImageImport'
+import { mapConcurrentItems } from '../../ui/mapConcurrentItems'
 import type { StudioAsset, StudioDocument, StudioElement, StudioFaceTransform, StudioFaceTransforms } from '../../../../shared/studio'
 import type { CustomizerCharacter } from '../../../../shared/customizer'
 import type { CustomizerFaceAppearance } from '../../../../shared/customizer'
@@ -310,7 +310,7 @@ export function StudioPage() {
       return
     }
     setStudioFaceDetailsLoading(true)
-    void mapConcurrentStudioItems(
+    void mapConcurrentItems(
       missingIds,
       async (id) => ({ key: `${modelSlot}:${id}`, item: await window.desktop.fabricator.loadFaceCatalogItem(modelSlot, id) }),
       () => cancelled
@@ -334,7 +334,7 @@ export function StudioPage() {
     let cancelled = false
     void (async () => {
       const { renderArtwork } = await import('../../characters/characterRenderer')
-      const thumbnails = await mapConcurrentStudioItems(poses, async (pose) => {
+      const thumbnails = await mapConcurrentItems(poses, async (pose) => {
         try {
           const artwork = await window.desktop.fabricator.loadFabricatorPose(pose.sourceModelSlot, pose.slot)
           if (!isPoseSnapshotForModel(artwork, pose.sourceModelSlot, pose.slot)) return null
