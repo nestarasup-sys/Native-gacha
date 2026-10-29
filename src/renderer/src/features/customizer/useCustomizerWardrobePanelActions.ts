@@ -3,6 +3,7 @@ import type { CustomizerCharacter, HairColorOverrides, HairColorRole } from '../
 import type { WardrobeSet, WardrobeSetSummary } from '../../../../shared/fabricator'
 import { recolorWardrobeComponents, selectWardrobePanelComponents } from '../../../../shared/wardrobePlacementModel'
 import type { ClothingGroupCategory, SelectedWardrobeComponent } from '../../characters/characterRenderer'
+import { customizerFaceAppearanceForModel } from './customizerFaceAppearanceModel'
 import { hasSelectedFaceAsset } from './customizerFaceCatalogModel'
 import { wardrobeComponentMatchesPanel } from './wardrobePanelModel'
 import type { WardrobePanel, WardrobePanelCandidate } from './wardrobePanelModel'
@@ -33,7 +34,7 @@ export function useCustomizerWardrobePanelActions(deps: {
       const selectedHeadExtraId = currentAppearance?.modelSlot === selectedModelSlot ? currentAppearance.headExtras?.glasses : undefined
       if (candidate?.headExtraAsset || !candidate && selectedHeadExtraId) {
         const after = before.filter((group) => group.modelSlot !== selectedModelSlot || group.category !== panel.category)
-        const base = currentAppearance?.modelSlot === selectedModelSlot ? currentAppearance : { modelSlot: selectedModelSlot, eyeState: 0 as const, eyebrows: true, noseIndex: 0, expressionIndex: 0, mouthOpen: false }
+        const base = customizerFaceAppearanceForModel(currentAppearance, selectedModelSlot)
         const headExtras = { ...base.headExtras }
         if (candidate?.headExtraAsset) headExtras.glasses = candidate.headExtraAsset.id
         else delete headExtras.glasses

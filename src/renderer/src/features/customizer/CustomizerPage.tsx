@@ -45,7 +45,7 @@ import { RenderedCharacterPortrait } from '../../ui/components/RenderedCharacter
 import { Icon } from '../../ui/components/Icon'
 import type { FaceComponentAssetSummary, FaceDetailKind, FabricatorProject, HairStyle, HairStyleSummary } from '../../../../shared/fabricator'
 import { resolvePoseCategory } from '../../../../shared/fabricator'
-import type { CustomizerFaceAppearance, CustomizerWardrobeGroup, HairColorRole } from '../../../../shared/customizer'
+import type { CustomizerWardrobeGroup, HairColorRole } from '../../../../shared/customizer'
 import { characterBodyDimensionLimits, characterProportionLimits, defaultCharacterProportions, type CharacterProportions } from '../../../../shared/customizer'
 import { usePreviewBackground } from '../../ui/hooks/usePreviewBackground'
 import { DesignBanner } from '../../ui/components/DesignBanner'
@@ -452,7 +452,7 @@ export function CustomizerPage() {
   const {
     chooseFaceCatalogItem, chooseFacePartCatalogItem, setFacePartColor, applyFacePartPalette,
     resetFacePartColors, clearFacePartSelection, setFaceCatalogVariant, applyFaceCatalogPalette,
-    setFaceCatalogPartColor, chooseFaceDetailCatalogItem, clearFaceCatalogPart
+    setFaceCatalogPartColor, chooseFaceDetailCatalogItem, clearFaceCatalogPart, setMouthBlush
   } = useCustomizerFaceAppearanceActions({
     selectedCharacter, selectedModelSlot: selectedCatalogModelSlot, charactersRef, saveCharacterCustomization,
     selectHeadTab, faceCatalogItems, faceCatalogDetails, setFaceCatalogDetails,
@@ -630,27 +630,8 @@ export function CustomizerPage() {
     else void chooseFaceCatalogItem(choice.summary, choice.piece.index)
   }
 
-  async function updateCharacterMouthBlush(patch: Partial<Pick<CustomizerFaceAppearance, 'mouthBlushEnabled' | 'mouthBlushColor' | 'mouthBlushOpacity'>>) {
-    if (!selectedCharacter || selectedCatalogModelSlot === null) return
-    const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
-    const previous = current.customization.faceAppearance
-    const sameModel = previous?.modelSlot === selectedCatalogModelSlot
-    const appearance: CustomizerFaceAppearance = {
-      ...(sameModel ? previous : undefined),
-      modelSlot: selectedCatalogModelSlot,
-      eyeState: sameModel ? previous.eyeState : 0,
-      eyebrows: sameModel ? previous.eyebrows : true,
-      noseIndex: sameModel ? previous.noseIndex : 0,
-      expressionIndex: sameModel ? previous.expressionIndex : 0,
-      mouthOpen: sameModel ? previous.mouthOpen : false,
-      mouthBlushEnabled: sameModel ? previous.mouthBlushEnabled : false,
-      ...patch
-    }
-    await saveCharacterCustomization({ faceAppearance: appearance })
-  }
-
   const renderMouthBlushToggle = () => <label className="customizer-mouth-blush-toggle" title="Controla o blush na expressão base e nos presets do Studio">
-    <input type="checkbox" checked={Boolean(activeFaceAppearance?.mouthBlushEnabled)} disabled={!selectedCharacter || selectedCatalogModelSlot === null} onChange={(event) => void updateCharacterMouthBlush({ mouthBlushEnabled: event.target.checked })} />
+    <input type="checkbox" checked={Boolean(activeFaceAppearance?.mouthBlushEnabled)} disabled={!selectedCharacter || selectedCatalogModelSlot === null} onChange={(event) => void setMouthBlush({ mouthBlushEnabled: event.target.checked })} />
     <span>Blush na boca</span>
   </label>
 
@@ -658,7 +639,7 @@ export function CustomizerPage() {
     color={activeFaceAppearance?.mouthBlushColor ?? '#e86388'}
     opacity={activeFaceAppearance?.mouthBlushOpacity ?? .38}
     disabled={!selectedCharacter || selectedCatalogModelSlot === null}
-    onChange={(patch) => void updateCharacterMouthBlush(patch)}
+    onChange={(patch) => void setMouthBlush(patch)}
   />
 
   const renderFaceCatalogCard = (part: typeof customizerFaceCatalogLayoutParts[number]) => {

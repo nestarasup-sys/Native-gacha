@@ -4,6 +4,7 @@ import type { CustomizerCharacter, CustomizerFaceAppearance, FacePalettePartId, 
 import type { FaceCatalogItem, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSummary, FaceDetailKind, FaceSheetKind } from '../../../../shared/fabricator'
 import type { CharacterPatch } from './useCustomizerCharacterCommands'
 import { customizerFaceParts, facePartSourceId, hasSelectedFaceAsset, sameFaceAssetPair } from './customizerFaceCatalogModel'
+import { customizerFaceAppearanceForModel, customizerMouthBlushAppearance } from './customizerFaceAppearanceModel'
 import type { FaceLibraryPartId } from './customizerFaceCatalogModel'
 import { isRightFaceAsset } from '../../characters/characterRenderer'
 
@@ -52,7 +53,7 @@ export function useCustomizerFaceAppearanceActions(deps: {
       }
     }
     const appearance: CustomizerFaceAppearance = {
-      ...(sameModel ? previous : undefined),
+      ...customizerFaceAppearanceForModel(previous, item.modelSlot),
       ...migrated,
       modelSlot: item.modelSlot,
       setId: undefined,
@@ -89,21 +90,16 @@ export function useCustomizerFaceAppearanceActions(deps: {
     setFaceComponentDetails((current) => ({ ...current, ...Object.fromEntries(selectedAssets) }))
     const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
     const previous = current.customization.faceAppearance
-    const sameModel = previous?.modelSlot === item.modelSlot
-    const linkedSides = { ...(sameModel ? previous?.linkedSides : undefined), [part.category]: false }
-    const previousComponents = sameModel ? previous?.components : undefined
+    const appearanceBase = customizerFaceAppearanceForModel(previous, item.modelSlot)
+    const linkedSides = { ...appearanceBase.linkedSides, [part.category]: false }
+    const previousComponents = appearanceBase.components
     const appearance: CustomizerFaceAppearance = {
-      ...(sameModel ? previous : undefined), modelSlot: item.modelSlot, setId: undefined, linkedSides,
+      ...appearanceBase, setId: undefined, linkedSides,
       components: {
         ...(previousComponents ?? {}),
         [leftPart.id]: { ...previousComponents?.[leftPart.id], assetId: leftSummary.id, transform: undefined },
         [rightPart.id]: { ...previousComponents?.[rightPart.id], assetId: rightSummary.id, transform: undefined }
-      },
-      eyeState: sameModel ? previous.eyeState : 0,
-      eyebrows: sameModel ? previous.eyebrows : true,
-      noseIndex: sameModel ? previous.noseIndex : 0,
-      expressionIndex: sameModel ? previous.expressionIndex : 0,
-      mouthOpen: sameModel ? previous.mouthOpen : false
+      }
     }
     await saveCharacterCustomization({ faceAppearance: appearance })
   }
@@ -112,15 +108,13 @@ export function useCustomizerFaceAppearanceActions(deps: {
     if (!selectedCharacter || selectedModelSlot === null) return
     const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
     const previous = current.customization.faceAppearance
-    const appearanceBefore = previous?.modelSlot === selectedModelSlot ? previous : undefined
+    const appearanceBase = customizerFaceAppearanceForModel(previous, selectedModelSlot)
     const partDefinition = customizerFaceParts.find((entry) => entry.id === part)!
     const targetPart = facePartSourceId(partDefinition)
-    const components = { ...(appearanceBefore?.components ?? {}) }
+    const components = { ...appearanceBase.components }
     const manualColorRoles = [...new Set([...(components[targetPart]?.manualColorRoles ?? []), role])]
     components[targetPart] = { ...(components[targetPart] ?? { assetId: null }), colors: { ...components[targetPart]?.colors, [role]: value }, manualColorRoles }
-    const appearance: CustomizerFaceAppearance = previous?.modelSlot === selectedModelSlot ? { ...previous, components } : {
-      modelSlot: selectedModelSlot, eyeState: 0, eyebrows: true, noseIndex: 0, expressionIndex: 0, mouthOpen: false, components
-    }
+    const appearance: CustomizerFaceAppearance = { ...appearanceBase, components }
     await saveCharacterCustomization({ faceAppearance: appearance })
   }
 
@@ -128,14 +122,11 @@ export function useCustomizerFaceAppearanceActions(deps: {
     if (!selectedCharacter || selectedModelSlot === null) return
     const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
     const previous = current.customization.faceAppearance
-    const sameModel = previous?.modelSlot === selectedModelSlot
-    const components = { ...(sameModel ? previous?.components : undefined) }
+    const appearanceBase = customizerFaceAppearanceForModel(previous, selectedModelSlot)
+    const components = { ...appearanceBase.components }
     components[part] = { ...(components[part] ?? { assetId: null }), colors, manualColorRoles: [] }
     await saveCharacterCustomization({ faceAppearance: {
-      ...(sameModel ? previous : undefined), modelSlot: selectedModelSlot,
-      eyeState: sameModel ? previous.eyeState : 0, eyebrows: sameModel ? previous.eyebrows : true,
-      noseIndex: sameModel ? previous.noseIndex : 0, expressionIndex: sameModel ? previous.expressionIndex : 0,
-      mouthOpen: sameModel ? previous.mouthOpen : false, components
+      ...appearanceBase, components
     } })
   }
 
@@ -170,12 +161,8 @@ export function useCustomizerFaceAppearanceActions(deps: {
     if (!selectedCharacter || selectedModelSlot === null) return
     const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
     const old = current.customization.faceAppearance
-    const sameModel = old?.modelSlot === selectedModelSlot
     const appearance: CustomizerFaceAppearance = {
-      ...(sameModel ? old : undefined), modelSlot: selectedModelSlot,
-      eyeState: sameModel ? old.eyeState : 0, eyebrows: sameModel ? old.eyebrows : true,
-      noseIndex: sameModel ? old.noseIndex : 0, expressionIndex: sameModel ? old.expressionIndex : 0,
-      mouthOpen: sameModel ? old.mouthOpen : false, ...patch
+      ...customizerFaceAppearanceForModel(old, selectedModelSlot), ...patch
     }
     await saveCharacterCustomization({ faceAppearance: hasSelectedFaceAsset(appearance) ? appearance : undefined })
   }
@@ -184,12 +171,9 @@ export function useCustomizerFaceAppearanceActions(deps: {
     const current = selectedCharacter && (charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter)
     if (!current || selectedModelSlot === null) return
     const previous = current.customization.faceAppearance
-    const sameModel = previous?.modelSlot === selectedModelSlot
-    const base: CustomizerFaceAppearance = sameModel ? previous : {
-      modelSlot: selectedModelSlot, eyeState: 0, eyebrows: true, noseIndex: 0, expressionIndex: 0, mouthOpen: false
-    }
-    const facePalettes = { ...(sameModel ? previous.facePalettes : undefined), [part]: colors }
-    const facePaletteManualRoles = { ...(sameModel ? previous.facePaletteManualRoles : undefined), [part]: [] }
+    const base = customizerFaceAppearanceForModel(previous, selectedModelSlot)
+    const facePalettes = { ...base.facePalettes, [part]: colors }
+    const facePaletteManualRoles = { ...base.facePaletteManualRoles, [part]: [] }
     await saveCharacterCustomization({ faceAppearance: { ...base, facePalettes, facePaletteManualRoles } })
   }
 
@@ -197,12 +181,9 @@ export function useCustomizerFaceAppearanceActions(deps: {
     const current = selectedCharacter && (charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter)
     if (!current || selectedModelSlot === null) return
     const previous = current.customization.faceAppearance
-    const sameModel = previous?.modelSlot === selectedModelSlot
-    const base: CustomizerFaceAppearance = sameModel ? previous : {
-      modelSlot: selectedModelSlot, eyeState: 0, eyebrows: true, noseIndex: 0, expressionIndex: 0, mouthOpen: false
-    }
-    const facePalettes = { ...(sameModel ? previous.facePalettes : undefined), [part]: { ...(sameModel ? previous.facePalettes?.[part] : undefined), [role]: value } }
-    const facePaletteManualRoles = { ...(sameModel ? previous.facePaletteManualRoles : undefined), [part]: [...new Set([...(sameModel ? previous.facePaletteManualRoles?.[part] ?? [] : []), role])] }
+    const base = customizerFaceAppearanceForModel(previous, selectedModelSlot)
+    const facePalettes = { ...base.facePalettes, [part]: { ...base.facePalettes?.[part], [role]: value } }
+    const facePaletteManualRoles = { ...base.facePaletteManualRoles, [part]: [...new Set([...(base.facePaletteManualRoles?.[part] ?? []), role])] }
     await saveCharacterCustomization({ faceAppearance: { ...base, facePalettes, facePaletteManualRoles } })
   }
 
@@ -225,19 +206,23 @@ export function useCustomizerFaceAppearanceActions(deps: {
     }
     const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
     const previous = current.customization.faceAppearance
-    const sameModel = previous?.modelSlot === selectedModelSlot
-    const base: CustomizerFaceAppearance = sameModel ? { ...previous } : {
-      modelSlot: selectedModelSlot, eyeState: 0, eyebrows: true, noseIndex: 0, expressionIndex: 0, mouthOpen: false
-    }
+    const base = customizerFaceAppearanceForModel(previous, selectedModelSlot)
     const faceAppearance = part === 'nose'
       ? { ...base, noseCatalogId: undefined, noseIndex: 0 }
       : { ...base, mouthClosedCatalogId: undefined, mouthOpenCatalogId: undefined, expressionIndex: 0 }
     await saveCharacterCustomization({ faceAppearance: hasSelectedFaceAsset(faceAppearance) ? faceAppearance : undefined })
   }
 
+  async function setMouthBlush(patch: Partial<Pick<CustomizerFaceAppearance, 'mouthBlushEnabled' | 'mouthBlushColor' | 'mouthBlushOpacity'>>) {
+    if (!selectedCharacter || selectedModelSlot === null) return
+    const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
+    const faceAppearance = customizerMouthBlushAppearance(current.customization.faceAppearance, selectedModelSlot, patch)
+    await saveCharacterCustomization({ faceAppearance })
+  }
+
   return {
     chooseFaceCatalogItem, chooseFacePartCatalogItem, setFacePartColor, applyFacePartPalette,
     resetFacePartColors, clearFacePartSelection, setFaceCatalogVariant, applyFaceCatalogPalette,
-    setFaceCatalogPartColor, chooseFaceDetailCatalogItem, clearFaceCatalogPart
+    setFaceCatalogPartColor, chooseFaceDetailCatalogItem, clearFaceCatalogPart, setMouthBlush
   }
 }
