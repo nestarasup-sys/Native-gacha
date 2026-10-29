@@ -514,11 +514,12 @@ Este corte separa propriedade dos contratos e chamadas entre domínios, mas não
 - As leituras continuam atravessando `window.desktop`/preload. Rosto e catálogo facial legado seguem nos canais de `faceCatalogIpc.ts`; assets faciais usam `fabricatorIpcChannels`; efeitos de expressão seguem pelo `CharacterRenderAssetProvider`. No processo principal, os leitores e escritores continuam injetados pelo composition root em `electron/main.ts`.
 - O Customizador diminuiu mais 49 linhas; o teste de continuidade verifica o dono do carregamento, o cache legado, o cancelamento e a condição de erro contextual.
 
-### Etapa aplicada — aparência do modelo compartilhada entre workspaces
+### Ajuste aplicado — controles de aparência exclusivos de Modelos
 
-- `useFabricatorModelAppearance.ts` agora possui o slot-alvo informado pelos workspaces, a leitura do modelo selecionado fora de Modelos e o salvamento externo da cor de pele e do contorno. O contexto continua fornecendo a cor e os PNGs de prévia aos editores que consomem o modelo base; oito workspaces escolhem seu alvo via `useModelAppearanceTarget`.
-- Quando a edição é do projeto aberto, `FabricatorPage` segue usando `updateProject`, histórico e autosave existentes. Quando a área edita outro slot, o hook altera o snapshot em memória, aplica debounce de 500 ms, serializa as gravações, salva metadados com a lista de assets vazia e emite `fabricator:assets-updated`. Trocas de alvo e de slot continuam aguardando a fila pendente.
-- O fluxo mantém `loadFabricatorSlot`/`saveFabricatorProject`, IDs de slot e contratos atuais; não duplica PNGs nem muda o formato persistido. A página do Fabricador diminuiu 87 linhas, e o teste de continuidade verifica os oito consumidores, a divisão entre autosave local e escrita externa e a gravação sem reenvio de assets.
+- A faixa de cor de pele e contorno fica somente em Modelos. As outras áreas do Fabricador não exibem controles duplicados nem alteram a aparência do modelo base.
+- `useFabricatorModelAppearance.ts` continua carregando o slot escolhido por cada workspace e o `ModelAppearanceProvider` distribui cor e PNGs de prévia aos oito consumidores. Essa leitura é somente para renderização; o hook não grava o projeto.
+- A alteração de aparência é feita no editor de Modelos por `updateProject`, mantendo o histórico e o autosave próprios do projeto. A faixa externa e sua fila de salvamento foram removidas.
+- Os testes de continuidade verificam que há um único `ModelSkinTonePicker`, no editor de Modelos, e que os workspaces continuam usando o contexto de aparência para as prévias.
 
 ### Etapa aplicada — contrato e composição do resultado da importação do modelo
 
@@ -642,14 +643,14 @@ Este corte separa propriedade dos contratos e chamadas entre domínios, mas não
 - O fechamento e o backup chamavam o flush do processo principal, mas não executavam o timer de 350 ms nem aguardavam `writeQueue.current` no renderer. O cleanup tentava salvar sem aguardar e engolia falhas.
 - Um registro pequeno de flushers do renderer foi adicionado. `AnimatorWorkspace` registra o flush do rascunho, captura o estado após o commit React, cancela o debounce e aguarda a gravação; o cleanup agora só cancela e remove o registro.
 - O canal de flush existente pede ao renderer que drene os escritores registrados antes de verificar o inventário IPC. Como fechamento e backup já usam esse canal, ambos passam a aguardar o rascunho. A navegação do TopBar e a troca de área dentro do Fabricador também aguardam o flush e permanecem na tela se o salvamento falhar.
-- `renderer-pending-persistence.test.mjs` cobre concorrência, falhas e os pontos de integração. A cobertura atual do registro inclui o Animador; a inspeção encontrou outros timers de gravação em Poses DEV, no editor de modelos, na aparência compartilhada, em Preset Expressão e nos componentes faciais, ainda fora deste contrato.
+- `renderer-pending-persistence.test.mjs` cobre concorrência, falhas e os pontos de integração. A cobertura atual do registro inclui o Animador; a inspeção encontrou outros timers de gravação em Poses DEV, no editor de modelos, em Preset Expressão e nos componentes faciais, ainda fora deste contrato.
 - Verificação: os testes direcionados passaram (16), `npm run test:refactor` passou com 316 testes, `npm run typecheck`, `npm run audit:architecture` (350 arquivos TS/TSX), `npm run build` e `git diff --check` passaram.
 
-## 8. Etapa aplicada — flush de Poses DEV, Modelos e aparência compartilhada
+## 8. Etapa aplicada — flush de Poses DEV e Modelos
 
 - `PoseWorkspace` agora registra o rascunho no flush central, cancela o debounce, grava o snapshot atual e aguarda a fila local. Salvar uma pose ou descartá-la também espera gravações anteriores para evitar que um rascunho antigo reapareça depois da ação.
 - `FabricatorPage` serializa as gravações do projeto no renderer. O flush cancela e consome o timer de 700 ms, usa o projeto mais recente e aguarda a fila; a exclusão de slot espera gravações já iniciadas antes de remover os arquivos.
-- A aparência compartilhada entrou no mesmo registro. Erros de escrita deixam o snapshot pendente para nova tentativa e são propagados ao flush, impedindo navegação ou backup silenciosos.
+- Os controles de cor do modelo base permanecem dentro de Modelos e usam o autosave do projeto. As áreas secundárias só leem a aparência para exibir as prévias; não há gravação externa de cor.
 - O teste do IPC de modelos confirma que recuperação ambígua vira `null` sem rejeitar o invoke; o bundle compilado contém esse tratamento. Na investigação não havia servidor ativo na porta 5188.
 - `tests/renderer-pending-persistence.test.mjs` e `fabricator-customizer-studio-continuity.test.mjs` foram atualizados para os novos contratos. `npm run test:refactor` passou com 318 testes; também passaram `npm run typecheck`, `npm run audit:architecture` (350 arquivos TS/TSX), `npm run build` e `git diff --check`. Os testes usam operações e dados sintéticos.
 

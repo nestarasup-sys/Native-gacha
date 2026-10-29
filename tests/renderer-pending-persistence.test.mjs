@@ -61,17 +61,15 @@ test('Pose drafts register a flush for the latest project and wait for queued wr
   assert.match(poses, /await flushDraftWrites\(\)[\s\S]*?saveFabricatorPose\(/)
 })
 
-test('Fabricator projects and shared appearance register flushers and surface failed writes', async () => {
+test('Fabricator model projects register a flusher while secondary appearance previews stay read-only', async () => {
   const fabricator = await readFile('src/renderer/src/features/fabricator/FabricatorPage.tsx', 'utf8')
   const appearance = await readFile('src/renderer/src/features/fabricator/useFabricatorModelAppearance.ts', 'utf8')
   assert.match(fabricator, /registerPendingWriteFlusher\(flushProjectWrites\)/)
   assert.match(fabricator, /if \(hadPendingTimer && projectRef\.current\) await persistProject\(projectRef\.current\)/)
   assert.match(fabricator, /await projectWriteQueue\.current/)
-  assert.match(appearance, /registerPendingWriteFlusher\(flushExternalAppearanceSave\)/)
-  assert.match(appearance, /await appearanceSaveQueue\.current/)
-  assert.match(appearance, /if \(!pendingAppearanceSave\.current\) pendingAppearanceSave\.current = snapshot/)
-  assert.match(appearance, /setAppearanceSaveError\([\s\S]*?throw reason/)
-  assert.doesNotMatch(appearance, /void persistExternalAppearance\(pendingAppearance\)/)
+  assert.match(appearance, /loadFabricatorSlot\(visibleAppearanceSlot\)/)
+  assert.match(appearance, /setAppearanceLoadError/)
+  assert.doesNotMatch(appearance, /registerPendingWriteFlusher|saveFabricatorProject|appearanceSaveQueue/)
 })
 
 test('Expression workspace drafts register, serialize and await the latest disk snapshot', async () => {

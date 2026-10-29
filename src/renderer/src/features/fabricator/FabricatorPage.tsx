@@ -169,15 +169,7 @@ export function FabricatorPage() {
 
   useEffect(() => registerPendingWriteFlusher(flushProjectWrites), [flushProjectWrites])
 
-  const {
-    appearanceProject, appearanceSaveState, appearanceSaveError,
-    setAppearanceTargetSlot, scheduleExternalAppearanceSave, flushExternalAppearanceSave
-  } = useFabricatorModelAppearance({ activeSection, activeSlot, project, setSlots })
-  const appearanceUsesEditorProject = appearanceProject?.slot === project?.slot
-  const visibleAppearanceSaveState = appearanceUsesEditorProject ? saveState : appearanceSaveState
-  const visibleAppearanceSaveLabel = visibleAppearanceSaveState === 'saving'
-    ? appearanceUsesEditorProject ? 'Salvando…' : 'Salvando cores…'
-    : visibleAppearanceSaveState === 'error' ? 'Erro ao salvar' : 'Salvo localmente'
+  const { appearanceProject, appearanceLoadError, setAppearanceTargetSlot } = useFabricatorModelAppearance({ activeSection, activeSlot, project })
 
   useEffect(() => {
     void window.desktop.fabricator.listFabricatorSlots()
@@ -340,17 +332,6 @@ export function FabricatorPage() {
     trackProjectChange(current, normalized, action)
   }
 
-  const updateModelAppearance = (field: 'modelSkinTone' | 'modelOutlineColor', value: string | undefined) => {
-    const current = appearanceProject
-    if (!current) return
-    if (projectRef.current?.slot === current.slot) {
-      updateProject((latest) => ({ ...latest, [field]: value }))
-      return
-    }
-    const next = { ...current, [field]: value, updatedAt: new Date().toISOString() }
-    scheduleExternalAppearanceSave(next)
-  }
-
   const moveLayer = (partId: string, direction: -1 | 1) => {
     updateProject((current) => {
       const topDown = normalizeLayerOrder(current.parts, current.layerOrder).reverse()
@@ -375,10 +356,6 @@ export function FabricatorPage() {
 
   const selectSlot = async (slot: number) => {
     const generation = ++slotSelectionGeneration.current
-    try { await flushExternalAppearanceSave() } catch (reason) {
-      setError(reason instanceof Error ? `Falha ao salvar as cores antes de trocar de slot: ${reason.message}` : 'Falha ao salvar as cores antes de trocar de slot.')
-      return
-    }
     if (generation !== slotSelectionGeneration.current) return
     setSlotSwitching(true)
     requestId.current += 1
@@ -996,23 +973,7 @@ export function FabricatorPage() {
       }) }))} />}
       <ModelAppearanceProvider slot={appearanceProject?.slot ?? null} previewUrls={bodyAppearancePreviewUrls} modelSkinTone={appearanceProject?.modelSkinTone} modelOutlineColor={appearanceProject?.modelOutlineColor} setTargetSlot={setAppearanceTargetSlot}>
         <section className="fabricator-workspace-shell">
-          {activeSection !== 'Modelos' && appearanceProject && <div className="fabricator-shared-appearance">
-            <div className="fabricator-shared-appearance-heading">
-              <span><small>MODELO BASE · SLOT {String(appearanceProject.slot).padStart(2, '0')}</small><strong>{appearanceProject.name}</strong></span>
-              <span className={`model-save-state ${visibleAppearanceSaveState}`}><i />{visibleAppearanceSaveLabel}</span>
-            </div>
-            <ModelSkinTonePicker
-              value={appearanceProject.modelSkinTone}
-              outlineColor={appearanceProject.modelOutlineColor}
-              contourPartCount={appearanceProject.parts.filter(part => part.fakeSkinContours?.length).length}
-              disabled={!appearanceProject || (slotSwitching && appearanceProject.slot === activeSlot)}
-              showContourButton={false}
-              onSelect={(tone) => updateModelAppearance('modelSkinTone', tone)}
-              onOutlineSelect={(color) => updateModelAppearance('modelOutlineColor', color)}
-              onEditContours={() => undefined}
-            />
-            {appearanceSaveError && !appearanceUsesEditorProject && <small className="fabricator-shared-appearance-error" role="status">Não foi possível salvar as cores: {appearanceSaveError}</small>}
-          </div>}
+          {activeSection !== 'Modelos' && appearanceLoadError && <small className="fabricator-appearance-error" role="status">Não foi possível carregar a prévia do modelo base: {appearanceLoadError}</small>}
       {activeSection === 'Design Dev' ? <DesignWorkspace /> : activeSection === 'Poses' ? <PoseWorkspace baseModelSlot={activeSlot} /> : activeSection === 'Roupas' ? <WardrobeWorkspace baseModelSlot={activeSlot} /> : activeSection === 'Olhos' ? <FaceComponentsWorkspace mode="eyes" baseModelSlot={activeSlot} /> : activeSection === 'Rosto' ? <FaceComponentsWorkspace mode="face" baseModelSlot={activeSlot} /> : activeSection === 'Preset Expressão Dev' ? <ExpressionPresetWorkspace modelSlot={activeSlot} /> : activeSection === 'Animador Rosto Dev' ? <FaceAnimatorWorkspace modelSlot={activeSlot} /> : activeSection === 'Cabeças extra' ? <HeadExtrasWorkspace baseModelSlot={activeSlot} /> : activeSection === 'Cabelos Dev' ? <HairWorkspace baseModelSlot={activeSlot} /> : activeSection === 'Animador Dev' ? <AnimatorWorkspace baseModelSlot={activeSlot} /> : (
         <section className="fabricator-model-editor" aria-label="Editor de modelos">
           <header className="model-slotbar">

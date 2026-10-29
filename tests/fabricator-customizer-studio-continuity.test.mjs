@@ -121,7 +121,7 @@ test('catálogos faciais ficam isolados e mantêm carregamento legado e cancelam
  assert.match(catalog,/if \(cancelled\) return/,'respostas antigas não atualizam o catálogo após a troca de modelo')
  assert.match(catalog,/!cancelled && activeModule === 'Cabeça'/,'erros de rostos continuam relevantes apenas na área facial')
 })
-test('cores e prévias do modelo base atravessam os workspaces pelo contexto e salvamento serializado',async()=>{
+test('controles de aparência ficam em Modelos e as prévias compartilham as cores do modelo base',async()=>{
  const consumers=[
   'src/renderer/src/features/fabricator/PoseWorkspace.tsx',
   'src/renderer/src/features/fabricator/wardrobe/WardrobeWorkspace.tsx',
@@ -139,13 +139,12 @@ test('cores e prévias do modelo base atravessam os workspaces pelo contexto e s
   ...consumers.map(path=>readFile(path,'utf8'))
  ])
  assert.match(page,/useFabricatorModelAppearance\(/)
- assert.match(page,/projectRef\.current\?\.slot === current\.slot/,'o modelo aberto continua usando seu próprio histórico e autosave')
- assert.match(page,/scheduleExternalAppearanceSave\(next\)/)
+ assert.equal((page.match(/<ModelSkinTonePicker\b/g) ?? []).length,1,'os controles de pele e contorno aparecem uma vez, no editor de Modelos')
+ assert.doesNotMatch(page,/fabricator-shared-appearance|scheduleExternalAppearanceSave/,'as áreas secundárias não exibem nem salvam controles de aparência')
  assert.match(page,/ModelAppearanceProvider slot=\{appearanceProject\?\.slot/)
- assert.match(appearance,/appearanceSaveQueue\.current/)
- assert.match(appearance,/saveFabricatorProject\(serializeFabricatorProject\(snapshot\), \[\]\)/,'cores externas não reenviam assets das peças')
- assert.match(appearance,/setTimeout\(\(\) => \{[\s\S]*?appearanceSaveTimer\.current = null[\s\S]*?void flushExternalAppearanceSave\(\)\.catch/)
- assert.match(appearance,/flushExternalAppearanceSave\(\)\.then/,'troca de modelo aguarda as cores pendentes antes de mudar o alvo')
+ assert.match(appearance,/loadFabricatorSlot\(visibleAppearanceSlot\)/,'as outras áreas continuam lendo o modelo selecionado para as prévias')
+ assert.match(appearance,/appearanceLoadError/)
+ assert.doesNotMatch(appearance,/saveFabricatorProject|registerPendingWriteFlusher|appearanceSaveQueue/,'o hook de prévia não grava alterações de modelo')
  assert.match(context,/useModelAppearanceTarget/)
  for(const workspace of workspaces) assert.match(workspace,/useModelAppearanceTarget\(/)
 })

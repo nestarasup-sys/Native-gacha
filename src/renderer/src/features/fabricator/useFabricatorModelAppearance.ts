@@ -1,88 +1,19 @@
-/** Shared model skin/outline settings consumed by Fabricator workspaces outside Modelos. */
-import { useCallback, useEffect, useRef, useState } from 'react'
-import type { Dispatch, SetStateAction } from 'react'
-import type { FabricatorProject, FabricatorSlotSummary } from '../../../../shared/fabricator'
-import { registerPendingWriteFlusher } from '../../ui/pendingPersistence'
-import { serializeFabricatorProject } from './models/projectSerialization'
+/** Loads the selected base model so Fabricator workspaces can render its shared appearance. */
+import { useCallback, useEffect, useState } from 'react'
+import type { FabricatorProject } from '../../../../shared/fabricator'
 
 export function useFabricatorModelAppearance(deps: {
   activeSection: string
   activeSlot: number
   project: FabricatorProject | null
-  setSlots: Dispatch<SetStateAction<FabricatorSlotSummary[]>>
 }) {
-  const { activeSection, activeSlot, project, setSlots } = deps
+  const { activeSection, activeSlot, project } = deps
   const [appearanceTargetSlot, setAppearanceTargetSlotState] = useState<number | null>(null)
   const [otherAppearanceProject, setOtherAppearanceProject] = useState<FabricatorProject | null>(null)
-  const [appearanceSaveState, setAppearanceSaveState] = useState<'saved' | 'saving' | 'error'>('saved')
-  const [appearanceSaveError, setAppearanceSaveError] = useState('')
-  const appearanceSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const pendingAppearanceSave = useRef<FabricatorProject | null>(null)
-  const appearanceSaveQueue = useRef<Promise<unknown>>(Promise.resolve())
-  const appearanceTargetRef = useRef<number | null>(null)
-
-  const persistExternalAppearance = useCallback(async (snapshot: FabricatorProject) => {
-    const previous = appearanceSaveQueue.current
-    const current = previous.catch(() => undefined).then(async () => {
-      await window.desktop.fabricator.saveFabricatorProject(serializeFabricatorProject(snapshot), [])
-      window.dispatchEvent(new Event('fabricator:assets-updated'))
-      setSlots((items) => items.map((item) => item?.slot === snapshot.slot ? { ...item, updatedAt: snapshot.updatedAt } : item))
-      if (!pendingAppearanceSave.current) {
-        setAppearanceSaveState('saved')
-        setAppearanceSaveError('')
-      }
-    })
-    appearanceSaveQueue.current = current
-    try {
-      await current
-    } catch (reason) {
-      setAppearanceSaveState('error')
-      setAppearanceSaveError(reason instanceof Error ? reason.message : 'Não foi possível salvar as cores deste modelo.')
-      throw reason
-    }
-  }, [])
-
-  const flushExternalAppearanceSave = useCallback(async () => {
-    if (appearanceSaveTimer.current) clearTimeout(appearanceSaveTimer.current)
-    appearanceSaveTimer.current = null
-    const snapshot = pendingAppearanceSave.current
-    if (snapshot) {
-      pendingAppearanceSave.current = null
-      try {
-        await persistExternalAppearance(snapshot)
-      } catch (reason) {
-        if (!pendingAppearanceSave.current) pendingAppearanceSave.current = snapshot
-        throw reason
-      }
-    }
-    await appearanceSaveQueue.current
-  }, [persistExternalAppearance])
-
+  const [appearanceLoadError, setAppearanceLoadError] = useState('')
   const setAppearanceTargetSlot = useCallback((slot: number | null) => {
-    if (slot === null) return
-    if (appearanceTargetRef.current === slot) {
-      void flushExternalAppearanceSave().catch(() => undefined)
-      return
-    }
-    void flushExternalAppearanceSave().then(() => {
-      appearanceTargetRef.current = slot
-      setAppearanceTargetSlotState(slot)
-    }).catch(() => undefined)
-  }, [flushExternalAppearanceSave])
-
-  const scheduleExternalAppearanceSave = useCallback((snapshot: FabricatorProject) => {
-    setOtherAppearanceProject(snapshot)
-    pendingAppearanceSave.current = snapshot
-    setAppearanceSaveState('saving')
-    setAppearanceSaveError('')
-    if (appearanceSaveTimer.current) clearTimeout(appearanceSaveTimer.current)
-    appearanceSaveTimer.current = setTimeout(() => {
-      appearanceSaveTimer.current = null
-      void flushExternalAppearanceSave().catch(() => undefined)
-    }, 500)
-  }, [flushExternalAppearanceSave])
-
-  useEffect(() => registerPendingWriteFlusher(flushExternalAppearanceSave), [flushExternalAppearanceSave])
+    if (slot !== null) setAppearanceTargetSlotState(slot)
+  }, [])
 
   const visibleAppearanceSlot = activeSection === 'Modelos' ? activeSlot : appearanceTargetSlot ?? activeSlot
   const appearanceProject = project?.slot === visibleAppearanceSlot
@@ -90,42 +21,28 @@ export function useFabricatorModelAppearance(deps: {
     : otherAppearanceProject?.slot === visibleAppearanceSlot ? otherAppearanceProject : null
 
   useEffect(() => {
-    if (visibleAppearanceSlot === project?.slot) {
+    if (activeSection === 'Modelos' || visibleAppearanceSlot === project?.slot) {
       setOtherAppearanceProject(null)
-      setAppearanceSaveState('saved')
-      setAppearanceSaveError('')
+      setAppearanceLoadError('')
       return
     }
     let active = true
+    setAppearanceLoadError('')
     void window.desktop.fabricator.loadFabricatorSlot(visibleAppearanceSlot).then((loaded) => {
-      if (active) {
-        setOtherAppearanceProject(loaded)
-        setAppearanceSaveState('saved')
-        setAppearanceSaveError('')
-      }
+      if (active) setOtherAppearanceProject(loaded)
     }).catch((reason: unknown) => {
       if (active) {
         setOtherAppearanceProject(null)
-        setAppearanceSaveState('error')
-        setAppearanceSaveError(reason instanceof Error ? reason.message : 'Não foi possível carregar as cores deste modelo.')
+        setAppearanceLoadError(reason instanceof Error ? reason.message : 'Não foi possível carregar o modelo base para a prévia de aparência.')
       }
     })
     return () => { active = false }
-  }, [visibleAppearanceSlot, project?.slot])
-
-  useEffect(() => () => {
-    if (appearanceSaveTimer.current) clearTimeout(appearanceSaveTimer.current)
-    appearanceSaveTimer.current = null
-  }, [])
+  }, [activeSection, visibleAppearanceSlot, project?.slot])
 
   return {
     appearanceTargetSlot,
     appearanceProject,
-    appearanceSaveState,
-    appearanceSaveError,
-    visibleAppearanceSlot,
-    setAppearanceTargetSlot,
-    scheduleExternalAppearanceSave,
-    flushExternalAppearanceSave
+    appearanceLoadError,
+    setAppearanceTargetSlot
   }
 }
