@@ -1,7 +1,7 @@
 import { projectForOriginalPreview } from '../../../../../shared/fabricatorModelViews'
 import { useModelSourceRefresh } from '../models/useModelSourceRefresh'
-import { pupilDeltaFromDrag, pupilSourceMirrored } from '../../../../../shared/facePupilGeometry'
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
+import { pupilSourceMirrored } from '../../../../../shared/facePupilGeometry'
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties } from 'react'
 import type { FaceAssetKind, FaceCatalogItem, FaceCatalogItemSave, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSave, FaceComponentAssetSummary, FaceComponentKind, FaceDetailKind, FaceGuideProfile, FaceGuideSettings, FaceTransform, FabricatorProject, FabricatorSlotSummary, ModelPart } from '../../../../../shared/fabricator'
 import { Icon } from '../../../ui/components/Icon'
 import { usePreviewBackground } from '../../../ui/hooks/usePreviewBackground'
@@ -18,15 +18,14 @@ import { normalizeEditableImageFile } from '../normalizeImage'
 import { useModelAppearanceTarget, useModelPartAppearancePreview } from '../ModelAppearanceContext'
 import { isRightLibraryAsset, libraryBaseName, sameLibraryPair, visibleFaceLibraryAssets } from './faceLibraryModel'
 import { createFaceSaveQueue, type FaceSaveQueue } from './faceSaveQueue'
-import { createPreviewFrameScheduler, type PreviewFrameScheduler } from './facePreviewFrame'
 import { loadFaceCatalogWorkspaceData, loadFaceComponentWorkspaceData } from './faceWorkspaceData'
+import { useFacePreviewDrag } from './useFacePreviewDrag'
 
 type PartId = 'eye-left' | 'eye-right' | 'pupil-left' | 'pupil-right' | 'eye-closed-left' | 'eye-closed-right' | 'brow-left' | 'brow-right'
 type CatalogKind = 'nose' | 'mouth-closed' | 'mouth-open'
 type LibraryCategory = FaceComponentKind | FaceDetailKind | 'nose' | 'mouth'
 type FaceWorkspaceMode = 'eyes' | 'face'
 type FaceGuide = FaceGuideSettings
-type PreviewDrag = { pointerId: number; key: string; modelSlot: number; target: HTMLImageElement; clientX: number; clientY: number; startX: number; startY: number; modelPerPixelX: number; modelPerPixelY: number; invertX: boolean; pupil: boolean; rotation: number }
 const COMPONENT_SELECTION_STORAGE_KEY = 'gacha-nymi:face-dev-component-selections'
 const LEGACY_PUPIL_SELECTION_STORAGE_KEY = 'gacha-nymi:face-dev-pupil-selections'
 const FACE_IMPORT_ANCHORS_STORAGE_KEY = 'gacha-nymi:face-dev-import-anchors'
@@ -209,15 +208,6 @@ export function FaceComponentsWorkspace({ mode, baseModelSlot }: { mode: FaceWor
     })
   }
   const { queueSave, flushSave, flushAllSaves } = faceSaveQueueRef.current
-  const previewDrag = useRef<PreviewDrag | null>(null)
-  const previewDragScheduler = useRef<PreviewFrameScheduler | null>(null)
-  if (!previewDragScheduler.current) {
-    previewDragScheduler.current = createPreviewFrameScheduler(
-      (callback) => requestAnimationFrame(callback),
-      (frameId) => cancelAnimationFrame(frameId)
-    )
-  }
-  const [draggingPreview, setDraggingPreview] = useState(false)
   const stageRef = useRef<HTMLDivElement>(null)
   const [stageSize, setStageSize] = useState({ width: 0, height: 0 })
   const head = useMemo(() => model?.parts.find((part) => /cabe[çc]a|head/i.test(part.name)) ?? null, [model])
@@ -288,8 +278,9 @@ export function FaceComponentsWorkspace({ mode, baseModelSlot }: { mode: FaceWor
   const selectedTransform = selectedCatalogItem ? selectedCatalogItem.category === 'nose' ? selectedCatalogItem.transforms.nose : sharedMouthTransform
     : activeFaceDetail?.defaultTransform ?? (selectedAsset && followsOpenEye && selectedOpenEye && head ? fitClosedEyeToOpen(selectedAsset, selectedOpenEye, head, selectedPart.endsWith('right')) : selectedAsset?.defaultTransform)
   const activePreviewKey = selectedCatalogItem ? `${selectedCatalogItem.category}:${selectedCatalogItem.id}` : activeFaceDetail ? `${activeFaceDetail.kind}:${activeFaceDetail.id}` : activeComponent ? `${selectedPart}:${activeComponent.id}` : null
-  const activePreviewKeyRef = useRef(activePreviewKey)
-  activePreviewKeyRef.current = activePreviewKey
+  const { isDragging: draggingPreview, begin: beginPreviewDrag, move: movePreviewDrag, end: endPreviewDrag } = useFacePreviewDrag({
+    modelSlot, activeKey: activePreviewKey, head, transform: selectedTransform, onTransformChange: updateTransform
+  })
   const controlSourcePiece = selectedCatalogItem?.category !== 'nose' && selectedCatalogItem
     ? mouthReferenceItem?.pieces.find((piece) => piece.index === selectedMouth?.selectedExpression) ?? mouthReferenceItem?.pieces[0] ?? selectedCatalogPiece
     : selectedCatalogPiece
@@ -327,22 +318,6 @@ export function FaceComponentsWorkspace({ mode, baseModelSlot }: { mode: FaceWor
   catalogDetailsRef.current = { ...noseDetails, ...mouthDetails }
 
   useEffect(() => registerPendingWriteFlusher(flushAllSaves), [flushAllSaves])
-
-  useEffect(() => {
-    const drag = previewDrag.current
-    if (!drag || drag.key === activePreviewKey && drag.modelSlot === modelSlot) return
-    previewDragScheduler.current?.cancel()
-    previewDrag.current = null
-    setDraggingPreview(false)
-    if (drag.target.hasPointerCapture(drag.pointerId)) drag.target.releasePointerCapture(drag.pointerId)
-  }, [activePreviewKey, modelSlot])
-
-  useEffect(() => () => {
-    const drag = previewDrag.current
-    previewDragScheduler.current?.cancel()
-    previewDrag.current = null
-    if (drag?.target.hasPointerCapture(drag.pointerId)) drag.target.releasePointerCapture(drag.pointerId)
-  }, [])
 
   useEffect(() => { void window.desktop.fabricator.listFabricatorSlots().then((slots) => { setModels(slots); const preferredExists = Boolean(slots[baseModelSlot - 1]); const first = slots.findIndex(Boolean); if (!preferredExists && first >= 0) setModelSlot(first + 1) }).catch((reason) => setError(String(reason))) }, [baseModelSlot])
   useEffect(() => { if (mode !== 'eyes') return; try { window.localStorage.setItem(FACE_IMPORT_ANCHORS_STORAGE_KEY, JSON.stringify(importAnchorsByModel)) } catch { setError('Não foi possível salvar a fixação de importação neste computador.') } }, [mode, importAnchorsByModel])
@@ -900,49 +875,6 @@ export function FaceComponentsWorkspace({ mode, baseModelSlot }: { mode: FaceWor
     catalogDetailsRef.current = { ...catalogDetailsRef.current, [next.id]: next }
     setNoseDetails((items) => ({ ...items, [next.id]: next }))
     queueSave(`catalog:${next.modelSlot}:${next.id}`, () => window.desktop.fabricator.saveFaceCatalogItem(next.modelSlot, catalogSaveData(next), catalogImagesForSave(next)))
-  }
-
-  function beginPreviewDrag(event: ReactPointerEvent<HTMLImageElement>, key: string, invertX = false, pupil = false, rotation = 0) {
-    if (event.button !== 0 || !event.isPrimary || !head || !selectedTransform || key !== activePreviewKey) return
-    const canvas = event.currentTarget.closest('.face-components-preview-canvas')
-    if (!canvas) return
-    const bounds = canvas.getBoundingClientRect()
-    if (bounds.width <= 0 || bounds.height <= 0) return
-    event.preventDefault()
-    previewDragScheduler.current?.cancel()
-    event.currentTarget.setPointerCapture(event.pointerId)
-    previewDrag.current = {
-      pointerId: event.pointerId, key, modelSlot, target: event.currentTarget, clientX: event.clientX, clientY: event.clientY,
-      startX: selectedTransform.x, startY: selectedTransform.y,
-      modelPerPixelX: head.width / bounds.width, modelPerPixelY: head.height / bounds.height,
-      invertX, pupil, rotation
-    }
-    setDraggingPreview(true)
-  }
-
-  function movePreviewDrag(event: ReactPointerEvent<HTMLImageElement>) {
-    const drag = previewDrag.current
-    if (!drag || drag.pointerId !== event.pointerId || drag.key !== activePreviewKey || !head) return
-    const delta = pupilDeltaFromDrag(event.clientX-drag.clientX,event.clientY-drag.clientY,{
-      rotationDegrees:drag.pupil ? drag.rotation : 0,mirrorSourceX:drag.invertX,
-      modelPerPixelX:drag.modelPerPixelX,modelPerPixelY:drag.modelPerPixelY
-    })
-    const x=drag.startX+delta.x,y=drag.startY+delta.y
-    const patch = drag.pupil ? { x, y } : { x: clamp(x, 0, head.width), y: clamp(y, 0, head.height) }
-    const expectedKey = drag.key
-    previewDragScheduler.current?.schedule(() => {
-      const currentDrag = previewDrag.current
-      if (!currentDrag || currentDrag.key !== expectedKey || currentDrag.modelSlot !== modelSlot || activePreviewKeyRef.current !== expectedKey) return
-      updateTransform(patch)
-    })
-  }
-
-  function endPreviewDrag(event: ReactPointerEvent<HTMLImageElement>) {
-    if (previewDrag.current?.pointerId !== event.pointerId) return
-    previewDragScheduler.current?.flush()
-    previewDrag.current = null
-    setDraggingPreview(false)
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
   }
 
   async function removeSelectedAssets() {

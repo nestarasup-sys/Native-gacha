@@ -1323,3 +1323,10 @@ Continua a auditoria das operações IPC iniciadas pelo usuário e da cobertura 
 - Ao trocar a peça ou o slot, a tarefa pendente é cancelada e a captura do ponteiro é liberada; ao desmontar a tela, o agendador também é cancelado. Isso evita uma atualização atrasada alcançar outra seleção ou tela.
 - O fluxo de transformação e salvamento continua usando `updateTransform` e a fila existente. IDs, formatos persistidos, canais IPC, renderização do Studio/Editor V6 e arte exportada não mudaram. A economia é limitada aos eventos redundantes entre quadros; não foi feita medição de FPS em hardware real.
 - Verificação: `npm run typecheck`, `npm run build`, `npm run audit:architecture` (436 arquivos TS/TSX, sem violações) e `git diff --check` passaram. Os testes automatizados não foram executados nesta etapa.
+
+## 78. Etapa aplicada — gesto de arraste isolado em hook da feature
+
+- Depois de limitar as atualizações ao quadro de animação, o mesmo componente ainda era dono dos detalhes do ponteiro: captura, espelhamento da pupila, cálculo de posição, cancelamento e limpeza de tarefas pendentes.
+- `useFacePreviewDrag.ts` passou a coordenar esse ciclo e recebe apenas o slot, a peça ativa, o tamanho da cabeça, a transformação e a função de atualização. `FaceComponentsWorkspace.tsx` agora conecta o hook aos elementos da prévia e preserva os mesmos eventos e rótulos visuais; o componente ficou com 1.131 linhas, 34 a menos que o inventário anterior à otimização.
+- A separação não muda a regra de arraste nem a persistência. A fila de salvamento, transforms, IPC e os consumidores do modelo continuam pertencendo aos módulos existentes. A agenda de quadro permanece em `facePreviewFrame.ts`, que também é usada pelo hook.
+- Verificação: `npm run typecheck`, `npm run build`, `npm run audit:architecture` (437 arquivos TS/TSX, sem violações) e `git diff --check` passaram. Os testes automatizados não foram executados nesta etapa.
