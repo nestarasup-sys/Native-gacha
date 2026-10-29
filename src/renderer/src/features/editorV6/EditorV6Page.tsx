@@ -18,6 +18,7 @@ import { useEditorV6InspectorState } from './useEditorV6InspectorState'
 import { useEditorV6FaceCatalog } from './useEditorV6FaceCatalog'
 import { useEditorV6FacePreview } from './useEditorV6FacePreview'
 import { createSceneFaceActions } from '../../characters/sceneFaceActions'
+import { SceneFaceCatalogPanel } from '../../characters/SceneFaceCatalogPanel'
 import { useEditorV6StageInteraction, type EditorV6StageDrag } from './useEditorV6StageInteraction'
 import { resolveEditorV6InspectorSelection } from './editorV6Selection'
 import { trimTransparentImage, fitElementToTrim, faceRenderGeometry, type TrimmedImage } from '../../characters/characterGeometry'
@@ -39,7 +40,6 @@ import { fitEditorV6CharacterToStage } from '../../../../shared/editorV6Characte
 import { editorV6ProjectSummary, type EditorV6Asset, type EditorV6Document, type EditorV6Element, type EditorV6FaceTransform, type EditorV6FaceTransforms, type EditorV6ProjectSummary, type EditorV6TimelineBlock } from '../../../../shared/editorV6'
 import type { CustomizerCharacter } from '../../../../shared/customizer'
 import type { CustomizerFaceAppearance } from '../../../../shared/customizer'
-import type { FaceCatalogItem } from '../../../../shared/fabricator'
 type EditorV6Card = EditorV6ProjectSummary
 type Tool = 'background' | 'objects' | null
 const STORAGE_KEY = 'gacha-nymi-editor-v6-catalog-v1'
@@ -1236,32 +1236,16 @@ export function EditorV6Page() {
       ?? selectedElement.faceTransforms?.[editorV6FaceCategory]
       ?? defaultStudioEyeTransform
     const catalogItems = editorV6FaceItems.filter((item) => item.modelSlot === selectedEditorV6CharacterModelSlot && item.category === sheetKind)
-    const renderPair = (pieces: FaceCatalogItem['pieces']) => pieces.slice(0, 2).map((piece) => <img key={piece.id} src={piece.dataUrl} alt="" />)
-    const categoryButtons = [
-      { id: 'eyes', label: 'Olhos' }, { id: 'eyebrows', label: 'Sobrancelhas' },
-      { id: 'nose', label: 'Nariz' }, { id: 'mouth', label: 'Boca' }
-    ] as const
-    return <div className="studio-custom-face">
-      <div className="studio-custom-face-categories" aria-label="Categorias do rosto">
-        {categoryButtons.map((category) => <button key={category.id} className={editorV6FaceCategory === category.id ? 'active' : ''} onClick={() => setEditorV6FaceCategory(category.id)} type="button">{category.label}</button>)}
-      </div>
-      {editorV6FaceCategory === 'mouth' && <div className="studio-custom-mouth-tabs"><button className={selectedEditorV6FaceMode !== 'talk' ? 'active' : ''} onClick={() => void applyEditorV6FaceMode('idle')} disabled={!selectedEditorV6FaceAppearance || editorV6FaceBusy || editorV6ExpressionBusy} type="button">Fechada</button><button className={selectedEditorV6FaceMode === 'talk' ? 'active' : ''} onClick={() => void applyEditorV6FaceMode('talk')} disabled={!selectedEditorV6FaceAppearance || editorV6FaceBusy || editorV6ExpressionBusy || !selectedEditorV6TalkAvailable} type="button">Aberta</button></div>}
-      <label className="studio-custom-eye-sheet-select"><span>{editorV6FaceCategory === 'eyes' ? 'Folha de olhos' : editorV6FaceCategory === 'eyebrows' ? 'Folha de sobrancelhas' : editorV6FaceCategory === 'nose' ? 'Folha de nariz' : 'Folha de boca'}</span><select value={selectedItemId ?? ''} onChange={(event) => { const summary = catalogItems.find((item) => item.id === event.target.value); if (summary) void chooseEditorV6FaceSheet(summary) }} disabled={editorV6FaceBusy || editorV6FaceLoading}><option value="">Selecione uma folha</option>{catalogItems.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
-      {editorV6FaceLoading && <p className="studio-custom-hint">Carregando catálogo facial…</p>}
-      {editorV6FaceDetailsLoading && <p className="studio-custom-hint">Carregando imagens da folha facial selecionada…</p>}
-      {editorV6FaceCategory === 'eyebrows' && selectedEditorV6FaceAppearance?.eyebrowCatalogId && <button className={`studio-custom-toggle${selectedEditorV6FaceAppearance.eyebrows ? ' active' : ''}`} onClick={() => updateEditorV6FaceVariant({ eyebrows: !selectedEditorV6FaceAppearance.eyebrows })} disabled={editorV6FaceBusy} type="button">{selectedEditorV6FaceAppearance.eyebrows ? 'Ocultar sobrancelhas' : 'Mostrar sobrancelhas'}</button>}
-      {sheetKind === 'eyes' && <>
-        {activeItem ? <div className="studio-custom-face-variants">{[0, 1, 2].map((index) => {
-          const pieces = activeItem.pieces.filter((piece) => piece.index === index)
-          const labels = ['Direita', 'Esquerda', 'Fechados']
-          const displayedEyeState = selectedEditorV6FaceMode === 'blink' ? 2 : selectedEditorV6FaceAppearance?.eyeState === 1 ? 1 : 0
-          return <button className={(displayedEyeState === index ? 'selected' : '')} key={index} onClick={() => updateEditorV6FaceVariant({ eyeState: index as 0 | 1 | 2 })} disabled={editorV6FaceBusy} type="button"><span>{renderPair(pieces)}</span><b>{labels[index]}</b></button>
-        })}</div> : <p className="studio-custom-hint">{selectedItemId ? 'A folha de olhos selecionada ainda não está disponível.' : 'Escolha uma folha de olhos para ver as três variantes.'}</p>}
-      </>}
-      {activeItem && <>
-        {sheetKind === 'nose' && <div className="studio-custom-face-variants studio-custom-face-grid">{activeItem.pieces.map((piece) => <button className={(selectedEditorV6FaceAppearance?.noseIndex === piece.index ? 'selected' : '')} key={piece.id} onClick={() => updateEditorV6FaceVariant({ noseIndex: piece.index })} disabled={editorV6FaceBusy} type="button"><span><img src={piece.dataUrl} alt="" /></span><b>{piece.index + 1}</b></button>)}</div>}
-        {sheetKind.startsWith('mouth') && <div className="studio-custom-face-variants studio-custom-face-grid">{activeItem.pieces.map((piece) => <button className={(selectedEditorV6FaceAppearance?.expressionIndex === piece.index ? 'selected' : '')} key={piece.id} onClick={() => updateEditorV6FaceVariant({ expressionIndex: piece.index })} disabled={editorV6FaceBusy} type="button"><span><img src={piece.dataUrl} alt="" /></span><b>{String(piece.index + 1).padStart(2, '0')}</b></button>)}</div>}
-      </>}
+    return <SceneFaceCatalogPanel
+      category={editorV6FaceCategory} sheetKind={sheetKind} selectedItemId={selectedItemId}
+      catalogItems={catalogItems} activeItem={activeItem} appearance={selectedEditorV6FaceAppearance}
+      faceMode={selectedEditorV6FaceMode} faceBusy={editorV6FaceBusy} expressionBusy={editorV6ExpressionBusy}
+      catalogLoading={editorV6FaceLoading} detailsLoading={editorV6FaceDetailsLoading}
+      talkAvailable={selectedEditorV6TalkAvailable}
+      emptyEyesMessage={selectedItemId ? 'A folha de olhos selecionada ainda não está disponível.' : 'Escolha uma folha de olhos para ver as três variantes.'}
+      onCategoryChange={setEditorV6FaceCategory} onFaceModeChange={(mode) => { void applyEditorV6FaceMode(mode) }}
+      onSheetSelect={(summary) => { void chooseEditorV6FaceSheet(summary) }} onAppearanceChange={updateEditorV6FaceVariant}
+    >
       <div className="studio-controls-grid studio-custom-eye-controls">
         {control('X', selectedEditorV6FaceTransform.x, (value, record) => updateEditorV6FaceTransform(studioTransformKey, { x: value }, record, selectedEditorV6FaceTransform), -100, 100, '%', () => finishEditorV6FaceTransform(studioTransformKey), editorV6FaceBusy)}
         {control('Y', selectedEditorV6FaceTransform.y, (value, record) => updateEditorV6FaceTransform(studioTransformKey, { y: value }, record, selectedEditorV6FaceTransform), -100, 100, '%', () => finishEditorV6FaceTransform(studioTransformKey), editorV6FaceBusy)}
@@ -1270,7 +1254,7 @@ export function EditorV6Page() {
         {control('Rotação', selectedEditorV6FaceTransform.rotation, (value, record) => updateEditorV6FaceTransform(studioTransformKey, { rotation: value }, record, selectedEditorV6FaceTransform), -180, 180, '°', () => finishEditorV6FaceTransform(studioTransformKey), editorV6FaceBusy)}
       </div>
       {editorV6FaceBusy && <p className="studio-custom-hint" role="status">Atualizando personagem…</p>}
-    </div>
+    </SceneFaceCatalogPanel>
   }
 
   const toggleTimelinePlayback = () => {

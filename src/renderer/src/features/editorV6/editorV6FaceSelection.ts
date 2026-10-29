@@ -1,12 +1,9 @@
 import type { CustomizerFaceAppearance } from '../../../../shared/customizer'
-import type { FaceSheetKind } from '../../../../shared/fabricator'
+import { sceneFaceCatalogItemId, sceneFaceSheetKind, type SceneFaceCategory } from '../../characters/sceneFaceSelection'
 
-export type EditorV6FaceCategory = 'eyes' | 'eyebrows' | 'nose' | 'mouth'
+export type EditorV6FaceCategory = SceneFaceCategory
 
-export function editorV6FaceSheetKind(category: EditorV6FaceCategory, mode: 'idle' | 'blink' | 'talk' | 'talk-blink'): FaceSheetKind {
-  if (category !== 'mouth') return category
-  return mode === 'talk' ? 'mouth-open' : 'mouth-closed'
-}
+export const editorV6FaceSheetKind = sceneFaceSheetKind
 
 export function editorV6SelectedFaceCatalogItemId(
   category: EditorV6FaceCategory,
@@ -14,12 +11,7 @@ export function editorV6SelectedFaceCatalogItemId(
   appearance: CustomizerFaceAppearance | undefined,
   fallbackOpenMouthId?: string
 ): string | undefined {
-  const kind = editorV6FaceSheetKind(category, mode)
-  if (kind === 'eyes') return appearance?.eyeCatalogId
-  if (kind === 'eyebrows') return appearance?.eyebrowCatalogId
-  if (kind === 'nose') return appearance?.noseCatalogId
-  if (kind === 'mouth-open') return appearance?.mouthOpenCatalogId ?? fallbackOpenMouthId
-  return appearance?.mouthClosedCatalogId
+  return sceneFaceCatalogItemId(category, mode, appearance, fallbackOpenMouthId)
 }
 
 export function editorV6FaceDetailIds(selectedId?: string, openMouthId?: string): string[] {

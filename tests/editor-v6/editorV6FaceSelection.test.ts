@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { editorV6FaceDetailIds, editorV6FaceDetailsAreLoading, editorV6FaceSheetKind, editorV6SelectedFaceCatalogItemId } from '../../src/renderer/src/features/editorV6/editorV6FaceSelection'
+import { sceneFaceCatalogItemId, sceneFaceSheetKind } from '../../src/renderer/src/characters/sceneFaceSelection'
 import { EDITOR_V6_FACE_DETAIL_CACHE_LIMIT, rememberEditorV6FaceCatalogItem } from '../../src/renderer/src/features/editorV6/editorV6FaceDetailCache'
 import type { CustomizerFaceAppearance } from '../../src/shared/customizer'
 import type { FaceCatalogItem } from '../../src/shared/fabricator'
@@ -19,6 +20,12 @@ const appearance: CustomizerFaceAppearance = {
 }
 
 describe('seleção de folhas faciais do Editor V6', () => {
+  it('compartilha as mesmas regras de categoria e mantém a compatibilidade do modo de renderização', () => {
+    expect(editorV6FaceSheetKind).toBe(sceneFaceSheetKind)
+    expect(editorV6SelectedFaceCatalogItemId('mouth', 'talk-blink', appearance)).toBe('mouth-closed-main')
+    expect(sceneFaceCatalogItemId('mouth', 'talk', appearance)).toBe('mouth-open-main')
+  })
+
   it('mapeia a categoria boca para a folha correspondente ao modo atual', () => {
     expect(editorV6FaceSheetKind('mouth', 'idle')).toBe('mouth-closed')
     expect(editorV6FaceSheetKind('mouth', 'talk')).toBe('mouth-open')

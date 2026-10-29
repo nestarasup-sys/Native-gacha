@@ -3,6 +3,7 @@
  */
 import { useRef, useState } from 'react'
 import type { FaceExpressionCollection, FaceExpressionPresetSummary, FabricatorPoseSummary, FaceCatalogItemSummary, FaceCatalogItem } from '../../../shared/fabricator'
+import type { SceneFaceCategory } from './sceneFaceSelection'
 
 export function useStudioInspectorState() {
   const [inspectorTab, setInspectorTab] = useState<'editor' | 'custom'>('editor')
@@ -19,7 +20,7 @@ export function useStudioInspectorState() {
   const [studioPoseThumbnails, setStudioPoseThumbnails] = useState<Record<number, string>>({})
   const [studioPoseDimensions, setStudioPoseDimensions] = useState<Record<number, { width: number; height: number }>>({})
   const [inspectorOpen, setInspectorOpen] = useState(true)
-  const [studioFaceCategory, setStudioFaceCategory] = useState<'eyes' | 'eyebrows' | 'nose' | 'mouth'>('eyes')
+  const [studioFaceCategory, setStudioFaceCategory] = useState<SceneFaceCategory>('eyes')
   const [studioFaceItems, setStudioFaceItems] = useState<FaceCatalogItemSummary[]>([])
   const [studioFaceDetails, setStudioFaceDetails] = useState<Record<string, FaceCatalogItem>>({})
   const [studioFaceLoading, setStudioFaceLoading] = useState(false)

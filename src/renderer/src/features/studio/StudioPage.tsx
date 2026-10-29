@@ -21,11 +21,13 @@ import { resolveStudioTalkMouthId } from '../../../../shared/studio'
 import { fitStudioCharacterToStage } from '../../../../shared/studioCharacterGeometry'
 import { STUDIO_FACE_RENDER_VERSION, useStudioFacePreview } from './useStudioFacePreview'
 import { createSceneFaceActions } from '../../characters/sceneFaceActions'
+import { SceneFaceCatalogPanel } from '../../characters/SceneFaceCatalogPanel'
 import { sceneFaceModeForElement } from '../../characters/sceneFaceMode'
+import { sceneFaceCatalogItemId, sceneFaceSheetKind } from '../../characters/sceneFaceSelection'
 import type { StudioAsset, StudioDocument, StudioElement, StudioFaceTransform, StudioFaceTransforms } from '../../../../shared/studio'
 import type { CustomizerCharacter } from '../../../../shared/customizer'
 import type { CustomizerFaceAppearance } from '../../../../shared/customizer'
-import type { FaceCatalogItem, FaceSheetKind, FabricatorPoseSummary } from '../../../../shared/fabricator'
+import type { FabricatorPoseSummary } from '../../../../shared/fabricator'
 type StudioCard = StudioDocument
 type StudioSnapshot = Pick<StudioDocument, 'backgroundColor' | 'backgroundAssetId' | 'backgroundX' | 'backgroundY' | 'backgroundWidth' | 'backgroundHeight' | 'backgroundRotation' | 'assets' | 'elements'>
 type Tool = 'background' | 'objects' | null
@@ -1132,14 +1134,8 @@ export function StudioPage() {
     if (!selectedStudioCharacter || selectedElement?.kind !== 'character' || selectedStudioCharacterModelSlot === null) {
       return <div className="studio-custom-empty"><strong>Personalizar personagem</strong><span>Selecione um personagem na prévia ou no elenco para escolher as peças do rosto.</span></div>
     }
-    const sheetKind: FaceSheetKind = studioFaceCategory === 'mouth'
-      ? selectedStudioFaceMode === 'talk' ? 'mouth-open' : 'mouth-closed'
-      : studioFaceCategory
-    const selectedItemId = sheetKind === 'eyes' ? selectedStudioFaceAppearance?.eyeCatalogId
-      : sheetKind === 'eyebrows' ? selectedStudioFaceAppearance?.eyebrowCatalogId
-        : sheetKind === 'nose' ? selectedStudioFaceAppearance?.noseCatalogId
-          : sheetKind === 'mouth-open' ? selectedStudioFaceAppearance?.mouthOpenCatalogId ?? selectedStudioOpenMouthId
-            : selectedStudioFaceAppearance?.mouthClosedCatalogId
+    const sheetKind = sceneFaceSheetKind(studioFaceCategory, selectedStudioFaceMode)
+    const selectedItemId = sceneFaceCatalogItemId(studioFaceCategory, selectedStudioFaceMode, selectedStudioFaceAppearance, selectedStudioOpenMouthId)
     const activeItem = selectedItemId ? studioFaceDetails[`${selectedStudioCharacterModelSlot}:${selectedItemId}`] : null
     const studioTransformKey = studioFaceCategory === 'mouth' ? 'mouth' : selectedItemId ? `${sheetKind}:${selectedItemId}` : studioFaceCategory
     const legacyMouthTransform = selectedStudioFaceAppearance?.mouthClosedCatalogId
@@ -1152,31 +1148,15 @@ export function StudioPage() {
       ?? selectedElement.faceTransforms?.[studioFaceCategory]
       ?? defaultStudioEyeTransform
     const catalogItems = studioFaceItems.filter((item) => item.category === sheetKind)
-    const renderPair = (pieces: FaceCatalogItem['pieces']) => pieces.slice(0, 2).map((piece) => <img key={piece.id} src={piece.dataUrl} alt="" />)
-    const categoryButtons = [
-      { id: 'eyes', label: 'Olhos' }, { id: 'eyebrows', label: 'Sobrancelhas' },
-      { id: 'nose', label: 'Nariz' }, { id: 'mouth', label: 'Boca' }
-    ] as const
-    return <div className="studio-custom-face">
-      <div className="studio-custom-face-categories" aria-label="Categorias do rosto">
-        {categoryButtons.map((category) => <button key={category.id} className={studioFaceCategory === category.id ? 'active' : ''} onClick={() => setStudioFaceCategory(category.id)} type="button">{category.label}</button>)}
-      </div>
-      {studioFaceCategory === 'mouth' && <div className="studio-custom-mouth-tabs"><button className={selectedStudioFaceMode !== 'talk' ? 'active' : ''} onClick={() => void applyStudioFaceMode('idle')} disabled={!selectedStudioFaceAppearance || studioFaceBusy || studioExpressionBusy} type="button">Fechada</button><button className={selectedStudioFaceMode === 'talk' ? 'active' : ''} onClick={() => void applyStudioFaceMode('talk')} disabled={!selectedStudioFaceAppearance || studioFaceBusy || studioExpressionBusy || !selectedStudioTalkAvailable} type="button">Aberta</button></div>}
-      <label className="studio-custom-eye-sheet-select"><span>{studioFaceCategory === 'eyes' ? 'Folha de olhos' : studioFaceCategory === 'eyebrows' ? 'Folha de sobrancelhas' : studioFaceCategory === 'nose' ? 'Folha de nariz' : 'Folha de boca'}</span><select value={selectedItemId ?? ''} onChange={(event) => { const summary = catalogItems.find((item) => item.id === event.target.value); if (summary) void chooseStudioFaceSheet(summary) }} disabled={studioFaceBusy || studioFaceLoading}><option value="">Selecione uma folha</option>{catalogItems.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
-      {studioFaceLoading && <p className="studio-custom-hint">Carregando catálogo facial…</p>}
-      {studioFaceCategory === 'eyebrows' && selectedStudioFaceAppearance?.eyebrowCatalogId && <button className={`studio-custom-toggle${selectedStudioFaceAppearance.eyebrows ? ' active' : ''}`} onClick={() => updateStudioFaceVariant({ eyebrows: !selectedStudioFaceAppearance.eyebrows })} disabled={studioFaceBusy} type="button">{selectedStudioFaceAppearance.eyebrows ? 'Ocultar sobrancelhas' : 'Mostrar sobrancelhas'}</button>}
-      {sheetKind === 'eyes' && <>
-        {activeItem ? <div className="studio-custom-face-variants">{[0, 1, 2].map((index) => {
-          const pieces = activeItem.pieces.filter((piece) => piece.index === index)
-          const labels = ['Direita', 'Esquerda', 'Fechados']
-          const displayedEyeState = selectedStudioFaceMode === 'blink' ? 2 : selectedStudioFaceAppearance?.eyeState === 1 ? 1 : 0
-          return <button className={(displayedEyeState === index ? 'selected' : '')} key={index} onClick={() => updateStudioFaceVariant({ eyeState: index as 0 | 1 | 2 })} disabled={studioFaceBusy} type="button"><span>{renderPair(pieces)}</span><b>{labels[index]}</b></button>
-        })}</div> : <p className="studio-custom-hint">Escolha uma folha de olhos para ver as três variantes.</p>}
-      </>}
-      {activeItem && <>
-        {sheetKind === 'nose' && <div className="studio-custom-face-variants studio-custom-face-grid">{activeItem.pieces.map((piece) => <button className={(selectedStudioFaceAppearance?.noseIndex === piece.index ? 'selected' : '')} key={piece.id} onClick={() => updateStudioFaceVariant({ noseIndex: piece.index })} disabled={studioFaceBusy} type="button"><span><img src={piece.dataUrl} alt="" /></span><b>{piece.index + 1}</b></button>)}</div>}
-        {sheetKind.startsWith('mouth') && <div className="studio-custom-face-variants studio-custom-face-grid">{activeItem.pieces.map((piece) => <button className={(selectedStudioFaceAppearance?.expressionIndex === piece.index ? 'selected' : '')} key={piece.id} onClick={() => updateStudioFaceVariant({ expressionIndex: piece.index })} disabled={studioFaceBusy} type="button"><span><img src={piece.dataUrl} alt="" /></span><b>{String(piece.index + 1).padStart(2, '0')}</b></button>)}</div>}
-      </>}
+    return <SceneFaceCatalogPanel
+      category={studioFaceCategory} sheetKind={sheetKind} selectedItemId={selectedItemId}
+      catalogItems={catalogItems} activeItem={activeItem} appearance={selectedStudioFaceAppearance}
+      faceMode={selectedStudioFaceMode} faceBusy={studioFaceBusy} expressionBusy={studioExpressionBusy}
+      catalogLoading={studioFaceLoading} talkAvailable={selectedStudioTalkAvailable}
+      emptyEyesMessage="Escolha uma folha de olhos para ver as três variantes."
+      onCategoryChange={setStudioFaceCategory} onFaceModeChange={(mode) => { void applyStudioFaceMode(mode) }}
+      onSheetSelect={(summary) => { void chooseStudioFaceSheet(summary) }} onAppearanceChange={updateStudioFaceVariant}
+    >
       <div className="studio-controls-grid studio-custom-eye-controls">
         {control('X', selectedStudioFaceTransform.x, (value, record) => updateStudioFaceTransform(studioTransformKey, { x: value }, record, selectedStudioFaceTransform), -100, 100, '%', () => finishStudioFaceTransform(studioTransformKey), studioFaceBusy)}
         {control('Y', selectedStudioFaceTransform.y, (value, record) => updateStudioFaceTransform(studioTransformKey, { y: value }, record, selectedStudioFaceTransform), -100, 100, '%', () => finishStudioFaceTransform(studioTransformKey), studioFaceBusy)}
@@ -1185,7 +1165,7 @@ export function StudioPage() {
         {control('Rotação', selectedStudioFaceTransform.rotation, (value, record) => updateStudioFaceTransform(studioTransformKey, { rotation: value }, record, selectedStudioFaceTransform), -180, 180, '°', () => finishStudioFaceTransform(studioTransformKey), studioFaceBusy)}
       </div>
       {studioFaceBusy && <p className="studio-custom-hint" role="status">Atualizando personagem…</p>}
-    </div>
+    </SceneFaceCatalogPanel>
   }
 
   const presetsPanel = (): ReactNode => {
