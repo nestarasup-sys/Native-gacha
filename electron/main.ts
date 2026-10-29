@@ -1275,6 +1275,7 @@ function collectPendingPersistenceWrites(): Promise<unknown>[] {
     ...(faceGuideIpc?.getPendingWrites() ?? []), customizerService.pendingWrites,
     ...(studioFileIpc?.getPendingWrites() ?? []),
     ...(editorV6FileIpc?.getPendingWrites() ?? []),
+    ...(editorV6ExportService?.getPendingWrites() ?? []),
     ...videoLibrary.getPendingWrites(), ...videoBackgroundLibrary.getPendingWrites(),
     ...roteiroUiGifLibrary.getPendingWrites(),
     ...(migrationTask ? [migrationTask] : []),
@@ -1832,6 +1833,7 @@ app.on('before-quit', (event) => {
     const failed = results.some((result) => result.status === 'rejected')
     if (failed) {
       roteiroExportIpc?.resumeAfterFailedShutdown()
+      editorV6ExportService?.resumeAfterFailedShutdown()
       // Do not report successful shutdown after a persistence failure.
       // Keep the application available for retry/recovery instead.
       if (!BrowserWindow.getAllWindows().some((window) => !window.isDestroyed())) createMainWindow()

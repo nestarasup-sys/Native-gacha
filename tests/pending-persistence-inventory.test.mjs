@@ -25,6 +25,7 @@ test('flush, backup e encerramento drenam persistências e aguardam operações 
     'customizerService.pendingWrites',
     'studioSaveQueues.studio',
     'editorV6SaveQueue',
+    'editorV6ExportService?.getPendingWrites()',
     'roteirosSaveQueue'
   ]) assert.ok(inventory.includes(owner), `inventário sem a fila ${owner}`)
 
@@ -33,6 +34,8 @@ test('flush, backup e encerramento drenam persistências e aguardam operações 
   assert.match(main, /\.\.\.collectPendingPersistenceWrites\(\),[\s\S]*?dataBackupIpc\?\.getActiveTasks\(\)/)
   assert.ok(main.includes('...(dataBackupIpc?.getActiveTasks() ?? [])'), 'o encerramento deve aguardar operações manuais de backup em andamento')
   assert.ok(main.includes('...(roteiroExportIpc ? [roteiroExportIpc.drain()] : [])'), 'o encerramento deve drenar os jobs de exportação de Roteiros')
+  assert.ok(main.includes('...(editorV6ExportService ? [editorV6ExportService.drain()] : [])'), 'o encerramento deve aguardar cópias do Editor V6 e drenar suas exportações')
+  assert.ok(main.includes('editorV6ExportService?.resumeAfterFailedShutdown()'), 'uma falha de gravação deve reabrir os handlers para nova tentativa')
 
   const designWorkspace = await readFile('src/renderer/src/features/fabricator/DesignWorkspace.tsx', 'utf8')
   assert.match(designWorkspace, /registerPendingWriteFlusher\(flushDesignSettings\)/, 'Design Dev deve drenar o autosave antes de navegar ou fechar')
