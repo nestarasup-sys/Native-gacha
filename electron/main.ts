@@ -287,6 +287,7 @@ const copyFile = dataFileSystem.copyFile.bind(dataFileSystem) as typeof nativeCo
 const faceGuidePersistence = createFaceGuidePersistence({ mkdir, readFile, writeFile, rename }, () => app.getPath('userData'))
 let dataMigration: InstanceType<typeof DataMigrationService> | null = null
 let dataBackupService: InstanceType<typeof DataBackupService> | null = null
+let dataBackupIpc: ReturnType<typeof registerDataBackupHandlers> | null = null
 let dataMigrationIpc: ReturnType<typeof registerDataMigrationHandlers> | null = null
 let fabricatorHairIpc: ReturnType<typeof registerFabricatorHairHandlers> | null = null
 let fabricatorProjectIpc: ReturnType<typeof registerFabricatorProjectHandlers> | null = null
@@ -1771,7 +1772,7 @@ app.whenReady().then(async () => {
       for (const window of BrowserWindow.getAllWindows()) if (!window.isDestroyed()) window.webContents.send('app:data-migration:progress', progress)
     }
   })
-  registerDataBackupHandlers({
+  dataBackupIpc = registerDataBackupHandlers({
     ipcMain, assertTrustedSender,
     getStorageSummary: async () => ({ disk: await getAppDataUsage(app.getPath('appData')), catalog: dataPlatform.storageSummary() }),
     getService: () => dataBackupService,
@@ -1779,6 +1780,10 @@ app.whenReady().then(async () => {
       const window = BrowserWindow.fromWebContents(event.sender)
       if (window && !window.webContents.isLoading()) await window.webContents.executeJavaScript('window.desktop?.flushPendingWrites?.()')
       await flushPendingPersistenceWrites()
+    },
+    showConfirmation: (event, options) => {
+      const owner = BrowserWindow.fromWebContents(event.sender)
+      return owner ? dialog.showMessageBox(owner, options) : dialog.showMessageBox(options)
     },
     relaunch: () => app.relaunch(),
     quit: () => app.quit()
@@ -1835,6 +1840,7 @@ app.on('before-quit', (event) => {
   const dataMigrationTask = dataMigrationIpc?.getActiveTask()
   const pendingWrites = [
     ...collectPendingPersistenceWrites(),
+    ...(dataBackupIpc?.getActiveTasks() ?? []),
     ...(dataMigrationTask ? [dataMigrationTask] : []),
     ...(editorV6ExportService ? [editorV6ExportService.drain()] : []),
     ...(editorV6MotionService ? [editorV6MotionService.drain()] : [])

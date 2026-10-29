@@ -678,7 +678,7 @@ Este corte separa propriedade dos contratos e chamadas entre domínios, mas não
 
 ## 12. Próxima tarefa recomendada
 
-Em andamento: auditar operações IPC manuais iniciadas por ações de usuário e a cobertura do inventário do processo principal, além dos autosaves já drenados. Registrar para cada domínio o comportamento de falha/recuperação e completar a matriz de persistência do aplicativo. A fila de guias faciais por perfil foi incluída nesta atualização.
+Em andamento: auditar operações IPC manuais iniciadas por ações de usuário e a cobertura do inventário do processo principal, além dos autosaves já drenados. Registrar para cada domínio o comportamento de falha/recuperação e completar a matriz de persistência do aplicativo. A auditoria desta rodada incluiu os jobs assíncronos de backup no ciclo de encerramento; ainda faltam as demais operações manuais de outros domínios.
 
 ## 13. Verificações e validação
 
@@ -711,3 +711,11 @@ Em andamento: auditar operações IPC manuais iniciadas por ações de usuário 
 - A fila global no composition root foi substituída por `createKeyedOperationQueue({ retainFailures: true })` dentro do dono IPC dos guias. Cada perfil mantém FIFO; operações de perfis diferentes deixam de se bloquear. Falhas permanecem visíveis ao flush até uma gravação posterior daquele perfil concluir, e o handler fornece as caudas ao inventário comum de flush, backup e encerramento.
 - Canais IPC, tipos de perfil, nomes dos arquivos, JSON, validação, recuperação de arquivo corrompido e propriedade dos dados não mudaram. Nenhum arquivo de guia real foi aberto ou regravado.
 - `npm run test:fabricator:face-guides` cobre FIFO por perfil, concorrência entre perfis, falha retida e recuperação do inventário. Nesta etapa também passaram `npm run typecheck`, `npm run audit:architecture`, `npm run build` e `git diff --check`; os testes usam handlers e valores sintéticos.
+
+## 15. Etapa aplicada — operações manuais de backup no ciclo de encerramento
+
+- O fluxo de backup pertence a `OptionsPage` → `window.desktop.dataManagement` → `dataBackupIpc.ts` → `DataBackupService` → diretórios de backup e snapshot SQLite. Criar backup primeiro drena as gravações pendentes; verificar altera `verifiedAt` no manifesto; restaurar agora também drena o renderer e o processo principal antes da cópia de segurança e prepara um journal para a próxima inicialização; excluir remove apenas o backup confirmado.
+- A auditoria encontrou que `before-quit` aguardava gravações, migração, exportação e preparação de movimento, mas não a Promise de `createBackup`, `verifyBackup`, `stageRestore` ou `deleteBackup`. Assim, fechar o app durante uma dessas operações poderia encerrar o processo antes da cópia, verificação, publicação do journal ou exclusão terminar.
+- `dataBackupIpc.ts` agora registra as operações mutáveis em andamento e as expõe a `electron/main.ts`. O `before-quit` aguarda esses jobs junto das filas existentes; falhas continuam acionando o caminho atual de encerramento seguro. A restauração usa a mesma rotina de flush do backup manual antes de criar a cópia de segurança. O backup/restauração em si, os canais, os manifestos e os dados não mudaram.
+- A caixa de confirmação nativa passou a ser injetada pelo composition root, deixando o módulo IPC testável sem iniciar Electron. `npm run test:data-backup-ipc` cobre criação desde o flush até a conclusão, verificação, exclusão e restauração na ordem flush → cópia de segurança → staging, além da inclusão dos jobs no encerramento.
+- Nenhum backup real foi criado, verificado, removido ou restaurado nesta etapa. Os testes direcionados, a suíte de refatoração, typecheck, auditoria de arquitetura e build foram executados sobre código e fixtures sintéticas.
