@@ -24,6 +24,7 @@ import { createFaceSaveQueue, type FaceSaveQueue } from './faceSaveQueue'
 import { loadFaceCatalogWorkspaceData, loadFaceComponentWorkspaceData } from './faceWorkspaceData'
 import { readComponentSelections, readFaceDetailSelections, readFaceImportAnchors, saveComponentSelection, saveFaceDetailSelections, saveFaceImportAnchors, type FaceDetailSelections, type FaceImportAnchors } from './faceWorkspaceSelectionStorage'
 import { deriveFacePairTransformMetrics } from './facePairTransformModel'
+import { planEyeSeparation, planFacePairMove, planFacePairResize } from './facePairTransformEdits'
 import { useFacePreviewDrag } from './useFacePreviewDrag'
 
 type CatalogKind = 'nose' | 'mouth-closed' | 'mouth-open'
@@ -722,16 +723,10 @@ export function FaceComponentsWorkspace({ mode, baseModelSlot }: { mode: FaceWor
     const pair = await editablePair(kind === 'eye-closed' ? 'eye' : kind)
     if (!pair) return
     const [leftCurrent, rightCurrent] = pair
-    const leftValue = leftCurrent.defaultTransform[axis]
-    const rightValue = rightCurrent.defaultTransform[axis]
-    const center = (leftValue + rightValue) / 2
-    const limit = axis === 'x' ? head.width : head.height
-    const minimum = 0, maximum = limit
-    const desired = (relative ? center + target : target) - center
-    const delta = kind === 'pupil' ? desired : clamp(desired,Math.max(minimum-leftValue,minimum-rightValue),Math.min(maximum-leftValue,maximum-rightValue))
-    if (Math.abs(delta) < .001) return
-    saveComponentTransform(leftCurrent, { [axis]: leftValue + delta })
-    saveComponentTransform(rightCurrent, { [axis]: rightValue + delta })
+    const positions = planFacePairMove({ kind, axis, target, relative, head, left: leftCurrent, right: rightCurrent })
+    if (!positions) return
+    saveComponentTransform(leftCurrent, { [axis]: positions[0] })
+    saveComponentTransform(rightCurrent, { [axis]: positions[1] })
   }
 
   async function setEyeSeparation(target: number) {
@@ -739,11 +734,9 @@ export function FaceComponentsWorkspace({ mode, baseModelSlot }: { mode: FaceWor
     const pair = await editablePair('eye')
     if (!pair) return
     const [left, right] = pair
-    const center = clamp((left.defaultTransform.x + right.defaultTransform.x) / 2, 0, head.width)
-    const max = 2 * Math.min(center, head.width - center)
-    const separation = clamp(target, 0, max)
-    saveComponentTransform(left, { x: center - separation / 2 })
-    saveComponentTransform(right, { x: center + separation / 2 })
+    const [leftX, rightX] = planEyeSeparation(left.defaultTransform.x, right.defaultTransform.x, head.width, target)
+    saveComponentTransform(left, { x: leftX })
+    saveComponentTransform(right, { x: rightX })
   }
 
   async function resizePair(kind: FaceComponentKind, axis: 'scaleX' | 'scaleY', targetPercent: number) {
@@ -751,20 +744,10 @@ export function FaceComponentsWorkspace({ mode, baseModelSlot }: { mode: FaceWor
     const scaledKind = kind === 'eye-closed' && axis === 'scaleX' ? 'eye' : kind
     const pair = await editablePair(scaledKind)
     if (!pair) return
-    const dimension = axis === 'scaleX' ? 'width' : 'height'
-    const headSize = head[dimension]
     const selection = selectedAssetsRef.current
-    for (const [index, asset] of pair.entries()) {
-      let sourceSize = index === 1 && linked[scaledKind] ? pair[0][dimension] : asset[dimension]
-      if (scaledKind === 'pupil') {
-        const side = index === 0 ? 'eye-left' : 'eye-right'
-        const eye = componentDetailsRef.current[selection[side] ?? ''] ?? componentDetailsRef.current[selection['eye-left'] ?? '']
-        const sourceEye = index === 1 && linked.eye ? componentDetailsRef.current[selection['eye-left'] ?? ''] ?? eye : eye
-        sourceSize = sourceEye && eye ? sourceEye[dimension] * eye.defaultTransform[axis] : headSize * (axis === 'scaleX' ? .19 : .17)
-      }
-      const scale = clamp(targetPercent / 100 * headSize / sourceSize, .01, 20)
-      saveComponentTransform(asset, { [axis]: scale })
-    }
+    const scales = planFacePairResize({ pair, kind, axis, targetPercent, head, selectedAssets: selection, details: componentDetailsRef.current, linked })
+    saveComponentTransform(pair[0], { [axis]: scales[0] })
+    saveComponentTransform(pair[1], { [axis]: scales[1] })
   }
 
   function updateCatalogVariant(index: number) {

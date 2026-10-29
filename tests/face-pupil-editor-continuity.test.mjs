@@ -7,6 +7,8 @@ import { pupilDeltaFromDrag,pupilScreenOffset,pupilSourceMirrored }
 import { FACE_COMPONENT_SELECTION_STORAGE_KEY,savedFaceLibraryParts,pickFaceLibraryBase,savedLegacyPupilParts }
   from '../src/shared/faceLibrarySelection.ts'
 import { deriveFacePairTransformMetrics } from '../src/renderer/src/features/fabricator/face/facePairTransformModel.ts'
+import { planEyeSeparation, planFacePairMove, planFacePairResize }
+  from '../src/renderer/src/features/fabricator/face/facePairTransformEdits.ts'
 
 const pairAsset=(id,kind,x,y,width,height,scaleX=1,scaleY=1,extra={})=>({
   id,kind,width,height,...extra,
@@ -170,9 +172,50 @@ test('métricas de pupilas usam proporções do olho e olhos fechados separam as
   assert.equal(closed.pairHeightPercent,2)
 })
 
+test('edições em par preservam centro, limites da cabeça e movimento livre de pupilas',()=>{
+  const head={width:100,height:80}
+  const left=pairAsset('left','eye',20,30,12,10)
+  const right=pairAsset('right','eye',90,34,14,10)
+  assert.deepEqual(planFacePairMove({kind:'eye',axis:'x',target:120,head,left,right}),[30,100])
+  assert.deepEqual(planFacePairMove({kind:'eye',axis:'y',target:-20,relative:true,head,left,right}),[10,14])
+  assert.equal(planFacePairMove({kind:'eye',axis:'x',target:55,head,left:right,right:left}),null)
+
+  const pupilLeft=pairAsset('pupil-left','pupil',-30,-12,4,4)
+  const pupilRight=pairAsset('pupil-right','pupil',-10,-8,4,4)
+  assert.deepEqual(planFacePairMove({kind:'pupil',axis:'x',target:200,head,left:pupilLeft,right:pupilRight}),[190,210])
+  assert.deepEqual(planEyeSeparation(30,70,100,90),[5,95])
+  assert.deepEqual(planEyeSeparation(30,70,100,200),[0,100])
+})
+
+test('redimensionar par respeita vínculo dos olhos e a escala visual dos assets de pupila',()=>{
+  const head={width:200,height:100}
+  const leftEye=pairAsset('eye-left','eye',40,40,20,10,1.2,.7)
+  const rightEye=pairAsset('eye-right','eye',160,40,30,10,.8,1.4)
+  const eyePair=[leftEye,rightEye]
+  const linkedEyes=planFacePairResize({
+    pair:eyePair,kind:'eye',axis:'scaleX',targetPercent:100,head,
+    selectedAssets:{},details:{},linked:{eye:true,pupil:true,'eye-closed':true,eyebrow:true}
+  })
+  assert.deepEqual(linkedEyes,[10,10])
+
+  const leftPupil=pairAsset('pupil-left','pupil',0,0,4,4)
+  const rightPupil=pairAsset('pupil-right','pupil',0,0,4,4)
+  const pupilScales=planFacePairResize({
+    pair:[leftPupil,rightPupil],kind:'pupil',axis:'scaleX',targetPercent:50,head,
+    selectedAssets:{'eye-left':'eye-left','eye-right':'eye-right'},
+    details:{'eye-left':leftEye,'eye-right':rightEye},
+    linked:{eye:false,pupil:false,'eye-closed':true,eyebrow:true}
+  })
+  assert.ok(Math.abs(pupilScales[0]-100/(20*1.2))<1e-12)
+  assert.ok(Math.abs(pupilScales[1]-100/(30*.8))<1e-12)
+})
+
 test('workspace delega a geometria dos pares ao modelo puro',async()=>{
   const workspace=await readFile('src/renderer/src/features/fabricator/face/FaceComponentsWorkspace.tsx','utf8')
   assert.match(workspace,/deriveFacePairTransformMetrics\(/)
+  assert.match(workspace,/planFacePairMove\(/)
+  assert.match(workspace,/planEyeSeparation\(/)
+  assert.match(workspace,/planFacePairResize\(/)
   assert.doesNotMatch(workspace,/const rightPairX =/)
   assert.doesNotMatch(workspace,/const pairWidthSource =/)
 })
