@@ -1127,3 +1127,12 @@ Continua a auditoria das operações IPC iniciadas pelo usuário e da cobertura 
 - O pincel continua dentro da superfície da prévia e bloqueia a propagação do ponteiro. Os limites do raio e da força, a disponibilidade dos botões, a ocultação da barra durante teste de pose e o fundo compartilhado foram preservados. Não houve alteração de CSS, IPC, dados ou exportação.
 - `WardrobeWorkspace.tsx` passou de 631 para 627 linhas no inventário estático e voltou a ficar dentro do orçamento de 630. Um teste fixa a localização e os contratos dos controles.
 - Verificação: 34 testes focados de Roupas DEV e prévia passaram; `npm run test:refactor` passou com 372; `npm test` passou com 29. Também passaram `npm run typecheck`, `npm run audit:architecture` (401 arquivos TS/TSX), `performance-audit.cjs --check` sem arquivos acima do orçamento, `npm run build` e `git diff --check`.
+
+## 53. Etapa aplicada — edição e histórico de poses sem cópia de imagens
+
+- `PoseWorkspace.tsx` guardava uma cópia profunda do projeto antes de cada mudança e no início de cada arrasto. Isso duplicava as strings base64 de cada PNG até 50 vezes; ao soltar a peça, ainda serializava o projeto inteiro para detectar se a geometria mudou.
+- `poseHistory.ts` agora mantém snapshots imutáveis por referência e limita o histórico a 50 versões, preservando a mesma ordem de desfazer/refazer. A comparação de gesto examina somente dimensões, posições, rotações e juntas; não percorre nem serializa os PNGs.
+- `poseEditorModel.ts` concentra as regras puras de movimento e rotação dos ramos conectados. `PoseWorkspace.tsx` passou de 705 para 615 linhas físicas. Os cálculos, as juntas fixas, as peças que não podem ser movidas e a fixação do tronco têm regressões sintéticas dedicadas.
+- Uma medição sintética pontual com 10 peças e 3,1 MiB de imagens, guardando 50 estados, registrou 141,7 ms e 157,9 MiB para `structuredClone`; armazenar as versões imutáveis por referência registrou 0,2 ms e cerca de 0,7 MiB de estrutura. É um ensaio local ilustrativo, não uma medição de uso real do aplicativo.
+- Não houve mudança no JSON das poses, nos assets, IDs, canais IPC, persistência ou exportação.
+- Verificação: seis regressões focadas passaram; `npm run test:refactor` passou com 378 testes; `npm test` passou com 29. Também passaram typecheck, auditoria de arquitetura (403 arquivos TS/TSX), `performance-audit.cjs --check`, build e `git diff --check`.

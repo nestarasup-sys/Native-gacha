@@ -5,68 +5,21 @@ import { defaultExportPoseSlots, poseFromModel } from './models/poseProjection'
 import { Icon } from '../../ui/components/Icon'
 import { usePreviewBackground } from '../../ui/hooks/usePreviewBackground'
 import { registerPendingWriteFlusher } from '../../ui/pendingPersistence'
-import { isModelRigConnectionCompatible, normalizeLayerOrder, orderedParts, partJointAnchor, repairIncompatibleModelRigJoints } from './models/rig'
-import { rotatePointAroundOrigin } from './models/geometry'
+import { normalizeLayerOrder, orderedParts, partJointAnchor, repairIncompatibleModelRigJoints } from './models/rig'
 import { poseAssetsForPersistence } from './models/poseAssetSnapshots'
 import { useModelAppearanceTarget, useModelPartAppearancePreview } from './ModelAppearanceContext'
+import { isMovablePosePart, rotatePosePart, translatePoseBranch } from './poseEditorModel'
+import type { PoseEditorProject } from './poseEditorModel'
+import { createPoseHistory, hasPoseGestureChanged, rememberPoseProject, restorePoseProject } from './poseHistory'
+import type { PoseHistory } from './poseHistory'
 
-type DraftProject = Omit<FabricatorPose, 'slot'>
+type DraftProject = PoseEditorProject
 type PanelTab = 'parts' | 'layers' | 'joints'
-type PoseHistory = { undo: DraftProject[]; redo: DraftProject[] }
 type PanGesture = { pointerId: number; x: number; y: number; originX: number; originY: number }
 type PartGesture = { pointerId: number; partId: string; x: number; y: number; lastAngle: number; startRotation: number; accumulatedRotation: number; pivotX: number; pivotY: number; includeConnectedChildren: boolean; movePiece: boolean; canMove: boolean; before: DraftProject }
 
 const SLOT_COUNT = 12
 const EXPORT_POSE_SLOT_COUNT = 5
-const HISTORY_LIMIT = 50
-const emptyHistory = (): PoseHistory => ({ undo: [], redo: [] })
-
-function cloneProject(project: DraftProject): DraftProject {
-  return structuredClone(project)
-}
-
-function isMovablePosePart(project: DraftProject, partId: string): boolean {
-  const part = project.parts.find((item) => item.id === partId)
-  return Boolean(part && !/tronco|corpo|cabeça|cabeca/i.test(part.name))
-}
-
-function fixedPoseBranch(project: DraftProject, rootId: string): Set<string> {
-  const movingIds = new Set([rootId])
-  const parts = new Map(project.parts.map((part) => [part.id, part]))
-  let changed = true
-  while (changed) {
-    changed = false
-    for (const joint of project.joints) if (joint.fixed && movingIds.has(joint.parentPartId) && !movingIds.has(joint.childPartId)) {
-      const parent = parts.get(joint.parentPartId)
-      const child = parts.get(joint.childPartId)
-      if (!parent || !child || !isModelRigConnectionCompatible(parent, child)) continue
-      movingIds.add(joint.childPartId)
-      changed = true
-    }
-  }
-  return movingIds
-}
-
-function translateParts(project: DraftProject, partIds: Set<string>, dx: number, dy: number): DraftProject {
-  return {
-    ...project,
-    parts: project.parts.map((part) => partIds.has(part.id) ? {
-      ...part,
-      x: part.x + dx,
-      y: part.y + dy,
-      ...(part.jointAnchor ? { jointAnchor: { x: part.jointAnchor.x + dx, y: part.jointAnchor.y + dy } } : {})
-    } : part),
-    joints: project.joints.map((joint) => {
-      const parentAnchor = partIds.has(joint.parentPartId) ? { x: joint.parentAnchor.x + dx, y: joint.parentAnchor.y + dy } : joint.parentAnchor
-      const childAnchor = partIds.has(joint.childPartId) ? { x: joint.childAnchor.x + dx, y: joint.childAnchor.y + dy } : joint.childAnchor
-      return { ...joint, parentAnchor, childAnchor, pivot: { x: (parentAnchor.x + childAnchor.x) / 2, y: (parentAnchor.y + childAnchor.y) / 2 } }
-    })
-  }
-}
-
-function translatePoseBranch(project: DraftProject, rootId: string, dx: number, dy: number): DraftProject {
-  return translateParts(project, fixedPoseBranch(project, rootId), dx, dy)
-}
 
 function toSavedPose(project: DraftProject, slot: number): FabricatorPoseSave {
   return {
@@ -97,7 +50,7 @@ export function PoseWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
   const [project, setProject] = useState<DraftProject | null>(null)
   const [sourcePreview, setSourcePreview] = useState<DraftProject | null>(null)
   const [editingSlot, setEditingSlot] = useState<number | null>(null)
-  const [history, setHistory] = useState<PoseHistory>(emptyHistory)
+  const [history, setHistory] = useState<PoseHistory<DraftProject>>(createPoseHistory<DraftProject>)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [tab, setTab] = useState<PanelTab>('parts')
   const [rotationMode, setRotationMode] = useState<'part' | 'branch'>('branch')
@@ -221,7 +174,7 @@ export function PoseWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
   useEffect(() => { editingSlotRef.current = editingSlot }, [editingSlot])
 
   const remember = (before: DraftProject) => {
-    setHistory((current) => ({ undo: [...current.undo, cloneProject(before)].slice(-HISTORY_LIMIT), redo: [] }))
+    setHistory((current) => rememberPoseProject(current, before))
   }
 
   const changeProject = (updater: (current: DraftProject) => DraftProject, record = true) => {
@@ -244,13 +197,11 @@ export function PoseWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
 
   const restoreHistory = (direction: 'undo' | 'redo') => {
     const current = projectRef.current
-    const stack = history[direction]
-    const target = stack.at(-1)
-    if (!current || !target) return
-    const snapshot = cloneProject(target)
-    setHistory((state) => direction === 'undo'
-      ? { undo: state.undo.slice(0, -1), redo: [...state.redo, cloneProject(current)].slice(-HISTORY_LIMIT) }
-      : { undo: [...state.undo, cloneProject(current)].slice(-HISTORY_LIMIT), redo: state.redo.slice(0, -1) })
+    if (!current) return
+    const restored = restorePoseProject(history, current, direction)
+    if (!restored) return
+    const snapshot = restored.project
+    setHistory(restored.history)
     publishProject(snapshot)
     setSelectedId((id) => snapshot.parts.some((part) => part.id === id) ? id : snapshot.parts[0]?.id ?? null)
   }
@@ -268,7 +219,7 @@ export function PoseWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
     setRecoveredDraft(null)
     setEditingSlot(null)
     editingSlotRef.current = null
-    setHistory(emptyHistory())
+    setHistory(createPoseHistory<DraftProject>())
     publishProject(null, false)
     setSelectedId(null)
     setSaveMessage('')
@@ -311,7 +262,7 @@ export function PoseWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
     setActiveSlot(nextSlot)
     setEditingSlot(null)
     editingSlotRef.current = null
-    setHistory(emptyHistory())
+    setHistory(createPoseHistory<DraftProject>())
     setSelectedId(next.parts[0]?.id ?? null)
     publishProject(next)
     setSelectingModel(false)
@@ -327,7 +278,7 @@ export function PoseWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
     if (!summary) {
       setEditingSlot(null)
       editingSlotRef.current = null
-      setHistory(emptyHistory())
+      setHistory(createPoseHistory<DraftProject>())
       publishProject(null, false)
       setSelectedId(null)
       return
@@ -340,7 +291,7 @@ export function PoseWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
       setSourcePreview(null)
       setEditingSlot(slot)
       editingSlotRef.current = slot
-      setHistory(emptyHistory())
+      setHistory(createPoseHistory<DraftProject>())
       setSelectedId(editable.parts[0]?.id ?? null)
       publishProject(editable, false)
       setError('')
@@ -359,7 +310,7 @@ export function PoseWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
     editingSlotRef.current = recoveredDraft.editingSlot
     publishProject(recoveredDraft.project)
     setSelectedId(recoveredDraft.project.parts[0]?.id ?? null)
-    setHistory(emptyHistory())
+    setHistory(createPoseHistory<DraftProject>())
     setRecoveredDraft(null)
     setActiveSlot(recoveredDraft.editingSlot ?? (slots.findIndex((slot) => !slot) + 1 || SLOT_COUNT))
   }
@@ -432,49 +383,9 @@ export function PoseWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
     return axis === 'x' ? translatePoseBranch(current, partId, delta, 0) : translatePoseBranch(current, partId, 0, delta)
   })
 
-  const rotateSelected = (partId: string, targetAngle: number, includeConnectedChildren: boolean) => changeProject((current) => {
-    const selected = current.parts.find((part) => part.id === partId)
-    if (!selected) return current
-    const amount = targetAngle - selected.rotation
-    if (!amount) return current
-    const origin = partJointAnchor(selected, current.joints) ?? { x: selected.x + selected.width / 2, y: selected.y + selected.height / 2 }
-    const affected = new Set<string>([selected.id])
-    if (includeConnectedChildren) {
-      let changed = true
-      while (changed) {
-        changed = false
-        for (const joint of current.joints) {
-          if (!joint.fixed || !affected.has(joint.parentPartId) || affected.has(joint.childPartId)) continue
-          const parent = current.parts.find((part) => part.id === joint.parentPartId)
-          const child = current.parts.find((part) => part.id === joint.childPartId)
-          if (!parent || !child || !isModelRigConnectionCompatible(parent, child)) continue
-          affected.add(joint.childPartId)
-          changed = true
-        }
-      }
-    }
-    const parts = current.parts.map((part) => {
-      if (!affected.has(part.id)) return part
-      const center = rotatePointAroundOrigin({ x: part.x + part.width / 2, y: part.y + part.height / 2 }, origin, amount)
-      const anchor = partJointAnchor(part, current.joints)
-      return {
-        ...part,
-        x: center.x - part.width / 2,
-        y: center.y - part.height / 2,
-        rotation: part.rotation + amount,
-        ...(anchor ? { jointAnchor: rotatePointAroundOrigin(anchor, origin, amount) } : {})
-      }
-    })
-    const partById = new Map(parts.map((part) => [part.id, part]))
-    const joints = current.joints.map((joint) => {
-      const parent = partById.get(joint.parentPartId)
-      const child = partById.get(joint.childPartId)
-      const parentAnchor = parent ? partJointAnchor(parent, current.joints) ?? joint.parentAnchor : joint.parentAnchor
-      const childAnchor = child ? partJointAnchor(child, current.joints) ?? joint.childAnchor : joint.childAnchor
-      return { ...joint, parentAnchor, childAnchor, pivot: { x: (parentAnchor.x + childAnchor.x) / 2, y: (parentAnchor.y + childAnchor.y) / 2 } }
-    })
-    return { ...current, parts, joints }
-  })
+  const rotateSelected = (partId: string, targetAngle: number, includeConnectedChildren: boolean) => changeProject(
+    (current) => rotatePosePart(current, partId, targetAngle, includeConnectedChildren)
+  )
 
   const changeLayer = (partId: string, direction: -1 | 1) => changeProject((current) => {
     const topDown = normalizeLayerOrder(current.parts, current.layerOrder).reverse()
@@ -496,7 +407,7 @@ export function PoseWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
     setEditingSlot(null)
     editingSlotRef.current = null
     setSelectedId(null)
-    setHistory(emptyHistory())
+    setHistory(createPoseHistory<DraftProject>())
     setActiveSlot(1)
     setRecoveredDraft(null)
     setSelectingModel(false)
@@ -561,7 +472,7 @@ export function PoseWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
     if (drag?.pointerId === event.pointerId) {
       partDragRef.current = null
       const current = projectRef.current
-      if (current && JSON.stringify(drag.before) !== JSON.stringify(current)) remember(drag.before)
+      if (current && hasPoseGestureChanged(drag.before, current)) remember(drag.before)
     }
   }
 
@@ -587,7 +498,7 @@ export function PoseWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
       includeConnectedChildren: rotationMode === 'branch',
       movePiece: moveToolActive,
       canMove: isMovablePosePart(project, part.id),
-      before: cloneProject(project)
+      before: project
     }
   }
 
