@@ -678,7 +678,7 @@ Este corte separa propriedade dos contratos e chamadas entre domínios, mas não
 
 ## 12. Próxima tarefa recomendada
 
-Em andamento: auditar operações IPC manuais iniciadas por ações de usuário e a cobertura do inventário do processo principal, além dos autosaves já drenados. Registrar para cada domínio o comportamento de falha/recuperação e completar a matriz de persistência do aplicativo. A auditoria agora cobre jobs de backup, exportações de Roteiros, recuperação de imagens de poses e ações compostas de mídia do Editor V6 no fechamento; ainda faltam operações manuais dos outros domínios e a recuperação após interrupção forçada de algumas publicações.
+Em andamento: auditar operações IPC manuais iniciadas por ações de usuário e a cobertura do inventário do processo principal, além dos autosaves já drenados. Registrar para cada domínio o comportamento de falha/recuperação e completar a matriz de persistência do aplicativo. A auditoria agora cobre jobs de backup, exportações de Roteiros, imagens de poses, ações compostas de mídia do Editor V6 e arquivos de print/materialização do Studio no fechamento; ainda faltam operações manuais dos outros domínios e a recuperação após interrupção forçada de algumas publicações.
 
 ## 13. Verificações e validação
 
@@ -742,3 +742,10 @@ Em andamento: auditar operações IPC manuais iniciadas por ações de usuário 
 - `createPendingOperationTracker` centraliza registro e drenagem das Promises. O Editor V6 agora mantém importação de imagem/áudio/vídeo, vínculo de vídeo, duplicação, importação de áudio para exportação, início de exportação e captura de print pendentes até a ação inteira terminar; `flushEditorV6Writes` também aguarda as ações que surgirem enquanto já está drenando.
 - O fechamento nativo existente chama o flush do renderer antes de fechar a janela; navegação continua usando o mesmo registro global. Contratos IPC, IDs, formatos e estrutura dos projetos não mudaram.
 - `tests/renderer-pending-persistence.test.mjs` verifica a drenagem com uma segunda ação iniciada durante o flush e as ações do Editor V6 cobertas. `npm run test:editor-v6` cobre o painel de exportação e `npm run typecheck` valida os contratos de UI. Nenhuma mídia ou projeto real foi criado ou alterado.
+
+## 19. Etapa aplicada — ações de arquivo do Studio no fechamento
+
+- O Studio salva a cena pela fila `studioSaveQueues.studio`; importar uma imagem retorna dados normalizados à página, que incorpora o asset e persiste a cena. Gerar um print segue `StudioPage` → `makeCanvasPrint` → `studio:save-print` → pasta `projects/studio/<id>/prints`; abrir a pasta pode materializar prints do armazenamento nativo em uma pasta temporária.
+- O flush da tela aguardava o autosave e os IPCs iniciados, mas não acompanhava a ação inteira de importar imagem, gerar print, excluir o Studio ou materializar a pasta. O print era gravado em `fileIpc.ts`, fora da lista do processo principal, então um encerramento durante essa escrita podia interrompê-la.
+- `StudioPage` agora usa o rastreador de operações pendentes para esperar essas ações até completarem. O IPC de arquivos registra a gravação e a materialização dos prints em `getPendingWrites`, e `electron/main.ts` inclui essa fila no flush, backup e encerramento. O diálogo de importação foi injetado como dependência para permitir teste isolado do domínio.
+- Os canais, paths, PNGs e documentos existentes permanecem iguais. `tests/cycle10-studio-ipc-and-editor-structure.test.mjs` usa gates e dependências sintéticas para provar que escrita e materialização continuam no inventário até terminar; nenhum Studio ou print real foi lido ou alterado.

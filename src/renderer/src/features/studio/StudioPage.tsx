@@ -5,7 +5,7 @@ import { useStudioInspectorState } from '../../characters/useStudioInspectorStat
 import { StudioSceneCanvas } from './StudioSceneCanvas'
 import { addStudioImageAsset } from './studioImageChanges'
 import { trimTransparentImage, fitElementToTrim, faceRenderGeometry, type TrimmedImage } from '../../characters/characterGeometry'
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { buildStudioExpressionAppearance, buildStudioExpressionTransforms, resolveStudioExpressionBase, studioExpressionCollection } from './expressionTransforms'
 import { Icon } from '../../ui/components/Icon'
 import { NumericRangeField } from '../../ui/components/NumericRangeField'
@@ -13,6 +13,7 @@ import { SceneElementControls } from '../../ui/components/SceneElementControls'
 import { SceneCastPickerModal } from '../../ui/components/SceneCastPickerModal'
 import { useSerializedSceneDocumentSave } from '../../ui/hooks/useSerializedSceneDocumentSave'
 import { registerPendingWriteFlusher } from '../../ui/pendingPersistence'
+import { createPendingOperationTracker } from '../../ui/pendingOperations'
 import { isLegacySceneCatalogId, loadLegacySceneCatalog } from '../../ui/legacySceneCatalog'
 import { createSceneTextElement, sceneCatalogColor, sceneEditorTools } from '../../ui/sceneEditorDefaults'
 import { CharacterPortrait } from '../../ui/components/CharacterPortrait'
@@ -167,6 +168,8 @@ export function StudioPage() {
   const studiosRef = useRef(studios)
   const activeStudioIdRef = useRef(activeStudioId)
   const studioIpcWritesRef = useRef(new Set<Promise<unknown>>())
+  const studioPendingOperations = useMemo(() => createPendingOperationTracker(), [])
+  const trackStudioOperation = studioPendingOperations.track
   const studioSaveTimerRef = useRef<number | null>(null)
   const studioSavePromiseRef = useRef<Promise<boolean> | null>(null)
   useLayoutEffect(() => { studiosRef.current = studios }, [studios])
@@ -201,7 +204,7 @@ export function StudioPage() {
     void pending.then(() => { if (studioSavePromiseRef.current === pending) studioSavePromiseRef.current = null })
     return pending
   }, [activeStudio, saveStudioDocument])
-  const flushStudioWrites = useCallback(async () => {
+  const flushStudioDocumentWrites = useCallback(async () => {
     const hadPendingTimer = studioSaveTimerRef.current !== null
     if (studioSaveTimerRef.current !== null) window.clearTimeout(studioSaveTimerRef.current)
     studioSaveTimerRef.current = null
@@ -221,6 +224,15 @@ export function StudioPage() {
       throw reason
     }
   }, [saved, saveStudio])
+  const flushStudioWrites = useCallback(async () => {
+    try {
+      await studioPendingOperations.flush()
+      await flushStudioDocumentWrites()
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Não foi possível concluir as operações do Studio antes de continuar.')
+      throw reason
+    }
+  }, [flushStudioDocumentWrites, studioPendingOperations])
   useEffect(() => registerPendingWriteFlusher(flushStudioWrites), [flushStudioWrites])
   const markStudioUnsaved = useCallback(() => {
     invalidateStudioPendingSaves()
@@ -716,7 +728,7 @@ export function StudioPage() {
     setHistoryVersion(value => value + 1)
   }
 
-  const importImage = async (category: 'background' | 'object') => {
+  const importImage = (category: 'background' | 'object') => trackStudioOperation(async () => {
     if (!activeStudio) return
     const studioId = activeStudio.id
     try {
@@ -751,7 +763,7 @@ export function StudioPage() {
         setInspectorTab('editor')
       }
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível importar a imagem.') }
-  }
+  })
 
   const selectBackground = (asset: StudioAsset) => {
     changeScene((studio) => ({ ...studio, backgroundAssetId: asset.id, backgroundX: 0, backgroundY: 0, backgroundWidth: 100, backgroundHeight: 100, backgroundRotation: 0, updatedAt: new Date().toISOString() }))
@@ -1165,14 +1177,16 @@ export function StudioPage() {
 
   const deleteStudio = async (target: StudioCard | null = selectedStudio) => {
     if (!target || !window.confirm(`Excluir ${target.title}?`)) return
-    try {
-      if (target.id === activeStudioIdRef.current) await flushStudioWrites()
-      await trackStudioIpcWrite(window.desktop.studio.deleteStudio(target.id))
-      setStudios((current) => current.filter((studio) => studio.id !== target.id))
-      setSelectedId((current) => current === target.id ? null : current)
-      setSaved(true)
-      setError(null)
-    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível excluir o Studio.') }
+    await trackStudioOperation(async () => {
+      try {
+        if (target.id === activeStudioIdRef.current) await flushStudioDocumentWrites()
+        await trackStudioIpcWrite(window.desktop.studio.deleteStudio(target.id))
+        setStudios((current) => current.filter((studio) => studio.id !== target.id))
+        setSelectedId((current) => current === target.id ? null : current)
+        setSaved(true)
+        setError(null)
+      } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível excluir o Studio.') }
+    })
   }
 
   const leaveStudio = async () => {
@@ -1183,21 +1197,24 @@ export function StudioPage() {
     setFullView(false)
   }
 
-  const exportPrint = async () => {
+  const exportPrint = () => {
     if (!activeStudio) return
-    try {
-      await flushStudioWrites()
-      const image = await makeCanvasPrint(activeStudio)
-      const path = await window.desktop.studio.saveStudioPrint(activeStudio.id, image)
-      if (path) { setError(null); setNotice(`Print salvo em ${path}`) }
-    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível gerar o print.') }
+    const studio = activeStudio
+    return trackStudioOperation(async () => {
+      try {
+        await flushStudioDocumentWrites()
+        const image = await makeCanvasPrint(studio)
+        const path = await trackStudioIpcWrite(window.desktop.studio.saveStudioPrint(studio.id, image))
+        if (path) { setError(null); setNotice(`Print salvo em ${path}`) }
+      } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível gerar o print.') }
+    })
   }
 
-  const openPrints = async () => {
+  const openPrints = () => trackStudioOperation(async () => {
     if (!activeStudio) return
     try { await window.desktop.studio.openStudioPrints(activeStudio.id) }
     catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível abrir a pasta de prints.') }
-  }
+  })
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {

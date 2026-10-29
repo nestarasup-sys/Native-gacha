@@ -375,6 +375,7 @@ const assertLibraryUiGifReferencesAvailable = async (assetIds: readonly string[]
   }
 }
 const studioSaveQueues = { studio: Promise.resolve() as Promise<void> }
+let studioFileIpc: ReturnType<typeof registerStudioFileHandlers> | null = null
 let editorV6SaveQueue: Promise<void> = Promise.resolve()
 const characterManifestPath = () => join(characterLibraryPath(), 'characters.json')
 let poseSaveQueue: Promise<void> = Promise.resolve()
@@ -1257,6 +1258,7 @@ function collectPendingPersistenceWrites(): Promise<unknown>[] {
     ...(fabricatorFaceCatalogIpc?.getPendingWrites() ?? []),
     ...expressionPresetOperations.getPendingWrites(),
     ...(faceGuideIpc?.getPendingWrites() ?? []), customizerService.pendingWrites,
+    ...(studioFileIpc?.getPendingWrites() ?? []),
     studioSaveQueues.studio, editorV6SaveQueue, roteirosSaveQueue,
     ...(poseMigration ? [poseMigration] : [])
   ]
@@ -1303,8 +1305,9 @@ async function registerFabricatorHandlers(): Promise<void> {
     measure: (label, operation) => measureIpc(label, operation)
   })
 
-  registerStudioFileHandlers({
+  studioFileIpc = registerStudioFileHandlers({
     ipcMain, assertTrustedSender,
+    showOpenDialog: (options) => dialog.showOpenDialog(options),
     appDataPath: () => app.getPath('appData'), tempPath: () => app.getPath('temp'), studioPath,
     dataFileSystem: {
       locate: (path) => dataFileSystem.locate(path),
