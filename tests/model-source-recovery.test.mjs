@@ -132,12 +132,16 @@ test('exclusão explícita do slot apaga seus backups e transações sem afetar 
   assert.equal(await recoverModelSourceSlot(1, () => official, fs), 'missing')
 })
 
-test('marca apenas slots vazios com recuperação ambígua, sem substituir modelos íntegros', () => {
+test('marca slots ambíguos com e sem manifesto, preservando resumo do modelo', () => {
   const summaries = [null, { slot: 2, name: 'Modelo existente', sourceName: 'folha.png', partCount: 10, updatedAt: '2026-01-01' }, null]
   const marked = markAmbiguousModelSourceSlots(summaries, [1, 2, 3, 11])
   assert.equal(marked[0].recoveryRequired, true)
   assert.equal(marked[1].name, 'Modelo existente')
-  assert.equal(marked[1].recoveryRequired, undefined)
+  assert.equal(marked[1].recoveryRequired, true)
+  const { recoveryRequired, ...preservedSummary } = marked[1]
+  assert.equal(recoveryRequired, true)
+  assert.deepEqual(preservedSummary, summaries[1])
   assert.equal(marked[2].recoveryRequired, true)
   assert.equal(summaries[0], null)
+  assert.equal(summaries[1].recoveryRequired, undefined)
 })

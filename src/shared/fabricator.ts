@@ -75,7 +75,7 @@ export type FabricatorSlotSummary = {
   sourceName: string
   partCount: number
   updatedAt: string
-  /** Slot vazio cujo Model Source tem múltiplas recuperações válidas; exige decisão explícita. */
+  /** Model Source do slot tem recuperação ambígua; exige decisão explícita, exista ou não um manifesto válido. */
   recoveryRequired?: boolean
 } | null
 

@@ -66,10 +66,11 @@ export function markAmbiguousModelSourceSlots(
 ): FabricatorSlotSummary[] {
   const result = [...summaries]
   for (const slot of ambiguousSlots) {
-    if (!Number.isInteger(slot) || slot < 1 || slot > result.length || result[slot - 1]) continue
-    result[slot - 1] = {
-      slot, name: 'Recuperação pendente', sourceName: '', partCount: 0, updatedAt: '', recoveryRequired: true
-    }
+    if (!Number.isInteger(slot) || slot < 1 || slot > result.length) continue
+    const summary = result[slot - 1]
+    result[slot - 1] = summary
+      ? { ...summary, recoveryRequired: true }
+      : { slot, name: 'Recuperação pendente', sourceName: '', partCount: 0, updatedAt: '', recoveryRequired: true }
   }
   return result
 }
