@@ -12,6 +12,7 @@ import { NumericRangeField } from '../../ui/components/NumericRangeField'
 import { SceneElementControls } from '../../ui/components/SceneElementControls'
 import { SceneCastPickerModal } from '../../ui/components/SceneCastPickerModal'
 import { useSerializedSceneDocumentSave } from '../../ui/hooks/useSerializedSceneDocumentSave'
+import { registerPendingWriteFlusher } from '../../ui/pendingPersistence'
 import { isLegacySceneCatalogId, loadLegacySceneCatalog } from '../../ui/legacySceneCatalog'
 import { createSceneTextElement, sceneCatalogColor, sceneEditorTools } from '../../ui/sceneEditorDefaults'
 import { CharacterPortrait } from '../../ui/components/CharacterPortrait'
@@ -165,9 +166,17 @@ export function StudioPage() {
   const activeStudio = studios.find((studio) => studio.id === activeStudioId) ?? null
   const studiosRef = useRef(studios)
   const activeStudioIdRef = useRef(activeStudioId)
+  const studioIpcWritesRef = useRef(new Set<Promise<unknown>>())
+  const studioSaveTimerRef = useRef<number | null>(null)
+  const studioSavePromiseRef = useRef<Promise<boolean> | null>(null)
   useLayoutEffect(() => { studiosRef.current = studios }, [studios])
   useLayoutEffect(() => { activeStudioIdRef.current = activeStudioId }, [activeStudioId])
-  const writeStudioDocument = useCallback((studio: StudioDocument) => window.desktop.studio.saveStudio(studio), [])
+  const trackStudioIpcWrite = useCallback(<T,>(operation: Promise<T>) => {
+    studioIpcWritesRef.current.add(operation)
+    void operation.then(() => studioIpcWritesRef.current.delete(operation), () => studioIpcWritesRef.current.delete(operation))
+    return operation
+  }, [])
+  const writeStudioDocument = useCallback((studio: StudioDocument) => trackStudioIpcWrite(window.desktop.studio.saveStudio(studio)), [trackStudioIpcWrite])
   const onStudioDocumentSaved = useCallback((document: StudioDocument, savedDocument: StudioDocument) => {
     if (savedDocument.thumbnailDataUrl !== document.thumbnailDataUrl) {
       setStudios((current) => current.map((studio) => studio.id === document.id && studio.updatedAt === document.updatedAt && studio.thumbnailDataUrl !== savedDocument.thumbnailDataUrl
@@ -180,12 +189,39 @@ export function StudioPage() {
   const onStudioDocumentSaveError = useCallback((reason: unknown) => {
     setError(reason instanceof Error ? reason.message : 'Não foi possível salvar o Studio neste dispositivo.')
   }, [])
-  const { save: saveStudio, writeInOrder: writeStudioInOrder, invalidatePendingSaves: invalidateStudioPendingSaves } = useSerializedSceneDocumentSave(activeStudio, {
+  const { save: saveStudioDocument, writeInOrder: writeStudioInOrder, invalidatePendingSaves: invalidateStudioPendingSaves } = useSerializedSceneDocumentSave(activeStudio, {
     createThumbnail: makeStudioThumbnail,
     write: writeStudioDocument,
     onSaved: onStudioDocumentSaved,
     onError: onStudioDocumentSaveError
   })
+  const saveStudio = useCallback((document = activeStudio) => {
+    const pending = saveStudioDocument(document)
+    studioSavePromiseRef.current = pending
+    void pending.then(() => { if (studioSavePromiseRef.current === pending) studioSavePromiseRef.current = null })
+    return pending
+  }, [activeStudio, saveStudioDocument])
+  const flushStudioWrites = useCallback(async () => {
+    const hadPendingTimer = studioSaveTimerRef.current !== null
+    if (studioSaveTimerRef.current !== null) window.clearTimeout(studioSaveTimerRef.current)
+    studioSaveTimerRef.current = null
+    try {
+      const activeId = activeStudioIdRef.current
+      const latest = activeId ? studiosRef.current.find((studio) => studio.id === activeId) ?? null : null
+      if (latest && (hadPendingTimer || !saved) && !await saveStudio(latest)) throw new Error('Não foi possível salvar o Studio antes de continuar.')
+      const inFlightSave = studioSavePromiseRef.current
+      if (inFlightSave && !await inFlightSave) throw new Error('Não foi possível concluir o salvamento do Studio.')
+      while (studioIpcWritesRef.current.size > 0) {
+        const results = await Promise.allSettled([...studioIpcWritesRef.current])
+        const failure = results.find((result): result is PromiseRejectedResult => result.status === 'rejected')
+        if (failure) throw failure.reason
+      }
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Não foi possível salvar o Studio antes de continuar.')
+      throw reason
+    }
+  }, [saved, saveStudio])
+  useEffect(() => registerPendingWriteFlusher(flushStudioWrites), [flushStudioWrites])
   const markStudioUnsaved = useCallback(() => {
     invalidateStudioPendingSaves()
     setSaved(false)
@@ -315,7 +351,7 @@ export function StudioPage() {
         const now = new Date().toISOString()
         for (const old of legacy) {
           if (knownIds.has(old.id) || !isLegacySceneCatalogId(old.id)) continue
-          await window.desktop.studio.saveStudio({
+          await writeStudioDocument({
             schemaVersion: 1, ...old, createdAt: now, updatedAt: now, backgroundColor: '#d7b5cd',
             backgroundAssetId: null, backgroundX: 0, backgroundY: 0, backgroundWidth: 100, backgroundHeight: 100,
             backgroundRotation: 0, assets: [], elements: []
@@ -577,7 +613,7 @@ export function StudioPage() {
     }
     try {
       setError(null)
-      await window.desktop.studio.saveStudio(studio)
+      await writeStudioDocument(studio)
       setStudios((current) => [...current, studio])
       setSelectedId(studio.id)
       setSaved(true)
@@ -605,7 +641,7 @@ export function StudioPage() {
     duplicate.backgroundAssetId = source.backgroundAssetId ? oldToNew.get(source.backgroundAssetId) ?? null : null
     try {
       setError(null)
-      await window.desktop.studio.saveStudio(duplicate)
+      await writeStudioDocument(duplicate)
       setStudios((current) => [...current, duplicate])
       setSelectedId(duplicate.id)
       setSaved(true)
@@ -622,8 +658,16 @@ export function StudioPage() {
       void saveStudio(activeStudio)
       return
     }
-    const timer = window.setTimeout(() => { void saveStudio(activeStudio) }, 650)
-    return () => window.clearTimeout(timer)
+    if (studioSaveTimerRef.current !== null) window.clearTimeout(studioSaveTimerRef.current)
+    const timer = window.setTimeout(() => {
+      if (studioSaveTimerRef.current === timer) studioSaveTimerRef.current = null
+      void saveStudio(activeStudio)
+    }, 650)
+    studioSaveTimerRef.current = timer
+    return () => {
+      window.clearTimeout(timer)
+      if (studioSaveTimerRef.current === timer) studioSaveTimerRef.current = null
+    }
   }, [activeStudio, markStudioUnsaved, saveStudio])
 
   const patchStudio = (transform: (studio: StudioDocument) => StudioDocument) => {
@@ -1122,7 +1166,8 @@ export function StudioPage() {
   const deleteStudio = async (target: StudioCard | null = selectedStudio) => {
     if (!target || !window.confirm(`Excluir ${target.title}?`)) return
     try {
-      await window.desktop.studio.deleteStudio(target.id)
+      if (target.id === activeStudioIdRef.current) await flushStudioWrites()
+      await trackStudioIpcWrite(window.desktop.studio.deleteStudio(target.id))
       setStudios((current) => current.filter((studio) => studio.id !== target.id))
       setSelectedId((current) => current === target.id ? null : current)
       setSaved(true)
@@ -1131,7 +1176,7 @@ export function StudioPage() {
   }
 
   const leaveStudio = async () => {
-    if (!await saveStudio(activeStudio)) return
+    try { await flushStudioWrites() } catch { return }
     setActiveStudioId(null)
     setActiveTool(null)
     setSelectedElementId(null)
@@ -1141,7 +1186,7 @@ export function StudioPage() {
   const exportPrint = async () => {
     if (!activeStudio) return
     try {
-      if (!await saveStudio(activeStudio)) return
+      await flushStudioWrites()
       const image = await makeCanvasPrint(activeStudio)
       const path = await window.desktop.studio.saveStudioPrint(activeStudio.id, image)
       if (path) { setError(null); setNotice(`Print salvo em ${path}`) }
@@ -1361,7 +1406,7 @@ export function StudioPage() {
         {!fullView && <aside className="studio-editor-rail studio-editor-left" aria-label="Ferramentas do Studio">
           <div className="studio-editor-quick-actions">
             <button className="studio-round-action" onClick={() => void leaveStudio()} title="Salvar automaticamente e voltar" aria-label="Voltar para Seus Studios" type="button"><span>←</span></button>
-            <button className="studio-round-action" onClick={() => void saveStudio(activeStudio)} title="Salvar agora no computador" aria-label="Salvar Studio" type="button"><Icon name="save" /></button>
+            <button className="studio-round-action" onClick={() => { void flushStudioWrites().catch(() => undefined) }} title="Salvar agora no computador" aria-label="Salvar Studio" type="button"><Icon name="save" /></button>
           </div>
           <div className="studio-editor-quick-actions studio-history-actions">
             <button className="studio-round-action" disabled={!canUndo} onClick={undo} title="Desfazer (Ctrl+Z)" aria-label="Desfazer" type="button"><Icon name="undo" /></button>

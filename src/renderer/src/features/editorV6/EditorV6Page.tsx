@@ -26,6 +26,7 @@ import { NumericRangeField } from '../../ui/components/NumericRangeField'
 import { SceneElementControls } from '../../ui/components/SceneElementControls'
 import { SceneCastPickerModal } from '../../ui/components/SceneCastPickerModal'
 import { useSerializedSceneDocumentSave } from '../../ui/hooks/useSerializedSceneDocumentSave'
+import { registerPendingWriteFlusher } from '../../ui/pendingPersistence'
 import { isLegacySceneCatalogId, loadLegacySceneCatalog } from '../../ui/legacySceneCatalog'
 import { createSceneTextElement, sceneCatalogColor, sceneEditorTools } from '../../ui/sceneEditorDefaults'
 import { CharacterPortrait } from '../../ui/components/CharacterPortrait'
@@ -133,9 +134,17 @@ export function EditorV6Page() {
   const expressionSaveSignatureRef = useRef<{ studioId: string; value: string } | null>(null)
   const normalizedStudioIdsRef = useRef(new Set<string>())
   const nextStudioNumber = useRef(1)
+  const editorV6IpcWritesRef = useRef(new Set<Promise<unknown>>())
+  const editorV6SaveTimerRef = useRef<number | null>(null)
+  const editorV6SavePromiseRef = useRef<Promise<boolean> | null>(null)
   const selectedEditorV6 = editorV6Projects.find((studio) => studio.id === selectedId) ?? null
   const activeEditorV6 = activeEditorV6Stored?.id === activeEditorV6Id ? activeEditorV6Stored : null
-  const writeEditorV6Document = useCallback((document: EditorV6Document) => window.desktop.editorV6.saveEditorV6Project(document), [])
+  const trackEditorV6IpcWrite = useCallback(<T,>(operation: Promise<T>) => {
+    editorV6IpcWritesRef.current.add(operation)
+    void operation.then(() => editorV6IpcWritesRef.current.delete(operation), () => editorV6IpcWritesRef.current.delete(operation))
+    return operation
+  }, [])
+  const writeEditorV6Document = useCallback((document: EditorV6Document) => trackEditorV6IpcWrite(window.desktop.editorV6.saveEditorV6Project(document)), [trackEditorV6IpcWrite])
   const onEditorV6DocumentSaved = useCallback((document: EditorV6Document, savedDocument: EditorV6Document) => {
     if (savedDocument.thumbnailDataUrl !== document.thumbnailDataUrl) {
       updateActiveEditorV6Project((project) => project.id === document.id && project.updatedAt === document.updatedAt && project.thumbnailDataUrl !== savedDocument.thumbnailDataUrl
@@ -148,12 +157,40 @@ export function EditorV6Page() {
   const onEditorV6DocumentSaveError = useCallback((reason: unknown) => {
     setError(reason instanceof Error ? reason.message : 'Não foi possível salvar o projeto do Editor V6 neste dispositivo.')
   }, [])
-  const { save: saveActiveEditorV6Project, writeInOrder: writeEditorV6DocumentInOrder, invalidatePendingSaves: invalidateEditorV6PendingSaves } = useSerializedSceneDocumentSave(activeEditorV6, {
+  const { save: saveEditorV6Document, writeInOrder: writeEditorV6DocumentInOrder, invalidatePendingSaves: invalidateEditorV6PendingSaves } = useSerializedSceneDocumentSave(activeEditorV6, {
     createThumbnail: makeEditorV6Thumbnail,
     write: writeEditorV6Document,
     onSaved: onEditorV6DocumentSaved,
     onError: onEditorV6DocumentSaveError
   })
+  const saveActiveEditorV6Project = useCallback((document = activeEditorV6) => {
+    const pending = saveEditorV6Document(document)
+    editorV6SavePromiseRef.current = pending
+    void pending.then(() => { if (editorV6SavePromiseRef.current === pending) editorV6SavePromiseRef.current = null })
+    return pending
+  }, [activeEditorV6, saveEditorV6Document])
+  const flushEditorV6Writes = useCallback(async () => {
+    const hadPendingTimer = editorV6SaveTimerRef.current !== null
+    if (editorV6SaveTimerRef.current !== null) window.clearTimeout(editorV6SaveTimerRef.current)
+    editorV6SaveTimerRef.current = null
+    try {
+      const activeId = activeEditorV6IdRef.current
+      const stored = useEditorV6Store.getState().activeProject
+      const latest = activeId && stored?.id === activeId ? stored : null
+      if (latest && (hadPendingTimer || !saved) && !await saveActiveEditorV6Project(latest)) throw new Error('Não foi possível salvar o projeto do Editor V6 antes de continuar.')
+      const inFlightSave = editorV6SavePromiseRef.current
+      if (inFlightSave && !await inFlightSave) throw new Error('Não foi possível concluir o salvamento do Editor V6.')
+      while (editorV6IpcWritesRef.current.size > 0) {
+        const results = await Promise.allSettled([...editorV6IpcWritesRef.current])
+        const failure = results.find((result): result is PromiseRejectedResult => result.status === 'rejected')
+        if (failure) throw failure.reason
+      }
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Não foi possível salvar o projeto do Editor V6 antes de continuar.')
+      throw reason
+    }
+  }, [saved, saveActiveEditorV6Project])
+  useEffect(() => registerPendingWriteFlusher(flushEditorV6Writes), [flushEditorV6Writes])
   const markEditorV6Unsaved = useCallback(() => {
     invalidateEditorV6PendingSaves()
     setSaved(false)
@@ -297,7 +334,7 @@ export function EditorV6Page() {
         const now = new Date().toISOString()
         for (const old of legacy) {
           if (knownIds.has(old.id) || !isLegacySceneCatalogId(old.id)) continue
-          await window.desktop.editorV6.saveEditorV6Project({
+          await writeEditorV6Document({
             schemaVersion: 1, ...old, createdAt: now, updatedAt: now, backgroundColor: '#d7b5cd',
             backgroundAssetId: null, backgroundX: 0, backgroundY: 0, backgroundWidth: 100, backgroundHeight: 100,
             backgroundRotation: 0, assets: [], elements: [], timeline: createEditorV6Timeline()
@@ -585,7 +622,7 @@ export function EditorV6Page() {
     }
     try {
       setError(null)
-      await window.desktop.editorV6.saveEditorV6Project(studio)
+      await writeEditorV6Document(studio)
       upsertEditorV6Summary(editorV6ProjectSummary(studio))
       setSelectedId(studio.id)
       setSaved(true)
@@ -615,9 +652,9 @@ export function EditorV6Page() {
     }, () => crypto.randomUUID())
     try {
       setError(null)
-      if (source.exportAudio?.length) await window.desktop.editorV6.cloneEditorV6ExportAudio(source.id, duplicate.id, source.exportAudio)
-      if (source.media?.length) await window.desktop.editorV6.cloneEditorV6Media(source.id, duplicate.id, source.media)
-      await window.desktop.editorV6.saveEditorV6Project(duplicate)
+      if (source.exportAudio?.length) await trackEditorV6IpcWrite(window.desktop.editorV6.cloneEditorV6ExportAudio(source.id, duplicate.id, source.exportAudio))
+      if (source.media?.length) await trackEditorV6IpcWrite(window.desktop.editorV6.cloneEditorV6Media(source.id, duplicate.id, source.media))
+      await writeEditorV6Document(duplicate)
       upsertEditorV6Summary(editorV6ProjectSummary(duplicate))
       setSelectedId(duplicate.id)
       setSaved(true)
@@ -634,8 +671,16 @@ export function EditorV6Page() {
       void saveActiveEditorV6Project(activeEditorV6)
       return
     }
-    const timer = window.setTimeout(() => { void saveActiveEditorV6Project(activeEditorV6) }, 650)
-    return () => window.clearTimeout(timer)
+    if (editorV6SaveTimerRef.current !== null) window.clearTimeout(editorV6SaveTimerRef.current)
+    const timer = window.setTimeout(() => {
+      if (editorV6SaveTimerRef.current === timer) editorV6SaveTimerRef.current = null
+      void saveActiveEditorV6Project(activeEditorV6)
+    }, 650)
+    editorV6SaveTimerRef.current = timer
+    return () => {
+      window.clearTimeout(timer)
+      if (editorV6SaveTimerRef.current === timer) editorV6SaveTimerRef.current = null
+    }
   }, [activeEditorV6, markEditorV6Unsaved, saveActiveEditorV6Project])
 
   const patchStudio = (transform: (studio: EditorV6Document) => EditorV6Document, editSelection = true) => {
@@ -1280,7 +1325,8 @@ export function EditorV6Page() {
   const deleteStudio = async (target: EditorV6Card | null = selectedEditorV6) => {
     if (!target || !window.confirm(`Excluir ${target.title}?`)) return
     try {
-      await window.desktop.editorV6.deleteEditorV6Project(target.id)
+      if (target.id === activeEditorV6IdRef.current) await flushEditorV6Writes()
+      await trackEditorV6IpcWrite(window.desktop.editorV6.deleteEditorV6Project(target.id))
       removeEditorV6Summary(target.id)
       setSelectedId((current) => current === target.id ? null : current)
       if (activeEditorV6Id === target.id) { pausePlayback(); setActiveEditorV6Id(null) }
@@ -1290,7 +1336,7 @@ export function EditorV6Page() {
   }
 
   const leaveStudio = async () => {
-    if (!await saveActiveEditorV6Project(activeEditorV6)) return
+    try { await flushEditorV6Writes() } catch { return }
     pausePlayback()
     setActiveEditorV6Id(null)
     setActiveTool(null)
@@ -1301,7 +1347,7 @@ export function EditorV6Page() {
   const exportPrint = async () => {
     if (!activeEditorV6) return
     try {
-      if (!await saveActiveEditorV6Project(activeEditorV6)) return
+      await flushEditorV6Writes()
       const { captureEditorV6Frame } = await import('./sceneCapture')
       const image = await captureEditorV6Frame(activeEditorV6, getEditorV6PlaybackFrame(), 1920, 1080, 'image/png')
       const path = await window.desktop.editorV6.saveEditorV6Print(activeEditorV6.id, image)
@@ -1556,7 +1602,7 @@ export function EditorV6Page() {
         {!fullView && <aside className="studio-editor-rail studio-editor-left" aria-label="Ferramentas do Editor V6">
           <div className="studio-editor-quick-actions">
             <button className="studio-round-action" onClick={() => void leaveStudio()} title="Salvar automaticamente e voltar" aria-label="Voltar para Editor V6" type="button"><span>←</span></button>
-            <button className="studio-round-action" onClick={() => void saveActiveEditorV6Project(activeEditorV6)} title="Salvar agora no computador" aria-label="Salvar Editor V6" type="button"><Icon name="save" /></button>
+            <button className="studio-round-action" onClick={() => { void flushEditorV6Writes().catch(() => undefined) }} title="Salvar agora no computador" aria-label="Salvar Editor V6" type="button"><Icon name="save" /></button>
           </div>
           <div className="studio-editor-quick-actions studio-history-actions">
             <button className="studio-round-action" disabled={!canUndo} onClick={undo} title="Desfazer (Ctrl+Z)" aria-label="Desfazer" type="button"><Icon name="undo" /></button>

@@ -660,11 +660,18 @@ Este corte separa propriedade dos contratos e chamadas entre domínios, mas não
 - Os dois componentes deixam de iniciar gravações sem aguardar no cleanup. Os testes do registro cobrem a inclusão desses gravadores e a propagação/repetição de falhas.
 - `npm run test:refactor` passou com 320 testes; também passaram `npm run typecheck`, `npm run audit:architecture` (350 arquivos TS/TSX), `npm run build` e `git diff --check`. Os testes usaram dados sintéticos.
 
-## 10. Próxima tarefa recomendada
+## 10. Etapa aplicada — flush no Studio, Editor V6 e Base de Vídeos
 
-No Fabricador, os timers de persistência encontrados estão agora registrados; o timer restante de `ModelSourceEditor` calcula apenas a prévia. Expandir o mesmo mapeamento para os autosaves do Studio, Editor V6 e Base de Vídeos, conferindo os caminhos de navegação, fechamento e backup e atualizando a matriz de persistência.
+- Studio e Editor V6 registram o autosave de 650 ms no flush global, usam o documento ativo mais recente e aguardam tanto o save serializado quanto operações IPC de gravação em andamento. Falha do save impede navegação, backup ou fechamento silenciosos.
+- Base de Vídeos drena todos os timers e IDs com metadados pendentes, espera gravações em andamento e propaga falhas; os detalhes permanecem na fila para nova tentativa.
+- O inventário de timers do renderer confirmou que o debounce de Model Source restante é apenas para cálculo de prévia. Os demais timers encontrados são polling, reconhecimento de mídia ou renderização temporizada.
+- Os testes direcionados do registro, fila serializada e Base de Vídeos passaram com 21 casos. A suíte completa `npm run test:refactor` passou com 322 testes; `npm run typecheck`, `npm run audit:architecture` (350 arquivos TS/TSX), `npm run build` e `git diff --check` também passaram.
 
-## 11. Verificações e validação
+## 11. Próxima tarefa recomendada
+
+Auditar operações IPC manuais iniciadas por ações de usuário e a cobertura do inventário do processo principal, além dos debounces já drenados. Mapear o comportamento de falha/recuperação de cada domínio e completar a matriz de persistência do aplicativo.
+
+## 12. Verificações e validação
 
 - Leitura do código atual de rotas, TopBar, preload, contratos compartilhados, Base de Vídeos, Roteiros, Editor V6, VideoLibrary, boot Electron, módulos de domínio, renderizadores, schema SQLite e ADRs.
 - A etapa anterior moveu as consultas de referência para os domínios donos e `npm run test:base-videos` passou com 7 verificações sintéticas. Nenhum perfil ou mídia real foi usado.

@@ -92,6 +92,26 @@ test('Face component debounces and catalog saves drain through the renderer regi
   assert.match(faces, /if \(failure\) throw failure\.reason/)
 })
 
+test('Studio and Editor V6 flush debounced documents and wait for renderer IPC writes', async () => {
+  const studio = await readFile('src/renderer/src/features/studio/StudioPage.tsx', 'utf8')
+  const editor = await readFile('src/renderer/src/features/editorV6/EditorV6Page.tsx', 'utf8')
+  assert.match(studio, /registerPendingWriteFlusher\(flushStudioWrites\)/)
+  assert.match(studio, /hadPendingTimer \|\| !saved[\s\S]*?saveStudio\(latest\)/)
+  assert.match(studio, /await Promise\.allSettled\(\[\.\.\.studioIpcWritesRef\.current\]\)/)
+  assert.match(editor, /registerPendingWriteFlusher\(flushEditorV6Writes\)/)
+  assert.match(editor, /hadPendingTimer \|\| !saved[\s\S]*?saveActiveEditorV6Project\(latest\)/)
+  assert.match(editor, /await Promise\.allSettled\(\[\.\.\.editorV6IpcWritesRef\.current\]\)/)
+})
+
+test('Base Videos drains every debounced detail write before leaving', async () => {
+  const videos = await readFile('src/renderer/src/features/baseVideos/BaseVideosPage.tsx', 'utf8')
+  assert.match(videos, /registerPendingWriteFlusher\(flushPendingSaves\)/)
+  assert.match(videos, /pendingSaves\.current\.keys\(\), \.\.\.inFlightSaves\.current\.keys\(\)/)
+  assert.match(videos, /Promise\.allSettled\(videoIds\.map\(\(videoId\) => persistPendingSave\(videoId\)\)\)/)
+  assert.match(videos, /if \(failure\) throw failure\.reason/)
+  assert.doesNotMatch(videos, /void persistPendingSave\(videoId, false\)\.catch/)
+})
+
 test('main flushes renderer writes before its IPC inventory and navigation waits for renderer flush', async () => {
   const main = await readFile('electron/main.ts', 'utf8')
   const topBar = await readFile('src/renderer/src/ui/components/TopBar.tsx', 'utf8')

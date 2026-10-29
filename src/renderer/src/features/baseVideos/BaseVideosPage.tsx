@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { BaseVideoCategory, BaseVideoDetails, VideoTimeline } from '../../../../shared/baseVideos'
 import type { VideoLibraryItem } from '../../../../shared/mediaLibrary'
 import { Icon } from '../../ui/components/Icon'
+import { registerPendingWriteFlusher } from '../../ui/pendingPersistence'
 
 const emptyDetails = (videoId: string): BaseVideoDetails => ({ videoId, categoryId: null, description: '', additionalContext: '', timeline: 'unspecified' })
 const formatDuration = (frames: number | null) => {
@@ -79,12 +80,6 @@ export function BaseVideosPage() {
     return () => { cancelled = true }
   }, [])
 
-  useEffect(() => () => {
-    for (const timer of saveTimers.current.values()) window.clearTimeout(timer)
-    for (const videoId of pendingSaves.current.keys()) void persistPendingSave(videoId, false).catch((reason: unknown) => console.error('Falha ao salvar dados da Base de vídeos.', reason))
-    saveTimers.current.clear()
-  }, [])
-
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return
@@ -97,7 +92,7 @@ export function BaseVideosPage() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [deleteConfirmOpen, renameTarget, categoryVideoId, deleteMode])
 
-  const persistPendingSave = async (videoId: string, updateUi = true) => {
+  const persistPendingSave = useCallback(async (videoId: string, updateUi = true) => {
     while (true) {
       const inFlight = inFlightSaves.current.get(videoId)
       if (inFlight) { await inFlight; continue }
@@ -119,7 +114,22 @@ export function BaseVideosPage() {
         if (inFlightSaves.current.get(videoId) === request) inFlightSaves.current.delete(videoId)
       }
     }
-  }
+  }, [])
+
+  const flushPendingSaves = useCallback(async () => {
+    while (true) {
+      for (const timer of saveTimers.current.values()) window.clearTimeout(timer)
+      saveTimers.current.clear()
+      const videoIds = [...new Set([...pendingSaves.current.keys(), ...inFlightSaves.current.keys()])]
+      if (videoIds.length === 0) return
+      const results = await Promise.allSettled(videoIds.map((videoId) => persistPendingSave(videoId)))
+      const failure = results.find((result): result is PromiseRejectedResult => result.status === 'rejected')
+      if (failure) throw failure.reason
+      if (pendingSaves.current.size === 0 && inFlightSaves.current.size === 0) return
+    }
+  }, [persistPendingSave])
+
+  useEffect(() => registerPendingWriteFlusher(flushPendingSaves), [flushPendingSaves])
 
   const scheduleSave = (details: BaseVideoDetails) => {
     setSaveStatusById((current) => ({ ...current, [details.videoId]: 'saving' }))
