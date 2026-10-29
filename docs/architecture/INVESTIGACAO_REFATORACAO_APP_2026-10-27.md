@@ -653,11 +653,18 @@ Este corte separa propriedade dos contratos e chamadas entre domínios, mas não
 - O teste do IPC de modelos confirma que recuperação ambígua vira `null` sem rejeitar o invoke; o bundle compilado contém esse tratamento. Na investigação não havia servidor ativo na porta 5188.
 - `tests/renderer-pending-persistence.test.mjs` e `fabricator-customizer-studio-continuity.test.mjs` foram atualizados para os novos contratos. `npm run test:refactor` passou com 318 testes; também passaram `npm run typecheck`, `npm run audit:architecture` (350 arquivos TS/TSX), `npm run build` e `git diff --check`. Os testes usam operações e dados sintéticos.
 
-## 9. Próxima tarefa recomendada
+## 9. Etapa aplicada — flush de Preset Expressão e Componentes Faciais
 
-Mapear os timers de gravação ainda fora do registro, começando por Preset Expressão DEV e Componentes Faciais. Conferir se rascunhos acionados por ações específicas já entram nas filas IPC ou se ainda podem ficar exclusivamente no renderer antes de estender o flush.
+- Preset Expressão DEV salva o rascunho mais recente no IPC ao drenar o debounce, serializa as gravações locais e mantém a falha visível. O backup local em `localStorage` continua sendo atualizado imediatamente; o flush espera também a cópia em disco.
+- Componentes Faciais registra os timers por asset e catálogo. O flush percorre todas as chaves, drena as filas e tenta uma vez novamente a gravação mais recente em caso de falha. `flushSave` agora propaga a falha para impedir que ações dependentes, como excluir um asset, prossigam sem persistência.
+- Os dois componentes deixam de iniciar gravações sem aguardar no cleanup. Os testes do registro cobrem a inclusão desses gravadores e a propagação/repetição de falhas.
+- `npm run test:refactor` passou com 320 testes; também passaram `npm run typecheck`, `npm run audit:architecture` (350 arquivos TS/TSX), `npm run build` e `git diff --check`. Os testes usaram dados sintéticos.
 
-## 10. Verificações e validação
+## 10. Próxima tarefa recomendada
+
+No Fabricador, os timers de persistência encontrados estão agora registrados; o timer restante de `ModelSourceEditor` calcula apenas a prévia. Expandir o mesmo mapeamento para os autosaves do Studio, Editor V6 e Base de Vídeos, conferindo os caminhos de navegação, fechamento e backup e atualizando a matriz de persistência.
+
+## 11. Verificações e validação
 
 - Leitura do código atual de rotas, TopBar, preload, contratos compartilhados, Base de Vídeos, Roteiros, Editor V6, VideoLibrary, boot Electron, módulos de domínio, renderizadores, schema SQLite e ADRs.
 - A etapa anterior moveu as consultas de referência para os domínios donos e `npm run test:base-videos` passou com 7 verificações sintéticas. Nenhum perfil ou mídia real foi usado.

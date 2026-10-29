@@ -1,10 +1,11 @@
 import { projectForOriginalPreview } from '../../../../../shared/fabricatorModelViews'
 import { useModelSourceRefresh } from '../models/useModelSourceRefresh'
 import { pupilDeltaFromDrag, pupilSourceMirrored } from '../../../../../shared/facePupilGeometry'
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
 import type { FaceAssetKind, FaceCatalogItem, FaceCatalogItemSave, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSave, FaceComponentAssetSummary, FaceComponentKind, FaceDetailKind, FaceGuideProfile, FaceGuideSettings, FaceTransform, FabricatorProject, FabricatorSlotSummary, ModelPart } from '../../../../../shared/fabricator'
 import { Icon } from '../../../ui/components/Icon'
 import { usePreviewBackground } from '../../../ui/hooks/usePreviewBackground'
+import { registerPendingWriteFlusher } from '../../../ui/pendingPersistence'
 import { processFaceSheet } from './processFaceSheet'
 import { splitEyeSheet } from './splitEyeSheet'
 import { defaultFaceGuide, useFaceGuides } from './useFaceGuides'
@@ -203,6 +204,7 @@ export function FaceComponentsWorkspace({ mode, baseModelSlot }: { mode: FaceWor
   const catalogDetailsRef = useRef<Record<string, FaceCatalogItem>>({})
   const pendingSaves = useRef(new Map<string, { timer: number; run: () => Promise<void> }>())
   const saveChains = useRef(new Map<string, Promise<void>>())
+  const saveRuns = useRef(new Map<string, () => Promise<void>>())
   const previewDrag = useRef<PreviewDrag | null>(null)
   const [draggingPreview, setDraggingPreview] = useState(false)
   const stageRef = useRef<HTMLDivElement>(null)
@@ -327,28 +329,63 @@ export function FaceComponentsWorkspace({ mode, baseModelSlot }: { mode: FaceWor
   selectedAssetsRef.current = selectedAssets
   catalogDetailsRef.current = { ...noseDetails, ...mouthDetails }
 
+  function enqueueSave(key: string, run: () => Promise<void>) {
+    const next = (saveChains.current.get(key) ?? Promise.resolve()).catch(() => undefined).then(run)
+    saveChains.current.set(key, next)
+    void next.then(() => {
+      window.dispatchEvent(new Event('fabricator:assets-updated'))
+      if (saveChains.current.get(key) === next) saveChains.current.delete(key)
+      if (saveRuns.current.get(key) === run && !pendingSaves.current.has(key)) saveRuns.current.delete(key)
+    }).catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)))
+    return next
+  }
+
   function queueSave(key: string, run: () => Promise<void>) {
     const previous = pendingSaves.current.get(key)
     if (previous) window.clearTimeout(previous.timer)
+    saveRuns.current.set(key, run)
     const timer = window.setTimeout(() => {
       pendingSaves.current.delete(key)
-      const next = (saveChains.current.get(key) ?? Promise.resolve()).catch(() => undefined).then(run)
-      saveChains.current.set(key, next)
-      void next.then(() => window.dispatchEvent(new Event('fabricator:assets-updated'))).catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)))
+      enqueueSave(key, run)
     }, 180)
     pendingSaves.current.set(key, { timer, run })
   }
 
   async function flushSave(key: string) {
-    const pending = pendingSaves.current.get(key)
-    if (pending) {
-      window.clearTimeout(pending.timer)
-      pendingSaves.current.delete(key)
-      const next = (saveChains.current.get(key) ?? Promise.resolve()).catch(() => undefined).then(pending.run)
-      saveChains.current.set(key, next)
+    let attempts = 0
+    while (true) {
+      const pending = pendingSaves.current.get(key)
+      if (pending) {
+        window.clearTimeout(pending.timer)
+        pendingSaves.current.delete(key)
+        enqueueSave(key, pending.run)
+      }
+      const current = saveChains.current.get(key)
+      if (!current) return
+      try {
+        await current
+        return
+      } catch (reason) {
+        const retry = saveRuns.current.get(key)
+        if (attempts > 0 || !retry) throw reason
+        attempts += 1
+        enqueueSave(key, retry)
+      }
     }
-    await saveChains.current.get(key)?.catch(() => undefined)
   }
+
+  const flushAllSaves = useCallback(async () => {
+    while (true) {
+      const keys = [...new Set([...pendingSaves.current.keys(), ...saveChains.current.keys()])]
+      if (keys.length === 0) return
+      const results = await Promise.allSettled(keys.map((key) => flushSave(key)))
+      const failure = results.find((result): result is PromiseRejectedResult => result.status === 'rejected')
+      if (failure) throw failure.reason
+      if (pendingSaves.current.size === 0 && saveChains.current.size === 0) return
+    }
+  }, [])
+
+  useEffect(() => registerPendingWriteFlusher(flushAllSaves), [flushAllSaves])
 
   useEffect(() => { void window.desktop.fabricator.listFabricatorSlots().then((slots) => { setModels(slots); const preferredExists = Boolean(slots[baseModelSlot - 1]); const first = slots.findIndex(Boolean); if (!preferredExists && first >= 0) setModelSlot(first + 1) }).catch((reason) => setError(String(reason))) }, [baseModelSlot])
   useEffect(() => { if (mode !== 'eyes') return; try { window.localStorage.setItem(FACE_IMPORT_ANCHORS_STORAGE_KEY, JSON.stringify(importAnchorsByModel)) } catch { setError('Não foi possível salvar a fixação de importação neste computador.') } }, [mode, importAnchorsByModel])

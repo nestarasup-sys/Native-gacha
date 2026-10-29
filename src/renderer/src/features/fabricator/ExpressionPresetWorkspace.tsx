@@ -5,9 +5,10 @@ import { FACE_COMPONENT_SELECTION_STORAGE_KEY, LEGACY_PUPIL_SELECTION_STORAGE_KE
 import { ExpressionCharacterPreview } from './ExpressionCharacterPreview'
 import { projectForOriginalPreview } from '../../../../shared/fabricatorModelViews'
 import { useModelSourceRefresh } from './models/useModelSourceRefresh'
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import type { FaceCatalogItem, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSummary, FaceExpressionCollection, FaceExpressionPreset, FaceExpressionPresetSummary, FaceExpressionEffects, FaceExpressionTransforms, FaceExpressionWorkspaceDraft, FaceExpressionWorkspaceEntry, FaceTransform, PtPupilOverrides, FabricatorProject } from '../../../../shared/fabricator'
 import { Icon, type IconName } from '../../ui/components/Icon'
+import { registerPendingWriteFlusher } from '../../ui/pendingPersistence'
 import { eyeInteriorMask } from '../../ui/image/eyeInteriorMask'
 import { useModelAppearanceTarget, useModelPartAppearancePreview } from './ModelAppearanceContext'
 
@@ -281,6 +282,7 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
   const previewEffectDrag = useRef<PreviewEffectDrag | null>(null)
   const previewCanvas = useRef<HTMLDivElement | null>(null)
   const workspaceSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const workspaceSaveQueue = useRef<Promise<void>>(Promise.resolve())
   const latestWorkspaceDraft = useRef<FaceExpressionWorkspaceDraft | null>(null)
   const [saving, setSaving] = useState(false)
   const [open, setOpen] = useState(false)
@@ -290,6 +292,31 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
   const [error, setError] = useState<string | null>(null)
   const [collectionDialogOpen, setCollectionDialogOpen] = useState(false)
   const [newCollectionName, setNewCollectionName] = useState('')
+
+  const persistWorkspaceDraft = useCallback((snapshot: FaceExpressionWorkspaceDraft) => {
+    const current = workspaceSaveQueue.current.catch(() => undefined)
+      .then(() => window.desktop.fabricator.saveFaceExpressionWorkspaceDraft(snapshot.modelSlot, snapshot))
+    workspaceSaveQueue.current = current
+    return current.then(() => {
+      if (latestWorkspaceDraft.current?.updatedAt === snapshot.updatedAt) setWorkspaceSaveStatus('saved')
+    }).catch((reason) => {
+      if (latestWorkspaceDraft.current?.updatedAt === snapshot.updatedAt) {
+        setWorkspaceSaveStatus('failed')
+        setError(reason instanceof Error ? `Falha ao gravar o rascunho no disco: ${reason.message}` : 'Falha ao gravar o rascunho no disco.')
+      }
+      throw reason
+    })
+  }, [])
+
+  const flushWorkspaceDraft = useCallback(async () => {
+    if (workspaceSaveTimer.current) clearTimeout(workspaceSaveTimer.current)
+    workspaceSaveTimer.current = null
+    const latest = latestWorkspaceDraft.current
+    if (latest?.modelSlot === modelSlot) await persistWorkspaceDraft(latest)
+    await workspaceSaveQueue.current
+  }, [modelSlot, persistWorkspaceDraft])
+
+  useEffect(() => registerPendingWriteFlusher(flushWorkspaceDraft), [flushWorkspaceDraft])
 
   useEffect(() => {
     let cancelled = false
@@ -451,27 +478,14 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
     if (workspaceSaveTimer.current) clearTimeout(workspaceSaveTimer.current)
     workspaceSaveTimer.current = setTimeout(() => {
       workspaceSaveTimer.current = null
-      void window.desktop.fabricator.saveFaceExpressionWorkspaceDraft(modelSlot, workspaceDraft).then(() => {
-        if (latestWorkspaceDraft.current?.updatedAt === workspaceDraft.updatedAt) setWorkspaceSaveStatus('saved')
-      }).catch((reason) => {
-        if (latestWorkspaceDraft.current?.updatedAt === workspaceDraft.updatedAt) {
-          setWorkspaceSaveStatus('failed')
-          setError(reason instanceof Error ? `Falha ao gravar o rascunho no disco: ${reason.message}` : 'Falha ao gravar o rascunho no disco.')
-        }
-      })
+      const latest = latestWorkspaceDraft.current
+      if (latest?.modelSlot === modelSlot) void persistWorkspaceDraft(latest).catch(() => undefined)
     }, 120)
     return () => {
       if (workspaceSaveTimer.current) clearTimeout(workspaceSaveTimer.current)
       workspaceSaveTimer.current = null
     }
-  }, [workspaceReady, loading, switchingExpression, modelSlot, selectedCollectionId, selectedExpressionIndex, presetId, composition, transforms, ptPupils, noseOpacity, effects, workingCopies, customExpressionNames])
-
-  useEffect(() => () => {
-    if (workspaceSaveTimer.current) clearTimeout(workspaceSaveTimer.current)
-    workspaceSaveTimer.current = null
-    const latest = latestWorkspaceDraft.current
-    if (latest?.modelSlot === modelSlot) void window.desktop.fabricator.saveFaceExpressionWorkspaceDraft(modelSlot, latest).catch(() => undefined)
-  }, [modelSlot])
+  }, [workspaceReady, loading, switchingExpression, modelSlot, selectedCollectionId, selectedExpressionIndex, presetId, composition, transforms, ptPupils, noseOpacity, effects, workingCopies, customExpressionNames, persistWorkspaceDraft])
 
   useEffect(() => {
     let cancelled = false

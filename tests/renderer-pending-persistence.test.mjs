@@ -74,6 +74,24 @@ test('Fabricator projects and shared appearance register flushers and surface fa
   assert.doesNotMatch(appearance, /void persistExternalAppearance\(pendingAppearance\)/)
 })
 
+test('Expression workspace drafts register, serialize and await the latest disk snapshot', async () => {
+  const expressions = await readFile('src/renderer/src/features/fabricator/ExpressionPresetWorkspace.tsx', 'utf8')
+  assert.match(expressions, /registerPendingWriteFlusher\(flushWorkspaceDraft\)/)
+  assert.match(expressions, /const latest = latestWorkspaceDraft\.current[\s\S]*?await persistWorkspaceDraft\(latest\)/)
+  assert.match(expressions, /await workspaceSaveQueue\.current/)
+  assert.match(expressions, /saveFaceExpressionWorkspaceDraft\(snapshot\.modelSlot, snapshot\)/)
+  assert.doesNotMatch(expressions, /void window\.desktop\.fabricator\.saveFaceExpressionWorkspaceDraft\(modelSlot, latest\)\.catch\(\(\) => undefined\)/)
+})
+
+test('Face component debounces and catalog saves drain through the renderer registry', async () => {
+  const faces = await readFile('src/renderer/src/features/fabricator/face/FaceComponentsWorkspace.tsx', 'utf8')
+  assert.match(faces, /registerPendingWriteFlusher\(flushAllSaves\)/)
+  assert.match(faces, /pendingSaves\.current\.keys\(\), \.\.\.saveChains\.current\.keys\(\)/)
+  assert.match(faces, /await Promise\.allSettled\(keys\.map\(\(key\) => flushSave\(key\)\)\)/)
+  assert.match(faces, /await current[\s\S]*?const retry = saveRuns\.current\.get\(key\)/)
+  assert.match(faces, /if \(failure\) throw failure\.reason/)
+})
+
 test('main flushes renderer writes before its IPC inventory and navigation waits for renderer flush', async () => {
   const main = await readFile('electron/main.ts', 'utf8')
   const topBar = await readFile('src/renderer/src/ui/components/TopBar.tsx', 'utf8')
