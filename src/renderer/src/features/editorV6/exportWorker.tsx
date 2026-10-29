@@ -21,7 +21,7 @@ async function initialize() {
     return { ...scene, elements: scene.elements.map((element) => {
       if (element.kind !== 'character' || !element.characterId || element.motionSprite) return element
       const faceMode = editorV6FaceModeAtFrame(project.id, project.timeline, element.characterId, frame)
-      if (faceMode === 'blink' || faceMode === 'talk-blink' || element.activeFaceMode === 'blink') return element
+      if (faceMode !== 'talk' || element.activeFaceMode === 'blink') return element
       const block = editorV6ClipAtFrame(project.timeline, element.id, frame)?.block
       const state = mouthLoopByBlock.get(`${element.id}:${block?.id ?? element.id}`)
       if (!state || state.characterId !== element.characterId) return element
