@@ -1275,6 +1275,10 @@ async function flushPendingPersistenceWrites(): Promise<void> {
 async function registerFabricatorHandlers(): Promise<void> {
   ipcMain.handle(studioIpcChannels.flushPendingWrites, async (event): Promise<void> => {
     assertTrustedSender(event)
+    const owner = BrowserWindow.fromWebContents(event.sender)
+    if (owner && !owner.isDestroyed() && !owner.webContents.isLoading()) {
+      await owner.webContents.executeJavaScript('window.__flushPendingRendererWrites()')
+    }
     await flushPendingPersistenceWrites()
   })
 

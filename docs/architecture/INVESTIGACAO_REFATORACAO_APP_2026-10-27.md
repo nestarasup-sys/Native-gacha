@@ -637,9 +637,19 @@ Este corte separa propriedade dos contratos e chamadas entre domínios, mas não
 
 ## 7. Próxima tarefa recomendada
 
-Auditar as gravações do renderer no Animador DEV: `AnimatorWorkspace` mantém `writeQueue.current`, um timer de 350 ms e um salvamento fire-and-forget no cleanup. O flush atual alcança as caudas IPC do processo principal, mas não enumera timers/filas ainda não enviados pelo renderer. Mapear e coordenar esses rascunhos com backup, fechamento e navegação sem perder o snapshot mais recente.
+### Etapa aplicada — flush dos rascunhos do Animador DEV no renderer
 
-## 8. Verificações e validação
+- O fechamento e o backup chamavam o flush do processo principal, mas não executavam o timer de 350 ms nem aguardavam `writeQueue.current` no renderer. O cleanup tentava salvar sem aguardar e engolia falhas.
+- Um registro pequeno de flushers do renderer foi adicionado. `AnimatorWorkspace` registra o flush do rascunho, captura o estado após o commit React, cancela o debounce e aguarda a gravação; o cleanup agora só cancela e remove o registro.
+- O canal de flush existente pede ao renderer que drene os escritores registrados antes de verificar o inventário IPC. Como fechamento e backup já usam esse canal, ambos passam a aguardar o rascunho. A navegação do TopBar e a troca de área dentro do Fabricador também aguardam o flush e permanecem na tela se o salvamento falhar.
+- `renderer-pending-persistence.test.mjs` cobre concorrência, falhas e os pontos de integração. A cobertura atual do registro inclui o Animador; a inspeção encontrou outros timers de gravação em Poses DEV, no editor de modelos, na aparência compartilhada, em Preset Expressão e nos componentes faciais, ainda fora deste contrato.
+- Verificação: os testes direcionados passaram (16), `npm run test:refactor` passou com 316 testes, `npm run typecheck`, `npm run audit:architecture` (350 arquivos TS/TSX), `npm run build` e `git diff --check` passaram.
+
+## 8. Próxima tarefa recomendada
+
+Integrar ao registro os demais gravadores automáticos do Fabricador, começando por `PoseWorkspace` e `FabricatorPage`: validar rascunhos de pose, debounce de projeto e aparência compartilhada nas trocas de seção, navegação superior, backup e fechamento. Depois mapear os timers restantes de Preset Expressão e Componentes Faciais e estender o mesmo contrato somente onde a persistência realmente fica pendente no renderer.
+
+## 9. Verificações e validação
 
 - Leitura do código atual de rotas, TopBar, preload, contratos compartilhados, Base de Vídeos, Roteiros, Editor V6, VideoLibrary, boot Electron, módulos de domínio, renderizadores, schema SQLite e ADRs.
 - A etapa anterior moveu as consultas de referência para os domínios donos e `npm run test:base-videos` passou com 7 verificações sintéticas. Nenhum perfil ou mídia real foi usado.

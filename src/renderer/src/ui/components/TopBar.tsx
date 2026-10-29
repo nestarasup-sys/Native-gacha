@@ -1,5 +1,8 @@
-import { NavLink } from 'react-router'
+import { useRef } from 'react'
+import type { MouseEvent as ReactMouseEvent } from 'react'
+import { NavLink, useLocation, useNavigate } from 'react-router'
 import { Icon } from './Icon'
+import { flushPendingRendererWrites } from '../pendingPersistence'
 
 const sections = [
   { label: 'Studio', path: '/estudio', icon: 'camera' },
@@ -12,6 +15,23 @@ const sections = [
 ] as const
 
 export function TopBar() {
+  const location = useLocation()
+  const navigate = useNavigate()
+  const navigationRequest = useRef(0)
+
+  const navigateAfterFlush = (event: ReactMouseEvent<HTMLAnchorElement>, path: string) => {
+    if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || path === location.pathname) return
+    event.preventDefault()
+    const request = ++navigationRequest.current
+    void flushPendingRendererWrites().then(() => {
+      if (request === navigationRequest.current) navigate(path)
+    }).catch((reason: unknown) => {
+      if (request !== navigationRequest.current) return
+      const detail = reason instanceof Error ? `\n\n${reason.message}` : ''
+      window.alert(`Não foi possível salvar as alterações antes de sair desta área. Ela continuará aberta para você tentar novamente.${detail}`)
+    })
+  }
+
   return (
     <header className="top-bar">
       <div className="top-brand">
@@ -24,6 +44,7 @@ export function TopBar() {
           <NavLink
             className={({ isActive }) => `top-nav-link${isActive ? ' active' : ''}`}
             key={section.path}
+            onClick={(event) => navigateAfterFlush(event, section.path)}
             to={section.path}
           >
             <Icon name={section.icon} />

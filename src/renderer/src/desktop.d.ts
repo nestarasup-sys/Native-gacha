@@ -10,6 +10,7 @@ import type { ImageImportDesktopApi } from '../../shared/imageImport'
 
 declare global {
   interface Window {
+    __flushPendingRendererWrites: () => Promise<void>
     desktop: {
       platform: string
       appName: string

@@ -1,7 +1,7 @@
 import { applyCurrentModelSkinContours, projectForOriginalPreview } from '../../../../shared/fabricatorModelViews'
 import { interpolateFrames, shortestAngle } from './models/animationInterpolation'
 import { useModelSourceRefresh } from './models/useModelSourceRefresh'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, FormEvent, PointerEvent as ReactPointerEvent } from 'react'
 import { resolvePoseCategory, type AnimatorAnimation, type AnimatorAnimationAsset, type AnimatorAnimationDraft, type AnimatorFrame, type AnimatorAnimationSave, type AnimatorAnimationSummary, type AnimatorFrameTransform, type FaceCatalogItem, type FaceElementKind, type FaceSet, type FaceSheetKind, type FabricatorPose, type FabricatorProject, type FabricatorSlotSummary, type HairStyle, type JointLink, type PosePart, type WardrobeSet } from '../../../../shared/fabricator'
 import { defaultCharacterBodyDimensions, type CustomizerCharacter, type CustomizerWardrobeGroup } from '../../../../shared/customizer'
@@ -13,6 +13,7 @@ import { mapWardrobeComponentToPose } from './wardrobe/poseTransform'
 import { applyCharacterBodyShape } from '../../../../shared/bodyShape'
 import { isModelBodyPartName, tintModelBodyPixels } from '../../characters/skinTint'
 import { useModelAppearanceSettings, useModelAppearanceTarget, useModelPartAppearancePreview } from './ModelAppearanceContext'
+import { registerPendingWriteFlusher } from '../../ui/pendingPersistence'
 
 const SLOT_COUNT = 12
 const HISTORY_LIMIT = 40
@@ -325,6 +326,8 @@ export function AnimatorWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
   const pendingAssets = useRef<Map<string, string>>(new Map())
   const draftAssetsPersisted = useRef(false)
   const draftTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const draftFlushRef = useRef<() => Promise<void>>(async () => {})
+  const mountedRef = useRef(false)
   const savedAnimationRef = useRef<string | null>(null)
   const dirtyFrameRef = useRef(false)
   const animationLoadId = useRef(0)
@@ -346,7 +349,7 @@ export function AnimatorWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
   const selectedFrameIndex = animation?.frames.findIndex((frame) => frame.id === selectedFrameId) ?? -1
   const selectedFrame = animation && selectedFrameIndex >= 0 ? animation.frames[selectedFrameIndex] : null
   const currentSnapshot = useMemo<FrameHistoryState>(() => ({ animation, transforms: currentTransforms, joints: currentJoints, frameId: selectedFrameId }), [animation, currentTransforms, currentJoints, selectedFrameId])
-  useEffect(() => { stateRef.current = currentSnapshot }, [currentSnapshot])
+  useLayoutEffect(() => { stateRef.current = currentSnapshot }, [currentSnapshot])
   const dirtyFrame = Boolean(selectedFrame && (JSON.stringify(selectedFrame.transforms) !== JSON.stringify(currentTransforms) || JSON.stringify(selectedFrame.joints) !== JSON.stringify(currentJoints)))
   dirtyFrameRef.current = dirtyFrame
   const totalDuration = animation?.frames.reduce((sum, frame) => sum + frame.durationMs, 0) ?? 0
@@ -568,16 +571,19 @@ export function AnimatorWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
     }
   }, [source, selectedCharacter])
 
-  const persistDraftNow = async (snapshot = animation, targetSlot = activeSlot, editorState = stateRef.current) => {
+  const persistDraftNow = async (snapshot = animation, targetSlot = activeSlot, editorState = stateRef.current, removeMatchingDraftWhenClean = true) => {
     if (!snapshot || !editorState) return
-    if (draftTimer.current) clearTimeout(draftTimer.current)
+    if (draftTimer.current !== null) clearTimeout(draftTimer.current)
+    draftTimer.current = null
     const frame = snapshot.frames.find((item) => item.id === editorState.frameId)
     const stateIsDirty = Boolean(frame && (JSON.stringify(frame.transforms) !== JSON.stringify(editorState.transforms) || JSON.stringify(frame.joints) !== JSON.stringify(editorState.joints)))
     const documentIsDirty = savedAnimationRef.current === null || JSON.stringify(serializeAnimation(snapshot)) !== savedAnimationRef.current || stateIsDirty
     if (!documentIsDirty) {
+      await writeQueue.current
+      if (!removeMatchingDraftWhenClean) return
       const existing = await window.desktop.fabricator.loadAnimatorDraft(snapshot.sourceModelSlot)
       if (existing?.editingSlot === targetSlot) await window.desktop.fabricator.deleteAnimatorDraft(snapshot.sourceModelSlot)
-      setDraft(null)
+      if (mountedRef.current) setDraft(null)
       return
     }
     const serialized = serializeDraft(snapshot, targetSlot, editorState, stateIsDirty)
@@ -586,8 +592,32 @@ export function AnimatorWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
     writeQueue.current = next
     await next
     draftAssetsPersisted.current = true
-    setDraft(serialized)
+    if (mountedRef.current) setDraft(serialized)
   }
+
+  const flushDraftAndQueue = async () => {
+    if (draftTimer.current !== null) clearTimeout(draftTimer.current)
+    draftTimer.current = null
+    const current = stateRef.current
+    const active = current?.animation
+    if (active && current) {
+      await persistDraftNow(active, active.slot, current, false)
+      return
+    }
+    await writeQueue.current
+  }
+  draftFlushRef.current = flushDraftAndQueue
+
+  useEffect(() => {
+    mountedRef.current = true
+    const unregister = registerPendingWriteFlusher(() => draftFlushRef.current())
+    return () => {
+      mountedRef.current = false
+      unregister()
+      if (draftTimer.current !== null) clearTimeout(draftTimer.current)
+      draftTimer.current = null
+    }
+  }, [])
 
   const createAnimation = async () => {
     if (saving) return
@@ -716,9 +746,11 @@ export function AnimatorWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
 
   const saveAnimation = async (): Promise<boolean> => {
     if (!animation || saving) return false
-    if (draftTimer.current) clearTimeout(draftTimer.current)
+    if (draftTimer.current !== null) clearTimeout(draftTimer.current)
+    draftTimer.current = null
     setSaving(true); setError('')
     try {
+      await writeQueue.current.catch(() => undefined)
       let snapshot = animation
       if (dirtyFrame && displayBase && selectedFrame) {
         const thumbnail = await renderThumbnail(displayBase, currentTransforms)
@@ -732,6 +764,7 @@ export function AnimatorWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
       await window.desktop.fabricator.saveAnimatorAnimation(updated.sourceModelSlot, updated.slot, serializeAnimation(updated), assets)
       const savedDraft = await window.desktop.fabricator.loadAnimatorDraft(updated.sourceModelSlot)
       if (savedDraft?.editingSlot === updated.slot) await window.desktop.fabricator.deleteAnimatorDraft(updated.sourceModelSlot)
+      writeQueue.current = Promise.resolve()
       pendingAssets.current = new Map(updated.parts.map((part) => [part.id, part.dataUrl]))
       draftAssetsPersisted.current = false
       savedAnimationRef.current = JSON.stringify(serializeAnimation(updated))
@@ -799,11 +832,14 @@ export function AnimatorWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
 
   const deleteAnimation = async () => {
     if (saving || !animation || !window.confirm(`Excluir a animação “${animation.name}” do slot ${animation.slot}?`)) return
-    if (draftTimer.current) clearTimeout(draftTimer.current)
+    if (draftTimer.current !== null) clearTimeout(draftTimer.current)
+    draftTimer.current = null
     try {
+      await writeQueue.current.catch(() => undefined)
       await window.desktop.fabricator.deleteAnimatorAnimation(animation.sourceModelSlot, animation.slot)
       const savedDraft = await window.desktop.fabricator.loadAnimatorDraft(animation.sourceModelSlot)
       if (savedDraft?.editingSlot === animation.slot) await window.desktop.fabricator.deleteAnimatorDraft(animation.sourceModelSlot)
+      writeQueue.current = Promise.resolve()
       setSummaries((current) => current.filter((item) => item.slot !== animation.slot)); setAnimation(null); setCurrentTransforms({}); setCurrentJoints([]); setSelectedFrameId(''); setSelectedPartId(''); setSaveMessage(''); setDraft(null); savedAnimationRef.current = null
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível excluir a animação.') }
   }
@@ -991,7 +1027,8 @@ export function AnimatorWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
 
   useEffect(() => {
     if (!animation || modelSlot === null || saving) return
-    if (draftTimer.current) clearTimeout(draftTimer.current)
+    if (draftTimer.current !== null) clearTimeout(draftTimer.current)
+    draftTimer.current = null
     const snapshot = animation
     const editorState = stateRef.current ?? { animation, transforms: currentTransforms, joints: currentJoints, frameId: selectedFrameId }
     const frame = snapshot.frames.find((item) => item.id === editorState.frameId)
@@ -1002,11 +1039,14 @@ export function AnimatorWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
     const assets: AnimatorAnimationAsset[] = draftAssetsPersisted.current ? [] : snapshot.parts.flatMap((part) => pendingAssets.current.has(part.id) ? [{ id: part.id, dataUrl: pendingAssets.current.get(part.id)! }] : [])
     setSaveMessage(dirtyFrame ? 'Frame alterado · rascunho automático' : 'Rascunho automático')
     draftTimer.current = setTimeout(() => {
+      draftTimer.current = null
       const next = writeQueue.current.catch(() => undefined).then(() => window.desktop.fabricator.saveAnimatorDraft(snapshot.sourceModelSlot, serialized, assets))
       writeQueue.current = next
-      void next.then(() => { draftAssetsPersisted.current = true; setDraft(serialized) }).catch((reason: unknown) => setError(reason instanceof Error ? `Não foi possível salvar o rascunho: ${reason.message}` : 'Não foi possível salvar o rascunho.'))
+      void next.then(() => { draftAssetsPersisted.current = true; if (mountedRef.current) setDraft(serialized) }).catch((reason: unknown) => {
+        if (mountedRef.current) setError(reason instanceof Error ? `Não foi possível salvar o rascunho: ${reason.message}` : 'Não foi possível salvar o rascunho.')
+      })
     }, 350)
-    return () => { if (draftTimer.current) clearTimeout(draftTimer.current) }
+    return () => { if (draftTimer.current !== null) clearTimeout(draftTimer.current); draftTimer.current = null }
   }, [animation, activeSlot, currentTransforms, currentJoints, selectedFrameId, dirtyFrame, modelSlot, saving])
 
   useEffect(() => {
@@ -1018,21 +1058,6 @@ export function AnimatorWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
     }
     window.addEventListener('keydown', onKeyDown); return () => window.removeEventListener('keydown', onKeyDown)
   }, [animation, dirtyFrame, undoStack, redoStack, currentTransforms, currentJoints, saving])
-
-  useEffect(() => () => {
-    if (draftTimer.current) clearTimeout(draftTimer.current)
-    const current = stateRef.current
-    const active = current?.animation
-    if (active) {
-      const frame = active.frames.find((item) => item.id === current!.frameId)
-      const frameIsDirty = Boolean(frame && (JSON.stringify(frame.transforms) !== JSON.stringify(current!.transforms) || JSON.stringify(frame.joints) !== JSON.stringify(current!.joints)))
-      const documentIsDirty = savedAnimationRef.current === null || JSON.stringify(serializeAnimation(active)) !== savedAnimationRef.current || frameIsDirty || dirtyFrameRef.current
-      if (!documentIsDirty) return
-      const serialized = serializeDraft(active, active.slot, current!, dirtyFrameRef.current)
-      const assets = active.parts.flatMap((part) => pendingAssets.current.has(part.id) ? [{ id: part.id, dataUrl: pendingAssets.current.get(part.id)! }] : [])
-      void window.desktop.fabricator.saveAnimatorDraft(active.sourceModelSlot, serialized, assets).catch(() => undefined)
-    }
-  }, [])
 
   const stageScale = scale
   const frameSeconds = (milliseconds: number) => `${(milliseconds / 1000).toFixed(2)}s`

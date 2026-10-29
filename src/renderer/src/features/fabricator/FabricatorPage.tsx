@@ -35,6 +35,7 @@ import { connectBodyContourJoints } from './models/contourJoints'
 import { isValidSkinTone } from '../../../../shared/skinTones'
 import { ModelAppearanceProvider } from './ModelAppearanceContext'
 import { useFabricatorModelAppearance } from './useFabricatorModelAppearance'
+import { flushPendingRendererWrites } from '../../ui/pendingPersistence'
 
 const sections: { id: string; label: string; icon: IconName }[] = [
   { id: 'Modelos', label: 'Modelos Dev', icon: 'sparkles' }, { id: 'Poses', label: 'Poses Dev', icon: 'expand' }, { id: 'Roupas', label: 'Roupas Dev', icon: 'shirt' }, { id: 'Olhos', label: 'Olhos Dev', icon: 'face' }, { id: 'Rosto', label: 'Rosto Dev', icon: 'face' }, { id: 'Preset Expressão Dev', label: 'Preset Expressão Dev', icon: 'face' }, { id: 'Animador Rosto Dev', label: 'Animador Rosto Dev', icon: 'face' }, { id: 'Cabeças extra', label: 'Cabeças extra dev', icon: 'face' }, { id: 'Cabelos Dev', label: 'Cabelos Dev', icon: 'bow' }, { id: 'Animador Dev', label: 'Animador Dev', icon: 'body' }, { id: 'Design Dev', label: 'Design Dev', icon: 'flower' }
@@ -928,7 +929,12 @@ export function FabricatorPage() {
         </div>
         <nav className="fabricator-section-list" aria-label="Seções do Fabricador Dev">
           {sections.map((section) => (
-            <button aria-pressed={activeSection === section.id} className={`fabricator-section-button${activeSection === section.id ? ' active' : ''}`} key={section.id} onClick={() => { setActiveSection(section.id); setAppearanceTargetSlot(activeSlot); if (section.id !== 'Modelos') { setThighDeformationActive(false); setTemporaryThighDeformationIds(new Set()) } }} disabled={Boolean(slots[activeSlot - 1]?.recoveryRequired) && section.id !== 'Modelos'} title={slots[activeSlot - 1]?.recoveryRequired && section.id !== 'Modelos' ? 'Resolva a recuperação pendente do slot antes de abrir esta área.' : undefined} type="button">
+            <button aria-pressed={activeSection === section.id} className={`fabricator-section-button${activeSection === section.id ? ' active' : ''}`} key={section.id} onClick={() => {
+              void flushPendingRendererWrites().then(() => {
+                setActiveSection(section.id); setAppearanceTargetSlot(activeSlot)
+                if (section.id !== 'Modelos') { setThighDeformationActive(false); setTemporaryThighDeformationIds(new Set()) }
+              }).catch((reason: unknown) => setError(reason instanceof Error ? `Não foi possível salvar antes de trocar de área: ${reason.message}` : 'Não foi possível salvar antes de trocar de área.'))
+            }} disabled={Boolean(slots[activeSlot - 1]?.recoveryRequired) && section.id !== 'Modelos'} title={slots[activeSlot - 1]?.recoveryRequired && section.id !== 'Modelos' ? 'Resolva a recuperação pendente do slot antes de abrir esta área.' : undefined} type="button">
               <Icon name={section.icon} /><span>{section.label}</span>
             </button>
           ))}
