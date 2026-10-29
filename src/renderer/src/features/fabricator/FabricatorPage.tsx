@@ -11,7 +11,8 @@ import { splitImage, mergeImages } from './models/partImages'
 import { createImportedModelProject } from './models/processedModelProject'
 import { startChromaAdjustWorker, ChromaAdjustTaskError, type ChromaAdjustTask } from './models/runChromaAdjustWorker'
 import { startImageProcessorWorker, ImageProcessorTaskError, type ImageProcessorTask } from './models/runImageProcessorWorker'
-import { paintSeamMixerSegment as applySeamMixerSegment, type SeamMixerSurface } from './models/seamMixer'
+import { paintSeamMixerSegment as applySeamMixerSegment } from './models/seamMixer'
+import { BoundedSeamMixerSurfaceCache } from './models/seamMixerSurfaceCache'
 import { serializeFabricatorProject } from './models/projectSerialization'
 import { createFabricatorProjectSaveCoordinator } from './projectSaveCoordinator'
 import { useFabricatorHistory } from './useFabricatorHistory'
@@ -106,7 +107,7 @@ export function FabricatorPage() {
   const panRef = useRef<PanState | null>(null)
   const mixerStrokeRef = useRef<MixerStrokeState | null>(null)
   const mixerTouchedRef = useRef<Map<string, Uint8Array>>(new Map())
-  const mixerSurfacesRef = useRef<Map<string, SeamMixerSurface>>(new Map())
+  const mixerSurfacesRef = useRef(new BoundedSeamMixerSurfaceCache())
   const mixerQueueRef = useRef<Promise<void>>(Promise.resolve())
   const mixerSessionRef = useRef(0)
   const layerDragRef = useRef<string | null>(null)
@@ -749,20 +750,24 @@ export function FabricatorPage() {
   }
 
   const paintMixerSegment = async (fromX: number, fromY: number, toX: number, toY: number, touchedPixels: Map<string, Uint8Array>, session: number) => {
-    if (!project || !scale || session !== mixerSessionRef.current) return
+    const currentProject = projectRef.current
+    if (!currentProject || !scale || session !== mixerSessionRef.current) return
     const stage = stageRef.current
     if (!stage) return
     const stageBounds = stage.getBoundingClientRect()
+    const hiddenParts = new Set(currentProject.hiddenPartIds ?? [])
+    const candidates = orderedParts(currentProject.parts, currentProject.layerOrder).reverse()
+      .filter((part) => !hiddenParts.has(part.id))
     const changedAssets = await applySeamMixerSegment({
       fromX,
       fromY,
       toX,
       toY,
-      projectSize: project,
+      projectSize: currentProject,
       scale,
       pan,
       stageBounds,
-      candidates: frontToBackLayers.filter((part) => !hiddenPartIds.includes(part.id)),
+      candidates,
       touchedPixels,
       surfaces: mixerSurfacesRef.current,
       session,

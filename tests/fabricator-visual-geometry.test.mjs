@@ -1,7 +1,9 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
 import { selectOriginalModelSource, selectMountedModelSource } from '../src/shared/fabricatorModelViews.ts'
 import { interpolateFrames } from '../src/renderer/src/features/fabricator/models/animationInterpolation.ts'
+import { BoundedSeamMixerSurfaceCache } from '../src/renderer/src/features/fabricator/models/seamMixerSurfaceCache.ts'
 
 /** Rasterizador sintético de caixas, não screenshots do Canvas/Electron.
  * Captura geometria e ordem de composição sem introduzir motor de render paralelo.
@@ -75,4 +77,42 @@ test('animação interpola cabeça e tronco sem alterar o PNG original ou catál
  assert.equal(mid.transforms.head.rotation,360)
  assert.equal(model.parts[1].x,5)
  assert.equal(selectOriginalModelSource(model).parts[1].x,1)
+})
+
+test('cache do Misturador aplica LRU, limite de bytes e contabilidade correta',()=>{
+ const cache=new BoundedSeamMixerSurfaceCache(2,24)
+ const surface=(width,height)=>({canvas:{width,height},context:{}})
+
+ cache.set('a',surface(3,1))
+ cache.set('b',surface(3,1))
+ assert.equal(cache.estimatedRetainedBytes,24)
+ assert.equal(cache.get('a')?.canvas.width,3,'leitura promove a entrada mais recente')
+ cache.set('c',surface(3,1))
+ assert.equal(cache.has('a'),true)
+ assert.equal(cache.has('b'),false,'a entrada menos usada sai primeiro')
+ assert.equal(cache.has('c'),true)
+ assert.equal(cache.estimatedRetainedBytes,24)
+
+ cache.set('a',surface(1,1))
+ assert.equal(cache.estimatedRetainedBytes,16,'substituição remove a contagem anterior')
+ cache.set('too-large',surface(4,4))
+ assert.equal(cache.has('too-large'),false,'uma superfície maior que o orçamento não é retida')
+ assert.equal(cache.estimatedRetainedBytes,16)
+
+ cache.delete('c')
+ assert.equal(cache.estimatedRetainedBytes,4)
+ cache.clear()
+ assert.equal(cache.estimatedRetainedBytes,0)
+ assert.equal(cache.size,0)
+})
+
+test('Misturador usa o canvas local mesmo se o limite retirar a superfície do cache',async()=>{
+ const source=await readFile('src/renderer/src/features/fabricator/models/seamMixer.ts','utf8')
+ const page=await readFile('src/renderer/src/features/fabricator/FabricatorPage.tsx','utf8')
+ assert.match(source,/const surfacesForSegment = new Map<string, SeamMixerSurface>/)
+ assert.match(source,/let surface = surfacesForSegment\.get\(part\.id\) \?\? surfaces\.get\(part\.id\)/)
+ assert.match(source,/surfacesForSegment\.get\(partId\)/)
+ assert.match(page,/useRef\(new BoundedSeamMixerSurfaceCache\(\)\)/)
+ assert.match(page,/const currentProject = projectRef\.current/)
+ assert.match(page,/orderedParts\(currentProject\.parts, currentProject\.layerOrder\)\.reverse\(\)/)
 })

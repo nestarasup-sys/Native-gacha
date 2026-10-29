@@ -1,7 +1,7 @@
 import type { ModelPart } from '../../../../../shared/fabricator'
 import { loadImageFromDataUrl } from './imageData'
-
-export type SeamMixerSurface = { canvas: HTMLCanvasElement; context: CanvasRenderingContext2D }
+import type { SeamMixerSurface } from './seamMixerSurfaceCache'
+export type { SeamMixerSurface } from './seamMixerSurfaceCache'
 
 type SeamMixerSegmentInput = {
   fromX: number
@@ -38,9 +38,10 @@ export async function paintSeamMixerSegment({
   if (!scale || session !== getCurrentSession()) return null
 
   const imageDataById = new Map<string, ImageData>()
+  const surfacesForSegment = new Map<string, SeamMixerSurface>()
   const affectedParts = new Map<string, ModelPart>()
   const getImageData = async (part: ModelPart) => {
-    let surface = surfaces.get(part.id)
+    let surface = surfacesForSegment.get(part.id) ?? surfaces.get(part.id)
     if (!surface) {
       const image = await loadImageFromDataUrl(part.dataUrl, 'Não foi possível abrir o recorte.')
       if (session !== getCurrentSession()) return null
@@ -52,6 +53,7 @@ export async function paintSeamMixerSegment({
       surface = { canvas, context }
       surfaces.set(part.id, surface)
     }
+    surfacesForSegment.set(part.id, surface)
     let imageData = imageDataById.get(part.id)
     if (!imageData) {
       imageData = surface.context.getImageData(0, 0, surface.canvas.width, surface.canvas.height)
@@ -153,7 +155,7 @@ export async function paintSeamMixerSegment({
   if (session !== getCurrentSession() || affectedParts.size === 0) return null
   const changedAssets = new Map<string, string>()
   for (const [partId] of affectedParts) {
-    const surface = surfaces.get(partId)
+    const surface = surfacesForSegment.get(partId)
     const imageData = imageDataById.get(partId)
     if (!surface || !imageData) continue
     surface.context.putImageData(imageData, 0, 0)

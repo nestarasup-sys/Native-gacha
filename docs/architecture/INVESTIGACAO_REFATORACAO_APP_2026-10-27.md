@@ -1453,3 +1453,11 @@ Continua a auditoria das operações IPC iniciadas pelo usuário e da cobertura 
 - A normalização reutiliza `mapConcurrentItems` com limite de três leituras/recortes simultâneos. Antes, `Promise.all` iniciava o recorte de todos os personagens da cena de uma vez. A ordem dos efeitos foi preservada, e a regra pura de seleção continua em `studioCharacterRefreshModel.ts`.
 - A extração reduziu `StudioPage.tsx` de 1.092 para 975 linhas. Não mudou a persistência do documento, os IDs de assets/personagens, o IPC nem o algoritmo de composição facial.
 - Testes focados verificam as barreiras entre página e hook, o uso do limitador e continuidade Studio/Customizador; 31 testes de Studio, assets e persistência passaram. Também passaram `npm run test:refactor`, `npm run typecheck`, `npm run build`, `npm run audit:architecture` e `git diff --check`.
+
+## 94. Etapa aplicada — memória do Misturador do Fabricador limitada
+
+- O Misturador mantinha um canvas RGBA para cada peça tocada até trocar de modelo. Como a quantidade e a resolução das peças variam, esse `Map` podia reter dezenas ou centenas de MiB e continuar segurando canvases de peças removidas.
+- `BoundedSeamMixerSurfaceCache` agora aplica LRU com teto de 24 entradas e 48 MiB estimados por `largura × altura × 4`. Superfícies maiores que o orçamento atendem o traço atual sem entrar no cache; canvases descartados são recarregados do PNG atual do projeto quando necessários.
+- Cada segmento mantém referências locais aos canvases usados até terminar, então uma entrada removida durante a execução ainda recebe os pixels modificados do traço. A página resolve peças, visibilidade e ordem de camadas a partir do projeto mais recente antes de iniciar o segmento, evitando recarregar uma imagem antiga após uma expulsão do cache.
+- O limite cobre apenas canvases persistentes do cache; buffers temporários `ImageData` de um traço ainda dependem das peças que ele examina. Não houve alteração no algoritmo visual do pincel, nos assets salvos ou na persistência.
+- Testes cobrem LRU, orçamento de bytes, substituição, descarte de superfícies grandes, limpeza da contabilidade e o caminho de uso do canvas durante uma expulsão. Typecheck, build, auditoria de arquitetura, suíte `test:refactor` e `git diff --check` passaram.
