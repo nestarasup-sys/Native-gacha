@@ -34,7 +34,15 @@ async function main() {
   project = editEditorV6BackgroundAtFrame(project, 30, { backgroundColor: '#0000ff' })
   project = editEditorV6BackgroundAtFrame(project, 45, { backgroundColor: '#00ff00' })
   project.exportAudio = [{ id: randomUUID(), fileName: `${randomUUID()}.wav`, name: 'Tone', sourceFrames: 120, sourceInFrame: 5, startFrame: 10, durationFrames: 80, gain: .75, muted: false }]
-  const factory = createEditorV6WorkerFactory({ ipcMain, html: join(root, 'out/renderer/editor-v6-export.html'), preload: join(root, 'out/preload/editorV6ExportPreload.cjs'), mediaPath: (_projectId, fileName, libraryVideoId) => join(folder, libraryVideoId ? 'library' : 'media', fileName) })
+  const inspected = new Set<number>()
+  const factory = createEditorV6WorkerFactory({ ipcMain, html: join(root, 'out/renderer/editor-v6-export.html'), preload: join(root, 'out/preload/editorV6ExportPreload.cjs'), mediaPath: (_projectId, fileName, libraryVideoId) => join(folder, libraryVideoId ? 'library' : 'media', fileName), inspectCapture: process.env.GACHA_EXPORT_CAPTURE_DIAGNOSTICS === '1' ? async ({ window, frame, bitmap }) => {
+    if (inspected.has(window.webContents.id)) return
+    inspected.add(window.webContents.id)
+    let yellowPixels = 0
+    for (let offset = 0; offset < bitmap.length; offset += 4) if (bitmap[offset] < 80 && bitmap[offset + 1] > 120 && bitmap[offset + 2] > 180) yellowPixels++
+    const dom = await window.webContents.executeJavaScript(`({ viewport: [innerWidth, innerHeight, devicePixelRatio], bounds: document.querySelector('svg')?.getBoundingClientRect().toJSON(), background: document.querySelector('svg rect')?.getAttribute('fill'), images: Array.from(document.querySelectorAll('svg image')).map(image => ({ x: image.getAttribute('x'), y: image.getAttribute('y'), width: image.getAttribute('width'), height: image.getAttribute('height'), transform: image.parentElement.getAttribute('transform'), source: image.getAttribute('href') })), svg: document.querySelector('svg')?.getAttribute('viewBox') })`)
+    await writeFile(join(folder, `capture-${window.webContents.id}.json`), JSON.stringify({ frame, yellowPixels, dom }))
+  } : undefined })
   let active = 0, peak = 0
   const makeWorker = async (signal: AbortSignal, width = 320, height = 180, renderProject = project, layeredVideo = false) => {
     active++; peak = Math.max(peak, active)

@@ -5,11 +5,13 @@ import { fileURLToPath } from 'node:url'
 import { editorV6WorkerChannels, type EditorV6FrameTimings, type EditorV6RenderFrameResult, type EditorV6WorkerPayload } from '../../../src/shared/editorV6Export'
 import { waitForExport } from './exportProcess'
 import { restrictRendererNavigation } from '../../windowNavigation'
+import { exportBitmap } from './exportBitmap'
 
 export type EditorV6FrameWorker = { frame: (frame: number) => Promise<EditorV6RenderFrameResult & { bitmap?: Buffer }>; close: () => void }
-export function createEditorV6WorkerFactory(deps: { ipcMain: Pick<IpcMain, 'handle' | 'removeHandler'>; html: string; preload: string; devUrl?: string; mediaPath?: (projectId: string, fileName: string, libraryVideoId?: string) => string | Promise<string> }) {
+export function createEditorV6WorkerFactory(deps: { ipcMain: Pick<IpcMain, 'handle' | 'removeHandler'>; html: string; preload: string; devUrl?: string; mediaPath?: (projectId: string, fileName: string, libraryVideoId?: string) => string | Promise<string>; inspectCapture?: (capture: { window: BrowserWindow; frame: number; bitmap: Buffer }) => Promise<void> }) {
   const entries = new Map<number, { payload: EditorV6WorkerPayload; ready: (error?: string) => void }>()
   const activeWorkers = new Set<() => void>()
+  const retiredWorkers = new Set<number>()
   let disposed = false
   function entry(event: Electron.IpcMainInvokeEvent) {
     const found = entries.get(event.sender.id)
@@ -17,7 +19,10 @@ export function createEditorV6WorkerFactory(deps: { ipcMain: Pick<IpcMain, 'hand
     return found
   }
   deps.ipcMain.handle(editorV6WorkerChannels.payload, (event) => entry(event).payload)
-  deps.ipcMain.handle(editorV6WorkerChannels.ready, (event, error?: string) => entry(event).ready(error))
+  deps.ipcMain.handle(editorV6WorkerChannels.ready, (event, error?: string) => {
+    if (retiredWorkers.has(event.sender.id) && event.senderFrame === event.sender.mainFrame) return
+    return entry(event).ready(error)
+  })
   const create = async (payload: EditorV6WorkerPayload, signal: AbortSignal): Promise<EditorV6FrameWorker> => {
     signal.throwIfAborted()
     if (disposed) throw Error('A fábrica de renderizadores de exportação foi encerrada.')
@@ -59,6 +64,8 @@ export function createEditorV6WorkerFactory(deps: { ipcMain: Pick<IpcMain, 'hand
       closed = true
       activeWorkers.delete(close)
       entries.delete(id)
+      retiredWorkers.add(id)
+      while (retiredWorkers.size > 128) retiredWorkers.delete(retiredWorkers.values().next().value!)
       layeredBitmap = undefined
       signal.removeEventListener('abort', close)
       rejectReady(Error('A janela de exportação foi fechada.'))
@@ -83,9 +90,10 @@ export function createEditorV6WorkerFactory(deps: { ipcMain: Pick<IpcMain, 'hand
         if (result.reused) return result
         const capture = async () => {
           const started = performance.now()
-          let image = await waitForExport(window.webContents.capturePage({ x: 0, y: 0, width: payload.width, height: payload.height }), signal, 60000, 'capturar quadro')
-          image = image.resize({ width: payload.width, height: payload.height, quality: 'best' })
-          return { bitmap: image.toBitmap({ scaleFactor: 1 }), elapsedMs: performance.now() - started }
+          const image = await waitForExport(window.webContents.capturePage({ x: 0, y: 0, width: payload.width, height: payload.height }), signal, 60000, 'capturar quadro')
+          const bitmap = exportBitmap(image, payload.width, payload.height)
+          await deps.inspectCapture?.({ window, frame, bitmap })
+          return { bitmap, elapsedMs: performance.now() - started }
         }
         if (!layeredVideo) {
           const captured = await capture()

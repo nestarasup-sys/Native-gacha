@@ -2,6 +2,14 @@
 
 ## Reauditoria geral — 2026-10-29
 
+### Rodada ampliada — captura nativa e cancelamento
+
+- Instrumentação opt-in `GACHA_EXPORT_CAPTURE_DIAGNOSTICS=1` grava a primeira captura por worker em fixture temporária: viewport, bounds SVG, fonte e posição das imagens, contagem de pixels. A reprodução mostrou DOM correto com superfície praticamente branca (um pixel de fundo correto). Aguardar SVG ou trocar por paint/invalidate não corrigiu; essas tentativas foram removidas.
+- `exportBitmap` materializa o bitmap nativo antes de transformar e evita resize quando tamanho e quantidade de bytes já correspondem à saída. A política anterior redimensionava toda captura mesmo no mesmo tamanho. O fallback continua validando o tamanho BGRA antes de enviar ao FFmpeg. Não há afirmação de uma causa interna específica do Chromium; a correção do caminho é sustentada por regressão reproduzida antes e cinco execuções completas consecutivas aprovadas depois, com diagnóstico desligado.
+- `ready` tardio de um worker já encerrado passa a ser ignorado somente para IDs conhecidos e mainFrame correspondente, em inventário limitado a 128 IDs. Remetentes desconhecidos continuam rejeitados; payload de worker fechado continua sem autorização.
+- Novas regressões cobrem pixels nativos sem resampling, ordem de materialização no fallback, tamanho inválido e distinção entre ready tardio e remetente desconhecido. Passaram 108 testes Editor V6 (um ignorado existente), 330 de refatoração, typecheck, auditoria e build.
+- Cinco rodadas reais completas: 81 quadros/78 reaproveitados na fixture estática, pico de dois workers, áudio contínuo, destino preservado ao cancelar, recuperação induzida, quadro único, 1080p e transição na emenda. Sem perfis pessoais. Precisão geométrica do viewport 1080p ainda precisa de verificação específica: foi observado screenshot nativo de 1920×1032 no monitor local, convertido pelo fallback para 1920×1080.
+
 ### Validação Electron integrada e falha intermitente aberta
 
 - Executados em perfis temporários: check-motion passou (7 amostras, 90.000 pixels de atlas); motion-service passou com reutilização de janela/cache, recuperação de cancelamento e agendamento em background. Raster SHA256: 79db53ee3662e72a5bb737ed9fb0eb72e391ce74945c9681bb2fcb56b5aacdd2. Avisos de GPU apareceram ao finalizar check-motion; o processo encerrou com código zero.

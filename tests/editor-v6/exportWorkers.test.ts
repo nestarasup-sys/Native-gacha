@@ -45,6 +45,8 @@ describe('export worker lifecycle', () => {
     window.destroy()
     expect(remove).toHaveBeenCalledWith('abort', expect.any(Function))
     expect(() => handlers.get(editorV6WorkerChannels.payload)!({ sender: window.webContents, senderFrame: window.webContents.mainFrame })).toThrow('não autorizado')
+    expect(() => handlers.get(editorV6WorkerChannels.ready)!({ sender: window.webContents, senderFrame: window.webContents.mainFrame })).not.toThrow()
+    expect(() => handlers.get(editorV6WorkerChannels.ready)!({ sender: { id: 999, mainFrame: {} }, senderFrame: {} })).toThrow('não autorizado')
     await expect(worker.frame(0)).rejects.toThrow('encerrado')
     worker.close()
     factory.dispose()
