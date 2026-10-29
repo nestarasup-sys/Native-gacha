@@ -21,6 +21,7 @@ import { useCustomizerInitialArtworkPreview } from './useCustomizerInitialArtwor
 import { useCustomizerFacePreview } from './useCustomizerFacePreview'
 import { useCustomizerFaceCatalog } from './useCustomizerFaceCatalog'
 import { useCustomizerHairPreview } from './useCustomizerHairPreview'
+import { useCustomizerHairCatalog } from './useCustomizerHairCatalog'
 import { useCustomizerWardrobePreview } from './useCustomizerWardrobePreview'
 import { useCustomizerWardrobeAdjustment } from './useCustomizerWardrobeAdjustment'
 import { useCustomizerWardrobePanelActions } from './useCustomizerWardrobePanelActions'
@@ -335,24 +336,14 @@ export function CustomizerPage() {
     setFaceLoading, setFaceComponentLoading, setCatalogError
   })
 
-  useEffect(() => {
-    if (selectedCatalogModelSlot === null || !(activeModule === 'Cabelos' || activeModule === 'Cabeça' && headPanelTab === 'hair')) { setHairStyles([]); return }
-    let cancelled = false
-    setHairLoading(true)
-    void window.desktop.fabricator.listHairStyles(selectedCatalogModelSlot).then(async (summaries) => {
-      const styles = await Promise.all(summaries.map((summary) => window.desktop.fabricator.loadHairStyle(selectedCatalogModelSlot, summary.id)))
-      if (cancelled) return
-      setHairStyles(summaries)
-      setHairDetails((current) => {
-        const next = { ...current }
-        for (const style of styles) if (style) next[`${selectedCatalogModelSlot}:${style.id}`] = style
-        return next
-      })
-    }).catch((reason: unknown) => {
-      if (!cancelled) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível carregar o catálogo de cabelos.')
-    }).finally(() => { if (!cancelled) setHairLoading(false) })
-    return () => { cancelled = true }
-  }, [activeModule, headPanelTab, selectedCatalogModelSlot])
+  useCustomizerHairCatalog({
+    active: activeModule === 'Cabelos' || activeModule === 'Cabeça' && headPanelTab === 'hair',
+    selectedModelSlot: selectedCatalogModelSlot,
+    setHairStyles,
+    setHairDetails,
+    setHairLoading,
+    setCatalogError
+  })
 
   useCustomizerFacePreview({
     appearance: characterFaceAppearance,

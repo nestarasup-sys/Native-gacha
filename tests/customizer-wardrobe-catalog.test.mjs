@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { loadCustomizerWardrobeCatalog } from '../src/renderer/src/features/customizer/customizerWardrobeCatalog.ts'
+import { loadCustomizerHairDetails } from '../src/renderer/src/features/customizer/customizerHairCatalog.ts'
 
 const summary = (id) => ({ id, modelSlot: 1, modelName: 'Modelo', name: id, updatedAt: '2026-10-29T00:00:00.000Z', edition: 2, componentCount: 1 })
 const set = (id, category) => ({
@@ -129,6 +130,50 @@ test('página do Customizador delega a carga de detalhes e miniaturas ao hook da
   assert.doesNotMatch(page, /listWardrobeSets\(|loadWardrobeSet\(|renderWardrobeThumbnail\(/)
   assert.match(hook, /listWardrobeSets\(selectedModelSlot\)/)
   assert.match(hook, /loadCustomizerWardrobeCatalog\(/)
+  assert.match(loader, /concurrency = 3/)
+  assert.match(loader, /mapConcurrentItems\(/)
+})
+
+test('detalhes dos cabelos têm concorrência limitada, ordem estável e cancelamento', async () => {
+  const summaries = Array.from({ length: 10 }, (_, index) => ({ id: `hair-${index}` }))
+  let active = 0
+  let maximumActive = 0
+  const details = await loadCustomizerHairDetails(summaries, () => false, async (id) => {
+    active += 1
+    maximumActive = Math.max(maximumActive, active)
+    await new Promise((resolve) => setTimeout(resolve, 2))
+    active -= 1
+    return id === 'hair-4' ? null : { id }
+  })
+
+  assert.equal(maximumActive, 3)
+  assert.deepEqual(details.map((style) => style.id), ['hair-0', 'hair-1', 'hair-2', 'hair-3', 'hair-5', 'hair-6', 'hair-7', 'hair-8', 'hair-9'])
+
+  let cancelled = false
+  const started = []
+  const releases = []
+  const task = loadCustomizerHairDetails(summaries, () => cancelled, async (id) => {
+    started.push(id)
+    await new Promise((resolve) => releases.push(resolve))
+    return { id }
+  })
+  assert.deepEqual(started, ['hair-0', 'hair-1', 'hair-2'])
+  cancelled = true
+  releases.forEach((release) => release())
+  assert.deepEqual(await task, [])
+  assert.deepEqual(started, ['hair-0', 'hair-1', 'hair-2'])
+})
+
+test('Customizador delega o catálogo de cabelos ao hook e ao carregador limitado', async () => {
+  const [page, hook, loader] = await Promise.all([
+    readFile('src/renderer/src/features/customizer/CustomizerPage.tsx', 'utf8'),
+    readFile('src/renderer/src/features/customizer/useCustomizerHairCatalog.ts', 'utf8'),
+    readFile('src/renderer/src/features/customizer/customizerHairCatalog.ts', 'utf8')
+  ])
+  assert.match(page, /useCustomizerHairCatalog\(/)
+  assert.doesNotMatch(page, /Promise\.all\(summaries\.map\(\(summary\) => window\.desktop\.fabricator\.loadHairStyle/)
+  assert.match(hook, /listHairStyles\(selectedModelSlot\)/)
+  assert.match(hook, /loadCustomizerHairDetails\(/)
   assert.match(loader, /concurrency = 3/)
   assert.match(loader, /mapConcurrentItems\(/)
 })

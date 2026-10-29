@@ -1276,3 +1276,11 @@ Continua a auditoria das operações IPC iniciadas pelo usuário e da cobertura 
 - `main.ts` fornece adaptadores de filesystem, bibliotecas e caminhos como composition root. Não mudaram esquemas, origens válidas, IDs, autorização, política de cache, IPC, preload nem contratos do renderer; o arquivo principal caiu de 1.223 para 1.176 linhas.
 - Teste Node usa arquivos sintéticos em pasta temporária para confirmar os quatro registros, cabeçalhos e leitura de faixa, associações do Editor V6, rejeição de origem/rota inválida e limpeza da fixture.
 - Verificação: `npm run test:refactor` passou com 454 testes; `npm test` com 29; `npm run test:editor-v6` com 140 testes e 1 ignorado, mais os 3 testes do perfil sintético. Também passaram typecheck, auditoria de arquitetura (430 arquivos TS/TSX, sem violações), build, auditoria de orçamento estático (nenhum arquivo acima do limite) e `git diff --check`.
+
+## 72. Etapa aplicada — leituras de cabelos limitadas no Customizador
+
+- Ao abrir a área de cabelos, o Customizador lia os resumos e disparava `loadHairStyle` para todos os itens em um único `Promise.all`. Uma biblioteca maior podia iniciar muitas leituras de PNG ao mesmo tempo.
+- `useCustomizerHairCatalog.ts` agora coordena ativação, troca de slot, cancelamento e erro. `customizerHairCatalog.ts` usa a fila compartilhada com teto de três leituras, mantém a ordem das respostas e ignora detalhes ausentes sem remover seus resumos. A página deixou de conter a regra de carregamento e caiu de 1.149 para 1.140 linhas.
+- A lista de cabelos e a composição do preview continuam iguais. O carregamento ainda busca os detalhes completos do catálogo ativo e os guarda no mapa de estado existente; esta etapa limita a concorrência transitória, mas não aplica limite de bytes nem elimina detalhes antigos da memória.
+- Testes sintéticos com dez itens confirmam pico de três leituras, ordem, item sem detalhe e cancelamento antes de iniciar novos itens. Um teste estrutural confirma a delegação ao hook.
+- Verificação: `npm run test:refactor` passou com 456 testes; `npm test` com 29; `npm run test:editor-v6` com 140 testes e 1 ignorado, mais os 3 testes do perfil sintético. Também passaram typecheck, auditoria de arquitetura (432 arquivos TS/TSX, sem violações), build, auditoria de orçamento estático (nenhum arquivo acima do limite) e `git diff --check`.
