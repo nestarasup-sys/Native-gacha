@@ -1,10 +1,10 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import type { EditorV6Document, EditorV6Element, EditorV6Timeline as Timeline, EditorV6TimelineBlock as Block, EditorV6TimelineTrack as Track } from '../../../../shared/editorV6'
-import { editorV6MotionPlan } from '../../../../shared/editorV6Motion'
 import { EDITOR_V6_DEFAULT_BLOCK_FRAMES, orderEditorV6TimelineTracks, videoCharacterTrackColor } from '../../../../shared/editorV6'
 import { editorV6ClipAtFrame, frameTimecode, MAX_TIMELINE_FRAME, normalizeEditorV6Timeline, timelineClips } from '../../../../shared/editorV6TimelineCore'
 import { duplicateEditorV6Block, pruneEditorV6TimelineSnapshots, setEditorV6BlockTiming, snapEditorV6Frame, splitEditorV6Block } from '../../../../shared/editorV6TimelineEdits'
 import { useEditorV6PlaybackFrame } from './editorV6PlaybackClock'
+import { editorV6VisibleMotionPlans } from './editorV6VisibleMotionPlans'
 
 type Props = {
   document: EditorV6Document
@@ -49,7 +49,7 @@ const TimelineRows = memo(function TimelineRows({ timeline, pps, width, heading,
     return rows
   }, [timeline])
   const sortedTracks = useMemo(() => new Map(displayRows.map(({ key, blocks }) => [key, [...blocks].sort((a, b) => a.startFrame - b.startFrame)])), [displayRows])
-  const transitions = useMemo(() => new Map(displayRows.map(({ key, track }) => { const blocks = sortedTracks.get(key)!; return [key, blocks.slice(1).flatMap((next, i) => { const plan = editorV6MotionPlan(track, blocks[i], next); return plan ? [plan] : [] })] })), [displayRows, sortedTracks])
+  const transitions = useMemo(() => new Map(displayRows.map(({ key, track }) => [key, editorV6VisibleMotionPlans(track, sortedTracks.get(key)!, range)])), [displayRows, sortedTracks, range])
   const [renameId, setRenameId] = useState<string | null>(null)
   const canMoveTrack = (index: number, direction: -1 | 1) => {
     if (fixedBottomTrack(displayRows[index].track)) return false
@@ -71,7 +71,7 @@ const TimelineRows = memo(function TimelineRows({ timeline, pps, width, heading,
       </div>}
     </div>
     <div className="editor-v6-timeline-lane" style={{ width, backgroundSize: `${pps}px 100%` }} onPointerDown={onScrub}>
-      {transitions.get(key)!.filter((plan) => plan.startFrame <= range[1] && plan.endFrame >= range[0]).map((plan) => <i key={`motion-${plan.blockId}`} className="v6-motion-range" style={{ left: plan.startFrame / 30 * pps, width: (plan.endFrame - plan.startFrame) / 30 * pps }} />)}
+      {transitions.get(key)!.map((plan) => <i key={`motion-${plan.blockId}`} className="v6-motion-range" style={{ left: plan.startFrame / 30 * pps, width: (plan.endFrame - plan.startFrame) / 30 * pps }} />)}
       {sortedTracks.get(key)!.filter((block) => block.startFrame <= range[1] && block.startFrame + block.durationFrames >= range[0]).map((block) => <div key={block.id}
         className={`editor-v6-timeline-block kind-${backgroundLane ? 'background' : track.kind}${selectedId === block.id ? ' selected' : ''}${track.locked ? ' locked' : ''}`}
         style={{ left: block.startFrame / 30 * pps, width: Math.max(3, block.durationFrames / 30 * pps), ...(track.characterId ? { borderColor: videoCharacterTrackColor(track.characterId) } : {}) }}
