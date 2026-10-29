@@ -88,20 +88,8 @@ import { createEditorV6LibraryIndex } from './domains/editorV6/libraryIndex'
 import { createEditorV6DocumentPersistence } from './domains/editorV6/documentPersistence'
 import { createVideoReferenceChangeCoordinator, createVideoReferenceGuard } from './domains/mediaLibrary/videoReferences'
 import { createRoteirosVideoReferenceLookup } from './domains/roteiros/videoReferences'
-import { createRoteirosDocumentService } from './domains/roteiros/service'
-import { registerRoteirosDocumentHandlers } from './domains/roteiros/documentIpc'
-import { createRoteiroExportLogsService } from './domains/roteiros/exportLogsService'
-import { registerRoteiroExportLogsHandlers } from './domains/roteiros/exportLogsIpc'
-import { createRoteiroExportService } from './domains/roteiros/exportService'
-import { registerRoteiroExportHandlers } from './domains/roteiros/exportIpc'
-import { createRoteiroBackgroundReferenceGuard, createRoteiroUiGifReferenceGuard } from './domains/roteiros/assetReferences'
-import { createRoteiroUiGifsService } from './domains/roteiros/uiGifsService'
-import { registerRoteiroUiGifsHandlers } from './domains/roteiros/uiGifsIpc'
 import { createRoteirosWriteQueue } from './domains/roteiros/writeQueue'
-import { createBackgroundLibraryService } from './domains/mediaLibrary/backgroundLibraryService'
-import { registerBackgroundLibraryHandlers } from './domains/mediaLibrary/backgroundLibraryIpc'
-import { createVideoLibraryService } from './domains/mediaLibrary/videoLibraryService'
-import { registerVideoLibraryHandlers } from './domains/mediaLibrary/videoLibraryIpc'
+import { registerRoteirosIpc, type RoteirosIpcLifecycle } from './application/registerRoteirosIpc'
 import { createEditorV6VideoReferenceLookup } from './domains/editorV6/videoReferences'
 
 let configuredAppDataRoot: string | null = null
@@ -293,7 +281,7 @@ let dataMigration: InstanceType<typeof DataMigrationService> | null = null
 let dataBackupService: InstanceType<typeof DataBackupService> | null = null
 let dataBackupIpc: ReturnType<typeof registerDataBackupHandlers> | null = null
 let dataMigrationIpc: ReturnType<typeof registerDataMigrationHandlers> | null = null
-let roteiroExportIpc: ReturnType<typeof registerRoteiroExportHandlers> | null = null
+let roteiroExportIpc: RoteirosIpcLifecycle | null = null
 let fabricatorHairIpc: ReturnType<typeof registerFabricatorHairHandlers> | null = null
 let fabricatorProjectIpc: ReturnType<typeof registerFabricatorProjectHandlers> | null = null
 let fabricatorModelSourceDownloadIpc: ReturnType<typeof registerModelSourceDownloadHandlers> | null = null
@@ -795,72 +783,34 @@ async function registerFabricatorHandlers(): Promise<void> {
     openPath: (path) => shell.openPath(path)
   })
 
-  const videoLibraryService = createVideoLibraryService({
-    library: videoLibrary,
-    openImportDialog: async () => {
-      const result = await dialog.showOpenDialog({ title: 'Biblioteca de vídeos: importar', properties: ['openFile'], filters: [{ name: 'Vídeos', extensions: ['mp4', 'webm', 'mov', 'm4v'] }] })
-      return result.canceled ? null : result.filePaths[0] ?? null
-    },
-    enqueueWrite: enqueueRoteirosWrite,
-    coordinateReferenceChange: coordinateVideoReferenceChange,
-    assertNoReferences: assertNoVideoReferences
-  })
-  registerVideoLibraryHandlers({ ipcMain, assertTrustedSender, service: videoLibraryService })
-  const backgroundLibraryService = createBackgroundLibraryService({
-    openImportDialog: async () => {
-      const result = await dialog.showOpenDialog({ title: 'Biblioteca de fundos: importar', properties: ['openFile'], filters: [{ name: 'Imagens', extensions: ['png', 'jpg', 'jpeg', 'webp'] }] })
-      return result.canceled ? null : result.filePaths[0] ?? null
-    },
-    library: videoBackgroundLibrary,
-    assertRoteiroUnreferenced: createRoteiroBackgroundReferenceGuard(() => dataPlatform.database),
-    enqueueWrite: enqueueRoteirosWrite
-  })
-  registerBackgroundLibraryHandlers({ ipcMain, assertTrustedSender, service: backgroundLibraryService })
-  const roteiroUiGifsService = createRoteiroUiGifsService({
-    getDefaultGifPath: getRoteiroUiGifDefaultPath,
-    openImportDialog: async () => {
-      const result = await dialog.showOpenDialog({ title: 'Biblioteca de GIFs: adicionar', properties: ['openFile'], filters: [{ name: 'GIF animado', extensions: ['gif'] }] })
-      return result.canceled ? null : result.filePaths[0] ?? null
-    },
-    library: roteiroUiGifLibrary,
-    assertUnreferenced: createRoteiroUiGifReferenceGuard(() => dataPlatform.database),
-    enqueueWrite: enqueueRoteirosWrite
-  })
-  registerRoteiroUiGifsHandlers({ ipcMain, assertTrustedSender, service: roteiroUiGifsService })
-  const roteiroExportService = createRoteiroExportService({
-    getAppDataRoot: () => configuredAppDataRoot ?? join(app.getPath('userData'), 'app-data'),
-    resolveBackground: async (id) => {
-      const resolved = await videoBackgroundLibrary.resolve(id)
-      return await dataFileSystem.resolvePhysicalPath(resolved.path) ?? resolved.path
-    },
-    resolveGif: async (id) => {
-      const resolved = await roteiroUiGifLibrary.resolve(id)
-      return await dataFileSystem.resolvePhysicalPath(resolved) ?? resolved
-    },
-    resolveVideo: async (video) => {
-      const resolved = await videoLibrary.resolveMedia(video.id)
-      if (resolved.extension !== video.extension || resolved.durationFrames !== null && resolved.durationFrames !== video.durationFrames) throw new Error(`O vídeo “${video.name}” não corresponde ao arquivo da biblioteca.`)
-      return await dataFileSystem.resolvePhysicalPath(resolved.path) ?? resolved.path
-    }
-  })
-  roteiroExportIpc = registerRoteiroExportHandlers({ ipcMain, assertTrustedSender, openPath: (path) => shell.openPath(path), service: roteiroExportService })
-
-  const roteiroDocumentService = createRoteirosDocumentService({
+  roteiroExportIpc = registerRoteirosIpc({
+    ipcMain,
+    assertTrustedSender,
     getDatabase: () => dataPlatform.database,
-    waitForPendingWrites: waitForRoteirosWrites,
+    videoLibrary,
+    videoBackgroundLibrary,
+    roteiroUiGifLibrary,
+    getDefaultGifPath: getRoteiroUiGifDefaultPath,
+    getAppDataRoot: () => configuredAppDataRoot ?? join(app.getPath('userData'), 'app-data'),
+    resolvePhysicalPath: (path) => dataFileSystem.resolvePhysicalPath(path),
+    openPath: (path) => shell.openPath(path),
+    openImportFile: async (kind) => {
+      const selection = kind === 'video'
+        ? { title: 'Biblioteca de vídeos: importar', filters: [{ name: 'Vídeos', extensions: ['mp4', 'webm', 'mov', 'm4v'] }] }
+        : kind === 'background'
+          ? { title: 'Biblioteca de fundos: importar', filters: [{ name: 'Imagens', extensions: ['png', 'jpg', 'jpeg', 'webp'] }] }
+          : { title: 'Biblioteca de GIFs: adicionar', filters: [{ name: 'GIF animado', extensions: ['gif'] }] }
+      const result = await dialog.showOpenDialog({ ...selection, properties: ['openFile'] })
+      return result.canceled ? null : result.filePaths[0] ?? null
+    },
     enqueueWrite: enqueueRoteirosWrite,
+    waitForPendingWrites: waitForRoteirosWrites,
     coordinateVideoReferenceChange,
+    assertNoVideoReferences,
     assertLibraryVideoReferencesAvailable,
     assertLibraryBackgroundReferencesAvailable,
     assertLibraryUiGifReferencesAvailable
   })
-  registerRoteirosDocumentHandlers({ ipcMain, assertTrustedSender, service: roteiroDocumentService })
-  const roteiroExportLogsService = createRoteiroExportLogsService({
-    getDatabase: () => dataPlatform.database,
-    waitForPendingWrites: waitForRoteirosWrites,
-    enqueueWrite: enqueueRoteirosWrite
-  })
-  registerRoteiroExportLogsHandlers({ ipcMain, assertTrustedSender, service: roteiroExportLogsService })
   // Módulo Base de Vídeos: IPC → casos de uso → repositório SQLite.
   // Compartilha a fila existente de Roteiros para conservar a ordem das gravações.
   registerBaseVideoHandlers(ipcMain, assertTrustedSender, new BaseVideoService({
