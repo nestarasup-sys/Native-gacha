@@ -14,6 +14,7 @@ import { getEditorV6PlaybackFrame, setEditorV6PlaybackFrame } from './editorV6Pl
 import { duplicateEditorV6ProjectDocument } from './editorV6ProjectDuplication'
 import { createEditorV6ProjectCreationCommands } from './editorV6ProjectCreation'
 import { planEditorV6CastSelection, retainEditorV6CastAssets } from './editorV6CastSelection'
+import { projectSceneCharacters } from '../../characters/sceneCharacterProjection'
 import { addEditorV6ImageAsset, addEditorV6TimelineMedia } from './editorV6MediaChanges'
 import { importEditorV6ImageToProject, importEditorV6MediaToTimeline } from './editorV6MediaImport'
 import { addEditorV6ElementAtFrame, editorV6ClipAtFrame, normalizeEditorV6Timeline, timelineClips } from '../../../../shared/editorV6TimelineCore'
@@ -115,6 +116,10 @@ export function EditorV6Page() {
   const editorV6SaveTimerRef = useRef<number | null>(null)
   const selectedEditorV6 = editorV6Projects.find((studio) => studio.id === selectedId) ?? null
   const activeEditorV6 = activeEditorV6Stored?.id === activeEditorV6Id ? activeEditorV6Stored : null
+  const sceneCharacterProjection = useMemo(
+    () => projectSceneCharacters(activeEditorV6?.elements ?? []),
+    [activeEditorV6?.elements]
+  )
   const {
     trackOperation: trackEditorV6Operation,
     writeDocument: writeEditorV6Document,
@@ -194,7 +199,7 @@ export function EditorV6Page() {
     ? editorV6FaceDetails[`${selectedEditorV6CharacterModelSlot}:${selectedEditorV6OpenMouthId}`]
     : undefined
   const selectedEditorV6TalkAvailable = Boolean(selectedEditorV6OpenMouth?.pieces.some((piece) => piece.sheet === 'mouth-open' && piece.index === selectedEditorV6FaceAppearance?.expressionIndex))
-  const stageCharacters = activeEditorV6?.elements.filter((element) => element.kind === 'character') ?? []
+  const stageCharacters = sceneCharacterProjection.characters
 
   const allStageCharactersLocked = stageCharacters.length > 0 && stageCharacters.every((element) => element.positionLocked === true)
   const toggleStageCharacterPositionLock = () => {
@@ -295,7 +300,7 @@ export function EditorV6Page() {
   useEffect(() => {
     if (!activeEditorV6 || dragRef.current) return
     markEditorV6Unsaved()
-    const signature = JSON.stringify(activeEditorV6.elements.filter((element) => element.kind === 'character').map((element) => [element.id, element.activeExpressionCollectionId, element.activeExpressionPresetId]))
+    const signature = sceneCharacterProjection.autosaveSignature
     const previous = expressionSaveSignatureRef.current
     expressionSaveSignatureRef.current = { studioId: activeEditorV6.id, value: signature }
     if (previous?.studioId === activeEditorV6.id && previous.value !== signature) {
@@ -312,7 +317,7 @@ export function EditorV6Page() {
       window.clearTimeout(timer)
       if (editorV6SaveTimerRef.current === timer) editorV6SaveTimerRef.current = null
     }
-  }, [activeEditorV6, markEditorV6Unsaved, saveActiveEditorV6Project])
+  }, [activeEditorV6, markEditorV6Unsaved, saveActiveEditorV6Project, sceneCharacterProjection.autosaveSignature])
 
   const patchStudio = (transform: (studio: EditorV6Document) => EditorV6Document, editSelection = true) => {
     if (!activeEditorV6Id) return

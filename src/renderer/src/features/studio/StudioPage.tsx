@@ -4,7 +4,7 @@ import { useStudioInspectorState } from '../../characters/useStudioInspectorStat
 import { useFaceExpressionCatalog } from '../../characters/useFaceExpressionCatalog'
 import { StudioSceneCanvas } from './StudioSceneCanvas'
 import { trimTransparentImage, faceRenderGeometry } from '../../characters/characterGeometry'
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { studioExpressionCollection } from './expressionTransforms'
 import { Icon } from '../../ui/components/Icon'
 import { NumericRangeField } from '../../ui/components/NumericRangeField'
@@ -29,6 +29,7 @@ import { useStudioAutosave, useStudioDocumentPersistence } from './useStudioDocu
 import { useStudioImageImport } from './useStudioImageImport'
 import { mapConcurrentItems } from '../../ui/mapConcurrentItems'
 import { useStudioCharacterSourceRefresh } from './useStudioCharacterSourceRefresh'
+import { projectSceneCharacters, sceneExpressionPresetSignature } from '../../characters/sceneCharacterProjection'
 import type { StudioAsset, StudioDocument, StudioElement, StudioFaceTransform, StudioFaceTransforms } from '../../../../shared/studio'
 import type { CustomizerCharacter } from '../../../../shared/customizer'
 import type { CustomizerFaceAppearance } from '../../../../shared/customizer'
@@ -76,9 +77,11 @@ export function StudioPage() {
   const nextStudioNumber = useRef(1)
   const selectedStudio = studios.find((studio) => studio.id === selectedId) ?? null
   const activeStudio = studios.find((studio) => studio.id === activeStudioId) ?? null
-  const autosaveSignature = JSON.stringify(activeStudio?.elements
-    .filter((element) => element.kind === 'character')
-    .map((element) => [element.id, element.activeExpressionCollectionId, element.activeExpressionPresetId]) ?? [])
+  const sceneCharacterProjection = useMemo(
+    () => projectSceneCharacters(activeStudio?.elements ?? []),
+    [activeStudio?.elements]
+  )
+  const autosaveSignature = sceneCharacterProjection.autosaveSignature
   const {
     studiosRef,
     activeStudioIdRef,
@@ -111,7 +114,7 @@ export function StudioPage() {
     : undefined
   const selectedStudioTalkAvailable = Boolean(selectedStudioOpenMouth?.pieces.some((piece) => piece.sheet === 'mouth-open' && piece.index === selectedStudioFaceAppearance?.expressionIndex))
   const selectedBackgroundAsset = activeStudio?.assets.find((asset) => asset.id === activeStudio.backgroundAssetId) ?? null
-  const stageCharacters = activeStudio?.elements.filter((element) => element.kind === 'character') ?? []
+  const stageCharacters = sceneCharacterProjection.characters
   const allStageCharactersLocked = stageCharacters.length > 0 && stageCharacters.every((element) => element.positionLocked === true)
   const toggleStageCharacterPositionLock = () => {
     if (!activeStudio || !stageCharacters.length) return
@@ -145,9 +148,10 @@ export function StudioPage() {
     errorFallback: 'Não foi possível carregar os presets de expressão.'
   })
 
-  const activeScenePresetSignature = JSON.stringify(activeStudio?.elements
-    .filter((element) => element.kind === 'character' && element.characterId && element.activeExpressionPresetId)
-    .map((element) => [element.characterId, element.activeExpressionPresetId]) ?? [])
+  const activeScenePresetSignature = useMemo(
+    () => sceneExpressionPresetSignature(activeStudio?.elements ?? []),
+    [activeStudio?.elements]
+  )
 
   useEffect(() => {
     if (!activeStudio || !activeScenePresetSignature) { setSceneExpressionPresetVersions({}); return }
