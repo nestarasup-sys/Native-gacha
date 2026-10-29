@@ -1438,3 +1438,11 @@ Continua a auditoria das operações IPC iniciadas pelo usuário e da cobertura 
 - Os assets de componentes e itens faciais deixaram de ser solicitados todos ao mesmo tempo. O workspace reutiliza `mapConcurrentItems`, limitando e cancelando as leituras já durante uma troca de contexto, sem alterar o catálogo completo exibido nem o formato dos dados.
 - Chave local, schema do rascunho, canal IPC e fluxo de restauração foram preservados. Testes sintéticos cobrem a prontidão por slot, debounce, serialização, flush, falha/retry e uso da persistência pela tela.
 - Verificação nesta etapa: os testes focados passaram com 29 casos; `npm run test:refactor`, `npm run typecheck`, `npm run build` e `npm run audit:architecture` passaram (455 arquivos TS/TSX, sem violações); `git diff --check` passou.
+
+## 92. Etapa aplicada — seleção de atualização de personagens isolada no Studio
+
+- `StudioPage.tsx` misturava ao efeito assíncrono a regra que decide se uma imagem de personagem ficou desatualizada por alteração no personagem, preset facial, renderizador ou biblioteca de assets. Essa seleção agora está em `studioCharacterRefreshModel.ts`, como uma função pura que recebe as revisões observadas e devolve os personagens que precisam atualizar.
+- A tela continua responsável por carregar presets, renderizar e publicar as imagens no documento. O modelo só decide os motivos do refresh e se é necessário recompor a expressão; alterações exclusivas do renderizador ou da biblioteca preservam esse comportamento existente.
+- Elementos sem personagem ou asset válido continuam ignorados, presets sem revisão conhecida não disparam refresh e revisões de assets já aplicadas não são repetidas. Nenhum formato salvo, ID, IPC ou regra de composição foi alterado.
+- Testes sintéticos verificam cada gatilho, a distinção entre recompor a expressão e apenas atualizar o render, referências ausentes e revisão de assets já aplicada. Também há uma verificação arquitetural para impedir que a seleção inline volte à página.
+- Verificação: a suíte focada do Studio passou com 8 testes; `npm run test:refactor` passou com 488 testes principais e suítes adicionais; `npm run typecheck`, `npm run build`, `npm run audit:architecture` (456 arquivos TS/TSX, sem violações) e `git diff --check` passaram.

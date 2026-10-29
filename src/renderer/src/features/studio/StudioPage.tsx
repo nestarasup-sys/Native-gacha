@@ -27,6 +27,7 @@ import { studioFaceCatalogSelectionIds } from './studioFaceCatalogSelection'
 import { useStudioAutosave, useStudioDocumentPersistence } from './useStudioDocumentPersistence'
 import { useStudioImageImport } from './useStudioImageImport'
 import { mapConcurrentItems } from '../../ui/mapConcurrentItems'
+import { selectStudioCharacterRefreshCandidates } from './studioCharacterRefreshModel'
 import type { StudioAsset, StudioDocument, StudioElement, StudioFaceTransform, StudioFaceTransforms } from '../../../../shared/studio'
 import type { CustomizerCharacter } from '../../../../shared/customizer'
 import type { CustomizerFaceAppearance } from '../../../../shared/customizer'
@@ -400,19 +401,13 @@ export function StudioPage() {
 
   useEffect(() => {
     if (!activeStudio || !normalizedStudioIdsRef.current.has(activeStudio.id) || !availableCharacters.length) return
-    const characters = new Map(availableCharacters.map((character) => [character.id, character]))
-    const pending = activeStudio.elements.flatMap((element) => {
-      if (element.kind !== 'character' || !element.characterId || !element.assetId) return []
-      const character = characters.get(element.characterId)
-      const modelSlot = character?.customization.modelSlot ?? 1
-      const latestPresetVersion = element.activeExpressionPresetId ? sceneExpressionPresetVersions[`${modelSlot}:${element.activeExpressionPresetId}`] : undefined
-      const presetChanged = Boolean(latestPresetVersion && latestPresetVersion !== element.activeExpressionPresetUpdatedAt)
-      const characterChanged = Boolean(character && element.characterSourceUpdatedAt !== character.updatedAt)
-      const rendererChanged = element.faceRendererVersion !== STUDIO_FACE_RENDER_VERSION
-      const assetRevisionKey = `${activeStudio.id}:${element.id}`
-      const assetsChanged = assetLibraryRevision > (appliedAssetRevisionRef.current.get(assetRevisionKey) ?? 0)
-      return character && (characterChanged || presetChanged || rendererChanged || assetsChanged)
-        ? [{ element, character, shouldRecomposeExpression: characterChanged || presetChanged, assetRevisionKey, assetsChanged }] : []
+    const pending = selectStudioCharacterRefreshCandidates({
+      studio: activeStudio,
+      availableCharacters,
+      expressionPresetVersions: sceneExpressionPresetVersions,
+      assetLibraryRevision,
+      appliedAssetRevisions: appliedAssetRevisionRef.current,
+      faceRendererVersion: STUDIO_FACE_RENDER_VERSION
     })
     if (!pending.length) return
     let cancelled = false
