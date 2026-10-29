@@ -5,9 +5,9 @@ import { editorV6MotionResultSchema } from '../../../src/shared/editorV6Schema'
 import type { EditorV6MotionBakeRequest, EditorV6MotionBakeResult } from '../../../src/shared/editorV6Motion'
 
 /** Bump when baking changes without an authored timeline change. */
-export const MOTION_CACHE_VERSION = 2
+export const MOTION_CACHE_VERSION = 3
 export function motionCacheKey(request: EditorV6MotionBakeRequest): string {
-  return createHash('sha256').update(JSON.stringify([MOTION_CACHE_VERSION, request.plan.key, request.character])).digest('hex')
+  return createHash('sha256').update(JSON.stringify([MOTION_CACHE_VERSION, request.plan.key, request.mouthScaleSamples ?? null, request.character])).digest('hex')
 }
 export function createMotionDiskCache(folder: string, maximumBytes = 256 * 1024 * 1024) {
   let maintenance = Promise.resolve()

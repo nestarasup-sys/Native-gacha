@@ -5,7 +5,8 @@ import { editorV6DefaultVideoLayout, type EditorV6Document } from '../../../src/
 import type { CustomizerCharacter } from '../../../src/shared/customizer'
 import { missingEditorV6Motions, type EditorV6MotionBakeRequest, type EditorV6MotionBakeResult } from '../../../src/shared/editorV6Motion'
 import { prepareExportMotions } from './prepareMotions'
-import { planEditorV6Audio, planEditorV6Export, type EditorV6ExportAudio, type EditorV6ExportOptions, type EditorV6ExportPart, type EditorV6ExportStatus, type EditorV6FrameTimings } from '../../../src/shared/editorV6Export'
+import { prepareExportMouthLoops } from './prepareMouthLoops'
+import { planEditorV6Audio, planEditorV6Export, type EditorV6ExportAudio, type EditorV6ExportMouthLoops, type EditorV6ExportOptions, type EditorV6ExportPart, type EditorV6ExportStatus, type EditorV6FrameTimings } from '../../../src/shared/editorV6Export'
 import { runExportCommand, spawnExportProcess, waitForExport } from './exportProcess'
 import type { EditorV6FrameWorker } from './exportWorkers'
 type StreamProbe = { codec_type: string; codec_name: string; profile?: string; pix_fmt?: string; width?: number; height?: number; r_frame_rate?: string; time_base?: string; nb_read_frames?: string; nb_frames?: string; duration?: string; extradata_hash?: string }
@@ -19,10 +20,10 @@ type TimingAccumulator = { count: number; totalMs: number; maxMs: number; histog
 type FrameTimingReport = Partial<Record<TimingPhase, { samples: number; totalMs: number; p50Ms: number; p95Ms: number; maxMs: number }>>
 type PartReport = EditorV6ExportPart & { encoder: string; rendered: number; reused: number; frames: number; milliseconds: number; frameTiming?: FrameTimingReport; path: string; probe?: MediaProbe }
 type AttemptReport = { parts: PartReport[]; encoder: string; parallelism: number; milliseconds?: number; error?: string }
-export type EditorV6ExportReport = { schemaVersion: 1; id: string; state: string; projectId: string; options: EditorV6ExportOptions; fps: 30; totalFrames: number; fallback: boolean; attempts: AttemptReport[]; encoderTests: Array<{ encoder: string; error?: string }>; audioClips: number; videoInputs: number; proxies: 0; motionTransitionsRequired: number; motionTransitionsPrepared: number; motionPreparation?: Awaited<ReturnType<typeof prepareExportMotions>>['stats']; startedAt: string; endedAt?: string; milliseconds?: number; outputPath: string; deliveryWarning?: string; validation?: unknown; error?: string }
+export type EditorV6ExportReport = { schemaVersion: 1; id: string; state: string; projectId: string; options: EditorV6ExportOptions; fps: 30; totalFrames: number; fallback: boolean; attempts: AttemptReport[]; encoderTests: Array<{ encoder: string; error?: string }>; audioClips: number; videoInputs: number; proxies: 0; motionTransitionsRequired: number; motionTransitionsPrepared: number; motionPreparation?: Awaited<ReturnType<typeof prepareExportMotions>>['stats']; mouthAnimation?: { stateAtlases: number; characters: number; skippedStates: number; staleStates: number; cycleFrames: number; atlasBytes: number; atlasPixels: number; details: string[] }; startedAt: string; endedAt?: string; milliseconds?: number; outputPath: string; deliveryWarning?: string; validation?: unknown; error?: string }
 type Dependencies = {
   ffmpeg: string; ffprobe: string; tempRoot: string; reportPath: string; outputPath: string; id: string
-  createWorker: (project: EditorV6Document, part: EditorV6ExportPart, signal: AbortSignal, layeredVideo: boolean) => Promise<EditorV6FrameWorker>
+  createWorker: (project: EditorV6Document, part: EditorV6ExportPart, signal: AbortSignal, layeredVideo: boolean, mouthLoops?: EditorV6ExportMouthLoops) => Promise<EditorV6FrameWorker>
   getCharacters: () => Promise<CustomizerCharacter[]>
   bakeMotion: (request: EditorV6MotionBakeRequest, signal: AbortSignal) => Promise<EditorV6MotionBakeResult>
   audioPath: (clip: EditorV6ExportAudio) => string | Promise<string>
@@ -98,6 +99,7 @@ export async function runEditorV6Export(project: EditorV6Document, options: Edit
   const folder = await mkdtemp(join(deps.tempRoot, 'editor-v6-export-'))
   const candidate = join(dirname(deps.outputPath), `.editor-v6-${deps.id}.mp4`)
   let published = false
+  let mouthLoops: EditorV6ExportMouthLoops | undefined
   const saveReport = async () => { await mkdir(dirname(deps.reportPath), { recursive: true }); await writeFile(deps.reportPath + '.tmp', JSON.stringify(report, null, 2)); await rename(deps.reportPath + '.tmp', deps.reportPath) }
   const testEncoder = async (encoder: string) => {
     try {
@@ -140,7 +142,7 @@ export async function runEditorV6Export(project: EditorV6Document, options: Edit
       const process = spawnExportProcess(deps.ffmpeg, ['-v', 'error', '-y', '-f', 'rawvideo', '-pixel_format', 'bgra', '-video_size', `${options.width}x${rawHeight}`, '-framerate', '30', '-i', 'pipe:0', ...videoInputs, ...filterArgs, '-an', ...encodingArgs(encoder, Math.max(1, Math.min(8, Math.floor(availableParallelism() / parts.length)))), '-frames:v', String(part.endFrame - part.startFrame), path], controller.signal)
       try {
         const workerStarted = performance.now()
-        worker = await deps.createWorker(project, part, controller.signal, layeredVideo)
+        worker = await deps.createWorker(project, part, controller.signal, layeredVideo, mouthLoops)
         recordTiming(timingAccumulators, 'workerStartupMs', performance.now() - workerStarted)
         let bitmap: Buffer | undefined
         for (let frame = part.startFrame; frame < part.endFrame; frame++) {
@@ -179,8 +181,9 @@ export async function runEditorV6Export(project: EditorV6Document, options: Edit
   }
   try {
     deps.signal.throwIfAborted()
+    const characters = await deps.getCharacters()
     const prepared = await prepareExportMotions(project, options.startFrame, options.endFrame, {
-      signal: deps.signal, characters: await deps.getCharacters(), bake: deps.bakeMotion,
+      signal: deps.signal, characters, bake: deps.bakeMotion,
       progress: (completed, total, name) => {
         report.motionTransitionsRequired = total; report.motionTransitionsPrepared = completed
         deps.progress({ state: 'preparing', frames: 0, motionProgress: { completed, total }, message: completed === total ? 'Transições prontas.' : `Preparando transição ${completed + 1}/${total} · ${name}…` })
@@ -190,6 +193,15 @@ export async function runEditorV6Export(project: EditorV6Document, options: Edit
     report.motionTransitionsRequired = prepared.stats.total
     report.motionTransitionsPrepared = prepared.stats.total
     report.motionPreparation = prepared.stats
+    if (options.mouthLoop) {
+      const mouth = await prepareExportMouthLoops(project, options.startFrame, options.endFrame, options.mouthLoopCycleFrames ?? 30, {
+        signal: deps.signal, characters, bake: deps.bakeMotion,
+        progress: (completed, total, name) => deps.progress({ state: 'preparing', frames: 0, motionProgress: undefined, message: `Preparando loop da boca ${Math.min(completed + 1, total)}/${total} · ${name}…` })
+      })
+      project = mouth.project
+      mouthLoops = mouth.mouthLoops
+      report.mouthAnimation = { stateAtlases: mouth.stats.states, characters: mouth.stats.characters, skippedStates: mouth.stats.skipped, staleStates: mouth.stats.skippedStale, cycleFrames: options.mouthLoopCycleFrames ?? 30, atlasBytes: mouth.stats.atlasBytes, atlasPixels: mouth.stats.atlasPixels, details: mouth.stats.errors }
+    }
     if (missingEditorV6Motions(project, options.startFrame, options.endFrame).length) throw Error('Não foi possível preparar todas as transições deste intervalo.')
     await saveReport()
     await mkdir(dirname(deps.outputPath), { recursive: true })

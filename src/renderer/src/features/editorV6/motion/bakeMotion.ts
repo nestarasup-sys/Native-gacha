@@ -9,13 +9,18 @@ import { editorV6ElementSize } from '../../../../../shared/editorV6SceneModel'
 import { loadStandardExpressionEffects, prepareSavedCharacterRenderer, type GachaReusableMaterialCache } from '../../../characters/editorV6CharacterRenderer'
 
 type Renderer = Awaited<ReturnType<typeof prepareSavedCharacterRenderer>>
-type Crop = { left: number; top: number; width: number; height: number }
-function cropOf(canvas: HTMLCanvasElement): Crop {
+type Crop = { left: number; top: number; width: number; height: number; fingerprint?: number }
+function cropOf(canvas: HTMLCanvasElement, fingerprint = false): Crop {
   const pixels = canvas.getContext('2d', { willReadFrequently: true })!.getImageData(0, 0, canvas.width, canvas.height).data
   let left = canvas.width, right = -1, top = canvas.height, bottom = -1
-  for (let y = 0; y < canvas.height; y++) for (let x = 0; x < canvas.width; x++) if (pixels[(y * canvas.width + x) * 4 + 3] > 8) { left = Math.min(left, x); right = Math.max(right, x); top = Math.min(top, y); bottom = Math.max(bottom, y) }
-  if (right < left) return { left: 0, top: 0, width: 1, height: 1 }
-  return { left, top, width: right - left + 1, height: bottom - top + 1 }
+  let hash = 2166136261
+  for (let y = 0; y < canvas.height; y++) for (let x = 0; x < canvas.width; x++) {
+    const offset = (y * canvas.width + x) * 4
+    if (pixels[offset + 3] > 8) { left = Math.min(left, x); right = Math.max(right, x); top = Math.min(top, y); bottom = Math.max(bottom, y) }
+    if (fingerprint) for (let channel = 0; channel < 4; channel++) hash = Math.imul(hash ^ pixels[offset + channel], 16777619)
+  }
+  if (right < left) return { left: 0, top: 0, width: 1, height: 1, ...(fingerprint ? { fingerprint: hash >>> 0 } : {}) }
+  return { left, top, width: right - left + 1, height: bottom - top + 1, ...(fingerprint ? { fingerprint: hash >>> 0 } : {}) }
 }
 function cachedProvider(provider: CharacterRenderAssetProvider, sharedOnly = false): CharacterRenderAssetProvider {
   const cache = new Map<string, Promise<unknown>>()
@@ -34,6 +39,20 @@ function cachedProvider(provider: CharacterRenderAssetProvider, sharedOnly = fal
   } })
 }
 const neutral = (): EditorV6FaceTransform => ({ x: 0, y: 0, width: 100, height: 100, rotation: 0 })
+
+function scaleMouthForExport(face: Awaited<ReturnType<typeof interpolateEditorV6Face>>, factor: number) {
+  if (factor === 1) return face
+  const appearance = face.appearance
+  const transforms = { ...face.transforms }
+  const source = transforms.mouth
+    ?? (appearance?.mouthClosedCatalogId ? transforms[`mouth-closed:${appearance.mouthClosedCatalogId}`] : undefined)
+    ?? (appearance?.mouthOpenCatalogId ? transforms[`mouth-open:${appearance.mouthOpenCatalogId}`] : undefined)
+    ?? transforms['mouth-open']
+    ?? transforms['mouth-closed']
+    ?? neutral()
+  transforms.mouth = { ...source, width: source.width * factor, height: source.height * factor }
+  return { ...face, transforms }
+}
 
 /** Resolve implicit sheet calibrations before interpolating portable preset overrides. */
 async function prepareFace(state: EditorV6Element, request: EditorV6MotionBakeRequest, provider: CharacterRenderAssetProvider): Promise<EditorV6Element> {
@@ -98,11 +117,11 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
     if (samePose) reusable = renderer
     return renderer
   }
-  const render = async (progress: number, faceMode?: EditorV6FaceRenderMode) => {
-    const renderer = await prepare(progress), face = interpolateEditorV6Face(from, to, progress)
+  const render = async (progress: number, faceMode?: EditorV6FaceRenderMode, mouthScale = 1) => {
+    const renderer = await prepare(progress), face = scaleMouthForExport(interpolateEditorV6Face(from, to, progress), mouthScale)
     try {
       const result = await renderer.renderToCanvas(face.appearance, face.transforms, face.effects, editorV6FaceModeDuringMotion(faceMode ?? face.mode))
-      return { ...result, crop: cropOf(result.canvas), dispose: () => { if (!samePose) renderer.dispose() } }
+      return { ...result, crop: cropOf(result.canvas, Boolean(request.mouthScaleSamples)), dispose: () => { if (!samePose) renderer.dispose() } }
     } catch (error) { if (!samePose) renderer.dispose(); throw error }
   }
   try {
@@ -120,8 +139,9 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
     const fromScale = { x: aa.width * 19.2 / fromCrop.width, y: aa.height * 10.8 / fromCrop.height }, toScale = { x: bb.width * 19.2 / toCrop.width, y: bb.height * 10.8 / toCrop.height }
     const frames: EditorV6MotionFrame[] = []
     for (const [index, sample] of request.plan.samples.entries()) {
-      const t = motionEase(sample.progress), frame = await render(t, sample.faceMode), crop = frame.crop
+      const t = motionEase(sample.progress), frame = await render(t, sample.faceMode, request.mouthScaleSamples?.[index] ?? 1), crop = frame.crop
       try {
+        if (request.mouthScaleSamples && index === request.mouthScaleSamples.length - 1 && crop.fingerprint === fromCrop.fingerprint) throw Error('A boca aberta não respondeu à ampliação; confira se o personagem tem uma variante de boca aberta editável no catálogo facial.')
         const x = index % columns * cellWidth, y = Math.floor(index / columns) * cellHeight, width = Math.max(1, Math.ceil(crop.width * ratio)), height = Math.max(1, Math.ceil(crop.height * ratio))
         context.drawImage(frame.canvas, crop.left, crop.top, crop.width, crop.height, x, y, width, height)
         const sx = motionLerp(fromScale.x, toScale.x, t), sy = motionLerp(fromScale.y, toScale.y, t)

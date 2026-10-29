@@ -47,9 +47,13 @@ export function registerEditorV6ExportHandlers(deps: { ipcMain: IpcMain; assertT
     const abort = () => controller.abort(Error('A janela do editor foi fechada.'))
     event.sender.once('destroyed', abort)
     job.promise = runEditorV6Export(project, options, { ffmpeg, ffprobe, tempRoot: deps.tempRoot, id, outputPath, reportPath, signal: controller.signal, getCharacters: deps.getCharacters, bakeMotion: deps.bakeMotion,
-      createWorker: (renderProject, _part, signal, layeredVideo) => workers.create({ project: renderProject, width: options.width, height: options.height, layeredVideo }, signal), audioPath: (clip) => audioPath(project.id, clip, project.media), mediaPath,
+      createWorker: (renderProject, _part, signal, layeredVideo, mouthLoops) => workers.create({ project: renderProject, width: options.width, height: options.height, layeredVideo, ...(mouthLoops ? { mouthLoops } : {}) }, signal), audioPath: (clip) => audioPath(project.id, clip, project.media), mediaPath,
       progress: (patch) => { job.status = { ...job.status, ...patch } }
-    }).then((report) => { job.status = { ...job.status, state: 'completed', outputPath: report.outputPath, fallback: report.fallback, frames: status.totalFrames, message: report.deliveryWarning ?? 'MP4 exportado e validado.' } }, (error: unknown) => {
+    }).then((report) => {
+      const mouth = report.mouthAnimation
+      const message = `${report.deliveryWarning ?? 'MP4 exportado e validado.'}${mouth ? ` Loop da boca em ${mouth.characters} personagem(ns) · ${mouth.cycleFrames / 30}s${mouth.skippedStates ? ` · ${mouth.skippedStates} estado(s) ignorado(s); veja o relatório` : ''}.` : ''}`
+      job.status = { ...job.status, state: 'completed', outputPath: report.outputPath, fallback: report.fallback, frames: status.totalFrames, message }
+    }, (error: unknown) => {
       job.status = { ...job.status, state: controller.signal.aborted ? 'cancelled' : 'failed', error: error instanceof Error ? error.message : String(error), message: controller.signal.aborted ? 'Exportação cancelada.' : 'A exportação falhou. Consulte o relatório.' }
     }).finally(() => { if (!event.sender.isDestroyed()) event.sender.removeListener('destroyed', abort) })
     for (const [key, entry] of jobs) if (jobs.size > 20 && terminal(entry.status)) jobs.delete(key)
