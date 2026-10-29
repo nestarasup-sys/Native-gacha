@@ -11,7 +11,7 @@ import { CustomizerModelPicker } from './CustomizerModelPicker'
 import { CustomizerClothesAdjustmentPanel } from './CustomizerClothesAdjustmentPanel'
 import { CustomizerHeadAdjustmentPanel } from './CustomizerHeadAdjustmentPanel'
 import { buildClothesAdjustmentEntries } from './customizerClothesAdjustmentModel'
-import { upperWardrobePanels, upperWardrobePageTwoPanels, accessoryWardrobePanels, lowerWardrobePanels, lowerWardrobePageTwoPanels, wardrobePanelCandidates, isWardrobePanelCandidateSelected, renderWardrobeThumbnail } from './wardrobePanelModel'
+import { upperWardrobePanels, upperWardrobePageTwoPanels, accessoryWardrobePanels, lowerWardrobePanels, lowerWardrobePageTwoPanels, wardrobePanelCandidates, isWardrobePanelCandidateSelected } from './wardrobePanelModel'
 import type { WardrobePanel } from './wardrobePanelModel'
 import { HairAssetPreview, WardrobePanelCandidatePreview } from './CustomizerAssetPreviews'
 import { customizerFaceParts, customizerFaceCatalogLayoutParts, customizerSkinTonePresets, facePartCatalogId, facePartColorControls, facePartSourceId, sameFaceAssetPair, skinTonePresets, wrapSlotIndex, createCustomizerFaceCatalogModel } from './customizerFaceCatalogModel'
@@ -25,6 +25,7 @@ import { useCustomizerWardrobePreview } from './useCustomizerWardrobePreview'
 import { useCustomizerWardrobeAdjustment } from './useCustomizerWardrobeAdjustment'
 import { useCustomizerWardrobePanelActions } from './useCustomizerWardrobePanelActions'
 import { useCustomizerWardrobeHydration } from './useCustomizerWardrobeHydration'
+import { useCustomizerWardrobeCatalog } from './useCustomizerWardrobeCatalog'
 import { useCustomizerHeadAdjustment } from './useCustomizerHeadAdjustment'
 import { MODEL_SKIN_BASE_TONE, isValidSkinTone } from '../../../../shared/skinTones'
 import { useCustomizerAdjustmentPreview } from './useCustomizerAdjustmentPreview'
@@ -39,7 +40,7 @@ import { hairStyleSupportsCategory } from '../../../../shared/hairCategories'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { RenderedCharacterPortrait } from '../../ui/components/RenderedCharacterPortrait'
 import { Icon } from '../../ui/components/Icon'
-import type { FaceComponentAssetSummary, FaceDetailKind, FabricatorProject, HairStyleSummary, WardrobeSet } from '../../../../shared/fabricator'
+import type { FaceComponentAssetSummary, FaceDetailKind, FabricatorProject, HairStyleSummary } from '../../../../shared/fabricator'
 import { resolvePoseCategory } from '../../../../shared/fabricator'
 import type { CustomizerFaceAppearance, CustomizerWardrobeGroup, HairColorRole } from '../../../../shared/customizer'
 import { characterBodyDimensionLimits, characterProportionLimits, defaultCharacterProportions, type CharacterProportions } from '../../../../shared/customizer'
@@ -313,18 +314,18 @@ export function CustomizerPage() {
     setAdjustmentPreviewHighlight
   })
 
-  useEffect(() => {
-    const wardrobeCatalogVisible = activeModule === 'Roupas' || activeModule === 'Cabeça' && headPanelTab === 'extra'
-    if (!wardrobeCatalogVisible || selectedCatalogModelSlot === null) return
-    let cancelled = false
-    setWardrobeLoading(true)
-    void window.desktop.fabricator.listWardrobeSets(selectedCatalogModelSlot).then((sets) => {
-      if (!cancelled) setWardrobeSets(sets)
-    }).catch((reason: unknown) => {
-      if (!cancelled) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível carregar o catálogo de roupas.')
-    }).finally(() => { if (!cancelled) setWardrobeLoading(false) })
-    return () => { cancelled = true }
-  }, [activeModule, headPanelTab, selectedCatalogModelSlot])
+  useCustomizerWardrobeCatalog({
+    activeModule,
+    headPanelTab,
+    selectedModelSlot: selectedCatalogModelSlot,
+    wardrobeSets,
+    wardrobeThumbnails,
+    setWardrobeSets,
+    setWardrobeLoading,
+    setWardrobeDetails,
+    setWardrobeThumbnails,
+    setCatalogError
+  })
 
   useCustomizerFaceCatalog({
     selectedModelSlot: selectedCatalogModelSlot, activeModule,
@@ -385,33 +386,6 @@ export function CustomizerPage() {
     setSelectedFrontHairUrl,
     setCatalogError
   })
-
-  useEffect(() => {
-    const wardrobeCatalogVisible = activeModule === 'Roupas' || activeModule === 'Cabeça' && headPanelTab === 'extra'
-    if (!wardrobeCatalogVisible || !wardrobeSets.length) return
-    let cancelled = false
-    void (async () => {
-      for (const summary of wardrobeSets) {
-        let set: WardrobeSet | null = null
-        try {
-          set = await window.desktop.fabricator.loadWardrobeSet(summary.modelSlot, summary.id)
-          if (!set || cancelled) continue
-          setWardrobeDetails((current) => ({ ...current, [`${summary.modelSlot}:${summary.id}`]: set! }))
-          for (const group of Object.values(clothingCategories).flat()) {
-            if (!set.components.some((component) => group.source.includes(component.category))) continue
-            const key = `${summary.modelSlot}:${summary.id}:${group.id}`
-            if (wardrobeThumbnails[key]) continue
-            const thumbnail = await renderWardrobeThumbnail(set, group.source)
-            if (cancelled) return
-            if (thumbnail) setWardrobeThumbnails((current) => ({ ...current, [key]: thumbnail }))
-          }
-        } catch (reason) {
-          if (!cancelled) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível montar a miniatura da roupa.')
-        }
-      }
-    })()
-    return () => { cancelled = true }
-  }, [activeModule, headPanelTab, wardrobeSets])
 
   const { unavailableWardrobeSetKeys, repairingWardrobeLinks, removeUnavailableWardrobeLinks } = useCustomizerWardrobeHydration({
     selectedCharacter, charactersRef, saveCharacter, wardrobeThumbnails,
