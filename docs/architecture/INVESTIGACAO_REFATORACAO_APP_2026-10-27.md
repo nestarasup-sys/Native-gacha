@@ -1532,3 +1532,11 @@ Continua a auditoria das operações IPC iniciadas pelo usuário e da cobertura 
 - O processo continua validando o modelo de origem e não sobrescreve slots ou rascunhos que já existam no destino. A migração permanece no inventário de persistências aguardadas durante backup e encerramento. Não houve mudança nos caminhos, formatos, IPC ou dados existentes.
 - Testes sintéticos em diretório temporário cobrem slots e rascunho válidos, origem inválida, destino existente, chamadas concorrentes e retomada após falha parcial. O teste foi incluído em `npm run test:refactor`.
 - `main.ts` passou de 1.060 para 1.036 linhas.
+
+## 105. Etapa aplicada — ciclo de vida da janela principal isolado
+
+- `main.ts` criava a janela, aplicava as opções de isolamento e segurança, restringia navegação, configurava a janela offscreen de stress, aguardava o flush antes de fechar e ligava o carregamento saudável à finalização de migrações e testes visuais DEV AI.
+- `application/mainWindow.ts` agora concentra criação, navegação, carregamento e fechamento protegido por flush. `main.ts` continua dono dos serviços e fornece os callbacks para finalização de backup/migração, captura sintética, liberação do serviço de movimento e aviso de falha de salvamento.
+- As opções `sandbox`, `contextIsolation`, `nodeIntegration`, caminhos, modo offscreen, ordem dos callbacks e regra de não fechar se o flush falhar foram preservadas. Falhas ao abrir o aviso de salvamento agora são registradas sem gerar uma rejeição não tratada.
+- Quatro testes com uma janela em memória cobrem isolamento da janela normal, modo DEV AI, janela offscreen, flush concorrente e nova tentativa depois de falha. O novo teste está em `npm run test:refactor`.
+- `main.ts` passou de 1.036 para 994 linhas. Passaram `npm run typecheck`, `npm run audit:architecture` (468 arquivos TS/TSX), `npm run test:refactor` (500 testes principais e 18 auxiliares), build e `git diff --check`.

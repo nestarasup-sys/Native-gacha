@@ -91,6 +91,7 @@ import { createRoteirosVideoReferenceLookup } from './domains/roteiros/videoRefe
 import { createRoteirosWriteQueue } from './domains/roteiros/writeQueue'
 import { registerRoteirosIpc, type RoteirosIpcLifecycle } from './application/registerRoteirosIpc'
 import { configureDevAiDataRoot, configureLocalAppDataRoot } from './application/appDataBootstrap'
+import { createMainWindowFactory } from './application/mainWindow'
 import { createEditorV6VideoReferenceLookup } from './domains/editorV6/videoReferences'
 
 let configuredAppDataRoot: string | null = null
@@ -818,56 +819,30 @@ async function registerFabricatorHandlers(): Promise<void> {
   })
 }
 
-function createMainWindow(): void {
-  Menu.setApplicationMenu(null)
-  const videoStressOffscreen = process.env.GACHA_VIDEO_STRESS_OFFSCREEN === '1'
-  const window = new BrowserWindow({
-    show: !videoStressOffscreen && process.env.GACHA_DEV_AI_TEST !== '1',
-    width: 1440,
-    height: 900,
-    minWidth: 1120,
-    minHeight: 720,
-    backgroundColor: '#f7f8fa',
-    title: 'Gacha Nymi',
-    icon: join(__dirname, '../renderer/gacha-nymi.ico'),
-    webPreferences: {
-      preload: join(__dirname, '../preload/preload.cjs'),
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: true,
-      // Normal windows retain Chromium's background throttling. Stress sessions
-      // keep their preview clock active while the window stays off-display.
-      backgroundThrottling: videoStressOffscreen || process.env.GACHA_DEV_AI_TEST === '1' ? false : true
-    }
-  })
-  if (videoStressOffscreen) {
-    window.setSkipTaskbar(true)
-    window.once('ready-to-show', () => {
-      // A never-shown BrowserWindow is throttled by some Windows compositor
-      // paths despite backgroundThrottling=false. An off-display native window
-      // keeps real Electron rendering active without appearing on any monitor.
-      window.setPosition(-32000, -32000)
-      window.showInactive()
-    })
-  }
-  restrictRendererNavigation(window.webContents)
-  window.removeMenu()
-  window.webContents.once('did-finish-load', () => {
+const createMainWindow = createMainWindowFactory({
+  env: process.env,
+  createWindow: (options) => new BrowserWindow(options),
+  clearApplicationMenu: () => Menu.setApplicationMenu(null),
+  iconPath: join(__dirname, '../renderer/gacha-nymi.ico'),
+  preloadPath: join(__dirname, '../preload/preload.cjs'),
+  rendererPath: join(__dirname, '../renderer/index.html'),
+  rendererUrl: process.env.ELECTRON_RENDERER_URL,
+  restrictNavigation: restrictRendererNavigation,
+  onRendererLoaded: (window) => {
     if (dataBackupService) {
       void dataBackupService.finalizePendingRestore().catch((reason: unknown) => {
         console.error('A restauração foi aplicada, mas a limpeza do staging falhou; a cópia anterior foi preservada.', reason)
       })
     }
-    if (!dataMigration) return
-    void dataMigration.finalizeAfterHealthyLoad().catch((reason: unknown) => {
-      console.error('A validação final do armazenamento local falhou; as cópias de segurança temporárias foram preservadas.', reason)
-    })
-  })
+    if (dataMigration) {
+      void dataMigration.finalizeAfterHealthyLoad().catch((reason: unknown) => {
+        console.error('A validação final do armazenamento local falhou; as cópias de segurança temporárias foram preservadas.', reason)
+      })
+    }
 
-  // Smoke isolado, somente perfil DEV AI validado por configureDevAiDataRoot().
-  // Não captura screenshots nem usa perfis reais em execução normal.
-  if (process.env.GACHA_DEV_AI_TEST === '1' && process.env.GACHA_FABRICATOR_REAL_UI_CAPTURE === '1') {
-    window.webContents.once('did-finish-load', () => {
+    // Smoke isolado, somente perfil DEV AI validado por configureDevAiDataRoot().
+    // Não captura screenshots nem usa perfis reais em execução normal.
+    if (process.env.GACHA_DEV_AI_TEST === '1' && process.env.GACHA_FABRICATOR_REAL_UI_CAPTURE === '1') {
       const sandbox = resolve(process.env.GACHA_DEV_AI_SANDBOX ?? '')
       const captures = join(sandbox, 'fabricator-real-ui-captures')
       const reopen = process.env.GACHA_DEV_AI_REOPEN === '1'
@@ -877,42 +852,25 @@ function createMainWindow(): void {
           .then(() => visualCapture.captureCustomizerStudioRealScreens(window, captures)))
       void capture.then(() => { console.log('Capturas reais concluídas', captures, reopen ? '(reabertura)' : '(primeiro processo)'); app.quit() })
         .catch(error => { console.error('Falha no teste visual real do Fabricador:', error); app.exit(1) })
-    })
+    }
+  },
+  onClosed: () => editorV6MotionService?.releaseIdle(),
+  flushRendererWrites: async (window) => {
+    if (!window.webContents.isLoading()) {
+      await window.webContents.executeJavaScript('window.desktop?.flushPendingWrites ? window.desktop.flushPendingWrites() : undefined')
+    }
+  },
+  onFlushFailure: (window, reason) => {
+    console.error('Não foi possível concluir os salvamentos antes de fechar o editor:', reason)
+    if (window.isDestroyed()) return
+    void dialog.showMessageBox(window, {
+      type: 'error',
+      title: 'Salvamento pendente',
+      message: 'Não foi possível concluir os salvamentos. O editor continuará aberto para proteger suas alterações.',
+      buttons: ['Voltar ao editor']
+    }).catch((dialogError: unknown) => console.error('Não foi possível exibir o aviso de salvamento pendente:', dialogError))
   }
-
-  let closeAfterFlush = false
-  let flushingBeforeClose = false
-  window.on('closed', () => editorV6MotionService?.releaseIdle())
-  window.on('close', (event) => {
-    if (closeAfterFlush) return
-    event.preventDefault()
-    if (flushingBeforeClose) return
-    flushingBeforeClose = true
-    const flushRendererWrites = window.webContents.isLoading()
-      ? Promise.resolve()
-      : window.webContents.executeJavaScript("window.desktop?.flushPendingWrites ? window.desktop.flushPendingWrites() : undefined")
-    void flushRendererWrites.then(() => {
-      closeAfterFlush = true
-      flushingBeforeClose = false
-      if (!window.isDestroyed()) window.close()
-    }).catch(async (reason: unknown) => {
-      flushingBeforeClose = false
-      console.error('Não foi possível concluir os salvamentos antes de fechar o editor:', reason)
-      if (!window.isDestroyed()) await dialog.showMessageBox(window, {
-        type: 'error',
-        title: 'Salvamento pendente',
-        message: 'Não foi possível concluir os salvamentos. O editor continuará aberto para proteger suas alterações.',
-        buttons: ['Voltar ao editor']
-      })
-    })
-  })
-
-  if (process.env.ELECTRON_RENDERER_URL) {
-    void window.loadURL(process.env.ELECTRON_RENDERER_URL)
-  } else {
-    void window.loadFile(join(__dirname, '../renderer/index.html'))
-  }
-}
+})
 
 app.whenReady().then(async () => {
   restrictRendererPermissions(session.defaultSession)
