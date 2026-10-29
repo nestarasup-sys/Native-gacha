@@ -9,6 +9,7 @@ import { prepareExportMotions } from '../../electron/domains/editorV6/prepareMot
 import { createMotionDiskCache, motionCacheKey } from '../../electron/domains/editorV6/motionCache'
 import { createEditorV6MotionService } from '../../electron/domains/editorV6/motionIpc'
 import { editorV6IpcChannels } from '../../src/shared/editorV6IpcChannels'
+import { createCompletedMotionPreparation, hasCompletedMotionPreparation, indexMotionPreparationCharacters, rememberCompletedMotionPreparation } from '../../src/renderer/src/features/editorV6/motion/motionPreparationModel'
 
 function fixture() {
   const stamp = '2026-10-26T12:00:00.000Z'
@@ -25,6 +26,50 @@ function resultFor(request: EditorV6MotionBakeRequest): EditorV6MotionBakeResult
 }
 
 describe('transition preparation reuse', () => {
+  it('indexes the first character once and shares its full-content fingerprint across plans', () => {
+    const { character } = fixture()
+    let serializations = 0
+    Object.assign(character, { toJSON: () => { serializations++; return { id: character.id, updatedAt: character.updatedAt } } })
+    const duplicate = { ...character, name: 'Duplicate' }
+    const index = indexMotionPreparationCharacters([character, duplicate])
+    const firstPlan = index.get(character.id)!
+    const secondPlan = index.get(character.id)!
+
+    expect(firstPlan.character).toBe(character)
+    expect(secondPlan).toBe(firstPlan)
+    expect(index.get('missing')).toBeUndefined()
+    expect(serializations).toBe(1)
+  })
+
+  it('reuses only the matching character revision and keeps a bounded FIFO completion map', () => {
+    const { character } = fixture()
+    const initial = indexMotionPreparationCharacters([character]).get(character.id)!
+    const completed = createCompletedMotionPreparation()
+    expect(hasCompletedMotionPreparation(completed, 'plan-1', initial)).toBe(false)
+    rememberCompletedMotionPreparation(completed, 'plan-1', initial, 2)
+    expect(hasCompletedMotionPreparation(completed, 'plan-1', initial)).toBe(true)
+    expect(completed.byPlan.get('plan-1')).toEqual([{ characterId: character.id, fingerprint: initial.fingerprint }])
+
+    const changed = indexMotionPreparationCharacters([{ ...character, updatedAt: 'new-revision' }]).get(character.id)!
+    expect(hasCompletedMotionPreparation(completed, 'plan-1', changed)).toBe(false)
+    rememberCompletedMotionPreparation(completed, 'plan-2', initial, 2)
+    rememberCompletedMotionPreparation(completed, 'plan-3', initial, 2)
+    expect(completed.byPlan.has('plan-1')).toBe(false)
+    expect([...completed.byPlan.keys()]).toEqual(['plan-2', 'plan-3'])
+  })
+
+  it('keeps older completed revisions until the FIFO bound evicts them', () => {
+    const { character } = fixture()
+    const initial = indexMotionPreparationCharacters([character]).get(character.id)!
+    const changed = indexMotionPreparationCharacters([{ ...character, updatedAt: 'new-revision' }]).get(character.id)!
+    const completed = createCompletedMotionPreparation()
+    rememberCompletedMotionPreparation(completed, 'plan-1', initial, 3)
+    rememberCompletedMotionPreparation(completed, 'plan-1', changed, 3)
+
+    expect(hasCompletedMotionPreparation(completed, 'plan-1', initial)).toBe(true)
+    expect(hasCompletedMotionPreparation(completed, 'plan-1', changed)).toBe(true)
+  })
+
   it('treats a superseded background preparation as a normal cancellation', async () => {
     const { request } = fixture()
     const handlers = new Map<string, (event: IpcMainInvokeEvent, ...args: any[]) => any>()

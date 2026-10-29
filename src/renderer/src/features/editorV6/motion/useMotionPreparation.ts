@@ -2,10 +2,13 @@ import { useEffect, useRef } from 'react'
 import type { EditorV6Document } from '../../../../../shared/editorV6'
 import type { CustomizerCharacter } from '../../../../../shared/customizer'
 import { missingEditorV6Motions } from '../../../../../shared/editorV6Motion'
+import { createCompletedMotionPreparation, hasCompletedMotionPreparation, indexMotionPreparationCharacters, rememberCompletedMotionPreparation } from './motionPreparationModel'
 
 /** Warm the bounded disk cache only while the saved editor is idle. */
 export function useMotionPreparation(project: EditorV6Document | null, characters: CustomizerCharacter[], enabled: boolean) {
-  const done = useRef(new Set<string>())
+  const doneRef = useRef<ReturnType<typeof createCompletedMotionPreparation> | null>(null)
+  if (!doneRef.current) doneRef.current = createCompletedMotionPreparation()
+  const done = doneRef.current
   useEffect(() => {
     if (!project || !enabled) return
     let disposed = false, generation = 0, timer = 0, requestId: string | undefined, pointerHeld = false
@@ -16,19 +19,17 @@ export function useMotionPreparation(project: EditorV6Document | null, character
     }
     async function prepare(epoch: number) {
       const unique = new Map(missingEditorV6Motions(project!).map((plan) => [plan.key, plan]))
+      const characterIndex = indexMotionPreparationCharacters(characters)
       for (const plan of unique.values()) {
         if (disposed || epoch !== generation) return
-        const character = characters.find((item) => item.id === plan.characterId)
-        if (!character) continue
-        const key = JSON.stringify([plan.key, character])
-        if (done.current.has(key)) continue
+        const indexedCharacter = characterIndex.get(plan.characterId)
+        if (!indexedCharacter || hasCompletedMotionPreparation(done, plan.key, indexedCharacter)) continue
         const id = crypto.randomUUID()
         requestId = id
         try {
-          await window.desktop.editorV6.prepareEditorV6Motion({ id, plan, character })
+          await window.desktop.editorV6.prepareEditorV6Motion({ id, plan, character: indexedCharacter.character })
           if (disposed || epoch !== generation) return
-          done.current.add(key)
-          while (done.current.size > 256) done.current.delete(done.current.values().next().value!)
+          rememberCompletedMotionPreparation(done, plan.key, indexedCharacter)
         } catch (error) {
           if (!disposed && epoch === generation) console.warn('Preparação antecipada de transição adiada:', error)
           return
