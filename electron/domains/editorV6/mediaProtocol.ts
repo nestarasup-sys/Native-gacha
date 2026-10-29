@@ -1,5 +1,5 @@
 import { join } from 'node:path'
-import { createMediaFileResponse } from '../mediaLibrary/mediaFileResponse'
+import { createMediaFileResponse } from '../mediaLibrary/mediaFileResponse.ts'
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const mediaFile = /^([0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\.(mp4|webm|mov|m4v|mp3|wav|m4a|aac|ogg|flac|opus)$/i

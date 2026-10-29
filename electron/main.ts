@@ -1,6 +1,5 @@
-import { createEditorV6MediaHandler } from './domains/editorV6/mediaProtocol'
 import { createEditorV6Paths } from './domains/editorV6/paths'
-import { createMediaFileResponse } from './domains/mediaLibrary/mediaFileResponse'
+import { registerMediaProtocols } from './mediaProtocols'
 import { app, BrowserWindow, dialog, ipcMain, Menu, protocol, session, shell, type IpcMainInvokeEvent } from 'electron'
 import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync } from 'node:fs'
 import { mkdir as nativeMkdir, readFile as nativeReadFile, writeFile as nativeWriteFile, readdir as nativeReaddir, unlink as nativeUnlink, rename as nativeRename, stat as nativeStat, access as nativeAccess, rm as nativeRm, copyFile as nativeCopyFile } from 'node:fs/promises'
@@ -1129,57 +1128,6 @@ function createMainWindow(): void {
   }
 }
 
-function registerVideoAssetProtocol(): void {
-  protocol.handle('gacha-video', async (request) => {
-    try {
-      const url = new URL(request.url)
-      const parts = url.pathname.split('/').filter(Boolean)
-      const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-      if (url.hostname !== 'library' || parts.length !== 1 || !uuid.test(parts[0])) return new Response('Not found', { status: 404 })
-      const media = await videoLibrary.resolveMedia(parts[0])
-      const path = await dataFileSystem.resolvePhysicalPath(media.path) ?? media.path
-      const mimeType = ({ mp4: 'video/mp4', webm: 'video/webm', mov: 'video/quicktime', m4v: 'video/x-m4v' } as const)[media.extension]
-      return await createMediaFileResponse(request, path, mimeType)
-    } catch { return new Response('Not found', { status: 404 }) }
-  })
-}
-
-function registerEditorV6MediaProtocol(): void {
-  protocol.handle('gacha-editor-media', createEditorV6MediaHandler({
-    projectPath: editorV6Path,
-    readManifest: async (id) => JSON.parse(await nativeReadFile(join(editorV6Path(id), 'editorV6.json'), 'utf8')),
-    resolveLibraryMedia: async (id) => {
-      const media = await videoLibrary.resolveMedia(id)
-      return { path: await dataFileSystem.resolvePhysicalPath(media.path) ?? media.path, mimeType: media.mimeType }
-    }
-  }))
-}
-
-function registerVideoBackgroundProtocol(): void {
-  protocol.handle('gacha-background', async (request) => {
-    try {
-      const url = new URL(request.url)
-      const parts = url.pathname.split('/').filter(Boolean)
-      const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-      if (url.hostname !== 'library' || parts.length !== 1 || !uuid.test(parts[0])) return new Response('Not found', { status: 404 })
-      const image = await videoBackgroundLibrary.resolve(parts[0])
-      const bytes = await readFile(image.path)
-      return new Response(bytes, { headers: { 'content-type': image.mimeType, 'cache-control': 'no-store' } })
-    } catch { return new Response('Not found', { status: 404 }) }
-  })
-  protocol.handle('gacha-gif', async (request) => {
-    try {
-      const url = new URL(request.url)
-      const parts = url.pathname.split('/').filter(Boolean)
-      const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-      if (url.hostname !== 'library' || parts.length !== 1 || !uuid.test(parts[0])) return new Response('Not found', { status: 404 })
-      const path = await roteiroUiGifLibrary.resolve(parts[0])
-      const gif = await readFile(path)
-      return new Response(gif, { headers: { 'content-type': 'image/gif', 'cache-control': 'no-store' } })
-    } catch { return new Response('Not found', { status: 404 }) }
-  })
-}
-
 app.whenReady().then(async () => {
   restrictRendererPermissions(session.defaultSession)
   dataBackupService = new DataBackupService({ dataRoot: app.getPath('appData'), catalog: dataPlatform })
@@ -1241,9 +1189,11 @@ app.whenReady().then(async () => {
       callback({ cancel: blocked })
     })
   }
-  registerVideoAssetProtocol()
-  registerEditorV6MediaProtocol()
-  registerVideoBackgroundProtocol()
+  registerMediaProtocols({
+    protocol, videoLibrary, backgroundLibrary: videoBackgroundLibrary, gifLibrary: roteiroUiGifLibrary,
+    fileSystem: dataFileSystem, readFile, editorV6Path,
+    readEditorV6Manifest: async (id) => JSON.parse(await nativeReadFile(join(editorV6Path(id), 'editorV6.json'), 'utf8'))
+  })
   await registerFabricatorHandlers()
   editorV6MotionService = createEditorV6MotionService({ ipcMain, assertTrustedSender, html: join(__dirname, '../renderer/index.html'), preload: join(__dirname, '../preload/editorV6MotionPreload.cjs'), devUrl: process.env.ELECTRON_RENDERER_URL, cacheDirectory: join(app.getPath('userData'), 'cache', 'editor-v6-motion-v2') })
   editorV6ExportService = registerEditorV6ExportHandlers({ ipcMain, assertTrustedSender, projectPath: editorV6Path,
