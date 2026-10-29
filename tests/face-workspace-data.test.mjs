@@ -309,12 +309,13 @@ test('workspace data loaders stop before starting image requests if the view was
   assert.equal(componentRequests, 0)
 })
 
-test('FaceComponentsWorkspace delegates library reads while keeping selection and save queue in the page', async () => {
+test('FaceComponentsWorkspace delegates data loading and keeps catalog editing actions in the page', async () => {
   const page = await readFile('src/renderer/src/features/fabricator/face/FaceComponentsWorkspace.tsx', 'utf8')
+  const hook = await readFile('src/renderer/src/features/fabricator/face/useFaceCatalogWorkspace.ts', 'utf8')
   assert.match(page, /loadFaceComponentWorkspaceData\(window\.desktop\.fabricator, modelSlot, visibleKinds, \(\) => !active\)/)
-  assert.match(page, /listFaceCatalogWorkspaceSummaries\(window\.desktop\.fabricator, modelSlot, \(\) => !active\)/)
-  assert.match(page, /loadFaceCatalogWorkspaceDetails\(window\.desktop\.fabricator, modelSlot,/)
-  assert.match(page, /activeCategory,\s*mouthKind: mouthKindRef\.current,\s*selectedMouthId: selectedMouthIdRef\.current,\s*selectedNoseId: selectedNoseIdRef\.current/)
+  assert.match(page, /useFaceCatalogWorkspace\(/)
+  assert.match(hook, /listFaceCatalogWorkspaceSummaries\(api, modelSlot/)
+  assert.match(hook, /loadFaceCatalogWorkspaceDetails\(api, modelSlot,/)
   assert.match(page, /isCatalogDeleteOpen \? 'all'/)
   assert.doesNotMatch(page, /Promise\.all\((?:visibleList|relevant)\.map\(/)
   assert.match(page, /registerPendingWriteFlusher\(flushAllSaves\)/)
