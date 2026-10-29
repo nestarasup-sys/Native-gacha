@@ -1,5 +1,4 @@
 import { editorV6ElementSize } from '../../../../shared/editorV6SceneModel'
-import { isPoseSnapshotForModel } from '../../../../shared/characterSourceContinuity'
 import { useEditorV6Store } from './editorV6Store'
 import { createEditorV6Timeline, editorV6DefaultVideoLayout, syncEditorV6TimelineElements } from '../../../../shared/editorV6'
 import { EditorV6Timeline } from './EditorV6Timeline'
@@ -16,6 +15,7 @@ import { addEditorV6ImageAsset, addEditorV6TimelineMedia } from './editorV6Media
 import { addEditorV6ElementAtFrame, editEditorV6DocumentAtBlock, editorV6ClipAtFrame, normalizeEditorV6Timeline, editEditorV6BackgroundAtFrame, pruneEditorV6TimelineSnapshots, repairEditorV6DuplicateAssets, repairEditorV6FaceModeAssetReferences, resolveEditorV6SceneAtFrame, timelineClips } from '../../../../shared/editorV6Timeline'
 import { useEditorV6InspectorState } from './useEditorV6InspectorState'
 import { useEditorV6FaceCatalog } from './useEditorV6FaceCatalog'
+import { useEditorV6PoseCatalog } from './useEditorV6PoseCatalog'
 import { useEditorV6FacePreview } from './useEditorV6FacePreview'
 import { createSceneFaceActions } from '../../characters/sceneFaceActions'
 import { SceneFaceCatalogPanel } from '../../characters/SceneFaceCatalogPanel'
@@ -65,9 +65,8 @@ export function EditorV6Page() {
     inspectorTab, setInspectorTab, inspectorCustomView, setInspectorCustomView,
     characterInspectorViewRef, editorV6PresetCategory, setEditorV6PresetCategory, editorV6ExpressionCollections,
     setEditorV6ExpressionCollections, editorV6ExpressionPresets, setEditorV6ExpressionPresets, editorV6ExpressionCollectionMenuOpen, setEditorV6ExpressionCollectionMenuOpen, editorV6ExpressionLoading,
-    setEditorV6ExpressionLoading, editorV6ExpressionBusy, setEditorV6ExpressionBusy, editorV6PoseSlots,
-    setEditorV6PoseSlots, editorV6PoseThumbnails, setEditorV6PoseThumbnails, editorV6PoseDimensions,
-    setEditorV6PoseDimensions, inspectorOpen, setInspectorOpen, editorV6FaceCategory,
+    setEditorV6ExpressionLoading, editorV6ExpressionBusy, setEditorV6ExpressionBusy,
+    inspectorOpen, setInspectorOpen, editorV6FaceCategory,
     setEditorV6FaceCategory, editorV6FaceBusy, setEditorV6FaceBusy
   } = useEditorV6InspectorState()
   const [studioFolder, setEditorV6Folder] = useState('')
@@ -185,6 +184,7 @@ export function EditorV6Page() {
   const selectedEditorV6Character = selectedElement?.kind === 'character' ? availableCharacters.find((character) => character.id === selectedElement.characterId) ?? null : null
   const selectedEditorV6ExpressionCollectionId = editorV6ExpressionCollection(selectedElement, editorV6ExpressionPresets)
   const selectedEditorV6CharacterModelSlot = selectedEditorV6Character ? selectedEditorV6Character.customization.modelSlot ?? 1 : null
+  const { poseSlots: editorV6PoseSlots, poseThumbnails: editorV6PoseThumbnails, poseDimensions: editorV6PoseDimensions } = useEditorV6PoseCatalog(selectedEditorV6CharacterModelSlot, setError)
   const selectedEditorV6PoseSlot = selectedElement?.kind === 'character' ? selectedElement.poseSlot === undefined ? selectedEditorV6Character?.customization.poseSlot ?? null : selectedElement.poseSlot : null
   const selectedEditorV6FaceAppearance = selectedElement?.kind === 'character'
     ? selectedElement.faceAppearance ?? selectedEditorV6Character?.customization.faceAppearance
@@ -264,43 +264,6 @@ export function EditorV6Page() {
       window.removeEventListener('focus', refreshExpressionLibrary)
       document.removeEventListener('visibilitychange', refreshWhenVisible)
     }
-  }, [selectedEditorV6CharacterModelSlot])
-
-  useEffect(() => {
-    const modelSlot = selectedEditorV6CharacterModelSlot
-    const poses = editorV6PoseSlots.filter((pose) => pose.sourceModelSlot === modelSlot)
-    if (modelSlot === null || !poses.length) { setEditorV6PoseThumbnails({}); setEditorV6PoseDimensions({}); return }
-    let cancelled = false
-    void (async () => {
-      const { renderArtwork } = await import('../../characters/editorV6CharacterRenderer')
-      const thumbnails = await mapConcurrentItems(poses, async (pose) => {
-        try {
-          const artwork = await window.desktop.fabricator.loadFabricatorPose(pose.sourceModelSlot, pose.slot)
-          if (!isPoseSnapshotForModel(artwork, pose.sourceModelSlot, pose.slot)) return null
-          const thumbnail = await renderArtwork(artwork, 180)
-          return thumbnail ? { slot: pose.slot, thumbnail, width: artwork.width, height: artwork.height } : null
-        } catch { return null }
-      }, () => cancelled)
-      if (!cancelled) {
-        const ready = thumbnails.filter((entry): entry is NonNullable<typeof entry> => entry !== null)
-        setEditorV6PoseThumbnails(Object.fromEntries(ready.map((entry) => [entry.slot, entry.thumbnail])))
-        setEditorV6PoseDimensions(Object.fromEntries(ready.map((entry) => [entry.slot, { width: entry.width, height: entry.height }])))
-      }
-    })().catch(() => { if (!cancelled) { setEditorV6PoseThumbnails({}); setEditorV6PoseDimensions({}) } })
-    return () => { cancelled = true }
-  }, [editorV6PoseSlots, selectedEditorV6CharacterModelSlot])
-
-  useEffect(() => {
-    const modelSlot = selectedEditorV6CharacterModelSlot
-    if (modelSlot === null) { setEditorV6PoseSlots([]); return }
-    setEditorV6PoseSlots([])
-    let cancelled = false
-    void window.desktop.fabricator.listFabricatorPoseSlots(modelSlot).then((poses) => {
-      if (!cancelled) setEditorV6PoseSlots(poses.filter((pose): pose is NonNullable<typeof pose> => Boolean(pose)))
-    }).catch((reason: unknown) => {
-      if (!cancelled) setError(reason instanceof Error ? reason.message : 'Não foi possível carregar as poses do modelo.')
-    })
-    return () => { cancelled = true }
   }, [selectedEditorV6CharacterModelSlot])
 
   useEffect(() => {

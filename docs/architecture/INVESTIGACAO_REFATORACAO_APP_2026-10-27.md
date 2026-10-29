@@ -1259,3 +1259,12 @@ Continua a auditoria das operações IPC iniciadas pelo usuário e da cobertura 
 - O formato das cenas e projetos, IDs, IPC, persistência e render final permanecem iguais. A extração removeu o carregador específico do Studio e deixa a política comum num módulo reutilizável, sem import entre features.
 - Testes sintéticos cobrem limite, ordem, cancelamento, falha e integração nos dois fluxos; verificam também a normalização cancelável no Editor V6.
 - Verificação: `npm run test:refactor` passou com 450 testes; `npm test` com 29; `npm run test:editor-v6` com 140 testes e 1 ignorado, além dos 3 testes do perfil sintético. Também passaram typecheck, auditoria de arquitetura (427 arquivos TS/TSX, sem violações), build, auditoria de orçamento estático (nenhum arquivo acima do limite) e `git diff --check`.
+
+## 70. Etapa aplicada — catálogo de poses isolado do Editor V6
+
+- `EditorV6Page.tsx` cuidava diretamente da busca de poses, cancelamento, validação do snapshot, renderização das miniaturas e dimensões, além de coordenar a cena. O estado dessas poses também estava misturado ao hook geral do inspector.
+- `useEditorV6PoseCatalog.ts` agora é dono desse estado e do ciclo de vida das leituras por modelo. `editorV6PoseCatalog.ts` concentra o serviço testável: filtra a origem, limita a concorrência, valida o snapshot contra modelo e slot, preserva a ordem e descarta apenas poses inválidas ou sem miniatura.
+- O hook limpa lista e prévias ao trocar o modelo, cancela leituras antigas e comunica falhas na busca da lista ao estado de erro da página. `useEditorV6InspectorState` fica restrito às escolhas e abas do inspector. A página foi reduzida em cerca de 35 linhas e passou a compor o hook.
+- A busca continua usando os mesmos canais e IDs do Fabricador. Formatos de projeto, persistência, seleção de pose, montagem de cena e exportação não mudaram.
+- Testes sintéticos exercitam o serviço com carregadores em memória: teto de três leituras, ordem, slots incompatíveis, erro de pose, imagem sem resultado e cancelamento antes da leitura. Um teste de integração estrutural confirma a delegação da página e a separação do estado.
+- Verificação: `npm run test:refactor` passou com 452 testes; `npm test` com 29; `npm run test:editor-v6` com 140 testes e 1 ignorado, mais os 3 testes do perfil sintético. Também passaram typecheck, auditoria de arquitetura (429 arquivos TS/TSX, sem violações), build, auditoria de orçamento estático (nenhum arquivo acima do limite) e `git diff --check`.

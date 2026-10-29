@@ -7,6 +7,7 @@ import {
   sameCustomizerCharacterCatalog,
   samePoseRevisionSnapshot
 } from '../src/renderer/src/features/editorV6/useEditorV6CharacterSources.ts'
+import { loadEditorV6PoseThumbnails } from '../src/renderer/src/features/editorV6/editorV6PoseCatalog.ts'
 
 const validId = (value) => `00000000-0000-4000-8000-${String(value).padStart(12, '0')}`
 const projectSummary = (id) => ({ id, title: `Projeto ${id}`, color: '#d7b5cd', createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z' })
@@ -98,6 +99,73 @@ test('compara revisões e catálogos sem trocar referências se os dados não mu
   assert.deepEqual(revisions, { '2:1': 'missing', '2:4': 'pose-v2' })
   assert.equal(samePoseRevisionSnapshot(revisions, { ...revisions }), true)
   assert.equal(samePoseRevisionSnapshot(revisions, { ...revisions, '2:4': 'pose-v3' }), false)
+})
+
+test('catálogo de poses limita leituras, conserva ordem e rejeita snapshots incompatíveis', async () => {
+  const poses = Array.from({ length: 8 }, (_, index) => ({
+    slot: index + 1,
+    sourceModelSlot: index === 7 ? 9 : 2,
+    name: `Pose ${index + 1}`,
+    sourceModelName: 'Modelo 2',
+    partCount: 1,
+    updatedAt: '2026-01-01T00:00:00.000Z'
+  }))
+  const loads = []
+  const rendered = []
+  let active = 0
+  let maxActive = 0
+  const previews = await loadEditorV6PoseThumbnails({
+    modelSlot: 2,
+    poses,
+    isCancelled: () => false,
+    loadPose: async (modelSlot, poseSlot) => {
+      loads.push([modelSlot, poseSlot])
+      active += 1
+      maxActive = Math.max(maxActive, active)
+      await new Promise((resolve) => setTimeout(resolve, 2))
+      active -= 1
+      if (poseSlot === 5) throw new Error('pose ausente')
+      return {
+        schemaVersion: 1,
+        sourceModelSlot: modelSlot,
+        slot: poseSlot === 4 ? 40 : poseSlot,
+        width: 100 + poseSlot,
+        height: 200 + poseSlot,
+        parts: [],
+        joints: [],
+        layerOrder: [],
+        hiddenPartIds: []
+      }
+    },
+    renderArtwork: async (artwork, maxSize) => {
+      rendered.push([artwork.slot, maxSize])
+      return artwork.slot === 2 ? null : `thumb:${artwork.slot}`
+    }
+  })
+
+  assert.equal(maxActive, 3)
+  assert.deepEqual(loads.map(([, slot]) => slot), [1, 2, 3, 4, 5, 6, 7])
+  assert.deepEqual(previews, [1, 3, 6, 7].map((slot) => ({
+    slot,
+    thumbnail: `thumb:${slot}`,
+    width: 100 + slot,
+    height: 200 + slot
+  })))
+  assert.equal(rendered.some(([slot]) => slot === 40), false)
+  assert.ok(rendered.every(([, maxSize]) => maxSize === 180))
+})
+
+test('catálogo de poses cancelado não inicia leituras', async () => {
+  let loads = 0
+  const previews = await loadEditorV6PoseThumbnails({
+    modelSlot: 2,
+    poses: [{ slot: 1, sourceModelSlot: 2, name: 'Pose', sourceModelName: 'Modelo 2', partCount: 1, updatedAt: 'v1' }],
+    isCancelled: () => true,
+    loadPose: async () => { loads += 1; return null },
+    renderArtwork: async () => null
+  })
+  assert.deepEqual(previews, [])
+  assert.equal(loads, 0)
 })
 
 test('página delega biblioteca e fontes de personagem aos hooks da feature', async () => {

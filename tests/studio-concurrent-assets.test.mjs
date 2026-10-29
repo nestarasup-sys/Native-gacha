@@ -64,11 +64,19 @@ test('Studio usa a fila limitada para imagens faciais e miniaturas de pose', asy
   assert.match(page, /studioPoseSlots\.filter\(\(pose\) => pose\.sourceModelSlot === modelSlot\)/)
 })
 
-test('Editor V6 limita pose e recorte de personagens e interrompe trabalho obsoleto', async () => {
-  const page = await readFile('src/renderer/src/features/editorV6/EditorV6Page.tsx', 'utf8')
-  assert.equal((page.match(/mapConcurrentItems\(/g) ?? []).length, 2)
+test('Editor V6 delega o catálogo de poses e limita o recorte de personagens', async () => {
+  const [page, poseHook, poseCatalog] = await Promise.all([
+    readFile('src/renderer/src/features/editorV6/EditorV6Page.tsx', 'utf8'),
+    readFile('src/renderer/src/features/editorV6/useEditorV6PoseCatalog.ts', 'utf8'),
+    readFile('src/renderer/src/features/editorV6/editorV6PoseCatalog.ts', 'utf8')
+  ])
+  assert.equal((page.match(/mapConcurrentItems\(/g) ?? []).length, 1)
   assert.doesNotMatch(page, /Promise\.all\(editorV6PoseSlots\.map/)
   assert.doesNotMatch(page, /Promise\.all\(characterAssets\.map/)
-  assert.match(page, /editorV6PoseSlots\.filter\(\(pose\) => pose\.sourceModelSlot === modelSlot\)/)
-  assert.match(page, /\[editorV6PoseSlots, selectedEditorV6CharacterModelSlot\]/)
+  assert.match(page, /useEditorV6PoseCatalog\(selectedEditorV6CharacterModelSlot, setError\)/)
+  assert.match(poseHook, /listFabricatorPoseSlots\(modelSlot\)/)
+  assert.match(poseHook, /loadEditorV6PoseThumbnails\(/)
+  assert.match(poseHook, /\[modelSlot, poseSlots\]/)
+  assert.match(poseCatalog, /mapConcurrentItems\(/)
+  assert.match(poseCatalog, /isPoseSnapshotForModel\(/)
 })
