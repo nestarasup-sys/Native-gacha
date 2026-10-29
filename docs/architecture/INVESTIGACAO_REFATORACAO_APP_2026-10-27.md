@@ -1136,3 +1136,10 @@ Continua a auditoria das operações IPC iniciadas pelo usuário e da cobertura 
 - Uma medição sintética pontual com 10 peças e 3,1 MiB de imagens, guardando 50 estados, registrou 141,7 ms e 157,9 MiB para `structuredClone`; armazenar as versões imutáveis por referência registrou 0,2 ms e cerca de 0,7 MiB de estrutura. É um ensaio local ilustrativo, não uma medição de uso real do aplicativo.
 - Não houve mudança no JSON das poses, nos assets, IDs, canais IPC, persistência ou exportação.
 - Verificação: seis regressões focadas passaram; `npm run test:refactor` passou com 378 testes; `npm test` passou com 29. Também passaram typecheck, auditoria de arquitetura (403 arquivos TS/TSX), `performance-audit.cjs --check`, build e `git diff --check`.
+
+## 54. Etapa aplicada — regras puras dos Presets de Expressão separadas da tela
+
+- `ExpressionPresetWorkspace.tsx` continha a validação dos rascunhos recuperados, rebase de transforms, cálculo de métricas portáteis, reconciliação de boca/nariz por expressão e agrupamento de assets duplicados ou pareados. Essas regras agora ficam em `expressionPresetModel.ts`, testáveis sem montar a interface.
+- A tela continua responsável por estado, gestos, apresentação, autosave e chamadas IPC. A ordenação dos grupos, o fallback por `pairId`/nome/PNG, as métricas de espelhamento, o limite das escalas e a preservação de camadas portáteis foram mantidos e cobertos com fixtures sintéticas.
+- `ExpressionPresetWorkspace.tsx` passou de 1.276 para 1.101 linhas físicas. Os formatos e versões dos rascunhos e presets, IDs, assets, IPC, exportação e dados persistidos não mudaram.
+- Verificação: oito testes focados passaram; `npm run test:refactor` passou com 386 testes; `npm test` passou com 29. Também passaram typecheck, auditoria de arquitetura (404 arquivos TS/TSX), auditoria de orçamento estático sem estouros e build.

@@ -1,4 +1,4 @@
-import { compilePortableExpression, compilePtPupilMotion, resolvePresetPupilGaze, type ExpressionMetrics } from '../../../../shared/portableExpression'
+import { compilePortableExpression, compilePtPupilMotion, resolvePresetPupilGaze } from '../../../../shared/portableExpression'
 import { pupilDeltaFromDrag, pupilSourceMirrored } from '../../../../shared/facePupilGeometry'
 import { faceExpressionDefaults as defaultTransforms } from '../../../../shared/faceExpressionDefaults'
 import { FACE_COMPONENT_SELECTION_STORAGE_KEY, LEGACY_PUPIL_SELECTION_STORAGE_KEY, pickFaceLibraryBase, savedFaceLibraryParts, savedLegacyPupilParts } from '../../../../shared/faceLibrarySelection'
@@ -13,21 +13,25 @@ import { registerPendingWriteFlusher } from '../../ui/pendingPersistence'
 import { useModelAppearanceTarget, useModelPartAppearancePreview } from './ModelAppearanceContext'
 import { useEyeInteriorMasks } from '../../ui/hooks/useEyeInteriorMasks'
 import { selectedExpressionEyeAssets } from './eyePreviewSelection'
+import {
+  STANDARD_EXPRESSIONS,
+  authoredMetrics,
+  buildCatalogOptions,
+  buildComponentOptions,
+  compositionForExpression,
+  emptyExpressionComposition as emptyComposition,
+  findPairedAsset,
+  isWorkspaceDraftForModel,
+  motionForPublishedPreset,
+  rebaseExpressionTransforms
+} from './expressionPresetModel'
+import type { ComponentOption, ExpressionComposition } from './expressionPresetModel'
 
 type Side = 'left' | 'right'
 type PickerCategory = 'eyes' | 'pupils' | 'eyebrows' | 'nose' | 'mouth'
 type ComponentKind = 'eye' | 'pupil' | 'eyebrow'
 type PairedLayerKind = ComponentKind
-type ComponentOption = { key: string; kind: ComponentKind; name: string; leftId: string; rightId: string; ids: string[] }
-type CatalogOption = { key: string; item: FaceCatalogItemSummary; ids: string[] }
 type ExpressionWorkingCopy = { id: string; composition: ExpressionComposition; transforms: FaceExpressionTransforms; ptPupils?: PtPupilOverrides; noseOpacity: number; effects: FaceExpressionEffects }
-type ExpressionComposition = {
-  eyes: Record<Side, string | null>
-  pupils: Record<Side, string | null>
-  eyebrows: Record<Side, string | null>
-  nose: { catalogId: string; index: number } | null
-  mouth: { catalogId: string; kind: 'mouth-closed' | 'mouth-open'; index: number } | null
-}
 type LayerKey = keyof FaceExpressionTransforms
 type PreviewLayerMapping = { layer: LayerKey; startX: number; startY: number; mirroredX: boolean; rotation: number }
 type PreviewLayerDrag = {
@@ -58,33 +62,6 @@ const fromWorkspaceEntry = (entry: FaceExpressionWorkspaceEntry): ExpressionWork
   id: entry.id, composition: structuredClone(entry.selections), transforms: cloneTransforms(entry.transforms),
   ptPupils: structuredClone(entry.ptPupils ?? {}), noseOpacity: entry.noseOpacity, effects: cloneEffects(entry.effects)
 })
-function isWorkspaceDraftForModel(value: unknown, modelSlot: number): value is FaceExpressionWorkspaceDraft {
-  if (!value || typeof value !== 'object') return false
-  const draft = value as Partial<FaceExpressionWorkspaceDraft>
-  const validEntry = (entry: unknown) => {
-    if (!entry || typeof entry !== 'object') return false
-    const candidate = entry as FaceExpressionWorkspaceEntry
-    const transformKeys: Array<keyof FaceExpressionTransforms> = ['eyeLeft', 'eyeRight', 'pupilLeft', 'pupilRight', 'browLeft', 'browRight', 'nose', 'mouth']
-    return typeof candidate.id === 'string' && !!candidate.selections && typeof candidate.selections === 'object'
-      && !!candidate.transforms && transformKeys.every((key) => {
-        const transform = candidate.transforms[key]
-        return !!transform && [transform.x, transform.y, transform.scaleX, transform.scaleY, transform.rotation].every(Number.isFinite)
-      }) && Number.isFinite(candidate.noseOpacity) && candidate.noseOpacity >= 0 && candidate.noseOpacity <= 1
-      && !!candidate.effects && typeof candidate.effects === 'object'
-  }
-  return draft.schemaVersion === 1 && draft.modelSlot === modelSlot && typeof draft.selectedCollectionId === 'string'
-    && Number.isInteger(draft.selectedExpressionIndex) && Number(draft.selectedExpressionIndex) >= 0 && Number(draft.selectedExpressionIndex) <= 999
-    && validEntry(draft.current) && !!draft.workingCopies && typeof draft.workingCopies === 'object'
-    && Object.values(draft.workingCopies).every(validEntry)
-    && !!draft.customExpressionNames && typeof draft.customExpressionNames === 'object'
-    && Object.values(draft.customExpressionNames).every((name) => typeof name === 'string')
-    && typeof draft.updatedAt === 'string' && Number.isFinite(Date.parse(draft.updatedAt))
-}
-const STANDARD_EXPRESSIONS = [
-  'Aliviada', 'Animada', 'Apaixonada', 'Cansada', 'Ciumenta', 'Confusa', 'Decepcionada',
-  'Desconfiada', 'Envergonhada', 'Impressionada', 'Indignada', 'Irritada', 'Nojo', 'Normal',
-  'Orgulhosa', 'Preocupada', 'Séria', 'Sorrindo de canto', 'Sorriso maligno', 'Surpresa', 'Triste/magoada'
-] as const
 const defaultExpressionEffects = (): FaceExpressionEffects => ({ shadow: { enabled: false, color: '#4b3542', opacity: .38, softness: .55, size: .42, offsetY: 0 }, blush: { enabled: false, color: '#f0789c', opacity: .48, softness: .72, size: .68, offsetX: 0, offsetY: .04, aspectRatio: .52, style: 'cheeks' }, mouthBlush: { enabled: false, color: '#e86388', opacity: .38, softness: .78, size: .12, width: .12, height: .0624, rotation: 0, offsetY: 0, aspectRatio: .52 } })
 const cloneEffects = (effects?: FaceExpressionEffects): FaceExpressionEffects => structuredClone(effects ?? defaultExpressionEffects())
 const identityTransform = (): FaceTransform => ({ x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0 })
@@ -93,157 +70,6 @@ const cloneTransforms = (transforms: FaceExpressionTransforms): FaceExpressionTr
 const layerKey = (kind: 'eye' | 'pupil' | 'eyebrow', side: Side): LayerKey => kind === 'eye' ? side === 'left' ? 'eyeLeft' : 'eyeRight' : kind === 'pupil' ? side === 'left' ? 'pupilLeft' : 'pupilRight' : side === 'left' ? 'browLeft' : 'browRight'
 const pairedLayerKeys: Partial<Record<LayerKey, LayerKey>> = { eyeLeft: 'eyeRight', eyeRight: 'eyeLeft', pupilLeft: 'pupilRight', pupilRight: 'pupilLeft', browLeft: 'browRight', browRight: 'browLeft' }
 const pairedKindForLayer = (layer: LayerKey): PairedLayerKind | null => layer.startsWith('eye') ? 'eye' : layer.startsWith('pupil') ? 'pupil' : layer.startsWith('brow') ? 'eyebrow' : null
-
-function rebaseTransform(transform: FaceTransform, reference: FaceTransform, nextReference: FaceTransform): FaceTransform {
-  const rebased: FaceTransform = {
-    ...nextReference,
-    x: nextReference.x + transform.x - reference.x,
-    y: nextReference.y + transform.y - reference.y,
-    scaleX: Math.max(.02, Math.min(20, nextReference.scaleX * transform.scaleX / reference.scaleX)),
-    scaleY: Math.max(.02, Math.min(20, nextReference.scaleY * transform.scaleY / reference.scaleY)),
-    rotation: nextReference.rotation + transform.rotation - reference.rotation
-  }
-  if (Boolean(transform.flipX) !== Boolean(reference.flipX)) {
-    const flipX = !Boolean(nextReference.flipX)
-    if (flipX) rebased.flipX = true
-    else delete rebased.flipX
-  }
-  return rebased
-}
-
-/** Metrics are captured when authoring, never read from the original PNG to apply a preset later. */
-function authoredMetrics(composition: ExpressionComposition, components: Record<string,FaceComponentAsset>, catalogs: Record<string,FaceCatalogItem>): ExpressionMetrics {
-  const metrics: ExpressionMetrics = {}
-  for(const side of ['left','right'] as const){
-    const suffix=side==='left'?'Left':'Right'
-    const eye=composition.eyes[side] ? components[composition.eyes[side]!] : undefined
-    const brow=composition.eyebrows[side] ? components[composition.eyebrows[side]!] : undefined
-    if(eye){
-      metrics[`eye${suffix}`]={width:eye.width,height:eye.height,mirrored:side==='right' && !eye.rightSidePositioned}
-      // Pupil offsets use eye dimensions but the PUPIL's own mirror orientation.
-      const pupilId=composition.pupils[side]
-      const pupil=pupilId ? components[pupilId] : undefined
-      metrics[`pupil${suffix}`]={width:eye.width,height:eye.height,mirrored:side==='right' && !pupil?.rightSidePositioned}
-    }
-    if(brow)metrics[`brow${suffix}`]={width:brow.width,height:brow.height,mirrored:side==='right' && !brow.rightSidePositioned}
-  }
-  if(composition.nose){
-    const piece=catalogs[composition.nose.catalogId]?.pieces.find(item=>item.sheet==='nose' && item.index===composition.nose?.index)
-    if(piece)metrics.nose={width:piece.width,height:piece.height}
-  }
-  if(composition.mouth){
-    const piece=catalogs[composition.mouth.catalogId]?.pieces.find(item=>item.sheet===composition.mouth?.kind && item.index===composition.mouth?.index)
-    if(piece)metrics.mouth={width:piece.width,height:piece.height}
-  }
-  return metrics
-}
-
-function motionForPublishedPreset(
-  transforms: FaceExpressionTransforms,
-  reference: FaceExpressionTransforms,
-  selection: ExpressionComposition,
-  components: Record<string,FaceComponentAsset>,
-  catalogs: Record<string,FaceCatalogItem>,
-  previous?: FaceExpressionPreset | null
-) {
-  const compiled=compilePortableExpression(transforms,reference,authoredMetrics(selection,components,catalogs))
-  const old=previous && JSON.stringify(previous.selections)===JSON.stringify(selection)
-    ? previous.portableMotion?.layers : undefined
-  const layers={...old,...compiled.layers}
-  return Object.keys(layers).length ? {version:1 as const,layers} : undefined
-}
-
-function rebaseExpressionTransforms(
-  transforms: FaceExpressionTransforms,
-  reference: FaceExpressionTransforms,
-  nextReference: FaceExpressionTransforms
-): FaceExpressionTransforms {
-  const keys: LayerKey[] = ['eyeLeft', 'eyeRight', 'pupilLeft', 'pupilRight', 'browLeft', 'browRight', 'nose', 'mouth']
-  return Object.fromEntries(keys.map((key) => [key, rebaseTransform(transforms[key], reference[key], nextReference[key])])) as FaceExpressionTransforms
-}
-
-function compositionForExpression(composition: ExpressionComposition, index: number, catalogs: Record<string, FaceCatalogItem>): ExpressionComposition {
-  const next = structuredClone(composition)
-  if (next.nose) {
-    const nose = catalogs[next.nose.catalogId]
-    if (nose && !nose.pieces.some((piece) => piece.index === next.nose!.index)) next.nose.index = nose.pieces[0]?.index ?? 0
-  }
-  if (next.mouth) {
-    const mouth = catalogs[next.mouth.catalogId]
-    if (mouth?.pieces.some((piece) => piece.index === index)) next.mouth.index = index
-    else if (mouth && !mouth.pieces.some((piece) => piece.index === next.mouth!.index)) next.mouth.index = mouth.pieces[0]?.index ?? 0
-  }
-  return next
-}
-
-const emptyComposition: ExpressionComposition = {
-  eyes: { left: null, right: null }, pupils: { left: null, right: null }, eyebrows: { left: null, right: null }, nose: null, mouth: null
-}
-
-function componentSide(asset: FaceComponentAssetSummary): Side {
-  return asset.rightSidePositioned || /direit[oa]$/i.test(asset.name) ? 'right' : 'left'
-}
-
-function findPairedAsset(asset: FaceComponentAssetSummary, assets: FaceComponentAssetSummary[]): FaceComponentAssetSummary | undefined {
-  return assets.find((candidate) => candidate.id !== asset.id && candidate.kind === asset.kind && componentSide(candidate) === 'right'
-    && Boolean(asset.pairId && candidate.pairId === asset.pairId))
-    ?? assets.find((candidate) => candidate.id !== asset.id && candidate.kind === asset.kind && componentSide(candidate) === 'right'
-    && candidate.name.replace(/\s*[·-]\s*(?:Olho|Pupila|Sobrancelha)\s*(?:esquerd[oa]|direit[oa])$/i, '') === asset.name.replace(/\s*[·-]\s*(?:Olho|Pupila|Sobrancelha)\s*(?:esquerd[oa]|direit[oa])$/i, ''))
-}
-
-function componentBaseName(name: string): string {
-  return name.replace(/\s*[·-]\s*(?:Olho(?: aberto| fechado)?|Pupila|Sobrancelha)\s*(?:esquerd[oa]|direit[oa])$/i, '').trim()
-}
-
-function buildComponentOptions(kind: ComponentKind, summaries: FaceComponentAssetSummary[], details: Record<string, FaceComponentAsset>): ComponentOption[] {
-  const remaining = summaries.filter((asset) => asset.kind === kind)
-  const groups: FaceComponentAssetSummary[][] = []
-  while (remaining.length) {
-    const group = [remaining.shift()!]
-    let expanded = true
-    while (expanded) {
-      expanded = false
-      for (let index = remaining.length - 1; index >= 0; index -= 1) {
-        const candidate = remaining[index]
-        const connected = group.some((member) => {
-          const memberDetail = details[member.id]
-          const candidateDetail = details[candidate.id]
-          const sharedPair = Boolean(member.pairId && candidate.pairId && member.pairId === candidate.pairId)
-          const sameImage = Boolean(memberDetail?.dataUrl && candidateDetail?.dataUrl && memberDetail.dataUrl === candidateDetail.dataUrl)
-          const pairedNames = componentSide(member) !== componentSide(candidate) && componentBaseName(member.name) === componentBaseName(candidate.name)
-          return sharedPair || sameImage || pairedNames
-        })
-        if (connected) { group.push(remaining.splice(index, 1)[0]); expanded = true }
-      }
-    }
-    groups.push(group)
-  }
-
-  return groups.map((group) => {
-    const right = group.find((asset) => componentSide(asset) === 'right')
-    const left = group.find((asset) => componentSide(asset) === 'left') ?? group.find((asset) => asset.id !== right?.id) ?? right!
-    const rightAsset = right ?? left
-    const uniqueName = componentBaseName(left.name) || componentBaseName(rightAsset.name) || left.name
-    return { key: group.map((asset) => asset.id).sort().join(':'), kind, name: uniqueName, leftId: left.id, rightId: rightAsset.id, ids: group.map((asset) => asset.id) }
-  }).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'))
-}
-
-function buildCatalogOptions(summaries: FaceCatalogItemSummary[], items: Record<string, FaceCatalogItem>): CatalogOption[] {
-  const groups: Array<{ key: string; item: FaceCatalogItemSummary; ids: string[]; detail?: FaceCatalogItem }> = []
-  for (const summary of summaries) {
-    const item = items[summary.id]
-    const sortedPieces = item?.pieces.slice().sort((a, b) => a.index - b.index)
-    const duplicate = item && sortedPieces ? groups.find((group) => {
-      const otherPieces = group.detail?.pieces.slice().sort((a, b) => a.index - b.index)
-      return group.detail?.category === item.category && Boolean(otherPieces && otherPieces.length === sortedPieces.length
-        && otherPieces.every((piece, index) => piece.dataUrl === sortedPieces[index].dataUrl))
-    }) : undefined
-    const key = `${summary.category}:${summary.id}`
-    if (duplicate) duplicate.ids.push(summary.id)
-    else groups.push({ key, item: summary, ids: [summary.id], detail: item })
-  }
-  return groups.map(({ key, item, ids }) => ({ key, item, ids })).sort((a, b) => a.item.name.localeCompare(b.item.name, 'pt-BR'))
-}
 
 export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) {
   useModelAppearanceTarget(modelSlot)
