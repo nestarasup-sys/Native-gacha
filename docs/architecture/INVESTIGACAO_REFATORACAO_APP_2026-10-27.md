@@ -1074,3 +1074,10 @@ Continua a auditoria das operações IPC iniciadas pelo usuário e da cobertura 
 - A página registra o mesmo flusher global. Troca de slot, exclusão, duplicação, publicação da imagem original, reset e importação continuam aguardando ou cancelando a mesma fila nos pontos anteriores. O canal IPC, o payload serializado e os JSON persistidos não mudaram.
 - `FabricatorPage.tsx` passou de 1.091 para 1.045 linhas físicas (46 a menos). Quatro regressões cobrem flush do snapshot mais recente, serialização das gravações após falha, cancelamento do timer e preservação de um asset alterado durante uma gravação em curso.
 - Verificação: testes do coordenador (4), inventário de persistência pendente, suíte ampla de refatoração, typecheck, auditoria de arquitetura, build, `npm test` e `git diff --check`.
+
+## 47. Etapa aplicada — regressões sintéticas do recolorimento de pele
+
+- A função compartilhada `skinTint.ts` participa das prévias do Fabricador e da renderização usada por Customizador, Studio e Editor V6; não havia testes unitários diretos do preenchimento de pixels, das guias artificiais e da máscara de contorno.
+- `skin-tint.test.mjs` usa imagens RGBA sintéticas para verificar que o preenchimento alcança somente interiores, que uma guia fecha a abertura de junta sem colorir o exterior e que a troca da cor de pele/contorno mantém os canais alpha. A implementação visual não foi alterada.
+- O import de `skinTones` agora explicita a extensão `.ts` para que o módulo puro seja testado diretamente pelo Node com type stripping; Vite e TypeScript continuam usando o mesmo módulo.
+- Verificação: testes de pixels (4), suíte ampla de refatoração, typecheck, auditoria de arquitetura, build e `git diff --check`.

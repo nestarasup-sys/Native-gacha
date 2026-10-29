@@ -1,5 +1,5 @@
 import type { ModelSkinContourStroke } from '../../../shared/fabricator'
-import { MODEL_SKIN_BASE_TONE, isValidSkinTone } from '../../../shared/skinTones'
+import { MODEL_SKIN_BASE_TONE, isValidSkinTone } from '../../../shared/skinTones.ts'
 
 const MODEL_BODY_PART_NAME = /cabe[çc]a|head|tronco|corpo|torso|body|bra[cç]o|arm|antebra[cç]o|forearm|coxa|thigh|perna|canela|panturrilha|leg|calf|shin|(?:^|[\s_-])p[eé]s?(?:$|[\s_-])|foot|feet|m[aã]o(?:s)?|hands?/i
 
