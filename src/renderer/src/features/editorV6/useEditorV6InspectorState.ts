@@ -2,7 +2,7 @@
  * Os hooks mantêm os defaults e a ordem do componente original.
  */
 import { useRef, useState } from 'react'
-import type { FaceExpressionCollection, FaceExpressionPresetSummary, FabricatorPoseSummary, FaceCatalogItemSummary, FaceCatalogItem } from '../../../../shared/fabricator'
+import type { FaceExpressionCollection, FaceExpressionPresetSummary, FabricatorPoseSummary } from '../../../../shared/fabricator'
 
 export function useEditorV6InspectorState() {
   const [inspectorTab, setInspectorTab] = useState<'editor' | 'custom'>('editor')
@@ -20,9 +20,6 @@ export function useEditorV6InspectorState() {
   const [editorV6PoseDimensions, setEditorV6PoseDimensions] = useState<Record<number, { width: number; height: number }>>({})
   const [inspectorOpen, setInspectorOpen] = useState(true)
   const [editorV6FaceCategory, setEditorV6FaceCategory] = useState<'eyes' | 'eyebrows' | 'nose' | 'mouth'>('eyes')
-  const [editorV6FaceItems, setEditorV6FaceItems] = useState<FaceCatalogItemSummary[]>([])
-  const [editorV6FaceDetails, setEditorV6FaceDetails] = useState<Record<string, FaceCatalogItem>>({})
-  const [editorV6FaceLoading, setEditorV6FaceLoading] = useState(false)
   const [editorV6FaceBusy, setEditorV6FaceBusy] = useState(false)
 
   return {
@@ -54,12 +51,6 @@ export function useEditorV6InspectorState() {
     setInspectorOpen,
     editorV6FaceCategory,
     setEditorV6FaceCategory,
-    editorV6FaceItems,
-    setEditorV6FaceItems,
-    editorV6FaceDetails,
-    setEditorV6FaceDetails,
-    editorV6FaceLoading,
-    setEditorV6FaceLoading,
     editorV6FaceBusy,
     setEditorV6FaceBusy,
     characterInspectorViewRef

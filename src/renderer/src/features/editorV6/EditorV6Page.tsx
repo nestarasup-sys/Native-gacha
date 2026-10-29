@@ -14,6 +14,7 @@ import { addEditorV6ImageAsset, addEditorV6TimelineMedia } from './editorV6Media
 import type { ScenePointerEvent, SceneSurfaceInteraction } from './SceneSurface'
 import { addEditorV6ElementAtFrame, editEditorV6DocumentAtBlock, editorV6ClipAtFrame, normalizeEditorV6Timeline, prepareEditorV6PositionAtFrame, moveEditorV6ElementInPeriod, editEditorV6BackgroundAtFrame, pruneEditorV6TimelineSnapshots, repairEditorV6DuplicateAssets, repairEditorV6FaceModeAssetReferences, resolveEditorV6SceneAtFrame, timelineClips } from '../../../../shared/editorV6Timeline'
 import { useEditorV6InspectorState } from './useEditorV6InspectorState'
+import { useEditorV6FaceCatalog } from './useEditorV6FaceCatalog'
 import { resolveEditorV6InspectorSelection } from './editorV6Selection'
 import { trimTransparentImage, fitElementToTrim, faceRenderGeometry, type TrimmedImage } from '../../characters/characterGeometry'
 import { bakeFaceModeAssets, EDITOR_V6_FACE_RENDER_VERSION, editorV6FaceModeForElement, trimTransparentCanvas } from './faceModeAssets'
@@ -32,7 +33,6 @@ import { isLegacySceneCatalogId, loadLegacySceneCatalog } from '../../ui/legacyS
 import { createSceneTextElement, sceneCatalogColor, sceneEditorTools } from '../../ui/sceneEditorDefaults'
 import { CharacterPortrait } from '../../ui/components/CharacterPortrait'
 import { recordEditorV6PlaybackFrame, recordUiCommit } from '../../ui/performanceDiagnostics'
-import { resolveEditorV6TalkMouthId } from '../../../../shared/editorV6'
 import { fitEditorV6CharacterToStage } from '../../../../shared/editorV6CharacterGeometry'
 import { editorV6ProjectSummary, type EditorV6Asset, type EditorV6Document, type EditorV6Element, type EditorV6FaceMode, type EditorV6FaceTransform, type EditorV6FaceTransforms, type EditorV6ProjectSummary, type EditorV6TimelineBlock, type EditorV6VideoLayout } from '../../../../shared/editorV6'
 import type { CustomizerCharacter } from '../../../../shared/customizer'
@@ -89,9 +89,7 @@ export function EditorV6Page() {
     setEditorV6ExpressionLoading, editorV6ExpressionBusy, setEditorV6ExpressionBusy, editorV6PoseSlots,
     setEditorV6PoseSlots, editorV6PoseThumbnails, setEditorV6PoseThumbnails, editorV6PoseDimensions,
     setEditorV6PoseDimensions, inspectorOpen, setInspectorOpen, editorV6FaceCategory,
-    setEditorV6FaceCategory, editorV6FaceItems, setEditorV6FaceItems, editorV6FaceDetails,
-    setEditorV6FaceDetails, editorV6FaceLoading, setEditorV6FaceLoading, editorV6FaceBusy,
-    setEditorV6FaceBusy
+    setEditorV6FaceCategory, editorV6FaceBusy, setEditorV6FaceBusy
   } = useEditorV6InspectorState()
   const [studioFolder, setEditorV6Folder] = useState('')
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -250,9 +248,15 @@ export function EditorV6Page() {
     ? selectedElement.faceAppearance ?? selectedEditorV6Character?.customization.faceAppearance
     : undefined
   const selectedEditorV6FaceMode = selectedElement?.kind === 'character' ? editorV6FaceModeForElement(selectedElement, selectedEditorV6FaceAppearance) : 'idle'
-  const selectedEditorV6OpenMouthId = selectedEditorV6CharacterModelSlot === null
-    ? undefined
-    : resolveEditorV6TalkMouthId(selectedEditorV6FaceAppearance, editorV6FaceItems.filter((item) => item.modelSlot === selectedEditorV6CharacterModelSlot))
+  const reportFaceCatalogError = useCallback((reason: unknown) => {
+    setError(reason instanceof Error ? reason.message : 'Não foi possível carregar o catálogo de rosto.')
+  }, [])
+  const {
+    items: editorV6FaceItems, details: editorV6FaceDetails, loading: editorV6FaceLoading,
+    loadingRequiredDetails: editorV6FaceDetailsLoading, loadItem: loadEditorV6FaceCatalogItem,
+    openMouthId: selectedEditorV6OpenMouthId, selectedItemId: selectedEditorV6FaceCatalogItemId,
+    sheetKind: selectedEditorV6FaceSheetKind
+  } = useEditorV6FaceCatalog(selectedEditorV6CharacterModelSlot, editorV6FaceCategory, selectedEditorV6FaceMode, selectedEditorV6FaceAppearance, reportFaceCatalogError)
   const selectedEditorV6OpenMouth = selectedEditorV6OpenMouthId && selectedEditorV6CharacterModelSlot !== null
     ? editorV6FaceDetails[`${selectedEditorV6CharacterModelSlot}:${selectedEditorV6OpenMouthId}`]
     : undefined
@@ -446,27 +450,6 @@ export function EditorV6Page() {
       document.removeEventListener('visibilitychange', refreshWhenVisible)
     }
   }, [activeEditorV6Id, fabricatorModelSlotsKey])
-
-  useEffect(() => {
-    const modelSlot = selectedEditorV6CharacterModelSlot
-    if (modelSlot === null) { setEditorV6FaceItems([]); return }
-    let cancelled = false
-    setEditorV6FaceLoading(true)
-    void window.desktop.fabricator.listFaceCatalog(modelSlot).then(async (summaries) => {
-      if (cancelled) return
-      setEditorV6FaceItems(summaries)
-      const items = await Promise.all(summaries.map(async (summary) => ({ key: `${summary.modelSlot}:${summary.id}`, item: await window.desktop.fabricator.loadFaceCatalogItem(summary.modelSlot, summary.id) })))
-      if (cancelled) return
-      setEditorV6FaceDetails((current) => {
-        const next = { ...current }
-        for (const { key, item } of items) if (item) next[key] = item
-        return next
-      })
-    }).catch((reason: unknown) => {
-      if (!cancelled) setError(reason instanceof Error ? reason.message : 'Não foi possível carregar o catálogo de rosto.')
-    }).finally(() => { if (!cancelled) setEditorV6FaceLoading(false) })
-    return () => { cancelled = true }
-  }, [selectedEditorV6CharacterModelSlot])
 
   useEffect(() => {
     if (!editorV6PoseSlots.length) { setEditorV6PoseThumbnails({}); setEditorV6PoseDimensions({}); return }
@@ -1068,10 +1051,13 @@ export function EditorV6Page() {
 
   const chooseStudioFaceSheet = async (summary: FaceCatalogItemSummary) => {
     if (!selectedEditorV6Character) return
-    const key = `${summary.modelSlot}:${summary.id}`
-    const item = editorV6FaceDetails[key] ?? await window.desktop.fabricator.loadFaceCatalogItem(summary.modelSlot, summary.id)
+    let item: FaceCatalogItem | null
+    try { item = await loadEditorV6FaceCatalogItem(summary.modelSlot, summary.id) }
+    catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Não foi possível carregar a folha facial selecionada.')
+      return
+    }
     if (!item) return
-    setEditorV6FaceDetails((current) => ({ ...current, [key]: item }))
     const previous = selectedEditorV6FaceAppearance
     const sameModel = previous?.modelSlot === item.modelSlot
     const field: Record<FaceSheetKind, keyof CustomizerFaceAppearance> = {
@@ -1447,14 +1433,8 @@ export function EditorV6Page() {
     if (!selectedEditorV6Character || selectedElement?.kind !== 'character' || selectedEditorV6CharacterModelSlot === null) {
       return <div className="studio-custom-empty"><strong>Personalizar personagem</strong><span>Selecione um personagem na prévia ou no elenco para escolher as peças do rosto.</span></div>
     }
-    const sheetKind: FaceSheetKind = editorV6FaceCategory === 'mouth'
-      ? selectedEditorV6FaceMode === 'talk' ? 'mouth-open' : 'mouth-closed'
-      : editorV6FaceCategory
-    const selectedItemId = sheetKind === 'eyes' ? selectedEditorV6FaceAppearance?.eyeCatalogId
-      : sheetKind === 'eyebrows' ? selectedEditorV6FaceAppearance?.eyebrowCatalogId
-        : sheetKind === 'nose' ? selectedEditorV6FaceAppearance?.noseCatalogId
-          : sheetKind === 'mouth-open' ? selectedEditorV6FaceAppearance?.mouthOpenCatalogId ?? selectedEditorV6OpenMouthId
-            : selectedEditorV6FaceAppearance?.mouthClosedCatalogId
+    const sheetKind = selectedEditorV6FaceSheetKind
+    const selectedItemId = selectedEditorV6FaceCatalogItemId
     const activeItem = selectedItemId ? editorV6FaceDetails[`${selectedEditorV6CharacterModelSlot}:${selectedItemId}`] : null
     const studioTransformKey = editorV6FaceCategory === 'mouth' ? 'mouth' : selectedItemId ? `${sheetKind}:${selectedItemId}` : editorV6FaceCategory
     const legacyMouthTransform = selectedEditorV6FaceAppearance?.mouthClosedCatalogId
@@ -1466,7 +1446,7 @@ export function EditorV6Page() {
       ?? (editorV6FaceCategory === 'mouth' ? (selectedItemId ? selectedElement.faceTransforms?.[`${sheetKind}:${selectedItemId}`] : undefined) ?? legacyMouthTransform : undefined)
       ?? selectedElement.faceTransforms?.[editorV6FaceCategory]
       ?? defaultStudioEyeTransform
-    const catalogItems = editorV6FaceItems.filter((item) => item.category === sheetKind)
+    const catalogItems = editorV6FaceItems.filter((item) => item.modelSlot === selectedEditorV6CharacterModelSlot && item.category === sheetKind)
     const renderPair = (pieces: FaceCatalogItem['pieces']) => pieces.slice(0, 2).map((piece) => <img key={piece.id} src={piece.dataUrl} alt="" />)
     const categoryButtons = [
       { id: 'eyes', label: 'Olhos' }, { id: 'eyebrows', label: 'Sobrancelhas' },
@@ -1479,6 +1459,7 @@ export function EditorV6Page() {
       {editorV6FaceCategory === 'mouth' && <div className="studio-custom-mouth-tabs"><button className={selectedEditorV6FaceMode !== 'talk' ? 'active' : ''} onClick={() => void applyEditorV6FaceMode('idle')} disabled={!selectedEditorV6FaceAppearance || editorV6FaceBusy || editorV6ExpressionBusy} type="button">Fechada</button><button className={selectedEditorV6FaceMode === 'talk' ? 'active' : ''} onClick={() => void applyEditorV6FaceMode('talk')} disabled={!selectedEditorV6FaceAppearance || editorV6FaceBusy || editorV6ExpressionBusy || !selectedEditorV6TalkAvailable} type="button">Aberta</button></div>}
       <label className="studio-custom-eye-sheet-select"><span>{editorV6FaceCategory === 'eyes' ? 'Folha de olhos' : editorV6FaceCategory === 'eyebrows' ? 'Folha de sobrancelhas' : editorV6FaceCategory === 'nose' ? 'Folha de nariz' : 'Folha de boca'}</span><select value={selectedItemId ?? ''} onChange={(event) => { const summary = catalogItems.find((item) => item.id === event.target.value); if (summary) void chooseStudioFaceSheet(summary) }} disabled={editorV6FaceBusy || editorV6FaceLoading}><option value="">Selecione uma folha</option>{catalogItems.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
       {editorV6FaceLoading && <p className="studio-custom-hint">Carregando catálogo facial…</p>}
+      {editorV6FaceDetailsLoading && <p className="studio-custom-hint">Carregando imagens da folha facial selecionada…</p>}
       {editorV6FaceCategory === 'eyebrows' && selectedEditorV6FaceAppearance?.eyebrowCatalogId && <button className={`studio-custom-toggle${selectedEditorV6FaceAppearance.eyebrows ? ' active' : ''}`} onClick={() => updateStudioFaceVariant({ eyebrows: !selectedEditorV6FaceAppearance.eyebrows })} disabled={editorV6FaceBusy} type="button">{selectedEditorV6FaceAppearance.eyebrows ? 'Ocultar sobrancelhas' : 'Mostrar sobrancelhas'}</button>}
       {sheetKind === 'eyes' && <>
         {activeItem ? <div className="studio-custom-face-variants">{[0, 1, 2].map((index) => {
@@ -1486,7 +1467,7 @@ export function EditorV6Page() {
           const labels = ['Direita', 'Esquerda', 'Fechados']
           const displayedEyeState = selectedEditorV6FaceMode === 'blink' ? 2 : selectedEditorV6FaceAppearance?.eyeState === 1 ? 1 : 0
           return <button className={(displayedEyeState === index ? 'selected' : '')} key={index} onClick={() => updateStudioFaceVariant({ eyeState: index as 0 | 1 | 2 })} disabled={editorV6FaceBusy} type="button"><span>{renderPair(pieces)}</span><b>{labels[index]}</b></button>
-        })}</div> : <p className="studio-custom-hint">Escolha uma folha de olhos para ver as três variantes.</p>}
+        })}</div> : <p className="studio-custom-hint">{selectedItemId ? 'A folha de olhos selecionada ainda não está disponível.' : 'Escolha uma folha de olhos para ver as três variantes.'}</p>}
       </>}
       {activeItem && <>
         {sheetKind === 'nose' && <div className="studio-custom-face-variants studio-custom-face-grid">{activeItem.pieces.map((piece) => <button className={(selectedEditorV6FaceAppearance?.noseIndex === piece.index ? 'selected' : '')} key={piece.id} onClick={() => updateStudioFaceVariant({ noseIndex: piece.index })} disabled={editorV6FaceBusy} type="button"><span><img src={piece.dataUrl} alt="" /></span><b>{piece.index + 1}</b></button>)}</div>}
