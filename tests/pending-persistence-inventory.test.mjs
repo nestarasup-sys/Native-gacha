@@ -7,6 +7,8 @@ test('flush, backup e encerramento drenam persistências e aguardam operações 
   const inventory = main.match(/function collectPendingPersistenceWrites\(\): Promise<unknown>\[\] \{([\s\S]*?)^\}/m)?.[1]
 
   assert.ok(inventory, 'o composition root deve declarar o inventário de gravações')
+  assert.ok(inventory.includes('dataMigrationIpc?.getActiveTask()'), 'backups e flush devem aguardar a migração ativa')
+  assert.equal((main.match(/runMaintenance: runDataMaintenance/g) ?? []).length, 2, 'backup/restauração e migração devem compartilhar o mesmo coordenador')
   for (const owner of [
     'fabricatorProjectIpc?.getPendingWrites()',
     'fabricatorModelSourceDownloadIpc?.getPendingWrites()',
@@ -28,7 +30,7 @@ test('flush, backup e encerramento drenam persistências e aguardam operações 
 
   assert.equal((main.match(/await flushPendingPersistenceWrites\(\)/g) ?? []).length, 2)
   assert.equal((main.match(/fabricatorProjectIpc\?\.getPendingWrites\(\)/g) ?? []).length, 1)
-  assert.match(main, /\.\.\.collectPendingPersistenceWrites\(\),[\s\S]*?dataMigrationTask/)
+  assert.match(main, /\.\.\.collectPendingPersistenceWrites\(\),[\s\S]*?dataBackupIpc\?\.getActiveTasks\(\)/)
   assert.ok(main.includes('...(dataBackupIpc?.getActiveTasks() ?? [])'), 'o encerramento deve aguardar operações manuais de backup em andamento')
   assert.ok(main.includes('...(roteiroExportIpc ? [roteiroExportIpc.drain()] : [])'), 'o encerramento deve drenar os jobs de exportação de Roteiros')
 

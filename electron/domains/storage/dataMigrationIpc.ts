@@ -10,6 +10,7 @@ export function registerDataMigrationHandlers(deps: {
   ipcMain: Pick<IpcMain, 'handle'>
   assertTrustedSender: (event: IpcMainInvokeEvent) => void
   getService: () => DataMigrationServicePort | null
+  runMaintenance: <T>(operation: () => Promise<T>) => Promise<T>
   relaunch: () => void
   quit: () => void
 }) {
@@ -31,7 +32,7 @@ export function registerDataMigrationHandlers(deps: {
     running = true
     pauseRequested = false
     const outcomes: DataMigrationOutcome[] = []
-    const task = (async () => {
+    const task = deps.runMaintenance(async () => {
       const prepared = await service.prepare()
       if (!prepared.hasEnoughSpace) throw new Error('Espaço livre insuficiente para validar os dados com segurança.')
       for (const domain of prepared.domains) {
@@ -40,7 +41,7 @@ export function registerDataMigrationHandlers(deps: {
         outcomes.push(await service.migrateDomain(domain.domainId))
       }
       return { outcomes, paused: pauseRequested, summary: await service.prepare() }
-    })()
+    })
     activeTask = task
     try { return await task }
     finally { running = false; activeTask = null }

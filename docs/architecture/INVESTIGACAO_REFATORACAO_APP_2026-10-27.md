@@ -795,7 +795,7 @@ Este corte separa propriedade dos contratos e chamadas entre domínios, mas não
 
 ## 12. Próxima tarefa recomendada
 
-Continua a auditoria das operações IPC iniciadas pelo usuário e da cobertura do inventário do processo principal. Além de backups, exportações de Roteiros, bibliotecas compartilhadas, imagens de poses, ações compostas e prints do Editor V6/Studio, a rodada de 2026-10-29 incluiu importação/exportação do Model Source, exportação de animação facial e autosave de Design Dev. A recuperação após interrupção forçada agora cobre os dois fluxos de exportação de Roteiros; ainda faltam revisar outros caminhos manuais e publicações do aplicativo.
+Continua a auditoria das operações IPC iniciadas pelo usuário e da cobertura do inventário do processo principal. Além de backups, exportações de Roteiros, bibliotecas compartilhadas, imagens de poses, ações compostas e prints do Editor V6/Studio, a rodada de 2026-10-29 incluiu importação/exportação do Model Source, exportação de animação facial e autosave de Design Dev. A recuperação após interrupção forçada cobre os dois fluxos de exportação de Roteiros, e migração de dados e operações de backup agora compartilham exclusão mútua; ainda faltam revisar outros caminhos manuais e publicações do aplicativo.
 
 ## 13. Verificações e validação
 
@@ -894,3 +894,10 @@ Continua a auditoria das operações IPC iniciadas pelo usuário e da cobertura 
 - Na próxima exportação ou ao abrir a pasta de personagens, o app resolve a transação: desfaz uma publicação incompleta ou mantém uma publicação que alcançou o marcador de commit. A recuperação compara conteúdo e assinaturas e preserva um destino que tenha sido alterado por fora do app, deixando o journal para revisão.
 - Exportações do mesmo projeto são serializadas desde a leitura/mesclagem do JSON até a publicação, evitando que duas janelas percam a atualização uma da outra. Arquivos não gerados pelo exportador dentro das pastas dos personagens são mantidos; diretórios de staging órfãos são limpos após reinício.
 - A raiz padrão do Editor V4 agora está em `projectPaths.ts` e é compartilhada pelos dois exportadores de Roteiros. IPC, IDs persistidos, JSON do projeto e layout dos assets permanecem iguais. Seis regressões sintéticas cobrem publicação normal, hash do asset publicado, rollback após interrupção, preservação de alteração externa, retomada após commit e exportações concorrentes; nenhum projeto real foi acessado.
+
+## 24. Etapa aplicada — coordenação entre migração de dados e backups
+
+- `DataMigrationService.migrateDomain()` escreve no catálogo SQLite e nos snapshots de migração. Ao mesmo tempo, `DataBackupService.createBackup()` copia as pastas do app-data e cria um snapshot SQLite. Como a interface permitia iniciar as duas operações, o backup podia capturar o catálogo e os arquivos em momentos diferentes.
+- Backup, verificação, exclusão e restauração agora usam a mesma fila de manutenção da migração. A restauração mantém a exclusão mútua desde o backup de segurança até terminar o staging; migrações aguardam operações de backup já iniciadas, e backups aguardam uma migração ativa.
+- A migração ativa entrou no inventário de persistência, usado pelo flush antes do backup e pelo encerramento. A fila fica no composition root e é injetada nos dois domínios, mantendo a coordenação explícita sem mover a propriedade dos dados.
+- `npm run test:data-backup-ipc` passou com sete testes, incluindo as duas ordens de concorrência e staging de restauração; `npm test` passou com 27, `npm run test:refactor` com 330, e também passaram typecheck, auditoria de arquitetura (364 arquivos TS/TSX), build e `git diff --check`. Os testes usam serviços sintéticos; nenhum dado real foi alterado.

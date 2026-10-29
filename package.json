@@ -28,7 +28,7 @@
     "package:win:portable": "npm run build && electron-builder --win portable --x64",
     "test": "node --test tests/app-data-migration.test.cjs tests/studio-character-geometry.test.cjs tests/data-platform.test.cjs tests/video-library-domainfs.test.cjs tests/video-cas-shadow.test.cjs",
     "test:data-runtime": "node scripts/test-data-runtime.cjs",
-    "test:data-backup-ipc": "node --experimental-strip-types --test tests/data-backup-ipc-lifecycle.test.mjs tests/pending-persistence-inventory.test.mjs",
+    "test:data-backup-ipc": "node --experimental-strip-types --test tests/data-backup-ipc-lifecycle.test.mjs tests/data-maintenance-ipc-lifecycle.test.mjs tests/pending-persistence-inventory.test.mjs",
     "test:media-library-pending": "node --experimental-strip-types --test tests/media-library-pending-inventory.test.mjs",
     "test:fabricator:manual-lifecycle": "node --experimental-strip-types --test tests/fabricator-manual-operations-lifecycle.test.mjs tests/pending-persistence-inventory.test.mjs",
     "audit:gv5-import": "node scripts/diagnostics/audit-gv5-import.cjs",

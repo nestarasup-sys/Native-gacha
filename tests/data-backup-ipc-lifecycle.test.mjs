@@ -10,7 +10,7 @@ function deferred() {
 
 const tick = () => new Promise((resolve) => setImmediate(resolve))
 
-function createHarness({ service = {}, flushPendingWrites = async () => {}, showConfirmation = async () => ({ response: 0 }) } = {}) {
+function createHarness({ service = {}, flushPendingWrites = async () => {}, runMaintenance = (operation) => operation(), showConfirmation = async () => ({ response: 0 }) } = {}) {
   const handlers = new Map()
   const backupService = {
     createBackup: async () => ({ id: 'safety-backup' }),
@@ -28,6 +28,7 @@ function createHarness({ service = {}, flushPendingWrites = async () => {}, show
     getStorageSummary: async () => ({ disk: {}, catalog: {} }),
     getService: () => backupService,
     flushPendingWrites,
+    runMaintenance,
     showConfirmation,
     relaunch: () => { relaunched = true },
     quit: () => { quit = true }

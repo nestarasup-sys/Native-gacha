@@ -102,6 +102,11 @@ import { createEditorV6VideoReferenceLookup } from './domains/editorV6/videoRefe
 
 let configuredAppDataRoot: string | null = null
 let roteirosSaveQueue: Promise<void> = Promise.resolve()
+const dataMaintenanceQueue = createKeyedOperationQueue()
+
+function runDataMaintenance<T>(operation: () => Promise<T>): Promise<T> {
+  return dataMaintenanceQueue.run('app-data-maintenance', operation)
+}
 
 function waitForRoteirosWrites(): Promise<void> {
   return roteirosSaveQueue.catch(() => undefined)
@@ -1258,6 +1263,7 @@ const { isValidAnimatorSlot, writeAnimatorAnimation, readAnimatorAnimation, writ
 })
 
 function collectPendingPersistenceWrites(): Promise<unknown>[] {
+  const migrationTask = dataMigrationIpc?.getActiveTask()
   return [
     ...(fabricatorProjectIpc?.getPendingWrites() ?? []), ...poseSaveWrites, ...(fabricatorHairIpc?.getPendingWrites() ?? []),
     ...(fabricatorModelSourceDownloadIpc?.getPendingWrites() ?? []),
@@ -1271,6 +1277,7 @@ function collectPendingPersistenceWrites(): Promise<unknown>[] {
     ...(editorV6FileIpc?.getPendingWrites() ?? []),
     ...videoLibrary.getPendingWrites(), ...videoBackgroundLibrary.getPendingWrites(),
     ...roteiroUiGifLibrary.getPendingWrites(),
+    ...(migrationTask ? [migrationTask] : []),
     studioSaveQueues.studio, editorV6SaveQueue, roteirosSaveQueue,
     ...(poseMigration ? [poseMigration] : [])
   ]
@@ -1748,6 +1755,7 @@ app.whenReady().then(async () => {
   })
   dataBackupIpc = registerDataBackupHandlers({
     ipcMain, assertTrustedSender,
+    runMaintenance: runDataMaintenance,
     getStorageSummary: async () => ({ disk: await getAppDataUsage(app.getPath('appData')), catalog: dataPlatform.storageSummary() }),
     getService: () => dataBackupService,
     flushPendingWrites: async (event) => {
@@ -1765,6 +1773,7 @@ app.whenReady().then(async () => {
   dataMigrationIpc = registerDataMigrationHandlers({
     ipcMain, assertTrustedSender,
     getService: () => dataMigration,
+    runMaintenance: runDataMaintenance,
     relaunch: () => app.relaunch(),
     quit: () => app.quit()
   })
@@ -1811,12 +1820,10 @@ app.on('before-quit', (event) => {
   waitingForPersistenceWritesBeforeQuit = true
   editorV6ExportService?.cancelAll()
   editorV6MotionService?.cancelAll()
-  const dataMigrationTask = dataMigrationIpc?.getActiveTask()
   const pendingWrites = [
     ...collectPendingPersistenceWrites(),
     ...(dataBackupIpc?.getActiveTasks() ?? []),
     ...(roteiroExportIpc ? [roteiroExportIpc.drain()] : []),
-    ...(dataMigrationTask ? [dataMigrationTask] : []),
     ...(editorV6ExportService ? [editorV6ExportService.drain()] : []),
     ...(editorV6MotionService ? [editorV6MotionService.drain()] : [])
   ]

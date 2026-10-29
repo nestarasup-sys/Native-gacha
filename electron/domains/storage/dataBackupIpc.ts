@@ -10,6 +10,7 @@ export function registerDataBackupHandlers(deps: {
   getStorageSummary: () => Promise<DataStorageSummary>
   getService: () => DataBackupServicePort | null
   flushPendingWrites: (event: IpcMainInvokeEvent) => Promise<void>
+  runMaintenance: <T>(operation: () => Promise<T>) => Promise<T>
   showConfirmation: (event: IpcMainInvokeEvent, options: MessageBoxOptions) => Promise<{ response: number }>
   relaunch: () => void
   quit: () => void
@@ -38,14 +39,14 @@ export function registerDataBackupHandlers(deps: {
     if (!service) throw new Error('Serviço de backup ainda não inicializado.')
     return trackTask(async () => {
       await deps.flushPendingWrites(event)
-      return service.createBackup()
+      return deps.runMaintenance(() => service.createBackup())
     })
   })
   deps.ipcMain.handle('app:data-backups:verify', async (event, id: string) => {
     deps.assertTrustedSender(event)
     const service = deps.getService()
     if (!service) throw new Error('Serviço de backup ainda não inicializado.')
-    return trackTask(() => service.verifyBackup(id))
+    return trackTask(() => deps.runMaintenance(() => service.verifyBackup(id)))
   })
   deps.ipcMain.handle('app:data-backups:restore', async (event, id: string) => {
     deps.assertTrustedSender(event)
@@ -61,11 +62,13 @@ export function registerDataBackupHandlers(deps: {
     if (choice.response !== 0) return { cancelled: true }
     return trackTask(async () => {
       await deps.flushPendingWrites(event)
-      const safety = await service.createBackup()
-      const staged = await service.stageRestore(id)
-      deps.relaunch()
-      deps.quit()
-      return { cancelled: false, safetyBackupId: safety.id, ...staged }
+      return deps.runMaintenance(async () => {
+        const safety = await service.createBackup()
+        const staged = await service.stageRestore(id)
+        deps.relaunch()
+        deps.quit()
+        return { cancelled: false, safetyBackupId: safety.id, ...staged }
+      })
     })
   })
   deps.ipcMain.handle('app:data-backups:delete', async (event, id: string) => {
@@ -79,7 +82,7 @@ export function registerDataBackupHandlers(deps: {
     const choice = await deps.showConfirmation(event, options)
     if (choice.response !== 0) return { deleted: false }
     return trackTask(async () => {
-      await service.deleteBackup(id)
+      await deps.runMaintenance(() => service.deleteBackup(id))
       return { deleted: true }
     })
   })
