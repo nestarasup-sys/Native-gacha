@@ -2,6 +2,13 @@
 
 ## Reauditoria geral — 2026-10-29
 
+### Bootstrap separado para workers e interface
+
+- `main.tsx` importava estaticamente ReactDOM, roteador, App e CSS mesmo no hash do preparador de animações. `ui/mountApp.tsx` agora é importado somente na janela interativa; mantém StrictMode, HashRouter, boundaries e CSS. O registro público de flush continua síncrono no bootstrap.
+- Build: entrada bootstrap 5,20 kB; montagem da interface 96,20 kB e stylesheet de 374,13 kB ficam no caminho interativo. São tamanhos de artefatos sem compressão; não são medida de RSS nem de latência.
+- Novo comando reproduzível `npm run test:editor-v6:bootstrap` compila e abre Electron real com perfil temporário e bridge sintética que retorna fila vazia. Verificou que o worker chama payload, não monta DOM da interface, não carrega stylesheets nem mountApp, e mantém a função pública de flush. Relatório gerado em `out/editor-v6-bootstrap/result.json`, não versionado. Nenhum perfil real foi aberto pelo teste.
+- Passaram 330 testes de refatoração, typecheck, auditoria e build, além do smoke Electron real com os artefatos de produção. Esse smoke cobre inicialização do baker, não renderização de uma animação completa nem navegação interativa; essas verificações continuam no escopo pendente.
+
 ### Carregamento dos workspaces do Fabricador
 
 - A página importava estaticamente nove workspaces especializados embora a seção inicial seja Modelos. Os componentes agora são React.lazy no escopo do módulo, com Suspense local dentro do provider de aparência. A seção é montada somente quando selecionada; permanece o flush de gravações antes da troca e o tratamento de erros da rota.
