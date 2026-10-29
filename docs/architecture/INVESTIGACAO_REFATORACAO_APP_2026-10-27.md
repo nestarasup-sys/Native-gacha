@@ -2,6 +2,14 @@
 
 ## Reauditoria geral — 2026-10-29
 
+### Cache de imagens decodificadas
+
+- Os consumidores foram mapeados: Customizador/Studio/Roteiros/Fabricador usam uma instância; Editor V6 usa outra. Ambas mantêm o contrato Promise<HTMLImageElement> e sua independência.
+- `characterImageCache` conserva LRU/512 entradas e acrescenta orçamento estimado de 128 MiB por instância: fonte UTF-16 e pixels RGBA (largura natural × altura natural × 4). A contabilidade é atualizada após carregar. Imagens maiores que o orçamento são entregues ao chamador, mas não retidas. A evicção não modifica src nem invalida referências de renderizações em curso.
+- Corrigida corrida: rejeição de uma carga já removida só limpa a entrada se ainda for a mesma requisição; não remove uma substituta mais recente.
+- Testes sintéticos cobrem compartilhamento de cargas pendentes, ordem LRU, orçamento por pixels, imagem grande, validade da referência externa e rejeição antiga. Aprovados: 77 testes do Editor V6 (um ignorado existente), 330 de refatoração, typecheck, auditoria de arquitetura e build.
+- Limitação: orçamento estimado de referências retidas pelo cache, não limite global do Chromium/GPU nem de cargas simultâneas. Outros consumidores podem manter imagens vivas. Não foi medido ganho de RSS/FPS neste ciclo. Próxima revisão: os três caches de recoloração em characterImageTint, incluindo o cache de pele sem limite explícito.
+
 ### Ciclo de vida de esperas dos workers
 
 - `waitForExport` é usado no carregamento dos workers, desenho/captura de quadros, preparação das transições e envio/finalização do FFmpeg. A limpeza do timer/listener dependia da conclusão da operação original, mesmo quando a espera já havia sido cancelada ou expirado.
