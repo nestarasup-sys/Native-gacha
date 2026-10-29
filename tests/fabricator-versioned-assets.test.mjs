@@ -55,6 +55,18 @@ test('leitura com erro não deixa entrada incompleta em cache e permite retry',a
  assert.deepEqual(Array.from(await cache.resolve('face','eyes','v1',async()=>Uint8Array.of(5))),[5])
 })
 
+test('resolveBuffer oferece Buffer de chamada sem expor o armazenamento do cache', async () => {
+  const cache = new VersionedAssetResolver()
+  let reads = 0
+  const read = async () => { reads += 1; return Uint8Array.from([1, 2, 3, 4]) }
+  const first = await cache.resolveBuffer('model', 'head', 'v1', read)
+  assert.equal(Buffer.isBuffer(first), true)
+  first[0] = 255
+  const second = await cache.resolveBuffer('model', 'head', 'v1', read)
+  assert.deepEqual(Array.from(second), [1, 2, 3, 4])
+  assert.equal(reads, 1)
+})
+
 test('invalidação enquanto PNG antigo está sendo lido não ressuscita cache obsoleto', async () => {
   const resolver = new VersionedAssetResolver()
   let releaseOld

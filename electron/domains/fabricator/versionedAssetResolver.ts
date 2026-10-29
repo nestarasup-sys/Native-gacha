@@ -69,4 +69,10 @@ export class VersionedAssetResolver {
     try { return Uint8Array.from(await task) }
     finally { if (this.pending.get(key) === task) this.pending.delete(key) }
   }
+
+  /** Wraps resolve's caller-owned bytes without a second payload copy. */
+  async resolveBuffer(namespace: AssetNamespace, identity: string, version: string, read: () => Promise<Uint8Array>, assetPath = ''): Promise<Buffer> {
+    const bytes = await this.resolve(namespace, identity, version, read, assetPath)
+    return Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+  }
 }
