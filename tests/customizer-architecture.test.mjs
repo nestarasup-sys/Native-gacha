@@ -56,6 +56,21 @@ test('as duas telas do Customizador usam uma única superfície de prévia', asy
   assert.deepEqual(layerOffsets, [...layerOffsets].sort((left, right) => left - right))
 })
 
+test('workspace facial de catálogo fica isolado da página e gravação via callbacks', async () => {
+  const [page, workspace] = await Promise.all([
+    readFile(new URL('../src/renderer/src/features/customizer/CustomizerPage.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../src/renderer/src/features/customizer/CustomizerFaceCatalogWorkspace.tsx', import.meta.url), 'utf8')
+  ])
+  assert.match(page, /<CustomizerFaceCatalogWorkspace\b/)
+  assert.match(page, /onChooseCatalogItem=\{chooseFaceCatalogItem\}/)
+  assert.match(page, /onMouthBlushChange=\{setMouthBlush\}/)
+  assert.doesNotMatch(page, /renderFaceCatalogCard|renderFaceCatalogLibrary|renderFaceCatalogCustomizer/)
+  assert.doesNotMatch(workspace, /window\.desktop|localStorage/)
+  assert.match(workspace, /onSelectPage/)
+  assert.match(workspace, /onNoseOpacityChange/)
+  assert.match(workspace, /customizer-face-layout-catalog/)
+})
+
 test('validador aceita formato atual e rejeita id, slot, cor ou pose inválidos', () => {
   assert.equal(isCustomizerCharacter(valid()), true)
   assert.equal(isCustomizerCharacter({ ...valid(), customization: { ...valid().customization, faceAppearance: null } }), false)

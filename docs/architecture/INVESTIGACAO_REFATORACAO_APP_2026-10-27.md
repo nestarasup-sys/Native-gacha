@@ -1387,3 +1387,11 @@ Continua a auditoria das operações IPC iniciadas pelo usuário e da cobertura 
 - A gravação do blush passou da página para `useCustomizerFaceAppearanceActions`; os comandos de catálogo, paleta, rosto e óculos compartilham a mesma inicialização. Isso reduz duplicação sem alterar a forma de salvar o personagem, os contratos IPC ou os dados persistidos.
 - Quatro testes sintéticos cobrem defaults, preservação no mesmo modelo, isolamento ao trocar de modelo e comportamento do blush. `npm run test:customizer:face-appearance`, `npm run test:customizer` (15 testes) e a suíte de catálogo do Customizador (10 testes) passaram.
 - Verificação integrada: `npm run test:refactor` passou com 469 testes principais e 14 casos específicos; typecheck e build passaram; auditoria de arquitetura inspecionou 446 arquivos TS/TSX sem violações; `package.json` foi validado e `git diff --check` passou.
+
+## 86. Etapa aplicada — catálogo facial isolado da página do Customizador
+
+- `CustomizerPage.tsx` continha dentro da própria página a montagem dos cartões faciais, a biblioteca paginada, a seleção de assets e os controles de blush/nariz. Esse bloco misturava composição da tela com detalhes visuais de um subdomínio e acrescentava mais de cem linhas aos renderizadores locais.
+- `CustomizerFaceCatalogWorkspace.tsx` agora apresenta os cartões e a biblioteca e recebe estado/dados por props e operações por callbacks. A página segue dona da orquestração e da persistência; o componente não acessa `window.desktop`, filesystem, `localStorage` ou os serviços de gravação.
+- O modelo do catálogo exporta seu tipo inferido para o contrato entre página e componente. A seleção de peça, paginação, cores, paletas, boca aberta/fechada, blush, opacidade e tom do nariz continuam usando os mesmos serviços e valores; não houve mudança em IPC ou formato salvo.
+- A extração removeu 118 linhas líquidas de renderização de `CustomizerPage.tsx`; a nova fronteira adicionou 150 linhas de UI isolada e reduziu o escopo dos renderizadores da página.
+- Verificação: os 16 testes de arquitetura do Customizador passaram durante a implementação; `npm run typecheck`, `npm run audit:architecture` (447 arquivos TS/TSX, sem importações entre features nem violações) e `npm run build` passaram. `git diff --check` passou.

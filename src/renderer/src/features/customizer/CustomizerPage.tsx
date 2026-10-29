@@ -8,15 +8,16 @@ import { useCustomizerHairAppearanceActions } from './useCustomizerHairAppearanc
 import { useCustomizerBodyAppearance } from './useCustomizerBodyAppearance'
 import { useCustomizerCharacterSourceSelection } from './useCustomizerCharacterSourceSelection'
 import { CustomizerModelPicker } from './CustomizerModelPicker'
+import { CustomizerFaceCatalogWorkspace } from './CustomizerFaceCatalogWorkspace'
 import { CustomizerClothesAdjustmentPanel } from './CustomizerClothesAdjustmentPanel'
 import { CustomizerHeadAdjustmentPanel } from './CustomizerHeadAdjustmentPanel'
 import { buildClothesAdjustmentEntries } from './customizerClothesAdjustmentModel'
 import { upperWardrobePanels, upperWardrobePageTwoPanels, accessoryWardrobePanels, lowerWardrobePanels, lowerWardrobePageTwoPanels, wardrobePanelCandidates, isWardrobePanelCandidateSelected } from './wardrobePanelModel'
 import type { WardrobePanel } from './wardrobePanelModel'
 import { HairAssetPreview, WardrobePanelCandidatePreview } from './CustomizerAssetPreviews'
-import { customizerFaceParts, customizerFaceCatalogLayoutParts, customizerSkinTonePresets, facePartCatalogId, facePartColorControls, facePartSourceId, sameFaceAssetPair, skinTonePresets, wrapSlotIndex, createCustomizerFaceCatalogModel } from './customizerFaceCatalogModel'
-import type { FaceCatalogChoice, FaceCatalogLayoutPart, FaceLibraryPartId } from './customizerFaceCatalogModel'
-import { hairColorControls, hairPalettePresets, MouthBlushControls, NoseOpacityControl, NoseSkinTonePalette, PiecePaletteStrip } from './CustomizerAppearanceControls'
+import { customizerFaceParts, customizerSkinTonePresets, facePartCatalogId, facePartColorControls, facePartSourceId, sameFaceAssetPair, skinTonePresets, wrapSlotIndex, createCustomizerFaceCatalogModel } from './customizerFaceCatalogModel'
+import type { FaceLibraryPartId } from './customizerFaceCatalogModel'
+import { hairColorControls, hairPalettePresets, PiecePaletteStrip } from './CustomizerAppearanceControls'
 import { useCustomizerInitialArtworkPreview } from './useCustomizerInitialArtworkPreview'
 import { useCustomizerFacePreview } from './useCustomizerFacePreview'
 import { useCustomizerFaceCatalog } from './useCustomizerFaceCatalog'
@@ -43,7 +44,7 @@ import { hairAppearanceStyleIds, hairStyleSupportsCategory } from '../../../../s
 import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react'
 import { RenderedCharacterPortrait } from '../../ui/components/RenderedCharacterPortrait'
 import { Icon } from '../../ui/components/Icon'
-import type { FaceComponentAssetSummary, FaceDetailKind, FabricatorProject, HairStyle, HairStyleSummary } from '../../../../shared/fabricator'
+import type { FaceComponentAssetSummary, FabricatorProject, HairStyle, HairStyleSummary } from '../../../../shared/fabricator'
 import { resolvePoseCategory } from '../../../../shared/fabricator'
 import type { CustomizerWardrobeGroup, HairColorRole } from '../../../../shared/customizer'
 import { characterBodyDimensionLimits, characterProportionLimits, defaultCharacterProportions, type CharacterProportions } from '../../../../shared/customizer'
@@ -625,119 +626,6 @@ export function CustomizerPage() {
       </section>
   }
 
-  const chooseFaceCatalogChoice = (part: FaceCatalogLayoutPart, choice: FaceCatalogChoice) => {
-    if (choice.type === 'detail') void chooseFaceDetailCatalogItem(part as FaceDetailKind, choice.summary)
-    else void chooseFaceCatalogItem(choice.summary, choice.piece.index)
-  }
-
-  const renderMouthBlushToggle = () => <label className="customizer-mouth-blush-toggle" title="Controla o blush na expressão base e nos presets do Studio">
-    <input type="checkbox" checked={Boolean(activeFaceAppearance?.mouthBlushEnabled)} disabled={!selectedCharacter || selectedCatalogModelSlot === null} onChange={(event) => void setMouthBlush({ mouthBlushEnabled: event.target.checked })} />
-    <span>Blush na boca</span>
-  </label>
-
-  const renderMouthBlushControls = () => <MouthBlushControls
-    color={activeFaceAppearance?.mouthBlushColor ?? '#e86388'}
-    opacity={activeFaceAppearance?.mouthBlushOpacity ?? .38}
-    disabled={!selectedCharacter || selectedCatalogModelSlot === null}
-    onChange={(patch) => void setMouthBlush(patch)}
-  />
-
-  const renderFaceCatalogCard = (part: typeof customizerFaceCatalogLayoutParts[number]) => {
-    const choices = faceCatalogModel.choicesForPart(part.id)
-    const selectedId = faceCatalogModel.selectedIdForPart(part.id)
-    const selectedIndex = choices.findIndex((choice) => faceCatalogModel.isChoiceSelected(part.id, choice))
-    const selected = selectedIndex >= 0 ? choices[selectedIndex] : null
-    const selectedSlot = selectedIndex >= 0 ? selectedIndex + 1 : 0
-    const slotCount = choices.length + 1
-    const colors = activeFaceAppearance?.facePalettes?.[part.id] ?? {}
-    const skinTone = activeFaceAppearance?.noseSkinTone ?? effectiveModelSkinTone
-    const catalogOpacity = selected?.type === 'catalog' ? faceCatalogDetails[`${selected.summary.modelSlot}:${selected.summary.id}`]?.opacity ?? 1 : 1
-    const chooseAt = (index: number) => {
-      if (!selectedCharacter) return
-      const slot = wrapSlotIndex(index, slotCount)
-      if (slot === 0) void clearFaceCatalogPart(part.id)
-      else chooseFaceCatalogChoice(part.id, choices[slot - 1])
-    }
-    const isMouth = part.id === 'mouth'
-    const clearPart = part.id
-    return <article className={`customizer-hair-piece customizer-face-piece customizer-face-layout-piece customizer-face-layout-piece-${part.id}${isMouth ? ' customizer-face-layout-mouth' : ''}`} key={part.id}>
-      <header><strong>{part.label} {selectedSlot + 1}/{slotCount}</strong>{isMouth && <span className="customizer-mouth-blush-group">{renderMouthBlushToggle()}{renderMouthBlushControls()}</span>}<button className="customizer-hair-reset" type="button" disabled={!selectedId} onClick={() => void clearFaceCatalogPart(clearPart)}>Remover</button></header>
-      {isMouth && <nav className="customizer-face-layout-mode" aria-label="Tipo de boca">
-        <button className={!activeFaceAppearance?.mouthOpen ? 'active' : ''} type="button" aria-pressed={!activeFaceAppearance?.mouthOpen} onClick={() => void setFaceCatalogVariant({ mouthOpen: false })}>Fechada</button>
-        <button className={activeFaceAppearance?.mouthOpen ? 'active' : ''} type="button" aria-pressed={Boolean(activeFaceAppearance?.mouthOpen)} onClick={() => void setFaceCatalogVariant({ mouthOpen: true })}>Aberta</button>
-      </nav>}
-      <div className="customizer-hair-piece-selector customizer-face-layout-selector">
-        <button aria-label={`Peça anterior: ${part.label}`} onClick={() => chooseAt(selectedSlot - 1)} disabled={!choices.length || !selectedCharacter} type="button"><Icon name="chevronRight" /></button>
-        <button className="customizer-hair-piece-preview" aria-label={`Abrir biblioteca de ${part.label}`} title={`Abrir biblioteca de ${part.label}`} type="button" onClick={() => { setFaceCatalogLibraryPage(0); setFaceCatalogLibraryPart(part.id) }}>
-          {selected && <HairAssetPreview source={selected.type === 'catalog' ? selected.piece.dataUrl : selected.asset.dataUrl} colors={colors} tintOptions={{ preserveNearWhite: true, allowNearWhiteRoles: activeFaceAppearance?.facePaletteManualRoles?.[part.id] }} skinTone={part.id === 'nose' ? skinTone : undefined} opacity={part.id === 'nose' ? activeFaceAppearance?.noseOpacity ?? catalogOpacity : 1} alt={selected.summary.name} />}
-        </button>
-        <button aria-label={`Próxima peça: ${part.label}`} onClick={() => chooseAt(selectedSlot + 1)} disabled={!choices.length || !selectedCharacter} type="button"><Icon name="chevronRight" /></button>
-        <div className={`customizer-hair-piece-colors${part.id === 'nose' ? ' customizer-nose-piece-colors' : ''}`} aria-label={`Cores de ${part.label}`}>
-          {facePartColorControls.slice(0, 3).map((color) => <label key={color.id} className={colors[color.id] ? 'local' : ''} style={{ '--hair-color-swatch': colors[color.id] ?? color.fallback } as React.CSSProperties} title={`${color.label} de ${part.label}`}>
-            <input type="color" aria-label={`${color.label} de ${part.label}`} value={colors[color.id] ?? color.fallback} disabled={!selectedCharacter || !selected} onChange={(event) => void setFaceCatalogPartColor(part.id, color.id, event.target.value)} />
-            <span aria-hidden="true">{color.id === 'highlight' ? 'L' : color.id === 'accent' ? 'A' : color.id === 'outline' ? 'C' : color.id === 'fade' ? 'D' : 'B'}</span>
-          </label>)}
-          {part.id === 'nose' && <NoseOpacityControl value={activeFaceAppearance?.noseOpacity ?? catalogOpacity} disabled={!selectedCharacter || !selected} onChange={(value) => void saveCharacterCustomization((current) => current.faceAppearance ? { faceAppearance: { ...current.faceAppearance, noseOpacity: value } } : {})} />}
-          {facePartColorControls.slice(3).map((color) => <label key={color.id} className={colors[color.id] ? 'local' : ''} style={{ '--hair-color-swatch': colors[color.id] ?? color.fallback } as React.CSSProperties} title={`${color.label} de ${part.label}`}>
-            <input type="color" aria-label={`${color.label} de ${part.label}`} value={colors[color.id] ?? color.fallback} disabled={!selectedCharacter || !selected} onChange={(event) => void setFaceCatalogPartColor(part.id, color.id, event.target.value)} />
-            <span aria-hidden="true">{color.id === 'highlight' ? 'L' : color.id === 'accent' ? 'A' : color.id === 'outline' ? 'C' : color.id === 'fade' ? 'D' : 'B'}</span>
-          </label>)}
-        </div>
-      </div>
-      {part.id === 'nose'
-        ? <NoseSkinTonePalette value={skinTone ?? originalSkinTone ?? skinTonePresets[0].id} disabled={!selectedCharacter || !selected} onSelect={(tone) => void saveCharacterCustomization((current) => current.faceAppearance ? { faceAppearance: { ...current.faceAppearance, noseSkinTone: tone } } : {})} />
-        : <PiecePaletteStrip label={part.label} colors={colors} disabled={!selectedCharacter || !selected} onSelect={(palette) => void applyFaceCatalogPalette(part.id, palette)} />}
-    </article>
-  }
-
-  const renderFaceCatalogLibrary = () => {
-    if (!faceCatalogLibraryPart) return null
-    const part = customizerFaceCatalogLayoutParts.find((entry) => entry.id === faceCatalogLibraryPart)!
-    const choices = faceCatalogModel.choicesForPart(part.id)
-    const pageSize = 20
-    const slots: Array<FaceCatalogChoice | null> = [null, ...choices]
-    const pageCount = Math.max(1, Math.ceil(slots.length / pageSize))
-    const page = Math.min(faceCatalogLibraryPage, pageCount - 1)
-    const visible = slots.slice(page * pageSize, (page + 1) * pageSize)
-    const selectedId = faceCatalogModel.selectedIdForPart(part.id)
-    const selectedIndex = choices.findIndex((choice) => faceCatalogModel.isChoiceSelected(part.id, choice))
-    return <section className={`customizer-hair-library customizer-face-layout-library${part.id === 'mouth' ? ' customizer-face-layout-library-mouth' : ''}`} aria-labelledby="customizer-face-layout-library-title">
-      <header className={`customizer-hair-library-heading${part.id === 'mouth' ? ' customizer-hair-library-heading-mouth' : ''}`}>
-        <button className="customizer-hair-library-remove" type="button" onClick={() => void clearFaceCatalogPart(part.id)} disabled={!selectedId} aria-label={`Remover ${part.label}`} title={`Remover ${part.label}`}><Icon name="trash" /></button>
-        <h2 id="customizer-face-layout-library-title">{part.label}</h2>
-        {part.id === 'mouth' && <span className="customizer-mouth-blush-group">{renderMouthBlushToggle()}{renderMouthBlushControls()}</span>}
-        <button className="customizer-hair-library-close" type="button" onClick={() => setFaceCatalogLibraryPart(null)} aria-label="Voltar às peças do rosto">×</button>
-      </header>
-      {part.id === 'mouth' && <nav className="customizer-face-layout-mode customizer-face-layout-library-mode" aria-label="Tipo de boca">
-        <button className={!activeFaceAppearance?.mouthOpen ? 'active' : ''} type="button" aria-pressed={!activeFaceAppearance?.mouthOpen} onClick={() => { setFaceCatalogLibraryPage(0); void setFaceCatalogVariant({ mouthOpen: false }) }}>Fechada</button>
-        <button className={activeFaceAppearance?.mouthOpen ? 'active' : ''} type="button" aria-pressed={Boolean(activeFaceAppearance?.mouthOpen)} onClick={() => { setFaceCatalogLibraryPage(0); void setFaceCatalogVariant({ mouthOpen: true }) }}>Aberta</button>
-      </nav>}
-      <div className="customizer-hair-library-grid" aria-label={`Biblioteca de ${part.label}`}>
-        {visible.map((choice) => {
-          if (!choice) return <button className={`customizer-hair-library-item${selectedIndex < 0 ? ' selected' : ''}`} key="empty-slot" title="Slot vazio" aria-label={`Slot vazio · remover ${part.label} do personagem`} aria-pressed={selectedIndex < 0} type="button" onClick={() => { void clearFaceCatalogPart(part.id); setFaceCatalogLibraryPart(null) }} />
-          const selected = faceCatalogModel.isChoiceSelected(part.id, choice)
-          const itemId = choice.type === 'catalog' ? `${choice.summary.id}:${choice.piece.id}` : choice.summary.id
-          const imageUrl = choice.type === 'catalog' ? choice.piece.dataUrl : choice.asset.dataUrl
-          const itemIndex = choice.type === 'catalog' ? ` · ${choice.piece.index + 1}` : ''
-          return <button className={`customizer-hair-library-item${selected ? ' selected' : ''}`} key={itemId} title={`${choice.summary.name}${itemIndex}`} aria-label={`Selecionar ${part.label}${itemIndex}`} aria-pressed={selected} type="button" onClick={() => { chooseFaceCatalogChoice(part.id, choice); setFaceCatalogLibraryPart(null) }}><img src={imageUrl} alt="" /></button>
-        })}
-        {!choices.length && <p className="customizer-hair-library-empty">Nenhuma outra peça de {part.label.toLowerCase()} salva no Fabricador Dev.</p>}
-      </div>
-      <footer className="customizer-hair-library-pagination">
-        <button className="customizer-hair-library-page-arrow" type="button" aria-label="Página anterior" disabled={page === 0} onClick={() => setFaceCatalogLibraryPage((current) => Math.max(0, current - 1))}><Icon name="chevronRight" /></button>
-        <span>Página <strong>{page + 1}/{pageCount}</strong></span>
-        <button className="customizer-hair-library-page-arrow next" type="button" aria-label="Próxima página" disabled={page >= pageCount - 1} onClick={() => setFaceCatalogLibraryPage((current) => Math.min(pageCount - 1, current + 1))}><Icon name="chevronRight" /></button>
-      </footer>
-    </section>
-  }
-
-  const renderFaceCatalogCustomizer = () => <section className="customizer-hair-workspace customizer-face-catalog-workspace" aria-label="Personalização do rosto">
-    {selectedCatalogModelSlot === null ? <div className="customizer-catalog-empty">Escolha um modelo para ver as peças faciais.</div>
-      : faceLoading || faceComponentLoading ? <div className="customizer-catalog-empty">Carregando catálogo facial…</div>
-        : faceCatalogLibraryPart ? renderFaceCatalogLibrary()
-          : <div className="customizer-hair-layout customizer-face-layout customizer-face-layout-catalog">{customizerFaceCatalogLayoutParts.map(renderFaceCatalogCard)}</div>}
-  </section>
-
   const renderFaceCustomizer = () => {
     const appearance = characterFaceAppearance?.modelSlot === selectedCatalogModelSlot ? characterFaceAppearance : undefined
     const renderPart = (part: typeof customizerFaceParts[number]) => {
@@ -1029,7 +917,29 @@ export function CustomizerPage() {
             {catalogError && <p className="customizer-catalog-error" role="alert">{catalogError}</p>}
             {selectedCustomizerTopTab === 'cabeca' && headPanelTab === 'hair' && (hairLibraryPart ? renderHairLibrary() : renderHairCustomizer())}
             {selectedCustomizerTopTab === 'cabeca' && headPanelTab === 'eyes' && (faceLibraryPart ? renderFaceLibrary() : renderFaceCustomizer())}
-            {selectedCustomizerTopTab === 'cabeca' && headPanelTab === 'face' && renderFaceCatalogCustomizer()}
+            {selectedCustomizerTopTab === 'cabeca' && headPanelTab === 'face' && <CustomizerFaceCatalogWorkspace
+              selectedModelSlot={selectedCatalogModelSlot}
+              loading={faceLoading || faceComponentLoading}
+              selectedPart={faceCatalogLibraryPart}
+              selectedPage={faceCatalogLibraryPage}
+              faceCatalogModel={faceCatalogModel}
+              faceCatalogDetails={faceCatalogDetails}
+              appearance={activeFaceAppearance}
+              hasCharacter={Boolean(selectedCharacter)}
+              effectiveModelSkinTone={effectiveModelSkinTone}
+              originalSkinTone={originalSkinTone}
+              onSelectPart={setFaceCatalogLibraryPart}
+              onSelectPage={setFaceCatalogLibraryPage}
+              onChooseCatalogItem={chooseFaceCatalogItem}
+              onChooseDetail={chooseFaceDetailCatalogItem}
+              onClearPart={clearFaceCatalogPart}
+              onSetVariant={setFaceCatalogVariant}
+              onSetColor={setFaceCatalogPartColor}
+              onApplyPalette={applyFaceCatalogPalette}
+              onMouthBlushChange={setMouthBlush}
+              onNoseOpacityChange={(value) => { void saveCharacterCustomization((current) => current.faceAppearance ? { faceAppearance: { ...current.faceAppearance, noseOpacity: value } } : {}) }}
+              onNoseSkinToneChange={(tone) => { void saveCharacterCustomization((current) => current.faceAppearance ? { faceAppearance: { ...current.faceAppearance, noseSkinTone: tone } } : {}) }}
+            />}
             {selectedCustomizerTopTab === 'cabeca' && headPanelTab === 'extra' && renderWardrobeCatalog()}
             {selectedCustomizerTopTab === 'cabeca' && headPanelTab === 'adjust' && renderAdjustmentPicker('head')}
             {selectedCustomizerTopTab === 'roupas' && (clothesPanelTab === 'upper' || clothesPanelTab === 'lower') && renderWardrobeCatalog()}

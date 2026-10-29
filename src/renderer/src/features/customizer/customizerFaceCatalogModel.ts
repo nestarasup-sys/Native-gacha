@@ -124,3 +124,5 @@ export function createCustomizerFaceCatalogModel({
 
   return { optionsForCategory, choicesForPart, selectedIdForPart, isChoiceSelected }
 }
+
+export type CustomizerFaceCatalogModel = ReturnType<typeof createCustomizerFaceCatalogModel>
