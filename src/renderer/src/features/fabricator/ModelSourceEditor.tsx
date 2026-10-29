@@ -5,6 +5,7 @@ import { isHeadPart } from './models/resize'
 import { normalizePartAnchors } from './models/rig'
 import { composeModelSource, sourceRect, validateModelSourceChroma, validateModelSourceDimensions, MAX_CHROMA_TOLERANCE, type ModelSourceDimensions, type ModelSourceResult } from './models/modelSource'
 import { cropModelSourcePart, eraseModelSourceBrush, removeModelSourceColor, rotateModelSourcePart, sampleModelSourceColor, splitModelSourcePart, worldPointInsideCrop, worldPointToPart, type ModelSourceCrop, type ModelSourcePoint, type ModelSourceQuarterTurn } from './models/modelSourceEditing'
+import { applyRotatedModelSourcePart } from './models/modelSourceProjectEditing'
 import { applyImageWarpBrush, type ImageWarpPoint } from './models/imageMeshWarp'
 import { createModelSourceWarpSession, drawModelSourceWarp, modelSourceWarpDataUrl, warpModelSkinContours, type ModelSourceWarpSession } from './models/modelSourceWarp'
 import { isModelSkinPart } from './models/modelSkinTone'
@@ -48,11 +49,6 @@ const toolButton = (active: boolean, disabled: boolean): CSSProperties => ({
   background: active ? '#24558b' : '#1b2230',
   opacity: disabled ? .5 : 1
 })
-
-function sourceOverlapArea(a: ReturnType<typeof sourceRect>, b: ReturnType<typeof sourceRect>): number {
-  return Math.max(0, Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x))
-    * Math.max(0, Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y))
-}
 
 function cropFromGesture(gesture: DrawingGesture): ModelSourceCrop {
   const x = Math.floor(Math.min(gesture.start.x, gesture.current.x))
@@ -300,38 +296,9 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
     void runMutation(async (materialized) => {
       const part = materialized.parts.find((item) => item.id === selected.id)
       if (!part) throw new Error('A peça selecionada não está mais no modelo.')
-      const previousRect = sourceRect(part)
       const rotatedPart = await rotateModelSourcePart(part, degrees)
-      const rotatedRect = sourceRect(rotatedPart)
-      if (rotatedRect.x < 0 || rotatedRect.y < 0 || rotatedRect.x + rotatedRect.width > materialized.width || rotatedRect.y + rotatedRect.height > materialized.height) {
-        throw new Error('A rotação ultrapassaria os limites da folha original. Reduza o tamanho da peça ou escolha outra peça.')
-      }
-      for (const other of materialized.parts) {
-        if (other.id === part.id) continue
-        const otherRect = sourceRect(other)
-        if (sourceOverlapArea(rotatedRect, otherRect) > sourceOverlapArea(previousRect, otherRect) + 1) {
-          throw new Error(`A rotação invadiria a área de ${other.name}. A peça não foi alterada.`)
-        }
-      }
-      const radians = degrees * Math.PI / 180
-      const center = { x: part.x + part.width / 2, y: part.y + part.height / 2 }
-      const rotateAnchor = (point: { x: number; y: number }) => {
-        const dx = point.x - center.x
-        const dy = point.y - center.y
-        return {
-          x: center.x + dx * Math.cos(radians) - dy * Math.sin(radians),
-          y: center.y + dx * Math.sin(radians) + dy * Math.cos(radians)
-        }
-      }
-      const parts = materialized.parts.map((item) => item.id === part.id ? rotatedPart : item)
-      const joints = materialized.joints.map((joint) => {
-        const parentAnchor = joint.parentPartId === part.id ? rotateAnchor(joint.parentAnchor) : joint.parentAnchor
-        const childAnchor = joint.childPartId === part.id ? rotateAnchor(joint.childAnchor) : joint.childAnchor
-        return { ...joint, parentAnchor, childAnchor, pivot: { x: (parentAnchor.x + childAnchor.x) / 2, y: (parentAnchor.y + childAnchor.y) / 2 } }
-      })
-      const rig = normalizePartAnchors(parts, joints)
       return {
-        project: { ...materialized, parts: rig.parts, joints: rig.joints },
+        project: applyRotatedModelSourcePart(materialized, part.id, rotatedPart, degrees),
         selectedId: part.id,
         status: `Imagem da peça girada ${degrees > 0 ? '90° à direita' : '90° à esquerda'}. A edição pode ser desfeita e só vai ao modelo original ao salvar.`
       }
