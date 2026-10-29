@@ -2,6 +2,7 @@
 import { join, resolve, dirname, basename } from 'node:path'
 import type * as nodeFs from 'node:fs/promises'
 import type { StudioAsset, StudioDocument } from '../../../src/shared/studio'
+import { createKeyedOperationQueue } from '../storage/keyedOperationQueue.ts'
 import { publishStudioAssetsAndManifest, recoverStudioAssetTransaction } from '../storage/studioAssetTransaction.ts'
 
 type Files = Pick<typeof nodeFs, 'readFile' | 'writeFile' | 'mkdir' | 'access' | 'rename' | 'unlink' | 'rm'>
@@ -15,16 +16,7 @@ export function createStudioDocumentPersistence(deps: {
   normalizeImage: (bytes: Buffer) => Promise<{ bytes: Buffer }>
 }) {
   const { readFile, mkdir, rm } = deps.files
-  const operations = new Map<string, Promise<void>>()
-
-  function serialized<T>(id: string, operation: () => Promise<T>): Promise<T> {
-    const prior = operations.get(id) ?? Promise.resolve()
-    const task = prior.catch(() => undefined).then(operation)
-    const idle = task.then(() => undefined, () => undefined)
-    operations.set(id, idle)
-    void idle.then(() => { if (operations.get(id) === idle) operations.delete(id) })
-    return task
-  }
+  const operations = createKeyedOperationQueue()
 
   function normalizeStudio(value: Record<string, unknown>, id: string): StudioDocument {
     return {
@@ -121,9 +113,9 @@ export function createStudioDocumentPersistence(deps: {
   }
 
   return {
-    readStudio: (id: string) => serialized(id, () => readStudio(id)),
-    readStudioPoseReferences: (id: string) => serialized(id, () => readStudioPoseReferences(id)),
-    writeStudio: (document: StudioDocument) => serialized(document.id, () => writeStudio(document)),
-    removeStudio: (id: string) => serialized(id, () => removeStudio(id)),
+    readStudio: (id: string) => operations.run(id, () => readStudio(id)),
+    readStudioPoseReferences: (id: string) => operations.run(id, () => readStudioPoseReferences(id)),
+    writeStudio: (document: StudioDocument) => operations.run(document.id, () => writeStudio(document)),
+    removeStudio: (id: string) => operations.run(id, () => removeStudio(id)),
   }
 }

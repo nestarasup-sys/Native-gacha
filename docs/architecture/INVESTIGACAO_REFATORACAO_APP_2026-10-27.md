@@ -6,7 +6,7 @@
 
 **Base histórica da reauditoria:** branch local `Dev-V2`, criada sobre `Main-desenvolvimento` no commit `6c2997223430ded043043222469b1fc20a63084f`.
 
-**Snapshot revalidado nesta etapa:** branch local `Dev-V2`, commit `c98f630` (`refactor(fabricator): use shared preview background hook`), antes da atualização incremental do contrato IPC descrita abaixo.
+**Ponto de partida desta etapa:** branch local `Dev-V2`, commit `06c5b25` (`fix(fabricator): protect referenced poses across workspaces`).
 
 **Base histórica do primeiro ciclo:** commit `805798f` (`refactor(media): remove obsolete video studios field`), branch local `Dev-V2`.
 
@@ -22,7 +22,7 @@ A **Biblioteca de Mídia** é dona dos arquivos de vídeo e seus IDs. Base de V�
 
 O restante já tem módulos por domínio e armazenamento local com SQLite, arquivos e CAS. O `electron/main.ts` agora registra somente o flush transversal de gravações; a maior concentração está nas páginas React extensas que combinam estado e coordenação de operações. O plano prioriza limites de propriedade, segurança dos dados e redução de responsabilidades por fluxo.
 
-**Próximos passos:** continuar mapeando referências de catálogos e assets entre renderer, preload, handlers IPC e repositórios; verificar em especial os vínculos numéricos de poses do Fabricador mantidos por personagens e áreas consumidoras. O flush transversal permanece no composition root. A composição compartilha algoritmos visuais de baixo nível; a orquestração e os modos de render continuam próprios de Studio e Editor V6 até existir comparação visual das saídas reais.
+**Próximos passos:** o ciclo de referências de poses já foi mapeado e protegido: personagens, cenas do Studio e elementos/blocos da timeline do Editor V6 são verificados antes de excluir uma pose, coordenando gravações concorrentes. Nesta etapa, a serialização por chave compartilhada entre persistências do Fabricador, Studio e Editor V6 foi centralizada sem alterar os formatos ou a ordem das gravações. O flush transversal permanece no composition root. A composição compartilha algoritmos visuais de baixo nível; a orquestração e os modos de render continuam próprios de Studio e Editor V6 até existir comparação visual das saídas reais.
 
 ## 1. Estado observado
 
@@ -181,6 +181,7 @@ Editor V6
 
 - **Modelo-fonte:** Fabricador guarda as peças desmontadas com IDs estáveis e `sourceTransform`, que registra a posição original de cada recorte. Poses partem do modelo montado, mas preservam esses IDs e a origem do modelo (`slot` e `updatedAt`) no snapshot.
 - **Pose:** `PoseWorkspace` grava cada pose no catálogo do slot de modelo que a originou. Customizador, Studio, Editor V6 e o Animador consultam esse catálogo por `sourceModelSlot` e `slot`; Customizador, Studio e Editor V6 validam a identidade da pose antes de projetá-la.
+- **Referências e exclusão de poses:** o personagem persiste `modelSlot`/`poseSlot`; cenas do Studio referenciam poses por elementos de personagem; o Editor V6 também guarda vínculos em elementos e no estado da timeline. `src/shared/fabricatorPoseReferences.ts` reúne os coletores, e `electron/domains/fabricator/poseReferences.ts` coordena gravações e exclusões. A exclusão de uma pose em uso é bloqueada; referências legadas já quebradas continuam editáveis, e referências cujo modelo não pode ser identificado falham fechadas para a mesma pose.
 - **Roupa:** um conjunto pertence a `modelSlot`; cada peça aponta para `attachedPartId` e guarda o encaixe no referencial local do osso original em `binding`. `mapWardrobeComponentToPose` converte esse encaixe para o osso homônimo da pose. Os PNGs e os metadados do conjunto continuam na biblioteca do Fabricador.
 - **Instância do personagem:** Customizador guarda apenas referências (`modelSlot`, `setId`, `componentId`) e ajustes próprios do personagem em `wardrobeGroups`; não altera o modelo, a pose ou o conjunto de roupa-fonte.
 - **Renderização:** `characterWardrobeRenderer` resolve modelo-fonte, pose, conjunto e grupo equipado por IDs e desenha as peças sobre os ossos correspondentes. As fachadas de Customizador/Studio e Editor V6, além da prévia do Animador, reutilizam esse mapeamento. `validateWardrobeFlow` aponta vínculo ausente, incompatibilidade de slot/revisão e transformações inválidas, sem regravar catálogos durante a leitura.
@@ -194,6 +195,7 @@ Editor V6
 - **Contrato desktop:** `electron/preload.ts` constrói o objeto protegido `window.desktop`; contratos de domínio ficam em `src/shared/` e a declaração global em `desktop.d.ts`. Base, Biblioteca de Mídia, fundos, gerenciamento de dados, importação de imagens, Fabricador, Customizador, Studio, Editor V6 e Roteiros expõem namespaces tipados. A auditoria de chamadas migrou os consumidores internos e removeu os aliases planos; `flushPendingWrites` permanece na raiz para a coordenação transversal de encerramento.
 - **Composição:** `electron/main.ts` inicializa Electron, filesystem, migrações e bibliotecas, registra IPC, conecta serviços e mantém somente o handler transversal de flush; `dataMigrationIpc` registra as quatro operações de migração e expõe a tarefa ativa para o encerramento aguardar, `dataBackupIpc` registra o inventário e as cinco operações de backup, `fabricator/hairIpc` registra seis canais e mantém a fila de cabelo consultável pelo backup e pelo encerramento, `fabricator/projectIpc` registra operações de projetos e `fabricator/wardrobeIpc` coordena os três canais de roupa. `faceAnimationExportIpc` continua no domínio Fabricador; `images/imageNormalizationIpc` registra a normalização compartilhada sem renomear o canal existente. As persistências de projeto, histórico e roupa ficam em módulos do domínio. Os módulos de arquivo do Studio/Editor V6 coordenam seleção de imagens e abertura de prints; `designSettingsService` cuida da ativação segura do domínio legado, leitura, validação e gravação. `main.ts` injeta caminhos, acesso ao storage, normalização e callbacks de ciclo de vida; continua responsável por criar serviços, coordenar filas antes do backup e finalizar migrações após a abertura saudável.
 - **Dados:** `electron/dataPlatform.cjs` possui schema e catálogo SQLite centralizados; `DomainFileSystem` permite caminhos lógicos sobre armazenamento físico/CAS; cada domínio mantém manifestos e arquivos próprios. Os nomes antigos dos diretórios são parte da compatibilidade.
+- **Ordem de operações locais:** `electron/domains/storage/keyedOperationQueue.ts` agora centraliza FIFO por chave para as persistências de catálogos do Fabricador, Studio e Editor V6. Uma falha é devolvida à operação chamadora, sem impedir a seguinte; chaves distintas avançam em paralelo. As tabelas `pending` dos journals de assets têm outro contrato — recuperação aguarda uma publicação em andamento — e permanecem separadas.
 - **Renderização compartilhada:** `characters/` já compartilha cache de imagem, materiais preparados, tintura, presets de expressão e composição de camadas, roupas e rosto de catálogo. Os renderizadores mantêm suas próprias fachadas, políticas e ciclo de vida. Ainda falta comparar saídas reais de Studio e Editor V6 antes de unificar a orquestração completa.
 
 ### Dívida estrutural geral
@@ -575,9 +577,16 @@ Este corte separa propriedade dos contratos e chamadas entre domínios, mas não
 - `faceCatalogIpc.ts` coordena exclusões com `withCharactersLocked` e `queueExpressionWork`; `expressionIpc.ts` valida novos IDs em presets, salvamentos em lote e rascunhos. A remoção de componentes também protege assets pareados; uma peça virtual de conjunto legado sem diretório próprio agora retorna erro explícito em vez de sucesso sem exclusão.
 - Vínculos quebrados já existentes permanecem editáveis em campos não relacionados. Formatos persistidos, canais IPC, IDs e ownership dos assets não mudaram.
 
+### Etapa aplicada — fila por chave compartilhada
+
+- A mesma implementação de FIFO por chave existia na persistência do Studio, do Editor V6 e dos catálogos do Fabricador. Agora `createKeyedOperationQueue` é a regra comum usada pelos três; cada domínio mantém as próprias chaves e operações.
+- A fila mantém leitura, gravação, recuperação e remoção na ordem anterior para a mesma chave. Operações de outras chaves continuam paralelas e uma rejeição não bloqueia trabalhos seguintes.
+- Os journals de publicação de PNG do Studio e Editor V6 não foram acoplados à fila: seus mapas `pending` são barreiras de recuperação com semântica diferente. Nenhum canal IPC, arquivo, formato persistido, ID ou ownership foi alterado.
+- `tests/keyed-operation-queue.test.mjs` cobre FIFO, paralelismo entre chaves e continuidade após falha; os testes existentes continuam cobrindo gravação concorrente, recovery e integridade dos catálogos/documentos.
+
 ## 7. Próxima tarefa recomendada
 
-Mapear o ciclo dos vínculos numéricos de poses do Fabricador: personagem guarda `modelSlot`/`poseSlot`, e Customizador, Studio e Editor V6 carregam o snapshot pelo slot. Verificar como a exclusão de uma pose afeta cada consumidor e definir, com evidência no código, se a regra adequada é bloquear exclusão, limpar vínculos ou manter um snapshot recuperável. Preservar os formatos e o comportamento de poses legadas até concluir essa análise.
+Auditar a semelhança entre `electron/domains/storage/studioAssetTransaction.ts` e `electron/domains/editorV6/assetTransaction.ts`. Mapear protocolo de journal, campos próprios de cada manifesto, recuperação e injeção de filesystem; só extrair um núcleo comum se os testes de falha continuarem exercitando ambos os contratos sem alterar caminhos ou dados persistidos.
 
 ## 8. Verificações e validação
 
@@ -597,3 +606,4 @@ Mapear o ciclo dos vínculos numéricos de poses do Fabricador: personagem guard
 - Nesta etapa, `node --test tests/pending-persistence-inventory.test.mjs`, `npm run typecheck`, `npm run audit:architecture` (342 arquivos TS/TSX) e `npm run build` passaram. O mapeamento de referências de catálogo foi somente leitura; nenhum dado de perfil ou mídia foi acessado.
 - Nesta etapa, 16 testes de `customizer-architecture` e `fabricator-hair-reference-integrity` passaram; também passaram `npm run typecheck`, `npm run audit:architecture` (343 arquivos TS/TSX), `npm run build` e `git diff --check`. Os testes usaram armazenamento temporário e personagens sintéticos.
 - Nesta etapa, 24 testes de `customizer-architecture`, `fabricator-hair-reference-integrity` e `fabricator-face-reference-integrity` passaram. `npm run typecheck`, `npm run audit:architecture` (345 arquivos TS/TSX, sem imports locais ausentes ou violações de fronteira), `npm run build` e `git diff --check` também passaram. A cobertura inclui vínculos de personagens, presets e rascunhos, IDs virtuais legados, assets pareados, validação de novos IDs e `setId` inativo; fixtures sintéticas e armazenamento temporário foram usados.
+- Nesta etapa, `npm run test:refactor` passou com 296 testes; `npm test` passou com 27, e `npm run test:editor-v6` com 64 testes (1 fixture opcional ignorado). Também passaram `npm run typecheck`, `npm run audit:architecture` (348 arquivos TS/TSX, sem imports ausentes ou violações de fronteira), `npm run build` e `git diff --check`. Os novos cenários de fila e os testes de persistência usaram operações sintéticas e diretórios temporários; nenhum perfil ou mídia pessoal foi acessado.

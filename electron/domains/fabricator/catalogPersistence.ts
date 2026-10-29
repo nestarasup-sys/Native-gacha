@@ -4,6 +4,7 @@
  */
 import { join } from 'node:path'
 import type * as nodeFs from 'node:fs/promises'
+import { createKeyedOperationQueue } from '../storage/keyedOperationQueue.ts'
 import { publishJsonManifest } from '../storage/atomicManifest.ts'
 import { recoverCatalogImageTransaction, runCatalogImageTransaction, type CatalogManifestName } from './catalogImageTransaction.ts'
 
@@ -29,15 +30,7 @@ export function createFabricatorCatalogPersistence(
 
   // Mutex por conjunto: não permitir leitura de recuperação enquanto uma nova
   // versão ainda está montando backups, PNGs e manifesto (inclusive em SQLite).
-  const inFlight = new Map<string, Promise<void>>()
-  function serialized<T>(folder: string, task: () => Promise<T>): Promise<T> {
-    const preceding = inFlight.get(folder) ?? Promise.resolve()
-    const result = preceding.catch(() => undefined).then(task)
-    const settled = result.then(() => undefined, () => undefined)
-    inFlight.set(folder, settled)
-    void settled.then(() => { if (inFlight.get(folder) === settled) inFlight.delete(folder) })
-    return result
-  }
+  const operations = createKeyedOperationQueue()
 
   async function recoverLegacyWardrobeManifest(folder: string): Promise<void> {
     const target = join(folder, 'wardrobe.json')
@@ -55,10 +48,10 @@ export function createFabricatorCatalogPersistence(
   }
 
   async function recoverCatalogManifest(folder: string, imageFolder: string): Promise<void> {
-    await serialized(folder, () => recoverCatalogImageTransaction(files, folder, imageFolder))
+    await operations.run(folder, () => recoverCatalogImageTransaction(files, folder, imageFolder))
   }
   async function recoverWardrobeManifest(folder: string): Promise<void> {
-    await serialized(folder, async () => {
+    await operations.run(folder, async () => {
       await recoverCatalogImageTransaction(files, folder, join(folder, 'parts'))
       await recoverLegacyWardrobeManifest(folder)
     })
@@ -93,7 +86,7 @@ export function createFabricatorCatalogPersistence(
 
   async function saveCatalog(options: Options): Promise<void> {
     const { folder, imageFolder, manifestName, manifest, images, expected, prune, missingMessage } = options
-    return serialized(folder, async () => {
+    return operations.run(folder, async () => {
     if (new Set(images.map(image => image.id)).size !== images.length ||
       images.some(image => !expected.has(image.id) || !/^[a-zA-Z0-9_-]{1,80}$/.test(image.id))) {
       throw new Error('Imagens de catálogo duplicadas ou inesperadas.')

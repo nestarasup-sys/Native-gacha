@@ -2,6 +2,7 @@
 import { join, resolve, dirname, basename } from 'node:path'
 import type * as nodeFs from 'node:fs/promises'
 import { createEditorV6Timeline, syncEditorV6TimelineElements, type EditorV6Asset, type EditorV6Document, type EditorV6ProjectSummary, type EditorV6Timeline } from '../../../src/shared/editorV6'
+import { createKeyedOperationQueue } from '../storage/keyedOperationQueue.ts'
 import { publishEditorV6AssetsAndManifest, recoverEditorV6AssetTransaction } from './assetTransaction.ts'
 import { normalizeEditorV6CharacterPositions, normalizeEditorV6Timeline } from '../../../src/shared/editorV6Timeline'
 import { editorV6DocumentSchema, editorV6MediaAssetSchema } from '../../../src/shared/editorV6Schema'
@@ -19,16 +20,7 @@ export function createEditorV6DocumentPersistence(deps: {
   normalizeImage: (bytes: Buffer) => Promise<{ bytes: Buffer }>
 }) {
   const { readFile, mkdir, rm } = deps.files
-  const operations = new Map<string, Promise<void>>()
-
-  function serialized<T>(id: string, operation: () => Promise<T>): Promise<T> {
-    const prior = operations.get(id) ?? Promise.resolve()
-    const task = prior.catch(() => undefined).then(operation)
-    const idle = task.then(() => undefined, () => undefined)
-    operations.set(id, idle)
-    void idle.then(() => { if (operations.get(id) === idle) operations.delete(id) })
-    return task
-  }
+  const operations = createKeyedOperationQueue()
 
   function normalizeEditorV6(value: Record<string, unknown>, id: string): EditorV6Document {
     const elements = Array.isArray(value.elements) ? value.elements as EditorV6Document['elements'] : []
@@ -173,10 +165,10 @@ export function createEditorV6DocumentPersistence(deps: {
   }
 
   return {
-    readEditorV6: (id: string) => serialized(id, () => readEditorV6(id)),
-    readEditorV6Summary: (id: string) => serialized(id, () => readEditorV6Summary(id)),
-    readEditorV6PoseReferences: (id: string) => serialized(id, () => readEditorV6PoseReferences(id)),
-    writeEditorV6: (document: EditorV6Document) => serialized(document.id, () => writeEditorV6(document)),
-    removeEditorV6: (id: string) => serialized(id, () => removeEditorV6(id)),
+    readEditorV6: (id: string) => operations.run(id, () => readEditorV6(id)),
+    readEditorV6Summary: (id: string) => operations.run(id, () => readEditorV6Summary(id)),
+    readEditorV6PoseReferences: (id: string) => operations.run(id, () => readEditorV6PoseReferences(id)),
+    writeEditorV6: (document: EditorV6Document) => operations.run(document.id, () => writeEditorV6(document)),
+    removeEditorV6: (id: string) => operations.run(id, () => removeEditorV6(id)),
   }
 }
