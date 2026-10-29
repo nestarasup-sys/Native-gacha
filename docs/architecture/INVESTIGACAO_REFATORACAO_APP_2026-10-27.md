@@ -954,3 +954,11 @@ Continua a auditoria das operações IPC iniciadas pelo usuário e da cobertura 
 - A prévia continua usando o PNG original enquanto a máscara é calculada e então troca para a máscara da esclera. A cache compartilhada existente segue limitada a 48 imagens. O exportador do Face Animator ainda prepara as máscaras de todos os olhos usados pela sequência completa, pois eles são necessários para renderizar o vídeo. Nenhum asset é alterado ou salvo.
 - Os testes cobrem seleção de um olho, de um par, deduplicação e referências inválidas. Composição, seleção persistida, IPC, formato de assets e renderizadores do Customizador, Studio e Editor V6 não mudaram.
 - Verificação: o teste focado de expressões passou com 12 testes; `npm run test:refactor` com 341; `npm test` com 27; também passaram `npm run typecheck`, `npm run audit:architecture` (373 arquivos TS/TSX) e `npm run build`.
+
+## 32. Etapa aplicada — carregamento seletivo do Face Animator
+
+- `FaceAnimatorWorkspace.tsx` carregava o detalhe de todos os presets, todos os componentes faciais e todas as folhas do catálogo no slot. A tela e a exportação só usam as 21 expressões da coleção `standard` e os assets referenciados por elas.
+- `faceAnimatorLoadPlan.ts` agora deriva os IDs dos presets `standard` e os IDs únicos de olhos, pupilas, sobrancelhas, nariz e boca necessários. A tela carrega esses presets primeiro e busca diretamente apenas os assets referenciados, mantendo os IPCs existentes e o suporte à leitura de itens faciais legados por ID.
+- O filtro de presets mantém a regra anterior: somente itens com `collectionId === 'standard'` eram exibidos e exportados. Assets ausentes continuam sendo ignorados como antes; ordem da sequência, aparência, exportação, persistência e formatos de dados não mudaram. Nenhum catálogo ou asset foi modificado.
+- `face-animator-load-plan.test.mjs` cobre filtro da coleção, deduplicação dos assets e exclusão das referências de outras coleções.
+- Verificação: o teste focado passou com 2 cenários; `npm run test:refactor` passou com 343 testes; `npm test` com 27; também passaram `npm run typecheck`, `npm run audit:architecture` (374 arquivos TS/TSX), `npm run build` e `git diff --check`.

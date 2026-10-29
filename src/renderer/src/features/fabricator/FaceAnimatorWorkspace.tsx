@@ -9,6 +9,7 @@ import { Icon } from '../../ui/components/Icon'
 import { eyeInteriorMask } from '../../ui/image/eyeInteriorMask'
 import { useEyeInteriorMasks } from '../../ui/hooks/useEyeInteriorMasks'
 import { selectedExpressionEyeAssets } from './eyePreviewSelection'
+import { faceAnimatorAssetRequirements, standardFaceAnimatorPresetIds } from './faceAnimatorLoadPlan'
 import { useModelAppearanceTarget, useModelPartAppearancePreview } from './ModelAppearanceContext'
 
 type TransitionRecipe = { id: string; name: string; from: string; to: string; durationMs: number; easing: 'smooth' | 'linear' }
@@ -102,18 +103,22 @@ export function FaceAnimatorWorkspace({ modelSlot }: { modelSlot: number }) {
     setLoadError('')
     void (async () => {
       try {
-        const [model, summaries, componentSummaries, catalogSummaries] = await Promise.all([
-          window.desktop.fabricator.loadFabricatorSlot(modelSlot), window.desktop.fabricator.listFaceExpressionPresets(modelSlot),
-          window.desktop.fabricator.listFaceComponentAssets(modelSlot), window.desktop.fabricator.listFaceCatalog(modelSlot)
+        const [model, summaries] = await Promise.all([
+          window.desktop.fabricator.loadFabricatorSlot(modelSlot), window.desktop.fabricator.listFaceExpressionPresets(modelSlot)
         ])
-        const [loadedPresets, loadedComponents, loadedCatalog] = await Promise.all([
-          Promise.all(summaries.map((entry) => window.desktop.fabricator.loadFaceExpressionPreset(modelSlot, entry.id))),
-          Promise.all(componentSummaries.map((entry) => window.desktop.fabricator.loadFaceComponentAsset(modelSlot, entry.id))),
-          Promise.all(catalogSummaries.map((entry) => window.desktop.fabricator.loadFaceCatalogItem(modelSlot, entry.id)))
+        if (!active) return
+        const standardPresetIds = standardFaceAnimatorPresetIds(summaries)
+        const loadedPresets = await Promise.all(standardPresetIds.map((id) => window.desktop.fabricator.loadFaceExpressionPreset(modelSlot, id)))
+        if (!active) return
+        const standardPresets = loadedPresets.filter((entry): entry is FaceExpressionPreset => !!entry && entry.collectionId === 'standard')
+        const requiredAssets = faceAnimatorAssetRequirements(standardPresets)
+        const [loadedComponents, loadedCatalog] = await Promise.all([
+          Promise.all(requiredAssets.componentIds.map((id) => window.desktop.fabricator.loadFaceComponentAsset(modelSlot, id))),
+          Promise.all(requiredAssets.catalogIds.map((id) => window.desktop.fabricator.loadFaceCatalogItem(modelSlot, id)))
         ])
         if (!active) return
         setProject(projectForOriginalPreview(model))
-        setPresets(loadedPresets.filter((entry): entry is FaceExpressionPreset => !!entry && entry.collectionId === 'standard'))
+        setPresets(standardPresets)
         setAssets(Object.fromEntries(loadedComponents.filter((entry): entry is FaceComponentAsset => !!entry).map((entry) => [entry.id, entry])))
         setCatalog(Object.fromEntries(loadedCatalog.filter((entry): entry is FaceCatalogItem => !!entry).map((entry) => [entry.id, entry])))
       } catch (reason) { if (active) setLoadError(reason instanceof Error ? reason.message : 'Não foi possível carregar os presets de rosto.') }
