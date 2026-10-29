@@ -33,6 +33,29 @@ async function fixture(t, seeds = [], options = {}) {
   return { dir, target, repo, service }
 }
 
+test('as duas telas do Customizador usam uma única superfície de prévia', async () => {
+  const [page, surface] = await Promise.all([
+    readFile(new URL('../src/renderer/src/features/customizer/CustomizerPage.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../src/renderer/src/features/customizer/CustomizerPreviewSurface.tsx', import.meta.url), 'utf8')
+  ])
+  assert.equal((page.match(/<CustomizerPreviewSurface\b/g) ?? []).length, 2)
+  assert.doesNotMatch(page, /className="customizer-preview-controls"/)
+  assert.equal((surface.match(/className="customizer-preview-controls"/g) ?? []).length, 1)
+  assert.match(page, /backButton=\{\{ label: 'Voltar ao Customizar'/)
+  assert.match(page, /identity=\{/)
+  assert.match(page, /emptyArtworkMessage=/)
+  assert.match(surface, /stageRef\.current/)
+  assert.match(surface, /document\.fullscreenElement === stage/)
+
+  const layers = [
+    'customizer-selected-artwork', 'customizer-wardrobe-overlay', 'customizer-face-overlay',
+    'customizer-front-hair-overlay', 'customizer-wardrobe-above-hair-overlay'
+  ]
+  const layerOffsets = layers.map((layer) => surface.indexOf(layer))
+  assert.ok(layerOffsets.every((offset) => offset >= 0))
+  assert.deepEqual(layerOffsets, [...layerOffsets].sort((left, right) => left - right))
+})
+
 test('validador aceita formato atual e rejeita id, slot, cor ou pose inválidos', () => {
   assert.equal(isCustomizerCharacter(valid()), true)
   assert.equal(isCustomizerCharacter({ ...valid(), customization: { ...valid().customization, faceAppearance: null } }), false)

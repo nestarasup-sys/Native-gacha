@@ -31,6 +31,7 @@ import { useCustomizerAdjustmentPreview } from './useCustomizerAdjustmentPreview
 import { useCustomizerHeadNavigation } from './useCustomizerHeadNavigation'
 import { useCustomizerWardrobeNavigation } from './useCustomizerWardrobeNavigation'
 import { useCustomizerPreviewViewport } from './useCustomizerPreviewViewport'
+import { CustomizerPreviewSurface } from './CustomizerPreviewSurface'
 import { sampleOriginalSkinTone } from './customizerPreviewImages'
 import { CustomizerCategoryIcon, clothesAdjustmentDefinitions, customizerClothesTabs, customizerHeadTabs, customizerModuleByTab, customizerModuleNames, customizerOtherTabs, customizerTopTabs, headAdjustmentItemsFor } from './customizerNavigation'
 import { hairAppearancePartStyleId } from './customizerHairAppearanceModel'
@@ -984,36 +985,37 @@ export function CustomizerPage() {
     />
   }
 
+  const previewSurfaceProps = {
+    style: customizerPreviewStyle,
+    artworkUrl: selectedArtworkUrl,
+    artworkLabel: selectedArtworkLabel,
+    previewLoading,
+    previewBackground,
+    wardrobeUrl: selectedWardrobeUrl,
+    faceUrl: selectedFaceUrl,
+    frontHairUrl: selectedFrontHairUrl,
+    wardrobeAboveHairUrl: selectedWardrobeAboveHairUrl,
+    onPreviewBackgroundChange: setPreviewBackground,
+    onBeginPan: beginCustomizerPreviewPan,
+    onMovePan: moveCustomizerPreviewPan,
+    onEndPan: finishCustomizerPreviewPan,
+    onZoomIn: zoomInCustomizerPreview,
+    onZoomOut: zoomOutCustomizerPreview,
+    onResetZoom: resetCustomizerPreviewZoom
+  }
+
   if (activeModule !== null && customizerModuleNames.includes(activeModule)) {
     return (
       <div className="customizer-models-view">
         <div className="customizer-models-columns">
           <section className="customizer-model-preview" aria-label="Prévia do personagem">
             <div className="stage-wrap customizer-preview-stage-wrap" ref={customizerPreviewStageRef}>
-              <div className="stage-scene customizer-preview-pan-surface" style={customizerPreviewStyle} onPointerDown={(event) => beginCustomizerPreviewPan(event, Boolean(selectedArtworkUrl))} onPointerMove={moveCustomizerPreviewPan} onPointerUp={finishCustomizerPreviewPan} onPointerCancel={finishCustomizerPreviewPan}>
-                <button className="customizer-back-button customizer-preview-back" onClick={() => setActiveModule(null)} aria-label="Voltar ao Customizar" title="Voltar ao Customizar" type="button"><Icon name="close" /></button>
-                <div className="customizer-preview-controls" aria-label="Controles da prévia">
-                  <label className="preview-scene-color" title="Mudar a cor do fundo da prévia">
-                    <span className="preview-color-swatch" style={{ backgroundColor: previewBackground }} />
-                    <input type="color" aria-label="Cor do fundo da prévia" value={previewBackground} onChange={(event) => setPreviewBackground(event.target.value)} />
-                  </label>
-                  <button aria-label="Tela cheia" title="Tela cheia" onClick={() => {
-                    const stage = customizerPreviewStageRef.current
-                    if (!stage) return
-                    if (document.fullscreenElement === stage) void document.exitFullscreen()
-                    else void stage.requestFullscreen()
-                  }} type="button"><Icon name="expand" /></button>
-                  <button aria-label="Afastar" title="Afastar" onClick={zoomOutCustomizerPreview} type="button"><Icon name="zoomOut" /></button>
-                  <button aria-label="Aproximar" title="Aproximar" onClick={zoomInCustomizerPreview} type="button"><Icon name="zoomIn" /></button>
-                  <button aria-label="Restaurar zoom" title="Restaurar zoom" onClick={resetCustomizerPreviewZoom} type="button"><Icon name="reset" /></button>
-                </div>
-                {selectedArtworkUrl ? <img className="customizer-selected-artwork" src={selectedArtworkUrl} alt={selectedArtworkLabel} /> : !previewLoading && <div className="customizer-no-artwork"><Icon name="body" /><span>Nenhum modelo salvo para mostrar.</span></div>}
-              {selectedWardrobeUrl && selectedArtworkUrl && <img className="customizer-wardrobe-overlay" src={selectedWardrobeUrl} alt="Roupas do personagem" draggable={false} />}
-              {selectedFaceUrl && selectedArtworkUrl && <img className="customizer-face-overlay" src={selectedFaceUrl} alt="Rosto do personagem" draggable={false} />}
-              {selectedFrontHairUrl && selectedArtworkUrl && <img className="customizer-front-hair-overlay" src={selectedFrontHairUrl} alt="Cabelo posterior e franja frontal" draggable={false} />}
-              {selectedWardrobeAboveHairUrl && selectedArtworkUrl && <img className="customizer-wardrobe-above-hair-overlay" src={selectedWardrobeAboveHairUrl} alt="Óculos e acessórios de cabeça por cima dos cabelos" draggable={false} />}
-                {previewLoading && <div className="customizer-preview-loading">Carregando prévia…</div>}
-              </div>
+              <CustomizerPreviewSurface
+                {...previewSurfaceProps}
+                stageRef={customizerPreviewStageRef}
+                emptyArtworkMessage="Nenhum modelo salvo para mostrar."
+                backButton={{ label: 'Voltar ao Customizar', onClick: () => setActiveModule(null) }}
+              />
             </div>
           </section>
           <section className={`customizer-models-sidebar${selectedCustomizerTopTab === 'roupas' && (clothesPanelTab === 'upper' || clothesPanelTab === 'lower' || clothesPanelTab === 'adjust') ? ' customizer-models-sidebar-clothes-upper' : ''}`} aria-label="Categorias de personalização">
@@ -1171,33 +1173,17 @@ export function CustomizerPage() {
 
         <section className="preview-column" aria-label="Preview do personagem">
           <div className="stage-wrap customizer-preview-stage-wrap" ref={mainPreviewStageRef}>
-            <div className="stage-scene customizer-preview-pan-surface" style={customizerPreviewStyle} onPointerDown={(event) => beginCustomizerPreviewPan(event, Boolean(selectedArtworkUrl))} onPointerMove={moveCustomizerPreviewPan} onPointerUp={finishCustomizerPreviewPan} onPointerCancel={finishCustomizerPreviewPan}>
-              <div className="preview-title customizer-preview-identity">
-                <p className="eyebrow">CUSTOMIZAR <span>/</span> PERSONAGEM</p>
-                <h1><span className="customizer-preview-character-name">{selectedCharacter?.name ?? (charactersLoading ? 'Carregando personagens…' : 'Crie um personagem')}</span><button className="rename-button" aria-label="Editar nome do personagem" disabled={!selectedCharacter} onClick={() => { setNameDraft(selectedCharacter?.name ?? ''); setDialogMode('rename') }} type="button"><Icon name="edit" /></button></h1>
-              </div>
-              <div className="customizer-preview-controls" aria-label="Controles da prévia">
-                <label className="preview-scene-color" title="Mudar a cor do fundo da prévia">
-                  <span className="preview-color-swatch" style={{ backgroundColor: previewBackground }} />
-                  <input type="color" aria-label="Cor do fundo da prévia" value={previewBackground} onChange={(event) => setPreviewBackground(event.target.value)} />
-                </label>
-                <button aria-label="Tela cheia" title="Tela cheia" onClick={() => {
-                  const stage = mainPreviewStageRef.current
-                  if (!stage) return
-                  if (document.fullscreenElement === stage) void document.exitFullscreen()
-                  else void stage.requestFullscreen()
-                }} type="button"><Icon name="expand" /></button>
-                <button aria-label="Afastar" title="Afastar" onClick={zoomOutCustomizerPreview} type="button"><Icon name="zoomOut" /></button>
-                <button aria-label="Aproximar" title="Aproximar" onClick={zoomInCustomizerPreview} type="button"><Icon name="zoomIn" /></button>
-                <button aria-label="Restaurar zoom" title="Restaurar zoom" onClick={resetCustomizerPreviewZoom} type="button"><Icon name="reset" /></button>
-              </div>
-              {selectedArtworkUrl ? <img className="customizer-selected-artwork" src={selectedArtworkUrl} alt={selectedArtworkLabel} /> : !previewLoading && <div className="customizer-no-artwork"><Icon name="body" /><span>{selectedCharacter ? 'Importe um modelo no Fabricador Dev para começar.' : 'Crie um personagem para começar a personalizar.'}</span></div>}
-                {selectedWardrobeUrl && selectedArtworkUrl && <img className="customizer-wardrobe-overlay" src={selectedWardrobeUrl} alt="Roupas do personagem" draggable={false} />}
-                {selectedFaceUrl && selectedArtworkUrl && <img className="customizer-face-overlay" src={selectedFaceUrl} alt="Rosto do personagem" draggable={false} />}
-                {selectedFrontHairUrl && selectedArtworkUrl && <img className="customizer-front-hair-overlay" src={selectedFrontHairUrl} alt="Cabelo posterior e franja frontal" draggable={false} />}
-                {selectedWardrobeAboveHairUrl && selectedArtworkUrl && <img className="customizer-wardrobe-above-hair-overlay" src={selectedWardrobeAboveHairUrl} alt="Óculos e acessórios de cabeça por cima dos cabelos" draggable={false} />}
-              {previewLoading && <div className="customizer-preview-loading">Carregando prévia…</div>}
-            </div>
+            <CustomizerPreviewSurface
+              {...previewSurfaceProps}
+              stageRef={mainPreviewStageRef}
+              emptyArtworkMessage={selectedCharacter ? 'Importe um modelo no Fabricador Dev para começar.' : 'Crie um personagem para começar a personalizar.'}
+              identity={
+                <div className="preview-title customizer-preview-identity">
+                  <p className="eyebrow">CUSTOMIZAR <span>/</span> PERSONAGEM</p>
+                  <h1><span className="customizer-preview-character-name">{selectedCharacter?.name ?? (charactersLoading ? 'Carregando personagens…' : 'Crie um personagem')}</span><button className="rename-button" aria-label="Editar nome do personagem" disabled={!selectedCharacter} onClick={() => { setNameDraft(selectedCharacter?.name ?? ''); setDialogMode('rename') }} type="button"><Icon name="edit" /></button></h1>
+                </div>
+              }
+            />
             <div className="stage-underbar customizer-preview-underbar">
               <button className="text-action" onClick={() => setActiveModule('Personalização')}><Icon name="sliders" /> Personalizar</button>
             </div>
