@@ -57,6 +57,57 @@ async function removeSlotTransactionArtifacts(base: string, slot: number, files:
   }
 }
 
+async function isImportedSourceReferenced(slot: number, sourceAssetName: string, deps: FabricatorProjectIpcDependencies): Promise<boolean> {
+  const slotDirectory = deps.slotPath(slot)
+  const readOptionalJson = async (path: string): Promise<{ exists: true; value: unknown } | { exists: false }> => {
+    try { return { exists: true, value: JSON.parse(await deps.files.readFile(path, 'utf8')) as unknown } }
+    catch (reason) {
+      if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return { exists: false }
+      throw reason
+    }
+  }
+
+  const manifestDocument = await readOptionalJson(join(slotDirectory, 'project.json'))
+  let manifest: { sourceFile?: unknown } | null = null
+  if (manifestDocument.exists) {
+    if (!manifestDocument.value || typeof manifestDocument.value !== 'object' || Array.isArray(manifestDocument.value)) {
+      throw new Error('Manifesto do modelo inválido; a imagem importada foi preservada.')
+    }
+    manifest = manifestDocument.value as { sourceFile?: unknown }
+  }
+  if (manifest) {
+    if (typeof manifest.sourceFile !== 'string' || !/^source-[a-f0-9-]+\.(png|jpe?g|webp)$/i.test(manifest.sourceFile)) {
+      throw new Error('Manifesto do modelo inválido; a imagem importada foi preservada.')
+    }
+    if (manifest.sourceFile === sourceAssetName) return true
+  }
+
+  const historyDocument = await readOptionalJson(join(slotDirectory, 'history', 'history.json'))
+  let history: { version?: unknown; undo?: unknown; redo?: unknown } | null = null
+  if (historyDocument.exists) {
+    if (!historyDocument.value || typeof historyDocument.value !== 'object' || Array.isArray(historyDocument.value)) {
+      throw new Error('Histórico do modelo inválido; a imagem importada foi preservada.')
+    }
+    history = historyDocument.value as { version?: unknown; undo?: unknown; redo?: unknown }
+  }
+  if (!history) return false
+  if (history.version !== 1 || !Array.isArray(history.undo) || !Array.isArray(history.redo)) {
+    throw new Error('Histórico do modelo inválido; a imagem importada foi preservada.')
+  }
+  for (const entry of [...history.undo, ...history.redo]) {
+    if (!entry || typeof entry !== 'object' || !('project' in entry)
+      || !entry.project || typeof entry.project !== 'object') {
+      throw new Error('Histórico do modelo inválido; a imagem importada foi preservada.')
+    }
+    const referencedSource = (entry.project as { sourceAssetName?: unknown }).sourceAssetName
+    if (typeof referencedSource !== 'string' || !/^source-[a-f0-9-]+\.(png|jpe?g|webp)$/i.test(referencedSource)) {
+      throw new Error('Histórico do modelo inválido; a imagem importada foi preservada.')
+    }
+    if (referencedSource === sourceAssetName) return true
+  }
+  return false
+}
+
 export function registerFabricatorProjectHandlers(deps: FabricatorProjectIpcDependencies) {
   const saveQueues = new Map<number, Promise<unknown>>()
   const queueWrite = async <T>(slot: number, operation: () => Promise<T>): Promise<T> => {
@@ -102,6 +153,24 @@ export function registerFabricatorProjectHandlers(deps: FabricatorProjectIpcDepe
       await deps.files.mkdir(destination, { recursive: true })
       await deps.files.writeFile(join(destination, sourceAssetName), canonical.bytes)
       return { sourceName: basename(path), sourceAssetName, sourceDataUrl }
+    })
+  })
+
+  deps.ipcMain.handle(fabricatorIpcChannels.discardImportedFabricatorSource, async (event, slot: number, sourceAssetName: string): Promise<boolean> => {
+    deps.assertTrustedSender(event)
+    if (!deps.isValidSlot(slot)) throw new Error('Slot inválido.')
+    if (typeof sourceAssetName !== 'string' || !/^source-[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}\.png$/i.test(sourceAssetName)) {
+      throw new Error('Imagem temporária de importação inválida.')
+    }
+    return queueWrite(slot, async () => {
+      if (await isImportedSourceReferenced(slot, sourceAssetName, deps)) return false
+      try {
+        await deps.files.unlink(join(deps.slotPath(slot), sourceAssetName))
+        return true
+      } catch (reason) {
+        if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return false
+        throw reason
+      }
     })
   })
 

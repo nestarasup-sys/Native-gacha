@@ -320,7 +320,6 @@ export function FabricatorPage() {
 
   const selectSlot = async (slot: number) => {
     const generation = ++slotSelectionGeneration.current
-    if (generation !== slotSelectionGeneration.current) return
     setSlotSwitching(true)
     requestId.current += 1
     cancelImageProcessingTask()
@@ -463,22 +462,50 @@ export function FabricatorPage() {
     }
   }
 
-  const runProcessor = (sourceDataUrl: string, tolerance: number, metadata: { slot: number; name: string; sourceName: string; sourceAssetName: string }, recordBefore?: FabricatorProject) => {
+  const discardImportedSource = async (slot: number, sourceAssetName: string, generation: number) => {
+    try {
+      await window.desktop.fabricator.discardImportedFabricatorSource(slot, sourceAssetName)
+      return null
+    } catch (reason) {
+      const message = reason instanceof Error ? reason.message : String(reason)
+      if (generation !== slotSelectionGeneration.current) console.error('Não foi possível limpar uma imagem de importação não usada.', reason)
+      return message
+    }
+  }
+  const withImportCleanupError = (message: string, cleanupError: string | null) => cleanupError
+    ? `${message} A imagem temporária também não pôde ser removida: ${cleanupError}`
+    : message
+
+  const runProcessor = (
+    sourceDataUrl: string,
+    tolerance: number,
+    metadata: { slot: number; name: string; sourceName: string; sourceAssetName: string },
+    recordBefore?: FabricatorProject,
+    importedSource?: { sourceAssetName: string; generation: number }
+  ) => {
     const id = ++requestId.current
     cancelImageProcessingTask()
     const task = startImageProcessorWorker({ id, sourceDataUrl, tolerance }, setProgress)
     imageProcessingTaskRef.current = task
     setProcessing(true); setProgress(1); setError('')
-    void task.result.then((message) => {
-      if (id !== requestId.current) return
+    const discardUncommittedSource = () => importedSource
+      ? discardImportedSource(metadata.slot, importedSource.sourceAssetName, importedSource.generation)
+      : Promise.resolve(null)
+    void task.result.then(async (message) => {
+      if (id !== requestId.current) { await discardUncommittedSource(); return }
       if (imageProcessingTaskRef.current === task) imageProcessingTaskRef.current = null
       setProcessing(false)
-      if (message.parts.length === 0) { setError('Nenhuma peça foi encontrada. Aumente a tolerância ou escolha outra imagem.'); return }
+      if (message.parts.length === 0) {
+        const cleanupError = await discardUncommittedSource()
+        setError(withImportCleanupError('Nenhuma peça foi encontrada. Aumente a tolerância ou escolha outra imagem.', cleanupError))
+        return
+      }
       let imported: ReturnType<typeof createImportedModelProject>
       try {
         imported = createImportedModelProject(message, sourceDataUrl, tolerance, metadata)
       } catch (reason) {
-        setError(reason instanceof Error ? reason.message : 'Não foi possível montar o modelo importado.')
+        const cleanupError = await discardUncommittedSource()
+        setError(withImportCleanupError(reason instanceof Error ? reason.message : 'Não foi possível montar o modelo importado.', cleanupError))
         return
       }
       for (const [partId, dataUrl] of imported.dirtyAssets) dirtyAssets.current.set(partId, dataUrl)
@@ -487,12 +514,19 @@ export function FabricatorPage() {
       setChromaValue(tolerance)
       projectRef.current = imported.project
       setProject(imported.project); setSelectedIds(imported.project.parts[0] ? [imported.project.parts[0].id] : [])
-    }, (reason: unknown) => {
-      if (id !== requestId.current) return
+    }, async (reason: unknown) => {
+      if (id !== requestId.current) { await discardUncommittedSource(); return }
       if (imageProcessingTaskRef.current === task) imageProcessingTaskRef.current = null
       setProcessing(false)
-      if (reason instanceof ImageProcessorTaskError && reason.kind === 'cancelled') return
-      setError(reason instanceof ImageProcessorTaskError && reason.kind === 'worker' ? reason.message : 'O processamento da imagem falhou.')
+      if (reason instanceof ImageProcessorTaskError && reason.kind === 'cancelled') {
+        const cleanupError = await discardUncommittedSource()
+        if (cleanupError) setError(withImportCleanupError('A importação foi cancelada.', cleanupError))
+        return
+      }
+      const cleanupError = await discardUncommittedSource()
+      setError(withImportCleanupError(reason instanceof ImageProcessorTaskError && reason.kind === 'worker' ? reason.message : 'O processamento da imagem falhou.', cleanupError))
+    }).catch((reason: unknown) => {
+      if (id === requestId.current) setError(reason instanceof Error ? reason.message : 'Não foi possível concluir a importação do modelo.')
     })
   }
 
@@ -624,13 +658,27 @@ export function FabricatorPage() {
     }
     if (selectionGeneration !== slotSelectionGeneration.current) return
     setError('')
+    let selectedSource: { sourceName: string; sourceAssetName: string; sourceDataUrl: string } | null = null
+    let sourcePersisted = false
+    let cleanupDelegated = false
     try {
       const selected = await window.desktop.fabricator.importFabricatorModel(slot, reimporting ? 'reimport' : 'import')
       if (!selected) return
+      selectedSource = selected
+      if (selectionGeneration !== slotSelectionGeneration.current) {
+        await discardImportedSource(slot, selected.sourceAssetName, selectionGeneration)
+        cleanupDelegated = true
+        return
+      }
       if (reimporting) {
         const current = projectRef.current
         const existing = current?.slot === slot ? current : await window.desktop.fabricator.loadFabricatorSlot(slot)
         if (!existing) throw new Error('O modelo salvo não foi encontrado. Nenhuma configuração foi alterada.')
+        if (selectionGeneration !== slotSelectionGeneration.current) {
+          await discardImportedSource(slot, selected.sourceAssetName, selectionGeneration)
+          cleanupDelegated = true
+          return
+        }
         const updated: FabricatorProject = {
           ...existing,
           sourceName: selected.sourceName,
@@ -638,6 +686,7 @@ export function FabricatorPage() {
           sourceDataUrl: selected.sourceDataUrl
         }
         await persistProject(updated)
+        sourcePersisted = true
         if (selectionGeneration !== slotSelectionGeneration.current) {
           broadcastModelSourceUpdate({ slot, sourceAssetName: selected.sourceAssetName })
           return
@@ -666,8 +715,18 @@ export function FabricatorPage() {
       const name = selected.sourceName.replace(/\.[^.]+$/, '') || `Modelo ${slot}`
       const recordBefore = project?.slot === slot ? project : undefined
       if (!recordBefore) clearHistory()
-      runProcessor(selected.sourceDataUrl, 74, { slot, name, sourceName: selected.sourceName, sourceAssetName: selected.sourceAssetName }, recordBefore)
-    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível importar a imagem.') }
+      runProcessor(selected.sourceDataUrl, 74, { slot, name, sourceName: selected.sourceName, sourceAssetName: selected.sourceAssetName }, recordBefore, {
+        sourceAssetName: selected.sourceAssetName,
+        generation: selectionGeneration
+      })
+      cleanupDelegated = true
+    } catch (reason) {
+      const message = reason instanceof Error ? reason.message : 'Não foi possível importar a imagem.'
+      const cleanupError = selectedSource && !sourcePersisted && !cleanupDelegated
+        ? await discardImportedSource(slot, selectedSource.sourceAssetName, selectionGeneration)
+        : null
+      setError(withImportCleanupError(message, cleanupError))
+    }
   }
 
   const removePart = (partId: string) => {

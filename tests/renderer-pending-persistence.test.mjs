@@ -205,3 +205,16 @@ test('main flushes renderer writes before its IPC inventory and navigation waits
   assert.match(topBar, /flushPendingRendererWrites\(\)\.then\(\(\) =>[\s\S]*?navigate\(path\)/)
   assert.match(fabricatorPage, /flushPendingRendererWrites\(\)\.then\(\(\) =>[\s\S]*?setActiveSection\(section\.id\)/)
 })
+
+test('Fabricator discards obsolete import results and guards cleanup against saved references', async () => {
+  const page = await readFile('src/renderer/src/features/fabricator/FabricatorPage.tsx', 'utf8')
+  const ipc = await readFile('electron/domains/fabricator/projectIpc.ts', 'utf8')
+  const channels = await readFile('src/shared/fabricatorIpcChannels.ts', 'utf8')
+
+  assert.match(page, /selectionGeneration !== slotSelectionGeneration\.current\)[\s\S]*?await discardImportedSource\(slot, selected\.sourceAssetName/)
+  assert.match(page, /id !== requestId\.current\)[\s\S]*?await discardUncommittedSource\(\)/)
+  assert.match(page, /runProcessor\(selected\.sourceDataUrl,[\s\S]*?generation: selectionGeneration/)
+  assert.match(channels, /discardImportedFabricatorSource: 'fabricator:discard-imported-source'/)
+  assert.match(ipc, /ipcMain\.handle\(fabricatorIpcChannels\.discardImportedFabricatorSource/)
+  assert.match(ipc, /queueWrite\(slot, async \(\) => \{[\s\S]*?isImportedSourceReferenced\(slot, sourceAssetName, deps\)/)
+})

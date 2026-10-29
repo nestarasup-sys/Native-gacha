@@ -432,6 +432,8 @@ export type FabricatorDesktopApi = {
   saveFabricatorDesignSettings: (settings: FabricatorDesignSettings) => Promise<void>
   listFabricatorSlots: () => Promise<FabricatorSlotSummary[]>
   importFabricatorModel: (slot: number, mode?: 'import' | 'reimport') => Promise<{ sourceName: string; sourceAssetName: string; sourceDataUrl: string } | null>
+  /** Remove apenas um PNG recém-importado que ainda não esteja referenciado pelo projeto ou histórico. */
+  discardImportedFabricatorSource: (slot: number, sourceAssetName: string) => Promise<boolean>
   loadFabricatorSlot: (slot: number) => Promise<FabricatorProject | null>
   saveFabricatorProject: (project: FabricatorProjectSave, changedAssets: FabricatorAssetSave[]) => Promise<void>
   duplicateFabricatorSlot: (sourceSlot: number, targetSlot: number) => Promise<void>

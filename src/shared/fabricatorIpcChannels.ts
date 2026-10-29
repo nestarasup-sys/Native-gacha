@@ -6,6 +6,7 @@ import type { FabricatorDesktopApi } from './fabricator'
 export const fabricatorIpcChannels = {
   listFabricatorSlots: 'fabricator:list-slots',
   loadFabricatorSlot: 'fabricator:load-slot',
+  discardImportedFabricatorSource: 'fabricator:discard-imported-source',
   duplicateFabricatorSlot: 'fabricator:duplicate-slot',
   publishFabricatorModelSource: 'fabricator:model-source:publish',
   downloadFabricatorModelSource: 'fabricator:model-source:download',
