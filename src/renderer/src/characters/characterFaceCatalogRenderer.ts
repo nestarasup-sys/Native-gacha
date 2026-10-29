@@ -3,7 +3,7 @@ import type { CharacterRenderAssetProvider } from '../../../shared/characterRend
 import type { CustomizerCharacter, CustomizerFaceAppearance, FaceComponentPartId, FacePalettePartId, HairColorOverrides } from '../../../shared/customizer'
 import type { EditorV6FaceRenderMode, EditorV6FaceTransforms } from '../../../shared/editorV6'
 import type { StudioFaceMode, StudioFaceTransforms } from '../../../shared/studio'
-import { drawFaceExpressionEffects } from './expressionEffectRender'
+import { drawFaceExpressionEffects, type ExpressionEffectMouthPlacement } from './expressionEffectRender'
 import { eyeInteriorMaskSource } from '../ui/image/eyeInteriorMask'
 import { createCharacterCanvas } from './canvasSurface'
 import { drawPreviewImageWithHalo } from './characterCanvasDrawing'
@@ -34,7 +34,8 @@ export function createCharacterFaceCatalogRenderer(loaders: CharacterFaceCatalog
       if (!pending) { pending = assetProvider.loadFaceComponentAsset(appearance.modelSlot, id); componentLoads.set(id, pending) }
       return pending
     }
-    await drawFaceExpressionEffects(context, artwork, sourceHead, targetHead, appearance, items, expressionEffects, studioFaceTransforms)
+    await drawFaceExpressionEffects(context, artwork, targetHead, appearance, expressionEffects, 'underlay')
+    let mouthBlushPlacement: ExpressionEffectMouthPlacement | undefined
     const categoryIds: Partial<Record<FaceSheetKind, string | undefined>> = {
       eyes: appearance.eyeCatalogId,
       eyebrows: appearance.eyebrowCatalogId,
@@ -108,6 +109,13 @@ export function createCharacterFaceCatalogRenderer(loaders: CharacterFaceCatalog
         context.rotate((targetHead.rotation + transform.rotation + (studioTransform?.rotation ?? 0)) * Math.PI / 180)
         drawPreviewImageWithHalo(context, image, -width / 2, -height / 2, highlightedHeadId === element, width, height)
         context.restore()
+        if (element === 'mouth') {
+          mouthBlushPlacement = {
+            x: localX,
+            y: localY,
+            rotation: transform.rotation + (studioTransform?.rotation ?? 0)
+          }
+        }
       } catch { /* Keep the rest of the face visible if one catalog asset is missing. */ }
     }
     const componentIds: FaceComponentPartId[] = ['eye-left', 'eye-right', 'pupil-left', 'pupil-right', 'brow-left', 'brow-right']
@@ -265,6 +273,8 @@ export function createCharacterFaceCatalogRenderer(loaders: CharacterFaceCatalog
         drawPreviewImageWithHalo(context, image, -width / 2, -height / 2, highlightedHeadId === kind, width, height); context.restore()
       } catch { /* Keep the rest of the face visible if one detail asset is unavailable. */ }
     }
+    // Paint mouth blush after the mouth bitmap so its position and rotation stay visible.
+    await drawFaceExpressionEffects(context, artwork, targetHead, appearance, expressionEffects, 'mouth', mouthBlushPlacement)
     for (const id of Object.values(appearance.headExtras ?? {})) {
       if (!id) continue
       const asset = await loadComponent(id)

@@ -7,6 +7,7 @@ import { projectForOriginalPreview } from '../../../../shared/fabricatorModelVie
 import { useModelSourceRefresh } from './models/useModelSourceRefresh'
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import type { FaceCatalogItem, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSummary, FaceExpressionCollection, FaceExpressionPreset, FaceExpressionPresetSummary, FaceExpressionEffects, FaceExpressionTransforms, FaceExpressionWorkspaceDraft, FaceExpressionWorkspaceEntry, FaceTransform, PtPupilOverrides, FabricatorProject } from '../../../../shared/fabricator'
+import { ExpressionEffectCanvas } from '../../characters/ExpressionEffectCanvas'
 import { Icon, type IconName } from '../../ui/components/Icon'
 import { registerPendingWriteFlusher } from '../../ui/pendingPersistence'
 import { eyeInteriorMask } from '../../ui/image/eyeInteriorMask'
@@ -1164,21 +1165,8 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
     <main className="expression-head-stage" aria-label="Prévia da cabeça">
       {loading ? <span>Carregando cabeça e biblioteca facial…</span> : head ? <div ref={previewCanvas} className="expression-head-canvas" style={{ aspectRatio: `${head.width} / ${head.height}` }}>
         <img className="expression-head-base" src={appearancePreviewForPart(head)} alt="Cabeça do modelo" />
-        <div className="expression-head-effects" aria-label="Prévia dos efeitos da expressão" style={{ WebkitMaskImage: `url(${head.dataUrl})`, maskImage: `url(${head.dataUrl})` }}>{(['shadow', 'blush', 'mouthBlush'] as const).map((key) => {
-          const effect = effects[key]
-          if (!effect.enabled) return null
-          const color = `color-mix(in srgb, ${effect.color} ${Math.round(effect.opacity * (key === 'blush' ? .54 : 1) * 100)}%, transparent)`
-          if (key === 'shadow') return <span key={key} className="expression-preview-shadow" aria-hidden="true" style={{ top: `${effect.offsetY * 100}%`, height: `${effect.size * 100}%`, background: `linear-gradient(180deg, ${color}, transparent)` }} />
-          if (key === 'blush') {
-            const shape = effect.style ?? 'cheeks'
-            const radial = (at: string) => `radial-gradient(ellipse at ${at}, ${color}, transparent ${Math.round((.4 + effect.softness * .6) * 100)}%)`
-            const background = shape === 'cheeks' ? `${radial('27% 50%')}, ${radial('73% 50%')}` : shape === 'bands' ? `${radial('50% 25%')}, ${radial('50% 50%')}, ${radial('50% 75%')}` : radial('50% 50%')
-            return <span key={key} className="expression-preview-blush expression-preview-blush-draggable" role="group" tabIndex={previewGaze==='left'?-1:0} aria-label="Posição do blush nas bochechas. Arraste ou use as setas para mover; Shift move mais." onPointerDown={beginBlushDrag} onPointerMove={moveBlushDrag} onPointerUp={endBlushDrag} onPointerCancel={endBlushDrag} onLostPointerCapture={endBlushDrag} onKeyDown={nudgeBlush} style={{ left: `${50 + (effect.offsetX ?? 0) * 100}%`, top: `${50 + effect.offsetY * 100}%`, width: `${effect.size * 100}%`, height: `${effect.size * (effect.aspectRatio ?? .52) * 100}%`, background, transform: `translate(-50%,-50%) rotate(${shape === 'diagonal' ? -16 : 0}deg)` }} />
-          }
-          if (!visibleComposition.mouth) return null
-          const mouthTransform = visibleTransforms.mouth
-          return <span key={key} className="expression-preview-mouth-blush" aria-hidden="true" style={{ left: `${(mouthTransform.x + (effect.offsetX ?? 0) * head.width) / (head.width || 1) * 100}%`, top: `${(mouthTransform.y + effect.offsetY * head.height) / (head.height || 1) * 100}%`, width: `${(effect.width ?? effect.size) * 100}%`, height: `${(effect.height ?? effect.size * (effect.aspectRatio ?? .52)) * 100}%`, background: `radial-gradient(ellipse, ${color}, transparent ${Math.round((.4 + effect.softness * .58) * 100)}%)`, transform: `translate(-50%,-50%) rotate(${mouthTransform.rotation + (effect.rotation ?? 0)}deg)` }} />
-        })}</div>
+        <ExpressionEffectCanvas head={head} modelSlot={modelSlot} effects={effects} phase="underlay" className="expression-head-effect-canvas expression-head-effect-underlay" />
+        {effects.blush.enabled && <span className="expression-preview-blush-drag-handle" role="group" tabIndex={previewGaze === 'left' ? -1 : 0} aria-label="Posição do blush nas bochechas. Arraste ou use as setas para mover; Shift move mais." onPointerDown={beginBlushDrag} onPointerMove={moveBlushDrag} onPointerUp={endBlushDrag} onPointerCancel={endBlushDrag} onLostPointerCapture={endBlushDrag} onKeyDown={nudgeBlush} style={{ left: `${50 + (effects.blush.offsetX ?? 0) * 100}%`, top: `${50 + effects.blush.offsetY * 100}%`, width: `${effects.blush.size * 100}%`, height: `${effects.blush.size * (effects.blush.aspectRatio ?? .52) * 100}%`, transform: 'translate(-50%,-50%)' }} />}
         {(['left', 'right'] as const).map((currentSide) => {
           const eye = componentAssets[visibleComposition.eyes[currentSide] ?? '']
           const pupil = componentAssets[visibleComposition.pupils[currentSide] ?? '']
@@ -1191,6 +1179,7 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
         })}
         {renderCatalogPiece(visibleComposition.nose, 'nose')}
         {renderCatalogPiece(visibleComposition.mouth, 'mouth')}
+        <ExpressionEffectCanvas head={head} modelSlot={modelSlot} effects={effects} phase="mouth" mouthPlacement={visibleComposition.mouth ? visibleTransforms.mouth : undefined} mouthBlushColor={effects.mouthBlush.color} mouthBlushOpacity={effects.mouthBlush.opacity} className="expression-head-effect-canvas expression-head-effect-mouth" />
       </div> : <div className="expression-head-empty"><Icon name="face" /><strong>Este slot ainda não tem uma cabeça</strong><span>Importe um modelo no slot {modelSlot} para montar a prévia da expressão.</span></div>}
       {head && <span className="expression-head-caption">Prévia da cabeça · escolha os assets para ver a composição</span>}
     </main>

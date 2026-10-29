@@ -1,4 +1,7 @@
 import { projectForOriginalPreview } from '../../../../shared/fabricatorModelViews'
+import { interpolateFaceExpressionEffect, motionAngle } from '../../../../shared/editorV6MotionInterpolation'
+import { ExpressionEffectCanvas } from '../../characters/ExpressionEffectCanvas'
+import { drawExpressionEffectBlob } from '../../characters/expressionEffectRender'
 import { useModelSourceRefresh } from './models/useModelSourceRefresh'
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import type { FaceCatalogItem, FaceComponentAsset, FaceExpressionEffect, FaceExpressionPreset, FaceExpressionTransforms, FaceTransform, FabricatorProject } from '../../../../shared/fabricator'
@@ -20,28 +23,8 @@ const recipes: TransitionRecipe[] = [
 ]
 const transformKeys: Array<keyof FaceExpressionTransforms> = ['eyeLeft', 'eyeRight', 'pupilLeft', 'pupilRight', 'browLeft', 'browRight', 'nose', 'mouth']
 const effectKeys = ['shadow', 'blush', 'mouthBlush'] as const
-type EffectKey = typeof effectKeys[number]
-const defaultEffect: FaceExpressionEffect = { enabled: false, color: '#000000', opacity: 0, softness: 0, size: 0, offsetX: 0, offsetY: 0 }
-const colorLerp = (a: string, b: string, t: number) => {
-  const parse = (value: string) => /^#[\da-f]{6}$/i.test(value) ? [1, 3, 5].map((index) => parseInt(value.slice(index, index + 2), 16)) : [0, 0, 0]
-  const aa = parse(a); const bb = parse(b)
-  return `#${aa.map((value, i) => Math.round(value + (bb[i] - value) * t).toString(16).padStart(2, '0')).join('')}`
-}
 function interpolateTransform(a: FaceTransform, b: FaceTransform, t: number): FaceTransform {
-  const delta = ((b.rotation - a.rotation + 540) % 360) - 180
-  return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, scaleX: a.scaleX + (b.scaleX - a.scaleX) * t, scaleY: a.scaleY + (b.scaleY - a.scaleY) * t, rotation: a.rotation + delta * t, flipX: t < .5 ? a.flipX : b.flipX }
-}
-function interpolateEffect(a: FaceExpressionEffect | undefined, b: FaceExpressionEffect | undefined, t: number): FaceExpressionEffect {
-  const from = a ?? defaultEffect; const to = b ?? defaultEffect
-  const result: FaceExpressionEffect = { ...from, enabled: t < .5 ? from.enabled : to.enabled, color: colorLerp(from.color, to.color, t) }
-  for (const key of ['opacity', 'softness', 'size', 'offsetX', 'offsetY', 'aspectRatio', 'width', 'height', 'rotation'] as const) {
-    const left = key === 'opacity' && !from.enabled ? 0 : from[key] ?? 0
-    const right = key === 'opacity' && !to.enabled ? 0 : to[key] ?? 0
-    result[key] = left + (right - left) * t
-  }
-  result.style = t < .5 ? from.style : to.style
-  result.enabled = from.enabled || to.enabled
-  return result
+  return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, scaleX: a.scaleX + (b.scaleX - a.scaleX) * t, scaleY: a.scaleY + (b.scaleY - a.scaleY) * t, rotation: motionAngle(a.rotation, b.rotation, t), flipX: t < .5 ? a.flipX : b.flipX }
 }
 function transformStyle(transform: FaceTransform, width: number, height: number, artWidth: number, artHeight: number, zIndex: number): CSSProperties {
   return { position: 'absolute', left: `${transform.x / artWidth * 100}%`, top: `${transform.y / artHeight * 100}%`, width: `${width * transform.scaleX / artWidth * 100}%`, height: `${height * transform.scaleY / artHeight * 100}%`, objectFit: 'fill', zIndex, transform: `translate(-50%,-50%) rotate(${transform.rotation}deg) scaleX(${transform.flipX ? -1 : 1})`, pointerEvents: 'none' }
@@ -107,7 +90,7 @@ export function FaceAnimatorWorkspace({ modelSlot }: { modelSlot: number }) {
     if (!fromPreset || !toPreset) return fromPreset?.transforms ?? toPreset?.transforms
     return Object.fromEntries(transformKeys.map((key) => [key, interpolateTransform(fromPreset.transforms[key], toPreset.transforms[key], eased)])) as FaceExpressionTransforms
   }, [fromPreset, toPreset, eased])
-  const effects = useMemo(() => Object.fromEntries(effectKeys.map((key) => [key, interpolateEffect(fromPreset?.effects?.[key], toPreset?.effects?.[key], eased)])) as FaceExpressionPreset['effects'], [fromPreset, toPreset, eased])
+  const effects = useMemo(() => Object.fromEntries(effectKeys.map((key) => [key, interpolateFaceExpressionEffect(fromPreset?.effects?.[key], toPreset?.effects?.[key], eased)])) as FaceExpressionPreset['effects'], [fromPreset, toPreset, eased])
   const noseOpacity = fromPreset && toPreset ? fromPreset.noseOpacity + (toPreset.noseOpacity - fromPreset.noseOpacity) * eased : discretePreset?.noseOpacity ?? 1
 
   useEffect(() => {
@@ -208,25 +191,11 @@ export function FaceAnimatorWorkspace({ modelSlot }: { modelSlot: number }) {
   }
   const renderEffects = () => {
     if (!head || !effects) return null
-    return <div className="expression-head-effects face-animator-effects" style={{ WebkitMaskImage: `url(${head.dataUrl})`, maskImage: `url(${head.dataUrl})` }}>
-      {effectKeys.map((key: EffectKey) => {
-        const effect = effects[key]
-        if (!effect?.enabled) return null
-        const color = `color-mix(in srgb, ${effect.color} ${Math.round(effect.opacity * 100)}%, transparent)`
-        if (key === 'shadow') return <span key={key} className="expression-preview-shadow" style={{ top: `${effect.offsetY * 100}%`, height: `${effect.size * 100}%`, background: `linear-gradient(180deg, ${color}, transparent)` }} />
-        if (key === 'blush') {
-          const shape = effect.style ?? 'cheeks'
-          const blushColor = `color-mix(in srgb, ${effect.color} ${Math.round(effect.opacity * .54 * 100)}%, transparent)`
-          const radial = (at: string) => `radial-gradient(ellipse at ${at}, ${blushColor}, transparent ${Math.round((.4 + effect.softness * .6) * 100)}%)`
-          const background = shape === 'cheeks' ? `${radial('27% 50%')}, ${radial('73% 50%')}` : shape === 'bands' ? `${radial('50% 25%')}, ${radial('50% 50%')}, ${radial('50% 75%')}` : radial('50% 50%')
-          return <span key={key} className="expression-preview-blush" style={{ left: `${50 + (effect.offsetX ?? 0) * 100}%`, top: `${50 + effect.offsetY * 100}%`, width: `${effect.size * 100}%`, height: `${effect.size * (effect.aspectRatio ?? .52) * 100}%`, background, transform: `translate(-50%,-50%) rotate(${shape === 'diagonal' ? -16 : 0}deg)` }} />
-        }
-        const mouth = transforms?.mouth
-        return <span key={key} className="expression-preview-mouth-blush" style={{ left: `${((mouth?.x ?? 0) + (effect.offsetX ?? 0) * head.width) / (head.width || 1) * 100}%`, top: `${((mouth?.y ?? 0) + effect.offsetY * head.height) / (head.height || 1) * 100}%`, width: `${(effect.width ?? effect.size) * 100}%`, height: `${(effect.height ?? effect.size * (effect.aspectRatio ?? .52)) * 100}%`, background: `radial-gradient(ellipse, ${color}, transparent ${Math.round((.4 + effect.softness * .58) * 100)}%)`, transform: `translate(-50%,-50%) rotate(${(mouth?.rotation ?? 0) + (effect.rotation ?? 0)}deg)` }} />
-      })}
-    </div>
+    return <>
+      <ExpressionEffectCanvas head={head} modelSlot={modelSlot} effects={effects} phase="underlay" className="expression-head-effect-canvas expression-head-effect-underlay" />
+      <ExpressionEffectCanvas head={head} modelSlot={modelSlot} effects={effects} phase="mouth" mouthPlacement={discretePreset?.selections.mouth ? transforms?.mouth : undefined} className="expression-head-effect-canvas expression-head-effect-mouth face-animator-mouth-effect" />
+    </>
   }
-
   const exportExpressionSequence = async () => {
     if (!head) return
     const appearanceHeadDataUrl = appearancePreviewForPart(head)
@@ -280,17 +249,14 @@ export function FaceAnimatorWorkspace({ modelSlot }: { modelSlot: number }) {
       if (!mimeType) throw new Error('O codificador WebM não está disponível neste computador.')
       recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 4_000_000 })
       exportRecorderRef.current = recorder
-      const drawSoftSpot = (cx: number, cy: number, width: number, height: number, color: string, opacity: number, softness: number, rotation = 0) => {
-        if (width <= 0 || height <= 0 || opacity <= 0) return
-        effectContext.save(); effectContext.translate(cx, cy); effectContext.rotate(rotation * Math.PI / 180); effectContext.scale(width / 2, height / 2)
-        const gradient = effectContext.createRadialGradient(0, 0, 0, 0, 0, 1)
-        gradient.addColorStop(0, rgbaFromHex(color, opacity)); gradient.addColorStop(Math.max(.01, Math.min(1, .4 + softness * .6)), rgbaFromHex(color, opacity)); gradient.addColorStop(1, rgbaFromHex(color, 0))
-        effectContext.fillStyle = gradient; effectContext.beginPath(); effectContext.ellipse(0, 0, 1, 1, 0, 0, Math.PI * 2); effectContext.fill(); effectContext.restore()
+      const drawSoftSpot = (cx: number, cy: number, width: number, height: number, effect: FaceExpressionEffect, alpha = 1, rotation = 0) => {
+        if (width <= 0 || height <= 0 || effect.opacity <= 0) return
+        drawExpressionEffectBlob(effectContext, cx, cy, width, height, rotation, effect, alpha)
       }
       const renderAt = (from: FaceExpressionPreset, to: FaceExpressionPreset, rawProgress: number) => {
         const t = rawProgress * rawProgress * (3 - 2 * rawProgress)
         const frameTransforms = Object.fromEntries(transformKeys.map((key) => [key, interpolateTransform(from.transforms[key], to.transforms[key], t)])) as FaceExpressionTransforms
-        const frameEffects = Object.fromEntries(effectKeys.map((key) => [key, interpolateEffect(from.effects?.[key], to.effects?.[key], t)])) as NonNullable<FaceExpressionPreset['effects']>
+        const frameEffects = Object.fromEntries(effectKeys.map((key) => [key, interpolateFaceExpressionEffect(from.effects?.[key], to.effects?.[key], t)])) as NonNullable<FaceExpressionPreset['effects']>
         const composition = t < .5 ? from : to
         context.setTransform(artScale, 0, 0, artScale, 0, 0)
         context.fillStyle = '#fdfcfd'; context.fillRect(0, 0, head.width, head.height)
@@ -300,25 +266,31 @@ export function FaceAnimatorWorkspace({ modelSlot }: { modelSlot: number }) {
         const shadow = frameEffects.shadow
         if (shadow.enabled && shadow.opacity > 0 && shadow.size > 0) {
           const top = shadow.offsetY * head.height
-          const gradient = effectContext.createLinearGradient(0, top, 0, top + shadow.size * head.height)
-          gradient.addColorStop(0, rgbaFromHex(shadow.color, shadow.opacity)); gradient.addColorStop(1, rgbaFromHex(shadow.color, 0))
+          const extent = shadow.size * head.height
+          const gradient = effectContext.createLinearGradient(0, top, 0, top + extent)
+          gradient.addColorStop(0, rgbaFromHex(shadow.color, shadow.opacity * .78))
+          gradient.addColorStop(Math.max(.05, 1 - shadow.softness), rgbaFromHex(shadow.color, shadow.opacity * .6))
+          gradient.addColorStop(1, rgbaFromHex(shadow.color, 0))
           effectContext.fillStyle = gradient; effectContext.fillRect(0, top, head.width, shadow.size * head.height)
         }
         const blush = frameEffects.blush
         if (blush.enabled && blush.opacity > 0) {
           const w = blush.size * head.width; const h = blush.size * (blush.aspectRatio ?? .52) * head.height
           const x = (50 + (blush.offsetX ?? 0) * 100) / 100 * head.width; const y = (50 + blush.offsetY * 100) / 100 * head.height
-          const blushOpacity = blush.opacity * .54
-          if (blush.style === 'cheeks') { drawSoftSpot(x - w * .23, y, w * .9, h, blush.color, blushOpacity, blush.softness); drawSoftSpot(x + w * .23, y, w * .9, h, blush.color, blushOpacity, blush.softness) }
-          else if (blush.style === 'bands') { for (const offset of [-.25, 0, .25]) drawSoftSpot(x, y + h * offset, w, h * .72, blush.color, blushOpacity, blush.softness) }
-          else drawSoftSpot(x, y, w, h, blush.color, blushOpacity, blush.softness, blush.style === 'diagonal' ? -16 : 0)
-        }
-        const mouthBlush = frameEffects.mouthBlush
-        if (mouthBlush.enabled && mouthBlush.opacity > 0) {
-          const mouth = frameTransforms.mouth
-          drawSoftSpot(mouth.x + (mouthBlush.offsetX ?? 0) * head.width, mouth.y + mouthBlush.offsetY * head.height,
-            (mouthBlush.width ?? mouthBlush.size) * head.width, (mouthBlush.height ?? mouthBlush.size * (mouthBlush.aspectRatio ?? .52)) * head.height,
-            mouthBlush.color, mouthBlush.opacity, mouthBlush.softness, mouth.rotation + (mouthBlush.rotation ?? 0))
+          switch (blush.style ?? 'cheeks') {
+            case 'cheeks':
+              drawSoftSpot(x - w * .23, y, w * .54, h * .82, blush, .54)
+              drawSoftSpot(x + w * .23, y, w * .54, h * .82, blush, .54)
+              break
+            case 'bands':
+              drawSoftSpot(x, y - h * .24, w * .92, h * .28, blush, .44)
+              drawSoftSpot(x, y, w * .96, h * .28, blush, .38)
+              drawSoftSpot(x, y + h * .24, w * .92, h * .28, blush, .32)
+              break
+            case 'diagonal': drawSoftSpot(x, y, w * .92, h * .58, blush, .54, -16); break
+            case 'spot': drawSoftSpot(x, y, w * .62, h * .62, blush, .68); break
+            default: drawSoftSpot(x, y, w, h, blush, .54)
+          }
         }
         effectContext.globalCompositeOperation = 'destination-in'; effectContext.drawImage(headImage, 0, 0, head.width, head.height); effectContext.globalCompositeOperation = 'source-over'
         context.drawImage(effectCanvas, 0, 0, head.width, head.height)
@@ -355,6 +327,18 @@ export function FaceAnimatorWorkspace({ modelSlot }: { modelSlot: number }) {
           context.save(); context.globalAlpha *= kind === 'nose' ? from.noseOpacity + (to.noseOpacity - from.noseOpacity) * t : 1
           drawFacialLayer(context, loadedImages.get(piece.dataUrl)!, frameTransforms[kind], piece.width, piece.height, head.width)
           context.restore()
+        }
+        const mouthBlush = frameEffects.mouthBlush
+        if (composition.selections.mouth && mouthBlush.enabled && mouthBlush.opacity > 0) {
+          effectContext.setTransform(artScale, 0, 0, artScale, 0, 0)
+          effectContext.clearRect(0, 0, head.width, head.height)
+          const mouth = frameTransforms.mouth
+          drawSoftSpot(mouth.x + (mouthBlush.offsetX ?? 0) * head.width, mouth.y + mouthBlush.offsetY * head.height,
+            (mouthBlush.width ?? mouthBlush.size) * head.width,
+            (mouthBlush.height ?? mouthBlush.size * (mouthBlush.aspectRatio ?? .52)) * head.height,
+            mouthBlush, 1, mouth.rotation + (mouthBlush.rotation ?? 0))
+          effectContext.globalCompositeOperation = 'destination-in'; effectContext.drawImage(headImage, 0, 0, head.width, head.height); effectContext.globalCompositeOperation = 'source-over'
+          context.drawImage(effectCanvas, 0, 0, head.width, head.height)
         }
       }
 

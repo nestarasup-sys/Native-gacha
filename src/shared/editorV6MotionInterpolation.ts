@@ -5,6 +5,22 @@ type CatalogArtwork = Pick<FabricatorProject, 'width' | 'height' | 'parts' | 'la
 export const motionEase = (value: number) => { const t = Math.max(0, Math.min(1, value)); return t * t * (3 - 2 * t) }
 export const motionLerp = (from: number, to: number, t: number) => from + (to - from) * t
 export const motionAngle = (from: number, to: number, t: number) => from + ((((to - from) % 360 + 540) % 360) - 180) * t
+export function interpolateFaceExpressionEffect(a: FaceExpressionEffect | undefined, b: FaceExpressionEffect | undefined, t: number): FaceExpressionEffect {
+  const empty: FaceExpressionEffect = { enabled: false, color: '#000000', opacity: 0, softness: 0, size: 0, offsetY: 0 }
+  const left = a ?? empty, right = b ?? empty
+  const effect = { ...(t < .5 ? left : right), enabled: left.enabled || right.enabled }
+  for (const key of ['opacity', 'softness', 'size', 'offsetX', 'offsetY', 'aspectRatio', 'width', 'height'] as const) {
+    const from = key === 'opacity' && !left.enabled ? 0 : left[key] ?? 0
+    const to = key === 'opacity' && !right.enabled ? 0 : right[key] ?? 0
+    effect[key] = motionLerp(from, to, t)
+  }
+  const fromRotation = left.rotation ?? 0, toRotation = right.rotation ?? 0
+  effect.rotation = motionAngle(fromRotation, toRotation, t)
+  const color = (value: string) => /^#[0-9a-f]{6}$/i.test(value) ? [1, 3, 5].map((offset) => parseInt(value.slice(offset, offset + 2), 16)) : [0, 0, 0]
+  const fromColor = color(left.color), toColor = color(right.color)
+  effect.color = '#' + fromColor.map((value, index) => Math.round(motionLerp(value, toColor[index], t)).toString(16).padStart(2, '0')).join('')
+  return effect
+}
 const point = (a: { x: number; y: number }, b: { x: number; y: number }, t: number) => ({ x: motionLerp(a.x, b.x, t), y: motionLerp(a.y, b.y, t) })
 /** Preserve a part's authored pivot while rotating; linear centers collapse a swinging limb inward. */
 function interpolatePart(a: ModelPart, b: ModelPart, t: number): ModelPart {
@@ -55,15 +71,8 @@ export function interpolateEditorV6Face(from: EditorV6Element, to: EditorV6Eleme
     transforms[key] = { x: motionLerp(left.x, right.x, t), y: motionLerp(left.y, right.y, t), width: motionLerp(left.width, right.width, t), height: motionLerp(left.height, right.height, t), rotation: motionAngle(left.rotation, right.rotation, t), ...(left.sourceTransformOverride || right.sourceTransformOverride ? { sourceTransformOverride: faceTransform(left.sourceTransformOverride ?? { x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0 }, right.sourceTransformOverride ?? { x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0 }, t) } : {}) }
   }
   const effects = {} as FaceExpressionEffects
-  const empty: FaceExpressionEffect = { enabled: false, color: '#000000', opacity: 0, softness: 0, size: 0, offsetY: 0 }
   for (const key of ['blush', 'shadow', 'mouthBlush'] as const) {
-    const left = from.activeExpressionEffects?.[key] ?? empty, right = to.activeExpressionEffects?.[key] ?? empty
-    const effect = { ...(t < .5 ? left : right), enabled: left.enabled || right.enabled }
-    for (const name of ['opacity', 'softness', 'size', 'offsetX', 'offsetY', 'aspectRatio', 'width', 'height', 'rotation'] as const) effect[name] = motionLerp(name === 'opacity' && !left.enabled ? 0 : left[name] ?? 0, name === 'opacity' && !right.enabled ? 0 : right[name] ?? 0, t)
-    const color = (value: string) => /^#[0-9a-f]{6}$/i.test(value) ? [1, 3, 5].map((offset) => parseInt(value.slice(offset, offset + 2), 16)) : [0, 0, 0]
-    const aa = color(left.color), bb = color(right.color)
-    effect.color = '#' + aa.map((value, index) => Math.round(motionLerp(value, bb[index], t)).toString(16).padStart(2, '0')).join('')
-    effects[key] = effect
+    effects[key] = interpolateFaceExpressionEffect(from.activeExpressionEffects?.[key], to.activeExpressionEffects?.[key], t)
   }
   return { appearance, transforms, effects: from.activeExpressionEffects || to.activeExpressionEffects ? effects : undefined, mode: t < .5 ? from.activeFaceMode : to.activeFaceMode }
 }

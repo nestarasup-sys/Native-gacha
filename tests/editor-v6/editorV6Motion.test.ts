@@ -170,4 +170,11 @@ describe('V6 motion scheduling and portable cache', () => {
     expect(face.transforms.test.x).toBe(10)
     expect(face.transforms.test.rotation).toBe(360)
   })
+  it('interpolates mouth blush rotation through the shortest angular path', () => {
+    const effect = (rotation: number) => ({ enabled: true, color: '#e86388', opacity: .5, softness: .5, size: .12, offsetY: 0, rotation })
+    const effects = (rotation: number) => ({ shadow: effect(0), blush: effect(0), mouthBlush: effect(rotation) })
+    const from = { activeExpressionEffects: effects(179) } as unknown as EditorV6Element
+    const to = { activeExpressionEffects: effects(-179) } as unknown as EditorV6Element
+    expect(interpolateEditorV6Face(from, to, .5).effects?.mouthBlush.rotation).toBeCloseTo(180)
+  })
 })
