@@ -1,6 +1,6 @@
 import { editorV6ElementSize } from '../../../../shared/editorV6SceneModel'
 import { useEditorV6Store } from './editorV6Store'
-import { createEditorV6Timeline, editorV6DefaultVideoLayout, syncEditorV6TimelineElements } from '../../../../shared/editorV6'
+import { createEditorV6Timeline, syncEditorV6TimelineElements } from '../../../../shared/editorV6'
 import { EditorV6Timeline } from './EditorV6Timeline'
 import { EditorV6ExportPanel } from './EditorV6ExportPanel'
 import { useMotionPreparation } from './motion/useMotionPreparation'
@@ -9,6 +9,7 @@ import { EditorV6PlaybackAudio } from './EditorV6PlaybackAudio'
 import { EditorV6PlaybackScene } from './EditorV6PlaybackScene'
 import { EditorV6CastPanel } from './EditorV6CastPanel'
 import { EditorV6PresetPanel } from './EditorV6PresetPanel'
+import { EditorV6PropertyPanel } from './EditorV6PropertyPanel'
 import { getEditorV6PlaybackFrame, setEditorV6PlaybackFrame } from './editorV6PlaybackClock'
 import { duplicateEditorV6ProjectDocument } from './editorV6ProjectDuplication'
 import { addEditorV6ImageAsset, addEditorV6TimelineMedia } from './editorV6MediaChanges'
@@ -29,7 +30,6 @@ import { Profiler, useCallback, useEffect, useMemo, useRef, useState, type React
 import { editorV6ExpressionCollection } from './expressionTransforms'
 import { Icon } from '../../ui/components/Icon'
 import { NumericRangeField } from '../../ui/components/NumericRangeField'
-import { SceneElementControls } from '../../ui/components/SceneElementControls'
 import { SceneCastPickerModal } from '../../ui/components/SceneCastPickerModal'
 import { createSceneTextElement, sceneCatalogColor, sceneEditorTools } from '../../ui/sceneEditorDefaults'
 import { recordEditorV6PlaybackFrame, recordUiCommit } from '../../ui/performanceDiagnostics'
@@ -847,63 +847,41 @@ export function EditorV6Page() {
     <NumericRangeField key={label} label={label} value={value} onChange={onChange} onStart={() => recordHistory()} onFinish={onFinish} disabled={disabled} min={min} max={max} suffix={suffix} />
   )
 
-  const propertyPanel = (): ReactNode => {
-    if (!activeEditorV6) return null
-    if (activeTool === 'background') return <div className="studio-side-content">
-      <h2>Fundos</h2><p>Escolha um fundo salvo ou adicione uma imagem.</p>
-      <label className="studio-color-control">Cor sólida<input type="color" value={previewBackground.backgroundColor} onChange={(event) => updateBackground({ backgroundColor: event.target.value })} /></label>
-      <button className="studio-side-primary" type="button" onClick={() => void importImage('background')}><Icon name="plus" />Adicionar imagem</button>
-      <div className="studio-asset-grid">{activeEditorV6.assets.filter((asset) => asset.category === 'background').map((asset) => <button key={asset.id} className={`studio-asset-card${previewBackground.backgroundAssetId === asset.id ? ' active' : ''}`} type="button" onClick={() => selectBackground(asset)}><img src={asset.dataUrl} alt="" /><span>{asset.name}</span></button>)}</div>
-      {selectedBackgroundAsset && selectedElementId === 'background' && <><div className="studio-controls-grid">{control('X', previewBackground.backgroundX, (value, record) => updateBackground({ backgroundX: value }, record), -100, 100)}{control('Y', previewBackground.backgroundY, (value, record) => updateBackground({ backgroundY: value }, record), -100, 100)}{control('Largura', previewBackground.backgroundWidth, (value, record) => updateBackground({ backgroundWidth: value }, record), 1, 300)}{control('Altura', previewBackground.backgroundHeight, (value, record) => updateBackground({ backgroundHeight: value }, record), 1, 300)}{control('Rotação', previewBackground.backgroundRotation, (value, record) => updateBackground({ backgroundRotation: value }, record), -180, 180, '°')}</div><button className="studio-side-danger" type="button" onClick={deleteSelected}><Icon name="trash" />Remover fundo da cena</button></>}
-    </div>
-    if (activeTool === 'objects') return <div className="studio-side-content">
-      <h2>Objetos</h2><p>Imagens importadas ficam disponíveis neste Studio.</p>
-      <button className="studio-side-primary" type="button" onClick={() => void importImage('object')}><Icon name="plus" />Importar imagem</button>
-      <div className="studio-asset-grid">{activeEditorV6.assets.filter((asset) => asset.category === 'object').map((asset) => <button key={asset.id} className="studio-asset-card" type="button" onClick={() => {
-        if (activeEditorV6.timeline.tracks.some((track) => track.kind === 'object' && track.locked)) { setError('Desbloqueie a faixa Objetos para adicionar uma imagem.'); return }
-        const element: EditorV6Element = { id: crypto.randomUUID(), kind: 'image', assetId: asset.id, text: '', x: 0, y: 0, width: 25, height: 25, rotation: 0, zIndex: Math.max(0, ...activeEditorV6.elements.map((item) => item.zIndex)) + 1 }
-        const blockId = crypto.randomUUID()
-        const frame = getEditorV6PlaybackFrame()
-        changeScene((studio) => ({ ...addEditorV6ElementAtFrame(studio, element, frame, blockId), updatedAt: new Date().toISOString() }))
-        setSelectedElementId(element.id)
-        setSelectedTimelineBlockId(blockId)
-        setInspectorOpen(true)
-        setInspectorTab('editor')
-      }}><img src={asset.dataUrl} alt="" /><span>{asset.name}</span></button>)}</div>
-      {selectedElementId && selectedElement && <SceneElementControls element={selectedElement} update={(values, record) => updateElement(selectedElement.id, values, record)} remove={deleteSelected} control={control} positionNote="A posição X e Y é compartilhada por todos os blocos deste personagem." />}
-    </div>
-    if (selectedTimelineVideoClip && selectedTimelineVideo && activeEditorV6) {
-      const block = selectedTimelineVideoClip.block
-      const layout = block.mediaLayout ?? editorV6DefaultVideoLayout(selectedTimelineVideo.width, selectedTimelineVideo.height)
-      const setLayout = (values: Partial<typeof layout>, record: boolean) => updateVideoBlock(block.id, { mediaLayout: { ...layout, ...values } }, record)
-      return <div className="studio-side-content">
-        <h2>Vídeo selecionado</h2><p>{selectedTimelineVideo.name}</p>
-        <div className="studio-controls-grid">
-          {control('X', layout.x, (value, record) => setLayout({ x: value }, record ?? true), -200, 200)}
-          {control('Y', layout.y, (value, record) => setLayout({ y: value }, record ?? true), -200, 200)}
-          {control('Largura', layout.width, (value, record) => setLayout({ width: value }, record ?? true), 1, 200)}
-          {control('Altura', layout.height, (value, record) => setLayout({ height: value }, record ?? true), 1, 200)}
-          {control('Rotação', layout.rotation, (value, record) => setLayout({ rotation: value }, record ?? true), -180, 180, '°')}
-          {control('Início da mídia', block.mediaInFrame ?? 0, (value, record) => updateVideoBlock(block.id, { mediaInFrame: Math.round(value) }, record), 0, Math.max(0, selectedTimelineVideo.sourceFrames - 1), ' quadros')}
-          {selectedTimelineVideo.hasAudio && control('Volume', Math.min(1, block.gain ?? 1), (value, record) => updateVideoBlock(block.id, { gain: value }, record ?? true), 0, 1, '×')}
-        </div>
-        {selectedTimelineVideo.hasAudio && <label className="studio-color-control">Áudio do vídeo<input type="checkbox" checked={block.audioEnabled !== false} onChange={(event) => { recordHistory(); updateVideoBlock(block.id, { audioEnabled: event.target.checked }, false) }} /></label>}
-        <small>Duração na timeline: {(block.durationFrames / 30).toFixed(2)} s · o quadro é renderizado centralizado proporcionalmente.</small>
-        <button className="studio-side-danger" type="button" onClick={deleteSelected}><Icon name="trash" />Remover vídeo da timeline</button>
-      </div>
+  const addObjectAsset = (asset: EditorV6Asset) => {
+    if (!activeEditorV6) return
+    if (activeEditorV6.timeline.tracks.some((track) => track.kind === 'object' && track.locked)) {
+      setError('Desbloqueie a faixa Objetos para adicionar uma imagem.')
+      return
     }
-    if (selectedElement && activeEditorV6) return <div className="studio-side-content">
-      <h2>{selectedElement.kind === 'character' ? selectedElement.text : selectedElement.kind === 'image' ? 'Objeto selecionado' : selectedElement.kind === 'narrator' ? 'Narrador' : selectedElement.kind === 'speech' ? 'Balão de fala' : 'Balão de pensamento'}</h2>
-      {selectedElement.kind !== 'image' && selectedElement.kind !== 'character' && <label className="studio-text-control">Texto<textarea value={selectedElement.text} onChange={(event) => updateElement(selectedElement.id, { text: event.target.value })} rows={3} /></label>}
-      <SceneElementControls element={selectedElement} update={(values, record) => updateElement(selectedElement.id, values, record)} remove={deleteSelected} control={control} positionNote="A posição X e Y é compartilhada por todos os blocos deste personagem." />
-    </div>
-    if (selectedElementId === 'background' && selectedBackgroundAsset) return <div className="studio-side-content">
-      <h2>Imagem de fundo</h2><p>{selectedBackgroundAsset.name}</p>
-      <div className="studio-controls-grid">{control('X', previewBackground.backgroundX, (value, record) => updateBackground({ backgroundX: value }, record), -100, 100)}{control('Y', previewBackground.backgroundY, (value, record) => updateBackground({ backgroundY: value }, record), -100, 100)}{control('Largura', previewBackground.backgroundWidth, (value, record) => updateBackground({ backgroundWidth: value }, record), 1, 300)}{control('Altura', previewBackground.backgroundHeight, (value, record) => updateBackground({ backgroundHeight: value }, record), 1, 300)}{control('Rotação', previewBackground.backgroundRotation, (value, record) => updateBackground({ backgroundRotation: value }, record), -180, 180, '°')}</div>
-      <button className="studio-side-danger" type="button" onClick={deleteSelected}><Icon name="trash" />Remover fundo</button>
-    </div>
-    return <div className="studio-side-content"><h2>Cena</h2><p>Escolha uma ferramenta à esquerda ou selecione um elemento na cena.</p><small>{activeEditorV6.elements.length} elemento(s)</small></div>
+    const element: EditorV6Element = { id: crypto.randomUUID(), kind: 'image', assetId: asset.id, text: '', x: 0, y: 0, width: 25, height: 25, rotation: 0, zIndex: Math.max(0, ...activeEditorV6.elements.map((item) => item.zIndex)) + 1 }
+    const blockId = crypto.randomUUID()
+    const frame = getEditorV6PlaybackFrame()
+    changeScene((studio) => ({ ...addEditorV6ElementAtFrame(studio, element, frame, blockId), updatedAt: new Date().toISOString() }))
+    setSelectedElementId(element.id)
+    setSelectedTimelineBlockId(blockId)
+    setInspectorOpen(true)
+    setInspectorTab('editor')
   }
+
+  const propertyPanel = (): ReactNode => <EditorV6PropertyPanel
+    project={activeEditorV6}
+    activeTool={activeTool}
+    background={previewBackground}
+    selectedElementId={selectedElementId}
+    selectedElement={selectedElement}
+    selectedBackgroundAsset={selectedBackgroundAsset}
+    selectedVideoBlock={selectedTimelineVideoClip?.block ?? null}
+    selectedVideo={selectedTimelineVideo ?? null}
+    control={control}
+    onBackgroundChange={updateBackground}
+    onImportImage={importImage}
+    onSelectBackground={selectBackground}
+    onAddObject={addObjectAsset}
+    onUpdateElement={updateElement}
+    onUpdateVideoBlock={updateVideoBlock}
+    onRecordHistory={() => recordHistory()}
+    onDeleteSelected={deleteSelected}
+  />
 
   const customPanel = (): ReactNode => {
     if (!selectedEditorV6Character || selectedElement?.kind !== 'character' || selectedEditorV6CharacterModelSlot === null) {
