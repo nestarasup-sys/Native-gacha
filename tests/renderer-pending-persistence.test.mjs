@@ -115,11 +115,14 @@ test('Expression workspace drafts register, serialize and await the latest disk 
 
 test('Face component debounces and catalog saves drain through the renderer registry', async () => {
   const faces = await readFile('src/renderer/src/features/fabricator/face/FaceComponentsWorkspace.tsx', 'utf8')
+  const queue = await readFile('src/renderer/src/features/fabricator/face/faceSaveQueue.ts', 'utf8')
   assert.match(faces, /registerPendingWriteFlusher\(flushAllSaves\)/)
-  assert.match(faces, /pendingSaves\.current\.keys\(\), \.\.\.saveChains\.current\.keys\(\)/)
-  assert.match(faces, /await Promise\.allSettled\(keys\.map\(\(key\) => flushSave\(key\)\)\)/)
-  assert.match(faces, /await current[\s\S]*?const retry = saveRuns\.current\.get\(key\)/)
-  assert.match(faces, /if \(failure\) throw failure\.reason/)
+  assert.match(faces, /createFaceSaveQueue/)
+  assert.match(queue, /debounceMs \?\? 180/)
+  assert.match(queue, /\.catch\(\(\) => undefined\)\.then\(run\)/)
+  assert.match(queue, /Promise\.allSettled\(keys\.map\(flushSave\)\)/)
+  assert.match(queue, /await current[\s\S]*?const retry = saveRuns\.get\(key\)/)
+  assert.match(queue, /if \(failure\) throw failure\.reason/)
 })
 
 test('Studio and Editor V6 flush debounced documents and wait for renderer IPC writes', async () => {
