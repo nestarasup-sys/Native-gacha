@@ -80,15 +80,15 @@ test('seleções quebradas ou JSON truncado não sobrescrevem conjuntos existent
 })
 
 test('ambos os editores usam o mesmo inversor, incluindo pupila PT sem clamping nem alteração da normal',async()=>{
-  const [eyes,presets,core]=await Promise.all([
-    readFile('src/renderer/src/features/fabricator/face/FaceComponentsWorkspace.tsx','utf8'),
+  const [dragHook,presets,core]=await Promise.all([
+    readFile('src/renderer/src/features/fabricator/face/useFacePreviewDrag.ts','utf8'),
     readFile('src/renderer/src/features/fabricator/ExpressionPresetWorkspace.tsx','utf8'),
     readFile('src/shared/facePupilGeometry.ts','utf8')])
-  assert.match(eyes,/pupilDeltaFromDrag\(/)
+  assert.match(dragHook,/pupilDeltaFromDrag\(/)
   assert.match(presets,/pupilDeltaFromDrag\(/)
-  assert.match(eyes,/drag\.pupil \? \{x,y\}/)
-  assert.doesNotMatch(eyes,/head\.width \* \.25/)
-  assert.doesNotMatch(eyes,/head\.height \* \.25/)
+  assert.match(dragHook,/current\.pupil \? \{ x, y \}/)
+  assert.doesNotMatch(dragHook,/head\.width \* \.25/)
+  assert.doesNotMatch(dragHook,/head\.height \* \.25/)
   assert.match(presets,/if \(open \|\| previewGaze==='right'\)return raw/)
   assert.match(presets,/const canDrag = selectedLayer === pupilLayer/)
   assert.match(presets,/setPtPupils\(/)

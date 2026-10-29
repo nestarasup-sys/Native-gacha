@@ -1330,3 +1330,11 @@ Continua a auditoria das operações IPC iniciadas pelo usuário e da cobertura 
 - `useFacePreviewDrag.ts` passou a coordenar esse ciclo e recebe apenas o slot, a peça ativa, o tamanho da cabeça, a transformação e a função de atualização. `FaceComponentsWorkspace.tsx` agora conecta o hook aos elementos da prévia e preserva os mesmos eventos e rótulos visuais; o componente ficou com 1.131 linhas, 34 a menos que o inventário anterior à otimização.
 - A separação não muda a regra de arraste nem a persistência. A fila de salvamento, transforms, IPC e os consumidores do modelo continuam pertencendo aos módulos existentes. A agenda de quadro permanece em `facePreviewFrame.ts`, que também é usada pelo hook.
 - Verificação: `npm run typecheck`, `npm run build`, `npm run audit:architecture` (437 arquivos TS/TSX, sem violações) e `git diff --check` passaram. Os testes automatizados não foram executados nesta etapa.
+
+## 79. Etapa aplicada — caches de imagem compartilhados e limitados por bytes
+
+- O Customizador mantinha até 40 prévias de cabelo em um `Map` limitado só por quantidade. Como o tamanho dos PNGs e das strings resultantes varia bastante, 40 entradas grandes podiam reter muito mais memória do que 40 entradas pequenas.
+- A implementação `createBoundedImageCache` saiu de `animatorImageCache.ts` e agora pertence a `ui/image/boundedImageCache.ts`. Animador e Customizador compartilham deduplicação de tarefas pendentes, LRU, limite de entradas, orçamento estimado por bytes, descarte de falhas e proteção para que uma carga antiga não repovoe o cache depois de `clear()`.
+- O Customizador aplica um teto de 24 MiB e 40 entradas, contabilizando a chave de origem e a string de prévia. Resultados acima do orçamento continuam sendo mostrados por quem os solicitou; apenas deixam de ficar retidos no cache. O Animador conserva seus limites anteriores de 48 imagens e 64 MiB.
+- IDs, persistência, arquivos-fonte, IPC e aparência das prévias não mudaram. A contagem de bytes é uma estimativa de memória retida, não uma medição do heap do Chromium.
+- Testes: `npm run test:refactor` passou com 469 testes; `npm run test:fabricator:face-workspace` passou com 21; `npm run test:customizer:preview-cache` passou com 1. Também passaram `npm run typecheck`, `npm run build`, `npm run audit:architecture` (439 arquivos TS/TSX, sem violações) e `git diff --check`.

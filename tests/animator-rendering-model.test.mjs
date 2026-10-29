@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
-import { createBoundedImageCache } from '../src/renderer/src/features/fabricator/models/animatorImageCache.ts'
+import { createBoundedImageCache } from '../src/renderer/src/ui/image/boundedImageCache.ts'
 import {
   applyFrameState,
   moveFramePart,
