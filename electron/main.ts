@@ -291,6 +291,7 @@ let dataMigrationIpc: ReturnType<typeof registerDataMigrationHandlers> | null = 
 let fabricatorHairIpc: ReturnType<typeof registerFabricatorHairHandlers> | null = null
 let fabricatorProjectIpc: ReturnType<typeof registerFabricatorProjectHandlers> | null = null
 let fabricatorWardrobeIpc: ReturnType<typeof registerFabricatorWardrobeHandlers> | null = null
+let fabricatorAnimatorIpc: ReturnType<typeof registerFabricatorAnimatorHandlers> | null = null
 let editorV6ExportService: ReturnType<typeof registerEditorV6ExportHandlers> | null = null
 let editorV6MotionService: ReturnType<typeof createEditorV6MotionService> | null = null
 
@@ -377,7 +378,6 @@ const characterManifestPath = () => join(characterLibraryPath(), 'characters.jso
 let poseSaveQueue: Promise<void> = Promise.resolve()
 const poseSaveWrites = new Set<Promise<void>>()
 let poseMigration: Promise<void> | null = null
-let animatorSaveQueue: Promise<void> = Promise.resolve()
 let faceGuideSaveQueue: Promise<void> = Promise.resolve()
 let fabricatorFaceCatalogIpc: ReturnType<typeof registerFabricatorFaceCatalogHandlers> | null = null
 
@@ -1257,7 +1257,7 @@ const { isValidAnimatorSlot, writeAnimatorAnimation, readAnimatorAnimation, writ
 function collectPendingPersistenceWrites(): Promise<unknown>[] {
   return [
     ...(fabricatorProjectIpc?.getPendingWrites() ?? []), ...poseSaveWrites, ...(fabricatorHairIpc?.getPendingWrites() ?? []),
-    animatorSaveQueue, ...(fabricatorWardrobeIpc?.getPendingWrites() ?? []),
+    ...(fabricatorAnimatorIpc?.getPendingWrites() ?? []), ...(fabricatorWardrobeIpc?.getPendingWrites() ?? []),
     ...(fabricatorFaceCatalogIpc?.getPendingWrites() ?? []),
     ...expressionPresetOperations.getPendingWrites(),
     faceGuideSaveQueue, customizerService.pendingWrites,
@@ -1460,12 +1460,10 @@ async function registerFabricatorHandlers(): Promise<void> {
     files: { readFile, writeFile, mkdir, rename, rm }
   })
 
-  registerFabricatorAnimatorHandlers({
+  fabricatorAnimatorIpc = registerFabricatorAnimatorHandlers({
     ipcMain, assertTrustedSender, isValidModelSlot, isValidAnimatorSlot, poseSlotCount,
     animatorLibraryPath, animatorModelPath, animatorSlotPath, animatorDraftPath,
     readAnimatorAnimation, writeAnimatorAnimation, readAnimatorDraft, writeAnimatorDraft,
-    getQueue: () => animatorSaveQueue,
-    setQueue: next => { animatorSaveQueue = next },
     files: { readFile, readdir, rm }
   })
 

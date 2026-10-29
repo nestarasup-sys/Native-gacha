@@ -1,20 +1,26 @@
-/** Mantém operações da mesma entidade em ordem, sem bloquear outras chaves. */
-export function createKeyedOperationQueue() {
-  const pendingByKey = new Map<string, Promise<void>>()
+/** Mantém operações da mesma entidade em ordem, sem bloquear outras chaves.
+ * `retainFailures` deixa falhas visíveis em `getPendingWrites` até uma operação posterior concluir.
+ */
+export function createKeyedOperationQueue(options: { retainFailures?: boolean } = {}) {
+  const retainFailures = options.retainFailures ?? false
+  const tailsByKey = new Map<string, Promise<void>>()
 
   function run<T>(key: string, operation: () => Promise<T>): Promise<T> {
-    const preceding = pendingByKey.get(key) ?? Promise.resolve()
+    const preceding = tailsByKey.get(key) ?? Promise.resolve()
     const result = preceding.catch(() => undefined).then(operation)
-    const settled = result.then(() => undefined, () => undefined)
-    pendingByKey.set(key, settled)
-    void settled.then(() => {
-      if (pendingByKey.get(key) === settled) pendingByKey.delete(key)
-    })
+    const trackedTail = retainFailures
+      ? result.then(() => undefined)
+      : result.then(() => undefined, () => undefined)
+    tailsByKey.set(key, trackedTail)
+    void trackedTail.then(
+      () => { if (tailsByKey.get(key) === trackedTail) tailsByKey.delete(key) },
+      () => { if (!retainFailures && tailsByKey.get(key) === trackedTail) tailsByKey.delete(key) }
+    )
     return result
   }
 
   function getPendingWrites(): Promise<void>[] {
-    return [...pendingByKey.values()]
+    return [...tailsByKey.values()]
   }
 
   return { run, getPendingWrites }

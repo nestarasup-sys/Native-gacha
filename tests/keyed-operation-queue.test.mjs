@@ -37,3 +37,15 @@ test('uma falha é devolvida ao chamador sem bloquear a próxima operação da c
   await assert.rejects(failure, /falha sintética/)
   assert.equal(await recovery, 'recuperado')
 })
+
+test('a opção de retenção mantém uma falha visível ao flush até uma nova operação bem-sucedida', async () => {
+  const queue = createKeyedOperationQueue({ retainFailures: true })
+  const failure = queue.run('model-1', async () => { throw new Error('falha persistente sintética') })
+
+  await assert.rejects(failure, /falha persistente sintética/)
+  await assert.rejects(Promise.all(queue.getPendingWrites()), /falha persistente sintética/)
+
+  assert.equal(await queue.run('model-1', async () => 'recuperado'), 'recuperado')
+  await new Promise(resolve => setImmediate(resolve))
+  assert.deepEqual(queue.getPendingWrites(), [])
+})

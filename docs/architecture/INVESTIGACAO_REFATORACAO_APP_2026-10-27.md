@@ -628,9 +628,16 @@ Este corte separa propriedade dos contratos e chamadas entre domínios, mas não
 - O Customizador não tenta montar miniaturas ou poses a partir de slots pendentes, mostra a pendência para personagens já vinculados e impede selecionar o slot como modelo novo.
 - `fabricator-model-catalog.test.mjs` verifica que o handler IPC resolve com `null` nesse caso. `npm run test:refactor` passou com 310 testes; os testes direcionados do catálogo e recuperação passaram com 18; também passaram typecheck, auditoria de arquitetura (349 arquivos TS/TSX), build e `git diff --check`.
 
+### Etapa aplicada — operações do Animador DEV por modelo
+
+- `animatorIpc.ts` recebia uma única Promise do composition root. Salvamentos, leituras e exclusões de animação/rascunho em qualquer modelo entravam na mesma fila, enquanto `listAnimatorAnimations` lia os manifestos sem aguardar essa fila.
+- O domínio agora é dono de uma fila por `modelSlot`; leituras e gravações do mesmo modelo mantêm FIFO, modelos distintos avançam em paralelo, e a listagem de animações espera operações do próprio modelo. A validação do slot precede o enfileiramento.
+- O composition root coleta as caudas do IPC do Animador no mesmo inventário usado por backup, flush e encerramento. A opção `retainFailures` da fila keyed mantém uma falha de persistência visível ao flush até uma tentativa posterior do mesmo modelo concluir com sucesso.
+- `fabricator-ipc-boundaries.test.cjs` verifica FIFO por modelo, progresso independente, leitura de catálogo atrás de gravações e retenção/recuperação de falhas. `keyed-operation-queue.test.mjs` cobre o contrato da fila. `npm run test:refactor` passou com 311 testes; também passaram typecheck, auditoria de arquitetura (349 arquivos TS/TSX), build e `git diff --check`.
+
 ## 7. Próxima tarefa recomendada
 
-Auditar `animatorSaveQueue`: mapear leituras, gravações, exclusões e rascunhos que compartilham a fila global, verificar se animações e rascunhos de slots independentes podem avançar em paralelo, e identificar quais filas/caudas o backup e o encerramento precisam aguardar. Preservar ordenação dentro do mesmo `modelSlot` e os caminhos atuais.
+Auditar as gravações do renderer no Animador DEV: `AnimatorWorkspace` mantém `writeQueue.current`, um timer de 350 ms e um salvamento fire-and-forget no cleanup. O flush atual alcança as caudas IPC do processo principal, mas não enumera timers/filas ainda não enviados pelo renderer. Mapear e coordenar esses rascunhos com backup, fechamento e navegação sem perder o snapshot mais recente.
 
 ## 8. Verificações e validação
 
