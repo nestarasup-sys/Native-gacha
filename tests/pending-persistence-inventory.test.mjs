@@ -17,7 +17,7 @@ test('flush, backup e encerramento drenam persistências e aguardam operações 
     'fabricatorFaceAnimationExportIpc?.getPendingWrites()',
     'fabricatorDesignSettingsIpc?.getPendingWrites()',
     'poseSaveWrites',
-    'poseMigration',
+    'legacyPoseMigration.getTrackedTask()',
     'fabricatorHairIpc?.getPendingWrites()',
     'fabricatorAnimatorIpc?.getPendingWrites()',
     'fabricatorWardrobeIpc?.getPendingWrites()',

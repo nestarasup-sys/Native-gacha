@@ -6,7 +6,7 @@ import { mkdir as nativeMkdir, readFile as nativeReadFile, writeFile as nativeWr
 import { dirname, join, resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
-import { FABRICATOR_MODEL_SLOT_COUNT, FABRICATOR_POSE_SLOT_COUNT, type FaceExpressionPreset, type FabricatorPoseDraftSave, type FabricatorPoseSave, type FabricatorProjectSave, type ModelPart } from '../src/shared/fabricator'
+import { FABRICATOR_MODEL_SLOT_COUNT, FABRICATOR_POSE_SLOT_COUNT, type FaceExpressionPreset, type FabricatorProjectSave, type ModelPart } from '../src/shared/fabricator'
 import type { CustomizerCharacter } from '../src/shared/customizer'
 import type { CustomizerFaceAssetReference } from '../src/shared/customizerFaceAssetReferences'
 import type { FabricatorPoseReference } from '../src/shared/fabricatorPoseReferences'
@@ -58,6 +58,7 @@ import { createFabricatorModelWriter } from './domains/fabricator/modelWriter'
 import { createFabricatorHistoryPersistence } from './domains/fabricator/historyPersistence'
 import { registerFabricatorProjectHandlers } from './domains/fabricator/projectIpc'
 import { createPosePersistence } from './domains/fabricator/posePersistence'
+import { createLegacyPoseMigration } from './domains/fabricator/legacyPoseMigration'
 import { createPoseReferenceChangeCoordinator } from './domains/fabricator/poseReferences'
 import { createFabricatorPoseReferenceIntegrity } from './domains/fabricator/poseReferenceIntegrity'
 import { createAnimatorPersistence } from './domains/fabricator/animatorPersistence'
@@ -222,7 +223,6 @@ let editorV6FileIpc: ReturnType<typeof registerEditorV6FileHandlers> | null = nu
 let editorV6SaveQueue: Promise<void> = Promise.resolve()
 let poseSaveQueue: Promise<void> = Promise.resolve()
 const poseSaveWrites = new Set<Promise<void>>()
-let poseMigration: Promise<void> | null = null
 let faceGuideIpc: ReturnType<typeof registerFaceGuideHandlers> | null = null
 let fabricatorFaceCatalogIpc: ReturnType<typeof registerFabricatorFaceCatalogHandlers> | null = null
 // O Customizador recebe estes guards antes de o armazenamento de poses ser montado;
@@ -392,40 +392,15 @@ function isValidModelSlot(slot: number): boolean {
   return Number.isInteger(slot) && slot >= 1 && slot <= slotCount
 }
 
-function ensureLegacyPoseMigration(): Promise<void> {
-  if (poseMigration) return poseMigration
-  poseMigration = (async () => {
-    const root = poseLibraryPath()
-    for (let slot = 1; slot <= poseSlotCount; slot += 1) {
-      const legacyFolder = join(root, `slot-${slot}`)
-      try {
-        const project = JSON.parse(await readFile(join(legacyFolder, 'pose.json'), 'utf8')) as FabricatorPoseSave
-        if (!isValidModelSlot(project.sourceModelSlot)) continue
-        const destination = poseSlotPath(project.sourceModelSlot, slot)
-        try { await access(join(destination, 'pose.json')) } catch {
-          await mkdir(dirname(destination), { recursive: true })
-          await rename(legacyFolder, destination)
-        }
-      } catch (reason) {
-        if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason
-      }
-    }
-    const legacyDraft = join(root, 'draft')
-    try {
-      const draft = JSON.parse(await readFile(join(legacyDraft, 'draft.json'), 'utf8')) as FabricatorPoseDraftSave
-      const modelSlot = draft.project.sourceModelSlot
-      if (!isValidModelSlot(modelSlot)) return
-      const destination = poseDraftPath(modelSlot)
-      try { await access(join(destination, 'draft.json')) } catch {
-        await mkdir(dirname(destination), { recursive: true })
-        await rename(legacyDraft, destination)
-      }
-    } catch (reason) {
-      if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason
-    }
-  })()
-  return poseMigration
-}
+const legacyPoseMigration = createLegacyPoseMigration({
+  getLegacyRoot: poseLibraryPath,
+  poseSlotCount,
+  poseSlotPath,
+  poseDraftPath,
+  isValidModelSlot,
+  files: { readFile, access, mkdir, rename }
+})
+const ensureLegacyPoseMigration = legacyPoseMigration.ensure
 
 function assertTrustedSender(event: IpcMainInvokeEvent): void {
   const senderUrl = event.senderFrame?.url
@@ -561,6 +536,7 @@ const { isValidAnimatorSlot, writeAnimatorAnimation, readAnimatorAnimation, reco
 
 function collectPendingPersistenceWrites(): Promise<unknown>[] {
   const migrationTask = dataMigrationIpc?.getActiveTask()
+  const legacyPoseMigrationTask = legacyPoseMigration.getTrackedTask()
   return [
     ...(fabricatorProjectIpc?.getPendingWrites() ?? []), ...poseSaveWrites, ...(fabricatorHairIpc?.getPendingWrites() ?? []),
     ...(fabricatorModelSourceDownloadIpc?.getPendingWrites() ?? []),
@@ -577,7 +553,7 @@ function collectPendingPersistenceWrites(): Promise<unknown>[] {
     ...roteiroUiGifLibrary.getPendingWrites(),
     ...(migrationTask ? [migrationTask] : []),
     studioSaveQueues.studio, editorV6SaveQueue, ...roteirosWriteQueue.getPendingWrites(),
-    ...(poseMigration ? [poseMigration] : [])
+    ...(legacyPoseMigrationTask ? [legacyPoseMigrationTask] : [])
   ]
 }
 

@@ -1524,3 +1524,11 @@ Continua a auditoria das operações IPC iniciadas pelo usuário e da cobertura 
 - `electron/application/appDataBootstrap.ts` agora concentra as duas rotinas, recebendo `app`, variáveis de ambiente e caminhos de execução por dependências explícitas. A ordem do boot não mudou: valida o root DEV AI, configura `app-data`, migra o perfil Electron e só então cria `DataPlatform` e `DomainFileSystem`.
 - Foram preservados o marcador de backup privado com `verifiedSha256`, o sandbox como filho direto de uma execução, os diretórios canônicos sem symlink, a exigência de root absoluto para stress e a separação entre `appData`, `userData` e `sessionData`. Não houve leitura ou alteração do perfil pessoal durante os testes; todos os cenários usaram pastas temporárias.
 - `main.ts` passou de 1.196 para 1.060 linhas. Sete testes cobrem caminhos local e empacotado, perfil de stress válido/inválido, marcador DEV AI válido/inválido, cópia privada validada/fora da raiz, gate do runner e a ordem entre as duas rotinas. Passaram typecheck, auditoria de arquitetura (466 arquivos TS/TSX), `npm run test:refactor` (497 testes e suítes auxiliares), 20 testes de `data-platform`, os 7 testes do bootstrap, build e `git diff --check`.
+
+## 104. Etapa aplicada — migração legada de poses isolada e retomável
+
+- `main.ts` mantinha a migração dos slots e rascunhos antigos de poses em uma função local. A primeira Promise também ficava armazenada mesmo quando rejeitava; uma falha de filesystem impedia nova tentativa até reiniciar o app.
+- `domains/fabricator/legacyPoseMigration.ts` agora é dono dessa migração. Execuções concorrentes ainda compartilham a mesma Promise; após falha, o cache é liberado para permitir retry. Slots movidos antes da falha são ignorados na retomada por não existirem mais na origem.
+- O processo continua validando o modelo de origem e não sobrescreve slots ou rascunhos que já existam no destino. A migração permanece no inventário de persistências aguardadas durante backup e encerramento. Não houve mudança nos caminhos, formatos, IPC ou dados existentes.
+- Testes sintéticos em diretório temporário cobrem slots e rascunho válidos, origem inválida, destino existente, chamadas concorrentes e retomada após falha parcial. O teste foi incluído em `npm run test:refactor`.
+- `main.ts` passou de 1.060 para 1.036 linhas.
