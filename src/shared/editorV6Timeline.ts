@@ -1,5 +1,5 @@
 /** Frame-based timeline operations shared by preview, prints and persistence. */
-import type { EditorV6BackgroundState, EditorV6Document, EditorV6Element, EditorV6Timeline, EditorV6TimelineBlock, EditorV6TimelineTrack, EditorV6VideoLayout } from './editorV6'
+import type { EditorV6Asset, EditorV6BackgroundState, EditorV6Document, EditorV6Element, EditorV6Timeline, EditorV6TimelineBlock, EditorV6TimelineTrack, EditorV6VideoLayout } from './editorV6'
 import { editorV6DefaultVideoLayout, editorV6MediaUrl, editorV6TrackKindForElement, editorV6TrackLabel } from './editorV6'
 import { editorV6MotionPlans, type EditorV6MotionPlan } from './editorV6Motion'
 import { editorV6FaceModeAtFrame } from './editorV6FaceSchedule'
@@ -360,15 +360,43 @@ export function repairEditorV6FaceModeAssetReferences(document: EditorV6Document
 
 /** Recover duplicate image IDs from a live editor session without dropping either image. */
 export function repairEditorV6DuplicateAssets(document: EditorV6Document, selectedBlockId: string | null): EditorV6Document {
-  const seen = new Set<string>(), replaced = new Map<string, string>()
+  const assetsById = new Map<string, EditorV6Asset[]>()
+  const uniqueIds = new Set(document.assets.map((asset) => asset.id))
+  const duplicateIds = new Set<string>()
   const assets = document.assets.map((asset) => {
-    if (!seen.has(asset.id)) { seen.add(asset.id); return asset }
-    const id = crypto.randomUUID()
-    replaced.set(asset.id, id)
-    return { ...asset, id, timelineSnapshot: true }
+    const copies = assetsById.get(asset.id)
+    if (!copies) { assetsById.set(asset.id, [asset]); return asset }
+    duplicateIds.add(asset.id)
+    let id = crypto.randomUUID()
+    while (uniqueIds.has(id)) id = crypto.randomUUID()
+    uniqueIds.add(id)
+    const copy = { ...asset, id, timelineSnapshot: true }
+    copies.push(copy)
+    return copy
   })
-  if (!replaced.size) return document
-  return { ...document, assets, timeline: { ...document.timeline, tracks: document.timeline.tracks.map((track) => ({ ...track, blocks: track.blocks.map((block) => block.id === selectedBlockId && block.state?.assetId && replaced.has(block.state.assetId) ? { ...block, state: { ...block.state, assetId: replaced.get(block.state.assetId) } } : block) })) } }
+  if (!duplicateIds.size) return document
+  const resolveAssetId = (id: string | undefined, category?: EditorV6Asset['category'], preferLast = false) => {
+    if (!id || !duplicateIds.has(id)) return id
+    const copies = assetsById.get(id)!
+    const matching = category ? copies.filter((asset) => asset.category === category) : copies
+    const candidates = matching.length ? matching : copies
+    return candidates[preferLast ? candidates.length - 1 : 0].id
+  }
+  const categoryForElement = (element: EditorV6Element): EditorV6Asset['category'] | undefined =>
+    element.kind === 'character' ? 'character' : element.kind === 'image' ? 'object' : undefined
+  const repairElement = (element: EditorV6Element, preferLast = false): EditorV6Element => ({
+    ...element,
+    ...(element.assetId ? { assetId: resolveAssetId(element.assetId, categoryForElement(element), preferLast) } : {}),
+    ...(element.faceModeAssetIds ? { faceModeAssetIds: Object.fromEntries(Object.entries(element.faceModeAssetIds).map(([mode, id]) => [mode, resolveAssetId(id, 'character')])) as EditorV6Element['faceModeAssetIds'] } : {})
+  })
+  const elements = document.elements.map((element) => repairElement(element))
+  const timeline = { ...document.timeline, tracks: document.timeline.tracks.map((track) => ({ ...track, blocks: track.blocks.map((block) => ({
+    ...block,
+    ...(block.state ? { state: repairElement(block.state, block.id === selectedBlockId) } : {}),
+    ...(block.background ? { background: { ...block.background, backgroundAssetId: resolveAssetId(block.background.backgroundAssetId ?? undefined, 'background') ?? null } } : {}),
+    ...(block.incomingMotion ? { incomingMotion: { ...block.incomingMotion, assetId: resolveAssetId(block.incomingMotion.assetId, 'character')! } } : {})
+  })) })) }
+  return { ...document, backgroundAssetId: resolveAssetId(document.backgroundAssetId ?? undefined, 'background') ?? null, assets, elements, timeline }
 }
 
 export function snapEditorV6Frame(timeline: EditorV6Timeline, frame: number, cursor: number, excludeId: string, threshold: number, duration = 0): { frame: number; guide?: number } {

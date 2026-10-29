@@ -115,6 +115,25 @@ describe('timeline do Editor V6', () => {
     expect(editorV6DocumentSchema.safeParse(repaired).success).toBe(true)
   })
 
+  it('mantém a referência do personagem na imagem certa ao reparar IDs duplicados entre categorias', () => {
+    const document = fixture(), original = document.assets[0]
+    document.assets.unshift({ ...original, category: 'object', name: 'Objeto com ID duplicado' })
+    const repaired = repairEditorV6DuplicateAssets(document, null)
+    const character = repaired.elements[0]
+    expect(repaired.assets.find((asset) => asset.id === character.assetId)?.category).toBe('character')
+    expect(editorV6DocumentSchema.safeParse(repaired).success).toBe(true)
+  })
+
+  it('aponta qual vínculo do personagem está inválido ao validar o projeto', () => {
+    const document = fixture(), actor = document.elements[0]
+    const missingImage = editorV6DocumentSchema.safeParse({ ...document, elements: [{ ...actor, assetId: crypto.randomUUID() }] })
+    const missingSource = editorV6DocumentSchema.safeParse({ ...document, elements: [{ ...actor, characterId: undefined }] })
+    expect(missingImage.success).toBe(false)
+    expect(missingImage.error.issues.map((issue) => issue.path)).toContainEqual(['elements', 0, 'assetId'])
+    expect(missingSource.success).toBe(false)
+    expect(missingSource.error.issues.map((issue) => issue.path)).toContainEqual(['elements', 0, 'characterId'])
+  })
+
   it('remove referências faciais órfãs sem apagar modos cujos assets continuam válidos', () => {
     const document = fixture(), actor = document.elements[0], clip = actorClip(document)
     const blinkId = crypto.randomUUID()

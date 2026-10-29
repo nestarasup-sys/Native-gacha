@@ -168,7 +168,8 @@ export const editorV6DocumentSchema = z.object({
     }
     if (element.kind === 'character') {
       const asset = element.assetId ? assetsById.get(element.assetId) : undefined
-      if (!element.characterId || !asset || asset.category !== 'character') context.addIssue({ code: 'custom', path: ['elements', index], message: 'O personagem precisa apontar para uma imagem e um personagem de origem.' })
+      if (!element.characterId) context.addIssue({ code: 'custom', path: ['elements', index, 'characterId'], message: 'O personagem precisa apontar para um personagem de origem.' })
+      if (!asset || asset.category !== 'character') context.addIssue({ code: 'custom', path: ['elements', index, 'assetId'], message: 'A imagem base do personagem precisa existir na biblioteca do projeto.' })
     }
     for (const [mode, assetId] of Object.entries(element.faceModeAssetIds ?? {})) {
       const faceAsset = assetId ? assetsById.get(assetId) : undefined
