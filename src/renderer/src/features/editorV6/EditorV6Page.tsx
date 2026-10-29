@@ -27,6 +27,7 @@ import { SceneElementControls } from '../../ui/components/SceneElementControls'
 import { SceneCastPickerModal } from '../../ui/components/SceneCastPickerModal'
 import { useSerializedSceneDocumentSave } from '../../ui/hooks/useSerializedSceneDocumentSave'
 import { registerPendingWriteFlusher } from '../../ui/pendingPersistence'
+import { createPendingOperationTracker } from '../../ui/pendingOperations'
 import { isLegacySceneCatalogId, loadLegacySceneCatalog } from '../../ui/legacySceneCatalog'
 import { createSceneTextElement, sceneCatalogColor, sceneEditorTools } from '../../ui/sceneEditorDefaults'
 import { CharacterPortrait } from '../../ui/components/CharacterPortrait'
@@ -134,17 +135,13 @@ export function EditorV6Page() {
   const expressionSaveSignatureRef = useRef<{ studioId: string; value: string } | null>(null)
   const normalizedStudioIdsRef = useRef(new Set<string>())
   const nextStudioNumber = useRef(1)
-  const editorV6IpcWritesRef = useRef(new Set<Promise<unknown>>())
+  const editorV6PendingOperations = useMemo(() => createPendingOperationTracker(), [])
   const editorV6SaveTimerRef = useRef<number | null>(null)
   const editorV6SavePromiseRef = useRef<Promise<boolean> | null>(null)
   const selectedEditorV6 = editorV6Projects.find((studio) => studio.id === selectedId) ?? null
   const activeEditorV6 = activeEditorV6Stored?.id === activeEditorV6Id ? activeEditorV6Stored : null
-  const trackEditorV6IpcWrite = useCallback(<T,>(operation: Promise<T>) => {
-    editorV6IpcWritesRef.current.add(operation)
-    void operation.then(() => editorV6IpcWritesRef.current.delete(operation), () => editorV6IpcWritesRef.current.delete(operation))
-    return operation
-  }, [])
-  const writeEditorV6Document = useCallback((document: EditorV6Document) => trackEditorV6IpcWrite(window.desktop.editorV6.saveEditorV6Project(document)), [trackEditorV6IpcWrite])
+  const trackEditorV6Operation = editorV6PendingOperations.track
+  const writeEditorV6Document = useCallback((document: EditorV6Document) => trackEditorV6Operation(() => window.desktop.editorV6.saveEditorV6Project(document)), [trackEditorV6Operation])
   const onEditorV6DocumentSaved = useCallback((document: EditorV6Document, savedDocument: EditorV6Document) => {
     if (savedDocument.thumbnailDataUrl !== document.thumbnailDataUrl) {
       updateActiveEditorV6Project((project) => project.id === document.id && project.updatedAt === document.updatedAt && project.thumbnailDataUrl !== savedDocument.thumbnailDataUrl
@@ -180,11 +177,7 @@ export function EditorV6Page() {
       if (latest && (hadPendingTimer || !saved) && !await saveActiveEditorV6Project(latest)) throw new Error('Não foi possível salvar o projeto do Editor V6 antes de continuar.')
       const inFlightSave = editorV6SavePromiseRef.current
       if (inFlightSave && !await inFlightSave) throw new Error('Não foi possível concluir o salvamento do Editor V6.')
-      while (editorV6IpcWritesRef.current.size > 0) {
-        const results = await Promise.allSettled([...editorV6IpcWritesRef.current])
-        const failure = results.find((result): result is PromiseRejectedResult => result.status === 'rejected')
-        if (failure) throw failure.reason
-      }
+      await editorV6PendingOperations.flush()
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Não foi possível salvar o projeto do Editor V6 antes de continuar.')
       throw reason
@@ -629,7 +622,7 @@ export function EditorV6Page() {
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível criar o projeto do Editor V6.') }
   }
 
-  const duplicateStudio = async (sourceSummary: EditorV6Card | null = selectedEditorV6) => {
+  const duplicateStudio = (sourceSummary: EditorV6Card | null = selectedEditorV6) => trackEditorV6Operation(async () => {
     if (!sourceSummary) return
     let source: EditorV6Document | null
     try {
@@ -652,14 +645,14 @@ export function EditorV6Page() {
     }, () => crypto.randomUUID())
     try {
       setError(null)
-      if (source.exportAudio?.length) await trackEditorV6IpcWrite(window.desktop.editorV6.cloneEditorV6ExportAudio(source.id, duplicate.id, source.exportAudio))
-      if (source.media?.length) await trackEditorV6IpcWrite(window.desktop.editorV6.cloneEditorV6Media(source.id, duplicate.id, source.media))
+      if (source.exportAudio?.length) await window.desktop.editorV6.cloneEditorV6ExportAudio(source.id, duplicate.id, source.exportAudio)
+      if (source.media?.length) await window.desktop.editorV6.cloneEditorV6Media(source.id, duplicate.id, source.media)
       await writeEditorV6Document(duplicate)
       upsertEditorV6Summary(editorV6ProjectSummary(duplicate))
       setSelectedId(duplicate.id)
       setSaved(true)
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível duplicar o projeto do Editor V6.') }
-  }
+  })
 
   useEffect(() => {
     if (!activeEditorV6 || dragRef.current) return
@@ -761,7 +754,7 @@ export function EditorV6Page() {
     setHistoryVersion(value => value + 1)
   }
 
-  const importImage = async (category: 'background' | 'object') => {
+  const importImage = (category: 'background' | 'object') => trackEditorV6Operation(async () => {
     if (!activeEditorV6) return
     pausePlayback()
     const targetTrackKind = category === 'object' ? 'object' : 'video'
@@ -789,9 +782,9 @@ export function EditorV6Page() {
       setInspectorOpen(true)
       setInspectorTab('editor')
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível importar a imagem.') }
-  }
+  })
 
-  const importTimelineMedia = async (kind: 'video' | 'audio') => {
+  const importTimelineMedia = (kind: 'video' | 'audio') => trackEditorV6Operation(async () => {
     if (!activeEditorV6) return
     if (kind === 'video') { setVideoPickerOpen(true); return }
     const track = activeEditorV6.timeline.tracks.find((item) => item.kind === kind)
@@ -813,9 +806,9 @@ export function EditorV6Page() {
       setInspectorOpen(true)
       setInspectorTab('editor')
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível importar o áudio.') }
-  }
+  })
 
-  const linkVideoLibraryItem = async (item: import('../../../../shared/mediaLibrary').VideoLibraryItem) => {
+  const linkVideoLibraryItem = (item: import('../../../../shared/mediaLibrary').VideoLibraryItem) => trackEditorV6Operation(async () => {
     const activeProject = activeEditorV6
     if (!activeProject) return
     const projectId = activeProject.id
@@ -835,7 +828,7 @@ export function EditorV6Page() {
     setInspectorOpen(true)
     setInspectorTab('editor')
     setVideoPickerOpen(false)
-  }
+  })
 
   const selectBackground = (asset: EditorV6Asset) => {
     const frame = getEditorV6PlaybackFrame()
@@ -1326,7 +1319,7 @@ export function EditorV6Page() {
     if (!target || !window.confirm(`Excluir ${target.title}?`)) return
     try {
       if (target.id === activeEditorV6IdRef.current) await flushEditorV6Writes()
-      await trackEditorV6IpcWrite(window.desktop.editorV6.deleteEditorV6Project(target.id))
+      await trackEditorV6Operation(() => window.desktop.editorV6.deleteEditorV6Project(target.id))
       removeEditorV6Summary(target.id)
       setSelectedId((current) => current === target.id ? null : current)
       if (activeEditorV6Id === target.id) { pausePlayback(); setActiveEditorV6Id(null) }
@@ -1348,10 +1341,12 @@ export function EditorV6Page() {
     if (!activeEditorV6) return
     try {
       await flushEditorV6Writes()
-      const { captureEditorV6Frame } = await import('./sceneCapture')
-      const image = await captureEditorV6Frame(activeEditorV6, getEditorV6PlaybackFrame(), 1920, 1080, 'image/png')
-      const path = await window.desktop.editorV6.saveEditorV6Print(activeEditorV6.id, image)
-      if (path) { setError(null); setNotice(`Print salvo em ${path}`) }
+      await trackEditorV6Operation(async () => {
+        const { captureEditorV6Frame } = await import('./sceneCapture')
+        const image = await captureEditorV6Frame(activeEditorV6, getEditorV6PlaybackFrame(), 1920, 1080, 'image/png')
+        const path = await window.desktop.editorV6.saveEditorV6Print(activeEditorV6.id, image)
+        if (path) { setError(null); setNotice(`Print salvo em ${path}`) }
+      })
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível gerar o print.') }
   }
 
@@ -1642,7 +1637,7 @@ export function EditorV6Page() {
         {!fullView && <Profiler id="/editor-v6/timeline" onRender={recordUiCommit}><EditorV6Timeline key={activeEditorV6.id} document={activeEditorV6} playing={isPlaying} selectedId={selectedTimelineBlockId}
           onSeek={(frame) => { if (dragRef.current) cancelSceneDrag(); pausePlayback(); publishPlayheadFrame(frame) }} onPlay={toggleTimelinePlayback} onChange={changeScene}
           onSelect={(block) => { setSelectedTimelineBlockId(block.id); setSelectedElementId(block.background ? 'background' : block.elementId ?? null); setActiveTool(block.background ? 'background' : null); setInspectorOpen(true); if (block.state?.kind === 'character') restoreCharacterInspectorView(); else setInspectorTab('editor') }} /></Profiler> }
-        <EditorV6ExportPanel key={`export-${activeEditorV6.id}`} project={activeEditorV6} open={exportOpen} onClose={() => setExportOpen(false)} onChange={(update) => patchStudio(update, false)} onActivity={setMotionExportBusy} />
+        <EditorV6ExportPanel key={`export-${activeEditorV6.id}`} project={activeEditorV6} open={exportOpen} onClose={() => setExportOpen(false)} onChange={(update) => patchStudio(update, false)} onActivity={setMotionExportBusy} trackOperation={trackEditorV6Operation} />
         {videoPickerOpen && <EditorV6VideoPickerModal onClose={() => setVideoPickerOpen(false)} onSelect={linkVideoLibraryItem} />}
         {castPickerOpen && <SceneCastPickerModal title="Personagens do Editor V6" characters={availableCharacters} selection={castSelection} saving={savingCast} onToggle={(characterId, selected) => setCastSelection((current) => selected ? current.filter((id) => id !== characterId) : [...current, characterId])} onClose={() => setCastPickerOpen(false)} onSave={() => void saveCastSelection()} />}
       </main>

@@ -2,6 +2,35 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { flushPendingRendererWrites, registerPendingWriteFlusher } from '../src/renderer/src/ui/pendingPersistence.ts'
+import { createPendingOperationTracker } from '../src/renderer/src/ui/pendingOperations.ts'
+
+function deferred() {
+  let resolve
+  const promise = new Promise((yes) => { resolve = yes })
+  return { promise, resolve }
+}
+
+test('pending operation flush shares callers and keeps draining actions added during a close', async () => {
+  const tracker = createPendingOperationTracker()
+  const firstGate = deferred(), firstStarted = deferred()
+  const secondGate = deferred(), secondStarted = deferred()
+  const first = tracker.track(async () => { firstStarted.resolve(); await firstGate.promise })
+  await firstStarted.promise
+  const flushing = tracker.flush()
+  assert.equal(tracker.flush(), flushing)
+  const second = tracker.track(async () => { secondStarted.resolve(); await secondGate.promise })
+  await secondStarted.promise
+  firstGate.resolve()
+  await first
+  let flushFinished = false
+  void flushing.then(() => { flushFinished = true })
+  await Promise.resolve()
+  assert.equal(flushFinished, false, 'o flush não esperou a ação iniciada enquanto a primeira estava pendente')
+  secondGate.resolve()
+  await second
+  await flushing
+  assert.equal(flushFinished, true)
+})
 
 test('renderer flush waits for every registered writer and shares concurrent flush requests', async () => {
   const events = []
@@ -93,12 +122,19 @@ test('Face component debounces and catalog saves drain through the renderer regi
 test('Studio and Editor V6 flush debounced documents and wait for renderer IPC writes', async () => {
   const studio = await readFile('src/renderer/src/features/studio/StudioPage.tsx', 'utf8')
   const editor = await readFile('src/renderer/src/features/editorV6/EditorV6Page.tsx', 'utf8')
+  const exportPanel = await readFile('src/renderer/src/features/editorV6/EditorV6ExportPanel.tsx', 'utf8')
   assert.match(studio, /registerPendingWriteFlusher\(flushStudioWrites\)/)
   assert.match(studio, /hadPendingTimer \|\| !saved[\s\S]*?saveStudio\(latest\)/)
   assert.match(studio, /await Promise\.allSettled\(\[\.\.\.studioIpcWritesRef\.current\]\)/)
   assert.match(editor, /registerPendingWriteFlusher\(flushEditorV6Writes\)/)
   assert.match(editor, /hadPendingTimer \|\| !saved[\s\S]*?saveActiveEditorV6Project\(latest\)/)
-  assert.match(editor, /await Promise\.allSettled\(\[\.\.\.editorV6IpcWritesRef\.current\]\)/)
+  assert.match(editor, /await editorV6PendingOperations\.flush\(\)/)
+  for (const operation of ['duplicateStudio', 'importImage', 'importTimelineMedia', 'linkVideoLibraryItem']) {
+    assert.match(editor, new RegExp(`const ${operation} =[^\\n]*trackEditorV6Operation\\(async \\(\\) =>`), `${operation} deve permanecer pendente até salvar o documento relacionado`)
+  }
+  assert.match(editor, /await trackEditorV6Operation\(async \(\) => \{[\s\S]*?saveEditorV6Print/)
+  assert.match(exportPanel, /trackOperation\(async \(\) => \{ const clip = await window\.desktop\.editorV6\.importEditorV6ExportAudio/)
+  assert.match(exportPanel, /trackOperation\(async \(\) => \{ planEditorV6Export/)
 })
 
 test('Base Videos drains every debounced detail write before leaving', async () => {

@@ -5,7 +5,7 @@ import { planEditorV6Export, type EditorV6ExportAudio, type EditorV6ExportOption
 
 let rememberedJob: EditorV6ExportStatus | null = null
 const finished = (job: EditorV6ExportStatus) => ['completed', 'cancelled', 'failed'].includes(job.state)
-export function EditorV6ExportPanel({ project, open, onClose, onChange, onActivity }: { project: EditorV6Document; open: boolean; onClose: () => void; onChange: (update: (project: EditorV6Document) => EditorV6Document) => void; onActivity?: (active: boolean) => void }) {
+export function EditorV6ExportPanel({ project, open, onClose, onChange, onActivity, trackOperation }: { project: EditorV6Document; open: boolean; onClose: () => void; onChange: (update: (project: EditorV6Document) => EditorV6Document) => void; onActivity?: (active: boolean) => void; trackOperation: <T,>(operation: () => Promise<T>) => Promise<T> }) {
   const dialog = useRef<HTMLElement>(null)
   useLayoutEffect(() => {
     if (!open) return
@@ -34,13 +34,13 @@ export function EditorV6ExportPanel({ project, open, onClose, onChange, onActivi
   const updateAudio = (id: string, values: Partial<EditorV6ExportAudio>) => onChange((document) => ({ ...document, exportAudio: document.exportAudio?.map((clip) => clip.id === id ? { ...clip, ...values } : clip), updatedAt: new Date().toISOString() }))
   const importAudio = async () => {
     setBusy(true); setError('')
-    try { const clip = await window.desktop.editorV6.importEditorV6ExportAudio(project.id); if (clip) onChange((document) => ({ ...document, exportAudio: [...(document.exportAudio ?? []), clip], updatedAt: new Date().toISOString() })) }
+    try { await trackOperation(async () => { const clip = await window.desktop.editorV6.importEditorV6ExportAudio(project.id); if (clip) onChange((document) => ({ ...document, exportAudio: [...(document.exportAudio ?? []), clip], updatedAt: new Date().toISOString() })) }) }
     catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
     finally { setBusy(false) }
   }
   const start = async () => {
     setBusy(true); setError('')
-    try { planEditorV6Export(options, project.timeline.durationFrames); const value = await window.desktop.editorV6.startEditorV6Export(project, options); if (value) setStatus(value) }
+    try { await trackOperation(async () => { planEditorV6Export(options, project.timeline.durationFrames); const value = await window.desktop.editorV6.startEditorV6Export(project, options); if (value) setStatus(value) }) }
     catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
     finally { setBusy(false) }
   }

@@ -44,7 +44,7 @@ let closePanelTest: () => void
   const root = createRoot(mount)
   function Demo() {
     const [project, setProject] = useState(panelProject)
-    return <EditorV6ExportPanel project={project} open onClose={() => {}} onChange={setProject} />
+    return <EditorV6ExportPanel project={project} open onClose={() => {}} onChange={setProject} trackOperation={async (operation) => operation()} />
   }
   flushSync(() => root.render(<Demo />))
   await new Promise((resolve) => requestAnimationFrame(resolve))

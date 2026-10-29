@@ -678,7 +678,7 @@ Este corte separa propriedade dos contratos e chamadas entre domínios, mas não
 
 ## 12. Próxima tarefa recomendada
 
-Em andamento: auditar operações IPC manuais iniciadas por ações de usuário e a cobertura do inventário do processo principal, além dos autosaves já drenados. Registrar para cada domínio o comportamento de falha/recuperação e completar a matriz de persistência do aplicativo. A auditoria agora cobre jobs de backup, exportações de Roteiros e recuperação de imagens de poses no autosave; ainda faltam operações manuais dos outros domínios e a recuperação após interrupção forçada de algumas publicações.
+Em andamento: auditar operações IPC manuais iniciadas por ações de usuário e a cobertura do inventário do processo principal, além dos autosaves já drenados. Registrar para cada domínio o comportamento de falha/recuperação e completar a matriz de persistência do aplicativo. A auditoria agora cobre jobs de backup, exportações de Roteiros, recuperação de imagens de poses e ações compostas de mídia do Editor V6 no fechamento; ainda faltam operações manuais dos outros domínios e a recuperação após interrupção forçada de algumas publicações.
 
 ## 13. Verificações e validação
 
@@ -734,3 +734,11 @@ Em andamento: auditar operações IPC manuais iniciadas por ações de usuário 
 - `posePersistence.ts` agora procura a imagem ausente no slot da pose em edição e, em seguida, no modelo-fonte, antes de publicar o manifesto do rascunho. Para uma peça editada, o slot salvo tem precedência para manter exatamente sua imagem; poses novas usam a fonte do modelo. IDs, JSON e formato dos PNGs permanecem iguais.
 - No Editor V6, cancelar a preparação antecipada de animação enquanto o usuário interage é resultado normal. O job marca explicitamente esse cancelamento e a chamada de cache não o propaga como falha IPC. Preparações de exportação continuam propagando erros reais.
 - `npm run test:fabricator:persistence` cobre recuperação do slot e da fonte em fixtures PNG sintéticas. `npm run test:editor-v6` e `npm run test:editor-v6:motion-service` verificam cancelamento e retomada; o teste do harness foi alinhado à forma real do preload (`desktop.editorV6`). Nenhum dado de modelo ou pose do usuário foi acessado.
+
+## 18. Etapa aplicada — ações compostas do Editor V6 no flush de fechamento
+
+- O fluxo de mídia passa por `EditorV6Page` → `window.desktop.editorV6` → `exportIpc.ts`/`fileIpc.ts` → diretórios `media`, `export-audio` ou `prints`. Importar mídia e vincular vídeo também altera o documento do projeto depois que o IPC retorna; duplicar copia os arquivos antes de salvar o novo manifesto.
+- O flush da página aguardava saves e IPCs individuais, mas não acompanhava algumas ações completas. Ao fechar entre a cópia do arquivo e o save do documento, poderia deixar uma importação ou duplicação incompleta sem a tela permanecer aberta até o final.
+- `createPendingOperationTracker` centraliza registro e drenagem das Promises. O Editor V6 agora mantém importação de imagem/áudio/vídeo, vínculo de vídeo, duplicação, importação de áudio para exportação, início de exportação e captura de print pendentes até a ação inteira terminar; `flushEditorV6Writes` também aguarda as ações que surgirem enquanto já está drenando.
+- O fechamento nativo existente chama o flush do renderer antes de fechar a janela; navegação continua usando o mesmo registro global. Contratos IPC, IDs, formatos e estrutura dos projetos não mudaram.
+- `tests/renderer-pending-persistence.test.mjs` verifica a drenagem com uma segunda ação iniciada durante o flush e as ações do Editor V6 cobertas. `npm run test:editor-v6` cobre o painel de exportação e `npm run typecheck` valida os contratos de UI. Nenhuma mídia ou projeto real foi criado ou alterado.
