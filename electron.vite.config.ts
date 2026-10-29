@@ -2,6 +2,7 @@ import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 import react from '@vitejs/plugin-react'
+import { rendererContentSecurityPolicyPlugin } from './electron/application/rendererContentSecurityPolicy'
 
 const projectRoot = fileURLToPath(new URL('.', import.meta.url))
 
@@ -30,7 +31,7 @@ export default defineConfig({
   renderer: {
     root: resolve(projectRoot, 'src/renderer'),
     resolve: { alias: { '@': resolve(projectRoot, 'src/renderer/src') } },
-    plugins: [react()],
+    plugins: [react(), rendererContentSecurityPolicyPlugin()],
     worker: { format: 'es' },
     build: { outDir: 'out/renderer', rollupOptions: { input: { index: resolve(projectRoot, 'src/renderer/index.html'), editorV6Export: resolve(projectRoot, 'src/renderer/editor-v6-export.html') } } }
   }

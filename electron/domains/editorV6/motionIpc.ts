@@ -69,7 +69,7 @@ export function createEditorV6MotionService(deps: { ipcMain: Pick<IpcMain, 'hand
       if (!lane.window || lane.window.isDestroyed()) {
         const window = new BrowserWindow({ show: false, width: 320, height: 180, webPreferences: { preload: deps.preload, contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: false, offscreen: true, devTools: false, partition: lane.partition } })
         restrictRendererNavigation(window.webContents)
-        restrictRendererPermissions(window.webContents.session, { allowFullscreen: false })
+        restrictRendererPermissions(window.webContents.session)
         restrictRendererResources(window.webContents.session, { html: deps.html, devUrl: deps.devUrl })
         lane.window = window; lane.delivery = request
         workers.set(window.webContents.id, lane)

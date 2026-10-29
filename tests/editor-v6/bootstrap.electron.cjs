@@ -19,10 +19,12 @@ app.whenReady().then(async () => {
     await new Promise(resolve => setTimeout(resolve, 25))
   }
   assert.equal(started, true, 'worker must request its payload')
-  const state = await window.webContents.executeJavaScript(`({ rootChildren: document.getElementById('root').childElementCount, styles: document.styleSheets.length, flush: typeof window.__flushPendingRendererWrites })`)
+  const state = await window.webContents.executeJavaScript(`({ rootChildren: document.getElementById('root').childElementCount, styles: document.styleSheets.length, flush: typeof window.__flushPendingRendererWrites, csp: document.querySelector('meta[http-equiv="Content-Security-Policy"]')?.content ?? null })`)
   assert.equal(state.rootChildren, 0)
   assert.equal(state.styles, 0)
   assert.equal(state.flush, 'function')
+  assert.match(state.csp, /script-src 'self'/)
+  assert.doesNotMatch(state.csp, /unsafe-eval|ws:/)
   assert.equal(resources.some(url => /mountApp|\.css(?:$|\?)/.test(url)), false, 'worker must not load UI shell or styles')
   const popup = await window.webContents.executeJavaScript(`window.open('about:blank') === null`)
   assert.equal(popup, true)

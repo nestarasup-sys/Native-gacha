@@ -5,7 +5,6 @@ import { existsSync } from 'node:fs'
 import { mkdir as nativeMkdir, readFile as nativeReadFile, writeFile as nativeWriteFile, readdir as nativeReaddir, unlink as nativeUnlink, rename as nativeRename, stat as nativeStat, access as nativeAccess, rm as nativeRm, copyFile as nativeCopyFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { fileURLToPath } from 'node:url'
 import { FABRICATOR_MODEL_SLOT_COUNT, FABRICATOR_POSE_SLOT_COUNT, type FaceExpressionPreset, type FabricatorProjectSave, type ModelPart } from '../src/shared/fabricator'
 import type { CustomizerCharacter } from '../src/shared/customizer'
 import type { CustomizerFaceAssetReference } from '../src/shared/customizerFaceAssetReferences'
@@ -93,7 +92,11 @@ import { registerRoteirosIpc, type RoteirosIpcLifecycle } from './application/re
 import { configureDevAiDataRoot, configureLocalAppDataRoot } from './application/appDataBootstrap'
 import { createMainWindowFactory } from './application/mainWindow'
 import { createEditorV6VideoReferenceLookup } from './domains/editorV6/videoReferences'
+import { canVisibleRendererRequestFullscreen, createRendererTrustPolicy, isTrustedRendererFrame } from './application/rendererTrust'
 
+const rendererHtmlPath = join(__dirname, '../renderer/index.html')
+const devRendererUrl = app.isPackaged ? undefined : process.env.ELECTRON_RENDERER_URL
+const rendererTrustPolicy = createRendererTrustPolicy(devRendererUrl, rendererHtmlPath)
 let configuredAppDataRoot: string | null = null
 const roteirosWriteQueue = createRoteirosWriteQueue()
 const dataMaintenanceQueue = createKeyedOperationQueue()
@@ -404,12 +407,9 @@ const legacyPoseMigration = createLegacyPoseMigration({
 const ensureLegacyPoseMigration = legacyPoseMigration.ensure
 
 function assertTrustedSender(event: IpcMainInvokeEvent): void {
-  const senderUrl = event.senderFrame?.url
-  if (!senderUrl) throw new Error('Origem da solicitação inválida.')
-  const expectedUrl = process.env.ELECTRON_RENDERER_URL
-  if (expectedUrl) {
-    if (new URL(senderUrl).origin !== new URL(expectedUrl).origin) throw new Error('Origem da solicitação não autorizada.')
-  } else if (resolve(fileURLToPath(senderUrl)) !== resolve(join(__dirname, '../renderer/index.html'))) {
+  const frame = event.senderFrame
+  if (!frame) throw new Error('Origem da solicitação inválida.')
+  if (!isTrustedRendererFrame(frame.url, frame === event.sender.mainFrame, rendererTrustPolicy)) {
     throw new Error('Origem da solicitação não autorizada.')
   }
 }
@@ -825,8 +825,8 @@ const createMainWindow = createMainWindowFactory({
   clearApplicationMenu: () => Menu.setApplicationMenu(null),
   iconPath: join(__dirname, '../renderer/gacha-nymi.ico'),
   preloadPath: join(__dirname, '../preload/preload.cjs'),
-  rendererPath: join(__dirname, '../renderer/index.html'),
-  rendererUrl: process.env.ELECTRON_RENDERER_URL,
+  rendererPath: rendererHtmlPath,
+  rendererUrl: devRendererUrl,
   restrictNavigation: restrictRendererNavigation,
   onRendererLoaded: (window) => {
     if (dataBackupService) {
@@ -873,7 +873,14 @@ const createMainWindow = createMainWindowFactory({
 })
 
 app.whenReady().then(async () => {
-  restrictRendererPermissions(session.defaultSession)
+  restrictRendererPermissions(session.defaultSession, {
+    canRequestFullscreen: ({ webContents, requestingUrl, isMainFrame }) => {
+      if (!webContents || !isMainFrame || webContents.isDestroyed()) return false
+      const window = BrowserWindow.fromWebContents(webContents)
+      return Boolean(window && !window.isDestroyed() && window.webContents === webContents
+        && canVisibleRendererRequestFullscreen(isMainFrame, window.isVisible(), requestingUrl, webContents.getURL(), rendererTrustPolicy))
+    }
+  })
   dataBackupService = new DataBackupService({ dataRoot: app.getPath('appData'), catalog: dataPlatform })
   await dataBackupService.applyPendingRestore()
   dataPlatform.initialize()
@@ -939,11 +946,11 @@ app.whenReady().then(async () => {
     readEditorV6Manifest: async (id) => JSON.parse(await nativeReadFile(join(editorV6Path(id), 'editorV6.json'), 'utf8'))
   })
   await registerFabricatorHandlers()
-  editorV6MotionService = createEditorV6MotionService({ ipcMain, assertTrustedSender, html: join(__dirname, '../renderer/index.html'), preload: join(__dirname, '../preload/editorV6MotionPreload.cjs'), devUrl: process.env.ELECTRON_RENDERER_URL, cacheDirectory: join(app.getPath('userData'), 'cache', 'editor-v6-motion-v2') })
+  editorV6MotionService = createEditorV6MotionService({ ipcMain, assertTrustedSender, html: rendererHtmlPath, preload: join(__dirname, '../preload/editorV6MotionPreload.cjs'), devUrl: devRendererUrl, cacheDirectory: join(app.getPath('userData'), 'cache', 'editor-v6-motion-v2') })
   editorV6ExportService = registerEditorV6ExportHandlers({ ipcMain, assertTrustedSender, projectPath: editorV6Path,
     toolsDirectory: app.isPackaged ? join(process.resourcesPath, 'video-tools') : resolve(__dirname, '../../resources/video-tools'),
     workerHtml: join(__dirname, '../renderer/editor-v6-export.html'), workerPreload: join(__dirname, '../preload/editorV6ExportPreload.cjs'),
-    devUrl: process.env.ELECTRON_RENDERER_URL, tempRoot: app.getPath('temp'), getCharacters: () => customizerService.list(),
+    devUrl: devRendererUrl, tempRoot: app.getPath('temp'), getCharacters: () => customizerService.list(),
     resolveLibraryVideo: async (id) => { const item = await videoLibrary.resolveMedia(id); return { ...item, path: await dataFileSystem.resolvePhysicalPath(item.path) ?? item.path } },
     bakeMotion: (request, signal) => editorV6MotionService!.bakeForExport(request, signal) })
   createMainWindow()

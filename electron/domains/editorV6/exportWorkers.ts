@@ -41,7 +41,7 @@ export function createEditorV6WorkerFactory(deps: { ipcMain: Pick<IpcMain, 'hand
       } catch { return new Response('Not found', { status: 404 }) }
     })
     restrictRendererNavigation(window.webContents)
-    restrictRendererPermissions(window.webContents.session, { allowFullscreen: false })
+    restrictRendererPermissions(window.webContents.session)
     window.removeMenu()
     // Initial native bounds can be clamped to the monitor work area on Windows.
     window.setContentSize(payload.width, payload.height)
