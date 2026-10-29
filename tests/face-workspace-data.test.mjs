@@ -178,7 +178,7 @@ test('FaceComponentsWorkspace delegates library reads while keeping selection an
   assert.match(page, /loadFaceCatalogWorkspaceData\(window\.desktop\.fabricator, modelSlot, \(\) => !active\)/)
   assert.doesNotMatch(page, /Promise\.all\((?:visibleList|relevant)\.map\(/)
   assert.match(page, /registerPendingWriteFlusher\(flushAllSaves\)/)
-  assert.match(page, /const savedSelection = mode === 'eyes' \? readComponentSelections\(\)\[modelSlot\] : undefined/)
+  assert.match(page, /const savedSelection = mode === 'eyes' \? readComponentSelections\(\(\) => window\.localStorage\)\[modelSlot\] : undefined/)
 })
 
 test('face workspace reuses the shared ordered worker while preserving one global image limit', async () => {

@@ -1554,3 +1554,10 @@ Continua a auditoria das operações IPC iniciadas pelo usuário e da cobertura 
 - A conversão do arraste para coordenadas do modelo continua usando `pupilDeltaFromDrag`; o olhar PT segue alterando apenas os overrides de pupila, sem deslocar a expressão base. Os gestos do blush continuam limitados aos mesmos valores e a captura do ponteiro é liberada no término, cancelamento ou perda de captura.
 - `ExpressionPresetWorkspace.tsx` passou de 1.057 para 968 linhas. Testes sintéticos cobrem escala da cabeça, captura do ponteiro, pupila PT e movimentação/limites do blush. A verificação de continuidade agora acompanha o módulo que é dono da conversão geométrica.
 - Sem mudança de interface, formato persistido, seleção de peças ou contrato IPC. Passaram `npm run test:refactor` (500 testes principais e 24 auxiliares), `npm run typecheck`, `npm run audit:architecture` (470 arquivos TS/TSX sem violações), build e `git diff --check`.
+
+## 108. Etapa aplicada — armazenamento de seleções faciais separado da tela
+
+- `FaceComponentsWorkspace.tsx` lia e migrava quatro grupos de preferências locais: peças selecionadas, seleções antigas de pupila, guias de importação e detalhes faciais. Também atualizava esses registros diretamente nos efeitos da tela.
+- `faceWorkspaceSelectionStorage.ts` agora é dono das chaves, da leitura segura, da validação de slots/guias, da compatibilidade com pupilas antigas e da gravação por modelo. A precedência permanece: seleções atuais substituem os valores migrados; gravar um slot preserva os demais.
+- As quatro chaves e seus formatos JSON não mudaram. Nenhum perfil local foi lido nos testes; fixtures em memória cobrem migração, precedência, preservação de slots, JSON inválido e descarte de âncoras inválidas. `FaceComponentsWorkspace.tsx` passou de 1.074 para 1.040 linhas.
+- Passaram `npm run test:refactor` (500 testes principais e 28 auxiliares), `npm run typecheck`, `npm run audit:architecture` (471 arquivos TS/TSX sem violações), build e `git diff --check`.

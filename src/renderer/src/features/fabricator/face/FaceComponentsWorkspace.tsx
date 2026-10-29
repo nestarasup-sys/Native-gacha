@@ -11,7 +11,7 @@ import { processFaceSheet } from './processFaceSheet'
 import { splitEyeSheet } from './splitEyeSheet'
 import { defaultFaceGuide, useFaceGuides } from './useFaceGuides'
 import { selectedEyeAssetsByIds } from '../eyePreviewSelection'
-import { captureFaceImportAnchor, fitClosedEyeToOpen, validFaceImportAnchor, type AlignableFaceKind, type FaceImportAnchor } from './faceImportAlignment'
+import { captureFaceImportAnchor, fitClosedEyeToOpen, type AlignableFaceKind, type FaceImportAnchor } from './faceImportAlignment'
 import { assertFaceComponentImportActive, saveFaceComponentAssetBatch } from './faceComponentAssetBatch'
 import { clamp, createEyeSheetImportPlan, createEyebrowImportPlan, createFaceDetailImportEntry, faceComponentCategories as categories, initialFaceComponentTransform as initialTransform, initialFaceDetailTransform, partCategory } from './faceComponentImportModel'
 import type { FacePartId as PartId } from './faceComponentImportModel'
@@ -22,6 +22,7 @@ import { useModelAppearanceTarget, useModelPartAppearancePreview } from '../Mode
 import { isRightLibraryAsset, libraryBaseName, sameLibraryPair, visibleFaceLibraryAssets } from './faceLibraryModel'
 import { createFaceSaveQueue, type FaceSaveQueue } from './faceSaveQueue'
 import { loadFaceCatalogWorkspaceData, loadFaceComponentWorkspaceData } from './faceWorkspaceData'
+import { readComponentSelections, readFaceDetailSelections, readFaceImportAnchors, saveComponentSelection, saveFaceDetailSelections, saveFaceImportAnchors, type FaceDetailSelections, type FaceImportAnchors } from './faceWorkspaceSelectionStorage'
 import { deriveFacePairTransformMetrics } from './facePairTransformModel'
 import { useFacePreviewDrag } from './useFacePreviewDrag'
 
@@ -29,10 +30,6 @@ type CatalogKind = 'nose' | 'mouth-closed' | 'mouth-open'
 type LibraryCategory = FaceComponentKind | FaceDetailKind | 'nose' | 'mouth'
 type FaceWorkspaceMode = 'eyes' | 'face'
 type FaceGuide = FaceGuideSettings
-const COMPONENT_SELECTION_STORAGE_KEY = 'gacha-nymi:face-dev-component-selections'
-const LEGACY_PUPIL_SELECTION_STORAGE_KEY = 'gacha-nymi:face-dev-pupil-selections'
-const FACE_IMPORT_ANCHORS_STORAGE_KEY = 'gacha-nymi:face-dev-import-anchors'
-const FACE_DETAIL_SELECTION_STORAGE_KEY = 'gacha-nymi:face-dev-detail-selections'
 const autoFixKinds: AlignableFaceKind[] = ['eye', 'pupil', 'eye-closed']
 const faceDetailCategories: Array<{ kind: FaceDetailKind; label: string }> = [
   { kind: 'eye-highlight-left', label: 'Brilho olho esquerdo' },
@@ -42,35 +39,6 @@ const faceDetailCategories: Array<{ kind: FaceDetailKind; label: string }> = [
 ]
 const isFaceDetailKind = (kind: string): kind is FaceDetailKind => faceDetailCategories.some((category) => category.kind === kind)
 const isFaceComponentKind = (kind: FaceComponentAsset['kind']): kind is FaceComponentKind => categories.some((category) => category.kind === kind)
-type ComponentSelection = { parts: Partial<Record<PartId, string>>; linked: Partial<Record<FaceComponentKind, boolean>>; moveTogether?: Partial<Record<FaceComponentKind, boolean>> }
-function readComponentSelections(): Record<number, ComponentSelection> {
-  try {
-    const stored = JSON.parse(window.localStorage.getItem(COMPONENT_SELECTION_STORAGE_KEY) ?? '{}') as Record<string, ComponentSelection>
-    const legacy = JSON.parse(window.localStorage.getItem(LEGACY_PUPIL_SELECTION_STORAGE_KEY) ?? '{}') as Record<string, { left?: string; right?: string; linked: boolean }>
-    const migrated = Object.fromEntries(Object.entries(legacy && typeof legacy === 'object' && !Array.isArray(legacy) ? legacy : {}).filter(([, selection]) => selection && typeof selection === 'object').map(([slot, selection]) => [slot, {
-      parts: { 'pupil-left': selection.left, 'pupil-right': selection.right }, linked: { pupil: selection.linked }
-    }])) as Record<number, ComponentSelection>
-    return { ...migrated, ...(stored && typeof stored === 'object' && !Array.isArray(stored) ? stored : {}) }
-  } catch { return {} }
-}
-type FaceImportAnchors = Record<number, Partial<Record<AlignableFaceKind, FaceImportAnchor>>>
-type FaceDetailSelections = Record<number, Partial<Record<FaceDetailKind, string>>>
-function readFaceDetailSelections(): FaceDetailSelections {
-  try {
-    const stored = JSON.parse(window.localStorage.getItem(FACE_DETAIL_SELECTION_STORAGE_KEY) ?? '{}') as Record<string, Partial<Record<FaceDetailKind, string>>>
-    if (!stored || typeof stored !== 'object' || Array.isArray(stored)) return {}
-    return Object.fromEntries(Object.entries(stored).filter(([slot, selections]) => /^\d+$/.test(slot) && selections && typeof selections === 'object').map(([slot, selections]) => [Number(slot), selections]))
-  } catch { return {} }
-}
-function readFaceImportAnchors(): FaceImportAnchors {
-  try {
-    const stored = JSON.parse(window.localStorage.getItem(FACE_IMPORT_ANCHORS_STORAGE_KEY) ?? '{}') as Record<string, Record<string, unknown>>
-    if (!stored || typeof stored !== 'object' || Array.isArray(stored)) return {}
-    return Object.fromEntries(Object.entries(stored).filter(([slot, value]) => /^\d+$/.test(slot) && value && typeof value === 'object').map(([slot, value]) => [Number(slot), Object.fromEntries(
-      (['eye', 'pupil', 'eye-closed'] as const).filter((kind) => validFaceImportAnchor(value[kind])).map((kind) => [kind, value[kind]])
-    )])) as FaceImportAnchors
-  } catch { return {} }
-}
 const readImage = normalizeEditableImageFile
 function catalogSaveData(item: FaceCatalogItem): FaceCatalogItemSave {
   const { dataUrl: _sheetData, ...sheet } = item.sheet
@@ -148,7 +116,7 @@ export function FaceComponentsWorkspace({ mode, baseModelSlot }: { mode: FaceWor
   const [modelSlot, setModelSlot] = useState(baseModelSlot)
   useModelAppearanceTarget(modelSlot)
   const appearancePreviewForPart = useModelPartAppearancePreview(modelSlot)
-  const [importAnchorsByModel, setImportAnchorsByModel] = useState<FaceImportAnchors>(readFaceImportAnchors)
+  const [importAnchorsByModel, setImportAnchorsByModel] = useState<FaceImportAnchors>(() => readFaceImportAnchors(() => window.localStorage))
   const [model, setModel] = useState<FabricatorProject | null>(null)
   useModelSourceRefresh(modelSlot, fresh => setModel(projectForOriginalPreview(fresh)))
   const [assets, setAssets] = useState<FaceComponentAssetSummary[]>([])
@@ -156,7 +124,7 @@ export function FaceComponentsWorkspace({ mode, baseModelSlot }: { mode: FaceWor
   const [selectedPart, setSelectedPart] = useState<PartId>('eye-left')
   const [libraryCategory, setLibraryCategory] = useState<LibraryCategory>(() => mode === 'eyes' ? 'eye' : 'nose')
   const [selectedAssets, setSelectedAssets] = useState<Partial<Record<PartId, string>>>({})
-  const [faceDetailSelectionsByModel, setFaceDetailSelectionsByModel] = useState<FaceDetailSelections>(() => mode === 'face' ? readFaceDetailSelections() : {})
+  const [faceDetailSelectionsByModel, setFaceDetailSelectionsByModel] = useState<FaceDetailSelections>(() => mode === 'face' ? readFaceDetailSelections(() => window.localStorage) : {})
   const selectedFaceDetails = faceDetailSelectionsByModel[modelSlot] ?? {}
   const [mouthCatalog, setMouthCatalog] = useState<FaceCatalogItemSummary[]>([])
   const [mouthDetails, setMouthDetails] = useState<Record<string, FaceCatalogItem>>({})
@@ -310,15 +278,13 @@ export function FaceComponentsWorkspace({ mode, baseModelSlot }: { mode: FaceWor
   }, [mode, modelSlot])
 
   useEffect(() => { void window.desktop.fabricator.listFabricatorSlots().then((slots) => { setModels(slots); const preferredExists = Boolean(slots[baseModelSlot - 1]); const first = slots.findIndex(Boolean); if (!preferredExists && first >= 0) setModelSlot(first + 1) }).catch((reason) => setError(String(reason))) }, [baseModelSlot])
-  useEffect(() => { if (mode !== 'eyes') return; try { window.localStorage.setItem(FACE_IMPORT_ANCHORS_STORAGE_KEY, JSON.stringify(importAnchorsByModel)) } catch { setError('Não foi possível salvar a fixação de importação neste computador.') } }, [mode, importAnchorsByModel])
-  useEffect(() => { if (mode !== 'face') return; try { window.localStorage.setItem(FACE_DETAIL_SELECTION_STORAGE_KEY, JSON.stringify(faceDetailSelectionsByModel)) } catch { /* Saved assets remain available in the library. */ } }, [mode, faceDetailSelectionsByModel])
+  useEffect(() => { if (mode !== 'eyes') return; try { saveFaceImportAnchors(() => window.localStorage, importAnchorsByModel) } catch { setError('Não foi possível salvar a fixação de importação neste computador.') } }, [mode, importAnchorsByModel])
+  useEffect(() => { if (mode !== 'face') return; try { saveFaceDetailSelections(() => window.localStorage, faceDetailSelectionsByModel) } catch { /* Saved assets remain available in the library. */ } }, [mode, faceDetailSelectionsByModel])
   useEffect(() => {
     if (mode !== 'eyes') return
     if (hydratedComponentSlot.current !== modelSlot) return
     try {
-      const stored = readComponentSelections()
-      stored[modelSlot] = { parts: selectedAssets, linked, moveTogether }
-      window.localStorage.setItem(COMPONENT_SELECTION_STORAGE_KEY, JSON.stringify(stored))
+      saveComponentSelection(() => window.localStorage, modelSlot, { parts: selectedAssets, linked, moveTogether })
     } catch { /* The saved assets remain available in the library. */ }
   }, [mode, modelSlot, selectedAssets, linked, moveTogether])
   function updateGuide(patch: Partial<FaceGuide>) {
@@ -377,7 +343,7 @@ export function FaceComponentsWorkspace({ mode, baseModelSlot }: { mode: FaceWor
       if (!active || !loaded) return
       const { project, assets: visibleList, details: loadedDetails } = loaded
       const assetKinds = new Map(Object.values(loadedDetails).map((item) => [item.id, item.kind]))
-      const savedSelection = mode === 'eyes' ? readComponentSelections()[modelSlot] : undefined
+      const savedSelection = mode === 'eyes' ? readComponentSelections(() => window.localStorage)[modelSlot] : undefined
       const savedParts = Object.fromEntries(Object.entries(savedSelection?.parts ?? {}).filter(([part, id]) =>
         categories.some((category) => category.parts.includes(part as PartId) && assetKinds.get(id) === category.kind))) as Partial<Record<PartId, string>>
       setModel(projectForOriginalPreview(project)); setAssets(visibleList); setDetails(loadedDetails)
