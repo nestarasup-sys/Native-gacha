@@ -4,10 +4,14 @@ const path = require('node:path')
 const net = require('node:net')
 const { pathToFileURL } = require('node:url')
 const { spawn, spawnSync } = require('node:child_process')
+const { createSyntheticStressProfile } = require('./synthetic-stress-profile.cjs')
 const root = path.resolve(__dirname, '../..')
 const ffmpeg = path.join(root, 'resources', 'video-tools', 'ffmpeg.exe')
 const ffprobe = path.join(root, 'resources', 'video-tools', 'ffprobe.exe')
-const outputRoot = path.join(root, 'out', 'editor-v6-stress')
+const defaultRunId = `${new Date().toISOString().replace(/[:.]/g, '-')}-${process.pid}`
+const outputRoot = process.env.GACHA_EDITOR_V6_STRESS_OUTPUT_ROOT
+  ? path.resolve(process.env.GACHA_EDITOR_V6_STRESS_OUTPUT_ROOT)
+  : path.join(root, 'out', 'editor-v6-stress', 'runs', defaultRunId)
 let projectRoot
 const vitest = path.join(root, 'node_modules', 'vitest', 'vitest.mjs')
 const runDurationMs = Number(process.env.GACHA_EDITOR_V6_STRESS_RUN_MS || 30_000)
@@ -155,15 +159,10 @@ async function main() {
   const memoizationEnabled = memoArgument?.slice('--memo='.length) !== 'off'
   const runLabel = process.argv.find((argument) => argument.startsWith('--label='))?.slice('--label='.length) ?? null
   const experiment = process.argv.find((argument) => argument.startsWith('--experiment='))?.slice('--experiment='.length) ?? 'baseline'
-  const sourceProfile = path.join(root, 'app-data', 'runtime', 'profile')
   const tempProfile = path.join(dataRoot, 'runtime', 'profile')
-  for (const fixtureDirectory of ['customizer', 'fabricator']) {
-    const source = path.join(sourceProfile, fixtureDirectory)
-    await fs.access(source).catch(() => { throw new Error(`Não encontrei os dados locais reais de teste em ${source}; o perfil original não será usado nem alterado.`) })
-    await fs.cp(source, path.join(tempProfile, fixtureDirectory), { recursive: true, force: false })
-  }
-  const bundlePath = path.join(tempRoot, 'real-characters.json')
-  const projectSummaryPath = path.join(outputRoot, 'projects-summary.json')
+  const syntheticProfile = await createSyntheticStressProfile(tempProfile)
+  const bundlePath = path.join(tempRoot, 'synthetic-characters.json')
+  const projectSummaryPath = path.join(tempRoot, 'projects-summary.json')
   const port = await freePort()
   const rendererPort = await freePort()
   const viteConfigPath = path.join(tempRoot, 'electron-vite.config.mts')
@@ -202,7 +201,7 @@ async function main() {
     const origin = new URL(target.url).origin
     const captureUrl = `${origin}/?editorV6StressCapture=1&run=${Date.now()}#/editor-v6-stress-harness`
     await cdp.send('Page.navigate', { url: captureUrl })
-    console.log('[V6 stress] Renderizando os quatro STRESS e as transições reais com o motor de personagens do Editor V6.')
+    console.log('[V6 stress] Renderizando quatro personagens e poses sintéticos com o motor de produção do Editor V6.')
     const captureStatus = await waitForExpression(cdp, "window.__editorV6StressCapture?.status", (value) => value === 'done' || value === 'error', 180_000)
     if (captureStatus === 'error') {
       const details = await evaluate(cdp, 'window.__editorV6StressCapture?.error || "Erro desconhecido ao preparar personagens."')
@@ -263,7 +262,7 @@ async function main() {
       if (!playButton) throw new Error(`${scenario.key}: botão de reprodução não apareceu no Editor V6.`)
       const expectedSceneNames = captured.map(({ character }) => character.name)
       const visualSurface = await evaluate(cdp, `({ cast: document.querySelectorAll(".studio-cast-item").length, timeline: document.querySelectorAll(".editor-v6-timeline-block").length, scene: Boolean(document.querySelector(".v6-scene-canvas")), sceneCharacterNames: [...document.querySelectorAll(".v6-scene-surface g[data-element-id]")].map(element => element.getAttribute("aria-label")).filter(name => ${JSON.stringify(expectedSceneNames)}.includes(name)) })`)
-      if (visualSurface.cast !== 4 || visualSurface.sceneCharacterNames.slice().sort().join(',') !== expectedSceneNames.slice().sort().join(',') || !visualSurface.scene || visualSurface.timeline === 0) throw new Error(`${scenario.key}: a interface não desenhou os quatro personagens reais na cena. ${JSON.stringify(visualSurface)}`)
+      if (visualSurface.cast !== 4 || visualSurface.sceneCharacterNames.slice().sort().join(',') !== expectedSceneNames.slice().sort().join(',') || !visualSurface.scene || visualSurface.timeline === 0) throw new Error(`${scenario.key}: a interface não desenhou os quatro personagens sintéticos na cena. ${JSON.stringify(visualSurface)}`)
       await evaluate(cdp, 'document.querySelector(".editor-v6-timeline-actions button[aria-label=Reproduzir]")?.click()')
       await waitForExpression(cdp, 'Boolean(document.querySelector(".editor-v6-timeline-actions button[aria-label=Pausar]"))', Boolean, 5000)
       await new Promise((resolve) => setTimeout(resolve, 2000))
@@ -480,10 +479,16 @@ async function main() {
         const clockPairs = await evaluate(cdp, 'window.__editorV6StressClockPairs')
         traceCapture = await finishPlaybackTrace(cdp, traceSession, path.join(outputRoot, `${scenario.key}-playback-trace.json`), scenario.key, { ...measurement, clockPairs, calibration })
       }
-      const expectedMotionNames = [...new Set(prepared.motionWindows.map((window) => window.characterName))].sort().join(',')
-      const observedMotionNames = Object.keys(measurement.motionFramesByCharacter).sort().join(',')
-      const motionWindowReached = expectedMotionNames.split(',').filter(Boolean).every((name) => observedMotionNames.includes(name))
-      if (runDurationMs >= 30_000 && expectedMotionNames && !motionWindowReached) throw new Error(`${scenario.key}: o Play não exibiu as transições esperadas (${expectedMotionNames}). Observados: ${observedMotionNames || 'nenhum'}.`)
+      const expectedPoseChangeNames = [...new Set(prepared.motionWindows
+        .filter((window) => window.startFrame < runDurationMs * 30 / 1000 + 10)
+        .map((window) => window.characterName))].sort()
+      const poseChangeNamesObserved = [...new Set(measurement.visualChangeEvents
+        .filter((event) => event.imageSourceChanged)
+        .map((event) => event.characterName))].sort()
+      const poseChangesObserved = expectedPoseChangeNames.every((name) => poseChangeNamesObserved.includes(name))
+      if (runDurationMs >= 30_000 && expectedPoseChangeNames.length && !poseChangesObserved) {
+        throw new Error(`${scenario.key}: a prévia não exibiu as trocas de pose esperadas (${expectedPoseChangeNames.join(',')}). Observadas: ${poseChangeNamesObserved.join(',') || 'nenhuma'}. A prévia do Editor V6 usa snapshots estáticos; atlas de movimento são usados na exportação.`)
+      }
       const mediaValidation = scenario.key === 'multimedia' ? (() => {
         const expected = ['mp4', 'webm', 'wav', 'ogg']
         const observed = [...new Set(measurement.mediaPlayEvents.map((item) => item.extension).filter(Boolean))].sort()
@@ -500,14 +505,16 @@ async function main() {
         await fs.writeFile(sceneScreenshotPath, Buffer.from(sceneImage.data,'base64'))
       }
       const runtimeConfig = await evaluate(cdp, `({userAgent:navigator.userAgent,hardwareConcurrency:navigator.hardwareConcurrency,deviceMemory:navigator.deviceMemory??null,viewport:{width:innerWidth,height:innerHeight},screen:{width:screen.width,height:screen.height,refreshRate:screen.orientation?.type??null},timeOrigin:performance.timeOrigin})`)
-      measurements.push({ ...scenario, project: prepared, visualSurface, interactionMetrics, mediaValidation, motionWindowReached, motionNamesObserved: Object.keys(measurement.motionFramesByCharacter).sort(), motionReadyWaitMs: motionPreparation.durationMs, memoizationEnabled, runtimeConfig, ...measurement, screenshotPath, sceneScreenshotPath })
+      measurements.push({ ...scenario, project: prepared, visualSurface, interactionMetrics, mediaValidation, expectedPoseChangeNames, poseChangeNamesObserved, poseChangesObserved, motionPlaybackPreview: 'static-pose-snapshots; transition atlases are prepared for export', motionReadyWaitMs: motionPreparation.durationMs, memoizationEnabled, runtimeConfig, ...measurement, screenshotPath, sceneScreenshotPath })
       const playbackMetrics = measurement.react.find((item) => item.route === '/editor-v6')?.playback
       console.log(`[V6 stress] ${scenario.key}: ${runDurationMs} ms, ${prepared.blocks} blocos, RAF p95 ${measurement.p95FrameMs} ms, callbacks ${measurement.rafCallbackHz} Hz, DOM ${measurement.domFrameUpdateRate} updates/s, pior ${measurement.worstFrameMs} ms, commits ${measurement.react.find((item) => item.route === '/editor-v6')?.commits ?? 0}, logical gaps ${playbackMetrics?.logicalFrameGaps?.length ?? 'n/d'}, DOM gaps ${measurement.domFrameGaps.length}.`)
 
     }
     const report = {
       generatedAt: new Date().toISOString(),
-      mode: 'Electron Chromium em janela fora dos monitores, perfil temporário isolado, sem migração do perfil local; background throttling desativado; CDP local.',
+      mode: 'Electron Chromium em janela fora dos monitores, perfil sintético temporário isolado; nenhum perfil local foi lido ou copiado; background throttling desativado; CDP local.',
+      syntheticProfile: { characterNames: syntheticProfile.characterNames, sourceFile: syntheticProfile.sourceFile, partCount: syntheticProfile.partCount, poseSlots: syntheticProfile.poseSlots },
+      playbackMotionContract: 'EditorV6PlaybackScene resolves preview with includeMotion=false. The playback benchmark checks visible pose snapshot changes; prepared transition atlases are validated in the project and consumed by export.',
       runLabel,
       experiment,
       runDurationMs,

@@ -44,7 +44,7 @@ export async function publishEditorV6StressCharacters(): Promise<void> {
   try {
     const allCharacters = await window.desktop.customizer.listCustomizerCharacters()
     const characters = expectedNames.map((name) => allCharacters.find((candidate) => candidate.name === name))
-    if (characters.some((character) => !character)) throw new Error(`O Customizador precisa conter estes quatro personagens: ${expectedNames.join(', ')}.`)
+    if (characters.some((character) => !character)) throw new Error(`O perfil sintético precisa conter estes quatro personagens: ${expectedNames.join(', ')}.`)
 
     const captured: CapturedCharacter[] = []
     for (const candidate of characters as CustomizerCharacter[]) {
@@ -86,6 +86,6 @@ export async function publishEditorV6StressCharacters(): Promise<void> {
   } catch (reason) {
     const error = reason instanceof Error ? reason.stack ?? reason.message : String(reason)
     window.__editorV6StressCapture = { status: 'error', error }
-    console.error('[V6 stress] Falha ao renderizar personagens reais:', error)
+    console.error('[V6 stress] Falha ao renderizar personagens sintéticos:', error)
   }
 }

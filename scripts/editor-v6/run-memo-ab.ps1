@@ -10,8 +10,11 @@ $runs = @(
 )
 
 $workspace = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
-$evidenceRoot = Join-Path $workspace 'out\editor-v6-stress\ab-memo'
-New-Item -ItemType Directory -Force -Path $evidenceRoot | Out-Null
+$runId = "$(Get-Date -Format 'yyyyMMdd-HHmmss')-$PID-$([guid]::NewGuid().ToString('N'))"
+$evidenceRoot = Join-Path $workspace "out\editor-v6-stress\ab-memo\runs\$runId"
+New-Item -ItemType Directory -Force -Path (Split-Path -Parent $evidenceRoot) | Out-Null
+New-Item -ItemType Directory -Path $evidenceRoot | Out-Null
+$env:GACHA_EDITOR_V6_STRESS_OUTPUT_ROOT = $evidenceRoot
 $os = Get-CimInstance Win32_OperatingSystem
 $cpu = Get-CimInstance Win32_Processor | Select-Object -First 1
 $computer = Get-CimInstance Win32_ComputerSystem
@@ -31,3 +34,10 @@ foreach ($run in $runs) {
   & npm run test:editor-v6:stress-offscreen -- --scenario=heavy "--memo=$($run.Memo)" "--label=$($run.Label)"
   if ($LASTEXITCODE -ne 0) { throw "A rodada $($run.Label) falhou com código $LASTEXITCODE." }
 }
+
+$env:GACHA_EDITOR_V6_STRESS_AB_INPUT_ROOT = Join-Path $evidenceRoot 'ab-memo'
+$env:GACHA_EDITOR_V6_STRESS_AB_OUTPUT_ROOT = Join-Path $evidenceRoot 'analysis'
+Write-Host "Analisando relatórios sintéticos em $env:GACHA_EDITOR_V6_STRESS_AB_INPUT_ROOT"
+& npm run editor-v6:analyze-memo-ab
+if ($LASTEXITCODE -ne 0) { throw "A análise A/B falhou com código $LASTEXITCODE." }
+Write-Host "Evidências desta comparação: $evidenceRoot"

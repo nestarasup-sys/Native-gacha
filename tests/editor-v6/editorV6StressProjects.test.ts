@@ -234,14 +234,16 @@ async function buildScenario(scenario: Scenario, capturedCharacters: CapturedCha
   for (let actor = 0; actor < actors.length; actor++) {
     const element = actors[actor], poses = characterAssets[actor]
     const track: EditorV6TimelineTrack = { id: uuid(`${key}:track:character:${actor}`), kind: 'character', characterId: element.characterId, name: element.text, muted: false, locked: false, motionEnabled: !scenario.instantTransitions, blocks: [] }
+    // Pose snapshots can have different transparent crop bounds. Keep the
+    // scene transform actor-owned so persistence does not invalidate its motion key.
+    const actorGeometry = capturedCharacters[actor].poses[0].geometry
     for (let index = 0; index < scenario.characterBlocks; index++) {
       const offset = index === 0 ? 0 : (scenario.staggerFrames ?? 0) * actor
       const startFrame = index === 0 ? 0 : Math.floor(index * durationFrames / scenario.characterBlocks) + offset
       const endFrame = index + 1 === scenario.characterBlocks ? durationFrames : Math.floor((index + 1) * durationFrames / scenario.characterBlocks) + offset
       const shouldTransition = actor < (scenario.transitionActorCount ?? actors.length)
       const poseIndex = shouldTransition ? (index + actor) % Math.min(2, scenario.posesPerCharacter) : actor % Math.min(2, scenario.posesPerCharacter)
-      const geometry = capturedCharacters[actor].poses.find((pose) => pose.poseSlot === poses[poseIndex].poseSlot)!.geometry
-      const nextState: EditorV6Element = { ...element, assetId: poses[poseIndex].asset.id, poseSlot: poses[poseIndex].poseSlot, x: actorPositions[actor] + geometry.x, y: geometry.y, width: geometry.width, height: geometry.height }
+      const nextState: EditorV6Element = { ...element, assetId: poses[poseIndex].asset.id, poseSlot: poses[poseIndex].poseSlot, x: actorPositions[actor] + actorGeometry.x, y: actorGeometry.y, width: actorGeometry.width, height: actorGeometry.height }
       track.blocks.push({ id: uuid(`${key}:block:character:${actor}:${index}`), elementId: element.id, characterId: element.characterId, label: `${element.text} · pose ${poses[poseIndex].poseSlot}`, startFrame, durationFrames: endFrame - startFrame, state: nextState })
     }
     characterTracks.push(track)
@@ -390,7 +392,7 @@ async function writeScenario(root: string, result: ScenarioResult) {
 
 const enabled = process.env.GACHA_EDITOR_V6_STRESS_FIXTURES === '1'
 describe.skipIf(!enabled)('projetos de estresse do Editor V6', () => {
-  it('cria e valida projetos com os quatro personagens reais, imagens e transições renderizadas no Electron', async () => {
+  it('cria e valida projetos com quatro personagens sintéticos e transições renderizadas no Electron', async () => {
     const root = process.env.GACHA_EDITOR_V6_STRESS_ROOT
     if (!root) throw new Error('O gerador precisa de uma pasta raiz explícita para os projetos de estresse.')
     const bundlePath = process.env.GACHA_EDITOR_V6_STRESS_CHARACTERS_BUNDLE

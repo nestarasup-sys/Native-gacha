@@ -3,8 +3,8 @@ const path = require('node:path')
 const sharp = require('sharp')
 
 const root = path.resolve(__dirname, '../..')
-const inputRoot = path.join(root, 'out', 'editor-v6-stress', 'ab-memo')
-const outputRoot = path.join(root, 'docs', 'editor-v6', 'benchmarks')
+const inputRoot = path.resolve(process.env.GACHA_EDITOR_V6_STRESS_AB_INPUT_ROOT || path.join(root, 'out', 'editor-v6-stress', 'ab-memo'))
+const outputRoot = path.resolve(process.env.GACHA_EDITOR_V6_STRESS_AB_OUTPUT_ROOT || path.join(root, 'docs', 'editor-v6', 'benchmarks'))
 const labels = ['A1', 'B1', 'B2', 'A2', 'A3', 'B3']
 
 function percentile(values, p) {
@@ -22,7 +22,8 @@ async function loadRun(label) {
   const file = path.join(inputRoot, `heavy-${variant}-${label}.json`)
   const report = JSON.parse(await fs.readFile(file, 'utf8'))
   const m = report.measurements?.[0]
-  if (!m || m.key !== 'heavy' || m.elapsedMs < 29_000 || m.memoizationEnabled !== (variant === 'memo-on')) throw new Error(`Rodada ${label} inválida/incompleta.`)
+  if (!m || m.key !== 'heavy' || m.elapsedMs < 29_000 || m.memoizationEnabled !== (variant === 'memo-on')
+    || m.poseChangesObserved !== true || m.project?.missingMotions !== 0 || m.project?.motionTransitions < 1) throw new Error(`Rodada ${label} inválida/incompleta.`)
   const page = m.react?.find((item) => item.route === '/editor-v6')
   const surface = m.react?.find((item) => item.route === '/editor-v6/surface')
   const scene = m.react?.find((item) => item.route === '/editor-v6/scene')
@@ -42,7 +43,8 @@ async function loadRun(label) {
     longTasks:page?.longTasks??0,longTaskMs:page?.longTaskMs??0,
     logicalFrames:page?.playback?.logicalFrameUpdates??null,logicalSkippedFrames:page?.playback?.logicalFrameGaps?.reduce((sum,item)=>sum+item.skipped,0)??null,
     heapPeakMB:+(m.jsHeapPeakBytes/1024/1024).toFixed(2),
-    motionWindowReached:(m.motionNamesObserved?.length??0)===4,motionNames:m.motionNamesObserved?.length??0,pageErrors:m.pageErrors.length,
+    preparedMotionTransitions:m.project.motionTransitions,missingMotionTransitions:m.project.missingMotions,
+    poseChangesObserved:m.poseChangesObserved,poseChangeNames:m.poseChangeNamesObserved?.length??0,pageErrors:m.pageErrors.length,
     sceneScreenshotPath:m.sceneScreenshotPath,
     runtime:{userAgent:m.runtimeConfig?.userAgent,hardwareConcurrency:m.runtimeConfig?.hardwareConcurrency,deviceMemory:m.runtimeConfig?.deviceMemory,viewport:m.runtimeConfig?.viewport,screen:m.runtimeConfig?.screen}
   }
@@ -77,14 +79,23 @@ async function main() {
   const publicRuns=runs.map(({sceneScreenshotPath,...run})=>run)
   let host=null
   try { host=JSON.parse(await fs.readFile(path.join(inputRoot,'environment.json'),'utf8')) } catch {}
-  const result={schemaVersion:1,date:'2026-10-26',scenario:'heavy',durationPerRoundMs:30000,warmupMs:2000,tracingDuringBenchmark:false,variants:{memoOn:'SceneLayer memo comparator active',memoOff:'same build; memo comparator returns false to force renders'},order:labels.map((label)=>runs.find((run)=>run.label===label).memoization),environment:{...runs[0].runtime,host},rounds:publicRuns,pairs,summary,interpretation:'Compare medians and ranges. Three rounds are small-sample exploratory evidence; differences overlapping ranges are not established improvements. The disabled variant uses the same binary and adds comparator dispatch, so it approximates the pre-memo rendering behavior rather than reconstructing the exact older commit.'}
+  const generatedAt = new Date().toISOString()
+  const date = generatedAt.slice(0, 10)
+  const result={schemaVersion:1,date,generatedAt,scenario:'heavy',durationPerRoundMs:30000,warmupMs:2000,tracingDuringBenchmark:false,playbackMotionContract:'The Editor V6 preview uses static pose snapshots; prepared motion atlases are checked on the project and consumed by export.',variants:{memoOn:'SceneLayer memo comparator active',memoOff:'same build; memo comparator returns false to force renders'},order:labels.map((label)=>runs.find((run)=>run.label===label).memoization),environment:{...runs[0].runtime,host},rounds:publicRuns,pairs,summary,interpretation:'Compare medians and ranges. Three rounds are small-sample exploratory evidence; differences overlapping ranges are not established improvements. The disabled variant uses the same build and adds comparator dispatch, so it approximates the pre-memo rendering behavior rather than reconstructing the exact older commit.'}
   await fs.mkdir(outputRoot,{recursive:true})
-  await fs.writeFile(path.join(outputRoot,'AB_MEMO_2026-10-26.json'),JSON.stringify(result,null,2),'utf8')
+  const reportStem = `AB_MEMO_${date}`
+  const jsonPath = path.join(outputRoot,`${reportStem}.json`)
+  const markdownPath = path.join(outputRoot,`${reportStem}.md`)
+  for (const filePath of [jsonPath, markdownPath]) {
+    try { await fs.access(filePath); throw new Error(`O relatório já existe e será preservado: ${filePath}`) }
+    catch (error) { if (error.code !== 'ENOENT') throw error }
+  }
+  await fs.writeFile(jsonPath,JSON.stringify(result,null,2),{encoding:'utf8',flag:'wx'})
   const table=fields.map((field)=>`| ${field} | ${summary.memoOn.metrics[field].median} (${summary.memoOn.metrics[field].min}–${summary.memoOn.metrics[field].max}) | ${summary.memoOff.metrics[field].median} (${summary.memoOff.metrics[field].min}–${summary.memoOff.metrics[field].max}) |`).join('\n')
   const visual=pairs.map((pair)=>`| ${pair.pair} | ${pair.scenePixelComparison.equalDimensions ? `${pair.scenePixelComparison.width}×${pair.scenePixelComparison.height}` : 'different dimensions'} | ${pair.scenePixelComparison.differentPixelChannels} | ${pair.scenePixelComparison.meanAbsoluteChannelError} |`).join('\n')
-  const markdown=`# A/B da memoização do Editor V6\n\nData: 26/10/2026 · cenário pesado · três rodadas de 30 s por variante · aquecimento prévio de 2 s · sem tracing CDP durante medição. As variantes foram intercaladas A1/B1/B2/A2/A3/B3.\n\nA variante desligada usa o mesmo build e força o comparator do React a sempre solicitar nova renderização das camadas. É aproximação reprodutível do comportamento anterior à memoização; mede ainda o custo mínimo de chamar esse comparator.\n\n| Métrica | Memo ligada: mediana (mín–máx) | Memo desligada: mediana (mín–máx) |\n| --- | ---: | ---: |\n${table}\n\n## Correção visual\n\n| Par | Dimensão da cena | Canais de pixel diferentes | Erro absoluto médio |\n| --- | --- | ---: | ---: |\n${visual}\n\nTrês pares compararam a captura da cena na mesma configuração. O resultado pixel a pixel mostra se desligar a memoização alterou a imagem; não mede apresentação física do compositor. Consulte o JSON para os valores individuais, ambiente e intervalo de cada rodada. As amostras são poucas: diferenças cujas faixas se sobrepõem não demonstram ganho.\n`
-  await fs.writeFile(path.join(outputRoot,'AB_MEMO_2026-10-26.md'),markdown,'utf8')
-  console.log(`A/B concluído: ${runs.length} rodadas; comparação visual ${pairs.map((pair)=>pair.scenePixelComparison.differentPixelChannels).join(', ')} canais diferentes; JSON e Markdown em docs/editor-v6/benchmarks.`)
+  const markdown=`# A/B da memoização do Editor V6\n\nData: ${date} · cenário pesado · três rodadas de 30 s por variante · aquecimento prévio de 2 s · sem tracing CDP durante medição. As variantes foram intercaladas A1/B1/B2/A2/A3/B3.\n\nA variante desligada usa o mesmo build e força o comparator do React a sempre solicitar nova renderização das camadas. É aproximação reprodutível do comportamento anterior à memoização; mede ainda o custo mínimo de chamar esse comparator.\n\n| Métrica | Memo ligada: mediana (mín–máx) | Memo desligada: mediana (mín–máx) |\n| --- | ---: | ---: |\n${table}\n\n## Correção visual\n\n| Par | Dimensão da cena | Canais de pixel diferentes | Erro absoluto médio |\n| --- | --- | ---: | ---: |\n${visual}\n\nTrês pares compararam a captura da cena na mesma configuração. O resultado pixel a pixel mostra se desligar a memoização alterou a imagem; não mede apresentação física do compositor. Consulte o JSON para os valores individuais, ambiente e intervalo de cada rodada. As amostras são poucas: diferenças cujas faixas se sobrepõem não demonstram ganho.\n`
+  await fs.writeFile(markdownPath,markdown,{encoding:'utf8',flag:'wx'})
+  console.log(`A/B concluído: ${runs.length} rodadas; comparação visual ${pairs.map((pair)=>pair.scenePixelComparison.differentPixelChannels).join(', ')} canais diferentes; JSON e Markdown em ${outputRoot}.`)
 }
 
 main().catch((error)=>{console.error(error);process.exitCode=1})
