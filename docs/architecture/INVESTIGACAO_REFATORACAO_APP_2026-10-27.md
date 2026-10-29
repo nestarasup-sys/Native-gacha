@@ -2,6 +2,13 @@
 
 ## Reauditoria geral — 2026-10-29
 
+### Rodada ampliada — superfície e painel de exportação
+
+- O smoke integrado `test:editor-v6:surface` falhava ao importar áudio porque seu mock ainda expunha métodos no objeto `desktop` plano; a interface atual usa `desktop.editorV6`. A fixture agora implementa o contrato namespaced tipado, sem adicionar compatibilidade obsoleta ao aplicativo.
+- Validação Electron/Chromium com projeto e áudio sintéticos: preview e quadros sequenciais da exportação tiveram 0 canais de pixel diferentes; as proporções foram preservadas nos dois tamanhos avaliados. O painel importou uma faixa e iniciou uma exportação.
+- Comparar a captura nativa da preview com a renderização SVG mostrou diferenças limitadas à rasterização de texto (7.524 canais, nenhum pixel fora da área de texto; erro médio por canal 0,1223). Portanto, a evidência confirma geometria e conteúdo visual fora do texto, não igualdade pixel a pixel das fontes entre renderizadores.
+- `npm run test:editor-v6:surface` passou em duas execuções no estado atual. Usa perfil temporário e fixtures; não acessa projetos pessoais.
+
 ### Rodada ampliada — geometria 1080p e busca de assets
 
 - A captura 1920×1032 veio de bounds iniciais limitados à área útil do monitor Windows. Definir setContentSize explicitamente após criar a janela estabelece o viewport solicitado, sem depender apenas do tamanho inicial do construtor. Acrescentada verificação da área do personagem no MP4 1080p decodificado.
@@ -16,15 +23,15 @@
 - `exportBitmap` materializa o bitmap nativo antes de transformar e evita resize quando tamanho e quantidade de bytes já correspondem à saída. A política anterior redimensionava toda captura mesmo no mesmo tamanho. O fallback continua validando o tamanho BGRA antes de enviar ao FFmpeg. Não há afirmação de uma causa interna específica do Chromium; a correção do caminho é sustentada por regressão reproduzida antes e cinco execuções completas consecutivas aprovadas depois, com diagnóstico desligado.
 - `ready` tardio de um worker já encerrado passa a ser ignorado somente para IDs conhecidos e mainFrame correspondente, em inventário limitado a 128 IDs. Remetentes desconhecidos continuam rejeitados; payload de worker fechado continua sem autorização.
 - Novas regressões cobrem pixels nativos sem resampling, ordem de materialização no fallback, tamanho inválido e distinção entre ready tardio e remetente desconhecido. Passaram 108 testes Editor V6 (um ignorado existente), 330 de refatoração, typecheck, auditoria e build.
-- Cinco rodadas reais completas: 81 quadros/78 reaproveitados na fixture estática, pico de dois workers, áudio contínuo, destino preservado ao cancelar, recuperação induzida, quadro único, 1080p e transição na emenda. Sem perfis pessoais. Precisão geométrica do viewport 1080p ainda precisa de verificação específica: foi observado screenshot nativo de 1920×1032 no monitor local, convertido pelo fallback para 1920×1080.
+- Cinco rodadas reais completas: 81 quadros/78 reaproveitados na fixture estática, pico de dois workers, áudio contínuo, destino preservado ao cancelar, recuperação induzida, quadro único, 1080p e transição na emenda. Sem perfis pessoais. Naquele estágio, a precisão geométrica ainda estava pendente; a medição e contraprova do viewport 1080p estão na seção posterior desta reauditoria.
 
-### Validação Electron integrada e falha intermitente aberta
+### Validação Electron integrada e investigação da captura
 
 - Executados em perfis temporários: check-motion passou (7 amostras, 90.000 pixels de atlas); motion-service passou com reutilização de janela/cache, recuperação de cancelamento e agendamento em background. Raster SHA256: 79db53ee3662e72a5bb737ed9fb0eb72e391ce74945c9681bb2fcb56b5aacdd2. Avisos de GPU apareceram ao finalizar check-motion; o processo encerrou com código zero.
 - O teste de exportação ainda verificava o antigo método desktop.bakeEditorV6Motion. Atualizado para o contrato atual desktop.editorV6.bakeEditorV6Motion, sem restaurar API obsoleta no produto.
 - A exportação integrada teve duas execuções completas aprovadas e uma falha intermitente na emenda Turbo. As aprovadas verificaram 81 quadros, 78 reaproveitados, pico de dois workers, áudio contínuo, fallback induzido, destino preservado ao cancelar, quadro único, 1080p e transição de pose na emenda.
-- Falha aberta: fixture editor-v6-export-check-3VMdcG/turbo.mp4, quadros de saída 39/40/41: pixels do personagem em (240,90) [252,252,0]/[255,255,255]/[255,255,255]. Contagem total de pixels amarelos: 4608/0/0. Isso comprova perda visual intermitente da segunda parte; causa ainda não demonstrada. Não declarar estabilidade completa nem reduzir critérios do teste.
-- check-export agora mantém out/editor-v6-export-check/result.json com estado running/failed ou resultado aprovado, evitando um relatório verde antigo após falha. A fixture sintética é preservada para análise. Próxima ação: instrumentar estado resolvido, DOM/SVG e captura bruta no começo de cada parte para localizar em qual camada os pixels se perdem.
+- Na investigação inicial, a fixture `editor-v6-export-check-3VMdcG/turbo.mp4`, quadros 39/40/41, mostrou pixels amarelos 4608/0/0 e perda da segunda parte. Essa falha foi posteriormente investigada com diagnóstico opt-in de DOM/SVG/captura e corrigida no caminho de materialização do bitmap nativo; os resultados e a contraprova estão nas seções mais recentes desta reauditoria.
+- `check-export` mantém `out/editor-v6-export-check/result.json` com estado running/failed ou resultado aprovado, evitando um relatório verde antigo após falha. As fixtures e capturas são sintéticas e ficam fora do controle de versão.
 
 ### Protocolo de mídia do Editor V6 no domínio dono
 

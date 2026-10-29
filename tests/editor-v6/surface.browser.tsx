@@ -4,7 +4,8 @@ import { flushSync } from 'react-dom'
 import { SceneSurface } from '../../src/renderer/src/features/editorV6/SceneSurface'
 import { EditorV6ExportPanel } from '../../src/renderer/src/features/editorV6/EditorV6ExportPanel'
 import { captureEditorV6Frame, captureEditorV6Frames } from '../../src/renderer/src/features/editorV6/sceneCapture'
-import { createEditorV6Timeline, type EditorV6Document, type EditorV6Element } from '../../src/shared/editorV6'
+import { createEditorV6Timeline, type EditorV6DesktopApi, type EditorV6Document, type EditorV6Element } from '../../src/shared/editorV6'
+import type { EditorV6ExportStatus } from '../../src/shared/editorV6Export'
 import { addEditorV6ElementAtFrame, editEditorV6BackgroundAtFrame, editEditorV6DocumentAtBlock, prepareEditorV6PositionAtFrame, resolveEditorV6SceneAtFrame } from '../../src/shared/editorV6Timeline'
 
 const assert = (condition: unknown, message: string) => { if (!condition) throw Error(message) }
@@ -33,12 +34,13 @@ let closePanelTest: () => void
 ;(globalThis as unknown as { checkExportPanel: () => Promise<unknown> }).checkExportPanel = async () => {
   let imported = 0, started = 0
   const clip = { id: crypto.randomUUID(), name: 'Trilha de teste.wav', fileName: `${crypto.randomUUID()}.wav`, sourceFrames: 120, sourceInFrame: 0, startFrame: 0, durationFrames: 120, gain: 1, muted: false }
-  const job = { id: crypto.randomUUID(), state: 'completed', frames: 300, totalFrames: 300, message: 'MP4 exportado e validado.', fallback: false }
-  Object.defineProperty(window, 'desktop', { configurable: true, value: {
+  const job: EditorV6ExportStatus = { id: crypto.randomUUID(), state: 'completed', frames: 300, totalFrames: 300, message: 'MP4 exportado e validado.', fallback: false }
+  const editorV6: Pick<EditorV6DesktopApi, 'getEditorV6ExportStatus' | 'importEditorV6ExportAudio' | 'startEditorV6Export'> = {
     getEditorV6ExportStatus: async (id: string) => { if (id === 'latest') throw Error('Nenhuma exportação anterior.'); return job },
     importEditorV6ExportAudio: async () => { imported++; return clip },
     startEditorV6Export: async (project: EditorV6Document, options: { turbo: boolean; width: number }) => { assert(project.exportAudio?.length === 1 && options.turbo && options.width === 1920, 'Painel perdeu trilha de áudio ou configurações do Turbo.'); started++; return job }
-  } })
+  }
+  Object.defineProperty(window, 'desktop', { configurable: true, value: { editorV6 } })
   const mount = document.createElement('div')
   document.body.append(mount)
   const root = createRoot(mount)
