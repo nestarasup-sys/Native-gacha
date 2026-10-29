@@ -1,8 +1,8 @@
 import { compilePortableExpression, compilePtPupilMotion, resolvePresetPupilGaze } from '../../../../shared/portableExpression'
-import { pupilSourceMirrored } from '../../../../shared/facePupilGeometry'
 import { faceExpressionDefaults as defaultTransforms } from '../../../../shared/faceExpressionDefaults'
 import { FACE_COMPONENT_SELECTION_STORAGE_KEY, LEGACY_PUPIL_SELECTION_STORAGE_KEY, pickFaceLibraryBase, savedFaceLibraryParts, savedLegacyPupilParts } from '../../../../shared/faceLibrarySelection'
 import { ExpressionCharacterPreview } from './ExpressionCharacterPreview'
+import { ExpressionFaceComponentPreview } from './ExpressionFaceComponentPreview'
 import { projectForOriginalPreview } from '../../../../shared/fabricatorModelViews'
 import { useModelSourceRefresh } from './models/useModelSourceRefresh'
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
@@ -28,14 +28,15 @@ import {
 import type { ComponentOption, ExpressionComposition } from './expressionPresetModel'
 import { expressionWorkspaceDraftStorageKey, useExpressionWorkspaceDraftPersistence } from './useExpressionWorkspaceDraftPersistence'
 import { mapConcurrentItems } from '../../ui/mapConcurrentItems'
-import { createExpressionPreviewInteraction, type PreviewEffectDrag, type PreviewLayerDrag, type PreviewLayerMapping } from './expressionPreviewInteraction'
+import { createExpressionPreviewInteraction, type PreviewEffectDrag, type PreviewLayerDrag } from './expressionPreviewInteraction'
+import { expressionLayerKey as layerKey, expressionLayerUsesMirroredX, updateExpressionLayerTransform, updateExpressionPtPupils, type ExpressionLayerKey } from './expressionLayerTransformEdits.ts'
 
 type Side = 'left' | 'right'
 type PickerCategory = 'eyes' | 'pupils' | 'eyebrows' | 'nose' | 'mouth'
 type ComponentKind = 'eye' | 'pupil' | 'eyebrow'
 type PairedLayerKind = ComponentKind
 type ExpressionWorkingCopy = { id: string; composition: ExpressionComposition; transforms: FaceExpressionTransforms; ptPupils?: PtPupilOverrides; noseOpacity: number; effects: FaceExpressionEffects }
-type LayerKey = keyof FaceExpressionTransforms
+type LayerKey = ExpressionLayerKey
 const presetLayerPairs: Array<{ kind: PairedLayerKind; label: string; keys: [LayerKey, LayerKey]; labels: [string, string] }> = [
   { kind: 'eye', label: 'Olhos', keys: ['eyeLeft', 'eyeRight'], labels: ['Olho esquerdo', 'Olho direito'] },
   { kind: 'pupil', label: 'Pupilas', keys: ['pupilLeft', 'pupilRight'], labels: ['Pupila esquerda', 'Pupila direita'] },
@@ -59,7 +60,6 @@ const cloneEffects = (effects?: FaceExpressionEffects): FaceExpressionEffects =>
 const identityTransform = (): FaceTransform => ({ x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0 })
 const emptyTransforms = (): FaceExpressionTransforms => ({ eyeLeft: identityTransform(), eyeRight: identityTransform(), pupilLeft: identityTransform(), pupilRight: identityTransform(), browLeft: identityTransform(), browRight: identityTransform(), nose: identityTransform(), mouth: identityTransform() })
 const cloneTransforms = (transforms: FaceExpressionTransforms): FaceExpressionTransforms => structuredClone(transforms)
-const layerKey = (kind: 'eye' | 'pupil' | 'eyebrow', side: Side): LayerKey => kind === 'eye' ? side === 'left' ? 'eyeLeft' : 'eyeRight' : kind === 'pupil' ? side === 'left' ? 'pupilLeft' : 'pupilRight' : side === 'left' ? 'browLeft' : 'browRight'
 const pairedLayerKeys: Partial<Record<LayerKey, LayerKey>> = { eyeLeft: 'eyeRight', eyeRight: 'eyeLeft', pupilLeft: 'pupilRight', pupilRight: 'pupilLeft', browLeft: 'browRight', browRight: 'browLeft' }
 const pairedKindForLayer = (layer: LayerKey): PairedLayerKind | null => layer.startsWith('eye') ? 'eye' : layer.startsWith('pupil') ? 'pupil' : layer.startsWith('brow') ? 'eyebrow' : null
 
@@ -435,55 +435,26 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
     if(previewGaze==='left' && !open){
       if (key!=='pupilLeft' && key!=='pupilRight')return
       if(!Object.keys(patch).every(field=>['x','y','rotation'].includes(field)))return
-      const side=key==='pupilLeft'?'left':'right', pairedSide=side==='left'?'right':'left'
-      setPtPupils(current=>{
-        const before=current[side] ?? {x:visibleTransforms[key].x,y:visibleTransforms[key].y,rotation:visibleTransforms[key].rotation}
-        const after={...before,...patch}
-        const next={...current,[side]:after}
-        if(linkedLayerPairs.pupil){
-          const otherKey=side==='left'?'pupilRight':'pupilLeft'
-          const prior=current[pairedSide] ?? {x:visibleTransforms[otherKey].x,y:visibleTransforms[otherKey].y,rotation:visibleTransforms[otherKey].rotation}
-          const paired={...prior}
-          if(patch.x!==undefined){
-            const mirror=(s:'left'|'right')=>s==='right' && componentAssets[composition.pupils[s] ?? '']?.rightSidePositioned!==true?-1:1
-            paired.x+=(after.x-before.x)*mirror(side)/mirror(pairedSide)
-          }
-          if(patch.y!==undefined)paired.y+=after.y-before.y
-          if(patch.rotation!==undefined)paired.rotation-=after.rotation-before.rotation
-          next[pairedSide]=paired
-        }
-        return next
-      })
+      const side=key==='pupilLeft'?'left':'right'
+      const mirroredX = (pupilSide: Side) => expressionLayerUsesMirroredX(
+        pupilSide === 'left' ? 'pupilLeft' : 'pupilRight', composition, componentAssets
+      )
+      setPtPupils(current=>updateExpressionPtPupils(current, side, patch, {
+        linked: linkedLayerPairs.pupil,
+        visibleTransforms,
+        mirroredX: { left: mirroredX('left'), right: mirroredX('right') }
+      }))
       return
     }
     const pairKind = pairedKindForLayer(key)
     const pairedKey = pairedLayerKeys[key]
     const linkPair = Boolean(pairKind && pairedKey && linkedLayerPairs[pairKind])
-    const usesMirroredX = (layer: LayerKey) => {
-      if (!layer.endsWith('Right')) return false
-      const side = 'right'
-      const assetId = layer.startsWith('eye') ? composition.eyes[side] : layer.startsWith('pupil') ? composition.pupils[side] : composition.eyebrows[side]
-      return componentAssets[assetId ?? '']?.rightSidePositioned !== true
-    }
-    setTransforms((current) => {
-      const sourceBefore = current[key]
-      const sourceAfter = { ...sourceBefore, ...patch }
-      if (!linkPair || !pairedKey) return { ...current, [key]: sourceAfter }
-      const pairedBefore = current[pairedKey]
-      const pairedAfter = { ...pairedBefore }
-      if (patch.x !== undefined) {
-        const direction = (usesMirroredX(key) ? -1 : 1) / (usesMirroredX(pairedKey) ? -1 : 1)
-        pairedAfter.x = pairedBefore.x + (sourceAfter.x - sourceBefore.x) * direction
-      }
-      if (patch.y !== undefined) pairedAfter.y = pairedBefore.y + (sourceAfter.y - sourceBefore.y)
-      if (patch.scaleX !== undefined) pairedAfter.scaleX = Math.max(.02, Math.min(4, pairedBefore.scaleX * sourceAfter.scaleX / sourceBefore.scaleX))
-      if (patch.scaleY !== undefined) pairedAfter.scaleY = Math.max(.02, Math.min(4, pairedBefore.scaleY * sourceAfter.scaleY / sourceBefore.scaleY))
-      if (patch.rotation !== undefined) {
-        pairedAfter.rotation = Math.max(-180, Math.min(180, pairedBefore.rotation - (sourceAfter.rotation - sourceBefore.rotation)))
-      }
-      if (patch.flipX !== undefined) pairedAfter.flipX = Boolean(pairedBefore.flipX) !== (Boolean(sourceBefore.flipX) !== Boolean(sourceAfter.flipX))
-      return { ...current, [key]: sourceAfter, [pairedKey]: pairedAfter }
-    })
+    setTransforms((current) => updateExpressionLayerTransform(current, key, patch, {
+      linked: linkPair,
+      pairedLayer: pairedKey,
+      sourceMirroredX: expressionLayerUsesMirroredX(key, composition, componentAssets),
+      pairedMirroredX: pairedKey ? expressionLayerUsesMirroredX(pairedKey, composition, componentAssets) : false
+    }))
   }
   const previewInteraction = createExpressionPreviewInteraction({
     layerDragRef: previewLayerDrag,
@@ -680,90 +651,13 @@ export function ExpressionPresetWorkspace({ modelSlot }: { modelSlot: number }) 
     }
   }
 
-  const renderComponent = (assetId: string | null, kind: 'eye' | 'pupil' | 'eyebrow', currentSide: Side, transform: FaceTransform, eyeAsset?: FaceComponentAsset, eyeTransformOverride?: FaceTransform): ReactNode => {
-    if (!head || !assetId) return null
-    const asset = componentAssets[assetId]
-    if (!asset || asset.kind !== kind) return null
-    const right = currentSide === 'right'
-    // A name such as "Olho direito" identifies the library slot; it does not
-    // prove that the pixels are already positioned as a right-side asset.
-    // Olhos Dev uses this metadata alone to decide whether the image needs mirroring.
-    const physicallyRight = asset.rightSidePositioned === true
-    if (kind !== 'pupil') {
-      const mirrored = right && !physicallyRight
-      const layer = layerKey(kind, currentSide)
-      const pairedSide = right ? 'left' : 'right'
-      const pairedLayer = layerKey(kind, pairedSide)
-      const movePair = linkedLayerPairs[kind]
-      const canDrag = selectedLayer === layer || movePair && selectedLayer === pairedLayer
-      const pairedAssetId = kind === 'eye' ? visibleComposition.eyes[pairedSide] : visibleComposition.eyebrows[pairedSide]
-      const pairedAsset = pairedAssetId ? componentAssets[pairedAssetId] : undefined
-      const dragMappings: Array<Omit<PreviewLayerMapping, 'startX' | 'startY'>> = [{ layer, mirroredX: mirrored, rotation: 0 }]
-      if (movePair && pairedAsset) dragMappings.push({ layer: pairedLayer, mirroredX: pairedSide === 'right' && pairedAsset.rightSidePositioned !== true, rotation: 0 })
-      const x = mirrored ? head.width - transform.x : transform.x
-      const rotation = mirrored ? -transform.rotation : transform.rotation
-      const imageStyle: CSSProperties = {
-        left: `${x / head.width * 100}%`, top: `${transform.y / head.height * 100}%`,
-        width: `${asset.width * transform.scaleX / head.width * 100}%`, height: `${asset.height * transform.scaleY / head.height * 100}%`,
-        zIndex: kind === 'eyebrow' ? 4 : 2,
-        transform: `translate(-50%,-50%) rotate(${rotation}deg) scaleX(${Boolean(transform.flipX) !== mirrored ? -1 : 1})`,
-        pointerEvents: canDrag ? 'auto' : 'none', cursor: canDrag ? 'grab' : undefined, touchAction: canDrag ? 'none' : undefined
-      }
-      return <img key={`${kind}-${asset.id}-${right}`} className="expression-head-piece" src={asset.dataUrl} alt={canDrag ? `Arraste para mover ${layer === 'browLeft' || layer === 'browRight' ? 'a sobrancelha' : 'o olho'}` : ''} style={imageStyle}
-        onPointerDown={canDrag ? (event) => previewInteraction.beginLayerDrag(event, dragMappings) : undefined}
-        onPointerMove={canDrag ? previewInteraction.moveLayerDrag : undefined} onPointerUp={canDrag ? previewInteraction.endLayerDrag : undefined}
-        onPointerCancel={canDrag ? previewInteraction.endLayerDrag : undefined} onLostPointerCapture={canDrag ? previewInteraction.endLayerDrag : undefined} />
-    }
-    if (!eyeAsset) return null
-    const eyeTransform = eyeTransformOverride ?? eyeAsset.defaultTransform
-    const eyePhysicallyRight = eyeAsset.rightSidePositioned === true
-    const eyeMirrored = right && !eyePhysicallyRight
-    const eyeX = eyeMirrored ? head.width - eyeTransform.x : eyeTransform.x
-    const eyeRotation = eyeMirrored ? -eyeTransform.rotation : eyeTransform.rotation
-    const pupilTransform = transform
-    const mirroredPupilX = pupilSourceMirrored(currentSide,physicallyRight)
-    const pupilX = mirroredPupilX ? -pupilTransform.x : pupilTransform.x
-    const eyeFlip = Boolean(eyeTransform.flipX) !== eyeMirrored
-    const eyeFlipDirection = eyeFlip ? -1 : 1
-    const maskStyle: CSSProperties = {
-      left: `${eyeX / head.width * 100}%`, top: `${eyeTransform.y / head.height * 100}%`,
-      width: `${eyeAsset.width * eyeTransform.scaleX / head.width * 100}%`, height: `${eyeAsset.height * eyeTransform.scaleY / head.height * 100}%`,
-      transform: `translate(-50%,-50%) rotate(${eyeRotation}deg) scaleX(${eyeFlipDirection})`,
-      // Match Olhos Dev: keep the source alpha mask until its sclera-only mask
-      // finishes generating, so the pupil never flashes outside the eye.
-      maskImage: `url(${eyeMasks[eyeAsset.id] ?? eyeAsset.dataUrl})`,
-      WebkitMaskImage: `url(${eyeMasks[eyeAsset.id] ?? eyeAsset.dataUrl})`
-    }
-    const pupilStyle: CSSProperties = {
-      left: `${50 + pupilX / (eyeFlipDirection * eyeTransform.scaleX * eyeAsset.width) * 100}%`,
-      top: `${50 + pupilTransform.y / (eyeAsset.height * eyeTransform.scaleY) * 100}%`,
-      width: `${pupilTransform.scaleX * 100}%`, height: `${pupilTransform.scaleY * 100}%`,
-      transform: `translate(-50%,-50%) rotate(${pupilTransform.rotation * (right && !physicallyRight ? -1 : 1) * eyeFlipDirection}deg) scaleX(${Boolean(pupilTransform.flipX) !== eyeFlip ? -1 : 1})`
-    }
-    const pupilLayer = layerKey('pupil', currentSide)
-    const pairedSide = right ? 'left' : 'right'
-    const pairedPupilLayer = layerKey('pupil', pairedSide)
-    const movePair = linkedLayerPairs.pupil
-    const canDrag = selectedLayer === pupilLayer || movePair && selectedLayer === pairedPupilLayer
-    const pairedPupilId = visibleComposition.pupils[pairedSide]
-    const pairedEyeId = visibleComposition.eyes[pairedSide]
-    const pairedPupilAsset = pairedPupilId ? componentAssets[pairedPupilId] : undefined
-    const pairedEyeAsset = pairedEyeId ? componentAssets[pairedEyeId] : undefined
-    const pairedEyeTransform = visibleTransforms[layerKey('eye', pairedSide)]
-    const pairedEyeMirrored = pairedSide === 'right' && pairedEyeAsset?.rightSidePositioned !== true
-    const pairedEyeRotation = pairedEyeMirrored ? -pairedEyeTransform.rotation : pairedEyeTransform.rotation
-    const dragMappings: Array<Omit<PreviewLayerMapping, 'startX' | 'startY'>> = [{ layer: pupilLayer, mirroredX: mirroredPupilX, rotation: eyeRotation }]
-    if (movePair && pairedPupilAsset && pairedEyeAsset) dragMappings.push({
-      layer: layerKey('pupil', pairedSide), mirroredX: pupilSourceMirrored(pairedSide,pairedPupilAsset.rightSidePositioned===true), rotation: pairedEyeRotation
-    })
-    return <span key={`${kind}-${asset.id}-${right}`} className="expression-head-pupil-mask" style={{ ...maskStyle, pointerEvents: canDrag ? 'auto' : 'none', cursor: canDrag ? 'grab' : undefined, touchAction: canDrag ? 'none' : undefined }}
-      onPointerDown={canDrag ? (event) => previewInteraction.beginLayerDrag(event, dragMappings) : undefined}
-      onPointerMove={canDrag ? previewInteraction.moveLayerDrag : undefined} onPointerUp={canDrag ? previewInteraction.endLayerDrag : undefined}
-      onPointerCancel={canDrag ? previewInteraction.endLayerDrag : undefined} onLostPointerCapture={canDrag ? previewInteraction.endLayerDrag : undefined}>
-      <img src={asset.dataUrl} alt={canDrag ? `Arraste para mover a pupila ${right ? 'direita' : 'esquerda'}` : ''} style={pupilStyle} />
-    </span>
-  }
-
+  const renderComponent = (assetId: string | null, kind: 'eye' | 'pupil' | 'eyebrow', currentSide: Side, transform: FaceTransform, eyeAsset?: FaceComponentAsset, eyeTransformOverride?: FaceTransform): ReactNode =>
+    <ExpressionFaceComponentPreview
+      head={head} assetId={assetId} kind={kind} side={currentSide} transform={transform}
+      eyeAsset={eyeAsset} eyeTransformOverride={eyeTransformOverride} composition={visibleComposition}
+      componentAssets={componentAssets} transforms={visibleTransforms} eyeMasks={eyeMasks}
+      selectedLayer={selectedLayer} linkedLayerPairs={linkedLayerPairs} interaction={previewInteraction}
+    />
   const renderCatalogPiece = (choice: ExpressionComposition['nose'] | NonNullable<ExpressionComposition['mouth']>, type: 'nose' | 'mouth'): ReactNode => {
     if (!head || !choice) return null
     const item = catalogItems[choice.catalogId]
