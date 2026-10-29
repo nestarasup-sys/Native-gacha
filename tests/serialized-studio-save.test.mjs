@@ -27,15 +27,17 @@ test('falha de um save não bloqueia o próximo, nem mascara a exceção',async(
 })
 test('Studio e Editor V6 usam a fila compartilhada antes de chamar seus canais IPC',async()=>{
  const {readFile}=await import('node:fs/promises')
-  const [studio,editorV6,saveHook]=await Promise.all([
+  const [studio,editorV6,editorPersistence,saveHook]=await Promise.all([
    readFile('src/renderer/src/features/studio/StudioPage.tsx','utf8'),
    readFile('src/renderer/src/features/editorV6/EditorV6Page.tsx','utf8'),
+   readFile('src/renderer/src/features/editorV6/useEditorV6DocumentPersistence.ts','utf8'),
    readFile('src/renderer/src/ui/hooks/useSerializedSceneDocumentSave.ts','utf8')
  ])
  assert.match(studio,/useSerializedSceneDocumentSave\(activeStudio, \{/)
- assert.match(editorV6,/useSerializedSceneDocumentSave\(activeEditorV6, \{/)
+  assert.match(editorV6,/useEditorV6DocumentPersistence\(/)
+  assert.match(editorPersistence,/useSerializedSceneDocumentSave\(activeProject, \{/)
  assert.match(studio,/window\.desktop\.studio\.saveStudio\(studio\)/)
- assert.match(editorV6,/window\.desktop\.editorV6\.saveEditorV6Project\(document\)/)
+  assert.match(editorPersistence,/window\.desktop\.editorV6\.saveEditorV6Project\(document\)/)
  assert.match(saveHook,/new SerializedDocumentSaveQueue\(\)/)
  assert.match(saveHook,/queue\.current\.run\(/)
 })

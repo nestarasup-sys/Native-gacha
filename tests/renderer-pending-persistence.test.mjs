@@ -128,6 +128,7 @@ test('Face component debounces and catalog saves drain through the renderer regi
 test('Studio and Editor V6 flush debounced documents and wait for renderer IPC writes', async () => {
   const studio = await readFile('src/renderer/src/features/studio/StudioPage.tsx', 'utf8')
   const editor = await readFile('src/renderer/src/features/editorV6/EditorV6Page.tsx', 'utf8')
+  const editorPersistence = await readFile('src/renderer/src/features/editorV6/useEditorV6DocumentPersistence.ts', 'utf8')
   const exportPanel = await readFile('src/renderer/src/features/editorV6/EditorV6ExportPanel.tsx', 'utf8')
   assert.match(studio, /registerPendingWriteFlusher\(flushStudioWrites\)/)
   assert.match(studio, /hadPendingTimer \|\| !saved[\s\S]*?saveStudio\(latest\)/)
@@ -137,9 +138,11 @@ test('Studio and Editor V6 flush debounced documents and wait for renderer IPC w
   assert.match(studio, /await trackStudioOperation\(async \(\) => \{[\s\S]*?deleteStudio\(target\.id\)/)
   assert.match(studio, /const exportPrint = \(\) => \{[\s\S]*?trackStudioOperation\(async \(\) => \{[\s\S]*?saveStudioPrint/)
   assert.match(studio, /const openPrints = \(\) => trackStudioOperation\(async \(\) =>/)
-  assert.match(editor, /registerPendingWriteFlusher\(flushEditorV6Writes\)/)
-  assert.match(editor, /hadPendingTimer \|\| !saved[\s\S]*?saveActiveEditorV6Project\(latest\)/)
-  assert.match(editor, /await editorV6PendingOperations\.flush\(\)/)
+  assert.match(editor, /useEditorV6DocumentPersistence\(/)
+  assert.match(editorPersistence, /registerPendingWriteFlusher\(flushWrites\)/)
+  assert.match(editorPersistence, /hadPendingTimer \|\| !saved[\s\S]*?saveActiveProject\(latest\)/)
+  assert.match(editorPersistence, /await pendingOperations\.flush\(\)[\s\S]*?await flushDocumentWrites\(\)/)
+  assert.match(editorPersistence, /const inFlightSave = savePromiseRef\.current/)
   for (const operation of ['duplicateStudio', 'importImage', 'importTimelineMedia', 'linkVideoLibraryItem']) {
     assert.match(editor, new RegExp(`const ${operation} =[^\\n]*trackEditorV6Operation\\(async \\(\\) =>`), `${operation} deve permanecer pendente até salvar o documento relacionado`)
   }

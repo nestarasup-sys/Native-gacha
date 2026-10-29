@@ -31,12 +31,10 @@ import { Icon } from '../../ui/components/Icon'
 import { NumericRangeField } from '../../ui/components/NumericRangeField'
 import { SceneElementControls } from '../../ui/components/SceneElementControls'
 import { SceneCastPickerModal } from '../../ui/components/SceneCastPickerModal'
-import { useSerializedSceneDocumentSave } from '../../ui/hooks/useSerializedSceneDocumentSave'
-import { registerPendingWriteFlusher } from '../../ui/pendingPersistence'
-import { createPendingOperationTracker } from '../../ui/pendingOperations'
 import { isLegacySceneCatalogId, loadLegacySceneCatalog } from '../../ui/legacySceneCatalog'
 import { createSceneTextElement, sceneCatalogColor, sceneEditorTools } from '../../ui/sceneEditorDefaults'
 import { recordEditorV6PlaybackFrame, recordUiCommit } from '../../ui/performanceDiagnostics'
+import { useEditorV6DocumentPersistence } from './useEditorV6DocumentPersistence'
 import { fitEditorV6CharacterToStage } from '../../../../shared/editorV6CharacterGeometry'
 import { editorV6ProjectSummary, type EditorV6Asset, type EditorV6Document, type EditorV6Element, type EditorV6FaceTransform, type EditorV6FaceTransforms, type EditorV6ProjectSummary, type EditorV6TimelineBlock } from '../../../../shared/editorV6'
 import type { CustomizerCharacter } from '../../../../shared/customizer'
@@ -61,10 +59,6 @@ function samePoseRevisionSnapshot(left: Record<string, string>, right: Record<st
   return keys.length === Object.keys(right).length && keys.every((key) => left[key] === right[key])
 }
 const defaultStudioEyeTransform: EditorV6FaceTransform = createDefaultSceneFaceTransform()
-async function makeEditorV6Thumbnail(studio: EditorV6Document): Promise<string> {
-  const { captureEditorV6Frame } = await import('./sceneCapture')
-  return captureEditorV6Frame(studio, 0, 480, 270, 'image/jpeg')
-}
 
 /** Layout do Editor V6. */
 export function EditorV6Page() {
@@ -130,67 +124,26 @@ export function EditorV6Page() {
   const expressionSaveSignatureRef = useRef<{ studioId: string; value: string } | null>(null)
   const normalizedStudioIdsRef = useRef(new Set<string>())
   const nextStudioNumber = useRef(1)
-  const editorV6PendingOperations = useMemo(() => createPendingOperationTracker(), [])
   const editorV6SaveTimerRef = useRef<number | null>(null)
-  const editorV6SavePromiseRef = useRef<Promise<boolean> | null>(null)
   const selectedEditorV6 = editorV6Projects.find((studio) => studio.id === selectedId) ?? null
   const activeEditorV6 = activeEditorV6Stored?.id === activeEditorV6Id ? activeEditorV6Stored : null
-  const trackEditorV6Operation = editorV6PendingOperations.track
-  const writeEditorV6Document = useCallback((document: EditorV6Document) => trackEditorV6Operation(() => window.desktop.editorV6.saveEditorV6Project(document)), [trackEditorV6Operation])
-  const onEditorV6DocumentSaved = useCallback((document: EditorV6Document, savedDocument: EditorV6Document) => {
-    if (savedDocument.thumbnailDataUrl !== document.thumbnailDataUrl) {
-      updateActiveEditorV6Project((project) => project.id === document.id && project.updatedAt === document.updatedAt && project.thumbnailDataUrl !== savedDocument.thumbnailDataUrl
-        ? { ...project, thumbnailDataUrl: savedDocument.thumbnailDataUrl }
-        : project)
-    }
-    setSaved(true)
-    setError(null)
-  }, [updateActiveEditorV6Project])
-  const onEditorV6DocumentSaveError = useCallback((reason: unknown) => {
-    setError(reason instanceof Error ? reason.message : 'Não foi possível salvar o projeto do Editor V6 neste dispositivo.')
-  }, [])
-  const { save: saveEditorV6Document, writeInOrder: writeEditorV6DocumentInOrder, invalidatePendingSaves: invalidateEditorV6PendingSaves } = useSerializedSceneDocumentSave(activeEditorV6, {
-    createThumbnail: makeEditorV6Thumbnail,
-    write: writeEditorV6Document,
-    onSaved: onEditorV6DocumentSaved,
-    onError: onEditorV6DocumentSaveError
+  const {
+    trackOperation: trackEditorV6Operation,
+    writeDocument: writeEditorV6Document,
+    writeInOrder: writeEditorV6DocumentInOrder,
+    saveActiveProject: saveActiveEditorV6Project,
+    flushDocumentWrites: flushEditorV6DocumentWrites,
+    flushWrites: flushEditorV6Writes,
+    markUnsaved: markEditorV6Unsaved
+  } = useEditorV6DocumentPersistence({
+    activeProject: activeEditorV6,
+    activeProjectIdRef: activeEditorV6IdRef,
+    saved,
+    saveTimerRef: editorV6SaveTimerRef,
+    setSaved,
+    setError,
+    updateActiveProject: updateActiveEditorV6Project
   })
-  const saveActiveEditorV6Project = useCallback((document = activeEditorV6) => {
-    const pending = saveEditorV6Document(document)
-    editorV6SavePromiseRef.current = pending
-    void pending.then(() => { if (editorV6SavePromiseRef.current === pending) editorV6SavePromiseRef.current = null })
-    return pending
-  }, [activeEditorV6, saveEditorV6Document])
-  const flushEditorV6DocumentWrites = useCallback(async () => {
-    const hadPendingTimer = editorV6SaveTimerRef.current !== null
-    if (editorV6SaveTimerRef.current !== null) window.clearTimeout(editorV6SaveTimerRef.current)
-    editorV6SaveTimerRef.current = null
-    try {
-      const activeId = activeEditorV6IdRef.current
-      const stored = useEditorV6Store.getState().activeProject
-      const latest = activeId && stored?.id === activeId ? stored : null
-      if (latest && (hadPendingTimer || !saved) && !await saveActiveEditorV6Project(latest)) throw new Error('Não foi possível salvar o projeto do Editor V6 antes de continuar.')
-      const inFlightSave = editorV6SavePromiseRef.current
-      if (inFlightSave && !await inFlightSave) throw new Error('Não foi possível concluir o salvamento do Editor V6.')
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Não foi possível salvar o projeto do Editor V6 antes de continuar.')
-      throw reason
-    }
-  }, [saved, saveActiveEditorV6Project])
-  const flushEditorV6Writes = useCallback(async () => {
-    try {
-      await editorV6PendingOperations.flush()
-      await flushEditorV6DocumentWrites()
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Não foi possível salvar o projeto do Editor V6 antes de continuar.')
-      throw reason
-    }
-  }, [editorV6PendingOperations, flushEditorV6DocumentWrites])
-  useEffect(() => registerPendingWriteFlusher(flushEditorV6Writes), [flushEditorV6Writes])
-  const markEditorV6Unsaved = useCallback(() => {
-    invalidateEditorV6PendingSaves()
-    setSaved(false)
-  }, [invalidateEditorV6PendingSaves])
   const availableCharacterById = useMemo(() => new Map(availableCharacters.map((character) => [character.id, character])), [availableCharacters])
   const fabricatorModelSlots = useMemo(() => [...new Set(availableCharacters.map((character) => character.customization.modelSlot ?? 1))].sort((left, right) => left - right), [availableCharacters])
   const fabricatorModelSlotsKey = fabricatorModelSlots.join(',')
