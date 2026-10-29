@@ -168,15 +168,16 @@ test('preload e handlers do Studio não duplicam strings IPC fora do contrato',a
   assert.match(editorFileDomain,/trackWrite\(async \(\) => \{[\s\S]*?writeFile\(printPath, bytes\)/)
 })
 test('Roteiros e Customizador mantêm UI separada dos componentes centrais',async()=>{
-  const [page,editor,customizer,roster]=await Promise.all([
+  const [page,workspace,editor,customizer,roster]=await Promise.all([
     readFile('src/renderer/src/features/roteiros/RoteirosPage.tsx','utf8'),
+    readFile('src/renderer/src/features/roteiros/RoteiroWorkspace.tsx','utf8'),
     readFile('src/renderer/src/features/roteiros/RoteiroSectionEditor.tsx','utf8'),
     readFile('src/renderer/src/features/customizer/CustomizerPage.tsx','utf8'),
     readFile('src/renderer/src/features/customizer/useCustomizerCharacterRoster.ts','utf8')
   ])
   assert.doesNotMatch(page,/function RoteiroSectionEditor/)
   assert.match(editor,/export function RoteiroSectionEditor/)
-  assert.match(page,/from '\.\/RoteiroSectionEditor'/)
+  assert.match(workspace,/from '\.\/RoteiroSectionEditor'/)
   assert.match(customizer,/useCustomizerCharacterRoster\(\)/)
   assert.doesNotMatch(customizer,/useEffect\(\(\) => \{\n    let cancelled = false\n    void window\.desktop\.listCustomizerCharacters\(\)/)
   assert.match(roster,/window\.desktop\.customizer\.listCustomizerCharacters\(\)/)
