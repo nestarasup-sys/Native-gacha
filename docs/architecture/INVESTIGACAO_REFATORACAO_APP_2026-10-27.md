@@ -2,6 +2,15 @@
 
 ## Reauditoria geral — 2026-10-29
 
+### Rodada ampliada — operações manuais do Fabricador no flush
+
+- A auditoria do inventário de encerramento encontrou quatro caminhos fora do flush: importação da folha do Model Source, exportação do PNG do Model Source, exportação WebM do Animador Facial e autosave do Design Dev.
+- `fabricator:import-model` agora permanece na fila do slot desde a abertura do seletor até gravar a fonte; isso serializa a gravação com outras alterações daquele modelo e permite que o flush principal a aguarde. O download de PNG, a exportação WebM (incluindo seletor e escrita) e as gravações IPC do Design Dev agora expõem operações ativas ao inventário `collectPendingPersistenceWrites()`.
+- O rascunho de Design Dev também registra `flushDesignSettings` no flush do renderer. A fila preserva a rejeição para que navegação/encerramento detecte uma falha, enquanto uma edição posterior pode iniciar uma nova tentativa.
+- Canais IPC, conteúdo JSON, caminhos de persistência e arquivos exportados não mudaram. As regressões usam arquivos temporários, saídas sintéticas e Promises controladas; nenhum modelo, download ou configuração local foi aberto ou alterado.
+- `npm run test:fabricator:manual-lifecycle` passou com 5 testes; `npm run test:refactor` com 330; `npm test` com 27; `test:data-backup-ipc` com 4; `test:roteiros` com 6; `test:media-library-pending` com 2. Também passaram `npm run typecheck`, `npm run audit:architecture` (361 arquivos) e `npm run build`.
+- Esta etapa fecha as lacunas encontradas nesses caminhos manuais; permanece necessária a auditoria completa das operações restantes e de recuperação após interrupção forçada do processo.
+
 ### Rodada ampliada — superfície e painel de exportação
 
 - O smoke integrado `test:editor-v6:surface` falhava ao importar áudio porque seu mock ainda expunha métodos no objeto `desktop` plano; a interface atual usa `desktop.editorV6`. A fixture agora implementa o contrato namespaced tipado, sem adicionar compatibilidade obsoleta ao aplicativo.
@@ -786,7 +795,7 @@ Este corte separa propriedade dos contratos e chamadas entre domínios, mas não
 
 ## 12. Próxima tarefa recomendada
 
-Em andamento: auditar operações IPC manuais iniciadas por ações de usuário e a cobertura do inventário do processo principal, além dos autosaves já drenados. Registrar para cada domínio o comportamento de falha/recuperação e completar a matriz de persistência do aplicativo. A auditoria agora cobre jobs de backup, exportações de Roteiros, bibliotecas compartilhadas de vídeo/fundos/GIFs, imagens de poses, ações compostas e prints do Editor V6 e arquivos de print/materialização do Studio no fechamento; ainda faltam outras operações manuais e recuperação após interrupção forçada de algumas publicações.
+Continua a auditoria das operações IPC iniciadas pelo usuário e da cobertura do inventário do processo principal. Além de backups, exportações de Roteiros, bibliotecas compartilhadas, imagens de poses, ações compostas e prints do Editor V6/Studio, a rodada de 2026-10-29 incluiu importação/exportação do Model Source, exportação de animação facial e autosave de Design Dev. Ainda faltam revisar os caminhos manuais restantes e mapear recuperação após interrupção forçada de algumas publicações.
 
 ## 13. Verificações e validação
 

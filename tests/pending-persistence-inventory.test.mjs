@@ -9,6 +9,9 @@ test('flush, backup e encerramento drenam persistências e aguardam operações 
   assert.ok(inventory, 'o composition root deve declarar o inventário de gravações')
   for (const owner of [
     'fabricatorProjectIpc?.getPendingWrites()',
+    'fabricatorModelSourceDownloadIpc?.getPendingWrites()',
+    'fabricatorFaceAnimationExportIpc?.getPendingWrites()',
+    'fabricatorDesignSettingsIpc?.getPendingWrites()',
     'poseSaveWrites',
     'poseMigration',
     'fabricatorHairIpc?.getPendingWrites()',
@@ -28,4 +31,7 @@ test('flush, backup e encerramento drenam persistências e aguardam operações 
   assert.match(main, /\.\.\.collectPendingPersistenceWrites\(\),[\s\S]*?dataMigrationTask/)
   assert.ok(main.includes('...(dataBackupIpc?.getActiveTasks() ?? [])'), 'o encerramento deve aguardar operações manuais de backup em andamento')
   assert.ok(main.includes('...(roteiroExportIpc ? [roteiroExportIpc.drain()] : [])'), 'o encerramento deve drenar os jobs de exportação de Roteiros')
+
+  const designWorkspace = await readFile('src/renderer/src/features/fabricator/DesignWorkspace.tsx', 'utf8')
+  assert.match(designWorkspace, /registerPendingWriteFlusher\(flushDesignSettings\)/, 'Design Dev deve drenar o autosave antes de navegar ou fechar')
 })

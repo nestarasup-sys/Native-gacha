@@ -78,29 +78,31 @@ export function registerFabricatorProjectHandlers(deps: FabricatorProjectIpcDepe
     deps.assertTrustedSender(event)
     if (!deps.isValidSlot(slot)) throw new Error('Slot inválido.')
     if (mode !== 'import' && mode !== 'reimport') throw new Error('Modo de importação inválido.')
-    const path = await deps.openImportDialog(mode)
-    if (!path) return null
-    const extension = extname(path).toLowerCase()
-    const supportedExtensions = new Set(['.png', '.jpg', '.jpeg', '.webp'])
-    if (!supportedExtensions.has(extension)) throw new Error('Formato incompatível. Use PNG, JPG ou WebP.')
-    const fileStat = await deps.files.stat(path)
-    if (fileStat.size > 50 * 1024 * 1024) throw new Error('A imagem excede o limite de 50 MB.')
-    if (fileStat.size === 0) throw new Error('O arquivo de imagem está vazio.')
-    const bytes = await deps.files.readFile(path)
-    const canonical = await deps.normalizeImage(bytes)
-    if (canonical.bitDepth > 8) throw new Error('O Fabricador processa a folha em 8 bits. O PNG de 16 bits não foi alterado; converta uma cópia para 8 bits para importar neste editor.')
-    if (mode === 'reimport') {
-      const existing = JSON.parse(await deps.files.readFile(join(deps.slotPath(slot), 'project.json'), 'utf8')) as { width?: number; height?: number }
-      if (canonical.width !== existing.width || canonical.height !== existing.height) {
-        throw new Error(`Para preservar as configurações do modelo, a imagem precisa ter ${existing.width} × ${existing.height} pixels.`)
+    return queueWrite(slot, async () => {
+      const path = await deps.openImportDialog(mode)
+      if (!path) return null
+      const extension = extname(path).toLowerCase()
+      const supportedExtensions = new Set(['.png', '.jpg', '.jpeg', '.webp'])
+      if (!supportedExtensions.has(extension)) throw new Error('Formato incompatível. Use PNG, JPG ou WebP.')
+      const fileStat = await deps.files.stat(path)
+      if (fileStat.size > 50 * 1024 * 1024) throw new Error('A imagem excede o limite de 50 MB.')
+      if (fileStat.size === 0) throw new Error('O arquivo de imagem está vazio.')
+      const bytes = await deps.files.readFile(path)
+      const canonical = await deps.normalizeImage(bytes)
+      if (canonical.bitDepth > 8) throw new Error('O Fabricador processa a folha em 8 bits. O PNG de 16 bits não foi alterado; converta uma cópia para 8 bits para importar neste editor.')
+      if (mode === 'reimport') {
+        const existing = JSON.parse(await deps.files.readFile(join(deps.slotPath(slot), 'project.json'), 'utf8')) as { width?: number; height?: number }
+        if (canonical.width !== existing.width || canonical.height !== existing.height) {
+          throw new Error(`Para preservar as configurações do modelo, a imagem precisa ter ${existing.width} × ${existing.height} pixels.`)
+        }
       }
-    }
-    const sourceDataUrl = `data:image/png;base64,${canonical.bytes.toString('base64')}`
-    const destination = deps.slotPath(slot)
-    const sourceAssetName = `source-${deps.createId()}.png`
-    await deps.files.mkdir(destination, { recursive: true })
-    await deps.files.writeFile(join(destination, sourceAssetName), canonical.bytes)
-    return { sourceName: basename(path), sourceAssetName, sourceDataUrl }
+      const sourceDataUrl = `data:image/png;base64,${canonical.bytes.toString('base64')}`
+      const destination = deps.slotPath(slot)
+      const sourceAssetName = `source-${deps.createId()}.png`
+      await deps.files.mkdir(destination, { recursive: true })
+      await deps.files.writeFile(join(destination, sourceAssetName), canonical.bytes)
+      return { sourceName: basename(path), sourceAssetName, sourceDataUrl }
+    })
   })
 
   deps.ipcMain.handle('fabricator:save-project', async (event, project: FabricatorProjectSave, changedAssets: FabricatorAssetSave[]): Promise<void> => {

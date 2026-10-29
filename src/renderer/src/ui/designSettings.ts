@@ -72,13 +72,24 @@ export function saveDesignSettings(settings: DesignSettings): void {
   const revision = ++settingsRevision
   cachedSettingsSnapshot = normalized
   window.dispatchEvent(new Event(CHANGE_EVENT))
-  saveQueue = saveQueue.catch(() => undefined).then(async () => {
+  const current = saveQueue.catch(() => undefined).then(async () => {
     await initializeSettings()
     await window.desktop.fabricator.saveFabricatorDesignSettings(normalized)
     if (settingsRevision === revision) {
       try { window.localStorage.removeItem(STORAGE_KEY) } catch { /* app-data remains authoritative */ }
     }
-  }).catch((reason) => console.error('Não foi possível salvar as configurações do Design Dev.', reason))
+  })
+  saveQueue = current
+  void current.catch((reason) => console.error('Não foi possível salvar as configurações do Design Dev.', reason))
+}
+
+export async function flushDesignSettings(): Promise<void> {
+  await initializeSettings()
+  while (true) {
+    const pending = saveQueue
+    await pending
+    if (pending === saveQueue) return
+  }
 }
 
 function subscribe(callback: () => void): () => void {

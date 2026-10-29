@@ -294,6 +294,9 @@ let dataMigrationIpc: ReturnType<typeof registerDataMigrationHandlers> | null = 
 let roteiroExportIpc: ReturnType<typeof registerRoteiroExportHandlers> | null = null
 let fabricatorHairIpc: ReturnType<typeof registerFabricatorHairHandlers> | null = null
 let fabricatorProjectIpc: ReturnType<typeof registerFabricatorProjectHandlers> | null = null
+let fabricatorModelSourceDownloadIpc: ReturnType<typeof registerModelSourceDownloadHandlers> | null = null
+let fabricatorFaceAnimationExportIpc: ReturnType<typeof registerFabricatorFaceAnimationExportHandler> | null = null
+let fabricatorDesignSettingsIpc: ReturnType<typeof registerFabricatorDesignSettingsHandlers> | null = null
 let fabricatorWardrobeIpc: ReturnType<typeof registerFabricatorWardrobeHandlers> | null = null
 let fabricatorAnimatorIpc: ReturnType<typeof registerFabricatorAnimatorHandlers> | null = null
 let editorV6ExportService: ReturnType<typeof registerEditorV6ExportHandlers> | null = null
@@ -1257,6 +1260,9 @@ const { isValidAnimatorSlot, writeAnimatorAnimation, readAnimatorAnimation, writ
 function collectPendingPersistenceWrites(): Promise<unknown>[] {
   return [
     ...(fabricatorProjectIpc?.getPendingWrites() ?? []), ...poseSaveWrites, ...(fabricatorHairIpc?.getPendingWrites() ?? []),
+    ...(fabricatorModelSourceDownloadIpc?.getPendingWrites() ?? []),
+    ...(fabricatorFaceAnimationExportIpc?.getPendingWrites() ?? []),
+    ...(fabricatorDesignSettingsIpc?.getPendingWrites() ?? []),
     ...(fabricatorAnimatorIpc?.getPendingWrites() ?? []), ...(fabricatorWardrobeIpc?.getPendingWrites() ?? []),
     ...(fabricatorFaceCatalogIpc?.getPendingWrites() ?? []),
     ...expressionPresetOperations.getPendingWrites(),
@@ -1450,7 +1456,7 @@ async function registerFabricatorHandlers(): Promise<void> {
     files: { stat, readFile, mkdir, writeFile, readdir, rename, rm, access, unlink }
   })
 
-  registerModelSourceDownloadHandlers(ipcMain, assertTrustedSender, () => app.getPath('downloads'))
+  fabricatorModelSourceDownloadIpc = registerModelSourceDownloadHandlers(ipcMain, assertTrustedSender, () => app.getPath('downloads'))
   registerFabricatorPoseHandlers({
     ipcMain, assertTrustedSender, ensureLegacyPoseMigration, isValidModelSlot, isValidPoseSlot,
     slotCount, poseSlotCount, poseSlotPath, poseModelPath, poseDraftPath,
@@ -1536,8 +1542,12 @@ async function registerFabricatorHandlers(): Promise<void> {
     }
   })
 
-  registerFabricatorFaceAnimationExportHandler({
-    ipcMain, assertTrustedSender, isValidModelSlot, writeFile
+  fabricatorFaceAnimationExportIpc = registerFabricatorFaceAnimationExportHandler({
+    ipcMain, assertTrustedSender, isValidModelSlot, writeFile,
+    showSaveDialog: (sender, options) => {
+      const owner = BrowserWindow.fromWebContents(sender)
+      return owner ? dialog.showSaveDialog(owner, options) : dialog.showSaveDialog(options)
+    }
   })
   faceGuideIpc = registerFaceGuideHandlers(ipcMain, assertTrustedSender, {
     isProfile: isFaceGuideProfile,
@@ -1727,7 +1737,7 @@ app.whenReady().then(async () => {
       writeText: (path, text) => writeFile(path, text, 'utf8')
     }
   })
-  registerFabricatorDesignSettingsHandlers({ ipcMain, assertTrustedSender, service: designSettingsService })
+  fabricatorDesignSettingsIpc = registerFabricatorDesignSettingsHandlers({ ipcMain, assertTrustedSender, service: designSettingsService })
   dataMigration = new DataMigrationService({
     dataRoot: app.getPath('appData'),
     userDataRoot: app.getPath('userData'),

@@ -30,6 +30,7 @@
     "test:data-runtime": "node scripts/test-data-runtime.cjs",
     "test:data-backup-ipc": "node --experimental-strip-types --test tests/data-backup-ipc-lifecycle.test.mjs tests/pending-persistence-inventory.test.mjs",
     "test:media-library-pending": "node --experimental-strip-types --test tests/media-library-pending-inventory.test.mjs",
+    "test:fabricator:manual-lifecycle": "node --experimental-strip-types --test tests/fabricator-manual-operations-lifecycle.test.mjs tests/pending-persistence-inventory.test.mjs",
     "audit:gv5-import": "node scripts/diagnostics/audit-gv5-import.cjs",
     "audit:architecture": "node scripts/architecture/check-syntax.cjs && node scripts/architecture/check-relative-imports.cjs && node scripts/architecture/check-boundaries.cjs",
     "test:roteiros": "node --experimental-strip-types --test tests/roteiros-validation.test.mjs tests/roteiros-export-ipc-lifecycle.test.mjs tests/pending-persistence-inventory.test.mjs",

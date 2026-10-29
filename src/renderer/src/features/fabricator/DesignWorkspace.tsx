@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Icon } from '../../ui/components/Icon'
 import { normalizeImageFile } from './normalizeImage'
-import { DESIGN_BANNER_HEIGHT_PX, DESIGN_BANNER_IMAGE_HEIGHT_PX, DESIGN_BANNER_IMAGE_WIDTH_PX, DESIGN_BANNER_WIDTH_PX, designLimits, saveDesignSettings, useDesignSettings, type DesignBannerSlide } from '../../ui/designSettings'
+import { DESIGN_BANNER_HEIGHT_PX, DESIGN_BANNER_IMAGE_HEIGHT_PX, DESIGN_BANNER_IMAGE_WIDTH_PX, DESIGN_BANNER_WIDTH_PX, designLimits, flushDesignSettings, saveDesignSettings, useDesignSettings, type DesignBannerSlide } from '../../ui/designSettings'
 import { DesignBanner } from '../../ui/components/DesignBanner'
+import { registerPendingWriteFlusher } from '../../ui/pendingPersistence'
 
 function createSlide(): DesignBannerSlide {
   return { id: crypto.randomUUID(), title: 'Nova novidade', subtitle: 'Escreva uma descrição curta.', imageDataUrl: null }
@@ -13,6 +14,8 @@ export { DesignBanner } from '../../ui/components/DesignBanner' // compatibilida
 export function DesignWorkspace() {
   const settings = useDesignSettings()
   const [error, setError] = useState('')
+
+  useEffect(() => registerPendingWriteFlusher(flushDesignSettings), [])
 
   const updateSlide = (id: string, update: Partial<DesignBannerSlide>) => saveDesignSettings({
     ...settings,
