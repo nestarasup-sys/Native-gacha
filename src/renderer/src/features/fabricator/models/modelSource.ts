@@ -2,6 +2,9 @@
 import type { FabricatorProject, ModelPart } from '../../../../../shared/fabricator'
 import { isHeadPart } from './resize'
 import { sourceRect, type ModelSourceDimensions } from './modelSourceGeometry'
+import { composeModelSourceImages } from './modelSourceComposer'
+import { createModelSourceComposeWorkerRequest, materializeModelSourceResult, type ModelSourceComposeRequest } from './modelSourceComposeProtocol'
+import { shouldComposeModelSourceOnMainThread } from './modelSourceExecutionStrategy'
 import { startModelSourceComposeWorker } from './runModelSourceComposeWorker'
 
 export type { ModelSourceDimensions } from './modelSourceGeometry'
@@ -71,10 +74,15 @@ export async function composeModelSource(
   }
   validateModelSourceDimensions(project, edits)
   validateModelSourceChroma(tolerance)
-  return startModelSourceComposeWorker({
+  const request: ModelSourceComposeRequest = {
     id: ++composeRequestId,
     project,
     edits,
     tolerance
-  }, undefined, signal).result
+  }
+  if (shouldComposeModelSourceOnMainThread(project, edits, tolerance)) {
+    const output = await composeModelSourceImages(createModelSourceComposeWorkerRequest(request), signal, 'renderer')
+    return materializeModelSourceResult(project, output)
+  }
+  return startModelSourceComposeWorker(request, undefined, signal).result
 }

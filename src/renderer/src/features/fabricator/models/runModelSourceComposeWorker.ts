@@ -1,4 +1,9 @@
-import type { ModelSourceComposeMessage, ModelSourceComposeRequest, ModelSourceComposeWorkerRequest } from './modelSourceComposeProtocol'
+import {
+  createModelSourceComposeWorkerRequest,
+  materializeModelSourceResult,
+  type ModelSourceComposeMessage,
+  type ModelSourceComposeRequest
+} from './modelSourceComposeProtocol.ts'
 import type { ModelSourceResult } from './modelSource'
 
 export type ModelSourceComposeTask = { result: Promise<ModelSourceResult>; cancel: () => void }
@@ -14,7 +19,7 @@ export class ModelSourceComposeTaskError extends Error {
   }
 }
 
-/** Keeps image decoding and canvas composition off the UI thread and owns worker cleanup. */
+/** Runs a large composition outside the UI thread and owns worker cleanup. */
 export function startModelSourceComposeWorker(
   request: ModelSourceComposeRequest,
   createWorker: () => Worker = () => new Worker(new URL('./modelSourceCompose.worker.ts', import.meta.url), { type: 'module' }),
@@ -48,23 +53,7 @@ export function startModelSourceComposeWorker(
       return
     }
     try {
-      const { output } = event.data
-      const updates = new Map(output.partUpdates.map(({ id, patch }) => [id, patch]))
-      const project = request.project
-      const value: ModelSourceResult = {
-        sourceDataUrl: output.sourceDataUrl,
-        previewDataUrl: output.previewDataUrl,
-        parts: project.parts.map(part => {
-          const patch = updates.get(part.id)
-          return patch ? { ...part, ...patch } : part
-        }),
-        tolerance: output.tolerance,
-        modelSkinTone: project.modelSkinTone,
-        modelOutlineColor: project.modelOutlineColor,
-        joints: project.joints,
-        layerOrder: project.layerOrder,
-        hiddenPartIds: project.hiddenPartIds
-      }
+      const value = materializeModelSourceResult(request.project, event.data.output)
       settled = true
       signal?.removeEventListener('abort', cancel)
       worker.terminate()
@@ -80,13 +69,7 @@ export function startModelSourceComposeWorker(
   if (signal?.aborted) cancel()
   try {
     if (!settled) {
-      const project = request.project
-      worker.postMessage({
-        id: request.id,
-        project: { width: project.width, height: project.height, tolerance: project.tolerance, parts: project.parts },
-        edits: request.edits,
-        tolerance: request.tolerance
-      } satisfies ModelSourceComposeWorkerRequest)
+      worker.postMessage(createModelSourceComposeWorkerRequest(request))
     }
   } catch (reason) {
     fail(new ModelSourceComposeTaskError(reason instanceof Error ? reason.message : 'Não foi possível iniciar a composição do Model Source.', 'runtime'))

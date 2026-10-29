@@ -55,7 +55,7 @@ test('monta o projeto importado com bases, ordem, juntas e assets pendentes pres
 })
 
 test('tela e workers compartilham os contratos de mensagem definidos pelo domínio', async () => {
-  const [page, imageWorker, chromaWorker, modelSource, chromaRunner, imageRunner, pixelWorker, pixelRunner, pixelEditing, composeWorker, composeRunner, geometry] = await Promise.all([
+  const [page, imageWorker, chromaWorker, modelSource, chromaRunner, imageRunner, pixelWorker, pixelRunner, pixelEditing, composeWorker, composeRunner, geometry, composer] = await Promise.all([
     readFile(new URL('../src/renderer/src/features/fabricator/FabricatorPage.tsx', import.meta.url), 'utf8'),
     readFile(new URL('../src/renderer/src/features/fabricator/models/imageProcessor.worker.ts', import.meta.url), 'utf8'),
     readFile(new URL('../src/renderer/src/features/fabricator/models/chromaAdjust.worker.ts', import.meta.url), 'utf8'),
@@ -67,7 +67,8 @@ test('tela e workers compartilham os contratos de mensagem definidos pelo domín
     readFile(new URL('../src/renderer/src/features/fabricator/models/modelSourceEditing.ts', import.meta.url), 'utf8'),
     readFile(new URL('../src/renderer/src/features/fabricator/models/modelSourceCompose.worker.ts', import.meta.url), 'utf8'),
     readFile(new URL('../src/renderer/src/features/fabricator/models/runModelSourceComposeWorker.ts', import.meta.url), 'utf8'),
-    readFile(new URL('../src/renderer/src/features/fabricator/models/modelSourceGeometry.ts', import.meta.url), 'utf8')
+    readFile(new URL('../src/renderer/src/features/fabricator/models/modelSourceGeometry.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../src/renderer/src/features/fabricator/models/modelSourceComposer.ts', import.meta.url), 'utf8')
   ])
 
   assert.match(page, /startImageProcessorWorker/)
@@ -92,8 +93,9 @@ test('tela e workers compartilham os contratos de mensagem definidos pelo domín
   assert.doesNotMatch(modelSource, /new Worker\(new URL\('\.\/chromaAdjust\.worker/)
   assert.match(composeRunner, /MessageEvent<ModelSourceComposeMessage>/)
   assert.match(composeWorker, /MessageEvent<ModelSourceComposeWorkerRequest>/)
-  assert.match(composeWorker, /OffscreenCanvas/)
-  assert.match(composeWorker, /sourceRect\(/)
+  assert.match(composeWorker, /composeModelSourceImages/)
+  assert.match(composer, /OffscreenCanvas/)
+  assert.match(composer, /sourceRect\(/)
   assert.match(geometry, /export function sourceRect/)
   assert.match(chromaWorker, /applyChromaPixels/)
 })

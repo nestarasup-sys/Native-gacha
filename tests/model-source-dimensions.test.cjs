@@ -6,6 +6,7 @@ const ts = require('typescript')
 
 const file = resolve('src/renderer/src/features/fabricator/models/modelSource.ts')
 let composeWorkerOverride = null
+let composeImagesOverride = null
 const compiled = ts.transpileModule(readFileSync(file,'utf8'), {
   compilerOptions: {module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}
 }).outputText.replaceAll('import.meta.url', '\"file:///model-source-test.ts\"')
@@ -24,6 +25,33 @@ new Function('exports','module','require',compiled)(mod.exports,mod,(specifier) 
     startModelSourceComposeWorker: (...args) => composeWorkerOverride
       ? composeWorkerOverride(...args)
       : (() => { throw new Error('O fixture só valida dimensões; worker não deve ser iniciado.') })()
+  }
+  if (specifier === './modelSourceComposer') return {
+    composeModelSourceImages: (...args) => composeImagesOverride
+      ? composeImagesOverride(...args)
+      : (() => { throw new Error('O fixture não prepara imagens reais para composição direta.') })()
+  }
+  if (specifier === './modelSourceComposeProtocol') return {
+    createModelSourceComposeWorkerRequest: request => ({
+      id: request.id,
+      project: { width: request.project.width, height: request.project.height, tolerance: request.project.tolerance, parts: request.project.parts },
+      edits: request.edits,
+      tolerance: request.tolerance
+    }),
+    materializeModelSourceResult: (project, output) => ({
+      sourceDataUrl: output.sourceDataUrl,
+      previewDataUrl: output.previewDataUrl,
+      parts: project.parts,
+      tolerance: output.tolerance,
+      modelSkinTone: project.modelSkinTone,
+      modelOutlineColor: project.modelOutlineColor,
+      joints: project.joints,
+      layerOrder: project.layerOrder,
+      hiddenPartIds: project.hiddenPartIds
+    })
+  }
+  if (specifier === './modelSourceExecutionStrategy') return {
+    shouldComposeModelSourceOnMainThread: (project, _edits, tolerance) => project.width < 1000 && tolerance === project.tolerance
   }
   throw new Error('Import inesperado no domínio: ' + specifier)
 })
@@ -84,7 +112,7 @@ test('composição encaminha projeto validado, alterações e tolerância ao wor
     return {result:Promise.resolve(result),cancel(){}}
   }
   try {
-    const model=fixture()
+    const model={...fixture(),width:4000,height:3000}
     const edits={cabeca:{width:70,height:75}}
     assert.equal(await composeModelSource(model,edits,50,controller.signal),result)
     assert.equal(received.request.project,model)
@@ -93,6 +121,26 @@ test('composição encaminha projeto validado, alterações e tolerância ao wor
     assert.equal(received.signal,controller.signal)
   } finally {
     composeWorkerOverride=null
+  }
+})
+
+test('composição pequena usa o mesmo compositor local e mantém metadados do modelo',async()=>{
+  const controller=new AbortController()
+  let received
+  const output={sourceDataUrl:'source',previewDataUrl:'preview',tolerance:74,partUpdates:[]}
+  composeImagesOverride=(request,signal)=>{
+    received={request,signal}
+    return Promise.resolve(output)
+  }
+  try {
+    const model={...fixture(),tolerance:74,modelSkinTone:'#f2c6a8',joints:[]}
+    const result=await composeModelSource(model,{},74,controller.signal)
+    assert.equal(received.request.project.width,model.width)
+    assert.equal(received.signal,controller.signal)
+    assert.equal(result.sourceDataUrl,'source')
+    assert.equal(result.modelSkinTone,model.modelSkinTone)
+  } finally {
+    composeImagesOverride=null
   }
 })
 
@@ -112,7 +160,7 @@ test('cancelamento durante a composição interrompe o worker e retorna AbortErr
     return {result,cancel}
   }
   try {
-    const pending=composeModelSource(fixture(),{},74,controller.signal)
+    const pending=composeModelSource({...fixture(),width:4000,height:3000},{},74,controller.signal)
     controller.abort()
     await assert.rejects(pending,error=>error.name==='AbortError')
     assert.equal(cancelled,true)
