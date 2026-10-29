@@ -795,7 +795,7 @@ Este corte separa propriedade dos contratos e chamadas entre domínios, mas não
 
 ## 12. Próxima tarefa recomendada
 
-Continua a auditoria das operações IPC iniciadas pelo usuário e da cobertura do inventário do processo principal. Além de backups, exportações de Roteiros, bibliotecas compartilhadas, imagens de poses, ações compostas e prints do Editor V6/Studio, a rodada de 2026-10-29 incluiu importação/exportação do Model Source, exportação de animação facial e autosave de Design Dev. Ainda faltam revisar os caminhos manuais restantes e mapear recuperação após interrupção forçada de algumas publicações.
+Continua a auditoria das operações IPC iniciadas pelo usuário e da cobertura do inventário do processo principal. Além de backups, exportações de Roteiros, bibliotecas compartilhadas, imagens de poses, ações compostas e prints do Editor V6/Studio, a rodada de 2026-10-29 incluiu importação/exportação do Model Source, exportação de animação facial e autosave de Design Dev. A recuperação após interrupção forçada agora cobre os dois fluxos de exportação de Roteiros; ainda faltam revisar outros caminhos manuais e publicações do aplicativo.
 
 ## 13. Verificações e validação
 
@@ -886,4 +886,11 @@ Continua a auditoria das operações IPC iniciadas pelo usuário e da cobertura 
 - `projectExportStore.ts` agora recupera a transação pendente antes de ler o manifesto e antes de criar subpastas de exportação. O journal registra os destinos, a ação, os arquivos originais, os backups e as assinaturas dos arquivos staged; um marcador de commit diferencia uma publicação completa de uma troca interrompida.
 - Se o processo fechar durante a substituição, a próxima exportação ou abertura da pasta restaura os arquivos anteriores de forma idempotente. A recuperação só substitui ou remove um destino quando ele ainda corresponde ao original, ao backup ou ao conteúdo staged registrado. Se outro conteúdo apareceu, preserva-o e mantém o journal para inspeção.
 - O manifesto e o journal aceitam somente `roteiro.txt`, o GIF da interface, o fundo `01` e vídeos numerados nas pastas previstas. Caminhos duplicados, fora da allowlist, com traversal ou atravessando links simbólicos são recusados. O formato do manifesto publicado, IPC e destinos existentes não mudaram.
-- `characterExportStore.ts` tem publicação e ciclo de vida próprios e não foi alterado nesta etapa; sua recuperação após encerramento forçado continua sendo uma frente separada. Nenhum projeto real do Editor V4 foi acessado. Os quatro casos novos de recuperação/ownership, `npm run test:roteiros`, typecheck, auditoria de arquitetura e build passaram.
+- A publicação de personagens é um fluxo separado, coberto pela etapa 23. Nenhum projeto real do Editor V4 foi acessado. Os quatro casos novos de recuperação/ownership, `npm run test:roteiros`, typecheck, auditoria de arquitetura e build passaram nesta etapa.
+
+## 23. Etapa aplicada — recuperação transacional da exportação de personagens
+
+- `characterExportStore.ts` prepara os PNGs e o JSON, depois publica no projeto existente. Agora um journal durável registra cada escrita/remoção, assinatura do original, hash do novo conteúdo e os caminhos temporários/backups antes de alterar o projeto. Os originais são movidos para backups no mesmo projeto; não há uma segunda cópia completa dos assets antigos.
+- Na próxima exportação ou ao abrir a pasta de personagens, o app resolve a transação: desfaz uma publicação incompleta ou mantém uma publicação que alcançou o marcador de commit. A recuperação compara conteúdo e assinaturas e preserva um destino que tenha sido alterado por fora do app, deixando o journal para revisão.
+- Exportações do mesmo projeto são serializadas desde a leitura/mesclagem do JSON até a publicação, evitando que duas janelas percam a atualização uma da outra. Arquivos não gerados pelo exportador dentro das pastas dos personagens são mantidos; diretórios de staging órfãos são limpos após reinício.
+- A raiz padrão do Editor V4 agora está em `projectPaths.ts` e é compartilhada pelos dois exportadores de Roteiros. IPC, IDs persistidos, JSON do projeto e layout dos assets permanecem iguais. Seis regressões sintéticas cobrem publicação normal, hash do asset publicado, rollback após interrupção, preservação de alteração externa, retomada após commit e exportações concorrentes; nenhum projeto real foi acessado.

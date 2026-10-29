@@ -2,9 +2,9 @@ import { lstat, mkdir, readFile, stat } from 'node:fs/promises'
 import { basename, dirname, join, resolve } from 'node:path'
 import type { RoteiroDocument, RoteiroExportCharacterInfo, RoteiroSectionContent, RoteiroVideoReference } from '../../../src/shared/roteiros'
 import { createRoteiroProjectExportTransaction, isRoteiroProjectExportAssetPath, roteiroProjectExportManifestPath, type RoteiroProjectExportWrite } from './projectExportTransaction.ts'
+import { roteiroV4ProjectsRoot } from './projectPaths.ts'
 
 const idPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-const rootDefault = 'C:\\TRABALHO 2\\EDITOR V4\\EDITOR V4\\projects'
 type Manifest = { app: 'GACHA_V5_ROTEIRO_EXPORT'; scriptId: string; files: string[] }
 const safeSegment = (value: string) => {
   const cleaned = value.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9 _-]/g, '-').replace(/[\s_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 72) || 'roteiro'
@@ -19,7 +19,7 @@ const characterFolder = (name: string, id: string) => safeSegment(name || 'perso
 
 export class RoteiroProjectExportStore {
   private readonly transaction = createRoteiroProjectExportTransaction()
-  constructor(private readonly resolveBackground: (id: string) => Promise<string>, private readonly resolveGif: (id: string) => Promise<string>, private readonly resolveVideo: (video: RoteiroVideoReference) => Promise<string>, private readonly projectsRoot = rootDefault) {}
+  constructor(private readonly resolveBackground: (id: string) => Promise<string>, private readonly resolveGif: (id: string) => Promise<string>, private readonly resolveVideo: (video: RoteiroVideoReference) => Promise<string>, private readonly projectsRoot = roteiroV4ProjectsRoot) {}
   private async projectFolder(roteiro: RoteiroDocument) {
     const root = resolve(this.projectsRoot)
     const info = await lstat(root).catch(() => null)

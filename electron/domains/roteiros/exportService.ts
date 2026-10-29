@@ -1,5 +1,5 @@
 /** Coordena a exportação de assets e personagens dos documentos de Roteiros. */
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import type { RoteiroExportCharacterInfo, RoteiroVideoReference } from '../../../src/shared/roteiros'
 import { RoteiroCharacterExportStore } from './characterExportStore.ts'
 import { RoteiroProjectExportStore } from './projectExportStore.ts'
@@ -69,7 +69,9 @@ export function createRoteiroExportService(deps: RoteiroExportServiceDependencie
       const value = request as { roteiro?: unknown; kind?: unknown }
       const roteiro = value.roteiro
       if (!isRoteiroDocument(roteiro) || !['characters', 'background', 'videos', 'script', 'ui'].includes(String(value.kind))) throw new Error('Roteiro ou pasta de exportação inválida.')
-      return getProjectStore().ensureExportFolder(roteiro, value.kind as RoteiroExportFolderKind)
+      const folder = await getProjectStore().ensureExportFolder(roteiro, value.kind as RoteiroExportFolderKind)
+      if (value.kind === 'characters') await getCharacterStore().recoverProject(dirname(dirname(folder)))
+      return folder
     },
 
     startCharacterExport(request: unknown) {

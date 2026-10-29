@@ -8,6 +8,7 @@ import test from 'node:test'
 import * as nativeFiles from 'node:fs/promises'
 import ts from 'typescript'
 import { createRoteiroProjectExportTransaction, isRoteiroProjectExportAssetPath, roteiroProjectExportManifestPath } from '../electron/domains/roteiros/projectExportTransaction.ts'
+import { roteiroV4ProjectsRoot } from '../electron/domains/roteiros/projectPaths.ts'
 
 const transactionPrefix = '.gacha-v5-roteiro-export-transaction-'
 const scriptId = '5b181b53-e8f9-4a54-b434-e968f1efc3e1'
@@ -34,6 +35,7 @@ function loadProjectExportStore() {
   const requireFromModule = createRequire(modulePath)
   const injectedRequire = (name) => name === './projectExportTransaction.ts'
     ? { createRoteiroProjectExportTransaction, isRoteiroProjectExportAssetPath, roteiroProjectExportManifestPath }
+    : name === './projectPaths.ts' ? { roteiroV4ProjectsRoot }
     : requireFromModule(name)
   new Function('require', 'exports', 'module', compiled)(injectedRequire, module.exports, module)
   return module.exports.RoteiroProjectExportStore
