@@ -31,6 +31,7 @@ import { configureAssetImageStorage, readAssetImage, writeAssetImageSource } fro
 import { migrateElectronProfile } from './electronProfileMigration.cjs'
 import { normalizeImageBuffer } from './imageIngestion.cjs'
 import { measureIpc } from './ipcPerformance'
+import { restrictRendererNavigation } from './windowNavigation'
 import { BaseVideoService } from './domains/baseVideos/service'
 import { registerBaseVideoHandlers } from './domains/baseVideos/ipc'
 import { isValidCustomizerFaceAppearance } from './domains/customizer/validation'
@@ -1592,6 +1593,7 @@ function createMainWindow(): void {
       window.showInactive()
     })
   }
+  restrictRendererNavigation(window.webContents)
   window.removeMenu()
   window.webContents.once('did-finish-load', () => {
     if (dataBackupService) {

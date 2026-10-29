@@ -2,6 +2,14 @@
 
 ## Reauditoria geral — 2026-10-29
 
+### Navegação das janelas e dependências
+
+- `npm audit --json` retornou zero vulnerabilidades conhecidas nas dependências instaladas nesta rodada. Isso não certifica ausência de vulnerabilidades no app nem justifica atualizar versões indiscriminadamente.
+- Mapeamento não encontrou uso funcional de window.open ou navegação de documento no renderer. A navegação das áreas usa HashRouter; documentos são carregados pelo processo principal. `windowNavigation.ts` aplica deny a popups e preventDefault a will-navigate nas três criações de BrowserWindow de produção: janela principal, preparador e exportador.
+- Base oficial: https://www.electronjs.org/docs/latest/tutorial/security/ e https://www.electronjs.org/docs/latest/api/web-contents — will-navigate não bloqueia HashRouter nem loadURL/loadFile iniciados pelo processo principal.
+- O smoke de bootstrap em Electron real agora também comprova popup bloqueado, navegação externa impedida, hash alterável e loadFile funcionando em perfil temporário. Relatório em out/editor-v6-bootstrap/result.json. Não certifica todos os cenários de navegação interativa ou permissões.
+- Aprovados: 84 testes Editor V6 (um ignorado existente), 330 de refatoração, auditoria de arquitetura, typecheck, build e smoke Electron real. Política de permissões por sessão, CSP e demais superfícies permanecem itens de auditoria; não há declaração de segurança completa.
+
 ### Bootstrap separado para workers e interface
 
 - `main.tsx` importava estaticamente ReactDOM, roteador, App e CSS mesmo no hash do preparador de animações. `ui/mountApp.tsx` agora é importado somente na janela interativa; mantém StrictMode, HashRouter, boundaries e CSS. O registro público de flush continua síncrono no bootstrap.

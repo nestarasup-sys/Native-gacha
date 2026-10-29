@@ -7,6 +7,7 @@ app.setPath('userData', path.join(folder, 'profile'))
 const watchdog = setTimeout(() => { console.error('Bootstrap timeout'); app.exit(1) }, 30000)
 app.whenReady().then(async () => {
   const window = new BrowserWindow({ show: false, webPreferences: { preload: path.join(folder, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true } })
+  require(path.join(folder, 'navigation.cjs')).restrictRendererNavigation(window.webContents)
   const resources = []
   window.webContents.session.webRequest.onCompleted(details => resources.push(details.url))
   await window.loadFile(html, { hash: '/editor-v6-transition-baker' })
@@ -23,7 +24,15 @@ app.whenReady().then(async () => {
   assert.equal(state.styles, 0)
   assert.equal(state.flush, 'function')
   assert.equal(resources.some(url => /mountApp|\.css(?:$|\?)/.test(url)), false, 'worker must not load UI shell or styles')
-  const result = { passed: true, mode: 'production-transition-baker', ...state, resources: resources.map(url => path.basename(new URL(url).pathname)) }
+  const popup = await window.webContents.executeJavaScript(`window.open('about:blank') === null`)
+  assert.equal(popup, true)
+  await window.webContents.executeJavaScript(`window.location.hash = '#/navigation-probe'`)
+  assert.equal(new URL(window.webContents.getURL()).hash, '#/navigation-probe')
+  const blocked = new Promise(resolve => window.webContents.once('will-navigate', event => resolve(event.defaultPrevented)))
+  await window.webContents.executeJavaScript(`window.location.href = 'https://example.invalid/'`)
+  assert.equal(await blocked, true)
+  assert.equal(new URL(window.webContents.getURL()).protocol, 'file:')
+  const result = { passed: true, mode: 'production-transition-baker', navigationBlocked: true, popupBlocked: true, hashRouting: true, ...state, resources: resources.map(url => path.basename(new URL(url).pathname)) }
   await fs.writeFile(path.join(folder, 'result.json'), JSON.stringify(result, null, 2))
   clearTimeout(watchdog)
   window.destroy()

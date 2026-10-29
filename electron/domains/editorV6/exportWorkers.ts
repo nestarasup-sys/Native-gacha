@@ -6,6 +6,7 @@ import { Readable } from 'node:stream'
 import { fileURLToPath } from 'node:url'
 import { editorV6WorkerChannels, type EditorV6FrameTimings, type EditorV6RenderFrameResult, type EditorV6WorkerPayload } from '../../../src/shared/editorV6Export'
 import { waitForExport } from './exportProcess'
+import { restrictRendererNavigation } from '../../windowNavigation'
 
 export type EditorV6FrameWorker = { frame: (frame: number) => Promise<EditorV6RenderFrameResult & { bitmap?: Buffer }>; close: () => void }
 export function createEditorV6WorkerFactory(deps: { ipcMain: Pick<IpcMain, 'handle' | 'removeHandler'>; html: string; preload: string; devUrl?: string; mediaPath?: (projectId: string, fileName: string, libraryVideoId?: string) => string | Promise<string> }) {
@@ -49,6 +50,7 @@ export function createEditorV6WorkerFactory(deps: { ipcMain: Pick<IpcMain, 'hand
         return new Response(Readable.toWeb(createReadStream(path)) as unknown as BodyInit, { status: 200, headers })
       } catch { return new Response('Not found', { status: 404 }) }
     })
+    restrictRendererNavigation(window.webContents)
     window.removeMenu()
     window.webContents.setFrameRate(60)
     window.webContents.session.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false))

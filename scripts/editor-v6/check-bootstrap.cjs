@@ -2,11 +2,13 @@ const { spawn } = require('node:child_process')
 const fs = require('node:fs/promises')
 const path = require('node:path')
 const os = require('node:os')
+const { build } = require('esbuild')
 
 async function main() {
   const root = path.resolve(__dirname, '../..')
   await fs.access(path.join(root, 'out/renderer/index.html'))
   const folder = await fs.mkdtemp(path.join(os.tmpdir(), 'gacha-bootstrap-'))
+  await build({ entryPoints: [path.join(root, 'electron/windowNavigation.ts')], outfile: path.join(folder, 'navigation.cjs'), bundle: true, platform: 'node', format: 'cjs', logLevel: 'warning' })
   await fs.writeFile(path.join(folder, 'preload.cjs'), `
     const { contextBridge } = require('electron')
     let read = false

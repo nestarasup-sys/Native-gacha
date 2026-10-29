@@ -8,6 +8,7 @@ const state = vi.hoisted(() => ({ windows: [] as any[] }))
 vi.mock('electron', () => ({ BrowserWindow: class extends EventEmitter {
   destroyed = false
   webContents = {
+    on: vi.fn(), setWindowOpenHandler: vi.fn(),
     id: state.windows.length + 1, mainFrame: {}, setFrameRate: vi.fn(), setZoomFactor: vi.fn(),
     session: { setPermissionRequestHandler: vi.fn(), webRequest: { onBeforeRequest: vi.fn() } }
   }

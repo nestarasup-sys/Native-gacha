@@ -6,6 +6,7 @@ import { editorV6MotionResultSchema, parseEditorV6MotionRequest } from '../../..
 import { isCustomizerCharacter } from '../customizer/validation'
 import { waitForExport } from './exportProcess'
 import { createMotionDiskCache, motionCacheKey } from './motionCache'
+import { restrictRendererNavigation } from '../../windowNavigation'
 
 type Active = { request: EditorV6MotionBakeRequest; resolve: (result: EditorV6MotionBakeResult) => void; reject: (error: Error) => void }
 type Lane = { window?: BrowserWindow; active?: Active; delivery?: EditorV6MotionBakeRequest; waiting?: (request: EditorV6MotionBakeRequest | null) => void; idle?: ReturnType<typeof setTimeout>; tail: Promise<void>; count: number }
@@ -64,6 +65,7 @@ export function createEditorV6MotionService(deps: { ipcMain: Pick<IpcMain, 'hand
     try {
       if (!lane.window || lane.window.isDestroyed()) {
         const window = new BrowserWindow({ show: false, width: 320, height: 180, webPreferences: { preload: deps.preload, contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: false, offscreen: true, devTools: false } })
+        restrictRendererNavigation(window.webContents)
         lane.window = window; lane.delivery = request
         workers.set(window.webContents.id, lane)
         const workerId = window.webContents.id
