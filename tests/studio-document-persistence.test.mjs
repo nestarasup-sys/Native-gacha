@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import * as fs from 'node:fs/promises'
-import { join } from 'node:path'
+import { join, dirname } from 'node:path'
 import { tmpdir } from 'node:os'
 import { createHash } from 'node:crypto'
 import { createStudioDocumentPersistence } from '../electron/domains/studio/documentPersistence.ts'
@@ -45,6 +45,39 @@ test('Studio grava e reidrata documento e PNG com hash idêntico no perfil isola
   assert.equal(restored?.title,'Cena')
   assert.equal(await persistence.readStudio(other),null)
   await assert.rejects(persistence.readStudio('../'),/Identificador de Studio inválido/)
+})
+
+test('inventário leve de poses do Studio lê vínculos sem abrir imagens de assets',async t=>{
+  const {persistence,studioPath}=await setup(t)
+  const document={...makeDoc(),elements:[{
+    id:'actor-1',kind:'character',characterId:'character-1',poseSlot:4,text:'Lia',
+    x:0,y:0,width:20,height:40,rotation:0,zIndex:1
+  }]}
+  await persistence.writeStudio(document)
+  const lightReader=createStudioDocumentPersistence({
+    files:{...fs,readFile:async(file,...args)=>{
+      if(String(file).endsWith('.png')) throw new Error('Leitura de asset não esperada no inventário de poses')
+      return fs.readFile(file,...args)
+    }},
+    studioPath,studioLibraryPath:()=>dirname(studioPath(id)),
+    validate:value=>value?.schemaVersion===1,
+    decodeImage:dataUrl=>Buffer.from(dataUrl.slice(dataUrl.indexOf(',')+1),'base64'),
+    normalizeImage:async bytes=>({bytes})
+  })
+  const references=await lightReader.readStudioPoseReferences(id)
+  assert.equal(references?.elements[0]?.characterId,'character-1')
+  assert.equal(references?.elements[0]?.poseSlot,4)
+})
+
+test('falha de recuperação não é confundida com Studio sem vínculos de pose',async t=>{
+  const {persistence,studioPath}=await setup(t)
+  const journalRoot=join(studioPath(id),'.studio-assets-transaction')
+  await fs.mkdir(journalRoot,{recursive:true})
+  await fs.writeFile(join(journalRoot,'journal.json'),JSON.stringify({
+    schemaVersion:1,previousHash:'0'.repeat(64),nextHash:'1'.repeat(64),
+    entries:[{relativePath:'assets/characters/orphan.png',backedUp:true}]
+  }))
+  await assert.rejects(persistence.readStudioPoseReferences(id),{code:'ENOENT'})
 })
 test('falha antes da promoção do manifesto não altera a versão anterior nem outros projetos',async t=>{
   let fail=false

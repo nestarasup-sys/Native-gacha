@@ -5,9 +5,13 @@ import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'nod
 import { randomUUID } from 'node:crypto'
 import { Readable } from 'node:stream'
 import { fileURLToPath } from 'node:url'
-import type { FaceAssetKind, FaceAssetSave, FaceCatalogItem, FaceCatalogItemSave, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSave, FaceComponentAssetSummary, FaceElementKind, FaceExpressionPreset, FaceExpressionTransforms, FaceExpressionWorkspaceDraft, FaceSet, FaceSetSave, FaceSheetKind, FaceTransform, FabricatorPoseDraftSave, FabricatorPoseSave, FabricatorProjectSave, HairStyle, HairStyleAsset, HairStyleSave, HairWorkspace, HairWorkspaceAsset, HairWorkspaceSave, ModelPart } from '../src/shared/fabricator'
+import { FABRICATOR_MODEL_SLOT_COUNT, FABRICATOR_POSE_SLOT_COUNT, type FaceAssetKind, type FaceAssetSave, type FaceCatalogItem, type FaceCatalogItemSave, type FaceCatalogItemSummary, type FaceComponentAsset, type FaceComponentAssetSave, type FaceComponentAssetSummary, type FaceElementKind, type FaceExpressionPreset, type FaceExpressionTransforms, type FaceExpressionWorkspaceDraft, type FaceSet, type FaceSetSave, type FaceSheetKind, type FaceTransform, type FabricatorPoseDraftSave, type FabricatorPoseSave, type FabricatorProjectSave, type HairStyle, type HairStyleAsset, type HairStyleSave, type HairWorkspace, type HairWorkspaceAsset, type HairWorkspaceSave, type ModelPart } from '../src/shared/fabricator'
 import { hairCategories } from '../src/shared/hairCategories'
+import type { CustomizerCharacter } from '../src/shared/customizer'
 import type { CustomizerFaceAssetReference } from '../src/shared/customizerFaceAssetReferences'
+import type { FabricatorPoseReference } from '../src/shared/fabricatorPoseReferences'
+import { addedFabricatorPoseReferences, collectCustomizerPoseReferences, collectEditorV6PoseReferences, collectStudioPoseReferences } from '../src/shared/fabricatorPoseReferences'
+import type { EditorV6Document } from '../src/shared/editorV6'
 import type { StudioAsset, StudioDocument } from '../src/shared/studio'
 import { isStudioExpressionEffects, isStudioFaceTransforms } from '../src/shared/studio'
 import { isEditorV6Document } from '../src/shared/editorV6Schema'
@@ -51,6 +55,7 @@ import { createFabricatorModelWriter } from './domains/fabricator/modelWriter'
 import { createFabricatorHistoryPersistence } from './domains/fabricator/historyPersistence'
 import { registerFabricatorProjectHandlers } from './domains/fabricator/projectIpc'
 import { createPosePersistence } from './domains/fabricator/posePersistence'
+import { createPoseReferenceChangeCoordinator } from './domains/fabricator/poseReferences'
 import { createAnimatorPersistence } from './domains/fabricator/animatorPersistence'
 import { registerFabricatorPoseHandlers } from './domains/fabricator/poseIpc'
 import { registerFabricatorAnimatorHandlers } from './domains/fabricator/animatorIpc'
@@ -295,8 +300,8 @@ protocol.registerSchemesAsPrivileged([
   { scheme: 'gacha-gif', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } }
 ])
 
-const slotCount = 10
-const poseSlotCount = 12
+const slotCount = FABRICATOR_MODEL_SLOT_COUNT
+const poseSlotCount = FABRICATOR_POSE_SLOT_COUNT
 const libraryPath = () => join(app.getPath('userData'), 'fabricator', 'models')
 const slotPath = (slot: number) => join(libraryPath(), `slot-${slot}`)
 const fabricatorModelCatalog = new FabricatorModelCatalog(slotCount, slotPath, { readFile, readAssetImage })
@@ -329,6 +334,7 @@ const editorV6LibraryPath = () => join(app.getPath('userData'), 'studios', 'Edit
 const editorV6Path = (id: string) => join(editorV6LibraryPath(), `editorV6-${id}`)
 const videoLibrary = new VideoLibraryStore(() => studioLibraryPath('video'))
 const coordinateVideoReferenceChange = createVideoReferenceChangeCoordinator()
+const coordinatePoseReferenceChange = createPoseReferenceChangeCoordinator()
 const assertLibraryVideoReferencesAvailable = async (videoIds: readonly string[]): Promise<void> => {
   if (videoIds.length === 0) return
   const availableVideos = new Map((await videoLibrary.list()).map((item) => [item.id, item]))
@@ -417,7 +423,10 @@ const customizerService = new CustomizerCharacterService(
         }
       }
     },
-    assertFaceAssetsAvailable: assertFaceAssetReferencesAvailable
+    assertFaceAssetsAvailable: assertFaceAssetReferencesAvailable,
+    assertFabricatorPosesAvailable: assertFabricatorPoseReferencesAvailable,
+    assertDependentFabricatorPosesAvailable: assertDependentCharacterPoseReferencesAvailable,
+    coordinatePoseReferenceChange
   }
 )
 
@@ -1081,7 +1090,7 @@ function isStudioAsset(value: unknown): value is StudioAsset {
     && typeof asset.dataUrl === 'string' && asset.dataUrl.startsWith(`data:${asset.mimeType};base64,`) && asset.dataUrl.length <= 70_000_000
 }
 
-const { readStudio, writeStudio, removeStudio } = createStudioDocumentPersistence({
+const { readStudio, readStudioPoseReferences, writeStudio, removeStudio } = createStudioDocumentPersistence({
   files: { readFile, writeFile, mkdir, access, rename, unlink, rm },
   studioPath,
   studioLibraryPath,
@@ -1090,13 +1099,14 @@ const { readStudio, writeStudio, removeStudio } = createStudioDocumentPersistenc
   normalizeImage: normalizeImageBuffer
 })
 
-const { listStudios } = createStudioLibraryIndex({
+const { listStudios, listStudioPoseReferenceDocuments } = createStudioLibraryIndex({
   files: { mkdir, readdir },
   studioLibraryPath,
-  readStudio
+  readStudio,
+  readStudioPoseReferences
 })
 
-const { readEditorV6, readEditorV6Summary, writeEditorV6, removeEditorV6 } = createEditorV6DocumentPersistence({
+const { readEditorV6, readEditorV6Summary, readEditorV6PoseReferences, writeEditorV6, removeEditorV6 } = createEditorV6DocumentPersistence({
   files: { readFile, writeFile, mkdir, access, rename, unlink, rm },
   editorV6Path,
   editorV6LibraryPath,
@@ -1106,10 +1116,11 @@ const { readEditorV6, readEditorV6Summary, writeEditorV6, removeEditorV6 } = cre
   normalizeImage: normalizeImageBuffer
 })
 
-const { listEditorV6s } = createEditorV6LibraryIndex({
+const { listEditorV6s, listEditorV6PoseReferenceDocuments } = createEditorV6LibraryIndex({
   files: { mkdir, readdir },
   editorV6LibraryPath,
-  readEditorV6Summary
+  readEditorV6Summary,
+  readEditorV6PoseReferences
 })
 
 const assertNoVideoReferences = createVideoReferenceGuard([
@@ -1138,6 +1149,66 @@ async function assertFaceAssetReferencesAvailable(references: readonly Customize
       }
     }
   }
+}
+
+async function assertFabricatorPoseReferencesAvailable(references: readonly FabricatorPoseReference[]): Promise<void> {
+  for (const reference of references) {
+    if (reference.modelSlot === null || !isValidModelSlot(reference.modelSlot) || !isValidPoseSlot(reference.poseSlot)) {
+      throw new Error(`Não foi possível identificar o modelo e a pose usados por ${reference.owner}. Reabra e selecione uma pose salva.`)
+    }
+    if (!await readPoseProject(reference.modelSlot, reference.poseSlot)) {
+      throw new Error(`A pose ${reference.modelSlot}:${reference.poseSlot} usada por ${reference.owner} não está mais disponível no Fabricador Dev.`)
+    }
+  }
+}
+
+async function assertDependentCharacterPoseReferencesAvailable(previous: CustomizerCharacter, next: CustomizerCharacter): Promise<void> {
+  if (previous.id !== next.id) throw new Error('Não foi possível confirmar a identidade do personagem ao alterar o modelo.')
+  if (previous.customization.modelSlot === next.customization.modelSlot) return
+  const [studios, editorDocuments] = await Promise.all([
+    listStudioPoseReferenceDocuments(), listEditorV6PoseReferenceDocuments()
+  ])
+  const previousReferences = [
+    ...collectStudioPoseReferences(studios, [previous]),
+    ...collectEditorV6PoseReferences(editorDocuments, [previous])
+  ]
+  const nextReferences = [
+    ...collectStudioPoseReferences(studios, [next]),
+    ...collectEditorV6PoseReferences(editorDocuments, [next])
+  ]
+  await assertFabricatorPoseReferencesAvailable(addedFabricatorPoseReferences(nextReferences, previousReferences))
+}
+
+function withPoseReferenceSnapshot<T>(operation: (references: readonly FabricatorPoseReference[]) => Promise<T>): Promise<T> {
+  return customizerService.withCharactersLocked(async (characters) => {
+    const [studios, editorDocuments] = await Promise.all([
+      listStudioPoseReferenceDocuments(), listEditorV6PoseReferenceDocuments()
+    ])
+    const references = [
+      ...collectCustomizerPoseReferences(characters),
+      ...collectStudioPoseReferences(studios, characters),
+      ...collectEditorV6PoseReferences(editorDocuments, characters)
+    ]
+    return operation(references)
+  })
+}
+
+async function assertStudioPoseReferencesAvailable(document: StudioDocument): Promise<void> {
+  const [previous, characters] = await Promise.all([
+    readStudioPoseReferences(document.id), customizerService.list()
+  ])
+  const nextReferences = collectStudioPoseReferences([document], characters)
+  const previousReferences = previous ? collectStudioPoseReferences([previous], characters) : []
+  await assertFabricatorPoseReferencesAvailable(addedFabricatorPoseReferences(nextReferences, previousReferences))
+}
+
+async function assertEditorV6PoseReferencesAvailable(document: EditorV6Document): Promise<void> {
+  const [previous, characters] = await Promise.all([
+    readEditorV6PoseReferences(document.id), customizerService.list()
+  ])
+  const nextReferences = collectEditorV6PoseReferences([document], characters)
+  const previousReferences = previous ? collectEditorV6PoseReferences([previous], characters) : []
+  await assertFabricatorPoseReferencesAvailable(addedFabricatorPoseReferences(nextReferences, previousReferences))
 }
 
 function dataUrlBuffer(dataUrl: string): Buffer {
@@ -1216,6 +1287,8 @@ async function registerFabricatorHandlers(): Promise<void> {
     list: () => listStudios(),
     write: (document) => writeStudio(document),
     remove: (id) => removeStudio(id),
+    assertPoseReferencesAvailable: assertStudioPoseReferencesAvailable,
+    coordinatePoseReferenceChange,
     getPendingWrites: () => studioSaveQueues.studio,
     setPendingWrites: (pending) => { studioSaveQueues.studio = pending },
     measure: (label, operation) => measureIpc(label, operation)
@@ -1227,6 +1300,8 @@ async function registerFabricatorHandlers(): Promise<void> {
     read: (id) => readEditorV6(id),
     write: (document) => coordinateVideoReferenceChange(() => writeEditorV6(document)),
     remove: (id) => removeEditorV6(id),
+    assertPoseReferencesAvailable: assertEditorV6PoseReferencesAvailable,
+    coordinatePoseReferenceChange,
     getPendingWrites: () => editorV6SaveQueue,
     setPendingWrites: (pending) => { editorV6SaveQueue = pending },
     measure: (label, operation) => measureIpc(label, operation)
@@ -1383,6 +1458,7 @@ async function registerFabricatorHandlers(): Promise<void> {
     ipcMain, assertTrustedSender, ensureLegacyPoseMigration, isValidModelSlot, isValidPoseSlot,
     slotCount, poseSlotCount, poseSlotPath, poseModelPath, poseDraftPath,
     queuePoseWrite, readPoseProject, writePoseProject, readPoseDraft, writePoseDraft,
+    coordinatePoseReferenceChange, withPoseReferenceSnapshot,
     files: { readFile, writeFile, mkdir, rename, rm }
   })
 

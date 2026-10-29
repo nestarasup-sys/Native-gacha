@@ -420,7 +420,11 @@ describe.skipIf(!enabled)('projetos de estresse do Editor V6', () => {
       decodeImage: (url) => Buffer.from(url.slice(url.indexOf(',') + 1), 'base64'),
       normalizeImage: async (bytes) => ({ bytes })
     })
-    const library = createEditorV6LibraryIndex({ files: { mkdir, readdir }, editorV6LibraryPath: () => root, readEditorV6Summary: persistence.readEditorV6Summary })
+    const library = createEditorV6LibraryIndex({
+      files: { mkdir, readdir }, editorV6LibraryPath: () => root,
+      readEditorV6Summary: persistence.readEditorV6Summary,
+      readEditorV6PoseReferences: persistence.readEditorV6PoseReferences
+    })
     const summaries = await library.listEditorV6s()
     const fixtureIds = new Set(scenarios.map((scenario) => uuid(`${scenario.key}:project`)))
     const fixtureSummaries = summaries.filter((summary) => fixtureIds.has(summary.id))

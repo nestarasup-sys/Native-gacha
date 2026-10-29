@@ -8,7 +8,7 @@ function loadFile(name){
   const content=fs.readFileSync(path.join(__dirname,'../electron/domains/fabricator',name),'utf8')
   const js=ts.transpile(content,{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022})
   const module={exports:{}}
-  const injected=name=>name.includes('fabricatorIpcChannels')?{fabricatorIpcChannels:{"listFabricatorPoseSlots":"fabricator:poses:list","getFabricatorExportPoseSlots":"fabricator:poses:export-slots:get","saveFabricatorExportPoseSlots":"fabricator:poses:export-slots:save","loadFabricatorPose":"fabricator:poses:load","saveFabricatorPose":"fabricator:poses:save","deleteFabricatorPose":"fabricator:poses:delete","loadFabricatorPoseDraft":"fabricator:poses:draft:load","saveFabricatorPoseDraft":"fabricator:poses:draft:save","deleteFabricatorPoseDraft":"fabricator:poses:draft:delete","listAnimatorModelSlots":"fabricator:animator:model-slots","listAnimatorAnimations":"fabricator:animator:list","loadAnimatorAnimation":"fabricator:animator:load","saveAnimatorAnimation":"fabricator:animator:save","deleteAnimatorAnimation":"fabricator:animator:delete","loadAnimatorDraft":"fabricator:animator:draft:load","saveAnimatorDraft":"fabricator:animator:draft:save","deleteAnimatorDraft":"fabricator:animator:draft:delete"}}:name.includes('shared/fabricator')?{resolvePoseCategory:doc=>doc.category??'normal'}:require(name)
+  const injected=name=>name.includes('fabricatorIpcChannels')?{fabricatorIpcChannels:{"listFabricatorPoseSlots":"fabricator:poses:list","getFabricatorExportPoseSlots":"fabricator:poses:export-slots:get","saveFabricatorExportPoseSlots":"fabricator:poses:export-slots:save","loadFabricatorPose":"fabricator:poses:load","saveFabricatorPose":"fabricator:poses:save","deleteFabricatorPose":"fabricator:poses:delete","loadFabricatorPoseDraft":"fabricator:poses:draft:load","saveFabricatorPoseDraft":"fabricator:poses:draft:save","deleteFabricatorPoseDraft":"fabricator:poses:draft:delete","listAnimatorModelSlots":"fabricator:animator:model-slots","listAnimatorAnimations":"fabricator:animator:list","loadAnimatorAnimation":"fabricator:animator:load","saveAnimatorAnimation":"fabricator:animator:save","deleteAnimatorAnimation":"fabricator:animator:delete","loadAnimatorDraft":"fabricator:animator:draft:load","saveAnimatorDraft":"fabricator:animator:draft:save","deleteAnimatorDraft":"fabricator:animator:draft:delete"}}:name.includes('poseReferences.ts')?{assertPoseHasNoReferences:()=>undefined}:name.includes('shared/fabricator')?{resolvePoseCategory:doc=>doc.category??'normal'}:require(name)
   new Function('require','exports','module',js)(injected,module.exports,module)
   return module.exports
 }
@@ -21,6 +21,7 @@ test('canais IPC de Poses DEV preservam nomes e bloqueiam origem externa antes d
   ensureLegacyPoseMigration:async()=>{},isValidModelSlot:()=>true,isValidPoseSlot:()=>true,
   slotCount:10,poseSlotCount:12,poseSlotPath:()=>'',poseModelPath:()=>'',poseDraftPath:()=>'',
   queuePoseWrite:async fn=>fn(),readPoseProject:async()=>null,writePoseProject:async()=>{},
+  coordinatePoseReferenceChange:async operation=>operation(),withPoseReferenceSnapshot:async operation=>operation([]),
   readPoseDraft:async()=>null,writePoseDraft:async()=>{},
   files:{readFile:async()=>'',writeFile:async()=>{},mkdir:async()=>{},rename:async()=>{},rm:async()=>{}}
  })

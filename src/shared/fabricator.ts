@@ -1,3 +1,7 @@
+/** Slots do catálogo compartilhados por Fabricador, Customizador e cenas. */
+export const FABRICATOR_MODEL_SLOT_COUNT = 10
+export const FABRICATOR_POSE_SLOT_COUNT = 12
+
 export type JointLink = {
   id: string
   parentPartId: string

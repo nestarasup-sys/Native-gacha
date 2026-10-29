@@ -13,6 +13,8 @@ export type StudioPrimaryIpcDependencies = {
   list: () => Promise<StudioDocument[]>
   write: (document: StudioDocument) => Promise<void>
   remove: (id: string) => Promise<void>
+  assertPoseReferencesAvailable?: (document: StudioDocument) => Promise<void>
+  coordinatePoseReferenceChange?: <T>(operation: () => Promise<T>) => Promise<T>
   getPendingWrites: () => Promise<void>
   setPendingWrites: (pending: Promise<void>) => void
   measure: <T>(label: string, work: () => Promise<T>) => Promise<T>
@@ -24,6 +26,8 @@ export function registerStudioPrimaryHandlers(deps: StudioPrimaryIpcDependencies
     deps.setPendingWrites(next)
     return next
   }
+  const enqueueReferenceChange = (operation: () => Promise<void>): Promise<void> =>
+    (deps.coordinatePoseReferenceChange ?? ((task) => task()))(() => enqueue(operation))
 
   deps.ipcMain.handle(studioIpcChannels.listStudios, async (event): Promise<StudioDocument[]> => {
     deps.assertTrustedSender(event)
@@ -31,11 +35,14 @@ export function registerStudioPrimaryHandlers(deps: StudioPrimaryIpcDependencies
   })
   deps.ipcMain.handle(studioIpcChannels.saveStudio, async (event, document: StudioDocument): Promise<void> => {
     deps.assertTrustedSender(event)
-    await deps.measure(studioIpcChannels.saveStudio, () => enqueue(() => deps.write(document)))
+    await deps.measure(studioIpcChannels.saveStudio, () => enqueueReferenceChange(async () => {
+      await deps.assertPoseReferencesAvailable?.(document)
+      await deps.write(document)
+    }))
   })
   deps.ipcMain.handle(studioIpcChannels.deleteStudio, async (event, id: string): Promise<void> => {
     deps.assertTrustedSender(event)
     if (typeof id !== 'string' || !STUDIO_ID.test(id)) throw new Error('Identificador de Studio inválido.')
-    await enqueue(() => deps.remove(id))
+    await enqueueReferenceChange(() => deps.remove(id))
   })
 }

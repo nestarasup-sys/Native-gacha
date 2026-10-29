@@ -1,9 +1,9 @@
-import type { FaceElementKind } from './fabricator'
+import { FABRICATOR_MODEL_SLOT_COUNT, type FaceElementKind } from './fabricator.ts'
 import type { CustomizerFaceAppearance } from './customizer'
 import type { HairColorOverrides } from './customizer'
 
 const validWardrobeId = (id: string) => /^[a-zA-Z0-9_-]{1,80}$/.test(id)
-const validModelSlot = (slot: number) => Number.isInteger(slot) && slot >= 1 && slot <= 10
+const validModelSlot = (slot: number) => Number.isInteger(slot) && slot >= 1 && slot <= FABRICATOR_MODEL_SLOT_COUNT
 const validFaceCatalogId = (id: string) => /^[a-zA-Z0-9_-]{1,120}$/.test(id)
 const faceElementKinds: FaceElementKind[] = ['eye-left', 'eye-right', 'brow-left', 'brow-right', 'nose', 'mouth']
 const faceComponentPartIds = ['eye-left', 'eye-right', 'pupil-left', 'pupil-right', 'brow-left', 'brow-right'] as const

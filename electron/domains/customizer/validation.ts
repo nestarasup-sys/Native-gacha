@@ -2,13 +2,12 @@
  * Contratos legados permanecem aceitos para não invalidar bibliotecas existentes.
  */
 import type { CustomizerCharacter, CustomizerWardrobePaletteKey, HairColorOverrides } from '../../../src/shared/customizer.ts'
+import { FABRICATOR_MODEL_SLOT_COUNT, FABRICATOR_POSE_SLOT_COUNT } from '../../../src/shared/fabricator.ts'
 import { isValidCustomizerFaceAppearance } from '../../../src/shared/customizerValidation.ts'
 export { isValidCustomizerFaceAppearance } from '../../../src/shared/customizerValidation.ts'
 import { characterBodyDimensionLimits, characterProportionLimits } from '../../../src/shared/customizer.ts'
 import { validWardrobeAdjustmentReference } from '../../../src/shared/wardrobeAdjustment.ts'
-const slotCount = 10
-const poseSlotCount = 12
-const isValidModelSlot = (slot: number) => Number.isInteger(slot) && slot >= 1 && slot <= slotCount
+const isValidModelSlot = (slot: number) => Number.isInteger(slot) && slot >= 1 && slot <= FABRICATOR_MODEL_SLOT_COUNT
 const isValidWardrobeId = (id: string) => /^[a-zA-Z0-9_-]{1,80}$/.test(id)
 
 const hairColorRoles = ['base', 'fade', 'outline', 'highlight', 'accent'] as const
@@ -29,7 +28,7 @@ export function isCustomizerCharacter(value: unknown): value is CustomizerCharac
     && typeof character.skin === 'string' && /^#[0-9a-fA-F]{6}$/.test(character.skin)
     && !!character.customization && typeof character.customization === 'object'
     && (character.customization.modelSlot === null || isValidModelSlot(character.customization.modelSlot))
-    && (character.customization.poseSlot === null || (Number.isInteger(character.customization.poseSlot) && character.customization.poseSlot >= 1 && character.customization.poseSlot <= poseSlotCount))
+    && (character.customization.poseSlot === null || (Number.isInteger(character.customization.poseSlot) && character.customization.poseSlot >= 1 && character.customization.poseSlot <= FABRICATOR_POSE_SLOT_COUNT))
     && (character.customization.proportions === undefined || (
       !!character.customization.proportions && typeof character.customization.proportions === 'object'
       && (Object.keys(characterProportionLimits) as Array<keyof typeof characterProportionLimits>).every((key) => {

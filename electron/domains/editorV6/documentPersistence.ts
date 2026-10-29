@@ -108,6 +108,23 @@ export function createEditorV6DocumentPersistence(deps: {
     }
   }
 
+  async function readEditorV6PoseReferences(id: string): Promise<Pick<EditorV6Document, 'id' | 'title' | 'elements' | 'timeline'> | null> {
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) throw new Error('Identificador de EditorV6 inválido.')
+    const folder = deps.editorV6Path(id)
+    await recoverEditorV6AssetTransaction(deps.files, folder)
+    let contents: string
+    try {
+      contents = await readFile(join(folder, 'editorV6.json'), 'utf8')
+    } catch (reason) {
+      if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return null
+      throw reason
+    }
+    const raw = JSON.parse(contents) as Record<string, unknown>
+    if (raw.id !== id || !Array.isArray(raw.elements)) throw new Error(`Os vínculos de pose do Editor V6 ${id} estão inválidos.`)
+    const document = normalizeEditorV6(raw, id)
+    return { id, title: document.title, elements: document.elements, timeline: document.timeline }
+  }
+
   async function writeEditorV6(editorV6: EditorV6Document): Promise<void> {
     if (!deps.validate(editorV6)) {
       const parsed = editorV6DocumentSchema.safeParse(editorV6)
@@ -158,6 +175,7 @@ export function createEditorV6DocumentPersistence(deps: {
   return {
     readEditorV6: (id: string) => serialized(id, () => readEditorV6(id)),
     readEditorV6Summary: (id: string) => serialized(id, () => readEditorV6Summary(id)),
+    readEditorV6PoseReferences: (id: string) => serialized(id, () => readEditorV6PoseReferences(id)),
     writeEditorV6: (document: EditorV6Document) => serialized(document.id, () => writeEditorV6(document)),
     removeEditorV6: (id: string) => serialized(id, () => removeEditorV6(id)),
   }

@@ -71,6 +71,22 @@ export function createStudioDocumentPersistence(deps: {
     }
   }
 
+  async function readStudioPoseReferences(id: string): Promise<Pick<StudioDocument, 'id' | 'title' | 'elements'> | null> {
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) throw new Error('Identificador de Studio inválido.')
+    const folder = deps.studioPath(id)
+    await recoverStudioAssetTransaction(deps.files, folder)
+    let contents: string
+    try {
+      contents = await readFile(join(folder, 'studio.json'), 'utf8')
+    } catch (reason) {
+      if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return null
+      throw reason
+    }
+    const raw = JSON.parse(contents) as Record<string, unknown>
+    if (raw.id !== id || !Array.isArray(raw.elements)) throw new Error(`Os vínculos de pose do Studio ${id} estão inválidos.`)
+    return { id, title: String(raw.title ?? 'Studio').slice(0, 100), elements: raw.elements as StudioDocument['elements'] }
+  }
+
   async function writeStudio(studio: StudioDocument): Promise<void> {
     if (!deps.validate(studio)) throw new Error('Dados do Studio inválidos.')
     const folder = deps.studioPath(studio.id)
@@ -106,6 +122,7 @@ export function createStudioDocumentPersistence(deps: {
 
   return {
     readStudio: (id: string) => serialized(id, () => readStudio(id)),
+    readStudioPoseReferences: (id: string) => serialized(id, () => readStudioPoseReferences(id)),
     writeStudio: (document: StudioDocument) => serialized(document.id, () => writeStudio(document)),
     removeStudio: (id: string) => serialized(id, () => removeStudio(id)),
   }

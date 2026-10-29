@@ -398,6 +398,7 @@ export function PoseWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
     if (!window.confirm(`Excluir permanentemente a pose “${project.name}” do slot ${editingSlot}?`)) return
     try {
       await window.desktop.fabricator.deleteFabricatorPose(selectedModelSlot, editingSlot)
+      window.dispatchEvent(new Event('fabricator:assets-updated'))
       const nextExportSlots = exportPoseSlots.map((slot) => slot === editingSlot ? null : slot)
       if (nextExportSlots.some((slot, index) => slot !== exportPoseSlots[index])) {
         await window.desktop.fabricator.saveFabricatorExportPoseSlots(selectedModelSlot, nextExportSlots)

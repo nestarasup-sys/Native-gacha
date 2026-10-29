@@ -14,6 +14,8 @@ export type EditorV6PrimaryIpcDependencies = {
   read: (id: string) => Promise<EditorV6Document | null>
   write: (document: EditorV6Document) => Promise<void>
   remove: (id: string) => Promise<void>
+  assertPoseReferencesAvailable?: (document: EditorV6Document) => Promise<void>
+  coordinatePoseReferenceChange?: <T>(operation: () => Promise<T>) => Promise<T>
   getPendingWrites: () => Promise<void>
   setPendingWrites: (pending: Promise<void>) => void
   measure: <T>(label: string, work: () => Promise<T>) => Promise<T>
@@ -25,6 +27,8 @@ export function registerEditorV6PrimaryHandlers(deps: EditorV6PrimaryIpcDependen
     deps.setPendingWrites(next)
     return next
   }
+  const enqueueReferenceChange = (operation: () => Promise<void>): Promise<void> =>
+    (deps.coordinatePoseReferenceChange ?? ((task) => task()))(() => enqueue(operation))
 
   deps.ipcMain.handle(editorV6IpcChannels.listEditorV6Projects, async (event): Promise<EditorV6ProjectSummary[]> => {
     deps.assertTrustedSender(event)
@@ -37,11 +41,14 @@ export function registerEditorV6PrimaryHandlers(deps: EditorV6PrimaryIpcDependen
   })
   deps.ipcMain.handle(editorV6IpcChannels.saveEditorV6Project, async (event, document: EditorV6Document): Promise<void> => {
     deps.assertTrustedSender(event)
-    await deps.measure(editorV6IpcChannels.saveEditorV6Project, () => enqueue(() => deps.write(document)))
+    await deps.measure(editorV6IpcChannels.saveEditorV6Project, () => enqueueReferenceChange(async () => {
+      await deps.assertPoseReferencesAvailable?.(document)
+      await deps.write(document)
+    }))
   })
   deps.ipcMain.handle(editorV6IpcChannels.deleteEditorV6Project, async (event, id: string): Promise<void> => {
     deps.assertTrustedSender(event)
     if (typeof id !== 'string' || !EDITOR_V6_ID.test(id)) throw new Error('Identificador do Editor V6 inválido.')
-    await enqueue(() => deps.remove(id))
+    await enqueueReferenceChange(() => deps.remove(id))
   })
 }
