@@ -2,6 +2,14 @@
 
 ## Reauditoria geral — 2026-10-29
 
+### Fechamento dos renderizadores de exportação
+
+- `exportWorkers` agora centraliza fechamento explícito, abort e evento externo closed no mesmo cleanup idempotente: remove entrada autorizada e listener de abort, solta a referência ao bitmap de camadas e rejeita preparação ainda pendente.
+- A fábrica acompanha seus workers ativos; seu dispose fecha todos e remove os handlers. Após dispose, recusa novos workers. O runner existente continua dono do fechamento por finally e cancelamento por AbortSignal; não foi adicionada nova dependência no fluxo de encerramento global.
+- Chamadas de frame após fechamento retornam erro de domínio imediato. Os formatos de payload/IPC, política de mídia e bitmap entregue ao FFmpeg foram preservados.
+- Testes com BrowserWindow simulado verificam fechamento externo, revogação de autorização por ID, remoção do listener, descarte da fábrica e fechamento antes de ready. Aprovados 84 testes do Editor V6 (um ignorado existente), typecheck, auditoria de arquitetura e build. Simulação não substitui teste de crash/captura real do Chromium.
+- Auditoria de segurança ainda pendente: política explícita de navegação/popups/check de permissões para todas as janelas e comparação das sessões dos preparadores. As janelas já usam sandbox/contextIsolation e nodeIntegration desativado; isso não prova cobertura completa de segurança.
+
 ### Recoloração e política única de retenção
 
 - `characterImagePromiseCache` concentra LRU, orçamento estimado, atualização após conclusão e limpeza por identidade. O loader de origem e os três caches de recoloração usam a mesma política; os algoritmos de pixels e suas chaves foram preservados.

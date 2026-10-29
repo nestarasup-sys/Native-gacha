@@ -10,6 +10,8 @@ import { waitForExport } from './exportProcess'
 export type EditorV6FrameWorker = { frame: (frame: number) => Promise<EditorV6RenderFrameResult & { bitmap?: Buffer }>; close: () => void }
 export function createEditorV6WorkerFactory(deps: { ipcMain: Pick<IpcMain, 'handle' | 'removeHandler'>; html: string; preload: string; devUrl?: string; mediaPath?: (projectId: string, fileName: string, libraryVideoId?: string) => string | Promise<string> }) {
   const entries = new Map<number, { payload: EditorV6WorkerPayload; ready: (error?: string) => void }>()
+  const activeWorkers = new Set<() => void>()
+  let disposed = false
   function entry(event: Electron.IpcMainInvokeEvent) {
     const found = entries.get(event.sender.id)
     if (!found || event.senderFrame !== event.sender.mainFrame) throw Error('Renderizador de exportação não autorizado.')
@@ -19,6 +21,7 @@ export function createEditorV6WorkerFactory(deps: { ipcMain: Pick<IpcMain, 'hand
   deps.ipcMain.handle(editorV6WorkerChannels.ready, (event, error?: string) => entry(event).ready(error))
   const create = async (payload: EditorV6WorkerPayload, signal: AbortSignal): Promise<EditorV6FrameWorker> => {
     signal.throwIfAborted()
+    if (disposed) throw Error('A fábrica de renderizadores de exportação foi encerrada.')
     const layeredVideo = payload.layeredVideo
     const window = new BrowserWindow({ show: false, useContentSize: true, width: payload.width, height: payload.height, enableLargerThanScreen: true, frame: false, transparent: layeredVideo, ...(layeredVideo ? { backgroundColor: '#00000000' } : {}),
       webPreferences: { preload: deps.preload, contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: false, offscreen: true, devTools: false, partition: `editor-v6-export-${crypto.randomUUID()}` } })
@@ -63,22 +66,27 @@ export function createEditorV6WorkerFactory(deps: { ipcMain: Pick<IpcMain, 'hand
     entries.set(window.webContents.id, { payload, ready: (error) => error ? rejectReady(Error(error)) : resolveReady() })
     const id = window.webContents.id
     let closed = false
+    let layeredBitmap: Buffer | undefined
     const close = () => {
       if (closed) return
       closed = true
+      activeWorkers.delete(close)
       entries.delete(id)
+      layeredBitmap = undefined
       signal.removeEventListener('abort', close)
+      rejectReady(Error('A janela de exportação foi fechada.'))
       if (!window.isDestroyed()) window.destroy()
     }
+    activeWorkers.add(close)
     signal.addEventListener('abort', close, { once: true })
-    window.once('closed', () => { entries.delete(id); rejectReady(Error('A janela de exportação foi fechada.')) })
+    window.once('closed', close)
     try {
       await waitForExport(deps.devUrl ? window.loadURL(new URL('editor-v6-export.html', deps.devUrl.endsWith('/') ? deps.devUrl : deps.devUrl + '/').href) : window.loadFile(deps.html), signal, 60000, 'abrir renderizador')
       await waitForExport(ready, signal, 60000, 'preparar renderizador')
       window.webContents.setZoomFactor(1)
-      let layeredBitmap: Buffer | undefined
       return { close, frame: async (frame) => {
         signal.throwIfAborted()
+        if (closed) throw Error('O renderizador de exportação foi encerrado.')
         const draw = async (layer?: 'background' | 'foreground') => {
           const started = performance.now()
           const result = await waitForExport(window.webContents.executeJavaScript(`window.renderEditorV6ExportFrame(${Math.round(frame)}${layer ? `, '${layer}'` : ''})`) as Promise<EditorV6RenderFrameResult>, signal, 60000, 'desenhar quadro')
@@ -123,5 +131,10 @@ export function createEditorV6WorkerFactory(deps: { ipcMain: Pick<IpcMain, 'hand
       } }
     } catch (error) { close(); throw error }
   }
-  return { create, dispose: () => { deps.ipcMain.removeHandler(editorV6WorkerChannels.payload); deps.ipcMain.removeHandler(editorV6WorkerChannels.ready) } }
+  return { create, dispose: () => {
+    disposed = true
+    for (const close of activeWorkers) close()
+    deps.ipcMain.removeHandler(editorV6WorkerChannels.payload)
+    deps.ipcMain.removeHandler(editorV6WorkerChannels.ready)
+  } }
 }
