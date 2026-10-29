@@ -1,7 +1,7 @@
 import { editorV6CharacterRenderKey, editorV6ElementSize } from '../../../../shared/editorV6SceneModel'
 import { isPoseSnapshotForModel } from '../../../../shared/characterSourceContinuity'
 import { useEditorV6Store } from './editorV6Store'
-import { createEditorV6Timeline, EDITOR_V6_DEFAULT_VIDEO_LAYOUT, editorV6DefaultVideoLayout, syncEditorV6TimelineElements } from '../../../../shared/editorV6'
+import { createEditorV6Timeline, editorV6DefaultVideoLayout, syncEditorV6TimelineElements } from '../../../../shared/editorV6'
 import { EditorV6Timeline } from './EditorV6Timeline'
 import { EditorV6ExportPanel } from './EditorV6ExportPanel'
 import { useMotionPreparation } from './motion/useMotionPreparation'
@@ -11,10 +11,10 @@ import { EditorV6PlaybackScene } from './EditorV6PlaybackScene'
 import { getEditorV6PlaybackFrame, setEditorV6PlaybackFrame } from './editorV6PlaybackClock'
 import { duplicateEditorV6ProjectDocument } from './editorV6ProjectDuplication'
 import { addEditorV6ImageAsset, addEditorV6TimelineMedia } from './editorV6MediaChanges'
-import type { ScenePointerEvent, SceneSurfaceInteraction } from './SceneSurface'
-import { addEditorV6ElementAtFrame, editEditorV6DocumentAtBlock, editorV6ClipAtFrame, normalizeEditorV6Timeline, prepareEditorV6PositionAtFrame, moveEditorV6ElementInPeriod, editEditorV6BackgroundAtFrame, pruneEditorV6TimelineSnapshots, repairEditorV6DuplicateAssets, repairEditorV6FaceModeAssetReferences, resolveEditorV6SceneAtFrame, timelineClips } from '../../../../shared/editorV6Timeline'
+import { addEditorV6ElementAtFrame, editEditorV6DocumentAtBlock, editorV6ClipAtFrame, normalizeEditorV6Timeline, editEditorV6BackgroundAtFrame, pruneEditorV6TimelineSnapshots, repairEditorV6DuplicateAssets, repairEditorV6FaceModeAssetReferences, resolveEditorV6SceneAtFrame, timelineClips } from '../../../../shared/editorV6Timeline'
 import { useEditorV6InspectorState } from './useEditorV6InspectorState'
 import { useEditorV6FaceCatalog } from './useEditorV6FaceCatalog'
+import { useEditorV6StageInteraction, type EditorV6StageDrag } from './useEditorV6StageInteraction'
 import { resolveEditorV6InspectorSelection } from './editorV6Selection'
 import { trimTransparentImage, fitElementToTrim, faceRenderGeometry, type TrimmedImage } from '../../characters/characterGeometry'
 import { bakeFaceModeAssets, EDITOR_V6_FACE_RENDER_VERSION, editorV6FaceModeForElement, trimTransparentCanvas } from './faceModeAssets'
@@ -34,13 +34,12 @@ import { createSceneTextElement, sceneCatalogColor, sceneEditorTools } from '../
 import { CharacterPortrait } from '../../ui/components/CharacterPortrait'
 import { recordEditorV6PlaybackFrame, recordUiCommit } from '../../ui/performanceDiagnostics'
 import { fitEditorV6CharacterToStage } from '../../../../shared/editorV6CharacterGeometry'
-import { editorV6ProjectSummary, type EditorV6Asset, type EditorV6Document, type EditorV6Element, type EditorV6FaceMode, type EditorV6FaceTransform, type EditorV6FaceTransforms, type EditorV6ProjectSummary, type EditorV6TimelineBlock, type EditorV6VideoLayout } from '../../../../shared/editorV6'
+import { editorV6ProjectSummary, type EditorV6Asset, type EditorV6Document, type EditorV6Element, type EditorV6FaceMode, type EditorV6FaceTransform, type EditorV6FaceTransforms, type EditorV6ProjectSummary, type EditorV6TimelineBlock } from '../../../../shared/editorV6'
 import type { CustomizerCharacter } from '../../../../shared/customizer'
 import type { CustomizerFaceAppearance } from '../../../../shared/customizer'
 import type { FaceCatalogItem, FaceCatalogItemSummary, FaceExpressionPreset, FaceExpressionPresetSummary, FaceSheetKind, FabricatorPoseSummary } from '../../../../shared/fabricator'
 type EditorV6Card = EditorV6ProjectSummary
 type Tool = 'background' | 'objects' | null
-type DragState = { id: string; target: 'element' | 'background' | 'video'; videoLayout?: EditorV6VideoLayout; pointerId: number; startX: number; startY: number; originalX: number; originalY: number; width: number; height: number; before: EditorV6Document; prepared: EditorV6Document; blockId: string; frame: number; moved: boolean }
 const STORAGE_KEY = 'gacha-nymi-editor-v6-catalog-v1'
 const editorV6PoseRevisionKey = (modelSlot: number, poseSlot: number) => `${modelSlot}:${poseSlot}`
 function sameCustomizerCharacterCatalog(left: CustomizerCharacter[], right: CustomizerCharacter[]): boolean {
@@ -122,7 +121,7 @@ export function EditorV6Page() {
   const [canUndo, setCanUndo] = useState(false)
   const [canRedo, setCanRedo] = useState(false)
   const sceneRef = useRef<HTMLDivElement>(null)
-  const dragRef = useRef<DragState | null>(null)
+  const dragRef = useRef<EditorV6StageDrag | null>(null)
   const editorV6FaceTransformsRef = useRef<Record<string, EditorV6FaceTransforms>>({})
   const editorV6FaceRenderTimerRef = useRef<number | null>(null)
   const editorV6FaceRenderVersionRef = useRef(0)
@@ -224,8 +223,6 @@ export function EditorV6Page() {
   const previewScene = useMemo(() => activeEditorV6 ? resolveEditorV6SceneAtFrame(activeEditorV6, playheadFrame, { includeMotion: false }) : null, [activeEditorV6, playheadFrame])
   const previewBackground = previewScene?.background ?? { backgroundColor: '#d7b5cd', backgroundAssetId: null, backgroundX: 0, backgroundY: 0, backgroundWidth: 100, backgroundHeight: 100, backgroundRotation: 0 }
   const visibleTimelineElements = previewScene?.elements ?? []
-  const sceneInteractionRef = useRef<SceneSurfaceInteraction>({ start: () => {}, move: () => {}, end: () => {} })
-  const sceneInteraction = useMemo<SceneSurfaceInteraction>(() => ({ start: (event, id) => sceneInteractionRef.current.start(event, id), move: (event) => sceneInteractionRef.current.move(event), end: (event) => sceneInteractionRef.current.end(event) }), [])
   useEffect(() => {
     if (!activeEditorV6 || new Set(activeEditorV6.assets.map((asset) => asset.id)).size === activeEditorV6.assets.length) return
     updateActiveEditorV6Project((project) => project.id === activeEditorV6.id ? repairEditorV6DuplicateAssets(project, selectedTimelineBlockId) : project)
@@ -1210,87 +1207,14 @@ export function EditorV6Page() {
     else patchStudio(update)
   }
 
-  const cancelSceneDrag = () => {
-    const drag = dragRef.current
-    if (!drag) return
-    dragRef.current = null
-    if (drag.moved) {
-      updateActiveEditorV6Project((project) => project.id === drag.before.id ? { ...drag.before, updatedAt: new Date().toISOString() } : project)
-      setSelectedTimelineBlockId(drag.target === 'background' ? null : drag.target === 'video' ? drag.blockId : editorV6ClipAtFrame(drag.before.timeline, drag.id, drag.frame)?.block.id ?? null)
-      markEditorV6Unsaved()
-    }
-  }
-
-  const startDrag = (event: ScenePointerEvent, id: string) => {
-    if (!activeEditorV6 || !sceneRef.current || event.button !== 0) return
-    event.preventDefault()
-    event.stopPropagation()
-    pausePlayback()
-    const currentScene = resolveEditorV6SceneAtFrame(activeEditorV6, getEditorV6PlaybackFrame(), { includeMotion: false })
-    const currentBackground = currentScene.background
-    const videoBlockId = id.startsWith('media-video:') ? id.slice('media-video:'.length) : null
-    const target: DragState['target'] = videoBlockId ? 'video' : id === 'background' ? 'background' : 'element'
-    setSelectedElementId(target === 'video' ? null : id)
-    setActiveTool(target === 'background' ? 'background' : null)
-    setInspectorOpen(true)
-    const element = target === 'element' ? currentScene.elements.find((item) => item.id === id) : undefined
-    const videoClip = videoBlockId ? timelineClips(activeEditorV6.timeline).find(({ track, block }) => track.kind === 'video' && block.id === videoBlockId) : undefined
-    if (target === 'video' && (!videoClip || videoClip.track.locked)) return
-    const currentClip = target === 'background' || target === 'video' ? null : editorV6ClipAtFrame(activeEditorV6.timeline, id, currentScene.frame)
-    setSelectedTimelineBlockId(currentClip?.block.id ?? null)
-    if (videoClip) setSelectedTimelineBlockId(videoClip.block.id)
-    if (element?.kind === 'character') restoreCharacterInspectorView()
-    else setInspectorTab('editor')
-    if (editorV6FaceBusy || editorV6ExpressionBusy || editorV6FaceRenderRunningRef.current) return
-    const frame = currentScene.frame
-    let prepared: EditorV6Document, blockId: string
-    if (target === 'video' && videoClip) {
-      prepared = activeEditorV6
-      blockId = videoClip.block.id
-    } else if (target === 'background') {
-      if (activeEditorV6.timeline.tracks.some((track) => track.kind === 'video' && track.locked)) return
-      prepared = editEditorV6BackgroundAtFrame(activeEditorV6, frame, {})
-      blockId = timelineClips(prepared.timeline).find(({ block }) => block.background && block.startFrame === frame)!.block.id
-    } else {
-      const operation = prepareEditorV6PositionAtFrame(activeEditorV6, id, frame)
-      if (!operation || !element) return
-      prepared = operation.document
-      blockId = operation.blockId
-    }
-    const rect = sceneRef.current.getBoundingClientRect()
-    const videoAsset = videoClip?.block.mediaId ? activeEditorV6.media?.find((media) => media.id === videoClip.block.mediaId) : undefined
-    const videoLayout = videoClip?.block.mediaLayout ?? editorV6DefaultVideoLayout(videoAsset?.width, videoAsset?.height)
-    dragRef.current = { id, target, ...(target === 'video' ? { videoLayout } : {}), pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, originalX: target === 'background' ? currentBackground.backgroundX : target === 'video' ? videoLayout.x : element!.x, originalY: target === 'background' ? currentBackground.backgroundY : target === 'video' ? videoLayout.y : element!.y, width: rect.width, height: rect.height, before: activeEditorV6, prepared, blockId, frame, moved: false }
-    event.currentTarget.setPointerCapture(event.pointerId)
-  }
-
-  const moveDrag = (event: ScenePointerEvent) => {
-    const drag = dragRef.current
-    if (!drag || drag.pointerId !== event.pointerId) return
-    if (!drag.moved && Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) < 2) return
-    const x = drag.originalX + (event.clientX - drag.startX) / drag.width * 100
-    const y = drag.originalY + (event.clientY - drag.startY) / drag.height * 100
-    const next = drag.target === 'background' ? editEditorV6BackgroundAtFrame(drag.prepared, drag.frame, { backgroundX: x, backgroundY: y }, drag.blockId)
-      : drag.target === 'video' ? { ...drag.prepared, timeline: normalizeEditorV6Timeline({ ...drag.prepared.timeline, tracks: drag.prepared.timeline.tracks.map((track) => ({ ...track, blocks: track.blocks.map((block) => block.id === drag.blockId ? { ...block, mediaLayout: { ...(block.mediaLayout ?? drag.videoLayout ?? EDITOR_V6_DEFAULT_VIDEO_LAYOUT), x, y } } : block) })) }) }
-        : moveEditorV6ElementInPeriod(drag.prepared, drag.blockId, x, y)
-    drag.moved = true
-    publishPlayheadFrame(drag.frame)
-    setSelectedTimelineBlockId(drag.blockId)
-    updateActiveEditorV6Project((project) => project.id === drag.before.id ? { ...next, updatedAt: new Date().toISOString() } : project)
-    markEditorV6Unsaved()
-  }
-
-  const endDrag = (event: ScenePointerEvent) => {
-    const drag = dragRef.current
-    if (drag?.pointerId !== event.pointerId) return
-    if (event.type === 'pointercancel') { cancelSceneDrag(); return }
-    dragRef.current = null
-    if (!drag.moved) return
-    recordHistory(drag.before)
-    updateActiveEditorV6Project((project) => project.id === drag.before.id ? { ...project, updatedAt: new Date().toISOString() } : project)
-    markEditorV6Unsaved()
-  }
-  sceneInteractionRef.current = { start: startDrag, move: moveDrag, end: endDrag }
+  const { cancelSceneDrag, interaction: sceneInteraction } = useEditorV6StageInteraction({
+    project: activeEditorV6, sceneRef,
+    faceBusy: editorV6FaceBusy, expressionBusy: editorV6ExpressionBusy,
+    faceRenderRunningRef: editorV6FaceRenderRunningRef,
+    setSelectedElementId, setActiveTool, setInspectorOpen, setInspectorTab, setSelectedTimelineBlockId,
+    restoreCharacterInspectorView, pausePlayback, publishPlayheadFrame,
+    updateActiveProject: updateActiveEditorV6Project, markUnsaved: markEditorV6Unsaved, recordHistory
+  }, dragRef)
 
   const deleteSelected = () => {
     if (!activeEditorV6) return
