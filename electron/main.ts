@@ -1,3 +1,4 @@
+import { createEditorV6MediaHandler } from './domains/editorV6/mediaProtocol'
 import { createMediaFileResponse } from './domains/mediaLibrary/mediaFileResponse'
 import { app, BrowserWindow, dialog, ipcMain, Menu, protocol, session, shell, type IpcMainInvokeEvent } from 'electron'
 import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync } from 'node:fs'
@@ -1673,34 +1674,14 @@ function registerVideoAssetProtocol(): void {
 }
 
 function registerEditorV6MediaProtocol(): void {
-  protocol.handle('gacha-editor-media', async (request) => {
-    try {
-      const url = new URL(request.url)
-      const parts = url.pathname.split('/').filter(Boolean)
-      const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-      if (parts.length !== 2 || !uuid.test(parts[0])) return new Response('Not found', { status: 404 })
-      let path: string, mimeType: string
-      if (url.hostname === 'project') {
-        const file = /^([0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\.(mp4|webm|mov|m4v|mp3|wav|m4a|aac|ogg|flac|opus)$/i.exec(parts[1])
-        if (!file) return new Response('Not found', { status: 404 })
-        const folder = editorV6Path(parts[0])
-        const manifest = JSON.parse(await nativeReadFile(join(folder, 'editorV6.json'), 'utf8')) as { id?: unknown; media?: Array<{ id?: unknown; fileName?: unknown; mimeType?: unknown }> }
-        const media = manifest.id === parts[0] ? manifest.media?.find((item) => item.id === file[1] && item.fileName === parts[1]) : undefined
-        if (!media || typeof media.mimeType !== 'string') return new Response('Not found', { status: 404 })
-        path = join(folder, 'media', parts[1]); mimeType = media.mimeType
-      } else if (url.hostname === 'library' && uuid.test(parts[1])) {
-        const projectFolder = editorV6Path(parts[0])
-        const manifest = JSON.parse(await nativeReadFile(join(projectFolder, 'editorV6.json'), 'utf8')) as { id?: unknown; media?: Array<{ libraryVideoId?: unknown }> }
-        if (manifest.id !== parts[0] || !manifest.media?.some((item) => item.libraryVideoId === parts[1])) return new Response('Not found', { status: 404 })
-        const media = await videoLibrary.resolveMedia(parts[1])
-        path = await dataFileSystem.resolvePhysicalPath(media.path) ?? media.path
-        mimeType = media.mimeType
-      } else return new Response('Not found', { status: 404 })
-      const supportedTypes = new Set(['video/mp4', 'video/webm', 'video/quicktime', 'video/x-m4v', 'audio/mpeg', 'audio/wav', 'audio/mp4', 'audio/aac', 'audio/ogg', 'audio/flac', 'audio/opus', 'audio/webm'])
-      if (!supportedTypes.has(mimeType)) return new Response('Not found', { status: 404 })
-      return await createMediaFileResponse(request, path, mimeType)
-    } catch { return new Response('Not found', { status: 404 }) }
-  })
+  protocol.handle('gacha-editor-media', createEditorV6MediaHandler({
+    projectPath: editorV6Path,
+    readManifest: async (id) => JSON.parse(await nativeReadFile(join(editorV6Path(id), 'editorV6.json'), 'utf8')),
+    resolveLibraryMedia: async (id) => {
+      const media = await videoLibrary.resolveMedia(id)
+      return { path: await dataFileSystem.resolvePhysicalPath(media.path) ?? media.path, mimeType: media.mimeType }
+    }
+  }))
 }
 
 function registerVideoBackgroundProtocol(): void {

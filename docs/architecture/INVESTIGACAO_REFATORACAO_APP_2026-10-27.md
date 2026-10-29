@@ -2,6 +2,13 @@
 
 ## Reauditoria geral — 2026-10-29
 
+### Protocolo de mídia do Editor V6 no domínio dono
+
+- `editorV6/mediaProtocol.ts` concentra validação de URL, vínculo no manifesto, MIME permitido e autorização de mídia local/biblioteca. `main.ts` registra o protocolo e injeta leitura nativa do manifesto, caminho de projeto e resolução física/CAS. O domínio não importa Electron nem consulta tabelas de outros domínios.
+- A leitura do manifesto continua nativa, sem cache que possa manter vínculos removidos. Resolução da biblioteca só ocorre após comprovar a referência por projeto. Manifestos inválidos são recusados; nomes, IDs, extensões e conteúdo autorizado mantêm o contrato anterior. A entrega de bytes usa o helper compartilhado da etapa anterior.
+- Oito testes novos verificam mídia local e da biblioteca com ranges reais em arquivos sintéticos, manifestos inválidos, projeto divergente, item sem referência, host/nome inválido, MIME não permitido e arquivo ausente. Confirmação por spies de que entradas inválidas não alcançam os resolvedores.
+- Validação: 105 testes Editor V6 aprovados (um ignorado existente), 330 de refatoração, typecheck, auditoria de arquitetura e build. Nenhum dado pessoal acessado. Os protocolos restantes de biblioteca/imagens ainda estão no composition root e seguem na revisão geral.
+
 ### Resposta de mídia compartilhada
 
 - Três implementações de headers/HEAD/Range/stream eram duplicadas: biblioteca de vídeos, mídia do Editor V6 na janela principal e mídia no worker de exportação. `mediaLibrary/mediaFileResponse.ts` centraliza somente a entrega de arquivo já autorizado; IDs, validações de manifesto, resolução CAS e escopo por projeto permanecem nos protocolos donos.
