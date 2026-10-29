@@ -13,11 +13,16 @@ import {
   applyEditorV6CharacterAssetCrops,
   applyEditorV6CharacterRefreshResult
 } from '../src/renderer/src/features/editorV6/editorV6CharacterRefreshModel.ts'
+import {
+  importEditorV6ImageToProject,
+  importEditorV6MediaToTimeline
+} from '../src/renderer/src/features/editorV6/editorV6MediaImport.ts'
 
 const validId = (value) => `00000000-0000-4000-8000-${String(value).padStart(12, '0')}`
 const projectSummary = (id) => ({ id, title: `Projeto ${id}`, color: '#d7b5cd', createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z' })
 const legacyEntry = (id, title = `Legado ${id}`) => ({ id, title, color: '#ab77bb' })
 const emptyTimeline = () => ({ fps: 30, durationFrames: 300, tracks: [] })
+const mediaProject = () => ({ id: 'project', assets: [], elements: [], media: [], timeline: emptyTimeline() })
 
 test('importa apenas projetos legados ausentes e preserva defaults antes de reler a biblioteca', async () => {
   const knownId = validId(1)
@@ -269,6 +274,102 @@ test('aplica refresh de snapshots preservando assets ainda referenciados e remov
   assert.equal(refreshed.updatedAt, 'after')
   assert.equal(project.assets[0].timelineSnapshot, true)
   assert.equal(project.timeline.tracks[0].blocks[0].state.assetId, 'old-shared')
+})
+
+test('importação de imagem coordena escolha, documento atual, persistência e seleção do bloco', async () => {
+  const source = mediaProject()
+  const asset = { id: 'image-asset', name: 'Fundo', category: 'object', dataUrl: 'data:image/png;base64,x' }
+  const calls = []
+  const result = await importEditorV6ImageToProject({
+    category: 'object',
+    frame: 42,
+    importAsset: async (category) => { calls.push(['import', category]); return asset },
+    loadProject: async () => { calls.push(['load']); return source },
+    persistDocument: async (before, next) => { calls.push(['persist', before, next]); return true },
+    createId: () => 'scene-image',
+    addImageAsset: (document, imported, category, frame, createId) => {
+      calls.push(['add', imported, category, frame])
+      const image = { id: createId(), kind: 'image', assetId: imported.id }
+      return { ...document, assets: [...document.assets, imported], elements: [...document.elements, image] }
+    },
+    findClipAtFrame: (_timeline, elementId, frame) => ({ block: { id: `${elementId}:${frame}` } })
+  })
+
+  assert.deepEqual(calls.map(([kind]) => kind), ['import', 'load', 'add', 'persist'])
+  assert.equal(calls[3][1], source)
+  assert.equal(result.selectedElementId, 'scene-image')
+  assert.equal(result.selectedTimelineBlockId, 'scene-image:42')
+  assert.equal(result.activeTool, 'objects')
+})
+
+test('cancelamento da seleção de imagem não carrega nem publica o projeto', async () => {
+  let loads = 0
+  let writes = 0
+  const result = await importEditorV6ImageToProject({
+    category: 'background', frame: 8,
+    importAsset: async () => null,
+    loadProject: async () => { loads += 1; return mediaProject() },
+    persistDocument: async () => { writes += 1; return true },
+    createId: () => 'unused',
+    addImageAsset: (document) => document,
+    findClipAtFrame: () => undefined
+  })
+  assert.equal(result, null)
+  assert.equal(loads, 0)
+  assert.equal(writes, 0)
+})
+
+test('imagem revalida bloqueio da faixa depois de escolher o arquivo e antes de persistir', async () => {
+  let writes = 0
+  const source = mediaProject()
+  await assert.rejects(importEditorV6ImageToProject({
+    category: 'object', frame: 8,
+    importAsset: async () => ({ id: 'asset', name: 'Imagem', category: 'object', dataUrl: 'data:image/png;base64,x' }),
+    loadProject: async () => source,
+    persistDocument: async () => { writes += 1; return true },
+    createId: () => 'unused',
+    addImageAsset: (document) => document,
+    findClipAtFrame: () => undefined,
+    validateProject: () => { throw new Error('Desbloqueie a faixa Objetos para adicionar uma imagem.') }
+  }), /Desbloqueie a faixa Objetos/)
+  assert.equal(writes, 0)
+})
+
+test('mídia de áudio ou vídeo é anexada à última versão do documento antes de atualizar a timeline', async () => {
+  const source = mediaProject()
+  const media = { id: 'audio-1', kind: 'audio', name: 'Voz', sourceFrames: 90 }
+  const calls = []
+  const result = await importEditorV6MediaToTimeline({
+    frame: 240,
+    requestMedia: async () => { calls.push('import'); return media },
+    loadProject: async () => { calls.push('load'); return source },
+    persistDocument: async (before, next) => { calls.push(['persist', before, next]); return true },
+    createId: () => 'audio-block',
+    addTimelineMedia: (document, imported, frame, createId) => {
+      calls.push(['add', imported, frame])
+      return { document: { ...document, media: [...document.media, imported] }, block: { id: createId() }, startFrame: 240 }
+    }
+  })
+
+  assert.deepEqual(calls.slice(0, 2), ['import', 'load'])
+  assert.equal(calls[2][1], media)
+  assert.equal(calls[2][2], 240)
+  assert.equal(calls[3][1], source)
+  assert.equal(result.blockId, 'audio-block')
+  assert.equal(result.startFrame, 240)
+})
+
+test('importação sem mídia ou persistência cancelada não devolve seleção de timeline', async () => {
+  const media = { id: 'video-1', kind: 'video', name: 'Clipe', sourceFrames: 60 }
+  const result = await importEditorV6MediaToTimeline({
+    frame: 12,
+    requestMedia: async () => media,
+    loadProject: async () => mediaProject(),
+    persistDocument: async () => false,
+    createId: () => 'video-block',
+    addTimelineMedia: (document, imported, frame, createId) => ({ document, block: { id: createId() }, startFrame: frame })
+  })
+  assert.equal(result, null)
 })
 
 test('catálogo de poses limita leituras, conserva ordem e rejeita snapshots incompatíveis', async () => {

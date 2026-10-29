@@ -14,6 +14,7 @@ import { getEditorV6PlaybackFrame, setEditorV6PlaybackFrame } from './editorV6Pl
 import { duplicateEditorV6ProjectDocument } from './editorV6ProjectDuplication'
 import { createEditorV6ProjectCreationCommands } from './editorV6ProjectCreation'
 import { addEditorV6ImageAsset, addEditorV6TimelineMedia } from './editorV6MediaChanges'
+import { importEditorV6ImageToProject, importEditorV6MediaToTimeline } from './editorV6MediaImport'
 import { addEditorV6ElementAtFrame, editorV6ClipAtFrame, normalizeEditorV6Timeline, timelineClips } from '../../../../shared/editorV6TimelineCore'
 import { editEditorV6DocumentAtBlock, pruneEditorV6TimelineSnapshots, repairEditorV6DuplicateAssets, repairEditorV6FaceModeAssetReferences } from '../../../../shared/editorV6TimelineEdits'
 import { editEditorV6BackgroundAtFrame, resolveEditorV6SceneAtFrame } from '../../../../shared/editorV6TimelineScene'
@@ -417,23 +418,25 @@ export function EditorV6Page() {
     const projectId = activeEditorV6.id
     try {
       const frameAtImport = getEditorV6PlaybackFrame()
-      const asset = await window.desktop.editorV6.importEditorV6Image(category)
-      if (!asset) return
-      const currentProject = await loadLatestEditorV6Project(projectId)
-      if (!currentProject) { setError('Não foi possível carregar o projeto para adicionar a imagem.'); return }
-      if (category !== 'background' && currentProject.timeline.tracks.some((track) => track.kind === targetTrackKind && track.locked)) {
-        setError(category === 'object' ? 'Desbloqueie a faixa Objetos para adicionar uma imagem.' : 'Desbloqueie a faixa Vídeo para adicionar uma imagem.')
-        return
-      }
-      const nextProject = addEditorV6ImageAsset(currentProject, asset, category, frameAtImport, () => crypto.randomUUID())
-      if (!await persistImportedEditorV6Document(currentProject, nextProject)) return
-      if (category === 'background') {
-        setSelectedElementId('background')
-      } else {
-        setSelectedElementId(nextProject.elements.at(-1)?.id ?? null)
-        setSelectedTimelineBlockId(editorV6ClipAtFrame(nextProject.timeline, nextProject.elements.at(-1)!.id, frameAtImport)?.block.id ?? null)
-      }
-      setActiveTool(category === 'background' ? 'background' : 'objects')
+      const result = await importEditorV6ImageToProject({
+        category,
+        frame: frameAtImport,
+        importAsset: (assetCategory) => window.desktop.editorV6.importEditorV6Image(assetCategory),
+        loadProject: () => loadLatestEditorV6Project(projectId),
+        persistDocument: persistImportedEditorV6Document,
+        createId: () => crypto.randomUUID(),
+        addImageAsset: addEditorV6ImageAsset,
+        findClipAtFrame: editorV6ClipAtFrame,
+        validateProject: (currentProject) => {
+          if (category !== 'background' && currentProject.timeline.tracks.some((track) => track.kind === targetTrackKind && track.locked)) {
+            throw new Error(category === 'object' ? 'Desbloqueie a faixa Objetos para adicionar uma imagem.' : 'Desbloqueie a faixa Vídeo para adicionar uma imagem.')
+          }
+        }
+      })
+      if (!result) return
+      setSelectedElementId(result.selectedElementId)
+      if (category === 'object') setSelectedTimelineBlockId(result.selectedTimelineBlockId ?? null)
+      setActiveTool(result.activeTool)
       setInspectorOpen(true)
       setInspectorTab('editor')
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível importar a imagem.') }
@@ -448,14 +451,17 @@ export function EditorV6Page() {
     const projectId = activeEditorV6.id
     const frameAtImport = getEditorV6PlaybackFrame()
     try {
-      const media = await window.desktop.editorV6.importEditorV6Media(projectId, kind)
-      if (!media) return
-      const currentProject = await loadLatestEditorV6Project(projectId)
-      if (!currentProject) { setError('Não foi possível carregar o projeto para adicionar a mídia.'); return }
-      const { document: nextProject, block, startFrame } = addEditorV6TimelineMedia(currentProject, media, frameAtImport, () => crypto.randomUUID())
-      if (!await persistImportedEditorV6Document(currentProject, nextProject)) return
-      publishPlayheadFrame(startFrame)
-      setSelectedTimelineBlockId(block.id)
+      const result = await importEditorV6MediaToTimeline({
+        frame: frameAtImport,
+        requestMedia: () => window.desktop.editorV6.importEditorV6Media(projectId, kind),
+        loadProject: () => loadLatestEditorV6Project(projectId),
+        persistDocument: persistImportedEditorV6Document,
+        createId: () => crypto.randomUUID(),
+        addTimelineMedia: addEditorV6TimelineMedia
+      })
+      if (!result) return
+      publishPlayheadFrame(result.startFrame)
+      setSelectedTimelineBlockId(result.blockId)
       setSelectedElementId(null)
       setActiveTool(null)
       setInspectorOpen(true)
@@ -471,13 +477,17 @@ export function EditorV6Page() {
     if (track?.locked) throw new Error('Desbloqueie a faixa Vídeo antes de adicionar um vídeo.')
     pausePlayback()
     const frameAtImport = getEditorV6PlaybackFrame()
-    const media = await window.desktop.editorV6.linkEditorV6LibraryVideo(projectId, item.id)
-    const currentProject = await loadLatestEditorV6Project(projectId)
-    if (!currentProject) throw new Error('Não foi possível carregar o projeto para adicionar o vídeo.')
-    const { document: nextProject, block, startFrame } = addEditorV6TimelineMedia(currentProject, media, frameAtImport, () => crypto.randomUUID())
-    if (!await persistImportedEditorV6Document(currentProject, nextProject)) return
-    publishPlayheadFrame(startFrame)
-    setSelectedTimelineBlockId(block.id)
+    const result = await importEditorV6MediaToTimeline({
+      frame: frameAtImport,
+      requestMedia: () => window.desktop.editorV6.linkEditorV6LibraryVideo(projectId, item.id),
+      loadProject: () => loadLatestEditorV6Project(projectId),
+      persistDocument: persistImportedEditorV6Document,
+      createId: () => crypto.randomUUID(),
+      addTimelineMedia: addEditorV6TimelineMedia
+    })
+    if (!result) return
+    publishPlayheadFrame(result.startFrame)
+    setSelectedTimelineBlockId(result.blockId)
     setSelectedElementId(null)
     setActiveTool(null)
     setInspectorOpen(true)
