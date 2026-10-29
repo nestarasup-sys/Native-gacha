@@ -22,7 +22,8 @@ import { useCustomizerFacePreview } from './useCustomizerFacePreview'
 import { useCustomizerFaceCatalog } from './useCustomizerFaceCatalog'
 import { useCustomizerHairPreview } from './useCustomizerHairPreview'
 import { useCustomizerHairCatalog } from './useCustomizerHairCatalog'
-import { retainCustomizerHairDetailsForModel } from './customizerHairCatalog'
+import { getCustomizerHairLibraryPage, retainCustomizerHairDetailsForModel } from './customizerHairCatalog'
+import { useCustomizerHairLibraryPage } from './useCustomizerHairLibraryPage'
 import { useCustomizerWardrobePreview } from './useCustomizerWardrobePreview'
 import { useCustomizerWardrobeAdjustment } from './useCustomizerWardrobeAdjustment'
 import { useCustomizerWardrobePanelActions } from './useCustomizerWardrobePanelActions'
@@ -38,7 +39,7 @@ import { CustomizerPreviewSurface } from './CustomizerPreviewSurface'
 import { sampleOriginalSkinTone } from './customizerPreviewImages'
 import { CustomizerCategoryIcon, clothesAdjustmentDefinitions, customizerClothesTabs, customizerHeadTabs, customizerModuleByTab, customizerModuleNames, customizerOtherTabs, customizerTopTabs, headAdjustmentItemsFor } from './customizerNavigation'
 import { hairAppearancePartStyleId } from './customizerHairAppearanceModel'
-import { hairStyleSupportsCategory } from '../../../../shared/hairCategories'
+import { hairAppearanceStyleIds, hairStyleSupportsCategory } from '../../../../shared/hairCategories'
 import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react'
 import { RenderedCharacterPortrait } from '../../ui/components/RenderedCharacterPortrait'
 import { Icon } from '../../ui/components/Icon'
@@ -127,16 +128,14 @@ export function CustomizerPage() {
   } = useCustomizerAssetLibraryState<WardrobePanel, FaceLibraryPartId>()
   const activeHairModelSlotRef = useRef(selectedCatalogModelSlot)
   activeHairModelSlotRef.current = selectedCatalogModelSlot
+  const activeHairStyleIdsRef = useRef<ReadonlySet<string>>(new Set())
   const setActiveHairDetails = useCallback<Dispatch<SetStateAction<Record<string, HairStyle>>>>((update) => {
     const modelSlot = activeHairModelSlotRef.current
     setHairDetails((current) => {
       const next = typeof update === 'function' ? update(current) : update
-      return retainCustomizerHairDetailsForModel(next, modelSlot)
+      return retainCustomizerHairDetailsForModel(next, modelSlot, activeHairStyleIdsRef.current)
     })
   }, [setHairDetails])
-  useEffect(() => {
-    setHairDetails((current) => retainCustomizerHairDetailsForModel(current, selectedCatalogModelSlot))
-  }, [selectedCatalogModelSlot, setHairDetails])
   const { headPanelTab, headCategorySelection, selectHeadTab } = useCustomizerHeadNavigation()
   const [activeHairColorRole, setActiveHairColorRole] = useState<HairColorRole>('base')
   const [selectedClothing, setSelectedClothing] = useState<SelectedWardrobeComponent | null>(null)
@@ -228,6 +227,26 @@ export function CustomizerPage() {
   const customizerPreviewStyle = { ...previewStyle, '--preview-zoom': customizerPreviewZoom, '--preview-pan-x': `${customizerPreviewPan.x}px`, '--preview-pan-y': `${customizerPreviewPan.y}px` } as import('react').CSSProperties
   const characterFaceAppearance = selectedCharacter?.customization.faceAppearance
   const characterHairAppearance = selectedCharacter?.customization.hairAppearance
+  const hairLibraryPageView = useMemo(
+    () => getCustomizerHairLibraryPage(hairStyles, hairLibraryPart, hairLibraryPage),
+    [hairStyles, hairLibraryPart, hairLibraryPage]
+  )
+  const activeHairStyleIds = useMemo(() => {
+    const ids = new Set(hairLibraryPageView.visibleStyles.map((style) => style.id))
+    if (characterHairAppearance?.modelSlot === selectedCatalogModelSlot) {
+      for (const style of hairAppearanceStyleIds(characterHairAppearance)) ids.add(style.id)
+    }
+    return ids
+  }, [hairLibraryPageView.visibleStyles, characterHairAppearance, selectedCatalogModelSlot])
+  activeHairStyleIdsRef.current = activeHairStyleIds
+
+  useEffect(() => {
+    setActiveHairDetails((current) => retainCustomizerHairDetailsForModel(
+      current,
+      activeHairModelSlotRef.current,
+      activeHairStyleIdsRef.current
+    ))
+  }, [selectedCatalogModelSlot, activeHairStyleIds, setActiveHairDetails])
 
   useEffect(() => {
     resetCustomizerPreviewPan()
@@ -353,8 +372,17 @@ export function CustomizerPage() {
     active: activeModule === 'Cabelos' || activeModule === 'Cabeça' && headPanelTab === 'hair',
     selectedModelSlot: selectedCatalogModelSlot,
     setHairStyles,
-    setHairDetails: setActiveHairDetails,
     setHairLoading,
+    setCatalogError
+  })
+
+  const hairLibraryPageLoading = useCustomizerHairLibraryPage({
+    active: (activeModule === 'Cabelos' || activeModule === 'Cabeça' && headPanelTab === 'hair') && hairLibraryPart !== null,
+    modelSlot: selectedCatalogModelSlot,
+    partId: hairLibraryPart,
+    visibleStyles: hairLibraryPageView.visibleStyles,
+    hairDetails,
+    setHairDetails: setActiveHairDetails,
     setCatalogError
   })
 
@@ -566,12 +594,7 @@ export function CustomizerPage() {
     if (!hairLibraryPart) return null
     const part = customizerHairParts.find((item) => item.id === hairLibraryPart)
     if (!part) return null
-    const options = hairStyles.filter((summary) => hairStyleSupportsCategory(summary, part.id))
-    const pageSize = 20
-    const slots: Array<HairStyleSummary | null> = [null, ...options]
-    const pageCount = Math.max(1, Math.ceil(slots.length / pageSize))
-    const page = Math.min(hairLibraryPage, pageCount - 1)
-    const visible = slots.slice(page * pageSize, (page + 1) * pageSize)
+    const { options, visible, pageCount, page } = hairLibraryPageView
     const appearance = characterHairAppearance?.modelSlot === selectedCatalogModelSlot ? characterHairAppearance : undefined
     const selectedId = hairAppearancePartStyleId(appearance, part.id)
     const choose = (summary: HairStyleSummary | null) => {
@@ -583,7 +606,7 @@ export function CustomizerPage() {
           <h2 id="customizer-hair-library-title">{part.label}</h2>
           <button className="customizer-hair-library-close" type="button" onClick={() => setHairLibraryPart(null)} aria-label="Fechar biblioteca">×</button>
         </header>
-        <div className="customizer-hair-library-grid" aria-label={`Peças disponíveis para ${part.label}`}>
+        <div className="customizer-hair-library-grid" aria-label={`Peças disponíveis para ${part.label}`} aria-busy={hairLibraryPageLoading}>
           {visible.map((summary) => {
             if (!summary) return <button className={`customizer-hair-library-item${!selectedId ? ' selected' : ''}`} key="empty-slot" title="Slot vazio" aria-label={`Slot vazio · remover ${part.label} do personagem`} aria-pressed={!selectedId} type="button" onClick={() => choose(null)} />
             const asset = hairDetails[`${summary.modelSlot}:${summary.id}`]?.[part.side]

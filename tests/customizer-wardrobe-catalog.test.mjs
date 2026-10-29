@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { loadCustomizerWardrobeCatalog } from '../src/renderer/src/features/customizer/customizerWardrobeCatalog.ts'
-import { loadCustomizerHairDetails, retainCustomizerHairDetailsForModel } from '../src/renderer/src/features/customizer/customizerHairCatalog.ts'
+import { getCustomizerHairLibraryPage, loadCustomizerHairDetails, loadCustomizerHairLibraryPageDetails, retainCustomizerHairDetailsForModel } from '../src/renderer/src/features/customizer/customizerHairCatalog.ts'
 
 const summary = (id) => ({ id, modelSlot: 1, modelName: 'Modelo', name: id, updatedAt: '2026-10-29T00:00:00.000Z', edition: 2, componentCount: 1 })
 const set = (id, category) => ({
@@ -165,17 +165,45 @@ test('detalhes dos cabelos têm concorrência limitada, ordem estável e cancela
 })
 
 test('Customizador delega o catálogo de cabelos ao hook e ao carregador limitado', async () => {
-  const [page, hook, loader] = await Promise.all([
+  const [page, catalogHook, libraryHook, loader] = await Promise.all([
     readFile('src/renderer/src/features/customizer/CustomizerPage.tsx', 'utf8'),
     readFile('src/renderer/src/features/customizer/useCustomizerHairCatalog.ts', 'utf8'),
+    readFile('src/renderer/src/features/customizer/useCustomizerHairLibraryPage.ts', 'utf8'),
     readFile('src/renderer/src/features/customizer/customizerHairCatalog.ts', 'utf8')
   ])
   assert.match(page, /useCustomizerHairCatalog\(/)
   assert.doesNotMatch(page, /Promise\.all\(summaries\.map\(\(summary\) => window\.desktop\.fabricator\.loadHairStyle/)
-  assert.match(hook, /listHairStyles\(selectedModelSlot\)/)
-  assert.match(hook, /loadCustomizerHairDetails\(/)
+  assert.match(catalogHook, /listHairStyles\(selectedModelSlot\)/)
+  assert.match(page, /useCustomizerHairLibraryPage\(/)
+  assert.match(libraryHook, /loadCustomizerHairLibraryPageDetails\(/)
   assert.match(loader, /concurrency = 3/)
   assert.match(loader, /mapConcurrentItems\(/)
+})
+
+test('biblioteca de cabelos carrega só as miniaturas da página visível', async () => {
+  const summaries = Array.from({ length: 45 }, (_, index) => ({
+    ...summary(`hair-${index}`),
+    category: 'rearHair',
+    front: { width: 10, height: 10 }, back: null, fringe: null
+  }))
+  const page = getCustomizerHairLibraryPage(summaries, 'rearHair', 1)
+  const loaded = []
+  const details = await loadCustomizerHairLibraryPageDetails(
+    page.visibleStyles,
+    () => false,
+    (item) => item.id === 'hair-20',
+    async (id) => {
+      loaded.push(id)
+      return { id, modelSlot: 1, updatedAt: '2026-10-29T00:00:00.000Z' }
+    }
+  )
+
+  assert.equal(page.page, 1)
+  assert.equal(page.pageCount, 3)
+  assert.deepEqual(page.visibleStyles.map((item) => item.id), Array.from({ length: 20 }, (_, index) => `hair-${index + 19}`))
+  assert.equal(loaded.length, 19)
+  assert.equal(loaded.includes('hair-20'), false)
+  assert.equal(details.length, 19)
 })
 
 test('cache de cabelos mantém apenas assets do modelo selecionado', async () => {
@@ -192,6 +220,20 @@ test('cache de cabelos mantém apenas assets do modelo selecionado', async () =>
   const page = await readFile('src/renderer/src/features/customizer/CustomizerPage.tsx', 'utf8')
   assert.match(page, /setActiveHairDetails/)
   assert.match(page, /const modelSlot = activeHairModelSlotRef\.current/)
-  assert.match(page, /retainCustomizerHairDetailsForModel\(current, selectedCatalogModelSlot\)/)
+  assert.match(page, /retainCustomizerHairDetailsForModel\(\s*current,\s*activeHairModelSlotRef\.current,\s*activeHairStyleIdsRef\.current/)
   assert.equal((page.match(/setHairDetails: setActiveHairDetails/g) ?? []).length, 2)
+})
+
+test('cache de cabelos mantém estilos selecionados e página atual, removendo páginas antigas', () => {
+  const details = {
+    '2:selected': { id: 'selected' },
+    '2:visible-a': { id: 'visible-a' },
+    '2:previous-page': { id: 'previous-page' },
+    '1:other-model': { id: 'other-model' }
+  }
+  const retained = retainCustomizerHairDetailsForModel(details, 2, new Set(['selected', 'visible-a']))
+  assert.deepEqual(retained, {
+    '2:selected': { id: 'selected' },
+    '2:visible-a': { id: 'visible-a' }
+  })
 })
