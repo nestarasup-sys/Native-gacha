@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import type { CustomizerCharacter } from '../../../../shared/customizer'
 import { CharacterPortrait } from './CharacterPortrait'
+import { createRenderedCharacterPortraitCache } from './renderedCharacterPortraitCache'
 
-const portraitCache = new Map<string, Promise<string | null>>()
+const portraitCache = createRenderedCharacterPortraitCache()
 
 export function RenderedCharacterPortrait({ character, className = '' }: { character: CustomizerCharacter; className?: string }) {
   const [image, setImage] = useState<string | null>(null)
@@ -10,15 +11,15 @@ export function RenderedCharacterPortrait({ character, className = '' }: { chara
   useEffect(() => {
     let cancelled = false
     const key = `${character.id}:${character.updatedAt}`
-    let rendered = portraitCache.get(key)
-    if (!rendered) {
-      rendered = import('../../characters/characterRenderer')
-        .then(({ renderSavedCharacter }) => renderSavedCharacter(character))
-        .then((result) => result.dataUrl)
-        .catch(() => null)
-      portraitCache.set(key, rendered)
-      if (portraitCache.size > 32) portraitCache.delete(portraitCache.keys().next().value!)
-    }
+    const rendered = portraitCache.load(key, async () => {
+      try {
+        const { renderSavedCharacter } = await import('../../characters/characterRenderer')
+        const result = await renderSavedCharacter(character)
+        return result.dataUrl
+      } catch {
+        return null
+      }
+    })
     void rendered.then((dataUrl) => { if (!cancelled) setImage(dataUrl) })
     return () => { cancelled = true }
   }, [character])

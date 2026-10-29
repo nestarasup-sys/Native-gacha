@@ -1,5 +1,5 @@
 type BoundedImageCacheOptions<T> = {
-  load: (source: string) => Promise<T>
+  load?: (source: string) => Promise<T>
   estimateValueBytes: (value: T, source: string) => number
   maxEntries: number
   maxBytes: number
@@ -32,7 +32,7 @@ export function createBoundedImageCache<T>(options: BoundedImageCacheOptions<T>)
   }
 
   return {
-    load(source: string): Promise<T> {
+    load(source: string, loader = options.load): Promise<T> {
       const cached = completed.get(source)
       if (cached) {
         completed.delete(source)
@@ -41,11 +41,12 @@ export function createBoundedImageCache<T>(options: BoundedImageCacheOptions<T>)
       }
       const pending = inFlight.get(source)
       if (pending) return pending
+      if (!loader) return Promise.reject(new Error('O cache precisa de uma função para carregar o valor.'))
 
       const requestGeneration = generation
       let request: Promise<T>
       request = Promise.resolve()
-        .then(() => options.load(source))
+        .then(() => loader(source))
         .then((value) => {
           if (generation === requestGeneration && inFlight.get(source) === request) {
             inFlight.delete(source)

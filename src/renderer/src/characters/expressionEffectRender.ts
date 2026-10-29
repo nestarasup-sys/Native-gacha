@@ -1,30 +1,21 @@
 import type { CustomizerFaceAppearance } from '../../../shared/customizer'
 import type { FaceExpressionEffect, FaceExpressionEffects, FaceTransform, FabricatorProject } from '../../../shared/fabricator'
+import { createExpressionEffectMaskCache } from './expressionEffectMaskCache'
 
 type Artwork = Pick<FabricatorProject, 'width' | 'height'>
 type HeadPart = FabricatorProject['parts'][number]
 
 export type ExpressionEffectPhase = 'underlay' | 'mouth' | 'all'
 export type ExpressionEffectMouthPlacement = Pick<FaceTransform, 'x' | 'y' | 'rotation'>
-const headMaskCache = new Map<string, Promise<HTMLImageElement>>()
+const headMaskCache = createExpressionEffectMaskCache((source) => new Promise<HTMLImageElement>((resolve, reject) => {
+  const image = new Image()
+  image.onload = () => resolve(image)
+  image.onerror = () => reject(new Error('Não foi possível carregar a máscara da cabeça.'))
+  image.src = source
+}))
 
 function loadHeadMask(source: string): Promise<HTMLImageElement> {
-  const cached = headMaskCache.get(source)
-  if (cached) {
-    headMaskCache.delete(source)
-    headMaskCache.set(source, cached)
-    return cached
-  }
-  const image = new Image()
-  const pending = new Promise<HTMLImageElement>((resolve, reject) => {
-    image.onload = () => resolve(image)
-    image.onerror = () => reject(new Error('Não foi possível carregar a máscara da cabeça.'))
-    image.src = source
-  })
-  headMaskCache.set(source, pending)
-  while (headMaskCache.size > 8) headMaskCache.delete(headMaskCache.keys().next().value!)
-  void pending.catch(() => { if (headMaskCache.get(source) === pending) headMaskCache.delete(source) })
-  return pending
+  return headMaskCache.load(source)
 }
 
 function rgba(hex: string, alpha: number) {

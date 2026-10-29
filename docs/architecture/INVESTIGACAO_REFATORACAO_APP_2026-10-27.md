@@ -1345,3 +1345,19 @@ Continua a auditoria das operações IPC iniciadas pelo usuário e da cobertura 
 - O cache agora usa `createBoundedImageCache` e `eyeInteriorMaskCache.ts` estima cada canvas em `largura × altura × 4`, com os mesmos 48 slots e um orçamento de 64 MiB. A chave de origem também entra na estimativa. Falhas continuam produzindo `null` e o caminho consumidor preserva o fallback para a imagem original.
 - O bitmap ainda é fechado no `finally` após a geração da máscara. Canvas acima do orçamento continua sendo retornado à chamada atual, mas não fica armazenado para usos futuros. As saídas continuam iguais: string PNG no renderer e canvas no caminho de worker.
 - Verificação: `npm run test:eye-interior-mask-cache` passou; `npm run test:refactor` passou com 469 testes; também passaram typecheck, build, auditoria de arquitetura (440 arquivos TS/TSX, sem violações) e `git diff --check`.
+
+## 81. Etapa aplicada — cache de retratos limitado por memória estimada
+
+- `RenderedCharacterPortrait` era usado nas listas de roteiros, no Customizador e em detalhes de reação. O mapa guardava até 32 tarefas/imagens, mas só limitava a quantidade; o tamanho da saída renderizada do personagem podia variar bastante.
+- O componente agora usa `createBoundedImageCache`, com até 32 retratos e orçamento estimado de 32 MiB. A estimativa contabiliza a chave e a string PNG codificada; imagens individuais acima do teto continuam sendo mostradas pelo componente que as pediu, mas não ficam retidas para reutilização.
+- O cache compartilhado passou a aceitar uma função de carregamento por chamada, mantendo os carregadores configurados existentes e permitindo deduplicar retratos pela chave `id:updatedAt`. Falhas ainda viram `null` e mantêm o fallback atual; respostas antigas continuam sem atualizar componentes desmontados.
+- Não houve alteração na composição dos retratos, nos dados dos personagens ou na persistência. A medição é estimativa de memória do cache, não heap real do Chromium.
+- Dois testes sintéticos cobrem deduplicação, limite por quantidade, teto de bytes, repetição de render acima do teto e cache do fallback nulo. `npm run test:rendered-character-portrait-cache` passou; typecheck também passou.
+
+## 82. Etapa aplicada — máscaras de efeitos faciais limitadas por resolução
+
+- `expressionEffectRender.ts` mantinha até oito máscaras de cabeça sem considerar suas dimensões. O efeito visual continuava correto, mas várias imagens grandes podiam ocupar memória de decodificação além do necessário para o conjunto reutilizável.
+- `expressionEffectMaskCache.ts` agora mantém o limite original de oito entradas e soma um orçamento de 32 MiB, estimado como largura × altura × 4 mais o custo da chave. A implementação usa o cache LRU compartilhado com os outros loaders de imagem; chamadas simultâneas à mesma máscara compartilham a leitura, falhas são removidas e resultados acima do orçamento atendem a chamada atual sem ocupar o cache.
+- O desenho dos efeitos, a ordem de composição, a origem das máscaras e os dados salvos não mudaram. A estimativa usa pixels RGBA, não uma medição do heap do Chromium.
+- Dois testes sintéticos cobrem concorrência, descarte LRU por orçamento, retry após falha e não retenção de máscaras grandes. `npm run test:expression-effect-mask-cache` e typecheck passaram.
+- Verificação integrada da rodada: `npm run test:refactor` passou com 469 testes mais os quatro casos novos; `npm test` passou com 29; `npm run test:editor-v6` passou com 140 e um ignorado, além dos três testes de perfil. Também passaram `npm run typecheck`, `npm run build`, `npm run audit:architecture` (442 arquivos TS/TSX, sem violações), validação do `package.json` e `git diff --check`.
