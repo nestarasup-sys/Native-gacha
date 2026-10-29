@@ -2,6 +2,7 @@ import { access as nativeAccess, mkdir as nativeMkdir, readFile as nativeReadFil
 import { basename, extname, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import type { DomainFileSystem } from './domainFileSystem.cjs'
+import { createPendingOperationTracker } from './domains/storage/pendingOperationTracker.ts'
 
 type StorageAdapter = Pick<DomainFileSystem, 'access' | 'mkdir' | 'readFile' | 'rename' | 'stat' | 'unlink' | 'writeFile'>
 let storage: StorageAdapter = { access: nativeAccess, mkdir: nativeMkdir, readFile: nativeReadFile, rename: nativeRename, stat: nativeStat, unlink: nativeUnlink, writeFile: nativeWriteFile }
@@ -27,10 +28,17 @@ const validEntry = (entry: unknown): entry is Entry => Boolean(entry && typeof e
 export type RoteiroUiGifItem = Entry & { available: boolean }
 export class RoteiroUiGifLibraryStore {
   private queue: Promise<unknown> = Promise.resolve()
+  private readonly pendingOperations = createPendingOperationTracker()
   constructor(private readonly root: () => string) {}
   private folder() { return join(this.root(), 'roteiro-ui-gif-library') }
   private file(id: string) { return join(this.folder(), 'gifs', `${id}.gif`) }
-  private async run<T>(operation: () => Promise<T>): Promise<T> { const next = this.queue.catch(() => undefined).then(operation); this.queue = next; return next }
+  private run<T>(operation: () => Promise<T>): Promise<T> {
+    const previous = this.queue
+    const next = this.pendingOperations.track(() => previous.catch(() => undefined).then(operation))
+    this.queue = next
+    return next
+  }
+  getPendingWrites(): Promise<unknown>[] { return this.pendingOperations.getPending() }
   private async catalog(): Promise<Catalog | null> {
     try {
       const result = JSON.parse(await readFile(join(this.folder(), 'catalog.json')).then((bytes) => bytes.toString('utf8'))) as Catalog

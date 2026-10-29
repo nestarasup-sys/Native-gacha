@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto'
 import type { StudioAsset, StudioDocument, VideoBackgroundLibraryItem } from '../src/shared/studio'
 import type { DomainFileSystem } from './domainFileSystem.cjs'
 import { normalizeImageBuffer } from './imageIngestion.cjs'
+import { createPendingOperationTracker } from './domains/storage/pendingOperationTracker.ts'
 
 type StorageAdapter = Pick<DomainFileSystem, 'access' | 'copyFile' | 'mkdir' | 'readFile' | 'readdir' | 'rename' | 'stat' | 'unlink' | 'writeFile'>
 let storage: StorageAdapter = { access: nativeAccess, copyFile: nativeCopyFile, mkdir: nativeMkdir, readFile: nativeReadFile,
@@ -50,15 +51,18 @@ function validEntry(value: unknown): value is Entry {
 /** Library originals are shared by Roteiros and remain independent of each script. */
 export class VideoBackgroundLibraryStore {
   private queue: Promise<unknown> = Promise.resolve()
+  private readonly pendingOperations = createPendingOperationTracker()
   constructor(private readonly workspacePath: () => string) {}
   private libraryPath() { return join(this.workspacePath(), 'background-library') }
   private libraryFile(item: Pick<Entry, 'id' | 'extension'>) { return join(this.libraryPath(), 'images', `${item.id}.${item.extension}`) }
   private projectFile(studioId: string, item: Pick<Entry, 'id' | 'extension'>) { return join(this.workspacePath(), `studio-${studioId}`, 'assets', 'backgrounds', `${item.id}.${item.extension === 'jpeg' ? 'jpg' : item.extension}`) }
   private run<T>(operation: () => Promise<T>): Promise<T> {
-    const next = this.queue.catch(() => undefined).then(operation)
+    const previous = this.queue
+    const next = this.pendingOperations.track(() => previous.catch(() => undefined).then(operation))
     this.queue = next
     return next
   }
+  getPendingWrites(): Promise<unknown>[] { return this.pendingOperations.getPending() }
   private async readCatalog(): Promise<Catalog> {
     try {
       const catalog = JSON.parse(await readFile(join(this.libraryPath(), 'catalog.json'), 'utf8')) as Catalog

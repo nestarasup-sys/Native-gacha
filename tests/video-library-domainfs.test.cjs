@@ -15,7 +15,12 @@ function loadVideoLibrary() {
   const source = require('node:fs').readFileSync(path.resolve(__dirname, '../electron/domains/mediaLibrary/videoLibraryStore.ts'), 'utf8')
   const compiled = ts.transpile(source, { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 })
   const mod = { exports: {} }
-  new Function('require', 'module', 'exports', compiled)((name) => name === './videoCasShadow' ? videoCasShadow : require(name), mod, mod.exports)
+  const trackerSource = require('node:fs').readFileSync(path.resolve(__dirname, '../electron/domains/storage/pendingOperationTracker.ts'), 'utf8')
+  const trackerCompiled = ts.transpile(trackerSource, { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 })
+  const trackerModule = { exports: {} }
+  new Function('require', 'module', 'exports', trackerCompiled)(require, trackerModule, trackerModule.exports)
+  const injectedRequire = (name) => name.includes('pendingOperationTracker') ? trackerModule.exports : name.includes('videoCasShadow') ? videoCasShadow : require(name)
+  new Function('require', 'module', 'exports', compiled)(injectedRequire, mod, mod.exports)
   return mod.exports
 }
 

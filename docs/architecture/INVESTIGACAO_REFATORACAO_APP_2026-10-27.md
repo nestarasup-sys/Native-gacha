@@ -678,7 +678,7 @@ Este corte separa propriedade dos contratos e chamadas entre domínios, mas não
 
 ## 12. Próxima tarefa recomendada
 
-Em andamento: auditar operações IPC manuais iniciadas por ações de usuário e a cobertura do inventário do processo principal, além dos autosaves já drenados. Registrar para cada domínio o comportamento de falha/recuperação e completar a matriz de persistência do aplicativo. A auditoria agora cobre jobs de backup, exportações de Roteiros, imagens de poses, ações compostas e prints do Editor V6 e arquivos de print/materialização do Studio no fechamento; ainda faltam operações manuais dos outros domínios e a recuperação após interrupção forçada de algumas publicações.
+Em andamento: auditar operações IPC manuais iniciadas por ações de usuário e a cobertura do inventário do processo principal, além dos autosaves já drenados. Registrar para cada domínio o comportamento de falha/recuperação e completar a matriz de persistência do aplicativo. A auditoria agora cobre jobs de backup, exportações de Roteiros, bibliotecas compartilhadas de vídeo/fundos/GIFs, imagens de poses, ações compostas e prints do Editor V6 e arquivos de print/materialização do Studio no fechamento; ainda faltam outras operações manuais e recuperação após interrupção forçada de algumas publicações.
 
 ## 13. Verificações e validação
 
@@ -730,8 +730,8 @@ Em andamento: auditar operações IPC manuais iniciadas por ações de usuário 
 
 ## 17. Etapa aplicada — recuperação de imagens em Poses DEV e cancelamento de pré-cálculo
 
-- O rascunho de Poses DEV guarda metadados JSON separados dos PNGs. O renderer envia somente imagens pendentes; quando a pasta do rascunho é recriada e um PNG não está no payload, o gravador antes falhava mesmo com a peça ainda presente na pose salva ou no modelo base.
-- `posePersistence.ts` agora procura a imagem ausente no slot da pose em edição e, em seguida, no modelo-fonte, antes de publicar o manifesto do rascunho. Para uma peça editada, o slot salvo tem precedência para manter exatamente sua imagem; poses novas usam a fonte do modelo. IDs, JSON e formato dos PNGs permanecem iguais.
+- O rascunho de Poses DEV guarda metadados JSON separados dos PNGs. O renderer enviava somente imagens pendentes; depois de um salvamento bem-sucedido, a pasta ou as fontes do PNG podiam faltar enquanto a peça continuava no projeto aberto.
+- `posePersistence.ts` procura a imagem ausente no slot da pose em edição e, em seguida, no modelo-fonte. Além disso, `PoseWorkspace` envia o snapshot completo de imagens da memória tanto no autosave quanto no salvamento definitivo, permitindo recriar a biblioteca do rascunho. IDs, JSON e formato dos PNGs permanecem iguais.
 - No Editor V6, cancelar a preparação antecipada de animação enquanto o usuário interage é resultado normal. O job marca explicitamente esse cancelamento e a chamada de cache não o propaga como falha IPC. Preparações de exportação continuam propagando erros reais.
 - `npm run test:fabricator:persistence` cobre recuperação do slot e da fonte em fixtures PNG sintéticas. `npm run test:editor-v6` e `npm run test:editor-v6:motion-service` verificam cancelamento e retomada; o teste do harness foi alinhado à forma real do preload (`desktop.editorV6`). Nenhum dado de modelo ou pose do usuário foi acessado.
 
@@ -756,3 +756,10 @@ Em andamento: auditar operações IPC manuais iniciadas por ações de usuário 
 - A página separa `flushEditorV6DocumentWrites` do flush completo. Exportar print e excluir entram no rastreador antes de esperar o salvamento do documento, sem o rastreador esperar a si próprio; a navegação e o botão de salvar continuam usando o flush completo.
 - `editorV6/fileIpc.ts` agora expõe a gravação e a criação da pasta de prints por `getPendingWrites`; `electron/main.ts` inclui essas operações no mesmo inventário de backup e encerramento. O diálogo foi injetado para testar o módulo sem Electron real. Canais, IDs, paths e formatos de PNG não mudaram.
 - `tests/cycle10-studio-ipc-and-editor-structure.test.mjs` mantém escrita/criação em gates sintéticos e verifica que os dois handlers ficam pendentes até concluir; `tests/renderer-pending-persistence.test.mjs` cobre as ações compostas do renderer. Nenhum projeto ou print real foi acessado.
+
+## 21. Etapa aplicada — bibliotecas compartilhadas no inventário de encerramento
+
+- O mapa dos caminhos de consumo confirmou que Base de Vídeos e Editor V6 usam `VideoLibraryStore`; Roteiros usa `VideoBackgroundLibraryStore` e `RoteiroUiGifLibraryStore`. Esses três stores serializavam internamente importação, exclusão, migração/listagem e outras operações de arquivo, mas suas filas não eram consultadas pelo inventário do processo principal.
+- `createPendingOperationTracker` agora acompanha cada operação ativa dos três stores e expõe `getPendingWrites`. `collectPendingPersistenceWrites()` inclui as filas, portanto flush, backup e encerramento aguardam operações iniciadas pelos IPCs das bibliotecas. O rastreador remove uma operação ao concluir, com sucesso ou falha; o erro continua sendo retornado à chamada original.
+- Os canais IPC, IDs, estruturas de catálogo, propriedade dos dados, paths e ordem interna das filas permanecem iguais. As operações de diálogo só entram no inventário quando começam a leitura/cópia ou a publicação dos dados.
+- `npm run test:media-library-pending` usa catálogos e arquivos sintéticos e mantém a escrita do manifesto bloqueada por uma barreira controlada para provar que exclusões das três bibliotecas ficam no inventário até concluir. Nenhuma biblioteca real foi lida ou modificada.

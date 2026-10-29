@@ -1261,6 +1261,8 @@ function collectPendingPersistenceWrites(): Promise<unknown>[] {
     ...(faceGuideIpc?.getPendingWrites() ?? []), customizerService.pendingWrites,
     ...(studioFileIpc?.getPendingWrites() ?? []),
     ...(editorV6FileIpc?.getPendingWrites() ?? []),
+    ...videoLibrary.getPendingWrites(), ...videoBackgroundLibrary.getPendingWrites(),
+    ...roteiroUiGifLibrary.getPendingWrites(),
     studioSaveQueues.studio, editorV6SaveQueue, roteirosSaveQueue,
     ...(poseMigration ? [poseMigration] : [])
   ]

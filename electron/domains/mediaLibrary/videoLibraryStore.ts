@@ -4,6 +4,7 @@ import { basename, dirname, extname, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import type { VideoLibraryItem } from '../../../src/shared/mediaLibrary'
 import type { DomainFileSystem } from '../../domainFileSystem.cjs'
+import { createPendingOperationTracker } from '../storage/pendingOperationTracker.ts'
 import { sha256File } from './videoCasShadow'
 
 type StorageAdapter = Pick<DomainFileSystem, 'access' | 'copyFile' | 'mkdir' | 'readFile' | 'rename' | 'stat' | 'unlink' | 'writeFile'>
@@ -50,6 +51,7 @@ function validEntry(value: unknown): value is Entry {
 /** Owns shared video originals and their stable IDs for all consuming areas. */
 export class VideoLibraryStore {
   private queue: Promise<unknown> = Promise.resolve()
+  private readonly pendingOperations = createPendingOperationTracker()
   constructor(private readonly workspacePath: () => string) {}
   private libraryPath() { return join(this.workspacePath(), 'media-library') }
   private mediaPath(item: Pick<Entry, 'id' | 'extension'>) { return join(this.libraryPath(), 'videos', `${item.id}.${item.extension}`) }
@@ -62,10 +64,12 @@ export class VideoLibraryStore {
     return sha256
   }
   private run<T>(operation: () => Promise<T>): Promise<T> {
-    const next = this.queue.catch(() => undefined).then(operation)
+    const previous = this.queue
+    const next = this.pendingOperations.track(() => previous.catch(() => undefined).then(operation))
     this.queue = next
     return next
   }
+  getPendingWrites(): Promise<unknown>[] { return this.pendingOperations.getPending() }
   private async readCatalog(): Promise<Catalog> {
     try {
       const catalog = JSON.parse(await readFile(join(this.libraryPath(), 'catalog.json'), 'utf8')) as Catalog
