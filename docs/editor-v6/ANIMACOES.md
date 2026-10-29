@@ -18,7 +18,7 @@ O contrato e agendamento ficam em `src/shared/editorV6Motion.ts`. A 30 FPS, 250 
 
 `bakeMotion.ts` usa o compositor canônico dedicado ao V6. Para expressão com pose fixa, um único rig é preparado; para mudanças corporais, os rigs intermediários são liberados após o desenho. Leituras de fontes e materiais são reutilizadas dentro do trabalho.
 
-`motionIpc.ts` mantém fila serial, janela oculta e cancelamento. O preload expõe apenas leituras necessárias e canais do preparador. Deve permanecer autocontido: sandboxed preloads não podem importar chunks por require relativo. O teste de exportação verifica isso em Electron real.
+`motionIpc.ts` mantém fila serial, janela oculta e cancelamento. Cada fila reutiliza uma sessão temporária própria, isolada da janela principal; as permissões são negadas e as requisições ficam limitadas aos arquivos do renderer, à origem do Vite durante desenvolvimento e a imagens/fontes/mídia `data:` ou `blob:`. O preload expõe apenas leituras necessárias e canais do preparador. Deve permanecer autocontido: sandboxed preloads não podem importar chunks por require relativo. O teste de exportação verifica isso em Electron real.
 
 Os intermediários são guardados em um atlas PNG de até aproximadamente 8 MP, com até sete recortes. A interface mantém cache LRU limitado a oito resultados/24 MB de strings; o documento guarda os atlas referenciados para reabrir e exportar sem consultar o Fabricador novamente. A resolução por quadro só escolhe um recorte indexado e o SceneSurface o desenha.
 

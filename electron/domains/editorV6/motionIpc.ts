@@ -7,9 +7,11 @@ import { isCustomizerCharacter } from '../customizer/validation'
 import { waitForExport } from './exportProcess'
 import { createMotionDiskCache, motionCacheKey } from './motionCache'
 import { restrictRendererNavigation } from '../../windowNavigation'
+import { restrictRendererPermissions } from '../../windowPermissions'
+import { restrictRendererResources } from '../../windowResourcePolicy'
 
 type Active = { request: EditorV6MotionBakeRequest; resolve: (result: EditorV6MotionBakeResult) => void; reject: (error: Error) => void }
-type Lane = { window?: BrowserWindow; active?: Active; delivery?: EditorV6MotionBakeRequest; waiting?: (request: EditorV6MotionBakeRequest | null) => void; idle?: ReturnType<typeof setTimeout>; tail: Promise<void>; count: number }
+type Lane = { partition: string; window?: BrowserWindow; active?: Active; delivery?: EditorV6MotionBakeRequest; waiting?: (request: EditorV6MotionBakeRequest | null) => void; idle?: ReturnType<typeof setTimeout>; tail: Promise<void>; count: number }
 const retiredWorkers = new Set<number>()
 function retire(id: number) {
   retiredWorkers.add(id)
@@ -21,7 +23,8 @@ export function createEditorV6MotionService(deps: { ipcMain: Pick<IpcMain, 'hand
   const jobs = new Map<string, { owner: number; controller: AbortController; cancelled: boolean }>()
   const cache = new Map<string, EditorV6MotionBakeResult>()
   const disk = deps.cacheDirectory ? createMotionDiskCache(deps.cacheDirectory) : undefined
-  const lanes: Lane[] = Array.from({ length: deps.concurrency ?? 1 }, () => ({ tail: Promise.resolve(), count: 0 }))
+  // A lane reuses one in-memory session, keeping worker storage isolated and bounded by concurrency.
+  const lanes: Lane[] = Array.from({ length: deps.concurrency ?? 1 }, () => ({ partition: `editor-v6-motion-${crypto.randomUUID()}`, tail: Promise.resolve(), count: 0 }))
   let stopped = false
   const worker = (event: IpcMainInvokeEvent) => {
     const lane = workers.get(event.sender.id)
@@ -64,8 +67,10 @@ export function createEditorV6MotionService(deps: { ipcMain: Pick<IpcMain, 'hand
     signal.addEventListener('abort', abort, { once: true })
     try {
       if (!lane.window || lane.window.isDestroyed()) {
-        const window = new BrowserWindow({ show: false, width: 320, height: 180, webPreferences: { preload: deps.preload, contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: false, offscreen: true, devTools: false } })
+        const window = new BrowserWindow({ show: false, width: 320, height: 180, webPreferences: { preload: deps.preload, contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: false, offscreen: true, devTools: false, partition: lane.partition } })
         restrictRendererNavigation(window.webContents)
+        restrictRendererPermissions(window.webContents.session, { allowFullscreen: false })
+        restrictRendererResources(window.webContents.session, { html: deps.html, devUrl: deps.devUrl })
         lane.window = window; lane.delivery = request
         workers.set(window.webContents.id, lane)
         const workerId = window.webContents.id

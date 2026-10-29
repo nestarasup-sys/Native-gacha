@@ -1,11 +1,10 @@
 import { createMediaFileResponse } from '../mediaLibrary/mediaFileResponse'
 import { BrowserWindow, type IpcMain } from 'electron'
-import { dirname, resolve, sep } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { editorV6WorkerChannels, type EditorV6FrameTimings, type EditorV6RenderFrameResult, type EditorV6WorkerPayload } from '../../../src/shared/editorV6Export'
 import { waitForExport } from './exportProcess'
 import { restrictRendererNavigation } from '../../windowNavigation'
 import { restrictRendererPermissions } from '../../windowPermissions'
+import { restrictRendererResources } from '../../windowResourcePolicy'
 import { exportBitmap } from './exportBitmap'
 
 export type EditorV6FrameWorker = { frame: (frame: number) => Promise<EditorV6RenderFrameResult & { bitmap?: Buffer }>; close: () => void }
@@ -42,18 +41,15 @@ export function createEditorV6WorkerFactory(deps: { ipcMain: Pick<IpcMain, 'hand
       } catch { return new Response('Not found', { status: 404 }) }
     })
     restrictRendererNavigation(window.webContents)
-    restrictRendererPermissions(window.webContents.session)
+    restrictRendererPermissions(window.webContents.session, { allowFullscreen: false })
     window.removeMenu()
     // Initial native bounds can be clamped to the monitor work area on Windows.
     window.setContentSize(payload.width, payload.height)
     window.webContents.setFrameRate(60)
-    window.webContents.session.webRequest.onBeforeRequest((request, callback) => {
-      let allowed = /^(data|blob):/.test(request.url) || request.url.startsWith('gacha-editor-media:')
-      try {
-        if (deps.devUrl) allowed ||= new URL(request.url).origin === new URL(deps.devUrl).origin
-        else if (request.url.startsWith('file:')) allowed ||= resolve(fileURLToPath(request.url)).startsWith(resolve(dirname(deps.html)) + sep)
-      } catch { /* Reject an invalid resource URL. */ }
-      callback({ cancel: !allowed })
+    restrictRendererResources(window.webContents.session, {
+      html: deps.html,
+      devUrl: deps.devUrl,
+      allowedSchemes: mediaPath && mediaList?.length ? ['gacha-editor-media'] : []
     })
     let resolveReady!: () => void, rejectReady!: (error: Error) => void
     const ready = new Promise<void>((resolve, reject) => { resolveReady = resolve; rejectReady = reject })
