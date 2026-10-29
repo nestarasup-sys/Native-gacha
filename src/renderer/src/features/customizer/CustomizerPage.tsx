@@ -22,6 +22,7 @@ import { useCustomizerFacePreview } from './useCustomizerFacePreview'
 import { useCustomizerFaceCatalog } from './useCustomizerFaceCatalog'
 import { useCustomizerHairPreview } from './useCustomizerHairPreview'
 import { useCustomizerHairCatalog } from './useCustomizerHairCatalog'
+import { retainCustomizerHairDetailsForModel } from './customizerHairCatalog'
 import { useCustomizerWardrobePreview } from './useCustomizerWardrobePreview'
 import { useCustomizerWardrobeAdjustment } from './useCustomizerWardrobeAdjustment'
 import { useCustomizerWardrobePanelActions } from './useCustomizerWardrobePanelActions'
@@ -38,10 +39,10 @@ import { sampleOriginalSkinTone } from './customizerPreviewImages'
 import { CustomizerCategoryIcon, clothesAdjustmentDefinitions, customizerClothesTabs, customizerHeadTabs, customizerModuleByTab, customizerModuleNames, customizerOtherTabs, customizerTopTabs, headAdjustmentItemsFor } from './customizerNavigation'
 import { hairAppearancePartStyleId } from './customizerHairAppearanceModel'
 import { hairStyleSupportsCategory } from '../../../../shared/hairCategories'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react'
 import { RenderedCharacterPortrait } from '../../ui/components/RenderedCharacterPortrait'
 import { Icon } from '../../ui/components/Icon'
-import type { FaceComponentAssetSummary, FaceDetailKind, FabricatorProject, HairStyleSummary } from '../../../../shared/fabricator'
+import type { FaceComponentAssetSummary, FaceDetailKind, FabricatorProject, HairStyle, HairStyleSummary } from '../../../../shared/fabricator'
 import { resolvePoseCategory } from '../../../../shared/fabricator'
 import type { CustomizerFaceAppearance, CustomizerWardrobeGroup, HairColorRole } from '../../../../shared/customizer'
 import { characterBodyDimensionLimits, characterProportionLimits, defaultCharacterProportions, type CharacterProportions } from '../../../../shared/customizer'
@@ -124,6 +125,18 @@ export function CustomizerPage() {
     faceLibraryPart, setFaceLibraryPart, faceLibraryPage, setFaceLibraryPage,
     faceCatalogLibraryPart, setFaceCatalogLibraryPart, faceCatalogLibraryPage, setFaceCatalogLibraryPage
   } = useCustomizerAssetLibraryState<WardrobePanel, FaceLibraryPartId>()
+  const activeHairModelSlotRef = useRef(selectedCatalogModelSlot)
+  activeHairModelSlotRef.current = selectedCatalogModelSlot
+  const setActiveHairDetails = useCallback<Dispatch<SetStateAction<Record<string, HairStyle>>>>((update) => {
+    const modelSlot = activeHairModelSlotRef.current
+    setHairDetails((current) => {
+      const next = typeof update === 'function' ? update(current) : update
+      return retainCustomizerHairDetailsForModel(next, modelSlot)
+    })
+  }, [setHairDetails])
+  useEffect(() => {
+    setHairDetails((current) => retainCustomizerHairDetailsForModel(current, selectedCatalogModelSlot))
+  }, [selectedCatalogModelSlot, setHairDetails])
   const { headPanelTab, headCategorySelection, selectHeadTab } = useCustomizerHeadNavigation()
   const [activeHairColorRole, setActiveHairColorRole] = useState<HairColorRole>('base')
   const [selectedClothing, setSelectedClothing] = useState<SelectedWardrobeComponent | null>(null)
@@ -340,7 +353,7 @@ export function CustomizerPage() {
     active: activeModule === 'Cabelos' || activeModule === 'Cabeça' && headPanelTab === 'hair',
     selectedModelSlot: selectedCatalogModelSlot,
     setHairStyles,
-    setHairDetails,
+    setHairDetails: setActiveHairDetails,
     setHairLoading,
     setCatalogError
   })
@@ -372,7 +385,7 @@ export function CustomizerPage() {
     previewExtent,
     zoom: customizerPreviewZoom,
     highlight: activeHairPreviewHighlight,
-    setHairDetails,
+    setHairDetails: setActiveHairDetails,
     setSelectedArtworkUrl,
     setSelectedFrontHairUrl,
     setCatalogError

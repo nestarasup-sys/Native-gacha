@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { loadCustomizerWardrobeCatalog } from '../src/renderer/src/features/customizer/customizerWardrobeCatalog.ts'
-import { loadCustomizerHairDetails } from '../src/renderer/src/features/customizer/customizerHairCatalog.ts'
+import { loadCustomizerHairDetails, retainCustomizerHairDetailsForModel } from '../src/renderer/src/features/customizer/customizerHairCatalog.ts'
 
 const summary = (id) => ({ id, modelSlot: 1, modelName: 'Modelo', name: id, updatedAt: '2026-10-29T00:00:00.000Z', edition: 2, componentCount: 1 })
 const set = (id, category) => ({
@@ -176,4 +176,22 @@ test('Customizador delega o catálogo de cabelos ao hook e ao carregador limitad
   assert.match(hook, /loadCustomizerHairDetails\(/)
   assert.match(loader, /concurrency = 3/)
   assert.match(loader, /mapConcurrentItems\(/)
+})
+
+test('cache de cabelos mantém apenas assets do modelo selecionado', async () => {
+  const details = {
+    '1:front-a': { id: 'front-a' },
+    '2:front-b': { id: 'front-b' },
+    '20:front-c': { id: 'front-c' }
+  }
+  const selectedModel = retainCustomizerHairDetailsForModel(details, 2)
+  assert.deepEqual(selectedModel, { '2:front-b': { id: 'front-b' } })
+  assert.strictEqual(retainCustomizerHairDetailsForModel(selectedModel, 2), selectedModel)
+  assert.deepEqual(retainCustomizerHairDetailsForModel(selectedModel, null), {})
+
+  const page = await readFile('src/renderer/src/features/customizer/CustomizerPage.tsx', 'utf8')
+  assert.match(page, /setActiveHairDetails/)
+  assert.match(page, /const modelSlot = activeHairModelSlotRef\.current/)
+  assert.match(page, /retainCustomizerHairDetailsForModel\(current, selectedCatalogModelSlot\)/)
+  assert.equal((page.match(/setHairDetails: setActiveHairDetails/g) ?? []).length, 2)
 })
