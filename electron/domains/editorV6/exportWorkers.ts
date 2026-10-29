@@ -1,5 +1,5 @@
 import { createMediaFileResponse } from '../mediaLibrary/mediaFileResponse'
-import { BrowserWindow, type IpcMain } from 'electron'
+import { BrowserWindow, type IpcMain, type NativeImage } from 'electron'
 import { editorV6WorkerChannels, type EditorV6FrameTimings, type EditorV6RenderFrameResult, type EditorV6WorkerPayload } from '../../../src/shared/editorV6Export'
 import { waitForExport } from './exportProcess'
 import { restrictRendererNavigation } from '../../windowNavigation'
@@ -8,6 +8,45 @@ import { restrictRendererResources } from '../../windowResourcePolicy'
 import { exportBitmap } from './exportBitmap'
 
 export type EditorV6FrameWorker = { frame: (frame: number) => Promise<EditorV6RenderFrameResult & { bitmap?: Buffer }>; close: () => void }
+
+function waitForOffscreenPaint(window: BrowserWindow, signal: AbortSignal): Promise<void> {
+  if (signal.aborted) return Promise.reject(signal.reason ?? Error('Exportação cancelada.'))
+  const { webContents } = window
+  return new Promise((resolve, reject) => {
+    let settled = false
+    let timeout: ReturnType<typeof setTimeout> | undefined
+    const cleanup = () => {
+      if (timeout) clearTimeout(timeout)
+      webContents.removeListener('paint', onPaint)
+      window.removeListener('closed', onClosed)
+      signal.removeEventListener('abort', onAbort)
+    }
+    const finish = (error?: unknown) => {
+      if (settled) return
+      settled = true
+      cleanup()
+      if (error) reject(error)
+      else resolve()
+    }
+    const onPaint = (_event: Electron.Event, _dirtyRect: Electron.Rectangle, _image: NativeImage) => finish()
+    const onClosed = () => finish(Error('A janela de exportação foi fechada.'))
+    const onAbort = () => finish(signal.reason ?? Error('Exportação cancelada.'))
+
+    webContents.once('paint', onPaint)
+    window.once('closed', onClosed)
+    signal.addEventListener('abort', onAbort, { once: true })
+    timeout = setTimeout(() => finish(Error('Tempo limite: pintar quadro do renderizador de exportação.')), 60000)
+    try {
+      // The renderer's animation frames only confirm that React/SVG committed.
+      // Wait for Chromium's offscreen compositor after every visual change so
+      // image-source transitions cannot be captured from the previous paint.
+      webContents.invalidate()
+    } catch (error) {
+      finish(error)
+    }
+  })
+}
+
 export function createEditorV6WorkerFactory(deps: { ipcMain: Pick<IpcMain, 'handle' | 'removeHandler'>; html: string; preload: string; devUrl?: string; mediaPath?: (projectId: string, fileName: string, libraryVideoId?: string) => string | Promise<string>; inspectCapture?: (capture: { window: BrowserWindow; frame: number; bitmap: Buffer }) => Promise<void> }) {
   const entries = new Map<number, { payload: EditorV6WorkerPayload; ready: (error?: string) => void }>()
   const activeWorkers = new Set<() => void>()
@@ -89,6 +128,7 @@ export function createEditorV6WorkerFactory(deps: { ipcMain: Pick<IpcMain, 'hand
         if (result.reused) return result
         const capture = async () => {
           const started = performance.now()
+          await waitForOffscreenPaint(window, signal)
           const image = await waitForExport(window.webContents.capturePage({ x: 0, y: 0, width: payload.width, height: payload.height }), signal, 60000, 'capturar quadro')
           const bitmap = exportBitmap(image, payload.width, payload.height)
           await deps.inspectCapture?.({ window, frame, bitmap })

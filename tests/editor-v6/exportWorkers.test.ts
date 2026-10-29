@@ -7,11 +7,14 @@ import { editorV6WorkerChannels } from '../../src/shared/editorV6Export'
 const state = vi.hoisted(() => ({ windows: [] as any[] }))
 vi.mock('electron', () => ({ BrowserWindow: class extends EventEmitter {
   destroyed = false
-  webContents = {
-    on: vi.fn(), setWindowOpenHandler: vi.fn(),
+  webContents = Object.assign(new EventEmitter(), {
+    setWindowOpenHandler: vi.fn(),
     id: state.windows.length + 1, mainFrame: {}, setFrameRate: vi.fn(), setZoomFactor: vi.fn(),
+    invalidate: vi.fn(function (this: EventEmitter) { setTimeout(() => this.emit('paint', {}, {}, {}), 0) }),
+    executeJavaScript: vi.fn().mockResolvedValue({ reused: false, timings: {} }),
+    capturePage: vi.fn().mockResolvedValue({ getSize: () => ({ width: 320, height: 180 }), toBitmap: () => Buffer.alloc(320 * 180 * 4, 255), resize: vi.fn() }),
     session: { setPermissionCheckHandler: vi.fn(), setPermissionRequestHandler: vi.fn(), webRequest: { onBeforeRequest: vi.fn() } }
-  }
+  })
   constructor() { super(); state.windows.push(this) }
   removeMenu() {}
   setContentSize = vi.fn()
@@ -63,6 +66,35 @@ describe('export worker lifecycle', () => {
     expect(state.windows[0].destroyed).toBe(true)
     expect(handlers.size).toBe(0)
     await expect(factory.create(payload, new AbortController().signal)).rejects.toThrow('encerrada')
+  })
+
+  it('waits for the offscreen compositor before capturing each rendered frame', async () => {
+    const { factory, payload, ready } = fixture()
+    const pending = factory.create(payload, new AbortController().signal)
+    ready()
+    const worker = await pending
+    const contents = state.windows[0].webContents
+    let paintCount = 0
+    const bitmap = Buffer.alloc(320 * 180 * 4, 127)
+    const paintedImage = { getSize: () => ({ width: 320, height: 180 }), toBitmap: () => bitmap, resize: vi.fn() }
+    contents.invalidate.mockImplementation(() => setTimeout(() => {
+      paintCount++
+      contents.emit('paint', {}, { x: 0, y: 0, width: 320, height: 180 }, paintedImage)
+    }, 0))
+    contents.capturePage.mockImplementation(async () => {
+      expect(paintCount).toBe(contents.invalidate.mock.calls.length)
+      return paintedImage
+    })
+    const first = await worker.frame(10)
+    const second = await worker.frame(11)
+
+    expect(contents.invalidate).toHaveBeenCalledTimes(2)
+    expect(paintCount).toBe(2)
+    expect(contents.capturePage).toHaveBeenCalledTimes(2)
+    expect(first.bitmap).toBe(bitmap)
+    expect(second.bitmap).toBe(bitmap)
+    worker.close()
+    factory.dispose()
   })
 
   it('rejects preparation immediately when closed before ready', async () => {

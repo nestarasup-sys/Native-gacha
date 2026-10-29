@@ -1,5 +1,6 @@
 import { createRoot } from 'react-dom/client'
 import { flushSync } from 'react-dom'
+import type { SyntheticEvent } from 'react'
 import { SceneSurface } from './SceneSurface'
 import { editorV6ClipAtFrame } from '../../../../shared/editorV6TimelineCore'
 import { resolveEditorV6SceneAtFrame } from '../../../../shared/editorV6TimelineScene'
@@ -11,6 +12,34 @@ async function initialize() {
   const { project, width, height, layeredVideo, mouthLoops } = await worker.payload()
   const root = createRoot(document.getElementById('root')!)
   const images = new Map<string, Promise<void>>()
+  const loadedSvgImages = new WeakMap<SVGImageElement, string>()
+  const onSvgImageLoad = (event: SyntheticEvent<SVGImageElement>) => {
+    const image = event.currentTarget
+    loadedSvgImages.set(image, image.getAttribute('href') ?? '')
+  }
+  const waitForSvgImage = (image: SVGImageElement, expectedSource: string) => {
+    if (loadedSvgImages.get(image) === expectedSource) return Promise.resolve()
+    return new Promise<void>((resolve, reject) => {
+      let timeout: ReturnType<typeof setTimeout>
+      const finish = (error?: Error) => {
+        clearTimeout(timeout)
+        image.removeEventListener('load', onLoad)
+        image.removeEventListener('error', onError)
+        if (error) reject(error)
+        else resolve()
+      }
+      const onLoad = () => {
+        const source = image.getAttribute('href') ?? ''
+        loadedSvgImages.set(image, source)
+        if (source === expectedSource) finish()
+      }
+      const onError = () => finish(Error('Uma imagem da cena falhou ao carregar no renderizador de exportação.'))
+      image.addEventListener('load', onLoad)
+      image.addEventListener('error', onError)
+      timeout = setTimeout(() => finish(Error('Tempo limite ao carregar uma imagem da cena para exportação.')), 60000)
+      if (loadedSvgImages.get(image) === expectedSource) finish()
+    })
+  }
   const assetsById = new Map(project.assets.map(asset => [asset.id, asset]))
   const mouthLoopByBlock = new Map<string, EditorV6ExportMouthLoops['states'][number]>()
   for (const state of mouthLoops?.states ?? []) for (const blockId of state.blockIds) mouthLoopByBlock.set(`${state.elementId}:${blockId}`, state)
@@ -64,8 +93,14 @@ async function initialize() {
     }
     timings.assetPreparationMs = performance.now() - assetPreparationStarted
     const reactCommitStarted = performance.now()
-    flushSync(() => root.render(<SceneSurface scene={{ ...scene, mediaVideo: undefined }} assets={project.assets} outputWidth={width} outputHeight={height} renderLayer={activeLayer ?? 'all'} />))
+    flushSync(() => root.render(<SceneSurface scene={{ ...scene, mediaVideo: undefined }} assets={project.assets} outputWidth={width} outputHeight={height} renderLayer={activeLayer ?? 'all'} onImageLoad={onSvgImageLoad} />))
     timings.reactCommitMs = performance.now() - reactCommitStarted
+    const svgImageDecodeStarted = performance.now()
+    await Promise.all(Array.from(document.querySelectorAll<SVGImageElement>('svg image')).flatMap((image) => {
+      const source = image.getAttribute('href') ?? ''
+      return source ? [waitForSvgImage(image, source)] : []
+    }))
+    timings.assetPreparationMs = (timings.assetPreparationMs ?? 0) + performance.now() - svgImageDecodeStarted
     const rafStarted = performance.now()
     await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
     timings.rafWaitMs = performance.now() - rafStarted
