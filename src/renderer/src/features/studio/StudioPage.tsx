@@ -3,6 +3,7 @@ import { isPoseSnapshotForModel } from '../../../../shared/characterSourceContin
 import { useStudioInspectorState } from '../../characters/useStudioInspectorState'
 import { useFaceExpressionCatalog } from '../../characters/useFaceExpressionCatalog'
 import { StudioSceneCanvas } from './StudioSceneCanvas'
+import { StudioCastPanel } from './StudioCastPanel'
 import { trimTransparentImage, faceRenderGeometry } from '../../characters/characterGeometry'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { studioExpressionCollection } from './expressionTransforms'
@@ -12,7 +13,6 @@ import { SceneElementControls } from '../../ui/components/SceneElementControls'
 import { SceneCastPickerModal } from '../../ui/components/SceneCastPickerModal'
 import { isLegacySceneCatalogId, loadLegacySceneCatalog } from '../../ui/legacySceneCatalog'
 import { createSceneTextElement, sceneCatalogColor, sceneEditorTools } from '../../ui/sceneEditorDefaults'
-import { CharacterPortrait } from '../../ui/components/CharacterPortrait'
 import { resolveStudioTalkMouthId } from '../../../../shared/studio'
 import { fitStudioCharacterToStage } from '../../../../shared/studioCharacterGeometry'
 import { STUDIO_FACE_RENDER_VERSION, useStudioFacePreview } from './useStudioFacePreview'
@@ -866,24 +866,6 @@ export function StudioPage() {
     </div>
   }
 
-  const castPanel = () => <div className="studio-cast-content">
-    <header><span><h2>Elenco</h2><small>{stageCharacters.length} na cena</small></span><button className="studio-cast-add-button" onClick={openCastPicker} type="button"><Icon name="plus" />Adicionar</button></header>
-    <section className="studio-cast-section" aria-label="Personagens na cena">
-      <header><h3>Na cena</h3><button className={`studio-cast-lock${allStageCharactersLocked ? ' active' : ''}`} onClick={toggleStageCharacterPositionLock} disabled={!stageCharacters.length} aria-label={allStageCharactersLocked ? 'Desbloquear posição dos personagens' : 'Bloquear posição dos personagens'} title={allStageCharactersLocked ? 'Desbloquear posições' : 'Bloquear posições'} type="button"><Icon name={allStageCharactersLocked ? 'lock' : 'unlock'} /></button></header>
-      {stageCharacters.length ? stageCharacters.map((element) => {
-        const character = availableCharacters.find((item) => item.id === element.characterId)
-        const firstName = (character?.name ?? element.text).trim().split(/\s+/)[0] || element.text
-        return <article className={`studio-cast-item${selectedElementId === element.id ? ' selected' : ''}`} key={element.id}>
-          <button className="studio-cast-select" onClick={() => { setSelectedElementId(element.id); setActiveTool(null); setInspectorOpen(true); restoreCharacterInspectorView() }} type="button">
-            {character ? <CharacterPortrait character={character} /> : <span className="studio-cast-fallback">{element.text.slice(0, 1)}</span>}
-            <span>{firstName}</span>
-          </button>
-          <button className="studio-cast-remove" onClick={() => removeStageCharacter(element)} aria-label={`Remover ${firstName} do elenco`} title="Remover da cena" type="button">×</button>
-        </article>
-      }) : <p className="studio-cast-empty">Adicione personagens para montar a cena.</p>}
-    </section>
-  </div>
-
   if (activeStudio) {
     const inspectorWidth = sceneRef.current ? Math.min(38, 276 / sceneRef.current.clientWidth * 100) : 28
     const selectedBounds = selectedElement
@@ -926,7 +908,18 @@ export function StudioPage() {
               {inspectorTab === 'editor' ? <div className="studio-inspector-content">{propertyPanel()}</div> : <div className="studio-inspector-content">{inspectorCustomView === 'presets' ? presetsPanel() : customPanel()}</div>}
             </aside>}
         </StudioSceneCanvas>
-        {!fullView && <aside className="studio-editor-rail studio-editor-right" aria-label="Elenco do Studio">{castPanel()}</aside>}
+        {!fullView && <aside className="studio-editor-rail studio-editor-right" aria-label="Elenco do Studio">
+          <StudioCastPanel
+            stageCharacters={stageCharacters}
+            availableCharacters={availableCharacters}
+            selectedElementId={selectedElementId}
+            allCharactersLocked={allStageCharactersLocked}
+            onAddCharacter={openCastPicker}
+            onTogglePositionLock={toggleStageCharacterPositionLock}
+            onSelectCharacter={(element) => { setSelectedElementId(element.id); setActiveTool(null); setInspectorOpen(true); restoreCharacterInspectorView() }}
+            onRemoveCharacter={removeStageCharacter}
+          />
+        </aside>}
         {castPickerOpen && <SceneCastPickerModal title="Personagens do Studio" characters={availableCharacters} selection={castSelection} saving={savingCast} onToggle={(characterId, selected) => setCastSelection((current) => selected ? current.filter((id) => id !== characterId) : [...current, characterId])} onClose={() => setCastPickerOpen(false)} onSave={() => void saveCastSelection()} />}
       </main>
     )
