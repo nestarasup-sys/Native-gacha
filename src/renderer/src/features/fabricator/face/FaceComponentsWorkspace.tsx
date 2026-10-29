@@ -20,7 +20,7 @@ import { normalizeEditableImageFile } from '../normalizeImage'
 import { useModelAppearanceTarget, useModelPartAppearancePreview } from '../ModelAppearanceContext'
 import { isRightLibraryAsset, libraryBaseName, sameLibraryPair, visibleFaceLibraryAssets } from './faceLibraryModel'
 import { createFaceSaveQueue, type FaceSaveQueue } from './faceSaveQueue'
-import { loadFaceCatalogWorkspaceData, loadFaceComponentWorkspaceData } from './faceWorkspaceData'
+import { listFaceCatalogWorkspaceSummaries, loadFaceCatalogWorkspaceDetails, loadFaceComponentWorkspaceData } from './faceWorkspaceData'
 import { readComponentSelections, readFaceDetailSelections, readFaceImportAnchors, saveComponentSelection, saveFaceDetailSelections, saveFaceImportAnchors, type FaceDetailSelections, type FaceImportAnchors } from './faceWorkspaceSelectionStorage'
 import { deriveFacePairTransformMetrics } from './facePairTransformModel'
 import { planEyeSeparation, planFacePairMove, planFacePairResize } from './facePairTransformEdits'
@@ -114,6 +114,7 @@ export function FaceComponentsWorkspace({ mode, baseModelSlot }: { mode: FaceWor
   const selectedFaceDetails = faceDetailSelectionsByModel[modelSlot] ?? {}
   const [mouthCatalog, setMouthCatalog] = useState<FaceCatalogItemSummary[]>([])
   const [mouthDetails, setMouthDetails] = useState<Record<string, FaceCatalogItem>>({})
+  const [catalogSummariesScope, setCatalogSummariesScope] = useState<string | null>(null)
   const [selectedMouthId, setSelectedMouthId] = useState<string | null>(null)
   const [mouthKind, setMouthKind] = useState<'mouth-closed' | 'mouth-open'>('mouth-closed')
   const [noseCatalog, setNoseCatalog] = useState<FaceCatalogItemSummary[]>([])
@@ -126,6 +127,7 @@ export function FaceComponentsWorkspace({ mode, baseModelSlot }: { mode: FaceWor
   const { guidesByModel, guidesLoaded, updateGuide: persistGuide } = useFaceGuides(guideProfile, setError)
   const [notice, setNotice] = useState(() => mode === 'eyes' ? 'Importe a folha 3 em 1 de olhos.' : 'Adicione as peças faciais à biblioteca.')
   const [openModal, setOpenModal] = useState<'import' | 'delete' | null>(null)
+  const isCatalogDeleteOpen = openModal === 'delete'
   const [markedForDeletion, setMarkedForDeletion] = useState<string[]>([])
   const componentDetailsRef = useRef(details)
   const selectedAssetsRef = useRef(selectedAssets)
@@ -134,6 +136,11 @@ export function FaceComponentsWorkspace({ mode, baseModelSlot }: { mode: FaceWor
   const preparingPair = useRef(new Map<string, Promise<FaceComponentAsset>>())
   const hydratedComponentSlot = useRef<number | null>(null)
   const catalogDetailsRef = useRef<Record<string, FaceCatalogItem>>({})
+  const mouthCatalogRef = useRef(mouthCatalog)
+  const noseCatalogRef = useRef(noseCatalog)
+  const mouthKindRef = useRef(mouthKind)
+  const selectedMouthIdRef = useRef(selectedMouthId)
+  const selectedNoseIdRef = useRef(selectedNoseId)
   const faceSaveQueueRef = useRef<FaceSaveQueue | null>(null)
   if (!faceSaveQueueRef.current) {
     faceSaveQueueRef.current = createFaceSaveQueue({
@@ -248,6 +255,11 @@ export function FaceComponentsWorkspace({ mode, baseModelSlot }: { mode: FaceWor
   componentDetailsRef.current = details
   selectedAssetsRef.current = selectedAssets
   catalogDetailsRef.current = { ...noseDetails, ...mouthDetails }
+  mouthCatalogRef.current = mouthCatalog
+  noseCatalogRef.current = noseCatalog
+  mouthKindRef.current = mouthKind
+  selectedMouthIdRef.current = selectedMouthId
+  selectedNoseIdRef.current = selectedNoseId
 
   useEffect(() => registerPendingWriteFlusher(flushAllSaves), [flushAllSaves])
   useEffect(() => () => {
@@ -342,22 +354,44 @@ export function FaceComponentsWorkspace({ mode, baseModelSlot }: { mode: FaceWor
   }, [mode, modelSlot])
   useEffect(() => {
     let active = true
+    const scope = `${mode}:${modelSlot}`
+    setCatalogSummariesScope(null)
     setMouthCatalog([]); setMouthDetails({}); setNoseCatalog([]); setNoseDetails({})
     if (mode !== 'face') return () => { active = false }
-    void loadFaceCatalogWorkspaceData(window.desktop.fabricator, modelSlot, () => !active).then((loaded) => {
+    void listFaceCatalogWorkspaceSummaries(window.desktop.fabricator, modelSlot, () => !active).then((loaded) => {
       if (!active || !loaded) return
-      const { mouthCatalog: mouths, mouthDetails: loadedMouthDetails, noseCatalog: noses, noseDetails: loadedNoseDetails } = loaded
+      const { mouthCatalog: mouths, noseCatalog: noses } = loaded
       setMouthCatalog(mouths)
       setNoseCatalog(noses)
-      setMouthDetails(loadedMouthDetails)
-      setNoseDetails(loadedNoseDetails)
-      const availableMouthKind = mouths.some((item) => item.category === mouthKind) ? mouthKind : mouths[0]?.category
+      const currentMouthKind = mouthKindRef.current
+      const availableMouthKind = mouths.some((item) => item.category === currentMouthKind) ? currentMouthKind : mouths[0]?.category
       if (availableMouthKind === 'mouth-closed' || availableMouthKind === 'mouth-open') setMouthKind(availableMouthKind)
       setSelectedMouthId((current) => mouths.some((item) => item.id === current && item.category === availableMouthKind) ? current : mouths.find((item) => item.category === availableMouthKind)?.id ?? null)
       setSelectedNoseId((current) => noses.some((item) => item.id === current) ? current : noses[0]?.id ?? null)
+      setCatalogSummariesScope(scope)
     }).catch((reason) => { if (active) setError(String(reason)) })
     return () => { active = false }
   }, [mode, modelSlot])
+  useEffect(() => {
+    let active = true
+    const scope = `${mode}:${modelSlot}`
+    if (mode !== 'face' || catalogSummariesScope !== scope) return () => { active = false }
+    const activeCategory = isCatalogDeleteOpen ? 'all' : libraryCategory === 'nose' ? 'nose' : libraryCategory === 'mouth' ? 'mouth' : 'selected'
+    void loadFaceCatalogWorkspaceDetails(window.desktop.fabricator, modelSlot, {
+      mouthCatalog: mouthCatalogRef.current,
+      noseCatalog: noseCatalogRef.current
+    }, {
+      activeCategory,
+      mouthKind: mouthKindRef.current,
+      selectedMouthId: selectedMouthIdRef.current,
+      selectedNoseId: selectedNoseIdRef.current
+    }, () => !active).then((loaded) => {
+      if (!active || !loaded) return
+      setMouthDetails(loaded.mouthDetails)
+      setNoseDetails(loaded.noseDetails)
+    }).catch((reason) => { if (active) setError(String(reason)) })
+    return () => { active = false }
+  }, [mode, modelSlot, libraryCategory, isCatalogDeleteOpen, catalogSummariesScope])
 
   async function cleanSelectedEyebrow() {
     if (!selectedAsset || selectedAsset.kind !== 'eyebrow' || busy) return

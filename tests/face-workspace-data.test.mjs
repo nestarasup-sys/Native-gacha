@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
-import { loadFaceCatalogWorkspaceData, loadFaceComponentWorkspaceData } from '../src/renderer/src/features/fabricator/face/faceWorkspaceData.ts'
+import { listFaceCatalogWorkspaceSummaries, loadFaceCatalogWorkspaceData, loadFaceCatalogWorkspaceDetails, loadFaceComponentWorkspaceData } from '../src/renderer/src/features/fabricator/face/faceWorkspaceData.ts'
 import {
   alignFaceCatalogMouthPreviewTransform,
   faceCatalogImagesForImport,
@@ -185,6 +185,115 @@ test('catalog loader loads only nose and mouth entries and separates details by 
   assert.deepEqual(Object.keys(result.mouthDetails), ['mouth-1', 'mouth-2'])
 })
 
+test('catalog summaries are listed without reading PNG details', async () => {
+  const summaries = [
+    { id: 'nose-1', category: 'nose', name: 'Nariz' },
+    { id: 'eye-sheet', category: 'eyes', name: 'Olhos' }
+  ]
+  let detailReads = 0
+  const api = {
+    listFaceCatalog: async () => summaries,
+    loadFaceCatalogItem: async () => { detailReads += 1; return null }
+  }
+
+  const result = await listFaceCatalogWorkspaceSummaries(api, 2, () => false)
+
+  assert.deepEqual(result, { mouthCatalog: [], noseCatalog: [summaries[0]] })
+  assert.equal(detailReads, 0)
+})
+
+test('catalog loader hydrates the active category and only the other selected face assets', async () => {
+  const summaries = [
+    { id: 'nose-1', category: 'nose', name: 'Nariz 1' },
+    { id: 'closed-1', category: 'mouth-closed', name: 'Fechada 1' },
+    { id: 'closed-2', category: 'mouth-closed', name: 'Fechada 2' },
+    { id: 'open-1', category: 'mouth-open', name: 'Aberta 1' },
+    { id: 'nose-2', category: 'nose', name: 'Nariz 2' },
+    { id: 'other', category: 'eyes', name: 'Não usado aqui' }
+  ]
+  const loadedIds = []
+  const api = {
+    listFaceCatalog: async () => summaries,
+    loadFaceCatalogItem: async (_slot, id) => {
+      loadedIds.push(id)
+      const summary = summaries.find((item) => item.id === id)
+      return { ...summary, pieces: [], transforms: {} }
+    }
+  }
+
+  const result = await loadFaceCatalogWorkspaceData(api, 2, () => false, {
+    activeCategory: 'nose',
+    mouthKind: 'mouth-open',
+    selectedMouthId: 'open-1',
+    selectedNoseId: 'nose-2'
+  })
+
+  assert.deepEqual(new Set(loadedIds), new Set(['nose-1', 'nose-2', 'open-1', 'closed-1']))
+  assert.deepEqual(result.noseCatalog.map((item) => item.id), ['nose-1', 'nose-2'])
+  assert.deepEqual(result.mouthCatalog.map((item) => item.id), ['closed-1', 'closed-2', 'open-1'])
+  assert.deepEqual(Object.keys(result.mouthDetails).sort(), ['closed-1', 'open-1'])
+  assert.deepEqual(Object.keys(result.noseDetails).sort(), ['nose-1', 'nose-2'])
+})
+
+test('mouth editing loads all mouth variants so shared transforms stay synchronized', async () => {
+  const summaries = [
+    { id: 'nose-1', category: 'nose', name: 'Nariz 1' },
+    { id: 'closed-1', category: 'mouth-closed', name: 'Fechada 1' },
+    { id: 'closed-2', category: 'mouth-closed', name: 'Fechada 2' },
+    { id: 'open-1', category: 'mouth-open', name: 'Aberta 1' },
+    { id: 'nose-2', category: 'nose', name: 'Nariz 2' }
+  ]
+  const loadedIds = []
+  const api = {
+    listFaceCatalog: async () => summaries,
+    loadFaceCatalogItem: async (_slot, id) => {
+      loadedIds.push(id)
+      const summary = summaries.find((item) => item.id === id)
+      return { ...summary, pieces: [], transforms: {} }
+    }
+  }
+
+  await loadFaceCatalogWorkspaceData(api, 2, () => false, {
+    activeCategory: 'mouth',
+    mouthKind: 'mouth-closed',
+    selectedMouthId: 'closed-2',
+    selectedNoseId: 'nose-2'
+  })
+
+  assert.deepEqual(new Set(loadedIds), new Set(['nose-2', 'closed-1', 'closed-2', 'open-1']))
+})
+
+test('detail loading reuses summaries without listing catalog metadata again', async () => {
+  const summaries = {
+    mouthCatalog: [
+      { id: 'closed-1', category: 'mouth-closed', name: 'Fechada 1' },
+      { id: 'open-1', category: 'mouth-open', name: 'Aberta 1' }
+    ],
+    noseCatalog: [{ id: 'nose-1', category: 'nose', name: 'Nariz 1' }]
+  }
+  let summaryReads = 0
+  const detailReads = []
+  const api = {
+    listFaceCatalog: async () => { summaryReads += 1; return [] },
+    loadFaceCatalogItem: async (_slot, id) => {
+      detailReads.push(id)
+      const summary = [...summaries.noseCatalog, ...summaries.mouthCatalog].find((item) => item.id === id)
+      return { ...summary, pieces: [], transforms: {} }
+    }
+  }
+
+  const result = await loadFaceCatalogWorkspaceDetails(api, 2, summaries, {
+    activeCategory: 'nose',
+    mouthKind: 'mouth-closed',
+    selectedMouthId: 'closed-1',
+    selectedNoseId: 'nose-1'
+  }, () => false)
+
+  assert.deepEqual(new Set(detailReads), new Set(['nose-1', 'closed-1']))
+  assert.equal(summaryReads, 0)
+  assert.deepEqual(Object.keys(result.mouthDetails), ['closed-1'])
+})
+
 test('workspace data loaders stop before starting image requests if the view was cancelled during listing', async () => {
   let cancelled = false
   let componentRequests = 0
@@ -203,7 +312,10 @@ test('workspace data loaders stop before starting image requests if the view was
 test('FaceComponentsWorkspace delegates library reads while keeping selection and save queue in the page', async () => {
   const page = await readFile('src/renderer/src/features/fabricator/face/FaceComponentsWorkspace.tsx', 'utf8')
   assert.match(page, /loadFaceComponentWorkspaceData\(window\.desktop\.fabricator, modelSlot, visibleKinds, \(\) => !active\)/)
-  assert.match(page, /loadFaceCatalogWorkspaceData\(window\.desktop\.fabricator, modelSlot, \(\) => !active\)/)
+  assert.match(page, /listFaceCatalogWorkspaceSummaries\(window\.desktop\.fabricator, modelSlot, \(\) => !active\)/)
+  assert.match(page, /loadFaceCatalogWorkspaceDetails\(window\.desktop\.fabricator, modelSlot,/)
+  assert.match(page, /activeCategory,\s*mouthKind: mouthKindRef\.current,\s*selectedMouthId: selectedMouthIdRef\.current,\s*selectedNoseId: selectedNoseIdRef\.current/)
+  assert.match(page, /isCatalogDeleteOpen \? 'all'/)
   assert.doesNotMatch(page, /Promise\.all\((?:visibleList|relevant)\.map\(/)
   assert.match(page, /registerPendingWriteFlusher\(flushAllSaves\)/)
   assert.match(page, /const savedSelection = mode === 'eyes' \? readComponentSelections\(\(\) => window\.localStorage\)\[modelSlot\] : undefined/)
