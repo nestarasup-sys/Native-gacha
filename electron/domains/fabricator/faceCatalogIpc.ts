@@ -34,14 +34,22 @@ type Dependencies = {
   hasStoredFaceCatalogItem: (modelSlot: number, id: string) => Promise<boolean>
   withReferenceSnapshot: <T>(modelSlot: number, operation: (snapshot: FaceReferenceSnapshot) => Promise<T>) => Promise<T>
   removeDirectory: (path: string) => Promise<void>
-  queueSave: (operation: () => Promise<void>) => Promise<void>
 }
 
 export function registerFabricatorFaceCatalogHandlers(
   ipc: Pick<IpcMain, 'handle'>,
   assertTrustedSender: (event: IpcMainInvokeEvent) => void,
   deps: Dependencies
-): void {
+): { getPendingWrites: () => Promise<void>[] } {
+  const saveQueues = new Map<number, Promise<void>>()
+  const queueSave = (modelSlot: number, operation: () => Promise<void>): Promise<void> => {
+    const previous = saveQueues.get(modelSlot) ?? Promise.resolve()
+    // Keep the raw tail so a failed write remains visible to flush and backup.
+    const next = previous.catch(() => undefined).then(operation)
+    saveQueues.set(modelSlot, next)
+    return next
+  }
+
   ipc.handle('fabricator:face:list', async (event, modelSlot: number): Promise<FaceSetSummary[]> => {
     assertTrustedSender(event)
     return deps.listFaceSets(modelSlot)
@@ -54,7 +62,8 @@ export function registerFabricatorFaceCatalogHandlers(
 
   ipc.handle('fabricator:face:save', async (event, modelSlot: number, set: FaceSetSave, assets: FaceAssetSave[]): Promise<void> => {
     assertTrustedSender(event)
-    return deps.queueSave(() => deps.writeFaceSet(modelSlot, set, assets))
+    if (!deps.isValidModelSlot(modelSlot)) throw new Error('Rosto inválido.')
+    return queueSave(modelSlot, () => deps.writeFaceSet(modelSlot, set, assets))
   })
 
   ipc.handle('fabricator:face:delete', async (event, modelSlot: number, id: string): Promise<void> => {
@@ -63,7 +72,7 @@ export function registerFabricatorFaceCatalogHandlers(
     const base = resolve(deps.faceModelPath(modelSlot))
     const target = resolve(deps.faceSetPath(modelSlot, id))
     if (dirname(target) !== base || basename(target) !== `set-${id}`) throw new Error('Caminho de exclusão inválido.')
-    return deps.queueSave(() => deps.withReferenceSnapshot(modelSlot, async (snapshot) => {
+    return queueSave(modelSlot, () => deps.withReferenceSnapshot(modelSlot, async (snapshot) => {
       await deps.readFaceSet(modelSlot, id)
       assertFaceSetHasNoReferences(snapshot, modelSlot, id)
       await deps.removeDirectory(target)
@@ -82,7 +91,8 @@ export function registerFabricatorFaceCatalogHandlers(
 
   ipc.handle('fabricator:face-catalog:save', async (event, modelSlot: number, item: FaceCatalogItemSave, assets: FaceAssetSave[]): Promise<void> => {
     assertTrustedSender(event)
-    return deps.queueSave(() => deps.writeFaceCatalogItem(modelSlot, item, assets))
+    if (!deps.isValidModelSlot(modelSlot)) throw new Error('Peça facial inválida.')
+    return queueSave(modelSlot, () => deps.writeFaceCatalogItem(modelSlot, item, assets))
   })
 
   ipc.handle('fabricator:face-catalog:delete', async (event, modelSlot: number, id: string): Promise<void> => {
@@ -91,7 +101,7 @@ export function registerFabricatorFaceCatalogHandlers(
     const base = resolve(deps.faceCatalogPath(modelSlot))
     const target = resolve(deps.faceCatalogItemPath(modelSlot, id))
     if (dirname(target) !== base || basename(target) !== `item-${id}`) throw new Error('Caminho de exclusão inválido.')
-    return deps.queueSave(() => deps.withReferenceSnapshot(modelSlot, async (snapshot) => {
+    return queueSave(modelSlot, () => deps.withReferenceSnapshot(modelSlot, async (snapshot) => {
       await deps.readFaceCatalogItem(modelSlot, id)
       assertFaceCatalogItemHasNoReferences(snapshot, modelSlot, id)
       if (!await deps.hasStoredFaceCatalogItem(modelSlot, id)) {
@@ -113,7 +123,8 @@ export function registerFabricatorFaceCatalogHandlers(
 
   ipc.handle(fabricatorIpcChannels.saveFaceComponentAsset, async (event, modelSlot: number, asset: FaceComponentAssetSave, dataUrl: string): Promise<void> => {
     assertTrustedSender(event)
-    return deps.queueSave(() => deps.writeFaceComponentAsset(modelSlot, asset, dataUrl))
+    if (!deps.isValidModelSlot(modelSlot)) throw new Error('Asset facial inválido; use uma imagem PNG.')
+    return queueSave(modelSlot, () => deps.writeFaceComponentAsset(modelSlot, asset, dataUrl))
   })
 
   ipc.handle(fabricatorIpcChannels.deleteFaceComponentAsset, async (event, modelSlot: number, id: string): Promise<void> => {
@@ -122,10 +133,12 @@ export function registerFabricatorFaceCatalogHandlers(
     const base = resolve(deps.faceComponentPath(modelSlot))
     const target = resolve(deps.faceComponentItemPath(modelSlot, id))
     if (dirname(target) !== base || basename(target) !== `item-${id}`) throw new Error('Caminho de exclusão inválido.')
-    return deps.queueSave(() => deps.withReferenceSnapshot(modelSlot, async (snapshot) => {
+    return queueSave(modelSlot, () => deps.withReferenceSnapshot(modelSlot, async (snapshot) => {
       const asset = await deps.readFaceComponentAsset(modelSlot, id)
       assertFaceComponentHasNoReferences(snapshot, modelSlot, id, asset?.name ?? id)
       await deps.removeDirectory(target)
     }))
   })
+
+  return { getPendingWrites: () => [...saveQueues.values()] }
 }

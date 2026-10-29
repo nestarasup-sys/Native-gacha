@@ -48,27 +48,26 @@ function referenceSnapshot() {
   }
 }
 
-function registerFaceHandlers(snapshot, removed, storedCatalogItem = true) {
+function registerFaceHandlers(snapshot, removed, storedCatalogItem = true, overrides = {}) {
   const handlers = new Map()
-  const modelRoot = join(tmpdir(), 'native-gacha-face-reference-test', 'model-1')
-  registerFabricatorFaceCatalogHandlers({ handle: (channel, handler) => handlers.set(channel, handler) }, () => undefined, {
-    isValidModelSlot: slot => slot === 1,
+  const modelRoot = slot => join(tmpdir(), 'native-gacha-face-reference-test', `model-${slot}`)
+  const registration = registerFabricatorFaceCatalogHandlers({ handle: (channel, handler) => handlers.set(channel, handler) }, () => undefined, {
+    isValidModelSlot: slot => slot === 1 || slot === 2,
     isValidWardrobeId: id => /^[a-z0-9_-]+$/.test(id),
     isValidFaceCatalogId: id => /^[a-z0-9_-]+$/.test(id),
-    listFaceSets: async () => [], readFaceSet: async () => null, writeFaceSet: async () => undefined,
-    faceModelPath: () => modelRoot, faceSetPath: (_slot, id) => join(modelRoot, `set-${id}`),
-    listFaceCatalogItems: async () => [], readFaceCatalogItem: async () => null, writeFaceCatalogItem: async () => undefined,
-    faceCatalogPath: () => join(modelRoot, 'catalog'), faceCatalogItemPath: (_slot, id) => join(modelRoot, 'catalog', `item-${id}`),
+    listFaceSets: async () => [], readFaceSet: async () => null, writeFaceSet: overrides.writeFaceSet ?? (async () => undefined),
+    faceModelPath: slot => modelRoot(slot), faceSetPath: (slot, id) => join(modelRoot(slot), `set-${id}`),
+    listFaceCatalogItems: async () => [], readFaceCatalogItem: async () => null, writeFaceCatalogItem: overrides.writeFaceCatalogItem ?? (async () => undefined),
+    faceCatalogPath: slot => join(modelRoot(slot), 'catalog'), faceCatalogItemPath: (slot, id) => join(modelRoot(slot), 'catalog', `item-${id}`),
     listFaceComponentAssets: async () => [],
     readFaceComponentAsset: async (_slot, id) => ({ id, name: id, kind: 'eye' }),
-    writeFaceComponentAsset: async () => undefined,
-    faceComponentPath: () => join(modelRoot, 'components'), faceComponentItemPath: (_slot, id) => join(modelRoot, 'components', `item-${id}`),
+    writeFaceComponentAsset: overrides.writeFaceComponentAsset ?? (async () => undefined),
+    faceComponentPath: slot => join(modelRoot(slot), 'components'), faceComponentItemPath: (slot, id) => join(modelRoot(slot), 'components', `item-${id}`),
     hasStoredFaceCatalogItem: async () => storedCatalogItem,
     withReferenceSnapshot: async (_slot, operation) => operation(snapshot),
-    removeDirectory: async path => { removed.push(path) },
-    queueSave: async operation => operation()
+    removeDirectory: async path => { removed.push(path) }
   })
-  return handlers
+  return { handlers, getPendingWrites: registration.getPendingWrites }
 }
 
 test('inventaria todos os vínculos de rosto persistidos pelo personagem', () => {
@@ -107,7 +106,7 @@ test('presets e rascunhos de Expressões DEV mantêm referências faciais', () =
 test('excluir asset facial bloqueia vínculos e permite remover um asset isolado', async () => {
   const snapshot = referenceSnapshot()
   const removed = []
-  const handlers = registerFaceHandlers(snapshot, removed)
+  const { handlers } = registerFaceHandlers(snapshot, removed)
   const deleteComponent = handlers.get(fabricatorIpcChannels.deleteFaceComponentAsset)
   await assert.rejects(deleteComponent({}, 1, 'eye-preset'), /Preset preset-1/)
   await assert.rejects(handlers.get('fabricator:face-catalog:delete')({}, 1, 'nose-preset'), /Preset preset-1/)
@@ -121,8 +120,57 @@ test('excluir asset facial bloqueia vínculos e permite remover um asset isolado
 })
 
 test('peça virtual de conjunto legado não retorna sucesso falso ao tentar excluí-la', async () => {
-  const handlers = registerFaceHandlers({ characters: [], expressionPresets: [], expressionDraft: null, faceComponents: [] }, [], false)
+  const { handlers } = registerFaceHandlers({ characters: [], expressionPresets: [], expressionDraft: null, faceComponents: [] }, [], false)
   await assert.rejects(handlers.get('fabricator:face-catalog:delete')({}, 1, 'legacy_old-set_eyes'), /conjunto facial legado/)
+})
+
+test('gravações faciais mantêm FIFO por modelo e liberam outros slots', async () => {
+  const events = []
+  let releaseFirst
+  let signalFirst
+  const gate = new Promise(resolve => { releaseFirst = resolve })
+  const firstStarted = new Promise(resolve => { signalFirst = resolve })
+  const harness = registerFaceHandlers({ characters: [], expressionPresets: [], expressionDraft: null, faceComponents: [] }, [], true, {
+    writeFaceSet: async slot => {
+      const occurrence = events.filter(event => event === `start:${slot}`).length + 1
+      events.push(`start:${slot}`)
+      if (slot === 1 && occurrence === 1) {
+        signalFirst()
+        await gate
+      }
+      events.push(`end:${slot}`)
+    }
+  })
+  const save = slot => harness.handlers.get('fabricator:face:save')({}, slot, { id: `set-${slot}` }, [])
+
+  const first = save(1)
+  await firstStarted
+  const nextForSameSlot = save(1)
+  const independentSlot = save(2)
+  const pending = harness.getPendingWrites()
+  assert.equal(pending.length, 2, 'o inventário conserva a cauda de cada slot ativo')
+
+  await independentSlot
+  assert.deepEqual(events, ['start:1', 'start:2', 'end:2'])
+  releaseFirst()
+  await Promise.all([first, nextForSameSlot, ...pending])
+  assert.deepEqual(events, ['start:1', 'start:2', 'end:2', 'end:1', 'start:1', 'end:1'])
+  await assert.rejects(save(3), /Rosto inválido/)
+  assert.equal(harness.getPendingWrites().length, 2, 'slots inválidos não criam caudas de gravação')
+})
+
+test('falha facial segue visível no flush e não impede a próxima gravação do mesmo slot', async () => {
+  let shouldFail = true
+  const harness = registerFaceHandlers({ characters: [], expressionPresets: [], expressionDraft: null, faceComponents: [] }, [], true, {
+    writeFaceSet: async () => { if (shouldFail) throw new Error('falha facial sintética') }
+  })
+  const save = () => harness.handlers.get('fabricator:face:save')({}, 1, { id: 'set-1' }, [])
+
+  await assert.rejects(save(), /falha facial sintética/)
+  await assert.rejects(Promise.all(harness.getPendingWrites()), /falha facial sintética/)
+  shouldFail = false
+  await save()
+  await Promise.all(harness.getPendingWrites())
 })
 
 test('novos vínculos de preset e rascunho são checados, preservando referências antigas', () => {

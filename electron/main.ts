@@ -378,14 +378,8 @@ let poseSaveQueue: Promise<void> = Promise.resolve()
 const poseSaveWrites = new Set<Promise<void>>()
 let poseMigration: Promise<void> | null = null
 let animatorSaveQueue: Promise<void> = Promise.resolve()
-let faceSaveQueue: Promise<void> = Promise.resolve()
 let faceGuideSaveQueue: Promise<void> = Promise.resolve()
-
-function queueFaceSave(operation: () => Promise<void>): Promise<void> {
-  const next = faceSaveQueue.catch(() => undefined).then(operation)
-  faceSaveQueue = next
-  return next
-}
+let fabricatorFaceCatalogIpc: ReturnType<typeof registerFabricatorFaceCatalogHandlers> | null = null
 
 function queueFaceGuideSave(operation: () => Promise<void>): Promise<void> {
   const next = faceGuideSaveQueue.catch(() => undefined).then(operation)
@@ -1263,7 +1257,8 @@ const { isValidAnimatorSlot, writeAnimatorAnimation, readAnimatorAnimation, writ
 function collectPendingPersistenceWrites(): Promise<unknown>[] {
   return [
     ...(fabricatorProjectIpc?.getPendingWrites() ?? []), ...poseSaveWrites, ...(fabricatorHairIpc?.getPendingWrites() ?? []),
-    animatorSaveQueue, ...(fabricatorWardrobeIpc?.getPendingWrites() ?? []), faceSaveQueue,
+    animatorSaveQueue, ...(fabricatorWardrobeIpc?.getPendingWrites() ?? []),
+    ...(fabricatorFaceCatalogIpc?.getPendingWrites() ?? []),
     ...expressionPresetOperations.getPendingWrites(),
     faceGuideSaveQueue, customizerService.pendingWrites,
     studioSaveQueues.studio, editorV6SaveQueue, roteirosSaveQueue,
@@ -1496,7 +1491,7 @@ async function registerFabricatorHandlers(): Promise<void> {
     readLegacyHair:readHairWorkspace,
     readLegacyHairCatalogState
   })
-  registerFabricatorFaceCatalogHandlers(ipcMain, assertTrustedSender, {
+  fabricatorFaceCatalogIpc = registerFabricatorFaceCatalogHandlers(ipcMain, assertTrustedSender, {
     isValidModelSlot, isValidWardrobeId, isValidFaceCatalogId,
     listFaceSets: (modelSlot) => catalogListings.listFaces(modelSlot),
     readFaceSet, writeFaceSet, faceModelPath, faceSetPath,
@@ -1518,8 +1513,7 @@ async function registerFabricatorHandlers(): Promise<void> {
         faceComponents: await listFaceComponentAssets(modelSlot)
       })
     })),
-    removeDirectory: (path) => rm(path, { recursive: true, force: true }),
-    queueSave: queueFaceSave
+    removeDirectory: (path) => rm(path, { recursive: true, force: true })
   })
 
   registerExpressionPresetHandlers(ipcMain, assertTrustedSender, {
