@@ -36,27 +36,34 @@ type RowsProps = {
   onTrack: (track: Track, action: TrackAction, name?: string) => void
   onScrub: (event: ReactPointerEvent<HTMLElement>) => void
 }
+type DisplayRow = { key: string; track: Track; blocks: Block[]; backgroundLane: boolean; index: number }
 /** Playback only moves the cursor overlay; these rows rerender on editing or scrolling. */
 const TimelineRows = memo(function TimelineRows({ timeline, pps, width, heading, range, selectedId, onPointer, onSelect, onMenu, onTrack, onScrub }: RowsProps) {
-  const sortedTracks = useMemo(() => new Map(timeline.tracks.map((track) => [track.id, [...track.blocks].sort((a, b) => a.startFrame - b.startFrame)])), [timeline])
-  const transitions = useMemo(() => new Map(timeline.tracks.map((track) => { const blocks = sortedTracks.get(track.id)!; return [track.id, blocks.slice(1).flatMap((next, i) => { const plan = editorV6MotionPlan(track, blocks[i], next); return plan ? [plan] : [] })] })), [timeline, sortedTracks])
+  const displayRows = useMemo<DisplayRow[]>(() => {
+    const rows = timeline.tracks.map((track, index) => ({ key: track.id, track, blocks: track.blocks.filter((block) => !block.background), backgroundLane: false, index }))
+    const track = timeline.tracks.find((candidate) => candidate.kind === 'video') ?? { id: 'editor-v6-background-source', kind: 'video' as const, name: 'Vídeo', muted: false, locked: false, blocks: [] }
+    rows.push({ key: `background:${track.id}`, track, blocks: track.blocks.filter((block) => Boolean(block.background)), backgroundLane: true, index: timeline.tracks.length })
+    return rows
+  }, [timeline])
+  const sortedTracks = useMemo(() => new Map(displayRows.map(({ key, blocks }) => [key, [...blocks].sort((a, b) => a.startFrame - b.startFrame)])), [displayRows])
+  const transitions = useMemo(() => new Map(displayRows.map(({ key, track }) => { const blocks = sortedTracks.get(key)!; return [key, blocks.slice(1).flatMap((next, i) => { const plan = editorV6MotionPlan(track, blocks[i], next); return plan ? [plan] : [] })] })), [displayRows, sortedTracks])
   const [renameId, setRenameId] = useState<string | null>(null)
-  return <>{timeline.tracks.map((track, index) => <div className={`editor-v6-timeline-track${track.hidden || track.muted ? ' muted' : ''}${track.collapsed ? ' collapsed' : ''}`} key={track.id} style={{ gridTemplateColumns: `${heading}px ${width}px` }}>
+  return <>{displayRows.map(({ key, track, backgroundLane, index }) => <div className={`editor-v6-timeline-track${track.hidden || track.muted ? ' muted' : ''}${!backgroundLane && track.collapsed ? ' collapsed' : ''}`} key={key} style={{ gridTemplateColumns: `${heading}px ${width}px` }}>
     <div className="editor-v6-timeline-track-heading">
-      <button type="button" className="v6-track-collapse" onClick={() => onTrack(track, 'collapsed')} title={track.collapsed ? 'Expandir faixa' : 'Recolher faixa'}>{track.collapsed ? '▸' : '▾'}</button>
-      {renameId === track.id ? <input className="v6-track-name" autoFocus defaultValue={track.name} maxLength={80} onBlur={(event) => { const name = event.currentTarget.value.trim(); if (name && name !== track.name) onTrack(track, 'rename', name); setRenameId(null) }} onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') setRenameId(null) }} /> : <strong title={`${track.name} · ${LABELS[track.kind]} · Duplo clique para renomear`} onDoubleClick={() => setRenameId(track.id)}>{track.name}</strong>}
-      <div className="editor-v6-track-actions">
+      {!backgroundLane && <button type="button" className="v6-track-collapse" onClick={() => onTrack(track, 'collapsed')} title={track.collapsed ? 'Expandir faixa' : 'Recolher faixa'}>{track.collapsed ? '▸' : '▾'}</button>}
+      {backgroundLane ? <strong title="Estados do fundo">Fundo</strong> : renameId === track.id ? <input className="v6-track-name" autoFocus defaultValue={track.name} maxLength={80} onBlur={(event) => { const name = event.currentTarget.value.trim(); if (name && name !== track.name) onTrack(track, 'rename', name); setRenameId(null) }} onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') setRenameId(null) }} /> : <strong title={`${track.name} · ${LABELS[track.kind]} · Duplo clique para renomear`} onDoubleClick={() => setRenameId(track.id)}>{track.name}</strong>}
+      {!backgroundLane && <div className="editor-v6-track-actions">
         {track.kind === 'character' && <button type="button" aria-pressed={track.motionEnabled !== false} disabled={track.locked} onClick={() => onTrack(track, 'motion')} title="Animar trocas de pose e expressão nesta faixa (250 ms)">{track.motionEnabled === false ? '◇' : '◆'}</button>}<button type="button" onClick={() => onTrack(track, 'add')} disabled={track.locked} title="Adicionar bloco no cursor">＋</button>
         <button type="button" onClick={() => onTrack(track, 'hidden')} title={track.hidden || track.muted ? 'Mostrar faixa' : 'Ocultar faixa'}>{track.hidden || track.muted ? '◌' : '◉'}</button>
         <button type="button" onClick={() => onTrack(track, 'locked')} title={track.locked ? 'Desbloquear faixa' : 'Bloquear faixa'}>{track.locked ? '▣' : '▢'}</button>
         <button type="button" onClick={() => onTrack(track, 'up')} disabled={index === 0 || track.locked} title="Mover faixa para cima">↑</button>
         <button type="button" onClick={() => onTrack(track, 'down')} disabled={index === timeline.tracks.length - 1 || track.locked} title="Mover faixa para baixo">↓</button>
-      </div>
+      </div>}
     </div>
     <div className="editor-v6-timeline-lane" style={{ width, backgroundSize: `${pps}px 100%` }} onPointerDown={onScrub}>
-      {transitions.get(track.id)!.filter((plan) => plan.startFrame <= range[1] && plan.endFrame >= range[0]).map((plan) => <i key={`motion-${plan.blockId}`} className="v6-motion-range" style={{ left: plan.startFrame / 30 * pps, width: (plan.endFrame - plan.startFrame) / 30 * pps }} />)}
-      {track.blocks.filter((block) => block.startFrame <= range[1] && block.startFrame + block.durationFrames >= range[0]).map((block) => <div key={block.id}
-        className={`editor-v6-timeline-block kind-${track.kind}${selectedId === block.id ? ' selected' : ''}${track.locked ? ' locked' : ''}`}
+      {transitions.get(key)!.filter((plan) => plan.startFrame <= range[1] && plan.endFrame >= range[0]).map((plan) => <i key={`motion-${plan.blockId}`} className="v6-motion-range" style={{ left: plan.startFrame / 30 * pps, width: (plan.endFrame - plan.startFrame) / 30 * pps }} />)}
+      {sortedTracks.get(key)!.filter((block) => block.startFrame <= range[1] && block.startFrame + block.durationFrames >= range[0]).map((block) => <div key={block.id}
+        className={`editor-v6-timeline-block kind-${backgroundLane ? 'background' : track.kind}${selectedId === block.id ? ' selected' : ''}${track.locked ? ' locked' : ''}`}
         style={{ left: block.startFrame / 30 * pps, width: Math.max(3, block.durationFrames / 30 * pps), ...(track.characterId ? { borderColor: videoCharacterTrackColor(track.characterId) } : {}) }}
         tabIndex={0} role="button" aria-label={`${block.label}, ${frameTimecode(block.startFrame)}, duração ${frameTimecode(block.durationFrames)}`}
         title={`${block.label}\nInício ${frameTimecode(block.startFrame)} · Fim ${frameTimecode(block.startFrame + block.durationFrames)} · Duração ${frameTimecode(block.durationFrames)}`}
@@ -64,7 +71,7 @@ const TimelineRows = memo(function TimelineRows({ timeline, pps, width, heading,
         onClick={(event) => { event.stopPropagation(); onSelect(block) }} onKeyDown={(event) => { if (event.key === 'Enter') onSelect(block) }}
         onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); onMenu(event.clientX, event.clientY, track, block) }}>
         <span>{block.state?.visible === false ? '◌ ' : ''}{block.parentBlockId ? '↳ ' : ''}{block.label}</span>
-        {!track.collapsed && <small>{frameTimecode(block.durationFrames)}</small>}
+        {(backgroundLane || !track.collapsed) && <small>{frameTimecode(block.durationFrames)}</small>}
         <i className="editor-v6-timeline-resize" onPointerDown={(event) => onPointer(event, track, block, 'resize')} aria-label="Alterar duração" />
       </div>)}
     </div>
@@ -295,7 +302,7 @@ export function EditorV6Timeline(props: Props) {
     <div className="editor-v6-timeline-scroll" ref={scroll} onScroll={(event) => setViewport({ left: event.currentTarget.scrollLeft, width: event.currentTarget.clientWidth })}>
       <div className="editor-v6-timeline-content" style={{ width: heading + width }}>
         <div className="editor-v6-timeline-ruler-row" style={{ gridTemplateColumns: `${heading}px ${width}px` }}>
-          <div className="editor-v6-timeline-track-heading">FAIXAS <span>{timeline.tracks.length}</span></div>
+          <div className="editor-v6-timeline-track-heading">FAIXAS <span>{timeline.tracks.length + 1}</span></div>
           <div className="editor-v6-timeline-ruler" style={{ width, backgroundSize: `${pps}px 100%` }} onPointerDown={onScrub}>{ticks.map((second) => <span key={second} style={{ left: second * pps }}>{second}s</span>)}</div>
         </div>
         <TimelineRows timeline={timeline} pps={pps} width={width} heading={heading} range={range} selectedId={props.selectedId} onPointer={onPointer} onSelect={select} onMenu={onMenu} onTrack={onTrack} onScrub={onScrub} />
@@ -305,7 +312,7 @@ export function EditorV6Timeline(props: Props) {
     {readout && <div className="v6-drag-readout" role="status">Início {frameTimecode(readout.startFrame)} · Fim {frameTimecode(readout.startFrame + readout.durationFrames)} · Duração {frameTimecode(readout.durationFrames)} <kbd>Esc cancela</kbd></div>}
     {notice && <button type="button" className="v6-timeline-notice" onClick={() => setNotice('')}>{notice} ×</button>}
     {inspector && selected && <div className="v6-clip-inspector" aria-label="Inspector do bloco">
-      <strong title={selected.block.label}>{selected.track.name}</strong>
+      <strong title={selected.block.label}>{selected.block.background ? 'Fundo' : selected.track.name}</strong>
       <FrameInput label="Início (s)" value={selected.block.startFrame} disabled={selected.track.locked} onCommit={(value) => changeTimeline((current) => setEditorV6BlockTiming(current, selected.block.id, { startFrame: value }))} />
       <FrameInput label="Duração (s)" value={selected.block.durationFrames} disabled={selected.track.locked} onCommit={(value) => {
         if (value < 1) return

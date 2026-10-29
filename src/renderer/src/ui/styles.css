@@ -748,6 +748,7 @@ button:focus-visible, input:focus-visible { outline: 3px solid #ed8caf; outline-
 .editor-v6-timeline-block.kind-thought { border-color:#80aaa0;background:linear-gradient(180deg,#e2f3ee,#cce7de);color:#41695f; }
 .editor-v6-timeline-block.kind-object { border-color:#aa91c7;background:linear-gradient(180deg,#f0e8fa,#dfd1f1);color:#604d75; }
 .editor-v6-timeline-block.kind-visual,.editor-v6-timeline-block.kind-video { border-color:#7da8c2;background:linear-gradient(180deg,#e2f1f8,#c8e1ee);color:#3f6276; }
+.editor-v6-timeline-block.kind-background { border-color:#75a99b;background:linear-gradient(180deg,#e3f3ee,#cce7dc);color:#40695c; }
 .editor-v6-timeline-block.kind-audio { border-color:#c2a166;background:linear-gradient(180deg,#fbf0d8,#f0dfb9);color:#735b2d; }
 .editor-v6-timeline-resize { width:8px;position:absolute;top:0;right:0;bottom:0;border-left:1px solid #ffffff70;border-radius:0 4px 4px 0;background:#ffffff38;cursor:ew-resize;touch-action:none; }
 .v6-timeline-pro { position:relative;grid-template-rows:39px minmax(0,1fr); }

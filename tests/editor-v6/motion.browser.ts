@@ -63,20 +63,29 @@ async function image(url: string) { const i = new Image(); i.src = url; await i.
   }
   assert(greenXs.every((x,i)=>i===0 || x>=greenXs[i-1]) && greenXs[6]-greenXs[0]>10,'Facial preset did not interpolate from the actual catalog calibration')
   const baseTimeline = createEditorV6Timeline([actor])
-  const uiProject: EditorV6Document = { schemaVersion: 1,id: crypto.randomUUID(),title: 'UI motion',color: '#ffffff',createdAt: source.updatedAt,updatedAt: source.updatedAt,backgroundColor: '#ffffff',backgroundAssetId: null,backgroundX: 0,backgroundY: 0,backgroundWidth: 100,backgroundHeight: 100,backgroundRotation: 0,elements: [actor],assets: [],timeline: { ...baseTimeline,tracks: baseTimeline.tracks.map(t=>t.kind==='character'?{...t,blocks:[previous,next]}:t) } }
+  const timelineBackground = { id: crypto.randomUUID(), label: 'Fundo: teste.png', startFrame: 0, durationFrames: 300, background: { backgroundColor: '#ffffff', backgroundAssetId: null, backgroundX: 0, backgroundY: 0, backgroundWidth: 100, backgroundHeight: 100, backgroundRotation: 0 } }
+  const videoClip = { id: crypto.randomUUID(), mediaId: 'video-test', label: 'Vídeo de teste', startFrame: 0, durationFrames: 150 }
+  const uiProject: EditorV6Document = { schemaVersion: 1,id: crypto.randomUUID(),title: 'UI motion',color: '#ffffff',createdAt: source.updatedAt,updatedAt: source.updatedAt,backgroundColor: '#ffffff',backgroundAssetId: null,backgroundX: 0,backgroundY: 0,backgroundWidth: 100,backgroundHeight: 100,backgroundRotation: 0,elements: [actor],assets: [],timeline: { ...baseTimeline,tracks: baseTimeline.tracks.map(t=>t.kind==='character'?{...t,blocks:[previous,next]}:t.kind==='video'?{...t,blocks:[timelineBackground,videoClip]}:t) } }
   const mount=document.createElement('div');document.body.append(mount);const uiRoot=createRoot(mount)
   function TimelineDemo() {
     const [project,setProject]=useState(uiProject),[selected,onSelect]=useState<string|null>(null)
     return createElement(EditorV6Timeline,{document:project,frame:0,playing:false,selectedId:selected,onSeek:()=>{},onPlay:()=>{},onSelect:b=>onSelect(b.id),onChange:setProject})
   }
   flushSync(()=>uiRoot.render(createElement(TimelineDemo)))
+  const lanes=Array.from(mount.querySelectorAll<HTMLElement>('.editor-v6-timeline-track'))
+  const videoLane=lanes.find(lane=>lane.querySelector('.editor-v6-timeline-track-heading strong')?.textContent==='Vídeo')
+  const backgroundLane=lanes.at(-1)
+  assert(backgroundLane?.querySelector('.editor-v6-timeline-track-heading strong')?.textContent==='Fundo','Dedicated background lane is missing or not at the bottom')
+  assert(!Array.from(videoLane?.querySelectorAll('.editor-v6-timeline-block')??[]).some(block=>block.textContent?.includes('Fundo: teste.png')),'Background appeared as a block in the video lane')
+  assert(Array.from(videoLane?.querySelectorAll('.editor-v6-timeline-block')??[]).some(block=>block.textContent?.includes('Vídeo de teste')),'Regular video clips disappeared from the video lane')
+  assert(Array.from(backgroundLane?.querySelectorAll('.editor-v6-timeline-block')??[]).some(block=>block.textContent?.includes('Fundo: teste.png')),'Background state was not shown in its dedicated lane')
   const tick=()=>new Promise(resolve=>requestAnimationFrame(()=>resolve(undefined)))
   const toggle=()=>mount.querySelector<HTMLButtonElement>('button[title="Animar trocas de pose e expressão nesta faixa (250 ms)"]')!
   assert(mount.querySelectorAll('.v6-motion-range').length===1,'Timeline did not mark the anticipatory transition')
   toggle().click();await tick()
   assert(toggle().getAttribute('aria-pressed')==='false' && !mount.querySelector('.v6-motion-range'),'Character motion switch failed')
   toggle().click();await tick()
-  mount.querySelectorAll<HTMLElement>('.editor-v6-timeline-block')[1].click();await tick()
+  mount.querySelectorAll<HTMLElement>('.editor-v6-timeline-block.kind-character')[1].click();await tick()
   const checkbox=Array.from(mount.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')).find(c=>c.parentElement?.textContent?.includes('Animar entrada'))!
   assert(checkbox?.checked,'Destination block motion switch is missing')
   checkbox.click();await tick()

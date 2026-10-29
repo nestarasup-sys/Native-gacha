@@ -841,6 +841,7 @@ export function EditorV6Page() {
   const selectBackground = (asset: EditorV6Asset) => {
     const frame = getEditorV6PlaybackFrame()
     changeScene((studio) => ({ ...editEditorV6BackgroundAtFrame(studio, frame, { backgroundAssetId: asset.id, backgroundX: 0, backgroundY: 0, backgroundWidth: 100, backgroundHeight: 100, backgroundRotation: 0 }), updatedAt: new Date().toISOString() }))
+    setSelectedTimelineBlockId(null)
     setSelectedElementId('background')
     setInspectorOpen(true)
     setInspectorTab('editor')
