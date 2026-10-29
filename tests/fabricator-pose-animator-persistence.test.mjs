@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { createPosePersistence } from '../electron/domains/fabricator/posePersistence.ts'
 import { createAnimatorPersistence } from '../electron/domains/fabricator/animatorPersistence.ts'
+import { poseAssetsForPersistence } from '../src/renderer/src/features/fabricator/models/poseAssetSnapshots.ts'
 
 const png = 'data:image/png;base64,' + Buffer.from('PNGDATA').toString('base64')
 const part = { id: 'head', name: 'Cabeça', x: 12, y: 8, width: 30, height: 40, rotation: 0 }
@@ -64,6 +65,16 @@ test('Poses DEV salva e relê o rascunho sem renomear peças', async t => {
   await store.writePoseDraft(1,draft,[{id:'head',dataUrl:png}])
   const loaded = await store.readPoseDraft(1)
   assert.equal(loaded.project.parts[0].id,'head')
+  assert.equal(loaded.project.parts[0].dataUrl,png)
+})
+test('autosave recria o PNG da cabeça se a pasta do rascunho tiver sido removida', async t => {
+  const {pose: store,paths} = await fixture(t)
+  const imageParts = [{...part,dataUrl:png}]
+  const savedDraft = {...draft,project:{...draft.project,parts:[part]}}
+  await store.writePoseDraft(1,savedDraft,poseAssetsForPersistence(imageParts))
+  await fs.rm(paths.poseDraftPath(1),{recursive:true,force:true})
+  await store.writePoseDraft(1,savedDraft,poseAssetsForPersistence(imageParts))
+  const loaded = await store.readPoseDraft(1)
   assert.equal(loaded.project.parts[0].dataUrl,png)
 })
 test('rascunho de pose recupera a imagem do slot editado antes da imagem do modelo', async t => {
