@@ -6,8 +6,7 @@ import { mkdir as nativeMkdir, readFile as nativeReadFile, writeFile as nativeWr
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
-import { FABRICATOR_MODEL_SLOT_COUNT, FABRICATOR_POSE_SLOT_COUNT, type FaceAssetKind, type FaceAssetSave, type FaceCatalogItem, type FaceCatalogItemSave, type FaceCatalogItemSummary, type FaceComponentAsset, type FaceComponentAssetSave, type FaceComponentAssetSummary, type FaceElementKind, type FaceExpressionPreset, type FaceExpressionTransforms, type FaceExpressionWorkspaceDraft, type FaceSet, type FaceSetSave, type FaceSheetKind, type FaceTransform, type FabricatorPoseDraftSave, type FabricatorPoseSave, type FabricatorProjectSave, type HairStyle, type HairStyleAsset, type HairStyleSave, type HairWorkspace, type HairWorkspaceAsset, type HairWorkspaceSave, type ModelPart } from '../src/shared/fabricator'
-import { hairCategories } from '../src/shared/hairCategories'
+import { FABRICATOR_MODEL_SLOT_COUNT, FABRICATOR_POSE_SLOT_COUNT, type FaceExpressionPreset, type FaceExpressionTransforms, type FaceExpressionWorkspaceDraft, type FaceTransform, type FabricatorPoseDraftSave, type FabricatorPoseSave, type FabricatorProjectSave, type ModelPart } from '../src/shared/fabricator'
 import type { CustomizerCharacter } from '../src/shared/customizer'
 import type { CustomizerFaceAssetReference } from '../src/shared/customizerFaceAssetReferences'
 import type { FabricatorPoseReference } from '../src/shared/fabricatorPoseReferences'
@@ -64,6 +63,8 @@ import { registerFabricatorPoseHandlers } from './domains/fabricator/poseIpc'
 import { registerFabricatorAnimatorHandlers } from './domains/fabricator/animatorIpc'
 import { FabricatorCatalogAssetService } from './domains/fabricator/catalogAssetService'
 import { createFabricatorCatalogPersistence } from './domains/fabricator/catalogPersistence'
+import { createFabricatorFaceStorage } from './domains/fabricator/faceStorage'
+import { createFabricatorHairStorage } from './domains/fabricator/hairStorage'
 import { createFabricatorExpressionStorage } from './domains/fabricator/expressionStorage'
 import { createExpressionBatchTransaction } from './domains/fabricator/expressionBatchTransaction'
 import { createFabricatorDesignSettingsService } from './domains/fabricator/designSettingsService'
@@ -434,38 +435,6 @@ const customizerService = new CustomizerCharacterService(
 
 const isValidWardrobeId = (id: string) => /^[a-zA-Z0-9_-]{1,80}$/.test(id)
 const isValidFaceCatalogId = (id: string) => /^[a-zA-Z0-9_-]{1,120}$/.test(id)
-const faceSheetKinds: FaceSheetKind[] = ['eyes', 'eyebrows', 'nose', 'mouth-closed', 'mouth-open']
-const faceElementKinds: FaceElementKind[] = ['eye-left', 'eye-right', 'brow-left', 'brow-right', 'nose', 'mouth']
-
-function validFaceSet(modelSlot: number, set: FaceSetSave): boolean {
-  if (!isValidModelSlot(modelSlot) || set?.schemaVersion !== 1 || set.modelSlot !== modelSlot || !isValidWardrobeId(set.id)
-    || typeof set.name !== 'string' || !set.name.trim() || set.name.length > 80
-    || !Array.isArray(set.pieces) || set.pieces.length > 60 || !set.sheets || typeof set.sheets !== 'object'
-    || !set.transforms || typeof set.transforms !== 'object') return false
-  const ids = new Set<string>()
-  for (const piece of set.pieces) {
-    if (!isValidWardrobeId(piece.id) || ids.has(piece.id) || !faceSheetKinds.includes(piece.sheet)
-      || !Number.isInteger(piece.index) || piece.index < 0 || piece.index > 20
-      || (piece.side !== undefined && piece.side !== 'left' && piece.side !== 'right')
-      || !piece.crop || ![piece.crop.x, piece.crop.y, piece.crop.width, piece.crop.height, piece.width, piece.height].every(Number.isFinite)
-      || piece.crop.width <= 0 || piece.crop.height <= 0 || piece.width <= 0 || piece.height <= 0) return false
-    ids.add(piece.id)
-  }
-  for (const [kind, sheet] of Object.entries(set.sheets)) {
-    if (!faceSheetKinds.includes(kind as FaceSheetKind) || !sheet || !Number.isFinite(sheet.width)
-      || !Number.isFinite(sheet.height) || sheet.width <= 0 || sheet.height <= 0 || sheet.width * sheet.height > 32_000_000
-      || !Number.isFinite(sheet.tolerance) || sheet.tolerance < 0 || sheet.tolerance > 280) return false
-  }
-  for (const kind of faceElementKinds) {
-    const transform = set.transforms[kind]
-    if (!transform || ![transform.x, transform.y, transform.scaleX, transform.scaleY, transform.rotation].every(Number.isFinite)
-      || transform.scaleX <= 0 || transform.scaleY <= 0) return false
-  }
-  return Number.isInteger(set.selectedNose) && set.selectedNose >= 0 && set.selectedNose <= 5
-    && Number.isInteger(set.selectedExpression) && set.selectedExpression >= 0 && set.selectedExpression <= 20
-    && typeof set.eyeLinked === 'boolean' && typeof set.browLinked === 'boolean'
-}
-
 function validFaceExpressionPreset(modelSlot: number, preset: FaceExpressionPreset): boolean {
   const validTransform = (transform: unknown) => {
     if (!transform || typeof transform !== 'object') return false
@@ -564,397 +533,25 @@ function queueExpressionWork<T>(modelSlot: number, operation: () => Promise<T>):
 
 const catalogPersistence = createFabricatorCatalogPersistence({ mkdir, access, readFile, writeFile, rename, unlink, rm, readdir }, writeAssetImageSource)
 
-async function writeFaceSet(modelSlot: number, set: FaceSetSave, assets: FaceAssetSave[]): Promise<void> {
-  invalidateCatalogPng('face', `${modelSlot}:set:${set.id}`)
-  if (!validFaceSet(modelSlot, set)) throw new Error('Rosto inválido.')
-  const expected = new Set([...set.pieces.map(piece => piece.id), ...Object.keys(set.sheets).map(kind => `sheet-${kind}`)])
-  if (assets.some(asset => !expected.has(asset.id)) || new Set(assets.map(asset => asset.id)).size !== assets.length) throw new Error('Imagens do rosto inválidas.')
-  const folder = faceSetPath(modelSlot, set.id)
-  await catalogPersistence.saveCatalog({
-    folder, imageFolder: join(folder, 'images'), manifestName: 'face.json', manifest: set,
-    images: assets.map(asset => ({ id: asset.id, bytes: dataUrlBuffer(asset.dataUrl) })),
-    expected, prune: 'all'
-  })
-}
-
-async function readFaceSet(modelSlot: number, id: string): Promise<FaceSet | null> {
-  if (!isValidModelSlot(modelSlot) || !isValidWardrobeId(id)) throw new Error('Rosto inválido.')
-  try {
-    const folder = faceSetPath(modelSlot, id)
-    await catalogPersistence.recoverCatalogManifest(folder, join(folder, 'images'))
-    const set = JSON.parse(await readFile(join(folder, 'face.json'), 'utf8')) as FaceSetSave
-    if (!inspectFabricatorStorage('face', set).compatible) return null
-    if (!validFaceSet(modelSlot, set) || set.id !== id) return null
-    const version = set.updatedAt
-    const identity = `${modelSlot}:set:${id}`
-    const sheets = { ...set.sheets } as FaceSet['sheets']
-    for (const kind of faceSheetKinds) if (sheets[kind]) sheets[kind] = { ...sheets[kind], dataUrl: `data:image/png;base64,${(await readCatalogPng('face', identity, version, join(folder, 'images', `sheet-${kind}.png`))).toString('base64')}` }
-    const pieces = await Promise.all(set.pieces.map(async (piece) => ({ ...piece, dataUrl: `data:image/png;base64,${(await readCatalogPng('face', identity, version, join(folder, 'images', `${piece.id}.png`))).toString('base64')}` })))
-    return { ...set, sheets, pieces }
-  } catch (reason) {
-    if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return null
-    throw reason
-  }
-}
-
-function validFaceCatalogItem(modelSlot: number, item: FaceCatalogItemSave): boolean {
-  const requiredElements: Record<FaceSheetKind, FaceElementKind[]> = {
-    eyes: ['eye-left', 'eye-right'], eyebrows: ['brow-left', 'brow-right'], nose: ['nose'],
-    'mouth-closed': ['mouth'], 'mouth-open': ['mouth']
-  }
-  if (!isValidModelSlot(modelSlot) || item?.schemaVersion !== 1 || item.modelSlot !== modelSlot || !isValidFaceCatalogId(item.id)
-    || !faceSheetKinds.includes(item.category) || item.sheet?.kind !== item.category
-    || typeof item.name !== 'string' || !item.name.trim() || item.name.length > 120
-    || !Array.isArray(item.pieces) || item.pieces.length > 60 || !item.transforms || typeof item.transforms !== 'object'
-    || !Number.isFinite(item.sheet.width) || !Number.isFinite(item.sheet.height) || item.sheet.width <= 0 || item.sheet.height <= 0
-    || item.sheet.width * item.sheet.height > 32_000_000 || !Number.isFinite(item.sheet.tolerance) || item.sheet.tolerance < 0 || item.sheet.tolerance > 280) return false
-  const ids = new Set<string>()
-  for (const piece of item.pieces) {
-    if (!isValidWardrobeId(piece.id) || ids.has(piece.id) || piece.sheet !== item.category
-      || !Number.isInteger(piece.index) || piece.index < 0 || piece.index > 20
-      || (piece.side !== undefined && piece.side !== 'left' && piece.side !== 'right')
-      || !piece.crop || ![piece.crop.x, piece.crop.y, piece.crop.width, piece.crop.height, piece.width, piece.height].every(Number.isFinite)
-      || piece.crop.width <= 0 || piece.crop.height <= 0 || piece.width <= 0 || piece.height <= 0) return false
-    ids.add(piece.id)
-  }
-  for (const element of requiredElements[item.category]) {
-    const transform = item.transforms[element]
-    if (!transform || ![transform.x, transform.y, transform.scaleX, transform.scaleY, transform.rotation].every(Number.isFinite)
-      || transform.scaleX <= 0 || transform.scaleY <= 0) return false
-  }
-  return typeof item.eyeLinked === 'boolean' && typeof item.browLinked === 'boolean'
-    && (item.opacity === undefined || item.category === 'nose' && Number.isFinite(item.opacity) && item.opacity >= 0 && item.opacity <= 1)
-    && Number.isInteger(item.selectedNose) && item.selectedNose >= 0 && item.selectedNose <= 5
-    && Number.isInteger(item.selectedExpression) && item.selectedExpression >= 0 && item.selectedExpression <= 20
-    && typeof item.updatedAt === 'string'
-}
-
-async function writeFaceCatalogItem(modelSlot: number, item: FaceCatalogItemSave, assets: FaceAssetSave[]): Promise<void> {
-  invalidateCatalogPng('face', `${modelSlot}:catalog:${item.id}`)
-  if (!validFaceCatalogItem(modelSlot, item)) throw new Error('Peça facial inválida.')
-  const expected = new Set([`sheet-${item.category}`, ...item.pieces.map(piece => piece.id)])
-  if (assets.some(asset => !expected.has(asset.id)) || new Set(assets.map(asset => asset.id)).size !== assets.length) throw new Error('Imagens da peça facial inválidas.')
-  const folder = faceCatalogItemPath(modelSlot, item.id)
-  await catalogPersistence.saveCatalog({
-    folder, imageFolder: join(folder, 'images'), manifestName: 'item.json', manifest: item,
-    images: assets.map(asset => ({ id: asset.id, bytes: dataUrlBuffer(asset.dataUrl) })),
-    expected, prune: 'all'
-  })
-}
-
-function legacyFaceCatalogId(id: string): { setId: string; category: FaceSheetKind } | null {
-  if (!id.startsWith('legacy_')) return null
-  for (const category of faceSheetKinds) {
-    const suffix = `_${category}`
-    if (id.endsWith(suffix)) {
-      const setId = id.slice('legacy_'.length, -suffix.length)
-      if (isValidWardrobeId(setId)) return { setId, category }
-    }
-  }
-  return null
-}
-
-async function readFaceCatalogItem(modelSlot: number, id: string): Promise<FaceCatalogItem | null> {
-  if (!isValidModelSlot(modelSlot) || !isValidFaceCatalogId(id)) throw new Error('Peça facial inválida.')
-  try {
-    const folder = faceCatalogItemPath(modelSlot, id)
-    await catalogPersistence.recoverCatalogManifest(folder, join(folder, 'images'))
-    const item = JSON.parse(await readFile(join(folder, 'item.json'), 'utf8')) as FaceCatalogItemSave
-    if (!inspectFabricatorStorage('face-catalog', item).compatible) return null
-    if (!validFaceCatalogItem(modelSlot, item) || item.id !== id) return null
-    const identity = `${modelSlot}:catalog:${id}`
-    const version = item.updatedAt
-    const sheet = { ...item.sheet, dataUrl: `data:image/png;base64,${(await readCatalogPng('face', identity, version, join(folder, 'images', `sheet-${item.category}.png`))).toString('base64')}` }
-    const pieces = await Promise.all(item.pieces.map(async (piece) => ({ ...piece, dataUrl: `data:image/png;base64,${(await readCatalogPng('face', identity, version, join(folder, 'images', `${piece.id}.png`))).toString('base64')}` })))
-    return { ...item, sheet, pieces }
-  } catch (reason) {
-    if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason
-    const legacy = legacyFaceCatalogId(id)
-    if (!legacy) return null
-    const set = await readFaceSet(modelSlot, legacy.setId)
-    const sheet = set?.sheets[legacy.category]
-    if (!set || !sheet) return null
-    const elements: FaceElementKind[] = legacy.category === 'eyes' ? ['eye-left', 'eye-right'] : legacy.category === 'eyebrows' ? ['brow-left', 'brow-right'] : legacy.category === 'nose' ? ['nose'] : ['mouth']
-    return {
-      schemaVersion: 1, id, modelSlot, category: legacy.category, name: sheet.name.replace(/\.[^.]+$/, ''), sheet,
-      pieces: set.pieces.filter((piece) => piece.sheet === legacy.category),
-      transforms: Object.fromEntries(elements.map((element) => [element, set.transforms[element]])),
-      eyeLinked: set.eyeLinked, browLinked: set.browLinked, selectedNose: set.selectedNose,
-      selectedExpression: set.selectedExpression, updatedAt: set.updatedAt
-    }
-  }
-}
-
-async function listFaceCatalogItems(modelSlot: number): Promise<FaceCatalogItemSummary[]> {
-  if (!isValidModelSlot(modelSlot)) throw new Error('Modelo inválido.')
-  const items = new Map<string, FaceCatalogItemSummary>()
-  try {
-    for (const entry of await readdir(faceCatalogPath(modelSlot), { withFileTypes: true })) {
-      if (!entry.isDirectory() || !/^item-[a-zA-Z0-9_-]{1,120}$/.test(entry.name)) continue
-      const folder = join(faceCatalogPath(modelSlot), entry.name)
-      await catalogPersistence.recoverCatalogManifest(folder, join(folder, 'images'))
-      try {
-        const item = JSON.parse(await readFile(join(folder, 'item.json'), 'utf8')) as FaceCatalogItemSave
-        if (validFaceCatalogItem(modelSlot, item) && item.id === entry.name.slice(5)) items.set(item.id, { id: item.id, modelSlot, category: item.category, name: item.name, updatedAt: item.updatedAt, pieceCount: item.pieces.length })
-      } catch { /* Incomplete catalog items are hidden. */ }
-    }
-  } catch (reason) { if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason }
-  // Surface old complete face saves as category items until the user edits or saves them individually.
-  try {
-    for (const entry of await readdir(faceModelPath(modelSlot), { withFileTypes: true })) {
-      if (!entry.isDirectory() || !/^set-[a-zA-Z0-9_-]{1,80}$/.test(entry.name)) continue
-      const setId = entry.name.slice(4)
-      const folder = join(faceModelPath(modelSlot), entry.name)
-      await catalogPersistence.recoverCatalogManifest(folder, join(folder, 'images'))
-      try {
-        const set = JSON.parse(await readFile(join(folder, 'face.json'), 'utf8')) as FaceSetSave
-        if (!validFaceSet(modelSlot, set) || set.id !== setId) continue
-        for (const category of faceSheetKinds) {
-          const sheet = set.sheets[category]
-          if (!sheet) continue
-          const id = `legacy_${setId}_${category}`
-          if (items.has(id)) continue
-          items.set(id, { id, modelSlot, category, name: sheet.name.replace(/\.[^.]+$/, ''), updatedAt: set.updatedAt, pieceCount: set.pieces.filter((piece) => piece.sheet === category).length })
-        }
-      } catch { /* Invalid legacy sets do not enter the new catalog. */ }
-    }
-  } catch (reason) { if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason }
-  return [...items.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-}
-
-function validFaceComponentAsset(modelSlot: number, asset: FaceComponentAssetSave): boolean {
-  const transform = asset?.defaultTransform
-  return isValidModelSlot(modelSlot) && asset?.schemaVersion === 1 && asset.modelSlot === modelSlot
-    && isValidWardrobeId(asset.id) && ['eye', 'pupil', 'eye-closed', 'eyebrow', 'eye-highlight-left', 'eye-highlight-right', 'blush', 'facial-shadow', 'head-extra'].includes(asset.kind)
-    && typeof asset.name === 'string' && asset.name.trim().length > 0 && asset.name.length <= 120
-    && Number.isFinite(asset.width) && Number.isFinite(asset.height) && asset.width > 0 && asset.height > 0 && asset.width * asset.height <= 32_000_000
-    && (asset.rightSidePositioned === undefined || typeof asset.rightSidePositioned === 'boolean')
-    && (asset.pairId === undefined || isValidWardrobeId(asset.pairId))
-    && Boolean(transform) && [transform.x, transform.y, transform.scaleX, transform.scaleY, transform.rotation].every(Number.isFinite)
-    && (transform.flipX === undefined || typeof transform.flipX === 'boolean')
-    && transform.scaleX > 0 && transform.scaleY > 0 && transform.scaleX <= 20 && transform.scaleY <= 20
-    && typeof asset.updatedAt === 'string'
-}
-
-async function listFaceComponentAssets(modelSlot: number, kind?: FaceAssetKind): Promise<FaceComponentAssetSummary[]> {
-  if (!isValidModelSlot(modelSlot)) throw new Error('Modelo inválido.')
-  const directory = faceComponentPath(modelSlot)
-  const output: FaceComponentAssetSummary[] = []
-  try {
-    for (const entry of await readdir(directory, { withFileTypes: true })) {
-      if (!entry.isDirectory() || !/^item-[a-zA-Z0-9_-]{1,120}$/.test(entry.name)) continue
-      const folder = join(directory, entry.name)
-      await catalogPersistence.recoverCatalogManifest(folder, folder)
-      try {
-        const asset = JSON.parse(await readFile(join(folder, 'asset.json'), 'utf8')) as FaceComponentAssetSave
-        if (!validFaceComponentAsset(modelSlot, asset) || asset.id !== entry.name.slice(5) || kind && asset.kind !== kind) continue
-        const { defaultTransform: _transform, ...summary } = asset
-        output.push(summary)
-      } catch { /* Hide incomplete component assets. */ }
-    }
-  } catch (reason) { if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason }
-  return output.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-}
-
-async function readFaceComponentAsset(modelSlot: number, id: string): Promise<FaceComponentAsset | null> {
-  if (!isValidModelSlot(modelSlot) || !isValidWardrobeId(id)) throw new Error('Asset facial inválido.')
-  try {
-    const folder = faceComponentItemPath(modelSlot, id)
-    await catalogPersistence.recoverCatalogManifest(folder, folder)
-    const asset = JSON.parse(await readFile(join(folder, 'asset.json'), 'utf8')) as FaceComponentAssetSave
-    if (!inspectFabricatorStorage('face-component', asset).compatible) return null
-    if (!validFaceComponentAsset(modelSlot, asset) || asset.id !== id) return null
-    const dataUrl = `data:image/png;base64,${(await readCatalogPng('face', `${modelSlot}:component:${id}`, asset.updatedAt, join(folder, 'asset.png'))).toString('base64')}`
-    return { ...asset, dataUrl }
-  } catch (reason) { if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return null; throw reason }
-}
-
-async function writeFaceComponentAsset(modelSlot: number, asset: FaceComponentAssetSave, dataUrl: string): Promise<void> {
-  invalidateCatalogPng('face', `${modelSlot}:component:${asset.id}`)
-  if (!validFaceComponentAsset(modelSlot, asset) || typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/png;base64,')) throw new Error('Asset facial inválido; use uma imagem PNG.')
-  const folder = faceComponentItemPath(modelSlot, asset.id)
-  await catalogPersistence.saveCatalog({
-    folder, imageFolder: folder, manifestName: 'asset.json', manifest: asset,
-    images: [{ id: 'asset', bytes: dataUrlBuffer(dataUrl) }], expected: new Set(['asset'])
-  })
-}
-
-function validHairWorkspace(modelSlot: number, workspace: HairWorkspaceSave): boolean {
-  if (!isValidModelSlot(modelSlot) || workspace?.schemaVersion !== 1 || workspace.modelSlot !== modelSlot || !workspace.transforms) return false
-  for (const side of ['front', 'back', 'fringe'] as const) {
-    const category = workspace.categoryBySide?.[side]
-    if (category !== undefined && !hairCategories.some((item) => item.id === category && item.side === side)) return false
-  }
-  for (const side of ['front', 'back', 'fringe'] as const) {
-    const asset = workspace[side]
-    const transform = workspace.transforms[side]
-    if (side === 'fringe' && !asset && !transform) continue
-    if (asset && (!Number.isFinite(asset.width) || !Number.isFinite(asset.height) || asset.width <= 0 || asset.height <= 0 || asset.width * asset.height > 32_000_000)) return false
-    if (!transform || ![transform.x, transform.y, transform.scaleX, transform.scaleY, transform.rotation].every(Number.isFinite)
-      || Math.abs(transform.x) > 100_000 || Math.abs(transform.y) > 100_000 || transform.scaleX <= 0 || transform.scaleY <= 0 || transform.scaleX > 20 || transform.scaleY > 20
-      || (transform.flipX !== undefined && typeof transform.flipX !== 'boolean')) return false
-  }
-  if (workspace.chromaTolerance !== undefined && (!Number.isFinite(workspace.chromaTolerance) || workspace.chromaTolerance < 0 || workspace.chromaTolerance > 100)) return false
-  if (workspace.chromaMode !== undefined && !['auto', 'green', 'checker'].includes(workspace.chromaMode)) return false
-  if (workspace.sourceImageSaved !== undefined && typeof workspace.sourceImageSaved !== 'boolean') return false
-  if (workspace.sourceAppliesToDraft !== undefined && typeof workspace.sourceAppliesToDraft !== 'boolean') return false
-  return typeof workspace.updatedAt === 'string'
-}
-
-async function writeHairWorkspace(modelSlot: number, workspace: HairWorkspaceSave, assets: HairWorkspaceAsset[]): Promise<void> {
-  invalidateCatalogPng('hair', `${modelSlot}:workspace`)
-  if (!validHairWorkspace(modelSlot, workspace)) throw new Error('Configuração de cabelo inválida.')
-  const expected = new Set<string>((['front', 'back', 'fringe'] as const).filter(side => workspace[side] != null))
-  if (workspace.sourceImageSaved) expected.add('source')
-  if (assets.some(asset => !expected.has(asset.id)) || new Set(assets.map(asset => asset.id)).size !== assets.length) throw new Error('Imagens de cabelo inválidas.')
-  const folder = hairModelPath(modelSlot)
-  await catalogPersistence.saveCatalog({
-    folder, imageFolder: join(folder, 'images'), manifestName: 'hair.json', manifest: workspace,
-    images: assets.map(asset => ({ id: asset.id, bytes: dataUrlBuffer(asset.dataUrl) })),
-    expected, prune: ['front', 'back', 'fringe', 'source'],
-    missingMessage: id => `Imagem de cabelo ausente: ${id}.`
-  })
-}
-
-async function readHairWorkspace(modelSlot: number): Promise<HairWorkspace | null> {
-  if (!isValidModelSlot(modelSlot)) throw new Error('Modelo inválido.')
-  try {
-    const folder = hairModelPath(modelSlot)
-    await catalogPersistence.recoverCatalogManifest(folder, join(folder, 'images'))
-    const saved = JSON.parse(await readFile(join(folder, 'hair.json'), 'utf8')) as HairWorkspaceSave
-    if (!inspectFabricatorStorage('hair', saved).compatible) return null
-    if (!validHairWorkspace(modelSlot, saved)) return null
-    const identity = `${modelSlot}:workspace`
-    const version = saved.updatedAt
-    const loadPart = async (side: 'front' | 'back' | 'fringe') => saved[side]
-      ? { ...saved[side]!, dataUrl: `data:image/png;base64,${(await readCatalogPng('hair', identity, version, join(folder, 'images', `${side}.png`))).toString('base64')}` }
-      : null
-    let sourceImageDataUrl: string | undefined
-    if (saved.sourceImageSaved) {
-      try { sourceImageDataUrl = `data:image/png;base64,${(await readCatalogPng('hair', identity, version, join(folder, 'images', 'source.png'))).toString('base64')}` }
-      catch (reason) { if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason }
-    }
-    return { ...saved, front: await loadPart('front'), back: await loadPart('back'), fringe: await loadPart('fringe'), ...(sourceImageDataUrl ? { sourceImageDataUrl } : {}) }
-  } catch (reason) {
-    if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return null
-    throw reason
-  }
-}
-
-async function clearHairWorkspace(modelSlot: number): Promise<void> {
-  if (!isValidModelSlot(modelSlot)) throw new Error('Modelo inválido.')
-  const folder = hairModelPath(modelSlot)
-  const images = join(folder, 'images')
-  // Recover or reject a pending write before removing its journal and duplicate assets.
-  await catalogPersistence.recoverCatalogManifest(folder, images)
-  await rm(join(folder, 'hair.json'), { force: true })
-  await rm(join(folder, 'hair.json.tmp'), { force: true })
-  await rm(join(folder, 'hair.json.backup'), { force: true })
-  await rm(images, { recursive: true, force: true })
-}
-
-type LegacyHairCatalogState = 'active' | 'dismissed' | null
-const legacyHairCatalogStatePath = (modelSlot: number) => join(hairModelPath(modelSlot), 'hair-legacy-catalog-state-v1')
-
-async function readLegacyHairCatalogState(modelSlot: number): Promise<LegacyHairCatalogState> {
-  if (!isValidModelSlot(modelSlot)) throw new Error('Modelo inválido.')
-  try {
-    const state = (await readFile(legacyHairCatalogStatePath(modelSlot), 'utf8')).trim()
-    if (state === 'active' || state === 'dismissed') return state
-    throw new Error('Estado de catálogo legado de cabelo inválido.')
-  } catch (reason) {
-    if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return null
-    throw reason
-  }
-}
-
-async function writeLegacyHairCatalogState(modelSlot: number, state: Exclude<LegacyHairCatalogState, null>): Promise<void> {
-  if (!isValidModelSlot(modelSlot)) throw new Error('Modelo inválido.')
-  const folder = hairModelPath(modelSlot)
-  await mkdir(folder, { recursive: true })
-  const previous = await readLegacyHairCatalogState(modelSlot)
-  const next = state === 'active' && previous === 'dismissed' ? 'dismissed' : state
-  await writeFile(legacyHairCatalogStatePath(modelSlot), next, 'utf8')
-}
-
-function validHairStyle(modelSlot: number, style: HairStyleSave): boolean {
-  if (!isValidModelSlot(modelSlot) || style?.schemaVersion !== 1 || style.modelSlot !== modelSlot || !isValidWardrobeId(style.id)
-    || typeof style.name !== 'string' || !style.name.trim() || style.name.length > 80 || !style.transforms) return false
-  if (!style.front && !style.back && !style.fringe) return false
-  if (style.category !== undefined) {
-    const category = hairCategories.find((item) => item.id === style.category)
-    if (!category || !style[category.side]) return false
-  }
-  if (style.categoryBySide !== undefined && (!style.categoryBySide || Array.isArray(style.categoryBySide) || typeof style.categoryBySide !== 'object')) return false
-  if (style.categoryBySide !== undefined) {
-    for (const side of ['front', 'back', 'fringe'] as const) {
-      const categoryId = style.categoryBySide[side]
-      if (categoryId !== undefined && !hairCategories.some((item) => item.id === categoryId && item.side === side)) return false
-      if (categoryId !== undefined && !style[side]) return false
-    }
-  }
-  if (style.sourceImageSaved !== undefined && typeof style.sourceImageSaved !== 'boolean') return false
-  if (style.sourceAppliesToDraft !== undefined && typeof style.sourceAppliesToDraft !== 'boolean') return false
-  if (style.sourceAppliesToDraft === true && style.sourceImageSaved !== true) return false
-  if (style.chromaTolerance !== undefined && (!Number.isFinite(style.chromaTolerance) || style.chromaTolerance < 0 || style.chromaTolerance > 100)) return false
-  if (style.chromaMode !== undefined && !['auto', 'green', 'checker'].includes(style.chromaMode)) return false
-  for (const side of ['front', 'back', 'fringe'] as const) {
-    const asset = style[side]
-    const transform = style.transforms[side]
-    if (side === 'fringe' && !asset && !transform) continue
-    if (asset && (!Number.isFinite(asset.width) || !Number.isFinite(asset.height) || asset.width <= 0 || asset.height <= 0 || asset.width * asset.height > 32_000_000)) return false
-    if (!transform || ![transform.x, transform.y, transform.scaleX, transform.scaleY, transform.rotation].every(Number.isFinite)
-      || Math.abs(transform.x) > 100_000 || Math.abs(transform.y) > 100_000 || transform.scaleX <= 0 || transform.scaleY <= 0 || transform.scaleX > 20 || transform.scaleY > 20
-      || (transform.flipX !== undefined && typeof transform.flipX !== 'boolean')) return false
-  }
-  return typeof style.createdAt === 'string' && typeof style.updatedAt === 'string'
-}
-
-async function writeHairStyle(modelSlot: number, style: HairStyleSave, assets: HairStyleAsset[]): Promise<void> {
-  invalidateCatalogPng('hair', `${modelSlot}:style:${style.id}`)
-  if (!validHairStyle(modelSlot, style)) throw new Error('Estilo de cabelo inválido.')
-  const expected = new Set<string>((['front', 'back', 'fringe'] as const).filter(side => style[side] != null))
-  if (style.sourceImageSaved) expected.add('source')
-  if (assets.some(asset => !expected.has(asset.id)) || new Set(assets.map(asset => asset.id)).size !== assets.length) throw new Error('Imagens do cabelo inválidas.')
-  const folder = hairStylePath(modelSlot, style.id)
-  await catalogPersistence.saveCatalog({
-    folder, imageFolder: join(folder, 'images'), manifestName: 'hair-style.json', manifest: style,
-    images: assets.map(asset => ({ id: asset.id, bytes: dataUrlBuffer(asset.dataUrl) })),
-    expected, prune: ['front', 'back', 'fringe', 'source'],
-    missingMessage: id => `Imagem de cabelo ausente: ${id}.`
-  })
-}
-
-async function readHairStyle(modelSlot: number, id: string, includeSource = false): Promise<HairStyle | null> {
-  if (!isValidModelSlot(modelSlot) || !isValidWardrobeId(id)) throw new Error('Estilo de cabelo inválido.')
-  try {
-    const folder = hairStylePath(modelSlot, id)
-    await catalogPersistence.recoverCatalogManifest(folder, join(folder, 'images'))
-    const saved = JSON.parse(await readFile(join(folder, 'hair-style.json'), 'utf8')) as HairStyleSave
-    if (!inspectFabricatorStorage('hair-style', saved).compatible) return null
-    if (!validHairStyle(modelSlot, saved) || saved.id !== id) return null
-    const identity = `${modelSlot}:style:${id}`
-    const version = saved.updatedAt
-    const loadPart = async (side: 'front' | 'back' | 'fringe') => saved[side]
-      ? { ...saved[side]!, dataUrl: `data:image/png;base64,${(await readCatalogPng('hair', identity, version, join(folder, 'images', `${side}.png`))).toString('base64')}` }
-      : null
-    const sourceImageDataUrl = includeSource && saved.sourceImageSaved
-      ? `data:image/png;base64,${(await readCatalogPng('hair', identity, version, join(folder, 'images', 'source.png'))).toString('base64')}`
-      : undefined
-    return { ...saved, front: await loadPart('front'), back: await loadPart('back'), fringe: await loadPart('fringe'), ...(sourceImageDataUrl ? { sourceImageDataUrl } : {}) }
-  } catch (reason) {
-    if ((reason as NodeJS.ErrnoException).code === 'ENOENT') {
-      if (id === 'legacy-workspace') {
-        if (await readLegacyHairCatalogState(modelSlot) === 'dismissed') return null
-        try { await access(join(hairModelPath(modelSlot), 'hair-style-migration-v1')); return null }
-        catch(markerError) { if ((markerError as NodeJS.ErrnoException).code !== 'ENOENT') throw markerError }
-        return legacyHairStyle(modelSlot,await readHairWorkspace(modelSlot))
-      }
-      return null
-    }
-    throw reason
-  }
-}
+const faceStorage = createFabricatorFaceStorage({
+  isValidModelSlot, isValidWardrobeId, isValidFaceCatalogId,
+  paths: {
+    faceModel: faceModelPath, faceSet: faceSetPath, faceCatalog: faceCatalogPath,
+    faceCatalogItem: faceCatalogItemPath, faceComponent: faceComponentPath, faceComponentItem: faceComponentItemPath
+  },
+  dataUrlBuffer,
+  saveCatalog: (options) => catalogPersistence.saveCatalog(options),
+  recoverCatalogManifest: (folder, imageFolder) => catalogPersistence.recoverCatalogManifest(folder, imageFolder),
+  isCompatible: (kind, value) => inspectFabricatorStorage(kind, value).compatible,
+  readCatalogPng: (identity, version, path) => readCatalogPng('face', identity, version, path),
+  invalidateCatalogPng: (identity) => invalidateCatalogPng('face', identity),
+  files: { readFile, readdir }
+})
+const {
+  validFaceSet, writeFaceSet, readFaceSet,
+  writeFaceCatalogItem, readFaceCatalogItem, listFaceCatalogItems,
+  listFaceComponentAssets, readFaceComponentAsset, writeFaceComponentAsset
+} = faceStorage
 
 // Assets versionados são usados apenas nas bibliotecas oficiais; rascunhos não entram em cache.
 const catalogAssets = new FabricatorCatalogAssetService(readAssetImage)
@@ -964,6 +561,23 @@ function readCatalogPng(namespace: AssetNamespace, identity: string, version: st
 function invalidateCatalogPng(namespace: AssetNamespace, identity: string): void {
   catalogAssets.invalidate(namespace, identity)
 }
+
+const hairStorage = createFabricatorHairStorage({
+  isValidModelSlot, isValidWardrobeId,
+  paths: { hairModel: hairModelPath, hairStyle: hairStylePath },
+  dataUrlBuffer,
+  saveCatalog: (options) => catalogPersistence.saveCatalog(options),
+  recoverCatalogManifest: (folder, imageFolder) => catalogPersistence.recoverCatalogManifest(folder, imageFolder),
+  isCompatible: (kind, value) => inspectFabricatorStorage(kind, value).compatible,
+  readCatalogPng: (identity, version, path) => readCatalogPng('hair', identity, version, path),
+  invalidateCatalogPng: (identity) => invalidateCatalogPng('hair', identity),
+  legacyHairStyle,
+  files: { access, mkdir, readFile, rm, writeFile }
+})
+const {
+  validHairStyle, writeHairWorkspace, readHairWorkspace, clearHairWorkspace,
+  readLegacyHairCatalogState, writeLegacyHairCatalogState, writeHairStyle, readHairStyle
+} = hairStorage
 
 const wardrobePersistence = createFabricatorWardrobePersistence({
   isValidModelSlot,
