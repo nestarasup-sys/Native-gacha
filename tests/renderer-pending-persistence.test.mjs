@@ -138,6 +138,7 @@ test('Studio and Editor V6 flush debounced documents and wait for renderer IPC w
   const studioPersistence = await readFile('src/renderer/src/features/studio/useStudioDocumentPersistence.ts', 'utf8')
   const studioImageImport = await readFile('src/renderer/src/features/studio/useStudioImageImport.ts', 'utf8')
   const editor = await readFile('src/renderer/src/features/editorV6/EditorV6Page.tsx', 'utf8')
+  const editorCreation = await readFile('src/renderer/src/features/editorV6/editorV6ProjectCreation.ts', 'utf8')
   const editorPersistence = await readFile('src/renderer/src/features/editorV6/useEditorV6DocumentPersistence.ts', 'utf8')
   const exportPanel = await readFile('src/renderer/src/features/editorV6/EditorV6ExportPanel.tsx', 'utf8')
   assert.match(studio, /useStudioDocumentPersistence\(/)
@@ -159,9 +160,11 @@ test('Studio and Editor V6 flush debounced documents and wait for renderer IPC w
   assert.match(editorPersistence, /hadPendingTimer \|\| !saved[\s\S]*?saveActiveProject\(latest\)/)
   assert.match(editorPersistence, /await pendingOperations\.flush\(\)[\s\S]*?await flushDocumentWrites\(\)/)
   assert.match(editorPersistence, /const inFlightSave = savePromiseRef\.current/)
-  for (const operation of ['duplicateStudio', 'importImage', 'importTimelineMedia', 'linkVideoLibraryItem']) {
+  for (const operation of ['importImage', 'importTimelineMedia', 'linkVideoLibraryItem']) {
     assert.match(editor, new RegExp(`const ${operation} =[^\\n]*trackEditorV6Operation\\(async \\(\\) =>`), `${operation} deve permanecer pendente até salvar o documento relacionado`)
   }
+  assert.match(editor, /createEditorV6ProjectCreationCommands\(/)
+  assert.match(editorCreation, /const duplicateStudio = \(sourceSummary: EditorV6ProjectSummary \| null\) => dependencies\.trackOperation\(async \(\) =>/)
   assert.match(editor, /const deleteStudio = async \([\s\S]*?trackEditorV6Operation\(async \(\) => \{[\s\S]*?deleteEditorV6Project/)
   assert.match(editor, /const exportPrint = \(\) => \{[\s\S]*?return trackEditorV6Operation\(async \(\) => \{[\s\S]*?flushEditorV6DocumentWrites\(\)[\s\S]*?saveEditorV6Print/)
   assert.match(editor, /const openPrints = \(\) => trackEditorV6Operation\(async \(\) =>/)

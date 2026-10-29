@@ -12,6 +12,7 @@ import { EditorV6PresetPanel } from './EditorV6PresetPanel'
 import { EditorV6PropertyPanel } from './EditorV6PropertyPanel'
 import { getEditorV6PlaybackFrame, setEditorV6PlaybackFrame } from './editorV6PlaybackClock'
 import { duplicateEditorV6ProjectDocument } from './editorV6ProjectDuplication'
+import { createEditorV6ProjectCreationCommands } from './editorV6ProjectCreation'
 import { addEditorV6ImageAsset, addEditorV6TimelineMedia } from './editorV6MediaChanges'
 import { addEditorV6ElementAtFrame, editorV6ClipAtFrame, normalizeEditorV6Timeline, timelineClips } from '../../../../shared/editorV6TimelineCore'
 import { editEditorV6DocumentAtBlock, pruneEditorV6TimelineSnapshots, repairEditorV6DuplicateAssets, repairEditorV6FaceModeAssetReferences } from '../../../../shared/editorV6TimelineEdits'
@@ -266,62 +267,28 @@ export function EditorV6Page() {
     reportError: setError
   })
 
-  const allocateNumber = () => {
-    const highest = editorV6Projects.reduce((max, studio) => Math.max(max, Number(studio.title.match(/^Editor V6\s+(\d+)/i)?.[1] ?? 0)), 0)
-    const number = Math.max(nextStudioNumber.current, highest + 1)
-    nextStudioNumber.current = number + 1
-    return number
-  }
-
-  const createStudio = async () => {
-    const number = allocateNumber()
-    const now = new Date().toISOString()
-    const studio: EditorV6Document = {
-      schemaVersion: 1, id: crypto.randomUUID(), title: `Editor V6 ${String(number).padStart(2, '0')}`,
-      color: sceneCatalogColor(number), createdAt: now, updatedAt: now, backgroundColor: '#d7b5cd',
-      backgroundAssetId: null, backgroundX: 0, backgroundY: 0, backgroundWidth: 100, backgroundHeight: 100,
-      backgroundRotation: 0, assets: [], elements: [], timeline: createEditorV6Timeline()
-    }
-    try {
-      setError(null)
-      await writeEditorV6Document(studio)
-      upsertEditorV6Summary(editorV6ProjectSummary(studio))
-      setSelectedId(studio.id)
-      setSaved(true)
-    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível criar o projeto do Editor V6.') }
-  }
-
-  const duplicateStudio = (sourceSummary: EditorV6Card | null = selectedEditorV6) => trackEditorV6Operation(async () => {
-    if (!sourceSummary) return
-    let source: EditorV6Document | null
-    try {
-      source = activeEditorV6?.id === sourceSummary.id
-        ? activeEditorV6
-        : await window.desktop.editorV6.loadEditorV6Project(sourceSummary.id)
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Não foi possível carregar o projeto que será duplicado.')
-      return
-    }
-    if (!source) { setError('Não foi possível carregar o projeto que será duplicado.'); return }
-    const number = allocateNumber()
-    const now = new Date().toISOString()
-    const duplicate = duplicateEditorV6ProjectDocument(source, {
-      id: crypto.randomUUID(),
-      title: `Editor V6 ${String(number).padStart(2, '0')}`,
-      color: sceneCatalogColor(number),
-      createdAt: now,
-      updatedAt: now
-    }, () => crypto.randomUUID())
-    try {
-      setError(null)
-      if (source.exportAudio?.length) await window.desktop.editorV6.cloneEditorV6ExportAudio(source.id, duplicate.id, source.exportAudio)
-      if (source.media?.length) await window.desktop.editorV6.cloneEditorV6Media(source.id, duplicate.id, source.media)
-      await writeEditorV6Document(duplicate)
-      upsertEditorV6Summary(editorV6ProjectSummary(duplicate))
-      setSelectedId(duplicate.id)
-      setSaved(true)
-    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível duplicar o projeto do Editor V6.') }
+  const projectCreation = createEditorV6ProjectCreationCommands({
+    projects: () => editorV6Projects,
+    nextNumber: nextStudioNumber,
+    activeProject: () => activeEditorV6,
+    createTimeline: createEditorV6Timeline,
+    colorForNumber: sceneCatalogColor,
+    projectSummary: editorV6ProjectSummary,
+    duplicateDocument: duplicateEditorV6ProjectDocument,
+    createId: () => crypto.randomUUID(),
+    now: () => new Date().toISOString(),
+    loadProject: (projectId) => window.desktop.editorV6.loadEditorV6Project(projectId),
+    cloneExportAudio: (sourceId, duplicateId, audio) => window.desktop.editorV6.cloneEditorV6ExportAudio(sourceId, duplicateId, audio),
+    cloneMedia: (sourceId, duplicateId, media) => window.desktop.editorV6.cloneEditorV6Media(sourceId, duplicateId, media),
+    writeDocument: writeEditorV6Document,
+    upsertSummary: upsertEditorV6Summary,
+    selectProject: setSelectedId,
+    setSaved,
+    setError,
+    trackOperation: trackEditorV6Operation
   })
+  const createStudio = projectCreation.createStudio
+  const duplicateStudio = (sourceSummary: EditorV6Card | null = selectedEditorV6) => projectCreation.duplicateStudio(sourceSummary)
 
   useEffect(() => {
     if (!activeEditorV6 || dragRef.current) return
