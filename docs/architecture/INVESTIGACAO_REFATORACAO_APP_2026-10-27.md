@@ -2,6 +2,13 @@
 
 ## Reauditoria geral — 2026-10-29
 
+### Ciclo de vida de esperas dos workers
+
+- `waitForExport` é usado no carregamento dos workers, desenho/captura de quadros, preparação das transições e envio/finalização do FFmpeg. A limpeza do timer/listener dependia da conclusão da operação original, mesmo quando a espera já havia sido cancelada ou expirado.
+- A finalização agora é única e remove timer/listener imediatamente em sucesso, falha, cancelamento ou timeout. Respostas tardias continuam consumidas, sem modificar o resultado já entregue. O helper cancela a espera; encerrar o processo/janela continua responsabilidade dos donos existentes.
+- Regressões sintéticas usam operações que nunca concluem, timers controlados, cancelamento prévio e rejeição tardia. Verificados: 73 testes do Editor V6 aprovados, um ignorado existente, typecheck, auditoria de arquitetura e build. Nenhum perfil real foi usado.
+- Próximo gargalo confirmado para investigação: os dois caches independentes de imagens limitam apenas quantidade (512 entradas cada), sem orçamento para dimensões decodificadas. Dimensionar política de bytes sem invalidar imagens ainda usadas por renderizações ativas.
+
 Objetivo ativo: refatoração geral de todos os domínios, incluindo organização, redundâncias, segurança, inicialização, renderização, memória, processamento e persistência. As etapas abaixo registram progresso; não certificam conclusão do aplicativo inteiro.
 
 - Base desta rodada: `Dev-V2`, `68e83f4`, árvore limpa. Reutilizar este mapa e os contratos existentes; preservar formatos e dados pessoais.

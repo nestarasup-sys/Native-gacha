@@ -4,10 +4,14 @@ import type { ChildProcessWithoutNullStreams } from 'node:child_process'
 export function waitForExport<T>(operation: Promise<T>, signal: AbortSignal, timeoutMs: number, label: string): Promise<T> {
   if (signal.aborted) { void operation.catch(() => {}); return Promise.reject(signal.reason ?? Error('Exportação cancelada.')) }
   return new Promise((resolve, reject) => {
-    const abort = () => reject(signal.reason ?? Error('Exportação cancelada.'))
-    const timer = setTimeout(() => reject(Error(`Tempo limite: ${label}.`)), timeoutMs)
+    let settled = false
+    const cleanup = () => { clearTimeout(timer); signal.removeEventListener('abort', abort) }
+    const succeed = (value: T) => { if (settled) return; settled = true; cleanup(); resolve(value) }
+    const fail = (error: unknown) => { if (settled) return; settled = true; cleanup(); reject(error) }
+    const abort = () => fail(signal.reason ?? Error('Exportação cancelada.'))
+    const timer = setTimeout(() => fail(Error(`Tempo limite: ${label}.`)), timeoutMs)
     signal.addEventListener('abort', abort, { once: true })
-    operation.then(resolve, reject).finally(() => { clearTimeout(timer); signal.removeEventListener('abort', abort) }).catch(() => {})
+    operation.then(succeed, fail)
   })
 }
 
