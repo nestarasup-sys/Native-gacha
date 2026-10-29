@@ -4,7 +4,7 @@ import { useModelSourceRefresh } from './models/useModelSourceRefresh'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, FormEvent, PointerEvent as ReactPointerEvent } from 'react'
 import { resolvePoseCategory, type AnimatorAnimation, type AnimatorAnimationAsset, type AnimatorAnimationDraft, type AnimatorFrame, type AnimatorAnimationSummary, type AnimatorFrameTransform, type FaceCatalogItem, type FaceSet, type FabricatorProject, type FabricatorSlotSummary, type HairStyle, type JointLink, type PosePart, type WardrobeSet } from '../../../../shared/fabricator'
-import type { CustomizerCharacter, CustomizerWardrobeGroup } from '../../../../shared/customizer'
+import type { CustomizerCharacter } from '../../../../shared/customizer'
 import { Icon } from '../../ui/components/Icon'
 import { normalizeLayerOrder, orderedParts, partJointAnchor } from './models/rig'
 import {
@@ -22,21 +22,16 @@ import {
 import { loadAnimatorImage as loadImage } from './models/animatorImageCache'
 import { refreshAnimatorThumbnails as refreshThumbnails, renderAnimatorThumbnail as renderThumbnail } from './models/animatorThumbnail'
 import { usePreviewBackground } from '../../ui/hooks/usePreviewBackground'
-import { mapWardrobeComponentToPose } from './wardrobe/poseTransform'
 import { isModelBodyPartName, tintModelBodyPixels } from '../../characters/skinTint'
 import { useModelAppearanceSettings, useModelAppearanceTarget, useModelPartAppearancePreview } from './ModelAppearanceContext'
 import { registerPendingWriteFlusher } from '../../ui/pendingPersistence'
 import { breathingVariations, createBreathingAnimation } from './models/animatorBreathingModel'
 import { buildAnimatorHeadOverlays } from './models/animatorHeadOverlays'
+import { buildAnimatorGarmentLayers } from './models/animatorGarmentLayers'
+import { buildAnimatorRigDiagnostics } from './models/animatorRigDiagnostics'
 
 const SLOT_COUNT = 12
 const HISTORY_LIMIT = 40
-const wardrobeCategories: Record<CustomizerWardrobeGroup['category'], string[]> = {
-  camisa: ['camisa'], jaqueta: ['jaqueta'], 'manga-superior': ['manga-superior'], 'manga-inferior': ['manga-inferior'],
-  luvas: ['luvas'], capa: ['capa'], cinto: ['cinto'], saia: ['saia'], 'saia-superior': ['saia'], 'saia-inferior': ['saia'],
-  calca: ['calca-coxa', 'calca-canela', 'shorts'], shorts: ['shorts'], meia: ['meia'], sapato: ['sapato'], oculos: ['oculos'], 'acessorio-cabeca': ['acessorio-cabeca']
-}
-
 type Gesture = { pointerId: number; partId: string; startX: number; startY: number; lastAngle: number; rotationDelta: number; before: FrameHistoryState; pivotX: number; pivotY: number; scale: number; mode: 'rotate' | 'move' }
 type PanGesture = { pointerId: number; startX: number; startY: number; originX: number; originY: number }
 
@@ -99,31 +94,26 @@ export function AnimatorWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
   const playheadRef = useRef(0)
   const directionRef = useRef<1 | -1>(1)
   const selectedCharacter = characters.find((character) => character.id === characterId) ?? null
-  const rigProject = animation ? projectFromAnimation(animation, source) : source
-  const diagnostics = useMemo(() => {
-    if (!rigProject) return []
-    const used = new Set<string>()
-    return rigProject.joints.map((joint) => {
-      const parent = rigProject.parts.find((part) => part.id === joint.parentPartId)
-      const child = rigProject.parts.find((part) => part.id === joint.childPartId)
-      used.add(joint.parentPartId); used.add(joint.childPartId)
-      return { id: joint.id, parent: parent?.name ?? 'Peça ausente', child: child?.name ?? 'Peça ausente', fixed: joint.fixed, exists: Boolean(parent && child) }
-    }).concat(rigProject.parts.filter((part) => !used.has(part.id)).map((part) => ({ id: part.id, parent: '—', child: part.name, fixed: false, exists: true })))
-  }, [rigProject])
+  const rigProject = useMemo(() => animation ? projectFromAnimation(animation, source) : source, [animation, source])
+  const diagnostics = useMemo(() => buildAnimatorRigDiagnostics(rigProject), [rigProject])
   const slots = useMemo(() => Array.from({ length: SLOT_COUNT }, (_, index) => summaries.find((item) => item.slot === index + 1) ?? null), [summaries])
   const selectedFrameIndex = animation?.frames.findIndex((frame) => frame.id === selectedFrameId) ?? -1
   const selectedFrame = animation && selectedFrameIndex >= 0 ? animation.frames[selectedFrameIndex] : null
   const currentSnapshot = useMemo<FrameHistoryState>(() => ({ animation, transforms: currentTransforms, joints: currentJoints, frameId: selectedFrameId }), [animation, currentTransforms, currentJoints, selectedFrameId])
   useLayoutEffect(() => { stateRef.current = currentSnapshot }, [currentSnapshot])
-  const dirtyFrame = Boolean(selectedFrame && (JSON.stringify(selectedFrame.transforms) !== JSON.stringify(currentTransforms) || JSON.stringify(selectedFrame.joints) !== JSON.stringify(currentJoints)))
+  const dirtyFrame = useMemo(() => Boolean(selectedFrame
+    && (JSON.stringify(selectedFrame.transforms) !== JSON.stringify(currentTransforms)
+      || JSON.stringify(selectedFrame.joints) !== JSON.stringify(currentJoints))), [selectedFrame, currentTransforms, currentJoints])
   dirtyFrameRef.current = dirtyFrame
   const totalDuration = animation?.frames.reduce((sum, frame) => sum + frame.durationMs, 0) ?? 0
   const playbackState = useMemo(() => animation ? interpolateFrames(animation.frames, playhead, animation.interpolation, animation.loopMode, playDirection) : null, [animation, playhead, playDirection])
   const displayTransforms = playing && playbackState ? playbackState.transforms : currentTransforms
   const displayJoints = playing && playbackState ? playbackState.joints : currentJoints
-  const displayBase = animation ? projectFromAnimation(animation, source) : baseProject
+  const displayBase = animation ? rigProject : baseProject
   const tintParts = displayBase?.parts
-  const displayProject = displayBase ? applyFrameState(displayBase, displayTransforms, displayJoints.length ? displayJoints : displayBase.joints) : null
+  const displayProject = useMemo(() => displayBase
+    ? applyFrameState(displayBase, displayTransforms, displayJoints.length ? displayJoints : displayBase.joints)
+    : null, [displayBase, displayTransforms, displayJoints])
   const parts = useMemo(() => displayProject ? orderedParts(displayProject.parts, displayProject.layerOrder).filter((part) => !displayProject.hiddenPartIds?.includes(part.id)) : [], [displayProject])
   const selectedPart = displayProject?.parts.find((part) => part.id === selectedPartId) ?? null
   const selectedCanTransform = Boolean(selectedPart && (!isCorePart(selectedPart) || allowCorePartId === selectedPart.id) && !playing && !saving)
@@ -145,34 +135,14 @@ export function AnimatorWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
     layerIndex,
     layerStride
   }), [rigProject, displayProject, selectedCharacter, hairStyles, faceItems, faceSets, layerIndex, layerStride])
-  const garmentLayers = useMemo(() => {
-    if (!rigProject || !displayProject || !selectedCharacter) return []
-    const entries: Array<{ key: string; dataUrl: string; originX: number; originY: number; centerX: number; centerY: number; matrix: string; localLeft: number; localTop: number; width: number; height: number; rotation: number; groupX: number; groupY: number; groupScaleX: number; groupScaleY: number; groupRotation: number; opacity: number; zIndex: number }> = []
-    let sequence = 0
-    for (const group of (selectedCharacter.customization.wardrobeGroups ?? []).filter((item) => item.modelSlot === rigProject.slot)) {
-      const set = wardrobeDetails[`${group.modelSlot}:${group.setId}`]
-      if (!set) continue
-      const components = set.components.filter((component) => wardrobeCategories[group.category].includes(component.category) && (!group.componentId || group.componentId === component.id))
-      const pantsTogether = components.some((item) => item.category === 'calca-coxa') && components.some((item) => item.category === 'calca-canela')
-      const mapped: Array<{ component: WardrobeSet['components'][number]; transform: ReturnType<typeof mapWardrobeComponentToPose>; layer: number }> = []
-      for (const component of components) {
-        const from = rigProject.parts.find((part) => part.id === component.attachedPartId)
-        const to = displayProject.parts.find((part) => part.id === component.attachedPartId)
-        if (!from || !to) continue
-        const knee = pantsTogether && (component.category === 'calca-coxa' || component.category === 'calca-canela') ? 18 : 0
-        const edge = component.category.startsWith('manga-') ? Math.max(8, Math.min(14, Math.round(Math.min(component.width, component.height) * .06))) : 0
-        mapped.push({ component, transform: mapWardrobeComponentToPose(component, from, to, knee, edge), layer: layerIndex.get(to.id) ?? 0 })
-      }
-      if (!mapped.length) continue
-      const centerX = mapped.reduce((sum, item) => sum + item.transform.origin.x / mapped.length, 0)
-      const centerY = mapped.reduce((sum, item) => sum + item.transform.origin.y / mapped.length, 0)
-      for (const item of mapped) {
-        entries.push({ key: `${group.setId}:${group.category}:${item.component.id}`, dataUrl: item.component.dataUrl, originX: item.transform.origin.x, originY: item.transform.origin.y, centerX, centerY, matrix: item.transform.matrix, localLeft: item.transform.localLeft, localTop: item.transform.localTop, width: item.transform.renderWidth, height: item.transform.renderHeight, rotation: item.transform.localRotation, groupX: group.offsetX, groupY: group.offsetY, groupScaleX: group.scaleX, groupScaleY: group.scaleY, groupRotation: group.rotation, opacity: Math.min(1, Math.max(0, group.opacity ?? 1)), zIndex: item.layer * layerStride + 4 + sequence % Math.max(1, layerStride - 8) })
-        sequence++
-      }
-    }
-    return entries
-  }, [rigProject, displayProject, selectedCharacter, wardrobeDetails, layerIndex, layerStride])
+  const garmentLayers = useMemo(() => buildAnimatorGarmentLayers({
+    rigProject,
+    displayProject,
+    wardrobeGroups: selectedCharacter?.customization.wardrobeGroups ?? [],
+    wardrobeDetails,
+    layerIndex,
+    layerStride
+  }), [rigProject, displayProject, selectedCharacter, wardrobeDetails, layerIndex, layerStride])
 
   const pushHistory = useCallback((before = stateRef.current) => {
     if (!before) return
