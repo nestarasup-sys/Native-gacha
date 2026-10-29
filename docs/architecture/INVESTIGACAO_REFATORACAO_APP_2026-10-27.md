@@ -1446,3 +1446,10 @@ Continua a auditoria das operações IPC iniciadas pelo usuário e da cobertura 
 - Elementos sem personagem ou asset válido continuam ignorados, presets sem revisão conhecida não disparam refresh e revisões de assets já aplicadas não são repetidas. Nenhum formato salvo, ID, IPC ou regra de composição foi alterado.
 - Testes sintéticos verificam cada gatilho, a distinção entre recompor a expressão e apenas atualizar o render, referências ausentes e revisão de assets já aplicada. Também há uma verificação arquitetural para impedir que a seleção inline volte à página.
 - Verificação: a suíte focada do Studio passou com 8 testes; `npm run test:refactor` passou com 488 testes principais e suítes adicionais; `npm run typecheck`, `npm run build`, `npm run audit:architecture` (456 arquivos TS/TSX, sem violações) e `git diff --check` passaram.
+
+## 93. Etapa aplicada — sincronização de personagens do Studio movida para um hook
+
+- `StudioPage.tsx` ainda executava a normalização de PNGs legados e a reconstrução assíncrona de personagens após mudanças no Customizador, preset ou catálogo. `useStudioCharacterSourceRefresh.ts` agora é dono desse ciclo: acompanha cancelamento por troca de cena, normaliza as imagens, seleciona as fontes desatualizadas, renderiza os snapshots e publica apenas resultados ainda válidos para os elementos atuais.
+- A normalização reutiliza `mapConcurrentItems` com limite de três leituras/recortes simultâneos. Antes, `Promise.all` iniciava o recorte de todos os personagens da cena de uma vez. A ordem dos efeitos foi preservada, e a regra pura de seleção continua em `studioCharacterRefreshModel.ts`.
+- A extração reduziu `StudioPage.tsx` de 1.092 para 975 linhas. Não mudou a persistência do documento, os IDs de assets/personagens, o IPC nem o algoritmo de composição facial.
+- Testes focados verificam as barreiras entre página e hook, o uso do limitador e continuidade Studio/Customizador; 31 testes de Studio, assets e persistência passaram. Também passaram `npm run test:refactor`, `npm run typecheck`, `npm run build`, `npm run audit:architecture` e `git diff --check`.

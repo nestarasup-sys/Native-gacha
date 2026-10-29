@@ -241,16 +241,17 @@ test('presets legados continuam transferindo usando referências; erro visível 
 
 test('Studio e Editor V6 persistem a direção do olhar sem escrever outro preset',async()=>{
   const paths=['src/renderer/src/features/studio/StudioPage.tsx',
+    'src/renderer/src/features/studio/useStudioCharacterSourceRefresh.ts',
     'src/renderer/src/features/editorV6/EditorV6Page.tsx',
     'src/renderer/src/features/editorV6/EditorV6PresetPanel.tsx',
     'src/renderer/src/characters/sceneFaceActions.ts',
     'src/renderer/src/features/fabricator/ExpressionPresetWorkspace.tsx']
-  const [studio,editorV6,editorV6Panel,sceneFaceActions,editor]=await Promise.all(paths.map(path=>readFile(path,'utf8')))
+  const [studio,studioRefresh,editorV6,editorV6Panel,sceneFaceActions,editor]=await Promise.all(paths.map(path=>readFile(path,'utf8')))
   assert.match(studio,/createSceneFaceActions/)
   assert.match(editorV6,/createSceneFaceActions/)
   assert.match(sceneFaceActions,/activeExpressionGaze: gaze/)
   assert.ok(editorV6Panel.includes('aria-label={`Pupilas à esquerda: ${preset.name}`}'))
-  assert.match(studio,/element\.activeExpressionGaze \?\? 'right'/)
+  assert.match(studioRefresh,/element\.activeExpressionGaze \?\? 'right'/)
   assert.match(editorV6Panel,/activeExpressionGaze === 'left'/)
   assert.match(editor,/setPreviewGaze\(pupilsLeft\?'left':'right'\)/)
   assert.doesNotMatch(editor,/turnPupilsLeft\(/)

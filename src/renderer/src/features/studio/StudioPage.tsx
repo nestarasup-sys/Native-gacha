@@ -2,9 +2,9 @@ import { studioElementSize } from '../../../../shared/studioSceneModel'
 import { isPoseSnapshotForModel } from '../../../../shared/characterSourceContinuity'
 import { useStudioInspectorState } from '../../characters/useStudioInspectorState'
 import { StudioSceneCanvas } from './StudioSceneCanvas'
-import { trimTransparentImage, fitElementToTrim, faceRenderGeometry, type TrimmedImage } from '../../characters/characterGeometry'
+import { trimTransparentImage, faceRenderGeometry } from '../../characters/characterGeometry'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { buildStudioExpressionAppearance, buildStudioExpressionTransforms, resolveStudioExpressionBase, studioExpressionCollection } from './expressionTransforms'
+import { studioExpressionCollection } from './expressionTransforms'
 import { Icon } from '../../ui/components/Icon'
 import { NumericRangeField } from '../../ui/components/NumericRangeField'
 import { SceneElementControls } from '../../ui/components/SceneElementControls'
@@ -27,7 +27,7 @@ import { studioFaceCatalogSelectionIds } from './studioFaceCatalogSelection'
 import { useStudioAutosave, useStudioDocumentPersistence } from './useStudioDocumentPersistence'
 import { useStudioImageImport } from './useStudioImageImport'
 import { mapConcurrentItems } from '../../ui/mapConcurrentItems'
-import { selectStudioCharacterRefreshCandidates } from './studioCharacterRefreshModel'
+import { useStudioCharacterSourceRefresh } from './useStudioCharacterSourceRefresh'
 import type { StudioAsset, StudioDocument, StudioElement, StudioFaceTransform, StudioFaceTransforms } from '../../../../shared/studio'
 import type { CustomizerCharacter } from '../../../../shared/customizer'
 import type { CustomizerFaceAppearance } from '../../../../shared/customizer'
@@ -45,8 +45,6 @@ export function StudioPage() {
   const [notice, setNotice] = useState<string | null>(null)
   const [availableCharacters, setAvailableCharacters] = useState<CustomizerCharacter[]>([])
   const [assetLibraryRevision, setAssetLibraryRevision] = useState(0)
-  const appliedAssetRevisionRef = useRef(new Map<string, number>())
-  const [normalizedStudioVersion, setNormalizedStudioVersion] = useState(0)
   const [castPickerOpen, setCastPickerOpen] = useState(false)
   const [castSelection, setCastSelection] = useState<string[]>([])
   const [savingCast, setSavingCast] = useState(false)
@@ -74,7 +72,6 @@ export function StudioPage() {
   const studioFaceTransformsRef = useRef<Record<string, StudioFaceTransforms>>({})
   const studioFaceDetailsRef = useRef(studioFaceDetails)
   const studioFaceDetailsModelSlotRef = useRef<number | null>(null)
-  const normalizedStudioIdsRef = useRef(new Set<string>())
   const nextStudioNumber = useRef(1)
   const selectedStudio = studios.find((studio) => studio.id === selectedId) ?? null
   const activeStudio = studios.find((studio) => studio.id === activeStudioId) ?? null
@@ -370,130 +367,16 @@ export function StudioPage() {
     setSelectedElementId(null)
   }, [activeStudioId])
 
-  useEffect(() => {
-    if (!activeStudio || normalizedStudioIdsRef.current.has(activeStudio.id)) return
-    let cancelled = false
-    const studioId = activeStudio.id
-    void (async () => {
-      const characterAssets = activeStudio.assets.filter((asset) => asset.category === 'character' && activeStudio.elements.some((element) => element.kind === 'character' && element.assetId === asset.id))
-      const crops = await Promise.all(characterAssets.map(async (asset) => ({ assetId: asset.id, crop: await trimTransparentImage(asset.dataUrl) })))
-      if (cancelled) return
-      normalizedStudioIdsRef.current.add(studioId)
-      setNormalizedStudioVersion((version) => version + 1)
-      const byAsset = new Map(crops.filter((entry): entry is { assetId: string; crop: TrimmedImage } => entry.crop !== null).map((entry) => [entry.assetId, entry.crop]))
-      if (!byAsset.size) return
-      setStudios((current) => current.map((studio) => studio.id !== studioId ? studio : {
-        ...studio,
-        assets: studio.assets.map((asset) => {
-          const crop = byAsset.get(asset.id)
-          return crop ? { ...asset, dataUrl: crop.dataUrl, mimeType: 'image/png' } : asset
-        }),
-        elements: studio.elements.map((element) => {
-          const crop = element.kind === 'character' && element.assetId ? byAsset.get(element.assetId) : undefined
-          return crop ? fitElementToTrim(element, crop) : element
-        }),
-        updatedAt: new Date().toISOString()
-      }))
-      markStudioUnsaved()
-    })()
-    return () => { cancelled = true }
-  }, [activeStudio, markStudioUnsaved])
-
-  useEffect(() => {
-    if (!activeStudio || !normalizedStudioIdsRef.current.has(activeStudio.id) || !availableCharacters.length) return
-    const pending = selectStudioCharacterRefreshCandidates({
-      studio: activeStudio,
-      availableCharacters,
-      expressionPresetVersions: sceneExpressionPresetVersions,
-      assetLibraryRevision,
-      appliedAssetRevisions: appliedAssetRevisionRef.current,
-      faceRendererVersion: STUDIO_FACE_RENDER_VERSION
-    })
-    if (!pending.length) return
-    let cancelled = false
-    const studioId = activeStudio.id
-    const stageWidth = sceneRef.current?.clientWidth ?? 1000
-    const stageHeight = sceneRef.current?.clientHeight ?? 562
-    void (async () => {
-      try {
-        const { renderSavedCharacter } = await import('../../characters/characterRenderer')
-        const updates: Array<{ previous: StudioElement; next: StudioElement; asset: StudioAsset }> = []
-        for (const { element, character, shouldRecomposeExpression, assetRevisionKey, assetsChanged } of pending) {
-          const savedPreset = element.activeExpressionPresetId
-            ? await window.desktop.fabricator.loadFaceExpressionPreset(character.customization.modelSlot ?? 1, element.activeExpressionPresetId)
-            : null
-          if (element.activeExpressionPresetId && !savedPreset) continue
-          const sourceAppearance = character.customization.faceAppearance
-          const appearanceFallback = sourceAppearance ?? element.faceAppearance ?? element.expressionBase?.appearance
-          if (!appearanceFallback) continue
-          const previousBase = resolveStudioExpressionBase(element, appearanceFallback)
-          const sceneTransforms = Object.fromEntries(Object.entries(element.faceTransforms ?? {}).filter(([key]) => !key.startsWith('expression-component:') && !key.startsWith('expression:')))
-          const characterChanged = element.characterSourceUpdatedAt !== character.updatedAt
-          const expressionBase = characterChanged && sourceAppearance
-            ? { appearance: structuredClone(sourceAppearance), transforms: sceneTransforms }
-            : previousBase
-          const appearance = shouldRecomposeExpression
-            ? savedPreset && expressionBase
-              ? await buildStudioExpressionAppearance(savedPreset, expressionBase.appearance, (id) => window.desktop.fabricator.loadFaceCatalogItem(savedPreset.modelSlot, id))
-              : expressionBase?.appearance ?? element.faceAppearance
-            : element.faceAppearance ?? expressionBase?.appearance
-          const faceMode = sceneFaceModeForElement(element, element.faceAppearance ?? expressionBase?.appearance)
-          const faceTransforms = shouldRecomposeExpression
-            ? savedPreset && appearance && expressionBase
-              ? await buildStudioExpressionTransforms(savedPreset, appearance, expressionBase.transforms,
-                (id) => window.desktop.fabricator.loadFaceComponentAsset(savedPreset.modelSlot, id),
-                (id) => window.desktop.fabricator.loadFaceCatalogItem(savedPreset.modelSlot, id), element.activeExpressionGaze ?? 'right')
-              : expressionBase?.transforms ?? element.faceTransforms
-            : element.faceTransforms ?? expressionBase?.transforms
-          const expressionEffects = shouldRecomposeExpression ? savedPreset?.effects : element.activeExpressionEffects
-          const customization = {
-            ...character.customization,
-            poseSlot: element.poseSlot === undefined ? character.customization.poseSlot : element.poseSlot,
-            faceAppearance: appearance
-          }
-          const rendered = await renderSavedCharacter({ ...character, customization }, faceTransforms, expressionEffects, faceMode)
-          if (cancelled) return
-          const crop = await trimTransparentImage(rendered.dataUrl)
-          if (cancelled) return
-          const cropWidth = crop?.width ?? rendered.width
-          const cropHeight = crop?.height ?? rendered.height
-          const characterCanvasWidth = element.characterCanvasWidth ?? element.width * rendered.width / cropWidth
-          const asset = activeStudio.assets.find((item) => item.id === element.assetId)
-          if (!asset) continue
-          updates.push({
-            previous: element,
-            next: {
-              ...element, characterSourceUpdatedAt: character.updatedAt, faceRendererVersion: STUDIO_FACE_RENDER_VERSION, expressionBase, faceAppearance: appearance, faceTransforms, activeExpressionEffects: expressionEffects, activeFaceMode: faceMode,
-              ...(savedPreset ? { activeExpressionPresetUpdatedAt: savedPreset.updatedAt } : {}), characterCanvasWidth,
-              width: characterCanvasWidth * cropWidth / rendered.width,
-              height: characterCanvasWidth * stageWidth / stageHeight * cropHeight / rendered.width,
-              text: element.text === asset.name ? character.name : element.text
-            },
-            asset: { ...asset, name: character.name, mimeType: 'image/png', dataUrl: crop?.dataUrl ?? rendered.dataUrl }
-          })
-          if (assetsChanged) appliedAssetRevisionRef.current.set(assetRevisionKey, assetLibraryRevision)
-        }
-        if (cancelled || !updates.length) return
-        setStudios((current) => current.map((studio) => {
-          if (studio.id !== studioId) return studio
-          const valid = updates.filter(({ previous }) => studio.elements.some((element) => element === previous))
-          if (!valid.length) return studio
-          const elements = new Map(valid.map(({ next }) => [next.id, next]))
-          const assets = new Map(valid.map(({ asset }) => [asset.id, asset]))
-          return {
-            ...studio,
-            elements: studio.elements.map((element) => elements.get(element.id) ?? element),
-            assets: studio.assets.map((asset) => assets.get(asset.id) ?? asset),
-            updatedAt: new Date().toISOString()
-          }
-        }))
-        markStudioUnsaved()
-      } catch (reason) {
-        if (!cancelled) setError(reason instanceof Error ? reason.message : 'Não foi possível atualizar o personagem do Studio.')
-      }
-    })()
-    return () => { cancelled = true }
-  }, [activeStudio, availableCharacters, normalizedStudioVersion, sceneExpressionPresetVersions, assetLibraryRevision, markStudioUnsaved])
+  useStudioCharacterSourceRefresh({
+    activeStudio,
+    availableCharacters,
+    expressionPresetVersions: sceneExpressionPresetVersions,
+    assetLibraryRevision,
+    sceneRef,
+    setStudios,
+    markUnsaved: markStudioUnsaved,
+    setError
+  })
 
   const allocateNumber = () => {
     const highest = studios.reduce((max, studio) => Math.max(max, Number(studio.title.match(/^Studio\s+(\d+)/i)?.[1] ?? 0)), 0)

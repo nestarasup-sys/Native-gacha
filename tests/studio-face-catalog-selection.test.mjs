@@ -59,13 +59,19 @@ test('usa a boca aberta padrão somente quando a aparência não tem uma salva',
 })
 
 test('Studio mantém a lista de opções leve e carrega detalhes das folhas selecionadas', async () => {
-  const page = await readFile('src/renderer/src/features/studio/StudioPage.tsx', 'utf8')
+  const [page, refresh] = await Promise.all([
+    readFile('src/renderer/src/features/studio/StudioPage.tsx', 'utf8'),
+    readFile('src/renderer/src/features/studio/useStudioCharacterSourceRefresh.ts', 'utf8')
+  ])
   assert.match(page, /setStudioFaceItems\(summaries\)/)
   assert.match(page, /studioFaceCatalogSelectionIds\(selectedStudioFaceAppearance, selectedStudioOpenMouthId\)/)
   assert.match(page, /loadFaceCatalogItem\(modelSlot, id\)/)
   assert.match(page, /mergeStudioFaceDetails/)
-  assert.match(page, /selectStudioCharacterRefreshCandidates\(/)
-  assert.doesNotMatch(page, /const pending = activeStudio\.elements\.flatMap/)
+  assert.match(page, /useStudioCharacterSourceRefresh\(/)
+  assert.doesNotMatch(page, /normalizedStudioIdsRef|selectStudioCharacterRefreshCandidates\(/)
+  assert.match(refresh, /selectStudioCharacterRefreshCandidates\(/)
+  assert.match(refresh, /mapConcurrentItems\(\s*characterAssets/)
+  assert.doesNotMatch(refresh, /Promise\.all\(characterAssets\.map/)
   assert.match(page, /studioFaceDetailsModelSlotRef\.current === modelSlot/)
   assert.match(page, /detailsLoading=\{studioFaceDetailsLoading\}/)
   assert.doesNotMatch(page, /mapConcurrentItems\(\s*summaries/)
