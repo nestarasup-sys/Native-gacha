@@ -6,12 +6,14 @@ import {
   authoredMetrics,
   buildCatalogOptions,
   buildComponentOptions,
+  canPersistExpressionWorkspaceDraft,
   compositionForExpression,
   findPairedAsset,
   isWorkspaceDraftForModel,
   motionForPublishedPreset,
   rebaseExpressionTransforms
 } from '../src/renderer/src/features/fabricator/expressionPresetModel.ts'
+import { createExpressionWorkspaceDraftQueue } from '../src/renderer/src/features/fabricator/expressionWorkspaceDraftQueue.ts'
 
 const layerKeys = ['eyeLeft', 'eyeRight', 'pupilLeft', 'pupilRight', 'browLeft', 'browRight', 'nose', 'mouth']
 const transform = (patch = {}) => ({ x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0, ...patch })
@@ -179,8 +181,88 @@ test('validação de rascunho mantém versão, modelo, transforms finitos e data
   assert.equal(STANDARD_EXPRESSIONS.length, 21)
 })
 
+test('rascunho só pode persistir depois que o slot correspondente terminou de carregar', () => {
+  assert.equal(canPersistExpressionWorkspaceDraft(2, 2, false, false), true)
+  assert.equal(canPersistExpressionWorkspaceDraft(null, 2, false, false), false)
+  assert.equal(canPersistExpressionWorkspaceDraft(1, 2, false, false), false)
+  assert.equal(canPersistExpressionWorkspaceDraft(2, 2, true, false), false)
+  assert.equal(canPersistExpressionWorkspaceDraft(2, 2, false, true), false)
+})
+
+test('fila do rascunho cancela debounce antigo, serializa e não grava duas vezes o snapshot em voo', async () => {
+  let nextTimer = 0
+  const timers = new Map()
+  const cancelled = []
+  const writes = []
+  const statuses = []
+  const errors = []
+  const queue = createExpressionWorkspaceDraftQueue({
+    write: async (draft) => { writes.push(draft.updatedAt) },
+    scheduleTimer: (callback) => { const id = ++nextTimer; timers.set(id, callback); return id },
+    cancelTimer: (id) => { cancelled.push(id); timers.delete(id) },
+    setStatus: (status) => statuses.push(status),
+    reportError: (message) => errors.push(message)
+  })
+  const stale = { modelSlot: 2, updatedAt: 'stale' }
+  const latest = { modelSlot: 2, updatedAt: 'latest' }
+
+  queue.schedule(stale)
+  const staleTimer = nextTimer
+  queue.schedule(latest)
+  const latestTimer = nextTimer
+  assert.deepEqual(cancelled, [staleTimer])
+  timers.get(latestTimer)()
+  await queue.flush(2)
+
+  assert.deepEqual(writes, ['latest'])
+  assert.equal(statuses.at(-1), 'saved')
+  assert.deepEqual(errors, [])
+})
+
+test('fila do rascunho relata falha no snapshot atual e permite retry', async () => {
+  let nextTimer = 0
+  const timers = new Map()
+  const writes = []
+  const statuses = []
+  const errors = []
+  let fail = true
+  const queue = createExpressionWorkspaceDraftQueue({
+    write: async (draft) => {
+      writes.push(draft.updatedAt)
+      if (fail) throw new Error('disco indisponível')
+    },
+    scheduleTimer: (callback) => { const id = ++nextTimer; timers.set(id, callback); return id },
+    cancelTimer: (id) => { timers.delete(id) },
+    setStatus: (status) => statuses.push(status),
+    reportError: (message) => errors.push(message)
+  })
+  const draft = { modelSlot: 4, updatedAt: 'same-snapshot' }
+  queue.schedule(draft)
+
+  await assert.rejects(queue.flush(4), /disco indisponível/)
+  assert.equal(statuses.at(-1), 'failed')
+  assert.deepEqual(errors, ['Falha ao gravar o rascunho no disco: disco indisponível'])
+
+  fail = false
+  queue.schedule(draft)
+  await queue.flush(4)
+  assert.deepEqual(writes, ['same-snapshot', 'same-snapshot'])
+  assert.equal(statuses.at(-1), 'saved')
+})
+
 test('a tela usa o módulo puro de presets sem manter as regras duplicadas dentro do componente', async () => {
-  const source = await readFile('src/renderer/src/features/fabricator/ExpressionPresetWorkspace.tsx', 'utf8')
+  const [source, persistence] = await Promise.all([
+    readFile('src/renderer/src/features/fabricator/ExpressionPresetWorkspace.tsx', 'utf8'),
+    readFile('src/renderer/src/features/fabricator/useExpressionWorkspaceDraftPersistence.ts', 'utf8')
+  ])
   assert.match(source, /from '\.\/expressionPresetModel'/)
   assert.doesNotMatch(source, /function (rebaseTransform|authoredMetrics|buildComponentOptions|buildCatalogOptions)\(/)
+  assert.match(source, /canPersistExpressionWorkspaceDraft\(workspaceReadySlot, modelSlot, loading, switchingExpression\)/)
+  assert.match(source, /mapConcurrentItems\(components/)
+  assert.match(source, /mapConcurrentItems\(facialCatalogs/)
+  assert.doesNotMatch(source, /Promise\.all\((components|facialCatalogs)\.map/)
+  assert.match(source, /useExpressionWorkspaceDraftPersistence\(/)
+  assert.doesNotMatch(source, /registerPendingWriteFlusher|saveFaceExpressionWorkspaceDraft\(/)
+  assert.match(persistence, /registerPendingWriteFlusher\(flush\)/)
+  assert.match(persistence, /saveFaceExpressionWorkspaceDraft\(draft\.modelSlot, draft\)/)
 })

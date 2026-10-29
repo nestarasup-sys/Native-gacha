@@ -25,6 +25,15 @@ export const STANDARD_EXPRESSIONS = [
   'Orgulhosa', 'Preocupada', 'Séria', 'Sorrindo de canto', 'Sorriso maligno', 'Surpresa', 'Triste/magoada'
 ] as const
 
+export function canPersistExpressionWorkspaceDraft(
+  readyModelSlot: number | null,
+  modelSlot: number,
+  loading: boolean,
+  switchingExpression: boolean
+): boolean {
+  return readyModelSlot === modelSlot && !loading && !switchingExpression
+}
+
 export const emptyExpressionComposition: ExpressionComposition = {
   eyes: { left: null, right: null },
   pupils: { left: null, right: null },

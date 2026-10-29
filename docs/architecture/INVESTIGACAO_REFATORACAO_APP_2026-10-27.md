@@ -1430,3 +1430,11 @@ Continua a auditoria das operações IPC iniciadas pelo usuário e da cobertura 
 - A página deixou de carregar diretamente o limitador de imagens, os cálculos de recorte e a montagem dos resultados de refresh. Não mudaram o schema, os IDs, a persistência, o IPC, a ordem dos blocos ou o algoritmo de renderização.
 - Dois testes sintéticos verificam offsets/dimensões em cena e timeline, imutabilidade do documento, preservação de assets compartilhados e remoção de snapshots órfãos. A suíte focada de fontes e snapshots do Editor V6 passou com 12 testes.
 - Verificação integrada após corrigir a expectativa arquitetural que ainda apontava para a página antiga: `npm run test:refactor`, `npm run test:editor-v6`, typecheck, build, auditoria de arquitetura e `git diff --check`.
+
+## 91. Etapa aplicada — persistência de rascunhos de Expressões DEV isolada e leituras limitadas
+
+- `ExpressionPresetWorkspace.tsx` mantinha debounce, cópia local, fila serializada e tratamento de falhas do rascunho dentro da tela. Essa persistência agora está em `useExpressionWorkspaceDraftPersistence.ts`, apoiada pela fila pura `expressionWorkspaceDraftQueue.ts`, que concentra substituição de snapshots pendentes, gravação serial, flush do último snapshot, deduplicação do item em voo e retry após falha.
+- A tela agora associa a prontidão ao número do slot carregado. Durante uma troca de modelo, o estado anterior não pode ser salvo como rascunho do novo slot; a gravação só é liberada quando o slot atual terminou de carregar e não há troca de expressão em andamento.
+- Os assets de componentes e itens faciais deixaram de ser solicitados todos ao mesmo tempo. O workspace reutiliza `mapConcurrentItems`, limitando e cancelando as leituras já durante uma troca de contexto, sem alterar o catálogo completo exibido nem o formato dos dados.
+- Chave local, schema do rascunho, canal IPC e fluxo de restauração foram preservados. Testes sintéticos cobrem a prontidão por slot, debounce, serialização, flush, falha/retry e uso da persistência pela tela.
+- Verificação nesta etapa: os testes focados passaram com 29 casos; `npm run test:refactor`, `npm run typecheck`, `npm run build` e `npm run audit:architecture` passaram (455 arquivos TS/TSX, sem violações); `git diff --check` passou.

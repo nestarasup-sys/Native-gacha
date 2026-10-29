@@ -105,12 +105,20 @@ test('Fabricator model projects register a flusher while secondary appearance pr
 })
 
 test('Expression workspace drafts register, serialize and await the latest disk snapshot', async () => {
-  const expressions = await readFile('src/renderer/src/features/fabricator/ExpressionPresetWorkspace.tsx', 'utf8')
-  assert.match(expressions, /registerPendingWriteFlusher\(flushWorkspaceDraft\)/)
-  assert.match(expressions, /const latest = latestWorkspaceDraft\.current[\s\S]*?await persistWorkspaceDraft\(latest\)/)
-  assert.match(expressions, /await workspaceSaveQueue\.current/)
-  assert.match(expressions, /saveFaceExpressionWorkspaceDraft\(snapshot\.modelSlot, snapshot\)/)
-  assert.doesNotMatch(expressions, /void window\.desktop\.fabricator\.saveFaceExpressionWorkspaceDraft\(modelSlot, latest\)\.catch\(\(\) => undefined\)/)
+  const [expressions, persistence, queue] = await Promise.all([
+    readFile('src/renderer/src/features/fabricator/ExpressionPresetWorkspace.tsx', 'utf8'),
+    readFile('src/renderer/src/features/fabricator/useExpressionWorkspaceDraftPersistence.ts', 'utf8'),
+    readFile('src/renderer/src/features/fabricator/expressionWorkspaceDraftQueue.ts', 'utf8')
+  ])
+  assert.match(expressions, /useExpressionWorkspaceDraftPersistence\(/)
+  assert.doesNotMatch(expressions, /registerPendingWriteFlusher|saveFaceExpressionWorkspaceDraft\(/)
+  assert.match(persistence, /registerPendingWriteFlusher\(flush\)/)
+  assert.match(persistence, /localStorage\.setItem\(expressionWorkspaceDraftStorageKey\(modelSlot\), JSON\.stringify\(snapshot\)\)/)
+  assert.match(persistence, /queue\.reset\(\)/)
+  assert.match(queue, /async flush\(modelSlot\)[\s\S]*?const latest = latestDraft[\s\S]*?await persist\(latest\)[\s\S]*?await writeQueue/)
+  assert.match(persistence, /saveFaceExpressionWorkspaceDraft\(draft\.modelSlot, draft\)/)
+  assert.match(queue, /writeQueue = tracked/)
+  assert.doesNotMatch(persistence, /void window\.desktop\.fabricator\.saveFaceExpressionWorkspaceDraft\(modelSlot, latest\)\.catch\(\(\) => undefined\)/)
 })
 
 test('Face component debounces and catalog saves drain through the renderer registry', async () => {
