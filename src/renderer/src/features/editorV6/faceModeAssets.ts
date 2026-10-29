@@ -1,5 +1,5 @@
 import type { CustomizerFaceAppearance } from '../../../../shared/customizer'
-import type { EditorV6Asset, EditorV6Element, EditorV6FaceMode, EditorV6FaceRenderMode, EditorV6FaceTransforms } from '../../../../shared/editorV6'
+import type { EditorV6Asset, EditorV6FaceRenderMode, EditorV6FaceTransforms } from '../../../../shared/editorV6'
 import type { FaceExpressionEffects } from '../../../../shared/fabricator'
 import type { TrimmedImage } from '../../characters/characterGeometry'
 
@@ -7,12 +7,7 @@ export const EDITOR_V6_FACE_RENDER_VERSION = 8
 const AUTO_FACE_MODES: EditorV6FaceRenderMode[] = ['idle', 'blink', 'talk', 'talk-blink']
 export type PreparedEditorV6FaceRenderer = Awaited<ReturnType<typeof import('../../characters/editorV6CharacterRenderer').prepareSavedCharacterRenderer>>
 
-export function editorV6FaceModeForElement(element: EditorV6Element | null, appearance: CustomizerFaceAppearance | undefined): EditorV6FaceMode {
-  if (element?.activeFaceMode) return element.activeFaceMode
-  if (appearance?.eyeState === 2) return 'blink'
-  if (appearance?.mouthOpen) return 'talk'
-  return 'idle'
-}
+export { sceneFaceModeForElement as editorV6FaceModeForElement } from '../../characters/sceneFaceMode.ts'
 
 export function trimTransparentCanvas(source: HTMLCanvasElement): TrimmedImage | null {
   const context = source.getContext('2d', { willReadFrequently: true })

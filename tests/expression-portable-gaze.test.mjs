@@ -8,6 +8,8 @@ import { buildStudioExpressionTransforms, buildStudioExpressionAppearance, resol
   from '../src/renderer/src/characters/studioExpressionTransforms.ts'
 import { buildEditorV6ExpressionTransforms }
   from '../src/renderer/src/characters/editorV6ExpressionTransforms.ts'
+import { createSceneFaceActions }
+  from '../src/renderer/src/characters/sceneFaceActions.ts'
 import { selectedExpressionEyeAssets, selectedEyeAssetsByIds }
   from '../src/renderer/src/features/fabricator/eyePreviewSelection.ts'
 
@@ -241,12 +243,12 @@ test('Studio e Editor V6 persistem a direção do olhar sem escrever outro prese
   const paths=['src/renderer/src/features/studio/StudioPage.tsx',
     'src/renderer/src/features/editorV6/EditorV6Page.tsx',
     'src/renderer/src/features/editorV6/EditorV6PresetPanel.tsx',
-    'src/renderer/src/features/editorV6/editorV6FaceActions.ts',
+    'src/renderer/src/characters/sceneFaceActions.ts',
     'src/renderer/src/features/fabricator/ExpressionPresetWorkspace.tsx']
-  const [studio,editorV6,editorV6Panel,editorV6FaceActions,editor]=await Promise.all(paths.map(path=>readFile(path,'utf8')))
-  assert.match(studio,/activeExpressionGaze: gaze/)
-  assert.match(editorV6,/createEditorV6FaceActions/)
-  assert.match(editorV6FaceActions,/activeExpressionGaze: gaze/)
+  const [studio,editorV6,editorV6Panel,sceneFaceActions,editor]=await Promise.all(paths.map(path=>readFile(path,'utf8')))
+  assert.match(studio,/createSceneFaceActions/)
+  assert.match(editorV6,/createSceneFaceActions/)
+  assert.match(sceneFaceActions,/activeExpressionGaze: gaze/)
   assert.ok(editorV6Panel.includes('aria-label={`Pupilas à esquerda: ${preset.name}`}'))
   assert.match(studio,/element\.activeExpressionGaze \?\? 'right'/)
   assert.match(editorV6Panel,/activeExpressionGaze === 'left'/)
@@ -254,6 +256,31 @@ test('Studio e Editor V6 persistem a direção do olhar sem escrever outro prese
   assert.doesNotMatch(editor,/turnPupilsLeft\(/)
   assert.match(editor,/ExpressionCharacterPreview/)
   assert.match(editor,/saveFaceExpressionPresetBatch/)
+})
+
+test('ações faciais compartilhadas mantêm folha, variantes e modo de fala da cena',async()=>{
+  const appearance={modelSlot:1,eyeState:0,eyebrows:true,noseIndex:1,expressionIndex:0,mouthOpen:false,eyeCatalogId:'eyes-old'}
+  const element={kind:'character',faceTransforms:{nose:{x:12,y:8,width:20,height:20,rotation:0}}}
+  const applied=[]
+  const errors=[]
+  const item={id:'mouth-open',modelSlot:1,category:'mouth-open',selectedNose:0,selectedExpression:2}
+  const actions=createSceneFaceActions({
+    character:{customization:{faceAppearance:appearance}},element,appearance,faceMode:'idle',modelSlot:1,
+    expressionCollectionId:'standard',expressionBusy:false,faceBusy:false,
+    setExpressionBusy:()=>{},setError:(error)=>errors.push(error),
+    loadCatalogItem:async()=>item,
+    applyAppearance:async(...args)=>applied.push(args)
+  })
+
+  await actions.chooseFaceSheet({id:item.id,modelSlot:1,category:item.category})
+
+  assert.equal(applied.length,1)
+  assert.deepEqual(applied[0][0],{
+    ...appearance,setId:undefined,mouthOpenCatalogId:'mouth-open',expressionIndex:2,mouthOpen:true
+  })
+  assert.deepEqual(applied[0][1],element.faceTransforms)
+  assert.equal(applied[0][3].activeFaceMode,'talk')
+  assert.deepEqual(errors,[])
 })
 
 test('todas as 21 expressões são variações da base e PT não vira um novo preset',async()=>{

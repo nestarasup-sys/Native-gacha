@@ -20,10 +20,12 @@ import { CharacterPortrait } from '../../ui/components/CharacterPortrait'
 import { resolveStudioTalkMouthId } from '../../../../shared/studio'
 import { fitStudioCharacterToStage } from '../../../../shared/studioCharacterGeometry'
 import { STUDIO_FACE_RENDER_VERSION, useStudioFacePreview } from './useStudioFacePreview'
-import type { StudioAsset, StudioDocument, StudioElement, StudioFaceMode, StudioFaceTransform, StudioFaceTransforms } from '../../../../shared/studio'
+import { createSceneFaceActions } from '../../characters/sceneFaceActions'
+import { sceneFaceModeForElement } from '../../characters/sceneFaceMode'
+import type { StudioAsset, StudioDocument, StudioElement, StudioFaceTransform, StudioFaceTransforms } from '../../../../shared/studio'
 import type { CustomizerCharacter } from '../../../../shared/customizer'
 import type { CustomizerFaceAppearance } from '../../../../shared/customizer'
-import type { FaceCatalogItem, FaceCatalogItemSummary, FaceExpressionPreset, FaceExpressionPresetSummary, FaceSheetKind, FabricatorPoseSummary } from '../../../../shared/fabricator'
+import type { FaceCatalogItem, FaceSheetKind, FabricatorPoseSummary } from '../../../../shared/fabricator'
 type StudioCard = StudioDocument
 type StudioSnapshot = Pick<StudioDocument, 'backgroundColor' | 'backgroundAssetId' | 'backgroundX' | 'backgroundY' | 'backgroundWidth' | 'backgroundHeight' | 'backgroundRotation' | 'assets' | 'elements'>
 type Tool = 'background' | 'objects' | null
@@ -31,12 +33,6 @@ type DragState = { id: string; pointerId: number; startX: number; startY: number
 
 const STORAGE_KEY = 'gacha-nymi-studio-catalog-v1'
 const defaultStudioEyeTransform: StudioFaceTransform = { x: 0, y: 0, width: 100, height: 100, rotation: 0 }
-function studioFaceModeForElement(element: StudioElement | null, appearance: CustomizerFaceAppearance | undefined): StudioFaceMode {
-  if (element?.activeFaceMode) return element.activeFaceMode
-  if (appearance?.eyeState === 2) return 'blink'
-  if (appearance?.mouthOpen) return 'talk'
-  return 'idle'
-}
 function makeCanvasPrint(studio: StudioDocument, outputWidth = 1920, outputHeight = 1080, mimeType = 'image/png'): Promise<string> {
   return new Promise((resolve, reject) => {
     const canvas = document.createElement('canvas')
@@ -241,7 +237,7 @@ export function StudioPage() {
   const selectedStudioFaceAppearance = selectedElement?.kind === 'character'
     ? selectedElement.faceAppearance ?? selectedStudioCharacter?.customization.faceAppearance
     : undefined
-  const selectedStudioFaceMode = selectedElement?.kind === 'character' ? studioFaceModeForElement(selectedElement, selectedStudioFaceAppearance) : 'idle'
+  const selectedStudioFaceMode = selectedElement?.kind === 'character' ? sceneFaceModeForElement(selectedElement, selectedStudioFaceAppearance) : 'idle'
   const selectedStudioOpenMouthId = selectedStudioCharacterModelSlot === null
     ? undefined
     : resolveStudioTalkMouthId(selectedStudioFaceAppearance, studioFaceItems.filter((item) => item.modelSlot === selectedStudioCharacterModelSlot))
@@ -544,7 +540,7 @@ export function StudioPage() {
               ? await buildStudioExpressionAppearance(savedPreset, expressionBase.appearance, (id) => window.desktop.fabricator.loadFaceCatalogItem(savedPreset.modelSlot, id))
               : expressionBase?.appearance ?? element.faceAppearance
             : element.faceAppearance ?? expressionBase?.appearance
-          const faceMode = studioFaceModeForElement(element, element.faceAppearance ?? expressionBase?.appearance)
+          const faceMode = sceneFaceModeForElement(element, element.faceAppearance ?? expressionBase?.appearance)
           const faceTransforms = shouldRecomposeExpression
             ? savedPreset && appearance && expressionBase
               ? await buildStudioExpressionTransforms(savedPreset, appearance, expressionBase.transforms,
@@ -872,55 +868,32 @@ export function StudioPage() {
     } finally { setStudioFaceBusy(false) }
   }
 
-  const applyStudioBaseExpression = async () => {
-    const appearance = selectedStudioCharacter?.customization.faceAppearance ?? selectedStudioFaceAppearance
-    if (!selectedElement || !appearance || studioExpressionBusy || studioFaceBusy) return
-    const faceMode = studioFaceModeForElement(selectedElement, appearance)
-    const base = { ...resolveStudioExpressionBase(selectedElement, appearance), appearance: structuredClone(appearance) }
-    setStudioExpressionBusy(true)
-    try {
-      await applyStudioFaceAppearance(base.appearance, base.transforms, true, { expressionBase: base, activeExpressionPresetId: null, activeExpressionGaze: 'right', activeExpressionPresetUpdatedAt: undefined, activeExpressionCollectionId: selectedStudioExpressionCollectionId, activeExpressionEffects: undefined, activeFaceMode: faceMode })
-    } finally { setStudioExpressionBusy(false) }
-  }
-
-  const applyStudioExpressionPreset = async (summary: FaceExpressionPresetSummary, gaze: 'right' | 'left' = 'right') => {
-    if (!selectedStudioCharacter || !selectedElement || selectedElement.kind !== 'character' || studioExpressionBusy || studioFaceBusy) return
-    setStudioExpressionBusy(true)
-    setError(null)
-    try {
-      const preset: FaceExpressionPreset | null = await window.desktop.fabricator.loadFaceExpressionPreset(summary.modelSlot, summary.id)
-      if (!preset || preset.modelSlot !== selectedStudioCharacterModelSlot) throw new Error('Este preset não está disponível para o modelo selecionado.')
-      const characterAppearance = selectedStudioCharacter.customization.faceAppearance ?? selectedStudioFaceAppearance
-      if (!characterAppearance) throw new Error('A personagem ainda não tem uma aparência facial para ajustar.')
-      const faceMode = studioFaceModeForElement(selectedElement, selectedStudioFaceAppearance)
-      const base = { ...resolveStudioExpressionBase(selectedElement, characterAppearance), appearance: structuredClone(characterAppearance) }
-      const appearance = base.appearance
-      let nextAppearance = await buildStudioExpressionAppearance(preset, appearance, (id) => window.desktop.fabricator.loadFaceCatalogItem(preset.modelSlot, id))
-      if (faceMode === 'talk' && selectedStudioOpenMouthId && !nextAppearance.mouthOpenCatalogId) {
-        nextAppearance = { ...nextAppearance, mouthOpenCatalogId: selectedStudioOpenMouthId }
-      }
-      const faceTransforms = await buildStudioExpressionTransforms(
-        preset, nextAppearance, base.transforms,
-        (id) => window.desktop.fabricator.loadFaceComponentAsset(preset.modelSlot, id),
-        (id) => window.desktop.fabricator.loadFaceCatalogItem(preset.modelSlot, id),
-        gaze
-      )
-
-      await applyStudioFaceAppearance(nextAppearance, faceTransforms, true, { expressionBase: base, activeExpressionPresetId: preset.id, activeExpressionGaze: gaze, activeExpressionPresetUpdatedAt: preset.updatedAt, activeExpressionCollectionId: preset.collectionId ?? 'standard', activeExpressionEffects: preset.effects, activeFaceMode: faceMode })
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Não foi possível aplicar este preset de expressão.')
-    } finally {
-      setStudioExpressionBusy(false)
-    }
-  }
-
-  const applyStudioFaceMode = async (mode: StudioFaceMode) => {
-    if (!selectedElement || selectedElement.kind !== 'character' || !selectedStudioFaceAppearance || studioExpressionBusy || studioFaceBusy) return
-    const appearance = mode === 'talk' && selectedStudioOpenMouthId && !selectedStudioFaceAppearance.mouthOpenCatalogId
-      ? { ...selectedStudioFaceAppearance, mouthOpenCatalogId: selectedStudioOpenMouthId }
-      : selectedStudioFaceAppearance
-    await applyStudioFaceAppearance(appearance, selectedElement.faceTransforms ?? {}, true, { activeFaceMode: mode })
-  }
+  const {
+    applyBaseExpression: applyStudioBaseExpression,
+    applyExpressionPreset: applyStudioExpressionPreset,
+    applyFaceMode: applyStudioFaceMode,
+    chooseFaceSheet: chooseStudioFaceSheet,
+    updateFaceVariant: updateStudioFaceVariant
+  } = createSceneFaceActions({
+    character: selectedStudioCharacter,
+    element: selectedElement,
+    appearance: selectedStudioFaceAppearance,
+    faceMode: selectedStudioFaceMode,
+    modelSlot: selectedStudioCharacterModelSlot,
+    openMouthCatalogId: selectedStudioOpenMouthId,
+    expressionCollectionId: selectedStudioExpressionCollectionId,
+    expressionBusy: studioExpressionBusy,
+    faceBusy: studioFaceBusy,
+    setExpressionBusy: setStudioExpressionBusy,
+    setError,
+    loadCatalogItem: async (modelSlot, id) => {
+      const key = `${modelSlot}:${id}`
+      const item = studioFaceDetails[key] ?? await window.desktop.fabricator.loadFaceCatalogItem(modelSlot, id)
+      if (item) setStudioFaceDetails((current) => ({ ...current, [key]: item }))
+      return item
+    },
+    applyAppearance: applyStudioFaceAppearance
+  })
 
   const applyStudioPose = async (poseSlot: number | null) => {
     if (!activeStudio || selectedElement?.kind !== 'character' || !selectedStudioCharacter || !selectedElement.assetId || studioFaceBusy) return
@@ -956,49 +929,6 @@ export function StudioPage() {
       setError(null)
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível aplicar a pose neste Studio.') }
     finally { setStudioFaceBusy(false) }
-  }
-
-  const chooseStudioFaceSheet = async (summary: FaceCatalogItemSummary) => {
-    if (!selectedStudioCharacter) return
-    const key = `${summary.modelSlot}:${summary.id}`
-    const item = studioFaceDetails[key] ?? await window.desktop.fabricator.loadFaceCatalogItem(summary.modelSlot, summary.id)
-    if (!item) return
-    setStudioFaceDetails((current) => ({ ...current, [key]: item }))
-    const previous = selectedStudioFaceAppearance
-    const sameModel = previous?.modelSlot === item.modelSlot
-    const field: Record<FaceSheetKind, keyof CustomizerFaceAppearance> = {
-      eyes: 'eyeCatalogId', eyebrows: 'eyebrowCatalogId', nose: 'noseCatalogId',
-      'mouth-closed': 'mouthClosedCatalogId', 'mouth-open': 'mouthOpenCatalogId'
-    }
-    const appearance: CustomizerFaceAppearance = {
-      ...(sameModel ? previous : undefined),
-      modelSlot: item.modelSlot,
-      setId: undefined,
-      [field[item.category]]: item.id,
-      eyeState: sameModel ? previous.eyeState : 0,
-      eyebrows: sameModel ? previous.eyebrows : true,
-      noseIndex: item.category === 'nose' ? item.selectedNose : sameModel ? previous.noseIndex : item.selectedNose,
-      expressionIndex: item.category.startsWith('mouth') ? item.selectedExpression : sameModel ? previous.expressionIndex : item.selectedExpression,
-      mouthOpen: item.category === 'mouth-open' ? true : item.category === 'mouth-closed' ? false : sameModel ? previous.mouthOpen : false
-    }
-    const faceMode = item.category === 'mouth-open' ? 'talk' : item.category === 'mouth-closed' ? 'idle' : selectedElement?.activeFaceMode
-    await applyStudioFaceAppearance(appearance, selectedElement?.faceTransforms ?? {}, true, { activeFaceMode: faceMode })
-  }
-
-  const updateStudioFaceVariant = (patch: Partial<CustomizerFaceAppearance>) => {
-    if (!selectedStudioFaceAppearance || selectedStudioCharacterModelSlot === null) return
-    const changesFaceMode = Object.hasOwn(patch, 'mouthOpen') || Object.hasOwn(patch, 'eyeState')
-    let faceMode = selectedElement?.activeFaceMode
-    if (Object.hasOwn(patch, 'mouthOpen')) faceMode = patch.mouthOpen ? 'talk' : 'idle'
-    else if (Object.hasOwn(patch, 'eyeState')) {
-      faceMode = patch.eyeState === 2 ? 'blink' : selectedStudioFaceMode === 'talk' ? 'talk' : 'idle'
-    }
-    void applyStudioFaceAppearance(
-      { ...selectedStudioFaceAppearance, ...patch },
-      selectedElement?.faceTransforms ?? {},
-      true,
-      changesFaceMode ? { activeFaceMode: faceMode } : undefined
-    )
   }
 
   const updateStudioFaceTransform = (transformKey: string, patch: Partial<StudioFaceTransform>, record = false, baseTransform = defaultStudioEyeTransform) => {

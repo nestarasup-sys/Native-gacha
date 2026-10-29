@@ -1,25 +1,38 @@
-import type { CustomizerCharacter, CustomizerFaceAppearance } from '../../../../shared/customizer'
-import type { EditorV6Element, EditorV6FaceMode, EditorV6FaceTransforms } from '../../../../shared/editorV6'
-import type { FaceCatalogItem, FaceCatalogItemSummary, FaceExpressionPreset, FaceExpressionPresetSummary, FaceSheetKind } from '../../../../shared/fabricator'
-import { buildEditorV6ExpressionAppearance, buildEditorV6ExpressionTransforms, resolveEditorV6ExpressionBase } from '../../characters/editorV6ExpressionTransforms'
-import { editorV6FaceModeForElement } from './faceModeAssets'
+import type { CustomizerCharacter, CustomizerFaceAppearance } from '../../../shared/customizer'
+import type { SceneExpressionBase, SceneFaceMode, SceneFaceTransforms } from '../../../shared/sceneFaceValidation'
+import type { FaceCatalogItem, FaceCatalogItemSummary, FaceExpressionEffects, FaceExpressionPreset, FaceExpressionPresetSummary, FaceSheetKind } from '../../../shared/fabricator'
+import { buildSceneExpressionAppearance, buildSceneExpressionTransforms, resolveSceneExpressionBase } from './sceneExpressionTransforms.ts'
+import { sceneFaceModeForElement } from './sceneFaceMode.ts'
 
-type ExpressionState = Pick<EditorV6Element,
-  'expressionBase' | 'activeExpressionGaze' | 'activeExpressionPresetId' | 'activeExpressionPresetUpdatedAt'
-  | 'activeExpressionCollectionId' | 'activeExpressionEffects' | 'activeFaceMode'>
+export type SceneFaceActionElement = {
+  kind: string
+  expressionBase?: SceneExpressionBase
+  faceTransforms?: SceneFaceTransforms
+  activeFaceMode?: SceneFaceMode
+}
+
+export type SceneFaceExpressionState = {
+  expressionBase?: SceneExpressionBase
+  activeExpressionGaze?: 'right' | 'left'
+  activeExpressionPresetId?: string | null
+  activeExpressionPresetUpdatedAt?: string
+  activeExpressionCollectionId?: string
+  activeExpressionEffects?: FaceExpressionEffects
+  activeFaceMode?: SceneFaceMode
+}
 
 type ApplyFaceAppearance = (
   appearance: CustomizerFaceAppearance,
-  faceTransforms?: EditorV6FaceTransforms,
+  faceTransforms?: SceneFaceTransforms,
   record?: boolean,
-  expressionState?: ExpressionState
+  expressionState?: SceneFaceExpressionState
 ) => Promise<void>
 
-type EditorV6FaceActionsOptions = {
+type CreateSceneFaceActionsOptions = {
   character: CustomizerCharacter | null
-  element: EditorV6Element | null
+  element: SceneFaceActionElement | null
   appearance?: CustomizerFaceAppearance
-  faceMode: EditorV6FaceMode
+  faceMode: SceneFaceMode
   modelSlot: number | null
   openMouthCatalogId?: string | null
   expressionCollectionId: string
@@ -31,8 +44,8 @@ type EditorV6FaceActionsOptions = {
   applyAppearance: ApplyFaceAppearance
 }
 
-/** Owns the Editor V6 inspector actions that choose and apply facial expressions. */
-export function createEditorV6FaceActions({
+/** Shared inspector actions for Studio and Editor V6; each caller owns rendering and saving. */
+export function createSceneFaceActions({
   character,
   element,
   appearance: selectedAppearance,
@@ -46,12 +59,12 @@ export function createEditorV6FaceActions({
   setError,
   loadCatalogItem,
   applyAppearance
-}: EditorV6FaceActionsOptions) {
+}: CreateSceneFaceActionsOptions) {
   const applyBaseExpression = async () => {
     const appearance = character?.customization.faceAppearance ?? selectedAppearance
     if (!element || !appearance || expressionBusy || faceBusy) return
-    const activeFaceMode = editorV6FaceModeForElement(element, appearance)
-    const base = { ...resolveEditorV6ExpressionBase(element, appearance), appearance: structuredClone(appearance) }
+    const activeFaceMode = sceneFaceModeForElement(element, appearance)
+    const base = { ...resolveSceneExpressionBase(element, appearance), appearance: structuredClone(appearance) }
     setExpressionBusy(true)
     try {
       await applyAppearance(base.appearance, base.transforms, true, {
@@ -77,13 +90,13 @@ export function createEditorV6FaceActions({
       if (!preset || preset.modelSlot !== modelSlot) throw new Error('Este preset não está disponível para o modelo selecionado.')
       const characterAppearance = character.customization.faceAppearance ?? selectedAppearance
       if (!characterAppearance) throw new Error('A personagem ainda não tem uma aparência facial para ajustar.')
-      const activeFaceMode = editorV6FaceModeForElement(element, selectedAppearance)
-      const base = { ...resolveEditorV6ExpressionBase(element, characterAppearance), appearance: structuredClone(characterAppearance) }
-      let nextAppearance = await buildEditorV6ExpressionAppearance(preset, base.appearance, (id) => window.desktop.fabricator.loadFaceCatalogItem(preset.modelSlot, id))
+      const activeFaceMode = sceneFaceModeForElement(element, selectedAppearance)
+      const base = { ...resolveSceneExpressionBase(element, characterAppearance), appearance: structuredClone(characterAppearance) }
+      let nextAppearance = await buildSceneExpressionAppearance(preset, base.appearance, (id) => window.desktop.fabricator.loadFaceCatalogItem(preset.modelSlot, id))
       if (activeFaceMode === 'talk' && openMouthCatalogId && !nextAppearance.mouthOpenCatalogId) {
         nextAppearance = { ...nextAppearance, mouthOpenCatalogId: openMouthCatalogId }
       }
-      const faceTransforms = await buildEditorV6ExpressionTransforms(
+      const faceTransforms = await buildSceneExpressionTransforms(
         preset,
         nextAppearance,
         base.transforms,
@@ -107,7 +120,7 @@ export function createEditorV6FaceActions({
     }
   }
 
-  const applyFaceMode = async (mode: EditorV6FaceMode) => {
+  const applyFaceMode = async (mode: SceneFaceMode) => {
     if (!element || element.kind !== 'character' || !selectedAppearance || expressionBusy || faceBusy) return
     const appearance = mode === 'talk' && openMouthCatalogId && !selectedAppearance.mouthOpenCatalogId
       ? { ...selectedAppearance, mouthOpenCatalogId: openMouthCatalogId }
@@ -134,7 +147,7 @@ export function createEditorV6FaceActions({
       'mouth-closed': 'mouthClosedCatalogId',
       'mouth-open': 'mouthOpenCatalogId'
     }
-    const appearance: CustomizerFaceAppearance = {
+    const nextAppearance: CustomizerFaceAppearance = {
       ...(sameModel ? previous : undefined),
       modelSlot: item.modelSlot,
       setId: undefined,
@@ -146,7 +159,7 @@ export function createEditorV6FaceActions({
       mouthOpen: item.category === 'mouth-open' ? true : item.category === 'mouth-closed' ? false : sameModel ? previous.mouthOpen : false
     }
     const activeFaceMode = item.category === 'mouth-open' ? 'talk' : item.category === 'mouth-closed' ? 'idle' : element?.activeFaceMode
-    await applyAppearance(appearance, element?.faceTransforms ?? {}, true, { activeFaceMode })
+    await applyAppearance(nextAppearance, element?.faceTransforms ?? {}, true, { activeFaceMode })
   }
 
   const updateFaceVariant = (patch: Partial<CustomizerFaceAppearance>) => {
