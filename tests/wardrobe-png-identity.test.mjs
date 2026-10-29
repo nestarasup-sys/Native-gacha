@@ -39,7 +39,7 @@ test('upload e ajuste posteriores nunca trocam os PNGs individuais por cópias d
 
 test('o editor Roupas Dev só reenvia PNGs ao importar um conjunto novo, não ao mudar seus encaixes',async()=>{
   const editor=await fs.readFile('src/renderer/src/features/fabricator/wardrobe/WardrobeWorkspace.tsx','utf8')
-  assert.match(editor,/activeSetId === set\.id && !dirtyWarpImageIdsRef\.current\.has\(component\.id\)/)
+  assert.match(editor,/activeSetId === set\.id && !hasDirtyWarpImage\(component\.id\)/)
   assert.match(editor,/saveWardrobeSet\(modelSlot, serialized, images\)/)
   const persistence=await fs.readFile('electron/domains/fabricator/wardrobePersistence.ts','utf8')
   assert.match(persistence,/deps\.readCatalogPng\(identity, version, join\(folder, 'parts', `\$\{component\.id\}\.png`\)\)/)
