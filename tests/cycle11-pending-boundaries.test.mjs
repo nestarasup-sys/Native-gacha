@@ -46,3 +46,8 @@ test('workflow Windows exige screenshots reais das três áreas no PR e perfis s
   assert.match(cap,/window\.location\.hash = '#\/estudio'/)
   assert.match(cap,/studio\.scene\.area|studio-scene-area/)
 })
+test('captura visual DEV AI só carrega o módulo de inspeção sob demanda',async()=>{
+  const main=await readFile('electron/main.ts','utf8')
+  assert.doesNotMatch(main,/import \{[^}]*captureFabricatorRealScreens[^}]*\} from ['"]\.\/domains\/fabricator\/visualUiCapture/)
+  assert.match(main,/GACHA_DEV_AI_TEST === '1'[\s\S]*?GACHA_FABRICATOR_REAL_UI_CAPTURE === '1'[\s\S]*?import\('\.\/domains\/fabricator\/visualUiCapture'\)/)
+})

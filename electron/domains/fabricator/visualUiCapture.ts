@@ -243,16 +243,19 @@ export async function captureFabricatorRealScreens(win: BrowserWindow, output: s
       if(first===null)throw Error('Não conseguiu medir pupila do Olhos DEV.')
       pathPixels.push(first)
       for(let index=1;index<=5;index++){
-        win.webContents.sendInputEvent({type:'mouseMove',x:x+index*5,y})
+        win.webContents.sendInputEvent({type:'mouseMove',x:x+index*5,y,button:'left',modifiers:['leftbuttondown']})
         await new Promise(resolve=>setTimeout(resolve,85))
         const observed=await observe()
         if(observed===null)throw Error('Pupila saiu da interface durante drag.')
         pathPixels.push(observed)
       }
       win.webContents.sendInputEvent({type:'mouseUp',x:x+25,y,button:'left',clickCount:1})
+      await new Promise(resolve=>setTimeout(resolve,50))
+      const finalPosition=await observe()
+      if(finalPosition!==null)pathPixels.push(finalPosition)
       // Electron/React may batch several pointermove events into one paint:
       // plateaus are valid, backwards movement is not. The final displacement
-      // must still be visible, not a "pass" from a frozen cursor.
+      // after pointerup must still be visible, not a "pass" from a frozen cursor.
       if(!pathPixels.slice(1).every((value,index)=>value>=pathPixels[index]-.3)
         || pathPixels[pathPixels.length-1]<pathPixels[0]+7) {
         throw Error('Arrastar a pupila à direita congelou ou inverteu a imagem: '+JSON.stringify(pathPixels))
@@ -394,11 +397,11 @@ export async function captureFabricatorRealScreens(win: BrowserWindow, output: s
         throw Error('Prévia de Roupas Dev não está estável no instante da foto: ' + JSON.stringify(ready))
       }
       await exerciseGlueWorkflow(win)
-      await waitFor(win, '.wardrobe-preview-controls button[title*="Aproxima bordas"][aria-pressed="true"]')
-      await win.webContents.executeJavaScript("document.querySelector('.wardrobe-preview-controls button[title*=Aproxima]')?.click()")
-      await waitFor(win, '.wardrobe-preview-controls button[title*="Aproxima bordas"][aria-pressed="false"]')
-      await win.webContents.executeJavaScript("document.querySelector('.wardrobe-preview-controls button[title*=Aproxima]')?.click()")
-      await waitFor(win, '.wardrobe-preview-controls button[title*="Aproxima bordas"][aria-pressed="true"]')
+      await waitFor(win, '.wardrobe-preview-controls .wardrobe-control-magnet[aria-pressed="true"]')
+      await win.webContents.executeJavaScript("document.querySelector('.wardrobe-preview-controls .wardrobe-control-magnet')?.click()")
+      await waitFor(win, '.wardrobe-preview-controls .wardrobe-control-magnet[aria-pressed="false"]')
+      await win.webContents.executeJavaScript("document.querySelector('.wardrobe-preview-controls .wardrobe-control-magnet')?.click()")
+      await waitFor(win, '.wardrobe-preview-controls .wardrobe-control-magnet[aria-pressed="true"]')
       await waitFor(win, '.wardrobe-comparison-toggle button', 30000)
       const compared = await win.webContents.executeJavaScript(`(() => {
         const button = document.querySelector('.wardrobe-comparison-toggle button')
