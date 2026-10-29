@@ -667,11 +667,19 @@ Este corte separa propriedade dos contratos e chamadas entre domínios, mas não
 - O inventário de timers do renderer confirmou que o debounce de Model Source restante é apenas para cálculo de prévia. Os demais timers encontrados são polling, reconhecimento de mídia ou renderização temporizada.
 - Os testes direcionados do registro, fila serializada e Base de Vídeos passaram com 21 casos. A suíte completa `npm run test:refactor` passou com 322 testes; `npm run typecheck`, `npm run audit:architecture` (350 arquivos TS/TSX), `npm run build` e `git diff --check` também passaram.
 
-## 11. Próxima tarefa recomendada
+## 11. Etapa aplicada — flush dos documentos de Roteiros
 
-Auditar operações IPC manuais iniciadas por ações de usuário e a cobertura do inventário do processo principal, além dos debounces já drenados. Mapear o comportamento de falha/recuperação de cada domínio e completar a matriz de persistência do aplicativo.
+- `RoteirosPage` salvava cada snapshot num efeito React sem registrar a gravação pendente no flush compartilhado. A navegação podia ocorrer entre o commit do estado e o início/conclusão do IPC.
+- A página agora mantém a referência do snapshot atual, espera gravações iniciadas e persiste o estado mais recente antes de sair, fechar ou iniciar backup. Se a última gravação falhar, o flush falha e a navegação fica na área para nova tentativa.
+- A remoção de vídeo de rascunho atualiza o estado e usa a mesma rotina de gravação antes de excluir o vídeo da Base, preservando a ordem entre remover a referência e apagar o asset.
+- O fluxo principal continua `RoteirosPage` → `roteiros:save` → `documentIpc.ts` → `service.ts`/fila compartilhada → `RoteirosRepository`; IDs, esquema SQLite e canais IPC não mudaram.
+- `npm run test:refactor` passou com 323 testes; `npm run typecheck`, `npm run audit:architecture` (350 arquivos TS/TSX) e `npm run build` também passaram. Os testes usam documentos sintéticos; nenhum roteiro salvo foi acessado ou alterado.
 
-## 12. Verificações e validação
+## 12. Próxima tarefa recomendada
+
+Continuar a auditoria de operações IPC manuais iniciadas por ações de usuário e da cobertura do inventário do processo principal, além dos autosaves já drenados. Mapear o comportamento de falha/recuperação de cada domínio e completar a matriz de persistência do aplicativo.
+
+## 13. Verificações e validação
 
 - Leitura do código atual de rotas, TopBar, preload, contratos compartilhados, Base de Vídeos, Roteiros, Editor V6, VideoLibrary, boot Electron, módulos de domínio, renderizadores, schema SQLite e ADRs.
 - A etapa anterior moveu as consultas de referência para os domínios donos e `npm run test:base-videos` passou com 7 verificações sintéticas. Nenhum perfil ou mídia real foi usado.

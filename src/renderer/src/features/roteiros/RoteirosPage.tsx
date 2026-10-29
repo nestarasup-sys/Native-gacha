@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Icon } from '../../ui/components/Icon'
+import { registerPendingWriteFlusher } from '../../ui/pendingPersistence'
 import { RoteiroSectionEditor } from './RoteiroSectionEditor'
 import { CharacterPortrait } from '../../ui/components/CharacterPortrait'
 import { RenderedCharacterPortrait } from '../../ui/components/RenderedCharacterPortrait'
@@ -387,8 +388,50 @@ export function RoteirosPage() {
   const roteiroListRef = useRef<HTMLDivElement>(null)
   const roteiroListScroll = useRef(0)
   const saveRevision = useRef(0)
+  const roteirosRef = useRef(roteiros)
+  const lastRequestedRoteiros = useRef<SidebarRoteiro[] | null>(null)
+  const persistedRoteiros = useRef<SidebarRoteiro[] | null>(null)
+  const persistedRoteirosRevision = useRef(0)
+  const roteiroSaveWrites = useRef(new Set<Promise<void>>())
   const active = roteiroAreas.find((area) => area.id === activeArea) ?? roteiroAreas[0]
   const openedRoteiro = roteiros.find((roteiro) => roteiro.id === openedRoteiroId) ?? null
+
+  useLayoutEffect(() => { roteirosRef.current = roteiros }, [roteiros])
+
+  const saveRoteirosSnapshot = useCallback((snapshot: SidebarRoteiro[]) => {
+    const revision = ++saveRevision.current
+    lastRequestedRoteiros.current = snapshot
+    setRoteiroSaveStatus('saving')
+    const write = Promise.resolve().then(() => window.desktop.roteiros.saveRoteiros(snapshot)).then(() => {
+      if (revision >= persistedRoteirosRevision.current) {
+        persistedRoteirosRevision.current = revision
+        persistedRoteiros.current = snapshot
+      }
+      if (revision === saveRevision.current) setRoteiroSaveStatus('saved')
+    }, (error: unknown) => {
+      if (revision === saveRevision.current) setRoteiroSaveStatus('error')
+      if (lastRequestedRoteiros.current === snapshot) lastRequestedRoteiros.current = null
+      console.error('Não foi possível salvar os roteiros.', error)
+      throw error
+    })
+    roteiroSaveWrites.current.add(write)
+    void write.then(() => roteiroSaveWrites.current.delete(write), () => roteiroSaveWrites.current.delete(write))
+    return write
+  }, [])
+
+  const flushRoteirosWrites = useCallback(async () => {
+    if (!roteirosLoaded) return
+    while (true) {
+      const pending = [...roteiroSaveWrites.current]
+      if (pending.length > 0) await Promise.allSettled(pending)
+      const latest = roteirosRef.current
+      if (persistedRoteiros.current === latest && roteiroSaveWrites.current.size === 0) return
+      if (lastRequestedRoteiros.current === latest && roteiroSaveWrites.current.size > 0) continue
+      await saveRoteirosSnapshot(latest)
+    }
+  }, [roteirosLoaded, saveRoteirosSnapshot])
+
+  useEffect(() => registerPendingWriteFlusher(flushRoteirosWrites), [flushRoteirosWrites])
 
   useEffect(() => {
     let cancelled = false
@@ -410,14 +453,9 @@ export function RoteirosPage() {
   }, [])
 
   useEffect(() => {
-    if (!roteirosLoaded) return
-    const revision = ++saveRevision.current
-    setRoteiroSaveStatus('saving')
-    void window.desktop.roteiros.saveRoteiros(roteiros).then(() => { if (revision === saveRevision.current) setRoteiroSaveStatus('saved') }).catch((error) => {
-      console.error('Não foi possível salvar os roteiros.', error)
-      if (revision === saveRevision.current) setRoteiroSaveStatus('error')
-    })
-  }, [roteiros, roteirosLoaded])
+    if (!roteirosLoaded || lastRequestedRoteiros.current === roteiros) return
+    void saveRoteirosSnapshot(roteiros).catch(() => undefined)
+  }, [roteiros, roteirosLoaded, saveRoteirosSnapshot])
 
   useEffect(() => {
     if (!openedRoteiroId && roteiroListRef.current) roteiroListRef.current.scrollTop = roteiroListScroll.current
@@ -443,9 +481,9 @@ export function RoteirosPage() {
   }
 
   const deleteDraftVideoFromRoteiro = async (updatedRoteiro: SidebarRoteiro, videoId: string) => {
-    const nextRoteiros = roteiros.map((item) => item.id === updatedRoteiro.id ? updatedRoteiro : item)
-    await window.desktop.roteiros.saveRoteiros(nextRoteiros)
+    const nextRoteiros = roteirosRef.current.map((item) => item.id === updatedRoteiro.id ? updatedRoteiro : item)
     setRoteiros(nextRoteiros)
+    await saveRoteirosSnapshot(nextRoteiros)
     const stillReferenced = nextRoteiros.some((item) => item.opening?.video?.id === videoId || item.tiktoks.some((tiktok) => tiktok.video?.id === videoId))
     if (stillReferenced) return false
     await window.desktop.baseVideos.deleteVideo(videoId)
@@ -516,7 +554,7 @@ export function RoteirosPage() {
     </aside>
     <section className="roteiros-main-empty" aria-label={`Área ${active.label}`}>
       <header className="roteiros-area-titlebar"><div className="roteiros-title-content">{activeArea === 'roteiros' && <div className="roteiros-title-actions"><button className="add" onClick={() => { setDeleteMode(false); setDeleteSelection([]); setNewTitle(''); setNewCharacterIds([]); setCreateOpen(true) }} disabled={!roteirosLoaded} title="Adicionar roteiro" type="button">Adicionar</button><button className={deleteMode ? deleteSelection.length ? 'confirm-delete' : 'cancel-delete' : 'delete'} onClick={handleDeleteButton} disabled={!roteirosLoaded || (!deleteMode && roteiros.length === 0)} title={deleteMode ? deleteSelection.length ? `Confirmar exclusão de ${deleteSelection.length} roteiro(s)` : 'Voltar sem excluir roteiros' : 'Selecionar roteiros para excluir'} type="button">{deleteMode ? deleteSelection.length ? 'Confirmar' : 'Voltar' : 'Excluir'}</button></div>}<h1>{active.label}</h1></div></header>
-      {activeArea === 'roteiros' && <div className="roteiro-main-library" aria-label="Lista de roteiros" ref={roteiroListRef}><div className="roteiro-library-toolbar"><label><Icon name="search" /><input value={roteiroSearch} onChange={(event) => setRoteiroSearch(event.target.value)} placeholder="Buscar roteiro…" /></label><span className={`roteiro-save-indicator ${roteirosLoadError ? 'error' : roteiroSaveStatus}`} role="status">{roteirosLoadError ? 'Falha ao carregar' : !roteirosLoaded ? 'Carregando roteiros…' : roteiroSaveStatus === 'saving' ? 'Salvando…' : roteiroSaveStatus === 'error' ? 'Falha ao salvar' : 'Tudo salvo'}</span>{roteirosLoadError && <button className="roteiro-save-retry" type="button" onClick={() => { setRoteirosLoadError(''); void window.desktop.roteiros.listRoteiros().then((items) => { setRoteiros(items); setRoteirosLoaded(true) }).catch((reason: unknown) => setRoteirosLoadError(reason instanceof Error ? reason.message : 'Não foi possível carregar os roteiros salvos.')) }}>Tentar carregar</button>}{roteiroSaveStatus === 'error' && !roteirosLoadError && <button className="roteiro-save-retry" type="button" onClick={() => { void window.desktop.roteiros.saveRoteiros(roteiros).then(() => setRoteiroSaveStatus('saved')).catch(() => setRoteiroSaveStatus('error')) }}>Tentar novamente</button>}</div>{roteirosLoaded && <div className="roteiro-main-cards">{visibleRoteiros.map((roteiro) => {
+      {activeArea === 'roteiros' && <div className="roteiro-main-library" aria-label="Lista de roteiros" ref={roteiroListRef}><div className="roteiro-library-toolbar"><label><Icon name="search" /><input value={roteiroSearch} onChange={(event) => setRoteiroSearch(event.target.value)} placeholder="Buscar roteiro…" /></label><span className={`roteiro-save-indicator ${roteirosLoadError ? 'error' : roteiroSaveStatus}`} role="status">{roteirosLoadError ? 'Falha ao carregar' : !roteirosLoaded ? 'Carregando roteiros…' : roteiroSaveStatus === 'saving' ? 'Salvando…' : roteiroSaveStatus === 'error' ? 'Falha ao salvar' : 'Tudo salvo'}</span>{roteirosLoadError && <button className="roteiro-save-retry" type="button" onClick={() => { setRoteirosLoadError(''); void window.desktop.roteiros.listRoteiros().then((items) => { setRoteiros(items); setRoteirosLoaded(true) }).catch((reason: unknown) => setRoteirosLoadError(reason instanceof Error ? reason.message : 'Não foi possível carregar os roteiros salvos.')) }}>Tentar carregar</button>}{roteiroSaveStatus === 'error' && !roteirosLoadError && <button className="roteiro-save-retry" type="button" onClick={() => { void saveRoteirosSnapshot(roteiros).catch(() => undefined) }}>Tentar novamente</button>}</div>{roteirosLoaded && <div className="roteiro-main-cards">{visibleRoteiros.map((roteiro) => {
         const roteiroCharacters = roteiro.characterIds.map((id) => characters.find((character) => character.id === id)).filter((character): character is CustomizerCharacter => Boolean(character))
         const markedForDelete = deleteSelection.includes(roteiro.id)
         const refs = [roteiro.opening?.video, ...roteiro.tiktoks.map((item) => item.video)].filter((item): item is RoteiroVideoReference => Boolean(item))

@@ -112,6 +112,16 @@ test('Base Videos drains every debounced detail write before leaving', async () 
   assert.doesNotMatch(videos, /void persistPendingSave\(videoId, false\)\.catch/)
 })
 
+test('Roteiros flushes the latest snapshot and waits for document IPC writes', async () => {
+  const roteiros = await readFile('src/renderer/src/features/roteiros/RoteirosPage.tsx', 'utf8')
+  assert.match(roteiros, /registerPendingWriteFlusher\(flushRoteirosWrites\)/)
+  assert.match(roteiros, /useLayoutEffect\(\(\) => \{ roteirosRef\.current = roteiros \}, \[roteiros\]\)/)
+  assert.match(roteiros, /const pending = \[\.\.\.roteiroSaveWrites\.current\][\s\S]*?await Promise\.allSettled\(pending\)/)
+  assert.match(roteiros, /await saveRoteirosSnapshot\(latest\)/)
+  assert.match(roteiros, /await saveRoteirosSnapshot\(nextRoteiros\)/)
+  assert.doesNotMatch(roteiros, /window\.desktop\.roteiros\.saveRoteiros\(roteiros\)/)
+})
+
 test('main flushes renderer writes before its IPC inventory and navigation waits for renderer flush', async () => {
   const main = await readFile('electron/main.ts', 'utf8')
   const topBar = await readFile('src/renderer/src/ui/components/TopBar.tsx', 'utf8')
