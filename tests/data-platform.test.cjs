@@ -6,6 +6,9 @@ const path = require('node:path')
 const sharp = require('sharp')
 const Database = require('better-sqlite3')
 const { ContentAddressedStore, DataPlatform, createDatabaseSnapshot, getAppDataUsage, registerObjectMetadata, sha256 } = require('../electron/dataPlatform.cjs')
+const ContentAddressedStoreService = require('../electron/domains/storage/contentAddressedStore.cjs')
+const { getAppDataUsage: readAppDataUsage } = require('../electron/domains/storage/appDataUsage.cjs')
+const { sha256: hashBytes } = require('../electron/domains/storage/storageFiles.cjs')
 const { DomainFileSystem } = require('../electron/domainFileSystem.cjs')
 const { DataMigrationService } = require('../electron/dataMigration.cjs')
 const { DataBackupService } = require('../electron/dataBackups.cjs')
@@ -26,6 +29,12 @@ async function withRoot(run) {
     await fs.rm(root, { recursive: true, force: true })
   }
 }
+
+test('data platform keeps its storage exports as aliases to the owning modules', () => {
+  assert.equal(ContentAddressedStore, ContentAddressedStoreService)
+  assert.equal(getAppDataUsage, readAppDataUsage)
+  assert.equal(sha256, hashBytes)
+})
 
 test('catalog supports new domains, stable IDs, metadata search and bounded pagination', async () => withRoot(async (root) => {
   const catalog = catalogAt(root)

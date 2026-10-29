@@ -2,11 +2,11 @@ const fs = require('node:fs')
 const fsp = require('node:fs/promises')
 const path = require('node:path')
 const crypto = require('node:crypto')
-const { createReadStream, createWriteStream } = require('node:fs')
-const { Transform } = require('node:stream')
-const { pipeline } = require('node:stream/promises')
 const Database = require('better-sqlite3')
 const { normalizeImageBuffer } = require('./imageIngestion.cjs')
+const ContentAddressedStore = require('./domains/storage/contentAddressedStore.cjs')
+const { assertCanonicalDirectory, ensureSafeDirectory, hashFile, isWithin, sha256 } = require('./domains/storage/storageFiles.cjs')
+const { getAppDataUsage } = require('./domains/storage/appDataUsage.cjs')
 
 const BUILTIN_DOMAINS = [
   'fabricator.models', 'fabricator.poses', 'fabricator.animations', 'fabricator.wardrobe', 'fabricator.design-settings',
@@ -15,42 +15,6 @@ const BUILTIN_DOMAINS = [
   'customizer.characters', 'studio.projects', 'studio.prints',
   'video-studio.media', 'video-studio.backgrounds'
 ]
-
-function isWithin(root, target) {
-  const rel = path.relative(path.resolve(root), path.resolve(target))
-  return rel === '' || (rel !== '..' && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel))
-}
-
-function assertCanonicalDirectory(root, label) {
-  fs.mkdirSync(root, { recursive: true })
-  const stat = fs.lstatSync(root)
-  if (!stat.isDirectory() || stat.isSymbolicLink() || path.resolve(root) !== fs.realpathSync(root)) {
-    throw new Error(`${label} precisa ser uma pasta real e canônica.`)
-  }
-}
-
-async function ensureSafeDirectory(root, target) {
-  const canonicalRoot = path.resolve(root)
-  const absolute = path.resolve(target)
-  if (!isWithin(canonicalRoot, absolute)) throw new Error('Tentativa de gravação fora de app-data.')
-  assertCanonicalDirectory(canonicalRoot, 'Raiz app-data')
-  const relativePath = path.relative(canonicalRoot, absolute)
-  let current = canonicalRoot
-  for (const segment of relativePath ? relativePath.split(path.sep) : []) {
-    current = path.join(current, segment)
-    await fsp.mkdir(current, { recursive: false }).catch((error) => {
-      if (error.code !== 'EEXIST') throw error
-    })
-    const stat = await fsp.lstat(current)
-    if (!stat.isDirectory() || stat.isSymbolicLink() || path.resolve(current) !== await fsp.realpath(current)) {
-      throw new Error(`Diretório de dados não canônico: ${current}`)
-    }
-  }
-}
-
-function sha256(bytes) {
-  return crypto.createHash('sha256').update(bytes).digest('hex')
-}
 
 function categoryHslColor(hue) {
   const saturation = 0.62
@@ -73,26 +37,12 @@ function nextCategoryColor(usedColors) {
   throw new Error('Não foi possível gerar uma cor exclusiva para a categoria.')
 }
 
-async function hashFile(filePath) {
-  const hash = crypto.createHash('sha256')
-  for await (const chunk of createReadStream(filePath)) hash.update(chunk)
-  return hash.digest('hex')
-}
-
 function validateDomainId(value) {
   if (typeof value !== 'string' || !/^[a-z][a-z0-9.-]{1,79}$/.test(value)) throw new Error('Identificador de domínio inválido.')
 }
 
 function validateId(value, label = 'Identificador') {
   if (typeof value !== 'string' || value.length < 1 || value.length > 160 || /[\u0000-\u001f]/.test(value)) throw new Error(`${label} inválido.`)
-}
-
-function validateExtension(value) {
-  // Domain files preserve their original logical filenames. Some existing
-  // sidecars use descriptive suffixes such as `.before-head-shape`; CAS object
-  // paths are hash-only, so allowing a bounded alphanumeric suffix is safe.
-  if (typeof value !== 'string' || !/^\.[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$/i.test(value)) throw new Error('Extensão de asset inválida.')
-  return value.toLowerCase()
 }
 
 function normalizeDomainPath(value, allowEmpty = false) {
@@ -905,255 +855,6 @@ function parseAssetRow(row) {
     createdAt: row.created_at, updatedAt: row.updated_at }
 }
 
-class ContentAddressedStore {
-  constructor(dataRoot) {
-    this.root = path.resolve(dataRoot)
-    this.objectsRoot = path.join(this.root, 'media', 'objects', 'sha256')
-    this.thumbnailsRoot = path.join(this.root, 'media', 'thumbnails')
-    this.tempRoot = path.join(this.root, 'temp')
-  }
-
-  async putObject(bytes, { mimeType, extension }) {
-    if (!Buffer.isBuffer(bytes) || !mimeType || typeof mimeType !== 'string') throw new Error('Conteúdo de asset inválido.')
-    extension = validateExtension(extension)
-    const hash = sha256(bytes)
-    const folder = path.join(this.objectsRoot, hash.slice(0, 2))
-    const destination = path.join(folder, hash)
-    if (!isWithin(this.root, destination)) throw new Error('Objeto fora de app-data.')
-    await ensureSafeDirectory(this.root, folder)
-    if (fs.existsSync(destination)) {
-      const existing = await fsp.stat(destination)
-      if (existing.size !== bytes.length || await hashFile(destination) !== hash) throw new Error('Objeto existente com hash divergente; gravação interrompida.')
-      return { sha256: hash, byteLength: bytes.length, mimeType, extension: extension.toLowerCase(), relativePath: path.relative(this.root, destination).split(path.sep).join('/'), reused: true }
-    }
-    const temporary = path.join(this.tempRoot, `object-${crypto.randomUUID()}.tmp`)
-    if (!isWithin(this.root, temporary)) throw new Error('Temporário fora de app-data.')
-    await ensureSafeDirectory(this.root, this.tempRoot)
-    try {
-      const handle = await fsp.open(temporary, 'wx')
-      try { await handle.writeFile(bytes); await handle.sync() } finally { await handle.close() }
-      try { await fsp.rename(temporary, destination) } catch (error) {
-        if (!fs.existsSync(destination)) throw error
-        const existing = await fsp.stat(destination)
-        if (existing.size !== bytes.length || await hashFile(destination) !== hash) throw new Error('Conflito ao publicar objeto de mídia.')
-        await fsp.unlink(temporary).catch(() => undefined)
-        return { sha256: hash, byteLength: bytes.length, mimeType, extension: extension.toLowerCase(), relativePath: path.relative(this.root, destination).split(path.sep).join('/'), reused: true }
-      }
-    } catch (error) {
-      await fsp.unlink(temporary).catch(() => undefined)
-      throw error
-    }
-    return { sha256: hash, byteLength: bytes.length, mimeType, extension: extension.toLowerCase(), relativePath: path.relative(this.root, destination).split(path.sep).join('/'), reused: false }
-  }
-
-  async putFile(sourcePath, { mimeType, extension }) {
-    if (!mimeType || typeof mimeType !== 'string') throw new Error('Tipo de mídia inválido.')
-    extension = validateExtension(extension)
-    const source = path.resolve(sourcePath)
-    const sourceStat = await fsp.stat(source)
-    if (!sourceStat.isFile()) throw new Error('A origem da mídia não é um arquivo regular.')
-    const folder = this.objectsRoot
-    await ensureSafeDirectory(this.root, folder)
-    await ensureSafeDirectory(this.root, this.tempRoot)
-    const temporary = path.join(this.tempRoot, `object-${crypto.randomUUID()}.tmp`)
-    const hash = crypto.createHash('sha256')
-    let bytes = 0
-    const digestTransform = new Transform({
-      transform(chunk, _encoding, callback) {
-        hash.update(chunk)
-        bytes += chunk.length
-        callback(null, chunk)
-      }
-    })
-    try {
-      await pipeline(createReadStream(source), digestTransform, createWriteStream(temporary, { flags: 'wx' }))
-      const digest = hash.digest('hex')
-      const destinationFolder = path.join(folder, digest.slice(0, 2))
-      const destination = path.join(destinationFolder, digest)
-      if (!isWithin(this.root, destination) || !isWithin(this.root, temporary)) throw new Error('Mídia fora de app-data.')
-      await ensureSafeDirectory(this.root, destinationFolder)
-      if (fs.existsSync(destination)) {
-        const targetStat = await fsp.stat(destination)
-        if (targetStat.size !== bytes || await hashFile(destination) !== digest) throw new Error('Objeto existente com hash divergente; gravação interrompida.')
-        await fsp.unlink(temporary)
-        return { sha256: digest, byteLength: bytes, mimeType, extension: extension.toLowerCase(), relativePath: path.relative(this.root, destination).split(path.sep).join('/'), reused: true }
-      }
-      try { await fsp.rename(temporary, destination) } catch (error) {
-        if (!fs.existsSync(destination)) throw error
-        const targetStat = await fsp.stat(destination)
-        if (targetStat.size !== bytes || await hashFile(destination) !== digest) throw new Error('Conflito ao publicar mídia.')
-        await fsp.unlink(temporary).catch(() => undefined)
-        return { sha256: digest, byteLength: bytes, mimeType, extension: extension.toLowerCase(), relativePath: path.relative(this.root, destination).split(path.sep).join('/'), reused: true }
-      }
-      return { sha256: digest, byteLength: bytes, mimeType, extension: extension.toLowerCase(), relativePath: path.relative(this.root, destination).split(path.sep).join('/'), reused: false }
-    } catch (error) {
-      await fsp.unlink(temporary).catch(() => undefined)
-      throw error
-    }
-  }
-
-  async createPngThumbnail(bytes, { maxDimension = 384 } = {}) {
-    if (!Buffer.isBuffer(bytes) || !Number.isSafeInteger(maxDimension) || maxDimension < 32 || maxDimension > 2048) throw new Error('Pedido de miniatura inválido.')
-    const sharp = require('sharp')
-    const sourceHash = sha256(bytes)
-    const output = await sharp(bytes, { limitInputPixels: 100_000_000, failOn: 'error' })
-      .resize({ width: maxDimension, height: maxDimension, fit: 'inside', withoutEnlargement: true })
-      .png({ compressionLevel: 9, effort: 10, adaptiveFiltering: true }).toBuffer()
-    const thumbnailHash = sha256(output)
-    const destination = path.join(this.thumbnailsRoot, `png-v1-${sourceHash}-${maxDimension}.png`)
-    if (!isWithin(this.root, destination)) throw new Error('Miniatura fora de app-data.')
-    await ensureSafeDirectory(this.root, this.thumbnailsRoot)
-    if (fs.existsSync(destination)) {
-      const current = await fsp.readFile(destination)
-      if (sha256(current) !== thumbnailHash) throw new Error('Miniatura existente divergente; geração interrompida.')
-      return { path: path.relative(this.root, destination).split(path.sep).join('/'), sha256: thumbnailHash, byteLength: output.length, reused: true }
-    }
-    const temporary = path.join(this.tempRoot, `thumbnail-${crypto.randomUUID()}.tmp`)
-    await ensureSafeDirectory(this.root, this.tempRoot)
-    try {
-      await fsp.writeFile(temporary, output, { flag: 'wx' })
-      await fsp.rename(temporary, destination)
-    } catch (error) {
-      await fsp.unlink(temporary).catch(() => undefined)
-      if (!fs.existsSync(destination)) throw error
-      const current = await fsp.readFile(destination)
-      if (sha256(current) !== thumbnailHash) throw new Error('Conflito ao publicar miniatura.')
-      return { path: path.relative(this.root, destination).split(path.sep).join('/'), sha256: thumbnailHash, byteLength: current.length, reused: true }
-    }
-    return { path: path.relative(this.root, destination).split(path.sep).join('/'), sha256: thumbnailHash, byteLength: output.length, reused: false }
-  }
-
-  async createPngThumbnailFromFile(sourcePath, { maxDimension = 384 } = {}) {
-    if (!Number.isSafeInteger(maxDimension) || maxDimension < 32 || maxDimension > 2048) throw new Error('Pedido de miniatura inválido.')
-    const sharp = require('sharp')
-    const source = path.resolve(sourcePath)
-    const sourceHash = await hashFile(source)
-    const destination = path.join(this.thumbnailsRoot, `png-v1-${sourceHash}-${maxDimension}.png`)
-    if (!isWithin(this.root, destination)) throw new Error('Miniatura fora de app-data.')
-    await ensureSafeDirectory(this.root, this.thumbnailsRoot)
-    await ensureSafeDirectory(this.root, this.tempRoot)
-    if (fs.existsSync(destination)) {
-      const bytes = await fsp.readFile(destination)
-      return { path: path.relative(this.root, destination).split(path.sep).join('/'), sha256: sha256(bytes), byteLength: bytes.length, reused: true }
-    }
-    const temporary = path.join(this.tempRoot, `thumbnail-${crypto.randomUUID()}.tmp`)
-    try {
-      await sharp(source, { limitInputPixels: 100_000_000, failOn: 'error' })
-        .resize({ width: maxDimension, height: maxDimension, fit: 'inside', withoutEnlargement: true })
-        .png({ compressionLevel: 9, effort: 10, adaptiveFiltering: true }).toFile(temporary)
-      const digest = await hashFile(temporary)
-      const stat = await fsp.stat(temporary)
-      try { await fsp.rename(temporary, destination) } catch (error) {
-        if (!fs.existsSync(destination)) throw error
-        if (await hashFile(destination) !== digest) throw new Error('Conflito ao publicar miniatura.')
-        await fsp.unlink(temporary).catch(() => undefined)
-      }
-      return { path: path.relative(this.root, destination).split(path.sep).join('/'), sha256: digest, byteLength: stat.size, reused: false }
-    } catch (error) {
-      await fsp.unlink(temporary).catch(() => undefined)
-      throw error
-    }
-  }
-
-  async evaluateLosslessPng(bytes) {
-    if (!Buffer.isBuffer(bytes)) throw new Error('PNG inválido.')
-    const sharp = require('sharp')
-    const startedAt = process.hrtime.bigint()
-    const source = sharp(bytes, { limitInputPixels: 100_000_000, failOn: 'error' })
-    const metadata = await source.metadata()
-    if (metadata.format !== 'png') throw new Error('A avaliação lossless aceita somente PNG.')
-    const originalPixels = await sharp(bytes).ensureAlpha().raw().toBuffer()
-    const candidate = await sharp(bytes).png({ compressionLevel: 9, effort: 10, adaptiveFiltering: true }).toBuffer()
-    const candidatePixels = await sharp(candidate).ensureAlpha().raw().toBuffer()
-    const pixelIdentical = originalPixels.equals(candidatePixels)
-    const durationMs = Number(process.hrtime.bigint() - startedAt) / 1_000_000
-    return { pixelIdentical, originalBytes: bytes.length, candidateBytes: candidate.length, durationMs,
-      savedBytes: pixelIdentical ? Math.max(0, bytes.length - candidate.length) : 0,
-      candidate, originalSha256: sha256(bytes), candidateSha256: sha256(candidate) }
-  }
-}
-
-const USAGE_GROUPS = {
-  characters: ['characters'],
-  libraries: ['libraries'],
-  projects: ['projects'],
-  media: ['media'],
-  database: ['database'],
-  backups: ['backups'],
-  cache: ['cache'],
-  temporary: ['temp'],
-  operations: ['logs', 'crash-dumps', 'manifests'],
-  other: [],
-  profile: ['runtime/profile', 'cache/electron-session']
-}
-const ELECTRON_CACHE_NAMES = [
-    'Cache', 'Code Cache', 'DawnGraphiteCache', 'DawnWebGPUCache', 'GPUCache',
-    'GPUPersistentCache', 'GrShaderCache', 'ShaderCache', 'VideoDecodeStats', 'blob_storage', 'Shared Dictionary'
-  ]
-const ELECTRON_CACHE_NAME_SET = new Set(ELECTRON_CACHE_NAMES.map((name) => name.toLowerCase()))
-
-async function measureTree(root, { excludeNames = null } = {}) {
-  let files = 0; let bytes = 0; let unreadable = 0
-  try {
-    const rootStat = await fsp.lstat(root)
-    if (rootStat.isSymbolicLink()) return { files, bytes, unreadable }
-    if (rootStat.isFile()) return { files: 1, bytes: rootStat.size, unreadable }
-  } catch (error) {
-    if (error.code === 'ENOENT') return { files, bytes, unreadable }
-    unreadable += 1; return { files, bytes, unreadable }
-  }
-  async function walk(folder) {
-    let entries
-    try { entries = await fsp.readdir(folder, { withFileTypes: true }) } catch (error) {
-      if (error.code === 'ENOENT') return
-      unreadable += 1; return
-    }
-    for (const entry of entries) {
-      if (excludeNames?.has(entry.name.toLowerCase())) continue
-      const absolute = path.join(folder, entry.name)
-      if (entry.isSymbolicLink()) continue
-      if (entry.isDirectory()) { await walk(absolute); continue }
-      if (!entry.isFile()) continue
-      try {
-        const stat = await fsp.stat(absolute)
-        files += 1; bytes += stat.size
-      } catch { unreadable += 1 }
-    }
-  }
-  await walk(root)
-  return { files, bytes, unreadable }
-}
-
-async function getAppDataUsage(dataRoot) {
-  const root = path.resolve(dataRoot)
-  const rootStat = await fsp.lstat(root)
-  if (!rootStat.isDirectory() || rootStat.isSymbolicLink() || path.resolve(root) !== await fsp.realpath(root)) throw new Error('Raiz app-data não canônica.')
-  const result = {}
-  for (const [group, relatives] of Object.entries(USAGE_GROUPS)) {
-    const accountedRootEntries = new Set(Object.values(USAGE_GROUPS).flat().filter(Boolean).map((relative) => relative.split('/')[0]))
-    const roots = group === 'other'
-      ? (await fsp.readdir(root, { withFileTypes: true })).filter((entry) => !accountedRootEntries.has(entry.name) && !entry.isSymbolicLink()).map((entry) => path.join(root, entry.name))
-      : group === 'cache'
-      ? await (async () => {
-        const cacheRoot = path.join(root, 'cache')
-        let entries = []
-        try { entries = await fsp.readdir(cacheRoot, { withFileTypes: true }) } catch (error) { if (error.code !== 'ENOENT') throw error }
-        const sessionRoot = path.join(cacheRoot, 'electron-session')
-        const roots = entries.filter((entry) => entry.name !== 'electron-session' && !entry.isSymbolicLink()).map((entry) => path.join(cacheRoot, entry.name))
-        for (const name of ELECTRON_CACHE_NAMES) {
-          const candidate = path.join(sessionRoot, name)
-          if (fs.existsSync(candidate)) roots.push(candidate)
-        }
-        return roots
-      })()
-      : group === 'profile'
-      ? relatives.map((relative) => path.join(root, relative)).filter((candidate) => fs.existsSync(candidate))
-      : relatives.map((relative) => path.join(root, relative))
-    const totals = await Promise.all(roots.map((candidate) => measureTree(candidate, { excludeNames: group === 'profile' ? ELECTRON_CACHE_NAME_SET : null })))
-    result[group] = totals.reduce((sum, item) => ({ files: sum.files + item.files, bytes: sum.bytes + item.bytes, unreadable: sum.unreadable + item.unreadable }), { files: 0, bytes: 0, unreadable: 0 })
-  }
-  return { groups: result, measuredAt: new Date().toISOString() }
-}
 
 async function registerObjectMetadata(catalog, assetId, object, role = 'original') {
   const db = catalog.assertReady()

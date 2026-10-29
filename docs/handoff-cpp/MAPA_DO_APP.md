@@ -10,6 +10,7 @@ Native Gacha é um app desktop local, atualmente Electron 44 + React 19 + TypeSc
 |---|---|
 | `electron/main.ts`, `electron/preload.ts` | Inicialização desktop, superfície segura e comunicação renderer/main |
 | `electron/domains/` | Casos de uso, validação, repositórios e persistência por domínio |
+| `electron/domains/storage/` | Store de objetos por hash, primitivas seguras de arquivo e medição de uso do app-data |
 | `electron/data*.cjs`, `electron/domainFileSystem.cjs` | Dados locais, migração, backups e filesystem virtualizado |
 | `src/shared/` | Tipos, regras puras, modelos persistidos e contratos entre camadas |
 | `src/renderer/src/features/` | Interfaces dos módulos |
