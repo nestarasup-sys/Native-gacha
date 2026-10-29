@@ -1008,3 +1008,11 @@ Continua a auditoria das operações IPC iniciadas pelo usuário e da cobertura 
 - `windowResourcePolicy.test.ts` cobre arquivos de pacote, desvio para diretório vizinho, origem Vite, esquemas internos e bloqueio de requisições externas/HTML. `motionRendererSecurity.test.ts` comprova partição isolada e instalação das políticas no worker; `windowPermissions.test.ts` verifica negação total nas janelas de fundo.
 - Fontes oficiais consultadas: [Session e partições temporárias](https://www.electronjs.org/docs/latest/api/session) e [WebRequest e `onBeforeRequest`](https://www.electronjs.org/docs/latest/api/web-request).
 - Verificação: suíte do Editor V6 passou com 136 testes e 1 ignorado; refatoração com 343; suíte geral com 27; typecheck, auditoria (379 arquivos TS/TSX), build e `git diff --check` passaram. A exportação Electron integrada passou duas vezes, incluindo uma com captura diagnóstica; a primeira tentativa falhou uma vez na checagem de pixels da emenda, sem reproduzir nas repetições.
+
+## 38. Etapa aplicada — painéis do Editor V6 com responsabilidades próprias
+
+- `EditorV6Page.tsx` ainda montava os painéis de elenco e presets dentro da própria página, misturando marcação visual ao gerenciamento da cena e às ações do Fabricador.
+- `EditorV6CastPanel.tsx` agora apresenta o elenco e encaminha seleção, bloqueio de posição, adição e remoção para os callbacks do editor. `EditorV6PresetPanel.tsx` apresenta poses/expressões e encaminha as ações correspondentes; a página continua dona do documento, do histórico, da persistência e das operações de renderização.
+- O filtro e a ordenação de presets por conjunto viraram o seletor puro `editorV6ExpressionPresetsForCollection()`. O teste confirma a ordem crescente, o descarte de índices inválidos e que a entrada não é alterada.
+- A página caiu de 1.454 para 1.392 linhas. O markup, rótulos, classes CSS, disponibilidade dos botões e callbacks existentes foram mantidos; esta etapa organiza o código e não promete ganho de renderização.
+- Verificação: teste focado do seletor passou com 36 testes; `npm run test:editor-v6` passou com 137 testes e 1 ignorado; `npm run typecheck`, `npm run audit:architecture` (381 arquivos TS/TSX), `npm run build` e `git diff --check` passaram.

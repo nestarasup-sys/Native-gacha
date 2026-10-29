@@ -8,6 +8,8 @@ import { useMotionPreparation } from './motion/useMotionPreparation'
 import { EditorV6VideoPickerModal } from './EditorV6VideoPickerModal'
 import { EditorV6PlaybackAudio } from './EditorV6PlaybackAudio'
 import { EditorV6PlaybackScene } from './EditorV6PlaybackScene'
+import { EditorV6CastPanel } from './EditorV6CastPanel'
+import { EditorV6PresetPanel } from './EditorV6PresetPanel'
 import { getEditorV6PlaybackFrame, setEditorV6PlaybackFrame } from './editorV6PlaybackClock'
 import { duplicateEditorV6ProjectDocument } from './editorV6ProjectDuplication'
 import { addEditorV6ImageAsset, addEditorV6TimelineMedia } from './editorV6MediaChanges'
@@ -31,13 +33,12 @@ import { registerPendingWriteFlusher } from '../../ui/pendingPersistence'
 import { createPendingOperationTracker } from '../../ui/pendingOperations'
 import { isLegacySceneCatalogId, loadLegacySceneCatalog } from '../../ui/legacySceneCatalog'
 import { createSceneTextElement, sceneCatalogColor, sceneEditorTools } from '../../ui/sceneEditorDefaults'
-import { CharacterPortrait } from '../../ui/components/CharacterPortrait'
 import { recordEditorV6PlaybackFrame, recordUiCommit } from '../../ui/performanceDiagnostics'
 import { fitEditorV6CharacterToStage } from '../../../../shared/editorV6CharacterGeometry'
 import { editorV6ProjectSummary, type EditorV6Asset, type EditorV6Document, type EditorV6Element, type EditorV6FaceMode, type EditorV6FaceTransform, type EditorV6FaceTransforms, type EditorV6ProjectSummary, type EditorV6TimelineBlock } from '../../../../shared/editorV6'
 import type { CustomizerCharacter } from '../../../../shared/customizer'
 import type { CustomizerFaceAppearance } from '../../../../shared/customizer'
-import type { FaceCatalogItem, FaceCatalogItemSummary, FaceExpressionPreset, FaceExpressionPresetSummary, FaceSheetKind, FabricatorPoseSummary } from '../../../../shared/fabricator'
+import type { FaceCatalogItem, FaceCatalogItemSummary, FaceExpressionPreset, FaceExpressionPresetSummary, FaceSheetKind } from '../../../../shared/fabricator'
 type EditorV6Card = EditorV6ProjectSummary
 type Tool = 'background' | 'objects' | null
 const STORAGE_KEY = 'gacha-nymi-editor-v6-catalog-v1'
@@ -1345,89 +1346,6 @@ export function EditorV6Page() {
     </div>
   }
 
-  const presetsPanel = (): ReactNode => {
-    const presetOptions = [
-      { id: 'pose' as const, label: 'Pose', icon: 'frame' },
-      { id: 'expression' as const, label: 'Expressão', icon: 'face' },
-      { id: 'reserved-1', label: 'Em breve', icon: 'sparkles' },
-      { id: 'reserved-2', label: 'Em breve', icon: 'sparkles' },
-      { id: 'reserved-3', label: 'Em breve', icon: 'sparkles' },
-      { id: 'reserved-4', label: 'Em breve', icon: 'sparkles' }
-    ] as const
-    if (!selectedEditorV6Character || selectedElement?.kind !== 'character') return <div className="studio-custom-empty"><strong>Presets</strong><span>Selecione um personagem na cena para ver poses e expressões.</span></div>
-    return <div className="studio-presets-panel">
-      <div className="studio-preset-buttons" aria-label="Categorias de presets">
-        {presetOptions.map((option) => <button key={option.id} className={`studio-preset-button${option.id === editorV6PresetCategory ? ' active' : ''}${option.id.startsWith('reserved') ? ' reserved' : ''}`} disabled={option.id.startsWith('reserved')} onClick={() => { if (option.id === 'pose') { setEditorV6PresetCategory('pose') } else if (option.id === 'expression') setEditorV6PresetCategory('expression') }} type="button"><Icon name={option.icon} /><span>{option.label}</span></button>)}
-      </div>
-        {editorV6PresetCategory === 'pose' && <section className="studio-preset-catalog" aria-label="Catálogo de poses">
-        <h3>Poses do modelo</h3>
-        <div className="studio-preset-list">
-          {editorV6PoseSlots.filter((pose): pose is NonNullable<FabricatorPoseSummary> => pose !== null).map((pose) => {
-            const dimensions = editorV6PoseDimensions[pose.slot]
-            return <button className={`studio-pose-option${selectedEditorV6PoseSlot === pose.slot ? ' selected' : ''}`} key={pose.slot} onClick={() => void applyStudioPose(pose.slot)} disabled={editorV6FaceBusy} aria-label={`Selecionar pose ${pose.name}`} title={pose.name} style={dimensions ? { aspectRatio: `${dimensions.width}/${dimensions.height}` } : undefined} type="button">{editorV6PoseThumbnails[pose.slot] ? <img src={editorV6PoseThumbnails[pose.slot]} alt="" /> : <span className="studio-pose-thumb-placeholder" />}</button>
-          })}
-          {!editorV6PoseSlots.length && <p className="studio-custom-hint">Este modelo ainda não tem poses salvas.</p>}
-        </div>
-      </section>}
-      {editorV6PresetCategory === 'expression' && <section className="studio-expression-catalog" aria-label="Presets do Expressão Dev">
-        {editorV6ExpressionLoading ? <p className="studio-custom-hint">Carregando conjuntos de expressão…</p> : <>
-          <div className="studio-expression-modes" role="group" aria-label="Estado facial do personagem">
-            {([{ id: 'idle', label: 'Idle' }, { id: 'blink', label: 'Blink' }, { id: 'talk', label: 'Talk' }] as const).map((mode) => <button key={mode.id} className={`studio-expression-mode${selectedEditorV6FaceMode === mode.id ? ' active' : ''}`} type="button" aria-pressed={selectedEditorV6FaceMode === mode.id} disabled={editorV6ExpressionBusy || editorV6FaceBusy || !selectedEditorV6FaceAppearance || mode.id === 'talk' && !selectedEditorV6TalkAvailable} onClick={() => void applyEditorV6FaceMode(mode.id)}>{mode.label}</button>)}
-          </div>
-          <div className="studio-expression-collections" aria-label="Selecionar conjunto de expressão">
-            <button className="studio-expression-collection-button" type="button" aria-expanded={editorV6ExpressionCollectionMenuOpen} onClick={() => setEditorV6ExpressionCollectionMenuOpen((open) => !open)}>
-              <strong>{[{ id: 'standard', name: 'Padrão' }, ...editorV6ExpressionCollections].find((item) => item.id === selectedEditorV6ExpressionCollectionId)?.name ?? 'Escolher conjunto'}</strong><Icon name="chevronDown" />
-            </button>
-            {editorV6ExpressionCollectionMenuOpen && <div className="studio-expression-collection-options" role="listbox" aria-label="Conjuntos disponíveis">
-              {[{ id: 'standard', name: 'Padrão' }, ...editorV6ExpressionCollections].map((collection) => {
-                const selected = selectedEditorV6ExpressionCollectionId === collection.id
-                return <button className={`studio-expression-collection-option${selected ? ' selected' : ''}`} key={collection.id} type="button" role="option" aria-selected={selected} onClick={() => { updateElement(selectedElement.id, { activeExpressionCollectionId: collection.id }); setEditorV6ExpressionCollectionMenuOpen(false) }}>
-                  <span>{collection.name}</span>{selected && <Icon name="check" />}
-                </button>
-              })}
-            </div>}
-          </div>
-          {selectedEditorV6ExpressionCollectionId ? (() => {
-            const expressions = editorV6ExpressionPresets
-              .filter((preset) => preset.collectionId === selectedEditorV6ExpressionCollectionId && Number.isInteger(preset.expressionIndex))
-              .sort((a, b) => a.expressionIndex! - b.expressionIndex!)
-            return <div className="studio-expression-selected">
-              <div className="studio-expression-list">
-                <button className={`studio-expression-option${!selectedElement.activeExpressionPresetId ? ' selected' : ''}`} type="button" onClick={() => void applyStudioBaseExpression()} disabled={editorV6ExpressionBusy || editorV6FaceBusy} aria-pressed={!selectedElement.activeExpressionPresetId}><b>•</b><span>Base</span></button>
-                {expressions.map((preset) => <div className="studio-expression-row" key={preset.id}>
-                  <button className={`studio-expression-option${selectedElement.activeExpressionPresetId === preset.id && selectedElement.activeExpressionGaze !== 'left' ? ' selected' : ''}`} type="button" aria-pressed={selectedElement.activeExpressionPresetId === preset.id} onClick={() => void applyStudioExpressionPreset(preset)} disabled={editorV6ExpressionBusy || editorV6FaceBusy}>
-                    <b>{String((preset.expressionIndex ?? 0) + 1).padStart(2, '0')}</b><span>{preset.name}</span>
-                  </button>
-                  <button className="studio-expression-look-left" type="button" aria-pressed={selectedElement.activeExpressionPresetId === preset.id && selectedElement.activeExpressionGaze === 'left'} title={`Aplicar ${preset.name} com as pupilas voltadas à esquerda`} aria-label={`Pupilas à esquerda: ${preset.name}`} onClick={() => void applyStudioExpressionPreset(preset, 'left')} disabled={editorV6ExpressionBusy || editorV6FaceBusy}>pt</button>
-                </div>)}
-                {!expressions.length && <p className="studio-custom-hint">Nenhuma expressão salva neste conjunto. Salve expressões no Expressão Dev para listá-las aqui.</p>}
-              </div>
-            </div>
-          })() : <p className="studio-custom-hint">Selecione um conjunto para ver as expressões disponíveis.</p>}
-          {(editorV6ExpressionBusy || editorV6FaceBusy) && <p className="studio-custom-hint" role="status">Aplicando expressão…</p>}
-        </>}
-      </section>}
-    </div>
-  }
-
-  const castPanel = () => <div className="studio-cast-content">
-    <header><span><h2>Elenco</h2><small>{stageCharacters.length} na cena</small></span><button className="studio-cast-add-button" onClick={openCastPicker} type="button"><Icon name="plus" />Adicionar</button></header>
-    <section className="studio-cast-section" aria-label="Personagens na cena">
-      <header><h3>Na cena</h3><button className={`studio-cast-lock${allStageCharactersLocked ? ' active' : ''}`} onClick={toggleStageCharacterPositionLock} disabled={!stageCharacters.length} aria-label={allStageCharactersLocked ? 'Desbloquear posição dos personagens' : 'Bloquear posição dos personagens'} title={allStageCharactersLocked ? 'Desbloquear posições' : 'Bloquear posições'} type="button"><Icon name={allStageCharactersLocked ? 'lock' : 'unlock'} /></button></header>
-      {stageCharacters.length ? stageCharacters.map((element) => {
-        const character = availableCharacters.find((item) => item.id === element.characterId)
-        const firstName = (character?.name ?? element.text).trim().split(/\s+/)[0] || element.text
-        return <article className={`studio-cast-item${selectedElementId === element.id ? ' selected' : ''}`} key={element.id}>
-          <button className="studio-cast-select" onClick={() => { pausePlayback(); setSelectedElementId(element.id); setSelectedTimelineBlockId(editorV6ClipAtFrame(activeEditorV6!.timeline, element.id, getEditorV6PlaybackFrame())?.block.id ?? null); setActiveTool(null); setInspectorOpen(true); restoreCharacterInspectorView() }} type="button">
-            {character ? <CharacterPortrait character={character} /> : <span className="studio-cast-fallback">{element.text.slice(0, 1)}</span>}
-            <span>{firstName}</span>
-          </button>
-          <button className="studio-cast-remove" onClick={() => removeStageCharacter(element)} aria-label={`Remover ${firstName} do elenco`} title="Remover da cena" type="button">×</button>
-        </article>
-      }) : <p className="studio-cast-empty">Adicione personagens para montar a cena.</p>}
-    </section>
-  </div>
-
   const toggleTimelinePlayback = () => {
     if (dragRef.current) return
     if (isPlaying) { pausePlayback(); return }
@@ -1483,11 +1401,29 @@ export function EditorV6Page() {
             {!fullView && inspectorOpen && <aside className={`studio-inspector studio-inspector-${inspectorSide}`} aria-label="Inspector da cena" onPointerDown={(event) => event.stopPropagation()}>
               <header className="studio-inspector-tabs"><button className={inspectorTab === 'editor' ? 'active' : ''} onClick={() => { setInspectorTab('editor'); rememberCharacterInspectorView('editor') }} type="button">Editor</button><button className={inspectorTab === 'custom' && inspectorCustomView === 'face' ? 'active' : ''} onClick={() => { setInspectorTab('custom'); setInspectorCustomView('face'); rememberCharacterInspectorView('custom', 'face') }} type="button">Custom</button><button className="studio-inspector-close" onClick={() => setInspectorOpen(false)} aria-label="Fechar inspector" title="Fechar" type="button">×</button></header>
               <button className={`studio-inspector-presets${inspectorTab === 'custom' && inspectorCustomView === 'presets' ? ' active' : ''}`} onClick={() => { setEditorV6PresetCategory('expression'); setInspectorTab('custom'); setInspectorCustomView('presets'); rememberCharacterInspectorView('custom', 'presets') }} type="button"><Icon name="sparkles" />Presets</button>
-              {inspectorTab === 'editor' ? <div className="studio-inspector-content">{propertyPanel()}</div> : <div className="studio-inspector-content">{inspectorCustomView === 'presets' ? presetsPanel() : customPanel()}</div>}
+              {inspectorTab === 'editor' ? <div className="studio-inspector-content">{propertyPanel()}</div> : <div className="studio-inspector-content">{inspectorCustomView === 'presets' ? <EditorV6PresetPanel
+                characterAvailable={Boolean(selectedEditorV6Character)} element={selectedElement} category={editorV6PresetCategory}
+                onCategoryChange={setEditorV6PresetCategory} poseSlots={editorV6PoseSlots} poseThumbnails={editorV6PoseThumbnails}
+                poseDimensions={editorV6PoseDimensions} selectedPoseSlot={selectedEditorV6PoseSlot} faceBusy={editorV6FaceBusy}
+                onPoseSelect={applyStudioPose} expressionLoading={editorV6ExpressionLoading} expressionBusy={editorV6ExpressionBusy}
+                faceAppearanceAvailable={Boolean(selectedEditorV6FaceAppearance)} talkAvailable={selectedEditorV6TalkAvailable}
+                faceMode={selectedEditorV6FaceMode} onFaceModeSelect={(mode) => { void applyEditorV6FaceMode(mode) }}
+                collections={editorV6ExpressionCollections} selectedCollectionId={selectedEditorV6ExpressionCollectionId}
+                collectionMenuOpen={editorV6ExpressionCollectionMenuOpen} onToggleCollectionMenu={() => setEditorV6ExpressionCollectionMenuOpen((open) => !open)}
+                onCollectionSelect={(id) => { if (selectedElement?.kind === 'character') updateElement(selectedElement.id, { activeExpressionCollectionId: id }); setEditorV6ExpressionCollectionMenuOpen(false) }}
+                presets={editorV6ExpressionPresets} onApplyBaseExpression={() => { void applyStudioBaseExpression() }}
+                onApplyExpressionPreset={(preset, gaze) => { void applyStudioExpressionPreset(preset, gaze) }}
+              /> : customPanel()}</div>}
             </aside>}
           </div>
         </section>
-        {!fullView && <aside className="studio-editor-rail studio-editor-right" aria-label="Elenco do Editor V6">{castPanel()}</aside>}
+        {!fullView && <aside className="studio-editor-rail studio-editor-right" aria-label="Elenco do Editor V6"><EditorV6CastPanel
+          elements={stageCharacters} characters={availableCharacters} selectedElementId={selectedElementId}
+          allPositionsLocked={allStageCharactersLocked} onAddCharacter={openCastPicker}
+          onTogglePositionsLocked={toggleStageCharacterPositionLock}
+          onSelectCharacter={(element) => { pausePlayback(); setSelectedElementId(element.id); setSelectedTimelineBlockId(editorV6ClipAtFrame(activeEditorV6.timeline, element.id, getEditorV6PlaybackFrame())?.block.id ?? null); setActiveTool(null); setInspectorOpen(true); restoreCharacterInspectorView() }}
+          onRemoveCharacter={removeStageCharacter}
+        /></aside>}
         {!fullView && <Profiler id="/editor-v6/timeline" onRender={recordUiCommit}><EditorV6Timeline key={activeEditorV6.id} document={activeEditorV6} playing={isPlaying} selectedId={selectedTimelineBlockId}
           onSeek={(frame) => { if (dragRef.current) cancelSceneDrag(); pausePlayback(); publishPlayheadFrame(frame) }} onPlay={toggleTimelinePlayback} onChange={changeScene}
           onSelect={(block) => { setSelectedTimelineBlockId(block.id); setSelectedElementId(block.background ? 'background' : block.elementId ?? null); setActiveTool(block.background ? 'background' : null); setInspectorOpen(true); if (block.state?.kind === 'character') restoreCharacterInspectorView(); else setInspectorTab('editor') }} /></Profiler> }
