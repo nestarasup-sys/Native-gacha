@@ -5,6 +5,8 @@ import { join, resolve } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { createExpressionBatchTransaction } from '../electron/domains/fabricator/expressionBatchTransaction.ts'
+import { registerExpressionPresetHandlers } from '../electron/domains/fabricator/expressionIpc.ts'
+import { createKeyedOperationQueue } from '../electron/domains/storage/keyedOperationQueue.ts'
 
 const preset=(id,revision)=>({schemaVersion:1,modelSlot:1,id,name:`Preset ${id}`,
   collectionId:'standard',expressionIndex:Number(id.slice(1)),selections:{},transforms:{},
@@ -93,6 +95,45 @@ test('lote duplicado ou inválido é recusado sem qualquer escrita',async t=>{
   assert.deepEqual(await snapshot(fx),before)
 })
 
+test('Expressões DEV mantém FIFO por modelo e não bloqueia outro slot', async () => {
+  const queue = createKeyedOperationQueue()
+  const handlers = new Map()
+  const events = []
+  let releaseFirst
+  let signalFirst
+  const gate = new Promise(resolve => { releaseFirst = resolve })
+  const firstStarted = new Promise(resolve => { signalFirst = resolve })
+
+  registerExpressionPresetHandlers({ handle: (channel, handler) => handlers.set(channel, handler) }, () => undefined, {
+    queue: (slot, operation) => queue.run(String(slot), operation),
+    recover: async slot => { events.push(`recover:${slot}`) },
+    listPresets: async slot => {
+      events.push(`list:start:${slot}`)
+      if (slot === 1 && events.filter(event => event === 'list:start:1').length === 1) {
+        signalFirst()
+        await gate
+      }
+      events.push(`list:end:${slot}`)
+      return []
+    }
+  })
+  const list = handlers.get('fabricator:expression-presets:list')
+
+  const first = list({}, 1)
+  await firstStarted
+  const nextForSameModel = list({}, 1)
+  const independentModel = list({}, 2)
+  await independentModel
+
+  assert.equal(events.filter(event => event === 'list:start:1').length, 1)
+  assert.ok(events.includes('list:end:2'), 'slot 2 termina enquanto slot 1 está bloqueado')
+  releaseFirst()
+  await Promise.all([first, nextForSameModel])
+  assert.deepEqual(events.filter(event => event.startsWith('list:')), [
+    'list:start:1', 'list:start:2', 'list:end:2', 'list:end:1', 'list:start:1', 'list:end:1'
+  ])
+})
+
 test('expressão nova criada durante lote é retirada se a transação falhar',async t=>{
   const fx=await fixture(t),before=await snapshot(fx)
   const novel=preset('p21','new')
@@ -118,6 +159,8 @@ test('caminho do renderer usa endpoint único; leituras passam pela fila seriali
   assert.match(main,/recover: expressionBatch\.recover/)
   assert.match(handlers,/deps\.recover\(slot\)/)
   assert.match(main,/function queueExpressionWork/)
+  assert.match(main,/queueExpressionWork<T>\(modelSlot: number/)
+  assert.match(handlers,/deps\.queue\(slot, async/)
   assert.match(main,/queue: queueExpressionWork/)
   assert.match(handlers,/fabricator:expression-presets:save-batch/)
   assert.match(main,/registerExpressionPresetHandlers\(/)

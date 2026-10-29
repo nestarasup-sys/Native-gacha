@@ -19,11 +19,13 @@ test('operações da mesma chave mantêm FIFO e chaves diferentes avançam em pa
   await started
   const nextForA = queue.run('studio-a', async () => { events.push('a:next') })
   const independentB = queue.run('studio-b', async () => { events.push('b') })
+  const pendingWrites = queue.getPendingWrites()
+  assert.equal(pendingWrites.length, 2, 'o flush aguarda a cauda ativa de cada chave')
 
   await independentB
   assert.deepEqual(events, ['a:start', 'b'])
   releaseFirst()
-  await Promise.all([first, nextForA])
+  await Promise.all([first, nextForA, ...pendingWrites])
   assert.deepEqual(events, ['a:start', 'b', 'a:end', 'a:next'])
 })
 

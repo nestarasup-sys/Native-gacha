@@ -26,6 +26,7 @@ import { DataMigrationService } from './dataMigration.cjs'
 import { DataBackupService } from './dataBackups.cjs'
 import { registerDataMigrationHandlers } from './domains/storage/dataMigrationIpc'
 import { registerDataBackupHandlers } from './domains/storage/dataBackupIpc'
+import { createKeyedOperationQueue } from './domains/storage/keyedOperationQueue'
 import { configureAssetImageStorage, readAssetImage, writeAssetImageSource } from './assetImageOverrides'
 import { migrateElectronProfile } from './electronProfileMigration.cjs'
 import { normalizeImageBuffer } from './imageIngestion.cjs'
@@ -378,7 +379,6 @@ const poseSaveWrites = new Set<Promise<void>>()
 let poseMigration: Promise<void> | null = null
 let animatorSaveQueue: Promise<void> = Promise.resolve()
 let faceSaveQueue: Promise<void> = Promise.resolve()
-let expressionPresetSaveQueue: Promise<void> = Promise.resolve()
 let faceGuideSaveQueue: Promise<void> = Promise.resolve()
 
 function queueFaceSave(operation: () => Promise<void>): Promise<void> {
@@ -553,11 +553,11 @@ const expressionBatch = createExpressionBatchTransaction({
   validPreset: validFaceExpressionPreset
 })
 
-// Reads are queued too: no list/load may observe a half-written batch.
-function queueExpressionWork<T>(operation: () => Promise<T>): Promise<T> {
-  const work = expressionPresetSaveQueue.catch(() => undefined).then(operation)
-  expressionPresetSaveQueue = work.then(() => undefined, () => undefined)
-  return work
+// Presets, drafts and their referenced assets are isolated by model slot.
+// Keep reads and writes ordered within a slot while allowing unrelated slots to progress.
+const expressionPresetOperations = createKeyedOperationQueue()
+function queueExpressionWork<T>(modelSlot: number, operation: () => Promise<T>): Promise<T> {
+  return expressionPresetOperations.run(String(modelSlot), operation)
 }
 
 const catalogPersistence = createFabricatorCatalogPersistence({ mkdir, access, readFile, writeFile, rename, unlink, rm, readdir }, writeAssetImageSource)
@@ -1263,7 +1263,8 @@ const { isValidAnimatorSlot, writeAnimatorAnimation, readAnimatorAnimation, writ
 function collectPendingPersistenceWrites(): Promise<unknown>[] {
   return [
     ...(fabricatorProjectIpc?.getPendingWrites() ?? []), ...poseSaveWrites, ...(fabricatorHairIpc?.getPendingWrites() ?? []),
-    animatorSaveQueue, ...(fabricatorWardrobeIpc?.getPendingWrites() ?? []), faceSaveQueue, expressionPresetSaveQueue,
+    animatorSaveQueue, ...(fabricatorWardrobeIpc?.getPendingWrites() ?? []), faceSaveQueue,
+    ...expressionPresetOperations.getPendingWrites(),
     faceGuideSaveQueue, customizerService.pendingWrites,
     studioSaveQueues.studio, editorV6SaveQueue, roteirosSaveQueue,
     ...(poseMigration ? [poseMigration] : [])
@@ -1505,7 +1506,7 @@ async function registerFabricatorHandlers(): Promise<void> {
       try { await access(join(faceCatalogItemPath(modelSlot, id), 'item.json')); return true }
       catch (reason) { if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return false; throw reason }
     },
-    withReferenceSnapshot: (modelSlot, operation) => customizerService.withCharactersLocked((characters) => queueExpressionWork(async () => {
+    withReferenceSnapshot: (modelSlot, operation) => customizerService.withCharactersLocked((characters) => queueExpressionWork(modelSlot, async () => {
       await expressionBatch.recover(modelSlot)
       const summaries = await listFaceExpressionPresets(modelSlot)
       const loadedPresets = await Promise.all(summaries.map(({ id }) => readFaceExpressionPreset(modelSlot, id)))

@@ -1,5 +1,5 @@
 /** IPC for expression presets and drafts, isolated from main Electron startup.
- * Every mutation and read shares the main-process queue and crash-recovery gate.
+ * Each model slot shares one queue and crash-recovery gate across reads and mutations.
  */
 import { basename, dirname, resolve } from 'node:path'
 import type { IpcMain, IpcMainInvokeEvent } from 'electron'
@@ -11,7 +11,7 @@ import {
 import type { FaceExpressionAssetReference } from './faceReferences.ts'
 
 type Dependencies = {
-  queue: <T>(task: () => Promise<T>) => Promise<T>
+  queue: <T>(modelSlot: number, task: () => Promise<T>) => Promise<T>
   recover: (modelSlot: number) => Promise<void>
   listPresets: (modelSlot: number) => Promise<FaceExpressionPresetSummary[]>
   listCollections: (modelSlot: number) => Promise<FaceExpressionCollection[]>
@@ -34,7 +34,7 @@ export function registerExpressionPresetHandlers(
   deps: Dependencies
 ): void {
   const run = <T>(slot: number, action: () => Promise<T>) =>
-    deps.queue(async () => { await deps.recover(slot); return action() })
+    deps.queue(slot, async () => { await deps.recover(slot); return action() })
   const savePreset = async (slot: number, preset: FaceExpressionPreset): Promise<void> => {
     if (!preset || typeof preset !== 'object' || !deps.validId(preset.id)) return deps.savePreset(slot, preset)
     const existing = await deps.loadPreset(slot, preset.id)

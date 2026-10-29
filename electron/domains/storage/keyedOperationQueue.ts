@@ -13,5 +13,9 @@ export function createKeyedOperationQueue() {
     return result
   }
 
-  return { run }
+  function getPendingWrites(): Promise<void>[] {
+    return [...pendingByKey.values()]
+  }
+
+  return { run, getPendingWrites }
 }

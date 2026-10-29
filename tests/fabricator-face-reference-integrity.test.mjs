@@ -149,7 +149,7 @@ test('salvar preset, lote e rascunho validam novos IDs antes de persistir', asyn
   const checks = []
   const saved = []
   registerExpressionPresetHandlers({ handle: (channel, handler) => handlers.set(channel, handler) }, () => undefined, {
-    queue: async operation => operation(), recover: async () => undefined,
+    queue: async (_slot, operation) => operation(), recover: async () => undefined,
     listPresets: async () => [], listCollections: async () => [], saveCollection: async () => undefined,
     loadPreset: async () => null, savePreset: async () => { saved.push('preset') }, saveBatch: async () => { saved.push('batch') },
     removePreset: async () => undefined, presetPath: () => join(tmpdir(), 'unused.json'),
