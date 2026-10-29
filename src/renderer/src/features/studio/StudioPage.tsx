@@ -22,6 +22,7 @@ import { createDefaultSceneFaceTransform, resolveSceneFaceTransform, sceneFaceCa
 import { useStudioStageInteraction } from './useStudioStageInteraction'
 import { useStudioHistory } from './useStudioHistory'
 import { makeCanvasPrint } from './studioCanvasPrint'
+import { mapConcurrentStudioItems } from './studioConcurrentAssetLoader'
 import { useStudioAutosave, useStudioDocumentPersistence } from './useStudioDocumentPersistence'
 import { useStudioImageImport } from './useStudioImageImport'
 import type { StudioAsset, StudioDocument, StudioElement, StudioFaceTransform, StudioFaceTransforms } from '../../../../shared/studio'
@@ -270,7 +271,11 @@ export function StudioPage() {
     void window.desktop.fabricator.listFaceCatalog(modelSlot).then(async (summaries) => {
       if (cancelled) return
       setStudioFaceItems(summaries)
-      const items = await Promise.all(summaries.map(async (summary) => ({ key: `${summary.modelSlot}:${summary.id}`, item: await window.desktop.fabricator.loadFaceCatalogItem(summary.modelSlot, summary.id) })))
+      const items = await mapConcurrentStudioItems(
+        summaries,
+        async (summary) => ({ key: `${summary.modelSlot}:${summary.id}`, item: await window.desktop.fabricator.loadFaceCatalogItem(summary.modelSlot, summary.id) }),
+        () => cancelled
+      )
       if (cancelled) return
       setStudioFaceDetails((current) => {
         const next = { ...current }
@@ -284,18 +289,20 @@ export function StudioPage() {
   }, [selectedStudioCharacterModelSlot])
 
   useEffect(() => {
-    if (!studioPoseSlots.length) { setStudioPoseThumbnails({}); setStudioPoseDimensions({}); return }
+    const modelSlot = selectedStudioCharacterModelSlot
+    const poses = studioPoseSlots.filter((pose) => pose.sourceModelSlot === modelSlot)
+    if (modelSlot === null || !poses.length) { setStudioPoseThumbnails({}); setStudioPoseDimensions({}); return }
     let cancelled = false
     void (async () => {
       const { renderArtwork } = await import('../../characters/characterRenderer')
-      const thumbnails = await Promise.all(studioPoseSlots.map(async (pose) => {
+      const thumbnails = await mapConcurrentStudioItems(poses, async (pose) => {
         try {
           const artwork = await window.desktop.fabricator.loadFabricatorPose(pose.sourceModelSlot, pose.slot)
           if (!isPoseSnapshotForModel(artwork, pose.sourceModelSlot, pose.slot)) return null
           const thumbnail = await renderArtwork(artwork, 180)
           return thumbnail ? { slot: pose.slot, thumbnail, width: artwork.width, height: artwork.height } : null
         } catch { return null }
-      }))
+      }, () => cancelled)
       if (!cancelled) {
         const ready = thumbnails.filter((entry): entry is NonNullable<typeof entry> => entry !== null)
         setStudioPoseThumbnails(Object.fromEntries(ready.map((entry) => [entry.slot, entry.thumbnail])))
@@ -303,11 +310,12 @@ export function StudioPage() {
       }
     })().catch(() => { if (!cancelled) { setStudioPoseThumbnails({}); setStudioPoseDimensions({}) } })
     return () => { cancelled = true }
-  }, [studioPoseSlots])
+  }, [studioPoseSlots, selectedStudioCharacterModelSlot])
 
   useEffect(() => {
     const modelSlot = selectedStudioCharacterModelSlot
     if (modelSlot === null) { setStudioPoseSlots([]); return }
+    setStudioPoseSlots([])
     let cancelled = false
     void window.desktop.fabricator.listFabricatorPoseSlots(modelSlot).then((poses) => {
       if (!cancelled) setStudioPoseSlots(poses.filter((pose): pose is NonNullable<typeof pose> => Boolean(pose)))
