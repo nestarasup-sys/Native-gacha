@@ -18,6 +18,7 @@ import { normalizeEditableImageFile } from '../normalizeImage'
 import { useModelAppearanceTarget, useModelPartAppearancePreview } from '../ModelAppearanceContext'
 import { isRightLibraryAsset, libraryBaseName, sameLibraryPair, visibleFaceLibraryAssets } from './faceLibraryModel'
 import { createFaceSaveQueue, type FaceSaveQueue } from './faceSaveQueue'
+import { loadFaceCatalogWorkspaceData, loadFaceComponentWorkspaceData } from './faceWorkspaceData'
 
 type PartId = 'eye-left' | 'eye-right' | 'pupil-left' | 'pupil-right' | 'eye-closed-left' | 'eye-closed-right' | 'brow-left' | 'brow-right'
 type CatalogKind = 'nose' | 'mouth-closed' | 'mouth-open'
@@ -381,18 +382,14 @@ export function FaceComponentsWorkspace({ mode, baseModelSlot }: { mode: FaceWor
     const visibleKinds: FaceAssetKind[] = mode === 'eyes'
       ? categories.map((category) => category.kind)
       : faceDetailCategories.map((category) => category.kind)
-    void Promise.all([
-      window.desktop.fabricator.loadFabricatorSlot(modelSlot),
-      Promise.all(visibleKinds.map((kind) => window.desktop.fabricator.listFaceComponentAssets(modelSlot, kind))).then((lists) => lists.flat())
-    ]).then(async ([project, visibleList]) => {
-      const loaded = await Promise.all(visibleList.map((entry) => window.desktop.fabricator.loadFaceComponentAsset(modelSlot, entry.id)))
-      if (!active) return
-      const loadedAssets = loaded.filter((item): item is FaceComponentAsset => Boolean(item))
-      const assetKinds = new Map(loadedAssets.map((item) => [item.id, item.kind]))
+    void loadFaceComponentWorkspaceData(window.desktop.fabricator, modelSlot, visibleKinds, () => !active).then((loaded) => {
+      if (!active || !loaded) return
+      const { project, assets: visibleList, details: loadedDetails } = loaded
+      const assetKinds = new Map(Object.values(loadedDetails).map((item) => [item.id, item.kind]))
       const savedSelection = mode === 'eyes' ? readComponentSelections()[modelSlot] : undefined
       const savedParts = Object.fromEntries(Object.entries(savedSelection?.parts ?? {}).filter(([part, id]) =>
         categories.some((category) => category.parts.includes(part as PartId) && assetKinds.get(id) === category.kind))) as Partial<Record<PartId, string>>
-      setModel(projectForOriginalPreview(project)); setAssets(visibleList); setDetails(Object.fromEntries(loadedAssets.map((item) => [item.id, item])))
+      setModel(projectForOriginalPreview(project)); setAssets(visibleList); setDetails(loadedDetails)
       setSelectedAssets(savedParts)
       setLinked({ eye: true, pupil: true, 'eye-closed': true, eyebrow: true, ...savedSelection?.linked })
       setMoveTogether({ eye: false, pupil: false, 'eye-closed': false, eyebrow: false, ...savedSelection?.moveTogether })
@@ -404,17 +401,13 @@ export function FaceComponentsWorkspace({ mode, baseModelSlot }: { mode: FaceWor
     let active = true
     setMouthCatalog([]); setMouthDetails({}); setNoseCatalog([]); setNoseDetails({})
     if (mode !== 'face') return () => { active = false }
-    void window.desktop.fabricator.listFaceCatalog(modelSlot).then(async (list) => {
-      const relevant = list.filter((item) => item.category === 'nose' || item.category === 'mouth-closed' || item.category === 'mouth-open')
-      const mouths = relevant.filter((item) => item.category === 'mouth-closed' || item.category === 'mouth-open')
-      const noses = relevant.filter((item) => item.category === 'nose')
-      const loaded = await Promise.all(relevant.map((item) => window.desktop.fabricator.loadFaceCatalogItem(modelSlot, item.id)))
-      if (!active) return
+    void loadFaceCatalogWorkspaceData(window.desktop.fabricator, modelSlot, () => !active).then((loaded) => {
+      if (!active || !loaded) return
+      const { mouthCatalog: mouths, mouthDetails: loadedMouthDetails, noseCatalog: noses, noseDetails: loadedNoseDetails } = loaded
       setMouthCatalog(mouths)
       setNoseCatalog(noses)
-      const entries = loaded.filter((item): item is FaceCatalogItem => Boolean(item))
-      setMouthDetails(Object.fromEntries(entries.filter((item) => item.category !== 'nose').map((item) => [item.id, item])))
-      setNoseDetails(Object.fromEntries(entries.filter((item) => item.category === 'nose').map((item) => [item.id, item])))
+      setMouthDetails(loadedMouthDetails)
+      setNoseDetails(loadedNoseDetails)
       const availableMouthKind = mouths.some((item) => item.category === mouthKind) ? mouthKind : mouths[0]?.category
       if (availableMouthKind === 'mouth-closed' || availableMouthKind === 'mouth-open') setMouthKind(availableMouthKind)
       setSelectedMouthId((current) => mouths.some((item) => item.id === current && item.category === availableMouthKind) ? current : mouths.find((item) => item.category === availableMouthKind)?.id ?? null)
