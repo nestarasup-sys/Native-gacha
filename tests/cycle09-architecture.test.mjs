@@ -2,12 +2,26 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import * as sharedExpressions from '../src/renderer/src/characters/studioExpressionTransforms.ts'
+import * as editorV6Expressions from '../src/renderer/src/characters/editorV6ExpressionTransforms.ts'
 import * as legacyExpressions from '../src/renderer/src/features/studio/expressionTransforms.ts'
 
 test('a API de expressões preserva identidade por reexport, sem mudar a geometria', () => {
   for (const name of ['buildStudioExpressionAppearance','buildStudioExpressionTransforms',
     'resolveStudioExpressionBase','studioExpressionCollection','transferExpressionTransform']) {
     assert.equal(legacyExpressions[name], sharedExpressions[name], name)
+  }
+})
+test('Studio e Editor V6 usam a mesma implementação de transformações faciais', () => {
+  for (const [studioName, editorV6Name] of [
+    ['studioExpressionCollection', 'editorV6ExpressionCollection'],
+    ['presetWithPupilsLookingLeft', 'presetWithPupilsLookingLeft'],
+    ['appearanceWithPupilsLookingLeft', 'appearanceWithPupilsLookingLeft'],
+    ['resolveStudioExpressionBase', 'resolveEditorV6ExpressionBase'],
+    ['buildStudioExpressionAppearance', 'buildEditorV6ExpressionAppearance'],
+    ['buildStudioExpressionTransforms', 'buildEditorV6ExpressionTransforms'],
+    ['transferExpressionTransform', 'transferExpressionTransform']
+  ]) {
+    assert.equal(editorV6Expressions[editorV6Name], sharedExpressions[studioName], `${studioName}/${editorV6Name}`)
   }
 })
 test('roteamento carrega Roteiros como feature e não mantém regras da página no shell', async () => {

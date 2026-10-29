@@ -1,6 +1,6 @@
 import type { CustomizerFaceAppearance } from './customizer'
-import type { FaceExpressionEffects, FaceTransform } from './fabricator'
-import { isSceneFaceExpressionEffects, isSceneFaceTransforms } from './sceneFaceValidation'
+import type { FaceExpressionEffects } from './fabricator'
+import { isSceneFaceExpressionEffects, isSceneFaceTransforms, type SceneExpressionBase, type SceneFaceMode, type SceneFaceTransform, type SceneFaceTransformCategory, type SceneFaceTransforms } from './sceneFaceValidation'
 import type { EditorV6ExportAudio, EditorV6ExportOptions, EditorV6ExportStatus } from './editorV6Export'
 import type { EditorV6MotionAtlas, EditorV6MotionBakeRequest, EditorV6MotionBakeResult, EditorV6MotionSprite } from './editorV6Motion'
 export { resolveTalkMouthCatalogId as resolveEditorV6TalkMouthId } from './faceMouthSelection'
@@ -33,15 +33,15 @@ export function editorV6MediaUrl(projectId: string, fileName: string, libraryVid
 }
 
 /** EditorV6-local adjustment shared by a facial category and its variant frames. */
-export type EditorV6FaceTransform = { x: number; y: number; width: number; height: number; rotation: number; sourceTransformOverride?: FaceTransform }
-export type EditorV6FaceTransformCategory = 'eyes' | 'eyebrows' | 'nose' | 'mouth'
+export type EditorV6FaceTransform = SceneFaceTransform
+export type EditorV6FaceTransformCategory = SceneFaceTransformCategory
 /** EditorV6-local playback state for the character's neutral, blink, or speaking face. */
-export type EditorV6FaceMode = 'idle' | 'blink' | 'talk'
+export type EditorV6FaceMode = SceneFaceMode
 export type EditorV6FaceRenderMode = EditorV6FaceMode | 'talk-blink'
 
 /** Keys are category:itemId; bare category keys remain supported for older EditorV6 data. */
-export type EditorV6FaceTransforms = Record<string, EditorV6FaceTransform>
-export type EditorV6ExpressionBase = { appearance: CustomizerFaceAppearance; transforms: EditorV6FaceTransforms }
+export type EditorV6FaceTransforms = SceneFaceTransforms
+export type EditorV6ExpressionBase = SceneExpressionBase
 
 /** Shared persistence boundary for manual and expression-specific transforms. */
 export function isEditorV6ExpressionEffects(value: unknown): value is FaceExpressionEffects {

@@ -1,7 +1,11 @@
+import type { CustomizerFaceAppearance } from './customizer'
 import type { FaceExpressionEffects, FaceTransform } from './fabricator'
 
 export type SceneFaceTransform = { x: number; y: number; width: number; height: number; rotation: number; sourceTransformOverride?: FaceTransform }
+export type SceneFaceTransformCategory = 'eyes' | 'eyebrows' | 'nose' | 'mouth'
 export type SceneFaceTransforms = Record<string, SceneFaceTransform>
+export type SceneExpressionBase = { appearance: CustomizerFaceAppearance; transforms: SceneFaceTransforms }
+export type SceneFaceMode = 'idle' | 'blink' | 'talk'
 
 export function isSceneFaceExpressionEffects(value: unknown): value is FaceExpressionEffects {
   if (value === undefined) return true

@@ -1,6 +1,6 @@
 import type { CustomizerFaceAppearance } from './customizer'
-import type { FaceExpressionEffects, FaceTransform } from './fabricator'
-import { isSceneFaceExpressionEffects, isSceneFaceTransforms } from './sceneFaceValidation'
+import type { FaceExpressionEffects } from './fabricator'
+import { isSceneFaceExpressionEffects, isSceneFaceTransforms, type SceneExpressionBase, type SceneFaceMode, type SceneFaceTransform, type SceneFaceTransformCategory, type SceneFaceTransforms } from './sceneFaceValidation'
 export { resolveTalkMouthCatalogId as resolveStudioTalkMouthId } from './faceMouthSelection'
 
 export type StudioAsset = {
@@ -12,14 +12,14 @@ export type StudioAsset = {
 }
 
 /** Studio-local adjustment shared by a facial category and its variant frames. */
-export type StudioFaceTransform = { x: number; y: number; width: number; height: number; rotation: number; sourceTransformOverride?: FaceTransform }
-export type StudioFaceTransformCategory = 'eyes' | 'eyebrows' | 'nose' | 'mouth'
+export type StudioFaceTransform = SceneFaceTransform
+export type StudioFaceTransformCategory = SceneFaceTransformCategory
 /** Studio-local playback state for the character's neutral, blink, or speaking face. */
-export type StudioFaceMode = 'idle' | 'blink' | 'talk'
+export type StudioFaceMode = SceneFaceMode
 
 /** Keys are category:itemId; bare category keys remain supported for older Studio data. */
-export type StudioFaceTransforms = Record<string, StudioFaceTransform>
-export type StudioExpressionBase = { appearance: CustomizerFaceAppearance; transforms: StudioFaceTransforms }
+export type StudioFaceTransforms = SceneFaceTransforms
+export type StudioExpressionBase = SceneExpressionBase
 
 /** Shared persistence boundary for manual and expression-specific transforms. */
 export function isStudioExpressionEffects(value: unknown): value is FaceExpressionEffects {
