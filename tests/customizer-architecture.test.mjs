@@ -71,6 +71,20 @@ test('workspace facial de catálogo fica isolado da página e gravação via cal
   assert.match(workspace, /customizer-face-layout-catalog/)
 })
 
+test('workspace de cabelos fica isolado e recebe dados e ações pela página', async () => {
+  const [page, workspace] = await Promise.all([
+    readFile(new URL('../src/renderer/src/features/customizer/CustomizerPage.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../src/renderer/src/features/customizer/CustomizerHairWorkspace.tsx', import.meta.url), 'utf8')
+  ])
+  assert.match(page, /<CustomizerHairWorkspace\b/)
+  assert.doesNotMatch(page, /renderHairCustomizer|renderHairLibrary/)
+  assert.match(page, /onChooseStyle=\{chooseHairPartStyle\}/)
+  assert.match(page, /onSetPartColor=\{setHairPartColor\}/)
+  assert.doesNotMatch(workspace, /window\.desktop|localStorage/)
+  assert.match(workspace, /onApplyPalette/)
+  assert.match(workspace, /libraryPageView/)
+})
+
 test('validador aceita formato atual e rejeita id, slot, cor ou pose inválidos', () => {
   assert.equal(isCustomizerCharacter(valid()), true)
   assert.equal(isCustomizerCharacter({ ...valid(), customization: { ...valid().customization, faceAppearance: null } }), false)
