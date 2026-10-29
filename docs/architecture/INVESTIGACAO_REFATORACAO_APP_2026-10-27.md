@@ -2,6 +2,13 @@
 
 ## Reauditoria geral — 2026-10-29
 
+### Rodada ampliada — limite de memória nas prévias de cor do Fabricador
+
+- O cache das prévias de pele mantinha até 80 entradas, mas não limitava o tamanho das imagens. Ao alternar entre slots, ele podia conservar referências às imagens-fonte e às PNGs geradas sem um teto de memória estimado.
+- `modelBodyPreviewCache.ts` mantém a reutilização LRU existente e aplica um orçamento de 64 MiB estimados, além do teto de 80 entradas. A estimativa considera dois bytes por unidade da string da fonte, guias, cores e resultado; é uma estimativa conservadora de retenção, não uma medição do heap do Chromium.
+- Se uma geração termina depois de sua entrada ter sido substituída ou expulsa, ela não atualiza o orçamento nem remove a entrada atual. Falhas continuam removendo somente a entrada correspondente. A promessa entregue à renderização permanece utilizável mesmo após a expulsão do cache.
+- Não houve mudança no recolorimento, nas chaves dos dados salvos, nos canais IPC ou na persistência. `npm run typecheck`, `npm run audit:architecture` (394 arquivos) e `npm run build` passaram. Testes automatizados não foram executados nesta etapa.
+
 ### Rodada ampliada — operações manuais do Fabricador no flush
 
 - A auditoria do inventário de encerramento encontrou quatro caminhos fora do flush: importação da folha do Model Source, exportação do PNG do Model Source, exportação WebM do Animador Facial e autosave do Design Dev.
