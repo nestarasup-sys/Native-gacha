@@ -21,6 +21,12 @@ async function makeEditorV6Thumbnail(project: EditorV6Document): Promise<string>
   return captureEditorV6Frame(project, 0, 480, 270, 'image/jpeg')
 }
 
+function editorV6ThumbnailCacheKey(project: EditorV6Document): readonly unknown[] {
+  return [project.id, project.assets, project.elements, project.timeline, project.media ?? null,
+    project.backgroundColor, project.backgroundAssetId, project.backgroundX, project.backgroundY,
+    project.backgroundWidth, project.backgroundHeight, project.backgroundRotation]
+}
+
 /** Owns Editor V6 document writes, autosave flushing, and operation draining. */
 export function useEditorV6DocumentPersistence({
   activeProject,
@@ -55,6 +61,7 @@ export function useEditorV6DocumentPersistence({
     invalidatePendingSaves
   } = useSerializedSceneDocumentSave(activeProject, {
     createThumbnail: makeEditorV6Thumbnail,
+    thumbnailCacheKey: editorV6ThumbnailCacheKey,
     write: writeDocument,
     onSaved: onDocumentSaved,
     onError: onDocumentSaveError

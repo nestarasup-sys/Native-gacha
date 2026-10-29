@@ -2,6 +2,28 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { SerializedDocumentSaveQueue } from '../src/shared/serializedDocumentSave.ts'
 import { makeCanvasPrint } from '../src/renderer/src/features/studio/studioCanvasPrint.ts'
+import { SceneThumbnailCache } from '../src/renderer/src/ui/hooks/sceneThumbnailCache.ts'
+
+test('cache de miniatura reutiliza a imagem enquanto as referências visuais permanecem iguais', async () => {
+ const cache = new SceneThumbnailCache()
+ const assets = [], elements = [], timeline = {}
+ let renders = 0
+ const render = async () => `thumbnail-${++renders}`
+ const key = ['project', assets, elements, timeline, '#fff']
+ assert.equal(await cache.get(key, render), 'thumbnail-1')
+ assert.equal(await cache.get([...key], render), 'thumbnail-1')
+ assert.equal(renders, 1)
+ assert.equal(await cache.get(['project', assets, elements, timeline, '#000'], render), 'thumbnail-2')
+ assert.equal(await cache.get(['project', assets, [...elements], timeline, '#000'], render), 'thumbnail-3')
+ assert.equal(renders, 3)
+})
+
+test('falha ao criar miniatura não preenche o cache e permite tentar de novo', async () => {
+ const cache = new SceneThumbnailCache()
+ const key = ['project', []]
+ await assert.rejects(cache.get(key, async () => { throw Error('render failure') }), /render failure/)
+ assert.equal(await cache.get(key, async () => 'thumbnail-ok'), 'thumbnail-ok')
+})
 
 test('fila de documentos não inverte ordem quando salvamento antigo leva mais tempo',async()=>{
  const saves = []
@@ -43,6 +65,9 @@ test('Studio e Editor V6 usam a fila compartilhada antes de chamar seus canais I
   assert.match(editorPersistence,/window\.desktop\.editorV6\.saveEditorV6Project\(document\)/)
  assert.match(saveHook,/new SerializedDocumentSaveQueue\(\)/)
  assert.match(saveHook,/queue\.current\.run\(/)
+ assert.match(saveHook,/currentThumbnailCache\.get\(\s*thumbnailCacheKey\(document\)/)
+ assert.match(editorPersistence,/thumbnailCacheKey: editorV6ThumbnailCacheKey/)
+ assert.match(studioPersistence,/thumbnailCacheKey: studioThumbnailCacheKey/)
 })
 
 test('renderização do print decodifica fontes únicas em lotes limitados e preserva camadas', async () => {

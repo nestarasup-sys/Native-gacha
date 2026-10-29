@@ -1,5 +1,6 @@
 import { useCallback, useRef } from 'react'
 import { SerializedDocumentSaveQueue } from '../../../../shared/serializedDocumentSave'
+import { SceneThumbnailCache } from './sceneThumbnailCache'
 
 type SaveableSceneDocument = {
   updatedAt: string
@@ -8,6 +9,7 @@ type SaveableSceneDocument = {
 
 type SerializedSceneDocumentSaveOptions<TDocument extends SaveableSceneDocument> = {
   createThumbnail: (document: TDocument) => Promise<string>
+  thumbnailCacheKey: (document: TDocument) => readonly unknown[]
   write: (document: TDocument) => Promise<void>
   onSaved: (document: TDocument, savedDocument: TDocument) => void
   onError: (reason: unknown) => void
@@ -18,8 +20,11 @@ export function useSerializedSceneDocumentSave<TDocument extends SaveableSceneDo
   options: SerializedSceneDocumentSaveOptions<TDocument>
 ) {
   const queue = useRef(new SerializedDocumentSaveQueue())
+  const thumbnailCache = useRef<SceneThumbnailCache | null>(null)
+  if (!thumbnailCache.current) thumbnailCache.current = new SceneThumbnailCache()
+  const currentThumbnailCache = thumbnailCache.current
   const generation = useRef(0)
-  const { createThumbnail, write, onSaved, onError } = options
+  const { createThumbnail, thumbnailCacheKey, write, onSaved, onError } = options
 
   const invalidatePendingSaves = useCallback(() => { generation.current += 1 }, [])
   const writeInOrder = useCallback((document: TDocument) => queue.current.run(() => write(document)), [write])
@@ -28,7 +33,10 @@ export function useSerializedSceneDocumentSave<TDocument extends SaveableSceneDo
     const currentGeneration = ++generation.current
     try {
       const savedDocument = await queue.current.run(async () => {
-        const thumbnailDataUrl = await createThumbnail(document).catch(() => document.thumbnailDataUrl)
+        const thumbnailDataUrl = await currentThumbnailCache.get(
+          thumbnailCacheKey(document),
+          () => createThumbnail(document)
+        ).catch(() => document.thumbnailDataUrl)
         const next = {
           ...document,
           ...(thumbnailDataUrl ? { thumbnailDataUrl } : {}),
@@ -43,7 +51,7 @@ export function useSerializedSceneDocumentSave<TDocument extends SaveableSceneDo
       if (currentGeneration === generation.current) onError(reason)
       return false
     }
-  }, [activeDocument, createThumbnail, onError, onSaved, write])
+  }, [activeDocument, createThumbnail, currentThumbnailCache, onError, onSaved, thumbnailCacheKey, write])
 
   return { save, writeInOrder, invalidatePendingSaves }
 }

@@ -18,6 +18,12 @@ type StudioDocumentPersistenceOptions = {
   setError: (message: string | null) => void
 }
 
+function studioThumbnailCacheKey(studio: StudioDocument): readonly unknown[] {
+  return [studio.id, studio.assets, studio.elements, studio.backgroundColor, studio.backgroundAssetId,
+    studio.backgroundX, studio.backgroundY, studio.backgroundWidth, studio.backgroundHeight,
+    studio.backgroundRotation]
+}
+
 /** Owns Studio document writes, autosave flushing, and pending operation draining. */
 export function useStudioDocumentPersistence({
   studios,
@@ -64,6 +70,7 @@ export function useStudioDocumentPersistence({
     invalidatePendingSaves
   } = useSerializedSceneDocumentSave(activeStudio, {
     createThumbnail: makeStudioThumbnail,
+    thumbnailCacheKey: studioThumbnailCacheKey,
     write: writeDocument,
     onSaved: onDocumentSaved,
     onError: onDocumentSaveError
