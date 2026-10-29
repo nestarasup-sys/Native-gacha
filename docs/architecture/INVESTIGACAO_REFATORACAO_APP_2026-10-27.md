@@ -22,7 +22,7 @@ A **Biblioteca de Mídia** é dona dos arquivos de vídeo e seus IDs. Base de V�
 
 O restante já tem módulos por domínio e armazenamento local com SQLite, arquivos e CAS. O `electron/main.ts` agora registra somente o flush transversal de gravações; a maior concentração está nas páginas React extensas que combinam estado e coordenação de operações. O plano prioriza limites de propriedade, segurança dos dados e redução de responsabilidades por fluxo.
 
-**Próximos passos:** o ciclo de referências de poses já foi mapeado e protegido: personagens, cenas do Studio e elementos/blocos da timeline do Editor V6 são verificados antes de excluir uma pose, coordenando gravações concorrentes. Nesta etapa, a serialização por chave compartilhada entre persistências do Fabricador, Studio e Editor V6 foi centralizada sem alterar os formatos ou a ordem das gravações. O flush transversal permanece no composition root. A composição compartilha algoritmos visuais de baixo nível; a orquestração e os modos de render continuam próprios de Studio e Editor V6 até existir comparação visual das saídas reais.
+**Próximos passos:** o ciclo de referências de poses está protegido entre Customizador, Studio e Editor V6. A fila de operações por chave está centralizada para persistências do Fabricador, Studio e Editor V6. Os journals de assets do Studio e Editor V6 agora usam um núcleo comum parametrizado; seus wrappers mantêm paths, formatos e nomes de canal. O próximo exame deve comparar as transações do catálogo visual e dos lotes de expressões, preservando as garantias próprias de cada domínio. O flush transversal permanece no composition root. A orquestração e os modos de render de Studio e Editor V6 continuam separados até existir comparação visual das saídas reais.
 
 ## 1. Estado observado
 
@@ -584,9 +584,16 @@ Este corte separa propriedade dos contratos e chamadas entre domínios, mas não
 - Os journals de publicação de PNG do Studio e Editor V6 não foram acoplados à fila: seus mapas `pending` são barreiras de recuperação com semântica diferente. Nenhum canal IPC, arquivo, formato persistido, ID ou ownership foi alterado.
 - `tests/keyed-operation-queue.test.mjs` cobre FIFO, paralelismo entre chaves e continuidade após falha; os testes existentes continuam cobrindo gravação concorrente, recovery e integridade dos catálogos/documentos.
 
+### Etapa aplicada — núcleo comum para journals de Studio e Editor V6
+
+- `studioAssetTransaction.ts` e `editorV6/assetTransaction.ts` continham a mesma lógica de hash, validação de paths, backup, recuperação, promoção do manifesto e limpeza do journal. As diferenças eram os nomes reservados e do manifesto e o rótulo dos erros.
+- `storage/assetManifestTransaction.ts` agora implementa esse protocolo uma vez. Instâncias separadas nos wrappers preservam mapas de operações em voo independentes; os wrappers mantêm as funções públicas que `documentPersistence` já chama.
+- Permanecem iguais os diretórios `.studio-assets-transaction` e `.editorV6-assets-transaction`, os alvos `studio.json` e `editorV6.json`, temporários, manifestos, campos do journal, regras conservadoras de confirmação e mensagens de caminho inválido. Nenhum dado foi migrado ou regravado.
+- `tests/asset-manifest-transaction.test.mjs` aplica a mesma bateria aos dois wrappers: publicação, rollback durante PNG parcial, recuperação após reabertura, falha de callback pós-promoção e bloqueio de path traversal. A bateria específica do Studio permanece ativa.
+
 ## 7. Próxima tarefa recomendada
 
-Auditar a semelhança entre `electron/domains/storage/studioAssetTransaction.ts` e `electron/domains/editorV6/assetTransaction.ts`. Mapear protocolo de journal, campos próprios de cada manifesto, recuperação e injeção de filesystem; só extrair um núcleo comum se os testes de falha continuarem exercitando ambos os contratos sem alterar caminhos ou dados persistidos.
+Mapear `electron/domains/fabricator/catalogImageTransaction.ts` e `electron/domains/fabricator/expressionBatchTransaction.ts`: inventariar quais arquivos/manifestos cada journal protege, como diferem no preparo de lote, recuperação e barreiras de gravação, e quais testes exercitam falhas em cada estágio. Só propor compartilhamento depois de distinguir os contratos de catálogo e de presets; preservar sidecars, recuperação legada e paths atuais.
 
 ## 8. Verificações e validação
 
@@ -607,3 +614,4 @@ Auditar a semelhança entre `electron/domains/storage/studioAssetTransaction.ts`
 - Nesta etapa, 16 testes de `customizer-architecture` e `fabricator-hair-reference-integrity` passaram; também passaram `npm run typecheck`, `npm run audit:architecture` (343 arquivos TS/TSX), `npm run build` e `git diff --check`. Os testes usaram armazenamento temporário e personagens sintéticos.
 - Nesta etapa, 24 testes de `customizer-architecture`, `fabricator-hair-reference-integrity` e `fabricator-face-reference-integrity` passaram. `npm run typecheck`, `npm run audit:architecture` (345 arquivos TS/TSX, sem imports locais ausentes ou violações de fronteira), `npm run build` e `git diff --check` também passaram. A cobertura inclui vínculos de personagens, presets e rascunhos, IDs virtuais legados, assets pareados, validação de novos IDs e `setId` inativo; fixtures sintéticas e armazenamento temporário foram usados.
 - Nesta etapa, `npm run test:refactor` passou com 296 testes; `npm test` passou com 27, e `npm run test:editor-v6` com 64 testes (1 fixture opcional ignorado). Também passaram `npm run typecheck`, `npm run audit:architecture` (348 arquivos TS/TSX, sem imports ausentes ou violações de fronteira), `npm run build` e `git diff --check`. Os novos cenários de fila e os testes de persistência usaram operações sintéticas e diretórios temporários; nenhum perfil ou mídia pessoal foi acessado.
+- Nesta etapa, a suíte direcionada aos journals teve 22 testes verdes; `npm run test:refactor` passou com 306 testes, `npm test` com 27 e `npm run test:editor-v6` com 64 (1 fixture opcional ignorado). `npm run typecheck`, `npm run audit:architecture` (349 arquivos TS/TSX, sem imports ausentes ou violações de fronteira), `npm run build` e `git diff --check` também passaram. A bateria nova usa os wrappers do Studio e Editor V6 com pastas sintéticas temporárias; nenhum perfil ou mídia pessoal foi acessado.
