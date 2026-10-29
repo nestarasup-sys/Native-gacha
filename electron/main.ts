@@ -51,7 +51,7 @@ import { registerFabricatorHairHandlers } from './domains/fabricator/hairIpc'
 import { registerFaceGuideHandlers } from './domains/fabricator/faceGuidesIpc'
 import { registerFabricatorFaceAnimationExportHandler } from './domains/fabricator/faceAnimationExportIpc'
 import { registerImageNormalizationHandler } from './domains/images/imageNormalizationIpc'
-import { AmbiguousModelSourceRecoveryError, recoverModelSourceSlot } from './domains/fabricator/modelSourceRecovery'
+import { AmbiguousModelSourceRecoveryError, markAmbiguousModelSourceSlots, recoverModelSourceSlot } from './domains/fabricator/modelSourceRecovery'
 import { createFabricatorModelWriter } from './domains/fabricator/modelWriter'
 import { createFabricatorHistoryPersistence } from './domains/fabricator/historyPersistence'
 import { registerFabricatorProjectHandlers } from './domains/fabricator/projectIpc'
@@ -1407,20 +1407,22 @@ async function registerFabricatorHandlers(): Promise<void> {
 
   registerCustomizerCharacterHandlers(ipcMain, assertTrustedSender, customizerService, measureIpc)
 
-  // Uma recuperação ambígua em um slot não pode esconder os demais modelos.
-  // A abertura do slot específico continua exibindo o erro para recuperação manual.
+  // Uma recuperação ambígua não pode esconder os demais modelos nem escolher um backup sozinha.
+  // O catálogo expõe o slot pendente para decisão explícita na interface.
   const recoverSlot = (slot: number) =>
     recoverModelSourceSlot(slot, slotPath, { readdir, readFile, rename, rm })
   registerFabricatorModelCatalogHandlers(ipcMain, assertTrustedSender, {
     listSlots: async () => {
+      const ambiguousSlots: number[] = []
       for (let slot = 1; slot <= slotCount; slot += 1) {
         try { await recoverSlot(slot) }
         catch (reason) {
           if (!(reason instanceof AmbiguousModelSourceRecoveryError)) throw reason
-          console.error(`Recuperação manual pendente no slot ${slot}; os outros slots continuarão disponíveis.`, reason)
+          ambiguousSlots.push(slot)
+          console.warn(`Recuperação pendente no slot ${slot}; os outros slots continuarão disponíveis.`)
         }
       }
-      return fabricatorModelCatalog.listSlots()
+      return markAmbiguousModelSourceSlots(await fabricatorModelCatalog.listSlots(), ambiguousSlots)
     },
     loadSlot: async (slot) => {
       if (isValidSlot(slot)) await recoverSlot(slot)

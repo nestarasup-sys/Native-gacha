@@ -3,7 +3,8 @@ import assert from 'node:assert/strict'
 import * as fs from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { recoverModelSourceSlot } from '../electron/domains/fabricator/modelSourceRecovery.ts'
+import { markAmbiguousModelSourceSlots, recoverModelSourceSlot } from '../electron/domains/fabricator/modelSourceRecovery.ts'
+import { registerFabricatorProjectHandlers } from '../electron/domains/fabricator/projectIpc.ts'
 
 async function fixture(t) {
   const root = await fs.mkdtemp(join(tmpdir(), 'native-gacha-recover-'))
@@ -18,6 +19,25 @@ async function fixture(t) {
   }
   return {root,official,backup,write}
 }
+
+function registerProjectHandlers(libraryPath) {
+  const handlers = new Map()
+  registerFabricatorProjectHandlers({
+    ipcMain: { handle: (channel, handler) => handlers.set(channel, handler) },
+    assertTrustedSender: event => { if (!event.trusted) throw new Error('Origem inválida.') },
+    isValidSlot: slot => Number.isInteger(slot) && slot >= 1 && slot <= 10,
+    libraryPath: () => libraryPath,
+    slotPath: slot => join(libraryPath, `slot-${slot}`),
+    writeProject: async () => undefined,
+    history: { read: async () => ({ undo: [], redo: [] }), write: async () => undefined },
+    openImportDialog: async () => null,
+    normalizeImage: async bytes => ({ bytes, bitDepth: 8, width: 1, height: 1 }),
+    createId: () => '01234567-89ab-cdef-0123-456789abcdef',
+    files: fs
+  })
+  return handlers
+}
+
 test('recupera fonte anterior depois de interromper a renomeação',async t=>{
   const {official,backup,write}=await fixture(t)
   await write(backup)
@@ -81,4 +101,43 @@ test('slot lógico vazio exige marcador transacional antes de recuperar backup',
   }))
   assert.equal(await recoverModelSourceSlot(1,()=>official,fs),'restored')
   assert.equal(await fs.readFile(join(official,'parts','head.png'),'utf8'),'PIXELS')
+})
+
+test('exclusão explícita do slot apaga seus backups e transações sem afetar outros slots', async t => {
+  const { root, official, backup, write } = await fixture(t)
+  const secondBackup = join(root, '.model-source-backup-1-11111111-2222-3333-4444-555555555555')
+  const modelSourceStage = join(root, '.model-source-stage-1-aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee')
+  const duplicateStage = join(root, '.fabricator-duplicate-stage-1-aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee')
+  const pending = join(root, '.model-source-pending-1.json')
+  const otherSlotArtifacts = [
+    join(root, '.model-source-backup-2-11111111-2222-3333-4444-555555555555'),
+    join(root, '.model-source-stage-2-aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'),
+    join(root, '.fabricator-duplicate-stage-2-aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee')
+  ]
+  await write(official)
+  await write(backup)
+  await write(secondBackup)
+  await fs.mkdir(modelSourceStage)
+  await fs.mkdir(duplicateStage)
+  await fs.writeFile(pending, JSON.stringify({ version: 1, backup: 'not-used-after-explicit-delete' }))
+  for (const path of otherSlotArtifacts) await fs.mkdir(path)
+
+  const handlers = registerProjectHandlers(root)
+  await handlers.get('fabricator:delete-slot')({ trusted: true }, 1)
+
+  for (const path of [official, backup, secondBackup, modelSourceStage, duplicateStage, pending]) {
+    await assert.rejects(fs.access(path), { code: 'ENOENT' })
+  }
+  for (const path of otherSlotArtifacts) await fs.access(path)
+  assert.equal(await recoverModelSourceSlot(1, () => official, fs), 'missing')
+})
+
+test('marca apenas slots vazios com recuperação ambígua, sem substituir modelos íntegros', () => {
+  const summaries = [null, { slot: 2, name: 'Modelo existente', sourceName: 'folha.png', partCount: 10, updatedAt: '2026-01-01' }, null]
+  const marked = markAmbiguousModelSourceSlots(summaries, [1, 2, 3, 11])
+  assert.equal(marked[0].recoveryRequired, true)
+  assert.equal(marked[1].name, 'Modelo existente')
+  assert.equal(marked[1].recoveryRequired, undefined)
+  assert.equal(marked[2].recoveryRequired, true)
+  assert.equal(summaries[0], null)
 })

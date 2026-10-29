@@ -33,7 +33,7 @@ Testes registram handlers em transporte simulado, verificando canal estável, re
 Antes da troca de diretórios, `modelSource.ts` escreve o marcador `.model-source-pending-<slot>.json` com o nome do backup anterior ao commit; a publicação remove o marcador quando consegue concluir. Quando há vários backups, o recuperador usa apenas o nome validado do marcador e rejeita recuperação ambígua.
 
 - Não sobrescreve um slot oficial, mesmo que o manifesto existente esteja defeituoso.
-- Não remove backups; um operador pode recuperá-los manualmente.
+- A recuperação automática preserva backups para recuperação manual. Já a exclusão explícita e confirmada do slot remove seus backups, áreas de staging e marcador pendente.
 - Nunca confia em caminhos do marcador (somente nomes de backup do slot com UUID válido).
 - Usa o DomainFileSystem injetado; não modifica arquivos fora da biblioteca.
 - O catálogo e a publicação fazem a verificação antes da leitura ou da gravação.

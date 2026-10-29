@@ -2,6 +2,7 @@
  * Só atua quando o slot oficial está ausente. Nunca sobrescreve um slot existente.
  */
 import { dirname, join } from 'node:path'
+import type { FabricatorSlotSummary } from '../../../src/shared/fabricator.ts'
 import type { ModelSourceFiles } from './modelSource'
 import { isModelSourceJournal, verifyModelSourceCommit } from './modelSourceJournal.ts'
 
@@ -58,6 +59,19 @@ export class AmbiguousModelSourceRecoveryError extends Error {
     super('Há múltiplos backups ou uma publicação pendente inconsistente. Recuperação manual necessária.')
     this.name = 'AmbiguousModelSourceRecoveryError'
   }
+}
+
+export function markAmbiguousModelSourceSlots(
+  summaries: FabricatorSlotSummary[], ambiguousSlots: readonly number[]
+): FabricatorSlotSummary[] {
+  const result = [...summaries]
+  for (const slot of ambiguousSlots) {
+    if (!Number.isInteger(slot) || slot < 1 || slot > result.length || result[slot - 1]) continue
+    result[slot - 1] = {
+      slot, name: 'Recuperação pendente', sourceName: '', partCount: 0, updatedAt: '', recoveryRequired: true
+    }
+  }
+  return result
 }
 
 export async function recoverModelSourceSlot(

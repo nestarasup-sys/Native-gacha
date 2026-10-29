@@ -373,6 +373,12 @@ export function FabricatorPage() {
     setActiveSlot(slot); setProject(null); setSelectedIds([]); setError(''); dirtyAssets.current.clear(); dirtyChromaBases.current.clear(); mixerSurfacesRef.current.clear(); mixerStrokeRef.current = null; setMixerActive(false); setMixerPainting(false); setZoom(1); setPan({ x: 0, y: 0 })
     const summary = slots[slot - 1]
     if (!summary) { setSlotSwitching(false); return }
+    if (summary.recoveryRequired) {
+      setActiveSection('Modelos')
+      setError(`O slot ${slot} tem mais de uma cópia de recuperação válida, então o app não escolheu nenhuma automaticamente. Use “Excluir recuperação” somente se quiser apagar todas as cópias deste slot.`)
+      setSlotSwitching(false)
+      return
+    }
     try {
       const loaded = await window.desktop.fabricator.loadFabricatorSlot(slot)
       if (generation !== slotSelectionGeneration.current) return
@@ -415,7 +421,10 @@ export function FabricatorPage() {
   const deleteSlot = async (slot: number) => {
     const summary = slots[slot - 1]
     if (!summary || deletingSlot !== null) return
-    if (!window.confirm(`Excluir permanentemente “${summary.name}” do slot ${slot}? A imagem original e todas as peças salvas serão apagadas.`)) return
+    const confirmation = summary.recoveryRequired
+      ? `Limpar permanentemente a recuperação pendente do slot ${slot}? Todos os backups, arquivos temporários e transações deste slot serão apagados sem possibilidade de restauração.`
+      : `Excluir permanentemente “${summary.name}” do slot ${slot}? A imagem original, as peças salvas, os backups e as transações pendentes deste slot serão apagados sem possibilidade de restauração.`
+    if (!window.confirm(confirmation)) return
     setDeletingSlot(slot)
     if (activeSlot === slot) {
       slotSelectionGeneration.current += 1
@@ -630,6 +639,10 @@ export function FabricatorPage() {
 
   const importSlot = async (slot: number, preserveExisting = false) => {
     const selectionGeneration = slotSelectionGeneration.current
+    if (slots[slot - 1]?.recoveryRequired) {
+      setError(`O slot ${slot} tem backups de recuperação ambíguos. Exclua o slot antes de importar uma nova imagem.`)
+      return
+    }
     const reimporting = preserveExisting && Boolean(slots[slot - 1])
     if (slots[slot - 1] && !reimporting && !window.confirm(`Substituir o modelo do slot ${slot}? O projeto atual será trocado.`)) return
     const projectToSave = projectRef.current ?? project
@@ -892,10 +905,12 @@ export function FabricatorPage() {
   const renderEmptyState = () => (
     <div className="model-empty-state">
       <div className="model-empty-symbol"><Icon name="sparkles" /></div>
-      <p className="model-eyebrow">BIBLIOTECA DE MODELOS</p>
-      <h1>{slots[activeSlot - 1] ? 'Abrindo projeto…' : 'Sua mesa de montagem'}</h1>
-      <p>Importe uma folha de peças. O Nymi remove o fundo, recorta cada elemento e abre o canvas para você montar e articular o modelo.</p>
-      <button className="model-primary-button" onClick={() => void importSlot(activeSlot, true)} type="button"><Icon name={slots[activeSlot - 1] ? 'reset' : 'plus'} /> {slots[activeSlot - 1] ? 'Reimportar imagem' : 'Importar imagem'}</button>
+      <p className="model-eyebrow">{slots[activeSlot - 1]?.recoveryRequired ? 'RECUPERAÇÃO DO MODEL SOURCE' : 'BIBLIOTECA DE MODELOS'}</p>
+      <h1>{slots[activeSlot - 1]?.recoveryRequired ? 'Este slot precisa de uma decisão' : slots[activeSlot - 1] ? 'Abrindo projeto…' : 'Sua mesa de montagem'}</h1>
+      <p>{slots[activeSlot - 1]?.recoveryRequired
+        ? 'Foram encontrados vários backups válidos e o app não escolheu um automaticamente. Use “Excluir recuperação” para apagar permanentemente apenas os arquivos deste slot.'
+        : 'Importe uma folha de peças. O Nymi remove o fundo, recorta cada elemento e abre o canvas para você montar e articular o modelo.'}</p>
+      {!slots[activeSlot - 1]?.recoveryRequired && <button className="model-primary-button" onClick={() => void importSlot(activeSlot, true)} type="button"><Icon name={slots[activeSlot - 1] ? 'reset' : 'plus'} /> {slots[activeSlot - 1] ? 'Reimportar imagem' : 'Importar imagem'}</button>}
       <span className="model-supported-formats">PNG · JPG · WEBP · processamento local</span>
     </div>
   )
@@ -913,7 +928,7 @@ export function FabricatorPage() {
         </div>
         <nav className="fabricator-section-list" aria-label="Seções do Fabricador Dev">
           {sections.map((section) => (
-            <button aria-pressed={activeSection === section.id} className={`fabricator-section-button${activeSection === section.id ? ' active' : ''}`} key={section.id} onClick={() => { setActiveSection(section.id); setAppearanceTargetSlot(activeSlot); if (section.id !== 'Modelos') { setThighDeformationActive(false); setTemporaryThighDeformationIds(new Set()) } }} type="button">
+            <button aria-pressed={activeSection === section.id} className={`fabricator-section-button${activeSection === section.id ? ' active' : ''}`} key={section.id} onClick={() => { setActiveSection(section.id); setAppearanceTargetSlot(activeSlot); if (section.id !== 'Modelos') { setThighDeformationActive(false); setTemporaryThighDeformationIds(new Set()) } }} disabled={Boolean(slots[activeSlot - 1]?.recoveryRequired) && section.id !== 'Modelos'} title={slots[activeSlot - 1]?.recoveryRequired && section.id !== 'Modelos' ? 'Resolva a recuperação pendente do slot antes de abrir esta área.' : undefined} type="button">
               <Icon name={section.icon} /><span>{section.label}</span>
             </button>
           ))}
@@ -963,14 +978,14 @@ export function FabricatorPage() {
             <div className="model-slots" role="tablist" aria-label="Slots de modelos">
               {slots.map((slot, index) => {
                 const number = index + 1
-                return <button key={number} className={`model-slot${activeSlot === number ? ' active' : ''}${slot ? ' filled' : ' empty'}`} onClick={() => void selectSlot(number)} disabled={deletingSlot !== null} role="tab" aria-selected={activeSlot === number} aria-label={`Slot ${number}, ${slot ? 'preenchido' : 'vazio'}`} title={slot ? `Slot ${number}: ${slot.name} — ${slot.partCount} peças` : `Slot ${number}: vazio`} type="button">
-                  <span>{String(number).padStart(2, '0')}</span><small>{slot ? 'Preenchido' : 'Vazio'}</small>
+                return <button key={number} className={`model-slot${activeSlot === number ? ' active' : ''}${slot ? ' filled' : ' empty'}`} onClick={() => void selectSlot(number)} disabled={deletingSlot !== null} role="tab" aria-selected={activeSlot === number} aria-label={`Slot ${number}, ${slot?.recoveryRequired ? 'recuperação pendente' : slot ? 'preenchido' : 'vazio'}`} title={slot ? `Slot ${number}: ${slot.name}${slot.recoveryRequired ? ' — vários backups válidos' : ` — ${slot.partCount} peças`}` : `Slot ${number}: vazio`} type="button">
+                  <span>{String(number).padStart(2, '0')}</span><small>{slot?.recoveryRequired ? 'Recuperação' : slot ? 'Preenchido' : 'Vazio'}</small>
                 </button>
               })}
             </div>
-            {slots[activeSlot - 1] && <button className="model-delete-compact" onClick={() => void deleteSlot(activeSlot)} disabled={slotSwitching || deletingSlot === activeSlot} title="Excluir permanentemente este modelo" type="button"><Icon name="trash" /><span>{deletingSlot === activeSlot ? 'Excluindo…' : 'Excluir modelo'}</span></button>}
+            {slots[activeSlot - 1] && <button className="model-delete-compact" onClick={() => void deleteSlot(activeSlot)} disabled={slotSwitching || deletingSlot === activeSlot} title={slots[activeSlot - 1]?.recoveryRequired ? 'Apagar permanentemente os backups e transações deste slot' : 'Excluir permanentemente este modelo'} type="button"><Icon name="trash" /><span>{deletingSlot === activeSlot ? 'Excluindo…' : slots[activeSlot - 1]?.recoveryRequired ? 'Excluir recuperação' : 'Excluir modelo'}</span></button>}
             {project?.slot === activeSlot && <button className="model-duplicate-compact" onClick={openDuplicateModelDialog} disabled={slotSwitching || deletingSlot !== null || processing || chromaApplying || historyBusy || modelSourcePublishing} title="Criar uma cópia deste modelo em outro slot vazio" type="button"><Icon name="box" /><span>Duplicar modelo</span></button>}
-            <button className="model-import-compact" onClick={() => void importSlot(activeSlot, true)} disabled={slotSwitching || deletingSlot !== null || processing || chromaApplying || historyBusy || modelSourcePublishing} title={slots[activeSlot - 1] ? 'Substituir a imagem original preservando peças, poses, juntas e demais configurações' : 'Importar folha para este slot'} type="button"><Icon name={slots[activeSlot - 1] ? 'reset' : 'plus'} /><span>{slots[activeSlot - 1] ? 'Reimportar' : 'Importar'}</span></button>
+            <button className="model-import-compact" onClick={() => void importSlot(activeSlot, true)} disabled={Boolean(slots[activeSlot - 1]?.recoveryRequired) || slotSwitching || deletingSlot !== null || processing || chromaApplying || historyBusy || modelSourcePublishing} title={slots[activeSlot - 1]?.recoveryRequired ? 'Exclua a recuperação pendente antes de importar' : slots[activeSlot - 1] ? 'Substituir a imagem original preservando peças, poses, juntas e demais configurações' : 'Importar folha para este slot'} type="button"><Icon name={slots[activeSlot - 1] ? 'reset' : 'plus'} /><span>{slots[activeSlot - 1]?.recoveryRequired ? 'Recuperação' : slots[activeSlot - 1] ? 'Reimportar' : 'Importar'}</span></button>
           </header>
 
           {slotSwitching ? (

@@ -2,11 +2,11 @@ import type { IpcMain, IpcMainInvokeEvent } from 'electron'
 import type { access as nativeAccess, stat as nativeStat, unlink as nativeUnlink } from 'node:fs/promises'
 import { basename, dirname, extname, join, resolve } from 'node:path'
 import type { FabricatorAssetSave, FabricatorHistorySaveState, FabricatorHistoryState, FabricatorProjectSave } from '../../../src/shared/fabricator'
-import { fabricatorIpcChannels } from '../../../src/shared/fabricatorIpcChannels'
-import type { ModelSourceFiles, ModelSourcePublishRequest } from './modelSource'
-import { publishModelSource } from './modelSource'
-import { verifyModelSourceCommit } from './modelSourceJournal'
-import { recoverModelSourceSlot } from './modelSourceRecovery'
+import { fabricatorIpcChannels } from '../../../src/shared/fabricatorIpcChannels.ts'
+import type { ModelSourceFiles, ModelSourcePublishRequest } from './modelSource.ts'
+import { publishModelSource } from './modelSource.ts'
+import { verifyModelSourceCommit } from './modelSourceJournal.ts'
+import { recoverModelSourceSlot } from './modelSourceRecovery.ts'
 
 type FabricatorProjectIpcDependencies = {
   ipcMain: Pick<IpcMain, 'handle'>
@@ -33,6 +33,27 @@ async function copyDirectoryContents(source: string, destination: string, files:
     if (entry.isDirectory()) await copyDirectoryContents(from, to, files)
     else if (entry.isFile()) await files.writeFile(to, await files.readFile(from))
     else throw new Error('O modelo contém um arquivo que não pode ser duplicado com segurança.')
+  }
+}
+
+async function removeSlotTransactionArtifacts(base: string, slot: number, files: ModelSourceFiles): Promise<void> {
+  let entries: Array<{ name: string; isDirectory: () => boolean }>
+  try { entries = await files.readdir(base, { withFileTypes: true }) }
+  catch (reason) {
+    if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return
+    throw reason
+  }
+
+  const modelSourceArtifact = new RegExp(`^\\.model-source-(?:backup|stage)-${slot}-[a-f0-9-]{36}$`)
+  const duplicateStage = new RegExp(`^\\.fabricator-duplicate-stage-${slot}-[a-f0-9-]{36}$`, 'i')
+  for (const entry of entries) {
+    if (!entry.isDirectory() || !modelSourceArtifact.test(entry.name) && !duplicateStage.test(entry.name)) continue
+    await files.rm(join(base, entry.name), { recursive: true, force: true })
+  }
+
+  const pendingMarker = `.model-source-pending-${slot}.json`
+  if (entries.some(entry => entry.name === pendingMarker)) {
+    await files.rm(join(base, pendingMarker), { force: true })
   }
 }
 
@@ -180,6 +201,7 @@ export function registerFabricatorProjectHandlers(deps: FabricatorProjectIpcDepe
       const base = resolve(deps.libraryPath())
       const target = resolve(deps.slotPath(slot))
       if (dirname(target) !== base || basename(target) !== `slot-${slot}`) throw new Error('Caminho de exclusão inválido.')
+      await removeSlotTransactionArtifacts(base, slot, deps.files)
       await deps.files.rm(target, { recursive: true, force: true })
     })
   })

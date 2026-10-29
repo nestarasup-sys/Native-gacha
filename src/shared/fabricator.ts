@@ -75,6 +75,8 @@ export type FabricatorSlotSummary = {
   sourceName: string
   partCount: number
   updatedAt: string
+  /** Slot vazio cujo Model Source tem múltiplas recuperações válidas; exige decisão explícita. */
+  recoveryRequired?: boolean
 } | null
 
 export type FabricatorProjectSave = Omit<FabricatorProject, 'sourceDataUrl' | 'parts'> & {
