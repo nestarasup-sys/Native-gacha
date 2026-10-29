@@ -134,6 +134,25 @@ test('cache do Misturador aplica LRU, limite de bytes e contabilidade correta',(
  assert.equal(cache.size,0)
 })
 
+test('a página do Fabricador compõe canvas e painel sem absorver a renderização', async () => {
+ const [page,canvas,panel]=await Promise.all([
+  readFile('src/renderer/src/features/fabricator/FabricatorPage.tsx','utf8'),
+  readFile('src/renderer/src/features/fabricator/FabricatorModelCanvas.tsx','utf8'),
+  readFile('src/renderer/src/features/fabricator/FabricatorModelPanel.tsx','utf8')
+ ])
+
+ assert.match(page,/<FabricatorModelCanvas\b/)
+ assert.match(page,/<FabricatorModelPanel\b/)
+ assert.doesNotMatch(page,/<TemporaryThighWarpPreview\b|className="model-joint-layer"/)
+ assert.match(canvas,/canvasParts\.filter\(\(part\) => !hiddenIds\.has\(part\.id\)\)/)
+ assert.match(canvas,/beginAnchorDrag\(event, part\.id, offset\)/)
+ assert.match(canvas,/onWarpStateChange=\{onWarpStateChange\}/)
+ assert.match(panel,/actions\.layers\.toggleFix\(part\.id\)/)
+ assert.match(panel,/actions\.joints\.autoConnect/)
+ assert.match(panel,/isTorsoPart\(selectedPart\)/)
+ assert.doesNotMatch(panel,/window\.desktop|saveFabricatorProject/)
+})
+
 test('Misturador usa o canvas local mesmo se o limite retirar a superfície do cache',async()=>{
  const source=await readFile('src/renderer/src/features/fabricator/models/seamMixer.ts','utf8')
  const page=await readFile('src/renderer/src/features/fabricator/FabricatorPage.tsx','utf8')
