@@ -1159,3 +1159,10 @@ Continua a auditoria das operações IPC iniciadas pelo usuário e da cobertura 
 - `StudioPage.tsx` passou de 1.267 para 1.226 linhas físicas. Não houve mudança nos dados persistidos, canais IPC, ativos, schema ou formato do histórico.
 - Quatro regressões sintéticas cobrem gravação/limpeza do ramo, ida e volta de desfazer/refazer, limite do histórico e delegação/reset por documento.
 - Verificação: `npm run test:refactor` passou com 395 testes; `npm test` com 29; também passaram typecheck, auditoria de arquitetura (407 arquivos TS/TSX, sem violações), auditoria de orçamento estático, build e `git diff --check`.
+
+## 57. Etapa aplicada — algoritmo de histórico compartilhado entre Studio e Editor V6
+
+- `studioHistory.ts` e `editorV6History.ts` repetiam a mesma implementação de limite, registro, desfazer e refazer. `sceneHistory.ts` agora mantém esse algoritmo genérico e puro; cada domínio fornece seu adaptador de captura/restauração e continua expondo as funções tipadas com os nomes existentes.
+- Os dados capturados continuam específicos: Studio guarda a composição e o Editor V6 inclui também a timeline. As duas áreas compartilham o limite de 30 passos sem compartilhar nem misturar documentos ou pilhas. O nome `EDITOR_V6_HISTORY_LIMIT` corrige a exportação do domínio; o antigo `STUDIO_HISTORY_LIMIT` continua como alias compatível no módulo do Editor V6.
+- Quatro testes sintéticos cobrem imutabilidade, branching, restauração de campos externos ao snapshot, limite normal/unitário e estados vazios. As regressões existentes de Studio e Editor V6 continuam usando os adaptadores públicos.
+- Verificação: `npm run test:refactor` passou com 399 testes; `npm test` com 29; `npm run test:editor-v6` passou com 140 testes e 1 teste ignorado pela suíte (mais 3 testes do perfil sintético). Também passaram typecheck, auditoria de arquitetura (408 arquivos TS/TSX, sem violações), auditoria de orçamento estático, build e `git diff --check`.
