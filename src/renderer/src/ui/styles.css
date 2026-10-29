@@ -2004,13 +2004,18 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .hair-dev-set-pieces span { overflow:hidden;font-size:9px;text-overflow:ellipsis;white-space:nowrap; }
 .hair-dev-set-pieces>small,.hair-dev-set-list>small { color:#a0929e;font-size:9px; }
 .hair-dev-set-catalog { flex:1.4; }
-.hair-dev-set-list { min-height:0;display:flex;flex-direction:column;gap:5px;overflow:auto; }
+.hair-dev-set-list { min-height:0;flex:1;display:flex;flex-direction:column;gap:5px;overflow:auto; }
 .hair-dev-set-list button { min-width:0;display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:6px;overflow:hidden;padding:4px;border:1px solid #e9e0e8;border-radius:6px;background:#f5f3f6;color:#5d4c60;text-align:left;cursor:pointer; }
 .hair-dev-set-thumbnails { display:flex;gap:2px; }
 .hair-dev-set-thumbnails img { width:30px;height:36px;object-fit:contain; }
+.hair-dev-set-thumbnail-empty { width:30px;height:36px;display:grid;place-items:center;border:1px solid #eee7ec;border-radius:4px;background:#faf8fa;color:#b6aab4;font-size:12px; }
 .hair-dev-set-caption { min-width:0;display:grid;gap:2px; }
 .hair-dev-set-caption b { overflow:hidden;font-size:9px;text-overflow:ellipsis;white-space:nowrap; }
 .hair-dev-set-caption small { color:#988896;font-size:8px; }
+.hair-dev-set-pagination { display:flex;align-items:center;justify-content:center;gap:10px;padding-top:4px;color:#988896; }
+.hair-dev-set-pagination button { width:24px;height:22px;border:1px solid #e9e0e8;border-radius:5px;background:#fff;color:#8b4c6d;font-size:14px;cursor:pointer; }
+.hair-dev-set-pagination button:disabled { opacity:.45;cursor:default; }
+.hair-dev-set-pagination small { font-size:9px; }
 .hair-dev-preview { display:flex;flex-direction:column; }
 .hair-dev-preview-heading { min-height:32px;display:flex;align-items:center;justify-content:space-between;padding:0 13px;border-bottom:1px solid #f1e9ee;color:#aa9ba5;font-size:10px;letter-spacing:.5px; }
 .hair-dev-preview-stage { position:relative;min-height:220px;flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;background-image:linear-gradient(45deg,#0000000a 25%,transparent 25%),linear-gradient(-45deg,#0000000a 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#0000000a 75%),linear-gradient(-45deg,transparent 75%,#0000000a 75%);background-size:18px 18px; }
