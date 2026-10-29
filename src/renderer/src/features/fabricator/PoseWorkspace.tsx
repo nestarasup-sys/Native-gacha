@@ -4,6 +4,7 @@ import { resolvePoseCategory } from '../../../../shared/fabricator'
 import { defaultExportPoseSlots, poseFromModel } from './models/poseProjection'
 import { Icon } from '../../ui/components/Icon'
 import { usePreviewBackground } from '../../ui/hooks/usePreviewBackground'
+import { registerPendingWriteFlusher } from '../../ui/pendingPersistence'
 import { isModelRigConnectionCompatible, normalizeLayerOrder, orderedParts, partJointAnchor, repairIncompatibleModelRigJoints } from './models/rig'
 import { rotatePointAroundOrigin } from './models/geometry'
 import { useModelAppearanceTarget, useModelPartAppearancePreview } from './ModelAppearanceContext'
@@ -192,6 +193,14 @@ export function PoseWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
     })
   }, [])
 
+  const flushDraftWrites = useCallback(async () => {
+    if (draftTimer.current) clearTimeout(draftTimer.current)
+    draftTimer.current = null
+    const snapshot = projectRef.current
+    if (snapshot && dirtyRef.current) await writeDraft(snapshot, editingSlotRef.current)
+    await writeQueue.current
+  }, [writeDraft])
+
   useEffect(() => {
     if (!project || !dirty) return
     setSaveMessage('Salvando rascunho…')
@@ -204,11 +213,14 @@ export function PoseWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
     return () => { if (draftTimer.current) clearTimeout(draftTimer.current) }
   }, [project, editingSlot, dirty, writeDraft])
 
-  useEffect(() => () => {
-    if (draftTimer.current) clearTimeout(draftTimer.current)
-    const snapshot = projectRef.current
-    if (snapshot && dirtyRef.current) void writeDraft(snapshot, editingSlotRef.current).catch(() => undefined)
-  }, [writeDraft])
+  useEffect(() => {
+    const unregister = registerPendingWriteFlusher(flushDraftWrites)
+    return () => {
+      unregister()
+      if (draftTimer.current) clearTimeout(draftTimer.current)
+      draftTimer.current = null
+    }
+  }, [flushDraftWrites])
 
   useEffect(() => { editingSlotRef.current = editingSlot }, [editingSlot])
 
@@ -249,6 +261,8 @@ export function PoseWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
 
   const discardDraft = async () => {
     if (draftTimer.current) clearTimeout(draftTimer.current)
+    draftTimer.current = null
+    await writeQueue.current.catch(() => undefined)
     const sourceModelSlot = projectRef.current?.sourceModelSlot ?? recoveredDraft?.project.sourceModelSlot ?? selectedModelSlot
     try { await window.desktop.fabricator.deleteFabricatorPoseDraft(sourceModelSlot) } catch { /* O conteúdo em memória continua editável. */ }
     try {
@@ -360,16 +374,18 @@ export function PoseWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
   }
 
   const savePose = async () => {
-    const snapshot = projectRef.current
-    if (!snapshot || saving) return
-    let slot = editingSlotRef.current
-    if (slot === null) {
-      slot = slots.findIndex((item) => !item) + 1
-      if (slot === 0) { setError('Os 12 slots de pose estão preenchidos. Exclua uma pose para liberar espaço.'); return }
-    }
+    if (!projectRef.current || saving) return
     setSaving(true)
     setError('')
     try {
+      await flushDraftWrites()
+      const snapshot = projectRef.current
+      if (!snapshot) return
+      let slot = editingSlotRef.current
+      if (slot === null) {
+        slot = slots.findIndex((item) => !item) + 1
+        if (slot === 0) { setError('Os 12 slots de pose estão preenchidos. Exclua uma pose para liberar espaço.'); return }
+      }
       const assets = snapshot.parts.flatMap((part) => {
         const dataUrl = pendingAssets.current.get(part.id)
         return dataUrl ? [{ id: part.id, dataUrl }] : []

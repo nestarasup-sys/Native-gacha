@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Dispatch, SetStateAction } from 'react'
 import type { FabricatorProject, FabricatorSlotSummary } from '../../../../shared/fabricator'
+import { registerPendingWriteFlusher } from '../../ui/pendingPersistence'
 import { serializeFabricatorProject } from './models/projectSerialization'
 
 export function useFabricatorModelAppearance(deps: {
@@ -37,6 +38,7 @@ export function useFabricatorModelAppearance(deps: {
     } catch (reason) {
       setAppearanceSaveState('error')
       setAppearanceSaveError(reason instanceof Error ? reason.message : 'Não foi possível salvar as cores deste modelo.')
+      throw reason
     }
   }, [])
 
@@ -46,21 +48,26 @@ export function useFabricatorModelAppearance(deps: {
     const snapshot = pendingAppearanceSave.current
     if (snapshot) {
       pendingAppearanceSave.current = null
-      await persistExternalAppearance(snapshot)
+      try {
+        await persistExternalAppearance(snapshot)
+      } catch (reason) {
+        if (!pendingAppearanceSave.current) pendingAppearanceSave.current = snapshot
+        throw reason
+      }
     }
-    await appearanceSaveQueue.current.catch(() => undefined)
+    await appearanceSaveQueue.current
   }, [persistExternalAppearance])
 
   const setAppearanceTargetSlot = useCallback((slot: number | null) => {
     if (slot === null) return
     if (appearanceTargetRef.current === slot) {
-      void flushExternalAppearanceSave()
+      void flushExternalAppearanceSave().catch(() => undefined)
       return
     }
-    appearanceTargetRef.current = slot
-    void flushExternalAppearanceSave().finally(() => {
-      if (appearanceTargetRef.current === slot) setAppearanceTargetSlotState(slot)
-    })
+    void flushExternalAppearanceSave().then(() => {
+      appearanceTargetRef.current = slot
+      setAppearanceTargetSlotState(slot)
+    }).catch(() => undefined)
   }, [flushExternalAppearanceSave])
 
   const scheduleExternalAppearanceSave = useCallback((snapshot: FabricatorProject) => {
@@ -69,8 +76,13 @@ export function useFabricatorModelAppearance(deps: {
     setAppearanceSaveState('saving')
     setAppearanceSaveError('')
     if (appearanceSaveTimer.current) clearTimeout(appearanceSaveTimer.current)
-    appearanceSaveTimer.current = setTimeout(() => { void flushExternalAppearanceSave() }, 500)
+    appearanceSaveTimer.current = setTimeout(() => {
+      appearanceSaveTimer.current = null
+      void flushExternalAppearanceSave().catch(() => undefined)
+    }, 500)
   }, [flushExternalAppearanceSave])
+
+  useEffect(() => registerPendingWriteFlusher(flushExternalAppearanceSave), [flushExternalAppearanceSave])
 
   const visibleAppearanceSlot = activeSection === 'Modelos' ? activeSlot : appearanceTargetSlot ?? activeSlot
   const appearanceProject = project?.slot === visibleAppearanceSlot
@@ -104,10 +116,7 @@ export function useFabricatorModelAppearance(deps: {
   useEffect(() => () => {
     if (appearanceSaveTimer.current) clearTimeout(appearanceSaveTimer.current)
     appearanceSaveTimer.current = null
-    const pendingAppearance = pendingAppearanceSave.current
-    pendingAppearanceSave.current = null
-    if (pendingAppearance) void persistExternalAppearance(pendingAppearance)
-  }, [persistExternalAppearance])
+  }, [])
 
   return {
     appearanceTargetSlot,

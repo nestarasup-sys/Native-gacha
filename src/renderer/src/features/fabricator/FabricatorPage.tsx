@@ -35,7 +35,7 @@ import { connectBodyContourJoints } from './models/contourJoints'
 import { isValidSkinTone } from '../../../../shared/skinTones'
 import { ModelAppearanceProvider } from './ModelAppearanceContext'
 import { useFabricatorModelAppearance } from './useFabricatorModelAppearance'
-import { flushPendingRendererWrites } from '../../ui/pendingPersistence'
+import { flushPendingRendererWrites, registerPendingWriteFlusher } from '../../ui/pendingPersistence'
 
 const sections: { id: string; label: string; icon: IconName }[] = [
   { id: 'Modelos', label: 'Modelos Dev', icon: 'sparkles' }, { id: 'Poses', label: 'Poses Dev', icon: 'expand' }, { id: 'Roupas', label: 'Roupas Dev', icon: 'shirt' }, { id: 'Olhos', label: 'Olhos Dev', icon: 'face' }, { id: 'Rosto', label: 'Rosto Dev', icon: 'face' }, { id: 'Preset Expressão Dev', label: 'Preset Expressão Dev', icon: 'face' }, { id: 'Animador Rosto Dev', label: 'Animador Rosto Dev', icon: 'face' }, { id: 'Cabeças extra', label: 'Cabeças extra dev', icon: 'face' }, { id: 'Cabelos Dev', label: 'Cabelos Dev', icon: 'bow' }, { id: 'Animador Dev', label: 'Animador Dev', icon: 'body' }, { id: 'Design Dev', label: 'Design Dev', icon: 'flower' }
@@ -111,6 +111,7 @@ export function FabricatorPage() {
   const dirtyAssets = useRef<Map<string, string>>(new Map())
   const dirtyChromaBases = useRef<Map<string, string>>(new Map())
   const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const projectWriteQueue = useRef<Promise<void>>(Promise.resolve())
   const initialSlotLoad = useRef(false)
   const cancelImageProcessingTask = useCallback(() => {
     const task = imageProcessingTaskRef.current
@@ -132,21 +133,41 @@ export function FabricatorPage() {
     processing, chromaApplying
   })
 
-  const persistProject = useCallback(async (snapshot: FabricatorProject) => {
-    const assets = await persistFabricatorProjectSnapshot(
-      snapshot,
-      dirtyAssets.current,
-      dirtyChromaBases.current,
-      (serialized, changedAssets) => window.desktop.fabricator.saveFabricatorProject(serialized, changedAssets)
-    )
-    for (const asset of assets) {
-      if (dirtyAssets.current.get(asset.id) === asset.dataUrl) dirtyAssets.current.delete(asset.id)
-      if (asset.chromaBaseDataUrl && dirtyChromaBases.current.get(asset.id) === asset.chromaBaseDataUrl) dirtyChromaBases.current.delete(asset.id)
-    }
-    setSaveState('saved')
-    window.dispatchEvent(new Event('fabricator:assets-updated'))
-    setSlots((current) => current.map((item, index) => index + 1 === snapshot.slot ? { slot: snapshot.slot, name: snapshot.name, sourceName: snapshot.sourceName, partCount: snapshot.parts.length, updatedAt: snapshot.updatedAt } : item))
+  const persistProject = useCallback((snapshot: FabricatorProject) => {
+    const current = projectWriteQueue.current.catch(() => undefined).then(async () => {
+      const assets = await persistFabricatorProjectSnapshot(
+        snapshot,
+        dirtyAssets.current,
+        dirtyChromaBases.current,
+        (serialized, changedAssets) => window.desktop.fabricator.saveFabricatorProject(serialized, changedAssets)
+      )
+      for (const asset of assets) {
+        if (dirtyAssets.current.get(asset.id) === asset.dataUrl) dirtyAssets.current.delete(asset.id)
+        if (asset.chromaBaseDataUrl && dirtyChromaBases.current.get(asset.id) === asset.chromaBaseDataUrl) dirtyChromaBases.current.delete(asset.id)
+      }
+      setSaveState('saved')
+      window.dispatchEvent(new Event('fabricator:assets-updated'))
+      setSlots((items) => items.map((item, index) => index + 1 === snapshot.slot ? { slot: snapshot.slot, name: snapshot.name, sourceName: snapshot.sourceName, partCount: snapshot.parts.length, updatedAt: snapshot.updatedAt } : item))
+    })
+    projectWriteQueue.current = current
+    return current
   }, [])
+
+  const flushProjectWrites = useCallback(async () => {
+    const hadPendingTimer = savedTimer.current !== null
+    if (savedTimer.current) clearTimeout(savedTimer.current)
+    savedTimer.current = null
+    try {
+      if (hadPendingTimer && projectRef.current) await persistProject(projectRef.current)
+      await projectWriteQueue.current
+    } catch (reason) {
+      setSaveState('error')
+      setError(reason instanceof Error ? `Falha ao salvar o projeto: ${reason.message}` : 'Falha ao salvar o projeto.')
+      throw reason
+    }
+  }, [persistProject])
+
+  useEffect(() => registerPendingWriteFlusher(flushProjectWrites), [flushProjectWrites])
 
   const {
     appearanceProject, appearanceSaveState, appearanceSaveError,
@@ -167,6 +188,7 @@ export function FabricatorPage() {
       cancelImageProcessingTask()
       cancelChromaTask()
       if (savedTimer.current) clearTimeout(savedTimer.current)
+      savedTimer.current = null
     }
   }, [cancelChromaTask, cancelImageProcessingTask])
 
@@ -192,13 +214,18 @@ export function FabricatorPage() {
     if (!project) { setSaveState('saved'); return }
     setSaveState('saving')
     if (savedTimer.current) clearTimeout(savedTimer.current)
-    savedTimer.current = setTimeout(() => {
-      void persistProject(project).catch((reason: unknown) => {
+    const timer = setTimeout(() => {
+      if (savedTimer.current === timer) savedTimer.current = null
+      void persistProject(projectRef.current ?? project).catch((reason: unknown) => {
         setSaveState('error')
         setError(reason instanceof Error ? `Falha ao salvar: ${reason.message}` : 'Falha ao salvar o projeto.')
       })
     }, 700)
-    return () => { if (savedTimer.current) clearTimeout(savedTimer.current) }
+    savedTimer.current = timer
+    return () => {
+      clearTimeout(timer)
+      if (savedTimer.current === timer) savedTimer.current = null
+    }
   }, [persistProject, project])
 
   useEffect(() => {
@@ -348,7 +375,10 @@ export function FabricatorPage() {
 
   const selectSlot = async (slot: number) => {
     const generation = ++slotSelectionGeneration.current
-    await flushExternalAppearanceSave()
+    try { await flushExternalAppearanceSave() } catch (reason) {
+      setError(reason instanceof Error ? `Falha ao salvar as cores antes de trocar de slot: ${reason.message}` : 'Falha ao salvar as cores antes de trocar de slot.')
+      return
+    }
     if (generation !== slotSelectionGeneration.current) return
     setSlotSwitching(true)
     requestId.current += 1
@@ -358,6 +388,7 @@ export function FabricatorPage() {
     const projectToSave = projectRef.current ?? project
     if (projectToSave) {
       if (savedTimer.current) clearTimeout(savedTimer.current)
+      savedTimer.current = null
       try { await persistProject(projectToSave) } catch (reason) {
         if (generation === slotSelectionGeneration.current) {
           setError(reason instanceof Error ? `Falha ao salvar antes de trocar de slot: ${reason.message}` : 'Falha ao salvar antes de trocar de slot.')
@@ -431,11 +462,13 @@ export function FabricatorPage() {
       slotSelectionGeneration.current += 1
       requestId.current += 1
       if (savedTimer.current) clearTimeout(savedTimer.current)
+      savedTimer.current = null
       cancelImageProcessingTask()
       cancelChromaTask(); setChromaApplying(false)
       setProcessing(false); setProgress(0)
     }
     try {
+      await projectWriteQueue.current.catch(() => undefined)
       await window.desktop.fabricator.deleteFabricatorSlot(slot)
       setSlots((current) => current.map((item, index) => index === slot - 1 ? null : item))
       if (activeSlot === slot) {
@@ -532,6 +565,7 @@ export function FabricatorPage() {
     setModelSourcePublishing(true)
     setSaveState('saving')
     if (savedTimer.current) clearTimeout(savedTimer.current)
+    savedTimer.current = null
     try {
       await persistProject(current)
       const next: FabricatorProject = {
@@ -618,6 +652,7 @@ export function FabricatorPage() {
     const originalName = project.sourceName.replace(/\.[^.]+$/, '') || `Modelo ${project.slot}`
     if (!window.confirm('Resetar este modelo para a importação original? Isso vai apagar os recortes, posições, camadas, juntas e ajustes atuais.')) return
     if (savedTimer.current) clearTimeout(savedTimer.current)
+    savedTimer.current = null
     setProcessing(true)
     try {
       await persistProject(project)
@@ -649,6 +684,7 @@ export function FabricatorPage() {
     const projectToSave = projectRef.current ?? project
     if (projectToSave) {
       if (savedTimer.current) clearTimeout(savedTimer.current)
+      savedTimer.current = null
       try { await persistProject(projectToSave) } catch (reason) { setError(reason instanceof Error ? `Falha ao salvar antes da importação: ${reason.message}` : 'Falha ao salvar antes da importação.'); return }
     }
     if (selectionGeneration !== slotSelectionGeneration.current) return

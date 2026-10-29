@@ -645,11 +645,19 @@ Este corte separa propriedade dos contratos e chamadas entre domínios, mas não
 - `renderer-pending-persistence.test.mjs` cobre concorrência, falhas e os pontos de integração. A cobertura atual do registro inclui o Animador; a inspeção encontrou outros timers de gravação em Poses DEV, no editor de modelos, na aparência compartilhada, em Preset Expressão e nos componentes faciais, ainda fora deste contrato.
 - Verificação: os testes direcionados passaram (16), `npm run test:refactor` passou com 316 testes, `npm run typecheck`, `npm run audit:architecture` (350 arquivos TS/TSX), `npm run build` e `git diff --check` passaram.
 
-## 8. Próxima tarefa recomendada
+## 8. Etapa aplicada — flush de Poses DEV, Modelos e aparência compartilhada
 
-Integrar ao registro os demais gravadores automáticos do Fabricador, começando por `PoseWorkspace` e `FabricatorPage`: validar rascunhos de pose, debounce de projeto e aparência compartilhada nas trocas de seção, navegação superior, backup e fechamento. Depois mapear os timers restantes de Preset Expressão e Componentes Faciais e estender o mesmo contrato somente onde a persistência realmente fica pendente no renderer.
+- `PoseWorkspace` agora registra o rascunho no flush central, cancela o debounce, grava o snapshot atual e aguarda a fila local. Salvar uma pose ou descartá-la também espera gravações anteriores para evitar que um rascunho antigo reapareça depois da ação.
+- `FabricatorPage` serializa as gravações do projeto no renderer. O flush cancela e consome o timer de 700 ms, usa o projeto mais recente e aguarda a fila; a exclusão de slot espera gravações já iniciadas antes de remover os arquivos.
+- A aparência compartilhada entrou no mesmo registro. Erros de escrita deixam o snapshot pendente para nova tentativa e são propagados ao flush, impedindo navegação ou backup silenciosos.
+- O teste do IPC de modelos confirma que recuperação ambígua vira `null` sem rejeitar o invoke; o bundle compilado contém esse tratamento. Na investigação não havia servidor ativo na porta 5188.
+- `tests/renderer-pending-persistence.test.mjs` e `fabricator-customizer-studio-continuity.test.mjs` foram atualizados para os novos contratos. `npm run test:refactor` passou com 318 testes; também passaram `npm run typecheck`, `npm run audit:architecture` (350 arquivos TS/TSX), `npm run build` e `git diff --check`. Os testes usam operações e dados sintéticos.
 
-## 9. Verificações e validação
+## 9. Próxima tarefa recomendada
+
+Mapear os timers de gravação ainda fora do registro, começando por Preset Expressão DEV e Componentes Faciais. Conferir se rascunhos acionados por ações específicas já entram nas filas IPC ou se ainda podem ficar exclusivamente no renderer antes de estender o flush.
+
+## 10. Verificações e validação
 
 - Leitura do código atual de rotas, TopBar, preload, contratos compartilhados, Base de Vídeos, Roteiros, Editor V6, VideoLibrary, boot Electron, módulos de domínio, renderizadores, schema SQLite e ADRs.
 - A etapa anterior moveu as consultas de referência para os domínios donos e `npm run test:base-videos` passou com 7 verificações sintéticas. Nenhum perfil ou mídia real foi usado.

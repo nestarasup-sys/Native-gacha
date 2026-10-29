@@ -52,6 +52,28 @@ test('Animator drafts register a synchronous flush and leave unmount cleanup fre
   assert.doesNotMatch(animator, /saveAnimatorDraft\(active\.sourceModelSlot, serialized, assets\)\.catch\(\(\) => undefined\)/)
 })
 
+test('Pose drafts register a flush for the latest project and wait for queued writes', async () => {
+  const poses = await readFile('src/renderer/src/features/fabricator/PoseWorkspace.tsx', 'utf8')
+  assert.match(poses, /registerPendingWriteFlusher\(flushDraftWrites\)/)
+  assert.match(poses, /if \(snapshot && dirtyRef\.current\) await writeDraft\(snapshot, editingSlotRef\.current\)/)
+  assert.match(poses, /await writeQueue\.current/)
+  assert.doesNotMatch(poses, /void writeDraft\(snapshot, editingSlotRef\.current\)\.catch\(\(\) => undefined\)/)
+  assert.match(poses, /await flushDraftWrites\(\)[\s\S]*?saveFabricatorPose\(/)
+})
+
+test('Fabricator projects and shared appearance register flushers and surface failed writes', async () => {
+  const fabricator = await readFile('src/renderer/src/features/fabricator/FabricatorPage.tsx', 'utf8')
+  const appearance = await readFile('src/renderer/src/features/fabricator/useFabricatorModelAppearance.ts', 'utf8')
+  assert.match(fabricator, /registerPendingWriteFlusher\(flushProjectWrites\)/)
+  assert.match(fabricator, /if \(hadPendingTimer && projectRef\.current\) await persistProject\(projectRef\.current\)/)
+  assert.match(fabricator, /await projectWriteQueue\.current/)
+  assert.match(appearance, /registerPendingWriteFlusher\(flushExternalAppearanceSave\)/)
+  assert.match(appearance, /await appearanceSaveQueue\.current/)
+  assert.match(appearance, /if \(!pendingAppearanceSave\.current\) pendingAppearanceSave\.current = snapshot/)
+  assert.match(appearance, /setAppearanceSaveError\([\s\S]*?throw reason/)
+  assert.doesNotMatch(appearance, /void persistExternalAppearance\(pendingAppearance\)/)
+})
+
 test('main flushes renderer writes before its IPC inventory and navigation waits for renderer flush', async () => {
   const main = await readFile('electron/main.ts', 'utf8')
   const topBar = await readFile('src/renderer/src/ui/components/TopBar.tsx', 'utf8')
