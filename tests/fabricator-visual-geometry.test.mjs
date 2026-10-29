@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises'
 import { selectOriginalModelSource, selectMountedModelSource } from '../src/shared/fabricatorModelViews.ts'
 import { interpolateFrames } from '../src/renderer/src/features/fabricator/models/animationInterpolation.ts'
 import { BoundedSeamMixerSurfaceCache } from '../src/renderer/src/features/fabricator/models/seamMixerSurfaceCache.ts'
+import { buildFabricatorJointMarkers } from '../src/renderer/src/features/fabricator/models/jointMarkerModel.ts'
 
 /** Rasterizador sintético de caixas, não screenshots do Canvas/Electron.
  * Captura geometria e ordem de composição sem introduzir motor de render paralelo.
@@ -77,6 +78,33 @@ test('animação interpola cabeça e tronco sem alterar o PNG original ou catál
  assert.equal(mid.transforms.head.rotation,360)
  assert.equal(model.parts[1].x,5)
  assert.equal(selectOriginalModelSource(model).parts[1].x,1)
+})
+
+test('marcadores das juntas preservam âncoras, espaçamento, seleção e fixação', async () => {
+ const parts = [
+  { id:'torso', name:'Tronco', x:0, y:0, width:20, height:20, rotation:0, dataUrl:'', jointAnchor:{x:10,y:10} },
+  { id:'upper', name:'Braço superior', x:40, y:40, width:20, height:20, rotation:0, dataUrl:'' },
+  { id:'forearm', name:'Antebraço', x:80, y:80, width:20, height:20, rotation:0, dataUrl:'', jointAnchor:{x:10,y:10} },
+  { id:'lower', name:'Canela', x:9, y:9, width:2, height:2, rotation:0, dataUrl:'' },
+  { id:'head', name:'Cabeça', x:0, y:0, width:20, height:20, rotation:0, dataUrl:'', jointAnchor:{x:10,y:10} }
+ ]
+ const joints = [
+  { id:'neck', parentPartId:'torso', childPartId:'upper', parentAnchor:{x:50,y:50}, childAnchor:{x:10,y:10}, fixed:true },
+  { id:'elbow', parentPartId:'upper', childPartId:'forearm', parentAnchor:{x:50,y:50}, childAnchor:{x:30,y:30}, fixed:false }
+ ]
+
+ const markers = buildFabricatorJointMarkers(parts, joints, ['forearm'])
+
+ assert.deepEqual(markers.map(({ part, anchor, offset, fixed, selected }) => ({ id:part.id, anchor, offset, fixed, selected })), [
+  { id:'upper', anchor:{x:10,y:10}, offset:-20, fixed:true, selected:false },
+  { id:'lower', anchor:{x:10,y:10}, offset:20, fixed:false, selected:false },
+  { id:'head', anchor:{x:10,y:10}, offset:40, fixed:false, selected:false },
+  { id:'forearm', anchor:{x:10,y:10}, offset:0, fixed:false, selected:true }
+ ])
+
+ const page = await readFile('src/renderer/src/features/fabricator/FabricatorPage.tsx', 'utf8')
+ assert.match(page, /buildFabricatorJointMarkers\(project\.parts, project\.joints, selectedIds\)/)
+ assert.doesNotMatch(page, /group\.findIndex\(/)
 })
 
 test('cache do Misturador aplica LRU, limite de bytes e contabilidade correta',()=>{

@@ -159,6 +159,16 @@ export function partJointAnchor(part: ModelPart, joints: JointLink[]): Point | n
   return joint.parentPartId === part.id ? joint.parentAnchor : joint.childAnchor
 }
 
+/** Creates a reusable O(1) anchor lookup while retaining the first matching joint's priority. */
+export function createPartJointAnchorResolver(joints: readonly JointLink[]): (part: ModelPart) => Point {
+  const anchors = new Map<string, Point>()
+  for (const joint of joints) {
+    if (!anchors.has(joint.parentPartId)) anchors.set(joint.parentPartId, joint.parentAnchor)
+    if (!anchors.has(joint.childPartId)) anchors.set(joint.childPartId, joint.childAnchor)
+  }
+  return (part) => part.jointAnchor ?? anchors.get(part.id) ?? center(part)
+}
+
 /** Maps a pivot from the currently assembled canvas back into the imported sheet. */
 export function sourcePointFromCanvas(part: ModelPart, point: Point): Point | null {
   const source = part.sourceTransform

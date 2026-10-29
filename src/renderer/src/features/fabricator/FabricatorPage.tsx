@@ -2,8 +2,9 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import type { FabricatorAssetSave, FabricatorHistoryAction, FabricatorHistoryState, FabricatorProject, FabricatorSlotSummary, ModelPart } from '../../../../shared/fabricator'
 import { Icon, type IconName } from '../../ui/components/Icon'
 import { usePreviewBackground } from '../../ui/hooks/usePreviewBackground'
-import { modelRigSegmentKind, normalizeLayerOrder, orderedParts, partJointAnchor, reorderLayer } from './models/rig'
+import { modelRigSegmentKind, normalizeLayerOrder, orderedParts, reorderLayer } from './models/rig'
 import { connectFabricatorParts, isTorsoPart, moveFabricatorPartBranch, rotateFabricatorPartBranch, toggleFabricatorJointFixed } from './models/rigEditing'
+import { buildFabricatorJointMarkers } from './models/jointMarkerModel'
 import { createFabricatorCanvasInteraction, type AnchorDragState, type DragState, type MixerStrokeState, type PanState } from './canvasInteraction'
 import { headSizePercent, isHeadPart, resizeHeadPart } from './models/resize'
 import { ModelSourceEditor } from './ModelSourceEditor'
@@ -241,27 +242,9 @@ export function FabricatorPage() {
     setThighDeformationActive(!thighDeformationActive)
   }, [thighDeformationActive])
   const frontToBackLayers = useMemo(() => canvasParts.slice().reverse(), [canvasParts])
-  const jointedParts = useMemo(() => {
-    if (!project) return []
-    const withAnchors = project.parts.flatMap((part) => {
-      const anchor = partJointAnchor(part, project.joints)
-      return anchor ? [{ part, anchor, offset: 0 }] : []
-    })
-    const groups = new Map<string, typeof withAnchors>()
-    for (const item of withAnchors) {
-      const key = `${item.anchor.x.toFixed(2)}:${item.anchor.y.toFixed(2)}`
-      groups.set(key, [...(groups.get(key) ?? []), item])
-    }
-    return withAnchors.map((item) => {
-      const key = `${item.anchor.x.toFixed(2)}:${item.anchor.y.toFixed(2)}`
-      const group = groups.get(key) ?? []
-      return { ...item, offset: (group.findIndex((candidate) => candidate.part.id === item.part.id) - (group.length - 1) / 2) * 20 }
-    })
-  }, [project])
-  const jointMarkers = useMemo(() => jointedParts
-    .filter(({ part }) => !isTorsoPart(part))
-    .map((item) => ({ ...item, fixed: Boolean(project?.joints.some((joint) => joint.childPartId === item.part.id && joint.fixed)) }))
-    .sort((a, b) => Number(selectedIds.includes(a.part.id)) - Number(selectedIds.includes(b.part.id))), [jointedParts, project?.joints, selectedIds])
+  const jointMarkers = useMemo(() => project
+    ? buildFabricatorJointMarkers(project.parts, project.joints, selectedIds)
+    : [], [project?.parts, project?.joints, selectedIds])
   const hiddenPartIds = project?.hiddenPartIds ?? []
   const measuredWidth = Math.max(stageSize.width, stageRef.current?.clientWidth ?? 0)
   const measuredHeight = Math.max(stageSize.height, stageRef.current?.clientHeight ?? 0)
@@ -1001,7 +984,7 @@ export function FabricatorPage() {
                         return <img key={part.id} className={className} src={partPreviewSource(part)} alt={part.name} draggable={false} onClick={onClick} onPointerDown={onPointerDown} style={style} />
                       })}
                       <svg className="model-joint-layer" viewBox={`0 0 ${project.width} ${project.height}`} preserveAspectRatio="none" aria-label="Conexões entre as peças">
-                        {showJointPivots && !thighDeformationActive && jointMarkers.map(({ part, anchor, offset, fixed }) => <circle key={part.id} className={`model-joint-anchor${fixed ? ' fixed' : selectedIds.includes(part.id) ? ' selected' : ''}`} cx={anchor.x + offset / scale} cy={anchor.y} r={Math.max(selectedIds.includes(part.id) ? 11 : 8, (selectedIds.includes(part.id) ? 13 : 10) / scale)} aria-label={`Pivô de ${part.name}`} onPointerDown={(event) => canvasInteraction.beginAnchorDrag(event, part.id, offset)} />)}
+                        {showJointPivots && !thighDeformationActive && jointMarkers.map(({ part, anchor, offset, fixed, selected }) => <circle key={part.id} className={`model-joint-anchor${fixed ? ' fixed' : selected ? ' selected' : ''}`} cx={anchor.x + offset / scale} cy={anchor.y} r={Math.max(selected ? 11 : 8, (selected ? 13 : 10) / scale)} aria-label={`Pivô de ${part.name}`} onPointerDown={(event) => canvasInteraction.beginAnchorDrag(event, part.id, offset)} />)}
                       </svg>
                     </div>
                     <div className="model-stage-tools"><span>{Math.round(zoom * 100)}%</span><button onClick={() => setZoom((value) => Math.min(2.4, value + 0.15))} title="Aumentar zoom" type="button"><Icon name="zoomIn" /></button><button onClick={() => setZoom((value) => Math.max(0.5, value - 0.15))} title="Diminuir zoom" type="button"><Icon name="zoomOut" /></button><button onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }) }} title="Centralizar prévia" type="button"><Icon name="frame" /></button></div>

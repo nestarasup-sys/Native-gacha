@@ -52,6 +52,7 @@
     "test:customizer:preview-cache": "node --experimental-strip-types --test tests/customizer-preview-cache.test.mjs",
     "test:eye-interior-mask-cache": "node --experimental-strip-types --test tests/eye-interior-mask-cache.test.mjs",
     "bench:fabricator:eye-sheet": "node --experimental-strip-types scripts/diagnostics/benchmark-eye-sheet-processing.mjs",
+    "bench:fabricator:joints": "node --experimental-strip-types scripts/diagnostics/benchmark-fabricator-joint-markers.mjs",
     "bench:animator:garments": "node --experimental-strip-types scripts/diagnostics/benchmark-animator-garment-layers.mjs",
     "bench:editor-v6:motion-preparation": "node --experimental-strip-types scripts/diagnostics/benchmark-editor-v6-motion-preparation.mjs",
     "test:expression-effect-mask-cache": "node --experimental-strip-types --test tests/expression-effect-mask-cache.test.mjs",
