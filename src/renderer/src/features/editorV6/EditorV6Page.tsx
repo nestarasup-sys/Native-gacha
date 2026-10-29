@@ -1,4 +1,4 @@
-import { editorV6CharacterRenderKey, editorV6ElementSize } from '../../../../shared/editorV6SceneModel'
+import { editorV6ElementSize } from '../../../../shared/editorV6SceneModel'
 import { isPoseSnapshotForModel } from '../../../../shared/characterSourceContinuity'
 import { useEditorV6Store } from './editorV6Store'
 import { createEditorV6Timeline, editorV6DefaultVideoLayout, syncEditorV6TimelineElements } from '../../../../shared/editorV6'
@@ -14,11 +14,11 @@ import { addEditorV6ImageAsset, addEditorV6TimelineMedia } from './editorV6Media
 import { addEditorV6ElementAtFrame, editEditorV6DocumentAtBlock, editorV6ClipAtFrame, normalizeEditorV6Timeline, editEditorV6BackgroundAtFrame, pruneEditorV6TimelineSnapshots, repairEditorV6DuplicateAssets, repairEditorV6FaceModeAssetReferences, resolveEditorV6SceneAtFrame, timelineClips } from '../../../../shared/editorV6Timeline'
 import { useEditorV6InspectorState } from './useEditorV6InspectorState'
 import { useEditorV6FaceCatalog } from './useEditorV6FaceCatalog'
+import { useEditorV6FacePreview } from './useEditorV6FacePreview'
 import { useEditorV6StageInteraction, type EditorV6StageDrag } from './useEditorV6StageInteraction'
 import { resolveEditorV6InspectorSelection } from './editorV6Selection'
 import { trimTransparentImage, fitElementToTrim, faceRenderGeometry, type TrimmedImage } from '../../characters/characterGeometry'
 import { bakeFaceModeAssets, EDITOR_V6_FACE_RENDER_VERSION, editorV6FaceModeForElement, trimTransparentCanvas } from './faceModeAssets'
-import type { PreparedEditorV6FaceRenderer } from './faceModeAssets'
 import { planEditorV6CharacterRefresh, renderEditorV6CharacterRefresh } from './characterSnapshotRefresh'
 import { Profiler, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { buildEditorV6ExpressionAppearance, buildEditorV6ExpressionTransforms, resolveEditorV6ExpressionBase, editorV6ExpressionCollection } from './expressionTransforms'
@@ -123,11 +123,6 @@ export function EditorV6Page() {
   const sceneRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef<EditorV6StageDrag | null>(null)
   const editorV6FaceTransformsRef = useRef<Record<string, EditorV6FaceTransforms>>({})
-  const editorV6FaceRenderTimerRef = useRef<number | null>(null)
-  const editorV6FaceRenderVersionRef = useRef(0)
-  const editorV6FaceRenderPendingRef = useRef<{ studioId: string; elementId: string; assetId: string; character: CustomizerCharacter; transforms: EditorV6FaceTransforms } | null>(null)
-  const editorV6FaceRenderRunningRef = useRef(false)
-  const editorV6FaceRendererRef = useRef<{ key: string; renderer: PreparedEditorV6FaceRenderer } | null>(null)
   const activeLoadGenerationRef = useRef(0)
   const expressionSaveSignatureRef = useRef<{ studioId: string; value: string } | null>(null)
   const normalizedStudioIdsRef = useRef(new Set<string>())
@@ -259,11 +254,6 @@ export function EditorV6Page() {
     : undefined
   const selectedEditorV6TalkAvailable = Boolean(selectedEditorV6OpenMouth?.pieces.some((piece) => piece.sheet === 'mouth-open' && piece.index === selectedEditorV6FaceAppearance?.expressionIndex))
   const stageCharacters = activeEditorV6?.elements.filter((element) => element.kind === 'character') ?? []
-
-  useEffect(() => () => {
-    editorV6FaceRendererRef.current?.renderer.dispose()
-    editorV6FaceRendererRef.current = null
-  }, [])
 
   const allStageCharactersLocked = stageCharacters.length > 0 && stageCharacters.every((element) => element.positionLocked === true)
   const toggleStageCharacterPositionLock = () => {
@@ -677,6 +667,25 @@ export function EditorV6Page() {
     markEditorV6Unsaved()
   }
 
+  const patchEditorV6FacePreview = (projectId: string, blockId: string | null | undefined, transform: (project: EditorV6Document) => EditorV6Document) => {
+    if (activeEditorV6IdRef.current !== projectId) return
+    updateActiveEditorV6Project((project) => {
+      if (project.id !== projectId) return project
+      const next = editEditorV6DocumentAtBlock(project, blockId ?? null, transform)
+      return pruneEditorV6TimelineSnapshots(repairEditorV6FaceModeAssetReferences({ ...next, timeline: normalizeEditorV6Timeline(next.timeline) }))
+    })
+    markEditorV6Unsaved()
+  }
+
+  const editorV6FacePreview = useEditorV6FacePreview({
+    activeProject: activeEditorV6,
+    activeProjectId: activeEditorV6Id,
+    sceneRef,
+    transformsRef: editorV6FaceTransformsRef,
+    patchProject: patchEditorV6FacePreview,
+    setError
+  })
+
   const recordHistory = (document = activeEditorV6) => {
     if (!document) return
     const history = useEditorV6Store.getState().record(document.id, document)
@@ -912,32 +921,21 @@ export function EditorV6Page() {
     if (!activeEditorV6 || selectedElement?.kind !== 'character' || !selectedEditorV6Character || !selectedElement.assetId || editorV6FaceBusy) return
     setEditorV6FaceBusy(true)
     try {
-      // Cancel queued slider renders and let any in-flight composition finish before
-      // reusing its canvas for a new catalog selection.
-      editorV6FaceRenderVersionRef.current += 1
-      editorV6FaceRenderPendingRef.current = null
-      if (editorV6FaceRenderTimerRef.current !== null) {
-        window.clearTimeout(editorV6FaceRenderTimerRef.current)
-        editorV6FaceRenderTimerRef.current = null
-      }
-      while (editorV6FaceRenderRunningRef.current) await new Promise((resolve) => window.setTimeout(resolve, 16))
       const characterCopy: CustomizerCharacter = {
         ...selectedEditorV6Character,
         customization: { ...selectedEditorV6Character.customization, poseSlot: selectedElement.poseSlot === undefined ? selectedEditorV6Character.customization.poseSlot : selectedElement.poseSlot, faceAppearance: appearance }
-      }
-      const key = editorV6CharacterRenderKey(characterCopy, selectedElement.poseSourceRevision)
-      if (!editorV6FaceRendererRef.current || editorV6FaceRendererRef.current.key !== key) {
-        const { prepareSavedCharacterRenderer } = await import('../../characters/editorV6CharacterRenderer')
-        const renderer = await prepareSavedCharacterRenderer(characterCopy)
-        editorV6FaceRendererRef.current?.renderer.dispose()
-        editorV6FaceRendererRef.current = { key, renderer }
       }
       const activeEffects = expressionState && Object.hasOwn(expressionState, 'activeExpressionEffects') ? expressionState.activeExpressionEffects : selectedElement.activeExpressionEffects
       const faceMode = expressionState && Object.hasOwn(expressionState, 'activeFaceMode') ? expressionState.activeFaceMode : selectedElement.activeFaceMode
       const baseMode = faceMode ?? editorV6FaceModeForElement(selectedElement, appearance)
       const assetId = selectedElement.assetId
-      const rendered = await editorV6FaceRendererRef.current.renderer.renderToCanvas(appearance, faceTransforms, activeEffects, baseMode)
-      const baked = await bakeFaceModeAssets(selectedElement.text, editorV6FaceRendererRef.current.renderer, appearance, faceTransforms, activeEffects, baseMode, rendered)
+      const result = await editorV6FacePreview.withRenderer(characterCopy, selectedElement.poseSourceRevision, async (renderer) => {
+        const rendered = await renderer.renderToCanvas(appearance, faceTransforms, activeEffects, baseMode)
+        const baked = await bakeFaceModeAssets(selectedElement.text, renderer, appearance, faceTransforms, activeEffects, baseMode, rendered)
+        return { rendered, baked }
+      })
+      if (!result) return
+      const { rendered, baked } = result
       const faceModeAssetIds = { ...baked.assetIds, [baseMode]: assetId }
       const elementId = selectedElement.id
       const update = (studio: EditorV6Document): EditorV6Document => ({
@@ -1099,9 +1097,11 @@ export function EditorV6Page() {
     const next = { ...saved, [transformKey]: transform }
     editorV6FaceTransformsRef.current[selectedElement.id] = next
     updateElement(selectedElement.id, { faceTransforms: next }, record)
-    if (selectedEditorV6Character && selectedEditorV6FaceAppearance && selectedElement.assetId && activeEditorV6Id) {
-      const character: CustomizerCharacter = { ...selectedEditorV6Character, customization: { ...selectedEditorV6Character.customization, poseSlot: selectedElement.poseSlot ?? selectedEditorV6Character.customization.poseSlot, faceAppearance: selectedEditorV6FaceAppearance } }
-      scheduleStudioFacePreview({ studioId: activeEditorV6Id, elementId: selectedElement.id, assetId: selectedElement.assetId, character, transforms: next })
+    if (activeEditorV6 && selectedEditorV6Character && selectedEditorV6FaceAppearance && selectedElement.assetId && activeEditorV6Id) {
+      const character: CustomizerCharacter = { ...selectedEditorV6Character, customization: { ...selectedEditorV6Character.customization, poseSlot: selectedElement.poseSlot === undefined ? selectedEditorV6Character.customization.poseSlot : selectedElement.poseSlot, faceAppearance: selectedEditorV6FaceAppearance } }
+      const selectedClip = timelineClips(activeEditorV6.timeline).find(({ block }) => block.id === selectedTimelineBlockId && block.elementId === selectedElement.id)
+        ?? editorV6ClipAtFrame(activeEditorV6.timeline, selectedElement.id, getEditorV6PlaybackFrame())
+      editorV6FacePreview.schedulePreview({ projectId: activeEditorV6Id, elementId: selectedElement.id, assetId: selectedElement.assetId, blockId: selectedClip?.block.id ?? null, poseSlot: selectedElement.poseSlot, poseSourceRevision: selectedElement.poseSourceRevision, character, transforms: next })
     }
   }
 
@@ -1109,70 +1109,7 @@ export function EditorV6Page() {
     if (!selectedElement || selectedElement.kind !== 'character') return
     const faceTransforms = editorV6FaceTransformsRef.current[selectedElement.id] ?? selectedElement.faceTransforms ?? {}
     if (!faceTransforms[transformKey]) return
-    flushStudioFacePreview()
-  }
-
-  const scheduleStudioFacePreview = (job: NonNullable<typeof editorV6FaceRenderPendingRef.current>) => {
-    editorV6FaceRenderPendingRef.current = job
-    editorV6FaceRenderVersionRef.current += 1
-    if (editorV6FaceRenderTimerRef.current !== null) return
-    editorV6FaceRenderTimerRef.current = window.setTimeout(() => {
-      editorV6FaceRenderTimerRef.current = null
-      void renderPendingStudioFacePreview()
-    }, 55)
-  }
-
-  const flushStudioFacePreview = () => {
-    if (editorV6FaceRenderTimerRef.current !== null) window.clearTimeout(editorV6FaceRenderTimerRef.current)
-    editorV6FaceRenderTimerRef.current = null
-    void renderPendingStudioFacePreview()
-  }
-
-  const renderPendingStudioFacePreview = async () => {
-    if (editorV6FaceRenderRunningRef.current) return
-    editorV6FaceRenderRunningRef.current = true
-    try {
-      while (editorV6FaceRenderPendingRef.current) {
-        const job = editorV6FaceRenderPendingRef.current
-        editorV6FaceRenderPendingRef.current = null
-        const version = editorV6FaceRenderVersionRef.current
-        const renderElement = selectedElement?.id === job.elementId ? selectedElement : activeEditorV6?.elements.find((candidate) => candidate.id === job.elementId)
-        const key = editorV6CharacterRenderKey(job.character, renderElement?.poseSourceRevision)
-        try {
-          if (!editorV6FaceRendererRef.current || editorV6FaceRendererRef.current.key !== key) {
-            const { prepareSavedCharacterRenderer } = await import('../../characters/editorV6CharacterRenderer')
-            const renderer = await prepareSavedCharacterRenderer(job.character)
-            if (version !== editorV6FaceRenderVersionRef.current) continue
-            editorV6FaceRendererRef.current?.renderer.dispose()
-            editorV6FaceRendererRef.current = { key, renderer }
-          }
-          const element = renderElement
-          const transforms = editorV6FaceTransformsRef.current[job.elementId] ?? job.transforms
-          const effects = element?.activeExpressionEffects
-          const baseMode = editorV6FaceModeForElement(element ?? null, job.character.customization.faceAppearance)
-          const rendered = await editorV6FaceRendererRef.current.renderer.renderToCanvas(job.character.customization.faceAppearance, transforms, effects, baseMode)
-          const baked = await bakeFaceModeAssets(element?.text ?? job.character.name, editorV6FaceRendererRef.current.renderer, job.character.customization.faceAppearance, transforms, effects, baseMode, rendered)
-          if (version === editorV6FaceRenderVersionRef.current && job.studioId === activeEditorV6Id) {
-            patchStudio((studio) => ({
-              ...studio,
-              elements: studio.elements.map((element) => element.id === job.elementId ? { ...element, faceRendererVersion: EDITOR_V6_FACE_RENDER_VERSION, faceModeAssetIds: { ...baked.assetIds, [baseMode]: job.assetId }, ...faceRenderGeometry(element, rendered, baked.crop, sceneRef.current?.clientWidth ?? 1000, sceneRef.current?.clientHeight ?? 562) } : element),
-              assets: [...studio.assets.map((asset) => asset.id === job.assetId ? { ...asset, dataUrl: baked.dataUrl, mimeType: 'image/png' as const } : asset), ...baked.extraAssets],
-              updatedAt: new Date().toISOString()
-            }))
-          }
-        } catch (reason) {
-          if (version === editorV6FaceRenderVersionRef.current && job.studioId === activeEditorV6Id) setError(reason instanceof Error ? reason.message : 'Não foi possível atualizar a prévia facial.')
-        }
-      }
-    } finally {
-      editorV6FaceRenderRunningRef.current = false
-    }
-    if (editorV6FaceRenderPendingRef.current && editorV6FaceRenderTimerRef.current === null) {
-      editorV6FaceRenderTimerRef.current = window.setTimeout(() => {
-        editorV6FaceRenderTimerRef.current = null
-        void renderPendingStudioFacePreview()
-      }, 0)
-    }
+    editorV6FacePreview.flushPreview()
   }
 
   const removeStageCharacter = (element: EditorV6Element) => {
@@ -1210,7 +1147,7 @@ export function EditorV6Page() {
   const { cancelSceneDrag, interaction: sceneInteraction } = useEditorV6StageInteraction({
     project: activeEditorV6, sceneRef,
     faceBusy: editorV6FaceBusy, expressionBusy: editorV6ExpressionBusy,
-    faceRenderRunningRef: editorV6FaceRenderRunningRef,
+    faceRenderRunningRef: editorV6FacePreview.renderRunningRef,
     setSelectedElementId, setActiveTool, setInspectorOpen, setInspectorTab, setSelectedTimelineBlockId,
     restoreCharacterInspectorView, pausePlayback, publishPlayheadFrame,
     updateActiveProject: updateActiveEditorV6Project, markUnsaved: markEditorV6Unsaved, recordHistory
