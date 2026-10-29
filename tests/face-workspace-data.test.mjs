@@ -180,3 +180,13 @@ test('FaceComponentsWorkspace delegates library reads while keeping selection an
   assert.match(page, /registerPendingWriteFlusher\(flushAllSaves\)/)
   assert.match(page, /const savedSelection = mode === 'eyes' \? readComponentSelections\(\)\[modelSlot\] : undefined/)
 })
+
+test('face workspace reuses the shared ordered worker while preserving one global image limit', async () => {
+  const source = await readFile('src/renderer/src/features/fabricator/face/faceWorkspaceData.ts', 'utf8')
+  assert.match(source, /import \{ mapConcurrentItems \} from '\.\.\/\.\.\/\.\.\/ui\/mapConcurrentItems\.ts'/)
+  assert.match(source, /import \{ createConcurrencyLimiter \} from '\.\.\/\.\.\/\.\.\/ui\/concurrencyLimiter\.ts'/)
+  assert.match(source, /return mapConcurrentItems\(/)
+  assert.match(source, /scheduleFaceImageLoad\(\(\) => loadDetail\(summary\), isCancelled\)/)
+  assert.match(source, /createConcurrencyLimiter\(FACE_IMAGE_LOAD_CONCURRENCY\)/)
+  assert.doesNotMatch(source, /const workerCount = Math\.min\(FACE_IMAGE_LOAD_CONCURRENCY/)
+})
