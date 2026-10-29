@@ -1,4 +1,4 @@
-import { despillGreenFringes, sampleBackground } from './chroma'
+import { applyChromaPixels, sampleBackground } from './chroma'
 import type { ChromaAdjustMessage, ChromaAdjustRequest } from './chromaAdjustProtocol'
 const workerScope = self as unknown as {
   onmessage: ((event: MessageEvent<ChromaAdjustRequest>) => void) | null
@@ -26,24 +26,7 @@ workerScope.onmessage = async (event: MessageEvent<ChromaAdjustRequest>) => {
       context.drawImage(image, 0, 0)
       image.close()
       const pixels = context.getImageData(0, 0, canvas.width, canvas.height)
-      const feather = 44
-      for (let offset = 0; offset < pixels.data.length; offset += 4) {
-        if (pixels.data[offset + 3] === 0) continue
-        const distance = Math.hypot(pixels.data[offset] - background[0], pixels.data[offset + 1] - background[1], pixels.data[offset + 2] - background[2])
-        if (distance <= tolerance) pixels.data[offset + 3] = 0
-        else if (distance < tolerance + feather) {
-          const matte = (distance - tolerance) / feather
-          if (matte < 0.12) pixels.data[offset + 3] = 0
-          else {
-            const backgroundWeight = 1 - matte
-            pixels.data[offset] = clampChannel((pixels.data[offset] - background[0] * backgroundWeight) / matte)
-            pixels.data[offset + 1] = clampChannel((pixels.data[offset + 1] - background[1] * backgroundWeight) / matte)
-            pixels.data[offset + 2] = clampChannel((pixels.data[offset + 2] - background[2] * backgroundWeight) / matte)
-            pixels.data[offset + 3] = Math.round(pixels.data[offset + 3] * matte)
-          }
-        }
-      }
-      despillGreenFringes(pixels.data, background, tolerance)
+      applyChromaPixels(pixels.data, background, tolerance)
       context.putImageData(pixels, 0, 0)
       adjusted.push({ id: part.id, png: await (await canvas.convertToBlob({ type: 'image/png' })).arrayBuffer() })
     }
@@ -51,8 +34,4 @@ workerScope.onmessage = async (event: MessageEvent<ChromaAdjustRequest>) => {
   } catch (error) {
     workerScope.postMessage({ type: 'error', id, message: error instanceof Error ? error.message : 'Não foi possível ajustar o chroma key.' })
   }
-}
-
-function clampChannel(value: number): number {
-  return Math.max(0, Math.min(255, Math.round(value)))
 }

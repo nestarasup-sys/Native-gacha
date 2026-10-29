@@ -69,6 +69,7 @@
     "test:fabricator:persistence": "node --experimental-strip-types --test tests/fabricator-pose-animator-persistence.test.mjs tests/fabricator-model-writer.test.mjs",
     "test:fabricator:face-guides": "node --experimental-strip-types --test tests/fabricator-face-guides-ipc.test.mjs tests/pending-persistence-inventory.test.mjs",
     "test:fabricator:electron-visual": "electron scripts/fabricator/model-source-electron-visual.cjs",
+    "test:fabricator:compose-worker": "npm run build && electron scripts/fabricator/model-source-compose-worker.cjs",
     "test:fabricator:real-ui": "node scripts/fabricator/capture-real-ui.cjs",
     "test:fabricator:assets": "node --experimental-strip-types --test tests/fabricator-versioned-assets.test.mjs",
     "test:fabricator:chaos": "node --experimental-strip-types --test tests/model-source-fault-injection.test.mjs",

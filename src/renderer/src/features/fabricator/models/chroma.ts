@@ -36,3 +36,35 @@ export function despillGreenFringes(pixels: Uint8ClampedArray, background: RGB, 
   }
   return changed
 }
+
+/** Applies the shared green-screen matte to a complete RGBA image buffer. */
+export function applyChromaPixels(pixels: Uint8ClampedArray, background: RGB, tolerance: number): void {
+  for (let offset = 0; offset < pixels.length; offset += 4) {
+    if (pixels[offset + 3] === 0) continue
+    const distance = Math.hypot(
+      pixels[offset] - background[0],
+      pixels[offset + 1] - background[1],
+      pixels[offset + 2] - background[2]
+    )
+    if (distance <= tolerance) {
+      pixels[offset + 3] = 0
+      continue
+    }
+    if (distance >= tolerance + 44) continue
+    const matte = (distance - tolerance) / 44
+    if (matte < 0.12) {
+      pixels[offset + 3] = 0
+      continue
+    }
+    const backgroundWeight = 1 - matte
+    pixels[offset] = clampChannel((pixels[offset] - background[0] * backgroundWeight) / matte)
+    pixels[offset + 1] = clampChannel((pixels[offset + 1] - background[1] * backgroundWeight) / matte)
+    pixels[offset + 2] = clampChannel((pixels[offset + 2] - background[2] * backgroundWeight) / matte)
+    pixels[offset + 3] = Math.round(pixels[offset + 3] * matte)
+  }
+  despillGreenFringes(pixels, background, tolerance)
+}
+
+function clampChannel(value: number): number {
+  return Math.max(0, Math.min(255, Math.round(value)))
+}

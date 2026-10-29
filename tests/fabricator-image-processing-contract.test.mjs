@@ -6,6 +6,8 @@ import { ChromaAdjustTaskError, startChromaAdjustWorker } from '../src/renderer/
 import { ImageProcessorTaskError, startImageProcessorWorker } from '../src/renderer/src/features/fabricator/models/runImageProcessorWorker.ts'
 import { ModelSourcePixelEditTaskError, startModelSourcePixelEditWorker } from '../src/renderer/src/features/fabricator/models/runModelSourcePixelEditWorker.ts'
 import { applyModelSourceBrushPixels, modelSourceBrushRegion, removeModelSourceColorPixels } from '../src/renderer/src/features/fabricator/models/modelSourcePixelOperations.ts'
+import { ModelSourceComposeTaskError, startModelSourceComposeWorker } from '../src/renderer/src/features/fabricator/models/runModelSourceComposeWorker.ts'
+import { applyChromaPixels } from '../src/renderer/src/features/fabricator/models/chroma.ts'
 
 const imageBuffer = value => Uint8Array.of(value).buffer
 
@@ -53,7 +55,7 @@ test('monta o projeto importado com bases, ordem, juntas e assets pendentes pres
 })
 
 test('tela e workers compartilham os contratos de mensagem definidos pelo domínio', async () => {
-  const [page, imageWorker, chromaWorker, modelSource, chromaRunner, imageRunner, pixelWorker, pixelRunner, pixelEditing] = await Promise.all([
+  const [page, imageWorker, chromaWorker, modelSource, chromaRunner, imageRunner, pixelWorker, pixelRunner, pixelEditing, composeWorker, composeRunner, geometry] = await Promise.all([
     readFile(new URL('../src/renderer/src/features/fabricator/FabricatorPage.tsx', import.meta.url), 'utf8'),
     readFile(new URL('../src/renderer/src/features/fabricator/models/imageProcessor.worker.ts', import.meta.url), 'utf8'),
     readFile(new URL('../src/renderer/src/features/fabricator/models/chromaAdjust.worker.ts', import.meta.url), 'utf8'),
@@ -62,7 +64,10 @@ test('tela e workers compartilham os contratos de mensagem definidos pelo domín
     readFile(new URL('../src/renderer/src/features/fabricator/models/runImageProcessorWorker.ts', import.meta.url), 'utf8'),
     readFile(new URL('../src/renderer/src/features/fabricator/models/modelSourcePixelEdit.worker.ts', import.meta.url), 'utf8'),
     readFile(new URL('../src/renderer/src/features/fabricator/models/runModelSourcePixelEditWorker.ts', import.meta.url), 'utf8'),
-    readFile(new URL('../src/renderer/src/features/fabricator/models/modelSourceEditing.ts', import.meta.url), 'utf8')
+    readFile(new URL('../src/renderer/src/features/fabricator/models/modelSourceEditing.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../src/renderer/src/features/fabricator/models/modelSourceCompose.worker.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../src/renderer/src/features/fabricator/models/runModelSourceComposeWorker.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../src/renderer/src/features/fabricator/models/modelSourceGeometry.ts', import.meta.url), 'utf8')
   ])
 
   assert.match(page, /startImageProcessorWorker/)
@@ -70,7 +75,8 @@ test('tela e workers compartilham os contratos de mensagem definidos pelo domín
   assert.match(imageRunner, /satisfies ImageProcessorRequest/)
   assert.match(imageWorker, /MessageEvent<ImageProcessorRequest>/)
   assert.match(page, /startChromaAdjustWorker/)
-  assert.match(modelSource, /startChromaAdjustWorker/)
+  assert.match(modelSource, /startModelSourceComposeWorker/)
+  assert.doesNotMatch(modelSource, /document\.createElement/)
   assert.match(chromaRunner, /MessageEvent<ChromaAdjustMessage>/)
   assert.match(chromaRunner, /satisfies ChromaAdjustRequest/)
   assert.match(chromaWorker, /MessageEvent<ChromaAdjustRequest>/)
@@ -84,6 +90,12 @@ test('tela e workers compartilham os contratos de mensagem definidos pelo domín
   assert.doesNotMatch(page, /new Worker\(new URL\('\.\/models\/imageProcessor\.worker/)
   assert.doesNotMatch(page, /new Worker\(new URL\('\.\/models\/chromaAdjust\.worker/)
   assert.doesNotMatch(modelSource, /new Worker\(new URL\('\.\/chromaAdjust\.worker/)
+  assert.match(composeRunner, /MessageEvent<ModelSourceComposeMessage>/)
+  assert.match(composeWorker, /MessageEvent<ModelSourceComposeWorkerRequest>/)
+  assert.match(composeWorker, /OffscreenCanvas/)
+  assert.match(composeWorker, /sourceRect\(/)
+  assert.match(geometry, /export function sourceRect/)
+  assert.match(chromaWorker, /applyChromaPixels/)
 })
 
 function rgbaImage(width, height, color = [240, 200, 170, 255]) {
@@ -150,6 +162,19 @@ test('remoção de cor mantém contorno escuro e cores que não correspondem ao 
   assert.equal(image.data[11], 255)
 })
 
+test('Chroma compartilhado mantém o alpha verde transparente e limpa o derramamento', () => {
+  const image = rgbaImage(3, 1, [0, 255, 0, 255])
+  image.data.set([60, 190, 58, 255], 4)
+  image.data.set([240, 160, 120, 255], 8)
+
+  applyChromaPixels(image.data, [0, 255, 0], 24)
+
+  assert.equal(image.data[3], 0)
+  assert.equal(image.data[7], 255)
+  assert.ok(image.data[5] < 190)
+  assert.equal(image.data[11], 255)
+})
+
 test('worker de pixels ignora respostas antigas, converte as duas bases e termina', async () => {
   const worker = createWorkerDouble()
   const task = startModelSourcePixelEditWorker({
@@ -195,6 +220,68 @@ test('worker de pixels distingue erro e cancelamento e respeita AbortSignal', as
     throw new Error('Worker não deve iniciar para tarefa cancelada.')
   }, alreadyAborted.signal)
   await assert.rejects(skipped.result, error => error instanceof ModelSourcePixelEditTaskError && error.kind === 'cancelled')
+})
+
+test('worker de composição ignora respostas antigas e devolve a composição completa', async () => {
+  const worker = createWorkerDouble()
+  const expected = { sourceDataUrl: 'source', previewDataUrl: 'preview', tolerance: 74, partUpdates: [] }
+  const project = { width: 10, height: 20, tolerance: 74, sourceDataUrl: 'large-source', parts: [], joints: [], layerOrder: [], hiddenPartIds: [], modelSkinTone: '#f2c6a8', modelOutlineColor: '#351f24' }
+  const task = startModelSourceComposeWorker({
+    id: 30,
+    project,
+    edits: {},
+    tolerance: 74
+  }, () => worker)
+
+  assert.equal(worker.posted.id, 30)
+  assert.equal(worker.posted.project.sourceDataUrl, undefined)
+  assert.deepEqual(worker.posted.project, { width: 10, height: 20, tolerance: 74, parts: [] })
+  worker.onmessage({ data: { type: 'complete', id: 29, output: expected } })
+  assert.equal(worker.terminated, false)
+  worker.onmessage({ data: { type: 'complete', id: 30, output: expected } })
+
+  assert.deepEqual(await task.result, {
+    sourceDataUrl: 'source', previewDataUrl: 'preview', parts: [], tolerance: 74,
+    modelSkinTone: '#f2c6a8', modelOutlineColor: '#351f24', joints: [], layerOrder: [], hiddenPartIds: []
+  })
+  assert.equal(worker.terminateCount, 1)
+})
+
+test('worker de composição devolve só alterações e mantém peças sem mudanças por referência', async () => {
+  const worker = createWorkerDouble()
+  const head = { id: 'head', name: 'Cabeça', width: 10, height: 10, dataUrl: 'old', rotation: 0 }
+  const torso = { id: 'torso', name: 'Tronco', width: 20, height: 30, dataUrl: 'base', rotation: 0 }
+  const task = startModelSourceComposeWorker({
+    id: 33,
+    project: { width: 30, height: 40, tolerance: 74, parts: [head, torso], joints: [] },
+    edits: {},
+    tolerance: 74
+  }, () => worker)
+  worker.onmessage({ data: { type: 'complete', id: 33, output: {
+    sourceDataUrl: 'source', previewDataUrl: 'preview', tolerance: 74,
+    partUpdates: [{ id: 'head', patch: { width: 12, dataUrl: 'new' } }]
+  } } })
+
+  const result = await task.result
+  assert.deepEqual(result.parts[0], { ...head, width: 12, dataUrl: 'new' })
+  assert.equal(result.parts[1], torso)
+})
+
+test('worker de composição encerra em erro e cancelamento', async () => {
+  const failedWorker = createWorkerDouble()
+  const failed = startModelSourceComposeWorker({ id: 31, project: {}, edits: {}, tolerance: 0 }, () => failedWorker)
+  const failure = assert.rejects(failed.result, error => error instanceof ModelSourceComposeTaskError && error.kind === 'worker' && error.message === 'peça inválida')
+  failedWorker.onmessage({ data: { type: 'error', id: 31, message: 'peça inválida' } })
+  await failure
+  assert.equal(failedWorker.terminateCount, 1)
+
+  const worker = createWorkerDouble()
+  const controller = new AbortController()
+  const cancelled = startModelSourceComposeWorker({ id: 32, project: {}, edits: {}, tolerance: 0 }, () => worker, controller.signal)
+  const cancellation = assert.rejects(cancelled.result, error => error instanceof ModelSourceComposeTaskError && error.kind === 'cancelled' && error.name === 'AbortError')
+  controller.abort()
+  await cancellation
+  assert.equal(worker.terminateCount, 1)
 })
 
 test('processador de imagem filtra IDs, encaminha progresso e resolve o resultado completo', async () => {
