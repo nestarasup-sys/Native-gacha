@@ -11,7 +11,10 @@ import { processFaceSheet } from './processFaceSheet'
 import { splitEyeSheet } from './splitEyeSheet'
 import { defaultFaceGuide, useFaceGuides } from './useFaceGuides'
 import { selectedEyeAssetsByIds } from '../eyePreviewSelection'
-import { alignImportedFacePiece, captureFaceImportAnchor, fitClosedEyeToOpen, validFaceImportAnchor, type AlignableFaceKind, type FaceImportAnchor } from './faceImportAlignment'
+import { captureFaceImportAnchor, fitClosedEyeToOpen, validFaceImportAnchor, type AlignableFaceKind, type FaceImportAnchor } from './faceImportAlignment'
+import { assertFaceComponentImportActive, saveFaceComponentAssetBatch } from './faceComponentAssetBatch'
+import { clamp, createEyeSheetImportPlan, createEyebrowImportPlan, createFaceDetailImportEntry, faceComponentCategories as categories, initialFaceComponentTransform as initialTransform, initialFaceDetailTransform, partCategory } from './faceComponentImportModel'
+import type { FacePartId as PartId } from './faceComponentImportModel'
 import { removeEyebrowGreen } from './removeEyebrowGreen'
 import './face-components.css'
 import { normalizeEditableImageFile } from '../normalizeImage'
@@ -21,7 +24,6 @@ import { createFaceSaveQueue, type FaceSaveQueue } from './faceSaveQueue'
 import { loadFaceCatalogWorkspaceData, loadFaceComponentWorkspaceData } from './faceWorkspaceData'
 import { useFacePreviewDrag } from './useFacePreviewDrag'
 
-type PartId = 'eye-left' | 'eye-right' | 'pupil-left' | 'pupil-right' | 'eye-closed-left' | 'eye-closed-right' | 'brow-left' | 'brow-right'
 type CatalogKind = 'nose' | 'mouth-closed' | 'mouth-open'
 type LibraryCategory = FaceComponentKind | FaceDetailKind | 'nose' | 'mouth'
 type FaceWorkspaceMode = 'eyes' | 'face'
@@ -30,12 +32,6 @@ const COMPONENT_SELECTION_STORAGE_KEY = 'gacha-nymi:face-dev-component-selection
 const LEGACY_PUPIL_SELECTION_STORAGE_KEY = 'gacha-nymi:face-dev-pupil-selections'
 const FACE_IMPORT_ANCHORS_STORAGE_KEY = 'gacha-nymi:face-dev-import-anchors'
 const FACE_DETAIL_SELECTION_STORAGE_KEY = 'gacha-nymi:face-dev-detail-selections'
-const categories: Array<{ kind: FaceComponentKind; label: string; parts: [PartId, PartId]; names: [string, string] }> = [
-  { kind: 'eye', label: 'Olhos', parts: ['eye-left', 'eye-right'], names: ['Olho esquerdo', 'Olho direito'] },
-  { kind: 'pupil', label: 'Pupilas', parts: ['pupil-left', 'pupil-right'], names: ['Pupila esquerda', 'Pupila direita'] },
-  { kind: 'eye-closed', label: 'Olhos fechados', parts: ['eye-closed-left', 'eye-closed-right'], names: ['Olho fechado esquerdo', 'Olho fechado direito'] },
-  { kind: 'eyebrow', label: 'Sobrancelhas', parts: ['brow-left', 'brow-right'], names: ['Sobrancelha esquerda', 'Sobrancelha direita'] }
-]
 const autoFixKinds: AlignableFaceKind[] = ['eye', 'pupil', 'eye-closed']
 const faceDetailCategories: Array<{ kind: FaceDetailKind; label: string }> = [
   { kind: 'eye-highlight-left', label: 'Brilho olho esquerdo' },
@@ -45,15 +41,6 @@ const faceDetailCategories: Array<{ kind: FaceDetailKind; label: string }> = [
 ]
 const isFaceDetailKind = (kind: string): kind is FaceDetailKind => faceDetailCategories.some((category) => category.kind === kind)
 const isFaceComponentKind = (kind: FaceComponentAsset['kind']): kind is FaceComponentKind => categories.some((category) => category.kind === kind)
-const initialTransform = (kind: FaceComponentKind, head: ModelPart, width: number, height: number): FaceTransform => ({
-  x: kind === 'pupil' ? 0 : head.width * (kind === 'eyebrow' ? .38 : .37),
-  y: kind === 'pupil' ? 0 : head.height * (kind === 'eyebrow' ? .32 : .46),
-  scaleX: kind === 'pupil' ? .35 : head.width * (kind === 'eyebrow' ? .16 : .19) / width,
-  scaleY: kind === 'pupil' ? .35 : head.height * (kind === 'eyebrow' ? .12 : .17) / height,
-  rotation: 0
-})
-const partCategory = (id: PartId) => categories.find((category) => category.parts.includes(id))!
-const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value))
 type ComponentSelection = { parts: Partial<Record<PartId, string>>; linked: Partial<Record<FaceComponentKind, boolean>>; moveTogether?: Partial<Record<FaceComponentKind, boolean>> }
 function readComponentSelections(): Record<number, ComponentSelection> {
   try {
@@ -84,12 +71,6 @@ function readFaceImportAnchors(): FaceImportAnchors {
   } catch { return {} }
 }
 const readImage = normalizeEditableImageFile
-function throwIfEyeSheetImportAborted(signal: AbortSignal) {
-  if (!signal.aborted) return
-  const error = new Error('Importação cancelada.')
-  error.name = 'AbortError'
-  throw error
-}
 function catalogSaveData(item: FaceCatalogItem): FaceCatalogItemSave {
   const { dataUrl: _sheetData, ...sheet } = item.sheet
   return { ...item, sheet, pieces: item.pieces.map(({ dataUrl: _pieceData, ...piece }) => piece) }
@@ -112,14 +93,6 @@ function alignMouthPreviewTransform(transform: FaceTransform, closedItem: FaceCa
   if (!closedBase || !activeBase || closedBase.scaleX <= 0 || closedBase.scaleY <= 0) return transform
   return { ...transform, scaleX: transform.scaleX * activeBase.scaleX / closedBase.scaleX, scaleY: transform.scaleY * activeBase.scaleY / closedBase.scaleY }
 }
-function initialFaceDetailTransform(kind: FaceDetailKind, head: ModelPart, width: number, height: number): FaceTransform {
-  const targetWidth = kind.startsWith('eye-highlight') ? .075 : kind === 'blush' ? .24 : .3
-  const scale = width > 0 && height > 0 ? clamp(head.width * targetWidth / width, .01, 20) : .25
-  const x = kind.endsWith('left') ? head.width * .39 : kind.endsWith('right') ? head.width * .61 : head.width * .5
-  const y = kind.startsWith('eye-highlight') ? head.height * .48 : kind === 'blush' ? head.height * .68 : head.height * .62
-  return { x, y, scaleX: scale, scaleY: scale, rotation: 0 }
-}
-
 function FaceGuideOverlay({ head, guide }: { head: ModelPart; guide: FaceGuide }) {
   const x = head.width * guide.verticalX / 100
   const y = head.height * guide.horizontalY / 100
@@ -467,51 +440,19 @@ export function FaceComponentsWorkspace({ mode, baseModelSlot }: { mode: FaceWor
     const controller = new AbortController()
     eyeSheetImportController.current = controller
     setBusy(true); setError('')
-    const savedIds: string[] = []
     try {
       const canonicalSheet = await normalizeEditableImageFile(file)
-      throwIfEyeSheetImportAborted(controller.signal)
+      assertFaceComponentImportActive(controller.signal)
       const pieces = await splitEyeSheet(canonicalSheet.dataUrl, controller.signal)
-      throwIfEyeSheetImportAborted(controller.signal)
-      const baseName = file.name.replace(/\.[^.]+$/, '').slice(0, 90) || 'Olhos'
-      const imported: FaceComponentAsset[] = []
-      const assigned: Partial<Record<PartId, string>> = {}
-      const sourceSheetPairId = crypto.randomUUID()
-      for (const piece of pieces) {
-        throwIfEyeSheetImportAborted(controller.signal)
-        const category = categories.find((entry) => entry.kind === piece.kind)!
-        for (const [index, side] of category.parts.entries()) {
-          const baseTransform = initialTransform(piece.kind, head, piece.width, piece.height)
-          const defaultTransform: FaceTransform = index === 0 ? baseTransform : {
-            ...baseTransform, x: piece.kind === 'pupil' ? -baseTransform.x : head.width - baseTransform.x,
-            rotation: -baseTransform.rotation, flipX: true
-          }
-          const anchor = importAnchorsByModel[modelSlot]?.[piece.kind]
-          let transform = anchor ? alignImportedFacePiece(piece.kind, index === 0 ? 'left' : 'right', piece.width, piece.height, anchor) : defaultTransform
-          if (piece.kind === 'eye-closed') {
-            const open = imported.find((asset) => asset.kind === 'eye' && Boolean(asset.rightSidePositioned) === Boolean(index))
-            if (open) transform = fitClosedEyeToOpen({ width: piece.width, defaultTransform: transform, rightSidePositioned: index === 1 }, open, head, index === 1)
-          }
-          if (transform.scaleX > 20) throw new Error('O olho fechado desta folha é estreito demais para acompanhar a largura do olho aberto.')
-          const asset: FaceComponentAssetSave = {
-            schemaVersion: 1, id: crypto.randomUUID(), modelSlot, kind: piece.kind,
-            name: `${baseName} · ${category.names[index]}`.slice(0, 120), width: piece.width, height: piece.height,
-            defaultTransform: transform, rightSidePositioned: index === 1, pairId: sourceSheetPairId, updatedAt: new Date().toISOString()
-          }
-          await window.desktop.fabricator.saveFaceComponentAsset(modelSlot, asset, piece.dataUrl)
-          savedIds.push(asset.id)
-          throwIfEyeSheetImportAborted(controller.signal)
-          assigned[side] = asset.id
-          imported.push({ ...asset, dataUrl: piece.dataUrl })
-        }
-      }
-      setDetails((current) => ({ ...current, ...Object.fromEntries(imported.map((asset) => [asset.id, asset])) }))
-      setAssets((current) => [...imported, ...current])
-      setSelectedAssets((current) => ({ ...current, ...assigned }))
+      assertFaceComponentImportActive(controller.signal)
+      const plan = createEyeSheetImportPlan({ pieces, fileName: file.name, modelSlot, head, anchors: importAnchorsByModel[modelSlot] })
+      await saveFaceComponentAssetBatch(window.desktop.fabricator, modelSlot, plan.entries, controller.signal)
+      setDetails((current) => ({ ...current, ...Object.fromEntries(plan.assets.map((asset) => [asset.id, asset])) }))
+      setAssets((current) => [...plan.assets, ...current])
+      setSelectedAssets((current) => ({ ...current, ...plan.assigned }))
       setSelectedPart('eye-left'); setLibraryCategory('eye'); setOpenModal(null)
       setNotice('Olho aberto, pupila e olho fechado importados. Ajuste cada peça na Biblioteca.')
     } catch (reason) {
-      await Promise.allSettled(savedIds.map((id) => window.desktop.fabricator.deleteFaceComponentAsset(modelSlot, id)))
       if (!controller.signal.aborted && !(reason instanceof Error && reason.name === 'AbortError')) setError(reason instanceof Error ? reason.message : String(reason))
     } finally {
       if (eyeSheetImportController.current === controller) eyeSheetImportController.current = null
@@ -523,39 +464,17 @@ export function FaceComponentsWorkspace({ mode, baseModelSlot }: { mode: FaceWor
     const file = event.target.files?.[0]; event.target.value = ''
     if (!file || !head) return
     setBusy(true); setError('')
-    const savedIds: string[] = []
     try {
       const image = await readImage(file)
-      const baseName = file.name.replace(/\.[^.]+$/, '').slice(0, 90) || 'Sobrancelha'
-      const pairId = crypto.randomUUID()
-      const updatedAt = new Date().toISOString()
-      const leftTransform = initialTransform('eyebrow', head, image.width, image.height)
-      const left: FaceComponentAssetSave = {
-        schemaVersion: 1, id: crypto.randomUUID(), modelSlot, kind: 'eyebrow',
-        name: `${baseName} · Sobrancelha esquerda`.slice(0, 120), width: image.width, height: image.height,
-        defaultTransform: leftTransform, pairId, updatedAt
-      }
-      const right: FaceComponentAssetSave = {
-        ...left, id: crypto.randomUUID(), name: `${baseName} · Sobrancelha direita`.slice(0, 120),
-        rightSidePositioned: true,
-        defaultTransform: {
-          ...leftTransform, x: head.width - leftTransform.x,
-          rotation: -leftTransform.rotation, flipX: !leftTransform.flipX
-        }
-      }
-      await window.desktop.fabricator.saveFaceComponentAsset(modelSlot, left, image.dataUrl)
-      savedIds.push(left.id)
-      await window.desktop.fabricator.saveFaceComponentAsset(modelSlot, right, image.dataUrl)
-      savedIds.push(right.id)
-
-      const imported = [left, right].map((asset) => ({ ...asset, dataUrl: image.dataUrl }))
+      const plan = createEyebrowImportPlan({ fileName: file.name, modelSlot, head, ...image })
+      await saveFaceComponentAssetBatch(window.desktop.fabricator, modelSlot, plan.entries)
+      const imported = plan.entries.map(({ asset, dataUrl }) => ({ ...asset, dataUrl }))
       setDetails((current) => ({ ...current, ...Object.fromEntries(imported.map((asset) => [asset.id, asset])) }))
       setAssets((current) => [...imported, ...current])
-      setSelectedAssets((current) => ({ ...current, 'brow-left': left.id, 'brow-right': right.id }))
+      setSelectedAssets((current) => ({ ...current, 'brow-left': plan.leftId, 'brow-right': plan.rightId }))
       setSelectedPart('brow-left'); setLibraryCategory('eyebrow'); setOpenModal(null)
       setNotice('Sobrancelha importada. O lado direito foi criado espelhado; ajuste cada lado na Biblioteca.')
     } catch (reason) {
-      await Promise.allSettled(savedIds.map((id) => window.desktop.fabricator.deleteFaceComponentAsset(modelSlot, id)))
       setError(reason instanceof Error ? reason.message : String(reason))
     } finally { setBusy(false) }
   }
@@ -575,15 +494,13 @@ export function FaceComponentsWorkspace({ mode, baseModelSlot }: { mode: FaceWor
     setBusy(true); setError('')
     try {
       const image = await readImage(file)
-      const asset: FaceComponentAssetSave = {
-        schemaVersion: 1, id: crypto.randomUUID(), modelSlot, kind,
-        name: file.name.replace(/\.[^.]+$/, '').slice(0, 110) || faceDetailCategories.find((entry) => entry.kind === kind)!.label,
-        width: image.width, height: image.height,
-        defaultTransform: initialFaceDetailTransform(kind, head, image.width, image.height),
-        updatedAt: new Date().toISOString()
-      }
-      await window.desktop.fabricator.saveFaceComponentAsset(modelSlot, asset, image.dataUrl)
-      const saved = { ...asset, dataUrl: image.dataUrl }
+      const entry = createFaceDetailImportEntry({
+        kind, fileName: file.name, fallbackName: faceDetailCategories.find((category) => category.kind === kind)!.label,
+        modelSlot, head, ...image
+      })
+      const asset = entry.asset
+      await window.desktop.fabricator.saveFaceComponentAsset(modelSlot, asset, entry.dataUrl)
+      const saved = { ...asset, dataUrl: entry.dataUrl }
       setAssets((current) => [asset, ...current])
       setDetails((current) => ({ ...current, [asset.id]: saved }))
       selectFaceDetail(kind, asset.id)

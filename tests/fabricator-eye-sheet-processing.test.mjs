@@ -109,9 +109,11 @@ test('cancelar a importação termina o worker e rejeita como AbortError', async
     assert.equal(currentWorker.terminated, true)
     assert.equal(currentWorker.onmessage, null)
     const workspace = await readFile('src/renderer/src/features/fabricator/face/FaceComponentsWorkspace.tsx', 'utf8')
+    const batchWriter = await readFile('src/renderer/src/features/fabricator/face/faceComponentAssetBatch.ts', 'utf8')
     assert.match(workspace, /const controller = eyeSheetImportController\.current[\s\S]*controller\.abort\(\)/)
     assert.match(workspace, /eyeSheetImportContextCancelled\.current = true[\s\S]*controller\.abort\(\)[\s\S]*\}, \[mode, modelSlot\]\)/)
-    assert.match(workspace, /Promise\.allSettled\(savedIds\.map\(\(id\) => window\.desktop\.fabricator\.deleteFaceComponentAsset\(modelSlot, id\)\)\)/)
+    assert.match(workspace, /saveFaceComponentAssetBatch\(window\.desktop\.fabricator, modelSlot, plan\.entries, controller\.signal\)/)
+    assert.match(batchWriter, /Promise\.allSettled\(attemptedIds\.map\(\(id\) => writer\.deleteFaceComponentAsset\(modelSlot, id\)\)\)/)
   } finally {
     if (previousWorker) Object.defineProperty(globalThis, 'Worker', previousWorker)
     else Reflect.deleteProperty(globalThis, 'Worker')
