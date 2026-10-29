@@ -181,6 +181,13 @@ export function editorV6TrackLabel(kind: EditorV6TrackKind, index = 1): string {
   return index === 1 ? labels[kind] : `${labels[kind]} ${index}`
 }
 
+const TIMELINE_TRACK_GROUP_ORDER: Record<EditorV6TrackKind, number> = { video: 0, speech: 0, thought: 0, character: 1, object: 2, audio: 3 }
+export function orderEditorV6TimelineTracks(tracks: readonly EditorV6TimelineTrack[]): EditorV6TimelineTrack[] {
+  return tracks.map((track, index) => ({ track, index }))
+    .sort((left, right) => TIMELINE_TRACK_GROUP_ORDER[left.track.kind] - TIMELINE_TRACK_GROUP_ORDER[right.track.kind] || left.index - right.index)
+    .map(({ track }) => track)
+}
+
 /** Creates shared lanes and character lanes in the default visual stacking order. */
 export function createEditorV6Timeline(elements: readonly EditorV6Element[] = []): EditorV6Timeline {
   const kinds: EditorV6TrackKind[] = ['video', 'speech', 'thought']
@@ -206,9 +213,7 @@ export function createEditorV6Timeline(elements: readonly EditorV6Element[] = []
   for (const kind of ['object', 'audio'] as const) if (!tracks.some((track) => track.kind === kind)) tracks.push({
     id: crypto.randomUUID(), kind, name: editorV6TrackLabel(kind), muted: false, locked: false, blocks: []
   })
-  const defaultOrder: Record<EditorV6TrackKind, number> = { video: 0, speech: 1, thought: 2, character: 3, object: 4, audio: 5 }
-  tracks.sort((left, right) => defaultOrder[left.kind] - defaultOrder[right.kind])
-  return { fps: 30, durationFrames: EDITOR_V6_DEFAULT_DURATION_FRAMES, tracks, knownElementIds: elements.map((element) => element.id) }
+  return { fps: 30, durationFrames: EDITOR_V6_DEFAULT_DURATION_FRAMES, tracks: orderEditorV6TimelineTracks(tracks), knownElementIds: elements.map((element) => element.id) }
 }
 
 export function syncEditorV6TimelineElements(timeline: EditorV6Timeline, elements: readonly EditorV6Element[]): EditorV6Timeline {
@@ -270,27 +275,8 @@ export function syncEditorV6TimelineElements(timeline: EditorV6Timeline, element
     })
   }
   tracks.push(...characterTracks.values())
-  const originalOrder = new Map(timeline.tracks.map((track, index) => [track.id, index]))
-  const videoOrder = timeline.tracks.findIndex((track) => track.kind === 'video')
-  const audioOrder = timeline.tracks.findIndex((track) => track.kind === 'audio')
-  const lastCharacterOrder = timeline.tracks.reduce((last, track, index) => track.kind === 'character' ? index : last, -1)
-  const order = (track: EditorV6TimelineTrack) => originalOrder.get(track.id)
-    ?? (track.kind === 'audio' ? Math.max(0, videoOrder) + .5
-      : track.kind === 'object' ? lastCharacterOrder >= 0 ? lastCharacterOrder + .5 : audioOrder >= 0 ? audioOrder - .5 : 10000
-        : 10000)
-  tracks.sort((a, b) => order(a) - order(b))
-  if (!timeline.tracks.some((track) => track.kind === 'object')) {
-    const objectIndex = tracks.findIndex((track) => track.kind === 'object')
-    const objectTrack = tracks.splice(objectIndex, 1)[0]
-    if (objectTrack) {
-      const lastCharacterIndex = tracks.reduce((last, track, index) => track.kind === 'character' ? index : last, -1)
-      const audioIndex = tracks.findIndex((track) => track.kind === 'audio')
-      const insertionIndex = Math.max(lastCharacterIndex + 1, audioIndex >= 0 ? audioIndex : tracks.length)
-      tracks.splice(insertionIndex, 0, objectTrack)
-    }
-  }
   const endFrame = tracks.flatMap((track) => track.blocks).reduce((end, block) => Math.max(end, block.startFrame + block.durationFrames), timeline.durationFrames)
-  return { ...timeline, durationFrames: endFrame, tracks, knownElementIds: elements.map((element) => element.id) }
+  return { ...timeline, durationFrames: endFrame, tracks: orderEditorV6TimelineTracks(tracks), knownElementIds: elements.map((element) => element.id) }
 }
 
 export const VIDEO_CHARACTER_TRACK_COLORS = ['#7768c8', '#5277b8', '#aa8264', '#478f83', '#b47a43', '#bd6386', '#4b91ad', '#8b6c9c'] as const

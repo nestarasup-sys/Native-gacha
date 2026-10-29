@@ -1,6 +1,6 @@
 /** Frame-based timeline operations shared by preview, prints and persistence. */
 import type { EditorV6Asset, EditorV6BackgroundState, EditorV6Document, EditorV6Element, EditorV6Timeline, EditorV6TimelineBlock, EditorV6TimelineTrack, EditorV6VideoLayout } from './editorV6'
-import { editorV6DefaultVideoLayout, editorV6MediaUrl, editorV6TrackKindForElement, editorV6TrackLabel } from './editorV6'
+import { editorV6DefaultVideoLayout, editorV6MediaUrl, editorV6TrackKindForElement, editorV6TrackLabel, orderEditorV6TimelineTracks } from './editorV6'
 import { editorV6MotionPlans, type EditorV6MotionPlan } from './editorV6Motion'
 import { editorV6FaceModeAtFrame } from './editorV6FaceSchedule'
 export { isEditorV6BlinkFrame } from './editorV6FaceSchedule'
@@ -56,7 +56,7 @@ export function normalizeEditorV6Timeline(timeline: EditorV6Timeline): EditorV6T
     const relativeStartFrame = Math.min(parent.durationFrames - 1, Math.max(0, Math.round(block.relativeStartFrame ?? block.startFrame - parent.startFrame)))
     return { ...block, relativeStartFrame, startFrame: parent.startFrame + relativeStartFrame, durationFrames: Math.max(1, Math.min(block.durationFrames, parent.durationFrames - relativeStartFrame)) }
   }) }))
-  return { ...timeline, durationFrames, tracks }
+  return { ...timeline, durationFrames, tracks: orderEditorV6TimelineTracks(tracks) }
 }
 
 export type EditorV6ResolvedScene = { frame: number; background: EditorV6BackgroundState; elements: EditorV6Element[]; mediaVideo?: { blockId: string; mediaId: string; url: string; layout: EditorV6VideoLayout; startFrame: number; sourceInFrame: number; durationFrames: number; hasAudio: boolean; audioEnabled: boolean; gain: number } }

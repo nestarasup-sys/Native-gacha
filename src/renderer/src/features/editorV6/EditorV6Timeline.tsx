@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import type { EditorV6Document, EditorV6Element, EditorV6Timeline as Timeline, EditorV6TimelineBlock as Block, EditorV6TimelineTrack as Track } from '../../../../shared/editorV6'
 import { editorV6MotionPlan } from '../../../../shared/editorV6Motion'
-import { EDITOR_V6_DEFAULT_BLOCK_FRAMES, videoCharacterTrackColor } from '../../../../shared/editorV6'
+import { EDITOR_V6_DEFAULT_BLOCK_FRAMES, orderEditorV6TimelineTracks, videoCharacterTrackColor } from '../../../../shared/editorV6'
 import { duplicateEditorV6Block, editorV6ClipAtFrame, frameTimecode, MAX_TIMELINE_FRAME, normalizeEditorV6Timeline, pruneEditorV6TimelineSnapshots, setEditorV6BlockTiming, snapEditorV6Frame, splitEditorV6Block, timelineClips } from '../../../../shared/editorV6Timeline'
 import { useEditorV6PlaybackFrame } from './editorV6PlaybackClock'
 
@@ -19,10 +19,7 @@ type TrackAction = 'motion' | 'add' | 'hidden' | 'locked' | 'collapsed' | 'up' |
 const LABELS = { character: 'Personagem', speech: 'Fala', thought: 'Pensamento', object: 'Objetos', video: 'Vídeo', audio: 'Áudio' }
 const editableTarget = (target: EventTarget | null) => target instanceof HTMLElement && Boolean(target.closest('input,textarea,select,[contenteditable=true],[role=dialog]'))
 const timelineTrackGroup = (track: Track) => track.kind === 'character' ? 1 : track.kind === 'object' || track.kind === 'audio' ? 2 : 0
-const orderTimelineTracks = (tracks: readonly Track[]) => tracks
-  .map((track, originalIndex) => ({ track, originalIndex }))
-  .sort((left, right) => timelineTrackGroup(left.track) - timelineTrackGroup(right.track) || left.originalIndex - right.originalIndex)
-  .map(({ track }) => track)
+const fixedBottomTrack = (track: Track) => track.kind === 'object' || track.kind === 'audio'
 
 function FrameInput({ label, value, onCommit, disabled = false }: { label: string; value: number; onCommit: (value: number) => void; disabled?: boolean }) {
   const [text, setText] = useState(String(Number((value / 30).toFixed(4))))
@@ -45,7 +42,7 @@ type DisplayRow = { key: string; track: Track; blocks: Block[]; backgroundLane: 
 /** Playback only moves the cursor overlay; these rows rerender on editing or scrolling. */
 const TimelineRows = memo(function TimelineRows({ timeline, pps, width, heading, range, selectedId, onPointer, onSelect, onMenu, onTrack, onScrub }: RowsProps) {
   const displayRows = useMemo<DisplayRow[]>(() => {
-    const rows = orderTimelineTracks(timeline.tracks).map((track, index) => ({ key: track.id, track, blocks: track.blocks.filter((block) => !block.background), backgroundLane: false, index }))
+    const rows = orderEditorV6TimelineTracks(timeline.tracks).map((track, index) => ({ key: track.id, track, blocks: track.blocks.filter((block) => !block.background), backgroundLane: false, index }))
     const track = timeline.tracks.find((candidate) => candidate.kind === 'video') ?? { id: 'editor-v6-background-source', kind: 'video' as const, name: 'Vídeo', muted: false, locked: false, blocks: [] }
     rows.push({ key: `background:${track.id}`, track, blocks: track.blocks.filter((block) => Boolean(block.background)), backgroundLane: true, index: timeline.tracks.length })
     return rows
@@ -54,6 +51,7 @@ const TimelineRows = memo(function TimelineRows({ timeline, pps, width, heading,
   const transitions = useMemo(() => new Map(displayRows.map(({ key, track }) => { const blocks = sortedTracks.get(key)!; return [key, blocks.slice(1).flatMap((next, i) => { const plan = editorV6MotionPlan(track, blocks[i], next); return plan ? [plan] : [] })] })), [displayRows, sortedTracks])
   const [renameId, setRenameId] = useState<string | null>(null)
   const canMoveTrack = (index: number, direction: -1 | 1) => {
+    if (fixedBottomTrack(displayRows[index].track)) return false
     const neighbor = displayRows[index + direction]
     return Boolean(neighbor && timelineTrackGroup(displayRows[index].track) === timelineTrackGroup(neighbor.track))
   }
@@ -65,8 +63,10 @@ const TimelineRows = memo(function TimelineRows({ timeline, pps, width, heading,
         {track.kind === 'character' && <button type="button" aria-pressed={track.motionEnabled !== false} disabled={track.locked} onClick={() => onTrack(track, 'motion')} title="Animar trocas de pose e expressão nesta faixa (250 ms)">{track.motionEnabled === false ? '◇' : '◆'}</button>}<button type="button" onClick={() => onTrack(track, 'add')} disabled={track.locked} title="Adicionar bloco no cursor">＋</button>
         <button type="button" onClick={() => onTrack(track, 'hidden')} title={track.hidden || track.muted ? 'Mostrar faixa' : 'Ocultar faixa'}>{track.hidden || track.muted ? '◌' : '◉'}</button>
         <button type="button" onClick={() => onTrack(track, 'locked')} title={track.locked ? 'Desbloquear faixa' : 'Bloquear faixa'}>{track.locked ? '▣' : '▢'}</button>
-        <button type="button" onClick={() => onTrack(track, 'up')} disabled={!canMoveTrack(index, -1) || track.locked} title="Mover faixa para cima">↑</button>
-        <button type="button" onClick={() => onTrack(track, 'down')} disabled={!canMoveTrack(index, 1) || track.locked} title="Mover faixa para baixo">↓</button>
+        {!fixedBottomTrack(track) && <>
+          <button type="button" onClick={() => onTrack(track, 'up')} disabled={!canMoveTrack(index, -1) || track.locked} title="Mover faixa para cima">↑</button>
+          <button type="button" onClick={() => onTrack(track, 'down')} disabled={!canMoveTrack(index, 1) || track.locked} title="Mover faixa para baixo">↓</button>
+        </>}
       </div>}
     </div>
     <div className="editor-v6-timeline-lane" style={{ width, backgroundSize: `${pps}px 100%` }} onPointerDown={onScrub}>
@@ -157,6 +157,7 @@ export function EditorV6Timeline(props: Props) {
 
   const onTrack = useCallback((track: Track, action: TrackAction, name?: string) => {
     if (action !== 'hidden' && action !== 'locked' && action !== 'collapsed' && track.locked) return
+    if ((action === 'up' || action === 'down') && fixedBottomTrack(track)) return
     if (action === 'add') {
       const { document, frame } = latest.current
       latest.current.onSeek(frame)
@@ -180,7 +181,7 @@ export function EditorV6Timeline(props: Props) {
     }
     changeTimeline((current) => {
       if (action === 'up' || action === 'down') {
-        const tracks = orderTimelineTracks(current.tracks)
+        const tracks = orderEditorV6TimelineTracks(current.tracks)
         const index = tracks.findIndex((candidate) => candidate.id === track.id)
         if (index < 0) return current
         const next = action === 'up' ? index - 1 : index + 1

@@ -4,6 +4,7 @@
 
 - Três faixas gerais: Vídeo, Fala e Pensamento.
 - Uma faixa automática para cada personagem do elenco.
+- As faixas **Objetos** e **Áudio** ficam fixas depois de todos os personagens; seus controles para mover faixa não são exibidos. O fundo continua na linha separada no fim da timeline.
 - Tempo inteiro em quadros, a 30 FPS. Os campos de segundos são convertidos para o quadro mais próximo.
 - O início do bloco define sua posição; a duração define a largura.
 - Fala e pensamento são eventos de intervalo e podem se sobrepor a estados de personagens.
@@ -19,7 +20,7 @@
 - Divisão no cursor, duplicação e exclusão de blocos. Excluir um bloco não remove o personagem do elenco.
 - Menu de contexto com Inspector, início, fim, duplicação, divisão e exclusão.
 - Magnetismo nas bordas dos blocos, cursor e limites da timeline; Alt ignora o encaixe temporariamente.
-- Zoom, Fit, nomes compactos, renomear por duplo clique, ordenar, recolher, ocultar e bloquear faixas.
+- Zoom, Fit, nomes compactos, renomear por duplo clique, reordenar as faixas permitidas, recolher, ocultar e bloquear faixas. A normalização também mantém Objetos e Áudio no fim, mesmo em projetos antigos.
 - Inspector do bloco com início, duração, texto, personagem associado e visibilidade do estado.
 - Falas e pensamentos podem ser vinculados a um bloco visual, com deslocamento relativo limitado ao seu intervalo. Mover o visual move os comentários; dividir o visual divide ou redistribui os comentários correspondentes.
 
@@ -45,7 +46,7 @@ Os atalhos de edição da timeline não interceptam a digitação em campos de t
 
 ## Dados e desempenho
 
-`src/shared/editorV6Timeline.ts` contém as operações e a resolução determinística da cena, sem dependências de React ou Electron. A prévia e os prints usam esse mesmo resolvedor.
+`src/shared/editorV6Timeline.ts` contém as operações e a resolução determinística da cena, sem dependências de React ou Electron. A prévia e os prints usam esse mesmo resolvedor. `src/shared/editorV6.ts` define a ordem canônica das faixas: as de personagem vêm antes de Objetos e Áudio; a linha do fundo é desenhada no fim.
 
 A prévia agora usa `SceneSurface`, também reutilizado pelas capturas de quadros e prints. Fundos têm estados persistentes na faixa Vídeo. Arrastar um personagem na prévia cria ou atualiza o estado no quadro do cursor; o histórico registra o gesto inteiro uma vez. Veja [PREVIA.md](PREVIA.md).
 
