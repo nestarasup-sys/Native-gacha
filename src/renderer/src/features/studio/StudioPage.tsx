@@ -5,7 +5,7 @@ import { useStudioInspectorState } from '../../characters/useStudioInspectorStat
 import { StudioSceneCanvas } from './StudioSceneCanvas'
 import { addStudioImageAsset } from './studioImageChanges'
 import { trimTransparentImage, fitElementToTrim, faceRenderGeometry, type TrimmedImage } from '../../characters/characterGeometry'
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { buildStudioExpressionAppearance, buildStudioExpressionTransforms, resolveStudioExpressionBase, studioExpressionCollection } from './expressionTransforms'
 import { Icon } from '../../ui/components/Icon'
 import { NumericRangeField } from '../../ui/components/NumericRangeField'
@@ -24,6 +24,7 @@ import { createSceneFaceActions } from '../../characters/sceneFaceActions'
 import { SceneFaceCatalogPanel } from '../../characters/SceneFaceCatalogPanel'
 import { sceneFaceModeForElement } from '../../characters/sceneFaceMode'
 import { createDefaultSceneFaceTransform, resolveSceneFaceTransform, sceneFaceCatalogItemId, sceneFaceSheetKind } from '../../characters/sceneFaceSelection'
+import { useStudioStageInteraction } from './useStudioStageInteraction'
 import type { StudioAsset, StudioDocument, StudioElement, StudioFaceTransform, StudioFaceTransforms } from '../../../../shared/studio'
 import type { CustomizerCharacter } from '../../../../shared/customizer'
 import type { CustomizerFaceAppearance } from '../../../../shared/customizer'
@@ -31,7 +32,6 @@ import type { FabricatorPoseSummary } from '../../../../shared/fabricator'
 type StudioCard = StudioDocument
 type StudioSnapshot = Pick<StudioDocument, 'backgroundColor' | 'backgroundAssetId' | 'backgroundX' | 'backgroundY' | 'backgroundWidth' | 'backgroundHeight' | 'backgroundRotation' | 'assets' | 'elements'>
 type Tool = 'background' | 'objects' | null
-type DragState = { id: string; pointerId: number; startX: number; startY: number; originalX: number; originalY: number; width: number; height: number }
 
 const STORAGE_KEY = 'gacha-nymi-studio-catalog-v1'
 const defaultStudioEyeTransform: StudioFaceTransform = createDefaultSceneFaceTransform()
@@ -149,7 +149,6 @@ export function StudioPage() {
   const [canUndo, setCanUndo] = useState(false)
   const [canRedo, setCanRedo] = useState(false)
   const sceneRef = useRef<HTMLDivElement>(null)
-  const dragRef = useRef<DragState | null>(null)
   const undoRef = useRef<StudioSnapshot[]>([])
   const redoRef = useRef<StudioSnapshot[]>([])
   const studioFaceTransformsRef = useRef<Record<string, StudioFaceTransforms>>({})
@@ -978,54 +977,10 @@ export function StudioPage() {
     else patchStudio(update)
   }
 
-  const startDrag = (event: ReactPointerEvent<HTMLElement>, id: string) => {
-    if (!activeStudio || !sceneRef.current) return
-    event.preventDefault()
-    event.stopPropagation()
-    if (id === 'background') {
-      const rect = sceneRef.current.getBoundingClientRect()
-      recordHistory()
-      setSelectedElementId('background')
-      setActiveTool('background')
-      setInspectorOpen(true)
-      setInspectorTab('editor')
-      dragRef.current = { id, pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, originalX: activeStudio.backgroundX, originalY: activeStudio.backgroundY, width: rect.width, height: rect.height }
-      event.currentTarget.setPointerCapture(event.pointerId)
-      return
-    }
-    const element = activeStudio.elements.find((item) => item.id === id)
-    if (!element) return
-    if (element.kind === 'character' && element.positionLocked) {
-      setSelectedElementId(id)
-      setActiveTool(null)
-      setInspectorOpen(true)
-      restoreCharacterInspectorView()
-      return
-    }
-    const rect = sceneRef.current.getBoundingClientRect()
-    recordHistory()
-    setSelectedElementId(id)
-    setActiveTool(null)
-    setInspectorOpen(true)
-    if (element.kind === 'character') restoreCharacterInspectorView()
-    else setInspectorTab('editor')
-    dragRef.current = { id, pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, originalX: element.x, originalY: element.y, width: rect.width, height: rect.height }
-    event.currentTarget.setPointerCapture(event.pointerId)
-  }
-
-  const moveDrag = (event: ReactPointerEvent<HTMLElement>) => {
-    const drag = dragRef.current
-    if (!drag || drag.pointerId !== event.pointerId) return
-    const x = drag.originalX + (event.clientX - drag.startX) / drag.width * 100
-    const y = drag.originalY + (event.clientY - drag.startY) / drag.height * 100
-    if (drag.id === 'background') patchStudio((studio) => ({ ...studio, backgroundX: x, backgroundY: y, updatedAt: new Date().toISOString() }))
-    else updateElement(drag.id, { x, y }, false)
-  }
-
-  const endDrag = (event: ReactPointerEvent<HTMLElement>) => {
-    if (dragRef.current?.pointerId !== event.pointerId) return
-    dragRef.current = null
-  }
+  const { startDrag, moveDrag, endDrag } = useStudioStageInteraction({
+    activeStudio, sceneRef, recordHistory, setSelectedElementId, setActiveTool,
+    setInspectorOpen, setInspectorTab, restoreCharacterInspectorView, patchStudio
+  })
 
   const deleteSelected = () => {
     if (!activeStudio) return

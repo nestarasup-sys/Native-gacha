@@ -1143,3 +1143,11 @@ Continua a auditoria das operações IPC iniciadas pelo usuário e da cobertura 
 - A tela continua responsável por estado, gestos, apresentação, autosave e chamadas IPC. A ordenação dos grupos, o fallback por `pairId`/nome/PNG, as métricas de espelhamento, o limite das escalas e a preservação de camadas portáteis foram mantidos e cobertos com fixtures sintéticas.
 - `ExpressionPresetWorkspace.tsx` passou de 1.276 para 1.101 linhas físicas. Os formatos e versões dos rascunhos e presets, IDs, assets, IPC, exportação e dados persistidos não mudaram.
 - Verificação: oito testes focados passaram; `npm run test:refactor` passou com 386 testes; `npm test` passou com 29. Também passaram typecheck, auditoria de arquitetura (404 arquivos TS/TSX), auditoria de orçamento estático sem estouros e build.
+
+## 55. Etapa aplicada — interação de arraste do palco do Studio isolada
+
+- `StudioPage.tsx` continha a captura do ponteiro, seleção, histórico e conversão do arraste de pixels para coordenadas percentuais junto da composição da tela. `useStudioStageInteraction.ts` agora concentra o gesto e `studioStageInteractionModel.ts` contém a conversão e a atualização imutável do documento.
+- A página continua sendo dona do documento, do histórico e do salvamento. O hook recebe esses contratos explicitamente e atualiza o palco pelo mesmo `patchStudio`; a captura do ponteiro, seleção do fundo/elemento, bloqueio de personagens e restauração do inspetor foram preservados. Nenhum canal IPC, formato persistido, asset ou exportação mudou.
+- A conversão agora ignora movimento se o palco estiver sem largura/altura válida ou se as coordenadas forem não finitas, evitando inserir coordenadas inválidas no documento. `StudioPage.tsx` passou de 1.312 para 1.267 linhas físicas (45 a menos).
+- Cinco regressões sintéticas cobrem conversão, dimensões inválidas, atualização isolada do fundo e elemento, imutabilidade e delegação da tela ao hook.
+- Verificação: `npm run test:refactor` passou com 391 testes; `npm test` com 29; também passaram typecheck, auditoria de arquitetura (406 arquivos TS/TSX, sem violações), auditoria de orçamento estático, build e `git diff --check`.
