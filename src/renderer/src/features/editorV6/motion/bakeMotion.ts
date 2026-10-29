@@ -87,7 +87,7 @@ function calibratePair(from: EditorV6Element, to: EditorV6Element) {
   }
 }
 
-/** Bake seven or fewer canonical rig samples into one bounded PNG atlas, off the UI thread. */
+/** Bake canonical rig samples into one bounded PNG atlas, off the UI thread. */
 export type EditorV6BakeSession = { provider: CharacterRenderAssetProvider; materials: GachaReusableMaterialCache }
 export function createEditorV6BakeSession(provider: CharacterRenderAssetProvider): EditorV6BakeSession {
   return { provider: cachedProvider(provider, true), materials: new Map() }
@@ -131,7 +131,8 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
     const maximumWidth = Math.max(fullWidth, last.width), maximumHeight = Math.max(fullHeight, last.height)
     last.dispose()
     const count = request.plan.samples.length, columns = Math.ceil(Math.sqrt(count)), rows = Math.ceil(count / columns)
-    const ratio = Math.min(1, 4096 / columns / maximumWidth, 4096 / rows / maximumHeight, Math.sqrt(8_000_000 / (columns * rows * maximumWidth * maximumHeight)))
+    const maxAtlasPixels = Math.min(8_000_000, request.maxAtlasPixels ?? 8_000_000)
+    const ratio = Math.min(1, 4096 / columns / maximumWidth, 4096 / rows / maximumHeight, Math.sqrt(maxAtlasPixels / (columns * rows * maximumWidth * maximumHeight)))
     const cellWidth = Math.ceil(maximumWidth * ratio), cellHeight = Math.ceil(maximumHeight * ratio)
     const atlas = document.createElement('canvas'); atlas.width = cellWidth * columns; atlas.height = cellHeight * rows
     const context = atlas.getContext('2d')!

@@ -86,7 +86,7 @@ export function createEditorV6MotionService(deps: { ipcMain: Pick<IpcMain, 'hand
   }
   const validateRequest = (request: EditorV6MotionBakeRequest) => {
     const { plan, character } = request
-    if (!isCustomizerCharacter(character) || character.id !== plan.characterId || plan.from.characterId !== plan.characterId || plan.to.characterId !== plan.characterId || plan.from.id !== plan.elementId || plan.to.id !== plan.elementId || plan.endFrame <= plan.startFrame || plan.endFrame - plan.startFrame > 7.50001 || plan.samples.some((sample) => Math.abs(sample.progress - (plan.endFrame + sample.offset - plan.startFrame) / (plan.endFrame - plan.startFrame)) > 1e-6) || request.mouthScaleSamples && request.mouthScaleSamples.length !== plan.samples.length) throw Error('Dados de animação incompatíveis com o personagem.')
+    if (!isCustomizerCharacter(character) || character.id !== plan.characterId || plan.from.characterId !== plan.characterId || plan.to.characterId !== plan.characterId || plan.from.id !== plan.elementId || plan.to.id !== plan.elementId || plan.endFrame <= plan.startFrame || plan.endFrame - plan.startFrame > 7.50001 || plan.samples.some((sample) => Math.abs(sample.progress - (plan.endFrame + sample.offset - plan.startFrame) / (plan.endFrame - plan.startFrame)) > 1e-6) || request.mouthScaleSamples && request.mouthScaleSamples.length !== plan.samples.length || request.maxAtlasPixels !== undefined && !request.mouthScaleSamples) throw Error('Dados de animação incompatíveis com o personagem.')
   }
   const remember = (key: string, result: EditorV6MotionBakeResult) => {
     cache.delete(key); cache.set(key, result)

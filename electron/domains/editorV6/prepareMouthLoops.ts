@@ -6,6 +6,9 @@ import type { EditorV6MotionBakeRequest, EditorV6MotionBakeResult } from '../../
 const MAX_UNIQUE_STATES = 12
 const MAX_ATLAS_BYTES = 64 * 1024 * 1024
 const MAX_ATLAS_PIXELS = 32_000_000
+const MAX_SINGLE_ATLAS_PIXELS = 8_000_000
+const MIN_SINGLE_ATLAS_PIXELS = 1_000_000
+const MAX_ATLAS_ATTEMPTS = 3
 class MouthLoopResourceLimitError extends Error {}
 type Character = EditorV6MotionBakeRequest['character']
 type Candidate = { state: EditorV6Element; character: Character; blockIds: string[]; key: string }
@@ -66,17 +69,17 @@ function candidatesFor(project: EditorV6Document, characters: readonly Character
   return { candidates: [...candidates.values()], skippedStale: staleStates.size }
 }
 
-function requestFor(candidate: Candidate): EditorV6MotionBakeRequest {
+function requestFor(candidate: Candidate, maxAtlasPixels: number): EditorV6MotionBakeRequest {
   const from = { ...candidate.state, activeFaceMode: 'talk' as const }
   const to = { ...from }
   const startFrame = 0.5, endFrame = 8
   const samples = EDITOR_V6_MOUTH_LOOP_SAMPLE_SCALES.map((_, index) => {
-    const offset = index - 7
+    const offset = index - EDITOR_V6_MOUTH_LOOP_SAMPLE_SCALES.length
     return { offset, progress: (endFrame + offset - startFrame) / (endFrame - startFrame), faceMode: 'talk' as const }
   })
   return {
-    id: randomUUID(), character: candidate.character, mouthScaleSamples: [...EDITOR_V6_MOUTH_LOOP_SAMPLE_SCALES],
-    plan: { blockId: randomUUID(), elementId: from.id, characterId: from.characterId!, key: `mouth-loop:${candidate.key}`, startFrame, endFrame, from, to, samples }
+    id: randomUUID(), character: candidate.character, mouthScaleSamples: [...EDITOR_V6_MOUTH_LOOP_SAMPLE_SCALES], maxAtlasPixels,
+    plan: { blockId: randomUUID(), elementId: from.id, characterId: from.characterId!, key: `mouth-loop:${candidate.key}:${maxAtlasPixels}`, startFrame, endFrame, from, to, samples }
   }
 }
 
@@ -95,13 +98,26 @@ export async function prepareExportMouthLoops(project: EditorV6Document, startFr
   const states: EditorV6ExportMouthLoopState[] = []
   let atlasBytes = 0, atlasPixels = 0, projectWithAssets = project, skippedUnsupported = 0
   const errors: string[] = []
+  const statePixelBudget = Math.floor(MAX_ATLAS_PIXELS / candidates.length)
+  const stateByteBudget = Math.floor(MAX_ATLAS_BYTES / candidates.length)
   for (const [index, candidate] of candidates.entries()) {
     deps.signal.throwIfAborted()
     deps.progress(index, candidates.length, candidate.state.text || 'Personagem')
     try {
-      const result = await deps.bake(requestFor(candidate), deps.signal)
-      deps.signal.throwIfAborted()
-      if (result.motion.frames.length !== EDITOR_V6_MOUTH_LOOP_SAMPLE_SCALES.length) throw Error('O renderizador não preparou todos os tamanhos da boca.')
+      let pixelLimit = Math.min(MAX_SINGLE_ATLAS_PIXELS, statePixelBudget)
+      let result: EditorV6MotionBakeResult | undefined
+      for (let attempt = 0; attempt < MAX_ATLAS_ATTEMPTS; attempt++) {
+        result = await deps.bake(requestFor(candidate, pixelLimit), deps.signal)
+        deps.signal.throwIfAborted()
+        if (result.motion.frames.length !== EDITOR_V6_MOUTH_LOOP_SAMPLE_SCALES.length) throw Error('O renderizador não preparou todos os tamanhos da boca.')
+        if (result.metrics.atlasPixels <= statePixelBudget && result.asset.dataUrl.length <= stateByteBudget) break
+        if (attempt === MAX_ATLAS_ATTEMPTS - 1 || pixelLimit <= MIN_SINGLE_ATLAS_PIXELS) {
+          throw new MouthLoopResourceLimitError('O loop da boca ainda excede a memória disponível mesmo com imagens simplificadas. Reduza o trecho ou desative o loop da boca.')
+        }
+        const pixelRatio = Math.min(statePixelBudget / Math.max(1, result.metrics.atlasPixels), stateByteBudget / Math.max(1, result.asset.dataUrl.length), 0.8)
+        pixelLimit = Math.max(MIN_SINGLE_ATLAS_PIXELS, Math.min(pixelLimit - 1, Math.floor(result.metrics.atlasPixels * pixelRatio * 0.85)))
+      }
+      if (!result) throw Error('O renderizador não preparou a animação da boca.')
       atlasBytes += result.asset.dataUrl.length
       atlasPixels += result.metrics.atlasPixels
       if (atlasBytes > MAX_ATLAS_BYTES || atlasPixels > MAX_ATLAS_PIXELS) throw new MouthLoopResourceLimitError('Os atlases da animação excederam o limite seguro de memória. Reduza o intervalo ou desative o loop da boca.')

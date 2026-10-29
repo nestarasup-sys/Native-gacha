@@ -13,7 +13,7 @@ export type EditorV6MotionPlan = {
   blockId: string; elementId: string; characterId: string; key: string; startFrame: number; endFrame: number
   from: EditorV6Element; to: EditorV6Element; samples: Array<{ offset: number; progress: number; faceMode?: EditorV6FaceRenderMode }>
 }
-export type EditorV6MotionBakeRequest = { id: string; plan: EditorV6MotionPlan; character: CustomizerCharacter; mouthScaleSamples?: number[] }
+export type EditorV6MotionBakeRequest = { id: string; plan: EditorV6MotionPlan; character: CustomizerCharacter; mouthScaleSamples?: number[]; maxAtlasPixels?: number }
 export type EditorV6MotionBakeResult = { asset: EditorV6Asset; motion: EditorV6MotionAtlas; metrics: { milliseconds: number; preparedRigs: number; samples: number; atlasPixels: number } }
 export const editorV6MotionChannels = { payload: 'editor-v6:motion-worker:payload', complete: 'editor-v6:motion-worker:complete' } as const
 export type EditorV6MotionBridge = { payload: () => Promise<EditorV6MotionBakeRequest | null>; provider: CharacterRenderAssetProvider; complete: (result?: EditorV6MotionBakeResult, error?: string) => Promise<void> }

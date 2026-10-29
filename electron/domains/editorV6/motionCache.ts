@@ -7,7 +7,10 @@ import type { EditorV6MotionBakeRequest, EditorV6MotionBakeResult } from '../../
 /** Bump when baking changes without an authored timeline change. */
 export const MOTION_CACHE_VERSION = 3
 export function motionCacheKey(request: EditorV6MotionBakeRequest): string {
-  return createHash('sha256').update(JSON.stringify([MOTION_CACHE_VERSION, request.plan.key, request.mouthScaleSamples ?? null, request.character])).digest('hex')
+  const key = request.maxAtlasPixels === undefined
+    ? [MOTION_CACHE_VERSION, request.plan.key, request.mouthScaleSamples ?? null, request.character]
+    : [MOTION_CACHE_VERSION, request.plan.key, request.mouthScaleSamples ?? null, request.maxAtlasPixels, request.character]
+  return createHash('sha256').update(JSON.stringify(key)).digest('hex')
 }
 export function createMotionDiskCache(folder: string, maximumBytes = 256 * 1024 * 1024) {
   let maintenance = Promise.resolve()

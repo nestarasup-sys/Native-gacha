@@ -14,7 +14,7 @@ export type EditorV6ExportStatus = {
 export type EditorV6ExportPart = { index: number; startFrame: number; endFrame: number }
 export type EditorV6ExportMouthLoopState = { elementId: string; characterId: string; blockIds: string[]; assetId: string; frames: EditorV6MotionFrame[] }
 export type EditorV6ExportMouthLoops = { startFrame: number; cycleFrames: number; states: EditorV6ExportMouthLoopState[] }
-export const EDITOR_V6_MOUTH_LOOP_SAMPLE_SCALES = [1, 1.33, 1.67, 2, 2.33, 2.67, 3] as const
+export const EDITOR_V6_MOUTH_LOOP_SAMPLE_SCALES = [1, 2, 3] as const
 export function planEditorV6Export(options: EditorV6ExportOptions, durationFrames: number): EditorV6ExportPart[] {
   if (!options || typeof options.turbo !== 'boolean') throw Error('Configuração de exportação inválida.')
   if (!Number.isInteger(options.startFrame) || !Number.isInteger(options.endFrame) || options.startFrame < 0 || options.endFrame > durationFrames || options.endFrame <= options.startFrame) throw Error('Escolha um intervalo válido de quadros para exportar.')
