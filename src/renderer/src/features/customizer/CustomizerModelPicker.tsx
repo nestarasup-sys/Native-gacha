@@ -21,16 +21,17 @@ export function CustomizerModelPicker(props: {
       : models.length === 0 ? <div className="customizer-catalog-empty">Nenhum modelo salvo ainda.</div>
         : <div className="customizer-catalog-grid customizer-model-catalog">
           {models.map((model) => <button
-            className={'customizer-catalog-card model-catalog-card' + (selectedSlot === model.slot ? ' selected' : '')}
+            className={'customizer-catalog-card model-catalog-card' + (selectedSlot === model.slot ? ' selected' : '') + (model.recoveryRequired ? ' recovery-required' : '')}
             key={model.slot}
             onClick={() => onSelect(model)}
-            aria-label={`Selecionar ${model.name}`}
+            aria-label={model.recoveryRequired ? `Slot ${model.slot} com recuperação pendente` : `Selecionar ${model.name}`}
             aria-pressed={selectedSlot === model.slot}
-            title={model.name}
+            title={model.recoveryRequired ? `Slot ${model.slot}: resolva a recuperação em Modelos DEV` : model.name}
+            disabled={Boolean(model.recoveryRequired)}
             type="button"
           >
             {thumbnails[model.slot] ? <img src={thumbnails[model.slot]} alt="" /> : <span className="customizer-catalog-placeholder"><Icon name="body" /></span>}
-            <span className="customizer-model-catalog-name">{model.name}</span>
+            <span className="customizer-model-catalog-name">{model.recoveryRequired ? 'Recuperação pendente' : model.name}</span>
           </button>)}
         </div>}
   </section>

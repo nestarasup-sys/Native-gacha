@@ -621,6 +621,13 @@ Este corte separa propriedade dos contratos e chamadas entre domínios, mas não
 - A confirmação da interface informa que backups e transações pendentes serão apagados sem possibilidade de restauração. A recuperação automática regular permanece conservadora e continua preservando backups.
 - `model-source-recovery.test.mjs` exercita o handler IPC com diretórios temporários: remove backups múltiplos e staging do slot escolhido, preserva os artefatos de outro slot e confirma que a recuperação posterior retorna `missing` sem ambiguidade.
 
+### Etapa aplicada — leitura de slot ambíguo no Customizador
+
+- O Customizador e outros consumidores usam `fabricator:load-slot`. Quando a recuperação achava mais de um backup, o erro era propagado pelo handler IPC e o Electron reportava `Error invoking remote method`, mesmo que o consumidor tivesse um tratamento de erro.
+- `modelIpc.ts` agora transforma somente `AmbiguousModelSourceRecoveryError` em `null`, que já faz parte do contrato de leitura; outros erros continuam sendo propagados. A listagem mantém a marca `recoveryRequired` para orientar a decisão em Modelos DEV.
+- O Customizador não tenta montar miniaturas ou poses a partir de slots pendentes, mostra a pendência para personagens já vinculados e impede selecionar o slot como modelo novo.
+- `fabricator-model-catalog.test.mjs` verifica que o handler IPC resolve com `null` nesse caso. `npm run test:refactor` passou com 310 testes; os testes direcionados do catálogo e recuperação passaram com 18; também passaram typecheck, auditoria de arquitetura (349 arquivos TS/TSX), build e `git diff --check`.
+
 ## 7. Próxima tarefa recomendada
 
 Auditar `animatorSaveQueue`: mapear leituras, gravações, exclusões e rascunhos que compartilham a fila global, verificar se animações e rascunhos de slots independentes podem avançar em paralelo, e identificar quais filas/caudas o backup e o encerramento precisam aguardar. Preservar ordenação dentro do mesmo `modelSlot` e os caminhos atuais.

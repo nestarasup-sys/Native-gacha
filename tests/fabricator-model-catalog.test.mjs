@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { FabricatorModelCatalog } from '../electron/domains/fabricator/modelCatalog.ts'
 import { registerFabricatorModelCatalogHandlers } from '../electron/domains/fabricator/modelIpc.ts'
+import { AmbiguousModelSourceRecoveryError } from '../electron/domains/fabricator/modelSourceRecovery.ts'
 const SOURCE_FILE = 'source-abcdef11-2345.png'
 const PART = { id: 'head', name: 'Cabeça', x: 0, y: 0, width: 80, height: 80, rotation: 0 }
 const manifest = { schemaVersion: 1, slot: 1, name: 'Modelinho', sourceName: 'sheet.png', sourceAssetName: SOURCE_FILE,
@@ -66,6 +67,19 @@ test('IPC conserva canais e impede acesso de origem não confiável', async () =
   for (const cb of handlers.values()) await assert.rejects(cb({ trusted: false }, 1), /Origem inválida/)
   assert.equal(calls, 0)
   assert.deepEqual(await handlers.get('fabricator:load-slot')({ trusted: true }, 1), { slot: 1 })
+})
+
+test('IPC converte recuperação ambígua em modelo indisponível sem rejeitar o invoke', async () => {
+  const handlers = new Map()
+  registerFabricatorModelCatalogHandlers({ handle: (name, cb) => handlers.set(name, cb) }, () => {}, {
+    listSlots: async () => [],
+    loadSlot: async (slot) => {
+      if (slot === 3) throw new AmbiguousModelSourceRecoveryError()
+      throw new Error('Falha de leitura do disco')
+    }
+  })
+  assert.equal(await handlers.get('fabricator:load-slot')({}, 3), null)
+  await assert.rejects(handlers.get('fabricator:load-slot')({}, 4), /Falha de leitura do disco/)
 })
 
 test('catálogo reutiliza PNGs da versão atual e atualiza após nova publicação', async t => {

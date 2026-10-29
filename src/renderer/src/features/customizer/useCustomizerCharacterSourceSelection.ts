@@ -62,6 +62,10 @@ export function useCustomizerCharacterSourceSelection(deps: {
     })
 
   async function selectCatalogModel(model: NonNullable<FabricatorSlotSummary>) {
+    if (model.recoveryRequired) {
+      setCatalogError(`O slot ${model.slot} tem várias cópias de recuperação. Resolva-o em Fabricador Dev → Modelos antes de selecioná-lo.`)
+      return
+    }
     const requestId = ++previewLoadRequest.current
     setSelectedCatalogModelSlot(model.slot)
     setSelectedPosePage(0)

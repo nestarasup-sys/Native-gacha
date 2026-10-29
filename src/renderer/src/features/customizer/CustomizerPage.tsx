@@ -767,7 +767,8 @@ export function CustomizerPage() {
   }
 
   const availableModels = catalogModels.filter((model): model is NonNullable<typeof model> => model !== null)
-  const availablePoses = catalogPoses.filter((pose): pose is NonNullable<typeof pose> => pose?.sourceModelSlot === selectedCatalogModelSlot).sort((a, b) => a.slot - b.slot)
+  const recoveryModelSlots = new Set(catalogModels.flatMap((model) => model?.recoveryRequired ? [model.slot] : []))
+  const availablePoses = catalogPoses.filter((pose): pose is NonNullable<typeof pose> => pose?.sourceModelSlot === selectedCatalogModelSlot && !recoveryModelSlots.has(pose.sourceModelSlot)).sort((a, b) => a.slot - b.slot)
   const poseCategories = ['Parado', 'Sentado', ...new Set(availablePoses.map(resolvePoseCategory).filter((category) => category !== 'Parado' && category !== 'Sentado'))]
   const categoryPoses = availablePoses.filter((pose) => resolvePoseCategory(pose) === selectedPoseCategory)
   const posePageCount = Math.max(1, Math.ceil(categoryPoses.length / 5))

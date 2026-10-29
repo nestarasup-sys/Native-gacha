@@ -64,6 +64,21 @@ export function useCustomizerInitialArtworkPreview(deps: {
       setPreviewLoading(false)
       return
     }
+    if (model.recoveryRequired) {
+      setSelectedCatalogModelSlot(model.slot)
+      setSelectedCatalogPoseSlot(null)
+      setSelectedPoseCategory('Parado')
+      setSelectedPosePage(0)
+      setSelectedArtworkUrl(null)
+      setSelectedArtworkLabel(`Slot ${model.slot} · recuperação pendente`)
+      setSelectedArtworkProject(null)
+      setSelectedSourceModelProject(null)
+      setSelectedWardrobeUrl(null)
+      setSelectedWardrobeAboveHairUrl(null)
+      setPreviewLoading(false)
+      setCatalogError(`O slot ${model.slot} tem várias cópias de recuperação. Abra Fabricador Dev → Modelos e escolha “Excluir recuperação” se quiser apagá-las.`)
+      return
+    }
     const requestedPose = selectedCharacter.customization.poseSlot
     const pose = requestedPose === null ? null : catalogPoses.find((item) => item?.sourceModelSlot === model.slot && item.slot === requestedPose)
     const requestId = ++previewLoadRequest.current

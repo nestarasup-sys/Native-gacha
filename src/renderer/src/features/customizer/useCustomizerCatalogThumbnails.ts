@@ -36,7 +36,7 @@ export function useCustomizerCatalogThumbnails(deps: CatalogThumbnailDependencie
     let cancelled = false
     void (async () => {
       for (const model of catalogModels) {
-        if (!model || thumbnailCache.current.has(`model:${model.slot}`)) continue
+        if (!model || model.recoveryRequired || thumbnailCache.current.has(`model:${model.slot}`)) continue
         let artwork: CatalogArtwork | null = null
         const firstPose = catalogPoses.find((pose) => pose?.sourceModelSlot === model.slot && pose.slot === 1)
         try {
@@ -58,7 +58,8 @@ export function useCustomizerCatalogThumbnails(deps: CatalogThumbnailDependencie
   }, [activeModule, catalogLoading, catalogModels, catalogPoses, setCatalogError, setModelThumbnails])
 
   useEffect(() => {
-    if ((activeModule !== 'Poses' && selectedCustomizerTopTab !== 'modelos') || selectedCatalogModelSlot === null || catalogLoading) return
+    if ((activeModule !== 'Poses' && selectedCustomizerTopTab !== 'modelos') || selectedCatalogModelSlot === null || catalogLoading
+      || catalogModels.some((model) => model?.slot === selectedCatalogModelSlot && model.recoveryRequired)) return
     let cancelled = false
     const modelPoses = catalogPoses.filter((pose): pose is NonNullable<typeof pose> => pose?.sourceModelSlot === selectedCatalogModelSlot)
     void (async () => {
