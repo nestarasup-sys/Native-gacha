@@ -1,9 +1,21 @@
 /** Opt-in aggregate diagnostics: no user/project names, asset paths or content. */
 type RouteStats = { commits:number; commitMs:number; worstCommitMs:number; longTasks:number; longTaskMs:number; commitSamples:Array<{phase:string;actualDuration:number;baseDuration:number;startTime:number;commitTime:number}>; longTaskSamples:Array<{startTime:number;duration:number}>; sceneResolveSamples:Array<{at:number;durationMs:number;elementCount:number}> }
+type PlaybackSample = { frame:number; at:number; publishMs:number }
+type PlaybackGap = { from:number; to:number; skipped:number }
+const PLAYBACK_DIAGNOSTIC_SAMPLE_LIMIT = 5000
 const routes = new Set(['/', '/customizar', '/estudio', '/editor-v6', '/editor-v6/scene', '/editor-v6/surface', '/editor-v6/timeline', '/roteiros', '/base-videos', '/opcoes', '/fabricador-dev'])
 const stats = new Map<string, RouteStats>()
 const enabled = (() => { try { return typeof window !== 'undefined' && sessionStorage.getItem('gv5:perf') === '1' } catch { return false } })()
-let logicalFrameSamples: Array<{ frame: number; at: number; publishMs: number }> = []
+let logicalFrameSamples: PlaybackSample[] = []
+let playbackSampleWriteIndex = 0
+let logicalFrameGaps: PlaybackGap[] = []
+let playbackGapWriteIndex = 0
+let playbackUpdateCount = 0
+let playbackGapCount = 0
+let firstPlaybackFrame: number | null = null
+let lastPlaybackFrame: number | null = null
+let playbackPublishTotalMs = 0
+let playbackPublishWorstMs = 0
 function traceCaptureEnabled():boolean {
   return typeof window !== 'undefined' && Boolean((window as Window & { __editorV6TraceCapture?: boolean }).__editorV6TraceCapture)
 }
@@ -42,30 +54,60 @@ function summarizeSceneResolution(samples:RouteStats['sceneResolveSamples']) {
     p50Ms:+percentile(durations,.5).toFixed(3),p95Ms:+percentile(durations,.95).toFixed(3),p99Ms:+percentile(durations,.99).toFixed(3),
     worstMs:+Math.max(0,...durations).toFixed(3),maxElements:Math.max(0,...samples.map(sample=>sample.elementCount)) }
 }
+function appendBounded<T>(items:T[], item:T, nextWriteIndex:number):number {
+  if (items.length < PLAYBACK_DIAGNOSTIC_SAMPLE_LIMIT) {
+    items.push(item)
+    return nextWriteIndex
+  }
+  items[nextWriteIndex] = item
+  return (nextWriteIndex + 1) % PLAYBACK_DIAGNOSTIC_SAMPLE_LIMIT
+}
+function orderedSamples<T>(items:T[], nextWriteIndex:number):T[] {
+  if (items.length < PLAYBACK_DIAGNOSTIC_SAMPLE_LIMIT || nextWriteIndex === 0) return items.slice()
+  return [...items.slice(nextWriteIndex), ...items.slice(0, nextWriteIndex)]
+}
 function snapshotPlaybackPerformance() {
-  const frames = logicalFrameSamples
-  const gaps = frames.slice(1).flatMap((sample, index) => {
-    const prior = frames[index]
-    return sample.frame > prior.frame + 1 ? [{ from: prior.frame, to: sample.frame, skipped: sample.frame - prior.frame - 1 }] : []
-  })
+  const frames = orderedSamples(logicalFrameSamples, playbackSampleWriteIndex)
   return {
-    logicalFrameUpdates: frames.length,
-    firstLogicalFrame: frames[0]?.frame ?? null,
-    lastLogicalFrame: frames.at(-1)?.frame ?? null,
-    logicalFrameGaps: gaps,
-    publishTotalMs: +frames.reduce((sum, sample) => sum + sample.publishMs, 0).toFixed(2),
-    publishWorstMs: +Math.max(0, ...frames.map(sample => sample.publishMs)).toFixed(2),
+    logicalFrameUpdates: playbackUpdateCount,
+    firstLogicalFrame: firstPlaybackFrame,
+    lastLogicalFrame: lastPlaybackFrame,
+    logicalFrameGaps: orderedSamples(logicalFrameGaps, playbackGapWriteIndex),
+    logicalFrameGapCount: playbackGapCount,
+    publishTotalMs: +playbackPublishTotalMs.toFixed(2),
+    publishWorstMs: +playbackPublishWorstMs.toFixed(2),
+    samplesRetained: frames.length,
+    samplesDropped: playbackUpdateCount - frames.length,
     samples: frames
   }
 }
 export function resetUiPerformance(): void {
   stats.clear()
   logicalFrameSamples = []
+  playbackSampleWriteIndex = 0
+  logicalFrameGaps = []
+  playbackGapWriteIndex = 0
+  playbackUpdateCount = 0
+  playbackGapCount = 0
+  firstPlaybackFrame = null
+  lastPlaybackFrame = null
+  playbackPublishTotalMs = 0
+  playbackPublishWorstMs = 0
 }
 /** Captures the playback clock's requested logical frame and synchronous publication cost. */
 export function recordEditorV6PlaybackFrame(frame:number, at:number, publishMs:number):void {
   if (!enabled || !Number.isFinite(frame) || !Number.isFinite(at) || !Number.isFinite(publishMs)) return
-  logicalFrameSamples.push({ frame, at:+at.toFixed(2), publishMs:+publishMs.toFixed(3) })
+  if (lastPlaybackFrame !== null && frame > lastPlaybackFrame + 1) {
+    playbackGapCount += 1
+    playbackGapWriteIndex = appendBounded(logicalFrameGaps, { from:lastPlaybackFrame, to:frame, skipped:frame - lastPlaybackFrame - 1 }, playbackGapWriteIndex)
+  }
+  if (firstPlaybackFrame === null) firstPlaybackFrame = frame
+  lastPlaybackFrame = frame
+  const roundedPublishMs = +publishMs.toFixed(3)
+  playbackPublishTotalMs += roundedPublishMs
+  playbackPublishWorstMs = Math.max(playbackPublishWorstMs, roundedPublishMs)
+  playbackSampleWriteIndex = appendBounded(logicalFrameSamples, { frame, at:+at.toFixed(2), publishMs:roundedPublishMs }, playbackSampleWriteIndex)
+  playbackUpdateCount += 1
   if (traceCaptureEnabled()) performance.mark('editor-v6:playback-publish', { detail:{ frame, publishMs:+publishMs.toFixed(3), rafAt:+at.toFixed(3) } })
 }
 /** Measures deterministic timeline-to-scene composition independently from React/Chromium drawing. */
