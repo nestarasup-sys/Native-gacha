@@ -1060,3 +1060,10 @@ Continua a auditoria das operações IPC iniciadas pelo usuário e da cobertura 
 - As regras SQL e a sequência de migrações foram movidas sem alterar o schema. A cor seguinte de categoria tinha algoritmos duplicados no catálogo e na Base de Vídeos; `electron/categoryColors.cjs` agora contém uma implementação, enquanto a validação de Base de Vídeos preserva seu export antigo como reexport compatível.
 - `dataPlatform.cjs` passou de 847 para 599 linhas físicas (248 a menos). Os módulos preservam `BUILTIN_DOMAINS`, o formato persistido, IDs e caminhos. Um teste verifica que abrir um catálogo em versão futura falha sem alterar versão, tabela ou conteúdo existentes.
 - Verificação: `npm run test:refactor` passou com 348 testes; `npm test` passou com 29; `npm run test:data-runtime` confirmou SQLite, FTS5, object store, miniaturas e backup. Também passaram typecheck, auditoria de arquitetura (388 arquivos TS/TSX), build e `git diff --check`.
+
+## 45. Etapa aplicada — caminhos persistidos pertencem aos domínios
+
+- `electron/main.ts` definia diretamente os caminhos de catálogo, poses, animações, roupas, rostos, cabelo, personagens, Studio e Editor V6. `paths.ts` agora fica em cada domínio e constrói esses caminhos a partir de um provedor de `userData`; o composition root apenas compõe os módulos para injetá-los nos serviços.
+- Os nomes em disco e o formato não mudaram. Os testes com raiz sintética cobrem todas as rotas do Fabricador, manifesto do Customizador, Studio Principal, Editor Gacha e projetos do Editor V6; também garantem que a resolução continua acompanhando o caminho de dados atual.
+- `electron/main.ts` passou de 1.346 para 1.332 linhas físicas. Nenhum diretório ou dado local foi lido, movido ou regravado nesta extração.
+- Verificação: testes de caminhos (5), suíte ampla de refatoração, typecheck, auditoria de arquitetura, build, `npm test` e `git diff --check`.

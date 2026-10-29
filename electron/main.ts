@@ -1,4 +1,5 @@
 import { createEditorV6MediaHandler } from './domains/editorV6/mediaProtocol'
+import { createEditorV6Paths } from './domains/editorV6/paths'
 import { createMediaFileResponse } from './domains/mediaLibrary/mediaFileResponse'
 import { app, BrowserWindow, dialog, ipcMain, Menu, protocol, session, shell, type IpcMainInvokeEvent } from 'electron'
 import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync } from 'node:fs'
@@ -36,10 +37,12 @@ import { restrictRendererPermissions } from './windowPermissions'
 import { BaseVideoService } from './domains/baseVideos/service'
 import { registerBaseVideoHandlers } from './domains/baseVideos/ipc'
 import { CustomizerCharacterRepository } from './domains/customizer/repository'
+import { createCustomizerPaths } from './domains/customizer/paths'
 import { CustomizerCharacterService } from './domains/customizer/service'
 import { registerCustomizerCharacterHandlers } from './domains/customizer/ipc'
 import { starterCharacters } from './domains/customizer/starterCharacters'
 import { FabricatorModelCatalog } from './domains/fabricator/modelCatalog'
+import { createFabricatorPaths } from './domains/fabricator/paths'
 import { registerFabricatorModelCatalogHandlers } from './domains/fabricator/modelIpc'
 import { FabricatorWardrobeCatalog } from './domains/fabricator/wardrobeCatalog'
 import { createFabricatorCatalogListings, legacyHairStyle } from './domains/fabricator/catalogListings'
@@ -72,6 +75,7 @@ import { createFabricatorDesignSettingsService } from './domains/fabricator/desi
 import { registerFabricatorDesignSettingsHandlers } from './domains/fabricator/designSettingsIpc'
 import { registerExpressionPresetHandlers } from './domains/fabricator/expressionIpc'
 import { registerStudioPrimaryHandlers } from './domains/studio/primaryIpc'
+import { createStudioPaths } from './domains/studio/paths'
 import { registerStudioFileHandlers } from './domains/studio/fileIpc'
 import { createStudioLibraryIndex } from './domains/studio/libraryIndex'
 import { createStudioDocumentPersistence } from './domains/studio/documentPersistence'
@@ -317,36 +321,19 @@ protocol.registerSchemesAsPrivileged([
 
 const slotCount = FABRICATOR_MODEL_SLOT_COUNT
 const poseSlotCount = FABRICATOR_POSE_SLOT_COUNT
-const libraryPath = () => join(app.getPath('userData'), 'fabricator', 'models')
-const slotPath = (slot: number) => join(libraryPath(), `slot-${slot}`)
+const userDataPath = () => app.getPath('userData')
+const {
+  libraryPath, slotPath, poseLibraryPath, poseModelPath, poseSlotPath, poseDraftPath,
+  animatorLibraryPath, animatorModelPath, animatorSlotPath, animatorDraftPath,
+  wardrobeModelPath, wardrobeSetPath,
+  faceModelPath, faceSetPath, faceCatalogPath, faceCatalogItemPath,
+  faceExpressionPresetPath, faceExpressionCollectionsPath, faceExpressionWorkspaceDraftPath,
+  faceComponentPath, faceComponentItemPath, hairModelPath, hairStylePath
+} = createFabricatorPaths(userDataPath)
+const { characterManifestPath } = createCustomizerPaths(userDataPath)
+const { studioLibraryPath, studioPath } = createStudioPaths(userDataPath)
+const { editorV6LibraryPath, editorV6Path } = createEditorV6Paths(userDataPath)
 const fabricatorModelCatalog = new FabricatorModelCatalog(slotCount, slotPath, { readFile, readAssetImage })
-const poseLibraryPath = () => join(app.getPath('userData'), 'fabricator', 'poses')
-const poseModelPath = (modelSlot: number) => join(poseLibraryPath(), `model-${modelSlot}`)
-const poseSlotPath = (modelSlot: number, slot: number) => join(poseModelPath(modelSlot), `slot-${slot}`)
-const poseDraftPath = (modelSlot: number) => join(poseModelPath(modelSlot), 'draft')
-const animatorLibraryPath = () => join(app.getPath('userData'), 'fabricator', 'animations')
-const animatorModelPath = (modelSlot: number) => join(animatorLibraryPath(), `model-${modelSlot}`)
-const animatorSlotPath = (modelSlot: number, slot: number) => join(animatorModelPath(modelSlot), `slot-${slot}`)
-const animatorDraftPath = (modelSlot: number) => join(animatorModelPath(modelSlot), 'draft')
-const wardrobeLibraryPath = () => join(app.getPath('userData'), 'fabricator', 'wardrobe')
-const wardrobeModelPath = (modelSlot: number) => join(wardrobeLibraryPath(), `model-${modelSlot}`)
-const wardrobeSetPath = (modelSlot: number, id: string) => join(wardrobeModelPath(modelSlot), `set-${id}`)
-const faceModelPath = (modelSlot: number) => join(app.getPath('userData'), 'fabricator', 'faces', `model-${modelSlot}`)
-const faceSetPath = (modelSlot: number, id: string) => join(faceModelPath(modelSlot), `set-${id}`)
-const faceCatalogPath = (modelSlot: number) => join(faceModelPath(modelSlot), 'catalog')
-const faceCatalogItemPath = (modelSlot: number, id: string) => join(faceCatalogPath(modelSlot), `item-${id}`)
-const faceExpressionPresetPath = (modelSlot: number, id: string) => join(app.getPath('userData'), 'fabricator', 'expression-presets', `model-${modelSlot}`, `preset-${id}.json`)
-const faceExpressionCollectionsPath = (modelSlot: number) => join(app.getPath('userData'), 'fabricator', 'expression-presets', `model-${modelSlot}`, 'collections.json')
-const faceExpressionWorkspaceDraftPath = (modelSlot: number) => join(app.getPath('userData'), 'fabricator', 'expression-presets', `model-${modelSlot}`, 'workspace-draft.json')
-const faceComponentPath = (modelSlot: number) => join(app.getPath('userData'), 'fabricator', 'face-components', `model-${modelSlot}`)
-const faceComponentItemPath = (modelSlot: number, id: string) => join(faceComponentPath(modelSlot), `item-${id}`)
-const hairModelPath = (modelSlot: number) => join(app.getPath('userData'), 'fabricator', 'hair', `model-${modelSlot}`)
-const hairStylePath = (modelSlot: number, id: string) => join(hairModelPath(modelSlot), 'styles', `style-${id}`)
-const characterLibraryPath = () => join(app.getPath('userData'), 'customizer', 'characters')
-const studioLibraryPath = (workspace: 'studio' | 'video' = 'studio') => join(app.getPath('userData'), 'studios', workspace === 'video' ? 'Editor Gacha' : 'Studio Principal')
-const studioPath = (id: string) => join(studioLibraryPath('studio'), `studio-${id}`)
-const editorV6LibraryPath = () => join(app.getPath('userData'), 'studios', 'Editor V6')
-const editorV6Path = (id: string) => join(editorV6LibraryPath(), `editorV6-${id}`)
 const videoLibrary = new VideoLibraryStore(() => studioLibraryPath('video'))
 const coordinateVideoReferenceChange = createVideoReferenceChangeCoordinator()
 const coordinatePoseReferenceChange = createPoseReferenceChangeCoordinator()
@@ -389,7 +376,6 @@ const studioSaveQueues = { studio: Promise.resolve() as Promise<void> }
 let studioFileIpc: ReturnType<typeof registerStudioFileHandlers> | null = null
 let editorV6FileIpc: ReturnType<typeof registerEditorV6FileHandlers> | null = null
 let editorV6SaveQueue: Promise<void> = Promise.resolve()
-const characterManifestPath = () => join(characterLibraryPath(), 'characters.json')
 let poseSaveQueue: Promise<void> = Promise.resolve()
 const poseSaveWrites = new Set<Promise<void>>()
 let poseMigration: Promise<void> | null = null
