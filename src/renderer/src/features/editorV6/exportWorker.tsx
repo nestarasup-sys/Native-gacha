@@ -10,6 +10,7 @@ async function initialize() {
   const { project, width, height, layeredVideo, mouthLoops } = await worker.payload()
   const root = createRoot(document.getElementById('root')!)
   const images = new Map<string, Promise<void>>()
+  const assetsById = new Map(project.assets.map(asset => [asset.id, asset]))
   const mouthLoopByBlock = new Map<string, EditorV6ExportMouthLoops['states'][number]>()
   for (const state of mouthLoops?.states ?? []) for (const blockId of state.blockIds) mouthLoopByBlock.set(`${state.elementId}:${blockId}`, state)
   let previous = '', previousBackground = '', previousForeground = ''
@@ -44,8 +45,9 @@ async function initialize() {
     }
     const ids = new Set(activeLayer === 'background' ? [scene.background.backgroundAssetId] : activeLayer === 'foreground' ? scene.elements.map((element) => element.assetId) : [scene.background.backgroundAssetId, ...scene.elements.map((element) => element.assetId)])
     const assetPreparationStarted = performance.now()
-    for (const asset of project.assets) {
-      if (!ids.has(asset.id)) continue
+    for (const id of ids) {
+      const asset = id ? assetsById.get(id) : undefined
+      if (!asset) continue
       let prepared = images.get(asset.id)
       if (!prepared) {
         prepared = new Promise<void>((resolve, reject) => {

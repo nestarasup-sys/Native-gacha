@@ -175,6 +175,10 @@ async function main() {
   project = silent
   const fullHd = await runEditorV6Export(silent, { ...options, startFrame: 45, endFrame: 47, width: 1920, height: 1080 }, { ...base, id: randomUUID(), outputPath: join(folder, '1080p.mp4'), reportPath: join(folder, '1080p.report.json'), createWorker: (renderProject, _part, signal, layeredVideo) => makeWorker(signal, 1920, 1080, renderProject, layeredVideo) })
   assert(fullHd.totalFrames === 2 && !fullHd.fallback && active === 0, 'Exportação 1080p não concluiu com duas partes.')
+  const hdPixels = run(['-i', join(folder, '1080p.mp4'), '-frames:v', '1', '-pix_fmt', 'rgb24', '-f', 'rawvideo', 'pipe:1'])
+  let actorPixels = 0
+  for (let offset = 0; offset < hdPixels.length; offset += 3) if (hdPixels[offset] > 180 && hdPixels[offset + 1] > 120 && hdPixels[offset + 2] < 80) actorPixels++
+  assert(Math.abs(actorPixels - 384 * 432) < 384 * 432 * .02, `1080p distorceu a área do personagem: ${actorPixels} pixels, esperado ${384 * 432}.`)
   // Exercise the actual restricted sandbox preload, IPC queue and hidden bake worker.
   const owner = new BrowserWindow({ show: false, webPreferences: { sandbox: true, preload: join(root, 'out/preload/preload.cjs') } })
   await owner.loadURL('data:text/html,<html><body>isolated preload check</body></html>')
@@ -237,7 +241,7 @@ async function main() {
   project = staticProject
   assert(!(await readdir(folder)).some((name) => name.startsWith('editor-v6-export-') || name.startsWith('.editor-v6-')), 'Temporários de exportação não foram removidos.')
   factory.dispose()
-  const summary = { passed: true, peakWorkers: peak, frames: 81, reused: report.attempts[0].parts.reduce((sum, part) => sum + part.reused, 0), audioContinuousAtSeam: true, fallback: fallback.fallback, cancelledDestinationPreserved: true, singleFrame: true, fullHd: true, sandboxPreloads: true, motionAcrossTurboSeam: true, motionCancelled: true, output }
+  const summary = { passed: true, peakWorkers: peak, frames: 81, reused: report.attempts[0].parts.reduce((sum, part) => sum + part.reused, 0), audioContinuousAtSeam: true, fallback: fallback.fallback, cancelledDestinationPreserved: true, singleFrame: true, fullHd: true, fullHdActorPixels: actorPixels, sandboxPreloads: true, motionAcrossTurboSeam: true, motionCancelled: true, output }
   await writeFile(join(folder, 'result.json'), JSON.stringify(summary))
   console.log(JSON.stringify(summary, null, 2))
   app.exit(0)

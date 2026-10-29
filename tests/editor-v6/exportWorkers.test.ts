@@ -14,6 +14,7 @@ vi.mock('electron', () => ({ BrowserWindow: class extends EventEmitter {
   }
   constructor() { super(); state.windows.push(this) }
   removeMenu() {}
+  setContentSize = vi.fn()
   loadFile() { return Promise.resolve() }
   isDestroyed() { return this.destroyed }
   destroy() { this.destroyed = true; this.emit('closed') }
@@ -42,6 +43,7 @@ describe('export worker lifecycle', () => {
     ready()
     const worker = await pending
     const window = state.windows[0]
+    expect(window.setContentSize).toHaveBeenCalledWith(payload.width, payload.height)
     window.destroy()
     expect(remove).toHaveBeenCalledWith('abort', expect.any(Function))
     expect(() => handlers.get(editorV6WorkerChannels.payload)!({ sender: window.webContents, senderFrame: window.webContents.mainFrame })).toThrow('não autorizado')

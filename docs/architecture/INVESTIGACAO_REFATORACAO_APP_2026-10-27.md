@@ -2,6 +2,14 @@
 
 ## Reauditoria geral — 2026-10-29
 
+### Rodada ampliada — geometria 1080p e busca de assets
+
+- A captura 1920×1032 veio de bounds iniciais limitados à área útil do monitor Windows. Definir setContentSize explicitamente após criar a janela estabelece o viewport solicitado, sem depender apenas do tamanho inicial do construtor. Acrescentada verificação da área do personagem no MP4 1080p decodificado.
+- Contraprova real: retirar apenas setContentSize faz o teste detectar 158.112 pixels amarelos, contra 165.888 esperados. Restaurar a configuração entrega exatamente 165.888 pixels. O teste anterior só validava resolução final e não detectava a distorção anterior ao encode.
+- No renderer de exportação, índice assetsById é construído uma vez. Preparação por quadro consulta apenas os IDs visíveis em vez de percorrer todo project.assets. Custo dessa seleção muda de O(total de assets) para O(IDs visíveis), após indexação inicial O(total); não foi atribuída porcentagem de ganho de FPS a essa mudança.
+- Três exportações reais completas consecutivas no estado final passaram com área 1080p exata, após as cinco rodadas do ciclo de bitmap. Diagnóstico adicional permaneceu desligado. Aprovados também 108 testes Editor V6 (um ignorado existente), 330 de refatoração, 27 gerais, typecheck, auditoria e build.
+- Benchmark sintético de armazenamento desta rodada: 2.600 assets, inserção 310,8 ms e busca p95 8,63 ms, executado junto a outras verificações. Não comparar diretamente com runs anteriores para alegar aceleração; hardware/carga e esse benchmark não medem a alteração da captura.
+
 ### Rodada ampliada — captura nativa e cancelamento
 
 - Instrumentação opt-in `GACHA_EXPORT_CAPTURE_DIAGNOSTICS=1` grava a primeira captura por worker em fixture temporária: viewport, bounds SVG, fonte e posição das imagens, contagem de pixels. A reprodução mostrou DOM correto com superfície praticamente branca (um pixel de fundo correto). Aguardar SVG ou trocar por paint/invalidate não corrigiu; essas tentativas foram removidas.
