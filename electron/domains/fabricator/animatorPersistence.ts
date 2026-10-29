@@ -4,6 +4,7 @@
 import { join } from 'node:path'
 import type { AnimatorAnimation, AnimatorAnimationAsset, AnimatorAnimationDraft, AnimatorAnimationSave, PosePart } from '../../../src/shared/fabricator'
 import { areModelPartSkinContoursValid, isValidModelSkinContours } from '../../../src/shared/modelSkinContours.ts'
+import { recoverAnimatorImageTransaction, runAnimatorImageTransaction, type AnimatorManifestName, type PendingImage } from './imageManifestTransaction.ts'
 import type * as nodeFs from 'node:fs/promises'
 
 export type AnimatorPersistenceDependencies = {
@@ -14,7 +15,7 @@ export type AnimatorPersistenceDependencies = {
   dataUrlBuffer: (url: string) => Buffer
   writeAssetImageSource: (path: string, bytes: Buffer) => Promise<void>
   readAssetImage: (path: string) => Promise<Buffer>
-  files: Pick<typeof nodeFs, 'mkdir' | 'access' | 'readdir' | 'unlink' | 'readFile' | 'writeFile' | 'rename'>
+  files: Pick<typeof nodeFs, 'mkdir' | 'access' | 'readdir' | 'unlink' | 'readFile' | 'writeFile' | 'rename' | 'rm'>
 }
 
 export function createAnimatorPersistence(deps: AnimatorPersistenceDependencies) {
@@ -41,20 +42,65 @@ function validateAnimatorDocument(modelSlot: number, document: Pick<AnimatorAnim
   if (!document.thumbnailDataUrl.startsWith('data:image/png;base64,') || document.thumbnailDataUrl.length > 3_000_000) throw new Error('Miniatura da animação inválida.')
 }
 
-async function writeAnimatorParts(folder: string, parts: Array<Omit<PosePart, 'dataUrl'>>, assets: AnimatorAnimationAsset[]): Promise<void> {
+async function prepareAnimatorParts(folder: string, parts: Array<Omit<PosePart, 'dataUrl'>>, assets: AnimatorAnimationAsset[]): Promise<{ partsFolder: string; images: PendingImage[] }> {
   const partsFolder = join(folder, 'parts')
   await mkdir(partsFolder, { recursive: true })
   const validIds = new Set(parts.map((part) => part.id))
-  for (const asset of assets) if (validIds.has(asset.id)) await writeAssetImageSource(join(partsFolder, `${asset.id}.png`), dataUrlBuffer(asset.dataUrl))
+  const imagesById = new Map<string, Buffer>()
+  for (const asset of assets) {
+    if (!validIds.has(asset.id)) continue
+    const bytes = dataUrlBuffer(asset.dataUrl)
+    // Preserva o comportamento anterior: se o IPC repetir um ID, prevalece o último asset.
+    imagesById.set(asset.id, bytes)
+  }
   for (const part of parts) {
+    if (imagesById.has(part.id)) continue
     const target = join(partsFolder, `${part.id}.png`)
     try { await access(target) } catch (reason) {
       if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason
       throw new Error(`Imagem-base ausente na animação: ${part.name} (${part.id}).`)
     }
   }
+  return { partsFolder, images: [...imagesById].map(([id, bytes]) => ({ id, bytes })) }
+}
+
+async function pruneAnimatorParts(partsFolder: string, parts: Array<Omit<PosePart, 'dataUrl'>>): Promise<void> {
   const keep = new Set(parts.map((part) => `${part.id}.png`))
-  for (const filename of await readdir(partsFolder)) if (filename.endsWith('.png') && !filename.endsWith('.paint.png') && !keep.has(filename)) await unlink(join(partsFolder, filename))
+  let entries: string[]
+  try { entries = await readdir(partsFolder) }
+  catch (reason) { if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return; throw reason }
+  for (const filename of entries) {
+    if (!filename.endsWith('.png') || filename.endsWith('.paint.png') || keep.has(filename)) continue
+    try { await unlink(join(partsFolder, filename)) }
+    catch (reason) { if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason }
+  }
+}
+
+async function publishAnimatorDocument(folder: string, manifestName: AnimatorManifestName, parts: Array<Omit<PosePart, 'dataUrl'>>, assets: AnimatorAnimationAsset[], manifest: unknown): Promise<void> {
+  const { partsFolder, images } = await prepareAnimatorParts(folder, parts, assets)
+  await mkdir(folder, { recursive: true })
+  await runAnimatorImageTransaction({
+    files: deps.files, folder, imageFolder: partsFolder, manifestName, manifest, images,
+    writeImage: writeAssetImageSource,
+    promoteManifest: async () => {
+      const temporary = join(folder, `${manifestName}.tmp`)
+      await writeFile(temporary, JSON.stringify(manifest), 'utf8')
+      await rename(temporary, join(folder, manifestName))
+    }
+  })
+  await pruneAnimatorParts(partsFolder, parts)
+}
+
+async function recoverAnimatorAnimation(modelSlot: number, slot: number): Promise<void> {
+  if (!isValidModelSlot(modelSlot) || !isValidAnimatorSlot(slot)) throw new Error('Slot de animação inválido.')
+  const folder = animatorSlotPath(modelSlot, slot)
+  await recoverAnimatorImageTransaction(deps.files, folder, join(folder, 'parts'), 'animation.json')
+}
+
+async function recoverAnimatorDraft(modelSlot: number): Promise<void> {
+  if (!isValidModelSlot(modelSlot)) throw new Error('Modelo de rascunho inválido.')
+  const folder = animatorDraftPath(modelSlot)
+  await recoverAnimatorImageTransaction(deps.files, folder, join(folder, 'parts'), 'draft.json')
 }
 
 async function readAnimatorParts(folder: string, parts: Array<Omit<PosePart, 'dataUrl'>>): Promise<PosePart[]> {
@@ -66,21 +112,20 @@ async function writeAnimatorAnimation(modelSlot: number, slot: number, animation
   if (!isValidAnimatorSlot(slot) || animation.slot !== slot) throw new Error('Slot de animação inválido.')
   validateAnimatorDocument(modelSlot, animation as AnimatorAnimation)
   const folder = animatorSlotPath(modelSlot, slot)
-  await writeAnimatorParts(folder, animation.parts, assets)
-  await mkdir(folder, { recursive: true })
-  const temporary = join(folder, 'animation.json.tmp')
-  await writeFile(temporary, JSON.stringify(animation), 'utf8')
-  await rename(temporary, join(folder, 'animation.json'))
+  await recoverAnimatorAnimation(modelSlot, slot)
+  await publishAnimatorDocument(folder, 'animation.json', animation.parts, assets, animation)
 }
 
 async function readAnimatorAnimation(modelSlot: number, slot: number): Promise<AnimatorAnimation | null> {
   if (!isValidModelSlot(modelSlot) || !isValidAnimatorSlot(slot)) throw new Error('Slot de animação inválido.')
   try {
+    await recoverAnimatorAnimation(modelSlot, slot)
     const folder = animatorSlotPath(modelSlot, slot)
     const saved = JSON.parse(await readFile(join(folder, 'animation.json'), 'utf8')) as AnimatorAnimationSave
     if (saved.slot !== slot) return null
     validateAnimatorDocument(modelSlot, saved as AnimatorAnimation)
-    return { ...saved, parts: await readAnimatorParts(folder, saved.parts) }
+    const loadedParts = await readAnimatorParts(folder, saved.parts)
+    return { ...saved, parts: loadedParts }
   } catch (reason) {
     if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return null
     throw reason
@@ -91,21 +136,20 @@ async function writeAnimatorDraft(modelSlot: number, draft: AnimatorAnimationDra
   if (!isValidModelSlot(modelSlot) || draft.animation.sourceModelSlot !== modelSlot || (draft.editingSlot !== null && !isValidAnimatorSlot(draft.editingSlot))) throw new Error('Rascunho de animação inválido.')
   validateAnimatorDocument(modelSlot, { ...draft.animation, slot: draft.editingSlot ?? 1 } as AnimatorAnimation)
   const folder = animatorDraftPath(modelSlot)
-  await writeAnimatorParts(folder, draft.animation.parts, assets)
-  await mkdir(folder, { recursive: true })
-  const temporary = join(folder, 'draft.json.tmp')
-  await writeFile(temporary, JSON.stringify(draft), 'utf8')
-  await rename(temporary, join(folder, 'draft.json'))
+  await recoverAnimatorDraft(modelSlot)
+  await publishAnimatorDocument(folder, 'draft.json', draft.animation.parts, assets, draft)
 }
 
 async function readAnimatorDraft(modelSlot: number): Promise<AnimatorAnimationDraft | null> {
   if (!isValidModelSlot(modelSlot)) throw new Error('Modelo de rascunho inválido.')
   try {
+    await recoverAnimatorDraft(modelSlot)
     const folder = animatorDraftPath(modelSlot)
     const draft = JSON.parse(await readFile(join(folder, 'draft.json'), 'utf8')) as AnimatorAnimationDraft
     if (draft.editingSlot !== null && !isValidAnimatorSlot(draft.editingSlot)) return null
     validateAnimatorDocument(modelSlot, { ...draft.animation, slot: draft.editingSlot ?? 1 } as AnimatorAnimation)
-    return { ...draft, animation: { ...draft.animation, parts: await readAnimatorParts(folder, draft.animation.parts) } }
+    const loadedParts = await readAnimatorParts(folder, draft.animation.parts)
+    return { ...draft, animation: { ...draft.animation, parts: loadedParts } }
   } catch (reason) {
     if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return null
     throw reason
@@ -113,5 +157,5 @@ async function readAnimatorDraft(modelSlot: number): Promise<AnimatorAnimationDr
 }
 
 
-  return { isValidAnimatorSlot, validateAnimatorDocument, writeAnimatorAnimation, readAnimatorAnimation, writeAnimatorDraft, readAnimatorDraft }
+  return { isValidAnimatorSlot, validateAnimatorDocument, writeAnimatorAnimation, readAnimatorAnimation, recoverAnimatorAnimation, writeAnimatorDraft, readAnimatorDraft, recoverAnimatorDraft }
 }

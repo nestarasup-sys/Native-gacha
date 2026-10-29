@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { FabricatorWardrobeCatalog } from '../electron/domains/fabricator/wardrobeCatalog.ts'
 import { registerFabricatorWardrobeCatalogHandlers } from '../electron/domains/fabricator/wardrobeCatalogIpc.ts'
-import { recoverCatalogImageTransaction } from '../electron/domains/fabricator/catalogImageTransaction.ts'
+import { recoverCatalogImageTransaction } from '../electron/domains/fabricator/imageManifestTransaction.ts'
 
 async function fixture(t) {
   const root = await mkdtemp(join(tmpdir(), 'native-gacha-wardrobe-'))

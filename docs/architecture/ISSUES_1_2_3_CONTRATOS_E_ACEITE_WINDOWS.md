@@ -42,7 +42,7 @@ O código-fonte foi importado como **arquivos Git**, não como um ZIP: Electron,
 - `posePersistence.ts`, `poseIpc.ts`, `animatorPersistence.ts`: pose/animador por contrato de dependência.
 - `wardrobeCatalog.ts`, `wardrobeCatalogIpc.ts`: listagem isolada com diagnóstico por conjunto.
 - `catalogListings.ts`: listagem de rostos e cabelos fora do `electron/main.ts`, por filesystem injetado; o legado pode ser virtual ou já estar fisicamente migrado, mas deixa de ser listado ao ativar o catálogo ou excluí-lo. Referências diretas continuam carregando enquanto o legado não for excluído.
-- `catalogPersistence.ts` + `catalogImageTransaction.ts`, `modelSourceJournal.ts`, `studioAssetTransaction.ts`, `expressionBatchTransaction.ts`: backups, validação e recuperação; dados de origem não são apagados em falhas sem provas.
+- `catalogPersistence.ts` + `imageManifestTransaction.ts`, `modelSourceJournal.ts`, `studioAssetTransaction.ts`, `expressionBatchTransaction.ts`: backups, validação e recuperação; dados de origem não são apagados em falhas sem provas.
 - `CustomizerCharacterRepository`: gravação e compatibilidade de biblioteca por personagem.
 - Os handlers `fabricator:face:list`, `fabricator:listHairStyles` (via canal tipado original), poses, roupas e catálogos não foram renomeados. O `main.ts` só delega as listagens. O restante da persistência de domínios já extraída mantém compatibilidade JSON/SQLite/IPC.
 

@@ -1,7 +1,7 @@
 /** Synthetic-only subprocess: exits during the first PNG write, AFTER journal commit. */
 import * as fs from 'node:fs/promises'
 import { join } from 'node:path'
-import { runCatalogImageTransaction } from '../../electron/domains/fabricator/catalogImageTransaction.ts'
+import { runCatalogImageTransaction } from '../../electron/domains/fabricator/imageManifestTransaction.ts'
 
 const folder=process.argv[2]
 if(!folder || !folder.includes('native-glue-crash-'))throw Error('Crash test may only touch its isolated temporary fixture')

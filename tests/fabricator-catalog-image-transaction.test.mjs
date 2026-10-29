@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { createHash } from 'node:crypto'
 import { createFabricatorCatalogPersistence } from '../electron/domains/fabricator/catalogPersistence.ts'
-import { catalogManifestNames, recoverCatalogImageTransaction, runCatalogImageTransaction } from '../electron/domains/fabricator/catalogImageTransaction.ts'
+import { catalogManifestNames, recoverCatalogImageTransaction, runCatalogImageTransaction } from '../electron/domains/fabricator/imageManifestTransaction.ts'
 
 const digest = value => createHash('sha256').update(value).digest('hex')
 async function fixture(t, manifestName = 'wardrobe.json') {

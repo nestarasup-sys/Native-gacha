@@ -5,7 +5,10 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { createPosePersistence } from '../electron/domains/fabricator/posePersistence.ts'
 import { createAnimatorPersistence } from '../electron/domains/fabricator/animatorPersistence.ts'
+import { runAnimatorImageTransaction } from '../electron/domains/fabricator/imageManifestTransaction.ts'
 import { poseAssetsForPersistence } from '../src/renderer/src/features/fabricator/models/poseAssetSnapshots.ts'
+import { spawnSync } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
 
 const png = 'data:image/png;base64,' + Buffer.from('PNGDATA').toString('base64')
 const part = { id: 'head', name: 'Cabeça', x: 12, y: 8, width: 30, height: 40, rotation: 0 }
@@ -43,9 +46,11 @@ async function fixture(t) {
     readAssetImage: path => fs.readFile(path),
     files: fs
   }
+  const animatorDeps = { ...deps, animatorSlotPath, animatorDraftPath }
   return {
     pose: createPosePersistence({ ...deps, poseSlotPath, poseDraftPath, modelSlotPath: modelPath, modelHeadParts: async () => [] }),
-    animator: createAnimatorPersistence({ ...deps, animatorSlotPath, animatorDraftPath }),
+    animator: createAnimatorPersistence(animatorDeps),
+    animatorDeps,
     paths: {poseSlotPath,poseDraftPath,animatorSlotPath,animatorDraftPath,modelPath}
   }
 }
@@ -118,6 +123,96 @@ test('Animador DEV mantém snapshots em draft com round-trip', async t => {
   const loaded=await store.readAnimatorDraft(1)
   assert.equal(loaded.animation.parts[0].dataUrl,png)
   assert.equal(loaded.selectedFrameId,'frame-1')
+})
+
+test('journal do Animador só aceita manifestos declarados pelo domínio', async () => {
+  assert.throws(() => runAnimatorImageTransaction({ manifestName: '../animation.json' }), /Manifesto de animação não autorizado/)
+})
+
+test('Animador DEV apaga PNG obsoleto só depois de confirmar o novo manifesto', async t => {
+  const { animator: store, paths } = await fixture(t)
+  const body = { id: 'body', name: 'Tronco', x: 20, y: 30, width: 60, height: 90, rotation: 0 }
+  const original = {
+    ...animation,
+    parts: [part, body],
+    frames: [{ ...animation.frames[0], transforms: { head: { x: 12, y: 8, rotation: 0 }, body: { x: 20, y: 30, rotation: 0 } } }]
+  }
+  const folder = paths.animatorSlotPath(1, 1)
+  await store.writeAnimatorAnimation(1, 1, original, [{ id: 'head', dataUrl: png }, { id: 'body', dataUrl: png }])
+  await fs.writeFile(join(folder, 'parts', 'head.paint.png'), 'PAINT')
+  await fs.writeFile(join(folder, 'parts', 'head.paint.json'), '{"sourceHash":"kept"}')
+
+  const updated = { ...animation, frames: [{ ...animation.frames[0], transforms: { head: { x: 15, y: 8, rotation: 0 } } }] }
+  await store.writeAnimatorAnimation(1, 1, updated, [{ id: 'head', dataUrl: png }])
+
+  assert.equal(JSON.parse(await fs.readFile(join(folder, 'animation.json'), 'utf8')).parts.length, 1)
+  await assert.rejects(fs.access(join(folder, 'parts', 'body.png')), { code: 'ENOENT' })
+  assert.equal(await fs.readFile(join(folder, 'parts', 'head.paint.png'), 'utf8'), 'PAINT')
+  assert.equal(await fs.readFile(join(folder, 'parts', 'head.paint.json'), 'utf8'), '{"sourceHash":"kept"}')
+})
+
+test('Animador DEV recupera PNG e manifesto antigos após encerramento durante a escrita de asset', async t => {
+  const { animator: store, animatorDeps, paths } = await fixture(t)
+  await store.writeAnimatorAnimation(1, 1, animation, [{ id: 'head', dataUrl: png }])
+  const folder = paths.animatorSlotPath(1, 1)
+  const child = spawnSync(process.execPath, ['--experimental-strip-types', fileURLToPath(new URL('../scripts/fabricator/crash-animator-image-write.mjs', import.meta.url)), folder, 'animation', 'image'], {
+    encoding: 'utf8', timeout: 25000
+  })
+
+  assert.equal(child.status, 94, child.stderr || child.error?.message || 'O processo não encerrou no checkpoint do PNG')
+  assert.equal(await fs.readFile(join(folder, 'parts', 'head.png'), 'utf8'), 'PROCESS_CRASH_NEW_IMAGE')
+  assert.notEqual(await fs.readFile(join(folder, '.animator-image-transaction', 'journal.json'), 'utf8'), '')
+
+  const reopened = createAnimatorPersistence(animatorDeps)
+  const restored = await reopened.readAnimatorAnimation(1, 1)
+  assert.equal(restored.parts[0].dataUrl, png)
+  assert.deepEqual(JSON.parse(await fs.readFile(join(folder, 'animation.json'), 'utf8')), animation)
+  await assert.rejects(fs.access(join(folder, '.animator-image-transaction')), { code: 'ENOENT' })
+})
+
+test('Animador DEV mantém PNGs novos quando o processo encerra após promover o manifesto', async t => {
+  const { animator: store, animatorDeps, paths } = await fixture(t)
+  await store.writeAnimatorAnimation(1, 1, animation, [{ id: 'head', dataUrl: png }])
+  const folder = paths.animatorSlotPath(1, 1)
+  const child = spawnSync(process.execPath, ['--experimental-strip-types', fileURLToPath(new URL('../scripts/fabricator/crash-animator-image-write.mjs', import.meta.url)), folder, 'animation', 'manifest'], {
+    encoding: 'utf8', timeout: 25000
+  })
+
+  assert.equal(child.status, 96, child.stderr || child.error?.message || 'O processo não encerrou após a promoção do manifesto')
+  assert.equal(JSON.parse(await fs.readFile(join(folder, 'animation.json'), 'utf8')).name, 'Crash test')
+  assert.notEqual(await fs.readFile(join(folder, '.animator-image-transaction', 'journal.json'), 'utf8'), '')
+
+  const reopened = createAnimatorPersistence(animatorDeps)
+  const restored = await reopened.readAnimatorAnimation(1, 1)
+  assert.equal(restored.name, 'Crash test')
+  assert.equal(restored.parts[0].dataUrl, png)
+  await assert.rejects(fs.access(join(folder, '.animator-image-transaction')), { code: 'ENOENT' })
+})
+
+test('Animador DEV recupera o PNG anterior quando o autosave draft é interrompido', async t => {
+  const { animator: store, animatorDeps, paths } = await fixture(t)
+  const originalDraft = {
+    editingSlot: null,
+    animation: { ...animation, slot: undefined },
+    currentTransforms: { head: { x: 12, y: 8, rotation: 0 } },
+    currentJoints: [],
+    selectedFrameId: 'frame-1',
+    dirtyFrame: false,
+    updatedAt: animation.updatedAt
+  }
+  await store.writeAnimatorDraft(1, originalDraft, [{ id: 'head', dataUrl: png }])
+  const folder = paths.animatorDraftPath(1)
+  const child = spawnSync(process.execPath, ['--experimental-strip-types', fileURLToPath(new URL('../scripts/fabricator/crash-animator-image-write.mjs', import.meta.url)), folder, 'draft', 'image'], {
+    encoding: 'utf8', timeout: 25000
+  })
+
+  assert.equal(child.status, 94, child.stderr || child.error?.message || 'O processo não encerrou no checkpoint do PNG draft')
+  const reopened = createAnimatorPersistence(animatorDeps)
+  const restored = await reopened.readAnimatorDraft(1)
+  assert.equal(restored.animation.name, animation.name)
+  assert.equal(restored.animation.parts[0].dataUrl, png)
+  assert.deepEqual(JSON.parse(await fs.readFile(join(folder, 'draft.json'), 'utf8')), JSON.parse(JSON.stringify(originalDraft)))
+  await assert.rejects(fs.access(join(folder, '.animator-image-transaction')), { code: 'ENOENT' })
 })
 test('manifesto não é publicado se faltar peça no rascunho do Animator', async t => {
   const {animator: store,paths} = await fixture(t)

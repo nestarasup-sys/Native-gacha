@@ -1256,10 +1256,10 @@ async function modelHeadParts(modelSlot: number): Promise<Array<Pick<ModelPart, 
   }
 }
 
-const { isValidAnimatorSlot, writeAnimatorAnimation, readAnimatorAnimation, writeAnimatorDraft, readAnimatorDraft } = createAnimatorPersistence({
+const { isValidAnimatorSlot, writeAnimatorAnimation, readAnimatorAnimation, recoverAnimatorAnimation, writeAnimatorDraft, readAnimatorDraft, recoverAnimatorDraft } = createAnimatorPersistence({
   animatorSlotPath, animatorDraftPath, isValidModelSlot, isValidPoseSlot,
   dataUrlBuffer, writeAssetImageSource, readAssetImage,
-  files: { mkdir, access, readdir, unlink, readFile, writeFile, rename }
+  files: { mkdir, access, readdir, unlink, readFile, writeFile, rename, rm }
 })
 
 function collectPendingPersistenceWrites(): Promise<unknown>[] {
@@ -1475,7 +1475,7 @@ async function registerFabricatorHandlers(): Promise<void> {
   fabricatorAnimatorIpc = registerFabricatorAnimatorHandlers({
     ipcMain, assertTrustedSender, isValidModelSlot, isValidAnimatorSlot, poseSlotCount,
     animatorLibraryPath, animatorModelPath, animatorSlotPath, animatorDraftPath,
-    readAnimatorAnimation, writeAnimatorAnimation, readAnimatorDraft, writeAnimatorDraft,
+    readAnimatorAnimation, recoverAnimatorAnimation, writeAnimatorAnimation, readAnimatorDraft, recoverAnimatorDraft, writeAnimatorDraft,
     files: { readFile, readdir, rm }
   })
 

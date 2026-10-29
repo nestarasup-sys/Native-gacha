@@ -4,7 +4,7 @@ import * as fs from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { spawnSync } from 'node:child_process'
-import { recoverCatalogImageTransaction } from '../electron/domains/fabricator/catalogImageTransaction.ts'
+import { recoverCatalogImageTransaction } from '../electron/domains/fabricator/imageManifestTransaction.ts'
 
 test('processo interrompido durante gravação de roupa fixada preserva PNGs, vínculos e outro conjunto',async t=>{
   const folder=await fs.mkdtemp(join(tmpdir(),'native-glue-crash-'))

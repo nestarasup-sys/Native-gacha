@@ -43,13 +43,13 @@ test('canais IPC do Animador DEV mantêm fila independente e autenticada',async(
   ipcMain:{handle:(key,fn)=>handlers.set(key,fn)},assertTrustedSender:e=>{if(!e.trusted)throw Error('Bloqueado')},
   isValidModelSlot:()=>true,isValidAnimatorSlot:()=>true,poseSlotCount:12,
   animatorLibraryPath:()=>'',animatorModelPath:model=>`model-${model}`,animatorSlotPath:(model,slot)=>`model-${model}/slot-${slot}`,animatorDraftPath:model=>`model-${model}/draft`,
-  readAnimatorAnimation:async()=>null,writeAnimatorAnimation:async(model,slot)=>{
+  readAnimatorAnimation:async()=>null,recoverAnimatorAnimation:async()=>{},writeAnimatorAnimation:async(model,slot)=>{
    events.push(`${model}:${slot}:start`)
    if(model===1&&slot===1){markFirstStarted();await firstGate}
    if(model===3&&failModelThree){failModelThree=false;throw Error('Falha de persistência sintética')}
    events.push(`${model}:${slot}:end`)
   },
-  readAnimatorDraft:async()=>null,writeAnimatorDraft:async()=>{},
+  readAnimatorDraft:async()=>null,recoverAnimatorDraft:async()=>{},writeAnimatorDraft:async()=>{},
   files:{readFile:async()=>{listReads++;return ''},readdir:async()=>[],rm:async()=>{}}
  })
  assert.equal(handlers.size,8)

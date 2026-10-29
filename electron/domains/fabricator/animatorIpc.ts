@@ -17,8 +17,10 @@ export type AnimatorIpcDependencies = {
   animatorSlotPath: (model: number, slot: number) => string
   animatorDraftPath: (model: number) => string
   readAnimatorAnimation: (model: number, slot: number) => Promise<AnimatorAnimation | null>
+  recoverAnimatorAnimation: (model: number, slot: number) => Promise<void>
   writeAnimatorAnimation: (model: number, slot: number, animation: AnimatorAnimationSave, assets: AnimatorAnimationAsset[]) => Promise<void>
   readAnimatorDraft: (model: number) => Promise<AnimatorAnimationDraft | null>
+  recoverAnimatorDraft: (model: number) => Promise<void>
   writeAnimatorDraft: (model: number, draft: AnimatorAnimationDraft, assets: AnimatorAnimationAsset[]) => Promise<void>
   files: Pick<typeof fs, 'readFile' | 'readdir' | 'rm'>
 }
@@ -26,7 +28,7 @@ export type AnimatorIpcDependencies = {
 export function registerFabricatorAnimatorHandlers(deps: AnimatorIpcDependencies): { getPendingWrites: () => Promise<void>[] } {
   const { ipcMain, assertTrustedSender, isValidModelSlot, isValidAnimatorSlot, poseSlotCount,
     animatorLibraryPath, animatorModelPath, animatorSlotPath, animatorDraftPath,
-    readAnimatorAnimation, writeAnimatorAnimation, readAnimatorDraft, writeAnimatorDraft } = deps
+    readAnimatorAnimation, recoverAnimatorAnimation, writeAnimatorAnimation, readAnimatorDraft, recoverAnimatorDraft, writeAnimatorDraft } = deps
   const { readFile, readdir, rm } = deps.files
   const modelOperations = createKeyedOperationQueue({ retainFailures: true })
   const queueModelOperation = <T>(modelSlot: number, operation: () => Promise<T>): Promise<T> =>
@@ -53,6 +55,7 @@ export function registerFabricatorAnimatorHandlers(deps: AnimatorIpcDependencies
     return queueModelOperation(modelSlot, async () => {
       const entries: AnimatorAnimationSummary[] = []
       for (let slot = 1; slot <= poseSlotCount; slot += 1) {
+        await recoverAnimatorAnimation(modelSlot, slot)
         try {
           const animation = JSON.parse(await readFile(join(animatorSlotPath(modelSlot, slot), 'animation.json'), 'utf8')) as AnimatorAnimationSave
           if (animation.schemaVersion !== 1 || animation.sourceModelSlot !== modelSlot || animation.slot !== slot) continue
@@ -82,6 +85,7 @@ export function registerFabricatorAnimatorHandlers(deps: AnimatorIpcDependencies
       const base = resolve(animatorModelPath(modelSlot))
       const target = resolve(animatorSlotPath(modelSlot, slot))
       if (dirname(target) !== base || basename(target) !== `slot-${slot}`) throw new Error('Caminho de exclusão de animação inválido.')
+      await recoverAnimatorAnimation(modelSlot, slot)
       await rm(target, { recursive: true, force: true })
     })
   })
@@ -105,6 +109,7 @@ export function registerFabricatorAnimatorHandlers(deps: AnimatorIpcDependencies
       const base = resolve(animatorModelPath(modelSlot))
       const target = resolve(animatorDraftPath(modelSlot))
       if (dirname(target) !== base || basename(target) !== 'draft') throw new Error('Caminho de rascunho inválido.')
+      await recoverAnimatorDraft(modelSlot)
       await rm(target, { recursive: true, force: true })
     })
   })

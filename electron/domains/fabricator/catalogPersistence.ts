@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import type * as nodeFs from 'node:fs/promises'
 import { createKeyedOperationQueue } from '../storage/keyedOperationQueue.ts'
 import { publishJsonManifest } from '../storage/atomicManifest.ts'
-import { recoverCatalogImageTransaction, runCatalogImageTransaction, type CatalogManifestName } from './catalogImageTransaction.ts'
+import { recoverCatalogImageTransaction, runCatalogImageTransaction, type CatalogManifestName } from './imageManifestTransaction.ts'
 
 type Files = Pick<typeof nodeFs, 'mkdir' | 'access' | 'writeFile' | 'readFile' | 'rm' | 'rename' | 'unlink' | 'readdir'>
 type Image = { id: string; bytes: Buffer }
