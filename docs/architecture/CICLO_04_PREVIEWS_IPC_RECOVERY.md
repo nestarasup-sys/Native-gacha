@@ -34,7 +34,7 @@ Antes da troca de diretórios, `modelSource.ts` escreve o marcador `.model-sourc
 
 - Não sobrescreve um slot oficial, mesmo que o manifesto existente esteja defeituoso.
 - A recuperação automática preserva backups para recuperação manual. Já a exclusão explícita e confirmada do slot remove seus backups, áreas de staging e marcador pendente.
-- A listagem sinaliza slots ambíguos com `recoveryRequired`, inclusive quando ainda existe um manifesto válido, preservando o resumo do modelo para facilitar a identificação. Leituras por IPC retornam `null` para um modelo ambíguo, em vez de rejeitar a chamada nos consumidores como o Customizador. A exclusão continua sendo uma decisão explícita em Modelos DEV.
+- `listModelSourceSlots` percorre os slots e sinaliza os ambíguos com `recoveryRequired`, inclusive quando ainda existe um manifesto válido, preservando o resumo do modelo para facilitar a identificação. Leituras por IPC retornam `null` para um modelo ambíguo, em vez de rejeitar a chamada nos consumidores como o Customizador. A ambiguidade esperada fica representada no catálogo/UI; não gera `console.warn` a cada consulta. A exclusão continua sendo uma decisão explícita em Modelos DEV.
 - Nunca confia em caminhos do marcador (somente nomes de backup do slot com UUID válido).
 - Usa o DomainFileSystem injetado; não modifica arquivos fora da biblioteca.
 - O catálogo e a publicação fazem a verificação antes da leitura ou da gravação.

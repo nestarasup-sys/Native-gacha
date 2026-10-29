@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import * as fs from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { markAmbiguousModelSourceSlots, recoverModelSourceSlot } from '../electron/domains/fabricator/modelSourceRecovery.ts'
+import { AmbiguousModelSourceRecoveryError, listModelSourceSlots, markAmbiguousModelSourceSlots, recoverModelSourceSlot } from '../electron/domains/fabricator/modelSourceRecovery.ts'
 import { registerFabricatorProjectHandlers } from '../electron/domains/fabricator/projectIpc.ts'
 
 async function fixture(t) {
@@ -144,4 +144,27 @@ test('marca slots ambíguos com e sem manifesto, preservando resumo do modelo', 
   assert.equal(marked[2].recoveryRequired, true)
   assert.equal(summaries[0], null)
   assert.equal(summaries[1].recoveryRequired, undefined)
+})
+
+test('lista recuperação ambígua como estado de catálogo sem repetir warning por consulta', async () => {
+  const summaries = [
+    { slot: 1, name: 'Modelo 1', sourceName: 'folha.png', partCount: 8, updatedAt: '2026-01-01' },
+    { slot: 2, name: 'Modelo 2', sourceName: 'folha.png', partCount: 10, updatedAt: '2026-01-02' },
+    null
+  ]
+  const recoveredSlots = []
+  const listed = await listModelSourceSlots(3, async (slot) => {
+    recoveredSlots.push(slot)
+    if (slot === 2 || slot === 3) throw new AmbiguousModelSourceRecoveryError()
+    return 'intact'
+  }, async () => summaries)
+  assert.deepEqual(recoveredSlots, [1, 2, 3])
+  assert.equal(listed[1].name, 'Modelo 2')
+  assert.equal(listed[1].recoveryRequired, true)
+  assert.equal(listed[2].recoveryRequired, true)
+  assert.equal(summaries[1].recoveryRequired, undefined)
+
+  const main = await fs.readFile(join(process.cwd(), 'electron', 'main.ts'), 'utf8')
+  assert.match(main, /listSlots: \(\) => listModelSourceSlots\(slotCount, recoverSlot/)
+  assert.doesNotMatch(main, /console\.warn\(`Recuperação pendente no slot/)
 })

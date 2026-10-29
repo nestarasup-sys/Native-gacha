@@ -51,7 +51,7 @@ import { registerFabricatorHairHandlers } from './domains/fabricator/hairIpc'
 import { registerFaceGuideHandlers } from './domains/fabricator/faceGuidesIpc'
 import { registerFabricatorFaceAnimationExportHandler } from './domains/fabricator/faceAnimationExportIpc'
 import { registerImageNormalizationHandler } from './domains/images/imageNormalizationIpc'
-import { AmbiguousModelSourceRecoveryError, markAmbiguousModelSourceSlots, recoverModelSourceSlot } from './domains/fabricator/modelSourceRecovery'
+import { listModelSourceSlots, recoverModelSourceSlot } from './domains/fabricator/modelSourceRecovery'
 import { createFabricatorModelWriter } from './domains/fabricator/modelWriter'
 import { createFabricatorHistoryPersistence } from './domains/fabricator/historyPersistence'
 import { registerFabricatorProjectHandlers } from './domains/fabricator/projectIpc'
@@ -1416,18 +1416,7 @@ async function registerFabricatorHandlers(): Promise<void> {
   const recoverSlot = (slot: number) =>
     recoverModelSourceSlot(slot, slotPath, { readdir, readFile, rename, rm })
   registerFabricatorModelCatalogHandlers(ipcMain, assertTrustedSender, {
-    listSlots: async () => {
-      const ambiguousSlots: number[] = []
-      for (let slot = 1; slot <= slotCount; slot += 1) {
-        try { await recoverSlot(slot) }
-        catch (reason) {
-          if (!(reason instanceof AmbiguousModelSourceRecoveryError)) throw reason
-          ambiguousSlots.push(slot)
-          console.warn(`Recuperação pendente no slot ${slot}; os outros slots continuarão disponíveis.`)
-        }
-      }
-      return markAmbiguousModelSourceSlots(await fabricatorModelCatalog.listSlots(), ambiguousSlots)
-    },
+    listSlots: () => listModelSourceSlots(slotCount, recoverSlot, () => fabricatorModelCatalog.listSlots()),
     loadSlot: async (slot) => {
       if (isValidSlot(slot)) await recoverSlot(slot)
       return fabricatorModelCatalog.loadSlot(slot)

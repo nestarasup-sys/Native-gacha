@@ -75,6 +75,23 @@ export function markAmbiguousModelSourceSlots(
   return result
 }
 
+/** Recupera slots individualmente e entrega a ambiguidade como estado do catálogo, não como log de erro. */
+export async function listModelSourceSlots(
+  slotCount: number,
+  recoverSlot: (slot: number) => Promise<ModelSourceRecoveryResult>,
+  listCatalogSlots: () => Promise<FabricatorSlotSummary[]>
+): Promise<FabricatorSlotSummary[]> {
+  const ambiguousSlots: number[] = []
+  for (let slot = 1; slot <= slotCount; slot += 1) {
+    try { await recoverSlot(slot) }
+    catch (reason) {
+      if (!(reason instanceof AmbiguousModelSourceRecoveryError)) throw reason
+      ambiguousSlots.push(slot)
+    }
+  }
+  return markAmbiguousModelSourceSlots(await listCatalogSlots(), ambiguousSlots)
+}
+
 export async function recoverModelSourceSlot(
   slot: number,
   slotPath: (slot: number) => string,
