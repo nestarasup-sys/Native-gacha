@@ -22,13 +22,11 @@ import { SceneFaceCatalogPanel } from '../../characters/SceneFaceCatalogPanel'
 import { createDefaultSceneFaceTransform, resolveSceneFaceTransform } from '../../characters/sceneFaceSelection'
 import { useEditorV6StageInteraction, type EditorV6StageDrag } from './useEditorV6StageInteraction'
 import { resolveEditorV6InspectorSelection } from './editorV6Selection'
-import { trimTransparentImage, fitElementToTrim, faceRenderGeometry, type TrimmedImage } from '../../characters/characterGeometry'
+import { trimTransparentImage, faceRenderGeometry } from '../../characters/characterGeometry'
 import { bakeFaceModeAssets, EDITOR_V6_FACE_RENDER_VERSION, editorV6FaceModeForElement, trimTransparentCanvas } from './faceModeAssets'
-import { planEditorV6CharacterRefresh, renderEditorV6CharacterRefresh } from './characterSnapshotRefresh'
 import { Profiler, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { editorV6ExpressionCollection } from './expressionTransforms'
 import { Icon } from '../../ui/components/Icon'
-import { mapConcurrentItems } from '../../ui/mapConcurrentItems'
 import { NumericRangeField } from '../../ui/components/NumericRangeField'
 import { SceneElementControls } from '../../ui/components/SceneElementControls'
 import { SceneCastPickerModal } from '../../ui/components/SceneCastPickerModal'
@@ -37,6 +35,7 @@ import { recordEditorV6PlaybackFrame, recordUiCommit } from '../../ui/performanc
 import { useEditorV6DocumentPersistence } from './useEditorV6DocumentPersistence'
 import { editorV6PoseRevisionKey, useEditorV6CharacterSources } from './useEditorV6CharacterSources'
 import { resolveEditorV6CharacterSourceRefresh } from './editorV6CharacterSourceModel'
+import { useEditorV6CharacterSnapshotRefresh } from './useEditorV6CharacterSnapshotRefresh'
 import { useEditorV6ProjectLibrary } from './useEditorV6ProjectLibrary'
 import { fitEditorV6CharacterToStage } from '../../../../shared/editorV6CharacterGeometry'
 import { editorV6ProjectSummary, type EditorV6Asset, type EditorV6Document, type EditorV6Element, type EditorV6FaceTransform, type EditorV6FaceTransforms, type EditorV6ProjectSummary, type EditorV6TimelineBlock } from '../../../../shared/editorV6'
@@ -58,7 +57,6 @@ export function EditorV6Page() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
-  const [normalizedSourceVersion, setNormalizedSourceVersion] = useState(0)
   const [castPickerOpen, setCastPickerOpen] = useState(false)
   const [castSelection, setCastSelection] = useState<string[]>([])
   const [savingCast, setSavingCast] = useState(false)
@@ -107,7 +105,6 @@ export function EditorV6Page() {
   const dragRef = useRef<EditorV6StageDrag | null>(null)
   const editorV6FaceTransformsRef = useRef<Record<string, EditorV6FaceTransforms>>({})
   const expressionSaveSignatureRef = useRef<{ studioId: string; value: string } | null>(null)
-  const normalizedStudioIdsRef = useRef(new Set<string>())
   const nextStudioNumber = useRef(1)
   const editorV6SaveTimerRef = useRef<number | null>(null)
   const selectedEditorV6 = editorV6Projects.find((studio) => studio.id === selectedId) ?? null
@@ -283,82 +280,16 @@ export function EditorV6Page() {
     return () => cancelAnimationFrame(animation)
   }, [isPlaying, timelineDurationFrames, activeEditorV6Id, publishPlayheadFrame])
 
-  useEffect(() => {
-    if (!activeEditorV6 || normalizedStudioIdsRef.current.has(activeEditorV6.id)) return
-    let cancelled = false
-    const studioId = activeEditorV6.id
-    void (async () => {
-      const characterAssets = activeEditorV6.assets.filter((asset) => asset.category === 'character' && activeEditorV6.elements.some((element) => element.kind === 'character' && element.assetId === asset.id))
-      const crops = await mapConcurrentItems(characterAssets,
-        async (asset) => ({ assetId: asset.id, crop: await trimTransparentImage(asset.dataUrl) }),
-        () => cancelled
-      )
-      if (cancelled) return
-      normalizedStudioIdsRef.current.add(studioId)
-      setNormalizedSourceVersion((version) => version + 1)
-      const byAsset = new Map(crops.filter((entry): entry is { assetId: string; crop: TrimmedImage } => entry.crop !== null).map((entry) => [entry.assetId, entry.crop]))
-      if (!byAsset.size) return
-      updateActiveEditorV6Project((studio) => studio.id !== studioId ? studio : {
-        ...studio,
-        assets: studio.assets.map((asset) => {
-          const crop = byAsset.get(asset.id)
-          return crop ? { ...asset, dataUrl: crop.dataUrl, mimeType: 'image/png' } : asset
-        }),
-        elements: studio.elements.map((element) => {
-          const crop = element.kind === 'character' && element.assetId ? byAsset.get(element.assetId) : undefined
-          return crop ? fitElementToTrim(element, crop) : element
-        }),
-        timeline: { ...studio.timeline, tracks: studio.timeline.tracks.map((track) => ({ ...track, blocks: track.blocks.map((block) => {
-          const crop = block.state?.kind === 'character' && block.state.assetId ? byAsset.get(block.state.assetId) : undefined
-          return crop && block.state ? { ...block, state: fitElementToTrim(block.state, crop) } : block
-        }) })) },
-        updatedAt: new Date().toISOString()
-      })
-      markEditorV6Unsaved()
-    })()
-    return () => { cancelled = true }
-  }, [activeEditorV6, markEditorV6Unsaved])
-
-  useEffect(() => {
-    const project = activeEditorV6
-    if (!project || !normalizedStudioIdsRef.current.has(project.id) || !availableCharacters.length || activePoseSourceSnapshot?.projectId !== project.id) return
-    const plan = planEditorV6CharacterRefresh(project, availableCharacters, activePoseSourceSnapshot.revisions)
-    if (plan.missingCharacterNames.length) setError(`Não foi possível atualizar ${plan.missingCharacterNames.join(', ')} porque o personagem não está disponível no Customizador.`)
-    if (!plan.groups.length) return
-    pausePlayback()
-    let cancelled = false
-    const projectId = project.id
-    void (async () => {
-      try {
-        const result = await renderEditorV6CharacterRefresh(
-          plan.groups,
-          sceneRef.current?.clientWidth ?? 1000,
-          sceneRef.current?.clientHeight ?? 562,
-          () => cancelled
-        )
-        if (cancelled || !result) return
-        updateActiveEditorV6Project((current) => {
-          if (current.id !== projectId) return current
-          const timeline = { ...current.timeline, tracks: current.timeline.tracks.map((track) => ({ ...track, blocks: track.blocks.map((block) => {
-            const state = result.nextBlocks.get(block.id)
-            return state ? { ...block, state, label: state.text.trim().slice(0, 120) || block.label } : block
-          }) })) }
-          const next = {
-            ...current,
-            elements: current.elements.map((element) => result.nextElements.get(element.id) ?? element),
-            assets: [...current.assets.map((asset) => result.staleAssetIds.has(asset.id) ? { ...asset, timelineSnapshot: true } : asset), ...result.refreshedAssets],
-            timeline,
-            updatedAt: new Date().toISOString()
-          }
-          return pruneEditorV6TimelineSnapshots(next)
-        })
-        markEditorV6Unsaved()
-      } catch (reason) {
-        if (!cancelled) setError(reason instanceof Error ? reason.message : 'Não foi possível atualizar o personagem e as poses salvas no Editor V6.')
-      }
-    })()
-    return () => { cancelled = true }
-  }, [activeEditorV6, activePoseSourceSnapshot, availableCharacters, normalizedSourceVersion, pausePlayback, updateActiveEditorV6Project, markEditorV6Unsaved])
+  useEditorV6CharacterSnapshotRefresh({
+    project: activeEditorV6,
+    availableCharacters,
+    poseSourceSnapshot: activePoseSourceSnapshot,
+    sceneRef,
+    updateProject: updateActiveEditorV6Project,
+    markUnsaved: markEditorV6Unsaved,
+    pausePlayback,
+    reportError: setError
+  })
 
   const allocateNumber = () => {
     const highest = editorV6Projects.reduce((max, studio) => Math.max(max, Number(studio.title.match(/^Editor V6\s+(\d+)/i)?.[1] ?? 0)), 0)

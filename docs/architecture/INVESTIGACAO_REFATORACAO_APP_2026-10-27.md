@@ -1421,3 +1421,12 @@ Continua a auditoria das operações IPC iniciadas pelo usuário e da cobertura 
 - Não houve alteração no projeto salvo, nos IDs, na persistência, nos contratos IPC ou nas regras de atualização já existentes.
 - Três testes sintéticos cobrem revisões atuais e desatualizadas na cena e timeline, snapshot ainda ausente, renderizador antigo, personagem removido e projeto vazio. A suíte focada `tests/editor-v6-data-sources.test.mjs` passou com 10 testes.
 - Verificação integrada: os 10 testes focados e `npm run test:refactor` passaram; também passaram `npm run typecheck`, `npm run build`, `npm run audit:architecture` (451 arquivos TS/TSX, sem violações) e `git diff --check`.
+
+## 90. Etapa aplicada — ciclo de snapshots de personagens isolado do Editor V6
+
+- `EditorV6Page.tsx` ainda mantinha dois efeitos acoplados para normalizar PNGs antigos com bordas transparentes e reconstruir snapshots faciais quando personagem, pose ou renderizador mudavam. Eles também atualizavam estados e assets da cena e dos blocos da timeline.
+- `useEditorV6CharacterSnapshotRefresh.ts` agora coordena a normalização e a atualização assíncrona, incluindo cancelamento ao trocar de projeto, pausa durante a renderização e marcação do documento como não salvo. A seleção de assets referenciados passou a usar um `Set`, evitando procurar cada imagem dentro de toda a lista de elementos.
+- `editorV6CharacterRefreshModel.ts` contém aplicações puras das transformações geométricas e dos resultados renderizados. Ele conserva assets antigos ainda referenciados e delega a coleta de snapshots órfãos a `pruneEditorV6TimelineSnapshots`, que continua sendo a regra compartilhada da timeline.
+- A página deixou de carregar diretamente o limitador de imagens, os cálculos de recorte e a montagem dos resultados de refresh. Não mudaram o schema, os IDs, a persistência, o IPC, a ordem dos blocos ou o algoritmo de renderização.
+- Dois testes sintéticos verificam offsets/dimensões em cena e timeline, imutabilidade do documento, preservação de assets compartilhados e remoção de snapshots órfãos. A suíte focada de fontes e snapshots do Editor V6 passou com 12 testes.
+- Verificação integrada após corrigir a expectativa arquitetural que ainda apontava para a página antiga: `npm run test:refactor`, `npm run test:editor-v6`, typecheck, build, auditoria de arquitetura e `git diff --check`.

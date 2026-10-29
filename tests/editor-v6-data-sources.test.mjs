@@ -9,6 +9,10 @@ import {
 } from '../src/renderer/src/features/editorV6/useEditorV6CharacterSources.ts'
 import { resolveEditorV6CharacterSourceRefresh } from '../src/renderer/src/features/editorV6/editorV6CharacterSourceModel.ts'
 import { loadEditorV6PoseThumbnails } from '../src/renderer/src/features/editorV6/editorV6PoseCatalog.ts'
+import {
+  applyEditorV6CharacterAssetCrops,
+  applyEditorV6CharacterRefreshResult
+} from '../src/renderer/src/features/editorV6/editorV6CharacterRefreshModel.ts'
 
 const validId = (value) => `00000000-0000-4000-8000-${String(value).padStart(12, '0')}`
 const projectSummary = (id) => ({ id, title: `Projeto ${id}`, color: '#d7b5cd', createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z' })
@@ -183,6 +187,90 @@ test('não bloqueia personagens sem fonte viva e devolve estado vazio sem projet
   })
 })
 
+test('aplica recortes antigos de personagens em assets, cena e timeline sem mutar o projeto', () => {
+  const character = { id: 'scene-character', kind: 'character', assetId: 'character-asset', x: 40, y: 50, width: 100, height: 120, rotation: 0 }
+  const timelineCharacter = { ...character, id: 'timeline-character', x: 10, y: 20, width: 100, height: 100 }
+  const unrelated = { id: 'object', kind: 'image', assetId: 'object-asset', x: 0, y: 0, width: 20, height: 20, rotation: 0 }
+  const project = {
+    id: 'project', updatedAt: 'before',
+    assets: [
+      { id: 'character-asset', category: 'character', dataUrl: 'data:image/png;base64,old', mimeType: 'image/png' },
+      { id: 'object-asset', category: 'object', dataUrl: 'data:image/png;base64,object', mimeType: 'image/png' }
+    ],
+    elements: [character, unrelated],
+    timeline: { tracks: [{ id: 'track', kind: 'character', blocks: [{ id: 'block', state: timelineCharacter, label: 'Character' }] }] }
+  }
+  const before = structuredClone(project)
+  const crop = {
+    dataUrl: 'data:image/png;base64,cropped', width: 50, height: 60,
+    left: 10, top: 20, sourceWidth: 100, sourceHeight: 120
+  }
+
+  const normalized = applyEditorV6CharacterAssetCrops(project, [{ assetId: 'character-asset', crop }], 'after')
+
+  assert.equal(normalized.assets[0].dataUrl, crop.dataUrl)
+  assert.equal(normalized.assets[0].mimeType, 'image/png')
+  assert.equal(normalized.elements[0].x, 25)
+  assert.equal(normalized.elements[0].y, 40)
+  assert.equal(normalized.elements[0].width, 50)
+  assert.equal(normalized.elements[0].height, 60)
+  assert.deepEqual(normalized.elements[1], unrelated)
+  assert.ok(Math.abs(normalized.timeline.tracks[0].blocks[0].state.x + 5) < 1e-9)
+  assert.ok(Math.abs(normalized.timeline.tracks[0].blocks[0].state.y - 11.666666666666667) < 1e-9)
+  assert.equal(normalized.timeline.tracks[0].blocks[0].state.width, 50)
+  assert.equal(normalized.timeline.tracks[0].blocks[0].state.height, 50)
+  assert.equal(normalized.updatedAt, 'after')
+  assert.deepEqual(project, before)
+  assert.equal(applyEditorV6CharacterAssetCrops(project, [], 'unused'), project)
+})
+
+test('aplica refresh de snapshots preservando assets ainda referenciados e removendo snapshots órfãos', () => {
+  const firstCharacter = { id: 'first', kind: 'character', characterId: 'character', assetId: 'old-shared', text: 'Anterior', x: 0, y: 0, width: 10, height: 10 }
+  const secondCharacter = { id: 'second', kind: 'character', characterId: 'character', assetId: 'old-shared', text: 'Outra cópia', x: 0, y: 0, width: 10, height: 10 }
+  const oldBlockState = { ...firstCharacter, id: 'timeline-state' }
+  const project = {
+    id: 'project', updatedAt: 'before', backgroundAssetId: null,
+    elements: [firstCharacter, secondCharacter],
+    assets: [
+      { id: 'old-shared', category: 'character', dataUrl: 'old', timelineSnapshot: true },
+      { id: 'old-orphan', category: 'character', dataUrl: 'orphan', timelineSnapshot: true },
+      { id: 'permanent', category: 'character', dataUrl: 'permanent' }
+    ],
+    timeline: { durationFrames: 300, tracks: [{ id: 'track', kind: 'character', blocks: [{ id: 'block', elementId: 'first', state: oldBlockState, label: 'Anterior' }] }] }
+  }
+  const nextSceneState = { ...firstCharacter, assetId: 'new-scene', text: 'Novo personagem' }
+  const nextBlockState = { ...oldBlockState, assetId: 'new-timeline', text: '  Novo estado  ' }
+  const result = {
+    nextElements: new Map([['first', nextSceneState]]),
+    nextBlocks: new Map([['block', nextBlockState]]),
+    refreshedAssets: [
+      { id: 'new-scene', category: 'character', dataUrl: 'scene', timelineSnapshot: true },
+      { id: 'new-timeline', category: 'character', dataUrl: 'timeline', timelineSnapshot: true },
+      { id: 'new-orphan', category: 'character', dataUrl: 'unused', timelineSnapshot: true }
+    ],
+    staleAssetIds: new Set(['old-shared', 'old-orphan'])
+  }
+
+  const pruneSnapshots = (document) => {
+    const referenced = new Set([
+      ...document.elements.map((element) => element.assetId),
+      ...document.timeline.tracks.flatMap((track) => track.blocks.map((block) => block.state?.assetId))
+    ])
+    return { ...document, assets: document.assets.filter((asset) => !asset.timelineSnapshot || referenced.has(asset.id)) }
+  }
+  const refreshed = applyEditorV6CharacterRefreshResult(project, result, pruneSnapshots, 'after')
+
+  assert.equal(refreshed.elements[0].assetId, 'new-scene')
+  assert.equal(refreshed.elements[1].assetId, 'old-shared')
+  assert.deepEqual(refreshed.assets.map((asset) => asset.id), ['old-shared', 'permanent', 'new-scene', 'new-timeline'])
+  assert.equal(refreshed.assets[0].timelineSnapshot, true)
+  assert.equal(refreshed.timeline.tracks[0].blocks[0].state.assetId, 'new-timeline')
+  assert.equal(refreshed.timeline.tracks[0].blocks[0].label, 'Novo estado')
+  assert.equal(refreshed.updatedAt, 'after')
+  assert.equal(project.assets[0].timelineSnapshot, true)
+  assert.equal(project.timeline.tracks[0].blocks[0].state.assetId, 'old-shared')
+})
+
 test('catálogo de poses limita leituras, conserva ordem e rejeita snapshots incompatíveis', async () => {
   const poses = Array.from({ length: 8 }, (_, index) => ({
     slot: index + 1,
@@ -250,20 +338,26 @@ test('catálogo de poses cancelado não inicia leituras', async () => {
   assert.equal(loads, 0)
 })
 
-test('página delega biblioteca e frescor da fonte de personagem a módulos da feature', async () => {
-  const [page, projectHook, characterHook, sourceModel] = await Promise.all([
+test('página delega biblioteca, fontes e ciclo de atualização do personagem a módulos da feature', async () => {
+  const [page, projectHook, characterHook, sourceModel, snapshotHook] = await Promise.all([
     readFile('src/renderer/src/features/editorV6/EditorV6Page.tsx', 'utf8'),
     readFile('src/renderer/src/features/editorV6/useEditorV6ProjectLibrary.ts', 'utf8'),
     readFile('src/renderer/src/features/editorV6/useEditorV6CharacterSources.ts', 'utf8'),
-    readFile('src/renderer/src/features/editorV6/editorV6CharacterSourceModel.ts', 'utf8')
+    readFile('src/renderer/src/features/editorV6/editorV6CharacterSourceModel.ts', 'utf8'),
+    readFile('src/renderer/src/features/editorV6/useEditorV6CharacterSnapshotRefresh.ts', 'utf8')
   ])
   assert.match(page, /useEditorV6ProjectLibrary\(/)
   assert.match(page, /useEditorV6CharacterSources\(/)
   assert.match(page, /resolveEditorV6CharacterSourceRefresh\(/)
+  assert.match(page, /useEditorV6CharacterSnapshotRefresh\(/)
   assert.doesNotMatch(page, /const activeCharacterStates|const poseRefreshRequired/)
+  assert.doesNotMatch(page, /normalizedProjectIdsRef|planEditorV6CharacterRefresh|renderEditorV6CharacterRefresh/)
   assert.doesNotMatch(page, /window\.desktop\.customizer\.listCustomizerCharacters\(|window\.desktop\.editorV6\.listEditorV6Projects\(|window\.desktop\.editorV6\.loadEditorV6Project\(activeEditorV6Id\)/)
   assert.match(projectHook, /activeLoadGenerationRef/)
   assert.match(characterHook, /fabricator:assets-updated/)
   assert.match(characterHook, /addEventListener\('visibilitychange'/)
   assert.doesNotMatch(sourceModel, /window\.desktop|useEffect|useMemo/)
+  assert.match(snapshotHook, /applyEditorV6CharacterAssetCrops/)
+  assert.match(snapshotHook, /applyEditorV6CharacterRefreshResult/)
+  assert.match(snapshotHook, /applyEditorV6CharacterRefreshResult\(current, result, pruneEditorV6TimelineSnapshots\)/)
 })
