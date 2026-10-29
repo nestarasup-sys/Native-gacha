@@ -18,6 +18,7 @@ import { useEditorV6FaceCatalog } from './useEditorV6FaceCatalog'
 import { useEditorV6PoseCatalog } from './useEditorV6PoseCatalog'
 import { useEditorV6FacePreview } from './useEditorV6FacePreview'
 import { createSceneFaceActions } from '../../characters/sceneFaceActions'
+import { useFaceExpressionCatalog } from '../../characters/useFaceExpressionCatalog'
 import { SceneFaceCatalogPanel } from '../../characters/SceneFaceCatalogPanel'
 import { createDefaultSceneFaceTransform, resolveSceneFaceTransform } from '../../characters/sceneFaceSelection'
 import { useEditorV6StageInteraction, type EditorV6StageDrag } from './useEditorV6StageInteraction'
@@ -212,44 +213,16 @@ export function EditorV6Page() {
     if (selectedElement?.kind === 'character') editorV6FaceTransformsRef.current[selectedElement.id] = selectedElement.faceTransforms ?? {}
   }, [activeEditorV6Id, selectedElementId, selectedElement?.faceTransforms])
 
-  useEffect(() => { setEditorV6ExpressionCollectionMenuOpen(false) }, [activeEditorV6Id, selectedElementId])
+  useEffect(() => { setEditorV6ExpressionCollectionMenuOpen(false) }, [activeEditorV6Id, selectedElementId, selectedEditorV6CharacterModelSlot])
 
-  useEffect(() => {
-    let cancelled = false
-    setEditorV6ExpressionCollectionMenuOpen(false)
-    if (selectedEditorV6CharacterModelSlot === null) {
-      setEditorV6ExpressionCollections([])
-      setEditorV6ExpressionPresets([])
-      setEditorV6ExpressionLoading(false)
-      return () => { cancelled = true }
-    }
-    const refreshExpressionLibrary = () => {
-      setEditorV6ExpressionLoading(true)
-      void Promise.all([
-        window.desktop.fabricator.listFaceExpressionCollections(selectedEditorV6CharacterModelSlot),
-        window.desktop.fabricator.listFaceExpressionPresets(selectedEditorV6CharacterModelSlot)
-      ]).then(([collections, presets]) => {
-        if (cancelled) return
-        setEditorV6ExpressionCollections(collections)
-        setEditorV6ExpressionPresets(presets)
-      }).catch((reason) => {
-        if (!cancelled) setError(reason instanceof Error ? reason.message : 'Não foi possível carregar os presets de expressão.')
-      }).finally(() => {
-        if (!cancelled) setEditorV6ExpressionLoading(false)
-      })
-    }
-    const refreshWhenVisible = () => {
-      if (document.visibilityState === 'visible') refreshExpressionLibrary()
-    }
-    refreshExpressionLibrary()
-    window.addEventListener('focus', refreshExpressionLibrary)
-    document.addEventListener('visibilitychange', refreshWhenVisible)
-    return () => {
-      cancelled = true
-      window.removeEventListener('focus', refreshExpressionLibrary)
-      document.removeEventListener('visibilitychange', refreshWhenVisible)
-    }
-  }, [selectedEditorV6CharacterModelSlot])
+  useFaceExpressionCatalog({
+    modelSlot: selectedEditorV6CharacterModelSlot,
+    setCollections: setEditorV6ExpressionCollections,
+    setPresets: setEditorV6ExpressionPresets,
+    setLoading: setEditorV6ExpressionLoading,
+    setError,
+    errorFallback: 'Não foi possível carregar os presets de expressão.'
+  })
 
   useEffect(() => {
     if (!activeEditorV6Id) return

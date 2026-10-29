@@ -1,6 +1,7 @@
 import { studioElementSize } from '../../../../shared/studioSceneModel'
 import { isPoseSnapshotForModel } from '../../../../shared/characterSourceContinuity'
 import { useStudioInspectorState } from '../../characters/useStudioInspectorState'
+import { useFaceExpressionCatalog } from '../../characters/useFaceExpressionCatalog'
 import { StudioSceneCanvas } from './StudioSceneCanvas'
 import { trimTransparentImage, faceRenderGeometry } from '../../characters/characterGeometry'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
@@ -133,44 +134,16 @@ export function StudioPage() {
     if (selectedElement?.kind === 'character') studioFaceTransformsRef.current[selectedElement.id] = selectedElement.faceTransforms ?? {}
   }, [activeStudioId, selectedElementId, selectedElement?.faceTransforms])
 
-  useEffect(() => { setStudioExpressionCollectionMenuOpen(false) }, [activeStudioId, selectedElementId])
+  useEffect(() => { setStudioExpressionCollectionMenuOpen(false) }, [activeStudioId, selectedElementId, selectedStudioCharacterModelSlot])
 
-  useEffect(() => {
-    let cancelled = false
-    setStudioExpressionCollectionMenuOpen(false)
-    if (selectedStudioCharacterModelSlot === null) {
-      setStudioExpressionCollections([])
-      setStudioExpressionPresets([])
-      setStudioExpressionLoading(false)
-      return () => { cancelled = true }
-    }
-    const refreshExpressionLibrary = () => {
-      setStudioExpressionLoading(true)
-      void Promise.all([
-        window.desktop.fabricator.listFaceExpressionCollections(selectedStudioCharacterModelSlot),
-        window.desktop.fabricator.listFaceExpressionPresets(selectedStudioCharacterModelSlot)
-      ]).then(([collections, presets]) => {
-        if (cancelled) return
-        setStudioExpressionCollections(collections)
-        setStudioExpressionPresets(presets)
-      }).catch((reason) => {
-        if (!cancelled) setError(reason instanceof Error ? reason.message : 'Não foi possível carregar os presets de expressão.')
-      }).finally(() => {
-        if (!cancelled) setStudioExpressionLoading(false)
-      })
-    }
-    const refreshWhenVisible = () => {
-      if (document.visibilityState === 'visible') refreshExpressionLibrary()
-    }
-    refreshExpressionLibrary()
-    window.addEventListener('focus', refreshExpressionLibrary)
-    document.addEventListener('visibilitychange', refreshWhenVisible)
-    return () => {
-      cancelled = true
-      window.removeEventListener('focus', refreshExpressionLibrary)
-      document.removeEventListener('visibilitychange', refreshWhenVisible)
-    }
-  }, [selectedStudioCharacterModelSlot])
+  useFaceExpressionCatalog({
+    modelSlot: selectedStudioCharacterModelSlot,
+    setCollections: setStudioExpressionCollections,
+    setPresets: setStudioExpressionPresets,
+    setLoading: setStudioExpressionLoading,
+    setError,
+    errorFallback: 'Não foi possível carregar os presets de expressão.'
+  })
 
   const activeScenePresetSignature = JSON.stringify(activeStudio?.elements
     .filter((element) => element.kind === 'character' && element.characterId && element.activeExpressionPresetId)

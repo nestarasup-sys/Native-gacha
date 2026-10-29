@@ -182,3 +182,21 @@ test('Roteiros e Customizador mantêm UI separada dos componentes centrais',asyn
   assert.doesNotMatch(customizer,/useEffect\(\(\) => \{\n    let cancelled = false\n    void window\.desktop\.listCustomizerCharacters\(\)/)
   assert.match(roster,/window\.desktop\.customizer\.listCustomizerCharacters\(\)/)
 })
+
+test('Studio e Editor V6 compartilham refresh do catálogo facial e descartam respostas antigas',async()=>{
+  const [studio,editorV6,hook]=await Promise.all([
+    readFile('src/renderer/src/features/studio/StudioPage.tsx','utf8'),
+    readFile('src/renderer/src/features/editorV6/EditorV6Page.tsx','utf8'),
+    readFile('src/renderer/src/characters/useFaceExpressionCatalog.ts','utf8')
+  ])
+  for (const page of [studio,editorV6]) {
+    assert.match(page,/useFaceExpressionCatalog\(/)
+    assert.doesNotMatch(page,/listFaceExpressionCollections\(/)
+  }
+  assert.match(hook,/let latestRequest = 0/)
+  assert.match(hook,/request !== latestRequest/)
+  assert.match(hook,/request === latestRequest/)
+  assert.match(hook,/addEventListener\('focus'/)
+  assert.match(hook,/removeEventListener\('focus'/)
+  assert.match(hook,/latestRequest \+= 1/)
+})
