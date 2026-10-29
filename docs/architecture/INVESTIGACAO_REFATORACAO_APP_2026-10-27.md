@@ -84,7 +84,7 @@
 - A fábrica acompanha seus workers ativos; seu dispose fecha todos e remove os handlers. Após dispose, recusa novos workers. O runner existente continua dono do fechamento por finally e cancelamento por AbortSignal; não foi adicionada nova dependência no fluxo de encerramento global.
 - Chamadas de frame após fechamento retornam erro de domínio imediato. Os formatos de payload/IPC, política de mídia e bitmap entregue ao FFmpeg foram preservados.
 - Testes com BrowserWindow simulado verificam fechamento externo, revogação de autorização por ID, remoção do listener, descarte da fábrica e fechamento antes de ready. Aprovados 84 testes do Editor V6 (um ignorado existente), typecheck, auditoria de arquitetura e build. Simulação não substitui teste de crash/captura real do Chromium.
-- Auditoria de segurança ainda pendente: política explícita de navegação/popups/check de permissões para todas as janelas e comparação das sessões dos preparadores. As janelas já usam sandbox/contextIsolation e nodeIntegration desativado; isso não prova cobertura completa de segurança.
+- Auditoria de segurança: a navegação e abertura de janelas já são bloqueadas no renderer principal e nos dois renderizadores auxiliares. A etapa 36 adicionou handlers de verificação e solicitação de permissões para a sessão principal e a sessão isolada de exportação. A revisão de isolamento continua: o preparador de movimento ainda compartilha a sessão principal; isso não prova cobertura completa de segurança.
 
 ### Recoloração e política única de retenção
 
@@ -100,14 +100,14 @@
 - `characterImageCache` conserva LRU/512 entradas e acrescenta orçamento estimado de 128 MiB por instância: fonte UTF-16 e pixels RGBA (largura natural × altura natural × 4). A contabilidade é atualizada após carregar. Imagens maiores que o orçamento são entregues ao chamador, mas não retidas. A evicção não modifica src nem invalida referências de renderizações em curso.
 - Corrigida corrida: rejeição de uma carga já removida só limpa a entrada se ainda for a mesma requisição; não remove uma substituta mais recente.
 - Testes sintéticos cobrem compartilhamento de cargas pendentes, ordem LRU, orçamento por pixels, imagem grande, validade da referência externa e rejeição antiga. Aprovados: 77 testes do Editor V6 (um ignorado existente), 330 de refatoração, typecheck, auditoria de arquitetura e build.
-- Limitação: orçamento estimado de referências retidas pelo cache, não limite global do Chromium/GPU nem de cargas simultâneas. Outros consumidores podem manter imagens vivas. Não foi medido ganho de RSS/FPS neste ciclo. Próxima revisão: os três caches de recoloração em characterImageTint, incluindo o cache de pele sem limite explícito.
+- Limitação: o orçamento estima imagens retidas por cada renderizador, não a memória global do Chromium/GPU nem cargas simultâneas. Outros consumidores ainda podem manter imagens vivas. Não foi medido ganho de RSS/FPS neste ciclo; próxima revisão deve comparar a política estimada com uso real em fixtures.
 
 ### Ciclo de vida de esperas dos workers
 
 - `waitForExport` é usado no carregamento dos workers, desenho/captura de quadros, preparação das transições e envio/finalização do FFmpeg. A limpeza do timer/listener dependia da conclusão da operação original, mesmo quando a espera já havia sido cancelada ou expirado.
 - A finalização agora é única e remove timer/listener imediatamente em sucesso, falha, cancelamento ou timeout. Respostas tardias continuam consumidas, sem modificar o resultado já entregue. O helper cancela a espera; encerrar o processo/janela continua responsabilidade dos donos existentes.
 - Regressões sintéticas usam operações que nunca concluem, timers controlados, cancelamento prévio e rejeição tardia. Verificados: 73 testes do Editor V6 aprovados, um ignorado existente, typecheck, auditoria de arquitetura e build. Nenhum perfil real foi usado.
-- Próximo gargalo confirmado para investigação: os dois caches independentes de imagens limitam apenas quantidade (512 entradas cada), sem orçamento para dimensões decodificadas. Dimensionar política de bytes sem invalidar imagens ainda usadas por renderizações ativas.
+- A política de bytes do cache de imagens e da recoloração foi concluída nas etapas registradas acima e na etapa 35. A validação continua limitada a estimativas e fixtures; RSS/FPS de um processo Chromium com uma cena real ainda precisa de medição dedicada.
 
 Objetivo ativo: refatoração geral de todos os domínios, incluindo organização, redundâncias, segurança, inicialização, renderização, memória, processamento e persistência. As etapas abaixo registram progresso; não certificam conclusão do aplicativo inteiro.
 
@@ -982,3 +982,19 @@ Continua a auditoria das operações IPC iniciadas pelo usuário e da cobertura 
 - A leitura de assets continua pelos IPCs existentes do Fabricador. O salvamento continua passando por `saveCharacterCustomization`, que serializa gravações por personagem, ancora roupas e publica o evento atual. Canais, IDs, formatos JSON e ownership dos dados não mudaram.
 - A composição da página ficou 285 linhas menor; os dois hooks tornam as regras de edição facial e capilar localizáveis sem alterar a interface nem copiar dados para outro domínio.
 - Verificação: `npm run test:customizer` passou com 14 testes; `npm run test:refactor` passou com 343; `npm test` passou com 27. Também passaram `npm run typecheck`, `npm run audit:architecture` (377 arquivos TS/TSX), `npm run build` e `git diff --check`.
+
+## 35. Etapa aplicada — orçamento agregado das imagens recoloridas
+
+- Cada renderizador mantinha caches separados de pele, cabelo e corpo, cada um com 64 MiB e limites de 80, 40 e 80 entradas. Juntos podiam reter até 192 MiB estimados por renderizador.
+- `createCharacterImagePromiseCacheBudget()` coordena um LRU compartilhado de 128 MiB por instância de renderizador. Os limites locais de 64 MiB e de entradas continuam ativos; a política agregada expulsa a entrada menos recente entre os três caches quando o total passa do teto.
+- A expulsão remove apenas a referência do cache. Promises e imagens entregues a renderizações ativas continuam válidas. Studio/Customizador e Editor V6 ainda têm instâncias e caches independentes; o algoritmo de recoloração, suas chaves e formato de imagem não mudaram.
+- O teste `characterImageTintCache.test.ts` usa cinco imagens sintéticas de 2.800 × 2.800 para exceder o teto agregado, confirmar que a primeira entrada fria é recarregada e verificar que resultados recentes de cabelo e corpo continuam em cache. Isso valida a contabilidade estimada, não mede RSS/GPU do Chromium.
+- Verificação: `npm run test:editor-v6` passou com 131 testes e 1 ignorado; `npm run test:refactor` passou com 343; `npm test` passou com 27. Também passaram typecheck, auditoria de arquitetura, build e `git diff --check`.
+
+## 36. Etapa aplicada — permissões explícitas nos renderizadores Electron
+
+- O Electron atual aprova pedidos de permissão automaticamente quando a sessão não instala um handler. A configuração de produção só instalava um handler de solicitação dentro do modo de teste DEV AI; não havia handler de verificação. A busca por APIs do renderer encontrou uso explícito apenas de `requestFullscreen()` na prévia do Customizador.
+- `restrictRendererPermissions()` instala os dois handlers e permite somente `fullscreen`. A política é instalada na sessão padrão antes de abrir a janela principal, cobrindo também o preparador de movimento que a compartilha, e na sessão isolada por partição usada pelo exportador. Permissões de mídia, captura, notificações, geolocalização, clipboard e demais recursos são recusadas.
+- Navegação, IPC, preload e funcionalidades de arquivo não mudam. A prévia ainda pode entrar em tela cheia; nenhum conteúdo ganhou acesso a Node ou filesystem. A sessão do preparador de movimento permanece compartilhada com a janela principal e continua como item de auditoria separado.
+- `windowPermissions.test.ts` valida handlers de verificação e solicitação para tela cheia e permissões representativas proibidas. Documentação consultada: [segurança do Electron](https://www.electronjs.org/docs/latest/tutorial/security) e [API de sessão](https://www.electronjs.org/docs/latest/api/session).
+- Verificação: `npm run test:editor-v6` passou com 132 testes e 1 ignorado; `npm run test:refactor` passou com 343; `npm test` passou com 27. Também passaram typecheck, auditoria de arquitetura, build e `git diff --check`.

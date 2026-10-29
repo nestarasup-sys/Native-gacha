@@ -32,6 +32,7 @@ import { migrateElectronProfile } from './electronProfileMigration.cjs'
 import { normalizeImageBuffer } from './imageIngestion.cjs'
 import { measureIpc } from './ipcPerformance'
 import { restrictRendererNavigation } from './windowNavigation'
+import { restrictRendererPermissions } from './windowPermissions'
 import { BaseVideoService } from './domains/baseVideos/service'
 import { registerBaseVideoHandlers } from './domains/baseVideos/ipc'
 import { isValidCustomizerFaceAppearance } from './domains/customizer/validation'
@@ -1342,6 +1343,7 @@ function registerVideoBackgroundProtocol(): void {
 }
 
 app.whenReady().then(async () => {
+  restrictRendererPermissions(session.defaultSession)
   dataBackupService = new DataBackupService({ dataRoot: app.getPath('appData'), catalog: dataPlatform })
   await dataBackupService.applyPendingRestore()
   dataPlatform.initialize()
@@ -1400,7 +1402,6 @@ app.whenReady().then(async () => {
       const blocked = /^(?:https?|wss?|ftp):/i.test(details.url)
       callback({ cancel: blocked })
     })
-    session.defaultSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false))
   }
   registerVideoAssetProtocol()
   registerEditorV6MediaProtocol()

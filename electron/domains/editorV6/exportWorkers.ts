@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { editorV6WorkerChannels, type EditorV6FrameTimings, type EditorV6RenderFrameResult, type EditorV6WorkerPayload } from '../../../src/shared/editorV6Export'
 import { waitForExport } from './exportProcess'
 import { restrictRendererNavigation } from '../../windowNavigation'
+import { restrictRendererPermissions } from '../../windowPermissions'
 import { exportBitmap } from './exportBitmap'
 
 export type EditorV6FrameWorker = { frame: (frame: number) => Promise<EditorV6RenderFrameResult & { bitmap?: Buffer }>; close: () => void }
@@ -41,11 +42,11 @@ export function createEditorV6WorkerFactory(deps: { ipcMain: Pick<IpcMain, 'hand
       } catch { return new Response('Not found', { status: 404 }) }
     })
     restrictRendererNavigation(window.webContents)
+    restrictRendererPermissions(window.webContents.session)
     window.removeMenu()
     // Initial native bounds can be clamped to the monitor work area on Windows.
     window.setContentSize(payload.width, payload.height)
     window.webContents.setFrameRate(60)
-    window.webContents.session.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false))
     window.webContents.session.webRequest.onBeforeRequest((request, callback) => {
       let allowed = /^(data|blob):/.test(request.url) || request.url.startsWith('gacha-editor-media:')
       try {

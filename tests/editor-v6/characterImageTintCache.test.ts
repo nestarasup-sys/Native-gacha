@@ -37,6 +37,24 @@ describe('recolored image retention', () => {
     expect(loader).toHaveBeenCalledTimes(calls + 1)
   })
 
+  it('shares a renderer-wide byte budget across skin, hair, and body tint caches', async () => {
+    vi.stubGlobal('document', { createElement: () => ({ getContext: () => null }) })
+    const loader = vi.fn(async () => ({ naturalWidth: 2800, naturalHeight: 2800 } as HTMLImageElement))
+    const tint = createCharacterImageTint(loader)
+    const skinA = await tint.loadSkinTintedImage('skin-a', '#000000')
+    await tint.loadHairTintedImage('hair-a', { base: '#000000' })
+    const bodyA = await tint.loadModelBodyTintedImage('body-a', '#000000')
+    await tint.loadSkinTintedImage('skin-b', '#000000')
+    const hairB = await tint.loadHairTintedImage('hair-b', { base: '#000000' })
+
+    // Five 2,800² RGBA results exceed the shared 128 MiB allowance, while
+    // each category remains under its existing 64 MiB local limit.
+    expect(tint.loadSkinTintedImage('skin-a', '#000000')).not.toBe(skinA)
+    expect(await tint.loadHairTintedImage('hair-b', { base: '#000000' })).toBe(hairB)
+    expect(await tint.loadModelBodyTintedImage('body-a', '#000000')).toBe(bodyA)
+    expect(loader).toHaveBeenCalledTimes(6)
+  })
+
   it('does not retain oversized results in any recoloring cache', async () => {
     vi.stubGlobal('document', { createElement: () => ({ getContext: () => null }) })
     const loader = vi.fn(async () => ({ naturalWidth: 5000, naturalHeight: 5000 } as HTMLImageElement))

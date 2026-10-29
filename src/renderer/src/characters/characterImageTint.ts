@@ -3,15 +3,16 @@ import type { ModelSkinContourStroke } from '../../../shared/fabricator'
 import { isValidSkinTone } from '../../../shared/skinTones'
 import { tintModelBodyPixels, tintSkinPixels } from './skinTint'
 import { createCharacterCanvas, isCharacterCanvasWorker } from './canvasSurface'
-import { createCharacterImagePromiseCache } from './characterImagePromiseCache'
+import { createCharacterImagePromiseCache, createCharacterImagePromiseCacheBudget } from './characterImagePromiseCache'
 
 export type HairTintOptions = { preserveNearWhite?: boolean; allowNearWhiteRoles?: readonly HairColorRole[] }
 type CharacterImageLoader = (source: string | CanvasImageSource) => Promise<HTMLImageElement>
 
 export function createCharacterImageTint(loadCachedImage: CharacterImageLoader) {
-  const skinTintImageCache = createCharacterImagePromiseCache({ maxEntries: 80, maxBytes: 64 * 1024 * 1024 })
-  const modelBodyTintImageCache = createCharacterImagePromiseCache({ maxEntries: 80, maxBytes: 64 * 1024 * 1024 })
-  const hairTintImageCache = createCharacterImagePromiseCache({ maxEntries: 40, maxBytes: 64 * 1024 * 1024 })
+  const tintCacheBudget = createCharacterImagePromiseCacheBudget(128 * 1024 * 1024)
+  const skinTintImageCache = createCharacterImagePromiseCache({ maxEntries: 80, maxBytes: 64 * 1024 * 1024, budget: tintCacheBudget })
+  const modelBodyTintImageCache = createCharacterImagePromiseCache({ maxEntries: 80, maxBytes: 64 * 1024 * 1024, budget: tintCacheBudget })
+  const hairTintImageCache = createCharacterImagePromiseCache({ maxEntries: 40, maxBytes: 64 * 1024 * 1024, budget: tintCacheBudget })
 
   function hairHue(red: number, green: number, blue: number): number {
     const maximum = Math.max(red, green, blue)

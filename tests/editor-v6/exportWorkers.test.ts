@@ -10,7 +10,7 @@ vi.mock('electron', () => ({ BrowserWindow: class extends EventEmitter {
   webContents = {
     on: vi.fn(), setWindowOpenHandler: vi.fn(),
     id: state.windows.length + 1, mainFrame: {}, setFrameRate: vi.fn(), setZoomFactor: vi.fn(),
-    session: { setPermissionRequestHandler: vi.fn(), webRequest: { onBeforeRequest: vi.fn() } }
+    session: { setPermissionCheckHandler: vi.fn(), setPermissionRequestHandler: vi.fn(), webRequest: { onBeforeRequest: vi.fn() } }
   }
   constructor() { super(); state.windows.push(this) }
   removeMenu() {}
