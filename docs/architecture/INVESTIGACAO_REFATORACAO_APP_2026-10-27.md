@@ -938,3 +938,11 @@ Continua a auditoria das operações IPC iniciadas pelo usuário e da cobertura 
 - O snapshot de início ainda é a fonte do rollback e do histórico; IDs, timeline, gravação e layout visual não mudaram. Não foi introduzida dependência de dados persistidos ou IPC nessa interação.
 - `editorV6StageDrag.test.ts` cobre o limite de tremor, conversão da prévia, movimento de personagem por bloco, movimento do fundo no quadro ativo e preservação das dimensões/rotação do vídeo.
 - Verificação: `npm run test:editor-v6` passou com 123 testes e 1 ignorado; `npm run test:refactor` passou com 340; também passaram `npm run typecheck`, `npm run audit:architecture` (370 arquivos TS/TSX), `npm run build` e `git diff --check`.
+
+## 30. Etapa aplicada — composição da prévia facial no Studio
+
+- `StudioPage.tsx` acumulava a fila com debounce dos ajustes faciais, o cache do renderizador, a invalidação de trabalhos antigos, o cancelamento antes de aplicar uma nova peça e a atualização do PNG no documento. Essa lógica dividia a página entre seleção facial e ciclo de renderização.
+- `useStudioFacePreview.ts` agora concentra o cache do renderizador facial e a fila de prévias. A página continua responsável por escolher a personagem, a aparência, os efeitos e o modo; o hook recebe essa solicitação e atualiza o elemento e o asset da cena quando o trabalho ainda pertence ao Studio ativo.
+- O debounce de 55 ms, a coalescência dos sliders, a verificação de versão antes de publicar o resultado, a espera por uma renderização em andamento antes de trocar a expressão e a atualização de geometria foram preservados. A versão do renderizador ficou em um único local compartilhado pela página e pelo hook.
+- IPC, estrutura do documento, IDs, assets e persistência não mudaram. O teste arquitetural agora confirma que a página e o hook carregam o renderizador compartilhado sob demanda, sem depender de contagem fixa de chamadas no arquivo da página.
+- Verificação: `npm run test:refactor` passou com 340 testes; `npm test` com 27; também passaram `npm run typecheck`, `npm run audit:architecture` (371 arquivos TS/TSX) e `npm run build`.

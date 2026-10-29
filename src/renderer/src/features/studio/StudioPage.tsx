@@ -1,4 +1,4 @@
-import { studioCharacterRenderKey, studioElementSize } from '../../../../shared/studioSceneModel'
+import { studioElementSize } from '../../../../shared/studioSceneModel'
 import { isPoseSnapshotForModel } from '../../../../shared/characterSourceContinuity'
 import { recordStudioHistory, undoStudioHistory, redoStudioHistory } from '../../../../shared/studioHistory'
 import { useStudioInspectorState } from '../../characters/useStudioInspectorState'
@@ -19,17 +19,17 @@ import { createSceneTextElement, sceneCatalogColor, sceneEditorTools } from '../
 import { CharacterPortrait } from '../../ui/components/CharacterPortrait'
 import { resolveStudioTalkMouthId } from '../../../../shared/studio'
 import { fitStudioCharacterToStage } from '../../../../shared/studioCharacterGeometry'
+import { STUDIO_FACE_RENDER_VERSION, useStudioFacePreview } from './useStudioFacePreview'
 import type { StudioAsset, StudioDocument, StudioElement, StudioFaceMode, StudioFaceTransform, StudioFaceTransforms } from '../../../../shared/studio'
 import type { CustomizerCharacter } from '../../../../shared/customizer'
 import type { CustomizerFaceAppearance } from '../../../../shared/customizer'
-import type { FaceCatalogItem, FaceCatalogItemSummary, FaceExpressionEffects, FaceExpressionPreset, FaceExpressionPresetSummary, FaceSheetKind, FabricatorPoseSummary } from '../../../../shared/fabricator'
+import type { FaceCatalogItem, FaceCatalogItemSummary, FaceExpressionPreset, FaceExpressionPresetSummary, FaceSheetKind, FabricatorPoseSummary } from '../../../../shared/fabricator'
 type StudioCard = StudioDocument
 type StudioSnapshot = Pick<StudioDocument, 'backgroundColor' | 'backgroundAssetId' | 'backgroundX' | 'backgroundY' | 'backgroundWidth' | 'backgroundHeight' | 'backgroundRotation' | 'assets' | 'elements'>
 type Tool = 'background' | 'objects' | null
 type DragState = { id: string; pointerId: number; startX: number; startY: number; originalX: number; originalY: number; width: number; height: number }
 
 const STORAGE_KEY = 'gacha-nymi-studio-catalog-v1'
-const STUDIO_FACE_RENDER_VERSION = 7
 const defaultStudioEyeTransform: StudioFaceTransform = { x: 0, y: 0, width: 100, height: 100, rotation: 0 }
 function studioFaceModeForElement(element: StudioElement | null, appearance: CustomizerFaceAppearance | undefined): StudioFaceMode {
   if (element?.activeFaceMode) return element.activeFaceMode
@@ -155,11 +155,6 @@ export function StudioPage() {
   const undoRef = useRef<StudioSnapshot[]>([])
   const redoRef = useRef<StudioSnapshot[]>([])
   const studioFaceTransformsRef = useRef<Record<string, StudioFaceTransforms>>({})
-  const studioFaceRenderTimerRef = useRef<number | null>(null)
-  const studioFaceRenderVersionRef = useRef(0)
-  const studioFaceRenderPendingRef = useRef<{ studioId: string; elementId: string; assetId: string; character: CustomizerCharacter; transforms: StudioFaceTransforms } | null>(null)
-  const studioFaceRenderRunningRef = useRef(false)
-  const studioFaceRendererRef = useRef<{ key: string; render: (appearance?: CustomizerFaceAppearance, transforms?: StudioFaceTransforms, effects?: FaceExpressionEffects, mode?: StudioFaceMode) => Promise<{ dataUrl: string; width: number; height: number }> } | null>(null)
   const expressionSaveSignatureRef = useRef<{ studioId: string; value: string } | null>(null)
   const normalizedStudioIdsRef = useRef(new Set<string>())
   const nextStudioNumber = useRef(1)
@@ -688,6 +683,16 @@ export function StudioPage() {
     markStudioUnsaved()
   }
 
+  const {
+    renderFace: renderStudioFace,
+    schedulePreview: scheduleStudioFacePreview,
+    flushPreview: flushStudioFacePreview,
+    cancelPendingAndWait: cancelStudioFacePreview
+  } = useStudioFacePreview({
+    activeStudio, activeStudioId, sceneRef,
+    transformsRef: studioFaceTransformsRef, patchStudio, setError
+  })
+
   const recordHistory = (document = activeStudio) => {
     if (!document) return
     const history = recordStudioHistory({ undo: undoRef.current, redo: redoRef.current }, document)
@@ -840,28 +845,15 @@ export function StudioPage() {
     if (!activeStudio || selectedElement?.kind !== 'character' || !selectedStudioCharacter || !selectedElement.assetId || studioFaceBusy) return
     setStudioFaceBusy(true)
     try {
-      // Cancel queued slider renders and let any in-flight composition finish before
-      // reusing its canvas for a new catalog selection.
-      studioFaceRenderVersionRef.current += 1
-      studioFaceRenderPendingRef.current = null
-      if (studioFaceRenderTimerRef.current !== null) {
-        window.clearTimeout(studioFaceRenderTimerRef.current)
-        studioFaceRenderTimerRef.current = null
-      }
-      while (studioFaceRenderRunningRef.current) await new Promise((resolve) => window.setTimeout(resolve, 16))
+      // Cancel queued slider renders before applying a new catalog selection.
+      await cancelStudioFacePreview()
       const characterCopy: CustomizerCharacter = {
         ...selectedStudioCharacter,
         customization: { ...selectedStudioCharacter.customization, poseSlot: selectedElement.poseSlot === undefined ? selectedStudioCharacter.customization.poseSlot : selectedElement.poseSlot, faceAppearance: appearance }
       }
-      const key = studioCharacterRenderKey(characterCopy)
-      if (!studioFaceRendererRef.current || studioFaceRendererRef.current.key !== key) {
-        const { prepareSavedCharacterRenderer } = await import('../../characters/characterRenderer')
-        const renderer = await prepareSavedCharacterRenderer(characterCopy)
-        studioFaceRendererRef.current = { key, render: renderer.render }
-      }
       const activeEffects = expressionState && Object.hasOwn(expressionState, 'activeExpressionEffects') ? expressionState.activeExpressionEffects : selectedElement.activeExpressionEffects
       const faceMode = expressionState && Object.hasOwn(expressionState, 'activeFaceMode') ? expressionState.activeFaceMode : selectedElement.activeFaceMode
-      const rendered = await studioFaceRendererRef.current.render(appearance, faceTransforms, activeEffects, faceMode)
+      const rendered = await renderStudioFace(characterCopy, appearance, faceTransforms, activeEffects, faceMode)
       const trimmed = await trimTransparentImage(rendered.dataUrl)
       const studioDataUrl = trimmed?.dataUrl ?? rendered.dataUrl
       const elementId = selectedElement.id
@@ -1027,65 +1019,6 @@ export function StudioPage() {
     const faceTransforms = studioFaceTransformsRef.current[selectedElement.id] ?? selectedElement.faceTransforms ?? {}
     if (!faceTransforms[transformKey]) return
     flushStudioFacePreview()
-  }
-
-  const scheduleStudioFacePreview = (job: NonNullable<typeof studioFaceRenderPendingRef.current>) => {
-    studioFaceRenderPendingRef.current = job
-    studioFaceRenderVersionRef.current += 1
-    if (studioFaceRenderTimerRef.current !== null) return
-    studioFaceRenderTimerRef.current = window.setTimeout(() => {
-      studioFaceRenderTimerRef.current = null
-      void renderPendingStudioFacePreview()
-    }, 55)
-  }
-
-  const flushStudioFacePreview = () => {
-    if (studioFaceRenderTimerRef.current !== null) window.clearTimeout(studioFaceRenderTimerRef.current)
-    studioFaceRenderTimerRef.current = null
-    void renderPendingStudioFacePreview()
-  }
-
-  const renderPendingStudioFacePreview = async () => {
-    if (studioFaceRenderRunningRef.current) return
-    studioFaceRenderRunningRef.current = true
-    try {
-      while (studioFaceRenderPendingRef.current) {
-        const job = studioFaceRenderPendingRef.current
-        studioFaceRenderPendingRef.current = null
-        const version = studioFaceRenderVersionRef.current
-        const key = studioCharacterRenderKey(job.character)
-        try {
-          if (!studioFaceRendererRef.current || studioFaceRendererRef.current.key !== key) {
-            const { prepareSavedCharacterRenderer } = await import('../../characters/characterRenderer')
-            const renderer = await prepareSavedCharacterRenderer(job.character)
-            if (version !== studioFaceRenderVersionRef.current) continue
-            studioFaceRendererRef.current = { key, render: renderer.render }
-          }
-          const element = activeStudio?.elements.find((candidate) => candidate.id === job.elementId)
-          const rendered = await studioFaceRendererRef.current.render(job.character.customization.faceAppearance, studioFaceTransformsRef.current[job.elementId] ?? job.transforms, element?.activeExpressionEffects, element?.activeFaceMode)
-          const trimmed = await trimTransparentImage(rendered.dataUrl)
-          const studioDataUrl = trimmed?.dataUrl ?? rendered.dataUrl
-          if (version === studioFaceRenderVersionRef.current && job.studioId === activeStudioId) {
-            patchStudio((studio) => ({
-              ...studio,
-              elements: studio.elements.map((element) => element.id === job.elementId ? { ...element, faceRendererVersion: STUDIO_FACE_RENDER_VERSION, ...faceRenderGeometry(element, rendered, trimmed, sceneRef.current?.clientWidth ?? 1000, sceneRef.current?.clientHeight ?? 562) } : element),
-              assets: studio.assets.map((asset) => asset.id === job.assetId ? { ...asset, dataUrl: studioDataUrl, mimeType: 'image/png' } : asset),
-              updatedAt: new Date().toISOString()
-            }))
-          }
-        } catch (reason) {
-          if (version === studioFaceRenderVersionRef.current && job.studioId === activeStudioId) setError(reason instanceof Error ? reason.message : 'Não foi possível atualizar a prévia facial.')
-        }
-      }
-    } finally {
-      studioFaceRenderRunningRef.current = false
-    }
-    if (studioFaceRenderPendingRef.current && studioFaceRenderTimerRef.current === null) {
-      studioFaceRenderTimerRef.current = window.setTimeout(() => {
-        studioFaceRenderTimerRef.current = null
-        void renderPendingStudioFacePreview()
-      }, 0)
-    }
   }
 
   const removeStageCharacter = (element: StudioElement) => {

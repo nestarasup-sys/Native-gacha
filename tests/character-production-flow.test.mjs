@@ -62,10 +62,12 @@ test('dois personagens compartilham catálogo sem sobrescrever suas configuraç�
 
 test('Studio usa o renderizador compartilhado sem compatibilidade exportada pela página Customizador', async () => {
   const studio = await readFile(new URL('../src/renderer/src/features/studio/StudioPage.tsx', import.meta.url), 'utf8')
+  const studioFacePreview = await readFile(new URL('../src/renderer/src/features/studio/useStudioFacePreview.ts', import.meta.url), 'utf8')
   const customizer = await readFile(new URL('../src/renderer/src/features/customizer/CustomizerPage.tsx', import.meta.url), 'utf8')
   const renderer = await readFile(new URL('../src/renderer/src/characters/characterRenderer.ts', import.meta.url), 'utf8')
   assert.equal(studio.includes("import('../customizer/CustomizerPage')"), false)
-  assert.equal(studio.split("import('../../characters/characterRenderer')").length - 1, 6)
+  assert.match(studio, /import\('\.\.\/\.\.\/characters\/characterRenderer'\)/)
+  assert.match(studioFacePreview, /import\('\.\.\/\.\.\/characters\/characterRenderer'\)/)
   assert.doesNotMatch(customizer, /^export \{ renderArtwork, prepareSavedCharacterRenderer, renderSavedCharacter, loadStandardExpressionEffects \} from/m)
   assert.doesNotMatch(customizer, /^export type \{ CatalogArtwork \} from/m)
   assert.match(renderer, /export async function prepareSavedCharacterRenderer/)
