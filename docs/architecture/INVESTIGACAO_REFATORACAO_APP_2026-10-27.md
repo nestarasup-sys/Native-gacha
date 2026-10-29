@@ -2,7 +2,7 @@
 
 **Data:** 2026-10-27
 
-**Última atualização:** 2026-10-28
+**Última atualização:** 2026-10-29
 
 **Base histórica da reauditoria:** branch local `Dev-V2`, criada sobre `Main-desenvolvimento` no commit `6c2997223430ded043043222469b1fc20a63084f`.
 
@@ -22,7 +22,7 @@ A **Biblioteca de Mídia** é dona dos arquivos de vídeo e seus IDs. Base de V�
 
 O restante já tem módulos por domínio e armazenamento local com SQLite, arquivos e CAS. O `electron/main.ts` agora registra somente o flush transversal de gravações; a maior concentração está nas páginas React extensas que combinam estado e coordenação de operações. O plano prioriza limites de propriedade, segurança dos dados e redução de responsabilidades por fluxo.
 
-**Próximos passos:** o ciclo de referências de poses está protegido entre Customizador, Studio e Editor V6. A fila por chave e o journal de assets do Studio/Editor V6 foram centralizados sem alterar formatos. As filas de operações de expressões agora preservam FIFO por `modelSlot` e deixam slots independentes avançarem juntos; o inventário de persistência inclui a cauda de cada slot. O próximo ponto é auditar a fila global de gravação do catálogo facial e sua interação com os locks de personagens e expressões. O flush transversal permanece no composition root. A orquestração e os modos de render de Studio e Editor V6 continuam separados até existir comparação visual das saídas reais.
+**Próximos passos:** referências, filas e persistência dos catálogos faciais agora têm escopo explícito por `modelSlot` ou perfil. As gravações do catálogo facial mantêm a ordem fila do slot → lock de personagens → fila de expressões; os guias faciais são serializados por perfil e entram no inventário de flush, backup e encerramento. O próximo ciclo continua a auditoria das operações IPC manuais iniciadas por ações do usuário e completa a matriz de falhas e recuperação de cada domínio. O flush transversal permanece no composition root. A orquestração e os modos de render de Studio e Editor V6 continuam separados até existir comparação visual das saídas reais.
 
 ## 1. Estado observado
 
@@ -678,7 +678,7 @@ Este corte separa propriedade dos contratos e chamadas entre domínios, mas não
 
 ## 12. Próxima tarefa recomendada
 
-Continuar a auditoria de operações IPC manuais iniciadas por ações de usuário e da cobertura do inventário do processo principal, além dos autosaves já drenados. Mapear o comportamento de falha/recuperação de cada domínio e completar a matriz de persistência do aplicativo.
+Em andamento: auditar operações IPC manuais iniciadas por ações de usuário e a cobertura do inventário do processo principal, além dos autosaves já drenados. Registrar para cada domínio o comportamento de falha/recuperação e completar a matriz de persistência do aplicativo. A fila de guias faciais por perfil foi incluída nesta atualização.
 
 ## 13. Verificações e validação
 
@@ -704,3 +704,10 @@ Continuar a auditoria de operações IPC manuais iniciadas por ações de usuár
 - Nesta atualização, revisei o fluxo entre `catalogPersistence`/`catalogImageTransaction`, `expressionIpc`/`expressionBatchTransaction`, `main.ts` e as suítes de falha. A fila de expressões foi limitada ao `modelSlot`, continua no inventário de gravações pendentes e coordena exclusões faciais com snapshots de referências. Nenhum dado de perfil ou mídia foi aberto ou alterado.
 - Nesta etapa, `faceCatalogIpc.ts` passou a serializar mutações por modelo e expor as caudas brutas ao inventário. `node --experimental-strip-types --test tests/fabricator-face-reference-integrity.test.mjs tests/pending-persistence-inventory.test.mjs` passou com 10 testes; `npm run test:refactor` com 307, `npm test` com 27 e `npm run test:editor-v6` com 64 (1 fixture opcional ignorada). Também passaram `npm run typecheck`, `npm run audit:architecture` (349 arquivos TS/TSX), `npm run build` e `git diff --check`. Os testes usam slots e operações sintéticos; nenhum perfil ou mídia pessoal foi acessado.
 - Nesta atualização, a exclusão explícita do Model Source limpa somente os artefatos transacionais do slot escolhido, e slots ambíguos ficam visíveis para a decisão do usuário sem seleção automática de backup. A suíte `model-source-recovery.test.mjs` passou com 10 testes; combinada com `model-source-publish.test.mjs` e `fabricator-model-catalog.test.mjs`, passou com 22 testes. `npm run test:refactor` passou com 309 testes, `npm test` com 27 e `npm run test:editor-v6` com 64 (1 fixture opcional ignorada). Também passaram `npm run typecheck`, `npm run audit:architecture` (349 arquivos TS/TSX), `npm run build` e `git diff --check`. Os testes usam diretórios e dados sintéticos; nenhum arquivo local de modelo foi apagado ou alterado.
+
+## 14. Etapa aplicada — fila de gravação por perfil de guias faciais
+
+- `faceGuidePersistence.ts` grava cada perfil em seu próprio `guides-<perfil>.json`, validando o conteúdo e publicando por arquivo temporário + rename. `faceGuidesIpc.ts` valida a origem e o perfil antes de persistir. Como três áreas compartilham o perfil `shared`, as gravações daquele perfil precisam manter FIFO; `eyes`, `face`, `head-extras` e `shared` usam caminhos separados e podem avançar independentemente.
+- A fila global no composition root foi substituída por `createKeyedOperationQueue({ retainFailures: true })` dentro do dono IPC dos guias. Cada perfil mantém FIFO; operações de perfis diferentes deixam de se bloquear. Falhas permanecem visíveis ao flush até uma gravação posterior daquele perfil concluir, e o handler fornece as caudas ao inventário comum de flush, backup e encerramento.
+- Canais IPC, tipos de perfil, nomes dos arquivos, JSON, validação, recuperação de arquivo corrompido e propriedade dos dados não mudaram. Nenhum arquivo de guia real foi aberto ou regravado.
+- `npm run test:fabricator:face-guides` cobre FIFO por perfil, concorrência entre perfis, falha retida e recuperação do inventário. Nesta etapa também passaram `npm run typecheck`, `npm run audit:architecture`, `npm run build` e `git diff --check`; os testes usam handlers e valores sintéticos.

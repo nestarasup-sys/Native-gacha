@@ -41,6 +41,7 @@
     "test:fabricator:contracts": "node --experimental-strip-types --test tests/fabricator-model-writer.test.mjs tests/fabricator-model-views.test.mjs tests/fabricator-view-boundaries.test.cjs tests/model-source-publish.test.mjs",
     "test:fabricator:visual": "node --experimental-strip-types --test tests/fabricator-visual-geometry.test.mjs tests/model-source-events.test.mjs",
     "test:fabricator:persistence": "node --experimental-strip-types --test tests/fabricator-pose-animator-persistence.test.mjs tests/fabricator-model-writer.test.mjs",
+    "test:fabricator:face-guides": "node --experimental-strip-types --test tests/fabricator-face-guides-ipc.test.mjs tests/pending-persistence-inventory.test.mjs",
     "test:fabricator:electron-visual": "electron scripts/fabricator/model-source-electron-visual.cjs",
     "test:fabricator:real-ui": "node scripts/fabricator/capture-real-ui.cjs",
     "test:fabricator:assets": "node --experimental-strip-types --test tests/fabricator-versioned-assets.test.mjs",

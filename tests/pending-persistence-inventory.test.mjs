@@ -16,7 +16,7 @@ test('flush, backup e encerramento usam um único inventário de gravações pen
     'fabricatorWardrobeIpc?.getPendingWrites()',
     'fabricatorFaceCatalogIpc?.getPendingWrites()',
     'expressionPresetOperations.getPendingWrites()',
-    'faceGuideSaveQueue',
+    'faceGuideIpc?.getPendingWrites()',
     'customizerService.pendingWrites',
     'studioSaveQueues.studio',
     'editorV6SaveQueue',

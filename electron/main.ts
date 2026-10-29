@@ -378,14 +378,8 @@ const characterManifestPath = () => join(characterLibraryPath(), 'characters.jso
 let poseSaveQueue: Promise<void> = Promise.resolve()
 const poseSaveWrites = new Set<Promise<void>>()
 let poseMigration: Promise<void> | null = null
-let faceGuideSaveQueue: Promise<void> = Promise.resolve()
+let faceGuideIpc: ReturnType<typeof registerFaceGuideHandlers> | null = null
 let fabricatorFaceCatalogIpc: ReturnType<typeof registerFabricatorFaceCatalogHandlers> | null = null
-
-function queueFaceGuideSave(operation: () => Promise<void>): Promise<void> {
-  const next = faceGuideSaveQueue.catch(() => undefined).then(operation)
-  faceGuideSaveQueue = next
-  return next
-}
 // O acesso do Customizador passa pelo mesmo DomainFileSystem legado, sem migrar dados.
 const customizerRepository = new CustomizerCharacterRepository(
   characterManifestPath,
@@ -1260,7 +1254,7 @@ function collectPendingPersistenceWrites(): Promise<unknown>[] {
     ...(fabricatorAnimatorIpc?.getPendingWrites() ?? []), ...(fabricatorWardrobeIpc?.getPendingWrites() ?? []),
     ...(fabricatorFaceCatalogIpc?.getPendingWrites() ?? []),
     ...expressionPresetOperations.getPendingWrites(),
-    faceGuideSaveQueue, customizerService.pendingWrites,
+    ...(faceGuideIpc?.getPendingWrites() ?? []), customizerService.pendingWrites,
     studioSaveQueues.studio, editorV6SaveQueue, roteirosSaveQueue,
     ...(poseMigration ? [poseMigration] : [])
   ]
@@ -1533,11 +1527,10 @@ async function registerFabricatorHandlers(): Promise<void> {
   registerFabricatorFaceAnimationExportHandler({
     ipcMain, assertTrustedSender, isValidModelSlot, writeFile
   })
-  registerFaceGuideHandlers(ipcMain, assertTrustedSender, {
+  faceGuideIpc = registerFaceGuideHandlers(ipcMain, assertTrustedSender, {
     isProfile: isFaceGuideProfile,
     read: (profile) => faceGuidePersistence.read(profile),
-    write: (profile, guides) => faceGuidePersistence.write(profile, guides),
-    queueSave: queueFaceGuideSave
+    write: (profile, guides) => faceGuidePersistence.write(profile, guides)
   })
 
   fabricatorHairIpc = registerFabricatorHairHandlers({
