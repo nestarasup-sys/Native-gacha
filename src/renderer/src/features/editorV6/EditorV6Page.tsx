@@ -7,7 +7,7 @@ import { useMotionPreparation } from './motion/useMotionPreparation'
 import { EditorV6VideoPickerModal } from './EditorV6VideoPickerModal'
 import { EditorV6PlaybackAudio } from './EditorV6PlaybackAudio'
 import { EditorV6PlaybackScene } from './EditorV6PlaybackScene'
-import { EditorV6CastPanel } from './EditorV6CastPanel'
+import { SceneCastPanel } from '../../ui/components/SceneCastPanel'
 import { EditorV6PresetPanel } from './EditorV6PresetPanel'
 import { EditorV6PropertyPanel } from './EditorV6PropertyPanel'
 import { getEditorV6PlaybackFrame, setEditorV6PlaybackFrame } from './editorV6PlaybackClock'
@@ -965,7 +965,7 @@ export function EditorV6Page() {
             </aside>}
           </div>
         </section>
-        {!fullView && <aside className="studio-editor-rail studio-editor-right" aria-label="Elenco do Editor V6"><EditorV6CastPanel
+        {!fullView && <aside className="studio-editor-rail studio-editor-right" aria-label="Elenco do Editor V6"><SceneCastPanel
           elements={stageCharacters} characters={availableCharacters} selectedElementId={selectedElementId}
           allPositionsLocked={allStageCharactersLocked} onAddCharacter={openCastPicker}
           onTogglePositionsLocked={toggleStageCharacterPositionLock}

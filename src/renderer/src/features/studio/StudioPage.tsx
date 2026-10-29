@@ -3,7 +3,7 @@ import { isPoseSnapshotForModel } from '../../../../shared/characterSourceContin
 import { useStudioInspectorState } from '../../characters/useStudioInspectorState'
 import { useFaceExpressionCatalog } from '../../characters/useFaceExpressionCatalog'
 import { StudioSceneCanvas } from './StudioSceneCanvas'
-import { StudioCastPanel } from './StudioCastPanel'
+import { SceneCastPanel } from '../../ui/components/SceneCastPanel'
 import { trimTransparentImage, faceRenderGeometry } from '../../characters/characterGeometry'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { studioExpressionCollection } from './expressionTransforms'
@@ -909,13 +909,13 @@ export function StudioPage() {
             </aside>}
         </StudioSceneCanvas>
         {!fullView && <aside className="studio-editor-rail studio-editor-right" aria-label="Elenco do Studio">
-          <StudioCastPanel
-            stageCharacters={stageCharacters}
-            availableCharacters={availableCharacters}
+          <SceneCastPanel
+            elements={stageCharacters}
+            characters={availableCharacters}
             selectedElementId={selectedElementId}
-            allCharactersLocked={allStageCharactersLocked}
+            allPositionsLocked={allStageCharactersLocked}
             onAddCharacter={openCastPicker}
-            onTogglePositionLock={toggleStageCharacterPositionLock}
+            onTogglePositionsLocked={toggleStageCharacterPositionLock}
             onSelectCharacter={(element) => { setSelectedElementId(element.id); setActiveTool(null); setInspectorOpen(true); restoreCharacterInspectorView() }}
             onRemoveCharacter={removeStageCharacter}
           />
