@@ -5,6 +5,7 @@ const { resolve } = require('node:path')
 const ts = require('typescript')
 
 const file = resolve('src/renderer/src/features/fabricator/models/modelSource.ts')
+let imageLoaderOverride = null
 const compiled = ts.transpileModule(readFileSync(file,'utf8'), {
   compilerOptions: {module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}
 }).outputText.replaceAll('import.meta.url', '\"file:///model-source-test.ts\"')
@@ -12,7 +13,9 @@ const mod={exports:{}}
 new Function('exports','module','require',compiled)(mod.exports,mod,(specifier) => {
   if (specifier === './resize') return { isHeadPart: part => /cabe[çc]a|head/i.test(part.name) }
   if (specifier === './imageData') return {
-    loadImageFromDataUrl: () => { throw new Error('O fixture só valida dimensões; imagem não deve ser carregada.') },
+    loadImageFromDataUrl: (...args) => imageLoaderOverride
+      ? imageLoaderOverride(...args)
+      : (() => { throw new Error('O fixture só valida dimensões; imagem não deve ser carregada.') })(),
     pngDataUrlFromBuffer: () => { throw new Error('O fixture só valida dimensões; PNG não deve ser convertido.') }
   }
   if (specifier === './runChromaAdjustWorker') return {
@@ -20,7 +23,7 @@ new Function('exports','module','require',compiled)(mod.exports,mod,(specifier) 
   }
   throw new Error('Import inesperado no domínio: ' + specifier)
 })
-const {sourceRect,validateModelSourceDimensions,validateModelSourceChroma}=mod.exports
+const {sourceRect,validateModelSourceDimensions,validateModelSourceChroma,composeModelSource}=mod.exports
 const part=(id,x,y,width,height)=>({id,name:id,x,y,width,height,rotation:0,dataUrl:'data:image/png;base64,',sourceTransform:{x,y,width,height,rotation:0}})
 const fixture=()=>({width:400,height:300,parts:[part('cabeca',20,20,80,80),part('torso',170,60,120,180)]})
 
@@ -60,4 +63,36 @@ test('somente a cabeça pode ser reposicionada na fonte, sem mover montagem',()=
 test('chroma configurável permite intervalo 0–280',()=>{
   for(const n of [0,74,280]) assert.doesNotThrow(()=>validateModelSourceChroma(n))
   for(const n of [-1,281,1.5,NaN]) assert.throws(()=>validateModelSourceChroma(n),/Chroma Key/)
+})
+
+test('composição já cancelada termina antes de criar canvases ou abrir imagens',async()=>{
+  const controller=new AbortController()
+  controller.abort()
+  await assert.rejects(composeModelSource(fixture(),{},74,controller.signal),error=>error.name==='AbortError')
+})
+
+test('cancelar a composição durante a leitura impede iniciar a próxima peça',async()=>{
+  const previousDocument=global.document
+  const controller=new AbortController()
+  let reads=0
+  imageLoaderOverride=(_dataUrl,_message,signal)=>new Promise((_resolve,reject)=>{
+    reads+=1
+    signal.addEventListener('abort',()=>{
+      const error=new Error('cancelado')
+      error.name='AbortError'
+      reject(error)
+    },{once:true})
+  })
+  global.document={createElement:()=>({width:0,height:0,getContext:()=>({fillRect(){},drawImage(){}}),toDataURL:()=> 'data:image/png;base64,AA=='})}
+  try{
+    const pending=composeModelSource(fixture(),{},74,controller.signal)
+    assert.equal(reads,1)
+    controller.abort()
+    await assert.rejects(pending,error=>error.name==='AbortError')
+    assert.equal(reads,1)
+  }finally{
+    imageLoaderOverride=null
+    if(previousDocument===undefined)delete global.document
+    else global.document=previousDocument
+  }
 })

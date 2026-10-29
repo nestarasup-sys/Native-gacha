@@ -21,8 +21,13 @@ export class ChromaAdjustTaskError extends Error {
 /** Runs one chroma worker request and owns its completion, error, and cancellation cleanup. */
 export function startChromaAdjustWorker(
   request: ChromaAdjustRequest,
-  createWorker: () => Worker = () => new Worker(new URL('./chromaAdjust.worker.ts', import.meta.url), { type: 'module' })
+  createWorker: () => Worker = () => new Worker(new URL('./chromaAdjust.worker.ts', import.meta.url), { type: 'module' }),
+  signal?: AbortSignal
 ): ChromaAdjustTask {
+  if (signal?.aborted) {
+    const result = Promise.reject<Map<string, string>>(new ChromaAdjustTaskError('Operação cancelada.', 'cancelled'))
+    return { result, cancel: () => {} }
+  }
   const worker = createWorker()
   let settled = false
   let resolveResult!: (assets: Map<string, string>) => void
@@ -34,9 +39,11 @@ export function startChromaAdjustWorker(
   const fail = (error: ChromaAdjustTaskError) => {
     if (settled) return
     settled = true
+    signal?.removeEventListener('abort', cancel)
     worker.terminate()
     rejectResult(error)
   }
+  const cancel = () => fail(new ChromaAdjustTaskError('Operação cancelada.', 'cancelled'))
 
   worker.onmessage = (event: MessageEvent<ChromaAdjustMessage>) => {
     if (settled || event.data.id !== request.id) return
@@ -47,6 +54,7 @@ export function startChromaAdjustWorker(
     try {
       const assets = new Map(event.data.parts.map(({ id, png }) => [id, pngDataUrlFromBuffer(png)]))
       settled = true
+      signal?.removeEventListener('abort', cancel)
       worker.terminate()
       resolveResult(assets)
     } catch (reason) {
@@ -55,14 +63,17 @@ export function startChromaAdjustWorker(
   }
   worker.onerror = () => fail(new ChromaAdjustTaskError('Não foi possível aplicar o Chroma Key.', 'runtime'))
 
+  signal?.addEventListener('abort', cancel, { once: true })
+  if (signal?.aborted) cancel()
+
   try {
-    worker.postMessage(request satisfies ChromaAdjustRequest)
+    if (!settled) worker.postMessage(request satisfies ChromaAdjustRequest)
   } catch (reason) {
     fail(new ChromaAdjustTaskError(reason instanceof Error ? reason.message : 'Não foi possível iniciar o worker de Chroma Key.', 'runtime'))
   }
 
   return {
     result,
-    cancel: () => fail(new ChromaAdjustTaskError('Operação cancelada.', 'cancelled'))
+    cancel
   }
 }

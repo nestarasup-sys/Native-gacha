@@ -73,22 +73,31 @@ function resizePng(image: HTMLImageElement, width: number, height: number): HTML
   context.drawImage(image, 0, 0, width, height)
   return canvas
 }
-async function applyChroma(sourceDataUrl: string, tolerance: number, parts: ModelPart[]): Promise<Map<string, string>> {
+async function applyChroma(sourceDataUrl: string, tolerance: number, parts: ModelPart[], signal?: AbortSignal): Promise<Map<string, string>> {
   const task = startChromaAdjustWorker({
     id: 1,
     sourceDataUrl,
     tolerance,
     parts: parts.map(part => ({ id: part.id, dataUrl: part.chromaBaseDataUrl ?? part.dataUrl }))
-  })
+  }, undefined, signal)
   return task.result
+}
+
+function throwIfAborted(signal?: AbortSignal): void {
+  if (!signal?.aborted) return
+  const error = new Error('Composição do Model Source cancelada.')
+  error.name = 'AbortError'
+  throw error
 }
 
 /** Renderiza duas folhas: fonte original editada (para reprocessamento) e preview transparente exportável. */
 export async function composeModelSource(
   project: FabricatorProject,
   edits: ModelSourceDimensions,
-  tolerance: number = project.tolerance
+  tolerance: number = project.tolerance,
+  signal?: AbortSignal
 ): Promise<ModelSourceResult> {
+  throwIfAborted(signal)
   validateModelSourceDimensions(project, edits)
   validateModelSourceChroma(tolerance)
   const raw = document.createElement('canvas')
@@ -100,15 +109,18 @@ export async function composeModelSource(
   rawContext.fillRect(0, 0, project.width, project.height)
   const resized: ModelPart[] = []
   for (const part of project.parts) {
+    throwIfAborted(signal)
     const rect = sourceRect(part, edits[part.id])
     const baseline = sourceRect(part)
     const edited = rect.x !== baseline.x || rect.y !== baseline.y
       || rect.width !== baseline.width || rect.height !== baseline.height
-    const sourceImage = await loadImageFromDataUrl(part.chromaBaseDataUrl ?? part.dataUrl, 'Não foi possível decodificar uma das peças.')
+    const sourceImage = await loadImageFromDataUrl(part.chromaBaseDataUrl ?? part.dataUrl, 'Não foi possível decodificar uma das peças.', signal)
+    throwIfAborted(signal)
     const rawPart = resizePng(sourceImage, rect.width, rect.height)
     rawContext.drawImage(rawPart, rect.x, rect.y)
     if (!edited) { resized.push(part); continue }
-    const originalImage = await loadImageFromDataUrl(part.dataUrl, 'Não foi possível decodificar uma das peças.')
+    const originalImage = await loadImageFromDataUrl(part.dataUrl, 'Não foi possível decodificar uma das peças.', signal)
+    throwIfAborted(signal)
     const displayPart = resizePng(originalImage, rect.width, rect.height)
     // Preserve a montagem corrente. Só x/y de origem mudam ao mover a cabeça.
     resized.push({
@@ -132,9 +144,11 @@ export async function composeModelSource(
       chromaBaseDataUrl: rawPart.toDataURL('image/png')
     })
   }
+  throwIfAborted(signal)
   const sourceDataUrl = raw.toDataURL('image/png')
   const adjusted = tolerance === project.tolerance ? resized : await (async () => {
-    const recolored = await applyChroma(sourceDataUrl, tolerance, resized)
+    const recolored = await applyChroma(sourceDataUrl, tolerance, resized, signal)
+    throwIfAborted(signal)
     return resized.map(part => ({
       ...part,
       dataUrl: recolored.get(part.id) ?? part.dataUrl,
@@ -147,8 +161,11 @@ export async function composeModelSource(
   const view = preview.getContext('2d')
   if (!view) throw new Error('Canvas indisponível para renderizar a prévia.')
   for (const part of adjusted) {
+    throwIfAborted(signal)
     const rect = sourceRect(part, edits[part.id])
-    view.drawImage(await loadImageFromDataUrl(part.dataUrl, 'Não foi possível decodificar uma das peças.'), rect.x, rect.y, rect.width, rect.height)
+    const image = await loadImageFromDataUrl(part.dataUrl, 'Não foi possível decodificar uma das peças.', signal)
+    throwIfAborted(signal)
+    view.drawImage(image, rect.x, rect.y, rect.width, rect.height)
   }
   return {
     sourceDataUrl,

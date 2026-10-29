@@ -149,6 +149,24 @@ test('worker compartilhado diferencia falha, erro do worker e cancelamento sem t
   assert.equal(cancelledWorker.terminateCount, 1)
 })
 
+test('worker compartilhado acompanha AbortSignal e não inicia tarefa já cancelada', async () => {
+  const worker = createWorkerDouble()
+  const controller = new AbortController()
+  const task = startChromaAdjustWorker({ id: 4, sourceDataUrl: 'source', tolerance: 20, parts: [] }, () => worker, controller.signal)
+  const cancellation = assert.rejects(task.result, error => error instanceof ChromaAdjustTaskError && error.kind === 'cancelled')
+  controller.abort()
+  await cancellation
+  worker.onmessage({ data: { type: 'complete', id: 4, parts: [] } })
+  assert.equal(worker.terminateCount, 1)
+
+  const alreadyAborted = new AbortController()
+  alreadyAborted.abort()
+  const skipped = startChromaAdjustWorker({ id: 5, sourceDataUrl: 'source', tolerance: 20, parts: [] }, () => {
+    throw new Error('Worker não deve ser criado para sinal cancelado.')
+  }, alreadyAborted.signal)
+  await assert.rejects(skipped.result, error => error instanceof ChromaAdjustTaskError && error.kind === 'cancelled')
+})
+
 function createWorkerDouble() {
   return {
     onmessage: null,

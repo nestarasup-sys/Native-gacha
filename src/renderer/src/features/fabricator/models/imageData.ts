@@ -1,8 +1,30 @@
-export function loadImageFromDataUrl(dataUrl: string, errorMessage: string): Promise<HTMLImageElement> {
+export function loadImageFromDataUrl(dataUrl: string, errorMessage: string, signal?: AbortSignal): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      const error = new Error('Carregamento de imagem cancelado.')
+      error.name = 'AbortError'
+      reject(error)
+      return
+    }
     const image = new Image()
-    image.onload = () => resolve(image)
-    image.onerror = () => reject(new Error(errorMessage))
+
+    const cleanup = () => {
+      image.onload = null
+      image.onerror = null
+      signal?.removeEventListener('abort', abort)
+    }
+    const abort = () => {
+      cleanup()
+      try { image.src = '' } catch { /* A decodificação já pode ter sido liberada pelo navegador. */ }
+      const error = new Error('Carregamento de imagem cancelado.')
+      error.name = 'AbortError'
+      reject(error)
+    }
+
+    image.onload = () => { cleanup(); resolve(image) }
+    image.onerror = () => { cleanup(); reject(new Error(errorMessage)) }
+    signal?.addEventListener('abort', abort, { once: true })
+    if (signal?.aborted) { abort(); return }
     image.src = dataUrl
   })
 }

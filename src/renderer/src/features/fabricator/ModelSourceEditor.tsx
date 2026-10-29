@@ -133,20 +133,21 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
 
   useEffect(() => {
     let active = true
+    const controller = new AbortController()
     const handle = window.setTimeout(() => {
-      void composeModelSource(draft, dimensions, chromaTolerance).then(result => {
+      void composeModelSource(draft, dimensions, chromaTolerance, controller.signal).then(result => {
         if (!active) return
         setPreview(result.previewDataUrl)
         setPreviewParts(result.parts)
         setError('')
       }).catch(reason => {
-        if (!active) return
+        if (!active || controller.signal.aborted) return
         setError(reason instanceof Error ? reason.message : 'Prévia inválida.')
         setPreview('')
         setPreviewParts([])
       })
     }, 180)
-    return () => { active = false; window.clearTimeout(handle) }
+    return () => { active = false; window.clearTimeout(handle); controller.abort() }
   }, [draft, dimensions, chromaTolerance])
 
   useEffect(() => {
