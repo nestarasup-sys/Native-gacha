@@ -8,6 +8,7 @@ import { createVideoReferenceGuard } from '../electron/domains/mediaLibrary/vide
 import { createRoteirosVideoReferenceLookup } from '../electron/domains/roteiros/videoReferences.ts'
 import { createEditorV6VideoReferenceLookup } from '../electron/domains/editorV6/videoReferences.ts'
 import { assertBaseVideoId, nextCategoryColor, normalizeCategoryName, validateVideoDetails } from '../electron/domains/baseVideos/validation.ts'
+import categoryColors from '../electron/categoryColors.cjs'
 
 const A = 'a2189020-8327-4327-a4a6-442ed9902123'
 const B = 'b2189020-8327-4327-a4a6-442ed9902123'
@@ -68,6 +69,7 @@ test('validação pura rejeita entradas fora de contrato', () => {
   assert.doesNotThrow(() => validateVideoDetails({ videoId: A, description: '', timeline: 'unspecified' }))
   assert.equal(nextCategoryColor(new Set()), '#dc5368')
   assert.equal(nextCategoryColor(new Set(['#dc5368'])), '#e58b3a')
+  assert.equal(nextCategoryColor, categoryColors.nextCategoryColor)
 })
 
 test('categorias: criação, nomes únicos, cores distintas, edição e exclusão', async (t) => {

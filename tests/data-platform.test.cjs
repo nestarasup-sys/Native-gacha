@@ -5,8 +5,9 @@ const os = require('node:os')
 const path = require('node:path')
 const sharp = require('sharp')
 const Database = require('better-sqlite3')
-const { ContentAddressedStore, DataPlatform, createDatabaseSnapshot, getAppDataUsage, registerObjectMetadata, sha256 } = require('../electron/dataPlatform.cjs')
+const { BUILTIN_DOMAINS, ContentAddressedStore, DataPlatform, createDatabaseSnapshot, getAppDataUsage, registerObjectMetadata, sha256 } = require('../electron/dataPlatform.cjs')
 const ContentAddressedStoreService = require('../electron/domains/storage/contentAddressedStore.cjs')
+const catalogSchema = require('../electron/domains/storage/catalogSchema.cjs')
 const { getAppDataUsage: readAppDataUsage } = require('../electron/domains/storage/appDataUsage.cjs')
 const { sha256: hashBytes } = require('../electron/domains/storage/storageFiles.cjs')
 const { DomainFileSystem } = require('../electron/domainFileSystem.cjs')
@@ -31,10 +32,30 @@ async function withRoot(run) {
 }
 
 test('data platform keeps its storage exports as aliases to the owning modules', () => {
+  assert.equal(BUILTIN_DOMAINS, catalogSchema.BUILTIN_DOMAINS)
   assert.equal(ContentAddressedStore, ContentAddressedStoreService)
   assert.equal(getAppDataUsage, readAppDataUsage)
   assert.equal(sha256, hashBytes)
 })
+
+test('catalog rejects a future schema without changing its database', async () => withRoot(async (root) => {
+  const databasePath = path.join(root, 'database', 'catalog.sqlite')
+  await fs.mkdir(path.dirname(databasePath), { recursive: true })
+  const legacy = new Database(databasePath)
+  legacy.exec('CREATE TABLE preserved_fixture (value TEXT NOT NULL); PRAGMA user_version = 17;')
+  legacy.prepare('INSERT INTO preserved_fixture(value) VALUES (?)').run('keep')
+  legacy.close()
+
+  const catalog = new DataPlatform(root)
+  assert.throws(() => catalog.initialize(), /schema 17/)
+  assert.equal(catalog.database, null)
+
+  const verify = new Database(databasePath, { readonly: true })
+  try {
+    assert.equal(verify.pragma('user_version', { simple: true }), 17)
+    assert.equal(verify.prepare('SELECT value FROM preserved_fixture').get().value, 'keep')
+  } finally { verify.close() }
+}))
 
 test('catalog supports new domains, stable IDs, metadata search and bounded pagination', async () => withRoot(async (root) => {
   const catalog = catalogAt(root)

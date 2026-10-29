@@ -1053,3 +1053,10 @@ Continua a auditoria das operações IPC iniciadas pelo usuário e da cobertura 
 - Não mudaram arquivos JSON, referências, filas, canais IPC ou o comportamento do editor. `electron/main.ts` passou de 1.419 para 1.346 linhas físicas (1.336 para 1.264 com conteúdo), deixando a composição sem as regras de validação do domínio.
 - Regressões verificam preset atual, movimento e pupilas PT, seleção facial, limites geométricos, rascunho, cópias de trabalho e valores inválidos. A validação não altera o objeto recebido.
 - Verificação: `npm run test:refactor` passou com 348 testes; a suíte focada de compatibilidade passou com 14; também passaram typecheck, auditoria de arquitetura (388 arquivos TS/TSX), build e `git diff --check`.
+
+## 44. Etapa aplicada — schema do catálogo e paleta de categorias isolados
+
+- `electron/dataPlatform.cjs` ainda misturava a fachada do catálogo com a criação de tabelas, índices e migrações SQLite. `catalogSchema.cjs` agora é dono da inicialização e declara a versão suportada (16); a fachada mantém a checagem de schema futuro e delega a inicialização antes da migração legada de Roteiros.
+- As regras SQL e a sequência de migrações foram movidas sem alterar o schema. A cor seguinte de categoria tinha algoritmos duplicados no catálogo e na Base de Vídeos; `electron/categoryColors.cjs` agora contém uma implementação, enquanto a validação de Base de Vídeos preserva seu export antigo como reexport compatível.
+- `dataPlatform.cjs` passou de 847 para 599 linhas físicas (248 a menos). Os módulos preservam `BUILTIN_DOMAINS`, o formato persistido, IDs e caminhos. Um teste verifica que abrir um catálogo em versão futura falha sem alterar versão, tabela ou conteúdo existentes.
+- Verificação: `npm run test:refactor` passou com 348 testes; `npm test` passou com 29; `npm run test:data-runtime` confirmou SQLite, FTS5, object store, miniaturas e backup. Também passaram typecheck, auditoria de arquitetura (388 arquivos TS/TSX), build e `git diff --check`.
