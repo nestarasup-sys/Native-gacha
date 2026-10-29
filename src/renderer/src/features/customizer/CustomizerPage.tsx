@@ -3,6 +3,8 @@ import { useCustomizerModelBrowserState } from './useCustomizerModelBrowserState
 import { useCustomizerCatalogThumbnails } from './useCustomizerCatalogThumbnails'
 import { useCustomizerAssetLibraryState } from './useCustomizerAssetLibraryState'
 import { useCustomizerCharacterCommands } from './useCustomizerCharacterCommands'
+import { useCustomizerFaceAppearanceActions } from './useCustomizerFaceAppearanceActions'
+import { useCustomizerHairAppearanceActions } from './useCustomizerHairAppearanceActions'
 import { useCustomizerBodyAppearance } from './useCustomizerBodyAppearance'
 import { useCustomizerCharacterSourceSelection } from './useCustomizerCharacterSourceSelection'
 import { CustomizerModelPicker } from './CustomizerModelPicker'
@@ -12,7 +14,7 @@ import { buildClothesAdjustmentEntries } from './customizerClothesAdjustmentMode
 import { upperWardrobePanels, upperWardrobePageTwoPanels, accessoryWardrobePanels, lowerWardrobePanels, lowerWardrobePageTwoPanels, wardrobePanelCandidates, isWardrobePanelCandidateSelected, renderWardrobeThumbnail } from './wardrobePanelModel'
 import type { WardrobePanel } from './wardrobePanelModel'
 import { HairAssetPreview, WardrobePanelCandidatePreview } from './CustomizerAssetPreviews'
-import { customizerFaceParts, customizerFaceCatalogLayoutParts, customizerSkinTonePresets, facePartCatalogId, facePartColorControls, facePartSourceId, hasSelectedFaceAsset, sameFaceAssetPair, skinTonePresets, wrapSlotIndex, createCustomizerFaceCatalogModel } from './customizerFaceCatalogModel'
+import { customizerFaceParts, customizerFaceCatalogLayoutParts, customizerSkinTonePresets, facePartCatalogId, facePartColorControls, facePartSourceId, sameFaceAssetPair, skinTonePresets, wrapSlotIndex, createCustomizerFaceCatalogModel } from './customizerFaceCatalogModel'
 import type { FaceCatalogChoice, FaceCatalogLayoutPart, FaceLibraryPartId } from './customizerFaceCatalogModel'
 import { hairColorControls, hairPalettePresets, MouthBlushControls, NoseOpacityControl, NoseSkinTonePalette, PiecePaletteStrip } from './CustomizerAppearanceControls'
 import { useCustomizerInitialArtworkPreview } from './useCustomizerInitialArtworkPreview'
@@ -36,9 +38,9 @@ import { hairStyleSupportsCategory } from '../../../../shared/hairCategories'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { RenderedCharacterPortrait } from '../../ui/components/RenderedCharacterPortrait'
 import { Icon } from '../../ui/components/Icon'
-import type { FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSummary, FaceDetailKind, FaceSheetKind, FabricatorProject, HairStyleSummary, WardrobeSet } from '../../../../shared/fabricator'
+import type { FaceComponentAssetSummary, FaceDetailKind, FabricatorProject, HairStyleSummary, WardrobeSet } from '../../../../shared/fabricator'
 import { resolvePoseCategory } from '../../../../shared/fabricator'
-import type { CustomizerFaceAppearance, CustomizerWardrobeGroup, FacePalettePartId, HairColorOverrides, HairColorRole, HairPartId } from '../../../../shared/customizer'
+import type { CustomizerFaceAppearance, CustomizerWardrobeGroup, HairColorRole } from '../../../../shared/customizer'
 import { characterBodyDimensionLimits, characterProportionLimits, defaultCharacterProportions, type CharacterProportions } from '../../../../shared/customizer'
 import { usePreviewBackground } from '../../ui/hooks/usePreviewBackground'
 import { DesignBanner } from '../../ui/components/DesignBanner'
@@ -440,292 +442,21 @@ export function CustomizerPage() {
   }
 
 
-  async function chooseFaceCatalogItem(summary: FaceCatalogItemSummary, variantIndex?: number) {
-    const item = faceCatalogDetails[`${summary.modelSlot}:${summary.id}`] ?? await window.desktop.fabricator.loadFaceCatalogItem(summary.modelSlot, summary.id)
-    if (!item || !selectedCharacter) return
-    setFaceCatalogDetails((current) => ({ ...current, [`${summary.modelSlot}:${summary.id}`]: item }))
-    const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
-    const previous = current.customization.faceAppearance
-    const field: Record<FaceSheetKind, keyof CustomizerFaceAppearance> = {
-      eyes: 'eyeCatalogId', eyebrows: 'eyebrowCatalogId', nose: 'noseCatalogId',
-      'mouth-closed': 'mouthClosedCatalogId', 'mouth-open': 'mouthOpenCatalogId'
-    }
-    const sameModel = previous?.modelSlot === item.modelSlot
-    const migrated: Partial<Pick<CustomizerFaceAppearance, 'eyeCatalogId' | 'eyebrowCatalogId' | 'noseCatalogId' | 'mouthClosedCatalogId' | 'mouthOpenCatalogId'>> = {}
-    if (sameModel && previous?.setId) {
-      const legacySet = await window.desktop.fabricator.loadFaceSet(previous.modelSlot, previous.setId)
-      for (const kind of Object.keys(field) as FaceSheetKind[]) {
-        if (!legacySet?.sheets[kind]) continue
-        const legacyItemId = `legacy_${legacySet.id}_${kind}`
-        if (!faceCatalogItems.some((entry) => entry.id === legacyItemId)) continue
-        if (kind === 'eyes') migrated.eyeCatalogId = legacyItemId
-        else if (kind === 'eyebrows') migrated.eyebrowCatalogId = legacyItemId
-        else if (kind === 'nose') migrated.noseCatalogId = legacyItemId
-        else if (kind === 'mouth-closed') migrated.mouthClosedCatalogId = legacyItemId
-        else migrated.mouthOpenCatalogId = legacyItemId
-      }
-    }
-    const appearance: CustomizerFaceAppearance = {
-      ...(sameModel ? previous : undefined),
-      ...migrated,
-      modelSlot: item.modelSlot,
-      setId: undefined,
-      [field[item.category]]: item.id,
-      eyeState: sameModel ? previous.eyeState : 0,
-      eyebrows: sameModel ? previous.eyebrows : true,
-      noseIndex: item.category === 'nose' ? variantIndex ?? item.selectedNose : sameModel ? previous.noseIndex : item.selectedNose,
-      expressionIndex: item.category.startsWith('mouth') ? variantIndex ?? item.selectedExpression : sameModel ? previous.expressionIndex : item.selectedExpression,
-      mouthOpen: item.category === 'mouth-open' ? true : item.category === 'mouth-closed' ? false : sameModel ? previous.mouthOpen : false
-    }
-    if (item.category === 'eyes' || item.category === 'eyebrows') {
-      selectHeadTab('eyes')
-    } else {
-      selectHeadTab('face')
-    }
-    await saveCharacterCustomization({ faceAppearance: appearance })
-  }
-
-  async function chooseFacePartCatalogItem(partId: FaceLibraryPartId, summary: FaceComponentAssetSummary) {
-    const part = customizerFaceParts.find((entry) => entry.id === partId)
-    if (!part || !selectedCharacter) return
-    const categoryParts = customizerFaceParts.filter((candidate) => candidate.category === part.category)
-    const leftPart = categoryParts.find((candidate) => candidate.side === 'left')
-    const rightPart = categoryParts.find((candidate) => candidate.side === 'right')
-    const leftSummary = isRightFaceAsset(summary)
-      ? faceComponentAssets.find((candidate) => !isRightFaceAsset(candidate) && sameFaceAssetPair(candidate, summary, faceComponentDetails)) ?? summary
-      : summary
-    const rightSummary = isRightFaceAsset(leftSummary)
-      ? leftSummary
-      : faceComponentAssets.find((candidate) => sameFaceAssetPair(leftSummary, candidate, faceComponentDetails)) ?? leftSummary
-    const selectedAssets = new Map<string, FaceComponentAsset>()
-    for (const candidate of new Set([leftSummary, rightSummary])) {
-      const asset = faceComponentDetails[candidate.id] ?? await window.desktop.fabricator.loadFaceComponentAsset(candidate.modelSlot, candidate.id)
-      if (asset) selectedAssets.set(candidate.id, asset)
-    }
-    const item = selectedAssets.get((part.side === 'right' ? rightSummary : leftSummary).id)
-    if (!item || !leftPart || !rightPart) return
-    setFaceComponentDetails((current) => ({ ...current, ...Object.fromEntries(selectedAssets) }))
-    const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
-    const previous = current.customization.faceAppearance
-    const sameModel = previous?.modelSlot === item.modelSlot
-    const linkedSides = { ...(sameModel ? previous?.linkedSides : undefined), [part.category]: false }
-    const previousComponents = sameModel ? previous?.components : undefined
-    const appearance: CustomizerFaceAppearance = {
-      ...(sameModel ? previous : undefined), modelSlot: item.modelSlot, setId: undefined, linkedSides,
-      components: {
-        ...(previousComponents ?? {}),
-        [leftPart.id]: { ...previousComponents?.[leftPart.id], assetId: leftSummary.id, transform: undefined },
-        [rightPart.id]: { ...previousComponents?.[rightPart.id], assetId: rightSummary.id, transform: undefined }
-      },
-      eyeState: sameModel ? previous.eyeState : 0,
-      eyebrows: sameModel ? previous.eyebrows : true,
-      noseIndex: sameModel ? previous.noseIndex : 0,
-      expressionIndex: sameModel ? previous.expressionIndex : 0,
-      mouthOpen: sameModel ? previous.mouthOpen : false
-    }
-    await saveCharacterCustomization({ faceAppearance: appearance })
-  }
-
-  async function setFacePartColor(part: FaceLibraryPartId, role: HairColorRole, value: string) {
-    if (!selectedCharacter || selectedCatalogModelSlot === null) return
-    const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
-    const previous = current.customization.faceAppearance
-    const appearanceBefore = previous?.modelSlot === selectedCatalogModelSlot ? previous : undefined
-    const partDefinition = customizerFaceParts.find((entry) => entry.id === part)!
-    const targetPart = facePartSourceId(partDefinition)
-    const components = { ...(appearanceBefore?.components ?? {}) }
-    const manualColorRoles = [...new Set([...(components[targetPart]?.manualColorRoles ?? []), role])]
-    components[targetPart] = { ...(components[targetPart] ?? { assetId: null }), colors: { ...components[targetPart]?.colors, [role]: value }, manualColorRoles }
-    const appearance: CustomizerFaceAppearance = previous?.modelSlot === selectedCatalogModelSlot ? { ...previous, components } : {
-      modelSlot: selectedCatalogModelSlot, eyeState: 0, eyebrows: true, noseIndex: 0, expressionIndex: 0, mouthOpen: false, components
-    }
-    await saveCharacterCustomization({ faceAppearance: appearance })
-  }
-
-  async function applyFacePartPalette(part: FaceLibraryPartId, colors: HairColorOverrides) {
-    if (!selectedCharacter || selectedCatalogModelSlot === null) return
-    const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
-    const previous = current.customization.faceAppearance
-    const sameModel = previous?.modelSlot === selectedCatalogModelSlot
-    const components = { ...(sameModel ? previous?.components : undefined) }
-    components[part] = { ...(components[part] ?? { assetId: null }), colors, manualColorRoles: [] }
-    await saveCharacterCustomization({ faceAppearance: {
-      ...(sameModel ? previous : undefined), modelSlot: selectedCatalogModelSlot,
-      eyeState: sameModel ? previous.eyeState : 0, eyebrows: sameModel ? previous.eyebrows : true,
-      noseIndex: sameModel ? previous.noseIndex : 0, expressionIndex: sameModel ? previous.expressionIndex : 0,
-      mouthOpen: sameModel ? previous.mouthOpen : false, components
-    } })
-  }
-
-  async function resetFacePartColors(part: FaceLibraryPartId) {
-    if (!selectedCharacter || selectedCatalogModelSlot === null) return
-    const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
-    const previous = current.customization.faceAppearance
-    if (!previous || previous.modelSlot !== selectedCatalogModelSlot) return
-    const partDefinition = customizerFaceParts.find((entry) => entry.id === part)!
-    const targetPart = facePartSourceId(partDefinition)
-    const components = { ...previous.components }
-    if (components[targetPart]) components[targetPart] = { ...components[targetPart]!, colors: undefined }
-    await saveCharacterCustomization({ faceAppearance: { ...previous, components } })
-  }
-
-  async function clearFacePartSelection(partId: FaceLibraryPartId) {
-    const part = customizerFaceParts.find((entry) => entry.id === partId)
-    if (!part || !selectedCharacter || selectedCatalogModelSlot === null) return
-    const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
-    const previous = current.customization.faceAppearance
-    if (!previous || previous.modelSlot !== selectedCatalogModelSlot) return
-    const pair = customizerFaceParts.filter((candidate) => candidate.category === part.category)
-    const components = { ...previous.components }
-    for (const targetPart of pair) {
-      components[targetPart.id] = { ...(previous.components?.[targetPart.id] ?? { assetId: null }), assetId: null }
-    }
-    const appearance = { ...previous, components }
-    await saveCharacterCustomization({ faceAppearance: hasSelectedFaceAsset(appearance) ? appearance : undefined })
-  }
-
-  async function chooseHairPartStyle(part: HairPartId, summary: HairStyleSummary | null) {
-    if (!selectedCharacter || selectedCatalogModelSlot === null) return
-    const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
-    const previous = current.customization.hairAppearance
-    const sameModel = previous?.modelSlot === selectedCatalogModelSlot
-    const previousParts = sameModel ? previous?.parts : undefined
-    const parts = { ...(previousParts ?? {}), ...(part === 'frontHair' && previousParts?.frontHair && !previousParts.rearHair ? { rearHair: previousParts.frontHair } : {}), [part]: summary?.id ?? null }
-    await saveCharacterCustomization({ hairAppearance: { ...(sameModel ? previous : undefined), modelSlot: selectedCatalogModelSlot, parts } })
-  }
-
-  async function setHairColor(role: HairColorRole, value: string) {
-    if (!selectedCharacter || selectedCatalogModelSlot === null) return
-    const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
-    const previous = current.customization.hairAppearance
-    const sameModel = previous?.modelSlot === selectedCatalogModelSlot
-    const partColors = { ...(sameModel ? previous?.partColors : undefined) }
-    for (const part of customizerHairParts) {
-      if (!partColors[part.id]?.[role]) continue
-      const next = { ...partColors[part.id] }
-      delete next[role]
-      if (Object.keys(next).length) partColors[part.id] = next
-      else delete partColors[part.id]
-    }
-    await saveCharacterCustomization({ hairAppearance: {
-      ...(sameModel ? previous : undefined),
-      modelSlot: selectedCatalogModelSlot,
-      colors: { ...(sameModel ? previous?.colors : undefined), [role]: value },
-      partColors
-    } })
-  }
-
-  async function setHairPartColor(part: HairPartId, role: HairColorRole, value: string) {
-    if (!selectedCharacter || selectedCatalogModelSlot === null) return
-    const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
-    const previous = current.customization.hairAppearance
-    const sameModel = previous?.modelSlot === selectedCatalogModelSlot
-    const partColors = { ...(sameModel ? previous?.partColors : undefined) }
-    partColors[part] = { ...partColors[part], [role]: value }
-    await saveCharacterCustomization({ hairAppearance: { ...(sameModel ? previous : undefined), modelSlot: selectedCatalogModelSlot, partColors } })
-  }
-
-  async function applyHairPartPalette(part: HairPartId, colors: HairColorOverrides) {
-    if (!selectedCharacter || selectedCatalogModelSlot === null) return
-    const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
-    const previous = current.customization.hairAppearance
-    const sameModel = previous?.modelSlot === selectedCatalogModelSlot
-    await saveCharacterCustomization({ hairAppearance: {
-      ...(sameModel ? previous : undefined), modelSlot: selectedCatalogModelSlot,
-      partColors: { ...(sameModel ? previous?.partColors : undefined), [part]: colors }
-    } })
-  }
-
-  async function resetHairPartColors(part: HairPartId) {
-    if (!selectedCharacter || selectedCatalogModelSlot === null) return
-    const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
-    const previous = current.customization.hairAppearance
-    if (!previous || previous.modelSlot !== selectedCatalogModelSlot) return
-    const partColors = { ...previous.partColors }
-    delete partColors[part]
-    await saveCharacterCustomization({ hairAppearance: { ...previous, partColors } })
-  }
-
-  async function applyHairPalette(colors: HairColorOverrides) {
-    if (!selectedCharacter || selectedCatalogModelSlot === null) return
-    const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
-    const previous = current.customization.hairAppearance
-    const sameModel = previous?.modelSlot === selectedCatalogModelSlot
-    await saveCharacterCustomization({ hairAppearance: { ...(sameModel ? previous : undefined), modelSlot: selectedCatalogModelSlot, colors, partColors: {} } })
-  }
-
-  async function restoreHairColors() {
-    if (!selectedCharacter || selectedCatalogModelSlot === null) return
-    const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
-    const previous = current.customization.hairAppearance
-    if (!previous || previous.modelSlot !== selectedCatalogModelSlot) return
-    await saveCharacterCustomization({ hairAppearance: { ...previous, colors: undefined, partColors: undefined } })
-  }
-
-  async function setFaceCatalogVariant(patch: Partial<CustomizerFaceAppearance>) {
-    if (!selectedCharacter || selectedCatalogModelSlot === null) return
-    const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
-    const old = current.customization.faceAppearance
-    const sameModel = old?.modelSlot === selectedCatalogModelSlot
-    const appearance: CustomizerFaceAppearance = {
-      ...(sameModel ? old : undefined), modelSlot: selectedCatalogModelSlot,
-      eyeState: sameModel ? old.eyeState : 0, eyebrows: sameModel ? old.eyebrows : true,
-      noseIndex: sameModel ? old.noseIndex : 0, expressionIndex: sameModel ? old.expressionIndex : 0,
-      mouthOpen: sameModel ? old.mouthOpen : false, ...patch
-    }
-    await saveCharacterCustomization({ faceAppearance: hasSelectedFaceAsset(appearance) ? appearance : undefined })
-  }
-
-  async function applyFaceCatalogPalette(part: FacePalettePartId, colors: HairColorOverrides) {
-    const current = selectedCharacter && (charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter)
-    if (!current || selectedCatalogModelSlot === null) return
-    const previous = current.customization.faceAppearance
-    const sameModel = previous?.modelSlot === selectedCatalogModelSlot
-    const base: CustomizerFaceAppearance = sameModel ? previous : {
-      modelSlot: selectedCatalogModelSlot, eyeState: 0, eyebrows: true, noseIndex: 0, expressionIndex: 0, mouthOpen: false
-    }
-    const facePalettes = { ...(sameModel ? previous.facePalettes : undefined), [part]: colors }
-    const facePaletteManualRoles = { ...(sameModel ? previous.facePaletteManualRoles : undefined), [part]: [] }
-    await saveCharacterCustomization({ faceAppearance: { ...base, facePalettes, facePaletteManualRoles } })
-  }
-
-  async function setFaceCatalogPartColor(part: FacePalettePartId, role: HairColorRole, value: string) {
-    const current = selectedCharacter && (charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter)
-    if (!current || selectedCatalogModelSlot === null) return
-    const previous = current.customization.faceAppearance
-    const sameModel = previous?.modelSlot === selectedCatalogModelSlot
-    const base: CustomizerFaceAppearance = sameModel ? previous : {
-      modelSlot: selectedCatalogModelSlot, eyeState: 0, eyebrows: true, noseIndex: 0, expressionIndex: 0, mouthOpen: false
-    }
-    const facePalettes = { ...(sameModel ? previous.facePalettes : undefined), [part]: { ...(sameModel ? previous.facePalettes?.[part] : undefined), [role]: value } }
-    const facePaletteManualRoles = { ...(sameModel ? previous.facePaletteManualRoles : undefined), [part]: [...new Set([...(sameModel ? previous.facePaletteManualRoles?.[part] ?? [] : []), role])] }
-    await saveCharacterCustomization({ faceAppearance: { ...base, facePalettes, facePaletteManualRoles } })
-  }
-
-  async function chooseFaceDetailCatalogItem(kind: FaceDetailKind, summary: FaceComponentAssetSummary) {
-    if (!selectedCharacter || selectedCatalogModelSlot === null || summary.modelSlot !== selectedCatalogModelSlot) return
-    const details = { ...(activeFaceAppearance?.faceDetails ?? {}), [kind]: summary.id }
-    await setFaceCatalogVariant({ faceDetails: details })
-  }
-
-  async function clearFaceCatalogPart(part: 'nose' | 'mouth' | FaceDetailKind) {
-    if (!selectedCharacter || selectedCatalogModelSlot === null) return
-    if (part !== 'nose' && part !== 'mouth') {
-      const details = { ...(activeFaceAppearance?.faceDetails ?? {}), [part]: null }
-      await setFaceCatalogVariant({ faceDetails: details })
-      return
-    }
-    const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
-    const previous = current.customization.faceAppearance
-    const sameModel = previous?.modelSlot === selectedCatalogModelSlot
-    const base: CustomizerFaceAppearance = sameModel ? { ...previous } : {
-      modelSlot: selectedCatalogModelSlot, eyeState: 0, eyebrows: true, noseIndex: 0, expressionIndex: 0, mouthOpen: false
-    }
-    const faceAppearance = part === 'nose'
-      ? { ...base, noseCatalogId: undefined, noseIndex: 0 }
-      : { ...base, mouthClosedCatalogId: undefined, mouthOpenCatalogId: undefined, expressionIndex: 0 }
-    await saveCharacterCustomization({ faceAppearance: hasSelectedFaceAsset(faceAppearance) ? faceAppearance : undefined })
-  }
+  const {
+    chooseFaceCatalogItem, chooseFacePartCatalogItem, setFacePartColor, applyFacePartPalette,
+    resetFacePartColors, clearFacePartSelection, setFaceCatalogVariant, applyFaceCatalogPalette,
+    setFaceCatalogPartColor, chooseFaceDetailCatalogItem, clearFaceCatalogPart
+  } = useCustomizerFaceAppearanceActions({
+    selectedCharacter, selectedModelSlot: selectedCatalogModelSlot, charactersRef, saveCharacterCustomization,
+    selectHeadTab, faceCatalogItems, faceCatalogDetails, setFaceCatalogDetails,
+    faceComponentAssets, faceComponentDetails, setFaceComponentDetails
+  })
+  const {
+    chooseHairPartStyle, setHairColor, setHairPartColor, applyHairPartPalette,
+    resetHairPartColors, applyHairPalette, restoreHairColors
+  } = useCustomizerHairAppearanceActions({
+    selectedCharacter, selectedModelSlot: selectedCatalogModelSlot, charactersRef, saveCharacterCustomization
+  })
 
   async function submitCharacterDialog(event: import('react').FormEvent<HTMLFormElement>) {
     event.preventDefault()
