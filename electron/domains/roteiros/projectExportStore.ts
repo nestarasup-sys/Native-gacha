@@ -1,7 +1,7 @@
-import { randomUUID } from 'node:crypto'
-import { copyFile, lstat, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
-import { basename, dirname, join, relative, resolve, sep } from 'node:path'
+import { lstat, mkdir, readFile, stat } from 'node:fs/promises'
+import { basename, dirname, join, resolve } from 'node:path'
 import type { RoteiroDocument, RoteiroExportCharacterInfo, RoteiroSectionContent, RoteiroVideoReference } from '../../../src/shared/roteiros'
+import { createRoteiroProjectExportTransaction, isRoteiroProjectExportAssetPath, roteiroProjectExportManifestPath, type RoteiroProjectExportWrite } from './projectExportTransaction.ts'
 
 const idPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const rootDefault = 'C:\\TRABALHO 2\\EDITOR V4\\EDITOR V4\\projects'
@@ -18,6 +18,7 @@ const displayTime = (seconds: number | undefined) => seconds === undefined ? 'n�
 const characterFolder = (name: string, id: string) => safeSegment(name || 'personagem') || `personagem-${id.slice(0, 8)}`
 
 export class RoteiroProjectExportStore {
+  private readonly transaction = createRoteiroProjectExportTransaction()
   constructor(private readonly resolveBackground: (id: string) => Promise<string>, private readonly resolveGif: (id: string) => Promise<string>, private readonly resolveVideo: (video: RoteiroVideoReference) => Promise<string>, private readonly projectsRoot = rootDefault) {}
   private async projectFolder(roteiro: RoteiroDocument) {
     const root = resolve(this.projectsRoot)
@@ -36,67 +37,41 @@ export class RoteiroProjectExportStore {
     const folder = kind === 'characters' ? join(project, 'assets', 'characters')
       : kind === 'background' ? join(project, 'assets', 'backgrounds')
       : kind === 'videos' ? join(project, 'assets', 'tiktoks') : kind === 'ui' ? join(project, 'assets', 'ui') : project
+    await this.transaction.recover(project)
     await mkdir(folder, { recursive: true })
     return folder
   }
-  private async writeOwned(folder: string, scriptId: string, outputs: Array<{ path: string; bytes?: Buffer; sourcePath?: string; expectedSize?: number }>, scope: string) {
-    const manifestPath = join(folder, '.gacha-v5-roteiro-exports.json')
+  private async writeOwned(folder: string, scriptId: string, outputs: RoteiroProjectExportWrite[], scope: string) {
+    await this.transaction.recover(folder)
+    const manifestPath = join(folder, roteiroProjectExportManifestPath)
     let manifest: Manifest = { app: 'GACHA_V5_ROTEIRO_EXPORT', scriptId, files: [] }
     try {
       const manifestInfo = await lstat(manifestPath)
       if (!manifestInfo.isFile() || manifestInfo.isSymbolicLink()) throw new Error('O manifesto de exportação é um caminho não seguro.')
       const stored = JSON.parse(await readFile(manifestPath, 'utf8')) as Manifest
       if (stored.app !== manifest.app || stored.scriptId !== scriptId || !Array.isArray(stored.files) || !stored.files.every((item) => typeof item === 'string')) throw new Error('A pasta de exportação pertence a outro roteiro; nenhum arquivo foi alterado.')
+      if (stored.files.some((path) => !isRoteiroProjectExportAssetPath(path)) || new Set(stored.files).size !== stored.files.length) throw new Error('O manifesto contém caminhos duplicados ou fora dos arquivos exportados pelo Gacha; nenhum arquivo foi alterado.')
       manifest = stored
     } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
     const prior = new Set(manifest.files)
-    const nextFiles = new Set([...prior].filter((path) => !path.startsWith(scope)))
-    const staged: Array<{ temporary: string; target: string }> = []
-    const backups: Array<{ backup: string; target: string }> = []
-    const installed: string[] = []
-    try {
-      for (const output of outputs) {
-        const target = resolve(folder, output.path)
-        const rel = relative(folder, target)
-        if (!rel || rel === '..' || rel.startsWith(`..${sep}`) || rel.includes(`..${sep}`)) throw new Error('Destino de exportação fora da pasta do roteiro.')
-        let parent = folder
-        for (const segment of dirname(rel).split(sep).filter(Boolean)) {
-          parent = join(parent, segment)
-          const parentInfo = await lstat(parent).catch(() => null)
-          if (parentInfo && (!parentInfo.isDirectory() || parentInfo.isSymbolicLink())) throw new Error('O destino de exportação contém uma pasta não segura.')
-        }
-        const existing = await lstat(target).catch(() => null)
-        if (existing && (!prior.has(output.path) || !existing.isFile() || existing.isSymbolicLink())) throw new Error(`O arquivo ${basename(target)} já existe e não pertence a uma exportação controlada do Gacha V5; foi preservado.`)
-        await mkdir(dirname(target), { recursive: true })
-        const temporary = `${target}.${randomUUID()}.tmp`
-        if (output.sourcePath) await copyFile(output.sourcePath, temporary)
-        else if (output.bytes) await writeFile(temporary, output.bytes, { flag: 'wx' })
-        else throw new Error('Conteúdo vazio para exportação.')
-        if (output.expectedSize !== undefined && (await stat(temporary)).size !== output.expectedSize) throw new Error(`O arquivo ${basename(target)} mudou durante a exportação.`)
-        staged.push({ temporary, target }); nextFiles.add(output.path)
-      }
-      for (const item of staged) {
-        if (await lstat(item.target).catch(() => null)) {
-          const backup = `${item.target}.${randomUUID()}.bak`
-          await rename(item.target, backup); backups.push({ backup, target: item.target })
-        }
-        await rename(item.temporary, item.target); installed.push(item.target)
-      }
-      const manifestTemp = `${manifestPath}.${randomUUID()}.tmp`
-      await writeFile(manifestTemp, `${JSON.stringify({ app: manifest.app, scriptId, files: [...nextFiles].sort() }, null, 2)}\n`, { flag: 'wx' })
-      await rename(manifestTemp, manifestPath)
-      await Promise.allSettled(backups.map(({ backup }) => rm(backup, { force: true })))
-    } catch (error) {
-      await Promise.allSettled(installed.map((target) => rm(target, { force: true })))
-      for (const { backup, target } of backups.reverse()) await rename(backup, target).catch(() => undefined)
-      await Promise.allSettled(staged.map(({ temporary }) => rm(temporary, { force: true })))
-      throw error
+    const inScope = (path: string) => scope === 'roteiro.txt' ? path === scope : path.startsWith(scope)
+    if (outputs.some(({ path }) => !isRoteiroProjectExportAssetPath(path) || !inScope(path))) throw new Error('A exportação contém um caminho fora do conjunto de arquivos permitido.')
+    if (new Set(outputs.map(({ path }) => path)).size !== outputs.length) throw new Error('A exportação contém destinos duplicados.')
+    const nextFiles = new Set([...prior].filter((path) => !inScope(path)))
+    for (const output of outputs) {
+      const target = resolve(folder, ...output.path.split('/'))
+      const existing = await lstat(target).catch((error) => {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
+        throw error
+      })
+      if (existing && (!prior.has(output.path) || !existing.isFile() || existing.isSymbolicLink())) throw new Error(`O arquivo ${basename(target)} já existe e não pertence a uma exportação controlada do Gacha V5; foi preservado.`)
+      nextFiles.add(output.path)
     }
-    for (const stale of prior) if (!nextFiles.has(stale)) {
-      const target = resolve(folder, stale)
-      const rel = relative(folder, target)
-      if (rel && rel !== '..' && !rel.startsWith(`..${sep}`)) await rm(target, { force: true }).catch(() => undefined)
-    }
+    const manifestBytes = Buffer.from(`${JSON.stringify({ app: manifest.app, scriptId, files: [...nextFiles].sort() }, null, 2)}\n`, 'utf8')
+    await this.transaction.publish(folder, {
+      writes: [...outputs, { path: roteiroProjectExportManifestPath, bytes: manifestBytes }],
+      removes: [...prior].filter((path) => !nextFiles.has(path)).sort()
+    })
     return { folder, files: outputs.length }
   }
   async export(roteiro: RoteiroDocument, kind: 'background' | 'videos' | 'script' | 'gif', characterInfo: RoteiroExportCharacterInfo[] = []) {
