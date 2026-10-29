@@ -1120,3 +1120,10 @@ Continua a auditoria das operações IPC iniciadas pelo usuário e da cobertura 
 - O editor recebe o mesmo roteiro, personagens e callbacks de retorno/atualização/exclusão de rascunho. Chamadas IPC de exportação e bibliotecas, estrutura persistida, IDs e comportamento de navegação foram mantidos. O valor padrão de seção compartilhado entre catálogo e editor ficou em `roteiroDefaults.ts`.
 - Uma regressão de arquitetura fixa essa fronteira e protege o flusher de gravações na página. `RoteirosPage.tsx` caiu de 573 para 237 linhas físicas; o workspace ficou em 344 linhas. A extração foi comparada com a função anterior após normalizar apenas o alias de tipo, e o corpo ficou idêntico.
 - Verificação: `npm run test:refactor` passou com 371 testes; `npm run test:roteiros` com 16; `npm test` com 29. Também passaram typecheck, auditoria de arquitetura (400 arquivos TS/TSX), build e `git diff --check`.
+
+## 52. Etapa aplicada — controles visuais da prévia de Roupas DEV isolados
+
+- `WardrobeWorkspace.tsx` mantinha a barra de prévia e os controles do pincel de deformação junto do catálogo, das operações do conjunto e da montagem corporal. `WardrobePreviewToolbar` e `WardrobeDeformationBrushControls` agora apresentam esses controles com estado e callbacks explícitos; a página mantém a propriedade dos estados, gestos, modelos e persistência.
+- O pincel continua dentro da superfície da prévia e bloqueia a propagação do ponteiro. Os limites do raio e da força, a disponibilidade dos botões, a ocultação da barra durante teste de pose e o fundo compartilhado foram preservados. Não houve alteração de CSS, IPC, dados ou exportação.
+- `WardrobeWorkspace.tsx` passou de 631 para 627 linhas no inventário estático e voltou a ficar dentro do orçamento de 630. Um teste fixa a localização e os contratos dos controles.
+- Verificação: 34 testes focados de Roupas DEV e prévia passaram; `npm run test:refactor` passou com 372; `npm test` passou com 29. Também passaram `npm run typecheck`, `npm run audit:architecture` (401 arquivos TS/TSX), `performance-audit.cjs --check` sem arquivos acima do orçamento, `npm run build` e `git diff --check`.
