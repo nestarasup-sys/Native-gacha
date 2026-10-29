@@ -241,10 +241,12 @@ test('Studio e Editor V6 persistem a direção do olhar sem escrever outro prese
   const paths=['src/renderer/src/features/studio/StudioPage.tsx',
     'src/renderer/src/features/editorV6/EditorV6Page.tsx',
     'src/renderer/src/features/editorV6/EditorV6PresetPanel.tsx',
+    'src/renderer/src/features/editorV6/editorV6FaceActions.ts',
     'src/renderer/src/features/fabricator/ExpressionPresetWorkspace.tsx']
-  const [studio,editorV6,editorV6Panel,editor]=await Promise.all(paths.map(path=>readFile(path,'utf8')))
+  const [studio,editorV6,editorV6Panel,editorV6FaceActions,editor]=await Promise.all(paths.map(path=>readFile(path,'utf8')))
   assert.match(studio,/activeExpressionGaze: gaze/)
-  assert.match(editorV6,/activeExpressionGaze: gaze/)
+  assert.match(editorV6,/createEditorV6FaceActions/)
+  assert.match(editorV6FaceActions,/activeExpressionGaze: gaze/)
   assert.ok(editorV6Panel.includes('aria-label={`Pupilas à esquerda: ${preset.name}`}'))
   assert.match(studio,/element\.activeExpressionGaze \?\? 'right'/)
   assert.match(editorV6Panel,/activeExpressionGaze === 'left'/)

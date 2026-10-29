@@ -17,13 +17,14 @@ import { addEditorV6ElementAtFrame, editEditorV6DocumentAtBlock, editorV6ClipAtF
 import { useEditorV6InspectorState } from './useEditorV6InspectorState'
 import { useEditorV6FaceCatalog } from './useEditorV6FaceCatalog'
 import { useEditorV6FacePreview } from './useEditorV6FacePreview'
+import { createEditorV6FaceActions } from './editorV6FaceActions'
 import { useEditorV6StageInteraction, type EditorV6StageDrag } from './useEditorV6StageInteraction'
 import { resolveEditorV6InspectorSelection } from './editorV6Selection'
 import { trimTransparentImage, fitElementToTrim, faceRenderGeometry, type TrimmedImage } from '../../characters/characterGeometry'
 import { bakeFaceModeAssets, EDITOR_V6_FACE_RENDER_VERSION, editorV6FaceModeForElement, trimTransparentCanvas } from './faceModeAssets'
 import { planEditorV6CharacterRefresh, renderEditorV6CharacterRefresh } from './characterSnapshotRefresh'
 import { Profiler, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { buildEditorV6ExpressionAppearance, buildEditorV6ExpressionTransforms, resolveEditorV6ExpressionBase, editorV6ExpressionCollection } from './expressionTransforms'
+import { editorV6ExpressionCollection } from './expressionTransforms'
 import { Icon } from '../../ui/components/Icon'
 import { NumericRangeField } from '../../ui/components/NumericRangeField'
 import { SceneElementControls } from '../../ui/components/SceneElementControls'
@@ -35,10 +36,10 @@ import { isLegacySceneCatalogId, loadLegacySceneCatalog } from '../../ui/legacyS
 import { createSceneTextElement, sceneCatalogColor, sceneEditorTools } from '../../ui/sceneEditorDefaults'
 import { recordEditorV6PlaybackFrame, recordUiCommit } from '../../ui/performanceDiagnostics'
 import { fitEditorV6CharacterToStage } from '../../../../shared/editorV6CharacterGeometry'
-import { editorV6ProjectSummary, type EditorV6Asset, type EditorV6Document, type EditorV6Element, type EditorV6FaceMode, type EditorV6FaceTransform, type EditorV6FaceTransforms, type EditorV6ProjectSummary, type EditorV6TimelineBlock } from '../../../../shared/editorV6'
+import { editorV6ProjectSummary, type EditorV6Asset, type EditorV6Document, type EditorV6Element, type EditorV6FaceTransform, type EditorV6FaceTransforms, type EditorV6ProjectSummary, type EditorV6TimelineBlock } from '../../../../shared/editorV6'
 import type { CustomizerCharacter } from '../../../../shared/customizer'
 import type { CustomizerFaceAppearance } from '../../../../shared/customizer'
-import type { FaceCatalogItem, FaceCatalogItemSummary, FaceExpressionPreset, FaceExpressionPresetSummary, FaceSheetKind } from '../../../../shared/fabricator'
+import type { FaceCatalogItem } from '../../../../shared/fabricator'
 type EditorV6Card = EditorV6ProjectSummary
 type Tool = 'background' | 'objects' | null
 const STORAGE_KEY = 'gacha-nymi-editor-v6-catalog-v1'
@@ -953,55 +954,27 @@ export function EditorV6Page() {
     } finally { setEditorV6FaceBusy(false) }
   }
 
-  const applyStudioBaseExpression = async () => {
-    const appearance = selectedEditorV6Character?.customization.faceAppearance ?? selectedEditorV6FaceAppearance
-    if (!selectedElement || !appearance || editorV6ExpressionBusy || editorV6FaceBusy) return
-    const faceMode = editorV6FaceModeForElement(selectedElement, appearance)
-    const base = { ...resolveEditorV6ExpressionBase(selectedElement, appearance), appearance: structuredClone(appearance) }
-    setEditorV6ExpressionBusy(true)
-    try {
-      await applyStudioFaceAppearance(base.appearance, base.transforms, true, { expressionBase: base, activeExpressionPresetId: null, activeExpressionGaze: 'right', activeExpressionPresetUpdatedAt: undefined, activeExpressionCollectionId: selectedEditorV6ExpressionCollectionId, activeExpressionEffects: undefined, activeFaceMode: faceMode })
-    } finally { setEditorV6ExpressionBusy(false) }
-  }
-
-  const applyStudioExpressionPreset = async (summary: FaceExpressionPresetSummary, gaze: 'right' | 'left' = 'right') => {
-    if (!selectedEditorV6Character || !selectedElement || selectedElement.kind !== 'character' || editorV6ExpressionBusy || editorV6FaceBusy) return
-    setEditorV6ExpressionBusy(true)
-    setError(null)
-    try {
-      const preset: FaceExpressionPreset | null = await window.desktop.fabricator.loadFaceExpressionPreset(summary.modelSlot, summary.id)
-      if (!preset || preset.modelSlot !== selectedEditorV6CharacterModelSlot) throw new Error('Este preset não está disponível para o modelo selecionado.')
-      const characterAppearance = selectedEditorV6Character.customization.faceAppearance ?? selectedEditorV6FaceAppearance
-      if (!characterAppearance) throw new Error('A personagem ainda não tem uma aparência facial para ajustar.')
-      const faceMode = editorV6FaceModeForElement(selectedElement, selectedEditorV6FaceAppearance)
-      const base = { ...resolveEditorV6ExpressionBase(selectedElement, characterAppearance), appearance: structuredClone(characterAppearance) }
-      const appearance = base.appearance
-      let nextAppearance = await buildEditorV6ExpressionAppearance(preset, appearance, (id) => window.desktop.fabricator.loadFaceCatalogItem(preset.modelSlot, id))
-      if (faceMode === 'talk' && selectedEditorV6OpenMouthId && !nextAppearance.mouthOpenCatalogId) {
-        nextAppearance = { ...nextAppearance, mouthOpenCatalogId: selectedEditorV6OpenMouthId }
-      }
-      const faceTransforms = await buildEditorV6ExpressionTransforms(
-        preset, nextAppearance, base.transforms,
-        (id) => window.desktop.fabricator.loadFaceComponentAsset(preset.modelSlot, id),
-        (id) => window.desktop.fabricator.loadFaceCatalogItem(preset.modelSlot, id),
-        gaze
-      )
-
-      await applyStudioFaceAppearance(nextAppearance, faceTransforms, true, { expressionBase: base, activeExpressionPresetId: preset.id, activeExpressionGaze: gaze, activeExpressionPresetUpdatedAt: preset.updatedAt, activeExpressionCollectionId: preset.collectionId ?? 'standard', activeExpressionEffects: preset.effects, activeFaceMode: faceMode })
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Não foi possível aplicar este preset de expressão.')
-    } finally {
-      setEditorV6ExpressionBusy(false)
-    }
-  }
-
-  const applyEditorV6FaceMode = async (mode: EditorV6FaceMode) => {
-    if (!selectedElement || selectedElement.kind !== 'character' || !selectedEditorV6FaceAppearance || editorV6ExpressionBusy || editorV6FaceBusy) return
-    const appearance = mode === 'talk' && selectedEditorV6OpenMouthId && !selectedEditorV6FaceAppearance.mouthOpenCatalogId
-      ? { ...selectedEditorV6FaceAppearance, mouthOpenCatalogId: selectedEditorV6OpenMouthId }
-      : selectedEditorV6FaceAppearance
-    await applyStudioFaceAppearance(appearance, selectedElement.faceTransforms ?? {}, true, { activeFaceMode: mode })
-  }
+  const {
+    applyBaseExpression: applyStudioBaseExpression,
+    applyExpressionPreset: applyStudioExpressionPreset,
+    applyFaceMode: applyEditorV6FaceMode,
+    chooseFaceSheet: chooseStudioFaceSheet,
+    updateFaceVariant: updateStudioFaceVariant
+  } = createEditorV6FaceActions({
+    character: selectedEditorV6Character,
+    element: selectedElement,
+    appearance: selectedEditorV6FaceAppearance,
+    faceMode: selectedEditorV6FaceMode,
+    modelSlot: selectedEditorV6CharacterModelSlot,
+    openMouthCatalogId: selectedEditorV6OpenMouthId,
+    expressionCollectionId: selectedEditorV6ExpressionCollectionId,
+    expressionBusy: editorV6ExpressionBusy,
+    faceBusy: editorV6FaceBusy,
+    setExpressionBusy: setEditorV6ExpressionBusy,
+    setError,
+    loadCatalogItem: loadEditorV6FaceCatalogItem,
+    applyAppearance: applyStudioFaceAppearance
+  })
 
   const applyStudioPose = async (poseSlot: number | null) => {
     if (!activeEditorV6 || selectedElement?.kind !== 'character' || !selectedEditorV6Character || !selectedElement.assetId || editorV6FaceBusy) return
@@ -1043,52 +1016,6 @@ export function EditorV6Page() {
       setError(null)
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível aplicar a pose neste projeto.') }
     finally { setEditorV6FaceBusy(false) }
-  }
-
-  const chooseStudioFaceSheet = async (summary: FaceCatalogItemSummary) => {
-    if (!selectedEditorV6Character) return
-    let item: FaceCatalogItem | null
-    try { item = await loadEditorV6FaceCatalogItem(summary.modelSlot, summary.id) }
-    catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Não foi possível carregar a folha facial selecionada.')
-      return
-    }
-    if (!item) return
-    const previous = selectedEditorV6FaceAppearance
-    const sameModel = previous?.modelSlot === item.modelSlot
-    const field: Record<FaceSheetKind, keyof CustomizerFaceAppearance> = {
-      eyes: 'eyeCatalogId', eyebrows: 'eyebrowCatalogId', nose: 'noseCatalogId',
-      'mouth-closed': 'mouthClosedCatalogId', 'mouth-open': 'mouthOpenCatalogId'
-    }
-    const appearance: CustomizerFaceAppearance = {
-      ...(sameModel ? previous : undefined),
-      modelSlot: item.modelSlot,
-      setId: undefined,
-      [field[item.category]]: item.id,
-      eyeState: sameModel ? previous.eyeState : 0,
-      eyebrows: sameModel ? previous.eyebrows : true,
-      noseIndex: item.category === 'nose' ? item.selectedNose : sameModel ? previous.noseIndex : item.selectedNose,
-      expressionIndex: item.category.startsWith('mouth') ? item.selectedExpression : sameModel ? previous.expressionIndex : item.selectedExpression,
-      mouthOpen: item.category === 'mouth-open' ? true : item.category === 'mouth-closed' ? false : sameModel ? previous.mouthOpen : false
-    }
-    const faceMode = item.category === 'mouth-open' ? 'talk' : item.category === 'mouth-closed' ? 'idle' : selectedElement?.activeFaceMode
-    await applyStudioFaceAppearance(appearance, selectedElement?.faceTransforms ?? {}, true, { activeFaceMode: faceMode })
-  }
-
-  const updateStudioFaceVariant = (patch: Partial<CustomizerFaceAppearance>) => {
-    if (!selectedEditorV6FaceAppearance || selectedEditorV6CharacterModelSlot === null) return
-    const changesFaceMode = Object.hasOwn(patch, 'mouthOpen') || Object.hasOwn(patch, 'eyeState')
-    let faceMode = selectedElement?.activeFaceMode
-    if (Object.hasOwn(patch, 'mouthOpen')) faceMode = patch.mouthOpen ? 'talk' : 'idle'
-    else if (Object.hasOwn(patch, 'eyeState')) {
-      faceMode = patch.eyeState === 2 ? 'blink' : selectedEditorV6FaceMode === 'talk' ? 'talk' : 'idle'
-    }
-    void applyStudioFaceAppearance(
-      { ...selectedEditorV6FaceAppearance, ...patch },
-      selectedElement?.faceTransforms ?? {},
-      true,
-      changesFaceMode ? { activeFaceMode: faceMode } : undefined
-    )
   }
 
   const updateEditorV6FaceTransform = (transformKey: string, patch: Partial<EditorV6FaceTransform>, record = false, baseTransform = defaultStudioEyeTransform) => {
