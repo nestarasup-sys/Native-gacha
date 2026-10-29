@@ -3,13 +3,12 @@ import { interpolateFrames, shortestAngle } from './models/animationInterpolatio
 import { useModelSourceRefresh } from './models/useModelSourceRefresh'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, FormEvent, PointerEvent as ReactPointerEvent } from 'react'
-import { resolvePoseCategory, type AnimatorAnimation, type AnimatorAnimationAsset, type AnimatorAnimationDraft, type AnimatorFrame, type AnimatorAnimationSummary, type AnimatorFrameTransform, type FaceCatalogItem, type FaceElementKind, type FaceSet, type FaceSheetKind, type FabricatorPose, type FabricatorProject, type FabricatorSlotSummary, type HairStyle, type JointLink, type PosePart, type WardrobeSet } from '../../../../shared/fabricator'
-import { defaultCharacterBodyDimensions, type CustomizerCharacter, type CustomizerWardrobeGroup } from '../../../../shared/customizer'
+import { resolvePoseCategory, type AnimatorAnimation, type AnimatorAnimationAsset, type AnimatorAnimationDraft, type AnimatorFrame, type AnimatorAnimationSummary, type AnimatorFrameTransform, type FaceCatalogItem, type FaceElementKind, type FaceSet, type FaceSheetKind, type FabricatorProject, type FabricatorSlotSummary, type HairStyle, type JointLink, type PosePart, type WardrobeSet } from '../../../../shared/fabricator'
+import type { CustomizerCharacter, CustomizerWardrobeGroup } from '../../../../shared/customizer'
 import { Icon } from '../../ui/components/Icon'
 import { normalizeLayerOrder, orderedParts, partJointAnchor } from './models/rig'
 import {
   applyFrameState,
-  centerProjectOnCanvas,
   isCoreAnimatorPart as isCorePart,
   makePoseProject,
   moveFramePart,
@@ -24,19 +23,13 @@ import { loadAnimatorImage as loadImage } from './models/animatorImageCache'
 import { refreshAnimatorThumbnails as refreshThumbnails, renderAnimatorThumbnail as renderThumbnail } from './models/animatorThumbnail'
 import { usePreviewBackground } from '../../ui/hooks/usePreviewBackground'
 import { mapWardrobeComponentToPose } from './wardrobe/poseTransform'
-import { applyCharacterBodyShape } from '../../../../shared/bodyShape'
 import { isModelBodyPartName, tintModelBodyPixels } from '../../characters/skinTint'
 import { useModelAppearanceSettings, useModelAppearanceTarget, useModelPartAppearancePreview } from './ModelAppearanceContext'
 import { registerPendingWriteFlusher } from '../../ui/pendingPersistence'
+import { breathingVariations, createBreathingAnimation } from './models/animatorBreathingModel'
 
 const SLOT_COUNT = 12
 const HISTORY_LIMIT = 40
-const breathingVariations = [
-  { key: 'suave', name: 'Suave', cycleMs: 4200, torsoWidth: 100.7, torsoHeight: 102.0 },
-  { key: 'calma', name: 'Calma', cycleMs: 3600, torsoWidth: 101.1, torsoHeight: 103.0 },
-  { key: 'profunda', name: 'Profunda', cycleMs: 5200, torsoWidth: 101.8, torsoHeight: 104.2 },
-  { key: 'ritmada', name: 'Ritmada', cycleMs: 3000, torsoWidth: 101.2, torsoHeight: 102.6 }
-] as const
 const faceOrder: FaceElementKind[] = ['brow-left', 'brow-right', 'eye-left', 'eye-right', 'nose', 'mouth']
 const wardrobeCategories: Record<CustomizerWardrobeGroup['category'], string[]> = {
   camisa: ['camisa'], jaqueta: ['jaqueta'], 'manga-superior': ['manga-superior'], 'manga-inferior': ['manga-inferior'],
@@ -46,75 +39,6 @@ const wardrobeCategories: Record<CustomizerWardrobeGroup['category'], string[]> 
 
 type Gesture = { pointerId: number; partId: string; startX: number; startY: number; lastAngle: number; rotationDelta: number; before: FrameHistoryState; pivotX: number; pivotY: number; scale: number; mode: 'rotate' | 'move' }
 type PanGesture = { pointerId: number; startX: number; startY: number; originX: number; originY: number }
-
-async function makeBreathingAnimation(source: FabricatorProject, pose: FabricatorPose, slot: number, characterId: string | null, variation: typeof breathingVariations[number]): Promise<AnimatorAnimation> {
-  const poseProject = makePoseProject(source, pose)
-  const torso = poseProject.parts.find((part) => /tronco|torso|peito|chest/i.test(part.name))
-  if (!torso) throw new Error(`A pose ${pose.name} não possui uma peça de tronco identificável.`)
-  const inhaleRaw = applyCharacterBodyShape(poseProject, {
-    ...defaultCharacterBodyDimensions,
-    torsoWidth: variation.torsoWidth,
-    torsoHeight: variation.torsoHeight,
-    balance: 0
-  })
-  // Respiração deve animar apenas a metade superior. Keep leg branches anchored
-  // to the hips, while explicitly retaining a visible head/shoulder follow-through.
-  const lowerRoots = poseProject.joints.filter((joint) => joint.fixed && joint.parentPartId === torso.id).map((joint) => poseProject.parts.find((part) => part.id === joint.childPartId)).filter((part): part is PosePart => Boolean(part && (/(coxa|perna|canela|panturrilha|joelho|thigh|shin|calf)/i.test(part.name) || part.y + part.height / 2 > torso.y + torso.height * .8)))
-  const lowerIds = new Set(lowerRoots.map((part) => part.id))
-  let changed = true
-  while (changed) {
-    changed = false
-    for (const joint of poseProject.joints) if (joint.fixed && lowerIds.has(joint.parentPartId) && !lowerIds.has(joint.childPartId)) { lowerIds.add(joint.childPartId); changed = true }
-  }
-  const expandedTorso = inhaleRaw.parts.find((part) => part.id === torso.id)!
-  const breathHeight = Math.max(0, expandedTorso.height - torso.height)
-  const inhaleParts = inhaleRaw.parts.map((part) => {
-    const original = poseProject.parts.find((candidate) => candidate.id === part.id)!
-    if (lowerIds.has(part.id)) return original
-    if (/cabe[çc]a|head/i.test(part.name)) return { ...part, y: original.y + Math.min(0, expandedTorso.y - torso.y) }
-    if (/bra[cç]o|arm/i.test(part.name)) return { ...part, y: original.y - breathHeight * .25 }
-    return part
-  })
-  const inhaleProject = { ...inhaleRaw, parts: inhaleParts }
-  const canvasWidth = Math.max(poseProject.width, inhaleRaw.width)
-  const canvasHeight = Math.max(poseProject.height, inhaleRaw.height)
-  const base = centerProjectOnCanvas(poseProject, canvasWidth, canvasHeight)
-  const inhale = centerProjectOnCanvas(inhaleProject, canvasWidth, canvasHeight)
-  const makeFrame = async (project: FabricatorProject, durationMs: number): Promise<AnimatorFrame> => {
-    const transforms = transformsFromProject(project)
-    return { id: crypto.randomUUID(), durationMs, transforms, joints: structuredClone(project.joints), thumbnailDataUrl: await renderThumbnail(base, transforms) }
-  }
-  const cycle = variation.cycleMs
-  const frames = [
-    await makeFrame(base, Math.round(cycle * .36)),
-    await makeFrame(inhale, Math.round(cycle * .1)),
-    await makeFrame(inhale, Math.round(cycle * .38)),
-    await makeFrame(base, Math.round(cycle * .16))
-  ]
-  return {
-    schemaVersion: 1,
-    slot,
-    name: `Respiração · ${resolvePoseCategory(pose)} · ${variation.name}`,
-    sourceModelSlot: source.slot,
-    sourceModelName: source.name,
-    sourceModelUpdatedAt: source.updatedAt,
-    sourceModelPartCount: source.parts.length,
-    basePoseSlot: pose.slot,
-    characterId,
-    width: canvasWidth,
-    height: canvasHeight,
-    parts: structuredClone(base.parts),
-    joints: structuredClone(base.joints),
-    layerOrder: normalizeLayerOrder(base.parts, base.layerOrder),
-    hiddenPartIds: [...(base.hiddenPartIds ?? [])],
-    frames,
-    interpolation: 'smooth',
-    loopMode: 'loop',
-    speed: 1,
-    thumbnailDataUrl: frames[0].thumbnailDataUrl,
-    updatedAt: new Date().toISOString()
-  }
-}
 
 function mapHeadOverlay(sourceHead: PosePart, targetHead: PosePart, x: number, y: number, width: number, height: number, rotation: number, scaleX: number, scaleY: number, flipX = false) {
   const localX = x / Math.max(1, sourceHead.width) * targetHead.width, localY = y / Math.max(1, sourceHead.height) * targetHead.height
@@ -537,7 +461,7 @@ export function AnimatorWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
         ...breathingVariations.map((variation) => ({ pose: standing.pose, variation })),
         ...breathingVariations.map((variation) => ({ pose: sitting.pose, variation }))
       ]
-      const newAnimations = await Promise.all(plans.map((plan, index) => makeBreathingAnimation(source, plan.pose, freeSlots[index], characterId || null, plan.variation)))
+      const newAnimations = await Promise.all(plans.map((plan, index) => createBreathingAnimation(source, plan.pose, freeSlots[index], characterId || null, plan.variation, renderThumbnail)))
       replacementStarted = true
       for (const old of oldBreathing) await window.desktop.fabricator.deleteAnimatorAnimation(modelSlot, old.slot)
       for (const animation of newAnimations) {

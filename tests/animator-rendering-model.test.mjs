@@ -1,6 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { createRequire } from 'node:module'
 import { readFile } from 'node:fs/promises'
+import { readFileSync } from 'node:fs'
 import { createBoundedImageCache } from '../src/renderer/src/ui/image/boundedImageCache.ts'
 import {
   applyFrameState,
@@ -11,6 +13,20 @@ import {
   transformsFromProject
 } from '../src/renderer/src/features/fabricator/models/animatorFrameModel.ts'
 import { renderAnimatorThumbnail } from '../src/renderer/src/features/fabricator/models/animatorThumbnail.ts'
+
+const require = createRequire(import.meta.url)
+const typescript = require('typescript')
+const previousTypeScriptLoader = require.extensions['.ts']
+require.extensions['.ts'] = (module, filename) => {
+  const source = readFileSync(filename, 'utf8')
+  const compiled = typescript.transpileModule(source, {
+    compilerOptions: { module: typescript.ModuleKind.CommonJS, target: typescript.ScriptTarget.ES2022 }
+  }).outputText
+  module._compile(compiled, filename)
+}
+const { breathingVariations, createBreathingAnimation } = require('../src/renderer/src/features/fabricator/models/animatorBreathingModel.ts')
+if (previousTypeScriptLoader) require.extensions['.ts'] = previousTypeScriptLoader
+else delete require.extensions['.ts']
 
 function deferred() {
   let resolve
@@ -39,6 +55,34 @@ function createProject() {
 
 function createFrameState(project) {
   return { animation: null, transforms: transformsFromProject(project), joints: structuredClone(project.joints), frameId: 'frame-1' }
+}
+
+function createBreathingSourceAndPose() {
+  const parts = [
+    { id: 'torso', name: 'Tronco', x: 40, y: 30, width: 20, height: 30, rotation: 0, jointAnchor: { x: 50, y: 60 }, dataUrl: 'torso' },
+    { id: 'head', name: 'Cabeça', x: 42, y: 5, width: 16, height: 20, rotation: 0, jointAnchor: { x: 50, y: 25 }, dataUrl: 'head' },
+    { id: 'arm', name: 'Braço esquerdo', x: 20, y: 32, width: 8, height: 25, rotation: 0, jointAnchor: { x: 24, y: 57 }, dataUrl: 'arm' },
+    { id: 'thigh', name: 'Coxa esquerda', x: 43, y: 60, width: 14, height: 24, rotation: 0, jointAnchor: { x: 50, y: 60 }, dataUrl: 'thigh' },
+    { id: 'shin', name: 'Canela esquerda', x: 44, y: 84, width: 12, height: 26, rotation: 0, jointAnchor: { x: 50, y: 84 }, dataUrl: 'shin' },
+    { id: 'foot', name: 'Pé esquerdo', x: 43, y: 110, width: 14, height: 8, rotation: 0, jointAnchor: { x: 50, y: 110 }, dataUrl: 'foot' }
+  ]
+  const joints = [
+    { id: 'torso-head', parentPartId: 'torso', childPartId: 'head', parentAnchor: { x: 50, y: 30 }, childAnchor: { x: 50, y: 25 }, fixed: true },
+    { id: 'torso-arm', parentPartId: 'torso', childPartId: 'arm', parentAnchor: { x: 42, y: 35 }, childAnchor: { x: 24, y: 40 }, fixed: true },
+    { id: 'torso-thigh', parentPartId: 'torso', childPartId: 'thigh', parentAnchor: { x: 50, y: 60 }, childAnchor: { x: 50, y: 60 }, fixed: true },
+    { id: 'thigh-shin', parentPartId: 'thigh', childPartId: 'shin', parentAnchor: { x: 50, y: 84 }, childAnchor: { x: 50, y: 84 }, fixed: true },
+    { id: 'shin-foot', parentPartId: 'shin', childPartId: 'foot', parentAnchor: { x: 50, y: 110 }, childAnchor: { x: 50, y: 110 }, fixed: true }
+  ].map((joint) => ({ ...joint, pivot: { x: (joint.parentAnchor.x + joint.childAnchor.x) / 2, y: (joint.parentAnchor.y + joint.childAnchor.y) / 2 } }))
+  const source = {
+    schemaVersion: 1, slot: 2, name: 'Modelo teste', sourceName: 'Modelo teste', sourceAssetName: '', sourceDataUrl: '',
+    width: 120, height: 160, tolerance: 0, parts, joints, layerOrder: parts.map((part) => part.id), hiddenPartIds: [], updatedAt: 'model-updated'
+  }
+  const pose = {
+    schemaVersion: 1, slot: 4, name: 'Parada', category: 'Parado', sourceModelSlot: 2,
+    sourceModelName: 'Modelo teste', sourceModelUpdatedAt: 'model-updated', width: 120, height: 160,
+    parts: structuredClone(parts), joints: structuredClone(joints), layerOrder: parts.map((part) => part.id), hiddenPartIds: [], updatedAt: 'pose-updated'
+  }
+  return { source, pose }
 }
 
 test('bounded image cache deduplicates in-flight loads and applies LRU eviction', async () => {
@@ -147,6 +191,56 @@ test('fixed descendants rotate around the joint and recompute pivots without mut
   const selectedOnly = rotateFramePart(project, createFrameState(project), 'root', 90, false)
   assert.equal(selectedOnly.transforms.child.x, 10)
   assert.equal(selectedOnly.transforms.grandchild.x, 20)
+})
+
+test('breathing generation keeps fixed lower-body parts and their joint anchors coherent', async () => {
+  const { source, pose } = createBreathingSourceAndPose()
+  const originalSource = structuredClone(source)
+  const originalPose = structuredClone(pose)
+  const thumbnailCalls = []
+  const animation = await createBreathingAnimation(source, pose, 7, 'character-1', breathingVariations[0], async (project, transforms) => {
+    thumbnailCalls.push({ project, transforms })
+    return `thumbnail-${thumbnailCalls.length}`
+  })
+  const [base, inhale, inhaleHold, returnToBase] = animation.frames
+
+  assert.equal(animation.name, 'Respiração · Parado · Suave')
+  assert.equal(animation.slot, 7)
+  assert.equal(animation.characterId, 'character-1')
+  assert.equal(animation.loopMode, 'loop')
+  assert.equal(animation.frames.reduce((total, frame) => total + frame.durationMs, 0), breathingVariations[0].cycleMs)
+  assert.notEqual(inhale.transforms.torso.height, base.transforms.torso.height)
+  assert.notEqual(inhale.transforms.arm.y, base.transforms.arm.y)
+  assert.deepEqual(inhale.transforms.thigh, base.transforms.thigh)
+  assert.deepEqual(inhale.transforms.shin, base.transforms.shin)
+  assert.deepEqual(inhale.transforms.foot, base.transforms.foot)
+  assert.deepEqual(inhale.joints.find((joint) => joint.id === 'thigh-shin'), base.joints.find((joint) => joint.id === 'thigh-shin'))
+  assert.deepEqual(inhale.joints.find((joint) => joint.id === 'shin-foot'), base.joints.find((joint) => joint.id === 'shin-foot'))
+
+  const baseHipJoint = base.joints.find((joint) => joint.id === 'torso-thigh')
+  const inhaleHipJoint = inhale.joints.find((joint) => joint.id === 'torso-thigh')
+  assert.deepEqual(inhaleHipJoint.childAnchor, baseHipJoint.childAnchor, 'the thigh side of the hip joint remains attached to the pinned thigh')
+  assert.deepEqual(inhaleHipJoint.pivot, {
+    x: (inhaleHipJoint.parentAnchor.x + inhaleHipJoint.childAnchor.x) / 2,
+    y: (inhaleHipJoint.parentAnchor.y + inhaleHipJoint.childAnchor.y) / 2
+  })
+  assert.deepEqual(inhaleHold.transforms, inhale.transforms)
+  assert.deepEqual(returnToBase.transforms, base.transforms)
+  assert.equal(thumbnailCalls.length, 4)
+  assert.deepEqual(source, originalSource)
+  assert.deepEqual(pose, originalPose)
+})
+
+test('breathing generation reports a missing torso before rendering frame assets', async () => {
+  const { source, pose } = createBreathingSourceAndPose()
+  pose.parts = pose.parts.filter((part) => part.id !== 'torso')
+  let rendered = false
+
+  await assert.rejects(
+    createBreathingAnimation(source, pose, 1, null, breathingVariations[0], async () => { rendered = true; return '' }),
+    /não possui uma peça de tronco identificável/
+  )
+  assert.equal(rendered, false)
 })
 
 test('thumbnail renderer preserves layer order and restores canvas state after a bad asset', async () => {
