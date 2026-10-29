@@ -1,8 +1,9 @@
 /** Comandos do Customizador: alterações em cópias por personagem, nunca em modelos fonte.
  * Preserva a fila serializada por id, rollback via Electron e evento legado.
  */
-import type { Dispatch, MutableRefObject, SetStateAction } from 'react'
+import { useRef, type Dispatch, type MutableRefObject, type SetStateAction } from 'react'
 import type { CustomizerCharacter, CustomizerWardrobeGroup } from '../../../../shared/customizer'
+import { createCustomizerCharacterRosterCommands } from './customizerCharacterRosterCommands'
 
 type Customization = CustomizerCharacter['customization']
 export type CharacterPatch = Partial<Customization> | ((current: Customization) => Partial<Customization>)
@@ -22,6 +23,20 @@ export function useCustomizerCharacterCommands(deps: {
     charactersRef, characterSaveQueue, selectedCharacter, setCharacters,
     setSelectedCharacterId, setActiveModule, setCharactersError, setCharacterSaveState, anchorWardrobe
   } = deps
+  const deletionsInProgress = useRef(new Set<string>())
+  const deletionOperations = useRef(new Map<string, Promise<void>>())
+  const rosterCommands = createCustomizerCharacterRosterCommands({
+    api: window.desktop.customizer,
+    charactersRef,
+    saveQueue: characterSaveQueue,
+    deletionsInProgress,
+    deletionOperations,
+    setCharacters,
+    setSelectedCharacterId,
+    setActiveModule,
+    setCharactersError,
+    notifyCharactersUpdated: () => window.dispatchEvent(new Event('customizer:characters-updated'))
+  })
 
   function selectCharacter(id: string) {
     setSelectedCharacterId(id)
@@ -29,6 +44,7 @@ export function useCustomizerCharacterCommands(deps: {
   }
 
   async function saveCharacter(next: CustomizerCharacter) {
+    if (deletionsInProgress.current.has(next.id)) return
     setCharactersError('')
     setCharacterSaveState('saving')
     charactersRef.current = charactersRef.current.map(character => character.id === next.id ? next : character)
@@ -65,5 +81,5 @@ export function useCustomizerCharacterCommands(deps: {
     await saveCharacter({ ...current, customization, updatedAt: new Date().toISOString() })
   }
 
-  return { selectCharacter, saveCharacter, saveCharacterCustomization }
+  return { ...rosterCommands, selectCharacter, saveCharacter, saveCharacterCustomization }
 }

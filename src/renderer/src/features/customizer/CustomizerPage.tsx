@@ -155,7 +155,7 @@ export function CustomizerPage() {
   const wardrobePaletteStripRefs = useRef<Record<string, HTMLDivElement | null>>({})
   const previewLoadRequest = useRef(0)
   const selectedCharacter = characters.find((character) => character.id === selectedCharacterId) ?? characters[0] ?? null
-  const { selectCharacter, saveCharacter, saveCharacterCustomization } = useCustomizerCharacterCommands({
+  const { selectCharacter, createCharacter, deleteCharacter, saveCharacter, saveCharacterCustomization } = useCustomizerCharacterCommands({
     charactersRef, characterSaveQueue, setCharacters, selectedCharacter,
     setSelectedCharacterId, setActiveModule, setCharactersError, setCharacterSaveState,
     anchorWardrobe: (groups) => anchorCurrentWardrobe(groups)
@@ -475,11 +475,7 @@ export function CustomizerPage() {
     setCharactersError('')
     try {
       if (dialogMode === 'create') {
-        const character = await window.desktop.customizer.createCustomizerCharacter(name)
-        charactersRef.current = [...charactersRef.current, character]
-        setCharacters((current) => [...current, character])
-        setSelectedCharacterId(character.id)
-        setActiveModule(null)
+        await createCharacter(name)
       } else if (dialogMode === 'rename' && selectedCharacter) {
         await saveCharacter({ ...selectedCharacter, name, updatedAt: new Date().toISOString() })
       }
@@ -494,13 +490,7 @@ export function CustomizerPage() {
   async function deleteSelectedCharacter() {
     if (!selectedCharacter || !window.confirm(`Excluir ${selectedCharacter.name}? Esta ação não remove modelos nem poses do Fabricador Dev.`)) return
     try {
-      await window.desktop.customizer.deleteCustomizerCharacter(selectedCharacter.id)
-      const remaining = characters.filter((character) => character.id !== selectedCharacter.id)
-      charactersRef.current = remaining
-      setCharacters(remaining)
-      setSelectedCharacterId(remaining[0]?.id ?? '')
-      setActiveModule(null)
-      setCharactersError('')
+      await deleteCharacter(selectedCharacter.id)
     } catch (reason) {
       setCharactersError(reason instanceof Error ? reason.message : 'Não foi possível excluir o personagem.')
     }
