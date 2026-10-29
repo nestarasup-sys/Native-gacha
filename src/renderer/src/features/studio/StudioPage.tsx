@@ -23,7 +23,7 @@ import { STUDIO_FACE_RENDER_VERSION, useStudioFacePreview } from './useStudioFac
 import { createSceneFaceActions } from '../../characters/sceneFaceActions'
 import { SceneFaceCatalogPanel } from '../../characters/SceneFaceCatalogPanel'
 import { sceneFaceModeForElement } from '../../characters/sceneFaceMode'
-import { sceneFaceCatalogItemId, sceneFaceSheetKind } from '../../characters/sceneFaceSelection'
+import { createDefaultSceneFaceTransform, resolveSceneFaceTransform, sceneFaceCatalogItemId, sceneFaceSheetKind } from '../../characters/sceneFaceSelection'
 import type { StudioAsset, StudioDocument, StudioElement, StudioFaceTransform, StudioFaceTransforms } from '../../../../shared/studio'
 import type { CustomizerCharacter } from '../../../../shared/customizer'
 import type { CustomizerFaceAppearance } from '../../../../shared/customizer'
@@ -34,7 +34,7 @@ type Tool = 'background' | 'objects' | null
 type DragState = { id: string; pointerId: number; startX: number; startY: number; originalX: number; originalY: number; width: number; height: number }
 
 const STORAGE_KEY = 'gacha-nymi-studio-catalog-v1'
-const defaultStudioEyeTransform: StudioFaceTransform = { x: 0, y: 0, width: 100, height: 100, rotation: 0 }
+const defaultStudioEyeTransform: StudioFaceTransform = createDefaultSceneFaceTransform()
 function makeCanvasPrint(studio: StudioDocument, outputWidth = 1920, outputHeight = 1080, mimeType = 'image/png'): Promise<string> {
   return new Promise((resolve, reject) => {
     const canvas = document.createElement('canvas')
@@ -1137,16 +1137,9 @@ export function StudioPage() {
     const sheetKind = sceneFaceSheetKind(studioFaceCategory, selectedStudioFaceMode)
     const selectedItemId = sceneFaceCatalogItemId(studioFaceCategory, selectedStudioFaceMode, selectedStudioFaceAppearance, selectedStudioOpenMouthId)
     const activeItem = selectedItemId ? studioFaceDetails[`${selectedStudioCharacterModelSlot}:${selectedItemId}`] : null
-    const studioTransformKey = studioFaceCategory === 'mouth' ? 'mouth' : selectedItemId ? `${sheetKind}:${selectedItemId}` : studioFaceCategory
-    const legacyMouthTransform = selectedStudioFaceAppearance?.mouthClosedCatalogId
-      ? selectedElement.faceTransforms?.[`mouth-closed:${selectedStudioFaceAppearance.mouthClosedCatalogId}`]
-      : selectedStudioFaceAppearance?.mouthOpenCatalogId
-        ? selectedElement.faceTransforms?.[`mouth-open:${selectedStudioFaceAppearance.mouthOpenCatalogId}`]
-        : undefined
-    const selectedStudioFaceTransform = selectedElement.faceTransforms?.[studioTransformKey]
-      ?? (studioFaceCategory === 'mouth' ? (selectedItemId ? selectedElement.faceTransforms?.[`${sheetKind}:${selectedItemId}`] : undefined) ?? legacyMouthTransform : undefined)
-      ?? selectedElement.faceTransforms?.[studioFaceCategory]
-      ?? defaultStudioEyeTransform
+    const { transformKey: studioTransformKey, transform: selectedStudioFaceTransform } = resolveSceneFaceTransform(
+      studioFaceCategory, sheetKind, selectedItemId, selectedStudioFaceAppearance, selectedElement.faceTransforms
+    )
     const catalogItems = studioFaceItems.filter((item) => item.category === sheetKind)
     return <SceneFaceCatalogPanel
       category={studioFaceCategory} sheetKind={sheetKind} selectedItemId={selectedItemId}

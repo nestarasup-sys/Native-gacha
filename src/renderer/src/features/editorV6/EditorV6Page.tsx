@@ -19,6 +19,7 @@ import { useEditorV6FaceCatalog } from './useEditorV6FaceCatalog'
 import { useEditorV6FacePreview } from './useEditorV6FacePreview'
 import { createSceneFaceActions } from '../../characters/sceneFaceActions'
 import { SceneFaceCatalogPanel } from '../../characters/SceneFaceCatalogPanel'
+import { createDefaultSceneFaceTransform, resolveSceneFaceTransform } from '../../characters/sceneFaceSelection'
 import { useEditorV6StageInteraction, type EditorV6StageDrag } from './useEditorV6StageInteraction'
 import { resolveEditorV6InspectorSelection } from './editorV6Selection'
 import { trimTransparentImage, fitElementToTrim, faceRenderGeometry, type TrimmedImage } from '../../characters/characterGeometry'
@@ -59,7 +60,7 @@ function samePoseRevisionSnapshot(left: Record<string, string>, right: Record<st
   const keys = Object.keys(left)
   return keys.length === Object.keys(right).length && keys.every((key) => left[key] === right[key])
 }
-const defaultStudioEyeTransform: EditorV6FaceTransform = { x: 0, y: 0, width: 100, height: 100, rotation: 0 }
+const defaultStudioEyeTransform: EditorV6FaceTransform = createDefaultSceneFaceTransform()
 async function makeEditorV6Thumbnail(studio: EditorV6Document): Promise<string> {
   const { captureEditorV6Frame } = await import('./sceneCapture')
   return captureEditorV6Frame(studio, 0, 480, 270, 'image/jpeg')
@@ -1225,16 +1226,9 @@ export function EditorV6Page() {
     const sheetKind = selectedEditorV6FaceSheetKind
     const selectedItemId = selectedEditorV6FaceCatalogItemId
     const activeItem = selectedItemId ? editorV6FaceDetails[`${selectedEditorV6CharacterModelSlot}:${selectedItemId}`] : null
-    const studioTransformKey = editorV6FaceCategory === 'mouth' ? 'mouth' : selectedItemId ? `${sheetKind}:${selectedItemId}` : editorV6FaceCategory
-    const legacyMouthTransform = selectedEditorV6FaceAppearance?.mouthClosedCatalogId
-      ? selectedElement.faceTransforms?.[`mouth-closed:${selectedEditorV6FaceAppearance.mouthClosedCatalogId}`]
-      : selectedEditorV6FaceAppearance?.mouthOpenCatalogId
-        ? selectedElement.faceTransforms?.[`mouth-open:${selectedEditorV6FaceAppearance.mouthOpenCatalogId}`]
-        : undefined
-    const selectedEditorV6FaceTransform = selectedElement.faceTransforms?.[studioTransformKey]
-      ?? (editorV6FaceCategory === 'mouth' ? (selectedItemId ? selectedElement.faceTransforms?.[`${sheetKind}:${selectedItemId}`] : undefined) ?? legacyMouthTransform : undefined)
-      ?? selectedElement.faceTransforms?.[editorV6FaceCategory]
-      ?? defaultStudioEyeTransform
+    const { transformKey: studioTransformKey, transform: selectedEditorV6FaceTransform } = resolveSceneFaceTransform(
+      editorV6FaceCategory, sheetKind, selectedItemId, selectedEditorV6FaceAppearance, selectedElement.faceTransforms
+    )
     const catalogItems = editorV6FaceItems.filter((item) => item.modelSlot === selectedEditorV6CharacterModelSlot && item.category === sheetKind)
     return <SceneFaceCatalogPanel
       category={editorV6FaceCategory} sheetKind={sheetKind} selectedItemId={selectedItemId}

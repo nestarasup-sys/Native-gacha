@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { editorV6FaceDetailIds, editorV6FaceDetailsAreLoading, editorV6FaceSheetKind, editorV6SelectedFaceCatalogItemId } from '../../src/renderer/src/features/editorV6/editorV6FaceSelection'
-import { sceneFaceCatalogItemId, sceneFaceSheetKind } from '../../src/renderer/src/characters/sceneFaceSelection'
+import { createDefaultSceneFaceTransform, resolveSceneFaceTransform, sceneFaceCatalogItemId, sceneFaceSheetKind } from '../../src/renderer/src/characters/sceneFaceSelection'
 import { EDITOR_V6_FACE_DETAIL_CACHE_LIMIT, rememberEditorV6FaceCatalogItem } from '../../src/renderer/src/features/editorV6/editorV6FaceDetailCache'
 import type { CustomizerFaceAppearance } from '../../src/shared/customizer'
 import type { FaceCatalogItem } from '../../src/shared/fabricator'
@@ -24,6 +24,31 @@ describe('seleção de folhas faciais do Editor V6', () => {
     expect(editorV6FaceSheetKind).toBe(sceneFaceSheetKind)
     expect(editorV6SelectedFaceCatalogItemId('mouth', 'talk-blink', appearance)).toBe('mouth-closed-main')
     expect(sceneFaceCatalogItemId('mouth', 'talk', appearance)).toBe('mouth-open-main')
+  })
+
+  it('resolve transformações atuais, chaves antigas da boca e defaults isolados', () => {
+    const legacyMouth = { x: 13, y: 4, width: 88, height: 91, rotation: 7 }
+    const selectedEye = { x: 2, y: 3, width: 99, height: 98, rotation: 1 }
+    const mouth = resolveSceneFaceTransform('mouth', 'mouth-open', 'mouth-open-main', appearance, {
+      'mouth-closed:mouth-closed-main': legacyMouth
+    })
+    const preferredMouth = { x: 5, y: 6, width: 100, height: 100, rotation: 0 }
+    const preferred = resolveSceneFaceTransform('mouth', 'mouth-open', 'mouth-open-main', appearance, {
+      mouth: preferredMouth, 'mouth-closed:mouth-closed-main': legacyMouth
+    })
+    const eye = resolveSceneFaceTransform('eyes', 'eyes', 'eyes-main', appearance, {
+      eyes: createDefaultSceneFaceTransform(), 'eyes:eyes-main': selectedEye
+    })
+    const categoryFallback = resolveSceneFaceTransform('eyes', 'eyes', 'eyes-main', appearance, { eyes: selectedEye })
+    const fallback = resolveSceneFaceTransform('nose', 'nose', undefined, appearance, undefined)
+
+    expect(mouth.transformKey).toBe('mouth')
+    expect(mouth.transform).toBe(legacyMouth)
+    expect(preferred.transform).toBe(preferredMouth)
+    expect(eye.transform).toBe(selectedEye)
+    expect(categoryFallback.transform).toBe(selectedEye)
+    expect(fallback.transform).toEqual({ x: 0, y: 0, width: 100, height: 100, rotation: 0 })
+    expect(fallback.transform).not.toBe(createDefaultSceneFaceTransform())
   })
 
   it('mapeia a categoria boca para a folha correspondente ao modo atual', () => {
