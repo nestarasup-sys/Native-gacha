@@ -2,7 +2,7 @@ import { projectForOriginalPreview } from '../../../../../shared/fabricatorModel
 import { useModelSourceRefresh } from '../models/useModelSourceRefresh'
 import { pupilSourceMirrored } from '../../../../../shared/facePupilGeometry'
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties } from 'react'
-import type { FaceAssetKind, FaceCatalogItem, FaceCatalogItemSave, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSave, FaceComponentAssetSummary, FaceComponentKind, FaceDetailKind, FaceGuideProfile, FaceGuideSettings, FaceTransform, FabricatorProject, FabricatorSlotSummary, ModelPart } from '../../../../../shared/fabricator'
+import type { FaceAssetKind, FaceCatalogItem, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSave, FaceComponentAssetSummary, FaceComponentKind, FaceDetailKind, FaceGuideProfile, FaceGuideSettings, FaceTransform, FabricatorProject, FabricatorSlotSummary, ModelPart } from '../../../../../shared/fabricator'
 import { Icon } from '../../../ui/components/Icon'
 import { usePreviewBackground } from '../../../ui/hooks/usePreviewBackground'
 import { useEyeInteriorMasks } from '../../../ui/hooks/useEyeInteriorMasks'
@@ -25,6 +25,7 @@ import { loadFaceCatalogWorkspaceData, loadFaceComponentWorkspaceData } from './
 import { readComponentSelections, readFaceDetailSelections, readFaceImportAnchors, saveComponentSelection, saveFaceDetailSelections, saveFaceImportAnchors, type FaceDetailSelections, type FaceImportAnchors } from './faceWorkspaceSelectionStorage'
 import { deriveFacePairTransformMetrics } from './facePairTransformModel'
 import { planEyeSeparation, planFacePairMove, planFacePairResize } from './facePairTransformEdits'
+import { alignFaceCatalogMouthPreviewTransform, faceCatalogImagesForImport, faceCatalogImagesForSave, faceCatalogItemForSave, planFaceCatalogOpacityEdit, planFaceCatalogTransformEdits, planFaceCatalogVariantEdit } from './faceCatalogEdits'
 import { useFacePreviewDrag } from './useFacePreviewDrag'
 
 type CatalogKind = 'nose' | 'mouth-closed' | 'mouth-open'
@@ -41,27 +42,11 @@ const faceDetailCategories: Array<{ kind: FaceDetailKind; label: string }> = [
 const isFaceDetailKind = (kind: string): kind is FaceDetailKind => faceDetailCategories.some((category) => category.kind === kind)
 const isFaceComponentKind = (kind: FaceComponentAsset['kind']): kind is FaceComponentKind => categories.some((category) => category.kind === kind)
 const readImage = normalizeEditableImageFile
-function catalogSaveData(item: FaceCatalogItem): FaceCatalogItemSave {
-  const { dataUrl: _sheetData, ...sheet } = item.sheet
-  return { ...item, sheet, pieces: item.pieces.map(({ dataUrl: _pieceData, ...piece }) => piece) }
-}
-function catalogImagesForSave(item: FaceCatalogItem) {
-  return item.id.startsWith('legacy_') ? [
-    { id: `sheet-${item.category}`, dataUrl: item.sheet.dataUrl },
-    ...item.pieces.map((piece) => ({ id: piece.id, dataUrl: piece.dataUrl }))
-  ] : []
-}
 function initialCatalogTransform(head: ModelPart, item: Pick<FaceCatalogItem, 'category' | 'pieces'>): FaceTransform {
   const piece = item.pieces[0]
   const targetWidth = item.category === 'nose' ? .075 : .2
   const scale = piece ? clamp(head.width * targetWidth / piece.width, .04, 4) : .25
   return { x: head.width * .5, y: head.height * (item.category === 'nose' ? .61 : .78), scaleX: scale, scaleY: scale, rotation: 0 }
-}
-function alignMouthPreviewTransform(transform: FaceTransform, closedItem: FaceCatalogItem | undefined, activeItem: FaceCatalogItem | undefined): FaceTransform {
-  const closedBase = closedItem?.transforms.mouth
-  const activeBase = activeItem?.transforms.mouth
-  if (!closedBase || !activeBase || closedBase.scaleX <= 0 || closedBase.scaleY <= 0) return transform
-  return { ...transform, scaleX: transform.scaleX * activeBase.scaleX / closedBase.scaleX, scaleY: transform.scaleY * activeBase.scaleY / closedBase.scaleY }
 }
 function FaceGuideOverlay({ head, guide }: { head: ModelPart; guide: FaceGuide }) {
   const x = head.width * guide.verticalX / 100
@@ -212,7 +197,7 @@ export function FaceComponentsWorkspace({ mode, baseModelSlot }: { mode: FaceWor
   const mouthReferenceItem = selectedMouth?.category === 'mouth-closed' ? selectedMouth : firstClosedMouth
   const sharedMouthTransform = mouthReferenceItem?.transforms.mouth ?? selectedMouth?.transforms.mouth
   const mouthPreviewTransform = selectedMouth && sharedMouthTransform
-    ? alignMouthPreviewTransform(sharedMouthTransform, mouthReferenceItem, selectedMouth)
+    ? alignFaceCatalogMouthPreviewTransform(sharedMouthTransform, mouthReferenceItem, selectedMouth)
     : sharedMouthTransform
   const activeComponent: (FaceComponentAsset & { kind: FaceComponentKind }) | undefined = mode === 'eyes' && componentPair && selectedAsset && isFaceComponentKind(selectedAsset.kind) ? selectedAsset as FaceComponentAsset & { kind: FaceComponentKind } : undefined
   const activeFaceDetail: (FaceComponentAsset & { kind: FaceDetailKind }) | undefined = mode === 'face' && selectedFaceDetail && isFaceDetailKind(selectedFaceDetail.kind) ? selectedFaceDetail as FaceComponentAsset & { kind: FaceDetailKind } : undefined
@@ -553,10 +538,7 @@ export function FaceComponentsWorkspace({ mode, baseModelSlot }: { mode: FaceWor
         transforms: { [kind === 'nose' ? 'nose' : 'mouth']: initialCatalogTransform(head, { category: kind, pieces: processed.pieces }) },
         eyeLinked: true, browLinked: true, selectedNose: 0, selectedExpression: 0, updatedAt: new Date().toISOString()
       }
-      await window.desktop.fabricator.saveFaceCatalogItem(modelSlot, catalogSaveData(item), [
-        { id: `sheet-${kind}`, dataUrl: item.sheet.dataUrl },
-        ...item.pieces.map((piece) => ({ id: piece.id, dataUrl: piece.dataUrl }))
-      ])
+      await window.desktop.fabricator.saveFaceCatalogItem(modelSlot, faceCatalogItemForSave(item), faceCatalogImagesForImport(item))
       const summary: FaceCatalogItemSummary = { id: item.id, modelSlot, category: kind, name, updatedAt: item.updatedAt, pieceCount: item.pieces.length }
       if (kind === 'nose') {
         setNoseCatalog((current) => [summary, ...current]); setNoseDetails((current) => ({ ...current, [item.id]: item })); setSelectedNoseId(item.id); setLibraryCategory('nose')
@@ -579,32 +561,18 @@ export function FaceComponentsWorkspace({ mode, baseModelSlot }: { mode: FaceWor
       const original = catalogDetailsRef.current[selectedCatalogItem.id] ?? selectedCatalogItem
       const element = original.category === 'nose' ? 'nose' : 'mouth'
       if (element === 'nose') {
-        const current = original.transforms.nose
-        if (!current) return
-        const next: FaceCatalogItem = { ...original, transforms: { ...original.transforms, nose: { ...current, ...patch } }, updatedAt: new Date().toISOString() }
+        const [next] = planFaceCatalogTransformEdits(Object.values(catalogDetailsRef.current), original, patch, new Date().toISOString())
+        if (!next) return
         catalogDetailsRef.current = { ...catalogDetailsRef.current, [next.id]: next }
         setNoseDetails((items) => ({ ...items, [next.id]: next }))
-        queueSave(`catalog:${next.modelSlot}:${next.id}`, () => window.desktop.fabricator.saveFaceCatalogItem(next.modelSlot, catalogSaveData(next), catalogImagesForSave(next)))
+        queueSave(`catalog:${next.modelSlot}:${next.id}`, () => window.desktop.fabricator.saveFaceCatalogItem(next.modelSlot, faceCatalogItemForSave(next), faceCatalogImagesForSave(next)))
         return
       }
-      const mouthItems = Object.values(catalogDetailsRef.current).filter((item) => item.modelSlot === original.modelSlot && (item.category === 'mouth-closed' || item.category === 'mouth-open'))
-      const current = mouthItems.find((item) => item.category === 'mouth-closed')?.transforms.mouth ?? original.transforms.mouth
-      if (!current) return
-      const shared = { ...current, ...patch }
-      const updatedAt = new Date().toISOString()
-      const updates = (mouthItems.length ? mouthItems : [original]).map((item) => {
-        const itemBase = item.transforms.mouth ?? current
-        const isOpenMouth = item.category === 'mouth-open'
-        const itemTransform = isOpenMouth ? {
-          ...shared,
-          scaleX: shared.scaleX * itemBase.scaleX / current.scaleX,
-          scaleY: shared.scaleY * itemBase.scaleY / current.scaleY
-        } : shared
-        return { ...item, transforms: { ...item.transforms, mouth: itemTransform }, updatedAt }
-      })
+      const updates = planFaceCatalogTransformEdits(Object.values(catalogDetailsRef.current), original, patch, new Date().toISOString())
+      if (updates.length === 0) return
       catalogDetailsRef.current = { ...catalogDetailsRef.current, ...Object.fromEntries(updates.map((item) => [item.id, item])) }
       setMouthDetails((items) => ({ ...items, ...Object.fromEntries(updates.map((item) => [item.id, item])) }))
-      for (const item of updates) queueSave(`catalog:${item.modelSlot}:${item.id}`, () => window.desktop.fabricator.saveFaceCatalogItem(item.modelSlot, catalogSaveData(item), catalogImagesForSave(item)))
+      for (const item of updates) queueSave(`catalog:${item.modelSlot}:${item.id}`, () => window.desktop.fabricator.saveFaceCatalogItem(item.modelSlot, faceCatalogItemForSave(item), faceCatalogImagesForSave(item)))
       return
     }
     if (!selectedAsset) return
@@ -753,20 +721,21 @@ export function FaceComponentsWorkspace({ mode, baseModelSlot }: { mode: FaceWor
   function updateCatalogVariant(index: number) {
     if (!selectedCatalogItem) return
     const original = catalogDetailsRef.current[selectedCatalogItem.id] ?? selectedCatalogItem
-    const next = { ...original, [original.category === 'nose' ? 'selectedNose' : 'selectedExpression']: index, updatedAt: new Date().toISOString() }
+    const next = planFaceCatalogVariantEdit(original, index, new Date().toISOString())
     catalogDetailsRef.current = { ...catalogDetailsRef.current, [next.id]: next }
     if (next.category === 'nose') setNoseDetails((items) => ({ ...items, [next.id]: next }))
     else setMouthDetails((items) => ({ ...items, [next.id]: next }))
-    queueSave(`catalog:${next.modelSlot}:${next.id}`, () => window.desktop.fabricator.saveFaceCatalogItem(next.modelSlot, catalogSaveData(next), catalogImagesForSave(next)))
+    queueSave(`catalog:${next.modelSlot}:${next.id}`, () => window.desktop.fabricator.saveFaceCatalogItem(next.modelSlot, faceCatalogItemForSave(next), faceCatalogImagesForSave(next)))
   }
 
   function updateCatalogOpacity(value: number) {
     if (selectedCatalogItem?.category !== 'nose') return
     const original = catalogDetailsRef.current[selectedCatalogItem.id] ?? selectedCatalogItem
-    const next = { ...original, opacity: clamp(value, 0, 1), updatedAt: new Date().toISOString() }
+    const next = planFaceCatalogOpacityEdit(original, value, new Date().toISOString())
+    if (!next) return
     catalogDetailsRef.current = { ...catalogDetailsRef.current, [next.id]: next }
     setNoseDetails((items) => ({ ...items, [next.id]: next }))
-    queueSave(`catalog:${next.modelSlot}:${next.id}`, () => window.desktop.fabricator.saveFaceCatalogItem(next.modelSlot, catalogSaveData(next), catalogImagesForSave(next)))
+    queueSave(`catalog:${next.modelSlot}:${next.id}`, () => window.desktop.fabricator.saveFaceCatalogItem(next.modelSlot, faceCatalogItemForSave(next), faceCatalogImagesForSave(next)))
   }
 
   async function removeSelectedAssets() {

@@ -2,6 +2,15 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { loadFaceCatalogWorkspaceData, loadFaceComponentWorkspaceData } from '../src/renderer/src/features/fabricator/face/faceWorkspaceData.ts'
+import {
+  alignFaceCatalogMouthPreviewTransform,
+  faceCatalogImagesForImport,
+  faceCatalogImagesForSave,
+  faceCatalogItemForSave,
+  planFaceCatalogOpacityEdit,
+  planFaceCatalogTransformEdits,
+  planFaceCatalogVariantEdit
+} from '../src/renderer/src/features/fabricator/face/faceCatalogEdits.ts'
 
 function deferred() {
   let resolve
@@ -16,6 +25,25 @@ function componentSummary(id, kind = 'eye') {
 
 function componentDetail(summary) {
   return { ...summary, defaultTransform: { x: 10, y: 6, scaleX: 1, scaleY: 1, rotation: 0 }, dataUrl: `data:${summary.id}` }
+}
+
+function catalogItem(id, category, transform, modelSlot = 2) {
+  const element = category === 'nose' ? 'nose' : 'mouth'
+  return {
+    schemaVersion: 1,
+    id,
+    modelSlot,
+    category,
+    name: id,
+    sheet: { kind: category, name: `${id}.png`, width: 32, height: 24, tolerance: 42, dataUrl: `data:sheet:${id}` },
+    pieces: [{ id: `${id}-piece`, index: 0, width: 8, height: 6, dataUrl: `data:piece:${id}` }],
+    transforms: { [element]: transform },
+    eyeLinked: true,
+    browLinked: true,
+    selectedNose: 0,
+    selectedExpression: 0,
+    updatedAt: 'before'
+  }
 }
 
 function createComponentApi({ summaries = [], loadAsset = async (summary) => componentDetail(summary) } = {}) {
@@ -189,4 +217,74 @@ test('face workspace reuses the shared ordered worker while preserving one globa
   assert.match(source, /scheduleFaceImageLoad\(\(\) => loadDetail\(summary\), isCancelled\)/)
   assert.match(source, /createConcurrencyLimiter\(FACE_IMAGE_LOAD_CONCURRENCY\)/)
   assert.doesNotMatch(source, /const workerCount = Math\.min\(FACE_IMAGE_LOAD_CONCURRENCY/)
+})
+
+test('mouth transform edits preserve each open catalog variant scale relative to the closed mouth', () => {
+  const closed = catalogItem('closed', 'mouth-closed', { x: 20, y: 30, scaleX: 1, scaleY: 1, rotation: 0 })
+  const open = catalogItem('open', 'mouth-open', { x: 25, y: 34, scaleX: 1.4, scaleY: .75, rotation: .2 })
+  const otherModel = catalogItem('other-model', 'mouth-open', { x: 10, y: 11, scaleX: 3, scaleY: 2, rotation: 0 }, 3)
+  const patch = { x: 24, y: 32, scaleX: 1.2, scaleY: 1.1, rotation: .4 }
+
+  const updates = planFaceCatalogTransformEdits([open, closed, otherModel], closed, patch, 'after')
+
+  assert.deepEqual(updates.map((item) => item.id), ['open', 'closed'])
+  assert.deepEqual(updates.find((item) => item.id === 'closed').transforms.mouth, patch)
+  const openTransform = updates.find((item) => item.id === 'open').transforms.mouth
+  assert.deepEqual({ ...openTransform, scaleX: 0, scaleY: 0 }, { ...patch, scaleX: 0, scaleY: 0 })
+  assert.ok(Math.abs(openTransform.scaleX - 1.68) < 1e-10)
+  assert.ok(Math.abs(openTransform.scaleY - .825) < 1e-10)
+  assert.equal(updates.every((item) => item.updatedAt === 'after'), true)
+  assert.equal(otherModel.transforms.mouth.scaleX, 3)
+})
+
+test('editing an open mouth still uses the closed mouth as the shared transform reference', () => {
+  const closed = catalogItem('closed', 'mouth-closed', { x: 5, y: 6, scaleX: 2, scaleY: 4, rotation: 0 })
+  const open = catalogItem('open', 'mouth-open', { x: 8, y: 9, scaleX: 3, scaleY: 2, rotation: 0 })
+
+  const updates = planFaceCatalogTransformEdits([closed, open], open, { scaleX: 4, scaleY: 2 }, 'after')
+
+  assert.deepEqual(updates.find((item) => item.id === 'closed').transforms.mouth, {
+    x: 5, y: 6, scaleX: 4, scaleY: 2, rotation: 0
+  })
+  assert.deepEqual(updates.find((item) => item.id === 'open').transforms.mouth, {
+    x: 5, y: 6, scaleX: 6, scaleY: 1, rotation: 0
+  })
+})
+
+test('catalog transform edit updates a nose alone and skips catalog entries without its transform', () => {
+  const nose = catalogItem('nose', 'nose', { x: 14, y: 20, scaleX: .5, scaleY: .6, rotation: 0 })
+  const mouth = catalogItem('mouth', 'mouth-open', { x: 1, y: 2, scaleX: 1, scaleY: 1, rotation: 0 })
+  const malformedNose = { ...nose, id: 'missing-transform', transforms: {} }
+
+  const updates = planFaceCatalogTransformEdits([nose, mouth], nose, { x: 18 }, 'after')
+
+  assert.equal(updates.length, 1)
+  assert.deepEqual(updates[0].transforms.nose, { x: 18, y: 20, scaleX: .5, scaleY: .6, rotation: 0 })
+  assert.deepEqual(planFaceCatalogTransformEdits([malformedNose], malformedNose, { x: 18 }, 'after'), [])
+})
+
+test('catalog variant and opacity edits keep category rules and clamp opacity', () => {
+  const nose = catalogItem('nose', 'nose', { x: 1, y: 2, scaleX: 1, scaleY: 1, rotation: 0 })
+  const mouth = catalogItem('mouth', 'mouth-open', { x: 1, y: 2, scaleX: 1, scaleY: 1, rotation: 0 })
+
+  assert.equal(planFaceCatalogVariantEdit(nose, 4, 'after').selectedNose, 4)
+  assert.equal(planFaceCatalogVariantEdit(mouth, 3, 'after').selectedExpression, 3)
+  assert.equal(planFaceCatalogOpacityEdit(nose, 2, 'after').opacity, 1)
+  assert.equal(planFaceCatalogOpacityEdit(nose, -1, 'after').opacity, 0)
+  assert.equal(planFaceCatalogOpacityEdit(mouth, .4, 'after'), null)
+})
+
+test('mouth preview keeps transform alignment and catalog saves separate image payloads', () => {
+  const closed = catalogItem('closed', 'mouth-closed', { x: 20, y: 30, scaleX: 2, scaleY: 4, rotation: 0 })
+  const open = catalogItem('open', 'mouth-open', { x: 20, y: 30, scaleX: 3, scaleY: 2, rotation: 0 })
+  const base = { x: 12, y: 15, scaleX: .5, scaleY: .25, rotation: .1 }
+  const preview = alignFaceCatalogMouthPreviewTransform(base, closed, open)
+
+  assert.deepEqual(preview, { ...base, scaleX: .75, scaleY: .125 })
+  assert.equal(faceCatalogImagesForSave(closed).length, 0)
+  assert.equal(faceCatalogImagesForSave({ ...closed, id: 'legacy_old' }).length, 2)
+  assert.equal(faceCatalogImagesForImport(closed).length, 2)
+  const saved = faceCatalogItemForSave(closed)
+  assert.equal('dataUrl' in saved.sheet, false)
+  assert.equal('dataUrl' in saved.pieces[0], false)
 })
