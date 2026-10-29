@@ -3,6 +3,15 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { loadCustomizerWardrobeCatalog } from '../src/renderer/src/features/customizer/customizerWardrobeCatalog.ts'
 import { getCustomizerHairLibraryPage, loadCustomizerHairDetails, loadCustomizerHairLibraryPageDetails, retainCustomizerHairDetailsForModel } from '../src/renderer/src/features/customizer/customizerHairCatalog.ts'
+import {
+  upperWardrobePanels,
+  upperWardrobePageTwoPanels,
+  accessoryWardrobePanels,
+  lowerWardrobePanels,
+  lowerWardrobePageTwoPanels,
+  createWardrobePanelCandidateIndex,
+  wardrobePanelCandidates
+} from '../src/renderer/src/features/customizer/wardrobePanelModel.ts'
 
 const summary = (id) => ({ id, modelSlot: 1, modelName: 'Modelo', name: id, updatedAt: '2026-10-29T00:00:00.000Z', edition: 2, componentCount: 1 })
 const set = (id, category) => ({
@@ -69,6 +78,81 @@ test('gera apenas miniaturas faltantes cujas categorias existem no conjunto', as
 
   assert.deepEqual(rendered, [['calca-coxa']])
   assert.deepEqual(thumbnails, [{ key: '1:pants:lower', thumbnail: 'data:image/png;base64,AA==' }])
+})
+
+test('índice de candidatos preserva filtros, ordem e agrupamento de cada painel', () => {
+  const component = (id, name, category, attachedPartId = 'body') => ({
+    id, name, category, attachedPartId, x: 0, y: 0, width: 10, height: 10, rotation: 0,
+    dataUrl: 'data:image/png;base64,AA=='
+  })
+  const createSet = (id, modelSlot, components) => ({
+    schemaVersion: 1,
+    edition: 2,
+    id,
+    modelSlot,
+    modelName: `Modelo ${modelSlot}`,
+    name: id,
+    width: 20,
+    height: 20,
+    components,
+    updatedAt: '2026-10-29T00:00:00.000Z'
+  })
+  const panels = [
+    ...upperWardrobePanels,
+    ...upperWardrobePageTwoPanels,
+    ...accessoryWardrobePanels,
+    ...lowerWardrobePanels,
+    ...lowerWardrobePageTwoPanels
+  ]
+  const mainSet = createSet('main', 1, [
+    component('shirt', 'Camisa', 'camisa'),
+    component('jacket', 'Jaqueta', 'jaqueta'),
+    component('upper-left', 'Manga esquerda', 'manga-superior', 'braço esquerdo'),
+    component('upper-right', 'Manga direita', 'manga-superior', 'braço direito'),
+    component('lower-left', 'Manga inferior esquerda', 'manga-inferior', 'antebraço esquerdo'),
+    component('lower-right', 'Manga inferior direita', 'manga-inferior', 'antebraço direito'),
+    component('pants-thigh', 'Calça coxa', 'calca-coxa'),
+    component('pants-shin', 'Calça canela', 'calca-canela'),
+    component('shorts', 'Bermuda', 'shorts'),
+    component('glass-cloth', 'Óculos de roupa', 'oculos')
+  ])
+  const otherSlotSet = createSet('other-slot', 2, [component('other-shirt', 'Camisa', 'camisa')])
+  const summaries = [
+    { ...summary(mainSet.id), componentCount: mainSet.components.length },
+    { ...summary(otherSlotSet.id), modelSlot: 2, componentCount: otherSlotSet.components.length }
+  ]
+  const faceSummary = {
+    id: 'glasses-extra', modelSlot: 1, kind: 'head-extra', name: 'Óculos extra', width: 12, height: 8,
+    updatedAt: '2026-10-29T00:00:00.000Z'
+  }
+  const faceAsset = {
+    schemaVersion: 1, ...faceSummary,
+    defaultTransform: { x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0 },
+    dataUrl: 'data:image/png;base64,AA=='
+  }
+  const wardrobeDetails = { '1:main': mainSet, '2:other-slot': otherSlotSet }
+  const faceComponentDetails = { [faceAsset.id]: faceAsset }
+  const index = createWardrobePanelCandidateIndex({
+    panels,
+    selectedModelSlot: 1,
+    wardrobeSets: summaries,
+    wardrobeDetails,
+    faceComponentAssets: [faceSummary],
+    faceComponentDetails
+  })
+
+  assert.equal(index.size, panels.length)
+  assert.equal(new Set(panels.map((panel) => panel.id)).size, panels.length)
+  for (const panel of panels) {
+    assert.deepEqual(
+      index.get(panel.id),
+      wardrobePanelCandidates(panel, 1, summaries, wardrobeDetails, [faceSummary], faceComponentDetails)
+    )
+  }
+  assert.deepEqual(index.get('pants-left')?.[0]?.components.map(({ id }) => id), ['pants-thigh', 'pants-shin'])
+  assert.equal(index.get('pants-left')?.[0]?.component.id, 'pants-thigh')
+  assert.equal(index.get('glasses')?.[0]?.headExtraAsset?.id, faceAsset.id)
+  assert.equal(index.get('shirt')?.some((candidate) => candidate.summary.modelSlot === 2), false)
 })
 
 test('cancelamento impede publicar detalhes depois de trocar de área', async () => {
@@ -178,6 +262,14 @@ test('Customizador delega o catálogo de cabelos ao hook e ao carregador limitad
   assert.match(libraryHook, /loadCustomizerHairLibraryPageDetails\(/)
   assert.match(loader, /concurrency = 3/)
   assert.match(loader, /mapConcurrentItems\(/)
+})
+
+test('CustomizerPage memoiza candidatos de roupas e não refaz a busca dentro de cada painel', async () => {
+  const page = await readFile('src/renderer/src/features/customizer/CustomizerPage.tsx', 'utf8')
+  assert.match(page, /createWardrobePanelCandidateIndex\(/)
+  assert.match(page, /const wardrobePanelCandidateIndex = useMemo\(/)
+  assert.match(page, /wardrobePanelCandidateIndex\.get\(panel\.id\)/)
+  assert.doesNotMatch(page, /wardrobePanelCandidates\(/)
 })
 
 test('biblioteca de cabelos carrega só as miniaturas da página visível', async () => {

@@ -73,6 +73,7 @@
     "bench:fabricator:compose-worker:medium": "electron scripts/fabricator/model-source-compose-worker.cjs --medium",
     "bench:fabricator:compose-worker:large": "electron scripts/fabricator/model-source-compose-worker.cjs --large",
     "bench:studio:character-projection": "node --experimental-strip-types scripts/diagnostics/benchmark-studio-character-projection.mjs",
+    "bench:customizer:wardrobe-candidates": "node --experimental-strip-types scripts/diagnostics/benchmark-customizer-wardrobe-candidates.mjs",
     "test:fabricator:real-ui": "node scripts/fabricator/capture-real-ui.cjs",
     "test:fabricator:assets": "node --experimental-strip-types --test tests/fabricator-versioned-assets.test.mjs",
     "test:fabricator:chaos": "node --experimental-strip-types --test tests/model-source-fault-injection.test.mjs",

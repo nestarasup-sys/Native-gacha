@@ -9,7 +9,7 @@ import { applyCharacterBodyShape } from '../../../../shared/bodyShape'
 import { getCharacterBodyDimensions, getCharacterProportions } from '../../../../shared/customizer'
 import { clothingCategories, wardrobeComponentsForGroup, withCharacterHeadSize } from '../../characters/characterRenderer'
 import { loadCustomizerArtworkSource } from './customizerArtworkSource'
-import { renderWardrobeThumbnail } from './wardrobePanelModel'
+import { renderWardrobeThumbnail } from './wardrobePanelThumbnail'
 
 export function useCustomizerWardrobeHydration(deps: {
   selectedCharacter: CustomizerCharacter | null

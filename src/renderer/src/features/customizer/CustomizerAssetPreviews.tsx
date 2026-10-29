@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import type { HairColorOverrides } from '../../../../shared/customizer'
 import { loadCachedImage, loadHairTintedImage, loadSkinTintedImage } from '../../characters/characterRenderer'
 import type { HairTintOptions } from '../../characters/characterRenderer'
-import { renderWardrobeThumbnail } from './wardrobePanelModel'
+import { renderWardrobeThumbnail } from './wardrobePanelThumbnail'
 import type { WardrobePanelCandidate } from './wardrobePanelModel'
 import { createCustomizerHairPreviewCache } from './customizerHairPreviewCache'
 

@@ -13,7 +13,15 @@ import { CustomizerFaceCatalogWorkspace } from './CustomizerFaceCatalogWorkspace
 import { CustomizerClothesAdjustmentPanel } from './CustomizerClothesAdjustmentPanel'
 import { CustomizerHeadAdjustmentPanel } from './CustomizerHeadAdjustmentPanel'
 import { buildClothesAdjustmentEntries } from './customizerClothesAdjustmentModel'
-import { upperWardrobePanels, upperWardrobePageTwoPanels, accessoryWardrobePanels, lowerWardrobePanels, lowerWardrobePageTwoPanels, wardrobePanelCandidates, isWardrobePanelCandidateSelected } from './wardrobePanelModel'
+import {
+  upperWardrobePanels,
+  upperWardrobePageTwoPanels,
+  accessoryWardrobePanels,
+  lowerWardrobePanels,
+  lowerWardrobePageTwoPanels,
+  createWardrobePanelCandidateIndex,
+  isWardrobePanelCandidateSelected
+} from './wardrobePanelModel'
 import type { WardrobePanel } from './wardrobePanelModel'
 import { WardrobePanelCandidatePreview } from './CustomizerAssetPreviews'
 import { customizerSkinTonePresets, skinTonePresets, createCustomizerFaceCatalogModel } from './customizerFaceCatalogModel'
@@ -520,10 +528,34 @@ export function CustomizerPage() {
     faceComponentDetails,
     appearance: activeFaceAppearance
   }), [faceCatalogItems, faceCatalogDetails, faceComponentAssets, faceComponentDetails, activeFaceAppearance])
+  const wardrobePanelSelection = useMemo(() => {
+    const page = clothingSection === 'Inferior' ? lowerWardrobePage : upperWardrobePage
+    const pageTwo = page === 2
+    const panels = selectedCustomizerTopTab === 'cabeca' && headPanelTab === 'extra'
+      ? accessoryWardrobePanels
+      : clothingSection === 'Inferior'
+        ? pageTwo ? lowerWardrobePageTwoPanels : lowerWardrobePanels
+        : pageTwo ? upperWardrobePageTwoPanels : upperWardrobePanels
+    return { page, pageTwo, panels }
+  }, [clothingSection, headPanelTab, lowerWardrobePage, selectedCustomizerTopTab, upperWardrobePage])
+  const wardrobePanelCandidateIndex = useMemo(() => {
+    const panels = [...wardrobePanelSelection.panels]
+    if (wardrobeLibraryPanel && !panels.some((panel) => panel.id === wardrobeLibraryPanel.id)) {
+      panels.push(wardrobeLibraryPanel)
+    }
+    return createWardrobePanelCandidateIndex({
+      panels,
+      selectedModelSlot: selectedCatalogModelSlot,
+      wardrobeSets,
+      wardrobeDetails,
+      faceComponentAssets,
+      faceComponentDetails
+    })
+  }, [faceComponentAssets, faceComponentDetails, selectedCatalogModelSlot, wardrobeDetails, wardrobeLibraryPanel, wardrobePanelSelection.panels, wardrobeSets])
   const renderUpperWardrobeLibrary = () => {
     if (!wardrobeLibraryPanel) return null
     const panel = wardrobeLibraryPanel
-    const candidates = wardrobePanelCandidates(panel, selectedCatalogModelSlot, wardrobeSets, wardrobeDetails, faceComponentAssets, faceComponentDetails)
+    const candidates = wardrobePanelCandidateIndex.get(panel.id) ?? []
     const slots: Array<(typeof candidates)[number] | null> = [null, ...candidates]
     const pageSize = 20
     const pageCount = Math.max(1, Math.ceil(slots.length / pageSize))
@@ -557,14 +589,10 @@ export function CustomizerPage() {
   }
 
   const renderUpperWardrobePanels = () => {
-    const page = clothingSection === 'Inferior' ? lowerWardrobePage : upperWardrobePage
-    const pageTwo = page === 2
-    const panels = selectedCustomizerTopTab === 'cabeca' && headPanelTab === 'extra' ? accessoryWardrobePanels : clothingSection === 'Inferior'
-      ? pageTwo ? lowerWardrobePageTwoPanels : lowerWardrobePanels
-      : pageTwo ? upperWardrobePageTwoPanels : upperWardrobePanels
+    const { page, pageTwo, panels } = wardrobePanelSelection
     return <div className={`customizer-hair-layout customizer-upper-wardrobe-layout${clothingSection === 'Superior' && pageTwo ? ' page-two' : ''}${clothingSection === 'Inferior' && pageTwo ? ' lower-page-two' : ''}`} aria-label={`Peças de roupa ${clothingSection.toLowerCase()} · página ${page}`}>
     {panels.map((panel) => {
-      const candidates = wardrobePanelCandidates(panel, selectedCatalogModelSlot, wardrobeSets, wardrobeDetails, faceComponentAssets, faceComponentDetails)
+      const candidates = wardrobePanelCandidateIndex.get(panel.id) ?? []
       const appliedGroups = selectedCharacter?.customization.wardrobeGroups ?? []
       const selectedIndex = candidates.findIndex((candidate) => isWardrobePanelCandidateSelected(candidate, panel, appliedGroups, selectedCharacter?.customization.faceAppearance))
       const currentCandidate = selectedIndex >= 0 ? candidates[selectedIndex] : null

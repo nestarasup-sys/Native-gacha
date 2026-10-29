@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import type { Dispatch, SetStateAction } from 'react'
 import type { WardrobeSet, WardrobeSetSummary } from '../../../../shared/fabricator'
 import { clothingCategories } from '../../characters/characterRenderer'
-import { renderWardrobeThumbnail } from './wardrobePanelModel'
+import { renderWardrobeThumbnail } from './wardrobePanelThumbnail'
 import { loadCustomizerWardrobeCatalog } from './customizerWardrobeCatalog'
 
 type Dependencies = {
