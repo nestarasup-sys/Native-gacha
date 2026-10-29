@@ -2,6 +2,13 @@
 
 ## Reauditoria geral — 2026-10-29
 
+### Resposta de mídia compartilhada
+
+- Três implementações de headers/HEAD/Range/stream eram duplicadas: biblioteca de vídeos, mídia do Editor V6 na janela principal e mídia no worker de exportação. `mediaLibrary/mediaFileResponse.ts` centraliza somente a entrega de arquivo já autorizado; IDs, validações de manifesto, resolução CAS e escopo por projeto permanecem nos protocolos donos.
+- Intervalos decimais são interpretados com BigInt antes de limitar ao tamanho do arquivo, evitando perda de precisão com valores maiores que Number.MAX_SAFE_INTEGER. GET parcial mantém 206 e Content-Range; pedidos não suportados/insatisfatíveis mantêm 416; HEAD entrega metadados sem abrir body. Leituras recebem o AbortSignal da requisição. Os chamadores aguardam a resposta dentro do try para preservar 404 em falhas de acesso.
+- Referência normativa: RFC 9110, seção 14.1.2: https://www.rfc-editor.org/rfc/rfc9110.html#section-14.1.2. Continua suportado um intervalo único, sem multipart. Arquivos vazios continuam retornando 416 se solicitado range, preservando o comportamento existente.
+- 13 regressões novas com arquivos temporários verificam bytes exatos, sufixo, intervalo aberto, limites, números muito grandes, sintaxe inválida, HEAD e resposta completa. Aprovados 97 testes Editor V6 (um ignorado existente), 330 de refatoração, typecheck, auditoria e build. Não houve benchmark de throughput nem playback real de mídia neste ciclo.
+
 ### Navegação das janelas e dependências
 
 - `npm audit --json` retornou zero vulnerabilidades conhecidas nas dependências instaladas nesta rodada. Isso não certifica ausência de vulnerabilidades no app nem justifica atualizar versões indiscriminadamente.

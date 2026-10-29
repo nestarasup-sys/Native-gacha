@@ -1,8 +1,6 @@
+import { createMediaFileResponse } from '../mediaLibrary/mediaFileResponse'
 import { BrowserWindow, type IpcMain } from 'electron'
-import { createReadStream } from 'node:fs'
-import { stat } from 'node:fs/promises'
 import { dirname, resolve, sep } from 'node:path'
-import { Readable } from 'node:stream'
 import { fileURLToPath } from 'node:url'
 import { editorV6WorkerChannels, type EditorV6FrameTimings, type EditorV6RenderFrameResult, type EditorV6WorkerPayload } from '../../../src/shared/editorV6Export'
 import { waitForExport } from './exportProcess'
@@ -33,21 +31,8 @@ export function createEditorV6WorkerFactory(deps: { ipcMain: Pick<IpcMain, 'hand
         if (!['project', 'library'].includes(url.hostname) || parts.length !== 2 || parts[0] !== payload.project.id) return new Response('Not found', { status: 404 })
         const media = url.hostname === 'library' ? mediaList.find((item) => item.libraryVideoId === parts[1]) : mediaList.find((item) => item.fileName === parts[1])
         if (!media || !/^[0-9a-f-]{36}\.(mp4|webm|mov|m4v|mp3|wav|m4a|aac|ogg|flac|opus)$/i.test(media.fileName)) return new Response('Not found', { status: 404 })
-        const path = await mediaPath(payload.project.id, media.fileName, media.libraryVideoId), file = await stat(path)
-        const headers = new Headers({ 'accept-ranges': 'bytes', 'content-type': media.mimeType, 'cache-control': 'no-store' })
-        const range = request.headers.get('range')
-        if (request.method === 'HEAD') { headers.set('content-length', String(file.size)); return new Response(null, { status: 200, headers }) }
-        if (range) {
-          const match = /^bytes=(\d*)-(\d*)$/.exec(range)
-          if (!match || (!match[1] && !match[2])) return new Response(null, { status: 416, headers: { 'content-range': `bytes */${file.size}` } })
-          const start = match[1] ? Number(match[1]) : Math.max(0, file.size - Number(match[2]))
-          const end = match[2] && match[1] ? Math.min(file.size - 1, Number(match[2])) : file.size - 1
-          if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || start >= file.size || end < start) return new Response(null, { status: 416, headers: { 'content-range': `bytes */${file.size}` } })
-          headers.set('content-range', `bytes ${start}-${end}/${file.size}`); headers.set('content-length', String(end - start + 1))
-          return new Response(Readable.toWeb(createReadStream(path, { start, end })) as unknown as BodyInit, { status: 206, headers })
-        }
-        headers.set('content-length', String(file.size))
-        return new Response(Readable.toWeb(createReadStream(path)) as unknown as BodyInit, { status: 200, headers })
+        const path = await mediaPath(payload.project.id, media.fileName, media.libraryVideoId)
+        return await createMediaFileResponse(request, path, media.mimeType)
       } catch { return new Response('Not found', { status: 404 }) }
     })
     restrictRendererNavigation(window.webContents)

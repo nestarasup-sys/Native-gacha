@@ -1,9 +1,9 @@
+import { createMediaFileResponse } from './domains/mediaLibrary/mediaFileResponse'
 import { app, BrowserWindow, dialog, ipcMain, Menu, protocol, session, shell, type IpcMainInvokeEvent } from 'electron'
-import { createReadStream, existsSync, lstatSync, mkdirSync, readFileSync, realpathSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync } from 'node:fs'
 import { mkdir as nativeMkdir, readFile as nativeReadFile, writeFile as nativeWriteFile, readdir as nativeReaddir, unlink as nativeUnlink, rename as nativeRename, stat as nativeStat, access as nativeAccess, rm as nativeRm, copyFile as nativeCopyFile } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { Readable } from 'node:stream'
 import { fileURLToPath } from 'node:url'
 import { FABRICATOR_MODEL_SLOT_COUNT, FABRICATOR_POSE_SLOT_COUNT, type FaceAssetKind, type FaceAssetSave, type FaceCatalogItem, type FaceCatalogItemSave, type FaceCatalogItemSummary, type FaceComponentAsset, type FaceComponentAssetSave, type FaceComponentAssetSummary, type FaceElementKind, type FaceExpressionPreset, type FaceExpressionTransforms, type FaceExpressionWorkspaceDraft, type FaceSet, type FaceSetSave, type FaceSheetKind, type FaceTransform, type FabricatorPoseDraftSave, type FabricatorPoseSave, type FabricatorProjectSave, type HairStyle, type HairStyleAsset, type HairStyleSave, type HairWorkspace, type HairWorkspaceAsset, type HairWorkspaceSave, type ModelPart } from '../src/shared/fabricator'
 import { hairCategories } from '../src/shared/hairCategories'
@@ -1666,22 +1666,8 @@ function registerVideoAssetProtocol(): void {
       if (url.hostname !== 'library' || parts.length !== 1 || !uuid.test(parts[0])) return new Response('Not found', { status: 404 })
       const media = await videoLibrary.resolveMedia(parts[0])
       const path = await dataFileSystem.resolvePhysicalPath(media.path) ?? media.path
-      const file = await stat(path)
       const mimeType = ({ mp4: 'video/mp4', webm: 'video/webm', mov: 'video/quicktime', m4v: 'video/x-m4v' } as const)[media.extension]
-      const headers = new Headers({ 'accept-ranges': 'bytes', 'content-type': mimeType, 'cache-control': 'no-store' })
-      const range = request.headers.get('range')
-      if (request.method === 'HEAD') { headers.set('content-length', String(file.size)); return new Response(null, { status: 200, headers }) }
-      if (range) {
-        const match = /^bytes=(\d*)-(\d*)$/.exec(range)
-        if (!match || (!match[1] && !match[2])) return new Response(null, { status: 416, headers: { 'content-range': `bytes */${file.size}` } })
-        const start = match[1] ? Number(match[1]) : Math.max(0, file.size - Number(match[2]))
-        const end = match[2] && match[1] ? Math.min(file.size - 1, Number(match[2])) : file.size - 1
-        if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || start >= file.size || end < start) return new Response(null, { status: 416, headers: { 'content-range': `bytes */${file.size}` } })
-        headers.set('content-range', `bytes ${start}-${end}/${file.size}`); headers.set('content-length', String(end-start+1))
-        return new Response(Readable.toWeb(createReadStream(path,{start,end})) as unknown as BodyInit,{status:206,headers})
-      }
-      headers.set('content-length', String(file.size))
-      return new Response(Readable.toWeb(createReadStream(path)) as unknown as BodyInit, { status: 200, headers })
+      return await createMediaFileResponse(request, path, mimeType)
     } catch { return new Response('Not found', { status: 404 }) }
   })
 }
@@ -1712,21 +1698,7 @@ function registerEditorV6MediaProtocol(): void {
       } else return new Response('Not found', { status: 404 })
       const supportedTypes = new Set(['video/mp4', 'video/webm', 'video/quicktime', 'video/x-m4v', 'audio/mpeg', 'audio/wav', 'audio/mp4', 'audio/aac', 'audio/ogg', 'audio/flac', 'audio/opus', 'audio/webm'])
       if (!supportedTypes.has(mimeType)) return new Response('Not found', { status: 404 })
-      const metadata = await nativeStat(path)
-      const headers = new Headers({ 'accept-ranges': 'bytes', 'content-type': mimeType, 'cache-control': 'no-store' })
-      const range = request.headers.get('range')
-      if (request.method === 'HEAD') { headers.set('content-length', String(metadata.size)); return new Response(null, { status: 200, headers }) }
-      if (range) {
-        const match = /^bytes=(\d*)-(\d*)$/.exec(range)
-        if (!match || (!match[1] && !match[2])) return new Response(null, { status: 416, headers: { 'content-range': `bytes */${metadata.size}` } })
-        const start = match[1] ? Number(match[1]) : Math.max(0, metadata.size - Number(match[2]))
-        const end = match[2] && match[1] ? Math.min(metadata.size - 1, Number(match[2])) : metadata.size - 1
-        if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || start >= metadata.size || end < start) return new Response(null, { status: 416, headers: { 'content-range': `bytes */${metadata.size}` } })
-        headers.set('content-range', `bytes ${start}-${end}/${metadata.size}`); headers.set('content-length', String(end - start + 1))
-        return new Response(Readable.toWeb(createReadStream(path, { start, end })) as unknown as BodyInit, { status: 206, headers })
-      }
-      headers.set('content-length', String(metadata.size))
-      return new Response(Readable.toWeb(createReadStream(path)) as unknown as BodyInit, { status: 200, headers })
+      return await createMediaFileResponse(request, path, mimeType)
     } catch { return new Response('Not found', { status: 404 }) }
   })
 }
