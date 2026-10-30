@@ -10,7 +10,7 @@ import type { CustomizerCharacter } from '../../../src/shared/customizer'
 import type { EditorV6MotionBakeRequest, EditorV6MotionBakeResult } from '../../../src/shared/editorV6Motion'
 import { planEditorV6Export, type EditorV6ExportAudio, type EditorV6ExportOptions, type EditorV6ExportStatus } from '../../../src/shared/editorV6Export'
 import { createEditorV6WorkerFactory } from './exportWorkers'
-import { probeExportMedia, runEditorV6Export } from './exportRunner'
+import { probeExportMedia, runEditorV6Export, type EditorV6ExportReport } from './exportRunner'
 import { createPendingOperationTracker } from '../storage/pendingOperationTracker.ts'
 
 type Job = { owner: number; status: EditorV6ExportStatus; controller: AbortController; promise: Promise<void> }
@@ -32,6 +32,7 @@ type EditorV6ExportIpcLifecycle = {
   drain: () => Promise<void>
   getPendingWrites: () => Promise<unknown>[]
   resumeAfterFailedShutdown: () => void
+  runIsolatedExport: (project: unknown, options: EditorV6ExportOptions, outputPath: string, reportPath: string, id: string, signal?: AbortSignal, progress?: (patch: Partial<EditorV6ExportStatus>) => void) => Promise<EditorV6ExportReport>
 }
 const uuid = z.string().uuid()
 const terminal = (status: EditorV6ExportStatus) => ['completed', 'cancelled', 'failed'].includes(status.state)
@@ -79,6 +80,18 @@ export function registerEditorV6ExportHandlers(deps: EditorV6ExportIpcDependenci
   const audioPath = async (projectId: string, clip: EditorV6ExportAudio, media: readonly EditorV6MediaAsset[] = []) => clip.libraryVideoId
     ? (await deps.resolveLibraryVideo(clip.libraryVideoId)).path
     : join(deps.projectPath(projectId), media.some((item) => item.fileName === clip.fileName) ? 'media' : 'export-audio', clip.fileName)
+  const runIsolatedExport: EditorV6ExportIpcLifecycle['runIsolatedExport'] = (rawProject, options, outputPath, reportPath, id, signal = new AbortController().signal, progress = (patch) => { if (patch.message) console.log(`[V6 isolated export] ${patch.message}`) }) => {
+    const project = parseEditorV6Document(rawProject)
+    planEditorV6Export(options, project.timeline.durationFrames)
+    return runEditorV6Export(project, options, {
+      ffmpeg, ffprobe, tempRoot: deps.tempRoot, id, outputPath, reportPath,
+      signal,
+      getCharacters: deps.getCharacters,
+      bakeMotion: deps.bakeMotion,
+      createWorker: (renderProject, _part, signal, layeredVideo, mouthLoops) => workers.create({ project: renderProject, width: options.width, height: options.height, layeredVideo, ...(mouthLoops ? { mouthLoops } : {}) }, signal),
+      audioPath: (clip) => audioPath(project.id, clip, project.media), mediaPath, progress
+    })
+  }
   const findJob = (event: IpcMainInvokeEvent, id: string) => {
     deps.assertTrustedSender(event)
     const job = id === 'latest' ? [...jobs.values()].reverse().find((entry) => entry.owner === event.sender.id) : jobs.get(uuid.parse(id))
@@ -104,10 +117,7 @@ export function registerEditorV6ExportHandlers(deps: EditorV6ExportIpcDependenci
     jobs.set(id, job)
     const abort = () => controller.abort(Error('A janela do editor foi fechada.'))
     event.sender.once('destroyed', abort)
-    job.promise = runEditorV6Export(project, options, { ffmpeg, ffprobe, tempRoot: deps.tempRoot, id, outputPath, reportPath, signal: controller.signal, getCharacters: deps.getCharacters, bakeMotion: deps.bakeMotion,
-      createWorker: (renderProject, _part, signal, layeredVideo, mouthLoops) => workers.create({ project: renderProject, width: options.width, height: options.height, layeredVideo, ...(mouthLoops ? { mouthLoops } : {}) }, signal), audioPath: (clip) => audioPath(project.id, clip, project.media), mediaPath,
-      progress: (patch) => { job.status = { ...job.status, ...patch } }
-    }).then((report) => {
+    job.promise = runIsolatedExport(project, options, outputPath, reportPath, id, controller.signal, (patch) => { job.status = { ...job.status, ...patch } }).then((report) => {
       const mouth = report.mouthAnimation
       const message = `${report.deliveryWarning ?? 'MP4 exportado e validado.'}${mouth ? ` Loop da boca em ${mouth.characters} personagem(ns) · ${mouth.cycleFrames / 30}s${mouth.skippedStates ? ` · ${mouth.skippedStates} estado(s) ignorado(s); veja o relatório` : ''}.` : ''}`
       job.status = { ...job.status, state: 'completed', outputPath: report.outputPath, fallback: report.fallback, frames: status.totalFrames, message }
@@ -211,6 +221,7 @@ export function registerEditorV6ExportHandlers(deps: EditorV6ExportIpcDependenci
     cancelAll,
     drain,
     getPendingWrites,
-    resumeAfterFailedShutdown: () => { shuttingDown = false; drainTask = null }
+    resumeAfterFailedShutdown: () => { shuttingDown = false; drainTask = null },
+    runIsolatedExport
   }
 }

@@ -10,6 +10,7 @@ import type { CustomizerCharacter } from '../src/shared/customizer'
 import type { CustomizerFaceAssetReference } from '../src/shared/customizerFaceAssetReferences'
 import type { FabricatorPoseReference } from '../src/shared/fabricatorPoseReferences'
 import type { EditorV6Document } from '../src/shared/editorV6'
+import type { EditorV6ExportOptions } from '../src/shared/editorV6Export'
 import type { StudioDocument } from '../src/shared/studio'
 import { isStudioDocument } from '../src/shared/studioValidation'
 import { isEditorV6Document } from '../src/shared/editorV6Schema'
@@ -955,7 +956,46 @@ app.whenReady().then(async () => {
     devUrl: devRendererUrl, tempRoot: app.getPath('temp'), getCharacters: () => customizerService.list(),
     resolveLibraryVideo: async (id) => { const item = await videoLibrary.resolveMedia(id); return { ...item, path: await dataFileSystem.resolvePhysicalPath(item.path) ?? item.path } },
     bakeMotion: (request, signal) => editorV6MotionService!.bakeForExport(request, signal) })
-  createMainWindow()
+  if (process.env.GACHA_EDITOR_V6_STRESS_AUTORUN === '1') {
+    void (async () => {
+      const projectId = process.env.GACHA_EDITOR_V6_STRESS_PROJECT_ID ?? ''
+      const outputRoot = resolve(process.env.GACHA_EDITOR_V6_STRESS_OUTPUT_ROOT ?? '')
+      const allowedOutputRoot = resolve(__dirname, '../../out/editor-v6-stress/runs')
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(projectId)
+        || (outputRoot !== allowedOutputRoot && !outputRoot.startsWith(allowedOutputRoot + '\\'))) throw Error('Parâmetros do benchmark isolado inválidos.')
+      await nativeMkdir(outputRoot, { recursive: true })
+      const project = await readEditorV6(projectId)
+      if (!project) throw Error(`Projeto de benchmark ${projectId} não encontrado no perfil temporário.`)
+      const modes = [false, true, true, false, false, true]
+      const runs: Array<{ run: number; workers: number; milliseconds: number; renderingMilliseconds: number; finalizationMilliseconds: number; rssPeakBytes: number; motionTransitions: number; mouthStates: number; audioClips: number; videoInputs: number; audioOutput: boolean }> = []
+      for (const [index, turbo] of modes.entries()) {
+        const id = randomUUID()
+        const suffix = `run-${index + 1}-workers-${turbo ? 2 : 1}`
+        const outputPath = join(outputRoot, `actual-project-${suffix}.mp4`)
+        const reportPath = join(outputRoot, `actual-project-${suffix}.report.json`)
+        const options: EditorV6ExportOptions = { startFrame: 0, endFrame: project.timeline.durationFrames, width: 1920, height: 1080, turbo, encoder: 'auto', mouthLoop: true, mouthLoopCycleFrames: 30 }
+        console.log(`[V6 isolated export] Rodada ${index + 1}/${modes.length}: ${turbo ? 'dois' : 'um'} workers, ${project.timeline.durationFrames} quadros, 1920×1080, áudio e animação automática da boca.`)
+        const report = await editorV6ExportService!.runIsolatedExport(project, options, outputPath, reportPath, id)
+        const streams = (report.validation as { streams?: Array<{ codec_type?: string; nb_read_frames?: string | number; r_frame_rate?: string }> } | undefined)?.streams ?? []
+        const video = streams.find((stream) => stream.codec_type === 'video')
+        const audio = streams.some((stream) => stream.codec_type === 'audio')
+        if (report.state !== 'completed' || report.totalFrames !== project.timeline.durationFrames || Number(video?.nb_read_frames) !== project.timeline.durationFrames
+          || video?.r_frame_rate !== '30/1' || report.motionTransitionsPrepared !== report.motionTransitionsRequired
+          || !report.motionTransitionsRequired || !report.mouthAnimation || report.mouthAnimation.skippedStates || report.mouthAnimation.staleStates
+          || report.videoInputs < 1 || report.audioClips < 1 || !audio) throw Error(`A rodada ${index + 1} não preservou todos os estados esperados: ${JSON.stringify({ state: report.state, frames: report.totalFrames, videoFrames: video?.nb_read_frames, fps: video?.r_frame_rate, motionRequired: report.motionTransitionsRequired, motionPrepared: report.motionTransitionsPrepared, mouth: report.mouthAnimation, audioClips: report.audioClips, videoInputs: report.videoInputs, audio })}`)
+        runs.push({ run: index + 1, workers: turbo ? 2 : 1, milliseconds: report.milliseconds!, renderingMilliseconds: report.phaseMilliseconds.rendering, finalizationMilliseconds: report.phaseMilliseconds.finalization, rssPeakBytes: report.mainProcessMemory!.peakRssBytes, motionTransitions: report.motionTransitionsPrepared, mouthStates: report.mouthAnimation.stateAtlases, audioClips: report.audioClips, videoInputs: report.videoInputs, audioOutput: audio })
+      }
+      const median = (values: number[]) => { const sorted = [...values].sort((left, right) => left - right); return sorted[Math.floor(sorted.length / 2)] }
+      const variants = [1, 2].map((workers) => {
+        const selected = runs.filter((run) => run.workers === workers)
+        return { workers, runs: selected.length, medianMilliseconds: median(selected.map((run) => run.milliseconds)), medianRenderingMilliseconds: median(selected.map((run) => run.renderingMilliseconds)), maxMainProcessRssBytes: Math.max(...selected.map((run) => run.rssPeakBytes)) }
+      })
+      const summary = { passed: true, projectId, projectUpdatedAt: project.updatedAt, durationFrames: project.timeline.durationFrames, durationSeconds: project.timeline.durationFrames / 30, width: 1920, height: 1080, fps: '30/1', encoder: 'auto', mouthLoop: true, audioClips: runs[0].audioClips, videoInputs: runs[0].videoInputs, audioOutput: true, motionTransitionsPreparedPerRun: runs[0].motionTransitions, mouthStatesPerRun: runs[0].mouthStates, runOrder: runs.map((run) => run.workers), runs, variants }
+      await nativeWriteFile(join(outputRoot, 'stress-export-validation.json'), JSON.stringify(summary, null, 2), 'utf8')
+      console.log(JSON.stringify(summary, null, 2))
+      app.quit()
+    })().catch((error) => { console.error('[V6 isolated export] Falha:', error); app.exit(1) })
+  } else createMainWindow()
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createMainWindow()
@@ -963,6 +1003,7 @@ app.whenReady().then(async () => {
 })
 
 app.on('window-all-closed', () => {
+  if (process.env.GACHA_EDITOR_V6_STRESS_AUTORUN === '1') return
   if (process.platform !== 'darwin') app.quit()
 })
 

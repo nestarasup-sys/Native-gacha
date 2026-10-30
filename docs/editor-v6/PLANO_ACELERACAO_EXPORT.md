@@ -1,7 +1,7 @@
 # Editor V6 — plano de aceleração máxima do export
 
 Data: 30/10/2026. Base inicial de análise: branch `Dev-V2`, commit `b79aaaf`.
-Estado: em andamento. Otimizações, medições e verificações ficam registradas abaixo; a comparação após as mudanças no projeto de estresse real continua pendente.
+Estado: em andamento. Otimizações, medições e verificações ficam registradas abaixo; a comparação real está concluída para a configuração atual, e a otimização do gargalo de preparação ainda está pendente.
 
 ## Objetivo
 
@@ -54,6 +54,19 @@ Em 30/10/2026, `node scripts/editor-v6/test-stress-offscreen.cjs --export-stress
 Nesta fixture, dois workers reduziram a mediana do tempo total em 42,2% (1,73× mais rápido). A finalização ficou perto de 0,62–0,68 s, então a diferença está na renderização, não na junção. Em uma rodada de Turbo de 20 quadros por segundo/24,8 s, o relatório somou 30,1 s em `ipcDrawMs`, 25,5 s em `rafWaitMs` e 16,1 s em `captureMs` entre partes concorrentes; esses tempos se sobrepõem e não são tempos de parede. O perfil aponta o caminho de desenho/captura por quadro como próximo alvo de investigação. O pico RSS é somente do processo principal e não inclui renderizadores, GPU nem FFmpeg. Esta comparação sintética escolhe dois workers para o perfil testado, mas não substitui o teste no projeto real, não representa outros tamanhos/resoluções e não prova ganho de uma mudança de código. Relatórios e MP4s estão na pasta ignorada `out/editor-v6-stress/runs/2026-10-30T10-51-55-879Z-23232/`; não devem ser adicionados ao Git.
 
 A primeira otimização implementada indexa assets e movimentos uma vez, agrupa chaves em tempo linear e aplica os resultados em uma passagem por blocos, evitando percursos repetidos da timeline e cópias sucessivas de grupos. A preparação dos atlases de boca agora respeita o limite individual e o orçamento dividido entre trechos Turbo simultâneos; excesso impossível é detectado antes de rasterizar. O relatório registra o RSS do processo principal e o tempo acumulado de preparação dos atlases, separados de memória total e tempo de parede. Também separa em `phaseMilliseconds` a criação da pasta temporária, leitura de personagens, preparação de movimentos, testes de encoder, tentativas de renderização, finalização/validação e publicação. A tentativa mantém seu próprio tempo de parede; finalização mede concatenação, áudio e validações, sem confundir trabalho paralelo com tempo total. O tempo total e o pico de RSS agora incluem a publicação do MP4; o relatório só muda para `completed` depois que o arquivo é publicado. O amostrador de RSS inicia imediatamente antes do bloco `try/finally` que o encerra, para que falhas durante a configuração síncrona não deixem um timer órfão. O serviço de movimentos compartilha uma rasterização ainda em andamento para pedidos simultâneos com a mesma chave; cada consumidor pode cancelar sem interromper os demais, e o trabalho é abortado quando ninguém mais aguarda. Testes Electron cobrem deduplicação, isolamento de cancelamento e persistência das métricas de fases no relatório final. `npm run test:editor-v6` passou (170 testes aprovados, um ignorado), `npm run test:editor-v6:motion-service` passou, `npm run test:editor-v6:export` passou com build e cenários de Turbo/fallback/cancelamento, e `npm run audit:architecture` passou sem violações. A medição posterior no projeto completo continua pendente; até lá não se atribui redução de tempo às mudanças.
+
+### Comparação no projeto real de estresse
+
+Em 30/10/2026, o benchmark isolado exportou seis vezes a cópia verificada do projeto `72fbea64-4b18-4d31-9a0c-317f0f519a06`, revisão `2026-10-30T10:09:29.520Z`, na ordem 1, 2, 2, 1, 1, 2 workers. A máquina é um AMD Ryzen 5 4600G (6 núcleos/12 threads), 15,4 GiB de RAM; Electron usou encoder automático, selecionando AMF. As seis rodadas preservaram 5.700 quadros (190 s), 1920×1080, 30 FPS, 28 clipes de áudio, uma entrada de vídeo e saída de áudio. Foram preparadas 89/89 transições em cada rodada, sem hits do cache de movimentos (`reused=0`). A preparação das transições levou aproximadamente 54 s por rodada. A boca gerou de 198 a 201 estados por export, sem estados ignorados ou obsoletos; os 317–319 s de `mouthAnimation.preparationMilliseconds` são tempo agregado entre trechos paralelos, não tempo de parede.
+
+| Workers | Rodadas | Mediana total | Mediana de renderização | Pico máximo de RSS observado no processo principal |
+| --- | ---: | ---: | ---: | ---: |
+| 1 | 3 | 394,543 s | 313,092 s | 2,679 GiB |
+| 2 | 3 | 356,972 s | 275,144 s | 3,286 GiB |
+
+Dois workers reduziram a mediana total em 9,5% (37,571 s; 1,11×) e a renderização em 12,1%, mas elevaram o maior RSS observado em 22,7%. O RSS cresceu ao longo do benchmark sequencial (1,235 GiB na primeira rodada até 3,286 GiB na sexta); isso é um sinal para investigar retenção/ciclo de vida de memória e não permite declarar dois workers como padrão seguro. A diferença entre boca com 198 e 201 estados decorre da divisão dos trechos concorrentes. A primeira comparação real está concluída, porém não existe relatório pré-mudança da mesma revisão e com as mesmas opções; portanto, esses números comparam apenas 1 vs. 2 workers e não demonstram ganho das otimizações anteriores. Projeto e mídias originais foram comparados com a cópia de backup: os 297 arquivos do projeto tiveram hashes idênticos. Relatórios e vídeos ficam na pasta ignorada `out/editor-v6-stress/runs/actual-project-2026-10-30T11-22-38-700Z-25376/`, fora do Git.
+
+**Custos dominantes medidos:** renderização (275–313 s por export), preparação acumulada de boca (aprox. 318 s somados entre trechos) e preparação de movimentos (aprox. 54 s). O cache de movimentos não foi reaproveitado nem em exports repetidos no mesmo processo; investigar a chave, persistência e política de cache antes de aumentar limites ou afirmar aceleração por cache. O pico RSS sequencial também exige perfil de memória isolado por rodada, incluindo renderizadores e FFmpeg, antes de alterar a concorrência padrão.
 
 Como evidência complementar, `npm run bench:editor-v6:motion-preparation` comparou uma implementação legada e indexada em uma fixture sintética de 120 personagens e 2.400 planos, por cinco rodadas: medianas de 139,82 ms e 8,59 ms (16,27×), com os mesmos 2.400 planos concluídos. Esse benchmark cobre o índice de preparação antecipada no renderer, não o `prepareExportMotions` do exportador nem o projeto real; portanto, serve para validar a técnica de indexação e não para estimar o ganho de export.
 
@@ -136,7 +149,7 @@ Validar contagem de quadros, 30 FPS, resolução, duração, áudio e emendas co
 
 ## Sequência de entregas
 
-1. **Diagnóstico:** identificar o único projeto de estresse existente, registrar seu ID/revisão, verificar o backup e medir seu export completo como referência; identificar custos dominantes e métricas faltantes.
+1. **Diagnóstico:** concluído para o projeto `72fbea64-4b18-4d31-9a0c-317f0f519a06`, com backup verificado e comparação de workers; estabelecer a captura de um relatório baseline da mesma revisão/opções para avaliar mudanças de código.
 2. **Preparação:** índices, aplicação em lote e eliminação de pedidos repetidos conforme evidência.
 3. **Cache:** invalidação auditada, limites e preparação antecipada útil.
 4. **Quadros:** reduzir resolução de cena, commits, captura ou cópias conforme o maior custo restante.
@@ -148,7 +161,7 @@ Cada entrega deve conter diff pequeno, verificação focada, comparação antes/
 ## Conclusão de cada etapa
 
 - [ ] Ganho no tempo total reproduzido ou hipótese descartada com registro.
-- [ ] Comparação antes/depois realizada no projeto de estresse existente, com o mesmo conteúdo e opções de exportação.
+- [x] Comparação de workers realizada no projeto de estresse existente, com o mesmo conteúdo e opções; [ ] comparação antes/depois das otimizações com relatório baseline equivalente.
 - [ ] Qualidade, movimentos, presets e áudio preservados.
 - [ ] Pico de memória e consumo de disco conhecidos e limitados.
 - [ ] Cache atualizado corretamente após edição de fontes.
