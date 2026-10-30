@@ -111,7 +111,7 @@ export function createCharacterWardrobeRenderer(loaders: CharacterWardrobeImageL
         { sourceModelSlot: modelSlot, sourceModelUpdatedAt: source.updatedAt, parts: artwork.parts }, [group])
       const errors = checked.issues.filter((issue) => issue.severity === 'error')
       if (errors.length) {
-        throw new Error(`O pré-ajuste da roupa ${group.setId} não é compatível com este modelo/pose: ${errors.map((issue) => `${issue.code}:${issue.componentId ?? '-'}`).join(', ')}. Corrija o vínculo no Fabricador Dev; o personagem não será alterado.`)
+        throw new Error(`A roupa “${set.name}” não pôde ser encaixada neste modelo/pose: ${errors.map((issue) => `${issue.code} (parte: ${issue.boneId ?? 'não identificada'})`).join(', ')}. Confira a peça vinculada em Roupas DEV.`)
       }
       const mapped: Array<{ component: WardrobeSet['components'][number]; transform: ReturnType<typeof mapWardrobeComponentToPose>; center: { x: number; y: number }; sequence: number }> = []
       for (const component of components) {

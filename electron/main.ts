@@ -45,6 +45,7 @@ import { FabricatorWardrobeCatalog } from './domains/fabricator/wardrobeCatalog'
 import { createFabricatorCatalogListings, legacyHairStyle } from './domains/fabricator/catalogListings'
 import { registerFabricatorWardrobeCatalogHandlers } from './domains/fabricator/wardrobeCatalogIpc'
 import { createFabricatorWardrobePersistence } from './domains/fabricator/wardrobePersistence'
+import { createSplitAwareWardrobeReader } from './domains/fabricator/wardrobeSplitRecovery'
 import { registerFabricatorWardrobeHandlers } from './domains/fabricator/wardrobeIpc'
 import { createFaceGuidePersistence, isFaceGuideProfile } from './domains/fabricator/faceGuidePersistence'
 import { registerFabricatorFaceCatalogHandlers } from './domains/fabricator/faceCatalogIpc'
@@ -356,7 +357,7 @@ const {
   readLegacyHairCatalogState, writeLegacyHairCatalogState, writeHairStyle, readHairStyle
 } = hairStorage
 
-const wardrobePersistence = createFabricatorWardrobePersistence({
+const wardrobeStorage = createFabricatorWardrobePersistence({
   isValidModelSlot,
   isValidWardrobeId,
   wardrobeSetPath,
@@ -369,6 +370,9 @@ const wardrobePersistence = createFabricatorWardrobePersistence({
   invalidateCatalogPng: (identity) => invalidateCatalogPng('wardrobe', identity),
   files: { readFile, rm }
 })
+
+const wardrobePersistence = { ...wardrobeStorage,
+  read: createSplitAwareWardrobeReader({ read: wardrobeStorage.read, slotPath, readFile, readdir }) }
 
 async function readWardrobeSet(modelSlot: number, id: string) {
   return wardrobePersistence.read(modelSlot, id)

@@ -539,7 +539,7 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
         : attachedAnchor ? worldPointToPart(part, attachedAnchor) : { x: part.width / 2, y: part.height / 2 }
       const split = await splitModelSourcePart(part, start, end, reference)
       const retained = split.parts[split.retainedSide]
-      const created = split.parts[1 - split.retainedSide]
+      const created = { ...split.parts[1 - split.retainedSide], splitOriginPartId: part.id }
       const parts = materialized.parts.flatMap(item => item.id === part.id ? [retained, created] : [item])
       const rig = normalizePartAnchors(parts, materialized.joints)
       const validIds = new Set(parts.map(item => item.id))
@@ -612,6 +612,21 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
     void runMutation(async materialized => {
       const index = materialized.parts.findIndex(part => part.id === selected.id)
       if (index < 0) throw new Error('A peça selecionada não está mais no modelo.')
+      const original = materialized.parts[index]
+      const survivors = materialized.parts.filter(part => part.splitOriginPartId === original.id
+        && !project.parts.some(saved => saved.id === part.id))
+      if (survivors.length === 1) {
+        const survivor = survivors[0]
+        const parts = materialized.parts.filter(part => part.id !== original.id).map(part => part.id === survivor.id
+          ? { ...part, id: original.id, name: original.name, splitOriginPartId: original.splitOriginPartId } : part)
+        const order = materialized.layerOrder?.filter(id => id !== survivor.id)
+        return {
+          project: { ...materialized, parts, layerOrder: order,
+            hiddenPartIds: materialized.hiddenPartIds?.filter(id => id !== survivor.id) },
+          selectedId: original.id,
+          status: 'Segmento excluído. O segmento restante preservou a identidade e os vínculos da peça original.'
+        }
+      }
       const parts = materialized.parts.filter(part => part.id !== selected.id)
       const layerOrder = materialized.layerOrder?.filter(id => id !== selected.id)
       const hiddenPartIds = materialized.hiddenPartIds?.filter(id => id !== selected.id)

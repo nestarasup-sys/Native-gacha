@@ -21,6 +21,8 @@ export type ModelSkinContourStroke = { points: ModelSkinContourPoint[]; width: n
 
 export type ModelPart = {
   id: string
+  /** Identidade da peça que originou este segmento por divisão da folha. */
+  splitOriginPartId?: string
   name: string
   x: number
   y: number

@@ -2,6 +2,8 @@
 
 ## Fonte de verdade
 
+- A exclusão de um segmento recém-dividido na folha transfere a identidade original ao único segmento sobrevivente. Roupas legadas com vínculo perdido por essa operação são conciliadas em memória na leitura do catálogo: exige-se um backup de publicação com o ID antigo, os demais membros estáveis do mesmo rig e um único sobrevivente com o nome de divisão. Não há gravação automática, e casos ambíguos continuam sendo rejeitados pela validação.
+
 - **Fabricador DEV** produz e armazena modelos, poses, roupas, cabelos e peças faciais. Catálogos não são alterados por operações de personalização.
 - **Duplicar modelo** cria um snapshot independente em um slot vazio a partir do manifesto e dos arquivos salvos do modelo. A publicação usa uma pasta temporária validada; o slot de origem e os demais catálogos permanecem intactos, e a cópia começa com histórico de edição vazio.
 - Cada `project.json` pode guardar `modelSkinTone` e `modelOutlineColor` como cores padrão daquele slot. Para pele removida, o preview preenche interiores transparentes fechados com a base Porcelana (`#f5ddcb`) e aplica as cores a todas as peças anatômicas sem regravar os PNGs originais.
