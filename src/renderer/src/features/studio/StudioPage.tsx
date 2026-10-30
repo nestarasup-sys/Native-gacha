@@ -14,7 +14,6 @@ import { SceneCastPickerModal } from '../../ui/components/SceneCastPickerModal'
 import { isLegacySceneCatalogId, loadLegacySceneCatalog } from '../../ui/legacySceneCatalog'
 import { createSceneTextElement, sceneCatalogColor, sceneEditorTools } from '../../ui/sceneEditorDefaults'
 import { resolveStudioTalkMouthId } from '../../../../shared/studio'
-import { fitStudioCharacterToStage } from '../../../../shared/studioCharacterGeometry'
 import { STUDIO_FACE_RENDER_VERSION, useStudioFacePreview } from './useStudioFacePreview'
 import { createSceneFaceActions } from '../../characters/sceneFaceActions'
 import { SceneFaceCatalogPanel } from '../../characters/SceneFaceCatalogPanel'
@@ -29,6 +28,7 @@ import { useStudioAutosave, useStudioDocumentPersistence } from './useStudioDocu
 import { useStudioImageImport } from './useStudioImageImport'
 import { mapConcurrentItems } from '../../ui/mapConcurrentItems'
 import { useStudioCharacterSourceRefresh } from './useStudioCharacterSourceRefresh'
+import { prepareStudioCastSelection } from './studioCastSelection'
 import { projectSceneCharacters, sceneExpressionPresetSignature } from '../../characters/sceneCharacterProjection'
 import type { StudioAsset, StudioDocument, StudioElement, StudioFaceTransform, StudioFaceTransforms } from '../../../../shared/studio'
 import type { CustomizerCharacter } from '../../../../shared/customizer'
@@ -471,46 +471,27 @@ export function StudioPage() {
     if (!activeStudio || savingCast) return
     setSavingCast(true)
     try {
-      const selectedIds = new Set(castSelection)
-      const retained = activeStudio.elements.filter((element) => element.kind !== 'character' || !element.characterId || selectedIds.has(element.characterId))
-      const removedCharacterAssetIds = new Set(activeStudio.elements.filter((element) => element.kind === 'character' && element.characterId && !selectedIds.has(element.characterId)).map((element) => element.assetId).filter((id): id is string => Boolean(id)))
-      const retainedCharacters = new Set(retained.filter((element) => element.kind === 'character').map((element) => element.characterId))
-      const additions = availableCharacters.filter((character) => selectedIds.has(character.id) && !retainedCharacters.has(character.id))
-      const { renderSavedCharacter } = await import('../../characters/characterRenderer')
-      const assets: StudioAsset[] = []
-      const elements: StudioElement[] = []
       const stageWidth = sceneRef.current?.clientWidth ?? 1000
       const stageHeight = sceneRef.current?.clientHeight ?? 562
-      let zIndex = Math.max(0, ...retained.map((item) => item.zIndex))
-      for (const character of additions) {
-        const rendered = await renderSavedCharacter(character, undefined, undefined, 'idle')
-        const crop = await trimTransparentImage(rendered.dataUrl)
-        const imageData = crop?.dataUrl ?? rendered.dataUrl
-        const imageWidth = crop?.width ?? rendered.width
-        const imageHeight = crop?.height ?? rendered.height
-        const referenceCharacter = character.customization.poseSlot === null ? character : { ...character, customization: { ...character.customization, poseSlot: null } }
-        const referenceRendered = referenceCharacter === character ? rendered : await renderSavedCharacter(referenceCharacter, undefined, undefined, 'idle')
-        const referenceCrop = referenceCharacter === character ? crop : await trimTransparentImage(referenceRendered.dataUrl)
-        const referenceWidth = referenceCrop?.width ?? referenceRendered.width
-        const referenceHeight = referenceCrop?.height ?? referenceRendered.height
-        const asset: StudioAsset = { id: crypto.randomUUID(), category: 'character', name: character.name, mimeType: 'image/png', dataUrl: imageData }
-        const { width, height, characterCanvasWidth } = fitStudioCharacterToStage(referenceRendered, { width: referenceWidth, height: referenceHeight }, rendered, { width: imageWidth, height: imageHeight }, stageWidth, stageHeight)
-        assets.push(asset)
-        elements.push({ id: crypto.randomUUID(), kind: 'character', assetId: asset.id, characterId: character.id, characterSourceUpdatedAt: character.updatedAt, faceRendererVersion: STUDIO_FACE_RENDER_VERSION, activeExpressionCollectionId: 'standard', activeExpressionPresetId: null, activeFaceMode: 'idle', characterScale: 100, characterWidthScale: 100, characterHeightScale: 100, ...(character.customization.faceAppearance ? { expressionBase: { appearance: structuredClone(character.customization.faceAppearance), transforms: {} } } : {}), characterCanvasWidth, text: character.name, x: 0, y: 0, width, height, rotation: 0, zIndex: ++zIndex })
-      }
-      const nextElements = [...retained, ...elements]
-      const retainedAssetIds = new Set(retained.map((element) => element.assetId).filter((id): id is string => Boolean(id)))
+      const prepared = await prepareStudioCastSelection({
+        studio: activeStudio,
+        selectedCharacterIds: castSelection,
+        availableCharacters,
+        stageWidth,
+        stageHeight,
+        faceRendererVersion: STUDIO_FACE_RENDER_VERSION
+      })
       changeScene((studio) => ({
         ...studio,
-        elements: nextElements,
-        assets: [...studio.assets.filter((asset) => !removedCharacterAssetIds.has(asset.id) || retainedAssetIds.has(asset.id)), ...assets],
+        elements: prepared.elements,
+        assets: [...studio.assets.filter((asset) => !prepared.removedCharacterAssetIds.has(asset.id) || prepared.retainedAssetIds.has(asset.id)), ...prepared.addedAssets],
         updatedAt: new Date().toISOString()
       }))
       setCastPickerOpen(false)
       setActiveTool(null)
       restoreCharacterInspectorView()
       setInspectorOpen(true)
-      setSelectedElementId(elements.at(-1)?.id ?? null)
+      setSelectedElementId(prepared.addedElements.at(-1)?.id ?? null)
       setError(null)
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Não foi possível atualizar o elenco do Studio.')
