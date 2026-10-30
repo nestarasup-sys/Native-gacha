@@ -96,6 +96,12 @@ Implementei temporariamente um retorno `repeatFrames` limitado a 300 quadros, ca
 
 O ganho de tempo não se confirmou: a mediana aquecida foi 194,099 s, contra 191,975 s antes (+1,1%); renderização foi 164,454 s contra 162,833 s. `frameRoundTripMs` caiu de 88,9 s para 83,0 s e `ipcDrawMs` de 48,1 s para 42,1 s, mas `ffmpegWriteMs` subiu de 57,4 s para 61,9 s. A redução de IPC foi absorvida por custos de captura/escrita e variação entre exports. Reverti a mudança por não reduzir o tempo total medido. Evidência em `out/editor-v6-stress/runs/identical-frame-batch-2026-10-30T20-00-00/stress-export-validation.json` e `out/editor-v6-stress/runs/grouped-workers-2026-10-30T18-00-00/stress-export-validation.json`; os relatórios detalhados e vídeos estão nas mesmas pastas ignoradas.
 
+### Validações independentes em paralelo, com limite
+
+A finalização de uma rodada aquecida levou 27,5 s. Repeti as operações de validação no MP4 isolado: o FFprobe com `-count_frames` levou 20,2 s e as 18 verificações de emenda, 3,0 s sequenciais. Mantive ambas as verificações e passei a executá-las em paralelo, limitando as emendas a duas verificações simultâneas. `Promise.allSettled` aguarda os dois fluxos e cada lote inteiro antes de propagar qualquer falha; cancelamento continua ligado ao mesmo `AbortSignal`.
+
+No benchmark integral, as três rodadas passaram: 5.700 quadros, 1920×1080, 30 FPS, 190 s, áudio válido e 18 emendas verificadas. A mediana aquecida da finalização caiu de 27,594 s para 25,875 s (1,719 s; 6,2%). A mediana do export completo não caiu nesta comparação (199,569 s contra 191,975 s), pois a renderização variou e continua dominando; não atribuo ganho global a esta etapa isolada. O vídeo antes/depois teve SSIM 1,000000 e PSNR médio 83,63 dB. Relatórios em `out/editor-v6-stress/runs/parallel-final-validation-2026-10-30T21-00-00/stress-export-validation.json` e `out/editor-v6-stress/runs/grouped-workers-2026-10-30T18-00-00/stress-export-validation.json`.
+
 ## 2. Remover trabalho repetido da preparação — prioridade alta
 
 - Construir índices de assets, personagens, blocos e transições uma vez por preparação; evitar percorrer toda a timeline dentro de cada grupo.

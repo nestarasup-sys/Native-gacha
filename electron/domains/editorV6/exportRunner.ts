@@ -320,7 +320,23 @@ export async function runEditorV6Export(project: EditorV6Document, options: Edit
       const audioPaths = await Promise.all(audio.map((item) => deps.audioPath(item.clip)))
       await runExportCommand(deps.ffmpeg, ['-v', 'error', '-y', '-f', 'concat', '-safe', '0', '-i', list, ...audioPaths.flatMap((path) => ['-i', path]), ...(audio.length ? ['-filter_complex', filters.join(';'), '-map', '0:v:0', '-map', '[mix]', '-c:a', 'aac', '-b:a', '192k', '-ar', '48000'] : ['-map', '0:v:0', '-an']), '-c:v', 'copy', '-t', String(totalFrames / 30), '-movflags', '+faststart', candidate], deps.signal, folder)
       deps.progress({ state: 'validating', message: 'Conferindo quadros, duração e emendas do MP4…' })
-      const validation = await probeExportMedia(deps.ffprobe, candidate, deps.signal, true)
+      const seams = parts.slice(1).map((part) => part.startFrame - options.startFrame)
+      const validateSeams = async () => {
+        for (let offset = 0; offset < seams.length; offset += 2) {
+          const checks = await Promise.allSettled(seams.slice(offset, offset + 2).map((seam) =>
+            runExportCommand(deps.ffmpeg, ['-v', 'error', '-err_detect', 'explode', '-ss', String(Math.max(0, seam - 1) / 30), '-i', candidate, '-frames:v', '3', '-an', '-f', 'null', '-'], deps.signal)
+          ))
+          const failed = checks.find((check) => check.status === 'rejected')
+          if (failed?.status === 'rejected') throw failed.reason
+        }
+      }
+      const [validationResult, seamResult] = await Promise.allSettled([
+        probeExportMedia(deps.ffprobe, candidate, deps.signal, true),
+        validateSeams()
+      ])
+      if (validationResult.status === 'rejected') throw validationResult.reason
+      if (seamResult.status === 'rejected') throw seamResult.reason
+      const validation = validationResult.value
       report.validation = validation
       const video = validation.streams.find((stream) => stream.codec_type === 'video')
       if (!video || Number(video.nb_read_frames) !== totalFrames || video.width !== options.width || video.height !== options.height || video.r_frame_rate !== '30/1' || !Number.isFinite(Number(video.duration)) || Math.abs(Number(video.duration) - totalFrames / 30) > 1 / 30 + .001) throw Error('O arquivo final não passou na validação de quadros, resolução, FPS ou duração.')
@@ -328,8 +344,6 @@ export async function runEditorV6Export(project: EditorV6Document, options: Edit
         const sound = validation.streams.find((stream) => stream.codec_type === 'audio')
         if (!sound || !Number.isFinite(Number(sound.duration)) || Math.abs(Number(sound.duration) - totalFrames / 30) > .05) throw Error('O arquivo final perdeu ou truncou a trilha de áudio.')
       }
-      const seams = parts.slice(1).map((part) => part.startFrame - options.startFrame)
-      for (const seam of seams) await runExportCommand(deps.ffmpeg, ['-v', 'error', '-err_detect', 'explode', '-ss', String(Math.max(0, seam - 1) / 30), '-i', candidate, '-frames:v', '3', '-an', '-f', 'null', '-'], deps.signal)
       return { ...validation, seams, decodedFramesNearEachSeam: seams.length ? 3 : 0 }
     }
     const finishMeasured = async (parts: PartReport[]) => {
