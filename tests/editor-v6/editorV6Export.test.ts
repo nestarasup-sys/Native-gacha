@@ -3,6 +3,12 @@ import { planEditorV6Audio, planEditorV6Export, splitEditorV6ExportParts } from 
 import { editorV6ExportAudioSchema } from '../../src/shared/editorV6Schema'
 const options = { startFrame: 5, endFrame: 86, width: 1920, height: 1080, turbo: true, encoder: 'cpu' as const }
 describe('planejamento de exportação do Editor V6', () => {
+  it('rejeita durações inválidas ou inseguras antes de planejar quadros', () => {
+    for (const duration of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, Number.MAX_SAFE_INTEGER + 1]) {
+      expect(() => planEditorV6Export({ ...options, endFrame: 1 }, duration)).toThrow('A duração do documento é inválida.')
+    }
+  })
+
   it('divide intervalos ímpares sem repetir nem omitir quadros', () => {
     expect(planEditorV6Export(options, 100)).toEqual([{ index: 0, startFrame: 5, endFrame: 45 }, { index: 1, startFrame: 45, endFrame: 86 }])
     for (const count of [1, 2, 3, 29, 30, 31, 18000]) {

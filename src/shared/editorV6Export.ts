@@ -17,6 +17,7 @@ export type EditorV6ExportMouthLoops = { startFrame: number; cycleFrames: number
 export const EDITOR_V6_MOUTH_LOOP_SAMPLE_SCALES = [1, 1.05, 1.05 * 1.05] as const
 export function planEditorV6Export(options: EditorV6ExportOptions, durationFrames: number): EditorV6ExportPart[] {
   if (!options || typeof options.turbo !== 'boolean') throw Error('Configuração de exportação inválida.')
+  if (!Number.isSafeInteger(durationFrames) || durationFrames < 1) throw Error('A duração do documento é inválida.')
   if (!Number.isInteger(options.startFrame) || !Number.isInteger(options.endFrame) || options.startFrame < 0 || options.endFrame > durationFrames || options.endFrame <= options.startFrame) throw Error('Escolha um intervalo válido de quadros para exportar.')
   if (!Number.isInteger(options.width) || !Number.isInteger(options.height) || options.width < 320 || options.height < 180 || options.width > 1920 || options.height > 1080 || options.width % 2 || options.height % 2 || options.width * 9 !== options.height * 16) throw Error('A resolução precisa ser 16:9, com dimensões pares, entre 320×180 e 1920×1080.')
   if (options.encoder !== 'auto' && options.encoder !== 'cpu') throw Error('Codificador inválido.')

@@ -128,6 +128,10 @@ O `finally` do export podia substituir o erro original se a gravação final do 
 
 Na revisão das chaves visuais, confirmei que elementos e recortes de atlas usados pelo `SceneSurface` entram na chave, mas o layout de `mediaVideo` não. Isso podia reutilizar uma captura antiga se o mesmo vídeo e o mesmo quadro de origem aparecessem com posição, tamanho ou rotação diferentes. A chave compartilhada agora inclui o layout. A regressão focada passou (16 testes no arquivo de movimento); `npm run test:editor-v6:export` também passou com 81 quadros, recuperação Turbo, cancelamento preservando o destino, emenda de áudio, movimento na emenda e saída Full HD. Typecheck, auditoria de arquitetura e build passaram.
 
+### Validação da duração antes de planejar o export
+
+`planEditorV6Export` já rejeitava intervalos e resoluções inválidos, mas podia aceitar uma duração `NaN`, infinita, fracionária ou fora do intervalo seguro de inteiros: a comparação `endFrame > durationFrames` não rejeita `NaN`. Agora a duração precisa ser um inteiro seguro positivo antes de planejar qualquer parte, evitando encaminhar dados inválidos ao restante do pipeline. O teste focado cobriu seis durações inválidas; 5 testes do arquivo passaram, além de typecheck, auditoria de arquitetura e build.
+
 ## 2. Remover trabalho repetido da preparação — prioridade alta
 
 - Construir índices de assets, personagens, blocos e transições uma vez por preparação; evitar percorrer toda a timeline dentro de cada grupo.
