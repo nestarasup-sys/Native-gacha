@@ -2,7 +2,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState, type PointerEv
 import type { EditorV6Document, EditorV6Element, EditorV6Timeline as Timeline, EditorV6TimelineBlock as Block, EditorV6TimelineTrack as Track } from '../../../../shared/editorV6'
 import { EDITOR_V6_DEFAULT_BLOCK_FRAMES, orderEditorV6TimelineTracks, videoCharacterTrackColor } from '../../../../shared/editorV6'
 import { editorV6ClipAtFrame, frameTimecode, MAX_TIMELINE_FRAME, normalizeEditorV6Timeline, timelineClips } from '../../../../shared/editorV6TimelineCore'
-import { duplicateEditorV6Block, pruneEditorV6TimelineSnapshots, setEditorV6BlockTiming, snapEditorV6Frame, splitEditorV6Block } from '../../../../shared/editorV6TimelineEdits'
+import { duplicateEditorV6Block, pruneEditorV6TimelineSnapshots, snapEditorV6Frame, splitEditorV6Block } from '../../../../shared/editorV6TimelineEdits'
 import { useEditorV6PlaybackFrame } from './editorV6PlaybackClock'
 import { editorV6VisibleMotionPlans } from './editorV6VisibleMotionPlans'
 
@@ -21,16 +21,6 @@ const LABELS = { character: 'Personagem', speech: 'Fala', thought: 'Pensamento',
 const editableTarget = (target: EventTarget | null) => target instanceof HTMLElement && Boolean(target.closest('input,textarea,select,[contenteditable=true],[role=dialog]'))
 const timelineTrackGroup = (track: Track) => track.kind === 'character' ? 1 : track.kind === 'object' || track.kind === 'audio' ? 2 : 0
 const fixedBottomTrack = (track: Track) => track.kind === 'object' || track.kind === 'audio'
-
-function FrameInput({ label, value, onCommit, disabled = false }: { label: string; value: number; onCommit: (value: number) => void; disabled?: boolean }) {
-  const [text, setText] = useState(String(Number((value / 30).toFixed(4))))
-  useEffect(() => setText(String(Number((value / 30).toFixed(4)))), [value])
-  return <label>{label}<input type="number" min="0" max={MAX_TIMELINE_FRAME / 30} step={1 / 30} value={text} disabled={disabled} title={frameTimecode(value)} onChange={(event) => setText(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur() }} onBlur={() => {
-    const number = Number(text)
-    if (text.trim() && Number.isFinite(number) && number >= 0) onCommit(Math.min(MAX_TIMELINE_FRAME, Math.round(number * 30)))
-    else setText(String(value / 30))
-  }} /></label>
-}
 
 type RowsProps = {
   timeline: Timeline; pps: number; width: number; heading: number; range: [number, number]; selectedId: string | null
@@ -99,7 +89,6 @@ export function EditorV6Timeline(props: Props) {
   const [draft, setDraft] = useState<Timeline | null>(null)
   const [guide, setGuide] = useState<number | undefined>()
   const [readout, setReadout] = useState<Block | null>(null)
-  const [inspector, setInspector] = useState(false)
   const [menu, setMenu] = useState<{ x: number; y: number; track: Track; block: Block } | null>(null)
   const [notice, setNotice] = useState('')
   const scroll = useRef<HTMLDivElement>(null)
@@ -116,7 +105,6 @@ export function EditorV6Timeline(props: Props) {
   const timeline = draft ?? props.document.timeline
   const width = Math.max(viewport.width - heading, timeline.durationFrames / 30 * pps)
   const selected = useMemo(() => timelineClips(timeline).find(({ block }) => block.id === props.selectedId), [timeline, props.selectedId])
-  const selectedMedia = selected?.block.mediaId ? props.document.media?.find((media) => media.id === selected.block.mediaId) : undefined
   const range = useMemo<[number, number]>(() => [Math.max(0, (viewport.left - heading - 160) / pps * 30), (viewport.left + viewport.width + 160) / pps * 30], [viewport, heading, pps])
 
   const changeTimeline = useCallback((update: (timeline: Timeline) => Timeline) => {
@@ -126,12 +114,7 @@ export function EditorV6Timeline(props: Props) {
     if (didDrag.current) { didDrag.current = false; return }
     latest.current.onSeek(block.startFrame)
     latest.current.onSelect(block)
-    setInspector(true)
   }, [])
-  const commitBlock = (values: Partial<Block>) => {
-    if (!selected || selected.track.locked) return
-    changeTimeline((current) => ({ ...current, tracks: current.tracks.map((track) => ({ ...track, blocks: track.blocks.map((block) => block.id === selected.block.id ? { ...block, ...values } : block) })) }))
-  }
   const remove = useCallback((id: string) => {
     const found = timelineClips(latest.current.document.timeline).find(({ block }) => block.id === id)
     if (!found || found.track.locked) return
@@ -177,7 +160,6 @@ export function EditorV6Timeline(props: Props) {
       const block: Block = { id: crypto.randomUUID(), elementId: element.id, state: { ...element }, label: element.text || track.name, startFrame: frame, durationFrames: EDITOR_V6_DEFAULT_BLOCK_FRAMES }
       latest.current.onChange((current) => ({ ...current, elements: base ? current.elements : [...current.elements, element], timeline: normalizeEditorV6Timeline({ ...current.timeline, durationFrames: Math.max(current.timeline.durationFrames, frame + block.durationFrames), knownElementIds: [...new Set([...(current.timeline.knownElementIds ?? []), element.id])], tracks: current.timeline.tracks.map((candidate) => candidate.id === track.id ? { ...candidate, blocks: [...candidate.blocks, block] } : candidate) }) }))
       latest.current.onSelect(block)
-      setInspector(true)
       return
     }
     changeTimeline((current) => {
@@ -295,15 +277,7 @@ export function EditorV6Timeline(props: Props) {
   const tickSeconds = pps >= 120 ? .5 : pps >= 35 ? 1 : pps >= 8 ? 5 : pps >= 2 ? 30 : 120
   const ticks = []
   for (let second = Math.max(0, Math.floor(range[0] / 30 / tickSeconds) * tickSeconds); second <= Math.min(timeline.durationFrames / 30, range[1] / 30); second += tickSeconds) ticks.push(second)
-  const characters = props.document.elements.filter((element) => element.kind === 'character')
-  const parentOptions = timelineClips(timeline).filter(({ track, block }) => track.kind === 'video' && block.id !== selected?.block.id)
-  const patchState = (values: Partial<EditorV6Element>) => {
-    if (!selected) return
-    const base = selected.block.state ?? props.document.elements.find((element) => element.id === selected.block.elementId)
-    if (!base) return
-    commitBlock({ state: { ...base, ...values }, ...(values.text !== undefined ? { label: values.text.trim().slice(0, 120) || LABELS[selected.track.kind] } : {}) })
-  }
-  return <section ref={root} className={`editor-v6-timeline v6-timeline-pro${inspector && selected ? ' with-inspector' : ''}`} aria-label="Timeline do Editor V6" onPointerMove={movePointer} onPointerUp={endPointer} onPointerCancel={cancel}>
+  return <section ref={root} className="editor-v6-timeline v6-timeline-pro" aria-label="Timeline do Editor V6" onPointerMove={movePointer} onPointerUp={endPointer} onPointerCancel={cancel}>
     <header className="editor-v6-timeline-toolbar">
       <div className="editor-v6-timeline-title"><strong>Timeline</strong><span>{frameTimecode(playbackFrame)} / {frameTimecode(timeline.durationFrames)}</span><small>30 FPS</small></div>
       <div className="editor-v6-timeline-actions">
@@ -327,28 +301,7 @@ export function EditorV6Timeline(props: Props) {
     </div>
     {readout && <div className="v6-drag-readout" role="status">Início {frameTimecode(readout.startFrame)} · Fim {frameTimecode(readout.startFrame + readout.durationFrames)} · Duração {frameTimecode(readout.durationFrames)} <kbd>Esc cancela</kbd></div>}
     {notice && <button type="button" className="v6-timeline-notice" onClick={() => setNotice('')}>{notice} ×</button>}
-    {inspector && selected && <div className="v6-clip-inspector" aria-label="Inspector do bloco">
-      <strong title={selected.block.label}>{selected.block.background ? 'Fundo' : selected.track.name}</strong>
-      <FrameInput label="Início (s)" value={selected.block.startFrame} disabled={selected.track.locked} onCommit={(value) => changeTimeline((current) => setEditorV6BlockTiming(current, selected.block.id, { startFrame: value }))} />
-      <FrameInput label="Duração (s)" value={selected.block.durationFrames} disabled={selected.track.locked} onCommit={(value) => {
-        if (value < 1) return
-        const bounded = selectedMedia ? Math.min(value, selectedMedia.sourceFrames - (selected.block.mediaInFrame ?? 0)) : value
-        changeTimeline((current) => setEditorV6BlockTiming(current, selected.block.id, { durationFrames: bounded }))
-      }} />
-      {selectedMedia && <FrameInput label="Início da mídia (s)" value={selected.block.mediaInFrame ?? 0} disabled={selected.track.locked} onCommit={(value) => {
-        const mediaInFrame = Math.max(0, Math.min(selectedMedia.sourceFrames - 1, value))
-        commitBlock({ mediaInFrame, durationFrames: Math.min(selected.block.durationFrames, selectedMedia.sourceFrames - mediaInFrame) })
-      }} />}
-      {(selected.track.kind === 'speech' || selected.track.kind === 'thought') && <><label>Personagem<select value={selected.block.characterId ?? ''} disabled={selected.track.locked} onChange={(event) => commitBlock({ characterId: event.target.value || undefined })}><option value="">Sem personagem</option>{characters.map((element) => <option value={element.characterId} key={element.id}>{element.text}</option>)}</select></label><label className="v6-clip-text">Texto<input value={selected.block.state?.text ?? selected.block.label} maxLength={5000} disabled={selected.track.locked} onChange={(event) => patchState({ text: event.target.value })} /></label><label>Vincular a visual<select value={selected.block.parentBlockId ?? ''} disabled={selected.track.locked} onChange={(event) => { const parent = parentOptions.find(({ block }) => block.id === event.target.value)?.block; commitBlock({ parentBlockId: parent?.id, relativeStartFrame: parent ? Math.max(0, selected.block.startFrame - parent.startFrame) : undefined }) }}><option value="">Independente</option>{parentOptions.map(({ block }) => <option key={block.id} value={block.id}>{block.label}</option>)}</select></label></>}
-      {selected.block.mediaId && <><label><input type="checkbox" checked={selected.block.audioEnabled !== false} disabled={selected.track.locked || !selectedMedia?.hasAudio} onChange={(event) => commitBlock({ audioEnabled: event.target.checked })} />{selectedMedia?.hasAudio ? selected.track.kind === 'video' ? 'Áudio do vídeo ativado' : 'Áudio ativado' : 'Arquivo sem áudio'}</label><label>Volume<input type="range" min="0" max="1" step="0.05" value={Math.min(1, selected.block.gain ?? 1)} disabled={selected.track.locked || selected.block.audioEnabled === false || !selectedMedia?.hasAudio} onChange={(event) => commitBlock({ gain: Number(event.target.value) })} /></label></>}
-      {selected.track.kind === 'character' && <label><input type="checkbox" checked={selected.block.motionEnabled !== false} disabled={selected.track.locked || selected.track.motionEnabled === false} onChange={(event) => commitBlock({ motionEnabled: event.target.checked })} />Animar entrada (250 ms antes)</label>}
-      {selected.track.kind === 'character' && <label className="v6-clip-visible"><input type="checkbox" checked={selected.block.state?.visible !== false} disabled={selected.track.locked} onChange={(event) => patchState({ visible: event.target.checked })} />Visível neste período</label>}
-      <button type="button" disabled={selected.track.locked} onClick={() => duplicate(selected.block.id)} title="Duplicar (Ctrl+D)">Duplicar</button>
-      <button type="button" disabled={selected.track.locked} onClick={() => remove(selected.block.id)} title="Excluir apenas este bloco">Excluir</button>
-      <button type="button" onClick={() => setInspector(false)} aria-label="Fechar Inspector do bloco">×</button>
-    </div>}
     {menu && <div className="v6-timeline-menu" role="menu" style={{ left: menu.x, top: menu.y }}>
-      <button type="button" role="menuitem" onClick={() => { setInspector(true); latest.current.onSelect(menu.block); setMenu(null) }}>Abrir Inspector</button>
       <button type="button" role="menuitem" onClick={() => { latest.current.onSeek(menu.block.startFrame); setMenu(null) }}>Ir ao início</button>
       <button type="button" role="menuitem" onClick={() => { latest.current.onSeek(menu.block.startFrame + menu.block.durationFrames); setMenu(null) }}>Ir ao fim</button>
       <button type="button" role="menuitem" disabled={menu.track.locked} onClick={() => duplicate(menu.block.id)}>Duplicar <kbd>Ctrl+D</kbd></button>
