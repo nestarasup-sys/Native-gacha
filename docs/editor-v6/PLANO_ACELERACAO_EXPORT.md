@@ -1,7 +1,7 @@
 # Editor V6 — plano de aceleração máxima do export
 
 Data: 30/10/2026. Base inicial de análise: branch `Dev-V2`, commit `b79aaaf`.
-Estado: em andamento. Otimizações, medições e verificações ficam registradas abaixo; a comparação real está concluída para a configuração atual, e a otimização do gargalo de preparação ainda está pendente.
+Estado: em andamento. Otimizações, medições e verificações ficam registradas abaixo; o gargalo de preparação de movimentos recebeu concorrência limitada a duas tarefas após benchmark no projeto real. A comparação foi feita em grupos separados, então a redução de tempo total é indicativa e ainda requer confirmação alternada.
 
 ## Objetivo
 
@@ -140,6 +140,19 @@ Na revisão das chaves visuais, confirmei que elementos e recortes de atlas usad
 
 `planEditorV6Export` já rejeitava intervalos e resoluções inválidos, mas podia aceitar uma duração `NaN`, infinita, fracionária ou fora do intervalo seguro de inteiros: a comparação `endFrame > durationFrames` não rejeita `NaN`. Agora a duração precisa ser um inteiro seguro positivo antes de planejar qualquer parte, evitando encaminhar dados inválidos ao restante do pipeline. O teste focado cobriu seis durações inválidas; 5 testes do arquivo passaram, além de typecheck, auditoria de arquitetura e build.
 
+### Preparação de movimentos com concorrência limitada
+
+`prepareExportMotions` agrupava corretamente as 89 transições distintas, mas solicitava cada bake em série. O serviço já suporta duas janelas isoladas; agora a preparação pode executar no máximo duas transições ao mesmo tempo e o serviço é inicializado com duas janelas. Os resultados são juntados na ordem original, mantendo determinística a ordem dos assets. Em falha, o sinal local cancela a tarefa irmã e `Promise.allSettled` espera as tarefas iniciadas terminarem antes de propagar o erro; cancelamento do export também é encaminhado às duas tarefas.
+
+No projeto real `72fbea64-4b18-4d31-9a0c-317f0f519a06` (revisão `2026-10-30T10:09:29.520Z`), as rodadas foram feitas em dois grupos separados, cada qual com um export frio e dois aquecidos, sem alternar a ordem entre configurações. O projeto e as opções foram os mesmos: 5.700 quadros, 190 s, 1920×1080 a 30 FPS, 28 faixas/clipes de áudio, 1 vídeo e 198 estados de boca. Todas as três exportações de cada grupo passaram a validação do stress runner.
+
+| Concorrência dos bakes | Preparação fria das 89 transições | Mediana aquecida total | Mediana aquecida de renderização | Pico de RSS do processo principal |
+| ---: | ---: | ---: | ---: | ---: |
+| 1 | 57,801 s | 211,948 s | 182,102 s | 1.915.179.008 bytes |
+| 2 | 36,164 s | 202,353 s | 173,966 s | 1.876.971.520 bytes |
+
+Com duas tarefas, a preparação fria caiu 37,4% e a mediana aquecida total caiu 4,5% nesta comparação. Os lotes não foram alternados e exports anteriores do mesmo dia variaram bastante; por isso o ganho de parede não é tratado como confirmado. O RSS é somente do processo principal, não inclui renderizadores, GPU nem FFmpeg. O limite de duas evita crescimento sem teto, mas a qualidade visual entre os MP4s ainda não foi comparada quadro a quadro. Relatórios e saídas ficam em `out/editor-v6-stress/runs/motion-bake-concurrency-1-2026-10-30/` e `out/editor-v6-stress/runs/motion-bake-concurrency-2-2026-10-30/` (pastas ignoradas pelo Git). Cobertura unitária verifica o teto de concorrência e cancelamento/espera de tarefa irmã; a verificação final desta alteração inclui os testes de export, typecheck, auditoria de arquitetura e build.
+
 ## 2. Remover trabalho repetido da preparação — prioridade alta
 
 - Construir índices de assets, personagens, blocos e transições uma vez por preparação; evitar percorrer toda a timeline dentro de cada grupo.
@@ -220,7 +233,7 @@ Validar contagem de quadros, 30 FPS, resolução, duração, áudio e emendas co
 ## Sequência de entregas
 
 1. **Diagnóstico:** concluído para o projeto `72fbea64-4b18-4d31-9a0c-317f0f519a06`, com backup verificado e comparação de workers; estabelecer a captura de um relatório baseline da mesma revisão/opções para avaliar mudanças de código.
-2. **Preparação:** índices, aplicação em lote e eliminação de pedidos repetidos conforme evidência.
+2. **Preparação:** índices, aplicação em lote e eliminação de pedidos repetidos concluídos; concorrência limitada a duas tarefas adotada com ganho observado, ainda pendente de confirmação em comparação alternada.
 3. **Cache:** invalidação auditada, limites e preparação antecipada útil.
 4. **Quadros:** reduzir resolução de cena, commits, captura ou cópias conforme o maior custo restante.
 5. **Agendamento e encoder:** testar distribuição de partes e limites de concorrência.

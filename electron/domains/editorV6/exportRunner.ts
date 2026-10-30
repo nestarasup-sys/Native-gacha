@@ -272,7 +272,7 @@ export async function runEditorV6Export(project: EditorV6Document, options: Edit
     const prepared = await (async () => {
       try {
         return await prepareExportMotions(project, options.startFrame, options.endFrame, {
-          signal: deps.signal, characters, bake: (request, signal) => {
+          signal: deps.signal, characters, concurrency: 2, bake: (request, signal) => {
             if (cacheInputSamples.length < 3 && !cacheInputSamples.some((sample) => sample.characterId === request.character.id)) {
               cacheInputSamples.push({ cacheKey: motionCacheKey(request),
                 planKeyHash: createHash('sha256').update(request.plan.key).digest('hex'), characterId: request.character.id,

@@ -99,6 +99,49 @@ describe('transition preparation reuse', () => {
     expect(ready.project.assets).toHaveLength(3)
     expect(ready.project.timeline.tracks.find((track) => track.kind === 'character')!.blocks).toHaveLength(4)
   })
+  it('prepares distinct transitions with the configured concurrency limit', async () => {
+    const { project, character } = fixture()
+    let active = 0, peak = 0
+    const ready = await prepareExportMotions(project, 0, 300, {
+      signal: new AbortController().signal, characters: [character], concurrency: 2,
+      bake: async (request) => {
+        active++
+        peak = Math.max(peak, active)
+        await new Promise((resolve) => setTimeout(resolve, 10))
+        active--
+        return resultFor(request)
+      },
+      progress: () => {}
+    })
+    expect(peak).toBe(2)
+    expect(ready.stats.maxConcurrentBakes).toBe(2)
+    expect(missingEditorV6Motions(ready.project)).toHaveLength(0)
+  })
+  it('cancels and waits for sibling bakes after a transition fails', async () => {
+    const { project, character } = fixture()
+    let calls = 0, siblingCancelled = false
+    let startSibling!: () => void
+    const siblingStarted = new Promise<void>((resolve) => { startSibling = resolve })
+    await expect(prepareExportMotions(project, 0, 300, {
+      signal: new AbortController().signal, characters: [character], concurrency: 2,
+      bake: async (_request, signal) => {
+        calls++
+        if (calls === 1) {
+          await siblingStarted
+          throw Error('falha de bake')
+        }
+        startSibling()
+        return new Promise((_resolve, reject) => {
+          const abort = () => { siblingCancelled = true; reject(signal.reason) }
+          signal.addEventListener('abort', abort, { once: true })
+          if (signal.aborted) abort()
+        })
+      },
+      progress: () => {}
+    })).rejects.toThrow('falha de bake')
+    expect(calls).toBe(2)
+    expect(siblingCancelled).toBe(true)
+  })
   it('stops before publishing an aborted bake', async () => {
     const { project, character } = fixture(), controller = new AbortController()
     await expect(prepareExportMotions(project, 0, 300, { signal: controller.signal, characters: [character], bake: async (request) => { controller.abort(); return resultFor(request) }, progress: () => {} })).rejects.toThrow()
