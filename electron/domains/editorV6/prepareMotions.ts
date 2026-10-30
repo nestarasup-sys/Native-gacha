@@ -10,7 +10,11 @@ export async function prepareExportMotions(project: EditorV6Document, startFrame
 }) {
   const began = performance.now(), missing = missingEditorV6Motions(project, startFrame, endFrame)
   const groups = new Map<string, typeof missing>()
-  for (const plan of missing) groups.set(plan.key, [...(groups.get(plan.key) ?? []), plan])
+  for (const plan of missing) {
+    const group = groups.get(plan.key)
+    if (group) group.push(plan)
+    else groups.set(plan.key, [plan])
+  }
   const characters = new Map(deps.characters.map((character) => [character.id, character]))
   const assets = new Map(project.assets.map((asset) => [asset.id, asset]))
   const knownMotions = new Map<string, NonNullable<EditorV6Document['timeline']['tracks'][number]['blocks'][number]['incomingMotion']>>()
