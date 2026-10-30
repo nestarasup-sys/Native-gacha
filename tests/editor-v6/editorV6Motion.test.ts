@@ -21,6 +21,11 @@ function bake(document: EditorV6Document): EditorV6MotionBakeResult {
   return { asset: { id: assetId, category: 'character', name: 'Motion', mimeType: 'image/png', dataUrl: 'data:image/png;base64,AA==', timelineSnapshot: true }, motion: { version: 1, key: plan.key, assetId, frames: plan.samples.map((s, i) => ({ offset: s.offset, sprite: { x: i * 10, y: 0, width: 10, height: 10, atlasWidth: 70, atlasHeight: 10 }, x: i, y: 0, width: 20, height: 30, rotation: 0, flipX: false })) }, metrics: { milliseconds: 1, preparedRigs: 9, samples: 7, atlasPixels: 700 } }
 }
 describe('V6 motion scheduling and portable cache', () => {
+  it('invalidates captured frames when the same video changes its scene layout', () => {
+    const scene = (x: number) => ({ frame: 42, background: '#fff', elements: [], mediaVideo: { mediaId: 'video', startFrame: 0, sourceInFrame: 0, layout: { x, y: 0, width: 40, height: 40, rotation: 0 } } })
+    expect(editorV6VisualKey(scene(0))).not.toBe(editorV6VisualKey(scene(10)))
+  })
+
   it('mantém piscadas automáticas curtas no projeto longo de estresse', () => {
     const runs: number[] = []
     let previous = false, start = 0
