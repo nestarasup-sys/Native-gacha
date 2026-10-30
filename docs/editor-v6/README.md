@@ -9,7 +9,7 @@
 - [Testes de estresse offscreen](TESTES_DE_ESTRESSE_OFFSCREEN.md) e [evidências de benchmark](benchmarks/AB_MEMO_2026-10-26.md)
 - [Retomada de animações](RETOMAR_ANIMACOES.md): contexto da implementação concluída em 26/10
 
-Os números de performance, perfis de CPU e resultados de testes são observações de configurações e commits específicos; não são promessas para a branch atual. Confirme \`package.json\`, fontes e fixtures antes de reutilizá-los.
+Os números de performance, perfis de CPU e resultados de testes são observações de configurações e commits específicos; não são promessas para a branch atual. Confirme `package.json`, fontes e fixtures antes de reutilizá-los.
 
 ## Histórico
 

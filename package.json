@@ -6,6 +6,7 @@
   "type": "module",
   "main": "out/main/main.js",
   "scripts": {
+    "docs:check": "node scripts/docs/check-links.cjs",
     "postinstall": "node scripts/install-electron.cjs",
     "predev": "node scripts/prepare-app-data.cjs",
     "dev": "electron-vite dev --watch",

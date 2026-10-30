@@ -22,8 +22,8 @@ A [investigação extensa iniciada em 27/10](architecture/INVESTIGACAO_REFATORAC
 
 ## Regras de manutenção
 
-1. Novas decisões de arquitetura: \`docs/architecture/\`, com estado, contexto, alternativas e impactos.
-2. Guias de domínio: pasta do domínio em \`docs/\`; atualize a referência existente antes de criar outra.
-3. Ciclos concluídos, relatórios datados e incidentes encerrados: \`docs/archive/\`, com link de volta no índice.
-4. Registros de trabalho de agentes: \`.ai/\`, curtos e verificáveis; nunca armazenar dados reais, credenciais ou cadeia privada de raciocínio.
+1. Novas decisões de arquitetura: `docs/architecture/`, com estado, contexto, alternativas e impactos.
+2. Guias de domínio: pasta do domínio em `docs/`; atualize a referência existente antes de criar outra.
+3. Ciclos concluídos, relatórios datados e incidentes encerrados: `docs/archive/`, com link de volta no índice.
+4. Registros de trabalho de agentes: `.ai/`, curtos e verificáveis; nunca armazenar dados reais, credenciais ou cadeia privada de raciocínio.
 5. Ao renomear/mover documentação, atualizar links Markdown relativos e conferir caminhos. Não interpretar nomes de branches, comandos ou números de testes de relatórios antigos como estado atual.

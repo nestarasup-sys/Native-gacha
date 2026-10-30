@@ -2,7 +2,7 @@ name: Core architecture validation
 
 on:
   push:
-    branches: [main, Main-desenvolvimento]
+    branches: [main, Main-desenvolvimento, Dev-V2]
     paths:
       - 'electron/**'
       - 'src/**'
@@ -14,7 +14,7 @@ on:
       - 'ABRIR_DESENVOLVIMENTO.bat'
       - '.github/workflows/ci-core.yml'
   pull_request:
-    branches: [main, Main-desenvolvimento, refactor/shared-character-core]
+    branches: [main, Main-desenvolvimento, Dev-V2, refactor/shared-character-core]
   workflow_dispatch:
 
 permissions:
