@@ -108,6 +108,10 @@ A finalização de uma rodada aquecida levou 27,5 s. Repeti as operações de va
 
 No benchmark integral, as três rodadas passaram: 5.700 quadros, 1920×1080, 30 FPS, 190 s, áudio válido e 18 emendas verificadas. A mediana aquecida da finalização caiu de 27,594 s para 25,875 s (1,719 s; 6,2%). A mediana do export completo não caiu nesta comparação (199,569 s contra 191,975 s), pois a renderização variou e continua dominando; não atribuo ganho global a esta etapa isolada. O vídeo antes/depois teve SSIM 1,000000 e PSNR médio 83,63 dB. Relatórios em `out/editor-v6-stress/runs/parallel-final-validation-2026-10-30T21-00-00/stress-export-validation.json` e `out/editor-v6-stress/runs/grouped-workers-2026-10-30T18-00-00/stress-export-validation.json`.
 
+### Tentativa descartada: transmitir camadas sem montar o bitmap duplo
+
+Para eliminar as cópias das camadas capturadas para um buffer BGRA de altura dupla, enviei os buffers imutáveis de fundo e primeiro plano como duas escritas consecutivas, agrupadas apenas dentro do quadro. Cada par aguardava os callbacks antes de renderizar o próximo quadro, evitando sobrescrita enquanto o FFmpeg ainda lia os dados. As três rodadas passaram pela validação estrutural (5.700 quadros, 1920×1080, 30 FPS, 190 s, áudio e 18 emendas). Contra a referência estável `grouped-workers`, a mediana aquecida piorou: 199,525 s total e 173,106 s renderizando, versus 193,915 s e 165,145 s (+2,9% e +4,8%). No trecho 2, `ffmpegWriteMs` somou 70,075 s contra 55,150 s. A comparação visual do trecho correspondente teve SSIM 0,999994; 38 hashes de quadro diferiram, diferença compatível com a variação de codificação e sem queda relevante de similaridade. Como o caminho ficou mais lento, removi a implementação e mantive a montagem/cópia atual. Relatório e vídeos em `out/editor-v6-stress/runs/split-layer-buffers-2026-10-30T22-00-00/` (ignorados pelo Git).
+
 ## 2. Remover trabalho repetido da preparação — prioridade alta
 
 - Construir índices de assets, personagens, blocos e transições uma vez por preparação; evitar percorrer toda a timeline dentro de cada grupo.
