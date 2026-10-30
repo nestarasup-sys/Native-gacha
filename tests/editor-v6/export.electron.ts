@@ -60,6 +60,7 @@ async function main() {
   const base = { ffmpeg, ffprobe, tempRoot: folder, id: randomUUID(), outputPath: output, reportPath: join(folder, 'turbo.report.json'), signal: new AbortController().signal, getCharacters: async () => [], bakeMotion: async () => { throw Error('Unexpected motion bake.') }, createWorker: (renderProject: EditorV6Document, _part: unknown, signal: AbortSignal, layeredVideo: boolean, mouthLoops?: EditorV6ExportMouthLoops) => makeWorker(signal, 320, 180, renderProject, layeredVideo, mouthLoops), audioPath: () => audio, mediaPath: (_projectId: string, fileName: string) => join(folder, 'media', fileName), progress: (patch: { message?: string }) => { if (patch.message) progressMessages.push(patch.message) } }
   const report = await runEditorV6Export(project, options, base)
   assert(report.state === 'completed' && !report.fallback, 'Turbo não concluiu com duas partes.')
+  assert(report.mainProcessMemory && report.mainProcessMemory.startRssBytes > 0 && report.mainProcessMemory.peakRssBytes >= report.mainProcessMemory.startRssBytes && report.mainProcessMemory.sampleIntervalMs === 500, 'O relatório não registrou corretamente a memória RSS do processo principal.')
   assert(report.attempts[0].parts.map((part) => part.frames).sort((a, b) => a - b).join(',') === '40,41', 'Partes perderam ou repetiram quadros.')
   assert(report.attempts[0].parts.every((part) => (part.frameTiming?.frameRoundTripMs?.samples ?? 0) > 0 && (part.frameTiming?.rafWaitMs?.samples ?? 0) > 0 && (part.frameTiming?.captureMs?.samples ?? 0) > 0), 'O relatório não separou os tempos de renderização, espera RAF e captura por quadro.')
   assert(peak === 2 && active === 0, 'Os dois trabalhos não foram paralelos ou deixaram janelas abertas.')
@@ -179,7 +180,8 @@ async function main() {
     } })
   } catch { cancelled = true }
   assert(cancelled && (await readFile(preserved, 'utf8')) === 'arquivo anterior' && active === 0, 'Cancelamento substituiu o destino ou deixou renderizadores abertos.')
-  assert(JSON.parse(await readFile(join(folder, 'cancelled.report.json'), 'utf8')).state === 'cancelled', 'Cancelamento não salvou relatório.')
+  const cancelledReport = JSON.parse(await readFile(join(folder, 'cancelled.report.json'), 'utf8'))
+  assert(cancelledReport.state === 'cancelled' && cancelledReport.mainProcessMemory?.peakRssBytes >= cancelledReport.mainProcessMemory?.startRssBytes, 'Cancelamento não salvou o estado e a memória do processo no relatório.')
   const silent = { ...project, exportAudio: [] }
   const single = await runEditorV6Export(silent, { ...options, startFrame: 50, endFrame: 51 }, { ...base, id: randomUUID(), outputPath: join(folder, 'single.mp4'), reportPath: join(folder, 'single.report.json') })
   assert(single.totalFrames === 1 && single.attempts[0].parallelism === 1 && !single.fallback, 'Intervalo de um quadro não foi tratado corretamente.')
