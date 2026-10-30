@@ -969,8 +969,8 @@ app.whenReady().then(async () => {
       const project = await readEditorV6(projectId)
       if (!project) throw Error(`Projeto de benchmark ${projectId} não encontrado no perfil temporário.`)
       const cacheProbe = process.env.GACHA_EDITOR_V6_STRESS_CACHE_PROBE === '1'
-      const modes = cacheProbe ? [false, false] : [false, true, true, false, false, true]
-      const runs: Array<{ run: number; workers: number; milliseconds: number; renderingMilliseconds: number; finalizationMilliseconds: number; rssPeakBytes: number; motionTransitions: number; motionCache?: EditorV6MotionCacheStats; mouthStates: number; audioClips: number; videoInputs: number; audioOutput: boolean }> = []
+      const modes = cacheProbe ? [false, false, false] : [false, true, true, false, false, true]
+      const runs: Array<{ run: number; workers: number; milliseconds: number; renderingMilliseconds: number; finalizationMilliseconds: number; rssPeakBytes: number; motionTransitions: number; motionCache?: EditorV6MotionCacheStats & { inputSamples: Array<{ cacheKey: string; planKeyHash: string; characterId: string; characterFingerprint: string }> }; motionCacheTotal?: EditorV6MotionCacheStats; mouthStates: number; audioClips: number; videoInputs: number; audioOutput: boolean }> = []
       for (const [index, turbo] of modes.entries()) {
         const id = randomUUID()
         const suffix = `run-${index + 1}-workers-${turbo ? 2 : 1}`
@@ -978,7 +978,10 @@ app.whenReady().then(async () => {
         const reportPath = join(outputRoot, `actual-project-${suffix}.report.json`)
         const options: EditorV6ExportOptions = { startFrame: 0, endFrame: project.timeline.durationFrames, width: 1920, height: 1080, turbo, encoder: 'auto', mouthLoop: true, mouthLoopCycleFrames: 30 }
         console.log(`[V6 isolated export] Rodada ${index + 1}/${modes.length}: ${turbo ? 'dois' : 'um'} workers, ${project.timeline.durationFrames} quadros, 1920×1080, áudio e animação automática da boca.`)
+        const cacheBeforeExport = editorV6MotionService!.getCacheStats()
         const report = await editorV6ExportService!.runIsolatedExport(project, options, outputPath, reportPath, id)
+        const cacheAfterExport = editorV6MotionService!.getCacheStats()
+        const motionCacheTotal = Object.fromEntries(Object.keys(cacheAfterExport).map((key) => [key, cacheAfterExport[key as keyof EditorV6MotionCacheStats] - cacheBeforeExport[key as keyof EditorV6MotionCacheStats]])) as EditorV6MotionCacheStats
         const streams = (report.validation as { streams?: Array<{ codec_type?: string; nb_read_frames?: string | number; r_frame_rate?: string }> } | undefined)?.streams ?? []
         const video = streams.find((stream) => stream.codec_type === 'video')
         const audio = streams.some((stream) => stream.codec_type === 'audio')
@@ -986,7 +989,7 @@ app.whenReady().then(async () => {
           || video?.r_frame_rate !== '30/1' || report.motionTransitionsPrepared !== report.motionTransitionsRequired
           || !report.motionTransitionsRequired || !report.mouthAnimation || report.mouthAnimation.skippedStates || report.mouthAnimation.staleStates
           || report.videoInputs < 1 || report.audioClips < 1 || !audio) throw Error(`A rodada ${index + 1} não preservou todos os estados esperados: ${JSON.stringify({ state: report.state, frames: report.totalFrames, videoFrames: video?.nb_read_frames, fps: video?.r_frame_rate, motionRequired: report.motionTransitionsRequired, motionPrepared: report.motionTransitionsPrepared, mouth: report.mouthAnimation, audioClips: report.audioClips, videoInputs: report.videoInputs, audio })}`)
-        runs.push({ run: index + 1, workers: turbo ? 2 : 1, milliseconds: report.milliseconds!, renderingMilliseconds: report.phaseMilliseconds.rendering, finalizationMilliseconds: report.phaseMilliseconds.finalization, rssPeakBytes: report.mainProcessMemory!.peakRssBytes, motionTransitions: report.motionTransitionsPrepared, motionCache: report.motionCache, mouthStates: report.mouthAnimation.stateAtlases, audioClips: report.audioClips, videoInputs: report.videoInputs, audioOutput: audio })
+        runs.push({ run: index + 1, workers: turbo ? 2 : 1, milliseconds: report.milliseconds!, renderingMilliseconds: report.phaseMilliseconds.rendering, finalizationMilliseconds: report.phaseMilliseconds.finalization, rssPeakBytes: report.mainProcessMemory!.peakRssBytes, motionTransitions: report.motionTransitionsPrepared, motionCache: report.motionCache, motionCacheTotal, mouthStates: report.mouthAnimation.stateAtlases, audioClips: report.audioClips, videoInputs: report.videoInputs, audioOutput: audio })
       }
       const median = (values: number[]) => { const sorted = [...values].sort((left, right) => left - right); return sorted[Math.floor(sorted.length / 2)] }
       const variants = (cacheProbe ? [1] : [1, 2]).map((workers) => {

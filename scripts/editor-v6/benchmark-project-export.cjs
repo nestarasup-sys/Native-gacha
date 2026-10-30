@@ -72,7 +72,7 @@ async function main() {
   const summaryPath = path.join(outputFolder, 'stress-export-validation.json')
   const summary = JSON.parse(await fs.readFile(summaryPath, 'utf8'))
   if (!summary.passed || (cacheProbe
-    ? summary.benchmarkKind !== 'motion-cache-repeat' || summary.runs?.length !== 2 || summary.runs.some((run) => !run.motionCache)
+    ? summary.benchmarkKind !== 'motion-cache-repeat' || summary.runs?.length !== 3 || summary.runs.some((run) => !run.motionCache || !run.motionCacheTotal)
     : summary.benchmarkKind !== 'worker-comparison' || summary.runs?.length !== 6 || summary.variants?.some((variant) => variant.runs !== 3))) {
     throw Error(`O processo terminou sem as rodadas completas e validadas esperadas. Revise ${summaryPath}.`)
   }

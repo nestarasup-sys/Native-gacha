@@ -1,5 +1,5 @@
 import { mkdir, mkdtemp, rename, rm, unlink, writeFile } from 'node:fs/promises'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { basename, dirname, extname, join, resolve, sep } from 'node:path'
 import { availableParallelism } from 'node:os'
 import { editorV6DefaultVideoLayout, type EditorV6Document } from '../../../src/shared/editorV6'
@@ -10,7 +10,7 @@ import { prepareExportMouthLoops } from './prepareMouthLoops'
 import { planEditorV6Audio, planEditorV6Export, splitEditorV6ExportParts, type EditorV6ExportAudio, type EditorV6ExportMouthLoops, type EditorV6ExportOptions, type EditorV6ExportPart, type EditorV6ExportStatus, type EditorV6FrameTimings } from '../../../src/shared/editorV6Export'
 import { runExportCommand, spawnExportProcess, waitForExport } from './exportProcess'
 import type { EditorV6FrameWorker } from './exportWorkers'
-import type { EditorV6MotionCacheStats } from './motionCache'
+import { motionCacheKey, type EditorV6MotionCacheStats } from './motionCache'
 type StreamProbe = { codec_type: string; codec_name: string; profile?: string; pix_fmt?: string; width?: number; height?: number; r_frame_rate?: string; time_base?: string; nb_read_frames?: string; nb_frames?: string; duration?: string; extradata_hash?: string }
 export type MediaProbe = { streams: StreamProbe[]; format: { duration?: string } }
 export async function probeExportMedia(ffprobe: string, path: string, signal: AbortSignal, count = false): Promise<MediaProbe> {
@@ -24,7 +24,7 @@ type PartReport = EditorV6ExportPart & { encoder: string; rendered: number; reus
 type AttemptReport = { parts: PartReport[]; encoder: string; parallelism: number; milliseconds?: number; error?: string }
 type ExportPhase = 'temporarySetup' | 'characterLoading' | 'motionPreparation' | 'encoderProbe' | 'rendering' | 'finalization' | 'publication'
 type ExportPhaseTimings = Record<ExportPhase, number>
-export type EditorV6ExportReport = { schemaVersion: 1; id: string; state: string; projectId: string; options: EditorV6ExportOptions; fps: 30; totalFrames: number; fallback: boolean; attempts: AttemptReport[]; encoderTests: Array<{ encoder: string; error?: string }>; audioClips: number; videoInputs: number; proxies: 0; motionTransitionsRequired: number; motionTransitionsPrepared: number; motionPreparation?: Awaited<ReturnType<typeof prepareExportMotions>>['stats']; motionCache?: EditorV6MotionCacheStats; mouthAnimation?: { stateAtlases: number; characters: number; skippedStates: number; staleStates: number; cycleFrames: number; atlasBytes: number; atlasPixels: number; preparationMilliseconds: number; details: string[] }; mainProcessMemory?: { startRssBytes: number; peakRssBytes: number; sampleIntervalMs: number }; phaseMilliseconds: ExportPhaseTimings; startedAt: string; endedAt?: string; milliseconds?: number; outputPath: string; deliveryWarning?: string; validation?: unknown; error?: string }
+export type EditorV6ExportReport = { schemaVersion: 1; id: string; state: string; projectId: string; options: EditorV6ExportOptions; fps: 30; totalFrames: number; fallback: boolean; attempts: AttemptReport[]; encoderTests: Array<{ encoder: string; error?: string }>; audioClips: number; videoInputs: number; proxies: 0; motionTransitionsRequired: number; motionTransitionsPrepared: number; motionPreparation?: Awaited<ReturnType<typeof prepareExportMotions>>['stats']; motionCache?: EditorV6MotionCacheStats & { inputSamples: Array<{ cacheKey: string; planKeyHash: string; characterId: string; characterFingerprint: string }> }; mouthAnimation?: { stateAtlases: number; characters: number; skippedStates: number; staleStates: number; cycleFrames: number; atlasBytes: number; atlasPixels: number; preparationMilliseconds: number; details: string[] }; mainProcessMemory?: { startRssBytes: number; peakRssBytes: number; sampleIntervalMs: number }; phaseMilliseconds: ExportPhaseTimings; startedAt: string; endedAt?: string; milliseconds?: number; outputPath: string; deliveryWarning?: string; validation?: unknown; error?: string }
 type Dependencies = {
   ffmpeg: string; ffprobe: string; tempRoot: string; reportPath: string; outputPath: string; id: string
   createWorker: (project: EditorV6Document, part: EditorV6ExportPart, signal: AbortSignal, layeredVideo: boolean, mouthLoops?: EditorV6ExportMouthLoops) => Promise<EditorV6FrameWorker>
@@ -267,10 +267,18 @@ export async function runEditorV6Export(project: EditorV6Document, options: Edit
     finally { addPhaseTime(report, 'characterLoading', characterLoadStarted) }
     const motionPreparationStarted = performance.now()
     const cacheBefore = deps.getMotionCacheStats?.()
+    const cacheInputSamples: NonNullable<EditorV6ExportReport['motionCache']>['inputSamples'] = []
     const prepared = await (async () => {
       try {
         return await prepareExportMotions(project, options.startFrame, options.endFrame, {
-          signal: deps.signal, characters, bake: deps.bakeMotion,
+          signal: deps.signal, characters, bake: (request, signal) => {
+            if (cacheInputSamples.length < 3 && !cacheInputSamples.some((sample) => sample.characterId === request.character.id)) {
+              cacheInputSamples.push({ cacheKey: motionCacheKey(request),
+                planKeyHash: createHash('sha256').update(request.plan.key).digest('hex'), characterId: request.character.id,
+                characterFingerprint: createHash('sha256').update(JSON.stringify(request.character)).digest('hex') })
+            }
+            return deps.bakeMotion(request, signal)
+          },
           progress: (completed, total, name) => {
             report.motionTransitionsRequired = total; report.motionTransitionsPrepared = completed
             deps.progress({ state: 'preparing', frames: 0, motionProgress: { completed, total }, message: completed === total ? 'Transições prontas.' : `Preparando transição ${completed + 1}/${total} · ${name}…` })
@@ -283,7 +291,10 @@ export async function runEditorV6Export(project: EditorV6Document, options: Edit
     report.motionTransitionsPrepared = prepared.stats.total
     report.motionPreparation = prepared.stats
     const cacheAfter = deps.getMotionCacheStats?.()
-    if (cacheBefore && cacheAfter) report.motionCache = Object.fromEntries(Object.keys(cacheAfter).map((key) => [key, cacheAfter[key as keyof EditorV6MotionCacheStats] - cacheBefore[key as keyof EditorV6MotionCacheStats]])) as EditorV6MotionCacheStats
+    if (cacheBefore && cacheAfter) {
+      const counters = Object.fromEntries(Object.entries(cacheAfter).filter((entry): entry is [string, number] => typeof entry[1] === 'number').map(([key, value]) => [key, value - (cacheBefore[key as keyof EditorV6MotionCacheStats] as number)]))
+      report.motionCache = { ...counters, inputSamples: cacheInputSamples } as NonNullable<EditorV6ExportReport['motionCache']>
+    }
     if (missingEditorV6Motions(project, options.startFrame, options.endFrame).length) throw Error('Não foi possível preparar todas as transições deste intervalo.')
     await saveReport()
     await mkdir(dirname(deps.outputPath), { recursive: true })

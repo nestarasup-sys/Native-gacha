@@ -6,6 +6,8 @@ import type { EditorV6MotionBakeRequest, EditorV6MotionBakeResult } from '../../
 
 /** Bump when baking changes without an authored timeline change. */
 export const MOTION_CACHE_VERSION = 3
+const MAX_MOTION_CACHE_ENTRIES = 512
+const MAX_MOTION_CACHE_BYTES = 768 * 1024 * 1024
 export type EditorV6MotionCacheStats = { memoryHits: number; diskHits: number; misses: number; rasterized: number; diskMissing: number; diskRejected: number; diskReadErrors: number; diskWrites: number; diskWriteSkipped: number; diskWriteErrors: number; diskBytesRead: number; diskBytesWritten: number }
 export function motionCacheKey(request: EditorV6MotionBakeRequest): string {
   const key = request.maxAtlasPixels === undefined
@@ -18,7 +20,7 @@ function validateCachedMotion(request: EditorV6MotionBakeRequest, result: Editor
   if (parsed.motion.key !== request.plan.key || parsed.motion.frames.map((frame) => frame.offset).join() !== request.plan.samples.map((sample) => sample.offset).join()) throw Error('A transição em cache não corresponde à requisição.')
   return parsed
 }
-export function createMotionDiskCache(folder: string, maximumBytes = 256 * 1024 * 1024) {
+export function createMotionDiskCache(folder: string, maximumBytes = MAX_MOTION_CACHE_BYTES) {
   let maintenance = Promise.resolve()
   return {
     async read(request: EditorV6MotionBakeRequest): Promise<EditorV6MotionBakeResult | undefined> {
@@ -65,7 +67,7 @@ export function createMotionDiskCache(folder: string, maximumBytes = 256 * 1024 
         let bytes = 0
         for (const [index, entry] of entries.entries()) {
           bytes += entry.size
-          if (index >= 128 || bytes > maximumBytes) await unlink(join(folder, entry.name)).catch(() => {})
+          if (index >= MAX_MOTION_CACHE_ENTRIES || bytes > maximumBytes) await unlink(join(folder, entry.name)).catch(() => {})
         }
       })
       await maintenance
