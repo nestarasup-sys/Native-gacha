@@ -148,6 +148,8 @@ async function createMediaFixtures(folder) {
 
 async function main() {
   const exportOnly = process.argv.includes('--export-stress')
+  const compareWorkers = process.argv.includes('--compare-workers')
+  if (compareWorkers && !exportOnly) throw new Error('--compare-workers requer --export-stress.')
   await fs.mkdir(outputRoot, { recursive: true })
   const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'editor-v6-stress-offscreen-'))
   const dataRoot = path.join(tempRoot, 'app-data')
@@ -545,7 +547,7 @@ async function main() {
       const exportEnv = { ...process.env }
       delete exportEnv.ELECTRON_RUN_AS_NODE
       const projectFolder = path.join(projectRoot, `editorV6-${scenario.id}`)
-      const exportChild = spawn(require('electron'), [entry, root, projectFolder, outputRoot], { cwd: root, env: exportEnv, stdio: 'inherit', windowsHide: true })
+      const exportChild = spawn(require('electron'), [entry, root, projectFolder, outputRoot, ...(compareWorkers ? ['--compare-workers'] : [])], { cwd: root, env: exportEnv, stdio: 'inherit', windowsHide: true })
       const exportCode = await new Promise((resolve, reject) => { exportChild.once('error', reject); exportChild.once('exit', resolve) })
       if (exportCode !== 0) throw new Error(`A exportação silenciosa de 240 segundos falhou (Electron ${exportCode}).`)
       stressExport = JSON.parse(await fs.readFile(path.join(outputRoot, 'stress-export-validation.json'), 'utf8'))

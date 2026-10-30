@@ -58,73 +58,89 @@ async function main() {
     preload: join(root, 'out/preload/editorV6ExportPreload.cjs'),
     mediaPath: (_projectId, fileName, libraryVideoId) => join(projectFolder, libraryVideoId ? 'library' : 'media', fileName)
   })
-  const outputPath = join(outputFolder, 'stress-heavy-240s-silent.mp4')
-  const reportPath = join(outputFolder, 'stress-heavy-240s-silent.report.json')
+  const turbo = process.env.GACHA_EDITOR_V6_STRESS_TURBO !== 'off'
+  const comparisonModes = process.argv.includes('--compare-workers') ? [false, true, true, false, false, true] : [turbo]
+  const runSummaries: Array<{ run: number; parallelism: number; milliseconds: number; realTimeFactor: number; renderingMilliseconds: number; finalizationMilliseconds: number; rssStartBytes: number; rssPeakBytes: number; visibleTransitions: number; minimumChangedPixels: number }> = []
+  let finalOutputPath = ''
+  let finalReportPath = ''
   try {
-    console.log(`[V6 stress export] Exportando silenciosamente ${project.timeline.durationFrames} quadros, ${plans.length} transições.`)
-    const report = await runEditorV6Export(project, {
-      startFrame: 0, endFrame: project.timeline.durationFrames, width: 320, height: 180, turbo: true, encoder: 'cpu'
-    }, {
-      ffmpeg, ffprobe, tempRoot: join(outputFolder, 'temp'), id: randomUUID(), outputPath, reportPath,
-      signal: new AbortController().signal,
-      getCharacters: async () => [],
-      bakeMotion: async () => { throw Error('O fixture não deveria precisar gerar atlases de movimento.') },
-      createWorker: (renderProject, _part, signal, layeredVideo, mouthLoops) => factory.create({ project: renderProject, width: 320, height: 180, layeredVideo, ...(mouthLoops ? { mouthLoops } : {}) }, signal),
-      audioPath: (_clip) => join(projectFolder, 'media', _clip.fileName),
-      mediaPath: (_projectId, fileName, libraryVideoId) => join(projectFolder, libraryVideoId ? 'library' : 'media', fileName),
-      progress: (patch) => { if (patch.message) console.log(`[V6 stress export] ${patch.message}`) }
-    })
-    if (report.state !== 'completed' || report.totalFrames !== project.timeline.durationFrames || report.motionTransitionsRequired !== 0 || report.motionTransitionsPrepared !== 0) throw Error(`A exportação terminou com dados inesperados: ${JSON.stringify({ state: report.state, frames: report.totalFrames, transitionsRequired: report.motionTransitionsRequired, transitionsPrepared: report.motionTransitionsPrepared })}`)
-    const probe = report.validation as { streams?: Array<{ codec_type: string; nb_read_frames?: string | number; r_frame_rate?: string; duration?: string }>; format?: { duration?: string } }
-    const video = probe.streams?.find((stream) => stream.codec_type === 'video')
-    const audio = probe.streams?.find((stream) => stream.codec_type === 'audio')
-    if (Number(video?.nb_read_frames) !== project.timeline.durationFrames || video?.r_frame_rate !== '30/1' || audio || report.audioClips !== 0) throw Error('A exportação silenciosa perdeu quadros, taxa de quadros ou incluiu uma faixa de áudio.')
-
-    const expression = `select='${sampleFrames.map((frame) => `eq(n,${frame})`).join('+')}'`
-    const decoded = execFileSync(ffmpeg, ['-v', 'error', '-i', outputPath, '-vf', expression, '-fps_mode', 'passthrough', '-frames:v', String(sampleFrames.length), '-pix_fmt', 'rgb24', '-f', 'rawvideo', 'pipe:1'], { windowsHide: true, maxBuffer: 64 * 1024 ** 2 })
-    const frameBytes = 320 * 180 * 3
-    if (decoded.length !== sampleFrames.length * frameBytes) throw Error(`O MP4 entregou ${decoded.length / frameBytes} quadros de amostra; esperava ${sampleFrames.length}.`)
-    const frames = new Map<number, Buffer>()
-    sampleFrames.forEach((frame, index) => frames.set(frame, decoded.subarray(index * frameBytes, (index + 1) * frameBytes)))
-    const motionResults = visibleMotionPlans.map((plan) => {
-      const first = plan.endFrame + plan.samples[0].offset, last = plan.endFrame + plan.samples.at(-1)!.offset
-      const firstImage = frames.get(first)!, lastImage = frames.get(last)!
-      const bounds = [plan.from, plan.to].map((element) => {
-        const size = editorV6ElementSize(element)
-        return {
-          left: (50 + element.x) * 3.2 - size.width * 1.6,
-          right: (50 + element.x) * 3.2 + size.width * 1.6,
-          top: (50 + element.y) * 1.8 - size.height * .9,
-          bottom: (50 + element.y) * 1.8 + size.height * .9
-        }
+    for (const [index, runTurbo] of comparisonModes.entries()) {
+      const runSuffix = comparisonModes.length > 1 ? `-run-${index + 1}-workers-${runTurbo ? 2 : 1}` : ''
+      const outputPath = join(outputFolder, `stress-heavy-240s-silent${runSuffix}.mp4`)
+      const reportPath = join(outputFolder, `stress-heavy-240s-silent${runSuffix}.report.json`)
+      finalOutputPath = outputPath; finalReportPath = reportPath
+      console.log(`[V6 stress export] Rodada ${index + 1}/${comparisonModes.length}: ${runTurbo ? 'dois' : 'um'} worker(s), ${project.timeline.durationFrames} quadros, ${plans.length} transições.`)
+      const report = await runEditorV6Export(project, {
+        startFrame: 0, endFrame: project.timeline.durationFrames, width: 320, height: 180, turbo: runTurbo, encoder: 'cpu'
+      }, {
+        ffmpeg, ffprobe, tempRoot: join(outputFolder, 'temp'), id: randomUUID(), outputPath, reportPath,
+        signal: new AbortController().signal,
+        getCharacters: async () => [],
+        bakeMotion: async () => { throw Error('O fixture não deveria precisar gerar atlases de movimento.') },
+        createWorker: (renderProject, _part, signal, layeredVideo, mouthLoops) => factory.create({ project: renderProject, width: 320, height: 180, layeredVideo, ...(mouthLoops ? { mouthLoops } : {}) }, signal),
+        audioPath: (_clip) => join(projectFolder, 'media', _clip.fileName),
+        mediaPath: (_projectId, fileName, libraryVideoId) => join(projectFolder, libraryVideoId ? 'library' : 'media', fileName),
+        progress: (patch) => { if (patch.message) console.log(`[V6 stress export] ${patch.message}`) }
       })
-      const left = Math.max(0, Math.floor(Math.min(...bounds.map((item) => item.left)) - 4))
-      const right = Math.min(320, Math.ceil(Math.max(...bounds.map((item) => item.right)) + 4))
-      const bodyTop = Math.min(...bounds.map((item) => item.top + (item.bottom - item.top) * .3))
-      const top = Math.max(0, Math.floor(bodyTop - 4))
-      const bottom = Math.min(180, Math.ceil(Math.max(...bounds.map((item) => item.bottom)) + 4))
-      let changedPixels = 0
-      for (let y = top; y < bottom; y++) for (let x = left; x < right; x++) {
-        const offset = (y * 320 + x) * 3
-        const delta = Math.abs(firstImage[offset] - lastImage[offset]) + Math.abs(firstImage[offset + 1] - lastImage[offset + 1]) + Math.abs(firstImage[offset + 2] - lastImage[offset + 2])
-        if (delta > 50) changedPixels++
-      }
-      const visible = changedPixels >= 12
-      return { blockId: plan.blockId, characterId: plan.characterId, firstFrame: first, lastFrame: last, changedPixels, visible }
-    })
-    const invisible = motionResults.filter((result) => !result.visible)
-    if (invisible.length) throw Error(`${invisible.length} transições não alteraram pixels suficientes do personagem no MP4 decodificado: ${JSON.stringify(invisible.slice(0, 8))}`)
+      const expectedParallelism = runTurbo ? 2 : 1
+      if (report.state !== 'completed' || report.totalFrames !== project.timeline.durationFrames || report.motionTransitionsRequired !== 0 || report.motionTransitionsPrepared !== 0 || report.attempts[0]?.parallelism !== expectedParallelism) throw Error(`A exportação terminou com dados inesperados: ${JSON.stringify({ state: report.state, frames: report.totalFrames, transitionsRequired: report.motionTransitionsRequired, transitionsPrepared: report.motionTransitionsPrepared, parallelism: report.attempts[0]?.parallelism })}`)
+      const probe = report.validation as { streams?: Array<{ codec_type: string; nb_read_frames?: string | number; r_frame_rate?: string; duration?: string }>; format?: { duration?: string } }
+      const video = probe.streams?.find((stream) => stream.codec_type === 'video')
+      const audio = probe.streams?.find((stream) => stream.codec_type === 'audio')
+      if (Number(video?.nb_read_frames) !== project.timeline.durationFrames || video?.r_frame_rate !== '30/1' || audio || report.audioClips !== 0) throw Error('A exportação silenciosa perdeu quadros, taxa de quadros ou incluiu uma faixa de áudio.')
 
-    const summary = {
-      passed: true, outputPath, reportPath, frames: report.totalFrames, durationSeconds: Number(probe.format?.duration ?? 0),
-      fps: video.r_frame_rate, audioClips: report.audioClips, videoInputs: report.videoInputs, audioOutput: false,
-      motionAtlasesPersisted: plans.length, motionTransitionsNewlyPreparedDuringExport: report.motionTransitionsPrepared,
-      motionTransitionsDecodedAndVisible: motionResults.length,
-      decodedSampleFrames: sampleFrames.length,
-      visualChecks: motionResults
+      const expression = `select='${sampleFrames.map((frame) => `eq(n,${frame})`).join('+')}'`
+      const decoded = execFileSync(ffmpeg, ['-v', 'error', '-i', outputPath, '-vf', expression, '-fps_mode', 'passthrough', '-frames:v', String(sampleFrames.length), '-pix_fmt', 'rgb24', '-f', 'rawvideo', 'pipe:1'], { windowsHide: true, maxBuffer: 64 * 1024 ** 2 })
+      const frameBytes = 320 * 180 * 3
+      if (decoded.length !== sampleFrames.length * frameBytes) throw Error(`O MP4 entregou ${decoded.length / frameBytes} quadros de amostra; esperava ${sampleFrames.length}.`)
+      const frames = new Map<number, Buffer>()
+      sampleFrames.forEach((frame, frameIndex) => frames.set(frame, decoded.subarray(frameIndex * frameBytes, (frameIndex + 1) * frameBytes)))
+      const motionResults = visibleMotionPlans.map((plan) => {
+        const first = plan.endFrame + plan.samples[0].offset, last = plan.endFrame + plan.samples.at(-1)!.offset
+        const firstImage = frames.get(first)!, lastImage = frames.get(last)!
+        const bounds = [plan.from, plan.to].map((element) => {
+          const size = editorV6ElementSize(element)
+          return {
+            left: (50 + element.x) * 3.2 - size.width * 1.6,
+            right: (50 + element.x) * 3.2 + size.width * 1.6,
+            top: (50 + element.y) * 1.8 - size.height * .9,
+            bottom: (50 + element.y) * 1.8 + size.height * .9
+          }
+        })
+        const left = Math.max(0, Math.floor(Math.min(...bounds.map((item) => item.left)) - 4))
+        const right = Math.min(320, Math.ceil(Math.max(...bounds.map((item) => item.right)) + 4))
+        const bodyTop = Math.min(...bounds.map((item) => item.top + (item.bottom - item.top) * .3))
+        const top = Math.max(0, Math.floor(bodyTop - 4))
+        const bottom = Math.min(180, Math.ceil(Math.max(...bounds.map((item) => item.bottom)) + 4))
+        let changedPixels = 0
+        for (let y = top; y < bottom; y++) for (let x = left; x < right; x++) {
+          const offset = (y * 320 + x) * 3
+          const delta = Math.abs(firstImage[offset] - lastImage[offset]) + Math.abs(firstImage[offset + 1] - lastImage[offset + 1]) + Math.abs(firstImage[offset + 2] - lastImage[offset + 2])
+          if (delta > 50) changedPixels++
+        }
+        const visible = changedPixels >= 12
+        return { blockId: plan.blockId, characterId: plan.characterId, firstFrame: first, lastFrame: last, changedPixels, visible }
+      })
+      const invisible = motionResults.filter((result) => !result.visible)
+      if (invisible.length) throw Error(`${invisible.length} transições não alteraram pixels suficientes do personagem no MP4 decodificado: ${JSON.stringify(invisible.slice(0, 8))}`)
+      const rss = report.mainProcessMemory!
+      runSummaries.push({ run: index + 1, parallelism: expectedParallelism, milliseconds: report.milliseconds!, realTimeFactor: Number((report.milliseconds! / (project.timeline.durationFrames / 30 * 1000)).toFixed(3)), renderingMilliseconds: report.phaseMilliseconds.rendering, finalizationMilliseconds: report.phaseMilliseconds.finalization, rssStartBytes: rss.startRssBytes, rssPeakBytes: rss.peakRssBytes, visibleTransitions: motionResults.length, minimumChangedPixels: Math.min(...motionResults.map((result) => result.changedPixels)) })
     }
+    const median = (values: number[]) => { const sorted = [...values].sort((a, b) => a - b); return sorted[Math.floor(sorted.length / 2)] }
+    const variants = [1, 2].map((parallelism) => {
+      const runs = runSummaries.filter((run) => run.parallelism === parallelism)
+      return { parallelism, runs: runs.length, medianMilliseconds: median(runs.map((run) => run.milliseconds)), medianRenderingMilliseconds: median(runs.map((run) => run.renderingMilliseconds)), peakRssBytes: Math.max(...runs.map((run) => run.rssPeakBytes)), minimumVisibleTransitions: Math.min(...runs.map((run) => run.visibleTransitions)) }
+    })
+    const summary = {
+      passed: true, comparison: comparisonModes.length > 1, outputPath: finalOutputPath, reportPath: finalReportPath,
+      frames: project.timeline.durationFrames, durationSeconds: project.timeline.durationFrames / 30, fps: '30/1', audioClips: 0, videoInputs: 0, audioOutput: false,
+      motionAtlasesPersisted: plans.length, motionTransitionsNewlyPreparedDuringExport: 0,
+      decodedSampleFramesPerRun: sampleFrames.length, visibleTransitionsPerRun: visibleMotionPlans.length,
+      runOrder: runSummaries.map((run) => run.parallelism), runs: runSummaries, variants
+    }
+    if (comparisonModes.length > 1 && (variants.some((variant) => variant.runs !== 3) || runSummaries.some((run) => run.visibleTransitions !== visibleMotionPlans.length))) throw Error('A comparação não completou três rodadas por variante com todas as transições visíveis.')
     await writeFile(join(outputFolder, 'stress-export-validation.json'), JSON.stringify(summary, null, 2), 'utf8')
-    console.log(JSON.stringify({ ...summary, visualChecks: `${motionResults.length} transições verificadas` }, null, 2))
+    console.log(JSON.stringify(summary, null, 2))
   } finally { factory.dispose() }
 }
 
