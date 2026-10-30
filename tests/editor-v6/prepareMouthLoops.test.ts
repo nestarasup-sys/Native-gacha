@@ -113,4 +113,15 @@ describe('preparação dos loops de boca do Editor V6', () => {
     }, 0, 2)
     expect(requestedPixels).toBeLessThanOrEqual(4_000_000)
   })
+
+  it('recusa um volume de estados impossível sem iniciar rasterizações', async () => {
+    const elementId = randomUUID()
+    const actor: EditorV6Element = { id: elementId, kind: 'character', characterId: 'character', text: 'Personagem', x: 0, y: 0, width: 20, height: 40, rotation: 0, zIndex: 1 }
+    const blocks = Array.from({ length: 501 }, (_, index) => ({ id: randomUUID(), elementId, label: `Estado ${index}`, startFrame: index, durationFrames: 1, state: { ...actor, x: index } }))
+    const project = { id: randomUUID(), elements: [actor], assets: [], timeline: { durationFrames: 501, knownElementIds: [elementId], tracks: [{ id: randomUUID(), kind: 'character', name: 'Personagem', muted: false, locked: false, blocks }] } } as unknown as EditorV6Document
+    const character = { id: 'character', updatedAt: '2026-10-30T00:00:00.000Z', customization: { modelSlot: 1 } } as CustomizerCharacter
+    let bakeCalls = 0
+    await expect(prepareExportMouthLoops(project, 0, 501, 30, { signal: new AbortController().signal, characters: [character], progress: () => {}, bake: async () => { bakeCalls++; throw Error('Não deveria rasterizar') } }, 0, 2)).rejects.toThrow('resolução mínima')
+    expect(bakeCalls).toBe(0)
+  })
 })

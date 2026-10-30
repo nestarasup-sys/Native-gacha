@@ -102,6 +102,7 @@ export async function prepareExportMouthLoops(project: EditorV6Document, startFr
   const errors: string[] = []
   const statePixelBudget = Math.min(MAX_SINGLE_ATLAS_PIXELS, Math.floor(MAX_ATLAS_PIXELS / candidates.length / concurrentParts))
   const stateByteBudget = Math.floor(MAX_ATLAS_BYTES / candidates.length / concurrentParts)
+  if (statePixelBudget < MIN_SINGLE_ATLAS_PIXELS) throw new MouthLoopResourceLimitError(`A animação da boca precisa preparar ${candidates.length} estados neste trecho, acima do limite seguro na resolução mínima. Reduza o intervalo ou desative o loop da boca.`)
   for (const [index, candidate] of candidates.entries()) {
     deps.signal.throwIfAborted()
     deps.progress(index, candidates.length, candidate.state.text || 'Personagem')
