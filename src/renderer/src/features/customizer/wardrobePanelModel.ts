@@ -63,8 +63,24 @@ export function wardrobePanelCandidates(
       const components = set.components.filter((component) => wardrobeComponentMatchesPanel(component, panel))
       if (!components.length) return []
       if (panel.id === 'pants-left') {
-        const representative = components.find((component) => component.category === 'calca-coxa') ?? components[0]
-        return [{ summary, set, component: representative, components }]
+        const pantsByPair = new Map<string, typeof components>()
+        const unpairedComponents: typeof components = []
+        for (const component of components) {
+          if (!component.sleevePairId) {
+            unpairedComponents.push(component)
+            continue
+          }
+          const pair = pantsByPair.get(component.sleevePairId) ?? []
+          pair.push(component)
+          pantsByPair.set(component.sleevePairId, pair)
+        }
+        const pants = [...pantsByPair.values(), ...(unpairedComponents.length ? [unpairedComponents] : [])]
+        return pants.map((pair) => ({
+          summary,
+          set,
+          component: pair.find((component) => component.category === 'calca-coxa') ?? pair[0],
+          components: pair
+        }))
       }
       return components.map((component) => ({ summary, set, component, components: [component] }))
     })

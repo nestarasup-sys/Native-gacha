@@ -81,8 +81,8 @@ test('gera apenas miniaturas faltantes cujas categorias existem no conjunto', as
 })
 
 test('índice de candidatos preserva filtros, ordem e agrupamento de cada painel', () => {
-  const component = (id, name, category, attachedPartId = 'body') => ({
-    id, name, category, attachedPartId, x: 0, y: 0, width: 10, height: 10, rotation: 0,
+  const component = (id, name, category, attachedPartId = 'body', sleevePairId) => ({
+    id, name, category, attachedPartId, ...(sleevePairId ? { sleevePairId } : {}), x: 0, y: 0, width: 10, height: 10, rotation: 0,
     dataUrl: 'data:image/png;base64,AA=='
   })
   const createSet = (id, modelSlot, components) => ({
@@ -111,8 +111,11 @@ test('índice de candidatos preserva filtros, ordem e agrupamento de cada painel
     component('upper-right', 'Manga direita', 'manga-superior', 'braço direito'),
     component('lower-left', 'Manga inferior esquerda', 'manga-inferior', 'antebraço esquerdo'),
     component('lower-right', 'Manga inferior direita', 'manga-inferior', 'antebraço direito'),
-    component('pants-thigh', 'Calça coxa', 'calca-coxa'),
-    component('pants-shin', 'Calça canela', 'calca-canela'),
+    component('pants-thigh', 'Calça longa · coxa esquerda', 'calca-coxa', 'thigh-left', 'pants-one'),
+    component('pants-thigh-right', 'Calça longa · coxa direita', 'calca-coxa', 'thigh-right', 'pants-one'),
+    component('pants-shin', 'Calça longa · canela esquerda', 'calca-canela', 'calf-left', 'pants-one'),
+    component('pants-shin-right', 'Calça longa · canela direita', 'calca-canela', 'calf-right', 'pants-one'),
+    component('pants-two', 'Calça longa 02', 'calca-coxa', 'thigh-left', 'pants-two'),
     component('shorts', 'Bermuda', 'shorts'),
     component('glass-cloth', 'Óculos de roupa', 'oculos')
   ])
@@ -149,7 +152,9 @@ test('índice de candidatos preserva filtros, ordem e agrupamento de cada painel
       wardrobePanelCandidates(panel, 1, summaries, wardrobeDetails, [faceSummary], faceComponentDetails)
     )
   }
-  assert.deepEqual(index.get('pants-left')?.[0]?.components.map(({ id }) => id), ['pants-thigh', 'pants-shin'])
+  assert.equal(index.get('pants-left')?.length, 2)
+  assert.deepEqual(index.get('pants-left')?.[0]?.components.map(({ id }) => id), ['pants-thigh', 'pants-thigh-right', 'pants-shin', 'pants-shin-right'])
+  assert.deepEqual(index.get('pants-left')?.[1]?.components.map(({ id }) => id), ['pants-two'])
   assert.equal(index.get('pants-left')?.[0]?.component.id, 'pants-thigh')
   assert.equal(index.get('glasses')?.[0]?.headExtraAsset?.id, faceAsset.id)
   assert.equal(index.get('shirt')?.some((candidate) => candidate.summary.modelSlot === 2), false)
