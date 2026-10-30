@@ -1,7 +1,7 @@
 # Editor V6 — plano de aceleração máxima do export
 
 Data: 30/10/2026. Base inicial de análise: branch `Dev-V2`, commit `b79aaaf`.
-Estado: em andamento. A preparação de movimentos recebeu concorrência limitada a duas tarefas. Uma comparação fria alternada confirmou redução no projeto real. Um candidato para evitar renders repetidos na preparação da boca passou três exports completos, mas sua comparação de tempo ainda é indicativa; o restante do plano segue aberto.
+Estado: em andamento. A preparação de movimentos recebeu concorrência limitada a duas tarefas. A reutilização de um frame idêntico da boca reduziu as medianas em 6,5% no total e 9,4% na renderização com um bake simultâneo; com dois bakes, reduziu 6,4% e 7,3%. Todos os seis exports de cada comparação passaram a validação. O RSS do processo principal variou bastante; com dois bakes, a mediana foi 13,8% maior no candidato, mas o maior pico medido foi menor (1,341 GB contra 1,507 GB no baseline), então ainda não há evidência para atribuir essa diferença à mudança. O restante do plano continua aberto.
 
 ## Objetivo
 
@@ -184,7 +184,41 @@ O teste de navegador compara pixel a pixel o atlas otimizado com o caminho anter
 
 A mediana foi 379,375 s total e 291,487 s renderizando; a maior diferença entre tempos totais foi 3,104 s. A referência fria histórica disponível, sem este candidato, levou 416,512 s total e 329,329 s em renderização. A redução observada é 8,9% no total e 11,5% na renderização, mas a referência não foi executada em ordem alternada nem no mesmo processo/estado térmico. Portanto, o dado não prova que o candidato causou o ganho. O maior RSS medido foi 1,285 GB, aproximadamente 53 MB acima dos 1,232 GB da referência; ambos medem somente o processo principal. Não aumentei concorrência. Relatórios e arquivos ficam em `out/editor-v6-stress/runs/mouth-loop-reuse-candidate-2026-10-30/`, ignorados pelo Git.
 
-`npm run test:editor-v6:export` passou: Turbo/fallback, áudio contínuo na emenda, cancelamento preservando destino anterior, 5.700 quadros e saída Full HD. Também passaram typecheck, auditoria de arquitetura e os 179 testes do Editor V6 (um ignorado). Esta etapa protege a equivalência e valida o fluxo completo; ainda falta uma comparação A/B alternada com três rodadas em cada lado para promover a redução de tempo a ganho comprovado.
+`npm run test:editor-v6:export` passou: Turbo/fallback, áudio contínuo na emenda, cancelamento preservando destino anterior, 5.700 quadros e saída Full HD. Também passaram typecheck, auditoria de arquitetura e os 179 testes do Editor V6 (um ignorado). Esta etapa protege a equivalência e valida o fluxo completo; falta confirmar o perfil com duas tarefas de bake simultâneas.
+
+### Confirmação A/B alternada do reaproveitamento da boca
+
+Para confirmar o tempo com a mesma máquina e conteúdo, executei seis processos isolados na ordem `A1, B1, B2, A2, A3, B3`: A é o commit `1ebb538` (sem o reaproveitamento) e B é `8cf27cb` (com ele). Cada rodada teve cache do app vazio, perfil separado, um bake simultâneo, encoder automático e a mesma cópia verificada do projeto/revisão. Todas passaram as validações dos 5.700 quadros, 1920×1080, 30 FPS, 190 s, 28 áudios, vídeo de entrada e áudio de saída; não houve falha, rejeição ou erro de cache.
+
+| Ordem | Versão | Export total | Renderização | Finalização | Pico RSS principal |
+| ---: | --- | ---: | ---: | ---: | ---: |
+| A1 | baseline | 430,613 s | 342,561 s | 28,171 s | 1,316 GB |
+| B1 | candidato | 404,639 s | 311,382 s | 26,281 s | 1,426 GB |
+| B2 | candidato | 371,499 s | 285,347 s | 25,415 s | 1,121 GB |
+| A2 | baseline | 454,630 s | 362,404 s | 27,842 s | 1,196 GB |
+| A3 | baseline | 430,060 s | 336,110 s | 26,408 s | 1,146 GB |
+| B3 | candidato | 402,718 s | 310,493 s | 29,989 s | 1,322 GB |
+
+As medianas baseline/candidato foram 430,613/402,718 s no total (−6,5%) e 342,561/310,493 s em renderização (−9,4%). O candidato terminou mais rápido nos três pares adjacentes, mas há variação entre rodadas. O RSS principal mediano passou de 1,196 para 1,322 GB (+10,5%); o maior valor foi 1,426 GB no candidato e 1,316 GB no baseline. Esse contador não inclui renderizadores, GPU ou FFmpeg, então não é um limite de memória total. A seção seguinte repete a comparação no perfil de produção com concorrência 2.
+
+O SSIM dos 5.700 quadros entre A1 e B1 foi 0,999986 (Y 0,999985, U 0,999989, V 0,999987). Isso confirma alta similaridade do MP4 comprimido; a igualdade exata dos pixels do atlas otimizado continua coberta pelo teste de navegador. O áudio passou pela validação estrutural do export, mas não foi comparado por sinal PCM. Builds baseline/candidato, vídeos e relatórios isolados ficam em `out/editor-v6-stress/runs/mouth-loop-ab-alternating-2026-10-30/`, fora do Git.
+
+### Confirmação A/B alternada com dois bakes simultâneos
+
+Repeti a ordem `A1, B1, B2, A2, A3, B3` com concorrência de bake 2, mantendo o mesmo projeto/revisão, cache vazio, perfis isolados, encoder automático e conteúdo. A é `1ebb538`; B é `8cf27cb`. Todos os seis relatórios passaram: 5.700 quadros, 1920×1080, 30 FPS, 190 s, 89 transições, 198 estados de boca, 28 áudios, vídeo de entrada e áudio de saída. O pico simultâneo de bake foi 2, sem erros de leitura/escrita ou rejeições no cache.
+
+| Ordem | Versão | Export total | Renderização | Finalização | Pico RSS principal |
+| ---: | --- | ---: | ---: | ---: | ---: |
+| A1 | baseline | 429,059 s | 358,771 s | 26,394 s | 1,507 GB |
+| B1 | candidato | 401,701 s | 332,613 s | 28,805 s | 1,167 GB |
+| B2 | candidato | 491,146 s | 408,923 s | 39,390 s | 1,341 GB |
+| A2 | baseline | 499,834 s | 403,880 s | 27,471 s | 1,119 GB |
+| A3 | baseline | 377,363 s | 316,683 s | 24,978 s | 1,154 GB |
+| B3 | candidato | 328,537 s | 269,491 s | 24,962 s | 1,313 GB |
+
+As medianas baseline/candidato foram 429,059/401,701 s no total (−6,4%) e 358,771/332,613 s em renderização (−7,3%). O candidato terminou mais rápido nos três pares adjacentes. A amplitude dos tempos foi alta nos dois lados (baseline 377–500 s; candidato 329–491 s), então estes valores comprovam o ganho neste conjunto de rodadas, mas ainda recomendam acompanhar novas máquinas/projetos antes de otimizar limites de concorrência. A mediana do RSS do processo principal foi 1,154/1,313 GB (+13,8%), mas o maior pico foi maior no baseline (1,507 GB) que no candidato (1,341 GB); essa oscilação não permite atribuir aumento de memória à mudança. O RSS não inclui renderizadores, GPU ou FFmpeg.
+
+O SSIM dos 5.700 quadros entre A1 e B1 foi 0,999888 (Y 0,999872, U 0,999923, V 0,999916). O teste mediu apenas a imagem comprimida; não houve comparação PCM do áudio. Relatórios, vídeos, builds e estatísticas ficam em `out/editor-v6-stress/runs/mouth-loop-ab-motion2-2026-10-30/`, fora do Git.
 
 ## 2. Remover trabalho repetido da preparação — prioridade alta
 
