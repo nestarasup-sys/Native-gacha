@@ -86,7 +86,7 @@ export async function prepareExportMouthLoops(project: EditorV6Document, startFr
   signal: AbortSignal; characters: Character[]
   bake: (request: EditorV6MotionBakeRequest, signal: AbortSignal) => Promise<EditorV6MotionBakeResult>
   progress: (completed: number, total: number, name: string) => void
-}, phaseStartFrame = startFrame) {
+}, phaseStartFrame = startFrame, concurrentParts: 1 | 2 = 1) {
   const began = performance.now()
   const { candidates, skippedStale } = candidatesFor(project, deps.characters, startFrame, endFrame)
   if (!candidates.length) {
@@ -100,8 +100,8 @@ export async function prepareExportMouthLoops(project: EditorV6Document, startFr
   const states: EditorV6ExportMouthLoopState[] = []
   let atlasBytes = 0, atlasPixels = 0, projectWithAssets = project, skippedUnsupported = 0
   const errors: string[] = []
-  const statePixelBudget = Math.min(MAX_SINGLE_ATLAS_PIXELS, Math.floor(MAX_ATLAS_PIXELS / candidates.length))
-  const stateByteBudget = Math.floor(MAX_ATLAS_BYTES / candidates.length)
+  const statePixelBudget = Math.min(MAX_SINGLE_ATLAS_PIXELS, Math.floor(MAX_ATLAS_PIXELS / candidates.length / concurrentParts))
+  const stateByteBudget = Math.floor(MAX_ATLAS_BYTES / candidates.length / concurrentParts)
   for (const [index, candidate] of candidates.entries()) {
     deps.signal.throwIfAborted()
     deps.progress(index, candidates.length, candidate.state.text || 'Personagem')

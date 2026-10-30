@@ -149,7 +149,7 @@ export async function runEditorV6Export(project: EditorV6Document, options: Edit
           const mouth = await prepareExportMouthLoops(project, part.startFrame, part.endFrame, options.mouthLoopCycleFrames ?? 30, {
             signal: controller.signal, characters, bake: deps.bakeMotion,
             progress: (completed, total, name) => deps.progress({ state: 'preparing', frames: done, motionProgress: undefined, message: `Preparando boca · trecho ${part.index + 1}/${parts.length} · estado ${Math.min(completed + 1, total)}/${total} · ${name}…` })
-          }, options.startFrame)
+          }, options.startFrame, parallelism as 1 | 2)
           renderProject = mouth.project
           mouthLoops = mouth.mouthLoops
           mouthStats.states += mouth.stats.states
