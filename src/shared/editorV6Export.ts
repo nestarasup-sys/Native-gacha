@@ -32,6 +32,16 @@ export function planEditorV6Audio(clips: readonly EditorV6ExportAudio[], startFr
     return clip.muted || clip.gain === 0 || end <= start ? [] : [{ clip, sourceInFrame: clip.sourceInFrame + start - clip.startFrame, durationFrames: end - start, delayFrames: start - startFrame }]
   })
 }
+export function splitEditorV6ExportParts(parts: readonly EditorV6ExportPart[], maxFrames: number): EditorV6ExportPart[] {
+  if (!Number.isInteger(maxFrames) || maxFrames < 1) throw Error('O tamanho de cada trecho de exportação é inválido.')
+  const result: EditorV6ExportPart[] = []
+  for (const part of parts) {
+    for (let startFrame = part.startFrame; startFrame < part.endFrame; startFrame += maxFrames) {
+      result.push({ index: result.length, startFrame, endFrame: Math.min(part.endFrame, startFrame + maxFrames) })
+    }
+  }
+  return result
+}
 export const editorV6WorkerChannels = { payload: 'editor-v6:export-worker:payload', ready: 'editor-v6:export-worker:ready' } as const
 export type EditorV6WorkerPayload = { project: EditorV6Document; width: number; height: number; layeredVideo: boolean; mouthLoops?: EditorV6ExportMouthLoops }
 export type EditorV6WorkerBridge = { payload: () => Promise<EditorV6WorkerPayload>; ready: (error?: string) => Promise<void> }

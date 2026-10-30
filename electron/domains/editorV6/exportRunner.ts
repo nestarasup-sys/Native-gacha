@@ -6,7 +6,7 @@ import type { CustomizerCharacter } from '../../../src/shared/customizer'
 import { missingEditorV6Motions, type EditorV6MotionBakeRequest, type EditorV6MotionBakeResult } from '../../../src/shared/editorV6Motion'
 import { prepareExportMotions } from './prepareMotions'
 import { prepareExportMouthLoops } from './prepareMouthLoops'
-import { planEditorV6Audio, planEditorV6Export, type EditorV6ExportAudio, type EditorV6ExportMouthLoops, type EditorV6ExportOptions, type EditorV6ExportPart, type EditorV6ExportStatus, type EditorV6FrameTimings } from '../../../src/shared/editorV6Export'
+import { planEditorV6Audio, planEditorV6Export, splitEditorV6ExportParts, type EditorV6ExportAudio, type EditorV6ExportMouthLoops, type EditorV6ExportOptions, type EditorV6ExportPart, type EditorV6ExportStatus, type EditorV6FrameTimings } from '../../../src/shared/editorV6Export'
 import { runExportCommand, spawnExportProcess, waitForExport } from './exportProcess'
 import type { EditorV6FrameWorker } from './exportWorkers'
 type StreamProbe = { codec_type: string; codec_name: string; profile?: string; pix_fmt?: string; width?: number; height?: number; r_frame_rate?: string; time_base?: string; nb_read_frames?: string; nb_frames?: string; duration?: string; extradata_hash?: string }
@@ -71,6 +71,7 @@ function summarizeTimings(accumulators: Record<TimingPhase, TimingAccumulator>):
   return report
 }
 const encodingArgs = (encoder: string, threads: number) => ['-c:v', encoder, ...(encoder === 'libopenh264' ? ['-b:v', '12M', '-rc_mode', 'quality', '-allow_skip_frames', '0', '-threads', String(threads)] : ['-b:v', '12M']), '-pix_fmt', 'yuv420p', '-profile:v', 'high', '-level:v', '4.1', '-g', '60', '-bf', '0', '-video_track_timescale', '30000']
+const MOUTH_LOOP_BATCH_FRAMES = 300
 
 function timelineMediaAudio(project: EditorV6Document): EditorV6ExportAudio[] {
   const media = new Map((project.media ?? []).filter((asset) => asset.hasAudio).map((asset) => [asset.id, asset]))
@@ -90,7 +91,8 @@ function timelineVideoClips(project: EditorV6Document, startFrame: number, endFr
   })).sort((a, b) => a.startFrame - b.startFrame || a.fileName.localeCompare(b.fileName))
 }
 export async function runEditorV6Export(project: EditorV6Document, options: EditorV6ExportOptions, deps: Dependencies): Promise<EditorV6ExportReport> {
-  const planned = planEditorV6Export(options, project.timeline.durationFrames)
+  const requestedParts = planEditorV6Export(options, project.timeline.durationFrames)
+  const planned = options.mouthLoop ? splitEditorV6ExportParts(requestedParts, MOUTH_LOOP_BATCH_FRAMES) : requestedParts
   if (process.platform !== 'win32') throw Error('Este exportador BGRA está preparado para Windows.')
   const started = performance.now(), totalFrames = options.endFrame - options.startFrame
   const layeredVideo = timelineVideoClips(project, options.startFrame, options.endFrame).length > 0
@@ -99,7 +101,7 @@ export async function runEditorV6Export(project: EditorV6Document, options: Edit
   const folder = await mkdtemp(join(deps.tempRoot, 'editor-v6-export-'))
   const candidate = join(dirname(deps.outputPath), `.editor-v6-${deps.id}.mp4`)
   let published = false
-  let mouthLoops: EditorV6ExportMouthLoops | undefined
+  let characters: CustomizerCharacter[] = []
   const saveReport = async () => { await mkdir(dirname(deps.reportPath), { recursive: true }); await writeFile(deps.reportPath + '.tmp', JSON.stringify(report, null, 2)); await rename(deps.reportPath + '.tmp', deps.reportPath) }
   const testEncoder = async (encoder: string) => {
     try {
@@ -107,42 +109,74 @@ export async function runEditorV6Export(project: EditorV6Document, options: Edit
       report.encoderTests.push({ encoder }); return true
     } catch (error) { deps.signal.throwIfAborted(); report.encoderTests.push({ encoder, error: message(error) }); return false }
   }
-  const renderAttempt = async (parts: EditorV6ExportPart[], encoder: string): Promise<PartReport[]> => {
+  const renderAttempt = async (parts: EditorV6ExportPart[], encoder: string, maxParallelism = 2): Promise<PartReport[]> => {
     const began = performance.now(), controller = new AbortController(), abort = () => controller.abort(deps.signal.reason)
     deps.signal.addEventListener('abort', abort, { once: true })
     if (deps.signal.aborted) abort()
-    const attempt: AttemptReport = { parts: [], encoder, parallelism: parts.length }
+    const parallelism = Math.max(1, Math.min(maxParallelism, parts.length))
+    const attempt: AttemptReport = { parts: [], encoder, parallelism }
     report.attempts.push(attempt)
     let done = 0
-    deps.progress({ state: 'rendering', frames: 0, motionProgress: undefined, message: parts.length === 2 ? 'Renderizando duas partes em paralelo…' : 'Renderizando em modo seguro…', fallback: report.fallback })
-    const tasks = parts.map(async (part): Promise<PartReport> => {
+    const mouthStats = { states: 0, characterIds: new Set<string>(), skipped: 0, skippedStale: 0, atlasBytes: 0, atlasPixels: 0, details: new Set<string>() }
+    report.mouthAnimation = undefined
+    const publishMouthStats = () => {
+      if (!options.mouthLoop) return
+      report.mouthAnimation = { stateAtlases: mouthStats.states, characters: mouthStats.characterIds.size, skippedStates: mouthStats.skipped, staleStates: mouthStats.skippedStale, cycleFrames: options.mouthLoopCycleFrames ?? 30, atlasBytes: mouthStats.atlasBytes, atlasPixels: mouthStats.atlasPixels, details: [...mouthStats.details].slice(0, 3) }
+    }
+    deps.progress({ state: 'rendering', frames: 0, motionProgress: undefined, message: parallelism === 2 ? 'Renderizando até dois trechos em paralelo…' : 'Renderizando um trecho por vez…', fallback: report.fallback })
+    const renderPart = async (part: EditorV6ExportPart): Promise<PartReport> => {
+      controller.signal.throwIfAborted()
+      let renderProject = project
+      let mouthLoops: EditorV6ExportMouthLoops | undefined
+      try {
+        if (options.mouthLoop) {
+          const mouth = await prepareExportMouthLoops(project, part.startFrame, part.endFrame, options.mouthLoopCycleFrames ?? 30, {
+            signal: controller.signal, characters, bake: deps.bakeMotion,
+            progress: (completed, total, name) => deps.progress({ state: 'preparing', frames: done, motionProgress: undefined, message: `Preparando boca · trecho ${part.index + 1}/${parts.length} · estado ${Math.min(completed + 1, total)}/${total} · ${name}…` })
+          }, options.startFrame)
+          renderProject = mouth.project
+          mouthLoops = mouth.mouthLoops
+          mouthStats.states += mouth.stats.states
+          for (const id of mouth.mouthLoops.states.map((state) => state.characterId)) mouthStats.characterIds.add(id)
+          mouthStats.skipped += mouth.stats.skipped
+          mouthStats.skippedStale += mouth.stats.skippedStale
+          mouthStats.atlasBytes += mouth.stats.atlasBytes
+          mouthStats.atlasPixels += mouth.stats.atlasPixels
+          for (const detail of mouth.stats.errors) mouthStats.details.add(detail)
+          publishMouthStats()
+        }
+      } catch (error) {
+        controller.abort(error)
+        throw error
+      }
       const beganPart = performance.now(), path = join(folder, `attempt-${report.attempts.length}-part-${part.index}.mp4`)
       const result: PartReport = { ...part, path, encoder, rendered: 0, reused: 0, frames: 0, milliseconds: 0 }
       const timingAccumulators = newTimingAccumulators()
-      attempt.parts.push(result)
       let worker: EditorV6FrameWorker | undefined
-      const videoClips = timelineVideoClips(project, part.startFrame, part.endFrame)
-      const videoPaths = await Promise.all(videoClips.map((clip) => deps.mediaPath(project.id, clip.fileName, clip.libraryVideoId)))
-      const videoInputs = videoClips.flatMap((clip, index) => ['-ss', String(clip.mediaInFrame / 30), '-t', String((clip.endFrame - clip.startFrame) / 30), '-i', videoPaths[index]])
-      const filters = layeredVideo ? ['[0:v]crop=iw:ih/2:0:0,format=rgba,setsar=1[base]', '[0:v]crop=iw:ih/2:0:ih/2,format=rgba,setsar=1[fg]'] : ['[0:v]setsar=1[base]']
-      let lastVideo = 'base'
-      videoClips.forEach((clip, index) => {
-        const offset = (clip.startFrame - part.startFrame) / 30, end = (clip.endFrame - part.startFrame) / 30
-        const output = index === videoClips.length - 1 && !layeredVideo ? 'vout' : `mix${index}`
-        const boxWidth = clip.layout.width * options.width / 100, boxHeight = clip.layout.height * options.height / 100
-        const centerX = (50 + clip.layout.x) * options.width / 100, centerY = (50 + clip.layout.y) * options.height / 100
-        const rotation = clip.layout.rotation * Math.PI / 180
-        filters.push(`[${index + 1}:v:0]scale=${boxWidth}:${boxHeight}:force_original_aspect_ratio=decrease:force_divisible_by=2,setsar=1,format=rgba,rotate=${rotation}:ow=rotw(iw):oh=roth(ih):c=none,setpts=PTS-STARTPTS+${offset}/TB[clip${index}]`)
-        filters.push(`[${lastVideo}][clip${index}]overlay=x='${centerX}-overlay_w/2':y='${centerY}-overlay_h/2':enable='gte(t,${offset})*lt(t,${end})':eof_action=pass:repeatlast=0[${output}]`)
-        lastVideo = output
-      })
-      if (layeredVideo) filters.push(`[${lastVideo}][fg]overlay=0:0:format=auto:eof_action=pass:repeatlast=1[vout]`)
-      const filterArgs = layeredVideo || videoClips.length ? ['-filter_complex', filters.join(';'), '-map', '[vout]'] : ['-map', '0:v:0']
-      const rawHeight = options.height * (layeredVideo ? 2 : 1)
-      const process = spawnExportProcess(deps.ffmpeg, ['-v', 'error', '-y', '-f', 'rawvideo', '-pixel_format', 'bgra', '-video_size', `${options.width}x${rawHeight}`, '-framerate', '30', '-i', 'pipe:0', ...videoInputs, ...filterArgs, '-an', ...encodingArgs(encoder, Math.max(1, Math.min(8, Math.floor(availableParallelism() / parts.length)))), '-frames:v', String(part.endFrame - part.startFrame), path], controller.signal)
+      let process: ReturnType<typeof spawnExportProcess> | undefined
+      attempt.parts.push(result)
       try {
+        const videoClips = timelineVideoClips(project, part.startFrame, part.endFrame)
+        const videoPaths = await Promise.all(videoClips.map((clip) => deps.mediaPath(project.id, clip.fileName, clip.libraryVideoId)))
+        const videoInputs = videoClips.flatMap((clip, index) => ['-ss', String(clip.mediaInFrame / 30), '-t', String((clip.endFrame - clip.startFrame) / 30), '-i', videoPaths[index]])
+        const filters = layeredVideo ? ['[0:v]crop=iw:ih/2:0:0,format=rgba,setsar=1[base]', '[0:v]crop=iw:ih/2:0:ih/2,format=rgba,setsar=1[fg]'] : ['[0:v]setsar=1[base]']
+        let lastVideo = 'base'
+        videoClips.forEach((clip, index) => {
+          const offset = (clip.startFrame - part.startFrame) / 30, end = (clip.endFrame - part.startFrame) / 30
+          const output = index === videoClips.length - 1 && !layeredVideo ? 'vout' : `mix${index}`
+          const boxWidth = clip.layout.width * options.width / 100, boxHeight = clip.layout.height * options.height / 100
+          const centerX = (50 + clip.layout.x) * options.width / 100, centerY = (50 + clip.layout.y) * options.height / 100
+          const rotation = clip.layout.rotation * Math.PI / 180
+          filters.push(`[${index + 1}:v:0]scale=${boxWidth}:${boxHeight}:force_original_aspect_ratio=decrease:force_divisible_by=2,setsar=1,format=rgba,rotate=${rotation}:ow=rotw(iw):oh=roth(ih):c=none,setpts=PTS-STARTPTS+${offset}/TB[clip${index}]`)
+          filters.push(`[${lastVideo}][clip${index}]overlay=x='${centerX}-overlay_w/2':y='${centerY}-overlay_h/2':enable='gte(t,${offset})*lt(t,${end})':eof_action=pass:repeatlast=0[${output}]`)
+          lastVideo = output
+        })
+        if (layeredVideo) filters.push(`[${lastVideo}][fg]overlay=0:0:format=auto:eof_action=pass:repeatlast=1[vout]`)
+        const filterArgs = layeredVideo || videoClips.length ? ['-filter_complex', filters.join(';'), '-map', '[vout]'] : ['-map', '0:v:0']
+        const rawHeight = options.height * (layeredVideo ? 2 : 1)
+        process = spawnExportProcess(deps.ffmpeg, ['-v', 'error', '-y', '-f', 'rawvideo', '-pixel_format', 'bgra', '-video_size', `${options.width}x${rawHeight}`, '-framerate', '30', '-i', 'pipe:0', ...videoInputs, ...filterArgs, '-an', ...encodingArgs(encoder, Math.max(1, Math.min(8, Math.floor(availableParallelism() / parallelism)))), '-frames:v', String(part.endFrame - part.startFrame), path], controller.signal)
         const workerStarted = performance.now()
-        worker = await deps.createWorker(project, part, controller.signal, layeredVideo, mouthLoops)
+        worker = await deps.createWorker(renderProject, part, controller.signal, layeredVideo, mouthLoops)
         recordTiming(timingAccumulators, 'workerStartupMs', performance.now() - workerStarted)
         let bitmap: Buffer | undefined
         for (let frame = part.startFrame; frame < part.endFrame; frame++) {
@@ -154,7 +188,7 @@ export async function runEditorV6Export(project: EditorV6Document, options: Edit
           if (rendered.reused && bitmap) result.reused++
           else { if (!rendered.bitmap) throw Error('O renderizador não entregou o bitmap.'); bitmap = rendered.bitmap; result.rendered++ }
           const writeStarted = performance.now()
-          await waitForExport(new Promise<void>((resolve, reject) => process.child.stdin.write(bitmap!, (error) => error ? reject(error) : resolve())), controller.signal, 60000, 'enviar quadro ao FFmpeg')
+          await waitForExport(new Promise<void>((resolve, reject) => process!.child.stdin.write(bitmap!, (error) => error ? reject(error) : resolve())), controller.signal, 60000, 'enviar quadro ao FFmpeg')
           recordTiming(timingAccumulators, 'ffmpegWriteMs', performance.now() - writeStarted)
           result.frames++; done++
           deps.progress({ frames: done })
@@ -169,19 +203,25 @@ export async function runEditorV6Export(project: EditorV6Document, options: Edit
         result.frameTiming = summarizeTimings(timingAccumulators)
         return result
       } catch (error) { result.frameTiming = summarizeTimings(timingAccumulators); controller.abort(error); throw error }
-      finally { worker?.close(); if (process.child.exitCode === null) process.child.kill(); await process.done.catch(() => {}) }
-    })
+      finally { worker?.close(); if (process?.child.exitCode === null) process.child.kill(); await process?.done.catch(() => {}) }
+    }
     try {
-      const results = await Promise.allSettled(tasks)
-      const failed = results.find((item) => item.status === 'rejected')
-      if (failed?.status === 'rejected') throw failed.reason
-      return results.flatMap((item) => item.status === 'fulfilled' ? [item.value] : []).sort((a, b) => a.index - b.index)
+      const results: PartReport[] = []
+      for (let offset = 0; offset < parts.length; offset += parallelism) {
+        const group = parts.slice(offset, offset + parallelism)
+        const settled = await Promise.allSettled(group.map(renderPart))
+        const failed = settled.find((item) => item.status === 'rejected')
+        if (failed?.status === 'rejected') throw failed.reason
+        results.push(...settled.flatMap((item) => item.status === 'fulfilled' ? [item.value] : []))
+        await saveReport()
+      }
+      return results.sort((a, b) => a.index - b.index)
     } catch (error) { attempt.error = message(error); throw error }
     finally { attempt.milliseconds = performance.now() - began; deps.signal.removeEventListener('abort', abort) }
   }
   try {
     deps.signal.throwIfAborted()
-    const characters = await deps.getCharacters()
+    characters = await deps.getCharacters()
     const prepared = await prepareExportMotions(project, options.startFrame, options.endFrame, {
       signal: deps.signal, characters, bake: deps.bakeMotion,
       progress: (completed, total, name) => {
@@ -193,15 +233,6 @@ export async function runEditorV6Export(project: EditorV6Document, options: Edit
     report.motionTransitionsRequired = prepared.stats.total
     report.motionTransitionsPrepared = prepared.stats.total
     report.motionPreparation = prepared.stats
-    if (options.mouthLoop) {
-      const mouth = await prepareExportMouthLoops(project, options.startFrame, options.endFrame, options.mouthLoopCycleFrames ?? 30, {
-        signal: deps.signal, characters, bake: deps.bakeMotion,
-        progress: (completed, total, name) => deps.progress({ state: 'preparing', frames: 0, motionProgress: undefined, message: `Preparando loop da boca ${Math.min(completed + 1, total)}/${total} · ${name}…` })
-      })
-      project = mouth.project
-      mouthLoops = mouth.mouthLoops
-      report.mouthAnimation = { stateAtlases: mouth.stats.states, characters: mouth.stats.characters, skippedStates: mouth.stats.skipped, staleStates: mouth.stats.skippedStale, cycleFrames: options.mouthLoopCycleFrames ?? 30, atlasBytes: mouth.stats.atlasBytes, atlasPixels: mouth.stats.atlasPixels, details: mouth.stats.errors }
-    }
     if (missingEditorV6Motions(project, options.startFrame, options.endFrame).length) throw Error('Não foi possível preparar todas as transições deste intervalo.')
     await saveReport()
     await mkdir(dirname(deps.outputPath), { recursive: true })
@@ -240,16 +271,18 @@ export async function runEditorV6Export(project: EditorV6Document, options: Edit
       return { ...validation, seams, decodedFramesNearEachSeam: seams.length ? 3 : 0 }
     }
     try {
-      report.validation = await finish(await renderAttempt(planned, encoder))
+      report.validation = await finish(await renderAttempt(planned, encoder, options.turbo ? 2 : 1))
     } catch (error) {
       deps.signal.throwIfAborted()
       const attempt = report.attempts.at(-1)
       if (attempt) attempt.error = message(error)
-      if (planned.length < 2) throw error
+      if (!options.turbo || requestedParts.length < 2) throw error
       report.fallback = true
       deps.progress({ message: 'O Turbo falhou. Reiniciando com um renderizador e CPU…', fallback: true })
       if (encoder !== 'libopenh264' && !await testEncoder('libopenh264')) throw Error('O codificador seguro também não está disponível.')
-      report.validation = await finish(await renderAttempt([{ index: 0, startFrame: options.startFrame, endFrame: options.endFrame }], 'libopenh264'))
+      const safePart = [{ index: 0, startFrame: options.startFrame, endFrame: options.endFrame }]
+      const safeParts = options.mouthLoop ? splitEditorV6ExportParts(safePart, MOUTH_LOOP_BATCH_FRAMES) : safePart
+      report.validation = await finish(await renderAttempt(safeParts, 'libopenh264', 1))
     }
     deps.signal.throwIfAborted()
     // The destination only changes after the candidate passes all validations.

@@ -5,7 +5,8 @@ import { join, resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { createEditorV6MotionService } from '../../electron/domains/editorV6/motionIpc'
 import { editorV6IpcChannels } from '../../src/shared/editorV6IpcChannels'
-import { editorV6MotionPlans } from '../../src/shared/editorV6Motion'
+import { editorV6MotionPlans, type EditorV6MotionBakeRequest, type EditorV6MotionBakeResult } from '../../src/shared/editorV6Motion'
+import type { EditorV6ExportMouthLoops } from '../../src/shared/editorV6Export'
 import type { CustomizerCharacter } from '../../src/shared/customizer'
 import type { FabricatorProject } from '../../src/shared/fabricator'
 import { createEditorV6WorkerFactory } from '../../electron/domains/editorV6/exportWorkers'
@@ -44,10 +45,10 @@ async function main() {
     await writeFile(join(folder, `capture-${window.webContents.id}.json`), JSON.stringify({ frame, yellowPixels, dom }))
   } : undefined })
   let active = 0, peak = 0
-  const makeWorker = async (signal: AbortSignal, width = 320, height = 180, renderProject = project, layeredVideo = false) => {
+  const makeWorker = async (signal: AbortSignal, width = 320, height = 180, renderProject = project, layeredVideo = false, mouthLoops?: EditorV6ExportMouthLoops) => {
     active++; peak = Math.max(peak, active)
     try {
-      const worker = await factory.create({ project: renderProject, width, height, layeredVideo }, signal)
+      const worker = await factory.create({ project: renderProject, width, height, layeredVideo, ...(mouthLoops ? { mouthLoops } : {}) }, signal)
       let closed = false
       return { frame: worker.frame, close: () => { if (closed) return; closed = true; active--; worker.close() } }
     } catch (error) { active--; throw error }
@@ -55,7 +56,7 @@ async function main() {
   const options = { startFrame: 5, endFrame: 86, width: 320, height: 180, turbo: true, encoder: 'cpu' as const }
   const output = join(folder, 'turbo.mp4')
   const progressMessages: string[] = []
-  const base = { ffmpeg, ffprobe, tempRoot: folder, id: randomUUID(), outputPath: output, reportPath: join(folder, 'turbo.report.json'), signal: new AbortController().signal, getCharacters: async () => [], bakeMotion: async () => { throw Error('Unexpected motion bake.') }, createWorker: (renderProject: EditorV6Document, _part: unknown, signal: AbortSignal, layeredVideo: boolean) => makeWorker(signal, 320, 180, renderProject, layeredVideo), audioPath: () => audio, mediaPath: (_projectId: string, fileName: string) => join(folder, 'media', fileName), progress: (patch: { message?: string }) => { if (patch.message) progressMessages.push(patch.message) } }
+  const base = { ffmpeg, ffprobe, tempRoot: folder, id: randomUUID(), outputPath: output, reportPath: join(folder, 'turbo.report.json'), signal: new AbortController().signal, getCharacters: async () => [], bakeMotion: async () => { throw Error('Unexpected motion bake.') }, createWorker: (renderProject: EditorV6Document, _part: unknown, signal: AbortSignal, layeredVideo: boolean, mouthLoops?: EditorV6ExportMouthLoops) => makeWorker(signal, 320, 180, renderProject, layeredVideo, mouthLoops), audioPath: () => audio, mediaPath: (_projectId: string, fileName: string) => join(folder, 'media', fileName), progress: (patch: { message?: string }) => { if (patch.message) progressMessages.push(patch.message) } }
   const report = await runEditorV6Export(project, options, base)
   assert(report.state === 'completed' && !report.fallback, 'Turbo não concluiu com duas partes.')
   assert(report.attempts[0].parts.map((part) => part.frames).sort((a, b) => a - b).join(',') === '40,41', 'Partes perderam ou repetiram quadros.')
@@ -81,6 +82,43 @@ async function main() {
           : track)
     }
   }
+  const mouthAtlasPath = join(folder, 'mouth-loop-atlas.png')
+  run(['-f', 'lavfi', '-i', 'color=c=red:s=48x16', '-frames:v', '1', mouthAtlasPath])
+  const mouthAtlasData = `data:image/png;base64,${(await readFile(mouthAtlasPath)).toString('base64')}`
+  const mouthCharacter: CustomizerCharacter = { id: 'alice', name: 'Alice', hair: '#000000', outfit: '#000000', skin: '#ffffff', createdAt: project.createdAt, updatedAt: project.updatedAt, customization: { modelSlot: 1, poseSlot: null, partOverrides: {}, layerOrder: [] } }
+  const mouthBlocks = [
+    ...Array.from({ length: 15 }, (_, index) => ({ id: randomUUID(), elementId: faceActor.id, label: `Variação ${index + 1}`, startFrame: 5 + index * 2, durationFrames: 2, state: { ...faceActor, x: index - 7, activeFaceMode: 'idle' as const } })),
+    { id: randomUUID(), elementId: faceActor.id, label: 'Continuação', startFrame: 35, durationFrames: 271, state: { ...faceActor, activeFaceMode: 'idle' as const } }
+  ]
+  const mouthProject: EditorV6Document = {
+    ...project, title: 'Many mouth loop states', exportAudio: [], assets: [...project.assets, talkAsset], elements: [faceActor],
+    timeline: { ...project.timeline, durationFrames: 306, tracks: project.timeline.tracks.map((track) => track.kind === 'character'
+      ? { ...track, blocks: mouthBlocks }
+      : track.kind === 'speech' ? { ...track, blocks: [{ id: randomUUID(), label: 'Speech', characterId: 'alice', startFrame: 5, durationFrames: 301 }] }
+        : track) }
+  }
+  const mouthWorkerPayloads: Array<{ startFrame: number; cycleFrames: number; stateCount: number; assetCount: number; partStart: number; partEnd: number }> = []
+  const bakeMouthLoop = async (request: EditorV6MotionBakeRequest, signal: AbortSignal): Promise<EditorV6MotionBakeResult> => {
+    signal.throwIfAborted()
+    const assetId = randomUUID()
+    const frames = request.plan.samples.map((sample, index) => ({ offset: sample.offset, sprite: { x: index * 16, y: 0, width: 16, height: 16, atlasWidth: 48, atlasHeight: 16 }, x: request.plan.from.x, y: request.plan.from.y, width: request.plan.from.width, height: request.plan.from.height, rotation: 0, flipX: false }))
+    return { asset: { id: assetId, category: 'character', name: 'Mouth loop', mimeType: 'image/png', dataUrl: mouthAtlasData }, motion: { version: 1, key: request.plan.key, assetId, frames }, metrics: { milliseconds: 1, preparedRigs: 1, samples: frames.length, atlasPixels: 48 * 16 } }
+  }
+  const mouthOutput = join(folder, 'many-mouth-loop-states.mp4')
+  const mouthReport = await runEditorV6Export(mouthProject, { startFrame: 5, endFrame: 306, width: 320, height: 180, turbo: false, encoder: 'cpu', mouthLoop: true, mouthLoopCycleFrames: 37 }, {
+    ...base, id: randomUUID(), outputPath: mouthOutput, reportPath: join(folder, 'many-mouth-loop-states.report.json'),
+    getCharacters: async () => [mouthCharacter], bakeMotion: bakeMouthLoop,
+    createWorker: (renderProject, part, signal, layeredVideo, mouthLoops) => {
+      mouthWorkerPayloads.push({ startFrame: mouthLoops?.startFrame ?? -1, cycleFrames: mouthLoops?.cycleFrames ?? -1, stateCount: mouthLoops?.states.length ?? 0, assetCount: renderProject.assets.length, partStart: part.startFrame, partEnd: part.endFrame })
+      return makeWorker(signal, 320, 180, renderProject, layeredVideo, mouthLoops)
+    }
+  })
+  assert(mouthReport.state === 'completed' && mouthReport.mouthAnimation?.stateAtlases === 16, 'O export não preparou todos os estados da boca divididos entre os trechos.')
+  assert(mouthWorkerPayloads.map((item) => item.stateCount).join(',') === '15,1', 'Cada trecho recebeu estados de boca fora do seu próprio intervalo.')
+  assert(mouthWorkerPayloads.map((item) => item.assetCount).join(',') === '17,3', 'O worker recebeu atlas de boca de outros trechos do export.')
+  assert(mouthWorkerPayloads.every((item) => item.startFrame === 5 && item.cycleFrames === 37), 'O ciclo da boca reiniciou em uma emenda do export.')
+  assert(mouthWorkerPayloads[1].partStart === 305 && ((mouthWorkerPayloads[1].partStart - mouthWorkerPayloads[1].startFrame) % 37) === 4, 'A fase global da boca não foi preservada no trecho seguinte.')
+  assert(mouthReport.attempts[0].parallelism === 1 && mouthReport.attempts[0].parts.map((part) => part.frames).join(',') === '300,1', 'O export não limitou a preparação e renderização aos trechos configurados.')
   const faceOutput = join(folder, 'face-state.mp4')
   const faceReport = await runEditorV6Export(faceProject, { ...options, startFrame: 0, endFrame: 40 }, { ...base, id: randomUUID(), outputPath: faceOutput, reportPath: join(folder, 'face-state.report.json') })
   assert(!faceReport.fallback, 'Trocas de talk/pensamento não concluíram com a captura normal.')
