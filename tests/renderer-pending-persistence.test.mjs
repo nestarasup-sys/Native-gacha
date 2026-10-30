@@ -203,7 +203,7 @@ test('main flushes renderer writes before its IPC inventory and navigation waits
   assert.match(flushIpc, /ipcMain\.handle\(studioIpcChannels\.flushPendingWrites/)
   assert.match(flushIpc, /await flushRendererWrites\(event\)[\s\S]*?await flushMainWrites\(\)/, 'renderer deve drenar os timers antes do inventário principal')
   assert.match(topBar, /flushPendingRendererWrites\(\)\.then\(\(\) =>[\s\S]*?navigate\(path\)/)
-  assert.match(fabricatorPage, /flushPendingRendererWrites\(\)\.then\(\(\) =>[\s\S]*?setActiveSection\(section\.id\)/)
+  assert.match(fabricatorPage, /flushPendingRendererWrites\(\)\.then\(\(\) =>[\s\S]*?setActiveSection\(section\)/)
 })
 
 test('Fabricator discards obsolete import results and guards cleanup against saved references', async () => {

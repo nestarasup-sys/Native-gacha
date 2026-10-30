@@ -132,15 +132,17 @@ test('controles de aparência ficam em Modelos e as prévias compartilham as cor
   'src/renderer/src/features/fabricator/ExpressionPresetWorkspace.tsx',
   'src/renderer/src/features/fabricator/FaceAnimatorWorkspace.tsx'
  ]
- const [page,appearance,context,...workspaces]=await Promise.all([
+ const [page,modelWorkspace,appearance,context,...workspaces]=await Promise.all([
   readFile('src/renderer/src/features/fabricator/FabricatorPage.tsx','utf8'),
+  readFile('src/renderer/src/features/fabricator/FabricatorModelWorkspace.tsx','utf8'),
   readFile('src/renderer/src/features/fabricator/useFabricatorModelAppearance.ts','utf8'),
   readFile('src/renderer/src/features/fabricator/ModelAppearanceContext.tsx','utf8'),
   ...consumers.map(path=>readFile(path,'utf8'))
  ])
  assert.match(page,/useFabricatorModelAppearance\(/)
- assert.equal((page.match(/<ModelSkinTonePicker\b/g) ?? []).length,1,'os controles de pele e contorno aparecem uma vez, no editor de Modelos')
- assert.doesNotMatch(page,/fabricator-shared-appearance|scheduleExternalAppearanceSave/,'as áreas secundárias não exibem nem salvam controles de aparência')
+ assert.match(page,/<FabricatorModelWorkspace\b/)
+ assert.equal((modelWorkspace.match(/<ModelSkinTonePicker\b/g) ?? []).length,1,'os controles de pele e contorno aparecem uma vez, no editor de Modelos')
+ assert.doesNotMatch(page+modelWorkspace,/fabricator-shared-appearance|scheduleExternalAppearanceSave/,'as áreas secundárias não exibem nem salvam controles de aparência')
  assert.match(page,/ModelAppearanceProvider slot=\{appearanceProject\?\.slot/)
  assert.match(appearance,/loadFabricatorSlot\(visibleAppearanceSlot\)/,'as outras áreas continuam lendo o modelo selecionado para as prévias')
  assert.match(appearance,/appearanceLoadError/)

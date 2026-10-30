@@ -1,13 +1,16 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FabricatorAssetSave, FabricatorHistoryAction, FabricatorHistoryState, FabricatorProject, FabricatorSlotSummary, ModelPart } from '../../../../shared/fabricator'
-import { Icon, type IconName } from '../../ui/components/Icon'
+import { Icon } from '../../ui/components/Icon'
 import { usePreviewBackground } from '../../ui/hooks/usePreviewBackground'
 import { modelRigSegmentKind, normalizeLayerOrder, orderedParts, reorderLayer } from './models/rig'
 import { connectFabricatorParts, isTorsoPart, moveFabricatorPartBranch, rotateFabricatorPartBranch, toggleFabricatorJointFixed } from './models/rigEditing'
 import { buildFabricatorJointMarkers } from './models/jointMarkerModel'
 import { createFabricatorCanvasInteraction, type AnchorDragState, type DragState, type PanState } from './canvasInteraction'
-import { FabricatorModelCanvas } from './FabricatorModelCanvas'
-import { FabricatorModelPanel, type FabricatorPanelTab } from './FabricatorModelPanel'
+import { type FabricatorModelCanvasProps } from './FabricatorModelCanvas'
+import { type FabricatorModelPanelProps, type FabricatorPanelTab } from './FabricatorModelPanel'
+import { FabricatorModelWorkspace } from './FabricatorModelWorkspace'
+import { FabricatorSectionNavigation, type FabricatorSectionId } from './FabricatorSectionNavigation'
+import { FabricatorWorkspaceRouter } from './FabricatorWorkspaceRouter'
 import { resizeHeadPart } from './models/resize'
 import { ModelSourceEditor } from './ModelSourceEditor'
 import { broadcastModelSourceUpdate } from './models/modelSourceEvents'
@@ -19,8 +22,7 @@ import { serializeFabricatorProject } from './models/projectSerialization'
 import { createFabricatorProjectSaveCoordinator } from './projectSaveCoordinator'
 import { useFabricatorHistory } from './useFabricatorHistory'
 import { prepareLoadedFabricatorProject } from './models/projectHydration'
-import { MAX_CHROMA_TOLERANCE, type ModelSourceResult } from './models/modelSource'
-import { ModelSkinTonePicker } from './ModelSkinTonePicker'
+import { type ModelSourceResult } from './models/modelSource'
 import { ModelSkinContourEditor } from './ModelSkinContourEditor'
 import { DuplicateModelDialog } from './DuplicateModelDialog'
 import { cachedModelBodyAppearancePreview } from './models/modelSkinTone'
@@ -36,25 +38,11 @@ import './wardrobe/wardrobe.css'
 import './face/face-components.css'
 import './face/head-extras.css'
 
-const PoseWorkspace = lazy(async () => ({ default: (await import('./PoseWorkspace')).PoseWorkspace }))
-const WardrobeWorkspace = lazy(async () => ({ default: (await import('./wardrobe/WardrobeWorkspace')).WardrobeWorkspace }))
-const FaceComponentsWorkspace = lazy(async () => ({ default: (await import('./face/FaceComponentsWorkspace')).FaceComponentsWorkspace }))
-const HeadExtrasWorkspace = lazy(async () => ({ default: (await import('./face/HeadExtrasWorkspace')).HeadExtrasWorkspace }))
-const HairWorkspace = lazy(async () => ({ default: (await import('./HairWorkspace')).HairWorkspace }))
-const AnimatorWorkspace = lazy(async () => ({ default: (await import('./AnimatorWorkspace')).AnimatorWorkspace }))
-const DesignWorkspace = lazy(async () => ({ default: (await import('./DesignWorkspace')).DesignWorkspace }))
-const ExpressionPresetWorkspace = lazy(async () => ({ default: (await import('./ExpressionPresetWorkspace')).ExpressionPresetWorkspace }))
-const FaceAnimatorWorkspace = lazy(async () => ({ default: (await import('./FaceAnimatorWorkspace')).FaceAnimatorWorkspace }))
-
-const sections: { id: string; label: string; icon: IconName }[] = [
-  { id: 'Modelos', label: 'Modelos Dev', icon: 'sparkles' }, { id: 'Poses', label: 'Poses Dev', icon: 'expand' }, { id: 'Roupas', label: 'Roupas Dev', icon: 'shirt' }, { id: 'Olhos', label: 'Olhos Dev', icon: 'face' }, { id: 'Rosto', label: 'Rosto Dev', icon: 'face' }, { id: 'Preset Expressão Dev', label: 'Preset Expressão Dev', icon: 'face' }, { id: 'Animador Rosto Dev', label: 'Animador Rosto Dev', icon: 'face' }, { id: 'Cabeças extra', label: 'Cabeças extra dev', icon: 'face' }, { id: 'Cabelos Dev', label: 'Cabelos Dev', icon: 'bow' }, { id: 'Animador Dev', label: 'Animador Dev', icon: 'body' }, { id: 'Design Dev', label: 'Design Dev', icon: 'flower' }
-]
-
 const DEFAULT_CHROMA_TOLERANCE = 74
 
 export function FabricatorPage() {
   const [previewBackground] = usePreviewBackground()
-  const [activeSection, setActiveSection] = useState('Modelos')
+  const [activeSection, setActiveSection] = useState<FabricatorSectionId>('Modelos')
   const [slots, setSlots] = useState<FabricatorSlotSummary[]>(Array.from({ length: 10 }, () => null))
   const [slotsLoaded, setSlotsLoaded] = useState(false)
   const [slotSwitching, setSlotSwitching] = useState(false)
@@ -801,22 +789,99 @@ export function FabricatorPage() {
     startMixerStroke: seamMixer.startMixerStroke, moveMixerStroke: seamMixer.moveMixerStroke
   })
 
-  const renderEmptyState = () => (
-    <div className="model-empty-state">
-      <div className="model-empty-symbol"><Icon name="sparkles" /></div>
-      <p className="model-eyebrow">{slots[activeSlot - 1]?.recoveryRequired ? 'RECUPERAÇÃO DO MODEL SOURCE' : 'BIBLIOTECA DE MODELOS'}</p>
-      <h1>{slots[activeSlot - 1]?.recoveryRequired ? 'Este slot precisa de uma decisão' : slots[activeSlot - 1] ? 'Abrindo projeto…' : 'Sua mesa de montagem'}</h1>
-      <p>{slots[activeSlot - 1]?.recoveryRequired
-        ? 'Foram encontrados vários backups válidos e o app não escolheu um automaticamente. Use “Excluir recuperação” para apagar permanentemente apenas os arquivos deste slot.'
-        : 'Importe uma folha de peças. O Nymi remove o fundo, recorta cada elemento e abre o canvas para você montar e articular o modelo.'}</p>
-      {!slots[activeSlot - 1]?.recoveryRequired && <button className="model-primary-button" onClick={() => void importSlot(activeSlot, true)} type="button"><Icon name={slots[activeSlot - 1] ? 'reset' : 'plus'} /> {slots[activeSlot - 1] ? 'Reimportar imagem' : 'Importar imagem'}</button>}
-      <span className="model-supported-formats">PNG · JPG · WEBP · processamento local</span>
-    </div>
-  )
-
   const duplicateDestinationSlots = slots.flatMap((summary, index) =>
     !summary && index + 1 !== project?.slot ? [index + 1] : []
   )
+
+  const modelCanvas: FabricatorModelCanvasProps | null = project ? {
+    project,
+    stageRef,
+    previewBackground,
+    canvasParts,
+    hiddenPartIds,
+    selectedIds,
+    connectFromId,
+    jointMarkers,
+    scale,
+    pan,
+    zoom,
+    panning,
+    mixerActive,
+    mixerPainting,
+    thighDeformationActive,
+    showJointPivots,
+    thighDeformationRadius,
+    thighDeformationStrength,
+    temporaryThighResetToken,
+    canvasInteraction,
+    partPreviewSource,
+    toModelPoint,
+    onPartClick: handlePartClick,
+    onSelectPart: (partId) => setSelectedIds([partId]),
+    onWarpStateChange: updateTemporaryThighDeformation,
+    onWarpError: reportTemporaryThighError,
+    onZoomIn: () => setZoom((value) => Math.min(2.4, value + 0.15)),
+    onZoomOut: () => setZoom((value) => Math.max(0.5, value - 0.15)),
+    onCenter: () => { setZoom(1); setPan({ x: 0, y: 0 }) }
+  } : null
+
+  const modelPanel: FabricatorModelPanelProps | null = project ? {
+    project,
+    panelTab,
+    filter,
+    visibleParts,
+    selectedPart,
+    selectedIds,
+    frontToBackLayers,
+    hiddenPartIds,
+    layerDragId,
+    renamingPartId,
+    connectMode,
+    contourConnecting,
+    jointConnectMessage,
+    processing,
+    chromaApplying,
+    historyBusy,
+    modelSourcePublishing,
+    partPreviewSource,
+    actions: {
+      addSheet: (slot) => { void importSlot(slot) },
+      setTab: setPanelTab,
+      setFilter,
+      handlePartClick,
+      rename: {
+        begin: setRenamingPartId,
+        update: (partId, name) => updateProject((current) => ({ ...current, parts: current.parts.map((part) => part.id === partId ? { ...part, name } : part) })),
+        finish: () => setRenamingPartId(null)
+      },
+      transform: {
+        setCoordinate: setPartCoordinate,
+        setRotation: (partId, value) => updateProject((current) => ({ ...current, parts: current.parts.map((part) => part.id === partId ? { ...part, rotation: Number(value) || 0 } : part) })),
+        restoreHeadSize: (partId) => updateProject((current) => resizeHeadPart(resizeHeadPart(current, partId, 'width', 100), partId, 'height', 100)),
+        setHeadSize: (partId, axis, value) => updateProject((current) => resizeHeadPart(current, partId, axis, value)),
+        startGesture: () => startHistoryGesture('edit'),
+        finishGesture: finishHistoryGesture
+      },
+      removePart,
+      splitSelected,
+      mergeSelected,
+      layers: {
+        dragRef: layerDragRef,
+        setDragging: setLayerDragId,
+        drop: dropLayer,
+        select: (partId) => setSelectedIds([partId]),
+        move: moveLayer,
+        toggleFix: toggleJointFix,
+        toggleVisibility: toggleLayerVisibility
+      },
+      joints: {
+        autoConnect: () => { void autoConnectBodyContours() },
+        toggleConnectMode: () => { setConnectMode((value) => !value); setConnectFromId(null) },
+        rotateBranch,
+        disconnect: (jointId) => updateProject((current) => ({ ...current, joints: current.joints.filter((joint) => joint.id !== jointId) }))
+      }
+    }
+  } : null
 
   return (
     <main className="fabricator-layout" aria-label="Fabricador Dev">
@@ -825,18 +890,16 @@ export function FabricatorPage() {
           <span className="fabricator-heading-icon"><Icon name="box" /></span>
           <span><strong>Fabricador Dev</strong><small>ÁREAS DE PRODUÇÃO</small></span>
         </div>
-        <nav className="fabricator-section-list" aria-label="Seções do Fabricador Dev">
-          {sections.map((section) => (
-            <button aria-pressed={activeSection === section.id} className={`fabricator-section-button${activeSection === section.id ? ' active' : ''}`} key={section.id} onClick={() => {
-              void flushPendingRendererWrites().then(() => {
-                setActiveSection(section.id); setAppearanceTargetSlot(activeSlot)
-                if (section.id !== 'Modelos') { setThighDeformationActive(false); setTemporaryThighDeformationIds(new Set()) }
-              }).catch((reason: unknown) => setError(reason instanceof Error ? `Não foi possível salvar antes de trocar de área: ${reason.message}` : 'Não foi possível salvar antes de trocar de área.'))
-            }} disabled={Boolean(slots[activeSlot - 1]?.recoveryRequired) && section.id !== 'Modelos'} title={slots[activeSlot - 1]?.recoveryRequired && section.id !== 'Modelos' ? 'Resolva a recuperação pendente do slot antes de abrir esta área.' : undefined} type="button">
-              <Icon name={section.icon} /><span>{section.label}</span>
-            </button>
-          ))}
-        </nav>
+        <FabricatorSectionNavigation
+          activeSection={activeSection}
+          recoveryRequired={Boolean(slots[activeSlot - 1]?.recoveryRequired)}
+          onSelect={(section) => {
+            void flushPendingRendererWrites().then(() => {
+              setActiveSection(section); setAppearanceTargetSlot(activeSlot)
+              if (section !== 'Modelos') { setThighDeformationActive(false); setTemporaryThighDeformationIds(new Set()) }
+            }).catch((reason: unknown) => setError(reason instanceof Error ? `Não foi possível salvar antes de trocar de área: ${reason.message}` : 'Não foi possível salvar antes de trocar de área.'))
+          }}
+        />
       </aside>
 
       {modelSourceOpen && project && <ModelSourceEditor project={project} onClose={() => { if (!modelSourcePublishing) setModelSourceOpen(false) }} onPublish={publishEditedModelSource} />}
@@ -859,154 +922,60 @@ export function FabricatorPage() {
       <ModelAppearanceProvider slot={appearanceProject?.slot ?? null} previewUrls={bodyAppearancePreviewUrls} modelSkinTone={appearanceProject?.modelSkinTone} modelOutlineColor={appearanceProject?.modelOutlineColor} setTargetSlot={setAppearanceTargetSlot}>
         <section className="fabricator-workspace-shell">
           {activeSection !== 'Modelos' && appearanceLoadError && <small className="fabricator-appearance-error" role="status">Não foi possível carregar a prévia do modelo base: {appearanceLoadError}</small>}
-      <Suspense fallback={<div role="status" aria-busy="true">Carregando área…</div>}>
-      {activeSection === 'Design Dev' ? <DesignWorkspace /> : activeSection === 'Poses' ? <PoseWorkspace baseModelSlot={activeSlot} /> : activeSection === 'Roupas' ? <WardrobeWorkspace baseModelSlot={activeSlot} /> : activeSection === 'Olhos' ? <FaceComponentsWorkspace mode="eyes" baseModelSlot={activeSlot} /> : activeSection === 'Rosto' ? <FaceComponentsWorkspace mode="face" baseModelSlot={activeSlot} /> : activeSection === 'Preset Expressão Dev' ? <ExpressionPresetWorkspace modelSlot={activeSlot} /> : activeSection === 'Animador Rosto Dev' ? <FaceAnimatorWorkspace modelSlot={activeSlot} /> : activeSection === 'Cabeças extra' ? <HeadExtrasWorkspace baseModelSlot={activeSlot} /> : activeSection === 'Cabelos Dev' ? <HairWorkspace baseModelSlot={activeSlot} /> : activeSection === 'Animador Dev' ? <AnimatorWorkspace baseModelSlot={activeSlot} /> : (
-        <section className="fabricator-model-editor" aria-label="Editor de modelos">
-          <header className="model-slotbar">
-            <div className="model-slot-title"><span className="model-slot-logo"><Icon name="sparkles" /></span><span><strong>Modelos</strong><small>10 espaços de trabalho</small></span></div>
-            <div className="model-slots" role="tablist" aria-label="Slots de modelos">
-              {slots.map((slot, index) => {
-                const number = index + 1
-                return <button key={number} className={`model-slot${activeSlot === number ? ' active' : ''}${slot ? ' filled' : ' empty'}`} onClick={() => void selectSlot(number)} disabled={deletingSlot !== null} role="tab" aria-selected={activeSlot === number} aria-label={`Slot ${number}, ${slot?.recoveryRequired ? 'recuperação pendente' : slot ? 'preenchido' : 'vazio'}`} title={slot ? `Slot ${number}: ${slot.name}${slot.recoveryRequired ? ' — vários backups válidos' : ` — ${slot.partCount} peças`}` : `Slot ${number}: vazio`} type="button">
-                  <span>{String(number).padStart(2, '0')}</span><small>{slot?.recoveryRequired ? 'Recuperação' : slot ? 'Preenchido' : 'Vazio'}</small>
-                </button>
-              })}
-            </div>
-            {slots[activeSlot - 1] && <button className="model-delete-compact" onClick={() => void deleteSlot(activeSlot)} disabled={slotSwitching || deletingSlot === activeSlot} title={slots[activeSlot - 1]?.recoveryRequired ? 'Apagar permanentemente os backups e transações deste slot' : 'Excluir permanentemente este modelo'} type="button"><Icon name="trash" /><span>{deletingSlot === activeSlot ? 'Excluindo…' : slots[activeSlot - 1]?.recoveryRequired ? 'Excluir recuperação' : 'Excluir modelo'}</span></button>}
-            {project?.slot === activeSlot && <button className="model-duplicate-compact" onClick={openDuplicateModelDialog} disabled={slotSwitching || deletingSlot !== null || processing || chromaApplying || historyBusy || modelSourcePublishing} title="Criar uma cópia deste modelo em outro slot vazio" type="button"><Icon name="box" /><span>Duplicar modelo</span></button>}
-            <button className="model-import-compact" onClick={() => void importSlot(activeSlot, true)} disabled={Boolean(slots[activeSlot - 1]?.recoveryRequired) || slotSwitching || deletingSlot !== null || processing || chromaApplying || historyBusy || modelSourcePublishing} title={slots[activeSlot - 1]?.recoveryRequired ? 'Exclua a recuperação pendente antes de importar' : slots[activeSlot - 1] ? 'Substituir a imagem original preservando peças, poses, juntas e demais configurações' : 'Importar folha para este slot'} type="button"><Icon name={slots[activeSlot - 1] ? 'reset' : 'plus'} /><span>{slots[activeSlot - 1]?.recoveryRequired ? 'Recuperação' : slots[activeSlot - 1] ? 'Reimportar' : 'Importar'}</span></button>
-          </header>
-
-          {slotSwitching ? (
-            <div className="model-editor-content model-editor-empty" aria-busy="true">
-              <div className="model-processing"><div className="model-spinner" /><p className="model-eyebrow">BIBLIOTECA DE MODELOS</p><h2>Abrindo slot {String(activeSlot).padStart(2, '0')}…</h2><p>Salvando o projeto atual e carregando o próximo.</p></div>
-            </div>
-          ) : !project ? (
-            <div className="model-editor-content model-editor-empty">
-              {processing ? <div className="model-processing"><div className="model-spinner" /><p className="model-eyebrow">PROCESSANDO LOCALMENTE</p><h2>Separando as peças…</h2><p>Removendo o fundo e encontrando cada área da imagem.</p><div className="model-progress"><span style={{ width: `${progress}%` }} /></div><small>{progress}%</small></div> : renderEmptyState()}
-            </div>
-          ) : (
-            <>
-              <div className="model-editor-toolbar">
-                <div className="model-history-controls" aria-label="Histórico de alterações">
-                  <button className="model-history-button" onClick={() => void restoreHistory('undo')} disabled={!history.undo.length || historyBusy || processing || chromaApplying} title={`Desfazer${history.undo.length ? ` — ${history.undo.length} alterações disponíveis` : ''}`} aria-label={`Desfazer, ${history.undo.length} alterações disponíveis`} type="button"><Icon name="undo" /></button>
-                  <button className="model-history-button" onClick={() => void restoreHistory('redo')} disabled={!history.redo.length || historyBusy || processing || chromaApplying} title={`Refazer${history.redo.length ? ` — ${history.redo.length} alterações disponíveis` : ''}`} aria-label={`Refazer, ${history.redo.length} alterações disponíveis`} type="button"><Icon name="redo" /></button>
-                  <small className="model-history-count" title="Histórico salvo localmente; mantém até 50 alterações">{history.undo.length}/50</small>
-                </div>
-                <div className="model-current-title" aria-label={`Modelo ${String(project.slot).padStart(2, '0')}`}><span className="model-eyebrow">MODELO {String(project.slot).padStart(2, '0')}</span></div>
-                <div className="model-toolbar-actions">
-                  <span className={`model-save-state ${saveState}`}><i />{saveState === 'saving' ? 'Salvando…' : saveState === 'error' ? 'Erro ao salvar' : 'Salvo localmente'}</span>
-                  <div className="model-chroma-control">
-                    <div className="model-chroma-heading"><label htmlFor="model-chroma-range"><Icon name="sliders" />Chroma key</label><output htmlFor="model-chroma-range">{chromaValue}</output></div>
-                    <div className="model-chroma-adjust"><input id="model-chroma-range" aria-label="Intensidade do chroma key" type="range" min={project.chromaBaseTolerance ?? project.tolerance} max={MAX_CHROMA_TOLERANCE} value={Math.max(chromaValue, project.chromaBaseTolerance ?? project.tolerance)} disabled={chromaApplying || processing || historyBusy} onChange={(event) => setChromaValue(Number(event.target.value))} /><button className="model-chroma-apply" onClick={applyChromaKey} disabled={chromaApplying || processing || historyBusy || chromaValue === project.tolerance} type="button">{chromaApplying ? 'Aplicando…' : 'Aplicar'}</button></div>
-                    <small>Arraste para ajustar em qualquer direção · Resetar restaura a importação</small>
-                  </div>
-                  <button className="model-tool-button" onClick={() => setModelSourceOpen(true)} disabled={processing || chromaApplying || historyBusy || modelSourcePublishing || saveState === 'error'} title="Alterar permanentemente a largura e a altura das peças na imagem de origem" type="button"><Icon name="edit" /><span>Editar imagem original</span></button>
-                  <button className="model-tool-button model-reset-button" onClick={() => void resetModel()} disabled={processing || chromaApplying || historyBusy} title="Voltar o modelo inteiro ao estado da imagem importada" type="button"><Icon name="reset" /><span>{processing ? 'Resetando…' : 'Resetar'}</span></button>
-                  <button className={`model-tool-button model-mixer-toggle${mixerActive ? ' active' : ''}`} aria-pressed={mixerActive} onClick={() => { setMixerActive((active) => !active); setConnectMode(false); setConnectFromId(null) }} disabled={processing || chromaApplying || historyBusy} title="Pinte sobre a junta: o pincel edita a peça visível mais alta, mesmo que outra esteja selecionada" type="button"><Icon name="brush" /><span>Misturador</span></button>
-                  <button className="model-tool-button model-mixer-clear" onClick={() => { setMixerActive(false); void restoreHistory('undo') }} disabled={history.undo[history.undo.length - 1]?.action !== 'mixer' || historyBusy || processing || chromaApplying} title="Limpar o último traço do Misturador" aria-label="Limpar último traço do Misturador" type="button"><Icon name="eraser" /></button>
-                  <button className={`model-tool-button model-pivot-visibility${showJointPivots ? ' active' : ''}`} aria-pressed={showJointPivots} onClick={() => setShowJointPivots((visible) => !visible)} disabled={processing || chromaApplying || historyBusy} title={showJointPivots ? 'Ocultar bolinhas das juntas' : 'Mostrar bolinhas das juntas'} type="button"><Icon name={showJointPivots ? 'eye' : 'eyeOff'} /><span>{showJointPivots ? 'Ocultar bolinhas' : 'Mostrar bolinhas'}</span></button>
-                </div>
-              </div>
-              <ModelSkinTonePicker value={project.modelSkinTone} outlineColor={project.modelOutlineColor} contourPartCount={project.parts.filter(part => part.fakeSkinContours?.length).length} disabled={processing || chromaApplying || historyBusy || modelSourcePublishing} thighDeformationActive={thighDeformationActive} hasTemporaryThighDeformation={temporaryThighDeformationIds.size > 0} thighDeformationDisabled={!canDeformThigh} thighDeformationRadius={thighDeformationRadius} thighDeformationStrength={thighDeformationStrength} onToggleThighDeformation={toggleThighDeformation} onResetTemporaryThighDeformation={resetTemporaryThighDeformation} onThighDeformationRadiusChange={setThighDeformationRadius} onThighDeformationStrengthChange={setThighDeformationStrength} onSelect={(tone) => updateProject((current) => ({ ...current, modelSkinTone: tone }))} onOutlineSelect={(color) => updateProject((current) => ({ ...current, modelOutlineColor: color }))} onEditContours={() => setSkinContourEditorOpen(true)} />
-              <div className={`model-editor-content${processing || chromaApplying || historyBusy ? ' chroma-applying' : ''}`} aria-busy={processing || chromaApplying || historyBusy}>
-                <FabricatorModelCanvas
-                    project={project}
-                    stageRef={stageRef}
-                    previewBackground={previewBackground}
-                    canvasParts={canvasParts}
-                    hiddenPartIds={hiddenPartIds}
-                    selectedIds={selectedIds}
-                    connectFromId={connectFromId}
-                    jointMarkers={jointMarkers}
-                    scale={scale}
-                    pan={pan}
-                    zoom={zoom}
-                    panning={panning}
-                    mixerActive={mixerActive}
-                    mixerPainting={mixerPainting}
-                    thighDeformationActive={thighDeformationActive}
-                    showJointPivots={showJointPivots}
-                    thighDeformationRadius={thighDeformationRadius}
-                    thighDeformationStrength={thighDeformationStrength}
-                    temporaryThighResetToken={temporaryThighResetToken}
-                    canvasInteraction={canvasInteraction}
-                    partPreviewSource={partPreviewSource}
-                    toModelPoint={toModelPoint}
-                    onPartClick={handlePartClick}
-                    onSelectPart={(partId) => setSelectedIds([partId])}
-                    onWarpStateChange={updateTemporaryThighDeformation}
-                    onWarpError={reportTemporaryThighError}
-                    onZoomIn={() => setZoom((value) => Math.min(2.4, value + 0.15))}
-                    onZoomOut={() => setZoom((value) => Math.max(0.5, value - 0.15))}
-                    onCenter={() => { setZoom(1); setPan({ x: 0, y: 0 }) }}
-                />
-
-                <FabricatorModelPanel
-                  project={project}
-                  panelTab={panelTab}
-                  filter={filter}
-                  visibleParts={visibleParts}
-                  selectedPart={selectedPart}
-                  selectedIds={selectedIds}
-                  frontToBackLayers={frontToBackLayers}
-                  hiddenPartIds={hiddenPartIds}
-                  layerDragId={layerDragId}
-                  renamingPartId={renamingPartId}
-                  connectMode={connectMode}
-                  contourConnecting={contourConnecting}
-                  jointConnectMessage={jointConnectMessage}
-                  processing={processing}
-                  chromaApplying={chromaApplying}
-                  historyBusy={historyBusy}
-                  modelSourcePublishing={modelSourcePublishing}
-                  partPreviewSource={partPreviewSource}
-                  actions={{
-                    addSheet: (slot) => { void importSlot(slot) },
-                    setTab: setPanelTab,
-                    setFilter,
-                    handlePartClick,
-                    rename: {
-                      begin: setRenamingPartId,
-                      update: (partId, name) => updateProject((current) => ({ ...current, parts: current.parts.map((part) => part.id === partId ? { ...part, name } : part) })),
-                      finish: () => setRenamingPartId(null)
-                    },
-                    transform: {
-                      setCoordinate: setPartCoordinate,
-                      setRotation: (partId, value) => updateProject((current) => ({ ...current, parts: current.parts.map((part) => part.id === partId ? { ...part, rotation: Number(value) || 0 } : part) })),
-                      restoreHeadSize: (partId) => updateProject((current) => resizeHeadPart(resizeHeadPart(current, partId, 'width', 100), partId, 'height', 100)),
-                      setHeadSize: (partId, axis, value) => updateProject((current) => resizeHeadPart(current, partId, axis, value)),
-                      startGesture: () => startHistoryGesture('edit'),
-                      finishGesture: finishHistoryGesture
-                    },
-                    removePart,
-                    splitSelected,
-                    mergeSelected,
-                    layers: {
-                      dragRef: layerDragRef,
-                      setDragging: setLayerDragId,
-                      drop: dropLayer,
-                      select: (partId) => setSelectedIds([partId]),
-                      move: moveLayer,
-                      toggleFix: toggleJointFix,
-                      toggleVisibility: toggleLayerVisibility
-                    },
-                    joints: {
-                      autoConnect: () => { void autoConnectBodyContours() },
-                      toggleConnectMode: () => { setConnectMode((value) => !value); setConnectFromId(null) },
-                      rotateBranch,
-                      disconnect: (jointId) => updateProject((current) => ({ ...current, joints: current.joints.filter((joint) => joint.id !== jointId) }))
-                    }
-                  }}
-                />
-              </div>
-            </>
-          )}
-          {error && <div className="model-toast" role="status"><span>{error}</span><button onClick={() => setError('')} type="button" aria-label="Fechar aviso">×</button></div>}
-          {processing && project && <div className="model-processing-overlay"><div className="model-spinner" /><span>Reanalisando imagem · {progress}%</span></div>}
-        </section>
-      )}
-      </Suspense>
+          <FabricatorWorkspaceRouter
+            activeSection={activeSection}
+            activeSlot={activeSlot}
+            modelWorkspace={(
+              <FabricatorModelWorkspace
+                slots={slots}
+                activeSlot={activeSlot}
+                project={project}
+                slotSwitching={slotSwitching}
+                deletingSlot={deletingSlot}
+                processing={processing}
+                progress={progress}
+                chromaApplying={chromaApplying}
+                historyBusy={historyBusy}
+                modelSourcePublishing={modelSourcePublishing}
+                saveState={saveState}
+                history={history}
+                chromaValue={chromaValue}
+                showJointPivots={showJointPivots}
+                mixerActive={mixerActive}
+                thighDeformationActive={thighDeformationActive}
+                hasTemporaryThighDeformation={temporaryThighDeformationIds.size > 0}
+                canDeformThigh={canDeformThigh}
+                thighDeformationRadius={thighDeformationRadius}
+                thighDeformationStrength={thighDeformationStrength}
+                error={error}
+                canvas={modelCanvas}
+                panel={modelPanel}
+                actions={{
+                  select: (slot) => { void selectSlot(slot) },
+                  delete: (slot) => { void deleteSlot(slot) },
+                  duplicate: openDuplicateModelDialog,
+                  import: (slot) => { void importSlot(slot, true) },
+                  undo: () => { void restoreHistory('undo') },
+                  redo: () => { void restoreHistory('redo') },
+                  chromaValueChange: setChromaValue,
+                  applyChroma: applyChromaKey,
+                  openSourceEditor: () => setModelSourceOpen(true),
+                  reset: () => { void resetModel() },
+                  toggleMixer: () => { setMixerActive((active) => !active); setConnectMode(false); setConnectFromId(null) },
+                  clearMixerStroke: () => { setMixerActive(false); void restoreHistory('undo') },
+                  toggleJointPivots: () => setShowJointPivots((visible) => !visible),
+                  toggleThighDeformation,
+                  resetTemporaryThighDeformation,
+                  thighDeformationRadiusChange: setThighDeformationRadius,
+                  thighDeformationStrengthChange: setThighDeformationStrength,
+                  selectSkinTone: (tone) => updateProject((current) => ({ ...current, modelSkinTone: tone })),
+                  selectOutlineColor: (color) => updateProject((current) => ({ ...current, modelOutlineColor: color })),
+                  editFakeContours: () => setSkinContourEditorOpen(true),
+                  dismissError: () => setError('')
+                }}
+              />
+            )}
+          />
       </section>
       </ModelAppearanceProvider>
     </main>

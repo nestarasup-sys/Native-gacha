@@ -24,3 +24,27 @@ test('Customizador continua fora do domínio de salvamento do Fabricador', () =>
   assert.doesNotMatch(source, /\b(?:ipcMain|BrowserWindow|webContents)\b/)
   assert.doesNotMatch(writer, /features\/customizer/)
 })
+
+test('navegação e roteamento do Fabricador ficam fora da página controladora', () => {
+  const page = read('src/renderer/src/features/fabricator/FabricatorPage.tsx')
+  const navigation = read('src/renderer/src/features/fabricator/FabricatorSectionNavigation.tsx')
+  const router = read('src/renderer/src/features/fabricator/FabricatorWorkspaceRouter.tsx')
+  const modelWorkspace = read('src/renderer/src/features/fabricator/FabricatorModelWorkspace.tsx')
+
+  assert.match(page, /<FabricatorSectionNavigation\b/)
+  assert.match(page, /<FabricatorWorkspaceRouter\b/)
+  assert.match(page, /flushPendingRendererWrites\(\)\.then\(\(\) => \{[\s\S]*?setActiveSection\(section\)/)
+  assert.doesNotMatch(page, /const \w+Workspace = lazy\(/)
+  assert.doesNotMatch(page, /from '\.\/(?:PoseWorkspace|DesignWorkspace|AnimatorWorkspace)'/)
+  assert.match(navigation, /onSelect\(section\.id\)/)
+  assert.doesNotMatch(navigation, /window\.desktop|flushPendingRendererWrites/)
+  assert.match(router, /<Suspense fallback=/)
+
+  const sectionIds = [...navigation.matchAll(/id: '([^']+)'/g)].map(([, id]) => id)
+  const routedIds = [...router.matchAll(/case '([^']+)':/g)].map(([, id]) => id)
+  assert.deepEqual([...routedIds].sort(), [...sectionIds].sort(), 'cada seção visível tem exatamente uma rota')
+  assert.match(router, /workspace = modelWorkspace/)
+  assert.match(modelWorkspace, /<FabricatorModelCanvas \{\.\.\.canvas\}/)
+  assert.match(modelWorkspace, /<FabricatorModelPanel \{\.\.\.panel\}/)
+  assert.doesNotMatch(modelWorkspace, /window\.desktop|localStorage|saveFabricatorProject/)
+})

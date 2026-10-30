@@ -135,15 +135,18 @@ test('cache do Misturador aplica LRU, limite de bytes e contabilidade correta',(
  assert.equal(cache.size,0)
 })
 
-test('a página do Fabricador compõe canvas e painel sem absorver a renderização', async () => {
- const [page,canvas,panel]=await Promise.all([
+test('workspace de Modelos compõe canvas e painel sem absorver a renderização', async () => {
+ const [page,workspace,canvas,panel]=await Promise.all([
   readFile('src/renderer/src/features/fabricator/FabricatorPage.tsx','utf8'),
+  readFile('src/renderer/src/features/fabricator/FabricatorModelWorkspace.tsx','utf8'),
   readFile('src/renderer/src/features/fabricator/FabricatorModelCanvas.tsx','utf8'),
   readFile('src/renderer/src/features/fabricator/FabricatorModelPanel.tsx','utf8')
  ])
 
- assert.match(page,/<FabricatorModelCanvas\b/)
- assert.match(page,/<FabricatorModelPanel\b/)
+ assert.match(page,/<FabricatorModelWorkspace\b/)
+ assert.match(workspace,/<FabricatorModelCanvas\b/)
+ assert.match(workspace,/<FabricatorModelPanel\b/)
+ assert.doesNotMatch(workspace,/window\.desktop|localStorage|saveFabricatorProject/)
  assert.doesNotMatch(page,/<TemporaryThighWarpPreview\b|className="model-joint-layer"/)
  assert.match(canvas,/canvasParts\.filter\(\(part\) => !hiddenIds\.has\(part\.id\)\)/)
  assert.match(canvas,/beginAnchorDrag\(event, part\.id, offset\)/)
