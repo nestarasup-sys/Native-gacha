@@ -18,8 +18,7 @@ export const customizerFaceParts: Array<{ id: FaceLibraryPartId; label: string; 
 
 export const facePartColorControls: Array<{ id: HairColorRole; label: string; fallback: string }> = [
   { id: 'base', label: 'Base', fallback: '#55404d' }, { id: 'fade', label: 'Degradê', fallback: '#8a687e' },
-  { id: 'outline', label: 'Contorno', fallback: '#251e2c' }, { id: 'highlight', label: 'Luzes', fallback: '#d6b7c7' },
-  { id: 'accent', label: 'Acento', fallback: '#bd7198' }
+  { id: 'outline', label: 'Contorno', fallback: '#251e2c' }, { id: 'highlight', label: 'Luzes', fallback: '#d6b7c7' }
 ]
 
 export const mirroredFaceThumbnailIds = new Set<FaceComponentPartId>(['eye-right', 'pupil-right', 'brow-right'])

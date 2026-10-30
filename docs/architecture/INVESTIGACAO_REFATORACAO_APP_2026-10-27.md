@@ -1904,3 +1904,7 @@ Continua a auditoria das operações IPC iniciadas pelo usuário e da cobertura 
 - A opção Importar Calças (Sheet) reutiliza detecção de silhuetas, espelhamento, catálogo, histórico e publicação de PNGs. As duas primeiras linhas geram shorts vinculados às coxas; as duas últimas geram calças divisíveis entre coxa e canela.
 - O recortador de mangas e calças particiona a máscara alfa por uma linha com altura e ângulo configuráveis; o ângulo é invertido no lado espelhado. Os dois resultados mantêm o canvas original para evitar deslocamento dos pixels e permitem edição independente.
 - O contrato mantém os metadados de par opcionais existentes e acrescenta apenas pants-grid-3x4 a importKind. Não há migração de dados ou alteração de IPC.
+
+### Paleta do Customizador com quatro controles
+- Cabelos, roupas e elementos faciais compartilham agora base, degradê, luzes e contorno. Os presets novos deixam de emitir accent; o classificador deixa de separar cores por matiz quando uma base está configurada, distribuindo os pixels entre os três tons e contorno.
+- O campo legado accent continua aceito na persistência e funciona isoladamente quando não existe uma base configurada. Não há migração nem regravação de personagens. O renderizador compartilhado aplica a regra também aos consumidores de Studio e Editor V6.
