@@ -37,9 +37,9 @@ test('upload e ajuste posteriores nunca trocam os PNGs individuais por cópias d
   assert.equal(JSON.parse(await fs.readFile(join(root,'wardrobe.json'),'utf8')).name,'Roupa ajustada')
 })
 
-test('o editor Roupas Dev só reenvia PNGs ao importar um conjunto novo, não ao mudar seus encaixes',async()=>{
+test('o editor Roupas Dev salva os PNGs atuais por componente, incluindo recortes e edições',async()=>{
   const editor=await fs.readFile('src/renderer/src/features/fabricator/wardrobe/WardrobeWorkspace.tsx','utf8')
-  assert.match(editor,/activeSetId === set\.id && !hasDirtyWarpImage\(component\.id\)/)
+  assert.match(editor,/const images = wardrobeSaveAssets\(set\)/)
   assert.match(editor,/saveWardrobeSet\(modelSlot, serialized, images\)/)
   const persistence=await fs.readFile('electron/domains/fabricator/wardrobePersistence.ts','utf8')
   assert.match(persistence,/deps\.readCatalogPng\(identity, version, join\(folder, 'parts', `\$\{component\.id\}\.png`\)\)/)

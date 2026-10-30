@@ -17,6 +17,7 @@ import { suggestWardrobeBone } from './boneSelection'
 import { guessWardrobeCategoryForBone, guessWardrobeNameForBone } from './wardrobeAutoDetection'
 import { createWardrobeTorsoGridComponents } from './wardrobeGridImport'
 import { createWardrobeComponentsFromProcessedSheet } from './wardrobeSheetImport'
+import { wardrobeSaveAssets } from './wardrobeSaveAssets'
 import { createWardrobeSleeveSheetComponents } from './wardrobeSleeveSheetImport'
 import type { WardrobeProcessorResponse } from './wardrobeProcessorProtocol'
 import { recoverWardrobeReferenceModel } from './wardrobeReferenceRecovery'
@@ -39,7 +40,6 @@ const categoryNames: Record<WardrobeCategory, string> = {
   camisa: 'Camisas', jaqueta: 'Jaquetas', 'manga-superior': 'Mangas superiores', 'manga-inferior': 'Mangas inferiores', luvas: 'Luvas', capa: 'Capa', cinto: 'Cinto', oculos: 'Óculos', 'acessorio-cabeca': 'Acessórios de cabeça', saia: 'Saia', 'calca-coxa': 'Calças · coxas', 'calca-canela': 'Calças · canelas', shorts: 'Shorts', meia: 'Meias', sapato: 'Sapatos'
 }
 const categories = Object.keys(categoryNames) as WardrobeCategory[]
-function deformationOriginalAssetId(componentId: string): string { return `${componentId}_deform_original` }
 function readFile(file: File): Promise<string> { return normalizeEditableImageFile(file).then((image) => image.dataUrl) }
 function getBodyLayer(model: FabricatorProject | null, partId: string): number {
   if (!model) return 0
@@ -183,7 +183,7 @@ export function WardrobeWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
   const {
     deformMode, setDeformMode, warpReadyId, warpRadius, setWarpRadius, warpStrength, setWarpStrength,
     warpCanvasRef, warpBrushCursorRef, clear: clearWarpSession, invalidateImage: invalidateWarpImage,
-    restoreDeformation: restoreSelectedDeformation, hasDirtyImage: hasDirtyWarpImage,
+    restoreDeformation: restoreSelectedDeformation,
     clearDirtyImages: clearDirtyWarpImages, beginWardrobeWarp, moveWardrobeWarp, finishWardrobeWarp, leaveWardrobeWarp
   } = useWardrobeDeformation({
     selected,
@@ -278,6 +278,7 @@ export function WardrobeWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
       // Resolve the original sheet before translating any old separated-sheet
       // bindings. Opening a set does not publish the conversion to storage.
       clearWardrobeWarpState()
+      sleeveUndoRef.current = []; sleeveRedoRef.current = []
       setDraft(loaded); setActiveSetId(id); setSelectedId(loaded.components[0]?.id ?? null)
       setDirty(false); setBodyOffsets({}); setTestPose(null); setTestDragOffsets({}); setCalibratingPartId(null)
       setError(incompatible.length
@@ -346,7 +347,8 @@ export function WardrobeWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
     finally { setProcessing(false) }
   }
   const cutSelectedSleeve = async () => {
-    if (!draft || !selected?.sleevePairId || selected.sleeveSegment !== 'whole' || !selected.name.startsWith('Manga longa')) return
+    if (!draft || !model || processing || saving || openingSet || !selected?.sleevePairId || selected.sleeveSegment !== 'whole' || !selected.name.startsWith('Manga longa')) return
+    setProcessing(true); setError('')
     try {
       const pair = draft.components.filter((component) => component.sleevePairId === selected.sleevePairId && component.sleeveSegment === 'whole')
       if (pair.length !== 2) throw new Error('O par da manga não está completo; nada foi alterado.')
@@ -366,7 +368,7 @@ export function WardrobeWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
           const bone = suggestWardrobeBone(segment.category, sideX, model!.width, referenceModel ?? model!).bone
           const x = bone ? bone.x + (bone.width - partCanvas.width) / 2 : component.x
           const y = segment.key === 'upper' ? component.y : component.y + split
-          const piece: WardrobeComponent = { ...component, id: crypto.randomUUID(), name: component.name.replace(/ · (esquerda|direita)$/i, ` · ${segment.key === 'upper' ? 'braço superior' : 'antebraço'}`), sleeveSegment: segment.key, category: segment.category, ...(bone ? { attachedPartId: bone.id, x, y, binding: undefined, glue: { version: 1 as const, mode: 'loose' as const } } : {}), x, y, width: partCanvas.width, height: partCanvas.height, originX: x, originY: y, originWidth: partCanvas.width, originHeight: partCanvas.height, dataUrl: partCanvas.toDataURL('image/png') }
+          const piece: WardrobeComponent = { ...component, id: segment.key === 'upper' ? component.id : crypto.randomUUID(), name: component.name.replace(/ · (esquerda|direita)$/i, ` · ${segment.key === 'upper' ? 'braço superior' : 'antebraço'}`), sleeveSegment: segment.key, category: segment.category, ...(bone ? { attachedPartId: bone.id, x, y, binding: undefined, glue: { version: 1 as const, mode: 'loose' as const } } : {}), x, y, width: partCanvas.width, height: partCanvas.height, originX: x, originY: y, originWidth: partCanvas.width, originHeight: partCanvas.height, dataUrl: partCanvas.toDataURL('image/png') }
           replacements.push(bone ? fixWardrobeGlue(piece, bone) : piece)
         }
       }
@@ -374,6 +376,7 @@ export function WardrobeWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
       setDraft({ ...draft, components: [...draft.components.filter((component) => component.sleevePairId !== selected.sleevePairId), ...replacements], updatedAt: new Date().toISOString() })
       setSelectedId(replacements[0]?.id ?? null); setDirty(true)
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível recortar o par de mangas.') }
+    finally { setProcessing(false) }
   }
   const undoSleeveEdit = () => { const previous = sleeveUndoRef.current.pop(); if (!previous || !draft) return; sleeveRedoRef.current.push(draft); setDraft(previous); setSelectedId(previous.components[0]?.id ?? null); setDirty(true) }
   const redoSleeveEdit = () => { const next = sleeveRedoRef.current.pop(); if (!next || !draft) return; sleeveUndoRef.current.push(draft); setDraft(next); setSelectedId(next.components[0]?.id ?? null); setDirty(true) }
@@ -554,15 +557,8 @@ export function WardrobeWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
     try {
       const set: WardrobeSet = { ...draft, edition: 1, modelSlot, modelName: model?.name ?? draft.modelName, updatedAt: new Date().toISOString() }
       const serialized: WardrobeSetSave = { ...set, components: set.components.map(({ dataUrl: _dataUrl, deformationOriginalDataUrl: _deformationOriginalDataUrl, ...component }) => ({ ...component, renderAboveHair: (component.category === 'oculos' || component.category === 'acessorio-cabeca') && component.renderAboveHair === true })) }
-      // Salvamentos só de metadados preservam os PNGs; envie imagens alteradas e seus backups.
-       const images = set.components.flatMap((component) => {
-         if (activeSetId === set.id && !hasDirtyWarpImage(component.id)) return []
-         const assets = [{ id: component.id, dataUrl: component.dataUrl }]
-         if (component.hasDeformationOriginal && component.deformationOriginalDataUrl) {
-           assets.push({ id: deformationOriginalAssetId(component.id), dataUrl: component.deformationOriginalDataUrl })
-         }
-         return assets
-       })
+      // O rascunho é dono dos PNGs atuais, inclusive recortes novos e edições fora do deformador.
+       const images = wardrobeSaveAssets(set)
        await window.desktop.fabricator.saveWardrobeSet(modelSlot, serialized, images)
       window.dispatchEvent(new Event('fabricator:assets-updated'))
        clearDirtyWarpImages()

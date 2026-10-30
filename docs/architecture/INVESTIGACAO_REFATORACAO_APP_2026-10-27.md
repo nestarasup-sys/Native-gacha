@@ -1894,3 +1894,8 @@ Continua a auditoria das operações IPC iniciadas pelo usuário e da cobertura 
 - Selecionar um componente de um par exibe ambos na prévia. Mangas longas oferecem divisor horizontal ajustável e aplicam o mesmo corte em pixels aos dois PNGs; as metades são vinculadas como mangas superiores/inferiores conforme os ossos sugeridos pelo seletor existente.
 - O histórico local do rascunho suporta desfazer/refazer e atalhos Ctrl+Z, Ctrl+Y e Ctrl+Shift+Z. Reimportar cria novo rascunho sem escrever no catálogo até o botão de salvar existente.
 - O contrato persistido ganhou apenas metadados opcionais de par/lado/segmento e um novo valor de `importKind`; conjuntos anteriores continuam válidos. Não houve mudança no IPC ou no formato dos PNGs existentes.
+
+### Correção do salvamento de roupas após recorte
+- O envio de PNGs usava exclusivamente a marca de alteração do deformador. Recortes novos e edições do editor de imagem em conjuntos existentes podiam ser omitidos. wardrobeSaveAssets agora envia os PNGs atuais por ID e exige as cópias originais declaradas no manifesto. IPC e publicação transacional permanecem os existentes.
+- Recorte bloqueia salvamento concorrente durante a geração dos PNGs e preserva o ID superior; abrir outro conjunto limpa o histórico local para impedir restauração cruzada.
+- Regressão sintética cobre salvar/reabrir, substituir por quatro partes, editar PNG e restaurar os originais. Nenhum dado do perfil foi usado.
