@@ -11,6 +11,7 @@ import type { EditorV6MotionBakeRequest, EditorV6MotionBakeResult } from '../../
 import { planEditorV6Export, type EditorV6ExportAudio, type EditorV6ExportOptions, type EditorV6ExportStatus } from '../../../src/shared/editorV6Export'
 import { createEditorV6WorkerFactory } from './exportWorkers'
 import { probeExportMedia, runEditorV6Export, type EditorV6ExportReport } from './exportRunner'
+import type { EditorV6MotionCacheStats } from './motionCache'
 import { createPendingOperationTracker } from '../storage/pendingOperationTracker.ts'
 
 type Job = { owner: number; status: EditorV6ExportStatus; controller: AbortController; promise: Promise<void> }
@@ -25,6 +26,7 @@ type EditorV6ExportIpcDependencies = {
   tempRoot: string
   getCharacters: () => Promise<CustomizerCharacter[]>
   bakeMotion: (request: EditorV6MotionBakeRequest, signal: AbortSignal) => Promise<EditorV6MotionBakeResult>
+  getMotionCacheStats?: () => EditorV6MotionCacheStats
   resolveLibraryVideo: (id: string) => Promise<{ path: string; name: string; mimeType: EditorV6MediaAsset['mimeType']; extension: string; size: number; durationFrames: number | null }>
 }
 type EditorV6ExportIpcLifecycle = {
@@ -88,6 +90,7 @@ export function registerEditorV6ExportHandlers(deps: EditorV6ExportIpcDependenci
       signal,
       getCharacters: deps.getCharacters,
       bakeMotion: deps.bakeMotion,
+      getMotionCacheStats: deps.getMotionCacheStats,
       createWorker: (renderProject, _part, signal, layeredVideo, mouthLoops) => workers.create({ project: renderProject, width: options.width, height: options.height, layeredVideo, ...(mouthLoops ? { mouthLoops } : {}) }, signal),
       audioPath: (clip) => audioPath(project.id, clip, project.media), mediaPath, progress
     })

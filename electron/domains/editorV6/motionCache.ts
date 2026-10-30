@@ -6,6 +6,7 @@ import type { EditorV6MotionBakeRequest, EditorV6MotionBakeResult } from '../../
 
 /** Bump when baking changes without an authored timeline change. */
 export const MOTION_CACHE_VERSION = 3
+export type EditorV6MotionCacheStats = { memoryHits: number; diskHits: number; misses: number; rasterized: number; diskMissing: number; diskRejected: number; diskReadErrors: number; diskWrites: number; diskWriteSkipped: number; diskWriteErrors: number; diskBytesRead: number; diskBytesWritten: number }
 export function motionCacheKey(request: EditorV6MotionBakeRequest): string {
   const key = request.maxAtlasPixels === undefined
     ? [MOTION_CACHE_VERSION, request.plan.key, request.mouthScaleSamples ?? null, request.character]
@@ -21,21 +22,34 @@ export function createMotionDiskCache(folder: string, maximumBytes = 256 * 1024 
   let maintenance = Promise.resolve()
   return {
     async read(request: EditorV6MotionBakeRequest): Promise<EditorV6MotionBakeResult | undefined> {
+      const entry = await this.readWithStats(request)
+      return 'result' in entry ? entry.result : undefined
+    },
+    async readWithStats(request: EditorV6MotionBakeRequest): Promise<{ result: EditorV6MotionBakeResult; bytes: number } | { miss: 'missing' | 'rejected' | 'error' }> {
       const target = join(folder, motionCacheKey(request) + '.json')
+      let size: number
       try {
-        if ((await stat(target)).size > 32 * 1024 * 1024) return undefined
-        const envelope = JSON.parse(await readFile(target, 'utf8')) as { payload: string; checksum: string }
-        if (typeof envelope.payload !== 'string' || createHash('sha256').update(envelope.payload).digest('hex') !== envelope.checksum) return undefined
+        size = (await stat(target)).size
+      } catch (error) {
+        return (error as NodeJS.ErrnoException).code === 'ENOENT' ? { miss: 'missing' } : { miss: 'error' }
+      }
+      if (size > 32 * 1024 * 1024) return { miss: 'rejected' }
+      try {
+        const contents = await readFile(target, 'utf8')
+        const envelope = JSON.parse(contents) as { payload: string; checksum: string }
+        if (typeof envelope.payload !== 'string' || createHash('sha256').update(envelope.payload).digest('hex') !== envelope.checksum) return { miss: 'rejected' }
         const result = validateCachedMotion(request, JSON.parse(envelope.payload))
         const now = new Date()
         await utimes(target, now, now).catch(() => {})
-        return result
-      } catch { return undefined }
+        return { result, bytes: Buffer.byteLength(contents) }
+      } catch { return { miss: 'rejected' }
+      }
     },
-    async write(request: EditorV6MotionBakeRequest, result: EditorV6MotionBakeResult): Promise<void> {
+    async write(request: EditorV6MotionBakeRequest, result: EditorV6MotionBakeResult): Promise<{ stored: boolean; bytes: number }> {
       const payload = JSON.stringify(validateCachedMotion(request, result))
       const contents = JSON.stringify({ payload, checksum: createHash('sha256').update(payload).digest('hex') })
-      if (Buffer.byteLength(contents) > Math.min(maximumBytes, 32 * 1024 * 1024)) return
+      const bytes = Buffer.byteLength(contents)
+      if (bytes > Math.min(maximumBytes, 32 * 1024 * 1024)) return { stored: false, bytes }
       await mkdir(folder, { recursive: true })
       const target = join(folder, motionCacheKey(request) + '.json'), temporary = target + '.' + randomUUID() + '.tmp'
       try { await writeFile(temporary, contents, { flag: 'wx' }); await rename(temporary, target) }
@@ -55,6 +69,7 @@ export function createMotionDiskCache(folder: string, maximumBytes = 256 * 1024 
         }
       })
       await maintenance
+      return { stored: true, bytes }
     },
   }
 }

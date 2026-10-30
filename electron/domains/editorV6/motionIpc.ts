@@ -5,7 +5,7 @@ import { editorV6MotionChannels, type EditorV6MotionBakeRequest, type EditorV6Mo
 import { editorV6MotionResultSchema, parseEditorV6MotionRequest } from '../../../src/shared/editorV6Schema'
 import { isCustomizerCharacter } from '../customizer/validation'
 import { waitForExport } from './exportProcess'
-import { createMotionDiskCache, motionCacheKey } from './motionCache'
+import { createMotionDiskCache, motionCacheKey, type EditorV6MotionCacheStats } from './motionCache'
 import { restrictRendererNavigation } from '../../windowNavigation'
 import { restrictRendererPermissions } from '../../windowPermissions'
 import { restrictRendererResources } from '../../windowResourcePolicy'
@@ -24,6 +24,7 @@ export function createEditorV6MotionService(deps: { ipcMain: Pick<IpcMain, 'hand
   const cache = new Map<string, EditorV6MotionBakeResult>()
   const inFlight = new Map<string, { controller: AbortController; subscribers: Set<symbol>; promise: Promise<EditorV6MotionBakeResult>; settled: boolean }>()
   const disk = deps.cacheDirectory ? createMotionDiskCache(deps.cacheDirectory) : undefined
+  const cacheStats: EditorV6MotionCacheStats = { memoryHits: 0, diskHits: 0, misses: 0, rasterized: 0, diskMissing: 0, diskRejected: 0, diskReadErrors: 0, diskWrites: 0, diskWriteSkipped: 0, diskWriteErrors: 0, diskBytesRead: 0, diskBytesWritten: 0 }
   // A lane reuses one in-memory session, keeping worker storage isolated and bounded by concurrency.
   const lanes: Lane[] = Array.from({ length: deps.concurrency ?? 1 }, () => ({ partition: `editor-v6-motion-${crypto.randomUUID()}`, tail: Promise.resolve(), count: 0 }))
   let stopped = false
@@ -109,12 +110,31 @@ export function createEditorV6MotionService(deps: { ipcMain: Pick<IpcMain, 'hand
     const promise = lane.tail.catch(() => {}).then(async () => {
       signal.throwIfAborted()
       if (stopped) throw Error('O preparador está encerrando.')
-      const cached = cache.get(key) ?? await disk?.read(request)
+      let cached = cache.get(key)
+      if (cached) cacheStats.memoryHits++
+      else if (disk) {
+        const entry = await disk.readWithStats(request)
+        if ('result' in entry) { cached = entry.result; cacheStats.diskHits++; cacheStats.diskBytesRead += entry.bytes }
+        else if (entry.miss === 'missing') cacheStats.diskMissing++
+        else if (entry.miss === 'rejected') cacheStats.diskRejected++
+        else cacheStats.diskReadErrors++
+      }
       signal.throwIfAborted()
       if (cached) { remember(key, cached); return cached }
+      cacheStats.misses++
       const result = await render(lane, request, signal)
+      cacheStats.rasterized++
       remember(key, result)
-      await disk?.write(request, result).catch((error) => console.warn('Cache de transições indisponível:', error instanceof Error ? error.message : String(error)))
+      if (disk) {
+        try {
+          const write = await disk.write(request, result)
+          if (write.stored) { cacheStats.diskWrites++; cacheStats.diskBytesWritten += write.bytes }
+          else cacheStats.diskWriteSkipped++
+        } catch (error) {
+          cacheStats.diskWriteErrors++
+          console.warn('Cache de transições indisponível:', error instanceof Error ? error.message : String(error))
+        }
+      }
       return result
     }).finally(() => { lane.count--; if (signal.aborted) close(lane) })
     lane.tail = promise.then(() => {}, () => {})
@@ -203,5 +223,5 @@ export function createEditorV6MotionService(deps: { ipcMain: Pick<IpcMain, 'hand
     stopped = true
     for (const job of jobs.values()) job.controller.abort(Error('Aplicativo encerrado.'))
     for (const lane of lanes) { lane.active?.reject(Error('Aplicativo encerrado.')); close(lane) }
-  }, drain: () => Promise.allSettled(lanes.map((lane) => lane.tail)) }
+  }, drain: () => Promise.allSettled(lanes.map((lane) => lane.tail)), getCacheStats: () => ({ ...cacheStats }) }
 }

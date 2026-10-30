@@ -11,6 +11,7 @@ const fabricatorFolder = argument('--fabricator=') && path.resolve(argument('--f
 const sourceMotionCache = argument('--motion-cache=') && path.resolve(argument('--motion-cache='))
 const defaultOutput = path.join(root, 'out', 'editor-v6-stress', 'runs', `actual-project-${new Date().toISOString().replace(/[:.]/g, '-')}-${process.pid}`)
 const outputFolder = path.resolve(argument('--output=') ?? defaultOutput)
+const cacheProbe = process.argv.includes('--cache-probe')
 const verifiedBackupRoot = path.join(root, 'out', 'editor-v6-stress', 'backups')
 const inside = (parent, child) => {
   const relative = path.relative(parent, child)
@@ -19,11 +20,15 @@ const inside = (parent, child) => {
 
 async function main() {
   const sources = [projectFolder, libraryFolder, charactersPath, fabricatorFolder, sourceMotionCache]
-  if (sources.some((source) => !source) || !process.argv.includes('--compare-workers')) {
-    throw Error('Uso: npm run bench:editor-v6:project -- --project=<cópia verificada> --library=<mídias vinculadas> --characters=<personagens copiados> --fabricator=<cópia dos dados Fabricador> --motion-cache=<cache copiado> --compare-workers')
+  if (sources.some((source) => !source) || (!process.argv.includes('--compare-workers') && !cacheProbe)) {
+    throw Error('Uso: npm run bench:editor-v6:project -- --project=<cópia verificada> --library=<mídias vinculadas> --characters=<personagens copiados> --fabricator=<cópia dos dados Fabricador> --motion-cache=<cache copiado> (--compare-workers | --cache-probe)')
   }
-  if (!sources.every((source) => inside(verifiedBackupRoot, source))) throw Error('O benchmark só aceita fontes verificadas dentro de out/editor-v6-stress/backups.')
   const allowedRunsRoot = path.join(root, 'out', 'editor-v6-stress', 'runs')
+  const immutableSources = [projectFolder, libraryFolder, charactersPath, fabricatorFolder]
+  if (!immutableSources.every((source) => inside(verifiedBackupRoot, source))
+    || !(inside(verifiedBackupRoot, sourceMotionCache) || inside(allowedRunsRoot, sourceMotionCache))) {
+    throw Error('Projeto, mídias, personagens e Fabricador precisam vir do backup verificado; o cache pode vir do backup ou de uma execução isolada anterior.')
+  }
   if (!inside(allowedRunsRoot, outputFolder) || outputFolder === allowedRunsRoot
     || sources.some((source) => inside(source, outputFolder) || inside(outputFolder, source))) {
     throw Error('A pasta de resultados precisa ficar isolada das fontes verificadas.')
@@ -55,6 +60,7 @@ async function main() {
 
   const childEnv = { ...process.env, GACHA_VIDEO_STRESS_OFFSCREEN: '1', GACHA_EDITOR_V6_STRESS_DATA_ROOT: dataRoot,
     GACHA_EDITOR_V6_STRESS_AUTORUN: '1', GACHA_EDITOR_V6_STRESS_PROJECT_ID: manifest.id,
+    ...(cacheProbe ? { GACHA_EDITOR_V6_STRESS_CACHE_PROBE: '1' } : {}),
     GACHA_EDITOR_V6_STRESS_OUTPUT_ROOT: outputFolder, ELECTRON_DISABLE_SECURITY_WARNINGS: 'true' }
   delete childEnv.ELECTRON_RUN_AS_NODE
   const exportChild = spawn(require('electron'), [path.join(root, 'out', 'main', 'main.js')], { cwd: root, env: childEnv, stdio: 'inherit', windowsHide: true })
@@ -65,8 +71,10 @@ async function main() {
   if (code !== 0) throw Error(`A comparação do projeto real falhou (Electron ${code}); os relatórios parciais ficaram em ${outputFolder}.`)
   const summaryPath = path.join(outputFolder, 'stress-export-validation.json')
   const summary = JSON.parse(await fs.readFile(summaryPath, 'utf8'))
-  if (!summary.passed || summary.runs?.length !== 6 || summary.variants?.some((variant) => variant.runs !== 3)) {
-    throw Error(`O processo terminou sem seis rodadas completas e validadas. Revise ${summaryPath}.`)
+  if (!summary.passed || (cacheProbe
+    ? summary.benchmarkKind !== 'motion-cache-repeat' || summary.runs?.length !== 2 || summary.runs.some((run) => !run.motionCache)
+    : summary.benchmarkKind !== 'worker-comparison' || summary.runs?.length !== 6 || summary.variants?.some((variant) => variant.runs !== 3))) {
+    throw Error(`O processo terminou sem as rodadas completas e validadas esperadas. Revise ${summaryPath}.`)
   }
   console.log(`Comparação completa: ${summaryPath}`)
 }

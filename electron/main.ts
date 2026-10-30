@@ -11,6 +11,7 @@ import type { CustomizerFaceAssetReference } from '../src/shared/customizerFaceA
 import type { FabricatorPoseReference } from '../src/shared/fabricatorPoseReferences'
 import type { EditorV6Document } from '../src/shared/editorV6'
 import type { EditorV6ExportOptions } from '../src/shared/editorV6Export'
+import type { EditorV6MotionCacheStats } from './domains/editorV6/motionCache'
 import type { StudioDocument } from '../src/shared/studio'
 import { isStudioDocument } from '../src/shared/studioValidation'
 import { isEditorV6Document } from '../src/shared/editorV6Schema'
@@ -955,7 +956,8 @@ app.whenReady().then(async () => {
     workerHtml: join(__dirname, '../renderer/editor-v6-export.html'), workerPreload: join(__dirname, '../preload/editorV6ExportPreload.cjs'),
     devUrl: devRendererUrl, tempRoot: app.getPath('temp'), getCharacters: () => customizerService.list(),
     resolveLibraryVideo: async (id) => { const item = await videoLibrary.resolveMedia(id); return { ...item, path: await dataFileSystem.resolvePhysicalPath(item.path) ?? item.path } },
-    bakeMotion: (request, signal) => editorV6MotionService!.bakeForExport(request, signal) })
+    bakeMotion: (request, signal) => editorV6MotionService!.bakeForExport(request, signal),
+    getMotionCacheStats: () => editorV6MotionService!.getCacheStats() })
   if (process.env.GACHA_EDITOR_V6_STRESS_AUTORUN === '1') {
     void (async () => {
       const projectId = process.env.GACHA_EDITOR_V6_STRESS_PROJECT_ID ?? ''
@@ -966,8 +968,9 @@ app.whenReady().then(async () => {
       await nativeMkdir(outputRoot, { recursive: true })
       const project = await readEditorV6(projectId)
       if (!project) throw Error(`Projeto de benchmark ${projectId} não encontrado no perfil temporário.`)
-      const modes = [false, true, true, false, false, true]
-      const runs: Array<{ run: number; workers: number; milliseconds: number; renderingMilliseconds: number; finalizationMilliseconds: number; rssPeakBytes: number; motionTransitions: number; mouthStates: number; audioClips: number; videoInputs: number; audioOutput: boolean }> = []
+      const cacheProbe = process.env.GACHA_EDITOR_V6_STRESS_CACHE_PROBE === '1'
+      const modes = cacheProbe ? [false, false] : [false, true, true, false, false, true]
+      const runs: Array<{ run: number; workers: number; milliseconds: number; renderingMilliseconds: number; finalizationMilliseconds: number; rssPeakBytes: number; motionTransitions: number; motionCache?: EditorV6MotionCacheStats; mouthStates: number; audioClips: number; videoInputs: number; audioOutput: boolean }> = []
       for (const [index, turbo] of modes.entries()) {
         const id = randomUUID()
         const suffix = `run-${index + 1}-workers-${turbo ? 2 : 1}`
@@ -983,14 +986,14 @@ app.whenReady().then(async () => {
           || video?.r_frame_rate !== '30/1' || report.motionTransitionsPrepared !== report.motionTransitionsRequired
           || !report.motionTransitionsRequired || !report.mouthAnimation || report.mouthAnimation.skippedStates || report.mouthAnimation.staleStates
           || report.videoInputs < 1 || report.audioClips < 1 || !audio) throw Error(`A rodada ${index + 1} não preservou todos os estados esperados: ${JSON.stringify({ state: report.state, frames: report.totalFrames, videoFrames: video?.nb_read_frames, fps: video?.r_frame_rate, motionRequired: report.motionTransitionsRequired, motionPrepared: report.motionTransitionsPrepared, mouth: report.mouthAnimation, audioClips: report.audioClips, videoInputs: report.videoInputs, audio })}`)
-        runs.push({ run: index + 1, workers: turbo ? 2 : 1, milliseconds: report.milliseconds!, renderingMilliseconds: report.phaseMilliseconds.rendering, finalizationMilliseconds: report.phaseMilliseconds.finalization, rssPeakBytes: report.mainProcessMemory!.peakRssBytes, motionTransitions: report.motionTransitionsPrepared, mouthStates: report.mouthAnimation.stateAtlases, audioClips: report.audioClips, videoInputs: report.videoInputs, audioOutput: audio })
+        runs.push({ run: index + 1, workers: turbo ? 2 : 1, milliseconds: report.milliseconds!, renderingMilliseconds: report.phaseMilliseconds.rendering, finalizationMilliseconds: report.phaseMilliseconds.finalization, rssPeakBytes: report.mainProcessMemory!.peakRssBytes, motionTransitions: report.motionTransitionsPrepared, motionCache: report.motionCache, mouthStates: report.mouthAnimation.stateAtlases, audioClips: report.audioClips, videoInputs: report.videoInputs, audioOutput: audio })
       }
       const median = (values: number[]) => { const sorted = [...values].sort((left, right) => left - right); return sorted[Math.floor(sorted.length / 2)] }
-      const variants = [1, 2].map((workers) => {
+      const variants = (cacheProbe ? [1] : [1, 2]).map((workers) => {
         const selected = runs.filter((run) => run.workers === workers)
         return { workers, runs: selected.length, medianMilliseconds: median(selected.map((run) => run.milliseconds)), medianRenderingMilliseconds: median(selected.map((run) => run.renderingMilliseconds)), maxMainProcessRssBytes: Math.max(...selected.map((run) => run.rssPeakBytes)) }
       })
-      const summary = { passed: true, projectId, projectUpdatedAt: project.updatedAt, durationFrames: project.timeline.durationFrames, durationSeconds: project.timeline.durationFrames / 30, width: 1920, height: 1080, fps: '30/1', encoder: 'auto', mouthLoop: true, audioClips: runs[0].audioClips, videoInputs: runs[0].videoInputs, audioOutput: true, motionTransitionsPreparedPerRun: runs[0].motionTransitions, mouthStatesPerRun: runs[0].mouthStates, runOrder: runs.map((run) => run.workers), runs, variants }
+      const summary = { passed: true, benchmarkKind: cacheProbe ? 'motion-cache-repeat' : 'worker-comparison', projectId, projectUpdatedAt: project.updatedAt, durationFrames: project.timeline.durationFrames, durationSeconds: project.timeline.durationFrames / 30, width: 1920, height: 1080, fps: '30/1', encoder: 'auto', mouthLoop: true, audioClips: runs[0].audioClips, videoInputs: runs[0].videoInputs, audioOutput: true, motionTransitionsPreparedPerRun: runs[0].motionTransitions, mouthStatesPerRun: runs[0].mouthStates, runOrder: runs.map((run) => run.workers), runs, variants }
       await nativeWriteFile(join(outputRoot, 'stress-export-validation.json'), JSON.stringify(summary, null, 2), 'utf8')
       console.log(JSON.stringify(summary, null, 2))
       app.quit()
