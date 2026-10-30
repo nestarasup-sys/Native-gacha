@@ -100,7 +100,7 @@ export async function prepareExportMouthLoops(project: EditorV6Document, startFr
   const states: EditorV6ExportMouthLoopState[] = []
   let atlasBytes = 0, atlasPixels = 0, projectWithAssets = project, skippedUnsupported = 0
   const errors: string[] = []
-  const statePixelBudget = Math.floor(MAX_ATLAS_PIXELS / candidates.length)
+  const statePixelBudget = Math.min(MAX_SINGLE_ATLAS_PIXELS, Math.floor(MAX_ATLAS_PIXELS / candidates.length))
   const stateByteBudget = Math.floor(MAX_ATLAS_BYTES / candidates.length)
   for (const [index, candidate] of candidates.entries()) {
     deps.signal.throwIfAborted()

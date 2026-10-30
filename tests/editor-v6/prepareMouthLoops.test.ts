@@ -7,6 +7,30 @@ import { parseEditorV6MotionRequest } from '../../src/shared/editorV6Schema'
 import { prepareExportMouthLoops } from '../../electron/domains/editorV6/prepareMouthLoops'
 
 describe('preparação dos loops de boca do Editor V6', () => {
+  it('falha explicitamente quando um atlas segue acima do orçamento após as tentativas de redução', async () => {
+    const elementId = randomUUID()
+    const actor: EditorV6Element = { id: elementId, kind: 'character', characterId: 'character', assetId: randomUUID(), text: 'Personagem', x: 0, y: 0, width: 20, height: 40, rotation: 0, zIndex: 1 }
+    const project = {
+      id: randomUUID(), elements: [actor], assets: [],
+      timeline: { durationFrames: 60, knownElementIds: [elementId], tracks: [{ id: randomUUID(), kind: 'character', name: 'Personagem', muted: false, locked: false, blocks: [{ id: randomUUID(), elementId, label: 'Estado', startFrame: 0, durationFrames: 60, state: actor }] }] }
+    } as unknown as EditorV6Document
+    const character = { id: 'character', updatedAt: '2026-10-30T00:00:00.000Z', customization: { modelSlot: 1 } } as CustomizerCharacter
+    let attempts = 0
+    await expect(prepareExportMouthLoops(project, 0, 60, 30, {
+      signal: new AbortController().signal, characters: [character], progress: () => {},
+      bake: async (request) => {
+        attempts++
+        const assetId = randomUUID()
+        return {
+          asset: { id: assetId, category: 'character', name: 'Loop', mimeType: 'image/png', dataUrl: 'data:image/png;base64,AA==' },
+          motion: { version: 1, key: request.plan.key, assetId, frames: request.plan.samples.map((sample) => ({ offset: sample.offset, sprite: { x: 0, y: 0, width: 1, height: 1, atlasWidth: 1, atlasHeight: 1 }, x: 0, y: 0, width: 20, height: 40, rotation: 0, flipX: false })) },
+          metrics: { milliseconds: 1, preparedRigs: 1, samples: request.plan.samples.length, atlasPixels: 9_000_000 }
+        }
+      }
+    })).rejects.toThrow('excedem a memória segura')
+    expect(attempts).toBe(3)
+  })
+
   it('prepara todos os estados de um projeto longo sem um limite artificial de 12', async () => {
     const elementId = randomUUID()
     const actor: EditorV6Element = { id: elementId, kind: 'character', characterId: 'character', assetId: randomUUID(), text: 'Personagem', x: 0, y: 0, width: 20, height: 40, rotation: 0, zIndex: 1 }
