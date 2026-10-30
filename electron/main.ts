@@ -969,7 +969,8 @@ app.whenReady().then(async () => {
       const project = await readEditorV6(projectId)
       if (!project) throw Error(`Projeto de benchmark ${projectId} não encontrado no perfil temporário.`)
       const cacheProbe = process.env.GACHA_EDITOR_V6_STRESS_CACHE_PROBE === '1'
-      const modes = cacheProbe ? [false, false, false] : [false, true, true, false, false, true]
+      // Keep worker variants grouped so one configuration cannot evict the other's cache mid-measurement.
+      const modes = cacheProbe ? [false, false, false] : [false, false, false, true, true, true]
       const runs: Array<{ run: number; workers: number; milliseconds: number; renderingMilliseconds: number; finalizationMilliseconds: number; rssPeakBytes: number; motionTransitions: number; motionCache?: EditorV6MotionCacheStats & { inputSamples: Array<{ cacheKey: string; planKeyHash: string; characterId: string; characterFingerprint: string }> }; motionCacheTotal?: EditorV6MotionCacheStats; mouthStates: number; audioClips: number; videoInputs: number; audioOutput: boolean }> = []
       for (const [index, turbo] of modes.entries()) {
         const id = randomUUID()
