@@ -124,11 +124,14 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
     } catch (error) { if (!samePose) renderer.dispose(); throw error }
   }
   try {
-    const first = await render(0), fromCrop = first.crop, fullWidth = first.width, fullHeight = first.height
+    const staticMouthLoop = Boolean(request.mouthScaleSamples && samePose
+      && JSON.stringify(from) === JSON.stringify(to)
+      && request.plan.samples.every((sample) => sample.faceMode === from.activeFaceMode))
+    const first = await render(0, staticMouthLoop ? from.activeFaceMode : undefined), fromCrop = first.crop, fullWidth = first.width, fullHeight = first.height
     first.dispose()
-    const last = await render(1), toCrop = last.crop
-    const maximumWidth = Math.max(fullWidth, last.width), maximumHeight = Math.max(fullHeight, last.height)
-    last.dispose()
+    const last = staticMouthLoop ? null : await render(1), toCrop = last?.crop ?? fromCrop
+    const maximumWidth = Math.max(fullWidth, last?.width ?? fullWidth), maximumHeight = Math.max(fullHeight, last?.height ?? fullHeight)
+    last?.dispose()
     const count = request.plan.samples.length, columns = Math.ceil(Math.sqrt(count)), rows = Math.ceil(count / columns)
     const maxAtlasPixels = Math.min(8_000_000, request.maxAtlasPixels ?? 8_000_000)
     const ratio = Math.min(1, 4096 / columns / maximumWidth, 4096 / rows / maximumHeight, Math.sqrt(maxAtlasPixels / (columns * rows * maximumWidth * maximumHeight)))
@@ -139,7 +142,9 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
     const fromScale = { x: aa.width * 19.2 / fromCrop.width, y: aa.height * 10.8 / fromCrop.height }, toScale = { x: bb.width * 19.2 / toCrop.width, y: bb.height * 10.8 / toCrop.height }
     const frames: EditorV6MotionFrame[] = []
     for (const [index, sample] of request.plan.samples.entries()) {
-      const t = motionEase(sample.progress), frame = await render(t, sample.faceMode, request.mouthScaleSamples?.[index] ?? 1), crop = frame.crop
+      const t = motionEase(sample.progress), mouthScale = request.mouthScaleSamples?.[index] ?? 1
+      const reuseFirstMouthSample = staticMouthLoop && index === 0 && mouthScale === 1 && sample.faceMode === from.activeFaceMode
+      const frame = reuseFirstMouthSample ? first : await render(t, sample.faceMode, mouthScale), crop = frame.crop
       try {
         if (request.mouthScaleSamples && index === request.mouthScaleSamples.length - 1 && crop.fingerprint === fromCrop.fingerprint) throw Error('A boca aberta não respondeu à ampliação; confira se o personagem tem uma variante de boca aberta editável no catálogo facial.')
         const x = index % columns * cellWidth, y = Math.floor(index / columns) * cellHeight, width = Math.max(1, Math.ceil(crop.width * ratio)), height = Math.max(1, Math.ceil(crop.height * ratio))

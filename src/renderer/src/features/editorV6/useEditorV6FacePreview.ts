@@ -60,8 +60,8 @@ export function createEditorV6FaceRendererCache(
   const get = async (
     character: CustomizerCharacter,
     poseSourceRevision?: string,
-    modelSourceRevision?: string,
-    isCurrent: () => boolean = () => true
+    isCurrent: () => boolean = () => true,
+    modelSourceRevision?: string
   ): Promise<PreparedEditorV6FaceRenderer | null> => {
     const key = keyForRenderer(character, poseSourceRevision, modelSourceRevision)
     if (cached?.key === key) return cached.renderer
@@ -158,8 +158,8 @@ export function useEditorV6FacePreview(dependencies: Dependencies) {
         if (!element) continue
 
         try {
-          const renderer = await rendererCache.get(job.character, job.poseSourceRevision, job.modelSourceRevision,
-            () => !disposedRef.current && version === renderVersionRef.current)
+          const renderer = await rendererCache.get(job.character, job.poseSourceRevision,
+            () => !disposedRef.current && version === renderVersionRef.current, job.modelSourceRevision)
           if (!renderer || disposedRef.current || version !== renderVersionRef.current) continue
 
           const latest = dependenciesRef.current
@@ -218,7 +218,7 @@ export function useEditorV6FacePreview(dependencies: Dependencies) {
     if (disposedRef.current) return null
     renderRunningRef.current = true
     try {
-      const renderer = await rendererCache.get(character, poseSourceRevision, modelSourceRevision, () => !disposedRef.current)
+      const renderer = await rendererCache.get(character, poseSourceRevision, () => !disposedRef.current, modelSourceRevision)
       if (!renderer || disposedRef.current) return null
       return await operation(renderer)
     } finally {

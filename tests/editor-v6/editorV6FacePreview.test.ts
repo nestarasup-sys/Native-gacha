@@ -18,7 +18,7 @@ function renderer(): PreparedEditorV6FaceRenderer {
 }
 
 function createCache(prepare: (value: CustomizerCharacter) => Promise<PreparedEditorV6FaceRenderer>) {
-  return createEditorV6FaceRendererCache(prepare, (value, revision) => `${value.name}:${revision ?? 'sem-pose'}`)
+  return createEditorV6FaceRendererCache(prepare, (value, revision, modelRevision) => `${value.name}:${revision ?? 'sem-pose'}:${modelRevision ?? 'sem-modelo'}`)
 }
 
 describe('cache da prévia facial do Editor V6', () => {
@@ -31,6 +31,21 @@ describe('cache da prévia facial do Editor V6', () => {
     await expect(cache.get(character(), 'pose-a')).resolves.toBe(first)
     await expect(cache.get(character(), 'pose-a')).resolves.toBe(first)
     await expect(cache.get(character(), 'pose-b')).resolves.toBe(second)
+
+    expect(prepare).toHaveBeenCalledTimes(2)
+    expect(first.dispose).toHaveBeenCalledTimes(1)
+    cache.dispose()
+    expect(second.dispose).toHaveBeenCalledTimes(1)
+  })
+
+  it('descarta o renderer quando muda a revisão da folha original do modelo', async () => {
+    const first = renderer()
+    const second = renderer()
+    const prepare = vi.fn().mockResolvedValueOnce(first).mockResolvedValueOnce(second)
+    const cache = createCache(prepare)
+
+    await expect(cache.get(character(), 'pose-a', undefined, 'model-a')).resolves.toBe(first)
+    await expect(cache.get(character(), 'pose-a', undefined, 'model-b')).resolves.toBe(second)
 
     expect(prepare).toHaveBeenCalledTimes(2)
     expect(first.dispose).toHaveBeenCalledTimes(1)

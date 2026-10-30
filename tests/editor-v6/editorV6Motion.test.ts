@@ -68,6 +68,19 @@ describe('V6 motion scheduling and portable cache', () => {
     expect(editorV6MotionPlans(changed)[0].key).not.toBe(beforePlan.key)
     expect(missingEditorV6Motions(changed)).toHaveLength(1)
   })
+  it('invalidates baked transitions when the original model sheet changes', () => {
+    const doc = fixture(), beforePlan = editorV6MotionPlans(doc)[0]
+    const ready = attachEditorV6Motion(doc, beforePlan.blockId, bake(doc))
+    const changedTimeline = {
+      ...ready.timeline,
+      tracks: ready.timeline.tracks.map((track) => track.kind === 'character'
+        ? { ...track, blocks: track.blocks.map((block) => block.state ? { ...block, state: { ...block.state, modelSourceRevision: 'model-sheet-v2' } } : block) }
+        : track)
+    }
+    const changed = { ...ready, timeline: changedTimeline }
+    expect(editorV6MotionPlans(changed)[0].key).not.toBe(beforePlan.key)
+    expect(missingEditorV6Motions(changed)).toHaveLength(1)
+  })
   it('mantém a fala e suprime piscadas durante a transição sem atualizar o personagem por quadro', () => {
     const doc = fixture(), speech = doc.timeline.tracks.find((track) => track.kind === 'speech')!
     speech.blocks = [{ id: crypto.randomUUID(), label: 'Fala durante a troca', characterId: 'alice', startFrame: 86, durationFrames: 2 }]

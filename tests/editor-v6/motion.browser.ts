@@ -46,8 +46,9 @@ async function image(url: string) { const i = new Image(); i.src = url; await i.
   // Only temporary source/warp surfaces may remain; all nine prepared 100x100 rigs must be released.
   assert(alive.filter(c=>c.width===100 && c.height===100).length===0, 'Prepared rig backing stores were retained')
   const mouth: FaceCatalogItem = { schemaVersion: 1, id: 'mouth-test', modelSlot: 1, category: 'mouth-closed', name: 'Test mouth', sheet: { kind: 'mouth-closed', name: 'Mouth', width: 10, height: 10, tolerance: 0, dataUrl: png('#00ff00') }, pieces: [{ id: 'mouth', sheet: 'mouth-closed', index: 0, crop: { x: 0,y: 0,width: 10,height: 10 }, width: 10,height: 10,dataUrl: png('#00ff00') }], transforms: { mouth: { x: 5,y: 35,scaleX: .5,scaleY: .5,rotation: 0 } }, eyeLinked: true,browLinked: true,selectedNose: 0,selectedExpression: 0,updatedAt: source.updatedAt }
-  const facialProvider = { ...Object.fromEntries(['loadFabricatorSlot','loadFabricatorPose','loadHairStyle','loadWardrobeSet','loadFaceSet','listFaceComponentAssets','loadFaceComponentAsset','listFaceCatalog','listFaceExpressionPresets','loadFaceExpressionPreset'].map(name => [name, provider[name as keyof typeof provider]])), loadFaceCatalogItem: async () => mouth } as CharacterRenderAssetProvider
-  const appearance = { modelSlot: 1,mouthClosedCatalogId: mouth.id,eyeState: 0 as const,eyebrows: false,noseIndex: 0,expressionIndex: 0,mouthOpen: false }
+  const openMouth: FaceCatalogItem = { ...mouth, id: 'mouth-open-test', category: 'mouth-open', sheet: { ...mouth.sheet, kind: 'mouth-open' }, pieces: mouth.pieces.map((piece) => ({ ...piece, sheet: 'mouth-open' })) }
+  const facialProvider = { ...Object.fromEntries(['loadFabricatorSlot','loadFabricatorPose','loadHairStyle','loadWardrobeSet','loadFaceSet','listFaceComponentAssets','loadFaceComponentAsset','listFaceCatalog','listFaceExpressionPresets','loadFaceExpressionPreset'].map(name => [name, provider[name as keyof typeof provider]])), loadFaceCatalogItem: async (_modelSlot: number, id: string) => id === openMouth.id ? openMouth : mouth } as CharacterRenderAssetProvider
+  const appearance = { modelSlot: 1,mouthClosedCatalogId: mouth.id,mouthOpenCatalogId: openMouth.id,eyeState: 0 as const,eyebrows: false,noseIndex: 0,expressionIndex: 0,mouthOpen: false }
   const facialCharacter = { ...character, customization: { ...character.customization, faceAppearance: appearance } }
   const firstFace = { ...previous,state: { ...actor,faceAppearance: appearance } }
   const same = { ...next, state: { ...actor,faceAppearance: appearance,activeExpressionPresetId: 'other',faceTransforms: { 'expression:mouth-closed:mouth-test': { x: 0,y: 0,width: 100,height: 100,rotation: 0,sourceTransformOverride: { x: 25,y: 35,scaleX: .5,scaleY: .5,rotation: 0 } } } } }
@@ -62,6 +63,13 @@ async function image(url: string) { const i = new Image(); i.src = url; await i.
     assert(count>0,'Mouth disappeared during facial interpolation');greenXs.push(sum/count)
   }
   assert(greenXs.every((x,i)=>i===0 || x>=greenXs[i-1]) && greenXs[6]-greenXs[0]>10,'Facial preset did not interpolate from the actual catalog calibration')
+  const mouthState: EditorV6Element = { ...actor, faceAppearance: appearance, activeFaceMode: 'talk' }
+  const mouthSamples = [-3, -2, -1].map((offset, index) => ({ offset, progress: .6 + index * .13, faceMode: 'talk' as const }))
+  const mouthPlan = { blockId: crypto.randomUUID(), elementId: actor.id, characterId: character.id, key: 'synthetic-mouth-loop', startFrame: .5, endFrame: 8, from: mouthState, to: { ...mouthState }, samples: mouthSamples }
+  const mouthOptimized = await bakeEditorV6Motion({ id: crypto.randomUUID(), plan: mouthPlan, character: facialCharacter, mouthScaleSamples: [1, 1.05, 1.1025], maxAtlasPixels: 8_000_000 }, facialProvider)
+  const mouthReferencePlan = { ...mouthPlan, key: 'synthetic-mouth-reference', to: { ...mouthState, text: 'Alice reference' } }
+  const mouthReference = await bakeEditorV6Motion({ id: crypto.randomUUID(), plan: mouthReferencePlan, character: facialCharacter, mouthScaleSamples: [1, 1.05, 1.1025], maxAtlasPixels: 8_000_000 }, facialProvider)
+  assert(mouthOptimized.metrics.samples === 3 && mouthOptimized.asset.dataUrl === mouthReference.asset.dataUrl, 'Reusing an identical mouth-loop sample changed the rendered atlas')
   const baseTimeline = createEditorV6Timeline([actor])
   const timelineBackground = { id: crypto.randomUUID(), label: 'Fundo: teste.png', startFrame: 0, durationFrames: 300, background: { backgroundColor: '#ffffff', backgroundAssetId: null, backgroundX: 0, backgroundY: 0, backgroundWidth: 100, backgroundHeight: 100, backgroundRotation: 0 } }
   const videoClip = { id: crypto.randomUUID(), mediaId: 'video-test', label: 'Vídeo de teste', startFrame: 0, durationFrames: 150 }
@@ -85,11 +93,10 @@ async function image(url: string) { const i = new Image(); i.src = url; await i.
   toggle().click();await tick()
   assert(toggle().getAttribute('aria-pressed')==='false' && !mount.querySelector('.v6-motion-range'),'Character motion switch failed')
   toggle().click();await tick()
-  mount.querySelectorAll<HTMLElement>('.editor-v6-timeline-block.kind-character')[1].click();await tick()
-  const checkbox=Array.from(mount.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')).find(c=>c.parentElement?.textContent?.includes('Animar entrada'))!
-  assert(checkbox?.checked,'Destination block motion switch is missing')
-  checkbox.click();await tick()
-  assert(!mount.querySelector('.v6-motion-range'),'Destination block motion switch failed')
+  const destinationBlock=mount.querySelectorAll<HTMLElement>('.editor-v6-timeline-block.kind-character')[1]
+  destinationBlock.click();await tick()
+  assert(destinationBlock.classList.contains('selected'),'Destination block selection failed')
+  assert(!editorV6MotionPlan(track,previous,{...next,motionEnabled:false}),'Destination block motion opt-out was ignored')
   uiRoot.unmount();mount.remove()
   return { passed: true, metrics: result.metrics, timelineControls: true, expressionRigs: facial.metrics.preparedRigs, blueXs, greenXs, reads }
 }

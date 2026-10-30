@@ -1,7 +1,7 @@
 # Editor V6 — plano de aceleração máxima do export
 
 Data: 30/10/2026. Base inicial de análise: branch `Dev-V2`, commit `b79aaaf`.
-Estado: em andamento. A preparação de movimentos recebeu concorrência limitada a duas tarefas. Uma comparação fria alternada no projeto real confirmou redução no tempo total e na fase de movimentos; o restante do plano segue aberto.
+Estado: em andamento. A preparação de movimentos recebeu concorrência limitada a duas tarefas. Uma comparação fria alternada confirmou redução no projeto real. Um candidato para evitar renders repetidos na preparação da boca passou três exports completos, mas sua comparação de tempo ainda é indicativa; o restante do plano segue aberto.
 
 ## Objetivo
 
@@ -169,6 +169,22 @@ Para separar o efeito da concorrência da variação entre execuções, repeti o
 As medianas foram: total de 439,836 s com uma tarefa e 423,452 s com duas (−3,7%); preparação de movimentos de 62,222 s para 40,664 s (−34,6%); renderização de 348,765 s para 353,877 s (+1,5%). Nos três pares adjacentes, duas tarefas reduziram o total em 4,9%, 3,2% e 3,7%. O máximo RSS principal foi 1.197,1 MiB com uma tarefa e 1.233,4 MiB com duas; os valores variam entre execuções e não incluem memória dos processos filhos. Assim, mantenho o limite de duas: o ganho total se repetiu em cada par, a preparação ficou substancialmente mais curta e o aumento de memória principal observado foi de 3,0%, sem testar mais paralelismo.
 
 Comparei também os dois primeiros MP4s desta sequência com FFmpeg SSIM nos 5.700 quadros: SSIM geral 0,999919 (Y 0,999906, U 0,999946, V 0,999940). Os relatórios e vídeos, incluindo medições frias e seus caches isolados, estão em `out/editor-v6-stress/runs/motion-bake-ab-alternating-2026-10-30/` (ignorado pelo Git). A validação de cada rodada confirmou saída estrutural; SSIM alto mede similaridade, não substitui revisão visual de cada caso nem valida o áudio por comparação de sinal.
+
+### Candidato: reaproveitar o primeiro frame de loop da boca
+
+O bake agora reaproveita o render inicial como primeiro quadro do atlas e elimina a renderização do endpoint final quando pose, estado facial e modo são rigorosamente iguais. Em transições comuns ou estados diferentes, o caminho anterior permanece. O worker inclui a revisão da folha do modelo na identidade da sessão; assim, uma sessão de bake não pode reaproveitar materiais/rigs depois que a fonte muda. A chave do preview mantém a assinatura anterior e acrescenta a revisão sem deslocar o callback de cancelamento.
+
+O teste de navegador compara pixel a pixel o atlas otimizado com o caminho anterior forçado; `npm run test:editor-v6:motion` passou. Três exports frios consecutivos usaram a cópia verificada do único projeto, mesma revisão `2026-10-30T10:09:29.520Z`, 5.700 quadros, 1920×1080, 30 FPS, encoder automático, 198 estados de boca e concorrência de bake 1. As três rodadas passaram validação de vídeo e áudio, sem rejeição ou erro de leitura/escrita do cache.
+
+| Rodada | Export total | Renderização | Finalização | Pico RSS principal |
+| ---: | ---: | ---: | ---: | ---: |
+| 1 | 379,375 s | 293,021 s | 25,784 s | 1,285 GB |
+| 2 | 380,837 s | 287,870 s | 26,103 s | 1,246 GB |
+| 3 | 377,734 s | 291,487 s | 25,708 s | 1,285 GB |
+
+A mediana foi 379,375 s total e 291,487 s renderizando; a maior diferença entre tempos totais foi 3,104 s. A referência fria histórica disponível, sem este candidato, levou 416,512 s total e 329,329 s em renderização. A redução observada é 8,9% no total e 11,5% na renderização, mas a referência não foi executada em ordem alternada nem no mesmo processo/estado térmico. Portanto, o dado não prova que o candidato causou o ganho. O maior RSS medido foi 1,285 GB, aproximadamente 53 MB acima dos 1,232 GB da referência; ambos medem somente o processo principal. Não aumentei concorrência. Relatórios e arquivos ficam em `out/editor-v6-stress/runs/mouth-loop-reuse-candidate-2026-10-30/`, ignorados pelo Git.
+
+`npm run test:editor-v6:export` passou: Turbo/fallback, áudio contínuo na emenda, cancelamento preservando destino anterior, 5.700 quadros e saída Full HD. Também passaram typecheck, auditoria de arquitetura e os 179 testes do Editor V6 (um ignorado). Esta etapa protege a equivalência e valida o fluxo completo; ainda falta uma comparação A/B alternada com três rodadas em cada lado para promover a redução de tempo a ganho comprovado.
 
 ## 2. Remover trabalho repetido da preparação — prioridade alta
 

@@ -9,7 +9,7 @@ export async function runEditorV6MotionWorker() {
     try { request = await bridge.payload() } catch { return }
     if (!request) return
     try {
-      const nextRevision = JSON.stringify([request.character, request.plan.from.characterSourceUpdatedAt, request.plan.to.characterSourceUpdatedAt, [request.plan.from.poseSourceRevision, request.plan.to.poseSourceRevision].sort(), request.plan.from.faceRendererVersion, request.plan.to.faceRendererVersion])
+      const nextRevision = JSON.stringify([request.character, request.plan.from.characterSourceUpdatedAt, request.plan.to.characterSourceUpdatedAt, [request.plan.from.modelSourceRevision, request.plan.to.modelSourceRevision].sort(), [request.plan.from.poseSourceRevision, request.plan.to.poseSourceRevision].sort(), request.plan.from.faceRendererVersion, request.plan.to.faceRendererVersion])
       if (!session || nextRevision !== revision || uses >= 8) {
         session?.materials.clear()
         session = createEditorV6BakeSession(bridge.provider)
