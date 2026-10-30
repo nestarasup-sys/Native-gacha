@@ -377,12 +377,24 @@ export function WardrobeWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
             const at = (y * canvas.width + x) * 4
             partPixels.data.set(pixels.data.subarray(at, at + 4), at)
           }
-          ctx.putImageData(partPixels, 0, 0)
+          let minX = canvas.width, minY = canvas.height, maxX = -1, maxY = -1
+          for (let y = 0; y < canvas.height; y++) for (let x = 0; x < canvas.width; x++) {
+            if (!partPixels.data[(y * canvas.width + x) * 4 + 3]) continue
+            minX = Math.min(minX, x); minY = Math.min(minY, y); maxX = Math.max(maxX, x); maxY = Math.max(maxY, y)
+          }
+          if (maxX < minX) throw new Error('O corte deixa uma parte vazia. Ajuste a altura ou o ângulo.')
+          partCanvas.width = maxX - minX + 1; partCanvas.height = maxY - minY + 1
+          ctx.putImageData(partPixels, -minX, -minY)
+          const partWidth = partCanvas.width * component.width / canvas.width
+          const partHeight = partCanvas.height * component.height / canvas.height
+          const dx = (minX + partCanvas.width / 2) * component.width / canvas.width - component.width / 2
+          const dy = (minY + partCanvas.height / 2) * component.height / canvas.height - component.height / 2
+          const radians = component.rotation * Math.PI / 180
           const sideX = component.sleeveSide === 'left' ? model!.width * .27 : model!.width * .73
           const bone = suggestWardrobeBone(segment.category, sideX, model!.width, referenceModel ?? model!).bone
-          const x = component.x
-          const y = component.y
-          const piece: WardrobeComponent = { ...component, id: segment.key === 'upper' ? component.id : crypto.randomUUID(), name: component.name.replace(/ · (esquerda|direita)$/i, ` · ${component.category === 'calca-coxa' ? segment.key === 'upper' ? 'coxa' : 'canela' : segment.key === 'upper' ? 'braço superior' : 'antebraço'}`), sleeveSegment: segment.key, category: segment.category, ...(bone ? { attachedPartId: bone.id, x, y, binding: undefined, glue: { version: 1 as const, mode: 'loose' as const } } : {}), x, y, width: component.width, height: component.height, originX: x, originY: y, originWidth: component.width, originHeight: component.height, dataUrl: partCanvas.toDataURL('image/png') }
+          const x = component.x + component.width / 2 + dx * Math.cos(radians) - dy * Math.sin(radians) - partWidth / 2
+          const y = component.y + component.height / 2 + dx * Math.sin(radians) + dy * Math.cos(radians) - partHeight / 2
+          const piece: WardrobeComponent = { ...component, id: segment.key === 'upper' ? component.id : crypto.randomUUID(), name: component.name.replace(/ · (esquerda|direita)$/i, ` · ${component.category === 'calca-coxa' ? segment.key === 'upper' ? 'coxa' : 'canela' : segment.key === 'upper' ? 'braço superior' : 'antebraço'}`), sleeveSegment: segment.key, category: segment.category, ...(bone ? { attachedPartId: bone.id, x, y, binding: undefined, glue: { version: 1 as const, mode: 'loose' as const } } : {}), x, y, width: partWidth, height: partHeight, originX: x, originY: y, originWidth: partWidth, originHeight: partHeight, dataUrl: partCanvas.toDataURL('image/png') }
           replacements.push(bone ? fixWardrobeGlue(piece, bone) : piece)
         }
       }
@@ -693,7 +705,7 @@ export function WardrobeWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
           if (['sleeve-grid-3x4', 'pants-grid-3x4'].includes(draft?.importKind ?? '') && selected?.sleevePairId && component.sleevePairId !== selected.sleevePairId) return null
           if (!testPose) {
             if (deformMode && component.id === selectedId && warpReadyId === component.id) return <canvas key={component.id} width={1} height={1} ref={warpCanvasRef} className={`${imageClassName} wardrobe-warp-canvas`} aria-label={`Pincel de deformação sobre ${component.name}`} title={imageTitle} onPointerDown={(event) => beginWardrobeWarp(event, component, bodyOffset)} onPointerMove={(event) => moveWardrobeWarp(event, component, bodyOffset)} onPointerUp={(event) => finishWardrobeWarp(event, component, bodyOffset)} onPointerCancel={(event) => finishWardrobeWarp(event, component, bodyOffset)} onPointerLeave={leaveWardrobeWarp} style={{ zIndex: 10000 }} />
-            return <img key={component.id} className={imageClassName} src={component.dataUrl} alt={component.name} title={imageTitle} draggable={false} onClick={() => setSelectedId(component.id)} onPointerDown={(event) => beginPieceDrag(event, component)} onPointerMove={movePieceDrag} onPointerUp={finishPieceDrag} onPointerCancel={finishPieceDrag} style={{ left: componentX * scale, top: componentY * scale, width: component.width * scale, height: component.height * scale, zIndex, transform: `rotate(${component.rotation}deg)`, pointerEvents: deformMode ? 'none' : 'auto' }} />
+            return <img key={component.id} className={imageClassName} src={component.dataUrl} alt={component.name} title={imageTitle} draggable={false} onClick={() => setSelectedId(component.id)} onPointerDown={(event) => beginPieceDrag(event, component)} onPointerMove={movePieceDrag} onPointerUp={finishPieceDrag} onPointerCancel={finishPieceDrag} style={{ left: componentX * scale, top: componentY * scale, width: component.width * scale, height: component.height * scale, zIndex: component.id === selectedId ? 9999 : zIndex, transform: `rotate(${component.rotation}deg)`, pointerEvents: deformMode ? 'none' : 'auto' }} />
           }
           if (!poseTransform) return null
           const image = <img className={imageClassName} src={component.dataUrl} alt={component.name} title={imageTitle} draggable={false} onClick={() => setSelectedId(component.id)} onPointerDown={(event) => beginPieceDrag(event, component)} onPointerMove={movePieceDrag} onPointerUp={finishPieceDrag} onPointerCancel={finishPieceDrag} style={{ left: poseTransform.localLeft * scale, top: poseTransform.localTop * scale, width: poseTransform.renderWidth * scale, height: poseTransform.renderHeight * scale, transformOrigin: 'center', transform: `rotate(${poseTransform.localRotation}deg)` }} />
