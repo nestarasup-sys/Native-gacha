@@ -471,7 +471,8 @@ export function EditorV6Page() {
           assets.push(asset, ...baked.extraAssets)
           const poseSlot = character.customization.poseSlot
           const poseSourceRevision = typeof poseSlot === 'number' ? activePoseSourceSnapshot?.revisions[editorV6PoseRevisionKey(character.customization.modelSlot ?? 1, poseSlot)] ?? 'missing' : undefined
-          elements.push({ id: crypto.randomUUID(), kind: 'character', assetId: asset.id, faceModeAssetIds: { ...baked.assetIds, idle: asset.id }, characterId: character.id, characterSourceUpdatedAt: character.updatedAt, ...(poseSourceRevision ? { poseSourceRevision } : {}), faceRendererVersion: EDITOR_V6_FACE_RENDER_VERSION, activeExpressionCollectionId: 'standard', activeExpressionPresetId: null, activeFaceMode: 'idle', characterScale: 100, characterWidthScale: 100, characterHeightScale: 100, ...(character.customization.faceAppearance ? { expressionBase: { appearance: structuredClone(character.customization.faceAppearance), transforms: {} } } : {}), characterCanvasWidth, text: character.name, x: 0, y: 0, width, height, rotation: 0, zIndex: ++zIndex })
+          const modelSourceRevision = activePoseSourceSnapshot?.modelRevisions[String(character.customization.modelSlot ?? 1)] ?? 'missing'
+          elements.push({ id: crypto.randomUUID(), kind: 'character', assetId: asset.id, faceModeAssetIds: { ...baked.assetIds, idle: asset.id }, characterId: character.id, characterSourceUpdatedAt: character.updatedAt, modelSourceRevision, ...(poseSourceRevision ? { poseSourceRevision } : {}), faceRendererVersion: EDITOR_V6_FACE_RENDER_VERSION, activeExpressionCollectionId: 'standard', activeExpressionPresetId: null, activeFaceMode: 'idle', characterScale: 100, characterWidthScale: 100, characterHeightScale: 100, ...(character.customization.faceAppearance ? { expressionBase: { appearance: structuredClone(character.customization.faceAppearance), transforms: {} } } : {}), characterCanvasWidth, text: character.name, x: 0, y: 0, width, height, rotation: 0, zIndex: ++zIndex })
         } finally { renderer.dispose() }
       }
       changeScene((studio) => ({
@@ -503,7 +504,7 @@ export function EditorV6Page() {
       const faceMode = expressionState && Object.hasOwn(expressionState, 'activeFaceMode') ? expressionState.activeFaceMode : selectedElement.activeFaceMode
       const baseMode = faceMode ?? editorV6FaceModeForElement(selectedElement, appearance)
       const assetId = selectedElement.assetId
-      const result = await editorV6FacePreview.withRenderer(characterCopy, selectedElement.poseSourceRevision, async (renderer) => {
+      const result = await editorV6FacePreview.withRenderer(characterCopy, selectedElement.poseSourceRevision, selectedElement.modelSourceRevision, async (renderer) => {
         const rendered = await renderer.renderToCanvas(appearance, faceTransforms, activeEffects, baseMode)
         const baked = await bakeFaceModeAssets(selectedElement.text, renderer, appearance, faceTransforms, activeEffects, baseMode, rendered)
         return { rendered, baked }
@@ -597,7 +598,7 @@ export function EditorV6Page() {
       const character: CustomizerCharacter = { ...selectedEditorV6Character, customization: { ...selectedEditorV6Character.customization, poseSlot: selectedElement.poseSlot === undefined ? selectedEditorV6Character.customization.poseSlot : selectedElement.poseSlot, faceAppearance: selectedEditorV6FaceAppearance } }
       const selectedClip = timelineClips(activeEditorV6.timeline).find(({ block }) => block.id === selectedTimelineBlockId && block.elementId === selectedElement.id)
         ?? editorV6ClipAtFrame(activeEditorV6.timeline, selectedElement.id, getEditorV6PlaybackFrame())
-      editorV6FacePreview.schedulePreview({ projectId: activeEditorV6Id, elementId: selectedElement.id, assetId: selectedElement.assetId, blockId: selectedClip?.block.id ?? null, poseSlot: selectedElement.poseSlot, poseSourceRevision: selectedElement.poseSourceRevision, character, transforms: next })
+      editorV6FacePreview.schedulePreview({ projectId: activeEditorV6Id, elementId: selectedElement.id, assetId: selectedElement.assetId, blockId: selectedClip?.block.id ?? null, poseSlot: selectedElement.poseSlot, poseSourceRevision: selectedElement.poseSourceRevision, modelSourceRevision: selectedElement.modelSourceRevision, character, transforms: next })
     }
   }
 

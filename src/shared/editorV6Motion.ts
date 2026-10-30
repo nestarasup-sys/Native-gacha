@@ -24,7 +24,7 @@ function faceSignature(element: EditorV6Element) {
   return JSON.stringify([element.poseSlot === undefined ? 'character-default' : element.poseSlot, element.activeExpressionPresetId ?? null, element.activeExpressionPresetUpdatedAt, element.activeExpressionGaze, appearance, element.faceTransforms, element.activeExpressionEffects])
 }
 function motionKey(from: EditorV6Element, to: EditorV6Element, samples: EditorV6MotionPlan['samples']) {
-  const endpoint = (element: EditorV6Element) => [faceSignature(element), element.assetId, element.characterId, element.characterSourceUpdatedAt, element.poseSourceRevision, element.activeFaceMode, element.faceRendererVersion, element.x, element.y, element.width, element.height, element.rotation, element.flipX, element.characterScale, element.characterWidthScale, element.characterHeightScale, element.characterCanvasWidth]
+  const endpoint = (element: EditorV6Element) => [faceSignature(element), element.assetId, element.characterId, element.characterSourceUpdatedAt, element.modelSourceRevision, element.poseSourceRevision, element.activeFaceMode, element.faceRendererVersion, element.x, element.y, element.width, element.height, element.rotation, element.flipX, element.characterScale, element.characterWidthScale, element.characterHeightScale, element.characterCanvasWidth]
   return JSON.stringify([EDITOR_V6_MOTION_VERSION, endpoint(from), endpoint(to), samples])
 }
 export function editorV6MotionPlan(track: EditorV6TimelineTrack, previous: EditorV6TimelineBlock, next: EditorV6TimelineBlock): EditorV6MotionPlan | null {
@@ -32,6 +32,7 @@ export function editorV6MotionPlan(track: EditorV6TimelineTrack, previous: Edito
   if (track.kind !== 'character' || track.motionEnabled === false || next.motionEnabled === false || !from || !to || from.kind !== 'character' || to.kind !== 'character' || from.id !== to.id || !from.characterId || from.characterId !== to.characterId || from.visible === false || to.visible === false || next.startFrame <= previous.startFrame || faceSignature(from) === faceSignature(to)) return null
   // Material/source revisions are cuts; pose/expression motion belongs to one stable actor.
   if (from.characterSourceUpdatedAt && to.characterSourceUpdatedAt && from.characterSourceUpdatedAt !== to.characterSourceUpdatedAt) return null
+  if (from.modelSourceRevision !== to.modelSourceRevision) return null
   const startFrame = Math.max(previous.startFrame, next.startFrame - EDITOR_V6_MOTION_MS * 30 / 1000)
   const samples = []
   for (let frame = Math.floor(startFrame) + 1; frame < next.startFrame; frame++) samples.push({ offset: frame - next.startFrame, progress: (frame - startFrame) / (next.startFrame - startFrame) })

@@ -1,8 +1,9 @@
 import type { CustomizerCharacter } from '../../../../shared/customizer'
 import type { EditorV6Document, EditorV6Element } from '../../../../shared/editorV6'
 
-export type PoseRevisionSnapshot = { projectId: string; revisions: Record<string, string> }
+export type PoseRevisionSnapshot = { projectId: string; revisions: Record<string, string>; modelRevisions: Record<string, string> }
 export type PoseCatalog = { modelSlot: number; poses: Array<{ slot?: number; updatedAt: string } | null> }
+export type ModelCatalog = Array<{ slot: number; updatedAt: string } | null>
 
 export const editorV6PoseRevisionKey = (modelSlot: number, poseSlot: number) => `${modelSlot}:${poseSlot}`
 
@@ -21,6 +22,15 @@ export function sameCustomizerCharacterCatalog(left: CustomizerCharacter[], righ
 export function samePoseRevisionSnapshot(left: Record<string, string>, right: Record<string, string>): boolean {
   const keys = Object.keys(left)
   return keys.length === Object.keys(right).length && keys.every((key) => left[key] === right[key])
+}
+
+export function createEditorV6ModelRevisionSnapshot(models: ModelCatalog): Record<string, string> {
+  return Object.fromEntries(models.flatMap((model) => model ? [[String(model.slot), model.updatedAt]] : []))
+}
+
+export function sameSourceRevisionSnapshot(left: PoseRevisionSnapshot, right: PoseRevisionSnapshot): boolean {
+  return samePoseRevisionSnapshot(left.revisions, right.revisions)
+    && samePoseRevisionSnapshot(left.modelRevisions, right.modelRevisions)
 }
 
 export function createEditorV6PoseRevisionSnapshot(catalogs: PoseCatalog[]): Record<string, string> {
@@ -61,10 +71,13 @@ export function resolveEditorV6CharacterSourceRefresh({
     const character = characterById.get(state.characterId)
     if (!character) return false
     const poseSlot = state.poseSlot === undefined ? character.customization.poseSlot : state.poseSlot
-    if (typeof poseSlot !== 'number') return false
     if (!poseSourceSnapshot) return true
     const modelSlot = character.customization.modelSlot ?? 1
-    return state.poseSourceRevision !== (poseSourceSnapshot.revisions[editorV6PoseRevisionKey(modelSlot, poseSlot)] ?? 'missing')
+    const modelRevision = poseSourceSnapshot.modelRevisions?.[String(modelSlot)]
+    const poseChanged = typeof poseSlot === 'number'
+      && state.poseSourceRevision !== (poseSourceSnapshot.revisions[editorV6PoseRevisionKey(modelSlot, poseSlot)] ?? 'missing')
+    return poseChanged
+      || (modelRevision !== undefined && state.modelSourceRevision !== modelRevision)
   })
   const faceAssetRefreshRequired = Boolean(project && (poseRefreshRequired || characterStates.some((state) => {
     if (state.kind !== 'character') return false

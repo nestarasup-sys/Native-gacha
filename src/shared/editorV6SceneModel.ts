@@ -26,9 +26,9 @@ export function withEditorV6Snapshot<T extends Partial<EditorV6Document>>(editor
 }
 
 /** Não inclui mudanças só de expressão facial na chave de cache da geometria. */
-export function editorV6CharacterRenderKey(character: CustomizerCharacter, poseSourceRevision?: string): string {
+export function editorV6CharacterRenderKey(character: CustomizerCharacter, poseSourceRevision?: string, modelSourceRevision?: string): string {
   const { faceAppearance: _ignored, ...customization } = character.customization
-  return JSON.stringify({ id: character.id, customization, poseSourceRevision })
+  return JSON.stringify({ id: character.id, customization, poseSourceRevision, modelSourceRevision })
 }
 
 export function editorV6ElementSize(element: EditorV6Element): { width: number; height: number } {

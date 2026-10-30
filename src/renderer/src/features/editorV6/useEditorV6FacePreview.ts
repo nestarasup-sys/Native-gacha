@@ -15,13 +15,14 @@ export type EditorV6FacePreviewJob = {
   blockId?: string | null
   poseSlot?: number | null
   poseSourceRevision?: string
+  modelSourceRevision?: string
   character: CustomizerCharacter
   transforms: EditorV6FaceTransforms
 }
 
 type MutableRef<T> = { current: T }
 type PrepareRenderer = (character: CustomizerCharacter) => Promise<PreparedEditorV6FaceRenderer>
-type KeyForRenderer = (character: CustomizerCharacter, poseSourceRevision?: string) => string
+type KeyForRenderer = (character: CustomizerCharacter, poseSourceRevision?: string, modelSourceRevision?: string) => string
 
 export function editorV6FacePreviewTarget(job: EditorV6FacePreviewJob, project: EditorV6Document): EditorV6Element | null {
   const block = job.blockId
@@ -45,6 +46,7 @@ export function isCurrentEditorV6FacePreviewTarget(
     && target.characterId === job.character.id
     && target.poseSlot === job.poseSlot
     && target.poseSourceRevision === job.poseSourceRevision
+    && target.modelSourceRevision === job.modelSourceRevision
     && (!target.characterSourceUpdatedAt || target.characterSourceUpdatedAt === job.character.updatedAt))
 }
 
@@ -58,9 +60,10 @@ export function createEditorV6FaceRendererCache(
   const get = async (
     character: CustomizerCharacter,
     poseSourceRevision?: string,
+    modelSourceRevision?: string,
     isCurrent: () => boolean = () => true
   ): Promise<PreparedEditorV6FaceRenderer | null> => {
-    const key = keyForRenderer(character, poseSourceRevision)
+    const key = keyForRenderer(character, poseSourceRevision, modelSourceRevision)
     if (cached?.key === key) return cached.renderer
 
     const renderer = await prepareRenderer(character)
@@ -155,7 +158,7 @@ export function useEditorV6FacePreview(dependencies: Dependencies) {
         if (!element) continue
 
         try {
-          const renderer = await rendererCache.get(job.character, job.poseSourceRevision,
+          const renderer = await rendererCache.get(job.character, job.poseSourceRevision, job.modelSourceRevision,
             () => !disposedRef.current && version === renderVersionRef.current)
           if (!renderer || disposedRef.current || version !== renderVersionRef.current) continue
 
@@ -208,13 +211,14 @@ export function useEditorV6FacePreview(dependencies: Dependencies) {
   const withRenderer = async <T,>(
     character: CustomizerCharacter,
     poseSourceRevision: string | undefined,
+    modelSourceRevision: string | undefined,
     operation: (renderer: PreparedEditorV6FaceRenderer) => Promise<T>
   ): Promise<T | null> => {
     await cancelPendingAndWait()
     if (disposedRef.current) return null
     renderRunningRef.current = true
     try {
-      const renderer = await rendererCache.get(character, poseSourceRevision, () => !disposedRef.current)
+      const renderer = await rendererCache.get(character, poseSourceRevision, modelSourceRevision, () => !disposedRef.current)
       if (!renderer || disposedRef.current) return null
       return await operation(renderer)
     } finally {

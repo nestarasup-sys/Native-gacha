@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises'
 import { loadEditorV6ProjectCatalog } from '../src/renderer/src/features/editorV6/editorV6ProjectCatalog.ts'
 import {
   createEditorV6PoseRevisionSnapshot,
+  createEditorV6ModelRevisionSnapshot,
   sameCustomizerCharacterCatalog,
   samePoseRevisionSnapshot
 } from '../src/renderer/src/features/editorV6/useEditorV6CharacterSources.ts'
@@ -173,7 +174,9 @@ test('compara revisões e catálogos sem trocar referências se os dados não mu
   assert.equal(sameCustomizerCharacterCatalog([first], []), false)
 
   const revisions = createEditorV6PoseRevisionSnapshot([{ modelSlot: 2, poses: [null, { slot: 4, updatedAt: 'pose-v2' }] }])
+  const modelRevisions = createEditorV6ModelRevisionSnapshot([null, { slot: 2, updatedAt: 'model-v3' }])
   assert.deepEqual(revisions, { '2:1': 'missing', '2:4': 'pose-v2' })
+  assert.deepEqual(modelRevisions, { '2': 'model-v3' })
   assert.equal(samePoseRevisionSnapshot(revisions, { ...revisions }), true)
   assert.equal(samePoseRevisionSnapshot(revisions, { ...revisions, '2:4': 'pose-v3' }), false)
 })
@@ -187,17 +190,17 @@ test('decide refresh com revisões atuais e states de personagens nos blocos da 
     id: 'project',
     elements: [{
       id: 'scene-character', kind: 'character', characterId: 'character',
-      poseSourceRevision: 'pose-v2', characterSourceUpdatedAt: 'character-v2', faceRendererVersion: 8
+      poseSourceRevision: 'pose-v2', characterSourceUpdatedAt: 'character-v2', modelSourceRevision: 'model-v3', faceRendererVersion: 8
     }],
     timeline: { tracks: [{ blocks: [{ state: {
       id: 'timeline-character', kind: 'character', characterId: 'character', poseSlot: 5,
-      poseSourceRevision: 'pose-v1', characterSourceUpdatedAt: 'character-v2', faceRendererVersion: 8
+      poseSourceRevision: 'pose-v1', characterSourceUpdatedAt: 'character-v2', modelSourceRevision: 'model-v3', faceRendererVersion: 8
     } }] }] }
   }
   const input = {
     project,
     characterById: new Map([[character.id, character]]),
-    poseSourceSnapshot: { projectId: 'project', revisions: { '2:4': 'pose-v2', '2:5': 'pose-v1' } },
+    poseSourceSnapshot: { projectId: 'project', revisions: { '2:4': 'pose-v2', '2:5': 'pose-v1' }, modelRevisions: { '2': 'model-v3' } },
     faceRendererVersion: 8
   }
 
@@ -212,6 +215,13 @@ test('decide refresh com revisões atuais e states de personagens nos blocos da 
   })
   assert.equal(changedTimelineRevision.poseRefreshRequired, true)
   assert.equal(changedTimelineRevision.faceAssetRefreshRequired, true)
+
+  const changedModelRevision = resolveEditorV6CharacterSourceRefresh({
+    ...input,
+    poseSourceSnapshot: { ...input.poseSourceSnapshot, modelRevisions: { '2': 'model-v4' } }
+  })
+  assert.equal(changedModelRevision.poseRefreshRequired, true)
+  assert.equal(changedModelRevision.faceAssetRefreshRequired, true)
 })
 
 test('mantém refresh pendente enquanto o snapshot de pose não chegou e detecta renderer antigo', () => {

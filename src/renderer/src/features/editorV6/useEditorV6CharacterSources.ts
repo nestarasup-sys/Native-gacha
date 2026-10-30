@@ -2,16 +2,19 @@ import { useEffect, useMemo, useState } from 'react'
 import type { CustomizerCharacter } from '../../../../shared/customizer'
 import {
   createEditorV6PoseRevisionSnapshot,
+  createEditorV6ModelRevisionSnapshot,
   sameCustomizerCharacterCatalog,
-  samePoseRevisionSnapshot
+  sameSourceRevisionSnapshot
 } from './editorV6CharacterSourceModel.ts'
 import type { PoseRevisionSnapshot } from './editorV6CharacterSourceModel.ts'
 
 export {
   createEditorV6PoseRevisionSnapshot,
+  createEditorV6ModelRevisionSnapshot,
   editorV6PoseRevisionKey,
   sameCustomizerCharacterCatalog,
-  samePoseRevisionSnapshot
+  samePoseRevisionSnapshot,
+  sameSourceRevisionSnapshot
 } from './editorV6CharacterSourceModel.ts'
 
 /** Loads the live character catalog and tracks the pose revisions used by this project. */
@@ -62,14 +65,13 @@ export function useEditorV6CharacterSources(projectId: string | null, reportErro
         do {
           requestQueued = false
           try {
-            const catalogs = await Promise.all(fabricatorModelSlots.map(async (modelSlot) => ({
+            const [catalogs, models] = await Promise.all([Promise.all(fabricatorModelSlots.map(async (modelSlot) => ({
               modelSlot,
               poses: await window.desktop.fabricator.listFabricatorPoseSlots(modelSlot)
-            })))
+            }))), window.desktop.fabricator.listFabricatorSlots()])
             if (cancelled) return
-            const revisions = createEditorV6PoseRevisionSnapshot(catalogs)
-            setPoseSourceSnapshot((current) => current?.projectId === projectId && samePoseRevisionSnapshot(current.revisions, revisions)
-              ? current : { projectId, revisions })
+            const next = { projectId, revisions: createEditorV6PoseRevisionSnapshot(catalogs), modelRevisions: createEditorV6ModelRevisionSnapshot(models) }
+            setPoseSourceSnapshot((current) => current?.projectId === projectId && sameSourceRevisionSnapshot(current, next) ? current : next)
           } catch (reason) {
             if (!cancelled) reportError(reason instanceof Error ? reason.message : 'Não foi possível verificar as versões das poses salvas.')
           }

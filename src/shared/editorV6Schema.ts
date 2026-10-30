@@ -55,6 +55,7 @@ const editorV6ElementSchema = z.object({
   assetId: z.string().optional(),
   characterId: z.string().optional(),
   characterSourceUpdatedAt: z.string().datetime().optional(),
+  modelSourceRevision: z.string().max(80).optional(),
   poseSourceRevision: z.string().max(80).optional(),
   flipX: z.boolean().optional(),
   positionLocked: z.boolean().optional(),

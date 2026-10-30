@@ -62,6 +62,8 @@ export type EditorV6Element = {
   characterId?: string
   /** Customizer revision used to compose this actor's stored image. */
   characterSourceUpdatedAt?: string
+  /** Fabricator model sheet revision used to compose this actor's stored image. */
+  modelSourceRevision?: string
   /** Saved Fabricator pose revision used to compose this actor's stored image. */
   poseSourceRevision?: string
   flipX?: boolean

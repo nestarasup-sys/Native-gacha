@@ -13,7 +13,7 @@ type Character = EditorV6MotionBakeRequest['character']
 type Candidate = { state: EditorV6Element; character: Character; blockIds: string[]; key: string }
 
 function stateKey(state: EditorV6Element, character: Character): string {
-  const visualState = [state.id, state.assetId, state.characterId, state.characterSourceUpdatedAt, state.poseSourceRevision, state.poseSlot,
+  const visualState = [state.id, state.assetId, state.characterId, state.characterSourceUpdatedAt, state.modelSourceRevision, state.poseSourceRevision, state.poseSlot,
     state.x, state.y, state.width, state.height, state.rotation, state.flipX, state.characterScale, state.characterWidthScale, state.characterHeightScale,
     state.faceAppearance, state.faceTransforms, state.activeExpressionEffects, state.activeExpressionPresetId, state.activeExpressionPresetUpdatedAt,
     character.id, character.updatedAt, character.customization]
