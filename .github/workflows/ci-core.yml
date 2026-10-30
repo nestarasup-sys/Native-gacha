@@ -47,20 +47,9 @@ jobs:
         run: npm run test:refactor
       - name: Geometry regression
         run: npm run test:geometry
-      - name: Test rebuilt Video Studio contracts (Windows only)
+      - name: Verify Editor V6 timeline, render and export contracts (Windows only)
         if: matrix.os == 'windows-latest'
-        run: npm run test:video:next
-      - name: Verify existing serial export contracts (Windows only)
-        if: matrix.os == 'windows-latest'
-        run: npm run test:export:synthetic
-      - name: Smoke Windows process-tree memory probe
-        if: matrix.os == 'windows-latest'
-        shell: pwsh
-        run: |
-          .\scripts\video-studio\windows-memory-probe.ps1 -RootPid $PID -Samples 1 | Select-Object -First 1 | Out-Null
-      - name: Smoke Windows semantic SceneIR stress
-        if: matrix.os == 'windows-latest'
-        run: node scripts/video-studio/windows-sceneir-stress.cjs
+        run: npm run test:editor-v6
       - name: Verify updater targets canonical development branch (Windows only)
         if: matrix.os == 'windows-latest'
         shell: pwsh
