@@ -248,10 +248,10 @@ export async function runEditorV6Export(project: EditorV6Document, options: Edit
         return JSON.stringify([video.codec_name, video.profile, video.pix_fmt, video.width, video.height, video.r_frame_rate, video.time_base, video.extradata_hash])
       })
       if (new Set(signatures).size !== 1) throw Error('Os parâmetros das partes são incompatíveis para junção sem recodificação.')
-      deps.progress({ state: 'joining', message: 'Juntando o vídeo e preparando a mixagem de áudio…', frames: totalFrames })
+      const audio = planEditorV6Audio([...(project.exportAudio ?? []), ...timelineMediaAudio(project)], options.startFrame, options.endFrame)
+      deps.progress({ state: 'joining', message: audio.length ? 'Juntando o vídeo e preparando a mixagem de áudio…' : 'Juntando o vídeo final…', frames: totalFrames })
       const list = join(folder, 'parts.txt')
       await writeFile(list, parts.map((part) => `file '${basename(part.path)}'`).join('\n') + '\n')
-      const audio = planEditorV6Audio([...(project.exportAudio ?? []), ...timelineMediaAudio(project)], options.startFrame, options.endFrame)
       report.audioClips = audio.length
       const filters = audio.map((item, index) => `[${index + 1}:a:0]atrim=start=${item.sourceInFrame / 30}:duration=${item.durationFrames / 30},asetpts=N/SR/TB,aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,volume=${item.clip.gain},adelay=${item.delayFrames * 1600}S:all=1[a${index}]`)
       if (audio.length) filters.push(`${audio.map((_item, index) => `[a${index}]`).join('')}amix=inputs=${audio.length}:normalize=0:duration=longest:dropout_transition=0,asetpts=N/SR/TB,apad=whole_dur=${totalFrames / 30},atrim=duration=${totalFrames / 30},asetpts=N/SR/TB[mix]`)

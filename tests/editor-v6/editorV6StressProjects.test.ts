@@ -54,6 +54,7 @@ const scenarios: Scenario[] = [
 const stressExperiment = process.env.GACHA_EDITOR_V6_STRESS_EXPERIMENT ?? 'baseline'
 const experimentProfiles: Record<string, Partial<Scenario>> = {
   baseline: {},
+  silent240: { durationFrames: 7200 },
   frames200: { characterBlocks: 90 },
   frames300: { characterBlocks: 60 },
   static: { transitionActorCount: 0 },
@@ -65,6 +66,9 @@ const experimentProfiles: Record<string, Partial<Scenario>> = {
 if (!experimentProfiles[stressExperiment]) throw new Error(`Experimento de estresse desconhecido: ${stressExperiment}`)
 const heavyIndex = scenarios.findIndex((scenario) => scenario.key === 'heavy')
 scenarios[heavyIndex] = { ...scenarios[heavyIndex], ...experimentProfiles[stressExperiment] }
+const requestedScenarios = process.env.GACHA_EDITOR_V6_STRESS_ONLY?.split(',').map((key) => key.trim()).filter(Boolean)
+const scenariosToBuild = requestedScenarios ? scenarios.filter((scenario) => requestedScenarios.includes(scenario.key)) : scenarios
+if (requestedScenarios?.some((key) => !scenarios.some((scenario) => scenario.key === key))) throw new Error(`Projeto de estresse desconhecido: ${requestedScenarios.join(', ')}`)
 
 function uuid(seed: string): string {
   const hex = createHash('sha256').update(`editor-v6-stress:${seed}`).digest('hex').slice(0, 32).split('')
@@ -382,6 +386,12 @@ async function writeScenario(root: string, result: ScenarioResult) {
     motionTransitions: editorV6MotionPlans(document).length,
     stressExperiment,
     motionWindows: editorV6MotionPlans(document).map((plan) => ({ characterName: document.elements.find((element) => element.characterId === plan.characterId)?.text ?? plan.characterId, startFrame: plan.startFrame, endFrame: plan.endFrame })),
+    mediaPlaybackClips: document.timeline.tracks.flatMap((track) => track.kind === 'audio' || track.kind === 'video'
+      ? track.blocks.flatMap((block) => {
+          const media = document.media?.find((item) => item.id === block.mediaId)
+          return media ? [{ fileName: media.fileName, trackKind: track.kind, blockId: block.id, startFrame: block.startFrame, durationFrames: block.durationFrames, mediaInFrame: block.mediaInFrame ?? 0 }] : []
+        })
+      : []),
     linkedSpeechBlocks: document.timeline.tracks.filter((track) => track.kind === 'speech').flatMap((track) => track.blocks).filter((block) => block.characterId).length,
     linkedThoughtBlocks: document.timeline.tracks.filter((track) => track.kind === 'thought').flatMap((track) => track.blocks).filter((block) => block.characterId).length,
     missingMotions: missingEditorV6Motions(reopened.data).length,
@@ -404,14 +414,18 @@ describe.skipIf(!enabled)('projetos de estresse do Editor V6', () => {
     expect(capturedCharacters.every((entry) => entry.poses.length === 2 && entry.transitions.length === 2)).toBe(true)
     await mkdir(root, { recursive: true })
     const output = []
-    for (const scenario of scenarios) output.push(await writeScenario(root, await buildScenario(scenario, capturedCharacters)))
-    expect(output).toHaveLength(4)
-    expect(output.map((item) => item.characters)).toEqual([4, 4, 4, 4])
+    for (const scenario of scenariosToBuild) output.push(await writeScenario(root, await buildScenario(scenario, capturedCharacters)))
+    expect(output).toHaveLength(scenariosToBuild.length)
+    expect(output.every((item) => item.characters === 4)).toBe(true)
     expect(output.every((item) => item.characterNames.join(',') === expectedNames.join(','))).toBe(true)
     expect(output.every((item) => new Set(item.characterIds).size === 4)).toBe(true)
-    expect(output[0].blocks).toBeLessThan(output[1].blocks)
-    expect(output[1].blocks).toBeLessThan(output[2].blocks)
-    expect(output[3].media).toBe(4)
+    const outputByKey = new Map(output.map((item) => [item.key, item]))
+    for (const [leftKey, rightKey] of [['light', 'medium'], ['medium', 'heavy']]) {
+      const left = outputByKey.get(leftKey), right = outputByKey.get(rightKey)
+      if (left && right) expect(left.blocks).toBeLessThan(right.blocks)
+    }
+    const multimedia = outputByKey.get('multimedia')
+    if (multimedia) expect(multimedia.media).toBe(4)
 
     const persistence = createEditorV6DocumentPersistence({
       files: { access, mkdir, readFile, rename, unlink, rm, writeFile },
@@ -428,9 +442,9 @@ describe.skipIf(!enabled)('projetos de estresse do Editor V6', () => {
       readEditorV6PoseReferences: persistence.readEditorV6PoseReferences
     })
     const summaries = await library.listEditorV6s()
-    const fixtureIds = new Set(scenarios.map((scenario) => uuid(`${scenario.key}:project`)))
+    const fixtureIds = new Set(scenariosToBuild.map((scenario) => uuid(`${scenario.key}:project`)))
     const fixtureSummaries = summaries.filter((summary) => fixtureIds.has(summary.id))
-    expect(fixtureSummaries).toHaveLength(4)
+    expect(fixtureSummaries).toHaveLength(scenariosToBuild.length)
     expect(fixtureSummaries.every((summary) => !('assets' in summary))).toBe(true)
     for (const id of fixtureIds) {
       const reopened = await persistence.readEditorV6(id)

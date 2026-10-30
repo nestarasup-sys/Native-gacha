@@ -4,6 +4,7 @@ const path = require('node:path')
 const net = require('node:net')
 const { pathToFileURL } = require('node:url')
 const { spawn, spawnSync } = require('node:child_process')
+const { build } = require('esbuild')
 const { createSyntheticStressProfile } = require('./synthetic-stress-profile.cjs')
 const root = path.resolve(__dirname, '../..')
 const ffmpeg = path.join(root, 'resources', 'video-tools', 'ffmpeg.exe')
@@ -146,12 +147,13 @@ async function createMediaFixtures(folder) {
 }
 
 async function main() {
+  const exportOnly = process.argv.includes('--export-stress')
   await fs.mkdir(outputRoot, { recursive: true })
   const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'editor-v6-stress-offscreen-'))
   const dataRoot = path.join(tempRoot, 'app-data')
   projectRoot = path.join(dataRoot, 'runtime', 'profile', 'studios', 'Editor V6')
   const mediaRoot = path.join(tempRoot, 'media-fixtures')
-  const mediaFixtureProbes = await createMediaFixtures(mediaRoot)
+  const mediaFixtureProbes = exportOnly ? null : await createMediaFixtures(mediaRoot)
   const traceMode = process.argv.includes('--trace')
   const scenarioArgument = process.argv.find((argument) => argument.startsWith('--scenario='))
   const selectedScenario = scenarioArgument?.slice('--scenario='.length) ?? (traceMode ? 'heavy' : null)
@@ -222,7 +224,8 @@ async function main() {
         GACHA_EDITOR_V6_STRESS_CHARACTERS_BUNDLE: bundlePath,
         GACHA_EDITOR_V6_STRESS_MEDIA_ROOT: mediaRoot,
         GACHA_EDITOR_V6_STRESS_SUMMARY_PATH: projectSummaryPath,
-        GACHA_EDITOR_V6_STRESS_EXPERIMENT: experiment
+        GACHA_EDITOR_V6_STRESS_EXPERIMENT: exportOnly ? 'silent240' : experiment,
+        ...(exportOnly ? { GACHA_EDITOR_V6_STRESS_ONLY: 'heavy' } : {})
       },
       timeout: 180_000,
       windowsHide: true
@@ -238,8 +241,9 @@ async function main() {
       { key: 'multimedia', title: '[TESTE] Estresse multimídia — codecs e áudio' }
     ]
     if (selectedScenario && !scenarios.some((scenario) => scenario.key === selectedScenario)) throw new Error(`Cenário inválido para trace: ${selectedScenario}`)
-    const scenariosToRun = selectedScenario ? scenarios.filter((scenario) => scenario.key === selectedScenario) : scenarios
+    const scenariosToRun = exportOnly ? [] : selectedScenario ? scenarios.filter((scenario) => scenario.key === selectedScenario) : scenarios
     const measurements = []
+    let stressExport = null
     let traceCapture = null
     for (const scenario of scenariosToRun) {
       const appUrl = `${origin}/?editorV6Offscreen=${scenario.key}-${Date.now()}#/editor-v6`
@@ -320,6 +324,15 @@ async function main() {
       await evaluate(cdp, 'window.__gv5PerformanceReset?.()')
       await evaluate(cdp, `(() => {
         const observedWindows = ${JSON.stringify(prepared.motionWindows.filter((window) => window.startFrame < runDurationMs * 30 / 1000 + 10))}
+        const mediaPlaybackClips = ${JSON.stringify(prepared.mediaPlaybackClips ?? [])}
+        const mediaTarget = (media, frame) => {
+          let fileName = ''
+          try { fileName = decodeURIComponent(new URL(media.currentSrc || media.src).pathname.split('/').filter(Boolean).at(-1) || '') } catch {}
+          const clip = mediaPlaybackClips.find(item => item.fileName === fileName)
+          if (!clip) return { fileName: fileName || null, blockId: null, targetTime: null }
+          const active = frame >= clip.startFrame && frame < clip.startFrame + clip.durationFrames
+          return { fileName, blockId: clip.blockId, targetTime: active ? (clip.mediaInFrame + frame - clip.startFrame) / 30 : null }
+        }
         const motionWindowsByFrame = Object.create(null)
         for (const motionWindow of observedWindows) for (let sampleFrame=Math.floor(motionWindow.startFrame)+1;sampleFrame<=Math.ceil(motionWindow.endFrame)-1;sampleFrame++) (motionWindowsByFrame[sampleFrame] ||= []).push(motionWindow)
         const state = { samples: [], rafIntervals: [], motionFrames: {}, motionFrameEvents: [], motionBoundaryEvents: [], visualChangeEvents: [], sceneMutationEvents: [], domFrames: [], domFrameEvents: [], heapSamples: [], gcSamples: [], mediaStats: {}, motionWindowsByFrame, activeMotionWindows: new Set(), lastMotionFrameByWindow: new Map(), visualStateByCharacter: new Map(), last: null, started: performance.now(), timeOrigin: performance.timeOrigin, active: true, startFrame: Number(document.querySelector('.v6-scene-surface')?.getAttribute('data-frame')), memoryStart: performance.memory?.usedJSHeapSize ?? null }
@@ -394,7 +407,7 @@ async function main() {
           for (const media of window.__editorV6StressMediaElements ?? []) {
             const extension = media.currentSrc?.split(/[?#]/)[0].split('.').at(-1)?.toLowerCase() ?? 'unknown'
             const key = media.tagName.toLowerCase() + ':' + extension
-            const targetTime = media.tagName === 'VIDEO' ? Number(media.dataset.targetTime) : frame / 30
+            const targetTime = mediaTarget(media, frame).targetTime
             const stat = state.mediaStats[key] ||= { maxReadyState: 0, maxAbsDriftSeconds: 0, errorCodes: [] }
             stat.maxReadyState = Math.max(stat.maxReadyState, media.readyState)
             if (Number.isFinite(targetTime)) stat.maxAbsDriftSeconds = Math.max(stat.maxAbsDriftSeconds, Math.abs(media.currentTime-targetTime))
@@ -422,6 +435,15 @@ async function main() {
       await evaluate(cdp, 'document.querySelector(".editor-v6-timeline-actions button[aria-label=Pausar]")?.click()')
       const measurement = await evaluate(cdp, `(() => {
         const state = window.__editorV6StressFrames
+        const mediaPlaybackClips = ${JSON.stringify(prepared.mediaPlaybackClips ?? [])}
+        const mediaTarget = (media, frame) => {
+          let fileName = ''
+          try { fileName = decodeURIComponent(new URL(media.currentSrc || media.src).pathname.split('/').filter(Boolean).at(-1) || '') } catch {}
+          const clip = mediaPlaybackClips.find(item => item.fileName === fileName)
+          if (!clip) return { fileName: fileName || null, blockId: null, targetTime: null }
+          const active = frame >= clip.startFrame && frame < clip.startFrame + clip.durationFrames
+          return { fileName, blockId: clip.blockId, targetTime: active ? (clip.mediaInFrame + frame - clip.startFrame) / 30 : null }
+        }
         state.active = false
         const sorted = [...state.samples].sort((a,b) => a-b)
         const percentile = (p) => sorted.length ? +sorted[Math.min(sorted.length - 1, Math.floor((sorted.length - 1) * p))].toFixed(2) : 0
@@ -464,7 +486,7 @@ async function main() {
           mediaStats: state.mediaStats,
           mediaEvents: (window.__editorV6StressMediaEvents ?? []).map((event) => ({ ...event, at:+(event.at-state.started).toFixed(3) })),
           timelineFrame: Number(document.querySelector('.v6-scene-surface')?.getAttribute('data-frame')),
-          mediaElements: [...(window.__editorV6StressMediaElements ?? [])].map(media => { const extension = media.currentSrc?.split(/[?#]/)[0].split('.').at(-1)?.toLowerCase() ?? null; const targetTime = media.tagName === 'VIDEO' ? Number(media.dataset.targetTime) : Number(document.querySelector('.v6-scene-surface')?.getAttribute('data-frame')) / 30; return { type: media.tagName.toLowerCase(), extension, currentTime: +media.currentTime.toFixed(3), targetTime: Number.isFinite(targetTime) ? +targetTime.toFixed(3) : null, driftSeconds: Number.isFinite(targetTime) ? +(media.currentTime - targetTime).toFixed(3) : null, duration: Number.isFinite(media.duration) ? +media.duration.toFixed(3) : null, readyState: media.readyState, networkState: media.networkState, paused: media.paused, errorCode: media.error?.code ?? null } }),
+          mediaElements: [...(window.__editorV6StressMediaElements ?? [])].map(media => { const extension = media.currentSrc?.split(/[?#]/)[0].split('.').at(-1)?.toLowerCase() ?? null; const timing = mediaTarget(media, Number(document.querySelector('.v6-scene-surface')?.getAttribute('data-frame'))); const targetTime = timing.targetTime; return { type: media.tagName.toLowerCase(), extension, fileName: timing.fileName, blockId: timing.blockId, currentTime: +media.currentTime.toFixed(3), targetTime: Number.isFinite(targetTime) ? +targetTime.toFixed(3) : null, driftSeconds: Number.isFinite(targetTime) ? +(media.currentTime - targetTime).toFixed(3) : null, duration: Number.isFinite(media.duration) ? +media.duration.toFixed(3) : null, readyState: media.readyState, networkState: media.networkState, paused: media.paused, errorCode: media.error?.code ?? null } }),
           pageErrors: [...(window.__editorV6StressErrors ?? [])],
           mediaPlayEvents: [...(window.__editorV6StressMediaPlayEvents ?? [])].map(event => ({ ...event, at: +(event.at - state.started).toFixed(1) })),
           motionFramesByCharacter: Object.fromEntries(Object.entries(state.motionFrames).map(([name, frames]) => [name, [...frames].sort((a,b) => a-b)])),
@@ -492,8 +514,13 @@ async function main() {
       const mediaValidation = scenario.key === 'multimedia' ? (() => {
         const expected = ['mp4', 'webm', 'wav', 'ogg']
         const observed = [...new Set(measurement.mediaPlayEvents.map((item) => item.extension).filter(Boolean))].sort()
-        return { expectedExtensions: expected, observedExtensions: observed, missingExtensions: expected.filter((extension) => !observed.includes(extension)), mediaErrors: measurement.mediaElements.filter((item) => item.errorCode !== null), readyMedia: measurement.mediaElements.filter((item) => item.readyState >= 2).length, maxVideoDriftSeconds: Math.max(0, ...measurement.mediaElements.filter((item) => item.type === 'video' && item.driftSeconds !== null).map((item) => Math.abs(item.driftSeconds))), maxAudioDriftSeconds: Math.max(0, ...measurement.mediaElements.filter((item) => item.type === 'audio' && item.driftSeconds !== null).map((item) => Math.abs(item.driftSeconds))) }
+        const observedDrift = (type) => Math.max(0, ...Object.entries(measurement.mediaStats).filter(([key]) => key.startsWith(`${type}:`)).map(([, stat]) => stat.maxAbsDriftSeconds))
+        const finalDrift = (type) => Math.max(0, ...measurement.mediaElements.filter((item) => item.type === type && item.driftSeconds !== null).map((item) => Math.abs(item.driftSeconds)))
+        return { expectedExtensions: expected, observedExtensions: observed, missingExtensions: expected.filter((extension) => !observed.includes(extension)), mediaErrors: measurement.mediaElements.filter((item) => item.errorCode !== null), unmappedMedia: measurement.mediaElements.filter((item) => !item.blockId), readyMedia: measurement.mediaElements.filter((item) => item.readyState >= 2).length, maxVideoDriftSeconds: Math.max(observedDrift('video'), finalDrift('video')), maxAudioDriftSeconds: Math.max(observedDrift('audio'), finalDrift('audio')) }
       })() : null
+      if (mediaValidation && (mediaValidation.missingExtensions.length || mediaValidation.mediaErrors.length || mediaValidation.unmappedMedia.length || mediaValidation.maxVideoDriftSeconds > .5 || mediaValidation.maxAudioDriftSeconds > .5)) {
+        throw new Error(`${scenario.key}: a validação de reprodução de mídia encontrou uma falha de codec, mapeamento ou sincronização. ${JSON.stringify(mediaValidation)}`)
+      }
       const image = await cdp.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false })
       const screenshotPath = path.join(outputRoot, `${scenario.key}-offscreen.png`)
       await fs.writeFile(screenshotPath, Buffer.from(image.data, 'base64'))
@@ -510,14 +537,28 @@ async function main() {
       console.log(`[V6 stress] ${scenario.key}: ${runDurationMs} ms, ${prepared.blocks} blocos, RAF p95 ${measurement.p95FrameMs} ms, callbacks ${measurement.rafCallbackHz} Hz, DOM ${measurement.domFrameUpdateRate} updates/s, pior ${measurement.worstFrameMs} ms, commits ${measurement.react.find((item) => item.route === '/editor-v6')?.commits ?? 0}, logical gaps ${playbackMetrics?.logicalFrameGaps?.length ?? 'n/d'}, DOM gaps ${measurement.domFrameGaps.length}.`)
 
     }
+    if (exportOnly) {
+      const scenario = projectSummaries.find((item) => item.key === 'heavy')
+      if (!scenario) throw new Error('O fixture visual silencioso de 240 segundos não foi criado.')
+      const entry = path.join(tempRoot, 'stress-export.electron.cjs')
+      await build({ entryPoints: [path.join(root, 'tests', 'editor-v6', 'stressExport.electron.ts')], outfile: entry, bundle: true, platform: 'node', format: 'cjs', external: ['electron'], logLevel: 'warning' })
+      const exportEnv = { ...process.env }
+      delete exportEnv.ELECTRON_RUN_AS_NODE
+      const projectFolder = path.join(projectRoot, `editorV6-${scenario.id}`)
+      const exportChild = spawn(require('electron'), [entry, root, projectFolder, outputRoot], { cwd: root, env: exportEnv, stdio: 'inherit', windowsHide: true })
+      const exportCode = await new Promise((resolve, reject) => { exportChild.once('error', reject); exportChild.once('exit', resolve) })
+      if (exportCode !== 0) throw new Error(`A exportação silenciosa de 240 segundos falhou (Electron ${exportCode}).`)
+      stressExport = JSON.parse(await fs.readFile(path.join(outputRoot, 'stress-export-validation.json'), 'utf8'))
+    }
     const report = {
       generatedAt: new Date().toISOString(),
       mode: 'Electron Chromium em janela fora dos monitores, perfil sintético temporário isolado; nenhum perfil local foi lido ou copiado; background throttling desativado; CDP local.',
       syntheticProfile: { characterNames: syntheticProfile.characterNames, sourceFile: syntheticProfile.sourceFile, partCount: syntheticProfile.partCount, poseSlots: syntheticProfile.poseSlots },
       playbackMotionContract: 'EditorV6PlaybackScene resolves preview with includeMotion=false. The playback benchmark checks visible pose snapshot changes; prepared transition atlases are validated in the project and consumed by export.',
       runLabel,
-      experiment,
-      runDurationMs,
+      experiment: exportOnly ? 'silent240' : experiment,
+      runDurationMs: exportOnly ? 0 : runDurationMs,
+      stressExport,
       mediaFixtureProbes,
       traceCapture,
       presentationNote: 'A coleta de requestAnimationFrame e do atributo data-frame mede callbacks RAF e estado DOM após commit. Ela não prova que cada imagem foi fisicamente apresentada pelo monitor/compositor.',

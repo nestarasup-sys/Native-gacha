@@ -13,6 +13,7 @@ import { createEditorV6WorkerFactory } from '../../electron/domains/editorV6/exp
 import { runEditorV6Export } from '../../electron/domains/editorV6/exportRunner'
 import { createEditorV6Timeline, type EditorV6Document, type EditorV6Element } from '../../src/shared/editorV6'
 import { editEditorV6BackgroundAtFrame, moveEditorV6ElementInPeriod, prepareEditorV6PositionAtFrame } from '../../src/shared/editorV6Timeline'
+import { editorV6FaceModeAtFrame } from '../../src/shared/editorV6FaceSchedule'
 
 const root = resolve(process.argv[2]), folder = resolve(process.argv[3])
 protocol.registerSchemesAsPrivileged([{ scheme: 'gacha-editor-media', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } }])
@@ -69,15 +70,33 @@ async function main() {
   assert(pixel(1, 240, 90)[0] > 200 && pixel(1, 240, 90)[1] > 200 && pixel(1, 240, 90)[2] < 40, `A segunda parte perdeu o estado do personagem anterior ao seu início. Pixels antes/na/depois da emenda: ${[0, 1, 2].map(frame => pixel(frame, 240, 90).join(',')).join(' | ')}`)
   const talkPath = join(folder, 'talk.png')
   run(['-f', 'lavfi', '-i', 'color=c=red:s=16x16', '-frames:v', '1', talkPath])
-  const talkAssetId = randomUUID(), thoughtId = randomUUID()
+  const talkAssetId = randomUUID(), blinkAssetId = randomUUID(), talkBlinkAssetId = randomUUID(), thoughtId = randomUUID()
   const talkAsset = { id: talkAssetId, category: 'character' as const, name: 'Talk test', mimeType: 'image/png' as const, dataUrl: `data:image/png;base64,${(await readFile(talkPath)).toString('base64')}` }
-  const faceActor = { ...actor, faceModeAssetIds: { talk: talkAssetId } }
+  const blinkPath = join(folder, 'blink.png'), talkBlinkPath = join(folder, 'talk-blink.png')
+  run(['-f', 'lavfi', '-i', 'color=c=blue:s=16x16', '-frames:v', '1', blinkPath])
+  run(['-f', 'lavfi', '-i', 'color=c=magenta:s=16x16', '-frames:v', '1', talkBlinkPath])
+  const blinkAsset = { id: blinkAssetId, category: 'character' as const, name: 'Blink test', mimeType: 'image/png' as const, dataUrl: `data:image/png;base64,${(await readFile(blinkPath)).toString('base64')}` }
+  const talkBlinkAsset = { id: talkBlinkAssetId, category: 'character' as const, name: 'Talk blink test', mimeType: 'image/png' as const, dataUrl: `data:image/png;base64,${(await readFile(talkBlinkPath)).toString('base64')}` }
+  const faceSpeechBlock = { id: randomUUID(), label: 'Talk window', characterId: 'alice', startFrame: 8, durationFrames: 12 }
+  const faceScheduleTimeline = { ...project.timeline, durationFrames: 40, tracks: project.timeline.tracks.map((track) => track.kind === 'speech' ? { ...track, blocks: [faceSpeechBlock] } : track) }
+  let faceProjectId = randomUUID()
+  for (let attempt = 0; attempt < 5000; attempt++, faceProjectId = randomUUID()) {
+    const modes = Array.from({ length: 40 }, (_, frame) => editorV6FaceModeAtFrame(faceProjectId, faceScheduleTimeline, 'alice', frame))
+    const hasIdle = modes.some((mode, frame) => frame < 8 && mode === undefined)
+    const hasTalk = modes.some((mode, frame) => frame >= 8 && frame < 20 && mode === 'talk')
+    const hasBlink = modes.some((mode, frame) => (frame < 8 || frame >= 20) && mode === 'blink')
+    const hasTalkBlink = modes.some((mode) => mode === 'talk-blink')
+    if (hasIdle && hasTalk && hasBlink && hasTalkBlink) break
+    if (attempt === 4999) throw Error('Não foi possível preparar um ciclo de face com fala, piscada e sobreposição.')
+  }
+  const faceModeAssetIds = { talk: talkAssetId, blink: blinkAssetId, 'talk-blink': talkBlinkAssetId }
+  const faceActor = { ...actor, faceModeAssetIds }
   const thought = { id: thoughtId, kind: 'thought' as const, text: 'Teste', x: 0, y: -30, width: 28, height: 12, rotation: 0, zIndex: 2 }
   const faceProject: EditorV6Document = {
-    ...project, title: 'Face state capture test', exportAudio: [], assets: [...project.assets, talkAsset], elements: [faceActor, thought],
+    ...project, id: faceProjectId, title: 'Face state capture test', exportAudio: [], assets: [...project.assets, talkAsset, blinkAsset, talkBlinkAsset], elements: [faceActor, thought],
     timeline: { ...project.timeline, durationFrames: 40, knownElementIds: [...project.timeline.knownElementIds ?? [], thoughtId], tracks: project.timeline.tracks.map((track) => track.kind === 'character'
-      ? { ...track, blocks: track.blocks.map((block) => ({ ...block, state: block.state ? { ...block.state, faceModeAssetIds: { talk: talkAssetId } } : block.state })) }
-      : track.kind === 'speech' ? { ...track, blocks: [{ id: randomUUID(), label: 'Talk window', characterId: 'alice', startFrame: 8, durationFrames: 12 }] }
+      ? { ...track, blocks: track.blocks.map((block) => ({ ...block, state: block.state ? { ...block.state, faceModeAssetIds } : block.state })) }
+      : track.kind === 'speech' ? { ...track, blocks: [faceSpeechBlock] }
         : track.kind === 'thought' ? { ...track, blocks: [{ id: randomUUID(), label: thought.text, elementId: thought.id, state: thought, startFrame: 20, durationFrames: 5 }] }
           : track)
     }
@@ -127,9 +146,15 @@ async function main() {
   for (let frame = 0; frame < 40; frame++) {
     const offset = frame * faceFrameBytes + (90 * 320 + 240) * 3
     const [red, green, blue] = faceFrames.subarray(offset, offset + 3)
-    const speaking = frame >= 8 && frame < 20
-    assert(speaking ? red > 150 && green < 100 && blue < 100 : red > 150 && green > 100 && blue < 100,
-      `O personagem teve quadro vazio ou rosto incorreto na troca ${speaking ? 'talk' : 'idle'} do quadro ${frame}: ${red},${green},${blue}.`)
+    const mode = editorV6FaceModeAtFrame(faceProject.id, faceProject.timeline, 'alice', frame)
+    const correctColor = mode === 'talk-blink'
+      ? red > 150 && green < 100 && blue > 100
+      : mode === 'talk'
+        ? red > 150 && green < 100 && blue < 100
+        : mode === 'blink'
+          ? red < 100 && green < 100 && blue > 150
+          : red > 150 && green > 100 && blue < 100
+    assert(correctColor, `O MP4 exportado teve rosto incorreto no quadro ${frame} (${mode ?? 'idle'}): ${red},${green},${blue}.`)
   }
   let thoughtPixels = 0
   for (let y = 24; y < 49; y++) for (let x = 112; x < 208; x++) {

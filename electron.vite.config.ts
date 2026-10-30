@@ -2,7 +2,7 @@ import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 import react from '@vitejs/plugin-react'
-import { rendererContentSecurityPolicyPlugin } from './electron/application/rendererContentSecurityPolicy'
+import { rendererContentSecurityPolicyPlugin } from './electron/application/rendererContentSecurityPolicy.ts'
 
 const projectRoot = fileURLToPath(new URL('.', import.meta.url))
 
