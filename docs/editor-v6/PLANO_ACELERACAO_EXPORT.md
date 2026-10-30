@@ -128,6 +128,10 @@ O `finally` do export podia substituir o erro original se a gravação final do 
 
 A trilha de exportação usava somente `format.duration` do FFprobe e deixava o schema rejeitar o resultado caso viesse ausente, pouco claro para o usuário. Agora usa a duração da faixa de áudio como fallback, rejeita duração ausente/inválida e arquivos vazios antes de copiar, e aplica o limite de duração do Editor V6. O teste IPC verificou o fallback de duração e que entrada inválida não inicia cópia. Essa mudança melhora a confiabilidade do fluxo de mídia; não representa uma otimização de tempo de export.
 
+### Limite efetivo ao ler entradas do cache de movimento
+
+O cache de disco verificava o tamanho com `stat` antes de `readFile`; se uma entrada mudasse entre as operações, a leitura ainda podia alocar além do limite de 32 MiB. Agora a leitura em fluxo interrompe assim que excede esse teto, mesmo com arquivo alterado durante a leitura. Entradas excessivas ou danificadas viram falta de cache e são recalculadas, sem alterar documentos nem enfraquecer a validação do checksum e do atlas. A verificação focada também cobre rejeição de uma entrada acima do limite.
+
 ### Chave de cache para layout de vídeo
 
 Na revisão das chaves visuais, confirmei que elementos e recortes de atlas usados pelo `SceneSurface` entram na chave, mas o layout de `mediaVideo` não. Isso podia reutilizar uma captura antiga se o mesmo vídeo e o mesmo quadro de origem aparecessem com posição, tamanho ou rotação diferentes. A chave compartilhada agora inclui o layout. A regressão focada passou (16 testes no arquivo de movimento); `npm run test:editor-v6:export` também passou com 81 quadros, recuperação Turbo, cancelamento preservando o destino, emenda de áudio, movimento na emenda e saída Full HD. Typecheck, auditoria de arquitetura e build passaram.

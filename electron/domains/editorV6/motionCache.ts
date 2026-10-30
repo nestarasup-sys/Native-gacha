@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { mkdir, readFile, readdir, rename, stat, unlink, utimes, writeFile } from 'node:fs/promises'
+import { createReadStream } from 'node:fs'
+import { mkdir, readdir, rename, stat, unlink, utimes, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { editorV6MotionResultSchema } from '../../../src/shared/editorV6Schema'
 import type { EditorV6MotionBakeRequest, EditorV6MotionBakeResult } from '../../../src/shared/editorV6Motion'
@@ -8,7 +9,21 @@ import type { EditorV6MotionBakeRequest, EditorV6MotionBakeResult } from '../../
 export const MOTION_CACHE_VERSION = 3
 const MAX_MOTION_CACHE_ENTRIES = 512
 const MAX_MOTION_CACHE_BYTES = 768 * 1024 * 1024
+const MAX_MOTION_CACHE_ENTRY_BYTES = 32 * 1024 * 1024
 export type EditorV6MotionCacheStats = { memoryHits: number; diskHits: number; misses: number; rasterized: number; diskMissing: number; diskRejected: number; diskReadErrors: number; diskWrites: number; diskWriteSkipped: number; diskWriteErrors: number; diskBytesRead: number; diskBytesWritten: number }
+
+async function readBoundedFile(path: string, maximumBytes: number): Promise<Buffer | undefined> {
+  const chunks: Buffer[] = []
+  let bytes = 0
+  for await (const chunk of createReadStream(path, { highWaterMark: 64 * 1024 })) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
+    bytes += buffer.byteLength
+    if (bytes > maximumBytes) return undefined
+    chunks.push(buffer)
+  }
+  return Buffer.concat(chunks, bytes)
+}
+
 export function motionCacheKey(request: EditorV6MotionBakeRequest): string {
   const key = request.maxAtlasPixels === undefined
     ? [MOTION_CACHE_VERSION, request.plan.key, request.mouthScaleSamples ?? null, request.character]
@@ -35,15 +50,16 @@ export function createMotionDiskCache(folder: string, maximumBytes = MAX_MOTION_
       } catch (error) {
         return (error as NodeJS.ErrnoException).code === 'ENOENT' ? { miss: 'missing' } : { miss: 'error' }
       }
-      if (size > 32 * 1024 * 1024) return { miss: 'rejected' }
+      if (size > MAX_MOTION_CACHE_ENTRY_BYTES) return { miss: 'rejected' }
       try {
-        const contents = await readFile(target, 'utf8')
-        const envelope = JSON.parse(contents) as { payload: string; checksum: string }
+        const bytes = await readBoundedFile(target, MAX_MOTION_CACHE_ENTRY_BYTES)
+        if (!bytes) return { miss: 'rejected' }
+        const envelope = JSON.parse(bytes.toString('utf8')) as { payload: string; checksum: string }
         if (typeof envelope.payload !== 'string' || createHash('sha256').update(envelope.payload).digest('hex') !== envelope.checksum) return { miss: 'rejected' }
         const result = validateCachedMotion(request, JSON.parse(envelope.payload))
         const now = new Date()
         await utimes(target, now, now).catch(() => {})
-        return { result, bytes: Buffer.byteLength(contents) }
+        return { result, bytes: bytes.byteLength }
       } catch { return { miss: 'rejected' }
       }
     },

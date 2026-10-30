@@ -142,4 +142,12 @@ describe('transition preparation reuse', () => {
       expect(entries.length).toBeLessThan(6)
     } finally { await rm(folder, { recursive: true, force: true }) }
   })
+  it('does not load an oversized cache entry into memory', async () => {
+    const folder = await mkdtemp(join(tmpdir(), 'v6-motion-cache-entry-limit-'))
+    try {
+      const { request } = fixture()
+      await writeFile(join(folder, motionCacheKey(request) + '.json'), Buffer.alloc(32 * 1024 * 1024 + 1))
+      expect(await createMotionDiskCache(folder).read(request)).toBeUndefined()
+    } finally { await rm(folder, { recursive: true, force: true }) }
+  })
 })
