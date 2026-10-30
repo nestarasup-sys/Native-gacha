@@ -35,6 +35,12 @@ Referências: [exportação](EXPORTACAO.md), [preparação de transições](PREP
 
 **Entrega:** tabela de referência e três maiores custos, com evidência. Nenhum ganho é declarado usando apenas a velocidade do encoder ou uma fixture pequena.
 
+### Primeira linha de base disponível
+
+O relatório local `f75c3a26-0e6f-433d-9b05-dfc8de17fdb9.report.json` registra 5.700 quadros (190 s), exportados em 361,3 s: fator 1,90× a duração. A tentativa usou AMF, Turbo em duas partes concorrentes e criou 20 partes de 300 quadros. Renderizou 1.649 quadros e reutilizou 4.051 bitmaps. A preparação registrou 89 transições distintas em 55,9 s, sem reaproveitamento; o loop opcional de boca produziu 201 atlases (143.620.670 bytes). Esta é uma referência histórica anterior à preparação em lote, não uma comparação posterior nem prova de ganho. O relatório fica em `app-data` local e não deve ser adicionado ao Git.
+
+A primeira otimização implementada indexa assets e movimentos uma vez e aplica os resultados em uma passagem por blocos, evitando o percurso completo da timeline para cada chave e para cada vínculo repetido. `npm run test:editor-v6` passou após a mudança (167 testes aprovados, um ignorado). A medição posterior no projeto completo continua pendente; até lá não se atribui redução de tempo à mudança.
+
 ## 2. Remover trabalho repetido da preparação — prioridade alta
 
 - Construir índices de assets, personagens, blocos e transições uma vez por preparação; evitar percorrer toda a timeline dentro de cada grupo.
