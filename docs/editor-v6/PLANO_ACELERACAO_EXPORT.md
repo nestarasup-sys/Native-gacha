@@ -124,6 +124,10 @@ Fechei uma corrida rara em que o sinal podia ser cancelado depois da verificaç�
 
 O `finally` do export podia substituir o erro original se a gravação final do relatório ou a remoção dos temporários falhasse. Também podia propagar uma falha de limpeza após o MP4 ter sido publicado, deixando a interface indicar falha apesar do arquivo válido existir. Agora, falhas anteriores à publicação preservam a causa original e agregam erros de relatório/limpeza; depois da publicação, limpeza incompleta vira aviso e o relatório tenta registrar esse aviso. `ENOENT` ao remover o candidato é tratado como já removido. Typecheck, auditoria de arquitetura e build passaram.
 
+### Validação da duração ao importar trilha de áudio
+
+A trilha de exportação usava somente `format.duration` do FFprobe e deixava o schema rejeitar o resultado caso viesse ausente, pouco claro para o usuário. Agora usa a duração da faixa de áudio como fallback, rejeita duração ausente/inválida e arquivos vazios antes de copiar, e aplica o limite de duração do Editor V6. O teste IPC verificou o fallback de duração e que entrada inválida não inicia cópia. Essa mudança melhora a confiabilidade do fluxo de mídia; não representa uma otimização de tempo de export.
+
 ### Chave de cache para layout de vídeo
 
 Na revisão das chaves visuais, confirmei que elementos e recortes de atlas usados pelo `SceneSurface` entram na chave, mas o layout de `mediaVideo` não. Isso podia reutilizar uma captura antiga se o mesmo vídeo e o mesmo quadro de origem aparecessem com posição, tamanho ou rotação diferentes. A chave compartilhada agora inclui o layout. A regressão focada passou (16 testes no arquivo de movimento); `npm run test:editor-v6:export` também passou com 81 quadros, recuperação Turbo, cancelamento preservando o destino, emenda de áudio, movimento na emenda e saída Full HD. Typecheck, auditoria de arquitetura e build passaram.

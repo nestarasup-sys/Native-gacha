@@ -139,6 +139,32 @@ describe('lifecycle de cópias de mídia do Editor V6', () => {
     } as never)
   })
 
+  it('usa a duração da faixa de áudio quando o contêiner não informa duração', async () => {
+    vi.mocked(dialog.showOpenDialog).mockResolvedValue({ canceled: false, filePaths: ['C:/synthetic/input.mp3'] })
+    vi.mocked(probeExportMedia).mockResolvedValue({
+      streams: [{ codec_type: 'audio', duration: '1.5' }],
+      format: {}
+    } as never)
+    const { handlers } = createHarness()
+
+    await expect(handlers.get(editorV6IpcChannels.importEditorV6ExportAudio)!(event, targetId))
+      .resolves.toMatchObject({ sourceFrames: 45, durationFrames: 45 })
+    expect(copyFile).toHaveBeenCalledTimes(1)
+  })
+
+  it('rejeita duração de áudio inválida antes de copiar o arquivo', async () => {
+    vi.mocked(dialog.showOpenDialog).mockResolvedValue({ canceled: false, filePaths: ['C:/synthetic/input.mp3'] })
+    vi.mocked(probeExportMedia).mockResolvedValue({
+      streams: [{ codec_type: 'audio' }],
+      format: {}
+    } as never)
+    const { handlers } = createHarness()
+
+    await expect(handlers.get(editorV6IpcChannels.importEditorV6ExportAudio)!(event, targetId))
+      .rejects.toThrow('A duração do áudio não pôde ser determinada.')
+    expect(copyFile).not.toHaveBeenCalled()
+  })
+
   it.each(copyScenarios)('$name entra no inventário e o shutdown aguarda a cópia', async ({ configure, start }) => {
     configure?.()
     const started = deferred()

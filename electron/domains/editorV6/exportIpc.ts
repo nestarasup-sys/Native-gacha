@@ -138,12 +138,18 @@ export function registerEditorV6ExportHandlers(deps: EditorV6ExportIpcDependenci
     const result = await dialog.showOpenDialog({ title: 'Editor V6: adicionar áudio à exportação', properties: ['openFile'], filters: [{ name: 'Áudio', extensions: ['mp3', 'wav', 'm4a', 'aac', 'ogg', 'flac', 'opus', 'webm'] }] })
     const source = result.filePaths[0]
     if (result.canceled || !source) return null
-    if ((await stat(source)).size > 2 * 1024 ** 3) throw Error('O arquivo de áudio excede 2 GB.')
+    const fileStats = await stat(source)
+    if (fileStats.size <= 0) throw Error('O arquivo de áudio está vazio.')
+    if (fileStats.size > 2 * 1024 ** 3) throw Error('O arquivo de áudio excede 2 GB.')
     const extension = extname(source).slice(1).toLowerCase()
     if (!['mp3', 'wav', 'm4a', 'aac', 'ogg', 'flac', 'opus', 'webm'].includes(extension)) throw Error('Formato de áudio inválido.')
     const probe = await probeExportMedia(ffprobe, source, new AbortController().signal)
-    if (!probe.streams.some((stream) => stream.codec_type === 'audio')) throw Error('O arquivo selecionado não contém áudio.')
-    const sourceFrames = Math.floor(Number(probe.format.duration) * 30)
+    const audio = probe.streams.find((stream) => stream.codec_type === 'audio')
+    if (!audio) throw Error('O arquivo selecionado não contém áudio.')
+    const duration = Number(probe.format.duration ?? audio.duration ?? 0)
+    if (!Number.isFinite(duration) || duration <= 0) throw Error('A duração do áudio não pôde ser determinada.')
+    const sourceFrames = Math.max(1, Math.floor(duration * 30))
+    if (sourceFrames > 1_000_000) throw Error('A duração do áudio passa do limite do Editor V6.')
     const id = randomUUID(), fileName = `${id}.${extension}`
     const clip = editorV6ExportAudioSchema.parse({ id, fileName, name: basename(source), sourceFrames, startFrame: 0, sourceInFrame: 0, durationFrames: sourceFrames, gain: 1, muted: false })
     const folder = join(deps.projectPath(projectId), 'export-audio')
