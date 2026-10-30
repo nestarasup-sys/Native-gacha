@@ -130,7 +130,7 @@ A trilha de exportação usava somente `format.duration` do FFprobe e deixava o 
 
 ### Limite efetivo ao ler entradas do cache de movimento
 
-O cache de disco verificava o tamanho com `stat` antes de `readFile`; se uma entrada mudasse entre as operações, a leitura ainda podia alocar além do limite de 32 MiB. Agora a leitura em fluxo interrompe assim que excede esse teto, mesmo com arquivo alterado durante a leitura. Entradas excessivas ou danificadas viram falta de cache e são recalculadas, sem alterar documentos nem enfraquecer a validação do checksum e do atlas. A verificação focada também cobre rejeição de uma entrada acima do limite.
+O cache de disco verificava o tamanho com `stat` antes de `readFile`; se uma entrada mudasse entre as operações, a leitura ainda podia alocar além do limite de 32 MiB. Agora a leitura em fluxo interrompe assim que excede esse teto, mesmo com arquivo alterado durante a leitura. Entradas excessivas ou danificadas viram falta de cache e são recalculadas, sem alterar documentos nem enfraquecer a validação do checksum e do atlas. A verificação focada também cobre rejeição de uma entrada acima do limite. Depois da mudança, `npm run test:editor-v6:export` passou: 81 quadros, 78 reutilizados, emenda de áudio, fallback Turbo, cancelamento preservando o destino, movimento na emenda, saída Full HD e preloads sandbox.
 
 ### Chave de cache para layout de vídeo
 
