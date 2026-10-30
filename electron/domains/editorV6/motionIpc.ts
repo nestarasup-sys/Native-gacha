@@ -22,6 +22,7 @@ export function createEditorV6MotionService(deps: { ipcMain: Pick<IpcMain, 'hand
   const workers = new Map<number, Lane>()
   const jobs = new Map<string, { owner: number; controller: AbortController; cancelled: boolean }>()
   const cache = new Map<string, EditorV6MotionBakeResult>()
+  const inFlight = new Map<string, { controller: AbortController; subscribers: Set<symbol>; promise: Promise<EditorV6MotionBakeResult>; settled: boolean }>()
   const disk = deps.cacheDirectory ? createMotionDiskCache(deps.cacheDirectory) : undefined
   // A lane reuses one in-memory session, keeping worker storage isolated and bounded by concurrency.
   const lanes: Lane[] = Array.from({ length: deps.concurrency ?? 1 }, () => ({ partition: `editor-v6-motion-${crypto.randomUUID()}`, tail: Promise.resolve(), count: 0 }))
@@ -100,7 +101,7 @@ export function createEditorV6MotionService(deps: { ipcMain: Pick<IpcMain, 'hand
     const bytes = () => [...cache.values()].reduce((total, item) => total + item.asset.dataUrl.length, 0)
     while (cache.size > 8 || bytes() > 24_000_000) cache.delete(cache.keys().next().value!)
   }
-  const enqueueBake = (request: EditorV6MotionBakeRequest, signal: AbortSignal) => {
+  const runBake = (request: EditorV6MotionBakeRequest, signal: AbortSignal) => {
     if (stopped) return Promise.reject(Error('O preparador está encerrando.'))
     const key = motionCacheKey(request)
     const lane = lanes.reduce((best, candidate) => candidate.count < best.count ? candidate : best)
@@ -118,6 +119,50 @@ export function createEditorV6MotionService(deps: { ipcMain: Pick<IpcMain, 'hand
     }).finally(() => { lane.count--; if (signal.aborted) close(lane) })
     lane.tail = promise.then(() => {}, () => {})
     return promise
+  }
+  const enqueueBake = (request: EditorV6MotionBakeRequest, signal: AbortSignal): Promise<EditorV6MotionBakeResult> => {
+    if (signal.aborted) return Promise.reject(signal.reason ?? Error('Preparação de animação cancelada.'))
+    const key = motionCacheKey(request)
+    let flight = inFlight.get(key)
+    if (!flight || flight.controller.signal.aborted) {
+      const controller = new AbortController()
+      const created = {
+        controller,
+        subscribers: new Set<symbol>(),
+        settled: false,
+        promise: Promise.resolve().then(() => runBake(request, controller.signal)).finally(() => {
+          created.settled = true
+          if (inFlight.get(key) === created) inFlight.delete(key)
+        })
+      }
+      // A flight can be cancelled before any consumer attaches; keep its rejection handled.
+      void created.promise.catch(() => {})
+      inFlight.set(key, created)
+      flight = created
+    }
+
+    const shared = flight
+    return new Promise((resolve, reject) => {
+      const subscriber = Symbol(key)
+      shared.subscribers.add(subscriber)
+      let released = false
+      const release = (cancelWhenUnobserved = false) => {
+        if (released) return
+        released = true
+        signal.removeEventListener('abort', onAbort)
+        shared.subscribers.delete(subscriber)
+        if (cancelWhenUnobserved && shared.subscribers.size === 0 && !shared.settled) {
+          shared.controller.abort(Error('Nenhuma solicitação ainda aguarda esta animação.'))
+        }
+      }
+      const onAbort = () => {
+        release(true)
+        reject(signal.reason ?? Error('Preparação de animação cancelada.'))
+      }
+      signal.addEventListener('abort', onAbort, { once: true })
+      if (signal.aborted) { onAbort(); return }
+      shared.promise.then((result) => { if (!released) { release(); resolve(result) } }, (error) => { if (!released) { release(); reject(error) } })
+    })
   }
   const bakeForExport = (rawRequest: EditorV6MotionBakeRequest, signal: AbortSignal) => {
     const request = parseEditorV6MotionRequest(rawRequest)

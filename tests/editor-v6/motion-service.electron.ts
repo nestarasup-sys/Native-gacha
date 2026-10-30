@@ -70,6 +70,20 @@ async function main() {
   setTimeout(() => controller.abort(), 10)
   await assert.rejects(cancelled)
   await service!.bakeForExport(request(3), new AbortController().signal)
+  await start(undefined, 2)
+  const duplicate = request(100), beforeSharedBake = windows
+  const [sharedFirst, sharedSecond] = await Promise.all([
+    service!.bakeForExport(duplicate, new AbortController().signal),
+    service!.bakeForExport({ ...duplicate, id: randomUUID() }, new AbortController().signal)
+  ])
+  assert.equal(sharedFirst.asset.id, sharedSecond.asset.id, 'Concurrent duplicate requests baked separate atlases')
+  assert.equal(windows - beforeSharedBake, 1, 'Concurrent duplicate requests occupied more than one worker lane')
+  const sharedCancellation = new AbortController(), survivingRequest = request(101)
+  const cancelledSubscriber = service!.bakeForExport(survivingRequest, sharedCancellation.signal)
+  const survivingSubscriber = service!.bakeForExport({ ...survivingRequest, id: randomUUID() }, new AbortController().signal)
+  setTimeout(() => sharedCancellation.abort(), 10)
+  await assert.rejects(cancelledSubscriber)
+  assert.ok((await survivingSubscriber).asset.dataUrl.startsWith('data:image/png;base64,'), 'One subscriber cancellation interrupted another subscriber')
   const rounds: Array<{ mode: string; workers: number; round: number; milliseconds: number; windows: number }> = []
   for (let round = 0; round < 3; round++) for (const mode of round % 2 ? ['two', 'reuse', 'fresh'] : ['fresh', 'reuse', 'two']) {
     const concurrency = mode === 'two' ? 2 : 1
