@@ -1,7 +1,7 @@
 # Editor V6 — plano de aceleração máxima do export
 
 Data: 30/10/2026. Base inicial de análise: branch `Dev-V2`, commit `b79aaaf`.
-Estado: em andamento. Otimizações, medições e verificações ficam registradas abaixo; o gargalo de preparação de movimentos recebeu concorrência limitada a duas tarefas após benchmark no projeto real. A comparação foi feita em grupos separados, então a redução de tempo total é indicativa e ainda requer confirmação alternada.
+Estado: em andamento. A preparação de movimentos recebeu concorrência limitada a duas tarefas. Uma comparação fria alternada no projeto real confirmou redução no tempo total e na fase de movimentos; o restante do plano segue aberto.
 
 ## Objetivo
 
@@ -151,7 +151,24 @@ No projeto real `72fbea64-4b18-4d31-9a0c-317f0f519a06` (revisão `2026-10-30T10:
 | 1 | 57,801 s | 211,948 s | 182,102 s | 1.915.179.008 bytes |
 | 2 | 36,164 s | 202,353 s | 173,966 s | 1.876.971.520 bytes |
 
-Com duas tarefas, a preparação fria caiu 37,4% e a mediana aquecida total caiu 4,5% nesta comparação. Os lotes não foram alternados e exports anteriores do mesmo dia variaram bastante; por isso o ganho de parede não é tratado como confirmado. O RSS é somente do processo principal, não inclui renderizadores, GPU nem FFmpeg. Comparei os dois MP4s frios completos, quadro a quadro, com FFmpeg SSIM: os 5.700 quadros deram SSIM geral 0,999994 (Y 0,999994, U 0,999994, V 0,999994). Isso indica alta similaridade visual entre as saídas, sem substituir inspeção de casos específicos ou comparação de áudio. Relatórios e saídas ficam em `out/editor-v6-stress/runs/motion-bake-concurrency-1-2026-10-30/` e `out/editor-v6-stress/runs/motion-bake-concurrency-2-2026-10-30/` (pastas ignoradas pelo Git). Cobertura unitária verifica o teto de concorrência e cancelamento/espera de tarefa irmã; a verificação final desta alteração inclui os testes de export, typecheck, auditoria de arquitetura e build.
+Esta primeira medição foi exploratória: os grupos foram executados em sequência e não alternados. A confirmação abaixo substitui a interpretação preliminar do ganho. O RSS nesses registros mede somente o processo principal, sem renderizadores, GPU nem FFmpeg. A comparação visual daquela rodada encontrou SSIM 0,999994 nos 5.700 quadros.
+
+### Confirmação alternada de bakes frios no projeto real
+
+Para separar o efeito da concorrência da variação entre execuções, repeti o projeto em seis processos isolados com cache-fonte vazio, na ordem 1, 2, 2, 1, 1, 2. Cada rodada rasterizou 89/89 transições, sem acertos de cache, e passou as validações de 5.700 quadros, 30 FPS, 1920×1080, 190 s, áudio e 18 emendas. Projeto, revisão e opções foram idênticos aos da medição anterior.
+
+| Rodada | Bakes em paralelo | Export total | Preparação de movimentos | Renderização | Pico RSS principal |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 1 | 421,716 s | 58,624 s | 335,687 s | 1.077,8 MiB |
+| 2 | 2 | 401,229 s | 35,767 s | 337,881 s | 1.066,7 MiB |
+| 3 | 2 | 426,943 s | 41,156 s | 358,718 s | 1.233,4 MiB |
+| 4 | 1 | 440,953 s | 63,578 s | 350,069 s | 1.101,4 MiB |
+| 5 | 1 | 439,836 s | 62,222 s | 348,765 s | 1.197,1 MiB |
+| 6 | 2 | 423,452 s | 40,664 s | 353,877 s | 1.172,6 MiB |
+
+As medianas foram: total de 439,836 s com uma tarefa e 423,452 s com duas (−3,7%); preparação de movimentos de 62,222 s para 40,664 s (−34,6%); renderização de 348,765 s para 353,877 s (+1,5%). Nos três pares adjacentes, duas tarefas reduziram o total em 4,9%, 3,2% e 3,7%. O máximo RSS principal foi 1.197,1 MiB com uma tarefa e 1.233,4 MiB com duas; os valores variam entre execuções e não incluem memória dos processos filhos. Assim, mantenho o limite de duas: o ganho total se repetiu em cada par, a preparação ficou substancialmente mais curta e o aumento de memória principal observado foi de 3,0%, sem testar mais paralelismo.
+
+Comparei também os dois primeiros MP4s desta sequência com FFmpeg SSIM nos 5.700 quadros: SSIM geral 0,999919 (Y 0,999906, U 0,999946, V 0,999940). Os relatórios e vídeos, incluindo medições frias e seus caches isolados, estão em `out/editor-v6-stress/runs/motion-bake-ab-alternating-2026-10-30/` (ignorado pelo Git). A validação de cada rodada confirmou saída estrutural; SSIM alto mede similaridade, não substitui revisão visual de cada caso nem valida o áudio por comparação de sinal.
 
 ## 2. Remover trabalho repetido da preparação — prioridade alta
 
@@ -233,7 +250,7 @@ Validar contagem de quadros, 30 FPS, resolução, duração, áudio e emendas co
 ## Sequência de entregas
 
 1. **Diagnóstico:** concluído para o projeto `72fbea64-4b18-4d31-9a0c-317f0f519a06`, com backup verificado e comparação de workers; estabelecer a captura de um relatório baseline da mesma revisão/opções para avaliar mudanças de código.
-2. **Preparação:** índices, aplicação em lote e eliminação de pedidos repetidos concluídos; concorrência limitada a duas tarefas adotada com ganho observado, ainda pendente de confirmação em comparação alternada.
+2. **Preparação:** índices, aplicação em lote, eliminação de pedidos repetidos e concorrência limitada a duas tarefas concluídos e medidos; a comparação fria alternada confirmou ganho total e de preparação no projeto de estresse.
 3. **Cache:** invalidação auditada, limites e preparação antecipada útil.
 4. **Quadros:** reduzir resolução de cena, commits, captura ou cópias conforme o maior custo restante.
 5. **Agendamento e encoder:** testar distribuição de partes e limites de concorrência.

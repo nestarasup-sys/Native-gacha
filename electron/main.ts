@@ -969,18 +969,22 @@ app.whenReady().then(async () => {
       const project = await readEditorV6(projectId)
       if (!project) throw Error(`Projeto de benchmark ${projectId} não encontrado no perfil temporário.`)
       const cacheProbe = process.env.GACHA_EDITOR_V6_STRESS_CACHE_PROBE === '1'
+      const singleMotionRun = process.env.GACHA_EDITOR_V6_STRESS_SINGLE_MOTION_RUN === '1'
+      const motionConcurrencyValue = process.env.GACHA_EDITOR_V6_STRESS_MOTION_CONCURRENCY
+      const motionConcurrency = motionConcurrencyValue === '1' ? 1 : motionConcurrencyValue === '2' || motionConcurrencyValue === undefined ? 2 : null
+      if (motionConcurrency === null) throw Error('A concorrência de bakes do benchmark precisa ser 1 ou 2.')
       // Keep worker variants grouped so one configuration cannot evict the other's cache mid-measurement.
-      const modes = cacheProbe ? [false, false, false] : [false, false, false, true, true, true]
-      const runs: Array<{ run: number; workers: number; milliseconds: number; renderingMilliseconds: number; finalizationMilliseconds: number; rssPeakBytes: number; motionTransitions: number; motionCache?: EditorV6MotionCacheStats & { inputSamples: Array<{ cacheKey: string; planKeyHash: string; characterId: string; characterFingerprint: string }> }; motionCacheTotal?: EditorV6MotionCacheStats; mouthStates: number; audioClips: number; videoInputs: number; audioOutput: boolean }> = []
+      const modes = singleMotionRun ? [false] : cacheProbe ? [false, false, false] : [false, false, false, true, true, true]
+      const runs: Array<{ run: number; workers: number; motionConcurrency: number; motionConcurrentPeak: number; milliseconds: number; renderingMilliseconds: number; finalizationMilliseconds: number; rssPeakBytes: number; motionTransitions: number; motionCache?: EditorV6MotionCacheStats & { inputSamples: Array<{ cacheKey: string; planKeyHash: string; characterId: string; characterFingerprint: string }> }; motionCacheTotal?: EditorV6MotionCacheStats; mouthStates: number; audioClips: number; videoInputs: number; audioOutput: boolean }> = []
       for (const [index, turbo] of modes.entries()) {
         const id = randomUUID()
-        const suffix = `run-${index + 1}-workers-${turbo ? 2 : 1}`
+        const suffix = `run-${index + 1}-workers-${turbo ? 2 : 1}-motion-bakes-${motionConcurrency}`
         const outputPath = join(outputRoot, `actual-project-${suffix}.mp4`)
         const reportPath = join(outputRoot, `actual-project-${suffix}.report.json`)
         const options: EditorV6ExportOptions = { startFrame: 0, endFrame: project.timeline.durationFrames, width: 1920, height: 1080, turbo, encoder: 'auto', mouthLoop: true, mouthLoopCycleFrames: 30 }
-        console.log(`[V6 isolated export] Rodada ${index + 1}/${modes.length}: ${turbo ? 'dois' : 'um'} workers, ${project.timeline.durationFrames} quadros, 1920×1080, áudio e animação automática da boca.`)
+        console.log(`[V6 isolated export] Rodada ${index + 1}/${modes.length}: ${turbo ? 'dois' : 'um'} workers e ${motionConcurrency} bake(s) simultâneo(s), ${project.timeline.durationFrames} quadros, 1920×1080, áudio e animação automática da boca.`)
         const cacheBeforeExport = editorV6MotionService!.getCacheStats()
-        const report = await editorV6ExportService!.runIsolatedExport(project, options, outputPath, reportPath, id)
+        const report = await editorV6ExportService!.runIsolatedExport(project, options, outputPath, reportPath, id, undefined, undefined, motionConcurrency)
         const cacheAfterExport = editorV6MotionService!.getCacheStats()
         const motionCacheTotal = Object.fromEntries(Object.keys(cacheAfterExport).map((key) => [key, cacheAfterExport[key as keyof EditorV6MotionCacheStats] - cacheBeforeExport[key as keyof EditorV6MotionCacheStats]])) as EditorV6MotionCacheStats
         const streams = (report.validation as { streams?: Array<{ codec_type?: string; nb_read_frames?: string | number; r_frame_rate?: string }> } | undefined)?.streams ?? []
@@ -989,15 +993,19 @@ app.whenReady().then(async () => {
         if (report.state !== 'completed' || report.totalFrames !== project.timeline.durationFrames || Number(video?.nb_read_frames) !== project.timeline.durationFrames
           || video?.r_frame_rate !== '30/1' || report.motionTransitionsPrepared !== report.motionTransitionsRequired
           || !report.motionTransitionsRequired || !report.mouthAnimation || report.mouthAnimation.skippedStates || report.mouthAnimation.staleStates
-          || report.videoInputs < 1 || report.audioClips < 1 || !audio) throw Error(`A rodada ${index + 1} não preservou todos os estados esperados: ${JSON.stringify({ state: report.state, frames: report.totalFrames, videoFrames: video?.nb_read_frames, fps: video?.r_frame_rate, motionRequired: report.motionTransitionsRequired, motionPrepared: report.motionTransitionsPrepared, mouth: report.mouthAnimation, audioClips: report.audioClips, videoInputs: report.videoInputs, audio })}`)
-        runs.push({ run: index + 1, workers: turbo ? 2 : 1, milliseconds: report.milliseconds!, renderingMilliseconds: report.phaseMilliseconds.rendering, finalizationMilliseconds: report.phaseMilliseconds.finalization, rssPeakBytes: report.mainProcessMemory!.peakRssBytes, motionTransitions: report.motionTransitionsPrepared, motionCache: report.motionCache, motionCacheTotal, mouthStates: report.mouthAnimation.stateAtlases, audioClips: report.audioClips, videoInputs: report.videoInputs, audioOutput: audio })
+          || report.videoInputs < 1 || report.audioClips < 1 || !audio
+          || singleMotionRun && (!report.motionPreparation || report.motionPreparation.maxConcurrentBakes !== Math.min(motionConcurrency, report.motionPreparation.unique)
+            || !report.motionCache || report.motionCache.rasterized !== report.motionTransitionsRequired || report.motionCache.diskHits !== 0)) {
+          throw Error(`A rodada ${index + 1} não preservou todos os estados esperados: ${JSON.stringify({ state: report.state, frames: report.totalFrames, videoFrames: video?.nb_read_frames, fps: video?.r_frame_rate, motionRequired: report.motionTransitionsRequired, motionPrepared: report.motionTransitionsPrepared, motionPreparation: report.motionPreparation, motionCache: report.motionCache, mouth: report.mouthAnimation, audioClips: report.audioClips, videoInputs: report.videoInputs, audio })}`)
+        }
+        runs.push({ run: index + 1, workers: turbo ? 2 : 1, motionConcurrency, motionConcurrentPeak: report.motionPreparation?.maxConcurrentBakes ?? 0, milliseconds: report.milliseconds!, renderingMilliseconds: report.phaseMilliseconds.rendering, finalizationMilliseconds: report.phaseMilliseconds.finalization, rssPeakBytes: report.mainProcessMemory!.peakRssBytes, motionTransitions: report.motionTransitionsPrepared, motionCache: report.motionCache, motionCacheTotal, mouthStates: report.mouthAnimation.stateAtlases, audioClips: report.audioClips, videoInputs: report.videoInputs, audioOutput: audio })
       }
       const median = (values: number[]) => { const sorted = [...values].sort((left, right) => left - right); return sorted[Math.floor(sorted.length / 2)] }
-      const variants = (cacheProbe ? [1] : [1, 2]).map((workers) => {
+      const variants = (cacheProbe || singleMotionRun ? [1] : [1, 2]).map((workers) => {
         const selected = runs.filter((run) => run.workers === workers)
         return { workers, runs: selected.length, medianMilliseconds: median(selected.map((run) => run.milliseconds)), medianRenderingMilliseconds: median(selected.map((run) => run.renderingMilliseconds)), maxMainProcessRssBytes: Math.max(...selected.map((run) => run.rssPeakBytes)) }
       })
-      const summary = { passed: true, benchmarkKind: cacheProbe ? 'motion-cache-repeat' : 'worker-comparison', projectId, projectUpdatedAt: project.updatedAt, durationFrames: project.timeline.durationFrames, durationSeconds: project.timeline.durationFrames / 30, width: 1920, height: 1080, fps: '30/1', encoder: 'auto', mouthLoop: true, audioClips: runs[0].audioClips, videoInputs: runs[0].videoInputs, audioOutput: true, motionTransitionsPreparedPerRun: runs[0].motionTransitions, mouthStatesPerRun: runs[0].mouthStates, runOrder: runs.map((run) => run.workers), runs, variants }
+      const summary = { passed: true, benchmarkKind: singleMotionRun ? 'motion-concurrency-single' : cacheProbe ? 'motion-cache-repeat' : 'worker-comparison', projectId, projectUpdatedAt: project.updatedAt, durationFrames: project.timeline.durationFrames, durationSeconds: project.timeline.durationFrames / 30, width: 1920, height: 1080, fps: '30/1', encoder: 'auto', mouthLoop: true, audioClips: runs[0].audioClips, videoInputs: runs[0].videoInputs, audioOutput: true, motionTransitionsPreparedPerRun: runs[0].motionTransitions, mouthStatesPerRun: runs[0].mouthStates, motionBakeConcurrency: motionConcurrency, runOrder: runs.map((run) => run.workers), runs, variants }
       await nativeWriteFile(join(outputRoot, 'stress-export-validation.json'), JSON.stringify(summary, null, 2), 'utf8')
       console.log(JSON.stringify(summary, null, 2))
       app.quit()

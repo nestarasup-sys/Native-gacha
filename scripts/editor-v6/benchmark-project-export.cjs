@@ -12,6 +12,8 @@ const sourceMotionCache = argument('--motion-cache=') && path.resolve(argument('
 const defaultOutput = path.join(root, 'out', 'editor-v6-stress', 'runs', `actual-project-${new Date().toISOString().replace(/[:.]/g, '-')}-${process.pid}`)
 const outputFolder = path.resolve(argument('--output=') ?? defaultOutput)
 const cacheProbe = process.argv.includes('--cache-probe')
+const singleMotionRun = process.argv.includes('--single-motion-run')
+const motionConcurrency = argument('--motion-bake-concurrency=')
 const verifiedBackupRoot = path.join(root, 'out', 'editor-v6-stress', 'backups')
 const inside = (parent, child) => {
   const relative = path.relative(parent, child)
@@ -20,8 +22,9 @@ const inside = (parent, child) => {
 
 async function main() {
   const sources = [projectFolder, libraryFolder, charactersPath, fabricatorFolder, sourceMotionCache]
-  if (sources.some((source) => !source) || (!process.argv.includes('--compare-workers') && !cacheProbe)) {
-    throw Error('Uso: npm run bench:editor-v6:project -- --project=<cópia verificada> --library=<mídias vinculadas> --characters=<personagens copiados> --fabricator=<cópia dos dados Fabricador> --motion-cache=<cache copiado> (--compare-workers | --cache-probe)')
+  if (sources.some((source) => !source) || (!process.argv.includes('--compare-workers') && !cacheProbe && !singleMotionRun)
+    || singleMotionRun && !['1', '2'].includes(motionConcurrency)) {
+    throw Error('Uso: npm run bench:editor-v6:project -- --project=<cópia verificada> --library=<mídias vinculadas> --characters=<personagens copiados> --fabricator=<cópia dos dados Fabricador> --motion-cache=<cache copiado> (--compare-workers | --cache-probe | --single-motion-run --motion-bake-concurrency=1|2)')
   }
   const allowedRunsRoot = path.join(root, 'out', 'editor-v6-stress', 'runs')
   const immutableSources = [projectFolder, libraryFolder, charactersPath, fabricatorFolder]
@@ -39,6 +42,7 @@ async function main() {
   for (const media of manifest.media ?? []) if (media.libraryVideoId) await fs.access(path.join(libraryFolder, 'videos', media.fileName))
   await fs.access(charactersPath)
   await fs.access(sourceMotionCache)
+  if (singleMotionRun && (await fs.readdir(sourceMotionCache)).length !== 0) throw Error('A comparação fria de movimentos exige uma pasta de cache-fonte vazia.')
   await fs.access(path.join(fabricatorFolder, 'models', 'slot-1', 'project.json'))
   await fs.access(path.join(root, 'out', 'main', 'main.js'))
 
@@ -61,6 +65,7 @@ async function main() {
   const childEnv = { ...process.env, GACHA_VIDEO_STRESS_OFFSCREEN: '1', GACHA_EDITOR_V6_STRESS_DATA_ROOT: dataRoot,
     GACHA_EDITOR_V6_STRESS_AUTORUN: '1', GACHA_EDITOR_V6_STRESS_PROJECT_ID: manifest.id,
     ...(cacheProbe ? { GACHA_EDITOR_V6_STRESS_CACHE_PROBE: '1' } : {}),
+    ...(singleMotionRun ? { GACHA_EDITOR_V6_STRESS_SINGLE_MOTION_RUN: '1', GACHA_EDITOR_V6_STRESS_MOTION_CONCURRENCY: motionConcurrency } : {}),
     GACHA_EDITOR_V6_STRESS_OUTPUT_ROOT: outputFolder, ELECTRON_DISABLE_SECURITY_WARNINGS: 'true' }
   delete childEnv.ELECTRON_RUN_AS_NODE
   const exportChild = spawn(require('electron'), [path.join(root, 'out', 'main', 'main.js')], { cwd: root, env: childEnv, stdio: 'inherit', windowsHide: true })
@@ -71,7 +76,14 @@ async function main() {
   if (code !== 0) throw Error(`A comparação do projeto real falhou (Electron ${code}); os relatórios parciais ficaram em ${outputFolder}.`)
   const summaryPath = path.join(outputFolder, 'stress-export-validation.json')
   const summary = JSON.parse(await fs.readFile(summaryPath, 'utf8'))
-  if (!summary.passed || (cacheProbe
+  if (!summary.passed || (singleMotionRun
+    ? summary.benchmarkKind !== 'motion-concurrency-single' || summary.runs?.length !== 1
+      || summary.motionBakeConcurrency !== Number(motionConcurrency)
+      || summary.runs[0].motionConcurrency !== Number(motionConcurrency)
+      || summary.runs[0].motionCache?.rasterized !== summary.motionTransitionsPreparedPerRun
+      || summary.runs[0].motionCache?.diskHits !== 0
+      || summary.runs[0].motionConcurrentPeak !== Math.min(Number(motionConcurrency), summary.motionTransitionsPreparedPerRun)
+    : cacheProbe
     ? summary.benchmarkKind !== 'motion-cache-repeat' || summary.runs?.length !== 3 || summary.runs.some((run) => !run.motionCache || !run.motionCacheTotal)
     : summary.benchmarkKind !== 'worker-comparison' || summary.runs?.length !== 6 || summary.variants?.some((variant) => variant.runs !== 3))) {
     throw Error(`O processo terminou sem as rodadas completas e validadas esperadas. Revise ${summaryPath}.`)
