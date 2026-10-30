@@ -91,7 +91,9 @@ Cada experimento precisa de comparação isolada e possibilidade de remoção. E
 
 ## Matriz de validação e desempenho
 
-Usar fixtures sintéticas em perfil isolado. O projeto real de estresse pode ser uma medição adicional sobre cópia preservada; não serve como área destrutiva de testes.
+Usar como referência principal obrigatória o **único projeto atualmente existente no Editor V6**, que o usuário já montou como teste de estresse. Medir o export completo desse projeto antes e depois das otimizações, preservando sua timeline, personagens, vídeos, falas, pensamentos, poses, expressões e presets. Registrar o ID e a revisão do documento no início da execução para comparar exatamente o mesmo conteúdo, mesmo que outros projetos sejam criados depois.
+
+Preservar o projeto original e suas mídias. Criar uma cópia de segurança verificável antes da execução e usar cópia isolada para cenários que alterem fontes, dados ou provoquem falhas. Salvar MP4s e relatórios de cada rodada em destinos distintos. Fixtures sintéticas ficam como complemento para isolar regressões e cenários ausentes; a aprovação de desempenho exige a comparação no projeto de estresse existente.
 
 | Cenário | O que conferir |
 | --- | --- |
@@ -112,7 +114,7 @@ Validar contagem de quadros, 30 FPS, resolução, duração, áudio e emendas co
 
 ## Sequência de entregas
 
-1. **Diagnóstico:** referência reproduzível, custos dominantes e métricas faltantes.
+1. **Diagnóstico:** identificar o único projeto de estresse existente, registrar seu ID/revisão, verificar o backup e medir seu export completo como referência; identificar custos dominantes e métricas faltantes.
 2. **Preparação:** índices, aplicação em lote e eliminação de pedidos repetidos conforme evidência.
 3. **Cache:** invalidação auditada, limites e preparação antecipada útil.
 4. **Quadros:** reduzir resolução de cena, commits, captura ou cópias conforme o maior custo restante.
@@ -124,6 +126,7 @@ Cada entrega deve conter diff pequeno, verificação focada, comparação antes/
 ## Conclusão de cada etapa
 
 - [ ] Ganho no tempo total reproduzido ou hipótese descartada com registro.
+- [ ] Comparação antes/depois realizada no projeto de estresse existente, com o mesmo conteúdo e opções de exportação.
 - [ ] Qualidade, movimentos, presets e áudio preservados.
 - [ ] Pico de memória e consumo de disco conhecidos e limitados.
 - [ ] Cache atualizado corretamente após edição de fontes.
