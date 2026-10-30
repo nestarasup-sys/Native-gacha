@@ -90,6 +90,12 @@ O serviço mantinha no máximo oito resultados e aproximadamente 24 MB em memór
 
 Os tempos por quadro do export aquecido de referência apontam o próximo custo: 88,9 s acumulados em `frameRoundTripMs`, 57,4 s em `ffmpegWriteMs`, 48,1 s em `ipcDrawMs`, 39,4 s em `captureMs` e 24,7 s em `rafWaitMs`, frente a 165,1 s de tempo de parede da fase de renderização. Essas métricas por quadro se sobrepõem e não devem ser somadas. O cache maior não alterou esse caminho; a próxima investigação deve reduzir chamadas/esperas por quadro ou o custo de captura, preservando o ciclo de pintura já validado.
 
+### Tentativa descartada: agrupar quadros visuais consecutivos
+
+Implementei temporariamente um retorno `repeatFrames` limitado a 300 quadros, calculado pela mesma chave visual que já controla a reutilização de capturas. O processo principal repetia o bitmap para manter todos os quadros no FFmpeg, mas deixava de chamar o renderer para quadros consecutivos idênticos. No projeto real, os pedidos ao renderer caíram de 5.700 para 1.711 por export (−70%), com 1.711 capturas e 3.989 quadros reutilizados, e a validação estrutural confirmou 5.700 quadros, 30 FPS, 190 s e áudio. A comparação do vídeo antes/depois teve SSIM 0,999990 e PSNR médio 66,83 dB.
+
+O ganho de tempo não se confirmou: a mediana aquecida foi 194,099 s, contra 191,975 s antes (+1,1%); renderização foi 164,454 s contra 162,833 s. `frameRoundTripMs` caiu de 88,9 s para 83,0 s e `ipcDrawMs` de 48,1 s para 42,1 s, mas `ffmpegWriteMs` subiu de 57,4 s para 61,9 s. A redução de IPC foi absorvida por custos de captura/escrita e variação entre exports. Reverti a mudança por não reduzir o tempo total medido. Evidência em `out/editor-v6-stress/runs/identical-frame-batch-2026-10-30T20-00-00/stress-export-validation.json` e `out/editor-v6-stress/runs/grouped-workers-2026-10-30T18-00-00/stress-export-validation.json`; os relatórios detalhados e vídeos estão nas mesmas pastas ignoradas.
+
 ## 2. Remover trabalho repetido da preparação — prioridade alta
 
 - Construir índices de assets, personagens, blocos e transições uma vez por preparação; evitar percorrer toda a timeline dentro de cada grupo.
