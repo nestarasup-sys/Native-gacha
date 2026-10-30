@@ -1,4 +1,5 @@
 import { mkdir, mkdtemp, rename, rm, unlink, writeFile } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
 import { basename, dirname, extname, join, resolve, sep } from 'node:path'
 import { availableParallelism } from 'node:os'
 import { editorV6DefaultVideoLayout, type EditorV6Document } from '../../../src/shared/editorV6'
@@ -99,7 +100,12 @@ export async function runEditorV6Export(project: EditorV6Document, options: Edit
   const report: EditorV6ExportReport = { schemaVersion: 1, id: deps.id, projectId: project.id, options, fps: 30, totalFrames, state: 'preparing', fallback: false, attempts: [], encoderTests: [], audioClips: 0, videoInputs: new Set(timelineVideoClips(project, options.startFrame, options.endFrame).map((clip) => clip.fileName)).size, proxies: 0, motionTransitionsRequired: 0, motionTransitionsPrepared: 0, startedAt: new Date().toISOString(), outputPath: deps.outputPath }
   const startRssBytes = process.memoryUsage().rss
   report.mainProcessMemory = { startRssBytes, peakRssBytes: startRssBytes, sampleIntervalMs: 500 }
-  const saveReport = async () => { await mkdir(dirname(deps.reportPath), { recursive: true }); await writeFile(deps.reportPath + '.tmp', JSON.stringify(report, null, 2)); await rename(deps.reportPath + '.tmp', deps.reportPath) }
+  const saveReport = async () => {
+    await mkdir(dirname(deps.reportPath), { recursive: true })
+    const temporary = `${deps.reportPath}.${randomUUID()}.tmp`
+    try { await writeFile(temporary, JSON.stringify(report, null, 2), { flag: 'wx' }); await rename(temporary, deps.reportPath) }
+    finally { await unlink(temporary).catch(() => {}) }
+  }
   let folder: string
   try {
     await mkdir(deps.tempRoot, { recursive: true })
@@ -327,7 +333,6 @@ export async function runEditorV6Export(project: EditorV6Document, options: Edit
       if (!published) { report.endedAt = new Date().toISOString(); report.milliseconds = performance.now() - started; await saveReport() }
     } finally {
       await unlink(candidate).catch(() => {})
-      await unlink(deps.reportPath + '.tmp').catch(() => {})
       const absolute = resolve(folder)
       if (absolute.startsWith(resolve(deps.tempRoot) + sep) && basename(absolute).startsWith('editor-v6-export-')) await rm(absolute, { recursive: true, force: true })
     }
