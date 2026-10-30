@@ -8,6 +8,7 @@ import { cropModelSourcePart, eraseModelSourceBrush, removeModelSourceColor, rot
 import { applyRotatedModelSourcePart } from './models/modelSourceProjectEditing'
 import { applyImageWarpBrush, type ImageWarpPoint } from './models/imageMeshWarp'
 import { createModelSourceWarpSession, drawModelSourceWarp, modelSourceWarpDataUrl, warpModelSkinContours, type ModelSourceWarpSession } from './models/modelSourceWarp'
+import { useModelSourceGuides } from './models/useModelSourceGuides'
 import { isModelSkinPart } from './models/modelSkinTone'
 import { MODEL_SKIN_BASE_TONE } from '../../../../shared/skinTones'
 
@@ -21,8 +22,6 @@ type PreviewBackground = 'checker' | 'white' | 'dark' | 'green' | 'magenta'
 type EditTool = 'select' | 'erase' | 'crop' | 'split' | 'outline' | 'deform' | 'guide'
 type DrawingGesture = { tool: 'erase' | 'crop' | 'split' | 'outline'; start: ModelSourcePoint; current: ModelSourcePoint; points: ModelSourcePoint[] }
 type WarpDrag = { pointerId: number; partId: string; last: ImageWarpPoint; originalX: Float32Array; originalY: Float32Array; changed: boolean }
-type GuideLine = { id: string; start: ModelSourcePoint; end: ModelSourcePoint }
-type GuideStroke = { pointerId: number; partId: string; start: ModelSourcePoint; end: ModelSourcePoint }
 type UndoSnapshot = { project: FabricatorProject; dimensions: ModelSourceDimensions; tolerance: number; selectedId: string }
 type MutationResult = { project: FabricatorProject; selectedId: string; status: string }
 
@@ -97,8 +96,6 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
   const [gesture, setGesture] = useState<DrawingGesture | null>(null)
   const [warpSession, setWarpSession] = useState<ModelSourceWarpSession | null>(null)
   const [warpCursor, setWarpCursor] = useState<ModelSourcePoint | null>(null)
-  const [guides, setGuides] = useState<{ partId: string; lines: GuideLine[] }>({ partId: project.parts[0]?.id ?? '', lines: [] })
-  const [guideStroke, setGuideStroke] = useState<GuideStroke | null>(null)
   const [undoCount, setUndoCount] = useState(0)
   const drag = useRef<{ id: string; originX: number; originY: number; clientX: number; clientY: number } | null>(null)
   const surface = useRef<HTMLDivElement>(null)
@@ -106,7 +103,6 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
   const warpSessionRef = useRef<ModelSourceWarpSession | null>(null)
   const warpDrag = useRef<WarpDrag | null>(null)
   const warpDrawFrame = useRef<number | null>(null)
-  const guideDrag = useRef<Pick<GuideStroke, 'pointerId' | 'partId' | 'start'> | null>(null)
   const gestureRef = useRef<DrawingGesture | null>(null)
   const undoStack = useRef<UndoSnapshot[]>([])
   const pixelEditAbort = useRef<AbortController | null>(null)
@@ -129,7 +125,33 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
   const previewBackgroundStyle = previewBackground === 'checker'
     ? checker
     : { backgroundColor: previewBackgroundColors[previewBackground] }
-  const visibleGuideLines = guides.partId === selectedId ? guides.lines : []
+  const pointerPoint = (event: Pick<ReactPointerEvent<HTMLElement>, 'clientX' | 'clientY'>): ModelSourcePoint | null => {
+    const bounds = surface.current?.getBoundingClientRect()
+    if (!bounds || !bounds.width || !bounds.height) return null
+    return {
+      x: clamp((event.clientX - bounds.left) * logicalWidth / bounds.width, 0, logicalWidth),
+      y: clamp((event.clientY - bounds.top) * logicalHeight / bounds.height, 0, logicalHeight)
+    }
+  }
+  const {
+    setGuides,
+    guideStroke,
+    visibleGuideLines,
+    startGuide,
+    extendGuide,
+    moveGuide,
+    finishGuide,
+    cancelGuide,
+    clearGuideStroke
+  } = useModelSourceGuides({
+    selectedId,
+    hasSelectedPart: Boolean(selected),
+    toolActive: mode === 'part' && tool === 'guide',
+    editingBlocked: busy || downloading,
+    getPoint: pointerPoint,
+    capturePointer: pointerId => surface.current?.setPointerCapture(pointerId),
+    releasePointer: pointerId => surface.current?.releasePointerCapture(pointerId)
+  })
   warpSessionRef.current = warpSession
 
   useEffect(() => {
@@ -194,13 +216,6 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
     pixelEditAbort.current = null
     if (warpDrawFrame.current !== null) cancelAnimationFrame(warpDrawFrame.current)
   }, [])
-
-  useEffect(() => {
-    if (guides.partId === selectedId) return
-    guideDrag.current = null
-    setGuideStroke(null)
-    setGuides({ partId: selectedId, lines: [] })
-  }, [selectedId, guides.partId])
 
   const setRect = (part: ModelPart, next: { x: number; y: number; width: number; height: number }) => {
     const original = sourceRect(part)
@@ -324,14 +339,6 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
   })
   const pointsForPart = (points: ModelSourcePoint[], part: ModelPart, width: number, height: number) =>
     points.map(point => scalePointToPart(point, part, width, height))
-  const pointerPoint = (event: Pick<ReactPointerEvent<HTMLElement>, 'clientX' | 'clientY'>): ModelSourcePoint | null => {
-    const bounds = surface.current?.getBoundingClientRect()
-    if (!bounds || !bounds.width || !bounds.height) return null
-    return {
-      x: clamp((event.clientX - bounds.left) * logicalWidth / bounds.width, 0, logicalWidth),
-      y: clamp((event.clientY - bounds.top) * logicalHeight / bounds.height, 0, logicalHeight)
-    }
-  }
   const sampleSkinColor = async (event: ReactPointerEvent<HTMLDivElement>) => {
     if (!samplingSkinColor || mode !== 'part' || !previewPart || busy || downloading) return
     const point = pointerPoint(event)
@@ -354,49 +361,6 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
     } finally {
       setBusy(false)
     }
-  }
-  const beginGuideStroke = (pointerId: number, start: ModelSourcePoint) => {
-    if (!selected || tool !== 'guide' || mode !== 'part' || busy || downloading) return
-    guideDrag.current = { pointerId, partId: selected.id, start }
-    setGuideStroke({ pointerId, partId: selected.id, start, end: start })
-    surface.current?.setPointerCapture(pointerId)
-  }
-  const startGuide = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (tool !== 'guide' || mode !== 'part' || busy || downloading || event.button !== 0) return
-    const point = pointerPoint(event)
-    if (!point) return
-    event.preventDefault()
-    beginGuideStroke(event.pointerId, point)
-  }
-  const extendGuide = (event: ReactPointerEvent<SVGCircleElement>, start: ModelSourcePoint) => {
-    if (tool !== 'guide' || mode !== 'part' || busy || downloading || event.button !== 0) return
-    event.preventDefault()
-    event.stopPropagation()
-    beginGuideStroke(event.pointerId, start)
-  }
-  const moveGuide = (event: ReactPointerEvent<HTMLDivElement>) => {
-    const drag = guideDrag.current
-    if (!drag || drag.pointerId !== event.pointerId || drag.partId !== selectedId || tool !== 'guide') return
-    const point = pointerPoint(event)
-    if (!point) return
-    setGuideStroke({ pointerId: drag.pointerId, partId: drag.partId, start: drag.start, end: point })
-  }
-  const finishGuide = (event: ReactPointerEvent<HTMLDivElement>) => {
-    const drag = guideDrag.current
-    if (!drag || drag.pointerId !== event.pointerId) return
-    const end = event.type === 'pointerup' ? pointerPoint(event) : null
-    guideDrag.current = null
-    setGuideStroke(null)
-    try { surface.current?.releasePointerCapture(event.pointerId) } catch { /* A captura pode já ter sido liberada pelo navegador. */ }
-    if (!end || drag.partId !== selectedId || Math.hypot(end.x - drag.start.x, end.y - drag.start.y) < 2) return
-    const line = { id: crypto.randomUUID(), start: drag.start, end }
-    setGuides(current => ({ partId: drag.partId, lines: [...(current.partId === drag.partId ? current.lines : []), line] }))
-  }
-  const cancelGuide = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (guideDrag.current?.pointerId !== event.pointerId) return
-    guideDrag.current = null
-    setGuideStroke(null)
-    try { surface.current?.releasePointerCapture(event.pointerId) } catch { /* A captura pode já ter sido liberada pelo navegador. */ }
   }
   const drawWarpPreview = () => {
     const session = warpSessionRef.current
@@ -551,8 +515,7 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
   const cancelDrawing = () => {
     gestureRef.current = null
     setGesture(null)
-    guideDrag.current = null
-    setGuideStroke(null)
+    clearGuideStroke()
     setWarpCursor(null)
   }
   const setEditTool = (next: EditTool) => {
