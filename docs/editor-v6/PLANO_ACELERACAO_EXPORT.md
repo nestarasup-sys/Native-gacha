@@ -31,6 +31,7 @@ Referências: [exportação](EXPORTACAO.md), [preparação de transições](PREP
 - Aproveitar `motionPreparation` e `frameTiming` dos relatórios existentes. Acrescentar métricas compatíveis quando necessário, sem somar tempos concorrentes como se fossem tempo total.
 - Registrar acertos e falhas dos caches no serviço, bytes carregados, pico de memória e quantidade de workers/processos. `requested` na preparação não equivale a rasterização: pode recuperar cache do serviço.
 - Capturar no relatório o RSS inicial e o pico amostrado do processo principal, identificando explicitamente que esse dado não inclui renderizadores, GPU ou FFmpeg. Correlacionar com medições externas antes de inferir o pico total do app.
+- Registrar o tempo agregado de preparação dos atlases do loop da boca em `mouthAnimation.preparationMilliseconds`, separado do tempo de renderização; a soma cobre trechos processados em paralelo e não deve ser tratada como tempo de parede.
 - Identificar o caminho que limita o término do export. Ordenar as próximas mudanças pelo tempo recuperável nesse caminho.
 - Registrar máquina, versão do app, encoder, resolução, intervalo, opções, estado dos caches e duração da mídia para cada comparação.
 

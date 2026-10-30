@@ -139,7 +139,7 @@ async function main() {
       return makeWorker(signal, 320, 180, renderProject, layeredVideo, mouthLoops)
     }
   })
-  assert(mouthReport.state === 'completed' && mouthReport.mouthAnimation?.stateAtlases === 16, 'O export não preparou todos os estados da boca divididos entre os trechos.')
+  assert(mouthReport.state === 'completed' && mouthReport.mouthAnimation?.stateAtlases === 16 && mouthReport.mouthAnimation.preparationMilliseconds > 0, 'O export não preparou todos os estados da boca divididos entre os trechos ou não registrou o tempo de preparação.')
   assert(mouthWorkerPayloads.map((item) => item.stateCount).join(',') === '15,1', 'Cada trecho recebeu estados de boca fora do seu próprio intervalo.')
   assert(mouthWorkerPayloads.map((item) => item.assetCount).join(',') === '17,3', 'O worker recebeu atlas de boca de outros trechos do export.')
   assert(mouthWorkerPayloads.every((item) => item.startFrame === 5 && item.cycleFrames === 37), 'O ciclo da boca reiniciou em uma emenda do export.')
