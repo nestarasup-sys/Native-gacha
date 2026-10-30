@@ -22,8 +22,8 @@ function cropPng(pixels: ImageData, id: string, name: string, category: Wardrobe
   return bone ? fixWardrobeGlue(component, bone) : component
 }
 
-/** Imports the fixed 3×4 sleeve grid. Each logical cell contains a left sleeve in its left half. */
-export function createWardrobeSleeveSheetComponents(image: ImageBitmap, model: FabricatorProject, createId: () => string): WardrobeComponent[] {
+/** Detects twelve complete left-side silhouettes and creates editable mirrored pairs. */
+export function createWardrobeSleeveSheetComponents(image: ImageBitmap, model: FabricatorProject, createId: () => string, kind: 'sleeves' | 'pants' = 'sleeves'): WardrobeComponent[] {
   try {
     if (image.width < 6 || image.height < 4) throw new Error('A imagem é pequena demais para uma grade de mangas 3×4.')
     if (image.width * image.height > 32_000_000) throw new Error('A imagem tem mais de 32 milhões de pixels. Reduza as dimensões para continuar.')
@@ -46,8 +46,8 @@ export function createWardrobeSleeveSheetComponents(image: ImageBitmap, model: F
       }
       const long = row >= 2
       const pairId = createId()
-      const category = 'manga-superior' as const
-      const label = `${long ? 'Manga longa' : 'Manga curta'} ${String(row * 3 + col + 1).padStart(2, '0')}`
+      const category = kind === 'pants' ? 'calca-coxa' as const : 'manga-superior' as const
+      const label = `${kind === 'pants' ? long ? 'Calça longa' : 'Short' : long ? 'Manga longa' : 'Manga curta'} ${String(row * 3 + col + 1).padStart(2, '0')}`
       components.push(cropPng(cropped, createId(), `${label} · esquerda`, category, 'left', pairId, model))
       components.push(cropPng(cropped, createId(), `${label} · direita`, category, 'right', pairId, model))
     }

@@ -1899,3 +1899,8 @@ Continua a auditoria das operações IPC iniciadas pelo usuário e da cobertura 
 - O envio de PNGs usava exclusivamente a marca de alteração do deformador. Recortes novos e edições do editor de imagem em conjuntos existentes podiam ser omitidos. wardrobeSaveAssets agora envia os PNGs atuais por ID e exige as cópias originais declaradas no manifesto. IPC e publicação transacional permanecem os existentes.
 - Recorte bloqueia salvamento concorrente durante a geração dos PNGs e preserva o ID superior; abrir outro conjunto limpa o histórico local para impedir restauração cruzada.
 - Regressão sintética cobre salvar/reabrir, substituir por quatro partes, editar PNG e restaurar os originais. Nenhum dado do perfil foi usado.
+
+### Importação de calças e corte inclinado de pares
+- A opção Importar Calças (Sheet) reutiliza detecção de silhuetas, espelhamento, catálogo, histórico e publicação de PNGs. As duas primeiras linhas geram shorts vinculados às coxas; as duas últimas geram calças divisíveis entre coxa e canela.
+- O recortador de mangas e calças particiona a máscara alfa por uma linha com altura e ângulo configuráveis; o ângulo é invertido no lado espelhado. Os dois resultados mantêm o canvas original para evitar deslocamento dos pixels e permitem edição independente.
+- O contrato mantém os metadados de par opcionais existentes e acrescenta apenas pants-grid-3x4 a importKind. Não há migração de dados ou alteração de IPC.

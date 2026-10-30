@@ -10,7 +10,7 @@ import { createFabricatorCatalogPersistence } from '../electron/domains/fabricat
 const png = value => `data:image/png;base64,${Buffer.from(value).toString('base64')}`
 const piece = (id, segment = 'whole') => ({ id, name: id, category: 'manga-superior', attachedPartId: 'arm-left', x: 0, y: 0, width: 20, height: 30, rotation: 0, sleevePairId: 'pair-one', sleeveSide: 'left', sleeveSegment: segment, dataUrl: png(id) })
 
-test('salvar, reabrir, recortar, salvar novamente e desfazer mantém PNGs e pares', async t => {
+for (const importKind of ['sleeve-grid-3x4', 'pants-grid-3x4']) test(`${importKind}: salvar, reabrir, recortar e restaurar mantém PNGs e pares`, async t => {
   const root = await fs.mkdtemp(join(tmpdir(), 'sleeve-save-'))
   t.after(() => fs.rm(root, { recursive: true, force: true }))
   const catalog = createFabricatorCatalogPersistence(fs, (path, bytes) => fs.writeFile(path, bytes))
@@ -21,7 +21,7 @@ test('salvar, reabrir, recortar, salvar novamente e desfazer mantém PNGs e pare
     saveCatalog: opts => catalog.saveCatalog(opts), recoverWardrobeManifest: folder => catalog.recoverWardrobeManifest(folder),
     isCompatible: () => true, readCatalogPng: (_identity, _version, path) => fs.readFile(path), invalidateCatalogPng: () => {}, files: fs
   })
-  const set = { schemaVersion: 1, edition: 1, importKind: 'sleeve-grid-3x4', id: 'sleeves', modelSlot: 1, modelName: 'Synthetic', name: 'Sleeves', width: 100, height: 100, updatedAt: 'first', components: [piece('left'), piece('right')] }
+  const set = { schemaVersion: 1, edition: 1, importKind, id: 'sleeves', modelSlot: 1, modelName: 'Synthetic', name: 'Sleeves', width: 100, height: 100, updatedAt: 'first', components: [piece('left'), piece('right')] }
   const save = async value => {
     const metadata = { ...value, components: value.components.map(({ dataUrl, ...rest }) => rest) }
     await storage.save(1, metadata, wardrobeSaveAssets(value))
