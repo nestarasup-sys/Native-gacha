@@ -120,6 +120,10 @@ Com os buffers imutáveis por camada, experimentei manter no máximo dois quadro
 
 Fechei uma corrida rara em que o sinal podia ser cancelado depois da verificação inicial, mas antes de o listener `abort` ser registrado. `waitForExport` e `waitForOffscreenPaint` agora verificam o sinal outra vez imediatamente após registrar o listener; `spawnExportProcess` também encerra o processo se o cancelamento ocorrer nessa janela. Isso evita aguardar o timeout com a operação já cancelada e reduz o risco de deixar FFmpeg ativo. Typecheck, auditoria de arquitetura e build passaram; a correção foi revisada no fluxo de cancelamento do export e dos workers.
 
+### Preservação da causa quando a limpeza falha
+
+O `finally` do export podia substituir o erro original se a gravação final do relatório ou a remoção dos temporários falhasse. Também podia propagar uma falha de limpeza após o MP4 ter sido publicado, deixando a interface indicar falha apesar do arquivo válido existir. Agora, falhas anteriores à publicação preservam a causa original e agregam erros de relatório/limpeza; depois da publicação, limpeza incompleta vira aviso e o relatório tenta registrar esse aviso. `ENOENT` ao remover o candidato é tratado como já removido. Typecheck, auditoria de arquitetura e build passaram.
+
 ## 2. Remover trabalho repetido da preparação — prioridade alta
 
 - Construir índices de assets, personagens, blocos e transições uma vez por preparação; evitar percorrer toda a timeline dentro de cada grupo.

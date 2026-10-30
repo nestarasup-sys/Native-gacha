@@ -260,6 +260,7 @@ export async function runEditorV6Export(project: EditorV6Document, options: Edit
     const memory = report.mainProcessMemory
     if (memory) memory.peakRssBytes = Math.max(memory.peakRssBytes, process.memoryUsage().rss)
   }, 500)
+  let exportFailure: unknown
   try {
     deps.signal.throwIfAborted()
     const characterLoadStarted = performance.now()
@@ -387,6 +388,7 @@ export async function runEditorV6Export(project: EditorV6Document, options: Edit
     }
     return report
   } catch (error) {
+    exportFailure = error
     report.state = deps.signal.aborted ? 'cancelled' : 'failed'
     report.error = message(error)
     throw error
@@ -394,12 +396,26 @@ export async function runEditorV6Export(project: EditorV6Document, options: Edit
     clearInterval(memorySampler)
     const memory = report.mainProcessMemory
     if (memory) memory.peakRssBytes = Math.max(memory.peakRssBytes, process.memoryUsage().rss)
-    try {
-      if (!published) { report.endedAt = new Date().toISOString(); report.milliseconds = performance.now() - started; await saveReport() }
-    } finally {
-      await unlink(candidate).catch(() => {})
-      const absolute = resolve(folder)
-      if (absolute.startsWith(resolve(deps.tempRoot) + sep) && basename(absolute).startsWith('editor-v6-export-')) await rm(absolute, { recursive: true, force: true })
+    const cleanupErrors: unknown[] = []
+    if (!published) {
+      report.endedAt = new Date().toISOString(); report.milliseconds = performance.now() - started
+      try { await saveReport() } catch (error) { cleanupErrors.push(error) }
+    }
+    try { await unlink(candidate) } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') cleanupErrors.push(error) }
+    const absolute = resolve(folder)
+    if (absolute.startsWith(resolve(deps.tempRoot) + sep) && basename(absolute).startsWith('editor-v6-export-')) {
+      try { await rm(absolute, { recursive: true, force: true }) } catch (error) { cleanupErrors.push(error) }
+    }
+    if (cleanupErrors.length) {
+      const details = cleanupErrors.map(message)
+      if (published) {
+        report.deliveryWarning = [report.deliveryWarning, 'O MP4 foi salvo, mas houve falha ao limpar arquivos temporários.'].filter(Boolean).join(' ')
+        try { await saveReport() } catch (error) { console.warn('Não foi possível registrar a falha de limpeza do Editor V6:', message(error)) }
+        console.warn('Falha ao limpar arquivos temporários do Editor V6:', details.join('; '))
+      } else {
+        const primary = exportFailure === undefined ? [] : [exportFailure]
+        throw new AggregateError([...primary, ...cleanupErrors], [exportFailure === undefined ? 'Falha ao limpar arquivos temporários da exportação.' : `A exportação falhou: ${message(exportFailure)}.`, `Falha adicional na limpeza: ${details.join('; ')}`].join(' '))
+      }
     }
   }
 }
