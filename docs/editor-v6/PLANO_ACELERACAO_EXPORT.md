@@ -42,6 +42,8 @@ O relatório local `f75c3a26-0e6f-433d-9b05-dfc8de17fdb9.report.json` registra 5
 
 A primeira otimização implementada indexa assets e movimentos uma vez e aplica os resultados em uma passagem por blocos, evitando o percurso completo da timeline para cada chave e para cada vínculo repetido. `npm run test:editor-v6` passou após a mudança (167 testes aprovados, um ignorado). A medição posterior no projeto completo continua pendente; até lá não se atribui redução de tempo à mudança.
 
+Como evidência complementar, `npm run bench:editor-v6:motion-preparation` comparou uma implementação legada e indexada em uma fixture sintética de 120 personagens e 2.400 planos, por cinco rodadas: medianas de 139,82 ms e 8,59 ms (16,27×), com os mesmos 2.400 planos concluídos. Esse benchmark cobre o índice de preparação antecipada no renderer, não o `prepareExportMotions` do exportador nem o projeto real; portanto, serve para validar a técnica de indexação e não para estimar o ganho de export.
+
 ## 2. Remover trabalho repetido da preparação — prioridade alta
 
 - Construir índices de assets, personagens, blocos e transições uma vez por preparação; evitar percorrer toda a timeline dentro de cada grupo.
