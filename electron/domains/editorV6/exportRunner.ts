@@ -99,12 +99,12 @@ export async function runEditorV6Export(project: EditorV6Document, options: Edit
   const report: EditorV6ExportReport = { schemaVersion: 1, id: deps.id, projectId: project.id, options, fps: 30, totalFrames, state: 'preparing', fallback: false, attempts: [], encoderTests: [], audioClips: 0, videoInputs: new Set(timelineVideoClips(project, options.startFrame, options.endFrame).map((clip) => clip.fileName)).size, proxies: 0, motionTransitionsRequired: 0, motionTransitionsPrepared: 0, startedAt: new Date().toISOString(), outputPath: deps.outputPath }
   const startRssBytes = process.memoryUsage().rss
   report.mainProcessMemory = { startRssBytes, peakRssBytes: startRssBytes, sampleIntervalMs: 500 }
+  await mkdir(deps.tempRoot, { recursive: true })
+  const folder = await mkdtemp(join(deps.tempRoot, 'editor-v6-export-'))
   const memorySampler = setInterval(() => {
     const memory = report.mainProcessMemory
     if (memory) memory.peakRssBytes = Math.max(memory.peakRssBytes, process.memoryUsage().rss)
   }, 500)
-  await mkdir(deps.tempRoot, { recursive: true })
-  const folder = await mkdtemp(join(deps.tempRoot, 'editor-v6-export-'))
   const candidate = join(dirname(deps.outputPath), `.editor-v6-${deps.id}.mp4`)
   let published = false
   let characters: CustomizerCharacter[] = []
