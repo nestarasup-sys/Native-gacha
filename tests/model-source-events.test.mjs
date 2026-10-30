@@ -56,3 +56,19 @@ test('Model Source delega o ciclo das guias ao hook da feature', async () => {
   assert.match(hook, /releasePointer\(event\.pointerId\)/)
   assert.match(hook, /modelSourceGuideLinesForPart\(guides, selectedId\)/)
 })
+
+test('Model Source isola o rascunho, o undo e o ciclo das edições temporárias', async () => {
+  const [editor, draft] = await Promise.all([
+    readFile(new URL('../src/renderer/src/features/fabricator/ModelSourceEditor.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../src/renderer/src/features/fabricator/models/useModelSourceDraft.ts', import.meta.url), 'utf8')
+  ])
+
+  assert.match(editor, /useModelSourceDraft\(/)
+  assert.doesNotMatch(editor, /const undoStack =|const pixelEditAbort =|const runMutation =|const runPixelEdit =/)
+  assert.match(draft, /\.slice\(-8\)/, 'mantém o limite de oito snapshots')
+  assert.match(draft, /validateModelSourceDimensions\(draft, dimensions\)/)
+  assert.match(draft, /pixelEditAbort\.current\?\.abort\(\)/)
+  assert.match(draft, /if \(pixelEditAbort\.current === controller\) pixelEditAbort\.current = null/)
+  assert.match(draft, /setDimensions\(\{\}\)/)
+  assert.doesNotMatch(draft, /window\.desktop|localStorage|saveFabricatorProject/)
+})

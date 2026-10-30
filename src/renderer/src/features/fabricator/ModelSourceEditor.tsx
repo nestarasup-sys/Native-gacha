@@ -3,12 +3,13 @@ import type { CSSProperties, PointerEvent as ReactPointerEvent, WheelEvent as Re
 import type { FabricatorProject, ModelPart } from '../../../../shared/fabricator'
 import { isHeadPart } from './models/resize'
 import { normalizePartAnchors } from './models/rig'
-import { composeModelSource, sourceRect, validateModelSourceChroma, validateModelSourceDimensions, MAX_CHROMA_TOLERANCE, type ModelSourceDimensions, type ModelSourceResult } from './models/modelSource'
+import { composeModelSource, sourceRect, MAX_CHROMA_TOLERANCE, type ModelSourceResult } from './models/modelSource'
 import { cropModelSourcePart, eraseModelSourceBrush, removeModelSourceColor, rotateModelSourcePart, sampleModelSourceColor, splitModelSourcePart, worldPointInsideCrop, worldPointToPart, type ModelSourceCrop, type ModelSourcePoint, type ModelSourceQuarterTurn } from './models/modelSourceEditing'
 import { applyRotatedModelSourcePart } from './models/modelSourceProjectEditing'
 import { applyImageWarpBrush, type ImageWarpPoint } from './models/imageMeshWarp'
 import { createModelSourceWarpSession, drawModelSourceWarp, modelSourceWarpDataUrl, warpModelSkinContours, type ModelSourceWarpSession } from './models/modelSourceWarp'
 import { useModelSourceGuides } from './models/useModelSourceGuides'
+import { useModelSourceDraft } from './models/useModelSourceDraft'
 import { isModelSkinPart } from './models/modelSkinTone'
 import { MODEL_SKIN_BASE_TONE } from '../../../../shared/skinTones'
 
@@ -22,8 +23,6 @@ type PreviewBackground = 'checker' | 'white' | 'dark' | 'green' | 'magenta'
 type EditTool = 'select' | 'erase' | 'crop' | 'split' | 'outline' | 'deform' | 'guide'
 type DrawingGesture = { tool: 'erase' | 'crop' | 'split' | 'outline'; start: ModelSourcePoint; current: ModelSourcePoint; points: ModelSourcePoint[] }
 type WarpDrag = { pointerId: number; partId: string; last: ImageWarpPoint; originalX: Float32Array; originalY: Float32Array; changed: boolean }
-type UndoSnapshot = { project: FabricatorProject; dimensions: ModelSourceDimensions; tolerance: number; selectedId: string }
-type MutationResult = { project: FabricatorProject; selectedId: string; status: string }
 
 const card: CSSProperties = { display: 'flex', gap: 8, alignItems: 'center', padding: 9, borderRadius: 9, cursor: 'pointer', color: 'inherit', background: '#202635', border: '1px solid #3c4554', textAlign: 'left' }
 const field: CSSProperties = { width: '100%', color: '#f7f8fa', background: '#1b2230', border: '1px solid #64748b', borderRadius: 7, padding: 8 }
@@ -71,15 +70,10 @@ function isThighPart(part: ModelPart): boolean {
 }
 
 export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
-  const [draft, setDraft] = useState(project)
-  const [selectedId, setSelectedId] = useState(project.parts[0]?.id ?? '')
-  const [dimensions, setDimensions] = useState<ModelSourceDimensions>({})
-  const [chromaTolerance, setChromaTolerance] = useState(project.tolerance)
   const [preview, setPreview] = useState('')
   const [previewParts, setPreviewParts] = useState<ModelPart[]>([])
   const [error, setError] = useState('')
   const [status, setStatus] = useState('')
-  const [busy, setBusy] = useState(false)
   const [downloading, setDownloading] = useState(false)
   const [downloadInfo, setDownloadInfo] = useState('')
   const [mode, setMode] = useState<PreviewMode>('part')
@@ -96,7 +90,6 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
   const [gesture, setGesture] = useState<DrawingGesture | null>(null)
   const [warpSession, setWarpSession] = useState<ModelSourceWarpSession | null>(null)
   const [warpCursor, setWarpCursor] = useState<ModelSourcePoint | null>(null)
-  const [undoCount, setUndoCount] = useState(0)
   const drag = useRef<{ id: string; originX: number; originY: number; clientX: number; clientY: number } | null>(null)
   const surface = useRef<HTMLDivElement>(null)
   const warpCanvas = useRef<HTMLCanvasElement>(null)
@@ -104,17 +97,43 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
   const warpDrag = useRef<WarpDrag | null>(null)
   const warpDrawFrame = useRef<number | null>(null)
   const gestureRef = useRef<DrawingGesture | null>(null)
-  const undoStack = useRef<UndoSnapshot[]>([])
-  const pixelEditAbort = useRef<AbortController | null>(null)
+  const clearDrawingGesture = () => {
+    gestureRef.current = null
+    setGesture(null)
+  }
+  const {
+    draft,
+    setDraft,
+    selectedId,
+    setSelectedId,
+    dimensions,
+    setDimensions,
+    chromaTolerance,
+    setChromaTolerance,
+    busy,
+    setBusy,
+    undoCount,
+    edited,
+    structureChanged,
+    compile,
+    saveUndoSnapshot,
+    undo,
+    runMutation,
+    runPixelEdit
+  } = useModelSourceDraft({
+    project,
+    downloading,
+    clearGesture: clearDrawingGesture,
+    setError,
+    setStatus,
+    clearDownloadInfo: () => setDownloadInfo('')
+  })
 
   const selected = draft.parts.find(part => part.id === selectedId)
   const selectedRect = selected ? sourceRect(selected, dimensions[selected.id]) : null
   const baseline = selected ? sourceRect(selected) : null
   const isHead = Boolean(selected && isHeadPart(selected))
   const isThigh = Boolean(selected && isThighPart(selected))
-  const edited = draft !== project || Object.keys(dimensions).length > 0 || chromaTolerance !== project.tolerance
-  const structureChanged = draft.parts.length !== project.parts.length
-    || project.parts.some(part => !draft.parts.some(item => item.id === part.id))
   const logicalWidth = mode === 'part' ? selectedRect?.width ?? 1 : draft.width
   const logicalHeight = mode === 'part' ? selectedRect?.height ?? 1 : draft.height
   const fitScale = Math.min(1, 620 / Math.max(1, logicalWidth), 430 / Math.max(1, logicalHeight))
@@ -212,8 +231,6 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
   }, [mode, tool, selectedId, previewPart?.dataUrl, warpSession, logicalWidth, logicalHeight])
 
   useEffect(() => () => {
-    pixelEditAbort.current?.abort()
-    pixelEditAbort.current = null
     if (warpDrawFrame.current !== null) cancelAnimationFrame(warpDrawFrame.current)
   }, [])
 
@@ -251,71 +268,6 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
     setDimensions(current => { const state = { ...current }; delete state[selected.id]; return state })
     setDownloadInfo('')
     setStatus('Dimensões e posição desta peça restauradas.')
-  }
-  const compile = async (): Promise<ModelSourceResult> => {
-    validateModelSourceChroma(chromaTolerance)
-    validateModelSourceDimensions(draft, dimensions)
-    return composeModelSource(draft, dimensions, chromaTolerance)
-  }
-  const saveUndoSnapshot = () => {
-    undoStack.current = [...undoStack.current, { project: draft, dimensions, tolerance: chromaTolerance, selectedId }].slice(-8)
-    setUndoCount(undoStack.current.length)
-  }
-  const undo = () => {
-    const snapshot = undoStack.current.pop()
-    if (!snapshot) return
-    setDraft(snapshot.project)
-    setDimensions(snapshot.dimensions)
-    setChromaTolerance(snapshot.tolerance)
-    setSelectedId(snapshot.project.parts.some(part => part.id === snapshot.selectedId) ? snapshot.selectedId : snapshot.project.parts[0]?.id ?? '')
-    setUndoCount(undoStack.current.length)
-    setGesture(null)
-    gestureRef.current = null
-    setError('')
-    setStatus('Última edição desfeita.')
-    setDownloadInfo('')
-  }
-  const runMutation = async (mutate: (materialized: FabricatorProject, result: ModelSourceResult) => Promise<MutationResult | null>) => {
-    if (busy || downloading) return
-    setBusy(true)
-    setError('')
-    try {
-      const result = await compile()
-      const materialized: FabricatorProject = {
-        ...draft,
-        sourceDataUrl: result.sourceDataUrl,
-        parts: result.parts,
-        tolerance: result.tolerance,
-        joints: result.joints,
-        layerOrder: result.layerOrder,
-        hiddenPartIds: result.hiddenPartIds
-      }
-      const mutation = await mutate(materialized, result)
-      if (!mutation) return
-      saveUndoSnapshot()
-      setDraft(mutation.project)
-      setDimensions({})
-      setChromaTolerance(result.tolerance)
-      setSelectedId(mutation.selectedId)
-      setGesture(null)
-      gestureRef.current = null
-      setStatus(mutation.status)
-      setDownloadInfo('')
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Não foi possível editar a peça.')
-    } finally {
-      setBusy(false)
-    }
-  }
-  const runPixelEdit = async <T,>(edit: (signal: AbortSignal) => Promise<T>): Promise<T> => {
-    pixelEditAbort.current?.abort()
-    const controller = new AbortController()
-    pixelEditAbort.current = controller
-    try {
-      return await edit(controller.signal)
-    } finally {
-      if (pixelEditAbort.current === controller) pixelEditAbort.current = null
-    }
   }
   const rotateSelectedPart = (degrees: ModelSourceQuarterTurn) => {
     if (!selected || busy || downloading) return
