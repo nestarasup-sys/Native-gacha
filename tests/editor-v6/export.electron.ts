@@ -61,6 +61,12 @@ async function main() {
   const report = await runEditorV6Export(project, options, base)
   assert(report.state === 'completed' && !report.fallback, 'Turbo não concluiu com duas partes.')
   assert(report.mainProcessMemory && report.mainProcessMemory.startRssBytes > 0 && report.mainProcessMemory.peakRssBytes >= report.mainProcessMemory.startRssBytes && report.mainProcessMemory.sampleIntervalMs === 500, 'O relatório não registrou corretamente a memória RSS do processo principal.')
+  const blockedTempRoot = join(folder, 'not-a-temp-folder')
+  await writeFile(blockedTempRoot, 'file')
+  let setupFailed = false
+  try { await runEditorV6Export(project, options, { ...base, id: randomUUID(), tempRoot: blockedTempRoot, outputPath: join(folder, 'setup-failure.mp4'), reportPath: join(folder, 'setup-failure.report.json') }) } catch { setupFailed = true }
+  const setupReport = JSON.parse(await readFile(join(folder, 'setup-failure.report.json'), 'utf8'))
+  assert(setupFailed && setupReport.state === 'failed' && setupReport.error, 'Falha ao criar a pasta temporária não gerou um relatório de diagnóstico.')
   assert(report.attempts[0].parts.map((part) => part.frames).sort((a, b) => a - b).join(',') === '40,41', 'Partes perderam ou repetiram quadros.')
   assert(report.attempts[0].parts.every((part) => (part.frameTiming?.frameRoundTripMs?.samples ?? 0) > 0 && (part.frameTiming?.rafWaitMs?.samples ?? 0) > 0 && (part.frameTiming?.captureMs?.samples ?? 0) > 0), 'O relatório não separou os tempos de renderização, espera RAF e captura por quadro.')
   assert(peak === 2 && active === 0, 'Os dois trabalhos não foram paralelos ou deixaram janelas abertas.')
