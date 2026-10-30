@@ -349,7 +349,7 @@ export function PoseWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
 
   const deletePose = async () => {
     if (!editingSlot || !project) return
-    if (!window.confirm(`Excluir permanentemente a pose “${project.name}” do slot ${editingSlot}?`)) return
+    if (!window.confirm(`Excluir permanentemente a pose “${project.name}” do slot ${editingSlot}? Personagens e cenas vinculados a ela ficarão sem essa pose até você escolher outra.`)) return
     try {
       await window.desktop.fabricator.deleteFabricatorPose(selectedModelSlot, editingSlot)
       window.dispatchEvent(new Event('fabricator:assets-updated'))

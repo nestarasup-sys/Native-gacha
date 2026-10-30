@@ -240,8 +240,6 @@ const assertFabricatorPoseReferencesAvailable = (references: readonly Fabricator
   getPoseReferenceIntegrity().assertPoseReferencesAvailable(references)
 const assertDependentCharacterPoseReferencesAvailable = (previous: CustomizerCharacter, next: CustomizerCharacter): Promise<void> =>
   getPoseReferenceIntegrity().assertDependentCharacterPoseReferencesAvailable(previous, next)
-const withPoseReferenceSnapshot = <T>(operation: (references: readonly FabricatorPoseReference[]) => Promise<T>): Promise<T> =>
-  getPoseReferenceIntegrity().withPoseReferenceSnapshot(operation)
 const assertStudioPoseReferencesAvailable = (document: StudioDocument): Promise<void> =>
   getPoseReferenceIntegrity().assertStudioPoseReferencesAvailable(document)
 const assertEditorV6PoseReferencesAvailable = (document: EditorV6Document): Promise<void> =>
@@ -708,7 +706,7 @@ async function registerFabricatorHandlers(): Promise<void> {
     ipcMain, assertTrustedSender, ensureLegacyPoseMigration, isValidModelSlot, isValidPoseSlot,
     slotCount, poseSlotCount, poseSlotPath, poseModelPath, poseDraftPath,
     queuePoseWrite, readPoseProject, writePoseProject, readPoseDraft, writePoseDraft,
-    coordinatePoseReferenceChange, withPoseReferenceSnapshot,
+    coordinatePoseReferenceChange,
     files: { readFile, writeFile, mkdir, rename, rm }
   })
 

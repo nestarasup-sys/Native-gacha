@@ -17,7 +17,7 @@ import {
 } from '../src/shared/fabricatorPoseReferences.ts'
 import { CustomizerCharacterService } from '../electron/domains/customizer/service.ts'
 import { createFabricatorPoseReferenceIntegrity } from '../electron/domains/fabricator/poseReferenceIntegrity.ts'
-import { assertPoseHasNoReferences, createPoseReferenceChangeCoordinator } from '../electron/domains/fabricator/poseReferences.ts'
+import { createPoseReferenceChangeCoordinator } from '../electron/domains/fabricator/poseReferences.ts'
 import { registerEditorV6PrimaryHandlers } from '../electron/domains/editorV6/primaryIpc.ts'
 import { registerStudioPrimaryHandlers } from '../electron/domains/studio/primaryIpc.ts'
 
@@ -28,7 +28,7 @@ function loadPoseHandlers() {
   const requireFromTest = createRequire(import.meta.url)
   const injectedRequire = (name) => {
     if (name.includes('fabricatorIpcChannels')) return { fabricatorIpcChannels }
-    if (name.includes('poseReferences.ts')) return { assertPoseHasNoReferences }
+    if (name.includes('poseReferences.ts')) return {}
     if (name.includes('shared/fabricator')) return { resolvePoseCategory: (pose) => pose.category ?? 'normal' }
     return requireFromTest(name)
   }
@@ -197,7 +197,7 @@ test('referências corrompidas falham fechadas em vez de liberar uma exclusão',
   }], [character()]), /tipo inválido/i)
 })
 
-test('exclusão de pose preserva o asset quando há vínculo e remove slot isolado', async () => {
+test('exclusão de pose permite vínculos existentes e mantém a validação de caminho', async () => {
   const removed = []
   const references = collectCustomizerPoseReferences([character(2, 3)])
   const handlers = new Map()
@@ -227,10 +227,10 @@ test('exclusão de pose preserva o asset quando há vínculo e remove slot isola
   })
   const deletePose = handlers.get(fabricatorIpcChannels.deleteFabricatorPose)
 
-  await assert.rejects(deletePose({}, 2, 3), /Lia/)
-  assert.deepEqual(removed, [])
+  await deletePose({}, 2, 3)
+  assert.deepEqual(removed, [join(root, 'model-2', 'slot-3')])
   await deletePose({}, 2, 4)
-  assert.deepEqual(removed, [join(root, 'model-2', 'slot-4')])
+  assert.deepEqual(removed, [join(root, 'model-2', 'slot-3'), join(root, 'model-2', 'slot-4')])
 })
 
 test('validação de pose acompanha mudança do modelo sem alterar personagem em caso de falha', async () => {
@@ -270,7 +270,7 @@ test('coordenador serializa gravações de referência e exclusões', async () =
   releaseFirst()
   await Promise.all([first, second])
   assert.deepEqual(order, ['início gravação', 'fim gravação', 'exclusão'])
-  assert.throws(() => assertPoseHasNoReferences(collectCustomizerPoseReferences([character(2, 3)]), 2, 3), /Lia/)
+  assert.deepEqual(collectCustomizerPoseReferences([character(2, 3)]).map((reference) => reference.poseSlot), [3])
 })
 
 test('Studio e Editor V6 validam uma pose nova sob a coordenação antes de persistir', async () => {

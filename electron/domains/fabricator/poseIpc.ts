@@ -3,8 +3,6 @@ import { fabricatorIpcChannels } from '../../../src/shared/fabricatorIpcChannels
 import type { IpcMain, IpcMainInvokeEvent } from 'electron'
 import { basename, dirname, join, resolve } from 'node:path'
 import { resolvePoseCategory, type FabricatorAssetSave, type FabricatorPose, type FabricatorPoseDraft, type FabricatorPoseDraftSave, type FabricatorPoseSave, type FabricatorPoseSummary } from '../../../src/shared/fabricator'
-import type { FabricatorPoseReference } from '../../../src/shared/fabricatorPoseReferences.ts'
-import { assertPoseHasNoReferences } from './poseReferences.ts'
 import type * as fs from 'node:fs/promises'
 
 export type PoseIpcDependencies = {
@@ -22,7 +20,6 @@ export type PoseIpcDependencies = {
   readPoseProject: (model: number, slot: number) => Promise<FabricatorPose | null>
   writePoseProject: (model: number, slot: number, project: FabricatorPoseSave, assets: FabricatorAssetSave[]) => Promise<void>
   coordinatePoseReferenceChange: <T>(operation: () => Promise<T> | T) => Promise<T>
-  withPoseReferenceSnapshot: <T>(operation: (references: readonly FabricatorPoseReference[]) => Promise<T>) => Promise<T>
   readPoseDraft: (model: number) => Promise<FabricatorPoseDraft | null>
   writePoseDraft: (model: number, draft: FabricatorPoseDraftSave, assets: FabricatorAssetSave[]) => Promise<void>
   files: Pick<typeof fs, 'readFile' | 'writeFile' | 'mkdir' | 'rename' | 'rm'>
@@ -31,7 +28,7 @@ export type PoseIpcDependencies = {
 export function registerFabricatorPoseHandlers(deps: PoseIpcDependencies): void {
   const { ipcMain, assertTrustedSender, ensureLegacyPoseMigration, isValidModelSlot, isValidPoseSlot,
     slotCount, poseSlotCount, poseSlotPath, poseModelPath, poseDraftPath,
-    queuePoseWrite, readPoseProject, writePoseProject, coordinatePoseReferenceChange, withPoseReferenceSnapshot,
+    queuePoseWrite, readPoseProject, writePoseProject, coordinatePoseReferenceChange,
     readPoseDraft, writePoseDraft } = deps
   const { readFile, writeFile, mkdir, rename, rm } = deps.files
   ipcMain.handle(fabricatorIpcChannels.listFabricatorPoseSlots, async (event, requestedModelSlot?: number): Promise<FabricatorPoseSummary[]> => {
@@ -98,13 +95,12 @@ export function registerFabricatorPoseHandlers(deps: PoseIpcDependencies): void 
     assertTrustedSender(event)
     if (!isValidModelSlot(modelSlot) || !isValidPoseSlot(slot)) throw new Error('Slot de pose inválido.')
     await ensureLegacyPoseMigration()
-    await queuePoseWrite(() => coordinatePoseReferenceChange(() => withPoseReferenceSnapshot(async (references) => {
-      assertPoseHasNoReferences(references, modelSlot, slot)
+    await queuePoseWrite(() => coordinatePoseReferenceChange(async () => {
       const base = resolve(poseModelPath(modelSlot))
       const target = resolve(poseSlotPath(modelSlot, slot))
       if (dirname(target) !== base || basename(target) !== `slot-${slot}`) throw new Error('Caminho de exclusão de pose inválido.')
       await rm(target, { recursive: true, force: true })
-    })))
+    }))
   })
 
   ipcMain.handle(fabricatorIpcChannels.loadFabricatorPoseDraft, async (event, modelSlot: number): Promise<FabricatorPoseDraft | null> => {
