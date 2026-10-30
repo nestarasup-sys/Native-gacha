@@ -116,6 +116,10 @@ Para eliminar as cópias das camadas capturadas para um buffer BGRA de altura du
 
 Com os buffers imutáveis por camada, experimentei manter no máximo dois quadros pendentes por trecho, aguardando os callbacks antes de abrir espaço na fila e antes de finalizar o MP4. Isso sobrepôs a captura seguinte à escrita anterior sem permitir mutação dos buffers pendentes. As três saídas passaram pelas validações estruturais e o trecho comparado com o baseline teve SSIM 1,000000. Porém, a mediana das três rodadas foi 200,863 s total e 173,616 s renderizando, contra 193,915 s e 165,145 s na referência (+3,6% e +5,1%). O pico de RSS principal chegou a 1,95 GiB. Reverti a fila e a transmissão por camadas; continuam valendo a contrapressão serial e o buffer duplo reutilizado. Relatórios e vídeos em `out/editor-v6-stress/runs/bounded-frame-pipeline-2026-10-30T23-00-00/` (ignorados pelo Git).
 
+### Proteção contra cancelamento durante registro de listeners
+
+Fechei uma corrida rara em que o sinal podia ser cancelado depois da verificação inicial, mas antes de o listener `abort` ser registrado. `waitForExport` e `waitForOffscreenPaint` agora verificam o sinal outra vez imediatamente após registrar o listener; `spawnExportProcess` também encerra o processo se o cancelamento ocorrer nessa janela. Isso evita aguardar o timeout com a operação já cancelada e reduz o risco de deixar FFmpeg ativo. Typecheck, auditoria de arquitetura e build passaram; a correção foi revisada no fluxo de cancelamento do export e dos workers.
+
 ## 2. Remover trabalho repetido da preparação — prioridade alta
 
 - Construir índices de assets, personagens, blocos e transições uma vez por preparação; evitar percorrer toda a timeline dentro de cada grupo.

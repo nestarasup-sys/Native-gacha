@@ -36,6 +36,7 @@ function waitForOffscreenPaint(window: BrowserWindow, signal: AbortSignal): Prom
     window.once('closed', onClosed)
     signal.addEventListener('abort', onAbort, { once: true })
     timeout = setTimeout(() => finish(Error('Tempo limite: pintar quadro do renderizador de exportação.')), 60000)
+    if (signal.aborted) { onAbort(); return }
     try {
       // The renderer's animation frames only confirm that React/SVG committed.
       // Wait for Chromium's offscreen compositor after every visual change so

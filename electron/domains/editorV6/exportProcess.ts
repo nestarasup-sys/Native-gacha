@@ -11,6 +11,7 @@ export function waitForExport<T>(operation: Promise<T>, signal: AbortSignal, tim
     const abort = () => fail(signal.reason ?? Error('Exportação cancelada.'))
     const timer = setTimeout(() => fail(Error(`Tempo limite: ${label}.`)), timeoutMs)
     signal.addEventListener('abort', abort, { once: true })
+    if (signal.aborted) abort()
     operation.then(succeed, fail)
   })
 }
@@ -23,6 +24,7 @@ export function spawnExportProcess(binary: string, args: string[], signal: Abort
   child.stderr.on('data', (data: Buffer) => { stderr = (stderr + data.toString()).slice(-64000) })
   const abort = () => child.kill()
   signal.addEventListener('abort', abort, { once: true })
+  if (signal.aborted) abort()
   const done = new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
     child.once('error', reject)
     child.once('close', (code) => { signal.removeEventListener('abort', abort); if (signal.aborted) reject(signal.reason ?? Error('Exportação cancelada.')); else if (code !== 0) reject(Error(`FFmpeg/FFprobe terminou com código ${code}: ${stderr.slice(-4000)}`)); else resolve({ stdout, stderr }) })
