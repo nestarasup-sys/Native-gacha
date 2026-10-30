@@ -4,7 +4,7 @@ import type { StudioDocument, StudioElement } from '../../../../shared/studio'
 import { buildStudioExpressionAppearance, buildStudioExpressionTransforms, resolveStudioExpressionBase } from './expressionTransforms'
 import { selectStudioCharacterRefreshCandidates } from './studioCharacterRefreshModel'
 import { sceneFaceModeForElement } from '../../characters/sceneFaceMode'
-import { fitElementToTrim, trimTransparentImage, type TrimmedImage } from '../../characters/characterGeometry'
+import { faceRenderGeometry, fitElementToTrim, trimTransparentImage, type TrimmedImage } from '../../characters/characterGeometry'
 import { STUDIO_FACE_RENDER_VERSION } from './useStudioFacePreview'
 import { mapConcurrentItems } from '../../ui/mapConcurrentItems'
 
@@ -128,18 +128,14 @@ export function useStudioCharacterSourceRefresh({
           if (cancelled) return
           const crop = await trimTransparentImage(rendered.dataUrl)
           if (cancelled) return
-          const cropWidth = crop?.width ?? rendered.width
-          const cropHeight = crop?.height ?? rendered.height
-          const characterCanvasWidth = element.characterCanvasWidth ?? element.width * rendered.width / cropWidth
+          const geometry = faceRenderGeometry(element, rendered, crop, stageWidth, stageHeight)
           const asset = activeStudio.assets.find((item) => item.id === element.assetId)
           if (!asset) continue
           updates.push({
             previous: element,
             next: {
               ...element, characterSourceUpdatedAt: character.updatedAt, faceRendererVersion: STUDIO_FACE_RENDER_VERSION, expressionBase, faceAppearance: appearance, faceTransforms, activeExpressionEffects: expressionEffects, activeFaceMode: faceMode,
-              ...(savedPreset ? { activeExpressionPresetUpdatedAt: savedPreset.updatedAt } : {}), characterCanvasWidth,
-              width: characterCanvasWidth * cropWidth / rendered.width,
-              height: characterCanvasWidth * stageWidth / stageHeight * cropHeight / rendered.width,
+              ...(savedPreset ? { activeExpressionPresetUpdatedAt: savedPreset.updatedAt } : {}), ...geometry,
               text: element.text === asset.name ? character.name : element.text
             },
             asset: { ...asset, name: character.name, mimeType: 'image/png', dataUrl: crop?.dataUrl ?? rendered.dataUrl }

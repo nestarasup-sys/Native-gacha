@@ -597,18 +597,14 @@ export function StudioPage() {
       const rendered = await renderSavedCharacter(characterCopy, selectedElement.faceTransforms, selectedElement.activeExpressionEffects, selectedElement.activeFaceMode)
       const trimmed = await trimTransparentImage(rendered.dataUrl)
       const dataUrl = trimmed?.dataUrl ?? rendered.dataUrl
-      const cropWidth = trimmed?.width ?? rendered.width
-      const cropHeight = trimmed?.height ?? rendered.height
       const stageWidth = sceneRef.current?.clientWidth ?? 1000
       const stageHeight = sceneRef.current?.clientHeight ?? 562
-      const fullCanvasHeight = characterCanvasWidth * stageWidth / stageHeight * rendered.height / rendered.width
-      const width = characterCanvasWidth * cropWidth / rendered.width
-      const height = fullCanvasHeight * cropHeight / rendered.height
+      const geometry = faceRenderGeometry({ ...selectedElement, characterCanvasWidth }, rendered, trimmed, stageWidth, stageHeight)
       const elementId = selectedElement.id
       const assetId = selectedElement.assetId
       changeScene((studio) => ({
         ...studio,
-        elements: studio.elements.map((element) => element.id === elementId ? { ...element, poseSlot, characterCanvasWidth, width, height, characterSourceUpdatedAt: selectedStudioCharacter.updatedAt } : element),
+        elements: studio.elements.map((element) => element.id === elementId ? { ...element, poseSlot, ...geometry, characterSourceUpdatedAt: selectedStudioCharacter.updatedAt } : element),
         assets: studio.assets.map((asset) => asset.id === assetId ? { ...asset, dataUrl, mimeType: 'image/png' } : asset),
         updatedAt: new Date().toISOString()
       }))

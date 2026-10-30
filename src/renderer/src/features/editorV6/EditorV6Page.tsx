@@ -637,18 +637,14 @@ export function EditorV6Page() {
         rendered = await poseRenderer.renderToCanvas(characterCopy.customization.faceAppearance, selectedElement.faceTransforms, selectedElement.activeExpressionEffects, baseMode)
         baked = await bakeFaceModeAssets(selectedElement.text, poseRenderer, characterCopy.customization.faceAppearance, selectedElement.faceTransforms, selectedElement.activeExpressionEffects, baseMode, rendered)
       } finally { poseRenderer.dispose() }
-      const cropWidth = baked.crop?.width ?? rendered.width
-      const cropHeight = baked.crop?.height ?? rendered.height
       const stageWidth = sceneRef.current?.clientWidth ?? 1000
       const stageHeight = sceneRef.current?.clientHeight ?? 562
-      const fullCanvasHeight = characterCanvasWidth * stageWidth / stageHeight * rendered.height / rendered.width
-      const width = characterCanvasWidth * cropWidth / rendered.width
-      const height = fullCanvasHeight * cropHeight / rendered.height
+      const geometry = faceRenderGeometry({ ...selectedElement, characterCanvasWidth }, rendered, baked.crop, stageWidth, stageHeight)
       const elementId = selectedElement.id
       const assetId = selectedElement.assetId
       changeScene((studio) => ({
         ...studio,
-        elements: studio.elements.map((element) => element.id === elementId ? { ...element, poseSlot, ...(typeof poseSlot === 'number' ? { poseSourceRevision: activePoseSourceSnapshot?.revisions[editorV6PoseRevisionKey(selectedEditorV6Character.customization.modelSlot ?? 1, poseSlot)] ?? 'missing' } : { poseSourceRevision: undefined }), faceModeAssetIds: { ...baked.assetIds, [baseMode]: assetId }, characterCanvasWidth, width, height, characterSourceUpdatedAt: selectedEditorV6Character.updatedAt } : element),
+        elements: studio.elements.map((element) => element.id === elementId ? { ...element, poseSlot, ...geometry, ...(typeof poseSlot === 'number' ? { poseSourceRevision: activePoseSourceSnapshot?.revisions[editorV6PoseRevisionKey(selectedEditorV6Character.customization.modelSlot ?? 1, poseSlot)] ?? 'missing' } : { poseSourceRevision: undefined }), faceModeAssetIds: { ...baked.assetIds, [baseMode]: assetId }, characterSourceUpdatedAt: selectedEditorV6Character.updatedAt } : element),
         assets: [...studio.assets.map((asset) => asset.id === assetId ? { ...asset, dataUrl: baked.dataUrl, mimeType: 'image/png' as const } : asset), ...baked.extraAssets],
         updatedAt: new Date().toISOString()
       }))

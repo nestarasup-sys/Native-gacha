@@ -24,6 +24,10 @@ test('geometria de rosto idêntica para elementos em 16:9',()=>{
  assert.equal(result.width,28)
  assert.equal(result.height,40*1920/1080*480/400)
 })
+test('geometria compartilhada permanece finita quando o palco ainda não tem altura',()=>{
+ const result=faceRenderGeometry({width:25,characterCanvasWidth:40},{width:400,height:600},{width:280,height:480},1920,0)
+ assert.deepEqual(result,{characterCanvasWidth:40,width:28,height:40*1920*480/400})
+})
 test('Studio e Editor V6 usam a geometria compartilhada, sem cópias locais independentes',async()=>{
  const [studio,editorV6]=await Promise.all([
   readFile('src/renderer/src/features/studio/StudioPage.tsx','utf8'),
@@ -33,4 +37,19 @@ test('Studio e Editor V6 usam a geometria compartilhada, sem cópias locais inde
  assert.match(editorV6,/from '\.\.\/\.\.\/characters\/characterGeometry'/)
  assert.doesNotMatch(studio,/function trimTransparentImage\(/)
  assert.doesNotMatch(editorV6,/function fitElementToTrim\(/)
+})
+test('troca de pose e atualização de fonte usam a mesma geometria em Studio e Editor V6',async()=>{
+ const [studio,editorV6,studioRefresh,editorRefresh]=await Promise.all([
+  readFile('src/renderer/src/features/studio/StudioPage.tsx','utf8'),
+  readFile('src/renderer/src/features/editorV6/EditorV6Page.tsx','utf8'),
+  readFile('src/renderer/src/features/studio/useStudioCharacterSourceRefresh.ts','utf8'),
+  readFile('src/renderer/src/features/editorV6/characterSnapshotRefresh.ts','utf8')
+ ])
+ assert.match(studio,/faceRenderGeometry\(\{ \.\.\.selectedElement, characterCanvasWidth \}, rendered, trimmed/)
+ assert.match(editorV6,/faceRenderGeometry\(\{ \.\.\.selectedElement, characterCanvasWidth \}, rendered, baked\.crop/)
+ assert.match(studioRefresh,/faceRenderGeometry\(element, rendered, crop, stageWidth, stageHeight\)/)
+ assert.match(editorRefresh,/faceRenderGeometry\(target\.state, rendered, crop, stageWidth, stageHeight\)/)
+ assert.doesNotMatch(studio,/fullCanvasHeight/)
+ assert.doesNotMatch(editorV6,/fullCanvasHeight/)
+ assert.doesNotMatch(studioRefresh,/characterCanvasWidth \* stageWidth \/ stageHeight/)
 })
