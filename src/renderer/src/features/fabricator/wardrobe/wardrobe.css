@@ -6,3 +6,11 @@
 .wardrobe-sleeve-cut input[type="range"] { width:100%; }
 .wardrobe-sleeve-cut small { color:#667085; }
 .wardrobe-sleeve-cut-line { position:absolute;border-top:2px dashed #1677ff;z-index:20000;pointer-events:none;filter:drop-shadow(0 1px 1px white); }
+
+.wardrobe-set-row.sleeves-import { --set-border:#d4bcf2;--set-background:#f6f0ff;--set-color:#70429b;--set-active:#eadbfb; }
+.wardrobe-set-row.pants-import { --set-border:#b5cfee;--set-background:#eff6ff;--set-color:#285d98;--set-active:#daeaff; }
+.wardrobe-set-row.complete-import { --set-border:#efcb9c;--set-background:#fff6e9;--set-color:#8b591c;--set-active:#ffe8c9; }
+.wardrobe-set-row.sleeves-import,.wardrobe-set-row.pants-import,.wardrobe-set-row.complete-import { border-color:var(--set-border);background:var(--set-background);color:var(--set-color); }
+.wardrobe-set-row.sleeves-import:hover,.wardrobe-set-row.sleeves-import.active,.wardrobe-set-row.pants-import:hover,.wardrobe-set-row.pants-import.active,.wardrobe-set-row.complete-import:hover,.wardrobe-set-row.complete-import.active { background:var(--set-active);border-color:var(--set-color); }
+.wardrobe-set-row.sleeves-import .wardrobe-set-icon,.wardrobe-set-row.pants-import .wardrobe-set-icon,.wardrobe-set-row.complete-import .wardrobe-set-icon { background:var(--set-active);color:var(--set-color); }
+.wardrobe-set-row small { overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
