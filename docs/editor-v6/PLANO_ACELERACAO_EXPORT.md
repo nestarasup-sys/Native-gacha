@@ -84,6 +84,12 @@ Na etapa do encoder, comparei três reencodes AMF com os argumentos atuais contr
 
 Como evidência complementar, `npm run bench:editor-v6:motion-preparation` comparou uma implementação legada e indexada em uma fixture sintética de 120 personagens e 2.400 planos, por cinco rodadas: medianas de 139,82 ms e 8,59 ms (16,27×), com os mesmos 2.400 planos concluídos. Esse benchmark cobre o índice de preparação antecipada no renderer, não o `prepareExportMotions` do exportador nem o projeto real; portanto, serve para validar a técnica de indexação e não para estimar o ganho de export.
 
+### Tentativa descartada: ampliar o cache de movimento em memória
+
+O serviço mantinha no máximo oito resultados e aproximadamente 24 MB em memória. Como um export aquecido registrava 485 hits no cache de movimento e apenas quatro hits em memória, testei um LRU com teto de 256 entradas e até 1% da RAM, limitado entre 24 e 128 MiB. No projeto real, os exports aquecidos ainda tiveram só 12 hits em memória e 473 leituras do disco, que somaram 561,6 MB. A mediana aquecida foi 198,070 s, contra 191,975 s na comparação agrupada anterior; não houve ganho reproduzível e o volume lido do disco quase não mudou. Reverti a alteração para evitar manter uma reserva maior de RAM sem benefício demonstrado. Relatórios: `out/editor-v6-stress/runs/memory-cache-128m-2026-10-30T19-00-00/stress-export-validation.json` e `out/editor-v6-stress/runs/grouped-workers-2026-10-30T18-00-00/stress-export-validation.json`.
+
+Os tempos por quadro do export aquecido de referência apontam o próximo custo: 88,9 s acumulados em `frameRoundTripMs`, 57,4 s em `ffmpegWriteMs`, 48,1 s em `ipcDrawMs`, 39,4 s em `captureMs` e 24,7 s em `rafWaitMs`, frente a 165,1 s de tempo de parede da fase de renderização. Essas métricas por quadro se sobrepõem e não devem ser somadas. O cache maior não alterou esse caminho; a próxima investigação deve reduzir chamadas/esperas por quadro ou o custo de captura, preservando o ciclo de pintura já validado.
+
 ## 2. Remover trabalho repetido da preparação — prioridade alta
 
 - Construir índices de assets, personagens, blocos e transições uma vez por preparação; evitar percorrer toda a timeline dentro de cada grupo.
