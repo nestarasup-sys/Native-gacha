@@ -7,6 +7,7 @@ import { editorV6FaceModeDuringMotion } from '../../../../../shared/editorV6Face
 import { interpolateEditorV6Face, interpolateEditorV6Pose, motionAngle, motionEase, motionLerp } from '../../../../../shared/editorV6MotionInterpolation'
 import { editorV6ElementSize } from '../../../../../shared/editorV6SceneModel'
 import { loadStandardExpressionEffects, prepareSavedCharacterRenderer, type GachaReusableMaterialCache } from '../../../characters/editorV6CharacterRenderer'
+import { createMotionPoseResolver } from './motionPoseResolver'
 
 type Renderer = Awaited<ReturnType<typeof prepareSavedCharacterRenderer>>
 type Crop = { left: number; top: number; width: number; height: number; fingerprint?: number }
@@ -96,12 +97,10 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
   const began = performance.now(), provider = cachedProvider(session?.provider ?? rawProvider), slot = request.character.customization.modelSlot ?? 1
   const source = await provider.loadFabricatorSlot(slot)
   if (!source) throw Error('O modelo do personagem não está disponível para animar.')
-  const pose = async (state: EditorV6Element) => {
+  const resolvePose = createMotionPoseResolver(source, provider)
+  const pose = (state: EditorV6Element) => {
     const slotId = state.poseSlot === undefined ? request.character.customization.poseSlot : state.poseSlot
-    if (slotId === null || slotId === undefined) return source
-    const loaded = await provider.loadFabricatorPose(slot, slotId)
-    if (!loaded) throw Error(`A pose ${slotId} não está disponível para animar.`)
-    return loaded
+    return resolvePose(slotId)
   }
   const [fromPose, toPose, from, to] = await Promise.all([pose(request.plan.from), pose(request.plan.to), prepareFace(structuredClone(request.plan.from), request, provider), prepareFace(structuredClone(request.plan.to), request, provider)])
   calibratePair(from, to)
