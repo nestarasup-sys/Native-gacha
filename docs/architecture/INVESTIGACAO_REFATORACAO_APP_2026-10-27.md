@@ -324,7 +324,7 @@ Editor V6
 
 ### Dívida estrutural geral
 
-1. **Composition root inchado:** `electron/main.ts` tem 1.060 linhas e ainda inicializa serviços globais e mantém o inventário transversal de gravações pendentes. A configuração dos perfis foi extraída para `application/appDataBootstrap.ts`, o registro de Roteiros/mídia para a composição da aplicação, o canal de flush para `domains/storage/pendingPersistenceIpc.ts` e a fila de Roteiros para o próprio domínio. Ainda falta decompor a inicialização de serviços e o inventário sem deslocar propriedade entre domínios.
+1. **Composition root inchado:** na checagem de 2026-10-29, `electron/main.ts` tem 1.001 linhas e ainda inicializa serviços globais e mantém o inventário transversal de gravações pendentes. A configuração dos perfis foi extraída para `application/appDataBootstrap.ts`, o registro de Roteiros/mídia para a composição da aplicação, o canal de flush para `domains/storage/pendingPersistenceIpc.ts` e a fila de Roteiros para o próprio domínio. Ainda falta decompor a inicialização de serviços e o inventário sem deslocar propriedade entre domínios.
 2. **Preload amplo:** `electron/preload.ts` preserva os métodos raiz para compatibilidade e agora também oferece agrupamentos por domínio. Os consumidores ainda precisam migrar gradualmente para os namespaces; os nomes e a validação dos canais IPC permanecem os mesmos.
 3. **Páginas longas:** Customizador, Editor V6, Studio e Fabricador Dev ainda concentram estado e operações. A refatoração deve extrair casos de uso, seletores, hooks e componentes por responsabilidade, sem dividir apenas para reduzir contagem de linhas.
 4. **Núcleo de renderização de personagem:** Fabricador, Customizador, Studio e Editor V6 consomem modelos e composições em contextos diferentes. Um núcleo compartilhado exige contratos claros e fixtures visuais douradas antes de trocar os caminhos atuais.
@@ -1879,3 +1879,10 @@ Continua a auditoria das operações IPC iniciadas pelo usuário e da cobertura 
 - A pose neutra continua definindo a escala-base enquanto a pose escolhida fornece o PNG exibido. IDs, ordem Z, aparência facial inicial, referências entre elementos e regra de não remover assets ainda usados foram mantidos. Não mudaram persistência, IPC nem o formato do Studio; a página caiu de 941 para 922 linhas.
 - Três testes cobrem pose e dimensões iniciais, preservação/remoção de assets compartilhados, inclusão e remoção de personagens sem renderização desnecessária, e a fronteira de composição da página.
 - Passaram os testes focados do elenco (3), `npm run test:refactor`, `npm run typecheck`, `npm run audit:architecture` (527 arquivos TS/TSX, zero referências ausentes e zero violações), `npm run build` e `git diff --check`.
+
+## 154. Fechamento da rodada — gates de estabilidade aprovados; refatoração geral em pausa
+
+- A revisão começou com `Dev-V2` limpa no commit `da0d6c4`. Nenhum arquivo do perfil local ou conteúdo de personagens foi usado como área de teste.
+- Na validação final passaram `npm run test:refactor` (607 testes principais e suítes auxiliares), `npm run test:editor-v6` (163 aprovados, 1 ignorado; mais 3 testes do perfil sintético), `npm test` (29), `npm run test:data-runtime` (Electron, SQLite/FTS5, Sharp, CAS, miniatura e backup), `npm audit` (zero vulnerabilidades), `npm run typecheck`, `npm run audit:architecture` (527 arquivos TS/TSX, nenhuma violação), `npm run build` e `git diff --check`.
+- Não ficaram alterações de código desta rodada sem commit. Para a próxima retomada permanecem dois itens explicitamente adiados: extrair mais inicialização/inventário de `electron/main.ts` (1.001 linhas nesta revisão) e criar uma comparação dourada das saídas dos renderizadores de produção de Studio e Editor V6 antes de unificar essas políticas. Nenhum deles bloqueou os gates executados nesta rodada.
+- A meta geral de refatoração não foi marcada como concluída: a pedido do usuário, fica em pausa após este fechamento.
