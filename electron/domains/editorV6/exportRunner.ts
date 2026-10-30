@@ -21,7 +21,9 @@ type TimingAccumulator = { count: number; totalMs: number; maxMs: number; histog
 type FrameTimingReport = Partial<Record<TimingPhase, { samples: number; totalMs: number; p50Ms: number; p95Ms: number; maxMs: number }>>
 type PartReport = EditorV6ExportPart & { encoder: string; rendered: number; reused: number; frames: number; milliseconds: number; frameTiming?: FrameTimingReport; path: string; probe?: MediaProbe }
 type AttemptReport = { parts: PartReport[]; encoder: string; parallelism: number; milliseconds?: number; error?: string }
-export type EditorV6ExportReport = { schemaVersion: 1; id: string; state: string; projectId: string; options: EditorV6ExportOptions; fps: 30; totalFrames: number; fallback: boolean; attempts: AttemptReport[]; encoderTests: Array<{ encoder: string; error?: string }>; audioClips: number; videoInputs: number; proxies: 0; motionTransitionsRequired: number; motionTransitionsPrepared: number; motionPreparation?: Awaited<ReturnType<typeof prepareExportMotions>>['stats']; mouthAnimation?: { stateAtlases: number; characters: number; skippedStates: number; staleStates: number; cycleFrames: number; atlasBytes: number; atlasPixels: number; preparationMilliseconds: number; details: string[] }; mainProcessMemory?: { startRssBytes: number; peakRssBytes: number; sampleIntervalMs: number }; startedAt: string; endedAt?: string; milliseconds?: number; outputPath: string; deliveryWarning?: string; validation?: unknown; error?: string }
+type ExportPhase = 'temporarySetup' | 'characterLoading' | 'motionPreparation' | 'encoderProbe' | 'rendering' | 'finalization' | 'publication'
+type ExportPhaseTimings = Record<ExportPhase, number>
+export type EditorV6ExportReport = { schemaVersion: 1; id: string; state: string; projectId: string; options: EditorV6ExportOptions; fps: 30; totalFrames: number; fallback: boolean; attempts: AttemptReport[]; encoderTests: Array<{ encoder: string; error?: string }>; audioClips: number; videoInputs: number; proxies: 0; motionTransitionsRequired: number; motionTransitionsPrepared: number; motionPreparation?: Awaited<ReturnType<typeof prepareExportMotions>>['stats']; mouthAnimation?: { stateAtlases: number; characters: number; skippedStates: number; staleStates: number; cycleFrames: number; atlasBytes: number; atlasPixels: number; preparationMilliseconds: number; details: string[] }; mainProcessMemory?: { startRssBytes: number; peakRssBytes: number; sampleIntervalMs: number }; phaseMilliseconds: ExportPhaseTimings; startedAt: string; endedAt?: string; milliseconds?: number; outputPath: string; deliveryWarning?: string; validation?: unknown; error?: string }
 type Dependencies = {
   ffmpeg: string; ffprobe: string; tempRoot: string; reportPath: string; outputPath: string; id: string
   createWorker: (project: EditorV6Document, part: EditorV6ExportPart, signal: AbortSignal, layeredVideo: boolean, mouthLoops?: EditorV6ExportMouthLoops) => Promise<EditorV6FrameWorker>
@@ -44,6 +46,9 @@ export async function publishEditorV6Output(candidate: string, requestedPath: st
   }
 }
 const message = (error: unknown) => error instanceof Error ? error.message : String(error)
+function addPhaseTime(report: EditorV6ExportReport, phase: ExportPhase, started: number) {
+  report.phaseMilliseconds[phase] = Math.round((report.phaseMilliseconds[phase] + performance.now() - started) * 100) / 100
+}
 const TIMING_BUCKET_MS = .1
 const TIMING_BUCKETS = 2001
 function newTimingAccumulators(): Record<TimingPhase, TimingAccumulator> {
@@ -97,7 +102,7 @@ export async function runEditorV6Export(project: EditorV6Document, options: Edit
   if (process.platform !== 'win32') throw Error('Este exportador BGRA está preparado para Windows.')
   const started = performance.now(), totalFrames = options.endFrame - options.startFrame
   const layeredVideo = timelineVideoClips(project, options.startFrame, options.endFrame).length > 0
-  const report: EditorV6ExportReport = { schemaVersion: 1, id: deps.id, projectId: project.id, options, fps: 30, totalFrames, state: 'preparing', fallback: false, attempts: [], encoderTests: [], audioClips: 0, videoInputs: new Set(timelineVideoClips(project, options.startFrame, options.endFrame).map((clip) => clip.fileName)).size, proxies: 0, motionTransitionsRequired: 0, motionTransitionsPrepared: 0, startedAt: new Date().toISOString(), outputPath: deps.outputPath }
+  const report: EditorV6ExportReport = { schemaVersion: 1, id: deps.id, projectId: project.id, options, fps: 30, totalFrames, state: 'preparing', fallback: false, attempts: [], encoderTests: [], audioClips: 0, videoInputs: new Set(timelineVideoClips(project, options.startFrame, options.endFrame).map((clip) => clip.fileName)).size, proxies: 0, motionTransitionsRequired: 0, motionTransitionsPrepared: 0, phaseMilliseconds: { temporarySetup: 0, characterLoading: 0, motionPreparation: 0, encoderProbe: 0, rendering: 0, finalization: 0, publication: 0 }, startedAt: new Date().toISOString(), outputPath: deps.outputPath }
   const startRssBytes = process.memoryUsage().rss
   report.mainProcessMemory = { startRssBytes, peakRssBytes: startRssBytes, sampleIntervalMs: 500 }
   const saveReport = async () => {
@@ -107,10 +112,12 @@ export async function runEditorV6Export(project: EditorV6Document, options: Edit
     finally { await unlink(temporary).catch(() => {}) }
   }
   let folder: string
+  const temporarySetupStarted = performance.now()
   try {
     await mkdir(deps.tempRoot, { recursive: true })
     folder = await mkdtemp(join(deps.tempRoot, 'editor-v6-export-'))
   } catch (error) {
+    addPhaseTime(report, 'temporarySetup', temporarySetupStarted)
     report.state = deps.signal.aborted ? 'cancelled' : 'failed'
     report.error = message(error)
     report.endedAt = new Date().toISOString(); report.milliseconds = performance.now() - started
@@ -118,14 +125,17 @@ export async function runEditorV6Export(project: EditorV6Document, options: Edit
     catch (reportError) { throw new AggregateError([error, reportError], 'Falha ao preparar o export e salvar seu relatório.') }
     throw error
   }
+  addPhaseTime(report, 'temporarySetup', temporarySetupStarted)
   const candidate = join(dirname(deps.outputPath), `.editor-v6-${deps.id}.mp4`)
   let published = false
   let characters: CustomizerCharacter[] = []
   const testEncoder = async (encoder: string) => {
+    const probeStarted = performance.now()
     try {
       await runExportCommand(deps.ffmpeg, ['-v', 'error', '-f', 'lavfi', '-i', 'color=c=black:s=320x180:r=30', '-frames:v', '1', ...encodingArgs(encoder, 1), '-an', '-f', 'null', '-'], deps.signal)
       report.encoderTests.push({ encoder }); return true
     } catch (error) { deps.signal.throwIfAborted(); report.encoderTests.push({ encoder, error: message(error) }); return false }
+    finally { addPhaseTime(report, 'encoderProbe', probeStarted) }
   }
   const renderAttempt = async (parts: EditorV6ExportPart[], encoder: string, maxParallelism = 2): Promise<PartReport[]> => {
     const began = performance.now(), controller = new AbortController(), abort = () => controller.abort(deps.signal.reason)
@@ -236,7 +246,11 @@ export async function runEditorV6Export(project: EditorV6Document, options: Edit
       }
       return results.sort((a, b) => a.index - b.index)
     } catch (error) { attempt.error = message(error); throw error }
-    finally { attempt.milliseconds = performance.now() - began; deps.signal.removeEventListener('abort', abort) }
+    finally {
+      attempt.milliseconds = performance.now() - began
+      addPhaseTime(report, 'rendering', began)
+      deps.signal.removeEventListener('abort', abort)
+    }
   }
   // Start only after synchronous setup succeeds, immediately before the try/finally
   // that owns the sampler. This guarantees every started timer is cleared.
@@ -246,14 +260,21 @@ export async function runEditorV6Export(project: EditorV6Document, options: Edit
   }, 500)
   try {
     deps.signal.throwIfAborted()
-    characters = await deps.getCharacters()
-    const prepared = await prepareExportMotions(project, options.startFrame, options.endFrame, {
-      signal: deps.signal, characters, bake: deps.bakeMotion,
-      progress: (completed, total, name) => {
-        report.motionTransitionsRequired = total; report.motionTransitionsPrepared = completed
-        deps.progress({ state: 'preparing', frames: 0, motionProgress: { completed, total }, message: completed === total ? 'Transições prontas.' : `Preparando transição ${completed + 1}/${total} · ${name}…` })
-      }
-    })
+    const characterLoadStarted = performance.now()
+    try { characters = await deps.getCharacters() }
+    finally { addPhaseTime(report, 'characterLoading', characterLoadStarted) }
+    const motionPreparationStarted = performance.now()
+    const prepared = await (async () => {
+      try {
+        return await prepareExportMotions(project, options.startFrame, options.endFrame, {
+          signal: deps.signal, characters, bake: deps.bakeMotion,
+          progress: (completed, total, name) => {
+            report.motionTransitionsRequired = total; report.motionTransitionsPrepared = completed
+            deps.progress({ state: 'preparing', frames: 0, motionProgress: { completed, total }, message: completed === total ? 'Transições prontas.' : `Preparando transição ${completed + 1}/${total} · ${name}…` })
+          }
+        })
+      } finally { addPhaseTime(report, 'motionPreparation', motionPreparationStarted) }
+    })()
     project = prepared.project
     report.motionTransitionsRequired = prepared.stats.total
     report.motionTransitionsPrepared = prepared.stats.total
@@ -295,8 +316,13 @@ export async function runEditorV6Export(project: EditorV6Document, options: Edit
       for (const seam of seams) await runExportCommand(deps.ffmpeg, ['-v', 'error', '-err_detect', 'explode', '-ss', String(Math.max(0, seam - 1) / 30), '-i', candidate, '-frames:v', '3', '-an', '-f', 'null', '-'], deps.signal)
       return { ...validation, seams, decodedFramesNearEachSeam: seams.length ? 3 : 0 }
     }
+    const finishMeasured = async (parts: PartReport[]) => {
+      const finalizationStarted = performance.now()
+      try { return await finish(parts) }
+      finally { addPhaseTime(report, 'finalization', finalizationStarted) }
+    }
     try {
-      report.validation = await finish(await renderAttempt(planned, encoder, options.turbo ? 2 : 1))
+      report.validation = await finishMeasured(await renderAttempt(planned, encoder, options.turbo ? 2 : 1))
     } catch (error) {
       deps.signal.throwIfAborted()
       const attempt = report.attempts.at(-1)
@@ -307,21 +333,28 @@ export async function runEditorV6Export(project: EditorV6Document, options: Edit
       if (encoder !== 'libopenh264' && !await testEncoder('libopenh264')) throw Error('O codificador seguro também não está disponível.')
       const safePart = [{ index: 0, startFrame: options.startFrame, endFrame: options.endFrame }]
       const safeParts = options.mouthLoop ? splitEditorV6ExportParts(safePart, MOUTH_LOOP_BATCH_FRAMES) : safePart
-      report.validation = await finish(await renderAttempt(safeParts, 'libopenh264', 1))
+      report.validation = await finishMeasured(await renderAttempt(safeParts, 'libopenh264', 1))
     }
     deps.signal.throwIfAborted()
     // The destination only changes after the candidate passes all validations.
+    report.state = 'publishing'
+    await saveReport()
+    deps.signal.throwIfAborted()
+    const publicationStarted = performance.now()
+    let publication: Awaited<ReturnType<typeof publishEditorV6Output>>
+    try { publication = await publishEditorV6Output(candidate, deps.outputPath, deps.id) }
+    finally { addPhaseTime(report, 'publication', publicationStarted) }
+    report.outputPath = publication.outputPath
+    report.deliveryWarning = publication.warning
+    published = true
     report.state = 'completed'
     report.endedAt = new Date().toISOString(); report.milliseconds = performance.now() - started
     clearInterval(memorySampler)
     report.mainProcessMemory!.peakRssBytes = Math.max(report.mainProcessMemory!.peakRssBytes, process.memoryUsage().rss)
-    await saveReport()
-    deps.signal.throwIfAborted()
-    const publication = await publishEditorV6Output(candidate, deps.outputPath, deps.id)
-    report.outputPath = publication.outputPath
-    report.deliveryWarning = publication.warning
-    published = true
-    if (publication.warning) await saveReport()
+    try { await saveReport() }
+    catch (error) {
+      report.deliveryWarning = [report.deliveryWarning, `Vídeo salvo, mas não foi possível atualizar o relatório: ${message(error)}`].filter(Boolean).join(' ')
+    }
     return report
   } catch (error) {
     report.state = deps.signal.aborted ? 'cancelled' : 'failed'
