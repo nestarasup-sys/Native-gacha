@@ -108,8 +108,10 @@ describe('transition preparation reuse', () => {
     const folder = await mkdtemp(join(tmpdir(), 'v6-motion-cache-'))
     try {
       const { request } = fixture(), result = resultFor(request)
-      await createMotionDiskCache(folder).write(request, result)
-      expect(await createMotionDiskCache(folder).read(request)).toEqual(result)
+      const cache = createMotionDiskCache(folder)
+      await cache.write(request, result)
+      expect(await cache.read(request)).toEqual(result)
+      await expect(cache.write(request, { ...result, motion: { ...result.motion, key: 'another-transition' } })).rejects.toThrow('não corresponde à requisição')
       const changedCharacter = { ...request, character: { ...request.character, updatedAt: '2026-10-27T12:00:00.000Z' } }
       expect(await createMotionDiskCache(folder).read(changedCharacter)).toBeUndefined()
       expect(motionCacheKey(changedCharacter)).not.toBe(motionCacheKey(request))

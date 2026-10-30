@@ -12,6 +12,11 @@ export function motionCacheKey(request: EditorV6MotionBakeRequest): string {
     : [MOTION_CACHE_VERSION, request.plan.key, request.mouthScaleSamples ?? null, request.maxAtlasPixels, request.character]
   return createHash('sha256').update(JSON.stringify(key)).digest('hex')
 }
+function validateCachedMotion(request: EditorV6MotionBakeRequest, result: EditorV6MotionBakeResult): EditorV6MotionBakeResult {
+  const parsed = editorV6MotionResultSchema.parse(result)
+  if (parsed.motion.key !== request.plan.key || parsed.motion.frames.map((frame) => frame.offset).join() !== request.plan.samples.map((sample) => sample.offset).join()) throw Error('A transição em cache não corresponde à requisição.')
+  return parsed
+}
 export function createMotionDiskCache(folder: string, maximumBytes = 256 * 1024 * 1024) {
   let maintenance = Promise.resolve()
   return {
@@ -21,15 +26,14 @@ export function createMotionDiskCache(folder: string, maximumBytes = 256 * 1024 
         if ((await stat(target)).size > 32 * 1024 * 1024) return undefined
         const envelope = JSON.parse(await readFile(target, 'utf8')) as { payload: string; checksum: string }
         if (typeof envelope.payload !== 'string' || createHash('sha256').update(envelope.payload).digest('hex') !== envelope.checksum) return undefined
-        const result = editorV6MotionResultSchema.parse(JSON.parse(envelope.payload))
-        if (result.motion.key !== request.plan.key || result.motion.frames.map((frame) => frame.offset).join() !== request.plan.samples.map((sample) => sample.offset).join()) return undefined
+        const result = validateCachedMotion(request, JSON.parse(envelope.payload))
         const now = new Date()
         await utimes(target, now, now).catch(() => {})
         return result
       } catch { return undefined }
     },
     async write(request: EditorV6MotionBakeRequest, result: EditorV6MotionBakeResult): Promise<void> {
-      const payload = JSON.stringify(result)
+      const payload = JSON.stringify(validateCachedMotion(request, result))
       const contents = JSON.stringify({ payload, checksum: createHash('sha256').update(payload).digest('hex') })
       if (Buffer.byteLength(contents) > Math.min(maximumBytes, 32 * 1024 * 1024)) return
       await mkdir(folder, { recursive: true })
