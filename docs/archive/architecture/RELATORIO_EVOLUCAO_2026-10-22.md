@@ -54,4 +54,4 @@ npm run dev
 
 Antes de importar uma biblioteca pessoal: realizar backup verificável, abrir um perfil sintético isolado, testar Fabricador → Customizador → Studio, salvar, reiniciar, restaurar e conferir se os dados são idênticos.
 
-Consulte [ADR-002-fluxo-personagens.md](./ADR-002-fluxo-personagens.md) para entender propriedade dos dados e próximos domínios.
+Consulte [ADR-002-fluxo-personagens.md](../../architecture/ADR-002-fluxo-personagens.md) para entender propriedade dos dados e próximos domínios.

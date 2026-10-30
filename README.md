@@ -37,7 +37,7 @@ npm run dev
 
 ## Branch oficial e atalhos de desenvolvimento (Windows)
 
-A branch de trabalho do Native Gacha é **`Main-desenvolvimento`** (respeite maiúsculas/minúsculas); `main` não é atualizada automaticamente.
+Os atalhos de desenvolvimento deste checkout apontam para **`Main-desenvolvimento`** (respeite maiúsculas/minúsculas); `main` não é atualizada automaticamente. **Esta reorganização é proposta especificamente para `Dev-V2`** e não altera o alvo dos arquivos BAT. Antes de executar o atualizador, confira se deseja mesmo trocar de branch.
 
 - **`ATUALIZAR_DESENVOLVIMENTO.bat`**: verifica o clone `origin`, recusa alterações locais não salvas, faz fetch da branch oficial, seleciona `Main-desenvolvimento`, configura o upstream e faz `git pull --ff-only`. Não executa `reset --hard`, `clean` ou rebase.
 - **`ABRIR_DESENVOLVIMENTO.bat`**: inicia o Electron no Windows sem chamar o `predev` que migra dados do perfil G-V5 legado.
@@ -65,11 +65,11 @@ A estrutura final deve evoluir **por domínio** e não por movimentação massiv
 
 ## Documentação útil
 
-- [ADR 001 — Electron modular](docs/architecture/ADR-001-modular-electron.md)
-- [ADR 002 — fluxo de personagens](docs/architecture/ADR-002-fluxo-personagens.md)
-- [Relatório da evolução 22/10/2026](docs/architecture/RELATORIO_EVOLUCAO_2026-10-22.md)
-- [Plano de trabalho e GitHub](docs/architecture/PLANO_GITHUB_E_PROXIMOS_PASSOS.md)
-- [README histórico, com referências legadas](docs/architecture/README_LEGADO_2026-10-22.md)
+- [Índice da documentação](docs/README.md): fontes atuais, guias e histórico.
+- [Arquitetura e contratos](docs/architecture/README.md): decisões vigentes e limites entre domínios.
+- [Editor V6](docs/editor-v6/README.md): arquitetura, operações e medições.
+- [Arquivo histórico](docs/archive/README.md): ciclos e relatórios antigos, preservados para consulta.
+- [Registro técnico para próximas sessões de trabalho](.ai/README.md): estado, decisões e backlog verificável.
 
 ## Segurança e publicação
 

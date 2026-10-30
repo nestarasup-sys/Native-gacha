@@ -56,3 +56,11 @@ Não vasculhe dados pessoais, perfil local ou mídia do usuário sem necessidade
 - Trabalhe com autonomia nas decisões técnicas rotineiras e mantenha o usuário informado com atualizações curtas durante trabalhos longos.
 - Explique em português claro: o problema encontrado, a mudança feita, por que ela resolve a causa, o que foi verificado, o commit local e quaisquer limitações ou pendências.
 - Prefira nomes claros, funções pequenas e comentários que expliquem decisões não óbvias. Não deixe planos temporários, código experimental ou TODOs vagos no produto.
+
+## Documentação e continuidade de trabalho
+
+- Use [o índice de documentação](docs/README.md) para localizar referências atuais. Relatórios e ciclos passados estão em [docs/archive](docs/archive/README.md); não trate o histórico como contrato vigente.
+- Consulte [.ai/README.md](.ai/README.md) e [.ai/STATE.md](.ai/STATE.md) para contexto e backlog antes de iniciar um novo ciclo; atualize o registro apenas com fatos, decisões, evidências e pendências rastreáveis.
+- Não registre raciocínio privado, segredos, credenciais, dados pessoais, arquivos de perfil ou mídia de usuários em \`.ai/\` nem nos documentos.
+- Evite criar novos diários gigantes e duplicados: consolide normas estáveis em documentos canônicos; use o histórico para marcos concluídos e registre mudanças com links para commits/PRs.
+- Ao mover Markdown, valide links relativos e atualize o índice. Não exclua documentação apenas por ser antiga se ela explicar migrações, formatos, incidentes ou decisões de recuperação.
