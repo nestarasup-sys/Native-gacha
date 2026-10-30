@@ -118,10 +118,6 @@ export async function runEditorV6Export(project: EditorV6Document, options: Edit
     catch (reportError) { throw new AggregateError([error, reportError], 'Falha ao preparar o export e salvar seu relatório.') }
     throw error
   }
-  const memorySampler = setInterval(() => {
-    const memory = report.mainProcessMemory
-    if (memory) memory.peakRssBytes = Math.max(memory.peakRssBytes, process.memoryUsage().rss)
-  }, 500)
   const candidate = join(dirname(deps.outputPath), `.editor-v6-${deps.id}.mp4`)
   let published = false
   let characters: CustomizerCharacter[] = []
@@ -242,6 +238,12 @@ export async function runEditorV6Export(project: EditorV6Document, options: Edit
     } catch (error) { attempt.error = message(error); throw error }
     finally { attempt.milliseconds = performance.now() - began; deps.signal.removeEventListener('abort', abort) }
   }
+  // Start only after synchronous setup succeeds, immediately before the try/finally
+  // that owns the sampler. This guarantees every started timer is cleared.
+  const memorySampler = setInterval(() => {
+    const memory = report.mainProcessMemory
+    if (memory) memory.peakRssBytes = Math.max(memory.peakRssBytes, process.memoryUsage().rss)
+  }, 500)
   try {
     deps.signal.throwIfAborted()
     characters = await deps.getCharacters()
