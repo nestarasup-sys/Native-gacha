@@ -113,6 +113,11 @@ export function WardrobeWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
   const poseAudit = useWardrobePoseAudit(model,draft)
   const defaultPose = useWardrobeComparisonPose(modelSlot,Boolean(model && draft))
   const selected = draft?.components.find((component) => component.id === selectedId) ?? null
+  const previewComponents = draft?.components.filter(component => {
+    if (draft.importKind !== 'sleeve-grid-3x4' && !draft.components.some(piece => piece.sleevePairId)) return true
+    if (!selected) return false
+    return selected.sleevePairId ? component.sleevePairId === selected.sleevePairId : component.id === selected.id
+  }) ?? []
   const selectedIndex = draft?.components.findIndex((component) => component.id === selectedId) ?? -1
   const previewProject = testPose ?? model
   const previewPoseOrder = testPose ? normalizeLayerOrder(testPose.parts, testPose.layerOrder) : []
@@ -635,7 +640,7 @@ export function WardrobeWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
             onClick={() => setShowPoseComparison(visible => !visible)}>
             {showPoseComparison ? 'Ocultar comparação' : 'Comparar original e pose'}
           </button>
-          {showPoseComparison && <WardrobeComparisonPreview model={model} outfit={draft} pose={testPose ?? defaultPose!} onClose={() => setShowPoseComparison(false)}/>}
+          {showPoseComparison && <WardrobeComparisonPreview model={model} outfit={{ ...draft, components: previewComponents }} pose={testPose ?? defaultPose!} onClose={() => setShowPoseComparison(false)}/>}
         </div>}
         <WardrobePreviewToolbar
           showToolbar={!testPose}
@@ -655,9 +660,9 @@ export function WardrobeWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
           return <img key={part.id} className={`wardrobe-reference-body-part${moveBodyMode ? ' movable' : ''}`} src={appearancePreviewForPart(part)} alt={part.name} title={moveBodyMode ? `Arraste ${part.name} para conferir o vínculo` : undefined} draggable={false} onPointerDown={moveBodyMode ? (event) => beginBodyDrag(event, part.id) : undefined} onPointerMove={moveBodyMode ? moveBodyDrag : undefined} onPointerUp={moveBodyMode ? finishBodyDrag : undefined} onPointerCancel={moveBodyMode ? finishBodyDrag : undefined} style={{ left: (source.x + offset.x) * scale, top: (source.y + offset.y) * scale, width: source.width * scale, height: source.height * scale, outline: selected?.attachedPartId === part.id ? '2px solid #27a7a5' : undefined, transform: `rotate(${part.sourceTransform?.rotation ?? part.rotation}deg)`, zIndex: moveBodyMode ? 1000 + model.parts.indexOf(part) : 1 }} />
         })}
         {testPose && previewPoseParts.map((part) => <img key={part.id} className="wardrobe-pose-body-part" src={appearancePreviewForPart(part)} alt={part.name} draggable={false} style={{ left: part.x * scale, top: part.y * scale, width: part.width * scale, height: part.height * scale, zIndex: 2 + previewPoseOrder.indexOf(part.id) * previewLayerStride, transform: `rotate(${part.rotation}deg)` }} />)}
-        {draft?.components.map((component, index) => {
+        {previewComponents.map((component, index) => {
           const layer = getBodyLayer(model, component.attachedPartId)
-          const layerBand = testPose ? previewLayerStride : draft.components.length + 1
+          const layerBand = testPose ? previewLayerStride : (draft?.components.length ?? 0) + 1
            const modelBone = referenceBone(component.attachedPartId)
           const poseBone = testPose?.parts.find((part) => part.id === component.attachedPartId)
           const testOffset = testDragOffsets[component.id] ?? { x: 0, y: 0 }
@@ -666,7 +671,7 @@ export function WardrobeWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
            const componentY = component.y + (testPose ? testOffset.y : bodyOffset.y)
           const testComponent = { ...component, x: componentX, y: componentY }
           if (testPose && modelBone && (testOffset.x !== 0 || testOffset.y !== 0)) testComponent.binding = bindWardrobeComponent(testComponent, modelBone)
-          const { kneeOverlap, edgePadding } = wardrobePosePadding(component, draft.components)
+          const { kneeOverlap, edgePadding } = wardrobePosePadding(component, draft?.components ?? [])
           const poseTransform = testPose && component.glue?.mode !== 'loose' && modelBone && poseBone
             ? mapWardrobeComponentToPose(testComponent, modelBone, poseBone, kneeOverlap, edgePadding)
             : null
