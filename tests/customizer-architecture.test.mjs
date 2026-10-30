@@ -85,6 +85,23 @@ test('workspace de cabelos fica isolado e recebe dados e ações pela página', 
   assert.match(workspace, /libraryPageView/)
 })
 
+test('catálogo de roupas fica isolado e recebe seleção, cores e reparos por callbacks', async () => {
+  const [page, workspace] = await Promise.all([
+    readFile(new URL('../src/renderer/src/features/customizer/CustomizerPage.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../src/renderer/src/features/customizer/CustomizerWardrobeCatalogWorkspace.tsx', import.meta.url), 'utf8')
+  ])
+  assert.equal((page.match(/<CustomizerWardrobeCatalogWorkspace\b/g) ?? []).length, 2)
+  assert.doesNotMatch(page, /renderUpperWardrobeLibrary|renderUpperWardrobePanels|renderWardrobeCatalog/)
+  assert.match(page, /onApplyPanel: applyUpperWardrobePanel/)
+  assert.match(page, /onSetPieceColor: setWardrobePieceColor/)
+  assert.doesNotMatch(workspace, /window\.desktop|localStorage/)
+  assert.match(workspace, /onRemoveUnavailableLinks/)
+  assert.match(workspace, /onApplyPalette/)
+  assert.match(workspace, /onResetPieceColors/)
+  assert.match(workspace, /isWardrobePanelCandidateSelected/)
+  assert.match(workspace, /customizer-upper-wardrobe-layout/)
+})
+
 test('validador aceita formato atual e rejeita id, slot, cor ou pose inválidos', () => {
   assert.equal(isCustomizerCharacter(valid()), true)
   assert.equal(isCustomizerCharacter({ ...valid(), customization: { ...valid().customization, faceAppearance: null } }), false)

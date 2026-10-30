@@ -19,14 +19,12 @@ import {
   accessoryWardrobePanels,
   lowerWardrobePanels,
   lowerWardrobePageTwoPanels,
-  createWardrobePanelCandidateIndex,
-  isWardrobePanelCandidateSelected
+  createWardrobePanelCandidateIndex
 } from './wardrobePanelModel'
 import type { WardrobePanel } from './wardrobePanelModel'
-import { WardrobePanelCandidatePreview } from './CustomizerAssetPreviews'
+import { CustomizerWardrobeCatalogWorkspace } from './CustomizerWardrobeCatalogWorkspace'
 import { customizerSkinTonePresets, skinTonePresets, createCustomizerFaceCatalogModel } from './customizerFaceCatalogModel'
 import type { FaceLibraryPartId } from './customizerFaceCatalogModel'
-import { hairColorControls, hairPalettePresets } from './CustomizerAppearanceControls'
 import { useCustomizerInitialArtworkPreview } from './useCustomizerInitialArtworkPreview'
 import { useCustomizerFacePreview } from './useCustomizerFacePreview'
 import { useCustomizerFaceCatalog } from './useCustomizerFaceCatalog'
@@ -159,7 +157,6 @@ export function CustomizerPage() {
   const [selectedFrontHairUrl, setSelectedFrontHairUrl] = useState<string | null>(null)
   const [selectedArtworkLabel, setSelectedArtworkLabel] = useState('')
   const [previewLoading, setPreviewLoading] = useState(true)
-  const wardrobePaletteStripRefs = useRef<Record<string, HTMLDivElement | null>>({})
   const previewLoadRequest = useRef(0)
   const selectedCharacter = characters.find((character) => character.id === selectedCharacterId) ?? characters[0] ?? null
   const { selectCharacter, createCharacter, deleteCharacter, saveCharacter, saveCharacterCustomization } = useCustomizerCharacterCommands({
@@ -552,99 +549,31 @@ export function CustomizerPage() {
       faceComponentDetails
     })
   }, [faceComponentAssets, faceComponentDetails, selectedCatalogModelSlot, wardrobeDetails, wardrobeLibraryPanel, wardrobePanelSelection.panels, wardrobeSets])
-  const renderUpperWardrobeLibrary = () => {
-    if (!wardrobeLibraryPanel) return null
-    const panel = wardrobeLibraryPanel
-    const candidates = wardrobePanelCandidateIndex.get(panel.id) ?? []
-    const slots: Array<(typeof candidates)[number] | null> = [null, ...candidates]
-    const pageSize = 20
-    const pageCount = Math.max(1, Math.ceil(slots.length / pageSize))
-    const page = Math.min(wardrobeLibraryPage, pageCount - 1)
-    const visible = slots.slice(page * pageSize, (page + 1) * pageSize)
-    const appliedGroups = selectedCharacter?.customization.wardrobeGroups ?? []
-    const selectedIndex = candidates.findIndex((candidate) => isWardrobePanelCandidateSelected(candidate, panel, appliedGroups, selectedCharacter?.customization.faceAppearance))
-    const clearPanel = () => void applyUpperWardrobePanel(panel, null)
-    return <section className="customizer-hair-library" aria-labelledby="customizer-upper-wardrobe-library-title">
-      <header className="customizer-hair-library-heading">
-        <button className="customizer-hair-library-remove" type="button" onClick={clearPanel} disabled={selectedIndex < 0} aria-label={`Remover ${panel.label} do personagem`} title={`Remover ${panel.label} do personagem`}><Icon name="trash" /></button>
-        <h2 id="customizer-upper-wardrobe-library-title">{panel.label}</h2>
-        <button className="customizer-hair-library-close" type="button" onClick={() => setWardrobeLibraryPanel(null)} aria-label="Fechar biblioteca">×</button>
-      </header>
-      <div className="customizer-hair-library-grid" aria-label={`Biblioteca de ${panel.label}`}>
-        {visible.map((entry) => {
-          if (!entry) return <button className={`customizer-hair-library-item${selectedIndex < 0 ? ' selected' : ''}`} key="empty-slot" title="Slot vazio" aria-label={`Slot vazio · remover ${panel.label} do personagem`} aria-pressed={selectedIndex < 0} type="button" onClick={clearPanel} />
-          const selected = entry.summary.id === candidates[selectedIndex]?.summary.id && entry.component.id === candidates[selectedIndex]?.component.id
-          return <button className={`customizer-hair-library-item${selected ? ' selected' : ''}`} key={`${entry.summary.modelSlot}:${entry.summary.id}:${entry.component.id}`} title={entry.component.name} aria-label={`Selecionar ${entry.component.name}`} aria-pressed={selected} type="button" onClick={() => { void applyUpperWardrobePanel(panel, entry); setWardrobeLibraryPanel(null) }}>
-            <WardrobePanelCandidatePreview candidate={entry} />
-          </button>
-        })}
-        {!candidates.length && <p className="customizer-hair-library-empty">Nenhuma peça salva para {panel.label}. Importe e classifique uma peça no Fabricador Dev.</p>}
-      </div>
-      <footer className="customizer-hair-library-pagination">
-        <button className="customizer-hair-library-page-arrow" type="button" aria-label="Página anterior" disabled={page === 0} onClick={() => setWardrobeLibraryPage((current) => Math.max(0, current - 1))}><Icon name="chevronRight" /></button>
-        <span>Página <strong>{page + 1}/{pageCount}</strong></span>
-        <button className="customizer-hair-library-page-arrow next" type="button" aria-label="Próxima página" disabled={page >= pageCount - 1} onClick={() => setWardrobeLibraryPage((current) => Math.min(pageCount - 1, current + 1))}><Icon name="chevronRight" /></button>
-      </footer>
-    </section>
+  const wardrobeCatalogWorkspaceProps = {
+    loading: wardrobeLoading,
+    catalogError,
+    unavailableWardrobeSetCount: unavailableWardrobeSetKeys.length,
+    repairingUnavailableLinks: repairingWardrobeLinks,
+    section: clothingSection,
+    page: wardrobePanelSelection.page,
+    pageTwo: wardrobePanelSelection.pageTwo,
+    panels: wardrobePanelSelection.panels,
+    libraryPanel: wardrobeLibraryPanel,
+    libraryPage: wardrobeLibraryPage,
+    candidatesByPanel: wardrobePanelCandidateIndex,
+    selectedModelSlot: selectedCatalogModelSlot,
+    hasCharacter: Boolean(selectedCharacter),
+    wardrobeGroups: selectedCharacter?.customization.wardrobeGroups ?? [],
+    faceAppearance: selectedCharacter?.customization.faceAppearance,
+    wardrobePalettes: selectedCharacter?.customization.wardrobePalettes,
+    onRemoveUnavailableLinks: removeUnavailableWardrobeLinks,
+    onSetLibraryPanel: setWardrobeLibraryPanel,
+    onSetLibraryPage: setWardrobeLibraryPage,
+    onApplyPanel: applyUpperWardrobePanel,
+    onSetPieceColor: setWardrobePieceColor,
+    onApplyPalette: applyWardrobePalette,
+    onResetPieceColors: resetWardrobePieceColors
   }
-
-  const renderUpperWardrobePanels = () => {
-    const { page, pageTwo, panels } = wardrobePanelSelection
-    return <div className={`customizer-hair-layout customizer-upper-wardrobe-layout${clothingSection === 'Superior' && pageTwo ? ' page-two' : ''}${clothingSection === 'Inferior' && pageTwo ? ' lower-page-two' : ''}`} aria-label={`Peças de roupa ${clothingSection.toLowerCase()} · página ${page}`}>
-    {panels.map((panel) => {
-      const candidates = wardrobePanelCandidateIndex.get(panel.id) ?? []
-      const appliedGroups = selectedCharacter?.customization.wardrobeGroups ?? []
-      const selectedIndex = candidates.findIndex((candidate) => isWardrobePanelCandidateSelected(candidate, panel, appliedGroups, selectedCharacter?.customization.faceAppearance))
-      const currentCandidate = selectedIndex >= 0 ? candidates[selectedIndex] : null
-      const currentGroup = currentCandidate ? appliedGroups.find((group) => group.modelSlot === currentCandidate.summary.modelSlot && group.setId === currentCandidate.summary.id && group.category === panel.category && group.componentId === currentCandidate.component.id) : undefined
-      const wardrobePalette = selectedCharacter?.customization.wardrobePalettes?.[panel.id] ?? {}
-      const colors = { ...wardrobePalette, ...currentGroup?.colors }
-      const hasLocalColors = !currentCandidate?.headExtraAsset && Object.keys(colors).length > 0
-      const selectedSlot = selectedIndex >= 0 ? selectedIndex + 1 : 0
-      const slotCount = candidates.length + 1
-      const move = (direction: -1 | 1) => {
-        const nextSlot = (selectedSlot + direction + slotCount) % slotCount
-        void applyUpperWardrobePanel(panel, nextSlot === 0 ? null : candidates[nextSlot - 1])
-      }
-      return <article className={`customizer-hair-piece customizer-upper-wardrobe-piece customizer-wardrobe-piece-${panel.id}`} key={panel.id} aria-label={panel.label}>
-        <header><strong>{panel.label} {selectedSlot + 1}/{candidates.length + 1}</strong>{hasLocalColors && currentCandidate && <button className="customizer-hair-reset" type="button" onClick={() => void resetWardrobePieceColors(panel, currentCandidate.summary.id, currentCandidate.components.map((component) => component.id))}>Restaurar</button>}</header>
-        <div className="customizer-hair-piece-selector customizer-upper-wardrobe-selector">
-          <button aria-label={`Peça anterior: ${panel.label}`} onClick={() => move(-1)} disabled={!candidates.length || !selectedCharacter || selectedCatalogModelSlot === null} type="button"><Icon name="chevronRight" /></button>
-          <button className="customizer-hair-piece-preview" aria-label={`Abrir biblioteca de ${panel.label}`} title={`Abrir biblioteca de ${panel.label}`} onClick={() => { setWardrobeLibraryPage(0); setWardrobeLibraryPanel(panel) }} type="button">
-            {currentCandidate ? <WardrobePanelCandidatePreview candidate={currentCandidate} colors={colors} /> : <span>Escolha uma peça</span>}
-          </button>
-          <button aria-label={`Próxima peça: ${panel.label}`} onClick={() => move(1)} disabled={!candidates.length || !selectedCharacter || selectedCatalogModelSlot === null} type="button"><Icon name="chevronRight" /></button>
-          <div className="customizer-hair-piece-colors" aria-label={`Cores de ${panel.label}`}>
-            {hairColorControls.map((color) => <label key={color.id} className={colors[color.id] ? 'local' : ''} style={{ '--hair-color-swatch': colors[color.id] ?? color.fallback } as React.CSSProperties} title={`${color.label} de ${panel.label}`}>
-              <input type="color" aria-label={`${color.label} de ${panel.label}`} value={colors[color.id] ?? color.fallback} disabled={!selectedCharacter || !currentCandidate || Boolean(currentCandidate.headExtraAsset)} onChange={(event) => void setWardrobePieceColor(currentCandidate!.summary.id, panel.category, currentCandidate!.components.map((component) => component.id), color.id, event.target.value)} />
-              <span aria-hidden="true">{color.id === 'highlight' ? 'L' : color.id === 'accent' ? 'A' : color.id === 'outline' ? 'C' : color.id === 'fade' ? 'D' : 'B'}</span>
-            </label>)}
-          </div>
-        </div>
-        <div className="customizer-upper-piece-colors" aria-label={`Paletas de ${panel.label}`}>
-          <div className="customizer-upper-piece-colors-heading"><strong>{currentCandidate?.component.name ?? 'Paleta da peça'}</strong></div>
-          <div className="customizer-hair-palette-presets customizer-upper-piece-palette-presets">
-            <button className="customizer-hair-palette-scroll previous" aria-label={`Ver paletas anteriores de ${panel.label}`} onClick={() => wardrobePaletteStripRefs.current[panel.id]?.scrollBy({ left: -180, behavior: 'smooth' })} type="button"><Icon name="chevronRight" /></button>
-            <div className="customizer-hair-palette-preset-list" ref={(node) => { wardrobePaletteStripRefs.current[panel.id] = node }}>
-              {hairPalettePresets.map((preset) => <button key={preset.name} type="button" disabled={!selectedCharacter || !currentCandidate || Boolean(currentCandidate.headExtraAsset)} aria-pressed={hairColorControls.every((color) => wardrobePalette[color.id] === preset.colors[color.id])} onClick={() => currentCandidate && void applyWardrobePalette(panel, currentCandidate, preset.colors)} title={`Aplicar paleta ${preset.name} a ${panel.label}`}><span style={{ background: `linear-gradient(115deg, ${preset.colors.highlight} 0 23%, ${preset.colors.base} 23% 65%, ${preset.colors.fade} 65% 84%, ${preset.colors.outline} 84%)` }} />{preset.name}</button>)}
-            </div>
-            <button className="customizer-hair-palette-scroll" aria-label={`Ver próximas paletas de ${panel.label}`} onClick={() => wardrobePaletteStripRefs.current[panel.id]?.scrollBy({ left: 180, behavior: 'smooth' })} type="button"><Icon name="chevronRight" /></button>
-          </div>
-        </div>
-      </article>
-    })}
-    </div>
-  }
-
-  const renderWardrobeCatalog = () => (
-    <div className="customizer-wardrobe-catalog">
-      {wardrobeLoading ? <div className="customizer-catalog-empty">Carregando roupas…</div> : <>
-        {catalogError && <p className="customizer-catalog-error" role="alert">{catalogError}</p>}
-        {unavailableWardrobeSetKeys.length > 0 && <div className="customizer-wardrobe-reference-notice" role="status"><span>{unavailableWardrobeSetKeys.length} conjunto(s) de roupa não estão disponíveis. Os vínculos foram preservados, mas essas roupas não podem aparecer.</span><button type="button" disabled={repairingWardrobeLinks} onClick={() => void removeUnavailableWardrobeLinks()}>{repairingWardrobeLinks ? 'Salvando…' : 'Remover vínculos indisponíveis'}</button></div>}
-        {wardrobeLibraryPanel ? renderUpperWardrobeLibrary() : renderUpperWardrobePanels()}
-      </>}
-    </div>
-  )
 
   const renderAdjustmentPicker = (area: 'head' | 'clothes') => {
     if (area === 'clothes') {
@@ -807,9 +736,9 @@ export function CustomizerPage() {
               onNoseOpacityChange={(value) => { void saveCharacterCustomization((current) => current.faceAppearance ? { faceAppearance: { ...current.faceAppearance, noseOpacity: value } } : {}) }}
               onNoseSkinToneChange={(tone) => { void saveCharacterCustomization((current) => current.faceAppearance ? { faceAppearance: { ...current.faceAppearance, noseSkinTone: tone } } : {}) }}
             />}
-            {selectedCustomizerTopTab === 'cabeca' && headPanelTab === 'extra' && renderWardrobeCatalog()}
+            {selectedCustomizerTopTab === 'cabeca' && headPanelTab === 'extra' && <CustomizerWardrobeCatalogWorkspace {...wardrobeCatalogWorkspaceProps} />}
             {selectedCustomizerTopTab === 'cabeca' && headPanelTab === 'adjust' && renderAdjustmentPicker('head')}
-            {selectedCustomizerTopTab === 'roupas' && (clothesPanelTab === 'upper' || clothesPanelTab === 'lower') && renderWardrobeCatalog()}
+            {selectedCustomizerTopTab === 'roupas' && (clothesPanelTab === 'upper' || clothesPanelTab === 'lower') && <CustomizerWardrobeCatalogWorkspace {...wardrobeCatalogWorkspaceProps} />}
             {selectedCustomizerTopTab === 'roupas' && clothesPanelTab === 'adjust' && renderAdjustmentPicker('clothes')}
             {selectedCustomizerTopTab === 'modelos' && <CustomizerModelPicker models={availableModels} thumbnails={modelThumbnails} selectedSlot={selectedCatalogModelSlot} loading={catalogLoading} onSelect={(model) => void selectCatalogModel(model)} />}
             {selectedCustomizerTopTab === 'modelos' && <section className="customizer-model-skin-tones" aria-label="Cor de pele do modelo">

@@ -264,11 +264,16 @@ test('Customizador delega o catálogo de cabelos ao hook e ao carregador limitad
   assert.match(loader, /mapConcurrentItems\(/)
 })
 
-test('CustomizerPage memoiza candidatos de roupas e não refaz a busca dentro de cada painel', async () => {
-  const page = await readFile('src/renderer/src/features/customizer/CustomizerPage.tsx', 'utf8')
+test('Customizador memoiza candidatos de roupas e o workspace só consome o índice', async () => {
+  const [page, workspace] = await Promise.all([
+    readFile('src/renderer/src/features/customizer/CustomizerPage.tsx', 'utf8'),
+    readFile('src/renderer/src/features/customizer/CustomizerWardrobeCatalogWorkspace.tsx', 'utf8')
+  ])
   assert.match(page, /createWardrobePanelCandidateIndex\(/)
   assert.match(page, /const wardrobePanelCandidateIndex = useMemo\(/)
-  assert.match(page, /wardrobePanelCandidateIndex\.get\(panel\.id\)/)
+  assert.match(page, /candidatesByPanel: wardrobePanelCandidateIndex/)
+  assert.doesNotMatch(page, /wardrobePanelCandidateIndex\.get\(panel\.id\)/)
+  assert.match(workspace, /candidatesByPanel\.get\(panel\.id\)/)
   assert.doesNotMatch(page, /wardrobePanelCandidates\(/)
 })
 
