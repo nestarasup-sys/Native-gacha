@@ -1886,3 +1886,11 @@ Continua a auditoria das operações IPC iniciadas pelo usuário e da cobertura 
 - Na validação final passaram `npm run test:refactor` (607 testes principais e suítes auxiliares), `npm run test:editor-v6` (163 aprovados, 1 ignorado; mais 3 testes do perfil sintético), `npm test` (29), `npm run test:data-runtime` (Electron, SQLite/FTS5, Sharp, CAS, miniatura e backup), `npm audit` (zero vulnerabilidades), `npm run typecheck`, `npm run audit:architecture` (527 arquivos TS/TSX, nenhuma violação), `npm run build` e `git diff --check`.
 - Não ficaram alterações de código desta rodada sem commit. Para a próxima retomada permanecem dois itens explicitamente adiados: extrair mais inicialização/inventário de `electron/main.ts` (1.001 linhas nesta revisão) e criar uma comparação dourada das saídas dos renderizadores de produção de Studio e Editor V6 antes de unificar essas políticas. Nenhum deles bloqueou os gates executados nesta rodada.
 - A meta geral de refatoração não foi marcada como concluída: a pedido do usuário, fica em pausa após este fechamento.
+
+### Roupas DEV — importação de mangas em grade 3×4
+
+- O modal de importação ganhou a opção `Importar Mangas (Sheet)`, preservando os importadores existentes. A grade fixa lê 3 colunas por 4 linhas; nas 12 células, recorta a manga fornecida na metade esquerda e remove o fundo plano (incluindo chroma verde), mantendo a transparência.
+- Cada célula gera um par: o lado direito é rasterizado por espelhamento horizontal do PNG esquerdo. As duas primeiras linhas são mangas curtas e as duas últimas mangas longas; cada par fica no conjunto do slot de modelo selecionado, com IDs e componentes independentes.
+- Selecionar um componente de um par exibe ambos na prévia. Mangas longas oferecem divisor horizontal ajustável e aplicam o mesmo corte em pixels aos dois PNGs; as metades são vinculadas como mangas superiores/inferiores conforme os ossos sugeridos pelo seletor existente.
+- O histórico local do rascunho suporta desfazer/refazer e atalhos Ctrl+Z, Ctrl+Y e Ctrl+Shift+Z. Reimportar cria novo rascunho sem escrever no catálogo até o botão de salvar existente.
+- O contrato persistido ganhou apenas metadados opcionais de par/lado/segmento e um novo valor de `importKind`; conjuntos anteriores continuam válidos. Não houve mudança no IPC ou no formato dos PNGs existentes.
