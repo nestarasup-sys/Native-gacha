@@ -1,7 +1,8 @@
 import type { FabricatorProject, WardrobeComponent } from '../../../../../shared/fabricator'
 import { fixWardrobeGlue } from '../../../../../shared/wardrobeGlue'
 import { suggestWardrobeBone } from './boneSelection'
-import { findVisibleGridContentBounds, removeGridFlatBackground } from './wardrobeGridImage'
+import { removeGridFlatBackground } from './wardrobeGridImage'
+import { detectSleeveSilhouettes } from './sleeveSilhouettes'
 
 function cropPng(pixels: ImageData, id: string, name: string, category: WardrobeComponent['category'], side: 'left' | 'right', pairId: string, model: FabricatorProject): WardrobeComponent {
   const source = document.createElement('canvas'); source.width = pixels.width; source.height = pixels.height
@@ -33,18 +34,15 @@ export function createWardrobeSleeveSheetComponents(image: ImageBitmap, model: F
     const sheet = context.getImageData(0, 0, image.width, image.height)
     removeGridFlatBackground(sheet)
     context.putImageData(sheet, 0, 0)
+    const detected = detectSleeveSilhouettes(sheet)
     const components: WardrobeComponent[] = []
-    for (let row = 0; row < 4; row++) for (let col = 0; col < 3; col++) {
-      const x0 = Math.floor(col * image.width / 3), x1 = Math.floor((col + 1) * image.width / 3)
-      const y0 = Math.floor(row * image.height / 4), y1 = Math.floor((row + 1) * image.height / 4)
-      // The reference layout places the supplied left sleeve in the left half of each cell.
-      const cell = context.getImageData(x0, y0, Math.floor((x1 - x0) / 2), y1 - y0)
-      const bounds = findVisibleGridContentBounds(cell)
-      if (!bounds) throw new Error(`Não encontrei a manga esquerda na posição ${row * 3 + col + 1} da grade.`)
-      const cropped = context.createImageData(bounds.maxX - bounds.minX + 1, bounds.maxY - bounds.minY + 1)
-      for (let y = 0; y < cropped.height; y++) {
-        const start = ((bounds.minY + y) * cell.width + bounds.minX) * 4
-        cropped.data.set(cell.data.subarray(start, start + cropped.width * 4), y * cropped.width * 4)
+    for (let index = 0; index < detected.length; index++) {
+      const row = Math.floor(index / 3), col = index % 3
+      const region = detected[index]
+      const cropped = context.createImageData(region.width, region.height)
+      for (const pixel of region.pixels) {
+        const x = pixel % sheet.width, y = Math.floor(pixel / sheet.width)
+        cropped.data.set(sheet.data.subarray(pixel * 4, pixel * 4 + 4), ((y - region.y) * region.width + x - region.x) * 4)
       }
       const long = row >= 2
       const pairId = createId()
