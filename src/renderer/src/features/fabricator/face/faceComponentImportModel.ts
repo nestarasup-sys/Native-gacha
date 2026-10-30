@@ -1,4 +1,4 @@
-import type { FaceComponentAsset, FaceComponentAssetSave, FaceComponentKind, FaceDetailKind, FaceTransform, ModelPart } from '../../../../../shared/fabricator'
+import type { FaceCatalogItem, FaceComponentAsset, FaceComponentAssetSave, FaceComponentKind, FaceDetailKind, FaceTransform, ModelPart } from '../../../../../shared/fabricator'
 import type { AlignableFaceKind, FaceImportAnchor } from './faceImportAlignment.ts'
 import { alignImportedFacePiece, fitClosedEyeToOpen } from './faceImportAlignment.ts'
 import type { EyeSheetPiece } from './splitEyeSheet.ts'
@@ -43,6 +43,19 @@ export function initialFaceDetailTransform(kind: FaceDetailKind, head: ModelPart
   const x = kind.endsWith('left') ? head.width * .39 : kind.endsWith('right') ? head.width * .61 : head.width * .5
   const y = kind.startsWith('eye-highlight') ? head.height * .48 : kind === 'blush' ? head.height * .68 : head.height * .62
   return { x, y, scaleX: scale, scaleY: scale, rotation: 0 }
+}
+
+export function initialFaceCatalogTransform(head: ModelPart, item: Pick<FaceCatalogItem, 'category' | 'pieces'>): FaceTransform {
+  const piece = item.pieces[0]
+  const targetWidth = item.category === 'nose' ? .075 : .2
+  const scale = piece ? clamp(head.width * targetWidth / piece.width, .04, 4) : .25
+  return {
+    x: head.width * .5,
+    y: head.height * (item.category === 'nose' ? .61 : .78),
+    scaleX: scale,
+    scaleY: scale,
+    rotation: 0
+  }
 }
 
 function fileBaseName(fileName: string, maxLength: number, fallback: string): string {

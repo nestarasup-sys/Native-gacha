@@ -4,6 +4,7 @@ import {
   createEyeSheetImportPlan,
   createEyebrowImportPlan,
   createFaceDetailImportEntry,
+  initialFaceCatalogTransform,
   initialFaceComponentTransform
 } from '../src/renderer/src/features/fabricator/face/faceComponentImportModel.ts'
 
@@ -88,4 +89,16 @@ test('eye sheet plan rejects a closed-eye image that cannot fit the open-eye wid
     ],
     fileName: 'olhos.png', modelSlot: 1, head, createId: idSequence(), now: () => fixedTime
   }), /estreito demais/)
+})
+
+test('face catalog initial transforms center nose and mouth at their distinct guide heights', () => {
+  assert.deepEqual(initialFaceCatalogTransform(head, {
+    category: 'nose', pieces: [{ id: 'nose', index: 0, width: 20 }]
+  }), { x: 50, y: 122, scaleX: .375, scaleY: .375, rotation: 0 })
+  assert.deepEqual(initialFaceCatalogTransform(head, {
+    category: 'mouth-closed', pieces: [{ id: 'mouth', index: 0, width: 20 }]
+  }), { x: 50, y: 156, scaleX: 1, scaleY: 1, rotation: 0 })
+  assert.deepEqual(initialFaceCatalogTransform(head, { category: 'mouth-open', pieces: [] }), {
+    x: 50, y: 156, scaleX: .25, scaleY: .25, rotation: 0
+  })
 })

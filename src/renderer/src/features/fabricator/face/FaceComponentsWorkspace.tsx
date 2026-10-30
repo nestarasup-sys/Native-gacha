@@ -1,18 +1,15 @@
 import { projectForOriginalPreview } from '../../../../../shared/fabricatorModelViews'
 import { useModelSourceRefresh } from '../models/useModelSourceRefresh'
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties } from 'react'
-import type { FaceAssetKind, FaceCatalogItem, FaceCatalogItemSummary, FaceComponentAsset, FaceComponentAssetSave, FaceComponentAssetSummary, FaceComponentKind, FaceDetailKind, FaceGuideProfile, FaceGuideSettings, FaceTransform, FabricatorProject, FabricatorSlotSummary, ModelPart } from '../../../../../shared/fabricator'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import type { FaceAssetKind, FaceCatalogItem, FaceComponentAsset, FaceComponentAssetSave, FaceComponentAssetSummary, FaceComponentKind, FaceDetailKind, FaceGuideProfile, FaceGuideSettings, FaceTransform, FabricatorProject, FabricatorSlotSummary, ModelPart } from '../../../../../shared/fabricator'
 import { Icon } from '../../../ui/components/Icon'
 import { usePreviewBackground } from '../../../ui/hooks/usePreviewBackground'
 import { useEyeInteriorMasks } from '../../../ui/hooks/useEyeInteriorMasks'
 import { registerPendingWriteFlusher } from '../../../ui/pendingPersistence'
-import { processFaceSheet } from './processFaceSheet'
-import { splitEyeSheet } from './splitEyeSheet'
 import { defaultFaceGuide, useFaceGuides } from './useFaceGuides'
 import { selectedEyeAssetsByIds } from '../eyePreviewSelection'
 import { captureFaceImportAnchor, fitClosedEyeToOpen, type AlignableFaceKind, type FaceImportAnchor } from './faceImportAlignment'
-import { assertFaceComponentImportActive, saveFaceComponentAssetBatch } from './faceComponentAssetBatch'
-import { clamp, createEyeSheetImportPlan, createEyebrowImportPlan, createFaceDetailImportEntry, faceComponentCategories as categories, initialFaceComponentTransform as initialTransform, initialFaceDetailTransform, partCategory } from './faceComponentImportModel'
+import { clamp, createEyeSheetImportPlan, createEyebrowImportPlan, createFaceDetailImportEntry, faceComponentCategories as categories, initialFaceCatalogTransform, initialFaceComponentTransform as initialTransform, initialFaceDetailTransform, partCategory } from './faceComponentImportModel'
 import type { FacePartId as PartId } from './faceComponentImportModel'
 import { removeEyebrowGreen } from './removeEyebrowGreen'
 import './face-components.css'
@@ -28,8 +25,11 @@ import { planEyeSeparation, planFacePairMove, planFacePairResize } from './faceP
 import { alignFaceCatalogMouthPreviewTransform, faceCatalogImagesForImport, faceCatalogImagesForSave, faceCatalogItemForSave, planFaceCatalogOpacityEdit, planFaceCatalogTransformEdits, planFaceCatalogVariantEdit } from './faceCatalogEdits'
 import { useFacePreviewDrag } from './useFacePreviewDrag'
 import { FacePartPreview } from './FacePartPreview'
+import { processFaceSheet } from './processFaceSheet'
+import { splitEyeSheet } from './splitEyeSheet'
+import { assertFaceComponentImportActive, saveFaceComponentAssetBatch } from './faceComponentAssetBatch'
+import { createFaceComponentImportCommands } from './faceComponentImportCommands'
 
-type CatalogKind = 'nose' | 'mouth-closed' | 'mouth-open'
 type LibraryCategory = FaceComponentKind | FaceDetailKind | 'nose' | 'mouth'
 type FaceWorkspaceMode = 'eyes' | 'face'
 type FaceGuide = FaceGuideSettings
@@ -42,13 +42,6 @@ const faceDetailCategories: Array<{ kind: FaceDetailKind; label: string }> = [
 ]
 const isFaceDetailKind = (kind: string): kind is FaceDetailKind => faceDetailCategories.some((category) => category.kind === kind)
 const isFaceComponentKind = (kind: FaceComponentAsset['kind']): kind is FaceComponentKind => categories.some((category) => category.kind === kind)
-const readImage = normalizeEditableImageFile
-function initialCatalogTransform(head: ModelPart, item: Pick<FaceCatalogItem, 'category' | 'pieces'>): FaceTransform {
-  const piece = item.pieces[0]
-  const targetWidth = item.category === 'nose' ? .075 : .2
-  const scale = piece ? clamp(head.width * targetWidth / piece.width, .04, 4) : .25
-  return { x: head.width * .5, y: head.height * (item.category === 'nose' ? .61 : .78), scaleX: scale, scaleY: scale, rotation: 0 }
-}
 function FaceGuideOverlay({ head, guide }: { head: ModelPart; guide: FaceGuide }) {
   const x = head.width * guide.verticalX / 100
   const y = head.height * guide.horizontalY / 100
@@ -149,6 +142,8 @@ export function FaceComponentsWorkspace({ mode, baseModelSlot }: { mode: FaceWor
   const selectedAssetsRef = useRef(selectedAssets)
   const eyeSheetImportController = useRef<AbortController | null>(null)
   const eyeSheetImportContextCancelled = useRef(false)
+  const faceImportContextRef = useRef({ mode, modelSlot })
+  const faceImportMountedRef = useRef(true)
   const preparingPair = useRef(new Map<string, Promise<FaceComponentAsset>>())
   const hydratedComponentSlot = useRef<number | null>(null)
   const catalogDetailsRef = useRef<Record<string, FaceCatalogItem>>({})
@@ -165,6 +160,48 @@ export function FaceComponentsWorkspace({ mode, baseModelSlot }: { mode: FaceWor
   const stageRef = useRef<HTMLDivElement>(null)
   const [stageSize, setStageSize] = useState({ width: 0, height: 0 })
   const head = useMemo(() => model?.parts.find((part) => /cabe[çc]a|head/i.test(part.name)) ?? null, [model])
+  const importCommands = createFaceComponentImportCommands({
+    api: window.desktop.fabricator,
+    modelSlot,
+    head,
+    anchors: importAnchorsByModel[modelSlot],
+    faceDetailLabel: (kind) => faceDetailCategories.find((category) => category.kind === kind)?.label ?? kind,
+    isContextCurrent: () => faceImportMountedRef.current && faceImportContextRef.current.mode === mode && faceImportContextRef.current.modelSlot === modelSlot,
+    isMounted: () => faceImportMountedRef.current,
+    eyeSheetImportController,
+    eyeSheetImportContextCancelled,
+    setBusy,
+    setError,
+    setNotice,
+    setOpenModal,
+    setDetails,
+    setAssets,
+    setSelectedAssets,
+    setSelectedPart,
+    setLibraryCategory,
+    selectFaceDetail,
+    setNoseCatalog,
+    setNoseDetails,
+    setSelectedNoseId,
+    setMouthCatalog,
+    setMouthDetails,
+    setSelectedMouthId,
+    setMouthKind,
+    normalizeImage: normalizeEditableImageFile,
+    splitEyeSheet,
+    processFaceSheet,
+    createEyeSheetImportPlan,
+    createEyebrowImportPlan,
+    createFaceDetailImportEntry,
+    assertImportActive: assertFaceComponentImportActive,
+    saveAssetBatch: saveFaceComponentAssetBatch,
+    faceCatalogItemForSave,
+    faceCatalogImagesForImport,
+    initialCatalogTransform: initialFaceCatalogTransform,
+    createId: () => crypto.randomUUID(),
+    now: () => new Date().toISOString()
+  })
+  const { importEyeSheet, importEyebrow, importFaceDetail, importCatalogSheet } = importCommands
   const visibleEyeAssets = useMemo(() => selectedEyeAssetsByIds([
     selectedAssets['eye-left'], selectedAssets['eye-right'] ?? selectedAssets['eye-left']
   ], details), [selectedAssets, details])
@@ -267,14 +304,13 @@ export function FaceComponentsWorkspace({ mode, baseModelSlot }: { mode: FaceWor
   selectedAssetsRef.current = selectedAssets
   catalogDetailsRef.current = { ...noseDetails, ...mouthDetails }
 
+  useLayoutEffect(() => { faceImportContextRef.current = { mode, modelSlot } }, [mode, modelSlot])
+  useEffect(() => {
+    faceImportMountedRef.current = true
+    return () => { faceImportMountedRef.current = false }
+  }, [])
   useEffect(() => registerPendingWriteFlusher(flushAllSaves), [flushAllSaves])
-  useEffect(() => () => {
-    const controller = eyeSheetImportController.current
-    eyeSheetImportController.current = null
-    if (!controller) return
-    eyeSheetImportContextCancelled.current = true
-    controller.abort()
-  }, [mode, modelSlot])
+  useEffect(() => () => importCommands.cancelEyeSheetImport(), [mode, modelSlot])
   useEffect(() => {
     if (!eyeSheetImportContextCancelled.current) return
     eyeSheetImportContextCancelled.current = false
@@ -382,51 +418,6 @@ export function FaceComponentsWorkspace({ mode, baseModelSlot }: { mode: FaceWor
     finally { setBusy(false) }
   }
 
-  async function importEyeSheet(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0]; event.target.value = ''
-    if (!file || !head) return
-    const controller = new AbortController()
-    eyeSheetImportController.current = controller
-    setBusy(true); setError('')
-    try {
-      const canonicalSheet = await normalizeEditableImageFile(file)
-      assertFaceComponentImportActive(controller.signal)
-      const pieces = await splitEyeSheet(canonicalSheet.dataUrl, controller.signal)
-      assertFaceComponentImportActive(controller.signal)
-      const plan = createEyeSheetImportPlan({ pieces, fileName: file.name, modelSlot, head, anchors: importAnchorsByModel[modelSlot] })
-      await saveFaceComponentAssetBatch(window.desktop.fabricator, modelSlot, plan.entries, controller.signal)
-      setDetails((current) => ({ ...current, ...Object.fromEntries(plan.assets.map((asset) => [asset.id, asset])) }))
-      setAssets((current) => [...plan.assets, ...current])
-      setSelectedAssets((current) => ({ ...current, ...plan.assigned }))
-      setSelectedPart('eye-left'); setLibraryCategory('eye'); setOpenModal(null)
-      setNotice('Olho aberto, pupila e olho fechado importados. Ajuste cada peça na Biblioteca.')
-    } catch (reason) {
-      if (!controller.signal.aborted && !(reason instanceof Error && reason.name === 'AbortError')) setError(reason instanceof Error ? reason.message : String(reason))
-    } finally {
-      if (eyeSheetImportController.current === controller) eyeSheetImportController.current = null
-      if (!controller.signal.aborted) setBusy(false)
-    }
-  }
-
-  async function importEyebrow(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0]; event.target.value = ''
-    if (!file || !head) return
-    setBusy(true); setError('')
-    try {
-      const image = await readImage(file)
-      const plan = createEyebrowImportPlan({ fileName: file.name, modelSlot, head, ...image })
-      await saveFaceComponentAssetBatch(window.desktop.fabricator, modelSlot, plan.entries)
-      const imported = plan.entries.map(({ asset, dataUrl }) => ({ ...asset, dataUrl }))
-      setDetails((current) => ({ ...current, ...Object.fromEntries(imported.map((asset) => [asset.id, asset])) }))
-      setAssets((current) => [...imported, ...current])
-      setSelectedAssets((current) => ({ ...current, 'brow-left': plan.leftId, 'brow-right': plan.rightId }))
-      setSelectedPart('brow-left'); setLibraryCategory('eyebrow'); setOpenModal(null)
-      setNotice('Sobrancelha importada. O lado direito foi criado espelhado; ajuste cada lado na Biblioteca.')
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason))
-    } finally { setBusy(false) }
-  }
-
   function selectFaceDetail(kind: FaceDetailKind, id: string | undefined) {
     setFaceDetailSelectionsByModel((current) => {
       const selected = { ...(current[modelSlot] ?? {}) }
@@ -434,27 +425,6 @@ export function FaceComponentsWorkspace({ mode, baseModelSlot }: { mode: FaceWor
       else delete selected[kind]
       return { ...current, [modelSlot]: selected }
     })
-  }
-
-  async function importFaceDetail(kind: FaceDetailKind, event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0]; event.target.value = ''
-    if (!file || !head) return
-    setBusy(true); setError('')
-    try {
-      const image = await readImage(file)
-      const entry = createFaceDetailImportEntry({
-        kind, fileName: file.name, fallbackName: faceDetailCategories.find((category) => category.kind === kind)!.label,
-        modelSlot, head, ...image
-      })
-      const asset = entry.asset
-      await window.desktop.fabricator.saveFaceComponentAsset(modelSlot, asset, entry.dataUrl)
-      const saved = { ...asset, dataUrl: entry.dataUrl }
-      setAssets((current) => [asset, ...current])
-      setDetails((current) => ({ ...current, [asset.id]: saved }))
-      selectFaceDetail(kind, asset.id)
-      setLibraryCategory(kind); setNotice(`${asset.name} adicionado ao catálogo facial.`); setOpenModal(null)
-    } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
-    finally { setBusy(false) }
   }
 
   async function cloneComponentForSide(source: FaceComponentAsset, side: PartId): Promise<FaceComponentAsset> {
@@ -521,35 +491,6 @@ export function FaceComponentsWorkspace({ mode, baseModelSlot }: { mode: FaceWor
     finally { setBusy(false) }
   }
 
-  async function importCatalogSheet(kind: CatalogKind, event: ChangeEvent<HTMLInputElement>, noseMode: 'one' | 'six' = 'one') {
-    const file = event.target.files?.[0]; event.target.value = ''
-    if (!file || !head) return
-    setBusy(true); setError('')
-    try {
-      const image = await readImage(file)
-      const processed = await processFaceSheet(kind, image.dataUrl, noseMode)
-      if (!processed.pieces.length) throw new Error('Nenhuma peça foi encontrada na folha.')
-      const name = file.name.replace(/\.[^.]+$/, '').slice(0, 120) || (kind === 'nose' ? 'Nariz' : 'Boca')
-      const item: FaceCatalogItem = {
-        schemaVersion: 1, id: crypto.randomUUID(), modelSlot, category: kind, name,
-        sheet: { kind, name: file.name, width: processed.width, height: processed.height, tolerance: 42, dataUrl: processed.sheetPng },
-        pieces: processed.pieces,
-        transforms: { [kind === 'nose' ? 'nose' : 'mouth']: initialCatalogTransform(head, { category: kind, pieces: processed.pieces }) },
-        eyeLinked: true, browLinked: true, selectedNose: 0, selectedExpression: 0, updatedAt: new Date().toISOString()
-      }
-      await window.desktop.fabricator.saveFaceCatalogItem(modelSlot, faceCatalogItemForSave(item), faceCatalogImagesForImport(item))
-      const summary: FaceCatalogItemSummary = { id: item.id, modelSlot, category: kind, name, updatedAt: item.updatedAt, pieceCount: item.pieces.length }
-      if (kind === 'nose') {
-        setNoseCatalog((current) => [summary, ...current]); setNoseDetails((current) => ({ ...current, [item.id]: item })); setSelectedNoseId(item.id); setLibraryCategory('nose')
-      } else {
-        setMouthCatalog((current) => [summary, ...current]); setMouthDetails((current) => ({ ...current, [item.id]: item })); setSelectedMouthId(item.id); setMouthKind(kind); setLibraryCategory('mouth')
-      }
-      setNotice(`${item.pieces.length} ${item.pieces.length === 1 ? 'variante salva' : 'variantes salvas'} em ${name}.`)
-      setOpenModal(null)
-    } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
-    finally { setBusy(false) }
-  }
-
   function updateTransform(patch: Partial<FaceTransform>) {
     if (activeFaceDetail) {
       persistComponentAsset({ ...activeFaceDetail, defaultTransform: { ...activeFaceDetail.defaultTransform, ...patch }, updatedAt: new Date().toISOString() })
@@ -601,7 +542,7 @@ export function FaceComponentsWorkspace({ mode, baseModelSlot }: { mode: FaceWor
     if (!head) return
     if (selectedCatalogItem) {
       const resetTarget = selectedCatalogItem.category !== 'nose' ? mouthReferenceItem ?? selectedCatalogItem : selectedCatalogItem
-      updateTransform(initialCatalogTransform(head, resetTarget))
+      updateTransform(initialFaceCatalogTransform(head, resetTarget))
       return
     }
     if (activeFaceDetail) { updateTransform(initialFaceDetailTransform(activeFaceDetail.kind as FaceDetailKind, head, activeFaceDetail.width, activeFaceDetail.height)); return }
