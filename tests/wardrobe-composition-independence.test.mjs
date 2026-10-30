@@ -120,6 +120,6 @@ test('renderizador deve usar um pivô por peça, nunca o centro médio do grupo 
   assert.match(renderer,/layer\.push\(\{ group, \.\.\.item \}\)/)
   assert.doesNotMatch(renderer,/mapped\.reduce\(\(sum, item\)/)
   assert.match(renderer,/wardrobePosePadding\(component,/)
-  assert.match(editor,/wardrobePosePadding\(component, draft\.components\)/)
+  assert.match(editor,/wardrobePosePadding\(component,\s*draft\?\.components\s*\?\?\s*\[\]\)/)
   assert.match(preview,/wardrobePosePadding\(piece,outfit\.components\)/)
 })

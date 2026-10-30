@@ -11,4 +11,5 @@
 - Os scripts BAT apontam para `Main-desenvolvimento`; **não foram modificados** para evitar trocar implicitamente a branch oficial do usuário.
 - Documentos `CICLO_*`, relatórios e registros de incidente/aceite são históricos e foram separados de ADRs e contratos.
 - Este registro **não comprova** execução local de `npm ci`, testes, Electron gráfico, build ou benchmark. O acesso deste ciclo foi por API do GitHub, sem checkout executável.
-- Próxima etapa: verificar integridade dos links e CI do PR; retomar melhorias do produto por fatias pequenas com testes reproduzíveis.
+- Verificação estática da árvore Git: 57 Markdown examinados, nenhum link relativo quebrado encontrado. Workflow Quality executou a etapa de links; duas asserções de testes de Roupas DEV falharam por expectativas antigas, e estão sendo corrigidas com regressão comportamental.
+- Próxima etapa: confirmar CI do novo HEAD e retomar melhorias do produto por fatias pequenas com testes reproduzíveis.
