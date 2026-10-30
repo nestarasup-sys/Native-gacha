@@ -215,6 +215,13 @@ export const editorV6DocumentSchema = z.object({
   })
 })
 
+// O export pode receber projetos com muitos estados visuais e snapshots gerados
+// pela timeline. Esse limite maior é exclusivo do IPC de exportação; persistência
+// e carregamento continuam usando o limite normal do documento.
+export const editorV6ExportDocumentSchema = editorV6DocumentSchema.safeExtend({
+  assets: z.array(editorV6AssetSchema).max(5_000)
+})
+
 export function isEditorV6Document(value: unknown): value is EditorV6Document {
   return editorV6DocumentSchema.safeParse(value).success
 }
@@ -225,6 +232,10 @@ export function isEditorV6Asset(value: unknown): value is EditorV6Asset {
 
 export function parseEditorV6Document(value: unknown): EditorV6Document {
   return editorV6DocumentSchema.parse(value) as EditorV6Document
+}
+
+export function parseEditorV6ExportDocument(value: unknown): EditorV6Document {
+  return editorV6ExportDocumentSchema.parse(value) as EditorV6Document
 }
 
 export function parseEditorV6Element(value: unknown): EditorV6Element {

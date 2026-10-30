@@ -210,6 +210,26 @@ describe('lifecycle de cópias de mídia do Editor V6', () => {
     expect(lifecycle.getPendingWrites()).toEqual([])
   })
 
+  it('aceita no IPC de exportação projetos com mais de 500 assets sem mudar o limite de persistência', async () => {
+    const exportGate = deferred<Awaited<ReturnType<typeof runEditorV6Export>>>()
+    vi.mocked(dialog.showSaveDialog).mockResolvedValue({ canceled: false, filePath: 'C:/synthetic/output.mp4' })
+    vi.mocked(runEditorV6Export).mockImplementation(() => exportGate.promise)
+    const assets = Array.from({ length: 501 }, (_, index) => ({
+      id: `33333333-3333-4333-8333-${String(index + 1).padStart(12, '0')}`,
+      category: 'character' as const,
+      name: `Snapshot ${index + 1}`,
+      mimeType: 'image/png' as const,
+      dataUrl: 'data:image/png;base64,AA=='
+    }))
+
+    const { handlers } = createHarness()
+    const status = await handlers.get(editorV6IpcChannels.startEditorV6Export)!(event, { ...exportProject, assets }, exportOptions)
+
+    expect(status).toMatchObject({ state: 'preparing' })
+    expect(runEditorV6Export).toHaveBeenCalledWith(expect.objectContaining({ assets: expect.arrayContaining([expect.objectContaining({ name: 'Snapshot 501' })]) }), expect.anything(), expect.anything())
+    exportGate.resolve({ outputPath: 'C:/synthetic/output.mp4', fallback: false } as Awaited<ReturnType<typeof runEditorV6Export>>)
+  })
+
   it('retoma novos imports depois de uma cópia falhar durante o shutdown', async () => {
     const started = deferred()
     const copyGate = deferred()

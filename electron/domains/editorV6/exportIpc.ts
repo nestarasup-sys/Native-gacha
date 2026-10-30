@@ -4,7 +4,7 @@ import { basename, extname, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { editorV6IpcChannels } from '../../../src/shared/editorV6IpcChannels'
-import { editorV6ExportAudioSchema, editorV6MediaAssetSchema, parseEditorV6Document } from '../../../src/shared/editorV6Schema'
+import { editorV6ExportAudioSchema, editorV6MediaAssetSchema, parseEditorV6ExportDocument } from '../../../src/shared/editorV6Schema'
 import type { EditorV6MediaAsset } from '../../../src/shared/editorV6'
 import type { CustomizerCharacter } from '../../../src/shared/customizer'
 import type { EditorV6MotionBakeRequest, EditorV6MotionBakeResult } from '../../../src/shared/editorV6Motion'
@@ -83,7 +83,7 @@ export function registerEditorV6ExportHandlers(deps: EditorV6ExportIpcDependenci
     ? (await deps.resolveLibraryVideo(clip.libraryVideoId)).path
     : join(deps.projectPath(projectId), media.some((item) => item.fileName === clip.fileName) ? 'media' : 'export-audio', clip.fileName)
   const runIsolatedExport: EditorV6ExportIpcLifecycle['runIsolatedExport'] = (rawProject, options, outputPath, reportPath, id, signal = new AbortController().signal, progress = (patch) => { if (patch.message) console.log(`[V6 isolated export] ${patch.message}`) }, motionPreparationConcurrency = 2) => {
-    const project = parseEditorV6Document(rawProject)
+    const project = parseEditorV6ExportDocument(rawProject)
     planEditorV6Export(options, project.timeline.durationFrames)
     return runEditorV6Export(project, options, {
       ffmpeg, ffprobe, tempRoot: deps.tempRoot, id, outputPath, reportPath,
@@ -106,7 +106,7 @@ export function registerEditorV6ExportHandlers(deps: EditorV6ExportIpcDependenci
     deps.assertTrustedSender(event)
     assertAvailable()
     if ([...jobs.values()].some((job) => !terminal(job.status))) throw Error('Aguarde ou cancele a exportação atual antes de iniciar outra.')
-    const project = parseEditorV6Document(rawProject)
+    const project = parseEditorV6ExportDocument(rawProject)
     planEditorV6Export(options, project.timeline.durationFrames)
     const owner = BrowserWindow.fromWebContents(event.sender)
     const saveOptions = { title: 'Editor V6: exportar MP4', defaultPath: project.title.replace(/[<>:"/\\|?*]/g, '_') + '.mp4', filters: [{ name: 'Vídeo MP4', extensions: ['mp4'] }] }
