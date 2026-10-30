@@ -5,7 +5,7 @@ import { usePreviewBackground } from '../../ui/hooks/usePreviewBackground'
 import { modelRigSegmentKind, normalizeLayerOrder, orderedParts, reorderLayer } from './models/rig'
 import { connectFabricatorParts, isTorsoPart, moveFabricatorPartBranch, rotateFabricatorPartBranch, toggleFabricatorJointFixed } from './models/rigEditing'
 import { buildFabricatorJointMarkers } from './models/jointMarkerModel'
-import { createFabricatorCanvasInteraction, type AnchorDragState, type DragState, type MixerStrokeState, type PanState } from './canvasInteraction'
+import { createFabricatorCanvasInteraction, type AnchorDragState, type DragState, type PanState } from './canvasInteraction'
 import { FabricatorModelCanvas } from './FabricatorModelCanvas'
 import { FabricatorModelPanel, type FabricatorPanelTab } from './FabricatorModelPanel'
 import { resizeHeadPart } from './models/resize'
@@ -15,8 +15,6 @@ import { splitImage, mergeImages } from './models/partImages'
 import { createImportedModelProject } from './models/processedModelProject'
 import { startChromaAdjustWorker, ChromaAdjustTaskError, type ChromaAdjustTask } from './models/runChromaAdjustWorker'
 import { startImageProcessorWorker, ImageProcessorTaskError, type ImageProcessorTask } from './models/runImageProcessorWorker'
-import { paintSeamMixerSegment as applySeamMixerSegment } from './models/seamMixer'
-import { BoundedSeamMixerSurfaceCache } from './models/seamMixerSurfaceCache'
 import { serializeFabricatorProject } from './models/projectSerialization'
 import { createFabricatorProjectSaveCoordinator } from './projectSaveCoordinator'
 import { useFabricatorHistory } from './useFabricatorHistory'
@@ -30,6 +28,7 @@ import { connectBodyContourJoints } from './models/contourJoints'
 import { isValidSkinTone } from '../../../../shared/skinTones'
 import { ModelAppearanceProvider } from './ModelAppearanceContext'
 import { useFabricatorModelAppearance } from './useFabricatorModelAppearance'
+import { useFabricatorSeamMixer } from './useFabricatorSeamMixer'
 import { flushPendingRendererWrites, registerPendingWriteFlusher } from '../../ui/pendingPersistence'
 // Several workspaces share selectors; preserve their availability before any
 // lazy workspace mounts, regardless of the order in which areas are opened.
@@ -102,11 +101,6 @@ export function FabricatorPage() {
   const dragRef = useRef<DragState | null>(null)
   const anchorDragRef = useRef<AnchorDragState | null>(null)
   const panRef = useRef<PanState | null>(null)
-  const mixerStrokeRef = useRef<MixerStrokeState | null>(null)
-  const mixerTouchedRef = useRef<Map<string, Uint8Array>>(new Map())
-  const mixerSurfacesRef = useRef(new BoundedSeamMixerSurfaceCache())
-  const mixerQueueRef = useRef<Promise<void>>(Promise.resolve())
-  const mixerSessionRef = useRef(0)
   const layerDragRef = useRef<string | null>(null)
   const imageProcessingTaskRef = useRef<ImageProcessorTask | null>(null)
   const chromaTaskRef = useRef<ChromaAdjustTask | null>(null)
@@ -319,11 +313,11 @@ export function FabricatorPage() {
       }
     }
     if (generation !== slotSelectionGeneration.current) return
-    mixerSessionRef.current += 1
+    seamMixer.resetSession()
     resetHistoryGesture()
     clearHistory()
     projectRef.current = null
-    setActiveSlot(slot); setProject(null); setSelectedIds([]); setError(''); dirtyAssets.current.clear(); dirtyChromaBases.current.clear(); mixerSurfacesRef.current.clear(); mixerStrokeRef.current = null; setMixerActive(false); setMixerPainting(false); setZoom(1); setPan({ x: 0, y: 0 })
+    setActiveSlot(slot); setProject(null); setSelectedIds([]); setError(''); dirtyAssets.current.clear(); dirtyChromaBases.current.clear(); setMixerActive(false); setMixerPainting(false); setZoom(1); setPan({ x: 0, y: 0 })
     const summary = slots[slot - 1]
     if (!summary) { setSlotSwitching(false); return }
     if (summary.recoveryRequired) {
@@ -546,7 +540,7 @@ export function FabricatorPage() {
       clearHistory()
       dirtyAssets.current.clear()
       dirtyChromaBases.current.clear()
-      mixerSurfacesRef.current.clear()
+      seamMixer.clearSurfaces()
       projectRef.current = published
       setProject(published)
       setChromaValue(result.tolerance)
@@ -581,7 +575,7 @@ export function FabricatorPage() {
       if (chromaTaskRef.current === task) chromaTaskRef.current = null
       setChromaApplying(false)
       for (const [partId, dataUrl] of updatedAssets) dirtyAssets.current.set(partId, dataUrl)
-      mixerSurfacesRef.current.clear()
+      seamMixer.clearSurfaces()
       updateProject((current) => current.slot !== slot ? current : {
         ...current,
         tolerance,
@@ -691,9 +685,9 @@ export function FabricatorPage() {
         return
       }
       cancelChromaTask(); setChromaApplying(false)
-      mixerSessionRef.current += 1
+      seamMixer.resetSession()
       projectRef.current = null
-      setActiveSlot(slot); setProject(null); setSelectedIds([]); dirtyAssets.current.clear(); dirtyChromaBases.current.clear(); mixerSurfacesRef.current.clear(); mixerStrokeRef.current = null; setMixerActive(false); setMixerPainting(false)
+      setActiveSlot(slot); setProject(null); setSelectedIds([]); dirtyAssets.current.clear(); dirtyChromaBases.current.clear(); setMixerActive(false); setMixerPainting(false)
       const name = selected.sourceName.replace(/\.[^.]+$/, '') || `Modelo ${slot}`
       const recordBefore = project?.slot === slot ? project : undefined
       if (!recordBefore) clearHistory()
@@ -787,71 +781,24 @@ export function FabricatorPage() {
     }
   }
 
-  const paintMixerSegment = async (fromX: number, fromY: number, toX: number, toY: number, touchedPixels: Map<string, Uint8Array>, session: number) => {
-    const currentProject = projectRef.current
-    if (!currentProject || !scale || session !== mixerSessionRef.current) return
-    const stage = stageRef.current
-    if (!stage) return
-    const stageBounds = stage.getBoundingClientRect()
-    const hiddenParts = new Set(currentProject.hiddenPartIds ?? [])
-    const candidates = orderedParts(currentProject.parts, currentProject.layerOrder).reverse()
-      .filter((part) => !hiddenParts.has(part.id))
-    const changedAssets = await applySeamMixerSegment({
-      fromX,
-      fromY,
-      toX,
-      toY,
-      projectSize: currentProject,
-      scale,
-      pan,
-      stageBounds,
-      candidates,
-      touchedPixels,
-      surfaces: mixerSurfacesRef.current,
-      session,
-      getCurrentSession: () => mixerSessionRef.current
-    })
-    if (!changedAssets?.size) return
-    for (const [partId, dataUrl] of changedAssets) dirtyAssets.current.set(partId, dataUrl)
-    updateProject((current) => ({
-      ...current,
-      parts: current.parts.map((part) => changedAssets.has(part.id)
-        ? { ...part, dataUrl: changedAssets.get(part.id)! }
-        : part)
-    }), 'mixer')
-  }
-  const queueMixerSegment = (fromX: number, fromY: number, toX: number, toY: number) => {
-    const touchedPixels = mixerTouchedRef.current
-    const session = mixerSessionRef.current
-    mixerQueueRef.current = mixerQueueRef.current
-      .then(() => paintMixerSegment(fromX, fromY, toX, toY, touchedPixels, session))
-      .catch((reason: unknown) => { if (session === mixerSessionRef.current) setError(reason instanceof Error ? `Misturador: ${reason.message}` : 'O misturador não conseguiu editar essa peça.') })
-  }
-
-  const startMixerStroke = <T extends Element,>(event: React.PointerEvent<T>) => {
-    if (!project || !stageRef.current) return
-    event.preventDefault(); event.stopPropagation()
-    stageRef.current.setPointerCapture(event.pointerId)
-    startHistoryGesture('mixer')
-    mixerTouchedRef.current = new Map()
-    mixerStrokeRef.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY }
-    setMixerPainting(true)
-    queueMixerSegment(event.clientX, event.clientY, event.clientX, event.clientY)
-  }
-
-  const moveMixerStroke = (event: React.PointerEvent<HTMLDivElement>) => {
-    const stroke = mixerStrokeRef.current
-    if (!stroke || stroke.pointerId !== event.pointerId) return
-    queueMixerSegment(stroke.x, stroke.y, event.clientX, event.clientY)
-    stroke.x = event.clientX; stroke.y = event.clientY
-  }
+  const seamMixer = useFabricatorSeamMixer({
+    stageRef,
+    projectRef,
+    dirtyAssets,
+    scale,
+    pan,
+    setMixerPainting,
+    startHistoryGesture,
+    updateProject,
+    setError
+  })
 
   const canvasInteraction = createFabricatorCanvasInteraction({
-    project, dragRef, anchorDragRef, panRef, mixerStrokeRef,
+    project, dragRef, anchorDragRef, panRef, mixerStrokeRef: seamMixer.mixerStrokeRef,
     setSelectedIds, connectMode, mixerActive, thighDeformationActive, pan,
-    setPan, setPanning, setMixerPainting, scale, mixerQueueRef,
+    setPan, setPanning, setMixerPainting, scale, mixerQueueRef: seamMixer.mixerQueueRef,
     startHistoryGesture, finishHistoryGesture, updateProject, updatePartPosition,
-    startMixerStroke, moveMixerStroke
+    startMixerStroke: seamMixer.startMixerStroke, moveMixerStroke: seamMixer.moveMixerStroke
   })
 
   const renderEmptyState = () => (

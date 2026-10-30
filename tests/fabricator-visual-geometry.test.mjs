@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises'
 import { selectOriginalModelSource, selectMountedModelSource } from '../src/shared/fabricatorModelViews.ts'
 import { interpolateFrames } from '../src/renderer/src/features/fabricator/models/animationInterpolation.ts'
 import { BoundedSeamMixerSurfaceCache } from '../src/renderer/src/features/fabricator/models/seamMixerSurfaceCache.ts'
+import { createSeamMixerSession } from '../src/renderer/src/features/fabricator/models/seamMixerSession.ts'
 import { buildFabricatorJointMarkers } from '../src/renderer/src/features/fabricator/models/jointMarkerModel.ts'
 
 /** Rasterizador sintético de caixas, não screenshots do Canvas/Electron.
@@ -156,10 +157,93 @@ test('a página do Fabricador compõe canvas e painel sem absorver a renderizaç
 test('Misturador usa o canvas local mesmo se o limite retirar a superfície do cache',async()=>{
  const source=await readFile('src/renderer/src/features/fabricator/models/seamMixer.ts','utf8')
  const page=await readFile('src/renderer/src/features/fabricator/FabricatorPage.tsx','utf8')
+ const hook=await readFile('src/renderer/src/features/fabricator/useFabricatorSeamMixer.ts','utf8')
  assert.match(source,/const surfacesForSegment = new Map<string, SeamMixerSurface>/)
  assert.match(source,/let surface = surfacesForSegment\.get\(part\.id\) \?\? surfaces\.get\(part\.id\)/)
  assert.match(source,/surfacesForSegment\.get\(partId\)/)
- assert.match(page,/useRef\(new BoundedSeamMixerSurfaceCache\(\)\)/)
- assert.match(page,/const currentProject = projectRef\.current/)
- assert.match(page,/orderedParts\(currentProject\.parts, currentProject\.layerOrder\)\.reverse\(\)/)
+ assert.match(page,/useFabricatorSeamMixer/)
+ assert.doesNotMatch(page,/BoundedSeamMixerSurfaceCache|paintMixerSegment/)
+ assert.match(hook,/new BoundedSeamMixerSurfaceCache\(\)/)
+ assert.match(hook,/const currentProject = projectRef\.current/)
+ assert.match(hook,/orderedParts\(currentProject\.parts, currentProject\.layerOrder\)\.reverse\(\)/)
+})
+
+test('Misturador serializa segmentos e mantém pixels tocados durante o mesmo traço',async()=>{
+ const calls=[]
+ let releaseFirst
+ let markFirstStarted
+ const firstStarted=new Promise(resolve=>{markFirstStarted=resolve})
+ const firstGate=new Promise(resolve=>{releaseFirst=resolve})
+ const state={
+  stroke:{current:{pointerId:1,x:0,y:0}},
+  touchedPixels:{current:new Map()},
+  queue:{current:Promise.resolve()},
+  generation:{current:0}
+ }
+ const session=createSeamMixerSession(state,async(fromX,_fromY,_toX,_toY,touchedPixels,generation)=>{
+  calls.push({fromX,touchedPixels,generation})
+  if(fromX===1){markFirstStarted();await firstGate}
+ },()=>{})
+
+ session.queueSegment(1,0,2,0)
+ session.queueSegment(2,0,3,0)
+ await firstStarted
+ assert.deepEqual(calls.map(call=>call.fromX),[1])
+ releaseFirst()
+ await state.queue.current
+ assert.deepEqual(calls.map(call=>call.fromX),[1,2])
+ assert.equal(calls[0].touchedPixels,calls[1].touchedPixels)
+ assert.deepEqual(calls.map(call=>call.generation),[0,0])
+})
+
+test('Misturador invalida trabalho pendente ao trocar de modelo sem mostrar erro atrasado',async()=>{
+ const calls=[]
+ const errors=[]
+ let releaseFirst
+ let markFirstStarted
+ const firstStarted=new Promise(resolve=>{markFirstStarted=resolve})
+ const firstGate=new Promise(resolve=>{releaseFirst=resolve})
+ const state={
+  stroke:{current:{pointerId:9,x:3,y:4}},
+  touchedPixels:{current:new Map([['arm',new Uint8Array([1])]])},
+  queue:{current:Promise.resolve()},
+  generation:{current:0}
+ }
+ const oldTouchedPixels=state.touchedPixels.current
+ const session=createSeamMixerSession(state,async(fromX)=>{
+  calls.push(fromX)
+  if(fromX===1){markFirstStarted();await firstGate;throw Error('falha antiga')}
+ },message=>errors.push(message))
+
+ session.queueSegment(1,0,2,0)
+ session.queueSegment(2,0,3,0)
+ await firstStarted
+ session.reset()
+ releaseFirst()
+ await state.queue.current
+ assert.deepEqual(calls,[1])
+ assert.deepEqual(errors,[])
+ assert.equal(state.generation.current,1)
+ assert.equal(state.stroke.current,null)
+ assert.notEqual(state.touchedPixels.current,oldTouchedPixels)
+ assert.equal(state.touchedPixels.current.size,0)
+})
+
+test('falha do Misturador não bloqueia o próximo segmento do traço',async()=>{
+ const calls=[]
+ const errors=[]
+ const state={
+  stroke:{current:null},touchedPixels:{current:new Map()},
+  queue:{current:Promise.resolve()},generation:{current:0}
+ }
+ const session=createSeamMixerSession(state,async(fromX)=>{
+  calls.push(fromX)
+  if(fromX===1)throw Error('canvas indisponível')
+ },message=>errors.push(message))
+
+ session.queueSegment(1,0,1,0)
+ session.queueSegment(2,0,2,0)
+ await state.queue.current
+ assert.deepEqual(calls,[1,2])
+ assert.deepEqual(errors,['Misturador: canvas indisponível'])
 })

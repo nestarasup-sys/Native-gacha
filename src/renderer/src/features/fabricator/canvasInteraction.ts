@@ -1,11 +1,11 @@
 import type { PointerEvent as ReactPointerEvent } from 'react'
 import type { FabricatorHistoryAction, FabricatorProject, ModelPart } from '../../../../shared/fabricator'
 import { isTorsoPart, partJointAnchor, sourcePointFromCanvas } from '../../../../shared/modelRig.ts'
+import type { MixerStrokeState } from './models/seamMixerSession'
 
 export type DragState = { partId: string; pointerId: number; x: number; y: number }
 export type AnchorDragState = { partId: string; pointerId: number; x: number; y: number; offsetX: number }
 export type PanState = { pointerId: number; x: number; y: number; originX: number; originY: number }
-export type MixerStrokeState = { pointerId: number; x: number; y: number }
 
 type MutableValue<T> = { current: T }
 type PanOffset = { x: number; y: number }
