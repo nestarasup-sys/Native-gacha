@@ -25,11 +25,10 @@ import { prepareLoadedFabricatorProject } from './models/projectHydration'
 import { type ModelSourceResult } from './models/modelSource'
 import { ModelSkinContourEditor } from './ModelSkinContourEditor'
 import { DuplicateModelDialog } from './DuplicateModelDialog'
-import { cachedModelBodyAppearancePreview } from './models/modelSkinTone'
 import { connectBodyContourJoints } from './models/contourJoints'
-import { isValidSkinTone } from '../../../../shared/skinTones'
 import { ModelAppearanceProvider } from './ModelAppearanceContext'
 import { useFabricatorModelAppearance } from './useFabricatorModelAppearance'
+import { useFabricatorModelAppearancePreviews } from './useFabricatorModelAppearancePreviews'
 import { useFabricatorSeamMixer } from './useFabricatorSeamMixer'
 import { flushPendingRendererWrites, registerPendingWriteFlusher } from '../../ui/pendingPersistence'
 // Several workspaces share selectors; preserve their availability before any
@@ -48,7 +47,6 @@ export function FabricatorPage() {
   const [slotSwitching, setSlotSwitching] = useState(false)
   const [activeSlot, setActiveSlot] = useState(1)
   const [project, setProject] = useState<FabricatorProject | null>(null)
-  const [bodyAppearancePreviewUrls, setBodyAppearancePreviewUrls] = useState<Record<string, string>>({})
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [processing, setProcessing] = useState(false)
   const [chromaApplying, setChromaApplying] = useState(false)
@@ -134,6 +132,7 @@ export function FabricatorPage() {
   useEffect(() => registerPendingWriteFlusher(flushProjectWrites), [flushProjectWrites])
 
   const { appearanceProject, appearanceLoadError, setAppearanceTargetSlot } = useFabricatorModelAppearance({ activeSection, activeSlot, project })
+  const bodyAppearancePreviewUrls = useFabricatorModelAppearancePreviews(appearanceProject, setError)
 
   useEffect(() => {
     void window.desktop.fabricator.listFabricatorSlots()
@@ -165,29 +164,6 @@ export function FabricatorPage() {
   }, [activeSection, project])
 
   useEffect(() => projectSaveCoordinator.scheduleSave(project), [project, projectSaveCoordinator])
-
-  useEffect(() => {
-    if (!appearanceProject) {
-      setBodyAppearancePreviewUrls({})
-      return
-    }
-    let active = true
-    const slot = appearanceProject.slot
-    const tone = isValidSkinTone(appearanceProject.modelSkinTone) ? appearanceProject.modelSkinTone : undefined
-    const outlineColor = isValidSkinTone(appearanceProject.modelOutlineColor) ? appearanceProject.modelOutlineColor : undefined
-    void (async () => {
-      const previews: Record<string, string> = {}
-      for (const part of appearanceProject.parts) {
-        const preview = await cachedModelBodyAppearancePreview(slot, part, tone, outlineColor)
-        if (!active) return
-        if (preview) previews[`${slot}:${part.id}`] = preview
-      }
-      if (active) setBodyAppearancePreviewUrls(previews)
-    })().catch((reason: unknown) => {
-      if (active) setError(reason instanceof Error ? reason.message : 'Não foi possível aplicar a cor de pele do modelo.')
-    })
-    return () => { active = false }
-  }, [appearanceProject?.slot, appearanceProject?.modelSkinTone, appearanceProject?.modelOutlineColor, appearanceProject?.parts])
 
   useEffect(() => {
     if (connectMode && mixerActive) setMixerActive(false)
