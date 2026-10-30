@@ -9,6 +9,7 @@ import {
 } from '../src/renderer/src/features/editorV6/useEditorV6CharacterSources.ts'
 import { resolveEditorV6CharacterSourceRefresh } from '../src/renderer/src/features/editorV6/editorV6CharacterSourceModel.ts'
 import { loadEditorV6PoseThumbnails } from '../src/renderer/src/features/editorV6/editorV6PoseCatalog.ts'
+import { createEditorV6MediaCommands } from '../src/renderer/src/features/editorV6/editorV6MediaCommands.ts'
 import {
   applyEditorV6CharacterAssetCrops,
   applyEditorV6CharacterRefreshResult
@@ -23,6 +24,72 @@ const projectSummary = (id) => ({ id, title: `Projeto ${id}`, color: '#d7b5cd', 
 const legacyEntry = (id, title = `Legado ${id}`) => ({ id, title, color: '#ab77bb' })
 const emptyTimeline = () => ({ fps: 30, durationFrames: 300, tracks: [] })
 const mediaProject = () => ({ id: 'project', assets: [], elements: [], media: [], timeline: emptyTimeline() })
+
+function createMediaCommandHarness(overrides = {}) {
+  const calls = []
+  const selections = {}
+  const source = mediaProject()
+  source.timeline.tracks = ['video', 'object', 'audio'].map((kind) => ({
+    id: kind,
+    kind,
+    name: kind,
+    muted: false,
+    locked: false,
+    blocks: []
+  }))
+  const dependencies = {
+    activeProject: source,
+    trackOperation: async (operation) => { calls.push('track'); return operation() },
+    importImageToProject: async (options) => {
+      calls.push(['image-use-case', options.category, options.frame])
+      const asset = await options.importAsset(options.category)
+      const current = await options.loadProject()
+      if (!asset || !current) return null
+      const element = { id: 'image-element', kind: 'image', assetId: asset.id }
+      const next = { ...current, assets: [...current.assets, asset], elements: [...current.elements, element] }
+      await options.persistDocument(current, next)
+      return { selectedElementId: element.id, selectedTimelineBlockId: 'image-block', activeTool: 'objects' }
+    },
+    importMediaToTimeline: async (options) => {
+      calls.push(['media-use-case', options.frame])
+      const media = await options.requestMedia()
+      const current = await options.loadProject()
+      if (!media || !current) return null
+      const block = { id: 'media-block', mediaId: media.id, startFrame: options.frame, durationFrames: 60 }
+      const track = current.timeline.tracks.find((item) => item.kind === media.kind)
+      const timeline = { ...current.timeline, tracks: current.timeline.tracks.map((item) => item === track ? { ...item, blocks: [...item.blocks, block] } : item) }
+      const mediaList = current.media ?? []
+      const next = { ...current, media: mediaList.some((item) => item.id === media.id) ? mediaList : [...mediaList, media], timeline }
+      await options.persistDocument(current, next)
+      return { blockId: block.id, startFrame: block.startFrame }
+    },
+    addImageAsset: () => source,
+    addTimelineMedia: () => ({ document: source, block: { id: 'unused' }, startFrame: 0 }),
+    findClipAtFrame: () => undefined,
+    editBackgroundAtFrame: (project, _frame, values) => ({ ...project, ...values }),
+    bridge: {
+      importEditorV6Image: async (category) => { calls.push(['import-image', category]); return { id: 'image-asset', category, name: 'Imagem', mimeType: 'image/png', dataUrl: 'data:image/png;base64,x' } },
+      importEditorV6Media: async (projectId, kind) => { calls.push(['import-media', projectId, kind]); return { id: 'audio-media', kind, name: 'Áudio', fileName: 'audio.wav', sourceFrames: 90, mimeType: 'audio/wav' } },
+      linkEditorV6LibraryVideo: async (projectId, libraryId) => { calls.push(['link-video', projectId, libraryId]); return { id: 'linked-video', kind: 'video', name: 'Vídeo da Base', fileName: 'video.mp4', sourceFrames: 90, mimeType: 'video/mp4', libraryVideoId: libraryId } }
+    },
+    pausePlayback: () => calls.push('pause'),
+    publishPlayheadFrame: (frame) => calls.push(['playhead', frame]),
+    loadLatestProject: async (projectId) => { calls.push(['load-latest', projectId]); return source },
+    persistImportedDocument: async (before, next) => { calls.push(['persist', before, next]); return true },
+    setError: (message) => calls.push(['error', message]),
+    setVideoPickerOpen: (open) => calls.push(['picker', open]),
+    setSelectedElementId: (id) => { selections.elementId = id },
+    setSelectedTimelineBlockId: (id) => { selections.blockId = id },
+    setActiveTool: (tool) => { selections.tool = tool },
+    setInspectorOpen: (open) => { selections.inspectorOpen = open },
+    setInspectorTab: (tab) => { selections.inspectorTab = tab },
+    changeScene: (transform) => { selections.scene = transform(source) },
+    createId: (() => { let id = 0; return () => `scene-${++id}` })(),
+    getFrame: () => 42,
+    ...overrides
+  }
+  return { commands: createEditorV6MediaCommands(dependencies), calls, selections, source }
+}
 
 test('importa apenas projetos legados ausentes e preserva defaults antes de reler a biblioteca', async () => {
   const knownId = validId(1)
@@ -370,6 +437,91 @@ test('importação sem mídia ou persistência cancelada não devolve seleção 
     addTimelineMedia: (document, imported, frame, createId) => ({ document, block: { id: createId() }, startFrame: frame })
   })
   assert.equal(result, null)
+})
+
+test('comandos da tela importam imagem pelo projeto mais recente antes de selecionar o objeto', async () => {
+  const { commands, calls, selections, source } = createMediaCommandHarness()
+  await commands.importImage('object')
+
+  assert.deepEqual(calls.filter((call) => typeof call === 'string' || Array.isArray(call) && call[0] !== 'persist'), [
+    'track', 'pause', ['image-use-case', 'object', 42], ['import-image', 'object'], ['load-latest', 'project']
+  ])
+  const persisted = calls.find((call) => Array.isArray(call) && call[0] === 'persist')
+  assert.equal(persisted[1], source)
+  assert.equal(persisted[2].assets[0].id, 'image-asset')
+  assert.equal(persisted[2].elements[0].assetId, 'image-asset')
+  assert.equal(selections.elementId, persisted[2].elements[0].id)
+  assert.equal(selections.blockId, 'image-block')
+  assert.equal(selections.tool, 'objects')
+  assert.equal(selections.inspectorOpen, true)
+  assert.equal(selections.inspectorTab, 'editor')
+})
+
+test('comandos da tela vinculam vídeo da biblioteca, salvam antes de selecionar e fecham o picker', async () => {
+  const { commands, calls, selections, source } = createMediaCommandHarness()
+  await commands.linkVideoLibraryItem({ id: 'library-video', name: 'Clipe escolhido' })
+
+  assert.deepEqual(calls.filter((call) => typeof call === 'string' || Array.isArray(call) && call[0] !== 'persist'), [
+    'track', 'pause', ['media-use-case', 42], ['link-video', 'project', 'library-video'], ['load-latest', 'project'], ['playhead', 42], ['picker', false]
+  ])
+  const persisted = calls.find((call) => Array.isArray(call) && call[0] === 'persist')
+  assert.equal(persisted[1], source)
+  assert.equal(persisted[2].media[0].libraryVideoId, 'library-video')
+  assert.equal(selections.blockId, persisted[2].timeline.tracks.find((track) => track.kind === 'video').blocks[0].id)
+  assert.equal(selections.elementId, null)
+  assert.equal(selections.tool, null)
+  assert.equal(selections.inspectorOpen, true)
+})
+
+test('comandos da tela importam áudio, persistem e só então selecionam o bloco', async () => {
+  const { commands, calls, selections, source } = createMediaCommandHarness()
+  await commands.importTimelineMedia('audio')
+
+  assert.deepEqual(calls.filter((call) => typeof call === 'string' || Array.isArray(call) && call[0] !== 'persist'), [
+    'track', 'pause', ['media-use-case', 42], ['import-media', 'project', 'audio'], ['load-latest', 'project'], ['playhead', 42]
+  ])
+  const persisted = calls.find((call) => Array.isArray(call) && call[0] === 'persist')
+  assert.equal(persisted[1], source)
+  assert.equal(persisted[2].media[0].kind, 'audio')
+  assert.equal(persisted[2].timeline.tracks.find((track) => track.kind === 'audio').blocks[0].id, 'media-block')
+  assert.equal(selections.blockId, 'media-block')
+  assert.equal(selections.elementId, null)
+  assert.equal(selections.tool, null)
+  assert.equal(selections.inspectorOpen, true)
+  assert.equal(selections.inspectorTab, 'editor')
+})
+
+test('comando de vídeo abre o seletor sem iniciar importação direta', async () => {
+  const { commands, calls } = createMediaCommandHarness()
+  await commands.importTimelineMedia('video')
+
+  assert.deepEqual(calls, ['track', ['picker', true]])
+})
+
+test('comandos da tela bloqueiam importações quando a faixa ficou bloqueada', async () => {
+  const lockedProject = mediaProject()
+  lockedProject.timeline.tracks = [{ id: 'object', kind: 'object', name: 'Objetos', muted: false, locked: true, blocks: [] }]
+  const { commands, calls } = createMediaCommandHarness({ activeProject: lockedProject })
+
+  await commands.importImage('object')
+
+  assert.ok(calls.includes('pause'))
+  assert.deepEqual(calls.find((call) => Array.isArray(call) && call[0] === 'error'), [
+    'error', 'Desbloqueie a faixa Objetos para adicionar uma imagem.'
+  ])
+  assert.equal(calls.some((call) => Array.isArray(call) && call[0] === 'image-use-case'), false)
+})
+
+test('selecionar imagem de fundo continua sincronizado com o frame atual do projeto', () => {
+  const { commands, selections } = createMediaCommandHarness()
+  commands.selectBackground({ id: 'background-1', category: 'background', name: 'Cenário', mimeType: 'image/png', dataUrl: 'data:image/png;base64,x' })
+
+  assert.equal(selections.scene.backgroundAssetId, 'background-1')
+  assert.equal(selections.scene.backgroundX, 0)
+  assert.equal(selections.scene.backgroundWidth, 100)
+  assert.equal(selections.elementId, 'background')
+  assert.equal(selections.blockId, null)
+  assert.equal(selections.inspectorTab, 'editor')
 })
 
 test('catálogo de poses limita leituras, conserva ordem e rejeita snapshots incompatíveis', async () => {

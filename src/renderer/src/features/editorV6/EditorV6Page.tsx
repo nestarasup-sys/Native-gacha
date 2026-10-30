@@ -7,17 +7,18 @@ import { useMotionPreparation } from './motion/useMotionPreparation'
 import { EditorV6VideoPickerModal } from './EditorV6VideoPickerModal'
 import { EditorV6PlaybackAudio } from './EditorV6PlaybackAudio'
 import { EditorV6PlaybackScene } from './EditorV6PlaybackScene'
+import { getEditorV6PlaybackFrame } from './editorV6PlaybackClock'
 import { SceneCastPanel } from '../../ui/components/SceneCastPanel'
 import { EditorV6PresetPanel } from './EditorV6PresetPanel'
 import { EditorV6PropertyPanel } from './EditorV6PropertyPanel'
-import { getEditorV6PlaybackFrame } from './editorV6PlaybackClock'
 import { useEditorV6Playback } from './useEditorV6Playback'
 import { duplicateEditorV6ProjectDocument } from './editorV6ProjectDuplication'
 import { createEditorV6ProjectCreationCommands } from './editorV6ProjectCreation'
-import { planEditorV6CastSelection, retainEditorV6CastAssets } from './editorV6CastSelection'
-import { projectSceneCharacters } from '../../characters/sceneCharacterProjection'
 import { addEditorV6ImageAsset, addEditorV6TimelineMedia } from './editorV6MediaChanges'
 import { importEditorV6ImageToProject, importEditorV6MediaToTimeline } from './editorV6MediaImport'
+import { planEditorV6CastSelection, retainEditorV6CastAssets } from './editorV6CastSelection'
+import { projectSceneCharacters } from '../../characters/sceneCharacterProjection'
+import { createEditorV6MediaCommands } from './editorV6MediaCommands'
 import { addEditorV6ElementAtFrame, editorV6ClipAtFrame, normalizeEditorV6Timeline, timelineClips } from '../../../../shared/editorV6TimelineCore'
 import { editEditorV6DocumentAtBlock, pruneEditorV6TimelineSnapshots, repairEditorV6DuplicateAssets, repairEditorV6FaceModeAssetReferences } from '../../../../shared/editorV6TimelineEdits'
 import { editEditorV6BackgroundAtFrame, resolveEditorV6SceneAtFrame } from '../../../../shared/editorV6TimelineScene'
@@ -367,6 +368,32 @@ export function EditorV6Page() {
     })
   }
 
+  const { importImage, importTimelineMedia, linkVideoLibraryItem, selectBackground } = createEditorV6MediaCommands({
+    activeProject: activeEditorV6,
+    trackOperation: trackEditorV6Operation,
+    bridge: window.desktop.editorV6,
+    importImageToProject: importEditorV6ImageToProject,
+    importMediaToTimeline: importEditorV6MediaToTimeline,
+    addImageAsset: addEditorV6ImageAsset,
+    addTimelineMedia: addEditorV6TimelineMedia,
+    findClipAtFrame: editorV6ClipAtFrame,
+    editBackgroundAtFrame: editEditorV6BackgroundAtFrame,
+    pausePlayback,
+    publishPlayheadFrame,
+    getFrame: getEditorV6PlaybackFrame,
+    loadLatestProject: loadLatestEditorV6Project,
+    persistImportedDocument: persistImportedEditorV6Document,
+    setError,
+    setVideoPickerOpen,
+    setSelectedElementId,
+    setSelectedTimelineBlockId,
+    setActiveTool,
+    setInspectorOpen,
+    setInspectorTab,
+    changeScene,
+    createId: () => crypto.randomUUID()
+  })
+
   const undo = () => {
     if (!activeEditorV6) return
     const document = useEditorV6Store.getState().undo(activeEditorV6.id, activeEditorV6)
@@ -387,100 +414,6 @@ export function EditorV6Page() {
     setCanUndo(Boolean(history?.undo.length))
     setCanRedo(Boolean(history?.redo.length))
     setHistoryVersion(value => value + 1)
-  }
-
-  const importImage = (category: 'background' | 'object') => trackEditorV6Operation(async () => {
-    if (!activeEditorV6) return
-    pausePlayback()
-    const targetTrackKind = category === 'object' ? 'object' : 'video'
-    if (category !== 'background' && activeEditorV6.timeline.tracks.some((track) => track.kind === targetTrackKind && track.locked)) { setError(category === 'object' ? 'Desbloqueie a faixa Objetos para adicionar uma imagem.' : 'Desbloqueie a faixa Vídeo para adicionar uma imagem.'); return }
-    const projectId = activeEditorV6.id
-    try {
-      const frameAtImport = getEditorV6PlaybackFrame()
-      const result = await importEditorV6ImageToProject({
-        category,
-        frame: frameAtImport,
-        importAsset: (assetCategory) => window.desktop.editorV6.importEditorV6Image(assetCategory),
-        loadProject: () => loadLatestEditorV6Project(projectId),
-        persistDocument: persistImportedEditorV6Document,
-        createId: () => crypto.randomUUID(),
-        addImageAsset: addEditorV6ImageAsset,
-        findClipAtFrame: editorV6ClipAtFrame,
-        validateProject: (currentProject) => {
-          if (category !== 'background' && currentProject.timeline.tracks.some((track) => track.kind === targetTrackKind && track.locked)) {
-            throw new Error(category === 'object' ? 'Desbloqueie a faixa Objetos para adicionar uma imagem.' : 'Desbloqueie a faixa Vídeo para adicionar uma imagem.')
-          }
-        }
-      })
-      if (!result) return
-      setSelectedElementId(result.selectedElementId)
-      if (category === 'object') setSelectedTimelineBlockId(result.selectedTimelineBlockId ?? null)
-      setActiveTool(result.activeTool)
-      setInspectorOpen(true)
-      setInspectorTab('editor')
-    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível importar a imagem.') }
-  })
-
-  const importTimelineMedia = (kind: 'video' | 'audio') => trackEditorV6Operation(async () => {
-    if (!activeEditorV6) return
-    if (kind === 'video') { setVideoPickerOpen(true); return }
-    const track = activeEditorV6.timeline.tracks.find((item) => item.kind === kind)
-    if (track?.locked) { setError('Desbloqueie a faixa Áudio para importar mídia.'); return }
-    pausePlayback()
-    const projectId = activeEditorV6.id
-    const frameAtImport = getEditorV6PlaybackFrame()
-    try {
-      const result = await importEditorV6MediaToTimeline({
-        frame: frameAtImport,
-        requestMedia: () => window.desktop.editorV6.importEditorV6Media(projectId, kind),
-        loadProject: () => loadLatestEditorV6Project(projectId),
-        persistDocument: persistImportedEditorV6Document,
-        createId: () => crypto.randomUUID(),
-        addTimelineMedia: addEditorV6TimelineMedia
-      })
-      if (!result) return
-      publishPlayheadFrame(result.startFrame)
-      setSelectedTimelineBlockId(result.blockId)
-      setSelectedElementId(null)
-      setActiveTool(null)
-      setInspectorOpen(true)
-      setInspectorTab('editor')
-    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível importar o áudio.') }
-  })
-
-  const linkVideoLibraryItem = (item: import('../../../../shared/mediaLibrary').VideoLibraryItem) => trackEditorV6Operation(async () => {
-    const activeProject = activeEditorV6
-    if (!activeProject) return
-    const projectId = activeProject.id
-    const track = activeProject.timeline.tracks.find((entry) => entry.kind === 'video')
-    if (track?.locked) throw new Error('Desbloqueie a faixa Vídeo antes de adicionar um vídeo.')
-    pausePlayback()
-    const frameAtImport = getEditorV6PlaybackFrame()
-    const result = await importEditorV6MediaToTimeline({
-      frame: frameAtImport,
-      requestMedia: () => window.desktop.editorV6.linkEditorV6LibraryVideo(projectId, item.id),
-      loadProject: () => loadLatestEditorV6Project(projectId),
-      persistDocument: persistImportedEditorV6Document,
-      createId: () => crypto.randomUUID(),
-      addTimelineMedia: addEditorV6TimelineMedia
-    })
-    if (!result) return
-    publishPlayheadFrame(result.startFrame)
-    setSelectedTimelineBlockId(result.blockId)
-    setSelectedElementId(null)
-    setActiveTool(null)
-    setInspectorOpen(true)
-    setInspectorTab('editor')
-    setVideoPickerOpen(false)
-  })
-
-  const selectBackground = (asset: EditorV6Asset) => {
-    const frame = getEditorV6PlaybackFrame()
-    changeScene((studio) => ({ ...editEditorV6BackgroundAtFrame(studio, frame, { backgroundAssetId: asset.id, backgroundX: 0, backgroundY: 0, backgroundWidth: 100, backgroundHeight: 100, backgroundRotation: 0 }), updatedAt: new Date().toISOString() }))
-    setSelectedTimelineBlockId(null)
-    setSelectedElementId('background')
-    setInspectorOpen(true)
-    setInspectorTab('editor')
   }
 
   const addTextElement = (kind: 'narrator' | 'speech' | 'thought') => {

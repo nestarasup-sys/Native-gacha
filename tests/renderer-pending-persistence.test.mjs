@@ -139,6 +139,7 @@ test('Studio and Editor V6 flush debounced documents and wait for renderer IPC w
   const studioImageImport = await readFile('src/renderer/src/features/studio/useStudioImageImport.ts', 'utf8')
   const editor = await readFile('src/renderer/src/features/editorV6/EditorV6Page.tsx', 'utf8')
   const editorCreation = await readFile('src/renderer/src/features/editorV6/editorV6ProjectCreation.ts', 'utf8')
+  const editorMedia = await readFile('src/renderer/src/features/editorV6/editorV6MediaCommands.ts', 'utf8')
   const editorPersistence = await readFile('src/renderer/src/features/editorV6/useEditorV6DocumentPersistence.ts', 'utf8')
   const exportPanel = await readFile('src/renderer/src/features/editorV6/EditorV6ExportPanel.tsx', 'utf8')
   assert.match(studio, /useStudioDocumentPersistence\(/)
@@ -160,8 +161,9 @@ test('Studio and Editor V6 flush debounced documents and wait for renderer IPC w
   assert.match(editorPersistence, /hadPendingTimer \|\| !saved[\s\S]*?saveActiveProject\(latest\)/)
   assert.match(editorPersistence, /await pendingOperations\.flush\(\)[\s\S]*?await flushDocumentWrites\(\)/)
   assert.match(editorPersistence, /const inFlightSave = savePromiseRef\.current/)
+  assert.match(editor, /createEditorV6MediaCommands\([\s\S]*?trackOperation: trackEditorV6Operation/)
   for (const operation of ['importImage', 'importTimelineMedia', 'linkVideoLibraryItem']) {
-    assert.match(editor, new RegExp(`const ${operation} =[^\\n]*trackEditorV6Operation\\(async \\(\\) =>`), `${operation} deve permanecer pendente até salvar o documento relacionado`)
+    assert.match(editorMedia, new RegExp(`const ${operation} = .*dependencies\\.trackOperation\\(async \\(\\) =>`), `${operation} deve permanecer pendente até salvar o documento relacionado`)
   }
   assert.match(editor, /createEditorV6ProjectCreationCommands\(/)
   assert.match(editorCreation, /const duplicateStudio = \(sourceSummary: EditorV6ProjectSummary \| null\) => dependencies\.trackOperation\(async \(\) =>/)
