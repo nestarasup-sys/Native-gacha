@@ -164,7 +164,7 @@ function workspaceFromHairGridStyle(
 }
 
 export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
-  const { requestPaletteImport, paletteImportModal } = usePaletteImport()
+  const { requestPaletteImport } = usePaletteImport()
   const [background] = usePreviewBackground()
   const [models, setModels] = useState<FabricatorSlotSummary[]>([])
   const [modelSlot, setModelSlot] = useState(baseModelSlot)
@@ -369,10 +369,10 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
     event.currentTarget.value = ''
     if (!file || !head || !hairWorkspace) return
     if (dirty && (hairWorkspace.front || hairWorkspace.back) && !window.confirm('Substituir a folha atual e descartar os ajustes não salvos?')) return
-    setError(''); setNotice('')
+    setError(''); setNotice('Normalizando a paleta e preparando a folha…')
     try {
       const uploadDataUrl = await requestPaletteImport(file, 'hair')
-      if (!uploadDataUrl) return
+      if (!uploadDataUrl) { setNotice(''); return }
       const image = await loadImage(uploadDataUrl)
       if (image.naturalHeight < 2) throw new Error('A folha precisa ter o cabelo posterior em cima e o traseiro em baixo.')
       const sourceImageDataUrl = imageAsPng(image)
@@ -383,7 +383,7 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
       if (!activeStyleId && !styleName.trim()) setStyleName(nameFromFile(file))
       setSelectedCategory(selectedCategory === 'backHair' ? 'backHair' : 'rearHair')
       setNotice('Folha separada dentro do conjunto: posterior, traseiro e franja ficam juntos ao salvar.')
-    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível separar a folha de cabelo.') }
+    } catch (reason) { setNotice(''); setError(reason instanceof Error ? reason.message : 'Não foi possível separar a folha de cabelo.') }
   }
 
   async function importThreeStyleGrid(event: ChangeEvent<HTMLInputElement>) {
@@ -394,7 +394,7 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
       && !window.confirm('Há alterações não salvas. Importar a grade vai substituir o rascunho atual. Continuar?')) return
 
     setError('')
-    setNotice('Analisando as seis áreas da imagem…')
+    setNotice('Normalizando as cores e analisando as seis áreas da imagem…')
     setSaving(true)
     setHairGridPreviewBusy(true)
     try {
@@ -512,17 +512,17 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
     event.currentTarget.value = ''
     if (!file || !head || !hairWorkspace) return
     if (dirty && hairWorkspace[selectedSide] && !window.confirm(`Substituir a peça atual de ${category.label} e descartar os ajustes não salvos?`)) return
-    setError(''); setNotice('')
+    setError(''); setNotice('Normalizando a paleta da peça…')
     try {
       const uploadDataUrl = await requestPaletteImport(file, 'hair')
-      if (!uploadDataUrl) return
+      if (!uploadDataUrl) { setNotice(''); return }
       const image = await loadImage(uploadDataUrl)
       const asset = { dataUrl: imageAsPng(image), width: image.naturalWidth, height: image.naturalHeight }
       const side = selectedSide
       updateWorkspace((current) => ({ ...current, [side]: asset, categoryBySide: { ...current.categoryBySide, [side]: selectedCategory }, sourceAppliesToDraft: false, transforms: { ...current.transforms, [side]: initialTransform(side, head, asset) } }))
       if (!activeStyleId && !styleName.trim()) setStyleName(nameFromFile(file))
       setNotice(`${category.label} importado para o conjunto. Ajuste a peça e salve o conjunto inteiro.`)
-    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível importar a peça de cabelo.') }
+    } catch (reason) { setNotice(''); setError(reason instanceof Error ? reason.message : 'Não foi possível importar a peça de cabelo.') }
   }
 
   async function applyChroma(tolerance = hairWorkspace?.chromaTolerance ?? 70, mode = hairWorkspace?.chromaMode ?? 'auto') {
@@ -895,6 +895,5 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
       onCancel={cancelHairGridReview}
       onSave={() => void saveHairGridReview()}
     />}
-    {paletteImportModal}
   </section>
 }
