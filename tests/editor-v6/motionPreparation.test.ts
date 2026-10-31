@@ -8,7 +8,7 @@ import { attachEditorV6Motion, editorV6MotionPlans, missingEditorV6Motions, type
 import { prepareExportMotions } from '../../electron/domains/editorV6/prepareMotions'
 import { EDITOR_V6_MOUTH_LOOP_SAMPLE_SCALES, editorV6MouthLoopScaleAtFrame } from '../../src/shared/editorV6Export'
 import { createMotionDiskCache, motionCacheKey } from '../../electron/domains/editorV6/motionCache'
-import { createEditorV6MotionService } from '../../electron/domains/editorV6/motionIpc'
+import { createEditorV6MotionService, editorV6MotionMemoryCacheKey } from '../../electron/domains/editorV6/motionIpc'
 import { editorV6IpcChannels } from '../../src/shared/editorV6IpcChannels'
 import { createCompletedMotionPreparation, hasCompletedMotionPreparation, indexMotionPreparationCharacters, rememberCompletedMotionPreparation } from '../../src/renderer/src/features/editorV6/motion/motionPreparationModel'
 
@@ -193,6 +193,7 @@ describe('transition preparation reuse', () => {
       await cache.write(keyedRequest, result)
       const tighterBudget = { ...keyedRequest, maxAtlasPixels: 6 }
       expect(motionCacheKey({ ...keyedRequest, maxAtlasPixels: 100_000 })).toBe(motionCacheKey({ ...keyedRequest, maxAtlasPixels: 200_000 }))
+      expect(editorV6MotionMemoryCacheKey({ ...keyedRequest, maxAtlasPixels: 100_000 })).not.toBe(editorV6MotionMemoryCacheKey({ ...keyedRequest, maxAtlasPixels: 200_000 }))
       await expect(cache.read(tighterBudget)).resolves.toBeUndefined()
       await expect(cache.write(request, { ...result, motion: { ...result.motion, key: 'another-transition' } })).rejects.toThrow('não corresponde à requisição')
       const changedCharacter = { ...request, character: { ...request.character, updatedAt: '2026-10-27T12:00:00.000Z' } }

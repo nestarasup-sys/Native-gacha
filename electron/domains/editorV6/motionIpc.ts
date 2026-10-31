@@ -12,6 +12,9 @@ import { restrictRendererResources } from '../../windowResourcePolicy'
 
 type Active = { request: EditorV6MotionBakeRequest; resolve: (result: EditorV6MotionBakeResult) => void; reject: (error: Error) => void }
 type Lane = { partition: string; window?: BrowserWindow; active?: Active; delivery?: EditorV6MotionBakeRequest; waiting?: (request: EditorV6MotionBakeRequest | null) => void; idle?: ReturnType<typeof setTimeout>; tail: Promise<void>; count: number }
+export function editorV6MotionMemoryCacheKey(request: EditorV6MotionBakeRequest): string {
+  return `${motionCacheKey(request)}:pixels=${request.maxAtlasPixels ?? 'unbounded'}`
+}
 const retiredWorkers = new Set<number>()
 function retire(id: number) {
   retiredWorkers.add(id)
@@ -111,7 +114,7 @@ export function createEditorV6MotionService(deps: { ipcMain: Pick<IpcMain, 'hand
   }
   const runBake = (request: EditorV6MotionBakeRequest, signal: AbortSignal) => {
     if (stopped) return Promise.reject(Error('O preparador está encerrando.'))
-    const key = motionCacheKey(request)
+    const key = editorV6MotionMemoryCacheKey(request)
     const lane = lanes.reduce((best, candidate) => candidate.count < best.count ? candidate : best)
     lane.count++
     const promise = lane.tail.catch(() => {}).then(async () => {
@@ -149,10 +152,10 @@ export function createEditorV6MotionService(deps: { ipcMain: Pick<IpcMain, 'hand
   }
   const enqueueBake = (request: EditorV6MotionBakeRequest, signal: AbortSignal): Promise<EditorV6MotionBakeResult> => {
     if (signal.aborted) return Promise.reject(signal.reason ?? Error('Preparação de animação cancelada.'))
-    // The disk/memory cache can reuse an atlas across budgets after validation,
-    // but concurrent renders must have the same cap or the first request could
-    // fail another subscriber that had a larger safe budget.
-    const key = `${motionCacheKey(request)}:pixels=${request.maxAtlasPixels ?? 'unbounded'}`
+    // Disk entries can be reused across budgets after validation. In-memory and
+    // in-flight requests stay separated so a restrictive cap cannot poison a
+    // concurrent render that has more room.
+    const key = editorV6MotionMemoryCacheKey(request)
     let flight = inFlight.get(key)
     if (!flight || flight.controller.signal.aborted) {
       const controller = new AbortController()
