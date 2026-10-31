@@ -2,7 +2,7 @@ import type { CustomizerCharacter, CustomizerFaceAppearance } from '../../../../
 import type { EditorV6Asset, EditorV6Document, EditorV6Element, EditorV6FaceRenderMode, EditorV6FaceTransforms } from '../../../../shared/editorV6'
 import type { FaceExpressionEffects, FaceExpressionPreset } from '../../../../shared/fabricator'
 import { faceRenderGeometry, type TrimmedImage } from '../../characters/characterGeometry.ts'
-import { editorV6CharacterHairSourceRevision, editorV6CharacterHeadExtraSourceRevision, editorV6CharacterWardrobeSourceRevision } from './editorV6CharacterSourceModel.ts'
+import { editorV6CharacterEyeSourceRevision, editorV6CharacterHairSourceRevision, editorV6CharacterHeadExtraSourceRevision, editorV6CharacterWardrobeSourceRevision } from './editorV6CharacterSourceModel.ts'
 import { buildEditorV6ExpressionAppearance, buildEditorV6ExpressionTransforms, resolveEditorV6ExpressionBase } from './expressionTransforms.ts'
 import { bakeFaceModeAssets, EDITOR_V6_FACE_RENDER_VERSION, editorV6FaceModeForElement } from './faceModeAssets.ts'
 
@@ -16,6 +16,7 @@ export type EditorV6CharacterRefreshGroup = {
   wardrobeRevision?: string
   hairRevision?: string
   headExtraRevision?: string
+  eyeRevision?: string
 }
 export type EditorV6CharacterRefreshPlan = {
   groups: EditorV6CharacterRefreshGroup[]
@@ -38,7 +39,8 @@ export function planEditorV6CharacterRefresh(
   modelRevisions: Record<string, string> = {},
   wardrobeRevisions: Record<string, string> = {},
   hairRevisions: Record<string, string> = {},
-  headExtraRevisions: Record<string, string> = {}
+  headExtraRevisions: Record<string, string> = {},
+  eyeRevisions: Record<string, string> = {}
 ): EditorV6CharacterRefreshPlan {
   const characters = new Map(availableCharacters.map((character) => [character.id, character]))
   const groups = new Map<string, EditorV6CharacterRefreshGroup>()
@@ -63,11 +65,13 @@ export function planEditorV6CharacterRefresh(
     const hairChanged = hairRevision !== undefined && state.hairSourceRevision !== hairRevision
     const headExtraRevision = editorV6CharacterHeadExtraSourceRevision(character, headExtraRevisions)
     const headExtraChanged = headExtraRevision !== undefined && state.headExtraSourceRevision !== headExtraRevision
-    if (!poseChanged && !modelChanged && !wardrobeChanged && !hairChanged && !headExtraChanged && state.faceRendererVersion === EDITOR_V6_FACE_RENDER_VERSION && state.characterSourceUpdatedAt === character.updatedAt) return
+    const eyeRevision = editorV6CharacterEyeSourceRevision(character, eyeRevisions)
+    const eyeChanged = eyeRevision !== undefined && state.eyeSourceRevision !== eyeRevision
+    if (!poseChanged && !modelChanged && !wardrobeChanged && !hairChanged && !headExtraChanged && !eyeChanged && state.faceRendererVersion === EDITOR_V6_FACE_RENDER_VERSION && state.characterSourceUpdatedAt === character.updatedAt) return
     const signature = JSON.stringify([character.id, character.updatedAt, EDITOR_V6_FACE_RENDER_VERSION, poseRevision, poseSlot,
       state.faceAppearance, state.expressionBase, state.faceTransforms, state.activeFaceMode, state.activeExpressionPresetId,
-      state.activeExpressionPresetUpdatedAt, state.activeExpressionGaze, state.activeExpressionEffects, modelRevision ?? state.modelSourceRevision ?? null, wardrobeRevision ?? null, hairRevision ?? null, headExtraRevision ?? null])
-    const group = groups.get(signature) ?? { character, state, targets: [], ...(poseRevision ? { poseRevision } : {}), modelRevision: modelRevision ?? state.modelSourceRevision ?? 'missing', ...(wardrobeRevision ? { wardrobeRevision } : {}), ...(hairRevision ? { hairRevision } : {}), ...(headExtraRevision ? { headExtraRevision } : {}) }
+      state.activeExpressionPresetUpdatedAt, state.activeExpressionGaze, state.activeExpressionEffects, modelRevision ?? state.modelSourceRevision ?? null, wardrobeRevision ?? null, hairRevision ?? null, headExtraRevision ?? null, eyeRevision ?? null])
+    const group = groups.get(signature) ?? { character, state, targets: [], ...(poseRevision ? { poseRevision } : {}), modelRevision: modelRevision ?? state.modelSourceRevision ?? 'missing', ...(wardrobeRevision ? { wardrobeRevision } : {}), ...(hairRevision ? { hairRevision } : {}), ...(headExtraRevision ? { headExtraRevision } : {}), ...(eyeRevision ? { eyeRevision } : {}) }
     group.targets.push({ kind, id, state })
     groups.set(signature, group)
   }
@@ -120,6 +124,7 @@ export async function renderEditorV6CharacterRefresh(
     wardrobeRevision?: string
     hairRevision?: string
     headExtraRevision?: string
+    eyeRevision?: string
     sourceKey: string
     characterCopy: CustomizerCharacter
     appearance: CustomizerFaceAppearance | undefined
@@ -131,7 +136,7 @@ export async function renderEditorV6CharacterRefresh(
   }
   const rendererGroups = new Map<string, RefreshRenderJob[]>()
 
-  for (const { character, state, targets, poseRevision, modelRevision, wardrobeRevision, hairRevision, headExtraRevision } of groups) {
+  for (const { character, state, targets, poseRevision, modelRevision, wardrobeRevision, hairRevision, headExtraRevision, eyeRevision } of groups) {
     if (isCancelled()) return null
     for (const target of targets) {
       if (target.state.assetId) staleAssetIds.add(target.state.assetId)
@@ -156,10 +161,10 @@ export async function renderEditorV6CharacterRefresh(
     const effects = preset?.effects ?? state.activeExpressionEffects
     const faceMode = editorV6FaceModeForElement(state, appearance)
     const characterCopy: CustomizerCharacter = { ...character, customization: { ...character.customization, poseSlot: state.poseSlot === undefined ? character.customization.poseSlot : state.poseSlot, faceAppearance: appearance } }
-    const sourceKey = JSON.stringify([character.id, character.updatedAt, characterCopy.customization.modelSlot ?? 1, characterCopy.customization.poseSlot, modelRevision ?? null, poseRevision ?? null, wardrobeRevision ?? null, hairRevision ?? null, headExtraRevision ?? null])
+    const sourceKey = JSON.stringify([character.id, character.updatedAt, characterCopy.customization.modelSlot ?? 1, characterCopy.customization.poseSlot, modelRevision ?? null, poseRevision ?? null, wardrobeRevision ?? null, hairRevision ?? null, headExtraRevision ?? null, eyeRevision ?? null])
     // Legacy face sets bake state into a single image, so their complete appearance is part of the renderer identity.
     const rendererKey = JSON.stringify([sourceKey, appearance?.modelSlot ?? null, appearance?.setId ? appearance : null])
-    const job: RefreshRenderJob = { character, targets, ...(poseRevision ? { poseRevision } : {}), modelRevision, ...(wardrobeRevision ? { wardrobeRevision } : {}), ...(hairRevision ? { hairRevision } : {}), ...(headExtraRevision ? { headExtraRevision } : {}), sourceKey, characterCopy, appearance, expressionBase, faceTransforms, effects, faceMode, preset }
+    const job: RefreshRenderJob = { character, targets, ...(poseRevision ? { poseRevision } : {}), modelRevision, ...(wardrobeRevision ? { wardrobeRevision } : {}), ...(hairRevision ? { hairRevision } : {}), ...(headExtraRevision ? { headExtraRevision } : {}), ...(eyeRevision ? { eyeRevision } : {}), sourceKey, characterCopy, appearance, expressionBase, faceTransforms, effects, faceMode, preset }
     const rendererJobs = rendererGroups.get(rendererKey) ?? []
     rendererJobs.push(job)
     rendererGroups.set(rendererKey, rendererJobs)
@@ -179,7 +184,7 @@ export async function renderEditorV6CharacterRefresh(
     type FaceBake = { rendered: { width: number; height: number }; crop: TrimmedImage | null; faceModeAssetIds: Partial<Record<EditorV6FaceRenderMode, string>> }
     const faceVariants = new Map<string, FaceBake>()
     try {
-      for (const { character, targets, poseRevision, modelRevision, wardrobeRevision, hairRevision, headExtraRevision, appearance, expressionBase, faceTransforms, effects, faceMode, preset } of rendererJobs) {
+      for (const { character, targets, poseRevision, modelRevision, wardrobeRevision, hairRevision, headExtraRevision, eyeRevision, appearance, expressionBase, faceTransforms, effects, faceMode, preset } of rendererJobs) {
         if (isCancelled()) break
         // One bake already contains idle/blink/talk/talk-blink. Reuse it for states that differ only in active mode.
         const variantKey = JSON.stringify([appearance ?? null, faceTransforms ?? null, effects ?? null])
@@ -211,6 +216,7 @@ export async function renderEditorV6CharacterRefresh(
             wardrobeSourceRevision: wardrobeRevision,
             hairSourceRevision: hairRevision,
             headExtraSourceRevision: headExtraRevision,
+            eyeSourceRevision: eyeRevision,
             ...(preset ? { activeExpressionPresetUpdatedAt: preset.updatedAt } : {})
           }
           if (target.kind === 'element') nextElements.set(target.id, next)

@@ -197,6 +197,7 @@ export function FaceComponentsWorkspace({ mode, baseModelSlot }: { mode: FaceWor
     saveAssetBatch: saveFaceComponentAssetBatch,
     faceCatalogItemForSave,
     faceCatalogImagesForImport,
+    notifyAssetsUpdated: () => window.dispatchEvent(new Event('fabricator:assets-updated')),
     initialCatalogTransform: initialFaceCatalogTransform,
     createId: () => crypto.randomUUID(),
     now: () => new Date().toISOString()
@@ -696,6 +697,7 @@ export function FaceComponentsWorkspace({ mode, baseModelSlot }: { mode: FaceWor
     } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
     finally {
       if (removed.length > 0) {
+        window.dispatchEvent(new Event('fabricator:assets-updated'))
         const removedIds = new Set(removed)
         setAssets((current) => current.filter((item) => !removedIds.has(item.id)))
         setDetails((current) => Object.fromEntries(Object.entries(current).filter(([id]) => !removedIds.has(id))))

@@ -1,19 +1,24 @@
 import type { CustomizerCharacter } from '../../../../shared/customizer'
+import { collectCustomizerFaceAssetReferences } from '../../../../shared/customizerFaceAssetReferences.ts'
 import type { EditorV6Document, EditorV6Element } from '../../../../shared/editorV6'
 import { collectCustomizerHairStyleReferences } from '../../../../shared/hairCategories.ts'
-import type { FaceComponentAssetSummary, HairStyleSummary, WardrobeSetSummary } from '../../../../shared/fabricator'
+import type { FaceAssetKind, FaceComponentAssetSummary, FaceComponentKind, HairStyleSummary, WardrobeSetSummary } from '../../../../shared/fabricator'
 
-export type PoseRevisionSnapshot = { projectId: string; revisions: Record<string, string>; modelRevisions: Record<string, string>; wardrobeRevisions?: Record<string, string>; hairRevisions?: Record<string, string>; headExtraRevisions?: Record<string, string> }
+export type PoseRevisionSnapshot = { projectId: string; revisions: Record<string, string>; modelRevisions: Record<string, string>; wardrobeRevisions?: Record<string, string>; hairRevisions?: Record<string, string>; headExtraRevisions?: Record<string, string>; eyeRevisions?: Record<string, string> }
 export type PoseCatalog = { modelSlot: number; poses: Array<{ slot?: number; updatedAt: string } | null> }
 export type ModelCatalog = Array<{ slot: number; updatedAt: string } | null>
 export type WardrobeCatalog = { modelSlot: number; sets: Array<Pick<WardrobeSetSummary, 'id' | 'updatedAt'>> }
 export type HairCatalog = { modelSlot: number; styles: Array<Pick<HairStyleSummary, 'id' | 'updatedAt'>> }
 export type HeadExtraCatalog = { modelSlot: number; assets: Array<Pick<FaceComponentAssetSummary, 'id' | 'updatedAt'>> }
+export type EyeCatalog = { modelSlot: number; kind: FaceComponentKind; assets: Array<Pick<FaceComponentAssetSummary, 'id' | 'updatedAt'>> }
+
+export const editorV6EyeAssetKinds: readonly FaceComponentKind[] = ['eye', 'pupil', 'eye-closed', 'eyebrow']
 
 export const editorV6PoseRevisionKey = (modelSlot: number, poseSlot: number) => `${modelSlot}:${poseSlot}`
 export const editorV6WardrobeRevisionKey = (modelSlot: number, setId: string) => `${modelSlot}:${setId}`
 export const editorV6HairRevisionKey = (modelSlot: number, styleId: string) => `${modelSlot}:${styleId}`
 export const editorV6HeadExtraRevisionKey = (modelSlot: number, assetId: string) => `${modelSlot}:${assetId}`
+export const editorV6EyeRevisionKey = (modelSlot: number, kind: FaceAssetKind, assetId: string) => `${modelSlot}:${kind}:${assetId}`
 
 export function sameCustomizerCharacterCatalog(left: CustomizerCharacter[], right: CustomizerCharacter[]): boolean {
   return left.length === right.length && left.every((character, index) => {
@@ -48,7 +53,11 @@ export function createEditorV6HeadExtraRevisionSnapshot(catalogs: HeadExtraCatal
   return Object.fromEntries(catalogs.flatMap(({ modelSlot, assets }) => assets.map((asset) => [editorV6HeadExtraRevisionKey(modelSlot, asset.id), asset.updatedAt])))
 }
 
-function sourceRevision(kind: 'wardrobe' | 'hair' | 'head-extra', references: Array<[string, string]>): string | undefined {
+export function createEditorV6EyeRevisionSnapshot(catalogs: EyeCatalog[]): Record<string, string> {
+  return Object.fromEntries(catalogs.flatMap(({ modelSlot, kind, assets }) => assets.map((asset) => [editorV6EyeRevisionKey(modelSlot, kind, asset.id), asset.updatedAt])))
+}
+
+function sourceRevision(kind: 'wardrobe' | 'hair' | 'head-extra' | 'eyes', references: Array<[string, string]>): string | undefined {
   const normalized = [...new Map(references).entries()].sort(([left], [right]) => left.localeCompare(right))
   if (!normalized.length) return undefined
   const source = JSON.stringify(normalized)
@@ -92,12 +101,36 @@ export function editorV6CharacterHeadExtraSourceRevision(character: CustomizerCh
   return sourceRevision('head-extra', references)
 }
 
+/** Fingerprints the eye DEV pieces selected by this character and its automatic closed-eye variants. */
+export function editorV6CharacterEyeSourceRevision(character: CustomizerCharacter, revisions: Record<string, string>): string | undefined {
+  const selectedEyes = collectCustomizerFaceAssetReferences(character).flatMap((reference) =>
+    reference.assetType === 'face-component' && (reference.kind === 'eye' || reference.kind === 'pupil' || reference.kind === 'eyebrow')
+      ? [reference]
+      : []
+  )
+  if (!selectedEyes.length) return undefined
+
+  const references = selectedEyes.map((reference) => {
+    const key = editorV6EyeRevisionKey(reference.modelSlot, reference.kind, reference.id)
+    return [key, revisions[key] ?? 'missing'] as [string, string]
+  })
+  const openEyeModelSlots = new Set(selectedEyes.filter((reference) => reference.kind === 'eye').map((reference) => reference.modelSlot))
+  for (const modelSlot of openEyeModelSlots) {
+    const prefix = `${modelSlot}:eye-closed:`
+    for (const [key, updatedAt] of Object.entries(revisions)) {
+      if (key.startsWith(prefix)) references.push([key, updatedAt])
+    }
+  }
+  return sourceRevision('eyes', references)
+}
+
 export function sameSourceRevisionSnapshot(left: PoseRevisionSnapshot, right: PoseRevisionSnapshot): boolean {
   return samePoseRevisionSnapshot(left.revisions, right.revisions)
     && samePoseRevisionSnapshot(left.modelRevisions, right.modelRevisions)
     && samePoseRevisionSnapshot(left.wardrobeRevisions ?? {}, right.wardrobeRevisions ?? {})
     && samePoseRevisionSnapshot(left.hairRevisions ?? {}, right.hairRevisions ?? {})
     && samePoseRevisionSnapshot(left.headExtraRevisions ?? {}, right.headExtraRevisions ?? {})
+    && samePoseRevisionSnapshot(left.eyeRevisions ?? {}, right.eyeRevisions ?? {})
 }
 
 export function createEditorV6PoseRevisionSnapshot(catalogs: PoseCatalog[]): Record<string, string> {
@@ -133,6 +166,7 @@ export function resolveEditorV6CharacterSourceRefresh({
   wardrobeRefreshRequired: boolean
   hairRefreshRequired: boolean
   headExtraRefreshRequired: boolean
+  eyeRefreshRequired: boolean
   faceAssetRefreshRequired: boolean
 } {
   const characterStates = editorV6CharacterStates(project)
@@ -170,12 +204,19 @@ export function resolveEditorV6CharacterSourceRefresh({
     const currentRevision = editorV6CharacterHeadExtraSourceRevision(character, poseSourceSnapshot?.headExtraRevisions ?? {})
     return currentRevision !== undefined && state.headExtraSourceRevision !== currentRevision
   })
+  const eyeRefreshRequired = characterStates.some((state) => {
+    if (state.kind !== 'character' || !state.characterId) return false
+    const character = characterById.get(state.characterId)
+    if (!character) return false
+    const currentRevision = editorV6CharacterEyeSourceRevision(character, poseSourceSnapshot?.eyeRevisions ?? {})
+    return currentRevision !== undefined && state.eyeSourceRevision !== currentRevision
+  })
   const faceAssetRefreshRequired = Boolean(project && (poseRefreshRequired || characterStates.some((state) => {
     if (state.kind !== 'character') return false
     const character = characterById.get(state.characterId ?? '')
     return state.faceRendererVersion !== faceRendererVersion
       || Boolean(character && state.characterSourceUpdatedAt !== character.updatedAt)
-  }) || wardrobeRefreshRequired || hairRefreshRequired || headExtraRefreshRequired))
+  }) || wardrobeRefreshRequired || hairRefreshRequired || headExtraRefreshRequired || eyeRefreshRequired))
 
-  return { characterStates, poseRefreshRequired, wardrobeRefreshRequired, hairRefreshRequired, headExtraRefreshRequired, faceAssetRefreshRequired }
+  return { characterStates, poseRefreshRequired, wardrobeRefreshRequired, hairRefreshRequired, headExtraRefreshRequired, eyeRefreshRequired, faceAssetRefreshRequired }
 }

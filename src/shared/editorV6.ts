@@ -74,6 +74,8 @@ export type EditorV6Element = {
   hairSourceRevision?: string
   /** Fingerprint of the Cabeças extra DEV assets used to compose this actor's stored image. */
   headExtraSourceRevision?: string
+  /** Fingerprint of the Olhos DEV assets used to compose this actor's stored image. */
+  eyeSourceRevision?: string
   flipX?: boolean
   /** Prevents mouse dragging this character inside this EditorV6. */
   positionLocked?: boolean

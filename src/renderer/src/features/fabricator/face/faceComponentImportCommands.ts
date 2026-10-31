@@ -70,6 +70,7 @@ export type FaceComponentImportCommandDependencies = {
   saveAssetBatch: typeof saveFaceComponentAssetBatch
   faceCatalogItemForSave: typeof faceCatalogItemForSave
   faceCatalogImagesForImport: typeof faceCatalogImagesForImport
+  notifyAssetsUpdated: () => void
   initialCatalogTransform: (head: ModelPart, item: Pick<FaceCatalogItem, 'category' | 'pieces'>) => FaceTransform
   createId: () => string
   now: () => string
@@ -106,6 +107,7 @@ export function createFaceComponentImportCommands(dependencies: FaceComponentImp
         now: dependencies.now
       })
       await dependencies.saveAssetBatch(dependencies.api, modelSlot, plan.entries, controller.signal)
+      dependencies.notifyAssetsUpdated()
       if (!dependencies.isContextCurrent()) return
       dependencies.setDetails((current) => ({ ...current, ...Object.fromEntries(plan.assets.map((asset) => [asset.id, asset])) }))
       dependencies.setAssets((current) => [...plan.assets, ...current])
@@ -144,6 +146,7 @@ export function createFaceComponentImportCommands(dependencies: FaceComponentImp
         now: dependencies.now
       })
       await dependencies.saveAssetBatch(dependencies.api, modelSlot, plan.entries)
+      dependencies.notifyAssetsUpdated()
       if (!dependencies.isContextCurrent()) return
       const imported = plan.entries.map(({ asset, dataUrl }) => ({ ...asset, dataUrl }))
       dependencies.setDetails((current) => ({ ...current, ...Object.fromEntries(imported.map((asset) => [asset.id, asset])) }))
@@ -183,6 +186,7 @@ export function createFaceComponentImportCommands(dependencies: FaceComponentImp
       })
       const asset = entry.asset
       await dependencies.api.saveFaceComponentAsset(modelSlot, asset, entry.dataUrl)
+      dependencies.notifyAssetsUpdated()
       if (!dependencies.isContextCurrent()) return
       const saved = { ...asset, dataUrl: entry.dataUrl }
       dependencies.setAssets((current) => [asset, ...current])

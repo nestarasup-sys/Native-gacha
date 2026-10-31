@@ -62,6 +62,7 @@ const editorV6ElementSchema = z.object({
   wardrobeSourceRevision: z.string().max(80).optional(),
   hairSourceRevision: z.string().max(80).optional(),
   headExtraSourceRevision: z.string().max(80).optional(),
+  eyeSourceRevision: z.string().max(80).optional(),
   flipX: z.boolean().optional(),
   positionLocked: z.boolean().optional(),
   faceAppearance: z.custom(isValidCustomizerFaceAppearance).optional(),

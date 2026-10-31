@@ -6,6 +6,8 @@ import {
   createEditorV6WardrobeRevisionSnapshot,
   createEditorV6HairRevisionSnapshot,
   createEditorV6HeadExtraRevisionSnapshot,
+  createEditorV6EyeRevisionSnapshot,
+  editorV6EyeAssetKinds,
   sameCustomizerCharacterCatalog,
   sameSourceRevisionSnapshot
 } from './editorV6CharacterSourceModel.ts'
@@ -17,10 +19,13 @@ export {
   createEditorV6WardrobeRevisionSnapshot,
   createEditorV6HairRevisionSnapshot,
   createEditorV6HeadExtraRevisionSnapshot,
+  createEditorV6EyeRevisionSnapshot,
+  editorV6CharacterEyeSourceRevision,
   editorV6CharacterHeadExtraSourceRevision,
   editorV6CharacterHairSourceRevision,
   editorV6CharacterWardrobeSourceRevision,
   editorV6HeadExtraRevisionKey,
+  editorV6EyeRevisionKey,
   editorV6HairRevisionKey,
   editorV6PoseRevisionKey,
   editorV6WardrobeRevisionKey,
@@ -38,6 +43,9 @@ export function useEditorV6CharacterSources(projectId: string | null, reportErro
     character.customization.modelSlot ?? 1,
     ...(character.customization.wardrobeGroups ?? []).map((group) => group.modelSlot),
     ...(character.customization.hairAppearance ? [character.customization.hairAppearance.modelSlot] : []),
+    ...(character.customization.faceAppearance && Object.values(character.customization.faceAppearance.components ?? {}).some((component) => component?.assetId)
+      ? [character.customization.faceAppearance.modelSlot]
+      : []),
     ...(character.customization.faceAppearance && Object.values(character.customization.faceAppearance.headExtras ?? {}).some(Boolean)
       ? [character.customization.faceAppearance.modelSlot]
       : [])
@@ -84,7 +92,7 @@ export function useEditorV6CharacterSources(projectId: string | null, reportErro
         do {
           requestQueued = false
           try {
-            const [catalogs, models, wardrobeCatalogs, hairCatalogs, headExtraCatalogs] = await Promise.all([
+            const [catalogs, models, wardrobeCatalogs, hairCatalogs, headExtraCatalogs, eyeCatalogs] = await Promise.all([
               Promise.all(fabricatorModelSlots.map(async (modelSlot) => ({
                 modelSlot,
                 poses: await window.desktop.fabricator.listFabricatorPoseSlots(modelSlot)
@@ -101,7 +109,12 @@ export function useEditorV6CharacterSources(projectId: string | null, reportErro
               Promise.all(fabricatorModelSlots.map(async (modelSlot) => ({
                 modelSlot,
                 assets: await window.desktop.fabricator.listFaceComponentAssets(modelSlot, 'head-extra')
-              })))
+              }))),
+              Promise.all(fabricatorModelSlots.flatMap((modelSlot) => editorV6EyeAssetKinds.map(async (kind) => ({
+                modelSlot,
+                kind,
+                assets: await window.desktop.fabricator.listFaceComponentAssets(modelSlot, kind)
+              }))))
             ])
             if (cancelled) return
             if (requestQueued) continue
@@ -111,7 +124,8 @@ export function useEditorV6CharacterSources(projectId: string | null, reportErro
               modelRevisions: createEditorV6ModelRevisionSnapshot(models),
               wardrobeRevisions: createEditorV6WardrobeRevisionSnapshot(wardrobeCatalogs),
               hairRevisions: createEditorV6HairRevisionSnapshot(hairCatalogs),
-              headExtraRevisions: createEditorV6HeadExtraRevisionSnapshot(headExtraCatalogs)
+              headExtraRevisions: createEditorV6HeadExtraRevisionSnapshot(headExtraCatalogs),
+              eyeRevisions: createEditorV6EyeRevisionSnapshot(eyeCatalogs)
             }
             setPoseSourceSnapshot((current) => current?.projectId === projectId && sameSourceRevisionSnapshot(current, next) ? current : next)
           } catch (reason) {
