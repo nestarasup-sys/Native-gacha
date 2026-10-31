@@ -147,6 +147,18 @@ test('criar, editar e excluir conserva formato e campos existentes', async (t) =
   assert.deepEqual(await service.list(), [])
 })
 
+test('tamanho inicial da cabeça é salvo somente nos personagens novos que recebem a opção', async (t) => {
+  const { service } = await fixture(t)
+  const customized = await service.create('Luma maior', 124)
+  const standard = await service.create('Luma normal')
+  assert.equal(customized.customization.modelSlot, 1)
+  assert.equal(customized.customization.proportions.head, 124)
+  assert.equal(customized.customization.proportions.headWidth, 100)
+  assert.equal(standard.customization.proportions, undefined)
+  await assert.rejects(service.create('Inválido', 151), /entre 60% e 150%/)
+  assert.equal((await service.list()).length, 2)
+})
+
 test('salvar um novo cabelo consulta o catálogo antes de gravar o vínculo', async (t) => {
   const { service } = await fixture(t, [], {
     assertHairStylesAvailable: async references => {

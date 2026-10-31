@@ -84,7 +84,7 @@ const fabricatorApi: FabricatorDesktopApi = {
 const customizerApi: CustomizerDesktopApi = {
   listCustomizerCharacters: () => ipcRenderer.invoke('customizer:characters:list'),
   saveCustomizerCharacter: (character) => ipcRenderer.invoke('customizer:characters:save', character),
-  createCustomizerCharacter: (name) => ipcRenderer.invoke('customizer:characters:create', name),
+  createCustomizerCharacter: (name, initialHeadSize) => ipcRenderer.invoke('customizer:characters:create', name, initialHeadSize),
   deleteCustomizerCharacter: (id) => ipcRenderer.invoke('customizer:characters:delete', id)
 }
 

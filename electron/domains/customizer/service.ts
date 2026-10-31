@@ -1,5 +1,10 @@
 /** Casos de uso independentes de Electron. Todas as gravações compartilham uma fila. */
-import type { CustomizerCharacter, CustomizerWardrobeGroup } from '../../../src/shared/customizer.ts'
+import {
+  characterProportionLimits,
+  defaultCharacterProportions,
+  type CustomizerCharacter,
+  type CustomizerWardrobeGroup
+} from '../../../src/shared/customizer.ts'
 import { collectCustomizerHairStyleReferences } from '../../../src/shared/hairCategories.ts'
 import { collectCustomizerFaceAssetReferences, customizerFaceAssetReferenceKey, type CustomizerFaceAssetReference } from '../../../src/shared/customizerFaceAssetReferences.ts'
 import { addedFabricatorPoseReferences, collectCustomizerPoseReferences, type FabricatorPoseReference } from '../../../src/shared/fabricatorPoseReferences.ts'
@@ -98,9 +103,15 @@ export class CustomizerCharacterService {
     }))
   }
 
-  async create(requestedName: unknown): Promise<CustomizerCharacter> {
+  async create(requestedName: unknown, requestedHeadSize?: unknown): Promise<CustomizerCharacter> {
     const name = typeof requestedName === 'string' ? requestedName.trim().slice(0, 80) : ''
     if (!name) throw new Error('Digite um nome para o personagem.')
+    if (requestedHeadSize !== undefined && (typeof requestedHeadSize !== 'number'
+      || !Number.isInteger(requestedHeadSize)
+      || requestedHeadSize < characterProportionLimits.head.min
+      || requestedHeadSize > characterProportionLimits.head.max)) {
+      throw new Error('O tamanho inicial da cabeça deve estar entre 60% e 150%.')
+    }
     let created!: CustomizerCharacter
     await this.referenceChecks.coordinatePoseReferenceChange(() => this.enqueue(async () => {
       const characters = await this.repository.list()
@@ -108,7 +119,10 @@ export class CustomizerCharacterService {
       created = {
         id: this.newId(), name,
         hair: '#47354b', outfit: '#df9ab6', skin: '#f2d9c9',
-        customization: { modelSlot: 1, poseSlot: 1, partOverrides: {}, layerOrder: [] },
+        customization: {
+          modelSlot: 1, poseSlot: 1, partOverrides: {}, layerOrder: [],
+          ...(requestedHeadSize === undefined ? {} : { proportions: { ...defaultCharacterProportions, head: requestedHeadSize } })
+        },
         createdAt: now, updatedAt: now
       }
       characters.push(created)

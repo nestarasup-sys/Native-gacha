@@ -1,6 +1,13 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createCustomizerCharacterRosterCommands } from '../src/renderer/src/features/customizer/customizerCharacterRosterCommands.ts'
+import {
+  CUSTOMIZER_NEW_CHARACTER_HEAD_SIZE_KEY,
+  DEFAULT_CUSTOMIZER_NEW_CHARACTER_HEAD_SIZE,
+  normalizeCustomizerNewCharacterHeadSizePreference,
+  readCustomizerNewCharacterHeadSizePreference,
+  writeCustomizerNewCharacterHeadSizePreference
+} from '../src/renderer/src/features/customizer/customizerNewCharacterHeadSize.ts'
 
 const character = (id, name = id) => ({ id, name, customization: {}, createdAt: 'now', updatedAt: 'now' })
 
@@ -16,7 +23,11 @@ function createState(initial = []) {
   const charactersRef = { current: initial }
   const saveQueue = { current: new Map() }
   const api = {
-    createCustomizerCharacter: async (name) => character('created', name),
+    createdWithHeadSize: undefined,
+    createCustomizerCharacter: async (name, initialHeadSize) => {
+      api.createdWithHeadSize = initialHeadSize
+      return character('created', name)
+    },
     deleteCustomizerCharacter: async () => {}
   }
   const commands = createCustomizerCharacterRosterCommands({
@@ -53,6 +64,26 @@ test('criar personagem publica o roster, seleciona o novo personagem e notifica 
   assert.equal(state.activeModule, null)
   assert.equal(state.error, '')
   assert.equal(state.notifications, 1)
+  assert.equal(state.characters.at(-1).customization.proportions, undefined)
+})
+
+test('encaminha o tamanho inicial escolhido apenas na criação do novo personagem', async () => {
+  const { api, commands } = createState()
+  await commands.createCharacter('Nina', 124)
+  assert.equal(api.createdWithHeadSize, 124)
+})
+
+test('persiste a preferência de cabeça dos próximos personagens e normaliza valores inválidos', () => {
+  const values = new Map()
+  const storage = {
+    getItem: (key) => values.get(key) ?? null,
+    setItem: (key, value) => values.set(key, value)
+  }
+  assert.deepEqual(readCustomizerNewCharacterHeadSizePreference(storage), DEFAULT_CUSTOMIZER_NEW_CHARACTER_HEAD_SIZE)
+  writeCustomizerNewCharacterHeadSizePreference(storage, { enabled: true, value: 124 })
+  assert.equal(values.has(CUSTOMIZER_NEW_CHARACTER_HEAD_SIZE_KEY), true)
+  assert.deepEqual(readCustomizerNewCharacterHeadSizePreference(storage), { enabled: true, value: 124 })
+  assert.deepEqual(normalizeCustomizerNewCharacterHeadSizePreference({ enabled: true, value: 999 }), { enabled: true, value: 150 })
 })
 
 test('excluir aguarda o salvamento pendente antes do IPC e atualiza o roster depois', async () => {

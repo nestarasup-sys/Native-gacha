@@ -8,6 +8,13 @@ import { useCustomizerHairAppearanceActions } from './useCustomizerHairAppearanc
 import { useCustomizerBodyAppearance } from './useCustomizerBodyAppearance'
 import { useCustomizerCharacterSourceSelection } from './useCustomizerCharacterSourceSelection'
 import { CustomizerModelPicker } from './CustomizerModelPicker'
+import { CustomizerNewCharacterHeadSizeControl } from './CustomizerNewCharacterHeadSizeControl'
+import {
+  DEFAULT_CUSTOMIZER_NEW_CHARACTER_HEAD_SIZE,
+  readCustomizerNewCharacterHeadSizePreference,
+  writeCustomizerNewCharacterHeadSizePreference,
+  type CustomizerNewCharacterHeadSizePreference
+} from './customizerNewCharacterHeadSize'
 import { CustomizerFaceAssemblyWorkspace } from './CustomizerFaceAssemblyWorkspace'
 import { CustomizerFaceCatalogWorkspace } from './CustomizerFaceCatalogWorkspace'
 import { CustomizerClothesAdjustmentPanel } from './CustomizerClothesAdjustmentPanel'
@@ -83,6 +90,14 @@ export function CustomizerPage() {
   const [savingCharacter, setSavingCharacter] = useState(false)
   const [activeModule, setActiveModule] = useState<string | null>(null)
   const [selectedCustomizerTopTab, setSelectedCustomizerTopTab] = useState('corpo')
+  const [newCharacterHeadSizePreference, setNewCharacterHeadSizePreference] = useState<CustomizerNewCharacterHeadSizePreference>(() => {
+    try { return readCustomizerNewCharacterHeadSizePreference(window.localStorage) }
+    catch { return { ...DEFAULT_CUSTOMIZER_NEW_CHARACTER_HEAD_SIZE } }
+  })
+  useEffect(() => {
+    try { writeCustomizerNewCharacterHeadSizePreference(window.localStorage, newCharacterHeadSizePreference) }
+    catch { /* Esta preferência opcional não deve bloquear o Customizador. */ }
+  }, [newCharacterHeadSizePreference])
   const [previewBackground, setPreviewBackground] = usePreviewBackground()
   const {
     zoom: customizerPreviewZoom,
@@ -479,7 +494,8 @@ export function CustomizerPage() {
     setCharactersError('')
     try {
       if (dialogMode === 'create') {
-        await createCharacter(name)
+        const initialHeadSize = newCharacterHeadSizePreference.enabled ? newCharacterHeadSizePreference.value : undefined
+        await createCharacter(name, initialHeadSize)
       } else if (dialogMode === 'rename' && selectedCharacter) {
         await saveCharacter({ ...selectedCharacter, name, updatedAt: new Date().toISOString() })
       }
@@ -741,6 +757,10 @@ export function CustomizerPage() {
             {selectedCustomizerTopTab === 'roupas' && (clothesPanelTab === 'upper' || clothesPanelTab === 'lower') && <CustomizerWardrobeCatalogWorkspace {...wardrobeCatalogWorkspaceProps} />}
             {selectedCustomizerTopTab === 'roupas' && clothesPanelTab === 'adjust' && renderAdjustmentPicker('clothes')}
             {selectedCustomizerTopTab === 'modelos' && <CustomizerModelPicker models={availableModels} thumbnails={modelThumbnails} selectedSlot={selectedCatalogModelSlot} loading={catalogLoading} onSelect={(model) => void selectCatalogModel(model)} />}
+            {selectedCustomizerTopTab === 'modelos' && <CustomizerNewCharacterHeadSizeControl
+              preference={newCharacterHeadSizePreference}
+              onChange={setNewCharacterHeadSizePreference}
+            />}
             {selectedCustomizerTopTab === 'modelos' && <section className="customizer-model-skin-tones" aria-label="Cor de pele do modelo">
               <strong>Cor de pele</strong>
               <div className="customizer-model-skin-tone-row" role="group" aria-label="Escolher cor de pele">

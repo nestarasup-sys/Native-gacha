@@ -214,6 +214,6 @@ export type CustomizerCharacter = {
 export type CustomizerDesktopApi = {
   listCustomizerCharacters: () => Promise<CustomizerCharacter[]>
   saveCustomizerCharacter: (character: CustomizerCharacter) => Promise<void>
-  createCustomizerCharacter: (name: string) => Promise<CustomizerCharacter>
+  createCustomizerCharacter: (name: string, initialHeadSize?: number) => Promise<CustomizerCharacter>
   deleteCustomizerCharacter: (id: string) => Promise<void>
 }
