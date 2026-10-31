@@ -30,3 +30,5 @@
 - Nenhum perfil real foi acessado e nenhum dado persistido foi alterado por esta rodada. Testes Windows visuais ainda pendentes.
 
 - Protegido adicionalmente o retorno assíncrono de arquivos em grids de tronco/mangas/calças: importações canceladas não publicam dados nem limpam o estado de outra operação, e erros tardios não encerram o novo worker.
+
+- Importações diretas de grades agora aplicam limites de 50 MB e 32 milhões de pixels, alinhados ao normalizador e ao worker de folha; testes de fronteira verificam arquivos inválidos e decodificações grandes. O limite de pixels é pós-decodificação, portanto não elimina por completo picos de memória.

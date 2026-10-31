@@ -6,7 +6,8 @@ A área `WardrobeWorkspace.tsx` misturava manipulação de imagem, importações
 
 ## Mudanças
 
-- `wardrobeImportOperations.ts`: orquestra importação de folha, grade de tronco e grades de manga/calça. Mantém a mesma identidade e ordem dos componentes, tratamento de erro, cancelamento de worker e conteúdo das imagens.
+- `wardrobeImportOperations.ts`: orquestra importação de folha, grade de tronco e grades de manga/calça. Mantém a mesma identidade e ordem dos componentes, tratamento de erro, cancelamento de worker e conteúdo das imagens. Inclui guards de concorrência para respostas tardias e liberação de bitmaps temporários.
+- `wardrobeImportLimits.ts`/`wardrobeImportGuard.ts`: validação isolada de tamanho (50 MB), pixels (32 milhões) e versão do worker. O limite de pixels é verificado após a decodificação; não representa garantia absoluta de consumo de memória.
 - `wardrobeSleeveCut.ts`: recorte raster de manga/calça em pares. Mantém ID da parte superior e aloca ID apenas para a parte inferior; preserva a decisão de vínculo por osso e transformação.
 - `wardrobePoseActions.ts`: seleção e carregamento de poses apenas para prévia, sem gravar a pose.
 - `wardrobeWorkspaceModel.ts`: mapeamento de camadas, serialização do modelo e sugestão de osso sem dependência da tela.

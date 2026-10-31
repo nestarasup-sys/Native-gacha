@@ -6,6 +6,7 @@ import { createWardrobeComponentsFromProcessedSheet } from './wardrobeSheetImpor
 import { createWardrobeSleeveSheetComponents } from './wardrobeSleeveSheetImport'
 import type { WardrobeProcessorResponse } from './wardrobeProcessorProtocol'
 import { acceptsWardrobeWorkerResponse } from './wardrobeImportGuard'
+import { assertWardrobeImportFile, assertWardrobeBitmapBounds } from './wardrobeImportLimits'
 
 type Setter<T> = Dispatch<SetStateAction<T>>
 type ImportContext = {
@@ -104,9 +105,11 @@ export function createWardrobeImportOperations({
     setDeformMode(false)
     setProcessing(true); setError(''); setImportPickerOpen(false)
     try {
+      assertWardrobeImportFile(file)
       const image = await createImageBitmap(file)
       let components
       try {
+        assertWardrobeBitmapBounds(image)
         components = createWardrobeTorsoGridComponents(image, referenceModel ?? model, gridSize, () => crypto.randomUUID())
       } finally {
         image.close()
@@ -127,9 +130,11 @@ export function createWardrobeImportOperations({
     const requestAtStart = requestRef.current
     setDeformMode(false); setProcessing(true); setError(''); setImportPickerOpen(false)
     try {
+      assertWardrobeImportFile(file)
       const image = await createImageBitmap(file)
       let components
       try {
+        assertWardrobeBitmapBounds(image)
         components = createWardrobeSleeveSheetComponents(image, referenceModel ?? model, () => crypto.randomUUID(), pairedImportKindRef.current)
       } finally {
         image.close()
