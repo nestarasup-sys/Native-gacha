@@ -46,6 +46,7 @@
     "test:ui-performance-diagnostics": "node --experimental-strip-types --test tests/ui-performance-diagnostics.test.mjs",
     "test:fabricator:face-storage": "node --experimental-strip-types --test tests/fabricator-face-storage.test.mjs",
     "test:fabricator:eye-sheet-processing": "node --experimental-strip-types --test tests/fabricator-eye-sheet-processing.test.mjs",
+    "test:fabricator:palette-normalizer": "node --experimental-strip-types --test tests/fabricator-palette-normalizer.test.mjs",
     "test:fabricator:face-workspace": "node --experimental-strip-types --test tests/face-workspace-data.test.mjs tests/face-part-preview-model.test.mjs tests/face-library-model.test.mjs tests/face-component-import-model.test.mjs tests/face-component-asset-batch.test.mjs tests/face-save-queue.test.mjs tests/face-preview-frame.test.mjs",
     "test:fabricator:hair-storage": "node --experimental-strip-types --test tests/fabricator-hair-storage.test.mjs",
     "test:fabricator:hair-catalog": "node --experimental-strip-types --test tests/hair-workspace-catalog.test.mjs",

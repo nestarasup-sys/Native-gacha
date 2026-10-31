@@ -21,7 +21,7 @@ import { wardrobeSaveAssets } from './wardrobeSaveAssets'
 import { createWardrobeSleeveSheetComponents } from './wardrobeSleeveSheetImport'
 import type { WardrobeProcessorResponse } from './wardrobeProcessorProtocol'
 import { recoverWardrobeReferenceModel } from './wardrobeReferenceRecovery'
-import { normalizeEditableImageFile } from '../normalizeImage'
+import { usePaletteImport } from '../usePaletteImport'
 import { useWardrobeDeformation } from './useWardrobeDeformation'
 import { rebindWardrobeComponents } from './wardrobeBindings'
 import { WardrobeGarmentEditorModal } from './WardrobeGarmentEditorModal'
@@ -46,7 +46,6 @@ function wardrobeSetPresentation(kind: WardrobeSetSummary['importKind']) {
   if (kind === 'pants-grid-3x4') return { title: 'Calças', className: 'pants-import' }
   return { title: 'Completo', className: 'complete-import' }
 }
-function readFile(file: File): Promise<string> { return normalizeEditableImageFile(file).then((image) => image.dataUrl) }
 function getBodyLayer(model: FabricatorProject | null, partId: string): number {
   if (!model) return 0
   const order = model.layerOrder ?? model.parts.map((part) => part.id)
@@ -67,6 +66,7 @@ function isLongJointSplitCandidate(component: WardrobeComponent | null | undefin
   return /^(Manga longa|Calça longa)/i.test(component.name)
 }
 export function WardrobeWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
+  const { requestPaletteImport, paletteImportModal } = usePaletteImport()
   const [previewBackground, setPreviewBackground] = usePreviewBackground()
   const [models, setModels] = useState<FabricatorSlotSummary[]>(Array.from({ length: 10 }, () => null))
   const [modelSlot, setModelSlot] = useState(baseModelSlot)
@@ -308,9 +308,11 @@ export function WardrobeWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
     if (!sourceParts) { setError('Aguarde a referência corporal carregar antes de importar a folha.'); return }
     if (!/\.(png|jpe?g|webp)$/i.test(file.name)) { setError('Use uma imagem PNG, JPG ou WebP.'); return }
     setDeformMode(false)
-    setProcessing(true); setError('')
+    setError('')
     try {
-      const source = await readFile(file)
+      const source = await requestPaletteImport(file, 'wardrobe')
+      if (!source) return
+      setProcessing(true)
       workerRef.current?.terminate()
       const worker = new Worker(new URL('./wardrobeProcessor.worker.ts', import.meta.url), { type: 'module' })
       workerRef.current = worker
@@ -339,9 +341,12 @@ export function WardrobeWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
     if (!sourceParts) { setError('Aguarde a referência corporal carregar antes de importar a folha.'); return }
     const gridSize = gridSizeRef.current
     setDeformMode(false)
-    setProcessing(true); setError(''); setImportPickerOpen(false)
+    setError(''); setImportPickerOpen(false)
     try {
-      const image = await createImageBitmap(file)
+      const source = await requestPaletteImport(file, 'wardrobe')
+      if (!source) return
+      setProcessing(true)
+      const image = await createImageBitmap(await (await fetch(source)).blob())
       const components = createWardrobeTorsoGridComponents(image, referenceModel ?? model, gridSize, () => crypto.randomUUID())
       if (!components.length) throw new Error('A grade ' + gridSize + '×3 não contém peças visíveis. Confira as células da imagem.')
       clearWardrobeWarpState()
@@ -352,9 +357,12 @@ export function WardrobeWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
   }
   const importSleeveGrid = async (file?: File) => {
     if (!file || !model || processing || saving || openingSet) return
-    setDeformMode(false); setProcessing(true); setError(''); setImportPickerOpen(false)
+    setDeformMode(false); setError(''); setImportPickerOpen(false)
     try {
-      const components = createWardrobeSleeveSheetComponents(await createImageBitmap(file), referenceModel ?? model, () => crypto.randomUUID(), pairedImportKindRef.current)
+      const source = await requestPaletteImport(file, 'wardrobe')
+      if (!source) return
+      setProcessing(true)
+      const components = createWardrobeSleeveSheetComponents(await createImageBitmap(await (await fetch(source)).blob()), referenceModel ?? model, () => crypto.randomUUID(), pairedImportKindRef.current)
       clearWardrobeWarpState()
       setDraft({ schemaVersion: 1, edition: 1, importKind: pairedImportKindRef.current === 'pants' ? 'pants-grid-3x4' : 'sleeve-grid-3x4', id: crypto.randomUUID(), modelSlot, modelName: model.name, name: file.name.replace(/\.[^.]+$/, ''), width: model.width, height: model.height, components, updatedAt: new Date().toISOString() })
       setActiveSetId(null); setSelectedId(components[0]?.id ?? null); setDirty(true); setJoinJointsMode(false)
@@ -725,5 +733,6 @@ export function WardrobeWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
     </div>
     {garmentEditorOpen && selected && <WardrobeGarmentEditorModal key={selected.id} component={selected} bodyReference={editorBodyReference} onClose={() => setGarmentEditorOpen(false)} onApply={(imageUrl) => { if (imageUrl !== selected.dataUrl) { invalidateWarpImage(selected.id); updateComponent(selected.id, { dataUrl: imageUrl, hasDeformationOriginal: undefined, deformationOriginalDataUrl: undefined, deformationOriginalFrame: undefined, isDeformed: false }) } setGarmentEditorOpen(false) }} />}
     {importPickerOpen && <div className="pose-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setImportPickerOpen(false) }}><section className="pose-model-picker" role="dialog" aria-modal="true" aria-labelledby="wardrobe-import-title"><header><span><small>BIBLIOTECA DE ROUPAS</small><strong id="wardrobe-import-title">Como deseja importar?</strong></span><button onClick={() => setImportPickerOpen(false)} aria-label="Fechar" type="button">×</button></header><p>Na folha automática, organize os acessórios na faixa de cima e as roupas do corpo abaixo.</p><div className="pose-model-options"><button className="pose-model-option" onClick={() => { setImportPickerOpen(false); inputRef.current?.click() }} type="button"><span className="pose-model-number"><Icon name="sparkles" /></span><span><b>Separar automaticamente</b><small>Separa os recortes transparentes, detecta acessórios no topo e sugere tronco, braços, pernas, meias e sapatos abaixo.</small></span><Icon name="chevronRight" /></button><button className="pose-model-option" onClick={() => { gridSizeRef.current = 4; gridInputRef.current?.click() }} type="button"><span className="pose-model-number">4×3</span><span><b>Roupas para tronco · grade 4×3</b><small>Até 12 roupas, com remoção automática do fundo.</small></span><Icon name="chevronRight" /></button><button className="pose-model-option" onClick={() => { gridSizeRef.current = 3; gridInputRef.current?.click() }} type="button"><span className="pose-model-number">3×3</span><span><b>Roupas para tronco · grade 3×3</b><small>Até 9 roupas, com remoção automática do fundo.</small></span><Icon name="chevronRight" /></button><button className="pose-model-option" onClick={() => { pairedImportKindRef.current = 'pants'; sleeveInputRef.current?.click() }} type="button"><span className="pose-model-number">3×4</span><span><b>Importar Calças (Sheet)</b><small>12 peças esquerdas: 6 shorts nas coxas e 6 calças inteiras; posicione sobre coxa e canela com “Juntar juntas” e divida automaticamente na junta. O lado direito é espelhado.</small></span><Icon name="chevronRight" /></button><button className="pose-model-option" onClick={() => { pairedImportKindRef.current = 'sleeves'; sleeveInputRef.current?.click() }} type="button"><span className="pose-model-number">3×4</span><span><b>Importar Mangas (Sheet)</b><small>12 posições: mangas curtas nas 2 primeiras linhas; as longas ficam inteiras para posicionar e dividir na junta do modelo. Gera cada lado direito espelhando a manga esquerda.</small></span><Icon name="chevronRight" /></button></div></section></div>}{testPosePickerOpen && <div className="pose-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) { testPoseRequestRef.current += 1; setTestPoseLoading(false); setTestPosePickerOpen(false) } }}><section className="pose-model-picker" role="dialog" aria-modal="true" aria-labelledby="wardrobe-test-picker-title"><header><span><small>TESTE DE ROUPA</small><strong id="wardrobe-test-picker-title">Escolha uma pose</strong></span><button onClick={() => { testPoseRequestRef.current += 1; setTestPoseLoading(false); setTestPosePickerOpen(false) }} aria-label="Fechar" type="button">×</button></header><p>A roupa será exibida sobre uma cópia visual da pose. A pose salva não será modificada.</p><div className="pose-model-options">{testPoseLoading && <div className="pose-model-none">Carregando poses…</div>}{testPoseSlots.map((pose) => pose && <button key={`pose-${pose.slot}`} className="pose-model-option" disabled={testPoseLoading} onClick={() => void loadTestPose(pose.slot)} type="button"><span className="pose-model-number">{String(pose.slot).padStart(2, '0')}</span><span><b>{pose.name}</b><small>{pose.partCount} peças · {new Date(pose.updatedAt).toLocaleDateString('pt-BR')}</small></span><Icon name="chevronRight" /></button>)}{!testPoseLoading && testPoseSlots.length === 0 && <div className="pose-model-none">Este modelo ainda não tem poses salvas.</div>}</div></section></div>}
+    {paletteImportModal}
   </section>
 }

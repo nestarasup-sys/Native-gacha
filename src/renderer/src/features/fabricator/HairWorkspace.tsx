@@ -11,7 +11,7 @@ import { HairGridReviewModal } from './HairGridReviewModal'
 import { defaultHairGridSplits, type HairGridSplits } from './hairGridLayout'
 import { Icon } from '../../ui/components/Icon'
 import { usePreviewBackground } from '../../ui/hooks/usePreviewBackground'
-import { normalizeEditableImageFile } from './normalizeImage'
+import { usePaletteImport } from './usePaletteImport'
 import { useModelAppearanceTarget, useModelPartAppearancePreview } from './ModelAppearanceContext'
 import { getHairWorkspaceCatalogPage, hairStyleDetailMatchesSummary, hairStyleSummary, loadHairWorkspaceCatalogPage, retainHairWorkspaceStyleDetails } from './hairWorkspaceCatalog'
 
@@ -70,10 +70,6 @@ function categoriesForStyle(style: Pick<HairStyle, 'category' | 'categoryBySide'
 
 function nameFromFile(file: File): string {
   return file.name.replace(/\.[^.]+$/, '').trim().slice(0, 80) || 'Novo conjunto de cabelo'
-}
-
-function readFileDataUrl(file: File): Promise<string> {
-  return normalizeEditableImageFile(file).then((image) => image.dataUrl)
 }
 
 function loadImage(dataUrl: string): Promise<HTMLImageElement> {
@@ -168,6 +164,7 @@ function workspaceFromHairGridStyle(
 }
 
 export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
+  const { requestPaletteImport, paletteImportModal } = usePaletteImport()
   const [background] = usePreviewBackground()
   const [models, setModels] = useState<FabricatorSlotSummary[]>([])
   const [modelSlot, setModelSlot] = useState(baseModelSlot)
@@ -374,7 +371,8 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
     if (dirty && (hairWorkspace.front || hairWorkspace.back) && !window.confirm('Substituir a folha atual e descartar os ajustes não salvos?')) return
     setError(''); setNotice('')
     try {
-      const uploadDataUrl = await readFileDataUrl(file)
+      const uploadDataUrl = await requestPaletteImport(file, 'hair')
+      if (!uploadDataUrl) return
       const image = await loadImage(uploadDataUrl)
       if (image.naturalHeight < 2) throw new Error('A folha precisa ter o cabelo posterior em cima e o traseiro em baixo.')
       const sourceImageDataUrl = imageAsPng(image)
@@ -400,7 +398,9 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
     setSaving(true)
     setHairGridPreviewBusy(true)
     try {
-      const sourceImageDataUrl = imageAsPng(await loadImage(await readFileDataUrl(file)))
+      const uploadDataUrl = await requestPaletteImport(file, 'hair')
+      if (!uploadDataUrl) return
+      const sourceImageDataUrl = imageAsPng(await loadImage(uploadDataUrl))
       const tolerance = hairWorkspace.chromaTolerance ?? 70
       const mode = hairWorkspace.chromaMode ?? 'auto'
       const paddingPercent = 4
@@ -514,7 +514,9 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
     if (dirty && hairWorkspace[selectedSide] && !window.confirm(`Substituir a peça atual de ${category.label} e descartar os ajustes não salvos?`)) return
     setError(''); setNotice('')
     try {
-      const image = await loadImage(await readFileDataUrl(file))
+      const uploadDataUrl = await requestPaletteImport(file, 'hair')
+      if (!uploadDataUrl) return
+      const image = await loadImage(uploadDataUrl)
       const asset = { dataUrl: imageAsPng(image), width: image.naturalWidth, height: image.naturalHeight }
       const side = selectedSide
       updateWorkspace((current) => ({ ...current, [side]: asset, categoryBySide: { ...current.categoryBySide, [side]: selectedCategory }, sourceAppliesToDraft: false, transforms: { ...current.transforms, [side]: initialTransform(side, head, asset) } }))
@@ -893,5 +895,6 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
       onCancel={cancelHairGridReview}
       onSave={() => void saveHairGridReview()}
     />}
+    {paletteImportModal}
   </section>
 }
