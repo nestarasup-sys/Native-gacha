@@ -75,12 +75,29 @@ async function image(url: string) { const i = new Image(); i.src = url; await i.
   const talkingTransition = await bakeEditorV6Motion({ id: crypto.randomUUID(), plan: talkPlan, character: facialCharacter, mouthScaleSamples: talkScales }, facialProvider)
   assert(talkingTransition.metrics.preparedRigs === 9, 'Talking mouth samples prepared duplicate pose rigs during a transition')
   assert(talkingTransition.motion.frames.slice(1).every((frame) => Boolean(frame.facePatch)), 'Talking mouth samples lost their local facial patches during a pose transition')
+  const legacyTransitionScales = talkingTransition.motion.frames.map((frame) => frame.width / frame.sprite.width)
+  assert(Math.max(...legacyTransitionScales) - Math.min(...legacyTransitionScales) < 0.000001, 'An older project without characterCanvasWidth changed character scale while its pose moved')
+  assert(Boolean(talkingTransition.faceAsset), 'Talking transition did not return the localized facial atlas')
+  const transitionFaceAtlas = await image(talkingTransition.faceAsset!.dataUrl)
+  for (const frame of talkingTransition.motion.frames) if (frame.facePatch) {
+    const sprite = frame.facePatch.sprite, patchCanvas = document.createElement('canvas')
+    patchCanvas.width = sprite.width; patchCanvas.height = sprite.height
+    const patchContext = patchCanvas.getContext('2d')!
+    patchContext.drawImage(transitionFaceAtlas, sprite.x, sprite.y, sprite.width, sprite.height, 0, 0, sprite.width, sprite.height)
+    const pixels = patchContext.getImageData(0, 0, sprite.width, sprite.height).data
+    for (let x = 0; x < sprite.width; x++) assert(pixels[x * 4 + 3] === 0 && pixels[((sprite.height - 1) * sprite.width + x) * 4 + 3] === 0, 'Mouth patch has visible pixels on its horizontal rectangular edge')
+    for (let y = 0; y < sprite.height; y++) assert(pixels[(y * sprite.width) * 4 + 3] === 0 && pixels[(y * sprite.width + sprite.width - 1) * 4 + 3] === 0, 'Mouth patch has visible pixels on its vertical rectangular edge')
+  }
   assert(editorV6MotionResultSchema.safeParse(talkingTransition).success, 'A talking pose transition exceeded the motion result contract')
-  const firstFace = { ...previous,state: { ...actor,faceAppearance: appearance } }
-  const same = { ...next, state: { ...actor,faceAppearance: appearance,activeExpressionPresetId: 'other',faceTransforms: { 'expression:mouth-closed:mouth-test': { x: 0,y: 0,width: 100,height: 100,rotation: 0,sourceTransformOverride: { x: 25,y: 35,scaleX: .5,scaleY: .5,rotation: 0 } } } } }
+  const expressionActor = { ...actor, width: 20, height: 26.6666666667, characterCanvasWidth: 25 }
+  const firstFace = { ...previous,state: { ...expressionActor,faceAppearance: appearance } }
+  const same = { ...next, state: { ...expressionActor,faceAppearance: appearance,activeExpressionPresetId: 'other',faceTransforms: { 'expression:mouth-closed:mouth-test': { x: 0,y: 0,width: 100,height: 100,rotation: 0,sourceTransformOverride: { x: 65,y: 35,scaleX: .5,scaleY: .5,rotation: 0 } } } } }
   const expressionPlan = editorV6MotionPlan(track,firstFace,same)!
   const facial = await bakeEditorV6Motion({ id: crypto.randomUUID(), plan: expressionPlan, character: facialCharacter },facialProvider)
   assert(facial.metrics.preparedRigs === 1, 'Expression-only transition rebuilt the static rig')
+  assert(new Set(facial.motion.frames.map((frame) => frame.sprite.width)).size > 1, 'The expression fixture did not change the visible crop bounds')
+  const perPixelCharacterScale = facial.motion.frames.map((frame) => frame.width / frame.sprite.width)
+  assert(Math.max(...perPixelCharacterScale) - Math.min(...perPixelCharacterScale) < 0.000001, 'Changing facial crop bounds changed the character scale during an expression transition')
   const faceAtlas = await image(facial.asset.dataUrl), greenXs: number[] = []
   for (const frame of facial.motion.frames) {
     const c = document.createElement('canvas'),s = frame.sprite; c.width=s.width;c.height=s.height;const ctx=c.getContext('2d')!;ctx.drawImage(faceAtlas,s.x,s.y,s.width,s.height,0,0,c.width,c.height)
@@ -114,6 +131,14 @@ async function image(url: string) { const i = new Image(); i.src = url; await i.
   const hiActor: EditorV6Element = { ...actor, characterId: hiCharacter.id, faceAppearance: hiAppearance, activeFaceMode: 'talk', poseSlot: 1 }
   const hiPlan = { ...mouthPlan, elementId: hiActor.id, characterId: hiCharacter.id, key: 'native-resolution-mouth-patch', from: hiActor, to: { ...hiActor }, samples: mouthSamples }
   const hiMouthBake = await bakeEditorV6Motion({ id: crypto.randomUUID(), plan: hiPlan, character: hiCharacter, mouthScaleSamples: [1, 1.05, 1.1025], maxAtlasPixels: 8_000_000 }, hiProvider)
+  const hiPatchAtlas = await image(hiMouthBake.asset.dataUrl)
+  const hiPatchSprite = hiMouthBake.motion.frames[2].facePatch!.sprite
+  const hiPatchCanvas = document.createElement('canvas'); hiPatchCanvas.width = hiPatchSprite.width; hiPatchCanvas.height = hiPatchSprite.height
+  const hiPatchContext = hiPatchCanvas.getContext('2d')!
+  hiPatchContext.drawImage(hiPatchAtlas, hiPatchSprite.x, hiPatchSprite.y, hiPatchSprite.width, hiPatchSprite.height, 0, 0, hiPatchSprite.width, hiPatchSprite.height)
+  const hiPatchPixels = hiPatchContext.getImageData(0, 0, hiPatchSprite.width, hiPatchSprite.height).data
+  for (let x = 0; x < hiPatchSprite.width; x++) assert(hiPatchPixels[x * 4 + 3] === 0 && hiPatchPixels[((hiPatchSprite.height - 1) * hiPatchSprite.width + x) * 4 + 3] === 0, 'A high-resolution mouth patch retained an opaque horizontal rectangle edge')
+  for (let y = 0; y < hiPatchSprite.height; y++) assert(hiPatchPixels[(y * hiPatchSprite.width) * 4 + 3] === 0 && hiPatchPixels[(y * hiPatchSprite.width + hiPatchSprite.width - 1) * 4 + 3] === 0, 'A high-resolution mouth patch retained an opaque vertical rectangle edge')
   const hiBodyRenderer = await prepareSavedCharacterRenderer(hiCharacter, { source: hiSource, artwork: hiSource, assetProvider: hiProvider })
   const hiBody = await hiBodyRenderer.renderToCanvas(hiAppearance, {}, undefined, 'idle')
   const hiBodyDataUrl = hiBody.canvas.toDataURL('image/png')

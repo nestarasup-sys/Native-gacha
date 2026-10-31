@@ -19,10 +19,40 @@ function changedBounds(reference: Uint8ClampedArray, next: Uint8ClampedArray, wi
   let left = width, right = -1, top = height, bottom = -1
   for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
     const offset = (y * width + x) * 4
-    if (Math.abs(reference[offset] - next[offset]) < 3 && Math.abs(reference[offset + 1] - next[offset + 1]) < 3 && Math.abs(reference[offset + 2] - next[offset + 2]) < 3 && Math.abs(reference[offset + 3] - next[offset + 3]) < 3) continue
+    if (!pixelChanged(reference, next, offset)) continue
     left = Math.min(left, x); right = Math.max(right, x); top = Math.min(top, y); bottom = Math.max(bottom, y)
   }
   return right < left ? undefined : { left, top, right, bottom }
+}
+function pixelChanged(reference: Uint8ClampedArray, next: Uint8ClampedArray, offset: number): boolean {
+  return pixelChangedAt(reference, offset, next, offset)
+}
+function pixelChangedAt(reference: Uint8ClampedArray, referenceOffset: number, next: Uint8ClampedArray, nextOffset: number): boolean {
+  return Math.abs(reference[referenceOffset] - next[nextOffset]) >= 3 || Math.abs(reference[referenceOffset + 1] - next[nextOffset + 1]) >= 3
+    || Math.abs(reference[referenceOffset + 2] - next[nextOffset + 2]) >= 3 || Math.abs(reference[referenceOffset + 3] - next[nextOffset + 3]) >= 3
+}
+/** Build a sparse replacement layer; unchanged pixels stay transparent so its rectangular atlas cell cannot show a seam. */
+function changedPixelPatch(source: HTMLCanvasElement, reference: Uint8ClampedArray, width: number, bounds: PixelBounds): HTMLCanvasElement {
+  const patchWidth = bounds.right - bounds.left + 1, patchHeight = bounds.bottom - bounds.top + 1
+  const sourcePixels = source.getContext('2d', { willReadFrequently: true })!.getImageData(bounds.left, bounds.top, patchWidth, patchHeight).data
+  const patch = document.createElement('canvas'); patch.width = patchWidth; patch.height = patchHeight
+  const context = patch.getContext('2d')!
+  const pixels = context.createImageData(patchWidth, patchHeight)
+  for (let y = 0; y < patchHeight; y++) for (let x = 0; x < patchWidth; x++) {
+    const localOffset = (y * patchWidth + x) * 4
+    const sourceOffset = ((bounds.top + y) * width + bounds.left + x) * 4
+    if (!pixelChangedAt(reference, sourceOffset, sourcePixels, localOffset)) continue
+    const alpha = sourcePixels[localOffset + 3]
+    if (!alpha) continue
+    pixels.data[localOffset] = sourcePixels[localOffset]
+    pixels.data[localOffset + 1] = sourcePixels[localOffset + 1]
+    pixels.data[localOffset + 2] = sourcePixels[localOffset + 2]
+    // The usual face region sits over an opaque head. Replace those pixels
+    // instead of alpha-blending a second copy of the character's antialiasing.
+    pixels.data[localOffset + 3] = reference[sourceOffset + 3] >= 248 ? 255 : alpha
+  }
+  context.putImageData(pixels, 0, 0)
+  return patch
 }
 function unionBounds(current: PixelBounds | undefined, next: PixelBounds): PixelBounds {
   return current ? { left: Math.min(current.left, next.left), top: Math.min(current.top, next.top), right: Math.max(current.right, next.right), bottom: Math.max(current.bottom, next.bottom) } : next
@@ -38,6 +68,18 @@ function cropOf(canvas: HTMLCanvasElement, fingerprint = false): Crop {
   }
   if (right < left) return { left: 0, top: 0, width: 1, height: 1, ...(fingerprint ? { fingerprint: hash >>> 0 } : {}) }
   return { left, top, width: right - left + 1, height: bottom - top + 1, ...(fingerprint ? { fingerprint: hash >>> 0 } : {}) }
+}
+function characterCanvasScale(element: EditorV6Element, crop: Crop, canvasWidth: number, sharedCharacterCanvasWidth?: number) {
+  const size = editorV6ElementSize(element)
+  const characterCanvasWidth = element.characterCanvasWidth ?? sharedCharacterCanvasWidth
+  if (!characterCanvasWidth || !Number.isFinite(characterCanvasWidth) || characterCanvasWidth <= 0) {
+    return { x: size.width * 19.2 / crop.width, y: size.height * 10.8 / crop.height }
+  }
+  const overall = (element.characterScale ?? 100) / 100
+  return {
+    x: characterCanvasWidth * overall * (element.characterWidthScale ?? 100) / 100 * 19.2 / canvasWidth,
+    y: characterCanvasWidth * overall * (element.characterHeightScale ?? 100) / 100 * (1920 / 1080) * 10.8 / canvasWidth
+  }
 }
 function cachedProvider(provider: CharacterRenderAssetProvider, sharedOnly = false): CharacterRenderAssetProvider {
   const cache = new Map<string, Promise<unknown>>()
@@ -176,11 +218,13 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
       const frames: EditorV6MotionFrame[] = []
       for (const [index, sample] of request.plan.samples.entries()) {
         const frame = await render(0, sample.faceMode, scales[index] ?? 1)
+        let patchCanvas: HTMLCanvasElement | undefined
         try {
           const sx = index % columns * patchWidth, sy = Math.floor(index / columns) * patchHeight
-          context.drawImage(frame.canvas, left, top, patchWidth, patchHeight, sx, sy, patchWidth, patchHeight)
+          patchCanvas = changedPixelPatch(frame.canvas, baselinePixels, frame.width, { left, top, right, bottom })
+          context.drawImage(patchCanvas, sx, sy)
           frames.push({ offset: sample.offset, sprite: { x: sx, y: sy, width: patchWidth, height: patchHeight, atlasWidth, atlasHeight }, x: from.x, y: from.y, width: from.width, height: from.height, rotation: from.rotation, flipX: Boolean(from.flipX), facePatch: { sprite: { x: sx, y: sy, width: patchWidth, height: patchHeight, atlasWidth, atlasHeight }, x, y, width, height } })
-        } finally { frame.dispose() }
+        } finally { if (patchCanvas) { patchCanvas.width = 1; patchCanvas.height = 1 }; frame.dispose() }
       }
       const assetId = crypto.randomUUID(), dataUrl = atlas.toDataURL('image/png')
       atlas.width = atlas.height = 1
@@ -210,8 +254,7 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
         const left = Math.max(frame.crop.left, changed.left - padding), top = Math.max(frame.crop.top, changed.top - padding)
         const right = Math.min(frame.crop.left + frame.crop.width - 1, changed.right + padding), bottom = Math.min(frame.crop.top + frame.crop.height - 1, changed.bottom + padding)
         const patchWidth = right - left + 1, patchHeight = bottom - top + 1
-        const patchCanvas = document.createElement('canvas'); patchCanvas.width = patchWidth; patchCanvas.height = patchHeight
-        patchCanvas.getContext('2d')!.drawImage(scaled.canvas, left, top, patchWidth, patchHeight, 0, 0, patchWidth, patchHeight)
+        const patchCanvas = changedPixelPatch(scaled.canvas, baselinePixels, scaled.width, { left, top, right, bottom })
         facePatches.push({ index, canvas: patchCanvas, left, top, width: patchWidth, height: patchHeight, crop: frame.crop })
       } finally { scaled.dispose() }
     }
@@ -239,8 +282,20 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
     const cellWidth = Math.ceil(maximumWidth * ratio), cellHeight = Math.ceil(maximumHeight * ratio)
     const atlas = document.createElement('canvas'); atlas.width = cellWidth * columns; atlas.height = cellHeight * rows
     const context = atlas.getContext('2d')!
-    const aa = editorV6ElementSize(request.plan.from), bb = editorV6ElementSize(request.plan.to)
-    const fromScale = { x: aa.width * 19.2 / fromCrop.width, y: aa.height * 10.8 / fromCrop.height }, toScale = { x: bb.width * 19.2 / toCrop.width, y: bb.height * 10.8 / toCrop.height }
+    const sharedCharacterCanvasWidth = request.plan.from.characterCanvasWidth ?? request.plan.to.characterCanvasWidth
+    // characterCanvasWidth stores the stage size of the untrimmed character.
+    // Alpha bounds change with facial expressions, so they must not be the
+    // reference used to scale the character's body and clothes.
+    const fromScale = characterCanvasScale(request.plan.from, fromCrop, fullWidth, sharedCharacterCanvasWidth)
+    let toScale = characterCanvasScale(request.plan.to, toCrop, last?.width ?? fullWidth, sharedCharacterCanvasWidth)
+    // Older projects have no untrimmed-canvas width. If their actor box and
+    // explicit scale are unchanged, retain the source scale through the bake.
+    const sameLegacyElementSize = !sharedCharacterCanvasWidth
+      && request.plan.from.width === request.plan.to.width && request.plan.from.height === request.plan.to.height
+      && (request.plan.from.characterScale ?? 100) === (request.plan.to.characterScale ?? 100)
+      && (request.plan.from.characterWidthScale ?? 100) === (request.plan.to.characterWidthScale ?? 100)
+      && (request.plan.from.characterHeightScale ?? 100) === (request.plan.to.characterHeightScale ?? 100)
+    if (sameLegacyElementSize) toScale = fromScale
     for (const [index, sample] of request.plan.samples.entries()) {
       const t = motionEase(sample.progress), mouthScale = request.mouthScaleSamples?.[index] ?? 1
       const baked = preparedAtlasFrames?.[index]
@@ -251,8 +306,8 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
         const sourceCanvas = baked?.canvas ?? frame!.canvas
         context.drawImage(sourceCanvas, baked ? 0 : crop.left, baked ? 0 : crop.top, crop.width, crop.height, x, y, width, height)
         const sx = motionLerp(fromScale.x, toScale.x, t), sy = motionLerp(fromScale.y, toScale.y, t)
-        const originX = motionLerp(-aa.width * 9.6 - fromCrop.left * fromScale.x, -bb.width * 9.6 - toCrop.left * toScale.x, t)
-        const originY = motionLerp(-aa.height * 5.4 - fromCrop.top * fromScale.y, -bb.height * 5.4 - toCrop.top * toScale.y, t)
+        const originX = motionLerp(-(fromCrop.left + fromCrop.width / 2) * fromScale.x, -(toCrop.left + toCrop.width / 2) * toScale.x, t)
+        const originY = motionLerp(-(fromCrop.top + fromCrop.height / 2) * fromScale.y, -(toCrop.top + toCrop.height / 2) * toScale.y, t)
         const rotation = motionAngle(from.rotation, to.rotation, t), flipX = Boolean(t < .5 ? from.flipX : to.flipX)
         const dx = (originX + (crop.left + crop.width / 2) * sx) * (flipX ? -1 : 1), dy = originY + (crop.top + crop.height / 2) * sy, radians = rotation * Math.PI / 180
         frames.push({ offset: sample.offset, sprite: { x, y, width, height, atlasWidth: atlas.width, atlasHeight: atlas.height }, x: motionLerp(from.x, to.x, t) + (dx * Math.cos(radians) - dy * Math.sin(radians)) / 19.2, y: motionLerp(from.y, to.y, t) + (dx * Math.sin(radians) + dy * Math.cos(radians)) / 10.8, width: crop.width * sx / 19.2, height: crop.height * sy / 10.8, rotation, flipX })
