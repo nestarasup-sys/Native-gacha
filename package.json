@@ -32,6 +32,7 @@
     "test:editor-v6:surface": "node scripts/editor-v6/check-scene-surface.cjs",
     "test:editor-v6:face-export-silent": "npm run build && node scripts/editor-v6/check-face-export.cjs",
     "test:editor-v6:export": "npm run build && node scripts/editor-v6/check-export.cjs",
+    "test:editor-v6:export-overlay": "npm run build && node scripts/editor-v6/check-overlay-parity.cjs",
     "package:win:portable": "npm run build && electron-builder --win portable --x64",
     "test": "node --test tests/app-data-migration.test.cjs tests/studio-character-geometry.test.cjs tests/data-platform.test.cjs tests/video-library-domainfs.test.cjs tests/video-cas-shadow.test.cjs",
     "test:data-runtime": "node scripts/test-data-runtime.cjs",

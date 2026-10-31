@@ -75,3 +75,12 @@ A prévia e o exportador usam o mesmo estado visual da timeline. A prévia inter
 Para vídeos sobrepostos, o FFmpeg recebe as camadas em ordem crescente de **início original do bloco e ID do bloco**, a mesma precedência usada pela prévia, mesmo quando uma parte Turbo começa no meio de duas sobreposições. Não se pode ordenar por nome do arquivo nem apenas pelo início recortado da parte, pois isso alteraria o vídeo visível no MP4. O planejamento está em `src/shared/editorV6VideoComposition.ts`; a resolução visual permanece em `src/shared/editorV6TimelineScene.ts`.
 
 Os testes sintéticos em `tests/editor-v6/editorV6ExportParity.test.ts` comparam a mídia visível a cada quadro, offset de leitura, layout, estados escondidos/silenciados e as imagens de atlas da transição no SVG da prévia e da captura. O workflow `editor-v6-parity.yml` valida Editor V6, TypeScript e build em Linux/Windows. Esses testes **não substituem** um aceite visual com FFmpeg no Electron Windows e arquivos sintéticos.
+
+ 
+### Teste MP4 real de sobreposição e emenda Turbo
+
+O workflow dedicado do Editor V6 agora tem um job Windows que instala o runtime Electron e prepara **FFmpeg/FFprobe LGPL** usando o arquivo ZIP e seu hash SHA-256 do manifesto `resources/video-tools.manifest.json`. Em perfil Electron isolado, o comando `npm run test:editor-v6:export-overlay` gera três clipes sintéticos opacos, com IDs e nomes ordenados em sentido contrário à prioridade das camadas.
+
+A exportação Turbo gera **60 quadros a 30 FPS**. Todos os quadros do MP4 final são decodificados e seu pixel central é comparado à mídia que `resolveEditorV6SceneAtFrame` seleciona no mesmo instante: vermelho até o 19, verde do 20 ao 36, azul do 37 ao 49 e vermelho do 50 ao 59. A emenda entre as partes, nos quadros 29 e 30, deve continuar verde. São verificadas também resolução, quantidade exata de quadros e exportação em duas partes sem fallback. O relatório de verificação sintética é anexado à execução da CI, sem acessar mídia ou dados pessoais.
+
+O teste cobre a prioridade dos clipes opacos em tela inteira, não a paridade de áudio, transparência nem transformações de layout. O teste completo `npm run test:editor-v6:export` e o aceite visual de casos adicionais continuam relevantes.
