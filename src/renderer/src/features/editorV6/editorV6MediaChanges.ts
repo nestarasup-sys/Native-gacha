@@ -1,9 +1,26 @@
 import type { EditorV6Asset, EditorV6Document, EditorV6Element, EditorV6MediaAsset, EditorV6TimelineBlock } from '../../../../shared/editorV6'
 import { syncEditorV6TimelineElements } from '../../../../shared/editorV6'
-import { addEditorV6ElementAtFrame, normalizeEditorV6Timeline } from '../../../../shared/editorV6TimelineCore'
+import { MAX_TIMELINE_FRAME, addEditorV6ElementAtFrame, normalizeEditorV6Timeline } from '../../../../shared/editorV6TimelineCore'
 import { editEditorV6BackgroundAtFrame } from '../../../../shared/editorV6TimelineScene'
 
+/** Revalidate the latest document after the native picker, before publishing imported assets. */
+function assertImageLaneWritable(document: EditorV6Document, category: 'background' | 'object'): void {
+  const kind = category === 'background' ? 'video' : 'object'
+  const lanes = document.timeline.tracks.filter((track) => track.kind === kind)
+  if (lanes.some((track) => track.locked)) throw new Error(category === 'background'
+    ? 'Desbloqueie a faixa Vídeo para importar o fundo.'
+    : 'Desbloqueie a faixa Objetos para importar uma imagem.')
+  if (category === 'background' && lanes.length === 0) throw new Error('A faixa Vídeo não está disponível neste projeto.')
+}
+
+function assertMediaLaneWritable(document: EditorV6Document, kind: 'video' | 'audio'): void {
+  const lanes = document.timeline.tracks.filter((track) => track.kind === kind)
+  if (lanes.length !== 1) throw new Error(`A faixa ${kind === 'audio' ? 'Áudio' : 'Vídeo'} não está disponível de forma única neste projeto.`)
+  if (lanes[0].locked) throw new Error(`Desbloqueie a faixa ${kind === 'audio' ? 'Áudio' : 'Vídeo'} antes de importar a mídia.`)
+}
+
 export function addEditorV6ImageAsset(document: EditorV6Document, asset: EditorV6Asset, category: 'background' | 'object', frame: number, createId: () => string): EditorV6Document {
+  assertImageLaneWritable(document, category)
   let next: EditorV6Document = category === 'background'
     ? editEditorV6BackgroundAtFrame({
         ...document,
@@ -40,8 +57,13 @@ export function addEditorV6ImageAsset(document: EditorV6Document, asset: EditorV
 }
 
 export function addEditorV6TimelineMedia(document: EditorV6Document, media: EditorV6MediaAsset, frame: number, createId: () => string): { document: EditorV6Document; block: EditorV6TimelineBlock; startFrame: number } {
-  const startFrame = Math.min(frame, document.timeline.durationFrames)
-  const durationFrames = Math.max(1, Math.min(media.sourceFrames, 1_000_000 - startFrame))
+  assertMediaLaneWritable(document, media.kind)
+  if (!Number.isFinite(frame)) throw new Error('O quadro de importação da mídia é inválido.')
+  if (!Number.isSafeInteger(media.sourceFrames) || media.sourceFrames < 1 || media.sourceFrames > MAX_TIMELINE_FRAME) {
+    throw new Error('A duração da mídia é inválida.')
+  }
+  const startFrame = Math.min(MAX_TIMELINE_FRAME - 1, Math.max(0, Math.floor(frame)), document.timeline.durationFrames)
+  const durationFrames = Math.max(1, Math.min(media.sourceFrames, MAX_TIMELINE_FRAME - startFrame))
   const block: EditorV6TimelineBlock = {
     id: createId(),
     mediaId: media.id,

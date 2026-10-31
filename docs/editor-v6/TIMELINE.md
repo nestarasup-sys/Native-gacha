@@ -71,3 +71,17 @@ A associação de uma fala a um personagem já fica nos dados do bloco; a troca 
 ## Verificação
 
 Os testes em `tests/editor-v6/editorV6Timeline.test.ts` cobrem períodos independentes, imagens anteriores preservadas após alterações sucessivas, JSON válido, exclusão sem recriar blocos, faixas bloqueadas, fronteiras de um quadro, duplicação, magnetismo e comentários relativos ao dividir ou mover o visual.
+
+
+## Importação e bloqueio de faixas (2026-10-30)
+
+A importação de imagem, áudio e vídeo pode abrir um diálogo nativo antes de carregar a versão mais recente do projeto. As faixas são verificadas **novamente** sobre esse documento no serviço `editorV6MediaChanges.ts`, para que um bloqueio feito enquanto o seletor está aberto não permita publicar um arquivo ou bloco de timeline.
+
+- Fundo exige faixa Vídeo existente e desbloqueada; objeto exige faixa Objetos desbloqueada (faixa ausente pode ser criada pelo sincronizador legado).
+- Áudio e vídeo exigem exatamente uma faixa correspondente, desbloqueada. Uma faixa ausente ou duplicada falha explicitamente em vez de persistir arquivo sem bloco, ou IDs de bloco duplicados.
+- O quadro de inserção é limitado ao intervalo válido e mídias com duração inválida são recusadas antes da publicação do documento. Isso preserva o contrato de um milhão de quadros e a validação do JSON.
+- Testes em `tests/editor-v6/editorV6MediaImportGuards.test.ts` verificam mudanças de bloqueio após o seletor, ausência/duplicação de faixa, limites de tempo, imutabilidade do documento e persistência sem alterações.
+
+Essa proteção atua no documento, **não executa rollback do arquivo já copiado pelo diálogo nativo**. Recuperação/limpeza de mídia órfã permanece uma frente separada, dependente de inventário e teste de recuperação.
+
+A verificação dedicada em `.github/workflows/editor-v6.yml` executa `test:editor-v6`, `typecheck` e `build` no Linux e no Windows para PRs do Editor V6 direcionados a `Dev-V2`, mesmo enquanto os workflows gerais da branch ainda dependem do PR de organização anterior.
