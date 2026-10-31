@@ -18,7 +18,12 @@ export const CHARACTER_SOURCE_PALETTE: readonly SourceSwatch[] = [
   { role: 'detail', rgb: [140, 123, 255] }
 ]
 
-export type CharacterPaletteDetection = { supported: boolean; roleCounts: Record<CharacterPaletteRole, number> }
+type GrayscalePaletteRole = Extract<CharacterPaletteRole, 'outline' | 'shadow' | 'base' | 'light'>
+export type CharacterPaletteDetection = {
+  supported: boolean
+  roleCounts: Record<CharacterPaletteRole, number>
+  grayscaleRoleCounts: Record<GrayscalePaletteRole, number>
+}
 
 const grayscaleSourcePalette = CHARACTER_SOURCE_PALETTE.filter((swatch) => swatch.grayscaleValue !== undefined)
 const chromaticSourcePalette = CHARACTER_SOURCE_PALETTE.filter((swatch) => swatch.grayscaleValue === undefined)
@@ -48,6 +53,7 @@ function matchChromaticSource(red: number, green: number, blue: number): { role:
 /** Detect fixed grayscale roles plus supported chromatic secondary/detail swatches. */
 export function detectCharacterSourcePalette(pixels: ArrayLike<number>): CharacterPaletteDetection {
   const roleCounts: Record<CharacterPaletteRole, number> = { outline: 0, shadow: 0, base: 0, light: 0, detail: 0 }
+  const grayscaleRoleCounts: Record<GrayscalePaletteRole, number> = { outline: 0, shadow: 0, base: 0, light: 0 }
   for (let offset = 0; offset + 3 < pixels.length; offset += 4) {
     if (pixels[offset + 3] < 32) continue
     const red = pixels[offset], green = pixels[offset + 1], blue = pixels[offset + 2]
@@ -59,10 +65,15 @@ export function detectCharacterSourcePalette(pixels: ArrayLike<number>): Charact
     if (Math.max(red, green, blue) - Math.min(red, green, blue) > grayscaleTolerance) continue
     const gray = (red + green + blue) / 3
     for (const swatch of grayscaleSourcePalette) {
-      if (Math.abs(gray - swatch.grayscaleValue!) <= sourceSwatchTolerance) roleCounts[swatch.role] += 1
+      if (Math.abs(gray - swatch.grayscaleValue!) <= sourceSwatchTolerance) {
+        roleCounts[swatch.role] += 1
+        grayscaleRoleCounts[swatch.role as GrayscalePaletteRole] += 1
+      }
     }
   }
-  return { supported: Object.values(roleCounts).filter((count) => count > 0).length >= 2, roleCounts }
+  // A piece may legitimately use only one palette role (for example, a cyan
+  // shirt or a purple accessory); one recognized source color is sufficient.
+  return { supported: Object.values(roleCounts).some((count) => count > 0), roleCounts, grayscaleRoleCounts }
 }
 
 function parseColor(value: string | undefined): [number, number, number] | null {
@@ -70,7 +81,7 @@ function parseColor(value: string | undefined): [number, number, number] | null 
   return [Number.parseInt(value.slice(1, 3), 16), Number.parseInt(value.slice(3, 5), 16), Number.parseInt(value.slice(5, 7), 16)]
 }
 
-/** Map source swatches explicitly; grayscale antialias pixels interpolate between fixed roles. */
+/** Map detected source swatches; grayscale antialiasing is interpolated only between roles present in this piece. */
 export function tintCharacterPalettePixels(pixels: Uint8ClampedArray, colors: CharacterPaletteOverrides): CharacterPaletteDetection {
   const detection = detectCharacterSourcePalette(pixels)
   if (!detection.supported) return detection
@@ -80,6 +91,7 @@ export function tintCharacterPalettePixels(pixels: Uint8ClampedArray, colors: Ch
     if (color) targets.set(swatch.role, color)
   }
   if (!targets.size) return detection
+  const detectedGrayscaleSwatches = grayscaleSourcePalette.filter((swatch) => detection.grayscaleRoleCounts[swatch.role as GrayscalePaletteRole] > 0)
 
   for (let offset = 0; offset + 3 < pixels.length; offset += 4) {
     if (pixels[offset + 3] === 0) continue
@@ -95,16 +107,26 @@ export function tintCharacterPalettePixels(pixels: Uint8ClampedArray, colors: Ch
     }
     if (Math.max(red, green, blue) - Math.min(red, green, blue) > grayscaleTolerance) continue
     const gray = (red + green + blue) / 3
-    const first = grayscaleSourcePalette[0]
-    const last = grayscaleSourcePalette[grayscaleSourcePalette.length - 1]
-    if (gray < first.grayscaleValue! || gray > last.grayscaleValue!) continue
+    const exactSwatch = grayscaleSourcePalette.find((swatch) =>
+      detection.grayscaleRoleCounts[swatch.role as GrayscalePaletteRole] > 0
+      && Math.abs(gray - swatch.grayscaleValue!) <= sourceSwatchTolerance)
+    if (exactSwatch) {
+      const target = targets.get(exactSwatch.role)
+      if (target) {
+        pixels[offset] = target[0]
+        pixels[offset + 1] = target[1]
+        pixels[offset + 2] = target[2]
+      }
+      continue
+    }
 
-    let lower = first
-    let upper = last
-    for (let index = 0; index < grayscaleSourcePalette.length - 1; index += 1) {
-      const current = grayscaleSourcePalette[index]
-      const next = grayscaleSourcePalette[index + 1]
-      if (gray >= current.grayscaleValue! && gray <= next.grayscaleValue!) {
+    let lower = detectedGrayscaleSwatches[0]
+    let upper = detectedGrayscaleSwatches[detectedGrayscaleSwatches.length - 1]
+    if (!lower || !upper || lower === upper || gray <= lower.grayscaleValue! || gray >= upper.grayscaleValue!) continue
+    for (let index = 0; index < detectedGrayscaleSwatches.length - 1; index += 1) {
+      const current = detectedGrayscaleSwatches[index]
+      const next = detectedGrayscaleSwatches[index + 1]
+      if (gray > current.grayscaleValue! && gray < next.grayscaleValue!) {
         lower = current
         upper = next
         break
@@ -112,14 +134,12 @@ export function tintCharacterPalettePixels(pixels: Uint8ClampedArray, colors: Ch
     }
     const lowerColor = targets.get(lower.role)
     const upperColor = targets.get(upper.role)
-    if (!lowerColor && !upperColor) continue
-    const from = lowerColor ?? upperColor!
-    const to = upperColor ?? lowerColor!
+    if (!lowerColor || !upperColor) continue
     const span = upper.grayscaleValue! - lower.grayscaleValue!
     const amount = span === 0 ? 0 : Math.max(0, Math.min(1, (gray - lower.grayscaleValue!) / span))
-    pixels[offset] = Math.round(from[0] + (to[0] - from[0]) * amount)
-    pixels[offset + 1] = Math.round(from[1] + (to[1] - from[1]) * amount)
-    pixels[offset + 2] = Math.round(from[2] + (to[2] - from[2]) * amount)
+    pixels[offset] = Math.round(lowerColor[0] + (upperColor[0] - lowerColor[0]) * amount)
+    pixels[offset + 1] = Math.round(lowerColor[1] + (upperColor[1] - lowerColor[1]) * amount)
+    pixels[offset + 2] = Math.round(lowerColor[2] + (upperColor[2] - lowerColor[2]) * amount)
   }
   return detection
 }

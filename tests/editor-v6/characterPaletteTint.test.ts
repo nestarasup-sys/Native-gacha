@@ -80,6 +80,44 @@ describe('paleta fixa de cabelo, roupas e acessórios', () => {
     expect(Array.from(pixels.slice(24, 28))).toEqual([85, 197, 212, 0])
   })
 
+  it('recolore uma peça que usa somente ciano e preserva os outros pixels', () => {
+    const pixels = new Uint8ClampedArray([
+      85, 197, 212, 255,
+      43, 99, 106, 255,
+      33, 150, 190, 255,
+      85, 197, 212, 0
+    ])
+    const originalBlue = Array.from(pixels.slice(8, 12))
+
+    const detection = tintCharacterPalettePixels(pixels, { light: '#D020B0' })
+
+    expect(detection.supported).toBe(true)
+    expect(detection.roleCounts.light).toBe(2)
+    expect(Array.from(pixels.slice(0, 4))).toEqual([208, 32, 176, 255])
+    expect(Array.from(pixels.slice(4, 8))).toEqual([104, 16, 88, 255])
+    expect(Array.from(pixels.slice(8, 12))).toEqual(originalBlue)
+    expect(Array.from(pixels.slice(12, 16))).toEqual([85, 197, 212, 0])
+  })
+
+  it('recolore um acessório que usa somente roxo e preserva cinzas que não são papéis detectados', () => {
+    const pixels = new Uint8ClampedArray([
+      140, 123, 255, 255,
+      70, 61, 128, 255,
+      210, 24, 100, 255,
+      226, 226, 226, 255,
+      210, 210, 210, 255
+    ])
+    const originalNonPalettePixels = Array.from(pixels.slice(8))
+
+    const detection = tintCharacterPalettePixels(pixels, { detail: '#E03020' })
+
+    expect(detection.supported).toBe(true)
+    expect(detection.roleCounts.detail).toBe(2)
+    expect(Array.from(pixels.slice(0, 4))).toEqual([224, 48, 32, 255])
+    expect(Array.from(pixels.slice(4, 8))).toEqual([112, 24, 16, 255])
+    expect(Array.from(pixels.slice(8))).toEqual(originalNonPalettePixels)
+  })
+
   it('altera cada papel independentemente e preserva os outros quatro', () => {
     const roles = ['outline', 'shadow', 'base', 'light', 'detail'] as const
     const fixtureRoleByPixel = ['outline', 'shadow', 'base', 'light', 'detail', 'detail'] as const
