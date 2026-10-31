@@ -92,8 +92,11 @@ describe('Editor V6: importação na versão mais recente do projeto', () => {
   it('mantém quadros e duração dentro dos limites do documento', () => {
     const original = fixture(), audio = media('audio')
     expect(addEditorV6TimelineMedia(original, audio, -40, nextId).startFrame).toBe(0)
-    expect(addEditorV6TimelineMedia(original, audio, 10_000_000, nextId).startFrame).toBe(999_999)
-    const last = addEditorV6TimelineMedia(original, audio, 10_000_000, nextId)
+    expect(addEditorV6TimelineMedia(original, audio, 10_000_000, nextId).startFrame).toBe(300)
+    // O cursor continua limitado ao fim do projeto; só um projeto longo alcança o limite global.
+    const longProject = { ...original, timeline: { ...original.timeline, durationFrames: 1_000_000 } }
+    const last = addEditorV6TimelineMedia(longProject, audio, 10_000_000, nextId)
+    expect(last.startFrame).toBe(999_999)
     expect(last.block.durationFrames).toBe(1)
     expect(editorV6DocumentSchema.safeParse(last.document).success).toBe(true)
     for (const frame of [NaN, Infinity, -Infinity]) {
