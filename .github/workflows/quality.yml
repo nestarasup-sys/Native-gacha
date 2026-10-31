@@ -2,8 +2,12 @@ name: Quality - core and architecture
 
 on:
   push:
-    branches: [main]
+    branches: [main, Dev-V2]
     paths:
+      - 'docs/**'
+      - '.ai/**'
+      - 'README.md'
+      - 'AGENTS.md'
       - 'src/**'
       - 'electron/**'
       - 'scripts/**'
@@ -14,7 +18,7 @@ on:
       - 'electron.vite.config.ts'
       - '.github/workflows/quality.yml'
   pull_request:
-    branches: [main, refactor/shared-character-core]
+    branches: [main, Dev-V2, refactor/shared-character-core]
   workflow_dispatch:
 
 permissions:
@@ -46,6 +50,9 @@ jobs:
         with:
           node-version: '22.22.0'
           cache: npm
+      - name: Check internal Markdown links
+        if: steps.source.outputs.present == 'true'
+        run: npm run docs:check
       - name: Install dependencies without Electron download hooks
         if: steps.source.outputs.present == 'true'
         run: npm ci --ignore-scripts

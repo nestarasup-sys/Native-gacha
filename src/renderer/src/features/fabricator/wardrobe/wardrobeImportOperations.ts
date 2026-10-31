@@ -1,0 +1,155 @@
+import type { Dispatch, MutableRefObject, SetStateAction } from 'react'
+import type { FabricatorProject, WardrobeSet } from '../../../../../shared/fabricator'
+import { normalizeEditableImageFile } from '../normalizeImage'
+import { createWardrobeTorsoGridComponents } from './wardrobeGridImport'
+import { createWardrobeComponentsFromProcessedSheet } from './wardrobeSheetImport'
+import { createWardrobeSleeveSheetComponents } from './wardrobeSleeveSheetImport'
+import type { WardrobeProcessorResponse } from './wardrobeProcessorProtocol'
+import { acceptsWardrobeWorkerResponse } from './wardrobeImportGuard'
+import { assertWardrobeImportFile, assertWardrobeBitmapBounds } from './wardrobeImportLimits'
+
+type Setter<T> = Dispatch<SetStateAction<T>>
+type ImportContext = {
+  model: FabricatorProject | null
+  referenceModel: FabricatorProject | null
+  sourceParts: Record<string, unknown> | null
+  modelSlot: number
+  processing: boolean
+  saving: boolean
+  openingSet: boolean
+  workerRef: MutableRefObject<Worker | null>
+  requestRef: MutableRefObject<number>
+  gridSizeRef: MutableRefObject<3 | 4>
+  pairedImportKindRef: MutableRefObject<'sleeves' | 'pants'>
+  sleeveUndoRef: MutableRefObject<WardrobeSet[]>
+  sleeveRedoRef: MutableRefObject<WardrobeSet[]>
+  setDeformMode: Setter<boolean>
+  setProcessing: Setter<boolean>
+  setError: Setter<string>
+  setImportPickerOpen: Setter<boolean>
+  setDraft: Setter<WardrobeSet | null>
+  setActiveSetId: Setter<string | null>
+  setSelectedId: Setter<string | null>
+  setDirty: Setter<boolean>
+  setBodyOffsets: Setter<Record<string, { x: number; y: number }>>
+  clearWardrobeWarpState: () => void
+}
+
+function readFile(file: File): Promise<string> {
+  return normalizeEditableImageFile(file).then(image => image.dataUrl)
+}
+
+/** File imports and worker lifecycle remain isolated from component rendering. */
+export function createWardrobeImportOperations({
+  model, referenceModel, sourceParts, modelSlot, processing, saving, openingSet,
+  workerRef, requestRef, gridSizeRef, pairedImportKindRef, sleeveUndoRef, sleeveRedoRef,
+  setDeformMode, setProcessing, setError, setImportPickerOpen, setDraft,
+  setActiveSetId, setSelectedId, setDirty, setBodyOffsets, clearWardrobeWarpState
+}: ImportContext) {
+  const importSheet = async (file?: File) => {
+    if (!file || !model || processing || saving || openingSet) return
+    if (!sourceParts) { setError('Aguarde a referência corporal carregar antes de importar a folha.'); return }
+    if (!/\.(png|jpe?g|webp)$/i.test(file.name)) { setError('Use uma imagem PNG, JPG ou WebP.'); return }
+    setDeformMode(false)
+    setProcessing(true); setError('')
+    const requestAtStart = requestRef.current
+    let importWorker: Worker | null = null
+    try {
+      const source = await readFile(file)
+      // An import can complete after the workspace was replaced or unmounted.
+      if (requestAtStart !== requestRef.current) return
+      workerRef.current?.terminate()
+      const worker = new Worker(new URL('./wardrobeProcessor.worker.ts', import.meta.url), { type: 'module' })
+      importWorker = worker
+      workerRef.current = worker
+      const id = ++requestRef.current
+      worker.onmessage = (event: MessageEvent<WardrobeProcessorResponse>) => {
+        const message = event.data
+        if (!acceptsWardrobeWorkerResponse(id, requestRef.current, message.id, workerRef.current === worker)) return
+        setProcessing(false); worker.terminate(); workerRef.current = null
+        if (message.type === 'error') { setError(message.message); return }
+        if (!message.pieces.length) { setError('Não encontrei peças visíveis. Confira se a folha tem transparência entre as peças.'); return }
+        try {
+          const components = createWardrobeComponentsFromProcessedSheet(message.pieces, message.width, message.height, referenceModel ?? model)
+          const unbound = components.filter((component) => !component.attachedPartId)
+          if (unbound.length) {
+            setError(`${unbound.length} peça(s) sem osso correspondente na referência original. Selecione o osso de cada peça antes de salvar; não faremos um encaixe arbitrário.`)
+          }
+          clearWardrobeWarpState()
+          setDraft({ schemaVersion: 1, edition: 1, id: crypto.randomUUID(), modelSlot, modelName: model.name, name: file.name.replace(/\.[^.]+$/, ''), width: model.width, height: model.height, components, updatedAt: new Date().toISOString() })
+          setActiveSetId(null); setSelectedId(components[0]?.id ?? null); setDirty(true); setBodyOffsets({})
+        } catch (reason) {
+          setError(reason instanceof Error ? reason.message : 'Não foi possível preparar as peças importadas.')
+        }
+      }
+      worker.onerror = () => {
+        if (requestRef.current !== id || workerRef.current !== worker) return
+        setProcessing(false); setError('Falha ao processar a imagem localmente.')
+        worker.terminate(); workerRef.current = null
+      }
+      worker.postMessage({ id, dataUrl: source })
+    } catch (reason) {
+      // A rejected file read must not terminate a newer worker or clear its status.
+      if (importWorker ? workerRef.current !== importWorker : requestRef.current !== requestAtStart) return
+      importWorker?.terminate()
+      if (importWorker) workerRef.current = null
+      setProcessing(false)
+      setError(reason instanceof Error ? reason.message : 'Não foi possível importar a imagem.')
+    }
+  }
+  const importTorsoGrid = async (file?: File) => {
+    if (!file || !model || processing || saving || openingSet) return
+    if (!sourceParts) { setError('Aguarde a referência corporal carregar antes de importar a folha.'); return }
+    const gridSize = gridSizeRef.current
+    const requestAtStart = requestRef.current
+    setDeformMode(false)
+    setProcessing(true); setError(''); setImportPickerOpen(false)
+    try {
+      assertWardrobeImportFile(file)
+      const image = await createImageBitmap(file)
+      let components
+      try {
+        assertWardrobeBitmapBounds(image)
+        components = createWardrobeTorsoGridComponents(image, referenceModel ?? model, gridSize, () => crypto.randomUUID())
+      } finally {
+        image.close()
+      }
+      if (requestAtStart !== requestRef.current) return
+      if (!components.length) throw new Error('A grade ' + gridSize + '×3 não contém peças visíveis. Confira as células da imagem.')
+      clearWardrobeWarpState()
+      setDraft({ schemaVersion: 1, edition: 1, importKind: gridSize === 4 ? 'torso-grid-4x3' : 'torso-grid-3x3', id: crypto.randomUUID(), modelSlot, modelName: model.name, name: file.name.replace(/\.[^.]+$/, ''), width: model.width, height: model.height, components, updatedAt: new Date().toISOString() })
+      setActiveSetId(null); setSelectedId(components[0].id); setDirty(true); setBodyOffsets({})
+    } catch (reason) {
+      if (requestAtStart === requestRef.current) setError(reason instanceof Error ? reason.message : 'Não foi possível importar a grade de roupas.')
+    } finally {
+      if (requestAtStart === requestRef.current) setProcessing(false)
+    }
+  }
+  const importSleeveGrid = async (file?: File) => {
+    if (!file || !model || processing || saving || openingSet) return
+    const requestAtStart = requestRef.current
+    setDeformMode(false); setProcessing(true); setError(''); setImportPickerOpen(false)
+    try {
+      assertWardrobeImportFile(file)
+      const image = await createImageBitmap(file)
+      let components
+      try {
+        assertWardrobeBitmapBounds(image)
+        components = createWardrobeSleeveSheetComponents(image, referenceModel ?? model, () => crypto.randomUUID(), pairedImportKindRef.current)
+      } finally {
+        image.close()
+      }
+      if (requestAtStart !== requestRef.current) return
+      clearWardrobeWarpState()
+      setDraft({ schemaVersion: 1, edition: 1, importKind: pairedImportKindRef.current === 'pants' ? 'pants-grid-3x4' : 'sleeve-grid-3x4', id: crypto.randomUUID(), modelSlot, modelName: model.name, name: file.name.replace(/\.[^.]+$/, ''), width: model.width, height: model.height, components, updatedAt: new Date().toISOString() })
+      setActiveSetId(null); setSelectedId(components[0]?.id ?? null); setDirty(true); setBodyOffsets({})
+      sleeveUndoRef.current = []; sleeveRedoRef.current = []
+    } catch (reason) {
+      if (requestAtStart === requestRef.current) setError(reason instanceof Error ? reason.message : 'Não foi possível importar a grade de mangas.')
+    } finally {
+      if (requestAtStart === requestRef.current) setProcessing(false)
+    }
+  }
+
+  return { importSheet, importTorsoGrid, importSleeveGrid }
+}

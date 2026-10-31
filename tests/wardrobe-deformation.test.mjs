@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
+import { wardrobeSaveAssets } from '../src/renderer/src/features/fabricator/wardrobe/wardrobeSaveAssets.ts'
 import {
   createWardrobeDeformationPatch,
   createWardrobeRestorationPatch,
@@ -126,7 +127,8 @@ test('a página delega deformação ao hook de domínio da feature e mantém gra
     readFile(new URL('../src/renderer/src/features/fabricator/wardrobe/useWardrobeDeformation.ts', import.meta.url), 'utf8')
   ])
   assert.match(workspace, /useWardrobeDeformation\(/)
-  assert.match(workspace, /hasDirtyWarpImage\(component\.id\)/)
+  assert.match(workspace, /wardrobeSaveAssets\(set\)/)
+  assert.match(workspace, /saveWardrobeSet\(modelSlot, serialized, images\)/)
   assert.match(workspace, /clearDirtyWarpImages\(\)/)
   assert.match(workspace, /invalidateWarpImage\(selected\.id\)/)
   assert.doesNotMatch(workspace, /warpSessionsRef|warpDragRef|applyWardrobeWarpBrush|requestAnimationFrame/)
@@ -136,4 +138,28 @@ test('a página delega deformação ao hook de domínio da feature e mantém gra
   assert.match(hook, /warpSessionsRef\.current\.size >= 4/)
   assert.match(hook, /createWardrobeDeformationPatch\(/)
   assert.match(hook, /createWardrobeRestorationPatch\(/)
+})
+
+test('o salvamento preserva cada PNG atual e o original para recuperação da deformação', () => {
+  const deformed = {
+    ...piece,
+    id: 'sleeve-left',
+    dataUrl: 'data:image/png;base64,editado',
+    hasDeformationOriginal: true,
+    deformationOriginalDataUrl: 'data:image/png;base64,original'
+  }
+  const next = { ...piece, id: 'sleeve-right', dataUrl: 'data:image/png;base64,segundo' }
+  assert.deepEqual(wardrobeSaveAssets({ components: [deformed, next] }), [
+    { id: 'sleeve-left', dataUrl: deformed.dataUrl },
+    { id: 'sleeve-left_deform_original', dataUrl: deformed.deformationOriginalDataUrl },
+    { id: 'sleeve-right', dataUrl: next.dataUrl }
+  ])
+  assert.throws(
+    () => wardrobeSaveAssets({ components: [{ ...next, dataUrl: '' }] }),
+    /Imagem ausente na roupa/
+  )
+  assert.throws(
+    () => wardrobeSaveAssets({ components: [{ ...deformed, deformationOriginalDataUrl: undefined }] }),
+    /Imagem original ausente na roupa/
+  )
 })
