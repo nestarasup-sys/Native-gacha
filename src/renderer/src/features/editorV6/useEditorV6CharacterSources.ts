@@ -4,6 +4,7 @@ import {
   createEditorV6PoseRevisionSnapshot,
   createEditorV6ModelRevisionSnapshot,
   createEditorV6WardrobeRevisionSnapshot,
+  createEditorV6HairRevisionSnapshot,
   sameCustomizerCharacterCatalog,
   sameSourceRevisionSnapshot
 } from './editorV6CharacterSourceModel.ts'
@@ -13,7 +14,10 @@ export {
   createEditorV6PoseRevisionSnapshot,
   createEditorV6ModelRevisionSnapshot,
   createEditorV6WardrobeRevisionSnapshot,
+  createEditorV6HairRevisionSnapshot,
+  editorV6CharacterHairSourceRevision,
   editorV6CharacterWardrobeSourceRevision,
+  editorV6HairRevisionKey,
   editorV6PoseRevisionKey,
   editorV6WardrobeRevisionKey,
   sameCustomizerCharacterCatalog,
@@ -28,7 +32,8 @@ export function useEditorV6CharacterSources(projectId: string | null, reportErro
   const availableCharacterById = useMemo(() => new Map(availableCharacters.map((character) => [character.id, character])), [availableCharacters])
   const fabricatorModelSlots = useMemo(() => [...new Set(availableCharacters.flatMap((character) => [
     character.customization.modelSlot ?? 1,
-    ...(character.customization.wardrobeGroups ?? []).map((group) => group.modelSlot)
+    ...(character.customization.wardrobeGroups ?? []).map((group) => group.modelSlot),
+    ...(character.customization.hairAppearance ? [character.customization.hairAppearance.modelSlot] : [])
   ]))].sort((left, right) => left - right), [availableCharacters])
   const fabricatorModelSlotsKey = fabricatorModelSlots.join(',')
   const activePoseSourceSnapshot = poseSourceSnapshot?.projectId === projectId ? poseSourceSnapshot : null
@@ -72,7 +77,7 @@ export function useEditorV6CharacterSources(projectId: string | null, reportErro
         do {
           requestQueued = false
           try {
-            const [catalogs, models, wardrobeCatalogs] = await Promise.all([
+            const [catalogs, models, wardrobeCatalogs, hairCatalogs] = await Promise.all([
               Promise.all(fabricatorModelSlots.map(async (modelSlot) => ({
                 modelSlot,
                 poses: await window.desktop.fabricator.listFabricatorPoseSlots(modelSlot)
@@ -81,6 +86,10 @@ export function useEditorV6CharacterSources(projectId: string | null, reportErro
               Promise.all(fabricatorModelSlots.map(async (modelSlot) => ({
                 modelSlot,
                 sets: await window.desktop.fabricator.listWardrobeSets(modelSlot)
+              }))),
+              Promise.all(fabricatorModelSlots.map(async (modelSlot) => ({
+                modelSlot,
+                styles: await window.desktop.fabricator.listHairStyles(modelSlot)
               })))
             ])
             if (cancelled) return
@@ -89,7 +98,8 @@ export function useEditorV6CharacterSources(projectId: string | null, reportErro
               projectId,
               revisions: createEditorV6PoseRevisionSnapshot(catalogs),
               modelRevisions: createEditorV6ModelRevisionSnapshot(models),
-              wardrobeRevisions: createEditorV6WardrobeRevisionSnapshot(wardrobeCatalogs)
+              wardrobeRevisions: createEditorV6WardrobeRevisionSnapshot(wardrobeCatalogs),
+              hairRevisions: createEditorV6HairRevisionSnapshot(hairCatalogs)
             }
             setPoseSourceSnapshot((current) => current?.projectId === projectId && sameSourceRevisionSnapshot(current, next) ? current : next)
           } catch (reason) {

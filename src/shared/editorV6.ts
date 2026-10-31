@@ -70,6 +70,8 @@ export type EditorV6Element = {
   poseSourceRevision?: string
   /** Fingerprint of the Fabricator wardrobe sets used to compose this actor's stored image. */
   wardrobeSourceRevision?: string
+  /** Fingerprint of the Fabricator hair styles used to compose this actor's stored image. */
+  hairSourceRevision?: string
   flipX?: boolean
   /** Prevents mouse dragging this character inside this EditorV6. */
   positionLocked?: boolean

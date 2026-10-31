@@ -6,6 +6,8 @@ import {
   createEditorV6PoseRevisionSnapshot,
   createEditorV6ModelRevisionSnapshot,
   createEditorV6WardrobeRevisionSnapshot,
+  createEditorV6HairRevisionSnapshot,
+  editorV6CharacterHairSourceRevision,
   editorV6CharacterWardrobeSourceRevision,
   sameCustomizerCharacterCatalog,
   samePoseRevisionSnapshot,
@@ -180,14 +182,17 @@ test('compara revisões e catálogos sem trocar referências se os dados não mu
   const revisions = createEditorV6PoseRevisionSnapshot([{ modelSlot: 2, poses: [null, { slot: 4, updatedAt: 'pose-v2' }] }])
   const modelRevisions = createEditorV6ModelRevisionSnapshot([null, { slot: 2, updatedAt: 'model-v3' }])
   const wardrobeRevisions = createEditorV6WardrobeRevisionSnapshot([{ modelSlot: 2, sets: [{ id: 'pants', updatedAt: 'wardrobe-v3' }] }])
+  const hairRevisions = createEditorV6HairRevisionSnapshot([{ modelSlot: 2, styles: [{ id: 'hair', updatedAt: 'hair-v3' }] }])
   assert.deepEqual(revisions, { '2:1': 'missing', '2:4': 'pose-v2' })
   assert.deepEqual(modelRevisions, { '2': 'model-v3' })
   assert.deepEqual(wardrobeRevisions, { '2:pants': 'wardrobe-v3' })
+  assert.deepEqual(hairRevisions, { '2:hair': 'hair-v3' })
   assert.equal(samePoseRevisionSnapshot(revisions, { ...revisions }), true)
   assert.equal(samePoseRevisionSnapshot(revisions, { ...revisions, '2:4': 'pose-v3' }), false)
-  const source = { projectId: 'project', revisions, modelRevisions, wardrobeRevisions }
-  assert.equal(sameSourceRevisionSnapshot(source, { ...source, wardrobeRevisions: { ...wardrobeRevisions } }), true)
+  const source = { projectId: 'project', revisions, modelRevisions, wardrobeRevisions, hairRevisions }
+  assert.equal(sameSourceRevisionSnapshot(source, { ...source, wardrobeRevisions: { ...wardrobeRevisions }, hairRevisions: { ...hairRevisions } }), true)
   assert.equal(sameSourceRevisionSnapshot(source, { ...source, wardrobeRevisions: { '2:pants': 'wardrobe-v4' } }), false)
+  assert.equal(sameSourceRevisionSnapshot(source, { ...source, hairRevisions: { '2:hair': 'hair-v4' } }), false)
 })
 
 test('decide refresh com revisões atuais e states de personagens nos blocos da timeline', () => {
@@ -271,10 +276,10 @@ test('não bloqueia personagens sem fonte viva e devolve estado vazio sem projet
   }
 
   assert.deepEqual(resolveEditorV6CharacterSourceRefresh(input), {
-    characterStates: [missingCharacter], poseRefreshRequired: false, wardrobeRefreshRequired: false, faceAssetRefreshRequired: false
+    characterStates: [missingCharacter], poseRefreshRequired: false, wardrobeRefreshRequired: false, hairRefreshRequired: false, faceAssetRefreshRequired: false
   })
   assert.deepEqual(resolveEditorV6CharacterSourceRefresh({ ...input, project: null }), {
-    characterStates: [], poseRefreshRequired: false, wardrobeRefreshRequired: false, faceAssetRefreshRequired: false
+    characterStates: [], poseRefreshRequired: false, wardrobeRefreshRequired: false, hairRefreshRequired: false, faceAssetRefreshRequired: false
   })
 })
 
@@ -322,6 +327,35 @@ test('mudança no conjunto de roupa atualiza snapshots existentes mesmo sem alte
   })
   assert.equal(unchanged.wardrobeRefreshRequired, false)
   assert.equal(unchanged.faceAssetRefreshRequired, false)
+})
+
+test('mudança em cabelo DEV atualiza os snapshots da cena e da timeline', () => {
+  const character = {
+    id: 'character', name: 'Chloe', updatedAt: 'character-v2',
+    customization: { modelSlot: 2, poseSlot: 4, hairAppearance: { modelSlot: 3, parts: { backHair: 'bob' } } }
+  }
+  const before = createEditorV6HairRevisionSnapshot([{ modelSlot: 3, styles: [{ id: 'bob', updatedAt: 'hair-v2' }] }])
+  const current = createEditorV6HairRevisionSnapshot([{ modelSlot: 3, styles: [{ id: 'bob', updatedAt: 'hair-v3' }] }])
+  const state = {
+    id: 'scene-character', kind: 'character', characterId: 'character', assetId: 'old-render',
+    poseSourceRevision: 'pose-v2', characterSourceUpdatedAt: 'character-v2', modelSourceRevision: 'model-v3',
+    hairSourceRevision: editorV6CharacterHairSourceRevision(character, before), faceRendererVersion: 8, text: 'Chloe'
+  }
+  const timelineState = { ...state, id: 'timeline-character', assetId: 'old-timeline-render' }
+  const project = {
+    id: 'project', elements: [state], assets: [],
+    timeline: { tracks: [{ id: 'characters', blocks: [{ id: 'character-block', elementId: state.id, state: timelineState }] }] }
+  }
+  const revisions = { projectId: 'project', revisions: { '2:4': 'pose-v2' }, modelRevisions: { '2': 'model-v3' }, wardrobeRevisions: {}, hairRevisions: current }
+  const refresh = resolveEditorV6CharacterSourceRefresh({ project, characterById: new Map([[character.id, character]]), poseSourceSnapshot: revisions, faceRendererVersion: 8 })
+  assert.equal(refresh.wardrobeRefreshRequired, false)
+  assert.equal(refresh.hairRefreshRequired, true)
+  assert.equal(refresh.faceAssetRefreshRequired, true)
+
+  const plan = planEditorV6CharacterRefresh(project, [character], revisions.revisions, revisions.modelRevisions, revisions.wardrobeRevisions, revisions.hairRevisions)
+  assert.equal(plan.groups.length, 1)
+  assert.equal(plan.groups[0].targets.length, 2)
+  assert.equal(plan.groups[0].hairRevision, editorV6CharacterHairSourceRevision(character, current))
 })
 
 test('aplica recortes antigos de personagens em assets, cena e timeline sem mutar o projeto', () => {
@@ -673,7 +707,9 @@ test('página delega biblioteca, fontes e ciclo de atualização do personagem a
   assert.doesNotMatch(page, /window\.desktop\.customizer\.listCustomizerCharacters\(|window\.desktop\.editorV6\.listEditorV6Projects\(|window\.desktop\.editorV6\.loadEditorV6Project\(activeEditorV6Id\)/)
   assert.match(projectHook, /activeLoadGenerationRef/)
   assert.match(characterHook, /fabricator:assets-updated/)
+  assert.match(characterHook, /listHairStyles/)
   assert.match(characterHook, /addEventListener\('visibilitychange'/)
+  assert.match(sourceModel, /collectCustomizerHairStyleReferences/)
   assert.doesNotMatch(sourceModel, /window\.desktop|useEffect|useMemo/)
   assert.match(snapshotHook, /applyEditorV6CharacterAssetCrops/)
   assert.match(snapshotHook, /applyEditorV6CharacterRefreshResult/)

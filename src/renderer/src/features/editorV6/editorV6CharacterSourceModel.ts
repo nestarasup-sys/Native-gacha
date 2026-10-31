@@ -1,14 +1,17 @@
 import type { CustomizerCharacter } from '../../../../shared/customizer'
 import type { EditorV6Document, EditorV6Element } from '../../../../shared/editorV6'
-import type { WardrobeSetSummary } from '../../../../shared/fabricator'
+import { collectCustomizerHairStyleReferences } from '../../../../shared/hairCategories.ts'
+import type { HairStyleSummary, WardrobeSetSummary } from '../../../../shared/fabricator'
 
-export type PoseRevisionSnapshot = { projectId: string; revisions: Record<string, string>; modelRevisions: Record<string, string>; wardrobeRevisions?: Record<string, string> }
+export type PoseRevisionSnapshot = { projectId: string; revisions: Record<string, string>; modelRevisions: Record<string, string>; wardrobeRevisions?: Record<string, string>; hairRevisions?: Record<string, string> }
 export type PoseCatalog = { modelSlot: number; poses: Array<{ slot?: number; updatedAt: string } | null> }
 export type ModelCatalog = Array<{ slot: number; updatedAt: string } | null>
 export type WardrobeCatalog = { modelSlot: number; sets: Array<Pick<WardrobeSetSummary, 'id' | 'updatedAt'>> }
+export type HairCatalog = { modelSlot: number; styles: Array<Pick<HairStyleSummary, 'id' | 'updatedAt'>> }
 
 export const editorV6PoseRevisionKey = (modelSlot: number, poseSlot: number) => `${modelSlot}:${poseSlot}`
 export const editorV6WardrobeRevisionKey = (modelSlot: number, setId: string) => `${modelSlot}:${setId}`
+export const editorV6HairRevisionKey = (modelSlot: number, styleId: string) => `${modelSlot}:${styleId}`
 
 export function sameCustomizerCharacterCatalog(left: CustomizerCharacter[], right: CustomizerCharacter[]): boolean {
   return left.length === right.length && left.every((character, index) => {
@@ -35,14 +38,14 @@ export function createEditorV6WardrobeRevisionSnapshot(catalogs: WardrobeCatalog
   return Object.fromEntries(catalogs.flatMap(({ modelSlot, sets }) => sets.map((set) => [editorV6WardrobeRevisionKey(modelSlot, set.id), set.updatedAt])))
 }
 
-/** Fingerprints only the wardrobe sets referenced by this character. */
-export function editorV6CharacterWardrobeSourceRevision(character: CustomizerCharacter, revisions: Record<string, string>): string | undefined {
-  const references = [...new Map((character.customization.wardrobeGroups ?? []).map((group) => {
-    const key = editorV6WardrobeRevisionKey(group.modelSlot, group.setId)
-    return [key, [key, revisions[key] ?? 'missing']] as const
-  })).values()].sort(([left], [right]) => left.localeCompare(right))
-  if (!references.length) return undefined
-  const source = JSON.stringify(references)
+export function createEditorV6HairRevisionSnapshot(catalogs: HairCatalog[]): Record<string, string> {
+  return Object.fromEntries(catalogs.flatMap(({ modelSlot, styles }) => styles.map((style) => [editorV6HairRevisionKey(modelSlot, style.id), style.updatedAt])))
+}
+
+function sourceRevision(kind: 'wardrobe' | 'hair', references: Array<[string, string]>): string | undefined {
+  const normalized = [...new Map(references).entries()].sort(([left], [right]) => left.localeCompare(right))
+  if (!normalized.length) return undefined
+  const source = JSON.stringify(normalized)
   let first = 0x811c9dc5
   let second = 0x9e3779b9
   for (let index = 0; index < source.length; index++) {
@@ -50,13 +53,32 @@ export function editorV6CharacterWardrobeSourceRevision(character: CustomizerCha
     first = Math.imul(first ^ code, 0x01000193)
     second = Math.imul(second ^ code, 0x85ebca6b)
   }
-  return `wardrobe-v1:${(first >>> 0).toString(16).padStart(8, '0')}${(second >>> 0).toString(16).padStart(8, '0')}`
+  return `${kind}-v1:${(first >>> 0).toString(16).padStart(8, '0')}${(second >>> 0).toString(16).padStart(8, '0')}`
+}
+
+/** Fingerprints only the wardrobe sets referenced by this character. */
+export function editorV6CharacterWardrobeSourceRevision(character: CustomizerCharacter, revisions: Record<string, string>): string | undefined {
+  const references = (character.customization.wardrobeGroups ?? []).map((group) => {
+    const key = editorV6WardrobeRevisionKey(group.modelSlot, group.setId)
+    return [key, revisions[key] ?? 'missing'] as [string, string]
+  })
+  return sourceRevision('wardrobe', references)
+}
+
+/** Fingerprints the hair styles actually selected by this character, including legacy aliases. */
+export function editorV6CharacterHairSourceRevision(character: CustomizerCharacter, revisions: Record<string, string>): string | undefined {
+  const references = collectCustomizerHairStyleReferences(character).map(({ modelSlot, id }) => {
+    const key = editorV6HairRevisionKey(modelSlot, id)
+    return [key, revisions[key] ?? 'missing'] as [string, string]
+  })
+  return sourceRevision('hair', references)
 }
 
 export function sameSourceRevisionSnapshot(left: PoseRevisionSnapshot, right: PoseRevisionSnapshot): boolean {
   return samePoseRevisionSnapshot(left.revisions, right.revisions)
     && samePoseRevisionSnapshot(left.modelRevisions, right.modelRevisions)
     && samePoseRevisionSnapshot(left.wardrobeRevisions ?? {}, right.wardrobeRevisions ?? {})
+    && samePoseRevisionSnapshot(left.hairRevisions ?? {}, right.hairRevisions ?? {})
 }
 
 export function createEditorV6PoseRevisionSnapshot(catalogs: PoseCatalog[]): Record<string, string> {
@@ -90,6 +112,7 @@ export function resolveEditorV6CharacterSourceRefresh({
   characterStates: EditorV6Element[]
   poseRefreshRequired: boolean
   wardrobeRefreshRequired: boolean
+  hairRefreshRequired: boolean
   faceAssetRefreshRequired: boolean
 } {
   const characterStates = editorV6CharacterStates(project)
@@ -113,12 +136,19 @@ export function resolveEditorV6CharacterSourceRefresh({
     const currentRevision = editorV6CharacterWardrobeSourceRevision(character, poseSourceSnapshot?.wardrobeRevisions ?? {})
     return currentRevision !== undefined && state.wardrobeSourceRevision !== currentRevision
   })
+  const hairRefreshRequired = characterStates.some((state) => {
+    if (state.kind !== 'character' || !state.characterId) return false
+    const character = characterById.get(state.characterId)
+    if (!character) return false
+    const currentRevision = editorV6CharacterHairSourceRevision(character, poseSourceSnapshot?.hairRevisions ?? {})
+    return currentRevision !== undefined && state.hairSourceRevision !== currentRevision
+  })
   const faceAssetRefreshRequired = Boolean(project && (poseRefreshRequired || characterStates.some((state) => {
     if (state.kind !== 'character') return false
     const character = characterById.get(state.characterId ?? '')
     return state.faceRendererVersion !== faceRendererVersion
       || Boolean(character && state.characterSourceUpdatedAt !== character.updatedAt)
-  }) || wardrobeRefreshRequired))
+  }) || wardrobeRefreshRequired || hairRefreshRequired))
 
-  return { characterStates, poseRefreshRequired, wardrobeRefreshRequired, faceAssetRefreshRequired }
+  return { characterStates, poseRefreshRequired, wardrobeRefreshRequired, hairRefreshRequired, faceAssetRefreshRequired }
 }
