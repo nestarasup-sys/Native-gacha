@@ -33,37 +33,50 @@ function fixture() {
   return { width: 300, height: 400, parts, joints }
 }
 
-test('Juntar juntas move só canelas e antebraços; todo o restante continua na posição original', () => {
+function mountedFixture(source) {
+  const mounted = structuredClone(source)
+  const setPosition = (id, x, y) => {
+    const target = mounted.parts.find((part) => part.id === id)
+    target.x = x; target.y = y
+  }
+  setPosition('thigh-left', 80, 110)
+  setPosition('shin-left', 95, 170)
+  setPosition('thigh-right', 180, 110)
+  setPosition('shin-right', 175, 175)
+  setPosition('upper-arm-left', 70, 60)
+  setPosition('forearm-left', 85, 145)
+  return mounted
+}
+
+test('Juntar juntas usa o espaçamento dos segmentos inferiores do modelo montado e mantém as partes superiores na folha', () => {
   const model = fixture()
+  const mounted = mountedFixture(model)
   const before = structuredClone(model)
-  const offsets = createWardrobeJointAssemblyOffsets(model)
-  const knee = model.joints.find((joint) => joint.id === 'thigh-left-shin-left')
+  const mountedBefore = structuredClone(mounted)
+  const offsets = createWardrobeJointAssemblyOffsets(model, mounted)
   assert.deepEqual(offsets.torso, point(0, 0))
   for (const unchangedPart of ['head', 'thigh-left', 'thigh-right', 'upper-arm-left', 'hand-left', 'foot-right']) {
     assert.deepEqual(offsets[unchangedPart], point(0, 0), `${unchangedPart} must stay in place`)
   }
-  assert.deepEqual(offsets['shin-left'], point(2, -65))
-  assert.deepEqual(offsets['shin-right'], point(-2, -65))
-  assert.deepEqual(offsets['forearm-left'], point(10, -50))
-  assert.deepEqual(
-    point(knee.parentAnchor.x + offsets['thigh-left'].x, knee.parentAnchor.y + offsets['thigh-left'].y),
-    point(knee.childAnchor.x + offsets['shin-left'].x, knee.childAnchor.y + offsets['shin-left'].y)
-  )
+  assert.deepEqual(offsets['shin-left'], point(15, -50))
+  assert.deepEqual(offsets['shin-right'], point(-5, -45))
+  assert.deepEqual(offsets['forearm-left'], point(25, -10))
   assert.deepEqual(model, before)
+  assert.deepEqual(mounted, mountedBefore)
 })
 
 test('corte automático usa a junta da perna anexada e orienta o limite pelo eixo das peças', () => {
   const model = fixture()
-  const offsets = createWardrobeJointAssemblyOffsets(model)
+  const offsets = createWardrobeJointAssemblyOffsets(model, mountedFixture(model))
   const component = { id: 'long-pants', name: 'Calça longa 01 · esquerda', category: 'calca-coxa', attachedPartId: 'thigh-left', sleeveSide: 'left', x: 15, y: 150, width: 50, height: 100, rotation: 0, dataUrl: '' }
   const cut = findWardrobeJointCut(component, model, offsets)
   assert.ok(cut)
   assert.equal(cut.upperPartId, 'thigh-left')
   assert.equal(cut.lowerPartId, 'shin-left')
-  assert.ok(Math.abs(cut.point.x - 30) < 0.00001)
-  assert.ok(Math.abs(cut.point.y - 165) < 0.00001)
-  assert.ok(Math.abs(cut.axis.x - (2 / Math.hypot(2, 45))) < 0.00001)
-  assert.ok(Math.abs(cut.axis.y - (45 / Math.hypot(2, 45))) < 0.00001)
+  assert.ok(Math.abs(cut.point.x - 36.5) < 0.00001)
+  assert.ok(Math.abs(cut.point.y - 172.5) < 0.00001)
+  assert.ok(Math.abs(cut.axis.x - (15 / Math.hypot(15, 60))) < 0.00001)
+  assert.ok(Math.abs(cut.axis.y - (60 / Math.hypot(15, 60))) < 0.00001)
   assert.equal(findWardrobeJointCut({ ...component, category: 'shorts' }, model, offsets), null)
 })
 
@@ -101,7 +114,7 @@ test('corte considera a rotação da roupa ao transformar cada pixel para o espa
 
 test('modelos antigos sem juntas persistidas usam a inferência comum para localizar o recorte', () => {
   const model = { ...fixture(), joints: [] }
-  const offsets = createWardrobeJointAssemblyOffsets(model)
+  const offsets = createWardrobeJointAssemblyOffsets(model, mountedFixture(model))
   assert.ok(Object.keys(offsets).length === model.parts.length)
   assert.deepEqual(offsets['thigh-left'], point(0, 0))
   assert.deepEqual(offsets['upper-arm-left'], point(0, 0))
@@ -114,7 +127,7 @@ test('modelos antigos sem juntas persistidas usam a inferência comum para local
 test('um rig salvo sem a junta da peça falha sem inventar uma divisão', () => {
   const model = fixture()
   model.joints = model.joints.filter((joint) => joint.id !== 'thigh-left-shin-left')
-  const offsets = createWardrobeJointAssemblyOffsets(model)
+  const offsets = createWardrobeJointAssemblyOffsets(model, mountedFixture(model))
   const component = { id: 'long-pants', name: 'Calça longa 01 · esquerda', category: 'calca-coxa', attachedPartId: 'thigh-left', sleeveSide: 'left', x: 15, y: 150, width: 50, height: 100, rotation: 0, dataUrl: '' }
   assert.equal(findWardrobeJointCut(component, model, offsets), null)
 })

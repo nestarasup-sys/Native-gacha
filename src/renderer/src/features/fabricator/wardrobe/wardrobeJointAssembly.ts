@@ -47,15 +47,17 @@ function jointsForPreview(project: JointProject): JointLink[] {
 }
 
 /**
- * Build view-only offsets for lower legs and forearms only. The upper body,
- * thighs, upper arms, head, hands, and feet retain their original positions.
+ * Build view-only offsets for lower legs and forearms from the mounted model's
+ * actual segment spacing. Upper parts stay at their original-sheet positions;
+ * each lower part keeps the same relative placement it has in Modelos DEV.
  */
-export function createWardrobeJointAssemblyOffsets(project: JointProject): Record<string, WardrobePoint> {
-  const partsById = new Map(project.parts.map((part) => [part.id, part]))
+export function createWardrobeJointAssemblyOffsets(sourceProject: JointProject, mountedProject: JointProject): Record<string, WardrobePoint> {
+  const sourcePartsById = new Map(sourceProject.parts.map((part) => [part.id, part]))
+  const mountedPartsById = new Map(mountedProject.parts.map((part) => [part.id, part]))
   const candidatesByLowerPart = new Map<string, Array<{ offset: WardrobePoint; sideMatch: boolean; distance: number }>>()
-  for (const joint of jointsForPreview(project)) {
-    const parent = partsById.get(joint.parentPartId)
-    const child = partsById.get(joint.childPartId)
+  for (const joint of jointsForPreview(mountedProject)) {
+    const parent = mountedPartsById.get(joint.parentPartId)
+    const child = mountedPartsById.get(joint.childPartId)
     if (!parent || !child) continue
     if (![joint.parentAnchor.x, joint.parentAnchor.y, joint.childAnchor.x, joint.childAnchor.y].every(Number.isFinite)) continue
     const parentKind = modelRigSegmentKind(parent.name)
@@ -69,21 +71,29 @@ export function createWardrobeJointAssemblyOffsets(project: JointProject): Recor
     const parentIsUpper = parentKind === 'thigh' || parentKind === 'upper-arm'
     const upper = parentIsUpper ? parent : child
     const lower = parentIsUpper ? child : parent
+    const sourceUpper = sourcePartsById.get(upper.id)
+    const sourceLower = sourcePartsById.get(lower.id)
+    if (!sourceUpper || !sourceLower) continue
     const upperSide = modelRigSide(upper.name)
     const lowerSide = modelRigSide(lower.name)
     if (upperSide && lowerSide && upperSide !== lowerSide) continue
-    const upperAnchor = parentIsUpper ? joint.parentAnchor : joint.childAnchor
-    const lowerAnchor = parentIsUpper ? joint.childAnchor : joint.parentAnchor
+    const mountedUpperCenter = center(upper)
+    const mountedLowerCenter = center(lower)
+    const sourceUpperCenter = center(sourceUpper)
+    const sourceLowerCenter = center(sourceLower)
     const candidates = candidatesByLowerPart.get(lower.id) ?? []
     candidates.push({
-      offset: { x: upperAnchor.x - lowerAnchor.x, y: upperAnchor.y - lowerAnchor.y },
+      offset: {
+        x: sourceUpperCenter.x + mountedLowerCenter.x - mountedUpperCenter.x - sourceLowerCenter.x,
+        y: sourceUpperCenter.y + mountedLowerCenter.y - mountedUpperCenter.y - sourceLowerCenter.y
+      },
       sideMatch: Boolean(upperSide && lowerSide && upperSide === lowerSide),
-      distance: Math.hypot(center(upper).x - center(lower).x, center(upper).y - center(lower).y)
+      distance: Math.hypot(mountedUpperCenter.x - mountedLowerCenter.x, mountedUpperCenter.y - mountedLowerCenter.y)
     })
     candidatesByLowerPart.set(lower.id, candidates)
   }
 
-  return Object.fromEntries(project.parts.map((part) => {
+  return Object.fromEntries(sourceProject.parts.map((part) => {
     const candidates = candidatesByLowerPart.get(part.id) ?? []
     candidates.sort((first, second) => Number(second.sideMatch) - Number(first.sideMatch) || first.distance - second.distance)
     return [part.id, candidates[0]?.offset ?? { x: 0, y: 0 }]
