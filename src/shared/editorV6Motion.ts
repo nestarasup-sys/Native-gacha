@@ -22,6 +22,14 @@ export function editorV6UsesStaticMouthAtlas(request: EditorV6MotionBakeRequest)
     && JSON.stringify(request.plan.from) === JSON.stringify(request.plan.to)
     && request.plan.samples.every((sample) => sample.faceMode === request.plan.from.activeFaceMode))
 }
+export function editorV6MotionRequiresFaceAsset(motion: Pick<EditorV6MotionAtlas, 'frames'> | undefined): boolean {
+  return Boolean(motion?.frames.some((frame) => frame.facePatch))
+}
+export function editorV6MotionHasAvailableAssets(motion: EditorV6MotionAtlas | undefined, assets: ReadonlyMap<string, EditorV6Asset>): boolean {
+  if (!motion || assets.get(motion.assetId)?.category !== 'character') return false
+  if (motion.faceAssetId && assets.get(motion.faceAssetId)?.category !== 'character') return false
+  return !editorV6MotionRequiresFaceAsset(motion) || Boolean(motion.faceAssetId)
+}
 export const editorV6MotionChannels = { payload: 'editor-v6:motion-worker:payload', complete: 'editor-v6:motion-worker:complete' } as const
 export type EditorV6MotionBridge = { payload: () => Promise<EditorV6MotionBakeRequest | null>; provider: CharacterRenderAssetProvider; complete: (result?: EditorV6MotionBakeResult, error?: string) => Promise<void> }
 
@@ -75,9 +83,13 @@ export function editorV6MotionPlans(document: EditorV6Document): EditorV6MotionP
   return plans
 }
 export function missingEditorV6Motions(document: EditorV6Document, startFrame = 0, endFrame = document.timeline.durationFrames): EditorV6MotionPlan[] {
-  const ids = new Set(document.assets.map((asset) => asset.id))
+  const assets = new Map(document.assets.map((asset) => [asset.id, asset]))
   const blocks = new Map(document.timeline.tracks.flatMap((track) => track.blocks.map((block) => [block.id, block] as const)))
-  return editorV6MotionPlans(document).filter((plan) => plan.startFrame < endFrame && plan.endFrame > startFrame && (blocks.get(plan.blockId)?.incomingMotion?.key !== plan.key || !ids.has(blocks.get(plan.blockId)?.incomingMotion?.assetId ?? '')))
+  return editorV6MotionPlans(document).filter((plan) => {
+    if (plan.startFrame >= endFrame || plan.endFrame <= startFrame) return false
+    const motion = blocks.get(plan.blockId)?.incomingMotion
+    return motion?.key !== plan.key || !editorV6MotionHasAvailableAssets(motion, assets)
+  })
 }
 export function attachEditorV6Motion(document: EditorV6Document, blockId: string, result: Pick<EditorV6MotionBakeResult, 'asset' | 'faceAsset' | 'motion'>): EditorV6Document {
   if (!editorV6MotionPlans(document).some((plan) => plan.blockId === blockId && plan.key === result.motion.key)) return document

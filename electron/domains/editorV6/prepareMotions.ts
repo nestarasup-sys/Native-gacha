@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import type { EditorV6Document } from '../../../src/shared/editorV6'
 import type { CustomizerCharacter } from '../../../src/shared/customizer'
 import { editorV6CharacterSnapshotIsCurrent } from '../../../src/shared/editorV6CharacterSource.ts'
-import { editorV6MotionPlans, missingEditorV6Motions, type EditorV6MotionBakeRequest, type EditorV6MotionBakeResult } from '../../../src/shared/editorV6Motion'
+import { editorV6MotionHasAvailableAssets, editorV6MotionPlans, missingEditorV6Motions, type EditorV6MotionBakeRequest, type EditorV6MotionBakeResult } from '../../../src/shared/editorV6Motion'
 import { editorV6MouthLoopScaleAtFrame, EDITOR_V6_MOUTH_LOOP_SAMPLE_SCALES } from '../../../src/shared/editorV6Export'
 
 export async function prepareExportMotions(project: EditorV6Document, startFrame: number, endFrame: number, deps: {
@@ -40,8 +40,7 @@ export async function prepareExportMotions(project: EditorV6Document, startFrame
   const knownMotions = new Map<string, NonNullable<EditorV6Document['timeline']['tracks'][number]['blocks'][number]['incomingMotion']>>()
   for (const track of project.timeline.tracks) for (const block of track.blocks) {
     const motion = block.incomingMotion
-    if (!motion || !assets.has(motion.assetId)) continue
-    if (motion.faceAssetId && !assets.has(motion.faceAssetId)) continue
+    if (!editorV6MotionHasAvailableAssets(motion, assets)) continue
     if (!knownMotions.has(motion.key)) knownMotions.set(motion.key, motion)
   }
   const plansByBlock = new Map(editorV6MotionPlans(project).map((plan) => [plan.blockId, plan]))

@@ -32,8 +32,9 @@ function validateCachedMotion(request: EditorV6MotionBakeRequest, result: Editor
   const parsed = editorV6MotionResultSchema.parse(result)
   if (parsed.motion.key !== request.plan.key || parsed.motion.frames.map((frame) => frame.offset).join() !== request.plan.samples.map((sample) => sample.offset).join()) throw Error('A transição em cache não corresponde à requisição.')
   if (request.maxAtlasPixels !== undefined && parsed.metrics.atlasPixels > request.maxAtlasPixels) throw Error('O atlas em cache excede o orçamento desta requisição.')
-  const needsFaceAsset = Boolean(request.mouthScaleSamples?.some((scale) => scale > 1.000001) && !editorV6UsesStaticMouthAtlas(request))
-  if (request.mouthScaleSamples && request.mouthScaleSamples.some((scale, index) => scale > 1.000001 && !parsed.motion.frames[index]?.facePatch)
+  const staticMouthAtlas = editorV6UsesStaticMouthAtlas(request)
+  const needsFaceAsset = Boolean(request.mouthScaleSamples?.some((scale) => scale > 1.000001) && !staticMouthAtlas)
+  if (request.mouthScaleSamples && !staticMouthAtlas && request.mouthScaleSamples.some((scale, index) => scale > 1.000001 && !parsed.motion.frames[index]?.facePatch)
     || needsFaceAsset && (!parsed.faceAsset || !parsed.motion.faceAssetId)
     || request.mouthScaleSamples && parsed.faceAsset && parsed.motion.faceAssetId !== parsed.faceAsset.id
     || request.mouthScaleSamples && parsed.motion.faceAssetId && !parsed.faceAsset) throw Error('A camada facial em cache não corresponde à animação da boca solicitada.')

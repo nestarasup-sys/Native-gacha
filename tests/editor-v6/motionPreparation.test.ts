@@ -6,6 +6,10 @@ import { createEditorV6Timeline, type EditorV6Document, type EditorV6Element } f
 import type { CustomizerCharacter } from '../../src/shared/customizer'
 import { editorV6CharacterSnapshotIsCurrent } from '../../src/shared/editorV6CharacterSource.ts'
 import { attachEditorV6Motion, editorV6MotionPlans, missingEditorV6Motions, type EditorV6MotionBakeRequest, type EditorV6MotionBakeResult } from '../../src/shared/editorV6Motion'
+import { editorV6DocumentSchema } from '../../src/shared/editorV6Schema'
+import { editorV6MotionResultSchema } from '../../src/shared/editorV6Schema'
+import { pruneEditorV6TimelineSnapshots, repairEditorV6DuplicateAssets, resolveEditorV6ElementsAtFrame } from '../../src/shared/editorV6Timeline'
+import { editEditorV6DocumentAtBlock } from '../../src/shared/editorV6TimelineEdits'
 import { prepareExportMotions } from '../../electron/domains/editorV6/prepareMotions'
 import { EDITOR_V6_MOUTH_LOOP_SAMPLE_SCALES, editorV6MouthLoopScaleAtFrame } from '../../src/shared/editorV6Export'
 import { createMotionDiskCache, motionCacheKey } from '../../electron/domains/editorV6/motionCache'
@@ -26,6 +30,23 @@ function fixture() {
 function resultFor(request: EditorV6MotionBakeRequest): EditorV6MotionBakeResult {
   const id = crypto.randomUUID()
   return { asset: { id, category: 'character', mimeType: 'image/png', name: 'Atlas', dataUrl: 'data:image/png;base64,AA==' }, motion: { version: 1, key: request.plan.key, assetId: id, frames: request.plan.samples.map((sample, index) => ({ offset: sample.offset, sprite: { x: index, y: 0, width: 1, height: 1, atlasWidth: 7, atlasHeight: 1 }, x: 0, y: 0, width: 20, height: 30, rotation: 0, flipX: false })) }, metrics: { milliseconds: 1, samples: 7, preparedRigs: 9, atlasPixels: 7 } }
+}
+function resultWithFaceAsset(request: EditorV6MotionBakeRequest): EditorV6MotionBakeResult {
+  const result = resultFor(request), id = crypto.randomUUID()
+  return {
+    ...result,
+    asset: { ...result.asset, timelineSnapshot: true },
+    faceAsset: { id, category: 'character', mimeType: 'image/png', name: 'Atlas facial', dataUrl: 'data:image/png;base64,AA==', timelineSnapshot: true },
+    motion: {
+      ...result.motion,
+      faceAssetId: id,
+      frames: result.motion.frames.map((frame) => ({
+        ...frame,
+        facePatch: { sprite: frame.sprite, x: .4, y: .35, width: .2, height: .15 }
+      }))
+    },
+    metrics: { ...result.metrics, atlasPixels: result.metrics.atlasPixels * 2 }
+  }
 }
 
 describe('transition preparation reuse', () => {
@@ -77,6 +98,111 @@ describe('transition preparation reuse', () => {
     unsubscribe()
     target.dispatchEvent(new Event('customizer:characters-updated'))
     expect(refreshes).toBe(1)
+  })
+
+  it('preserves a facial atlas through an unrelated edit, snapshot pruning, reload and export preparation', async () => {
+    const { project, character } = fixture()
+    const characterTrack = project.timeline.tracks.find((track) => track.kind === 'character')!
+    characterTrack.blocks = characterTrack.blocks.slice(0, 2)
+    const plan = editorV6MotionPlans(project)[0]
+    const attached = attachEditorV6Motion(project, plan.blockId, resultWithFaceAsset({ id: crypto.randomUUID(), plan, character }))
+    const motionBlock = attached.timeline.tracks.find((track) => track.kind === 'character')!.blocks[1]
+    const faceAssetId = motionBlock.incomingMotion!.faceAssetId!
+
+    const image: EditorV6Element = { id: crypto.randomUUID(), kind: 'image', assetId: crypto.randomUUID(), text: 'Objeto', x: 0, y: 0, width: 10, height: 10, rotation: 0, zIndex: 2 }
+    const imageTrack = createEditorV6Timeline([image]).tracks.find((track) => track.kind === 'object')!
+    let edited = {
+      ...attached,
+      elements: [...attached.elements, image],
+      assets: [...attached.assets, { id: image.assetId!, category: 'object' as const, name: 'Objeto', mimeType: 'image/png' as const, dataUrl: 'data:image/png;base64,AA==' }],
+      timeline: { ...attached.timeline, tracks: [...attached.timeline.tracks, imageTrack] }
+    }
+    edited = editEditorV6DocumentAtBlock(edited, imageTrack.blocks[0].id, (working) => ({
+      ...working,
+      elements: working.elements.map((element) => element.id === image.id ? { ...element, text: 'Objeto editado' } : element)
+    }))
+    expect(edited.assets.some((asset) => asset.id === faceAssetId)).toBe(true)
+
+    const reloaded = editorV6DocumentSchema.parse(JSON.parse(JSON.stringify(edited))) as EditorV6Document
+    const facialFrame = resolveEditorV6ElementsAtFrame(reloaded, plan.endFrame - 1).find((element) => element.id === plan.elementId)
+    expect(facialFrame?.mouthPatch?.assetId).toBe(faceAssetId)
+    expect(reloaded.assets.find((asset) => asset.id === facialFrame?.mouthPatch?.assetId)?.category).toBe('character')
+
+    const prepared = await prepareExportMotions(reloaded, 0, reloaded.timeline.durationFrames, {
+      signal: new AbortController().signal,
+      characters: [character],
+      bake: async () => { throw Error('Uma transição íntegra não deve ser refeita.') },
+      progress: () => {}
+    })
+    expect(missingEditorV6Motions(prepared.project)).toHaveLength(0)
+    expect(prepared.project.assets.some((asset) => asset.id === faceAssetId)).toBe(true)
+  })
+
+  it('marks a motion as missing when its facial atlas is required but absent', () => {
+    const { project, character } = fixture()
+    const track = project.timeline.tracks.find((track) => track.kind === 'character')!
+    track.blocks = track.blocks.slice(0, 2)
+    const plan = editorV6MotionPlans(project)[0]
+    const ready = attachEditorV6Motion(project, plan.blockId, resultWithFaceAsset({ id: crypto.randomUUID(), plan, character }))
+    const block = ready.timeline.tracks.find((track) => track.kind === 'character')!.blocks[1]
+    const incomplete = { ...ready, assets: ready.assets.filter((asset) => asset.id !== block.incomingMotion?.faceAssetId) }
+    expect(missingEditorV6Motions(incomplete)).toHaveLength(1)
+  })
+
+  it('rebakes a legacy motion with a dangling facial atlas and leaves unrelated snapshot assets collectible', async () => {
+    const { project, character } = fixture()
+    const track = project.timeline.tracks.find((track) => track.kind === 'character')!
+    track.blocks = track.blocks.slice(0, 2)
+    const plan = editorV6MotionPlans(project)[0]
+    const ready = attachEditorV6Motion(project, plan.blockId, resultWithFaceAsset({ id: crypto.randomUUID(), plan, character }))
+    const originalBlock = ready.timeline.tracks.find((lane) => lane.kind === 'character')!.blocks[1]
+    const incomplete = { ...ready, assets: ready.assets.filter((asset) => asset.id !== originalBlock.incomingMotion?.faceAssetId) }
+    const reloaded = editorV6DocumentSchema.parse(JSON.parse(JSON.stringify(incomplete))) as EditorV6Document
+    const recovery = await prepareExportMotions(reloaded, 0, reloaded.timeline.durationFrames, {
+      signal: new AbortController().signal,
+      characters: [character],
+      bake: async (request) => resultWithFaceAsset(request),
+      progress: () => {}
+    })
+    const repairedBlock = recovery.project.timeline.tracks.find((lane) => lane.kind === 'character')!.blocks[1]
+    expect(recovery.stats.requested).toBe(1)
+    expect(repairedBlock.incomingMotion?.faceAssetId).toBeDefined()
+    expect(recovery.project.assets.some((asset) => asset.id === repairedBlock.incomingMotion?.faceAssetId)).toBe(true)
+    expect(missingEditorV6Motions(recovery.project)).toHaveLength(0)
+
+    const bodyId = repairedBlock.incomingMotion!.assetId, faceId = repairedBlock.incomingMotion!.faceAssetId!
+    const staleKey = { ...recovery.project, timeline: { ...recovery.project.timeline, tracks: recovery.project.timeline.tracks.map((lane) => lane.kind === 'character'
+      ? { ...lane, blocks: lane.blocks.map((block) => block.id === repairedBlock.id ? { ...block, state: { ...block.state!, activeExpressionPresetId: 'new-expression-revision' } } : block) }
+      : lane) } }
+    const pruned = pruneEditorV6TimelineSnapshots(staleKey)
+    expect(pruned.timeline.tracks.find((lane) => lane.kind === 'character')!.blocks[1].incomingMotion).toBeUndefined()
+    expect(pruned.assets.some((asset) => asset.id === bodyId || asset.id === faceId)).toBe(false)
+  })
+
+  it('repairs duplicate facial atlas IDs to the character asset when another category collides', () => {
+    const { project, character } = fixture()
+    const track = project.timeline.tracks.find((track) => track.kind === 'character')!
+    track.blocks = track.blocks.slice(0, 2)
+    const plan = editorV6MotionPlans(project)[0]
+    const ready = attachEditorV6Motion(project, plan.blockId, resultWithFaceAsset({ id: crypto.randomUUID(), plan, character }))
+    const faceAsset = ready.assets.find((asset) => asset.id === ready.timeline.tracks.find((lane) => lane.kind === 'character')!.blocks[1].incomingMotion?.faceAssetId)!
+    const withCollision = { ...ready, assets: [{ ...faceAsset, category: 'object' as const, name: 'ID duplicado' }, ...ready.assets] }
+    const repaired = repairEditorV6DuplicateAssets(withCollision, null)
+    const repairedFaceId = repaired.timeline.tracks.find((lane) => lane.kind === 'character')!.blocks[1].incomingMotion?.faceAssetId
+
+    expect(repaired.assets.find((asset) => asset.id === repairedFaceId)?.category).toBe('character')
+    expect(new Set(repaired.assets.map((asset) => asset.id)).size).toBe(repaired.assets.length)
+  })
+
+  it('rejects a prepared facial patch without its separate atlas', () => {
+    const { request } = fixture()
+    const result = resultWithFaceAsset(request)
+    expect(editorV6MotionResultSchema.safeParse(result).success).toBe(true)
+    expect(editorV6MotionResultSchema.safeParse({
+      ...result,
+      faceAsset: undefined,
+      motion: { ...result.motion, faceAssetId: undefined }
+    }).success).toBe(false)
   })
 
   it('indexes the first character once and shares its full-content fingerprint across plans', () => {
@@ -270,7 +396,6 @@ describe('transition preparation reuse', () => {
         plan: { ...original.plan, from: state, to: { ...state }, samples }
       }
       const result = resultFor(request)
-      result.motion.frames = result.motion.frames.map((frame) => ({ ...frame, facePatch: { sprite: frame.sprite, x: 0.4, y: 0.4, width: 0.2, height: 0.2 } }))
       const cache = createMotionDiskCache(folder)
       await cache.write(request, result)
       expect(await cache.read(request)).toEqual(result)

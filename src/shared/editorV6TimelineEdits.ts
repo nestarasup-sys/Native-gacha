@@ -116,7 +116,7 @@ export function pruneEditorV6TimelineSnapshots(document: EditorV6Document): Edit
   }
   const referenced = new Set([document.backgroundAssetId,
     ...document.elements.flatMap((element) => [element.assetId, ...Object.values(element.faceModeAssetIds ?? {})]),
-    ...timelineClips(document.timeline).flatMap(({ block }) => [block.state?.assetId, ...Object.values(block.state?.faceModeAssetIds ?? {}), block.background?.backgroundAssetId, block.incomingMotion?.assetId])])
+    ...timelineClips(document.timeline).flatMap(({ block }) => [block.state?.assetId, ...Object.values(block.state?.faceModeAssetIds ?? {}), block.background?.backgroundAssetId, block.incomingMotion?.assetId, block.incomingMotion?.faceAssetId])])
   const assets = document.assets.filter((asset) => !asset.timelineSnapshot || referenced.has(asset.id))
   return assets.length === document.assets.length ? document : { ...document, assets }
 }
@@ -184,7 +184,11 @@ export function repairEditorV6DuplicateAssets(document: EditorV6Document, select
     ...block,
     ...(block.state ? { state: repairElement(block.state, block.id === selectedBlockId) } : {}),
     ...(block.background ? { background: { ...block.background, backgroundAssetId: resolveAssetId(block.background.backgroundAssetId ?? undefined, 'background') ?? null } } : {}),
-    ...(block.incomingMotion ? { incomingMotion: { ...block.incomingMotion, assetId: resolveAssetId(block.incomingMotion.assetId, 'character')! } } : {})
+    ...(block.incomingMotion ? { incomingMotion: {
+      ...block.incomingMotion,
+      assetId: resolveAssetId(block.incomingMotion.assetId, 'character')!,
+      ...(block.incomingMotion.faceAssetId ? { faceAssetId: resolveAssetId(block.incomingMotion.faceAssetId, 'character')! } : {})
+    } } : {})
   })) })) }
   return { ...document, backgroundAssetId: resolveAssetId(document.backgroundAssetId ?? undefined, 'background') ?? null, assets, elements, timeline }
 }
