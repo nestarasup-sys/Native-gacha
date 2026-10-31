@@ -1,10 +1,10 @@
 import { useRef, type Dispatch, type SetStateAction } from 'react'
-import { normalizeCharacterColorOverrides } from '../../../../shared/customizer'
+import { normalizeCharacterHairColorOverrides } from '../../../../shared/customizer'
 import type { CharacterPaletteOverrides, CharacterPaletteRole, CustomizerCharacter, HairPartId } from '../../../../shared/customizer'
 import type { HairStyle, HairStyleSummary } from '../../../../shared/fabricator'
 import { hairStyleSupportsCategory } from '../../../../shared/hairCategories'
 import { customizerHairParts, resolvedHairColors } from '../../characters/characterRenderer'
-import { CharacterPaletteStrip, characterPaletteSwatchGradient, hairColorControls, hairPalettePresets } from './CustomizerAppearanceControls'
+import { HairAppearancePaletteStrip, characterHairPaletteSwatchGradient, customizerHairColorControls, customizerHairPalettePresets } from './CustomizerAppearanceControls'
 import { HairAssetPreview } from './CustomizerAssetPreviews'
 import { Icon } from '../../ui/components/Icon'
 import { hairAppearancePartStyleId } from './customizerHairAppearanceModel'
@@ -84,7 +84,7 @@ export function CustomizerHairWorkspace({
   if (loading) return <section className="customizer-hair-workspace" aria-label="Personalização do cabelo"><div className="customizer-catalog-empty">Carregando cabelos do Fabricador Dev…</div></section>
 
   const rawColorOverrides = appearance?.colors
-  const colorOverrides = normalizeCharacterColorOverrides(rawColorOverrides)
+  const colorOverrides = normalizeCharacterHairColorOverrides(rawColorOverrides)
   const globalColorOverrides = colorOverrides
   const hasLocalPartColors = (partId: HairPartId) => Object.keys(appearance?.partColors?.[partId] ?? {}).length > 0
 
@@ -93,13 +93,13 @@ export function CustomizerHairWorkspace({
       <div className="customizer-hair-color-controls" aria-label="Paleta geral dos cabelos">
         <div className="customizer-hair-palette-editor">
           <div className="customizer-hair-palette-title"><strong>Paleta geral</strong><span>Uma cor para os cinco cabelos</span><button type="button" onClick={() => void onRestoreColors()} disabled={!appearance || !Object.keys(rawColorOverrides ?? {}).length && !Object.values(appearance.partColors ?? {}).some((colors) => Object.keys(colors ?? {}).length)} title="Restaurar as cores originais dos cinco cabelos">Restaurar</button></div>
-          <div className="customizer-hair-palette-swatches">{hairColorControls.map((color) => <label className="customizer-hair-color-control" data-role={color.id} key={color.id} title={`${color.label} · aplica a todos os cabelos`}>
+          <div className="customizer-hair-palette-swatches">{customizerHairColorControls.map((color) => <label className="customizer-hair-color-control" data-role={color.id} key={color.id} title={`${color.label} · aplica a todos os cabelos`}>
             <span>{color.label}</span><input className={activeColorRole === color.id ? 'active' : ''} type="color" aria-label={`${color.label} geral`} value={colorOverrides[color.id] ?? color.fallback} disabled={!hasCharacter} onFocus={() => onActiveColorRoleChange(color.id)} onChange={(event) => void onSetColor(color.id, event.target.value)} />
           </label>)}</div>
         </div>
         <aside className="customizer-hair-palette-presets" aria-label="Paletas prontas">
           <button className="customizer-hair-palette-scroll previous" aria-label="Ver paletas anteriores" onClick={() => paletteStripRef.current?.scrollBy({ left: -180, behavior: 'smooth' })} type="button"><Icon name="chevronRight" /></button>
-          <div className="customizer-hair-palette-preset-list" ref={paletteStripRef}>{hairPalettePresets.map((preset) => <button key={preset.name} type="button" disabled={!hasCharacter} aria-pressed={hairColorControls.every((color) => colorOverrides[color.id] === preset.colors[color.id])} onClick={() => void onApplyPalette(preset.colors)} title={`Aplicar a paleta ${preset.name} aos cinco cabelos`}><span style={{ background: characterPaletteSwatchGradient(preset.colors) }} />{preset.name}</button>)}</div>
+          <div className="customizer-hair-palette-preset-list" ref={paletteStripRef}>{customizerHairPalettePresets.map((preset) => <button key={preset.name} type="button" disabled={!hasCharacter} aria-pressed={customizerHairColorControls.every((color) => colorOverrides[color.id] === preset.colors[color.id])} onClick={() => void onApplyPalette(preset.colors)} title={`Aplicar a paleta ${preset.name} aos cinco cabelos`}><span style={{ background: characterHairPaletteSwatchGradient(preset.colors) }} />{preset.name}</button>)}</div>
           <button className="customizer-hair-palette-scroll" aria-label="Ver próximas paletas" onClick={() => paletteStripRef.current?.scrollBy({ left: 180, behavior: 'smooth' })} type="button"><Icon name="chevronRight" /></button>
         </aside>
       </div>
@@ -112,8 +112,8 @@ export function CustomizerHairWorkspace({
         const slotCount = options.length + 1
         const asset = selected ? details[`${selected.modelSlot}:${selected.id}`]?.[part.side] : null
         const rawPieceColors = resolvedHairColors(appearance, part.id)
-        const pieceColors = normalizeCharacterColorOverrides(rawPieceColors)
-        const localPieceColors = normalizeCharacterColorOverrides(appearance?.partColors?.[part.id])
+        const pieceColors = normalizeCharacterHairColorOverrides(rawPieceColors)
+        const localPieceColors = normalizeCharacterHairColorOverrides(appearance?.partColors?.[part.id])
         const chooseAt = (index: number) => {
           const slot = wrapSlotIndex(index, slotCount)
           void onChooseStyle(part.id, slot === 0 ? null : options[slot - 1])
@@ -127,7 +127,7 @@ export function CustomizerHairWorkspace({
             </button>
             <button aria-label={`Próxima peça: ${part.label}`} onClick={() => chooseAt(selectedSlot + 1)} disabled={!options.length || !hasCharacter} type="button"><Icon name="chevronRight" /></button>
             <div className="customizer-hair-piece-colors" aria-label={`Cores de ${part.label}`}>
-              {hairColorControls.map((color) => {
+              {customizerHairColorControls.map((color) => {
                 const local = Boolean(appearance?.partColors?.[part.id]) && localPieceColors[color.id] !== globalColorOverrides[color.id]
                 return <label key={color.id} className={local ? 'local' : ''} style={{ '--hair-color-swatch': pieceColors[color.id] ?? color.fallback } as import('react').CSSProperties} title={`${color.label} de ${part.label} · ${local ? 'ajuste individual' : 'paleta geral'}`}>
                 <input type="color" aria-label={`${color.label} de ${part.label}`} value={pieceColors[color.id] ?? color.fallback} disabled={!hasCharacter || !asset} onFocus={() => onActiveColorRoleChange(color.id)} onChange={(event) => void onSetPartColor(part.id, color.id, event.target.value)} />
@@ -136,7 +136,7 @@ export function CustomizerHairWorkspace({
               })}
             </div>
           </div>
-          <CharacterPaletteStrip label={part.label} colors={normalizeCharacterColorOverrides(appearance?.partColors?.[part.id])} disabled={!hasCharacter || !asset} onSelect={(colors) => void onApplyPartPalette(part.id, colors)} />
+          <HairAppearancePaletteStrip label={part.label} colors={normalizeCharacterHairColorOverrides(appearance?.partColors?.[part.id])} disabled={!hasCharacter || !asset} onSelect={(colors) => void onApplyPartPalette(part.id, colors)} />
         </article>
       })}
     </div>

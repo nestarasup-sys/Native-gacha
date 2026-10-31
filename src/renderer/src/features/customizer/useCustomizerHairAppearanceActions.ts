@@ -1,6 +1,6 @@
 /** Ações de aparência do cabelo; alterações ficam na instância do personagem. */
 import type { MutableRefObject } from 'react'
-import { normalizeCharacterColorOverrides, setCharacterColorRole } from '../../../../shared/customizer'
+import { normalizeCharacterHairColorOverrides, setCharacterHairColorRole } from '../../../../shared/customizer'
 import type { CharacterColorOverrides, CharacterPaletteOverrides, CharacterPaletteRole, CustomizerCharacter, HairPartId } from '../../../../shared/customizer'
 import type { CharacterPatch } from './useCustomizerCharacterCommands'
 import { customizerHairParts } from '../../characters/characterRenderer'
@@ -43,7 +43,7 @@ export function useCustomizerHairAppearanceActions(deps: {
     await saveCharacterCustomization({ hairAppearance: {
       ...(sameModel ? previous : undefined),
       modelSlot: selectedModelSlot,
-      colors: setCharacterColorRole(sameModel ? previous?.colors : undefined, role, value),
+      colors: setCharacterHairColorRole(sameModel ? previous?.colors : undefined, role, value),
       partColors
     } })
   }
@@ -54,7 +54,7 @@ export function useCustomizerHairAppearanceActions(deps: {
     const previous = current.customization.hairAppearance
     const sameModel = previous?.modelSlot === selectedModelSlot
     const partColors = { ...(sameModel ? previous?.partColors : undefined) }
-    partColors[part] = setCharacterColorRole(partColors[part], role, value)
+    partColors[part] = setCharacterHairColorRole(partColors[part], role, value)
     await saveCharacterCustomization({ hairAppearance: { ...(sameModel ? previous : undefined), modelSlot: selectedModelSlot, partColors } })
   }
 
@@ -65,7 +65,7 @@ export function useCustomizerHairAppearanceActions(deps: {
     const sameModel = previous?.modelSlot === selectedModelSlot
     await saveCharacterCustomization({ hairAppearance: {
       ...(sameModel ? previous : undefined), modelSlot: selectedModelSlot,
-      partColors: { ...(sameModel ? previous?.partColors : undefined), [part]: normalizeCharacterColorOverrides(colors) }
+      partColors: { ...(sameModel ? previous?.partColors : undefined), [part]: normalizeCharacterHairColorOverrides(colors) }
     } })
   }
 
@@ -84,7 +84,7 @@ export function useCustomizerHairAppearanceActions(deps: {
     const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
     const previous = current.customization.hairAppearance
     const sameModel = previous?.modelSlot === selectedModelSlot
-    await saveCharacterCustomization({ hairAppearance: { ...(sameModel ? previous : undefined), modelSlot: selectedModelSlot, colors: normalizeCharacterColorOverrides(colors), partColors: {} } })
+    await saveCharacterCustomization({ hairAppearance: { ...(sameModel ? previous : undefined), modelSlot: selectedModelSlot, colors: normalizeCharacterHairColorOverrides(colors), partColors: {} } })
   }
 
   async function restoreHairColors() {

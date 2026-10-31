@@ -11,6 +11,9 @@ export type CharacterColorOverrides = HairColorOverrides | CharacterPaletteOverr
 export const defaultCharacterColorOverrides: CharacterPaletteOverrides = {
   outline: '#2B2B2B', shadow: '#6B6B6B', base: '#A8A8A8', light: '#55C5D4', detail: '#8C7BFF'
 }
+export const defaultCharacterHairColorOverrides = {
+  outline: '#2B2B2B', shadow: '#6B6B6B', base: '#A8A8A8', light: '#E2E2E2'
+} satisfies CharacterPaletteOverrides
 
 export function normalizeCharacterColorOverrides(colors?: CharacterColorOverrides | null): CharacterPaletteOverrides {
   const legacy = colors as HairColorOverrides | undefined
@@ -24,6 +27,21 @@ export function normalizeCharacterColorOverrides(colors?: CharacterColorOverride
     light: current?.light ?? legacy?.highlight ?? defaultCharacterColorOverrides.light,
     detail: current?.detail ?? defaultCharacterColorOverrides.detail
   }
+}
+/** Hair uses the four-role grayscale source palette; legacy saved highlights remain respected. */
+export function normalizeCharacterHairColorOverrides(colors?: CharacterColorOverrides | null): CharacterPaletteOverrides {
+  const legacy = colors as HairColorOverrides | undefined
+  const current = colors as CharacterPaletteOverrides | undefined
+  return {
+    outline: current?.outline ?? legacy?.outline ?? defaultCharacterHairColorOverrides.outline,
+    shadow: current?.shadow ?? legacy?.fade ?? defaultCharacterHairColorOverrides.shadow,
+    base: current?.base ?? defaultCharacterHairColorOverrides.base,
+    light: current?.light ?? legacy?.highlight ?? defaultCharacterHairColorOverrides.light,
+    ...(current?.detail === undefined ? {} : { detail: current.detail })
+  }
+}
+export function setCharacterHairColorRole(colors: CharacterColorOverrides | undefined, role: CharacterPaletteRole, value: string): CharacterPaletteOverrides {
+  return { ...normalizeCharacterHairColorOverrides(colors), [role]: value }
 }
 export function hasStandardCharacterColorRoles(colors?: CharacterColorOverrides | null): boolean {
   return !!colors && ('shadow' in colors || 'light' in colors || 'detail' in colors)

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { defaultCharacterHairColorOverrides } from '../../../../shared/customizer'
 import type { CharacterPaletteOverrides, CharacterPaletteRole, HairColorOverrides } from '../../../../shared/customizer'
 import { customizerSkinTonePresets } from './customizerFaceCatalogModel'
 import { Icon } from '../../ui/components/Icon'
@@ -9,6 +10,13 @@ export const hairColorControls: Array<{ id: CharacterPaletteRole; label: string;
   { id: 'base', label: 'Cor base', fallback: '#A8A8A8' },
   { id: 'light', label: 'Cor secundária', fallback: '#55C5D4' },
   { id: 'detail', label: 'Cor de acessório/detalhe', fallback: '#8C7BFF' }
+]
+
+export const customizerHairColorControls: Array<{ id: CharacterPaletteRole; label: string; fallback: string }> = [
+  { id: 'outline', label: 'Contorno', fallback: defaultCharacterHairColorOverrides.outline },
+  { id: 'shadow', label: 'Sombra', fallback: defaultCharacterHairColorOverrides.shadow },
+  { id: 'base', label: 'Cor base', fallback: defaultCharacterHairColorOverrides.base },
+  { id: 'light', label: 'Luz', fallback: defaultCharacterHairColorOverrides.light }
 ]
 
 const originalHairPalettePresets: Array<{ name: string; colors: HairColorOverrides }> = [
@@ -39,6 +47,11 @@ export const hairPalettePresets: Array<{ name: string; colors: CharacterPaletteO
   colors: { outline: colors.outline, shadow: colors.fade, base: colors.base, light: colors.highlight, detail: '#8C7BFF' }
 }))
 
+export const customizerHairPalettePresets: Array<{ name: string; colors: CharacterPaletteOverrides }> = originalHairPalettePresets.map(({ name, colors }) => ({
+  name,
+  colors: { outline: colors.outline, shadow: colors.fade, base: colors.base, light: colors.highlight }
+}))
+
 export function characterPaletteSwatchGradient(colors: CharacterPaletteOverrides): string {
   const outline = colors.outline ?? '#2B2B2B'
   const shadow = colors.shadow ?? '#6B6B6B'
@@ -46,6 +59,14 @@ export function characterPaletteSwatchGradient(colors: CharacterPaletteOverrides
   const secondary = colors.light ?? '#55C5D4'
   const detail = colors.detail ?? '#8C7BFF'
   return `linear-gradient(115deg, ${outline} 0 16%, ${shadow} 16% 32%, ${base} 32% 56%, ${secondary} 56% 78%, ${detail} 78%)`
+}
+
+export function characterHairPaletteSwatchGradient(colors: CharacterPaletteOverrides): string {
+  const outline = colors.outline ?? '#2B2B2B'
+  const shadow = colors.shadow ?? '#6B6B6B'
+  const base = colors.base ?? '#A8A8A8'
+  const light = colors.light ?? '#E2E2E2'
+  return `linear-gradient(115deg, ${outline} 0 20%, ${shadow} 20% 40%, ${base} 40% 70%, ${light} 70%)`
 }
 
 export function NoseOpacityControl({ value, disabled, onChange }: { value: number; disabled: boolean; onChange: (value: number) => void }) {
@@ -103,14 +124,14 @@ export function PiecePaletteStrip({ label = 'Paleta da peça', colors, disabled,
   </div>
 }
 
-export function CharacterPaletteStrip({ label = 'Paleta da peça', colors, disabled, onSelect }: { label?: string; colors?: CharacterPaletteOverrides; disabled: boolean; onSelect: (colors: CharacterPaletteOverrides) => void }) {
+export function HairAppearancePaletteStrip({ label = 'Paleta da peça', colors, disabled, onSelect }: { label?: string; colors?: CharacterPaletteOverrides; disabled: boolean; onSelect: (colors: CharacterPaletteOverrides) => void }) {
   const scroll = (button: HTMLButtonElement, direction: number) => button.closest('.customizer-piece-palette')?.querySelector<HTMLElement>('.customizer-piece-palette-list')?.scrollBy({ left: direction * 150, behavior: 'smooth' })
   return <div className="customizer-piece-palette" aria-label={label}>
     <strong>{label}</strong>
     <div className="customizer-piece-palette-strip">
       <button className="customizer-hair-palette-scroll previous" type="button" aria-label="Paletas anteriores" onClick={(event) => scroll(event.currentTarget, -1)}><Icon name="chevronRight" /></button>
       <div className="customizer-hair-palette-preset-list customizer-piece-palette-list">
-        {hairPalettePresets.map((preset) => <button key={preset.name} type="button" disabled={disabled} aria-pressed={hairColorControls.every((color) => colors?.[color.id] === preset.colors[color.id])} onClick={() => onSelect(preset.colors)} title={`Aplicar ${preset.name}`}><span style={{ background: characterPaletteSwatchGradient(preset.colors) }} />{preset.name}</button>)}
+        {customizerHairPalettePresets.map((preset) => <button key={preset.name} type="button" disabled={disabled} aria-pressed={customizerHairColorControls.every((color) => colors?.[color.id] === preset.colors[color.id])} onClick={() => onSelect(preset.colors)} title={`Aplicar ${preset.name}`}><span style={{ background: characterHairPaletteSwatchGradient(preset.colors) }} />{preset.name}</button>)}
       </div>
       <button className="customizer-hair-palette-scroll" type="button" aria-label="Próximas paletas" onClick={(event) => scroll(event.currentTarget, 1)}><Icon name="chevronRight" /></button>
     </div>

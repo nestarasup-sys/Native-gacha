@@ -1,5 +1,6 @@
 import type { FaceSet, FabricatorProject, HairStyle, ModelSkinContourStroke } from '../../../shared/fabricator'
 import type { CharacterRenderAssetProvider } from '../../../shared/characterRenderAssets'
+import { defaultCharacterHairColorOverrides } from '../../../shared/customizer'
 import type { CharacterColorOverrides, CustomizerCharacter, CustomizerFaceAppearance, HairPartId } from '../../../shared/customizer'
 import { hairAppearanceStyleId, hairAppearanceStyleIds, hairCategories } from '../../../shared/hairCategories'
 import type { CatalogArtwork } from './characterSourceResolver'
@@ -40,7 +41,10 @@ export function createCharacterLayerRenderer(loaders: CharacterLayerImageLoaders
   }
 
   function resolvedHairColors(appearance: CustomizerCharacter['customization']['hairAppearance'], part: HairPartId): CharacterColorOverrides {
-    return { ...appearance?.colors, ...appearance?.partColors?.[part] }
+    const colors = { ...appearance?.colors, ...appearance?.partColors?.[part] }
+    if (!Object.keys(colors).length || !('shadow' in colors || 'light' in colors || 'detail' in colors)) return colors
+    const palette = colors as CharacterColorOverrides & { light?: string; highlight?: string }
+    return { ...colors, light: palette.light ?? palette.highlight ?? defaultCharacterHairColorOverrides.light } as CharacterColorOverrides
   }
 
 

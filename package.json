@@ -87,7 +87,8 @@
     "test:fabricator:full-golden": "node --experimental-strip-types --test tests/fabricator-complete-character-golden.test.mjs",
     "test:fabricator:real-ui:review": "node scripts/fabricator/review-real-ui-captures.cjs",
     "test:base-videos": "node --experimental-strip-types --test tests/base-videos-architecture.test.mjs",
-    "test:customizer:face-appearance": "node --experimental-strip-types --test tests/customizer-face-appearance-model.test.mjs"
+    "test:customizer:face-appearance": "node --experimental-strip-types --test tests/customizer-face-appearance-model.test.mjs",
+    "test:customizer:hair-palette": "node --experimental-strip-types --test tests/customizer-hair-palette.test.mjs"
   },
   "dependencies": {
     "better-sqlite3": "^13.0.3",
