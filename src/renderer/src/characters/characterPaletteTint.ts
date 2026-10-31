@@ -27,12 +27,8 @@ export type CharacterPaletteDetection = {
 
 const grayscaleSourcePalette = CHARACTER_SOURCE_PALETTE.filter((swatch) => swatch.grayscaleValue !== undefined)
 const chromaticSourcePalette = CHARACTER_SOURCE_PALETTE.filter((swatch) => swatch.grayscaleValue === undefined)
-const detailSourceSwatch = chromaticSourcePalette.find((swatch) => swatch.role === 'detail')!
-const detailSourceLightness = (Math.max(...detailSourceSwatch.rgb) + Math.min(...detailSourceSwatch.rgb)) / 2
 const sourceSwatchTolerance = 6
 const grayscaleTolerance = 8
-const purpleHueRange = { min: 225, max: 320 }
-const minimumPurpleSaturation = 0.12
 
 function chromaticSourceShade(red: number, green: number, blue: number, swatch: SourceSwatch): number | null {
   const [sourceRed, sourceGreen, sourceBlue] = swatch.rgb
@@ -46,30 +42,9 @@ function chromaticSourceShade(red: number, green: number, blue: number, swatch: 
   return scale
 }
 
-function purpleAccessoryShade(red: number, green: number, blue: number): number | null {
-  const maximum = Math.max(red, green, blue)
-  const minimum = Math.min(red, green, blue)
-  if (maximum < 24 || (maximum - minimum) / maximum < minimumPurpleSaturation) return null
-
-  const difference = maximum - minimum
-  let hue: number
-  if (maximum === red) hue = ((green - blue) / difference) % 6
-  else if (maximum === green) hue = (blue - red) / difference + 2
-  else hue = (red - green) / difference + 4
-  hue = (hue * 60 + 360) % 360
-  if (hue < purpleHueRange.min || hue > purpleHueRange.max) return null
-
-  // Generated accessories use several purple pigments and highlights. Use
-  // hue to identify the role, then retain their light/dark value when tinting.
-  const sourcePixelLightness = (maximum + minimum) / 2
-  return Math.max(0.18, Math.min(1.4, sourcePixelLightness / detailSourceLightness))
-}
-
 function matchChromaticSource(red: number, green: number, blue: number): { role: CharacterPaletteRole; shade: number } | null {
   for (const swatch of chromaticSourcePalette) {
-    const shade = swatch.role === 'detail'
-      ? purpleAccessoryShade(red, green, blue)
-      : chromaticSourceShade(red, green, blue, swatch)
+    const shade = chromaticSourceShade(red, green, blue, swatch)
     if (shade !== null) return { role: swatch.role, shade }
   }
   return null

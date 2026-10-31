@@ -118,31 +118,6 @@ describe('paleta fixa de cabelo, roupas e acessórios', () => {
     expect(Array.from(pixels.slice(8))).toEqual(originalNonPalettePixels)
   })
 
-  it('leva toda a família de roxos para preto sem atingir ciano, azul ou contorno', () => {
-    const pixels = new Uint8ClampedArray([
-      140, 123, 255, 255,
-      153, 125, 245, 255,
-      110, 61, 150, 255,
-      176, 81, 169, 255,
-      85, 197, 212, 255,
-      49, 120, 200, 255,
-      43, 43, 43, 255,
-      32, 30, 34, 255,
-      140, 123, 255, 0
-    ])
-    const untouched = Array.from(pixels.slice(16, 32))
-
-    const detection = tintCharacterPalettePixels(pixels, { detail: '#000000' })
-
-    expect(detection.supported).toBe(true)
-    expect(detection.roleCounts.detail).toBe(4)
-    for (let offset = 0; offset < 16; offset += 4) {
-      expect(Array.from(pixels.slice(offset, offset + 4))).toEqual([0, 0, 0, 255])
-    }
-    expect(Array.from(pixels.slice(16, 32))).toEqual(untouched)
-    expect(Array.from(pixels.slice(32, 36))).toEqual([140, 123, 255, 0])
-  })
-
   it('altera cada papel independentemente e preserva os outros quatro', () => {
     const roles = ['outline', 'shadow', 'base', 'light', 'detail'] as const
     const fixtureRoleByPixel = ['outline', 'shadow', 'base', 'light', 'detail', 'detail'] as const
