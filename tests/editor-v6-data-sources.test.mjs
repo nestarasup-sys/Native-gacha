@@ -23,7 +23,8 @@ import { loadEditorV6PoseThumbnails } from '../src/renderer/src/features/editorV
 import { createEditorV6MediaCommands } from '../src/renderer/src/features/editorV6/editorV6MediaCommands.ts'
 import {
   applyEditorV6CharacterAssetCrops,
-  applyEditorV6CharacterRefreshResult
+  applyEditorV6CharacterRefreshResult,
+  editorV6CharacterRefreshStateSignature
 } from '../src/renderer/src/features/editorV6/editorV6CharacterRefreshModel.ts'
 import {
   importEditorV6ImageToProject,
@@ -530,6 +531,76 @@ test('aplica refresh de snapshots preservando assets ainda referenciados e remov
   assert.equal(refreshed.updatedAt, 'after')
   assert.equal(project.assets[0].timelineSnapshot, true)
   assert.equal(project.timeline.tracks[0].blocks[0].state.assetId, 'old-shared')
+})
+
+test('refresh assíncrono não substitui elementos e blocos alterados enquanto o bake estava pendente', () => {
+  const sceneCurrent = { id: 'scene', kind: 'character', characterId: 'character', assetId: 'old-scene', text: 'Cena', x: 0, y: 0, width: 10, height: 10 }
+  const sceneEdited = { id: 'edited-scene', kind: 'character', characterId: 'character', assetId: 'old-edited-scene', text: 'Antes', x: 10, y: 0, width: 10, height: 10 }
+  const blockCurrent = { ...sceneCurrent, id: 'block-actor' }
+  const blockEdited = { ...sceneCurrent, id: 'block-actor-edited', x: 40 }
+  const project = {
+    id: 'project', updatedAt: 'before', backgroundAssetId: null,
+    elements: [sceneCurrent, sceneEdited],
+    assets: [
+      { id: 'old-scene', category: 'character', dataUrl: 'old scene', timelineSnapshot: true },
+      { id: 'old-edited-scene', category: 'character', dataUrl: 'edited scene', timelineSnapshot: true },
+      { id: 'new-scene', category: 'character', dataUrl: 'new scene', timelineSnapshot: true },
+      { id: 'new-edited-scene', category: 'character', dataUrl: 'stale scene', timelineSnapshot: true },
+      { id: 'old-block', category: 'character', dataUrl: 'old block', timelineSnapshot: true },
+      { id: 'new-block', category: 'character', dataUrl: 'new block', timelineSnapshot: true },
+      { id: 'new-edited-block', category: 'character', dataUrl: 'stale block', timelineSnapshot: true }
+    ],
+    timeline: { durationFrames: 300, tracks: [{ id: 'track', kind: 'character', blocks: [
+      { id: 'block-current', elementId: 'scene', state: blockCurrent, label: 'Cena' },
+      { id: 'block-edited', elementId: 'scene', state: blockEdited, label: 'Antes' }
+    ] }] }
+  }
+  const staleSceneAtStart = { ...sceneEdited }
+  const staleBlockAtStart = { ...blockEdited }
+  // A body-scale edit lands after rendering started but before the queued updater runs.
+  const currentDocument = structuredClone(project)
+  currentDocument.elements[1] = { ...currentDocument.elements[1], width: 25 }
+  currentDocument.timeline.tracks[0].blocks[1] = {
+    ...currentDocument.timeline.tracks[0].blocks[1],
+    state: { ...currentDocument.timeline.tracks[0].blocks[1].state, width: 30 }
+  }
+  const result = {
+    nextElements: new Map([
+      ['scene', { ...sceneCurrent, assetId: 'new-scene' }],
+      ['edited-scene', { ...sceneEdited, assetId: 'new-edited-scene' }]
+    ]),
+    nextBlocks: new Map([
+      ['block-current', { ...blockCurrent, assetId: 'new-block' }],
+      ['block-edited', { ...blockEdited, assetId: 'new-edited-block' }]
+    ]),
+    expectedElementStates: new Map([
+      ['scene', editorV6CharacterRefreshStateSignature(sceneCurrent)],
+      ['edited-scene', editorV6CharacterRefreshStateSignature(staleSceneAtStart)]
+    ]),
+    expectedBlockStates: new Map([
+      ['block-current', editorV6CharacterRefreshStateSignature(blockCurrent)],
+      ['block-edited', editorV6CharacterRefreshStateSignature(staleBlockAtStart)]
+    ]),
+    refreshedAssets: project.assets.filter((asset) => asset.id.startsWith('new-')),
+    staleAssetIds: new Set(['old-scene', 'old-edited-scene', 'old-block'])
+  }
+  const pruneSnapshots = (document) => {
+    const referenced = new Set([
+      ...document.elements.map((element) => element.assetId),
+      ...document.timeline.tracks.flatMap((track) => track.blocks.map((block) => block.state?.assetId))
+    ])
+    return { ...document, assets: document.assets.filter((asset) => !asset.timelineSnapshot || referenced.has(asset.id)) }
+  }
+
+  const refreshed = applyEditorV6CharacterRefreshResult(currentDocument, result, pruneSnapshots, 'after')
+
+  assert.equal(refreshed.elements[0].assetId, 'new-scene')
+  assert.equal(refreshed.elements[1].assetId, 'old-edited-scene')
+  assert.equal(refreshed.elements[1].width, 25)
+  assert.equal(refreshed.timeline.tracks[0].blocks[0].state.assetId, 'new-block')
+  assert.equal(refreshed.timeline.tracks[0].blocks[1].state.assetId, 'old-scene')
+  assert.equal(refreshed.timeline.tracks[0].blocks[1].state.width, 30)
+  assert.ok(!refreshed.assets.some((asset) => asset.id === 'new-edited-scene' || asset.id === 'new-edited-block'))
 })
 
 test('importação de imagem coordena escolha, documento atual, persistência e seleção do bloco', async () => {

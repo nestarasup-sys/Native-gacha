@@ -510,17 +510,24 @@ export function EditorV6Page() {
       const baseMode = faceMode ?? editorV6FaceModeForElement(selectedElement, appearance)
       const assetId = selectedElement.assetId
       const result = await editorV6FacePreview.withRenderer(characterCopy, selectedElement.poseSourceRevision, selectedElement.modelSourceRevision, async (renderer) => {
+        const previousRendered = await renderer.renderToCanvas(
+          selectedElement.faceAppearance ?? selectedEditorV6Character.customization.faceAppearance,
+          selectedElement.faceTransforms,
+          selectedElement.activeExpressionEffects,
+          selectedElement.activeFaceMode
+        )
+        const previousCrop = trimTransparentCanvas(previousRendered.canvas)
         const rendered = await renderer.renderToCanvas(appearance, faceTransforms, activeEffects, baseMode)
         const baked = await bakeFaceModeAssets(selectedElement.text, renderer, appearance, faceTransforms, activeEffects, baseMode, rendered)
-        return { rendered, baked }
+        return { rendered, baked, previousCrop }
       })
       if (!result) return
-      const { rendered, baked } = result
+      const { rendered, baked, previousCrop } = result
       const faceModeAssetIds = { ...baked.assetIds, [baseMode]: assetId }
       const elementId = selectedElement.id
       const update = (studio: EditorV6Document): EditorV6Document => ({
         ...studio,
-        elements: studio.elements.map((element) => element.id === elementId ? { ...element, ...expressionState, faceRendererVersion: EDITOR_V6_FACE_RENDER_VERSION, faceModeAssetIds, ...faceRenderGeometry(element, rendered, baked.crop, sceneRef.current?.clientWidth ?? 1000, sceneRef.current?.clientHeight ?? 562), faceAppearance: appearance, faceTransforms, characterSourceUpdatedAt: selectedEditorV6Character.updatedAt } : element),
+        elements: studio.elements.map((element) => element.id === elementId ? { ...element, ...expressionState, faceRendererVersion: EDITOR_V6_FACE_RENDER_VERSION, faceModeAssetIds, ...faceRenderGeometry(element, rendered, baked.crop, sceneRef.current?.clientWidth ?? 1000, sceneRef.current?.clientHeight ?? 562, previousCrop), faceAppearance: appearance, faceTransforms, characterSourceUpdatedAt: selectedEditorV6Character.updatedAt } : element),
         assets: [...studio.assets.map((asset) => asset.id === assetId ? { ...asset, dataUrl: baked.dataUrl, mimeType: 'image/png' as const } : asset), ...baked.extraAssets],
         updatedAt: new Date().toISOString()
       })
@@ -607,7 +614,7 @@ export function EditorV6Page() {
       const character: CustomizerCharacter = { ...selectedEditorV6Character, customization: { ...selectedEditorV6Character.customization, poseSlot: selectedElement.poseSlot === undefined ? selectedEditorV6Character.customization.poseSlot : selectedElement.poseSlot, faceAppearance: selectedEditorV6FaceAppearance } }
       const selectedClip = timelineClips(activeEditorV6.timeline).find(({ block }) => block.id === selectedTimelineBlockId && block.elementId === selectedElement.id)
         ?? editorV6ClipAtFrame(activeEditorV6.timeline, selectedElement.id, getEditorV6PlaybackFrame())
-      editorV6FacePreview.schedulePreview({ projectId: activeEditorV6Id, elementId: selectedElement.id, assetId: selectedElement.assetId, blockId: selectedClip?.block.id ?? null, poseSlot: selectedElement.poseSlot, poseSourceRevision: selectedElement.poseSourceRevision, modelSourceRevision: selectedElement.modelSourceRevision, character, transforms: next })
+      editorV6FacePreview.schedulePreview({ projectId: activeEditorV6Id, elementId: selectedElement.id, assetId: selectedElement.assetId, blockId: selectedClip?.block.id ?? null, poseSlot: selectedElement.poseSlot, poseSourceRevision: selectedElement.poseSourceRevision, modelSourceRevision: selectedElement.modelSourceRevision, character, transforms: next, previousState: { faceAppearance: selectedElement.faceAppearance, faceTransforms: selectedElement.faceTransforms, activeExpressionEffects: selectedElement.activeExpressionEffects, activeFaceMode: selectedElement.activeFaceMode } })
     }
   }
 

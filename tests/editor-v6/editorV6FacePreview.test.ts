@@ -140,6 +140,12 @@ describe('publicação de prévia facial', () => {
     expect(isCurrentEditorV6FacePreviewTarget(job, changedSource, 'project-1')).toBe(false)
   })
 
+  it('descarta resultado calculado antes de uma transformação facial mais recente', () => {
+    const changedTransforms = project()
+    if (changedTransforms.elements[0].kind === 'character') changedTransforms.elements[0].faceTransforms = { mouth: { x: 3 } } as never
+    expect(isCurrentEditorV6FacePreviewTarget(job, changedTransforms, 'project-1')).toBe(false)
+  })
+
   it('valida e atualiza o snapshot do bloco selecionado, sem confundi-lo com a pose base', () => {
     const projectWithPoseSnapshot = project()
     projectWithPoseSnapshot.elements[0].poseSlot = 1

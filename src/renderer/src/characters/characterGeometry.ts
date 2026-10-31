@@ -37,14 +37,38 @@ export function trimTransparentImage(dataUrl: string): Promise<TrimmedImage | nu
   })
 }
 
-export function faceRenderGeometry(element: StudioElement, rendered: { width: number; height: number }, crop: { width: number; height: number } | null, stageWidth: number, stageHeight: number) {
+export function faceRenderGeometry(
+  element: StudioElement,
+  rendered: { width: number; height: number },
+  crop: Pick<TrimmedImage, 'width' | 'height' | 'left' | 'top'> | null,
+  stageWidth: number,
+  stageHeight: number,
+  previousCrop?: Pick<TrimmedImage, 'width' | 'height' | 'left' | 'top'> | null
+) {
   const cropWidth = crop?.width ?? rendered.width
   const cropHeight = crop?.height ?? rendered.height
   const characterCanvasWidth = element.characterCanvasWidth ?? element.width * rendered.width / Math.max(1, cropWidth)
-  return {
+  const geometry = {
     characterCanvasWidth,
     width: characterCanvasWidth * cropWidth / rendered.width,
     height: characterCanvasWidth * stageWidth / Math.max(1, stageHeight) * cropHeight / rendered.width
+  }
+  if (previousCrop === undefined) return geometry
+
+  const overall = (element.characterScale ?? 100) / 100
+  const scaleX = characterCanvasWidth * overall * (element.characterWidthScale ?? 100) / 100 / Math.max(1, rendered.width)
+  const scaleY = characterCanvasWidth * Math.max(1, stageWidth) / Math.max(1, stageHeight) * overall * (element.characterHeightScale ?? 100) / 100 / Math.max(1, rendered.width)
+  const cropCenterX = (crop?.left ?? 0) + cropWidth / 2
+  const cropCenterY = (crop?.top ?? 0) + cropHeight / 2
+  const previousCenterX = (previousCrop?.left ?? 0) + (previousCrop?.width ?? rendered.width) / 2
+  const previousCenterY = (previousCrop?.top ?? 0) + (previousCrop?.height ?? rendered.height) / 2
+  const radians = element.rotation * Math.PI / 180
+  const deltaX = (cropCenterX - previousCenterX) * scaleX * (element.flipX ? -1 : 1) * 19.2
+  const deltaY = (cropCenterY - previousCenterY) * scaleY * 10.8
+  return {
+    ...geometry,
+    x: element.x + (deltaX * Math.cos(radians) - deltaY * Math.sin(radians)) / 19.2,
+    y: element.y + (deltaX * Math.sin(radians) + deltaY * Math.cos(radians)) / 10.8
   }
 }
 

@@ -4,7 +4,7 @@ import { editorV6CharacterRenderKey } from '../../../../shared/editorV6SceneMode
 import type { EditorV6Document, EditorV6Element, EditorV6FaceTransforms } from '../../../../shared/editorV6'
 import { faceRenderGeometry } from '../../characters/characterGeometry'
 import {
-  bakeFaceModeAssets, EDITOR_V6_FACE_RENDER_VERSION, editorV6FaceModeForElement,
+  bakeFaceModeAssets, EDITOR_V6_FACE_RENDER_VERSION, editorV6FaceModeForElement, trimTransparentCanvas,
   type PreparedEditorV6FaceRenderer
 } from './faceModeAssets'
 
@@ -18,6 +18,7 @@ export type EditorV6FacePreviewJob = {
   modelSourceRevision?: string
   character: CustomizerCharacter
   transforms: EditorV6FaceTransforms
+  previousState?: Pick<EditorV6Element, 'faceAppearance' | 'faceTransforms' | 'activeExpressionEffects' | 'activeFaceMode'>
 }
 
 type MutableRef<T> = { current: T }
@@ -47,6 +48,7 @@ export function isCurrentEditorV6FacePreviewTarget(
     && target.poseSlot === job.poseSlot
     && target.poseSourceRevision === job.poseSourceRevision
     && target.modelSourceRevision === job.modelSourceRevision
+    && JSON.stringify(target.faceTransforms ?? {}) === JSON.stringify(job.transforms)
     && (!target.characterSourceUpdatedAt || target.characterSourceUpdatedAt === job.character.updatedAt))
 }
 
@@ -164,6 +166,14 @@ export function useEditorV6FacePreview(dependencies: Dependencies) {
 
           const latest = dependenciesRef.current
           const transforms = latest.transformsRef.current[job.elementId] ?? job.transforms
+          const previousState = job.previousState ?? element
+          const previousRendered = await renderer.renderToCanvas(
+            previousState.faceAppearance ?? job.character.customization.faceAppearance,
+            previousState.faceTransforms,
+            previousState.activeExpressionEffects,
+            previousState.activeFaceMode
+          )
+          const previousCrop = trimTransparentCanvas(previousRendered.canvas)
           const faceMode = editorV6FaceModeForElement(element, job.character.customization.faceAppearance)
           const rendered = await renderer.renderToCanvas(job.character.customization.faceAppearance, transforms, element.activeExpressionEffects, faceMode)
           const afterRender = dependenciesRef.current
@@ -177,11 +187,13 @@ export function useEditorV6FacePreview(dependencies: Dependencies) {
           if ((publish.transformsRef.current[job.elementId] ?? job.transforms) !== transforms) continue
 
           publish.patchProject(job.projectId, job.blockId, (project) => {
-            if (!isCurrentEditorV6FacePreviewTarget(job, project, job.projectId)) return project
+            const currentTarget = editorV6FacePreviewTarget(job, project)
+            if (!isCurrentEditorV6FacePreviewTarget(job, project, job.projectId) || !currentTarget
+              || JSON.stringify(currentTarget.faceTransforms ?? {}) !== JSON.stringify(transforms)) return project
             return {
               ...project,
               elements: project.elements.map((candidate) => candidate.id === job.elementId
-                ? { ...candidate, faceRendererVersion: EDITOR_V6_FACE_RENDER_VERSION, faceModeAssetIds: { ...baked.assetIds, [faceMode]: job.assetId }, ...faceRenderGeometry(candidate, rendered, baked.crop, publish.sceneRef.current?.clientWidth ?? 1000, publish.sceneRef.current?.clientHeight ?? 562) }
+                ? { ...candidate, faceRendererVersion: EDITOR_V6_FACE_RENDER_VERSION, faceModeAssetIds: { ...baked.assetIds, [faceMode]: job.assetId }, ...faceRenderGeometry(candidate, rendered, baked.crop, publish.sceneRef.current?.clientWidth ?? 1000, publish.sceneRef.current?.clientHeight ?? 562, previousCrop) }
                 : candidate),
               assets: [...project.assets.map((asset) => asset.id === job.assetId ? { ...asset, dataUrl: baked.dataUrl, mimeType: 'image/png' as const } : asset), ...baked.extraAssets],
               updatedAt: new Date().toISOString()

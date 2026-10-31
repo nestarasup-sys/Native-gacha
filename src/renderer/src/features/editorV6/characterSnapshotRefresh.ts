@@ -6,6 +6,7 @@ import { faceRenderGeometry, type TrimmedImage } from '../../characters/characte
 import { editorV6CharacterEyeSourceRevision, editorV6CharacterHairSourceRevision, editorV6CharacterHeadExtraSourceRevision, editorV6CharacterWardrobeSourceRevision } from './editorV6CharacterSourceModel.ts'
 import { buildEditorV6ExpressionAppearance, buildEditorV6ExpressionTransforms, resolveEditorV6ExpressionBase } from './expressionTransforms.ts'
 import { bakeFaceModeAssets, EDITOR_V6_FACE_RENDER_VERSION, editorV6FaceModeForElement } from './faceModeAssets.ts'
+import { editorV6CharacterRefreshStateSignature } from './editorV6CharacterRefreshModel.ts'
 
 export type EditorV6CharacterRefreshTarget = { kind: 'element' | 'block'; id: string; state: EditorV6Element }
 export type EditorV6CharacterRefreshGroup = {
@@ -26,6 +27,9 @@ export type EditorV6CharacterRefreshPlan = {
 export type EditorV6CharacterRefreshResult = {
   nextElements: Map<string, EditorV6Element>
   nextBlocks: Map<string, EditorV6Element>
+  /** Captured input states prevent a delayed bake from overwriting newer edits. */
+  expectedElementStates?: Map<string, string>
+  expectedBlockStates?: Map<string, string>
   refreshedAssets: EditorV6Asset[]
   staleAssetIds: Set<string>
 }
@@ -103,13 +107,15 @@ export async function renderEditorV6CharacterRefresh(
   stageHeight: number,
   isCancelled: () => boolean
 ): Promise<EditorV6CharacterRefreshResult | null> {
-  if (!groups.length) return { nextElements: new Map(), nextBlocks: new Map(), refreshedAssets: [], staleAssetIds: new Set() }
+  if (!groups.length) return { nextElements: new Map(), nextBlocks: new Map(), expectedElementStates: new Map(), expectedBlockStates: new Map(), refreshedAssets: [], staleAssetIds: new Set() }
   const [{ prepareSavedCharacterRenderer }, { resolveSavedCharacterSource }] = await Promise.all([
     import('../../characters/editorV6CharacterRenderer'),
     import('../../characters/characterSourceResolver')
   ])
   const nextElements = new Map<string, EditorV6Element>()
   const nextBlocks = new Map<string, EditorV6Element>()
+  const expectedElementStates = new Map<string, string>()
+  const expectedBlockStates = new Map<string, string>()
   const refreshedAssets: EditorV6Asset[] = []
   const staleAssetIds = new Set<string>()
   const expressionPresetCache = new Map<string, ReturnType<typeof window.desktop.fabricator.loadFaceExpressionPreset>>()
@@ -136,12 +142,15 @@ export async function renderEditorV6CharacterRefresh(
     preset: FaceExpressionPreset | null
   }
   const rendererGroups = new Map<string, RefreshRenderJob[]>()
+  const poseReferenceCrops = new Map<string, TrimmedImage | null>()
 
   for (const { character, state, targets, poseRevision, modelRevision, wardrobeRevision, hairRevision, headExtraRevision, eyeRevision } of groups) {
     if (isCancelled()) return null
     for (const target of targets) {
       if (target.state.assetId) staleAssetIds.add(target.state.assetId)
       for (const id of Object.values(target.state.faceModeAssetIds ?? {})) if (id) staleAssetIds.add(id)
+      const expectedStates = target.kind === 'element' ? expectedElementStates : expectedBlockStates
+      expectedStates.set(target.id, editorV6CharacterRefreshStateSignature(target.state))
     }
     const sourceAppearance = character.customization.faceAppearance
     const appearanceFallback = sourceAppearance ?? state.faceAppearance ?? state.expressionBase?.appearance
@@ -203,7 +212,9 @@ export async function renderEditorV6CharacterRefresh(
         const assetId = faceModeAssetIds[faceMode]
         if (!assetId) throw new Error(`Não foi possível preparar a variante facial ${faceMode} de ${character.name}.`)
         for (const target of targets) {
-          const geometry = faceRenderGeometry(target.state, rendered, crop, stageWidth, stageHeight)
+          const poseKey = JSON.stringify([target.state.id, character.customization.modelSlot ?? 1, target.state.poseSlot === undefined ? character.customization.poseSlot ?? null : target.state.poseSlot])
+          if (!poseReferenceCrops.has(poseKey)) poseReferenceCrops.set(poseKey, crop)
+          const geometry = faceRenderGeometry(target.state, rendered, crop, stageWidth, stageHeight, poseReferenceCrops.get(poseKey))
           const next: EditorV6Element = {
             ...target.state, assetId, faceModeAssetIds, ...geometry,
             ...(appearance ? { faceAppearance: appearance } : {}),
@@ -231,5 +242,5 @@ export async function renderEditorV6CharacterRefresh(
     if (isCancelled()) return null
   }
 
-  return { nextElements, nextBlocks, refreshedAssets, staleAssetIds }
+  return { nextElements, nextBlocks, expectedElementStates, expectedBlockStates, refreshedAssets, staleAssetIds }
 }
