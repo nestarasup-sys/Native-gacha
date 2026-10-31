@@ -18,4 +18,4 @@ Este é um **roteiro de investigação**, não uma declaração de defeitos conf
 
 ## Dívida comprovada pela CI
 
-- [Issue #8 — refatorar `WardrobeWorkspace.tsx`](https://github.com/nestarasup-sys/Native-gacha/issues/8): orçamento atual 630 linhas, arquivo acima do limite na base. Corrigir por extração real, nunca por relaxamento de threshold.
+- [Issue #8 — refatorar `WardrobeWorkspace.tsx`](https://github.com/nestarasup-sys/Native-gacha/issues/8): **implementado no PR #7** com redução 726 → 589 linhas, limite de 630 mantido e auditoria Linux aprovada. **Pendente:** aceite visual sintético no Windows, antes de encerrar a issue.

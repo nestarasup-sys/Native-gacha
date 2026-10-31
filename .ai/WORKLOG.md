@@ -32,3 +32,9 @@
 - Protegido adicionalmente o retorno assíncrono de arquivos em grids de tronco/mangas/calças: importações canceladas não publicam dados nem limpam o estado de outra operação, e erros tardios não encerram o novo worker.
 
 - Importações diretas de grades agora aplicam limites de 50 MB e 32 milhões de pixels, alinhados ao normalizador e ao worker de folha; testes de fronteira verificam arquivos inválidos e decodificações grandes. O limite de pixels é pós-decodificação, portanto não elimina por completo picos de memória.
+
+### Fechamento técnico desta rodada
+
+- HEAD `740cc271`: Quality Linux aprovou 611 testes de refatoração e todas as etapas de documentação, arquitetura, budget, TypeScript e build. Core Ubuntu aprovou. Etapa Core Windows aguarda término; resultados futuros devem ser consultados no PR.
+- Revisão focal de limites IPC de Roupas DEV: `wardrobeIpc.ts` valida origem do sender; `wardrobePersistence.ts` valida IDs e slots em leitura; exclusão exige caminho confinado e ausência de personagens referenciando o conjunto. **Isso não é uma auditoria completa de todos os canais IPC**.
+- Encaminhamento: revisão gráfica de importações, recorte de pares, espelhamento, edição, salvamento e restauração sobre perfil sintético no Windows; depois avaliar fechamento da issue #8 e merge revisado do PR.

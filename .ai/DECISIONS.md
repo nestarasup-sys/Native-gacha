@@ -11,3 +11,11 @@
 ## D-003 — Registro operacional não é fonte de verdade nem armazenamento privado (2026-10-30)
 
 **Decisão:** manter `.ai` apenas com estado, backlog, evidências e decisões editáveis. Investigações antigas não se tornam requisitos automaticamente. Raciocínio privado, perfis, dados pessoais e segredos nunca devem ser versionados.
+
+## D-004 — Refatoração com limite de tamanho preservado (2026-10-30)
+
+**Decisão:** manter o budget de 630 linhas de Roupas DEV e extrair importação, recorte de pares, prévia de pose e utilitários do modelo para módulos da feature. **Motivo:** responsabilização clara sem silenciar dívida arquitetural. A primeira CI da extração validou orçamento, TypeScript e build.
+
+## D-005 — Importação de imagens assíncronas falha fechada (2026-10-30)
+
+**Decisão:** descartar callbacks de workers antigos, impedir que decodificações concluídas depois de uma troca publiquem dados em outro rascunho e aplicar limites coerentes com o normalizador e o worker. **Consequência:** imagens grandes são recusadas com erro explicativo; teste visual ainda necessário. Bitmaps são explicitamente liberados após o processamento.
