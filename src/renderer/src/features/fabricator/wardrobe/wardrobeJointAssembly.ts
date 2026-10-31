@@ -47,47 +47,47 @@ function jointsForPreview(project: JointProject): JointLink[] {
 }
 
 /**
- * Build view-only offsets by traversing the saved model rig and bringing each
- * child anchor onto its parent anchor. The source part frames and rig are never
- * changed; callers use these offsets only while painting the Roupas DEV preview.
+ * Build view-only offsets for lower legs and forearms only. The upper body,
+ * thighs, upper arms, head, hands, and feet retain their original positions.
  */
 export function createWardrobeJointAssemblyOffsets(project: JointProject): Record<string, WardrobePoint> {
   const partsById = new Map(project.parts.map((part) => [part.id, part]))
-  const children = new Map<string, JointLink[]>()
-  const childIds = new Set<string>()
+  const candidatesByLowerPart = new Map<string, Array<{ offset: WardrobePoint; sideMatch: boolean; distance: number }>>()
   for (const joint of jointsForPreview(project)) {
-    if (!partsById.has(joint.parentPartId) || !partsById.has(joint.childPartId)) continue
+    const parent = partsById.get(joint.parentPartId)
+    const child = partsById.get(joint.childPartId)
+    if (!parent || !child) continue
     if (![joint.parentAnchor.x, joint.parentAnchor.y, joint.childAnchor.x, joint.childAnchor.y].every(Number.isFinite)) continue
-    const list = children.get(joint.parentPartId) ?? []
-    list.push(joint)
-    children.set(joint.parentPartId, list)
-    childIds.add(joint.childPartId)
+    const parentKind = modelRigSegmentKind(parent.name)
+    const childKind = modelRigSegmentKind(child.name)
+    const isLegPair = parentKind === 'thigh' && childKind === 'lower-leg'
+      || parentKind === 'lower-leg' && childKind === 'thigh'
+    const isArmPair = parentKind === 'upper-arm' && childKind === 'forearm'
+      || parentKind === 'forearm' && childKind === 'upper-arm'
+    if (!isLegPair && !isArmPair) continue
+
+    const parentIsUpper = parentKind === 'thigh' || parentKind === 'upper-arm'
+    const upper = parentIsUpper ? parent : child
+    const lower = parentIsUpper ? child : parent
+    const upperSide = modelRigSide(upper.name)
+    const lowerSide = modelRigSide(lower.name)
+    if (upperSide && lowerSide && upperSide !== lowerSide) continue
+    const upperAnchor = parentIsUpper ? joint.parentAnchor : joint.childAnchor
+    const lowerAnchor = parentIsUpper ? joint.childAnchor : joint.parentAnchor
+    const candidates = candidatesByLowerPart.get(lower.id) ?? []
+    candidates.push({
+      offset: { x: upperAnchor.x - lowerAnchor.x, y: upperAnchor.y - lowerAnchor.y },
+      sideMatch: Boolean(upperSide && lowerSide && upperSide === lowerSide),
+      distance: Math.hypot(center(upper).x - center(lower).x, center(upper).y - center(lower).y)
+    })
+    candidatesByLowerPart.set(lower.id, candidates)
   }
 
-  const offsets: Record<string, WardrobePoint> = {}
-  const visit = (root: ModelPart) => {
-    if (offsets[root.id]) return
-    offsets[root.id] = { x: 0, y: 0 }
-    const queue = [root]
-    while (queue.length) {
-      const parent = queue.shift()!
-      const parentOffset = offsets[parent.id]
-      for (const joint of children.get(parent.id) ?? []) {
-        if (offsets[joint.childPartId]) continue
-        offsets[joint.childPartId] = {
-          x: parentOffset.x + joint.parentAnchor.x - joint.childAnchor.x,
-          y: parentOffset.y + joint.parentAnchor.y - joint.childAnchor.y
-        }
-        const child = partsById.get(joint.childPartId)
-        if (child) queue.push(child)
-      }
-    }
-  }
-
-  for (const part of project.parts) if (!childIds.has(part.id)) visit(part)
-  // Also cover malformed/cyclic legacy rigs deterministically without looping.
-  for (const part of project.parts) visit(part)
-  return offsets
+  return Object.fromEntries(project.parts.map((part) => {
+    const candidates = candidatesByLowerPart.get(part.id) ?? []
+    candidates.sort((first, second) => Number(second.sideMatch) - Number(first.sideMatch) || first.distance - second.distance)
+    return [part.id, candidates[0]?.offset ?? { x: 0, y: 0 }]
+  }))
 }
 
 /** Keep the same attachment-following rule as the existing preview renderer. */

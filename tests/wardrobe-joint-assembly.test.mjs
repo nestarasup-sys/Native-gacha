@@ -8,33 +8,43 @@ const link = (parentPartId, childPartId, parentAnchor, childAnchor) => ({ id: `$
 
 function fixture() {
   const parts = [
+    part('head', 'Cabeça', 100, -50, 40, 50),
     part('torso', 'Tronco', 90, 20, 60, 80),
     part('thigh-left', 'Coxa esquerda', 20, 120),
     part('shin-left', 'Canela esquerda', 20, 230),
     part('thigh-right', 'Coxa direita', 180, 120),
     part('shin-right', 'Canela direita', 180, 230),
     part('upper-arm-left', 'Braço esquerdo', 10, 45),
-    part('forearm-left', 'Antebraço esquerdo', 0, 140)
+    part('forearm-left', 'Antebraço esquerdo', 0, 140),
+    part('hand-left', 'Mão esquerda', -10, 190, 15, 25),
+    part('foot-right', 'Pé direito', 180, 285, 20, 15)
   ]
   const joints = [
+    link('torso', 'head', point(110, 20), point(110, 0)),
     link('torso', 'thigh-left', point(105, 95), point(30, 120)),
     link('thigh-left', 'shin-left', point(30, 165), point(28, 230)),
     link('torso', 'thigh-right', point(135, 95), point(190, 120)),
-    link('thigh-right', 'shin-right', point(190, 165), point(192, 230)),
+    link('shin-right', 'thigh-right', point(192, 230), point(190, 165)),
     link('torso', 'upper-arm-left', point(100, 55), point(30, 45)),
-    link('upper-arm-left', 'forearm-left', point(25, 90), point(15, 140))
+    link('forearm-left', 'upper-arm-left', point(15, 140), point(25, 90)),
+    link('forearm-left', 'hand-left', point(5, 185), point(-3, 195)),
+    link('shin-right', 'foot-right', point(190, 280), point(190, 285))
   ]
   return { width: 300, height: 400, parts, joints }
 }
 
-test('Juntar juntas alinha âncoras sem alterar peças ou vínculos do modelo', () => {
+test('Juntar juntas move só canelas e antebraços; todo o restante continua na posição original', () => {
   const model = fixture()
   const before = structuredClone(model)
   const offsets = createWardrobeJointAssemblyOffsets(model)
   const knee = model.joints.find((joint) => joint.id === 'thigh-left-shin-left')
   assert.deepEqual(offsets.torso, point(0, 0))
-  assert.deepEqual(offsets['thigh-left'], point(75, -25))
-  assert.deepEqual(offsets['shin-left'], point(77, -90))
+  for (const unchangedPart of ['head', 'thigh-left', 'thigh-right', 'upper-arm-left', 'hand-left', 'foot-right']) {
+    assert.deepEqual(offsets[unchangedPart], point(0, 0), `${unchangedPart} must stay in place`)
+  }
+  assert.deepEqual(offsets['shin-left'], point(2, -65))
+  assert.deepEqual(offsets['shin-right'], point(-2, -65))
+  assert.deepEqual(offsets['forearm-left'], point(10, -50))
   assert.deepEqual(
     point(knee.parentAnchor.x + offsets['thigh-left'].x, knee.parentAnchor.y + offsets['thigh-left'].y),
     point(knee.childAnchor.x + offsets['shin-left'].x, knee.childAnchor.y + offsets['shin-left'].y)
@@ -50,8 +60,8 @@ test('corte automático usa a junta da perna anexada e orienta o limite pelo eix
   assert.ok(cut)
   assert.equal(cut.upperPartId, 'thigh-left')
   assert.equal(cut.lowerPartId, 'shin-left')
-  assert.ok(Math.abs(cut.point.x - 105) < 0.00001)
-  assert.ok(Math.abs(cut.point.y - 140) < 0.00001)
+  assert.ok(Math.abs(cut.point.x - 30) < 0.00001)
+  assert.ok(Math.abs(cut.point.y - 165) < 0.00001)
   assert.ok(Math.abs(cut.axis.x - (2 / Math.hypot(2, 45))) < 0.00001)
   assert.ok(Math.abs(cut.axis.y - (45 / Math.hypot(2, 45))) < 0.00001)
   assert.equal(findWardrobeJointCut({ ...component, category: 'shorts' }, model, offsets), null)
@@ -93,6 +103,8 @@ test('modelos antigos sem juntas persistidas usam a inferência comum para local
   const model = { ...fixture(), joints: [] }
   const offsets = createWardrobeJointAssemblyOffsets(model)
   assert.ok(Object.keys(offsets).length === model.parts.length)
+  assert.deepEqual(offsets['thigh-left'], point(0, 0))
+  assert.deepEqual(offsets['upper-arm-left'], point(0, 0))
   const component = { id: 'sleeve', name: 'Manga longa · esquerda', category: 'manga-superior', attachedPartId: 'upper-arm-left', sleeveSide: 'left', x: 0, y: 80, width: 20, height: 80, rotation: 0, dataUrl: '' }
   const cut = findWardrobeJointCut(component, model, offsets)
   assert.equal(cut?.upperPartId, 'upper-arm-left')
