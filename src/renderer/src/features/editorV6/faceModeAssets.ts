@@ -3,7 +3,9 @@ import type { EditorV6Asset, EditorV6FaceRenderMode, EditorV6FaceTransforms } fr
 import type { FaceExpressionEffects } from '../../../../shared/fabricator'
 import type { TrimmedImage } from '../../characters/characterGeometry'
 
-export const EDITOR_V6_FACE_RENDER_VERSION = 8
+// Version 9 rebuilds snapshots made by the refresh path that applied body
+// dimensions twice to characters with customized proportions.
+export const EDITOR_V6_FACE_RENDER_VERSION = 9
 const AUTO_FACE_MODES: EditorV6FaceRenderMode[] = ['idle', 'blink', 'talk', 'talk-blink']
 export type PreparedEditorV6FaceRenderer = Awaited<ReturnType<typeof import('../../characters/editorV6CharacterRenderer').prepareSavedCharacterRenderer>>
 

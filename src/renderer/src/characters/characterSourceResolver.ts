@@ -37,7 +37,7 @@ export function characterShapeScale(proportions: CharacterProportions): { x: num
 export async function resolveSavedCharacterSource(
   character: CustomizerCharacter,
   renderSource?: { artwork: CatalogArtwork; source: FabricatorProject; assetProvider?: CharacterRenderAssetProvider }
-): Promise<{ modelSlot: number; assetProvider: CharacterRenderAssetProvider; source: FabricatorProject; artwork: CatalogArtwork }> {
+): Promise<{ modelSlot: number; assetProvider: CharacterRenderAssetProvider; source: FabricatorProject; sourceArtwork: CatalogArtwork; artwork: CatalogArtwork }> {
   const modelSlot = character.customization.modelSlot ?? 1
   const assetProvider = renderSource?.assetProvider ?? window.desktop.fabricator
   const source = renderSource?.source ?? await assetProvider.loadFabricatorSlot(modelSlot)
@@ -50,5 +50,8 @@ export async function resolveSavedCharacterSource(
     parts: applyCurrentModelSkinContours(sourceArtwork.parts, source.parts)
   }
   const artwork = applyCharacterBodyShape(withCharacterHeadSize(artworkWithModelContours, proportions), getCharacterBodyDimensions(character.customization))
-  return { modelSlot, assetProvider, source, artwork }
+  // Keep the unshaped model/pose available to renderer preparation. Passing
+  // `artwork` back into this resolver would apply the character's dimensions a
+  // second time, which made refreshed Editor V6 snapshots wider than preview.
+  return { modelSlot, assetProvider, source, sourceArtwork, artwork }
 }
