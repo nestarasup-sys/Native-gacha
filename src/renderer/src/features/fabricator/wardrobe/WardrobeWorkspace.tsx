@@ -27,12 +27,12 @@ import { rebindWardrobeComponents } from './wardrobeBindings'
 import { WardrobeGarmentEditorModal } from './WardrobeGarmentEditorModal'
 import { WardrobeDeformationBrushControls, WardrobePreviewToolbar } from './WardrobePreviewControls'
 import { useModelAppearanceTarget, useModelPartAppearancePreview } from '../ModelAppearanceContext'
+import { createWardrobeJointAssemblyOffsets, findWardrobeJointCut, splitWardrobePixelsAtJoint, wardrobeComponentPreviewOffset } from './wardrobeJointAssembly'
 import './wardrobe.css'
 
 type PieceDrag = { pointerId: number; componentId: string; pointerX: number; pointerY: number; originX: number; originY: number }
 type PreviewPanDrag = { pointerId: number; pointerX: number; pointerY: number; originX: number; originY: number }
 type SourceReferencePart = { x: number; y: number; width: number; height: number; imageDataUrl: string }
-type BodyDrag = { pointerId: number; partId: string; pointerX: number; pointerY: number; originX: number; originY: number }
 type Point = { x: number; y: number }
 const zeroOffset: Point = { x: 0, y: 0 }
 
@@ -59,6 +59,12 @@ function serializeModel(model: FabricatorProject): FabricatorProjectSave {
 }
 function guessBone(category: WardrobeCategory, x: number, width: number, model: FabricatorProject): ModelPart | undefined {
   return suggestWardrobeBone(category, x, width, model).bone ?? undefined
+}
+function isLongJointSplitCandidate(component: WardrobeComponent | null | undefined): component is WardrobeComponent {
+  if (!component?.sleevePairId || component.sleeveSegment !== 'whole') return false
+  if (component.sleeveJointSplit === 'leg') return component.category === 'calca-coxa'
+  if (component.sleeveJointSplit === 'arm') return component.category === 'manga-superior'
+  return /^(Manga longa|Calça longa)/i.test(component.name)
 }
 export function WardrobeWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
   const [previewBackground, setPreviewBackground] = usePreviewBackground()
@@ -93,19 +99,15 @@ export function WardrobeWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
   const draftRef = useRef(draft)
   draftRef.current = draft
   const [previewSize, setPreviewSize] = useState({ width: 0, height: 0 })
-  const [moveBodyMode, setMoveBodyMode] = useState(false)
+  const [joinJointsMode, setJoinJointsMode] = useState(false)
   const [magneticSnap, setMagneticSnap] = useState(true)
   const [showPoseComparison, setShowPoseComparison] = useState(false)
-  const [bodyOffsets, setBodyOffsets] = useState<Record<string, Point>>({})
-  const bodyDragRef = useRef<BodyDrag | null>(null)
   const [testPosePickerOpen, setTestPosePickerOpen] = useState(false)
   const [importPickerOpen, setImportPickerOpen] = useState(false)
   const gridSizeRef = useRef<3 | 4>(4)
   const gridInputRef = useRef<HTMLInputElement>(null)
   const pairedImportKindRef = useRef<'sleeves' | 'pants'>('sleeves')
-  const [cutAngle, setCutAngle] = useState(0)
   const sleeveInputRef = useRef<HTMLInputElement>(null)
-  const [sleeveCutPercent, setSleeveCutPercent] = useState(50)
   const sleeveUndoRef = useRef<WardrobeSet[]>([])
   const sleeveRedoRef = useRef<WardrobeSet[]>([])
   const recordSleeveHistory = (current: WardrobeSet) => {
@@ -142,10 +144,16 @@ export function WardrobeWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
     ? Object.fromEntries(selectOriginalModelSource(model).parts.map((part) =>
       [part.id, { x: part.x, y: part.y, width: part.width, height: part.height, imageDataUrl: part.dataUrl }]))
     : null, [model])
-  const referenceModel = projectForOriginalPreview(model)
+  const referenceModel = useMemo(() => projectForOriginalPreview(model), [model])
+  const bodyOffsets = useMemo(() => joinJointsMode && referenceModel ? createWardrobeJointAssemblyOffsets(referenceModel) : {}, [joinJointsMode, referenceModel])
   const referenceBone = useCallback((partId: string) => referenceModel?.parts.find((part) => part.id === partId), [referenceModel])
   const selectedBone = selected ? referenceBone(selected.attachedPartId) : undefined
   const selectedBodySource = selected && sourceParts ? sourceParts[selected.attachedPartId] : undefined
+  const selectedBodyOffset = selected ? wardrobeComponentPreviewOffset(selected, bodyOffsets) : zeroOffset
+  const selectedSplitComponent = selected ? { ...selected, x: selected.x + selectedBodyOffset.x, y: selected.y + selectedBodyOffset.y } : null
+  const selectedJointCut = joinJointsMode && selectedSplitComponent && isLongJointSplitCandidate(selectedSplitComponent) && referenceModel
+    ? findWardrobeJointCut(selectedSplitComponent, referenceModel, bodyOffsets)
+    : null
   const editorBodyReference = selected && selectedBodySource && selectedBone ? {
     name: selectedBone.name,
     dataUrl: selectedBodySource.imageDataUrl,
@@ -234,7 +242,7 @@ export function WardrobeWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
       }
       if (requestRef.current !== requestId) return
       setModels(savedModels); setModel(recoveredModel); setSets(library.sets); setCatalogIssues(library.issues)
-      setActiveSetId(null); setDraft(null); setSelectedId(null); setDirty(false); setBodyOffsets({}); setMoveBodyMode(false)
+      setActiveSetId(null); setDraft(null); setSelectedId(null); setDirty(false); setJoinJointsMode(false)
     } catch (reason) {
       if (requestRef.current !== requestId) return
       setModel(null); setSets([]); setCatalogIssues([]); setDraft(null); setActiveSetId(null); setSelectedId(null)
@@ -288,7 +296,7 @@ export function WardrobeWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
       clearWardrobeWarpState()
       sleeveUndoRef.current = []; sleeveRedoRef.current = []
       setDraft(loaded); setActiveSetId(id); setSelectedId(loaded.components[0]?.id ?? null)
-      setDirty(false); setBodyOffsets({}); setTestPose(null); setTestDragOffsets({}); setCalibratingPartId(null)
+      setDirty(false); setJoinJointsMode(false); setTestPose(null); setTestDragOffsets({}); setCalibratingPartId(null)
       setError(incompatible.length
         ? `${incompatible.length} peça(s) sem vínculo compatível com o modelo original (${incompatible.map((component) => component.name || component.id).join(', ')}). O conjunto foi preservado; corrija os ossos antes de salvar.`
         : '')
@@ -320,7 +328,7 @@ export function WardrobeWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
         }
         clearWardrobeWarpState()
         setDraft({ schemaVersion: 1, edition: 1, id: crypto.randomUUID(), modelSlot, modelName: model.name, name: file.name.replace(/\.[^.]+$/, ''), width: model.width, height: model.height, components, updatedAt: new Date().toISOString() })
-        setActiveSetId(null); setSelectedId(components[0]?.id ?? null); setDirty(true); setBodyOffsets({})
+        setActiveSetId(null); setSelectedId(components[0]?.id ?? null); setDirty(true); setJoinJointsMode(false)
       }
       worker.onerror = () => { setProcessing(false); setError('Falha ao processar a imagem localmente.'); worker.terminate(); workerRef.current = null }
       worker.postMessage({ id, dataUrl: source })
@@ -338,7 +346,7 @@ export function WardrobeWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
       if (!components.length) throw new Error('A grade ' + gridSize + '×3 não contém peças visíveis. Confira as células da imagem.')
       clearWardrobeWarpState()
       setDraft({ schemaVersion: 1, edition: 1, importKind: gridSize === 4 ? 'torso-grid-4x3' : 'torso-grid-3x3', id: crypto.randomUUID(), modelSlot, modelName: model.name, name: file.name.replace(/\.[^.]+$/, ''), width: model.width, height: model.height, components, updatedAt: new Date().toISOString() })
-      setActiveSetId(null); setSelectedId(components[0].id); setDirty(true); setBodyOffsets({})
+      setActiveSetId(null); setSelectedId(components[0].id); setDirty(true); setJoinJointsMode(false)
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível importar a grade de roupas.') }
     finally { setProcessing(false) }
   }
@@ -349,59 +357,74 @@ export function WardrobeWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
       const components = createWardrobeSleeveSheetComponents(await createImageBitmap(file), referenceModel ?? model, () => crypto.randomUUID(), pairedImportKindRef.current)
       clearWardrobeWarpState()
       setDraft({ schemaVersion: 1, edition: 1, importKind: pairedImportKindRef.current === 'pants' ? 'pants-grid-3x4' : 'sleeve-grid-3x4', id: crypto.randomUUID(), modelSlot, modelName: model.name, name: file.name.replace(/\.[^.]+$/, ''), width: model.width, height: model.height, components, updatedAt: new Date().toISOString() })
-      setActiveSetId(null); setSelectedId(components[0]?.id ?? null); setDirty(true); setBodyOffsets({})
+      setActiveSetId(null); setSelectedId(components[0]?.id ?? null); setDirty(true); setJoinJointsMode(false)
       sleeveUndoRef.current = []; sleeveRedoRef.current = []
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível importar a grade de mangas.') }
     finally { setProcessing(false) }
   }
-  const cutSelectedSleeve = async () => {
-    if (!draft || !model || processing || saving || openingSet || !selected?.sleevePairId || selected.sleeveSegment !== 'whole' || !/^(Manga longa|Calça longa)/.test(selected.name)) return
+  const splitSelectedGarmentAtJoint = async () => {
+    if (!draft || !referenceModel || !selected || !joinJointsMode || processing || saving || openingSet || !isLongJointSplitCandidate(selected)) return
     setProcessing(true); setError('')
     try {
       const pair = draft.components.filter((component) => component.sleevePairId === selected.sleevePairId && component.sleeveSegment === 'whole')
-      if (pair.length !== 2) throw new Error('O par da manga não está completo; nada foi alterado.')
+      if (pair.length !== 2) throw new Error('O par da roupa não está completo; nada foi alterado.')
       const replacements: WardrobeComponent[] = []
       for (const component of pair) {
+        const bodyOffset = wardrobeComponentPreviewOffset(component, bodyOffsets)
+        const previewComponent = { ...component, x: component.x + bodyOffset.x, y: component.y + bodyOffset.y }
+        const cut = findWardrobeJointCut(previewComponent, referenceModel, bodyOffsets)
+        if (!cut) throw new Error(`Não encontrei uma junta vinculada entre os segmentos desta ${component.sleeveJointSplit === 'leg' || component.category === 'calca-coxa' ? 'calça' : 'manga'}. Confira os vínculos no modelo; nada foi alterado.`)
         const image = new Image(); image.src = component.dataUrl; await image.decode()
-        const canvas = document.createElement('canvas'); canvas.width = image.naturalWidth; canvas.height = image.naturalHeight
-        const context = canvas.getContext('2d')!; context.drawImage(image, 0, 0)
-        const pixels = context.getImageData(0, 0, canvas.width, canvas.height)
-        const split = Math.max(1, Math.min(canvas.height - 1, Math.round(canvas.height * sleeveCutPercent / 100)))
-        for (const segment of [{ key: 'upper' as const, y: 0, height: split, category: component.category === 'calca-coxa' ? 'calca-coxa' as const : 'manga-superior' as const }, { key: 'lower' as const, y: split, height: canvas.height - split, category: component.category === 'calca-coxa' ? 'calca-canela' as const : 'manga-inferior' as const }]) {
-          const partCanvas = document.createElement('canvas'); partCanvas.width = canvas.width; partCanvas.height = canvas.height
-          const ctx = partCanvas.getContext('2d')!; const partPixels = ctx.createImageData(canvas.width, canvas.height)
-          const slope = Math.tan(cutAngle * Math.PI / 180) * (component.sleeveSide === selected.sleeveSide ? 1 : -1)
-          for (let y = 0; y < canvas.height; y++) for (let x = 0; x < canvas.width; x++) {
-            const upper = y + .5 < split + slope * (x + .5 - canvas.width / 2)
-            if (upper !== (segment.key === 'upper')) continue
-            const at = (y * canvas.width + x) * 4
-            partPixels.data.set(pixels.data.subarray(at, at + 4), at)
+        const sourceCanvas = document.createElement('canvas'); sourceCanvas.width = image.naturalWidth; sourceCanvas.height = image.naturalHeight
+        const sourceContext = sourceCanvas.getContext('2d', { willReadFrequently: true })
+        if (!sourceContext) throw new Error('Não foi possível ler a imagem da roupa; nada foi alterado.')
+        sourceContext.drawImage(image, 0, 0)
+        const segments = splitWardrobePixelsAtJoint(sourceContext.getImageData(0, 0, sourceCanvas.width, sourceCanvas.height), previewComponent, cut)
+        for (const segment of segments) {
+          const upper = segment.key === 'upper'
+          const category = component.sleeveJointSplit === 'leg' || component.category === 'calca-coxa'
+            ? upper ? 'calca-coxa' as const : 'calca-canela' as const
+            : upper ? 'manga-superior' as const : 'manga-inferior' as const
+          const attachedPartId = upper ? cut.upperPartId : cut.lowerPartId
+          const bone = referenceModel.parts.find((part) => part.id === attachedPartId)
+          if (!bone) throw new Error('A junta aponta para uma parte ausente do modelo; nada foi alterado.')
+          const targetOffset = bodyOffsets[attachedPartId] ?? zeroOffset
+          const x = segment.x - targetOffset.x
+          const y = segment.y - targetOffset.y
+          const imageCanvas = document.createElement('canvas'); imageCanvas.width = segment.width; imageCanvas.height = segment.height
+          const imageContext = imageCanvas.getContext('2d')
+          if (!imageContext) throw new Error('Não foi possível preparar os recortes; nada foi alterado.')
+          const output = imageContext.createImageData(segment.width, segment.height)
+          output.data.set(segment.pixels)
+          imageContext.putImageData(output, 0, 0)
+          const suffix = component.sleeveJointSplit === 'leg' || component.category === 'calca-coxa'
+            ? upper ? 'coxa' : 'canela'
+            : upper ? 'braço superior' : 'antebraço'
+          const piece: WardrobeComponent = {
+            ...component,
+            id: upper ? component.id : crypto.randomUUID(),
+            name: component.name.replace(/ · (esquerda|direita)$/i, '') + ` · ${suffix}`,
+            sleeveSegment: segment.key,
+            sleeveJointSplit: undefined,
+            category,
+            attachedPartId,
+            x, y, width: segment.width * component.width / sourceCanvas.width, height: segment.height * component.height / sourceCanvas.height,
+            originX: x, originY: y,
+            originWidth: segment.width * component.width / sourceCanvas.width,
+            originHeight: segment.height * component.height / sourceCanvas.height,
+            binding: undefined,
+            glue: { version: 1, mode: 'loose' },
+            dataUrl: imageCanvas.toDataURL('image/png')
           }
-          let minX = canvas.width, minY = canvas.height, maxX = -1, maxY = -1
-          for (let y = 0; y < canvas.height; y++) for (let x = 0; x < canvas.width; x++) {
-            if (!partPixels.data[(y * canvas.width + x) * 4 + 3]) continue
-            minX = Math.min(minX, x); minY = Math.min(minY, y); maxX = Math.max(maxX, x); maxY = Math.max(maxY, y)
-          }
-          if (maxX < minX) throw new Error('O corte deixa uma parte vazia. Ajuste a altura ou o ângulo.')
-          partCanvas.width = maxX - minX + 1; partCanvas.height = maxY - minY + 1
-          ctx.putImageData(partPixels, -minX, -minY)
-          const partWidth = partCanvas.width * component.width / canvas.width
-          const partHeight = partCanvas.height * component.height / canvas.height
-          const dx = (minX + partCanvas.width / 2) * component.width / canvas.width - component.width / 2
-          const dy = (minY + partCanvas.height / 2) * component.height / canvas.height - component.height / 2
-          const radians = component.rotation * Math.PI / 180
-          const sideX = component.sleeveSide === 'left' ? model!.width * .27 : model!.width * .73
-          const bone = suggestWardrobeBone(segment.category, sideX, model!.width, referenceModel ?? model!).bone
-          const x = component.x + component.width / 2 + dx * Math.cos(radians) - dy * Math.sin(radians) - partWidth / 2
-          const y = component.y + component.height / 2 + dx * Math.sin(radians) + dy * Math.cos(radians) - partHeight / 2
-          const piece: WardrobeComponent = { ...component, id: segment.key === 'upper' ? component.id : crypto.randomUUID(), name: component.name.replace(/ · (esquerda|direita)$/i, ` · ${component.category === 'calca-coxa' ? segment.key === 'upper' ? 'coxa' : 'canela' : segment.key === 'upper' ? 'braço superior' : 'antebraço'}`), sleeveSegment: segment.key, category: segment.category, ...(bone ? { attachedPartId: bone.id, x, y, binding: undefined, glue: { version: 1 as const, mode: 'loose' as const } } : {}), x, y, width: partWidth, height: partHeight, originX: x, originY: y, originWidth: partWidth, originHeight: partHeight, dataUrl: partCanvas.toDataURL('image/png') }
-          replacements.push(bone ? fixWardrobeGlue(piece, bone) : piece)
+          replacements.push(fixWardrobeGlue(piece, bone))
         }
       }
+      if (draftRef.current !== draft) throw new Error('O conjunto mudou durante o cálculo. Revise a peça e tente dividir novamente; nada foi alterado.')
       recordSleeveHistory(draft)
       setDraft({ ...draft, components: [...draft.components.filter((component) => component.sleevePairId !== selected.sleevePairId), ...replacements], updatedAt: new Date().toISOString() })
-      setSelectedId(replacements[0]?.id ?? null); setDirty(true)
-    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível recortar o par de mangas.') }
+      setSelectedId(replacements.find((component) => component.sleeveSide === selected.sleeveSide && component.sleeveSegment === 'upper')?.id ?? replacements[0]?.id ?? null)
+      setDirty(true)
+    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível dividir a roupa na junta do modelo.') }
     finally { setProcessing(false) }
   }
   const undoSleeveEdit = () => { const previous = sleeveUndoRef.current.pop(); if (!previous || !draft) return; sleeveRedoRef.current.push(draft); setDraft(previous); setSelectedId(previous.components[0]?.id ?? null); setDirty(true) }
@@ -423,14 +446,12 @@ export function WardrobeWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
     if (!bone) return
     setDraft((current) => { if (!current) return current; recordSleeveHistory(current); return { ...current, components: current.components.map((piece) => piece.id === selected.id ? fixWardrobeGlue(piece, bone) : piece), updatedAt: new Date().toISOString() } })
     setDirty(true)
-    setBodyOffsets({})
     setError('')
   }
   const releaseSelectedBinding = () => {
     if (!selected) return
     setDraft((current) => { if (!current) return current; recordSleeveHistory(current); return { ...current, components: current.components.map((piece) => piece.id === selected.id ? releaseWardrobeGlue(piece) : piece), updatedAt: new Date().toISOString() } })
     setDirty(true)
-    setBodyOffsets({})
   }
   const calibrateSourceAnchor = async (partId: string, x: number, y: number) => {
     if (!model) return
@@ -459,7 +480,7 @@ export function WardrobeWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
     void calibrateSourceAnchor(calibratingPartId, (event.clientX - bounds.left) / scale, (event.clientY - bounds.top) / scale)
   }
   const handlePreviewPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (moveBodyMode || deformMode || testPose || calibratingPartId || event.button !== 0 || !artboardRef.current) return
+    if (deformMode || testPose || calibratingPartId || event.button !== 0 || !artboardRef.current) return
     const target = event.target as HTMLElement
     if (target !== event.currentTarget && target !== artboardRef.current) return
 
@@ -499,23 +520,6 @@ export function WardrobeWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
       ;[components[index], components[target]] = [components[target], components[index]]
       return { ...current, components, updatedAt: new Date().toISOString() }
     })
-  }
-  const beginBodyDrag = (event: ReactPointerEvent<HTMLImageElement>, partId: string) => {
-    if (!moveBodyMode || testPose || event.button !== 0) return
-    event.preventDefault(); event.stopPropagation()
-    event.currentTarget.setPointerCapture(event.pointerId)
-    const offset = bodyOffsets[partId] ?? zeroOffset
-    bodyDragRef.current = { pointerId: event.pointerId, partId, pointerX: event.clientX, pointerY: event.clientY, originX: offset.x, originY: offset.y }
-    const attached = draft?.components.find((component) => component.binding?.boneId === partId && component.glue?.mode !== 'loose')
-    if (attached) setSelectedId(attached.id)
-  }
-  const moveBodyDrag = (event: ReactPointerEvent<HTMLImageElement>) => {
-    const drag = bodyDragRef.current
-    if (!drag || drag.pointerId !== event.pointerId) return
-    setBodyOffsets((current) => ({ ...current, [drag.partId]: { x: drag.originX + (event.clientX - drag.pointerX) / scale, y: drag.originY + (event.clientY - drag.pointerY) / scale } }))
-  }
-  const finishBodyDrag = (event: ReactPointerEvent<HTMLImageElement>) => {
-    if (bodyDragRef.current?.pointerId === event.pointerId) bodyDragRef.current = null
   }
   const beginPieceDrag = (event: ReactPointerEvent<HTMLElement>, component: WardrobeComponent) => {
     if (event.button !== 0 || (deformMode && !testPose)) return
@@ -629,7 +633,7 @@ export function WardrobeWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
       const pose = await window.desktop.fabricator.loadFabricatorPose(requestedModelSlot, slot)
       if (requestId !== testPoseRequestRef.current) return
       if (!pose || pose.sourceModelSlot !== requestedModelSlot || pose.slot !== slot) throw new Error('Esta pose não está mais disponível para o modelo selecionado.')
-      setTestDragOffsets({}); setBodyOffsets({}); setMoveBodyMode(false); setTestPose(pose); setTestPosePickerOpen(false); setError('')
+      setTestDragOffsets({}); setJoinJointsMode(false); setTestPose(pose); setTestPosePickerOpen(false); setError('')
     } catch (reason) { if (requestId === testPoseRequestRef.current) setError(reason instanceof Error ? reason.message : 'Não foi possível abrir esta pose.') }
     finally { if (requestId === testPoseRequestRef.current) setTestPoseLoading(false) }
   }
@@ -666,20 +670,20 @@ export function WardrobeWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
         </div>}
         <WardrobePreviewToolbar
           showToolbar={!testPose}
-          body={{ moving: moveBodyMode, disabled: !sourceParts || Boolean(calibratingPartId) || deformMode, canReset: Boolean(Object.keys(bodyOffsets).length), onToggleMove: () => setMoveBodyMode((value) => !value), onReset: () => setBodyOffsets({}) }}
-          deformation={{ active: deformMode, disabled: !selected || draft?.edition === 2 || saving || processing || openingSet, canRestore: Boolean(selected?.isDeformed && selected.deformationOriginalDataUrl) && !saving && !processing && !openingSet && draft?.edition !== 2 && !testPose, onToggle: () => { const next = !deformMode; if (next) { setMoveBodyMode(false); setCalibratingPartId(null) } setDeformMode(next) }, onRestore: () => restoreSelectedDeformation(selected) }}
+          assembly={{ active: joinJointsMode, disabled: !sourceParts || Boolean(calibratingPartId) || deformMode, onToggle: () => setJoinJointsMode((value) => !value) }}
+          deformation={{ active: deformMode, disabled: !selected || draft?.edition === 2 || saving || processing || openingSet, canRestore: Boolean(selected?.isDeformed && selected.deformationOriginalDataUrl) && !saving && !processing && !openingSet && draft?.edition !== 2 && !testPose, onToggle: () => { const next = !deformMode; if (next) { setJoinJointsMode(false); setCalibratingPartId(null) } setDeformMode(next) }, onRestore: () => restoreSelectedDeformation(selected) }}
           magnet={{ enabled: magneticSnap, disabled: deformMode, onToggle: () => setMagneticSnap((active) => !active) }}
           viewport={{ canCenter: (previewPan.x !== 0 || previewPan.y !== 0) && !deformMode, onCenter: () => setPreviewPan(zeroOffset) }}
           background={{ color: previewBackground, onChange: setPreviewBackground }}
         />
-        <div ref={previewRef} className={`wardrobe-preview-stage${testPose ? ' testing-pose' : ''}${deformMode ? ' deforming' : ''}${!moveBodyMode && !deformMode && !calibratingPartId && !testPose ? ' pan-ready' : ''}`} onPointerDown={handlePreviewPointerDown} onPointerMove={movePreviewPan} onPointerUp={finishPreviewPan} onPointerCancel={finishPreviewPan} style={{ '--preview-background': previewBackground } as import('react').CSSProperties}>
+        <div ref={previewRef} className={`wardrobe-preview-stage${testPose ? ' testing-pose' : ''}${deformMode ? ' deforming' : ''}${!deformMode && !calibratingPartId && !testPose ? ' pan-ready' : ''}`} onPointerDown={handlePreviewPointerDown} onPointerMove={movePreviewPan} onPointerUp={finishPreviewPan} onPointerCancel={finishPreviewPan} style={{ '--preview-background': previewBackground } as import('react').CSSProperties}>
         <WardrobeDeformationBrushControls active={deformMode} ready={warpReadyId === selected?.id} radius={warpRadius} strength={warpStrength} onRadiusChange={setWarpRadius} onStrengthChange={setWarpStrength} />
-        {previewProject && <div ref={artboardRef} className={`wardrobe-artboard${calibratingPartId ? ' calibrating-origin' : ''}${deformMode ? ' deforming' : ''}${!moveBodyMode && !deformMode && !calibratingPartId && !testPose ? ' pan-ready' : ''}`} onPointerDown={handleArtboardPointerDown} style={{ width: previewProject.width * scale, height: previewProject.height * scale, transform: `translate(${previewPan.x}px, ${previewPan.y}px)` }}>
+        {previewProject && <div ref={artboardRef} className={`wardrobe-artboard${calibratingPartId ? ' calibrating-origin' : ''}${deformMode ? ' deforming' : ''}${!deformMode && !calibratingPartId && !testPose ? ' pan-ready' : ''}`} onPointerDown={handleArtboardPointerDown} style={{ width: previewProject.width * scale, height: previewProject.height * scale, transform: `translate(${previewPan.x}px, ${previewPan.y}px)` }}>
         {!testPose && model && sourceParts && orderedParts(model.parts, model.layerOrder).map((part) => {
           const source = sourceParts[part.id]
           if (!source) return null
-          const offset = moveBodyMode ? bodyOffsets[part.id] ?? zeroOffset : zeroOffset
-          return <img key={part.id} className={`wardrobe-reference-body-part${moveBodyMode ? ' movable' : ''}`} src={appearancePreviewForPart(part)} alt={part.name} title={moveBodyMode ? `Arraste ${part.name} para conferir o vínculo` : undefined} draggable={false} onPointerDown={moveBodyMode ? (event) => beginBodyDrag(event, part.id) : undefined} onPointerMove={moveBodyMode ? moveBodyDrag : undefined} onPointerUp={moveBodyMode ? finishBodyDrag : undefined} onPointerCancel={moveBodyMode ? finishBodyDrag : undefined} style={{ left: (source.x + offset.x) * scale, top: (source.y + offset.y) * scale, width: source.width * scale, height: source.height * scale, outline: selected?.attachedPartId === part.id ? '2px solid #27a7a5' : undefined, transform: `rotate(${part.sourceTransform?.rotation ?? part.rotation}deg)`, zIndex: moveBodyMode ? 1000 + model.parts.indexOf(part) : 1 }} />
+          const offset = bodyOffsets[part.id] ?? zeroOffset
+          return <img key={part.id} className={`wardrobe-reference-body-part${joinJointsMode ? ' assembled' : ''}`} src={appearancePreviewForPart(part)} alt={part.name} title={joinJointsMode ? `${part.name} · junta alinhada apenas na prévia` : undefined} draggable={false} style={{ left: (source.x + offset.x) * scale, top: (source.y + offset.y) * scale, width: source.width * scale, height: source.height * scale, outline: selected?.attachedPartId === part.id ? '2px solid #27a7a5' : undefined, transform: `rotate(${part.sourceTransform?.rotation ?? part.rotation}deg)`, zIndex: 1 }} />
         })}
         {testPose && previewPoseParts.map((part) => <img key={part.id} className="wardrobe-pose-body-part" src={appearancePreviewForPart(part)} alt={part.name} draggable={false} style={{ left: part.x * scale, top: part.y * scale, width: part.width * scale, height: part.height * scale, zIndex: 2 + previewPoseOrder.indexOf(part.id) * previewLayerStride, transform: `rotate(${part.rotation}deg)` }} />)}
         {previewComponents.map((component, index) => {
@@ -688,7 +692,7 @@ export function WardrobeWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
            const modelBone = referenceBone(component.attachedPartId)
           const poseBone = testPose?.parts.find((part) => part.id === component.attachedPartId)
           const testOffset = testDragOffsets[component.id] ?? { x: 0, y: 0 }
-           const bodyOffset = !testPose && component.binding?.boneId === component.attachedPartId ? bodyOffsets[component.attachedPartId] ?? zeroOffset : zeroOffset
+           const bodyOffset = !testPose ? wardrobeComponentPreviewOffset(component, bodyOffsets) : zeroOffset
            const componentX = component.x + (testPose ? testOffset.x : bodyOffset.x)
            const componentY = component.y + (testPose ? testOffset.y : bodyOffset.y)
           const testComponent = { ...component, x: componentX, y: componentY }
@@ -711,15 +715,15 @@ export function WardrobeWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
           const image = <img className={imageClassName} src={component.dataUrl} alt={component.name} title={imageTitle} draggable={false} onClick={() => setSelectedId(component.id)} onPointerDown={(event) => beginPieceDrag(event, component)} onPointerMove={movePieceDrag} onPointerUp={finishPieceDrag} onPointerCancel={finishPieceDrag} style={{ left: poseTransform.localLeft * scale, top: poseTransform.localTop * scale, width: poseTransform.renderWidth * scale, height: poseTransform.renderHeight * scale, transformOrigin: 'center', transform: `rotate(${poseTransform.localRotation}deg)` }} />
           return <div key={component.id} className="wardrobe-pose-garment" style={{ left: poseTransform.origin.x * scale, top: poseTransform.origin.y * scale, width: 0, height: 0, zIndex, transformOrigin: '0 0', transform: poseTransform.matrix }}>{image}</div>
         })}
-        {['sleeve-grid-3x4', 'pants-grid-3x4'].includes(draft?.importKind ?? '') && selected?.sleeveSegment === 'whole' && /^(Manga longa|Calça longa)/.test(selected.name) && <div aria-hidden="true" className="wardrobe-sleeve-cut-line" style={{ left: selected.x * scale, top: (selected.y + selected.height * sleeveCutPercent / 100) * scale, width: selected.width * scale, transform: `rotate(${cutAngle}deg)`, transformOrigin: 'center' }} />}
+        {selected && selectedJointCut && <svg aria-hidden="true" className="wardrobe-joint-cut-guide" width={previewProject?.width ? previewProject.width * scale : 0} height={previewProject?.height ? previewProject.height * scale : 0}><line x1={(selectedJointCut.point.x - selectedJointCut.tangent.x * Math.hypot(selected.width, selected.height)) * scale} y1={(selectedJointCut.point.y - selectedJointCut.tangent.y * Math.hypot(selected.width, selected.height)) * scale} x2={(selectedJointCut.point.x + selectedJointCut.tangent.x * Math.hypot(selected.width, selected.height)) * scale} y2={(selectedJointCut.point.y + selectedJointCut.tangent.y * Math.hypot(selected.width, selected.height)) * scale} /></svg>}
         {deformMode && selected && warpReadyId === selected.id && <div ref={warpBrushCursorRef} className="wardrobe-warp-brush-cursor" aria-hidden="true" />}
 
-      </div>}{!model && <div className="wardrobe-empty"><Icon name="shirt" /><strong>Selecione um modelo salvo</strong><small>O modelo será usado como guia na prévia de encaixe.</small></div>}{model && !draft && !testPose && <div className="wardrobe-stage-hint">Importe uma folha para começar · fundo transparente preservado</div>}{testPose && <div className="wardrobe-stage-hint wardrobe-test-hint">Teste temporário · a pose salva não será alterada</div>}{calibratingPartId && <div className="wardrobe-stage-hint wardrobe-calibration-hint">Clique na junta de “{model?.parts.find((part) => part.id === calibratingPartId)?.name}” na folha original</div>}<div className="wardrobe-zoom"><span>{Math.round(zoom * 100)}%</span><button onClick={() => setZoom((value) => Math.min(2.2, value + .1))} type="button">+</button><button onClick={() => setZoom((value) => Math.max(.55, value - .1))} type="button">−</button></div>{processing && <div className="wardrobe-processing"><span className="model-spinner" />Detectando peças transparentes…</div>}</div><footer>{testPose ? 'Arraste as roupas para testar o encaixe. Use “Sair do teste” para voltar à folha original.' : 'Arraste a roupa para encaixar. Clique em Fixar para grudar a roupa na parte selecionada; Mover corpo permite conferir o encaixe.'}</footer></section>
+      </div>}{!model && <div className="wardrobe-empty"><Icon name="shirt" /><strong>Selecione um modelo salvo</strong><small>O modelo será usado como guia na prévia de encaixe.</small></div>}{model && !draft && !testPose && <div className="wardrobe-stage-hint">Importe uma folha para começar · fundo transparente preservado</div>}{testPose && <div className="wardrobe-stage-hint wardrobe-test-hint">Teste temporário · a pose salva não será alterada</div>}{calibratingPartId && <div className="wardrobe-stage-hint wardrobe-calibration-hint">Clique na junta de “{model?.parts.find((part) => part.id === calibratingPartId)?.name}” na folha original</div>}<div className="wardrobe-zoom"><span>{Math.round(zoom * 100)}%</span><button onClick={() => setZoom((value) => Math.min(2.2, value + .1))} type="button">+</button><button onClick={() => setZoom((value) => Math.max(.55, value - .1))} type="button">−</button></div>{processing && <div className="wardrobe-processing"><span className="model-spinner" />Processando imagem…</div>}</div><footer>{testPose ? 'Arraste as roupas para testar o encaixe. Use “Sair do teste” para voltar à folha original.' : 'Arraste a roupa para encaixar. Clique em Fixar para grudar a roupa na parte selecionada; Juntar juntas alinha o modelo apenas na prévia para separar calças e mangas longas na articulação.'}</footer></section>
       <aside className="wardrobe-edit-panel wardrobe-edit-panel-v2"><header><span><strong>Ajuste da peça</strong><small>{selected?.name ?? 'Escolha uma peça no catálogo'}</small></span></header>
-        {draft ? <>{selected && <div className="wardrobe-fields"><div className="wardrobe-field-title"><strong>Editar peça · camada do modelo {getBodyLayer(model, selected.attachedPartId) + 1}</strong><button title="Subir camada" aria-label="Subir camada" disabled={selectedIndex === (draft?.components.length ?? 0) - 1} onClick={() => moveComponentLayer(selected.id, 1)} type="button">↑</button><button title="Descer camada" aria-label="Descer camada" disabled={selectedIndex <= 0} onClick={() => moveComponentLayer(selected.id, -1)} type="button">↓</button><button title="Remover esta peça do conjunto" onClick={() => { setDraft((current) => { if (!current) return current; recordSleeveHistory(current); return { ...current, components: current.components.filter((component) => component.id !== selected.id) } }); setSelectedId(draft.components.find((component) => component.id !== selected.id)?.id ?? null); setDirty(true) }} type="button"><Icon name="trash" /></button></div>{selected.sleevePairId && selected.sleeveSegment === 'whole' && /^(Manga longa|Calça longa)/.test(selected.name) && <section className="wardrobe-sleeve-cut"><strong>Recortar peça · par sincronizado</strong><label>Rotação da linha · {cutAngle}°<input type="range" min="-75" max="75" value={cutAngle} onChange={(event) => setCutAngle(Number(event.target.value))} /></label><div><button type="button" onClick={() => setCutAngle(value => Math.max(-75, value - 1))}>↶ 1°</button><button type="button" onClick={() => setCutAngle(0)}>Horizontal</button><button type="button" onClick={() => setCutAngle(value => Math.min(75, value + 1))}>↷ 1°</button></div><label>Altura do corte · {sleeveCutPercent}%<input type="range" min="15" max="85" value={sleeveCutPercent} onChange={(event) => setSleeveCutPercent(Number(event.target.value))} /></label><small>O corte será espelhado no outro lado do par, preservando todos os pixels.</small><button className="pose-button secondary" onClick={() => void cutSelectedSleeve()} type="button">Confirmar recorte sincronizado</button></section>}<button className="wardrobe-image-edit-button" type="button" disabled={saving || processing || openingSet || draft.edition === 2 || Boolean(testPose)} onClick={() => { setDeformMode(false); setGarmentEditorOpen(true) }}><Icon name="edit" /> Editar imagem da roupa</button><label>Nome<input value={selected.name} onChange={(event) => updateComponent(selected.id, { name: event.target.value })} /></label><label>Categoria<select value={selected.category} onChange={(event) => updateComponent(selected.id, { category: event.target.value as WardrobeCategory })}>{categories.map((category) => <option key={category} value={category}>{categoryNames[category]}</option>)}</select></label>{(selected.category === 'oculos' || selected.category === 'acessorio-cabeca') && <label className="wardrobe-option-toggle"><input type="checkbox" checked={selected.renderAboveHair ?? false} onChange={(event) => updateComponent(selected.id, { renderAboveHair: event.target.checked })} /><span>Exibir por cima de todos os cabelos</span></label>}<label>Parte correspondente<select value={selected.attachedPartId} onChange={(event) => updateComponent(selected.id, { attachedPartId: event.target.value })}><option value="" disabled>Escolha a parte do corpo</option>{model?.parts.map((part) => <option key={part.id} value={part.id}>{part.name}{part.sourceTransform ? '' : ' · calibrar origem'}</option>)}</select></label>{(() => { const linkedPart = model?.parts.find((part) => part.id === selected.attachedPartId); return linkedPart && !linkedPart.sourceTransform ? <button className="pose-button secondary wardrobe-calibrate-button" onClick={() => { setTestPose(null); setCalibratingPartId(linkedPart.id); setError('') }} type="button"><Icon name="frame" /> Calibrar origem na folha</button> : null })()}<WardrobeGlueControls component={selected} target={selectedBone} suggested={suggestedBone} status={glueStatus} onChooseTarget={(id) => updateComponent(selected.id, { attachedPartId: id })} onFix={fixSelectedBinding} onRelease={releaseSelectedBinding} /><div className="wardrobe-quick-controls"><div className="wardrobe-nudge-pad"><button aria-label="Mover para cima" title="Mover para cima" onClick={() => nudgeSelected(0, -5)} type="button">↑</button><button aria-label="Mover para esquerda" title="Mover para esquerda" onClick={() => nudgeSelected(-5, 0)} type="button">←</button><span>mover</span><button aria-label="Mover para direita" title="Mover para direita" onClick={() => nudgeSelected(5, 0)} type="button">→</button><button aria-label="Mover para baixo" title="Mover para baixo" onClick={() => nudgeSelected(0, 5)} type="button">↓</button></div><div className="wardrobe-quick-actions"><button title="Diminuir tamanho em 10%" onClick={() => resizeSelected(.9)} type="button">− Tamanho</button><button title="Aumentar tamanho em 10%" onClick={() => resizeSelected(1.1)} type="button">+ Tamanho</button><button title="Girar 15 graus para a esquerda" onClick={() => updateComponent(selected.id, { rotation: selected.rotation - 15 })} type="button">↶ 15°</button><button title="Girar 15 graus para a direita" onClick={() => updateComponent(selected.id, { rotation: selected.rotation + 15 })} type="button">↷ 15°</button><button className="wardrobe-origin-button" onClick={restoreSelectedOrigin} type="button">Voltar à posição original</button></div></div><section className="wardrobe-scale-controls" aria-label="Escala horizontal e vertical"><div className="wardrobe-scale-heading"><strong>Escala da peça</strong><label className="wardrobe-aspect-lock"><input type="checkbox" checked={lockAspectRatio} onChange={(event) => setLockAspectRatio(event.target.checked)} /><span>Manter proporção</span></label></div><label className="wardrobe-scale-row"><span><b>↔ Horizontal</b><output>{Math.round(selected.width / (selected.originWidth ?? selected.width) * 100)}%</output></span><input aria-label="Escala horizontal" type="range" min="10" max="300" step="1" value={Math.max(10, Math.min(300, Math.round(selected.width / (selected.originWidth ?? selected.width) * 100)))} onChange={(event) => scaleSelectedAxis('width', (selected.originWidth ?? selected.width) * Number(event.target.value) / 100)} /></label><label className="wardrobe-scale-row"><span><b>↕ Vertical</b><output>{Math.round(selected.height / (selected.originHeight ?? selected.height) * 100)}%</output></span><input aria-label="Escala vertical" type="range" min="10" max="300" step="1" value={Math.max(10, Math.min(300, Math.round(selected.height / (selected.originHeight ?? selected.height) * 100)))} onChange={(event) => scaleSelectedAxis('height', (selected.originHeight ?? selected.height) * Number(event.target.value) / 100)} /></label></section><div className="wardrobe-number-grid">{([['x', 'X'], ['y', 'Y'], ['width', 'Largura'], ['height', 'Altura'], ['rotation', 'Ângulo']] as const).map(([field, label]) => <label key={field}>{label}<input type="number" step={field === 'rotation' ? 1 : 2} value={Number(selected[field].toFixed(1))} onChange={(event) => { const value = Number(event.target.value); if (field === 'width' || field === 'height') scaleSelectedAxis(field, value); else updateComponent(selected.id, { [field]: value }) }} /></label>)}</div><small className="wardrobe-note">A peça acompanha o osso e a pose selecionados ao equipá-la no Customizador.</small></div>}{!selected && <div className="wardrobe-edit-empty"><Icon name="shirt" /><strong>Escolha uma peça</strong><small>Selecione no catálogo para ajustar posição, tamanho e vínculo.</small></div>}</> : <div className="wardrobe-edit-empty"><Icon name="sparkles" /><strong>Pré-encaixe automático</strong><small>A folha é separada por transparência. Depois você revisa categoria, peça do corpo e posição de cada recorte.</small></div>}
+        {draft ? <>{selected && <div className="wardrobe-fields"><div className="wardrobe-field-title"><strong>Editar peça · camada do modelo {getBodyLayer(model, selected.attachedPartId) + 1}</strong><button title="Subir camada" aria-label="Subir camada" disabled={selectedIndex === (draft?.components.length ?? 0) - 1} onClick={() => moveComponentLayer(selected.id, 1)} type="button">↑</button><button title="Descer camada" aria-label="Descer camada" disabled={selectedIndex <= 0} onClick={() => moveComponentLayer(selected.id, -1)} type="button">↓</button><button title="Remover esta peça do conjunto" onClick={() => { setDraft((current) => { if (!current) return current; recordSleeveHistory(current); return { ...current, components: current.components.filter((component) => component.id !== selected.id) } }); setSelectedId(draft.components.find((component) => component.id !== selected.id)?.id ?? null); setDirty(true) }} type="button"><Icon name="trash" /></button></div>{isLongJointSplitCandidate(selected) && <section className="wardrobe-sleeve-cut" aria-label="Separar pela junta do modelo"><strong>Separar na junta do modelo</strong>{!joinJointsMode && <small>Ative “Juntar juntas” e posicione a roupa inteira cobrindo os dois segmentos.</small>}{joinJointsMode && selectedJointCut && <small>Junta detectada entre “{referenceBone(selectedJointCut.upperPartId)?.name ?? 'segmento superior'}” e “{referenceBone(selectedJointCut.lowerPartId)?.name ?? 'segmento inferior'}”. A linha azul indica o corte calculado.</small>}{joinJointsMode && !selectedJointCut && <small>Não encontrei uma junta direta entre coxa e canela ou entre braço e antebraço. Confira os vínculos no modelo.</small>}<button className="pose-button secondary" disabled={!joinJointsMode || !selectedJointCut || processing || saving || openingSet || draft.edition === 2} onClick={() => void splitSelectedGarmentAtJoint()} type="button">Dividir o par na junta</button></section>}<button className="wardrobe-image-edit-button" type="button" disabled={saving || processing || openingSet || draft.edition === 2 || Boolean(testPose)} onClick={() => { setDeformMode(false); setGarmentEditorOpen(true) }}><Icon name="edit" /> Editar imagem da roupa</button><label>Nome<input value={selected.name} onChange={(event) => updateComponent(selected.id, { name: event.target.value })} /></label><label>Categoria<select value={selected.category} onChange={(event) => updateComponent(selected.id, { category: event.target.value as WardrobeCategory })}>{categories.map((category) => <option key={category} value={category}>{categoryNames[category]}</option>)}</select></label>{(selected.category === 'oculos' || selected.category === 'acessorio-cabeca') && <label className="wardrobe-option-toggle"><input type="checkbox" checked={selected.renderAboveHair ?? false} onChange={(event) => updateComponent(selected.id, { renderAboveHair: event.target.checked })} /><span>Exibir por cima de todos os cabelos</span></label>}<label>Parte correspondente<select value={selected.attachedPartId} onChange={(event) => updateComponent(selected.id, { attachedPartId: event.target.value })}><option value="" disabled>Escolha a parte do corpo</option>{model?.parts.map((part) => <option key={part.id} value={part.id}>{part.name}{part.sourceTransform ? '' : ' · calibrar origem'}</option>)}</select></label>{(() => { const linkedPart = model?.parts.find((part) => part.id === selected.attachedPartId); return linkedPart && !linkedPart.sourceTransform ? <button className="pose-button secondary wardrobe-calibrate-button" onClick={() => { setTestPose(null); setCalibratingPartId(linkedPart.id); setError('') }} type="button"><Icon name="frame" /> Calibrar origem na folha</button> : null })()}<WardrobeGlueControls component={selected} target={selectedBone} suggested={suggestedBone} status={glueStatus} onChooseTarget={(id) => updateComponent(selected.id, { attachedPartId: id })} onFix={fixSelectedBinding} onRelease={releaseSelectedBinding} /><div className="wardrobe-quick-controls"><div className="wardrobe-nudge-pad"><button aria-label="Mover para cima" title="Mover para cima" onClick={() => nudgeSelected(0, -5)} type="button">↑</button><button aria-label="Mover para esquerda" title="Mover para esquerda" onClick={() => nudgeSelected(-5, 0)} type="button">←</button><span>mover</span><button aria-label="Mover para direita" title="Mover para direita" onClick={() => nudgeSelected(5, 0)} type="button">→</button><button aria-label="Mover para baixo" title="Mover para baixo" onClick={() => nudgeSelected(0, 5)} type="button">↓</button></div><div className="wardrobe-quick-actions"><button title="Diminuir tamanho em 10%" onClick={() => resizeSelected(.9)} type="button">− Tamanho</button><button title="Aumentar tamanho em 10%" onClick={() => resizeSelected(1.1)} type="button">+ Tamanho</button><button title="Girar 15 graus para a esquerda" onClick={() => updateComponent(selected.id, { rotation: selected.rotation - 15 })} type="button">↶ 15°</button><button title="Girar 15 graus para a direita" onClick={() => updateComponent(selected.id, { rotation: selected.rotation + 15 })} type="button">↷ 15°</button><button className="wardrobe-origin-button" onClick={restoreSelectedOrigin} type="button">Voltar à posição original</button></div></div><section className="wardrobe-scale-controls" aria-label="Escala horizontal e vertical"><div className="wardrobe-scale-heading"><strong>Escala da peça</strong><label className="wardrobe-aspect-lock"><input type="checkbox" checked={lockAspectRatio} onChange={(event) => setLockAspectRatio(event.target.checked)} /><span>Manter proporção</span></label></div><label className="wardrobe-scale-row"><span><b>↔ Horizontal</b><output>{Math.round(selected.width / (selected.originWidth ?? selected.width) * 100)}%</output></span><input aria-label="Escala horizontal" type="range" min="10" max="300" step="1" value={Math.max(10, Math.min(300, Math.round(selected.width / (selected.originWidth ?? selected.width) * 100)))} onChange={(event) => scaleSelectedAxis('width', (selected.originWidth ?? selected.width) * Number(event.target.value) / 100)} /></label><label className="wardrobe-scale-row"><span><b>↕ Vertical</b><output>{Math.round(selected.height / (selected.originHeight ?? selected.height) * 100)}%</output></span><input aria-label="Escala vertical" type="range" min="10" max="300" step="1" value={Math.max(10, Math.min(300, Math.round(selected.height / (selected.originHeight ?? selected.height) * 100)))} onChange={(event) => scaleSelectedAxis('height', (selected.originHeight ?? selected.height) * Number(event.target.value) / 100)} /></label></section><div className="wardrobe-number-grid">{([['x', 'X'], ['y', 'Y'], ['width', 'Largura'], ['height', 'Altura'], ['rotation', 'Ângulo']] as const).map(([field, label]) => <label key={field}>{label}<input type="number" step={field === 'rotation' ? 1 : 2} value={Number(selected[field].toFixed(1))} onChange={(event) => { const value = Number(event.target.value); if (field === 'width' || field === 'height') scaleSelectedAxis(field, value); else updateComponent(selected.id, { [field]: value }) }} /></label>)}</div><small className="wardrobe-note">A peça acompanha o osso e a pose selecionados ao equipá-la no Customizador.</small></div>}{!selected && <div className="wardrobe-edit-empty"><Icon name="shirt" /><strong>Escolha uma peça</strong><small>Selecione no catálogo para ajustar posição, tamanho e vínculo.</small></div>}</> : <div className="wardrobe-edit-empty"><Icon name="sparkles" /><strong>Pré-encaixe automático</strong><small>A folha é separada por transparência. Depois você revisa categoria, peça do corpo e posição de cada recorte.</small></div>}
       </aside>
     </div>
     {garmentEditorOpen && selected && <WardrobeGarmentEditorModal key={selected.id} component={selected} bodyReference={editorBodyReference} onClose={() => setGarmentEditorOpen(false)} onApply={(imageUrl) => { if (imageUrl !== selected.dataUrl) { invalidateWarpImage(selected.id); updateComponent(selected.id, { dataUrl: imageUrl, hasDeformationOriginal: undefined, deformationOriginalDataUrl: undefined, deformationOriginalFrame: undefined, isDeformed: false }) } setGarmentEditorOpen(false) }} />}
-    {importPickerOpen && <div className="pose-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setImportPickerOpen(false) }}><section className="pose-model-picker" role="dialog" aria-modal="true" aria-labelledby="wardrobe-import-title"><header><span><small>BIBLIOTECA DE ROUPAS</small><strong id="wardrobe-import-title">Como deseja importar?</strong></span><button onClick={() => setImportPickerOpen(false)} aria-label="Fechar" type="button">×</button></header><p>Na folha automática, organize os acessórios na faixa de cima e as roupas do corpo abaixo.</p><div className="pose-model-options"><button className="pose-model-option" onClick={() => { setImportPickerOpen(false); inputRef.current?.click() }} type="button"><span className="pose-model-number"><Icon name="sparkles" /></span><span><b>Separar automaticamente</b><small>Separa os recortes transparentes, detecta acessórios no topo e sugere tronco, braços, pernas, meias e sapatos abaixo.</small></span><Icon name="chevronRight" /></button><button className="pose-model-option" onClick={() => { gridSizeRef.current = 4; gridInputRef.current?.click() }} type="button"><span className="pose-model-number">4×3</span><span><b>Roupas para tronco · grade 4×3</b><small>Até 12 roupas, com remoção automática do fundo.</small></span><Icon name="chevronRight" /></button><button className="pose-model-option" onClick={() => { gridSizeRef.current = 3; gridInputRef.current?.click() }} type="button"><span className="pose-model-number">3×3</span><span><b>Roupas para tronco · grade 3×3</b><small>Até 9 roupas, com remoção automática do fundo.</small></span><Icon name="chevronRight" /></button><button className="pose-model-option" onClick={() => { pairedImportKindRef.current = 'pants'; sleeveInputRef.current?.click() }} type="button"><span className="pose-model-number">3×4</span><span><b>Importar Calças (Sheet)</b><small>12 peças esquerdas: 6 shorts nas coxas e 6 calças para dividir entre coxa e canela. O lado direito é espelhado.</small></span><Icon name="chevronRight" /></button><button className="pose-model-option" onClick={() => { pairedImportKindRef.current = 'sleeves'; sleeveInputRef.current?.click() }} type="button"><span className="pose-model-number">3×4</span><span><b>Importar Mangas (Sheet)</b><small>12 posições: mangas curtas nas 2 primeiras linhas, longas nas 2 últimas. Gera cada lado direito espelhando a manga esquerda.</small></span><Icon name="chevronRight" /></button></div></section></div>}{testPosePickerOpen && <div className="pose-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) { testPoseRequestRef.current += 1; setTestPoseLoading(false); setTestPosePickerOpen(false) } }}><section className="pose-model-picker" role="dialog" aria-modal="true" aria-labelledby="wardrobe-test-picker-title"><header><span><small>TESTE DE ROUPA</small><strong id="wardrobe-test-picker-title">Escolha uma pose</strong></span><button onClick={() => { testPoseRequestRef.current += 1; setTestPoseLoading(false); setTestPosePickerOpen(false) }} aria-label="Fechar" type="button">×</button></header><p>A roupa será exibida sobre uma cópia visual da pose. A pose salva não será modificada.</p><div className="pose-model-options">{testPoseLoading && <div className="pose-model-none">Carregando poses…</div>}{testPoseSlots.map((pose) => pose && <button key={`pose-${pose.slot}`} className="pose-model-option" disabled={testPoseLoading} onClick={() => void loadTestPose(pose.slot)} type="button"><span className="pose-model-number">{String(pose.slot).padStart(2, '0')}</span><span><b>{pose.name}</b><small>{pose.partCount} peças · {new Date(pose.updatedAt).toLocaleDateString('pt-BR')}</small></span><Icon name="chevronRight" /></button>)}{!testPoseLoading && testPoseSlots.length === 0 && <div className="pose-model-none">Este modelo ainda não tem poses salvas.</div>}</div></section></div>}
+    {importPickerOpen && <div className="pose-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setImportPickerOpen(false) }}><section className="pose-model-picker" role="dialog" aria-modal="true" aria-labelledby="wardrobe-import-title"><header><span><small>BIBLIOTECA DE ROUPAS</small><strong id="wardrobe-import-title">Como deseja importar?</strong></span><button onClick={() => setImportPickerOpen(false)} aria-label="Fechar" type="button">×</button></header><p>Na folha automática, organize os acessórios na faixa de cima e as roupas do corpo abaixo.</p><div className="pose-model-options"><button className="pose-model-option" onClick={() => { setImportPickerOpen(false); inputRef.current?.click() }} type="button"><span className="pose-model-number"><Icon name="sparkles" /></span><span><b>Separar automaticamente</b><small>Separa os recortes transparentes, detecta acessórios no topo e sugere tronco, braços, pernas, meias e sapatos abaixo.</small></span><Icon name="chevronRight" /></button><button className="pose-model-option" onClick={() => { gridSizeRef.current = 4; gridInputRef.current?.click() }} type="button"><span className="pose-model-number">4×3</span><span><b>Roupas para tronco · grade 4×3</b><small>Até 12 roupas, com remoção automática do fundo.</small></span><Icon name="chevronRight" /></button><button className="pose-model-option" onClick={() => { gridSizeRef.current = 3; gridInputRef.current?.click() }} type="button"><span className="pose-model-number">3×3</span><span><b>Roupas para tronco · grade 3×3</b><small>Até 9 roupas, com remoção automática do fundo.</small></span><Icon name="chevronRight" /></button><button className="pose-model-option" onClick={() => { pairedImportKindRef.current = 'pants'; sleeveInputRef.current?.click() }} type="button"><span className="pose-model-number">3×4</span><span><b>Importar Calças (Sheet)</b><small>12 peças esquerdas: 6 shorts nas coxas e 6 calças inteiras; posicione sobre coxa e canela com “Juntar juntas” e divida automaticamente na junta. O lado direito é espelhado.</small></span><Icon name="chevronRight" /></button><button className="pose-model-option" onClick={() => { pairedImportKindRef.current = 'sleeves'; sleeveInputRef.current?.click() }} type="button"><span className="pose-model-number">3×4</span><span><b>Importar Mangas (Sheet)</b><small>12 posições: mangas curtas nas 2 primeiras linhas; as longas ficam inteiras para posicionar e dividir na junta do modelo. Gera cada lado direito espelhando a manga esquerda.</small></span><Icon name="chevronRight" /></button></div></section></div>}{testPosePickerOpen && <div className="pose-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) { testPoseRequestRef.current += 1; setTestPoseLoading(false); setTestPosePickerOpen(false) } }}><section className="pose-model-picker" role="dialog" aria-modal="true" aria-labelledby="wardrobe-test-picker-title"><header><span><small>TESTE DE ROUPA</small><strong id="wardrobe-test-picker-title">Escolha uma pose</strong></span><button onClick={() => { testPoseRequestRef.current += 1; setTestPoseLoading(false); setTestPosePickerOpen(false) }} aria-label="Fechar" type="button">×</button></header><p>A roupa será exibida sobre uma cópia visual da pose. A pose salva não será modificada.</p><div className="pose-model-options">{testPoseLoading && <div className="pose-model-none">Carregando poses…</div>}{testPoseSlots.map((pose) => pose && <button key={`pose-${pose.slot}`} className="pose-model-option" disabled={testPoseLoading} onClick={() => void loadTestPose(pose.slot)} type="button"><span className="pose-model-number">{String(pose.slot).padStart(2, '0')}</span><span><b>{pose.name}</b><small>{pose.partCount} peças · {new Date(pose.updatedAt).toLocaleDateString('pt-BR')}</small></span><Icon name="chevronRight" /></button>)}{!testPoseLoading && testPoseSlots.length === 0 && <div className="pose-model-none">Este modelo ainda não tem poses salvas.</div>}</div></section></div>}
   </section>
 }

@@ -3037,7 +3037,7 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
   .wardrobe-control-label-wide { display:none; }
   .wardrobe-control-label-compact { display:inline; }
   .wardrobe-preview-controls>.wardrobe-deformation-restore,
-  .wardrobe-preview-controls>.wardrobe-control-reset { gap:3px;padding-inline:5px; }
+  .wardrobe-preview-controls>.wardrobe-control-assembly { gap:3px;padding-inline:5px; }
   .wardrobe-preview-controls>.wardrobe-control-center { gap:0;padding-inline:5px; }
   .wardrobe-preview-controls>.wardrobe-control-center>span { display:none; }
   .wardrobe-preview-controls>.preview-background-picker { gap:4px;min-height:29px;padding:3px 4px;font-size:9px; }

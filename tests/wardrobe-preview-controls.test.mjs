@@ -14,9 +14,10 @@ test('Roupas DEV compõe controles da prévia sem transferir estado da tela', as
   assert.ok(workspace.indexOf('<WardrobeDeformationBrushControls') > workspace.indexOf('<div ref={previewRef}'))
   assert.doesNotMatch(workspace, /wardrobe-preview-controls|wardrobe-warp-controls/)
 
-  for (const label of ['Mover corpo', 'Restaurar deformação', 'Repor corpo', 'Ímã ligado', 'Centralizar prévia', 'Cor do fundo das prévias', 'Raio do pincel de deformação', 'Força do pincel de deformação']) {
+  for (const label of ['Juntar juntas', 'Separar juntas', 'Restaurar deformação', 'Ímã ligado', 'Centralizar prévia', 'Cor do fundo das prévias', 'Raio do pincel de deformação', 'Força do pincel de deformação']) {
     assert.ok(controls.includes(label), `controle preservado: ${label}`)
   }
+  assert.doesNotMatch(controls, /Mover corpo|Repor corpo/)
   assert.match(controls, /min="12" max="280"/)
   assert.match(controls, /min="10" max="100"/)
   assert.match(controls, /onPointerDown=\{\(event\) => event\.stopPropagation\(\)\}/)

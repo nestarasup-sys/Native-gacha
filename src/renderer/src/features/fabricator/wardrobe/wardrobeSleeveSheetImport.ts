@@ -3,8 +3,9 @@ import { fixWardrobeGlue } from '../../../../../shared/wardrobeGlue'
 import { suggestWardrobeBone } from './boneSelection'
 import { removeGridFlatBackground } from './wardrobeGridImage'
 import { detectSleeveSilhouettes } from './sleeveSilhouettes'
+import { wardrobeJointSplitForSheetCell } from './wardrobeJointAssembly'
 
-function cropPng(pixels: ImageData, id: string, name: string, category: WardrobeComponent['category'], side: 'left' | 'right', pairId: string, model: FabricatorProject): WardrobeComponent {
+function cropPng(pixels: ImageData, id: string, name: string, category: WardrobeComponent['category'], side: 'left' | 'right', pairId: string, model: FabricatorProject, jointSplit?: WardrobeComponent['sleeveJointSplit']): WardrobeComponent {
   const source = document.createElement('canvas'); source.width = pixels.width; source.height = pixels.height
   source.getContext('2d')!.putImageData(pixels, 0, 0)
   const canvas = document.createElement('canvas'); canvas.width = pixels.width; canvas.height = pixels.height
@@ -16,7 +17,7 @@ function cropPng(pixels: ImageData, id: string, name: string, category: Wardrobe
   const bone = selection.bone
   const x = bone ? bone.x + (bone.width - pixels.width) / 2 : placementSideX - pixels.width / 2
   const y = bone ? bone.y + (bone.height - pixels.height) / 2 : model.height * .27 - pixels.height / 2
-  const component: WardrobeComponent = { id, name, sleevePairId: pairId, sleeveSide: side, sleeveSegment: 'whole', category,
+  const component: WardrobeComponent = { id, name, sleevePairId: pairId, sleeveSide: side, sleeveSegment: 'whole', ...(jointSplit ? { sleeveJointSplit: jointSplit } : {}), category,
     x, y, width: pixels.width, height: pixels.height, rotation: 0, attachedPartId: bone?.id ?? '', originX: x, originY: y,
     originWidth: pixels.width, originHeight: pixels.height, dataUrl: canvas.toDataURL('image/png'), glue: { version: 1, mode: 'loose' } }
   return bone ? fixWardrobeGlue(component, bone) : component
@@ -47,9 +48,10 @@ export function createWardrobeSleeveSheetComponents(image: ImageBitmap, model: F
       const long = row >= 2
       const pairId = createId()
       const category = kind === 'pants' ? 'calca-coxa' as const : 'manga-superior' as const
+      const jointSplit = wardrobeJointSplitForSheetCell(kind, row)
       const label = `${kind === 'pants' ? long ? 'Calça longa' : 'Short' : long ? 'Manga longa' : 'Manga curta'} ${String(row * 3 + col + 1).padStart(2, '0')}`
-      components.push(cropPng(cropped, createId(), `${label} · esquerda`, category, 'left', pairId, model))
-      components.push(cropPng(cropped, createId(), `${label} · direita`, category, 'right', pairId, model))
+      components.push(cropPng(cropped, createId(), `${label} · esquerda`, category, 'left', pairId, model, jointSplit))
+      components.push(cropPng(cropped, createId(), `${label} · direita`, category, 'right', pairId, model, jointSplit))
     }
     return components
   } finally { image.close() }

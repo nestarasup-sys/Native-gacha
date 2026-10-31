@@ -2,10 +2,9 @@
 .wardrobe-set-row.grid-import:hover,.wardrobe-set-row.grid-import.active { border-color:#58ae9b;background:#dff4ee;color:#175b4e; }
 .wardrobe-set-row.grid-import .wardrobe-set-icon { background:#d5eee7;color:#21806b; }
 .wardrobe-sleeve-cut { display:grid;gap:8px;padding:12px;margin:10px 0;border:1px solid #79a8ff;border-radius:10px;background:#eff6ff; }
-.wardrobe-sleeve-cut label { display:grid;gap:6px; }
-.wardrobe-sleeve-cut input[type="range"] { width:100%; }
 .wardrobe-sleeve-cut small { color:#667085; }
-.wardrobe-sleeve-cut-line { position:absolute;border-top:2px dashed #1677ff;z-index:20000;pointer-events:none;filter:drop-shadow(0 1px 1px white); }
+.wardrobe-joint-cut-guide { position:absolute;inset:0;overflow:visible;z-index:20000;pointer-events:none; }
+.wardrobe-joint-cut-guide line { stroke:#1677ff;stroke-width:2;stroke-dasharray:7 5;filter:drop-shadow(0 1px 1px white); }
 
 .wardrobe-set-row.sleeves-import { --set-border:#d4bcf2;--set-background:#f6f0ff;--set-color:#70429b;--set-active:#eadbfb; }
 .wardrobe-set-row.pants-import { --set-border:#b5cfee;--set-background:#eff6ff;--set-color:#285d98;--set-active:#daeaff; }

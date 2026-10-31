@@ -8,7 +8,7 @@ import { createFabricatorWardrobePersistence } from '../electron/domains/fabrica
 import { createFabricatorCatalogPersistence } from '../electron/domains/fabricator/catalogPersistence.ts'
 
 const png = value => `data:image/png;base64,${Buffer.from(value).toString('base64')}`
-const piece = (id, segment = 'whole') => ({ id, name: id, category: 'manga-superior', attachedPartId: 'arm-left', x: 0, y: 0, width: 20, height: 30, rotation: 0, sleevePairId: 'pair-one', sleeveSide: 'left', sleeveSegment: segment, dataUrl: png(id) })
+const piece = (id, segment = 'whole', splitTarget) => ({ id, name: id, category: 'manga-superior', attachedPartId: 'arm-left', x: 0, y: 0, width: 20, height: 30, rotation: 0, sleevePairId: 'pair-one', sleeveSide: 'left', sleeveSegment: segment, ...(splitTarget ? { sleeveJointSplit: splitTarget } : {}), dataUrl: png(id) })
 
 for (const importKind of ['sleeve-grid-3x4', 'pants-grid-3x4']) test(`${importKind}: salvar, reabrir, recortar e restaurar mantém PNGs e pares`, async t => {
   const root = await fs.mkdtemp(join(tmpdir(), 'sleeve-save-'))
@@ -21,7 +21,8 @@ for (const importKind of ['sleeve-grid-3x4', 'pants-grid-3x4']) test(`${importKi
     saveCatalog: opts => catalog.saveCatalog(opts), recoverWardrobeManifest: folder => catalog.recoverWardrobeManifest(folder),
     isCompatible: () => true, readCatalogPng: (_identity, _version, path) => fs.readFile(path), invalidateCatalogPng: () => {}, files: fs
   })
-  const set = { schemaVersion: 1, edition: 1, importKind, id: 'sleeves', modelSlot: 1, modelName: 'Synthetic', name: 'Sleeves', width: 100, height: 100, updatedAt: 'first', components: [piece('left'), piece('right')] }
+  const splitTarget = importKind === 'pants-grid-3x4' ? 'leg' : 'arm'
+  const set = { schemaVersion: 1, edition: 1, importKind, id: 'sleeves', modelSlot: 1, modelName: 'Synthetic', name: 'Sleeves', width: 100, height: 100, updatedAt: 'first', components: [piece('left', 'whole', splitTarget), piece('right', 'whole', splitTarget)] }
   const save = async value => {
     const metadata = { ...value, components: value.components.map(({ dataUrl, ...rest }) => rest) }
     await storage.save(1, metadata, wardrobeSaveAssets(value))
@@ -29,6 +30,7 @@ for (const importKind of ['sleeve-grid-3x4', 'pants-grid-3x4']) test(`${importKi
   }
   const original = await save(set)
   assert.equal(original.components[0].dataUrl, png('left'))
+  assert.equal(original.components[0].sleeveJointSplit, splitTarget)
   const split = { ...original, updatedAt: 'split', components: ['left-upper', 'left-lower', 'right-upper', 'right-lower'].map(id => piece(id, id.endsWith('upper') ? 'upper' : 'lower')) }
   const reopened = await save(split)
   assert.equal(reopened.components.length, 4)

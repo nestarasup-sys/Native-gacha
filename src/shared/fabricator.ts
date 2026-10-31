@@ -114,10 +114,12 @@ export type WardrobeBinding = {
 }
 export type WardrobeComponent = {
   id: string
-  /** Optional grouping metadata for mirrored sleeve pairs and their split pieces. */
+  /** Optional grouping metadata for mirrored garments and their split pieces. */
   sleevePairId?: string
   sleeveSide?: 'left' | 'right'
   sleeveSegment?: 'whole' | 'upper' | 'lower'
+  /** Long 3×4 imports remain intact until Roupas DEV splits them on a model joint. */
+  sleeveJointSplit?: 'arm' | 'leg'
   name: string
   category: WardrobeCategory
   attachedPartId: string
