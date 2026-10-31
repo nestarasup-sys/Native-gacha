@@ -11,6 +11,8 @@ import { createMotionPoseResolver } from './motionPoseResolver'
 
 type Renderer = Awaited<ReturnType<typeof prepareSavedCharacterRenderer>>
 type Crop = { left: number; top: number; width: number; height: number; fingerprint?: number }
+type MotionFrameRender = { canvas: HTMLCanvasElement; width: number; height: number; crop: Crop; dispose: () => void }
+type BakedBodySample = { canvas: HTMLCanvasElement; crop: Crop }
 type PixelBounds = { left: number; top: number; right: number; bottom: number }
 type BakedFacePatch = { index: number; canvas: HTMLCanvasElement; left: number; top: number; width: number; height: number; crop: Crop }
 function changedBounds(reference: Uint8ClampedArray, next: Uint8ClampedArray, width: number, height: number): PixelBounds | undefined {
@@ -121,7 +123,7 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
   const poseSignature = (pose: typeof fromPose) => JSON.stringify([pose.width, pose.height, pose.parts, pose.joints, pose.layerOrder, pose.hiddenPartIds])
   const samePose = poseSignature(fromPose) === poseSignature(toPose)
   const materials: GachaReusableMaterialCache = session?.materials ?? new Map()
-  let preparedRigs = 0, reusable: Renderer | undefined
+  let preparedRigs = 0, reusable: Renderer | undefined, preparedAtlasFrames: BakedBodySample[] | undefined, pendingFacePatches: BakedFacePatch[] | undefined
   const prepare = async (progress: number) => {
     if (samePose && reusable) return reusable
     const artwork = interpolateEditorV6Pose(fromPose, toPose, progress)
@@ -130,7 +132,7 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
     if (samePose) reusable = renderer
     return renderer
   }
-  const render = async (progress: number, faceMode?: EditorV6FaceRenderMode, mouthScale = 1, fingerprint = false) => {
+  const render = async (progress: number, faceMode?: EditorV6FaceRenderMode, mouthScale = 1, fingerprint = false): Promise<MotionFrameRender> => {
     const renderer = await prepare(progress), face = scaleMouthForExport(interpolateEditorV6Face(from, to, progress), mouthScale)
     try {
       const result = await renderer.renderToCanvas(face.appearance, face.transforms, face.effects, editorV6FaceModeDuringMotion(faceMode ?? face.mode))
@@ -187,48 +189,78 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
     const first = await render(0, staticMouthLoop ? from.activeFaceMode : undefined, 1, Boolean(request.mouthScaleSamples)), fromCrop = first.crop, fullWidth = first.width, fullHeight = first.height
     first.dispose()
     const last = staticMouthLoop ? null : await render(1), toCrop = last?.crop ?? fromCrop
-    const maximumWidth = Math.max(fullWidth, last?.width ?? fullWidth), maximumHeight = Math.max(fullHeight, last?.height ?? fullHeight)
+    const maximumCanvasWidth = Math.max(fullWidth, last?.width ?? fullWidth), maximumCanvasHeight = Math.max(fullHeight, last?.height ?? fullHeight)
     last?.dispose()
     const count = request.plan.samples.length, columns = Math.ceil(Math.sqrt(count)), rows = Math.ceil(count / columns)
     const maxAtlasPixels = Math.min(8_000_000, request.maxAtlasPixels ?? 8_000_000)
-    const ratio = Math.min(1, 4096 / columns / maximumWidth, 4096 / rows / maximumHeight, Math.sqrt(maxAtlasPixels / (columns * rows * maximumWidth * maximumHeight)))
+    const atlasRatio = (width: number, height: number) => Math.min(1, 4096 / columns / width, 4096 / rows / height, Math.sqrt(maxAtlasPixels / (columns * rows * width * height)))
+    let maximumWidth = maximumCanvasWidth, maximumHeight = maximumCanvasHeight
+    let ratio = atlasRatio(maximumWidth, maximumHeight)
+    const frames: EditorV6MotionFrame[] = []
+    const facePatches: BakedFacePatch[] = pendingFacePatches = []
+    const prepareFacePatch = async (index: number, sample: { faceMode?: EditorV6FaceRenderMode }, t: number, mouthScale: number, frame: MotionFrameRender) => {
+      if (!request.mouthScaleSamples || sample.faceMode !== 'talk' || mouthScale <= 1.000001) return
+      const baselinePixels = new Uint8ClampedArray(frame.canvas.getContext('2d', { willReadFrequently: true })!.getImageData(0, 0, frame.width, frame.height).data)
+      const scaled = await render(t, sample.faceMode, mouthScale)
+      try {
+        const pixels = scaled.canvas.getContext('2d', { willReadFrequently: true })!.getImageData(0, 0, scaled.width, scaled.height).data
+        const changed = changedBounds(baselinePixels, pixels, scaled.width, scaled.height)
+        if (!changed) throw Error('A boca aberta não alterou pixels durante a transição; confira a variante de boca aberta no catálogo facial.')
+        const padding = 3
+        const left = Math.max(frame.crop.left, changed.left - padding), top = Math.max(frame.crop.top, changed.top - padding)
+        const right = Math.min(frame.crop.left + frame.crop.width - 1, changed.right + padding), bottom = Math.min(frame.crop.top + frame.crop.height - 1, changed.bottom + padding)
+        const patchWidth = right - left + 1, patchHeight = bottom - top + 1
+        const patchCanvas = document.createElement('canvas'); patchCanvas.width = patchWidth; patchCanvas.height = patchHeight
+        patchCanvas.getContext('2d')!.drawImage(scaled.canvas, left, top, patchWidth, patchHeight, 0, 0, patchWidth, patchHeight)
+        facePatches.push({ index, canvas: patchCanvas, left, top, width: patchWidth, height: patchHeight, crop: frame.crop })
+      } finally { scaled.dispose() }
+    }
+    if (ratio < 1) {
+      // The canvas can contain large transparent margins. Keep native cropped samples so
+      // the atlas uses visible bounds without rendering the same transition twice.
+      preparedAtlasFrames = []
+      maximumWidth = Math.max(fromCrop.width, toCrop.width)
+      maximumHeight = Math.max(fromCrop.height, toCrop.height)
+      for (const [index, sample] of request.plan.samples.entries()) {
+        const t = motionEase(sample.progress), mouthScale = request.mouthScaleSamples?.[index] ?? 1
+        const frame = await render(t, sample.faceMode, 1)
+        try {
+          maximumWidth = Math.max(maximumWidth, frame.crop.width)
+          maximumHeight = Math.max(maximumHeight, frame.crop.height)
+          const cropped = document.createElement('canvas'); cropped.width = frame.crop.width; cropped.height = frame.crop.height
+          cropped.getContext('2d')!.drawImage(frame.canvas, frame.crop.left, frame.crop.top, frame.crop.width, frame.crop.height, 0, 0, frame.crop.width, frame.crop.height)
+          preparedAtlasFrames.push({ canvas: cropped, crop: frame.crop })
+          await prepareFacePatch(index, sample, t, mouthScale, frame)
+        } finally { frame.dispose() }
+      }
+      ratio = atlasRatio(maximumWidth, maximumHeight)
+    }
     if (ratio < 1) throw Error(`A transição deste personagem precisa de ${Math.ceil(columns * maximumWidth)}×${Math.ceil(rows * maximumHeight)} pixels em resolução nativa e excede o limite seguro. A exportação foi interrompida para não reduzir a nitidez do personagem.`)
     const cellWidth = Math.ceil(maximumWidth * ratio), cellHeight = Math.ceil(maximumHeight * ratio)
     const atlas = document.createElement('canvas'); atlas.width = cellWidth * columns; atlas.height = cellHeight * rows
     const context = atlas.getContext('2d')!
     const aa = editorV6ElementSize(request.plan.from), bb = editorV6ElementSize(request.plan.to)
     const fromScale = { x: aa.width * 19.2 / fromCrop.width, y: aa.height * 10.8 / fromCrop.height }, toScale = { x: bb.width * 19.2 / toCrop.width, y: bb.height * 10.8 / toCrop.height }
-    const frames: EditorV6MotionFrame[] = []
-    const facePatches: BakedFacePatch[] = []
     for (const [index, sample] of request.plan.samples.entries()) {
       const t = motionEase(sample.progress), mouthScale = request.mouthScaleSamples?.[index] ?? 1
-      const frame = await render(t, sample.faceMode, 1), crop = frame.crop
+      const baked = preparedAtlasFrames?.[index]
+      const frame = baked ? undefined : await render(t, sample.faceMode, 1)
+      const crop = baked?.crop ?? frame!.crop
       try {
         const x = index % columns * cellWidth, y = Math.floor(index / columns) * cellHeight, width = Math.max(1, Math.ceil(crop.width * ratio)), height = Math.max(1, Math.ceil(crop.height * ratio))
-        context.drawImage(frame.canvas, crop.left, crop.top, crop.width, crop.height, x, y, width, height)
+        const sourceCanvas = baked?.canvas ?? frame!.canvas
+        context.drawImage(sourceCanvas, baked ? 0 : crop.left, baked ? 0 : crop.top, crop.width, crop.height, x, y, width, height)
         const sx = motionLerp(fromScale.x, toScale.x, t), sy = motionLerp(fromScale.y, toScale.y, t)
         const originX = motionLerp(-aa.width * 9.6 - fromCrop.left * fromScale.x, -bb.width * 9.6 - toCrop.left * toScale.x, t)
         const originY = motionLerp(-aa.height * 5.4 - fromCrop.top * fromScale.y, -bb.height * 5.4 - toCrop.top * toScale.y, t)
         const rotation = motionAngle(from.rotation, to.rotation, t), flipX = Boolean(t < .5 ? from.flipX : to.flipX)
         const dx = (originX + (crop.left + crop.width / 2) * sx) * (flipX ? -1 : 1), dy = originY + (crop.top + crop.height / 2) * sy, radians = rotation * Math.PI / 180
         frames.push({ offset: sample.offset, sprite: { x, y, width, height, atlasWidth: atlas.width, atlasHeight: atlas.height }, x: motionLerp(from.x, to.x, t) + (dx * Math.cos(radians) - dy * Math.sin(radians)) / 19.2, y: motionLerp(from.y, to.y, t) + (dx * Math.sin(radians) + dy * Math.cos(radians)) / 10.8, width: crop.width * sx / 19.2, height: crop.height * sy / 10.8, rotation, flipX })
-        if (request.mouthScaleSamples && sample.faceMode === 'talk' && mouthScale > 1.000001) {
-          const baselinePixels = new Uint8ClampedArray(frame.canvas.getContext('2d', { willReadFrequently: true })!.getImageData(0, 0, frame.width, frame.height).data)
-          const scaled = await render(t, sample.faceMode, mouthScale)
-          try {
-            const pixels = scaled.canvas.getContext('2d', { willReadFrequently: true })!.getImageData(0, 0, scaled.width, scaled.height).data
-            const changed = changedBounds(baselinePixels, pixels, scaled.width, scaled.height)
-            if (!changed) throw Error('A boca aberta não alterou pixels durante a transição; confira a variante de boca aberta no catálogo facial.')
-            const padding = 3
-            const left = Math.max(crop.left, changed.left - padding), top = Math.max(crop.top, changed.top - padding)
-            const right = Math.min(crop.left + crop.width - 1, changed.right + padding), bottom = Math.min(crop.top + crop.height - 1, changed.bottom + padding)
-            const patchWidth = right - left + 1, patchHeight = bottom - top + 1
-            const patchCanvas = document.createElement('canvas'); patchCanvas.width = patchWidth; patchCanvas.height = patchHeight
-            patchCanvas.getContext('2d')!.drawImage(scaled.canvas, left, top, patchWidth, patchHeight, 0, 0, patchWidth, patchHeight)
-            facePatches.push({ index, canvas: patchCanvas, left, top, width: patchWidth, height: patchHeight, crop })
-          } finally { scaled.dispose() }
-        }
-      } finally { frame.dispose() }
+        if (frame) await prepareFacePatch(index, sample, t, mouthScale, frame)
+      } finally {
+        frame?.dispose()
+        if (baked) baked.canvas.width = baked.canvas.height = 1
+      }
     }
     let faceAsset: EditorV6MotionBakeResult['faceAsset']
     if (facePatches.length) {
@@ -255,5 +287,10 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
     const assetId = crypto.randomUUID(), atlasPixels = atlas.width * atlas.height, dataUrl = atlas.toDataURL('image/png')
     atlas.width = atlas.height = 1
     return { asset: { id: assetId, category: 'character', name: 'Transição de personagem', mimeType: 'image/png', dataUrl, timelineSnapshot: true }, motion: { version: 1, key: request.plan.key, assetId, frames }, metrics: { milliseconds: performance.now() - began, preparedRigs, samples: count, atlasPixels } }
-  } finally { reusable?.dispose(); if (!session || materials.size > 4) materials.clear() }
+  } finally {
+    preparedAtlasFrames?.forEach(({ canvas }) => { canvas.width = canvas.height = 1 })
+    pendingFacePatches?.forEach(({ canvas }) => { canvas.width = canvas.height = 1 })
+    reusable?.dispose()
+    if (!session || materials.size > 4) materials.clear()
+  }
 }

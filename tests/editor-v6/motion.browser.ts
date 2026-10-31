@@ -31,6 +31,21 @@ async function image(url: string) { const i = new Image(); i.src = url; await i.
   assert(result.metrics.samples === 7 && result.metrics.atlasPixels <= 8_100_000, 'Invalid atlas budget or sample count')
   assert(result.metrics.preparedRigs === 9, 'Pose rigs were incorrectly reused')
   assert(reads.loadFabricatorSlot === 1 && reads.loadFabricatorPose === 2, 'Source reads were repeated per sample')
+  const expandedSource = { ...source, width: 1122, height: 1402 }
+  const expandedTarget = { ...target, width: 1122, height: 1402 }
+  const expandedProvider = new Proxy({}, { get: (_, name: string) => async (...args: unknown[]) => {
+    if (name === 'loadFabricatorSlot') return expandedSource
+    if (name === 'loadFabricatorPose') return args[1] === 1 ? expandedSource : expandedTarget
+    if (name.startsWith('list')) return []
+    return null
+  } }) as CharacterRenderAssetProvider
+  const transparentMargins = await bakeEditorV6Motion({ id: crypto.randomUUID(), plan, character }, expandedProvider)
+  const compactAtlas = await image(transparentMargins.asset.dataUrl)
+  assert(transparentMargins.metrics.atlasPixels === compactAtlas.width * compactAtlas.height
+    && transparentMargins.metrics.atlasPixels < 8_000_000
+    && compactAtlas.width < 3366 && compactAtlas.height < 4206,
+  'Transparent canvas margins incorrectly caused a native transition atlas limit failure')
+  assert(transparentMargins.metrics.preparedRigs === 9, 'Compacting a transition atlas rendered its pose rigs more than once')
   const atlas = await image(result.asset.dataUrl)
   const blueXs = []
   for (const frame of result.motion.frames) {
