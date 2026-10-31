@@ -1,0 +1,46 @@
+name: Editor V6 - parity and export contracts
+
+on:
+  pull_request:
+    branches: [Dev-V2]
+    paths:
+      - 'src/renderer/src/features/editorV6/**'
+      - 'src/shared/editorV6*'
+      - 'electron/domains/editorV6/**'
+      - 'tests/editor-v6/**'
+      - 'docs/editor-v6/**'
+      - '.github/workflows/editor-v6-parity.yml'
+  push:
+    branches: [Dev-V2]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: editor-v6-parity-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Editor V6 parity / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.22.0'
+          cache: npm
+      - name: Install without Electron postinstall hooks
+        run: npm ci --ignore-scripts
+      - name: Editor V6 timeline, export and scene tests
+        run: npm run test:editor-v6
+      - name: TypeScript validation
+        run: npm run typecheck
+      - name: Build Electron and renderer
+        run: npm run build

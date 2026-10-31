@@ -2,7 +2,8 @@ import { mkdir, mkdtemp, rename, rm, unlink, writeFile } from 'node:fs/promises'
 import { createHash, randomUUID } from 'node:crypto'
 import { basename, dirname, extname, join, resolve, sep } from 'node:path'
 import { availableParallelism } from 'node:os'
-import { editorV6DefaultVideoLayout, type EditorV6Document } from '../../../src/shared/editorV6'
+import type { EditorV6Document } from '../../../src/shared/editorV6'
+import { planEditorV6VideoOverlays } from '../../../src/shared/editorV6VideoComposition'
 import type { CustomizerCharacter } from '../../../src/shared/customizer'
 import { missingEditorV6Motions, type EditorV6MotionBakeRequest, type EditorV6MotionBakeResult } from '../../../src/shared/editorV6Motion'
 import { prepareExportMotions } from './prepareMotions'
@@ -90,22 +91,13 @@ function timelineMediaAudio(project: EditorV6Document): EditorV6ExportAudio[] {
     return [{ id: block.id, name: asset.name, fileName: asset.fileName, ...(asset.libraryVideoId ? { libraryVideoId: asset.libraryVideoId } : {}), sourceFrames: asset.sourceFrames, startFrame: block.startFrame, sourceInFrame: block.mediaInFrame ?? 0, durationFrames: block.durationFrames, gain: block.gain ?? 1, muted: false }]
   }))
 }
-type TimelineVideoClip = { fileName: string; libraryVideoId?: string; mediaInFrame: number; startFrame: number; endFrame: number; layout: { x: number; y: number; width: number; height: number; rotation: number } }
-function timelineVideoClips(project: EditorV6Document, startFrame: number, endFrame: number): TimelineVideoClip[] {
-  const media = new Map((project.media ?? []).filter((asset) => asset.kind === 'video').map((asset) => [asset.id, asset]))
-  return project.timeline.tracks.filter((track) => track.kind === 'video' && !track.hidden && !track.muted).flatMap((track) => track.blocks.flatMap((block) => {
-    const asset = block.mediaId ? media.get(block.mediaId) : undefined
-    const start = Math.max(startFrame, block.startFrame), end = Math.min(endFrame, block.startFrame + block.durationFrames)
-    return asset && end > start ? [{ fileName: asset.fileName, ...(asset.libraryVideoId ? { libraryVideoId: asset.libraryVideoId } : {}), mediaInFrame: (block.mediaInFrame ?? 0) + start - block.startFrame, startFrame: start, endFrame: end, layout: block.mediaLayout ?? editorV6DefaultVideoLayout(asset.width, asset.height) }] : []
-  })).sort((a, b) => a.startFrame - b.startFrame || a.fileName.localeCompare(b.fileName))
-}
 export async function runEditorV6Export(project: EditorV6Document, options: EditorV6ExportOptions, deps: Dependencies): Promise<EditorV6ExportReport> {
   const requestedParts = planEditorV6Export(options, project.timeline.durationFrames)
   const planned = options.mouthLoop ? splitEditorV6ExportParts(requestedParts, MOUTH_LOOP_BATCH_FRAMES) : requestedParts
   if (process.platform !== 'win32') throw Error('Este exportador BGRA está preparado para Windows.')
   const started = performance.now(), totalFrames = options.endFrame - options.startFrame
-  const layeredVideo = timelineVideoClips(project, options.startFrame, options.endFrame).length > 0
-  const report: EditorV6ExportReport = { schemaVersion: 1, id: deps.id, projectId: project.id, options, fps: 30, totalFrames, state: 'preparing', fallback: false, attempts: [], encoderTests: [], audioClips: 0, videoInputs: new Set(timelineVideoClips(project, options.startFrame, options.endFrame).map((clip) => clip.fileName)).size, proxies: 0, motionTransitionsRequired: 0, motionTransitionsPrepared: 0, phaseMilliseconds: { temporarySetup: 0, characterLoading: 0, motionPreparation: 0, encoderProbe: 0, rendering: 0, finalization: 0, publication: 0 }, startedAt: new Date().toISOString(), outputPath: deps.outputPath }
+  const layeredVideo = planEditorV6VideoOverlays(project, options.startFrame, options.endFrame).length > 0
+  const report: EditorV6ExportReport = { schemaVersion: 1, id: deps.id, projectId: project.id, options, fps: 30, totalFrames, state: 'preparing', fallback: false, attempts: [], encoderTests: [], audioClips: 0, videoInputs: new Set(planEditorV6VideoOverlays(project, options.startFrame, options.endFrame).map((clip) => clip.fileName)).size, proxies: 0, motionTransitionsRequired: 0, motionTransitionsPrepared: 0, phaseMilliseconds: { temporarySetup: 0, characterLoading: 0, motionPreparation: 0, encoderProbe: 0, rendering: 0, finalization: 0, publication: 0 }, startedAt: new Date().toISOString(), outputPath: deps.outputPath }
   const startRssBytes = process.memoryUsage().rss
   report.mainProcessMemory = { startRssBytes, peakRssBytes: startRssBytes, sampleIntervalMs: 500 }
   const saveReport = async () => {
@@ -188,7 +180,7 @@ export async function runEditorV6Export(project: EditorV6Document, options: Edit
       let process: ReturnType<typeof spawnExportProcess> | undefined
       attempt.parts.push(result)
       try {
-        const videoClips = timelineVideoClips(project, part.startFrame, part.endFrame)
+        const videoClips = planEditorV6VideoOverlays(project, part.startFrame, part.endFrame)
         const videoPaths = await Promise.all(videoClips.map((clip) => deps.mediaPath(project.id, clip.fileName, clip.libraryVideoId)))
         const videoInputs = videoClips.flatMap((clip, index) => ['-ss', String(clip.mediaInFrame / 30), '-t', String((clip.endFrame - clip.startFrame) / 30), '-i', videoPaths[index]])
         const filters = layeredVideo ? ['[0:v]crop=iw:ih/2:0:0,format=rgba,setsar=1[base]', '[0:v]crop=iw:ih/2:0:ih/2,format=rgba,setsar=1[fg]'] : ['[0:v]setsar=1[base]']

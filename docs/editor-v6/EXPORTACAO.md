@@ -66,3 +66,12 @@ Turbo 2× significa dois trabalhos simultâneos; não garante reduzir o tempo pe
 O loop experimental aumenta o trabalho de preparação antes do FFmpeg. Os atlas ficam no documento temporário do job e o serviço de animação pode manter cópias no cache descartável fora da pasta do projeto; nada é acrescentado ao JSON do projeto. Para limitar consumo, um export com o loop aceita até 12 estados visuais distintos, 64 MiB e 32 milhões de pixels somados nos atlas; acima disso ele falha antes de criar o MP4. Se nenhum personagem tiver boca aberta compatível, o export informa a falha em vez de produzir silenciosamente um loop vazio.
 
 O V6 pode compor vídeos presentes na timeline e mixar as faixas de áudio habilitadas, mas ainda não prepara proxies. A reprodução de vídeos usa o Chromium na prévia; na exportação, o FFmpeg compõe o vídeo sob os elementos capturados pelo renderer. Os quadros de vídeo impedem reaproveitar a composição inteira como imagem estática. Os tempos no relatório indicam onde o exportador espera; não medem por si só a latência de apresentação física no monitor.
+
+
+## Paridade de composição — ordem dos vídeos e animações (2026-10-30)
+
+A prévia e o exportador usam o mesmo estado visual da timeline. A prévia interativa também deve exibir os quadros intermediários de transições de pose/expressão já preparados; esses quadros antes eram desativados somente no componente de reprodução.
+
+Para vídeos sobrepostos, o FFmpeg recebe as camadas em ordem crescente de **início original do bloco e ID do bloco**, a mesma precedência usada pela prévia, mesmo quando uma parte Turbo começa no meio de duas sobreposições. Não se pode ordenar por nome do arquivo nem apenas pelo início recortado da parte, pois isso alteraria o vídeo visível no MP4. O planejamento está em `src/shared/editorV6VideoComposition.ts`; a resolução visual permanece em `src/shared/editorV6TimelineScene.ts`.
+
+Os testes sintéticos em `tests/editor-v6/editorV6ExportParity.test.ts` comparam a mídia visível a cada quadro, offset de leitura, layout, estados escondidos/silenciados e as imagens de atlas da transição no SVG da prévia e da captura. O workflow `editor-v6-parity.yml` valida Editor V6, TypeScript e build em Linux/Windows. Esses testes **não substituem** um aceite visual com FFmpeg no Electron Windows e arquivos sintéticos.
