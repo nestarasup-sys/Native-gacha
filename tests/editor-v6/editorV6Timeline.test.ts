@@ -228,6 +228,32 @@ describe('timeline do Editor V6', () => {
     expect(snapEditorV6Frame(document.timeline, 89, 120, id, 2, 30).frame).toBe(90)
   })
 
+  it('mantém o mesmo magnetismo usando o índice pré-calculado durante o arraste', () => {
+    const document = fixture(), characterTrack = document.timeline.tracks.find((track) => track.kind === 'character')!
+    characterTrack.blocks = Array.from({ length: 200 }, (_, index) => ({ ...characterTrack.blocks[0], id: crypto.randomUUID(), startFrame: index * 10, durationFrames: 6 }))
+    const excluded = characterTrack.blocks[75].id
+    const points = document.timeline.tracks.flatMap((track) => track.blocks.flatMap((block, order) => block.id === excluded || block.parentBlockId === excluded ? [] : [
+      { frame: block.startFrame, order: order * 2 }, { frame: block.startFrame + block.durationFrames, order: order * 2 + 1 }
+    ])).sort((a, b) => a.frame - b.frame || a.order - b.order)
+    for (let frame = 0; frame < 1990; frame += 7) {
+      const cursor = (frame * 13) % 1999
+      expect(snapEditorV6Frame(document.timeline, frame, cursor, excluded, 4, 12, points)).toEqual(snapEditorV6Frame(document.timeline, frame, cursor, excluded, 4, 12))
+    }
+  })
+
+  it('preserva a primeira guia quando dois pontos empatam', () => {
+    const first = { id: crypto.randomUUID(), startFrame: 102, durationFrames: 1 }
+    const second = { id: crypto.randomUUID(), startFrame: 100, durationFrames: 200 }
+    const timeline = { durationFrames: 300, tracks: [{ id: crypto.randomUUID(), kind: 'object', name: 'Empate', blocks: [first, second] }] } as unknown as EditorV6Timeline
+    const points = [
+      { frame: first.startFrame, order: 0 }, { frame: first.startFrame + first.durationFrames, order: 1 },
+      { frame: second.startFrame, order: 2 }, { frame: second.startFrame + second.durationFrames, order: 3 }
+    ].sort((a, b) => a.frame - b.frame || a.order - b.order)
+    const expected = snapEditorV6Frame(timeline, 101, 250, 'excluded', 1)
+    expect(expected.guide).toBe(102)
+    expect(snapEditorV6Frame(timeline, 101, 250, 'excluded', 1, 0, points)).toEqual(expected)
+  })
+
   it('oculta estados por período e por faixa', () => {
     const document = fixture(), clip = actorClip(document)
     const hiddenState = editEditorV6DocumentAtBlock(document, clip.block.id, (working) => ({ ...working, elements: working.elements.map((element) => ({ ...element, visible: false })) }))

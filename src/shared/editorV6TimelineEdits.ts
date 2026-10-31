@@ -189,15 +189,28 @@ export function repairEditorV6DuplicateAssets(document: EditorV6Document, select
   return { ...document, backgroundAssetId: resolveAssetId(document.backgroundAssetId ?? undefined, 'background') ?? null, assets, elements, timeline }
 }
 
-export function snapEditorV6Frame(timeline: EditorV6Timeline, frame: number, cursor: number, excludeId: string, threshold: number, duration = 0): { frame: number; guide?: number } {
+export function snapEditorV6Frame(timeline: EditorV6Timeline, frame: number, cursor: number, excludeId: string, threshold: number, duration = 0, indexedBlockPoints?: readonly { frame: number; order: number }[]): { frame: number; guide?: number } {
   const points = [0, timeline.durationFrames, cursor]
-  for (const { block } of timelineClips(timeline)) if (block.id !== excludeId && block.parentBlockId !== excludeId) points.push(block.startFrame, block.startFrame + block.durationFrames)
-  let best = Math.round(frame), distance = threshold + 1, guide: number | undefined
-  for (const point of points) for (const edge of [0, duration]) {
+  const blockPoints = indexedBlockPoints ?? timelineClips(timeline).flatMap(({ block }, order) => block.id === excludeId || block.parentBlockId === excludeId ? [] : [
+    { frame: block.startFrame, order: order * 2 }, { frame: block.startFrame + block.durationFrames, order: order * 2 + 1 }
+  ])
+  let best = Math.round(frame), distance = threshold + 1, guide: number | undefined, bestOrder = Number.POSITIVE_INFINITY
+  const consider = (point: number, edge: number, order: number) => {
     const candidate = point - edge
-    if (candidate < 0) continue
+    if (candidate < 0) return
     const delta = Math.abs(candidate - frame)
-    if (delta <= threshold && delta < distance) { best = candidate; distance = delta; guide = point }
+    if (delta <= threshold && (delta < distance || delta === distance && order < bestOrder)) { best = candidate; distance = delta; guide = point; bestOrder = order }
+  }
+  for (const [pointOrder, point] of points.entries()) for (const [edgeOrder, edge] of [0, duration].entries()) consider(point, edge, pointOrder * 2 + edgeOrder)
+  for (const [edgeOrder, edge] of [0, duration].entries()) {
+    const target = frame + edge
+    let left = 0, right = blockPoints.length
+    const minimum = target - threshold
+    while (left < right) { const middle = (left + right) >>> 1; if (blockPoints[middle].frame < minimum) left = middle + 1; else right = middle }
+    for (let index = left; index < blockPoints.length && blockPoints[index].frame <= target + threshold; index++) {
+      const point = blockPoints[index]
+      consider(point.frame, edge, points.length * 2 + point.order * 2 + edgeOrder)
+    }
   }
   return { frame: Math.max(0, best), guide }
 }
