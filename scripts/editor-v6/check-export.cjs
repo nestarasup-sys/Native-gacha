@@ -1,6 +1,6 @@
 const { build } = require('esbuild')
 const { spawn } = require('node:child_process')
-const { mkdtemp, readFile, mkdir, writeFile } = require('node:fs/promises')
+const { mkdtemp, readFile, mkdir, writeFile, copyFile } = require('node:fs/promises')
 const { join, resolve } = require('node:path')
 const { tmpdir } = require('node:os')
 async function main() {
@@ -18,8 +18,14 @@ async function main() {
   if (code !== 0) await writeFile(join(output, 'result.json'), JSON.stringify({ passed: false, state: 'failed', exitCode: code, fixtureDirectory: folder }))
   if (code === 0) {
     const contents = await readFile(join(folder, 'result.json'), 'utf8')
-    if (JSON.parse(contents).passed !== true) throw Error('O teste não concluiu as verificações.')
-    await writeFile(join(output, 'result.json'), contents)
+    const result = JSON.parse(contents)
+    if (result.passed !== true) throw Error('O teste não concluiu as verificações.')
+    if (result.mouthStress?.output) {
+      const mouthOutput = join(output, 'mouth-stress.mp4')
+      await copyFile(result.mouthStress.output, mouthOutput)
+      result.mouthStress.output = mouthOutput
+    }
+    await writeFile(join(output, 'result.json'), JSON.stringify(result, null, 2))
   }
 }
 main().catch((error) => { console.error(error); process.exitCode = 1 })

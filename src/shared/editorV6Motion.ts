@@ -4,17 +4,24 @@ import type { EditorV6Asset, EditorV6Document, EditorV6Element, EditorV6FaceRend
 import type { CharacterRenderAssetProvider } from './characterRenderAssets'
 import { editorV6FaceModeAtFrame, editorV6FaceModeDuringMotion } from './editorV6FaceSchedule'
 
-export const EDITOR_V6_MOTION_VERSION = 1
+export const EDITOR_V6_MOTION_VERSION = 2
 export const EDITOR_V6_MOTION_MS = 250
 export type EditorV6MotionSprite = { x: number; y: number; width: number; height: number; atlasWidth: number; atlasHeight: number }
-export type EditorV6MotionFrame = { offset: number; sprite: EditorV6MotionSprite; x: number; y: number; width: number; height: number; rotation: number; flipX: boolean }
-export type EditorV6MotionAtlas = { version: 1; key: string; assetId: string; frames: EditorV6MotionFrame[] }
+export type EditorV6FacePatch = { sprite: EditorV6MotionSprite; x: number; y: number; width: number; height: number }
+export type EditorV6MotionFrame = { offset: number; sprite: EditorV6MotionSprite; x: number; y: number; width: number; height: number; rotation: number; flipX: boolean; facePatch?: EditorV6FacePatch }
+export type EditorV6MotionAtlas = { version: 1; key: string; assetId: string; faceAssetId?: string; frames: EditorV6MotionFrame[] }
 export type EditorV6MotionPlan = {
   blockId: string; elementId: string; characterId: string; key: string; startFrame: number; endFrame: number
   from: EditorV6Element; to: EditorV6Element; samples: Array<{ offset: number; progress: number; faceMode?: EditorV6FaceRenderMode }>
 }
 export type EditorV6MotionBakeRequest = { id: string; plan: EditorV6MotionPlan; character: CustomizerCharacter; mouthScaleSamples?: number[]; maxAtlasPixels?: number }
-export type EditorV6MotionBakeResult = { asset: EditorV6Asset; motion: EditorV6MotionAtlas; metrics: { milliseconds: number; preparedRigs: number; samples: number; atlasPixels: number } }
+export type EditorV6MotionBakeResult = { asset: EditorV6Asset; faceAsset?: EditorV6Asset; motion: EditorV6MotionAtlas; metrics: { milliseconds: number; preparedRigs: number; samples: number; atlasPixels: number } }
+/** Static mouth cycles store their localized face atlas as the motion asset itself. */
+export function editorV6UsesStaticMouthAtlas(request: EditorV6MotionBakeRequest): boolean {
+  return Boolean(request.mouthScaleSamples
+    && JSON.stringify(request.plan.from) === JSON.stringify(request.plan.to)
+    && request.plan.samples.every((sample) => sample.faceMode === request.plan.from.activeFaceMode))
+}
 export const editorV6MotionChannels = { payload: 'editor-v6:motion-worker:payload', complete: 'editor-v6:motion-worker:complete' } as const
 export type EditorV6MotionBridge = { payload: () => Promise<EditorV6MotionBakeRequest | null>; provider: CharacterRenderAssetProvider; complete: (result?: EditorV6MotionBakeResult, error?: string) => Promise<void> }
 
@@ -68,7 +75,8 @@ export function missingEditorV6Motions(document: EditorV6Document, startFrame = 
   const blocks = new Map(document.timeline.tracks.flatMap((track) => track.blocks.map((block) => [block.id, block] as const)))
   return editorV6MotionPlans(document).filter((plan) => plan.startFrame < endFrame && plan.endFrame > startFrame && (blocks.get(plan.blockId)?.incomingMotion?.key !== plan.key || !ids.has(blocks.get(plan.blockId)?.incomingMotion?.assetId ?? '')))
 }
-export function attachEditorV6Motion(document: EditorV6Document, blockId: string, result: Pick<EditorV6MotionBakeResult, 'asset' | 'motion'>): EditorV6Document {
+export function attachEditorV6Motion(document: EditorV6Document, blockId: string, result: Pick<EditorV6MotionBakeResult, 'asset' | 'faceAsset' | 'motion'>): EditorV6Document {
   if (!editorV6MotionPlans(document).some((plan) => plan.blockId === blockId && plan.key === result.motion.key)) return document
-  return { ...document, assets: document.assets.some((asset) => asset.id === result.asset.id) ? document.assets : [...document.assets, result.asset], timeline: { ...document.timeline, tracks: document.timeline.tracks.map((track) => ({ ...track, blocks: track.blocks.map((block) => block.id === blockId ? { ...block, incomingMotion: result.motion } : block) })) } }
+  const assets = [result.asset, ...(result.faceAsset ? [result.faceAsset] : [])]
+  return { ...document, assets: assets.reduce((current, asset) => current.some((item) => item.id === asset.id) ? current : [...current, asset], document.assets), timeline: { ...document.timeline, tracks: document.timeline.tracks.map((track) => ({ ...track, blocks: track.blocks.map((block) => block.id === blockId ? { ...block, incomingMotion: result.motion } : block) })) } }
 }

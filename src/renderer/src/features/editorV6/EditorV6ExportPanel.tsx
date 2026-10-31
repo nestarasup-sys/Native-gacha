@@ -14,7 +14,7 @@ export function EditorV6ExportPanel({ project, open, onClose, onChange, onActivi
     return () => { if (previous instanceof HTMLElement && previous.isConnected) previous.focus() }
   }, [open])
   const [job, setJob] = useState(rememberedJob)
-  const [options, setOptions] = useState<EditorV6ExportOptions>({ startFrame: 0, endFrame: project.timeline.durationFrames, width: 1920, height: 1080, turbo: true, encoder: 'auto', mouthLoop: false, mouthLoopCycleFrames: 30 })
+  const [options, setOptions] = useState<EditorV6ExportOptions>({ startFrame: 0, endFrame: project.timeline.durationFrames, width: 1920, height: 1080, turbo: true, encoder: 'auto', mouthLoop: true, mouthLoopCycleFrames: 30 })
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const active = Boolean(job && !finished(job))
@@ -64,9 +64,8 @@ export function EditorV6ExportPanel({ project, open, onClose, onChange, onActivi
         <label>Resolução<select value={options.height} onChange={(event) => setOptions({ ...options, height: Number(event.target.value), width: Number(event.target.value) * 16 / 9 })}><option value={1080}>1080p · 1920 × 1080</option><option value={720}>720p · 1280 × 720</option></select></label>
         <label>Codificação<select value={options.encoder} onChange={(event) => setOptions({ ...options, encoder: event.target.value as EditorV6ExportOptions['encoder'] })}><option value="auto">Automática · GPU se disponível</option><option value="libx264">CPU · H.264</option></select></label>
       </div><small>{frameTimecode(options.startFrame)} → {frameTimecode(options.endFrame)} · {Math.max(0, options.endFrame - options.startFrame)} quadros · 30 FPS</small><label className="v6-export-check"><input type="checkbox" checked={options.turbo} onChange={(event) => setOptions({ ...options, turbo: event.target.checked })} />Turbo 2× · duas partes paralelas, com recuperação pelo modo seguro</label>
-        <label className="v6-export-check"><input type="checkbox" checked={Boolean(options.mouthLoop)} onChange={(event) => setOptions({ ...options, mouthLoop: event.target.checked })} />Teste: loop simples da boca · aumento de 5% durante a fala · só no MP4</label>
-        <label>Ciclo da boca<select value={options.mouthLoopCycleFrames ?? 30} disabled={!options.mouthLoop} onChange={(event) => setOptions({ ...options, mouthLoopCycleFrames: Number(event.target.value) })}><option value={30}>1 segundo</option><option value={60}>2 segundos</option><option value={90}>3 segundos</option><option value={180}>6 segundos</option></select></label>
-        <small>Usa três tamanhos de boca: 100%, 105% e 110,25% de largura e altura. Anima somente durante o balão de fala vinculado ao personagem.</small></fieldset>
+        <label>Ciclo da animação da boca<select value={options.mouthLoopCycleFrames ?? 30} onChange={(event) => setOptions({ ...options, mouthLoop: true, mouthLoopCycleFrames: Number(event.target.value) })}><option value={30}>1 segundo</option><option value={60}>2 segundos</option><option value={90}>3 segundos</option><option value={180}>6 segundos</option></select></label>
+        <small>A animação da boca é aplicada automaticamente durante a fala vinculada ao personagem. Ela não altera o restante da imagem.</small></fieldset>
       <fieldset disabled={busy || active}><legend>Trilha sonora da exportação</legend><p>Os arquivos são copiados para o projeto. A mixagem é aplicada uma única vez ao vídeo final.</p>
         <div className="v6-export-audio-list">{(project.exportAudio ?? []).map((clip) => <div className="v6-export-audio" key={clip.id}>
           <strong title={clip.name}>{clip.name}</strong>

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { EditorV6Timeline } from '../../src/shared/editorV6'
-import { isEditorV6CharacterSpeakingAtFrame } from '../../src/shared/editorV6FaceSchedule'
+import { hasEditorV6CharacterSpeechOverlap, isEditorV6CharacterSpeakingAtFrame } from '../../src/shared/editorV6FaceSchedule'
 
 function timeline(): EditorV6Timeline {
   return { fps: 30, durationFrames: 300, tracks: [{
@@ -29,5 +29,14 @@ describe('speech interval index', () => {
       const changed = { ...source, tracks: source.tracks.map(track => ({ ...track, ...patch })) }
       expect(isEditorV6CharacterSpeakingAtFrame(changed, 'alice', 50)).toBe(false)
     }
+  })
+
+  it('uses the merged interval index for range overlap, including nested and adjacent balloons', () => {
+    const source = timeline()
+    expect(hasEditorV6CharacterSpeechOverlap(source, 'alice', 90, 110)).toBe(true)
+    expect(hasEditorV6CharacterSpeechOverlap(source, 'alice', 110, 150)).toBe(false)
+    expect(hasEditorV6CharacterSpeechOverlap(source, 'alice', 115, 151)).toBe(true)
+    expect(hasEditorV6CharacterSpeechOverlap(source, 'alice', 0, 0)).toBe(false)
+    expect(hasEditorV6CharacterSpeechOverlap(source, 'bob', 0, 300)).toBe(false)
   })
 })

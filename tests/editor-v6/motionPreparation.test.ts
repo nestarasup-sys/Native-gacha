@@ -4,8 +4,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createEditorV6Timeline, type EditorV6Document, type EditorV6Element } from '../../src/shared/editorV6'
 import type { CustomizerCharacter } from '../../src/shared/customizer'
-import { editorV6MotionPlans, missingEditorV6Motions, type EditorV6MotionBakeRequest, type EditorV6MotionBakeResult } from '../../src/shared/editorV6Motion'
+import { attachEditorV6Motion, editorV6MotionPlans, missingEditorV6Motions, type EditorV6MotionBakeRequest, type EditorV6MotionBakeResult } from '../../src/shared/editorV6Motion'
 import { prepareExportMotions } from '../../electron/domains/editorV6/prepareMotions'
+import { EDITOR_V6_MOUTH_LOOP_SAMPLE_SCALES, editorV6MouthLoopScaleAtFrame } from '../../src/shared/editorV6Export'
 import { createMotionDiskCache, motionCacheKey } from '../../electron/domains/editorV6/motionCache'
 import { createEditorV6MotionService } from '../../electron/domains/editorV6/motionIpc'
 import { editorV6IpcChannels } from '../../src/shared/editorV6IpcChannels'
@@ -117,6 +118,40 @@ describe('transition preparation reuse', () => {
     expect(ready.stats.maxConcurrentBakes).toBe(2)
     expect(missingEditorV6Motions(ready.project)).toHaveLength(0)
   })
+  it('rebuilds a speaking transition with localized mouth patches aligned to the export cycle', async () => {
+    const { project: original, character } = fixture()
+    const timeline = { ...original.timeline, tracks: original.timeline.tracks.map((track) => track.kind === 'speech'
+      ? { ...track, blocks: [{ id: crypto.randomUUID(), label: 'Fala durante a transição', characterId: character.id, startFrame: 173, durationFrames: 7 }] }
+      : track) }
+    const project = { ...original, timeline }
+    const plan = editorV6MotionPlans(project).find((item) => item.endFrame === 180)!
+    const oldRequest = { id: crypto.randomUUID(), plan, character }
+    const old = attachEditorV6Motion(project, plan.blockId, resultFor(oldRequest))
+    let requestWithMouth: EditorV6MotionBakeRequest | undefined
+    const prepared = await prepareExportMotions(old, 0, 300, {
+      signal: new AbortController().signal, characters: [character], mouthLoop: { startFrame: 0, cycleFrames: 30 }, progress: () => {},
+      bake: async (request) => {
+        if (request.mouthScaleSamples) requestWithMouth = request
+        const faceId = crypto.randomUUID()
+        const frames = request.plan.samples.map((sample, index) => {
+          const scale = request.mouthScaleSamples?.[index] ?? 1
+          return { offset: sample.offset, sprite: { x: index, y: 0, width: 1, height: 1, atlasWidth: 7, atlasHeight: 1 }, x: 0, y: 0, width: 20, height: 30, rotation: 0, flipX: false, ...(scale > 1 ? { facePatch: { sprite: { x: index, y: 0, width: 1, height: 1, atlasWidth: 7, atlasHeight: 1 }, x: .4, y: .4, width: .2, height: .2 } } : {}) }
+        })
+        const result = resultFor(request)
+        return request.mouthScaleSamples
+          ? { ...result, faceAsset: { id: faceId, category: 'character', name: 'Local mouth', mimeType: 'image/png', dataUrl: 'data:image/png;base64,AA==' }, motion: { ...result.motion, faceAssetId: faceId, frames } }
+          : result
+      }
+    })
+    expect(requestWithMouth?.mouthScaleSamples).toHaveLength(plan.samples.length)
+    expect(requestWithMouth?.mouthScaleSamples).toEqual(plan.samples.map((sample) => sample.faceMode === 'talk'
+      ? editorV6MouthLoopScaleAtFrame(plan.endFrame + sample.offset, 0, 30)
+      : EDITOR_V6_MOUTH_LOOP_SAMPLE_SCALES[0]))
+    const readyTransition = prepared.project.timeline.tracks.flatMap((track) => track.blocks).find((block) => block.id === plan.blockId)!.incomingMotion!
+    expect(readyTransition.faceAssetId).toBeDefined()
+    expect(prepared.project.assets.some((asset) => asset.id === readyTransition.faceAssetId)).toBe(true)
+    expect(readyTransition.frames.some((frame) => Boolean(frame.facePatch))).toBe(true)
+  })
   it('cancels and waits for sibling bakes after a transition fails', async () => {
     const { project, character } = fixture()
     let calls = 0, siblingCancelled = false
@@ -154,6 +189,11 @@ describe('transition preparation reuse', () => {
       const cache = createMotionDiskCache(folder)
       await cache.write(request, result)
       expect(await cache.read(request)).toEqual(result)
+      const keyedRequest = { ...request, mouthScaleSamples: Array(request.plan.samples.length).fill(1) }
+      await cache.write(keyedRequest, result)
+      const tighterBudget = { ...keyedRequest, maxAtlasPixels: 6 }
+      expect(motionCacheKey({ ...keyedRequest, maxAtlasPixels: 100_000 })).toBe(motionCacheKey({ ...keyedRequest, maxAtlasPixels: 200_000 }))
+      await expect(cache.read(tighterBudget)).resolves.toBeUndefined()
       await expect(cache.write(request, { ...result, motion: { ...result.motion, key: 'another-transition' } })).rejects.toThrow('não corresponde à requisição')
       const changedCharacter = { ...request, character: { ...request.character, updatedAt: '2026-10-27T12:00:00.000Z' } }
       expect(await createMotionDiskCache(folder).read(changedCharacter)).toBeUndefined()
@@ -162,6 +202,25 @@ describe('transition preparation reuse', () => {
       await writeFile(join(folder, motionCacheKey(request) + '.json'), '{broken')
       expect(await createMotionDiskCache(folder).read(request)).toBeUndefined()
       expect((await readdir(folder)).some((name) => name.endsWith('.tmp'))).toBe(false)
+    } finally { await rm(folder, { recursive: true, force: true }) }
+  })
+  it('retains static localized mouth atlases without requiring a second face asset', async () => {
+    const folder = await mkdtemp(join(tmpdir(), 'v6-motion-static-mouth-cache-'))
+    try {
+      const { request: original } = fixture()
+      const state = { ...original.plan.from, activeFaceMode: 'talk' as const }
+      const samples = original.plan.samples.map((sample) => ({ ...sample, faceMode: 'talk' as const }))
+      const scales = [1, 1.05, 1.1, 1.05, 1]
+      const request: EditorV6MotionBakeRequest = {
+        ...original,
+        mouthScaleSamples: samples.map((_, index) => scales[index % scales.length]),
+        plan: { ...original.plan, from: state, to: { ...state }, samples }
+      }
+      const result = resultFor(request)
+      result.motion.frames = result.motion.frames.map((frame) => ({ ...frame, facePatch: { sprite: frame.sprite, x: 0.4, y: 0.4, width: 0.2, height: 0.2 } }))
+      const cache = createMotionDiskCache(folder)
+      await cache.write(request, result)
+      expect(await cache.read(request)).toEqual(result)
     } finally { await rm(folder, { recursive: true, force: true }) }
   })
   it('rejects modified payloads and bounds retained disk bytes', async () => {

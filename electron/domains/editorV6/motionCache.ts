@@ -3,10 +3,10 @@ import { createReadStream } from 'node:fs'
 import { mkdir, readdir, rename, stat, unlink, utimes, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { editorV6MotionResultSchema } from '../../../src/shared/editorV6Schema'
-import type { EditorV6MotionBakeRequest, EditorV6MotionBakeResult } from '../../../src/shared/editorV6Motion'
+import { editorV6UsesStaticMouthAtlas, type EditorV6MotionBakeRequest, type EditorV6MotionBakeResult } from '../../../src/shared/editorV6Motion'
 
 /** Bump when baking changes without an authored timeline change. */
-export const MOTION_CACHE_VERSION = 3
+export const MOTION_CACHE_VERSION = 4
 const MAX_MOTION_CACHE_ENTRIES = 512
 const MAX_MOTION_CACHE_BYTES = 768 * 1024 * 1024
 const MAX_MOTION_CACHE_ENTRY_BYTES = 32 * 1024 * 1024
@@ -25,14 +25,18 @@ async function readBoundedFile(path: string, maximumBytes: number): Promise<Buff
 }
 
 export function motionCacheKey(request: EditorV6MotionBakeRequest): string {
-  const key = request.maxAtlasPixels === undefined
-    ? [MOTION_CACHE_VERSION, request.plan.key, request.mouthScaleSamples ?? null, request.character]
-    : [MOTION_CACHE_VERSION, request.plan.key, request.mouthScaleSamples ?? null, request.maxAtlasPixels, request.character]
+  const key = [MOTION_CACHE_VERSION, request.plan.key, request.mouthScaleSamples ?? null, request.character]
   return createHash('sha256').update(JSON.stringify(key)).digest('hex')
 }
 function validateCachedMotion(request: EditorV6MotionBakeRequest, result: EditorV6MotionBakeResult): EditorV6MotionBakeResult {
   const parsed = editorV6MotionResultSchema.parse(result)
   if (parsed.motion.key !== request.plan.key || parsed.motion.frames.map((frame) => frame.offset).join() !== request.plan.samples.map((sample) => sample.offset).join()) throw Error('A transição em cache não corresponde à requisição.')
+  if (request.maxAtlasPixels !== undefined && parsed.metrics.atlasPixels > request.maxAtlasPixels) throw Error('O atlas em cache excede o orçamento desta requisição.')
+  const needsFaceAsset = Boolean(request.mouthScaleSamples?.some((scale) => scale > 1.000001) && !editorV6UsesStaticMouthAtlas(request))
+  if (request.mouthScaleSamples && request.mouthScaleSamples.some((scale, index) => scale > 1.000001 && !parsed.motion.frames[index]?.facePatch)
+    || needsFaceAsset && (!parsed.faceAsset || !parsed.motion.faceAssetId)
+    || request.mouthScaleSamples && parsed.faceAsset && parsed.motion.faceAssetId !== parsed.faceAsset.id
+    || request.mouthScaleSamples && parsed.motion.faceAssetId && !parsed.faceAsset) throw Error('A camada facial em cache não corresponde à animação da boca solicitada.')
   return parsed
 }
 export function createMotionDiskCache(folder: string, maximumBytes = MAX_MOTION_CACHE_BYTES) {

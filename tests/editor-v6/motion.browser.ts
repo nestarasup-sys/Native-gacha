@@ -7,6 +7,7 @@ import type { CustomizerCharacter } from '../../src/shared/customizer'
 import type { FaceCatalogItem, FabricatorProject } from '../../src/shared/fabricator'
 import { createEditorV6Timeline, type EditorV6Document, type EditorV6Element } from '../../src/shared/editorV6'
 import { editorV6MotionPlan } from '../../src/shared/editorV6Motion'
+import { prepareSavedCharacterRenderer } from '../../src/renderer/src/characters/editorV6CharacterRenderer'
 import { bakeEditorV6Motion } from '../../src/renderer/src/features/editorV6/motion/bakeMotion'
 const assert = (ok: unknown, message: string) => { if (!ok) throw Error(message) }
 function png(color: string) { const c = document.createElement('canvas'); c.width = c.height = 10; const x = c.getContext('2d')!; x.fillStyle = color; x.fillRect(0,0,10,10); return c.toDataURL() }
@@ -69,7 +70,34 @@ async function image(url: string) { const i = new Image(); i.src = url; await i.
   const mouthOptimized = await bakeEditorV6Motion({ id: crypto.randomUUID(), plan: mouthPlan, character: facialCharacter, mouthScaleSamples: [1, 1.05, 1.1025], maxAtlasPixels: 8_000_000 }, facialProvider)
   const mouthReferencePlan = { ...mouthPlan, key: 'synthetic-mouth-reference', to: { ...mouthState, text: 'Alice reference' } }
   const mouthReference = await bakeEditorV6Motion({ id: crypto.randomUUID(), plan: mouthReferencePlan, character: facialCharacter, mouthScaleSamples: [1, 1.05, 1.1025], maxAtlasPixels: 8_000_000 }, facialProvider)
-  assert(mouthOptimized.metrics.samples === 3 && mouthOptimized.asset.dataUrl === mouthReference.asset.dataUrl, 'Reusing an identical mouth-loop sample changed the rendered atlas')
+  const localizedAtlas = mouthOptimized.motion.frames[0].facePatch!.sprite
+  assert(mouthOptimized.metrics.samples === 3 && mouthOptimized.motion.frames.every(frame => Boolean(frame.facePatch))
+    && localizedAtlas.atlasWidth * localizedAtlas.atlasHeight === mouthOptimized.metrics.atlasPixels
+    && mouthOptimized.metrics.atlasPixels < mouthReference.metrics.atlasPixels,
+    'The static mouth loop did not keep its complete animation in a localized facial atlas')
+  const hiCanvas = document.createElement('canvas'); hiCanvas.width = 640; hiCanvas.height = 960
+  const hiContext = hiCanvas.getContext('2d')!; hiContext.fillStyle = '#e7bf48'; hiContext.fillRect(0, 0, 640, 960)
+  hiContext.strokeStyle = '#573c24'; hiContext.lineWidth = 2
+  for (let x = 0; x <= 640; x += 8) { hiContext.beginPath(); hiContext.moveTo(x, 0); hiContext.lineTo(x, 960); hiContext.stroke() }
+  for (let y = 0; y <= 960; y += 8) { hiContext.beginPath(); hiContext.moveTo(0, y); hiContext.lineTo(640, y); hiContext.stroke() }
+  const hiSource: FabricatorProject = { ...source, width: 640, height: 960, parts: [{ id: 'head', name: 'Head', x: 0, y: 0, width: 640, height: 960, rotation: 0, dataUrl: hiCanvas.toDataURL() }] }
+  const hiMouth: FaceCatalogItem = { ...mouth, sheet: { ...mouth.sheet, width: 80, height: 60, dataUrl: png('#00ff00') }, pieces: [{ ...mouth.pieces[0], crop: { x: 0, y: 0, width: 80, height: 60 }, width: 80, height: 60, dataUrl: png('#00ff00') }], transforms: { mouth: { x: 320, y: 480, scaleX: .8, scaleY: .8, rotation: 0 } } }
+  const hiOpenMouth: FaceCatalogItem = { ...hiMouth, id: 'mouth-open-hi', category: 'mouth-open', sheet: { ...hiMouth.sheet, kind: 'mouth-open' }, pieces: hiMouth.pieces.map(piece => ({ ...piece, sheet: 'mouth-open' })) }
+  const hiProvider = { ...facialProvider, loadFabricatorSlot: async () => hiSource, loadFabricatorPose: async () => hiSource, loadFaceCatalogItem: async (_modelSlot: number, id: string) => id === hiOpenMouth.id ? hiOpenMouth : hiMouth } as CharacterRenderAssetProvider
+  const hiAppearance = { ...appearance, mouthClosedCatalogId: hiMouth.id, mouthOpenCatalogId: hiOpenMouth.id }
+  const hiCharacter = { ...character, customization: { ...character.customization, faceAppearance: hiAppearance } }
+  const hiActor: EditorV6Element = { ...actor, characterId: hiCharacter.id, faceAppearance: hiAppearance, activeFaceMode: 'talk', poseSlot: 1 }
+  const hiPlan = { ...mouthPlan, elementId: hiActor.id, characterId: hiCharacter.id, key: 'native-resolution-mouth-patch', from: hiActor, to: { ...hiActor }, samples: mouthSamples }
+  const hiMouthBake = await bakeEditorV6Motion({ id: crypto.randomUUID(), plan: hiPlan, character: hiCharacter, mouthScaleSamples: [1, 1.05, 1.1025], maxAtlasPixels: 8_000_000 }, hiProvider)
+  const hiBodyRenderer = await prepareSavedCharacterRenderer(hiCharacter, { source: hiSource, artwork: hiSource, assetProvider: hiProvider })
+  const hiBody = await hiBodyRenderer.renderToCanvas(hiAppearance, {}, undefined, 'idle')
+  const hiBodyDataUrl = hiBody.canvas.toDataURL('image/png')
+  hiBody.canvas.width = hiBody.canvas.height = 1
+  hiBodyRenderer.dispose()
+  const hiPatch = hiMouthBake.motion.frames[2].facePatch
+  assert(Boolean(hiPatch) && hiPatch!.sprite.width < 640 / 4 && hiPatch!.sprite.height < 960 / 4, `A boca não ficou localizada: ${hiPatch?.sprite.width}×${hiPatch?.sprite.height} em personagem 640×960.`)
+  assert(hiMouthBake.motion.frames.every(frame => frame.facePatch?.sprite.width === hiPatch!.sprite.width && frame.facePatch?.sprite.height === hiPatch!.sprite.height), 'As amostras de boca perderam a mesma geometria local.')
+  assert(hiMouthBake.metrics.atlasPixels < 640 * 960, `O atlas facial reteve resolução de corpo inteiro (${hiMouthBake.metrics.atlasPixels} pixels).`)
   const baseTimeline = createEditorV6Timeline([actor])
   const timelineBackground = { id: crypto.randomUUID(), label: 'Fundo: teste.png', startFrame: 0, durationFrames: 300, background: { backgroundColor: '#ffffff', backgroundAssetId: null, backgroundX: 0, backgroundY: 0, backgroundWidth: 100, backgroundHeight: 100, backgroundRotation: 0 } }
   const videoClip = { id: crypto.randomUUID(), mediaId: 'video-test', label: 'Vídeo de teste', startFrame: 0, durationFrames: 150 }
@@ -98,5 +126,18 @@ async function image(url: string) { const i = new Image(); i.src = url; await i.
   assert(destinationBlock.classList.contains('selected'),'Destination block selection failed')
   assert(!editorV6MotionPlan(track,previous,{...next,motionEnabled:false}),'Destination block motion opt-out was ignored')
   uiRoot.unmount();mount.remove()
-  return { passed: true, metrics: result.metrics, timelineControls: true, expressionRigs: facial.metrics.preparedRigs, blueXs, greenXs, reads }
+  return {
+    passed: true, metrics: result.metrics, timelineControls: true, expressionRigs: facial.metrics.preparedRigs, blueXs, greenXs,
+    highResolutionMouth: { source: '640x960', atlasPixels: hiMouthBake.metrics.atlasPixels, patchPixels: hiPatch!.sprite.width * hiPatch!.sprite.height, patch: { width: hiPatch!.sprite.width, height: hiPatch!.sprite.height, x: hiPatch!.x, y: hiPatch!.y, widthRatio: hiPatch!.width, heightRatio: hiPatch!.height } },
+    mouthExportFixture: {
+      sourceDataUrl: hiBodyDataUrl,
+      sourceWidth: hiBody.width,
+      sourceHeight: hiBody.height,
+      asset: hiMouthBake.asset,
+      metrics: hiMouthBake.metrics,
+      bakeMilliseconds: hiMouthBake.metrics.milliseconds,
+      frames: hiMouthBake.motion.frames.map(frame => ({ facePatch: frame.facePatch }))
+    },
+    reads
+  }
 }

@@ -15,6 +15,12 @@ export type EditorV6ExportPart = { index: number; startFrame: number; endFrame: 
 export type EditorV6ExportMouthLoopState = { elementId: string; characterId: string; blockIds: string[]; assetId: string; frames: EditorV6MotionFrame[] }
 export type EditorV6ExportMouthLoops = { startFrame: number; cycleFrames: number; states: EditorV6ExportMouthLoopState[] }
 export const EDITOR_V6_MOUTH_LOOP_SAMPLE_SCALES = [1, 1.05, 1.05 * 1.05] as const
+export function editorV6MouthLoopScaleAtFrame(frame: number, startFrame: number, cycleFrames: number): number {
+  const phase = ((frame - startFrame) % cycleFrames + cycleFrames) % cycleFrames / cycleFrames
+  const travel = phase <= .5 ? phase * 2 : (1 - phase) * 2
+  const index = Math.round(travel * (EDITOR_V6_MOUTH_LOOP_SAMPLE_SCALES.length - 1))
+  return EDITOR_V6_MOUTH_LOOP_SAMPLE_SCALES[index]
+}
 export function planEditorV6Export(options: EditorV6ExportOptions, durationFrames: number): EditorV6ExportPart[] {
   if (!options || typeof options.turbo !== 'boolean') throw Error('Configuração de exportação inválida.')
   if (!Number.isSafeInteger(durationFrames) || durationFrames < 1) throw Error('A duração do documento é inválida.')
@@ -22,7 +28,7 @@ export function planEditorV6Export(options: EditorV6ExportOptions, durationFrame
   if (!Number.isInteger(options.width) || !Number.isInteger(options.height) || options.width < 320 || options.height < 180 || options.width > 1920 || options.height > 1080 || options.width % 2 || options.height % 2 || options.width * 9 !== options.height * 16) throw Error('A resolução precisa ser 16:9, com dimensões pares, entre 320×180 e 1920×1080.')
   if (options.encoder !== 'auto' && options.encoder !== 'cpu') throw Error('Codificador inválido.')
   if (options.mouthLoop !== undefined && typeof options.mouthLoop !== 'boolean') throw Error('Configuração de animação da boca inválida.')
-  if (options.mouthLoop && (!Number.isInteger(options.mouthLoopCycleFrames ?? 30) || (options.mouthLoopCycleFrames ?? 30) < 30 || (options.mouthLoopCycleFrames ?? 30) > 180)) throw Error('O ciclo da boca deve durar de 1 a 6 segundos.')
+  if (!Number.isInteger(options.mouthLoopCycleFrames ?? 30) || (options.mouthLoopCycleFrames ?? 30) < 30 || (options.mouthLoopCycleFrames ?? 30) > 180) throw Error('O ciclo da boca deve durar de 1 a 6 segundos.')
   const count = options.endFrame - options.startFrame
   const middle = options.startFrame + Math.floor(count / 2)
   return options.turbo && count >= 2 ? [{ index: 0, startFrame: options.startFrame, endFrame: middle }, { index: 1, startFrame: middle, endFrame: options.endFrame }] : [{ index: 0, startFrame: options.startFrame, endFrame: options.endFrame }]
@@ -50,7 +56,7 @@ export type EditorV6FrameTimings = Partial<Record<'sceneResolutionMs' | 'assetPr
 export type EditorV6RenderFrameResult = { reused: boolean; layerReused?: boolean; timings?: EditorV6FrameTimings }
 type EditorV6VisualKeyInput = { frame?: number; background: unknown; elements: EditorV6Document['elements']; mediaVideo?: { mediaId: string; startFrame: number; sourceInFrame: number; layout: { x: number; y: number; width: number; height: number; rotation: number } } }
 function editorV6ElementVisualKeys(elements: EditorV6Document['elements']) {
-  return elements.map((element) => [element.id, element.kind, element.assetId, element.text, element.x, element.y, element.width, element.height, element.rotation, element.flipX, element.characterScale, element.characterWidthScale, element.characterHeightScale, element.zIndex, element.motionSprite])
+  return elements.map((element) => [element.id, element.kind, element.assetId, element.text, element.x, element.y, element.width, element.height, element.rotation, element.flipX, element.characterScale, element.characterWidthScale, element.characterHeightScale, element.zIndex, element.motionSprite, element.mouthPatch])
 }
 export function editorV6LayerVisualKeys(scene: Pick<EditorV6VisualKeyInput, 'background' | 'elements'>) {
   return { background: JSON.stringify(scene.background), foreground: JSON.stringify(editorV6ElementVisualKeys(scene.elements)) }

@@ -82,6 +82,9 @@ function summarizeTimings(accumulators: Record<TimingPhase, TimingAccumulator>):
 }
 const encodingArgs = (encoder: string, threads: number) => ['-c:v', encoder, ...(encoder === 'libopenh264' ? ['-b:v', '12M', '-rc_mode', 'quality', '-allow_skip_frames', '0', '-threads', String(threads)] : ['-b:v', '12M']), '-pix_fmt', 'yuv420p', '-profile:v', 'high', '-level:v', '4.1', '-g', '60', '-bf', '0', '-video_track_timescale', '30000']
 const MOUTH_LOOP_BATCH_FRAMES = 300
+function hasLinkedSpeech(project: EditorV6Document, startFrame: number, endFrame: number) {
+  return project.timeline.tracks.some((track) => track.kind === 'speech' && !track.hidden && !track.muted && track.blocks.some((block) => Boolean(block.characterId ?? block.state?.characterId) && block.startFrame < endFrame && block.startFrame + block.durationFrames > startFrame))
+}
 
 function timelineMediaAudio(project: EditorV6Document): EditorV6ExportAudio[] {
   const media = new Map((project.media ?? []).filter((asset) => asset.hasAudio).map((asset) => [asset.id, asset]))
@@ -91,9 +94,11 @@ function timelineMediaAudio(project: EditorV6Document): EditorV6ExportAudio[] {
     return [{ id: block.id, name: asset.name, fileName: asset.fileName, ...(asset.libraryVideoId ? { libraryVideoId: asset.libraryVideoId } : {}), sourceFrames: asset.sourceFrames, startFrame: block.startFrame, sourceInFrame: block.mediaInFrame ?? 0, durationFrames: block.durationFrames, gain: block.gain ?? 1, muted: false }]
   }))
 }
-export async function runEditorV6Export(project: EditorV6Document, options: EditorV6ExportOptions, deps: Dependencies): Promise<EditorV6ExportReport> {
+export async function runEditorV6Export(project: EditorV6Document, requestedOptions: EditorV6ExportOptions, deps: Dependencies): Promise<EditorV6ExportReport> {
+  const options: EditorV6ExportOptions = { ...requestedOptions, mouthLoop: true }
   const requestedParts = planEditorV6Export(options, project.timeline.durationFrames)
-  const planned = options.mouthLoop ? splitEditorV6ExportParts(requestedParts, MOUTH_LOOP_BATCH_FRAMES) : requestedParts
+  const speechInRange = hasLinkedSpeech(project, options.startFrame, options.endFrame)
+  const planned = speechInRange ? splitEditorV6ExportParts(requestedParts, MOUTH_LOOP_BATCH_FRAMES) : requestedParts
   if (process.platform !== 'win32') throw Error('Este exportador BGRA está preparado para Windows.')
   const started = performance.now(), totalFrames = options.endFrame - options.startFrame
   const layeredVideo = planEditorV6VideoOverlays(project, options.startFrame, options.endFrame).length > 0
@@ -143,7 +148,6 @@ export async function runEditorV6Export(project: EditorV6Document, options: Edit
     const mouthStats = { states: 0, characterIds: new Set<string>(), skipped: 0, skippedStale: 0, atlasBytes: 0, atlasPixels: 0, preparationMilliseconds: 0, details: new Set<string>() }
     report.mouthAnimation = undefined
     const publishMouthStats = () => {
-      if (!options.mouthLoop) return
       report.mouthAnimation = { stateAtlases: mouthStats.states, characters: mouthStats.characterIds.size, skippedStates: mouthStats.skipped, staleStates: mouthStats.skippedStale, cycleFrames: options.mouthLoopCycleFrames ?? 30, atlasBytes: mouthStats.atlasBytes, atlasPixels: mouthStats.atlasPixels, preparationMilliseconds: mouthStats.preparationMilliseconds, details: [...mouthStats.details].slice(0, 3) }
     }
     deps.progress({ state: 'rendering', frames: 0, motionProgress: undefined, message: parallelism === 2 ? 'Renderizando até dois trechos em paralelo…' : 'Renderizando um trecho por vez…', fallback: report.fallback })
@@ -152,7 +156,7 @@ export async function runEditorV6Export(project: EditorV6Document, options: Edit
       let renderProject = project
       let mouthLoops: EditorV6ExportMouthLoops | undefined
       try {
-        if (options.mouthLoop) {
+        if (speechInRange) {
           const mouth = await prepareExportMouthLoops(project, part.startFrame, part.endFrame, options.mouthLoopCycleFrames ?? 30, {
             signal: controller.signal, characters, bake: deps.bakeMotion,
             progress: (completed, total, name) => deps.progress({ state: 'preparing', frames: done, motionProgress: undefined, message: `Preparando boca · trecho ${part.index + 1}/${parts.length} · estado ${Math.min(completed + 1, total)}/${total} · ${name}…` })
@@ -265,7 +269,7 @@ export async function runEditorV6Export(project: EditorV6Document, options: Edit
     const prepared = await (async () => {
       try {
         return await prepareExportMotions(project, options.startFrame, options.endFrame, {
-          signal: deps.signal, characters, concurrency: deps.motionPreparationConcurrency ?? 2, bake: (request, signal) => {
+          signal: deps.signal, characters, concurrency: deps.motionPreparationConcurrency ?? 2, mouthLoop: { startFrame: options.startFrame, cycleFrames: options.mouthLoopCycleFrames ?? 30 }, bake: (request, signal) => {
             if (cacheInputSamples.length < 3 && !cacheInputSamples.some((sample) => sample.characterId === request.character.id)) {
               cacheInputSamples.push({ cacheKey: motionCacheKey(request),
                 planKeyHash: createHash('sha256').update(request.plan.key).digest('hex'), characterId: request.character.id,
@@ -356,7 +360,7 @@ export async function runEditorV6Export(project: EditorV6Document, options: Edit
       deps.progress({ message: 'O Turbo falhou. Reiniciando com um renderizador e CPU…', fallback: true })
       if (encoder !== 'libopenh264' && !await testEncoder('libopenh264')) throw Error('O codificador seguro também não está disponível.')
       const safePart = [{ index: 0, startFrame: options.startFrame, endFrame: options.endFrame }]
-      const safeParts = options.mouthLoop ? splitEditorV6ExportParts(safePart, MOUTH_LOOP_BATCH_FRAMES) : safePart
+      const safeParts = speechInRange ? splitEditorV6ExportParts(safePart, MOUTH_LOOP_BATCH_FRAMES) : safePart
       report.validation = await finishMeasured(await renderAttempt(safeParts, 'libopenh264', 1))
     }
     deps.signal.throwIfAborted()

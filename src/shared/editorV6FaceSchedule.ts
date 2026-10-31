@@ -52,6 +52,16 @@ export function isEditorV6CharacterSpeakingAtFrame(timeline: EditorV6Timeline, c
   return Boolean(intervals[left - 1] && frame < intervals[left - 1].end)
 }
 
+/** Binary-search the merged per-character speech intervals for an overlapping export range. */
+export function hasEditorV6CharacterSpeechOverlap(timeline: EditorV6Timeline, characterId: string, startFrame: number, endFrame: number): boolean {
+  if (endFrame <= startFrame) return false
+  const intervals = speechIntervals(timeline).get(characterId)
+  if (!intervals?.length) return false
+  let left = 0, right = intervals.length
+  while (left < right) { const middle = (left + right) >>> 1; if (intervals[middle].end <= startFrame) left = middle + 1; else right = middle }
+  return Boolean(intervals[left] && intervals[left].start < endFrame)
+}
+
 /** Stable per-character schedule: a brief blink every 2.7–3.7 seconds. */
 const blinkScheduleCache = new Map<string, { period: number; phase: number; length: number; secondBlink: boolean }>()
 export function isEditorV6BlinkFrame(projectId: string, characterId: string, frame: number): boolean {

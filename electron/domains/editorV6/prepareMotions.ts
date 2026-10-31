@@ -2,14 +2,19 @@ import { randomUUID } from 'node:crypto'
 import type { EditorV6Document } from '../../../src/shared/editorV6'
 import type { CustomizerCharacter } from '../../../src/shared/customizer'
 import { editorV6MotionPlans, missingEditorV6Motions, type EditorV6MotionBakeRequest, type EditorV6MotionBakeResult } from '../../../src/shared/editorV6Motion'
+import { editorV6MouthLoopScaleAtFrame, EDITOR_V6_MOUTH_LOOP_SAMPLE_SCALES } from '../../../src/shared/editorV6Export'
 
 export async function prepareExportMotions(project: EditorV6Document, startFrame: number, endFrame: number, deps: {
   signal: AbortSignal; characters: CustomizerCharacter[]
   bake: (request: EditorV6MotionBakeRequest, signal: AbortSignal) => Promise<EditorV6MotionBakeResult>
   progress: (completed: number, total: number, name: string) => void
+  mouthLoop?: { startFrame: number; cycleFrames: number }
   concurrency?: 1 | 2
 }) {
-  const began = performance.now(), missing = missingEditorV6Motions(project, startFrame, endFrame)
+  const began = performance.now()
+  const missingIds = new Set(missingEditorV6Motions(project, startFrame, endFrame).map((plan) => plan.blockId))
+  const missing = editorV6MotionPlans(project).filter((plan) => plan.startFrame < endFrame && plan.endFrame > startFrame
+    && (missingIds.has(plan.blockId) || Boolean(deps.mouthLoop && plan.samples.some((sample) => sample.faceMode === 'talk'))))
   const groups = new Map<string, typeof missing>()
   for (const plan of missing) {
     const group = groups.get(plan.key)
@@ -22,12 +27,13 @@ export async function prepareExportMotions(project: EditorV6Document, startFrame
   for (const track of project.timeline.tracks) for (const block of track.blocks) {
     const motion = block.incomingMotion
     if (!motion || !assets.has(motion.assetId)) continue
+    if (motion.faceAssetId && !assets.has(motion.faceAssetId)) continue
     if (!knownMotions.has(motion.key)) knownMotions.set(motion.key, motion)
   }
   const plansByBlock = new Map(editorV6MotionPlans(project).map((plan) => [plan.blockId, plan]))
-  const preparedByBlock = new Map<string, Pick<EditorV6MotionBakeResult, 'asset' | 'motion'>>()
+  const preparedByBlock = new Map<string, Pick<EditorV6MotionBakeResult, 'asset' | 'faceAsset' | 'motion'>>()
   const groupedPlans = [...groups.values()]
-  const preparedGroups: Array<{ result: Pick<EditorV6MotionBakeResult, 'asset' | 'motion'>; baked: boolean; milliseconds: number } | undefined> = Array(groupedPlans.length)
+  const preparedGroups: Array<{ result: Pick<EditorV6MotionBakeResult, 'asset' | 'faceAsset' | 'motion'>; baked: boolean; milliseconds: number } | undefined> = Array(groupedPlans.length)
   const concurrency = Math.min(deps.concurrency ?? 1, Math.max(1, groupedPlans.length)) as 1 | 2
   let nextGroup = 0, completed = 0, baked = 0, activeBakes = 0, maxConcurrentBakes = 0, failure: unknown
   const controller = new AbortController()
@@ -45,16 +51,21 @@ export async function prepareExportMotions(project: EditorV6Document, startFrame
         throw failure
       }
       deps.progress(completed, missing.length, plan.from.text)
-      const known = knownMotions.get(plan.key)
+      const needsMouthBake = Boolean(deps.mouthLoop && plan.samples.some((sample) => sample.faceMode === 'talk'))
+      const known = needsMouthBake ? undefined : knownMotions.get(plan.key)
       const asset = known && assets.get(known.assetId)
+      const mouthScaleSamples = needsMouthBake ? plan.samples.map((sample) => sample.faceMode === 'talk'
+        ? editorV6MouthLoopScaleAtFrame(plan.endFrame + sample.offset, deps.mouthLoop!.startFrame, deps.mouthLoop!.cycleFrames)
+        : EDITOR_V6_MOUTH_LOOP_SAMPLE_SCALES[0]) : undefined
+      const facialMotion = mouthScaleSamples?.some((scale) => scale > 1) ? mouthScaleSamples : undefined
       const started = performance.now()
       try {
-        let result: Pick<EditorV6MotionBakeResult, 'asset' | 'motion'>
-        if (known && asset) result = { asset, motion: known }
+        let result: Pick<EditorV6MotionBakeResult, 'asset' | 'faceAsset' | 'motion'>
+        if (known && asset) result = { asset, ...(known.faceAssetId ? { faceAsset: assets.get(known.faceAssetId) } : {}), motion: known }
         else {
           activeBakes++
           maxConcurrentBakes = Math.max(maxConcurrentBakes, activeBakes)
-          try { result = await deps.bake({ id: randomUUID(), plan, character }, controller.signal) }
+          try { result = await deps.bake({ id: randomUUID(), plan, character, ...(facialMotion ? { mouthScaleSamples: facialMotion } : {}) }, controller.signal) }
           finally { activeBakes-- }
         }
         controller.signal.throwIfAborted()
@@ -82,6 +93,7 @@ export async function prepareExportMotions(project: EditorV6Document, startFrame
     if (prepared.baked) baked++
     timings.push(prepared.milliseconds)
     assets.set(prepared.result.asset.id, prepared.result.asset)
+    if (prepared.result.faceAsset) assets.set(prepared.result.faceAsset.id, prepared.result.faceAsset)
     for (const repeated of groupedPlans[index]) preparedByBlock.set(repeated.blockId, prepared.result)
   }
   if (preparedByBlock.size) {

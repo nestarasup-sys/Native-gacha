@@ -103,6 +103,7 @@ export function resolveEditorV6ElementsAtFrame(document: EditorV6Document, frame
     if (!next || frame <= next.plan.startFrame || frame >= next.plan.endFrame || next.block.incomingMotion?.key !== next.plan.key) return element
     const sample = next.block.incomingMotion.frames.find((sample) => sample.offset === frame - next.plan.endFrame)
     if (!sample) return element
-    return { ...element, assetId: next.block.incomingMotion.assetId, motionSprite: sample.sprite, x: sample.x, y: sample.y, width: sample.width, height: sample.height, rotation: sample.rotation, flipX: sample.flipX, characterScale: 100, characterWidthScale: 100, characterHeightScale: 100 }
+    const faceAssetId = next.block.incomingMotion.faceAssetId
+    return { ...element, assetId: next.block.incomingMotion.assetId, motionSprite: sample.sprite, ...(faceAssetId && sample.facePatch ? { mouthPatch: { assetId: faceAssetId, ...sample.facePatch } } : { mouthPatch: undefined }), x: sample.x, y: sample.y, width: sample.width, height: sample.height, rotation: sample.rotation, flipX: sample.flipX, characterScale: 100, characterWidthScale: 100, characterHeightScale: 100 }
   })
 }

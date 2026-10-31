@@ -18,7 +18,13 @@ async function main() {
   const html=path.join(folder,'index.html');await fs.writeFile(html,'<!doctype html><html><body></body></html>');await w.loadFile(html)
   await w.webContents.executeJavaScript(await fs.readFile(process.argv[2],'utf8'))
   const result=await w.webContents.executeJavaScript('globalThis.runMotionCheck()')
-  await fs.writeFile(path.join(folder,'result.json'),JSON.stringify(result,null,2));console.log(JSON.stringify(result,null,2));clearTimeout(timer);w.destroy();app.exit(0)
+  const { mouthExportFixture, ...summary } = result
+  if (mouthExportFixture) {
+   const fixtureFolder=path.join(path.resolve(__dirname,'../..'),'out/editor-v6-motion-check')
+   await fs.mkdir(fixtureFolder,{recursive:true})
+   await fs.writeFile(path.join(fixtureFolder,'high-resolution-mouth-fixture.json'),JSON.stringify(mouthExportFixture))
+  }
+  await fs.writeFile(path.join(folder,'result.json'),JSON.stringify(summary,null,2));console.log(JSON.stringify(summary,null,2));clearTimeout(timer);w.destroy();app.exit(0)
  } catch(error){console.error(error);clearTimeout(timer);w.destroy();app.exit(1)}
 }
 main().catch(e=>{console.error(e);process.exit(1)})

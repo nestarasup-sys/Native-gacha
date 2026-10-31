@@ -2,7 +2,7 @@ import type { CustomizerFaceAppearance } from './customizer'
 import type { FaceExpressionEffects } from './fabricator'
 import { isSceneFaceExpressionEffects, isSceneFaceTransforms, type SceneExpressionBase, type SceneFaceMode, type SceneFaceTransform, type SceneFaceTransformCategory, type SceneFaceTransforms } from './sceneFaceValidation'
 import type { EditorV6ExportAudio, EditorV6ExportOptions, EditorV6ExportStatus } from './editorV6Export'
-import type { EditorV6MotionAtlas, EditorV6MotionBakeRequest, EditorV6MotionBakeResult, EditorV6MotionSprite } from './editorV6Motion'
+import type { EditorV6FacePatch, EditorV6MotionAtlas, EditorV6MotionBakeRequest, EditorV6MotionBakeResult, EditorV6MotionSprite } from './editorV6Motion'
 export { resolveTalkMouthCatalogId as resolveEditorV6TalkMouthId } from './faceMouthSelection'
 
 export type EditorV6Asset = {
@@ -56,6 +56,8 @@ export type EditorV6Element = {
   id: string
   /** Playback-only atlas crop; never written into an authored state. */
   motionSprite?: EditorV6MotionSprite
+  /** Playback-only local facial overlay; never written into an authored state. */
+  mouthPatch?: { assetId: string; sprite: EditorV6FacePatch['sprite']; x: number; y: number; width: number; height: number }
   visible?: boolean
   kind: 'image' | 'character' | 'narrator' | 'speech' | 'thought'
   assetId?: string

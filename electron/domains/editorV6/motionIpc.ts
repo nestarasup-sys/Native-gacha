@@ -1,7 +1,7 @@
 import { BrowserWindow, type IpcMain, type IpcMainInvokeEvent } from 'electron'
 import { z } from 'zod'
 import { editorV6IpcChannels } from '../../../src/shared/editorV6IpcChannels'
-import { editorV6MotionChannels, type EditorV6MotionBakeRequest, type EditorV6MotionBakeResult } from '../../../src/shared/editorV6Motion'
+import { editorV6MotionChannels, editorV6UsesStaticMouthAtlas, type EditorV6MotionBakeRequest, type EditorV6MotionBakeResult } from '../../../src/shared/editorV6Motion'
 import { editorV6MotionResultSchema, parseEditorV6MotionRequest } from '../../../src/shared/editorV6Schema'
 import { isCustomizerCharacter } from '../customizer/validation'
 import { waitForExport } from './exportProcess'
@@ -48,6 +48,10 @@ export function createEditorV6MotionService(deps: { ipcMain: Pick<IpcMain, 'hand
     try {
       const result = editorV6MotionResultSchema.parse(rawResult)
       if (result.motion.key !== job.request.plan.key || result.motion.frames.map((frame) => frame.offset).join(',') !== job.request.plan.samples.map((sample) => sample.offset).join(',')) throw Error('O preparador retornou uma animação de outra revisão.')
+      if (job.request.maxAtlasPixels !== undefined && result.metrics.atlasPixels > job.request.maxAtlasPixels) throw Error('O preparador excedeu o orçamento de pixels da requisição.')
+      const needsFaceAsset = Boolean(job.request.mouthScaleSamples?.some((scale) => scale > 1.000001) && !editorV6UsesStaticMouthAtlas(job.request))
+      if (job.request.mouthScaleSamples?.some((scale, index) => scale > 1.000001 && !result.motion.frames[index]?.facePatch)
+        || needsFaceAsset && (!result.faceAsset || result.motion.faceAssetId !== result.faceAsset.id)) throw Error('O preparador não retornou a camada facial obrigatória da animação da boca.')
       job.resolve(result)
     } catch (reason) { job.reject(reason instanceof Error ? reason : Error(String(reason))) }
   })
@@ -99,8 +103,11 @@ export function createEditorV6MotionService(deps: { ipcMain: Pick<IpcMain, 'hand
   }
   const remember = (key: string, result: EditorV6MotionBakeResult) => {
     cache.delete(key); cache.set(key, result)
-    const bytes = () => [...cache.values()].reduce((total, item) => total + item.asset.dataUrl.length, 0)
+    const bytes = () => [...cache.values()].reduce((total, item) => total + item.asset.dataUrl.length + (item.faceAsset?.dataUrl.length ?? 0), 0)
     while (cache.size > 8 || bytes() > 24_000_000) cache.delete(cache.keys().next().value!)
+  }
+  const assertAtlasBudget = (request: EditorV6MotionBakeRequest, result: EditorV6MotionBakeResult) => {
+    if (request.maxAtlasPixels !== undefined && result.metrics.atlasPixels > request.maxAtlasPixels) throw Error('O atlas em cache excede o orçamento desta requisição.')
   }
   const runBake = (request: EditorV6MotionBakeRequest, signal: AbortSignal) => {
     if (stopped) return Promise.reject(Error('O preparador está encerrando.'))
@@ -120,7 +127,7 @@ export function createEditorV6MotionService(deps: { ipcMain: Pick<IpcMain, 'hand
         else cacheStats.diskReadErrors++
       }
       signal.throwIfAborted()
-      if (cached) { remember(key, cached); return cached }
+      if (cached) { assertAtlasBudget(request, cached); remember(key, cached); return cached }
       cacheStats.misses++
       const result = await render(lane, request, signal)
       cacheStats.rasterized++
@@ -142,7 +149,10 @@ export function createEditorV6MotionService(deps: { ipcMain: Pick<IpcMain, 'hand
   }
   const enqueueBake = (request: EditorV6MotionBakeRequest, signal: AbortSignal): Promise<EditorV6MotionBakeResult> => {
     if (signal.aborted) return Promise.reject(signal.reason ?? Error('Preparação de animação cancelada.'))
-    const key = motionCacheKey(request)
+    // The disk/memory cache can reuse an atlas across budgets after validation,
+    // but concurrent renders must have the same cap or the first request could
+    // fail another subscriber that had a larger safe budget.
+    const key = `${motionCacheKey(request)}:pixels=${request.maxAtlasPixels ?? 'unbounded'}`
     let flight = inFlight.get(key)
     if (!flight || flight.controller.signal.aborted) {
       const controller = new AbortController()
@@ -181,7 +191,12 @@ export function createEditorV6MotionService(deps: { ipcMain: Pick<IpcMain, 'hand
       }
       signal.addEventListener('abort', onAbort, { once: true })
       if (signal.aborted) { onAbort(); return }
-      shared.promise.then((result) => { if (!released) { release(); resolve(result) } }, (error) => { if (!released) { release(); reject(error) } })
+      shared.promise.then((result) => {
+        if (!released) {
+          try { assertAtlasBudget(request, result); release(); resolve(result) }
+          catch (error) { release(); reject(error instanceof Error ? error : Error(String(error))) }
+        }
+      }, (error) => { if (!released) { release(); reject(error) } })
     })
   }
   const bakeForExport = (rawRequest: EditorV6MotionBakeRequest, signal: AbortSignal) => {

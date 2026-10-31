@@ -83,11 +83,16 @@ const SceneVideoLayer = memo(function SceneVideoLayer({ scene, playing, selected
   </>
 })
 
-type SceneLayerProps = { element: EditorV6Element; asset?: EditorV6Asset; selected: boolean; interaction?: SceneSurfaceInteraction; onImageLoad?: (event: SyntheticEvent<SVGImageElement>) => void }
+type SceneLayerProps = { element: EditorV6Element; asset?: EditorV6Asset; mouthAsset?: EditorV6Asset; selected: boolean; interaction?: SceneSurfaceInteraction; onImageLoad?: (event: SyntheticEvent<SVGImageElement>) => void }
 function sameMotionSprite(left: EditorV6Element['motionSprite'], right: EditorV6Element['motionSprite']): boolean {
   if (left === right) return true
   return Boolean(left && right && left.x === right.x && left.y === right.y && left.width === right.width && left.height === right.height
     && left.atlasWidth === right.atlasWidth && left.atlasHeight === right.atlasHeight)
+}
+function sameMouthPatch(left: EditorV6Element['mouthPatch'], right: EditorV6Element['mouthPatch']): boolean {
+  if (left === right) return true
+  return Boolean(left && right && left.assetId === right.assetId && left.x === right.x && left.y === right.y && left.width === right.width && left.height === right.height
+    && sameMotionSprite(left.sprite, right.sprite))
 }
 
 /** Timeline resolution creates new state objects each frame; skip SVG layers whose visual inputs are unchanged.
@@ -95,16 +100,16 @@ function sameMotionSprite(left: EditorV6Element['motionSprite'], right: EditorV6
  * replaces the asset object; motionSprite's six fields fully define its crop within that asset. */
 export function sceneLayerPropsEqual(previous: SceneLayerProps, next: SceneLayerProps): boolean {
   if (typeof window !== 'undefined' && (window as Window & { __editorV6DisableSceneLayerMemo?: boolean }).__editorV6DisableSceneLayerMemo) return false
-  if (previous.asset !== next.asset || previous.selected !== next.selected || previous.interaction !== next.interaction || previous.onImageLoad !== next.onImageLoad) return false
+  if (previous.asset !== next.asset || previous.mouthAsset !== next.mouthAsset || previous.selected !== next.selected || previous.interaction !== next.interaction || previous.onImageLoad !== next.onImageLoad) return false
   const left = previous.element, right = next.element
   const keys = Object.keys(left) as Array<keyof EditorV6Element>
   if (keys.length !== Object.keys(right).length) return false
-  return keys.every((key) => key === 'motionSprite'
-    ? sameMotionSprite(left.motionSprite, right.motionSprite)
-    : Object.is(left[key], right[key]))
+  return keys.every((key) => key === 'motionSprite' ? sameMotionSprite(left.motionSprite, right.motionSprite)
+    : key === 'mouthPatch' ? sameMouthPatch(left.mouthPatch, right.mouthPatch)
+      : Object.is(left[key], right[key]))
 }
 
-const SceneLayer = memo(function SceneLayer({ element, asset, selected, interaction, onImageLoad }: SceneLayerProps) {
+const SceneLayer = memo(function SceneLayer({ element, asset, mouthAsset, selected, interaction, onImageLoad }: SceneLayerProps) {
   const size = editorV6ElementSize(element), width = size.width * 19.2, height = size.height * 10.8
   const image = element.kind === 'image' || element.kind === 'character'
   const fontSize = Math.max(8, Math.min(32, height * .3, width / 2)), lineHeight = fontSize * 1.22
@@ -114,7 +119,11 @@ const SceneLayer = memo(function SceneLayer({ element, asset, selected, interact
   return <g transform={transform(element.x, element.y, element.rotation)} data-element-id={element.id} aria-label={element.text || asset?.name || 'Objeto'} role={interaction ? 'button' : undefined}
     style={{ cursor: interaction ? element.positionLocked ? 'default' : 'move' : undefined, touchAction: 'none' }}
     onPointerDown={interaction ? (event) => interaction.start(event, element.id) : undefined} onPointerMove={interaction?.move} onPointerUp={interaction?.end} onPointerCancel={interaction?.end}>
-    {image && asset ? element.motionSprite ? <g transform={element.flipX ? 'scale(-1 1)' : undefined}><svg x={-width / 2} y={-height / 2} width={width} height={height} viewBox={`${element.motionSprite.x} ${element.motionSprite.y} ${element.motionSprite.width} ${element.motionSprite.height}`} preserveAspectRatio="none" overflow="hidden"><image href={asset.dataUrl} onLoad={onImageLoad} x={0} y={0} width={element.motionSprite.atlasWidth} height={element.motionSprite.atlasHeight} /></svg></g> : <image href={asset.dataUrl} onLoad={onImageLoad} x={-width / 2} y={-height / 2} width={width} height={height} preserveAspectRatio={element.kind === 'character' ? 'none' : 'xMidYMid meet'} transform={element.flipX ? 'scale(-1 1)' : undefined} /> : !image && <>
+    {image && asset ? <g transform={element.flipX ? 'scale(-1 1)' : undefined}>
+      {element.motionSprite ? <svg x={-width / 2} y={-height / 2} width={width} height={height} viewBox={`${element.motionSprite.x} ${element.motionSprite.y} ${element.motionSprite.width} ${element.motionSprite.height}`} preserveAspectRatio="none" overflow="hidden"><image href={asset.dataUrl} onLoad={onImageLoad} x={0} y={0} width={element.motionSprite.atlasWidth} height={element.motionSprite.atlasHeight} /></svg>
+        : <image href={asset.dataUrl} onLoad={onImageLoad} x={-width / 2} y={-height / 2} width={width} height={height} preserveAspectRatio={element.kind === 'character' ? 'none' : 'xMidYMid meet'} />}
+      {element.mouthPatch && mouthAsset && <svg x={-width / 2 + element.mouthPatch.x * width} y={-height / 2 + element.mouthPatch.y * height} width={element.mouthPatch.width * width} height={element.mouthPatch.height * height} viewBox={`${element.mouthPatch.sprite.x} ${element.mouthPatch.sprite.y} ${element.mouthPatch.sprite.width} ${element.mouthPatch.sprite.height}`} preserveAspectRatio="none" overflow="hidden"><image href={mouthAsset.dataUrl} onLoad={onImageLoad} x={0} y={0} width={element.mouthPatch.sprite.atlasWidth} height={element.mouthPatch.sprite.atlasHeight} /></svg>}
+    </g> : !image && <>
       {element.kind === 'speech' ? <rect x={-width / 2} y={-height / 2} width={width} height={height} fill={fill} fillOpacity={.96} stroke="#624d5b" strokeWidth={2} /> : element.kind === 'thought' ? <><ellipse rx={width / 2} ry={height / 2} fill={fill} stroke="#624d5b" strokeWidth={2} /><circle cx={width * .32} cy={height * .52} r={8} fill={fill} stroke="#624d5b" strokeWidth={2} /><circle cx={width * .37} cy={height * .65} r={4} fill={fill} stroke="#624d5b" strokeWidth={2} /></> : <rect x={-width / 2} y={-height / 2} width={width} height={height} rx={16} fill={fill} fillOpacity={.94} stroke="#624d5b" strokeWidth={2} />}
       <defs><clipPath id={clipId}><rect x={-width / 2 + 10} y={-height / 2 + 8} width={Math.max(0, width - 20)} height={Math.max(0, height - 16)} /></clipPath></defs>
       <text fontFamily={FONT} fontSize={fontSize} fontWeight={600} textAnchor="middle" dominantBaseline="middle" fill="#352d35" clipPath={`url(#${clipId})`}>
@@ -138,6 +147,6 @@ export const SceneSurface = memo(function SceneSurface({ scene, assets, selected
       {selectedId === 'background' && <Selection width={width} height={height} />}
     </g>}
     {renderLayer === 'all' && <SceneVideoLayer scene={scene} playing={playing} selectedId={selectedId} interaction={interaction} />}
-    {renderLayer !== 'background' && scene.elements.map((element) => <SceneLayer key={element.id} element={element} asset={element.assetId ? assetsById.get(element.assetId) : undefined} selected={selectedId === element.id} interaction={interaction} onImageLoad={onImageLoad} />)}
+    {renderLayer !== 'background' && scene.elements.map((element) => <SceneLayer key={element.id} element={element} asset={element.assetId ? assetsById.get(element.assetId) : undefined} mouthAsset={element.mouthPatch ? assetsById.get(element.mouthPatch.assetId) : undefined} selected={selectedId === element.id} interaction={interaction} onImageLoad={onImageLoad} />)}
   </svg>
 })

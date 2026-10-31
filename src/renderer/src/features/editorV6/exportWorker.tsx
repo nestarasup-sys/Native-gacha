@@ -5,7 +5,7 @@ import { SceneSurface } from './SceneSurface'
 import { editorV6ClipAtFrame } from '../../../../shared/editorV6TimelineCore'
 import { resolveEditorV6SceneAtFrame } from '../../../../shared/editorV6TimelineScene'
 import { editorV6FaceModeAtFrame } from '../../../../shared/editorV6FaceSchedule'
-import { EDITOR_V6_MOUTH_LOOP_SAMPLE_SCALES, editorV6LayerVisualKeys, editorV6VisualKey, type EditorV6ExportMouthLoops, type EditorV6FrameTimings, type EditorV6RenderFrameResult, type EditorV6WorkerBridge } from '../../../../shared/editorV6Export'
+import { EDITOR_V6_MOUTH_LOOP_SAMPLE_SCALES, editorV6MouthLoopScaleAtFrame, editorV6LayerVisualKeys, editorV6VisualKey, type EditorV6ExportMouthLoops, type EditorV6FrameTimings, type EditorV6RenderFrameResult, type EditorV6WorkerBridge } from '../../../../shared/editorV6Export'
 
 const worker = (window as unknown as { editorV6ExportWorker: EditorV6WorkerBridge }).editorV6ExportWorker
 async function initialize() {
@@ -46,19 +46,22 @@ async function initialize() {
   let previous = '', previousBackground = '', previousForeground = ''
   const applyMouthLoop = (scene: ReturnType<typeof resolveEditorV6SceneAtFrame>, frame: number) => {
     if (!mouthLoops) return scene
-    const phase = ((frame - mouthLoops.startFrame) % mouthLoops.cycleFrames + mouthLoops.cycleFrames) % mouthLoops.cycleFrames / mouthLoops.cycleFrames
-    const travel = phase <= .5 ? phase * 2 : (1 - phase) * 2
-    const sampleIndex = Math.round(travel * (EDITOR_V6_MOUTH_LOOP_SAMPLE_SCALES.length - 1))
+    const scale = editorV6MouthLoopScaleAtFrame(frame, mouthLoops.startFrame, mouthLoops.cycleFrames)
+    const sampleIndex = Math.round((scale - 1) / (EDITOR_V6_MOUTH_LOOP_SAMPLE_SCALES[2] - 1) * 2)
     return { ...scene, elements: scene.elements.map((element) => {
-      if (element.kind !== 'character' || !element.characterId || element.motionSprite) return element
+      if (element.kind !== 'character' || !element.characterId) return element
       const faceMode = editorV6FaceModeAtFrame(project.id, project.timeline, element.characterId, frame)
-      if (faceMode !== 'talk' || element.activeFaceMode === 'blink') return element
+      if (faceMode !== 'talk' && faceMode !== 'talk-blink') return element
       const block = editorV6ClipAtFrame(project.timeline, element.id, frame)?.block
       const state = mouthLoopByBlock.get(`${element.id}:${block?.id ?? element.id}`)
       if (!state || state.characterId !== element.characterId) return element
+      if (element.motionSprite) {
+        if (!element.mouthPatch && scale > 1.000001) throw Error(`A transição de ${element.text || element.characterId} não tem uma camada facial preparada durante a fala; a exportação foi interrompida para preservar a qualidade.`)
+        return element
+      }
       const motion = state.frames[sampleIndex] ?? state.frames[0]
-      if (!motion) return element
-      return { ...element, assetId: state.assetId, motionSprite: motion.sprite, x: motion.x, y: motion.y, width: motion.width, height: motion.height, rotation: motion.rotation, flipX: motion.flipX, characterScale: 100, characterWidthScale: 100, characterHeightScale: 100 }
+      if (!motion?.facePatch) throw Error(`A camada facial de ${element.text || element.characterId} está incompleta; a exportação foi interrompida para evitar um vídeo sem animação de boca.`)
+      return { ...element, mouthPatch: { assetId: state.assetId, ...motion.facePatch } }
     }) }
   }
   ;(window as unknown as { renderEditorV6ExportFrame: (frame: number, layer?: 'background' | 'foreground') => Promise<EditorV6RenderFrameResult> }).renderEditorV6ExportFrame = async (frame, layer) => {
@@ -73,7 +76,8 @@ async function initialize() {
       previous = key
       return { reused: false, layerReused: true, timings }
     }
-    const ids = new Set(activeLayer === 'background' ? [scene.background.backgroundAssetId] : activeLayer === 'foreground' ? scene.elements.map((element) => element.assetId) : [scene.background.backgroundAssetId, ...scene.elements.map((element) => element.assetId)])
+    const sceneAssetIds = scene.elements.flatMap((element) => [element.assetId, element.mouthPatch?.assetId])
+    const ids = new Set(activeLayer === 'background' ? [scene.background.backgroundAssetId] : activeLayer === 'foreground' ? sceneAssetIds : [scene.background.backgroundAssetId, ...sceneAssetIds])
     const assetPreparationStarted = performance.now()
     for (const id of ids) {
       const asset = id ? assetsById.get(id) : undefined
