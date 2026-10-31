@@ -1,8 +1,9 @@
 import type { WardrobeCategory, WardrobeSet } from '../../../../shared/fabricator'
-import { loadCachedImage } from '../../characters/characterRenderer'
+import type { CharacterColorOverrides } from '../../../../shared/customizer'
+import { loadCachedImage, loadCharacterTintedImage } from '../../characters/characterRenderer'
 import { configureCharacterSampling } from './renderResolution'
 
-export async function renderWardrobeThumbnail(set: WardrobeSet, categories: WardrobeCategory[], componentIds?: string[], resolution = 112): Promise<string | null> {
+export async function renderWardrobeThumbnail(set: WardrobeSet, categories: WardrobeCategory[], componentIds?: string[], resolution = 112, colors?: CharacterColorOverrides): Promise<string | null> {
   const allowedIds = componentIds ? new Set(componentIds) : null
   const pieces = set.components.filter((component) => categories.includes(component.category) && (!allowedIds || allowedIds.has(component.id)))
   if (!pieces.length) return null
@@ -19,7 +20,7 @@ export async function renderWardrobeThumbnail(set: WardrobeSet, categories: Ward
   if (!context) return null
   for (const piece of pieces) {
     try {
-      const image = await loadCachedImage(piece.dataUrl)
+      const image = colors ? await loadCharacterTintedImage(piece.dataUrl, colors) : await loadCachedImage(piece.dataUrl)
       context.save()
       context.translate((piece.x - left + piece.width / 2) * scale, (piece.y - top + piece.height / 2) * scale)
       context.rotate(piece.rotation * Math.PI / 180)

@@ -53,7 +53,7 @@ import { RenderedCharacterPortrait } from '../../ui/components/RenderedCharacter
 import { Icon } from '../../ui/components/Icon'
 import type { FabricatorProject, HairStyle } from '../../../../shared/fabricator'
 import { resolvePoseCategory } from '../../../../shared/fabricator'
-import type { CustomizerWardrobeGroup, HairColorRole } from '../../../../shared/customizer'
+import type { CharacterPaletteRole, CustomizerWardrobeGroup } from '../../../../shared/customizer'
 import { characterBodyDimensionLimits, characterProportionLimits, defaultCharacterProportions, type CharacterProportions } from '../../../../shared/customizer'
 import { usePreviewBackground } from '../../ui/hooks/usePreviewBackground'
 import { DesignBanner } from '../../ui/components/DesignBanner'
@@ -145,7 +145,7 @@ export function CustomizerPage() {
     })
   }, [setHairDetails])
   const { headPanelTab, headCategorySelection, selectHeadTab } = useCustomizerHeadNavigation()
-  const [activeHairColorRole, setActiveHairColorRole] = useState<HairColorRole>('base')
+  const [activeHairColorRole, setActiveHairColorRole] = useState<CharacterPaletteRole>('base')
   const [selectedClothing, setSelectedClothing] = useState<SelectedWardrobeComponent | null>(null)
   const [selectedWardrobeUrl, setSelectedWardrobeUrl] = useState<string | null>(null)
   const [selectedWardrobeAboveHairUrl, setSelectedWardrobeAboveHairUrl] = useState<string | null>(null)

@@ -1,5 +1,6 @@
 import { useRef } from 'react'
-import type { CustomizerFaceAppearance, CustomizerWardrobeGroup, CustomizerWardrobePaletteKey, HairColorOverrides, HairColorRole } from '../../../../shared/customizer'
+import { normalizeCharacterColorOverrides } from '../../../../shared/customizer'
+import type { CharacterColorOverrides, CharacterPaletteOverrides, CharacterPaletteRole, CustomizerFaceAppearance, CustomizerWardrobeGroup, CustomizerWardrobePaletteKey } from '../../../../shared/customizer'
 import type { ClothingGroupCategory } from '../../characters/characterRenderer'
 import { Icon } from '../../ui/components/Icon'
 import { hairColorControls, hairPalettePresets } from './CustomizerAppearanceControls'
@@ -8,7 +9,7 @@ import { isWardrobePanelCandidateSelected } from './wardrobePanelModel'
 import type { WardrobePanel, WardrobePanelCandidate } from './wardrobePanelModel'
 
 type WardrobePanelCandidateIndex = ReadonlyMap<WardrobePanel['id'], readonly WardrobePanelCandidate[]>
-type WardrobePaletteMap = Partial<Record<CustomizerWardrobePaletteKey, HairColorOverrides>>
+type WardrobePaletteMap = Partial<Record<CustomizerWardrobePaletteKey, CharacterColorOverrides>>
 
 export function CustomizerWardrobeCatalogWorkspace({
   loading,
@@ -55,8 +56,8 @@ export function CustomizerWardrobeCatalogWorkspace({
   onSetLibraryPanel: (panel: WardrobePanel | null) => void
   onSetLibraryPage: (update: number | ((current: number) => number)) => void
   onApplyPanel: (panel: WardrobePanel, candidate: WardrobePanelCandidate | null) => void | Promise<void>
-  onSetPieceColor: (setId: string, category: ClothingGroupCategory, componentIds: string[], role: HairColorRole, value: string) => void | Promise<void>
-  onApplyPalette: (panel: WardrobePanel, candidate: WardrobePanelCandidate, colors: HairColorOverrides) => void | Promise<void>
+  onSetPieceColor: (setId: string, category: ClothingGroupCategory, componentIds: string[], role: CharacterPaletteRole, value: string) => void | Promise<void>
+  onApplyPalette: (panel: WardrobePanel, candidate: WardrobePanelCandidate, colors: CharacterPaletteOverrides) => void | Promise<void>
   onResetPieceColors: (panel: WardrobePanel, setId: string, componentIds: string[]) => void | Promise<void>
 }) {
   const paletteStripRefs = useRef<Record<string, HTMLDivElement | null>>({})
@@ -103,9 +104,12 @@ export function CustomizerWardrobeCatalogWorkspace({
         const selectedIndex = candidates.findIndex((candidate) => isWardrobePanelCandidateSelected(candidate, panel, wardrobeGroups, faceAppearance))
         const currentCandidate = selectedIndex >= 0 ? candidates[selectedIndex] : null
         const currentGroup = currentCandidate ? wardrobeGroups.find((group) => group.modelSlot === currentCandidate.summary.modelSlot && group.setId === currentCandidate.summary.id && group.category === panel.category && group.componentId === currentCandidate.component.id) : undefined
-        const wardrobePalette = wardrobePalettes?.[panel.id] ?? {}
-        const colors = { ...wardrobePalette, ...currentGroup?.colors }
-        const hasLocalColors = !currentCandidate?.headExtraAsset && Object.keys(colors).length > 0
+        const wardrobePalette = wardrobePalettes?.[panel.id]
+        const colors: CharacterColorOverrides | undefined = wardrobePalette || currentGroup?.colors
+          ? { ...wardrobePalette, ...currentGroup?.colors }
+          : undefined
+        const displayColors = normalizeCharacterColorOverrides(colors)
+        const hasLocalColors = !currentCandidate?.headExtraAsset && Object.keys(colors ?? {}).length > 0
         const selectedSlot = selectedIndex >= 0 ? selectedIndex + 1 : 0
         const slotCount = candidates.length + 1
         const move = (direction: -1 | 1) => {
@@ -122,9 +126,9 @@ export function CustomizerWardrobeCatalogWorkspace({
             </button>
             <button aria-label={`Próxima peça: ${panel.label}`} onClick={() => move(1)} disabled={!candidates.length || !hasCharacter || selectedModelSlot === null} type="button"><Icon name="chevronRight" /></button>
             <div className="customizer-hair-piece-colors" aria-label={`Cores de ${panel.label}`}>
-              {hairColorControls.map((color) => <label key={color.id} className={colors[color.id] ? 'local' : ''} style={{ '--hair-color-swatch': colors[color.id] ?? color.fallback } as React.CSSProperties} title={`${color.label} de ${panel.label}`}>
-                <input type="color" aria-label={`${color.label} de ${panel.label}`} value={colors[color.id] ?? color.fallback} disabled={!hasCharacter || !currentCandidate || Boolean(currentCandidate.headExtraAsset)} onChange={(event) => currentCandidate && void onSetPieceColor(currentCandidate.summary.id, panel.category, currentCandidate.components.map((component) => component.id), color.id, event.target.value)} />
-                <span aria-hidden="true">{color.id === 'highlight' ? 'L' : color.id === 'accent' ? 'A' : color.id === 'outline' ? 'C' : color.id === 'fade' ? 'D' : 'B'}</span>
+              {hairColorControls.map((color) => <label key={color.id} className={displayColors[color.id] ? 'local' : ''} style={{ '--hair-color-swatch': displayColors[color.id] ?? color.fallback } as React.CSSProperties} title={`${color.label} de ${panel.label}`}>
+                <input type="color" aria-label={`${color.label} de ${panel.label}`} value={displayColors[color.id] ?? color.fallback} disabled={!hasCharacter || !currentCandidate || Boolean(currentCandidate.headExtraAsset)} onChange={(event) => currentCandidate && void onSetPieceColor(currentCandidate.summary.id, panel.category, currentCandidate.components.map((component) => component.id), color.id, event.target.value)} />
+                <span aria-hidden="true">{color.id === 'light' ? 'L' : color.id === 'shadow' ? 'S' : color.id === 'outline' ? 'C' : 'B'}</span>
               </label>)}
             </div>
           </div>
@@ -133,7 +137,7 @@ export function CustomizerWardrobeCatalogWorkspace({
             <div className="customizer-hair-palette-presets customizer-upper-piece-palette-presets">
               <button className="customizer-hair-palette-scroll previous" aria-label={`Ver paletas anteriores de ${panel.label}`} onClick={() => paletteStripRefs.current[panel.id]?.scrollBy({ left: -180, behavior: 'smooth' })} type="button"><Icon name="chevronRight" /></button>
               <div className="customizer-hair-palette-preset-list" ref={(node) => { paletteStripRefs.current[panel.id] = node }}>
-                {hairPalettePresets.map((preset) => <button key={preset.name} type="button" disabled={!hasCharacter || !currentCandidate || Boolean(currentCandidate.headExtraAsset)} aria-pressed={hairColorControls.every((color) => wardrobePalette[color.id] === preset.colors[color.id])} onClick={() => currentCandidate && void onApplyPalette(panel, currentCandidate, preset.colors)} title={`Aplicar paleta ${preset.name} a ${panel.label}`}><span style={{ background: `linear-gradient(115deg, ${preset.colors.highlight} 0 23%, ${preset.colors.base} 23% 65%, ${preset.colors.fade} 65% 84%, ${preset.colors.outline} 84%)` }} />{preset.name}</button>)}
+                {hairPalettePresets.map((preset) => <button key={preset.name} type="button" disabled={!hasCharacter || !currentCandidate || Boolean(currentCandidate.headExtraAsset)} aria-pressed={hairColorControls.every((color) => normalizeCharacterColorOverrides(wardrobePalette)[color.id] === preset.colors[color.id])} onClick={() => currentCandidate && void onApplyPalette(panel, currentCandidate, preset.colors)} title={`Aplicar paleta ${preset.name} a ${panel.label}`}><span style={{ background: `linear-gradient(115deg, ${preset.colors.light} 0 23%, ${preset.colors.base} 23% 65%, ${preset.colors.shadow} 65% 84%, ${preset.colors.outline} 84%)` }} />{preset.name}</button>)}
               </div>
               <button className="customizer-hair-palette-scroll" aria-label={`Ver próximas paletas de ${panel.label}`} onClick={() => paletteStripRefs.current[panel.id]?.scrollBy({ left: 180, behavior: 'smooth' })} type="button"><Icon name="chevronRight" /></button>
             </div>

@@ -1,5 +1,5 @@
 import type { FabricatorProject, ModelSkinContourStroke, WardrobeCategory, WardrobeSet } from '../../../shared/fabricator'
-import type { CustomizerWardrobeCategory, CustomizerWardrobeGroup, HairColorOverrides } from '../../../shared/customizer'
+import type { CharacterColorOverrides, CustomizerWardrobeCategory, CustomizerWardrobeGroup } from '../../../shared/customizer'
 import { mapWardrobeComponentToPose, wardrobePosePadding } from '../../../shared/wardrobePose'
 import { normalizeLayerOrder } from '../../../shared/modelRig'
 import { bindLegacyTorsoGridWardrobeSet, validateWardrobeFlow } from '../../../shared/assetFlow'
@@ -16,13 +16,13 @@ export type AdjustmentPreviewHighlight = { scope: 'head'; id: string } | { scope
 
 export type CharacterWardrobeImageLoaders = {
   loadCachedImage: (source: string | CanvasImageSource) => Promise<HTMLImageElement>
-  loadHairTintedImage: (source: string, overrides: HairColorOverrides | undefined) => Promise<HTMLImageElement>
+  loadCharacterTintedImage: (source: string, overrides: CharacterColorOverrides | undefined) => Promise<HTMLImageElement>
   loadSkinTintedImage: (source: string, tone: string) => Promise<HTMLImageElement>
   loadModelBodyTintedImage: (source: string, skinTone?: string, outlineColor?: string, fakeContours?: ModelSkinContourStroke[]) => Promise<HTMLImageElement>
 }
 
 export function createCharacterWardrobeRenderer(loaders: CharacterWardrobeImageLoaders) {
-  const { loadCachedImage, loadHairTintedImage, loadSkinTintedImage, loadModelBodyTintedImage } = loaders
+  const { loadCachedImage, loadCharacterTintedImage, loadSkinTintedImage, loadModelBodyTintedImage } = loaders
   const clothingCategories: Record<'Superior' | 'Inferior', Array<{ id: ClothingGroupCategory; label: string; source: WardrobeCategory[] }>> = {
     Superior: [
       { id: 'camisa', label: 'Camisas', source: ['camisa'] },
@@ -157,7 +157,7 @@ export function createCharacterWardrobeRenderer(loaders: CharacterWardrobeImageL
       const garments = (garmentLayers.get(part.id) ?? []).sort((a, b) => a.sequence - b.sequence)
       for (const garment of garments) {
         try {
-          const image = garment.group.colors ? await loadHairTintedImage(garment.component.dataUrl, garment.group.colors) : await loadCachedImage(garment.component.dataUrl)
+          const image = garment.group.colors ? await loadCharacterTintedImage(garment.component.dataUrl, garment.group.colors) : await loadCachedImage(garment.component.dataUrl)
           const matrix = /^matrix\(([^)]+)\)$/.exec(garment.transform.matrix)?.[1].split(',').map(Number) ?? [1, 0, 0, 1, 0, 0]
           const drawGarment = (context: CanvasRenderingContext2D, highlighted = false) => {
             context.save()

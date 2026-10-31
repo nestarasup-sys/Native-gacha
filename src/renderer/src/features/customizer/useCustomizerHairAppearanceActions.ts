@@ -1,6 +1,7 @@
 /** Ações de aparência do cabelo; alterações ficam na instância do personagem. */
 import type { MutableRefObject } from 'react'
-import type { CustomizerCharacter, HairColorOverrides, HairColorRole, HairPartId } from '../../../../shared/customizer'
+import { normalizeCharacterColorOverrides, setCharacterColorRole } from '../../../../shared/customizer'
+import type { CharacterColorOverrides, CharacterPaletteOverrides, CharacterPaletteRole, CustomizerCharacter, HairPartId } from '../../../../shared/customizer'
 import type { CharacterPatch } from './useCustomizerCharacterCommands'
 import { customizerHairParts } from '../../characters/characterRenderer'
 import type { HairStyleSummary } from '../../../../shared/fabricator'
@@ -23,45 +24,48 @@ export function useCustomizerHairAppearanceActions(deps: {
     await saveCharacterCustomization({ hairAppearance: { ...(sameModel ? previous : undefined), modelSlot: selectedModelSlot, parts } })
   }
 
-  async function setHairColor(role: HairColorRole, value: string) {
+  async function setHairColor(role: CharacterPaletteRole, value: string) {
     if (!selectedCharacter || selectedModelSlot === null) return
     const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
     const previous = current.customization.hairAppearance
     const sameModel = previous?.modelSlot === selectedModelSlot
     const partColors = { ...(sameModel ? previous?.partColors : undefined) }
     for (const part of customizerHairParts) {
-      if (!partColors[part.id]?.[role]) continue
-      const next = { ...partColors[part.id] }
+      const existing = partColors[part.id]
+      const legacyRole = role === 'shadow' ? 'fade' : role === 'light' ? 'highlight' : role
+      if (!existing || (!(role in existing) && !(legacyRole in existing))) continue
+      const next = { ...existing } as Record<string, string>
       delete next[role]
-      if (Object.keys(next).length) partColors[part.id] = next
+      delete next[legacyRole]
+      if (Object.keys(next).length) partColors[part.id] = next as CharacterColorOverrides
       else delete partColors[part.id]
     }
     await saveCharacterCustomization({ hairAppearance: {
       ...(sameModel ? previous : undefined),
       modelSlot: selectedModelSlot,
-      colors: { ...(sameModel ? previous?.colors : undefined), [role]: value },
+      colors: setCharacterColorRole(sameModel ? previous?.colors : undefined, role, value),
       partColors
     } })
   }
 
-  async function setHairPartColor(part: HairPartId, role: HairColorRole, value: string) {
+  async function setHairPartColor(part: HairPartId, role: CharacterPaletteRole, value: string) {
     if (!selectedCharacter || selectedModelSlot === null) return
     const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
     const previous = current.customization.hairAppearance
     const sameModel = previous?.modelSlot === selectedModelSlot
     const partColors = { ...(sameModel ? previous?.partColors : undefined) }
-    partColors[part] = { ...partColors[part], [role]: value }
+    partColors[part] = setCharacterColorRole(partColors[part], role, value)
     await saveCharacterCustomization({ hairAppearance: { ...(sameModel ? previous : undefined), modelSlot: selectedModelSlot, partColors } })
   }
 
-  async function applyHairPartPalette(part: HairPartId, colors: HairColorOverrides) {
+  async function applyHairPartPalette(part: HairPartId, colors: CharacterPaletteOverrides) {
     if (!selectedCharacter || selectedModelSlot === null) return
     const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
     const previous = current.customization.hairAppearance
     const sameModel = previous?.modelSlot === selectedModelSlot
     await saveCharacterCustomization({ hairAppearance: {
       ...(sameModel ? previous : undefined), modelSlot: selectedModelSlot,
-      partColors: { ...(sameModel ? previous?.partColors : undefined), [part]: colors }
+      partColors: { ...(sameModel ? previous?.partColors : undefined), [part]: normalizeCharacterColorOverrides(colors) }
     } })
   }
 
@@ -75,12 +79,12 @@ export function useCustomizerHairAppearanceActions(deps: {
     await saveCharacterCustomization({ hairAppearance: { ...previous, partColors } })
   }
 
-  async function applyHairPalette(colors: HairColorOverrides) {
+  async function applyHairPalette(colors: CharacterPaletteOverrides) {
     if (!selectedCharacter || selectedModelSlot === null) return
     const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
     const previous = current.customization.hairAppearance
     const sameModel = previous?.modelSlot === selectedModelSlot
-    await saveCharacterCustomization({ hairAppearance: { ...(sameModel ? previous : undefined), modelSlot: selectedModelSlot, colors, partColors: {} } })
+    await saveCharacterCustomization({ hairAppearance: { ...(sameModel ? previous : undefined), modelSlot: selectedModelSlot, colors: normalizeCharacterColorOverrides(colors), partColors: {} } })
   }
 
   async function restoreHairColors() {

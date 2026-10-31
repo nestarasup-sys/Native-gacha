@@ -2,10 +2,10 @@
  * Pure normalization: only called after validating the original object.
  * Never writes back to the Fabricador catalog or mutates a saved character.
  */
-import type { CustomizerCharacter, HairColorOverrides } from '../../../src/shared/customizer.ts'
+import type { CharacterColorOverrides, CustomizerCharacter } from '../../../src/shared/customizer.ts'
 
 export function normalizeCustomizerCharacter(character: CustomizerCharacter): CustomizerCharacter {
-  const storedCustomization = character.customization as CustomizerCharacter['customization'] & { wardrobeColors?: HairColorOverrides }
+  const storedCustomization = character.customization as CustomizerCharacter['customization'] & { wardrobeColors?: CharacterColorOverrides }
   const { wardrobeColors: legacyWardrobeColors, ...customization } = storedCustomization
   return {
     ...character,

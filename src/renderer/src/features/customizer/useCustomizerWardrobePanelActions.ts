@@ -1,5 +1,6 @@
 import type { MutableRefObject, Dispatch, SetStateAction } from 'react'
-import type { CustomizerCharacter, HairColorOverrides, HairColorRole } from '../../../../shared/customizer'
+import { normalizeCharacterColorOverrides } from '../../../../shared/customizer'
+import type { CharacterPaletteOverrides, CharacterPaletteRole, CustomizerCharacter } from '../../../../shared/customizer'
 import type { WardrobeSet, WardrobeSetSummary } from '../../../../shared/fabricator'
 import { recolorWardrobeComponents, selectWardrobePanelComponents } from '../../../../shared/wardrobePlacementModel'
 import type { ClothingGroupCategory, SelectedWardrobeComponent } from '../../characters/characterRenderer'
@@ -81,19 +82,19 @@ export function useCustomizerWardrobePanelActions(deps: {
     await saveCharacterCustomization({ wardrobeGroups: after })
   }
 
-  async function applyWardrobePalette(panel: WardrobePanel, candidate: WardrobePanelCandidate, colors: HairColorOverrides) {
+  async function applyWardrobePalette(panel: WardrobePanel, candidate: WardrobePanelCandidate, colors: CharacterPaletteOverrides) {
     if (!selectedCharacter) return
     const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
     const wardrobeGroups = recolorWardrobeComponents(current.customization.wardrobeGroups ?? [],
       candidate.summary.modelSlot, candidate.summary.id, panel.category, candidate.components.map((component) => component.id),
-      { kind: 'replace', colors })
+      { kind: 'replace', colors: normalizeCharacterColorOverrides(colors) })
     await saveCharacterCustomization({
-      wardrobePalettes: { ...current.customization.wardrobePalettes, [panel.id]: colors },
+      wardrobePalettes: { ...current.customization.wardrobePalettes, [panel.id]: normalizeCharacterColorOverrides(colors) },
       wardrobeGroups
     })
   }
 
-  async function setWardrobePieceColor(setId: string, category: ClothingGroupCategory, componentIds: string[], role: HairColorRole, value: string) {
+  async function setWardrobePieceColor(setId: string, category: ClothingGroupCategory, componentIds: string[], role: CharacterPaletteRole, value: string) {
     if (selectedModelSlot === null || !selectedCharacter) return
     const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
     const wardrobeGroups = recolorWardrobeComponents(current.customization.wardrobeGroups ?? [],

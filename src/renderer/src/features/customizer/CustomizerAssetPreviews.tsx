@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
-import type { HairColorOverrides } from '../../../../shared/customizer'
-import { loadCachedImage, loadHairTintedImage, loadSkinTintedImage } from '../../characters/characterRenderer'
+import { hasStandardCharacterColorRoles } from '../../../../shared/customizer'
+import type { CharacterColorOverrides, HairColorOverrides } from '../../../../shared/customizer'
+import { loadCachedImage, loadCharacterTintedImage, loadHairTintedImage, loadSkinTintedImage, inspectCharacterPalette } from '../../characters/characterRenderer'
 import type { HairTintOptions } from '../../characters/characterRenderer'
 import { renderWardrobeThumbnail } from './wardrobePanelThumbnail'
 import type { WardrobePanelCandidate } from './wardrobePanelModel'
@@ -50,29 +51,40 @@ function loadHairPreviewImage(source: string): Promise<string> {
   return hairPreviewImageCache.load(source)
 }
 
-export function HairAssetPreview({ source, alt, colors, tintOptions, skinTone, opacity = 1, flipX = false }: { source: string; alt: string; colors?: HairColorOverrides; tintOptions?: HairTintOptions; skinTone?: string; opacity?: number; flipX?: boolean }) {
+export function HairAssetPreview({ source, alt, colors, tintOptions, skinTone, opacity = 1, flipX = false, fixedPalette = false, paletteValidationColors, paletteCheckSources }: { source: string; alt: string; colors?: CharacterColorOverrides; tintOptions?: HairTintOptions; skinTone?: string; opacity?: number; flipX?: boolean; fixedPalette?: boolean; paletteValidationColors?: CharacterColorOverrides; paletteCheckSources?: string[] }) {
   const [previewSource, setPreviewSource] = useState(source)
-  const colorKey = JSON.stringify([colors, tintOptions])
+  const [unsupportedPalette, setUnsupportedPalette] = useState(false)
+  const colorKey = JSON.stringify([colors, tintOptions, paletteValidationColors, paletteCheckSources])
   useEffect(() => {
     let cancelled = false
     setPreviewSource(source)
-    const tintedImage = skinTone ? loadSkinTintedImage(source, skinTone) : loadHairTintedImage(source, colors, tintOptions)
+    setUnsupportedPalette(false)
+    const palette = paletteValidationColors ?? colors
+    const checkSources = fixedPalette && !skinTone && hasStandardCharacterColorRoles(palette) ? paletteCheckSources ?? [source] : []
+    if (checkSources.length) {
+      void Promise.all(checkSources.map((item) => inspectCharacterPalette(item))).then((results) => {
+        if (!cancelled) setUnsupportedPalette(results.some((supported) => !supported))
+      }).catch(() => undefined)
+    }
+    const tintedImage = skinTone ? loadSkinTintedImage(source, skinTone)
+      : fixedPalette ? loadCharacterTintedImage(source, colors, tintOptions)
+        : loadHairTintedImage(source, colors as HairColorOverrides | undefined, tintOptions)
     void tintedImage.then((image) => loadHairPreviewImage(image.src)).then((trimmed) => {
       if (!cancelled) setPreviewSource(trimmed)
     }).catch(() => undefined)
     return () => { cancelled = true }
-  }, [source, colorKey, skinTone])
-  return <img src={previewSource} alt={alt} style={{ opacity: Math.min(1, Math.max(0, opacity)), transform: flipX ? 'scaleX(-1)' : undefined }} />
+  }, [source, colorKey, skinTone, fixedPalette])
+  return <span className="customizer-character-asset-preview"><img src={previewSource} alt={alt} style={{ opacity: Math.min(1, Math.max(0, opacity)), transform: flipX ? 'scaleX(-1)' : undefined }} />{unsupportedPalette && <small className="customizer-palette-compatibility-notice" role="status">Paleta não reconhecida; cores originais preservadas</small>}</span>
 }
 
-export function WardrobePanelCandidatePreview({ candidate, colors }: { candidate: WardrobePanelCandidate; colors?: HairColorOverrides }) {
+export function WardrobePanelCandidatePreview({ candidate, colors }: { candidate: WardrobePanelCandidate; colors?: CharacterColorOverrides }) {
   const [source, setSource] = useState<string | null>(null)
   const componentIds = candidate.components.map((component) => component.id)
   useEffect(() => {
     let active = true
-    void renderWardrobeThumbnail(candidate.set, candidate.components.map((component) => component.category), componentIds, 512)
+    void renderWardrobeThumbnail(candidate.set, candidate.components.map((component) => component.category), componentIds, 512, colors)
       .then((thumbnail) => { if (active) setSource(thumbnail) })
     return () => { active = false }
-  }, [candidate.set, componentIds.join(':')])
-  return <HairAssetPreview source={source ?? candidate.component.dataUrl} colors={colors} alt={candidate.component.name} />
+  }, [candidate.set, componentIds.join(':'), JSON.stringify(colors)])
+  return <HairAssetPreview source={source ?? candidate.component.dataUrl} alt={candidate.component.name} fixedPalette paletteValidationColors={colors} paletteCheckSources={candidate.components.map((component) => component.dataUrl)} />
 }

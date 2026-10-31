@@ -32,6 +32,7 @@ export type { HairTintOptions } from './characterImageTint'
 
 const characterImageTint = createCharacterImageTint(loadCachedImage)
 export const loadHairTintedImage = characterImageTint.loadHairTintedImage
+export const loadCharacterTintedImage = characterImageTint.loadCharacterTintedImage
 export const loadSkinTintedImage = characterImageTint.loadSkinTintedImage
 export const loadModelBodyTintedImage = characterImageTint.loadModelBodyTintedImage
 
@@ -42,7 +43,7 @@ const characterFaceCatalogRenderer = createCharacterFaceCatalogRenderer(
 
 export type { HairCatalogSide } from './characterLayerRenderer'
 
-const characterLayerRenderer = createCharacterLayerRenderer({ loadCachedImage, loadHairTintedImage, loadSkinTintedImage, loadModelBodyTintedImage })
+const characterLayerRenderer = createCharacterLayerRenderer({ loadCachedImage, loadCharacterTintedImage, loadSkinTintedImage, loadModelBodyTintedImage })
 export const customizerHairParts = characterLayerRenderer.customizerHairParts
 export const hairAppearanceStyleId = characterLayerRenderer.hairAppearanceStyleId
 export const loadHairAppearanceLayers = characterLayerRenderer.loadHairAppearanceLayers
@@ -53,7 +54,8 @@ export const renderFrontHairOverlay = characterLayerRenderer.renderFrontHairOver
 export const renderFaceOverlay = characterLayerRenderer.renderFaceOverlay
 export type { AdjustmentPreviewHighlight, ClothingGroupCategory, SelectedWardrobeComponent } from './characterWardrobeRenderer'
 
-const characterWardrobeRenderer = createCharacterWardrobeRenderer({ loadCachedImage, loadHairTintedImage, loadSkinTintedImage, loadModelBodyTintedImage })
+const characterWardrobeRenderer = createCharacterWardrobeRenderer({ loadCachedImage, loadCharacterTintedImage, loadSkinTintedImage, loadModelBodyTintedImage })
+export const inspectCharacterPalette = characterImageTint.inspectCharacterPalette
 export const clothingCategories = characterWardrobeRenderer.clothingCategories
 export const wardrobeComponentsForGroup = characterWardrobeRenderer.wardrobeComponentsForGroup
 export const renderWardrobeOverlayCanvases = characterWardrobeRenderer.renderWardrobeOverlayCanvases

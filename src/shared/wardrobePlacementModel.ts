@@ -1,6 +1,7 @@
 /** Character-only clothing operations. Never writes Fabricador source or PNGs. */
 import type { WardrobeCategory, WardrobeComponent, ModelPart } from './fabricator'
-import type { CustomizerWardrobeCategory, CustomizerWardrobeGroup } from './customizer'
+import { setCharacterColorRole } from './customizer.ts'
+import type { CharacterPaletteRole, CustomizerWardrobeCategory, CustomizerWardrobeGroup } from './customizer'
 import { editWardrobeAdjustment } from './wardrobeAdjustment.ts'
 
 type Adjustment = Partial<Pick<CustomizerWardrobeGroup, 'offsetX' | 'offsetY' | 'scaleX' | 'scaleY' | 'rotation'>>
@@ -67,7 +68,7 @@ export function recolorWardrobeComponents(
   modelSlot: number, setId: string, _category: CustomizerWardrobeCategory,
   componentIds: readonly string[],
   change: { kind: 'replace'; colors: NonNullable<CustomizerWardrobeGroup['colors']> }
-    | { kind: 'role'; role: keyof NonNullable<CustomizerWardrobeGroup['colors']>; value: string }
+    | { kind: 'role'; role: CharacterPaletteRole; value: string }
     | { kind: 'clear' }
 ): CustomizerWardrobeGroup[] {
   const ids = new Set(componentIds)
@@ -76,7 +77,7 @@ export function recolorWardrobeComponents(
         || !group.componentId || !ids.has(group.componentId)) return group
     if (change.kind === 'clear') { const { colors: _colors, ...rest } = group; return rest }
     return { ...group, colors: change.kind === 'replace' ? change.colors
-      : { ...group.colors, [change.role]: change.value } }
+      : setCharacterColorRole(group.colors, change.role, change.value) }
   })
 }
 

@@ -1,0 +1,143 @@
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import { describe, expect, it } from 'vitest'
+import { defaultCharacterColorOverrides, normalizeCharacterColorOverrides, setCharacterColorRole } from '../../src/shared/customizer'
+import { recolorWardrobeComponents } from '../../src/shared/wardrobePlacementModel'
+import { detectCharacterSourcePalette, tintCharacterPalettePixels } from '../../src/renderer/src/characters/characterPaletteTint'
+import { isCustomizerCharacter } from '../../electron/domains/customizer/validation'
+import { isValidCustomizerFaceAppearance } from '../../src/shared/customizerValidation'
+
+function paletteFixture(): Uint8ClampedArray {
+  return new Uint8ClampedArray([
+    43, 43, 43, 255,
+    107, 107, 107, 255,
+    168, 168, 168, 255,
+    226, 226, 226, 255,
+    75, 75, 75, 128,
+    158, 158, 158, 96,
+    43, 43, 43, 0,
+    255, 255, 255, 0,
+    210, 24, 100, 255
+  ])
+}
+
+const vividPalette = {
+  outline: '#E03020', shadow: '#20D030', base: '#2040E0', light: '#F0E020'
+}
+
+describe('paleta fixa de cabelo e roupas', () => {
+  it('reconhece os quatro tons por valor explícito e mantém transparência, antialias e detalhes cromáticos', () => {
+    const pixels = paletteFixture()
+    const original = pixels.slice()
+    const detection = tintCharacterPalettePixels(pixels, vividPalette)
+
+    expect(detection.supported).toBe(true)
+    expect(Array.from(pixels.slice(0, 4))).toEqual([224, 48, 32, 255])
+    expect(Array.from(pixels.slice(4, 8))).toEqual([32, 208, 48, 255])
+    expect(Array.from(pixels.slice(8, 12))).toEqual([32, 64, 224, 255])
+    expect(Array.from(pixels.slice(12, 16))).toEqual([240, 224, 32, 255])
+    expect(pixels[19]).toBe(original[19])
+    expect(pixels[23]).toBe(original[23])
+    expect(Array.from(pixels.slice(24, 32))).toEqual(Array.from(original.slice(24, 32)))
+    expect(Array.from(pixels.slice(32, 36))).toEqual(Array.from(original.slice(32, 36)))
+    expect(Array.from(pixels.slice(36, 40))).toEqual(Array.from(original.slice(36, 40)))
+    expect(pixels[18]).not.toBe(original[18])
+    expect(pixels[22]).not.toBe(original[22])
+  })
+
+  it('altera cada papel independentemente e preserva os outros três', () => {
+    const roles = ['outline', 'shadow', 'base', 'light'] as const
+    const baseline = paletteFixture()
+    tintCharacterPalettePixels(baseline, defaultCharacterColorOverrides)
+    for (let selectedIndex = 0; selectedIndex < roles.length; selectedIndex += 1) {
+      const changed = paletteFixture()
+      const selectedRole = roles[selectedIndex]
+      const changedPalette = setCharacterColorRole(defaultCharacterColorOverrides, selectedRole, '#35AABB')
+      tintCharacterPalettePixels(changed, changedPalette)
+      for (let sourceIndex = 0; sourceIndex < roles.length; sourceIndex += 1) {
+        const offset = sourceIndex * 4
+        const actual = Array.from(changed.slice(offset, offset + 4))
+        const expected = Array.from(baseline.slice(offset, offset + 4))
+        if (sourceIndex === selectedIndex) expect(actual).not.toEqual(expected)
+        else expect(actual).toEqual(expected)
+      }
+    }
+    expect(normalizeCharacterColorOverrides({ base: '#112233', fade: '#223344', highlight: '#445566' })).toEqual({
+      outline: '#2B2B2B', shadow: '#223344', base: '#112233', light: '#445566'
+    })
+  })
+
+  it('não classifica nem altera assets antigos fora da paleta', () => {
+    const pixels = new Uint8ClampedArray([18, 92, 201, 255, 240, 30, 45, 255, 255, 255, 255, 0])
+    const original = pixels.slice()
+    expect(detectCharacterSourcePalette(pixels).supported).toBe(false)
+    expect(tintCharacterPalettePixels(pixels, vividPalette).supported).toBe(false)
+    expect(pixels).toEqual(original)
+  })
+
+  it('mantém cores salvas por personagem e por ID de componente', () => {
+    const group = (componentId: string, colors: { base: string }) => ({
+      modelSlot: 1, setId: 'uniforme', category: 'camisa' as const, componentId,
+      offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1, rotation: 0, colors
+    })
+    const characterA = [group('frente', { base: '#AA0000' }), group('manga', { base: '#00AA00' })]
+    const characterB = [group('frente', { base: '#0000AA' })]
+    const recoloredA = recolorWardrobeComponents(characterA, 1, 'uniforme', 'camisa', ['frente'], {
+      kind: 'role', role: 'base', value: '#CC5500'
+    })
+
+    expect(recoloredA[0].colors?.base).toBe('#CC5500')
+    expect(recoloredA[1].colors?.base).toBe('#00AA00')
+    expect(characterB[0].colors?.base).toBe('#0000AA')
+    expect(characterA[0].colors?.base).toBe('#AA0000')
+  })
+
+  it('valida e conserva paletas persistidas antigas e novas sem conversão automática', () => {
+    const character = {
+      id: 'personagem-1', name: 'Teste', hair: '#000000', outfit: '#FFFFFF', skin: '#C08060',
+      customization: { modelSlot: null, poseSlot: null, partOverrides: {}, layerOrder: [] },
+      createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z'
+    }
+    const oldSaved = structuredClone(character) as typeof character & { customization: { wardrobePalettes?: Record<string, unknown> } }
+    oldSaved.customization.wardrobePalettes = { shirt: { base: '#AA3300', fade: '#662200', outline: '#331100', highlight: '#EE9955' } }
+    const newSaved = structuredClone(character) as typeof character & { customization: { wardrobePalettes?: Record<string, unknown> } }
+    newSaved.customization.wardrobePalettes = { shirt: { outline: '#111111', shadow: '#444444', base: '#888888', light: '#DDDDDD' } }
+    newSaved.customization.wardrobeGroups = [{
+      modelSlot: 1, setId: 'uniforme', category: 'camisa', componentId: 'frente',
+      offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1, rotation: 0,
+      colors: { outline: '#111111', shadow: '#444444', base: '#888888', light: '#DDDDDD' }
+    }]
+
+    expect(isCustomizerCharacter(oldSaved)).toBe(true)
+    expect(isCustomizerCharacter(newSaved)).toBe(true)
+    expect(oldSaved.customization.wardrobePalettes?.shirt).toEqual({ base: '#AA3300', fade: '#662200', outline: '#331100', highlight: '#EE9955' })
+  })
+
+  it('mantém olhos e rosto no contrato de paleta antigo', () => {
+    const face = {
+      modelSlot: 1, eyeState: 0 as const, eyebrows: true, noseIndex: 0,
+      expressionIndex: 0, mouthOpen: false,
+      components: { 'eye-left': { assetId: 'olho-1', colors: { base: '#AA3300', fade: '#662200' } } }
+    }
+    expect(isValidCustomizerFaceAppearance(face)).toBe(true)
+    expect(isValidCustomizerFaceAppearance({
+      ...face,
+      components: { 'eye-left': { assetId: 'olho-1', colors: { outline: '#111111', shadow: '#444444', base: '#888888', light: '#DDDDDD' } } }
+    })).toBe(false)
+  })
+
+  it('usa a mesma recoloração fixa na prévia de roupas e no renderizador final, mantendo cabeça e pele no caminho anterior', () => {
+    const source = (path: string) => readFileSync(fileURLToPath(new URL(path, import.meta.url)), 'utf8')
+    const thumbnail = source('../../src/renderer/src/features/customizer/wardrobePanelThumbnail.ts')
+    const wardrobeRenderer = source('../../src/renderer/src/characters/characterWardrobeRenderer.ts')
+    const hairRenderer = source('../../src/renderer/src/characters/characterLayerRenderer.ts')
+    const faceRenderer = source('../../src/renderer/src/characters/characterFaceCatalogRenderer.ts')
+    const imageTint = source('../../src/renderer/src/characters/characterImageTint.ts')
+
+    expect(thumbnail).toContain('loadCharacterTintedImage(piece.dataUrl, colors)')
+    expect(wardrobeRenderer).toContain('loadCharacterTintedImage(garment.component.dataUrl, garment.group.colors)')
+    expect(hairRenderer).toContain('loadCharacterTintedImage(asset.dataUrl, resolvedHairColors(hairAppearance, layer.part))')
+    expect(faceRenderer).toContain('loadHairTintedImage(asset.dataUrl, selectedPart.colors')
+    expect(imageTint).toContain('tintSkinPixels(pixels, tone)')
+  })
+})

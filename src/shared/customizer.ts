@@ -1,10 +1,36 @@
 import type { FaceComponentKind, FaceDetailKind, FaceElementKind, FaceTransform } from './fabricator'
 
+/** Existing facial controls keep their saved roles and renderer. */
 export type HairColorRole = 'base' | 'fade' | 'outline' | 'highlight' | 'accent'
+export type HairColorOverrides = Partial<Record<HairColorRole, string>>
+/** Fixed source-color roles for the new hair and wardrobe recoloring path. */
+export type CharacterPaletteRole = 'outline' | 'shadow' | 'base' | 'light'
+export type CharacterPaletteOverrides = Partial<Record<CharacterPaletteRole, string>>
+/** Old saved palettes remain readable for compatibility. */
+export type CharacterColorOverrides = HairColorOverrides | CharacterPaletteOverrides
+export const defaultCharacterColorOverrides: CharacterPaletteOverrides = {
+  outline: '#2B2B2B', shadow: '#6B6B6B', base: '#A8A8A8', light: '#E2E2E2'
+}
+
+export function normalizeCharacterColorOverrides(colors?: CharacterColorOverrides | null): CharacterPaletteOverrides {
+  const legacy = colors as HairColorOverrides | undefined
+  const current = colors as CharacterPaletteOverrides | undefined
+  return {
+    outline: current?.outline ?? defaultCharacterColorOverrides.outline,
+    shadow: current?.shadow ?? legacy?.fade ?? defaultCharacterColorOverrides.shadow,
+    base: current?.base ?? defaultCharacterColorOverrides.base,
+    light: current?.light ?? legacy?.highlight ?? defaultCharacterColorOverrides.light
+  }
+}
+export function hasStandardCharacterColorRoles(colors?: CharacterColorOverrides | null): boolean {
+  return !!colors && ('shadow' in colors || 'light' in colors)
+}
+export function setCharacterColorRole(colors: CharacterColorOverrides | undefined, role: CharacterPaletteRole, value: string): CharacterPaletteOverrides {
+  return { ...normalizeCharacterColorOverrides(colors), [role]: value }
+}
 export type FaceComponentPartId = 'eye-left' | 'eye-right' | 'pupil-left' | 'pupil-right' | 'brow-left' | 'brow-right'
 export type FacePalettePartId = 'nose' | 'mouth' | FaceDetailKind
 export type HairPartId = 'backHair' | 'rearHair' | 'ponytail' | 'frontHair' | 'ahoge'
-export type HairColorOverrides = Partial<Record<HairColorRole, string>>
 
 export type CharacterCustomization = {
   /** Reference to the read-only Fabricator source selected for this character. */
@@ -24,7 +50,7 @@ export type CharacterCustomization = {
   /** Garments are character-owned placements; pants stay one group across thigh and calf pieces. */
   wardrobeGroups?: CustomizerWardrobeGroup[]
   /** Preset palettes persist independently for each clothing slot; hair and face colors remain independent. */
-  wardrobePalettes?: Partial<Record<CustomizerWardrobePaletteKey, HairColorOverrides>>
+  wardrobePalettes?: Partial<Record<CustomizerWardrobePaletteKey, CharacterColorOverrides>>
   /** Facial features chosen from the read-only face library, isolated per character. */
   faceAppearance?: CustomizerFaceAppearance
   /** Rear, posterior and fringe hair layers are selected independently per character. */
@@ -34,9 +60,9 @@ export type CharacterCustomization = {
     frontStyleId?: string | null
     backStyleId?: string | null
     /** Character-only recoloring overrides for the selected raster hair assets. */
-    colors?: HairColorOverrides
+    colors?: CharacterColorOverrides
     /** Overrides by piece. A changed global role clears only that role from every piece. */
-    partColors?: Partial<Record<HairPartId, HairColorOverrides>>
+    partColors?: Partial<Record<HairPartId, CharacterColorOverrides>>
     /** Independent hair parts selected from Fabricator Dev's rear, posterior and fringe layers. */
     parts?: Partial<Record<HairPartId, string | null>>
   }
@@ -150,7 +176,7 @@ export type CustomizerWardrobeGroup = {
   /** Soft deletion from Adjust: omit this component from the preview while keeping it restorable. */
   hidden?: boolean
   /** Color overrides belong to this individual garment component. */
-  colors?: HairColorOverrides
+  colors?: CharacterColorOverrides
 }
 
 export type CustomizerCharacter = {
