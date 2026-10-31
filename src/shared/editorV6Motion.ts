@@ -7,7 +7,7 @@ import { editorV6FaceModeAtFrame, editorV6FaceModeDuringMotion } from './editorV
 export const EDITOR_V6_MOTION_VERSION = 6
 export const EDITOR_V6_MOTION_MS = 250
 export type EditorV6MotionSprite = { x: number; y: number; width: number; height: number; atlasWidth: number; atlasHeight: number }
-export type EditorV6FacePatch = { sprite: EditorV6MotionSprite; x: number; y: number; width: number; height: number }
+export type EditorV6FacePatch = { sprite: EditorV6MotionSprite; x: number; y: number; width: number; height: number; replace?: boolean; replaceBounds?: { x: number; y: number; width: number; height: number } }
 export type EditorV6MotionFrame = { offset: number; sprite: EditorV6MotionSprite; x: number; y: number; width: number; height: number; rotation: number; flipX: boolean; facePatch?: EditorV6FacePatch }
 export type EditorV6MotionAtlas = { version: 1; key: string; assetId: string; faceAssetId?: string; frames: EditorV6MotionFrame[] }
 export type EditorV6MotionPlan = {

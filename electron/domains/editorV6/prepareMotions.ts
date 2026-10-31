@@ -40,7 +40,7 @@ export async function prepareExportMotions(project: EditorV6Document, startFrame
   const knownMotions = new Map<string, NonNullable<EditorV6Document['timeline']['tracks'][number]['blocks'][number]['incomingMotion']>>()
   for (const track of project.timeline.tracks) for (const block of track.blocks) {
     const motion = block.incomingMotion
-    if (!editorV6MotionHasAvailableAssets(motion, assets)) continue
+    if (!motion || !editorV6MotionHasAvailableAssets(motion, assets)) continue
     if (!knownMotions.has(motion.key)) knownMotions.set(motion.key, motion)
   }
   const plansByBlock = new Map(editorV6MotionPlans(project).map((plan) => [plan.blockId, plan]))

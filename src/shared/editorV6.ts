@@ -57,7 +57,7 @@ export type EditorV6Element = {
   /** Playback-only atlas crop; never written into an authored state. */
   motionSprite?: EditorV6MotionSprite
   /** Playback-only local facial overlay; never written into an authored state. */
-  mouthPatch?: { assetId: string; sprite: EditorV6FacePatch['sprite']; x: number; y: number; width: number; height: number }
+  mouthPatch?: { assetId: string } & EditorV6FacePatch
   visible?: boolean
   kind: 'image' | 'character' | 'narrator' | 'speech' | 'thought'
   assetId?: string

@@ -14,7 +14,7 @@ type Crop = { left: number; top: number; width: number; height: number; fingerpr
 type MotionFrameRender = { canvas: HTMLCanvasElement; width: number; height: number; crop: Crop; renderer: Renderer; dispose: () => void }
 type BakedBodySample = { canvas: HTMLCanvasElement; crop: Crop }
 type PixelBounds = { left: number; top: number; right: number; bottom: number }
-type BakedFacePatch = { index: number; canvas: HTMLCanvasElement; left: number; top: number; width: number; height: number; crop: Crop }
+type BakedFacePatch = { index: number; canvas: HTMLCanvasElement; left: number; top: number; width: number; height: number; crop: Crop; changed: PixelBounds }
 function changedBounds(reference: Uint8ClampedArray, next: Uint8ClampedArray, width: number, height: number): PixelBounds | undefined {
   let left = width, right = -1, top = height, bottom = -1
   for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
@@ -28,31 +28,33 @@ function pixelChanged(reference: Uint8ClampedArray, next: Uint8ClampedArray, off
   return pixelChangedAt(reference, offset, next, offset)
 }
 function pixelChangedAt(reference: Uint8ClampedArray, referenceOffset: number, next: Uint8ClampedArray, nextOffset: number): boolean {
-  return Math.abs(reference[referenceOffset] - next[nextOffset]) >= 3 || Math.abs(reference[referenceOffset + 1] - next[nextOffset + 1]) >= 3
-    || Math.abs(reference[referenceOffset + 2] - next[nextOffset + 2]) >= 3 || Math.abs(reference[referenceOffset + 3] - next[nextOffset + 3]) >= 3
+  return reference[referenceOffset] !== next[nextOffset] || reference[referenceOffset + 1] !== next[nextOffset + 1]
+    || reference[referenceOffset + 2] !== next[nextOffset + 2] || reference[referenceOffset + 3] !== next[nextOffset + 3]
 }
-/** Build a sparse replacement layer; unchanged pixels stay transparent so its rectangular atlas cell cannot show a seam. */
-function changedPixelPatch(source: HTMLCanvasElement, reference: Uint8ClampedArray, width: number, bounds: PixelBounds): HTMLCanvasElement {
+/** Store the complete RGBA rectangle and real source pixels as a texture gutter for clean resampling. */
+function changedPixelPatch(source: HTMLCanvasElement, bounds: PixelBounds): HTMLCanvasElement {
   const patchWidth = bounds.right - bounds.left + 1, patchHeight = bounds.bottom - bounds.top + 1
-  const sourcePixels = source.getContext('2d', { willReadFrequently: true })!.getImageData(bounds.left, bounds.top, patchWidth, patchHeight).data
-  const patch = document.createElement('canvas'); patch.width = patchWidth; patch.height = patchHeight
-  const context = patch.getContext('2d')!
-  const pixels = context.createImageData(patchWidth, patchHeight)
-  for (let y = 0; y < patchHeight; y++) for (let x = 0; x < patchWidth; x++) {
-    const localOffset = (y * patchWidth + x) * 4
-    const sourceOffset = ((bounds.top + y) * width + bounds.left + x) * 4
-    if (!pixelChangedAt(reference, sourceOffset, sourcePixels, localOffset)) continue
-    const alpha = sourcePixels[localOffset + 3]
-    if (!alpha) continue
-    pixels.data[localOffset] = sourcePixels[localOffset]
-    pixels.data[localOffset + 1] = sourcePixels[localOffset + 1]
-    pixels.data[localOffset + 2] = sourcePixels[localOffset + 2]
-    // The usual face region sits over an opaque head. Replace those pixels
-    // instead of alpha-blending a second copy of the character's antialiasing.
-    pixels.data[localOffset + 3] = reference[sourceOffset + 3] >= 248 ? 255 : alpha
+  const gutter = 2, patch = document.createElement('canvas'); patch.width = patchWidth + gutter * 2; patch.height = patchHeight + gutter * 2
+  const sourceContext = source.getContext('2d', { willReadFrequently: true })!, sourceLeft = Math.max(0, bounds.left - gutter), sourceTop = Math.max(0, bounds.top - gutter)
+  const sourceRight = Math.min(source.width, bounds.right + gutter + 1), sourceBottom = Math.min(source.height, bounds.bottom + gutter + 1)
+  const sourcePixels = sourceContext.getImageData(sourceLeft, sourceTop, sourceRight - sourceLeft, sourceBottom - sourceTop).data
+  const sourceWidth = sourceRight - sourceLeft, context = patch.getContext('2d')!, pixels = context.createImageData(patch.width, patch.height)
+  for (let y = 0; y < patch.height; y++) for (let x = 0; x < patch.width; x++) {
+    const sourceX = Math.max(sourceLeft, Math.min(sourceRight - 1, bounds.left + x - gutter))
+    const sourceY = Math.max(sourceTop, Math.min(sourceBottom - 1, bounds.top + y - gutter))
+    const sourceOffset = ((sourceY - sourceTop) * sourceWidth + sourceX - sourceLeft) * 4, targetOffset = (y * patch.width + x) * 4
+    pixels.data[targetOffset] = sourcePixels[sourceOffset]; pixels.data[targetOffset + 1] = sourcePixels[sourceOffset + 1]
+    pixels.data[targetOffset + 2] = sourcePixels[sourceOffset + 2]; pixels.data[targetOffset + 3] = sourcePixels[sourceOffset + 3]
   }
   context.putImageData(pixels, 0, 0)
   return patch
+}
+function normalizedReplacementBounds(changed: PixelBounds, patch: PixelBounds, padding = 2) {
+  const left = Math.max(patch.left, changed.left - padding), top = Math.max(patch.top, changed.top - padding)
+  const right = Math.min(patch.right, changed.right + padding), bottom = Math.min(patch.bottom, changed.bottom + padding)
+  const width = patch.right - patch.left + 1, height = patch.bottom - patch.top + 1
+  return { x: (left - patch.left) / width, y: (top - patch.top) / height,
+    width: (right - left + 1) / width, height: (bottom - top + 1) / height }
 }
 function unionBounds(current: PixelBounds | undefined, next: PixelBounds): PixelBounds {
   return current ? { left: Math.min(current.left, next.left), top: Math.min(current.top, next.top), right: Math.max(current.right, next.right), bottom: Math.max(current.bottom, next.bottom) } : next
@@ -206,8 +208,9 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
       const left = Math.max(sourceCrop.left, bounds.left - padding), top = Math.max(sourceCrop.top, bounds.top - padding)
       const right = Math.min(sourceCrop.left + sourceCrop.width - 1, bounds.right + padding), bottom = Math.min(sourceCrop.top + sourceCrop.height - 1, bounds.bottom + padding)
       const patchWidth = right - left + 1, patchHeight = bottom - top + 1
-      const count = request.plan.samples.length, columns = Math.ceil(Math.sqrt(count)), rows = Math.ceil(count / columns)
-      const atlasWidth = patchWidth * columns, atlasHeight = patchHeight * rows
+      const count = request.plan.samples.length, columns = Math.ceil(Math.sqrt(count)), rows = Math.ceil(count / columns), gutter = 2
+      const cellWidth = patchWidth + gutter * 2, cellHeight = patchHeight + gutter * 2
+      const atlasWidth = cellWidth * columns, atlasHeight = cellHeight * rows
       const atlasPixels = atlasWidth * atlasHeight
       if (atlasWidth > 8192 || atlasHeight > 8192 || atlasPixels > Math.min(8_000_000, request.maxAtlasPixels ?? 8_000_000)) throw Error(`A camada facial em resolução nativa precisa de ${atlasPixels.toLocaleString('pt-BR')} pixels e excede o limite seguro; reduza o número de personagens falando simultaneamente neste trecho.`)
       const atlas = document.createElement('canvas'); atlas.width = atlasWidth; atlas.height = atlasHeight
@@ -220,10 +223,10 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
         const frame = await render(0, sample.faceMode, scales[index] ?? 1)
         let patchCanvas: HTMLCanvasElement | undefined
         try {
-          const sx = index % columns * patchWidth, sy = Math.floor(index / columns) * patchHeight
-          patchCanvas = changedPixelPatch(frame.canvas, baselinePixels, frame.width, { left, top, right, bottom })
-          context.drawImage(patchCanvas, sx, sy)
-          frames.push({ offset: sample.offset, sprite: { x: sx, y: sy, width: patchWidth, height: patchHeight, atlasWidth, atlasHeight }, x: from.x, y: from.y, width: from.width, height: from.height, rotation: from.rotation, flipX: Boolean(from.flipX), facePatch: { sprite: { x: sx, y: sy, width: patchWidth, height: patchHeight, atlasWidth, atlasHeight }, x, y, width, height } })
+          const cellX = index % columns * cellWidth, cellY = Math.floor(index / columns) * cellHeight, sx = cellX + gutter, sy = cellY + gutter
+          patchCanvas = changedPixelPatch(frame.canvas, { left, top, right, bottom })
+          context.drawImage(patchCanvas, cellX, cellY)
+          frames.push({ offset: sample.offset, sprite: { x: sx, y: sy, width: patchWidth, height: patchHeight, atlasWidth, atlasHeight }, x: from.x, y: from.y, width: from.width, height: from.height, rotation: from.rotation, flipX: Boolean(from.flipX), facePatch: { sprite: { x: sx, y: sy, width: patchWidth, height: patchHeight, atlasWidth, atlasHeight }, x, y, width, height, replace: true, replaceBounds: normalizedReplacementBounds(bounds, { left, top, right, bottom }) } })
         } finally { if (patchCanvas) { patchCanvas.width = 1; patchCanvas.height = 1 }; frame.dispose() }
       }
       const assetId = crypto.randomUUID(), dataUrl = atlas.toDataURL('image/png')
@@ -254,8 +257,8 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
         const left = Math.max(frame.crop.left, changed.left - padding), top = Math.max(frame.crop.top, changed.top - padding)
         const right = Math.min(frame.crop.left + frame.crop.width - 1, changed.right + padding), bottom = Math.min(frame.crop.top + frame.crop.height - 1, changed.bottom + padding)
         const patchWidth = right - left + 1, patchHeight = bottom - top + 1
-        const patchCanvas = changedPixelPatch(scaled.canvas, baselinePixels, scaled.width, { left, top, right, bottom })
-        facePatches.push({ index, canvas: patchCanvas, left, top, width: patchWidth, height: patchHeight, crop: frame.crop })
+        const patchCanvas = changedPixelPatch(scaled.canvas, { left, top, right, bottom })
+        facePatches.push({ index, canvas: patchCanvas, left, top, width: patchWidth, height: patchHeight, crop: frame.crop, changed })
       } finally { scaled.dispose() }
     }
     if (ratio < 1) {
@@ -319,7 +322,7 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
     }
     let faceAsset: EditorV6MotionBakeResult['faceAsset']
     if (facePatches.length) {
-      const faceWidth = facePatches.reduce((total, patch) => total + patch.width, 0), faceHeight = Math.max(...facePatches.map((patch) => patch.height))
+      const gutter = 2, faceWidth = facePatches.reduce((total, patch) => total + patch.width + gutter * 2, 0), faceHeight = Math.max(...facePatches.map((patch) => patch.height)) + gutter * 2
       const facePixels = faceWidth * faceHeight, bodyPixels = atlas.width * atlas.height
       if (faceWidth > 8192 || faceHeight > 8192 || facePixels + bodyPixels > maxAtlasPixels) throw Error('As camadas faciais desta transição excedem o limite seguro em resolução nativa. A exportação foi interrompida para não reduzir a nitidez do personagem.')
       const faceAtlas = document.createElement('canvas'); faceAtlas.width = faceWidth; faceAtlas.height = faceHeight
@@ -328,8 +331,9 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
       for (const patch of facePatches) {
         faceContext.drawImage(patch.canvas, offsetX, 0)
         const frame = frames[patch.index]
-        frame.facePatch = { sprite: { x: offsetX, y: 0, width: patch.width, height: patch.height, atlasWidth: faceWidth, atlasHeight: faceHeight }, x: (patch.left - patch.crop.left) / patch.crop.width, y: (patch.top - patch.crop.top) / patch.crop.height, width: patch.width / patch.crop.width, height: patch.height / patch.crop.height }
-        offsetX += patch.width
+        frame.facePatch = { sprite: { x: offsetX + gutter, y: gutter, width: patch.width, height: patch.height, atlasWidth: faceWidth, atlasHeight: faceHeight }, x: (patch.left - patch.crop.left) / patch.crop.width, y: (patch.top - patch.crop.top) / patch.crop.height, width: patch.width / patch.crop.width, height: patch.height / patch.crop.height, replace: true,
+          replaceBounds: normalizedReplacementBounds(patch.changed, { left: patch.left, top: patch.top, right: patch.left + patch.width - 1, bottom: patch.top + patch.height - 1 }) }
+        offsetX += patch.width + gutter * 2
         patch.canvas.width = patch.canvas.height = 1
       }
       const faceAssetId = crypto.randomUUID(), assetId = crypto.randomUUID()

@@ -6,6 +6,7 @@ import { editorV6ClipAtFrame } from '../../../../shared/editorV6TimelineCore'
 import { resolveEditorV6SceneAtFrame } from '../../../../shared/editorV6TimelineScene'
 import { editorV6FaceModeAtFrame } from '../../../../shared/editorV6FaceSchedule'
 import { EDITOR_V6_MOUTH_LOOP_SAMPLE_SCALES, editorV6MouthLoopScaleAtFrame, editorV6LayerVisualKeys, editorV6VisualKey, type EditorV6ExportMouthLoops, type EditorV6FrameTimings, type EditorV6RenderFrameResult, type EditorV6WorkerBridge } from '../../../../shared/editorV6Export'
+import { composeEditorV6FaceReplacements } from './sceneFaceComposition'
 
 const worker = (window as unknown as { editorV6ExportWorker: EditorV6WorkerBridge }).editorV6ExportWorker
 async function initialize() {
@@ -96,8 +97,13 @@ async function initialize() {
       await prepared
     }
     timings.assetPreparationMs = performance.now() - assetPreparationStarted
+    const faceCompositionStarted = performance.now()
+    const composed = activeLayer === 'background'
+      ? { scene: { ...scene, mediaVideo: undefined }, assets: project.assets }
+      : await composeEditorV6FaceReplacements({ ...scene, mediaVideo: undefined }, project.assets)
+    timings.faceCompositionMs = performance.now() - faceCompositionStarted
     const reactCommitStarted = performance.now()
-    flushSync(() => root.render(<SceneSurface scene={{ ...scene, mediaVideo: undefined }} assets={project.assets} outputWidth={width} outputHeight={height} renderLayer={activeLayer ?? 'all'} onImageLoad={onSvgImageLoad} />))
+    flushSync(() => root.render(<SceneSurface scene={composed.scene} assets={composed.assets} outputWidth={width} outputHeight={height} renderLayer={activeLayer ?? 'all'} onImageLoad={onSvgImageLoad} />))
     timings.reactCommitMs = performance.now() - reactCommitStarted
     const svgImageDecodeStarted = performance.now()
     await Promise.all(Array.from(document.querySelectorAll<SVGImageElement>('svg image')).flatMap((image) => {

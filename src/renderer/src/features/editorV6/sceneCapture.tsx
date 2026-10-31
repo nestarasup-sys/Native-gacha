@@ -3,6 +3,7 @@ import type { EditorV6Document } from '../../../../shared/editorV6'
 import { resolveEditorV6SceneAtFrame } from '../../../../shared/editorV6TimelineScene'
 import { SceneSurface } from './SceneSurface'
 import { editorV6VisualKey } from '../../../../shared/editorV6Export'
+import { composeEditorV6FaceReplacements } from './sceneFaceComposition'
 
 export function renderEditorV6FrameSvg(document: EditorV6Document, frame: number, width = 1920, height = 1080): string {
   return renderToStaticMarkup(<SceneSurface scene={resolveEditorV6SceneAtFrame(document, frame)} assets={document.assets} outputWidth={width} outputHeight={height} />)
@@ -16,7 +17,9 @@ export async function captureEditorV6Frame(project: EditorV6Document, frame: num
   canvas.height = height
   const context = canvas.getContext('2d')
   if (!context) throw new Error('Não foi possível preparar a captura da cena.')
-  const svg = renderEditorV6FrameSvg(project, frame, width, height)
+  const scene = resolveEditorV6SceneAtFrame(project, frame)
+  const composed = await composeEditorV6FaceReplacements(scene, project.assets)
+  const svg = renderToStaticMarkup(<SceneSurface scene={composed.scene} assets={composed.assets} outputWidth={width} outputHeight={height} />)
   const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml;charset=utf-8' }))
   try {
     const image = new Image()

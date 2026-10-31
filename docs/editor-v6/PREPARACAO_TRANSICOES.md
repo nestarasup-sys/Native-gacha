@@ -6,7 +6,7 @@ Implementado em 26/10/2026, na branch `Main-desenvolvimento`.
 
 - O exportador agrupa as transições por `motion.key`, prepara cada conteúdo distinto uma vez e compartilha o atlas entre os blocos equivalentes. Um atlas válido já presente no projeto também pode ser reaproveitado.
 - O serviço mantém um cache persistente em `userData/cache/editor-v6-motion-v2`. O cache fica fora dos documentos dos projetos: não acrescenta atlas ao JSON salvo pelo usuário nem disputa com autosave.
-- A chave SHA-256 inclui versão do preparador, assinatura da transição, amostras temporárias de escala da boca (quando solicitadas) e conteúdo do personagem. A assinatura inclui poses/revisões, expressão/revisões, rosto, geometria e amostras de fala. A versão atual é 4; entradas anteriores não são apagadas nem aceitas com uma versão incompatível.
+- A chave SHA-256 inclui versão do preparador, assinatura da transição, amostras temporárias de escala da boca (quando solicitadas) e conteúdo do personagem. A assinatura inclui poses/revisões, expressão/revisões, rosto, geometria e amostras de fala. A versão atual é 5; entradas anteriores não são apagadas nem aceitas com uma versão incompatível.
 - Cada arquivo possui checksum, validação de schema e conferência da chave e dos offsets. Arquivos ausentes, corrompidos ou inválidos são tratados como cache ausente. O resultado é publicado por rename de temporário; falha no cache não impede exportar.
 - Limites atuais: até 512 entradas e 768 MiB em disco, descarte por uso recente; arquivos individuais acima de 32 MiB não são retidos. Temporários órfãos com mais de uma hora são removidos na próxima manutenção. O cache em RAM é limitado por entradas e bytes de data URL.
 - Uma janela oculta permanece disponível durante o lote, encerrando após 30 segundos sem renderização. Ao fechar a janela principal, preparadores ociosos são liberados imediatamente. Cancelamento e encerramento também fecham preparadores ativos.
@@ -14,9 +14,9 @@ Implementado em 26/10/2026, na branch `Main-desenvolvimento`.
 - A preparação antecipada começa 2,5 segundos após o editor salvo ficar ocioso. Interação, arraste, reprodução, edição ou exportação cancelam/suspendem esse trabalho. Há uma pausa entre pedidos. O canal `prepareEditorV6Motion` retorna somente a conclusão; PNGs grandes não voltam para a interface durante o aquecimento do cache.
 - A duração de 250 ms e as até sete amostras inteiras em 30 FPS permanecem iguais. Nenhuma redução de resolução/amostras foi aplicada.
 
-## Camada facial da boca — Rodada 01 (30/10/2026)
+## Camada facial da boca — Rodadas 01 e 02 (30–31/10/2026)
 
-Loops estáticos de boca guardam apenas o recorte facial localizado como o próprio atlas da animação. Transições de pose/expressão preservam o atlas corporal em resolução nativa e podem referenciar um asset facial separado para quadros falados; a validação do cache/IPC distingue esses dois formatos. A versão 4 invalida resultados anteriores à composição localizada. Se o recorte necessário exceder o orçamento, o bake falha explicitamente; não diminui a resolução do corpo.
+Loops estáticos de boca guardam apenas o recorte facial localizado como o próprio atlas da animação. Transições de pose/expressão preservam o atlas corporal em resolução nativa e podem referenciar um asset facial separado para quadros falados. Os recortes faciais guardam RGBA completo, inclusive pixels que precisam apagar a imagem anterior, e são compostos sobre o sprite corporal em resolução nativa antes de escalar o SVG. A comparação com o render integral cobre fundos transparentes, pretos, brancos, coloridos e quadriculados, além de personagem espelhado e rotacionado. A chave de movimento subiu para versão 3 e o cache para versão 5; isso invalida resultados antigos sem apagar arquivos do cache. Se a camada facial necessária exceder o orçamento, o bake falha explicitamente; não diminui a resolução do corpo.
 
 ## Evidência no projeto local de teste
 

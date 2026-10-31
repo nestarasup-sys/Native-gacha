@@ -52,7 +52,7 @@ export function splitEditorV6ExportParts(parts: readonly EditorV6ExportPart[], m
 export const editorV6WorkerChannels = { payload: 'editor-v6:export-worker:payload', ready: 'editor-v6:export-worker:ready' } as const
 export type EditorV6WorkerPayload = { project: EditorV6Document; width: number; height: number; layeredVideo: boolean; mouthLoops?: EditorV6ExportMouthLoops }
 export type EditorV6WorkerBridge = { payload: () => Promise<EditorV6WorkerPayload>; ready: (error?: string) => Promise<void> }
-export type EditorV6FrameTimings = Partial<Record<'sceneResolutionMs' | 'assetPreparationMs' | 'reactCommitMs' | 'rafWaitMs' | 'ipcDrawMs' | 'captureMs' | 'backgroundCaptureMs' | 'foregroundCaptureMs' | 'frameRoundTripMs' | 'ffmpegWriteMs', number>>
+export type EditorV6FrameTimings = Partial<Record<'sceneResolutionMs' | 'faceCompositionMs' | 'assetPreparationMs' | 'reactCommitMs' | 'rafWaitMs' | 'ipcDrawMs' | 'captureMs' | 'backgroundCaptureMs' | 'foregroundCaptureMs' | 'frameRoundTripMs' | 'ffmpegWriteMs', number>>
 export type EditorV6RenderFrameResult = { reused: boolean; layerReused?: boolean; timings?: EditorV6FrameTimings }
 type EditorV6VisualKeyInput = { frame?: number; background: unknown; elements: EditorV6Document['elements']; mediaVideo?: { mediaId: string; startFrame: number; sourceInFrame: number; layout: { x: number; y: number; width: number; height: number; rotation: number } } }
 function editorV6ElementVisualKeys(elements: EditorV6Document['elements']) {

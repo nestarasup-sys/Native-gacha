@@ -10,9 +10,26 @@ import { editorV6MotionResultSchema } from '../../src/shared/editorV6Schema'
 import { editorV6MotionPlan } from '../../src/shared/editorV6Motion'
 import { prepareSavedCharacterRenderer } from '../../src/renderer/src/characters/editorV6CharacterRenderer'
 import { bakeEditorV6Motion } from '../../src/renderer/src/features/editorV6/motion/bakeMotion'
+import { SceneSurface } from '../../src/renderer/src/features/editorV6/SceneSurface'
+import { composeEditorV6FaceReplacements } from '../../src/renderer/src/features/editorV6/sceneFaceComposition'
+import { faceRenderGeometry } from '../../src/renderer/src/characters/characterGeometry'
+import { trimTransparentCanvas } from '../../src/renderer/src/features/editorV6/faceModeAssets'
 const assert = (ok: unknown, message: string) => { if (!ok) throw Error(message) }
 function png(color: string) { const c = document.createElement('canvas'); c.width = c.height = 10; const x = c.getContext('2d')!; x.fillStyle = color; x.fillRect(0,0,10,10); return c.toDataURL() }
 async function image(url: string) { const i = new Image(); i.src = url; await i.decode(); return i }
+async function captureScene(scene: unknown, assets: unknown[], renderLayer: 'all' | 'foreground') {
+  const mount = document.createElement('div'); document.body.append(mount)
+  const root = createRoot(mount)
+  flushSync(() => root.render(createElement(SceneSurface, { scene, assets, renderLayer, outputWidth: 384, outputHeight: 216 } as never)))
+  const svg = mount.querySelector('svg')!
+  const source = new Blob([new XMLSerializer().serializeToString(svg)], { type: 'image/svg+xml' })
+  const url = URL.createObjectURL(source)
+  try {
+    const rendered = await image(url), canvas = document.createElement('canvas'); canvas.width = 384; canvas.height = 216
+    const context = canvas.getContext('2d', { willReadFrequently: true })!; context.drawImage(rendered, 0, 0)
+    return new Uint8ClampedArray(context.getImageData(0, 0, 384, 216).data)
+  } finally { URL.revokeObjectURL(url); root.unmount(); mount.remove() }
+}
 ;(globalThis as unknown as { runMotionCheck: () => Promise<unknown> }).runMotionCheck = async () => {
   const source: FabricatorProject = { schemaVersion: 1, slot: 1, name: 'Synthetic', sourceName: 'test', sourceAssetName: 'test', sourceDataUrl: '', width: 100, height: 100, tolerance: 0, updatedAt: new Date().toISOString(), joints: [], layerOrder: ['head','arm'], parts: [ { id: 'head', name: 'head', x: 35, y: 20, width: 30, height: 60, rotation: 0, dataUrl: png('#ff0000') }, { id: 'arm', name: 'arm', x: 10, y: 50, width: 10, height: 10, rotation: 0, dataUrl: png('#0000ff') } ] }
   const target = { ...source, parts: source.parts.map(p => p.id === 'arm' ? { ...p, x: 80 } : p) }
@@ -84,20 +101,57 @@ async function image(url: string) { const i = new Image(); i.src = url; await i.
     patchCanvas.width = sprite.width; patchCanvas.height = sprite.height
     const patchContext = patchCanvas.getContext('2d')!
     patchContext.drawImage(transitionFaceAtlas, sprite.x, sprite.y, sprite.width, sprite.height, 0, 0, sprite.width, sprite.height)
-    const pixels = patchContext.getImageData(0, 0, sprite.width, sprite.height).data
-    for (let x = 0; x < sprite.width; x++) assert(pixels[x * 4 + 3] === 0 && pixels[((sprite.height - 1) * sprite.width + x) * 4 + 3] === 0, 'Mouth patch has visible pixels on its horizontal rectangular edge')
-    for (let y = 0; y < sprite.height; y++) assert(pixels[(y * sprite.width) * 4 + 3] === 0 && pixels[(y * sprite.width + sprite.width - 1) * 4 + 3] === 0, 'Mouth patch has visible pixels on its vertical rectangular edge')
+    assert(frame.facePatch.replace === true && patchContext.getImageData(0, 0, sprite.width, sprite.height).data.length === sprite.width * sprite.height * 4, 'Mouth patch is not a complete RGBA replacement region')
   }
   assert(editorV6MotionResultSchema.safeParse(talkingTransition).success, 'A talking pose transition exceeded the motion result contract')
   const expressionActor = { ...actor, width: 20, height: 26.6666666667, characterCanvasWidth: 25 }
   const firstFace = { ...previous,state: { ...expressionActor,faceAppearance: appearance } }
   const same = { ...next, state: { ...expressionActor,faceAppearance: appearance,activeExpressionPresetId: 'other',faceTransforms: { 'expression:mouth-closed:mouth-test': { x: 0,y: 0,width: 100,height: 100,rotation: 0,sourceTransformOverride: { x: 65,y: 35,scaleX: .5,scaleY: .5,rotation: 0 } } } } }
   const expressionPlan = editorV6MotionPlan(track,firstFace,same)!
-  const facial = await bakeEditorV6Motion({ id: crypto.randomUUID(), plan: expressionPlan, character: facialCharacter },facialProvider)
+  const expressionRenderer = await prepareSavedCharacterRenderer(facialCharacter, { source, artwork: source, assetProvider: facialProvider })
+  const fromExpression = await expressionRenderer.renderToCanvas(appearance, firstFace.state.faceTransforms, firstFace.state.activeExpressionEffects, 'idle')
+  const sourceCanvasWidth = fromExpression.width, sourceCanvasHeight = fromExpression.height
+  const sourcePixels = fromExpression.canvas.getContext('2d')!.getImageData(0, 0, sourceCanvasWidth, sourceCanvasHeight).data
+  const fromCrop = trimTransparentCanvas(fromExpression.canvas)
+  const toExpression = await expressionRenderer.renderToCanvas(appearance, same.state.faceTransforms, same.state.activeExpressionEffects, 'idle')
+  const toCrop = trimTransparentCanvas(toExpression.canvas)
+  const stableFrom = { ...firstFace.state, ...faceRenderGeometry(firstFace.state, fromExpression, fromCrop, 1920, 1080) }
+  const stableTo = { ...same.state, ...faceRenderGeometry(same.state, toExpression, toCrop, 1920, 1080, fromCrop) }
+  fromExpression.canvas.width = fromExpression.canvas.height = toExpression.canvas.width = toExpression.canvas.height = 1
+  expressionRenderer.dispose()
+  const stableExpressionPlan = { ...expressionPlan, key: 'expression-with-stable-crop-anchor', from: stableFrom, to: stableTo }
+  const facial = await bakeEditorV6Motion({ id: crypto.randomUUID(), plan: stableExpressionPlan, character: facialCharacter },facialProvider)
   assert(facial.metrics.preparedRigs === 1, 'Expression-only transition rebuilt the static rig')
   assert(new Set(facial.motion.frames.map((frame) => frame.sprite.width)).size > 1, 'The expression fixture did not change the visible crop bounds')
   const perPixelCharacterScale = facial.motion.frames.map((frame) => frame.width / frame.sprite.width)
   assert(Math.max(...perPixelCharacterScale) - Math.min(...perPixelCharacterScale) < 0.000001, 'Changing facial crop bounds changed the character scale during an expression transition')
+  const expressionAtlas = await image(facial.asset.dataUrl)
+  const bodyLandmark = (pixels: Uint8ClampedArray, width: number, height: number) => {
+    let x = 0, y = 0, count = 0
+    for (let offset = 0; offset < pixels.length; offset += 4) if (pixels[offset] < 40 && pixels[offset + 1] < 40 && pixels[offset + 2] > 200 && pixels[offset + 3] > 200) { x += (offset / 4) % width; y += Math.floor(offset / 4 / width); count++ }
+    assert(count > 10, 'A transição facial perdeu o marcador sintético do corpo.')
+    return { x: x / count, y: y / count }
+  }
+  const sourceLandmark = bodyLandmark(sourcePixels, sourceCanvasWidth, sourceCanvasHeight)
+  const sourceCenterX = (fromCrop?.left ?? 0) + (fromCrop?.width ?? sourceCanvasWidth) / 2
+  const sourceCenterY = (fromCrop?.top ?? 0) + (fromCrop?.height ?? sourceCanvasHeight) / 2
+  const expectedLandmark = {
+    x: (50 + stableFrom.x) * 19.2 + (sourceLandmark.x - sourceCenterX) * stableFrom.characterCanvasWidth! * 19.2 / sourceCanvasWidth,
+    y: (50 + stableFrom.y) * 10.8 + (sourceLandmark.y - sourceCenterY) * stableFrom.characterCanvasWidth! * 19.2 / sourceCanvasWidth
+  }
+  let maxLandmarkDrift = 0
+  for (const frame of facial.motion.frames) {
+    const sprite = frame.sprite, frameCanvas = document.createElement('canvas'); frameCanvas.width = sprite.width; frameCanvas.height = sprite.height
+    const frameContext = frameCanvas.getContext('2d')!
+    frameContext.drawImage(expressionAtlas, sprite.x, sprite.y, sprite.width, sprite.height, 0, 0, sprite.width, sprite.height)
+    const landmark = bodyLandmark(frameContext.getImageData(0, 0, sprite.width, sprite.height).data, sprite.width, sprite.height)
+    const point = {
+      x: (50 + frame.x) * 19.2 + (landmark.x / sprite.width - .5) * frame.width * 19.2,
+      y: (50 + frame.y) * 10.8 + (landmark.y / sprite.height - .5) * frame.height * 10.8
+    }
+    maxLandmarkDrift = Math.max(maxLandmarkDrift, Math.hypot(point.x - expectedLandmark.x, point.y - expectedLandmark.y))
+  }
+  assert(maxLandmarkDrift < 1, `O corpo derivou ${maxLandmarkDrift.toFixed(3)} px durante uma transição apenas facial.`)
   const faceAtlas = await image(facial.asset.dataUrl), greenXs: number[] = []
   for (const frame of facial.motion.frames) {
     const c = document.createElement('canvas'),s = frame.sprite; c.width=s.width;c.height=s.height;const ctx=c.getContext('2d')!;ctx.drawImage(faceAtlas,s.x,s.y,s.width,s.height,0,0,c.width,c.height)
@@ -137,8 +191,7 @@ async function image(url: string) { const i = new Image(); i.src = url; await i.
   const hiPatchContext = hiPatchCanvas.getContext('2d')!
   hiPatchContext.drawImage(hiPatchAtlas, hiPatchSprite.x, hiPatchSprite.y, hiPatchSprite.width, hiPatchSprite.height, 0, 0, hiPatchSprite.width, hiPatchSprite.height)
   const hiPatchPixels = hiPatchContext.getImageData(0, 0, hiPatchSprite.width, hiPatchSprite.height).data
-  for (let x = 0; x < hiPatchSprite.width; x++) assert(hiPatchPixels[x * 4 + 3] === 0 && hiPatchPixels[((hiPatchSprite.height - 1) * hiPatchSprite.width + x) * 4 + 3] === 0, 'A high-resolution mouth patch retained an opaque horizontal rectangle edge')
-  for (let y = 0; y < hiPatchSprite.height; y++) assert(hiPatchPixels[(y * hiPatchSprite.width) * 4 + 3] === 0 && hiPatchPixels[(y * hiPatchSprite.width + hiPatchSprite.width - 1) * 4 + 3] === 0, 'A high-resolution mouth patch retained an opaque vertical rectangle edge')
+  assert(hiMouthBake.motion.frames[2].facePatch?.replace === true && hiPatchPixels.length === hiPatchSprite.width * hiPatchSprite.height * 4, 'A high-resolution mouth patch is not a complete RGBA replacement region')
   const hiBodyRenderer = await prepareSavedCharacterRenderer(hiCharacter, { source: hiSource, artwork: hiSource, assetProvider: hiProvider })
   const hiBody = await hiBodyRenderer.renderToCanvas(hiAppearance, {}, undefined, 'idle')
   const hiBodyDataUrl = hiBody.canvas.toDataURL('image/png')
@@ -148,6 +201,61 @@ async function image(url: string) { const i = new Image(); i.src = url; await i.
   assert(Boolean(hiPatch) && hiPatch!.sprite.width < 640 / 4 && hiPatch!.sprite.height < 960 / 4, `A boca não ficou localizada: ${hiPatch?.sprite.width}×${hiPatch?.sprite.height} em personagem 640×960.`)
   assert(hiMouthBake.motion.frames.every(frame => frame.facePatch?.sprite.width === hiPatch!.sprite.width && frame.facePatch?.sprite.height === hiPatch!.sprite.height), 'As amostras de boca perderam a mesma geometria local.')
   assert(hiMouthBake.metrics.atlasPixels < 640 * 960, `O atlas facial reteve resolução de corpo inteiro (${hiMouthBake.metrics.atlasPixels} pixels).`)
+
+  // Reproduce a face layer that removes old pixels. A source-over overlay cannot
+  // erase that content, so the composed scene must match a full renderer frame.
+  const compositeBase = document.createElement('canvas'); compositeBase.width = compositeBase.height = 96
+  const compositeBaseContext = compositeBase.getContext('2d')!
+  compositeBaseContext.fillStyle = '#f4d1ad'; compositeBaseContext.beginPath(); compositeBaseContext.ellipse(48, 48, 35, 40, 0, 0, Math.PI * 2); compositeBaseContext.fill()
+  compositeBaseContext.fillStyle = '#291b23'; compositeBaseContext.fillRect(38, 36, 14, 3)
+  compositeBaseContext.fillStyle = '#40212a'; compositeBaseContext.beginPath(); compositeBaseContext.ellipse(47, 62, 9, 3, 0, 0, Math.PI * 2); compositeBaseContext.fill()
+  const compositeNext = document.createElement('canvas'); compositeNext.width = compositeNext.height = 96
+  compositeNext.getContext('2d')!.drawImage(compositeBase, 0, 0)
+  const compositeNextContext = compositeNext.getContext('2d')!
+  compositeNextContext.fillStyle = '#f4d1ad'; compositeNextContext.fillRect(36, 34, 18, 7) // expression no longer has this brow
+  compositeNextContext.clearRect(42, 35, 1, 1) // RGBA replacement must preserve a pixel that became transparent
+  compositeNextContext.fillStyle = '#f4d1ad'; compositeNextContext.fillRect(37, 57, 28, 12) // remove the old mouth completely
+  compositeNextContext.fillStyle = '#291b23'; compositeNextContext.beginPath(); compositeNextContext.ellipse(51, 63, 12, 7, 0, 0, Math.PI * 2); compositeNextContext.fill()
+  compositeNextContext.fillStyle = '#cf5966'; compositeNextContext.beginPath(); compositeNextContext.ellipse(51, 65, 7, 3, 0, 0, Math.PI * 2); compositeNextContext.fill()
+  const replacement = document.createElement('canvas'); replacement.width = 46; replacement.height = 52
+  replacement.getContext('2d')!.drawImage(compositeNext, 29, 26, 46, 52, 0, 0, 46, 52)
+  const baseCompositeAsset = { id: 'base-face-fixture', category: 'character' as const, name: 'synthetic base', mimeType: 'image/png' as const, dataUrl: compositeBase.toDataURL('image/png') }
+  const fullCompositeAsset = { id: 'full-face-fixture', category: 'character' as const, name: 'synthetic full frame', mimeType: 'image/png' as const, dataUrl: compositeNext.toDataURL('image/png') }
+  const replacementAsset = { id: 'replacement-face-fixture', category: 'character' as const, name: 'synthetic replacement', mimeType: 'image/png' as const, dataUrl: replacement.toDataURL('image/png') }
+  const checkerCanvas = document.createElement('canvas'); checkerCanvas.width = checkerCanvas.height = 16
+  const checkerContext = checkerCanvas.getContext('2d')!
+  checkerContext.fillStyle = '#ffffff'; checkerContext.fillRect(0, 0, 16, 16); checkerContext.fillStyle = '#bbbbbb'; checkerContext.fillRect(0, 0, 8, 8); checkerContext.fillRect(8, 8, 8, 8)
+  const checkerAsset = { id: 'checker-face-fixture', category: 'background' as const, name: 'checker', mimeType: 'image/png' as const, dataUrl: checkerCanvas.toDataURL('image/png') }
+  const compositeActor: EditorV6Element = { id: 'composite-face-actor', kind: 'character', assetId: baseCompositeAsset.id, text: 'RGBA', x: 0, y: 0, width: 34, height: 50, rotation: 27, flipX: true, zIndex: 1,
+    mouthPatch: { assetId: replacementAsset.id, sprite: { x: 2, y: 2, width: 42, height: 48, atlasWidth: 46, atlasHeight: 52 }, x: 31 / 96, y: 28 / 96, width: 42 / 96, height: 48 / 96,
+      replace: true, replaceBounds: { x: 5 / 42, y: 5 / 48, width: 30 / 42, height: 40 / 48 } } }
+  const compositeScene = (backgroundColor: string, backgroundAssetId: string | null, elements: EditorV6Element[]) => ({
+    frame: 0, elements, background: { backgroundColor, backgroundAssetId, backgroundX: 0, backgroundY: 0, backgroundWidth: 100, backgroundHeight: 100, backgroundRotation: 0 }
+  })
+  const compositionComparisons: Array<{ background: string; changedPixels: number; maxDifference: number }> = []
+  for (const [label, backgroundColor, backgroundAssetId, layer] of [
+    ['transparent', '#000000', null, 'foreground'], ['black', '#000000', null, 'all'], ['white', '#ffffff', null, 'all'], ['colored', '#287f48', null, 'all'], ['checkerboard', '#ffffff', checkerAsset.id, 'all']
+  ] as const) {
+    const expected = await captureScene(compositeScene(backgroundColor, backgroundAssetId, [{ ...compositeActor, assetId: fullCompositeAsset.id, mouthPatch: undefined }]), [fullCompositeAsset, checkerAsset], layer)
+    const composed = await composeEditorV6FaceReplacements(compositeScene(backgroundColor, backgroundAssetId, [compositeActor]), [baseCompositeAsset, replacementAsset, checkerAsset])
+    const actual = await captureScene(composed.scene, composed.assets, layer)
+    let changedPixels = 0, maxDifference = 0, maxDifferenceAt = '', minX = 384, minY = 216, maxX = -1, maxY = -1, firstDifference = ''
+    for (let offset = 0; offset < expected.length; offset += 4) if (expected[offset] !== actual[offset] || expected[offset + 1] !== actual[offset + 1] || expected[offset + 2] !== actual[offset + 2] || expected[offset + 3] !== actual[offset + 3]) {
+      changedPixels++; const pixel = offset / 4, x = pixel % 384, y = Math.floor(pixel / 384)
+      const difference = Math.max(...[0, 1, 2, 3].map((channel) => Math.abs(expected[offset + channel] - actual[offset + channel])))
+      if (difference > maxDifference) { maxDifference = difference; maxDifferenceAt = `(${x},${y}) esperado ${Array.from(expected.slice(offset, offset + 4))}, obtido ${Array.from(actual.slice(offset, offset + 4))}` }
+      minX = Math.min(minX, x); minY = Math.min(minY, y); maxX = Math.max(maxX, x); maxY = Math.max(maxY, y)
+      if (!firstDifference) firstDifference = `(${x},${y}) esperado ${Array.from(expected.slice(offset, offset + 4))}, obtido ${Array.from(actual.slice(offset, offset + 4))}`
+    }
+    assert(changedPixels === 0, `A composição facial divergiu da renderização completa em ${label}: ${changedPixels} pixels, max ${maxDifference} em ${maxDifferenceAt}, bounds ${minX},${minY}–${maxX},${maxY}; ${firstDifference}.`)
+    compositionComparisons.push({ background: label, changedPixels, maxDifference })
+  }
+  const revisedBase = { ...baseCompositeAsset, dataUrl: fullCompositeAsset.dataUrl }
+  const revisedBaseComposition = await composeEditorV6FaceReplacements(compositeScene('#000000', null, [compositeActor]), [revisedBase, replacementAsset])
+  const revisedBaseExpected = await captureScene(compositeScene('#000000', null, [{ ...compositeActor, assetId: fullCompositeAsset.id, mouthPatch: undefined }]), [fullCompositeAsset], 'all')
+  const revisedBaseActual = await captureScene(revisedBaseComposition.scene, revisedBaseComposition.assets, 'all')
+  assert(revisedBaseExpected.every((value, index) => value === revisedBaseActual[index]), 'Uma nova revisão do asset reutilizou uma composição facial antiga.')
+
   const baseTimeline = createEditorV6Timeline([actor])
   const timelineBackground = { id: crypto.randomUUID(), label: 'Fundo: teste.png', startFrame: 0, durationFrames: 300, background: { backgroundColor: '#ffffff', backgroundAssetId: null, backgroundX: 0, backgroundY: 0, backgroundWidth: 100, backgroundHeight: 100, backgroundRotation: 0 } }
   const videoClip = { id: crypto.randomUUID(), mediaId: 'video-test', label: 'Vídeo de teste', startFrame: 0, durationFrames: 150 }
@@ -178,6 +286,8 @@ async function image(url: string) { const i = new Image(); i.src = url; await i.
   uiRoot.unmount();mount.remove()
   return {
     passed: true, metrics: result.metrics, timelineControls: true, expressionRigs: facial.metrics.preparedRigs, blueXs, greenXs,
+    facialGeometry: { maxBodyLandmarkDriftPixels: maxLandmarkDrift, exactAnchorThresholdPixels: 1 },
+    faceComposition: { backgrounds: compositionComparisons, assetRevisionInvalidation: true, characterRotationDegrees: compositeActor.rotation, mirrored: compositeActor.flipX },
     highResolutionMouth: { source: '640x960', atlasPixels: hiMouthBake.metrics.atlasPixels, patchPixels: hiPatch!.sprite.width * hiPatch!.sprite.height, patch: { width: hiPatch!.sprite.width, height: hiPatch!.sprite.height, x: hiPatch!.x, y: hiPatch!.y, widthRatio: hiPatch!.width, heightRatio: hiPatch!.height } },
     mouthExportFixture: {
       sourceDataUrl: hiBodyDataUrl,

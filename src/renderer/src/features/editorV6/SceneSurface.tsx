@@ -92,7 +92,8 @@ function sameMotionSprite(left: EditorV6Element['motionSprite'], right: EditorV6
 function sameMouthPatch(left: EditorV6Element['mouthPatch'], right: EditorV6Element['mouthPatch']): boolean {
   if (left === right) return true
   return Boolean(left && right && left.assetId === right.assetId && left.x === right.x && left.y === right.y && left.width === right.width && left.height === right.height
-    && sameMotionSprite(left.sprite, right.sprite))
+    && left.replace === right.replace && left.replaceBounds?.x === right.replaceBounds?.x && left.replaceBounds?.y === right.replaceBounds?.y
+    && left.replaceBounds?.width === right.replaceBounds?.width && left.replaceBounds?.height === right.replaceBounds?.height && sameMotionSprite(left.sprite, right.sprite))
 }
 
 /** Timeline resolution creates new state objects each frame; skip SVG layers whose visual inputs are unchanged.
@@ -115,13 +116,20 @@ const SceneLayer = memo(function SceneLayer({ element, asset, mouthAsset, select
   const fontSize = Math.max(8, Math.min(32, height * .3, width / 2)), lineHeight = fontSize * 1.22
   const lines = useMemo(() => image ? [] : wrapSceneText(element.text, Math.max(1, width - 32), fontSize, Math.max(1, Math.floor((height - 18) / lineHeight))), [element.text, image, width, height, fontSize, lineHeight])
   const clipId = `v6-text-${element.id}`
+  const faceReplacementMaskId = `v6-face-replacement-${element.id.replace(/[^a-zA-Z0-9_-]/g, '_')}`
   const fill = element.kind === 'thought' ? '#fffafd' : '#ffffff'
   return <g transform={transform(element.x, element.y, element.rotation)} data-element-id={element.id} aria-label={element.text || asset?.name || 'Objeto'} role={interaction ? 'button' : undefined}
     style={{ cursor: interaction ? element.positionLocked ? 'default' : 'move' : undefined, touchAction: 'none' }}
     onPointerDown={interaction ? (event) => interaction.start(event, element.id) : undefined} onPointerMove={interaction?.move} onPointerUp={interaction?.end} onPointerCancel={interaction?.end}>
     {image && asset ? <g transform={element.flipX ? 'scale(-1 1)' : undefined}>
+      {element.mouthPatch?.replace && mouthAsset && <defs><mask id={faceReplacementMaskId} maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse" x={-width * 2} y={-height * 2} width={width * 4} height={height * 4}>
+        <rect x={-width * 2} y={-height * 2} width={width * 4} height={height * 4} fill="#fff" />
+        <rect x={-width / 2 + (element.mouthPatch.x + (element.mouthPatch.replaceBounds?.x ?? 0) * element.mouthPatch.width) * width} y={-height / 2 + (element.mouthPatch.y + (element.mouthPatch.replaceBounds?.y ?? 0) * element.mouthPatch.height) * height} width={(element.mouthPatch.replaceBounds?.width ?? 1) * element.mouthPatch.width * width} height={(element.mouthPatch.replaceBounds?.height ?? 1) * element.mouthPatch.height * height} fill="#000" />
+      </mask></defs>}
+      <g mask={element.mouthPatch?.replace && mouthAsset ? `url(#${faceReplacementMaskId})` : undefined}>
       {element.motionSprite ? <svg x={-width / 2} y={-height / 2} width={width} height={height} viewBox={`${element.motionSprite.x} ${element.motionSprite.y} ${element.motionSprite.width} ${element.motionSprite.height}`} preserveAspectRatio="none" overflow="hidden"><image href={asset.dataUrl} onLoad={onImageLoad} x={0} y={0} width={element.motionSprite.atlasWidth} height={element.motionSprite.atlasHeight} /></svg>
         : <image href={asset.dataUrl} onLoad={onImageLoad} x={-width / 2} y={-height / 2} width={width} height={height} preserveAspectRatio={element.kind === 'character' ? 'none' : 'xMidYMid meet'} />}
+      </g>
       {element.mouthPatch && mouthAsset && <svg x={-width / 2 + element.mouthPatch.x * width} y={-height / 2 + element.mouthPatch.y * height} width={element.mouthPatch.width * width} height={element.mouthPatch.height * height} viewBox={`${element.mouthPatch.sprite.x} ${element.mouthPatch.sprite.y} ${element.mouthPatch.sprite.width} ${element.mouthPatch.sprite.height}`} preserveAspectRatio="none" overflow="hidden"><image href={mouthAsset.dataUrl} onLoad={onImageLoad} x={0} y={0} width={element.mouthPatch.sprite.atlasWidth} height={element.mouthPatch.sprite.atlasHeight} /></svg>}
     </g> : !image && <>
       {element.kind === 'speech' ? <rect x={-width / 2} y={-height / 2} width={width} height={height} fill={fill} fillOpacity={.96} stroke="#624d5b" strokeWidth={2} /> : element.kind === 'thought' ? <><ellipse rx={width / 2} ry={height / 2} fill={fill} stroke="#624d5b" strokeWidth={2} /><circle cx={width * .32} cy={height * .52} r={8} fill={fill} stroke="#624d5b" strokeWidth={2} /><circle cx={width * .37} cy={height * .65} r={4} fill={fill} stroke="#624d5b" strokeWidth={2} /></> : <rect x={-width / 2} y={-height / 2} width={width} height={height} rx={16} fill={fill} fillOpacity={.94} stroke="#624d5b" strokeWidth={2} />}
