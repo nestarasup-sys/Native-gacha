@@ -52,12 +52,14 @@ export function createWardrobeImportOperations({
     setDeformMode(false)
     setProcessing(true); setError('')
     const requestAtStart = requestRef.current
+    let importWorker: Worker | null = null
     try {
       const source = await readFile(file)
       // An import can complete after the workspace was replaced or unmounted.
       if (requestAtStart !== requestRef.current) return
       workerRef.current?.terminate()
       const worker = new Worker(new URL('./wardrobeProcessor.worker.ts', import.meta.url), { type: 'module' })
+      importWorker = worker
       workerRef.current = worker
       const id = ++requestRef.current
       worker.onmessage = (event: MessageEvent<WardrobeProcessorResponse>) => {
@@ -86,7 +88,10 @@ export function createWardrobeImportOperations({
       }
       worker.postMessage({ id, dataUrl: source })
     } catch (reason) {
-      workerRef.current?.terminate(); workerRef.current = null
+      // A rejected file read must not terminate a newer worker or clear its status.
+      if (importWorker ? workerRef.current !== importWorker : requestRef.current !== requestAtStart) return
+      importWorker?.terminate()
+      if (importWorker) workerRef.current = null
       setProcessing(false)
       setError(reason instanceof Error ? reason.message : 'Não foi possível importar a imagem.')
     }
@@ -95,6 +100,7 @@ export function createWardrobeImportOperations({
     if (!file || !model || processing || saving || openingSet) return
     if (!sourceParts) { setError('Aguarde a referência corporal carregar antes de importar a folha.'); return }
     const gridSize = gridSizeRef.current
+    const requestAtStart = requestRef.current
     setDeformMode(false)
     setProcessing(true); setError(''); setImportPickerOpen(false)
     try {
@@ -105,15 +111,20 @@ export function createWardrobeImportOperations({
       } finally {
         image.close()
       }
+      if (requestAtStart !== requestRef.current) return
       if (!components.length) throw new Error('A grade ' + gridSize + '×3 não contém peças visíveis. Confira as células da imagem.')
       clearWardrobeWarpState()
       setDraft({ schemaVersion: 1, edition: 1, importKind: gridSize === 4 ? 'torso-grid-4x3' : 'torso-grid-3x3', id: crypto.randomUUID(), modelSlot, modelName: model.name, name: file.name.replace(/\.[^.]+$/, ''), width: model.width, height: model.height, components, updatedAt: new Date().toISOString() })
       setActiveSetId(null); setSelectedId(components[0].id); setDirty(true); setBodyOffsets({})
-    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível importar a grade de roupas.') }
-    finally { setProcessing(false) }
+    } catch (reason) {
+      if (requestAtStart === requestRef.current) setError(reason instanceof Error ? reason.message : 'Não foi possível importar a grade de roupas.')
+    } finally {
+      if (requestAtStart === requestRef.current) setProcessing(false)
+    }
   }
   const importSleeveGrid = async (file?: File) => {
     if (!file || !model || processing || saving || openingSet) return
+    const requestAtStart = requestRef.current
     setDeformMode(false); setProcessing(true); setError(''); setImportPickerOpen(false)
     try {
       const image = await createImageBitmap(file)
@@ -123,12 +134,16 @@ export function createWardrobeImportOperations({
       } finally {
         image.close()
       }
+      if (requestAtStart !== requestRef.current) return
       clearWardrobeWarpState()
       setDraft({ schemaVersion: 1, edition: 1, importKind: pairedImportKindRef.current === 'pants' ? 'pants-grid-3x4' : 'sleeve-grid-3x4', id: crypto.randomUUID(), modelSlot, modelName: model.name, name: file.name.replace(/\.[^.]+$/, ''), width: model.width, height: model.height, components, updatedAt: new Date().toISOString() })
       setActiveSetId(null); setSelectedId(components[0]?.id ?? null); setDirty(true); setBodyOffsets({})
       sleeveUndoRef.current = []; sleeveRedoRef.current = []
-    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível importar a grade de mangas.') }
-    finally { setProcessing(false) }
+    } catch (reason) {
+      if (requestAtStart === requestRef.current) setError(reason instanceof Error ? reason.message : 'Não foi possível importar a grade de mangas.')
+    } finally {
+      if (requestAtStart === requestRef.current) setProcessing(false)
+    }
   }
 
   return { importSheet, importTorsoGrid, importSleeveGrid }

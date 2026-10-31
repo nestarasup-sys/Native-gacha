@@ -28,3 +28,5 @@
 - Primeira CI do SHA `d8f57cfc`: workflow Linux Quality passou por inteiro, incluindo auditoria, refatoração, orçamento, typecheck e build. Ubuntu Core também passou; Windows ainda em andamento no momento desta anotação.
 - Corrigidos callbacks tardios do worker de importação para recusar respostas de outra seleção/worker; recursos `ImageBitmap` são liberados após processar importações de grades; falhas no parse da resposta agora chegam à interface como erro. Criados testes de regressão do guard.
 - Nenhum perfil real foi acessado e nenhum dado persistido foi alterado por esta rodada. Testes Windows visuais ainda pendentes.
+
+- Protegido adicionalmente o retorno assíncrono de arquivos em grids de tronco/mangas/calças: importações canceladas não publicam dados nem limpam o estado de outra operação, e erros tardios não encerram o novo worker.

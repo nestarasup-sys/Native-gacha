@@ -16,5 +16,8 @@ test('operações de importação protegem callbacks e liberam bitmaps após cri
   assert.match(code, /acceptsWardrobeWorkerResponse\(id, requestRef\.current, message\.id, workerRef\.current === worker\)/)
   assert.match(code, /worker\.onerror = \(\) => \{\s*if \(requestRef\.current !== id \|\| workerRef\.current !== worker\) return/)
   assert.equal((code.match(/image\.close\(\)/g) ?? []).length, 2)
+  assert.equal((code.match(/if \(requestAtStart !== requestRef\.current\) return/g) ?? []).length, 3,
+    'leitura e decodificação assíncronas não devem publicar draft após troca de modelo')
+  assert.match(code, /if \(importWorker \? workerRef\.current !== importWorker : requestRef\.current !== requestAtStart\) return/)
   assert.match(code, /catch \(reason\) \{\s*setError\(reason instanceof Error \? reason\.message : 'Não foi possível preparar as peças importadas\.'\)/)
 })
