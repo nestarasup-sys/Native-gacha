@@ -6,6 +6,7 @@ import type { CharacterRenderAssetProvider } from '../../src/shared/characterRen
 import type { CustomizerCharacter } from '../../src/shared/customizer'
 import type { FaceCatalogItem, FabricatorProject } from '../../src/shared/fabricator'
 import { createEditorV6Timeline, type EditorV6Document, type EditorV6Element } from '../../src/shared/editorV6'
+import { editorV6MotionResultSchema } from '../../src/shared/editorV6Schema'
 import { editorV6MotionPlan } from '../../src/shared/editorV6Motion'
 import { prepareSavedCharacterRenderer } from '../../src/renderer/src/characters/editorV6CharacterRenderer'
 import { bakeEditorV6Motion } from '../../src/renderer/src/features/editorV6/motion/bakeMotion'
@@ -66,6 +67,15 @@ async function image(url: string) { const i = new Image(); i.src = url; await i.
   const facialProvider = { ...Object.fromEntries(['loadFabricatorSlot','loadFabricatorPose','loadHairStyle','loadWardrobeSet','loadFaceSet','listFaceComponentAssets','loadFaceComponentAsset','listFaceCatalog','listFaceExpressionPresets','loadFaceExpressionPreset'].map(name => [name, provider[name as keyof typeof provider]])), loadFaceCatalogItem: async (_modelSlot: number, id: string) => id === openMouth.id ? openMouth : mouth } as CharacterRenderAssetProvider
   const appearance = { modelSlot: 1,mouthClosedCatalogId: mouth.id,mouthOpenCatalogId: openMouth.id,eyeState: 0 as const,eyebrows: false,noseIndex: 0,expressionIndex: 0,mouthOpen: false }
   const facialCharacter = { ...character, customization: { ...character.customization, faceAppearance: appearance } }
+  const talkFrom = { ...previous, state: { ...actor, faceAppearance: appearance, activeFaceMode: 'talk' as const } }
+  const talkTo = { ...next, state: { ...actor, poseSlot: 2, faceAppearance: appearance, activeFaceMode: 'talk' as const } }
+  const talkPlanBase = editorV6MotionPlan(track, talkFrom, talkTo)!
+  const talkPlan = { ...talkPlanBase, key: 'synthetic-talking-pose-transition', samples: talkPlanBase.samples.map((sample) => ({ ...sample, faceMode: 'talk' as const })) }
+  const talkScales = [1, 1.05, 1.1025, 1.05, 1.1025, 1.05, 1.1025]
+  const talkingTransition = await bakeEditorV6Motion({ id: crypto.randomUUID(), plan: talkPlan, character: facialCharacter, mouthScaleSamples: talkScales }, facialProvider)
+  assert(talkingTransition.metrics.preparedRigs === 9, 'Talking mouth samples prepared duplicate pose rigs during a transition')
+  assert(talkingTransition.motion.frames.slice(1).every((frame) => Boolean(frame.facePatch)), 'Talking mouth samples lost their local facial patches during a pose transition')
+  assert(editorV6MotionResultSchema.safeParse(talkingTransition).success, 'A talking pose transition exceeded the motion result contract')
   const firstFace = { ...previous,state: { ...actor,faceAppearance: appearance } }
   const same = { ...next, state: { ...actor,faceAppearance: appearance,activeExpressionPresetId: 'other',faceTransforms: { 'expression:mouth-closed:mouth-test': { x: 0,y: 0,width: 100,height: 100,rotation: 0,sourceTransformOverride: { x: 25,y: 35,scaleX: .5,scaleY: .5,rotation: 0 } } } } }
   const expressionPlan = editorV6MotionPlan(track,firstFace,same)!

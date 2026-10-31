@@ -11,7 +11,7 @@ import { createMotionPoseResolver } from './motionPoseResolver'
 
 type Renderer = Awaited<ReturnType<typeof prepareSavedCharacterRenderer>>
 type Crop = { left: number; top: number; width: number; height: number; fingerprint?: number }
-type MotionFrameRender = { canvas: HTMLCanvasElement; width: number; height: number; crop: Crop; dispose: () => void }
+type MotionFrameRender = { canvas: HTMLCanvasElement; width: number; height: number; crop: Crop; renderer: Renderer; dispose: () => void }
 type BakedBodySample = { canvas: HTMLCanvasElement; crop: Crop }
 type PixelBounds = { left: number; top: number; right: number; bottom: number }
 type BakedFacePatch = { index: number; canvas: HTMLCanvasElement; left: number; top: number; width: number; height: number; crop: Crop }
@@ -132,12 +132,12 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
     if (samePose) reusable = renderer
     return renderer
   }
-  const render = async (progress: number, faceMode?: EditorV6FaceRenderMode, mouthScale = 1, fingerprint = false): Promise<MotionFrameRender> => {
-    const renderer = await prepare(progress), face = scaleMouthForExport(interpolateEditorV6Face(from, to, progress), mouthScale)
+  const render = async (progress: number, faceMode?: EditorV6FaceRenderMode, mouthScale = 1, fingerprint = false, preparedRenderer?: Renderer): Promise<MotionFrameRender> => {
+    const renderer = preparedRenderer ?? await prepare(progress), face = scaleMouthForExport(interpolateEditorV6Face(from, to, progress), mouthScale)
     try {
       const result = await renderer.renderToCanvas(face.appearance, face.transforms, face.effects, editorV6FaceModeDuringMotion(faceMode ?? face.mode))
-      return { ...result, crop: cropOf(result.canvas, fingerprint), dispose: () => { if (!samePose) renderer.dispose() } }
-    } catch (error) { if (!samePose) renderer.dispose(); throw error }
+      return { ...result, crop: cropOf(result.canvas, fingerprint), renderer, dispose: () => { if (!samePose && !preparedRenderer) renderer.dispose() } }
+    } catch (error) { if (!samePose && !preparedRenderer) renderer.dispose(); throw error }
   }
   try {
     const staticMouthLoop = Boolean(request.mouthScaleSamples && samePose
@@ -201,7 +201,7 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
     const prepareFacePatch = async (index: number, sample: { faceMode?: EditorV6FaceRenderMode }, t: number, mouthScale: number, frame: MotionFrameRender) => {
       if (!request.mouthScaleSamples || sample.faceMode !== 'talk' || mouthScale <= 1.000001) return
       const baselinePixels = new Uint8ClampedArray(frame.canvas.getContext('2d', { willReadFrequently: true })!.getImageData(0, 0, frame.width, frame.height).data)
-      const scaled = await render(t, sample.faceMode, mouthScale)
+      const scaled = await render(t, sample.faceMode, mouthScale, false, frame.renderer)
       try {
         const pixels = scaled.canvas.getContext('2d', { willReadFrequently: true })!.getImageData(0, 0, scaled.width, scaled.height).data
         const changed = changedBounds(baselinePixels, pixels, scaled.width, scaled.height)
