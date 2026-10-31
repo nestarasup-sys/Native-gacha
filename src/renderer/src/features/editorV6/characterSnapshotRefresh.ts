@@ -1,6 +1,7 @@
 import type { CustomizerCharacter, CustomizerFaceAppearance } from '../../../../shared/customizer'
 import type { EditorV6Asset, EditorV6Document, EditorV6Element, EditorV6FaceRenderMode, EditorV6FaceTransforms } from '../../../../shared/editorV6'
 import type { FaceExpressionEffects, FaceExpressionPreset } from '../../../../shared/fabricator'
+import { editorV6CharacterSnapshotIsCurrent } from '../../../../shared/editorV6CharacterSource.ts'
 import { faceRenderGeometry, type TrimmedImage } from '../../characters/characterGeometry.ts'
 import { editorV6CharacterEyeSourceRevision, editorV6CharacterHairSourceRevision, editorV6CharacterHeadExtraSourceRevision, editorV6CharacterWardrobeSourceRevision } from './editorV6CharacterSourceModel.ts'
 import { buildEditorV6ExpressionAppearance, buildEditorV6ExpressionTransforms, resolveEditorV6ExpressionBase } from './expressionTransforms.ts'
@@ -67,7 +68,7 @@ export function planEditorV6CharacterRefresh(
     const headExtraChanged = headExtraRevision !== undefined && state.headExtraSourceRevision !== headExtraRevision
     const eyeRevision = editorV6CharacterEyeSourceRevision(character, eyeRevisions)
     const eyeChanged = eyeRevision !== undefined && state.eyeSourceRevision !== eyeRevision
-    if (!poseChanged && !modelChanged && !wardrobeChanged && !hairChanged && !headExtraChanged && !eyeChanged && state.faceRendererVersion === EDITOR_V6_FACE_RENDER_VERSION && state.characterSourceUpdatedAt === character.updatedAt) return
+    if (!poseChanged && !modelChanged && !wardrobeChanged && !hairChanged && !headExtraChanged && !eyeChanged && state.faceRendererVersion === EDITOR_V6_FACE_RENDER_VERSION && editorV6CharacterSnapshotIsCurrent(state, character)) return
     const signature = JSON.stringify([character.id, character.updatedAt, EDITOR_V6_FACE_RENDER_VERSION, poseRevision, poseSlot,
       state.faceAppearance, state.expressionBase, state.faceTransforms, state.activeFaceMode, state.activeExpressionPresetId,
       state.activeExpressionPresetUpdatedAt, state.activeExpressionGaze, state.activeExpressionEffects, modelRevision ?? state.modelSourceRevision ?? null, wardrobeRevision ?? null, hairRevision ?? null, headExtraRevision ?? null, eyeRevision ?? null])

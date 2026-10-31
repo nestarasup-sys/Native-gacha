@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createEditorV6Timeline, type EditorV6Document, type EditorV6Element } from '../../src/shared/editorV6'
 import type { CustomizerCharacter } from '../../src/shared/customizer'
+import { editorV6CharacterSnapshotIsCurrent } from '../../src/shared/editorV6CharacterSource.ts'
 import { attachEditorV6Motion, editorV6MotionPlans, missingEditorV6Motions, type EditorV6MotionBakeRequest, type EditorV6MotionBakeResult } from '../../src/shared/editorV6Motion'
 import { prepareExportMotions } from '../../electron/domains/editorV6/prepareMotions'
 import { EDITOR_V6_MOUTH_LOOP_SAMPLE_SCALES, editorV6MouthLoopScaleAtFrame } from '../../src/shared/editorV6Export'
@@ -11,10 +12,11 @@ import { createMotionDiskCache, motionCacheKey } from '../../electron/domains/ed
 import { createEditorV6MotionService, editorV6MotionMemoryCacheKey } from '../../electron/domains/editorV6/motionIpc'
 import { editorV6IpcChannels } from '../../src/shared/editorV6IpcChannels'
 import { createCompletedMotionPreparation, hasCompletedMotionPreparation, indexMotionPreparationCharacters, rememberCompletedMotionPreparation } from '../../src/renderer/src/features/editorV6/motion/motionPreparationModel'
+import { subscribeToCustomizerCharacterUpdates } from '../../src/renderer/src/features/editorV6/editorV6CharacterSourceEvents.ts'
 
 function fixture() {
   const stamp = '2026-10-26T12:00:00.000Z'
-  const actor: EditorV6Element = { id: crypto.randomUUID(), kind: 'character', characterId: 'alice', assetId: crypto.randomUUID(), text: 'Alice', x: 0, y: 0, width: 20, height: 30, rotation: 0, zIndex: 1, poseSlot: 1 }
+  const actor: EditorV6Element = { id: crypto.randomUUID(), kind: 'character', characterId: 'alice', assetId: crypto.randomUUID(), text: 'Alice', x: 0, y: 0, width: 20, height: 30, rotation: 0, zIndex: 1, poseSlot: 1, characterSourceUpdatedAt: stamp }
   const project: EditorV6Document = { schemaVersion: 1, id: crypto.randomUUID(), title: 'Test', color: '#ffffff', createdAt: stamp, updatedAt: stamp, backgroundColor: '#ffffff', backgroundAssetId: null, backgroundX: 0, backgroundY: 0, backgroundWidth: 100, backgroundHeight: 100, backgroundRotation: 0, elements: [actor], assets: [{ id: actor.assetId!, category: 'character', name: 'Alice', mimeType: 'image/png', dataUrl: 'data:image/png;base64,AA==' }], timeline: createEditorV6Timeline([actor]) }
   project.timeline.tracks.find((track) => track.kind === 'character')!.blocks = [1, 2, 1, 2].map((poseSlot, index) => ({ id: crypto.randomUUID(), elementId: actor.id, label: 'Pose', startFrame: index * 60, durationFrames: 60, state: { ...actor, poseSlot } }))
   const character: CustomizerCharacter = { id: 'alice', name: 'Alice', createdAt: stamp, updatedAt: stamp, hair: '#000000', outfit: '#000000', skin: '#000000', customization: { modelSlot: 1, poseSlot: null, partOverrides: {}, layerOrder: [] } }
@@ -27,6 +29,56 @@ function resultFor(request: EditorV6MotionBakeRequest): EditorV6MotionBakeResult
 }
 
 describe('transition preparation reuse', () => {
+  it('detecta edição do Customizador e não prepara atlas com corpo diferente do snapshot', async () => {
+    const { project, character } = fixture()
+    const changedCharacter = {
+      ...character,
+      updatedAt: '2026-10-31T18:56:39.903Z',
+      customization: { ...character.customization, bodyDimensions: { thighsWidth: 112, thighsHeight: 100 } }
+    }
+    let bakes = 0
+
+    expect(editorV6CharacterSnapshotIsCurrent(project.elements[0], changedCharacter)).toBe(false)
+    await expect(prepareExportMotions(project, 0, 300, {
+      signal: new AbortController().signal,
+      characters: [changedCharacter],
+      bake: async (request) => { bakes++; return resultFor(request) },
+      progress: () => {}
+    })).rejects.toThrow('está desatualizada em relação ao Customizador')
+    expect(bakes).toBe(0)
+  })
+
+  it('mantém compatibilidade com snapshots legados sem revisão de origem', async () => {
+    const { project, character } = fixture()
+    for (const state of [
+      ...project.elements,
+      ...project.timeline.tracks.flatMap((track) => track.blocks.flatMap((block) => block.state ? [block.state] : []))
+    ]) delete state.characterSourceUpdatedAt
+    let bakes = 0
+
+    const prepared = await prepareExportMotions(project, 0, 300, {
+      signal: new AbortController().signal,
+      characters: [character],
+      bake: async (request) => { bakes++; return resultFor(request) },
+      progress: () => {}
+    })
+
+    expect(bakes).toBeGreaterThan(0)
+    expect(prepared.project).not.toBe(project)
+  })
+
+  it('atualiza a lista de personagens quando o Customizador salva na mesma janela', () => {
+    const target = new EventTarget()
+    let refreshes = 0
+    const unsubscribe = subscribeToCustomizerCharacterUpdates(target, () => { refreshes++ })
+
+    target.dispatchEvent(new Event('customizer:characters-updated'))
+    expect(refreshes).toBe(1)
+    unsubscribe()
+    target.dispatchEvent(new Event('customizer:characters-updated'))
+    expect(refreshes).toBe(1)
+  })
+
   it('indexes the first character once and shares its full-content fingerprint across plans', () => {
     const { character } = fixture()
     let serializations = 0

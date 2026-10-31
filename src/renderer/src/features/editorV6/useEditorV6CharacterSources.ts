@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { CustomizerCharacter } from '../../../../shared/customizer'
+import { subscribeToCustomizerCharacterUpdates } from './editorV6CharacterSourceEvents.ts'
 import {
   createEditorV6PoseRevisionSnapshot,
   createEditorV6ModelRevisionSnapshot,
@@ -37,6 +38,7 @@ export {
 /** Loads live character and Fabricator source revisions used by this project. */
 export function useEditorV6CharacterSources(projectId: string | null, reportError: (message: string) => void) {
   const [availableCharacters, setAvailableCharacters] = useState<CustomizerCharacter[]>([])
+  const [availableCharactersReady, setAvailableCharactersReady] = useState(false)
   const [poseSourceSnapshot, setPoseSourceSnapshot] = useState<PoseRevisionSnapshot | null>(null)
   const availableCharacterById = useMemo(() => new Map(availableCharacters.map((character) => [character.id, character])), [availableCharacters])
   const fabricatorModelSlots = useMemo(() => [...new Set(availableCharacters.flatMap((character) => [
@@ -60,8 +62,12 @@ export function useEditorV6CharacterSources(projectId: string | null, reportErro
     const refreshCharacters = () => {
       if (requestRunning) { requestQueued = true; return }
       requestRunning = true
+      setAvailableCharactersReady(false)
       void window.desktop.customizer.listCustomizerCharacters().then((characters) => {
-        if (!cancelled) setAvailableCharacters((current) => sameCustomizerCharacterCatalog(current, characters) ? current : characters)
+        if (!cancelled) {
+          setAvailableCharacters((current) => sameCustomizerCharacterCatalog(current, characters) ? current : characters)
+          setAvailableCharactersReady(true)
+        }
       }).catch((reason: unknown) => {
         if (!cancelled) reportError(reason instanceof Error ? reason.message : 'Não foi possível carregar o elenco de personagens.')
       }).finally(() => {
@@ -70,11 +76,13 @@ export function useEditorV6CharacterSources(projectId: string | null, reportErro
       })
     }
     const refreshWhenVisible = () => { if (document.visibilityState === 'visible') refreshCharacters() }
+    const unsubscribeCustomizerUpdates = subscribeToCustomizerCharacterUpdates(window, refreshCharacters)
     refreshCharacters()
     window.addEventListener('focus', refreshCharacters)
     document.addEventListener('visibilitychange', refreshWhenVisible)
     return () => {
       cancelled = true
+      unsubscribeCustomizerUpdates()
       window.removeEventListener('focus', refreshCharacters)
       document.removeEventListener('visibilitychange', refreshWhenVisible)
     }
@@ -151,5 +159,5 @@ export function useEditorV6CharacterSources(projectId: string | null, reportErro
     }
   }, [projectId, fabricatorModelSlotsKey])
 
-  return { availableCharacters, availableCharacterById, activePoseSourceSnapshot }
+  return { availableCharacters, availableCharactersReady, availableCharacterById, activePoseSourceSnapshot }
 }

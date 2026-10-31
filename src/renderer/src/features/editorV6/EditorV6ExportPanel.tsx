@@ -5,7 +5,7 @@ import { planEditorV6Export, type EditorV6ExportAudio, type EditorV6ExportOption
 
 let rememberedJob: EditorV6ExportStatus | null = null
 const finished = (job: EditorV6ExportStatus) => ['completed', 'cancelled', 'failed'].includes(job.state)
-export function EditorV6ExportPanel({ project, open, onClose, onChange, onActivity, trackOperation }: { project: EditorV6Document; open: boolean; onClose: () => void; onChange: (update: (project: EditorV6Document) => EditorV6Document) => void; onActivity?: (active: boolean) => void; trackOperation: <T,>(operation: () => Promise<T>) => Promise<T> }) {
+export function EditorV6ExportPanel({ project, open, characterSourceRefreshRequired, onClose, onChange, onActivity, trackOperation }: { project: EditorV6Document; open: boolean; characterSourceRefreshRequired: boolean; onClose: () => void; onChange: (update: (project: EditorV6Document) => EditorV6Document) => void; onActivity?: (active: boolean) => void; trackOperation: <T,>(operation: () => Promise<T>) => Promise<T> }) {
   const dialog = useRef<HTMLElement>(null)
   useLayoutEffect(() => {
     if (!open) return
@@ -39,6 +39,7 @@ export function EditorV6ExportPanel({ project, open, onClose, onChange, onActivi
     finally { setBusy(false) }
   }
   const start = async () => {
+    if (characterSourceRefreshRequired) { setError('Aguarde a sincronização da aparência do personagem com o Customizador antes de exportar.'); return }
     setBusy(true); setError('')
     try { await trackOperation(async () => { planEditorV6Export(options, project.timeline.durationFrames); const value = await window.desktop.editorV6.startEditorV6Export(project, options); if (value) setStatus(value) }) }
     catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
@@ -58,6 +59,7 @@ export function EditorV6ExportPanel({ project, open, onClose, onChange, onActivi
     <section ref={dialog} tabIndex={-1} className="v6-export-panel" role="dialog" aria-modal="true" aria-labelledby="v6-export-title">
       <header><div><small>EDITOR V6 · MP4</small><h2 id="v6-export-title">Exportar vídeo</h2></div><button type="button" onClick={onClose} disabled={busy} aria-label="Fechar exportador">×</button></header>
       <p>Duas partes em paralelo no Turbo. O ganho de velocidade depende do computador e da cena.</p>
+      {characterSourceRefreshRequired && <p role="status">Atualizando os personagens do Customizador. A exportação ficará disponível quando os snapshots estiverem sincronizados.</p>}
       <fieldset disabled={busy || active}><legend>Vídeo</legend><div className="v6-export-grid">
         <label>Do início (s)<input type="number" min={0} step={1 / 30} value={seconds(options.startFrame)} onChange={(event) => setOptions({ ...options, startFrame: frames(event.target.value, project.timeline.durationFrames) })} /></label>
         <label>Até (s)<input type="number" min={1 / 30} step={1 / 30} value={seconds(options.endFrame)} onChange={(event) => setOptions({ ...options, endFrame: frames(event.target.value, project.timeline.durationFrames) })} /></label>
@@ -79,7 +81,7 @@ export function EditorV6ExportPanel({ project, open, onClose, onChange, onActivi
       </fieldset>
       {job && <div className={`v6-export-progress state-${job.state}`} role="status"><strong>{job.message}</strong>{job.motionProgress && <span>Transições: {job.motionProgress.completed} / {job.motionProgress.total}</span>}<progress value={job.frames} max={job.totalFrames || 1} /><span>{job.frames} / {job.totalFrames} quadros{job.fallback ? ' · Recuperação pelo modo seguro' : ''}</span>{job.error && <p>{job.error}</p>}{active && <small>Você pode fechar este painel. Mantenha o aplicativo aberto até terminar.</small>}{finished(job) && <button type="button" onClick={() => void window.desktop.editorV6.revealEditorV6Export(job.id).catch((reason: unknown) => setError(String(reason)))}>{job.state === 'completed' ? 'Mostrar MP4 e relatório' : 'Mostrar relatório'}</button>}</div>}
       {error && <p role="alert" className="v6-export-error">{error}</p>}
-      <footer>{active ? <button type="button" disabled={busy} onClick={() => void cancel()}>Cancelar exportação</button> : <button className="v6-export-primary" type="button" disabled={busy} onClick={() => void start()}>{busy ? 'Abrindo exportação…' : options.turbo ? 'EXPORTAR TURBO 2×' : 'EXPORTAR MP4'}</button>}<button type="button" disabled={busy} onClick={onClose}>Fechar painel</button></footer>
+      <footer>{active ? <button type="button" disabled={busy} onClick={() => void cancel()}>Cancelar exportação</button> : <button className="v6-export-primary" type="button" disabled={busy || characterSourceRefreshRequired} onClick={() => void start()}>{busy ? 'Abrindo exportação…' : options.turbo ? 'EXPORTAR TURBO 2×' : 'EXPORTAR MP4'}</button>}<button type="button" disabled={busy} onClick={onClose}>Fechar painel</button></footer>
     </section>
   </div>
 }

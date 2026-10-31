@@ -251,6 +251,12 @@ test('decide refresh com revisões atuais e states de personagens nos blocos da 
   })
   assert.equal(changedModelRevision.poseRefreshRequired, true)
   assert.equal(changedModelRevision.faceAssetRefreshRequired, true)
+
+  const changedBodyDimensions = resolveEditorV6CharacterSourceRefresh({
+    ...input,
+    characterById: new Map([[character.id, { ...character, updatedAt: 'character-v3', customization: { ...character.customization, bodyDimensions: { thighsWidth: 112 } } }]])
+  })
+  assert.equal(changedBodyDimensions.faceAssetRefreshRequired, true)
 })
 
 test('mantém refresh pendente enquanto o snapshot de pose não chegou e detecta renderer antigo', () => {
@@ -797,6 +803,8 @@ test('página delega biblioteca, fontes e ciclo de atualização do personagem a
   assert.match(characterHook, /listHairStyles/)
   assert.match(characterHook, /listFaceComponentAssets\(modelSlot, 'head-extra'\)/)
   assert.match(characterHook, /editorV6EyeAssetKinds/)
+  assert.match(characterHook, /subscribeToCustomizerCharacterUpdates\(window, refreshCharacters\)/)
+  assert.match(characterHook, /availableCharactersReady/)
   assert.match(characterHook, /eyeRevisions: createEditorV6EyeRevisionSnapshot/)
   assert.match(headExtrasWorkspace, /deleteFaceComponentAsset[\s\S]*fabricator:assets-updated/)
   assert.match(faceComponentsWorkspace, /notifyAssetsUpdated: \(\) => window\.dispatchEvent\(new Event\('fabricator:assets-updated'\)\)/)

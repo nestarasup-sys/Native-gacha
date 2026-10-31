@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { EditorV6Document } from '../../../src/shared/editorV6'
 import type { CustomizerCharacter } from '../../../src/shared/customizer'
+import { editorV6CharacterSnapshotIsCurrent } from '../../../src/shared/editorV6CharacterSource.ts'
 import { editorV6MotionPlans, missingEditorV6Motions, type EditorV6MotionBakeRequest, type EditorV6MotionBakeResult } from '../../../src/shared/editorV6Motion'
 import { editorV6MouthLoopScaleAtFrame, EDITOR_V6_MOUTH_LOOP_SAMPLE_SCALES } from '../../../src/shared/editorV6Export'
 
@@ -12,6 +13,20 @@ export async function prepareExportMotions(project: EditorV6Document, startFrame
   concurrency?: 1 | 2
 }) {
   const began = performance.now()
+  const characters = new Map(deps.characters.map((character) => [character.id, character]))
+  const characterStates = [
+    ...project.elements,
+    ...project.timeline.tracks.flatMap((track) => track.blocks.flatMap((block) => block.state ? [block.state] : []))
+  ]
+  for (const state of characterStates) {
+    if (state.kind !== 'character' || !state.characterId) continue
+    const character = characters.get(state.characterId)
+    // Older projects may not carry a source revision yet. The renderer refreshes
+    // those snapshots before export; only reject a known, mismatched revision here.
+    if (!character || !state.characterSourceUpdatedAt || editorV6CharacterSnapshotIsCurrent(state, character)) continue
+    throw Error(`A aparência salva de ${state.text || character.name} está desatualizada em relação ao Customizador. Aguarde a atualização automática no Editor V6 antes de exportar novamente.`)
+  }
+
   const missingIds = new Set(missingEditorV6Motions(project, startFrame, endFrame).map((plan) => plan.blockId))
   const missing = editorV6MotionPlans(project).filter((plan) => plan.startFrame < endFrame && plan.endFrame > startFrame
     && (missingIds.has(plan.blockId) || Boolean(deps.mouthLoop && plan.samples.some((sample) => sample.faceMode === 'talk'))))
@@ -21,7 +36,6 @@ export async function prepareExportMotions(project: EditorV6Document, startFrame
     if (group) group.push(plan)
     else groups.set(plan.key, [plan])
   }
-  const characters = new Map(deps.characters.map((character) => [character.id, character]))
   const assets = new Map(project.assets.map((asset) => [asset.id, asset]))
   const knownMotions = new Map<string, NonNullable<EditorV6Document['timeline']['tracks'][number]['blocks'][number]['incomingMotion']>>()
   for (const track of project.timeline.tracks) for (const block of track.blocks) {

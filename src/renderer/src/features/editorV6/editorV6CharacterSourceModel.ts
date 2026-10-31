@@ -1,4 +1,5 @@
 import type { CustomizerCharacter } from '../../../../shared/customizer'
+import { editorV6CharacterSnapshotIsCurrent } from '../../../../shared/editorV6CharacterSource.ts'
 import { collectCustomizerFaceAssetReferences } from '../../../../shared/customizerFaceAssetReferences.ts'
 import type { EditorV6Document, EditorV6Element } from '../../../../shared/editorV6'
 import { collectCustomizerHairStyleReferences } from '../../../../shared/hairCategories.ts'
@@ -215,7 +216,7 @@ export function resolveEditorV6CharacterSourceRefresh({
     if (state.kind !== 'character') return false
     const character = characterById.get(state.characterId ?? '')
     return state.faceRendererVersion !== faceRendererVersion
-      || Boolean(character && state.characterSourceUpdatedAt !== character.updatedAt)
+      || Boolean(character && !editorV6CharacterSnapshotIsCurrent(state, character))
   }) || wardrobeRefreshRequired || hairRefreshRequired || headExtraRefreshRequired || eyeRefreshRequired))
 
   return { characterStates, poseRefreshRequired, wardrobeRefreshRequired, hairRefreshRequired, headExtraRefreshRequired, eyeRefreshRequired, faceAssetRefreshRequired }
