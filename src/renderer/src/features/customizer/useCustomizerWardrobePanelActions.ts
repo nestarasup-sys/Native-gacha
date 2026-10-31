@@ -97,18 +97,24 @@ export function useCustomizerWardrobePanelActions(deps: {
   async function setWardrobePieceColor(panel: WardrobePanel, candidate: WardrobePanelCandidate, role: CharacterPaletteRole, value: string) {
     if (selectedModelSlot === null || !selectedCharacter) return
     const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
+    const activeGroup = current.customization.wardrobeGroups?.find((group) =>
+      group.modelSlot === candidate.summary.modelSlot && group.setId === candidate.summary.id
+      && group.category === panel.category && group.componentId === candidate.component.id)
+    const activeColors = normalizeCharacterColorOverrides({
+      ...current.customization.wardrobePalettes?.[panel.id],
+      ...activeGroup?.colors
+    })
+    const wardrobePalettes = {
+      ...current.customization.wardrobePalettes,
+      [panel.id]: setCharacterColorRole(activeColors, role, value)
+    }
     if (candidate.headExtraAsset) {
-      await saveCharacterCustomization({
-        wardrobePalettes: {
-          ...current.customization.wardrobePalettes,
-          [panel.id]: setCharacterColorRole(current.customization.wardrobePalettes?.[panel.id], role, value)
-        }
-      })
+      await saveCharacterCustomization({ wardrobePalettes })
       return
     }
     const wardrobeGroups = recolorWardrobeComponents(current.customization.wardrobeGroups ?? [],
       candidate.summary.modelSlot, candidate.summary.id, panel.category, candidate.components.map((component) => component.id), { kind: 'role', role, value })
-    await saveCharacterCustomization({ wardrobeGroups })
+    await saveCharacterCustomization({ wardrobePalettes, wardrobeGroups })
   }
 
   async function resetWardrobePieceColors(panel: WardrobePanel, setId: string, componentIds: string[]) {
