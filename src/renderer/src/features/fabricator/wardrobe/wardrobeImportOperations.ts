@@ -5,6 +5,7 @@ import { createWardrobeTorsoGridComponents } from './wardrobeGridImport'
 import { createWardrobeComponentsFromProcessedSheet } from './wardrobeSheetImport'
 import { createWardrobeSleeveSheetComponents } from './wardrobeSleeveSheetImport'
 import type { WardrobeProcessorResponse } from './wardrobeProcessorProtocol'
+import { acceptsWardrobeWorkerResponse } from './wardrobeImportGuard'
 
 type Setter<T> = Dispatch<SetStateAction<T>>
 type ImportContext = {
@@ -50,30 +51,45 @@ export function createWardrobeImportOperations({
     if (!/\.(png|jpe?g|webp)$/i.test(file.name)) { setError('Use uma imagem PNG, JPG ou WebP.'); return }
     setDeformMode(false)
     setProcessing(true); setError('')
+    const requestAtStart = requestRef.current
     try {
       const source = await readFile(file)
+      // An import can complete after the workspace was replaced or unmounted.
+      if (requestAtStart !== requestRef.current) return
       workerRef.current?.terminate()
       const worker = new Worker(new URL('./wardrobeProcessor.worker.ts', import.meta.url), { type: 'module' })
       workerRef.current = worker
       const id = ++requestRef.current
       worker.onmessage = (event: MessageEvent<WardrobeProcessorResponse>) => {
         const message = event.data
-        if (message.id !== id) return
+        if (!acceptsWardrobeWorkerResponse(id, requestRef.current, message.id, workerRef.current === worker)) return
         setProcessing(false); worker.terminate(); workerRef.current = null
         if (message.type === 'error') { setError(message.message); return }
         if (!message.pieces.length) { setError('Não encontrei peças visíveis. Confira se a folha tem transparência entre as peças.'); return }
-        const components = createWardrobeComponentsFromProcessedSheet(message.pieces, message.width, message.height, referenceModel ?? model)
-        const unbound = components.filter((component) => !component.attachedPartId)
-        if (unbound.length) {
-          setError(`${unbound.length} peça(s) sem osso correspondente na referência original. Selecione o osso de cada peça antes de salvar; não faremos um encaixe arbitrário.`)
+        try {
+          const components = createWardrobeComponentsFromProcessedSheet(message.pieces, message.width, message.height, referenceModel ?? model)
+          const unbound = components.filter((component) => !component.attachedPartId)
+          if (unbound.length) {
+            setError(`${unbound.length} peça(s) sem osso correspondente na referência original. Selecione o osso de cada peça antes de salvar; não faremos um encaixe arbitrário.`)
+          }
+          clearWardrobeWarpState()
+          setDraft({ schemaVersion: 1, edition: 1, id: crypto.randomUUID(), modelSlot, modelName: model.name, name: file.name.replace(/\.[^.]+$/, ''), width: model.width, height: model.height, components, updatedAt: new Date().toISOString() })
+          setActiveSetId(null); setSelectedId(components[0]?.id ?? null); setDirty(true); setBodyOffsets({})
+        } catch (reason) {
+          setError(reason instanceof Error ? reason.message : 'Não foi possível preparar as peças importadas.')
         }
-        clearWardrobeWarpState()
-        setDraft({ schemaVersion: 1, edition: 1, id: crypto.randomUUID(), modelSlot, modelName: model.name, name: file.name.replace(/\.[^.]+$/, ''), width: model.width, height: model.height, components, updatedAt: new Date().toISOString() })
-        setActiveSetId(null); setSelectedId(components[0]?.id ?? null); setDirty(true); setBodyOffsets({})
       }
-      worker.onerror = () => { setProcessing(false); setError('Falha ao processar a imagem localmente.'); worker.terminate(); workerRef.current = null }
+      worker.onerror = () => {
+        if (requestRef.current !== id || workerRef.current !== worker) return
+        setProcessing(false); setError('Falha ao processar a imagem localmente.')
+        worker.terminate(); workerRef.current = null
+      }
       worker.postMessage({ id, dataUrl: source })
-    } catch (reason) { setProcessing(false); setError(reason instanceof Error ? reason.message : 'Não foi possível importar a imagem.') }
+    } catch (reason) {
+      workerRef.current?.terminate(); workerRef.current = null
+      setProcessing(false)
+      setError(reason instanceof Error ? reason.message : 'Não foi possível importar a imagem.')
+    }
   }
   const importTorsoGrid = async (file?: File) => {
     if (!file || !model || processing || saving || openingSet) return
@@ -83,7 +99,12 @@ export function createWardrobeImportOperations({
     setProcessing(true); setError(''); setImportPickerOpen(false)
     try {
       const image = await createImageBitmap(file)
-      const components = createWardrobeTorsoGridComponents(image, referenceModel ?? model, gridSize, () => crypto.randomUUID())
+      let components
+      try {
+        components = createWardrobeTorsoGridComponents(image, referenceModel ?? model, gridSize, () => crypto.randomUUID())
+      } finally {
+        image.close()
+      }
       if (!components.length) throw new Error('A grade ' + gridSize + '×3 não contém peças visíveis. Confira as células da imagem.')
       clearWardrobeWarpState()
       setDraft({ schemaVersion: 1, edition: 1, importKind: gridSize === 4 ? 'torso-grid-4x3' : 'torso-grid-3x3', id: crypto.randomUUID(), modelSlot, modelName: model.name, name: file.name.replace(/\.[^.]+$/, ''), width: model.width, height: model.height, components, updatedAt: new Date().toISOString() })
@@ -95,7 +116,13 @@ export function createWardrobeImportOperations({
     if (!file || !model || processing || saving || openingSet) return
     setDeformMode(false); setProcessing(true); setError(''); setImportPickerOpen(false)
     try {
-      const components = createWardrobeSleeveSheetComponents(await createImageBitmap(file), referenceModel ?? model, () => crypto.randomUUID(), pairedImportKindRef.current)
+      const image = await createImageBitmap(file)
+      let components
+      try {
+        components = createWardrobeSleeveSheetComponents(image, referenceModel ?? model, () => crypto.randomUUID(), pairedImportKindRef.current)
+      } finally {
+        image.close()
+      }
       clearWardrobeWarpState()
       setDraft({ schemaVersion: 1, edition: 1, importKind: pairedImportKindRef.current === 'pants' ? 'pants-grid-3x4' : 'sleeve-grid-3x4', id: crypto.randomUUID(), modelSlot, modelName: model.name, name: file.name.replace(/\.[^.]+$/, ''), width: model.width, height: model.height, components, updatedAt: new Date().toISOString() })
       setActiveSetId(null); setSelectedId(components[0]?.id ?? null); setDirty(true); setBodyOffsets({})

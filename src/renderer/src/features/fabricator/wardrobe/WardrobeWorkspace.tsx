@@ -200,6 +200,8 @@ export function WardrobeWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
     const requestId = ++requestRef.current
     clearWardrobeWarpState()
     workerRef.current?.terminate()
+    workerRef.current = null
+    setProcessing(false)
     setOpeningSet(false)
     setModel(null); setSets([]); setCatalogIssues([]); setDraft(null); setActiveSetId(null); setSelectedId(null)
     setError('')
