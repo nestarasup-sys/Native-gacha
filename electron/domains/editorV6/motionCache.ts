@@ -6,7 +6,7 @@ import { editorV6MotionResultSchema } from '../../../src/shared/editorV6Schema'
 import { editorV6UsesStaticMouthAtlas, type EditorV6MotionBakeRequest, type EditorV6MotionBakeResult } from '../../../src/shared/editorV6Motion'
 
 /** Bump when baking changes without an authored timeline change. */
-export const MOTION_CACHE_VERSION = 6
+export const MOTION_CACHE_VERSION = 7
 const MAX_MOTION_CACHE_ENTRIES = 512
 const MAX_MOTION_CACHE_BYTES = 768 * 1024 * 1024
 const MAX_MOTION_CACHE_ENTRY_BYTES = 32 * 1024 * 1024

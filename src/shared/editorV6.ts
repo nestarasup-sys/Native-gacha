@@ -72,6 +72,8 @@ export type EditorV6Element = {
   wardrobeSourceRevision?: string
   /** Fingerprint of the Fabricator hair styles used to compose this actor's stored image. */
   hairSourceRevision?: string
+  /** Fingerprint of the Cabeças extra DEV assets used to compose this actor's stored image. */
+  headExtraSourceRevision?: string
   flipX?: boolean
   /** Prevents mouse dragging this character inside this EditorV6. */
   positionLocked?: boolean

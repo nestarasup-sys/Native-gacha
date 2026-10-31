@@ -75,7 +75,7 @@ export function useEditorV6CharacterSnapshotRefresh({
     if (!project || !normalizedProjectIdsRef.current.has(project.id) || !availableCharacters.length
       || poseSourceSnapshot?.projectId !== project.id) return
 
-    const plan = planEditorV6CharacterRefresh(project, availableCharacters, poseSourceSnapshot.revisions, poseSourceSnapshot.modelRevisions, poseSourceSnapshot.wardrobeRevisions, poseSourceSnapshot.hairRevisions)
+    const plan = planEditorV6CharacterRefresh(project, availableCharacters, poseSourceSnapshot.revisions, poseSourceSnapshot.modelRevisions, poseSourceSnapshot.wardrobeRevisions, poseSourceSnapshot.hairRevisions, poseSourceSnapshot.headExtraRevisions)
     if (plan.missingCharacterNames.length) {
       reportError(`Não foi possível atualizar ${plan.missingCharacterNames.join(', ')} porque o personagem não está disponível no Customizador.`)
     }

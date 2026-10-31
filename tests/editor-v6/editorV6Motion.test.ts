@@ -136,6 +136,35 @@ describe('V6 motion scheduling and portable cache', () => {
     expect(editorV6MotionPlans({ ...doc, timeline: changedTimeline })).toHaveLength(0)
     expect(editorV6DocumentSchema.safeParse(doc).success).toBe(true)
   })
+  it('does not interpolate across head-extra source revisions', () => {
+    const doc = fixture()
+    doc.timeline = {
+      ...doc.timeline,
+      tracks: doc.timeline.tracks.map((item) => item.kind === 'character'
+        ? { ...item, blocks: item.blocks.map((block) => block.state ? { ...block, state: { ...block.state, headExtraSourceRevision: 'extra-v1' } } : block) }
+        : item)
+    }
+    const beforePlan = editorV6MotionPlans(doc)[0]
+    const ready = attachEditorV6Motion(doc, beforePlan.blockId, bake(doc))
+    const updatedTimeline = {
+      ...ready.timeline,
+      tracks: ready.timeline.tracks.map((item) => item.kind === 'character'
+        ? { ...item, blocks: item.blocks.map((block) => block.state ? { ...block, state: { ...block.state, headExtraSourceRevision: 'extra-v2' } } : block) }
+        : item)
+    }
+    const updated = { ...ready, timeline: updatedTimeline }
+    expect(editorV6MotionPlans(updated)[0].key).not.toBe(beforePlan.key)
+    expect(missingEditorV6Motions(updated)).toHaveLength(1)
+
+    const mismatchedTimeline = {
+      ...doc.timeline,
+      tracks: doc.timeline.tracks.map((item) => item.kind === 'character'
+        ? { ...item, blocks: item.blocks.map((block, index) => block.state ? { ...block, state: { ...block.state, headExtraSourceRevision: index === 0 ? 'extra-v1' : 'extra-v2' } } : block) }
+        : item)
+    }
+    expect(editorV6MotionPlans({ ...doc, timeline: mismatchedTimeline })).toHaveLength(0)
+    expect(editorV6DocumentSchema.safeParse(doc).success).toBe(true)
+  })
   it('mantém a fala e suprime piscadas durante a transição sem atualizar o personagem por quadro', () => {
     const doc = fixture(), speech = doc.timeline.tracks.find((track) => track.kind === 'speech')!
     speech.blocks = [{ id: crypto.randomUUID(), label: 'Fala durante a troca', characterId: 'alice', startFrame: 86, durationFrames: 2 }]

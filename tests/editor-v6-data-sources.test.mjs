@@ -7,7 +7,9 @@ import {
   createEditorV6ModelRevisionSnapshot,
   createEditorV6WardrobeRevisionSnapshot,
   createEditorV6HairRevisionSnapshot,
+  createEditorV6HeadExtraRevisionSnapshot,
   editorV6CharacterHairSourceRevision,
+  editorV6CharacterHeadExtraSourceRevision,
   editorV6CharacterWardrobeSourceRevision,
   sameCustomizerCharacterCatalog,
   samePoseRevisionSnapshot,
@@ -183,16 +185,19 @@ test('compara revisões e catálogos sem trocar referências se os dados não mu
   const modelRevisions = createEditorV6ModelRevisionSnapshot([null, { slot: 2, updatedAt: 'model-v3' }])
   const wardrobeRevisions = createEditorV6WardrobeRevisionSnapshot([{ modelSlot: 2, sets: [{ id: 'pants', updatedAt: 'wardrobe-v3' }] }])
   const hairRevisions = createEditorV6HairRevisionSnapshot([{ modelSlot: 2, styles: [{ id: 'hair', updatedAt: 'hair-v3' }] }])
+  const headExtraRevisions = createEditorV6HeadExtraRevisionSnapshot([{ modelSlot: 2, assets: [{ id: 'glasses', updatedAt: 'extra-v3' }] }])
   assert.deepEqual(revisions, { '2:1': 'missing', '2:4': 'pose-v2' })
   assert.deepEqual(modelRevisions, { '2': 'model-v3' })
   assert.deepEqual(wardrobeRevisions, { '2:pants': 'wardrobe-v3' })
   assert.deepEqual(hairRevisions, { '2:hair': 'hair-v3' })
+  assert.deepEqual(headExtraRevisions, { '2:glasses': 'extra-v3' })
   assert.equal(samePoseRevisionSnapshot(revisions, { ...revisions }), true)
   assert.equal(samePoseRevisionSnapshot(revisions, { ...revisions, '2:4': 'pose-v3' }), false)
-  const source = { projectId: 'project', revisions, modelRevisions, wardrobeRevisions, hairRevisions }
-  assert.equal(sameSourceRevisionSnapshot(source, { ...source, wardrobeRevisions: { ...wardrobeRevisions }, hairRevisions: { ...hairRevisions } }), true)
+  const source = { projectId: 'project', revisions, modelRevisions, wardrobeRevisions, hairRevisions, headExtraRevisions }
+  assert.equal(sameSourceRevisionSnapshot(source, { ...source, wardrobeRevisions: { ...wardrobeRevisions }, hairRevisions: { ...hairRevisions }, headExtraRevisions: { ...headExtraRevisions } }), true)
   assert.equal(sameSourceRevisionSnapshot(source, { ...source, wardrobeRevisions: { '2:pants': 'wardrobe-v4' } }), false)
   assert.equal(sameSourceRevisionSnapshot(source, { ...source, hairRevisions: { '2:hair': 'hair-v4' } }), false)
+  assert.equal(sameSourceRevisionSnapshot(source, { ...source, headExtraRevisions: { '2:glasses': 'extra-v4' } }), false)
 })
 
 test('decide refresh com revisões atuais e states de personagens nos blocos da timeline', () => {
@@ -276,10 +281,10 @@ test('não bloqueia personagens sem fonte viva e devolve estado vazio sem projet
   }
 
   assert.deepEqual(resolveEditorV6CharacterSourceRefresh(input), {
-    characterStates: [missingCharacter], poseRefreshRequired: false, wardrobeRefreshRequired: false, hairRefreshRequired: false, faceAssetRefreshRequired: false
+    characterStates: [missingCharacter], poseRefreshRequired: false, wardrobeRefreshRequired: false, hairRefreshRequired: false, headExtraRefreshRequired: false, faceAssetRefreshRequired: false
   })
   assert.deepEqual(resolveEditorV6CharacterSourceRefresh({ ...input, project: null }), {
-    characterStates: [], poseRefreshRequired: false, wardrobeRefreshRequired: false, hairRefreshRequired: false, faceAssetRefreshRequired: false
+    characterStates: [], poseRefreshRequired: false, wardrobeRefreshRequired: false, hairRefreshRequired: false, headExtraRefreshRequired: false, faceAssetRefreshRequired: false
   })
 })
 
@@ -356,6 +361,35 @@ test('mudança em cabelo DEV atualiza os snapshots da cena e da timeline', () =>
   assert.equal(plan.groups.length, 1)
   assert.equal(plan.groups[0].targets.length, 2)
   assert.equal(plan.groups[0].hairRevision, editorV6CharacterHairSourceRevision(character, current))
+})
+
+test('mudança em Cabeça Extra DEV atualiza os snapshots da cena e da timeline', () => {
+  const character = {
+    id: 'character', name: 'Chloe', updatedAt: 'character-v2',
+    customization: { modelSlot: 2, faceAppearance: { modelSlot: 3, headExtras: { glasses: 'round-glasses', 'head-accessory': null } } }
+  }
+  const before = createEditorV6HeadExtraRevisionSnapshot([{ modelSlot: 3, assets: [{ id: 'round-glasses', updatedAt: 'extra-v2' }] }])
+  const current = createEditorV6HeadExtraRevisionSnapshot([{ modelSlot: 3, assets: [{ id: 'round-glasses', updatedAt: 'extra-v3' }] }])
+  const state = {
+    id: 'scene-character', kind: 'character', characterId: 'character', assetId: 'old-render',
+    poseSourceRevision: 'pose-v2', characterSourceUpdatedAt: 'character-v2', modelSourceRevision: 'model-v3',
+    headExtraSourceRevision: editorV6CharacterHeadExtraSourceRevision(character, before), faceRendererVersion: 8, text: 'Chloe'
+  }
+  const timelineState = { ...state, id: 'timeline-character', assetId: 'old-timeline-render' }
+  const project = {
+    id: 'project', elements: [state], assets: [],
+    timeline: { tracks: [{ id: 'characters', blocks: [{ id: 'character-block', elementId: state.id, state: timelineState }] }] }
+  }
+  const revisions = { projectId: 'project', revisions: { '2:4': 'pose-v2' }, modelRevisions: { '2': 'model-v3' }, wardrobeRevisions: {}, hairRevisions: {}, headExtraRevisions: current }
+  const refresh = resolveEditorV6CharacterSourceRefresh({ project, characterById: new Map([[character.id, character]]), poseSourceSnapshot: revisions, faceRendererVersion: 8 })
+  assert.equal(refresh.hairRefreshRequired, false)
+  assert.equal(refresh.headExtraRefreshRequired, true)
+  assert.equal(refresh.faceAssetRefreshRequired, true)
+
+  const plan = planEditorV6CharacterRefresh(project, [character], revisions.revisions, revisions.modelRevisions, revisions.wardrobeRevisions, revisions.hairRevisions, revisions.headExtraRevisions)
+  assert.equal(plan.groups.length, 1)
+  assert.equal(plan.groups[0].targets.length, 2)
+  assert.equal(plan.groups[0].headExtraRevision, editorV6CharacterHeadExtraSourceRevision(character, current))
 })
 
 test('aplica recortes antigos de personagens em assets, cena e timeline sem mutar o projeto', () => {
@@ -691,12 +725,13 @@ test('catálogo de poses cancelado não inicia leituras', async () => {
 })
 
 test('página delega biblioteca, fontes e ciclo de atualização do personagem a módulos da feature', async () => {
-  const [page, projectHook, characterHook, sourceModel, snapshotHook] = await Promise.all([
+  const [page, projectHook, characterHook, sourceModel, snapshotHook, headExtrasWorkspace] = await Promise.all([
     readFile('src/renderer/src/features/editorV6/EditorV6Page.tsx', 'utf8'),
     readFile('src/renderer/src/features/editorV6/useEditorV6ProjectLibrary.ts', 'utf8'),
     readFile('src/renderer/src/features/editorV6/useEditorV6CharacterSources.ts', 'utf8'),
     readFile('src/renderer/src/features/editorV6/editorV6CharacterSourceModel.ts', 'utf8'),
-    readFile('src/renderer/src/features/editorV6/useEditorV6CharacterSnapshotRefresh.ts', 'utf8')
+    readFile('src/renderer/src/features/editorV6/useEditorV6CharacterSnapshotRefresh.ts', 'utf8'),
+    readFile('src/renderer/src/features/fabricator/face/HeadExtrasWorkspace.tsx', 'utf8')
   ])
   assert.match(page, /useEditorV6ProjectLibrary\(/)
   assert.match(page, /useEditorV6CharacterSources\(/)
@@ -708,8 +743,11 @@ test('página delega biblioteca, fontes e ciclo de atualização do personagem a
   assert.match(projectHook, /activeLoadGenerationRef/)
   assert.match(characterHook, /fabricator:assets-updated/)
   assert.match(characterHook, /listHairStyles/)
+  assert.match(characterHook, /listFaceComponentAssets\(modelSlot, 'head-extra'\)/)
+  assert.match(headExtrasWorkspace, /deleteFaceComponentAsset[\s\S]*fabricator:assets-updated/)
   assert.match(characterHook, /addEventListener\('visibilitychange'/)
   assert.match(sourceModel, /collectCustomizerHairStyleReferences/)
+  assert.match(sourceModel, /headExtras/)
   assert.doesNotMatch(sourceModel, /window\.desktop|useEffect|useMemo/)
   assert.match(snapshotHook, /applyEditorV6CharacterAssetCrops/)
   assert.match(snapshotHook, /applyEditorV6CharacterRefreshResult/)

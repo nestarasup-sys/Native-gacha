@@ -1,17 +1,19 @@
 import type { CustomizerCharacter } from '../../../../shared/customizer'
 import type { EditorV6Document, EditorV6Element } from '../../../../shared/editorV6'
 import { collectCustomizerHairStyleReferences } from '../../../../shared/hairCategories.ts'
-import type { HairStyleSummary, WardrobeSetSummary } from '../../../../shared/fabricator'
+import type { FaceComponentAssetSummary, HairStyleSummary, WardrobeSetSummary } from '../../../../shared/fabricator'
 
-export type PoseRevisionSnapshot = { projectId: string; revisions: Record<string, string>; modelRevisions: Record<string, string>; wardrobeRevisions?: Record<string, string>; hairRevisions?: Record<string, string> }
+export type PoseRevisionSnapshot = { projectId: string; revisions: Record<string, string>; modelRevisions: Record<string, string>; wardrobeRevisions?: Record<string, string>; hairRevisions?: Record<string, string>; headExtraRevisions?: Record<string, string> }
 export type PoseCatalog = { modelSlot: number; poses: Array<{ slot?: number; updatedAt: string } | null> }
 export type ModelCatalog = Array<{ slot: number; updatedAt: string } | null>
 export type WardrobeCatalog = { modelSlot: number; sets: Array<Pick<WardrobeSetSummary, 'id' | 'updatedAt'>> }
 export type HairCatalog = { modelSlot: number; styles: Array<Pick<HairStyleSummary, 'id' | 'updatedAt'>> }
+export type HeadExtraCatalog = { modelSlot: number; assets: Array<Pick<FaceComponentAssetSummary, 'id' | 'updatedAt'>> }
 
 export const editorV6PoseRevisionKey = (modelSlot: number, poseSlot: number) => `${modelSlot}:${poseSlot}`
 export const editorV6WardrobeRevisionKey = (modelSlot: number, setId: string) => `${modelSlot}:${setId}`
 export const editorV6HairRevisionKey = (modelSlot: number, styleId: string) => `${modelSlot}:${styleId}`
+export const editorV6HeadExtraRevisionKey = (modelSlot: number, assetId: string) => `${modelSlot}:${assetId}`
 
 export function sameCustomizerCharacterCatalog(left: CustomizerCharacter[], right: CustomizerCharacter[]): boolean {
   return left.length === right.length && left.every((character, index) => {
@@ -42,7 +44,11 @@ export function createEditorV6HairRevisionSnapshot(catalogs: HairCatalog[]): Rec
   return Object.fromEntries(catalogs.flatMap(({ modelSlot, styles }) => styles.map((style) => [editorV6HairRevisionKey(modelSlot, style.id), style.updatedAt])))
 }
 
-function sourceRevision(kind: 'wardrobe' | 'hair', references: Array<[string, string]>): string | undefined {
+export function createEditorV6HeadExtraRevisionSnapshot(catalogs: HeadExtraCatalog[]): Record<string, string> {
+  return Object.fromEntries(catalogs.flatMap(({ modelSlot, assets }) => assets.map((asset) => [editorV6HeadExtraRevisionKey(modelSlot, asset.id), asset.updatedAt])))
+}
+
+function sourceRevision(kind: 'wardrobe' | 'hair' | 'head-extra', references: Array<[string, string]>): string | undefined {
   const normalized = [...new Map(references).entries()].sort(([left], [right]) => left.localeCompare(right))
   if (!normalized.length) return undefined
   const source = JSON.stringify(normalized)
@@ -74,11 +80,24 @@ export function editorV6CharacterHairSourceRevision(character: CustomizerCharact
   return sourceRevision('hair', references)
 }
 
+/** Fingerprints only the head extras selected from Cabeças extra DEV for this character. */
+export function editorV6CharacterHeadExtraSourceRevision(character: CustomizerCharacter, revisions: Record<string, string>): string | undefined {
+  const appearance = character.customization.faceAppearance
+  if (!appearance) return undefined
+  const references = Object.values(appearance.headExtras ?? {}).flatMap((id) => {
+    if (!id) return []
+    const key = editorV6HeadExtraRevisionKey(appearance.modelSlot, id)
+    return [[key, revisions[key] ?? 'missing'] as [string, string]]
+  })
+  return sourceRevision('head-extra', references)
+}
+
 export function sameSourceRevisionSnapshot(left: PoseRevisionSnapshot, right: PoseRevisionSnapshot): boolean {
   return samePoseRevisionSnapshot(left.revisions, right.revisions)
     && samePoseRevisionSnapshot(left.modelRevisions, right.modelRevisions)
     && samePoseRevisionSnapshot(left.wardrobeRevisions ?? {}, right.wardrobeRevisions ?? {})
     && samePoseRevisionSnapshot(left.hairRevisions ?? {}, right.hairRevisions ?? {})
+    && samePoseRevisionSnapshot(left.headExtraRevisions ?? {}, right.headExtraRevisions ?? {})
 }
 
 export function createEditorV6PoseRevisionSnapshot(catalogs: PoseCatalog[]): Record<string, string> {
@@ -113,6 +132,7 @@ export function resolveEditorV6CharacterSourceRefresh({
   poseRefreshRequired: boolean
   wardrobeRefreshRequired: boolean
   hairRefreshRequired: boolean
+  headExtraRefreshRequired: boolean
   faceAssetRefreshRequired: boolean
 } {
   const characterStates = editorV6CharacterStates(project)
@@ -143,12 +163,19 @@ export function resolveEditorV6CharacterSourceRefresh({
     const currentRevision = editorV6CharacterHairSourceRevision(character, poseSourceSnapshot?.hairRevisions ?? {})
     return currentRevision !== undefined && state.hairSourceRevision !== currentRevision
   })
+  const headExtraRefreshRequired = characterStates.some((state) => {
+    if (state.kind !== 'character' || !state.characterId) return false
+    const character = characterById.get(state.characterId)
+    if (!character) return false
+    const currentRevision = editorV6CharacterHeadExtraSourceRevision(character, poseSourceSnapshot?.headExtraRevisions ?? {})
+    return currentRevision !== undefined && state.headExtraSourceRevision !== currentRevision
+  })
   const faceAssetRefreshRequired = Boolean(project && (poseRefreshRequired || characterStates.some((state) => {
     if (state.kind !== 'character') return false
     const character = characterById.get(state.characterId ?? '')
     return state.faceRendererVersion !== faceRendererVersion
       || Boolean(character && state.characterSourceUpdatedAt !== character.updatedAt)
-  }) || wardrobeRefreshRequired || hairRefreshRequired))
+  }) || wardrobeRefreshRequired || hairRefreshRequired || headExtraRefreshRequired))
 
-  return { characterStates, poseRefreshRequired, wardrobeRefreshRequired, hairRefreshRequired, faceAssetRefreshRequired }
+  return { characterStates, poseRefreshRequired, wardrobeRefreshRequired, hairRefreshRequired, headExtraRefreshRequired, faceAssetRefreshRequired }
 }

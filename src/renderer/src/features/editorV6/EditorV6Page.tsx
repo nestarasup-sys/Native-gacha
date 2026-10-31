@@ -42,7 +42,7 @@ import { SceneCastPickerModal } from '../../ui/components/SceneCastPickerModal'
 import { createSceneTextElement, sceneCatalogColor, sceneEditorTools } from '../../ui/sceneEditorDefaults'
 import { recordUiCommit } from '../../ui/performanceDiagnostics'
 import { useEditorV6DocumentPersistence } from './useEditorV6DocumentPersistence'
-import { editorV6CharacterHairSourceRevision, editorV6CharacterWardrobeSourceRevision, editorV6PoseRevisionKey, useEditorV6CharacterSources } from './useEditorV6CharacterSources'
+import { editorV6CharacterHairSourceRevision, editorV6CharacterHeadExtraSourceRevision, editorV6CharacterWardrobeSourceRevision, editorV6PoseRevisionKey, useEditorV6CharacterSources } from './useEditorV6CharacterSources'
 import { resolveEditorV6CharacterSourceRefresh } from './editorV6CharacterSourceModel'
 import { useEditorV6CharacterSnapshotRefresh } from './useEditorV6CharacterSnapshotRefresh'
 import { useEditorV6ProjectLibrary } from './useEditorV6ProjectLibrary'
@@ -474,7 +474,8 @@ export function EditorV6Page() {
           const modelSourceRevision = activePoseSourceSnapshot?.modelRevisions[String(character.customization.modelSlot ?? 1)] ?? 'missing'
           const wardrobeSourceRevision = editorV6CharacterWardrobeSourceRevision(character, activePoseSourceSnapshot?.wardrobeRevisions ?? {})
           const hairSourceRevision = editorV6CharacterHairSourceRevision(character, activePoseSourceSnapshot?.hairRevisions ?? {})
-          elements.push({ id: crypto.randomUUID(), kind: 'character', assetId: asset.id, faceModeAssetIds: { ...baked.assetIds, idle: asset.id }, characterId: character.id, characterSourceUpdatedAt: character.updatedAt, modelSourceRevision, ...(poseSourceRevision ? { poseSourceRevision } : {}), ...(wardrobeSourceRevision ? { wardrobeSourceRevision } : {}), ...(hairSourceRevision ? { hairSourceRevision } : {}), faceRendererVersion: EDITOR_V6_FACE_RENDER_VERSION, activeExpressionCollectionId: 'standard', activeExpressionPresetId: null, activeFaceMode: 'idle', characterScale: 100, characterWidthScale: 100, characterHeightScale: 100, ...(character.customization.faceAppearance ? { expressionBase: { appearance: structuredClone(character.customization.faceAppearance), transforms: {} } } : {}), characterCanvasWidth, text: character.name, x: 0, y: 0, width, height, rotation: 0, zIndex: ++zIndex })
+          const headExtraSourceRevision = editorV6CharacterHeadExtraSourceRevision(character, activePoseSourceSnapshot?.headExtraRevisions ?? {})
+          elements.push({ id: crypto.randomUUID(), kind: 'character', assetId: asset.id, faceModeAssetIds: { ...baked.assetIds, idle: asset.id }, characterId: character.id, characterSourceUpdatedAt: character.updatedAt, modelSourceRevision, ...(poseSourceRevision ? { poseSourceRevision } : {}), ...(wardrobeSourceRevision ? { wardrobeSourceRevision } : {}), ...(hairSourceRevision ? { hairSourceRevision } : {}), ...(headExtraSourceRevision ? { headExtraSourceRevision } : {}), faceRendererVersion: EDITOR_V6_FACE_RENDER_VERSION, activeExpressionCollectionId: 'standard', activeExpressionPresetId: null, activeFaceMode: 'idle', characterScale: 100, characterWidthScale: 100, characterHeightScale: 100, ...(character.customization.faceAppearance ? { expressionBase: { appearance: structuredClone(character.customization.faceAppearance), transforms: {} } } : {}), characterCanvasWidth, text: character.name, x: 0, y: 0, width, height, rotation: 0, zIndex: ++zIndex })
         } finally { renderer.dispose() }
       }
       changeScene((studio) => ({
@@ -580,9 +581,10 @@ export function EditorV6Page() {
       const assetId = selectedElement.assetId
       const wardrobeSourceRevision = editorV6CharacterWardrobeSourceRevision(selectedEditorV6Character, activePoseSourceSnapshot?.wardrobeRevisions ?? {})
       const hairSourceRevision = editorV6CharacterHairSourceRevision(selectedEditorV6Character, activePoseSourceSnapshot?.hairRevisions ?? {})
+      const headExtraSourceRevision = editorV6CharacterHeadExtraSourceRevision(selectedEditorV6Character, activePoseSourceSnapshot?.headExtraRevisions ?? {})
       changeScene((studio) => ({
         ...studio,
-        elements: studio.elements.map((element) => element.id === elementId ? { ...element, poseSlot, ...geometry, ...(typeof poseSlot === 'number' ? { poseSourceRevision: activePoseSourceSnapshot?.revisions[editorV6PoseRevisionKey(selectedEditorV6Character.customization.modelSlot ?? 1, poseSlot)] ?? 'missing' } : { poseSourceRevision: undefined }), faceModeAssetIds: { ...baked.assetIds, [baseMode]: assetId }, characterSourceUpdatedAt: selectedEditorV6Character.updatedAt, wardrobeSourceRevision, hairSourceRevision } : element),
+        elements: studio.elements.map((element) => element.id === elementId ? { ...element, poseSlot, ...geometry, ...(typeof poseSlot === 'number' ? { poseSourceRevision: activePoseSourceSnapshot?.revisions[editorV6PoseRevisionKey(selectedEditorV6Character.customization.modelSlot ?? 1, poseSlot)] ?? 'missing' } : { poseSourceRevision: undefined }), faceModeAssetIds: { ...baked.assetIds, [baseMode]: assetId }, characterSourceUpdatedAt: selectedEditorV6Character.updatedAt, wardrobeSourceRevision, hairSourceRevision, headExtraSourceRevision } : element),
         assets: [...studio.assets.map((asset) => asset.id === assetId ? { ...asset, dataUrl: baked.dataUrl, mimeType: 'image/png' as const } : asset), ...baked.extraAssets],
         updatedAt: new Date().toISOString()
       }))

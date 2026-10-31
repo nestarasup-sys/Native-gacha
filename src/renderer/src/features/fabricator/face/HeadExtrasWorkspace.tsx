@@ -183,6 +183,7 @@ export function HeadExtrasWorkspace({ baseModelSlot }: { baseModelSlot: number }
       setAssets(remaining)
       const nextDetails = { ...detailsRef.current }; delete nextDetails[selected.id]
       detailsRef.current = nextDetails; setDetails(nextDetails)
+      window.dispatchEvent(new Event('fabricator:assets-updated'))
       setSelectedId(remaining[0]?.id ?? null); setNotice('Extra removido da biblioteca.')
     } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
     finally { setBusy(false) }
