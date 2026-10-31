@@ -83,3 +83,5 @@ A importação de imagem, áudio e vídeo pode abrir um diálogo nativo antes de
 - Testes em `tests/editor-v6/editorV6MediaImportGuards.test.ts` verificam mudanças de bloqueio após o seletor, ausência/duplicação de faixa, limites de tempo, imutabilidade do documento e persistência sem alterações.
 
 Essa proteção atua no documento, **não executa rollback do arquivo já copiado pelo diálogo nativo**. Recuperação/limpeza de mídia órfã permanece uma frente separada, dependente de inventário e teste de recuperação.
+
+A verificação dedicada em `.github/workflows/editor-v6.yml` executa `test:editor-v6`, `typecheck` e `build` no Linux e no Windows para PRs do Editor V6 direcionados a `Dev-V2`, mesmo enquanto os workflows gerais da branch ainda dependem do PR de organização anterior.
