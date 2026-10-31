@@ -1983,6 +1983,34 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .hair-dev-set-name input { width:100%;min-width:0;height:29px;padding:0 7px;border:1px solid #eadde5;border-radius:6px;color:#54444f;font-size:10px; }
 .hair-dev-import-modal { width:min(520px,100%); }
 .hair-dev-import-modal .pose-model-option:disabled { opacity:.55;cursor:not-allowed; }
+.hair-grid-review-backdrop { z-index:125; }
+.hair-grid-review-modal { width:min(1080px,100%);max-height:min(94vh,900px); }
+.hair-grid-review-content { min-height:0;flex:1;display:grid;grid-template-columns:minmax(180px,.75fr) minmax(0,1.8fr);gap:12px;overflow:auto;padding:0 14px 12px; }
+.hair-grid-review-content h3 { margin:0 0 7px;color:#655461;font-size:10px; }
+.hair-grid-original-panel,.hair-grid-crop-panel { min-width:0;display:flex;flex-direction:column; }
+.hair-grid-original-image { position:relative;flex:none;min-height:120px;align-self:center;overflow:hidden;border:1px solid #e6dae2;border-radius:8px;background-color:#f9f7f9;background-image:linear-gradient(45deg,#e9e5e9 25%,transparent 25%),linear-gradient(-45deg,#e9e5e9 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#e9e5e9 75%),linear-gradient(-45deg,transparent 75%,#e9e5e9 75%);background-size:16px 16px;background-position:0 0,0 8px,8px -8px,-8px 0; }
+.hair-grid-original-image img { display:block;width:100%;height:100%;object-fit:fill; }
+.hair-grid-guide { position:absolute;z-index:1;pointer-events:none;background:#e13b83;box-shadow:0 0 0 1px #fff; }
+.hair-grid-guide-column-one,.hair-grid-guide-column-two { top:0;bottom:0;width:1px; }
+.hair-grid-guide-column-one { left:var(--hair-grid-col-one,33.333%); }.hair-grid-guide-column-two { left:var(--hair-grid-col-two,66.666%); }
+.hair-grid-guide-row { left:0;right:0;top:var(--hair-grid-row,50%);height:1px; }
+.hair-grid-original-panel>small { margin-top:6px;color:#988794;font-size:9px;line-height:1.4; }
+.hair-grid-crop-columns { min-height:0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px; }
+.hair-grid-crop-column { min-width:0;display:grid;grid-template-rows:1fr 1fr;gap:7px; }
+.hair-grid-crop-column figure { min-width:0;min-height:90px;display:grid;grid-template-rows:auto minmax(70px,1fr);gap:4px;margin:0; }
+.hair-grid-crop-column figcaption { overflow:hidden;color:#877583;font-size:9px;font-weight:700;text-overflow:ellipsis;white-space:nowrap; }
+.hair-grid-crop-column figure>span { min-width:0;min-height:70px;display:grid;place-items:center;overflow:hidden;border:1px solid #e6dae2;border-radius:7px;background-color:#f9f7f9;background-image:linear-gradient(45deg,#e9e5e9 25%,transparent 25%),linear-gradient(-45deg,#e9e5e9 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#e9e5e9 75%),linear-gradient(-45deg,transparent 75%,#e9e5e9 75%);background-size:14px 14px;background-position:0 0,0 7px,7px -7px,-7px 0; }
+.hair-grid-crop-column figure img { display:block;max-width:100%;max-height:23vh;object-fit:contain; }
+.hair-grid-adjustments { display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px;margin:0 14px 10px; }
+.hair-grid-adjust-control { min-width:0;display:grid;align-content:start;gap:5px;padding:8px 9px;border:1px solid #eadde5;border-radius:8px;background:#fff9fc; }
+.hair-grid-adjust-control>span { display:flex;align-items:center;justify-content:space-between;gap:5px;color:#66505f;font-size:10px; }
+.hair-grid-adjust-control output { min-width:42px;padding:3px 5px;border-radius:5px;background:#f6e5ed;color:#a23f6e;font-weight:800;text-align:center; }
+.hair-grid-adjust-control input { width:100%;margin:0;accent-color:#bd4783; }
+.hair-grid-adjust-control small { color:#988794;font-size:9px;line-height:1.35; }
+.hair-grid-review-status,.hair-grid-review-error { margin:0 14px 8px;padding:7px 9px;border-radius:6px;font-size:10px; }
+.hair-grid-review-status { background:#f7eff5;color:#80657a; }.hair-grid-review-error { background:#fff0f4;color:#b6385a; }
+.hair-grid-review-footer { display:flex;justify-content:flex-end;gap:7px;padding:0 14px 14px; }
+@media (max-width:760px) { .hair-grid-review-content { grid-template-columns:1fr; }.hair-grid-original-image { max-height:24vh; }.hair-grid-crop-column figure img { max-height:18vh; }.hair-grid-adjustments { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 .hair-dev-library-tabs { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:3px;padding:3px;border:2px solid #49388f;border-radius:8px;background:linear-gradient(180deg,#6957c2,#5543a8);box-shadow:0 3px 0 #3f2c79; }
 .hair-dev-library-tabs button { min-width:0;min-height:40px;padding:5px 2px;border:2px solid #49388f;border-radius:4px;background:linear-gradient(180deg,#7768ce,#5e4ab5);color:#fff;font-size:10px;font-weight:800;text-shadow:0 1px 2px #34266f;cursor:pointer; }
 .hair-dev-library-tabs button:hover { filter:brightness(1.12); }

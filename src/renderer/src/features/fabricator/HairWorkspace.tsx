@@ -7,6 +7,8 @@ import { hairCategories, type HairAssetSide } from '../../../../shared/hairCateg
 import { emptyHairTransform, normalizeHairTransforms } from '../../../../shared/hairPersistence'
 import { HairPiecePreview as HairPiece } from './HairPiecePreview'
 import { HairImportModal } from './HairImportModal'
+import { HairGridReviewModal } from './HairGridReviewModal'
+import { defaultHairGridSplits, type HairGridSplits } from './hairGridLayout'
 import { Icon } from '../../ui/components/Icon'
 import { usePreviewBackground } from '../../ui/hooks/usePreviewBackground'
 import { normalizeEditableImageFile } from './normalizeImage'
@@ -19,8 +21,10 @@ type HairDrag = { pointerId: number; side: HairSide; clientX: number; clientY: n
 type HairProcessorCut = { png: ArrayBuffer; width: number; height: number }
 type HairProcessorResult =
   | { type: 'complete'; layout: 'pair'; front: HairProcessorCut; back: HairProcessorCut }
-  | { type: 'complete'; layout: 'three-style-grid'; styles: Array<{ front: HairProcessorCut; back: HairProcessorCut; source: HairProcessorCut }> }
+  | { type: 'complete'; layout: 'three-style-grid'; styles: Array<{ front: HairProcessorCut; back: HairProcessorCut; source: HairProcessorCut }>; splits: HairGridSplits }
   | { type: 'error'; message: string }
+type HairGridStyle = { front: HairAsset; back: HairAsset; sourceImageDataUrl: string }
+type HairGridReview = { sourceImageDataUrl: string; fileName: string; tolerance: number; mode: 'auto' | 'green' | 'checker' }
 const defaultCategories: Record<HairSide, HairPartId> = { front: 'rearHair', back: 'backHair', fringe: 'frontHair' }
 
 function headPart(project: FabricatorProject | null): ModelPart | null {
@@ -101,7 +105,7 @@ function hairCutDataUrl(cut: HairProcessorCut): string {
   return `data:image/png;base64,${btoa(binary)}`
 }
 
-function runHairProcessor(dataUrl: string, tolerance: number, mode: 'auto' | 'green' | 'checker', layout: 'pair' | 'three-style-grid'): Promise<HairProcessorResult> {
+function runHairProcessor(dataUrl: string, tolerance: number, mode: 'auto' | 'green' | 'checker', layout: 'pair' | 'three-style-grid', paddingPercent = 0, gridSplits?: HairGridSplits): Promise<HairProcessorResult> {
   return new Promise((resolve, reject) => {
     const worker = new Worker(new URL('./hairProcessor.worker.ts', import.meta.url), { type: 'module' })
     worker.onmessage = ({ data }: MessageEvent<HairProcessorResult>) => {
@@ -111,7 +115,7 @@ function runHairProcessor(dataUrl: string, tolerance: number, mode: 'auto' | 'gr
       resolve(data)
     }
     worker.onerror = () => { worker.terminate(); reject(new Error('Não foi possível processar o chroma da folha de cabelo.')) }
-    worker.postMessage({ dataUrl, tolerance, mode, layout })
+    worker.postMessage({ dataUrl, tolerance, mode, layout, paddingPercent, gridSplits })
   })
 }
 
@@ -126,20 +130,23 @@ function processHairSheet(dataUrl: string, tolerance: number, mode: 'auto' | 'gr
   })
 }
 
-function processThreeStyleHairGrid(dataUrl: string, tolerance: number, mode: 'auto' | 'green' | 'checker'): Promise<Array<{ front: HairAsset; back: HairAsset; sourceImageDataUrl: string }>> {
-  return runHairProcessor(dataUrl, tolerance, mode, 'three-style-grid').then((result) => {
+function processThreeStyleHairGrid(dataUrl: string, tolerance: number, mode: 'auto' | 'green' | 'checker', paddingPercent = 4, gridSplits?: HairGridSplits): Promise<{ styles: HairGridStyle[]; splits: HairGridSplits }> {
+  return runHairProcessor(dataUrl, tolerance, mode, 'three-style-grid', paddingPercent, gridSplits).then((result) => {
     if (result.type !== 'complete' || result.layout !== 'three-style-grid' || result.styles.length !== 3) {
       throw new Error('A grade precisa conter exatamente três cabelos completos.')
     }
-    return result.styles.map(({ front, back, source }) => ({
-      front: hairAssetFromCut(front), back: hairAssetFromCut(back), sourceImageDataUrl: hairCutDataUrl(source)
-    }))
+    return {
+      styles: result.styles.map(({ front, back, source }) => ({
+        front: hairAssetFromCut(front), back: hairAssetFromCut(back), sourceImageDataUrl: hairCutDataUrl(source)
+      })),
+      splits: result.splits
+    }
   })
 }
 
 function workspaceFromHairGridStyle(
   modelSlot: number, head: ModelPart,
-  style: { front: HairAsset; back: HairAsset; sourceImageDataUrl: string },
+  style: HairGridStyle,
   tolerance: number, mode: 'auto' | 'green' | 'checker'
 ): HairWorkspaceData {
   return {
@@ -184,6 +191,12 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
   const [saving, setSaving] = useState(false)
   const [processingChroma, setProcessingChroma] = useState(false)
   const [importModalOpen, setImportModalOpen] = useState(false)
+  const [hairGridReview, setHairGridReview] = useState<HairGridReview | null>(null)
+  const [hairGridPreviewStyles, setHairGridPreviewStyles] = useState<HairGridStyle[] | null>(null)
+  const [hairGridPaddingPercent, setHairGridPaddingPercent] = useState(4)
+  const [hairGridSplits, setHairGridSplits] = useState<HairGridSplits>(defaultHairGridSplits)
+  const [hairGridPreviewBusy, setHairGridPreviewBusy] = useState(false)
+  const [hairGridPreviewError, setHairGridPreviewError] = useState('')
   const [dirty, setDirty] = useState(false)
   const [zoom, setZoom] = useState(1)
   const [error, setError] = useState('')
@@ -191,6 +204,8 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const singleFileInputRef = useRef<HTMLInputElement | null>(null)
   const threeStyleFileInputRef = useRef<HTMLInputElement | null>(null)
+  const hairGridPreviewRequestRef = useRef(0)
+  const hairGridPreviewTimerRef = useRef<number | null>(null)
   const dragRef = useRef<HairDrag | null>(null)
   const legacyWorkspaceRef = useRef<HairWorkspaceData | null>(null)
   const hairStyleRequestRef = useRef(0)
@@ -199,6 +214,10 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
   const hairDetailsRef = useRef(hairDetails)
   hairDetailsRef.current = hairDetails
   useEffect(() => () => { hairStyleRequestRef.current += 1 }, [])
+  useEffect(() => () => {
+    hairGridPreviewRequestRef.current += 1
+    if (hairGridPreviewTimerRef.current !== null) window.clearTimeout(hairGridPreviewTimerRef.current)
+  }, [])
   const head = useMemo(() => project?.slot === modelSlot ? headPart(project) : null, [project, modelSlot])
   const category = hairCategories.find((item) => item.id === selectedCategory)!
   const selectedSide = category.side
@@ -377,19 +396,77 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
       && !window.confirm('Há alterações não salvas. Importar a grade vai substituir o rascunho atual. Continuar?')) return
 
     setError('')
-    setNotice('Separando os três cabelos da imagem…')
+    setNotice('Analisando as seis áreas da imagem…')
     setSaving(true)
-    const imported: Array<{ detail: HairStyle; workspace: HairWorkspaceData }> = []
+    setHairGridPreviewBusy(true)
     try {
       const sourceImageDataUrl = imageAsPng(await loadImage(await readFileDataUrl(file)))
       const tolerance = hairWorkspace.chromaTolerance ?? 70
       const mode = hairWorkspace.chromaMode ?? 'auto'
-      const styles = await processThreeStyleHairGrid(sourceImageDataUrl, tolerance, mode)
-      const baseName = nameFromFile(file)
+      const paddingPercent = 4
+      const result = await processThreeStyleHairGrid(sourceImageDataUrl, tolerance, mode, paddingPercent)
+      setHairGridReview({ sourceImageDataUrl, fileName: nameFromFile(file), tolerance, mode })
+      setHairGridPreviewStyles(result.styles)
+      setHairGridPaddingPercent(paddingPercent)
+      setHairGridSplits(result.splits)
+      setHairGridPreviewError('')
+      setNotice('Detectei os espaços entre as silhuetas. Confira as seis peças e ajuste as guias ou a margem antes de salvar.')
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Não foi possível analisar a grade de três cabelos.')
+    } finally { setSaving(false); setHairGridPreviewBusy(false) }
+  }
 
+  function queueHairGridPreviewReprocessing(paddingPercent: number, splits: HairGridSplits) {
+    paddingPercent = Math.max(0, Math.min(12, Math.round(paddingPercent)))
+    setHairGridPaddingPercent(paddingPercent)
+    setHairGridSplits(splits)
+    if (!hairGridReview) return
+    setHairGridPreviewBusy(true)
+    setHairGridPreviewError('')
+    const requestId = ++hairGridPreviewRequestRef.current
+    if (hairGridPreviewTimerRef.current !== null) window.clearTimeout(hairGridPreviewTimerRef.current)
+    hairGridPreviewTimerRef.current = window.setTimeout(() => {
+      hairGridPreviewTimerRef.current = null
+      void processThreeStyleHairGrid(hairGridReview.sourceImageDataUrl, hairGridReview.tolerance, hairGridReview.mode, paddingPercent, splits)
+        .then((result) => {
+          if (hairGridPreviewRequestRef.current === requestId) {
+            setHairGridPreviewStyles(result.styles)
+            setHairGridSplits(result.splits)
+          }
+        })
+        .catch((reason: unknown) => {
+          if (hairGridPreviewRequestRef.current === requestId) setHairGridPreviewError(reason instanceof Error ? reason.message : 'Não foi possível recalcular os recortes.')
+        })
+        .finally(() => {
+          if (hairGridPreviewRequestRef.current === requestId) setHairGridPreviewBusy(false)
+        })
+    }, 180)
+  }
+
+  function cancelHairGridReview() {
+    hairGridPreviewRequestRef.current += 1
+    if (hairGridPreviewTimerRef.current !== null) window.clearTimeout(hairGridPreviewTimerRef.current)
+    hairGridPreviewTimerRef.current = null
+    setHairGridReview(null)
+    setHairGridPreviewStyles(null)
+    setHairGridSplits(defaultHairGridSplits)
+    setHairGridPreviewError('')
+    setHairGridPreviewBusy(false)
+  }
+
+  async function saveHairGridReview() {
+    if (!hairGridReview || !hairGridPreviewStyles || hairGridPreviewStyles.length !== 3 || hairGridPreviewBusy || saving || !head) return
+    const review = hairGridReview
+    const styles = hairGridPreviewStyles
+    const imported: Array<{ detail: HairStyle; workspace: HairWorkspaceData }> = []
+    cancelHairGridReview()
+    setSaving(true)
+    setError('')
+    setNotice('Salvando os três conjuntos…')
+    try {
       for (let index = 0; index < styles.length; index += 1) {
-        const workspace = workspaceFromHairGridStyle(modelSlot, head, styles[index], tolerance, mode)
-        const name = `${baseName} ${index + 1}`.slice(0, 80)
+        const workspace = workspaceFromHairGridStyle(modelSlot, head, styles[index], review.tolerance, review.mode)
+        const name = `${review.fileName} ${index + 1}`.slice(0, 80)
         const detail = await saveStyle(workspace, name, null)
         imported.push({ detail, workspace })
       }
@@ -403,7 +480,7 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
         window.dispatchEvent(new Event('fabricator:assets-updated'))
         setError(`${imported.length} de 3 conjuntos foram salvos. A importação parou: ${reason instanceof Error ? reason.message : 'falha ao salvar o próximo conjunto.'}`)
       } else {
-        setError(reason instanceof Error ? reason.message : 'Não foi possível importar a grade de três cabelos.')
+        setError(reason instanceof Error ? reason.message : 'Não foi possível salvar a grade de cabelos.')
       }
     } finally { setSaving(false) }
   }
@@ -707,7 +784,7 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
     <header className="hair-dev-toolbar">
       <span className="model-slot-logo"><Icon name="bow" /></span>
       <span><strong>Cabelos Dev</strong><small>Monte os cabelos para cada modelo</small></span>
-      <label>Modelo de referência<select value={modelSlot} onChange={(event) => { if (dirty && !window.confirm('Há alterações não salvas. Descartar e trocar de modelo?')) return; setImportModalOpen(false); setModelSlot(Number(event.target.value)) }} disabled={loadingModels || saving || loadingStyle}>{models.map((model, index) => model && <option key={model.slot} value={model.slot}>Modelo {String(index + 1).padStart(2, '0')} · {model.name}</option>)}</select></label>
+      <label>Modelo de referência<select value={modelSlot} onChange={(event) => { if (dirty && !window.confirm('Há alterações não salvas. Descartar e trocar de modelo?')) return; cancelHairGridReview(); setImportModalOpen(false); setModelSlot(Number(event.target.value)) }} disabled={loadingModels || saving || loadingStyle || Boolean(hairGridReview)}>{models.map((model, index) => model && <option key={model.slot} value={model.slot}>Modelo {String(index + 1).padStart(2, '0')} · {model.name}</option>)}</select></label>
       <button className="hair-dev-save" onClick={() => void saveHair()} disabled={!hairWorkspace || (!hairWorkspace.front && !hairWorkspace.back && !hairWorkspace.fringe) || saving || loadingHair || loadingStyle} title={activeStyleId && activeStyleId !== 'legacy-workspace' ? 'Salvar alterações neste conjunto' : 'Salvar todas as peças como um conjunto'} type="button"><Icon name="check" />{saving ? 'Salvando…' : activeStyleId && activeStyleId !== 'legacy-workspace' ? 'Salvar alterações' : 'Salvar conjunto'}</button>
     </header>
     <div className="hair-dev-body">
@@ -802,6 +879,19 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
       onImportSingle={() => { setImportModalOpen(false); singleFileInputRef.current?.click() }}
       onImportPairSheet={() => { setImportModalOpen(false); fileInputRef.current?.click() }}
       onImportThreeStyleGrid={() => { setImportModalOpen(false); threeStyleFileInputRef.current?.click() }}
+    />}
+    {hairGridReview && hairGridPreviewStyles && <HairGridReviewModal
+      sourceImageDataUrl={hairGridReview.sourceImageDataUrl}
+      styles={hairGridPreviewStyles}
+      paddingPercent={hairGridPaddingPercent}
+      splits={hairGridSplits}
+      busy={hairGridPreviewBusy}
+      saving={saving}
+      error={hairGridPreviewError}
+      onPaddingChange={(value) => queueHairGridPreviewReprocessing(value, hairGridSplits)}
+      onSplitsChange={(splits) => queueHairGridPreviewReprocessing(hairGridPaddingPercent, splits)}
+      onCancel={cancelHairGridReview}
+      onSave={() => void saveHairGridReview()}
     />}
   </section>
 }
