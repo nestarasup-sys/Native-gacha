@@ -210,7 +210,7 @@ describe('lifecycle de cópias de mídia do Editor V6', () => {
     expect(lifecycle.getPendingWrites()).toEqual([])
   })
 
-  it('aceita no IPC de exportação projetos com mais de 500 assets sem mudar o limite de persistência', async () => {
+  it('aceita no IPC de exportação projetos com mais de 500 assets', async () => {
     const exportGate = deferred<Awaited<ReturnType<typeof runEditorV6Export>>>()
     vi.mocked(dialog.showSaveDialog).mockResolvedValue({ canceled: false, filePath: 'C:/synthetic/output.mp4' })
     vi.mocked(runEditorV6Export).mockImplementation(() => exportGate.promise)

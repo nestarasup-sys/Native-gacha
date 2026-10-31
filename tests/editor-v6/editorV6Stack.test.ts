@@ -33,6 +33,18 @@ describe('base de arquitetura do Editor V6', () => {
     expect(editorV6DocumentSchema.safeParse(invalidTimeline).success).toBe(false)
   })
 
+  it('aceita documentos com mais de 500 assets usados em snapshots da timeline', () => {
+    const assets = Array.from({ length: 501 }, (_, index) => ({
+      id: `33333333-3333-4333-8333-${String(index + 1).padStart(12, '0')}`,
+      category: 'character' as const,
+      name: `Snapshot ${index + 1}`,
+      mimeType: 'image/png' as const,
+      dataUrl: 'data:image/png;base64,AA=='
+    }))
+
+    expect(editorV6DocumentSchema.safeParse({ ...document(), assets }).success).toBe(true)
+  })
+
   it('mantém desfazer e refazer isolados por projeto', () => {
     const store = useEditorV6Store.getState()
     store.clear(document().id)

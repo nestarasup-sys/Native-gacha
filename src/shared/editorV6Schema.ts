@@ -6,6 +6,7 @@ import type { EditorV6MotionBakeRequest } from './editorV6Motion'
 
 const uuid = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)
 const finite = z.number().finite()
+const EDITOR_V6_MAX_ASSETS = 5_000
 export const editorV6ExportAudioSchema = z.object({
   id: uuid, name: z.string().min(1).max(255),
   fileName: z.string().regex(/^[0-9a-f-]{36}\.(mp3|wav|m4a|aac|ogg|flac|opus|webm)$/i),
@@ -142,7 +143,7 @@ export const editorV6DocumentSchema = z.object({
   backgroundHeight: finite,
   backgroundRotation: finite,
   thumbnailDataUrl: z.string().max(1_500_000).regex(/^data:image\/(jpeg|png);base64,/).optional(),
-  assets: z.array(editorV6AssetSchema).max(500),
+  assets: z.array(editorV6AssetSchema).max(EDITOR_V6_MAX_ASSETS),
   media: z.array(editorV6MediaAssetSchema).max(500).optional(),
   elements: z.array(editorV6ElementSchema).max(1000),
   exportAudio: z.array(editorV6ExportAudioSchema).max(32).optional(),
@@ -215,11 +216,10 @@ export const editorV6DocumentSchema = z.object({
   })
 })
 
-// O export pode receber projetos com muitos estados visuais e snapshots gerados
-// pela timeline. Esse limite maior é exclusivo do IPC de exportação; persistência
-// e carregamento continuam usando o limite normal do documento.
+// O export e a persistência precisam aceitar todos os estados visuais e snapshots
+// gerados pela timeline, mantendo o mesmo teto em todas as fronteiras do documento.
 export const editorV6ExportDocumentSchema = editorV6DocumentSchema.safeExtend({
-  assets: z.array(editorV6AssetSchema).max(5_000)
+  assets: z.array(editorV6AssetSchema).max(EDITOR_V6_MAX_ASSETS)
 })
 
 export function isEditorV6Document(value: unknown): value is EditorV6Document {
