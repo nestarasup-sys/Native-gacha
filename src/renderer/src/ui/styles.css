@@ -1976,12 +1976,13 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .hair-dev-library-actions button:first-child { grid-column:1/-1; }
 .hair-dev-library-actions button { display:flex;align-items:center;justify-content:center;gap:5px;min-height:33px;border:1px solid #a9447e;border-radius:7px;background:#bf438d;color:#fff;font-size:10px;font-weight:800;cursor:pointer; }
 .hair-dev-library-actions button:last-child { border-color:#dc9ab6;background:#fff2f7;color:#a84370; }
-.hair-dev-library-actions button:disabled,.hair-dev-sheet-import:disabled { opacity:.5;cursor:not-allowed; }
+.hair-dev-library-actions button:disabled { opacity:.5;cursor:not-allowed; }
 .hair-dev-library-actions svg { width:14px;height:14px; }
 .hair-dev-library-hint { color:#9e8994;font-size:9px;line-height:1.4; }
 .hair-dev-set-name { display:grid;gap:4px;color:#7b6774;font-size:9px;font-weight:700; }
 .hair-dev-set-name input { width:100%;min-width:0;height:29px;padding:0 7px;border:1px solid #eadde5;border-radius:6px;color:#54444f;font-size:10px; }
-.hair-dev-sheet-import { min-height:30px;border:1px dashed #dca1bd;border-radius:7px;background:#fff8fb;color:#9d4d70;font-size:9px;font-weight:700;cursor:pointer; }
+.hair-dev-import-modal { width:min(520px,100%); }
+.hair-dev-import-modal .pose-model-option:disabled { opacity:.55;cursor:not-allowed; }
 .hair-dev-library-tabs { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:3px;padding:3px;border:2px solid #49388f;border-radius:8px;background:linear-gradient(180deg,#6957c2,#5543a8);box-shadow:0 3px 0 #3f2c79; }
 .hair-dev-library-tabs button { min-width:0;min-height:40px;padding:5px 2px;border:2px solid #49388f;border-radius:4px;background:linear-gradient(180deg,#7768ce,#5e4ab5);color:#fff;font-size:10px;font-weight:800;text-shadow:0 1px 2px #34266f;cursor:pointer; }
 .hair-dev-library-tabs button:hover { filter:brightness(1.12); }

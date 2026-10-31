@@ -1,8 +1,14 @@
 export {}
 
-type Request = { dataUrl: string; tolerance: number; mode: 'auto' | 'green' | 'checker' }
+import { getHairThreeStyleRegions } from './hairGridLayout.ts'
+
+type Request = { dataUrl: string; tolerance: number; mode: 'auto' | 'green' | 'checker'; layout?: 'pair' | 'three-style-grid' }
 type HairCut = { png: ArrayBuffer; width: number; height: number }
-type Response = { type: 'complete'; front: HairCut; back: HairCut } | { type: 'error'; message: string }
+type HairPair = { front: HairCut; back: HairCut; source: HairCut }
+type Response =
+  | { type: 'complete'; layout: 'pair'; front: HairCut; back: HairCut }
+  | { type: 'complete'; layout: 'three-style-grid'; styles: HairPair[] }
+  | { type: 'error'; message: string }
 const scope = self as unknown as { onmessage: ((event: MessageEvent<Request>) => void) | null; postMessage: (message: Response, transfer?: Transferable[]) => void }
 
 type Color = [number, number, number]
@@ -16,10 +22,12 @@ function nearColor(data: Uint8ClampedArray, offset: number, color: Color, tolera
   return Math.hypot(data[offset] - color[0], data[offset + 1] - color[1], data[offset + 2] - color[2]) <= tolerance
 }
 
-function processHalf(source: ImageData, top: number, height: number, tolerance: number, mode: Request['mode']): ImageData {
-  const { width } = source
+function processRegion(source: ImageData, left: number, top: number, width: number, height: number, tolerance: number, mode: Request['mode']): ImageData {
   const image = new ImageData(width, height)
-  for (let y = 0; y < height; y++) image.data.set(source.data.subarray(((top + y) * width) * 4, ((top + y) * width + width) * 4), y * width * 4)
+  for (let y = 0; y < height; y++) {
+    const start = ((top + y) * source.width + left) * 4
+    image.data.set(source.data.subarray(start, start + width * 4), y * width * 4)
+  }
   const { data } = image
   const stride = Math.max(1, Math.floor(Math.min(width, height) / 180))
   const greenSamples: Color[] = []
@@ -93,13 +101,33 @@ function processHalf(source: ImageData, top: number, height: number, tolerance: 
   return image
 }
 
+function processHalf(source: ImageData, top: number, height: number, tolerance: number, mode: Request['mode']): ImageData {
+  return processRegion(source, 0, top, source.width, height, tolerance, mode)
+}
+
+function copyRegion(source: ImageData, left: number, top: number, width: number, height: number): ImageData {
+  const output = new ImageData(width, height)
+  for (let y = 0; y < height; y++) {
+    const start = ((top + y) * source.width + left) * 4
+    output.data.set(source.data.subarray(start, start + width * 4), y * width * 4)
+  }
+  return output
+}
+
+async function encodeImageData(image: ImageData): Promise<HairCut> {
+  const canvas = new OffscreenCanvas(image.width, image.height)
+  const context = canvas.getContext('2d')!
+  context.putImageData(image, 0, 0)
+  return { png: await (await canvas.convertToBlob({ type: 'image/png' })).arrayBuffer(), width: image.width, height: image.height }
+}
+
 async function crop(image: ImageData): Promise<HairCut> {
   const { width, height, data } = image
   let left = width, right = -1, top = height, bottom = -1
   for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) if (data[(y * width + x) * 4 + 3] > 10) {
     left = Math.min(left, x); right = Math.max(right, x); top = Math.min(top, y); bottom = Math.max(bottom, y)
   }
-  if (right < left || bottom < top) throw new Error('Não encontrei cabelo nessa metade. Confira se a folha tem Posterior em cima e Traseiro embaixo.')
+  if (right < left || bottom < top) throw new Error('Não encontrei cabelo nessa área. Confira se a folha tem Posterior em cima e Traseiro embaixo.')
   const outWidth = right - left + 1, outHeight = bottom - top + 1
   const canvas = new OffscreenCanvas(outWidth, outHeight)
   const context = canvas.getContext('2d')!
@@ -123,9 +151,21 @@ scope.onmessage = async ({ data }: MessageEvent<Request>) => {
     const upperHeight = Math.floor(bitmap.height / 2)
     const tolerance = Math.max(0, Math.min(100, data.tolerance))
     const mode = ['auto', 'green', 'checker'].includes(data.mode) ? data.mode : 'auto'
-    const front = await crop(processHalf(source, 0, upperHeight, tolerance, mode))
-    const back = await crop(processHalf(source, upperHeight, bitmap.height - upperHeight, tolerance, mode))
-    scope.postMessage({ type: 'complete', front, back }, [front.png, back.png])
+    const layout = data.layout ?? 'pair'
+    if (layout === 'three-style-grid') {
+      const styles: HairPair[] = []
+      for (const region of getHairThreeStyleRegions(bitmap.width, bitmap.height)) {
+        const front = await crop(processRegion(source, region.posterior.x, region.posterior.y, region.posterior.width, region.posterior.height, tolerance, mode))
+        const back = await crop(processRegion(source, region.traseiro.x, region.traseiro.y, region.traseiro.width, region.traseiro.height, tolerance, mode))
+        const original = await encodeImageData(copyRegion(source, region.source.x, region.source.y, region.source.width, region.source.height))
+        styles.push({ front, back, source: original })
+      }
+      scope.postMessage({ type: 'complete', layout, styles }, styles.flatMap(({ front, back, source }) => [front.png, back.png, source.png]))
+    } else {
+      const front = await crop(processHalf(source, 0, upperHeight, tolerance, mode))
+      const back = await crop(processHalf(source, upperHeight, bitmap.height - upperHeight, tolerance, mode))
+      scope.postMessage({ type: 'complete', layout: 'pair', front, back }, [front.png, back.png])
+    }
   } catch (error) {
     scope.postMessage({ type: 'error', message: error instanceof Error ? error.message : 'Falha ao remover o fundo e separar a folha de cabelo.' })
   } finally { bitmap?.close() }

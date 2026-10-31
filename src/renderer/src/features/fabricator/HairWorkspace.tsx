@@ -6,6 +6,7 @@ import type { HairPartId } from '../../../../shared/customizer'
 import { hairCategories, type HairAssetSide } from '../../../../shared/hairCategories'
 import { emptyHairTransform, normalizeHairTransforms } from '../../../../shared/hairPersistence'
 import { HairPiecePreview as HairPiece } from './HairPiecePreview'
+import { HairImportModal } from './HairImportModal'
 import { Icon } from '../../ui/components/Icon'
 import { usePreviewBackground } from '../../ui/hooks/usePreviewBackground'
 import { normalizeEditableImageFile } from './normalizeImage'
@@ -15,6 +16,11 @@ import { getHairWorkspaceCatalogPage, hairStyleDetailMatchesSummary, hairStyleSu
 type HairSide = HairAssetSide
 type HairAsset = NonNullable<HairWorkspaceData['front']>
 type HairDrag = { pointerId: number; side: HairSide; clientX: number; clientY: number; x: number; y: number }
+type HairProcessorCut = { png: ArrayBuffer; width: number; height: number }
+type HairProcessorResult =
+  | { type: 'complete'; layout: 'pair'; front: HairProcessorCut; back: HairProcessorCut }
+  | { type: 'complete'; layout: 'three-style-grid'; styles: Array<{ front: HairProcessorCut; back: HairProcessorCut; source: HairProcessorCut }> }
+  | { type: 'error'; message: string }
 const defaultCategories: Record<HairSide, HairPartId> = { front: 'rearHair', back: 'backHair', fringe: 'frontHair' }
 
 function headPart(project: FabricatorProject | null): ModelPart | null {
@@ -89,23 +95,69 @@ function preserveHairFit(previous: HairTransform, oldAsset: HairAsset | null, ne
   return { ...previous, scaleX: previous.scaleX * oldAsset.width / nextAsset.width, scaleY: previous.scaleY * oldAsset.height / nextAsset.height }
 }
 
-function processHairSheet(dataUrl: string, tolerance: number, mode: 'auto' | 'green' | 'checker'): Promise<{ front: HairAsset; back: HairAsset }> {
+function hairCutDataUrl(cut: HairProcessorCut): string {
+  const bytes = new Uint8Array(cut.png); let binary = ''
+  for (let offset = 0; offset < bytes.length; offset += 0x8000) binary += String.fromCharCode(...bytes.subarray(offset, Math.min(offset + 0x8000, bytes.length)))
+  return `data:image/png;base64,${btoa(binary)}`
+}
+
+function runHairProcessor(dataUrl: string, tolerance: number, mode: 'auto' | 'green' | 'checker', layout: 'pair' | 'three-style-grid'): Promise<HairProcessorResult> {
   return new Promise((resolve, reject) => {
     const worker = new Worker(new URL('./hairProcessor.worker.ts', import.meta.url), { type: 'module' })
-    worker.onmessage = ({ data }: MessageEvent<{ type: 'complete'; front: { png: ArrayBuffer; width: number; height: number }; back: { png: ArrayBuffer; width: number; height: number } } | { type: 'error'; message: string }>) => {
+    worker.onmessage = ({ data }: MessageEvent<HairProcessorResult>) => {
       worker.terminate()
       if (data.type === 'error') { reject(new Error(data.message)); return }
-      // Convert binary PNGs without spreading large arrays onto the call stack.
-      const toDataUrl = (buffer: ArrayBuffer) => {
-        const bytes = new Uint8Array(buffer); let binary = ''
-        for (let offset = 0; offset < bytes.length; offset += 0x8000) binary += String.fromCharCode(...bytes.subarray(offset, Math.min(offset + 0x8000, bytes.length)))
-        return `data:image/png;base64,${btoa(binary)}`
-      }
-      resolve({ front: { dataUrl: toDataUrl(data.front.png), width: data.front.width, height: data.front.height }, back: { dataUrl: toDataUrl(data.back.png), width: data.back.width, height: data.back.height } })
+      if (data.layout !== layout) { reject(new Error('O processador retornou um formato de cabelo inesperado.')); return }
+      resolve(data)
     }
     worker.onerror = () => { worker.terminate(); reject(new Error('Não foi possível processar o chroma da folha de cabelo.')) }
-    worker.postMessage({ dataUrl, tolerance, mode })
+    worker.postMessage({ dataUrl, tolerance, mode, layout })
   })
+}
+
+function hairAssetFromCut(cut: HairProcessorCut): HairAsset {
+  return { dataUrl: hairCutDataUrl(cut), width: cut.width, height: cut.height }
+}
+
+function processHairSheet(dataUrl: string, tolerance: number, mode: 'auto' | 'green' | 'checker'): Promise<{ front: HairAsset; back: HairAsset }> {
+  return runHairProcessor(dataUrl, tolerance, mode, 'pair').then((result) => {
+    if (result.type !== 'complete' || result.layout !== 'pair') throw new Error('Não foi possível separar a folha Posterior/Traseiro.')
+    return { front: hairAssetFromCut(result.front), back: hairAssetFromCut(result.back) }
+  })
+}
+
+function processThreeStyleHairGrid(dataUrl: string, tolerance: number, mode: 'auto' | 'green' | 'checker'): Promise<Array<{ front: HairAsset; back: HairAsset; sourceImageDataUrl: string }>> {
+  return runHairProcessor(dataUrl, tolerance, mode, 'three-style-grid').then((result) => {
+    if (result.type !== 'complete' || result.layout !== 'three-style-grid' || result.styles.length !== 3) {
+      throw new Error('A grade precisa conter exatamente três cabelos completos.')
+    }
+    return result.styles.map(({ front, back, source }) => ({
+      front: hairAssetFromCut(front), back: hairAssetFromCut(back), sourceImageDataUrl: hairCutDataUrl(source)
+    }))
+  })
+}
+
+function workspaceFromHairGridStyle(
+  modelSlot: number, head: ModelPart,
+  style: { front: HairAsset; back: HairAsset; sourceImageDataUrl: string },
+  tolerance: number, mode: 'auto' | 'green' | 'checker'
+): HairWorkspaceData {
+  return {
+    ...emptyHairWorkspace(modelSlot),
+    front: style.front,
+    back: style.back,
+    transforms: {
+      front: initialTransform('front', head, style.front),
+      back: initialTransform('back', head, style.back),
+      fringe: emptyHairTransform()
+    },
+    sourceImageDataUrl: style.sourceImageDataUrl,
+    sourceImageSaved: true,
+    sourceAppliesToDraft: true,
+    chromaTolerance: tolerance,
+    chromaMode: mode,
+    updatedAt: new Date().toISOString()
+  }
 }
 
 export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
@@ -131,12 +183,14 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
   const [loadingStyle, setLoadingStyle] = useState(false)
   const [saving, setSaving] = useState(false)
   const [processingChroma, setProcessingChroma] = useState(false)
+  const [importModalOpen, setImportModalOpen] = useState(false)
   const [dirty, setDirty] = useState(false)
   const [zoom, setZoom] = useState(1)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const singleFileInputRef = useRef<HTMLInputElement | null>(null)
+  const threeStyleFileInputRef = useRef<HTMLInputElement | null>(null)
   const dragRef = useRef<HairDrag | null>(null)
   const legacyWorkspaceRef = useRef<HairWorkspaceData | null>(null)
   const hairStyleRequestRef = useRef(0)
@@ -315,6 +369,67 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível separar a folha de cabelo.') }
   }
 
+  async function importThreeStyleGrid(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.currentTarget.files?.[0]
+    event.currentTarget.value = ''
+    if (!file || !head || !hairWorkspace) return
+    if (dirty && (hairWorkspace.front || hairWorkspace.back || hairWorkspace.fringe)
+      && !window.confirm('Há alterações não salvas. Importar a grade vai substituir o rascunho atual. Continuar?')) return
+
+    setError('')
+    setNotice('Separando os três cabelos da imagem…')
+    setSaving(true)
+    const imported: Array<{ detail: HairStyle; workspace: HairWorkspaceData }> = []
+    try {
+      const sourceImageDataUrl = imageAsPng(await loadImage(await readFileDataUrl(file)))
+      const tolerance = hairWorkspace.chromaTolerance ?? 70
+      const mode = hairWorkspace.chromaMode ?? 'auto'
+      const styles = await processThreeStyleHairGrid(sourceImageDataUrl, tolerance, mode)
+      const baseName = nameFromFile(file)
+
+      for (let index = 0; index < styles.length; index += 1) {
+        const workspace = workspaceFromHairGridStyle(modelSlot, head, styles[index], tolerance, mode)
+        const name = `${baseName} ${index + 1}`.slice(0, 80)
+        const detail = await saveStyle(workspace, name, null)
+        imported.push({ detail, workspace })
+      }
+
+      adoptImportedHairStyles(imported)
+      window.dispatchEvent(new Event('fabricator:assets-updated'))
+      setNotice('3 conjuntos foram importados e salvos. O primeiro está aberto para ajuste.')
+    } catch (reason) {
+      if (imported.length) {
+        adoptImportedHairStyles(imported)
+        window.dispatchEvent(new Event('fabricator:assets-updated'))
+        setError(`${imported.length} de 3 conjuntos foram salvos. A importação parou: ${reason instanceof Error ? reason.message : 'falha ao salvar o próximo conjunto.'}`)
+      } else {
+        setError(reason instanceof Error ? reason.message : 'Não foi possível importar a grade de três cabelos.')
+      }
+    } finally { setSaving(false) }
+  }
+
+  function adoptImportedHairStyles(imported: Array<{ detail: HairStyle; workspace: HairWorkspaceData }>) {
+    if (!imported.length) return
+    const first = imported[0]
+    const importedIds = new Set(imported.map(({ detail }) => detail.id))
+    setHairStyles((current) => [
+      ...imported.map(({ detail }) => hairStyleSummary(detail)),
+      ...current.filter((style) => !importedIds.has(style.id) && style.id !== 'legacy-workspace')
+    ])
+    setHairStylesModelSlot(modelSlot)
+    setHairDetails((current) => ({
+      ...current,
+      ...Object.fromEntries(imported.map(({ detail }) => [`${modelSlot}:${detail.id}`, detail]))
+    }))
+    setHairWorkspace(first.workspace)
+    setHairCatalogPage(0)
+    setActiveStyleId(first.detail.id)
+    setStyleName(first.detail.name)
+    setSelectedCategory('rearHair')
+    legacyWorkspaceRef.current = null
+    setDirty(false)
+  }
+
   async function importSinglePiece(event: ChangeEvent<HTMLInputElement>) {
     const file = event.currentTarget.files?.[0]
     event.currentTarget.value = ''
@@ -409,8 +524,8 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
     finally { setSaving(false) }
   }
 
-  async function saveStyle(workspace: HairWorkspaceData): Promise<HairStyle> {
-    const existing = activeStyleId && activeStyleId !== 'legacy-workspace' ? activeStyleSummary : undefined
+  async function saveStyle(workspace: HairWorkspaceData, styleNameOverride = styleName, existingOverride: HairStyleSummary | null | undefined = activeStyleId && activeStyleId !== 'legacy-workspace' ? activeStyleSummary : undefined): Promise<HairStyle> {
+    const existing = existingOverride ?? undefined
     const id = existing?.id ?? crypto.randomUUID()
     const now = new Date().toISOString()
     const front = workspace.front
@@ -418,7 +533,7 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
     const fringe = workspace.fringe ?? null
     const sourceImageDataUrl = workspace.sourceImageDataUrl
     const saved: HairStyleSave = {
-      schemaVersion: 1, id, modelSlot, name: styleName.trim().slice(0, 80),
+      schemaVersion: 1, id, modelSlot, name: styleNameOverride.trim().slice(0, 80),
       categoryBySide: Object.fromEntries((['front', 'back', 'fringe'] as const).filter((side) => Boolean(workspace[side])).map((side) => [side, workspace.categoryBySide?.[side] ?? defaultCategories[side]])) as Partial<Record<HairSide, HairPartId>>,
       front: front ? { width: front.width, height: front.height } : null,
       back: back ? { width: back.width, height: back.height } : null,
@@ -592,7 +707,7 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
     <header className="hair-dev-toolbar">
       <span className="model-slot-logo"><Icon name="bow" /></span>
       <span><strong>Cabelos Dev</strong><small>Monte os cabelos para cada modelo</small></span>
-      <label>Modelo de referência<select value={modelSlot} onChange={(event) => { if (dirty && !window.confirm('Há alterações não salvas. Descartar e trocar de modelo?')) return; setModelSlot(Number(event.target.value)) }} disabled={loadingModels || saving || loadingStyle}>{models.map((model, index) => model && <option key={model.slot} value={model.slot}>Modelo {String(index + 1).padStart(2, '0')} · {model.name}</option>)}</select></label>
+      <label>Modelo de referência<select value={modelSlot} onChange={(event) => { if (dirty && !window.confirm('Há alterações não salvas. Descartar e trocar de modelo?')) return; setImportModalOpen(false); setModelSlot(Number(event.target.value)) }} disabled={loadingModels || saving || loadingStyle}>{models.map((model, index) => model && <option key={model.slot} value={model.slot}>Modelo {String(index + 1).padStart(2, '0')} · {model.name}</option>)}</select></label>
       <button className="hair-dev-save" onClick={() => void saveHair()} disabled={!hairWorkspace || (!hairWorkspace.front && !hairWorkspace.back && !hairWorkspace.fringe) || saving || loadingHair || loadingStyle} title={activeStyleId && activeStyleId !== 'legacy-workspace' ? 'Salvar alterações neste conjunto' : 'Salvar todas as peças como um conjunto'} type="button"><Icon name="check" />{saving ? 'Salvando…' : activeStyleId && activeStyleId !== 'legacy-workspace' ? 'Salvar alterações' : 'Salvar conjunto'}</button>
     </header>
     <div className="hair-dev-body">
@@ -600,14 +715,14 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
         <header><strong>Conjuntos de cabelo</strong><small>{currentHairStyles.length} salvos</small></header>
         <div className="hair-dev-library-actions">
           <button type="button" onClick={startNewSet} disabled={loadingHair || loadingStyle || saving}><Icon name="plus" /> Novo conjunto</button>
-          <button type="button" onClick={() => singleFileInputRef.current?.click()} disabled={!head || loadingHair || loadingStyle || saving}><Icon name="plus" /> Importar</button>
+          <button type="button" onClick={() => setImportModalOpen(true)} disabled={!head || loadingHair || loadingStyle || saving}><Icon name="plus" /> Importar</button>
           <button type="button" onClick={() => void deleteSelectedSet()} disabled={!activeStyleId || saving || loadingHair || loadingStyle}><Icon name="trash" /> Excluir conjunto</button>
         </div>
         <input ref={singleFileInputRef} className="hair-dev-file" type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => void importSinglePiece(event)} />
+        <input ref={fileInputRef} className="hair-dev-file" type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => void importSheet(event)} />
+        <input ref={threeStyleFileInputRef} className="hair-dev-file" type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => void importThreeStyleGrid(event)} />
         <label className="hair-dev-set-name">Nome do conjunto<input maxLength={80} value={styleName} placeholder="Ex.: Cabelo longo" disabled={loadingStyle || saving} onChange={(event) => { setStyleName(event.target.value); setDirty(true) }} /></label>
         <small className="hair-dev-library-hint">Importe peças para o mesmo conjunto. O botão Salvar grava todas juntas.</small>
-        <button className="hair-dev-sheet-import" onClick={() => fileInputRef.current?.click()} disabled={!head || loadingHair || loadingStyle || saving} type="button">Importar folha Posterior/Traseiro</button>
-        <input ref={fileInputRef} className="hair-dev-file" type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => void importSheet(event)} />
         <nav className="hair-dev-library-tabs" aria-label="Categorias da biblioteca" role="tablist">
           {hairCategories.map((item) => <button key={item.id} type="button" role="tab" aria-selected={selectedCategory === item.id} className={selectedCategory === item.id ? 'active' : ''} onClick={() => { setSelectedCategory(item.id); if (hairWorkspace?.[item.side] && hairWorkspace.categoryBySide?.[item.side] !== item.id) updateWorkspace((current) => ({ ...current, categoryBySide: { ...current.categoryBySide, [item.side]: item.id } })) }}>{item.label}</button>)}
         </nav>
@@ -681,5 +796,12 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
         </> : <p className="hair-dev-empty">Importe uma peça em {category.label} para ajustar seu encaixe.</p>}
       </section>
     </div>
+    {importModalOpen && <HairImportModal
+      disabled={!head || loadingHair || loadingStyle || saving}
+      onClose={() => setImportModalOpen(false)}
+      onImportSingle={() => { setImportModalOpen(false); singleFileInputRef.current?.click() }}
+      onImportPairSheet={() => { setImportModalOpen(false); fileInputRef.current?.click() }}
+      onImportThreeStyleGrid={() => { setImportModalOpen(false); threeStyleFileInputRef.current?.click() }}
+    />}
   </section>
 }
