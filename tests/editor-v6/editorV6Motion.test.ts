@@ -81,6 +81,30 @@ describe('V6 motion scheduling and portable cache', () => {
     expect(editorV6MotionPlans(changed)[0].key).not.toBe(beforePlan.key)
     expect(missingEditorV6Motions(changed)).toHaveLength(1)
   })
+  it('does not interpolate across wardrobe source revisions and invalidates old bakes', () => {
+    const doc = fixture(), track = doc.timeline.tracks.find(item => item.kind === 'character')!
+    track.blocks[0].state!.wardrobeSourceRevision = 'wardrobe-v1'
+    track.blocks[1].state!.wardrobeSourceRevision = 'wardrobe-v1'
+    const beforePlan = editorV6MotionPlans(doc)[0]
+    const ready = attachEditorV6Motion(doc, beforePlan.blockId, bake(doc))
+    const changedTimeline = {
+      ...ready.timeline,
+      tracks: ready.timeline.tracks.map((item) => item.kind === 'character'
+        ? { ...item, blocks: item.blocks.map((block) => block.state ? { ...block, state: { ...block.state, wardrobeSourceRevision: 'wardrobe-v2' } } : block) }
+        : item)
+    }
+    const changed = { ...ready, timeline: changedTimeline }
+    expect(editorV6MotionPlans(changed)[0].key).not.toBe(beforePlan.key)
+    expect(missingEditorV6Motions(changed)).toHaveLength(1)
+
+    const mismatchedTimeline = {
+      ...changedTimeline,
+      tracks: changedTimeline.tracks.map((item) => item.kind === 'character'
+        ? { ...item, blocks: item.blocks.map((block, index) => block.state ? { ...block, state: { ...block.state, wardrobeSourceRevision: index === 0 ? 'wardrobe-v1' : 'wardrobe-v2' } } : block) }
+        : item)
+    }
+    expect(editorV6MotionPlans({ ...changed, timeline: mismatchedTimeline })).toHaveLength(0)
+  })
   it('mantém a fala e suprime piscadas durante a transição sem atualizar o personagem por quadro', () => {
     const doc = fixture(), speech = doc.timeline.tracks.find((track) => track.kind === 'speech')!
     speech.blocks = [{ id: crypto.randomUUID(), label: 'Fala durante a troca', characterId: 'alice', startFrame: 86, durationFrames: 2 }]

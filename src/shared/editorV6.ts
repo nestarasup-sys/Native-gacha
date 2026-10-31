@@ -68,6 +68,8 @@ export type EditorV6Element = {
   modelSourceRevision?: string
   /** Saved Fabricator pose revision used to compose this actor's stored image. */
   poseSourceRevision?: string
+  /** Fingerprint of the Fabricator wardrobe sets used to compose this actor's stored image. */
+  wardrobeSourceRevision?: string
   flipX?: boolean
   /** Prevents mouse dragging this character inside this EditorV6. */
   positionLocked?: boolean

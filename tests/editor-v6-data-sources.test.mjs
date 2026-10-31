@@ -5,10 +5,14 @@ import { loadEditorV6ProjectCatalog } from '../src/renderer/src/features/editorV
 import {
   createEditorV6PoseRevisionSnapshot,
   createEditorV6ModelRevisionSnapshot,
+  createEditorV6WardrobeRevisionSnapshot,
+  editorV6CharacterWardrobeSourceRevision,
   sameCustomizerCharacterCatalog,
-  samePoseRevisionSnapshot
+  samePoseRevisionSnapshot,
+  sameSourceRevisionSnapshot
 } from '../src/renderer/src/features/editorV6/useEditorV6CharacterSources.ts'
 import { resolveEditorV6CharacterSourceRefresh } from '../src/renderer/src/features/editorV6/editorV6CharacterSourceModel.ts'
+import { planEditorV6CharacterRefresh } from '../src/renderer/src/features/editorV6/characterSnapshotRefresh.ts'
 import { loadEditorV6PoseThumbnails } from '../src/renderer/src/features/editorV6/editorV6PoseCatalog.ts'
 import { createEditorV6MediaCommands } from '../src/renderer/src/features/editorV6/editorV6MediaCommands.ts'
 import {
@@ -175,10 +179,15 @@ test('compara revisões e catálogos sem trocar referências se os dados não mu
 
   const revisions = createEditorV6PoseRevisionSnapshot([{ modelSlot: 2, poses: [null, { slot: 4, updatedAt: 'pose-v2' }] }])
   const modelRevisions = createEditorV6ModelRevisionSnapshot([null, { slot: 2, updatedAt: 'model-v3' }])
+  const wardrobeRevisions = createEditorV6WardrobeRevisionSnapshot([{ modelSlot: 2, sets: [{ id: 'pants', updatedAt: 'wardrobe-v3' }] }])
   assert.deepEqual(revisions, { '2:1': 'missing', '2:4': 'pose-v2' })
   assert.deepEqual(modelRevisions, { '2': 'model-v3' })
+  assert.deepEqual(wardrobeRevisions, { '2:pants': 'wardrobe-v3' })
   assert.equal(samePoseRevisionSnapshot(revisions, { ...revisions }), true)
   assert.equal(samePoseRevisionSnapshot(revisions, { ...revisions, '2:4': 'pose-v3' }), false)
+  const source = { projectId: 'project', revisions, modelRevisions, wardrobeRevisions }
+  assert.equal(sameSourceRevisionSnapshot(source, { ...source, wardrobeRevisions: { ...wardrobeRevisions } }), true)
+  assert.equal(sameSourceRevisionSnapshot(source, { ...source, wardrobeRevisions: { '2:pants': 'wardrobe-v4' } }), false)
 })
 
 test('decide refresh com revisões atuais e states de personagens nos blocos da timeline', () => {
@@ -200,7 +209,7 @@ test('decide refresh com revisões atuais e states de personagens nos blocos da 
   const input = {
     project,
     characterById: new Map([[character.id, character]]),
-    poseSourceSnapshot: { projectId: 'project', revisions: { '2:4': 'pose-v2', '2:5': 'pose-v1' }, modelRevisions: { '2': 'model-v3' } },
+    poseSourceSnapshot: { projectId: 'project', revisions: { '2:4': 'pose-v2', '2:5': 'pose-v1' }, modelRevisions: { '2': 'model-v3' }, wardrobeRevisions: {} },
     faceRendererVersion: 8
   }
 
@@ -242,7 +251,7 @@ test('mantém refresh pendente enquanto o snapshot de pose não chegou e detecta
 
   const oldRenderer = resolveEditorV6CharacterSourceRefresh({
     ...base,
-    poseSourceSnapshot: { projectId: 'project', revisions: { '3:7': 'missing' } },
+    poseSourceSnapshot: { projectId: 'project', revisions: { '3:7': 'missing' }, modelRevisions: {}, wardrobeRevisions: {} },
     project: { ...base.project, elements: [{ ...characterState, faceRendererVersion: 7 }] }
   })
   assert.equal(oldRenderer.poseRefreshRequired, false)
@@ -262,11 +271,57 @@ test('não bloqueia personagens sem fonte viva e devolve estado vazio sem projet
   }
 
   assert.deepEqual(resolveEditorV6CharacterSourceRefresh(input), {
-    characterStates: [missingCharacter], poseRefreshRequired: false, faceAssetRefreshRequired: false
+    characterStates: [missingCharacter], poseRefreshRequired: false, wardrobeRefreshRequired: false, faceAssetRefreshRequired: false
   })
   assert.deepEqual(resolveEditorV6CharacterSourceRefresh({ ...input, project: null }), {
-    characterStates: [], poseRefreshRequired: false, faceAssetRefreshRequired: false
+    characterStates: [], poseRefreshRequired: false, wardrobeRefreshRequired: false, faceAssetRefreshRequired: false
   })
+})
+
+test('mudança no conjunto de roupa atualiza snapshots existentes mesmo sem alterar o personagem', () => {
+  const character = {
+    id: 'character', name: 'Chloe', updatedAt: 'character-v2',
+    customization: { modelSlot: 2, poseSlot: 4, wardrobeGroups: [{ modelSlot: 2, setId: 'pants', category: 'calca', offsetX: 0, offsetY: 0, scaleX: 100, scaleY: 100, rotation: 0 }] }
+  }
+  const before = createEditorV6WardrobeRevisionSnapshot([{ modelSlot: 2, sets: [{ id: 'pants', updatedAt: 'wardrobe-v2' }] }])
+  const current = createEditorV6WardrobeRevisionSnapshot([{ modelSlot: 2, sets: [{ id: 'pants', updatedAt: 'wardrobe-v3' }] }])
+  const state = {
+    id: 'scene-character', kind: 'character', characterId: 'character', assetId: 'old-render',
+    poseSourceRevision: 'pose-v2', characterSourceUpdatedAt: 'character-v2', modelSourceRevision: 'model-v3',
+    wardrobeSourceRevision: editorV6CharacterWardrobeSourceRevision(character, before), faceRendererVersion: 8, text: 'Chloe'
+  }
+  const timelineState = { ...state, id: 'timeline-character', assetId: 'old-timeline-render' }
+  const project = {
+    id: 'project', elements: [state], assets: [],
+    timeline: { tracks: [{ id: 'characters', blocks: [{ id: 'character-block', elementId: state.id, state: timelineState }] }] }
+  }
+  const changed = resolveEditorV6CharacterSourceRefresh({
+    project, characterById: new Map([[character.id, character]]),
+    poseSourceSnapshot: { projectId: 'project', revisions: { '2:4': 'pose-v2' }, modelRevisions: { '2': 'model-v3' }, wardrobeRevisions: current },
+    faceRendererVersion: 8
+  })
+  assert.equal(changed.poseRefreshRequired, false)
+  assert.equal(changed.wardrobeRefreshRequired, true)
+  assert.equal(changed.faceAssetRefreshRequired, true)
+
+  const plan = planEditorV6CharacterRefresh(project, [character], { '2:4': 'pose-v2' }, { '2': 'model-v3' }, current)
+  assert.equal(plan.groups.length, 1)
+  assert.equal(plan.groups[0].targets.length, 2)
+  assert.equal(plan.groups[0].wardrobeRevision, editorV6CharacterWardrobeSourceRevision(character, current))
+
+  const currentState = { ...state, wardrobeSourceRevision: plan.groups[0].wardrobeRevision }
+  const currentTimelineState = { ...timelineState, wardrobeSourceRevision: plan.groups[0].wardrobeRevision }
+  const currentProject = {
+    ...project, elements: [currentState],
+    timeline: { tracks: [{ ...project.timeline.tracks[0], blocks: [{ ...project.timeline.tracks[0].blocks[0], state: currentTimelineState }] }] }
+  }
+  const unchanged = resolveEditorV6CharacterSourceRefresh({
+    project: currentProject, characterById: new Map([[character.id, character]]),
+    poseSourceSnapshot: { projectId: 'project', revisions: { '2:4': 'pose-v2' }, modelRevisions: { '2': 'model-v3' }, wardrobeRevisions: current },
+    faceRendererVersion: 8
+  })
+  assert.equal(unchanged.wardrobeRefreshRequired, false)
+  assert.equal(unchanged.faceAssetRefreshRequired, false)
 })
 
 test('aplica recortes antigos de personagens em assets, cena e timeline sem mutar o projeto', () => {

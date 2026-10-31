@@ -4,7 +4,7 @@ import type { EditorV6Asset, EditorV6Document, EditorV6Element, EditorV6FaceRend
 import type { CharacterRenderAssetProvider } from './characterRenderAssets'
 import { editorV6FaceModeAtFrame, editorV6FaceModeDuringMotion } from './editorV6FaceSchedule'
 
-export const EDITOR_V6_MOTION_VERSION = 2
+export const EDITOR_V6_MOTION_VERSION = 3
 export const EDITOR_V6_MOTION_MS = 250
 export type EditorV6MotionSprite = { x: number; y: number; width: number; height: number; atlasWidth: number; atlasHeight: number }
 export type EditorV6FacePatch = { sprite: EditorV6MotionSprite; x: number; y: number; width: number; height: number }
@@ -31,7 +31,7 @@ function faceSignature(element: EditorV6Element) {
   return JSON.stringify([element.poseSlot === undefined ? 'character-default' : element.poseSlot, element.activeExpressionPresetId ?? null, element.activeExpressionPresetUpdatedAt, element.activeExpressionGaze, appearance, element.faceTransforms, element.activeExpressionEffects])
 }
 function motionKey(from: EditorV6Element, to: EditorV6Element, samples: EditorV6MotionPlan['samples']) {
-  const endpoint = (element: EditorV6Element) => [faceSignature(element), element.assetId, element.characterId, element.characterSourceUpdatedAt, element.modelSourceRevision, element.poseSourceRevision, element.activeFaceMode, element.faceRendererVersion, element.x, element.y, element.width, element.height, element.rotation, element.flipX, element.characterScale, element.characterWidthScale, element.characterHeightScale, element.characterCanvasWidth]
+  const endpoint = (element: EditorV6Element) => [faceSignature(element), element.assetId, element.characterId, element.characterSourceUpdatedAt, element.modelSourceRevision, element.poseSourceRevision, element.wardrobeSourceRevision, element.activeFaceMode, element.faceRendererVersion, element.x, element.y, element.width, element.height, element.rotation, element.flipX, element.characterScale, element.characterWidthScale, element.characterHeightScale, element.characterCanvasWidth]
   return JSON.stringify([EDITOR_V6_MOTION_VERSION, endpoint(from), endpoint(to), samples])
 }
 export function editorV6MotionPlan(track: EditorV6TimelineTrack, previous: EditorV6TimelineBlock, next: EditorV6TimelineBlock): EditorV6MotionPlan | null {
@@ -40,6 +40,7 @@ export function editorV6MotionPlan(track: EditorV6TimelineTrack, previous: Edito
   // Material/source revisions are cuts; pose/expression motion belongs to one stable actor.
   if (from.characterSourceUpdatedAt && to.characterSourceUpdatedAt && from.characterSourceUpdatedAt !== to.characterSourceUpdatedAt) return null
   if (from.modelSourceRevision !== to.modelSourceRevision) return null
+  if (from.wardrobeSourceRevision !== to.wardrobeSourceRevision) return null
   const startFrame = Math.max(previous.startFrame, next.startFrame - EDITOR_V6_MOTION_MS * 30 / 1000)
   const samples = []
   for (let frame = Math.floor(startFrame) + 1; frame < next.startFrame; frame++) samples.push({ offset: frame - next.startFrame, progress: (frame - startFrame) / (next.startFrame - startFrame) })

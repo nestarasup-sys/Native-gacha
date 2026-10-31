@@ -1,11 +1,14 @@
 import type { CustomizerCharacter } from '../../../../shared/customizer'
 import type { EditorV6Document, EditorV6Element } from '../../../../shared/editorV6'
+import type { WardrobeSetSummary } from '../../../../shared/fabricator'
 
-export type PoseRevisionSnapshot = { projectId: string; revisions: Record<string, string>; modelRevisions: Record<string, string> }
+export type PoseRevisionSnapshot = { projectId: string; revisions: Record<string, string>; modelRevisions: Record<string, string>; wardrobeRevisions?: Record<string, string> }
 export type PoseCatalog = { modelSlot: number; poses: Array<{ slot?: number; updatedAt: string } | null> }
 export type ModelCatalog = Array<{ slot: number; updatedAt: string } | null>
+export type WardrobeCatalog = { modelSlot: number; sets: Array<Pick<WardrobeSetSummary, 'id' | 'updatedAt'>> }
 
 export const editorV6PoseRevisionKey = (modelSlot: number, poseSlot: number) => `${modelSlot}:${poseSlot}`
+export const editorV6WardrobeRevisionKey = (modelSlot: number, setId: string) => `${modelSlot}:${setId}`
 
 export function sameCustomizerCharacterCatalog(left: CustomizerCharacter[], right: CustomizerCharacter[]): boolean {
   return left.length === right.length && left.every((character, index) => {
@@ -28,9 +31,32 @@ export function createEditorV6ModelRevisionSnapshot(models: ModelCatalog): Recor
   return Object.fromEntries(models.flatMap((model) => model ? [[String(model.slot), model.updatedAt]] : []))
 }
 
+export function createEditorV6WardrobeRevisionSnapshot(catalogs: WardrobeCatalog[]): Record<string, string> {
+  return Object.fromEntries(catalogs.flatMap(({ modelSlot, sets }) => sets.map((set) => [editorV6WardrobeRevisionKey(modelSlot, set.id), set.updatedAt])))
+}
+
+/** Fingerprints only the wardrobe sets referenced by this character. */
+export function editorV6CharacterWardrobeSourceRevision(character: CustomizerCharacter, revisions: Record<string, string>): string | undefined {
+  const references = [...new Map((character.customization.wardrobeGroups ?? []).map((group) => {
+    const key = editorV6WardrobeRevisionKey(group.modelSlot, group.setId)
+    return [key, [key, revisions[key] ?? 'missing']] as const
+  })).values()].sort(([left], [right]) => left.localeCompare(right))
+  if (!references.length) return undefined
+  const source = JSON.stringify(references)
+  let first = 0x811c9dc5
+  let second = 0x9e3779b9
+  for (let index = 0; index < source.length; index++) {
+    const code = source.charCodeAt(index)
+    first = Math.imul(first ^ code, 0x01000193)
+    second = Math.imul(second ^ code, 0x85ebca6b)
+  }
+  return `wardrobe-v1:${(first >>> 0).toString(16).padStart(8, '0')}${(second >>> 0).toString(16).padStart(8, '0')}`
+}
+
 export function sameSourceRevisionSnapshot(left: PoseRevisionSnapshot, right: PoseRevisionSnapshot): boolean {
   return samePoseRevisionSnapshot(left.revisions, right.revisions)
     && samePoseRevisionSnapshot(left.modelRevisions, right.modelRevisions)
+    && samePoseRevisionSnapshot(left.wardrobeRevisions ?? {}, right.wardrobeRevisions ?? {})
 }
 
 export function createEditorV6PoseRevisionSnapshot(catalogs: PoseCatalog[]): Record<string, string> {
@@ -63,6 +89,7 @@ export function resolveEditorV6CharacterSourceRefresh({
 }): {
   characterStates: EditorV6Element[]
   poseRefreshRequired: boolean
+  wardrobeRefreshRequired: boolean
   faceAssetRefreshRequired: boolean
 } {
   const characterStates = editorV6CharacterStates(project)
@@ -79,12 +106,19 @@ export function resolveEditorV6CharacterSourceRefresh({
     return poseChanged
       || (modelRevision !== undefined && state.modelSourceRevision !== modelRevision)
   })
+  const wardrobeRefreshRequired = characterStates.some((state) => {
+    if (state.kind !== 'character' || !state.characterId) return false
+    const character = characterById.get(state.characterId)
+    if (!character) return false
+    const currentRevision = editorV6CharacterWardrobeSourceRevision(character, poseSourceSnapshot?.wardrobeRevisions ?? {})
+    return currentRevision !== undefined && state.wardrobeSourceRevision !== currentRevision
+  })
   const faceAssetRefreshRequired = Boolean(project && (poseRefreshRequired || characterStates.some((state) => {
     if (state.kind !== 'character') return false
     const character = characterById.get(state.characterId ?? '')
     return state.faceRendererVersion !== faceRendererVersion
       || Boolean(character && state.characterSourceUpdatedAt !== character.updatedAt)
-  })))
+  }) || wardrobeRefreshRequired))
 
-  return { characterStates, poseRefreshRequired, faceAssetRefreshRequired }
+  return { characterStates, poseRefreshRequired, wardrobeRefreshRequired, faceAssetRefreshRequired }
 }

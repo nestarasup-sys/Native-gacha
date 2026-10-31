@@ -42,7 +42,7 @@ import { SceneCastPickerModal } from '../../ui/components/SceneCastPickerModal'
 import { createSceneTextElement, sceneCatalogColor, sceneEditorTools } from '../../ui/sceneEditorDefaults'
 import { recordUiCommit } from '../../ui/performanceDiagnostics'
 import { useEditorV6DocumentPersistence } from './useEditorV6DocumentPersistence'
-import { editorV6PoseRevisionKey, useEditorV6CharacterSources } from './useEditorV6CharacterSources'
+import { editorV6CharacterWardrobeSourceRevision, editorV6PoseRevisionKey, useEditorV6CharacterSources } from './useEditorV6CharacterSources'
 import { resolveEditorV6CharacterSourceRefresh } from './editorV6CharacterSourceModel'
 import { useEditorV6CharacterSnapshotRefresh } from './useEditorV6CharacterSnapshotRefresh'
 import { useEditorV6ProjectLibrary } from './useEditorV6ProjectLibrary'
@@ -472,7 +472,8 @@ export function EditorV6Page() {
           const poseSlot = character.customization.poseSlot
           const poseSourceRevision = typeof poseSlot === 'number' ? activePoseSourceSnapshot?.revisions[editorV6PoseRevisionKey(character.customization.modelSlot ?? 1, poseSlot)] ?? 'missing' : undefined
           const modelSourceRevision = activePoseSourceSnapshot?.modelRevisions[String(character.customization.modelSlot ?? 1)] ?? 'missing'
-          elements.push({ id: crypto.randomUUID(), kind: 'character', assetId: asset.id, faceModeAssetIds: { ...baked.assetIds, idle: asset.id }, characterId: character.id, characterSourceUpdatedAt: character.updatedAt, modelSourceRevision, ...(poseSourceRevision ? { poseSourceRevision } : {}), faceRendererVersion: EDITOR_V6_FACE_RENDER_VERSION, activeExpressionCollectionId: 'standard', activeExpressionPresetId: null, activeFaceMode: 'idle', characterScale: 100, characterWidthScale: 100, characterHeightScale: 100, ...(character.customization.faceAppearance ? { expressionBase: { appearance: structuredClone(character.customization.faceAppearance), transforms: {} } } : {}), characterCanvasWidth, text: character.name, x: 0, y: 0, width, height, rotation: 0, zIndex: ++zIndex })
+          const wardrobeSourceRevision = editorV6CharacterWardrobeSourceRevision(character, activePoseSourceSnapshot?.wardrobeRevisions ?? {})
+          elements.push({ id: crypto.randomUUID(), kind: 'character', assetId: asset.id, faceModeAssetIds: { ...baked.assetIds, idle: asset.id }, characterId: character.id, characterSourceUpdatedAt: character.updatedAt, modelSourceRevision, ...(poseSourceRevision ? { poseSourceRevision } : {}), ...(wardrobeSourceRevision ? { wardrobeSourceRevision } : {}), faceRendererVersion: EDITOR_V6_FACE_RENDER_VERSION, activeExpressionCollectionId: 'standard', activeExpressionPresetId: null, activeFaceMode: 'idle', characterScale: 100, characterWidthScale: 100, characterHeightScale: 100, ...(character.customization.faceAppearance ? { expressionBase: { appearance: structuredClone(character.customization.faceAppearance), transforms: {} } } : {}), characterCanvasWidth, text: character.name, x: 0, y: 0, width, height, rotation: 0, zIndex: ++zIndex })
         } finally { renderer.dispose() }
       }
       changeScene((studio) => ({
@@ -576,9 +577,10 @@ export function EditorV6Page() {
       const geometry = faceRenderGeometry({ ...selectedElement, characterCanvasWidth }, rendered, baked.crop, stageWidth, stageHeight)
       const elementId = selectedElement.id
       const assetId = selectedElement.assetId
+      const wardrobeSourceRevision = editorV6CharacterWardrobeSourceRevision(selectedEditorV6Character, activePoseSourceSnapshot?.wardrobeRevisions ?? {})
       changeScene((studio) => ({
         ...studio,
-        elements: studio.elements.map((element) => element.id === elementId ? { ...element, poseSlot, ...geometry, ...(typeof poseSlot === 'number' ? { poseSourceRevision: activePoseSourceSnapshot?.revisions[editorV6PoseRevisionKey(selectedEditorV6Character.customization.modelSlot ?? 1, poseSlot)] ?? 'missing' } : { poseSourceRevision: undefined }), faceModeAssetIds: { ...baked.assetIds, [baseMode]: assetId }, characterSourceUpdatedAt: selectedEditorV6Character.updatedAt } : element),
+        elements: studio.elements.map((element) => element.id === elementId ? { ...element, poseSlot, ...geometry, ...(typeof poseSlot === 'number' ? { poseSourceRevision: activePoseSourceSnapshot?.revisions[editorV6PoseRevisionKey(selectedEditorV6Character.customization.modelSlot ?? 1, poseSlot)] ?? 'missing' } : { poseSourceRevision: undefined }), faceModeAssetIds: { ...baked.assetIds, [baseMode]: assetId }, characterSourceUpdatedAt: selectedEditorV6Character.updatedAt, ...(wardrobeSourceRevision ? { wardrobeSourceRevision } : {}) } : element),
         assets: [...studio.assets.map((asset) => asset.id === assetId ? { ...asset, dataUrl: baked.dataUrl, mimeType: 'image/png' as const } : asset), ...baked.extraAssets],
         updatedAt: new Date().toISOString()
       }))
@@ -833,13 +835,13 @@ export function EditorV6Page() {
             <button className="studio-tool-button" onClick={() => void importTimelineMedia('video')} type="button"><b>▣</b><span>Selecionar vídeo</span></button>
             <button className="studio-tool-button" onClick={() => void importTimelineMedia('audio')} type="button"><b>♪</b><span>Importar áudio</span></button>
             <span className="studio-tool-separator" />
-            <button className="studio-tool-button" onClick={() => { pausePlayback(); setExportOpen(true) }} disabled={faceAssetRefreshRequired} title={faceAssetRefreshRequired ? 'Atualizando a pose salva deste personagem' : undefined} type="button"><Icon name="download" /><span>{faceAssetRefreshRequired ? 'Atualizando personagem…' : 'Exportar MP4'}</span></button>
+            <button className="studio-tool-button" onClick={() => { pausePlayback(); setExportOpen(true) }} disabled={faceAssetRefreshRequired} title={faceAssetRefreshRequired ? 'Atualizando a aparência salva deste personagem' : undefined} type="button"><Icon name="download" /><span>{faceAssetRefreshRequired ? 'Atualizando personagem…' : 'Exportar MP4'}</span></button>
             <button className="studio-tool-button" onClick={() => void exportPrint()} type="button"><Icon name="download" /><span>Print</span><i aria-hidden="true">✦</i></button>
             <button className="studio-tool-button" onClick={() => void openPrints()} type="button"><Icon name="folder" /><span>Pasta</span><i aria-hidden="true">✦</i></button>
             <button className="studio-tool-button studio-view-button" onClick={() => setFullView(true)} type="button"><Icon name="expand" /><span>View</span></button>
           </nav>
           <small className={`studio-save-indicator${saved ? '' : ' unsaved'}`}><i />{saved ? 'Salvo automaticamente' : 'Salvando alterações…'}</small>
-          {faceAssetRefreshRequired && <small className="studio-save-notice" role="status">Atualizando a pose salva para a prévia e a exportação usarem a versão mais recente.</small>}
+          {faceAssetRefreshRequired && <small className="studio-save-notice" role="status">Atualizando as aparências salvas para a prévia e a exportação usarem as fontes mais recentes.</small>}
           {error && <small className="studio-error-message" role="alert">{error}</small>}
           {notice && <small className="studio-save-notice" role="status">{notice}</small>}
         </aside>}

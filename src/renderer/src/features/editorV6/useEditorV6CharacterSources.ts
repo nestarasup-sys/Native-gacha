@@ -3,6 +3,7 @@ import type { CustomizerCharacter } from '../../../../shared/customizer'
 import {
   createEditorV6PoseRevisionSnapshot,
   createEditorV6ModelRevisionSnapshot,
+  createEditorV6WardrobeRevisionSnapshot,
   sameCustomizerCharacterCatalog,
   sameSourceRevisionSnapshot
 } from './editorV6CharacterSourceModel.ts'
@@ -11,18 +12,24 @@ import type { PoseRevisionSnapshot } from './editorV6CharacterSourceModel.ts'
 export {
   createEditorV6PoseRevisionSnapshot,
   createEditorV6ModelRevisionSnapshot,
+  createEditorV6WardrobeRevisionSnapshot,
+  editorV6CharacterWardrobeSourceRevision,
   editorV6PoseRevisionKey,
+  editorV6WardrobeRevisionKey,
   sameCustomizerCharacterCatalog,
   samePoseRevisionSnapshot,
   sameSourceRevisionSnapshot
 } from './editorV6CharacterSourceModel.ts'
 
-/** Loads the live character catalog and tracks the pose revisions used by this project. */
+/** Loads live character and Fabricator source revisions used by this project. */
 export function useEditorV6CharacterSources(projectId: string | null, reportError: (message: string) => void) {
   const [availableCharacters, setAvailableCharacters] = useState<CustomizerCharacter[]>([])
   const [poseSourceSnapshot, setPoseSourceSnapshot] = useState<PoseRevisionSnapshot | null>(null)
   const availableCharacterById = useMemo(() => new Map(availableCharacters.map((character) => [character.id, character])), [availableCharacters])
-  const fabricatorModelSlots = useMemo(() => [...new Set(availableCharacters.map((character) => character.customization.modelSlot ?? 1))].sort((left, right) => left - right), [availableCharacters])
+  const fabricatorModelSlots = useMemo(() => [...new Set(availableCharacters.flatMap((character) => [
+    character.customization.modelSlot ?? 1,
+    ...(character.customization.wardrobeGroups ?? []).map((group) => group.modelSlot)
+  ]))].sort((left, right) => left - right), [availableCharacters])
   const fabricatorModelSlotsKey = fabricatorModelSlots.join(',')
   const activePoseSourceSnapshot = poseSourceSnapshot?.projectId === projectId ? poseSourceSnapshot : null
 
@@ -65,20 +72,37 @@ export function useEditorV6CharacterSources(projectId: string | null, reportErro
         do {
           requestQueued = false
           try {
-            const [catalogs, models] = await Promise.all([Promise.all(fabricatorModelSlots.map(async (modelSlot) => ({
-              modelSlot,
-              poses: await window.desktop.fabricator.listFabricatorPoseSlots(modelSlot)
-            }))), window.desktop.fabricator.listFabricatorSlots()])
+            const [catalogs, models, wardrobeCatalogs] = await Promise.all([
+              Promise.all(fabricatorModelSlots.map(async (modelSlot) => ({
+                modelSlot,
+                poses: await window.desktop.fabricator.listFabricatorPoseSlots(modelSlot)
+              }))),
+              window.desktop.fabricator.listFabricatorSlots(),
+              Promise.all(fabricatorModelSlots.map(async (modelSlot) => ({
+                modelSlot,
+                sets: await window.desktop.fabricator.listWardrobeSets(modelSlot)
+              })))
+            ])
             if (cancelled) return
-            const next = { projectId, revisions: createEditorV6PoseRevisionSnapshot(catalogs), modelRevisions: createEditorV6ModelRevisionSnapshot(models) }
+            if (requestQueued) continue
+            const next = {
+              projectId,
+              revisions: createEditorV6PoseRevisionSnapshot(catalogs),
+              modelRevisions: createEditorV6ModelRevisionSnapshot(models),
+              wardrobeRevisions: createEditorV6WardrobeRevisionSnapshot(wardrobeCatalogs)
+            }
             setPoseSourceSnapshot((current) => current?.projectId === projectId && sameSourceRevisionSnapshot(current, next) ? current : next)
           } catch (reason) {
-            if (!cancelled) reportError(reason instanceof Error ? reason.message : 'Não foi possível verificar as versões das poses salvas.')
+            if (!cancelled) reportError(reason instanceof Error ? reason.message : 'Não foi possível verificar as versões das fontes do personagem.')
           }
         } while (requestQueued && !cancelled)
       } finally { requestRunning = false }
     }
-    const refreshWhenVisible = () => { if (document.visibilityState === 'visible') void refreshPoseSourceSnapshot() }
+    const refreshWhenVisible = () => {
+      if (document.visibilityState !== 'visible') return
+      setPoseSourceSnapshot((current) => current?.projectId === projectId ? null : current)
+      void refreshPoseSourceSnapshot()
+    }
     void refreshPoseSourceSnapshot()
     window.addEventListener('focus', refreshWhenVisible)
     window.addEventListener('fabricator:assets-updated', refreshWhenVisible)
