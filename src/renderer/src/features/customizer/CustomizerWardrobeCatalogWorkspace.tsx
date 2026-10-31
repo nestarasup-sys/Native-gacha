@@ -2,13 +2,14 @@ import { useRef } from 'react'
 import { normalizeCharacterColorOverrides } from '../../../../shared/customizer'
 import type { CharacterColorOverrides, CharacterPaletteOverrides, CharacterPaletteRole, CustomizerFaceAppearance, CustomizerWardrobeGroup, CustomizerWardrobePaletteKey } from '../../../../shared/customizer'
 import { Icon } from '../../ui/components/Icon'
-import { characterPaletteSwatchGradient, hairColorControls, hairPalettePresets } from './CustomizerAppearanceControls'
+import { characterWardrobePresetSwatchGradient, hairColorControls, hairPalettePresets } from './CustomizerAppearanceControls'
 import { WardrobePanelCandidatePreview } from './CustomizerAssetPreviews'
 import { isWardrobePanelCandidateSelected } from './wardrobePanelModel'
 import type { WardrobePanel, WardrobePanelCandidate } from './wardrobePanelModel'
 
 type WardrobePanelCandidateIndex = ReadonlyMap<WardrobePanel['id'], readonly WardrobePanelCandidate[]>
 type WardrobePaletteMap = Partial<Record<CustomizerWardrobePaletteKey, CharacterColorOverrides>>
+const wardrobePresetColorRoles = ['outline', 'shadow', 'base'] as const
 
 export function CustomizerWardrobeCatalogWorkspace({
   loading,
@@ -136,7 +137,16 @@ export function CustomizerWardrobeCatalogWorkspace({
             <div className="customizer-hair-palette-presets customizer-upper-piece-palette-presets">
               <button className="customizer-hair-palette-scroll previous" aria-label={`Ver paletas anteriores de ${panel.label}`} onClick={() => paletteStripRefs.current[panel.id]?.scrollBy({ left: -180, behavior: 'smooth' })} type="button"><Icon name="chevronRight" /></button>
               <div className="customizer-hair-palette-preset-list" ref={(node) => { paletteStripRefs.current[panel.id] = node }}>
-                {hairPalettePresets.map((preset) => <button key={preset.name} type="button" disabled={!hasCharacter || !currentCandidate} aria-pressed={hairColorControls.every((color) => normalizeCharacterColorOverrides(wardrobePalette)[color.id] === preset.colors[color.id])} onClick={() => currentCandidate && void onApplyPalette(panel, currentCandidate, preset.colors)} title={`Aplicar paleta ${preset.name} a ${panel.label}`}><span style={{ background: characterPaletteSwatchGradient(preset.colors) }} />{preset.name}</button>)}
+                {hairPalettePresets.map((preset) => {
+                  const presetColors = {
+                    ...displayColors,
+                    outline: preset.colors.outline,
+                    shadow: preset.colors.shadow,
+                    base: preset.colors.base
+                  }
+                  const presetSelected = wardrobePresetColorRoles.every((role) => displayColors[role] === preset.colors[role])
+                  return <button key={preset.name} type="button" disabled={!hasCharacter || !currentCandidate} aria-pressed={presetSelected} onClick={() => currentCandidate && void onApplyPalette(panel, currentCandidate, presetColors)} title={`Aplicar ${preset.name} ao contorno, sombra e cor base de ${panel.label}`}><span style={{ background: characterWardrobePresetSwatchGradient(preset.colors) }} />{preset.name}</button>
+                })}
               </div>
               <button className="customizer-hair-palette-scroll" aria-label={`Ver próximas paletas de ${panel.label}`} onClick={() => paletteStripRefs.current[panel.id]?.scrollBy({ left: 180, behavior: 'smooth' })} type="button"><Icon name="chevronRight" /></button>
             </div>

@@ -52,13 +52,11 @@ export const customizerHairPalettePresets: Array<{ name: string; colors: Charact
   colors: { outline: colors.outline, shadow: colors.fade, base: colors.base, light: colors.highlight }
 }))
 
-export function characterPaletteSwatchGradient(colors: CharacterPaletteOverrides): string {
+export function characterWardrobePresetSwatchGradient(colors: CharacterPaletteOverrides): string {
   const outline = colors.outline ?? '#2B2B2B'
   const shadow = colors.shadow ?? '#6B6B6B'
   const base = colors.base ?? '#A8A8A8'
-  const secondary = colors.light ?? '#55C5D4'
-  const detail = colors.detail ?? '#8C7BFF'
-  return `linear-gradient(115deg, ${outline} 0 16%, ${shadow} 16% 32%, ${base} 32% 56%, ${secondary} 56% 78%, ${detail} 78%)`
+  return `linear-gradient(115deg, ${outline} 0 33%, ${shadow} 33% 66%, ${base} 66%)`
 }
 
 export function characterHairPaletteSwatchGradient(colors: CharacterPaletteOverrides): string {
