@@ -7,6 +7,29 @@ if errorlevel 1 (
   exit /b 1
 )
 
+rem Sempre inicia a versao da branch local Dev-V2.
+for /f "delims=" %%B in ('git branch --show-current 2^>nul') do set "NATIVE_GACHA_BRANCH=%%B"
+if not defined NATIVE_GACHA_BRANCH (
+  echo Nao foi possivel identificar a branch atual. Verifique se o Git esta instalado.
+  pause
+  exit /b 1
+)
+if /i not "%NATIVE_GACHA_BRANCH%"=="Dev-V2" (
+  for /f "delims=" %%S in ('git status --porcelain 2^>nul') do set "NATIVE_GACHA_DIRTY=1"
+  if defined NATIVE_GACHA_DIRTY (
+    echo Ha alteracoes locais. Salve-as antes de trocar para Dev-V2.
+    pause
+    exit /b 1
+  )
+  echo Trocando da branch %NATIVE_GACHA_BRANCH% para Dev-V2...
+  git switch Dev-V2
+  if errorlevel 1 (
+    echo Nao foi possivel trocar para Dev-V2. Suas alteracoes locais foram preservadas.
+    pause
+    exit /b 1
+  )
+)
+
 rem Native Gacha usa uma porta diferente do G-V5 legado (Vite: 5173).
 set "NATIVE_GACHA_DEV_PORT=5188"
 
