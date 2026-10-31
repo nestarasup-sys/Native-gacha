@@ -23,13 +23,14 @@ function blobFromDataUrl(dataUrl: string): Blob {
   const payload = dataUrl.slice(comma + 1)
   if (!metadata.split(';').includes('base64')) return new Blob([decodeURIComponent(payload)], { type: mimeType })
 
-  const parts: Uint8Array[] = []
+  const parts: BlobPart[] = []
   const chunkSize = 64 * 1024
   for (let start = 0; start < payload.length; start += chunkSize) {
     const binary = atob(payload.slice(start, start + chunkSize))
-    const bytes = new Uint8Array(binary.length)
+    const chunk = new ArrayBuffer(binary.length)
+    const bytes = new Uint8Array(chunk)
     for (let index = 0; index < binary.length; index++) bytes[index] = binary.charCodeAt(index)
-    parts.push(bytes)
+    parts.push(chunk)
   }
   return new Blob(parts, { type: mimeType })
 }
