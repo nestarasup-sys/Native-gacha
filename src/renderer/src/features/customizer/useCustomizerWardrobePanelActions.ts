@@ -1,9 +1,9 @@
 import type { MutableRefObject, Dispatch, SetStateAction } from 'react'
-import { normalizeCharacterColorOverrides } from '../../../../shared/customizer'
+import { normalizeCharacterColorOverrides, setCharacterColorRole } from '../../../../shared/customizer'
 import type { CharacterPaletteOverrides, CharacterPaletteRole, CustomizerCharacter } from '../../../../shared/customizer'
 import type { WardrobeSet, WardrobeSetSummary } from '../../../../shared/fabricator'
 import { recolorWardrobeComponents, selectWardrobePanelComponents } from '../../../../shared/wardrobePlacementModel'
-import type { ClothingGroupCategory, SelectedWardrobeComponent } from '../../characters/characterRenderer'
+import type { SelectedWardrobeComponent } from '../../characters/characterRenderer'
 import { customizerFaceAppearanceForModel } from './customizerFaceAppearanceModel'
 import { hasSelectedFaceAsset } from './customizerFaceCatalogModel'
 import { wardrobeComponentMatchesPanel } from './wardrobePanelModel'
@@ -94,11 +94,20 @@ export function useCustomizerWardrobePanelActions(deps: {
     })
   }
 
-  async function setWardrobePieceColor(setId: string, category: ClothingGroupCategory, componentIds: string[], role: CharacterPaletteRole, value: string) {
+  async function setWardrobePieceColor(panel: WardrobePanel, candidate: WardrobePanelCandidate, role: CharacterPaletteRole, value: string) {
     if (selectedModelSlot === null || !selectedCharacter) return
     const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
+    if (candidate.headExtraAsset) {
+      await saveCharacterCustomization({
+        wardrobePalettes: {
+          ...current.customization.wardrobePalettes,
+          [panel.id]: setCharacterColorRole(current.customization.wardrobePalettes?.[panel.id], role, value)
+        }
+      })
+      return
+    }
     const wardrobeGroups = recolorWardrobeComponents(current.customization.wardrobeGroups ?? [],
-      selectedModelSlot, setId, category, componentIds, { kind: 'role', role, value })
+      candidate.summary.modelSlot, candidate.summary.id, panel.category, candidate.components.map((component) => component.id), { kind: 'role', role, value })
     await saveCharacterCustomization({ wardrobeGroups })
   }
 

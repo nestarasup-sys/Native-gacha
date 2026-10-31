@@ -3,13 +3,13 @@ import type { FaceComponentKind, FaceDetailKind, FaceElementKind, FaceTransform 
 /** Existing facial controls keep their saved roles and renderer. */
 export type HairColorRole = 'base' | 'fade' | 'outline' | 'highlight' | 'accent'
 export type HairColorOverrides = Partial<Record<HairColorRole, string>>
-/** Fixed source-color roles for the new hair and wardrobe recoloring path. */
-export type CharacterPaletteRole = 'outline' | 'shadow' | 'base' | 'light'
+/** Fixed source-color roles for the new hair, wardrobe, and accessory recoloring path. */
+export type CharacterPaletteRole = 'outline' | 'shadow' | 'base' | 'light' | 'detail'
 export type CharacterPaletteOverrides = Partial<Record<CharacterPaletteRole, string>>
 /** Old saved palettes remain readable for compatibility. */
 export type CharacterColorOverrides = HairColorOverrides | CharacterPaletteOverrides
 export const defaultCharacterColorOverrides: CharacterPaletteOverrides = {
-  outline: '#2B2B2B', shadow: '#6B6B6B', base: '#A8A8A8', light: '#E2E2E2'
+  outline: '#2B2B2B', shadow: '#6B6B6B', base: '#A8A8A8', light: '#55C5D4', detail: '#8C7BFF'
 }
 
 export function normalizeCharacterColorOverrides(colors?: CharacterColorOverrides | null): CharacterPaletteOverrides {
@@ -19,11 +19,14 @@ export function normalizeCharacterColorOverrides(colors?: CharacterColorOverride
     outline: current?.outline ?? defaultCharacterColorOverrides.outline,
     shadow: current?.shadow ?? legacy?.fade ?? defaultCharacterColorOverrides.shadow,
     base: current?.base ?? defaultCharacterColorOverrides.base,
-    light: current?.light ?? legacy?.highlight ?? defaultCharacterColorOverrides.light
+    // `light` remains the persisted key so existing saved colors still load;
+    // its source role is now presented as the secondary color in the UI.
+    light: current?.light ?? legacy?.highlight ?? defaultCharacterColorOverrides.light,
+    detail: current?.detail ?? defaultCharacterColorOverrides.detail
   }
 }
 export function hasStandardCharacterColorRoles(colors?: CharacterColorOverrides | null): boolean {
-  return !!colors && ('shadow' in colors || 'light' in colors)
+  return !!colors && ('shadow' in colors || 'light' in colors || 'detail' in colors)
 }
 export function setCharacterColorRole(colors: CharacterColorOverrides | undefined, role: CharacterPaletteRole, value: string): CharacterPaletteOverrides {
   return { ...normalizeCharacterColorOverrides(colors), [role]: value }

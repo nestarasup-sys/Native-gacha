@@ -1,5 +1,5 @@
 import type { FaceCatalogItem, FaceCatalogItemSummary, FaceElementKind, FaceExpressionEffects, FaceSheetKind, FabricatorProject } from '../../../shared/fabricator'
-import type { CustomizerCharacter, CustomizerFaceAppearance } from '../../../shared/customizer'
+import type { CharacterColorOverrides, CustomizerCharacter, CustomizerFaceAppearance, CustomizerWardrobePaletteKey } from '../../../shared/customizer'
 import { resolveStudioTalkMouthId, type StudioFaceMode, type StudioFaceTransforms } from '../../../shared/studio'
 import { configureCharacterSampling } from './renderResolution'
 import type { CharacterRenderAssetProvider } from '../../../shared/characterRenderAssets'
@@ -37,7 +37,7 @@ export const loadSkinTintedImage = characterImageTint.loadSkinTintedImage
 export const loadModelBodyTintedImage = characterImageTint.loadModelBodyTintedImage
 
 const characterFaceCatalogRenderer = createCharacterFaceCatalogRenderer(
-  { loadCachedImage, loadHairTintedImage, loadSkinTintedImage },
+  { loadCachedImage, loadCharacterTintedImage, loadHairTintedImage, loadSkinTintedImage },
   (mode) => mode === 'blink'
 )
 
@@ -61,8 +61,8 @@ export const wardrobeComponentsForGroup = characterWardrobeRenderer.wardrobeComp
 export const renderWardrobeOverlayCanvases = characterWardrobeRenderer.renderWardrobeOverlayCanvases
 export const renderWardrobeOverlay = characterWardrobeRenderer.renderWardrobeOverlay
 
-export function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, artwork: CatalogArtwork, source: FabricatorProject, items: Partial<Record<FaceSheetKind | FaceElementKind, FaceCatalogItem>>, appearance: CustomizerFaceAppearance, skinTone?: string, studioFaceTransforms?: StudioFaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: StudioFaceMode, resolveClosedEye?: ClosedEyeAssetResolver, headOverrides: CustomizerCharacter['customization']['partOverrides'] = {}, highlightedHeadId?: string | null, assetProvider: CharacterRenderAssetProvider = window.desktop.fabricator): Promise<void> {
-  return characterFaceCatalogRenderer.drawFaceCatalogOverlay(context, artwork, source, items, appearance, skinTone, studioFaceTransforms, expressionEffects, studioFaceMode, resolveClosedEye, headOverrides, highlightedHeadId, assetProvider)
+export function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, artwork: CatalogArtwork, source: FabricatorProject, items: Partial<Record<FaceSheetKind | FaceElementKind, FaceCatalogItem>>, appearance: CustomizerFaceAppearance, skinTone?: string, studioFaceTransforms?: StudioFaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: StudioFaceMode, resolveClosedEye?: ClosedEyeAssetResolver, headOverrides: CustomizerCharacter['customization']['partOverrides'] = {}, highlightedHeadId?: string | null, assetProvider: CharacterRenderAssetProvider = window.desktop.fabricator, wardrobePalettes?: Partial<Record<CustomizerWardrobePaletteKey, CharacterColorOverrides>>): Promise<void> {
+  return characterFaceCatalogRenderer.drawFaceCatalogOverlay(context, artwork, source, items, appearance, skinTone, studioFaceTransforms, expressionEffects, studioFaceMode, resolveClosedEye, headOverrides, highlightedHeadId, assetProvider, wardrobePalettes)
 }
 
 /**
@@ -211,7 +211,7 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
       }
       const mouthEffects = expressionEffects ?? expressionEffectsByIndex[faceAppearance.expressionIndex]
       if (!hasCatalogFaceSelection && legacyFaceImage && faceAppearance.setId === appearance?.setId) targetContext.drawImage(legacyFaceImage, 0, 0, canvas.width, canvas.height)
-      if (hasCatalogFaceSelection || hasFaceOverlaySelection) await drawFaceCatalogOverlay(targetContext, artwork, source, activeItems, faceAppearance, skinTone, studioFaceTransforms, mouthEffects, studioFaceMode, resolveClosedEye, character.customization.partOverrides, undefined, assetProvider)
+      if (hasCatalogFaceSelection || hasFaceOverlaySelection) await drawFaceCatalogOverlay(targetContext, artwork, source, activeItems, faceAppearance, skinTone, studioFaceTransforms, mouthEffects, studioFaceMode, resolveClosedEye, character.customization.partOverrides, undefined, assetProvider, character.customization.wardrobePalettes)
     } else if (legacyFaceImage) targetContext.drawImage(legacyFaceImage, 0, 0, canvas.width, canvas.height)
   }
   // The default Canvas/PNG preview never needs an extra facial buffer.

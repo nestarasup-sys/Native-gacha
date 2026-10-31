@@ -10,7 +10,7 @@ import { validWardrobeAdjustmentReference } from '../../../src/shared/wardrobeAd
 const isValidModelSlot = (slot: number) => Number.isInteger(slot) && slot >= 1 && slot <= FABRICATOR_MODEL_SLOT_COUNT
 const isValidWardrobeId = (id: string) => /^[a-zA-Z0-9_-]{1,80}$/.test(id)
 
-const characterColorRoles = ['outline', 'shadow', 'base', 'light', 'fade', 'highlight', 'accent'] as const
+const characterColorRoles = ['outline', 'shadow', 'base', 'light', 'detail', 'fade', 'highlight', 'accent'] as const
 const hairPartIds = ['backHair', 'rearHair', 'ponytail', 'frontHair', 'ahoge'] as const
 const wardrobePaletteKeys: CustomizerWardrobePaletteKey[] = ['shirt', 'jacket', 'upper-left', 'upper-right', 'lower-left', 'lower-right', 'gloves-left', 'gloves-right', 'cape', 'belt', 'glasses', 'head-accessory', 'skirt', 'pants-left', 'shorts-right', 'sock-left', 'sock-right', 'shoe-left', 'shoe-right', 'lower-skirt']
 function isCharacterColorMap(value: unknown): value is CharacterColorOverrides {

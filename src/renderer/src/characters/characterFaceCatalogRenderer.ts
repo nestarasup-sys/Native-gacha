@@ -1,6 +1,6 @@
 import type { FaceCatalogItem, FaceComponentAsset, FaceDetailKind, FaceElementKind, FaceExpressionEffects, FaceSheetKind, FabricatorProject } from '../../../shared/fabricator'
 import type { CharacterRenderAssetProvider } from '../../../shared/characterRenderAssets'
-import type { CustomizerCharacter, CustomizerFaceAppearance, FaceComponentPartId, FacePalettePartId, HairColorOverrides } from '../../../shared/customizer'
+import type { CharacterColorOverrides, CustomizerCharacter, CustomizerFaceAppearance, CustomizerWardrobePaletteKey, FaceComponentPartId, FacePalettePartId, HairColorOverrides } from '../../../shared/customizer'
 import type { EditorV6FaceRenderMode, EditorV6FaceTransforms } from '../../../shared/editorV6'
 import type { StudioFaceMode, StudioFaceTransforms } from '../../../shared/studio'
 import { drawFaceExpressionEffects, type ExpressionEffectMouthPlacement } from './expressionEffectRender'
@@ -16,13 +16,14 @@ type FaceCatalogRenderMode = StudioFaceMode | EditorV6FaceRenderMode
 
 type CharacterFaceCatalogImageLoaders = {
   loadCachedImage: (source: string | CanvasImageSource) => Promise<HTMLImageElement>
+  loadCharacterTintedImage: (source: string, overrides: CharacterColorOverrides | undefined) => Promise<HTMLImageElement>
   loadHairTintedImage: (source: string, overrides: HairColorOverrides | undefined, options?: HairTintOptions) => Promise<HTMLImageElement>
   loadSkinTintedImage: (source: string, tone: string) => Promise<HTMLImageElement>
 }
 
 export function createCharacterFaceCatalogRenderer(loaders: CharacterFaceCatalogImageLoaders, isBlinkMode: (mode?: FaceCatalogRenderMode) => boolean) {
-  const { loadCachedImage, loadHairTintedImage, loadSkinTintedImage } = loaders
-  async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, artwork: CatalogArtwork, source: FabricatorProject, items: Partial<Record<FaceSheetKind | FaceElementKind, FaceCatalogItem>>, appearance: CustomizerFaceAppearance, skinTone?: string, studioFaceTransforms?: FaceCatalogTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: FaceCatalogRenderMode, resolveClosedEye?: ClosedEyeAssetResolver, headOverrides: CustomizerCharacter['customization']['partOverrides'] = {}, highlightedHeadId?: string | null, assetProvider: CharacterRenderAssetProvider = window.desktop.fabricator): Promise<void> {
+  const { loadCachedImage, loadCharacterTintedImage, loadHairTintedImage, loadSkinTintedImage } = loaders
+  async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, artwork: CatalogArtwork, source: FabricatorProject, items: Partial<Record<FaceSheetKind | FaceElementKind, FaceCatalogItem>>, appearance: CustomizerFaceAppearance, skinTone?: string, studioFaceTransforms?: FaceCatalogTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: FaceCatalogRenderMode, resolveClosedEye?: ClosedEyeAssetResolver, headOverrides: CustomizerCharacter['customization']['partOverrides'] = {}, highlightedHeadId?: string | null, assetProvider: CharacterRenderAssetProvider = window.desktop.fabricator, wardrobePalettes?: Partial<Record<CustomizerWardrobePaletteKey, CharacterColorOverrides>>): Promise<void> {
     const sourceHead = source.parts.find((part) => /cabe[çc]a|head/i.test(part.name))
     const targetHead = artwork.parts.find((part) => /cabe[çc]a|head/i.test(part.name))
     if (!sourceHead || !targetHead || sourceHead.width <= 0 || sourceHead.height <= 0) return
@@ -292,7 +293,8 @@ export function createCharacterFaceCatalogRenderer(loaders: CharacterFaceCatalog
       const width = asset.width * transform.scaleX / sourceHead.width * targetHead.width
       const height = asset.height * transform.scaleY / sourceHead.height * targetHead.height
       try {
-        const image = await loadCachedImage(asset.dataUrl)
+        const paletteKey: CustomizerWardrobePaletteKey = extraName === 'glasses' ? 'glasses' : 'head-accessory'
+        const image = await loadCharacterTintedImage(asset.dataUrl, wardrobePalettes?.[paletteKey])
         context.save(); context.translate(x, y); context.rotate((targetHead.rotation + transform.rotation) * Math.PI / 180)
         if (transform.flipX) context.scale(-1, 1)
         drawPreviewImageWithHalo(context, image, -width / 2, -height / 2, highlightedHeadId === (extraName === 'glasses' ? 'oculos' : 'acessorio-cabeca'), width, height); context.restore()

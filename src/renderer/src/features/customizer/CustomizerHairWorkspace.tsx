@@ -4,7 +4,7 @@ import type { CharacterPaletteOverrides, CharacterPaletteRole, CustomizerCharact
 import type { HairStyle, HairStyleSummary } from '../../../../shared/fabricator'
 import { hairStyleSupportsCategory } from '../../../../shared/hairCategories'
 import { customizerHairParts, resolvedHairColors } from '../../characters/characterRenderer'
-import { CharacterPaletteStrip, hairColorControls, hairPalettePresets } from './CustomizerAppearanceControls'
+import { CharacterPaletteStrip, characterPaletteSwatchGradient, hairColorControls, hairPalettePresets } from './CustomizerAppearanceControls'
 import { HairAssetPreview } from './CustomizerAssetPreviews'
 import { Icon } from '../../ui/components/Icon'
 import { hairAppearancePartStyleId } from './customizerHairAppearanceModel'
@@ -99,7 +99,7 @@ export function CustomizerHairWorkspace({
         </div>
         <aside className="customizer-hair-palette-presets" aria-label="Paletas prontas">
           <button className="customizer-hair-palette-scroll previous" aria-label="Ver paletas anteriores" onClick={() => paletteStripRef.current?.scrollBy({ left: -180, behavior: 'smooth' })} type="button"><Icon name="chevronRight" /></button>
-          <div className="customizer-hair-palette-preset-list" ref={paletteStripRef}>{hairPalettePresets.map((preset) => <button key={preset.name} type="button" disabled={!hasCharacter} aria-pressed={hairColorControls.every((color) => colorOverrides[color.id] === preset.colors[color.id])} onClick={() => void onApplyPalette(preset.colors)} title={`Aplicar a paleta ${preset.name} aos cinco cabelos`}><span style={{ background: `linear-gradient(115deg, ${preset.colors.light} 0 23%, ${preset.colors.base} 23% 65%, ${preset.colors.shadow} 65% 84%, ${preset.colors.outline} 84%)` }} />{preset.name}</button>)}</div>
+          <div className="customizer-hair-palette-preset-list" ref={paletteStripRef}>{hairPalettePresets.map((preset) => <button key={preset.name} type="button" disabled={!hasCharacter} aria-pressed={hairColorControls.every((color) => colorOverrides[color.id] === preset.colors[color.id])} onClick={() => void onApplyPalette(preset.colors)} title={`Aplicar a paleta ${preset.name} aos cinco cabelos`}><span style={{ background: characterPaletteSwatchGradient(preset.colors) }} />{preset.name}</button>)}</div>
           <button className="customizer-hair-palette-scroll" aria-label="Ver próximas paletas" onClick={() => paletteStripRef.current?.scrollBy({ left: 180, behavior: 'smooth' })} type="button"><Icon name="chevronRight" /></button>
         </aside>
       </div>
@@ -131,7 +131,7 @@ export function CustomizerHairWorkspace({
                 const local = Boolean(appearance?.partColors?.[part.id]) && localPieceColors[color.id] !== globalColorOverrides[color.id]
                 return <label key={color.id} className={local ? 'local' : ''} style={{ '--hair-color-swatch': pieceColors[color.id] ?? color.fallback } as import('react').CSSProperties} title={`${color.label} de ${part.label} · ${local ? 'ajuste individual' : 'paleta geral'}`}>
                 <input type="color" aria-label={`${color.label} de ${part.label}`} value={pieceColors[color.id] ?? color.fallback} disabled={!hasCharacter || !asset} onFocus={() => onActiveColorRoleChange(color.id)} onChange={(event) => void onSetPartColor(part.id, color.id, event.target.value)} />
-                <span aria-hidden="true">{color.id === 'light' ? 'L' : color.id === 'shadow' ? 'S' : color.id === 'outline' ? 'C' : 'B'}</span>
+                <span aria-hidden="true">{color.id === 'detail' ? 'D' : color.id === 'light' ? 'CS' : color.id === 'shadow' ? 'S' : color.id === 'outline' ? 'C' : 'B'}</span>
               </label>
               })}
             </div>
