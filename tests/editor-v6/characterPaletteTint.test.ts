@@ -57,6 +57,29 @@ describe('paleta fixa de cabelo, roupas e acessórios', () => {
     expect(Array.from(pixels.slice(16, 20))).toEqual([140, 123, 255, 255])
   })
 
+  it('reconhece a secundária ciano das folhas novas e seus tons sombreados', () => {
+    const pixels = new Uint8ClampedArray([
+      43, 43, 43, 255,
+      168, 168, 168, 255,
+      85, 197, 212, 255,
+      43, 99, 106, 160,
+      89, 193, 208, 255,
+      33, 150, 190, 255,
+      85, 197, 212, 0
+    ])
+    const customSecondary = { ...defaultCharacterColorOverrides, light: '#D020B0' }
+
+    const detection = tintCharacterPalettePixels(pixels, customSecondary)
+
+    expect(detection.supported).toBe(true)
+    expect(detection.roleCounts.light).toBe(3)
+    expect(Array.from(pixels.slice(8, 12))).toEqual([208, 32, 176, 255])
+    expect(Array.from(pixels.slice(12, 16))).toEqual([104, 16, 88, 160])
+    expect(Array.from(pixels.slice(16, 20))).toEqual([205, 32, 173, 255])
+    expect(Array.from(pixels.slice(20, 24))).toEqual([33, 150, 190, 255])
+    expect(Array.from(pixels.slice(24, 28))).toEqual([85, 197, 212, 0])
+  })
+
   it('altera cada papel independentemente e preserva os outros quatro', () => {
     const roles = ['outline', 'shadow', 'base', 'light', 'detail'] as const
     const fixtureRoleByPixel = ['outline', 'shadow', 'base', 'light', 'detail', 'detail'] as const

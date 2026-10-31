@@ -11,20 +11,22 @@ export const CHARACTER_SOURCE_PALETTE: readonly SourceSwatch[] = [
   { role: 'outline', rgb: [43, 43, 43], grayscaleValue: 43 },
   { role: 'shadow', rgb: [107, 107, 107], grayscaleValue: 107 },
   { role: 'base', rgb: [168, 168, 168], grayscaleValue: 168 },
-  // The original light-gray pixels keep their identity as the secondary role.
+  // Keep recognizing the original gray highlight while accepting the cyan
+  // secondary swatch used by newer wardrobe sheets.
   { role: 'light', rgb: [226, 226, 226], grayscaleValue: 226 },
+  { role: 'light', rgb: [85, 197, 212] },
   { role: 'detail', rgb: [140, 123, 255] }
 ]
 
 export type CharacterPaletteDetection = { supported: boolean; roleCounts: Record<CharacterPaletteRole, number> }
 
 const grayscaleSourcePalette = CHARACTER_SOURCE_PALETTE.filter((swatch) => swatch.grayscaleValue !== undefined)
-const detailSourceSwatch = CHARACTER_SOURCE_PALETTE.find((swatch) => swatch.role === 'detail')!
+const chromaticSourcePalette = CHARACTER_SOURCE_PALETTE.filter((swatch) => swatch.grayscaleValue === undefined)
 const sourceSwatchTolerance = 6
 const grayscaleTolerance = 8
 
-function detailSourceShade(red: number, green: number, blue: number): number | null {
-  const [sourceRed, sourceGreen, sourceBlue] = detailSourceSwatch.rgb
+function chromaticSourceShade(red: number, green: number, blue: number, swatch: SourceSwatch): number | null {
+  const [sourceRed, sourceGreen, sourceBlue] = swatch.rgb
   const sourceMagnitudeSquared = sourceRed ** 2 + sourceGreen ** 2 + sourceBlue ** 2
   const scale = (red * sourceRed + green * sourceGreen + blue * sourceBlue) / sourceMagnitudeSquared
   if (scale < 0.18 || scale > 1.2) return null
@@ -35,14 +37,23 @@ function detailSourceShade(red: number, green: number, blue: number): number | n
   return scale
 }
 
-/** Detect the four grayscale roles and the chromatic accessory/detail swatch. */
+function matchChromaticSource(red: number, green: number, blue: number): { role: CharacterPaletteRole; shade: number } | null {
+  for (const swatch of chromaticSourcePalette) {
+    const shade = chromaticSourceShade(red, green, blue, swatch)
+    if (shade !== null) return { role: swatch.role, shade }
+  }
+  return null
+}
+
+/** Detect fixed grayscale roles plus supported chromatic secondary/detail swatches. */
 export function detectCharacterSourcePalette(pixels: ArrayLike<number>): CharacterPaletteDetection {
   const roleCounts: Record<CharacterPaletteRole, number> = { outline: 0, shadow: 0, base: 0, light: 0, detail: 0 }
   for (let offset = 0; offset + 3 < pixels.length; offset += 4) {
     if (pixels[offset + 3] < 32) continue
     const red = pixels[offset], green = pixels[offset + 1], blue = pixels[offset + 2]
-    if (detailSourceShade(red, green, blue) !== null) {
-      roleCounts.detail += 1
+    const chromaticMatch = matchChromaticSource(red, green, blue)
+    if (chromaticMatch) {
+      roleCounts[chromaticMatch.role] += 1
       continue
     }
     if (Math.max(red, green, blue) - Math.min(red, green, blue) > grayscaleTolerance) continue
@@ -73,13 +84,13 @@ export function tintCharacterPalettePixels(pixels: Uint8ClampedArray, colors: Ch
   for (let offset = 0; offset + 3 < pixels.length; offset += 4) {
     if (pixels[offset + 3] === 0) continue
     const red = pixels[offset], green = pixels[offset + 1], blue = pixels[offset + 2]
-    const detailShade = detailSourceShade(red, green, blue)
-    if (detailShade !== null) {
-      const detailColor = targets.get('detail')
-      if (!detailColor) continue
-      pixels[offset] = Math.round(detailColor[0] * detailShade)
-      pixels[offset + 1] = Math.round(detailColor[1] * detailShade)
-      pixels[offset + 2] = Math.round(detailColor[2] * detailShade)
+    const chromaticMatch = matchChromaticSource(red, green, blue)
+    if (chromaticMatch) {
+      const target = targets.get(chromaticMatch.role)
+      if (!target) continue
+      pixels[offset] = Math.round(target[0] * chromaticMatch.shade)
+      pixels[offset + 1] = Math.round(target[1] * chromaticMatch.shade)
+      pixels[offset + 2] = Math.round(target[2] * chromaticMatch.shade)
       continue
     }
     if (Math.max(red, green, blue) - Math.min(red, green, blue) > grayscaleTolerance) continue
