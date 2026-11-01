@@ -1,5 +1,6 @@
 import type { FabricatorProject, JointLink, ModelPart, WardrobeComponent } from '../../../../../shared/fabricator'
 import { autoConnectParts, modelRigSegmentKind, modelRigSide } from '../../../../../shared/modelRig.ts'
+import { wardrobeJointAssemblyOffset } from '../../../../../shared/wardrobeJointAssembly'
 import type { WardrobeJointCutAdjustment } from './wardrobeJointCutSettings'
 
 export type WardrobePoint = { x: number; y: number }
@@ -87,14 +88,9 @@ export function createWardrobeJointAssemblyOffsets(sourceProject: JointProject, 
     if (upperSide && lowerSide && upperSide !== lowerSide) continue
     const mountedUpperCenter = center(upper)
     const mountedLowerCenter = center(lower)
-    const sourceUpperCenter = center(sourceUpper)
-    const sourceLowerCenter = center(sourceLower)
     const candidates = candidatesByLowerPart.get(lower.id) ?? []
     candidates.push({
-      offset: {
-        x: sourceUpperCenter.x + mountedLowerCenter.x - mountedUpperCenter.x - sourceLowerCenter.x,
-        y: sourceUpperCenter.y + mountedLowerCenter.y - mountedUpperCenter.y - sourceLowerCenter.y
-      },
+      offset: wardrobeJointAssemblyOffset(sourceUpper, sourceLower, upper, lower),
       sideMatch: Boolean(upperSide && lowerSide && upperSide === lowerSide),
       distance: Math.hypot(mountedUpperCenter.x - mountedLowerCenter.x, mountedUpperCenter.y - mountedLowerCenter.y)
     })

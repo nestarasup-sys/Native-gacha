@@ -1,6 +1,8 @@
 import type { FabricatorProject, ModelSkinContourStroke, WardrobeCategory, WardrobeSet } from '../../../shared/fabricator'
 import type { CharacterColorOverrides, CustomizerWardrobeCategory, CustomizerWardrobeGroup } from '../../../shared/customizer'
+import { projectForOriginalPreview } from '../../../shared/fabricatorModelViews'
 import { mapWardrobeComponentToPose, wardrobePosePadding } from '../../../shared/wardrobePose'
+import { wardrobeJointAssemblyOffset } from '../../../shared/wardrobeJointAssembly'
 import { normalizeLayerOrder } from '../../../shared/modelRig'
 import { bindLegacyTorsoGridWardrobeSet, validateWardrobeFlow } from '../../../shared/assetFlow'
 import { wardrobeAdjustmentMatrix } from '../../../shared/wardrobeAdjustment'
@@ -9,6 +11,7 @@ import { configureCharacterSampling, MAX_CHARACTER_PREVIEW_PIXELS } from './rend
 import { createCharacterCanvas } from './canvasSurface'
 import { drawPreviewImageWithHalo } from './characterCanvasDrawing'
 import { isModelBodyPartName } from './skinTint'
+import { drawWardrobeJointBridge } from './wardrobeJointBridge'
 
 export type ClothingGroupCategory = CustomizerWardrobeCategory
 export type SelectedWardrobeComponent = { modelSlot: number; setId: string; category: ClothingGroupCategory; componentId: string }
@@ -19,6 +22,16 @@ export type CharacterWardrobeImageLoaders = {
   loadCharacterTintedImage: (source: string, overrides: CharacterColorOverrides | undefined) => Promise<HTMLImageElement>
   loadSkinTintedImage: (source: string, tone: string) => Promise<HTMLImageElement>
   loadModelBodyTintedImage: (source: string, skinTone?: string, outlineColor?: string, fakeContours?: ModelSkinContourStroke[]) => Promise<HTMLImageElement>
+}
+
+type MappedWardrobeGarment = {
+  group: CustomizerWardrobeGroup
+  component: WardrobeSet['components'][number]
+  sourceBone: FabricatorProject['parts'][number]
+  targetBone: FabricatorProject['parts'][number]
+  transform: ReturnType<typeof mapWardrobeComponentToPose>
+  center: { x: number; y: number }
+  sequence: number
 }
 
 export function createCharacterWardrobeRenderer(loaders: CharacterWardrobeImageLoaders) {
@@ -80,7 +93,22 @@ export function createCharacterWardrobeRenderer(loaders: CharacterWardrobeImageL
     let aboveHairContext: CanvasRenderingContext2D | null = null
     const hidden = new Set(artwork.hiddenPartIds ?? [])
     const bodyOrder = normalizeLayerOrder(artwork.parts, artwork.layerOrder)
+    const originalModel = projectForOriginalPreview(source)
+    const originalPartsById = new Map(originalModel?.parts.map((part) => [part.id, part]) ?? [])
     const garmentLayers = new Map<string, Array<{ group: CustomizerWardrobeGroup; component: WardrobeSet['components'][number]; transform: ReturnType<typeof mapWardrobeComponentToPose>; center: { x: number; y: number }; sequence: number }>>()
+    const mappedGarments: MappedWardrobeGarment[] = []
+    const imagePromises = new Map<string, Promise<HTMLImageElement>>()
+    const loadGarmentImage = (garment: Pick<MappedWardrobeGarment, 'group' | 'component'>) => {
+      const key = `${garment.component.id}:${garment.group.modelSlot}:${garment.group.setId}:${JSON.stringify(garment.group.colors ?? null)}`
+      let image = imagePromises.get(key)
+      if (!image) {
+        image = garment.group.colors
+          ? loadCharacterTintedImage(garment.component.dataUrl, garment.group.colors)
+          : loadCachedImage(garment.component.dataUrl)
+        imagePromises.set(key, image)
+      }
+      return image
+    }
     let sequence = 0
     let hasAboveHairAccessories = false
 
@@ -113,7 +141,7 @@ export function createCharacterWardrobeRenderer(loaders: CharacterWardrobeImageL
       if (errors.length) {
         throw new Error(`A roupa “${set.name}” não pôde ser encaixada neste modelo/pose: ${errors.map((issue) => `${issue.code} (parte: ${issue.boneId ?? 'não identificada'})`).join(', ')}. Confira a peça vinculada em Roupas DEV.`)
       }
-      const mapped: Array<{ component: WardrobeSet['components'][number]; transform: ReturnType<typeof mapWardrobeComponentToPose>; center: { x: number; y: number }; sequence: number }> = []
+      const mapped: MappedWardrobeGarment[] = []
       for (const component of components) {
         const sourceBone = source.parts.find((part) => part.id === component.attachedPartId)
         const targetBone = artwork.parts.find((part) => part.id === component.attachedPartId)
@@ -123,7 +151,7 @@ export function createCharacterWardrobeRenderer(loaders: CharacterWardrobeImageL
         // geometry; only an explicit release hides them from the posed character.
         if (component.glue?.mode === 'loose' && component.glue.explicitRelease) continue
         const transform = mapWardrobeComponentToPose(component, sourceBone, targetBone, kneeOverlap, edgePadding)
-        mapped.push({ component, transform, center: transform.origin, sequence: sequence++ })
+        mapped.push({ group, component, sourceBone, targetBone, transform, center: transform.origin, sequence: sequence++ })
       }
       if (!mapped.length) continue
       // Each component owns its bone anchor. Averaging the centers of visible
@@ -131,9 +159,38 @@ export function createCharacterWardrobeRenderer(loaders: CharacterWardrobeImageL
       // or restored (thigh + calf, sleeves, accessories, etc.).
       for (const item of mapped) {
         const layer = garmentLayers.get(item.component.attachedPartId) ?? []
-        layer.push({ group, ...item })
+        layer.push(item)
         garmentLayers.set(item.component.attachedPartId, layer)
+        mappedGarments.push(item)
       }
+    }
+
+    const pairedGarments = new Map<string, Partial<Record<'upper' | 'lower', MappedWardrobeGarment>>>()
+    for (const garment of mappedGarments) {
+      const { sleevePairId, sleeveSide, sleeveSegment } = garment.component
+      if (!sleevePairId || !sleeveSide || (sleeveSegment !== 'upper' && sleeveSegment !== 'lower')) continue
+      const key = `${garment.group.modelSlot}:${garment.group.setId}:${sleevePairId}:${sleeveSide}`
+      const pair = pairedGarments.get(key) ?? {}
+      pair[sleeveSegment] = garment
+      pairedGarments.set(key, pair)
+    }
+    const bridgesAfterPart = new Map<string, Array<{ upper: MappedWardrobeGarment; lower: MappedWardrobeGarment; lowerSourceOffset: { x: number; y: number } }>>()
+    for (const pair of pairedGarments.values()) {
+      const { upper, lower } = pair
+      if (!upper || !lower) continue
+      const armPair = upper.component.category === 'manga-superior' && lower.component.category === 'manga-inferior'
+      const legPair = upper.component.category === 'calca-coxa' && lower.component.category === 'calca-canela'
+      if (!armPair && !legPair) continue
+      const upperLayer = bodyOrder.indexOf(upper.component.attachedPartId)
+      const lowerLayer = bodyOrder.indexOf(lower.component.attachedPartId)
+      if (upperLayer < 0 || lowerLayer < 0) continue
+      const renderAfterPart = bodyOrder[Math.max(upperLayer, lowerLayer)]
+      const bridges = bridgesAfterPart.get(renderAfterPart) ?? []
+      const sourceUpper = originalPartsById.get(upper.sourceBone.id) ?? upper.sourceBone
+      const sourceLower = originalPartsById.get(lower.sourceBone.id) ?? lower.sourceBone
+      bridges.push({ upper, lower,
+        lowerSourceOffset: wardrobeJointAssemblyOffset(sourceUpper, sourceLower, upper.sourceBone, lower.sourceBone) })
+      bridgesAfterPart.set(renderAfterPart, bridges)
     }
 
     for (const partId of bodyOrder) {
@@ -157,7 +214,7 @@ export function createCharacterWardrobeRenderer(loaders: CharacterWardrobeImageL
       const garments = (garmentLayers.get(part.id) ?? []).sort((a, b) => a.sequence - b.sequence)
       for (const garment of garments) {
         try {
-          const image = garment.group.colors ? await loadCharacterTintedImage(garment.component.dataUrl, garment.group.colors) : await loadCachedImage(garment.component.dataUrl)
+          const image = await loadGarmentImage(garment)
           const matrix = /^matrix\(([^)]+)\)$/.exec(garment.transform.matrix)?.[1].split(',').map(Number) ?? [1, 0, 0, 1, 0, 0]
           const drawGarment = (context: CanvasRenderingContext2D, highlighted = false) => {
             context.save()
@@ -193,6 +250,18 @@ export function createCharacterWardrobeRenderer(loaders: CharacterWardrobeImageL
           drawGarment(targetContext)
         } catch {
           throw new Error(`A imagem da peça ${garment.component.name} não pôde ser renderizada. Verifique o asset no Fabricador Dev sem alterar o personagem.`)
+        }
+      }
+      for (const bridge of bridgesAfterPart.get(part.id) ?? []) {
+        try {
+          const upperImage = await loadGarmentImage(bridge.upper)
+          const lowerImage = await loadGarmentImage(bridge.lower)
+          drawWardrobeJointBridge(outputContext,
+            { ...bridge.upper, image: upperImage },
+            { ...bridge.lower, image: lowerImage, sourceOffset: bridge.lowerSourceOffset })
+        } catch {
+          const name = bridge.upper.component.name.replace(/ · (braço superior|coxa)$/i, '')
+          throw new Error(`Não foi possível preparar a continuidade da roupa “${name}” na junta desta pose. Revise os dois segmentos em Roupas DEV.`)
         }
       }
     }
