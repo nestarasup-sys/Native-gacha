@@ -219,8 +219,8 @@ export function MaleTorsoEditorModal({ project, baseTorso, savedTorso, onClose, 
             <button className="model-tool-button" type="button" disabled={saving || !lastDeformation || deforming} onClick={undoDeformation}><Icon name="undo" />Desfazer deformação</button>
             <button className="model-tool-button" type="button" disabled={saving || deforming} onClick={restoreOriginal}><Icon name="undo" />Restaurar cópia feminina</button>
           </nav>
-          <div className="male-torso-stage">
-            <div className="male-torso-artboard" ref={boardRef} style={{ width: `${part.width * previewScale}px`, height: `${part.height * previewScale}px`, backgroundColor: previewBackground }}>
+          <div className="male-torso-stage" style={{ backgroundColor: previewBackground }}>
+            <div className="male-torso-artboard" ref={boardRef} style={{ width: `${part.width * previewScale}px`, height: `${part.height * previewScale}px` }}>
               {!deforming && <img className="male-torso-part-preview" src={part.dataUrl} alt="Cópia do tronco para o modelo masculino" style={{ width: '100%', height: '100%', objectFit: 'contain', transform: `rotate(${part.rotation}deg)` }} />}
               {deforming && !warpReady && <img className="male-torso-part-preview" src={part.dataUrl} alt="Prévia atualizada do tronco masculino" style={{ width: '100%', height: '100%', objectFit: 'contain', transform: `rotate(${part.rotation}deg)` }} />}
               {deforming && <canvas ref={canvasRef} className="male-torso-warp-canvas" aria-label="Pincel para deformar o tronco" onPointerDown={beginWarp} onPointerMove={moveWarp} onPointerUp={finishWarp} onPointerCancel={finishWarp} style={{ visibility: warpReady ? 'visible' : 'hidden' }} />}

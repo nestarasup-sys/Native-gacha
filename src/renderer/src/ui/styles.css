@@ -2470,8 +2470,8 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .male-torso-preview-tools input { width:23px;height:23px;padding:1px;border:1px solid #dce3eb;border-radius:5px;background:#fff;cursor:pointer; }
 .male-torso-editor-toolbar { min-height:40px;display:flex;align-items:center;gap:7px;flex-wrap:wrap;padding:5px 9px;border-bottom:1px solid #e0e7ef;background:#fff; }
 .male-torso-editor-toolbar .model-tool-button { min-height:29px;padding:4px 9px;color:#4d6f99;font-size:10px; }
-.male-torso-stage { min-height:360px;flex:1;display:flex;align-items:center;justify-content:center;padding:12px;overflow:auto; }
-.male-torso-artboard { width:min(100%,560px);height:min(52vh,520px);flex:0 0 auto;position:relative;overflow:visible;border:1px solid #cdd7e3;background-color:#fff;background-image:linear-gradient(45deg,#f3f6fa 25%,transparent 25%),linear-gradient(-45deg,#f3f6fa 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#f3f6fa 75%),linear-gradient(-45deg,transparent 75%,#f3f6fa 75%);background-size:16px 16px;background-position:0 0,0 8px,8px -8px,-8px 0;box-shadow:0 3px 12px #29374a18; }
+.male-torso-stage { width:min(100%,584px);height:min(52vh,544px);flex:0 0 auto;align-self:center;position:relative;display:flex;align-items:flex-start;justify-content:flex-start;box-sizing:border-box;overflow:auto;border:1px solid #cdd7e3;background-color:#fff;background-image:linear-gradient(45deg,#f3f6fa 25%,transparent 25%),linear-gradient(-45deg,#f3f6fa 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#f3f6fa 75%),linear-gradient(-45deg,transparent 75%,#f3f6fa 75%);background-size:16px 16px;background-position:0 0,0 8px,8px -8px,-8px 0;box-shadow:0 3px 12px #29374a18; }
+.male-torso-artboard { flex:0 0 auto;position:relative;margin:auto;overflow:visible;border:0;background:transparent;box-shadow:none; }
 .male-torso-part-preview { position:absolute;object-fit:fill;transform-origin:center center;user-select:none;-webkit-user-drag:none; }
 .male-torso-warp-canvas { position:absolute;z-index:2;touch-action:none;cursor:crosshair;transform-origin:center center; }
 .male-torso-editor-toolbar .male-torso-deform-button.active { border-color:#84afe1;background:#e7f2ff;color:#286bb2; }
@@ -2481,7 +2481,7 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .male-torso-modal-footer>div { display:flex;gap:8px; }
 .male-torso-modal-footer .primary-button { background:#4387d8;border-color:#4387d8; }
 .male-torso-modal .wardrobe-warp-controls { position:relative;top:auto;left:auto;max-width:none;justify-content:center;border:0;border-top:1px solid #dfe7f0;border-radius:0;background:#fff;box-shadow:none; }
-@media(max-width:800px) { .male-torso-stage { min-height:280px; }.male-torso-artboard { height:min(42vh,400px); }.male-torso-modal-footer { align-items:flex-end;flex-direction:column; }.male-torso-modal-footer>div { width:100%;justify-content:flex-end; } }
+@media(max-width:800px) { .male-torso-stage { height:min(42vh,420px); }.male-torso-modal-footer { align-items:flex-end;flex-direction:column; }.male-torso-modal-footer>div { width:100%;justify-content:flex-end; } }
 .pose-model-picker { width: min(480px, 100%); max-height: min(620px, 90vh); display: flex; flex-direction: column; overflow: hidden; border: 1px solid #eee6ec; border-radius: 15px; background: #fff; box-shadow: 0 20px 70px #20172040; }
 .pose-model-picker > header { display: flex; align-items: center; justify-content: space-between; padding: 15px; border-bottom: 1px solid #f0ebef; }
 .pose-model-picker > header span { display: grid; gap: 4px; }
