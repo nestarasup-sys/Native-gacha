@@ -225,6 +225,9 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
   const selectedSide = category.side
   const selectedAsset = (hairWorkspace?.categoryBySide?.[selectedSide] ?? defaultCategories[selectedSide]) === selectedCategory ? hairWorkspace?.[selectedSide] ?? null : null
   const selectedTransform = selectedAsset ? hairWorkspace?.transforms[selectedSide] ?? null : null
+  const uniformScalePercent = selectedTransform
+    ? Math.sqrt(selectedTransform.scaleX * selectedTransform.scaleY) * 100
+    : 100
   const visibleDraft = (side: HairSide) => selectedSide !== side || selectedAsset !== null
   const currentHairStyles = hairStylesModelSlot === modelSlot ? hairStyles : []
   const activeStyleSummary = currentHairStyles.find((style) => style.id === activeStyleId)
@@ -590,6 +593,13 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
     updateWorkspace((current) => ({ ...current, transforms: { ...current.transforms, [selectedSide]: { ...(current.transforms[selectedSide] ?? initialTransform(selectedSide, head, selectedAsset)), ...patch } } }))
   }
 
+  function changeUniformScale(percent: number) {
+    if (!head || !selectedAsset || !selectedTransform || deformMode) return
+    const currentScale = Math.sqrt(selectedTransform.scaleX * selectedTransform.scaleY) * 100
+    const multiplier = percent / Math.max(0.01, currentScale)
+    changeTransform({ scaleX: selectedTransform.scaleX * multiplier, scaleY: selectedTransform.scaleY * multiplier })
+  }
+
   function commitHairDeformation(side: HairSide, result: { dataUrl: string; width: number; height: number }) {
     updateWorkspace((current) => {
       const asset = current[side]
@@ -947,6 +957,7 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
             {([['x', 'Posição X'], ['y', 'Posição Y']] as const).map(([field, label]) => <label key={field}>{label}<input type="number" step="1" value={Math.round(selectedTransform[field])} disabled={deformMode} onChange={(event) => changeTransform({ [field]: Number(event.target.value) })} /></label>)}
           </div>
           {([['scaleX', 'Largura · espremer/esticar'], ['scaleY', 'Altura · espremer/esticar']] as const).map(([field, label]) => <label className="hair-dev-range" key={field}><span><b>{label}</b><output>{Math.round(selectedTransform[field] * 100)}%</output></span><input type="range" min="10" max="500" step="1" value={Math.max(10, Math.min(500, Math.round(selectedTransform[field] * 100)))} disabled={deformMode} onChange={(event) => changeTransform({ [field]: Number(event.target.value) / 100 })} /><input className="hair-dev-range-number" type="number" min="10" max="1000" step="1" aria-label={label + ' em porcentagem'} value={Math.round(selectedTransform[field] * 100)} disabled={deformMode} onChange={(event) => changeTransform({ [field]: Math.max(.1, Math.min(10, Number(event.target.value) / 100)) })} /></label>)}
+          <label className="hair-dev-range"><span><b>Escala (largura + altura)</b><output>{Math.round(uniformScalePercent)}%</output></span><input aria-label="Escala geral do cabelo" type="range" min="10" max="500" step="1" value={Math.max(10, Math.min(500, Math.round(uniformScalePercent)))} disabled={deformMode} onChange={(event) => changeUniformScale(Number(event.target.value))} /><input className="hair-dev-range-number" type="number" min="10" max="1000" step="1" aria-label="Escala geral do cabelo em porcentagem" value={Math.round(uniformScalePercent)} disabled={deformMode} onChange={(event) => changeUniformScale(Math.max(10, Math.min(1000, Number(event.target.value))))} /></label>
           <label className="hair-dev-range"><span><b>Rotação</b><output>{Math.round(selectedTransform.rotation)}°</output></span><input type="range" min="-180" max="180" step="1" value={Math.max(-180, Math.min(180, Math.round(selectedTransform.rotation)))} disabled={deformMode} onChange={(event) => changeTransform({ rotation: Number(event.target.value) })} /></label>
           <div className="hair-dev-piece-actions"><button className="hair-dev-reset" onClick={flipSelectedHair} disabled={deformMode} type="button"><Icon name="flipHorizontal" /> Inverter na horizontal</button><button className="hair-dev-reset" onClick={resetSelectedTransform} disabled={deformMode} type="button">Restaurar encaixe inicial</button></div>
           <section className="hair-dev-deformation" aria-label="Deformar cabelo">
