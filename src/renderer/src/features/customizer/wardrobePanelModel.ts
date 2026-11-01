@@ -39,6 +39,11 @@ export const lowerWardrobePageTwoPanels: WardrobePanel[] = [
 export function wardrobeComponentMatchesPanel(component: WardrobeSet['components'][number], panel: WardrobePanel): boolean {
   if (panel.source ? !panel.source.includes(component.category) : component.category !== panel.category) return false
   if (!panel.side) return true
+  // Manga/calça imports keep an explicit side even after splitting the piece.
+  // Split labels describe the segment ("braço superior", "antebraço") and may
+  // no longer contain esquerda/direita; bone IDs are opaque, so inferencing
+  // from the label alone incorrectly hid those saved components in the picker.
+  if (component.sleeveSide) return component.sleeveSide === panel.side
   const sideHint = `${component.name} ${component.attachedPartId}`.toLocaleLowerCase()
   const left = /\besquerd[oa]\b|\bleft\b/.test(sideHint)
   const right = /\bdireit[oa]\b|\bright\b/.test(sideHint)
