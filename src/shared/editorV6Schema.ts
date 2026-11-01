@@ -106,7 +106,31 @@ const editorV6BackgroundSchema = z.object({
 const motionSpriteSchema = z.object({ x: z.number().int().min(0), y: z.number().int().min(0), width: z.number().int().min(1), height: z.number().int().min(1), atlasWidth: z.number().int().min(1).max(8192), atlasHeight: z.number().int().min(1).max(8192) }).refine((rect) => rect.x + rect.width <= rect.atlasWidth && rect.y + rect.height <= rect.atlasHeight && rect.atlasWidth * rect.atlasHeight <= 8_100_000, 'Recorte de atlas inválido.')
 const facePatchSchema = z.object({ sprite: motionSpriteSchema, x: finite.min(0).max(1), y: finite.min(0).max(1), width: finite.positive().max(1), height: finite.positive().max(1), replace: z.boolean().optional(), replaceBounds: z.object({ x: finite.min(0).max(1), y: finite.min(0).max(1), width: finite.positive().max(1), height: finite.positive().max(1) }).refine((bounds) => bounds.x + bounds.width <= 1.000001 && bounds.y + bounds.height <= 1.000001, 'Região de substituição facial inválida.').optional() }).refine((patch) => patch.x + patch.width <= 1.000001 && patch.y + patch.height <= 1.000001 && (patch.replace !== true || Boolean(patch.replaceBounds)), 'Recorte facial fora do personagem ou sem região de substituição.')
 export const editorV6MotionAtlasSchema = z.object({ version: z.literal(1), key: z.string().max(65536), assetId: uuid, faceAssetId: uuid.optional(), frames: z.array(z.object({ offset: z.number().int().min(-7).max(-1), sprite: motionSpriteSchema, x: finite, y: finite, width: finite.positive(), height: finite.positive(), rotation: finite, flipX: z.boolean(), facePatch: facePatchSchema.optional() })).min(1).max(7) })
-export const editorV6MotionResultSchema = z.object({ asset: editorV6AssetSchema, faceAsset: editorV6AssetSchema.optional(), motion: editorV6MotionAtlasSchema, metrics: z.object({ milliseconds: finite.min(0), preparedRigs: z.number().int().min(1).max(9), samples: z.number().int().min(1).max(7), atlasPixels: z.number().int().min(1).max(8_100_000) }) }).refine((result) => result.asset.id === result.motion.assetId && result.asset.category === 'character' && result.asset.mimeType === 'image/png' && (Boolean(result.faceAsset) === Boolean(result.motion.faceAssetId)) && (!result.faceAsset || result.faceAsset.id === result.motion.faceAssetId && result.faceAsset.category === 'character' && result.faceAsset.mimeType === 'image/png') && (!result.motion.frames.some((frame) => frame.facePatch) || Boolean(result.motion.faceAssetId && result.faceAsset?.id === result.motion.faceAssetId)), 'Atlas de animação inválido.')
+export const editorV6MotionResultSchema = z.object({
+  asset: editorV6AssetSchema,
+  faceAsset: editorV6AssetSchema.optional(),
+  assetRole: z.literal('face-atlas').optional(),
+  motion: editorV6MotionAtlasSchema,
+  metrics: z.object({ milliseconds: finite.min(0), preparedRigs: z.number().int().min(1).max(9), samples: z.number().int().min(1).max(7), atlasPixels: z.number().int().min(1).max(8_100_000) })
+}).refine((result) => {
+  const hasFacePatches = result.motion.frames.some((frame) => frame.facePatch)
+  const validPrimaryAsset = result.asset.id === result.motion.assetId && result.asset.category === 'character' && result.asset.mimeType === 'image/png'
+  const selfContainedFaceAtlas = result.assetRole === 'face-atlas'
+    && !result.faceAsset && !result.motion.faceAssetId
+    && result.motion.frames.length > 0
+    && result.motion.frames.every((frame) => {
+      const patch = frame.facePatch
+      return Boolean(patch?.replace && patch.replaceBounds
+        && frame.sprite.x === patch.sprite.x && frame.sprite.y === patch.sprite.y
+        && frame.sprite.width === patch.sprite.width && frame.sprite.height === patch.sprite.height
+        && frame.sprite.atlasWidth === patch.sprite.atlasWidth && frame.sprite.atlasHeight === patch.sprite.atlasHeight)
+    })
+  const separateFaceAtlas = result.assetRole === undefined
+    && Boolean(result.faceAsset) === Boolean(result.motion.faceAssetId)
+    && (!result.faceAsset || result.faceAsset.id === result.motion.faceAssetId && result.faceAsset.category === 'character' && result.faceAsset.mimeType === 'image/png')
+    && (!hasFacePatches || Boolean(result.motion.faceAssetId && result.faceAsset?.id === result.motion.faceAssetId))
+  return validPrimaryAsset && (selfContainedFaceAtlas || separateFaceAtlas)
+}, 'Atlas de animação inválido.')
 export function parseEditorV6MotionRequest(value: unknown): EditorV6MotionBakeRequest {
   return z.object({ id: uuid, character: z.object({ id: z.string(), customization: z.object({}).passthrough() }).passthrough(), plan: z.object({ blockId: uuid, elementId: uuid, characterId: z.string(), key: z.string().max(65536), startFrame: finite.min(0), endFrame: z.number().int().min(1).max(1_000_000), from: editorV6ElementSchema, to: editorV6ElementSchema, samples: z.array(z.object({ offset: z.number().int().min(-7).max(-1), progress: finite.gt(0).lt(1), faceMode: z.enum(['idle', 'blink', 'talk', 'talk-blink']).optional() })).min(1).max(7) }), mouthScaleSamples: z.array(finite.min(1).max(3)).min(1).max(7).optional(), maxAtlasPixels: z.number().int().min(1).max(8_000_000).optional() }).parse(value) as unknown as EditorV6MotionBakeRequest
 }

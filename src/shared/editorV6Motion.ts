@@ -15,7 +15,14 @@ export type EditorV6MotionPlan = {
   from: EditorV6Element; to: EditorV6Element; samples: Array<{ offset: number; progress: number; faceMode?: EditorV6FaceRenderMode }>
 }
 export type EditorV6MotionBakeRequest = { id: string; plan: EditorV6MotionPlan; character: CustomizerCharacter; mouthScaleSamples?: number[]; maxAtlasPixels?: number }
-export type EditorV6MotionBakeResult = { asset: EditorV6Asset; faceAsset?: EditorV6Asset; motion: EditorV6MotionAtlas; metrics: { milliseconds: number; preparedRigs: number; samples: number; atlasPixels: number } }
+export type EditorV6MotionBakeResult = {
+  asset: EditorV6Asset
+  faceAsset?: EditorV6Asset
+  /** The primary asset itself is a localized face-patch atlas, used only for static mouth loops. */
+  assetRole?: 'face-atlas'
+  motion: EditorV6MotionAtlas
+  metrics: { milliseconds: number; preparedRigs: number; samples: number; atlasPixels: number }
+}
 /** Static mouth cycles store their localized face atlas as the motion asset itself. */
 export function editorV6UsesStaticMouthAtlas(request: EditorV6MotionBakeRequest): boolean {
   return Boolean(request.mouthScaleSamples

@@ -231,7 +231,7 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
       }
       const assetId = crypto.randomUUID(), dataUrl = atlas.toDataURL('image/png')
       atlas.width = atlas.height = 1
-      return { asset: { id: assetId, category: 'character', name: 'Camada facial da boca', mimeType: 'image/png', dataUrl, timelineSnapshot: true }, motion: { version: 1, key: request.plan.key, assetId, frames }, metrics: { milliseconds: performance.now() - began, preparedRigs, samples: count, atlasPixels } }
+      return { asset: { id: assetId, category: 'character', name: 'Camada facial da boca', mimeType: 'image/png', dataUrl, timelineSnapshot: true }, assetRole: 'face-atlas', motion: { version: 1, key: request.plan.key, assetId, frames }, metrics: { milliseconds: performance.now() - began, preparedRigs, samples: count, atlasPixels } }
     }
     const first = await render(0, staticMouthLoop ? from.activeFaceMode : undefined, 1, Boolean(request.mouthScaleSamples)), fromCrop = first.crop, fullWidth = first.width, fullHeight = first.height
     first.dispose()

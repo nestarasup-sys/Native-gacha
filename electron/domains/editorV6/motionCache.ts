@@ -6,7 +6,7 @@ import { editorV6MotionResultSchema } from '../../../src/shared/editorV6Schema'
 import { editorV6UsesStaticMouthAtlas, type EditorV6MotionBakeRequest, type EditorV6MotionBakeResult } from '../../../src/shared/editorV6Motion'
 
 /** Bump when baking changes without an authored timeline change. */
-export const MOTION_CACHE_VERSION = 9
+export const MOTION_CACHE_VERSION = 10
 const MAX_MOTION_CACHE_ENTRIES = 512
 const MAX_MOTION_CACHE_BYTES = 768 * 1024 * 1024
 const MAX_MOTION_CACHE_ENTRY_BYTES = 32 * 1024 * 1024
@@ -33,6 +33,9 @@ function validateCachedMotion(request: EditorV6MotionBakeRequest, result: Editor
   if (parsed.motion.key !== request.plan.key || parsed.motion.frames.map((frame) => frame.offset).join() !== request.plan.samples.map((sample) => sample.offset).join()) throw Error('A transição em cache não corresponde à requisição.')
   if (request.maxAtlasPixels !== undefined && parsed.metrics.atlasPixels > request.maxAtlasPixels) throw Error('O atlas em cache excede o orçamento desta requisição.')
   const staticMouthAtlas = editorV6UsesStaticMouthAtlas(request)
+  const hasFacePatches = parsed.motion.frames.some((frame) => frame.facePatch)
+  const isSelfContainedFaceAtlas = parsed.assetRole === 'face-atlas'
+  if (staticMouthAtlas !== isSelfContainedFaceAtlas || staticMouthAtlas && !hasFacePatches) throw Error('O atlas facial em cache não corresponde ao formato desta requisição.')
   const needsFaceAsset = Boolean(request.mouthScaleSamples?.some((scale) => scale > 1.000001) && !staticMouthAtlas)
   if (request.mouthScaleSamples && !staticMouthAtlas && request.mouthScaleSamples.some((scale, index) => scale > 1.000001 && !parsed.motion.frames[index]?.facePatch)
     || needsFaceAsset && (!parsed.faceAsset || !parsed.motion.faceAssetId)

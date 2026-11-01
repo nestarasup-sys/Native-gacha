@@ -51,6 +51,7 @@ export function createEditorV6MotionService(deps: { ipcMain: Pick<IpcMain, 'hand
     try {
       const result = editorV6MotionResultSchema.parse(rawResult)
       if (result.motion.key !== job.request.plan.key || result.motion.frames.map((frame) => frame.offset).join(',') !== job.request.plan.samples.map((sample) => sample.offset).join(',')) throw Error('O preparador retornou uma animação de outra revisão.')
+      if ((result.assetRole === 'face-atlas') !== editorV6UsesStaticMouthAtlas(job.request)) throw Error('O preparador retornou um atlas facial incompatível com o formato solicitado.')
       if (job.request.maxAtlasPixels !== undefined && result.metrics.atlasPixels > job.request.maxAtlasPixels) throw Error('O preparador excedeu o orçamento de pixels da requisição.')
       const needsFaceAsset = Boolean(job.request.mouthScaleSamples?.some((scale) => scale > 1.000001) && !editorV6UsesStaticMouthAtlas(job.request))
       if (job.request.mouthScaleSamples?.some((scale, index) => scale > 1.000001 && !result.motion.frames[index]?.facePatch)
