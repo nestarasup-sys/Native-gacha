@@ -10,6 +10,7 @@ import { getCharacterBodyDimensions, getCharacterProportions } from '../../../..
 import { clothingCategories, wardrobeComponentsForGroup, withCharacterHeadSize } from '../../characters/characterRenderer'
 import { loadCustomizerArtworkSource } from './customizerArtworkSource'
 import { renderWardrobeThumbnail } from './wardrobePanelThumbnail'
+import { restoreMissingPairedWardrobeSleeves } from './wardrobePanelModel'
 
 export function useCustomizerWardrobeHydration(deps: {
   selectedCharacter: CustomizerCharacter | null
@@ -61,6 +62,7 @@ export function useCustomizerWardrobeHydration(deps: {
         const category = wardrobeGroupCategoryForSource(component.category, group.category)
         return category === group.category ? group : { ...group, category }
       })
+      migratedGroups = restoreMissingPairedWardrobeSleeves(migratedGroups, setsByKey)
       if (migratedGroups.some((group) => !group.adjustmentReference && setsByKey.has(`${group.modelSlot}:${group.setId}`))) {
         const modelSlot = selectedCharacter.customization.modelSlot ?? 1
         const poseSlot = selectedCharacter.customization.poseSlot

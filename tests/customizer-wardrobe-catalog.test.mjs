@@ -12,7 +12,8 @@ import {
   createWardrobePanelCandidateIndex,
   wardrobePanelCandidates,
   isWardrobePanelCandidateSelected,
-  wardrobePanelGroupMatchesComponent
+  wardrobePanelGroupMatchesComponent,
+  restoreMissingPairedWardrobeSleeves
 } from '../src/renderer/src/features/customizer/wardrobePanelModel.ts'
 
 const summary = (id) => ({ id, modelSlot: 1, modelName: 'Modelo', name: id, updatedAt: '2026-10-29T00:00:00.000Z', edition: 2, componentCount: 1 })
@@ -113,6 +114,9 @@ test('índice de candidatos preserva filtros, ordem e agrupamento de cada painel
     component('upper-right', 'Manga direita · braço superior', 'manga-superior', 'braço direito', 'sleeve-long', 'right', 'upper'),
     component('lower-left', 'Manga esquerda · antebraço', 'manga-inferior', 'antebraço esquerdo', 'sleeve-long', 'left', 'lower'),
     component('lower-right', 'Manga direita · antebraço', 'manga-inferior', 'antebraço direito', 'sleeve-long', 'right', 'lower'),
+    component('legacy-upper-left', 'Manga longa 02 · esquerda · braço superior', 'manga-superior', 'braço esquerdo', undefined, undefined, 'upper'),
+    component('legacy-lower-left', 'Manga longa 02 · esquerda · antebraço', 'manga-inferior', 'antebraço esquerdo', undefined, undefined, 'lower'),
+    component('unpaired-lower-left', 'Manga longa 03 · esquerda · antebraço', 'manga-inferior', 'antebraço esquerdo', undefined, undefined, 'lower'),
     component('pants-thigh', 'Calça longa · coxa esquerda', 'calca-coxa', 'thigh-left', 'pants-one'),
     component('pants-thigh-right', 'Calça longa · coxa direita', 'calca-coxa', 'thigh-right', 'pants-one'),
     component('pants-shin', 'Calça longa · canela esquerda', 'calca-canela', 'calf-left', 'pants-one'),
@@ -158,7 +162,9 @@ test('índice de candidatos preserva filtros, ordem e agrupamento de cada painel
   assert.deepEqual(index.get('pants-left')?.[0]?.components.map(({ id }) => id), ['pants-thigh', 'pants-thigh-right', 'pants-shin', 'pants-shin-right'])
   assert.deepEqual(index.get('pants-left')?.[1]?.components.map(({ id }) => id), ['pants-two'])
   assert.equal(index.get('pants-left')?.[0]?.component.id, 'pants-thigh')
-  assert.deepEqual(index.get('upper-left')?.map((candidate) => candidate.components.map(({ id }) => id)), [['upper-left', 'lower-left']])
+  assert.deepEqual(index.get('upper-left')?.map((candidate) => candidate.components.map(({ id }) => id)), [
+    ['upper-left', 'lower-left'], ['legacy-upper-left', 'legacy-lower-left']
+  ])
   assert.deepEqual(index.get('upper-right')?.map((candidate) => candidate.components.map(({ id }) => id)), [['upper-right', 'lower-right']])
   assert.equal(upperWardrobePanels.some((panel) => panel.id === 'lower-left' || panel.id === 'lower-right'), false)
   const splitSleeve = index.get('upper-left')[0]
@@ -176,6 +182,36 @@ test('prévia da roupa desenha todas as partes agrupadas no mesmo candidato', as
   const preview = await readFile('src/renderer/src/features/customizer/CustomizerAssetPreviews.tsx', 'utf8')
   assert.match(preview, /candidate\.components\.map\(\(component\) => component\.category\)/)
   assert.match(preview, /candidate\.components\.map\(\(component\) => component\.id\)/)
+})
+
+test('reabre manga longa antiga e restaura o antebraço pareado sem duplicar ou perder cores', () => {
+  const upper = {
+    id: 'upper-old', name: 'Manga longa 04 · esquerda · braço superior', category: 'manga-superior',
+    attachedPartId: 'braço esquerdo', sleeveSegment: 'upper', x: 0, y: 0, width: 10, height: 20,
+    rotation: 0, dataUrl: 'data:image/png;base64,AA=='
+  }
+  const lower = {
+    id: 'lower-old', name: 'Manga longa 04 · esquerda · antebraço', category: 'manga-inferior',
+    attachedPartId: 'antebraço esquerdo', sleeveSegment: 'lower', x: 0, y: 0, width: 10, height: 20,
+    rotation: 0, dataUrl: 'data:image/png;base64,AA=='
+  }
+  const set = { schemaVersion: 1, edition: 1, id: 'old-sleeve', modelSlot: 1, modelName: 'Modelo', name: 'Conjunto antigo', width: 20, height: 20, components: [upper, lower], updatedAt: '2026-10-29T00:00:00.000Z' }
+  const savedUpper = { modelSlot: 1, setId: set.id, category: 'manga-superior', componentId: upper.id, offsetX: 7, offsetY: 2, scaleX: 1.1, scaleY: 1, rotation: 3, hidden: true, colors: { base: '#123456' } }
+  const restored = restoreMissingPairedWardrobeSleeves([savedUpper], new Map([[`1:${set.id}`, set]]))
+  assert.deepEqual(restored.map(({ componentId, category }) => [componentId, category]), [
+    ['upper-old', 'manga-superior'], ['lower-old', 'manga-superior']
+  ])
+  assert.deepEqual(restored[1], {
+    modelSlot: 1, setId: set.id, category: 'manga-superior', componentId: 'lower-old',
+    offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1, rotation: 0,
+    hidden: true, colors: { base: '#123456' }
+  })
+  assert.equal(restoreMissingPairedWardrobeSleeves(restored, new Map([[`1:${set.id}`, set]])).length, 2)
+})
+
+test('hidratação do Customizador aplica a restauração às referências antigas', async () => {
+  const hydration = await readFile('src/renderer/src/features/customizer/useCustomizerWardrobeHydration.ts', 'utf8')
+  assert.match(hydration, /restoreMissingPairedWardrobeSleeves\(migratedGroups, setsByKey\)/)
 })
 
 test('cancelamento impede publicar detalhes depois de trocar de área', async () => {

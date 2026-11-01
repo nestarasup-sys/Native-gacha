@@ -42,12 +42,70 @@ function wardrobeComponentSide(component: WardrobeSet['components'][number]): 'l
   return left && !right ? 'left' : right && !left ? 'right' : null
 }
 
+function normalizedSleeveName(component: WardrobeSet['components'][number]): string {
+  return component.name.toLocaleLowerCase()
+    .replace(/\b(?:braço superior|antebraço|manga superior|manga inferior|upper arm|forearm)\b/g, ' ')
+    .replace(/\b(?:esquerda|esquerdo|direita|direito|left|right|upper|lower)\b/g, ' ')
+    .replace(/[·_-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/^manga\s+/, '')
+    .trim()
+}
+
+function isPairedSleeveLower(upper: WardrobeSet['components'][number], lower: WardrobeSet['components'][number]): boolean {
+  if (lower.category !== 'manga-inferior' || lower.sleeveSegment === 'upper'
+      || wardrobeComponentSide(upper) !== wardrobeComponentSide(lower)) return false
+  if (upper.sleevePairId && lower.sleevePairId) return upper.sleevePairId === lower.sleevePairId
+  const upperName = normalizedSleeveName(upper)
+  return Boolean(upperName) && upperName === normalizedSleeveName(lower)
+}
+
+/** Resolves a long sleeve's linked halves, including older sets with matching names but no pair ID. */
+export function pairedWardrobeSleeveComponents(
+  set: WardrobeSet,
+  component: WardrobeSet['components'][number]
+): WardrobeSet['components'] {
+  if (component.category === 'manga-superior') {
+    const lower = set.components.find((candidate) => isPairedSleeveLower(component, candidate))
+    return lower ? [component, lower] : [component]
+  }
+  if (component.category === 'manga-inferior') {
+    const upper = set.components.find((candidate) => candidate.category === 'manga-superior' && isPairedSleeveLower(candidate, component))
+    return upper ? [upper, component] : [component]
+  }
+  return [component]
+}
+
+/** Restores a missing forearm entry when an older character only saved the upper sleeve. */
+export function restoreMissingPairedWardrobeSleeves(
+  groups: readonly CustomizerWardrobeGroup[],
+  setsByKey: ReadonlyMap<string, WardrobeSet>
+): CustomizerWardrobeGroup[] {
+  const restored = [...groups]
+  for (const group of groups) {
+    if (!group.componentId || group.category !== 'manga-superior') continue
+    const set = setsByKey.get(`${group.modelSlot}:${group.setId}`)
+    const upper = set?.components.find((component) => component.id === group.componentId)
+    if (!set || upper?.category !== 'manga-superior') continue
+    const lower = pairedWardrobeSleeveComponents(set, upper).find((component) => component.category === 'manga-inferior')
+    if (!lower || restored.some((candidate) => candidate.modelSlot === group.modelSlot
+      && candidate.setId === group.setId && candidate.componentId === lower.id)) continue
+    restored.push({
+      modelSlot: group.modelSlot, setId: group.setId, category: 'manga-superior', componentId: lower.id,
+      offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1, rotation: 0,
+      ...(group.opacity !== undefined ? { opacity: group.opacity } : {}),
+      ...(group.hidden !== undefined ? { hidden: group.hidden } : {}),
+      ...(group.colors ? { colors: group.colors } : {})
+    })
+  }
+  return restored
+}
+
 export function wardrobeComponentMatchesPanel(component: WardrobeSet['components'][number], panel: WardrobePanel): boolean {
   const sleevePairPanel = panel.id === 'upper-left' || panel.id === 'upper-right'
   const pairedLowerSleeve = sleevePairPanel
     && component.category === 'manga-inferior'
-    && component.sleeveSegment === 'lower'
-    && Boolean(component.sleevePairId)
+    && component.sleeveSegment !== 'upper'
   if (panel.source ? !panel.source.includes(component.category) : component.category !== panel.category && !pairedLowerSleeve) return false
   if (!panel.side) return true
   // Manga/calça imports keep an explicit side even after splitting the piece.
@@ -99,12 +157,7 @@ export function wardrobePanelCandidates(
         return components
           .filter((component) => component.category === 'manga-superior' && component.sleeveSegment !== 'lower')
           .map((upper) => {
-            const lower = upper.sleevePairId && upper.sleeveSegment === 'upper'
-              ? components.find((component) => component.category === 'manga-inferior'
-                && component.sleeveSegment === 'lower'
-                && component.sleevePairId === upper.sleevePairId
-                && wardrobeComponentSide(component) === wardrobeComponentSide(upper))
-              : undefined
+            const lower = pairedWardrobeSleeveComponents(set, upper).find((component) => component.category === 'manga-inferior')
             return { summary, set, component: upper, components: lower ? [upper, lower] : [upper] }
           })
       }
