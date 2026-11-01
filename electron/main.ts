@@ -26,6 +26,8 @@ import { DataMigrationService } from './dataMigration.cjs'
 import { DataBackupService } from './dataBackups.cjs'
 import { registerDataMigrationHandlers } from './domains/storage/dataMigrationIpc'
 import { registerDataBackupHandlers } from './domains/storage/dataBackupIpc'
+import { createDiagnosticsLog } from './domains/storage/diagnosticsLog'
+import { registerDiagnosticsHandlers } from './domains/storage/diagnosticsIpc'
 import { registerPendingPersistenceFlushIpc } from './domains/storage/pendingPersistenceIpc'
 import { createKeyedOperationQueue } from './domains/storage/keyedOperationQueue'
 import { configureAssetImageStorage, readAssetImage, writeAssetImageSource } from './assetImageOverrides'
@@ -113,6 +115,13 @@ const enqueueRoteirosWrite = roteirosWriteQueue.enqueue
 
 configureDevAiDataRoot({ app, repositoryRoot: resolve(__dirname, '../..') })
 configuredAppDataRoot = configureLocalAppDataRoot({ app })
+const diagnosticsLog = createDiagnosticsLog(app.getPath('appData'))
+process.on('uncaughtExceptionMonitor', (error, origin) => {
+  void diagnosticsLog.recordMain({ severity: 'error', code: 'main.uncaught-exception', message: `${origin}: ${error.message}` }).catch(() => undefined)
+})
+process.on('warning', (warning) => {
+  void diagnosticsLog.recordMain({ severity: 'warning', code: 'main.process-warning', message: `${warning.name}: ${warning.message}` }).catch(() => undefined)
+})
 
 // Local, opt-in harness for Windows media stress runs. It keeps the
 // normal app-data profile and app IPC, but lets an external local runner drive
@@ -833,6 +842,13 @@ const createMainWindow = createMainWindowFactory({
   rendererUrl: devRendererUrl,
   restrictNavigation: restrictRendererNavigation,
   onRendererLoaded: (window) => {
+    window.webContents.on('render-process-gone', (_event, details) => {
+      void diagnosticsLog.recordMain({
+        severity: 'error',
+        code: 'renderer.process-gone',
+        message: `O processo visual foi encerrado (${details.reason}; código ${details.exitCode}).`
+      }).catch(() => undefined)
+    })
     if (dataBackupService) {
       void dataBackupService.finalizePendingRestore().catch((reason: unknown) => {
         console.error('A restauração foi aplicada, mas a limpeza do staging falhou; a cópia anterior foi preservada.', reason)
@@ -934,6 +950,43 @@ app.whenReady().then(async () => {
     runMaintenance: runDataMaintenance,
     relaunch: () => app.relaunch(),
     quit: () => app.quit()
+  })
+  registerDiagnosticsHandlers({
+    ipcMain, assertTrustedSender,
+    log: diagnosticsLog,
+    getRuntimeDiagnostics: async (event) => {
+      const mainMemory = process.memoryUsage()
+      let rendererMemory: Awaited<ReturnType<typeof event.sender.getProcessMemoryInfo>> | null = null
+      try { rendererMemory = await event.sender.getProcessMemoryInfo() } catch { /* The OS can deny a one-time process sample. */ }
+      const fromKilobytes = (value: number | undefined): number | null => Number.isFinite(value) ? Math.round((value ?? 0) * 1024) : null
+      return {
+        measuredAt: new Date().toISOString(),
+        appVersion: app.getVersion(),
+        electronVersion: process.versions.electron ?? 'desconhecida',
+        chromiumVersion: process.versions.chrome ?? 'desconhecida',
+        nodeVersion: process.versions.node ?? 'desconhecida',
+        platform: process.platform,
+        architecture: process.arch,
+        uptimeSeconds: Math.round(process.uptime()),
+        memory: {
+          mainRssBytes: mainMemory.rss,
+          mainHeapUsedBytes: mainMemory.heapUsed,
+          mainExternalBytes: mainMemory.external,
+          rendererWorkingSetBytes: rendererMemory ? fromKilobytes(rendererMemory.workingSetSize) : null,
+          rendererPeakWorkingSetBytes: rendererMemory ? fromKilobytes(rendererMemory.peakWorkingSetSize) : null,
+          rendererPrivateBytes: rendererMemory ? fromKilobytes(rendererMemory.privateBytes) : null,
+          rendererSharedBytes: rendererMemory ? fromKilobytes(rendererMemory.sharedBytes) : null
+        }
+      }
+    },
+    getStorageSummary: async () => ({ disk: await getAppDataUsage(app.getPath('appData')), catalog: dataPlatform.storageSummary() }),
+    listBackups: () => dataBackupService?.listBackups() ?? Promise.resolve([]),
+    getAppVersion: () => app.getVersion(),
+    showSaveDialog: (event, options) => {
+      const owner = BrowserWindow.fromWebContents(event.sender)
+      return owner ? dialog.showSaveDialog(owner, options) : dialog.showSaveDialog(options)
+    },
+    writeFile: (path, text) => nativeWriteFile(path, text, 'utf8')
   })
   if (process.env.GACHA_DEV_AI_TEST === '1') {
     // Defense in depth for fixture-only Electron tests: no renderer-originated

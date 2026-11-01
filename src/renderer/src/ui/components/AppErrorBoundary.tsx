@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react'
+import { recordLocalRendererDiagnostic } from '../diagnosticCapture'
 
 type Props = { children: ReactNode }
 type State = { error: Error | null }
@@ -12,6 +13,7 @@ export class AppErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error, info: ErrorInfo): void {
     console.error('Falha ao renderizar o aplicativo:', error, info.componentStack)
+    recordLocalRendererDiagnostic('renderer.react-boundary', error)
   }
 
   render(): ReactNode {

@@ -68,8 +68,47 @@ export type DataBackupRestoreResult = {
 
 export type DataBackupDeleteResult = { deleted: boolean }
 
+export type LocalDiagnosticEventInput = {
+  severity: 'error' | 'warning' | 'info'
+  code: string
+  route?: string
+  message: string
+}
+
+export type LocalDiagnosticEvent = LocalDiagnosticEventInput & {
+  id: string
+  at: string
+  source: 'renderer' | 'main'
+}
+
+export type RuntimeDiagnosticsSnapshot = {
+  measuredAt: string
+  appVersion: string
+  electronVersion: string
+  chromiumVersion: string
+  nodeVersion: string
+  platform: string
+  architecture: string
+  uptimeSeconds: number
+  memory: {
+    mainRssBytes: number
+    mainHeapUsedBytes: number
+    mainExternalBytes: number
+    rendererWorkingSetBytes: number | null
+    rendererPeakWorkingSetBytes: number | null
+    rendererPrivateBytes: number | null
+    rendererSharedBytes: number | null
+  }
+}
+
+export type DiagnosticsReportSaveResult = { saved: boolean; fileName?: string }
+
 export type DataManagementDesktopApi = {
   getAppDataStorageSummary: () => Promise<DataStorageSummary>
+  listLocalDiagnosticEvents: () => Promise<LocalDiagnosticEvent[]>
+  recordLocalDiagnosticEvent: (event: LocalDiagnosticEventInput) => Promise<void>
+  getRuntimeDiagnostics: () => Promise<RuntimeDiagnosticsSnapshot>
+  saveDiagnosticsReport: () => Promise<DiagnosticsReportSaveResult>
   getDataMigrationSummary: () => Promise<DataMigrationSummary>
   runDataMigration: () => Promise<DataMigrationResult>
   pauseDataMigration: () => Promise<DataMigrationPauseResult>

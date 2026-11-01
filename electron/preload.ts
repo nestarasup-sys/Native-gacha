@@ -169,6 +169,10 @@ const roteirosApi: RoteirosDesktopApi = {
 
 const dataManagementApi: DataManagementDesktopApi = {
   getAppDataStorageSummary: () => ipcRenderer.invoke('app:data-storage-summary'),
+  listLocalDiagnosticEvents: () => ipcRenderer.invoke('app:diagnostics:list'),
+  recordLocalDiagnosticEvent: (event) => ipcRenderer.invoke('app:diagnostics:record', event),
+  getRuntimeDiagnostics: () => ipcRenderer.invoke('app:diagnostics:runtime'),
+  saveDiagnosticsReport: () => ipcRenderer.invoke('app:diagnostics:export'),
   getDataMigrationSummary: () => ipcRenderer.invoke('app:data-migration:prepare'),
   runDataMigration: () => ipcRenderer.invoke('app:data-migration:run-all'),
   pauseDataMigration: () => ipcRenderer.invoke('app:data-migration:pause'),

@@ -1,5 +1,6 @@
 import { lazy, Profiler, Suspense, useEffect } from 'react'
 import { installUiPerformanceDiagnostics, recordUiCommit } from './performanceDiagnostics'
+import { installRendererDiagnosticCapture } from './diagnosticCapture'
 import { Navigate, Route, Routes, useLocation } from 'react-router'
 import { TopBar } from './components/TopBar'
 import { AppErrorBoundary } from './components/AppErrorBoundary'
@@ -14,7 +15,11 @@ const LazyRoteirosPage = lazy(async () => ({ default: (await import('../features
 
 export function App() {
   const location = useLocation()
-  useEffect(() => installUiPerformanceDiagnostics(), [])
+  useEffect(() => {
+    const stopPerformanceDiagnostics = installUiPerformanceDiagnostics()
+    const stopErrorCapture = installRendererDiagnosticCapture()
+    return () => { stopPerformanceDiagnostics(); stopErrorCapture() }
+  }, [])
 
   return (
     <main className="app-shell">
