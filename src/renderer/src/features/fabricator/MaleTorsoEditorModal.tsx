@@ -3,6 +3,7 @@ import type { FabricatorProject, ModelPart } from '../../../../shared/fabricator
 import { Icon } from '../../ui/components/Icon'
 import { applyWardrobeWarpBrush, createWardrobeWarpMesh, drawWardrobeWarp, type WardrobeWarpMesh, type WardrobeWarpPoint } from './wardrobe/wardrobeMeshWarp'
 import { WardrobeDeformationBrushControls } from './wardrobe/WardrobePreviewControls'
+import { createMaleTorsoDeformationPatch } from './models/maleTorsoDeformation'
 
 type Props = {
   project: FabricatorProject
@@ -71,7 +72,7 @@ export function MaleTorsoEditorModal({ project, baseTorso, savedTorso, onClose, 
     const scale = Math.min(board.clientWidth / part.width, board.clientHeight / part.height)
     const originX = (board.clientWidth - part.width * scale) / 2
     const originY = (board.clientHeight - part.height * scale) / 2
-    const result = drawWardrobeWarp(canvas, image, meshRef.current)
+    const result = drawWardrobeWarp(canvas, image, meshRef.current, 0)
     const padX = result.padding * part.width / image.naturalWidth
     const padY = result.padding * part.height / image.naturalHeight
     canvas.style.left = `${originX - padX * scale}px`
@@ -166,17 +167,7 @@ export function MaleTorsoEditorModal({ project, baseTorso, savedTorso, onClose, 
       return
     }
     setLastDeformation(part)
-    const widthScale = part.width / image.naturalWidth
-    const heightScale = part.height / image.naturalHeight
-    setPart((current) => ({
-      ...current,
-      dataUrl,
-      fakeSkinContours: undefined,
-      x: current.x - layout.padX,
-      y: current.y - layout.padY,
-      width: (layout.result.width) * widthScale,
-      height: (layout.result.height) * heightScale
-    }))
+    setPart((current) => createMaleTorsoDeformationPatch(current, dataUrl))
     meshRef.current = createWardrobeWarpMesh()
     imageRef.current = null
     setWarpReady(false)
