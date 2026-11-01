@@ -91,7 +91,7 @@ export function WardrobeJointCutGuide({
 type WardrobeJointCutPositionControlProps = {
   ratio: number
   rotationDegrees: number
-  scope: 'mangas longas' | 'calças longas'
+  scope: 'manga esquerda' | 'manga direita' | 'calça esquerda' | 'calça direita'
   disabled?: boolean
   onPreview: (ratio: number, rotationDegrees: number) => void
   onCommit: (ratio: number, rotationDegrees: number) => void
@@ -116,14 +116,14 @@ export function WardrobeJointCutPositionControl({
   const angle = Math.round(Math.max(-45, Math.min(45, rotationDegrees)))
 
   return <div className="wardrobe-joint-cut-position">
-    <span><b>Posição global da linha</b><output>{value > 0 ? '+' : ''}{value}%</output></span>
+    <span><b>Posição global da linha · {scope}</b><output>{value > 0 ? '+' : ''}{value}%</output></span>
     <input
       aria-label={`Ajuste global da posição da linha de corte para ${scope}`}
       type="range" min="-100" max="100" step="1" value={value} disabled={disabled}
       onChange={(event) => preview({ ratio: Number(event.currentTarget.value) / 100, rotationDegrees: angle })}
       onPointerUp={commit} onPointerCancel={commit} onKeyUp={commit} onBlur={commit}
     />
-    <span><b>Rotação global da linha</b><output>{angle > 0 ? '+' : ''}{angle}°</output></span>
+    <span><b>Rotação global da linha · {scope}</b><output>{angle > 0 ? '+' : ''}{angle}°</output></span>
     <input
       aria-label={`Rotação global da linha de corte para ${scope}`}
       type="range" min="-45" max="45" step="1" value={angle} disabled={disabled}
@@ -131,6 +131,6 @@ export function WardrobeJointCutPositionControl({
       onPointerUp={commit} onPointerCancel={commit} onKeyUp={commit} onBlur={commit}
     />
     <button className="pose-button secondary wardrobe-joint-cut-reset" disabled={disabled || value === 0 && angle === 0} onClick={() => { pendingAdjustmentRef.current = null; onPreview(0, 0); onCommit(0, 0) }} type="button">Voltar ao automático</button>
-    <small>Salvo automaticamente no app e aplicado a todas as {scope} atuais e futuras. 0% e 0° usam a junta automática.</small>
+    <small>Salvo automaticamente e aplicado a todas as {scope === 'manga esquerda' || scope === 'manga direita' ? 'mangas longas' : 'calças longas'} deste lado, atuais e futuras. 0% e 0° usam a junta automática.</small>
   </div>
 }

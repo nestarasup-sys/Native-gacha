@@ -1,10 +1,15 @@
-import type { WardrobeComponent } from '../../../../../shared/fabricator'
+import type { FabricatorProject, WardrobeComponent } from '../../../../../shared/fabricator'
+import { modelRigSide } from '../../../../../shared/modelRig'
 
 export type WardrobeJointCutKind = 'sleeve' | 'pants'
+export type WardrobeJointCutSide = 'left' | 'right'
+export type WardrobeJointCutTarget = 'sleeve-left' | 'sleeve-right' | 'pants-left' | 'pants-right'
 export type WardrobeJointCutAdjustment = { offsetRatio: number; rotationDegrees: number }
-export type WardrobeJointCutSettings = Partial<Record<WardrobeJointCutKind, WardrobeJointCutAdjustment>>
+export type WardrobeJointCutSettings = Partial<Record<WardrobeJointCutTarget, WardrobeJointCutAdjustment>>
 
-const STORAGE_KEY = 'gacha-nymi:wardrobe-joint-cut-settings:v1'
+const STORAGE_KEY = 'gacha-nymi:wardrobe-joint-cut-settings:v2'
+const LEGACY_STORAGE_KEY = 'gacha-nymi:wardrobe-joint-cut-settings:v1'
+const targets: WardrobeJointCutTarget[] = ['sleeve-left', 'sleeve-right', 'pants-left', 'pants-right']
 const kinds: WardrobeJointCutKind[] = ['sleeve', 'pants']
 
 function clamp(value: unknown, fallback: number, min: number, max: number): number {
@@ -22,17 +27,32 @@ function normalizeAdjustment(value: unknown): WardrobeJointCutAdjustment | null 
 
 export function normalizeWardrobeJointCutSettings(value: unknown): WardrobeJointCutSettings {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
-  const source = value as Partial<Record<WardrobeJointCutKind, unknown>>
-  return Object.fromEntries(kinds.flatMap((kind) => {
-    const adjustment = normalizeAdjustment(source[kind])
-    return adjustment ? [[kind, adjustment]] : []
+  const source = value as Partial<Record<WardrobeJointCutTarget, unknown>>
+  return Object.fromEntries(targets.flatMap((target) => {
+    const adjustment = normalizeAdjustment(source[target])
+    return adjustment ? [[target, adjustment]] : []
   })) as WardrobeJointCutSettings
+}
+
+function migrateLegacyGlobalSettings(value: unknown): WardrobeJointCutSettings {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  const source = value as Partial<Record<WardrobeJointCutKind, unknown>>
+  const settings: WardrobeJointCutSettings = {}
+  for (const kind of kinds) {
+    const adjustment = normalizeAdjustment(source[kind])
+    if (!adjustment) continue
+    settings[`${kind}-left`] = adjustment
+    settings[`${kind}-right`] = adjustment
+  }
+  return settings
 }
 
 export function loadWardrobeJointCutSettings(): WardrobeJointCutSettings {
   try {
     const stored = window.localStorage.getItem(STORAGE_KEY)
-    return stored ? normalizeWardrobeJointCutSettings(JSON.parse(stored) as unknown) : {}
+    if (stored !== null) return normalizeWardrobeJointCutSettings(JSON.parse(stored) as unknown)
+    const legacy = window.localStorage.getItem(LEGACY_STORAGE_KEY)
+    return legacy ? migrateLegacyGlobalSettings(JSON.parse(legacy) as unknown) : {}
   } catch {
     return {}
   }
@@ -50,12 +70,27 @@ export function wardrobeJointCutKind(component: WardrobeComponent): WardrobeJoin
   return 'sleeve'
 }
 
-/** Uses a global setting when present and reads the old per-piece value only as a one-time migration source. */
+export function wardrobeJointCutTarget(
+  component: WardrobeComponent,
+  project?: Pick<FabricatorProject, 'parts' | 'width'> | null
+): WardrobeJointCutTarget {
+  const kind = wardrobeJointCutKind(component)
+  let side: WardrobeJointCutSide | null = component.sleeveSide ?? null
+  if (!side) {
+    const attachedPart = project?.parts.find((part) => part.id === component.attachedPartId)
+    side = modelRigSide(attachedPart?.name ?? '') ?? modelRigSide(component.name)
+  }
+  if (!side && project) side = component.x + component.width / 2 < project.width / 2 ? 'left' : 'right'
+  return `${kind}-${side ?? 'left'}` as WardrobeJointCutTarget
+}
+
+/** Uses a side-wide setting when present and reads a legacy per-piece value only as a migration source. */
 export function wardrobeJointCutAdjustmentFor(
   component: WardrobeComponent,
-  settings: WardrobeJointCutSettings
+  settings: WardrobeJointCutSettings,
+  project?: Pick<FabricatorProject, 'parts' | 'width'> | null
 ): WardrobeJointCutAdjustment {
-  const global = settings[wardrobeJointCutKind(component)]
+  const global = settings[wardrobeJointCutTarget(component, project)]
   if (global) return global
   return { offsetRatio: clamp(component.jointCutOffsetRatio, 0, -1, 1), rotationDegrees: 0 }
 }
