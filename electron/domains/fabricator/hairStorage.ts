@@ -5,7 +5,7 @@ import type {
 } from 'node:fs/promises'
 import { join } from 'node:path'
 import type {
-  HairStyle, HairStyleAsset, HairStyleSave, HairWorkspace, HairWorkspaceAsset, HairWorkspaceSave
+  HairStyle, HairStyleAsset, HairStyleSave, HairTransform, HairWorkspace, HairWorkspaceAsset, HairWorkspaceSave
 } from '../../../src/shared/fabricator'
 import { hairCategories } from '../../../src/shared/hairCategories.ts'
 
@@ -44,6 +44,39 @@ type Dependencies = {
 }
 
 const isMissing = (reason: unknown): boolean => (reason as NodeJS.ErrnoException)?.code === 'ENOENT'
+const deformationAssetId = (side: 'front' | 'back' | 'fringe') => `${side}-deform-original` as const
+
+function validHairTransform(transform: HairTransform | undefined): boolean {
+  return Boolean(transform && [transform.x, transform.y, transform.scaleX, transform.scaleY, transform.rotation].every(Number.isFinite)
+    && Math.abs(transform.x) <= 100_000 && Math.abs(transform.y) <= 100_000
+    && transform.scaleX > 0 && transform.scaleY > 0 && transform.scaleX <= 20 && transform.scaleY <= 20
+    && (transform.flipX === undefined || typeof transform.flipX === 'boolean'))
+}
+
+function validHairAsset(asset: HairWorkspaceSave['front'] | HairWorkspaceSave['back'] | HairWorkspaceSave['fringe']): boolean {
+  if (!asset) return true
+  if (!Number.isFinite(asset.width) || !Number.isFinite(asset.height) || asset.width <= 0 || asset.height <= 0 || asset.width * asset.height > 32_000_000) return false
+  if (asset.hasDeformationOriginal !== undefined && typeof asset.hasDeformationOriginal !== 'boolean') return false
+  if (!asset.hasDeformationOriginal) return asset.deformationOriginalWidth === undefined
+    && asset.deformationOriginalHeight === undefined && asset.deformationOriginalTransform === undefined
+  const originalTransform = asset.deformationOriginalTransform
+  return Number.isFinite(asset.deformationOriginalWidth) && Number.isFinite(asset.deformationOriginalHeight)
+    && (asset.deformationOriginalWidth ?? 0) > 0 && (asset.deformationOriginalHeight ?? 0) > 0
+    && (asset.deformationOriginalWidth ?? 0) * (asset.deformationOriginalHeight ?? 0) <= 32_000_000
+    && validHairTransform(originalTransform)
+}
+
+function hairImageAssetIds(value: Pick<HairWorkspaceSave, 'front' | 'back' | 'fringe'>, includeSource: boolean): Set<string> {
+  const expected = new Set<string>()
+  for (const side of ['front', 'back', 'fringe'] as const) {
+    const asset = value[side]
+    if (!asset) continue
+    expected.add(side)
+    if (asset.hasDeformationOriginal) expected.add(deformationAssetId(side))
+  }
+  if (includeSource) expected.add('source')
+  return expected
+}
 
 export function createFabricatorHairStorage(deps: Dependencies) {
   const { access, mkdir, readFile, rm, writeFile } = deps.files
@@ -58,10 +91,7 @@ export function createFabricatorHairStorage(deps: Dependencies) {
       const asset = workspace[side]
       const transform = workspace.transforms[side]
       if (side === 'fringe' && !asset && !transform) continue
-      if (asset && (!Number.isFinite(asset.width) || !Number.isFinite(asset.height) || asset.width <= 0 || asset.height <= 0 || asset.width * asset.height > 32_000_000)) return false
-      if (!transform || ![transform.x, transform.y, transform.scaleX, transform.scaleY, transform.rotation].every(Number.isFinite)
-        || Math.abs(transform.x) > 100_000 || Math.abs(transform.y) > 100_000 || transform.scaleX <= 0 || transform.scaleY <= 0 || transform.scaleX > 20 || transform.scaleY > 20
-        || (transform.flipX !== undefined && typeof transform.flipX !== 'boolean')) return false
+      if (!validHairAsset(asset) || !validHairTransform(transform)) return false
     }
     if (workspace.chromaTolerance !== undefined && (!Number.isFinite(workspace.chromaTolerance) || workspace.chromaTolerance < 0 || workspace.chromaTolerance > 100)) return false
     if (workspace.chromaMode !== undefined && !['auto', 'green', 'checker'].includes(workspace.chromaMode)) return false
@@ -73,14 +103,13 @@ export function createFabricatorHairStorage(deps: Dependencies) {
   async function writeHairWorkspace(modelSlot: number, workspace: HairWorkspaceSave, assets: HairWorkspaceAsset[]): Promise<void> {
     deps.invalidateCatalogPng(`${modelSlot}:workspace`)
     if (!validHairWorkspace(modelSlot, workspace)) throw new Error('Configuração de cabelo inválida.')
-    const expected = new Set<string>((['front', 'back', 'fringe'] as const).filter(side => workspace[side] != null))
-    if (workspace.sourceImageSaved) expected.add('source')
+    const expected = hairImageAssetIds(workspace, workspace.sourceImageSaved === true)
     if (assets.some(asset => !expected.has(asset.id)) || new Set(assets.map(asset => asset.id)).size !== assets.length) throw new Error('Imagens de cabelo inválidas.')
     const folder = deps.paths.hairModel(modelSlot)
     await deps.saveCatalog({
       folder, imageFolder: join(folder, 'images'), manifestName: 'hair.json', manifest: workspace,
       images: assets.map(asset => ({ id: asset.id, bytes: deps.dataUrlBuffer(asset.dataUrl) })),
-      expected, prune: ['front', 'back', 'fringe', 'source'],
+      expected, prune: ['front', 'back', 'fringe', 'source', 'front-deform-original', 'back-deform-original', 'fringe-deform-original'],
       missingMessage: id => `Imagem de cabelo ausente: ${id}.`
     })
   }
@@ -95,9 +124,15 @@ export function createFabricatorHairStorage(deps: Dependencies) {
       if (!validHairWorkspace(modelSlot, saved)) return null
       const identity = `${modelSlot}:workspace`
       const version = saved.updatedAt
-      const loadPart = async (side: 'front' | 'back' | 'fringe') => saved[side]
-        ? { ...saved[side]!, dataUrl: `data:image/png;base64,${(await deps.readCatalogPng(identity, version, join(folder, 'images', `${side}.png`))).toString('base64')}` }
-        : null
+      const loadPart = async (side: 'front' | 'back' | 'fringe') => {
+        const part = saved[side]
+        if (!part) return null
+        const dataUrl = `data:image/png;base64,${(await deps.readCatalogPng(identity, version, join(folder, 'images', `${side}.png`))).toString('base64')}`
+        const deformationOriginalDataUrl = part.hasDeformationOriginal
+          ? `data:image/png;base64,${(await deps.readCatalogPng(identity, version, join(folder, 'images', `${deformationAssetId(side)}.png`))).toString('base64')}`
+          : undefined
+        return { ...part, dataUrl, ...(deformationOriginalDataUrl ? { deformationOriginalDataUrl } : {}) }
+      }
       let sourceImageDataUrl: string | undefined
       if (saved.sourceImageSaved) {
         try { sourceImageDataUrl = `data:image/png;base64,${(await deps.readCatalogPng(identity, version, join(folder, 'images', 'source.png'))).toString('base64')}` }
@@ -171,10 +206,7 @@ export function createFabricatorHairStorage(deps: Dependencies) {
       const asset = style[side]
       const transform = style.transforms[side]
       if (side === 'fringe' && !asset && !transform) continue
-      if (asset && (!Number.isFinite(asset.width) || !Number.isFinite(asset.height) || asset.width <= 0 || asset.height <= 0 || asset.width * asset.height > 32_000_000)) return false
-      if (!transform || ![transform.x, transform.y, transform.scaleX, transform.scaleY, transform.rotation].every(Number.isFinite)
-        || Math.abs(transform.x) > 100_000 || Math.abs(transform.y) > 100_000 || transform.scaleX <= 0 || transform.scaleY <= 0 || transform.scaleX > 20 || transform.scaleY > 20
-        || (transform.flipX !== undefined && typeof transform.flipX !== 'boolean')) return false
+      if (!validHairAsset(asset) || !validHairTransform(transform)) return false
     }
     return typeof style.createdAt === 'string' && typeof style.updatedAt === 'string'
   }
@@ -182,14 +214,13 @@ export function createFabricatorHairStorage(deps: Dependencies) {
   async function writeHairStyle(modelSlot: number, style: HairStyleSave, assets: HairStyleAsset[]): Promise<void> {
     deps.invalidateCatalogPng(`${modelSlot}:style:${style.id}`)
     if (!validHairStyle(modelSlot, style)) throw new Error('Estilo de cabelo inválido.')
-    const expected = new Set<string>((['front', 'back', 'fringe'] as const).filter(side => style[side] != null))
-    if (style.sourceImageSaved) expected.add('source')
+    const expected = hairImageAssetIds(style, style.sourceImageSaved === true)
     if (assets.some(asset => !expected.has(asset.id)) || new Set(assets.map(asset => asset.id)).size !== assets.length) throw new Error('Imagens do cabelo inválidas.')
     const folder = deps.paths.hairStyle(modelSlot, style.id)
     await deps.saveCatalog({
       folder, imageFolder: join(folder, 'images'), manifestName: 'hair-style.json', manifest: style,
       images: assets.map(asset => ({ id: asset.id, bytes: deps.dataUrlBuffer(asset.dataUrl) })),
-      expected, prune: ['front', 'back', 'fringe', 'source'],
+      expected, prune: ['front', 'back', 'fringe', 'source', 'front-deform-original', 'back-deform-original', 'fringe-deform-original'],
       missingMessage: id => `Imagem de cabelo ausente: ${id}.`
     })
   }
@@ -204,9 +235,15 @@ export function createFabricatorHairStorage(deps: Dependencies) {
       if (!validHairStyle(modelSlot, saved) || saved.id !== id) return null
       const identity = `${modelSlot}:style:${id}`
       const version = saved.updatedAt
-      const loadPart = async (side: 'front' | 'back' | 'fringe') => saved[side]
-        ? { ...saved[side]!, dataUrl: `data:image/png;base64,${(await deps.readCatalogPng(identity, version, join(folder, 'images', `${side}.png`))).toString('base64')}` }
-        : null
+      const loadPart = async (side: 'front' | 'back' | 'fringe') => {
+        const part = saved[side]
+        if (!part) return null
+        const dataUrl = `data:image/png;base64,${(await deps.readCatalogPng(identity, version, join(folder, 'images', `${side}.png`))).toString('base64')}`
+        const deformationOriginalDataUrl = part.hasDeformationOriginal
+          ? `data:image/png;base64,${(await deps.readCatalogPng(identity, version, join(folder, 'images', `${deformationAssetId(side)}.png`))).toString('base64')}`
+          : undefined
+        return { ...part, dataUrl, ...(deformationOriginalDataUrl ? { deformationOriginalDataUrl } : {}) }
+      }
       const sourceImageDataUrl = includeSource && saved.sourceImageSaved
         ? `data:image/png;base64,${(await deps.readCatalogPng(identity, version, join(folder, 'images', 'source.png'))).toString('base64')}`
         : undefined

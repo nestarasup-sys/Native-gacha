@@ -30,7 +30,9 @@ export function hairStyleDetailMatchesSummary(summary: HairStyleSummary, detail:
     const loaded = detail[side]
     if (!expected) return !loaded
     if (!loaded?.dataUrl) return false
-    return loaded.width === expected.width && loaded.height === expected.height
+    return loaded.width === expected.width
+      && loaded.height === expected.height
+      && Boolean(loaded.hasDeformationOriginal) === Boolean(expected.hasDeformationOriginal)
   })
 }
 
@@ -50,8 +52,8 @@ export function hairStyleSummary(style: HairStyle): HairStyleSummary {
   const { front, back, fringe, sourceImageDataUrl: _source, ...metadata } = style
   return {
     ...metadata,
-    front: front ? { width: front.width, height: front.height } : null,
-    back: back ? { width: back.width, height: back.height } : null,
-    fringe: fringe ? { width: fringe.width, height: fringe.height } : null
+    front: front ? { width: front.width, height: front.height, ...(front.hasDeformationOriginal ? { hasDeformationOriginal: true } : {}) } : null,
+    back: back ? { width: back.width, height: back.height, ...(back.hasDeformationOriginal ? { hasDeformationOriginal: true } : {}) } : null,
+    fringe: fringe ? { width: fringe.width, height: fringe.height, ...(fringe.hasDeformationOriginal ? { hasDeformationOriginal: true } : {}) } : null
   }
 }

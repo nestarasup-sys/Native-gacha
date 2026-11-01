@@ -1,11 +1,12 @@
 import { projectForOriginalPreview } from '../../../../shared/fabricatorModelViews'
 import { useModelSourceRefresh } from './models/useModelSourceRefresh'
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type Dispatch, type PointerEvent, type SetStateAction } from 'react'
-import type { FabricatorProject, FabricatorSlotSummary, HairStyle, HairStyleSave, HairStyleSummary, HairTransform, HairWorkspace as HairWorkspaceData, ModelPart } from '../../../../shared/fabricator'
+import type { FabricatorProject, FabricatorSlotSummary, HairAsset as HairAssetData, HairStyle, HairStyleAsset, HairStyleSave, HairStyleSummary, HairTransform, HairWorkspace as HairWorkspaceData, ModelPart } from '../../../../shared/fabricator'
 import type { HairPartId } from '../../../../shared/customizer'
 import { hairCategories, type HairAssetSide } from '../../../../shared/hairCategories'
 import { emptyHairTransform, normalizeHairTransforms } from '../../../../shared/hairPersistence'
 import { HairPiecePreview as HairPiece } from './HairPiecePreview'
+import { HairDeformationPreview } from './HairDeformationPreview'
 import { HairImportModal } from './HairImportModal'
 import { HairGridReviewModal } from './HairGridReviewModal'
 import { defaultHairGridSplits, type HairGridSplits } from './hairGridLayout'
@@ -16,7 +17,7 @@ import { useModelAppearanceTarget, useModelPartAppearancePreview } from './Model
 import { getHairWorkspaceCatalogPage, hairStyleDetailMatchesSummary, hairStyleSummary, loadHairWorkspaceCatalogPage, retainHairWorkspaceStyleDetails } from './hairWorkspaceCatalog'
 
 type HairSide = HairAssetSide
-type HairAsset = NonNullable<HairWorkspaceData['front']>
+type HairAsset = HairAssetData
 type HairDrag = { pointerId: number; side: HairSide; clientX: number; clientY: number; x: number; y: number }
 type HairProcessorCut = { png: ArrayBuffer; width: number; height: number }
 type HairProcessorResult =
@@ -196,6 +197,10 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
   const [hairGridPreviewError, setHairGridPreviewError] = useState('')
   const [dirty, setDirty] = useState(false)
   const [zoom, setZoom] = useState(1)
+  const [deformMode, setDeformMode] = useState(false)
+  const [deformReady, setDeformReady] = useState(false)
+  const [deformRadius, setDeformRadius] = useState(52)
+  const [deformStrength, setDeformStrength] = useState(70)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const fileInputRef = useRef<HTMLInputElement | null>(null)
@@ -244,6 +249,11 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
     const pieceCategory = hairWorkspace?.categoryBySide?.[side] ?? defaultCategories[side]
     return [{ side, asset, pieceCategory, pieceName: hairCategories.find((item) => item.id === pieceCategory)?.label ?? side }]
   })
+
+  useEffect(() => {
+    setDeformMode(false)
+    setDeformReady(false)
+  }, [selectedCategory])
 
   useEffect(() => {
     let cancelled = false
@@ -576,8 +586,50 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
   }
 
   function changeTransform(patch: Partial<HairTransform>) {
-    if (!head || !selectedAsset) return
+    if (!head || !selectedAsset || deformMode) return
     updateWorkspace((current) => ({ ...current, transforms: { ...current.transforms, [selectedSide]: { ...(current.transforms[selectedSide] ?? initialTransform(selectedSide, head, selectedAsset)), ...patch } } }))
+  }
+
+  function commitHairDeformation(side: HairSide, result: { dataUrl: string; width: number; height: number }) {
+    updateWorkspace((current) => {
+      const asset = current[side]
+      if (!asset) return current
+      return {
+        ...current,
+        [side]: {
+          ...asset,
+          dataUrl: result.dataUrl,
+          width: result.width,
+          height: result.height,
+          hasDeformationOriginal: true,
+          deformationOriginalDataUrl: asset.deformationOriginalDataUrl ?? asset.dataUrl,
+          deformationOriginalWidth: asset.deformationOriginalWidth ?? asset.width,
+          deformationOriginalHeight: asset.deformationOriginalHeight ?? asset.height,
+          deformationOriginalTransform: asset.deformationOriginalTransform ?? { ...current.transforms[side] }
+        }
+      }
+    })
+    setError('')
+    setNotice('Deformação aplicada ao rascunho. Salve o conjunto para usar no Customizador.')
+  }
+
+  function restoreHairDeformation() {
+    const side = selectedSide
+    const asset = hairWorkspace?.[side]
+    if (!asset?.hasDeformationOriginal || !asset.deformationOriginalDataUrl
+      || !asset.deformationOriginalWidth || !asset.deformationOriginalHeight || !asset.deformationOriginalTransform) return
+    setDeformMode(false)
+    setDeformReady(false)
+    updateWorkspace((current) => {
+      const activeAsset = current[side]
+      if (!activeAsset?.deformationOriginalDataUrl || !activeAsset.deformationOriginalTransform) return current
+      return {
+        ...current,
+        [side]: { dataUrl: activeAsset.deformationOriginalDataUrl, width: activeAsset.deformationOriginalWidth!, height: activeAsset.deformationOriginalHeight! },
+        transforms: { ...current.transforms, [side]: { ...activeAsset.deformationOriginalTransform } }
+      }
+    })
+    setNotice('Forma original restaurada no rascunho. Salve o conjunto para aplicar a restauração.')
   }
 
   async function saveHair() {
@@ -611,12 +663,22 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
     const back = workspace.back
     const fringe = workspace.fringe ?? null
     const sourceImageDataUrl = workspace.sourceImageDataUrl
+    const assetMetadata = (asset: HairAsset | null) => asset ? {
+      width: asset.width,
+      height: asset.height,
+      ...(asset.hasDeformationOriginal ? {
+        hasDeformationOriginal: true,
+        deformationOriginalWidth: asset.deformationOriginalWidth,
+        deformationOriginalHeight: asset.deformationOriginalHeight,
+        deformationOriginalTransform: asset.deformationOriginalTransform
+      } : {})
+    } : null
     const saved: HairStyleSave = {
       schemaVersion: 1, id, modelSlot, name: styleNameOverride.trim().slice(0, 80),
       categoryBySide: Object.fromEntries((['front', 'back', 'fringe'] as const).filter((side) => Boolean(workspace[side])).map((side) => [side, workspace.categoryBySide?.[side] ?? defaultCategories[side]])) as Partial<Record<HairSide, HairPartId>>,
-      front: front ? { width: front.width, height: front.height } : null,
-      back: back ? { width: back.width, height: back.height } : null,
-      fringe: fringe ? { width: fringe.width, height: fringe.height } : null,
+      front: assetMetadata(front),
+      back: assetMetadata(back),
+      fringe: assetMetadata(fringe),
       transforms: workspace.transforms,
       sourceImageSaved: Boolean(sourceImageDataUrl),
       sourceAppliesToDraft: Boolean(sourceImageDataUrl) && workspace.sourceAppliesToDraft !== false,
@@ -625,12 +687,17 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
       createdAt: existing?.createdAt ?? now, updatedAt: now
     }
     saved.transforms = normalizeHairTransforms(saved)
-    const assets = [
-      front ? { id: 'front' as const, dataUrl: front.dataUrl } : null,
-      back ? { id: 'back' as const, dataUrl: back.dataUrl } : null,
-      fringe ? { id: 'fringe' as const, dataUrl: fringe.dataUrl } : null,
-      sourceImageDataUrl ? { id: 'source' as const, dataUrl: sourceImageDataUrl } : null
-    ].filter((asset): asset is NonNullable<typeof asset> => asset !== null)
+    const assets: HairStyleAsset[] = []
+    for (const side of ['front', 'back', 'fringe'] as const) {
+      const asset = workspace[side]
+      if (!asset) continue
+      assets.push({ id: side, dataUrl: asset.dataUrl })
+      if (asset.hasDeformationOriginal) {
+        if (!asset.deformationOriginalDataUrl) throw new Error(`Cópia original ausente para restaurar ${hairCategories.find((item) => item.side === side)?.label ?? 'a peça de cabelo'}.`)
+        assets.push({ id: `${side}-deform-original` as HairStyleAsset['id'], dataUrl: asset.deformationOriginalDataUrl })
+      }
+    }
+    if (sourceImageDataUrl) assets.push({ id: 'source', dataUrl: sourceImageDataUrl })
     await window.desktop.fabricator.saveHairStyle(modelSlot, saved, assets)
     return {
       ...saved,
@@ -644,6 +711,8 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
   async function openStyle(summary: HairStyleSummary) {
     if (dirty && !window.confirm('Há alterações não salvas. Abrir este conjunto e descartá-las?')) return
     if (!head || loadingStyle) return
+    setDeformMode(false)
+    setDeformReady(false)
     const requestId = ++hairStyleRequestRef.current
     const requestedModelSlot = modelSlot
     setLoadingStyle(true)
@@ -713,6 +782,8 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
 
   async function deleteSelectedPiece() {
     if (!hairWorkspace || !selectedAsset || saving) return
+    setDeformMode(false)
+    setDeformReady(false)
     const side = selectedSide
     const nextWorkspace = removeHairSide(hairWorkspace, side)
     const remainingPieces = (['front', 'back', 'fringe'] as const).filter((pieceSide) => Boolean(nextWorkspace[pieceSide])).length
@@ -765,6 +836,8 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
       return
     }
     if (dirty && !window.confirm('Descartar as alterações não salvas e começar outro conjunto?')) return
+    setDeformMode(false)
+    setDeformReady(false)
     setHairWorkspace(emptyHairWorkspace(modelSlot))
     setActiveStyleId(null)
     setStyleName('')
@@ -786,29 +859,29 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
     <header className="hair-dev-toolbar">
       <span className="model-slot-logo"><Icon name="bow" /></span>
       <span><strong>Cabelos Dev</strong><small>Monte os cabelos para cada modelo</small></span>
-      <label>Modelo de referência<select value={modelSlot} onChange={(event) => { if (dirty && !window.confirm('Há alterações não salvas. Descartar e trocar de modelo?')) return; cancelHairGridReview(); setImportModalOpen(false); setModelSlot(Number(event.target.value)) }} disabled={loadingModels || saving || loadingStyle || Boolean(hairGridReview)}>{models.map((model, index) => model && <option key={model.slot} value={model.slot}>Modelo {String(index + 1).padStart(2, '0')} · {model.name}</option>)}</select></label>
-      <button className="hair-dev-save" onClick={() => void saveHair()} disabled={!hairWorkspace || (!hairWorkspace.front && !hairWorkspace.back && !hairWorkspace.fringe) || saving || loadingHair || loadingStyle} title={activeStyleId && activeStyleId !== 'legacy-workspace' ? 'Salvar alterações neste conjunto' : 'Salvar todas as peças como um conjunto'} type="button"><Icon name="check" />{saving ? 'Salvando…' : activeStyleId && activeStyleId !== 'legacy-workspace' ? 'Salvar alterações' : 'Salvar conjunto'}</button>
+      <label>Modelo de referência<select value={modelSlot} onChange={(event) => { if (dirty && !window.confirm('Há alterações não salvas. Descartar e trocar de modelo?')) return; cancelHairGridReview(); setImportModalOpen(false); setModelSlot(Number(event.target.value)) }} disabled={loadingModels || saving || loadingStyle || Boolean(hairGridReview) || deformMode}>{models.map((model, index) => model && <option key={model.slot} value={model.slot}>Modelo {String(index + 1).padStart(2, '0')} · {model.name}</option>)}</select></label>
+      <button className="hair-dev-save" onClick={() => void saveHair()} disabled={!hairWorkspace || (!hairWorkspace.front && !hairWorkspace.back && !hairWorkspace.fringe) || saving || loadingHair || loadingStyle || deformMode} title={deformMode ? 'Conclua a deformação antes de salvar' : activeStyleId && activeStyleId !== 'legacy-workspace' ? 'Salvar alterações neste conjunto' : 'Salvar todas as peças como um conjunto'} type="button"><Icon name="check" />{saving ? 'Salvando…' : activeStyleId && activeStyleId !== 'legacy-workspace' ? 'Salvar alterações' : 'Salvar conjunto'}</button>
     </header>
     <div className="hair-dev-body">
       <aside className="hair-dev-library" aria-label="Biblioteca de cabelos">
         <header><strong>Conjuntos de cabelo</strong><small>{currentHairStyles.length} salvos</small></header>
         <div className="hair-dev-library-actions">
-          <button type="button" onClick={startNewSet} disabled={loadingHair || loadingStyle || saving}><Icon name="plus" /> Novo conjunto</button>
-          <button type="button" onClick={() => setImportModalOpen(true)} disabled={!head || loadingHair || loadingStyle || saving}><Icon name="plus" /> Importar</button>
-          <button type="button" onClick={() => void deleteSelectedSet()} disabled={!activeStyleId || saving || loadingHair || loadingStyle}><Icon name="trash" /> Excluir conjunto</button>
+          <button type="button" onClick={startNewSet} disabled={loadingHair || loadingStyle || saving || deformMode}><Icon name="plus" /> Novo conjunto</button>
+          <button type="button" onClick={() => setImportModalOpen(true)} disabled={!head || loadingHair || loadingStyle || saving || deformMode}><Icon name="plus" /> Importar</button>
+          <button type="button" onClick={() => void deleteSelectedSet()} disabled={!activeStyleId || saving || loadingHair || loadingStyle || deformMode}><Icon name="trash" /> Excluir conjunto</button>
         </div>
         <input ref={singleFileInputRef} className="hair-dev-file" type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => void importSinglePiece(event)} />
         <input ref={fileInputRef} className="hair-dev-file" type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => void importSheet(event)} />
         <input ref={threeStyleFileInputRef} className="hair-dev-file" type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => void importThreeStyleGrid(event)} />
-        <label className="hair-dev-set-name">Nome do conjunto<input maxLength={80} value={styleName} placeholder="Ex.: Cabelo longo" disabled={loadingStyle || saving} onChange={(event) => { setStyleName(event.target.value); setDirty(true) }} /></label>
+        <label className="hair-dev-set-name">Nome do conjunto<input maxLength={80} value={styleName} placeholder="Ex.: Cabelo longo" disabled={loadingStyle || saving || deformMode} onChange={(event) => { setStyleName(event.target.value); setDirty(true) }} /></label>
         <small className="hair-dev-library-hint">Importe peças para o mesmo conjunto. O botão Salvar grava todas juntas.</small>
         <nav className="hair-dev-library-tabs" aria-label="Categorias da biblioteca" role="tablist">
-          {hairCategories.map((item) => <button key={item.id} type="button" role="tab" aria-selected={selectedCategory === item.id} className={selectedCategory === item.id ? 'active' : ''} onClick={() => { setSelectedCategory(item.id); if (hairWorkspace?.[item.side] && hairWorkspace.categoryBySide?.[item.side] !== item.id) updateWorkspace((current) => ({ ...current, categoryBySide: { ...current.categoryBySide, [item.side]: item.id } })) }}>{item.label}</button>)}
+          {hairCategories.map((item) => <button key={item.id} type="button" role="tab" aria-selected={selectedCategory === item.id} className={selectedCategory === item.id ? 'active' : ''} disabled={deformMode} onClick={() => { setSelectedCategory(item.id); if (hairWorkspace?.[item.side] && hairWorkspace.categoryBySide?.[item.side] !== item.id) updateWorkspace((current) => ({ ...current, categoryBySide: { ...current.categoryBySide, [item.side]: item.id } })) }}>{item.label}</button>)}
         </nav>
         <section className="hair-dev-library-category" role="tabpanel" aria-label="Peças deste conjunto">
           <h3>Peças deste conjunto <small>{hairWorkspace ? (['front', 'back', 'fringe'] as const).filter((side) => Boolean(hairWorkspace[side])).length : 0}</small></h3>
           <div className="hair-dev-set-pieces">
-            {draftPieces.map(({ side, asset, pieceCategory, pieceName }) => <button className={selectedSide === side && selectedAsset ? 'active' : ''} key={side} type="button" onClick={() => setSelectedCategory(pieceCategory)}><img src={asset.dataUrl} alt="" /><span>{pieceName}</span></button>)}
+            {draftPieces.map(({ side, asset, pieceCategory, pieceName }) => <button className={selectedSide === side && selectedAsset ? 'active' : ''} key={side} type="button" disabled={deformMode} onClick={() => setSelectedCategory(pieceCategory)}><img src={asset.dataUrl} alt="" /><span>{pieceName}</span></button>)}
             {!draftPieces.length && <small>Importe peças para montar o conjunto.</small>}
           </div>
         </section>
@@ -817,7 +890,7 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
           <div className="hair-dev-set-list" aria-busy={loadingHair || loadingHairCatalogPage || loadingStyle}>
             {hairCatalogPageView.visibleStyles.map((style) => {
               const details = hairDetails[`${modelSlot}:${style.id}`]
-              return <button className={style.id === activeStyleId ? 'active' : ''} key={style.id} disabled={loadingHair || loadingHairCatalogPage || loadingStyle || loadingProject || saving} type="button" onClick={() => void openStyle(style)}>
+              return <button className={style.id === activeStyleId ? 'active' : ''} key={style.id} disabled={loadingHair || loadingHairCatalogPage || loadingStyle || loadingProject || saving || deformMode} type="button" onClick={() => void openStyle(style)}>
                 <span className="hair-dev-set-thumbnails">{hairStyleSides(style).map((side) => {
                   const asset = details?.[side]
                   return asset?.dataUrl
@@ -831,9 +904,9 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
             {!loadingHair && !currentHairStyles.length && <small>Nenhum conjunto salvo para este modelo.</small>}
           </div>
           {currentHairStyles.length > 0 && <nav className="hair-dev-set-pagination" aria-label="Páginas do catálogo de cabelos">
-            <button type="button" aria-label="Página anterior" disabled={hairCatalogPageView.page === 0 || loadingHairCatalogPage} onClick={() => setHairCatalogPage((page) => Math.max(0, page - 1))}>‹</button>
+            <button type="button" aria-label="Página anterior" disabled={hairCatalogPageView.page === 0 || loadingHairCatalogPage || deformMode} onClick={() => setHairCatalogPage((page) => Math.max(0, page - 1))}>‹</button>
             <small>Página {hairCatalogPageView.page + 1}/{hairCatalogPageView.pageCount}</small>
-            <button type="button" aria-label="Próxima página" disabled={hairCatalogPageView.page >= hairCatalogPageView.pageCount - 1 || loadingHairCatalogPage} onClick={() => setHairCatalogPage((page) => Math.min(hairCatalogPageView.pageCount - 1, page + 1))}>›</button>
+            <button type="button" aria-label="Próxima página" disabled={hairCatalogPageView.page >= hairCatalogPageView.pageCount - 1 || loadingHairCatalogPage || deformMode} onClick={() => setHairCatalogPage((page) => Math.min(hairCatalogPageView.pageCount - 1, page + 1))}>›</button>
           </nav>}
         </section>
       </aside>
@@ -841,10 +914,16 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
         <div className="hair-dev-preview-heading"><strong>PRÉVIA DA CABEÇA</strong><span>{head ? Math.round(head.width) + ' × ' + Math.round(head.height) : ''}</span></div>
         <div className="hair-dev-preview-stage" style={{ backgroundColor: background }} onWheel={(event) => { event.preventDefault(); setZoom((value) => Math.max(.5, Math.min(3, value * (event.deltaY < 0 ? 1.1 : .9)))) }}>
           {head && <div className="hair-dev-head-stage" style={{ aspectRatio: head.width + ' / ' + head.height, transform: 'scale(' + zoom + ')' }} onPointerMove={moveHair} onPointerUp={finishDrag} onPointerCancel={finishDrag}>
-            {hairWorkspace?.back && visibleDraft('back') && <HairPiece side="back" asset={hairWorkspace.back} transform={hairWorkspace.transforms.back} head={head} selected={selectedSide === 'back'} onPointerDown={startDrag} disabled={saving || loadingHair || loadingStyle || processingChroma} onErase={(dataUrl) => updateHairPixels('back', dataUrl)} />}
+          {hairWorkspace?.back && visibleDraft('back') && (deformMode && selectedSide === 'back'
+            ? <HairDeformationPreview side="back" asset={hairWorkspace.back} transform={hairWorkspace.transforms.back} head={head} active={deformMode} radius={deformRadius} strength={deformStrength} disabled={saving || loadingHair || loadingStyle || processingChroma} onReadyChange={setDeformReady} onCommit={(result) => commitHairDeformation('back', result)} onError={setError} />
+            : <HairPiece side="back" asset={hairWorkspace.back} transform={hairWorkspace.transforms.back} head={head} selected={selectedSide === 'back'} onPointerDown={startDrag} disabled={saving || loadingHair || loadingStyle || processingChroma || deformMode} onErase={(dataUrl) => updateHairPixels('back', dataUrl)} />)}
             <img className="hair-dev-head-base" src={appearancePreviewForPart(head)} alt="Cabeça do modelo de referência" draggable={false} />
-            {hairWorkspace?.front && visibleDraft('front') && <HairPiece side="front" asset={hairWorkspace.front} transform={hairWorkspace.transforms.front} head={head} selected={selectedSide === 'front'} onPointerDown={startDrag} disabled={saving || loadingHair || loadingStyle || processingChroma} onErase={(dataUrl) => updateHairPixels('front', dataUrl)} />}
-            {hairWorkspace?.fringe && hairWorkspace.transforms.fringe && visibleDraft('fringe') && <HairPiece side="fringe" asset={hairWorkspace.fringe} transform={hairWorkspace.transforms.fringe} head={head} selected={selectedSide === 'fringe'} onPointerDown={startDrag} disabled={saving || loadingHair || loadingStyle || processingChroma} onErase={(dataUrl) => updateHairPixels('fringe', dataUrl)} />}
+          {hairWorkspace?.front && visibleDraft('front') && (deformMode && selectedSide === 'front'
+            ? <HairDeformationPreview side="front" asset={hairWorkspace.front} transform={hairWorkspace.transforms.front} head={head} active={deformMode} radius={deformRadius} strength={deformStrength} disabled={saving || loadingHair || loadingStyle || processingChroma} onReadyChange={setDeformReady} onCommit={(result) => commitHairDeformation('front', result)} onError={setError} />
+            : <HairPiece side="front" asset={hairWorkspace.front} transform={hairWorkspace.transforms.front} head={head} selected={selectedSide === 'front'} onPointerDown={startDrag} disabled={saving || loadingHair || loadingStyle || processingChroma || deformMode} onErase={(dataUrl) => updateHairPixels('front', dataUrl)} />)}
+          {hairWorkspace?.fringe && hairWorkspace.transforms.fringe && visibleDraft('fringe') && (deformMode && selectedSide === 'fringe'
+            ? <HairDeformationPreview side="fringe" asset={hairWorkspace.fringe} transform={hairWorkspace.transforms.fringe} head={head} active={deformMode} radius={deformRadius} strength={deformStrength} disabled={saving || loadingHair || loadingStyle || processingChroma} onReadyChange={setDeformReady} onCommit={(result) => commitHairDeformation('fringe', result)} onError={setError} />
+            : <HairPiece side="fringe" asset={hairWorkspace.fringe} transform={hairWorkspace.transforms.fringe} head={head} selected={selectedSide === 'fringe'} onPointerDown={startDrag} disabled={saving || loadingHair || loadingStyle || processingChroma || deformMode} onErase={(dataUrl) => updateHairPixels('fringe', dataUrl)} />)}
           </div>}
           {(loadingModels || loadingProject || loadingHair || loadingStyle) && <span className="hair-dev-message">Carregando modelo e cabelos…</span>}
           {!loadingModels && !loadingProject && !head && <span className="hair-dev-message">{error || 'O modelo não tem uma peça chamada Cabeça.'}</span>}
@@ -857,20 +936,31 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
         <header><strong>Ajuste da peça</strong><small>{category.label} · arraste a peça na prévia para mover</small></header>
         <section className="hair-dev-chroma" aria-label="Controles do chroma key">
           <header><span><strong>Chroma key</strong><small>Remoção do fundo da folha</small></span><output>{hairWorkspace?.chromaTolerance ?? 70}%</output></header>
-          <label className="hair-dev-chroma-mode">Tipo de fundo<select aria-label="Tipo de fundo para chroma key" value={hairWorkspace?.chromaMode ?? 'auto'} disabled={!chromaReady || processingChroma} onChange={(event) => updateWorkspace((current) => ({ ...current, chromaMode: event.target.value as 'auto' | 'green' | 'checker' }))}><option value="auto">Detectar automaticamente</option><option value="green">Verde / chroma verde</option><option value="checker">Quadriculado cinza e preto</option></select></label>
-          <label className="hair-dev-chroma-range"><span><small>Menos</small><small>Mais</small></span><input aria-label="Intensidade do chroma key" type="range" min="0" max="100" step="1" value={hairWorkspace?.chromaTolerance ?? 70} disabled={!chromaReady || processingChroma} onChange={(event) => updateWorkspace((current) => ({ ...current, chromaTolerance: Number(event.target.value) }))} /></label>
-          <div className="hair-dev-chroma-actions"><button className="hair-dev-catalog-save" onClick={() => void applyChroma()} disabled={!chromaReady || processingChroma} type="button"><Icon name={processingChroma ? 'reset' : 'check'} />{processingChroma ? 'Aplicando…' : 'Aplicar chroma'}</button><button className="hair-dev-reset" onClick={() => { updateWorkspace((current) => ({ ...current, chromaTolerance: 0 })); void applyChroma(0) }} disabled={!chromaReady || processingChroma} type="button">Voltar ao original</button></div>
+          <label className="hair-dev-chroma-mode">Tipo de fundo<select aria-label="Tipo de fundo para chroma key" value={hairWorkspace?.chromaMode ?? 'auto'} disabled={!chromaReady || processingChroma || deformMode} onChange={(event) => updateWorkspace((current) => ({ ...current, chromaMode: event.target.value as 'auto' | 'green' | 'checker' }))}><option value="auto">Detectar automaticamente</option><option value="green">Verde / chroma verde</option><option value="checker">Quadriculado cinza e preto</option></select></label>
+          <label className="hair-dev-chroma-range"><span><small>Menos</small><small>Mais</small></span><input aria-label="Intensidade do chroma key" type="range" min="0" max="100" step="1" value={hairWorkspace?.chromaTolerance ?? 70} disabled={!chromaReady || processingChroma || deformMode} onChange={(event) => updateWorkspace((current) => ({ ...current, chromaTolerance: Number(event.target.value) }))} /></label>
+          <div className="hair-dev-chroma-actions"><button className="hair-dev-catalog-save" onClick={() => void applyChroma()} disabled={!chromaReady || processingChroma || deformMode} type="button"><Icon name={processingChroma ? 'reset' : 'check'} />{processingChroma ? 'Aplicando…' : 'Aplicar chroma'}</button><button className="hair-dev-reset" onClick={() => { updateWorkspace((current) => ({ ...current, chromaTolerance: 0 })); void applyChroma(0) }} disabled={!chromaReady || processingChroma || deformMode} type="button">Voltar ao original</button></div>
           <small className="hair-dev-chroma-hint">O ajuste sempre parte da folha original e mantém o encaixe das peças.</small>
         </section>
         {selectedAsset && selectedTransform ? <>
-          <div className="hair-dev-control-title"><b>{category.label}</b><small>Arraste a parte selecionada na prévia.</small></div>
+          <div className="hair-dev-control-title"><b>{category.label}</b><small>{deformMode ? 'Arraste sobre a peça para deformar a malha.' : 'Arraste a parte selecionada na prévia.'}</small></div>
           <div className="hair-dev-position-grid">
-            {([['x', 'Posição X'], ['y', 'Posição Y']] as const).map(([field, label]) => <label key={field}>{label}<input type="number" step="1" value={Math.round(selectedTransform[field])} onChange={(event) => changeTransform({ [field]: Number(event.target.value) })} /></label>)}
+            {([['x', 'Posição X'], ['y', 'Posição Y']] as const).map(([field, label]) => <label key={field}>{label}<input type="number" step="1" value={Math.round(selectedTransform[field])} disabled={deformMode} onChange={(event) => changeTransform({ [field]: Number(event.target.value) })} /></label>)}
           </div>
-          {([['scaleX', 'Largura · espremer/esticar'], ['scaleY', 'Altura · espremer/esticar']] as const).map(([field, label]) => <label className="hair-dev-range" key={field}><span><b>{label}</b><output>{Math.round(selectedTransform[field] * 100)}%</output></span><input type="range" min="10" max="500" step="1" value={Math.max(10, Math.min(500, Math.round(selectedTransform[field] * 100)))} onChange={(event) => changeTransform({ [field]: Number(event.target.value) / 100 })} /><input className="hair-dev-range-number" type="number" min="10" max="1000" step="1" aria-label={label + ' em porcentagem'} value={Math.round(selectedTransform[field] * 100)} onChange={(event) => changeTransform({ [field]: Math.max(.1, Math.min(10, Number(event.target.value) / 100)) })} /></label>)}
-          <label className="hair-dev-range"><span><b>Rotação</b><output>{Math.round(selectedTransform.rotation)}°</output></span><input type="range" min="-180" max="180" step="1" value={Math.max(-180, Math.min(180, Math.round(selectedTransform.rotation)))} onChange={(event) => changeTransform({ rotation: Number(event.target.value) })} /></label>
-          <div className="hair-dev-piece-actions"><button className="hair-dev-reset" onClick={flipSelectedHair} type="button"><Icon name="flipHorizontal" /> Inverter na horizontal</button><button className="hair-dev-reset" onClick={resetSelectedTransform} type="button">Restaurar encaixe inicial</button></div>
-          <button className="hair-dev-delete-piece" onClick={() => void deleteSelectedPiece()} disabled={saving || loadingHair || loadingStyle} type="button"><Icon name="trash" /> Excluir esta peça</button>
+          {([['scaleX', 'Largura · espremer/esticar'], ['scaleY', 'Altura · espremer/esticar']] as const).map(([field, label]) => <label className="hair-dev-range" key={field}><span><b>{label}</b><output>{Math.round(selectedTransform[field] * 100)}%</output></span><input type="range" min="10" max="500" step="1" value={Math.max(10, Math.min(500, Math.round(selectedTransform[field] * 100)))} disabled={deformMode} onChange={(event) => changeTransform({ [field]: Number(event.target.value) / 100 })} /><input className="hair-dev-range-number" type="number" min="10" max="1000" step="1" aria-label={label + ' em porcentagem'} value={Math.round(selectedTransform[field] * 100)} disabled={deformMode} onChange={(event) => changeTransform({ [field]: Math.max(.1, Math.min(10, Number(event.target.value) / 100)) })} /></label>)}
+          <label className="hair-dev-range"><span><b>Rotação</b><output>{Math.round(selectedTransform.rotation)}°</output></span><input type="range" min="-180" max="180" step="1" value={Math.max(-180, Math.min(180, Math.round(selectedTransform.rotation)))} disabled={deformMode} onChange={(event) => changeTransform({ rotation: Number(event.target.value) })} /></label>
+          <div className="hair-dev-piece-actions"><button className="hair-dev-reset" onClick={flipSelectedHair} disabled={deformMode} type="button"><Icon name="flipHorizontal" /> Inverter na horizontal</button><button className="hair-dev-reset" onClick={resetSelectedTransform} disabled={deformMode} type="button">Restaurar encaixe inicial</button></div>
+          <section className="hair-dev-deformation" aria-label="Deformar cabelo">
+            <div className="hair-dev-deformation-actions">
+              <button className={`hair-dev-reset hair-dev-deform-toggle${deformMode ? ' active' : ''}`} type="button" aria-pressed={deformMode} disabled={saving || loadingHair || loadingStyle || processingChroma} onClick={() => { setError(''); setDeformReady(false); setDeformMode((current) => !current) }}><Icon name="brush" />{deformMode ? 'Concluir deformação' : 'Deformar cabelo'}</button>
+              <button className="hair-dev-reset hair-dev-deform-restore" type="button" disabled={!selectedAsset.deformationOriginalDataUrl || saving || loadingHair || loadingStyle || processingChroma} onClick={restoreHairDeformation}><Icon name="undo" />Restaurar</button>
+            </div>
+            {deformMode && <>
+              <label className="hair-dev-range"><span><b>Raio do pincel</b><output>{deformRadius}px</output></span><input aria-label="Raio do pincel de deformação do cabelo" type="range" min="4" max="160" step="1" value={deformRadius} disabled={!deformReady || saving} onChange={(event) => setDeformRadius(Number(event.target.value))} /></label>
+              <label className="hair-dev-range"><span><b>Força</b><output>{deformStrength}%</output></span><input aria-label="Força do pincel de deformação do cabelo" type="range" min="10" max="100" step="1" value={deformStrength} disabled={!deformReady || saving} onChange={(event) => setDeformStrength(Number(event.target.value))} /></label>
+              <small>{deformReady ? 'Arraste na peça para empurrar a malha. A mudança fica no rascunho até salvar.' : 'Preparando a imagem para deformação…'}</small>
+            </>}
+          </section>
+          <button className="hair-dev-delete-piece" onClick={() => void deleteSelectedPiece()} disabled={saving || loadingHair || loadingStyle || deformMode} type="button"><Icon name="trash" /> Excluir esta peça</button>
           <div data-hair-eraser-controls />
         </> : <p className="hair-dev-empty">Importe uma peça em {category.label} para ajustar seu encaixe.</p>}
       </section>

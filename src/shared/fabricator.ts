@@ -303,12 +303,25 @@ export type FaceExpressionWorkspaceDraft = {
   updatedAt: string
 }
 export type HairTransform = { x: number; y: number; scaleX: number; scaleY: number; rotation: number; flipX?: boolean }
+export type HairAsset = {
+  dataUrl: string
+  width: number
+  height: number
+  hasDeformationOriginal?: boolean
+  deformationOriginalWidth?: number
+  deformationOriginalHeight?: number
+  deformationOriginalTransform?: HairTransform
+  /** Runtime-only URL loaded from the paired backup PNG. */
+  deformationOriginalDataUrl?: string
+}
+export type HairAssetSave = Omit<HairAsset, 'dataUrl' | 'deformationOriginalDataUrl'>
+export type HairAssetSummary = Pick<HairAsset, 'width' | 'height' | 'hasDeformationOriginal'>
 export type HairWorkspace = {
   schemaVersion: 1
   modelSlot: number
-  front: { dataUrl: string; width: number; height: number } | null
-  back: { dataUrl: string; width: number; height: number } | null
-  fringe?: { dataUrl: string; width: number; height: number } | null
+  front: HairAsset | null
+  back: HairAsset | null
+  fringe?: HairAsset | null
   transforms: { front: HairTransform; back: HairTransform; fringe?: HairTransform }
   sourceImageDataUrl?: string
   sourceImageSaved?: boolean
@@ -319,11 +332,12 @@ export type HairWorkspace = {
   updatedAt: string
 }
 export type HairWorkspaceSave = Omit<HairWorkspace, 'front' | 'back' | 'fringe' | 'sourceImageDataUrl'> & {
-  front: Omit<NonNullable<HairWorkspace['front']>, 'dataUrl'> | null
-  back: Omit<NonNullable<HairWorkspace['back']>, 'dataUrl'> | null
-  fringe?: Omit<NonNullable<HairWorkspace['fringe']>, 'dataUrl'> | null
+  front: HairAssetSave | null
+  back: HairAssetSave | null
+  fringe?: HairAssetSave | null
 }
-export type HairWorkspaceAsset = { id: 'front' | 'back' | 'fringe' | 'source'; dataUrl: string }
+export type HairImageAssetId = 'front' | 'back' | 'fringe' | 'source' | 'front-deform-original' | 'back-deform-original' | 'fringe-deform-original'
+export type HairWorkspaceAsset = { id: HairImageAssetId; dataUrl: string }
 export type HairStyle = {
   schemaVersion: 1
   id: string
@@ -333,9 +347,9 @@ export type HairStyle = {
   category?: import('./customizer').HairPartId
   /** Category assigned to each piece in a multi-piece hair set. */
   categoryBySide?: Partial<Record<'front' | 'back' | 'fringe', import('./customizer').HairPartId>>
-  front: { dataUrl: string; width: number; height: number } | null
-  back: { dataUrl: string; width: number; height: number } | null
-  fringe?: { dataUrl: string; width: number; height: number } | null
+  front: HairAsset | null
+  back: HairAsset | null
+  fringe?: HairAsset | null
   transforms: { front: HairTransform; back: HairTransform; fringe?: HairTransform }
   sourceImageDataUrl?: string
   sourceImageSaved?: boolean
@@ -346,16 +360,16 @@ export type HairStyle = {
   updatedAt: string
 }
 export type HairStyleSave = Omit<HairStyle, 'front' | 'back' | 'fringe' | 'sourceImageDataUrl'> & {
-  front: Omit<NonNullable<HairStyle['front']>, 'dataUrl'> | null
-  back: Omit<NonNullable<HairStyle['back']>, 'dataUrl'> | null
-  fringe?: Omit<NonNullable<HairStyle['fringe']>, 'dataUrl'> | null
+  front: HairAssetSave | null
+  back: HairAssetSave | null
+  fringe?: HairAssetSave | null
 }
 export type HairStyleSummary = Omit<HairStyle, 'front' | 'back' | 'fringe' | 'sourceImageDataUrl'> & {
-  front: Omit<NonNullable<HairStyle['front']>, 'dataUrl'> | null
-  back: Omit<NonNullable<HairStyle['back']>, 'dataUrl'> | null
-  fringe?: Omit<NonNullable<HairStyle['fringe']>, 'dataUrl'> | null
+  front: HairAssetSummary | null
+  back: HairAssetSummary | null
+  fringe?: HairAssetSummary | null
 }
-export type HairStyleAsset = { id: 'front' | 'back' | 'fringe' | 'source'; dataUrl: string }
+export type HairStyleAsset = { id: HairImageAssetId; dataUrl: string }
 export type PoseWardrobeAttachment = { setId: string; category: WardrobeCategory; attachedPartId: string; referenceAnchor: { x: number; y: number }; referenceRotation: number }
 export type WardrobePosePart = PosePart & { wardrobeAttachment?: PoseWardrobeAttachment }
 export type FabricatorPose = {
