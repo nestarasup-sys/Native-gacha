@@ -2482,6 +2482,7 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .male-torso-modal-footer>div { display:flex;gap:8px; }
 .male-torso-modal-footer .primary-button { background:#4387d8;border-color:#4387d8; }
 .male-torso-modal .wardrobe-warp-controls { position:relative;top:auto;left:auto;max-width:none;justify-content:center;border:0;border-top:1px solid #dfe7f0;border-radius:0;background:#fff;box-shadow:none; }
+.male-torso-tool-hint { margin:0;padding:6px 12px;color:#718096;font-size:10px;text-align:center; }
 @media(max-width:800px) { .male-torso-stage { height:min(42vh,420px); }.male-torso-modal-footer { align-items:flex-end;flex-direction:column; }.male-torso-modal-footer>div { width:100%;justify-content:flex-end; } }
 .pose-model-picker { width: min(480px, 100%); max-height: min(620px, 90vh); display: flex; flex-direction: column; overflow: hidden; border: 1px solid #eee6ec; border-radius: 15px; background: #fff; box-shadow: 0 20px 70px #20172040; }
 .pose-model-picker > header { display: flex; align-items: center; justify-content: space-between; padding: 15px; border-bottom: 1px solid #f0ebef; }

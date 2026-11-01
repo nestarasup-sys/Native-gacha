@@ -4,6 +4,7 @@ import { Icon } from '../../ui/components/Icon'
 import { applyWardrobeWarpBrushStroke, createWardrobeWarpMesh, drawWardrobeWarp, type WardrobeWarpMesh, type WardrobeWarpPoint } from './wardrobe/wardrobeMeshWarp'
 import { WardrobeDeformationBrushControls } from './wardrobe/WardrobePreviewControls'
 import { createMaleTorsoDeformationPatch } from './models/maleTorsoDeformation'
+import { extractAlphaContourPoints, nearestAlphaContourPoint, type AlphaContourPoint } from './models/maleTorsoContour'
 
 type Props = {
   project: FabricatorProject
@@ -28,11 +29,22 @@ function loadImage(source: string): Promise<HTMLImageElement> {
   })
 }
 
+function findImageAlphaContour(image: HTMLImageElement): AlphaContourPoint[] {
+  const canvas = document.createElement('canvas')
+  canvas.width = image.naturalWidth
+  canvas.height = image.naturalHeight
+  const context = canvas.getContext('2d', { willReadFrequently: true })
+  if (!context) return []
+  context.drawImage(image, 0, 0)
+  return extractAlphaContourPoints(context.getImageData(0, 0, canvas.width, canvas.height).data, canvas.width, canvas.height)
+}
+
 export function MaleTorsoEditorModal({ project, baseTorso, savedTorso, onClose, onSave }: Props) {
   const initialPart = savedTorso ?? copiedTorso(baseTorso)
   const [part, setPart] = useState<ModelPart>(initialPart)
   const [previewScale, setPreviewScale] = useState(() => Math.min(560 / Math.max(1, initialPart.width), 520 / Math.max(1, initialPart.height)))
   const [deforming, setDeforming] = useState(false)
+  const [deformationTool, setDeformationTool] = useState<'brush' | 'contour'>('brush')
   const [warpReady, setWarpReady] = useState(false)
   const [radius, setRadius] = useState(44)
   const [strength, setStrength] = useState(70)
@@ -44,19 +56,22 @@ export function MaleTorsoEditorModal({ project, baseTorso, savedTorso, onClose, 
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const brushCursorRef = useRef<HTMLDivElement>(null)
   const imageRef = useRef<HTMLImageElement | null>(null)
+  const contourPointsRef = useRef<AlphaContourPoint[]>([])
   const meshRef = useRef<WardrobeWarpMesh>(createWardrobeWarpMesh(20, 26))
-  const dragRef = useRef<{ pointerId: number; startClient: WardrobeWarpPoint; last: WardrobeWarpPoint; originalX: Float32Array; originalY: Float32Array; changed: boolean; activated: boolean } | null>(null)
+  const dragRef = useRef<{ pointerId: number; startClient: WardrobeWarpPoint; startWorld: WardrobeWarpPoint; contourAnchor: WardrobeWarpPoint | null; tool: 'brush' | 'contour'; last: WardrobeWarpPoint; originalX: Float32Array; originalY: Float32Array; changed: boolean; activated: boolean } | null>(null)
   const frameRef = useRef<number | null>(null)
   const lastPointerRef = useRef<WardrobeWarpPoint | null>(null)
 
   useEffect(() => {
-    if (!deforming) { setWarpReady(false); imageRef.current = null; return }
+    if (!deforming) { setWarpReady(false); imageRef.current = null; contourPointsRef.current = []; return }
     let active = true
     setWarpReady(false)
     meshRef.current = createWardrobeWarpMesh(20, 26)
     void loadImage(part.dataUrl).then((image) => {
       if (!active) return
       imageRef.current = image
+      try { contourPointsRef.current = findImageAlphaContour(image) }
+      catch { contourPointsRef.current = [] }
       setWarpReady(true)
     }).catch((reason: unknown) => {
       if (active) { setError(reason instanceof Error ? reason.message : 'Não foi possível preparar a deformação.'); setDeforming(false) }
@@ -108,6 +123,43 @@ export function MaleTorsoEditorModal({ project, baseTorso, savedTorso, onClose, 
     return world
   }
 
+  const localPoint = (world: WardrobeWarpPoint): WardrobeWarpPoint => {
+    const radians = -part.rotation * Math.PI / 180
+    const centerX = part.width / 2
+    const centerY = part.height / 2
+    const dx = world.x - centerX
+    const dy = world.y - centerY
+    return { x: centerX + dx * Math.cos(radians) - dy * Math.sin(radians), y: centerY + dx * Math.sin(radians) + dy * Math.cos(radians) }
+  }
+
+  const worldPoint = (local: WardrobeWarpPoint): WardrobeWarpPoint => {
+    const radians = part.rotation * Math.PI / 180
+    const centerX = part.width / 2
+    const centerY = part.height / 2
+    const dx = local.x - centerX
+    const dy = local.y - centerY
+    return { x: centerX + dx * Math.cos(radians) - dy * Math.sin(radians), y: centerY + dx * Math.sin(radians) + dy * Math.cos(radians) }
+  }
+
+  const nearestContourWorldPoint = (world: WardrobeWarpPoint) => {
+    const image = imageRef.current
+    if (!image || !contourPointsRef.current.length) return null
+    const local = localPoint(world)
+    const target = { x: local.x * image.naturalWidth / part.width, y: local.y * image.naturalHeight / part.height }
+    const nearest = nearestAlphaContourPoint(contourPointsRef.current, target)
+    if (!nearest) return null
+    const anchor = { x: nearest.point.x * part.width / image.naturalWidth, y: nearest.point.y * part.height / image.naturalHeight }
+    const distance = Math.hypot((nearest.point.x - target.x) * part.width / image.naturalWidth, (nearest.point.y - target.y) * part.height / image.naturalHeight)
+    return { point: worldPoint(anchor), distance }
+  }
+
+  const cursorPoint = (world: WardrobeWarpPoint) => {
+    if (deformationTool !== 'contour') return world
+    const nearest = nearestContourWorldPoint(world)
+    const snapDistance = Math.max(10, Math.min(24, radius * 0.65))
+    return nearest && nearest.distance <= snapDistance ? nearest.point : world
+  }
+
   const updateBrushCursor = (point: WardrobeWarpPoint | null) => {
     lastPointerRef.current = point
     const cursor = brushCursorRef.current
@@ -131,7 +183,7 @@ export function MaleTorsoEditorModal({ project, baseTorso, savedTorso, onClose, 
       return
     }
     if (lastPointerRef.current) updateBrushCursor(lastPointerRef.current)
-  }, [deforming, radius, part.width, part.height, warpReady])
+  }, [deforming, deformationTool, radius, part.width, part.height, part.rotation, warpReady])
 
   const leaveWarpPreview = () => {
     if (dragRef.current) return
@@ -142,24 +194,39 @@ export function MaleTorsoEditorModal({ project, baseTorso, savedTorso, onClose, 
     if (!warpReady || event.button !== 0 || dragRef.current) return
     const point = modelPoint(event)
     if (!point) return
-    updateBrushCursor(point)
+    let anchor = point
+    let contourAnchor: WardrobeWarpPoint | null = null
+    if (deformationTool === 'contour') {
+      const nearest = nearestContourWorldPoint(point)
+      const grabDistance = Math.max(10, Math.min(24, radius * 0.65))
+      if (!nearest || nearest.distance > grabDistance) {
+        setError('Clique próximo ao contorno visível do tronco para puxá-lo.')
+        return
+      }
+      anchor = nearest.point
+      contourAnchor = nearest.point
+    }
+    updateBrushCursor(anchor)
     event.preventDefault()
     event.currentTarget.setPointerCapture(event.pointerId)
-    dragRef.current = { pointerId: event.pointerId, startClient: { x: event.clientX, y: event.clientY }, last: point, originalX: new Float32Array(meshRef.current.offsetX), originalY: new Float32Array(meshRef.current.offsetY), changed: false, activated: false }
+    dragRef.current = { pointerId: event.pointerId, startClient: { x: event.clientX, y: event.clientY }, startWorld: point, contourAnchor, tool: deformationTool, last: anchor, originalX: new Float32Array(meshRef.current.offsetX), originalY: new Float32Array(meshRef.current.offsetY), changed: false, activated: false }
   }
 
   const moveWarp = (event: ReactPointerEvent<HTMLCanvasElement>) => {
     const point = modelPoint(event)
     if (!point) return
-    updateBrushCursor(point)
     const drag = dragRef.current
     const image = imageRef.current
+    const brushPoint = drag?.tool === 'contour' && drag.contourAnchor
+      ? { x: drag.contourAnchor.x + point.x - drag.startWorld.x, y: drag.contourAnchor.y + point.y - drag.startWorld.y }
+      : deformationTool === 'contour' ? cursorPoint(point) : point
+    updateBrushCursor(brushPoint)
     if (!drag || drag.pointerId !== event.pointerId || !image) return
     event.preventDefault()
     if (!drag.activated && Math.hypot(event.clientX - drag.startClient.x, event.clientY - drag.startClient.y) < 3) return
-    if (Math.hypot(point.x - drag.last.x, point.y - drag.last.y) < 0.01) return
-    applyWardrobeWarpBrushStroke(meshRef.current, image, { x: 0, y: 0, width: part.width, height: part.height, rotation: part.rotation }, drag.last, point, radius, strength / 100)
-    drag.last = point
+    if (Math.hypot(brushPoint.x - drag.last.x, brushPoint.y - drag.last.y) < 0.01) return
+    applyWardrobeWarpBrushStroke(meshRef.current, image, { x: 0, y: 0, width: part.width, height: part.height, rotation: part.rotation }, drag.last, brushPoint, radius, strength / 100)
+    drag.last = brushPoint
     drag.activated = true
     drag.changed = true
     scheduleDraw()
@@ -234,7 +301,9 @@ export function MaleTorsoEditorModal({ project, baseTorso, savedTorso, onClose, 
         <section className="male-torso-preview-panel" aria-label="Prévia somente do tronco">
           <header><span><i /> PRÉVIA · SOMENTE O TRONCO</span><div className="male-torso-preview-tools"><label title="Cor de fundo da prévia">Fundo<input aria-label="Cor de fundo da prévia do tronco" type="color" value={previewBackground} onChange={(event) => setPreviewBackground(event.target.value)} /></label><small>{Math.round(part.width)} × {Math.round(part.height)}</small></div></header>
           <nav className="male-torso-editor-toolbar" aria-label="Ferramentas da cópia masculina">
-            <button className={`model-tool-button male-torso-deform-button${deforming ? ' active' : ''}`} type="button" aria-pressed={deforming} disabled={saving || (deforming && !warpReady)} onClick={() => { setError(''); if (deforming) finishDeformation(); else setDeforming(true) }}><Icon name="move" />{deforming ? 'Concluir deformação' : 'Deformar tronco'}</button>
+            <button className={`model-tool-button male-torso-deform-button${deforming && deformationTool === 'brush' ? ' active' : ''}`} type="button" aria-pressed={deforming && deformationTool === 'brush'} disabled={saving || (deforming && !warpReady)} onClick={() => { setError(''); setDeformationTool('brush'); setRadius(44); if (!deforming) setDeforming(true) }}><Icon name="move" />Pincel livre</button>
+            <button className={`model-tool-button male-torso-deform-button${deforming && deformationTool === 'contour' ? ' active' : ''}`} type="button" aria-pressed={deforming && deformationTool === 'contour'} disabled={saving || (deforming && !warpReady)} onClick={() => { setError(''); setDeformationTool('contour'); setRadius(18); if (!deforming) setDeforming(true) }}><Icon name="move" />Puxar contorno</button>
+            {deforming && <button className="model-tool-button" type="button" disabled={saving || !warpReady} onClick={finishDeformation}>Concluir deformação</button>}
             <button className="model-tool-button" type="button" disabled={saving || !lastDeformation || deforming} onClick={undoDeformation}><Icon name="undo" />Desfazer deformação</button>
             <button className="model-tool-button" type="button" disabled={saving || deforming} onClick={restoreOriginal}><Icon name="undo" />Restaurar cópia feminina</button>
           </nav>
@@ -246,7 +315,7 @@ export function MaleTorsoEditorModal({ project, baseTorso, savedTorso, onClose, 
               {deforming && <div ref={brushCursorRef} className="male-torso-brush-cursor" aria-hidden="true" />}
             </div>
           </div>
-          {deforming && <WardrobeDeformationBrushControls active ready={warpReady} radius={radius} strength={strength} onRadiusChange={setRadius} onStrengthChange={setStrength} />}
+          {deforming && <><WardrobeDeformationBrushControls active ready={warpReady} radius={radius} strength={strength} onRadiusChange={setRadius} onStrengthChange={setStrength} /><p className="male-torso-tool-hint">{deformationTool === 'contour' ? 'Clique perto da borda do tronco e arraste para puxar o contorno.' : 'Arraste sobre o tronco para deformar a região sob o pincel.'}</p></>}
         </section>
       </div>
       {error && <p className="male-torso-error" role="alert">{error}</p>}
