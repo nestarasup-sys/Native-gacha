@@ -65,7 +65,7 @@ test('Juntar juntas usa o espaçamento dos segmentos inferiores do modelo montad
   assert.deepEqual(mounted, mountedBefore)
 })
 
-test('corte automático usa a junta da perna anexada e orienta o limite pelo eixo das peças', () => {
+test('corte automático usa a âncora da extremidade da peça superior e orienta o limite pelo eixo das peças', () => {
   const model = fixture()
   const offsets = createWardrobeJointAssemblyOffsets(model, mountedFixture(model))
   const component = { id: 'long-pants', name: 'Calça longa 01 · esquerda', category: 'calca-coxa', attachedPartId: 'thigh-left', sleeveSide: 'left', x: 15, y: 150, width: 50, height: 100, rotation: 0, dataUrl: '' }
@@ -73,8 +73,8 @@ test('corte automático usa a junta da perna anexada e orienta o limite pelo eix
   assert.ok(cut)
   assert.equal(cut.upperPartId, 'thigh-left')
   assert.equal(cut.lowerPartId, 'shin-left')
-  assert.ok(Math.abs(cut.point.x - 36.5) < 0.00001)
-  assert.ok(Math.abs(cut.point.y - 172.5) < 0.00001)
+  assert.ok(Math.abs(cut.point.x - 30) < 0.00001)
+  assert.ok(Math.abs(cut.point.y - 165) < 0.00001)
   assert.ok(Math.abs(cut.axis.x - (15 / Math.hypot(15, 60))) < 0.00001)
   assert.ok(Math.abs(cut.axis.y - (60 / Math.hypot(15, 60))) < 0.00001)
   assert.equal(findWardrobeJointCut({ ...component, category: 'shorts' }, model, offsets), null)

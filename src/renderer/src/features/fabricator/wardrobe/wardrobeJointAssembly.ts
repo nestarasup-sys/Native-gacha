@@ -113,6 +113,12 @@ function splitKinds(category: WardrobeComponent['category']): { upper: 'thigh' |
   return null
 }
 
+function jointAnchorForPart(joint: JointLink, partId: string): WardrobePoint | null {
+  if (joint.parentPartId === partId) return joint.parentAnchor
+  if (joint.childPartId === partId) return joint.childAnchor
+  return null
+}
+
 /** Find the exact authored joint that divides this long garment. */
 export function findWardrobeJointCut(
   component: WardrobeComponent,
@@ -148,29 +154,27 @@ export function findWardrobeJointCut(
   if (!matching.length) matching = candidates
   const componentCenter = { x: component.x + component.width / 2, y: component.y + component.height / 2 }
   matching.sort((a, b) => {
-    const jointCenter = ({ joint }: typeof matching[number]) => {
-      return {
-        x: (joint.parentAnchor.x + (offsets[joint.parentPartId]?.x ?? 0) + joint.childAnchor.x + (offsets[joint.childPartId]?.x ?? 0)) / 2,
-        y: (joint.parentAnchor.y + (offsets[joint.parentPartId]?.y ?? 0) + joint.childAnchor.y + (offsets[joint.childPartId]?.y ?? 0)) / 2
-      }
+    const upperJointAnchor = ({ joint, upper }: typeof matching[number]) => {
+      const anchor = jointAnchorForPart(joint, upper.id)
+      const offset = offsets[upper.id] ?? { x: 0, y: 0 }
+      return anchor ? { x: anchor.x + offset.x, y: anchor.y + offset.y } : center(upper)
     }
     const aIsAttachedBone = a.upper.id === component.attachedPartId
     const bIsAttachedBone = b.upper.id === component.attachedPartId
     if (aIsAttachedBone !== bIsAttachedBone) return aIsAttachedBone ? -1 : 1
-    const pointA = jointCenter(a), pointB = jointCenter(b)
+    const pointA = upperJointAnchor(a), pointB = upperJointAnchor(b)
     return Math.hypot(pointA.x - componentCenter.x, pointA.y - componentCenter.y)
       - Math.hypot(pointB.x - componentCenter.x, pointB.y - componentCenter.y)
   })
 
   const { joint, upper, lower } = matching[0]
-  const parentOffset = offsets[joint.parentPartId] ?? { x: 0, y: 0 }
-  const childOffset = offsets[joint.childPartId] ?? { x: 0, y: 0 }
-  const point = {
-    x: (joint.parentAnchor.x + parentOffset.x + joint.childAnchor.x + childOffset.x) / 2,
-    y: (joint.parentAnchor.y + parentOffset.y + joint.childAnchor.y + childOffset.y) / 2
-  }
+  const upperJointAnchor = jointAnchorForPart(joint, upper.id)
+  if (!upperJointAnchor) return null
   const upperOffset = offsets[upper.id] ?? { x: 0, y: 0 }
   const lowerOffset = offsets[lower.id] ?? { x: 0, y: 0 }
+  // Each bone stores its own side of the joint. Averaging those anchors can
+  // put the seam halfway inside the upper limb instead of at its distal end.
+  const point = { x: upperJointAnchor.x + upperOffset.x, y: upperJointAnchor.y + upperOffset.y }
   const upperCenter = center(upper)
   const lowerCenter = center(lower)
   const dx = lowerCenter.x + lowerOffset.x - upperCenter.x - upperOffset.x
