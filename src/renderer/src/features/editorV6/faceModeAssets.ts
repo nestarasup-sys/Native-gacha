@@ -5,7 +5,7 @@ import type { TrimmedImage } from '../../characters/characterGeometry'
 
 // Version 9 rebuilds snapshots made by the refresh path that applied body
 // dimensions twice to characters with customized proportions.
-export const EDITOR_V6_FACE_RENDER_VERSION = 9
+export const EDITOR_V6_FACE_RENDER_VERSION = 10
 const AUTO_FACE_MODES: EditorV6FaceRenderMode[] = ['idle', 'blink', 'talk', 'talk-blink']
 export type PreparedEditorV6FaceRenderer = Awaited<ReturnType<typeof import('../../characters/editorV6CharacterRenderer').prepareSavedCharacterRenderer>>
 
@@ -61,18 +61,44 @@ export async function bakeFaceModeAssets(
   let base: { canvas: HTMLCanvasElement; width: number; height: number }
   try { base = baseRendered ?? await renderer.renderToCanvas(appearance, transforms, effects, baseMode) }
   catch { throw new Error(`Não foi possível renderizar a expressão ${baseMode} de ${name}.`) }
-  const crop = trimTransparentCanvas(base.canvas)
-  const dataUrl = crop?.dataUrl ?? base.canvas.toDataURL('image/png')
-  const assetIds: Partial<Record<EditorV6FaceRenderMode, string>> = {}
-  const extraAssets: EditorV6Asset[] = []
-  for (const mode of AUTO_FACE_MODES) {
-    if (mode === baseMode) continue
-    try {
+  // The renderer reuses its canvas. Retain each mode before rendering the next,
+  // and use their union so an open mouth or blink cannot be clipped by idle.
+  const frames = new Map<EditorV6FaceRenderMode, HTMLCanvasElement>()
+  const retain = (mode: EditorV6FaceRenderMode, source: HTMLCanvasElement) => {
+    const copy = document.createElement('canvas')
+    copy.width = source.width; copy.height = source.height
+    const context = copy.getContext('2d')
+    if (!context) throw new Error(`Não foi possível preparar as variantes de ${name}.`)
+    context.drawImage(source, 0, 0)
+    frames.set(mode, copy)
+  }
+  retain(baseMode, base.canvas)
+  try {
+    for (const mode of AUTO_FACE_MODES) {
+      if (mode === baseMode) continue
       const frame = await renderer.renderToCanvas(appearance, transforms, effects, mode)
+      retain(mode, frame.canvas)
+    }
+    const union = document.createElement('canvas')
+    union.width = Math.max(...[...frames.values()].map(frame => frame.width))
+    union.height = Math.max(...[...frames.values()].map(frame => frame.height))
+    const context = union.getContext('2d')
+    if (!context) throw new Error(`Não foi possível medir as variantes de ${name}.`)
+    for (const frame of frames.values()) context.drawImage(frame, 0, 0)
+    const crop = trimTransparentCanvas(union)
+    const dataUrl = cropCharacterCanvas(frames.get(baseMode)!, crop)
+    if (crop) crop.dataUrl = dataUrl
+    const assetIds: Partial<Record<EditorV6FaceRenderMode, string>> = {}
+    const extraAssets: EditorV6Asset[] = []
+    for (const [mode, frame] of frames) {
+      if (mode === baseMode) continue
       const id = crypto.randomUUID()
       assetIds[mode] = id
-      extraAssets.push({ id, category: 'character', name: `${name} · ${mode}`, mimeType: 'image/png', dataUrl: cropCharacterCanvas(frame.canvas, crop), timelineSnapshot: true })
-    } catch { /* The character may not have a compatible blink or open-mouth asset. */ }
+      extraAssets.push({ id, category: 'character', name: `${name} · ${mode}`, mimeType: 'image/png', dataUrl: cropCharacterCanvas(frame, crop), timelineSnapshot: true })
+    }
+    union.width = union.height = 1
+    return { dataUrl, crop, assetIds, extraAssets }
+  } finally {
+    for (const frame of frames.values()) frame.width = frame.height = 1
   }
-  return { dataUrl, crop, assetIds, extraAssets }
 }

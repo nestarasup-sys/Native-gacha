@@ -1,3 +1,4 @@
+import { bakeFaceModeAssets } from '../../src/renderer/src/features/editorV6/faceModeAssets'
 import { createElement, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { flushSync } from 'react-dom'
@@ -31,6 +32,24 @@ async function captureScene(scene: unknown, assets: unknown[], renderLayer: 'all
   } finally { URL.revokeObjectURL(url); root.unmount(); mount.remove() }
 }
 ;(globalThis as unknown as { runMotionCheck: () => Promise<unknown> }).runMotionCheck = async () => {
+  const variantCanvas = document.createElement('canvas')
+  variantCanvas.width = variantCanvas.height = 100
+  const variantContext = variantCanvas.getContext('2d')!
+  const variantRenderer = { renderToCanvas: async (_a: unknown, _t: unknown, _e: unknown, mode: string) => {
+    variantContext.clearRect(0, 0, 100, 100)
+    variantContext.fillStyle = '#ff0000'
+    variantContext.fillRect(40, 40, 20, 20)
+    if (mode !== 'idle') variantContext.fillRect(70, 70, 5, 5)
+    return { canvas: variantCanvas, width: 100, height: 100 }
+  } } as unknown as Parameters<typeof bakeFaceModeAssets>[1]
+  const variants = await bakeFaceModeAssets('Synthetic union', variantRenderer, undefined, undefined, undefined, 'idle')
+  assert(variants.crop?.left === 40 && variants.crop.top === 40 && variants.crop.width === 35 && variants.crop.height === 35, 'Facial variants were cropped using idle bounds')
+  for (const asset of variants.extraAssets) {
+    const decoded = await image(asset.dataUrl)
+    const check = document.createElement('canvas'); check.width = check.height = 35
+    const ctx = check.getContext('2d')!; ctx.drawImage(decoded, 0, 0)
+    assert(ctx.getImageData(32, 32, 1, 1).data[3] === 255, 'A facial variant lost pixels outside idle bounds')
+  }
   const source: FabricatorProject = { schemaVersion: 1, slot: 1, name: 'Synthetic', sourceName: 'test', sourceAssetName: 'test', sourceDataUrl: '', width: 100, height: 100, tolerance: 0, updatedAt: new Date().toISOString(), joints: [], layerOrder: ['head','arm'], parts: [ { id: 'head', name: 'head', x: 35, y: 20, width: 30, height: 60, rotation: 0, dataUrl: png('#ff0000') }, { id: 'arm', name: 'arm', x: 10, y: 50, width: 10, height: 10, rotation: 0, dataUrl: png('#0000ff') } ] }
   const target = { ...source, parts: source.parts.map(p => p.id === 'arm' ? { ...p, x: 80 } : p) }
   const character: CustomizerCharacter = { id: 'alice', name: 'Alice', hair: '', outfit: '', skin: '', createdAt: source.updatedAt, updatedAt: source.updatedAt, customization: { modelSlot: 1, poseSlot: null, partOverrides: {}, layerOrder: [] } }
