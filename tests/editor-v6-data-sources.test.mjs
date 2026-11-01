@@ -23,9 +23,19 @@ import { loadEditorV6PoseThumbnails } from '../src/renderer/src/features/editorV
 import { createEditorV6MediaCommands } from '../src/renderer/src/features/editorV6/editorV6MediaCommands.ts'
 import {
   applyEditorV6CharacterAssetCrops,
+  editorV6LegacyCharacterCropAssetIds,
   applyEditorV6CharacterRefreshResult,
   editorV6CharacterRefreshStateSignature
 } from '../src/renderer/src/features/editorV6/editorV6CharacterRefreshModel.ts'
+
+test('reabrir documento preserva o recorte comum das variantes faciais, inclusive referências compartilhadas na timeline', () => {
+  const project = { elements: [
+    { kind: 'character', assetId: 'legacy' },
+    { kind: 'character', assetId: 'base', faceModeAssetIds: { talk: 'talk' } },
+    { kind: 'character', assetId: 'shared' }
+  ], timeline: { tracks: [{ blocks: [{ state: { kind: 'character', assetId: 'shared', faceModeAssetIds: { blink: 'blink' } } }] }] } }
+  assert.deepEqual([...editorV6LegacyCharacterCropAssetIds(JSON.parse(JSON.stringify(project)))], ['legacy'])
+})
 import {
   importEditorV6ImageToProject,
   importEditorV6MediaToTimeline

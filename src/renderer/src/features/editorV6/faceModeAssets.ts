@@ -76,8 +76,14 @@ export async function bakeFaceModeAssets(
   try {
     for (const mode of AUTO_FACE_MODES) {
       if (mode === baseMode) continue
-      const frame = await renderer.renderToCanvas(appearance, transforms, effects, mode)
-      retain(mode, frame.canvas)
+      try {
+        const frame = await renderer.renderToCanvas(appearance, transforms, effects, mode)
+        retain(mode, frame.canvas)
+      } catch (error) {
+        const missingBlink = error instanceof Error && error.message.includes('Selecione olhos do catálogo ou assets de Olhos Dev')
+        if ((mode === 'blink' || mode === 'talk-blink') && missingBlink) continue
+        throw error
+      }
     }
     const union = document.createElement('canvas')
     union.width = Math.max(...[...frames.values()].map(frame => frame.width))

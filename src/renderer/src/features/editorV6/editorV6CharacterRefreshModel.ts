@@ -4,6 +4,15 @@ import type { EditorV6CharacterRefreshResult } from './characterSnapshotRefresh'
 
 export type EditorV6TimelineSnapshotPruner = (project: EditorV6Document) => EditorV6Document
 
+/** Facial variants share one crop. Legacy normalization must not trim one of
+ * those images independently when a project is reopened. */
+export function editorV6LegacyCharacterCropAssetIds(project: EditorV6Document): Set<string> {
+  const states = [...project.elements, ...project.timeline.tracks.flatMap(track => track.blocks.flatMap(block => block.state ? [block.state] : []))]
+  const aligned = new Set(states.flatMap(state => state.kind === 'character' && Object.values(state.faceModeAssetIds ?? {}).some(Boolean)
+    ? [state.assetId, ...Object.values(state.faceModeAssetIds ?? {})] : []))
+  return new Set(project.elements.flatMap(element => element.kind === 'character' && element.assetId && !aligned.has(element.assetId) ? [element.assetId] : []))
+}
+
 /** Stable snapshot identity used to reject async refreshes based on an older scene state. */
 export function editorV6CharacterRefreshStateSignature(state: EditorV6Document['elements'][number]): string {
   return JSON.stringify(state)

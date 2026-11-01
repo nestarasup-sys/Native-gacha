@@ -7,6 +7,7 @@ import { mapConcurrentItems } from '../../ui/mapConcurrentItems'
 import type { PoseRevisionSnapshot } from './editorV6CharacterSourceModel'
 import {
   applyEditorV6CharacterAssetCrops,
+  editorV6LegacyCharacterCropAssetIds,
   applyEditorV6CharacterRefreshResult
 } from './editorV6CharacterRefreshModel'
 import {
@@ -43,9 +44,7 @@ export function useEditorV6CharacterSnapshotRefresh({
     if (!project || normalizedProjectIdsRef.current.has(project.id)) return
     let cancelled = false
     const projectId = project.id
-    const referencedCharacterAssetIds = new Set(project.elements.flatMap((element) =>
-      element.kind === 'character' && element.assetId ? [element.assetId] : []
-    ))
+    const referencedCharacterAssetIds = editorV6LegacyCharacterCropAssetIds(project)
     const characterAssets = project.assets.filter((asset) =>
       asset.category === 'character' && referencedCharacterAssetIds.has(asset.id)
     )
