@@ -51,6 +51,7 @@ export function createFabricatorWardrobePersistence(deps: WardrobePersistenceDep
     const ids = new Set(set.components.map(component => component.id))
     if (ids.size !== set.components.length || set.components.some(component => !deps.isValidWardrobeId(component.id) || !wardrobeCategories.includes(component.category)
       || !deps.isValidWardrobeId(component.attachedPartId)
+      || component.jointCutOffsetRatio !== undefined && (!Number.isFinite(component.jointCutOffsetRatio) || component.jointCutOffsetRatio < -1 || component.jointCutOffsetRatio > 1)
       || component.hasDeformationOriginal !== undefined && component.hasDeformationOriginal !== true
       || component.isDeformed !== undefined && typeof component.isDeformed !== 'boolean'
       || component.isDeformed === true && component.hasDeformationOriginal !== true

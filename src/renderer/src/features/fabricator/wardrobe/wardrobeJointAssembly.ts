@@ -7,7 +7,11 @@ export type WardrobeJointOffsets = Readonly<Record<string, WardrobePoint>>
 export type WardrobeJointCut = {
   upperPartId: string
   lowerPartId: string
+  /** Automatic distal edge before a user's manual adjustment. */
+  basePoint: WardrobePoint
   point: WardrobePoint
+  /** Length of the upper asset projected along the cut direction. */
+  adjustmentSpan: number
   /** Unit vector from the upper limb segment toward the lower segment. */
   axis: WardrobePoint
   /** Unit vector along the cut line. */
@@ -124,27 +128,33 @@ function directionBetweenSegments(upper: ModelPart, lower: ModelPart, offsets: W
   return length < 0.000001 ? null : { x: dx / length, y: dy / length }
 }
 
-/** Return the end of the upper asset's rectangle facing the lower segment. */
-function distalAssetPoint(part: ModelPart, axis: WardrobePoint, offset: WardrobePoint): WardrobePoint {
+/** Return the end and projected length of the upper asset facing the lower segment. */
+function distalAssetEdge(part: ModelPart, axis: WardrobePoint, offset: WardrobePoint): { point: WardrobePoint; span: number } {
   const radians = (part.sourceTransform?.rotation ?? part.rotation) * Math.PI / 180
   const cosine = Math.cos(radians)
   const sine = Math.sin(radians)
   const halfWidth = part.width / 2
   const halfHeight = part.height / 2
   let furthestProjection = Number.NEGATIVE_INFINITY
+  let nearestProjection = Number.POSITIVE_INFINITY
   for (const localX of [-halfWidth, halfWidth]) for (const localY of [-halfHeight, halfHeight]) {
     const rotatedX = localX * cosine - localY * sine
     const rotatedY = localX * sine + localY * cosine
-    furthestProjection = Math.max(furthestProjection, rotatedX * axis.x + rotatedY * axis.y)
+    const projection = rotatedX * axis.x + rotatedY * axis.y
+    furthestProjection = Math.max(furthestProjection, projection)
+    nearestProjection = Math.min(nearestProjection, projection)
   }
   const partCenter = center(part)
   return {
-    x: partCenter.x + offset.x + axis.x * furthestProjection,
-    y: partCenter.y + offset.y + axis.y * furthestProjection
+    point: {
+      x: partCenter.x + offset.x + axis.x * furthestProjection,
+      y: partCenter.y + offset.y + axis.y * furthestProjection
+    },
+    span: furthestProjection - nearestProjection
   }
 }
 
-/** Find the exact authored joint that divides this long garment. */
+/** Find connected upper/lower segments and calculate a persistent cut position. */
 export function findWardrobeJointCut(
   component: WardrobeComponent,
   project: JointProject,
@@ -183,7 +193,7 @@ export function findWardrobeJointCut(
       const axis = directionBetweenSegments(upper, lower, offsets)
       if (!axis) return center(upper)
       const offset = offsets[upper.id] ?? { x: 0, y: 0 }
-      return distalAssetPoint(upper, axis, offset)
+      return distalAssetEdge(upper, axis, offset).point
     }
     const aIsAttachedBone = a.upper.id === component.attachedPartId
     const bIsAttachedBone = b.upper.id === component.attachedPartId
@@ -197,10 +207,19 @@ export function findWardrobeJointCut(
   const upperOffset = offsets[upper.id] ?? { x: 0, y: 0 }
   const axis = directionBetweenSegments(upper, lower, offsets)
   if (!axis) return null
-  // The rig anchor can be manually positioned away from the image edge. The
-  // cut belongs at the distal edge of the upper asset, facing its lower part.
-  const point = distalAssetPoint(upper, axis, upperOffset)
-  return { upperPartId: upper.id, lowerPartId: lower.id, point, axis, tangent: { x: -axis.y, y: axis.x } }
+  const distalEdge = distalAssetEdge(upper, axis, upperOffset)
+  const ratio = typeof component.jointCutOffsetRatio === 'number' && Number.isFinite(component.jointCutOffsetRatio)
+    ? Math.max(-1, Math.min(1, component.jointCutOffsetRatio))
+    : 0
+  const point = {
+    x: distalEdge.point.x + axis.x * distalEdge.span * ratio,
+    y: distalEdge.point.y + axis.y * distalEdge.span * ratio
+  }
+  return {
+    upperPartId: upper.id, lowerPartId: lower.id,
+    basePoint: distalEdge.point, point, adjustmentSpan: distalEdge.span,
+    axis, tangent: { x: -axis.y, y: axis.x }
+  }
 }
 
 /** Split exact source pixels by the projected model joint, including rotated garments. */

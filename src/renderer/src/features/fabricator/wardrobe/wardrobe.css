@@ -4,7 +4,17 @@
 .wardrobe-sleeve-cut { display:grid;gap:8px;padding:12px;margin:10px 0;border:1px solid #79a8ff;border-radius:10px;background:#eff6ff; }
 .wardrobe-sleeve-cut small { color:#667085; }
 .wardrobe-joint-cut-guide { position:absolute;inset:0;overflow:visible;z-index:20000;pointer-events:none; }
-.wardrobe-joint-cut-guide line { stroke:#1677ff;stroke-width:2;stroke-dasharray:7 5;filter:drop-shadow(0 1px 1px white); }
+.wardrobe-joint-cut-guide .wardrobe-joint-cut-visible { stroke:#1677ff;stroke-width:2;stroke-dasharray:7 5;filter:drop-shadow(0 1px 1px white);pointer-events:none; }
+.wardrobe-joint-cut-guide .wardrobe-joint-cut-hit-target { stroke:transparent;stroke-width:24;stroke-dasharray:none;filter:none;pointer-events:stroke;cursor:grab;touch-action:none; }
+.wardrobe-joint-cut-guide .wardrobe-joint-cut-hit-target:active { cursor:grabbing; }
+.wardrobe-joint-cut-guide .wardrobe-joint-cut-hit-target.disabled { pointer-events:none; }
+.wardrobe-joint-cut-guide .wardrobe-joint-cut-handle { fill:#fff;stroke:#1677ff;stroke-width:2;pointer-events:none; }
+.wardrobe-joint-cut-position { display:grid;gap:6px;padding:8px 0; }
+.wardrobe-joint-cut-position > span { display:flex;justify-content:space-between;align-items:center;gap:10px; }
+.wardrobe-joint-cut-position output { font-variant-numeric:tabular-nums;font-weight:700;color:#1677ff; }
+.wardrobe-joint-cut-position input[type="range"] { width:100%;accent-color:#1677ff; }
+.wardrobe-joint-cut-reset { justify-self:start; }
+.wardrobe-joint-cut-position small { color:#667085; }
 
 .wardrobe-set-row.sleeves-import { --set-border:#d4bcf2;--set-background:#f6f0ff;--set-color:#70429b;--set-active:#eadbfb; }
 .wardrobe-set-row.pants-import { --set-border:#b5cfee;--set-background:#eff6ff;--set-color:#285d98;--set-active:#daeaff; }
