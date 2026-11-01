@@ -41,15 +41,16 @@ export function MaleTorsoEditorModal({ project, baseTorso, savedTorso, onClose, 
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const imageRef = useRef<HTMLImageElement | null>(null)
   const meshRef = useRef<WardrobeWarpMesh>(createWardrobeWarpMesh())
-  const dragRef = useRef<{ pointerId: number; last: WardrobeWarpPoint; originalX: Float32Array; originalY: Float32Array; changed: boolean } | null>(null)
+  const dragRef = useRef<{ pointerId: number; startClient: WardrobeWarpPoint; last: WardrobeWarpPoint; originalX: Float32Array; originalY: Float32Array; changed: boolean; activated: boolean } | null>(null)
+  const warpSessionChangedRef = useRef(false)
   const frameRef = useRef<number | null>(null)
-  const lastPointRef = useRef<WardrobeWarpPoint | null>(null)
 
   useEffect(() => {
     if (!deforming) { setWarpReady(false); imageRef.current = null; return }
     let active = true
     setWarpReady(false)
     meshRef.current = createWardrobeWarpMesh()
+    warpSessionChangedRef.current = false
     void loadImage(part.dataUrl).then((image) => {
       if (!active) return
       imageRef.current = image
@@ -110,27 +111,27 @@ export function MaleTorsoEditorModal({ project, baseTorso, savedTorso, onClose, 
   }
 
   const beginWarp = (event: ReactPointerEvent<HTMLCanvasElement>) => {
-    if (!warpReady || event.button !== 0) return
+    if (!warpReady || event.button !== 0 || dragRef.current) return
     const point = modelPoint(event)
     if (!point) return
     event.preventDefault()
     event.currentTarget.setPointerCapture(event.pointerId)
-    dragRef.current = { pointerId: event.pointerId, last: point, originalX: new Float32Array(meshRef.current.offsetX), originalY: new Float32Array(meshRef.current.offsetY), changed: false }
-    lastPointRef.current = point
+    dragRef.current = { pointerId: event.pointerId, startClient: { x: event.clientX, y: event.clientY }, last: point, originalX: new Float32Array(meshRef.current.offsetX), originalY: new Float32Array(meshRef.current.offsetY), changed: false, activated: false }
   }
 
   const moveWarp = (event: ReactPointerEvent<HTMLCanvasElement>) => {
     const point = modelPoint(event)
     if (!point) return
-    lastPointRef.current = point
     const drag = dragRef.current
     const image = imageRef.current
     if (!drag || drag.pointerId !== event.pointerId || !image) return
     event.preventDefault()
+    if (!drag.activated && Math.hypot(event.clientX - drag.startClient.x, event.clientY - drag.startClient.y) < 3) return
     const delta = { x: point.x - drag.last.x, y: point.y - drag.last.y }
     if (Math.abs(delta.x) < 0.01 && Math.abs(delta.y) < 0.01) return
     applyWardrobeWarpBrush(meshRef.current, image, { x: 0, y: 0, width: part.width, height: part.height, rotation: part.rotation }, point, delta, radius, strength / 100)
     drag.last = point
+    drag.activated = true
     drag.changed = true
     scheduleDraw()
   }
@@ -147,15 +148,31 @@ export function MaleTorsoEditorModal({ project, baseTorso, savedTorso, onClose, 
       drawWarp()
       return
     }
-    if (!drag.changed) return
+    if (drag.changed) warpSessionChangedRef.current = true
+  }
+
+  const finishDeformation = () => {
+    if (!deforming) return
+    if (!warpSessionChangedRef.current) {
+      setDeforming(false)
+      return
+    }
     if (frameRef.current !== null) cancelAnimationFrame(frameRef.current)
     frameRef.current = null
     const layout = drawWarp()
     const canvas = canvasRef.current
-    if (!layout || !canvas) return
+    if (!layout || !canvas) {
+      setError('Não foi possível concluir a deformação. Tente novamente.')
+      return
+    }
     const image = imageRef.current
-    if (!image) return
-    const dataUrl = canvas.toDataURL('image/png')
+    if (!image) {
+      setError('A imagem do tronco não está pronta. Tente novamente.')
+      return
+    }
+    let dataUrl: string
+    try { dataUrl = canvas.toDataURL('image/png') }
+    catch { setError('Não foi possível gerar a imagem deformada. Tente novamente.'); return }
     setLastDeformation(part)
     const widthScale = part.width / image.naturalWidth
     const heightScale = part.height / image.naturalHeight
@@ -168,6 +185,8 @@ export function MaleTorsoEditorModal({ project, baseTorso, savedTorso, onClose, 
       width: (layout.result.width) * widthScale,
       height: (layout.result.height) * heightScale
     }))
+    warpSessionChangedRef.current = false
+    meshRef.current = createWardrobeWarpMesh()
     setDeforming(false)
     setError('')
   }
@@ -194,14 +213,14 @@ export function MaleTorsoEditorModal({ project, baseTorso, savedTorso, onClose, 
     finally { setSaving(false) }
   }
 
-  return <div className="male-torso-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) onClose() }}>
+  return <div className="male-torso-modal-backdrop" role="presentation">
     <section className="male-torso-modal" role="dialog" aria-modal="true" aria-labelledby="male-torso-title">
       <header className="male-torso-modal-header"><div><small>MODELOS DEV · CÓPIA INDEPENDENTE</small><h2 id="male-torso-title">Tronco masculino · Modelo {String(project.slot).padStart(2, '0')}</h2><p>Edite e deforme esta cópia. O tronco feminino original continua intacto.</p></div><button type="button" aria-label="Fechar editor" disabled={saving} onClick={onClose}>×</button></header>
       <div className="male-torso-modal-body">
         <section className="male-torso-preview-panel" aria-label="Prévia somente do tronco">
           <header><span><i /> PRÉVIA · SOMENTE O TRONCO</span><div className="male-torso-preview-tools"><label title="Cor de fundo da prévia">Fundo<input aria-label="Cor de fundo da prévia do tronco" type="color" value={previewBackground} onChange={(event) => setPreviewBackground(event.target.value)} /></label><small>{Math.round(part.width)} × {Math.round(part.height)}</small></div></header>
           <nav className="male-torso-editor-toolbar" aria-label="Ferramentas da cópia masculina">
-            <button className={`model-tool-button male-torso-deform-button${deforming ? ' active' : ''}`} type="button" aria-pressed={deforming} disabled={saving} onClick={() => { setError(''); setDeforming((value) => !value) }}><Icon name="move" />{deforming ? 'Concluir deformação' : 'Deformar tronco'}</button>
+            <button className={`model-tool-button male-torso-deform-button${deforming ? ' active' : ''}`} type="button" aria-pressed={deforming} disabled={saving || (deforming && !warpReady)} onClick={() => { setError(''); if (deforming) finishDeformation(); else setDeforming(true) }}><Icon name="move" />{deforming ? 'Concluir deformação' : 'Deformar tronco'}</button>
             <button className="model-tool-button" type="button" disabled={saving || !lastDeformation || deforming} onClick={undoDeformation}><Icon name="undo" />Desfazer deformação</button>
             <button className="model-tool-button" type="button" disabled={saving || deforming} onClick={restoreOriginal}><Icon name="undo" />Restaurar cópia feminina</button>
           </nav>
