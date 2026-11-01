@@ -2470,8 +2470,8 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .male-torso-preview-tools input { width:23px;height:23px;padding:1px;border:1px solid #dce3eb;border-radius:5px;background:#fff;cursor:pointer; }
 .male-torso-editor-toolbar { min-height:40px;display:flex;align-items:center;gap:7px;flex-wrap:wrap;padding:5px 9px;border-bottom:1px solid #e0e7ef;background:#fff; }
 .male-torso-editor-toolbar .model-tool-button { min-height:29px;padding:4px 9px;color:#4d6f99;font-size:10px; }
-.male-torso-stage { min-height:360px;flex:1;display:grid;place-items:center;padding:12px;overflow:auto; }
-.male-torso-artboard { width:min(100%,560px);height:min(52vh,520px);position:relative;overflow:visible;border:1px solid #cdd7e3;background-color:#fff;background-image:linear-gradient(45deg,#f3f6fa 25%,transparent 25%),linear-gradient(-45deg,#f3f6fa 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#f3f6fa 75%),linear-gradient(-45deg,transparent 75%,#f3f6fa 75%);background-size:16px 16px;background-position:0 0,0 8px,8px -8px,-8px 0;box-shadow:0 3px 12px #29374a18; }
+.male-torso-stage { min-height:360px;flex:1;display:flex;align-items:center;justify-content:center;padding:12px;overflow:auto; }
+.male-torso-artboard { width:min(100%,560px);height:min(52vh,520px);flex:0 0 auto;position:relative;overflow:visible;border:1px solid #cdd7e3;background-color:#fff;background-image:linear-gradient(45deg,#f3f6fa 25%,transparent 25%),linear-gradient(-45deg,#f3f6fa 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#f3f6fa 75%),linear-gradient(-45deg,transparent 75%,#f3f6fa 75%);background-size:16px 16px;background-position:0 0,0 8px,8px -8px,-8px 0;box-shadow:0 3px 12px #29374a18; }
 .male-torso-part-preview { position:absolute;object-fit:fill;transform-origin:center center;user-select:none;-webkit-user-drag:none; }
 .male-torso-warp-canvas { position:absolute;z-index:2;touch-action:none;cursor:crosshair;transform-origin:center center; }
 .male-torso-editor-toolbar .male-torso-deform-button.active { border-color:#84afe1;background:#e7f2ff;color:#286bb2; }
