@@ -8,7 +8,7 @@ import { runEditorV6Export } from '../../electron/domains/editorV6/exportRunner'
 import { createEditorV6Timeline, type EditorV6Document, type EditorV6Element } from '../../src/shared/editorV6'
 import type { CustomizerCharacter } from '../../src/shared/customizer'
 import type { EditorV6MotionBakeRequest, EditorV6MotionBakeResult } from '../../src/shared/editorV6Motion'
-import { editorV6FaceModeAtFrame } from '../../src/shared/editorV6FaceSchedule'
+import { editorV6FaceModeAtFrame, isEditorV6BlinkFrame } from '../../src/shared/editorV6FaceSchedule'
 
 const root = resolve(process.argv[2]), folder = resolve(process.argv[3]), fixturePath = resolve(process.argv[4])
 protocol.registerSchemesAsPrivileged([{ scheme: 'gacha-editor-media', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } }])
@@ -60,6 +60,7 @@ async function main() {
     asset: EditorV6MotionBakeResult['asset']
     metrics: EditorV6MotionBakeResult['metrics']
     frames: Array<{ facePatch: NonNullable<EditorV6MotionBakeResult['motion']['frames'][number]['facePatch']> }>
+    combined: { transition: EditorV6MotionBakeResult; targetMouth: EditorV6MotionBakeResult; baseModes: { assetIds: EditorV6Element['faceModeAssetIds']; extraAssets: EditorV6Document['assets'] }; targetModes: { dataUrl: string; assetIds: EditorV6Element['faceModeAssetIds']; extraAssets: EditorV6Document['assets'] }; targetTransforms: EditorV6Element['faceTransforms']; characterCanvasWidth: number; characterHeight: number; customizations: CustomizerCharacter['customization'] }
   }
   const colors = [
     ['idle', 'yellow'],
@@ -181,25 +182,37 @@ async function main() {
   assert(thoughtPixels > 250, `O pensamento não apareceu sobre a animação facial: ${thoughtPixels} pixels claros.`)
   const hiBaseId = randomUUID(), hiPatchAsset = hiBakeFixture.asset, hiPatchId = hiPatchAsset.id
   const hiBaseAsset = { id: hiBaseId, category: 'character' as const, name: 'Personagem sintético 640 × 960', mimeType: 'image/png' as const, dataUrl: hiBakeFixture.sourceDataUrl }
+  const targetBaseId = randomUUID()
+  const targetBase = { ...hiBaseAsset, id: targetBaseId, dataUrl: hiBakeFixture.combined.targetModes.dataUrl }
   const hiCharacters: CustomizerCharacter[] = []
   const hiActors: EditorV6Element[] = [
-    { id: randomUUID(), kind: 'character', characterId: 'high-resolution-mouth-normal', assetId: hiBaseId, text: 'Fixture facial normal', x: -30, y: 0, width: 40, height: 70, rotation: 0, flipX: false, zIndex: 1 },
-    { id: randomUUID(), kind: 'character', characterId: 'high-resolution-mouth-small', assetId: hiBaseId, text: 'Fixture facial pequeno e espelhado', x: 0, y: 0, width: 24, height: 42, rotation: 31, flipX: true, zIndex: 2 },
-    { id: randomUUID(), kind: 'character', characterId: 'high-resolution-mouth-large', assetId: hiBaseId, text: 'Fixture facial grande e rotacionado', x: 30, y: 0, width: 52, height: 88, rotation: -24, flipX: false, zIndex: 3 }
+    { id: randomUUID(), kind: 'character', characterId: 'high-resolution-mouth-normal', assetId: hiBaseId, text: 'Fixture facial normal', x: -32, y: 0, width: 20, height: 80, rotation: 0, flipX: false, zIndex: 1 },
+    { id: randomUUID(), kind: 'character', characterId: 'high-resolution-mouth-small', assetId: hiBaseId, text: 'Fixture facial pequeno e espelhado', x: 0, y: 0, width: 14, height: 56, rotation: 31, flipX: true, zIndex: 2 },
+    { id: randomUUID(), kind: 'character', characterId: 'high-resolution-mouth-large', assetId: hiBaseId, text: 'Fixture facial grande e rotacionado', x: 32, y: 0, width: 22, height: 88, rotation: -24, flipX: false, zIndex: 3 }
   ]
-  for (const actor of hiActors) hiCharacters.push({ id: actor.characterId!, name: actor.text, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), hair: '', outfit: '', skin: '', customization: { modelSlot: 1, poseSlot: null, partOverrides: {}, layerOrder: [] } })
+  hiActors[0].characterCanvasWidth = hiBakeFixture.combined.characterCanvasWidth
+  hiActors[0].height = hiBakeFixture.combined.characterHeight
+  for (const actor of hiActors) actor.faceModeAssetIds = { ...hiBakeFixture.combined.baseModes.assetIds, idle: hiBaseId }
+  for (const actor of hiActors) hiCharacters.push({ id: actor.characterId!, name: actor.text, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), hair: '', outfit: '', skin: '', customization: hiBakeFixture.combined.customizations })
   const hiTimeline = createEditorV6Timeline(hiActors)
-  const hiProjectId = randomUUID()
+  let hiProjectId = randomUUID()
+  while (!Array.from({ length: 15 }, (_, i) => 25 + i).some(frame => isEditorV6BlinkFrame(hiProjectId, hiActors[0].characterId!, frame))) hiProjectId = randomUUID()
   const hiSpeechBlocks = hiActors.map((actor) => ({ id: randomUUID(), label: `Fala de ${actor.text}`, characterId: actor.characterId!, startFrame: 8, durationFrames: 16 }))
   const hiProject: EditorV6Document = {
     schemaVersion: 1, id: hiProjectId, title: 'Paridade facial em alta resolução', color: '#ffffff', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
     backgroundColor: '#151515', backgroundAssetId: null, backgroundX: 0, backgroundY: 0, backgroundWidth: 100, backgroundHeight: 100, backgroundRotation: 0,
-    assets: [hiBaseAsset], elements: hiActors, exportAudio: [],
+    assets: [hiBaseAsset, targetBase, ...hiBakeFixture.combined.baseModes.extraAssets, ...hiBakeFixture.combined.targetModes.extraAssets], elements: hiActors, exportAudio: [],
     timeline: { ...hiTimeline, durationFrames: 40, tracks: hiTimeline.tracks.map((track) => track.kind === 'character'
-      ? { ...track, blocks: track.blocks.map((block) => ({ ...block, durationFrames: 40, state: hiActors.find((actor) => actor.id === block.elementId) })) }
+      ? { ...track, blocks: track.blocks.flatMap((block) => {
+        const state = hiActors.find((actor) => actor.id === block.elementId)!
+        if (state.id !== hiActors[0].id) return [{ ...block, durationFrames: 40, state }]
+        return [{ ...block, durationFrames: 23, state }, { ...block, id: randomUUID(), startFrame: 23, durationFrames: 17, state: { ...state, assetId: targetBaseId, faceModeAssetIds: hiBakeFixture.combined.targetModes.assetIds, activeExpressionPresetId: 'synthetic-expression', faceTransforms: hiBakeFixture.combined.targetTransforms } }]
+      }) }
       : track.kind === 'speech' ? { ...track, blocks: hiSpeechBlocks } : track) }
   }
   const hiBake = async (request: EditorV6MotionBakeRequest): Promise<EditorV6MotionBakeResult> => {
+    if (request.plan.samples.length === 7) return { ...hiBakeFixture.combined.transition, motion: { ...hiBakeFixture.combined.transition.motion, key: request.plan.key } }
+    if (request.plan.from.faceTransforms) return { ...hiBakeFixture.combined.targetMouth, motion: { ...hiBakeFixture.combined.targetMouth.motion, key: request.plan.key } }
     const frames = request.plan.samples.map((sample, index) => {
       const facePatch = hiBakeFixture.frames[index]?.facePatch
       if (!facePatch) throw Error(`O bake Chromium não gerou o recorte facial ${index + 1}.`)
@@ -215,9 +228,10 @@ async function main() {
   assert(hiBakeFixture.metrics.atlasPixels < fullFrameAtlasEquivalentPixels / 10, 'O atlas da boca não reduziu o armazenamento em relação a quadros completos do personagem.')
   const atlasPixelReductionPercent = Number(((1 - hiBakeFixture.metrics.atlasPixels / fullFrameAtlasEquivalentPixels) * 100).toFixed(2))
   const hiResults = []
+  const reloadedProject = JSON.parse(JSON.stringify(hiProject)) as EditorV6Document
   for (const [label, width, height] of [['720p', 1280, 720], ['1080p', 1920, 1080]] as const) {
     const hiOutput = join(folder, `mouth-local-composition-${label}.mp4`)
-    const hiReport = await runEditorV6Export(hiProject, { startFrame: 0, endFrame: 40, width, height, turbo: true, encoder: 'cpu', mouthLoop: false }, {
+    const hiReport = await runEditorV6Export(reloadedProject, { startFrame: 0, endFrame: 40, width, height, turbo: true, encoder: 'cpu', mouthLoop: false }, {
       ffmpeg, ffprobe, tempRoot: folder, id: randomUUID(), outputPath: hiOutput, reportPath: join(folder, `mouth-local-composition-${label}.report.json`), signal: new AbortController().signal,
       getCharacters: async () => hiCharacters, bakeMotion: hiBake,
       createWorker: async (renderProject, part, signal, layeredVideo, mouthLoops) => {
@@ -227,7 +241,8 @@ async function main() {
       audioPath: () => { throw Error('A fixture facial não deve usar áudio.'); }, mediaPath: () => { throw Error('A fixture facial não deve usar mídia externa.'); }, progress: () => {}
     })
     assert(hiReport.state === 'completed' && !hiReport.fallback && hiReport.options.mouthLoop === true, `A exportação facial ${label} falhou ou aceitou desligar a boca: ${hiReport.error ?? hiReport.state}.`)
-    assert(hiReport.mouthAnimation?.stateAtlases === hiActors.length * 2 && hiReport.mouthAnimation.atlasPixels === hiBakeFixture.metrics.atlasPixels * hiActors.length * 2, `As camadas faciais ${label} não correspondem aos três personagens falando nos dois trechos Turbo.`)
+    assert(hiReport.mouthAnimation?.stateAtlases === 7, `As camadas faciais ${label} não correspondem aos três personagens e à mudança de expressão nos dois trechos Turbo.`)
+    assert(hiReport.motionTransitionsPrepared === 1, `A transição facial cruzando a emenda Turbo não foi preparada em ${label}.`)
     const hiProbe = JSON.parse(execFileSync(ffprobe, ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=width,height,r_frame_rate,nb_frames', '-of', 'json', hiOutput], { encoding: 'utf8', windowsHide: true })) as { streams: Array<{ width?: number; height?: number; r_frame_rate?: string; nb_frames?: string }> }
     assert(hiProbe.streams[0]?.width === width && hiProbe.streams[0]?.height === height && hiProbe.streams[0]?.r_frame_rate === '30/1' && Number(hiProbe.streams[0]?.nb_frames) === 40, `O MP4 facial ${label} perdeu resolução, taxa ou quadros.`)
     const speakerId = hiActors[0].characterId!
@@ -288,8 +303,31 @@ async function main() {
     }
     const outsideMouthMeanAbsoluteDifference = difference / Math.max(1, count)
     assert(outsideMouthMeanAbsoluteDifference <= 5, `A imagem fora da boca mudou no MP4 ${label} (MAE ${outsideMouthMeanAbsoluteDifference.toFixed(3)}).`)
+    const bodyX = Math.floor((.5 + hiActors[0].x / 100 - hiActors[0].width / 400) * width / 2) * 2
+    const bodyY = Math.floor((.5 + hiActors[0].height * .05 / 100) * height / 2) * 2
+    const bodyWidth = Math.floor(hiActors[0].width / 100 * width * .5 / 2) * 2
+    const bodyHeight = Math.floor(hiActors[0].height / 100 * height * .35 / 2) * 2
+    const bodyVideo = runFfmpeg(['-i', hiOutput, '-vf', `crop=${bodyWidth}:${bodyHeight}:${bodyX}:${bodyY},format=rgb24`, '-frames:v', '40', '-f', 'rawvideo', 'pipe:1'])
+    const referenceWorker = await factory.create({ project: reloadedProject, width, height, layeredVideo: false }, new AbortController().signal)
+    let bodyReference: Buffer
+    try {
+      const captured = await referenceWorker.frame(7)
+      assert(Boolean(captured.bitmap), 'A referência integral não produziu pixels.')
+      bodyReference = captured.bitmap!
+    } finally { referenceWorker.close() }
+    let maximumBodyReferenceMae = 0
+    for (let frame = 0; frame < 40; frame++) {
+      let bodyDifference = 0, samples = 0
+      for (let y = 0; y < bodyHeight; y += 2) for (let x = 0; x < bodyWidth; x += 2) {
+        const videoOffset = ((frame * bodyHeight + y) * bodyWidth + x) * 3
+        const referenceOffset = ((bodyY + y) * width + bodyX + x) * 4
+        for (let channel = 0; channel < 3; channel++) { bodyDifference += Math.abs(bodyVideo[videoOffset + channel] - bodyReference[referenceOffset + 2 - channel]); samples++ }
+      }
+      maximumBodyReferenceMae = Math.max(maximumBodyReferenceMae, bodyDifference / samples)
+    }
+    assert(maximumBodyReferenceMae <= 5, `O corpo/roupa divergiu da referência integral em ${label}: MAE ${maximumBodyReferenceMae}.`)
     const exportMilliseconds = hiReport.milliseconds
-    hiResults.push({ resolution: label, width, height, frames: Number(hiProbe.streams[0].nb_frames), turboParts: hiReport.attempts[0]?.parts.length ?? 0, speakingCharacters: hiActors.length, transformations: hiActors.map(({ width, height, rotation, flipX }) => ({ width, height, rotation, flipX })), seamMouthCounts, afterSpeechGreenPixels, exportMilliseconds, effectiveFps: Number((Number(hiProbe.streams[0].nb_frames) / (exportMilliseconds / 1000)).toFixed(1)), mainProcessMemory: hiReport.mainProcessMemory, phaseMilliseconds: hiReport.phaseMilliseconds, bakeMilliseconds: hiBakeFixture.bakeMilliseconds, mouthPatchAtlasPixels: hiBakeFixture.metrics.atlasPixels, bakedPatchPixels: bakedPatch.sprite.width * bakedPatch.sprite.height, fullFrameAtlasEquivalentPixels, atlasPixelReductionPercent, sourceCharacterResolution: `${hiBakeFixture.sourceWidth}x${hiBakeFixture.sourceHeight}`, sourceCharacterPixels: hiBakeFixture.sourceWidth * hiBakeFixture.sourceHeight, mouthSamples, mouthGreenPixelCounts: mouthAreas, outsideMouthMeanAbsoluteDifference: Number(outsideMouthMeanAbsoluteDifference.toFixed(4)), output: hiOutput })
+    hiResults.push({ resolution: label, width, height, frames: Number(hiProbe.streams[0].nb_frames), turboParts: hiReport.attempts[0]?.parts.length ?? 0, speakingCharacters: hiActors.length, transformations: hiActors.map(({ width, height, rotation, flipX }) => ({ width, height, rotation, flipX })), seamMouthCounts, afterSpeechGreenPixels, exportMilliseconds, effectiveFps: Number((Number(hiProbe.streams[0].nb_frames) / (exportMilliseconds / 1000)).toFixed(1)), mainProcessMemory: hiReport.mainProcessMemory, phaseMilliseconds: hiReport.phaseMilliseconds, bakeMilliseconds: hiBakeFixture.bakeMilliseconds, mouthPatchAtlasPixels: hiBakeFixture.metrics.atlasPixels, bakedPatchPixels: bakedPatch.sprite.width * bakedPatch.sprite.height, fullFrameAtlasEquivalentPixels, atlasPixelReductionPercent, sourceCharacterResolution: `${hiBakeFixture.sourceWidth}x${hiBakeFixture.sourceHeight}`, sourceCharacterPixels: hiBakeFixture.sourceWidth * hiBakeFixture.sourceHeight, mouthSamples, mouthGreenPixelCounts: mouthAreas, maximumBodyReferenceMae: Number(maximumBodyReferenceMae.toFixed(4)), expressionCrossesTurboSeam: true, customizedBodyAndWardrobe: true, outsideMouthMeanAbsoluteDifference: Number(outsideMouthMeanAbsoluteDifference.toFixed(4)), output: hiOutput })
   }
   const result = { passed: true, state: report.state, totalFrames: report.totalFrames, fps: report.fps, audioClips: report.audioClips, streams: probe.streams.map((stream) => stream.codec_type), frameModes, thoughtPixels, highResolutionMouthExports: hiResults, output }
   await writeFile(join(folder, 'result.json'), JSON.stringify(result, null, 2))

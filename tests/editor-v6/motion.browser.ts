@@ -1,4 +1,10 @@
-import { bakeFaceModeAssets } from '../../src/renderer/src/features/editorV6/faceModeAssets'
+import { bakeFaceModeAssets, trimTransparentCanvas } from '../../src/renderer/src/features/editorV6/faceModeAssets'
+import { defaultCharacterBodyDimensions, defaultCharacterProportions } from '../../src/shared/customizer'
+import { bindWardrobeComponent } from '../../src/shared/wardrobePose'
+import { editorV6MouthLoopScaleAtFrame } from '../../src/shared/editorV6Export'
+import { buildEditorV6ExpressionTransforms } from '../../src/renderer/src/characters/editorV6ExpressionTransforms'
+import type { FaceComponentAsset, FaceExpressionPreset, HairStyle } from '../../src/shared/fabricator'
+import { checkConcurrentSourceRefresh } from './sourceRefresh.browser'
 import { createElement, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { flushSync } from 'react-dom'
@@ -195,12 +201,29 @@ async function captureScene(scene: unknown, assets: unknown[], renderLayer: 'all
   hiContext.strokeStyle = '#573c24'; hiContext.lineWidth = 2
   for (let x = 0; x <= 640; x += 8) { hiContext.beginPath(); hiContext.moveTo(x, 0); hiContext.lineTo(x, 960); hiContext.stroke() }
   for (let y = 0; y <= 960; y += 8) { hiContext.beginPath(); hiContext.moveTo(0, y); hiContext.lineTo(640, y); hiContext.stroke() }
-  const hiSource: FabricatorProject = { ...source, width: 640, height: 960, parts: [{ id: 'head', name: 'Head', x: 0, y: 0, width: 640, height: 960, rotation: 0, dataUrl: hiCanvas.toDataURL() }] }
-  const hiMouth: FaceCatalogItem = { ...mouth, sheet: { ...mouth.sheet, width: 80, height: 60, dataUrl: png('#00ff00') }, pieces: [{ ...mouth.pieces[0], crop: { x: 0, y: 0, width: 80, height: 60 }, width: 80, height: 60, dataUrl: png('#00ff00') }], transforms: { mouth: { x: 320, y: 480, scaleX: .8, scaleY: .8, rotation: 0 } } }
+  const hiSource: FabricatorProject = { ...source, width: 640, height: 960, joints: [], layerOrder: ['torso', 'thigh', 'head'], parts: [
+    { id: 'head', name: 'Head', x: 160, y: 40, width: 320, height: 400, rotation: 0, dataUrl: hiCanvas.toDataURL() },
+    { id: 'torso', name: 'Torso', x: 220, y: 440, width: 200, height: 250, rotation: 0, dataUrl: png('#d9ac89') },
+    { id: 'thigh', name: 'Thigh', x: 220, y: 690, width: 160, height: 200, rotation: 0, dataUrl: png('#d9ac89') }
+  ] }
+  const shirt = { id: 'synthetic-shirt', name: 'Synthetic shirt', category: 'camisa' as const, attachedPartId: 'torso', x: 215, y: 445, width: 210, height: 220, rotation: 0, dataUrl: png('#3377bb') }
+  const wardrobe = { schemaVersion: 1 as const, id: 'synthetic-wardrobe', modelSlot: 1, modelName: 'Synthetic', name: 'Synthetic wardrobe', width: 640, height: 960, updatedAt: source.updatedAt, components: [{ ...shirt, binding: bindWardrobeComponent(shirt, hiSource.parts[1]) }] }
+  const hiMouth: FaceCatalogItem = { ...mouth, sheet: { ...mouth.sheet, width: 80, height: 60, dataUrl: png('#00ff00') }, pieces: [{ ...mouth.pieces[0], crop: { x: 0, y: 0, width: 80, height: 60 }, width: 80, height: 60, dataUrl: png('#00ff00') }], transforms: { mouth: { x: 160, y: 200, scaleX: .8, scaleY: .8, rotation: 0 } } }
   const hiOpenMouth: FaceCatalogItem = { ...hiMouth, id: 'mouth-open-hi', category: 'mouth-open', sheet: { ...hiMouth.sheet, kind: 'mouth-open' }, pieces: hiMouth.pieces.map(piece => ({ ...piece, sheet: 'mouth-open' })) }
-  const hiProvider = { ...facialProvider, loadFabricatorSlot: async () => hiSource, loadFabricatorPose: async () => hiSource, loadFaceCatalogItem: async (_modelSlot: number, id: string) => id === hiOpenMouth.id ? hiOpenMouth : hiMouth } as CharacterRenderAssetProvider
-  const hiAppearance = { ...appearance, mouthClosedCatalogId: hiMouth.id, mouthOpenCatalogId: hiOpenMouth.id }
-  const hiCharacter = { ...character, customization: { ...character.customization, faceAppearance: hiAppearance } }
+  const eye: FaceComponentAsset = { schemaVersion: 1, id: 'synthetic-eye', modelSlot: 1, kind: 'eye', name: 'Synthetic left', pairId: 'synthetic-eye-pair', width: 60, height: 20, defaultTransform: { x: 110, y: 130, scaleX: 1, scaleY: 1, rotation: 0 }, updatedAt: source.updatedAt, dataUrl: png('#ffffff') }
+  const closedEye: FaceComponentAsset = { ...eye, id: 'synthetic-eye-closed', kind: 'eye-closed', height: 4, dataUrl: png('#111111') }
+  const pupil: FaceComponentAsset = { ...eye, id: 'synthetic-pupil', kind: 'pupil', width: 10, height: 14, defaultTransform: { x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0 }, dataUrl: png('#aa2244') }
+  const extra: FaceComponentAsset = { ...eye, id: 'synthetic-head-extra', kind: 'head-extra', width: 40, height: 10, defaultTransform: { x: 160, y: 80, scaleX: 1, scaleY: 1, rotation: 0 }, dataUrl: png('#8855aa') }
+  const hair: HairStyle = { schemaVersion: 1, id: 'synthetic-hair', modelSlot: 1, name: 'Synthetic hair', front: { dataUrl: png('#aa55aa'), width: 90, height: 30 }, back: null,
+    transforms: { front: { x: 160, y: 45, scaleX: 1, scaleY: 1, rotation: 0 }, back: { x: 160, y: 45, scaleX: 1, scaleY: 1, rotation: 0 } }, createdAt: source.updatedAt, updatedAt: source.updatedAt }
+  const components = new Map([eye, closedEye, pupil, extra].map(asset => [asset.id, asset]))
+  const hiProvider = { ...facialProvider, loadHairStyle: async () => hair, listFaceComponentAssets: async (_slot: number, kind: string) => kind === 'eye-closed' ? [closedEye] : [], loadFaceComponentAsset: async (_slot: number, id: string) => components.get(id) ?? null, loadWardrobeSet: async () => wardrobe, loadFabricatorSlot: async () => hiSource, loadFabricatorPose: async () => hiSource, loadFaceCatalogItem: async (_modelSlot: number, id: string) => id === hiOpenMouth.id ? hiOpenMouth : hiMouth } as CharacterRenderAssetProvider
+  const hiAppearance = { ...appearance, mouthClosedCatalogId: hiMouth.id, mouthOpenCatalogId: hiOpenMouth.id, headExtras: { glasses: extra.id }, components: { 'eye-left': { assetId: eye.id }, 'pupil-left': { assetId: pupil.id } } }
+  const hiCharacter = { ...character, customization: { ...character.customization, faceAppearance: hiAppearance,
+    hairAppearance: { modelSlot: 1, parts: { frontHair: hair.id } },
+    proportions: { ...defaultCharacterProportions, head: 110 }, bodyDimensions: { ...defaultCharacterBodyDimensions, thighsWidth: 125, torsoWidth: 108 },
+    wardrobeGroups: [{ modelSlot: 1, setId: wardrobe.id, category: 'camisa' as const, componentId: shirt.id, offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1, rotation: 0 }]
+  } }
   const hiActor: EditorV6Element = { ...actor, characterId: hiCharacter.id, faceAppearance: hiAppearance, activeFaceMode: 'talk', poseSlot: 1 }
   const hiPlan = { ...mouthPlan, elementId: hiActor.id, characterId: hiCharacter.id, key: 'native-resolution-mouth-patch', from: hiActor, to: { ...hiActor }, samples: mouthSamples }
   const hiMouthBake = await bakeEditorV6Motion({ id: crypto.randomUUID(), plan: hiPlan, character: hiCharacter, mouthScaleSamples: [1, 1.05, 1.1025], maxAtlasPixels: 8_000_000 }, hiProvider)
@@ -213,9 +236,33 @@ async function captureScene(scene: unknown, assets: unknown[], renderLayer: 'all
   assert(hiMouthBake.motion.frames[2].facePatch?.replace === true && hiPatchPixels.length === hiPatchSprite.width * hiPatchSprite.height * 4, 'A high-resolution mouth patch is not a complete RGBA replacement region')
   const hiBodyRenderer = await prepareSavedCharacterRenderer(hiCharacter, { source: hiSource, artwork: hiSource, assetProvider: hiProvider })
   const hiBody = await hiBodyRenderer.renderToCanvas(hiAppearance, {}, undefined, 'idle')
-  const hiBodyDataUrl = hiBody.canvas.toDataURL('image/png')
+  const hiBodyCrop = trimTransparentCanvas(hiBody.canvas)
+  const hiBodyDataUrl = hiBodyCrop?.dataUrl ?? hiBody.canvas.toDataURL('image/png')
+  const baseModes = await bakeFaceModeAssets('Synthetic body and clothes', hiBodyRenderer, hiAppearance, {}, undefined, 'idle')
+  assert(Boolean(baseModes.assetIds.blink && baseModes.assetIds['talk-blink']), 'Combined fixture has no blink variants')
+  const neutralTransform = { x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0 }
+  const ptPreset: FaceExpressionPreset = { schemaVersion: 1, id: 'synthetic-expression', modelSlot: 1, name: 'Synthetic PT', updatedAt: source.updatedAt, noseOpacity: 1,
+    selections: { eyes: { left: eye.id, right: null }, pupils: { left: pupil.id, right: null }, eyebrows: { left: null, right: null }, nose: { catalogId: null, index: 0 }, mouth: { catalogId: hiMouth.id, kind: 'mouth-closed', index: 0 } },
+    transforms: { eyeLeft: eye.defaultTransform, eyeRight: neutralTransform, pupilLeft: pupil.defaultTransform, pupilRight: neutralTransform, browLeft: neutralTransform, browRight: neutralTransform, nose: neutralTransform, mouth: { ...hiMouth.transforms.mouth!, x: 168 } },
+    ptPupilMotion: { version: 1, layers: { left: { dx: -.1, dy: 0, rotation: 0 } } }
+  }
+  const targetTransforms = await buildEditorV6ExpressionTransforms(ptPreset, hiAppearance, {}, async id => components.get(id) ?? null, async () => hiMouth, 'left')
+  assert(targetTransforms['expression-component:pupil-left']?.sourceTransformOverride?.x !== pupil.defaultTransform.x, 'PT did not change pupil position')
+  const targetModes = await bakeFaceModeAssets('Synthetic expression target', hiBodyRenderer, hiAppearance, targetTransforms, undefined, 'idle')
+  const targetMouthState = { ...hiActor, faceTransforms: targetTransforms }
+  const targetMouth = await bakeEditorV6Motion({ id: crypto.randomUUID(), plan: { ...hiPlan, key: 'target-mouth', from: targetMouthState, to: { ...targetMouthState } }, character: hiCharacter, mouthScaleSamples: [1, 1.05, 1.1025] }, hiProvider)
+  const expressionFrom = { ...hiActor, x: -32, width: 20, height: 20 * 1920 / 1080 * (hiBodyCrop?.height ?? hiBody.height) / (hiBodyCrop?.width ?? hiBody.width), activeFaceMode: 'idle' as const,
+    characterCanvasWidth: 20 * hiBody.width / (hiBodyCrop?.width ?? hiBody.width) }
+  const expressionTo = { ...expressionFrom, activeExpressionPresetId: 'synthetic-expression', faceTransforms: targetTransforms }
+  const expressionBlockFrom = { id: crypto.randomUUID(), elementId: expressionFrom.id, label: 'Normal', startFrame: 0, durationFrames: 23, state: expressionFrom }
+  const expressionBlockTo = { ...expressionBlockFrom, id: crypto.randomUUID(), label: 'Expression', startFrame: 23, durationFrames: 17, state: expressionTo }
+  const combinedPlan = editorV6MotionPlan({ ...track, blocks: [expressionBlockFrom, expressionBlockTo] }, expressionBlockFrom, expressionBlockTo)!
+  const combinedTransition = await bakeEditorV6Motion({ id: crypto.randomUUID(), character: hiCharacter,
+    plan: { ...combinedPlan, samples: combinedPlan.samples.map(sample => ({ ...sample, faceMode: 'talk' as const })) },
+    mouthScaleSamples: combinedPlan.samples.map(sample => editorV6MouthLoopScaleAtFrame(23 + sample.offset, 0, 30)) }, hiProvider)
   hiBody.canvas.width = hiBody.canvas.height = 1
   hiBodyRenderer.dispose()
+  const concurrentSourceRefresh = await checkConcurrentSourceRefresh(hiCharacter, hiProvider, hiBodyDataUrl)
   const hiPatch = hiMouthBake.motion.frames[2].facePatch
   assert(Boolean(hiPatch) && hiPatch!.sprite.width < 640 / 4 && hiPatch!.sprite.height < 960 / 4, `A boca não ficou localizada: ${hiPatch?.sprite.width}×${hiPatch?.sprite.height} em personagem 640×960.`)
   assert(hiMouthBake.motion.frames.every(frame => frame.facePatch?.sprite.width === hiPatch!.sprite.width && frame.facePatch?.sprite.height === hiPatch!.sprite.height), 'As amostras de boca perderam a mesma geometria local.')
@@ -304,16 +351,18 @@ async function captureScene(scene: unknown, assets: unknown[], renderLayer: 'all
   assert(!editorV6MotionPlan(track,previous,{...next,motionEnabled:false}),'Destination block motion opt-out was ignored')
   uiRoot.unmount();mount.remove()
   return {
-    passed: true, metrics: result.metrics, timelineControls: true, expressionRigs: facial.metrics.preparedRigs, blueXs, greenXs,
+    passed: true, metrics: result.metrics, concurrentSourceRefresh, timelineControls: true, expressionRigs: facial.metrics.preparedRigs, blueXs, greenXs,
     facialGeometry: { maxBodyLandmarkDriftPixels: maxLandmarkDrift, exactAnchorThresholdPixels: 1 },
     faceComposition: { backgrounds: compositionComparisons, assetRevisionInvalidation: true, characterRotationDegrees: compositeActor.rotation, mirrored: compositeActor.flipX },
     highResolutionMouth: { source: '640x960', atlasPixels: hiMouthBake.metrics.atlasPixels, patchPixels: hiPatch!.sprite.width * hiPatch!.sprite.height, patch: { width: hiPatch!.sprite.width, height: hiPatch!.sprite.height, x: hiPatch!.x, y: hiPatch!.y, widthRatio: hiPatch!.width, heightRatio: hiPatch!.height } },
     mouthExportFixture: {
       sourceDataUrl: hiBodyDataUrl,
-      sourceWidth: hiBody.width,
-      sourceHeight: hiBody.height,
+      sourceWidth: hiBodyCrop?.width ?? hiBody.width,
+      sourceHeight: hiBodyCrop?.height ?? hiBody.height,
       asset: hiMouthBake.asset,
       metrics: hiMouthBake.metrics,
+      combined: { transition: combinedTransition, targetMouth, baseModes, targetModes, targetTransforms, characterHeight: expressionFrom.height, characterCanvasWidth: expressionFrom.characterCanvasWidth,
+        customizations: hiCharacter.customization },
       bakeMilliseconds: hiMouthBake.metrics.milliseconds,
       frames: hiMouthBake.motion.frames.map(frame => ({ facePatch: frame.facePatch }))
     },
