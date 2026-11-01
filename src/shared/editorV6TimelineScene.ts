@@ -1,11 +1,11 @@
 /** Scene and background resolution at a frame. */
-import type { EditorV6BackgroundState, EditorV6Document, EditorV6Element, EditorV6Timeline, EditorV6TimelineBlock, EditorV6TimelineTrack, EditorV6VideoLayout } from './editorV6'
-import { editorV6DefaultVideoLayout, editorV6MediaUrl } from './editorV6'
+import type { EditorV6BackgroundState, EditorV6Document, EditorV6Element, EditorV6SceneElement, EditorV6Timeline, EditorV6TimelineBlock, EditorV6TimelineTrack, EditorV6VideoLayout } from './editorV6'
+import { editorV6DefaultVideoLayout, editorV6MediaUrl, videoCharacterTrackColor } from './editorV6'
 import { editorV6MotionPlans, type EditorV6MotionPlan } from './editorV6Motion'
 import { editorV6FaceModeAtFrame } from './editorV6FaceSchedule'
 import { addEditorV6ElementAtFrame, compareEditorV6TimelineBlocks, editorV6ClipAtFrame, normalizeEditorV6Timeline, resolveEditorV6StaticElementsAtFrame, timelineClips, type TimelineClip } from './editorV6TimelineCore'
 
-export type EditorV6ResolvedScene = { frame: number; background: EditorV6BackgroundState; elements: EditorV6Element[]; mediaVideo?: { blockId: string; mediaId: string; url: string; layout: EditorV6VideoLayout; startFrame: number; sourceInFrame: number; durationFrames: number; hasAudio: boolean; audioEnabled: boolean; gain: number } }
+export type EditorV6ResolvedScene = { frame: number; background: EditorV6BackgroundState; elements: EditorV6SceneElement[]; mediaVideo?: { blockId: string; mediaId: string; url: string; layout: EditorV6VideoLayout; startFrame: number; sourceInFrame: number; durationFrames: number; hasAudio: boolean; audioEnabled: boolean; gain: number } }
 const backgroundsCache = new WeakMap<EditorV6Timeline, TimelineClip[]>()
 export function resolveEditorV6BackgroundAtFrame(document: EditorV6Document, frame: number): EditorV6BackgroundState {
   let backgrounds = backgroundsCache.get(document.timeline)
@@ -68,7 +68,38 @@ export function prepareEditorV6PositionAtFrame(document: EditorV6Document, eleme
 }
 
 const motionIndex = new WeakMap<EditorV6Document['timeline'], Map<string, Array<{ plan: EditorV6MotionPlan; block: EditorV6TimelineBlock }>>>()
-export function resolveEditorV6ElementsAtFrame(document: EditorV6Document, frame: number, options: { includeMotion?: boolean } = {}): EditorV6Element[] {
+function attachLinkedBalloons(document: EditorV6Document, elements: EditorV6Element[], frame: number): EditorV6SceneElement[] {
+  const characters = elements.filter((element) => element.kind === 'character' && element.characterId)
+  return elements.map((element): EditorV6SceneElement => {
+    if ((element.kind !== 'speech' && element.kind !== 'thought') || (!element.characterId && !element.attachedCharacterElementId)) return element
+    const exactTarget = element.attachedCharacterElementId ? characters.find((character) => character.id === element.attachedCharacterElementId) : undefined
+    const linkedTargets = element.characterId ? characters.filter((character) => character.characterId === element.characterId) : []
+    const target = exactTarget ?? linkedTargets.reduce<EditorV6Element | undefined>((nearest, character) => {
+      if (!nearest) return character
+      const distance = (character.x - element.x) ** 2 + (character.y - element.y) ** 2
+      const nearestDistance = (nearest.x - element.x) ** 2 + (nearest.y - element.y) ** 2
+      return distance < nearestDistance ? character : nearest
+    }, undefined)
+    if (!target) return element
+    const balloonClip = editorV6ClipAtFrame(document.timeline, element.id, frame)
+    const attachmentFrame = balloonClip?.block.startFrame ?? frame
+    const anchorCharacterState = editorV6ClipAtFrame(document.timeline, target.id, attachmentFrame)?.block.state
+    const baseCharacter = document.elements.find((candidate) => candidate.kind === 'character' && candidate.id === target.id)
+      ?? document.elements.find((candidate) => candidate.kind === 'character' && candidate.characterId === target.characterId)
+    const originX = element.attachmentOriginX ?? anchorCharacterState?.x ?? baseCharacter?.x ?? target.x
+    const originY = element.attachmentOriginY ?? anchorCharacterState?.y ?? baseCharacter?.y ?? target.y
+    const characterId = target.characterId ?? element.characterId
+    return {
+      ...element,
+      x: element.x + target.x - originX,
+      y: element.y + target.y - originY,
+      speakerName: target.text.trim() || undefined,
+      speakerColor: characterId ? document.characterNameColors?.[characterId] ?? videoCharacterTrackColor(characterId) : undefined
+    }
+  })
+}
+
+export function resolveEditorV6ElementsAtFrame(document: EditorV6Document, frame: number, options: { includeMotion?: boolean } = {}): EditorV6SceneElement[] {
   const resolved = resolveEditorV6StaticElementsAtFrame(document, frame)
   const applyAutomaticFace = (source: EditorV6Element) => {
     let element = source
@@ -81,7 +112,7 @@ export function resolveEditorV6ElementsAtFrame(document: EditorV6Document, frame
     }
     return element
   }
-  if (options.includeMotion === false) return resolved.map(applyAutomaticFace)
+  if (options.includeMotion === false) return attachLinkedBalloons(document, resolved.map(applyAutomaticFace), frame)
   let index = motionIndex.get(document.timeline)
   if (!index) {
     index = new Map()
@@ -93,7 +124,7 @@ export function resolveEditorV6ElementsAtFrame(document: EditorV6Document, frame
     for (const entries of index.values()) entries.sort((a, b) => a.plan.endFrame - b.plan.endFrame)
     motionIndex.set(document.timeline, index)
   }
-  return resolved.map((source) => {
+  return attachLinkedBalloons(document, resolved.map((source) => {
     let element = applyAutomaticFace(source)
     const entries = index!.get(element.id)
     if (!entries) return element
@@ -105,5 +136,5 @@ export function resolveEditorV6ElementsAtFrame(document: EditorV6Document, frame
     if (!sample) return element
     const faceAssetId = next.block.incomingMotion.faceAssetId
     return { ...element, assetId: next.block.incomingMotion.assetId, motionSprite: sample.sprite, ...(faceAssetId && sample.facePatch ? { mouthPatch: { assetId: faceAssetId, ...sample.facePatch } } : { mouthPatch: undefined }), x: sample.x, y: sample.y, width: sample.width, height: sample.height, rotation: sample.rotation, flipX: sample.flipX, characterScale: 100, characterWidthScale: 100, characterHeightScale: 100 }
-  })
+  }), frame)
 }

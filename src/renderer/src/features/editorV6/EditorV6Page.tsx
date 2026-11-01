@@ -1,6 +1,6 @@
 import { editorV6ElementSize } from '../../../../shared/editorV6SceneModel'
 import { useEditorV6Store } from './editorV6Store'
-import { createEditorV6Timeline, syncEditorV6TimelineElements } from '../../../../shared/editorV6'
+import { createEditorV6Timeline, syncEditorV6TimelineElements, videoCharacterTrackColor } from '../../../../shared/editorV6'
 import { EditorV6Timeline } from './EditorV6Timeline'
 import { EditorV6ExportPanel } from './EditorV6ExportPanel'
 import { useMotionPreparation } from './motion/useMotionPreparation'
@@ -429,7 +429,14 @@ export function EditorV6Page() {
     if (activeEditorV6.timeline.tracks.some((track) => track.kind === (kind === 'narrator' ? 'video' : kind) && track.locked)) { setError('Desbloqueie a faixa para adicionar um bloco.'); return }
     const element = {
       ...createSceneTextElement(kind, Math.max(0, ...activeEditorV6.elements.map((item) => item.zIndex)) + 1),
-      ...(character ? { characterId: character.characterId, x: character.x, y: character.y } : {})
+      ...(character ? {
+        characterId: character.characterId,
+        attachedCharacterElementId: character.id,
+        attachmentOriginX: character.x,
+        attachmentOriginY: character.y,
+        x: character.x,
+        y: character.y
+      } : {})
     }
     const blockId = crypto.randomUUID()
     changeScene((studio) => ({ ...addEditorV6ElementAtFrame(studio, element, frame, blockId), updatedAt: new Date().toISOString() }))
@@ -644,6 +651,14 @@ export function EditorV6Page() {
     else patchStudio(update)
   }
 
+  const updateCharacterNameColor = (characterId: string, color: string) => {
+    patchStudio((studio) => ({
+      ...studio,
+      characterNameColors: { ...studio.characterNameColors, [characterId]: color },
+      updatedAt: new Date().toISOString()
+    }), false)
+  }
+
   const updateVideoBlock = (blockId: string, values: Partial<Pick<EditorV6TimelineBlock, 'mediaLayout' | 'audioEnabled' | 'gain' | 'mediaInFrame'>>, record = true) => {
     const update = (studio: EditorV6Document) => ({ ...studio, timeline: normalizeEditorV6Timeline({ ...studio.timeline, tracks: studio.timeline.tracks.map((track) => ({ ...track, blocks: track.blocks.map((block) => block.id === blockId ? { ...block, ...values } : block) })) }), updatedAt: new Date().toISOString() })
     if (record) changeScene(update)
@@ -767,6 +782,9 @@ export function EditorV6Page() {
     background={previewBackground}
     selectedElementId={selectedElementId}
     selectedElement={selectedElement}
+    characterNameColor={selectedElement?.kind === 'character' && selectedElement.characterId
+      ? activeEditorV6?.characterNameColors?.[selectedElement.characterId] ?? videoCharacterTrackColor(selectedElement.characterId)
+      : null}
     selectedBackgroundAsset={selectedBackgroundAsset}
     selectedVideoBlock={selectedTimelineVideoClip?.block ?? null}
     selectedVideo={selectedTimelineVideo ?? null}
@@ -776,6 +794,7 @@ export function EditorV6Page() {
     onSelectBackground={selectBackground}
     onAddObject={addObjectAsset}
     onUpdateElement={updateElement}
+    onUpdateCharacterNameColor={updateCharacterNameColor}
     onUpdateVideoBlock={updateVideoBlock}
     onRecordHistory={() => recordHistory()}
     onDeleteSelected={deleteSelected}

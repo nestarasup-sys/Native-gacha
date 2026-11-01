@@ -25,6 +25,7 @@ type EditorV6PropertyPanelProps = {
   background: EditorV6BackgroundState
   selectedElementId: string | null
   selectedElement: EditorV6Element | null
+  characterNameColor: string | null
   selectedBackgroundAsset: EditorV6Asset | null
   selectedVideoBlock: EditorV6TimelineBlock | null
   selectedVideo: EditorV6MediaAsset | null
@@ -34,6 +35,7 @@ type EditorV6PropertyPanelProps = {
   onSelectBackground: (asset: EditorV6Asset) => void
   onAddObject: (asset: EditorV6Asset) => void
   onUpdateElement: (id: string, values: Partial<EditorV6Element>, record?: boolean) => void
+  onUpdateCharacterNameColor: (characterId: string, color: string) => void
   onUpdateVideoBlock: (id: string, values: EditorV6VideoValues, record?: boolean) => void
   onRecordHistory: () => void
   onDeleteSelected: () => void
@@ -46,6 +48,7 @@ export function EditorV6PropertyPanel({
   background,
   selectedElementId,
   selectedElement,
+  characterNameColor,
   selectedBackgroundAsset,
   selectedVideoBlock,
   selectedVideo,
@@ -55,6 +58,7 @@ export function EditorV6PropertyPanel({
   onSelectBackground,
   onAddObject,
   onUpdateElement,
+  onUpdateCharacterNameColor,
   onUpdateVideoBlock,
   onRecordHistory,
   onDeleteSelected
@@ -102,6 +106,7 @@ export function EditorV6PropertyPanel({
 
   if (selectedElement) return <div className="studio-side-content">
     <h2>{selectedElement.kind === 'character' ? selectedElement.text : selectedElement.kind === 'image' ? 'Objeto selecionado' : selectedElement.kind === 'narrator' ? 'Narrador' : selectedElement.kind === 'speech' ? 'Balão de fala' : 'Balão de pensamento'}</h2>
+    {selectedElement.kind === 'character' && selectedElement.characterId && characterNameColor && <label className="studio-color-control">Cor do nome nos balões<input type="color" value={characterNameColor} onPointerDown={onRecordHistory} onKeyDown={(event) => { if (!event.repeat && ['Enter', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key)) onRecordHistory() }} onChange={(event) => onUpdateCharacterNameColor(selectedElement.characterId!, event.target.value)} /></label>}
     {selectedElement.kind !== 'image' && selectedElement.kind !== 'character' && <label className="studio-text-control">Texto<textarea value={selectedElement.text} onChange={(event) => onUpdateElement(selectedElement.id, { text: event.target.value })} rows={3} /></label>}
     <SceneElementControls element={selectedElement} update={(values, record) => onUpdateElement(selectedElement.id, values, record)} remove={onDeleteSelected} control={control} positionNote="A posição X e Y é compartilhada por todos os blocos deste personagem." />
   </div>

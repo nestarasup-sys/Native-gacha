@@ -56,6 +56,9 @@ const editorV6ElementSchema = z.object({
   kind: z.enum(['image', 'character', 'narrator', 'speech', 'thought']),
   assetId: z.string().optional(),
   characterId: z.string().optional(),
+  attachedCharacterElementId: uuid.optional(),
+  attachmentOriginX: finite.optional(),
+  attachmentOriginY: finite.optional(),
   characterSourceUpdatedAt: z.string().datetime().optional(),
   modelSourceRevision: z.string().max(80).optional(),
   poseSourceRevision: z.string().max(80).optional(),
@@ -152,6 +155,7 @@ export const editorV6DocumentSchema = z.object({
   assets: z.array(editorV6AssetSchema).max(EDITOR_V6_MAX_ASSETS),
   media: z.array(editorV6MediaAssetSchema).max(500).optional(),
   elements: z.array(editorV6ElementSchema).max(1000),
+  characterNameColors: z.record(z.string().min(1).max(120), z.string().regex(/^#[0-9a-f]{6}$/i)).optional(),
   exportAudio: z.array(editorV6ExportAudioSchema).max(32).optional(),
   timeline: z.object({
     fps: z.literal(30),

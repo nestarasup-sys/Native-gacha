@@ -24,6 +24,10 @@ export function duplicateEditorV6ProjectDocument(source: EditorV6Document, ident
       : undefined
   }))
   const oldToNewElements = new Map(source.elements.map((element, index) => [element.id, duplicate.elements[index].id]))
+  duplicate.elements = duplicate.elements.map((element) => ({
+    ...element,
+    attachedCharacterElementId: element.attachedCharacterElementId ? oldToNewElements.get(element.attachedCharacterElementId) : undefined
+  }))
   const oldToNewBlocks = new Map(timelineClips(source.timeline).map(({ block }) => [block.id, createId()]))
   duplicate.timeline = {
     ...source.timeline,
@@ -39,6 +43,7 @@ export function duplicateEditorV6ProjectDocument(source: EditorV6Document, ident
         state: block.state ? {
           ...block.state,
           id: oldToNewElements.get(block.state.id) ?? block.state.id,
+          attachedCharacterElementId: block.state.attachedCharacterElementId ? oldToNewElements.get(block.state.attachedCharacterElementId) : undefined,
           assetId: block.state.assetId ? oldToNew.get(block.state.assetId) : undefined,
           faceModeAssetIds: block.state.faceModeAssetIds
             ? Object.fromEntries(Object.entries(block.state.faceModeAssetIds).map(([mode, id]) => [mode, id ? oldToNew.get(id) : undefined])) as EditorV6Element['faceModeAssetIds']

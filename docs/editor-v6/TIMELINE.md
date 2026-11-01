@@ -9,6 +9,8 @@
 - O início do bloco define sua posição; a duração define a largura.
 - Fala e pensamento são eventos de intervalo e podem se sobrepor a estados de personagens.
 - Cada período de personagem guarda pose, expressão, posição, tamanho, imagem e visibilidade. O estado permanece até o próximo período.
+- Balões de fala e pensamento ligados a um personagem acompanham seu deslocamento na cena e preservam o próprio afastamento em relação a ele.
+- O nome do personagem aparece no topo desses balões. A cor é configurada no Inspector do personagem e reaproveitada nos blocos de timeline ligados a ele.
 - Selecionar um bloco leva o cursor ao início e abre seus controles. As poses e expressões continuam sendo editadas no Inspector da cena.
 
 ## Edição implementada
@@ -57,6 +59,8 @@ Os índices de blocos são reutilizados por objeto de timeline. A busca de estad
 `EditorV6Timeline.tsx` desenha os blocos do trecho visível com margem lateral, mantém as linhas memorizadas e desenha o cursor em uma sobreposição separada. O cursor acompanha a rolagem durante a reprodução. Durante o arraste, a alteração fica em um rascunho local e só entra no documento/histórico ao soltar; cancelar descarta esse rascunho.
 
 Os blocos guardam estados e referências às imagens do projeto. Ao alterar uma imagem de pose/expressão, a cópia só acontece se o conteúdo mudar. Outras poses preservam suas imagens anteriores. Imagens geradas que deixam de ter referência são retiradas do documento.
+
+As cores dos nomes de personagem ficam em `characterNameColors`, no documento do projeto, associadas ao ID de origem do personagem. A posição dos balões ligados guarda o ID da instância e a posição de referência; o resolvedor da cena aplica o deslocamento atual do personagem para a prévia e a exportação. Projetos antigos sem esses dados continuam carregando: o vínculo legado por ID do personagem é resolvido pela instância mais próxima. Duplicar o projeto remapeia os IDs das instâncias vinculadas.
 
 O salvamento registra os estados e tempos no JSON e continua usando a persistência transacional de imagens do Editor V6. A normalização de projetos antigos preserva IDs de blocos, tempos e estados existentes. Duplicar um projeto remapeia também os IDs dos estados, imagens e comentários vinculados.
 

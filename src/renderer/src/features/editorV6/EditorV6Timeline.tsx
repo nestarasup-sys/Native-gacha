@@ -23,7 +23,7 @@ const timelineTrackGroup = (track: Track) => track.kind === 'character' ? 1 : tr
 const fixedBottomTrack = (track: Track) => track.kind === 'object' || track.kind === 'audio'
 
 type RowsProps = {
-  timeline: Timeline; pps: number; width: number; heading: number; range: [number, number]; selectedId: string | null
+  timeline: Timeline; characterNameColors?: EditorV6Document['characterNameColors']; pps: number; width: number; heading: number; range: [number, number]; selectedId: string | null
   onPointer: (event: ReactPointerEvent<HTMLElement>, track: Track, block: Block, mode: 'move' | 'resize') => void
   onSelect: (block: Block) => void; onMenu: (x: number, y: number, track: Track, block: Block) => void
   onTrack: (track: Track, action: TrackAction, name?: string) => void
@@ -31,7 +31,7 @@ type RowsProps = {
 }
 type DisplayRow = { key: string; track: Track; blocks: Block[]; backgroundLane: boolean; index: number }
 /** Playback only moves the cursor overlay; these rows rerender on editing or scrolling. */
-const TimelineRows = memo(function TimelineRows({ timeline, pps, width, heading, range, selectedId, onPointer, onSelect, onMenu, onTrack, onScrub }: RowsProps) {
+const TimelineRows = memo(function TimelineRows({ timeline, characterNameColors, pps, width, heading, range, selectedId, onPointer, onSelect, onMenu, onTrack, onScrub }: RowsProps) {
   const displayRows = useMemo<DisplayRow[]>(() => {
     const rows = orderEditorV6TimelineTracks(timeline.tracks).map((track, index) => ({ key: track.id, track, blocks: track.blocks.filter((block) => !block.background), backgroundLane: false, index }))
     const track = timeline.tracks.find((candidate) => candidate.kind === 'video') ?? { id: 'editor-v6-background-source', kind: 'video' as const, name: 'Vídeo', muted: false, locked: false, blocks: [] }
@@ -62,9 +62,12 @@ const TimelineRows = memo(function TimelineRows({ timeline, pps, width, heading,
     </div>
     <div className="editor-v6-timeline-lane" style={{ width, backgroundSize: `${pps}px 100%` }} onPointerDown={onScrub}>
       {transitions.get(key)!.map((plan) => <i key={`motion-${plan.blockId}`} className="v6-motion-range" style={{ left: plan.startFrame / 30 * pps, width: (plan.endFrame - plan.startFrame) / 30 * pps }} />)}
-      {sortedTracks.get(key)!.filter((block) => block.startFrame <= range[1] && block.startFrame + block.durationFrames >= range[0]).map((block) => <div key={block.id}
+      {sortedTracks.get(key)!.filter((block) => block.startFrame <= range[1] && block.startFrame + block.durationFrames >= range[0]).map((block) => {
+        const characterId = block.state?.characterId ?? block.characterId ?? track.characterId
+        const characterColor = characterId ? characterNameColors?.[characterId] ?? videoCharacterTrackColor(characterId) : undefined
+        return <div key={block.id}
         className={`editor-v6-timeline-block kind-${backgroundLane ? 'background' : track.kind}${selectedId === block.id ? ' selected' : ''}${track.locked ? ' locked' : ''}`}
-        style={{ left: block.startFrame / 30 * pps, width: Math.max(3, block.durationFrames / 30 * pps), ...(track.characterId ? { borderColor: videoCharacterTrackColor(track.characterId) } : {}) }}
+        style={{ left: block.startFrame / 30 * pps, width: Math.max(3, block.durationFrames / 30 * pps), ...(characterColor ? { borderColor: characterColor, background: `linear-gradient(180deg, ${characterColor}28, ${characterColor}16)` } : {}) }}
         tabIndex={0} role="button" aria-label={`${block.label}, ${frameTimecode(block.startFrame)}, duração ${frameTimecode(block.durationFrames)}`}
         title={`${block.label}\nInício ${frameTimecode(block.startFrame)} · Fim ${frameTimecode(block.startFrame + block.durationFrames)} · Duração ${frameTimecode(block.durationFrames)}`}
         onPointerDown={(event) => { if (event.button === 0) onPointer(event, track, block, 'move'); else event.stopPropagation() }}
@@ -73,7 +76,8 @@ const TimelineRows = memo(function TimelineRows({ timeline, pps, width, heading,
         <span>{block.state?.visible === false ? '◌ ' : ''}{block.parentBlockId ? '↳ ' : ''}{block.label}</span>
         {(backgroundLane || !track.collapsed) && <small>{frameTimecode(block.durationFrames)}</small>}
         <i className="editor-v6-timeline-resize" onPointerDown={(event) => onPointer(event, track, block, 'resize')} aria-label="Alterar duração" />
-      </div>)}
+      </div>
+      })}
     </div>
   </div>)}</>
 })
@@ -298,7 +302,7 @@ export function EditorV6Timeline(props: Props) {
           <div className="editor-v6-timeline-track-heading">FAIXAS <span>{timeline.tracks.length + 1}</span></div>
           <div className="editor-v6-timeline-ruler" style={{ width, backgroundSize: `${pps}px 100%` }} onPointerDown={onScrub}>{ticks.map((second) => <span key={second} style={{ left: second * pps }}>{second}s</span>)}</div>
         </div>
-        <TimelineRows timeline={timeline} pps={pps} width={width} heading={heading} range={range} selectedId={props.selectedId} onPointer={onPointer} onSelect={select} onMenu={onMenu} onTrack={onTrack} onScrub={onScrub} />
+        <TimelineRows timeline={timeline} characterNameColors={props.document.characterNameColors} pps={pps} width={width} heading={heading} range={range} selectedId={props.selectedId} onPointer={onPointer} onSelect={select} onMenu={onMenu} onTrack={onTrack} onScrub={onScrub} />
         <div className="v6-cursor-overlay" style={{ left: heading, width, clipPath: `inset(0 0 0 ${viewport.left}px)` }}><i className="v6-main-playhead" style={{ transform: `translateX(${playbackFrame / 30 * pps}px)` }} />{guide !== undefined && <i className="v6-snap-guide" style={{ left: guide / 30 * pps }} />}</div>
       </div>
     </div>

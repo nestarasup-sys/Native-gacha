@@ -62,6 +62,11 @@ export type EditorV6Element = {
   kind: 'image' | 'character' | 'narrator' | 'speech' | 'thought'
   assetId?: string
   characterId?: string
+  /** Exact scene actor followed by a linked speech or thought balloon. */
+  attachedCharacterElementId?: string
+  /** Actor position when the balloon was linked; keeps its authored offset stable. */
+  attachmentOriginX?: number
+  attachmentOriginY?: number
   /** Customizer revision used to compose this actor's stored image. */
   characterSourceUpdatedAt?: string
   /** Fabricator model sheet revision used to compose this actor's stored image. */
@@ -115,6 +120,9 @@ export type EditorV6Element = {
   rotation: number
   zIndex: number
 }
+
+/** Runtime-only speaker information resolved from a linked actor. */
+export type EditorV6SceneElement = EditorV6Element & { speakerName?: string; speakerColor?: string }
 
 export type EditorV6TrackKind = 'character' | 'speech' | 'thought' | 'object' | 'video' | 'audio'
 export type EditorV6BackgroundState = {
@@ -319,6 +327,8 @@ export type EditorV6Document = {
   assets: EditorV6Asset[]
   media?: EditorV6MediaAsset[]
   elements: EditorV6Element[]
+  /** Per-character speaker-label colors for this Editor V6 project. */
+  characterNameColors?: Record<string, string>
   timeline: EditorV6Timeline
   exportAudio?: EditorV6ExportAudio[]
 }
