@@ -10,7 +10,7 @@ export async function persistFabricatorProjectSnapshot(
   dirtyChromaBases: Map<string, string>,
   saveProject: SaveProject
 ): Promise<FabricatorAssetSave[]> {
-  const snapshotPartIds = new Set(snapshot.parts.map((part) => part.id))
+  const snapshotPartIds = new Set([...snapshot.parts.map((part) => part.id), ...(snapshot.maleTorso ? [snapshot.maleTorso.id] : [])])
   let assets: FabricatorAssetSave[] = Array.from(dirtyAssets).flatMap(([id, dataUrl]) => snapshotPartIds.has(id) ? [{
     id,
     dataUrl,
@@ -20,6 +20,9 @@ export async function persistFabricatorProjectSnapshot(
     ? [{ id: part.id, dataUrl: part.dataUrl, chromaBaseDataUrl: dirtyChromaBases.get(part.id)! }]
     : [])
   assets = [...assets, ...baseAssets]
+  if (snapshot.maleTorso && dirtyAssets.has(snapshot.maleTorso.id) && !assets.some((asset) => asset.id === snapshot.maleTorso!.id)) {
+    assets.push({ id: snapshot.maleTorso.id, dataUrl: dirtyAssets.get(snapshot.maleTorso.id)! })
+  }
   const serialized = serializeFabricatorProject(snapshot)
 
   try {
@@ -30,6 +33,9 @@ export async function persistFabricatorProjectSnapshot(
     if (!missing.length) throw reason
     const recoverable = missing.flatMap((id) => {
       const part = snapshot.parts.find((item) => item.id === id)
+      const maleTorso = snapshot.maleTorso?.id === id ? snapshot.maleTorso : null
+      if (!part && !maleTorso) return []
+      if (maleTorso) return [{ id, dataUrl: maleTorso.dataUrl }]
       if (!part) return []
       const chromaBaseDataUrl = dirtyChromaBases.get(id) ?? (part.chromaBaseSaved ? part.chromaBaseDataUrl : undefined)
       if (part.chromaBaseSaved && !chromaBaseDataUrl) return []

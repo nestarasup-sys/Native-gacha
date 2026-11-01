@@ -2451,6 +2451,37 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .pose-recover-button { background: #ce4e78 !important; color: #fff !important; }
 .pose-recovery > div { display: flex; gap: 5px; }
 .pose-modal-backdrop { position: fixed; z-index: 100; inset: 0; display: grid; place-items: center; padding: 20px; background: #21192380; }
+.male-torso-modal-backdrop { position:fixed;z-index:12000;inset:0;display:grid;place-items:center;padding:20px;background:#211923a8;backdrop-filter:blur(3px); }
+.male-torso-modal { width:min(1080px,96vw);max-height:94vh;display:flex;flex-direction:column;overflow:hidden;border:1px solid #d8e6f6;border-radius:16px;background:#fbfdff;box-shadow:0 24px 80px #171e2c55; }
+.male-torso-modal-header { display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding:16px 20px;border-bottom:1px solid #e7edf5;background:#fff; }
+.male-torso-modal-header>div { display:grid;gap:4px; }
+.male-torso-modal-header small { color:#4387d8;font-size:9px;font-weight:850;letter-spacing:1px; }
+.male-torso-modal-header h2 { margin:0;color:#27384d;font:750 18px Manrope,sans-serif; }
+.male-torso-modal-header p { margin:0;color:#8290a1;font-size:11px; }
+.male-torso-modal-header>button { width:30px;height:30px;flex:0 0 auto;border:0;border-radius:8px;background:#f0f4f9;color:#627186;font-size:20px;cursor:pointer; }
+.male-torso-modal-body { min-height:0;display:grid;grid-template-columns:minmax(0,1fr) 240px;gap:12px;padding:14px;overflow:auto; }
+.male-torso-preview-panel { min-width:0;position:relative;display:flex;flex-direction:column;overflow:hidden;border:1px solid #e4eaf1;border-radius:11px;background:#f1f4f8; }
+.male-torso-preview-panel>header { height:34px;flex:0 0 34px;display:flex;align-items:center;justify-content:space-between;padding:0 10px;border-bottom:1px solid #e0e7ef;background:#fff;color:#748298;font-size:9px;font-weight:800;letter-spacing:.6px; }
+.male-torso-preview-panel>header span { display:flex;align-items:center;gap:7px; }
+.male-torso-preview-panel>header i { width:6px;height:6px;border-radius:50%;background:#4387d8; }
+.male-torso-preview-panel>header small { color:#8d99a8;font-size:9px;font-weight:600;letter-spacing:0; }
+.male-torso-stage { min-height:260px;flex:1;display:grid;place-items:center;padding:12px;overflow:auto; }
+.male-torso-artboard { width:min(100%,920px);position:relative;overflow:hidden;border:1px solid #cdd7e3;background-color:#fff;background-image:linear-gradient(45deg,#f3f6fa 25%,transparent 25%),linear-gradient(-45deg,#f3f6fa 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#f3f6fa 75%),linear-gradient(-45deg,transparent 75%,#f3f6fa 75%);background-size:16px 16px;background-position:0 0,0 8px,8px -8px,-8px 0;box-shadow:0 3px 12px #29374a18; }
+.male-torso-part-preview { position:absolute;object-fit:fill;transform-origin:center center;user-select:none;-webkit-user-drag:none; }
+.male-torso-warp-canvas { position:absolute;z-index:2;touch-action:none;cursor:crosshair;transform-origin:center center; }
+.male-torso-edit-panel { display:flex;flex-direction:column;gap:9px;padding:12px;border:1px solid #e4eaf1;border-radius:11px;background:#fff; }
+.male-torso-edit-panel>strong { color:#35465a;font-size:12px; }
+.male-torso-edit-panel>p { margin:-4px 0 0;color:#8a96a4;font-size:10px;line-height:1.45; }
+.male-torso-edit-panel>label { display:grid;grid-template-columns:minmax(0,1fr) 94px;align-items:center;gap:8px;color:#7d8998;font-size:10px; }
+.male-torso-edit-panel input { width:100%;height:29px;padding:0 7px;border:1px solid #e3e9f0;border-radius:6px;color:#3d4d61;font-size:11px; }
+.male-torso-edit-panel .model-tool-button { justify-content:center;min-height:34px;color:#4d6f99; }
+.male-torso-edit-panel .male-torso-deform-button.active { border-color:#84afe1;background:#e7f2ff;color:#286bb2; }
+.male-torso-error { margin:0!important;color:#b53654!important;font-size:10px!important; }
+.male-torso-modal-footer { min-height:54px;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 15px;border-top:1px solid #e7edf5;background:#fff; }
+.male-torso-modal-footer>small { color:#8b96a4;font-size:9px; }
+.male-torso-modal-footer>div { display:flex;gap:8px; }
+.male-torso-modal-footer .primary-button { background:#4387d8;border-color:#4387d8; }
+.male-torso-modal .wardrobe-warp-controls { position:relative;top:auto;left:auto;max-width:none;justify-content:center;border:0;border-top:1px solid #dfe7f0;border-radius:0;background:#fff;box-shadow:none; }
 .pose-model-picker { width: min(480px, 100%); max-height: min(620px, 90vh); display: flex; flex-direction: column; overflow: hidden; border: 1px solid #eee6ec; border-radius: 15px; background: #fff; box-shadow: 0 20px 70px #20172040; }
 .pose-model-picker > header { display: flex; align-items: center; justify-content: space-between; padding: 15px; border-bottom: 1px solid #f0ebef; }
 .pose-model-picker > header span { display: grid; gap: 4px; }
@@ -2501,6 +2532,10 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .fabricator-duplicate-error { margin: 0 12px 10px !important; padding: 8px 10px !important; border: 1px solid #f0c8cd; border-radius: 8px; background: #fff4f4; color: #a33f48 !important; }
 .fabricator-duplicate-footer { display: flex; justify-content: flex-end; gap: 8px; padding: 0 12px 12px; }
 .model-editor-toolbar { min-height: 60px; display: flex; align-items: center; gap: 12px; padding: 7px 15px; border-bottom: 1px solid #f0ebef; }
+.model-male-torso-button { min-height:38px;display:flex;align-items:center;gap:7px;padding:5px 10px;border:1px solid #b9d2f1;border-radius:8px;background:#edf5ff;color:#347ac6;font-size:11px;font-weight:800;cursor:pointer; }
+.model-male-torso-button svg { width:15px;height:15px; }
+.model-male-torso-button small { color:#7294bd;font-size:9px;font-weight:600; }
+.model-male-torso-button:disabled { opacity:.5;cursor:not-allowed; }
 .model-skin-tone-bar { display: grid; grid-template-columns: auto minmax(250px, 340px) auto minmax(0, 76px) minmax(0, 1fr); align-items: center; gap: 10px; padding: 6px 15px; border-bottom: 1px solid #f0ebef; background: #fff7fb; }
 .model-skin-tone-heading { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
 .model-skin-tone-heading > strong { color: #75304f; font-size: 12px; }

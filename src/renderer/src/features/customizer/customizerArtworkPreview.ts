@@ -2,10 +2,11 @@ import type { CharacterBodyDimensions, CharacterProportions, CustomizerCharacter
 import type { FabricatorProject } from '../../../../shared/fabricator'
 import { MODEL_SKIN_BASE_TONE, isValidSkinTone } from '../../../../shared/skinTones.ts'
 import type { CatalogArtwork } from '../../characters/characterRenderer'
+import { withCharacterGenderTorso } from '../../characters/characterRenderer'
 import type { CustomizerArtworkSource } from './customizerArtworkSource'
 
 type PreviewExtent = { width: number; height: number; density: number }
-type ModelAppearance = Pick<CustomizerCharacter['customization'], 'modelSkinTone' | 'modelOutlineColor'>
+type ModelAppearance = Pick<CustomizerCharacter['customization'], 'modelSkinTone' | 'modelOutlineColor' | 'gender'>
 type BasePreviewOptions = {
   proportions: CharacterProportions
   bodyDimensions: CharacterBodyDimensions
@@ -45,12 +46,14 @@ export async function prepareCustomizerArtworkPreview(input: {
 }, providers: CustomizerArtworkPreviewProviders): Promise<CustomizerArtworkPreviewResult> {
   const source = await providers.loadSource(input.modelSlot, input.poseSlot, input.cachedModel)
   if (source.status !== 'ready') return source
-  input.onSourceResolved?.(source)
+  const genderArtwork = withCharacterGenderTorso(source.artwork, source.sourceProject, input.appearance?.gender)
+  const resolvedSource = { ...source, artwork: genderArtwork }
+  input.onSourceResolved?.(resolvedSource)
 
   const modelSkinTone = isValidSkinTone(source.sourceProject.modelSkinTone)
     ? source.sourceProject.modelSkinTone
     : await providers.sampleOriginalSkinTone(source.sourceProject)
-  const previewUrl = await providers.renderBasePreview(source.artwork, {
+  const previewUrl = await providers.renderBasePreview(genderArtwork, {
     proportions: input.proportions,
     bodyDimensions: input.bodyDimensions,
     extent: input.extent,
@@ -61,5 +64,5 @@ export async function prepareCustomizerArtworkPreview(input: {
       ? input.appearance.modelOutlineColor
       : source.sourceProject.modelOutlineColor
   })
-  return { ...source, previewUrl }
+  return { ...resolvedSource, previewUrl }
 }

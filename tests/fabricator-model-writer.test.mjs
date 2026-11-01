@@ -49,6 +49,20 @@ test('writer recusa falta de recorte e nunca publica um manifesto incompleto', a
   await assert.rejects(writer({...model,parts:[{...model.parts[0],id:'../invalido'}]},[]),/Identificador de peça inválido/)
 })
 
+test('writer salva a cópia masculina como asset independente sem alterar as peças femininas', async t => {
+  const { folder, writer } = await fixture(t)
+  const maleTorso = { id: 'male-torso', name: 'Tronco masculino', x: 25, y: 30, width: 40, height: 50, rotation: 0 }
+  await writer({ ...model, maleTorso }, [{ id: 'cabeca', dataUrl: png, chromaBaseDataUrl: png }, { id: 'male-torso', dataUrl: png }])
+  const manifest = JSON.parse(await fs.readFile(join(folder, 'project.json'), 'utf8'))
+  assert.equal(manifest.maleTorso.id, 'male-torso')
+  assert.equal(manifest.maleTorso.name, 'Tronco masculino')
+  assert.equal(manifest.maleTorso.dataUrl, undefined)
+  assert.equal(await fs.readFile(join(folder, 'parts', 'male-torso.png'), 'utf8'), 'IMAGE')
+  assert.equal(manifest.parts[0].id, 'cabeca')
+  await writer(model, [{ id: 'cabeca', dataUrl: png, chromaBaseDataUrl: png }])
+  await assert.rejects(fs.access(join(folder, 'parts', 'male-torso.png')), /ENOENT/)
+})
+
 test('writer remove somente arquivos obsoletos e mantém fonte referenciada pelo histórico', async t => {
   const { folder, writer } = await fixture(t)
   await fs.mkdir(join(folder,'parts'), {recursive:true})

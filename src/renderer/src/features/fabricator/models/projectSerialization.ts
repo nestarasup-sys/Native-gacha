@@ -2,9 +2,10 @@ import type { FabricatorProject, FabricatorProjectSave } from '../../../../../sh
 
 /** Removes embedded source and image bytes at the IPC save boundary. */
 export function serializeFabricatorProject(project: FabricatorProject): FabricatorProjectSave {
-  const { sourceDataUrl: _sourceDataUrl, parts, ...metadata } = project
+  const { sourceDataUrl: _sourceDataUrl, parts, maleTorso, ...metadata } = project
   return {
     ...metadata,
-    parts: parts.map(({ dataUrl: _dataUrl, chromaBaseDataUrl: _baseDataUrl, ...part }) => part)
+    parts: parts.map(({ dataUrl: _dataUrl, chromaBaseDataUrl: _baseDataUrl, ...part }) => part),
+    ...(maleTorso ? { maleTorso: (({ dataUrl: _dataUrl, chromaBaseDataUrl: _baseDataUrl, ...part }) => part)(maleTorso) } : {})
   }
 }

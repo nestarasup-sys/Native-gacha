@@ -6,8 +6,9 @@ import { areModelPartSkinContoursValid, isValidModelSkinContours } from '../../.
 
 type StoredHistoryEntry = {
   action: FabricatorHistoryEntry['action']
-  project: Omit<FabricatorProject, 'sourceDataUrl' | 'parts'>
+  project: Omit<FabricatorProject, 'sourceDataUrl' | 'parts' | 'maleTorso'>
   parts: Array<{ part: Omit<ModelPart, 'dataUrl' | 'chromaBaseDataUrl'>; hash: string; chromaBaseHash?: string }>
+  maleTorso?: { part: Omit<ModelPart, 'dataUrl' | 'chromaBaseDataUrl'>; hash: string }
 }
 
 type FabricatorHistoryPersistenceDependencies = {
@@ -57,8 +58,12 @@ export function createFabricatorHistoryPersistence(deps: FabricatorHistoryPersis
           ...(part.chromaBaseDataUrl ? { chromaBaseHash: await storeAsset(dataUrlBuffer(part.chromaBaseDataUrl), 'png') } : {})
         }
       }))
-      const { parts: _parts, ...metadata } = snapshot
-      return { action: entry.action, project: metadata, parts }
+      const maleTorso = snapshot.maleTorso ? {
+        part: (({ dataUrl: _dataUrl, chromaBaseDataUrl: _baseDataUrl, ...metadata }) => metadata)(snapshot.maleTorso),
+        hash: await storeAsset(dataUrlBuffer(snapshot.maleTorso.dataUrl), 'png')
+      } : undefined
+      const { parts: _parts, maleTorso: _maleTorso, ...metadata } = snapshot
+      return { action: entry.action, project: metadata, parts, ...(maleTorso ? { maleTorso } : {}) }
     }
     const stored = {
       version: 1,
@@ -112,9 +117,13 @@ export function createFabricatorHistoryPersistence(deps: FabricatorHistoryPersis
         dataUrl: `data:image/png;base64,${(await readAsset(hash, 'png')).toString('base64')}`,
         ...(chromaBaseHash ? { chromaBaseDataUrl: `data:image/png;base64,${(await readAsset(chromaBaseHash, 'png')).toString('base64')}` } : {})
       })))
+      const maleTorso = entry.maleTorso ? {
+        ...entry.maleTorso.part,
+        dataUrl: `data:image/png;base64,${(await readAsset(entry.maleTorso.hash, 'png')).toString('base64')}`
+      } : undefined
       return {
         action: entry.action,
-        project: { ...entry.project, sourceDataUrl: `data:${mime};base64,${source.toString('base64')}`, parts }
+        project: { ...entry.project, sourceDataUrl: `data:${mime};base64,${source.toString('base64')}`, parts, maleTorso }
       }
     }
     return { undo: await Promise.all(stored.undo.map(restoreEntry)), redo: await Promise.all(stored.redo.map(restoreEntry)) }

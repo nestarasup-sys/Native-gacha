@@ -37,3 +37,7 @@ Não mover os formatos persistidos de uma só vez. Não alterar caminhos, nomes 
 ## Consequências e próximos passos
 
 Avançar por domínio, sempre com testes e possibilidade de voltar ao módulo anterior. Depois de Base de Vídeos e validação dos Roteiros, os próximos candidatos são rotas de exportação de Roteiros, persistência do Customizador, bibliotecas de assets do Fabricador e Studio. Trocar Electron só deve ser reconsiderado diante de necessidades e medições concretas.
+
+## Compatibilidade: tronco masculino do Fabricador
+
+O projeto de modelo pode conter `maleTorso`, uma cópia editável e independente do tronco feminino. O manifesto mantém somente os metadados dessa peça; a imagem é armazenada em `parts/male-torso.png`, e o histórico mantém sua imagem como asset referenciado por hash. Projetos antigos sem `maleTorso` continuam válidos. Customizador e renderizadores aplicam a cópia somente a personagens masculinos, sem alterar a montagem feminina de origem.

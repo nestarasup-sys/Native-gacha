@@ -40,7 +40,13 @@ export function createFabricatorModelWriter(deps: FabricatorModelWriterDependenc
     if (!/^[a-zA-Z0-9_-]{1,80}$/.test(part.id)) throw new Error('Identificador de peça inválido.')
     return part
   })
-  const validPartIds = new Set(parts.map((part) => part.id))
+  const maleTorso = project.maleTorso
+  if (maleTorso && (maleTorso.id !== 'male-torso' || !Number.isFinite(maleTorso.x) || !Number.isFinite(maleTorso.y)
+    || !Number.isFinite(maleTorso.width) || !Number.isFinite(maleTorso.height) || !Number.isFinite(maleTorso.rotation)
+    || maleTorso.width <= 0 || maleTorso.height <= 0 || !areModelPartSkinContoursValid([maleTorso]))) {
+    throw new Error('Cópia masculina do tronco inválida.')
+  }
+  const validPartIds = new Set([...parts.map((part) => part.id), ...(maleTorso ? [maleTorso.id] : [])])
   for (const asset of changedAssets) {
     if (!validPartIds.has(asset.id)) continue
     await writeAssetImageSource(join(partsFolder, `${asset.id}.png`), dataUrlBuffer(asset.dataUrl))
@@ -60,6 +66,12 @@ export function createFabricatorModelWriter(deps: FabricatorModelWriterDependenc
     }
     if (missing) missingAssets.push(part.id)
   }
+  if (maleTorso) {
+    try { await access(join(partsFolder, 'male-torso.png')) } catch (reason) {
+      if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason
+      missingAssets.push(maleTorso.id)
+    }
+  }
   if (missingAssets.length) throw new Error(`FABRICATOR_MISSING_ASSETS:${missingAssets.join(',')}`)
   const projectDocument = {
     schemaVersion: project.schemaVersion,
@@ -76,6 +88,7 @@ export function createFabricatorModelWriter(deps: FabricatorModelWriterDependenc
     joints: project.joints,
     layerOrder: project.layerOrder,
     hiddenPartIds: project.hiddenPartIds,
+    maleTorso,
     updatedAt: project.updatedAt
   }
   const manifest = { ...projectDocument, parts, sourceFile }
@@ -85,7 +98,7 @@ export function createFabricatorModelWriter(deps: FabricatorModelWriterDependenc
   const keepFiles = new Set(parts.flatMap((part) => [
     `${part.id}.png`,
     ...(part.chromaBaseSaved ? [`${part.id}.base.png`] : [])
-  ]))
+  ]).concat(maleTorso ? ['male-torso.png'] : []))
   for (const file of await readdir(partsFolder)) {
     if (file.endsWith('.png') && !file.endsWith('.paint.png') && !keepFiles.has(file)) await unlink(join(partsFolder, file))
   }

@@ -38,6 +38,16 @@ test('reconstitui sourceDataUrl e peças na leitura do catálogo', async t => {
   assert.equal(project.parts[0].dataUrl, 'data:image/png;base64,BAUG')
   assert.equal(project.parts[0].id, 'head')
 })
+test('carrega a cópia masculina do tronco sem adicioná-la à montagem feminina', async t => {
+  const { catalog, folder } = await fixture(t)
+  await writeFile(join(folder, 'project.json'), JSON.stringify({ ...manifest, maleTorso: { id: 'male-torso', name: 'Tronco masculino', x: 1, y: 2, width: 30, height: 40, rotation: 0 } }))
+  await writeFile(join(folder, 'parts', 'male-torso.png'), Buffer.from([7,8,9]))
+  const project = await catalog.loadSlot(1)
+  assert.equal(project.maleTorso.id, 'male-torso')
+  assert.equal(project.maleTorso.dataUrl, 'data:image/png;base64,BwgJ')
+  assert.equal(project.parts.length, 1)
+  assert.equal(project.parts[0].id, 'head')
+})
 test('slot inválido rejeitado antes de IO; slot não preenchido retorna null', async t => {
   const { catalog } = await fixture(t)
   await assert.rejects(catalog.loadSlot(0), /Slot inválido/)

@@ -14,9 +14,10 @@ export interface FabricatorModelFiles {
   readAssetImage(path: string): Promise<Uint8Array>
 }
 
-type ModelManifest = Omit<FabricatorProject, 'sourceDataUrl' | 'parts'> & {
+type ModelManifest = Omit<FabricatorProject, 'sourceDataUrl' | 'parts' | 'maleTorso'> & {
   sourceFile: string
   parts: Array<Omit<ModelPart, 'dataUrl' | 'chromaBaseDataUrl'>>
+  maleTorso?: Omit<ModelPart, 'dataUrl' | 'chromaBaseDataUrl'>
 }
 
 export class FabricatorModelCatalog {
@@ -62,7 +63,12 @@ export class FabricatorModelCatalog {
       if (!inspectFabricatorStorage('model', manifest).compatible
         || !/^source-[a-f0-9-]+\.(png|jpe?g|webp)$/i.test(manifest.sourceFile)
         || manifest.parts.length > 500
-        || manifest.parts.some((part) => !/^[a-zA-Z0-9_-]{1,80}$/.test(part.id))) return null
+        || manifest.parts.some((part) => !/^[a-zA-Z0-9_-]{1,80}$/.test(part.id))
+        || (manifest.maleTorso !== undefined && (manifest.maleTorso.id !== 'male-torso'
+          || !Number.isFinite(manifest.maleTorso.x) || !Number.isFinite(manifest.maleTorso.y)
+          || !Number.isFinite(manifest.maleTorso.width) || !Number.isFinite(manifest.maleTorso.height)
+          || !Number.isFinite(manifest.maleTorso.rotation) || manifest.maleTorso.width <= 0
+          || manifest.maleTorso.height <= 0 || !areModelPartSkinContoursValid([manifest.maleTorso])))) return null
       const version = manifest.sourceFile + ':' + manifest.updatedAt
       const sourceBytes = await this.resolver.resolveBuffer('model', slot + ':source', version,
         () => this.files.readFile(join(folder, manifest.sourceFile)))
@@ -83,12 +89,18 @@ export class FabricatorModelCatalog {
           } : {})
         }
       }))
+      const maleTorso = manifest.maleTorso ? {
+        ...manifest.maleTorso,
+        dataUrl: `data:image/png;base64,${(await this.resolver.resolveBuffer('model', slot + ':part:male-torso', version,
+          () => this.files.readAssetImage(join(folder, 'parts', 'male-torso.png')))).toString('base64')}`
+      } : undefined
       return {
         ...manifest,
         modelSkinTone: isValidSkinTone(manifest.modelSkinTone) ? manifest.modelSkinTone : undefined,
         modelOutlineColor: isValidSkinTone(manifest.modelOutlineColor) ? manifest.modelOutlineColor : undefined,
         sourceDataUrl,
-        parts
+        parts,
+        maleTorso
       }
     } catch { return null }
   }

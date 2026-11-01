@@ -47,6 +47,9 @@ export function useFabricatorHistory(deps: FabricatorHistoryDependencies) {
       const chromaBaseDataUrl = deps.dirtyChromaBases.current.get(part.id)
       return dataUrl || chromaBaseDataUrl ? [{ id: part.id, dataUrl: dataUrl ?? part.dataUrl, ...(chromaBaseDataUrl ? { chromaBaseDataUrl } : {}) }] : []
     })
+    const maleTorso = currentProject.maleTorso
+    const maleTorsoData = maleTorso ? deps.dirtyAssets.current.get(maleTorso.id) : undefined
+    if (maleTorso && maleTorsoData) changedAssets.push({ id: maleTorso.id, dataUrl: maleTorsoData })
     deps.setSaveState('saving')
     void window.desktop.fabricator.saveFabricatorHistory(currentProject.slot, forDisk, currentForDisk, changedAssets).then(() => {
       for (const asset of changedAssets) if (deps.dirtyAssets.current.get(asset.id) === asset.dataUrl) deps.dirtyAssets.current.delete(asset.id)
@@ -108,6 +111,7 @@ export function useFabricatorHistory(deps: FabricatorHistoryDependencies) {
         deps.dirtyAssets.current.set(part.id, part.dataUrl)
         if (part.chromaBaseDataUrl && part.chromaBaseSaved) deps.dirtyChromaBases.current.set(part.id, part.chromaBaseDataUrl)
       }
+      if (target.maleTorso) deps.dirtyAssets.current.set(target.maleTorso.id, target.maleTorso.dataUrl)
       deps.projectRef.current = target
       deps.setProject(target)
       deps.setSelectedIds((ids) => { const valid = ids.filter((id) => target.parts.some((part) => part.id === id)); return valid.length ? valid : target.parts[0] ? [target.parts[0].id] : [] })

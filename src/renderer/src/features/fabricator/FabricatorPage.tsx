@@ -24,6 +24,7 @@ import { useFabricatorHistory } from './useFabricatorHistory'
 import { prepareLoadedFabricatorProject } from './models/projectHydration'
 import { type ModelSourceResult } from './models/modelSource'
 import { ModelSkinContourEditor } from './ModelSkinContourEditor'
+import { MaleTorsoEditorModal } from './MaleTorsoEditorModal'
 import { DuplicateModelDialog } from './DuplicateModelDialog'
 import { connectBodyContourJoints } from './models/contourJoints'
 import { ModelAppearanceProvider } from './ModelAppearanceContext'
@@ -51,6 +52,7 @@ export function FabricatorPage() {
   const [processing, setProcessing] = useState(false)
   const [chromaApplying, setChromaApplying] = useState(false)
   const [modelSourceOpen, setModelSourceOpen] = useState(false)
+  const [maleTorsoEditorOpen, setMaleTorsoEditorOpen] = useState(false)
   const [skinContourEditorOpen, setSkinContourEditorOpen] = useState(false)
   const [modelSourcePublishing, setModelSourcePublishing] = useState(false)
   const [duplicateModalOpen, setDuplicateModalOpen] = useState(false)
@@ -879,6 +881,24 @@ export function FabricatorPage() {
       </aside>
 
       {modelSourceOpen && project && <ModelSourceEditor project={project} onClose={() => { if (!modelSourcePublishing) setModelSourceOpen(false) }} onPublish={publishEditedModelSource} />}
+      {maleTorsoEditorOpen && project && project.parts.find(isTorsoPart) && <MaleTorsoEditorModal
+        key={`${project.slot}:male-torso`}
+        project={project}
+        baseTorso={project.parts.find(isTorsoPart)!}
+        savedTorso={project.maleTorso}
+        onClose={() => setMaleTorsoEditorOpen(false)}
+        onSave={async (maleTorso) => {
+          await flushProjectWrites()
+          const current = projectRef.current
+          if (!current || current.slot !== project.slot) throw new Error('O modelo mudou antes de salvar o tronco masculino. Reabra o editor e tente novamente.')
+          dirtyAssets.current.set(maleTorso.id, maleTorso.dataUrl)
+          updateProject((latest) => ({ ...latest, maleTorso, updatedAt: new Date().toISOString() }))
+          const next = projectRef.current
+          if (!next) throw new Error('O projeto foi fechado antes de salvar o tronco masculino.')
+          await persistProject(next)
+          setMaleTorsoEditorOpen(false)
+        }}
+      />}
       {duplicateModalOpen && project && <DuplicateModelDialog
         modelName={project.name}
         sourceSlot={project.slot}
@@ -913,6 +933,7 @@ export function FabricatorPage() {
                 chromaApplying={chromaApplying}
                 historyBusy={historyBusy}
                 modelSourcePublishing={modelSourcePublishing}
+                maleTorsoSaved={Boolean(project?.maleTorso)}
                 saveState={saveState}
                 history={history}
                 chromaValue={chromaValue}
@@ -947,6 +968,7 @@ export function FabricatorPage() {
                   selectSkinTone: (tone) => updateProject((current) => ({ ...current, modelSkinTone: tone })),
                   selectOutlineColor: (color) => updateProject((current) => ({ ...current, modelOutlineColor: color })),
                   editFakeContours: () => setSkinContourEditorOpen(true),
+                  openMaleTorsoEditor: () => setMaleTorsoEditorOpen(true),
                   dismissError: () => setError('')
                 }}
               />

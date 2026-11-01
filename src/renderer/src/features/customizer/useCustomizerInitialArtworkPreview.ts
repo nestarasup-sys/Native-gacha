@@ -124,5 +124,5 @@ export function useCustomizerInitialArtworkPreview(deps: {
       }
     })()
     return () => { cancelled = true }
-  }, [catalogLoading, catalogModels, catalogPoses, selectedCharacter?.id, selectedCharacter?.customization.modelSkinTone, selectedCharacter?.customization.modelOutlineColor, previewExtent, zoom])
+  }, [catalogLoading, catalogModels, catalogPoses, selectedCharacter?.id, selectedCharacter?.customization.gender, selectedCharacter?.customization.modelSkinTone, selectedCharacter?.customization.modelOutlineColor, previewExtent, zoom])
 }

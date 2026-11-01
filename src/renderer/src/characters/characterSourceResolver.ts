@@ -8,6 +8,7 @@ import type { CustomizerCharacter } from '../../../shared/customizer'
 import { getCharacterBodyDimensions, getCharacterProportions, type CharacterProportions } from '../../../shared/customizer'
 import { applyCharacterBodyShape } from '../../../shared/bodyShape'
 import type { CharacterRenderAssetProvider } from '../../../shared/characterRenderAssets'
+import { isTorsoPart } from '../../../shared/modelRig'
 
 export type CatalogArtwork = Pick<FabricatorProject, 'width' | 'height' | 'parts' | 'layerOrder' | 'hiddenPartIds'> & Partial<Pick<FabricatorProject, 'joints'>>
 
@@ -33,6 +34,28 @@ export function characterShapeScale(proportions: CharacterProportions): { x: num
   return { x: proportions.scale * proportions.width / 10000, y: proportions.scale * proportions.height / 10000 }
 }
 
+export function withCharacterGenderTorso(artwork: CatalogArtwork, source: FabricatorProject, gender: CustomizerCharacter['customization']['gender']): CatalogArtwork {
+  if (gender !== 'male' || !source.maleTorso) return artwork
+  const sourceTorso = source.parts.find(isTorsoPart)
+  const targetTorso = artwork.parts.find(isTorsoPart)
+  if (!sourceTorso || !targetTorso) return artwork
+  const scaleX = sourceTorso.width > 0 ? source.maleTorso.width / sourceTorso.width : 1
+  const scaleY = sourceTorso.height > 0 ? source.maleTorso.height / sourceTorso.height : 1
+  return {
+    ...artwork,
+    parts: artwork.parts.map((part) => part.id === targetTorso.id ? {
+      ...part,
+      dataUrl: source.maleTorso!.dataUrl,
+      x: part.x + source.maleTorso!.x - sourceTorso.x,
+      y: part.y + source.maleTorso!.y - sourceTorso.y,
+      width: part.width * scaleX,
+      height: part.height * scaleY,
+      rotation: part.rotation + source.maleTorso!.rotation - sourceTorso.rotation,
+      fakeSkinContours: source.maleTorso!.fakeSkinContours
+    } : part)
+  }
+}
+
 
 export async function resolveSavedCharacterSource(
   character: CustomizerCharacter,
@@ -49,7 +72,8 @@ export async function resolveSavedCharacterSource(
     ...sourceArtwork,
     parts: applyCurrentModelSkinContours(sourceArtwork.parts, source.parts)
   }
-  const artwork = applyCharacterBodyShape(withCharacterHeadSize(artworkWithModelContours, proportions), getCharacterBodyDimensions(character.customization))
+  const genderArtwork = withCharacterGenderTorso(artworkWithModelContours, source, character.customization.gender)
+  const artwork = applyCharacterBodyShape(withCharacterHeadSize(genderArtwork, proportions), getCharacterBodyDimensions(character.customization))
   // Keep the unshaped model/pose available to renderer preparation. Passing
   // `artwork` back into this resolver would apply the character's dimensions a
   // second time, which made refreshed Editor V6 snapshots wider than preview.

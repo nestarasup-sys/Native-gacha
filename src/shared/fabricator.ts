@@ -63,6 +63,8 @@ export type FabricatorProject = {
   /** Cor padrão do contorno do modelo; personagens podem sobrescrever sem alterar a fonte. */
   modelOutlineColor?: string
   parts: ModelPart[]
+  /** Independent editable copy of the source torso for the male character variant. */
+  maleTorso?: ModelPart
   joints: JointLink[]
   /** Ordem de desenho do fundo para a frente. Ausente em modelos antigos. */
   layerOrder?: string[]
@@ -81,8 +83,9 @@ export type FabricatorSlotSummary = {
   recoveryRequired?: boolean
 } | null
 
-export type FabricatorProjectSave = Omit<FabricatorProject, 'sourceDataUrl' | 'parts'> & {
+export type FabricatorProjectSave = Omit<FabricatorProject, 'sourceDataUrl' | 'parts' | 'maleTorso'> & {
   parts: Array<Omit<ModelPart, 'dataUrl' | 'chromaBaseDataUrl'>>
+  maleTorso?: Omit<ModelPart, 'dataUrl' | 'chromaBaseDataUrl'>
 }
 
 export type FabricatorAssetSave = { id: string; dataUrl: string; chromaBaseDataUrl?: string }

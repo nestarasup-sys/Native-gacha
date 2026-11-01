@@ -31,6 +31,7 @@ type ModelActions = {
   selectSkinTone: (tone: string) => void
   selectOutlineColor: (color: string | undefined) => void
   editFakeContours: () => void
+  openMaleTorsoEditor: () => void
   dismissError: () => void
 }
 
@@ -45,6 +46,7 @@ export type FabricatorModelWorkspaceProps = {
   chromaApplying: boolean
   historyBusy: boolean
   modelSourcePublishing: boolean
+  maleTorsoSaved: boolean
   saveState: ModelSaveState
   history: FabricatorHistoryState
   chromaValue: number
@@ -72,6 +74,7 @@ export function FabricatorModelWorkspace({
   chromaApplying,
   historyBusy,
   modelSourcePublishing,
+  maleTorsoSaved,
   saveState,
   history,
   chromaValue,
@@ -135,6 +138,7 @@ export function FabricatorModelWorkspace({
               <small className="model-history-count" title="Histórico salvo localmente; mantém até 50 alterações">{history.undo.length}/50</small>
             </div>
             <div className="model-current-title" aria-label={`Modelo ${String(project.slot).padStart(2, '0')}`}><span className="model-eyebrow">MODELO {String(project.slot).padStart(2, '0')}</span></div>
+            <button className="model-male-torso-button" onClick={actions.openMaleTorsoEditor} disabled={processing || chromaApplying || historyBusy || modelSourcePublishing || !project.parts.some((part) => /tronco|corpo/i.test(part.name))} title={maleTorsoSaved ? 'Editar cópia masculina salva do tronco' : 'Criar uma cópia independente do tronco para o modelo masculino'} type="button"><Icon name="body" /><span>MASCULINO</span><small>{maleTorsoSaved ? 'Editar cópia' : 'Criar cópia'}</small></button>
             <div className="model-toolbar-actions">
               <span className={`model-save-state ${saveState}`}><i />{saveState === 'saving' ? 'Salvando…' : saveState === 'error' ? 'Erro ao salvar' : 'Salvo localmente'}</span>
               <div className="model-chroma-control">

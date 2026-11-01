@@ -20,6 +20,7 @@ import { createCharacterWardrobeRenderer } from './characterWardrobeRenderer'
 import { loadStandardExpressionEffects, type StandardExpressionEffects } from './standardExpressionEffects'
 export { loadCachedImage } from './characterImageMemos'
 export { withCharacterHeadSize, characterShapeScale } from './characterSourceResolver'
+export { withCharacterGenderTorso } from './characterSourceResolver'
 export type { CatalogArtwork } from './characterSourceResolver'
 export type { GachaReusableMaterialCache, GachaReusableMaterials }
 

@@ -57,6 +57,16 @@ test('flush salva o snapshot atual e só limpa assets confirmados pela mesma ver
   await state.coordinator.waitForProjectWrites()
 })
 
+test('flush persiste a imagem do tronco masculino como asset separado', async () => {
+  const state = fixture()
+  const maleTorso = { id: 'male-torso', name: 'Tronco masculino', x: 1, y: 2, width: 30, height: 40, rotation: 0, dataUrl: 'data:image/png;base64,bWFsZQ==' }
+  state.projectRef.current = { ...state.projectRef.current, maleTorso }
+  state.dirtyAssets.set('male-torso', maleTorso.dataUrl)
+  await state.coordinator.persistProject(state.projectRef.current)
+  assert.equal(state.writes[0].serialized.maleTorso.dataUrl, undefined)
+  assert.deepEqual(state.writes[0].assets, [{ id: 'part-1', dataUrl: 'data:image/png;base64,ZWRpdGVk' }, { id: 'male-torso', dataUrl: maleTorso.dataUrl }])
+})
+
 test('uma gravação antiga não limpa um asset editado enquanto o IPC estava em andamento', async () => {
   let markStarted
   let releaseSave
