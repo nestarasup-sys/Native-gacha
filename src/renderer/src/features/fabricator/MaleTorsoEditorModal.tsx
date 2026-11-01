@@ -42,10 +42,12 @@ export function MaleTorsoEditorModal({ project, baseTorso, savedTorso, onClose, 
   const [error, setError] = useState('')
   const boardRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const brushCursorRef = useRef<HTMLDivElement>(null)
   const imageRef = useRef<HTMLImageElement | null>(null)
   const meshRef = useRef<WardrobeWarpMesh>(createWardrobeWarpMesh())
   const dragRef = useRef<{ pointerId: number; startClient: WardrobeWarpPoint; last: WardrobeWarpPoint; originalX: Float32Array; originalY: Float32Array; changed: boolean; activated: boolean } | null>(null)
   const frameRef = useRef<number | null>(null)
+  const lastPointerRef = useRef<WardrobeWarpPoint | null>(null)
 
   useEffect(() => {
     if (!deforming) { setWarpReady(false); imageRef.current = null; return }
@@ -103,18 +105,44 @@ export function MaleTorsoEditorModal({ project, baseTorso, savedTorso, onClose, 
     const originX = (bounds.width - part.width * scale) / 2
     const originY = (bounds.height - part.height * scale) / 2
     const world = { x: (event.clientX - bounds.left - originX) / scale, y: (event.clientY - bounds.top - originY) / scale }
-    const radians = -part.rotation * Math.PI / 180
-    const centerX = part.width / 2
-    const centerY = part.height / 2
-    const dx = world.x - centerX
-    const dy = world.y - centerY
-    return { x: centerX + dx * Math.cos(radians) - dy * Math.sin(radians), y: centerY + dx * Math.sin(radians) + dy * Math.cos(radians) }
+    return world
+  }
+
+  const updateBrushCursor = (point: WardrobeWarpPoint | null) => {
+    lastPointerRef.current = point
+    const cursor = brushCursorRef.current
+    const board = boardRef.current
+    if (!cursor || !board || !deforming || !point) {
+      if (cursor) cursor.style.display = 'none'
+      return
+    }
+    const scale = Math.min(board.clientWidth / part.width, board.clientHeight / part.height)
+    const diameter = Math.max(8, radius * 2 * scale)
+    cursor.style.display = 'block'
+    cursor.style.width = `${diameter}px`
+    cursor.style.height = `${diameter}px`
+    cursor.style.left = `${point.x * scale - diameter / 2}px`
+    cursor.style.top = `${point.y * scale - diameter / 2}px`
+  }
+
+  useEffect(() => {
+    if (!deforming) {
+      updateBrushCursor(null)
+      return
+    }
+    if (lastPointerRef.current) updateBrushCursor(lastPointerRef.current)
+  }, [deforming, radius, part.width, part.height, warpReady])
+
+  const leaveWarpPreview = () => {
+    if (dragRef.current) return
+    updateBrushCursor(null)
   }
 
   const beginWarp = (event: ReactPointerEvent<HTMLCanvasElement>) => {
     if (!warpReady || event.button !== 0 || dragRef.current) return
     const point = modelPoint(event)
     if (!point) return
+    updateBrushCursor(point)
     event.preventDefault()
     event.currentTarget.setPointerCapture(event.pointerId)
     dragRef.current = { pointerId: event.pointerId, startClient: { x: event.clientX, y: event.clientY }, last: point, originalX: new Float32Array(meshRef.current.offsetX), originalY: new Float32Array(meshRef.current.offsetY), changed: false, activated: false }
@@ -123,6 +151,7 @@ export function MaleTorsoEditorModal({ project, baseTorso, savedTorso, onClose, 
   const moveWarp = (event: ReactPointerEvent<HTMLCanvasElement>) => {
     const point = modelPoint(event)
     if (!point) return
+    updateBrushCursor(point)
     const drag = dragRef.current
     const image = imageRef.current
     if (!drag || drag.pointerId !== event.pointerId || !image) return
@@ -214,7 +243,8 @@ export function MaleTorsoEditorModal({ project, baseTorso, savedTorso, onClose, 
             <div className="male-torso-artboard" ref={boardRef} style={{ width: `${part.width * previewScale}px`, height: `${part.height * previewScale}px` }}>
               {!deforming && <img className="male-torso-part-preview" src={part.dataUrl} alt="Cópia do tronco para o modelo masculino" style={{ width: '100%', height: '100%', objectFit: 'contain', transform: `rotate(${part.rotation}deg)` }} />}
               {deforming && !warpReady && <img className="male-torso-part-preview" src={part.dataUrl} alt="Prévia atualizada do tronco masculino" style={{ width: '100%', height: '100%', objectFit: 'contain', transform: `rotate(${part.rotation}deg)` }} />}
-              {deforming && <canvas ref={canvasRef} className="male-torso-warp-canvas" aria-label="Pincel para deformar o tronco" onPointerDown={beginWarp} onPointerMove={moveWarp} onPointerUp={finishWarp} onPointerCancel={finishWarp} style={{ visibility: warpReady ? 'visible' : 'hidden' }} />}
+              {deforming && <canvas ref={canvasRef} className="male-torso-warp-canvas" aria-label="Pincel para deformar o tronco" onPointerDown={beginWarp} onPointerMove={moveWarp} onPointerUp={finishWarp} onPointerCancel={finishWarp} onPointerLeave={leaveWarpPreview} style={{ visibility: warpReady ? 'visible' : 'hidden' }} />}
+              {deforming && <div ref={brushCursorRef} className="male-torso-brush-cursor" aria-hidden="true" />}
             </div>
           </div>
           {deforming && <WardrobeDeformationBrushControls active ready={warpReady} radius={radius} strength={strength} onRadiusChange={setRadius} onStrengthChange={setStrength} />}
