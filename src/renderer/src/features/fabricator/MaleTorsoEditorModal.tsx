@@ -207,7 +207,7 @@ export function MaleTorsoEditorModal({ project, baseTorso, savedTorso, onClose, 
           </nav>
           <div className="male-torso-stage">
             <div className="male-torso-artboard" ref={boardRef} style={{ backgroundColor: previewBackground }}>
-              {!deforming && <img className="male-torso-part-preview" src={part.dataUrl} alt="Cópia do tronco para o modelo masculino" style={{ width: '100%', height: '100%', transform: `rotate(${part.rotation}deg)` }} />}
+              {!deforming && <img className="male-torso-part-preview" src={part.dataUrl} alt="Cópia do tronco para o modelo masculino" style={{ width: '100%', height: '100%', objectFit: 'contain', transform: `rotate(${part.rotation}deg)` }} />}
               {deforming && <canvas ref={canvasRef} className="male-torso-warp-canvas" aria-label="Pincel para deformar o tronco" onPointerDown={beginWarp} onPointerMove={moveWarp} onPointerUp={finishWarp} onPointerCancel={finishWarp} />}
             </div>
           </div>
