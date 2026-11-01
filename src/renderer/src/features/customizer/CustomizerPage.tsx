@@ -757,7 +757,16 @@ export function CustomizerPage() {
             {selectedCustomizerTopTab === 'cabeca' && headPanelTab === 'adjust' && renderAdjustmentPicker('head')}
             {selectedCustomizerTopTab === 'roupas' && (clothesPanelTab === 'upper' || clothesPanelTab === 'lower') && <CustomizerWardrobeCatalogWorkspace {...wardrobeCatalogWorkspaceProps} />}
             {selectedCustomizerTopTab === 'roupas' && clothesPanelTab === 'adjust' && renderAdjustmentPicker('clothes')}
-            {selectedCustomizerTopTab === 'modelos' && <CustomizerModelPicker models={availableModels} thumbnails={modelThumbnails} selectedSlot={selectedCatalogModelSlot} loading={catalogLoading} onSelect={(model) => void selectCatalogModel(model)} />}
+            {selectedCustomizerTopTab === 'modelos' && <CustomizerModelPicker
+              models={availableModels}
+              thumbnails={modelThumbnails}
+              selectedSlot={selectedCatalogModelSlot}
+              gender={selectedCharacter?.customization.gender ?? 'female'}
+              genderDisabled={!selectedCharacter}
+              onGenderChange={(gender) => { void saveCharacterCustomization({ gender }) }}
+              loading={catalogLoading}
+              onSelect={(model) => void selectCatalogModel(model)}
+            />}
             {selectedCustomizerTopTab === 'modelos' && <CustomizerNewCharacterHeadSizeControl
               preference={newCharacterHeadSizePreference}
               onChange={setNewCharacterHeadSizePreference}

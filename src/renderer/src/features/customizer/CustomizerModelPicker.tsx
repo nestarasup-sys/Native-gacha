@@ -1,4 +1,5 @@
 import type { FabricatorSlotSummary } from '../../../../shared/fabricator'
+import type { CharacterGender } from '../../../../shared/customizer'
 import { Icon } from '../../ui/components/Icon'
 
 type ModelSummary = NonNullable<FabricatorSlotSummary>
@@ -7,12 +8,19 @@ export function CustomizerModelPicker(props: {
   models: ModelSummary[]
   thumbnails: Record<number, string>
   selectedSlot: number | null
+  gender: CharacterGender
+  onGenderChange: (gender: CharacterGender) => void
+  genderDisabled?: boolean
   loading: boolean
   onSelect: (model: ModelSummary) => void
 }) {
-  const { models, thumbnails, selectedSlot, loading, onSelect } = props
+  const { models, thumbnails, selectedSlot, gender, onGenderChange, genderDisabled = false, loading, onSelect } = props
 
   return <section className="customizer-model-picker" aria-label="Modelos do Fabricador Dev">
+    <div className="customizer-model-gender-band" role="group" aria-label="Gênero do personagem">
+      <button className={'customizer-model-gender-button female' + (gender === 'female' ? ' active' : '')} type="button" aria-pressed={gender === 'female'} disabled={genderDisabled} onClick={() => onGenderChange('female')}>Feminino</button>
+      <button className={'customizer-model-gender-button male' + (gender === 'male' ? ' active' : '')} type="button" aria-pressed={gender === 'male'} disabled={genderDisabled} onClick={() => onGenderChange('male')}>Masculino</button>
+    </div>
     <header className="customizer-catalog-heading">
       <div><p className="eyebrow">CATÁLOGO</p><h2>Modelo base</h2></div>
       <small>{models.length} {models.length === 1 ? 'modelo' : 'modelos'}</small>
