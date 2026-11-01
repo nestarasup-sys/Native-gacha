@@ -113,10 +113,35 @@ function splitKinds(category: WardrobeComponent['category']): { upper: 'thigh' |
   return null
 }
 
-function jointAnchorForPart(joint: JointLink, partId: string): WardrobePoint | null {
-  if (joint.parentPartId === partId) return joint.parentAnchor
-  if (joint.childPartId === partId) return joint.childAnchor
-  return null
+function directionBetweenSegments(upper: ModelPart, lower: ModelPart, offsets: WardrobeJointOffsets): WardrobePoint | null {
+  const upperOffset = offsets[upper.id] ?? { x: 0, y: 0 }
+  const lowerOffset = offsets[lower.id] ?? { x: 0, y: 0 }
+  const upperCenter = center(upper)
+  const lowerCenter = center(lower)
+  const dx = lowerCenter.x + lowerOffset.x - upperCenter.x - upperOffset.x
+  const dy = lowerCenter.y + lowerOffset.y - upperCenter.y - upperOffset.y
+  const length = Math.hypot(dx, dy)
+  return length < 0.000001 ? null : { x: dx / length, y: dy / length }
+}
+
+/** Return the end of the upper asset's rectangle facing the lower segment. */
+function distalAssetPoint(part: ModelPart, axis: WardrobePoint, offset: WardrobePoint): WardrobePoint {
+  const radians = (part.sourceTransform?.rotation ?? part.rotation) * Math.PI / 180
+  const cosine = Math.cos(radians)
+  const sine = Math.sin(radians)
+  const halfWidth = part.width / 2
+  const halfHeight = part.height / 2
+  let furthestProjection = Number.NEGATIVE_INFINITY
+  for (const localX of [-halfWidth, halfWidth]) for (const localY of [-halfHeight, halfHeight]) {
+    const rotatedX = localX * cosine - localY * sine
+    const rotatedY = localX * sine + localY * cosine
+    furthestProjection = Math.max(furthestProjection, rotatedX * axis.x + rotatedY * axis.y)
+  }
+  const partCenter = center(part)
+  return {
+    x: partCenter.x + offset.x + axis.x * furthestProjection,
+    y: partCenter.y + offset.y + axis.y * furthestProjection
+  }
 }
 
 /** Find the exact authored joint that divides this long garment. */
@@ -154,34 +179,27 @@ export function findWardrobeJointCut(
   if (!matching.length) matching = candidates
   const componentCenter = { x: component.x + component.width / 2, y: component.y + component.height / 2 }
   matching.sort((a, b) => {
-    const upperJointAnchor = ({ joint, upper }: typeof matching[number]) => {
-      const anchor = jointAnchorForPart(joint, upper.id)
+    const upperAssetEnd = ({ upper, lower }: typeof matching[number]) => {
+      const axis = directionBetweenSegments(upper, lower, offsets)
+      if (!axis) return center(upper)
       const offset = offsets[upper.id] ?? { x: 0, y: 0 }
-      return anchor ? { x: anchor.x + offset.x, y: anchor.y + offset.y } : center(upper)
+      return distalAssetPoint(upper, axis, offset)
     }
     const aIsAttachedBone = a.upper.id === component.attachedPartId
     const bIsAttachedBone = b.upper.id === component.attachedPartId
     if (aIsAttachedBone !== bIsAttachedBone) return aIsAttachedBone ? -1 : 1
-    const pointA = upperJointAnchor(a), pointB = upperJointAnchor(b)
+    const pointA = upperAssetEnd(a), pointB = upperAssetEnd(b)
     return Math.hypot(pointA.x - componentCenter.x, pointA.y - componentCenter.y)
       - Math.hypot(pointB.x - componentCenter.x, pointB.y - componentCenter.y)
   })
 
-  const { joint, upper, lower } = matching[0]
-  const upperJointAnchor = jointAnchorForPart(joint, upper.id)
-  if (!upperJointAnchor) return null
+  const { upper, lower } = matching[0]
   const upperOffset = offsets[upper.id] ?? { x: 0, y: 0 }
-  const lowerOffset = offsets[lower.id] ?? { x: 0, y: 0 }
-  // Each bone stores its own side of the joint. Averaging those anchors can
-  // put the seam halfway inside the upper limb instead of at its distal end.
-  const point = { x: upperJointAnchor.x + upperOffset.x, y: upperJointAnchor.y + upperOffset.y }
-  const upperCenter = center(upper)
-  const lowerCenter = center(lower)
-  const dx = lowerCenter.x + lowerOffset.x - upperCenter.x - upperOffset.x
-  const dy = lowerCenter.y + lowerOffset.y - upperCenter.y - upperOffset.y
-  const length = Math.hypot(dx, dy)
-  if (length < 0.000001) return null
-  const axis = { x: dx / length, y: dy / length }
+  const axis = directionBetweenSegments(upper, lower, offsets)
+  if (!axis) return null
+  // The rig anchor can be manually positioned away from the image edge. The
+  // cut belongs at the distal edge of the upper asset, facing its lower part.
+  const point = distalAssetPoint(upper, axis, upperOffset)
   return { upperPartId: upper.id, lowerPartId: lower.id, point, axis, tangent: { x: -axis.y, y: axis.x } }
 }
 
