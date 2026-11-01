@@ -875,6 +875,10 @@ export function CustomizerPage() {
               <button
                 className={`character-card ${selectedCharacter?.id === character.id ? 'selected' : ''}`}
                 key={character.id}
+                style={{
+                  '--character-gender-bg': character.customization.gender === 'male' ? '#edf4ff' : '#fff0f5',
+                  '--character-gender-accent': character.customization.gender === 'male' ? '#4387d8' : '#dc4d87'
+                } as React.CSSProperties}
                 onClick={() => selectCharacter(character.id)}
                 aria-pressed={selectedCharacter?.id === character.id}
               >
