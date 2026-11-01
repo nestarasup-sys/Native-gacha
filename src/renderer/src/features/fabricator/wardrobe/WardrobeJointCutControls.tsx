@@ -9,11 +9,11 @@ type WardrobeJointCutGuideProps = {
   scale: number
   lineLength: number
   disabled?: boolean
-  onPreview: (componentId: string, ratio: number) => void
-  onCommit: (componentId: string, ratio: number) => void
+  onPreview: (componentId: string, ratio: number, rotationDegrees: number) => void
+  onCommit: (componentId: string, ratio: number, rotationDegrees: number) => void
 }
 
-type CutPointerDrag = { pointerId: number; componentId: string; ratio: number }
+type CutPointerDrag = { pointerId: number; componentId: string; ratio: number; pointerStart: { x: number; y: number } }
 
 function clampRatio(value: number): number {
   return Number.isFinite(value) ? Math.max(-1, Math.min(1, value)) : 0
@@ -28,26 +28,26 @@ export function WardrobeJointCutGuide({
   const x2 = (cut.point.x + cut.tangent.x * lineLength) * scale
   const y2 = (cut.point.y + cut.tangent.y * lineLength) * scale
 
-  const ratioAtPointer = (event: ReactPointerEvent<SVGLineElement>): number | null => {
+  const pointAtPointer = (event: ReactPointerEvent<SVGLineElement>): { x: number; y: number } | null => {
     const svg = event.currentTarget.ownerSVGElement
-    if (!svg || cut.adjustmentSpan <= 0) return null
+    if (!svg) return null
     const bounds = svg.getBoundingClientRect()
     if (!bounds.width || !bounds.height) return null
-    const point = {
+    return {
       x: (event.clientX - bounds.left) * projectWidth / bounds.width,
       y: (event.clientY - bounds.top) * projectHeight / bounds.height
     }
-    const distance = (point.x - cut.basePoint.x) * cut.axis.x + (point.y - cut.basePoint.y) * cut.axis.y
-    return clampRatio(distance / cut.adjustmentSpan)
   }
 
   const beginDrag = (event: ReactPointerEvent<SVGLineElement>) => {
     if (disabled) return
     event.preventDefault()
     event.stopPropagation()
-    const distance = (cut.point.x - cut.basePoint.x) * cut.axis.x + (cut.point.y - cut.basePoint.y) * cut.axis.y
+    const pointerStart = pointAtPointer(event)
+    if (!pointerStart || cut.adjustmentSpan <= 0) return
+    const distance = (cut.point.x - cut.basePoint.x) * cut.positionAxis.x + (cut.point.y - cut.basePoint.y) * cut.positionAxis.y
     const ratio = cut.adjustmentSpan > 0 ? clampRatio(distance / cut.adjustmentSpan) : 0
-    dragRef.current = { pointerId: event.pointerId, componentId, ratio }
+    dragRef.current = { pointerId: event.pointerId, componentId, ratio, pointerStart }
     event.currentTarget.setPointerCapture(event.pointerId)
   }
 
@@ -57,10 +57,15 @@ export function WardrobeJointCutGuide({
     if (!drag || drag.pointerId !== event.pointerId) return
     event.preventDefault()
     event.stopPropagation()
-    const ratio = ratioAtPointer(event)
-    if (ratio === null) return
+    const pointer = pointAtPointer(event)
+    if (!pointer || cut.adjustmentSpan <= 0) return
+    const normalMovement = (pointer.x - drag.pointerStart.x) * cut.axis.x + (pointer.y - drag.pointerStart.y) * cut.axis.y
+    const movementAlongPositionAxis = cut.axis.x * cut.positionAxis.x + cut.axis.y * cut.positionAxis.y
+    if (Math.abs(movementAlongPositionAxis) < .001) return
+    const ratio = clampRatio(drag.ratio + normalMovement / (movementAlongPositionAxis * cut.adjustmentSpan))
     drag.ratio = ratio
-    onPreview(componentId, ratio)
+    drag.pointerStart = pointer
+    onPreview(componentId, ratio, cut.rotationDegrees)
   }
 
   const finishDrag = (event: ReactPointerEvent<SVGLineElement>) => {
@@ -69,7 +74,7 @@ export function WardrobeJointCutGuide({
     event.preventDefault()
     event.stopPropagation()
     dragRef.current = null
-    onCommit(drag.componentId, drag.ratio)
+    onCommit(drag.componentId, drag.ratio, cut.rotationDegrees)
   }
 
   return <svg aria-label="Linha de corte ajustável" className="wardrobe-joint-cut-guide" width={projectWidth * scale} height={projectHeight * scale}>
@@ -85,35 +90,47 @@ export function WardrobeJointCutGuide({
 
 type WardrobeJointCutPositionControlProps = {
   ratio: number
+  rotationDegrees: number
+  scope: 'mangas longas' | 'calças longas'
   disabled?: boolean
-  onPreview: (ratio: number) => void
-  onCommit: (ratio: number) => void
+  onPreview: (ratio: number, rotationDegrees: number) => void
+  onCommit: (ratio: number, rotationDegrees: number) => void
 }
 
-export function WardrobeJointCutPositionControl({ ratio, disabled = false, onPreview, onCommit }: WardrobeJointCutPositionControlProps) {
-  const pendingRatioRef = useRef<number | null>(null)
-  const preview = (value: number) => {
-    const next = clampRatio(value)
-    pendingRatioRef.current = next
-    onPreview(next)
+export function WardrobeJointCutPositionControl({
+  ratio, rotationDegrees, scope, disabled = false, onPreview, onCommit
+}: WardrobeJointCutPositionControlProps) {
+  const pendingAdjustmentRef = useRef<{ ratio: number; rotationDegrees: number } | null>(null)
+  const preview = (next: { ratio: number; rotationDegrees: number }) => {
+    const normalized = { ratio: clampRatio(next.ratio), rotationDegrees: Math.max(-45, Math.min(45, next.rotationDegrees)) }
+    pendingAdjustmentRef.current = normalized
+    onPreview(normalized.ratio, normalized.rotationDegrees)
   }
   const commit = () => {
-    const pending = pendingRatioRef.current
+    const pending = pendingAdjustmentRef.current
     if (pending === null) return
-    pendingRatioRef.current = null
-    onCommit(pending)
+    pendingAdjustmentRef.current = null
+    onCommit(pending.ratio, pending.rotationDegrees)
   }
   const value = Math.round(clampRatio(ratio) * 100)
+  const angle = Math.round(Math.max(-45, Math.min(45, rotationDegrees)))
 
   return <div className="wardrobe-joint-cut-position">
-    <span><b>Ajuste da linha</b><output>{value > 0 ? '+' : ''}{value}%</output></span>
+    <span><b>Posição global da linha</b><output>{value > 0 ? '+' : ''}{value}%</output></span>
     <input
-      aria-label="Ajuste manual da posição da linha de corte"
+      aria-label={`Ajuste global da posição da linha de corte para ${scope}`}
       type="range" min="-100" max="100" step="1" value={value} disabled={disabled}
-      onChange={(event) => preview(Number(event.currentTarget.value) / 100)}
+      onChange={(event) => preview({ ratio: Number(event.currentTarget.value) / 100, rotationDegrees: angle })}
       onPointerUp={commit} onPointerCancel={commit} onKeyUp={commit} onBlur={commit}
     />
-    <button className="pose-button secondary wardrobe-joint-cut-reset" disabled={disabled || value === 0} onClick={() => { pendingRatioRef.current = null; onPreview(0); onCommit(0) }} type="button">Voltar ao automático</button>
-    <small>0% marca o fim automático da peça superior. Arraste a linha ou use o controle; salve o conjunto para guardar o ajuste.</small>
+    <span><b>Rotação global da linha</b><output>{angle > 0 ? '+' : ''}{angle}°</output></span>
+    <input
+      aria-label={`Rotação global da linha de corte para ${scope}`}
+      type="range" min="-45" max="45" step="1" value={angle} disabled={disabled}
+      onChange={(event) => preview({ ratio: value / 100, rotationDegrees: Number(event.currentTarget.value) })}
+      onPointerUp={commit} onPointerCancel={commit} onKeyUp={commit} onBlur={commit}
+    />
+    <button className="pose-button secondary wardrobe-joint-cut-reset" disabled={disabled || value === 0 && angle === 0} onClick={() => { pendingAdjustmentRef.current = null; onPreview(0, 0); onCommit(0, 0) }} type="button">Voltar ao automático</button>
+    <small>Salvo automaticamente no app e aplicado a todas as {scope} atuais e futuras. 0% e 0° usam a junta automática.</small>
   </div>
 }

@@ -120,7 +120,7 @@ export type WardrobeComponent = {
   sleeveSegment?: 'whole' | 'upper' | 'lower'
   /** Long 3×4 imports remain intact until Roupas DEV splits them on a model joint. */
   sleeveJointSplit?: 'arm' | 'leg'
-  /** Manual cut offset as a fraction of the upper asset length; saved with the wardrobe set. */
+  /** Legacy per-set cut offset, retained to seed the first global adjustment without changing old manifests. */
   jointCutOffsetRatio?: number
   name: string
   category: WardrobeCategory

@@ -1,5 +1,6 @@
 import type { FabricatorProject, JointLink, ModelPart, WardrobeComponent } from '../../../../../shared/fabricator'
 import { autoConnectParts, modelRigSegmentKind, modelRigSide } from '../../../../../shared/modelRig.ts'
+import type { WardrobeJointCutAdjustment } from './wardrobeJointCutSettings'
 
 export type WardrobePoint = { x: number; y: number }
 export type WardrobeJointOffsets = Readonly<Record<string, WardrobePoint>>
@@ -14,8 +15,11 @@ export type WardrobeJointCut = {
   adjustmentSpan: number
   /** Unit vector from the upper limb segment toward the lower segment. */
   axis: WardrobePoint
+  /** Original limb axis used to move the cut without changing its angle. */
+  positionAxis: WardrobePoint
   /** Unit vector along the cut line. */
   tangent: WardrobePoint
+  rotationDegrees: number
 }
 
 export type WardrobePixelImage = {
@@ -154,11 +158,12 @@ function distalAssetEdge(part: ModelPart, axis: WardrobePoint, offset: WardrobeP
   }
 }
 
-/** Find connected upper/lower segments and calculate a persistent cut position. */
+/** Find connected upper/lower segments and apply the active global cut adjustment. */
 export function findWardrobeJointCut(
   component: WardrobeComponent,
   project: JointProject,
-  offsets: WardrobeJointOffsets
+  offsets: WardrobeJointOffsets,
+  adjustment?: Partial<WardrobeJointCutAdjustment>
 ): WardrobeJointCut | null {
   const kinds = splitKinds(component.category)
   if (!kinds) return null
@@ -205,20 +210,28 @@ export function findWardrobeJointCut(
 
   const { upper, lower } = matching[0]
   const upperOffset = offsets[upper.id] ?? { x: 0, y: 0 }
-  const axis = directionBetweenSegments(upper, lower, offsets)
-  if (!axis) return null
-  const distalEdge = distalAssetEdge(upper, axis, upperOffset)
-  const ratio = typeof component.jointCutOffsetRatio === 'number' && Number.isFinite(component.jointCutOffsetRatio)
-    ? Math.max(-1, Math.min(1, component.jointCutOffsetRatio))
+  const positionAxis = directionBetweenSegments(upper, lower, offsets)
+  if (!positionAxis) return null
+  const distalEdge = distalAssetEdge(upper, positionAxis, upperOffset)
+  const ratioSource = adjustment?.offsetRatio ?? component.jointCutOffsetRatio
+  const ratio = typeof ratioSource === 'number' && Number.isFinite(ratioSource)
+    ? Math.max(-1, Math.min(1, ratioSource))
     : 0
+  const rotationSource = adjustment?.rotationDegrees ?? 0
+  const rotationDegrees = Number.isFinite(rotationSource) ? Math.max(-45, Math.min(45, rotationSource)) : 0
   const point = {
-    x: distalEdge.point.x + axis.x * distalEdge.span * ratio,
-    y: distalEdge.point.y + axis.y * distalEdge.span * ratio
+    x: distalEdge.point.x + positionAxis.x * distalEdge.span * ratio,
+    y: distalEdge.point.y + positionAxis.y * distalEdge.span * ratio
+  }
+  const radians = rotationDegrees * Math.PI / 180
+  const axis = {
+    x: positionAxis.x * Math.cos(radians) - positionAxis.y * Math.sin(radians),
+    y: positionAxis.x * Math.sin(radians) + positionAxis.y * Math.cos(radians)
   }
   return {
     upperPartId: upper.id, lowerPartId: lower.id,
     basePoint: distalEdge.point, point, adjustmentSpan: distalEdge.span,
-    axis, tangent: { x: -axis.y, y: axis.x }
+    axis, positionAxis, tangent: { x: -axis.y, y: axis.x }, rotationDegrees
   }
 }
 
