@@ -117,7 +117,7 @@ configureDevAiDataRoot({ app, repositoryRoot: resolve(__dirname, '../..') })
 configuredAppDataRoot = configureLocalAppDataRoot({ app })
 const diagnosticsLog = createDiagnosticsLog(app.getPath('appData'))
 process.on('uncaughtExceptionMonitor', (error, origin) => {
-  void diagnosticsLog.recordMain({ severity: 'error', code: 'main.uncaught-exception', message: `${origin}: ${error.message}` }).catch(() => undefined)
+  diagnosticsLog.recordFatalMain({ severity: 'error', code: 'main.uncaught-exception', message: `${origin}: ${error.message}` })
 })
 process.on('warning', (warning) => {
   void diagnosticsLog.recordMain({ severity: 'warning', code: 'main.process-warning', message: `${warning.name}: ${warning.message}` }).catch(() => undefined)

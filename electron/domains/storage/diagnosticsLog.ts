@@ -1,3 +1,4 @@
+import { appendFileSync, lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from 'node:fs'
 import { appendFile, lstat, mkdir, readFile, realpath, rename, stat, writeFile } from 'node:fs/promises'
 import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { randomUUID } from 'node:crypto'
@@ -109,6 +110,30 @@ export function createDiagnosticsLog(dataRoot: string) {
     })
   }
 
+  function recordFatalMain(input: LocalDiagnosticEventInput): void {
+    try {
+      const event = normalizeEvent(input, 'main')
+      const canonicalRoot = realpathSync(root)
+      const logDirectory = join(canonicalRoot, 'logs')
+      mkdirSync(logDirectory, { recursive: true })
+      const canonicalLogDirectory = realpathSync(logDirectory)
+      if (!isPathInside(canonicalRoot, canonicalLogDirectory)) return
+      const canonicalFilePath = join(canonicalLogDirectory, 'diagnostics.jsonl')
+      try {
+        if (lstatSync(canonicalFilePath).isSymbolicLink()) return
+      } catch (reason) {
+        if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') return
+      }
+      appendFileSync(canonicalFilePath, `${JSON.stringify(event)}\n`, 'utf8')
+      if (statSync(canonicalFilePath).size > MAX_LOG_BYTES) {
+        const retained = readFileSync(canonicalFilePath, 'utf8').split('\n').filter(Boolean).slice(-MAX_RETAINED_EVENTS)
+        const temporaryPath = `${canonicalFilePath}.${randomUUID()}.tmp`
+        writeFileSync(temporaryPath, retained.length ? `${retained.join('\n')}\n` : '', 'utf8')
+        renameSync(temporaryPath, canonicalFilePath)
+      }
+    } catch { /* Fatal-error capture is best effort and must not alter process shutdown. */ }
+  }
+
   async function list(): Promise<LocalDiagnosticEvent[]> {
     await writeQueue
     try {
@@ -130,5 +155,5 @@ export function createDiagnosticsLog(dataRoot: string) {
     }
   }
 
-  return { recordRenderer, recordMain, list, fileName: basename(filePath) }
+  return { recordRenderer, recordMain, recordFatalMain, list, fileName: basename(filePath) }
 }
