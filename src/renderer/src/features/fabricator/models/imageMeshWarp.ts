@@ -5,6 +5,8 @@ const MAX_WARP_PADDING = 512
 const MAX_WARP_PIXELS = 32_000_000
 
 export type ImageWarpMesh = {
+  columns: number
+  rows: number
   offsetX: Float32Array
   offsetY: Float32Array
 }
@@ -19,17 +21,19 @@ export type ImageWarpBounds = {
 
 export type ImageWarpPoint = { x: number; y: number }
 
-export function createImageWarpMesh(): ImageWarpMesh {
-  const pointCount = (IMAGE_WARP_COLUMNS + 1) * (IMAGE_WARP_ROWS + 1)
-  return { offsetX: new Float32Array(pointCount), offsetY: new Float32Array(pointCount) }
+export function createImageWarpMesh(columns = IMAGE_WARP_COLUMNS, rows = IMAGE_WARP_ROWS): ImageWarpMesh {
+  const safeColumns = Math.max(2, Math.min(64, Math.round(columns)))
+  const safeRows = Math.max(2, Math.min(64, Math.round(rows)))
+  const pointCount = (safeColumns + 1) * (safeRows + 1)
+  return { columns: safeColumns, rows: safeRows, offsetX: new Float32Array(pointCount), offsetY: new Float32Array(pointCount) }
 }
 
-function meshIndex(column: number, row: number): number {
-  return row * (IMAGE_WARP_COLUMNS + 1) + column
+function meshIndex(column: number, row: number, columns: number): number {
+  return row * (columns + 1) + column
 }
 
-function meshPoint(image: HTMLImageElement, column: number, row: number): ImageWarpPoint {
-  return { x: column * image.naturalWidth / IMAGE_WARP_COLUMNS, y: row * image.naturalHeight / IMAGE_WARP_ROWS }
+function meshPoint(image: HTMLImageElement, column: number, row: number, columns: number, rows: number): ImageWarpPoint {
+  return { x: column * image.naturalWidth / columns, y: row * image.naturalHeight / rows }
 }
 
 /** Maps a source pixel through the same two triangles used to render the warp mesh. */
@@ -37,16 +41,18 @@ export function mapImageWarpPoint(image: HTMLImageElement, mesh: ImageWarpMesh, 
   const width = image.naturalWidth
   const height = image.naturalHeight
   if (width <= 0 || height <= 0) return point
-  const gridX = Math.max(0, Math.min(IMAGE_WARP_COLUMNS, point.x * IMAGE_WARP_COLUMNS / width))
-  const gridY = Math.max(0, Math.min(IMAGE_WARP_ROWS, point.y * IMAGE_WARP_ROWS / height))
-  const column = Math.min(IMAGE_WARP_COLUMNS - 1, Math.floor(gridX))
-  const row = Math.min(IMAGE_WARP_ROWS - 1, Math.floor(gridY))
+  const columns = mesh.columns
+  const rows = mesh.rows
+  const gridX = Math.max(0, Math.min(columns, point.x * columns / width))
+  const gridY = Math.max(0, Math.min(rows, point.y * rows / height))
+  const column = Math.min(columns - 1, Math.floor(gridX))
+  const row = Math.min(rows - 1, Math.floor(gridY))
   const x = gridX - column
   const y = gridY - row
-  const topLeft = meshIndex(column, row)
-  const topRight = meshIndex(column + 1, row)
-  const bottomRight = meshIndex(column + 1, row + 1)
-  const bottomLeft = meshIndex(column, row + 1)
+  const topLeft = meshIndex(column, row, columns)
+  const topRight = meshIndex(column + 1, row, columns)
+  const bottomRight = meshIndex(column + 1, row + 1, columns)
+  const bottomLeft = meshIndex(column, row + 1, columns)
   let offsetX: number
   let offsetY: number
   if (x >= y) {
@@ -94,9 +100,9 @@ function constrainOffsets(mesh: ImageWarpMesh, image: HTMLImageElement): void {
     ? Math.min(MAX_WARP_PADDING - 2, paddingLimit - 2)
     : Math.min(MAX_WARP_PADDING - 2, Math.max(1, Math.min(image.naturalWidth / IMAGE_WARP_COLUMNS, image.naturalHeight / IMAGE_WARP_ROWS) * 0.72))
   for (let index = 0; index < mesh.offsetX.length; index += 1) {
-    const column = index % (IMAGE_WARP_COLUMNS + 1)
-    const row = Math.floor(index / (IMAGE_WARP_COLUMNS + 1))
-    if (paddingLimit < 2 && (column === 0 || column === IMAGE_WARP_COLUMNS || row === 0 || row === IMAGE_WARP_ROWS)) {
+    const column = index % (mesh.columns + 1)
+    const row = Math.floor(index / (mesh.columns + 1))
+    if (paddingLimit < 2 && (column === 0 || column === mesh.columns || row === 0 || row === mesh.rows)) {
       mesh.offsetX[index] = 0
       mesh.offsetY[index] = 0
       continue
@@ -126,10 +132,10 @@ export function applyImageWarpBrush(
   const safeRadius = Math.max(1, radius)
   const safeStrength = Math.max(0, Math.min(1, strength))
 
-  for (let row = 0; row <= IMAGE_WARP_ROWS; row += 1) {
-    for (let column = 0; column <= IMAGE_WARP_COLUMNS; column += 1) {
-      const index = meshIndex(column, row)
-      const base = meshPoint(image, column, row)
+  for (let row = 0; row <= mesh.rows; row += 1) {
+    for (let column = 0; column <= mesh.columns; column += 1) {
+      const index = meshIndex(column, row, mesh.columns)
+      const base = meshPoint(image, column, row, mesh.columns, mesh.rows)
       const world = pointToWorld({ x: base.x + mesh.offsetX[index], y: base.y + mesh.offsetY[index] }, image, bounds)
       const distance = Math.hypot(world.x - pointer.x, world.y - pointer.y)
       const influence = Math.exp(-Math.pow(distance / (safeRadius * 0.78), 2) * 1.4)
@@ -140,6 +146,27 @@ export function applyImageWarpBrush(
   }
 
   constrainOffsets(mesh, image)
+}
+
+/** Interpolates pointer movement so sparse mouse events deform along the complete stroke. */
+export function applyImageWarpBrushStroke(
+  mesh: ImageWarpMesh,
+  image: HTMLImageElement,
+  bounds: ImageWarpBounds,
+  from: ImageWarpPoint,
+  to: ImageWarpPoint,
+  radius: number,
+  strength: number
+): void {
+  const delta = { x: to.x - from.x, y: to.y - from.y }
+  const distance = Math.hypot(delta.x, delta.y)
+  if (distance <= 0.001) return
+  const steps = Math.max(1, Math.ceil(distance / Math.max(1, radius * 0.2)))
+  for (let step = 1; step <= steps; step += 1) {
+    const previous = { x: from.x + delta.x * ((step - 1) / steps), y: from.y + delta.y * ((step - 1) / steps) }
+    const point = { x: from.x + delta.x * (step / steps), y: from.y + delta.y * (step / steps) }
+    applyImageWarpBrush(mesh, image, bounds, point, { x: point.x - previous.x, y: point.y - previous.y }, radius, strength)
+  }
 }
 
 function expandedTriangle(points: [ImageWarpPoint, ImageWarpPoint, ImageWarpPoint], amount = 1.25): [ImageWarpPoint, ImageWarpPoint, ImageWarpPoint] {
@@ -227,17 +254,17 @@ export function drawImageWarp(
   }
 
   const node = (column: number, row: number): ImageWarpPoint => {
-    const index = meshIndex(column, row)
-    const base = meshPoint(image, column, row)
+    const index = meshIndex(column, row, mesh.columns)
+    const base = meshPoint(image, column, row, mesh.columns, mesh.rows)
     return { x: base.x + mesh.offsetX[index] + safePadding, y: base.y + mesh.offsetY[index] + safePadding }
   }
 
-  for (let row = 0; row < IMAGE_WARP_ROWS; row += 1) {
-    for (let column = 0; column < IMAGE_WARP_COLUMNS; column += 1) {
-      const sourceTopLeft = meshPoint(image, column, row)
-      const sourceTopRight = meshPoint(image, column + 1, row)
-      const sourceBottomRight = meshPoint(image, column + 1, row + 1)
-      const sourceBottomLeft = meshPoint(image, column, row + 1)
+  for (let row = 0; row < mesh.rows; row += 1) {
+    for (let column = 0; column < mesh.columns; column += 1) {
+      const sourceTopLeft = meshPoint(image, column, row, mesh.columns, mesh.rows)
+      const sourceTopRight = meshPoint(image, column + 1, row, mesh.columns, mesh.rows)
+      const sourceBottomRight = meshPoint(image, column + 1, row + 1, mesh.columns, mesh.rows)
+      const sourceBottomLeft = meshPoint(image, column, row + 1, mesh.columns, mesh.rows)
       const destinationTopLeft = node(column, row)
       const destinationTopRight = node(column + 1, row)
       const destinationBottomRight = node(column + 1, row + 1)

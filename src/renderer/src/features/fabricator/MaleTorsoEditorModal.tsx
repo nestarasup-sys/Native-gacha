@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import type { FabricatorProject, ModelPart } from '../../../../shared/fabricator'
 import { Icon } from '../../ui/components/Icon'
-import { applyWardrobeWarpBrush, createWardrobeWarpMesh, drawWardrobeWarp, type WardrobeWarpMesh, type WardrobeWarpPoint } from './wardrobe/wardrobeMeshWarp'
+import { applyWardrobeWarpBrushStroke, createWardrobeWarpMesh, drawWardrobeWarp, type WardrobeWarpMesh, type WardrobeWarpPoint } from './wardrobe/wardrobeMeshWarp'
 import { WardrobeDeformationBrushControls } from './wardrobe/WardrobePreviewControls'
 import { createMaleTorsoDeformationPatch } from './models/maleTorsoDeformation'
 
@@ -44,7 +44,7 @@ export function MaleTorsoEditorModal({ project, baseTorso, savedTorso, onClose, 
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const brushCursorRef = useRef<HTMLDivElement>(null)
   const imageRef = useRef<HTMLImageElement | null>(null)
-  const meshRef = useRef<WardrobeWarpMesh>(createWardrobeWarpMesh())
+  const meshRef = useRef<WardrobeWarpMesh>(createWardrobeWarpMesh(20, 26))
   const dragRef = useRef<{ pointerId: number; startClient: WardrobeWarpPoint; last: WardrobeWarpPoint; originalX: Float32Array; originalY: Float32Array; changed: boolean; activated: boolean } | null>(null)
   const frameRef = useRef<number | null>(null)
   const lastPointerRef = useRef<WardrobeWarpPoint | null>(null)
@@ -53,7 +53,7 @@ export function MaleTorsoEditorModal({ project, baseTorso, savedTorso, onClose, 
     if (!deforming) { setWarpReady(false); imageRef.current = null; return }
     let active = true
     setWarpReady(false)
-    meshRef.current = createWardrobeWarpMesh()
+    meshRef.current = createWardrobeWarpMesh(20, 26)
     void loadImage(part.dataUrl).then((image) => {
       if (!active) return
       imageRef.current = image
@@ -157,9 +157,8 @@ export function MaleTorsoEditorModal({ project, baseTorso, savedTorso, onClose, 
     if (!drag || drag.pointerId !== event.pointerId || !image) return
     event.preventDefault()
     if (!drag.activated && Math.hypot(event.clientX - drag.startClient.x, event.clientY - drag.startClient.y) < 3) return
-    const delta = { x: point.x - drag.last.x, y: point.y - drag.last.y }
-    if (Math.abs(delta.x) < 0.01 && Math.abs(delta.y) < 0.01) return
-    applyWardrobeWarpBrush(meshRef.current, image, { x: 0, y: 0, width: part.width, height: part.height, rotation: part.rotation }, point, delta, radius, strength / 100)
+    if (Math.hypot(point.x - drag.last.x, point.y - drag.last.y) < 0.01) return
+    applyWardrobeWarpBrushStroke(meshRef.current, image, { x: 0, y: 0, width: part.width, height: part.height, rotation: part.rotation }, drag.last, point, radius, strength / 100)
     drag.last = point
     drag.activated = true
     drag.changed = true
@@ -197,7 +196,7 @@ export function MaleTorsoEditorModal({ project, baseTorso, savedTorso, onClose, 
     }
     setLastDeformation(part)
     setPart((current) => createMaleTorsoDeformationPatch(current, dataUrl))
-    meshRef.current = createWardrobeWarpMesh()
+    meshRef.current = createWardrobeWarpMesh(20, 26)
     imageRef.current = null
     setWarpReady(false)
     setError('')

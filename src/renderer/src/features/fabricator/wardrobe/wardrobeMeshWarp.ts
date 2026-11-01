@@ -2,6 +2,7 @@ export {
   IMAGE_WARP_COLUMNS as WARDROBE_WARP_COLUMNS,
   IMAGE_WARP_ROWS as WARDROBE_WARP_ROWS,
   applyImageWarpBrush as applyWardrobeWarpBrush,
+  applyImageWarpBrushStroke as applyWardrobeWarpBrushStroke,
   createImageWarpMesh as createWardrobeWarpMesh,
   drawImageWarp as drawWardrobeWarp,
   imageWarpPadding as wardrobeWarpPadding

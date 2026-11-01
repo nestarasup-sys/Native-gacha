@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { createImageWarpMesh, drawImageWarp } from '../src/renderer/src/features/fabricator/models/imageMeshWarp.ts'
+import { applyImageWarpBrushStroke, createImageWarpMesh, drawImageWarp } from '../src/renderer/src/features/fabricator/models/imageMeshWarp.ts'
 
 test('a malha sem deslocamentos desenha a imagem diretamente sem costuras triangulares', () => {
   const calls = { drawImage: 0, clip: 0, beginPath: 0 }
@@ -37,4 +37,21 @@ test('a malha deformada usa sobreposição entre triângulos para esconder frest
   drawImageWarp(canvas, image, mesh, 0)
   assert.equal(calls.clip, 13 * 15 * 2)
   assert.equal(calls.drawImage, calls.clip)
+})
+
+test('o pincel interpolado distribui a deformação pelo caminho inteiro do mouse', () => {
+  const mesh = createImageWarpMesh(10, 10)
+  const image = { naturalWidth: 100, naturalHeight: 100 }
+  applyImageWarpBrushStroke(mesh, image, { x: 0, y: 0, width: 100, height: 100, rotation: 0 }, { x: 20, y: 50 }, { x: 80, y: 50 }, 20, 0.5)
+  const at = (column, row) => row * (mesh.columns + 1) + column
+  assert.ok(mesh.offsetX[at(2, 5)] > 0, 'a região inicial do traço foi afetada')
+  assert.ok(mesh.offsetX[at(5, 5)] > 0, 'a região central do traço foi afetada')
+  assert.ok(mesh.offsetX[at(8, 5)] > 0, 'a região final do traço foi afetada')
+})
+
+test('a malha mais densa do tronco mantém suas próprias subdivisões', () => {
+  const mesh = createImageWarpMesh(20, 26)
+  assert.equal(mesh.offsetX.length, 21 * 27)
+  assert.equal(mesh.columns, 20)
+  assert.equal(mesh.rows, 26)
 })
