@@ -142,7 +142,7 @@ export function applyImageWarpBrush(
   constrainOffsets(mesh, image)
 }
 
-function expandedTriangle(points: [ImageWarpPoint, ImageWarpPoint, ImageWarpPoint], amount = 0.65): [ImageWarpPoint, ImageWarpPoint, ImageWarpPoint] {
+function expandedTriangle(points: [ImageWarpPoint, ImageWarpPoint, ImageWarpPoint], amount = 1.25): [ImageWarpPoint, ImageWarpPoint, ImageWarpPoint] {
   const center = {
     x: (points[0].x + points[1].x + points[2].x) / 3,
     y: (points[0].y + points[1].y + points[2].y) / 3
@@ -219,6 +219,12 @@ export function drawImageWarp(
   context.imageSmoothingEnabled = true
   context.imageSmoothingQuality = 'high'
   context.clearRect(0, 0, width, height)
+
+  const hasDeformation = mesh.offsetX.some((offset, index) => Math.abs(offset) > 0.0001 || Math.abs(mesh.offsetY[index]) > 0.0001)
+  if (!hasDeformation) {
+    context.drawImage(image, safePadding, safePadding)
+    return { padding: safePadding, width, height }
+  }
 
   const node = (column: number, row: number): ImageWarpPoint => {
     const index = meshIndex(column, row)
