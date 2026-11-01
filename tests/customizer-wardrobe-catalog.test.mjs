@@ -11,6 +11,7 @@ import {
   lowerWardrobePageTwoPanels,
   createWardrobePanelCandidateIndex,
   wardrobePanelCandidates,
+  wardrobePanelSelectionComponents,
   isWardrobePanelCandidateSelected,
   wardrobePanelGroupMatchesComponent,
   restoreMissingPairedWardrobeSleeves
@@ -166,7 +167,16 @@ test('índice de candidatos preserva filtros, ordem e agrupamento de cada painel
     ['upper-left', 'lower-left'], ['legacy-upper-left', 'legacy-lower-left']
   ])
   assert.deepEqual(index.get('upper-right')?.map((candidate) => candidate.components.map(({ id }) => id)), [['upper-right', 'lower-right']])
-  assert.equal(upperWardrobePanels.some((panel) => panel.id === 'lower-left' || panel.id === 'lower-right'), false)
+  assert.deepEqual(index.get('lower-left')?.map((candidate) => [candidate.component.id, candidate.components.map(({ id }) => id), candidate.pairedComponents.map(({ id }) => id)]), [
+    ['lower-left', ['lower-left'], ['upper-left', 'lower-left']],
+    ['legacy-lower-left', ['legacy-lower-left'], ['legacy-upper-left', 'legacy-lower-left']],
+    ['unpaired-lower-left', ['unpaired-lower-left'], ['unpaired-lower-left']]
+  ])
+  assert.deepEqual(index.get('lower-right')?.map((candidate) => candidate.components.map(({ id }) => id)), [['lower-right']])
+  assert.deepEqual(wardrobePanelSelectionComponents(mainSet, upperWardrobePanels.find((panel) => panel.id === 'lower-left')).map(({ id }) => id), [
+    'upper-left', 'lower-left', 'legacy-upper-left', 'legacy-lower-left', 'unpaired-lower-left'
+  ])
+  assert.equal(upperWardrobePanels.some((panel) => panel.id === 'lower-left' || panel.id === 'lower-right'), true)
   const splitSleeve = index.get('upper-left')[0]
   const legacySplitGroups = [
     { modelSlot: 1, setId: 'main', category: 'manga-superior', componentId: 'upper-left' },
@@ -174,6 +184,9 @@ test('índice de candidatos preserva filtros, ordem e agrupamento de cada painel
   ]
   assert.equal(isWardrobePanelCandidateSelected(splitSleeve, upperWardrobePanels.find((panel) => panel.id === 'upper-left'), legacySplitGroups), true)
   assert.equal(wardrobePanelGroupMatchesComponent(legacySplitGroups[1], upperWardrobePanels.find((panel) => panel.id === 'upper-left'), 1, 'main', splitSleeve.components[1]), true)
+  const lowerSleeve = index.get('lower-left')[0]
+  assert.equal(isWardrobePanelCandidateSelected(lowerSleeve, upperWardrobePanels.find((panel) => panel.id === 'lower-left'), legacySplitGroups), true)
+  assert.equal(wardrobePanelGroupMatchesComponent(legacySplitGroups[1], upperWardrobePanels.find((panel) => panel.id === 'lower-left'), 1, 'main', lowerSleeve.component), true)
   assert.equal(index.get('glasses')?.[0]?.headExtraAsset?.id, faceAsset.id)
   assert.equal(index.get('shirt')?.some((candidate) => candidate.summary.modelSlot === 2), false)
 })

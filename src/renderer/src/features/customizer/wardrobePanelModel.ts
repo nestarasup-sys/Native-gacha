@@ -10,7 +10,9 @@ export const upperWardrobePanels: WardrobePanel[] = [
   { id: 'shirt', label: 'Camisa', category: 'camisa', side: null },
   { id: 'jacket', label: 'Jaqueta', category: 'jaqueta', side: null },
   { id: 'upper-left', label: 'Manga superior esquerda', category: 'manga-superior', side: 'left' },
-  { id: 'upper-right', label: 'Manga superior direita', category: 'manga-superior', side: 'right' }
+  { id: 'lower-left', label: 'Manga inferior esquerda', category: 'manga-superior', side: 'left' },
+  { id: 'upper-right', label: 'Manga superior direita', category: 'manga-superior', side: 'right' },
+  { id: 'lower-right', label: 'Manga inferior direita', category: 'manga-superior', side: 'right' }
 ]
 export const upperWardrobePageTwoPanels: WardrobePanel[] = [
   { id: 'gloves-left', label: 'Luvas esquerda', category: 'luvas', side: 'left' },
@@ -102,11 +104,13 @@ export function restoreMissingPairedWardrobeSleeves(
 }
 
 export function wardrobeComponentMatchesPanel(component: WardrobeSet['components'][number], panel: WardrobePanel): boolean {
-  const sleevePairPanel = panel.id === 'upper-left' || panel.id === 'upper-right'
-  const pairedLowerSleeve = sleevePairPanel
+  const pairedLowerSleeve = isSleeveUpperPanel(panel)
     && component.category === 'manga-inferior'
     && component.sleeveSegment !== 'upper'
-  if (panel.source ? !panel.source.includes(component.category) : component.category !== panel.category && !pairedLowerSleeve) return false
+  const forearmPanel = isSleeveLowerPanel(panel)
+    && component.category === 'manga-inferior'
+    && component.sleeveSegment !== 'upper'
+  if (panel.source ? !panel.source.includes(component.category) : component.category !== panel.category && !pairedLowerSleeve && !forearmPanel) return false
   if (!panel.side) return true
   // Manga/calça imports keep an explicit side even after splitting the piece.
   // Split labels describe the segment ("braço superior", "antebraço") and may
@@ -124,6 +128,23 @@ function isSleeveUpperPanel(panel: WardrobePanel): boolean {
   return panel.id === 'upper-left' || panel.id === 'upper-right'
 }
 
+function isSleeveLowerPanel(panel: WardrobePanel): boolean {
+  return panel.id === 'lower-left' || panel.id === 'lower-right'
+}
+
+/** Components replaced together when choosing or clearing either half of a linked long sleeve. */
+export function wardrobePanelSelectionComponents(set: WardrobeSet, panel: WardrobePanel): WardrobeSet['components'] {
+  const visibleComponents = wardrobeComponentsForPanel(set, panel)
+  const components = isSleeveUpperPanel(panel)
+    ? visibleComponents.filter((component) => component.category === 'manga-superior' && component.sleeveSegment !== 'lower')
+    : isSleeveLowerPanel(panel)
+      ? visibleComponents.filter((component) => component.category === 'manga-inferior' && component.sleeveSegment !== 'upper')
+      : visibleComponents
+  const selection = components.flatMap((component) =>
+    isSleeveUpperPanel(panel) || isSleeveLowerPanel(panel) ? pairedWardrobeSleeveComponents(set, component) : [component])
+  return [...new Map(selection.map((component) => [component.id, component])).values()]
+}
+
 export function wardrobePanelGroupMatchesComponent(
   group: CustomizerWardrobeGroup,
   panel: WardrobePanel,
@@ -133,10 +154,10 @@ export function wardrobePanelGroupMatchesComponent(
 ): boolean {
   return group.modelSlot === modelSlot && group.setId === setId && group.componentId === component.id
     && (group.category === panel.category
-      || isSleeveUpperPanel(panel) && component.category === 'manga-inferior' && group.category === 'manga-inferior')
+      || component.category === 'manga-inferior' && group.category === 'manga-inferior')
 }
 
-export type WardrobePanelCandidate = { summary: WardrobeSetSummary; set: WardrobeSet; component: WardrobeSet['components'][number]; components: WardrobeSet['components']; headExtraAsset?: FaceComponentAsset }
+export type WardrobePanelCandidate = { summary: WardrobeSetSummary; set: WardrobeSet; component: WardrobeSet['components'][number]; components: WardrobeSet['components']; pairedComponents?: WardrobeSet['components']; headExtraAsset?: FaceComponentAsset }
 
 export function wardrobePanelCandidates(
   panel: WardrobePanel,
@@ -158,8 +179,20 @@ export function wardrobePanelCandidates(
           .filter((component) => component.category === 'manga-superior' && component.sleeveSegment !== 'lower')
           .map((upper) => {
             const lower = pairedWardrobeSleeveComponents(set, upper).find((component) => component.category === 'manga-inferior')
-            return { summary, set, component: upper, components: lower ? [upper, lower] : [upper] }
+            const pair = lower ? [upper, lower] : [upper]
+            return { summary, set, component: upper, components: pair, pairedComponents: pair }
           })
+      }
+      if (isSleeveLowerPanel(panel)) {
+        return components
+          .filter((component) => component.category === 'manga-inferior' && component.sleeveSegment !== 'upper')
+          .map((lower) => ({
+            summary,
+            set,
+            component: lower,
+            components: [lower],
+            pairedComponents: pairedWardrobeSleeveComponents(set, lower)
+          }))
       }
       if (panel.id === 'pants-left') {
         const pantsByPair = new Map<string, typeof components>()
@@ -229,7 +262,7 @@ export function createWardrobePanelCandidateIndex({
 
 export function isWardrobePanelCandidateSelected(candidate: WardrobePanelCandidate, panel: WardrobePanel, groups: CustomizerWardrobeGroup[], appearance?: CustomizerFaceAppearance): boolean {
   if (candidate.headExtraAsset) return appearance?.modelSlot === candidate.summary.modelSlot && appearance.headExtras?.glasses === candidate.headExtraAsset.id
-  return candidate.components.some((component) => groups.some((group) => wardrobePanelGroupMatchesComponent(
+  return (candidate.pairedComponents ?? candidate.components).some((component) => groups.some((group) => wardrobePanelGroupMatchesComponent(
     group, panel, candidate.summary.modelSlot, candidate.summary.id, component)))
 }
 

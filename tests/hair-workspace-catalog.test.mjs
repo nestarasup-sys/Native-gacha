@@ -112,3 +112,10 @@ test('Cabelos Dev carrega a página sem folha original e só busca source ao abr
   assert.match(catalog, /concurrency = 3/)
   assert.match(catalog, /HAIR_WORKSPACE_CATALOG_PAGE_SIZE = 12/)
 })
+
+test('catálogo mantém cartões legíveis e rolagem quando há mais itens que espaço', async () => {
+  const styles = await readFile('src/renderer/src/ui/styles.css', 'utf8')
+  assert.match(styles, /\.hair-dev-set-list\s*\{[^}]*overflow:auto/)
+  assert.match(styles, /\.hair-dev-set-list button\s*\{[^}]*min-height:52px;flex:0 0 52px/)
+  assert.match(styles, /\.hair-dev-set-thumbnails img\s*\{[^}]*height:40px/)
+})

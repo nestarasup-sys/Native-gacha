@@ -6,7 +6,7 @@ import { recolorWardrobeComponents, selectWardrobePanelComponents } from '../../
 import type { SelectedWardrobeComponent } from '../../characters/characterRenderer'
 import { customizerFaceAppearanceForModel } from './customizerFaceAppearanceModel'
 import { hasSelectedFaceAsset } from './customizerFaceCatalogModel'
-import { wardrobeComponentMatchesPanel, wardrobePanelGroupMatchesComponent } from './wardrobePanelModel'
+import { wardrobePanelGroupMatchesComponent, wardrobePanelSelectionComponents } from './wardrobePanelModel'
 import type { WardrobePanel, WardrobePanelCandidate } from './wardrobePanelModel'
 import type { CharacterPatch } from './useCustomizerCharacterCommands'
 
@@ -47,11 +47,12 @@ export function useCustomizerWardrobePanelActions(deps: {
     }
 
     const replacesSelectedHeadExtra = panel.id === 'glasses' && current.customization.faceAppearance?.modelSlot === selectedModelSlot && Boolean(current.customization.faceAppearance.headExtras?.glasses)
-    const existingCandidate = candidate && !replacesSelectedHeadExtra && candidate.components.every((component) => before.some((group) =>
+    const selectionComponents = candidate ? candidate.pairedComponents ?? candidate.components : []
+    const existingCandidate = candidate && !replacesSelectedHeadExtra && selectionComponents.every((component) => before.some((group) =>
       wardrobePanelGroupMatchesComponent(group, panel, candidate.summary.modelSlot, candidate.summary.id, component)))
     if (existingCandidate) {
       setSelectedClothing({ modelSlot: candidate.summary.modelSlot, setId: candidate.summary.id, category: panel.category, componentId: candidate.component.id })
-      const normalizedGroups = before.map((group) => candidate.components.some((component) =>
+      const normalizedGroups = before.map((group) => selectionComponents.some((component) =>
         wardrobePanelGroupMatchesComponent(group, panel, candidate.summary.modelSlot, candidate.summary.id, component))
         ? { ...group, category: panel.category }
         : group)
@@ -63,7 +64,7 @@ export function useCustomizerWardrobePanelActions(deps: {
 
     const panelComponentKeys = new Set(wardrobeSets.flatMap((summary) => {
       const set = wardrobeDetails[`${summary.modelSlot}:${summary.id}`]
-      return set ? set.components.filter((component) => wardrobeComponentMatchesPanel(component, panel)).map((component) => `${summary.modelSlot}:${summary.id}:${component.id}`) : []
+      return set ? wardrobePanelSelectionComponents(set, panel).map((component) => `${summary.modelSlot}:${summary.id}:${component.id}`) : []
     }))
     const matchingGroups = before.filter((group) => group.modelSlot === selectedModelSlot
       && (group.componentId
@@ -73,7 +74,11 @@ export function useCustomizerWardrobePanelActions(deps: {
 
     const palette = current.customization.wardrobePalettes?.[panel.id]
     const after = selectWardrobePanelComponents(before, selectedModelSlot, panel.category, [...panelComponentKeys],
-      candidate ? { modelSlot: candidate.summary.modelSlot, setId: candidate.summary.id, componentIds: candidate.components.map((component) => component.id), colors: palette } : null)
+      candidate ? { modelSlot: candidate.summary.modelSlot, setId: candidate.summary.id, componentIds: selectionComponents.map((component) => component.id) } : null)
+    const afterWithPalette = candidate && palette
+      ? recolorWardrobeComponents(after, candidate.summary.modelSlot, candidate.summary.id, panel.category,
+        candidate.components.map((component) => component.id), { kind: 'replace', colors: normalizeCharacterColorOverrides(palette) })
+      : after
     if (candidate) {
       setSelectedClothing({ modelSlot: candidate.summary.modelSlot, setId: candidate.summary.id, category: panel.category, componentId: candidate.component.id })
     } else if (selectedClothing?.modelSlot === selectedModelSlot
@@ -87,11 +92,11 @@ export function useCustomizerWardrobePanelActions(deps: {
         const headExtras = { ...currentAppearance.headExtras }
         delete headExtras.glasses
         const faceAppearance = { ...currentAppearance, headExtras }
-        await saveCharacterCustomization({ wardrobeGroups: after, faceAppearance: hasSelectedFaceAsset(faceAppearance) ? faceAppearance : undefined })
+        await saveCharacterCustomization({ wardrobeGroups: afterWithPalette, faceAppearance: hasSelectedFaceAsset(faceAppearance) ? faceAppearance : undefined })
         return
       }
     }
-    await saveCharacterCustomization({ wardrobeGroups: after })
+    await saveCharacterCustomization({ wardrobeGroups: afterWithPalette })
   }
 
   async function applyWardrobePalette(panel: WardrobePanel, candidate: WardrobePanelCandidate, colors: CharacterPaletteOverrides) {
