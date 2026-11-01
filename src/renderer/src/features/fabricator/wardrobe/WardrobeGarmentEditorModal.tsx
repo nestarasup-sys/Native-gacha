@@ -8,8 +8,9 @@ type BodyReference = GarmentFrame & { name: string; dataUrl: string }
 type Props = {
   component: WardrobeComponent
   bodyReference?: BodyReference
+  mirrorPair?: boolean
   onClose: () => void
-  onApply: (dataUrl: string) => void
+  onApply: (dataUrl: string) => void | Promise<void>
 }
 type Tool = 'erase' | 'restore' | 'sample'
 type Adjustments = { brightness: number; contrast: number; saturation: number }
@@ -63,7 +64,7 @@ function cssFilter(adjustments: Adjustments): string {
   return `brightness(${brightness}) contrast(${contrast}) saturate(${Math.max(0, adjustments.saturation) / 100})`
 }
 
-export function WardrobeGarmentEditorModal({ component, bodyReference, onClose, onApply }: Props) {
+export function WardrobeGarmentEditorModal({ component, bodyReference, mirrorPair = false, onClose, onApply }: Props) {
   const [tool, setTool] = useState<Tool>('erase')
   const [brushSize, setBrushSize] = useState(34)
   const [brushStrength, setBrushStrength] = useState(100)
@@ -477,14 +478,14 @@ export function WardrobeGarmentEditorModal({ component, bodyReference, onClose, 
     if (before) recordEdit(before)
   }
 
-  const apply = () => {
+  const apply = async () => {
     const working = workingCanvasRef.current
     if (!working || !ready || busy) return
     const unchanged = historyRef.current.undo.length === 0
       && adjustments.brightness === DEFAULT_ADJUSTMENTS.brightness
       && adjustments.contrast === DEFAULT_ADJUSTMENTS.contrast
       && adjustments.saturation === DEFAULT_ADJUSTMENTS.saturation
-    if (unchanged) { onApply(component.dataUrl); return }
+    if (unchanged) { await onApply(component.dataUrl); return }
     setBusy(true)
     try {
       const output = document.createElement('canvas')
@@ -495,7 +496,7 @@ export function WardrobeGarmentEditorModal({ component, bodyReference, onClose, 
       context.filter = cssFilter(adjustments)
       context.drawImage(working, 0, 0)
       context.filter = 'none'
-      onApply(output.toDataURL('image/png'))
+      await onApply(output.toDataURL('image/png'))
     } catch (reason) {
       setBusy(false)
       setMessage(reason instanceof Error ? reason.message : 'Não foi possível aplicar as alterações.')
@@ -512,7 +513,7 @@ export function WardrobeGarmentEditorModal({ component, bodyReference, onClose, 
   return createPortal(<div className="wardrobe-image-editor-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onClose() }}>
     <section className="wardrobe-image-editor" data-history-version={historyRevision} role="dialog" aria-modal="true" aria-labelledby="wardrobe-image-editor-title">
       <header className="wardrobe-image-editor-header">
-        <div className="wardrobe-image-editor-title"><span className="wardrobe-image-editor-icon"><Icon name="edit" /></span><span><small>EDIÇÃO DA PEÇA</small><strong id="wardrobe-image-editor-title">{component.name}</strong><em>Alterações só entram no conjunto ao clicar em Aplicar.</em></span></div>
+        <div className="wardrobe-image-editor-title"><span className="wardrobe-image-editor-icon"><Icon name="edit" /></span><span><small>EDIÇÃO DA PEÇA</small><strong id="wardrobe-image-editor-title">{component.name}</strong><em>Alterações só entram no conjunto ao clicar em Aplicar.{mirrorPair ? ' A peça duplicada também será atualizada, espelhada.' : ''}</em></span></div>
         <button type="button" className="wardrobe-image-editor-close" aria-label="Fechar editor" disabled={busy} onClick={onClose}>×</button>
       </header>
       <div className="wardrobe-image-editor-toolbar">
