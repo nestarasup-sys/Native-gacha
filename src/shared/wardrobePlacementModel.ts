@@ -14,6 +14,9 @@ export function wardrobeGroupCategoryForSource(
   currentCategory: CustomizerWardrobeCategory
 ): CustomizerWardrobeCategory {
   if (sourceCategory === 'calca-coxa' || sourceCategory === 'calca-canela' || sourceCategory === 'shorts') return 'calca'
+  // A split long sleeve is presented and equipped as one upper-sleeve slot.
+  // Keep that picker identity when hydration resolves its lower source asset.
+  if (sourceCategory === 'manga-inferior' && currentCategory === 'manga-superior') return currentCategory
   if (sourceCategory === 'saia' && (currentCategory === 'saia-superior' || currentCategory === 'saia-inferior')) return currentCategory
   return sourceCategory
 }
@@ -95,10 +98,18 @@ export function selectWardrobePanelComponents(
     if (!group.componentId) return group.category !== category // Legacy category-wide entry for this slot.
     return !known.has(`${group.modelSlot}:${group.setId}:${group.componentId}`)
   })
-  if (next) after.push(...next.componentIds.map(componentId => ({
-    modelSlot:next.modelSlot,setId:next.setId,category,componentId,
-    offsetX:0,offsetY:0,scaleX:1,scaleY:1,rotation:0,
-    ...(next.colors ? {colors:next.colors} : {})
-  })))
+  if (next) after.push(...next.componentIds.map(componentId => {
+    const previous = groups.find(group => group.modelSlot === next.modelSlot
+      && group.setId === next.setId && group.componentId === componentId)
+    return {
+      modelSlot: next.modelSlot, setId: next.setId, componentId,
+      offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1, rotation: 0,
+      ...(next.colors ? { colors: next.colors } : {}),
+      ...(previous ?? {}),
+      // The picker slot now owns the shared identity even for a formerly
+      // separate lower sleeve component; keep its personal transform/colors.
+      category
+    }
+  }))
   return after
 }

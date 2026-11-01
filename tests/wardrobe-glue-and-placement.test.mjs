@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { fixWardrobeGlue, releaseWardrobeGlue, editWardrobeGlue, wardrobeGlueState, suggestWardrobeGlueTarget } from '../src/shared/wardrobeGlue.ts'
 import { mapWardrobeComponentToPose } from '../src/shared/wardrobePose.ts'
-import { toggleWardrobeVisibility, updateWardrobeComponentGroups, recolorWardrobeComponents, selectWardrobePanelComponents } from '../src/shared/wardrobePlacementModel.ts'
+import { toggleWardrobeVisibility, updateWardrobeComponentGroups, recolorWardrobeComponents, selectWardrobePanelComponents, wardrobeGroupCategoryForSource } from '../src/shared/wardrobePlacementModel.ts'
 
 const bone = (id,name,x,y,width=42,height=80)=>({
   id,name,x:x+120,y:y+55,width,height,rotation:45,dataUrl:'data:image/png;base64,AA==',
@@ -148,4 +148,22 @@ test('trocar manga direita preserva manga esquerda e ajustes da peça oposta',()
   assert.equal(swapped[2].colors.base,'#abcdef')
   const removed=selectWardrobePanelComponents(swapped,1,'manga-inferior',['1:uniform:new-right'],null)
   assert.deepEqual(removed,[left,other])
+})
+
+test('metades de manga longa equipadas no Customizador compartilham a categoria superior',()=>{
+  const upper={modelSlot:1,setId:'uniform',category:'manga-superior',componentId:'upper-left',offsetX:4,offsetY:0,scaleX:1,scaleY:1,rotation:0}
+  const oldLower={modelSlot:1,setId:'uniform',category:'manga-inferior',componentId:'lower-left',offsetX:12,offsetY:3,scaleX:1.1,scaleY:1,rotation:4,colors:{base:'#123456'}}
+  const right={modelSlot:1,setId:'uniform',category:'manga-superior',componentId:'upper-right',offsetX:0,offsetY:0,scaleX:1,scaleY:1,rotation:0}
+  const equipped=selectWardrobePanelComponents([upper,oldLower,right],1,'manga-superior',
+    ['1:uniform:upper-left','1:uniform:lower-left'],
+    {modelSlot:1,setId:'uniform',componentIds:['upper-left','lower-left']})
+  assert.deepEqual(equipped.map(group=>[group.componentId,group.category]),[
+    ['upper-right','manga-superior'],['upper-left','manga-superior'],['lower-left','manga-superior']
+  ])
+  assert.deepEqual(
+    (({offsetX,offsetY,scaleX,scaleY,rotation,colors})=>({offsetX,offsetY,scaleX,scaleY,rotation,colors}))(equipped.find(group=>group.componentId==='lower-left')),
+    {offsetX:12,offsetY:3,scaleX:1.1,scaleY:1,rotation:4,colors:{base:'#123456'}}
+  )
+  assert.equal(wardrobeGroupCategoryForSource('manga-inferior','manga-superior'),'manga-superior')
+  assert.equal(wardrobeGroupCategoryForSource('manga-inferior','manga-inferior'),'manga-inferior')
 })

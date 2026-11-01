@@ -10,7 +10,9 @@ import {
   lowerWardrobePanels,
   lowerWardrobePageTwoPanels,
   createWardrobePanelCandidateIndex,
-  wardrobePanelCandidates
+  wardrobePanelCandidates,
+  isWardrobePanelCandidateSelected,
+  wardrobePanelGroupMatchesComponent
 } from '../src/renderer/src/features/customizer/wardrobePanelModel.ts'
 
 const summary = (id) => ({ id, modelSlot: 1, modelName: 'Modelo', name: id, updatedAt: '2026-10-29T00:00:00.000Z', edition: 2, componentCount: 1 })
@@ -81,8 +83,8 @@ test('gera apenas miniaturas faltantes cujas categorias existem no conjunto', as
 })
 
 test('índice de candidatos preserva filtros, ordem e agrupamento de cada painel', () => {
-  const component = (id, name, category, attachedPartId = 'body', sleevePairId) => ({
-    id, name, category, attachedPartId, ...(sleevePairId ? { sleevePairId } : {}), x: 0, y: 0, width: 10, height: 10, rotation: 0,
+  const component = (id, name, category, attachedPartId = 'body', sleevePairId, sleeveSide, sleeveSegment) => ({
+    id, name, category, attachedPartId, ...(sleevePairId ? { sleevePairId } : {}), ...(sleeveSide ? { sleeveSide } : {}), ...(sleeveSegment ? { sleeveSegment } : {}), x: 0, y: 0, width: 10, height: 10, rotation: 0,
     dataUrl: 'data:image/png;base64,AA=='
   })
   const createSet = (id, modelSlot, components) => ({
@@ -107,10 +109,10 @@ test('índice de candidatos preserva filtros, ordem e agrupamento de cada painel
   const mainSet = createSet('main', 1, [
     component('shirt', 'Camisa', 'camisa'),
     component('jacket', 'Jaqueta', 'jaqueta'),
-    component('upper-left', 'Manga esquerda', 'manga-superior', 'braço esquerdo'),
-    component('upper-right', 'Manga direita', 'manga-superior', 'braço direito'),
-    component('lower-left', 'Manga inferior esquerda', 'manga-inferior', 'antebraço esquerdo'),
-    component('lower-right', 'Manga inferior direita', 'manga-inferior', 'antebraço direito'),
+    component('upper-left', 'Manga esquerda · braço superior', 'manga-superior', 'braço esquerdo', 'sleeve-long', 'left', 'upper'),
+    component('upper-right', 'Manga direita · braço superior', 'manga-superior', 'braço direito', 'sleeve-long', 'right', 'upper'),
+    component('lower-left', 'Manga esquerda · antebraço', 'manga-inferior', 'antebraço esquerdo', 'sleeve-long', 'left', 'lower'),
+    component('lower-right', 'Manga direita · antebraço', 'manga-inferior', 'antebraço direito', 'sleeve-long', 'right', 'lower'),
     component('pants-thigh', 'Calça longa · coxa esquerda', 'calca-coxa', 'thigh-left', 'pants-one'),
     component('pants-thigh-right', 'Calça longa · coxa direita', 'calca-coxa', 'thigh-right', 'pants-one'),
     component('pants-shin', 'Calça longa · canela esquerda', 'calca-canela', 'calf-left', 'pants-one'),
@@ -156,8 +158,24 @@ test('índice de candidatos preserva filtros, ordem e agrupamento de cada painel
   assert.deepEqual(index.get('pants-left')?.[0]?.components.map(({ id }) => id), ['pants-thigh', 'pants-thigh-right', 'pants-shin', 'pants-shin-right'])
   assert.deepEqual(index.get('pants-left')?.[1]?.components.map(({ id }) => id), ['pants-two'])
   assert.equal(index.get('pants-left')?.[0]?.component.id, 'pants-thigh')
+  assert.deepEqual(index.get('upper-left')?.map((candidate) => candidate.components.map(({ id }) => id)), [['upper-left', 'lower-left']])
+  assert.deepEqual(index.get('upper-right')?.map((candidate) => candidate.components.map(({ id }) => id)), [['upper-right', 'lower-right']])
+  assert.equal(upperWardrobePanels.some((panel) => panel.id === 'lower-left' || panel.id === 'lower-right'), false)
+  const splitSleeve = index.get('upper-left')[0]
+  const legacySplitGroups = [
+    { modelSlot: 1, setId: 'main', category: 'manga-superior', componentId: 'upper-left' },
+    { modelSlot: 1, setId: 'main', category: 'manga-inferior', componentId: 'lower-left' }
+  ]
+  assert.equal(isWardrobePanelCandidateSelected(splitSleeve, upperWardrobePanels.find((panel) => panel.id === 'upper-left'), legacySplitGroups), true)
+  assert.equal(wardrobePanelGroupMatchesComponent(legacySplitGroups[1], upperWardrobePanels.find((panel) => panel.id === 'upper-left'), 1, 'main', splitSleeve.components[1]), true)
   assert.equal(index.get('glasses')?.[0]?.headExtraAsset?.id, faceAsset.id)
   assert.equal(index.get('shirt')?.some((candidate) => candidate.summary.modelSlot === 2), false)
+})
+
+test('prévia da roupa desenha todas as partes agrupadas no mesmo candidato', async () => {
+  const preview = await readFile('src/renderer/src/features/customizer/CustomizerAssetPreviews.tsx', 'utf8')
+  assert.match(preview, /candidate\.components\.map\(\(component\) => component\.category\)/)
+  assert.match(preview, /candidate\.components\.map\(\(component\) => component\.id\)/)
 })
 
 test('cancelamento impede publicar detalhes depois de trocar de área', async () => {
