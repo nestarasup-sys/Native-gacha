@@ -104,6 +104,9 @@ test('catálogo de roupas fica isolado e recebe seleção, cores e reparos por c
 
 test('validador aceita formato atual e rejeita id, slot, cor ou pose inválidos', () => {
   assert.equal(isCustomizerCharacter(valid()), true)
+  assert.equal(isCustomizerCharacter({ ...valid(), customization: { ...valid().customization, gender: 'female' } }), true)
+  assert.equal(isCustomizerCharacter({ ...valid(), customization: { ...valid().customization, gender: 'male' } }), true)
+  assert.equal(isCustomizerCharacter({ ...valid(), customization: { ...valid().customization, gender: 'unknown' } }), false)
   assert.equal(isCustomizerCharacter({ ...valid(), customization: { ...valid().customization, faceAppearance: null } }), false)
   assert.equal(isValidCustomizerFaceAppearance(null), false)
   assert.equal(isCustomizerCharacter({ ...valid(), id: '../../escape' }), false)
@@ -111,6 +114,16 @@ test('validador aceita formato atual e rejeita id, slot, cor ou pose inválidos'
   assert.equal(isCustomizerCharacter({ ...valid(), customization: { ...valid().customization, modelSlot: 11 } }), false)
   assert.equal(isCustomizerCharacter({ ...valid(), customization: { ...valid().customization, poseSlot: 13 } }), false)
   assert.equal(isCustomizerCharacter({ ...valid(), customization: { ...valid().customization, wardrobeGroups: [{modelSlot:1,setId:'x',category:'camisa',offsetX:0,offsetY:0,scaleX:0,scaleY:1,rotation:0}] } }), false)
+})
+
+test('criação persiste o gênero escolhido e mantém feminino como padrão legado', async (t) => {
+  const { service, repo } = await fixture(t)
+  const female = await service.create('Lia')
+  const male = await service.create('Noah', undefined, 'male')
+  assert.equal(female.customization.gender, 'female')
+  assert.equal(male.customization.gender, 'male')
+  assert.deepEqual((await repo.list()).map((character) => character.customization.gender), ['female', 'male'])
+  await assert.rejects(service.create('Inválido', undefined, 'other'), /Gênero do personagem inválido/)
 })
 
 test('normalização legada mantém seleção e cores individuais sem alterar entrada', () => {
@@ -256,9 +269,9 @@ test('repositório rejeita id duplicado antes de persistir', async (t) => {
 
 test('IPC usa canais preexistentes e nunca passa por autenticação indevida', async () => {
   const handlers = new Map()
-  let authorized = 0, calls = 0
+  let authorized = 0, calls = 0, createdWith
   const service = {
-    list: async () => { calls++; return [] }, save: async () => { calls++ }, create: async () => { calls++; return valid() }, delete: async () => { calls++ }
+    list: async () => { calls++; return [] }, save: async () => { calls++ }, create: async (...args) => { calls++; createdWith = args; return valid() }, delete: async () => { calls++ }
   }
   registerCustomizerCharacterHandlers({ handle: (channel, cb) => handlers.set(channel, cb) }, (event) => {
     if (!event.trusted) throw new Error('Origem IPC não confiável')
@@ -268,10 +281,12 @@ test('IPC usa canais preexistentes e nunca passa por autenticação indevida', a
   for (const callback of handlers.values()) await assert.rejects(callback({ trusted: false }, valid()), /não confiável/)
   assert.equal(calls, 0)
   for (const [channel, callback] of handlers) {
-    await callback({ trusted: true }, channel.endsWith('create') ? 'Nina' : valid())
+    if (channel.endsWith('create')) await callback({ trusted: true }, 'Nina', 124, 'male')
+    else await callback({ trusted: true }, valid())
   }
   assert.equal(calls, 4)
   assert.equal(authorized, 4)
+  assert.deepEqual(createdWith, ['Nina', 124, 'male'])
 })
 
 

@@ -60,7 +60,7 @@ import { RenderedCharacterPortrait } from '../../ui/components/RenderedCharacter
 import { Icon } from '../../ui/components/Icon'
 import type { FabricatorProject, HairStyle } from '../../../../shared/fabricator'
 import { resolvePoseCategory } from '../../../../shared/fabricator'
-import type { CharacterPaletteRole, CustomizerWardrobeGroup } from '../../../../shared/customizer'
+import type { CharacterGender, CharacterPaletteRole, CustomizerWardrobeGroup } from '../../../../shared/customizer'
 import { characterBodyDimensionLimits, characterProportionLimits, defaultCharacterProportions, type CharacterProportions } from '../../../../shared/customizer'
 import { usePreviewBackground } from '../../ui/hooks/usePreviewBackground'
 import { DesignBanner } from '../../ui/components/DesignBanner'
@@ -87,6 +87,7 @@ export function CustomizerPage() {
   } = useCustomizerCharacterRoster()
   const [dialogMode, setDialogMode] = useState<'create' | 'rename' | null>(null)
   const [nameDraft, setNameDraft] = useState('')
+  const [newCharacterGender, setNewCharacterGender] = useState<CharacterGender>('female')
   const [savingCharacter, setSavingCharacter] = useState(false)
   const [activeModule, setActiveModule] = useState<string | null>(null)
   const [selectedCustomizerTopTab, setSelectedCustomizerTopTab] = useState('corpo')
@@ -495,7 +496,7 @@ export function CustomizerPage() {
     try {
       if (dialogMode === 'create') {
         const initialHeadSize = newCharacterHeadSizePreference.enabled ? newCharacterHeadSizePreference.value : undefined
-        await createCharacter(name, initialHeadSize)
+        await createCharacter(name, initialHeadSize, newCharacterGender)
       } else if (dialogMode === 'rename' && selectedCharacter) {
         await saveCharacter({ ...selectedCharacter, name, updatedAt: new Date().toISOString() })
       }
@@ -851,7 +852,7 @@ export function CustomizerPage() {
               <h2>Personagens <span>{characters.length.toString().padStart(2, '0')}</span></h2>
             </div>
             {selectedCharacter && <button className="icon-button roster-delete-button" aria-label={'Excluir ' + selectedCharacter.name} title="Excluir personagem" onClick={() => void deleteSelectedCharacter()} type="button"><Icon name="trash" /></button>}
-            <button className="icon-button add-button" aria-label="Adicionar personagem" onClick={() => { setNameDraft(''); setDialogMode('create') }} type="button">
+            <button className="icon-button add-button" aria-label="Adicionar personagem" onClick={() => { setNameDraft(''); setNewCharacterGender('female'); setDialogMode('create') }} type="button">
               <Icon name="plus" />
             </button>
           </div>
@@ -918,6 +919,10 @@ export function CustomizerPage() {
           <h2 id="character-dialog-title">{dialogMode === 'create' ? 'Novo personagem' : 'Renomear personagem'}</h2>
           <label htmlFor="character-name">Nome</label>
           <input id="character-name" autoFocus maxLength={80} value={nameDraft} onChange={(event) => setNameDraft(event.target.value)} placeholder="Ex.: Chloe" />
+          {dialogMode === 'create' && <div className="customizer-model-gender-band" role="group" aria-label="Gênero do personagem">
+            <button className={'customizer-model-gender-button female' + (newCharacterGender === 'female' ? ' active' : '')} type="button" aria-pressed={newCharacterGender === 'female'} onClick={() => setNewCharacterGender('female')}>Feminino</button>
+            <button className={'customizer-model-gender-button male' + (newCharacterGender === 'male' ? ' active' : '')} type="button" aria-pressed={newCharacterGender === 'male'} onClick={() => setNewCharacterGender('male')}>Masculino</button>
+          </div>}
           {charactersError && <p className="character-dialog-error" role="alert">{charactersError}</p>}
           <div className="character-dialog-actions"><button className="quiet-button" type="button" onClick={() => setDialogMode(null)}>Cancelar</button><button className="primary-button" type="submit" disabled={!nameDraft.trim() || savingCharacter}>{savingCharacter ? 'Salvando…' : 'Salvar'}</button></div>
         </form>

@@ -16,9 +16,9 @@ export function registerCustomizerCharacterHandlers(
     assertTrustedSender(event)
     return measure('customizer:characters:save', () => service.save(character))
   })
-  ipc.handle('customizer:characters:create', async (event, name: unknown, initialHeadSize: unknown) => {
+  ipc.handle('customizer:characters:create', async (event, name: unknown, initialHeadSize: unknown, gender: unknown) => {
     assertTrustedSender(event)
-    return service.create(name, initialHeadSize)
+    return service.create(name, initialHeadSize, gender)
   })
   ipc.handle('customizer:characters:delete', async (event, id: unknown) => {
     assertTrustedSender(event)

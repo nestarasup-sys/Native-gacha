@@ -34,6 +34,7 @@ Video Studio: fora do escopo desta etapa.
 
 1. **Fabricador é a fonte do catálogo**: importar e editar modelo, pose, roupa, cabelo ou rosto modifica somente o respectivo catálogo de desenvolvimento. Qualquer nova API deve preservar as referências `modelSlot`, `setId`, `componentId` e demais IDs já serializados.
 2. **Customizador é proprietário das diferenças de cada personagem**: seus `partOverrides`, `wardrobeGroups`, cores e aparência são por personagem. Mudanças visuais não alteram automaticamente o Fabricador. O contrato atual permanece `CustomizerCharacter` em `src/shared/customizer.ts`.
+   - Personagens novos guardam `customization.gender` (`female` ou `male`), escolhido no diálogo de criação; o padrão é `female`. O campo é opcional para compatibilidade com personagens antigos, e a validação aceita ausência como valor legado.
 3. **Studio é proprietário das diferenças de cada cena**: um elemento `kind: 'character'` guarda `characterId`, transformação/posição, estado de expressão e outros overrides de cena. O Studio não é autor do catálogo nem da customização global.
 4. **Referências e snapshots devem conviver**: a origem pode ser atualizada depois de um personagem/cena ter sido salvo. A estratégia de revalidação de referências precisa ser definida e testada antes de migrar qualquer formato. Não fazer cascatas de exclusão automáticas entre módulos.
 5. **O armazenamento permanece local**: Electron Main é o backend local; um servidor separado não é pré-requisito. APIs de arquivos/SQLite não pertencem às páginas React.

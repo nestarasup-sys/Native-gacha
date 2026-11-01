@@ -1,7 +1,7 @@
-import type { CustomizerCharacter } from '../../../../shared/customizer'
+import type { CharacterGender, CustomizerCharacter } from '../../../../shared/customizer'
 
 type CharacterCommandsApi = {
-  createCustomizerCharacter(name: string, initialHeadSize?: number): Promise<CustomizerCharacter>
+  createCustomizerCharacter(name: string, initialHeadSize?: number, gender?: CharacterGender): Promise<CustomizerCharacter>
   deleteCustomizerCharacter(id: string): Promise<void>
 }
 
@@ -26,8 +26,8 @@ export function createCustomizerCharacterRosterCommands(deps: {
     notifyCharactersUpdated
   } = deps
 
-  async function createCharacter(name: string, initialHeadSize?: number): Promise<CustomizerCharacter> {
-    const character = await api.createCustomizerCharacter(name, initialHeadSize)
+  async function createCharacter(name: string, initialHeadSize?: number, gender?: CharacterGender): Promise<CustomizerCharacter> {
+    const character = await api.createCustomizerCharacter(name, initialHeadSize, gender)
     const next = [...charactersRef.current, character]
     charactersRef.current = next
     setCharacters(next)

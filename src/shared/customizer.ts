@@ -53,7 +53,11 @@ export type FaceComponentPartId = 'eye-left' | 'eye-right' | 'pupil-left' | 'pup
 export type FacePalettePartId = 'nose' | 'mouth' | FaceDetailKind
 export type HairPartId = 'backHair' | 'rearHair' | 'ponytail' | 'frontHair' | 'ahoge'
 
+export type CharacterGender = 'female' | 'male'
+
 export type CharacterCustomization = {
+  /** Gender chosen when creating the character; absent legacy values use female as the default. */
+  gender?: CharacterGender
   /** Reference to the read-only Fabricator source selected for this character. */
   modelSlot: number | null
   poseSlot: number | null
@@ -214,6 +218,6 @@ export type CustomizerCharacter = {
 export type CustomizerDesktopApi = {
   listCustomizerCharacters: () => Promise<CustomizerCharacter[]>
   saveCustomizerCharacter: (character: CustomizerCharacter) => Promise<void>
-  createCustomizerCharacter: (name: string, initialHeadSize?: number) => Promise<CustomizerCharacter>
+  createCustomizerCharacter: (name: string, initialHeadSize?: number, gender?: CharacterGender) => Promise<CustomizerCharacter>
   deleteCustomizerCharacter: (id: string) => Promise<void>
 }

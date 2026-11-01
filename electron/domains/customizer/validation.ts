@@ -27,6 +27,7 @@ export function isCustomizerCharacter(value: unknown): value is CustomizerCharac
     && typeof character.outfit === 'string' && /^#[0-9a-fA-F]{6}$/.test(character.outfit)
     && typeof character.skin === 'string' && /^#[0-9a-fA-F]{6}$/.test(character.skin)
     && !!character.customization && typeof character.customization === 'object'
+    && (character.customization.gender === undefined || character.customization.gender === 'female' || character.customization.gender === 'male')
     && (character.customization.modelSlot === null || isValidModelSlot(character.customization.modelSlot))
     && (character.customization.poseSlot === null || (Number.isInteger(character.customization.poseSlot) && character.customization.poseSlot >= 1 && character.customization.poseSlot <= FABRICATOR_POSE_SLOT_COUNT))
     && (character.customization.proportions === undefined || (

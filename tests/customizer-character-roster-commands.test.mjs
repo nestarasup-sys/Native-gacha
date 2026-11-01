@@ -24,8 +24,10 @@ function createState(initial = []) {
   const saveQueue = { current: new Map() }
   const api = {
     createdWithHeadSize: undefined,
-    createCustomizerCharacter: async (name, initialHeadSize) => {
+    createdWithGender: undefined,
+    createCustomizerCharacter: async (name, initialHeadSize, gender) => {
       api.createdWithHeadSize = initialHeadSize
+      api.createdWithGender = gender
       return character('created', name)
     },
     deleteCustomizerCharacter: async () => {}
@@ -71,6 +73,12 @@ test('encaminha o tamanho inicial escolhido apenas na criação do novo personag
   const { api, commands } = createState()
   await commands.createCharacter('Nina', 124)
   assert.equal(api.createdWithHeadSize, 124)
+})
+
+test('encaminha o gênero escolhido durante a criação do personagem', async () => {
+  const { api, commands } = createState()
+  await commands.createCharacter('Noah', undefined, 'male')
+  assert.equal(api.createdWithGender, 'male')
 })
 
 test('persiste a preferência de cabeça dos próximos personagens e normaliza valores inválidos', () => {

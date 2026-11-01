@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import type { FabricatorSlotSummary } from '../../../../shared/fabricator'
 import { Icon } from '../../ui/components/Icon'
 
@@ -12,13 +11,8 @@ export function CustomizerModelPicker(props: {
   onSelect: (model: ModelSummary) => void
 }) {
   const { models, thumbnails, selectedSlot, loading, onSelect } = props
-  const [gender, setGender] = useState<'female' | 'male'>('female')
 
   return <section className="customizer-model-picker" aria-label="Modelos do Fabricador Dev">
-    <div className="customizer-model-gender-band" role="group" aria-label="Gênero do modelo">
-      <button className={'customizer-model-gender-button female' + (gender === 'female' ? ' active' : '')} type="button" aria-pressed={gender === 'female'} onClick={() => setGender('female')}>Feminino</button>
-      <button className={'customizer-model-gender-button male' + (gender === 'male' ? ' active' : '')} type="button" aria-pressed={gender === 'male'} onClick={() => setGender('male')}>Masculino</button>
-    </div>
     <header className="customizer-catalog-heading">
       <div><p className="eyebrow">CATÁLOGO</p><h2>Modelo base</h2></div>
       <small>{models.length} {models.length === 1 ? 'modelo' : 'modelos'}</small>
