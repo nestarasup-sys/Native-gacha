@@ -129,6 +129,7 @@ export function MaleTorsoEditorModal({ project, baseTorso, savedTorso, onClose, 
     if (!drag || drag.pointerId !== event.pointerId || !image) return
     event.preventDefault()
     const delta = { x: point.x - drag.last.x, y: point.y - drag.last.y }
+    if (Math.abs(delta.x) < 0.01 && Math.abs(delta.y) < 0.01) return
     applyWardrobeWarpBrush(meshRef.current, image, { x: 0, y: 0, width: part.width, height: part.height, rotation: part.rotation }, point, delta, radius, strength / 100)
     drag.last = point
     drag.changed = true
