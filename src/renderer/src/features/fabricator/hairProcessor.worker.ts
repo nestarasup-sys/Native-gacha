@@ -2,13 +2,15 @@ export {}
 
 import { detectHairGridSplits, getHairThreeStyleRegions, normalizeHairGridSplits, type HairGridSplits } from './hairGridLayout.ts'
 import { findHairCropBounds } from './hairCropBounds.ts'
+import { copyHairGridSideAtBoundary, findHairGridSilhouetteBoundary } from './hairSilhouetteRowSplit.ts'
 
 type Request = { dataUrl: string; tolerance: number; mode: 'auto' | 'green' | 'checker'; layout?: 'pair' | 'three-style-grid'; paddingPercent?: number; gridSplits?: HairGridSplits }
 type HairCut = { png: ArrayBuffer; width: number; height: number }
 type HairPair = { front: HairCut; back: HairCut; source: HairCut }
+type HairGridPair = HairPair & { rowBoundary: number[] }
 type Response =
   | { type: 'complete'; layout: 'pair'; front: HairCut; back: HairCut }
-  | { type: 'complete'; layout: 'three-style-grid'; styles: HairPair[]; splits: HairGridSplits }
+  | { type: 'complete'; layout: 'three-style-grid'; styles: HairGridPair[]; splits: HairGridSplits }
   | { type: 'error'; message: string }
 const scope = self as unknown as { onmessage: ((event: MessageEvent<Request>) => void) | null; postMessage: (message: Response, transfer?: Transferable[]) => void }
 
@@ -166,16 +168,16 @@ async function crop(image: ImageData): Promise<HairCut> {
   return { png: await (await canvas.convertToBlob({ type: 'image/png' })).arrayBuffer(), width: outWidth, height: outHeight }
 }
 
-async function cropWithAnalysis(image: ImageData, paddingPercent: number): Promise<HairCut> {
-  const bounds = findHairCropBounds(image.data, image.width, image.height, paddingPercent)
+async function cropWithAnalysis(data: Uint8ClampedArray, sourceWidth: number, sourceHeight: number, paddingPercent: number): Promise<HairCut> {
+  const bounds = findHairCropBounds(data, sourceWidth, sourceHeight, paddingPercent)
   const width = bounds.right - bounds.left + 1
   const height = bounds.bottom - bounds.top + 1
   const canvas = new OffscreenCanvas(width, height)
   const context = canvas.getContext('2d')!
   const pixels = context.createImageData(width, height)
   for (let row = 0; row < height; row += 1) {
-    const start = ((row + bounds.top) * image.width + bounds.left) * 4
-    pixels.data.set(image.data.subarray(start, start + width * 4), row * width * 4)
+    const start = ((row + bounds.top) * sourceWidth + bounds.left) * 4
+    pixels.data.set(data.subarray(start, start + width * 4), row * width * 4)
   }
   context.putImageData(pixels, 0, 0)
   return { png: await (await canvas.convertToBlob({ type: 'image/png' })).arrayBuffer(), width, height }
@@ -200,12 +202,22 @@ scope.onmessage = async ({ data }: MessageEvent<Request>) => {
     if (layout === 'three-style-grid') {
       const processed = processRegion(source, 0, 0, bitmap.width, bitmap.height, tolerance, mode)
       const splits = data.gridSplits ? normalizeHairGridSplits(data.gridSplits) : detectHairGridSplits(processed)
-      const styles: HairPair[] = []
+      const styles: HairGridPair[] = []
       for (const region of getHairThreeStyleRegions(bitmap.width, bitmap.height, splits)) {
-        const front = await cropWithAnalysis(copyRegion(processed, region.posterior.x, region.posterior.y, region.posterior.width, region.posterior.height), paddingPercent)
-        const back = await cropWithAnalysis(copyRegion(processed, region.traseiro.x, region.traseiro.y, region.traseiro.width, region.traseiro.height), paddingPercent)
+        const cell = copyRegion(processed, region.source.x, region.source.y, region.source.width, region.source.height)
+        const rowBoundary = findHairGridSilhouetteBoundary(cell, region.posterior.height)
+        let front: HairCut
+        {
+          const posterior = copyHairGridSideAtBoundary(cell, rowBoundary, 'posterior')
+          front = await cropWithAnalysis(posterior, cell.width, cell.height, paddingPercent)
+        }
+        let back: HairCut
+        {
+          const traseiro = copyHairGridSideAtBoundary(cell, rowBoundary, 'traseiro')
+          back = await cropWithAnalysis(traseiro, cell.width, cell.height, paddingPercent)
+        }
         const original = await encodeImageData(copyRegion(source, region.source.x, region.source.y, region.source.width, region.source.height))
-        styles.push({ front, back, source: original })
+        styles.push({ front, back, source: original, rowBoundary })
       }
       scope.postMessage({ type: 'complete', layout, styles, splits }, styles.flatMap(({ front, back, source }) => [front.png, back.png, source.png]))
     } else {

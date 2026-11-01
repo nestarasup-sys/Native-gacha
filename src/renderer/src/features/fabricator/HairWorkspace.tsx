@@ -21,9 +21,9 @@ type HairDrag = { pointerId: number; side: HairSide; clientX: number; clientY: n
 type HairProcessorCut = { png: ArrayBuffer; width: number; height: number }
 type HairProcessorResult =
   | { type: 'complete'; layout: 'pair'; front: HairProcessorCut; back: HairProcessorCut }
-  | { type: 'complete'; layout: 'three-style-grid'; styles: Array<{ front: HairProcessorCut; back: HairProcessorCut; source: HairProcessorCut }>; splits: HairGridSplits }
+  | { type: 'complete'; layout: 'three-style-grid'; styles: Array<{ front: HairProcessorCut; back: HairProcessorCut; source: HairProcessorCut; rowBoundary: number[] }>; splits: HairGridSplits }
   | { type: 'error'; message: string }
-type HairGridStyle = { front: HairAsset; back: HairAsset; sourceImageDataUrl: string }
+type HairGridStyle = { front: HairAsset; back: HairAsset; sourceImageDataUrl: string; rowBoundary: number[] }
 type HairGridReview = { sourceImageDataUrl: string; fileName: string; tolerance: number; mode: 'auto' | 'green' | 'checker' }
 const defaultCategories: Record<HairSide, HairPartId> = { front: 'rearHair', back: 'backHair', fringe: 'frontHair' }
 
@@ -132,8 +132,8 @@ function processThreeStyleHairGrid(dataUrl: string, tolerance: number, mode: 'au
       throw new Error('A grade precisa conter exatamente três cabelos completos.')
     }
     return {
-      styles: result.styles.map(({ front, back, source }) => ({
-        front: hairAssetFromCut(front), back: hairAssetFromCut(back), sourceImageDataUrl: hairCutDataUrl(source)
+      styles: result.styles.map(({ front, back, source, rowBoundary }) => ({
+        front: hairAssetFromCut(front), back: hairAssetFromCut(back), sourceImageDataUrl: hairCutDataUrl(source), rowBoundary
       })),
       splits: result.splits
     }

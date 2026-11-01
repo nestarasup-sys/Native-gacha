@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { detectHairGridSplits, getHairThreeStyleRegions } from '../src/renderer/src/features/fabricator/hairGridLayout.ts'
 import { findHairCropBounds } from '../src/renderer/src/features/fabricator/hairCropBounds.ts'
+import { copyHairGridSideAtBoundary, findHairGridSilhouetteBoundary } from '../src/renderer/src/features/fabricator/hairSilhouetteRowSplit.ts'
 
 test('grade de três cabelos separa três colunas e duas fileiras na ordem pedida', () => {
   const regions = getHairThreeStyleRegions(900, 600)
@@ -103,6 +104,55 @@ test('detecta colunas com larguras muito diferentes usando o espaço entre os gr
   assert.ok(row > 300 && row < 340, `divisão horizontal ficou em ${row}px`)
 })
 
+test('corte adaptativo acompanha um fio superior que atravessa a divisão central', () => {
+  const width = 60, height = 100
+  const data = new Uint8ClampedArray(width * height * 4)
+  const rectangle = (left, right, top, bottom, alpha = 255) => {
+    for (let y = top; y <= bottom; y += 1) for (let x = left; x <= right; x += 1) {
+      data.set([90, 50, 120, alpha], (y * width + x) * 4)
+    }
+  }
+  rectangle(6, 53, 10, 48)
+  rectangle(24, 35, 45, 70)
+  rectangle(4, 17, 64, 95)
+  rectangle(42, 55, 64, 95)
+
+  const image = { width, height, data }
+  const boundary = findHairGridSilhouetteBoundary(image, 50)
+  const posterior = copyHairGridSideAtBoundary(image, boundary, 'posterior')
+  const traseiro = copyHairGridSideAtBoundary(image, boundary, 'traseiro')
+  assert.ok(boundary[30] >= 68, `o corte não contornou o fio: ${boundary[30]}px`)
+  assert.ok(boundary[8] <= 55, `o corte deslocou a área sem fio: ${boundary[8]}px`)
+  const strandPixel = (66 * width + 30) * 4 + 3
+  assert.equal(posterior[strandPixel], 255, 'o fio superior deve permanecer na parte de cima')
+  assert.equal(traseiro[strandPixel], 0, 'o fio superior não deve ser duplicado na parte de baixo')
+  assert.equal(traseiro[(80 * width + 8) * 4 + 3], 255, 'a parte inferior deve continuar no recorte de baixo')
+})
+
+test('corte adaptativo preserva RGBA exatamente e não modifica a folha fonte', () => {
+  const width = 17, height = 31
+  const data = new Uint8ClampedArray(width * height * 4)
+  for (let y = 3; y < 29; y += 1) for (let x = 2; x < 15; x += 1) {
+    const offset = (y * width + x) * 4
+    data.set([x * 11, y * 7, (x + y) * 5, (x + y) % 3 === 0 ? 96 : 255], offset)
+  }
+  data.set([11, 22, 33, 0], (0 * width + 0) * 4)
+  const original = data.slice()
+  const image = { width, height, data }
+  const boundary = findHairGridSilhouetteBoundary(image, 15)
+  const posterior = copyHairGridSideAtBoundary(image, boundary, 'posterior')
+  const traseiro = copyHairGridSideAtBoundary(image, boundary, 'traseiro')
+  assert.deepEqual(data, original)
+  assert.equal(boundary.length, width)
+  for (let y = 0; y < height; y += 1) for (let x = 0; x < width; x += 1) {
+    const offset = (y * width + x) * 4
+    const selected = y < boundary[x] ? posterior : traseiro
+    const other = y < boundary[x] ? traseiro : posterior
+    assert.deepEqual([...selected.subarray(offset, offset + 4)], [...original.subarray(offset, offset + 4)])
+    assert.deepEqual([...other.subarray(offset, offset + 4)], [0, 0, 0, 0])
+  }
+})
+
 test('não analisa transparência como conteúdo e aponta células vazias', () => {
   const transparent = rgbaFixture(8, 8, [[2, 2, 0], [6, 6, 0]])
   assert.throws(() => findHairCropBounds(transparent, 8, 8), /Não encontrei/)
@@ -125,5 +175,9 @@ test('modal mantém importação individual e em par, além da grade de três co
   assert.match(await readFile('src/renderer/src/features/fabricator/HairGridReviewModal.tsx', 'utf8'), /Divisão 1ª coluna/)
   assert.match(await readFile('src/renderer/src/features/fabricator/HairGridReviewModal.tsx', 'utf8'), /Margem transparente/)
   assert.match(worker, /detectHairGridSplits\(processed\)/)
-  assert.match(worker, /findHairCropBounds\(image\.data, image\.width, image\.height, paddingPercent\)/)
+  assert.match(worker, /findHairGridSilhouetteBoundary\(cell, region\.posterior\.height\)/)
+  assert.match(worker, /findHairCropBounds\(data, sourceWidth, sourceHeight, paddingPercent\)/)
+  const review = await readFile('src/renderer/src/features/fabricator/HairGridReviewModal.tsx', 'utf8')
+  assert.match(review, /hair-grid-seam/)
+  assert.match(review, /linha rosa mostra o caminho do corte/)
 })
