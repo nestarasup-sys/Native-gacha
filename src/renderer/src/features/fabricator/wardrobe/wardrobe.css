@@ -2,7 +2,8 @@
 .wardrobe-set-row.grid-import:hover,.wardrobe-set-row.grid-import.active { border-color:#58ae9b;background:#dff4ee;color:#175b4e; }
 .wardrobe-set-row.grid-import .wardrobe-set-icon { background:#d5eee7;color:#21806b; }
 .wardrobe-sleeve-cut { display:grid;gap:8px;padding:12px;margin:10px 0;border:1px solid #79a8ff;border-radius:10px;background:#eff6ff; }
-.wardrobe-sleeve-cut small { color:#667085; }
+.wardrobe-joint-cut-heading { display:flex;align-items:center;justify-content:space-between;gap:8px; }
+.wardrobe-joint-cut-lock { padding:6px 9px;white-space:nowrap; }
 .wardrobe-joint-cut-guide { position:absolute;inset:0;overflow:visible;z-index:20000;pointer-events:none; }
 .wardrobe-joint-cut-guide .wardrobe-joint-cut-visible { stroke:#1677ff;stroke-width:2;stroke-dasharray:7 5;filter:drop-shadow(0 1px 1px white);pointer-events:none; }
 .wardrobe-joint-cut-guide .wardrobe-joint-cut-hit-target { stroke:transparent;stroke-width:24;stroke-dasharray:none;filter:none;pointer-events:stroke;cursor:grab;touch-action:none; }
