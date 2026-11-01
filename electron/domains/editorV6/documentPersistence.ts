@@ -5,6 +5,7 @@ import { createEditorV6Timeline, syncEditorV6TimelineElements, type EditorV6Asse
 import { createKeyedOperationQueue } from '../storage/keyedOperationQueue.ts'
 import { publishEditorV6AssetsAndManifest, recoverEditorV6AssetTransaction } from './assetTransaction.ts'
 import { normalizeEditorV6CharacterPositions } from '../../../src/shared/editorV6TimelineEdits'
+import { invalidateIncompleteEditorV6Motions } from '../../../src/shared/editorV6Motion'
 import { normalizeEditorV6Timeline } from '../../../src/shared/editorV6TimelineCore'
 import { editorV6DocumentSchema, editorV6MediaAssetSchema } from '../../../src/shared/editorV6Schema'
 import { collectEditorV6VideoReferenceIds } from './videoReferences.ts'
@@ -57,18 +58,26 @@ export function createEditorV6DocumentPersistence(deps: {
       await recoverEditorV6AssetTransaction(deps.files, folder)
       const raw = JSON.parse(await readFile(join(folder, 'editorV6.json'), 'utf8')) as Record<string, unknown>
       const normalized = normalizeEditorV6CharacterPositions(normalizeEditorV6(raw, id))
+      const states = [...normalized.elements, ...normalized.timeline.tracks.flatMap(track => track.blocks.flatMap(block => block.state ? [block.state] : []))]
+      const visibleAssets = new Set([normalized.backgroundAssetId, ...states.flatMap(state => [state.assetId, ...Object.values(state.faceModeAssetIds ?? {})])])
+      const derivedMotionAssets = new Set(normalized.timeline.tracks.flatMap(track => track.blocks.flatMap(block => block.incomingMotion ? [block.incomingMotion.assetId, block.incomingMotion.faceAssetId] : [])))
       const assets = await Promise.all(normalized.assets.map(async (asset) => {
         if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(asset.id)
           || !['background', 'object', 'character'].includes(asset.category)
           || !['image/png', 'image/jpeg', 'image/webp'].includes(asset.mimeType)) throw new Error('Biblioteca de imagens do EditorV6 inválida.')
         const extension = asset.mimeType === 'image/jpeg' ? 'jpg' : asset.mimeType.slice('image/'.length)
         const categoryFolder = asset.category === 'background' ? 'backgrounds' : asset.category === 'character' ? 'characters' : 'objects'
-        const data = await readFile(join(folder, 'assets', categoryFolder, `${asset.id}.${extension}`))
-        return { ...asset, dataUrl: `data:${asset.mimeType};base64,${data.toString('base64')}` }
+        try {
+          const data = await readFile(join(folder, 'assets', categoryFolder, `${asset.id}.${extension}`))
+          return { ...asset, dataUrl: `data:${asset.mimeType};base64,${data.toString('base64')}` }
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === 'ENOENT' && derivedMotionAssets.has(asset.id) && !visibleAssets.has(asset.id)) return null
+          throw error
+        }
       }))
       const media = (normalized.media ?? []).map((item) => editorV6MediaAssetSchema.parse(item))
       await Promise.all(media.filter((item) => !item.libraryVideoId).map((item) => deps.files.access(join(folder, 'media', item.fileName))))
-      const document = { ...normalized, assets, media }
+      const document = invalidateIncompleteEditorV6Motions({ ...normalized, assets: assets.filter(asset => asset !== null), media })
       if (!deps.validate(document)) throw new Error(`Os dados do EditorV6 ${id} estão inválidos.`)
       return document
     } catch (reason) {

@@ -17,6 +17,10 @@ import { createEditorV6MotionService, editorV6MotionMemoryCacheKey } from '../..
 import { editorV6IpcChannels } from '../../src/shared/editorV6IpcChannels'
 import { createCompletedMotionPreparation, hasCompletedMotionPreparation, indexMotionPreparationCharacters, rememberCompletedMotionPreparation } from '../../src/renderer/src/features/editorV6/motion/motionPreparationModel'
 import { subscribeToCustomizerCharacterUpdates } from '../../src/renderer/src/features/editorV6/editorV6CharacterSourceEvents.ts'
+import { invalidateIncompleteEditorV6Motions } from '../../src/shared/editorV6Motion'
+import { createEditorV6DocumentPersistence } from '../../electron/domains/editorV6/documentPersistence'
+import * as files from 'node:fs/promises'
+import { recordEditorV6History, undoEditorV6History, redoEditorV6History } from '../../src/shared/editorV6History'
 
 function fixture() {
   const stamp = '2026-10-26T12:00:00.000Z'
@@ -122,6 +126,13 @@ describe('transition preparation reuse', () => {
       elements: working.elements.map((element) => element.id === image.id ? { ...element, text: 'Objeto editado' } : element)
     }))
     expect(edited.assets.some((asset) => asset.id === faceAssetId)).toBe(true)
+    const history = recordEditorV6History({ undo: [], redo: [] }, attached)
+    const undone = undoEditorV6History(history, edited)!
+    const redone = redoEditorV6History(undone.history, undone.document)!
+    for (const replayed of [undone.document, redone.document]) {
+      expect(replayed.assets.some(asset => asset.id === faceAssetId)).toBe(true)
+      expect(replayed.timeline.tracks.find(track => track.kind === 'character')!.blocks[1].incomingMotion?.faceAssetId).toBe(faceAssetId)
+    }
 
     const reloaded = editorV6DocumentSchema.parse(JSON.parse(JSON.stringify(edited))) as EditorV6Document
     const facialFrame = resolveEditorV6ElementsAtFrame(reloaded, plan.endFrame - 1).find((element) => element.id === plan.elementId)
@@ -157,7 +168,8 @@ describe('transition preparation reuse', () => {
     const ready = attachEditorV6Motion(project, plan.blockId, resultWithFaceAsset({ id: crypto.randomUUID(), plan, character }))
     const originalBlock = ready.timeline.tracks.find((lane) => lane.kind === 'character')!.blocks[1]
     const incomplete = { ...ready, assets: ready.assets.filter((asset) => asset.id !== originalBlock.incomingMotion?.faceAssetId) }
-    const reloaded = editorV6DocumentSchema.parse(JSON.parse(JSON.stringify(incomplete))) as EditorV6Document
+    expect(editorV6DocumentSchema.safeParse(incomplete).success).toBe(false)
+    const reloaded = editorV6DocumentSchema.parse(invalidateIncompleteEditorV6Motions(JSON.parse(JSON.stringify(incomplete)))) as EditorV6Document
     const recovery = await prepareExportMotions(reloaded, 0, reloaded.timeline.durationFrames, {
       signal: new AbortController().signal,
       characters: [character],
@@ -177,6 +189,30 @@ describe('transition preparation reuse', () => {
     const pruned = pruneEditorV6TimelineSnapshots(staleKey)
     expect(pruned.timeline.tracks.find((lane) => lane.kind === 'character')!.blocks[1].incomingMotion).toBeUndefined()
     expect(pruned.assets.some((asset) => asset.id === bodyId || asset.id === faceId)).toBe(false)
+  })
+
+  it('reopens a saved project with a missing derived facial PNG and retains its timeline for regeneration', async () => {
+    const { project, character } = fixture()
+    const track = project.timeline.tracks.find(track => track.kind === 'character')!
+    track.blocks = track.blocks.slice(0, 2)
+    const plan = editorV6MotionPlans(project)[0]
+    const ready = attachEditorV6Motion(project, plan.blockId, resultWithFaceAsset({ id: crypto.randomUUID(), plan, character }))
+    const faceId = ready.timeline.tracks.find(track => track.kind === 'character')!.blocks[1].incomingMotion!.faceAssetId!
+    const root = await mkdtemp(join(tmpdir(), 'editor-v6-missing-face-'))
+    try {
+      const persistence = createEditorV6DocumentPersistence({ files, editorV6Path: id => join(root, `editorV6-${id}`), editorV6LibraryPath: () => root,
+        validate: (value): value is EditorV6Document => editorV6DocumentSchema.safeParse(value).success,
+        assertLibraryVideoReferencesAvailable: async () => {}, decodeImage: url => Buffer.from(url.split(',')[1], 'base64'), normalizeImage: async bytes => ({ bytes }) })
+      await persistence.writeEditorV6(ready)
+      await rm(join(root, `editorV6-${ready.id}`, 'assets', 'characters', `${faceId}.png`))
+      const reloaded = await persistence.readEditorV6(ready.id)
+      expect(reloaded).not.toBeNull()
+      expect(reloaded!.timeline.tracks.find(track => track.kind === 'character')!.blocks).toHaveLength(2)
+      expect(missingEditorV6Motions(reloaded!)).toHaveLength(1)
+      expect(reloaded!.assets.some(asset => asset.id === ready.elements[0].assetId)).toBe(true)
+      const repaired = await prepareExportMotions(reloaded!, 0, 300, { signal: new AbortController().signal, characters: [character], bake: async request => resultWithFaceAsset(request), progress: () => {} })
+      expect(missingEditorV6Motions(repaired.project)).toHaveLength(0)
+    } finally { await rm(root, { recursive: true, force: true }) }
   })
 
   it('repairs duplicate facial atlas IDs to the character asset when another category collides', () => {

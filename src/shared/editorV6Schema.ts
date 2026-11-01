@@ -206,7 +206,9 @@ export const editorV6DocumentSchema = z.object({
       if (block.background && (track.kind !== 'video' || block.elementId || block.state || (block.background.backgroundAssetId && assetsById.get(block.background.backgroundAssetId)?.category !== 'background'))) {
         context.addIssue({ code: 'custom', path: ['timeline', 'tracks', trackIndex, 'blocks', blockIndex, 'background'], message: 'O estado de fundo precisa usar uma imagem de fundo válida na faixa Vídeo.' })
       }
-      if (block.incomingMotion && (track.kind !== 'character' || assetsById.get(block.incomingMotion.assetId)?.category !== 'character')) context.addIssue({ code: 'custom', path: ['timeline', 'tracks', trackIndex, 'blocks', blockIndex, 'incomingMotion'], message: 'A animação precisa apontar para um atlas do personagem.' })
+      if (block.incomingMotion && (track.kind !== 'character' || assetsById.get(block.incomingMotion.assetId)?.category !== 'character'
+        || block.incomingMotion.faceAssetId && assetsById.get(block.incomingMotion.faceAssetId)?.category !== 'character'
+        || block.incomingMotion.frames.some(frame => frame.facePatch) && !block.incomingMotion.faceAssetId)) context.addIssue({ code: 'custom', path: ['timeline', 'tracks', trackIndex, 'blocks', blockIndex, 'incomingMotion'], message: 'A animação precisa apontar para os atlas corporal e facial necessários.' })
       if (block.mediaId) {
         const media = mediaById.get(block.mediaId)
         if (!media || media.kind !== track.kind) context.addIssue({ code: 'custom', path: ['timeline', 'tracks', trackIndex, 'blocks', blockIndex, 'mediaId'], message: 'O bloco precisa apontar para uma mídia compatível com a faixa.' })

@@ -30,6 +30,19 @@ export function editorV6MotionHasAvailableAssets(motion: EditorV6MotionAtlas | u
   if (motion.faceAssetId && assets.get(motion.faceAssetId)?.category !== 'character') return false
   return !editorV6MotionRequiresFaceAsset(motion) || Boolean(motion.faceAssetId)
 }
+
+/** Prepared atlases are derived data. An incomplete legacy atlas must be
+ * regenerated from the preserved timeline states, never treated as ready. */
+export function invalidateIncompleteEditorV6Motions(document: EditorV6Document): EditorV6Document {
+  const assets = new Map(document.assets.map(asset => [asset.id, asset]))
+  let changed = false
+  const tracks = document.timeline.tracks.map(track => ({ ...track, blocks: track.blocks.map(block => {
+    if (!block.incomingMotion || editorV6MotionHasAvailableAssets(block.incomingMotion, assets)) return block
+    changed = true
+    return { ...block, incomingMotion: undefined }
+  }) }))
+  return changed ? { ...document, timeline: { ...document.timeline, tracks } } : document
+}
 export const editorV6MotionChannels = { payload: 'editor-v6:motion-worker:payload', complete: 'editor-v6:motion-worker:complete' } as const
 export type EditorV6MotionBridge = { payload: () => Promise<EditorV6MotionBakeRequest | null>; provider: CharacterRenderAssetProvider; complete: (result?: EditorV6MotionBakeResult, error?: string) => Promise<void> }
 
