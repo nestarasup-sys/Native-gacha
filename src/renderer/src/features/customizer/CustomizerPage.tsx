@@ -1,5 +1,6 @@
 import { useCustomizerCharacterRoster } from './useCustomizerCharacterRoster'
 import { useCustomizerModelBrowserState } from './useCustomizerModelBrowserState'
+import { adjacentCustomizerPoseCategory, adjacentCustomizerPosePage, buildCustomizerPoseBrowserModel } from './customizerPoseBrowserModel'
 import { useCustomizerCatalogThumbnails } from './useCustomizerCatalogThumbnails'
 import { useCustomizerAssetLibraryState } from './useCustomizerAssetLibraryState'
 import { useCustomizerCharacterCommands } from './useCustomizerCharacterCommands'
@@ -60,7 +61,6 @@ import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type 
 import { RenderedCharacterPortrait } from '../../ui/components/RenderedCharacterPortrait'
 import { Icon } from '../../ui/components/Icon'
 import type { FabricatorProject, HairStyle } from '../../../../shared/fabricator'
-import { resolvePoseCategory } from '../../../../shared/fabricator'
 import type { CharacterGender, CharacterPaletteRole, CustomizerWardrobeGroup } from '../../../../shared/customizer'
 import { characterBodyDimensionLimits, characterProportionLimits, defaultCharacterProportions, type CharacterProportions } from '../../../../shared/customizer'
 import { usePreviewBackground } from '../../ui/hooks/usePreviewBackground'
@@ -488,21 +488,21 @@ export function CustomizerPage() {
   }
 
   const availableModels = catalogModels.filter((model): model is NonNullable<typeof model> => model !== null)
-  const recoveryModelSlots = new Set(catalogModels.flatMap((model) => model?.recoveryRequired ? [model.slot] : []))
-  const availablePoses = catalogPoses.filter((pose): pose is NonNullable<typeof pose> => pose?.sourceModelSlot === selectedCatalogModelSlot && !recoveryModelSlots.has(pose.sourceModelSlot)).sort((a, b) => a.slot - b.slot)
-  const poseCategories = ['Parado', 'Sentado', ...new Set(availablePoses.map(resolvePoseCategory).filter((category) => category !== 'Parado' && category !== 'Sentado'))]
-  const categoryPoses = availablePoses.filter((pose) => resolvePoseCategory(pose) === selectedPoseCategory)
-  const posePageCount = Math.max(1, Math.ceil(categoryPoses.length / 5))
-  const activePosePage = Math.min(selectedPosePage, posePageCount - 1)
-  const visibleCategoryPoses = categoryPoses.slice(activePosePage * 5, activePosePage * 5 + 5)
+  const poseBrowser = useMemo(() => buildCustomizerPoseBrowserModel({
+    catalogModels,
+    catalogPoses,
+    selectedModelSlot: selectedCatalogModelSlot,
+    selectedCategory: selectedPoseCategory,
+    selectedPage: selectedPosePage
+  }), [catalogModels, catalogPoses, selectedCatalogModelSlot, selectedPoseCategory, selectedPosePage])
+  const { categories: poseCategories, pageCount: posePageCount, activePage: activePosePage, visiblePoses: visibleCategoryPoses } = poseBrowser
   const showAdjacentPoseCategory = (direction: -1 | 1) => {
-    const categoryIndex = poseCategories.indexOf(selectedPoseCategory)
-    const nextCategory = poseCategories[(categoryIndex + direction + poseCategories.length) % poseCategories.length]
+    const nextCategory = adjacentCustomizerPoseCategory(poseCategories, selectedPoseCategory, direction)
     setSelectedPoseCategory(nextCategory)
     setSelectedPosePage(0)
   }
   const showAdjacentPosePage = (direction: -1 | 1) => {
-    setSelectedPosePage((current) => Math.max(0, Math.min(posePageCount - 1, current + direction)))
+    setSelectedPosePage((current) => adjacentCustomizerPosePage(current, posePageCount, direction))
   }
   const activeFaceAppearance = characterFaceAppearance?.modelSlot === selectedCatalogModelSlot ? characterFaceAppearance : undefined
   const faceCatalogModel = useMemo(() => createCustomizerFaceCatalogModel({
