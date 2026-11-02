@@ -1,6 +1,7 @@
 import { createFabricatorInvoker, fabricatorIpcChannels } from '../src/shared/fabricatorIpcChannels'
 import { createStudioInvoker } from '../src/shared/studioIpcChannels'
 import { createEditorV6Invoker } from '../src/shared/editorV6IpcChannels'
+import { createBaseVideosInvoker } from '../src/shared/baseVideosIpcChannels'
 import { contextBridge, ipcRenderer } from 'electron'
 import type { FabricatorDesktopApi, FabricatorModelSourcePublishRequest } from '../src/shared/fabricator'
 import type { CustomizerDesktopApi } from '../src/shared/customizer'
@@ -13,6 +14,7 @@ import type { DataManagementDesktopApi, DataMigrationProgress } from '../src/sha
 import type { ImageImportDesktopApi } from '../src/shared/imageImport'
 
 const invokeFabricator = createFabricatorInvoker(ipcRenderer)
+const invokeBaseVideos = createBaseVideosInvoker(ipcRenderer)
 const fabricatorApi: FabricatorDesktopApi = {
   loadFabricatorDesignSettings: () => ipcRenderer.invoke('fabricator:design-settings:load'),
   saveFabricatorDesignSettings: (settings) => ipcRenderer.invoke('fabricator:design-settings:save', settings),
@@ -139,15 +141,15 @@ const videoBackgroundsApi: VideoBackgroundLibraryDesktopApi = {
 }
 
 const baseVideosApi: BaseVideosDesktopApi = {
-  listDetails: () => ipcRenderer.invoke('base-videos:list-details'),
-  saveDetails: (details) => ipcRenderer.invoke('base-videos:save-details', details),
-  listCategories: () => ipcRenderer.invoke('base-videos:categories:list'),
-  createCategory: (name) => ipcRenderer.invoke('base-videos:categories:create', name),
-  renameCategory: (id, name) => ipcRenderer.invoke('base-videos:categories:rename', id, name),
-  deleteCategory: (id) => ipcRenderer.invoke('base-videos:categories:delete', id),
-  deleteDetails: (videoId) => ipcRenderer.invoke('base-videos:delete-details', videoId),
-  deleteVideo: (videoId) => ipcRenderer.invoke('base-videos:delete', videoId),
-  publish: (videoId) => ipcRenderer.invoke('base-videos:publish', videoId)
+  listDetails: () => invokeBaseVideos('listDetails'),
+  saveDetails: (details) => invokeBaseVideos('saveDetails', details),
+  listCategories: () => invokeBaseVideos('listCategories'),
+  createCategory: (name) => invokeBaseVideos('createCategory', name),
+  renameCategory: (id, name) => invokeBaseVideos('renameCategory', id, name),
+  deleteCategory: (id) => invokeBaseVideos('deleteCategory', id),
+  deleteDetails: (videoId) => invokeBaseVideos('deleteDetails', videoId),
+  deleteVideo: (videoId) => invokeBaseVideos('deleteVideo', videoId),
+  publish: (videoId) => invokeBaseVideos('publish', videoId)
 }
 
 const roteirosApi: RoteirosDesktopApi = {

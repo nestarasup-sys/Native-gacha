@@ -8,6 +8,7 @@ import { createVideoReferenceGuard } from '../electron/domains/mediaLibrary/vide
 import { createRoteirosVideoReferenceLookup } from '../electron/domains/roteiros/videoReferences.ts'
 import { createEditorV6VideoReferenceLookup } from '../electron/domains/editorV6/videoReferences.ts'
 import { assertBaseVideoId, nextCategoryColor, normalizeCategoryName, validateVideoDetails } from '../electron/domains/baseVideos/validation.ts'
+import { baseVideosIpcChannels, createBaseVideosInvoker } from '../src/shared/baseVideosIpcChannels.ts'
 import categoryColors from '../electron/categoryColors.cjs'
 
 const A = 'a2189020-8327-4327-a4a6-442ed9902123'
@@ -158,4 +159,21 @@ test('IPC: os nove canais verificam origem em cada chamada antes da regra', asyn
   const category = await handlers.get('base-videos:categories:create')({ allowed: true }, 'Ação')
   assert.equal(category.name, 'Ação')
   assert.equal((await handlers.get('base-videos:categories:list')({ allowed: true })).length, 1)
+})
+
+test('contrato do preload mapeia a API inteira sem renomear canais e preserva argumentos', async () => {
+  assert.deepEqual(Object.values(baseVideosIpcChannels), [
+    'base-videos:list-details', 'base-videos:save-details', 'base-videos:categories:list',
+    'base-videos:categories:create', 'base-videos:categories:rename', 'base-videos:categories:delete',
+    'base-videos:delete-details', 'base-videos:delete', 'base-videos:publish'
+  ])
+
+  const calls = []
+  const invoke = createBaseVideosInvoker({ invoke: async (...args) => { calls.push(args); return 4 } })
+  await invoke('renameCategory', 'category-id', 'Ação')
+  await invoke('publish', 'video-id')
+  assert.deepEqual(calls, [
+    ['base-videos:categories:rename', 'category-id', 'Ação'],
+    ['base-videos:publish', 'video-id']
+  ])
 })
