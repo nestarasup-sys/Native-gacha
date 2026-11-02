@@ -95,6 +95,7 @@ import { createRoteirosVideoReferenceLookup } from './domains/roteiros/videoRefe
 import { createRoteirosWriteQueue } from './domains/roteiros/writeQueue'
 import { registerRoteirosIpc, type RoteirosIpcLifecycle } from './application/registerRoteirosIpc'
 import { configureDevAiDataRoot, configureLocalAppDataRoot } from './application/appDataBootstrap'
+import { selectRendererMemorySnapshot } from './application/rendererMemorySnapshot'
 import { createMainWindowFactory } from './application/mainWindow'
 import { createEditorV6VideoReferenceLookup } from './domains/editorV6/videoReferences'
 import { canVisibleRendererRequestFullscreen, createRendererTrustPolicy, isTrustedRendererFrame } from './application/rendererTrust'
@@ -956,9 +957,7 @@ app.whenReady().then(async () => {
     log: diagnosticsLog,
     getRuntimeDiagnostics: async (event) => {
       const mainMemory = process.memoryUsage()
-      let rendererMemory: Awaited<ReturnType<typeof event.sender.getProcessMemoryInfo>> | null = null
-      try { rendererMemory = await event.sender.getProcessMemoryInfo() } catch { /* The OS can deny a one-time process sample. */ }
-      const fromKilobytes = (value: number | undefined): number | null => Number.isFinite(value) ? Math.round((value ?? 0) * 1024) : null
+      const rendererMemory = selectRendererMemorySnapshot(app.getAppMetrics(), event.sender)
       return {
         measuredAt: new Date().toISOString(),
         appVersion: app.getVersion(),
@@ -972,10 +971,7 @@ app.whenReady().then(async () => {
           mainRssBytes: mainMemory.rss,
           mainHeapUsedBytes: mainMemory.heapUsed,
           mainExternalBytes: mainMemory.external,
-          rendererWorkingSetBytes: rendererMemory ? fromKilobytes(rendererMemory.workingSetSize) : null,
-          rendererPeakWorkingSetBytes: rendererMemory ? fromKilobytes(rendererMemory.peakWorkingSetSize) : null,
-          rendererPrivateBytes: rendererMemory ? fromKilobytes(rendererMemory.privateBytes) : null,
-          rendererSharedBytes: rendererMemory ? fromKilobytes(rendererMemory.sharedBytes) : null
+          ...rendererMemory
         }
       }
     },
