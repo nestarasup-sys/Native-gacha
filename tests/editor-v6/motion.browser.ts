@@ -89,6 +89,29 @@ async function captureScene(scene: unknown, assets: unknown[], renderLayer: 'all
     && compactAtlas.width < 3366 && compactAtlas.height < 4206,
   'Transparent canvas margins incorrectly caused a native transition atlas limit failure')
   assert(transparentMargins.metrics.preparedRigs === 9, 'Compacting a transition atlas rendered its pose rigs more than once')
+  const tallSource = {
+    ...source,
+    width: 744,
+    height: 1217,
+    parts: source.parts.map((part) => part.id === 'head'
+      ? { ...part, x: 0, y: 0, width: 744, height: 1217 }
+      : part)
+  }
+  const tallTarget = {
+    ...tallSource,
+    parts: tallSource.parts.map((part) => part.id === 'arm' ? { ...part, x: 80 } : part)
+  }
+  const tallProvider = new Proxy({}, { get: (_, name: string) => async (...args: unknown[]) => {
+    if (name === 'loadFabricatorSlot') return tallSource
+    if (name === 'loadFabricatorPose') return args[1] === 1 ? tallSource : tallTarget
+    if (name.startsWith('list')) return []
+    return null
+  } }) as CharacterRenderAssetProvider
+  const packedPortrait = await bakeEditorV6Motion({ id: crypto.randomUUID(), plan, character }, tallProvider)
+  const packedPortraitAtlas = await image(packedPortrait.asset.dataUrl)
+  assert(packedPortrait.metrics.samples === 7 && packedPortrait.metrics.atlasPixels === 2_976 * 2_434
+    && packedPortraitAtlas.width === 2_976 && packedPortraitAtlas.height === 2_434,
+  'Seven native portrait samples were rejected because the atlas reserved two empty cells')
   const atlas = await image(result.asset.dataUrl)
   const blueXs = []
   for (const frame of result.motion.frames) {

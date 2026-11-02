@@ -7,6 +7,7 @@ import { editorV6FaceModeDuringMotion } from '../../../../../shared/editorV6Face
 import { interpolateEditorV6Face, interpolateEditorV6Pose, motionAngle, motionEase, motionLerp } from '../../../../../shared/editorV6MotionInterpolation'
 import { editorV6ElementSize } from '../../../../../shared/editorV6SceneModel'
 import { loadStandardExpressionEffects, prepareSavedCharacterRenderer, type GachaReusableMaterialCache } from '../../../characters/editorV6CharacterRenderer'
+import { chooseMotionAtlasLayout } from './motionAtlasLayout'
 import { createMotionPoseResolver } from './motionPoseResolver'
 
 type Renderer = Awaited<ReturnType<typeof prepareSavedCharacterRenderer>>
@@ -208,11 +209,11 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
       const left = Math.max(sourceCrop.left, bounds.left - padding), top = Math.max(sourceCrop.top, bounds.top - padding)
       const right = Math.min(sourceCrop.left + sourceCrop.width - 1, bounds.right + padding), bottom = Math.min(sourceCrop.top + sourceCrop.height - 1, bounds.bottom + padding)
       const patchWidth = right - left + 1, patchHeight = bottom - top + 1
-      const count = request.plan.samples.length, columns = Math.ceil(Math.sqrt(count)), rows = Math.ceil(count / columns), gutter = 2
+      const count = request.plan.samples.length, gutter = 2
       const cellWidth = patchWidth + gutter * 2, cellHeight = patchHeight + gutter * 2
-      const atlasWidth = cellWidth * columns, atlasHeight = cellHeight * rows
-      const atlasPixels = atlasWidth * atlasHeight
-      if (atlasWidth > 8192 || atlasHeight > 8192 || atlasPixels > Math.min(8_000_000, request.maxAtlasPixels ?? 8_000_000)) throw Error(`A camada facial em resolução nativa precisa de ${atlasPixels.toLocaleString('pt-BR')} pixels e excede o limite seguro; reduza o número de personagens falando simultaneamente neste trecho.`)
+      const layout = chooseMotionAtlasLayout(count, cellWidth, cellHeight, 8192, Math.min(8_000_000, request.maxAtlasPixels ?? 8_000_000))
+      if (layout.ratio < 1) throw Error(`A camada facial em resolução nativa precisa de ${layout.pixels.toLocaleString('pt-BR')} pixels e excede o limite seguro; reduza o número de personagens falando simultaneamente neste trecho.`)
+      const { columns, width: atlasWidth, height: atlasHeight, pixels: atlasPixels } = layout
       const atlas = document.createElement('canvas'); atlas.width = atlasWidth; atlas.height = atlasHeight
       const context = atlas.getContext('2d')!
       const x = (left - sourceCrop.left) / sourceCrop.width, y = (top - sourceCrop.top) / sourceCrop.height
@@ -238,11 +239,11 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
     const last = staticMouthLoop ? null : await render(1), toCrop = last?.crop ?? fromCrop
     const maximumCanvasWidth = Math.max(fullWidth, last?.width ?? fullWidth), maximumCanvasHeight = Math.max(fullHeight, last?.height ?? fullHeight)
     last?.dispose()
-    const count = request.plan.samples.length, columns = Math.ceil(Math.sqrt(count)), rows = Math.ceil(count / columns)
+    const count = request.plan.samples.length
     const maxAtlasPixels = Math.min(8_000_000, request.maxAtlasPixels ?? 8_000_000)
-    const atlasRatio = (width: number, height: number) => Math.min(1, 4096 / columns / width, 4096 / rows / height, Math.sqrt(maxAtlasPixels / (columns * rows * width * height)))
     let maximumWidth = maximumCanvasWidth, maximumHeight = maximumCanvasHeight
-    let ratio = atlasRatio(maximumWidth, maximumHeight)
+    let layout = chooseMotionAtlasLayout(count, maximumWidth, maximumHeight, 4096, maxAtlasPixels)
+    let ratio = layout.ratio
     const frames: EditorV6MotionFrame[] = []
     const facePatches: BakedFacePatch[] = pendingFacePatches = []
     const prepareFacePatch = async (index: number, sample: { faceMode?: EditorV6FaceRenderMode }, t: number, mouthScale: number, frame: MotionFrameRender) => {
@@ -279,9 +280,11 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
           await prepareFacePatch(index, sample, t, mouthScale, frame)
         } finally { frame.dispose() }
       }
-      ratio = atlasRatio(maximumWidth, maximumHeight)
+      layout = chooseMotionAtlasLayout(count, maximumWidth, maximumHeight, 4096, maxAtlasPixels)
+      ratio = layout.ratio
     }
-    if (ratio < 1) throw Error(`A transição deste personagem precisa de ${Math.ceil(columns * maximumWidth)}×${Math.ceil(rows * maximumHeight)} pixels em resolução nativa e excede o limite seguro. A exportação foi interrompida para não reduzir a nitidez do personagem.`)
+    if (ratio < 1) throw Error(`A transição deste personagem precisa de ${layout.width}×${layout.height} pixels em resolução nativa e excede o limite seguro. A exportação foi interrompida para não reduzir a nitidez do personagem.`)
+    const { columns, rows } = layout
     const cellWidth = Math.ceil(maximumWidth * ratio), cellHeight = Math.ceil(maximumHeight * ratio)
     const atlas = document.createElement('canvas'); atlas.width = cellWidth * columns; atlas.height = cellHeight * rows
     const context = atlas.getContext('2d')!
