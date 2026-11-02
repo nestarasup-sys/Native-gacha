@@ -30,7 +30,7 @@ Este documento acompanha a execução das Fases 1–6 e complementa a baseline d
 | 3 | Fabricador e Customizador | Em andamento | Fluxo de catálogo/customizações coberto de ponta a ponta; gravação de roupas e operações de cabelo (worker e serialização de conjunto) têm fronteiras/testes próprios. Restam mapear/decompor o estado dos maiores workspaces e ampliar cenários de reabertura. |
 | 4 | Studio, Editor V6 e fluxos de vídeo | Em andamento | Criação/duplicação de cenas do Studio extraídas; testes Windows de paridade Turbo e exportação facial 720p/1080p aprovados. Engines e projetos do Editor V6 continuam separados. Restam captura/export do Studio e revisão dos fluxos legados de vídeo e workers. |
 | 5 | Roteiros, Base de Vídeos, Opções, componentes e CSS | Em andamento | Biblioteca continua dona dos arquivos/IDs; Roteiros mantém metadados e referências. Guardas, canais e fila de salvamento da Base de Vídeos têm contratos testados; estilos e cálculos puros de Opções estão isolados. Restam decomposição adicional dos workspaces e CSS por feature. |
-| 6 | Performance, CI e consolidação | Em andamento | Workflow da Dev-V2 agora roda gates gerais e Editor V6 por plataforma; build Windows é reutilizado pelos testes MP4 via artifact limitado aos diretórios compilados. Restam baseline de performance comum, medição de gargalos e cobertura dos outros módulos. |
+| 6 | Performance, CI e consolidação | Em andamento | Workflow da Dev-V2 roda gates gerais e Editor V6 por plataforma; build Windows é reutilizado pelos testes MP4. Baseline repetível do cenário médio do Editor V6 registrada e captura IPC passou a ser estruturada. Restam medições de inicialização, Studio, outros workspaces e exportação, além de comparações repetidas antes de otimizar. |
 
 ## Fatias implementadas
 
@@ -174,7 +174,20 @@ O Node test runner não resolvia imports relativos extensionless `.ts` usados po
 - **Validação:** YAML carregado e estrutura do workflow conferida com `js-yaml` e assertions locais (gates, matriz, dependência, nomes/paths do artifact e ausência de build duplicado). `npm run test:refactor`, `npm run test:geometry` (5/5), `npm run typecheck`, `npm run audit:architecture` e `npm run build` passaram localmente.
 - **Limite da verificação:** não houve execução hospedada do GitHub Actions nesta alteração; o upload/download de artifact depende da próxima execução na Dev-V2.
 - **Commit local:** `2c3d5a3` (`ci: add Dev-V2 general gates and reuse export bundle`).
-- **Pendências:** estabelecer medições repetíveis para inicialização, telas, memória, gravação, timeline e exportação; revisar os gates para cobertura dos fluxos restantes sem duplicar trabalho.
+- **Pendências:** ampliar medições repetíveis para inicialização, Studio, outros workspaces e duração/uso de memória em exportações; revisar os gates para cobertura dos fluxos restantes sem duplicar trabalho.
+
+### Baseline atual de performance e captura IPC estruturada
+
+- **Escopo e ambiente:** baseline local, depois das fatias já executadas até `7b90bcc`, em Windows com Electron 45.1.0/Chromium 156.0.8078.49, viewport 1430 × 868, 12 processadores lógicos e `deviceMemory` reportada como 16 GB. O Editor V6 abriu um projeto sintético isolado com 4 personagens, 284 blocos, 7 tracks e 24 assets; reprodução medida por 30 segundos.
+- **Timeline:** 74,9 callbacks RAF/s; 30,03 atualizações DOM/s e 29,96 avanços lógicos/s. Intervalos medidos dos frames: p50 13,3 ms, p95 13,6 ms, p99 13,7 ms, pior 14 ms; nenhum acima de 33 ms ou 50 ms; zero lacunas lógicas e zero lacunas de atualização do DOM. A captura confirma cadência e estado após commit, não que cada frame tenha sido fisicamente apresentado pelo monitor.
+- **Memória do renderer:** heap JavaScript começou em 64,2 MiB, atingiu pico de 84,7 MiB e terminou em 40,6 MiB. O observador de GC não estava disponível nesse Chromium, então esses números não permitem atribuir a queda a uma coleta específica nem representam memória total do processo.
+- **Interação sintética:** seek 50 ms, duplicação de bloco 100 ms e sequência pausa/retomada 865 ms; fluxo completo 915 ms. A sequência concluiu e retomou em frame válido. O teste de 30 segundos não observou erros de página.
+- **IPC observado no mesmo cenário:** `customizer:characters:list` 3 chamadas, média/pior 23,12/24,76 ms; `editor-v6:projects:list` 4, 89,78/148,55 ms; `editor-v6:projects:load` 1, 88,88/88,88 ms; `editor-v6:projects:save` 4, 202,57/247,41 ms. São amostras pequenas de um perfil sintético, não evidência suficiente para classificar esses canais como gargalos.
+- **Limite da baseline:** a Fase 0 não deixou medições de performance anteriores às refatorações; este é o ponto de referência atual, não uma comparação pré/pós. Ainda não medimos inicialização, captura/exportação do Studio, abertura dos outros workspaces ou duração de exportação do Editor V6. Não haverá otimização inferida somente destes resultados; repetir o mesmo cenário e acrescentar fixtures comparáveis antes de decidir.
+- **Captura IPC:** `ipcPerformanceSnapshot.ts` transforma os acumuladores em linhas tipadas e, somente com `GV5_IPC_PERF=1`, emite um marcador JSON além da tabela existente. O relatório offscreen agora armazena objetos numéricos e o estado da captura em vez de linhas formatadas do terminal; rótulos são canais e contagens/latências, sem payloads, caminhos ou IDs.
+- **Validação:** a execução de 30 segundos passou no cenário `medium`; uma segunda execução curta confirmou o marcador JSON no processo Electron e gravou 4 métricas IPC estruturadas no relatório. Testes do snapshot 1/1, parser 2/2 e perfil de stress 7/7. `npm run test:refactor`, `npm run test:editor-v6` (220 aprovados, 1 ignorado), typecheck, audit arquitetural (573 arquivos TS/TSX) e build passaram.
+- **Commit local:** `bfdcde6` (`refactor: structure IPC performance snapshots`).
+- **Artefatos:** resultados completos e fixtures de medição foram criados em diretórios temporários do sistema. Os perfis de teste foram sintéticos; nenhum perfil `app-data` existente foi lido ou alterado.
 
 ## Reconciliação das falhas da baseline
 
@@ -212,4 +225,5 @@ As falhas observadas na execução inicial da suíte em `f416a02` foram investig
 | `add2123` | Extrai a preparação e gravação do conjunto de cabelo com cobertura de assets | Local em `Dev-V2`; sem publicação. |
 | `1d6e938` | Extrai a fila por vídeo de Base de Vídeos com testes de concorrência e retry | Local em `Dev-V2`; sem publicação. |
 | `da90c8d` | Permite redirecionar resultados sintéticos de paridade/export sem sobrescrever `out/` existente | Local em `Dev-V2`; sem publicação. |
+| `bfdcde6` | Estrutura snapshots IPC e captura baseline de timeline/memória em perfil sintético | Local em `Dev-V2`; sem publicação. |
 
