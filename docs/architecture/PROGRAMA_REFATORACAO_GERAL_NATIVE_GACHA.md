@@ -29,7 +29,7 @@ Este documento acompanha a execução das Fases 1–6 e complementa a baseline d
 | 2 | Núcleo compartilhado de personagens | Concluída | Consumidores e regressões mapeados. Escala-base idêntica entre Studio e Editor V6 centralizada; renderizadores e contratos de exportação distintos mantidos. Testes de personagem/gênero/roupas articuladas executáveis por script dedicado. |
 | 3 | Fabricador e Customizador | Em andamento | Fluxo de catálogo/customizações coberto de ponta a ponta; gravação de roupas, operações de cabelo, persistência serializada por personagem com recuperação e estado final protegido contra writes obsoletos, seleção de peça no Customizador, carregamento/hidratação de slot com guards de seleção obsoleta e validação de conjuntos salvos em Roupas DEV têm fronteiras/testes próprios. Restam mapear/decompor os workspaces maiores e ampliar cenários de reabertura. |
 | 4 | Studio, Editor V6 e fluxos de vídeo | Em andamento | Criação/duplicação e impressão do Studio extraídas; miniatura 480×270 corrigida; paridade Turbo e exportação facial 720p/1080p aprovadas. A impressão foi validada do canvas ao handler IPC com fixture de arquivos sintética. A antiga tela Video Studio não tem rota, mas as bibliotecas legadas seguem ativas em Roteiros e como origem de mídia do Editor V6. Teste de cancelamento do worker cobre espera do compositor. Restam medições e validação comparativa dos workers de exportação. |
-| 5 | Roteiros, Base de Vídeos, Opções, componentes e CSS | Em andamento | Biblioteca continua dona dos arquivos/IDs; Roteiros mantém metadados e referências. Guardas, canais, fila, carregamento, listagem, publicação, CRUD de categorias, importação e exclusões da Base de Vídeos têm contratos testados; estilos da Base de Vídeos e modelos/comandos de backups e migração de Opções têm módulos por feature. Restam decomposição adicional dos workspaces e migração gradual do CSS com revisão visual. |
+| 5 | Roteiros, Base de Vídeos, Opções, componentes e CSS | Em andamento | Biblioteca continua dona dos arquivos/IDs; Roteiros mantém metadados e referências. Guardas, fila de snapshots, canais, fila de metadados, carregamento, listagem, publicação, CRUD de categorias, importação e exclusões da Base de Vídeos têm contratos testados; estilos da Base de Vídeos e modelos/comandos de Opções têm módulos por feature. Restam decomposição adicional dos workspaces e migração gradual do CSS com revisão visual. |
 | 6 | Performance, CI e consolidação | Em andamento | Workflow da Dev-V2 roda gates gerais e Editor V6 por plataforma; build Windows é reutilizado pelos testes MP4. Baseline repetível do cenário médio do Editor V6 registrada e captura IPC passou a ser estruturada. Restam medições de inicialização, Studio, outros workspaces e exportação, além de comparações repetidas antes de otimizar. |
 
 ## Fatias implementadas
@@ -353,6 +353,15 @@ O Node test runner não resolvia imports relativos extensionless `.ts` usados po
 - **Commit local:** `6d48089` (`refactor: isolate Options migration commands`).
 - **Compatibilidade:** nenhum dado, schema, evento de progresso ou canal IPC foi alterado.
 
+### Persistência de snapshots em Roteiros
+
+- **Fronteira extraída:** `createRoteiroSnapshotPersistence` concentra revisões, writes ativos, última solicitação, snapshot persistido e o flush da versão mais recente. `RoteirosPage` continua dona do estado de domínio, do listener de navegação/saída e injeta o snapshot atual; `RoteiroWorkspace` continua sem gravar documentos.
+- **Corridas cobertas:** somente a revisão mais recente pode marcar o estado como salvo/erro. Falha de uma revisão antiga não apaga a solicitação nova; uma falha da revisão atual libera nova tentativa. O flush espera writes ativos, verifica a versão atual e persiste-a antes de resolver; antes do carregamento, não grava um snapshot vazio.
+- **Testes:** sete cenários sintéticos cobrem revisões concorrentes, falhas antigas/atuais, retry e flush (carregamento, estado ocioso, write ativo e recuperação). `npm run test:roteiros:snapshot-persistence` passou 7/7; o contrato do inventário de flush do renderer passou 14/14.
+- **Verificações:** `npm run test:refactor` passou com 641 testes e todos os scripts encadeados; `npm run test:roteiros` 16/16; typecheck, auditoria arquitetural (590 arquivos TS/TSX), build e `git diff --check` passaram.
+- **Commit local:** `fa34f9a` (`refactor: extract Roteiros snapshot persistence`).
+- **Compatibilidade:** formato do documento, IDs, IPC, persistência no Main e fronteira de propriedade de vídeos da biblioteca permanecem inalterados.
+
 ## Reconciliação das falhas da baseline
 
 As falhas observadas na execução inicial da suíte em `f416a02` foram investigadas e reconciliadas:
@@ -410,4 +419,5 @@ As falhas observadas na execução inicial da suíte em `f416a02` foram investig
 | `413e75f` | Extrai gravação por personagem e evita que erro de write obsoleto vença o sucesso mais recente | Local em `Dev-V2`; sem publicação. |
 | `c724489` | Isola os comandos de backup de Opções e preserva seus efeitos de refresh/restauração | Local em `Dev-V2`; sem publicação. |
 | `6d48089` | Isola as ações de migração de Opções mantendo pausa e progresso assíncrono | Local em `Dev-V2`; sem publicação. |
+| `fa34f9a` | Extrai a persistência de snapshots do renderer de Roteiros com flush de estado atual | Local em `Dev-V2`; sem publicação. |
 
