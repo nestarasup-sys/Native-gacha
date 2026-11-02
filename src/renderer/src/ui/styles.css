@@ -3008,6 +3008,13 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .wardrobe-component-row span { min-width:0;display:grid;gap:3px; }
 .wardrobe-fields { display:grid;gap:7px;overflow:auto;padding:9px;border-top:1px solid #f0ebef; }
 .wardrobe-edit-panel-v2 .wardrobe-fields { flex:1;min-height:0;border-top:0; }
+.wardrobe-preview-gender { display:flex;gap:5px;margin-top:5px; }
+.wardrobe-preview-gender button { min-height:23px;padding:3px 9px;border:1px solid #e3dce2;border-radius:5px;background:#fff;color:#837986;font-size:9px;font-weight:700;cursor:pointer; }
+.wardrobe-preview-gender button.female { border-color:#e789af;color:#c74d7d; }
+.wardrobe-preview-gender button.female.selected { background:#e56e9c;color:#fff; }
+.wardrobe-preview-gender button.male { border-color:#84aee0;color:#4276b4; }
+.wardrobe-preview-gender button.male.selected { background:#548fd4;color:#fff; }
+.wardrobe-preview-gender button:disabled { opacity:.45;cursor:not-allowed; }
 .wardrobe-field-title { display:flex;align-items:center;justify-content:space-between;color:#574e59;font-size:11px;font-weight:750; }
 .wardrobe-field-title button { width:25px;height:25px;display:grid;place-items:center;border:1px solid #f0d6dd;border-radius:6px;background:#fff7f8;color:#b85b6b;cursor:pointer; }
 .wardrobe-field-title svg { width:13px;height:13px; }

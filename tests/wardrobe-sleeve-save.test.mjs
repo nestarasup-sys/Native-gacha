@@ -22,13 +22,14 @@ for (const importKind of ['sleeve-grid-3x4', 'pants-grid-3x4']) test(`${importKi
     isCompatible: () => true, readCatalogPng: (_identity, _version, path) => fs.readFile(path), invalidateCatalogPng: () => {}, files: fs
   })
   const splitTarget = importKind === 'pants-grid-3x4' ? 'leg' : 'arm'
-  const set = { schemaVersion: 1, edition: 1, importKind, id: 'sleeves', modelSlot: 1, modelName: 'Synthetic', name: 'Sleeves', width: 100, height: 100, updatedAt: 'first', components: [piece('left', 'whole', splitTarget), piece('right', 'whole', splitTarget)] }
+  const set = { schemaVersion: 1, edition: 1, previewGender: 'male', importKind, id: 'sleeves', modelSlot: 1, modelName: 'Synthetic', name: 'Sleeves', width: 100, height: 100, updatedAt: 'first', components: [piece('left', 'whole', splitTarget), piece('right', 'whole', splitTarget)] }
   const save = async value => {
     const metadata = { ...value, components: value.components.map(({ dataUrl, ...rest }) => rest) }
     await storage.save(1, metadata, wardrobeSaveAssets(value))
     return storage.read(1, value.id)
   }
   const original = await save(set)
+  assert.equal(original.previewGender, 'male')
   assert.equal(original.components[0].dataUrl, png('left'))
   assert.equal(original.components[0].sleeveJointSplit, splitTarget)
   const split = { ...original, updatedAt: 'split', components: ['left-upper', 'left-lower', 'right-upper', 'right-lower'].map(id => piece(id, id.endsWith('upper') ? 'upper' : 'lower')) }

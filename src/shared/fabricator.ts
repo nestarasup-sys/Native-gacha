@@ -102,6 +102,7 @@ export type FabricatorHistorySaveState = { undo: FabricatorHistorySaveEntry[]; r
 export type PosePart = Omit<ModelPart, 'chromaBaseDataUrl' | 'chromaBaseSaved'>
 export type WardrobeCategory = 'camisa' | 'jaqueta' | 'manga-superior' | 'manga-inferior' | 'luvas' | 'capa' | 'cinto' | 'oculos' | 'acessorio-cabeca' | 'saia' | 'calca-coxa' | 'calca-canela' | 'shorts' | 'meia' | 'sapato'
 export type WardrobeEdition = 1 | 2
+export type WardrobePreviewGender = 'female' | 'male'
 /** Encaixe da roupa expresso no referencial imutável do osso na folha original. */
 export type WardrobeBinding = {
   version: 1
@@ -156,6 +157,8 @@ export type WardrobeComponent = {
 }
 export type WardrobeSet = {
   schemaVersion: 1
+  /** Corpo exibido apenas como referência de encaixe no Roupas DEV. */
+  previewGender?: WardrobePreviewGender
   /** Importador usado para identificar conjuntos criados por uma grade de roupas. */
   importKind?: 'torso-grid-4x3' | 'torso-grid-3x3' | 'sleeve-grid-3x4' | 'pants-grid-3x4'
   /** Conjuntos antigos sem edição pertencem ao editor original. */

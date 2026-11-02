@@ -47,7 +47,7 @@ export function createFabricatorWardrobePersistence(deps: WardrobePersistenceDep
 
   async function writeSet(modelSlot: number, set: WardrobeSetSave, assets: WardrobeAssetSave[]): Promise<void> {
     deps.invalidateCatalogPng(`${modelSlot}:${set.id}`)
-    if (!deps.isValidModelSlot(modelSlot) || set.schemaVersion !== 1 || (set.edition !== undefined && set.edition !== 1 && set.edition !== 2) || set.modelSlot !== modelSlot || !deps.isValidWardrobeId(set.id) || !Array.isArray(set.components) || set.components.length < 1 || set.components.length > 100) throw new Error('Conjunto de roupa inválido.')
+    if (!deps.isValidModelSlot(modelSlot) || set.schemaVersion !== 1 || (set.edition !== undefined && set.edition !== 1 && set.edition !== 2) || (set.previewGender !== undefined && set.previewGender !== 'female' && set.previewGender !== 'male') || set.modelSlot !== modelSlot || !deps.isValidWardrobeId(set.id) || !Array.isArray(set.components) || set.components.length < 1 || set.components.length > 100) throw new Error('Conjunto de roupa inválido.')
     const ids = new Set(set.components.map(component => component.id))
     if (ids.size !== set.components.length || set.components.some(component => !deps.isValidWardrobeId(component.id) || !wardrobeCategories.includes(component.category)
       || !deps.isValidWardrobeId(component.attachedPartId)
@@ -89,7 +89,7 @@ export function createFabricatorWardrobePersistence(deps: WardrobePersistenceDep
       await deps.recoverWardrobeManifest(folder)
       const set = JSON.parse(await deps.files.readFile(join(folder, 'wardrobe.json'), 'utf8')) as WardrobeSetSave
       if (!deps.isCompatible(set)) return null
-      if (set.schemaVersion !== 1 || (set.edition !== undefined && set.edition !== 1 && set.edition !== 2) || set.modelSlot !== modelSlot || set.id !== id || !Array.isArray(set.components) || set.components.length > 100) return null
+      if (set.schemaVersion !== 1 || (set.edition !== undefined && set.edition !== 1 && set.edition !== 2) || (set.previewGender !== undefined && set.previewGender !== 'female' && set.previewGender !== 'male') || set.modelSlot !== modelSlot || set.id !== id || !Array.isArray(set.components) || set.components.length > 100) return null
       const version = `${set.updatedAt}:${set.edition ?? 1}`
       const identity = `${modelSlot}:${id}`
       const components = await Promise.all(set.components.map(async (component) => {
