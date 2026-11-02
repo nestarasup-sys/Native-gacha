@@ -15,7 +15,7 @@ import { resizeHeadPart } from './models/resize'
 import { ModelSourceEditor } from './ModelSourceEditor'
 import { broadcastModelSourceUpdate } from './models/modelSourceEvents'
 import { splitImage, mergeImages } from './models/partImages'
-import { createImportedModelProject } from './models/processedModelProject'
+import { appendImportCleanupError, createProcessedImageImportResult } from './models/processedImageImportResult'
 import { startChromaAdjustWorker, ChromaAdjustTaskError, type ChromaAdjustTask } from './models/runChromaAdjustWorker'
 import { startImageProcessorWorker, ImageProcessorTaskError, type ImageProcessorTask } from './models/runImageProcessorWorker'
 import { serializeFabricatorProject } from './models/projectSerialization'
@@ -389,10 +389,6 @@ export function FabricatorPage() {
       return message
     }
   }
-  const withImportCleanupError = (message: string, cleanupError: string | null) => cleanupError
-    ? `${message} A imagem temporária também não pôde ser removida: ${cleanupError}`
-    : message
-
   const runProcessor = (
     sourceDataUrl: string,
     tolerance: number,
@@ -412,19 +408,18 @@ export function FabricatorPage() {
       if (id !== requestId.current) { await discardUncommittedSource(); return }
       if (imageProcessingTaskRef.current === task) imageProcessingTaskRef.current = null
       setProcessing(false)
-      if (message.parts.length === 0) {
-        const cleanupError = await discardUncommittedSource()
-        setError(withImportCleanupError('Nenhuma peça foi encontrada. Aumente a tolerância ou escolha outra imagem.', cleanupError))
+      const outcome = await createProcessedImageImportResult(
+        message,
+        sourceDataUrl,
+        tolerance,
+        metadata,
+        discardUncommittedSource
+      )
+      if (outcome.kind === 'failed') {
+        setError(outcome.message)
         return
       }
-      let imported: ReturnType<typeof createImportedModelProject>
-      try {
-        imported = createImportedModelProject(message, sourceDataUrl, tolerance, metadata)
-      } catch (reason) {
-        const cleanupError = await discardUncommittedSource()
-        setError(withImportCleanupError(reason instanceof Error ? reason.message : 'Não foi possível montar o modelo importado.', cleanupError))
-        return
-      }
+      const imported = outcome.imported
       for (const [partId, dataUrl] of imported.dirtyAssets) dirtyAssets.current.set(partId, dataUrl)
       for (const [partId, dataUrl] of imported.dirtyChromaBases) dirtyChromaBases.current.set(partId, dataUrl)
       if (recordBefore) recordHistorySnapshot(recordBefore, 'reset', imported.project)
@@ -437,11 +432,11 @@ export function FabricatorPage() {
       setProcessing(false)
       if (reason instanceof ImageProcessorTaskError && reason.kind === 'cancelled') {
         const cleanupError = await discardUncommittedSource()
-        if (cleanupError) setError(withImportCleanupError('A importação foi cancelada.', cleanupError))
+        if (cleanupError) setError(appendImportCleanupError('A importação foi cancelada.', cleanupError))
         return
       }
       const cleanupError = await discardUncommittedSource()
-      setError(withImportCleanupError(reason instanceof ImageProcessorTaskError && reason.kind === 'worker' ? reason.message : 'O processamento da imagem falhou.', cleanupError))
+      setError(appendImportCleanupError(reason instanceof ImageProcessorTaskError && reason.kind === 'worker' ? reason.message : 'O processamento da imagem falhou.', cleanupError))
     }).catch((reason: unknown) => {
       if (id === requestId.current) setError(reason instanceof Error ? reason.message : 'Não foi possível concluir a importação do modelo.')
     })
@@ -617,7 +612,7 @@ export function FabricatorPage() {
       const cleanupError = selectedSource && !sourcePersisted && !cleanupDelegated
         ? await discardImportedSource(slot, selectedSource.sourceAssetName, selectionGeneration)
         : null
-      setError(withImportCleanupError(message, cleanupError))
+      setError(appendImportCleanupError(message, cleanupError))
     }
   }
 
