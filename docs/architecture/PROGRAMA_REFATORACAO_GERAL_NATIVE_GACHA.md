@@ -27,7 +27,7 @@ Este documento acompanha a execução das Fases 1–6 e complementa a baseline d
 | 0 | Auditoria e baseline arquitetural | Concluída antes deste programa | [Relatório da Fase 0](./AUDITORIA_REFATORACAO_GERAL_V1_FASE_0.md). |
 | 1 | Electron, IPC, persistência, backups e filas | Concluída | Diagnóstico de memória corrigido; ciclo de encerramento extraído e coberto; diferenças das filas mapeadas; backup, manutenção e segurança de janela passaram. Os gatilhos gerais de CI de `Dev-V2` ficam na Fase 6. |
 | 2 | Núcleo compartilhado de personagens | Concluída | Consumidores e regressões mapeados. Escala-base idêntica entre Studio e Editor V6 centralizada; renderizadores e contratos de exportação distintos mantidos. Testes de personagem/gênero/roupas articuladas executáveis por script dedicado. |
-| 3 | Fabricador e Customizador | Em andamento | Fluxo de catálogo/customizações coberto de ponta a ponta; gravação de roupas, operações de cabelo, seleção de peça no Customizador e carregamento da sessão Roupas DEV têm fronteiras/testes próprios. Restam mapear/decompor os workspaces maiores e ampliar cenários de reabertura. |
+| 3 | Fabricador e Customizador | Em andamento | Fluxo de catálogo/customizações coberto de ponta a ponta; gravação de roupas, operações de cabelo, seleção de peça no Customizador, carregamento da sessão e validação de conjuntos salvos em Roupas DEV têm fronteiras/testes próprios. Restam mapear/decompor os workspaces maiores e ampliar cenários de reabertura. |
 | 4 | Studio, Editor V6 e fluxos de vídeo | Em andamento | Criação/duplicação de cenas do Studio extraídas; miniatura 480×270 corrigida; paridade Turbo e exportação facial 720p/1080p aprovadas. A antiga tela Video Studio não tem rota, mas as bibliotecas legadas seguem ativas em Roteiros e como origem de mídia do Editor V6. Teste de cancelamento do worker cobre espera do compositor. Restam validação da impressão do Studio e medições/exportação dos workers. |
 | 5 | Roteiros, Base de Vídeos, Opções, componentes e CSS | Em andamento | Biblioteca continua dona dos arquivos/IDs; Roteiros mantém metadados e referências. Guardas, canais, fila, carregamento, listagem, publicação e exclusões da Base de Vídeos têm contratos testados; estilos e cálculos puros de Opções estão isolados. Restam decomposição adicional dos workspaces e CSS por feature. |
 | 6 | Performance, CI e consolidação | Em andamento | Workflow da Dev-V2 roda gates gerais e Editor V6 por plataforma; build Windows é reutilizado pelos testes MP4. Baseline repetível do cenário médio do Editor V6 registrada e captura IPC passou a ser estruturada. Restam medições de inicialização, Studio, outros workspaces e exportação, além de comparações repetidas antes de otimizar. |
@@ -164,6 +164,16 @@ O Node test runner não resolvia imports relativos extensionless `.ts` usados po
 - **Verificações:** teste focado 5/5; `npm run test:refactor` passou com 641 testes no conjunto principal e todos os scripts encadeados; typecheck, audit arquitetural (582 arquivos TS/TSX), build e `git diff --check` passaram.
 - **Commit local:** `26fbd39` (`refactor: isolate wardrobe workspace loading`).
 - **Pendências:** `WardrobeWorkspace` segue entre os maiores componentes da interface; estado de edição, importação e interação do canvas precisam de fronteiras próprias sem fundir propriedades do Fabricador e do Customizador.
+
+### Validação ao abrir um conjunto de Roupas DEV
+
+- **Fronteira extraída:** `loadWardrobeSetForEditing` carrega o conjunto salvo e compara cada `attachedPartId` e `binding.boneId` com os ossos da referência original e do modelo atual. Incompatibilidades são devolvidas para aviso da página; os metadados carregados não são corrigidos automaticamente.
+- **Falha e concorrência:** conjunto removido após a listagem mantém a mensagem de domínio existente. O guard `requestId` continua impedindo a ativação de uma resposta obsoleta, e erros continuam no feedback já existente.
+- **Propriedade e compatibilidade:** o loader só lê o conjunto do catálogo do Fabricador; não converte, publica ou salva as peças. O Customizador e outros consumidores seguem recebendo os mesmos IDs e vínculos.
+- **Testes sintéticos:** cinco cenários cobrem compatibilidade válida, osso ausente, binding divergente, conjunto removido e integração do guard da página.
+- **Verificações:** teste focado 5/5; `npm run test:refactor` passou com 641 testes no conjunto principal e todos os scripts encadeados; typecheck, audit arquitetural (583 arquivos TS/TSX), build e `git diff --check` passaram.
+- **Commit local:** `fc8d74a` (`refactor: isolate wardrobe set compatibility checks`).
+- **Pendências:** estado de edição, importação e canvas do `WardrobeWorkspace` continuam na página e exigem testes específicos de geometria e persistência antes de extrações maiores.
 
 ### Proteção de referências de mídia dos Roteiros e escopo do CSS de Opções
 
@@ -319,4 +329,5 @@ As falhas observadas na execução inicial da suíte em `f416a02` foram investig
 | `3e4e7b8` | Extrai exclusão sequencial com preservação de sucessos parciais | Local em `Dev-V2`; sem publicação. |
 | `8cbee7f` | Centraliza carregamento e composição do snapshot da Base de Vídeos | Local em `Dev-V2`; sem publicação. |
 | `26fbd39` | Extrai carregamento concorrente da sessão de Roupas DEV e cobertura de respostas obsoletas | Local em `Dev-V2`; sem publicação. |
+| `fc8d74a` | Extrai validação de vínculos ao abrir conjuntos salvos de Roupas DEV | Local em `Dev-V2`; sem publicação. |
 
