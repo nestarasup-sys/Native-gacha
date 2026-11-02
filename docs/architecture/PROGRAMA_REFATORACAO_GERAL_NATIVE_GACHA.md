@@ -28,7 +28,7 @@ Este documento acompanha a execução das Fases 1–6 e complementa a baseline d
 | 1 | Electron, IPC, persistência, backups e filas | Concluída | Diagnóstico de memória corrigido; ciclo de encerramento extraído e coberto; diferenças das filas mapeadas; backup, manutenção e segurança de janela passaram. Os gatilhos gerais de CI de `Dev-V2` ficam na Fase 6. |
 | 2 | Núcleo compartilhado de personagens | Concluída | Consumidores e regressões mapeados. Escala-base idêntica entre Studio e Editor V6 centralizada; renderizadores e contratos de exportação distintos mantidos. Testes de personagem/gênero/roupas articuladas executáveis por script dedicado. |
 | 3 | Fabricador e Customizador | Em andamento | Fluxo de catálogo/customizações coberto de ponta a ponta; gravação de roupas e operações de cabelo (worker e serialização de conjunto) têm fronteiras/testes próprios. Restam mapear/decompor o estado dos maiores workspaces e ampliar cenários de reabertura. |
-| 4 | Studio, Editor V6 e fluxos de vídeo | Em andamento | Criação/duplicação de cenas do Studio extraídas e testadas; comandos próprios do Editor V6, timeline e exportação permanecem separados. Restam a revisão de vídeos, workers e paridade de exportação. |
+| 4 | Studio, Editor V6 e fluxos de vídeo | Em andamento | Criação/duplicação de cenas do Studio extraídas; testes Windows de paridade Turbo e exportação facial 720p/1080p aprovados. Engines e projetos do Editor V6 continuam separados. Restam captura/export do Studio e revisão dos fluxos legados de vídeo e workers. |
 | 5 | Roteiros, Base de Vídeos, Opções, componentes e CSS | Em andamento | Biblioteca continua dona dos arquivos/IDs; Roteiros mantém metadados e referências. Guardas, canais e fila de salvamento da Base de Vídeos têm contratos testados; estilos e cálculos puros de Opções estão isolados. Restam decomposição adicional dos workspaces e CSS por feature. |
 | 6 | Performance, CI e consolidação | Em andamento | Workflow da Dev-V2 agora roda gates gerais e Editor V6 por plataforma; build Windows é reutilizado pelos testes MP4 via artifact limitado aos diretórios compilados. Restam baseline de performance comum, medição de gargalos e cobertura dos outros módulos. |
 
@@ -98,6 +98,16 @@ O Node test runner não resolvia imports relativos extensionless `.ts` usados po
 - **Engines mantidas separadas:** Editor V6 conserva `editorV6ProjectCreation.ts`, os documentos com timeline e os fluxos próprios de áudio/mídia/exportação. A extração do Studio não compartilha builders nem altera os formatos de projeto.
 - **Verificações:** `test:studio:project-commands` passou 3/3; persistência/histórico/asset transaction do Studio passou 26/26; `npm run test:refactor` passou; `npm run test:editor-v6` passou com 220 testes e 1 skip; typecheck, audit arquitetural (567 arquivos TS/TSX) e build passaram.
 - **Pendências:** revisar caminho de captura/exportação do Studio, jobs e workers do Editor V6, fluxo de áudio/vídeo, paridade preview/export e dados legados das bibliotecas sem reativar a antiga interface Video Studio.
+
+### Paridade real de MP4 e exportação facial do Editor V6
+
+- **Dados protegidos:** os caminhos de saída do usuário já continham relatórios/fixtures. Os scripts de paridade agora reconhecem `NATIVE_GACHA_TEST_OUTPUT_DIR`; sem variável, mantêm `out/` como antes (incluindo os paths que o CI arquiva); com override, resultados e fixture sintético de boca vão para a pasta solicitada.
+- **Contrato:** `check-overlay-parity.cjs`, `check-face-export.cjs` e `check-motion.cjs` usam o mesmo resolvedor para os resultados; o HTML/preload compilado segue em `out/renderer` e `out/preload`. Um teste unitário comprova o default compatível e o override.
+- **Verificações reais em Windows:** `npm run test:editor-v6` passou com 220 testes e 1 skip. `test:editor-v6:export-overlay` passou com 60 frames e 2 partes Turbo. `test:editor-v6:face-export-silent` passou; os clipes 720p/1080p foram gerados e validados (143.370 e 353.076 bytes nos fixtures desta execução). A composição reportou zero pixels divergentes nos cinco fundos, invalidação por revisão de asset aprovada e landmarks faciais dentro do limiar.
+- **Diretório:** os artefatos reais foram gravados em uma pasta única criada dentro do diretório temporário do sistema, não em `out/` já existente. O Electron emitiu uma mensagem de estado de GPU na saída do processo; os dois relatórios registram `passed: true` e os comandos saíram com código 0.
+- **Verificações do resolvedor:** `test:editor-v6:stress-profile` passou 5/5, incluindo os dois casos de diretório; sintaxe dos três scripts e `git diff --check` passaram.
+- **Commit local:** `da90c8d` (`test: isolate Editor V6 export artifacts`).
+- **Pendências:** a paridade real reduz incerteza de exportação facial e Turbo; continua faltando medir comparação de performance inicial/depois e revisar as capturas/exportações do Studio.
 
 ### Ciclo de vida do worker de cabelo do Fabricador
 
@@ -201,4 +211,5 @@ As falhas observadas na execução inicial da suíte em `f416a02` foram investig
 | `1641353` | Extrai o cliente e o ciclo de vida do worker de processamento capilar | Local em `Dev-V2`; sem publicação. |
 | `add2123` | Extrai a preparação e gravação do conjunto de cabelo com cobertura de assets | Local em `Dev-V2`; sem publicação. |
 | `1d6e938` | Extrai a fila por vídeo de Base de Vídeos com testes de concorrência e retry | Local em `Dev-V2`; sem publicação. |
+| `da90c8d` | Permite redirecionar resultados sintéticos de paridade/export sem sobrescrever `out/` existente | Local em `Dev-V2`; sem publicação. |
 
