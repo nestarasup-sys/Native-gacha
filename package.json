@@ -67,6 +67,7 @@
     "test:asset-flow": "node scripts/audit-wardrobe-flow.mjs",
     "test:geometry": "node --experimental-strip-types --test tests/shared-body-shape.test.cjs tests/studio-character-geometry.test.cjs tests/shared-character-stage-geometry.test.mjs",
     "test:character-flow": "node --experimental-strip-types --test tests/character-production-flow.test.mjs",
+    "test:character-contracts": "node --experimental-strip-types --import ./scripts/testing/register-typescript-extensions.mjs --test tests/male-torso-character-source.test.mjs tests/wardrobe-preview-gender.test.mjs tests/wardrobe-joint-assembly.test.mjs tests/character-contract-acceptance.test.mjs tests/character-production-flow.test.mjs",
     "test:fabricator": "node --experimental-strip-types --test tests/fabricator-model-catalog.test.mjs tests/fabricator-wardrobe-catalog.test.mjs tests/fabricator-image-processing-contract.test.mjs tests/fabricator-eye-sheet-processing.test.mjs",
     "test:model-source": "node --experimental-strip-types --test tests/model-source-publish.test.mjs tests/model-source-dimensions.test.cjs tests/model-source-download.test.mjs tests/model-source-compose-strategy.test.mjs",
     "test:fabricator:contracts": "node --experimental-strip-types --test tests/fabricator-model-writer.test.mjs tests/fabricator-model-views.test.mjs tests/fabricator-model-appearance-previews.test.mjs tests/fabricator-view-boundaries.test.cjs tests/model-source-publish.test.mjs",
