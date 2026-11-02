@@ -176,11 +176,14 @@ test('Studio and Editor V6 flush debounced documents and wait for renderer IPC w
 
 test('Base Videos drains every debounced detail write before leaving', async () => {
   const videos = await readFile('src/renderer/src/features/baseVideos/BaseVideosPage.tsx', 'utf8')
-  assert.match(videos, /registerPendingWriteFlusher\(flushPendingSaves\)/)
-  assert.match(videos, /pendingSaves\.current\.keys\(\), \.\.\.inFlightSaves\.current\.keys\(\)/)
-  assert.match(videos, /Promise\.allSettled\(videoIds\.map\(\(videoId\) => persistPendingSave\(videoId\)\)\)/)
-  assert.match(videos, /if \(failure\) throw failure\.reason/)
-  assert.doesNotMatch(videos, /void persistPendingSave\(videoId, false\)\.catch/)
+  const queue = await readFile('src/renderer/src/features/baseVideos/baseVideoDetailsSaveQueue.ts', 'utf8')
+  assert.match(videos, /registerPendingWriteFlusher\(saveQueue\.flushPendingSaves\)/)
+  assert.match(videos, /saveQueue\.flushPendingSave\(videoId\)/)
+  assert.match(queue, /pendingSaves\.keys\(\), \.\.\.inFlightSaves\.keys\(\)/)
+  assert.match(queue, /Promise\.allSettled\(videoIds\.map\(\(videoId\) => persistPendingSave\(videoId\)\)\)/)
+  assert.match(queue, /if \(failure\) throw failure\.reason/)
+  assert.match(queue, /pendingSaves\.set\(details\.videoId, details\)/)
+  assert.doesNotMatch(videos, /pendingSaves\.current|inFlightSaves\.current|saveTimers\.current/)
 })
 
 test('Roteiros flushes the latest snapshot and waits for document IPC writes', async () => {

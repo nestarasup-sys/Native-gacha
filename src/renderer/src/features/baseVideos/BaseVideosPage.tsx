@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { BaseVideoCategory, BaseVideoDetails, VideoTimeline } from '../../../../shared/baseVideos'
 import type { VideoLibraryItem } from '../../../../shared/mediaLibrary'
 import { Icon } from '../../ui/components/Icon'
 import { registerPendingWriteFlusher } from '../../ui/pendingPersistence'
+import { createBaseVideoDetailsSaveQueue } from './baseVideoDetailsSaveQueue'
 
 const emptyDetails = (videoId: string): BaseVideoDetails => ({ videoId, categoryId: null, description: '', additionalContext: '', timeline: 'unspecified' })
 const formatDuration = (frames: number | null) => {
@@ -59,9 +60,13 @@ export function BaseVideosPage() {
   const [categoryEditValue, setCategoryEditValue] = useState('')
   const [categoryError, setCategoryError] = useState<string | null>(null)
   const [saveStatusById, setSaveStatusById] = useState<Record<string, 'saving' | 'saved' | 'error'>>({})
-  const pendingSaves = useRef(new Map<string, BaseVideoDetails>())
-  const saveTimers = useRef(new Map<string, number>())
-  const inFlightSaves = useRef(new Map<string, Promise<void>>())
+  const saveQueue = useMemo(() => createBaseVideoDetailsSaveQueue({
+    saveDetails: (details) => window.desktop.baseVideos.saveDetails(details),
+    setStatus: (videoId, status) => setSaveStatusById((current) => ({ ...current, [videoId]: status })),
+    setError: (reason) => setError(reason instanceof Error ? reason.message : 'Não foi possível salvar este vídeo.'),
+    setTimeout: (callback, delay) => window.setTimeout(callback, delay),
+    clearTimeout: (timer) => window.clearTimeout(timer)
+  }), [])
   const recognizingDurations = useRef(new Set<string>())
 
   useEffect(() => {
@@ -92,61 +97,11 @@ export function BaseVideosPage() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [deleteConfirmOpen, renameTarget, categoryVideoId, deleteMode])
 
-  const persistPendingSave = useCallback(async (videoId: string, updateUi = true) => {
-    while (true) {
-      const inFlight = inFlightSaves.current.get(videoId)
-      if (inFlight) { await inFlight; continue }
-      const details = pendingSaves.current.get(videoId)
-      if (!details) return
-      if (updateUi) setSaveStatusById((current) => ({ ...current, [videoId]: 'saving' }))
-      const request = window.desktop.baseVideos.saveDetails(details).catch((reason: unknown) => {
-        if (updateUi) { setSaveStatusById((current) => ({ ...current, [videoId]: 'error' })); setError(reason instanceof Error ? reason.message : 'Não foi possível salvar este vídeo.') }
-        throw reason
-      })
-      inFlightSaves.current.set(videoId, request)
-      try {
-        await request
-        if (pendingSaves.current.get(videoId) === details) {
-          pendingSaves.current.delete(videoId)
-          if (updateUi) setSaveStatusById((current) => ({ ...current, [videoId]: 'saved' }))
-        }
-      } finally {
-        if (inFlightSaves.current.get(videoId) === request) inFlightSaves.current.delete(videoId)
-      }
-    }
-  }, [])
-
-  const flushPendingSaves = useCallback(async () => {
-    while (true) {
-      for (const timer of saveTimers.current.values()) window.clearTimeout(timer)
-      saveTimers.current.clear()
-      const videoIds = [...new Set([...pendingSaves.current.keys(), ...inFlightSaves.current.keys()])]
-      if (videoIds.length === 0) return
-      const results = await Promise.allSettled(videoIds.map((videoId) => persistPendingSave(videoId)))
-      const failure = results.find((result): result is PromiseRejectedResult => result.status === 'rejected')
-      if (failure) throw failure.reason
-      if (pendingSaves.current.size === 0 && inFlightSaves.current.size === 0) return
-    }
-  }, [persistPendingSave])
-
-  useEffect(() => registerPendingWriteFlusher(flushPendingSaves), [flushPendingSaves])
-
-  const scheduleSave = (details: BaseVideoDetails) => {
-    setSaveStatusById((current) => ({ ...current, [details.videoId]: 'saving' }))
-    pendingSaves.current.set(details.videoId, details)
-    const existing = saveTimers.current.get(details.videoId)
-    if (existing !== undefined) window.clearTimeout(existing)
-    const timer = window.setTimeout(() => {
-      saveTimers.current.delete(details.videoId)
-      setSaveStatusById((current) => ({ ...current, [details.videoId]: 'saving' }))
-      void persistPendingSave(details.videoId).catch(() => undefined)
-    }, 350)
-    saveTimers.current.set(details.videoId, timer)
-  }
+  useEffect(() => registerPendingWriteFlusher(saveQueue.flushPendingSaves), [saveQueue])
 
   const updateDetails = (videoId: string, patch: Partial<BaseVideoDetails>) => {
     const next = { ...(detailsById[videoId] ?? emptyDetails(videoId)), ...patch, videoId }
-    scheduleSave(next)
+    saveQueue.scheduleSave(next)
     setDetailsById((current) => ({ ...current, [videoId]: next }))
   }
 
@@ -186,12 +141,7 @@ export function BaseVideosPage() {
     finally { setBusy(false) }
   }
 
-  const flushPendingSave = async (videoId: string) => {
-    const timer = saveTimers.current.get(videoId)
-    if (timer !== undefined) window.clearTimeout(timer)
-    saveTimers.current.delete(videoId)
-    await persistPendingSave(videoId)
-  }
+  const flushPendingSave = (videoId: string) => saveQueue.flushPendingSave(videoId)
 
   const visibleItems = useMemo(() => items.filter((item) => {
     const details = detailsById[item.id] ?? emptyDetails(item.id)
@@ -351,7 +301,7 @@ export function BaseVideosPage() {
             <header className="base-video-card-heading"><div><strong title={item.name}>{item.name}</strong><small>{details.videoNumber === undefined ? 'RASCUNHO' : `VÍDEO ${String(details.videoNumber).padStart(2, '0')}`} · {formatDuration(item.durationFrames)} · {(item.size / 1024 ** 2).toFixed(1)} MB</small></div><button type="button" disabled={busy} onClick={() => { setRenameTarget(item); setRenameValue(item.name) }} aria-label={`Renomear ${item.name}`} title="Renomear vídeo"><Icon name="edit" /></button></header>
             <div className="roteiro-video-stage"><video src={`gacha-video://library/${item.id}`} controls playsInline preload="metadata" onLoadedMetadata={(event) => recognizeCardDuration(item, event.currentTarget)} aria-label={`Prévia de ${item.name}`} />{details.videoNumber !== undefined && <span className="base-video-number" title={`ID ${item.id}`}>VÍDEO {String(details.videoNumber).padStart(2, '0')}</span>}<span className="base-video-duration-overlay">{formatDuration(item.durationFrames)}</span></div>
             {item.durationFrames === null && <p className="base-video-duration-warning" role="status"><Icon name="warning" /> Duração não reconhecida; carregue a prévia para tentar identificá-la automaticamente.</p>}
-            <div className="base-video-category-row"><span className={`base-video-category-current${saveStatusById[item.id] === 'error' ? ' save-error' : ''}`} role="status">{saveStatusById[item.id] === 'saving' ? 'Salvando alterações…' : saveStatusById[item.id] === 'error' ? 'Erro ao salvar' : <><span className="base-video-category-dot" style={{ backgroundColor: currentCategory?.color ?? '#b6aebd' }} />{currentCategory?.name ?? 'Sem categoria'}</>}</span><div className="base-video-category-row-actions">{saveStatusById[item.id] === 'error' && pendingSaves.current.has(item.id) && <button className="base-video-save-retry" type="button" onClick={() => void persistPendingSave(item.id).catch(() => undefined)}>Tentar salvar</button>}<button className="base-video-category-button" type="button" disabled={busy} onClick={() => { setCategoryVideoId(item.id); setCategoryName(''); setCategoryEditingId(null); setCategoryError(null) }}>Categoria</button></div></div>
+            <div className="base-video-category-row"><span className={`base-video-category-current${saveStatusById[item.id] === 'error' ? ' save-error' : ''}`} role="status">{saveStatusById[item.id] === 'saving' ? 'Salvando alterações…' : saveStatusById[item.id] === 'error' ? 'Erro ao salvar' : <><span className="base-video-category-dot" style={{ backgroundColor: currentCategory?.color ?? '#b6aebd' }} />{currentCategory?.name ?? 'Sem categoria'}</>}</span><div className="base-video-category-row-actions">{saveStatusById[item.id] === 'error' && saveQueue.hasPending(item.id) && <button className="base-video-save-retry" type="button" onClick={() => void saveQueue.persistPendingSave(item.id).catch(() => undefined)}>Tentar salvar</button>}<button className="base-video-category-button" type="button" disabled={busy} onClick={() => { setCategoryVideoId(item.id); setCategoryName(''); setCategoryEditingId(null); setCategoryError(null) }}>Categoria</button></div></div>
             <label className="roteiro-video-description"><span>Descrição do que acontece no vídeo</span><textarea value={details.description} disabled={busy} onChange={(event) => updateDetails(item.id, { description: event.target.value })} placeholder="Descreva o que acontece neste vídeo…" maxLength={20000} /></label>
             <div className="roteiro-scene-settings">
               <label className="roteiro-timeline-field"><span>Linha do tempo</span><select disabled={busy} value={details.timeline} onChange={(event) => updateDetails(item.id, { timeline: event.target.value as VideoTimeline })}><option value="unspecified">Indefinido</option><option value="past">Passado</option><option value="present">Presente</option><option value="future">Futuro</option></select></label>
