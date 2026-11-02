@@ -12,6 +12,7 @@ import { createCharacterCanvas } from './canvasSurface'
 import { drawPreviewImageWithHalo } from './characterCanvasDrawing'
 import { isModelBodyPartName } from './skinTint'
 import { drawWardrobeJointBridge } from './wardrobeJointBridge'
+import { resolveShoeOverlayAnchorPartId } from './wardrobeShoeLayering'
 
 export type ClothingGroupCategory = CustomizerWardrobeCategory
 export type SelectedWardrobeComponent = { modelSlot: number; setId: string; category: ClothingGroupCategory; componentId: string }
@@ -95,7 +96,7 @@ export function createCharacterWardrobeRenderer(loaders: CharacterWardrobeImageL
     const bodyOrder = normalizeLayerOrder(artwork.parts, artwork.layerOrder)
     const originalModel = projectForOriginalPreview(source)
     const originalPartsById = new Map(originalModel?.parts.map((part) => [part.id, part]) ?? [])
-    const garmentLayers = new Map<string, Array<{ group: CustomizerWardrobeGroup; component: WardrobeSet['components'][number]; transform: ReturnType<typeof mapWardrobeComponentToPose>; center: { x: number; y: number }; sequence: number }>>()
+    const garmentLayers = new Map<string, MappedWardrobeGarment[]>()
     const mappedGarments: MappedWardrobeGarment[] = []
     const imagePromises = new Map<string, Promise<HTMLImageElement>>()
     const loadGarmentImage = (garment: Pick<MappedWardrobeGarment, 'group' | 'component'>) => {
@@ -193,6 +194,60 @@ export function createCharacterWardrobeRenderer(loaders: CharacterWardrobeImageL
       bridgesAfterPart.set(renderAfterPart, bridges)
     }
 
+    const shoeOverlaysAfterPart = new Map<string, MappedWardrobeGarment[]>()
+    for (const garment of mappedGarments) {
+      if (garment.component.category !== 'sapato' || garment.group.renderAboveShinClothing !== true) continue
+      const anchor = resolveShoeOverlayAnchorPartId(
+        garment.component, garment.targetBone, artwork.parts, bodyOrder)
+      const overlays = shoeOverlaysAfterPart.get(anchor) ?? []
+      overlays.push(garment)
+      shoeOverlaysAfterPart.set(anchor, overlays)
+    }
+
+    async function renderWardrobeGarment(garment: MappedWardrobeGarment) {
+      try {
+        const image = await loadGarmentImage(garment)
+        const matrix = /^matrix\(([^)]+)\)$/.exec(garment.transform.matrix)?.[1].split(',').map(Number) ?? [1, 0, 0, 1, 0, 0]
+        const drawGarment = (context: CanvasRenderingContext2D, highlighted = false) => {
+          context.save()
+          context.globalAlpha = garment.group.hidden ? 0 : Math.min(1, Math.max(0, garment.group.opacity ?? 1))
+          context.transform(...wardrobeAdjustmentMatrix(garment.group, artwork.parts.find((bone) => bone.id === garment.component.attachedPartId), garment.center))
+          context.translate(garment.transform.origin.x, garment.transform.origin.y)
+          context.transform(matrix[0], matrix[1], matrix[2], matrix[3], matrix[4], matrix[5])
+          context.translate(garment.transform.localLeft + garment.transform.renderWidth / 2, garment.transform.localTop + garment.transform.renderHeight / 2)
+          context.rotate(garment.transform.localRotation * Math.PI / 180)
+          drawPreviewImageWithHalo(context, image, -garment.transform.renderWidth / 2, -garment.transform.renderHeight / 2, highlighted, garment.transform.renderWidth, garment.transform.renderHeight)
+          context.restore()
+        }
+        const renderAboveHair = garment.component.renderAboveHair === true
+          && (garment.component.category === 'oculos' || garment.component.category === 'acessorio-cabeca')
+        if (renderAboveHair && !aboveHairContext) {
+          aboveHairCanvas = createCharacterCanvas()
+          aboveHairCanvas.width = output.width
+          aboveHairCanvas.height = output.height
+          aboveHairContext = aboveHairCanvas.getContext('2d')
+          if (aboveHairContext) { configureCharacterSampling(aboveHairContext); aboveHairContext.scale(pixelScale, pixelScale) }
+        }
+        if (renderAboveHair && aboveHairContext) hasAboveHairAccessories = true
+        const highlightMatchesClothing = highlight?.scope === 'clothing'
+          && highlight.piece.modelSlot === garment.group.modelSlot
+          && highlight.piece.setId === garment.group.setId
+          && highlight.piece.category === garment.group.category
+          && highlight.piece.componentId === garment.component.id
+        const highlightMatchesHeadExtra = highlight?.scope === 'head'
+          && (highlight.id === 'oculos' || highlight.id === 'acessorio-cabeca')
+          && highlight.id === garment.group.category
+        const accessoryContext = aboveHairContext
+        const targetContext: CanvasRenderingContext2D = renderAboveHair
+          ? (accessoryContext ?? outputContext!)
+          : outputContext!
+        if (highlightMatchesClothing || highlightMatchesHeadExtra) drawGarment(targetContext, true)
+        drawGarment(targetContext)
+      } catch {
+        throw new Error(`A imagem da peça ${garment.component.name} não pôde ser renderizada. Verifique o asset no Fabricador Dev sem alterar o personagem.`)
+      }
+    }
+
     for (const partId of bodyOrder) {
       const part = artwork.parts.find((item) => item.id === partId)
       if (!part) continue
@@ -213,44 +268,8 @@ export function createCharacterWardrobeRenderer(loaders: CharacterWardrobeImageL
       }
       const garments = (garmentLayers.get(part.id) ?? []).sort((a, b) => a.sequence - b.sequence)
       for (const garment of garments) {
-        try {
-          const image = await loadGarmentImage(garment)
-          const matrix = /^matrix\(([^)]+)\)$/.exec(garment.transform.matrix)?.[1].split(',').map(Number) ?? [1, 0, 0, 1, 0, 0]
-          const drawGarment = (context: CanvasRenderingContext2D, highlighted = false) => {
-            context.save()
-            context.globalAlpha = garment.group.hidden ? 0 : Math.min(1, Math.max(0, garment.group.opacity ?? 1))
-            context.transform(...wardrobeAdjustmentMatrix(garment.group, artwork.parts.find((bone) => bone.id === garment.component.attachedPartId), garment.center))
-            context.translate(garment.transform.origin.x, garment.transform.origin.y)
-            context.transform(matrix[0], matrix[1], matrix[2], matrix[3], matrix[4], matrix[5])
-            context.translate(garment.transform.localLeft + garment.transform.renderWidth / 2, garment.transform.localTop + garment.transform.renderHeight / 2)
-            context.rotate(garment.transform.localRotation * Math.PI / 180)
-            drawPreviewImageWithHalo(context, image, -garment.transform.renderWidth / 2, -garment.transform.renderHeight / 2, highlighted, garment.transform.renderWidth, garment.transform.renderHeight)
-            context.restore()
-          }
-          const renderAboveHair = garment.component.renderAboveHair === true
-            && (garment.component.category === 'oculos' || garment.component.category === 'acessorio-cabeca')
-          if (renderAboveHair && !aboveHairContext) {
-            aboveHairCanvas = createCharacterCanvas()
-            aboveHairCanvas.width = output.width
-            aboveHairCanvas.height = output.height
-            aboveHairContext = aboveHairCanvas.getContext('2d')
-            if (aboveHairContext) { configureCharacterSampling(aboveHairContext); aboveHairContext.scale(pixelScale, pixelScale) }
-          }
-          if (renderAboveHair && aboveHairContext) hasAboveHairAccessories = true
-          const highlightMatchesClothing = highlight?.scope === 'clothing'
-            && highlight.piece.modelSlot === garment.group.modelSlot
-            && highlight.piece.setId === garment.group.setId
-            && highlight.piece.category === garment.group.category
-            && highlight.piece.componentId === garment.component.id
-          const highlightMatchesHeadExtra = highlight?.scope === 'head'
-            && (highlight.id === 'oculos' || highlight.id === 'acessorio-cabeca')
-            && highlight.id === garment.group.category
-          const targetContext = renderAboveHair && aboveHairContext ? aboveHairContext : outputContext
-          if (highlightMatchesClothing || highlightMatchesHeadExtra) drawGarment(targetContext, true)
-          drawGarment(targetContext)
-        } catch {
-          throw new Error(`A imagem da peça ${garment.component.name} não pôde ser renderizada. Verifique o asset no Fabricador Dev sem alterar o personagem.`)
-        }
+        if (garment.component.category === 'sapato' && garment.group.renderAboveShinClothing === true) continue
+        await renderWardrobeGarment(garment)
       }
       for (const bridge of bridgesAfterPart.get(part.id) ?? []) {
         try {
@@ -263,6 +282,9 @@ export function createCharacterWardrobeRenderer(loaders: CharacterWardrobeImageL
           const name = bridge.upper.component.name.replace(/ · (braço superior|coxa)$/i, '')
           throw new Error(`Não foi possível preparar a continuidade da roupa “${name}” na junta desta pose. Revise os dois segmentos em Roupas DEV.`)
         }
+      }
+      for (const garment of shoeOverlaysAfterPart.get(part.id) ?? []) {
+        await renderWardrobeGarment(garment)
       }
     }
     // Reutiliza os buffers renderizados em memória. Serializar cada

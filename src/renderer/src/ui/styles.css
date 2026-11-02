@@ -885,6 +885,9 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .customizer-hair-piece { min-width:0;min-height:0;display:grid;grid-template-rows:28px minmax(0,1fr) 47px;overflow:hidden;border:2px solid #514183;border-radius:5px;background:#aa7ef1; }
 .customizer-hair-piece>header { min-width:0;min-height:0;display:flex;align-items:center;gap:5px;padding:0 6px;background:#d665a9;color:#fff; }
 .customizer-hair-piece>header strong { overflow:hidden;font-size:clamp(10px,.95vw,14px);text-overflow:ellipsis;white-space:nowrap; }
+.customizer-shoe-above-shin-toggle { flex:none;display:inline-flex;align-items:center;gap:3px;margin-left:auto;color:inherit;font-size:clamp(8px,.72vw,10px);font-weight:700;line-height:1;white-space:nowrap;cursor:pointer; }
+.customizer-shoe-above-shin-toggle input { width:13px;height:13px;margin:0;accent-color:#f3afd4;cursor:pointer; }
+.customizer-shoe-above-shin-toggle input:disabled { cursor:default; }
 .customizer-mouth-blush-toggle { min-width:0;display:inline-flex;align-items:center;gap:3px;color:inherit;font-size:clamp(8px,.72vw,10px);font-weight:700;line-height:1;white-space:nowrap;cursor:pointer; }
 .customizer-mouth-blush-toggle input { width:13px;height:13px;margin:0;accent-color:#e863a5;cursor:pointer; }
 .customizer-mouth-blush-toggle input:disabled { cursor:default; }
@@ -1216,6 +1219,8 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .customizer-upper-wardrobe-layout:not(.page-two):not(.lower-page-two)>.customizer-wardrobe-piece-sock-right { grid-row:2;grid-column:3; }
 .customizer-upper-wardrobe-piece { grid-template-rows:28px minmax(0,1fr) 47px; }
 .customizer-upper-wardrobe-piece>header strong { min-width:0;font-size:clamp(10px,.95vw,14px); }
+.customizer-wardrobe-piece-shoe-left>header .customizer-shoe-above-shin-toggle,.customizer-wardrobe-piece-shoe-right>header .customizer-shoe-above-shin-toggle { margin-left:auto; }
+.customizer-wardrobe-piece-shoe-left>header .customizer-hair-reset,.customizer-wardrobe-piece-shoe-right>header .customizer-hair-reset { margin-left:0; }
 .customizer-upper-wardrobe-selector { grid-template-columns:clamp(24px,3vw,38px) minmax(0,1fr) clamp(24px,3vw,38px) clamp(30px,3.8vw,48px); }
 .customizer-upper-piece-colors { min-width:0;min-height:0;display:grid;grid-template-rows:10px minmax(0,1fr);gap:1px;overflow:hidden;padding:2px 4px 3px;border-top:1px solid #7668a4;background:#171a30; }
 .customizer-upper-piece-colors-heading { min-width:0;overflow:hidden;color:#d9cde8;font-size:8px;text-overflow:ellipsis;white-space:nowrap; }

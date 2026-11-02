@@ -65,6 +65,7 @@ export function isCustomizerCharacter(value: unknown): value is CustomizerCharac
         && [group.offsetX, group.offsetY, group.scaleX, group.scaleY, group.rotation].every(Number.isFinite)
         && group.scaleX > 0 && group.scaleY > 0
         && (group.colors === undefined || isCharacterColorMap(group.colors))
+        && (group.renderAboveShinClothing === undefined || group.category === 'sapato' && typeof group.renderAboveShinClothing === 'boolean')
         && (group.adjustmentReference === undefined || typeof group.componentId === 'string'
           && validWardrobeAdjustmentReference(group.adjustmentReference)))
     ))
