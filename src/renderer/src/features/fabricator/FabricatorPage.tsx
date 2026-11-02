@@ -20,6 +20,7 @@ import { startChromaAdjustWorker, ChromaAdjustTaskError, type ChromaAdjustTask }
 import { startImageProcessorWorker, ImageProcessorTaskError, type ImageProcessorTask } from './models/runImageProcessorWorker'
 import { serializeFabricatorProject } from './models/projectSerialization'
 import { createFabricatorProjectSaveCoordinator } from './projectSaveCoordinator'
+import { duplicateFabricatorSlot } from './duplicateFabricatorSlot'
 import { useFabricatorHistory } from './useFabricatorHistory'
 import { prepareLoadedFabricatorProject } from './models/projectHydration'
 import { loadFabricatorSlotForEditing } from './models/loadFabricatorSlotForEditing'
@@ -378,25 +379,21 @@ export function FabricatorPage() {
   const duplicateModel = async () => {
     const source = projectRef.current ?? project
     const targetSlot = duplicateTargetSlot
-    if (!source || !targetSlot || targetSlot === source.slot || slots[targetSlot - 1]) return
-    setDuplicatingModel(true)
-    setDuplicateError('')
-    try {
-      cancelScheduledSave()
-      await persistProject(source)
-      await window.desktop.fabricator.duplicateFabricatorSlot(source.slot, targetSlot)
-      const updatedAt = new Date().toISOString()
-      setSlots((current) => current.map((summary, index) => index + 1 === targetSlot
-        ? { slot: targetSlot, name: source.name, sourceName: source.sourceName, partCount: source.parts.length, updatedAt }
-        : summary))
-      window.dispatchEvent(new Event('fabricator:assets-updated'))
-      setDuplicateModalOpen(false)
-      setDuplicateTargetSlot(null)
-    } catch (reason) {
-      setDuplicateError(reason instanceof Error ? reason.message : 'Não foi possível duplicar o modelo.')
-    } finally {
-      setDuplicatingModel(false)
-    }
+    await duplicateFabricatorSlot({
+      source,
+      targetSlot,
+      targetOccupied: targetSlot === null ? false : Boolean(slots[targetSlot - 1]),
+      cancelScheduledSave,
+      persistProject,
+      duplicateSlot: (sourceSlot, target) => window.desktop.fabricator.duplicateFabricatorSlot(sourceSlot, target),
+      setBusy: setDuplicatingModel,
+      setError: setDuplicateError,
+      setSlotSummary: (summary) => setSlots((current) => current.map((item, index) => index + 1 === summary.slot ? summary : item)),
+      broadcastAssetsUpdated: () => window.dispatchEvent(new Event('fabricator:assets-updated')),
+      closeDialog: () => setDuplicateModalOpen(false),
+      clearTargetSlot: () => setDuplicateTargetSlot(null),
+      now: () => new Date().toISOString()
+    })
   }
 
   const discardImportedSource = async (slot: number, sourceAssetName: string, generation: number) => {
