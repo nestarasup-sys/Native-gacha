@@ -228,14 +228,18 @@ test('índice de candidatos preserva filtros, ordem e agrupamento de cada painel
   assert.deepEqual(await applyShoeCandidate('shoe-left', index.get('shoe-left')[0]), ['shoe-left-01', 'shoe-right-01'])
   assert.deepEqual(await applyShoeCandidate('shoe-right', index.get('shoe-right')[0]), ['shoe-left-01', 'shoe-right-01'])
 
-  const shoeCandidate = index.get('shoe-left')[0]
-  const shoePanel = lowerWardrobePanels.find((panel) => panel.id === 'shoe-left')
+  const leftShoeCandidate = index.get('shoe-left')[0]
+  const rightShoeCandidate = index.get('shoe-right')[0]
+  const shoePanels = {
+    left: lowerWardrobePanels.find((panel) => panel.id === 'shoe-left'),
+    right: lowerWardrobePanels.find((panel) => panel.id === 'shoe-right')
+  }
   const shoeGroups = [
     { modelSlot: 1, setId: 'main', category: 'sapato', componentId: 'shoe-left-01', offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1, rotation: 0 },
     { modelSlot: 1, setId: 'main', category: 'sapato', componentId: 'shoe-right-01', offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1, rotation: 0 }
   ]
-  const saveShoeLayerPreference = async (groups, enabled) => {
-    const character = { id: 'character', customization: { wardrobeGroups: groups } }
+  const saveShoeLayerPreference = async (side, enabled) => {
+    const character = { id: 'character', customization: { wardrobeGroups: shoeGroups } }
     let savedPatch
     const actions = useCustomizerWardrobePanelActions({
       selectedCharacter: character,
@@ -247,23 +251,17 @@ test('índice de candidatos preserva filtros, ordem e agrupamento de cada painel
       wardrobeDetails,
       saveCharacterCustomization: async (patch) => { savedPatch = patch }
     })
-    await actions.setShoeBehindShinClothing(shoePanel, shoeCandidate, enabled)
-    return savedPatch?.wardrobeGroups
+    const panel = shoePanels[side]
+    const candidate = side === 'left' ? leftShoeCandidate : rightShoeCandidate
+    await actions.setShoeBehindShinClothing(panel, candidate, enabled)
+    return savedPatch
   }
-  const shoeBehindShinGroups = await saveShoeLayerPreference(shoeGroups, true)
-  assert.equal(shoeBehindShinGroups.find(({ componentId }) => componentId === 'shoe-left-01').renderBehindShinClothing, true)
-  assert.equal(shoeBehindShinGroups.find(({ componentId }) => componentId === 'shoe-right-01').renderBehindShinClothing, undefined)
-  const defaultOrderShoeGroups = await saveShoeLayerPreference(shoeBehindShinGroups, false)
-  assert.equal(defaultOrderShoeGroups.find(({ componentId }) => componentId === 'shoe-left-01').renderBehindShinClothing, false)
+  const enabledFromLeft = await saveShoeLayerPreference('left', true)
+  const disabledFromRight = await saveShoeLayerPreference('right', false)
+  assert.equal(enabledFromLeft.shoesBehindShinClothing, true)
+  assert.equal(disabledFromRight.shoesBehindShinClothing, false)
+  assert.equal(Object.hasOwn(enabledFromLeft, 'wardrobeGroups'), false)
   assert.equal(shoeGroups[0].renderBehindShinClothing, undefined)
-  const expandedLegacyGroups = await saveShoeLayerPreference([
-    { modelSlot: 1, setId: 'main', category: 'sapato', offsetX: 3, offsetY: 4, scaleX: 1.1, scaleY: 1, rotation: 2 }
-  ], true)
-  assert.deepEqual(expandedLegacyGroups.map(({ componentId }) => componentId), [
-    'shoe-left-01', 'shoe-right-01', 'shoe-left-02', 'shoe-right-02', 'shoe-unpaired'
-  ])
-  assert.equal(expandedLegacyGroups.find(({ componentId }) => componentId === 'shoe-left-01').renderBehindShinClothing, true)
-  assert.equal(expandedLegacyGroups.find(({ componentId }) => componentId === 'shoe-right-01').renderBehindShinClothing, undefined)
   assert.equal(index.get('glasses')?.[0]?.headExtraAsset?.id, faceAsset.id)
   assert.equal(index.get('shirt')?.some((candidate) => candidate.summary.modelSlot === 2), false)
 })

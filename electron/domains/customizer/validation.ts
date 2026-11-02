@@ -28,6 +28,7 @@ export function isCustomizerCharacter(value: unknown): value is CustomizerCharac
     && typeof character.skin === 'string' && /^#[0-9a-fA-F]{6}$/.test(character.skin)
     && !!character.customization && typeof character.customization === 'object'
     && (character.customization.gender === undefined || character.customization.gender === 'female' || character.customization.gender === 'male')
+    && (character.customization.shoesBehindShinClothing === undefined || typeof character.customization.shoesBehindShinClothing === 'boolean')
     && (character.customization.modelSlot === null || isValidModelSlot(character.customization.modelSlot))
     && (character.customization.poseSlot === null || (Number.isInteger(character.customization.poseSlot) && character.customization.poseSlot >= 1 && character.customization.poseSlot <= FABRICATOR_POSE_SLOT_COUNT))
     && (character.customization.proportions === undefined || (
@@ -65,7 +66,6 @@ export function isCustomizerCharacter(value: unknown): value is CustomizerCharac
         && [group.offsetX, group.offsetY, group.scaleX, group.scaleY, group.rotation].every(Number.isFinite)
         && group.scaleX > 0 && group.scaleY > 0
         && (group.colors === undefined || isCharacterColorMap(group.colors))
-        && (group.renderBehindShinClothing === undefined || group.category === 'sapato' && typeof group.renderBehindShinClothing === 'boolean')
         && (group.adjustmentReference === undefined || typeof group.componentId === 'string'
           && validWardrobeAdjustmentReference(group.adjustmentReference)))
     ))

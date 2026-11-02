@@ -146,28 +146,7 @@ export function useCustomizerWardrobePanelActions(deps: {
 
   async function setShoeBehindShinClothing(panel: WardrobePanel, candidate: WardrobePanelCandidate, enabled: boolean) {
     if (panel.category !== 'sapato' || candidate.component.category !== 'sapato' || !selectedCharacter || selectedModelSlot === null) return
-    const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
-    const before = current.customization.wardrobeGroups ?? []
-    const shoeComponents = wardrobeDetails[`${candidate.summary.modelSlot}:${candidate.summary.id}`]?.components
-      .filter((component) => component.category === 'sapato') ?? []
-    const expandedGroups = before.flatMap((group) => {
-      if (group.modelSlot !== candidate.summary.modelSlot || group.setId !== candidate.summary.id
-        || group.category !== 'sapato' || group.componentId) return [group]
-      return shoeComponents.length
-        ? shoeComponents.map((component) => ({ ...group, componentId: component.id }))
-        : [group]
-    })
-    const hasSelectedShoe = expandedGroups.some((group) => group.modelSlot === candidate.summary.modelSlot
-      && group.setId === candidate.summary.id && group.category === 'sapato'
-      && (!group.componentId || group.componentId === candidate.component.id))
-    if (!hasSelectedShoe) return
-
-    const wardrobeGroups = expandedGroups.map((group) => group.modelSlot === candidate.summary.modelSlot
-      && group.setId === candidate.summary.id && group.category === 'sapato'
-      && (!group.componentId || group.componentId === candidate.component.id)
-      ? { ...group, renderBehindShinClothing: enabled }
-      : group)
-    await saveCharacterCustomization({ wardrobeGroups })
+    await saveCharacterCustomization({ shoesBehindShinClothing: enabled })
   }
 
   return { applyWardrobePanel, applyWardrobePalette, setWardrobePieceColor, resetWardrobePieceColors, setShoeBehindShinClothing }

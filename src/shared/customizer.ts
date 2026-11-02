@@ -74,6 +74,8 @@ export type CharacterCustomization = {
   layerOrder: string[]
   /** Garments are character-owned placements; pants stay one group across thigh and calf pieces. */
   wardrobeGroups?: CustomizerWardrobeGroup[]
+  /** Shared by both shoe panels and preserved when the equipped shoe pair changes. */
+  shoesBehindShinClothing?: boolean
   /** Preset palettes persist independently for each clothing slot; hair and face colors remain independent. */
   wardrobePalettes?: Partial<Record<CustomizerWardrobePaletteKey, CharacterColorOverrides>>
   /** Facial features chosen from the read-only face library, isolated per character. */
@@ -200,8 +202,6 @@ export type CustomizerWardrobeGroup = {
   opacity?: number
   /** Soft deletion from Adjust: omit this component from the preview while keeping it restorable. */
   hidden?: boolean
-  /** Draw this shoe beneath matching shin clothing in shared character renderers. */
-  renderBehindShinClothing?: boolean
   /** Color overrides belong to this individual garment component. */
   colors?: CharacterColorOverrides
 }

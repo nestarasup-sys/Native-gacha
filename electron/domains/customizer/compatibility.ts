@@ -2,19 +2,27 @@
  * Pure normalization: only called after validating the original object.
  * Never writes back to the Fabricador catalog or mutates a saved character.
  */
-import type { CharacterColorOverrides, CustomizerCharacter } from '../../../src/shared/customizer.ts'
+import type { CharacterColorOverrides, CustomizerCharacter, CustomizerWardrobeGroup } from '../../../src/shared/customizer.ts'
 
 export function normalizeCustomizerCharacter(character: CustomizerCharacter): CustomizerCharacter {
   const storedCustomization = character.customization as CustomizerCharacter['customization'] & { wardrobeColors?: CharacterColorOverrides }
   const { wardrobeColors: legacyWardrobeColors, ...customization } = storedCustomization
+  const storedGroups = customization.wardrobeGroups as Array<CustomizerWardrobeGroup & {
+    renderAboveShinClothing?: boolean
+    renderBehindShinClothing?: boolean
+  }> | undefined
+  const migratedShoePreference = customization.shoesBehindShinClothing
+    ?? (storedGroups?.some((group) => group.renderBehindShinClothing === true) ? true : undefined)
   return {
     ...character,
     customization: {
       ...customization,
-      wardrobeGroups: customization.wardrobeGroups?.map((storedGroup) => {
-        const group = { ...storedGroup } as typeof storedGroup & { renderAboveShinClothing?: boolean }
-        // The previous placement flag had the opposite meaning; leave old shoes at their default order.
+      ...(migratedShoePreference === undefined ? {} : { shoesBehindShinClothing: migratedShoePreference }),
+      wardrobeGroups: storedGroups?.map((storedGroup) => {
+        const group = { ...storedGroup }
+        // Migrate the previous per-shoe preference to the character-wide setting.
         delete group.renderAboveShinClothing
+        delete group.renderBehindShinClothing
         return {
           ...group,
           category: group.category === ('cinto-saia-1' as typeof group.category) ? 'cinto'

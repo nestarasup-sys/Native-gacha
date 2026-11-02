@@ -83,7 +83,8 @@ export function createCharacterWardrobeRenderer(loaders: CharacterWardrobeImageL
     source: FabricatorProject | null,
     skinTone?: string,
     maxSize = Math.max(artwork.width, artwork.height),
-    highlight?: AdjustmentPreviewHighlight | null
+    highlight?: AdjustmentPreviewHighlight | null,
+    shoesBehindShinClothing = false
   ): Promise<{ canvas: HTMLCanvasElement | null; aboveHairCanvas: HTMLCanvasElement | null }> {
     if (!groups.length || modelSlot === null || !source) return { canvas: null, aboveHairCanvas: null }
     const renderDetails: Record<string, WardrobeSet> = {}
@@ -200,23 +201,25 @@ export function createCharacterWardrobeRenderer(loaders: CharacterWardrobeImageL
       bridgesAfterPart.set(renderAfterPart, bridges)
     }
 
-    const shoeLayersBehindShinAfterPart = new Map<string, {
-      shoes: MappedWardrobeGarment[]
+    const shoeLayersAroundShinAfterPart = new Map<string, {
+      shoesBehindShin: MappedWardrobeGarment[]
       shinGarments: MappedWardrobeGarment[]
       bridges: MappedWardrobeJointBridge[]
+      shoesAboveShin: MappedWardrobeGarment[]
     }>()
     const deferredShoes = new Set<MappedWardrobeGarment>()
     const deferredShinGarments = new Set<MappedWardrobeGarment>()
     const deferredJointBridges = new Set<MappedWardrobeJointBridge>()
     for (const garment of mappedGarments) {
-      if (garment.component.category !== 'sapato' || garment.group.renderBehindShinClothing !== true) continue
+      if (garment.component.category !== 'sapato') continue
       const placement = resolveShoeBehindShinPlacement(
         garment.component, garment.targetBone, artwork.parts, bodyOrder)
       if (!placement.shinPartId) continue
-      const layers = shoeLayersBehindShinAfterPart.get(placement.renderAfterPartId) ?? {
-        shoes: [], shinGarments: [], bridges: []
+      const layers = shoeLayersAroundShinAfterPart.get(placement.renderAfterPartId) ?? {
+        shoesBehindShin: [], shinGarments: [], bridges: [], shoesAboveShin: []
       }
-      layers.shoes.push(garment)
+      const shoeLayers = shoesBehindShinClothing ? layers.shoesBehindShin : layers.shoesAboveShin
+      shoeLayers.push(garment)
       deferredShoes.add(garment)
       for (const shinGarment of garmentLayers.get(placement.shinPartId) ?? []) {
         if (shinGarment.component.category !== 'calca-canela' || deferredShinGarments.has(shinGarment)) continue
@@ -232,7 +235,7 @@ export function createCharacterWardrobeRenderer(loaders: CharacterWardrobeImageL
           deferredJointBridges.add(bridge)
         }
       }
-      shoeLayersBehindShinAfterPart.set(placement.renderAfterPartId, layers)
+      shoeLayersAroundShinAfterPart.set(placement.renderAfterPartId, layers)
     }
 
     async function renderWardrobeGarment(garment: MappedWardrobeGarment) {
@@ -318,12 +321,13 @@ export function createCharacterWardrobeRenderer(loaders: CharacterWardrobeImageL
       for (const bridge of bridgesAfterPart.get(part.id) ?? []) {
         if (!deferredJointBridges.has(bridge)) await renderWardrobeJointBridge(bridge)
       }
-      const behindLayers = shoeLayersBehindShinAfterPart.get(part.id)
-      for (const shoe of behindLayers?.shoes ?? []) await renderWardrobeGarment(shoe)
-      for (const shinGarment of behindLayers?.shinGarments ?? []) await renderWardrobeGarment(shinGarment)
-      for (const bridge of behindLayers?.bridges ?? []) {
+      const shoeLayers = shoeLayersAroundShinAfterPart.get(part.id)
+      for (const shoe of shoeLayers?.shoesBehindShin ?? []) await renderWardrobeGarment(shoe)
+      for (const shinGarment of shoeLayers?.shinGarments ?? []) await renderWardrobeGarment(shinGarment)
+      for (const bridge of shoeLayers?.bridges ?? []) {
         await renderWardrobeJointBridge(bridge)
       }
+      for (const shoe of shoeLayers?.shoesAboveShin ?? []) await renderWardrobeGarment(shoe)
     }
     // Reutiliza os buffers renderizados em memória. Serializar cada
     // changing wardrobe pose to PNG and decoding it back blocks both preview
@@ -343,10 +347,11 @@ export function createCharacterWardrobeRenderer(loaders: CharacterWardrobeImageL
     source: FabricatorProject | null,
     skinTone?: string,
     maxSize = Math.max(artwork.width, artwork.height),
-    highlight?: AdjustmentPreviewHighlight | null
+    highlight?: AdjustmentPreviewHighlight | null,
+    shoesBehindShinClothing = false
   ): Promise<{ imageUrl: string | null; aboveHairImageUrl: string | null }> {
     const rendered = await renderWardrobeOverlayCanvases(
-      groups, details, artwork, modelSlot, source, skinTone, maxSize, highlight)
+      groups, details, artwork, modelSlot, source, skinTone, maxSize, highlight, shoesBehindShinClothing)
     return {
       imageUrl: rendered.canvas?.toDataURL('image/png') ?? null,
       aboveHairImageUrl: rendered.aboveHairCanvas?.toDataURL('image/png') ?? null,

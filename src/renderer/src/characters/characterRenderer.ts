@@ -108,7 +108,8 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
   await renderArtworkWithHair(artwork, appearanceSource, backStyles, Math.max(artwork.width, artwork.height), skinTone, hairAppearance, baseContext, character.customization.partOverrides)
 
   const groups = (character.customization.wardrobeGroups ?? []).filter((group) => group.modelSlot === modelSlot)
-  const wardrobe = await renderWardrobeOverlayCanvases(groups, materials.wardrobeDetails, artwork, modelSlot, appearanceSource, skinTone)
+  const wardrobe = await renderWardrobeOverlayCanvases(groups, materials.wardrobeDetails, artwork, modelSlot, appearanceSource, skinTone,
+    undefined, undefined, character.customization.shoesBehindShinClothing === true)
 
   const appearance = character.customization.faceAppearance
   const expressionEffectsByIndex = appearance?.modelSlot === modelSlot

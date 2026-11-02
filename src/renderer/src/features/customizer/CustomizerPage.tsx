@@ -409,6 +409,7 @@ export function CustomizerPage() {
   useCustomizerWardrobePreview({
     characterId: selectedCharacter?.id,
     modelSkinTone: effectiveModelSkinTone,
+    shoesBehindShinClothing: selectedCharacter?.customization.shoesBehindShinClothing === true,
     wardrobeGroups: selectedCharacter?.customization.wardrobeGroups,
     wardrobeDetails,
     artwork: displayArtworkProject,
@@ -540,6 +541,7 @@ export function CustomizerPage() {
     candidatesByPanel: wardrobePanelCandidateIndex,
     selectedModelSlot: selectedCatalogModelSlot,
     hasCharacter: Boolean(selectedCharacter),
+    shoesBehindShinClothing: selectedCharacter?.customization.shoesBehindShinClothing === true,
     wardrobeGroups: selectedCharacter?.customization.wardrobeGroups ?? [],
     faceAppearance: selectedCharacter?.customization.faceAppearance,
     wardrobePalettes: selectedCharacter?.customization.wardrobePalettes,

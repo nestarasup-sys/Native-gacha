@@ -15,6 +15,7 @@ type WardrobeTransformDraft = Pick<CustomizerWardrobeGroup, 'offsetX' | 'offsetY
 export function useCustomizerWardrobePreview(deps: {
   characterId: string | undefined
   modelSkinTone?: string
+  shoesBehindShinClothing: boolean
   wardrobeGroups: CustomizerWardrobeGroup[] | undefined
   wardrobeDetails: Record<string, WardrobeSet>
   artwork: CatalogArtwork | null
@@ -30,7 +31,7 @@ export function useCustomizerWardrobePreview(deps: {
   setCatalogError: Dispatch<SetStateAction<string>>
 }) {
   const {
-    characterId, modelSkinTone, wardrobeGroups, wardrobeDetails, artwork, selectedModelSlot,
+    characterId, modelSkinTone, shoesBehindShinClothing, wardrobeGroups, wardrobeDetails, artwork, selectedModelSlot,
     source, selectedClothing, transformDraft, previewExtent, zoom, highlight,
     setSelectedWardrobeUrl, setSelectedWardrobeAboveHairUrl, setCatalogError
   } = deps
@@ -51,7 +52,7 @@ export function useCustomizerWardrobePreview(deps: {
       : groups
     const maxSize = characterRenderSize(artwork.width, artwork.height, previewExtent.width, previewExtent.height, zoom, previewExtent.density)
 
-    void renderWardrobeOverlay(previewGroups, wardrobeDetails, artwork, selectedModelSlot, source, modelSkinTone, maxSize, highlight).then(async (result) => {
+    void renderWardrobeOverlay(previewGroups, wardrobeDetails, artwork, selectedModelSlot, source, modelSkinTone, maxSize, highlight, shoesBehindShinClothing).then(async (result) => {
       const [wardrobeReady, aboveHairReady] = await Promise.all([preparePreviewImage(result.imageUrl), preparePreviewImage(result.aboveHairImageUrl)])
       if (!wardrobeReady || !aboveHairReady) return
       if (!cancelled) {
@@ -66,5 +67,5 @@ export function useCustomizerWardrobePreview(deps: {
       }
     })
     return () => { cancelled = true }
-  }, [characterId, modelSkinTone, wardrobeGroups, wardrobeDetails, artwork, selectedModelSlot, source, selectedClothing, transformDraft, previewExtent, zoom, highlight, setSelectedWardrobeUrl, setSelectedWardrobeAboveHairUrl, setCatalogError])
+  }, [characterId, modelSkinTone, shoesBehindShinClothing, wardrobeGroups, wardrobeDetails, artwork, selectedModelSlot, source, selectedClothing, transformDraft, previewExtent, zoom, highlight, setSelectedWardrobeUrl, setSelectedWardrobeAboveHairUrl, setCatalogError])
 }

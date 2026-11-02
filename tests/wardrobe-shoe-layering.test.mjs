@@ -44,13 +44,15 @@ test('canela do lado oposto não vira alvo para cobrir o sapato', () => {
   ), { shinPartId: null, renderAfterPartId: 'foot-left' })
 })
 
-test('renderer desenha o sapato, depois a canela e a ponte para manter o sapato atrás', async () => {
+test('renderer aplica a mesma preferência global e desenha na ordem escolhida', async () => {
   const renderer = await readFile(new URL('../src/renderer/src/characters/characterWardrobeRenderer.ts', import.meta.url), 'utf8')
   assert.match(renderer, /resolveShoeBehindShinPlacement\(/)
-  assert.match(renderer, /garment\.group\.renderBehindShinClothing !== true/)
+  assert.match(renderer, /shoesBehindShinClothing = false/)
+  assert.match(renderer, /if \(garment\.component\.category !== 'sapato'\) continue/)
   assert.match(renderer, /deferredShoes\.add\(garment\)/)
-  const shoeDraw = renderer.indexOf('for (const shoe of behindLayers?.shoes')
-  const shinDraw = renderer.indexOf('for (const shinGarment of behindLayers?.shinGarments')
-  const bridgeDraw = renderer.indexOf('for (const bridge of behindLayers?.bridges')
-  assert.ok(shoeDraw >= 0 && shoeDraw < shinDraw && shinDraw < bridgeDraw)
+  const behindShoeDraw = renderer.indexOf('for (const shoe of shoeLayers?.shoesBehindShin')
+  const shinDraw = renderer.indexOf('for (const shinGarment of shoeLayers?.shinGarments')
+  const bridgeDraw = renderer.indexOf('for (const bridge of shoeLayers?.bridges')
+  const aboveShoeDraw = renderer.indexOf('for (const shoe of shoeLayers?.shoesAboveShin')
+  assert.ok(behindShoeDraw >= 0 && behindShoeDraw < shinDraw && shinDraw < bridgeDraw && bridgeDraw < aboveShoeDraw)
 })
