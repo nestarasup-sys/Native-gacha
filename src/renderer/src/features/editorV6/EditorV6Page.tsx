@@ -20,6 +20,7 @@ import { planEditorV6CastSelection, retainEditorV6CastAssets } from './editorV6C
 import { projectSceneCharacters } from '../../characters/sceneCharacterProjection'
 import { createEditorV6MediaCommands } from './editorV6MediaCommands'
 import { createEditorV6TextElementCommand } from './editorV6TextElementCommand'
+import { createEditorV6DeleteSelectedCommand } from './editorV6DeleteSelectedCommand'
 import { addEditorV6ElementAtFrame, editorV6ClipAtFrame, normalizeEditorV6Timeline, timelineClips } from '../../../../shared/editorV6TimelineCore'
 import { editEditorV6DocumentAtBlock, pruneEditorV6TimelineSnapshots, repairEditorV6DuplicateAssets, repairEditorV6FaceModeAssetReferences } from '../../../../shared/editorV6TimelineEdits'
 import { editEditorV6BackgroundAtFrame, resolveEditorV6SceneAtFrame } from '../../../../shared/editorV6TimelineScene'
@@ -669,23 +670,18 @@ export function EditorV6Page() {
     updateActiveProject: updateActiveEditorV6Project, markUnsaved: markEditorV6Unsaved, recordHistory
   }, dragRef)
 
-  const deleteSelected = () => {
-    if (!activeEditorV6) return
-    if (selectedElementId === 'background') {
-      const frame = getEditorV6PlaybackFrame()
-      changeScene((studio) => ({ ...editEditorV6BackgroundAtFrame(studio, frame, { backgroundAssetId: null }), updatedAt: new Date().toISOString() }))
-      setSelectedElementId(null)
-    } else if (selectedTimelineVideoClip) {
-      const blockId = selectedTimelineVideoClip.block.id
-      changeScene((studio) => ({ ...studio, timeline: { ...studio.timeline, tracks: studio.timeline.tracks.map((track) => ({ ...track, blocks: track.blocks.filter((block) => block.id !== blockId) })) }, updatedAt: new Date().toISOString() }))
-      setSelectedTimelineBlockId(null)
-    } else if (selectedElementId) {
-      const current = activeEditorV6.elements.find((element) => element.id === selectedElementId)
-      if (current?.kind === 'character') removeStageCharacter(current)
-      else changeScene((studio) => ({ ...studio, elements: studio.elements.filter((element) => element.id !== selectedElementId), updatedAt: new Date().toISOString() }))
-      setSelectedElementId(null)
-    }
-  }
+  const deleteSelected = createEditorV6DeleteSelectedCommand({
+    activeProject: activeEditorV6,
+    selectedElementId,
+    selectedTimelineVideoBlockId: selectedTimelineVideoClip?.block.id ?? null,
+    getFrame: getEditorV6PlaybackFrame,
+    editBackgroundAtFrame: editEditorV6BackgroundAtFrame,
+    now: () => new Date().toISOString(),
+    changeScene,
+    removeStageCharacter,
+    setSelectedElementId,
+    setSelectedTimelineBlockId
+  })
 
   const deleteStudio = async (target: EditorV6Card | null = selectedEditorV6) => {
     if (!target || !window.confirm(`Excluir ${target.title}?`)) return
