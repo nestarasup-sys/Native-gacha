@@ -10,6 +10,7 @@ import { publishBaseVideoDraft } from './publishBaseVideoDraft'
 import { deleteBaseVideosSequentially } from './deleteBaseVideosSequentially'
 import { createEmptyBaseVideoDetails } from './baseVideoDetailsModel'
 import { loadBaseVideosSnapshot } from './loadBaseVideosSnapshot'
+import { importBaseVideoDraft } from './importBaseVideoDraft'
 
 const formatDuration = (frames: number | null) => {
   if (frames === null) return 'Duração não reconhecida'
@@ -173,25 +174,21 @@ export function BaseVideosPage() {
 
   const addVideo = async () => {
     setBusy(true); setError(null)
-    let imported: VideoLibraryItem | null = null
     try {
-      const importedItem = await window.desktop.mediaLibrary.import()
-      if (!importedItem) return
-      imported = importedItem
-      const details = createEmptyBaseVideoDetails(importedItem.id)
-      await window.desktop.baseVideos.saveDetails(details)
-      setItems((current) => [importedItem, ...current.filter((item) => item.id !== importedItem.id)])
-      setDetailsById((current) => ({ ...current, [importedItem.id]: details }))
-      setActiveView('drafts')
-      try {
-        const ready = await recognizeDuration(importedItem)
-        setItems((current) => current.map((item) => item.id === ready.id ? ready : item))
-      } catch (reason) {
-        setError(reason instanceof Error ? reason.message : 'O vídeo foi importado como rascunho, mas não foi possível reconhecer sua duração.')
-      }
-    } catch (reason) {
-      if (imported) await window.desktop.baseVideos.deleteVideo(imported.id).catch((cleanupReason: unknown) => console.error('Falha ao limpar a importação incompleta do vídeo.', cleanupReason))
-      setError(reason instanceof Error ? reason.message : 'Não foi possível adicionar o vídeo.')
+      await importBaseVideoDraft({
+        importVideo: () => window.desktop.mediaLibrary.import(),
+        saveDetails: (details) => window.desktop.baseVideos.saveDetails(details),
+        publishToSession: (item, details) => {
+          setItems((current) => [item, ...current.filter((entry) => entry.id !== item.id)])
+          setDetailsById((current) => ({ ...current, [item.id]: details }))
+          setActiveView('drafts')
+        },
+        recognizeDuration,
+        updateSessionItem: (ready) => setItems((current) => current.map((item) => item.id === ready.id ? ready : item)),
+        deleteIncompleteImport: (videoId) => window.desktop.baseVideos.deleteVideo(videoId),
+        setError,
+        logCleanupFailure: (reason) => console.error('Falha ao limpar a importação incompleta do vídeo.', reason)
+      })
     } finally { setBusy(false) }
   }
 
