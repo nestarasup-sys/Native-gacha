@@ -21,6 +21,7 @@ import { startImageProcessorWorker, ImageProcessorTaskError, type ImageProcessor
 import { serializeFabricatorProject } from './models/projectSerialization'
 import { createFabricatorProjectSaveCoordinator } from './projectSaveCoordinator'
 import { duplicateFabricatorSlot } from './duplicateFabricatorSlot'
+import { deleteFabricatorSlotCommand } from './deleteFabricatorSlotCommand'
 import { publishModelSourceResult } from './models/publishModelSourceResult'
 import { useFabricatorHistory } from './useFabricatorHistory'
 import { prepareLoadedFabricatorProject } from './models/projectHydration'
@@ -329,43 +330,34 @@ export function FabricatorPage() {
   }, [slotsLoaded, slots[0]])
 
   const deleteSlot = async (slot: number) => {
-    const summary = slots[slot - 1]
-    if (!summary || deletingSlot !== null) return
-    const confirmation = summary.recoveryRequired
-      ? `Limpar permanentemente a recuperação pendente do slot ${slot}? Todos os backups, arquivos temporários e transações deste slot serão apagados sem possibilidade de restauração.`
-      : `Excluir permanentemente “${summary.name}” do slot ${slot}? A imagem original, as peças salvas, os backups e as transações pendentes deste slot serão apagados sem possibilidade de restauração.`
-    if (!window.confirm(confirmation)) return
-    setDeletingSlot(slot)
-    if (activeSlot === slot) {
-      slotSelectionGeneration.current += 1
-      requestId.current += 1
-      cancelScheduledSave()
-      cancelImageProcessingTask()
-      cancelChromaTask(); setChromaApplying(false)
-      setProcessing(false); setProgress(0)
-    }
-    try {
-      await waitForProjectWrites()
-      await window.desktop.fabricator.deleteFabricatorSlot(slot)
-      setSlots((current) => current.map((item, index) => index === slot - 1 ? null : item))
-      if (activeSlot === slot) {
+    await deleteFabricatorSlotCommand({
+      slot,
+      summary: slots[slot - 1],
+      activeSlot,
+      deletionInProgress: deletingSlot !== null,
+      confirm: (message) => window.confirm(message),
+      setDeletingSlot,
+      invalidateActiveProject: () => {
+        slotSelectionGeneration.current += 1
+        requestId.current += 1
+        cancelScheduledSave()
+        cancelImageProcessingTask()
+        cancelChromaTask(); setChromaApplying(false)
+        setProcessing(false); setProgress(0)
+      },
+      waitForProjectWrites,
+      deleteSlot: (targetSlot) => window.desktop.fabricator.deleteFabricatorSlot(targetSlot),
+      removeSlotSummary: () => setSlots((current) => current.map((item, index) => index === slot - 1 ? null : item)),
+      clearActiveProject: () => {
         projectRef.current = null
         setProcessing(false); setProgress(0); setProject(null); setSelectedIds([]); dirtyAssets.current.clear(); dirtyChromaBases.current.clear(); setError('')
-      }
-    } catch (reason) {
-      setError(reason instanceof Error ? `Não foi possível excluir o modelo: ${reason.message}` : 'Não foi possível excluir o modelo.')
-      if (activeSlot === slot) {
-        const currentProject = projectRef.current ?? project
-        if (currentProject) {
-          const restored = { ...currentProject, updatedAt: new Date().toISOString() }
-          projectRef.current = restored
-          setProject(restored)
-        }
-        else await selectSlot(slot)
-      }
-    } finally {
-      setDeletingSlot(null)
-    }
+      },
+      setError,
+      getCurrentProject: () => projectRef.current ?? project,
+      restoreActiveProject: (restored) => { projectRef.current = restored; setProject(restored) },
+      reloadActiveSlot: (targetSlot) => selectSlot(targetSlot),
+      now: () => new Date().toISOString()
+    })
   }
 
   const openDuplicateModelDialog = () => {
