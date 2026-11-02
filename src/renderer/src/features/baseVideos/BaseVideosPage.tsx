@@ -11,6 +11,7 @@ import { deleteBaseVideosSequentially } from './deleteBaseVideosSequentially'
 import { createEmptyBaseVideoDetails } from './baseVideoDetailsModel'
 import { loadBaseVideosSnapshot } from './loadBaseVideosSnapshot'
 import { importBaseVideoDraft } from './importBaseVideoDraft'
+import '../../ui/components/videoEditorialFields.css'
 import './baseVideos.css'
 
 const formatDuration = (frames: number | null) => {

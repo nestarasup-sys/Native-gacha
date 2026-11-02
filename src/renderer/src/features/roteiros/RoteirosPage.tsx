@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import './roteiros.css'
 import { Icon } from '../../ui/components/Icon'
 import { registerPendingWriteFlusher } from '../../ui/pendingPersistence'
 import { CharacterPortrait } from '../../ui/components/CharacterPortrait'
