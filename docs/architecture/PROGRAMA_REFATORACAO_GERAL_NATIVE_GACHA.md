@@ -29,7 +29,7 @@ Este documento acompanha a execução das Fases 1–6 e complementa a baseline d
 | 2 | Núcleo compartilhado de personagens | Concluída | Consumidores e regressões mapeados. Escala-base idêntica entre Studio e Editor V6 centralizada; renderizadores e contratos de exportação distintos mantidos. Testes de personagem/gênero/roupas articuladas executáveis por script dedicado. |
 | 3 | Fabricador e Customizador | Em andamento | Fluxo de catálogo/customizações coberto de ponta a ponta; gravação de roupas, operações de cabelo e seleção de peça no Customizador têm fronteiras/testes próprios. Restam mapear/decompor os workspaces maiores e ampliar cenários de reabertura. |
 | 4 | Studio, Editor V6 e fluxos de vídeo | Em andamento | Criação/duplicação de cenas do Studio extraídas; miniatura 480×270 corrigida; paridade Turbo e exportação facial 720p/1080p aprovadas. A antiga tela Video Studio não tem rota, mas as bibliotecas legadas seguem ativas em Roteiros e como origem de mídia do Editor V6. Teste de cancelamento do worker cobre espera do compositor. Restam validação da impressão do Studio e medições/exportação dos workers. |
-| 5 | Roteiros, Base de Vídeos, Opções, componentes e CSS | Em andamento | Biblioteca continua dona dos arquivos/IDs; Roteiros mantém metadados e referências. Guardas, canais e fila de salvamento da Base de Vídeos têm contratos testados; estilos e cálculos puros de Opções estão isolados. Restam decomposição adicional dos workspaces e CSS por feature. |
+| 5 | Roteiros, Base de Vídeos, Opções, componentes e CSS | Em andamento | Biblioteca continua dona dos arquivos/IDs; Roteiros mantém metadados e referências. Guardas, canais, fila de salvamento e exclusão de categoria da Base de Vídeos têm contratos testados; estilos e cálculos puros de Opções estão isolados. Restam decomposição adicional dos workspaces e CSS por feature. |
 | 6 | Performance, CI e consolidação | Em andamento | Workflow da Dev-V2 roda gates gerais e Editor V6 por plataforma; build Windows é reutilizado pelos testes MP4. Baseline repetível do cenário médio do Editor V6 registrada e captura IPC passou a ser estruturada. Restam medições de inicialização, Studio, outros workspaces e exportação, além de comparações repetidas antes de otimizar. |
 
 ## Fatias implementadas
@@ -191,7 +191,16 @@ O Node test runner não resolvia imports relativos extensionless `.ts` usados po
 - **Testes:** `base-video-details-save-queue.test.mjs` usa timers e persistência sintéticos para cobrir debounce, serialização, edição durante in-flight, flush de encerramento, falha e retry. O teste estrutural de pendências confirma que a página delega à fila e continua registrada no flusher global.
 - **Verificações:** fila 4/4; testes de pendências 14/14; Base de Vídeos 8/8; `npm run test:refactor`, typecheck, audit arquitetural (572 arquivos TS/TSX) e build passaram.
 - **Commit local:** `1d6e938` (`refactor: isolate Base de Vídeos detail save queue`).
-- **Pendências:** o restante dos comandos editoriais de Base de Vídeos permanece na página; categorias e publicação exigem revisão própria antes de extração.
+- **Pendências:** o restante dos comandos editoriais de Base de Vídeos permanece na página; edição de categoria e publicação exigem revisão própria antes de extração.
+
+### Comando de exclusão de categoria da Base de Vídeos
+
+- **Fronteira extraída:** `deleteBaseVideoCategory` identifica os vídeos vinculados, drena sequencialmente suas gravações pendentes, apaga a categoria pelo serviço existente e só então limpa as atribuições na sessão da página. A UI continua dona do estado de busy/erro e da lista de categorias.
+- **Falhas e compatibilidade:** uma falha no flush impede a exclusão; uma falha no serviço impede a limpeza em memória. A sequência e a ordem estável que já existiam na página foram preservadas. Não mudaram canal IPC, IDs, formato salvo, ownership de arquivos ou regras de exclusão da biblioteca.
+- **Testes sintéticos:** quatro cenários cobrem caminho de sucesso, erro no flush, erro ao excluir e delegação da página ao comando. `npm run test:base-videos` também cobre categorias, metadados, publicação, validação IPC e bloqueios de mídia referenciada.
+- **Verificações:** teste focado 4/4; `npm run test:base-videos` 8/8; `npm run test:refactor` passou com 641 testes na suíte principal e todos os scripts encadeados; typecheck, audit arquitetural (576 arquivos TS/TSX), build e `git diff --check` passaram.
+- **Commit local:** `c81a7b9` (`refactor: isolate Base Videos category deletion`).
+- **Pendências:** criação/edição de categoria e publicação ainda não foram extraídas; cada fluxo requer preservar sua semântica transacional antes de mudar de fronteira.
 
 ### Gates gerais de CI na Dev-V2 e reutilização do bundle
 
@@ -256,4 +265,6 @@ As falhas observadas na execução inicial da suíte em `f416a02` foram investig
 | `b69685c` | Corrige o preenchimento do fundo nas miniaturas do Studio após a escala do canvas | Local em `Dev-V2`; sem publicação. |
 | `ca6ae76` | Extrai o modelo e o hook de seleção de roupas do Customizador | Local em `Dev-V2`; sem publicação. |
 | `e5b5ff9` | Cobre cancelamento durante a espera do compositor no worker de exportação | Local em `Dev-V2`; sem publicação. |
+| `94df39e` | Documenta ownership das bibliotecas de vídeo legadas e validação do cancelamento de workers | Local em `Dev-V2`; sem publicação. |
+| `c81a7b9` | Extrai exclusão de categoria da Base de Vídeos com ordem de flush testada | Local em `Dev-V2`; sem publicação. |
 
