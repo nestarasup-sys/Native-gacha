@@ -6,6 +6,7 @@ import type {
 } from '../../../../shared/dataManagement'
 import { diagnosticAlerts, domainLabels, formatBytes, formatDate, groupLabels, totalStorageBytes } from './optionsDiagnostics'
 import { createOptionsBackupCommands } from './optionsBackupCommands'
+import { createOptionsMigrationCommands } from './optionsMigrationCommands'
 
 type StoredBackup = DataBackupSummary
 type EventFilter = 'all' | 'error' | 'warning'
@@ -77,6 +78,16 @@ export function OptionsPage() {
     setMessage: setBackupMessage,
     setError: setBackupError
   }), [refreshBackups])
+  const migrationCommands = useMemo(() => createOptionsMigrationCommands({
+    runMigration: () => window.desktop.dataManagement.runDataMigration(),
+    pauseMigration: () => window.desktop.dataManagement.pauseDataMigration(),
+    restartAfterMigration: () => window.desktop.dataManagement.restartAfterDataMigration(),
+    refreshMigration,
+    setBusy: setMigrationBusy,
+    setPauseRequested,
+    setProgress,
+    setError: setMigrationError
+  }), [refreshMigration])
 
   useEffect(() => {
     void refreshEvents()
@@ -88,24 +99,9 @@ export function OptionsPage() {
   const verifyBackup = backupCommands.verify
   const restoreBackup = backupCommands.restore
   const deleteBackup = backupCommands.remove
-  const runMigration = useCallback(async () => {
-    setMigrationBusy(true); setPauseRequested(false); setMigrationError(null); setProgress(null)
-    try {
-      await window.desktop.dataManagement.runDataMigration()
-      await refreshMigration()
-    } catch (reason) { setMigrationError(reason instanceof Error ? reason.message : 'A migração foi interrompida; os dados de origem foram preservados.') }
-    finally { setMigrationBusy(false); setPauseRequested(false); setProgress(null) }
-  }, [refreshMigration])
-  const requestPause = useCallback(async () => {
-    setPauseRequested(true)
-    try { await window.desktop.dataManagement.pauseDataMigration() }
-    catch (reason) { setMigrationError(reason instanceof Error ? reason.message : 'Não foi possível pausar a migração.') }
-  }, [])
-  const restart = useCallback(async () => {
-    setMigrationError(null)
-    try { await window.desktop.dataManagement.restartAfterDataMigration() }
-    catch (reason) { setMigrationError(reason instanceof Error ? reason.message : 'Não foi possível reiniciar o aplicativo.') }
-  }, [])
+  const runMigration = migrationCommands.run
+  const requestPause = migrationCommands.pause
+  const restart = migrationCommands.restart
   const saveReport = useCallback(async () => {
     setReportBusy(true); setReportError(null); setReportMessage(null)
     try {
