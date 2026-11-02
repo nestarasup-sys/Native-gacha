@@ -27,7 +27,7 @@ Este documento acompanha a execução das Fases 1–6 e complementa a baseline d
 | 0 | Auditoria e baseline arquitetural | Concluída antes deste programa | [Relatório da Fase 0](./AUDITORIA_REFATORACAO_GERAL_V1_FASE_0.md). |
 | 1 | Electron, IPC, persistência, backups e filas | Concluída | Diagnóstico de memória corrigido; ciclo de encerramento extraído e coberto; diferenças das filas mapeadas; backup, manutenção e segurança de janela passaram. Os gatilhos gerais de CI de `Dev-V2` ficam na Fase 6. |
 | 2 | Núcleo compartilhado de personagens | Concluída | Consumidores e regressões mapeados. Escala-base idêntica entre Studio e Editor V6 centralizada; renderizadores e contratos de exportação distintos mantidos. Testes de personagem/gênero/roupas articuladas executáveis por script dedicado. |
-| 3 | Fabricador e Customizador | Em andamento | Fluxo de catálogo/customizações coberto de ponta a ponta; gravação de roupas e cliente do worker capilar têm fronteiras/testes próprios. Restam mapear/decompor o estado dos maiores workspaces e ampliar cenários de reabertura. |
+| 3 | Fabricador e Customizador | Em andamento | Fluxo de catálogo/customizações coberto de ponta a ponta; gravação de roupas e operações de cabelo (worker e serialização de conjunto) têm fronteiras/testes próprios. Restam mapear/decompor o estado dos maiores workspaces e ampliar cenários de reabertura. |
 | 4 | Studio, Editor V6 e fluxos de vídeo | Em andamento | Criação/duplicação de cenas do Studio extraídas e testadas; comandos próprios do Editor V6, timeline e exportação permanecem separados. Restam a revisão de vídeos, workers e paridade de exportação. |
 | 5 | Roteiros, Base de Vídeos, Opções, componentes e CSS | Em andamento | Biblioteca continua dona dos arquivos/IDs; Roteiros mantém metadados e referências. Guardas de exclusão têm testes sintéticos; canais da Base de Vídeos passaram a usar mapa tipado compartilhado por preload/Main; estilos e cálculos puros de Opções foram isolados. Restam decomposição dos workspaces e etapas adicionais de CSS. |
 | 6 | Performance, CI e consolidação | Em andamento | Workflow da Dev-V2 agora roda gates gerais e Editor V6 por plataforma; build Windows é reutilizado pelos testes MP4 via artifact limitado aos diretórios compilados. Restam baseline de performance comum, medição de gargalos e cobertura dos outros módulos. |
@@ -109,6 +109,15 @@ O Node test runner não resolvia imports relativos extensionless `.ts` usados po
 - **Commit local:** `1641353` (`refactor: isolate Fabricator hair worker client`).
 - **Pendências:** estado, carregamentos e comandos editoriais continuam concentrados no workspace; não foi alterado formato de estilo, PNG ou catálogo.
 
+### Comando de salvamento de conjuntos de cabelo
+
+- **Fronteira extraída:** `saveHairStyleDraft` em `hairStyleSaveCommand.ts` é responsável por gerar o payload de `HairStyleSave`, separar PNGs atuais, fontes e originais de deformação do metadado, normalizar transformações e persistir. `HairWorkspace` fica com feedback e atualizações da sessão/catalogação.
+- **Contrato mantido:** IDs existentes continuam iguais; novos IDs e timestamps seguem gerados no renderer; `createdAt` permanece estável ao editar; nome, categorias, defaults de chroma, transforms e referência de origem usam as mesmas regras; o IPC continua recebendo metadados e assets em argumentos separados. A ausência de PNG original de uma deformação bloqueia a gravação antes do IPC.
+- **Teste:** `hair-style-save-command.test.mjs` cobre edição/novo ID, metadata-versus-binary, original de deformação ausente e falha de persistência sem retorno de sucesso.
+- **Verificações:** teste focado 4/4; cliente do worker 3/3; armazenamento capilar 2/2; importação/grade 12/12; `npm run test:refactor`, typecheck, audit arquitetural (571 arquivos TS/TSX) e build passaram.
+- **Commit local:** `add2123` (`refactor: isolate Fabricator hair style saving`).
+- **Pendências:** outros carregamentos e comandos de `HairWorkspace` continuam no componente; não houve mudança de schema ou formato salvo.
+
 ### Proteção de referências de mídia dos Roteiros e escopo do CSS de Opções
 
 - **Propriedade preservada:** a biblioteca de mídia segue responsável pelos arquivos e IDs de fundos e GIFs; Roteiros continua responsável pelas referências. Os serviços de exclusão chamam os guards SQLite antes de excluir e bloqueiam a operação quando o catálogo não está disponível.
@@ -180,4 +189,5 @@ As falhas observadas na execução inicial da suíte em `f416a02` foram investig
 | `e338db9` | Centraliza os nove canais IPC da Base de Vídeos no preload e no Main | Local em `Dev-V2`; sem publicação. |
 | `2c3d5a3` | Adiciona gates gerais para Dev-V2 e reutiliza o bundle Windows na paridade MP4 | Local em `Dev-V2`; sem publicação. |
 | `1641353` | Extrai o cliente e o ciclo de vida do worker de processamento capilar | Local em `Dev-V2`; sem publicação. |
+| `add2123` | Extrai a preparação e gravação do conjunto de cabelo com cobertura de assets | Local em `Dev-V2`; sem publicação. |
 
