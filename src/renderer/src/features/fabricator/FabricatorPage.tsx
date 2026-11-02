@@ -807,7 +807,7 @@ export function FabricatorPage() {
   } : null
 
   return (
-    <main className="fabricator-layout" aria-label="Fabricador Dev">
+    <main className="fabricator-layout" aria-label="Fabricador Dev" aria-busy={!slotsLoaded}>
       <aside className="fabricator-sidebar">
         <div className="fabricator-sidebar-heading">
           <span className="fabricator-heading-icon"><Icon name="box" /></span>

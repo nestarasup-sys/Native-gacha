@@ -24,6 +24,7 @@ export class CustomizerCharacterRepository {
   private readonly starterCharacters: ReadonlyArray<CharacterSeed>
   private readonly newId: () => string
   private readonly now: () => string
+  private fileQueue: Promise<void> = Promise.resolve()
 
   constructor(manifestPath: () => string, files: CharacterFiles, starterCharacters: ReadonlyArray<CharacterSeed>, newId: () => string, now: () => string) {
     this.manifestPath = manifestPath
@@ -33,7 +34,21 @@ export class CustomizerCharacterRepository {
     this.now = now
   }
 
-  async list(): Promise<CustomizerCharacter[]> {
+  list(): Promise<CustomizerCharacter[]> {
+    return this.enqueueFileOperation(() => this.listFromDisk())
+  }
+
+  save(characters: CustomizerCharacter[]): Promise<void> {
+    return this.enqueueFileOperation(() => this.saveToDisk(characters))
+  }
+
+  private enqueueFileOperation<T>(operation: () => Promise<T>): Promise<T> {
+    const next = this.fileQueue.catch(() => undefined).then(operation)
+    this.fileQueue = next.then(() => undefined, () => undefined)
+    return next
+  }
+
+  private async listFromDisk(): Promise<CustomizerCharacter[]> {
     const target = this.manifestPath()
     try { await this.files.access(target) } catch (reason) {
       if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason
@@ -55,12 +70,12 @@ export class CustomizerCharacterRepository {
         createdAt: now,
         updatedAt: now
       }))
-      await this.save(seeded)
+      await this.saveToDisk(seeded)
       return seeded
     }
   }
 
-  async save(characters: CustomizerCharacter[]): Promise<void> {
+  private async saveToDisk(characters: CustomizerCharacter[]): Promise<void> {
     if (!Array.isArray(characters) || characters.length > 500 || !characters.every(isCustomizerCharacter)) throw new Error('Dados de personagem inválidos.')
     if (new Set(characters.map((character) => character.id)).size !== characters.length) throw new Error('Há personagens com identificadores repetidos.')
     const target = this.manifestPath()

@@ -282,6 +282,29 @@ test('repositório restaura .backup após interrupção de gravação', async (t
   await access(target)
 })
 
+test('listagens concorrentes inicializam um único manifesto sem disputar o arquivo temporário', async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), 'gv5-customizer-concurrent-'))
+  t.after(() => rm(dir, { recursive: true, force: true }))
+  const target = join(dir, 'customizer', 'characters', 'characters.json')
+  let writes = 0
+  let sequence = 0
+  const repo = new CustomizerCharacterRepository(() => target, {
+    access, readFile,
+    writeFile: async (...args) => {
+      writes += 1
+      await new Promise((resolve) => setTimeout(resolve, 10))
+      return writeFile(...args)
+    },
+    rename, unlink, mkdir
+  }, [], () => `concurrent-${++sequence}`, () => NOW)
+
+  const [first, second] = await Promise.all([repo.list(), repo.list()])
+
+  assert.deepEqual(first.map(({ id }) => id), second.map(({ id }) => id))
+  assert.equal(writes, 1)
+  assert.deepEqual(JSON.parse(await readFile(target, 'utf8')).map(({ id }) => id), first.map(({ id }) => id))
+})
+
 test('manifesto inválido não é apagado nem substituído automaticamente', async (t) => {
   const { repo, target } = await fixture(t)
   await mkdir(join(target, '..'), { recursive: true })

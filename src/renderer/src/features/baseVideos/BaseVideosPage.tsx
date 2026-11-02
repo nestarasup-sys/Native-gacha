@@ -293,7 +293,7 @@ export function BaseVideosPage() {
     finally { setLoaded(true); setBusy(false) }
   }
 
-  return <main className="base-videos-page">
+  return <main className="base-videos-page" aria-busy={!loaded}>
     <header className="base-videos-subbar">
       <div className="base-videos-heading"><span className="base-videos-heading-icon"><Icon name="frame" /></span><div><h1>Base de vídeos</h1><small>Descrições e tempos compartilhados com os roteiros</small></div></div>
       <div className="base-videos-actions">
