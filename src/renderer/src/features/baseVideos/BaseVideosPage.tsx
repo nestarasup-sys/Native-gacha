@@ -11,6 +11,7 @@ import { deleteBaseVideosSequentially } from './deleteBaseVideosSequentially'
 import { createEmptyBaseVideoDetails } from './baseVideoDetailsModel'
 import { loadBaseVideosSnapshot } from './loadBaseVideosSnapshot'
 import { importBaseVideoDraft } from './importBaseVideoDraft'
+import './baseVideos.css'
 
 const formatDuration = (frames: number | null) => {
   if (frames === null) return 'Duração não reconhecida'
