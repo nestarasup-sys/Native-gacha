@@ -97,6 +97,28 @@ describe('export worker lifecycle', () => {
     factory.dispose()
   })
 
+  it('does not capture a stale frame when cancelled during compositor paint wait', async () => {
+    const { factory, payload, ready } = fixture()
+    const controller = new AbortController()
+    const pending = factory.create(payload, controller.signal)
+    ready()
+    const worker = await pending
+    const window = state.windows[0]
+    const contents = window.webContents
+    contents.invalidate.mockImplementation(() => {})
+
+    const frame = worker.frame(12)
+    await vi.waitFor(() => expect(contents.invalidate).toHaveBeenCalledTimes(1))
+    controller.abort(Error('cancelamento sintético'))
+
+    await expect(frame).rejects.toThrow('fechada')
+    expect(contents.capturePage).not.toHaveBeenCalled()
+    expect(contents.listenerCount('paint')).toBe(0)
+    expect(window.destroyed).toBe(true)
+    worker.close()
+    factory.dispose()
+  })
+
   it('rejects preparation immediately when closed before ready', async () => {
     const { factory, payload } = fixture()
     const pending = factory.create(payload, new AbortController().signal)
