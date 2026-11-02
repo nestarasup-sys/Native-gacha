@@ -3,7 +3,11 @@ import type { Database } from 'better-sqlite3'
 import type { RoteiroDocument, RoteiroReactionBlock, RoteiroSectionContent, RoteiroVideoReference } from '../../../src/shared/roteiros'
 
 export class RoteirosRepository {
-  constructor(private readonly db: Database) {}
+  private readonly db: Database
+
+  constructor(db: Database) {
+    this.db = db
+  }
 
   list(): RoteiroDocument[] {
     const roteiroRows = this.db.prepare('SELECT id, title, video_title, character_ids_json, background_asset_id, ui_gif_asset_id, preview_details_collapsed FROM roteiros ORDER BY position, created_at, id').all() as Array<{ id: string; title: string; video_title: string; character_ids_json: string; background_asset_id: string | null; ui_gif_asset_id: string | null; preview_details_collapsed: number }>

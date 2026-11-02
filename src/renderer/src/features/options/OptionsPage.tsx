@@ -1,3 +1,4 @@
+import './options.css'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type {
   DataBackupSummary, DataMigrationProgress as MigrationProgress, DataMigrationSummary as MigrationSummary,
