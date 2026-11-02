@@ -28,6 +28,7 @@ import { studioFaceCatalogSelectionIds } from './studioFaceCatalogSelection'
 import { useStudioAutosave, useStudioDocumentPersistence } from './useStudioDocumentPersistence'
 import { useStudioImageImport } from './useStudioImageImport'
 import { createStudioProjectCommands } from './studioProjectCommands'
+import { removeStudioCharacterElement } from './studioCharacterRemoval'
 import { mapConcurrentItems } from '../../ui/mapConcurrentItems'
 import { useStudioCharacterSourceRefresh } from './useStudioCharacterSourceRefresh'
 import { prepareStudioCastSelection } from './studioCastSelection'
@@ -587,15 +588,7 @@ export function StudioPage() {
   }
 
   const removeStageCharacter = (element: StudioElement) => {
-    changeScene((studio) => {
-      const elements = studio.elements.filter((item) => item.id !== element.id)
-      const stillUsed = new Set(elements.map((item) => item.assetId).filter(Boolean))
-      return {
-        ...studio, elements,
-        assets: studio.assets.filter((asset) => asset.id !== element.assetId || stillUsed.has(asset.id)),
-        updatedAt: new Date().toISOString()
-      }
-    })
+    changeScene((studio) => removeStudioCharacterElement(studio, element, new Date().toISOString()))
     if (selectedElementId === element.id) setSelectedElementId(null)
   }
 
