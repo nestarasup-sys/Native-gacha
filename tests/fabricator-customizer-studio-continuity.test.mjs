@@ -203,3 +203,17 @@ test('preview unificado não tenta renderizar uma pose inválida',async()=>{
  })
  assert.deepEqual(result,{status:'invalid-pose'})
 })
+
+test('Customizador, Studio e Editor V6 mantêm tronco por gênero e camada dos sapatos no caminho de renderização', async () => {
+ const [sourceResolver, characterRenderer, editorV6Renderer] = await Promise.all([
+  readFile('src/renderer/src/characters/characterSourceResolver.ts', 'utf8'),
+  readFile('src/renderer/src/characters/characterRenderer.ts', 'utf8'),
+  readFile('src/renderer/src/characters/editorV6CharacterRenderer.ts', 'utf8')
+ ])
+
+ assert.match(sourceResolver, /withCharacterGenderTorso\(artworkWithModelContours, source, character\.customization\.gender\)/)
+ for (const renderer of [characterRenderer, editorV6Renderer]) {
+  assert.match(renderer, /resolveSavedCharacterSource\(character, renderSource\)/)
+  assert.match(renderer, /renderWardrobeOverlayCanvases\(groups, materials\.wardrobeDetails, artwork, modelSlot, appearanceSource, skinTone,\s*undefined, undefined, character\.customization\.shoesBehindShinClothing === true\)/)
+ }
+})
