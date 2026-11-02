@@ -187,7 +187,7 @@ export function CustomizerPage() {
     applyWardrobePalette,
     setWardrobePieceColor,
     resetWardrobePieceColors,
-    setShoeAboveShinClothing
+    setShoeBehindShinClothing
   } = useCustomizerWardrobePanelActions({
     selectedCharacter,
     selectedModelSlot: selectedCatalogModelSlot,
@@ -550,7 +550,7 @@ export function CustomizerPage() {
     onSetPieceColor: setWardrobePieceColor,
     onApplyPalette: applyWardrobePalette,
     onResetPieceColors: resetWardrobePieceColors,
-    onSetShoeAboveShinClothing: setShoeAboveShinClothing
+    onSetShoeBehindShinClothing: setShoeBehindShinClothing
   }
 
   const renderAdjustmentPicker = (area: 'head' | 'clothes') => {

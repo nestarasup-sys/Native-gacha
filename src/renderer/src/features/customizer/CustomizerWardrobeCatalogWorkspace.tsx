@@ -35,7 +35,7 @@ export function CustomizerWardrobeCatalogWorkspace({
   onSetPieceColor,
   onApplyPalette,
   onResetPieceColors,
-  onSetShoeAboveShinClothing
+  onSetShoeBehindShinClothing
 }: {
   loading: boolean
   catalogError: string | null
@@ -60,7 +60,7 @@ export function CustomizerWardrobeCatalogWorkspace({
   onSetPieceColor: (panel: WardrobePanel, candidate: WardrobePanelCandidate, role: CharacterPaletteRole, value: string) => void | Promise<void>
   onApplyPalette: (panel: WardrobePanel, candidate: WardrobePanelCandidate, colors: CharacterPaletteOverrides) => void | Promise<void>
   onResetPieceColors: (panel: WardrobePanel, setId: string, componentIds: string[]) => void | Promise<void>
-  onSetShoeAboveShinClothing: (panel: WardrobePanel, candidate: WardrobePanelCandidate, enabled: boolean) => void | Promise<void>
+  onSetShoeBehindShinClothing: (panel: WardrobePanel, candidate: WardrobePanelCandidate, enabled: boolean) => void | Promise<void>
 }) {
   const paletteStripRefs = useRef<Record<string, HTMLDivElement | null>>({})
 
@@ -123,7 +123,7 @@ export function CustomizerWardrobeCatalogWorkspace({
         }
 
         return <article className={`customizer-hair-piece customizer-upper-wardrobe-piece customizer-wardrobe-piece-${panel.id}`} key={panel.id} aria-label={panel.label}>
-          <header><strong>{panel.label} {selectedSlot + 1}/{candidates.length + 1}</strong>{panel.category === 'sapato' && <label className="customizer-shoe-above-shin-toggle" title="Desenhar o sapato por cima da roupa da canela"><input type="checkbox" checked={currentGroup?.renderAboveShinClothing === true} disabled={!hasCharacter || !currentCandidate} aria-label={`Por cima da roupa na canela: ${panel.label}`} onChange={(event) => currentCandidate && void onSetShoeAboveShinClothing(panel, currentCandidate, event.target.checked)} />Por cima</label>}{hasLocalColors && currentCandidate && <button className="customizer-hair-reset" type="button" onClick={() => void onResetPieceColors(panel, currentCandidate.summary.id, currentCandidate.components.map((component) => component.id))}>Restaurar</button>}</header>
+          <header><strong>{panel.label} {selectedSlot + 1}/{candidates.length + 1}</strong>{panel.category === 'sapato' && <label className="customizer-shoe-behind-shin-toggle" title="Desenhar o sapato por trás da roupa da canela"><input type="checkbox" checked={currentGroup?.renderBehindShinClothing === true} disabled={!hasCharacter || !currentCandidate} aria-label={`Por trás da roupa na canela: ${panel.label}`} onChange={(event) => currentCandidate && void onSetShoeBehindShinClothing(panel, currentCandidate, event.target.checked)} />Por trás</label>}{hasLocalColors && currentCandidate && <button className="customizer-hair-reset" type="button" onClick={() => void onResetPieceColors(panel, currentCandidate.summary.id, currentCandidate.components.map((component) => component.id))}>Restaurar</button>}</header>
           <div className="customizer-hair-piece-selector customizer-upper-wardrobe-selector">
             <button aria-label={`Peça anterior: ${panel.label}`} onClick={() => move(-1)} disabled={!candidates.length || !hasCharacter || selectedModelSlot === null} type="button"><Icon name="chevronRight" /></button>
             <button className="customizer-hair-piece-preview" aria-label={`Abrir biblioteca de ${panel.label}`} title={`Abrir biblioteca de ${panel.label}`} onClick={() => { onSetLibraryPage(0); onSetLibraryPanel(panel) }} type="button">

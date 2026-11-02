@@ -144,7 +144,7 @@ export function useCustomizerWardrobePanelActions(deps: {
     await saveCharacterCustomization({ wardrobeGroups: after, wardrobePalettes })
   }
 
-  async function setShoeAboveShinClothing(panel: WardrobePanel, candidate: WardrobePanelCandidate, enabled: boolean) {
+  async function setShoeBehindShinClothing(panel: WardrobePanel, candidate: WardrobePanelCandidate, enabled: boolean) {
     if (panel.category !== 'sapato' || candidate.component.category !== 'sapato' || !selectedCharacter || selectedModelSlot === null) return
     const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
     const before = current.customization.wardrobeGroups ?? []
@@ -165,10 +165,10 @@ export function useCustomizerWardrobePanelActions(deps: {
     const wardrobeGroups = expandedGroups.map((group) => group.modelSlot === candidate.summary.modelSlot
       && group.setId === candidate.summary.id && group.category === 'sapato'
       && (!group.componentId || group.componentId === candidate.component.id)
-      ? { ...group, renderAboveShinClothing: enabled }
+      ? { ...group, renderBehindShinClothing: enabled }
       : group)
     await saveCharacterCustomization({ wardrobeGroups })
   }
 
-  return { applyWardrobePanel, applyWardrobePalette, setWardrobePieceColor, resetWardrobePieceColors, setShoeAboveShinClothing }
+  return { applyWardrobePanel, applyWardrobePalette, setWardrobePieceColor, resetWardrobePieceColors, setShoeBehindShinClothing }
 }

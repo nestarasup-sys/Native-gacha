@@ -11,13 +11,18 @@ export function normalizeCustomizerCharacter(character: CustomizerCharacter): Cu
     ...character,
     customization: {
       ...customization,
-      wardrobeGroups: customization.wardrobeGroups?.map((group) => ({
-        ...group,
-        category: group.category === ('cinto-saia-1' as typeof group.category) ? 'cinto'
-          : group.category === ('cinto-saia-2' as typeof group.category) ? 'saia-superior'
-          : group.category === 'saia' ? 'saia-superior' : group.category,
-        ...(legacyWardrobeColors && !group.colors ? { colors: legacyWardrobeColors } : {})
-      }))
+      wardrobeGroups: customization.wardrobeGroups?.map((storedGroup) => {
+        const group = { ...storedGroup } as typeof storedGroup & { renderAboveShinClothing?: boolean }
+        // The previous placement flag had the opposite meaning; leave old shoes at their default order.
+        delete group.renderAboveShinClothing
+        return {
+          ...group,
+          category: group.category === ('cinto-saia-1' as typeof group.category) ? 'cinto'
+            : group.category === ('cinto-saia-2' as typeof group.category) ? 'saia-superior'
+            : group.category === 'saia' ? 'saia-superior' : group.category,
+          ...(legacyWardrobeColors && !group.colors ? { colors: legacyWardrobeColors } : {})
+        }
+      })
     }
   }
 }

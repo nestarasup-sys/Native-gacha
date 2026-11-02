@@ -98,8 +98,8 @@ test('catálogo de roupas fica isolado e recebe seleção, cores e reparos por c
   assert.match(workspace, /onRemoveUnavailableLinks/)
   assert.match(workspace, /onApplyPalette/)
   assert.match(workspace, /onResetPieceColors/)
-  assert.match(workspace, /customizer-shoe-above-shin-toggle/)
-  assert.match(workspace, /onSetShoeAboveShinClothing/)
+  assert.match(workspace, /customizer-shoe-behind-shin-toggle/)
+  assert.match(workspace, /onSetShoeBehindShinClothing/)
   assert.match(workspace, /isWardrobePanelCandidateSelected/)
   assert.match(workspace, /customizer-upper-wardrobe-layout/)
 })
@@ -116,11 +116,15 @@ test('validador aceita formato atual e rejeita id, slot, cor ou pose inválidos'
   assert.equal(isCustomizerCharacter({ ...valid(), customization: { ...valid().customization, modelSlot: 11 } }), false)
   assert.equal(isCustomizerCharacter({ ...valid(), customization: { ...valid().customization, poseSlot: 13 } }), false)
   assert.equal(isCustomizerCharacter({ ...valid(), customization: { ...valid().customization, wardrobeGroups: [{modelSlot:1,setId:'x',category:'camisa',offsetX:0,offsetY:0,scaleX:0,scaleY:1,rotation:0}] } }), false)
-  const shoeGroup = { modelSlot: 1, setId: 'shoes', category: 'sapato', componentId: 'shoe-left', offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1, rotation: 0, renderAboveShinClothing: true }
+  const shoeGroup = { modelSlot: 1, setId: 'shoes', category: 'sapato', componentId: 'shoe-left', offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1, rotation: 0, renderBehindShinClothing: true }
   assert.equal(isCustomizerCharacter({ ...valid(), customization: { ...valid().customization, wardrobeGroups: [shoeGroup] } }), true)
-  assert.equal(isCustomizerCharacter({ ...valid(), customization: { ...valid().customization, wardrobeGroups: [{ ...shoeGroup, renderAboveShinClothing: 'true' }] } }), false)
+  assert.equal(isCustomizerCharacter({ ...valid(), customization: { ...valid().customization, wardrobeGroups: [{ ...shoeGroup, renderBehindShinClothing: 'true' }] } }), false)
   assert.equal(isCustomizerCharacter({ ...valid(), customization: { ...valid().customization, wardrobeGroups: [{ ...shoeGroup, category: 'camisa' }] } }), false)
-  assert.equal(normalizeCustomizerCharacter({ ...valid(), customization: { ...valid().customization, wardrobeGroups: [shoeGroup] } }).customization.wardrobeGroups[0].renderAboveShinClothing, true)
+  assert.equal(normalizeCustomizerCharacter({ ...valid(), customization: { ...valid().customization, wardrobeGroups: [shoeGroup] } }).customization.wardrobeGroups[0].renderBehindShinClothing, true)
+  const previousFlag = { ...shoeGroup, renderBehindShinClothing: undefined, renderAboveShinClothing: true }
+  const compatibleCharacter = normalizeCustomizerCharacter({ ...valid(), customization: { ...valid().customization, wardrobeGroups: [previousFlag] } })
+  assert.equal(compatibleCharacter.customization.wardrobeGroups[0].renderAboveShinClothing, undefined)
+  assert.equal(compatibleCharacter.customization.wardrobeGroups[0].renderBehindShinClothing, undefined)
 })
 
 test('criação persiste o gênero escolhido e mantém feminino como padrão legado', async (t) => {
@@ -170,10 +174,10 @@ test('criar, editar e excluir conserva formato e campos existentes', async (t) =
 test('preferência de camada do sapato persiste e reabre no personagem', async (t) => {
   const { service, repo } = await fixture(t)
   const created = await service.create('Luma')
-  const shoeGroup = { modelSlot: 1, setId: 'shoes', category: 'sapato', componentId: 'shoe-left', offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1, rotation: 0, renderAboveShinClothing: true }
+  const shoeGroup = { modelSlot: 1, setId: 'shoes', category: 'sapato', componentId: 'shoe-left', offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1, rotation: 0, renderBehindShinClothing: true }
   await service.save({ ...created, customization: { ...created.customization, wardrobeGroups: [shoeGroup] } })
   const reopened = (await repo.list())[0]
-  assert.equal(reopened.customization.wardrobeGroups[0].renderAboveShinClothing, true)
+  assert.equal(reopened.customization.wardrobeGroups[0].renderBehindShinClothing, true)
 })
 
 test('tamanho inicial da cabeça é salvo somente nos personagens novos que recebem a opção', async (t) => {

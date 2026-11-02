@@ -200,8 +200,8 @@ export type CustomizerWardrobeGroup = {
   opacity?: number
   /** Soft deletion from Adjust: omit this component from the preview while keeping it restorable. */
   hidden?: boolean
-  /** Draw this shoe after the matching shin layer in shared character renderers. */
-  renderAboveShinClothing?: boolean
+  /** Draw this shoe beneath matching shin clothing in shared character renderers. */
+  renderBehindShinClothing?: boolean
   /** Color overrides belong to this individual garment component. */
   colors?: CharacterColorOverrides
 }

@@ -247,23 +247,23 @@ test('índice de candidatos preserva filtros, ordem e agrupamento de cada painel
       wardrobeDetails,
       saveCharacterCustomization: async (patch) => { savedPatch = patch }
     })
-    await actions.setShoeAboveShinClothing(shoePanel, shoeCandidate, enabled)
+    await actions.setShoeBehindShinClothing(shoePanel, shoeCandidate, enabled)
     return savedPatch?.wardrobeGroups
   }
-  const raisedShoeGroups = await saveShoeLayerPreference(shoeGroups, true)
-  assert.equal(raisedShoeGroups.find(({ componentId }) => componentId === 'shoe-left-01').renderAboveShinClothing, true)
-  assert.equal(raisedShoeGroups.find(({ componentId }) => componentId === 'shoe-right-01').renderAboveShinClothing, undefined)
-  const loweredShoeGroups = await saveShoeLayerPreference(raisedShoeGroups, false)
-  assert.equal(loweredShoeGroups.find(({ componentId }) => componentId === 'shoe-left-01').renderAboveShinClothing, false)
-  assert.equal(shoeGroups[0].renderAboveShinClothing, undefined)
+  const shoeBehindShinGroups = await saveShoeLayerPreference(shoeGroups, true)
+  assert.equal(shoeBehindShinGroups.find(({ componentId }) => componentId === 'shoe-left-01').renderBehindShinClothing, true)
+  assert.equal(shoeBehindShinGroups.find(({ componentId }) => componentId === 'shoe-right-01').renderBehindShinClothing, undefined)
+  const defaultOrderShoeGroups = await saveShoeLayerPreference(shoeBehindShinGroups, false)
+  assert.equal(defaultOrderShoeGroups.find(({ componentId }) => componentId === 'shoe-left-01').renderBehindShinClothing, false)
+  assert.equal(shoeGroups[0].renderBehindShinClothing, undefined)
   const expandedLegacyGroups = await saveShoeLayerPreference([
     { modelSlot: 1, setId: 'main', category: 'sapato', offsetX: 3, offsetY: 4, scaleX: 1.1, scaleY: 1, rotation: 2 }
   ], true)
   assert.deepEqual(expandedLegacyGroups.map(({ componentId }) => componentId), [
     'shoe-left-01', 'shoe-right-01', 'shoe-left-02', 'shoe-right-02', 'shoe-unpaired'
   ])
-  assert.equal(expandedLegacyGroups.find(({ componentId }) => componentId === 'shoe-left-01').renderAboveShinClothing, true)
-  assert.equal(expandedLegacyGroups.find(({ componentId }) => componentId === 'shoe-right-01').renderAboveShinClothing, undefined)
+  assert.equal(expandedLegacyGroups.find(({ componentId }) => componentId === 'shoe-left-01').renderBehindShinClothing, true)
+  assert.equal(expandedLegacyGroups.find(({ componentId }) => componentId === 'shoe-right-01').renderBehindShinClothing, undefined)
   assert.equal(index.get('glasses')?.[0]?.headExtraAsset?.id, faceAsset.id)
   assert.equal(index.get('shirt')?.some((candidate) => candidate.summary.modelSlot === 2), false)
 })

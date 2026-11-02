@@ -12,7 +12,7 @@ import { createCharacterCanvas } from './canvasSurface'
 import { drawPreviewImageWithHalo } from './characterCanvasDrawing'
 import { isModelBodyPartName } from './skinTint'
 import { drawWardrobeJointBridge } from './wardrobeJointBridge'
-import { resolveShoeOverlayAnchorPartId } from './wardrobeShoeLayering'
+import { resolveShoeBehindShinPlacement } from './wardrobeShoeLayering'
 
 export type ClothingGroupCategory = CustomizerWardrobeCategory
 export type SelectedWardrobeComponent = { modelSlot: number; setId: string; category: ClothingGroupCategory; componentId: string }
@@ -33,6 +33,12 @@ type MappedWardrobeGarment = {
   transform: ReturnType<typeof mapWardrobeComponentToPose>
   center: { x: number; y: number }
   sequence: number
+}
+
+type MappedWardrobeJointBridge = {
+  upper: MappedWardrobeGarment
+  lower: MappedWardrobeGarment
+  lowerSourceOffset: { x: number; y: number }
 }
 
 export function createCharacterWardrobeRenderer(loaders: CharacterWardrobeImageLoaders) {
@@ -175,7 +181,7 @@ export function createCharacterWardrobeRenderer(loaders: CharacterWardrobeImageL
       pair[sleeveSegment] = garment
       pairedGarments.set(key, pair)
     }
-    const bridgesAfterPart = new Map<string, Array<{ upper: MappedWardrobeGarment; lower: MappedWardrobeGarment; lowerSourceOffset: { x: number; y: number } }>>()
+    const bridgesAfterPart = new Map<string, MappedWardrobeJointBridge[]>()
     for (const pair of pairedGarments.values()) {
       const { upper, lower } = pair
       if (!upper || !lower) continue
@@ -194,14 +200,39 @@ export function createCharacterWardrobeRenderer(loaders: CharacterWardrobeImageL
       bridgesAfterPart.set(renderAfterPart, bridges)
     }
 
-    const shoeOverlaysAfterPart = new Map<string, MappedWardrobeGarment[]>()
+    const shoeLayersBehindShinAfterPart = new Map<string, {
+      shoes: MappedWardrobeGarment[]
+      shinGarments: MappedWardrobeGarment[]
+      bridges: MappedWardrobeJointBridge[]
+    }>()
+    const deferredShoes = new Set<MappedWardrobeGarment>()
+    const deferredShinGarments = new Set<MappedWardrobeGarment>()
+    const deferredJointBridges = new Set<MappedWardrobeJointBridge>()
     for (const garment of mappedGarments) {
-      if (garment.component.category !== 'sapato' || garment.group.renderAboveShinClothing !== true) continue
-      const anchor = resolveShoeOverlayAnchorPartId(
+      if (garment.component.category !== 'sapato' || garment.group.renderBehindShinClothing !== true) continue
+      const placement = resolveShoeBehindShinPlacement(
         garment.component, garment.targetBone, artwork.parts, bodyOrder)
-      const overlays = shoeOverlaysAfterPart.get(anchor) ?? []
-      overlays.push(garment)
-      shoeOverlaysAfterPart.set(anchor, overlays)
+      if (!placement.shinPartId) continue
+      const layers = shoeLayersBehindShinAfterPart.get(placement.renderAfterPartId) ?? {
+        shoes: [], shinGarments: [], bridges: []
+      }
+      layers.shoes.push(garment)
+      deferredShoes.add(garment)
+      for (const shinGarment of garmentLayers.get(placement.shinPartId) ?? []) {
+        if (shinGarment.component.category !== 'calca-canela' || deferredShinGarments.has(shinGarment)) continue
+        layers.shinGarments.push(shinGarment)
+        deferredShinGarments.add(shinGarment)
+      }
+      for (const bridges of bridgesAfterPart.values()) {
+        for (const bridge of bridges) {
+          if (bridge.lower.component.category !== 'calca-canela'
+            || bridge.lower.component.attachedPartId !== placement.shinPartId
+            || deferredJointBridges.has(bridge)) continue
+          layers.bridges.push(bridge)
+          deferredJointBridges.add(bridge)
+        }
+      }
+      shoeLayersBehindShinAfterPart.set(placement.renderAfterPartId, layers)
     }
 
     async function renderWardrobeGarment(garment: MappedWardrobeGarment) {
@@ -248,6 +279,19 @@ export function createCharacterWardrobeRenderer(loaders: CharacterWardrobeImageL
       }
     }
 
+    async function renderWardrobeJointBridge(bridge: MappedWardrobeJointBridge) {
+      try {
+        const upperImage = await loadGarmentImage(bridge.upper)
+        const lowerImage = await loadGarmentImage(bridge.lower)
+        drawWardrobeJointBridge(outputContext!,
+          { ...bridge.upper, image: upperImage },
+          { ...bridge.lower, image: lowerImage, sourceOffset: bridge.lowerSourceOffset })
+      } catch {
+        const name = bridge.upper.component.name.replace(/ · (braço superior|coxa)$/i, '')
+        throw new Error(`Não foi possível preparar a continuidade da roupa “${name}” na junta desta pose. Revise os dois segmentos em Roupas DEV.`)
+      }
+    }
+
     for (const partId of bodyOrder) {
       const part = artwork.parts.find((item) => item.id === partId)
       if (!part) continue
@@ -268,23 +312,17 @@ export function createCharacterWardrobeRenderer(loaders: CharacterWardrobeImageL
       }
       const garments = (garmentLayers.get(part.id) ?? []).sort((a, b) => a.sequence - b.sequence)
       for (const garment of garments) {
-        if (garment.component.category === 'sapato' && garment.group.renderAboveShinClothing === true) continue
+        if (deferredShoes.has(garment) || deferredShinGarments.has(garment)) continue
         await renderWardrobeGarment(garment)
       }
       for (const bridge of bridgesAfterPart.get(part.id) ?? []) {
-        try {
-          const upperImage = await loadGarmentImage(bridge.upper)
-          const lowerImage = await loadGarmentImage(bridge.lower)
-          drawWardrobeJointBridge(outputContext,
-            { ...bridge.upper, image: upperImage },
-            { ...bridge.lower, image: lowerImage, sourceOffset: bridge.lowerSourceOffset })
-        } catch {
-          const name = bridge.upper.component.name.replace(/ · (braço superior|coxa)$/i, '')
-          throw new Error(`Não foi possível preparar a continuidade da roupa “${name}” na junta desta pose. Revise os dois segmentos em Roupas DEV.`)
-        }
+        if (!deferredJointBridges.has(bridge)) await renderWardrobeJointBridge(bridge)
       }
-      for (const garment of shoeOverlaysAfterPart.get(part.id) ?? []) {
-        await renderWardrobeGarment(garment)
+      const behindLayers = shoeLayersBehindShinAfterPart.get(part.id)
+      for (const shoe of behindLayers?.shoes ?? []) await renderWardrobeGarment(shoe)
+      for (const shinGarment of behindLayers?.shinGarments ?? []) await renderWardrobeGarment(shinGarment)
+      for (const bridge of behindLayers?.bridges ?? []) {
+        await renderWardrobeJointBridge(bridge)
       }
     }
     // Reutiliza os buffers renderizados em memória. Serializar cada

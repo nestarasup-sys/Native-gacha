@@ -6,6 +6,11 @@ type ShoeAttachment = {
   sleeveSide?: 'left' | 'right'
 }
 
+export type ShoeBehindShinPlacement = {
+  shinPartId: string | null
+  renderAfterPartId: string
+}
+
 function distanceBetweenParts(left: ModelPart, right: ModelPart): number {
   const leftScale = Math.max(1, left.width, left.height)
   const rightScale = Math.max(1, right.width, right.height)
@@ -14,13 +19,13 @@ function distanceBetweenParts(left: ModelPart, right: ModelPart): number {
   return Math.hypot(x / Math.max(leftScale, rightScale), y / Math.max(leftScale, rightScale))
 }
 
-/** Places a shoe overlay after its own foot and the matching shin layer. */
-export function resolveShoeOverlayAnchorPartId(
+/** Resolves the matching shin and waits until both it and the shoe's bone are drawn. */
+export function resolveShoeBehindShinPlacement(
   shoe: ShoeAttachment,
   targetBone: ModelPart,
   bodyParts: readonly ModelPart[],
   bodyOrder: readonly string[]
-): string {
+): ShoeBehindShinPlacement {
   const target = bodyParts.find((part) => part.id === shoe.attachedPartId) ?? targetBone
   const side = shoe.sleeveSide ?? modelRigSide(target.name)
   const lowerLegs = bodyParts.filter((part) => modelRigSegmentKind(part.name) === 'lower-leg')
@@ -32,5 +37,8 @@ export function resolveShoeOverlayAnchorPartId(
     .sort((left, right) => distanceBetweenParts(target, left) - distanceBetweenParts(target, right))[0]
   const anchors = [target.id, closestShin?.id].filter((id): id is string => Boolean(id))
   const lastAnchorIndex = Math.max(...anchors.map((id) => bodyOrder.indexOf(id)).filter((index) => index >= 0))
-  return lastAnchorIndex >= 0 ? bodyOrder[lastAnchorIndex] : targetBone.id
+  return {
+    shinPartId: closestShin?.id ?? null,
+    renderAfterPartId: lastAnchorIndex >= 0 ? bodyOrder[lastAnchorIndex] : targetBone.id
+  }
 }
