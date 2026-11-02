@@ -29,7 +29,7 @@ Este documento acompanha a execução das Fases 1–6 e complementa a baseline d
 | 2 | Núcleo compartilhado de personagens | Concluída | Consumidores e regressões mapeados. Escala-base idêntica entre Studio e Editor V6 centralizada; renderizadores e contratos de exportação distintos mantidos. Testes de personagem/gênero/roupas articuladas executáveis por script dedicado. |
 | 3 | Fabricador e Customizador | Em andamento | Fluxo de catálogo/customizações coberto de ponta a ponta; primeira fronteira de gravação do Fabricador extraída. Restam mapear/decompor os maiores workspaces e ampliar cenários de reabertura. |
 | 4 | Studio, Editor V6 e fluxos de vídeo | Em andamento | Criação/duplicação de cenas do Studio extraídas e testadas; comandos próprios do Editor V6, timeline e exportação permanecem separados. Restam a revisão de vídeos, workers e paridade de exportação. |
-| 5 | Roteiros, Base de Vídeos, Opções, componentes e CSS | Não iniciada | Preservar propriedade da biblioteca de mídia e bloqueio de referências. |
+| 5 | Roteiros, Base de Vídeos, Opções, componentes e CSS | Em andamento | Biblioteca continua dona dos arquivos/IDs; Roteiros mantém metadados e referências. Testes sintéticos comprovam bloqueio de exclusão de fundos/GIFs referenciados; estilos de Opções foram movidos sem mudança visual para folha da feature. Restam decomposição dos workspaces e etapas adicionais de CSS. |
 | 6 | Performance, CI e consolidação | Não iniciada | Medir antes/depois; remover legado somente após comprovar ausência de consumidores. |
 
 ## Fatias implementadas
@@ -99,6 +99,16 @@ O Node test runner não resolvia imports relativos extensionless `.ts` usados po
 - **Verificações:** `test:studio:project-commands` passou 3/3; persistência/histórico/asset transaction do Studio passou 26/26; `npm run test:refactor` passou; `npm run test:editor-v6` passou com 220 testes e 1 skip; typecheck, audit arquitetural (567 arquivos TS/TSX) e build passaram.
 - **Pendências:** revisar caminho de captura/exportação do Studio, jobs e workers do Editor V6, fluxo de áudio/vídeo, paridade preview/export e dados legados das bibliotecas sem reativar a antiga interface Video Studio.
 
+### Proteção de referências de mídia dos Roteiros e escopo do CSS de Opções
+
+- **Propriedade preservada:** a biblioteca de mídia segue responsável pelos arquivos e IDs de fundos e GIFs; Roteiros continua responsável pelas referências. Os serviços de exclusão chamam os guards SQLite antes de excluir e bloqueiam a operação quando o catálogo não está disponível.
+- **Regressões sintéticas:** `tests/roteiros-asset-reference-guards.test.mjs` cobre bloqueio de fundo referenciado, bloqueio de GIF referenciado, exclusão após remover a referência e falha segura quando o catálogo não inicializou. Usa `DatabaseSync(':memory:')`; nenhum dado do perfil ou arquivo de usuário é usado.
+- **Compatibilidade do teste:** `RoteirosRepository` passou de parâmetro-propriedade TypeScript para campo explícito, mantendo a mesma API/runtime e permitindo o import direto com `node --experimental-strip-types` usado pelos testes.
+- **CSS de Opções:** as regras do bloco `Options / local diagnostics` foram movidas de `src/renderer/src/ui/styles.css` para `src/renderer/src/features/options/options.css`, carregadas pelo próprio `OptionsPage`. Comparação do conteúdo contra `HEAD` confirmou as 124 linhas originais idênticas; a alteração organiza propriedade sem redesign ou ajuste de declarações.
+- **Verificações:** `test:roteiros:asset-references` 3/3; `npm run test:roteiros` 16/16; `npm run test:base-videos` 7/7; `npm run test:refactor`, `npm run typecheck`, `npm run audit:architecture` (567 arquivos TS/TSX) e `npm run build` passaram; `git diff --check` passou.
+- **Commit local:** `497079f` (`refactor: scope Options styles and test roteiro media guards`).
+- **Pendências:** decompor os workspaces de Roteiros/Base de Vídeos/Opções onde houver fronteiras reais de sessão/comando; continuar movendo CSS por feature com verificação de equivalência. Nenhuma mudança de schema ou formato persistido.
+
 ## Reconciliação das falhas da baseline
 
 As falhas observadas na execução inicial da suíte em `f416a02` foram investigadas e reconciliadas:
@@ -127,4 +137,5 @@ As falhas observadas na execução inicial da suíte em `f416a02` foram investig
 | `a5c30c21c32bd47618ee6d08850c5eda96631e68` | Habilita execução Node de contratos de personagem com imports TS extensionless | Local em `Dev-V2`; sem publicação. |
 | `986aba7` | Extrai o comando de gravação de roupas e cobre continuidade Fabricador/Customizador | Local em `Dev-V2`; sem publicação. |
 | `da3ee89` | Extrai criação/duplicação de projetos do Studio sem compartilhar o contrato do Editor V6 | Local em `Dev-V2`; sem publicação. |
+| `497079f` | Preserva guardas de referências de mídia de Roteiros e move CSS de Opções sem alterar regras | Local em `Dev-V2`; sem publicação. |
 
