@@ -29,7 +29,7 @@ Este documento acompanha a execução das Fases 1–6 e complementa a baseline d
 | 2 | Núcleo compartilhado de personagens | Concluída | Consumidores e regressões mapeados. Escala-base idêntica entre Studio e Editor V6 centralizada; renderizadores e contratos de exportação distintos mantidos. Testes de personagem/gênero/roupas articuladas executáveis por script dedicado. |
 | 3 | Fabricador e Customizador | Em andamento | Fluxo de catálogo/customizações coberto de ponta a ponta; gravação de roupas, operações de cabelo e seleção de peça no Customizador têm fronteiras/testes próprios. Restam mapear/decompor os workspaces maiores e ampliar cenários de reabertura. |
 | 4 | Studio, Editor V6 e fluxos de vídeo | Em andamento | Criação/duplicação de cenas do Studio extraídas; miniatura 480×270 corrigida; paridade Turbo e exportação facial 720p/1080p aprovadas. A antiga tela Video Studio não tem rota, mas as bibliotecas legadas seguem ativas em Roteiros e como origem de mídia do Editor V6. Teste de cancelamento do worker cobre espera do compositor. Restam validação da impressão do Studio e medições/exportação dos workers. |
-| 5 | Roteiros, Base de Vídeos, Opções, componentes e CSS | Em andamento | Biblioteca continua dona dos arquivos/IDs; Roteiros mantém metadados e referências. Guardas, canais, fila de salvamento e exclusão de categoria da Base de Vídeos têm contratos testados; estilos e cálculos puros de Opções estão isolados. Restam decomposição adicional dos workspaces e CSS por feature. |
+| 5 | Roteiros, Base de Vídeos, Opções, componentes e CSS | Em andamento | Biblioteca continua dona dos arquivos/IDs; Roteiros mantém metadados e referências. Guardas, canais, fila, exclusão de categoria e modelo de listagem da Base de Vídeos têm contratos testados; estilos e cálculos puros de Opções estão isolados. Restam decomposição adicional dos workspaces e CSS por feature. |
 | 6 | Performance, CI e consolidação | Em andamento | Workflow da Dev-V2 roda gates gerais e Editor V6 por plataforma; build Windows é reutilizado pelos testes MP4. Baseline repetível do cenário médio do Editor V6 registrada e captura IPC passou a ser estruturada. Restam medições de inicialização, Studio, outros workspaces e exportação, além de comparações repetidas antes de otimizar. |
 
 ## Fatias implementadas
@@ -202,6 +202,15 @@ O Node test runner não resolvia imports relativos extensionless `.ts` usados po
 - **Commit local:** `c81a7b9` (`refactor: isolate Base Videos category deletion`).
 - **Pendências:** criação/edição de categoria e publicação ainda não foram extraídas; cada fluxo requer preservar sua semântica transacional antes de mudar de fronteira.
 
+### Modelo de busca, filtro e ordenação da Base de Vídeos
+
+- **Fronteira extraída:** `baseVideoListModel.ts` aplica busca nos campos existentes, separação entre publicados/rascunhos, filtro de linha temporal e os quatro modos de ordenação. `BaseVideosPage` mantém os controles React e memoriza o resultado chamando o modelo puro.
+- **Semântica preservada:** locale `pt-BR`, trim e caixa da busca, consultas a nome/ID/número/descrição/contexto, número zero como publicado, rascunhos por data mais recente, duração nula como zero e ordem de publicação numérica. A função não altera a lista recebida.
+- **Testes sintéticos:** sete cenários cobrem filtros, campos buscáveis, ordenações, metadados ausentes, não mutação e delegação da página.
+- **Verificações:** teste focado 7/7; `npm run test:refactor` passou com 641 testes no conjunto principal e os scripts encadeados; `npm run test:base-videos` 8/8; typecheck, audit arquitetural (577 arquivos TS/TSX), build e `git diff --check` passaram.
+- **Commit local:** `4d2df05` (`refactor: extract Base Videos list model`).
+- **Pendências:** a criação/edição de categoria, publicação, importação e exclusão em lote seguem na página; preservar operações parciais e compensações ao extrair esses fluxos.
+
 ### Gates gerais de CI na Dev-V2 e reutilização do bundle
 
 - **Gates gerais:** o workflow `editor-v6-parity.yml` passa a rodar `audit:architecture`, `test:refactor`, `test:geometry` e `typecheck` em um job Ubuntu para cada push ou PR da Dev-V2. Os testes de timeline/export do Editor V6 continuam em Linux e Windows.
@@ -267,4 +276,5 @@ As falhas observadas na execução inicial da suíte em `f416a02` foram investig
 | `e5b5ff9` | Cobre cancelamento durante a espera do compositor no worker de exportação | Local em `Dev-V2`; sem publicação. |
 | `94df39e` | Documenta ownership das bibliotecas de vídeo legadas e validação do cancelamento de workers | Local em `Dev-V2`; sem publicação. |
 | `c81a7b9` | Extrai exclusão de categoria da Base de Vídeos com ordem de flush testada | Local em `Dev-V2`; sem publicação. |
+| `4d2df05` | Extrai seleção, busca e ordenação da Base de Vídeos em modelo puro | Local em `Dev-V2`; sem publicação. |
 
