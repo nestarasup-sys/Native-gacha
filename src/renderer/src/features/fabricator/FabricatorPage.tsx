@@ -22,6 +22,7 @@ import { serializeFabricatorProject } from './models/projectSerialization'
 import { createFabricatorProjectSaveCoordinator } from './projectSaveCoordinator'
 import { useFabricatorHistory } from './useFabricatorHistory'
 import { prepareLoadedFabricatorProject } from './models/projectHydration'
+import { loadFabricatorSlotForEditing } from './models/loadFabricatorSlotForEditing'
 import { type ModelSourceResult } from './models/modelSource'
 import { ModelSkinContourEditor } from './ModelSkinContourEditor'
 import { MaleTorsoEditorModal } from './MaleTorsoEditorModal'
@@ -293,22 +294,16 @@ export function FabricatorPage() {
       return
     }
     try {
-      const loaded = await window.desktop.fabricator.loadFabricatorSlot(slot)
-      if (generation !== slotSelectionGeneration.current) return
-      if (!loaded) throw new Error('O projeto salvo não pôde ser carregado.')
-      let loadedHistory: FabricatorHistoryState = { undo: [], redo: [] }
-      try { loadedHistory = await window.desktop.fabricator.loadFabricatorHistory(slot) } catch {
-        if (generation !== slotSelectionGeneration.current) return
-        setError('O modelo abriu, mas o histórico persistido não pôde ser carregado.')
-      }
-      if (generation !== slotSelectionGeneration.current) return
-      replaceHistory(loadedHistory)
-      const prepared = await prepareLoadedFabricatorProject(
-        loaded,
-        loadedHistory,
-        () => generation === slotSelectionGeneration.current
-      )
-      if (!prepared || generation !== slotSelectionGeneration.current) return
+      const snapshot = await loadFabricatorSlotForEditing(slot, {
+        loadProject: (targetSlot) => window.desktop.fabricator.loadFabricatorSlot(targetSlot),
+        loadHistory: (targetSlot) => window.desktop.fabricator.loadFabricatorHistory(targetSlot),
+        isCurrent: () => generation === slotSelectionGeneration.current,
+        onHistoryLoadFailure: () => setError('O modelo abriu, mas o histórico persistido não pôde ser carregado.'),
+        replaceHistory,
+        prepareProject: prepareLoadedFabricatorProject
+      })
+      if (!snapshot || generation !== slotSelectionGeneration.current) return
+      const { loaded, prepared } = snapshot
       for (const [partId, dataUrl] of prepared.dirtyAssets) dirtyAssets.current.set(partId, dataUrl)
       for (const [partId, dataUrl] of prepared.dirtyChromaBases) dirtyChromaBases.current.set(partId, dataUrl)
       if (prepared.warning) setError(prepared.warning)
