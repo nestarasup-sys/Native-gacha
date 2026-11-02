@@ -96,6 +96,7 @@ import { createRoteirosWriteQueue } from './domains/roteiros/writeQueue'
 import { registerRoteirosIpc, type RoteirosIpcLifecycle } from './application/registerRoteirosIpc'
 import { configureDevAiDataRoot, configureLocalAppDataRoot } from './application/appDataBootstrap'
 import { selectRendererMemorySnapshot } from './application/rendererMemorySnapshot'
+import { createPersistenceShutdownHandler } from './application/persistenceShutdown'
 import { createMainWindowFactory } from './application/mainWindow'
 import { createEditorV6VideoReferenceLookup } from './domains/editorV6/videoReferences'
 import { canVisibleRendererRequestFullscreen, createRendererTrustPolicy, isTrustedRendererFrame } from './application/rendererTrust'
@@ -1071,38 +1072,28 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
 })
 
-let waitingForPersistenceWritesBeforeQuit = false
-let persistenceWritesDrainedForQuit = false
-app.on('before-quit', (event) => {
-  if (persistenceWritesDrainedForQuit) return
-  // Always prevent quit while an asynchronous drain is in flight. A second
-  // before-quit must not bypass the first drain.
-  event.preventDefault()
-  if (waitingForPersistenceWritesBeforeQuit) return
-  waitingForPersistenceWritesBeforeQuit = true
-  editorV6ExportService?.cancelAll()
-  editorV6MotionService?.cancelAll()
-  const pendingWrites = [
+app.on('before-quit', createPersistenceShutdownHandler({
+  getPendingOperations: () => [
     ...collectPendingPersistenceWrites(),
     ...(dataBackupIpc?.getActiveTasks() ?? []),
     ...(roteiroExportIpc ? [roteiroExportIpc.drain()] : []),
     ...(editorV6ExportService ? [editorV6ExportService.drain()] : []),
     ...(editorV6MotionService ? [editorV6MotionService.drain()] : [])
-  ]
-  void Promise.allSettled(pendingWrites).then((results) => {
-    waitingForPersistenceWritesBeforeQuit = false
-    const failed = results.some((result) => result.status === 'rejected')
-    if (failed) {
-      roteiroExportIpc?.resumeAfterFailedShutdown()
-      editorV6ExportService?.resumeAfterFailedShutdown()
-      // Do not report successful shutdown after a persistence failure.
-      // Keep the application available for retry/recovery instead.
-      if (!BrowserWindow.getAllWindows().some((window) => !window.isDestroyed())) createMainWindow()
-      dialog.showErrorBox('Falha no salvamento', 'Uma gravação pendente falhou. O aplicativo permanecerá aberto para proteger suas alterações.')
-      return
-    }
-    persistenceWritesDrainedForQuit = true
-    dataPlatform.close()
-    app.quit()
-  })
-})
+  ],
+  cancelExports: () => {
+    editorV6ExportService?.cancelAll()
+    editorV6MotionService?.cancelAll()
+  },
+  resumeAfterFailedShutdown: () => {
+    roteiroExportIpc?.resumeAfterFailedShutdown()
+    editorV6ExportService?.resumeAfterFailedShutdown()
+  },
+  hasUsableWindow: () => BrowserWindow.getAllWindows().some((window) => !window.isDestroyed()),
+  createWindow: createMainWindow,
+  showPersistenceFailure: () => dialog.showErrorBox(
+    'Falha no salvamento',
+    'Uma gravação pendente falhou. O aplicativo permanecerá aberto para proteger suas alterações.'
+  ),
+  closeDataPlatform: () => dataPlatform.close(),
+  quit: () => app.quit()
+}))
