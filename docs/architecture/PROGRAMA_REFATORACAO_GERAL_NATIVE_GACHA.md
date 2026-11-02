@@ -27,7 +27,7 @@ Este documento acompanha a execução das Fases 1–6 e complementa a baseline d
 | 0 | Auditoria e baseline arquitetural | Concluída antes deste programa | [Relatório da Fase 0](./AUDITORIA_REFATORACAO_GERAL_V1_FASE_0.md). |
 | 1 | Electron, IPC, persistência, backups e filas | Concluída | Diagnóstico de memória corrigido; ciclo de encerramento extraído e coberto; diferenças das filas mapeadas; backup, manutenção e segurança de janela passaram. Os gatilhos gerais de CI de `Dev-V2` ficam na Fase 6. |
 | 2 | Núcleo compartilhado de personagens | Concluída | Consumidores e regressões mapeados. Escala-base idêntica entre Studio e Editor V6 centralizada; renderizadores e contratos de exportação distintos mantidos. Testes de personagem/gênero/roupas articuladas executáveis por script dedicado. |
-| 3 | Fabricador e Customizador | Em andamento | Fluxo de catálogo/customizações coberto de ponta a ponta; gravação de roupas, operações de cabelo, persistência serializada por personagem com recuperação e estado final protegido contra writes obsoletos, seleção de peça no Customizador, carregamento/hidratação, duplicação e publicação de folha-base do Fabricador, e validação de conjuntos salvos em Roupas DEV têm fronteiras/testes próprios. Restam mapear/decompor os workspaces maiores e ampliar cenários de reabertura. |
+| 3 | Fabricador e Customizador | Em andamento | Fluxo de catálogo/customizações coberto de ponta a ponta; gravação de roupas, operações de cabelo, persistência serializada por personagem com recuperação e estado final protegido contra writes obsoletos, seleção de peça no Customizador, carregamento/hidratação, duplicação e publicação de folha-base do Fabricador, validação de conjuntos e corte de peças por junta em Roupas DEV têm fronteiras/testes próprios. Restam mapear/decompor os workspaces maiores e ampliar cenários de reabertura. |
 | 4 | Studio, Editor V6 e fluxos de vídeo | Em andamento | Criação/duplicação e impressão do Studio extraídas; miniatura 480×270 corrigida; paridade Turbo e exportação facial 720p/1080p aprovadas. A impressão foi validada do canvas ao handler IPC com fixture de arquivos sintética. A antiga tela Video Studio não tem rota, mas as bibliotecas legadas seguem ativas em Roteiros e como origem de mídia do Editor V6. Teste de cancelamento do worker cobre espera do compositor. Restam medições e validação comparativa dos workers de exportação. |
 | 5 | Roteiros, Base de Vídeos, Opções, componentes e CSS | Em andamento | Biblioteca continua dona dos arquivos/IDs; Roteiros mantém metadados e referências. Guardas, fila de snapshots, canais, fila de metadados, carregamento, listagem, publicação, CRUD de categorias, importação e exclusões da Base de Vídeos têm contratos testados; estilos da Base de Vídeos e modelos/comandos de Opções têm módulos por feature. Restam decomposição adicional dos workspaces e migração gradual do CSS com revisão visual. |
 | 6 | Performance, CI e consolidação | Em andamento | Workflow da Dev-V2 roda gates gerais e Editor V6 por plataforma; build Windows é reutilizado pelos testes MP4. Baseline de runtime e benchmarks sintéticos de projeção, indexação e processamento de pixels registrados. A exportação de stress ainda não mede desempenho: o harness não fornece o personagem/baker exigido pela fala e remover a fala invalida as chaves dos atlas persistidos. Restam medição válida de exportação, inicialização e interação real dos workspaces, além de comparações equivalentes antes de otimizar. |
@@ -400,6 +400,15 @@ O Node test runner não resolvia imports relativos extensionless `.ts` usados po
 - **Commit local:** `811ac13` (`refactor: isolate Fabricator model source publishing`).
 - **Compatibilidade:** nenhum schema, ID, conteúdo serializado, canal IPC ou propriedade do catálogo foi alterado; fixtures sintéticas sem acesso à biblioteca de usuário.
 
+### Corte de roupas longas nas juntas do modelo
+
+- **Fronteira extraída:** `splitWardrobeGarmentPairAtJoint` calcula os dois lados, encontra as juntas, recorta os pixels e monta peças superior/inferior com categorias, anexos, dimensões e encaixes correspondentes. `WardrobeWorkspace` mantém a interação, a adaptação de `Image`/canvas e verifica que o rascunho ainda é a mesma referência antes de publicar a substituição.
+- **Atomicidade da sessão:** o comando acumula os recortes em memória e só retorna o par completo; falta de par, junta ou osso lança o erro existente e a página não altera o rascunho. A gravação continua sendo responsabilidade do salvamento do conjunto pelo serviço do Fabricador.
+- **Testes sintéticos:** quatro cenários cobrem a divisão bilateral, preservação de IDs superiores e criação de IDs inferiores, categorias e bindings, par incompleto, junta ausente no segundo lado e guarda de resultado obsoleto na página. `npm run test:fabricator:wardrobe-joint-split` passou 4/4.
+- **Verificações:** `npm run test:refactor` passou com 641/641 testes na suíte principal e todos os scripts encadeados; `npm run test:geometry` 5/5; `npm run test:character-contracts` 15/15; typecheck, audit arquitetural (593 arquivos TS/TSX), build e `git diff --check` passaram.
+- **Commit local:** `84b9d80` (`refactor: isolate wardrobe joint garment splitting`).
+- **Compatibilidade:** nenhuma mudança de preview, PNG, ID, schema, payload persistido ou propriedade dos conjuntos; a calibração e o corte continuam usando o modelo-base de catálogo do Fabricador.
+
 ## Reconciliação das falhas da baseline
 
 As falhas observadas na execução inicial da suíte em `f416a02` foram investigadas e reconciliadas:
@@ -460,4 +469,6 @@ As falhas observadas na execução inicial da suíte em `f416a02` foram investig
 | `fa34f9a` | Extrai a persistência de snapshots do renderer de Roteiros com flush de estado atual | Local em `Dev-V2`; sem publicação. |
 | `ca1a970` | Extrai a sequência de salvamento e duplicação de slot do Fabricador | Local em `Dev-V2`; sem publicação. |
 | `811ac13` | Isola a publicação da folha-base editada após persistir o projeto Fabricador | Local em `Dev-V2`; sem publicação. |
+| `f85d0ae` | Registra benchmarks sintéticos e a pendência do harness de exportação do Editor V6 | Local em `Dev-V2`; sem publicação. |
+| `84b9d80` | Extrai corte bilateral de roupas DEV por junta com fixtures sintéticas | Local em `Dev-V2`; sem publicação. |
 
