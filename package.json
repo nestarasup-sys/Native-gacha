@@ -94,7 +94,7 @@
     "test:customizer:hair-palette": "node --experimental-strip-types --test tests/customizer-hair-palette.test.mjs",
     "test:studio:project-commands": "node --experimental-strip-types --import ./scripts/testing/register-typescript-extensions.mjs --test tests/studio-project-commands.test.mjs",
     "test:roteiros:asset-references": "node --experimental-strip-types --import ./scripts/testing/register-typescript-extensions.mjs --test tests/roteiros-asset-reference-guards.test.mjs",
-    "test:options:diagnostics": "node --experimental-strip-types --import ./scripts/testing/register-typescript-extensions.mjs --test tests/options-diagnostics.test.mjs",
+    "test:options:diagnostics": "node --experimental-strip-types --import ./scripts/testing/register-typescript-extensions.mjs --test tests/options-diagnostics.test.mjs tests/logs-dev-navigation.test.mjs",
     "test:fabricator:hair-processor-client": "node --experimental-strip-types --import ./scripts/testing/register-typescript-extensions.mjs --test tests/hair-processor-client.test.mjs",
     "test:fabricator:hair-style-save": "node --experimental-strip-types --import ./scripts/testing/register-typescript-extensions.mjs --test tests/hair-style-save-command.test.mjs",
     "test:base-videos:save-queue": "node --experimental-strip-types --import ./scripts/testing/register-typescript-extensions.mjs --test tests/base-video-details-save-queue.test.mjs",

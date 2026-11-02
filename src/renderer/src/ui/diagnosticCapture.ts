@@ -1,11 +1,11 @@
+import { sanitizeDiagnosticRoute } from '../../../shared/applicationRoutes.ts'
+
 type DiagnosticSeverity = 'error' | 'warning' | 'info'
 
 function currentSafeRoute(): string {
   const hashRoute = window.location.hash.startsWith('#/') ? window.location.hash.slice(1).split(/[?#]/, 1)[0] : ''
   const path = hashRoute || window.location.pathname.split(/[?#]/, 1)[0]
-  return ['/', '/customizar', '/estudio', '/editor-v6', '/roteiros', '/base-videos', '/opcoes', '/fabricador-dev'].includes(path)
-    ? path
-    : '(outra rota)'
+  return sanitizeDiagnosticRoute(path) ?? '(outra rota)'
 }
 
 function messageOf(reason: unknown): string {

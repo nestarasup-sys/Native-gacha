@@ -3,15 +3,16 @@ import type { MouseEvent as ReactMouseEvent } from 'react'
 import { NavLink, useLocation, useNavigate } from 'react-router'
 import { Icon } from './Icon'
 import { flushPendingRendererWrites } from '../pendingPersistence'
+import { APPLICATION_ROUTES } from '../../../../shared/applicationRoutes'
 
 const sections = [
-  { label: 'Studio', path: '/estudio', icon: 'camera' },
-  { label: 'EDITOR V6', path: '/editor-v6', icon: 'sparkles' },
-  { label: 'Roteiros', path: '/roteiros', icon: 'message' },
-  { label: 'Base de vídeos', path: '/base-videos', icon: 'frame' },
-  { label: 'Customizar', path: '/customizar', icon: 'bow' },
-  { label: 'Opções', path: '/opcoes', icon: 'settings' },
-  { label: 'Fabricador Dev', path: '/fabricador-dev', icon: 'box' }
+  { label: 'Studio', path: APPLICATION_ROUTES.studio, icon: 'camera' },
+  { label: 'EDITOR V6', path: APPLICATION_ROUTES.editorV6, icon: 'sparkles' },
+  { label: 'Roteiros', path: APPLICATION_ROUTES.roteiro, icon: 'message' },
+  { label: 'Base de vídeos', path: APPLICATION_ROUTES.baseVideos, icon: 'frame' },
+  { label: 'Customizar', path: APPLICATION_ROUTES.customizer, icon: 'bow' },
+  { label: 'Logs Dev', path: APPLICATION_ROUTES.logsDev, icon: 'settings' },
+  { label: 'Fabricador Dev', path: APPLICATION_ROUTES.fabricatorDev, icon: 'box' }
 ] as const
 
 export function TopBar() {

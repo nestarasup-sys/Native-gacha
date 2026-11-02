@@ -1,9 +1,11 @@
+import { UI_PERFORMANCE_ROUTES } from '../../../shared/applicationRoutes.ts'
+
 /** Opt-in aggregate diagnostics: no user/project names, asset paths or content. */
 type RouteStats = { commits:number; commitMs:number; worstCommitMs:number; longTasks:number; longTaskMs:number; commitSamples:Array<{phase:string;actualDuration:number;baseDuration:number;startTime:number;commitTime:number}>; longTaskSamples:Array<{startTime:number;duration:number}>; sceneResolveSamples:Array<{at:number;durationMs:number;elementCount:number}> }
 type PlaybackSample = { frame:number; at:number; publishMs:number }
 type PlaybackGap = { from:number; to:number; skipped:number }
 const PLAYBACK_DIAGNOSTIC_SAMPLE_LIMIT = 5000
-const routes = new Set(['/', '/customizar', '/estudio', '/editor-v6', '/editor-v6/scene', '/editor-v6/surface', '/editor-v6/timeline', '/roteiros', '/base-videos', '/opcoes', '/fabricador-dev'])
+const routes = UI_PERFORMANCE_ROUTES
 const stats = new Map<string, RouteStats>()
 const enabled = (() => { try { return typeof window !== 'undefined' && sessionStorage.getItem('gv5:perf') === '1' } catch { return false } })()
 let logicalFrameSamples: PlaybackSample[] = []

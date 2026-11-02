@@ -11,7 +11,7 @@ import { createOptionsMigrationCommands } from './optionsMigrationCommands'
 type StoredBackup = DataBackupSummary
 type EventFilter = 'all' | 'error' | 'warning'
 
-export function OptionsPage() {
+export function LogsDevPage() {
   const [summary, setSummary] = useState<StorageSummary | null>(null)
   const [storageBusy, setStorageBusy] = useState(false)
   const [storageError, setStorageError] = useState<string | null>(null)
@@ -120,10 +120,10 @@ export function OptionsPage() {
   const pendingDomains = migration?.domains.filter((domain) => domain.state !== 'active' && domain.state !== 'verified').length ?? 0
   const healthState = alerts.some((alert) => alert.level === 'error') ? 'error' : alerts.some((alert) => alert.level === 'warning') ? 'warning' : 'ok'
 
-  return <main className="options-page" aria-label="Opções e diagnóstico">
+  return <main className="options-page" aria-label="Logs Dev">
     <div className="options-page-content">
       <header className="options-page-header">
-        <div><span className="options-eyebrow">FERRAMENTAS DO APLICATIVO</span><h1>Diagnóstico e dados</h1><p>Armazenamento, problemas recentes, backups e leituras pontuais do aplicativo.</p></div>
+        <div><span className="options-eyebrow">FERRAMENTAS DO APLICATIVO</span><h1>Logs Dev</h1><p>Diagnóstico, registros, desempenho, armazenamento e recuperação do aplicativo.</p></div>
         <div className="options-header-actions">
           <button className="options-button primary" type="button" onClick={() => void saveReport()} disabled={reportBusy}>{reportBusy ? 'Preparando…' : 'Salvar relatório'}</button>
         </div>
@@ -223,3 +223,6 @@ export function OptionsPage() {
     </div>
   </main>
 }
+
+/** Compatibility export for feature-level consumers during the gradual rename. */
+export const OptionsPage = LogsDevPage

@@ -3,15 +3,12 @@ import { appendFile, lstat, mkdir, readFile, realpath, rename, stat, writeFile }
 import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import type { LocalDiagnosticEvent, LocalDiagnosticEventInput } from '../../../src/shared/dataManagement'
+import { sanitizeDiagnosticRoute } from '../../../src/shared/applicationRoutes'
 
 const MAX_RETAINED_EVENTS = 500
 const MAX_LOG_BYTES = 768 * 1024
-const SAFE_ROUTES = new Set(['/', '/customizar', '/estudio', '/editor-v6', '/roteiros', '/base-videos', '/opcoes', '/fabricador-dev'])
-
 function safeRoute(value: unknown): string | undefined {
-  if (typeof value !== 'string') return undefined
-  const route = value.split(/[?#]/, 1)[0]
-  return SAFE_ROUTES.has(route) ? route : '(outra rota)'
+  return sanitizeDiagnosticRoute(value)
 }
 
 function safeMessage(value: unknown): string {
