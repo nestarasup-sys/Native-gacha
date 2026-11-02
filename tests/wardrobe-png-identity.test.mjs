@@ -39,8 +39,10 @@ test('upload e ajuste posteriores nunca trocam os PNGs individuais por cópias d
 
 test('o editor Roupas Dev salva os PNGs atuais por componente, incluindo recortes e edições',async()=>{
   const editor=await fs.readFile('src/renderer/src/features/fabricator/wardrobe/WardrobeWorkspace.tsx','utf8')
-  assert.match(editor,/const images = wardrobeSaveAssets\(set\)/)
-  assert.match(editor,/saveWardrobeSet\(modelSlot, serialized, images\)/)
+  assert.match(editor,/saveWardrobeSetDraft\(draft, modelSlot, model\?\.name/)
+  const saveCommand=await fs.readFile('src/renderer/src/features/fabricator/wardrobe/saveWardrobeSetDraft.ts','utf8')
+  assert.match(saveCommand,/wardrobeSaveAssets\(set\)/)
+  assert.match(saveCommand,/api\.saveWardrobeSet\(modelSlot, serialized, wardrobeSaveAssets\(set\)\)/)
   const persistence=await fs.readFile('electron/domains/fabricator/wardrobePersistence.ts','utf8')
   assert.match(persistence,/deps\.readCatalogPng\(identity, version, join\(folder, 'parts', `\$\{component\.id\}\.png`\)\)/)
 })

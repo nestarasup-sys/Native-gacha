@@ -120,16 +120,18 @@ test('restaurar devolve a imagem e o quadro salvos e ignora peça sem backup', (
   assert.equal(createWardrobeRestorationPatch({ ...deformed, deformationOriginalDataUrl: undefined }), null)
 })
 
-test('a página delega deformação ao hook de domínio da feature e mantém gravação por peça', async () => {
-  const [workspace, hook] = await Promise.all([
+test('a página delega deformação ao hook e salva as imagens atuais do conjunto', async () => {
+  const [workspace, hook, saveCommand] = await Promise.all([
     readFile(new URL('../src/renderer/src/features/fabricator/wardrobe/WardrobeWorkspace.tsx', import.meta.url), 'utf8'),
-    readFile(new URL('../src/renderer/src/features/fabricator/wardrobe/useWardrobeDeformation.ts', import.meta.url), 'utf8')
+    readFile(new URL('../src/renderer/src/features/fabricator/wardrobe/useWardrobeDeformation.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../src/renderer/src/features/fabricator/wardrobe/saveWardrobeSetDraft.ts', import.meta.url), 'utf8')
   ])
   assert.match(workspace, /useWardrobeDeformation\(/)
-  assert.match(workspace, /hasDirtyWarpImage\(component\.id\)/)
-  assert.match(workspace, /clearDirtyWarpImages\(\)/)
-  assert.match(workspace, /invalidateWarpImage\(selected\.id\)/)
+  assert.match(workspace, /updatedComponents\.forEach\(\(_component, id\) => invalidateWarpImage\(id\)\)/)
+  assert.match(workspace, /saveWardrobeSetDraft\(draft, modelSlot, model\?\.name/)
+  assert.match(saveCommand, /wardrobeSaveAssets\(set\)/)
   assert.doesNotMatch(workspace, /warpSessionsRef|warpDragRef|applyWardrobeWarpBrush|requestAnimationFrame/)
+  assert.doesNotMatch(hook, /dirtyWarpImageIdsRef|hasDirtyImage|clearDirtyImages/)
   assert.match(hook, /setPointerCapture\(event\.pointerId\)/)
   assert.match(hook, /event\.type === 'pointercancel'/)
   assert.match(hook, /requestAnimationFrame\(/)

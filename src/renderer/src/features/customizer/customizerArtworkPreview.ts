@@ -47,7 +47,7 @@ export async function prepareCustomizerArtworkPreview(input: {
   const source = await providers.loadSource(input.modelSlot, input.poseSlot, input.cachedModel)
   if (source.status !== 'ready') return source
   const genderArtwork = withCharacterGenderTorso(source.artwork, source.sourceProject, input.appearance?.gender)
-  const resolvedSource = { ...source, artwork: genderArtwork }
+  const resolvedSource = genderArtwork === source.artwork ? source : { ...source, artwork: genderArtwork }
   input.onSourceResolved?.(resolvedSource)
 
   const modelSkinTone = isValidSkinTone(source.sourceProject.modelSkinTone)

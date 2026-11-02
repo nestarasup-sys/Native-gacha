@@ -67,7 +67,6 @@ export function useWardrobeDeformation({
   const warpDragRef = useRef<WardrobeWarpDrag | null>(null)
   const warpDrawFrameRef = useRef<number | null>(null)
   const lastWarpPointRef = useRef<WardrobeWarpPoint | null>(null)
-  const dirtyWarpImageIdsRef = useRef(new Set<string>())
 
   const clear = useCallback(() => {
     if (warpDrawFrameRef.current !== null) cancelAnimationFrame(warpDrawFrameRef.current)
@@ -75,7 +74,6 @@ export function useWardrobeDeformation({
     warpDragRef.current = null
     lastWarpPointRef.current = null
     warpSessionsRef.current.clear()
-    dirtyWarpImageIdsRef.current.clear()
     setWarpReadyId(null)
     setDeformMode(false)
     if (warpBrushCursorRef.current) warpBrushCursorRef.current.style.display = 'none'
@@ -193,7 +191,6 @@ export function useWardrobeDeformation({
     warpDrawFrameRef.current = null
     warpDragRef.current = null
     warpSessionsRef.current.clear()
-    dirtyWarpImageIdsRef.current.clear()
   }, [])
 
   const beginWardrobeWarp = useCallback((event: ReactPointerEvent<HTMLCanvasElement>, component: WardrobeComponent, displayOffset: WardrobeDeformationPoint) => {
@@ -285,7 +282,6 @@ export function useWardrobeDeformation({
     }, layout, displayOffset, imageUrl)
     session.committedPadding = layout.padding
     session.committedUrl = imageUrl
-    dirtyWarpImageIdsRef.current.add(component.id)
     setDirty(true)
     setError('')
     updateComponent(component.id, patch)
@@ -299,7 +295,6 @@ export function useWardrobeDeformation({
 
   const invalidateImage = useCallback((componentId: string) => {
     warpSessionsRef.current.delete(componentId)
-    dirtyWarpImageIdsRef.current.add(componentId)
   }, [])
 
   const restoreDeformation = useCallback((component: WardrobeComponent | null) => {
@@ -307,15 +302,11 @@ export function useWardrobeDeformation({
     const patch = createWardrobeRestorationPatch(component)
     if (!patch) return
     warpSessionsRef.current.delete(component.id)
-    dirtyWarpImageIdsRef.current.add(component.id)
     setDeformMode(false)
     setWarpReadyId(null)
     setError('')
     updateComponent(component.id, patch)
   }, [setError, updateComponent])
-
-  const hasDirtyImage = useCallback((componentId: string) => dirtyWarpImageIdsRef.current.has(componentId), [])
-  const clearDirtyImages = useCallback(() => dirtyWarpImageIdsRef.current.clear(), [])
 
   return {
     deformMode,
@@ -330,8 +321,6 @@ export function useWardrobeDeformation({
     clear,
     invalidateImage,
     restoreDeformation,
-    hasDirtyImage,
-    clearDirtyImages,
     beginWardrobeWarp,
     moveWardrobeWarp,
     finishWardrobeWarp,

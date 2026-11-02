@@ -1,7 +1,7 @@
 import { projectForOriginalPreview, selectOriginalModelSource } from '../../../../../shared/fabricatorModelViews'
 import { useModelSourceRefresh } from '../models/useModelSourceRefresh'
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
-import type { FabricatorPose, FabricatorPoseSummary, FabricatorProject, FabricatorProjectSave, FabricatorSlotSummary, ModelPart, WardrobeCategory, WardrobeComponent, WardrobePreviewGender, WardrobeSet, WardrobeSetSave, WardrobeSetSummary } from '../../../../../shared/fabricator'
+import type { FabricatorPose, FabricatorPoseSummary, FabricatorProject, FabricatorProjectSave, FabricatorSlotSummary, ModelPart, WardrobeCategory, WardrobeComponent, WardrobePreviewGender, WardrobeSet, WardrobeSetSummary } from '../../../../../shared/fabricator'
 import { Icon } from '../../../ui/components/Icon'
 import { usePreviewBackground } from '../../../ui/hooks/usePreviewBackground'
 import { normalizeLayerOrder, orderedParts, partJointAnchor } from '../models/rig'
@@ -17,7 +17,7 @@ import { suggestWardrobeBone } from './boneSelection'
 import { guessWardrobeCategoryForBone, guessWardrobeNameForBone } from './wardrobeAutoDetection'
 import { createWardrobeTorsoGridComponents } from './wardrobeGridImport'
 import { createWardrobeComponentsFromProcessedSheet } from './wardrobeSheetImport'
-import { wardrobeSaveAssets } from './wardrobeSaveAssets'
+import { saveWardrobeSetDraft } from './saveWardrobeSetDraft'
 import { createWardrobeSleeveSheetComponents } from './wardrobeSleeveSheetImport'
 import { mirrorWardrobeImageDataUrl } from './mirrorWardrobeImage'
 import type { WardrobeProcessorResponse } from './wardrobeProcessorProtocol'
@@ -243,7 +243,7 @@ export function WardrobeWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
     deformMode, setDeformMode, warpReadyId, warpRadius, setWarpRadius, warpStrength, setWarpStrength,
     warpCanvasRef, warpBrushCursorRef, clear: clearWarpSession, invalidateImage: invalidateWarpImage,
     restoreDeformation: restoreSelectedDeformation,
-    clearDirtyImages: clearDirtyWarpImages, beginWardrobeWarp, moveWardrobeWarp, finishWardrobeWarp, leaveWardrobeWarp
+    beginWardrobeWarp, moveWardrobeWarp, finishWardrobeWarp, leaveWardrobeWarp
   } = useWardrobeDeformation({
     selected,
     selectedId,
@@ -713,14 +713,12 @@ export function WardrobeWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
     if (!draft || draft.edition === 2 || !draft.components.length || saving || processing || openingSet || !sourceParts) return
     setSaving(true); setError('')
     try {
-      const set: WardrobeSet = { ...draft, edition: 1, modelSlot, modelName: model?.name ?? draft.modelName, updatedAt: new Date().toISOString() }
-      const serialized: WardrobeSetSave = { ...set, components: set.components.map(({ dataUrl: _dataUrl, deformationOriginalDataUrl: _deformationOriginalDataUrl, ...component }) => ({ ...component, renderAboveHair: (component.category === 'oculos' || component.category === 'acessorio-cabeca') && component.renderAboveHair === true })) }
-      // O rascunho é dono dos PNGs atuais, inclusive recortes novos e edições fora do deformador.
-       const images = wardrobeSaveAssets(set)
-       await window.desktop.fabricator.saveWardrobeSet(modelSlot, serialized, images)
-      window.dispatchEvent(new Event('fabricator:assets-updated'))
-       clearDirtyWarpImages()
-      setDraft(set); setActiveSetId(set.id); setDirty(false); setSets(await window.desktop.fabricator.listWardrobeSets(modelSlot))
+      const result = await saveWardrobeSetDraft(draft, modelSlot, model?.name, {
+        saveWardrobeSet: (slot, metadata, assets) => window.desktop.fabricator.saveWardrobeSet(slot, metadata, assets),
+        listWardrobeSets: (slot) => window.desktop.fabricator.listWardrobeSets(slot),
+        notifyAssetsUpdated: () => window.dispatchEvent(new Event('fabricator:assets-updated'))
+      })
+      setDraft(result.set); setActiveSetId(result.set.id); setDirty(false); setSets(result.sets)
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível salvar o conjunto.') }
     finally { setSaving(false) }
   }

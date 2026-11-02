@@ -100,6 +100,7 @@ function importCommandsHarness(overrides = {}) {
     },
     faceCatalogItemForSave: (item) => item,
     faceCatalogImagesForImport: (item) => [{ id: `sheet-${item.category}`, dataUrl: item.sheet.dataUrl }],
+    notifyAssetsUpdated: () => calls.push(['assets-updated']),
     initialCatalogTransform: () => ({ x: 50, y: 100, scaleX: 1, scaleY: 1, rotation: 0 }),
     createId: () => `catalog-${++id}`,
     now: () => '2026-10-29T00:00:00.000Z',
