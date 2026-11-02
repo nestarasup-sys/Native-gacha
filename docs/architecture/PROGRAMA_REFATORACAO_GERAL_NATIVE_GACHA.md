@@ -109,6 +109,15 @@ O Node test runner não resolvia imports relativos extensionless `.ts` usados po
 - **Commit local:** `497079f` (`refactor: scope Options styles and test roteiro media guards`).
 - **Pendências:** decompor os workspaces de Roteiros/Base de Vídeos/Opções onde houver fronteiras reais de sessão/comando; continuar movendo CSS por feature com verificação de equivalência. Nenhuma mudança de schema ou formato persistido.
 
+### Modelo puro de diagnósticos da tela Opções
+
+- **Fronteira extraída:** `optionsDiagnostics.ts` concentra formatação de bytes/datas, rótulos de armazenamento e migração, soma de uso local e geração de alertas. `OptionsPage.tsx` continua dona do estado da tela, efeitos e chamadas `window.desktop`; a persistência e os canais IPC não mudaram.
+- **Contrato preservado:** os textos, ordem e níveis dos alertas, cálculo de bytes e locale `pt-BR` foram movidos sem alteração de comportamento. CSS e markup da tela não foram alterados nesta fatia.
+- **Testes:** `tests/options-diagnostics.test.mjs` cobre formatação, soma de armazenamento, estado de erro, itens ilegíveis/não referenciados, migração pendente, estado saudável e ausência de medição. Os testes usam objetos sintéticos.
+- **Verificações:** teste focado 5/5; `npm run test:refactor` passou com 631 testes na suíte principal e os scripts encadeados; `npm run typecheck`, `npm run audit:architecture` (568 arquivos TS/TSX) e `npm run build` passaram.
+- **Commit local:** `6735283` (`refactor: extract Options diagnostics model`).
+- **Pendências:** o estado e a orquestração assíncrona de Opções permanecem na página; qualquer extração futura deverá preservar assinaturas IPC, cancelamento/estado de progresso da migração e sequência das operações de backup.
+
 ## Reconciliação das falhas da baseline
 
 As falhas observadas na execução inicial da suíte em `f416a02` foram investigadas e reconciliadas:
@@ -138,4 +147,5 @@ As falhas observadas na execução inicial da suíte em `f416a02` foram investig
 | `986aba7` | Extrai o comando de gravação de roupas e cobre continuidade Fabricador/Customizador | Local em `Dev-V2`; sem publicação. |
 | `da3ee89` | Extrai criação/duplicação de projetos do Studio sem compartilhar o contrato do Editor V6 | Local em `Dev-V2`; sem publicação. |
 | `497079f` | Preserva guardas de referências de mídia de Roteiros e move CSS de Opções sem alterar regras | Local em `Dev-V2`; sem publicação. |
+| `6735283` | Extrai cálculos e alertas puros de Opções, com testes sintéticos | Local em `Dev-V2`; sem publicação. |
 
