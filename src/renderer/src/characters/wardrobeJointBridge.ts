@@ -19,7 +19,10 @@ export type WardrobeJointBridgeSegment = {
 
 type SourceBounds = { x: number; y: number; width: number; height: number }
 type Seam = { center: Point; tangent: Point; normal: Point; minTangent: number; maxTangent: number }
-type AlphaMask = { width: number; height: number; data: Uint8Array }
+type SeamGapSample = { tangent: number; upperNormal: number; lowerNormal: number }
+type SeamWithGap = Seam & { gapSamples?: SeamGapSample[] }
+export type WardrobeJointBridgeMask = { width: number; height: number; data: Uint8Array }
+type AlphaMask = WardrobeJointBridgeMask
 
 const identity: Affine = [1, 0, 0, 1, 0, 0]
 const multiply = (first: Affine, second: Affine): Affine => [
@@ -92,6 +95,13 @@ function sourceBounds(upper: WardrobeJointBridgeSegment, lower: WardrobeJointBri
   const right = Math.ceil(Math.max(...points.map((point) => point.x)) + padding)
   const bottom = Math.ceil(Math.max(...points.map((point) => point.y)) + padding)
   return { x: left, y: top, width: Math.max(1, right - left), height: Math.max(1, bottom - top) }
+}
+
+function maximumJointGap(upper: WardrobeJointBridgeSegment, lower: WardrobeJointBridgeSegment): number {
+  const lengths = [upper.sourceBone, lower.sourceBone]
+    .map((bone) => Math.max(bone.width, bone.height))
+    .filter((length) => Number.isFinite(length) && length > 0)
+  return Math.max(2, Math.min(8, (lengths.length ? Math.min(...lengths) : 40) * .05))
 }
 
 function drawSourceSegment(context: CanvasRenderingContext2D, segment: WardrobeJointBridgeSegment, bounds: SourceBounds, applyOpacity = true) {
@@ -168,6 +178,166 @@ function alphaCenter(image: AlphaMask): Point | null {
 function pointInSeam(seam: Seam, tangent: number, normal: number): Point {
   return { x: seam.center.x + seam.tangent.x * tangent + seam.normal.x * normal,
     y: seam.center.y + seam.tangent.y * tangent + seam.normal.y * normal }
+}
+
+function findNearbySeam(upper: AlphaMask, lower: AlphaMask, maximumGap: number, reference?: Seam): SeamWithGap | null {
+  // The normal points from the lower piece toward the upper piece.
+  let normal = reference?.normal
+  let tangent = reference?.tangent
+  if (!normal || !tangent) {
+    const upperCenter = alphaCenter(upper), lowerCenter = alphaCenter(lower)
+    if (!upperCenter || !lowerCenter) return null
+    const axisX = upperCenter.x - lowerCenter.x, axisY = upperCenter.y - lowerCenter.y
+    const axisLength = Math.hypot(axisX, axisY)
+    if (axisLength < 1) return null
+    normal = { x: axisX / axisLength, y: axisY / axisLength }
+    tangent = { x: -normal.y, y: normal.x }
+  }
+  type Edge = { tangent: number; normal: number; point: Point }
+  const upperEdges = new Map<number, Edge>(), lowerEdges = new Map<number, Edge>()
+  const collectFacingEdges = (mask: AlphaMask, edges: Map<number, Edge>, upperSide: boolean) => {
+    for (let y = 0; y < mask.height; y += 1) for (let x = 0; x < mask.width; x += 1) {
+      if (mask.data[y * mask.width + x] < 24) continue
+      const point = { x: x + .5, y: y + .5 }
+      const projectedTangent = point.x * tangent.x + point.y * tangent.y
+      const projectedNormal = point.x * normal.x + point.y * normal.y
+      const key = Math.round(projectedTangent)
+      const previous = edges.get(key)
+      // The upper edge facing the lower piece is its minimum normal value;
+      // the lower edge facing the upper piece is its maximum normal value.
+      if (!previous || (upperSide ? projectedNormal < previous.normal : projectedNormal > previous.normal)) {
+        edges.set(key, { tangent: projectedTangent, normal: projectedNormal, point })
+      }
+    }
+  }
+  collectFacingEdges(upper, upperEdges, true)
+  collectFacingEdges(lower, lowerEdges, false)
+
+  const profiles: Array<{ tangent: number; upper: Edge; lower: Edge; gap: number }> = []
+  for (const [key, upperEdge] of upperEdges) {
+    const lowerEdge = lowerEdges.get(key)
+    if (!lowerEdge) continue
+    // Alpha pixels represent square texels. Subtract their combined projected
+    // half-width so touching edges count as zero gap instead of a one-pixel gap.
+    const gap = upperEdge.normal - lowerEdge.normal - Math.abs(normal.x) - Math.abs(normal.y)
+    if (gap > .25 && gap <= maximumGap) {
+      profiles.push({ tangent: (upperEdge.tangent + lowerEdge.tangent) / 2, upper: upperEdge, lower: lowerEdge, gap })
+    }
+  }
+  if (profiles.length < 3) return null
+
+  const midpoints = profiles.map(({ upper, lower }) => ({
+    x: (upper.point.x + lower.point.x) / 2,
+    y: (upper.point.y + lower.point.y) / 2
+  }))
+  const center = midpoints.reduce((sum, point) => ({
+    x: sum.x + point.x / midpoints.length,
+    y: sum.y + point.y / midpoints.length
+  }), { x: 0, y: 0 })
+  const centerTangent = center.x * tangent.x + center.y * tangent.y
+  const centerNormal = center.x * normal.x + center.y * normal.y
+  const gapSamples = profiles.map(({ tangent: projectedTangent, upper, lower }) => ({
+    tangent: projectedTangent - centerTangent,
+    upperNormal: upper.normal - centerNormal,
+    lowerNormal: lower.normal - centerNormal
+  }))
+  const minTangent = Math.min(...gapSamples.map((sample) => sample.tangent))
+  const maxTangent = Math.max(...gapSamples.map((sample) => sample.tangent))
+  if (maxTangent - minTangent < 2) return null
+  return { center, tangent, normal, minTangent, maxTangent, gapSamples }
+}
+
+/** Finds the garment seam and tolerates a narrow transparent gap between its halves. */
+export function detectWardrobeJointSeam(
+  upper: WardrobeJointBridgeMask,
+  lower: WardrobeJointBridgeMask,
+  maximumGap: number
+): SeamWithGap | null {
+  const touching = findSeam(upper, lower)
+  const nearby = findNearbySeam(upper, lower, maximumGap, touching ?? undefined)
+  if (!nearby) return touching
+  if (!touching) return nearby
+
+  const alignment = touching.normal.x * nearby.normal.x + touching.normal.y * nearby.normal.y
+  if (alignment < .75) return touching
+  const gapSamples: SeamGapSample[] = []
+  for (const sample of nearby.gapSamples ?? []) {
+    const upperPoint = pointInSeam(nearby, sample.tangent, sample.upperNormal)
+    const lowerPoint = pointInSeam(nearby, sample.tangent, sample.lowerNormal)
+    const relative = (point: Point) => ({ x: point.x - touching.center.x, y: point.y - touching.center.y })
+    const upperRelative = relative(upperPoint), lowerRelative = relative(lowerPoint)
+    const upperNormal = upperRelative.x * touching.normal.x + upperRelative.y * touching.normal.y
+    const lowerNormal = lowerRelative.x * touching.normal.x + lowerRelative.y * touching.normal.y
+    if (upperNormal <= lowerNormal) continue
+    const middle = { x: (upperPoint.x + lowerPoint.x) / 2, y: (upperPoint.y + lowerPoint.y) / 2 }
+    const middleRelative = relative(middle)
+    gapSamples.push({
+      tangent: middleRelative.x * touching.tangent.x + middleRelative.y * touching.tangent.y,
+      upperNormal,
+      lowerNormal
+    })
+  }
+  if (!gapSamples.length) return touching
+  return {
+    ...touching,
+    minTangent: Math.min(touching.minTangent, ...gapSamples.map((sample) => sample.tangent)),
+    maxTangent: Math.max(touching.maxTangent, ...gapSamples.map((sample) => sample.tangent)),
+    gapSamples
+  }
+}
+
+function sampleOpaquePixel(data: Uint8ClampedArray, width: number, height: number, seam: Seam,
+  tangent: number, normal: number, direction: number): [number, number, number, number] | null {
+  for (let distance = 0; distance <= 3; distance += .5) for (const tangentOffset of [0, -.5, .5]) {
+    const point = pointInSeam(seam, tangent + tangentOffset, normal + direction * distance)
+    const x = Math.floor(point.x), y = Math.floor(point.y)
+    if (x < 0 || x >= width || y < 0 || y >= height) continue
+    const index = (y * width + x) * 4
+    if (data[index + 3] >= 24) return [data[index], data[index + 1], data[index + 2], data[index + 3]]
+  }
+  return null
+}
+
+/** Fills only the narrow gap pixels, returning a transparent overlay for direct posing. */
+export function fillWardrobeJointGapPixels(
+  data: Uint8ClampedArray,
+  width: number,
+  height: number,
+  seam: SeamWithGap
+): Uint8ClampedArray | null {
+  if (!seam.gapSamples?.length || data.length !== width * height * 4) return null
+  const source = new Uint8ClampedArray(data)
+  const patch = new Uint8ClampedArray(data.length)
+  let changed = false
+  for (const sample of seam.gapSamples) {
+    const gap = sample.upperNormal - sample.lowerNormal
+    if (gap <= .25) continue
+    const lowerColor = sampleOpaquePixel(source, width, height, seam, sample.tangent, sample.lowerNormal, -1)
+    const upperColor = sampleOpaquePixel(source, width, height, seam, sample.tangent, sample.upperNormal, 1)
+    if (!lowerColor || !upperColor) continue
+    const steps = Math.max(1, Math.ceil(gap * 2))
+    for (let step = 0; step <= steps; step += 1) {
+      const amount = step / steps
+      const point = pointInSeam(seam, sample.tangent, sample.lowerNormal + gap * amount)
+      const x = Math.floor(point.x), y = Math.floor(point.y)
+      if (x < 0 || x >= width || y < 0 || y >= height) continue
+      const index = (y * width + x) * 4
+      if (source[index + 3] >= 250 || patch[index + 3] >= 250) continue
+      const lowerAlpha = lowerColor[3] / 255, upperAlpha = upperColor[3] / 255
+      const alpha = lowerAlpha + (upperAlpha - lowerAlpha) * amount
+      if (alpha <= 0) continue
+      const premultiplied = (channel: number) => {
+        const lower = lowerColor[channel] * lowerAlpha
+        const upper = upperColor[channel] * upperAlpha
+        return Math.round((lower + (upper - lower) * amount) / alpha)
+      }
+      const pixel: [number, number, number, number] = [premultiplied(0), premultiplied(1), premultiplied(2), Math.round(alpha * 255)]
+      patch.set(pixel, index)
+      data.set(pixel, index)
+      changed = true
+    }
+  }
+  return changed ? patch : null
 }
 
 function smoothStep(value: number): number {
@@ -254,27 +424,58 @@ export function drawWardrobeJointBridge(
   const translateBounds = translate(bounds.x, bounds.y)
   const upperWarp = multiply(multiply(upperPose, upperSourceInverse), translateBounds)
   const lowerWarp = multiply(multiply(lowerPose, lowerSourceInverse), translateBounds)
-  if (!transformsDifferOverBounds(bounds, upperWarp, lowerWarp)) return false
+  const transformsDiffer = transformsDifferOverBounds(bounds, upperWarp, lowerWarp)
 
   const sourceCanvas = document.createElement('canvas')
   sourceCanvas.width = bounds.width
   sourceCanvas.height = bounds.height
+  let gapCanvas: HTMLCanvasElement | null = null
   try {
     const sourceContext = sourceCanvas.getContext('2d', { willReadFrequently: true })
     if (!sourceContext) throw new Error('Não foi possível preparar a junção da roupa na pose.')
 
-    const seam = findSeam(drawAlphaMask(sourceContext, upper, bounds), drawAlphaMask(sourceContext, lower, bounds))
+    const seam = detectWardrobeJointSeam(
+      drawAlphaMask(sourceContext, upper, bounds),
+      drawAlphaMask(sourceContext, lower, bounds),
+      maximumJointGap(upper, lower)
+    )
     if (!seam) return false
+    if (!transformsDiffer && !seam.gapSamples?.length) return false
     sourceContext.clearRect(0, 0, bounds.width, bounds.height)
     drawSourceSegment(sourceContext, upper, bounds)
     drawSourceSegment(sourceContext, lower, bounds)
+
+    let gapOverlay: Uint8ClampedArray | null = null
+    if (seam.gapSamples?.length) {
+      const pixels = sourceContext.getImageData(0, 0, bounds.width, bounds.height)
+      gapOverlay = fillWardrobeJointGapPixels(pixels.data, bounds.width, bounds.height, seam)
+      if (gapOverlay) {
+        sourceContext.putImageData(pixels, 0, 0)
+        gapCanvas = document.createElement('canvas')
+        gapCanvas.width = bounds.width
+        gapCanvas.height = bounds.height
+        const gapContext = gapCanvas.getContext('2d')
+        if (gapContext) {
+          const overlay = gapContext.createImageData(bounds.width, bounds.height)
+          overlay.data.set(gapOverlay)
+          gapContext.putImageData(overlay, 0, 0)
+        } else gapCanvas = null
+      }
+    }
 
     const upperLength = Math.max(upper.sourceBone.width, upper.sourceBone.height)
     const lowerLength = Math.max(lower.sourceBone.width, lower.sourceBone.height)
     const halfWidth = Math.max(7, Math.min(36, Math.min(upperLength, lowerLength) * 0.12))
     // With the same pose on both bones, the source pixels already join exactly.
-    // Avoid painting them a second time, which would darken antialiased edges.
-    if (!transformsDifferAcrossSeam(seam, halfWidth, upperWarp, lowerWarp)) return false
+    // Avoid painting them a second time, but still render a detected source gap.
+    if (!transformsDifferAcrossSeam(seam, halfWidth, upperWarp, lowerWarp)) {
+      if (!gapCanvas) return false
+      context.save()
+      context.transform(...upperWarp)
+      context.drawImage(gapCanvas, 0, 0)
+      context.restore()
+      return true
+    }
     const tangentPadding = Math.min(halfWidth, Math.max(2, (seam.maxTangent - seam.minTangent) * 0.04))
     const start = seam.minTangent - tangentPadding
     const end = seam.maxTangent + tangentPadding
@@ -308,5 +509,6 @@ export function drawWardrobeJointBridge(
   } finally {
     sourceCanvas.width = 0
     sourceCanvas.height = 0
+    if (gapCanvas) { gapCanvas.width = 0; gapCanvas.height = 0 }
   }
 }
