@@ -8,6 +8,7 @@ import { runEditorV6Export } from '../../electron/domains/editorV6/exportRunner'
 import { editorV6MotionPlans, missingEditorV6Motions } from '../../src/shared/editorV6Motion'
 import { editorV6ElementSize } from '../../src/shared/editorV6SceneModel'
 import { editorV6DocumentSchema } from '../../src/shared/editorV6Schema'
+import { decodeSelectedFrames } from '../../scripts/editor-v6/stressFrameSamples'
 import type { EditorV6Asset } from '../../src/shared/editorV6'
 
 const root = resolve(process.argv[2]), projectFolder = resolve(process.argv[3]), outputFolder = resolve(process.argv[4])
@@ -89,12 +90,11 @@ async function main() {
       const audio = probe.streams?.find((stream) => stream.codec_type === 'audio')
       if (Number(video?.nb_read_frames) !== project.timeline.durationFrames || video?.r_frame_rate !== '30/1' || audio || report.audioClips !== 0) throw Error('A exportação silenciosa perdeu quadros, taxa de quadros ou incluiu uma faixa de áudio.')
 
-      const expression = `select='${sampleFrames.map((frame) => `eq(n,${frame})`).join('+')}'`
-      const decoded = execFileSync(ffmpeg, ['-v', 'error', '-i', outputPath, '-vf', expression, '-fps_mode', 'passthrough', '-frames:v', String(sampleFrames.length), '-pix_fmt', 'rgb24', '-f', 'rawvideo', 'pipe:1'], { windowsHide: true, maxBuffer: 64 * 1024 ** 2 })
       const frameBytes = 320 * 180 * 3
-      if (decoded.length !== sampleFrames.length * frameBytes) throw Error(`O MP4 entregou ${decoded.length / frameBytes} quadros de amostra; esperava ${sampleFrames.length}.`)
-      const frames = new Map<number, Buffer>()
-      sampleFrames.forEach((frame, frameIndex) => frames.set(frame, decoded.subarray(frameIndex * frameBytes, (frameIndex + 1) * frameBytes)))
+      const frames = decodeSelectedFrames(sampleFrames, frameBytes, (batch) => {
+        const expression = `select='${batch.map((frame) => `eq(n,${frame})`).join('+')}'`
+        return execFileSync(ffmpeg, ['-v', 'error', '-i', outputPath, '-vf', expression, '-fps_mode', 'passthrough', '-frames:v', String(batch.length), '-pix_fmt', 'rgb24', '-f', 'rawvideo', 'pipe:1'], { windowsHide: true, maxBuffer: 16 * 1024 ** 2 })
+      })
       const motionResults = visibleMotionPlans.map((plan) => {
         const first = plan.endFrame + plan.samples[0].offset, last = plan.endFrame + plan.samples.at(-1)!.offset
         const firstImage = frames.get(first)!, lastImage = frames.get(last)!

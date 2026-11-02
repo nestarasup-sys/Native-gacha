@@ -54,7 +54,9 @@ const scenarios: Scenario[] = [
 const stressExperiment = process.env.GACHA_EDITOR_V6_STRESS_EXPERIMENT ?? 'baseline'
 const experimentProfiles: Record<string, Partial<Scenario>> = {
   baseline: {},
-  silent240: { durationFrames: 7200 },
+  // This export benchmark intentionally measures a silent timeline. Generate it
+  // without speech instead of stripping speech after motion atlas keys exist.
+  silent240: { durationFrames: 7200, speechBlocks: 0, thoughtBlocks: 0 },
   frames200: { characterBlocks: 90 },
   frames300: { characterBlocks: 60 },
   static: { transitionActorCount: 0 },
@@ -420,6 +422,11 @@ describe.skipIf(!enabled)('projetos de estresse do Editor V6', () => {
     expect(output.every((item) => item.characterNames.join(',') === expectedNames.join(','))).toBe(true)
     expect(output.every((item) => new Set(item.characterIds).size === 4)).toBe(true)
     const outputByKey = new Map(output.map((item) => [item.key, item]))
+    if (stressExperiment === 'silent240') {
+      const heavy = outputByKey.get('heavy')
+      expect(heavy?.linkedSpeechBlocks).toBe(0)
+      expect(heavy?.linkedThoughtBlocks).toBe(0)
+    }
     for (const [leftKey, rightKey] of [['light', 'medium'], ['medium', 'heavy']]) {
       const left = outputByKey.get(leftKey), right = outputByKey.get(rightKey)
       if (left && right) expect(left.blocks).toBeLessThan(right.blocks)
