@@ -135,6 +135,7 @@ test('Face component debounces and catalog saves drain through the renderer regi
 
 test('Studio and Editor V6 flush debounced documents and wait for renderer IPC writes', async () => {
   const studio = await readFile('src/renderer/src/features/studio/StudioPage.tsx', 'utf8')
+  const studioPrintCommands = await readFile('src/renderer/src/features/studio/studioPrintCommands.ts', 'utf8')
   const studioPersistence = await readFile('src/renderer/src/features/studio/useStudioDocumentPersistence.ts', 'utf8')
   const studioImageImport = await readFile('src/renderer/src/features/studio/useStudioImageImport.ts', 'utf8')
   const editor = await readFile('src/renderer/src/features/editorV6/EditorV6Page.tsx', 'utf8')
@@ -154,8 +155,11 @@ test('Studio and Editor V6 flush debounced documents and wait for renderer IPC w
   assert.match(studioImageImport, /return useCallback\(\(category: 'background' \| 'object'\) => trackOperation\(async \(\) =>/)
   assert.match(studioImageImport, /await writeInOrder\(nextStudio\)/)
   assert.match(studio, /await trackStudioOperation\(async \(\) => \{[\s\S]*?deleteStudio\(target\.id\)/)
-  assert.match(studio, /const exportPrint = \(\) => \{[\s\S]*?trackStudioOperation\(async \(\) => \{[\s\S]*?saveStudioPrint/)
-  assert.match(studio, /const openPrints = \(\) => trackStudioOperation\(async \(\) =>/)
+  assert.match(studio, /createStudioPrintCommands\(/)
+  assert.match(studio, /const exportPrint = \(\) => studioPrintCommands\.exportPrint\(activeStudio\)/)
+  assert.match(studio, /const openPrints = \(\) => studioPrintCommands\.openPrints\(activeStudio\?\.id \?\? null\)/)
+  assert.match(studioPrintCommands, /dependencies\.flushDocumentWrites\(\)[\s\S]*?dependencies\.renderPrint\(studio\)[\s\S]*?dependencies\.trackIpcWrite\(dependencies\.savePrint\(studio\.id, image\)\)/)
+  assert.match(studioPrintCommands, /dependencies\.openPrints\(studioId\)/)
   assert.match(editor, /useEditorV6DocumentPersistence\(/)
   assert.match(editorPersistence, /registerPendingWriteFlusher\(flushWrites\)/)
   assert.match(editorPersistence, /hadPendingTimer \|\| !saved[\s\S]*?saveActiveProject\(latest\)/)

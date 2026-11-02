@@ -22,6 +22,7 @@ import { createDefaultSceneFaceTransform, resolveSceneFaceTransform, sceneFaceCa
 import { useStudioStageInteraction } from './useStudioStageInteraction'
 import { useStudioHistory } from './useStudioHistory'
 import { makeCanvasPrint } from './studioCanvasPrint'
+import { createStudioPrintCommands } from './studioPrintCommands'
 import { mergeStudioFaceDetails } from './studioFaceDetailCache'
 import { studioFaceCatalogSelectionIds } from './studioFaceCatalogSelection'
 import { useStudioAutosave, useStudioDocumentPersistence } from './useStudioDocumentPersistence'
@@ -111,6 +112,16 @@ export function StudioPage() {
   }), [studiosRef, writeStudioDocument])
   const createStudio = studioProjectCommands.createStudio
   const duplicateStudio = studioProjectCommands.duplicateStudio
+  const studioPrintCommands = useMemo(() => createStudioPrintCommands({
+    trackOperation: trackStudioOperation,
+    flushDocumentWrites: flushStudioDocumentWrites,
+    renderPrint: makeCanvasPrint,
+    savePrint: (studioId, image) => window.desktop.studio.saveStudioPrint(studioId, image),
+    trackIpcWrite: trackStudioIpcWrite,
+    openPrints: (studioId) => window.desktop.studio.openStudioPrints(studioId),
+    setError,
+    setNotice
+  }), [flushStudioDocumentWrites, setError, setNotice, trackStudioIpcWrite, trackStudioOperation])
   const selectedElement = activeStudio?.elements.find((element) => element.id === selectedElementId) ?? null
   const selectedStudioCharacter = selectedElement?.kind === 'character' ? availableCharacters.find((character) => character.id === selectedElement.characterId) ?? null : null
   const selectedStudioExpressionCollectionId = studioExpressionCollection(selectedElement, studioExpressionPresets)
@@ -640,24 +651,8 @@ export function StudioPage() {
     setFullView(false)
   }
 
-  const exportPrint = () => {
-    if (!activeStudio) return
-    const studio = activeStudio
-    return trackStudioOperation(async () => {
-      try {
-        await flushStudioDocumentWrites()
-        const image = await makeCanvasPrint(studio)
-        const path = await trackStudioIpcWrite(window.desktop.studio.saveStudioPrint(studio.id, image))
-        if (path) { setError(null); setNotice(`Print salvo em ${path}`) }
-      } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível gerar o print.') }
-    })
-  }
-
-  const openPrints = () => trackStudioOperation(async () => {
-    if (!activeStudio) return
-    try { await window.desktop.studio.openStudioPrints(activeStudio.id) }
-    catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível abrir a pasta de prints.') }
-  })
+  const exportPrint = () => studioPrintCommands.exportPrint(activeStudio)
+  const openPrints = () => studioPrintCommands.openPrints(activeStudio?.id ?? null)
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
