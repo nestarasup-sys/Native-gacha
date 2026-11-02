@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
+import { useCustomizerWardrobePanelActions } from '../src/renderer/src/features/customizer/useCustomizerWardrobePanelActions.ts'
 import { loadCustomizerWardrobeCatalog } from '../src/renderer/src/features/customizer/customizerWardrobeCatalog.ts'
 import { getCustomizerHairLibraryPage, loadCustomizerHairDetails, loadCustomizerHairLibraryPageDetails, retainCustomizerHairDetailsForModel } from '../src/renderer/src/features/customizer/customizerHairCatalog.ts'
 import {
@@ -84,7 +85,7 @@ test('gera apenas miniaturas faltantes cujas categorias existem no conjunto', as
   assert.deepEqual(thumbnails, [{ key: '1:pants:lower', thumbnail: 'data:image/png;base64,AA==' }])
 })
 
-test('índice de candidatos preserva filtros, ordem e agrupamento de cada painel', () => {
+test('índice de candidatos preserva filtros, ordem e agrupamento de cada painel', async () => {
   const component = (id, name, category, attachedPartId = 'body', sleevePairId, sleeveSide, sleeveSegment) => ({
     id, name, category, attachedPartId, ...(sleevePairId ? { sleevePairId } : {}), ...(sleeveSide ? { sleeveSide } : {}), ...(sleeveSegment ? { sleeveSegment } : {}), x: 0, y: 0, width: 10, height: 10, rotation: 0,
     dataUrl: 'data:image/png;base64,AA=='
@@ -124,7 +125,12 @@ test('índice de candidatos preserva filtros, ordem e agrupamento de cada painel
     component('pants-shin-right', 'Calça longa · canela direita', 'calca-canela', 'calf-right', 'pants-one'),
     component('pants-two', 'Calça longa 02', 'calca-coxa', 'thigh-left', 'pants-two'),
     component('shorts', 'Bermuda', 'shorts'),
-    component('glass-cloth', 'Óculos de roupa', 'oculos')
+    component('glass-cloth', 'Óculos de roupa', 'oculos'),
+    component('shoe-left-01', 'Sapato 01 · esquerda', 'sapato', 'foot-left', 'shoe-pair-01', 'left', 'whole'),
+    component('shoe-right-01', 'Sapato 01 · direita', 'sapato', 'foot-right', 'shoe-pair-01', 'right', 'whole'),
+    component('shoe-left-02', 'Sapato 02 · esquerda', 'sapato', 'foot-left', 'shoe-pair-02', 'left', 'whole'),
+    component('shoe-right-02', 'Sapato 02 · direita', 'sapato', 'foot-right', 'shoe-pair-02', 'right', 'whole'),
+    component('shoe-unpaired', 'Sapato extra · esquerda', 'sapato', 'foot-left', undefined, 'left', 'whole')
   ])
   const otherSlotSet = createSet('other-slot', 2, [component('other-shirt', 'Camisa', 'camisa')])
   const summaries = [
@@ -173,6 +179,18 @@ test('índice de candidatos preserva filtros, ordem e agrupamento de cada painel
     ['unpaired-lower-left', ['unpaired-lower-left'], ['unpaired-lower-left']]
   ])
   assert.deepEqual(index.get('lower-right')?.map((candidate) => candidate.components.map(({ id }) => id)), [['lower-right']])
+  assert.deepEqual(index.get('shoe-left')?.map((candidate) => [candidate.component.id, candidate.components.map(({ id }) => id)]), [
+    ['shoe-left-01', ['shoe-left-01', 'shoe-right-01']],
+    ['shoe-left-02', ['shoe-left-02', 'shoe-right-02']],
+    ['shoe-unpaired', ['shoe-unpaired']]
+  ])
+  assert.deepEqual(index.get('shoe-right')?.map((candidate) => [candidate.component.id, candidate.components.map(({ id }) => id)]), [
+    ['shoe-right-01', ['shoe-left-01', 'shoe-right-01']],
+    ['shoe-right-02', ['shoe-left-02', 'shoe-right-02']]
+  ])
+  assert.deepEqual(wardrobePanelSelectionComponents(mainSet, lowerWardrobePanels.find((panel) => panel.id === 'shoe-left')).map(({ id }) => id), [
+    'shoe-left-01', 'shoe-right-01', 'shoe-left-02', 'shoe-right-02', 'shoe-unpaired'
+  ])
   assert.deepEqual(wardrobePanelSelectionComponents(mainSet, upperWardrobePanels.find((panel) => panel.id === 'lower-left')).map(({ id }) => id), [
     'upper-left', 'lower-left', 'legacy-upper-left', 'legacy-lower-left', 'unpaired-lower-left'
   ])
@@ -187,6 +205,28 @@ test('índice de candidatos preserva filtros, ordem e agrupamento de cada painel
   const lowerSleeve = index.get('lower-left')[0]
   assert.equal(isWardrobePanelCandidateSelected(lowerSleeve, upperWardrobePanels.find((panel) => panel.id === 'lower-left'), legacySplitGroups), true)
   assert.equal(wardrobePanelGroupMatchesComponent(legacySplitGroups[1], upperWardrobePanels.find((panel) => panel.id === 'lower-left'), 1, 'main', lowerSleeve.component), true)
+  assert.equal(isWardrobePanelCandidateSelected(index.get('shoe-left')[0], lowerWardrobePanels.find((panel) => panel.id === 'shoe-left'), [
+    { modelSlot: 1, setId: 'main', category: 'sapato', componentId: 'shoe-right-01' }
+  ]), true)
+
+  const applyShoeCandidate = async (panelId, candidate) => {
+    const character = { id: 'character', customization: { wardrobeGroups: [] } }
+    let savedPatch
+    const actions = useCustomizerWardrobePanelActions({
+      selectedCharacter: character,
+      selectedModelSlot: 1,
+      selectedClothing: null,
+      setSelectedClothing: () => {},
+      charactersRef: { current: [character] },
+      wardrobeSets: summaries,
+      wardrobeDetails,
+      saveCharacterCustomization: async (patch) => { savedPatch = patch }
+    })
+    await actions.applyWardrobePanel(lowerWardrobePanels.find((panel) => panel.id === panelId), candidate)
+    return savedPatch.wardrobeGroups.map(({ componentId }) => componentId)
+  }
+  assert.deepEqual(await applyShoeCandidate('shoe-left', index.get('shoe-left')[0]), ['shoe-left-01', 'shoe-right-01'])
+  assert.deepEqual(await applyShoeCandidate('shoe-right', index.get('shoe-right')[0]), ['shoe-left-01', 'shoe-right-01'])
   assert.equal(index.get('glasses')?.[0]?.headExtraAsset?.id, faceAsset.id)
   assert.equal(index.get('shirt')?.some((candidate) => candidate.summary.modelSlot === 2), false)
 })

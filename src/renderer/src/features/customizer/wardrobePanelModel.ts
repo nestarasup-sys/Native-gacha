@@ -78,6 +78,21 @@ export function pairedWardrobeSleeveComponents(
   return [component]
 }
 
+/** Select both shoes from the same authored pair from either side panel. */
+export function pairedWardrobeShoeComponents(
+  set: WardrobeSet,
+  component: WardrobeSet['components'][number]
+): WardrobeSet['components'] {
+  if (component.category !== 'sapato' || !component.sleevePairId || !component.sleeveSide) return [component]
+  const oppositeSide = component.sleeveSide === 'left' ? 'right' : 'left'
+  const counterpart = set.components.find((candidate) => candidate.category === 'sapato'
+    && candidate.sleevePairId === component.sleevePairId
+    && candidate.sleeveSide === oppositeSide
+    && candidate.sleeveSegment === component.sleeveSegment)
+  if (!counterpart) return [component]
+  return component.sleeveSide === 'left' ? [component, counterpart] : [counterpart, component]
+}
+
 /** Restores a missing forearm entry when an older character only saved the upper sleeve. */
 export function restoreMissingPairedWardrobeSleeves(
   groups: readonly CustomizerWardrobeGroup[],
@@ -140,8 +155,11 @@ export function wardrobePanelSelectionComponents(set: WardrobeSet, panel: Wardro
     : isSleeveLowerPanel(panel)
       ? visibleComponents.filter((component) => component.category === 'manga-inferior' && component.sleeveSegment !== 'upper')
       : visibleComponents
-  const selection = components.flatMap((component) =>
-    isSleeveUpperPanel(panel) || isSleeveLowerPanel(panel) ? pairedWardrobeSleeveComponents(set, component) : [component])
+  const selection = components.flatMap((component) => {
+    if (isSleeveUpperPanel(panel) || isSleeveLowerPanel(panel)) return pairedWardrobeSleeveComponents(set, component)
+    if (panel.id === 'shoe-left' || panel.id === 'shoe-right') return pairedWardrobeShoeComponents(set, component)
+    return [component]
+  })
   return [...new Map(selection.map((component) => [component.id, component])).values()]
 }
 
@@ -193,6 +211,12 @@ export function wardrobePanelCandidates(
             components: [lower],
             pairedComponents: pairedWardrobeSleeveComponents(set, lower)
           }))
+      }
+      if (panel.id === 'shoe-left' || panel.id === 'shoe-right') {
+        return components.map((component) => {
+          const pair = pairedWardrobeShoeComponents(set, component)
+          return { summary, set, component, components: pair, pairedComponents: pair }
+        })
       }
       if (panel.id === 'pants-left') {
         const pantsByPair = new Map<string, typeof components>()
