@@ -1,9 +1,9 @@
 import { projectForOriginalPreview } from '../../../../shared/fabricatorModelViews'
 import { useModelSourceRefresh } from './models/useModelSourceRefresh'
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type Dispatch, type PointerEvent, type SetStateAction } from 'react'
-import type { FabricatorProject, FabricatorSlotSummary, HairAsset as HairAssetData, HairStyle, HairStyleSummary, HairTransform, HairWorkspace as HairWorkspaceData, ModelPart } from '../../../../shared/fabricator'
+import type { FabricatorProject, FabricatorSlotSummary, HairStyle, HairStyleSummary, HairTransform, HairWorkspace as HairWorkspaceData } from '../../../../shared/fabricator'
 import type { HairPartId } from '../../../../shared/customizer'
-import { hairCategories, type HairAssetSide } from '../../../../shared/hairCategories'
+import { hairCategories } from '../../../../shared/hairCategories'
 import { emptyHairTransform } from '../../../../shared/hairPersistence'
 import { HairPiecePreview as HairPiece } from './HairPiecePreview'
 import { HairDeformationPreview } from './HairDeformationPreview'
@@ -11,60 +11,17 @@ import { HairImportModal } from './HairImportModal'
 import { HairGridReviewModal } from './HairGridReviewModal'
 import { defaultHairGridSplits, type HairGridSplits } from './hairGridLayout'
 import { runHairProcessor, type HairProcessorCut } from './hairProcessorClient'
-import { defaultHairCategoriesBySide, saveHairStyleDraft } from './hairStyleSaveCommand'
+import { saveHairStyleDraft } from './hairStyleSaveCommand'
+import { defaultHairCategoriesBySide, headPart, initialTransform, emptyHairWorkspace, hairStyleSides, removeHairSide, categoriesForHairStyle, preserveHairFit, workspaceFromHairGridStyle, workspaceFromHairStyle, type HairAsset, type HairGridStyle, type HairSide } from './hairWorkspaceModel'
 import { Icon } from '../../ui/components/Icon'
 import { usePreviewBackground } from '../../ui/hooks/usePreviewBackground'
 import { usePaletteImport } from './usePaletteImport'
 import { useModelAppearanceTarget, useModelPartAppearancePreview } from './ModelAppearanceContext'
 import { getHairWorkspaceCatalogPage, hairStyleDetailMatchesSummary, hairStyleSummary, loadHairWorkspaceCatalogPage, retainHairWorkspaceStyleDetails } from './hairWorkspaceCatalog'
 
-type HairSide = HairAssetSide
-type HairAsset = HairAssetData
 type HairDrag = { pointerId: number; side: HairSide; clientX: number; clientY: number; x: number; y: number }
-type HairGridStyle = { front: HairAsset; back: HairAsset; sourceImageDataUrl: string; rowBoundary: number[] }
 type HairGridReview = { sourceImageDataUrl: string; fileName: string; tolerance: number; mode: 'auto' | 'green' | 'checker' }
 const defaultCategories = defaultHairCategoriesBySide
-
-function headPart(project: FabricatorProject | null): ModelPart | null {
-  return project?.parts.find((part) => /cabe[çc]a|head/i.test(part.name)) ?? null
-}
-
-function initialTransform(side: HairSide, head: ModelPart, asset: Pick<HairAsset, 'width' | 'height'>): HairTransform {
-  const isFringe = side === 'fringe'
-  const width = head.width * (isFringe ? 1.05 : 1.12)
-  const height = head.height * (isFringe ? .55 : .92)
-  return { x: head.width / 2, y: head.height * (isFringe ? .29 : .49), scaleX: width / asset.width, scaleY: height / asset.height, rotation: 0 }
-}
-
-function emptyHairWorkspace(modelSlot: number): HairWorkspaceData {
-  return { schemaVersion: 1, modelSlot, front: null, back: null, fringe: null, transforms: { front: emptyHairTransform(), back: emptyHairTransform(), fringe: emptyHairTransform() }, categoryBySide: defaultCategories, chromaTolerance: 70, chromaMode: 'auto', updatedAt: new Date().toISOString() }
-}
-
-function hairStyleSides(style: Pick<HairStyleSummary, 'front' | 'back' | 'fringe'>): HairSide[] {
-  return (['front', 'back', 'fringe'] as const).filter((side) => style[side] !== null && style[side] !== undefined)
-}
-
-function removeHairSide(workspace: HairWorkspaceData, side: HairSide): HairWorkspaceData {
-  const { sourceImageDataUrl: _sourceImageDataUrl, ...withoutSource } = workspace
-  return {
-    ...withoutSource,
-    [side]: null,
-    transforms: { ...workspace.transforms, [side]: emptyHairTransform() },
-    categoryBySide: { ...workspace.categoryBySide, [side]: defaultCategories[side] },
-    sourceImageSaved: false,
-    sourceAppliesToDraft: false,
-    updatedAt: new Date().toISOString()
-  }
-}
-
-function categoriesForStyle(style: Pick<HairStyle, 'category' | 'categoryBySide'>): Partial<Record<HairSide, HairPartId>> {
-  const categories: Partial<Record<HairSide, HairPartId>> = { ...defaultCategories }
-  if (style.category) {
-    const side = hairCategories.find((item) => item.id === style.category)?.side
-    if (side) categories[side] = style.category
-  }
-  return { ...categories, ...style.categoryBySide }
-}
 
 function nameFromFile(file: File): string {
   return file.name.replace(/\.[^.]+$/, '').trim().slice(0, 80) || 'Novo conjunto de cabelo'
@@ -86,11 +43,6 @@ function imageAsPng(image: HTMLImageElement): string {
   if (!context) throw new Error('Não foi possível preparar a folha original para o chroma key.')
   context.drawImage(image, 0, 0)
   return canvas.toDataURL('image/png')
-}
-
-function preserveHairFit(previous: HairTransform, oldAsset: HairAsset | null, nextAsset: HairAsset): HairTransform {
-  if (!oldAsset) return previous
-  return { ...previous, scaleX: previous.scaleX * oldAsset.width / nextAsset.width, scaleY: previous.scaleY * oldAsset.height / nextAsset.height }
 }
 
 function hairCutDataUrl(cut: HairProcessorCut): string {
@@ -122,29 +74,6 @@ function processThreeStyleHairGrid(dataUrl: string, tolerance: number, mode: 'au
       splits: result.splits
     }
   })
-}
-
-function workspaceFromHairGridStyle(
-  modelSlot: number, head: ModelPart,
-  style: HairGridStyle,
-  tolerance: number, mode: 'auto' | 'green' | 'checker'
-): HairWorkspaceData {
-  return {
-    ...emptyHairWorkspace(modelSlot),
-    front: style.front,
-    back: style.back,
-    transforms: {
-      front: initialTransform('front', head, style.front),
-      back: initialTransform('back', head, style.back),
-      fringe: emptyHairTransform()
-    },
-    sourceImageDataUrl: style.sourceImageDataUrl,
-    sourceImageSaved: true,
-    sourceAppliesToDraft: true,
-    chromaTolerance: tolerance,
-    chromaMode: mode,
-    updatedAt: new Date().toISOString()
-  }
 }
 
 export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
@@ -300,7 +229,7 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
         setActiveStyleId(legacy.id)
         setStyleName(legacy.name)
         const firstSide = hairStyleSides(legacy)[0]
-        const firstCategory = firstSide ? categoriesForStyle(legacy)[firstSide] : undefined
+        const firstCategory = firstSide ? categoriesForHairStyle(legacy)[firstSide] : undefined
         if (firstCategory) setSelectedCategory(firstCategory)
       } else {
         legacyWorkspaceRef.current = null
@@ -677,28 +606,13 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
       if (!style) throw new Error(`Não foi possível carregar o conjunto “${summary.name}”.`)
       if (hairStyleRequestRef.current !== requestId || modelSlotRef.current !== requestedModelSlot) return
       setActiveHairDetails((current) => ({ ...current, [`${requestedModelSlot}:${style.id}`]: style }))
-      const sourceImageDataUrl = style.sourceImageDataUrl ?? (style.id === 'legacy-workspace' ? legacyWorkspaceRef.current?.sourceImageDataUrl : undefined)
-      const categories = categoriesForStyle(style)
-      const workspace: HairWorkspaceData = {
-        ...emptyHairWorkspace(requestedModelSlot),
-        front: style.front ? { ...style.front } : null,
-        back: style.back ? { ...style.back } : null,
-        fringe: style.fringe ? { ...style.fringe } : null,
-        transforms: { ...structuredClone(style.transforms), fringe: style.transforms.fringe ?? (style.fringe ? initialTransform('fringe', head, style.fringe) : emptyHairTransform()) },
-        categoryBySide: categories,
-        ...(sourceImageDataUrl ? { sourceImageDataUrl } : {}),
-        sourceImageSaved: Boolean(sourceImageDataUrl),
-        sourceAppliesToDraft: style.sourceAppliesToDraft ?? legacyWorkspaceRef.current?.sourceAppliesToDraft ?? Boolean(sourceImageDataUrl),
-        chromaTolerance: style.chromaTolerance ?? legacyWorkspaceRef.current?.chromaTolerance ?? 70,
-        chromaMode: style.chromaMode ?? legacyWorkspaceRef.current?.chromaMode ?? 'auto',
-        updatedAt: new Date().toISOString()
-      }
+      const workspace = workspaceFromHairStyle(requestedModelSlot, head, style, legacyWorkspaceRef.current)
       setHairWorkspace(workspace)
       setActiveStyleId(style.id)
       setStyleName(style.name)
       setDirty(false)
       const firstSide = hairStyleSides(style)[0]
-      const firstCategory = firstSide ? categories[firstSide] : undefined
+      const firstCategory = firstSide ? workspace.categoryBySide?.[firstSide] : undefined
       if (firstCategory) setSelectedCategory(firstCategory)
       setNotice(`Conjunto “${style.name}” aberto com ${hairStyleSides(style).length} peça(s).`)
     } catch (reason) {

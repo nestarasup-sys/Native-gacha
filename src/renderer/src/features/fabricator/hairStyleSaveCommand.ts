@@ -2,10 +2,8 @@ import type { HairPartId } from '../../../../shared/customizer'
 import type { HairAsset, HairStyle, HairStyleAsset, HairStyleSave, HairStyleSummary, HairWorkspace } from '../../../../shared/fabricator'
 import { hairCategories, type HairAssetSide } from '../../../../shared/hairCategories'
 import { normalizeHairTransforms } from '../../../../shared/hairPersistence'
-
-export const defaultHairCategoriesBySide: Record<HairAssetSide, HairPartId> = {
-  front: 'rearHair', back: 'backHair', fringe: 'frontHair'
-}
+import { defaultHairCategoriesBySide } from './hairWorkspaceModel'
+export { defaultHairCategoriesBySide } from './hairWorkspaceModel'
 
 export type HairStyleSaveCommandInput = {
   workspace: HairWorkspace
