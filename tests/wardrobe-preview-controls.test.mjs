@@ -11,6 +11,8 @@ test('Roupas DEV compõe controles da prévia sem transferir estado da tela', as
   assert.match(workspace, /import \{ WardrobeDeformationBrushControls, WardrobePreviewToolbar \} from '\.\/WardrobePreviewControls'/)
   assert.match(workspace, /<WardrobePreviewToolbar[\s\S]*showToolbar=\{!testPose\}/)
   assert.match(workspace, /deformation=\{\{ active: deformMode/)
+  assert.match(workspace, /assembly=\{\{ active: joinJointsMode/)
+  assert.doesNotMatch(workspace, /const next = !deformMode; if \(next\) \{ setJoinJointsMode\(false\)/)
   assert.ok(workspace.indexOf('<WardrobeDeformationBrushControls') > workspace.indexOf('<div ref={previewRef}'))
   assert.doesNotMatch(workspace, /wardrobe-preview-controls|wardrobe-warp-controls/)
 

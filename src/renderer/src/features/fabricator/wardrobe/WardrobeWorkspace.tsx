@@ -759,7 +759,7 @@ export function WardrobeWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
         <WardrobePreviewToolbar
           showToolbar={!testPose}
           assembly={{ active: joinJointsMode, disabled: !sourceParts || Boolean(calibratingPartId) || deformMode, onToggle: () => setJoinJointsMode((value) => !value) }}
-          deformation={{ active: deformMode, disabled: !selected || draft?.edition === 2 || saving || processing || openingSet, canRestore: Boolean(selected?.isDeformed && selected.deformationOriginalDataUrl) && !saving && !processing && !openingSet && draft?.edition !== 2 && !testPose, onToggle: () => { const next = !deformMode; if (next) { setJoinJointsMode(false); setCalibratingPartId(null) } setDeformMode(next) }, onRestore: () => restoreSelectedDeformation(selected) }}
+          deformation={{ active: deformMode, disabled: !selected || draft?.edition === 2 || saving || processing || openingSet, canRestore: Boolean(selected?.isDeformed && selected.deformationOriginalDataUrl) && !saving && !processing && !openingSet && draft?.edition !== 2 && !testPose, onToggle: () => { const next = !deformMode; if (next) setCalibratingPartId(null); setDeformMode(next) }, onRestore: () => restoreSelectedDeformation(selected) }}
           magnet={{ enabled: magneticSnap, disabled: deformMode, onToggle: () => setMagneticSnap((active) => !active) }}
           viewport={{ canCenter: (previewPan.x !== 0 || previewPan.y !== 0) && !deformMode, onCenter: () => setPreviewPan(zeroOffset) }}
           background={{ color: previewBackground, onChange: setPreviewBackground }}
