@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Icon } from '../../ui/components/Icon'
 import { registerPendingWriteFlusher } from '../../ui/pendingPersistence'
 import { CharacterPortrait } from '../../ui/components/CharacterPortrait'
 import { RenderedCharacterPortrait } from '../../ui/components/RenderedCharacterPortrait'
 import { RoteiroWorkspace } from './RoteiroWorkspace'
 import { emptyRoteiroContent } from './roteiroDefaults'
+import { createRoteiroSnapshotPersistence } from './roteiroSnapshotPersistence'
 
 import type { CustomizerCharacter } from '../../../../shared/customizer'
 import type { RoteiroDocument, RoteiroReactionBlock, RoteiroVideoReference } from '../../../../shared/roteiros'
@@ -51,49 +52,21 @@ export function RoteirosPage() {
   const [editingCharacterIds, setEditingCharacterIds] = useState<string[]>([])
   const roteiroListRef = useRef<HTMLDivElement>(null)
   const roteiroListScroll = useRef(0)
-  const saveRevision = useRef(0)
   const roteirosRef = useRef(roteiros)
-  const lastRequestedRoteiros = useRef<SidebarRoteiro[] | null>(null)
-  const persistedRoteiros = useRef<SidebarRoteiro[] | null>(null)
-  const persistedRoteirosRevision = useRef(0)
-  const roteiroSaveWrites = useRef(new Set<Promise<void>>())
+  const roteiroPersistence = useMemo(() => createRoteiroSnapshotPersistence<SidebarRoteiro[]>({
+    saveSnapshot: (snapshot) => window.desktop.roteiros.saveRoteiros(snapshot),
+    setStatus: setRoteiroSaveStatus,
+    logFailure: (error) => console.error('Não foi possível salvar os roteiros.', error)
+  }), [])
   const active = roteiroAreas.find((area) => area.id === activeArea) ?? roteiroAreas[0]
   const openedRoteiro = roteiros.find((roteiro) => roteiro.id === openedRoteiroId) ?? null
 
   useLayoutEffect(() => { roteirosRef.current = roteiros }, [roteiros])
 
-  const saveRoteirosSnapshot = useCallback((snapshot: SidebarRoteiro[]) => {
-    const revision = ++saveRevision.current
-    lastRequestedRoteiros.current = snapshot
-    setRoteiroSaveStatus('saving')
-    const write = Promise.resolve().then(() => window.desktop.roteiros.saveRoteiros(snapshot)).then(() => {
-      if (revision >= persistedRoteirosRevision.current) {
-        persistedRoteirosRevision.current = revision
-        persistedRoteiros.current = snapshot
-      }
-      if (revision === saveRevision.current) setRoteiroSaveStatus('saved')
-    }, (error: unknown) => {
-      if (revision === saveRevision.current) setRoteiroSaveStatus('error')
-      if (lastRequestedRoteiros.current === snapshot) lastRequestedRoteiros.current = null
-      console.error('Não foi possível salvar os roteiros.', error)
-      throw error
-    })
-    roteiroSaveWrites.current.add(write)
-    void write.then(() => roteiroSaveWrites.current.delete(write), () => roteiroSaveWrites.current.delete(write))
-    return write
-  }, [])
-
   const flushRoteirosWrites = useCallback(async () => {
-    if (!roteirosLoaded) return
-    while (true) {
-      const pending = [...roteiroSaveWrites.current]
-      if (pending.length > 0) await Promise.allSettled(pending)
-      const latest = roteirosRef.current
-      if (persistedRoteiros.current === latest && roteiroSaveWrites.current.size === 0) return
-      if (lastRequestedRoteiros.current === latest && roteiroSaveWrites.current.size > 0) continue
-      await saveRoteirosSnapshot(latest)
-    }
-  }, [roteirosLoaded, saveRoteirosSnapshot])
+    await roteiroPersistence.flushPendingWrites(roteirosLoaded, () => roteirosRef.current)
+  }, [roteirosLoaded, roteiroPersistence])
+  const saveRoteirosSnapshot = roteiroPersistence.saveSnapshot
 
   useEffect(() => registerPendingWriteFlusher(flushRoteirosWrites), [flushRoteirosWrites])
 
@@ -117,9 +90,9 @@ export function RoteirosPage() {
   }, [])
 
   useEffect(() => {
-    if (!roteirosLoaded || lastRequestedRoteiros.current === roteiros) return
+    if (!roteirosLoaded || roteiroPersistence.isLastRequestedSnapshot(roteiros)) return
     void saveRoteirosSnapshot(roteiros).catch(() => undefined)
-  }, [roteiros, roteirosLoaded, saveRoteirosSnapshot])
+  }, [roteiros, roteirosLoaded, roteiroPersistence, saveRoteirosSnapshot])
 
   useEffect(() => {
     if (!openedRoteiroId && roteiroListRef.current) roteiroListRef.current.scrollTop = roteiroListScroll.current

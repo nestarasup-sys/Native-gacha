@@ -14,6 +14,8 @@ test('Roteiros mantém catálogo/persistência separados do editor do projeto', 
   assert.doesNotMatch(page, /function RoteiroWorkspace\(/)
   assert.match(page, /registerPendingWriteFlusher\(flushRoteirosWrites\)/)
   assert.match(page, /const flushRoteirosWrites =/)
+  assert.match(page, /createRoteiroSnapshotPersistence/)
+  assert.doesNotMatch(page, /new Set<Promise<void>>\(\)/)
 
   assert.match(workspace, /export function RoteiroWorkspace\(/)
   assert.match(workspace, /onDeleteDraftVideo/)
