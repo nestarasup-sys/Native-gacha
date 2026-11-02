@@ -27,7 +27,7 @@ Este documento acompanha a execução das Fases 1–6 e complementa a baseline d
 | 0 | Auditoria e baseline arquitetural | Concluída antes deste programa | [Relatório da Fase 0](./AUDITORIA_REFATORACAO_GERAL_V1_FASE_0.md). |
 | 1 | Electron, IPC, persistência, backups e filas | Concluída | Diagnóstico de memória corrigido; ciclo de encerramento extraído e coberto; diferenças das filas mapeadas; backup, manutenção e segurança de janela passaram. Os gatilhos gerais de CI de `Dev-V2` ficam na Fase 6. |
 | 2 | Núcleo compartilhado de personagens | Concluída | Consumidores e regressões mapeados. Escala-base idêntica entre Studio e Editor V6 centralizada; renderizadores e contratos de exportação distintos mantidos. Testes de personagem/gênero/roupas articuladas executáveis por script dedicado. |
-| 3 | Fabricador e Customizador | Em andamento | Fluxo de catálogo/customizações coberto de ponta a ponta; gravação de roupas, operações de cabelo, persistência serializada por personagem com recuperação e estado final protegido contra writes obsoletos, seleção de peça no Customizador, carregamento/hidratação, duplicação e publicação de folha-base do Fabricador, validação de conjuntos, corte de peças por junta, histórico de grades e seletor de poses em Roupas DEV têm fronteiras/testes próprios. Restam mapear/decompor os workspaces maiores e ampliar cenários de reabertura. |
+| 3 | Fabricador e Customizador | Em andamento | Fluxo de catálogo/customizações coberto de ponta a ponta; gravação de roupas, operações de cabelo, persistência serializada por personagem com recuperação e estado final protegido contra writes obsoletos, seleção de peça no Customizador, carregamento/hidratação, duplicação e publicação de folha-base do Fabricador, validação de conjuntos, corte de peças por junta, histórico de grades e seletor de poses em Roupas DEV, além da projeção/paginação do catálogo de poses do Customizador, têm fronteiras/testes próprios. Restam mapear/decompor os workspaces maiores e ampliar cenários de reabertura. |
 | 4 | Studio, Editor V6 e fluxos de vídeo | Em andamento | Criação/duplicação e impressão do Studio extraídas; miniatura 480×270 corrigida; paridade Turbo e exportação facial 720p/1080p aprovadas. A impressão foi validada do canvas ao handler IPC com fixture de arquivos sintética. A antiga tela Video Studio não tem rota, mas as bibliotecas legadas seguem ativas em Roteiros e como origem de mídia do Editor V6. Teste de cancelamento do worker cobre espera do compositor. Comparação sintética da exportação 240 s validou 284 transições em 1/2 workers; permanecem revisão visual e cobertura adicional dos fluxos de áudio/vídeo do Studio e Editor V6. |
 | 5 | Roteiros, Base de Vídeos, Opções, componentes e CSS | Em andamento | Biblioteca continua dona dos arquivos/IDs; Roteiros mantém metadados e referências. Guardas, fila de snapshots, canais, fila de metadados, carregamento, listagem, publicação, CRUD de categorias, importação e exclusões da Base de Vídeos têm contratos testados; estilos da Base de Vídeos e modelos/comandos de Opções têm módulos por feature. Restam decomposição adicional dos workspaces e migração gradual do CSS com revisão visual. |
 | 6 | Performance, CI e consolidação | Em andamento | Workflow da Dev-V2 roda gates gerais e Editor V6 por plataforma; build Windows é reutilizado pelos testes MP4. Baselines sintéticos de projeção, indexação, processamento de pixels e exportação 240 s registrados. Restam medições de inicialização e interação real dos workspaces, repetição das comparações de desempenho sem carga concorrente e consolidação da cobertura. |
@@ -430,6 +430,15 @@ O Node test runner não resolvia imports relativos extensionless `.ts` usados po
 - **Commit local:** `d26a328` (`refactor: extract wardrobe test pose picker`).
 - **Compatibilidade:** nenhum canal IPC, dado de pose, arquivo salvo, ID ou estilo foi alterado.
 
+### Modelo de navegação do catálogo de poses do Customizador
+
+- **Fronteira extraída:** `buildCustomizerPoseBrowserModel` em `src/renderer/src/features/customizer/customizerPoseBrowserModel.ts` projeta as poses utilizáveis do catálogo, respeitando slot selecionado, slots com recuperação pendente, ordenação, categorias, tamanho de página e limite da página ativa. Funções puras separadas calculam o próximo item da navegação circular e a página adjacente limitada.
+- **Integração:** `CustomizerPage` memoiza o modelo pelas entradas do catálogo e estado de navegação; continua dona dos setters e dos comandos de seleção/salvamento de personagem.
+- **Testes:** seis cenários cobrem filtro/ordenação, ordem de categorias, páginas cheias e vazias, limites, navegação circular e delegação da página. `npm run test:customizer:pose-browser-model` passou 6/6.
+- **Verificações:** `npm run test:refactor` passou com 641/641 testes principais e scripts encadeados; typecheck, auditoria arquitetural (596 arquivos TS/TSX), build e `git diff --check` passaram.
+- **Commit local:** `e77e9ed` (`refactor: isolate customizer pose browser model`).
+- **Compatibilidade:** o filtro de slots em recuperação, categorias iniciais, tamanho de página e navegação permanecem iguais; não altera catálogo ou customização persistidos.
+
 ## Reconciliação das falhas da baseline
 
 As falhas observadas na execução inicial da suíte em `f416a02` foram investigadas e reconciliadas:
@@ -498,4 +507,6 @@ As falhas observadas na execução inicial da suíte em `f416a02` foram investig
 | `187c75a` | Extrai o histórico de edição de grades de roupas DEV | Local em `Dev-V2`; sem publicação. |
 | `3113ebe` | Registra histórico de grades de roupas DEV e resultados da verificação | Local em `Dev-V2`; sem publicação. |
 | `d26a328` | Extrai o seletor de pose para prévia de roupas DEV | Local em `Dev-V2`; sem publicação. |
+| `4cd0b47` | Registra extração do seletor de pose e resultados de verificação | Local em `Dev-V2`; sem publicação. |
+| `e77e9ed` | Isola projeção e navegação do catálogo de poses do Customizador | Local em `Dev-V2`; sem publicação. |
 
