@@ -25,7 +25,7 @@ Este documento acompanha a execução das Fases 1–6 e complementa a baseline d
 | Fase | Escopo | Estado | Evidência/pendências |
 | --- | --- | --- | --- |
 | 0 | Auditoria e baseline arquitetural | Concluída antes deste programa | [Relatório da Fase 0](./AUDITORIA_REFATORACAO_GERAL_V1_FASE_0.md). |
-| 1 | Electron, IPC, persistência, backups, filas e gates | Em andamento | Corrigida a amostragem de memória do renderer. Ainda mapear as semânticas das filas, gates de CI para `Dev-V2` e extrações seguras do composition root. |
+| 1 | Electron, IPC, persistência, backups, filas e gates | Em andamento | Corrigida a amostragem de memória e extraído o ciclo de encerramento para um coordenador testável. Semânticas das filas documentadas e cobertas. Ainda revisar gates de CI para `Dev-V2` e escolher extrações seguras restantes do composition root. |
 | 2 | Núcleo compartilhado de personagens | Não iniciada | Mapear consumidores e contratos de preview/export antes de extrair regras. |
 | 3 | Fabricador e Customizador | Não iniciada | Preservar catálogo-fonte, instâncias e overrides; cobrir ciclo completo de edição. |
 | 4 | Studio, Editor V6 e fluxos de vídeo | Não iniciada | Manter engines distintas, paridade de exportação e caminhos legados de dados. |
@@ -43,6 +43,19 @@ Este documento acompanha a execução das Fases 1–6 e complementa a baseline d
 - **Commit local:** `697dee891e787c02fce129375c421fee9dc97291` (`fix: map renderer diagnostics from app metrics`).
 - **Verificações:** o teste focado passou (4/4); `npm run typecheck` passou; `npm run audit:architecture` passou (563 arquivos TS/TSX, sem violações); `git diff --check` passou. `npm run test:refactor` executou 621 testes: 615 passaram e as mesmas 6 falhas preexistentes permaneceram.
 
+### Coordenador de encerramento e inventário de persistência
+
+- **Fronteira extraída:** `createPersistenceShutdownHandler` em `electron/application/persistenceShutdown.ts` possui apenas estado e sequência do evento `before-quit`. O `main.ts` continua montando o inventário e injeta cancelamento/drenagem de exports, retomada após falha, recriação de janela, aviso, fechamento do catálogo e `app.quit()`.
+- **Comportamento preservado:** cliques/reentradas durante uma drenagem são bloqueados sem iniciar outra; falha mantém o app aberto, retoma handlers que podem ser repetidos e recria janela se necessário; sucesso fecha o catálogo antes de chamar `quit`, cuja reentrada já pode encerrar o processo.
+- **Semânticas de fila confirmadas; não consolidadas:**
+  - `createKeyedOperationQueue` serializa operações da mesma chave e permite concorrência entre chaves. A falha é devolvida ao chamador; por padrão a fila continua sem manter a falha no inventário. Com `retainFailures: true`, a cauda rejeitada continua visível ao flush até uma operação subsequente da chave se resolver.
+  - Roteiros usa uma única chave serial e retém falhas para o inventário principal. `waitForPendingWrites()` usa `Promise.allSettled`, portanto aguarda sem propagar o erro; o flush central lê a fila retida e transforma falhas em erro de flush.
+  - `createPendingOperationTracker` acompanha somente operações de filesystem ainda ativas e as retira do inventário quando terminam, com ou sem sucesso. A Promise original continua entregando erro ao chamador. É adequado para operações curtas de arquivo, não substitui uma fila serial com falhas retidas.
+  - Filas do renderer e do processo principal permanecem separadas; gravações do renderer são drenadas antes por flush explícito. Não são intercambiáveis só por compartilharem a ideia de “pendente”.
+- **Testes/arquivos:** `tests/application/persistence-shutdown.test.mjs` cobre drenagem, evento duplicado, reentrada bem-sucedida e nova tentativa após falha. `tests/keyed-operation-queue.test.mjs`, `tests/roteiros-write-queue.test.mjs`, `tests/media-library-pending-inventory.test.mjs` e `tests/pending-persistence-inventory.test.mjs` registram as políticas já existentes. Script local: `npm run test:application:persistence-shutdown`.
+- **Verificações da fatia:** testes da coordenação/persistência 10/10; typecheck passou; auditoria arquitetural passou (564 arquivos TS/TSX); build de produção passou; seis falhas conhecidas de `test:refactor` continuam sem mudança.
+- **Sem mudança de dados:** nenhuma fila foi consolidada, formato persistido foi alterado ou arquivo de usuário foi usado como fixture.
+
 ## Falhas preexistentes
 
 As falhas abaixo já estavam na baseline de `f416a02` antes da primeira alteração desta execução. Não foram mascaradas ou removidas:
@@ -58,7 +71,7 @@ O Node test runner conta também a suíte agregadora que contém as três primei
 ## Decisões e riscos abertos
 
 - A extração de `electron/main.ts` precisa preservar ordem de bootstrap, injeção de dependências, autorização IPC, flush de escrita e recuperação no encerramento.
-- As filas de persistência não serão fundidas só por semelhança de sintaxe. Antes, documentar e testar se propagam falha para flush, permitem gravações seguintes após falha e serializam por chave/slot.
+- As filas de persistência não serão fundidas só por semelhança de sintaxe. Já estão mapeadas suas diferenças de falha, concorrência, retenção e inventário; qualquer consolidação futura precisará preservar esses contratos com testes.
 - `Fabricador` continua proprietário do catálogo-fonte; `Customizador` da instância e personalizações do personagem; `Studio` do documento/cena; `Editor V6` do projeto/timeline. Consumidores se ligam por IDs explícitos.
 - Os caminhos legados `video-studio.media` e `video-studio.backgrounds` permanecem protegidos enquanto houver consumidores de dados. Não restaurar a UI/rota antiga.
 - Nenhuma alteração de schema, migração, exclusão de assets ou formato salvo foi incluída nesta fatia.
@@ -68,4 +81,5 @@ O Node test runner conta também a suíte agregadora que contém as três primei
 | Commit | Fatia | Estado |
 | --- | --- | --- |
 | `697dee891e787c02fce129375c421fee9dc97291` | Diagnóstico de memória do renderer e testes | Local em `Dev-V2`; sem publicação. |
+| `627a654f531240788ac2f56b6392a081e180e738` | Coordenador de encerramento, semânticas de filas e testes | Local em `Dev-V2`; sem publicação. |
 
