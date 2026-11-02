@@ -30,6 +30,7 @@ test('fechar pelo fundo ou botão delega o cancelamento para a página', async (
 
   assert.match(component, /event\.target === event\.currentTarget\) onClose\(\)/)
   assert.match(component, /button onClick=\{onClose\} aria-label="Fechar"/)
-  assert.match(page, /const closeTestPosePicker = \(\) => \{ testPoseRequestRef\.current \+= 1; setTestPoseLoading\(false\); setTestPosePickerOpen\(false\) \}/)
+  assert.match(page, /const closeTestPosePicker = testPoseCommands\.closePicker/)
+  assert.match(page, /const loadTestPose = \(slot: number\) => testPoseCommands\.loadPose\(modelSlot, slot\)/)
   assert.match(page, /<WardrobeTestPosePicker poses=\{testPoseSlots\} loading=\{testPoseLoading\} onClose=\{closeTestPosePicker\} onSelect=\{\(slot\) => void loadTestPose\(slot\)\} \/>/)
 })

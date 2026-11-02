@@ -21,6 +21,7 @@ import { saveWardrobeSetDraft } from './saveWardrobeSetDraft'
 import { createWardrobeSleeveSheetComponents } from './wardrobeSleeveSheetImport'
 import { createWardrobeGridHistory } from './wardrobeGridHistory'
 import { WardrobeTestPosePicker } from './WardrobeTestPosePicker'
+import { createWardrobeTestPoseCommands } from './wardrobeTestPoseCommands'
 import { mirrorWardrobeImageDataUrl } from './mirrorWardrobeImage'
 import type { WardrobeProcessorResponse } from './wardrobeProcessorProtocol'
 import { recoverWardrobeReferenceModel } from './wardrobeReferenceRecovery'
@@ -134,6 +135,18 @@ export function WardrobeWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
   const [testPose, setTestPose] = useState<FabricatorPose | null>(null)
   const [testPoseLoading, setTestPoseLoading] = useState(false)
   const [testDragOffsets, setTestDragOffsets] = useState<Record<string, { x: number; y: number }>>({})
+  const testPoseCommands = createWardrobeTestPoseCommands({
+    requestRef: testPoseRequestRef,
+    listPoseSlots: (slot) => window.desktop.fabricator.listFabricatorPoseSlots(slot),
+    loadPose: (slot, poseSlot) => window.desktop.fabricator.loadFabricatorPose(slot, poseSlot),
+    setPoseSlots: setTestPoseSlots,
+    setPose: setTestPose,
+    setLoading: setTestPoseLoading,
+    setPickerOpen: setTestPosePickerOpen,
+    clearDragOffsets: () => setTestDragOffsets({}),
+    disableJoinJoints: () => setJoinJointsMode(false),
+    setError
+  })
   const [calibratingPartId, setCalibratingPartId] = useState<string | null>(null)
   const poseAudit = useWardrobePoseAudit(model,draft)
   const defaultPose = useWardrobeComparisonPose(modelSlot,Boolean(model && draft))
@@ -382,14 +395,14 @@ export function WardrobeWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
   }, [draft?.components, referenceModel])
   useEffect(() => () => {
     requestRef.current++
-    testPoseRequestRef.current++
+    testPoseCommands.invalidate()
     workerRef.current?.terminate()
   }, [])
 
   const openSet = async (id: string) => {
     if (!model || processing || saving || openingSet) return
     if (dirty && !window.confirm('Há alterações não salvas neste conjunto. Descartar e abrir outro?')) return
-    testPoseRequestRef.current += 1
+    testPoseCommands.invalidate()
     setTestPoseLoading(false)
     setTestPosePickerOpen(false)
     setDeformMode(false)
@@ -708,39 +721,17 @@ export function WardrobeWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
       setError(`Calibre a origem na folha original antes do teste: ${missingOrigins.join(', ')}. Selecione cada peça do conjunto e use “Calibrar origem”.`)
       return
     }
-    const requestId = ++testPoseRequestRef.current
-    const requestedModelSlot = modelSlot
-    setError('')
-    setTestPosePickerOpen(true)
-    setTestPoseLoading(true)
-    try {
-      const slots = await window.desktop.fabricator.listFabricatorPoseSlots(requestedModelSlot)
-      if (requestId !== testPoseRequestRef.current) return
-      setTestPoseSlots(slots.filter((slot): slot is NonNullable<typeof slot> => slot !== null))
-    }
-    catch (reason) { if (requestId === testPoseRequestRef.current) setError(reason instanceof Error ? reason.message : 'Não foi possível carregar as poses deste modelo.') }
-    finally { if (requestId === testPoseRequestRef.current) setTestPoseLoading(false) }
+    await testPoseCommands.openPicker(modelSlot)
   }
-  const loadTestPose = async (slot: number) => {
-    const requestId = ++testPoseRequestRef.current
-    const requestedModelSlot = modelSlot
-    setTestPoseLoading(true)
-    try {
-      const pose = await window.desktop.fabricator.loadFabricatorPose(requestedModelSlot, slot)
-      if (requestId !== testPoseRequestRef.current) return
-      if (!pose || pose.sourceModelSlot !== requestedModelSlot || pose.slot !== slot) throw new Error('Esta pose não está mais disponível para o modelo selecionado.')
-      setTestDragOffsets({}); setJoinJointsMode(false); setTestPose(pose); setTestPosePickerOpen(false); setError('')
-    } catch (reason) { if (requestId === testPoseRequestRef.current) setError(reason instanceof Error ? reason.message : 'Não foi possível abrir esta pose.') }
-    finally { if (requestId === testPoseRequestRef.current) setTestPoseLoading(false) }
-  }
-  const exitTestPose = () => { testPoseRequestRef.current += 1; setTestPose(null); setTestPoseLoading(false); setTestDragOffsets({}) }
-  const closeTestPosePicker = () => { testPoseRequestRef.current += 1; setTestPoseLoading(false); setTestPosePickerOpen(false) }
+  const loadTestPose = (slot: number) => testPoseCommands.loadPose(modelSlot, slot)
+  const exitTestPose = testPoseCommands.exitPose
+  const closeTestPosePicker = testPoseCommands.closePicker
 
   const renderComponentList = () => <div className="wardrobe-component-list">{draft?.components.map((component) => <button key={component.id} className={`wardrobe-component-row${selectedId === component.id ? ' active' : ''}`} onClick={() => setSelectedId(component.id)} type="button"><img src={component.dataUrl} alt="" /><span><b>{component.name}</b><small>{categoryNames[component.category]}{component.sleeveSide ? ` · ${component.sleeveSide === 'left' ? 'esquerda' : 'direita'}` : ''}</small></span></button>)}</div>
   return <section className="fabricator-workspace wardrobe-workspace" aria-label="Biblioteca de roupas">
     <header className="wardrobe-toolbar">
       <div className="wardrobe-title"><span className="model-slot-logo"><Icon name="shirt" /></span><span><strong>Roupas Dev</strong><small>Todos os conjuntos e categorias por modelo</small></span></div>
-      <label className="wardrobe-model-select">Modelo<select value={modelSlot} disabled={processing || saving || openingSet || testPoseLoading} onChange={(event) => { if (dirty && !window.confirm('Há alterações não salvas. Descartar e trocar de modelo?')) return; testPoseRequestRef.current += 1; setTestPoseLoading(false); setTestPosePickerOpen(false); setTestPoseSlots([]); setTestPose(null); setModelSlot(Number(event.target.value)) }}>{models.map((item, index) => <option key={index + 1} value={index + 1} disabled={!item}>{String(index + 1).padStart(2, '0')} · {item?.name ?? 'Vazio'}</option>)}</select></label>
+      <label className="wardrobe-model-select">Modelo<select value={modelSlot} disabled={processing || saving || openingSet || testPoseLoading} onChange={(event) => { if (dirty && !window.confirm('Há alterações não salvas. Descartar e trocar de modelo?')) return; testPoseCommands.invalidate(); setTestPoseLoading(false); setTestPosePickerOpen(false); setTestPoseSlots([]); setTestPose(null); setModelSlot(Number(event.target.value)) }}>{models.map((item, index) => <option key={index + 1} value={index + 1} disabled={!item}>{String(index + 1).padStart(2, '0')} · {item?.name ?? 'Vazio'}</option>)}</select></label>
       {draft && <input aria-label="Nome do conjunto" className="wardrobe-name-input" value={draft.name} onChange={(event) => { setDirty(true); setDraft((current) => { if (!current) return current; sleeveHistoryRef.current.record(current); return { ...current, name: event.target.value } }) }} placeholder="Nome do conjunto" />}
       <div className="wardrobe-toolbar-actions"><span className={`wardrobe-save-state${dirty ? ' pending' : ''}`}><i />{dirty ? 'Alterações não salvas' : model ? `${model.parts.length} peças no modelo` : 'Escolha um modelo salvo'}</span><button className="pose-button secondary" disabled={!model || processing || saving || openingSet || !sourceParts} onClick={() => { if (dirty && !window.confirm('Descartar as alterações atuais e importar outra folha?')) return; setImportPickerOpen(true) }} type="button"><Icon name="plus" /> Importar</button>{['sleeve-grid-3x4', 'pants-grid-3x4'].includes(draft?.importKind ?? '') && <><button className="pose-button secondary" title="Desfazer (Ctrl+Z)" disabled={!sleeveHistoryRef.current.canUndo} onClick={undoSleeveEdit} type="button">↶ Desfazer</button><button className="pose-button secondary" title="Refazer (Ctrl+Y)" disabled={!sleeveHistoryRef.current.canRedo} onClick={redoSleeveEdit} type="button">↷ Refazer</button></>}{testPose ? <button className="pose-button danger" onClick={exitTestPose} type="button"><Icon name="eyeOff" /> Sair do teste</button> : <button className="pose-button secondary" disabled={!model || !draft?.components.length} onClick={() => void openTestPosePicker()} type="button"><Icon name="eye" /> Testar pose</button>}<button className="pose-button primary" disabled={!draft || draft.edition === 2 || saving || processing || openingSet || !sourceParts} onClick={() => void save()} type="button"><Icon name="check" />{saving ? 'Salvando…' : activeSetId ? 'Salvar alterações' : 'Salvar conjunto'}</button>{activeSetId && <button className="pose-icon-button" title="Excluir conjunto" disabled={processing || saving || openingSet} onClick={() => void deleteSet()} type="button"><Icon name="trash" /></button>}<input ref={inputRef} hidden type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => { void importSheet(event.target.files?.[0]); event.currentTarget.value = '' }} /><input ref={gridInputRef} hidden type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => { void importTorsoGrid(event.target.files?.[0]); event.currentTarget.value = '' }} /><input ref={sleeveInputRef} hidden type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => { void importSleeveGrid(event.target.files?.[0]); event.currentTarget.value = '' }} /></div>
     </header>
