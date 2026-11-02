@@ -8,8 +8,9 @@ import { deleteBaseVideoCategory } from './baseVideoCategoryCommands'
 import { selectVisibleBaseVideos, type BaseVideoListSort, type BaseVideoTimelineFilter } from './baseVideoListModel'
 import { publishBaseVideoDraft } from './publishBaseVideoDraft'
 import { deleteBaseVideosSequentially } from './deleteBaseVideosSequentially'
+import { createEmptyBaseVideoDetails } from './baseVideoDetailsModel'
+import { loadBaseVideosSnapshot } from './loadBaseVideosSnapshot'
 
-const emptyDetails = (videoId: string): BaseVideoDetails => ({ videoId, categoryId: null, description: '', additionalContext: '', timeline: 'unspecified' })
 const formatDuration = (frames: number | null) => {
   if (frames === null) return 'Duração não reconhecida'
   const seconds = Math.floor(frames / 60)
@@ -75,13 +76,15 @@ export function BaseVideosPage() {
 
   useEffect(() => {
     let cancelled = false
-    void Promise.all([window.desktop.mediaLibrary.list(), window.desktop.baseVideos.listDetails(), window.desktop.baseVideos.listCategories()]).then(([library, saved, loadedCategories]) => {
+    void loadBaseVideosSnapshot({
+      listLibrary: () => window.desktop.mediaLibrary.list(),
+      listDetails: () => window.desktop.baseVideos.listDetails(),
+      listCategories: () => window.desktop.baseVideos.listCategories()
+    }).then((snapshot) => {
       if (cancelled) return
-      const savedById = Object.fromEntries(saved.map((entry) => [entry.videoId, entry]))
-      const merged = Object.fromEntries(library.map((item) => [item.id, savedById[item.id] ?? emptyDetails(item.id)]))
-      setItems(library)
-      setDetailsById(merged)
-      setCategories(loadedCategories)
+      setItems(snapshot.items)
+      setDetailsById(snapshot.detailsById)
+      setCategories(snapshot.categories)
       setLoaded(true)
     }).catch((reason: unknown) => {
       if (!cancelled) { setLoadError(reason instanceof Error ? reason.message : 'Não foi possível abrir a Base de vídeos.'); setLoaded(true) }
@@ -104,7 +107,7 @@ export function BaseVideosPage() {
   useEffect(() => registerPendingWriteFlusher(saveQueue.flushPendingSaves), [saveQueue])
 
   const updateDetails = (videoId: string, patch: Partial<BaseVideoDetails>) => {
-    const next = { ...(detailsById[videoId] ?? emptyDetails(videoId)), ...patch, videoId }
+    const next = { ...(detailsById[videoId] ?? createEmptyBaseVideoDetails(videoId)), ...patch, videoId }
     saveQueue.scheduleSave(next)
     setDetailsById((current) => ({ ...current, [videoId]: next }))
   }
@@ -167,7 +170,7 @@ export function BaseVideosPage() {
       const importedItem = await window.desktop.mediaLibrary.import()
       if (!importedItem) return
       imported = importedItem
-      const details = emptyDetails(importedItem.id)
+      const details = createEmptyBaseVideoDetails(importedItem.id)
       await window.desktop.baseVideos.saveDetails(details)
       setItems((current) => [importedItem, ...current.filter((item) => item.id !== importedItem.id)])
       setDetailsById((current) => ({ ...current, [importedItem.id]: details }))
@@ -193,7 +196,7 @@ export function BaseVideosPage() {
         flushPendingSave,
         publish: (id) => window.desktop.baseVideos.publish(id)
       })
-      setDetailsById((current) => ({ ...current, [videoId]: { ...(current[videoId] ?? emptyDetails(videoId)), videoNumber } }))
+      setDetailsById((current) => ({ ...current, [videoId]: { ...(current[videoId] ?? createEmptyBaseVideoDetails(videoId)), videoNumber } }))
       setActiveView('main')
     } catch (reason) {
       const message = reason instanceof Error ? reason.message : 'Não foi possível enviar o vídeo para a Base.'
@@ -271,11 +274,14 @@ export function BaseVideosPage() {
     if (busy) return
     setBusy(true); setLoaded(false); setLoadError(null)
     try {
-      const [library, saved, loadedCategories] = await Promise.all([window.desktop.mediaLibrary.list(), window.desktop.baseVideos.listDetails(), window.desktop.baseVideos.listCategories()])
-      const savedById = Object.fromEntries(saved.map((entry) => [entry.videoId, entry]))
-      setItems(library)
-      setDetailsById(Object.fromEntries(library.map((item) => [item.id, savedById[item.id] ?? emptyDetails(item.id)])))
-      setCategories(loadedCategories)
+      const snapshot = await loadBaseVideosSnapshot({
+        listLibrary: () => window.desktop.mediaLibrary.list(),
+        listDetails: () => window.desktop.baseVideos.listDetails(),
+        listCategories: () => window.desktop.baseVideos.listCategories()
+      })
+      setItems(snapshot.items)
+      setDetailsById(snapshot.detailsById)
+      setCategories(snapshot.categories)
     } catch (reason) { setLoadError(reason instanceof Error ? reason.message : 'Não foi possível abrir a Base de vídeos.') }
     finally { setLoaded(true); setBusy(false) }
   }
@@ -296,7 +302,7 @@ export function BaseVideosPage() {
       <div className="base-videos-filters"><label className="base-videos-search"><Icon name="search" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar por nome, ID, número ou descrição" /></label><label><span>Linha do tempo</span><select value={timelineFilter} onChange={(event) => setTimelineFilter(event.target.value as BaseVideoTimelineFilter)}><option value="all">Todas</option><option value="past">Passado</option><option value="present">Presente</option><option value="future">Futuro</option><option value="unspecified">Indefinido</option></select></label><label><span>Ordenar</span><select value={sort} onChange={(event) => setSort(event.target.value as typeof sort)}><option value="order">Ordem padrão</option><option value="name">Nome</option><option value="duration">Duração</option><option value="newest">Mais recente</option></select></label>{deleteMode && <strong className="base-videos-selection-count">{selectedIds.length} selecionado(s)</strong>}</div>
       <div className="base-videos-view-heading"><div><h2>{activeView === 'main' ? 'Vídeos' : 'Rascunhos'}</h2><p>{activeView === 'main' ? 'Vídeos enviados para a Base, em ordem de identificação.' : 'Vídeos aguardando envio para a Base de vídeos.'}</p></div><span>{visibleItems.length} vídeo{visibleItems.length === 1 ? '' : 's'}</span></div>
       {!loaded ? <div className="base-videos-grid base-videos-skeleton-grid" aria-label="Carregando vídeos">{Array.from({ length: 6 }, (_, index) => <div className="base-videos-skeleton-card" key={index}><i /><b /><span /><span /></div>)}</div> : loadError ? <div className="base-videos-empty"><span className="base-videos-empty-icon"><Icon name="warning" /></span><strong>Não foi possível carregar a Base de vídeos</strong><span>{loadError}</span><button type="button" disabled={busy} onClick={() => void retryLoad()}>{busy ? 'Carregando…' : 'Tentar novamente'}</button></div> : visibleItems.length ? <><div className="base-videos-grid">{visibleItems.slice(0, visibleCount).map((item) => {
-        const details = detailsById[item.id] ?? emptyDetails(item.id)
+        const details = detailsById[item.id] ?? createEmptyBaseVideoDetails(item.id)
         const selected = selectedIds.includes(item.id)
         const currentCategory = categories.find((category) => category.id === details.categoryId)
         return <article className={`base-video-card${deleteMode ? ' selecting' : ''}${selected ? ' selected' : ''}`} key={item.id}>
