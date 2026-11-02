@@ -29,6 +29,7 @@ import { breathingVariations, createBreathingAnimation } from './models/animator
 import { buildAnimatorHeadOverlays } from './models/animatorHeadOverlays'
 import { buildAnimatorGarmentLayers } from './models/animatorGarmentLayers'
 import { buildAnimatorRigDiagnostics } from './models/animatorRigDiagnostics'
+import { createAnimatorDeleteAnimationCommand } from './animatorDeleteAnimationCommand'
 
 const SLOT_COUNT = 12
 const HISTORY_LIMIT = 40
@@ -529,19 +530,24 @@ export function AnimatorWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
     setNameDialog(null)
   }
 
-  const deleteAnimation = async () => {
-    if (saving || !animation || !window.confirm(`Excluir a animação “${animation.name}” do slot ${animation.slot}?`)) return
-    if (draftTimer.current !== null) clearTimeout(draftTimer.current)
-    draftTimer.current = null
-    try {
-      await writeQueue.current.catch(() => undefined)
-      await window.desktop.fabricator.deleteAnimatorAnimation(animation.sourceModelSlot, animation.slot)
-      const savedDraft = await window.desktop.fabricator.loadAnimatorDraft(animation.sourceModelSlot)
-      if (savedDraft?.editingSlot === animation.slot) await window.desktop.fabricator.deleteAnimatorDraft(animation.sourceModelSlot)
+  const deleteAnimation = createAnimatorDeleteAnimationCommand({
+    saving,
+    animation,
+    confirm: (message) => window.confirm(message),
+    clearDraftTimer: () => {
+      if (draftTimer.current !== null) clearTimeout(draftTimer.current)
+      draftTimer.current = null
+    },
+    waitForWrites: () => writeQueue.current,
+    deleteSavedAnimation: (sourceModelSlot, slot) => window.desktop.fabricator.deleteAnimatorAnimation(sourceModelSlot, slot),
+    loadSavedDraft: (sourceModelSlot) => window.desktop.fabricator.loadAnimatorDraft(sourceModelSlot),
+    deleteSavedDraft: (sourceModelSlot) => window.desktop.fabricator.deleteAnimatorDraft(sourceModelSlot),
+    resetAfterSuccess: (slot) => {
       writeQueue.current = Promise.resolve()
-      setSummaries((current) => current.filter((item) => item.slot !== animation.slot)); setAnimation(null); setCurrentTransforms({}); setCurrentJoints([]); setSelectedFrameId(''); setSelectedPartId(''); setSaveMessage(''); setDraft(null); savedAnimationRef.current = null
-    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível excluir a animação.') }
-  }
+      setSummaries((current) => current.filter((item) => item.slot !== slot)); setAnimation(null); setCurrentTransforms({}); setCurrentJoints([]); setSelectedFrameId(''); setSelectedPartId(''); setSaveMessage(''); setDraft(null); savedAnimationRef.current = null
+    },
+    setError
+  })
 
   const saveFrame = async () => {
     if (saving || !animation || !displayBase || !dirtyFrame) return
