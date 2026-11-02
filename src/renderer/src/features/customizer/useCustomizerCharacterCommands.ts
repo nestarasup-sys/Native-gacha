@@ -4,6 +4,7 @@
 import { useRef, type Dispatch, type MutableRefObject, type SetStateAction } from 'react'
 import type { CustomizerCharacter, CustomizerWardrobeGroup } from '../../../../shared/customizer'
 import { createCustomizerCharacterRosterCommands } from './customizerCharacterRosterCommands'
+import { saveCustomizerCharacter } from './customizerCharacterSaveCommand'
 
 type Customization = CustomizerCharacter['customization']
 export type CharacterPatch = Partial<Customization> | ((current: Customization) => Partial<Customization>)
@@ -44,32 +45,17 @@ export function useCustomizerCharacterCommands(deps: {
   }
 
   async function saveCharacter(next: CustomizerCharacter) {
-    if (deletionsInProgress.current.has(next.id)) return
-    setCharactersError('')
-    setCharacterSaveState('saving')
-    charactersRef.current = charactersRef.current.map(character => character.id === next.id ? next : character)
-    setCharacters(charactersRef.current)
-    const previousWrite = characterSaveQueue.current.get(next.id)
-    const write = (previousWrite ? previousWrite.catch(() => undefined) : Promise.resolve())
-      .then(() => window.desktop.customizer.saveCustomizerCharacter(next))
-    characterSaveQueue.current.set(next.id, write)
-    try {
-      await write
-      setCharacterSaveState('saved')
-      window.dispatchEvent(new Event('customizer:characters-updated'))
-    } catch (reason) {
-      setCharacterSaveState('error')
-      setCharactersError(reason instanceof Error ? reason.message : 'Não foi possível salvar o personagem.')
-      if (characterSaveQueue.current.get(next.id) === write) {
-        const latest = await window.desktop.customizer.listCustomizerCharacters().catch(() => null)
-        if (latest) {
-          charactersRef.current = latest
-          setCharacters(latest)
-        }
-      }
-    } finally {
-      if (characterSaveQueue.current.get(next.id) === write) characterSaveQueue.current.delete(next.id)
-    }
+    await saveCustomizerCharacter(next, {
+      charactersRef,
+      saveQueue: characterSaveQueue,
+      deletionsInProgress: deletionsInProgress.current,
+      setCharacters,
+      setCharactersError,
+      setCharacterSaveState,
+      persistCharacter: (character) => window.desktop.customizer.saveCustomizerCharacter(character),
+      loadCharacters: () => window.desktop.customizer.listCustomizerCharacters(),
+      notifyCharactersUpdated: () => window.dispatchEvent(new Event('customizer:characters-updated'))
+    })
   }
 
   async function saveCharacterCustomization(patch: CharacterPatch) {
