@@ -6,6 +6,7 @@ import { registerPendingWriteFlusher } from '../../ui/pendingPersistence'
 import { createBaseVideoDetailsSaveQueue } from './baseVideoDetailsSaveQueue'
 import { deleteBaseVideoCategory } from './baseVideoCategoryCommands'
 import { selectVisibleBaseVideos, type BaseVideoListSort, type BaseVideoTimelineFilter } from './baseVideoListModel'
+import { publishBaseVideoDraft } from './publishBaseVideoDraft'
 
 const emptyDetails = (videoId: string): BaseVideoDetails => ({ videoId, categoryId: null, description: '', additionalContext: '', timeline: 'unspecified' })
 const formatDuration = (frames: number | null) => {
@@ -186,8 +187,11 @@ export function BaseVideosPage() {
     setBusy(true); setError(null)
     setPublishErrors((current) => ({ ...current, [videoId]: '' }))
     try {
-      await flushPendingSave(videoId)
-      const videoNumber = await window.desktop.baseVideos.publish(videoId)
+      const videoNumber = await publishBaseVideoDraft({
+        videoId,
+        flushPendingSave,
+        publish: (id) => window.desktop.baseVideos.publish(id)
+      })
       setDetailsById((current) => ({ ...current, [videoId]: { ...(current[videoId] ?? emptyDetails(videoId)), videoNumber } }))
       setActiveView('main')
     } catch (reason) {
