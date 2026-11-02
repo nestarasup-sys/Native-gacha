@@ -5,6 +5,7 @@ import type {
   DataStorageSummary as StorageSummary, LocalDiagnosticEvent, RuntimeDiagnosticsSnapshot
 } from '../../../../shared/dataManagement'
 import { diagnosticAlerts, domainLabels, formatBytes, formatDate, groupLabels, totalStorageBytes } from './optionsDiagnostics'
+import { createOptionsBackupCommands } from './optionsBackupCommands'
 
 type StoredBackup = DataBackupSummary
 type EventFilter = 'all' | 'error' | 'warning'
@@ -66,6 +67,16 @@ export function OptionsPage() {
     catch (reason) { setMigrationError(reason instanceof Error ? reason.message : 'Não foi possível inventariar os domínios.') }
     finally { setMigrationBusy(false) }
   }, [])
+  const backupCommands = useMemo(() => createOptionsBackupCommands({
+    createBackup: () => window.desktop.dataManagement.createDataBackup(),
+    verifyBackup: (id) => window.desktop.dataManagement.verifyDataBackup(id),
+    restoreBackup: (id) => window.desktop.dataManagement.restoreDataBackup(id),
+    deleteBackup: (id) => window.desktop.dataManagement.deleteDataBackup(id),
+    refreshBackups,
+    setBusy: setBackupBusy,
+    setMessage: setBackupMessage,
+    setError: setBackupError
+  }), [refreshBackups])
 
   useEffect(() => {
     void refreshEvents()
@@ -73,42 +84,10 @@ export function OptionsPage() {
     return window.desktop.dataManagement.onDataMigrationProgress(setProgress)
   }, [refreshBackups, refreshEvents])
 
-  const createBackup = useCallback(async () => {
-    setBackupBusy(true); setBackupError(null); setBackupMessage(null)
-    try {
-      const created = await window.desktop.dataManagement.createDataBackup()
-      setBackupMessage(`Backup criado e verificado · ${created.fileCount.toLocaleString('pt-BR')} arquivos · ${formatBytes(created.byteLength)}.`)
-      await refreshBackups()
-    } catch (reason) { setBackupError(reason instanceof Error ? reason.message : 'Não foi possível criar o backup.') }
-    finally { setBackupBusy(false) }
-  }, [refreshBackups])
-  const verifyBackup = useCallback(async (backup: StoredBackup) => {
-    setBackupBusy(true); setBackupError(null); setBackupMessage(null)
-    try {
-      const result = await window.desktop.dataManagement.verifyDataBackup(backup.id)
-      setBackupMessage(result.valid ? `Backup íntegro: ${result.fileCount.toLocaleString('pt-BR')} arquivos e catálogo SQLite verificados.` : 'O backup não passou na validação.')
-      await refreshBackups()
-    } catch (reason) { setBackupError(reason instanceof Error ? reason.message : 'A verificação falhou.') }
-    finally { setBackupBusy(false) }
-  }, [refreshBackups])
-  const restoreBackup = useCallback(async (backup: StoredBackup) => {
-    setBackupBusy(true); setBackupError(null); setBackupMessage(null)
-    try {
-      const result = await window.desktop.dataManagement.restoreDataBackup(backup.id)
-      if (result.cancelled) setBackupMessage('Restauração cancelada; os dados atuais não foram alterados.')
-      else setBackupMessage('Backup preparado. O aplicativo vai reiniciar para aplicar e verificar a restauração.')
-    } catch (reason) { setBackupError(reason instanceof Error ? reason.message : 'Não foi possível preparar a restauração.') }
-    finally { setBackupBusy(false) }
-  }, [])
-  const deleteBackup = useCallback(async (backup: StoredBackup) => {
-    setBackupBusy(true); setBackupError(null); setBackupMessage(null)
-    try {
-      const result = await window.desktop.dataManagement.deleteDataBackup(backup.id)
-      setBackupMessage(result.deleted ? 'Backup excluído.' : 'Exclusão cancelada.')
-      await refreshBackups()
-    } catch (reason) { setBackupError(reason instanceof Error ? reason.message : 'Não foi possível excluir o backup.') }
-    finally { setBackupBusy(false) }
-  }, [refreshBackups])
+  const createBackup = backupCommands.create
+  const verifyBackup = backupCommands.verify
+  const restoreBackup = backupCommands.restore
+  const deleteBackup = backupCommands.remove
   const runMigration = useCallback(async () => {
     setMigrationBusy(true); setPauseRequested(false); setMigrationError(null); setProgress(null)
     try {
