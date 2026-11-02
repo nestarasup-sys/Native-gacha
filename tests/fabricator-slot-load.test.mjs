@@ -81,9 +81,10 @@ test('projeto ausente mantém o erro de domínio e não carrega histórico', asy
 test('FabricatorPage injeta os IPCs, os guards de geração e a hidratação do modelo', async () => {
   const page = await readFile(new URL('../src/renderer/src/features/fabricator/FabricatorPage.tsx', import.meta.url), 'utf8')
 
-  assert.match(page, /await loadFabricatorSlotForEditing\(slot, \{/)
-  assert.match(page, /loadProject: \(targetSlot\) => window\.desktop\.fabricator\.loadFabricatorSlot\(targetSlot\)/)
-  assert.match(page, /isCurrent: \(\) => generation === slotSelectionGeneration\.current/)
+  assert.match(page, /selectFabricatorSlotCommand\(\{/)
+  assert.match(page, /loadSnapshot: \(targetSlot, isCurrent\) => loadFabricatorSlotForEditing\(targetSlot, \{/)
+  assert.match(page, /loadProject: \(requestedSlot\) => window\.desktop\.fabricator\.loadFabricatorSlot\(requestedSlot\)/)
+  assert.match(page, /isCurrent,/)
   assert.match(page, /prepareProject: prepareLoadedFabricatorProject/)
-  assert.match(page, /if \(!snapshot \|\| generation !== slotSelectionGeneration\.current\) return/)
+  assert.match(page, /nextGeneration: \(\) => \+\+slotSelectionGeneration\.current/)
 })

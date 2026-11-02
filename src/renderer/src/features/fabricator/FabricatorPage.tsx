@@ -22,6 +22,7 @@ import { serializeFabricatorProject } from './models/projectSerialization'
 import { createFabricatorProjectSaveCoordinator } from './projectSaveCoordinator'
 import { duplicateFabricatorSlot } from './duplicateFabricatorSlot'
 import { deleteFabricatorSlotCommand } from './deleteFabricatorSlotCommand'
+import { selectFabricatorSlotCommand } from './selectFabricatorSlotCommand'
 import { publishModelSourceResult } from './models/publishModelSourceResult'
 import { useFabricatorHistory } from './useFabricatorHistory'
 import { prepareLoadedFabricatorProject } from './models/projectHydration'
@@ -265,62 +266,51 @@ export function FabricatorPage() {
   })
 
   const selectSlot = async (slot: number) => {
-    const generation = ++slotSelectionGeneration.current
-    setSlotSwitching(true)
-    requestId.current += 1
-    cancelImageProcessingTask()
-    cancelChromaTask()
-    setProcessing(false); setProgress(0); setChromaApplying(false)
-    const projectToSave = projectRef.current ?? project
-    if (projectToSave) {
-      cancelScheduledSave()
-      try { await persistProject(projectToSave) } catch (reason) {
-        if (generation === slotSelectionGeneration.current) {
-          setError(reason instanceof Error ? `Falha ao salvar antes de trocar de slot: ${reason.message}` : 'Falha ao salvar antes de trocar de slot.')
-          setSlotSwitching(false)
-        }
-        return
-      }
-    }
-    if (generation !== slotSelectionGeneration.current) return
-    seamMixer.resetSession()
-    resetHistoryGesture()
-    clearHistory()
-    projectRef.current = null
-    setActiveSlot(slot); setProject(null); setSelectedIds([]); setError(''); dirtyAssets.current.clear(); dirtyChromaBases.current.clear(); setMixerActive(false); setMixerPainting(false); setZoom(1); setPan({ x: 0, y: 0 })
-    const summary = slots[slot - 1]
-    if (!summary) { setSlotSwitching(false); return }
-    if (summary.recoveryRequired) {
-      setActiveSection('Modelos')
-      setError(`O slot ${slot} tem mais de uma cópia de recuperação válida, então o app não escolheu nenhuma automaticamente. Use “Excluir recuperação” somente se quiser apagar todas as cópias deste slot.`)
-      setSlotSwitching(false)
-      return
-    }
-    try {
-      const snapshot = await loadFabricatorSlotForEditing(slot, {
-        loadProject: (targetSlot) => window.desktop.fabricator.loadFabricatorSlot(targetSlot),
-        loadHistory: (targetSlot) => window.desktop.fabricator.loadFabricatorHistory(targetSlot),
-        isCurrent: () => generation === slotSelectionGeneration.current,
+    await selectFabricatorSlotCommand({
+      slot,
+      summary: slots[slot - 1] ?? null,
+      nextGeneration: () => ++slotSelectionGeneration.current,
+      isCurrent: (generation) => generation === slotSelectionGeneration.current,
+      setSwitching: setSlotSwitching,
+      invalidatePendingWork: () => {
+        requestId.current += 1
+        cancelImageProcessingTask()
+        cancelChromaTask()
+        setProcessing(false); setProgress(0); setChromaApplying(false)
+      },
+      getCurrentProject: () => projectRef.current ?? project,
+      persistCurrentProject: async (projectToSave) => { cancelScheduledSave(); await persistProject(projectToSave) },
+      onSaveFailure: (reason) => setError(reason instanceof Error ? `Falha ao salvar antes de trocar de slot: ${reason.message}` : 'Falha ao salvar antes de trocar de slot.'),
+      resetSlotSession: (targetSlot) => {
+        seamMixer.resetSession()
+        resetHistoryGesture()
+        clearHistory()
+        projectRef.current = null
+        setActiveSlot(targetSlot); setProject(null); setSelectedIds([]); setError(''); dirtyAssets.current.clear(); dirtyChromaBases.current.clear(); setMixerActive(false); setMixerPainting(false); setZoom(1); setPan({ x: 0, y: 0 })
+      },
+      onRecoveryRequired: (targetSlot) => {
+        setActiveSection('Modelos')
+        setError(`O slot ${targetSlot} tem mais de uma cópia de recuperação válida, então o app não escolheu nenhuma automaticamente. Use “Excluir recuperação” somente se quiser apagar todas as cópias deste slot.`)
+      },
+      loadSnapshot: (targetSlot, isCurrent) => loadFabricatorSlotForEditing(targetSlot, {
+        loadProject: (requestedSlot) => window.desktop.fabricator.loadFabricatorSlot(requestedSlot),
+        loadHistory: (requestedSlot) => window.desktop.fabricator.loadFabricatorHistory(requestedSlot),
+        isCurrent,
         onHistoryLoadFailure: () => setError('O modelo abriu, mas o histórico persistido não pôde ser carregado.'),
         replaceHistory,
         prepareProject: prepareLoadedFabricatorProject
-      })
-      if (!snapshot || generation !== slotSelectionGeneration.current) return
-      const { loaded, prepared } = snapshot
-      for (const [partId, dataUrl] of prepared.dirtyAssets) dirtyAssets.current.set(partId, dataUrl)
-      for (const [partId, dataUrl] of prepared.dirtyChromaBases) dirtyChromaBases.current.set(partId, dataUrl)
-      if (prepared.warning) setError(prepared.warning)
-      const loadedProject = prepared.project
-      projectRef.current = loadedProject
-      setProject(loadedProject); setSelectedIds(loaded.parts[0] ? [loaded.parts[0].id] : [])
-      setChromaValue(loaded.tolerance)
-      setSlotSwitching(false)
-    } catch (reason) {
-      if (generation === slotSelectionGeneration.current) {
-        setError(reason instanceof Error ? reason.message : 'Falha ao abrir modelo.')
-        setSlotSwitching(false)
-      }
-    }
+      }),
+      applySnapshot: ({ loaded, prepared }) => {
+        for (const [partId, dataUrl] of prepared.dirtyAssets) dirtyAssets.current.set(partId, dataUrl)
+        for (const [partId, dataUrl] of prepared.dirtyChromaBases) dirtyChromaBases.current.set(partId, dataUrl)
+        if (prepared.warning) setError(prepared.warning)
+        const loadedProject = prepared.project
+        projectRef.current = loadedProject
+        setProject(loadedProject); setSelectedIds(loaded.parts[0] ? [loaded.parts[0].id] : [])
+        setChromaValue(loaded.tolerance)
+      },
+      onLoadFailure: (reason) => setError(reason instanceof Error ? reason.message : 'Falha ao abrir modelo.')
+    })
   }
 
   useEffect(() => {
