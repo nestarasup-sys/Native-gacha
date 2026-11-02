@@ -10,6 +10,7 @@ import { HairDeformationPreview } from './HairDeformationPreview'
 import { HairImportModal } from './HairImportModal'
 import { HairGridReviewModal } from './HairGridReviewModal'
 import { defaultHairGridSplits, type HairGridSplits } from './hairGridLayout'
+import { runHairProcessor, type HairProcessorCut } from './hairProcessorClient'
 import { Icon } from '../../ui/components/Icon'
 import { usePreviewBackground } from '../../ui/hooks/usePreviewBackground'
 import { usePaletteImport } from './usePaletteImport'
@@ -19,11 +20,6 @@ import { getHairWorkspaceCatalogPage, hairStyleDetailMatchesSummary, hairStyleSu
 type HairSide = HairAssetSide
 type HairAsset = HairAssetData
 type HairDrag = { pointerId: number; side: HairSide; clientX: number; clientY: number; x: number; y: number }
-type HairProcessorCut = { png: ArrayBuffer; width: number; height: number }
-type HairProcessorResult =
-  | { type: 'complete'; layout: 'pair'; front: HairProcessorCut; back: HairProcessorCut }
-  | { type: 'complete'; layout: 'three-style-grid'; styles: Array<{ front: HairProcessorCut; back: HairProcessorCut; source: HairProcessorCut; rowBoundary: number[] }>; splits: HairGridSplits }
-  | { type: 'error'; message: string }
 type HairGridStyle = { front: HairAsset; back: HairAsset; sourceImageDataUrl: string; rowBoundary: number[] }
 type HairGridReview = { sourceImageDataUrl: string; fileName: string; tolerance: number; mode: 'auto' | 'green' | 'checker' }
 const defaultCategories: Record<HairSide, HairPartId> = { front: 'rearHair', back: 'backHair', fringe: 'frontHair' }
@@ -102,33 +98,19 @@ function hairCutDataUrl(cut: HairProcessorCut): string {
   return `data:image/png;base64,${btoa(binary)}`
 }
 
-function runHairProcessor(dataUrl: string, tolerance: number, mode: 'auto' | 'green' | 'checker', layout: 'pair' | 'three-style-grid', paddingPercent = 0, gridSplits?: HairGridSplits): Promise<HairProcessorResult> {
-  return new Promise((resolve, reject) => {
-    const worker = new Worker(new URL('./hairProcessor.worker.ts', import.meta.url), { type: 'module' })
-    worker.onmessage = ({ data }: MessageEvent<HairProcessorResult>) => {
-      worker.terminate()
-      if (data.type === 'error') { reject(new Error(data.message)); return }
-      if (data.layout !== layout) { reject(new Error('O processador retornou um formato de cabelo inesperado.')); return }
-      resolve(data)
-    }
-    worker.onerror = () => { worker.terminate(); reject(new Error('Não foi possível processar o chroma da folha de cabelo.')) }
-    worker.postMessage({ dataUrl, tolerance, mode, layout, paddingPercent, gridSplits })
-  })
-}
-
 function hairAssetFromCut(cut: HairProcessorCut): HairAsset {
   return { dataUrl: hairCutDataUrl(cut), width: cut.width, height: cut.height }
 }
 
 function processHairSheet(dataUrl: string, tolerance: number, mode: 'auto' | 'green' | 'checker'): Promise<{ front: HairAsset; back: HairAsset }> {
-  return runHairProcessor(dataUrl, tolerance, mode, 'pair').then((result) => {
+  return runHairProcessor({ dataUrl, tolerance, mode, layout: 'pair', paddingPercent: 0 }).then((result) => {
     if (result.type !== 'complete' || result.layout !== 'pair') throw new Error('Não foi possível separar a folha Posterior/Traseiro.')
     return { front: hairAssetFromCut(result.front), back: hairAssetFromCut(result.back) }
   })
 }
 
 function processThreeStyleHairGrid(dataUrl: string, tolerance: number, mode: 'auto' | 'green' | 'checker', paddingPercent = 4, gridSplits?: HairGridSplits): Promise<{ styles: HairGridStyle[]; splits: HairGridSplits }> {
-  return runHairProcessor(dataUrl, tolerance, mode, 'three-style-grid', paddingPercent, gridSplits).then((result) => {
+  return runHairProcessor({ dataUrl, tolerance, mode, layout: 'three-style-grid', paddingPercent, gridSplits }).then((result) => {
     if (result.type !== 'complete' || result.layout !== 'three-style-grid' || result.styles.length !== 3) {
       throw new Error('A grade precisa conter exatamente três cabelos completos.')
     }
