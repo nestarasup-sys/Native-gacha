@@ -27,7 +27,7 @@ Este documento acompanha a execução das Fases 1–6 e complementa a baseline d
 | 0 | Auditoria e baseline arquitetural | Concluída antes deste programa | [Relatório da Fase 0](./AUDITORIA_REFATORACAO_GERAL_V1_FASE_0.md). |
 | 1 | Electron, IPC, persistência, backups e filas | Concluída | Diagnóstico de memória corrigido; ciclo de encerramento extraído e coberto; diferenças das filas mapeadas; backup, manutenção e segurança de janela passaram. Os gatilhos gerais de CI de `Dev-V2` ficam na Fase 6. |
 | 2 | Núcleo compartilhado de personagens | Concluída | Consumidores e regressões mapeados. Escala-base idêntica entre Studio e Editor V6 centralizada; renderizadores e contratos de exportação distintos mantidos. Testes de personagem/gênero/roupas articuladas executáveis por script dedicado. |
-| 3 | Fabricador e Customizador | Em andamento | Fluxo de catálogo/customizações coberto de ponta a ponta; gravação de roupas, operações de cabelo, persistência serializada por personagem com recuperação e estado final protegido contra writes obsoletos, seleção de peça no Customizador, carregamento/hidratação, duplicação e publicação de folha-base do Fabricador, validação de conjuntos, corte de peças por junta e histórico de desfazer/refazer para grades em Roupas DEV têm fronteiras/testes próprios. Restam mapear/decompor os workspaces maiores e ampliar cenários de reabertura. |
+| 3 | Fabricador e Customizador | Em andamento | Fluxo de catálogo/customizações coberto de ponta a ponta; gravação de roupas, operações de cabelo, persistência serializada por personagem com recuperação e estado final protegido contra writes obsoletos, seleção de peça no Customizador, carregamento/hidratação, duplicação e publicação de folha-base do Fabricador, validação de conjuntos, corte de peças por junta, histórico de grades e seletor de poses em Roupas DEV têm fronteiras/testes próprios. Restam mapear/decompor os workspaces maiores e ampliar cenários de reabertura. |
 | 4 | Studio, Editor V6 e fluxos de vídeo | Em andamento | Criação/duplicação e impressão do Studio extraídas; miniatura 480×270 corrigida; paridade Turbo e exportação facial 720p/1080p aprovadas. A impressão foi validada do canvas ao handler IPC com fixture de arquivos sintética. A antiga tela Video Studio não tem rota, mas as bibliotecas legadas seguem ativas em Roteiros e como origem de mídia do Editor V6. Teste de cancelamento do worker cobre espera do compositor. Comparação sintética da exportação 240 s validou 284 transições em 1/2 workers; permanecem revisão visual e cobertura adicional dos fluxos de áudio/vídeo do Studio e Editor V6. |
 | 5 | Roteiros, Base de Vídeos, Opções, componentes e CSS | Em andamento | Biblioteca continua dona dos arquivos/IDs; Roteiros mantém metadados e referências. Guardas, fila de snapshots, canais, fila de metadados, carregamento, listagem, publicação, CRUD de categorias, importação e exclusões da Base de Vídeos têm contratos testados; estilos da Base de Vídeos e modelos/comandos de Opções têm módulos por feature. Restam decomposição adicional dos workspaces e migração gradual do CSS com revisão visual. |
 | 6 | Performance, CI e consolidação | Em andamento | Workflow da Dev-V2 roda gates gerais e Editor V6 por plataforma; build Windows é reutilizado pelos testes MP4. Baselines sintéticos de projeção, indexação, processamento de pixels e exportação 240 s registrados. Restam medições de inicialização e interação real dos workspaces, repetição das comparações de desempenho sem carga concorrente e consolidação da cobertura. |
@@ -421,6 +421,15 @@ O Node test runner não resolvia imports relativos extensionless `.ts` usados po
 - **Commit local:** `187c75a` (`refactor: isolate wardrobe grid history`).
 - **Compatibilidade:** não muda formatos salvos, IDs, comportamento de outras roupas ou o contrato de gravação do Fabricador.
 
+### Seletor de pose para prévia de roupas
+
+- **Fronteira extraída:** `WardrobeTestPosePicker` concentra o diálogo acessível, a listagem de poses e seus estados de carregamento/vazio. `WardrobeWorkspace` mantém a propriedade da sessão, a consulta ao IPC e a validação de que a pose escolhida ainda pertence ao modelo/slot solicitado.
+- **Comportamento preservado:** títulos, instrução de cópia visual, numeração, resumo, data local, bloqueio da lista durante carregamento e fechamento por botão/fundo são os mesmos. Fechar invalida a geração pendente, encerra o loading e oculta o diálogo; a resposta assíncrona antiga não consegue atualizar a sessão.
+- **Testes:** três verificações cobrem acessibilidade/cópia não destrutiva, conteúdo e estado de carregamento, e delegação do cancelamento. `npm run test:fabricator:wardrobe-test-pose-picker` passou 3/3.
+- **Verificações:** `npm run test:refactor` passou com 641/641 testes principais e scripts encadeados; typecheck, auditoria arquitetural (595 arquivos TS/TSX), build e `git diff --check` passaram.
+- **Commit local:** `d26a328` (`refactor: extract wardrobe test pose picker`).
+- **Compatibilidade:** nenhum canal IPC, dado de pose, arquivo salvo, ID ou estilo foi alterado.
+
 ## Reconciliação das falhas da baseline
 
 As falhas observadas na execução inicial da suíte em `f416a02` foram investigadas e reconciliadas:
@@ -487,4 +496,6 @@ As falhas observadas na execução inicial da suíte em `f416a02` foram investig
 | `4f44b0b` | Corrige o cenário silencioso e a validação por amostras da exportação de stress | Local em `Dev-V2`; sem publicação. |
 | `1b6bf17` | Registra comparação sintética de exportação do Editor V6 e ressalva de carga concorrente | Local em `Dev-V2`; sem publicação. |
 | `187c75a` | Extrai o histórico de edição de grades de roupas DEV | Local em `Dev-V2`; sem publicação. |
+| `3113ebe` | Registra histórico de grades de roupas DEV e resultados da verificação | Local em `Dev-V2`; sem publicação. |
+| `d26a328` | Extrai o seletor de pose para prévia de roupas DEV | Local em `Dev-V2`; sem publicação. |
 
