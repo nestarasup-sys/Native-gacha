@@ -29,6 +29,7 @@ import { useStudioAutosave, useStudioDocumentPersistence } from './useStudioDocu
 import { useStudioImageImport } from './useStudioImageImport'
 import { createStudioProjectCommands } from './studioProjectCommands'
 import { removeStudioCharacterElement } from './studioCharacterRemoval'
+import { createStudioDeleteSelectedCommand } from './studioDeleteSelectedCommand'
 import { mapConcurrentItems } from '../../ui/mapConcurrentItems'
 import { useStudioCharacterSourceRefresh } from './useStudioCharacterSourceRefresh'
 import { prepareStudioCastSelection } from './studioCastSelection'
@@ -609,18 +610,14 @@ export function StudioPage() {
     setInspectorOpen, setInspectorTab, restoreCharacterInspectorView, patchStudio
   })
 
-  const deleteSelected = () => {
-    if (!activeStudio) return
-    if (selectedElementId === 'background') {
-      changeScene((studio) => ({ ...studio, backgroundAssetId: null, updatedAt: new Date().toISOString() }))
-      setSelectedElementId(null)
-    } else if (selectedElementId) {
-      const current = activeStudio.elements.find((element) => element.id === selectedElementId)
-      if (current?.kind === 'character') removeStageCharacter(current)
-      else changeScene((studio) => ({ ...studio, elements: studio.elements.filter((element) => element.id !== selectedElementId), updatedAt: new Date().toISOString() }))
-      setSelectedElementId(null)
-    }
-  }
+  const deleteSelected = createStudioDeleteSelectedCommand({
+    activeStudio,
+    selectedElementId,
+    now: () => new Date().toISOString(),
+    changeScene,
+    removeStageCharacter,
+    setSelectedElementId
+  })
 
   const deleteStudio = async (target: StudioCard | null = selectedStudio) => {
     if (!target || !window.confirm(`Excluir ${target.title}?`)) return
