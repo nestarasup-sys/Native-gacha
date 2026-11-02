@@ -27,7 +27,7 @@ Este documento acompanha a execução das Fases 1–6 e complementa a baseline d
 | 0 | Auditoria e baseline arquitetural | Concluída antes deste programa | [Relatório da Fase 0](./AUDITORIA_REFATORACAO_GERAL_V1_FASE_0.md). |
 | 1 | Electron, IPC, persistência, backups e filas | Concluída | Diagnóstico de memória corrigido; ciclo de encerramento extraído e coberto; diferenças das filas mapeadas; backup, manutenção e segurança de janela passaram. Os gatilhos gerais de CI de `Dev-V2` ficam na Fase 6. |
 | 2 | Núcleo compartilhado de personagens | Concluída | Consumidores e regressões mapeados. Escala-base idêntica entre Studio e Editor V6 centralizada; renderizadores e contratos de exportação distintos mantidos. Testes de personagem/gênero/roupas articuladas executáveis por script dedicado. |
-| 3 | Fabricador e Customizador | Em andamento | Fluxo de catálogo/customizações coberto de ponta a ponta; gravação de roupas, operações de cabelo, persistência serializada por personagem com recuperação e estado final protegido contra writes obsoletos, seleção de peça no Customizador, carregamento/hidratação e duplicação de slots com guards de seleção/salvamento, e validação de conjuntos salvos em Roupas DEV têm fronteiras/testes próprios. Restam mapear/decompor os workspaces maiores e ampliar cenários de reabertura. |
+| 3 | Fabricador e Customizador | Em andamento | Fluxo de catálogo/customizações coberto de ponta a ponta; gravação de roupas, operações de cabelo, persistência serializada por personagem com recuperação e estado final protegido contra writes obsoletos, seleção de peça no Customizador, carregamento/hidratação, duplicação e publicação de folha-base do Fabricador, e validação de conjuntos salvos em Roupas DEV têm fronteiras/testes próprios. Restam mapear/decompor os workspaces maiores e ampliar cenários de reabertura. |
 | 4 | Studio, Editor V6 e fluxos de vídeo | Em andamento | Criação/duplicação e impressão do Studio extraídas; miniatura 480×270 corrigida; paridade Turbo e exportação facial 720p/1080p aprovadas. A impressão foi validada do canvas ao handler IPC com fixture de arquivos sintética. A antiga tela Video Studio não tem rota, mas as bibliotecas legadas seguem ativas em Roteiros e como origem de mídia do Editor V6. Teste de cancelamento do worker cobre espera do compositor. Restam medições e validação comparativa dos workers de exportação. |
 | 5 | Roteiros, Base de Vídeos, Opções, componentes e CSS | Em andamento | Biblioteca continua dona dos arquivos/IDs; Roteiros mantém metadados e referências. Guardas, fila de snapshots, canais, fila de metadados, carregamento, listagem, publicação, CRUD de categorias, importação e exclusões da Base de Vídeos têm contratos testados; estilos da Base de Vídeos e modelos/comandos de Opções têm módulos por feature. Restam decomposição adicional dos workspaces e migração gradual do CSS com revisão visual. |
 | 6 | Performance, CI e consolidação | Em andamento | Workflow da Dev-V2 roda gates gerais e Editor V6 por plataforma; build Windows é reutilizado pelos testes MP4. Baseline repetível do cenário médio do Editor V6 registrada e captura IPC passou a ser estruturada. Restam medições de inicialização, Studio, outros workspaces e exportação, além de comparações repetidas antes de otimizar. |
@@ -371,6 +371,15 @@ O Node test runner não resolvia imports relativos extensionless `.ts` usados po
 - **Commit local:** `ca1a970` (`refactor: isolate Fabricator slot duplication`).
 - **Compatibilidade:** IDs, arquivos, formato do projeto e canal IPC `duplicateFabricatorSlot` permanecem iguais; fixture sintética, sem ler nem gravar slots existentes.
 
+### Publicação de folha-base no Fabricador
+
+- **Fronteira extraída:** `publishModelSourceResult` prepara a nova versão a partir do resultado editado, serializa o projeto e assets, e coordena a publicação pelo serviço do Fabricador. `FabricatorPage` injeta o projeto atual, as travas de interação, histórico, caches, setters e eventos; o serviço dono do catálogo continua responsável pela publicação atômica.
+- **Ordem preservada:** recusa sem projeto ou enquanto processamento/chroma/histórico/publicação impedem a edição; marca salvamento e publicação ativos, cancela timer e persiste o projeto antes do IPC de publicação. Só após o serviço devolver o novo nome da folha limpa histórico/assets/surfaces e atualiza o projeto local. Falhas mantêm `saveState=error`, liberam a trava e são propagadas ao editor.
+- **Testes sintéticos:** seis casos cobrem guardas, ordem, payload de assets incluindo base de chroma opcional, atualização somente depois do IPC, erros antes/depois de serializar e delegação da página. `npm run test:fabricator:model-source-publish-result` passou 6/6.
+- **Verificações:** `npm run test:refactor` passou com 641 testes e scripts encadeados; `npm run test:fabricator` 36/36; typecheck, auditoria arquitetural (592 arquivos TS/TSX), build e `git diff --check` passaram.
+- **Commit local:** `811ac13` (`refactor: isolate Fabricator model source publishing`).
+- **Compatibilidade:** nenhum schema, ID, conteúdo serializado, canal IPC ou propriedade do catálogo foi alterado; fixtures sintéticas sem acesso à biblioteca de usuário.
+
 ## Reconciliação das falhas da baseline
 
 As falhas observadas na execução inicial da suíte em `f416a02` foram investigadas e reconciliadas:
@@ -430,4 +439,5 @@ As falhas observadas na execução inicial da suíte em `f416a02` foram investig
 | `6d48089` | Isola as ações de migração de Opções mantendo pausa e progresso assíncrono | Local em `Dev-V2`; sem publicação. |
 | `fa34f9a` | Extrai a persistência de snapshots do renderer de Roteiros com flush de estado atual | Local em `Dev-V2`; sem publicação. |
 | `ca1a970` | Extrai a sequência de salvamento e duplicação de slot do Fabricador | Local em `Dev-V2`; sem publicação. |
+| `811ac13` | Isola a publicação da folha-base editada após persistir o projeto Fabricador | Local em `Dev-V2`; sem publicação. |
 
