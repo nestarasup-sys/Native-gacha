@@ -1,6 +1,7 @@
 const fs = require('node:fs/promises')
 const path = require('node:path')
 const os = require('node:os')
+const { resolveEditorV6TestOutputDirectory } = require('./testOutputDirectory.cjs')
 async function main() {
  if (!process.versions.electron) {
   const { build } = require('esbuild'), { spawn } = require('node:child_process')
@@ -20,7 +21,8 @@ async function main() {
   const result=await w.webContents.executeJavaScript('globalThis.runMotionCheck()')
   const { mouthExportFixture, ...summary } = result
   if (mouthExportFixture) {
-   const fixtureFolder=path.join(path.resolve(__dirname,'../..'),'out/editor-v6-motion-check')
+   const root=path.resolve(__dirname,'../..')
+   const fixtureFolder=path.join(resolveEditorV6TestOutputDirectory(root),'editor-v6-motion-check')
    await fs.mkdir(fixtureFolder,{recursive:true})
    await fs.writeFile(path.join(fixtureFolder,'high-resolution-mouth-fixture.json'),JSON.stringify(mouthExportFixture))
   }

@@ -4,12 +4,13 @@ const { spawn } = require('node:child_process')
 const { mkdtemp, readFile, mkdir, writeFile } = require('node:fs/promises')
 const { join, resolve } = require('node:path')
 const { tmpdir } = require('node:os')
+const { resolveEditorV6TestOutputDirectory } = require('./testOutputDirectory.cjs')
 
 async function main() {
   if (process.platform !== 'win32') throw Error('This real MP4 integration check requires Windows.')
   const root = resolve(__dirname, '../..')
   const folder = await mkdtemp(join(tmpdir(), 'editor-v6-overlay-parity-'))
-  const output = join(root, 'out/editor-v6-overlay-parity')
+  const output = join(resolveEditorV6TestOutputDirectory(root), 'editor-v6-overlay-parity')
   await mkdir(output, { recursive: true })
   const entry = join(folder, 'overlay-parity.electron.cjs')
   await build({ entryPoints: [join(root, 'tests/editor-v6/exportOverlayParity.electron.ts')],
