@@ -23,6 +23,7 @@ import { mirrorWardrobeImageDataUrl } from './mirrorWardrobeImage'
 import type { WardrobeProcessorResponse } from './wardrobeProcessorProtocol'
 import { recoverWardrobeReferenceModel } from './wardrobeReferenceRecovery'
 import { loadWardrobeWorkspaceSnapshot } from './loadWardrobeWorkspaceSnapshot'
+import { loadWardrobeSetForEditing } from './loadWardrobeSetForEditing'
 import { usePaletteImport } from '../usePaletteImport'
 import { useWardrobeDeformation } from './useWardrobeDeformation'
 import { rebindWardrobeComponents } from './wardrobeBindings'
@@ -398,21 +399,20 @@ export function WardrobeWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
     const requestId = ++requestRef.current
     setOpeningSet(true)
     try {
-      const loaded = await window.desktop.fabricator.loadWardrobeSet(modelSlot, id)
-      if (requestRef.current !== requestId) return
-      if (!loaded) throw new Error('Não foi possível encontrar este conjunto.')
-      const incompatible = loaded.components.filter((component) => {
-        const bone = referenceBone(component.attachedPartId) ?? model.parts.find((part) => part.id === component.attachedPartId)
-        return !bone || Boolean(component.binding && component.binding.boneId !== component.attachedPartId)
+      const { set: loaded, incompatibleComponents } = await loadWardrobeSetForEditing(modelSlot, id, {
+        loadWardrobeSet: (slot, setId) => window.desktop.fabricator.loadWardrobeSet(slot, setId),
+        referenceParts: referenceModel?.parts ?? [],
+        currentModelParts: model.parts
       })
+      if (requestRef.current !== requestId) return
       // Resolve the original sheet before translating any old separated-sheet
       // bindings. Opening a set does not publish the conversion to storage.
       clearWardrobeWarpState()
       sleeveUndoRef.current = []; sleeveRedoRef.current = []
       setDraft(loaded); setActiveSetId(id); setSelectedId(loaded.components[0]?.id ?? null)
       setDirty(false); setJoinJointsMode(false); setTestPose(null); setTestDragOffsets({}); setCalibratingPartId(null)
-      setError(incompatible.length
-        ? `${incompatible.length} peça(s) sem vínculo compatível com o modelo original (${incompatible.map((component) => component.name || component.id).join(', ')}). O conjunto foi preservado; corrija os ossos antes de salvar.`
+      setError(incompatibleComponents.length
+        ? `${incompatibleComponents.length} peça(s) sem vínculo compatível com o modelo original (${incompatibleComponents.map((component) => component.name || component.id).join(', ')}). O conjunto foi preservado; corrija os ossos antes de salvar.`
         : '')
     } catch (reason) { if (requestRef.current === requestId) setError(reason instanceof Error ? reason.message : 'Não foi possível abrir o conjunto.') }
     finally { if (requestRef.current === requestId) setOpeningSet(false) }
