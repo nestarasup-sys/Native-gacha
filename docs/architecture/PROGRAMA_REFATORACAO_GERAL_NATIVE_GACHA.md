@@ -27,7 +27,7 @@ Este documento acompanha a execução das Fases 1–6 e complementa a baseline d
 | 0 | Auditoria e baseline arquitetural | Concluída antes deste programa | [Relatório da Fase 0](./AUDITORIA_REFATORACAO_GERAL_V1_FASE_0.md). |
 | 1 | Electron, IPC, persistência, backups e filas | Concluída | Diagnóstico de memória corrigido; ciclo de encerramento extraído e coberto; diferenças das filas mapeadas; backup, manutenção e segurança de janela passaram. Os gatilhos gerais de CI de `Dev-V2` ficam na Fase 6. |
 | 2 | Núcleo compartilhado de personagens | Concluída | Consumidores e regressões mapeados. Escala-base idêntica entre Studio e Editor V6 centralizada; renderizadores e contratos de exportação distintos mantidos. Testes de personagem/gênero/roupas articuladas executáveis por script dedicado. |
-| 3 | Fabricador e Customizador | Em andamento | Fluxo de catálogo/customizações coberto de ponta a ponta; gravação de roupas e operações de cabelo (worker e serialização de conjunto) têm fronteiras/testes próprios. Restam mapear/decompor o estado dos maiores workspaces e ampliar cenários de reabertura. |
+| 3 | Fabricador e Customizador | Em andamento | Fluxo de catálogo/customizações coberto de ponta a ponta; gravação de roupas, operações de cabelo e seleção de peça no Customizador têm fronteiras/testes próprios. Restam mapear/decompor os workspaces maiores e ampliar cenários de reabertura. |
 | 4 | Studio, Editor V6 e fluxos de vídeo | Em andamento | Criação/duplicação de cenas do Studio extraídas; miniatura 480×270 corrigida para preencher o fundo; testes Windows de paridade Turbo e exportação facial 720p/1080p aprovados. Engines do Editor V6 continuam separadas. Restam validação completa da impressão/exportação do Studio e revisão dos fluxos legados de vídeo e workers. |
 | 5 | Roteiros, Base de Vídeos, Opções, componentes e CSS | Em andamento | Biblioteca continua dona dos arquivos/IDs; Roteiros mantém metadados e referências. Guardas, canais e fila de salvamento da Base de Vídeos têm contratos testados; estilos e cálculos puros de Opções estão isolados. Restam decomposição adicional dos workspaces e CSS por feature. |
 | 6 | Performance, CI e consolidação | Em andamento | Workflow da Dev-V2 roda gates gerais e Editor V6 por plataforma; build Windows é reutilizado pelos testes MP4. Baseline repetível do cenário médio do Editor V6 registrada e captura IPC passou a ser estruturada. Restam medições de inicialização, Studio, outros workspaces e exportação, além de comparações repetidas antes de otimizar. |
@@ -90,6 +90,15 @@ O Node test runner não resolvia imports relativos extensionless `.ts` usados po
 - **Testes ajustados à implementação:** os checks de composição e deformação verificam a estrutura real (um pivô por peça e cache invalidado por componente), sem exigir sintaxe antiga. O fixture de importação facial injeta `notifyAssetsUpdated`, dependência obrigatória do comando. O teste de prévia verifica a identidade do objeto quando o artwork não muda; o código preserva essa referência.
 - **Verificações:** `npm run test:refactor` passou, incluindo os 2 novos testes do comando; `npm run typecheck`, `npm run audit:architecture` (566 arquivos TS/TSX, sem violações) e `npm run build` passaram.
 - **Próxima etapa da Fase 3:** inventariar os maiores componentes Fabricador/Customizador e extrair outras fronteiras de estado/comando somente quando a propriedade do dado e os efeitos de persistência estiverem claros.
+
+### Sincronização da peça selecionada no Customizador
+
+- **Fronteira extraída:** `CustomizerPage` continua dona da seleção interativa; o hook `useCustomizerClothingSelection` sincroniza essa seleção com personagem, categoria e catálogo carregado. O modelo puro resolve a peça padrão e a reconciliação da aba Ajustar sem importar React, Electron ou persistência.
+- **Semânticas preservadas:** reset ao trocar de personagem, escolha do primeiro grupo quando não há seleção, prioridade do `componentId` persistido, fallback de grupos legados por categoria, seleção restrita à categoria Ajustar e retenção de IDs explícitos enquanto os detalhes do conjunto carregam. A ordem dos efeitos permanece a mesma da página.
+- **Propriedade dos dados:** apenas lê grupos de roupa pertencentes à personalização do personagem e detalhes do catálogo do Fabricador; não escreve no catálogo nem altera JSON persistido, IDs ou vínculos.
+- **Verificações:** sete testes sintéticos cobrem a resolução de seleção e a delegação da página; `npm run test:refactor`, typecheck, audit arquitetural (575 arquivos TS/TSX) e build passaram.
+- **Commit local:** `ca6ae76` (`refactor: isolate customizer clothing selection`).
+- **Pendências:** esta extração reduz a lógica de sincronização na página; outras seções do Customizador e os workspaces maiores do Fabricador ainda precisam de fronteiras individuais e cobertura de reabertura.
 
 ### Comandos de projeto do Studio
 
@@ -236,4 +245,5 @@ As falhas observadas na execução inicial da suíte em `f416a02` foram investig
 | `da90c8d` | Permite redirecionar resultados sintéticos de paridade/export sem sobrescrever `out/` existente | Local em `Dev-V2`; sem publicação. |
 | `bfdcde6` | Estrutura snapshots IPC e captura baseline de timeline/memória em perfil sintético | Local em `Dev-V2`; sem publicação. |
 | `b69685c` | Corrige o preenchimento do fundo nas miniaturas do Studio após a escala do canvas | Local em `Dev-V2`; sem publicação. |
+| `ca6ae76` | Extrai o modelo e o hook de seleção de roupas do Customizador | Local em `Dev-V2`; sem publicação. |
 
