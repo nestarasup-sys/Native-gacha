@@ -2,7 +2,8 @@ import { fabricatorIpcChannels } from '../../../src/shared/fabricatorIpcChannels
 /** Canais legados de Poses DEV: transporte isolado, autorização obrigatória. */
 import type { IpcMain, IpcMainInvokeEvent } from 'electron'
 import { basename, dirname, join, resolve } from 'node:path'
-import { resolvePoseCategory, type FabricatorAssetSave, type FabricatorPose, type FabricatorPoseDraft, type FabricatorPoseDraftSave, type FabricatorPoseSave, type FabricatorPoseSummary } from '../../../src/shared/fabricator'
+import { type FabricatorAssetSave, type FabricatorPose, type FabricatorPoseDraft, type FabricatorPoseDraftSave, type FabricatorPoseSave, type FabricatorPoseSummary } from '../../../src/shared/fabricator'
+import { readPoseSlotSummaries } from './poseSummaryReader'
 import type * as fs from 'node:fs/promises'
 
 export type PoseIpcDependencies = {
@@ -35,18 +36,10 @@ export function registerFabricatorPoseHandlers(deps: PoseIpcDependencies): void 
     assertTrustedSender(event)
     await ensureLegacyPoseMigration()
     if (requestedModelSlot !== undefined && !isValidModelSlot(requestedModelSlot)) throw new Error('Modelo inválido.')
-    const modelSlots = requestedModelSlot === undefined ? Array.from({ length: slotCount }, (_, index) => index + 1) : [requestedModelSlot]
-    const allSlots: FabricatorPoseSummary[] = []
-    for (const modelSlot of modelSlots) {
-      for (let slot = 1; slot <= poseSlotCount; slot += 1) {
-        try {
-          const manifest = JSON.parse(await readFile(join(poseSlotPath(modelSlot, slot), 'pose.json'), 'utf8')) as FabricatorPoseSave
-          if (manifest.sourceModelSlot !== modelSlot || manifest.slot !== slot) continue
-          allSlots.push({ slot, sourceModelSlot: modelSlot, name: manifest.name, category: resolvePoseCategory(manifest), sourceModelName: manifest.sourceModelName, partCount: manifest.parts.length, updatedAt: manifest.updatedAt })
-        } catch { /* Slots sem manifest válido aparecem vazios. */ }
-      }
-    }
-    return requestedModelSlot === undefined ? allSlots : Array.from({ length: poseSlotCount }, (_, index) => allSlots.find((item) => item?.slot === index + 1) ?? null)
+    const summaries = await readPoseSlotSummaries({
+      requestedModelSlot, slotCount, poseSlotCount, poseSlotPath, readFile
+    })
+    return requestedModelSlot === undefined ? summaries.filter((summary): summary is FabricatorPoseSummary => summary !== null) : summaries
   })
 
   ipcMain.handle(fabricatorIpcChannels.getFabricatorExportPoseSlots, async (event, modelSlot: number): Promise<Array<number | null> | null> => {

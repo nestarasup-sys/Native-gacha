@@ -18,6 +18,7 @@ import {
 import { CustomizerCharacterService } from '../electron/domains/customizer/service.ts'
 import { createFabricatorPoseReferenceIntegrity } from '../electron/domains/fabricator/poseReferenceIntegrity.ts'
 import { createPoseReferenceChangeCoordinator } from '../electron/domains/fabricator/poseReferences.ts'
+import { readPoseSlotSummaries } from '../electron/domains/fabricator/poseSummaryReader.ts'
 import { registerEditorV6PrimaryHandlers } from '../electron/domains/editorV6/primaryIpc.ts'
 import { registerStudioPrimaryHandlers } from '../electron/domains/studio/primaryIpc.ts'
 
@@ -29,12 +30,69 @@ function loadPoseHandlers() {
   const injectedRequire = (name) => {
     if (name.includes('fabricatorIpcChannels')) return { fabricatorIpcChannels }
     if (name.includes('poseReferences.ts')) return {}
+    if (name.includes('poseSummaryReader')) return { readPoseSlotSummaries: async () => [] }
     if (name.includes('shared/fabricator')) return { resolvePoseCategory: (pose) => pose.category ?? 'normal' }
     return requireFromTest(name)
   }
   new Function('require', 'exports', 'module', compiled)(injectedRequire, module.exports, module)
   return module.exports.registerFabricatorPoseHandlers
 }
+
+test('resumo de poses lê slots com concorrência limitada e preserva ordem por modelo/slot', async () => {
+  const available = new Map([
+    ['model-1/slot-12', { sourceModelSlot: 1, slot: 12, name: 'última', sourceModelName: 'Modelo 1', parts: [{}, {}], updatedAt: 'a' }],
+    ['model-2/slot-3', { sourceModelSlot: 2, slot: 3, name: 'meio', sourceModelName: 'Modelo 2', parts: [{}], updatedAt: 'b' }],
+    ['model-10/slot-1', { sourceModelSlot: 10, slot: 1, name: 'início', sourceModelName: 'Modelo 10', parts: [{}], updatedAt: 'c' }],
+    ['model-1/slot-2', { sourceModelSlot: 1, slot: 99, name: 'manifesto divergente', sourceModelName: 'Modelo 1', parts: [{}], updatedAt: 'd' }]
+  ])
+  let reads = 0
+  let active = 0
+  let maxActive = 0
+  const summaries = await readPoseSlotSummaries({
+    slotCount: 10,
+    poseSlotCount: 12,
+    poseSlotPath: (model, slot) => `model-${model}/slot-${slot}`,
+    readFile: async (path) => {
+      reads += 1
+      active += 1
+      maxActive = Math.max(maxActive, active)
+      await new Promise((resolve) => setTimeout(resolve, 1))
+      active -= 1
+      const [model, slot] = path.split(/[\\/]/)
+      const manifest = available.get(`${model}/${slot}`)
+      if (!manifest) throw Object.assign(new Error('ausente'), { code: 'ENOENT' })
+      return JSON.stringify(manifest)
+    }
+  })
+
+  assert.equal(reads, 120)
+  assert.ok(maxActive > 1)
+  assert.ok(maxActive <= 8)
+  assert.deepEqual(summaries.filter(Boolean).map(({ sourceModelSlot, slot, name, partCount }) => ({ sourceModelSlot, slot, name, partCount })), [
+    { sourceModelSlot: 1, slot: 12, name: 'última', partCount: 2 },
+    { sourceModelSlot: 2, slot: 3, name: 'meio', partCount: 1 },
+    { sourceModelSlot: 10, slot: 1, name: 'início', partCount: 1 }
+  ])
+})
+
+test('listagem de um modelo preserva os 12 slots vazios na posição original', async () => {
+  const summaries = await readPoseSlotSummaries({
+    requestedModelSlot: 3,
+    slotCount: 10,
+    poseSlotCount: 12,
+    poseSlotPath: (model, slot) => `model-${model}/slot-${slot}`,
+    readFile: async (path) => {
+      const [model, slot] = path.split(/[\\/]/)
+      if (model !== 'model-3' || slot !== 'slot-5') throw Object.assign(new Error('ausente'), { code: 'ENOENT' })
+      return JSON.stringify({ sourceModelSlot: 3, slot: 5, name: 'pose', sourceModelName: 'Modelo 3', parts: [{}], updatedAt: 'agora' })
+    }
+  })
+
+  assert.equal(summaries.length, 12)
+  assert.equal(summaries[4]?.name, 'pose')
+  assert.deepEqual(summaries.filter(Boolean).map(({ slot }) => slot), [5])
+  assert.equal(summaries[0], null)
+})
 
 const character = (modelSlot = 2, poseSlot = 3) => ({
   id: 'character-1', name: 'Lia',
@@ -293,8 +351,7 @@ test('Studio e Editor V6 validam uma pose nova sob a coordenação antes de pers
         try { return await operation() } finally { order.push('unlock') }
       },
       getPendingWrites: () => pending,
-      setPendingWrites: (next) => { pending = next },
-      measure: (_label, operation) => operation()
+      setPendingWrites: (next) => { pending = next }
     })
 
     await assert.rejects(handlers.get(channel)({}, { id: 'project-1' }), /pose ausente/)
