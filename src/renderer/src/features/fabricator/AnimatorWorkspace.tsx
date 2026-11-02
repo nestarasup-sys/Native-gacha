@@ -15,7 +15,6 @@ import {
   projectFromAnimation,
   rotateFramePart,
   serializeAnimation,
-  serializeAnimatorDraft as serializeDraft,
   transformsFromProject,
   type AnimatorFrameState as FrameHistoryState
 } from './models/animatorFrameModel'
@@ -32,6 +31,7 @@ import { buildAnimatorGarmentLayers } from './models/animatorGarmentLayers'
 import { buildAnimatorRigDiagnostics } from './models/animatorRigDiagnostics'
 import { createAnimatorDeleteAnimationCommand } from './animatorDeleteAnimationCommand'
 import { createAnimatorBreathingSetCommand } from './animatorBreathingSetCommand'
+import { createAnimatorDraftSaveRequest, enqueueAnimatorDraftSave, isAnimatorDraftDocumentDirty, isAnimatorDraftFrameDirty } from './animatorDraftPersistence'
 
 const SLOT_COUNT = 12
 const HISTORY_LIMIT = 40
@@ -277,9 +277,8 @@ export function AnimatorWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
     if (!snapshot || !editorState) return
     if (draftTimer.current !== null) clearTimeout(draftTimer.current)
     draftTimer.current = null
-    const frame = snapshot.frames.find((item) => item.id === editorState.frameId)
-    const stateIsDirty = Boolean(frame && (JSON.stringify(frame.transforms) !== JSON.stringify(editorState.transforms) || JSON.stringify(frame.joints) !== JSON.stringify(editorState.joints)))
-    const documentIsDirty = savedAnimationRef.current === null || JSON.stringify(serializeAnimation(snapshot)) !== savedAnimationRef.current || stateIsDirty
+    const stateIsDirty = isAnimatorDraftFrameDirty(snapshot, editorState)
+    const documentIsDirty = isAnimatorDraftDocumentDirty(snapshot, editorState, savedAnimationRef.current)
     if (!documentIsDirty) {
       await writeQueue.current
       if (!removeMatchingDraftWhenClean) return
@@ -288,13 +287,12 @@ export function AnimatorWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
       if (mountedRef.current) setDraft(null)
       return
     }
-    const serialized = serializeDraft(snapshot, targetSlot, editorState, stateIsDirty)
-    const assets: AnimatorAnimationAsset[] = draftAssetsPersisted.current ? [] : snapshot.parts.flatMap((part) => pendingAssets.current.has(part.id) ? [{ id: part.id, dataUrl: pendingAssets.current.get(part.id)! }] : [])
-    const next = writeQueue.current.catch(() => undefined).then(() => window.desktop.fabricator.saveAnimatorDraft(snapshot.sourceModelSlot, serialized, assets))
-    writeQueue.current = next
+    const request = createAnimatorDraftSaveRequest(snapshot, targetSlot, editorState, stateIsDirty, pendingAssets.current, draftAssetsPersisted.current)
+    const next = enqueueAnimatorDraftSave(writeQueue, snapshot.sourceModelSlot, request,
+      (modelSlot, serialized, assets) => window.desktop.fabricator.saveAnimatorDraft(modelSlot, serialized, assets))
     await next
     draftAssetsPersisted.current = true
-    if (mountedRef.current) setDraft(serialized)
+    if (mountedRef.current) setDraft(request.draft)
   }
 
   const flushDraftAndQueue = async () => {
@@ -706,18 +704,16 @@ export function AnimatorWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
     draftTimer.current = null
     const snapshot = animation
     const editorState = stateRef.current ?? { animation, transforms: currentTransforms, joints: currentJoints, frameId: selectedFrameId }
-    const frame = snapshot.frames.find((item) => item.id === editorState.frameId)
-    const frameIsDirty = Boolean(frame && (JSON.stringify(frame.transforms) !== JSON.stringify(editorState.transforms) || JSON.stringify(frame.joints) !== JSON.stringify(editorState.joints)))
-    const documentIsDirty = savedAnimationRef.current === null || JSON.stringify(serializeAnimation(snapshot)) !== savedAnimationRef.current || frameIsDirty
+    const frameIsDirty = isAnimatorDraftFrameDirty(snapshot, editorState)
+    const documentIsDirty = isAnimatorDraftDocumentDirty(snapshot, editorState, savedAnimationRef.current)
     if (!documentIsDirty) { setSaveMessage('Animação salva'); return }
-    const serialized = serializeDraft(snapshot, activeSlot, editorState, dirtyFrame)
-    const assets: AnimatorAnimationAsset[] = draftAssetsPersisted.current ? [] : snapshot.parts.flatMap((part) => pendingAssets.current.has(part.id) ? [{ id: part.id, dataUrl: pendingAssets.current.get(part.id)! }] : [])
+    const request = createAnimatorDraftSaveRequest(snapshot, activeSlot, editorState, frameIsDirty, pendingAssets.current, draftAssetsPersisted.current)
     setSaveMessage(dirtyFrame ? 'Frame alterado · rascunho automático' : 'Rascunho automático')
     draftTimer.current = setTimeout(() => {
       draftTimer.current = null
-      const next = writeQueue.current.catch(() => undefined).then(() => window.desktop.fabricator.saveAnimatorDraft(snapshot.sourceModelSlot, serialized, assets))
-      writeQueue.current = next
-      void next.then(() => { draftAssetsPersisted.current = true; if (mountedRef.current) setDraft(serialized) }).catch((reason: unknown) => {
+      const next = enqueueAnimatorDraftSave(writeQueue, snapshot.sourceModelSlot, request,
+        (modelSlot, serialized, assets) => window.desktop.fabricator.saveAnimatorDraft(modelSlot, serialized, assets))
+      void next.then(() => { draftAssetsPersisted.current = true; if (mountedRef.current) setDraft(request.draft) }).catch((reason: unknown) => {
         if (mountedRef.current) setError(reason instanceof Error ? `Não foi possível salvar o rascunho: ${reason.message}` : 'Não foi possível salvar o rascunho.')
       })
     }, 350)
