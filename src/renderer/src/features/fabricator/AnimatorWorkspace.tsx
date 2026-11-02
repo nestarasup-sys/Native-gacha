@@ -3,7 +3,7 @@ import { interpolateFrames, shortestAngle } from './models/animationInterpolatio
 import { useModelSourceRefresh } from './models/useModelSourceRefresh'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, FormEvent, PointerEvent as ReactPointerEvent } from 'react'
-import { resolvePoseCategory, type AnimatorAnimation, type AnimatorAnimationAsset, type AnimatorAnimationDraft, type AnimatorFrame, type AnimatorAnimationSummary, type AnimatorFrameTransform, type FaceCatalogItem, type FaceSet, type FabricatorProject, type FabricatorSlotSummary, type HairStyle, type JointLink, type PosePart, type WardrobeSet } from '../../../../shared/fabricator'
+import { type AnimatorAnimation, type AnimatorAnimationAsset, type AnimatorAnimationDraft, type AnimatorFrame, type AnimatorAnimationSummary, type AnimatorFrameTransform, type FaceCatalogItem, type FaceSet, type FabricatorProject, type FabricatorSlotSummary, type HairStyle, type JointLink, type PosePart, type WardrobeSet } from '../../../../shared/fabricator'
 import type { CustomizerCharacter } from '../../../../shared/customizer'
 import { Icon } from '../../ui/components/Icon'
 import { normalizeLayerOrder, orderedParts, partJointAnchor } from './models/rig'
@@ -30,6 +30,7 @@ import { buildAnimatorHeadOverlays } from './models/animatorHeadOverlays'
 import { buildAnimatorGarmentLayers } from './models/animatorGarmentLayers'
 import { buildAnimatorRigDiagnostics } from './models/animatorRigDiagnostics'
 import { createAnimatorDeleteAnimationCommand } from './animatorDeleteAnimationCommand'
+import { createAnimatorBreathingSetCommand } from './animatorBreathingSetCommand'
 
 const SLOT_COUNT = 12
 const HISTORY_LIMIT = 40
@@ -349,64 +350,29 @@ export function AnimatorWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível criar a animação.') }
   }
 
-  const createBreathingSet = async () => {
-    if (!source || modelSlot === null || breathingSaving || saving) return
-    setBreathingSaving(true); setError('')
-    const createdSlots: number[] = []
-    let previousBreathing: AnimatorAnimation[] = []
-    let replacementStarted = false
-    try {
-      const [poseSummaries, summariesBefore] = await Promise.all([
-        window.desktop.fabricator.listFabricatorPoseSlots(modelSlot),
-        window.desktop.fabricator.listAnimatorAnimations(modelSlot)
-      ])
-      const oldBreathing = await Promise.all(summariesBefore.filter((item) => item.name.startsWith('Respiração ·')).map(async (item) => {
-        const saved = await window.desktop.fabricator.loadAnimatorAnimation(modelSlot, item.slot)
-        if (!saved) throw new Error(`Não consegui ler a animação de respiração no slot ${item.slot}; não alterei nenhum slot.`)
-        return saved
-      }))
-      previousBreathing = oldBreathing
-      const poses = await Promise.all(poseSummaries.map(async (summary) => {
-        if (!summary) return null
-        const pose = await window.desktop.fabricator.loadFabricatorPose(modelSlot, summary.slot)
-        return pose ? { pose, category: resolvePoseCategory(pose) } : null
-      }))
-      const standing = poses.find((entry) => entry?.category.toLocaleLowerCase('pt-BR').includes('parad'))
-      const sitting = poses.find((entry) => entry?.category.toLocaleLowerCase('pt-BR').includes('sentad'))
-      if (!standing || !sitting) throw new Error('Salve pelo menos uma pose “Parado” e uma “Sentado” em Poses Dev para criar as variações.')
-      const replaceable = new Set(oldBreathing.map((item) => item.slot))
-      const occupied = new Set(summariesBefore.filter((item) => !replaceable.has(item.slot)).map((item) => item.slot))
-      const freeSlots = Array.from({ length: SLOT_COUNT }, (_, index) => index + 1).filter((slot) => !occupied.has(slot))
-      const needed = breathingVariations.length * 2
-      if (freeSlots.length < needed) throw new Error(`São necessários ${needed} slots livres; este modelo tem ${freeSlots.length}. Libere slots sem animação para continuar.`)
-      const plans = [
-        ...breathingVariations.map((variation) => ({ pose: standing.pose, variation })),
-        ...breathingVariations.map((variation) => ({ pose: sitting.pose, variation }))
-      ]
-      const newAnimations = await Promise.all(plans.map((plan, index) => createBreathingAnimation(source, plan.pose, freeSlots[index], characterId || null, plan.variation, renderThumbnail)))
-      replacementStarted = true
-      for (const old of oldBreathing) await window.desktop.fabricator.deleteAnimatorAnimation(modelSlot, old.slot)
-      for (const animation of newAnimations) {
-        const assets: AnimatorAnimationAsset[] = animation.parts.map((part) => ({ id: part.id, dataUrl: part.dataUrl }))
-        await window.desktop.fabricator.saveAnimatorAnimation(modelSlot, animation.slot, serializeAnimation(animation), assets)
-        createdSlots.push(animation.slot)
-      }
-      const updated = await window.desktop.fabricator.listAnimatorAnimations(modelSlot)
-      setSummaries(updated)
-      setSaveMessage('8 variações de respiração salvas')
-      setBreathingDialog(false)
-    } catch (reason) {
-      // This batch owns only the empty slots reserved above; roll back its partial writes.
-      await Promise.all(createdSlots.map((slot) => window.desktop.fabricator.deleteAnimatorAnimation(modelSlot, slot).catch(() => undefined)))
-      // If a write failed after replacement began, restore the old breathing set.
-      if (replacementStarted) for (const old of previousBreathing) {
-        const assets: AnimatorAnimationAsset[] = old.parts.map((part) => ({ id: part.id, dataUrl: part.dataUrl }))
-        await window.desktop.fabricator.saveAnimatorAnimation(modelSlot, old.slot, serializeAnimation(old), assets).catch(() => undefined)
-      }
-      if (replacementStarted) setSummaries(await window.desktop.fabricator.listAnimatorAnimations(modelSlot).catch(() => summaries))
-      setError(reason instanceof Error ? reason.message : 'Não foi possível criar as animações de respiração.')
-    } finally { setBreathingSaving(false) }
-  }
+  const createBreathingSet = createAnimatorBreathingSetCommand({
+    source,
+    modelSlot,
+    characterId,
+    saving,
+    breathingSaving,
+    summaries,
+    slotCount: SLOT_COUNT,
+    variations: breathingVariations,
+    listPoseSlots: (slot) => window.desktop.fabricator.listFabricatorPoseSlots(slot),
+    listAnimations: (slot) => window.desktop.fabricator.listAnimatorAnimations(slot),
+    loadAnimation: (slot, animationSlot) => window.desktop.fabricator.loadAnimatorAnimation(slot, animationSlot),
+    loadPose: (slot, poseSlot) => window.desktop.fabricator.loadFabricatorPose(slot, poseSlot),
+    createAnimation: (project, pose, slot, selectedCharacterId, variation) => createBreathingAnimation(project, pose, slot, selectedCharacterId, variation, renderThumbnail),
+    serializeAnimation,
+    saveAnimation: (slot, animationSlot, document, assets) => window.desktop.fabricator.saveAnimatorAnimation(slot, animationSlot, document, assets),
+    deleteAnimation: (slot, animationSlot) => window.desktop.fabricator.deleteAnimatorAnimation(slot, animationSlot),
+    setBreathingSaving,
+    setSummaries,
+    setSaveMessage,
+    setBreathingDialog,
+    setError
+  })
 
   const selectAnimationSlot = async (slot: number) => {
     if (saving) return
