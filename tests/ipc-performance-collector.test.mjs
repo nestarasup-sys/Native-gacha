@@ -24,6 +24,17 @@ test('IPC permanece desligado por padrão e a coleta registra somente rótulos d
   assert.deepEqual(snapshot.rows[1], { channel: 'studio:list', calls: 1, failures: 0, averageMs: 15, worstMs: 15 })
 })
 
+test('o estado expira sob demanda sem manter a instrumentação ativa', () => {
+  let now = 0
+  const collector = createIpcPerformanceCollector({ now: () => now, maxDurationMs: 100, nowIso: () => '2026-11-02T12:00:00.000Z' })
+  assert.equal(collector.isEnabled(), false)
+  collector.setEnabled(true)
+  assert.equal(collector.isEnabled(), true)
+  now = 100
+  assert.equal(collector.isEnabled(), false)
+  assert.deepEqual(collector.snapshot().rows, [])
+})
+
 test('parar preserva o resumo até a próxima sessão e iniciar novamente limpa os valores anteriores', async () => {
   let now = 50
   const collector = createIpcPerformanceCollector({ now: () => now, nowIso: () => new Date(now).toISOString() })

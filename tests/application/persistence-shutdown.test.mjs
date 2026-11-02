@@ -8,17 +8,19 @@ function deferred() {
   return { promise, resolve }
 }
 
-function createHarness({ getPendingOperations = () => [], hasUsableWindow = true } = {}) {
+function createHarness({ getPendingOperations = () => [], drainIpc = () => Promise.resolve(), hasUsableWindow = true } = {}) {
   const calls = []
   let resolveQuit
   let resolveFailure
   const quitFinished = new Promise((resolve) => { resolveQuit = resolve })
   const failurePresented = new Promise((resolve) => { resolveFailure = resolve })
   const handler = createPersistenceShutdownHandler({
+    flushRendererWrites: async () => calls.push('flush-renderer'),
     getPendingOperations: () => {
       calls.push('collect')
       return getPendingOperations()
     },
+    drainIpc: () => { calls.push('drain-ipc'); return drainIpc() },
     cancelExports: () => calls.push('cancel'),
     resumeAfterFailedShutdown: () => calls.push('resume'),
     hasUsableWindow: () => hasUsableWindow,
@@ -43,7 +45,8 @@ function createQuitEvent() {
 
 test('aguarda a drenagem, ignora before-quit duplicado e permite a saída reentrante após sucesso', async () => {
   const operation = deferred()
-  const harness = createHarness({ getPendingOperations: () => [operation.promise] })
+  const ipcOperation = deferred()
+  const harness = createHarness({ getPendingOperations: () => [operation.promise], drainIpc: () => ipcOperation.promise })
   const firstEvent = createQuitEvent()
   const concurrentEvent = createQuitEvent()
 
@@ -51,11 +54,14 @@ test('aguarda a drenagem, ignora before-quit duplicado e permite a saída reentr
   harness.handler(concurrentEvent)
   assert.equal(firstEvent.prevented, true)
   assert.equal(concurrentEvent.prevented, true)
-  assert.deepEqual(harness.calls, ['cancel', 'collect'])
+  assert.deepEqual(harness.calls, ['cancel', 'flush-renderer'])
 
   operation.resolve()
+  await new Promise((resolve) => setImmediate(resolve))
+  assert.equal(harness.calls.includes('close-data'), false, 'o catálogo deve permanecer aberto enquanto um handler IPC ainda está em voo')
+  ipcOperation.resolve()
   await harness.quitFinished
-  assert.deepEqual(harness.calls, ['cancel', 'collect', 'close-data', 'quit'])
+  assert.deepEqual(harness.calls, ['cancel', 'flush-renderer', 'collect', 'drain-ipc', 'close-data', 'quit'])
 
   const reentrantEvent = createQuitEvent()
   harness.handler(reentrantEvent)
@@ -76,14 +82,37 @@ test('uma falha preserva a sessão, reabre a janela ausente e permite nova tenta
   harness.handler(firstEvent)
   await harness.failurePresented
   assert.equal(firstEvent.prevented, true)
-  assert.deepEqual(harness.calls, ['cancel', 'collect', 'resume', 'create-window', 'show-error'])
+  assert.deepEqual(harness.calls, ['cancel', 'flush-renderer', 'collect', 'drain-ipc', 'resume', 'create-window', 'show-error'])
 
   const retryEvent = createQuitEvent()
   harness.handler(retryEvent)
   await harness.quitFinished
   assert.equal(retryEvent.prevented, true)
   assert.deepEqual(harness.calls, [
-    'cancel', 'collect', 'resume', 'create-window', 'show-error',
-    'cancel', 'collect', 'close-data', 'quit'
+    'cancel', 'flush-renderer', 'collect', 'drain-ipc', 'resume', 'create-window', 'show-error',
+    'cancel', 'flush-renderer', 'collect', 'drain-ipc', 'close-data', 'quit'
   ])
+})
+
+test('uma falha ao descarregar o renderer mantém o catálogo e a janela disponíveis', async () => {
+  const calls = []
+  const failurePresented = new Promise((resolve) => { calls.push(resolve) })
+  const handler = createPersistenceShutdownHandler({
+    flushRendererWrites: async () => { calls.push('flush-renderer'); throw new Error('falha sintética') },
+    getPendingOperations: () => { calls.push('collect'); return [] },
+    drainIpc: async () => calls.push('drain-ipc'),
+    cancelExports: () => calls.push('cancel'),
+    resumeAfterFailedShutdown: () => calls.push('resume'),
+    hasUsableWindow: () => true,
+    createWindow: () => calls.push('create-window'),
+    showPersistenceFailure: () => { calls.push('show-error'); calls[0]() },
+    closeDataPlatform: () => calls.push('close-data'),
+    quit: () => calls.push('quit')
+  })
+
+  const event = createQuitEvent()
+  handler(event)
+  await failurePresented
+  assert.equal(event.prevented, true)
+  assert.deepEqual(calls.slice(1), ['cancel', 'flush-renderer', 'resume', 'show-error'])
 })

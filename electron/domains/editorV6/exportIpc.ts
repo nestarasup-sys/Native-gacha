@@ -16,7 +16,7 @@ import { createPendingOperationTracker } from '../storage/pendingOperationTracke
 
 type Job = { owner: number; status: EditorV6ExportStatus; controller: AbortController; promise: Promise<void> }
 type EditorV6ExportIpcDependencies = {
-  ipcMain: IpcMain
+  ipcMain: Pick<IpcMain, 'handle' | 'removeHandler'>
   assertTrustedSender: (event: IpcMainInvokeEvent) => void
   projectPath: (id: string) => string
   toolsDirectory: string

@@ -1,6 +1,6 @@
 import { createEditorV6Paths } from './domains/editorV6/paths'
 import { registerMediaProtocols } from './mediaProtocols'
-import { app, BrowserWindow, dialog, ipcMain, Menu, protocol, session, shell, type IpcMainInvokeEvent } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain as rawIpcMain, Menu, protocol, session, shell, type IpcMainInvokeEvent } from 'electron'
 import { existsSync } from 'node:fs'
 import { mkdir as nativeMkdir, readFile as nativeReadFile, writeFile as nativeWriteFile, readdir as nativeReaddir, unlink as nativeUnlink, rename as nativeRename, stat as nativeStat, access as nativeAccess, rm as nativeRm, copyFile as nativeCopyFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
@@ -33,6 +33,7 @@ import { createKeyedOperationQueue } from './domains/storage/keyedOperationQueue
 import { configureAssetImageStorage, readAssetImage, writeAssetImageSource } from './assetImageOverrides'
 import { normalizeImageBuffer } from './imageIngestion.cjs'
 import { getIpcPerformanceSnapshot, measureIpc, setIpcPerformanceCollectionEnabled } from './ipcPerformance'
+import { createMeasuredIpcMain } from './application/measuredIpcMain'
 import { restrictRendererNavigation } from './windowNavigation'
 import { restrictRendererPermissions } from './windowPermissions'
 import { BaseVideoService } from './domains/baseVideos/service'
@@ -103,6 +104,7 @@ import { createMainWindowFactory } from './application/mainWindow'
 import { createEditorV6VideoReferenceLookup } from './domains/editorV6/videoReferences'
 import { canVisibleRendererRequestFullscreen, createRendererTrustPolicy, isTrustedRendererFrame } from './application/rendererTrust'
 
+const ipcMain = createMeasuredIpcMain(rawIpcMain, measureIpc, (channel) => !channel.startsWith('app:diagnostics:'))
 const rendererHtmlPath = join(__dirname, '../renderer/index.html')
 const devRendererUrl = app.isPackaged ? undefined : process.env.ELECTRON_RENDERER_URL
 const rendererTrustPolicy = createRendererTrustPolicy(devRendererUrl, rendererHtmlPath)
@@ -176,6 +178,7 @@ let fabricatorWardrobeIpc: ReturnType<typeof registerFabricatorWardrobeHandlers>
 let fabricatorAnimatorIpc: ReturnType<typeof registerFabricatorAnimatorHandlers> | null = null
 let editorV6ExportService: ReturnType<typeof registerEditorV6ExportHandlers> | null = null
 let editorV6MotionService: ReturnType<typeof createEditorV6MotionService> | null = null
+let rendererWritesFlushedForShutdown = false
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'gacha-video', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } },
@@ -602,8 +605,7 @@ async function registerFabricatorHandlers(): Promise<void> {
     assertPoseReferencesAvailable: assertStudioPoseReferencesAvailable,
     coordinatePoseReferenceChange,
     getPendingWrites: () => studioSaveQueues.studio,
-    setPendingWrites: (pending) => { studioSaveQueues.studio = pending },
-    measure: (label, operation) => measureIpc(label, operation)
+    setPendingWrites: (pending) => { studioSaveQueues.studio = pending }
   })
 
   registerEditorV6PrimaryHandlers({
@@ -615,8 +617,7 @@ async function registerFabricatorHandlers(): Promise<void> {
     assertPoseReferencesAvailable: assertEditorV6PoseReferencesAvailable,
     coordinatePoseReferenceChange,
     getPendingWrites: () => editorV6SaveQueue,
-    setPendingWrites: (pending) => { editorV6SaveQueue = pending },
-    measure: (label, operation) => measureIpc(label, operation)
+    setPendingWrites: (pending) => { editorV6SaveQueue = pending }
   })
 
   studioFileIpc = registerStudioFileHandlers({
@@ -685,7 +686,7 @@ async function registerFabricatorHandlers(): Promise<void> {
     deleteLibraryVideo: async (id) => { await videoLibrary.delete(id) }
   }))
 
-  registerCustomizerCharacterHandlers(ipcMain, assertTrustedSender, customizerService, measureIpc)
+  registerCustomizerCharacterHandlers(ipcMain, assertTrustedSender, customizerService)
 
   // Uma recuperação ambígua não pode esconder os demais modelos nem escolher um backup sozinha.
   // O catálogo expõe o slot pendente para decisão explícita na interface.
@@ -886,6 +887,7 @@ const createMainWindow = createMainWindowFactory({
   },
   onClosed: () => editorV6MotionService?.releaseIdle(),
   flushRendererWrites: async (window) => {
+    if (rendererWritesFlushedForShutdown) return
     if (!window.webContents.isLoading()) {
       await window.webContents.executeJavaScript('window.desktop?.flushPendingWrites ? window.desktop.flushPendingWrites() : undefined')
     }
@@ -1093,6 +1095,14 @@ app.on('window-all-closed', () => {
 })
 
 app.on('before-quit', createPersistenceShutdownHandler({
+  flushRendererWrites: async () => {
+    rendererWritesFlushedForShutdown = false
+    for (const window of BrowserWindow.getAllWindows()) {
+      if (window.isDestroyed() || window.webContents.isLoading()) continue
+      await window.webContents.executeJavaScript('window.desktop?.flushPendingWrites ? window.desktop.flushPendingWrites() : undefined')
+    }
+    rendererWritesFlushedForShutdown = true
+  },
   getPendingOperations: () => [
     ...collectPendingPersistenceWrites(),
     ...(dataBackupIpc?.getActiveTasks() ?? []),
@@ -1100,11 +1110,13 @@ app.on('before-quit', createPersistenceShutdownHandler({
     ...(editorV6ExportService ? [editorV6ExportService.drain()] : []),
     ...(editorV6MotionService ? [editorV6MotionService.drain()] : [])
   ],
+  drainIpc: () => ipcMain.drain(),
   cancelExports: () => {
     editorV6ExportService?.cancelAll()
     editorV6MotionService?.cancelAll()
   },
   resumeAfterFailedShutdown: () => {
+    rendererWritesFlushedForShutdown = false
     roteiroExportIpc?.resumeAfterFailedShutdown()
     editorV6ExportService?.resumeAfterFailedShutdown()
   },

@@ -63,8 +63,7 @@ function harness() {
     write: async document => { records.push('write:' + document.id) },
     remove: async id => { records.push('delete:' + id) },
     getPendingWrites: () => pending,
-    setPendingWrites: next => { pending = next },
-    measure: async (_name, work) => work()
+    setPendingWrites: next => { pending = next }
   }
   registerStudioPrimaryHandlers(deps)
   const invoke = (method, event, ...args) => {

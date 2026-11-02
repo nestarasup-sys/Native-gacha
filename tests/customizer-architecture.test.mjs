@@ -328,7 +328,7 @@ test('IPC usa canais preexistentes e nunca passa por autenticação indevida', a
   registerCustomizerCharacterHandlers({ handle: (channel, cb) => handlers.set(channel, cb) }, (event) => {
     if (!event.trusted) throw new Error('Origem IPC não confiável')
     authorized++
-  }, service, async (_channel, operation) => operation())
+  }, service)
   assert.deepEqual([...handlers.keys()].sort(), ['customizer:characters:create','customizer:characters:delete','customizer:characters:list','customizer:characters:save'])
   for (const callback of handlers.values()) await assert.rejects(callback({ trusted: false }, valid()), /não confiável/)
   assert.equal(calls, 0)

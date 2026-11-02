@@ -2,7 +2,7 @@ import type { IpcMain, IpcMainInvokeEvent } from 'electron'
 import { studioIpcChannels } from '../../../src/shared/studioIpcChannels'
 
 type PendingPersistenceFlushDependencies = {
-  ipcMain: IpcMain
+  ipcMain: Pick<IpcMain, 'handle'>
   assertTrustedSender: (event: IpcMainInvokeEvent) => void
   flushRendererWrites: (event: IpcMainInvokeEvent) => Promise<void>
   flushMainWrites: () => Promise<void>

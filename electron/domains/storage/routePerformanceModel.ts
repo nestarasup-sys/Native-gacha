@@ -1,4 +1,5 @@
 import { APPLICATION_ROUTES } from '../../../src/shared/applicationRoutes'
+import type { IpcPerformanceDiagnosticsSnapshot } from '../../../src/shared/dataManagement'
 
 /** Main application routes whose visible-shell transition can be measured safely. */
 export const routePerformanceScenarios = [
@@ -44,8 +45,36 @@ export type RoutePerformanceSample = {
   rendererWorkingSetKiB: number | null
   rendererPrivateKiB: number | null
   rendererJsHeapBytes: number | null
+  longTaskSupported: boolean
+  longTaskCount: number | null
+  longTaskTotalMs: number | null
+  longTaskMaxMs: number | null
+  newResourceEntryCount: number
+  newResourceEncodedBytes: number | null
   mainRssBytes: number
   mainHeapUsedBytes: number
+}
+
+export type RouteStartupPerformance = {
+  initialRouteId: string
+  initialRoute: string
+  launchToFirstShellMs: number | null
+  electronProcessUptimeMs: number
+  rendererNavigation: {
+    domInteractiveMs: number | null
+    domContentLoadedMs: number | null
+    loadEventEndMs: number | null
+  }
+  rendererPaint: {
+    firstPaintMs: number | null
+    firstContentfulPaintMs: number | null
+  }
+  rendererWorkingSetKiB: number | null
+  rendererPrivateKiB: number | null
+  rendererJsHeapBytes: number | null
+  mainRssBytes: number
+  mainHeapUsedBytes: number
+  ipcPerformance: IpcPerformanceDiagnosticsSnapshot
 }
 
 function median(values: number[]): number {
@@ -70,8 +99,21 @@ export function summarizeRoutePerformance(samples: readonly RoutePerformanceSamp
           minMs: Math.min(...durations),
           medianMs: median(durations),
           maxMs: Math.max(...durations),
-          medianShellMs: median(samples.filter((sample) => sample.id === scenario.id && Number.isFinite(sample.shellDurationMs)).map((sample) => sample.shellDurationMs))
+          medianShellMs: median(samples.filter((sample) => sample.id === scenario.id && Number.isFinite(sample.shellDurationMs)).map((sample) => sample.shellDurationMs)),
+          medianLongTaskCount: medianNullable(samples.filter((sample) => sample.id === scenario.id).map((sample) => sample.longTaskCount)),
+          maxLongTaskMs: maxNullable(samples.filter((sample) => sample.id === scenario.id).map((sample) => sample.longTaskMaxMs)),
+          medianNewResourceEntryCount: medianNullable(samples.filter((sample) => sample.id === scenario.id).map((sample) => sample.newResourceEntryCount))
         }
-      : { id: scenario.id, route: scenario.route, sampleCount: 0, minMs: null, medianMs: null, maxMs: null, medianShellMs: null }
+      : { id: scenario.id, route: scenario.route, sampleCount: 0, minMs: null, medianMs: null, maxMs: null, medianShellMs: null, medianLongTaskCount: null, maxLongTaskMs: null, medianNewResourceEntryCount: null }
   })
+}
+
+function medianNullable(values: Array<number | null | undefined>): number | null {
+  const available = values.filter((value): value is number => Number.isFinite(value) && value! >= 0)
+  return available.length ? median(available) : null
+}
+
+function maxNullable(values: Array<number | null | undefined>): number | null {
+  const available = values.filter((value): value is number => Number.isFinite(value) && value! >= 0)
+  return available.length ? Math.max(...available) : null
 }

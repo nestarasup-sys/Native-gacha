@@ -17,7 +17,6 @@ export type StudioPrimaryIpcDependencies = {
   coordinatePoseReferenceChange?: <T>(operation: () => Promise<T>) => Promise<T>
   getPendingWrites: () => Promise<void>
   setPendingWrites: (pending: Promise<void>) => void
-  measure: <T>(label: string, work: () => Promise<T>) => Promise<T>
 }
 
 export function registerStudioPrimaryHandlers(deps: StudioPrimaryIpcDependencies): void {
@@ -31,14 +30,14 @@ export function registerStudioPrimaryHandlers(deps: StudioPrimaryIpcDependencies
 
   deps.ipcMain.handle(studioIpcChannels.listStudios, async (event): Promise<StudioDocument[]> => {
     deps.assertTrustedSender(event)
-    return deps.measure(studioIpcChannels.listStudios, deps.list)
+    return deps.list()
   })
   deps.ipcMain.handle(studioIpcChannels.saveStudio, async (event, document: StudioDocument): Promise<void> => {
     deps.assertTrustedSender(event)
-    await deps.measure(studioIpcChannels.saveStudio, () => enqueueReferenceChange(async () => {
+    await enqueueReferenceChange(async () => {
       await deps.assertPoseReferencesAvailable?.(document)
       await deps.write(document)
-    }))
+    })
   })
   deps.ipcMain.handle(studioIpcChannels.deleteStudio, async (event, id: string): Promise<void> => {
     deps.assertTrustedSender(event)

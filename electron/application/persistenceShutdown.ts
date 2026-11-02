@@ -3,7 +3,9 @@ export type PersistenceShutdownEvent = {
 }
 
 export type PersistenceShutdownDependencies = {
+  flushRendererWrites(): Promise<void>
   getPendingOperations(): Promise<unknown>[]
+  drainIpc(): Promise<void>
   cancelExports(): void
   resumeAfterFailedShutdown(): void
   hasUsableWindow(): boolean
@@ -28,11 +30,17 @@ export function createPersistenceShutdownHandler(deps: PersistenceShutdownDepend
 
     waitingForPersistenceWrites = true
     deps.cancelExports()
-    const pendingOperations = deps.getPendingOperations()
 
-    void Promise.allSettled(pendingOperations).then((results) => {
+    void (async () => {
+      let failed = false
+      try {
+        await deps.flushRendererWrites()
+        const results = await Promise.allSettled([...deps.getPendingOperations(), deps.drainIpc()])
+        failed = results.some((result) => result.status === 'rejected')
+      } catch {
+        failed = true
+      }
       waitingForPersistenceWrites = false
-      const failed = results.some((result) => result.status === 'rejected')
       if (failed) {
         // Keep the application open so the user can retry or recover the write.
         deps.resumeAfterFailedShutdown()
@@ -44,6 +52,6 @@ export function createPersistenceShutdownHandler(deps: PersistenceShutdownDepend
       persistenceWritesDrained = true
       deps.closeDataPlatform()
       deps.quit()
-    })
+    })()
   }
 }

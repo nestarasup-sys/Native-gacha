@@ -41,9 +41,12 @@ test('flush, backup e encerramento drenam persistências e aguardam operações 
   assert.ok(main.includes('...(roteiroExportIpc ? [roteiroExportIpc.drain()] : [])'), 'o encerramento deve drenar os jobs de exportação de Roteiros')
   assert.ok(main.includes('...(editorV6ExportService ? [editorV6ExportService.drain()] : [])'), 'o encerramento deve aguardar cópias do Editor V6 e drenar suas exportações')
   assert.match(main, /app\.on\('before-quit', createPersistenceShutdownHandler\(/)
-  assert.match(shutdown, /Promise\.allSettled\(pendingOperations\)/)
+  assert.match(shutdown, /Promise\.allSettled\(\[\.\.\.deps\.getPendingOperations\(\), deps\.drainIpc\(\)\]\)/)
   assert.match(shutdown, /deps\.resumeAfterFailedShutdown\(\)/, 'uma falha de gravação deve reabrir os handlers para nova tentativa')
+  assert.match(shutdown, /await deps\.flushRendererWrites\(\)[\s\S]*?deps\.drainIpc\(\)/, 'o encerramento descarrega o renderer e espera IPCs antes de fechar os dados')
   assert.match(shutdown, /deps\.closeDataPlatform\(\)[\s\S]*?deps\.quit\(\)/, 'o catálogo fecha somente após uma drenagem bem-sucedida')
+  assert.match(main, /drainIpc: \(\) => ipcMain\.drain\(\)/)
+  assert.match(main, /if \(rendererWritesFlushedForShutdown\) return/)
 
   const designWorkspace = await readFile('src/renderer/src/features/fabricator/DesignWorkspace.tsx', 'utf8')
   assert.match(designWorkspace, /registerPendingWriteFlusher\(flushDesignSettings\)/, 'Design Dev deve drenar o autosave antes de navegar ou fechar')

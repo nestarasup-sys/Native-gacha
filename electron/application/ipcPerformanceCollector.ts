@@ -43,6 +43,11 @@ export function createIpcPerformanceCollector(options: {
     }
   }
 
+  function isEnabled(): boolean {
+    stopIfExpired()
+    return enabled
+  }
+
   function setEnabled(nextEnabled: boolean): IpcPerformanceDiagnosticsSnapshot {
     stopIfExpired()
     if (nextEnabled === enabled) return snapshot()
@@ -86,5 +91,5 @@ export function createIpcPerformanceCollector(options: {
   }
 
   if (options.initiallyEnabled) setEnabled(true)
-  return { measure, snapshot, setEnabled }
+  return { measure, snapshot, setEnabled, isEnabled }
 }

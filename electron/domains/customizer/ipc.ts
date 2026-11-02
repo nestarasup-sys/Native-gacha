@@ -5,16 +5,15 @@ import type { CustomizerCharacterService } from './service.ts'
 export function registerCustomizerCharacterHandlers(
   ipc: Pick<IpcMain, 'handle'>,
   assertTrustedSender: (event: IpcMainInvokeEvent) => void,
-  service: CustomizerCharacterService,
-  measure: <T>(channel: string, operation: () => Promise<T>) => Promise<T>
+  service: CustomizerCharacterService
 ): void {
   ipc.handle('customizer:characters:list', async (event) => {
     assertTrustedSender(event)
-    return measure('customizer:characters:list', () => service.list())
+    return service.list()
   })
   ipc.handle('customizer:characters:save', async (event, character: unknown) => {
     assertTrustedSender(event)
-    return measure('customizer:characters:save', () => service.save(character))
+    return service.save(character)
   })
   ipc.handle('customizer:characters:create', async (event, name: unknown, initialHeadSize: unknown, gender: unknown) => {
     assertTrustedSender(event)
