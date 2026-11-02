@@ -5,6 +5,7 @@ import { Icon } from '../../ui/components/Icon'
 import { registerPendingWriteFlusher } from '../../ui/pendingPersistence'
 import { createBaseVideoDetailsSaveQueue } from './baseVideoDetailsSaveQueue'
 import { deleteBaseVideoCategory } from './baseVideoCategoryCommands'
+import { selectVisibleBaseVideos, type BaseVideoListSort, type BaseVideoTimelineFilter } from './baseVideoListModel'
 
 const emptyDetails = (videoId: string): BaseVideoDetails => ({ videoId, categoryId: null, description: '', additionalContext: '', timeline: 'unspecified' })
 const formatDuration = (frames: number | null) => {
@@ -50,8 +51,8 @@ export function BaseVideosPage() {
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [visibleCount, setVisibleCount] = useState(18)
   const [search, setSearch] = useState('')
-  const [timelineFilter, setTimelineFilter] = useState('all')
-  const [sort, setSort] = useState<'order' | 'name' | 'duration' | 'newest'>('order')
+  const [timelineFilter, setTimelineFilter] = useState<BaseVideoTimelineFilter>('all')
+  const [sort, setSort] = useState<BaseVideoListSort>('order')
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [renameTarget, setRenameTarget] = useState<VideoLibraryItem | null>(null)
   const [renameValue, setRenameValue] = useState('')
@@ -148,19 +149,11 @@ export function BaseVideosPage() {
 
   const flushPendingSave = (videoId: string) => saveQueue.flushPendingSave(videoId)
 
-  const visibleItems = useMemo(() => items.filter((item) => {
-    const details = detailsById[item.id] ?? emptyDetails(item.id)
-    const query = search.trim().toLocaleLowerCase('pt-BR')
-    const matchesQuery = !query || item.name.toLocaleLowerCase('pt-BR').includes(query) || item.id.toLocaleLowerCase('pt-BR').includes(query) || String(details.videoNumber ?? '').includes(query) || details.description.toLocaleLowerCase('pt-BR').includes(query) || (details.additionalContext ?? '').toLocaleLowerCase('pt-BR').includes(query)
-    return matchesQuery && (timelineFilter === 'all' || details.timeline === timelineFilter) && (activeView === 'drafts' ? details.videoNumber === undefined : details.videoNumber !== undefined)
-  }).sort((a, b) => {
-    const numberA = detailsById[a.id]?.videoNumber
-    const numberB = detailsById[b.id]?.videoNumber
-    if (sort === 'name') return a.name.localeCompare(b.name, 'pt-BR')
-    if (sort === 'duration') return (a.durationFrames ?? 0) - (b.durationFrames ?? 0)
-    if (sort === 'newest') return b.createdAt.localeCompare(a.createdAt)
-    if (activeView === 'main') return (numberA ?? Number.MAX_SAFE_INTEGER) - (numberB ?? Number.MAX_SAFE_INTEGER)
-    return b.createdAt.localeCompare(a.createdAt)
+  const visibleItems = useMemo(() => selectVisibleBaseVideos(items, detailsById, {
+    activeView,
+    search,
+    timelineFilter,
+    sort
   }), [items, detailsById, activeView, search, timelineFilter, sort])
 
   useEffect(() => { setVisibleCount(18) }, [activeView])
@@ -294,7 +287,7 @@ export function BaseVideosPage() {
     </header>
     <div className="base-videos-content">
       {error && <div className="base-videos-error" role="alert"><span>{error}</span><button type="button" onClick={() => setError(null)}>Fechar</button></div>}
-      <div className="base-videos-filters"><label className="base-videos-search"><Icon name="search" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar por nome, ID, número ou descrição" /></label><label><span>Linha do tempo</span><select value={timelineFilter} onChange={(event) => setTimelineFilter(event.target.value)}><option value="all">Todas</option><option value="past">Passado</option><option value="present">Presente</option><option value="future">Futuro</option><option value="unspecified">Indefinido</option></select></label><label><span>Ordenar</span><select value={sort} onChange={(event) => setSort(event.target.value as typeof sort)}><option value="order">Ordem padrão</option><option value="name">Nome</option><option value="duration">Duração</option><option value="newest">Mais recente</option></select></label>{deleteMode && <strong className="base-videos-selection-count">{selectedIds.length} selecionado(s)</strong>}</div>
+      <div className="base-videos-filters"><label className="base-videos-search"><Icon name="search" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar por nome, ID, número ou descrição" /></label><label><span>Linha do tempo</span><select value={timelineFilter} onChange={(event) => setTimelineFilter(event.target.value as BaseVideoTimelineFilter)}><option value="all">Todas</option><option value="past">Passado</option><option value="present">Presente</option><option value="future">Futuro</option><option value="unspecified">Indefinido</option></select></label><label><span>Ordenar</span><select value={sort} onChange={(event) => setSort(event.target.value as typeof sort)}><option value="order">Ordem padrão</option><option value="name">Nome</option><option value="duration">Duração</option><option value="newest">Mais recente</option></select></label>{deleteMode && <strong className="base-videos-selection-count">{selectedIds.length} selecionado(s)</strong>}</div>
       <div className="base-videos-view-heading"><div><h2>{activeView === 'main' ? 'Vídeos' : 'Rascunhos'}</h2><p>{activeView === 'main' ? 'Vídeos enviados para a Base, em ordem de identificação.' : 'Vídeos aguardando envio para a Base de vídeos.'}</p></div><span>{visibleItems.length} vídeo{visibleItems.length === 1 ? '' : 's'}</span></div>
       {!loaded ? <div className="base-videos-grid base-videos-skeleton-grid" aria-label="Carregando vídeos">{Array.from({ length: 6 }, (_, index) => <div className="base-videos-skeleton-card" key={index}><i /><b /><span /><span /></div>)}</div> : loadError ? <div className="base-videos-empty"><span className="base-videos-empty-icon"><Icon name="warning" /></span><strong>Não foi possível carregar a Base de vídeos</strong><span>{loadError}</span><button type="button" disabled={busy} onClick={() => void retryLoad()}>{busy ? 'Carregando…' : 'Tentar novamente'}</button></div> : visibleItems.length ? <><div className="base-videos-grid">{visibleItems.slice(0, visibleCount).map((item) => {
         const details = detailsById[item.id] ?? emptyDetails(item.id)
