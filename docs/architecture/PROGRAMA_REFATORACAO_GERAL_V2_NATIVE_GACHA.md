@@ -55,7 +55,7 @@ Ambiente observado: Node 24.18.0 (workflow fixa Node 22.22.0), Electron 45.1.0, 
 
 ### Logs Dev
 
-1. [ ] Renomear item, criar rota canônica e manter `/opcoes` compatível; testar captura/perfil por rota.
+1. [x] Renomear item, criar rota canônica e manter `/opcoes` compatível; testar captura/perfil por rota.
 2. [ ] Separar a tela em áreas acessíveis sem quebrar backup, restauração, migração e exportação.
 3. [ ] Criar modelo puro para busca, filtros, ordenação, intervalo de tempo e paginação/limite; testar eventos antigos e campos opcionais.
 4. [ ] Estruturar detalhes, cópia e exportação apenas dos eventos filtrados com sanitização no Main e limites IPC.
@@ -76,4 +76,5 @@ Ambiente observado: Node 24.18.0 (workflow fixa Node 22.22.0), Electron 45.1.0, 
 
 | Data | Ciclo/fatia | Resultado e verificações | Commit |
 | --- | --- | --- | --- |
-| 2026-11-02 | A — baseline e reconciliação V1 | Baseline aprovada conforme a tabela acima; estado do Git preservado. | A documentar na primeira fatia implementada. |
+| 2026-11-02 | A — baseline e reconciliação V1 | Baseline aprovada conforme a tabela acima; estado do Git preservado. | `72ae218` (`docs: record refactor v2 baseline`). |
+| 2026-11-02 | B1 — navegação e identidade da Logs Dev | `Logs Dev` passa a ser o item do menu e título da página; `/logs-dev` é canônica e `/opcoes` redireciona com `replace`. A captura de erros, logger Main e perfil de interface reconhecem as duas rotas através de uma lista compartilhada; canais IPC e operações existentes não mudaram. `npm run test:options:diagnostics` 8/8, `npm run typecheck`, `npm run audit:architecture` (612 arquivos), `npm run build` e `npm run test:refactor` (647/647 mais toda a cadeia) passaram. Uma primeira execução do teste geral revelou apenas que o import direto de TypeScript no runner Node precisava da extensão `.ts`; corrigido e validado na repetição. | `d9f64b6` (`feat(logs-dev): add canonical route and legacy redirect`). |
