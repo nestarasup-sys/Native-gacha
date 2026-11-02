@@ -10,7 +10,7 @@ export function makeCanvasPrint(studio: StudioDocument, outputWidth = 1920, outp
     if (!context) return reject(new Error('Não foi possível preparar a imagem do print.'))
     context.scale(outputWidth / 1920, outputHeight / 1080)
     context.fillStyle = studio.backgroundColor
-    context.fillRect(0, 0, canvas.width, canvas.height)
+    context.fillRect(0, 0, 1920, 1080)
 
     const loadImage = (src: string) => new Promise<HTMLImageElement>((ok, fail) => {
       const image = new Image()

@@ -120,3 +120,38 @@ test('renderização do print decodifica fontes únicas em lotes limitados e pre
     else globalThis.Image = previousImage
   }
 })
+
+test('miniatura do Studio preenche o canvas inteiro após escalar para 480 × 270', async () => {
+  const fillRects = []
+  const scales = []
+  const context = {
+    scale: (...values) => scales.push(values),
+    fillRect: (...values) => fillRects.push(values)
+  }
+  const previousDocument = globalThis.document
+  globalThis.document = {
+    createElement: () => ({
+      width: 0,
+      height: 0,
+      getContext: () => context,
+      toDataURL: () => 'data:image/jpeg;base64,AA=='
+    })
+  }
+
+  try {
+    const studio = {
+      backgroundColor: '#123456',
+      backgroundAssetId: null,
+      assets: [],
+      elements: []
+    }
+
+    await makeCanvasPrint(studio, 480, 270, 'image/jpeg')
+
+    assert.deepEqual(scales, [[0.25, 0.25]])
+    assert.deepEqual(fillRects, [[0, 0, 1920, 1080]])
+  } finally {
+    if (previousDocument === undefined) delete globalThis.document
+    else globalThis.document = previousDocument
+  }
+})
