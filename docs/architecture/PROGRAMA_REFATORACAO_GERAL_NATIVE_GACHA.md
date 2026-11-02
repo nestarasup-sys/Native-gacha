@@ -28,7 +28,7 @@ Este documento acompanha a execução das Fases 1–6 e complementa a baseline d
 | 1 | Electron, IPC, persistência, backups e filas | Concluída | Diagnóstico de memória corrigido; ciclo de encerramento extraído e coberto; diferenças das filas mapeadas; backup, manutenção e segurança de janela passaram. Os gatilhos gerais de CI de `Dev-V2` ficam na Fase 6. |
 | 2 | Núcleo compartilhado de personagens | Concluída | Consumidores e regressões mapeados. Escala-base idêntica entre Studio e Editor V6 centralizada; renderizadores e contratos de exportação distintos mantidos. Testes de personagem/gênero/roupas articuladas executáveis por script dedicado. |
 | 3 | Fabricador e Customizador | Em andamento | Fluxo de catálogo/customizações coberto de ponta a ponta; primeira fronteira de gravação do Fabricador extraída. Restam mapear/decompor os maiores workspaces e ampliar cenários de reabertura. |
-| 4 | Studio, Editor V6 e fluxos de vídeo | Não iniciada | Manter engines distintas, paridade de exportação e caminhos legados de dados. |
+| 4 | Studio, Editor V6 e fluxos de vídeo | Em andamento | Criação/duplicação de cenas do Studio extraídas e testadas; comandos próprios do Editor V6, timeline e exportação permanecem separados. Restam a revisão de vídeos, workers e paridade de exportação. |
 | 5 | Roteiros, Base de Vídeos, Opções, componentes e CSS | Não iniciada | Preservar propriedade da biblioteca de mídia e bloqueio de referências. |
 | 6 | Performance, CI e consolidação | Não iniciada | Medir antes/depois; remover legado somente após comprovar ausência de consumidores. |
 
@@ -91,6 +91,14 @@ O Node test runner não resolvia imports relativos extensionless `.ts` usados po
 - **Verificações:** `npm run test:refactor` passou, incluindo os 2 novos testes do comando; `npm run typecheck`, `npm run audit:architecture` (566 arquivos TS/TSX, sem violações) e `npm run build` passaram.
 - **Próxima etapa da Fase 3:** inventariar os maiores componentes Fabricador/Customizador e extrair outras fronteiras de estado/comando somente quando a propriedade do dado e os efeitos de persistência estiverem claros.
 
+### Comandos de projeto do Studio
+
+- **Fronteira extraída:** `createStudioProjectCommands` em `src/renderer/src/features/studio/studioProjectCommands.ts` agora é dono da criação e duplicação de cenas. A página mantém seleção, lista e estado visual; o comando injeta ID, relógio, persistência e callbacks da interface.
+- **Vínculos ao duplicar:** cada asset e elemento recebe ID novo; `backgroundAssetId` e `element.assetId` são remapeados para os assets duplicados antes da escrita. A lista só é atualizada depois de `writeDocument` concluir.
+- **Engines mantidas separadas:** Editor V6 conserva `editorV6ProjectCreation.ts`, os documentos com timeline e os fluxos próprios de áudio/mídia/exportação. A extração do Studio não compartilha builders nem altera os formatos de projeto.
+- **Verificações:** `test:studio:project-commands` passou 3/3; persistência/histórico/asset transaction do Studio passou 26/26; `npm run test:refactor` passou; `npm run test:editor-v6` passou com 220 testes e 1 skip; typecheck, audit arquitetural (567 arquivos TS/TSX) e build passaram.
+- **Pendências:** revisar caminho de captura/exportação do Studio, jobs e workers do Editor V6, fluxo de áudio/vídeo, paridade preview/export e dados legados das bibliotecas sem reativar a antiga interface Video Studio.
+
 ## Reconciliação das falhas da baseline
 
 As falhas observadas na execução inicial da suíte em `f416a02` foram investigadas e reconciliadas:
@@ -118,4 +126,5 @@ As falhas observadas na execução inicial da suíte em `f416a02` foram investig
 | `b171929e1a7f263796dcfa7265a13b4d7d063692` | Compartilha a geometria-base idêntica entre Studio e Editor V6 | Local em `Dev-V2`; sem publicação. |
 | `a5c30c21c32bd47618ee6d08850c5eda96631e68` | Habilita execução Node de contratos de personagem com imports TS extensionless | Local em `Dev-V2`; sem publicação. |
 | `986aba7` | Extrai o comando de gravação de roupas e cobre continuidade Fabricador/Customizador | Local em `Dev-V2`; sem publicação. |
+| `da3ee89` | Extrai criação/duplicação de projetos do Studio sem compartilhar o contrato do Editor V6 | Local em `Dev-V2`; sem publicação. |
 
