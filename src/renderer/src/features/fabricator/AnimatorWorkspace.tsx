@@ -19,6 +19,7 @@ import {
   transformsFromProject,
   type AnimatorFrameState as FrameHistoryState
 } from './models/animatorFrameModel'
+import { animatorFrameStartTime, deleteAnimatorFrame, duplicateAnimatorFrame, reorderAnimatorFrame, updateAnimatorFrameDuration } from './models/animatorFrameTimeline'
 import { loadAnimatorImage as loadImage } from './models/animatorImageCache'
 import { refreshAnimatorThumbnails as refreshThumbnails, renderAnimatorThumbnail as renderThumbnail } from './models/animatorThumbnail'
 import { usePreviewBackground } from '../../ui/hooks/usePreviewBackground'
@@ -527,37 +528,40 @@ export function AnimatorWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
 
   const selectFrame = (frame: AnimatorFrame) => {
     if (dirtyFrame && !window.confirm('As alterações deste frame ainda não foram gravadas. Descartar essas alterações e abrir o outro frame?')) return
-    const startTime = animation?.frames.slice(0, animation.frames.indexOf(frame)).reduce((sum, item) => sum + item.durationMs, 0) ?? 0
+    const startTime = animatorFrameStartTime(animation?.frames ?? [], frame)
     playheadRef.current = startTime
     setPlaying(false); setSelectedFrameId(frame.id); setCurrentTransforms(structuredClone(frame.transforms)); setCurrentJoints(structuredClone(frame.joints)); setPlayhead(startTime)
   }
 
   const duplicateFrame = () => {
     if (!animation || !selectedFrame) return
-    pushHistory(); const copy = { ...structuredClone(selectedFrame), id: crypto.randomUUID() }
-    const frames = [...animation.frames]; frames.splice(selectedFrameIndex + 1, 0, copy)
-    setAnimation({ ...animation, frames }); setSelectedFrameId(copy.id); setCurrentTransforms(copy.transforms); setCurrentJoints(copy.joints)
+    const result = duplicateAnimatorFrame(animation.frames, selectedFrame.id, () => crypto.randomUUID())
+    if (!result) return
+    pushHistory()
+    setAnimation({ ...animation, frames: result.frames }); setSelectedFrameId(result.frame.id); setCurrentTransforms(result.frame.transforms); setCurrentJoints(result.frame.joints)
   }
 
   const deleteFrame = () => {
-    if (!animation || animation.frames.length <= 1 || !selectedFrame) return
-    pushHistory(); const frames = animation.frames.filter((frame) => frame.id !== selectedFrame.id); const nextIndex = Math.max(0, selectedFrameIndex - 1); const frame = frames[nextIndex]
-    setAnimation({ ...animation, frames, thumbnailDataUrl: frames[0].thumbnailDataUrl }); setSelectedFrameId(frame.id); setCurrentTransforms(frame.transforms); setCurrentJoints(frame.joints)
+    if (!animation || !selectedFrame) return
+    const result = deleteAnimatorFrame(animation.frames, selectedFrame.id)
+    if (!result) return
+    pushHistory()
+    setAnimation({ ...animation, frames: result.frames, thumbnailDataUrl: result.frames[0].thumbnailDataUrl }); setSelectedFrameId(result.selectedFrame.id); setCurrentTransforms(result.selectedFrame.transforms); setCurrentJoints(result.selectedFrame.joints)
   }
 
   const reorderFrame = (offset: -1 | 1) => {
-    if (!animation || selectedFrameIndex < 0) return
-    const target = selectedFrameIndex + offset; if (target < 0 || target >= animation.frames.length) return
-    pushHistory(); const frames = [...animation.frames]; [frames[selectedFrameIndex], frames[target]] = [frames[target], frames[selectedFrameIndex]]
-    const startTime = frames.slice(0, target).reduce((sum, frame) => sum + frame.durationMs, 0)
-    setAnimation({ ...animation, frames }); playheadRef.current = startTime; setPlayhead(startTime)
+    if (!animation || selectedFrameIndex < 0 || !selectedFrame) return
+    const result = reorderAnimatorFrame(animation.frames, selectedFrame.id, offset)
+    if (!result) return
+    pushHistory()
+    setAnimation({ ...animation, frames: result.frames }); playheadRef.current = result.startTime; setPlayhead(result.startTime)
   }
 
   const changeFrameDuration = (value: number) => {
-    if (!animation || !selectedFrame || !Number.isFinite(value)) return
-    const duration = Math.max(40, Math.min(10000, value))
-    if (duration === selectedFrame.durationMs) return
-    pushHistory(); setAnimation({ ...animation, frames: animation.frames.map((frame) => frame.id === selectedFrame.id ? { ...frame, durationMs: duration } : frame) })
+    if (!animation || !selectedFrame) return
+    const frames = updateAnimatorFrameDuration(animation.frames, selectedFrame.id, value)
+    if (!frames) return
+    pushHistory(); setAnimation({ ...animation, frames })
   }
 
   const undo = () => {
