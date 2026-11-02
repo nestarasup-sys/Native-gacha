@@ -19,7 +19,7 @@ Este documento continua a [auditoria da Fase 0](./AUDITORIA_REFATORACAO_GERAL_V1
 | D — Electron e núcleo compartilhado | Concluído nesta rodada | A auditoria confirmou o `main.ts` como composition root: inicialização e registros são coordenados ali, enquanto handlers, persistência e regras ficam em módulos de domínio. Política de renderer, isolamento, validação IPC, encerramento, backups, recuperação, chamadas síncronas e ciclo de workers foram revisados. Testes diretos agora protegem origem, subframes, tela cheia e o caminho de tronco masculino/sapatos nos renderizadores compartilhados e do Editor V6. Nenhuma extração ampla foi justificada. |
 | E — Studio e Editor V6 | Concluído nesta rodada | Comandos de cena/timeline, assets, geometria, áudio/vídeo, atlas, recuperação, workers e paridade preview/export foram revisados com fixtures sintéticas. Os fluxos adicionais passaram; as páginas continuam compondo UI/sessão e não justificam extração ampla sem fronteira comprovada. |
 | F — Roteiros, Base de Vídeos e interface | Concluído nesta rodada | A duplicação de documentos ganhou regra pura testada, preservando referências vivas de mídia. A auditoria confirmou que criação, edição, publicação e importação restantes já delegam os casos de uso e protegem filas/referências; não foi encontrada extração maior com benefício claro. CSS de Roteiros/Base de Vídeos saiu da folha global para folhas por feature e uma folha compartilhada, com capturas sintéticas antes/depois idênticas. |
-| G — Performance, segurança e testes | Parcial | CI local da Dev-V2 e vários benchmarks sintéticos já existem; a auditoria de logger/IPC foi consolidada em D. Faltam inventário completo dos gates, medições reproduzíveis de inicialização/interação e métricas de renderer/processos auxiliares. Não inferir ganho de interface a partir de benchmark sintético. |
+| G — Performance, segurança e testes | Concluído como auditoria e medição local | Workflows/gates foram inventariados; três capturas do Fabricador/Customizador/Studio e seis telas de Logs Dev passaram em Electron real, todas com sandbox sintético. Benchmarks sintéticos faltantes foram executados. Nenhuma regressão ou gargalo de runtime que justificasse nova otimização foi confirmado. Os limites estáticos existentes apontam dívida em `characterGeometry.ts` e `WardrobeWorkspace.tsx`; foram mantidos intactos e o resultado está registrado abaixo. Medições ocorreram sob carga concorrente do jogo e não são baselines controladas. |
 
 ## Baseline executada em 2026-11-02
 
@@ -70,7 +70,7 @@ Ambiente observado: Node 24.18.0 (workflow fixa Node 22.22.0), Electron 45.1.0, 
 - [x] D: auditoria de segurança/IPC, recuperação, recursos e bloqueios do Main concluída; tronco masculino e sapatos validados nos renderizadores consumidores.
 - [x] E: atlas de movimento, áudio/vídeo, timeline, assets, geometria, paridade de preview/export, recuperação e ciclo de vida de workers validados com fixtures sintéticas; as páginas mantêm fronteiras existentes sem extração ampla sem benefício comprovado.
 - [x] F: duplicação de Roteiros isolada e testada; ownership de mídia preservado; CSS migrado por feature/componente compartilhado com equivalência visual pixel a pixel.
-- [ ] G: comparar inicialização, interação, memória, salvamento e exportação; revisar workflows/gates sem enfraquecer permissões ou duplicar builds.
+- [x] G: comparar inicialização, interação, memória, salvamento e exportação; revisar workflows/gates sem enfraquecer permissões ou duplicar builds. Medições locais e dívida de auditoria estática registradas abaixo.
 
 ## Registro de fatias
 
@@ -88,6 +88,61 @@ Ambiente observado: Node 24.18.0 (workflow fixa Node 22.22.0), Electron 45.1.0, 
 | 2026-11-02 | E1 — Studio, Editor V6 e exportações | Revisão dos módulos confirmou fronteiras existentes para comandos, estado de cena, histórico, persistência, miniaturas, impressão, timeline, playback, workers, cache de atlas, preparação de motions e exportação; `StudioPage`/`EditorV6Page` ainda contêm composição de UI/sessão, sem fronteira segura que justifique extração ampla. A grade nativa de 7 quadros para corpo 744×1217 mede 2.976×2.434 (7.243.584 px, abaixo de 8 M); novo teste cobre orçamento impossível e dimensões inválidas. O baker recorta margens transparentes, rejeita resolução nativa acima do limite e mantém o personagem sem redução. `test:editor-v6` passou 225 e ignorou 1; export facial sintética validou 40 quadros a 30 FPS em 720p e 1080p, três personagens em posições/rotações/espelhamento diferentes, boca em fala e na emenda Turbo, corpo/roupa customizados, sem diferença fora da boca (MAE 0) e geometria com MAE ≤1,72. Relatório observou RSS do processo Main de 169.484.288 bytes em 720p e 252.547.072 bytes em 1080p; tempos (1,52 s/2,08 s) ficam registrados apenas como observações da execução, não como benchmark controlado nem memória total do app, pois não mediram renderer/workers e a máquina pode estar com outro uso. Exportação sintética geral passou com áudio contínuo, cancelamento, 1080p e 81 quadros; `fallback:true` é a falha de worker injetada de propósito, recuperada em modo seguro com paralelismo 1. Paridade de sobreposição passou em 60 quadros/3 mídias; bootstrap e superfície de cena passaram. Fluxos Studio de salvar/reabrir, rollback de assets, histórico, concorrência, thumbnail/print e continuidade Fabricador→Studio: 33/33; comandos Studio/Editor adicionais: 31/31. `git diff --check` passou. | `80ace1b` (`test(editor-v6): protect atlas budget boundaries`) e `8e77a6c` (`docs: close studio and editor v2 cycle`). |
 | 2026-11-02 | F1 — duplicação de Roteiros | A duplicação saiu do componente para uma regra pura que gera IDs próprios para documento, TikToks e blocos, clona objetos de referência sem trocar IDs de mídia/elenco, e cobre abertura ausente e blocos opcionais legados. A página continua dona do comando, sessão e persistência; formatos e referências vivas permanecem iguais. `npm run test:roteiros` 20/20; snapshots 7/7; referências de mídia 3/3; typecheck, auditoria arquitetural e build passaram na validação combinada da fatia F. | `ba0b0bb` (`refactor(roteiros): isolate document duplication`). |
 | 2026-11-02 | F2 — CSS de Roteiros/Base de Vídeos por domínio | 308 seletores de Roteiros, 91 de Base de Vídeos e 32 regras realmente compartilhadas foram removidos de `ui/styles.css` para folhas das features e `videoEditorialFields.css`; a folha global caiu de 377.903 para 326.587 bytes, sem redesign. Capturas sintéticas Electron (1287×807) antes/depois de cada tela ficaram pixel a pixel idênticas (0 pixels alterados). Um desvio inicial de tipografia em Base de Vídeos levou a mover o placeholder para a folha compartilhada; a comparação repetida zerou. `test:base-videos` 8/8, fila 4/4, importação 5/5, comandos/lista/publicação/exclusão/snapshot 26/26, `test:refactor` e todos os comandos encadeados, typecheck, auditoria (632 arquivos) e build passaram. | `67611a7` (`refactor(css): scope roteiro and base video styles`). |
+
+### G — Perfilamento, CI e limites conhecidos
+
+As medições foram executadas em 2026-11-02 enquanto o usuário jogava. Todas são **observações sob carga concorrente**, com dados sintéticos. Resultados variáveis de CPU, memória e tempo não representam benchmark controlado nem comprovam, por si só, ganho percebido no aplicativo.
+
+#### Capturas em Electron real
+
+Três execuções completas do harness `test:fabricator:real-ui -- --synthetic-complete` passaram; cada uma produziu 12 capturas/artefatos e foi examinada por `review-real-ui-captures.cjs --with-workspaces`. O revisor confirmou a integridade dos artefatos, mas não existe golden visual para declarar equivalência automática. Os diretórios isolados foram:
+
+- `out/dev-ai/runs/9b117153-d6ef-4627-ab5d-363d58328fe9/sandbox/fabricator-real-ui-captures`
+- `out/dev-ai/runs/a0a3e005-3848-4bd3-a302-a06fbc24fc57/sandbox/fabricator-real-ui-captures`
+- `out/dev-ai/runs/9ee1cca9-d9b3-4cc6-b289-fcaef884bc57/sandbox/fabricator-real-ui-captures`
+
+O fluxo passa por Customizador, pose alternativa, elenco/cena no Studio, salvamento e reabertura. `firstProcessFlow` é a jornada do harness, não inicialização fria do Electron; `reopenedFlow` é a jornada de reabertura. Não comparar estes valores com tempo de startup ou com uma execução sem jogo.
+
+| Métrica sintética observada | Três execuções: mínimo / mediana / máximo | Semântica |
+| --- | ---: | --- |
+| Jornada do primeiro processo | 12.118 / 12.519 / 12.948 ms | Inclui interações do harness; não é cold start. |
+| Reabrir fluxo salvo no Studio | 1.598 / 1.746 / 1.750 ms | Fluxo de UI, não só leitura do arquivo. |
+| RAF amostrado, pose 1 | 74,93 / 75,02 / 75,75 FPS | Medição do renderer real, personagem sintético. |
+| RAF amostrado, pose 2 | 74,99 / 75,65 / 75,70 FPS | Mesma limitação. |
+| P95 do intervalo RAF, poses 1/2 | 13,5–13,7 / 13,4–13,6 ms | Intervalo dos valores entre execuções. |
+| Working set do renderer, poses 1/2 combinadas | 162.004–173.816 KiB | Memória do renderer medido; não é total do app. |
+| Memória privada do renderer, poses 1/2 combinadas | 91.240–95.728 KiB | Métrica de processo fornecida pelo Electron. |
+| Heap JS reportado | 11.200.000 bytes nas seis amostras | Não inclui memória nativa/GPU. |
+
+`npm run test:logs-dev:electron-visual` também passou nesta rodada: fez build e seis capturas em `out/dev-ai/runs/467fd906-95bd-4329-8a65-ac01e199178a/sandbox/logs-dev-captures`. A revisão de navegação/áreas da Logs Dev em B usou igualmente um sandbox sintético. F2 cobriu Roteiros e Base de Vídeos com capturas antes/depois pixel a pixel idênticas; elas não medem latência de navegação.
+
+#### Benchmarks de algoritmo
+
+Os resultados abaixo comparam algoritmos com fixtures sintéticas e validação de saída idêntica quando indicada. São medidas locais sob carga concorrente; não projetar os fatores diretamente como melhoria geral de UI.
+
+| Área / cenário | Resultado observado | Escopo e limite |
+| --- | --- | --- |
+| Customizador — seleção de roupas, 700 conjuntos / 4.200 peças / 80 renders repetidos | Varredura antiga: mediana 996,478 ms; seletor memoizado: 12,946 ms; saídas iguais | 7 rodadas; pressupõe referências estáveis. |
+| Studio — projeção de 2.000 elementos / 500 personagens / 200 rerenders | 30,345 ms → 0,249 ms; projeção igual | 7 rodadas sintéticas. |
+| Animator — 2.500 ossos e 2.500 roupas | Varredura linear 63,397 ms → índice 7,927 ms; 8× no fixture, resultado igual | 5 rodadas; não é cena real. |
+| Editor V6 — 120 personagens / 2.400 planos de movimento | 144,23 ms → 8,55 ms; 2.400 serializações JSON → 120 | 5 rodadas; saída/cache mantidos. |
+| Editor V6 — timeline com 30.000 blocos | Varredura completa 82,836 ms → planos visíveis 0,12 ms; mesmos 34 planos | Mediana sintética; a UI real não foi inferida deste número. |
+| Fabricador — cache, 750 leituras de arquivo sintético de 256 KiB | Sem cache 182,607 ms → com cache 30,854 ms; 750 leituras → 5; checksum igual | 5 execuções alternadas; cópia de buffers 9,087 ms → view 0,042 ms. |
+| Fabricador — processamento de folha ocular 2.400×2.400 | 5,76 Mpx em 190,14 ms; alocação inicial 21,97 MiB → 0,25 MiB (−98,86%) | Mediana de 3; exclui decode, PNG, worker e heap Chromium. |
+| Fabricador — marcadores de junta, 1.500 peças / 1.499 juntas | Varredura 46,738 ms → índice 1,401 ms (33,37× no fixture) | 7 rodadas, 1.459 marcadores. |
+| Fabricador — compositor, 8 peças 3.072×1.536 / 4.096×2.048 | Pixels idênticos. Mediana total / maior intervalo de timer: 45,2/13,9 e 74,7/28,5 ms (thread legado); 52,3/19,7 e 78,9/32,7 ms (núcleo direto); worker novo 163,2/1,1 e 254,9/1,2 ms; worker reutilizado 132,9/8,8 e 204,6/16,2 ms | 3 rodadas; o worker reduz bloqueio do thread principal, mas aumenta latência total neste fixture. |
+
+O ciclo E já registrou os testes sintéticos de MP4 facial em 720p/1080p, áudio, 30 FPS, turbo/seguro e paridade; os tempos e memória daquela rodada foram explicitamente tratados como observações, não medições limpas. O benchmark de projeto real exige fontes dentro de `out/editor-v6-stress/backups` e cópia verificada; nenhum perfil pessoal foi usado. Não foi repetido usando dados de usuário.
+
+#### Workflows e gates
+
+`.github/workflows/editor-v6-parity.yml` já executa em `Dev-V2` o gate geral (auditoria de arquitetura, `test:refactor`, geometria e typecheck), Editor V6 em Linux e Windows, bundle de produção somente no Windows e uma única etapa Windows para paridade MP4/720p/1080p com FFmpeg verificado. Permissões permanecem `contents: read`; concorrência cancela execuções antigas do mesmo ref. Não havia build duplicado nesse workflow nem lacuna que justificasse alterar CI. Workflows hospedados não foram executados: sem push, não há run remoto a confirmar. Sobreposição existente nos workflows de `main` foi deixada fora do escopo da branch exclusiva Dev-V2.
+
+`npm run audit:architecture` continua aprovado; sua checagem mede imports e fronteiras. Já a auditoria adicional de orçamento estático **falha**: `characterGeometry.ts` tem 90/75 linhas e `WardrobeWorkspace.tsx` tem 791/630. `node --test tests/architecture-audit.test.cjs` confirma a falha no teste de crescimento de módulos; seu teste de inventário estático passou. Estes números não são métricas de runtime. Não aumentei limites nem fiz uma extração arriscada de JSX/estado interativo apenas para satisfazer contagem; ficam como dívida explícita para a próxima fronteira de responsabilidade comprovada.
+
+Verificações gerais aprovadas após as fatias F: `npm run test:refactor` e sua cadeia, `npm run test:geometry`, `npm run typecheck`, `npm run audit:architecture`, `npm run build` e `git diff --check`. Nesta rodada final, o build da captura visual da Logs Dev passou; o único resultado vermelho foi o teste avulso dos limites estáticos descrito acima. A suíte hospedada permanece pendente de publicação autorizada.
+
+**Conclusão do ciclo G:** gates e workflows locais foram revisados; capturas de fluxos sintéticos, exportação anterior e benchmarks disponíveis foram medidos. Nenhuma otimização adicional foi incorporada porque os números de algoritmos não provam gargalo real e não surgiu falha funcional reproduzível. As medições controladas sem carga concorrente e a resolução arquitetural da dívida de contagem ficam registradas para uma etapa futura; nenhuma funcionalidade, dado de usuário ou threshold foi alterado neste ciclo.
 
 ### Ciclo C — fechamento da revisão dos workspaces
 
