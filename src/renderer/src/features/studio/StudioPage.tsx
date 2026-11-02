@@ -12,7 +12,7 @@ import { NumericRangeField } from '../../ui/components/NumericRangeField'
 import { SceneElementControls } from '../../ui/components/SceneElementControls'
 import { SceneCastPickerModal } from '../../ui/components/SceneCastPickerModal'
 import { isLegacySceneCatalogId, loadLegacySceneCatalog } from '../../ui/legacySceneCatalog'
-import { createSceneTextElement, sceneCatalogColor, sceneEditorTools } from '../../ui/sceneEditorDefaults'
+import { createSceneTextElement, sceneEditorTools } from '../../ui/sceneEditorDefaults'
 import { resolveStudioTalkMouthId } from '../../../../shared/studio'
 import { STUDIO_FACE_RENDER_VERSION, useStudioFacePreview } from './useStudioFacePreview'
 import { createSceneFaceActions } from '../../characters/sceneFaceActions'
@@ -26,6 +26,7 @@ import { mergeStudioFaceDetails } from './studioFaceDetailCache'
 import { studioFaceCatalogSelectionIds } from './studioFaceCatalogSelection'
 import { useStudioAutosave, useStudioDocumentPersistence } from './useStudioDocumentPersistence'
 import { useStudioImageImport } from './useStudioImageImport'
+import { createStudioProjectCommands } from './studioProjectCommands'
 import { mapConcurrentItems } from '../../ui/mapConcurrentItems'
 import { useStudioCharacterSourceRefresh } from './useStudioCharacterSourceRefresh'
 import { prepareStudioCastSelection } from './studioCastSelection'
@@ -97,6 +98,19 @@ export function StudioPage() {
   } = useStudioDocumentPersistence({
     studios, activeStudio, activeStudioId, saved, setStudios, setSaved, setError
   })
+  const studioProjectCommands = useMemo(() => createStudioProjectCommands({
+    studios: () => studiosRef.current,
+    nextNumber: nextStudioNumber,
+    createId: () => crypto.randomUUID(),
+    now: () => new Date().toISOString(),
+    writeDocument: writeStudioDocument,
+    appendStudio: (studio) => setStudios((current) => [...current, studio]),
+    selectStudio: (id) => setSelectedId(id),
+    setSaved,
+    setError
+  }), [studiosRef, writeStudioDocument])
+  const createStudio = studioProjectCommands.createStudio
+  const duplicateStudio = studioProjectCommands.duplicateStudio
   const selectedElement = activeStudio?.elements.find((element) => element.id === selectedElementId) ?? null
   const selectedStudioCharacter = selectedElement?.kind === 'character' ? availableCharacters.find((character) => character.id === selectedElement.characterId) ?? null : null
   const selectedStudioExpressionCollectionId = studioExpressionCollection(selectedElement, studioExpressionPresets)
@@ -354,59 +368,6 @@ export function StudioPage() {
     markUnsaved: markStudioUnsaved,
     setError
   })
-
-  const allocateNumber = () => {
-    const highest = studios.reduce((max, studio) => Math.max(max, Number(studio.title.match(/^Studio\s+(\d+)/i)?.[1] ?? 0)), 0)
-    const number = Math.max(nextStudioNumber.current, highest + 1)
-    nextStudioNumber.current = number + 1
-    return number
-  }
-
-  const createStudio = async () => {
-    const number = allocateNumber()
-    const now = new Date().toISOString()
-    const studio: StudioCard = {
-      schemaVersion: 1, id: crypto.randomUUID(), title: `Studio ${String(number).padStart(2, '0')}`,
-      color: sceneCatalogColor(number), createdAt: now, updatedAt: now, backgroundColor: '#d7b5cd',
-      backgroundAssetId: null, backgroundX: 0, backgroundY: 0, backgroundWidth: 100, backgroundHeight: 100,
-      backgroundRotation: 0, assets: [], elements: []
-    }
-    try {
-      setError(null)
-      await writeStudioDocument(studio)
-      setStudios((current) => [...current, studio])
-      setSelectedId(studio.id)
-      setSaved(true)
-    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível criar o Studio.') }
-  }
-
-  const duplicateStudio = async (source: StudioCard | null = selectedStudio) => {
-    if (!source) return
-    const number = allocateNumber()
-    const now = new Date().toISOString()
-    const duplicate: StudioCard = {
-      ...source, id: crypto.randomUUID(), title: `Studio ${String(number).padStart(2, '0')}`,
-      color: sceneCatalogColor(number), createdAt: now, updatedAt: now,
-      assets: source.assets.map((asset) => ({ ...asset, id: crypto.randomUUID() })),
-      elements: source.elements.map((element) => ({
-        ...element, id: crypto.randomUUID(), assetId: element.assetId
-          ? source.assets.find((asset) => asset.id === element.assetId)?.id
-          : undefined
-      }))
-    }
-    const oldToNew = new Map(source.assets.map((asset, index) => [asset.id, duplicate.assets[index]?.id ?? '']))
-    duplicate.elements = source.elements.map((element, index) => ({
-      ...duplicate.elements[index], assetId: element.assetId ? oldToNew.get(element.assetId) : undefined
-    }))
-    duplicate.backgroundAssetId = source.backgroundAssetId ? oldToNew.get(source.backgroundAssetId) ?? null : null
-    try {
-      setError(null)
-      await writeStudioDocument(duplicate)
-      setStudios((current) => [...current, duplicate])
-      setSelectedId(duplicate.id)
-      setSaved(true)
-    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível duplicar o Studio.') }
-  }
 
   useStudioAutosave({
     activeStudio, autosaveSignature, saveTimerRef: studioSaveTimerRef,
