@@ -29,7 +29,7 @@ Este documento acompanha a execução das Fases 1–6 e complementa a baseline d
 | 2 | Núcleo compartilhado de personagens | Concluída | Consumidores e regressões mapeados. Escala-base idêntica entre Studio e Editor V6 centralizada; renderizadores e contratos de exportação distintos mantidos. Testes de personagem/gênero/roupas articuladas executáveis por script dedicado. |
 | 3 | Fabricador e Customizador | Em andamento | Fluxo de catálogo/customizações coberto de ponta a ponta; gravação de roupas, operações de cabelo, seleção de peça no Customizador, carregamento da sessão e validação de conjuntos salvos em Roupas DEV têm fronteiras/testes próprios. Restam mapear/decompor os workspaces maiores e ampliar cenários de reabertura. |
 | 4 | Studio, Editor V6 e fluxos de vídeo | Em andamento | Criação/duplicação e impressão do Studio extraídas; miniatura 480×270 corrigida; paridade Turbo e exportação facial 720p/1080p aprovadas. A impressão foi validada do canvas ao handler IPC com fixture de arquivos sintética. A antiga tela Video Studio não tem rota, mas as bibliotecas legadas seguem ativas em Roteiros e como origem de mídia do Editor V6. Teste de cancelamento do worker cobre espera do compositor. Restam medições e validação comparativa dos workers de exportação. |
-| 5 | Roteiros, Base de Vídeos, Opções, componentes e CSS | Em andamento | Biblioteca continua dona dos arquivos/IDs; Roteiros mantém metadados e referências. Guardas, canais, fila, carregamento, listagem, publicação, CRUD de categorias e exclusões da Base de Vídeos têm contratos testados; estilos e cálculos puros de Opções estão isolados. Restam importação, decomposição adicional dos workspaces e CSS por feature. |
+| 5 | Roteiros, Base de Vídeos, Opções, componentes e CSS | Em andamento | Biblioteca continua dona dos arquivos/IDs; Roteiros mantém metadados e referências. Guardas, canais, fila, carregamento, listagem, publicação, CRUD de categorias, importação e exclusões da Base de Vídeos têm contratos testados; estilos e cálculos puros de Opções estão isolados. Restam decomposição adicional dos workspaces e CSS por feature. |
 | 6 | Performance, CI e consolidação | Em andamento | Workflow da Dev-V2 roda gates gerais e Editor V6 por plataforma; build Windows é reutilizado pelos testes MP4. Baseline repetível do cenário médio do Editor V6 registrada e captura IPC passou a ser estruturada. Restam medições de inicialização, Studio, outros workspaces e exportação, além de comparações repetidas antes de otimizar. |
 
 ## Fatias implementadas
@@ -300,6 +300,15 @@ O Node test runner não resolvia imports relativos extensionless `.ts` usados po
 - **Commit local:** `63e2c2b` (`refactor: isolate Base Videos category edits`).
 - **Propriedade:** Biblioteca de Mídia continua dona dos arquivos/IDs e Base de Vídeos das categorias e metadados; não houve alteração de schema ou escrita direta fora dos serviços atuais.
 
+### Importação de rascunhos da Base de Vídeos
+
+- **Fronteira extraída:** `importBaseVideoDraft` coordena o seletor da Biblioteca de Mídia, gravação dos metadados iniciais, publicação do rascunho na sessão e reconhecimento posterior da duração. `BaseVideosPage` permanece dona da UI, do estado `busy` e das atualizações visuais injetadas.
+- **Propriedade e compensação:** Biblioteca continua criando e mantendo o arquivo e seu ID; Base de Vídeos grava os metadados pelo serviço próprio. Se essa gravação falhar depois da importação, a compensação continua chamando `baseVideos.deleteVideo`, que mantém seus guards de referências e a coordenação da exclusão. Se somente o reconhecimento da duração falhar, o vídeo permanece como rascunho, conforme antes.
+- **Testes sintéticos:** cinco cenários cobrem importação e ordem de publicação, cancelamento, falha de metadados com compensação, falha na duração sem apagar o rascunho e delegação/liberação do busy pela página. Testes não acessam a biblioteca ou perfil reais.
+- **Verificações:** `npm run test:refactor` passou com 641 testes na suíte principal e todos os scripts encadeados; importação 5/5; typecheck, audit arquitetural (585 arquivos TS/TSX), build e `git diff --check` passaram.
+- **Commit local:** `9e6643d` (`refactor: isolate Base Videos draft import`).
+- **Contratos:** IPCs, IDs, formatos persistidos e ordem de compensação não mudaram.
+
 ## Reconciliação das falhas da baseline
 
 As falhas observadas na execução inicial da suíte em `f416a02` foram investigadas e reconciliadas:
@@ -351,4 +360,5 @@ As falhas observadas na execução inicial da suíte em `f416a02` foram investig
 | `210e0d1` | Documenta o limite de validação dos vínculos de conjuntos salvos de Roupas DEV | Local em `Dev-V2`; sem publicação. |
 | `6f053fb` | Extrai comandos de impressão do Studio e cobre a exportação completa até o IPC | Local em `Dev-V2`; sem publicação. |
 | `63e2c2b` | Extrai criação e renomeação de categorias da Base de Vídeos com testes de falha | Local em `Dev-V2`; sem publicação. |
+| `9e6643d` | Extrai a importação de rascunhos da Base com compensação testada | Local em `Dev-V2`; sem publicação. |
 
