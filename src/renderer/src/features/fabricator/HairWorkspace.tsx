@@ -1,16 +1,17 @@
 import { projectForOriginalPreview } from '../../../../shared/fabricatorModelViews'
 import { useModelSourceRefresh } from './models/useModelSourceRefresh'
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type Dispatch, type PointerEvent, type SetStateAction } from 'react'
-import type { FabricatorProject, FabricatorSlotSummary, HairAsset as HairAssetData, HairStyle, HairStyleAsset, HairStyleSave, HairStyleSummary, HairTransform, HairWorkspace as HairWorkspaceData, ModelPart } from '../../../../shared/fabricator'
+import type { FabricatorProject, FabricatorSlotSummary, HairAsset as HairAssetData, HairStyle, HairStyleSummary, HairTransform, HairWorkspace as HairWorkspaceData, ModelPart } from '../../../../shared/fabricator'
 import type { HairPartId } from '../../../../shared/customizer'
 import { hairCategories, type HairAssetSide } from '../../../../shared/hairCategories'
-import { emptyHairTransform, normalizeHairTransforms } from '../../../../shared/hairPersistence'
+import { emptyHairTransform } from '../../../../shared/hairPersistence'
 import { HairPiecePreview as HairPiece } from './HairPiecePreview'
 import { HairDeformationPreview } from './HairDeformationPreview'
 import { HairImportModal } from './HairImportModal'
 import { HairGridReviewModal } from './HairGridReviewModal'
 import { defaultHairGridSplits, type HairGridSplits } from './hairGridLayout'
 import { runHairProcessor, type HairProcessorCut } from './hairProcessorClient'
+import { defaultHairCategoriesBySide, saveHairStyleDraft } from './hairStyleSaveCommand'
 import { Icon } from '../../ui/components/Icon'
 import { usePreviewBackground } from '../../ui/hooks/usePreviewBackground'
 import { usePaletteImport } from './usePaletteImport'
@@ -22,7 +23,7 @@ type HairAsset = HairAssetData
 type HairDrag = { pointerId: number; side: HairSide; clientX: number; clientY: number; x: number; y: number }
 type HairGridStyle = { front: HairAsset; back: HairAsset; sourceImageDataUrl: string; rowBoundary: number[] }
 type HairGridReview = { sourceImageDataUrl: string; fileName: string; tolerance: number; mode: 'auto' | 'green' | 'checker' }
-const defaultCategories: Record<HairSide, HairPartId> = { front: 'rearHair', back: 'backHair', fringe: 'frontHair' }
+const defaultCategories = defaultHairCategoriesBySide
 
 function headPart(project: FabricatorProject | null): ModelPart | null {
   return project?.parts.find((part) => /cabe[çc]a|head/i.test(part.name)) ?? null
@@ -648,56 +649,11 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
   }
 
   async function saveStyle(workspace: HairWorkspaceData, styleNameOverride = styleName, existingOverride: HairStyleSummary | null | undefined = activeStyleId && activeStyleId !== 'legacy-workspace' ? activeStyleSummary : undefined): Promise<HairStyle> {
-    const existing = existingOverride ?? undefined
-    const id = existing?.id ?? crypto.randomUUID()
-    const now = new Date().toISOString()
-    const front = workspace.front
-    const back = workspace.back
-    const fringe = workspace.fringe ?? null
-    const sourceImageDataUrl = workspace.sourceImageDataUrl
-    const assetMetadata = (asset: HairAsset | null) => asset ? {
-      width: asset.width,
-      height: asset.height,
-      ...(asset.hasDeformationOriginal ? {
-        hasDeformationOriginal: true,
-        deformationOriginalWidth: asset.deformationOriginalWidth,
-        deformationOriginalHeight: asset.deformationOriginalHeight,
-        deformationOriginalTransform: asset.deformationOriginalTransform
-      } : {})
-    } : null
-    const saved: HairStyleSave = {
-      schemaVersion: 1, id, modelSlot, name: styleNameOverride.trim().slice(0, 80),
-      categoryBySide: Object.fromEntries((['front', 'back', 'fringe'] as const).filter((side) => Boolean(workspace[side])).map((side) => [side, workspace.categoryBySide?.[side] ?? defaultCategories[side]])) as Partial<Record<HairSide, HairPartId>>,
-      front: assetMetadata(front),
-      back: assetMetadata(back),
-      fringe: assetMetadata(fringe),
-      transforms: workspace.transforms,
-      sourceImageSaved: Boolean(sourceImageDataUrl),
-      sourceAppliesToDraft: Boolean(sourceImageDataUrl) && workspace.sourceAppliesToDraft !== false,
-      chromaTolerance: workspace.chromaTolerance ?? 70,
-      chromaMode: workspace.chromaMode ?? 'auto',
-      createdAt: existing?.createdAt ?? now, updatedAt: now
-    }
-    saved.transforms = normalizeHairTransforms(saved)
-    const assets: HairStyleAsset[] = []
-    for (const side of ['front', 'back', 'fringe'] as const) {
-      const asset = workspace[side]
-      if (!asset) continue
-      assets.push({ id: side, dataUrl: asset.dataUrl })
-      if (asset.hasDeformationOriginal) {
-        if (!asset.deformationOriginalDataUrl) throw new Error(`Cópia original ausente para restaurar ${hairCategories.find((item) => item.side === side)?.label ?? 'a peça de cabelo'}.`)
-        assets.push({ id: `${side}-deform-original` as HairStyleAsset['id'], dataUrl: asset.deformationOriginalDataUrl })
-      }
-    }
-    if (sourceImageDataUrl) assets.push({ id: 'source', dataUrl: sourceImageDataUrl })
-    await window.desktop.fabricator.saveHairStyle(modelSlot, saved, assets)
-    return {
-      ...saved,
-      front: saved.front && front ? { ...front } : null,
-      back: saved.back && back ? { ...back } : null,
-      fringe: saved.fringe && fringe ? { ...fringe } : null,
-      ...(sourceImageDataUrl ? { sourceImageDataUrl } : {})
-    }
+    return saveHairStyleDraft({ workspace, modelSlot, styleName: styleNameOverride, existing: existingOverride }, {
+      saveHairStyle: (slot, style, assets) => window.desktop.fabricator.saveHairStyle(slot, style, assets),
+      createId: () => crypto.randomUUID(),
+      now: () => new Date().toISOString()
+    })
   }
 
   async function openStyle(summary: HairStyleSummary) {
