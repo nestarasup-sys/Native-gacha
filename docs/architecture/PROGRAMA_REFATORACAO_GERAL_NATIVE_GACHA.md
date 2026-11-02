@@ -27,7 +27,7 @@ Este documento acompanha a execução das Fases 1–6 e complementa a baseline d
 | 0 | Auditoria e baseline arquitetural | Concluída antes deste programa | [Relatório da Fase 0](./AUDITORIA_REFATORACAO_GERAL_V1_FASE_0.md). |
 | 1 | Electron, IPC, persistência, backups e filas | Concluída | Diagnóstico de memória corrigido; ciclo de encerramento extraído e coberto; diferenças das filas mapeadas; backup, manutenção e segurança de janela passaram. Os gatilhos gerais de CI de `Dev-V2` ficam na Fase 6. |
 | 2 | Núcleo compartilhado de personagens | Concluída | Consumidores e regressões mapeados. Escala-base idêntica entre Studio e Editor V6 centralizada; renderizadores e contratos de exportação distintos mantidos. Testes de personagem/gênero/roupas articuladas executáveis por script dedicado. |
-| 3 | Fabricador e Customizador | Em andamento | Fluxo de catálogo/customizações coberto de ponta a ponta; gravação de roupas, operações de cabelo, seleção de peça no Customizador, carregamento da sessão e validação de conjuntos salvos em Roupas DEV têm fronteiras/testes próprios. Restam mapear/decompor os workspaces maiores e ampliar cenários de reabertura. |
+| 3 | Fabricador e Customizador | Em andamento | Fluxo de catálogo/customizações coberto de ponta a ponta; gravação de roupas, operações de cabelo, seleção de peça no Customizador, carregamento/hidratação de slot com guards de seleção obsoleta e validação de conjuntos salvos em Roupas DEV têm fronteiras/testes próprios. Restam mapear/decompor os workspaces maiores e ampliar cenários de reabertura. |
 | 4 | Studio, Editor V6 e fluxos de vídeo | Em andamento | Criação/duplicação e impressão do Studio extraídas; miniatura 480×270 corrigida; paridade Turbo e exportação facial 720p/1080p aprovadas. A impressão foi validada do canvas ao handler IPC com fixture de arquivos sintética. A antiga tela Video Studio não tem rota, mas as bibliotecas legadas seguem ativas em Roteiros e como origem de mídia do Editor V6. Teste de cancelamento do worker cobre espera do compositor. Restam medições e validação comparativa dos workers de exportação. |
 | 5 | Roteiros, Base de Vídeos, Opções, componentes e CSS | Em andamento | Biblioteca continua dona dos arquivos/IDs; Roteiros mantém metadados e referências. Guardas, canais, fila, carregamento, listagem, publicação, CRUD de categorias, importação e exclusões da Base de Vídeos têm contratos testados; estilos da Base de Vídeos e cálculos puros de Opções têm módulos por feature. Restam decomposição adicional dos workspaces e migração gradual do CSS com revisão visual. |
 | 6 | Performance, CI e consolidação | Em andamento | Workflow da Dev-V2 roda gates gerais e Editor V6 por plataforma; build Windows é reutilizado pelos testes MP4. Baseline repetível do cenário médio do Editor V6 registrada e captura IPC passou a ser estruturada. Restam medições de inicialização, Studio, outros workspaces e exportação, além de comparações repetidas antes de otimizar. |
@@ -317,6 +317,15 @@ O Node test runner não resolvia imports relativos extensionless `.ts` usados po
 - **Commit local:** `6afe17e` (`refactor: scope Base Videos styles`).
 - **Limite:** regras mistas globais e outros blocos de Base de Vídeos espalhados no stylesheet permanecem onde estavam para migração individual posterior; não houve alteração de aparência intencional.
 
+### Carregamento e hidratação de slot do Fabricador
+
+- **Fronteira extraída:** `loadFabricatorSlotForEditing` carrega o projeto e o histórico, mantém o fallback de histórico vazio e chama `prepareLoadedFabricatorProject`. `FabricatorPage` ainda controla a troca visual do slot, o salvamento anterior, o reset dos editores e a publicação final do projeto.
+- **Semântica preservada:** a checagem de geração ocorre após a leitura do projeto, após histórico e depois da hidratação; histórico é instalado antes da preparação, como no fluxo anterior. Projeto ausente mantém o erro existente. Se o histórico falhar, o modelo ainda abre com undo/redo vazios e o aviso atual; seleção obsoleta não publica um snapshot antigo.
+- **Testes sintéticos:** seis cenários cobrem ordem, fallback, projeto ausente e respostas obsoletas em cada etapa, além da integração estrutural da página. Nenhum projeto salvo foi carregado nos testes.
+- **Verificações:** `npm run test:refactor` passou com 641 testes na suíte principal e todos os scripts encadeados; carregamento de slot 6/6; typecheck, audit arquitetural (586 arquivos TS/TSX), build e `git diff --check` passaram.
+- **Commit local:** `c980558` (`refactor: isolate Fabricator slot hydration`).
+- **Pendências:** o restante de `FabricatorPage` segue concentrando seleção de peças, processamento/importação de imagem e geometria; a decomposição deve continuar por fluxo e manter as filas e guards existentes.
+
 ## Reconciliação das falhas da baseline
 
 As falhas observadas na execução inicial da suíte em `f416a02` foram investigadas e reconciliadas:
@@ -370,4 +379,5 @@ As falhas observadas na execução inicial da suíte em `f416a02` foram investig
 | `63e2c2b` | Extrai criação e renomeação de categorias da Base de Vídeos com testes de falha | Local em `Dev-V2`; sem publicação. |
 | `9e6643d` | Extrai a importação de rascunhos da Base com compensação testada | Local em `Dev-V2`; sem publicação. |
 | `6afe17e` | Move o primeiro bloco integral de CSS da Base de Vídeos sem alterar declarações | Local em `Dev-V2`; sem publicação. |
+| `c980558` | Extrai carregamento/hidratação de slot e protege gerações obsoletas do Fabricador | Local em `Dev-V2`; sem publicação. |
 
