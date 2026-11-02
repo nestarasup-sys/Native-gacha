@@ -4,7 +4,7 @@ import type { VideoLibraryItem } from '../../../../shared/mediaLibrary'
 import { Icon } from '../../ui/components/Icon'
 import { registerPendingWriteFlusher } from '../../ui/pendingPersistence'
 import { createBaseVideoDetailsSaveQueue } from './baseVideoDetailsSaveQueue'
-import { deleteBaseVideoCategory } from './baseVideoCategoryCommands'
+import { createBaseVideoCategory, deleteBaseVideoCategory, renameBaseVideoCategory } from './baseVideoCategoryCommands'
 import { selectVisibleBaseVideos, type BaseVideoListSort, type BaseVideoTimelineFilter } from './baseVideoListModel'
 import { publishBaseVideoDraft } from './publishBaseVideoDraft'
 import { deleteBaseVideosSequentially } from './deleteBaseVideosSequentially'
@@ -116,10 +116,14 @@ export function BaseVideosPage() {
     if (!categoryVideoId || !categoryName.trim() || busy) return
     setBusy(true); setCategoryError(null)
     try {
-      const category = await window.desktop.baseVideos.createCategory(categoryName)
-      setCategories((current) => [...current, category].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')))
-      updateDetails(categoryVideoId, { categoryId: category.id })
-      setCategoryName('')
+      await createBaseVideoCategory({
+        name: categoryName,
+        videoId: categoryVideoId,
+        createCategory: (name) => window.desktop.baseVideos.createCategory(name),
+        appendCategory: (category) => setCategories((current) => [...current, category].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'))),
+        assignCategory: (videoId, categoryId) => updateDetails(videoId, { categoryId }),
+        clearName: () => setCategoryName('')
+      })
     } catch (reason) { setCategoryError(reason instanceof Error ? reason.message : 'Não foi possível criar a categoria.') }
     finally { setBusy(false) }
   }
@@ -128,9 +132,13 @@ export function BaseVideosPage() {
     if (!categoryEditValue.trim() || busy) return
     setBusy(true); setCategoryError(null)
     try {
-      const renamed = await window.desktop.baseVideos.renameCategory(id, categoryEditValue)
-      setCategories((current) => current.map((category) => category.id === id ? renamed : category).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')))
-      setCategoryEditingId(null)
+      await renameBaseVideoCategory({
+        categoryId: id,
+        name: categoryEditValue,
+        renameCategory: (categoryId, name) => window.desktop.baseVideos.renameCategory(categoryId, name),
+        replaceCategory: (renamed) => setCategories((current) => current.map((category) => category.id === id ? renamed : category).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'))),
+        finishEditing: () => setCategoryEditingId(null)
+      })
     } catch (reason) { setCategoryError(reason instanceof Error ? reason.message : 'Não foi possível renomear a categoria.') }
     finally { setBusy(false) }
   }
