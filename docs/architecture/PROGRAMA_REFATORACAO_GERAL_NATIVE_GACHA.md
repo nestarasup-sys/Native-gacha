@@ -30,7 +30,7 @@ Este documento acompanha a execução das Fases 1–6 e complementa a baseline d
 | 3 | Fabricador e Customizador | Em andamento | Fluxo de catálogo/customizações coberto de ponta a ponta; primeira fronteira de gravação do Fabricador extraída. Restam mapear/decompor os maiores workspaces e ampliar cenários de reabertura. |
 | 4 | Studio, Editor V6 e fluxos de vídeo | Em andamento | Criação/duplicação de cenas do Studio extraídas e testadas; comandos próprios do Editor V6, timeline e exportação permanecem separados. Restam a revisão de vídeos, workers e paridade de exportação. |
 | 5 | Roteiros, Base de Vídeos, Opções, componentes e CSS | Em andamento | Biblioteca continua dona dos arquivos/IDs; Roteiros mantém metadados e referências. Guardas de exclusão têm testes sintéticos; canais da Base de Vídeos passaram a usar mapa tipado compartilhado por preload/Main; estilos e cálculos puros de Opções foram isolados. Restam decomposição dos workspaces e etapas adicionais de CSS. |
-| 6 | Performance, CI e consolidação | Não iniciada | Medir antes/depois; remover legado somente após comprovar ausência de consumidores. |
+| 6 | Performance, CI e consolidação | Em andamento | Workflow da Dev-V2 agora roda gates gerais e Editor V6 por plataforma; build Windows é reutilizado pelos testes MP4 via artifact limitado aos diretórios compilados. Restam baseline de performance comum, medição de gargalos e cobertura dos outros módulos. |
 
 ## Fatias implementadas
 
@@ -127,6 +127,16 @@ O Node test runner não resolvia imports relativos extensionless `.ts` usados po
 - **Commit local:** `e338db9` (`refactor: centralize Base de Vídeos IPC contract`).
 - **Pendências:** Roteiros e as demais APIs não tipadas no preload seguem separadas nesta fase; não houve rename de canal nem mudança de comportamento de exclusão.
 
+### Gates gerais de CI na Dev-V2 e reutilização do bundle
+
+- **Gates gerais:** o workflow `editor-v6-parity.yml` passa a rodar `audit:architecture`, `test:refactor`, `test:geometry` e `typecheck` em um job Ubuntu para cada push ou PR da Dev-V2. Os testes de timeline/export do Editor V6 continuam em Linux e Windows.
+- **Build sem repetição:** o job Windows da matriz faz o único build do workflow e publica por um dia os diretórios `out/main`, `out/preload` e `out/renderer`. O job de paridade MP4 depende da matriz e baixa esse bundle; não executa outro build. A seleção exclui todo o restante de `out/`, que localmente continha saídas de outras ferramentas/testes e não deve ser transportado como artifact.
+- **Compatibilidade do export:** o artifact inclui `out/renderer/editor-v6-export.html`, os assets renderer e o preload usados pelos testes offscreen. O teste facial gera no próprio job o fixture de motion em `out/editor-v6-motion-check`; não precisa de dados locais transferidos.
+- **Validação:** YAML carregado e estrutura do workflow conferida com `js-yaml` e assertions locais (gates, matriz, dependência, nomes/paths do artifact e ausência de build duplicado). `npm run test:refactor`, `npm run test:geometry` (5/5), `npm run typecheck`, `npm run audit:architecture` e `npm run build` passaram localmente.
+- **Limite da verificação:** não houve execução hospedada do GitHub Actions nesta alteração; o upload/download de artifact depende da próxima execução na Dev-V2.
+- **Commit local:** `2c3d5a3` (`ci: add Dev-V2 general gates and reuse export bundle`).
+- **Pendências:** estabelecer medições repetíveis para inicialização, telas, memória, gravação, timeline e exportação; revisar os gates para cobertura dos fluxos restantes sem duplicar trabalho.
+
 ## Reconciliação das falhas da baseline
 
 As falhas observadas na execução inicial da suíte em `f416a02` foram investigadas e reconciliadas:
@@ -158,4 +168,5 @@ As falhas observadas na execução inicial da suíte em `f416a02` foram investig
 | `497079f` | Preserva guardas de referências de mídia de Roteiros e move CSS de Opções sem alterar regras | Local em `Dev-V2`; sem publicação. |
 | `6735283` | Extrai cálculos e alertas puros de Opções, com testes sintéticos | Local em `Dev-V2`; sem publicação. |
 | `e338db9` | Centraliza os nove canais IPC da Base de Vídeos no preload e no Main | Local em `Dev-V2`; sem publicação. |
+| `2c3d5a3` | Adiciona gates gerais para Dev-V2 e reutiliza o bundle Windows na paridade MP4 | Local em `Dev-V2`; sem publicação. |
 
