@@ -65,7 +65,7 @@
     "test:rendered-character-portrait-cache": "node --experimental-strip-types --test tests/rendered-character-portrait-cache.test.mjs",
     "test:fabricator-catalog": "node --experimental-strip-types --test tests/fabricator-model-catalog.test.mjs",
     "test:asset-flow": "node scripts/audit-wardrobe-flow.mjs",
-    "test:geometry": "node --test tests/shared-body-shape.test.cjs tests/studio-character-geometry.test.cjs",
+    "test:geometry": "node --experimental-strip-types --test tests/shared-body-shape.test.cjs tests/studio-character-geometry.test.cjs tests/shared-character-stage-geometry.test.mjs",
     "test:character-flow": "node --experimental-strip-types --test tests/character-production-flow.test.mjs",
     "test:fabricator": "node --experimental-strip-types --test tests/fabricator-model-catalog.test.mjs tests/fabricator-wardrobe-catalog.test.mjs tests/fabricator-image-processing-contract.test.mjs tests/fabricator-eye-sheet-processing.test.mjs",
     "test:model-source": "node --experimental-strip-types --test tests/model-source-publish.test.mjs tests/model-source-dimensions.test.cjs tests/model-source-download.test.mjs tests/model-source-compose-strategy.test.mjs",

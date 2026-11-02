@@ -5,12 +5,18 @@ const fs = require('node:fs')
 const path = require('node:path')
 const ts = require('typescript')
 
-const sourcePath = path.join(__dirname, '../src/shared/studioCharacterGeometry.ts')
-const source = fs.readFileSync(sourcePath, 'utf8')
-const compiled = ts.transpile(source, { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 })
-const loadedModule = { exports: {} }
-new Function('require', 'module', 'exports', compiled)(require, loadedModule, loadedModule.exports)
-const { fitStudioCharacterToStage } = loadedModule.exports
+function loadTypeScriptModule(sourcePath) {
+  const source = fs.readFileSync(sourcePath, 'utf8')
+  const compiled = ts.transpile(source, { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 })
+  const loadedModule = { exports: {} }
+  const loadDependency = (specifier) => specifier.endsWith('.ts')
+    ? loadTypeScriptModule(path.resolve(path.dirname(sourcePath), specifier))
+    : require(specifier)
+  new Function('require', 'module', 'exports', compiled)(loadDependency, loadedModule, loadedModule.exports)
+  return loadedModule.exports
+}
+
+const { fitStudioCharacterToStage } = loadTypeScriptModule(path.join(__dirname, '../src/shared/studioCharacterGeometry.ts'))
 
 test('Studio uses the neutral character bounds as the same base scale for every selected pose', () => {
   const referenceRendered = { width: 1000, height: 1000 }
