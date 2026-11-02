@@ -4,17 +4,20 @@ import type {
   DataBackupSummary, DataMigrationProgress as MigrationProgress, DataMigrationSummary as MigrationSummary,
   DataStorageSummary as StorageSummary, LocalDiagnosticEvent, RuntimeDiagnosticsSnapshot
 } from '../../../../shared/dataManagement'
-import { diagnosticAlerts, domainLabels, formatBytes, formatDate, groupLabels, totalStorageBytes } from './optionsDiagnostics'
+import { diagnosticAlerts, domainLabels, formatBytes, formatDate, groupLabels, latestDiagnosticFailure, totalStorageBytes } from './optionsDiagnostics'
 import { createOptionsBackupCommands } from './optionsBackupCommands'
 import { createOptionsMigrationCommands } from './optionsMigrationCommands'
 import { LogsDevSectionNavigation } from './LogsDevSectionNavigation'
 import { type LogsDevSectionId } from './logsDevSections'
+import { DiagnosticEventBrowser } from './DiagnosticEventBrowser'
+import { DiagnosticsReportPreviewDialog } from './DiagnosticsReportPreviewDialog'
+import { RuntimeProcessMetricsTable } from './RuntimeProcessMetricsTable'
 
 type StoredBackup = DataBackupSummary
-type EventFilter = 'all' | 'error' | 'warning'
 
 export function LogsDevPage() {
   const [activeSection, setActiveSection] = useState<LogsDevSectionId>('overview')
+  const [reportPreviewOpen, setReportPreviewOpen] = useState(false)
   const [summary, setSummary] = useState<StorageSummary | null>(null)
   const [storageBusy, setStorageBusy] = useState(false)
   const [storageError, setStorageError] = useState<string | null>(null)
@@ -26,7 +29,6 @@ export function LogsDevPage() {
   const [eventsLoaded, setEventsLoaded] = useState(false)
   const [eventsBusy, setEventsBusy] = useState(false)
   const [eventsError, setEventsError] = useState<string | null>(null)
-  const [eventFilter, setEventFilter] = useState<EventFilter>('all')
   const [reportBusy, setReportBusy] = useState(false)
   const [reportMessage, setReportMessage] = useState<string | null>(null)
   const [reportError, setReportError] = useState<string | null>(null)
@@ -115,10 +117,10 @@ export function LogsDevPage() {
   }, [])
 
   const alerts = useMemo(() => diagnosticAlerts(events, summary, migration, backups), [events, summary, migration, backups])
+  const latestFailure = useMemo(() => latestDiagnosticFailure(events), [events])
   const errorCount = events.filter((event) => event.severity === 'error').length
   const warningCount = events.filter((event) => event.severity === 'warning').length
   const totalBytes = summary ? totalStorageBytes(summary) : 0
-  const visibleEvents = [...events].reverse().filter((event) => eventFilter === 'all' || event.severity === eventFilter).slice(0, 50)
   const allMigrated = !!migration?.domains.length && migration.domains.every((domain) => domain.state === 'active' || domain.state === 'verified')
   const pendingDomains = migration?.domains.filter((domain) => domain.state !== 'active' && domain.state !== 'verified').length ?? 0
   const healthState = alerts.some((alert) => alert.level === 'error') ? 'error' : alerts.some((alert) => alert.level === 'warning') ? 'warning' : 'ok'
@@ -128,9 +130,16 @@ export function LogsDevPage() {
       <header className="options-page-header">
         <div><span className="options-eyebrow">FERRAMENTAS DO APLICATIVO</span><h1>Logs Dev</h1><p>Diagnóstico, registros, desempenho, armazenamento e recuperação do aplicativo.</p></div>
         <div className="options-header-actions">
-          <button className="options-button primary" type="button" onClick={() => void saveReport()} disabled={reportBusy}>{reportBusy ? 'Preparando…' : 'Salvar relatório'}</button>
+          <button className="options-button primary" type="button" onClick={() => setReportPreviewOpen(true)} disabled={reportBusy}>{reportBusy ? 'Preparando…' : 'Salvar relatório'}</button>
         </div>
       </header>
+
+      <DiagnosticsReportPreviewDialog
+        open={reportPreviewOpen}
+        busy={reportBusy}
+        onCancel={() => setReportPreviewOpen(false)}
+        onConfirm={() => { setReportPreviewOpen(false); void saveReport() }}
+      />
 
       <LogsDevSectionNavigation selected={activeSection} onSelect={setActiveSection} />
       {(reportMessage || reportError) && <p className={`options-inline-message${reportError ? ' error' : ''}`} role={reportError ? 'alert' : 'status'}>{reportError ?? reportMessage}</p>}
@@ -138,19 +147,21 @@ export function LogsDevPage() {
       {activeSection === 'overview' && <>
       <section className={`options-health options-health-${healthState}`} aria-label="Estado geral">
         <div className="options-health-icon" aria-hidden="true">{healthState === 'error' ? '!' : healthState === 'warning' ? '△' : '✓'}</div>
-        <div className="options-health-copy"><strong>{healthState === 'error' ? 'Há problemas registrados' : healthState === 'warning' ? 'Há itens para conferir' : summary ? 'Verificações locais concluídas' : 'Registros locais carregados'}</strong><span>{eventsLoaded ? `${errorCount} erros · ${warningCount} avisos registrados` : 'Carregando os registros recentes…'}{summary ? ` · armazenamento medido ${formatDate(summary.disk.measuredAt)}` : ''}</span></div>
+        <div className="options-health-copy"><strong>{healthState === 'error' ? 'Há problemas registrados' : healthState === 'warning' ? 'Há itens para conferir' : !eventsLoaded ? 'Carregando os registros locais' : summary ? 'Verificações concluídas sem problemas conhecidos' : 'Sem problemas nos eventos consultados'}</strong><span>{eventsLoaded ? `${errorCount} erros · ${warningCount} avisos nos últimos 500 eventos` : 'A leitura dos eventos está em andamento.'}{summary ? ` · armazenamento medido ${formatDate(summary.disk.measuredAt)}` : ' · armazenamento ainda não medido'}</span></div>
         <span className="options-live-badge"><i /> Sem varreduras em segundo plano</span>
       </section>
 
       <section className="options-overview-grid" aria-label="Resumo">
         <article className="options-overview-card"><span>Armazenamento local</span><strong>{summary ? formatBytes(totalBytes) : 'Não medido'}</strong><small>{summary ? `${Object.values(summary.disk.groups).reduce((n, group) => n + group.files, 0).toLocaleString('pt-BR')} arquivos · ${storageScanMs ?? 0} ms nesta leitura` : 'Faça uma leitura sob demanda'}</small></article>
-        <article className="options-overview-card"><span>Processo principal · RSS</span><strong>{runtime ? formatBytes(runtime.memory.mainRssBytes) : 'Não medido'}</strong><small>{runtime ? `Amostra instantânea · ${formatDate(runtime.measuredAt)}` : 'Uma amostra instantânea, sem histórico contínuo'}</small></article>
-        <article className="options-overview-card"><span>Problemas recentes</span><strong>{errorCount.toLocaleString('pt-BR')} erros</strong><small>{warningCount.toLocaleString('pt-BR')} avisos · até 500 eventos locais</small></article>
+        <article className="options-overview-card"><span>Processo principal</span><strong>{runtime ? 'Respondendo' : runtimeError ? 'Falha na consulta' : 'Não consultado'}</strong><small>{runtime ? `Main respondeu em ${formatDate(runtime.measuredAt)}` : runtimeError ? 'Tente uma nova leitura em Desempenho' : 'Estado ainda não verificado por uma leitura'}</small></article>
+        <article className="options-overview-card"><span>Última falha registrada</span><strong>{latestFailure ? formatDate(latestFailure.at) : eventsLoaded ? 'Nenhuma nos eventos consultados' : 'Não consultado'}</strong><small>{latestFailure ? `${latestFailure.domain ?? 'Domínio não classificado'} · ${latestFailure.code}` : 'Considera os últimos 500 eventos locais disponíveis'}</small></article>
+        <article className="options-overview-card"><span>Versões do runtime</span><strong>{runtime ? `App ${runtime.appVersion}` : 'Não lidas'}</strong><small>{runtime ? `Electron ${runtime.electronVersion} · Chromium ${runtime.chromiumVersion} · Node ${runtime.nodeVersion}` : 'Disponíveis após uma leitura de desempenho'}</small></article>
+        <article className="options-overview-card"><span>Última leitura de desempenho</span><strong>{runtime ? formatDate(runtime.measuredAt) : 'Não medida'}</strong><small>{runtime ? `${runtime.processMetrics.processes.length} processos identificados · CPU ${runtime.processMetrics.sampleIntervalMs === null ? 'sem intervalo anterior' : `média em ${(runtime.processMetrics.sampleIntervalMs / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} s`}` : 'A leitura é manual e somente sob demanda'}</small></article>
         <article className="options-overview-card"><span>Backups manuais</span><strong>{backups.length.toLocaleString('pt-BR')}</strong><small>{backups.filter((backup) => backup.verifiedAt !== null).length.toLocaleString('pt-BR')} verificados · nunca removidos automaticamente</small></article>
       </section>
 
       <section className="options-panel" aria-label="Alertas e problemas">
-        <header className="options-panel-header"><div><span className="options-eyebrow">RESUMO DE SAÚDE</span><h2>O que precisa de atenção</h2></div><span className="options-count-pill">{alerts.length} itens</span></header>
+        <header className="options-panel-header"><div><span className="options-eyebrow">RESUMO DE SAÚDE</span><h2>O que precisa de atenção</h2></div><div className="options-header-actions"><span className="options-count-pill">{alerts.length} itens</span><button className="options-button secondary compact" type="button" onClick={() => setActiveSection('events')}>Investigar eventos</button></div></header>
         <div className="options-alert-list">
           {alerts.map((alert, index) => <article className={`options-alert options-alert-${alert.level}`} key={`${alert.title}-${index}`}><span className="options-alert-mark">{alert.level === 'error' ? '!' : alert.level === 'warning' ? '△' : 'i'}</span><div><strong>{alert.title}</strong><small>{alert.detail}</small></div></article>)}
         </div>
@@ -187,6 +198,7 @@ export function LogsDevPage() {
             <article><span>Heap JavaScript principal</span><strong>{formatBytes(runtime.memory.mainHeapUsedBytes)}</strong><small>Memória usada pelo JavaScript do processo principal</small></article>
             <article><span>Memória externa principal</span><strong>{formatBytes(runtime.memory.mainExternalBytes)}</strong><small>Buffers e recursos externos reportados pelo Node</small></article>
           </div>
+          <RuntimeProcessMetricsTable snapshot={runtime.processMetrics} />
           <details className="options-runtime-details"><summary>Versões e campos adicionais</summary><div className="options-version-grid"><span>Aplicativo <b>{runtime.appVersion}</b></span><span>Electron <b>{runtime.electronVersion}</b></span><span>Chromium <b>{runtime.chromiumVersion}</b></span><span>Node <b>{runtime.nodeVersion}</b></span><span>Sistema <b>{runtime.platform} · {runtime.architecture}</b></span><span>Tempo aberto <b>{Math.floor(runtime.uptimeSeconds / 3600)} h {Math.floor(runtime.uptimeSeconds % 3600 / 60)} min</b></span><span>Pico da interface <b>{runtime.memory.rendererPeakWorkingSetBytes === null ? 'Indisponível' : formatBytes(runtime.memory.rendererPeakWorkingSetBytes)}</b></span><span>Compartilhada <b>{runtime.memory.rendererSharedBytes === null ? 'Indisponível' : formatBytes(runtime.memory.rendererSharedBytes)}</b></span></div></details>
           <small className="options-measure-time">Medição: {formatDate(runtime.measuredAt)}</small>
         </>}
@@ -194,14 +206,14 @@ export function LogsDevPage() {
       </>}
 
       {activeSection === 'events' && <>
-      <section className="options-panel" aria-label="Logs locais">
-        <header className="options-panel-header"><div><span className="options-eyebrow">REGISTROS LOCAIS</span><h2>Erros e avisos recentes</h2><p>Captura eventos de erro da interface e avisos do processo. Mantém no máximo 500 registros curtos e remove caminhos locais. Mensagens técnicas podem conter detalhes específicos; revise antes de compartilhar um relatório.</p></div><div className="options-event-actions"><select aria-label="Filtrar registros" value={eventFilter} onChange={(event) => setEventFilter(event.target.value as EventFilter)}><option value="all">Todos</option><option value="error">Erros</option><option value="warning">Avisos</option></select><button className="options-button secondary" type="button" onClick={() => void refreshEvents()} disabled={eventsBusy}>{eventsBusy ? 'Lendo…' : 'Atualizar'}</button></div></header>
-        {eventsError && <p className="options-inline-message error" role="alert">{eventsError}</p>}
-        {!eventsBusy && eventsLoaded && visibleEvents.length === 0 && <div className="options-empty"><strong>{events.length ? 'Nenhum evento neste filtro' : 'Nenhum erro ou aviso registrado'}</strong><span>Novas falhas capturadas aparecerão aqui automaticamente.</span></div>}
-        <div className="options-event-list" aria-busy={eventsBusy}>
-          {visibleEvents.map((event) => <article className={`options-event options-event-${event.severity}`} key={event.id}><span className="options-event-severity">{event.severity === 'error' ? 'Erro' : event.severity === 'warning' ? 'Aviso' : 'Info'}</span><div className="options-event-copy"><strong>{event.code}</strong><p>{event.message}</p><small>{formatDate(event.at)}{event.route ? ` · ${event.route}` : ''} · {event.source === 'main' ? 'Processo principal' : 'Interface'}</small></div></article>)}
-        </div>
-      </section>
+        <DiagnosticEventBrowser
+          events={events}
+          busy={eventsBusy}
+          loaded={eventsLoaded}
+          error={eventsError}
+          onRefresh={() => void refreshEvents()}
+          onExport={(eventIds) => window.desktop.dataManagement.exportLocalDiagnosticEvents(eventIds)}
+        />
       </>}
 
       {activeSection === 'backups' && <>

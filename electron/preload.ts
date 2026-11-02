@@ -2,6 +2,7 @@ import { createFabricatorInvoker, fabricatorIpcChannels } from '../src/shared/fa
 import { createStudioInvoker } from '../src/shared/studioIpcChannels'
 import { createEditorV6Invoker } from '../src/shared/editorV6IpcChannels'
 import { createBaseVideosInvoker } from '../src/shared/baseVideosIpcChannels'
+import { isDiagnosticEventIdListWithinBridgeLimits, isDiagnosticEventInputWithinBridgeLimits } from './application/diagnosticEventInput'
 import { contextBridge, ipcRenderer } from 'electron'
 import type { FabricatorDesktopApi, FabricatorModelSourcePublishRequest } from '../src/shared/fabricator'
 import type { CustomizerDesktopApi } from '../src/shared/customizer'
@@ -10,7 +11,7 @@ import type { EditorV6DesktopApi } from '../src/shared/editorV6'
 import type { RoteirosDesktopApi } from '../src/shared/roteiros'
 import type { BaseVideosDesktopApi } from '../src/shared/baseVideos'
 import type { MediaLibraryDesktopApi } from '../src/shared/mediaLibrary'
-import type { DataManagementDesktopApi, DataMigrationProgress } from '../src/shared/dataManagement'
+import type { DataManagementDesktopApi, DataMigrationProgress, LocalDiagnosticEventInput } from '../src/shared/dataManagement'
 import type { ImageImportDesktopApi } from '../src/shared/imageImport'
 
 const invokeFabricator = createFabricatorInvoker(ipcRenderer)
@@ -169,12 +170,22 @@ const roteirosApi: RoteirosDesktopApi = {
   deleteRoteiroUiGif: (id) => ipcRenderer.invoke('roteiros:ui-gifs:delete', id)
 }
 
+function recordDiagnosticEvent(event: LocalDiagnosticEventInput): Promise<void> {
+  if (!isDiagnosticEventInputWithinBridgeLimits(event)) {
+    return Promise.reject(new Error('Evento de diagnóstico excede o limite permitido.'))
+  }
+  return ipcRenderer.invoke('app:diagnostics:record', event)
+}
+
 const dataManagementApi: DataManagementDesktopApi = {
   getAppDataStorageSummary: () => ipcRenderer.invoke('app:data-storage-summary'),
   listLocalDiagnosticEvents: () => ipcRenderer.invoke('app:diagnostics:list'),
-  recordLocalDiagnosticEvent: (event) => ipcRenderer.invoke('app:diagnostics:record', event),
+  recordLocalDiagnosticEvent: recordDiagnosticEvent,
   getRuntimeDiagnostics: () => ipcRenderer.invoke('app:diagnostics:runtime'),
   saveDiagnosticsReport: () => ipcRenderer.invoke('app:diagnostics:export'),
+  exportLocalDiagnosticEvents: (eventIds) => isDiagnosticEventIdListWithinBridgeLimits(eventIds)
+    ? ipcRenderer.invoke('app:diagnostics:export-events', eventIds)
+    : Promise.reject(new Error('Seleção de eventos de diagnóstico inválida.')),
   getDataMigrationSummary: () => ipcRenderer.invoke('app:data-migration:prepare'),
   runDataMigration: () => ipcRenderer.invoke('app:data-migration:run-all'),
   pauseDataMigration: () => ipcRenderer.invoke('app:data-migration:pause'),

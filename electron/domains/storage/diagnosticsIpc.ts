@@ -1,7 +1,8 @@
 import type { IpcMain, IpcMainInvokeEvent, SaveDialogOptions } from 'electron'
 import { basename } from 'node:path'
+import { isDiagnosticEventIdListWithinBridgeLimits } from '../../application/diagnosticEventInput'
 import type {
-  DataBackupSummary, DataStorageSummary, DiagnosticsReportSaveResult,
+  DataBackupSummary, DataStorageSummary, DiagnosticEventExportResult, DiagnosticsReportSaveResult,
   LocalDiagnosticEvent, LocalDiagnosticEventInput, RuntimeDiagnosticsSnapshot
 } from '../../../src/shared/dataManagement'
 
@@ -67,5 +68,31 @@ export function registerDiagnosticsHandlers(deps: {
     }
     await deps.writeFile(choice.filePath, JSON.stringify(report, null, 2))
     return { saved: true, fileName: basename(choice.filePath) }
+  })
+
+  deps.ipcMain.handle('app:diagnostics:export-events', async (event, input: unknown): Promise<DiagnosticEventExportResult> => {
+    deps.assertTrustedSender(event)
+    if (!isDiagnosticEventIdListWithinBridgeLimits(input)) throw new Error('Seleção de eventos de diagnóstico inválida.')
+
+    const availableEvents = new Map((await deps.log.list()).map((diagnosticEvent) => [diagnosticEvent.id, diagnosticEvent]))
+    const selectedEvents = [...new Set(input)].map((id) => availableEvents.get(id)).filter((item): item is LocalDiagnosticEvent => !!item)
+    if (!selectedEvents.length) return { saved: false, eventCount: 0 }
+
+    const defaultPath = `Native-gacha-eventos-${new Date().toISOString().slice(0, 10)}.json`
+    const choice = await deps.showSaveDialog(event, {
+      title: 'Exportar eventos de diagnóstico',
+      defaultPath,
+      filters: [{ name: 'Eventos JSON', extensions: ['json'] }]
+    })
+    if (choice.canceled || !choice.filePath) return { saved: false, eventCount: selectedEvents.length }
+
+    const report = {
+      format: 'native-gacha-diagnostic-events-v1',
+      generatedAt: new Date().toISOString(),
+      privacy: { eventMessagesAreFreeText: true, pathsAndCredentialsSanitized: true, reviewBeforeSharing: true },
+      events: selectedEvents
+    }
+    await deps.writeFile(choice.filePath, JSON.stringify(report, null, 2))
+    return { saved: true, fileName: basename(choice.filePath), eventCount: selectedEvents.length }
   })
 }

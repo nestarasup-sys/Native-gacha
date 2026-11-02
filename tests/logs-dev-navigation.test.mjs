@@ -48,4 +48,33 @@ test('Logs Dev separates overview, events, performance, storage, recovery and de
     assert.match(page, new RegExp(`activeSection === '${section.id}'`))
   }
   assert.match(page, /onToggle=\{\(event\) => \{ if \(event\.currentTarget\.open && !migration\) void refreshMigration\(\) \}\}/)
+
+  const eventBrowser = await readFile(new URL('../src/renderer/src/features/options/DiagnosticEventBrowser.tsx', import.meta.url), 'utf8')
+  assert.match(eventBrowser, /type="search"/)
+  assert.match(eventBrowser, /type="datetime-local"/)
+  assert.match(eventBrowser, /Copiar evento sanitizado/)
+  assert.match(eventBrowser, /Exportar filtrados/)
+
+  const processTable = await readFile(new URL('../src/renderer/src/features/options/RuntimeProcessMetricsTable.tsx', import.meta.url), 'utf8')
+  assert.match(processTable, /CPU é a média do intervalo/)
+  assert.match(processTable, /Não há monitoramento em segundo plano/)
+  assert.match(processTable, /scope="col"/)
+})
+
+test('report export requires a privacy summary before invoking the native save flow', async () => {
+  const page = await readFile(new URL('../src/renderer/src/features/options/OptionsPage.tsx', import.meta.url), 'utf8')
+  const preview = await readFile(new URL('../src/renderer/src/features/options/DiagnosticsReportPreviewDialog.tsx', import.meta.url), 'utf8')
+  assert.match(page, /onClick=\{\(\) => setReportPreviewOpen\(true\)\}/)
+  assert.match(page, /<DiagnosticsReportPreviewDialog/)
+  assert.match(preview, /Até 250 eventos locais recentes/)
+  assert.match(preview, /lista de processos com PID e memória/)
+  assert.match(preview, /Revise o JSON gerado antes de compartilhar/)
+})
+
+test('a visão geral mostra falha recente, estado consultado e acesso aos eventos sem declarar aprovação prematura', async () => {
+  const page = await readFile(new URL('../src/renderer/src/features/options/OptionsPage.tsx', import.meta.url), 'utf8')
+  assert.match(page, /Última falha registrada/)
+  assert.match(page, /Processo principal/)
+  assert.match(page, /Sem problemas nos eventos consultados/)
+  assert.match(page, /Investigar eventos/)
 })

@@ -68,17 +68,43 @@ export type DataBackupRestoreResult = {
 
 export type DataBackupDeleteResult = { deleted: boolean }
 
+export const DIAGNOSTIC_DOMAINS = [
+  'electron', 'storage', 'fabricator', 'customizer', 'studio', 'editor-v6', 'roteiros', 'base-videos', 'media-library', 'ui'
+] as const
+
+export type DiagnosticDomain = typeof DIAGNOSTIC_DOMAINS[number]
+export const DIAGNOSTIC_RESULTS = ['started', 'success', 'failure', 'cancelled'] as const
+export type DiagnosticResult = typeof DIAGNOSTIC_RESULTS[number]
+export const MAX_DIAGNOSTIC_EVENT_MESSAGE_CHARS = 16_384
+
 export type LocalDiagnosticEventInput = {
   severity: 'error' | 'warning' | 'info'
   code: string
   route?: string
   message: string
+  domain?: DiagnosticDomain
+  operation?: string
+  stage?: string
+  result?: DiagnosticResult
+  durationMs?: number
+  correlationId?: string
 }
 
 export type LocalDiagnosticEvent = LocalDiagnosticEventInput & {
   id: string
   at: string
   source: 'renderer' | 'main'
+}
+
+export type RuntimeProcessMetric = {
+  pid: number
+  kind: 'main' | 'renderer' | 'auxiliary' | 'other'
+  type: string
+  label: string
+  cpuPercent: number | null
+  workingSetBytes: number | null
+  peakWorkingSetBytes: number | null
+  privateBytes: number | null
 }
 
 export type RuntimeDiagnosticsSnapshot = {
@@ -90,6 +116,10 @@ export type RuntimeDiagnosticsSnapshot = {
   platform: string
   architecture: string
   uptimeSeconds: number
+  processMetrics: {
+    sampleIntervalMs: number | null
+    processes: RuntimeProcessMetric[]
+  }
   memory: {
     mainRssBytes: number
     mainHeapUsedBytes: number
@@ -102,6 +132,7 @@ export type RuntimeDiagnosticsSnapshot = {
 }
 
 export type DiagnosticsReportSaveResult = { saved: boolean; fileName?: string }
+export type DiagnosticEventExportResult = { saved: boolean; fileName?: string; eventCount: number }
 
 export type DataManagementDesktopApi = {
   getAppDataStorageSummary: () => Promise<DataStorageSummary>
@@ -109,6 +140,7 @@ export type DataManagementDesktopApi = {
   recordLocalDiagnosticEvent: (event: LocalDiagnosticEventInput) => Promise<void>
   getRuntimeDiagnostics: () => Promise<RuntimeDiagnosticsSnapshot>
   saveDiagnosticsReport: () => Promise<DiagnosticsReportSaveResult>
+  exportLocalDiagnosticEvents: (eventIds: string[]) => Promise<DiagnosticEventExportResult>
   getDataMigrationSummary: () => Promise<DataMigrationSummary>
   runDataMigration: () => Promise<DataMigrationResult>
   pauseDataMigration: () => Promise<DataMigrationPauseResult>

@@ -35,6 +35,19 @@ export function totalStorageBytes(summary: DataStorageSummary): number {
   return Object.values(summary.disk.groups).reduce((total, group) => total + group.bytes, 0)
 }
 
+export function latestDiagnosticFailure(events: LocalDiagnosticEvent[]): LocalDiagnosticEvent | null {
+  let latest: LocalDiagnosticEvent | null = null
+  let latestTime = Number.NEGATIVE_INFINITY
+  for (const event of events) {
+    if (event.severity !== 'error') continue
+    const at = Date.parse(event.at)
+    if (!Number.isFinite(at) || at < latestTime) continue
+    latest = event
+    latestTime = at
+  }
+  return latest
+}
+
 export function diagnosticAlerts(
   events: LocalDiagnosticEvent[],
   summary: DataStorageSummary | null,

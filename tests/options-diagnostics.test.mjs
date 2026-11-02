@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { diagnosticAlerts, domainLabels, formatBytes, formatDate, groupLabels, totalStorageBytes } from '../src/renderer/src/features/options/optionsDiagnostics.ts'
+import { diagnosticAlerts, domainLabels, formatBytes, formatDate, groupLabels, latestDiagnosticFailure, totalStorageBytes } from '../src/renderer/src/features/options/optionsDiagnostics.ts'
 
 test('formata valores e datas sem alterar o contrato pt-BR da tela', () => {
   assert.equal(formatBytes(10), '10 B')
@@ -38,6 +38,16 @@ test('diagnósticos agregam eventos, leituras incompletas, referências e migra�
     { level: 'warning', title: '1 domínio(s) de migração ainda pendente(s)' },
     { level: 'info', title: 'Nenhum backup manual disponível' }
   ])
+})
+
+test('a visão geral identifica a falha mais recente sem depender da ordem de leitura', () => {
+  const events = [
+    { severity: 'error', at: '2026-11-01T10:00:00.000Z', code: 'old', id: '1' },
+    { severity: 'warning', at: '2026-11-01T11:00:00.000Z', code: 'warning', id: '2' },
+    { severity: 'error', at: '2026-11-01T12:00:00.000Z', code: 'new', id: '3' }
+  ]
+  assert.equal(latestDiagnosticFailure(events)?.code, 'new')
+  assert.equal(latestDiagnosticFailure([]), null)
 })
 
 test('estado saudável reconhece backups verificados e migração concluída', () => {

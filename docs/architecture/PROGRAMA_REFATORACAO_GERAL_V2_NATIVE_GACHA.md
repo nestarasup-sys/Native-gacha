@@ -57,12 +57,12 @@ Ambiente observado: Node 24.18.0 (workflow fixa Node 22.22.0), Electron 45.1.0, 
 
 1. [x] Renomear item, criar rota canônica e manter `/opcoes` compatível; testar captura/perfil por rota.
 2. [x] Separar a tela em áreas acessíveis sem quebrar backup, restauração, migração e exportação.
-3. [ ] Criar modelo puro para busca, filtros, ordenação, intervalo de tempo e paginação/limite; testar eventos antigos e campos opcionais.
-4. [ ] Estruturar detalhes, cópia e exportação apenas dos eventos filtrados com sanitização no Main e limites IPC.
-5. [ ] Implementar painel sob demanda por processo com memória/CPU corretamente identificadas, ausência de métricas e cancelamento.
-6. [ ] Pré-visualizar o resumo do relatório e incluir métricas somente quando tenham sido explicitamente coletadas.
-7. [ ] Auditar flood, deduplicação/contagem, segredos, URLs, erros no logger, leitura e gravação concorrentes.
-8. [ ] Revisar acessibilidade, erros, testes reais disponíveis, diff e commit final do ciclo.
+3. [x] Criar modelo puro para busca, filtros, ordenação, intervalo de tempo e paginação/limite; testar eventos antigos e campos opcionais.
+4. [x] Estruturar detalhes, cópia e exportação apenas dos eventos filtrados com sanitização no Main e limites IPC.
+5. [~] Painel por processo concluído: Main, renderer e auxiliares, PID, memória e CPU média com intervalo explícito; sem monitoramento em segundo plano. Agregados IPC e operações mais lentas ainda pendentes.
+6. [x] Pré-visualizar o resumo do relatório e incluir dados de processo com valores indisponíveis explicitados.
+7. [x] Limitar e sanitizar eventos, validar contratos, agregar eventos excedentes com contagem, serializar gravações e recuperar filas após erro. Leituras são limitadas a 500 registros; paginação adicional não tem benefício comprovado.
+8. [~] Acessibilidade semântica, limites responsivos, falhas e testes cobertos; inspeção visual em Electron e conclusão do ciclo seguem pendentes.
 
 ### Próximos ciclos gerais
 
@@ -79,3 +79,4 @@ Ambiente observado: Node 24.18.0 (workflow fixa Node 22.22.0), Electron 45.1.0, 
 | 2026-11-02 | A — baseline e reconciliação V1 | Baseline aprovada conforme a tabela acima; estado do Git preservado. | `72ae218` (`docs: record refactor v2 baseline`). |
 | 2026-11-02 | B1 — navegação e identidade da Logs Dev | `Logs Dev` passa a ser o item do menu e título da página; `/logs-dev` é canônica e `/opcoes` redireciona com `replace`. A captura de erros, logger Main e perfil de interface reconhecem as duas rotas através de uma lista compartilhada; canais IPC e operações existentes não mudaram. `npm run test:options:diagnostics` 8/8, `npm run typecheck`, `npm run audit:architecture` (612 arquivos), `npm run build` e `npm run test:refactor` (647/647 mais toda a cadeia) passaram. Uma primeira execução do teste geral revelou apenas que o import direto de TypeScript no runner Node precisava da extensão `.ts`; corrigido e validado na repetição. | `d9f64b6` (`feat(logs-dev): add canonical route and legacy redirect`). |
 | 2026-11-02 | B2 — áreas da Logs Dev | Navegação acessível organiza Visão geral, Eventos e logs, Desempenho, Armazenamento, Backups e recuperação e Ferramentas Dev. Cada painel é montado sob demanda; catálogo/migração continuam sob a seção avançada, e os estados/casos de uso existentes permanecem no componente pai. `npm run test:options:diagnostics` 9/9, `npm run typecheck`, `npm run audit:architecture` (614 arquivos), `npm run build` e `npm run test:refactor` (647/647 mais toda a cadeia) passaram. | `1370238` (`feat(logs-dev): split diagnostics into sections`). |
+| 2026-11-02 | B3–B7 — eventos seguros, busca, exportação e métricas de processo | Metadados estruturados opcionais preservam JSONL legado; entrada IPC tem limites, segredos/caminhos/URLs são redigidos, flood acima de 1.000 pendentes gera aviso agregado com contagem, e a gravação usa lote serializado recuperável. O navegador permite busca, gravidade, domínio, origem, período, ordem, detalhes, cópia e exportação local dos IDs filtrados. Relatório mostra a prévia de privacidade e inclui runtime/processos. Painel distingue Main, renderer e auxiliares por PID e mostra CPU somente após duas leituras, como média no intervalo observado; memória Electron em KB é convertida uma vez, sem somar RSS/working set dos processos. `npm run test:options:diagnostics` 32/32, `npm run test:refactor` (647/647 e cadeia completa), `npm run typecheck`, `npm run audit:architecture` (622 arquivos, sem imports faltantes ou violações) e `npm run build` passaram. A instrumentação IPC agregada ainda é limitada ao opt-in preexistente de ambiente e será integrada na próxima fatia. | Pendente revisão/commit local. |

@@ -96,6 +96,8 @@ import { createRoteirosWriteQueue } from './domains/roteiros/writeQueue'
 import { registerRoteirosIpc, type RoteirosIpcLifecycle } from './application/registerRoteirosIpc'
 import { configureDevAiDataRoot, configureLocalAppDataRoot } from './application/appDataBootstrap'
 import { selectRendererMemorySnapshot } from './application/rendererMemorySnapshot'
+import { readElectronAppMetrics } from './application/electronAppMetrics'
+import { mapRuntimeProcessMetrics } from './application/runtimeProcessMetrics'
 import { createPersistenceShutdownHandler } from './application/persistenceShutdown'
 import { createMainWindowFactory } from './application/mainWindow'
 import { createEditorV6VideoReferenceLookup } from './domains/editorV6/videoReferences'
@@ -958,7 +960,9 @@ app.whenReady().then(async () => {
     log: diagnosticsLog,
     getRuntimeDiagnostics: async (event) => {
       const mainMemory = process.memoryUsage()
-      const rendererMemory = selectRendererMemorySnapshot(app.getAppMetrics(), event.sender)
+      const measuredProcesses = readElectronAppMetrics()
+      const rendererPid = event.sender.getOSProcessId()
+      const rendererMemory = selectRendererMemorySnapshot(measuredProcesses.metrics, { getOSProcessId: () => rendererPid })
       return {
         measuredAt: new Date().toISOString(),
         appVersion: app.getVersion(),
@@ -968,6 +972,14 @@ app.whenReady().then(async () => {
         platform: process.platform,
         architecture: process.arch,
         uptimeSeconds: Math.round(process.uptime()),
+        processMetrics: {
+          sampleIntervalMs: measuredProcesses.sampleIntervalMs,
+          processes: mapRuntimeProcessMetrics(measuredProcesses.metrics, {
+            mainPid: process.pid,
+            rendererPid,
+            sampleIntervalMs: measuredProcesses.sampleIntervalMs
+          })
+        },
         memory: {
           mainRssBytes: mainMemory.rss,
           mainHeapUsedBytes: mainMemory.heapUsed,

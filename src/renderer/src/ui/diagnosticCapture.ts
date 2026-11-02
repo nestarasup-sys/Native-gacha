@@ -20,6 +20,9 @@ export function recordLocalRendererDiagnostic(code: string, reason: unknown, sev
       severity,
       code,
       route: currentSafeRoute(),
+      domain: 'ui',
+      operation: 'renderer.diagnostic-capture',
+      stage: 'global-handler',
       message: messageOf(reason)
     }).catch(() => undefined)
   } catch { /* Logging must never interfere with the app's error recovery. */ }
