@@ -42,6 +42,7 @@ import { useCustomizerHairLibraryPage } from './useCustomizerHairLibraryPage'
 import { CustomizerHairWorkspace } from './CustomizerHairWorkspace'
 import { useCustomizerWardrobePreview } from './useCustomizerWardrobePreview'
 import { useCustomizerWardrobeAdjustment } from './useCustomizerWardrobeAdjustment'
+import { useCustomizerClothingSelection } from './useCustomizerClothingSelection'
 import { useCustomizerWardrobePanelActions } from './useCustomizerWardrobePanelActions'
 import { useCustomizerWardrobeHydration } from './useCustomizerWardrobeHydration'
 import { useCustomizerWardrobeCatalog } from './useCustomizerWardrobeCatalog'
@@ -66,7 +67,7 @@ import { usePreviewBackground } from '../../ui/hooks/usePreviewBackground'
 import { DesignBanner } from '../../ui/components/DesignBanner'
 import { anchorWardrobeAdjustments } from '../../../../shared/wardrobeAdjustment'
 import { applyCharacterBodyShape } from '../../../../shared/bodyShape'
-import { withCharacterHeadSize, characterShapeScale, clothingCategories, wardrobeComponentsForGroup } from '../../characters/characterRenderer'
+import { withCharacterHeadSize, characterShapeScale, wardrobeComponentsForGroup } from '../../characters/characterRenderer'
 import type { CatalogArtwork, SelectedWardrobeComponent } from '../../characters/characterRenderer'
 
 const proportionControls: Array<{ key: keyof CharacterProportions; label: string; description: string }> = [
@@ -317,46 +318,15 @@ export function CustomizerPage() {
     setSelectedWardrobeUrl, setSelectedWardrobeAboveHairUrl, setPreviewLoading, setCatalogError
   })
 
-  useEffect(() => {
-    setSelectedClothing(null)
-  }, [selectedCharacter?.id])
-
-  useEffect(() => {
-    if (!selectedCharacter || selectedClothing || activeModule === 'Roupas' && clothesPanelTab === 'adjust') return
-    const firstGroup = selectedCharacter?.customization.wardrobeGroups?.[0]
-    const firstSet = firstGroup ? wardrobeDetails[`${firstGroup.modelSlot}:${firstGroup.setId}`] : undefined
-    const firstDefinition = firstGroup ? Object.values(clothingCategories).flat().find((item) => item.id === firstGroup.category) : undefined
-    const firstComponent = firstGroup && firstSet
-      ? firstGroup.componentId
-        ? firstSet.components.find((component) => component.id === firstGroup.componentId)
-        : firstSet.components.find((component) => firstDefinition?.source.includes(component.category))
-      : undefined
-    setSelectedClothing(firstGroup && firstComponent ? { modelSlot: firstGroup.modelSlot, setId: firstGroup.setId, category: firstGroup.category, componentId: firstComponent.id } : null)
-  }, [activeModule, clothesPanelTab, selectedCharacter?.id, selectedCharacter?.customization.wardrobeGroups, selectedClothing, wardrobeDetails])
-
-  useEffect(() => {
-    if (!selectedCharacter || activeModule !== 'Roupas' || clothesPanelTab !== 'adjust') return
-    const definitions = clothesAdjustmentDefinitions(clothesCategorySelection)
-    const categoryIds = new Set(definitions.map((item) => item.id))
-    const groups = (selectedCharacter.customization.wardrobeGroups ?? []).filter((group) => categoryIds.has(group.category))
-    if (!groups.length) {
-      setSelectedClothing(null)
-      return
-    }
-    const currentSelectionStillInScope = selectedClothing && groups.some((group) => group.modelSlot === selectedClothing.modelSlot && group.setId === selectedClothing.setId && group.category === selectedClothing.category && (group.componentId === selectedClothing.componentId || !group.componentId))
-    if (currentSelectionStillInScope) {
-      return
-    }
-    const firstGroup = groups[0]
-    const set = wardrobeDetails[`${firstGroup.modelSlot}:${firstGroup.setId}`]
-    const definition = definitions.find((item) => item.id === firstGroup.category)
-    const component = set && (firstGroup.componentId
-      ? set.components.find((piece) => piece.id === firstGroup.componentId)
-      : set.components.find((piece) => definition?.source.includes(piece.category)))
-    if (firstGroup.componentId || component) {
-      setSelectedClothing({ modelSlot: firstGroup.modelSlot, setId: firstGroup.setId, category: firstGroup.category, componentId: component?.id ?? firstGroup.componentId! })
-    }
-  }, [activeModule, clothesPanelTab, clothesCategorySelection, selectedCharacter?.id, selectedCharacter?.customization.wardrobeGroups, selectedClothing?.modelSlot, selectedClothing?.setId, selectedClothing?.category, selectedClothing?.componentId, wardrobeDetails])
+  useCustomizerClothingSelection({
+    selectedCharacter,
+    activeModule,
+    clothesPanelTab,
+    clothesCategorySelection,
+    wardrobeDetails,
+    selectedClothing,
+    setSelectedClothing
+  })
 
   const { wardrobeTransformDraft, updateClothesAdjustComponent } = useCustomizerWardrobeAdjustment({
     selectedCharacter,
