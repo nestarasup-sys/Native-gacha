@@ -27,7 +27,7 @@ Este documento acompanha a execução das Fases 1–6 e complementa a baseline d
 | 0 | Auditoria e baseline arquitetural | Concluída antes deste programa | [Relatório da Fase 0](./AUDITORIA_REFATORACAO_GERAL_V1_FASE_0.md). |
 | 1 | Electron, IPC, persistência, backups e filas | Concluída | Diagnóstico de memória corrigido; ciclo de encerramento extraído e coberto; diferenças das filas mapeadas; backup, manutenção e segurança de janela passaram. Os gatilhos gerais de CI de `Dev-V2` ficam na Fase 6. |
 | 2 | Núcleo compartilhado de personagens | Concluída | Consumidores e regressões mapeados. Escala-base idêntica entre Studio e Editor V6 centralizada; renderizadores e contratos de exportação distintos mantidos. Testes de personagem/gênero/roupas articuladas executáveis por script dedicado. |
-| 3 | Fabricador e Customizador | Em andamento | Fluxo de catálogo/customizações coberto de ponta a ponta; primeira fronteira de gravação do Fabricador extraída. Restam mapear/decompor os maiores workspaces e ampliar cenários de reabertura. |
+| 3 | Fabricador e Customizador | Em andamento | Fluxo de catálogo/customizações coberto de ponta a ponta; gravação de roupas e cliente do worker capilar têm fronteiras/testes próprios. Restam mapear/decompor o estado dos maiores workspaces e ampliar cenários de reabertura. |
 | 4 | Studio, Editor V6 e fluxos de vídeo | Em andamento | Criação/duplicação de cenas do Studio extraídas e testadas; comandos próprios do Editor V6, timeline e exportação permanecem separados. Restam a revisão de vídeos, workers e paridade de exportação. |
 | 5 | Roteiros, Base de Vídeos, Opções, componentes e CSS | Em andamento | Biblioteca continua dona dos arquivos/IDs; Roteiros mantém metadados e referências. Guardas de exclusão têm testes sintéticos; canais da Base de Vídeos passaram a usar mapa tipado compartilhado por preload/Main; estilos e cálculos puros de Opções foram isolados. Restam decomposição dos workspaces e etapas adicionais de CSS. |
 | 6 | Performance, CI e consolidação | Em andamento | Workflow da Dev-V2 agora roda gates gerais e Editor V6 por plataforma; build Windows é reutilizado pelos testes MP4 via artifact limitado aos diretórios compilados. Restam baseline de performance comum, medição de gargalos e cobertura dos outros módulos. |
@@ -99,6 +99,16 @@ O Node test runner não resolvia imports relativos extensionless `.ts` usados po
 - **Verificações:** `test:studio:project-commands` passou 3/3; persistência/histórico/asset transaction do Studio passou 26/26; `npm run test:refactor` passou; `npm run test:editor-v6` passou com 220 testes e 1 skip; typecheck, audit arquitetural (567 arquivos TS/TSX) e build passaram.
 - **Pendências:** revisar caminho de captura/exportação do Studio, jobs e workers do Editor V6, fluxo de áudio/vídeo, paridade preview/export e dados legados das bibliotecas sem reativar a antiga interface Video Studio.
 
+### Ciclo de vida do worker de cabelo do Fabricador
+
+- **Fronteira extraída:** `hairProcessorClient.ts` é dono do protocolo renderer ↔ worker para recorte de pares e grades de três estilos. `HairWorkspace` continua dona do estado de importação, revisão, prévia e persistência dos conjuntos.
+- **Falhas e recursos:** o cliente valida o layout da resposta e encerra o worker em sucesso, erro retornado, erro do Worker, layout inesperado e exceção ao enviar a mensagem. Uma resposta tardia depois do encerramento não altera a Promise.
+- **Contrato preservado:** URL do worker, `type: 'module'`, campos enviados (`dataUrl`, tolerância, modo, layout, padding e divisões da grade) e mensagens de erro existentes permanecem iguais. A função recebe factory opcional somente para testes; o produto continua criando o mesmo Worker nativo.
+- **Testes:** `tests/hair-processor-client.test.mjs` cobre o envio, resposta válida, erros e encerramento do recurso; `hair-import-grid.test.mjs` cobre importação e geometria dos cortes; `fabricator-hair-storage.test.mjs` verifica persistência dos PNGs e estilos sem alterar legado.
+- **Verificações:** cliente 3/3; grade/importação 12/12; armazenamento 2/2; `npm run test:refactor`, typecheck, audit arquitetural (570 arquivos TS/TSX) e build passaram.
+- **Commit local:** `1641353` (`refactor: isolate Fabricator hair worker client`).
+- **Pendências:** estado, carregamentos e comandos editoriais continuam concentrados no workspace; não foi alterado formato de estilo, PNG ou catálogo.
+
 ### Proteção de referências de mídia dos Roteiros e escopo do CSS de Opções
 
 - **Propriedade preservada:** a biblioteca de mídia segue responsável pelos arquivos e IDs de fundos e GIFs; Roteiros continua responsável pelas referências. Os serviços de exclusão chamam os guards SQLite antes de excluir e bloqueiam a operação quando o catálogo não está disponível.
@@ -169,4 +179,5 @@ As falhas observadas na execução inicial da suíte em `f416a02` foram investig
 | `6735283` | Extrai cálculos e alertas puros de Opções, com testes sintéticos | Local em `Dev-V2`; sem publicação. |
 | `e338db9` | Centraliza os nove canais IPC da Base de Vídeos no preload e no Main | Local em `Dev-V2`; sem publicação. |
 | `2c3d5a3` | Adiciona gates gerais para Dev-V2 e reutiliza o bundle Windows na paridade MP4 | Local em `Dev-V2`; sem publicação. |
+| `1641353` | Extrai o cliente e o ciclo de vida do worker de processamento capilar | Local em `Dev-V2`; sem publicação. |
 
