@@ -26,7 +26,7 @@ Este documento acompanha a execução das Fases 1–6 e complementa a baseline d
 | --- | --- | --- | --- |
 | 0 | Auditoria e baseline arquitetural | Concluída antes deste programa | [Relatório da Fase 0](./AUDITORIA_REFATORACAO_GERAL_V1_FASE_0.md). |
 | 1 | Electron, IPC, persistência, backups e filas | Concluída | Diagnóstico de memória corrigido; ciclo de encerramento extraído e coberto; diferenças das filas mapeadas; backup, manutenção e segurança de janela passaram. Os gatilhos gerais de CI de `Dev-V2` ficam na Fase 6. |
-| 2 | Núcleo compartilhado de personagens | Não iniciada | Mapear consumidores e contratos de preview/export antes de extrair regras. |
+| 2 | Núcleo compartilhado de personagens | Em andamento | Mapeados renderizadores e consumidores. A escala-base idêntica entre Studio e Editor V6 agora usa uma única regra pura; demais diferenças de render/export seguem separadas. |
 | 3 | Fabricador e Customizador | Não iniciada | Preservar catálogo-fonte, instâncias e overrides; cobrir ciclo completo de edição. |
 | 4 | Studio, Editor V6 e fluxos de vídeo | Não iniciada | Manter engines distintas, paridade de exportação e caminhos legados de dados. |
 | 5 | Roteiros, Base de Vídeos, Opções, componentes e CSS | Não iniciada | Preservar propriedade da biblioteca de mídia e bloqueio de referências. |
@@ -56,6 +56,15 @@ Este documento acompanha a execução das Fases 1–6 e complementa a baseline d
 - **Verificações da fatia:** coordenação/persistência 10/10; backup e manutenção 7/7; segurança da janela 4/4; typecheck passou; auditoria arquitetural passou (564 arquivos TS/TSX); build de produção passou; seis falhas conhecidas de `test:refactor` continuam sem mudança.
 - **Sem mudança de dados:** nenhuma fila foi consolidada, formato persistido foi alterado ou arquivo de usuário foi usado como fixture.
 
+### Geometria comum de escala-base de personagens
+
+- **Evidência:** `fitStudioCharacterToStage` e `fitEditorV6CharacterToStage` continham a mesma fórmula, os mesmos limites e os mesmos campos de saída. Studio e Editor V6 continuam usando wrappers próprios nos pontos de chamada e mantêm seus contratos atuais.
+- **Mudança:** a regra idêntica foi movida para `src/shared/characterStageGeometry.ts`; `studioCharacterGeometry.ts` e `editorV6CharacterGeometry.ts` reexportam os tipos anteriores e delegam sem transformação. A geometria facial/crops e os renderizadores de exportação continuam independentes.
+- **Consumidores mapeados:** Studio (seleção e posicionamento do elenco), Editor V6 (inserção na timeline), Customizador (renderer compartilhado e adaptação do tronco por gênero), Roteiros (renderer compartilhado) e Editor V6 exportação/motion (renderer específico do Editor V6). O Fabricador segue dono do catálogo e das fontes; nenhum dado de personagem foi copiado ou persistido nesta alteração.
+- **Teste:** `tests/shared-character-stage-geometry.test.mjs` compara os dois wrappers com a regra central para pose neutra, pose articulada e dimensões inválidas. O loader legado de `tests/studio-character-geometry.test.cjs` agora resolve dependências TypeScript para manter sua execução CommonJS.
+- **Verificações:** `npm run test:geometry` 5/5; `npm run test:character-flow` 2/2; testes Studio e geometria facial 9/9; `npm run test:editor-v6` 220 aprovados e 1 ignorado (mais 3 testes sintéticos de stress); typecheck, audit arquitetural (565 arquivos TS/TSX) e build passaram. `npm run test:refactor`: 615 aprovados e 6 falhas preexistentes, sem novas falhas.
+- **Limite desta fatia:** proporções corporais, adaptações de tronco masculino, roupas articuladas, cabelo, rosto, expressões, piscadas, poses e espelhamento continuam com regras próprias até que o mapeamento demonstre igualdade de contrato e fixtures específicos cubram preview e exportação.
+
 ## Falhas preexistentes
 
 As falhas abaixo já estavam na baseline de `f416a02` antes da primeira alteração desta execução. Não foram mascaradas ou removidas:
@@ -82,4 +91,5 @@ O Node test runner conta também a suíte agregadora que contém as três primei
 | --- | --- | --- |
 | `697dee891e787c02fce129375c421fee9dc97291` | Diagnóstico de memória do renderer e testes | Local em `Dev-V2`; sem publicação. |
 | `627a654f531240788ac2f56b6392a081e180e738` | Coordenador de encerramento, semânticas de filas e testes | Local em `Dev-V2`; sem publicação. |
+| `b171929e1a7f263796dcfa7265a13b4d7d063692` | Compartilha a geometria-base idêntica entre Studio e Editor V6 | Local em `Dev-V2`; sem publicação. |
 
