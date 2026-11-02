@@ -19,6 +19,7 @@ import { importEditorV6ImageToProject, importEditorV6MediaToTimeline } from './e
 import { planEditorV6CastSelection, retainEditorV6CastAssets } from './editorV6CastSelection'
 import { projectSceneCharacters } from '../../characters/sceneCharacterProjection'
 import { createEditorV6MediaCommands } from './editorV6MediaCommands'
+import { createEditorV6TextElementCommand } from './editorV6TextElementCommand'
 import { addEditorV6ElementAtFrame, editorV6ClipAtFrame, normalizeEditorV6Timeline, timelineClips } from '../../../../shared/editorV6TimelineCore'
 import { editEditorV6DocumentAtBlock, pruneEditorV6TimelineSnapshots, repairEditorV6DuplicateAssets, repairEditorV6FaceModeAssetReferences } from '../../../../shared/editorV6TimelineEdits'
 import { editEditorV6BackgroundAtFrame, resolveEditorV6SceneAtFrame } from '../../../../shared/editorV6TimelineScene'
@@ -417,34 +418,21 @@ export function EditorV6Page() {
     setHistoryVersion(value => value + 1)
   }
 
-  const addTextElement = (kind: 'narrator' | 'speech' | 'thought') => {
-    if (!activeEditorV6) return
-    const character = kind === 'narrator' ? null : selectedCharacterElement
-    if (kind !== 'narrator' && !character?.characterId) {
-      setError('Selecione um personagem na cena antes de adicionar fala ou pensamento.')
-      return
-    }
-    pausePlayback()
-    const frame = getEditorV6PlaybackFrame()
-    if (activeEditorV6.timeline.tracks.some((track) => track.kind === (kind === 'narrator' ? 'video' : kind) && track.locked)) { setError('Desbloqueie a faixa para adicionar um bloco.'); return }
-    const element = {
-      ...createSceneTextElement(kind, Math.max(0, ...activeEditorV6.elements.map((item) => item.zIndex)) + 1),
-      ...(character ? {
-        characterId: character.characterId,
-        attachedCharacterElementId: character.id,
-        attachmentOriginX: character.x,
-        attachmentOriginY: character.y,
-        x: character.x,
-        y: character.y
-      } : {})
-    }
-    const blockId = crypto.randomUUID()
-    changeScene((studio) => ({ ...addEditorV6ElementAtFrame(studio, element, frame, blockId), updatedAt: new Date().toISOString() }))
-    setSelectedElementId(element.id)
-    setSelectedTimelineBlockId(blockId)
-    setInspectorOpen(true)
-    setInspectorTab('editor')
-  }
+  const addTextElement = createEditorV6TextElementCommand({
+    activeProject: activeEditorV6,
+    selectedCharacterElement,
+    pausePlayback,
+    getFrame: getEditorV6PlaybackFrame,
+    createTextElement: createSceneTextElement,
+    createBlockId: () => crypto.randomUUID(),
+    now: () => new Date().toISOString(),
+    changeScene,
+    setError,
+    setSelectedElementId,
+    setSelectedTimelineBlockId,
+    setInspectorOpen,
+    setInspectorTab
+  })
 
   const openCastPicker = () => {
     setCastSelection(stageCharacters.map((element) => element.characterId).filter((id): id is string => Boolean(id)))
