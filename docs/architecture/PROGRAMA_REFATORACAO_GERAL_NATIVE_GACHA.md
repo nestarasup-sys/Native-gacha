@@ -26,7 +26,7 @@ Este documento acompanha a execução das Fases 1–6 e complementa a baseline d
 | --- | --- | --- | --- |
 | 0 | Auditoria e baseline arquitetural | Concluída antes deste programa | [Relatório da Fase 0](./AUDITORIA_REFATORACAO_GERAL_V1_FASE_0.md). |
 | 1 | Electron, IPC, persistência, backups e filas | Concluída | Diagnóstico de memória corrigido; ciclo de encerramento extraído e coberto; diferenças das filas mapeadas; backup, manutenção e segurança de janela passaram. Os gatilhos gerais de CI de `Dev-V2` ficam na Fase 6. |
-| 2 | Núcleo compartilhado de personagens | Em andamento | Mapeados renderizadores e consumidores. A escala-base idêntica entre Studio e Editor V6 agora usa uma única regra pura; demais diferenças de render/export seguem separadas. |
+| 2 | Núcleo compartilhado de personagens | Concluída | Consumidores e regressões mapeados. Escala-base idêntica entre Studio e Editor V6 centralizada; renderizadores e contratos de exportação distintos mantidos. Testes de personagem/gênero/roupas articuladas executáveis por script dedicado. |
 | 3 | Fabricador e Customizador | Não iniciada | Preservar catálogo-fonte, instâncias e overrides; cobrir ciclo completo de edição. |
 | 4 | Studio, Editor V6 e fluxos de vídeo | Não iniciada | Manter engines distintas, paridade de exportação e caminhos legados de dados. |
 | 5 | Roteiros, Base de Vídeos, Opções, componentes e CSS | Não iniciada | Preservar propriedade da biblioteca de mídia e bloqueio de referências. |
@@ -65,6 +65,21 @@ Este documento acompanha a execução das Fases 1–6 e complementa a baseline d
 - **Verificações:** `npm run test:geometry` 5/5; `npm run test:character-flow` 2/2; testes Studio e geometria facial 9/9; `npm run test:editor-v6` 220 aprovados e 1 ignorado (mais 3 testes sintéticos de stress); typecheck, audit arquitetural (565 arquivos TS/TSX) e build passaram. `npm run test:refactor`: 615 aprovados e 6 falhas preexistentes, sem novas falhas.
 - **Limite desta fatia:** proporções corporais, adaptações de tronco masculino, roupas articuladas, cabelo, rosto, expressões, piscadas, poses e espelhamento continuam com regras próprias até que o mapeamento demonstre igualdade de contrato e fixtures específicos cubram preview e exportação.
 
+### Matriz de contratos compartilhados e regressões
+
+| Comportamento | Regra/dono e consumidores | Evidência de teste |
+| --- | --- | --- |
+| Gênero e tronco masculino independente | Fabricador persiste `maleTorso` como cópia própria; Customizador escolhe gender por personagem e troca somente o artwork em memória; roupas DEV usam a referência por conjunto. | `npm run test:character-contracts` cobre torso masculino, fallback legado feminino e preview por gênero (15/15 no conjunto). |
+| Proporções | `src/shared/bodyShape.ts` aplica dimensões da instância sem escrever no catálogo; Editor V6 atualiza snapshots de personagem por seu próprio contrato. | `test:geometry` cobre defaults e overrides por personagem; `test:editor-v6` cobre refresh de snapshot e geometria. |
+| Roupas articuladas e juntas | Fabricador monta/calibra juntas e separa roupa no espaço da junta; Animator resolve camadas; renderizadores de Customizador e Editor V6 consomem roupas por IDs e peças anexadas. | `test:character-contracts` cobre assembly/cortes de junta; `test:fabricator:visual` e o golden de personagem passaram no conjunto `test:refactor`. |
+| Cabelo, rosto e expressão | Renderizador compartilhado compõe camadas estáticas para preview; catálogos faciais e expressões mantêm identidade/transformações por domínio. | `animator-head-overlays` e `fabricator-complete-character-golden` passaram; os cenários de catálogo permanecem no conjunto de contratos. |
+| Piscar e fala | Agendamento e combinação de boca/piscada são regras específicas de timeline e export do Editor V6; o renderer do Editor V6 fica separado do compositor de preview. | `npm run test:editor-v6` passou com 220 testes e 1 skip, incluindo agenda facial, olhos fechados, fala e motion. |
+| Poses e espelhamento | Fabricador é dono do rig/pose e IDs de peça; Studio e Editor V6 conservam posição do ator e usam snapshots próprios. | `fabricator-visual-geometry`, `wardrobe-joint-assembly`, `studio-character-geometry` e a suíte de motion cobrem transformação, rotação, flip e poses. |
+
+O módulo `editorV6CharacterRenderer.ts` continua separado de `characterRenderer.ts`: o primeiro mantém material cacheado, buffers e descarte próprios para motion/export; o segundo atende o compositor reutilizável de preview. O mapeamento não demonstrou contratos iguais para fundi-los.
+
+O Node test runner não resolvia imports relativos extensionless `.ts` usados por dois contratos existentes. `scripts/testing/resolve-typescript-extensions.mjs` e `register-typescript-extensions.mjs` são exclusivos de testes e permitem rodar esses contratos sem alterar imports de produto. `npm run test:character-contracts` passou 15/15.
+
 ## Falhas preexistentes
 
 As falhas abaixo já estavam na baseline de `f416a02` antes da primeira alteração desta execução. Não foram mascaradas ou removidas:
@@ -92,4 +107,5 @@ O Node test runner conta também a suíte agregadora que contém as três primei
 | `697dee891e787c02fce129375c421fee9dc97291` | Diagnóstico de memória do renderer e testes | Local em `Dev-V2`; sem publicação. |
 | `627a654f531240788ac2f56b6392a081e180e738` | Coordenador de encerramento, semânticas de filas e testes | Local em `Dev-V2`; sem publicação. |
 | `b171929e1a7f263796dcfa7265a13b4d7d063692` | Compartilha a geometria-base idêntica entre Studio e Editor V6 | Local em `Dev-V2`; sem publicação. |
+| `a5c30c21c32bd47618ee6d08850c5eda96631e68` | Habilita execução Node de contratos de personagem com imports TS extensionless | Local em `Dev-V2`; sem publicação. |
 
