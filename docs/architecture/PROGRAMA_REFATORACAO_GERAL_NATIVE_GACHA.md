@@ -28,7 +28,7 @@ Este documento acompanha a execução das Fases 1–6 e complementa a baseline d
 | 1 | Electron, IPC, persistência, backups e filas | Concluída | Diagnóstico de memória corrigido; ciclo de encerramento extraído e coberto; diferenças das filas mapeadas; backup, manutenção e segurança de janela passaram. Os gatilhos gerais de CI de `Dev-V2` ficam na Fase 6. |
 | 2 | Núcleo compartilhado de personagens | Concluída | Consumidores e regressões mapeados. Escala-base idêntica entre Studio e Editor V6 centralizada; renderizadores e contratos de exportação distintos mantidos. Testes de personagem/gênero/roupas articuladas executáveis por script dedicado. |
 | 3 | Fabricador e Customizador | Em andamento | Fluxo de catálogo/customizações coberto de ponta a ponta; gravação de roupas e operações de cabelo (worker e serialização de conjunto) têm fronteiras/testes próprios. Restam mapear/decompor o estado dos maiores workspaces e ampliar cenários de reabertura. |
-| 4 | Studio, Editor V6 e fluxos de vídeo | Em andamento | Criação/duplicação de cenas do Studio extraídas; testes Windows de paridade Turbo e exportação facial 720p/1080p aprovados. Engines e projetos do Editor V6 continuam separados. Restam captura/export do Studio e revisão dos fluxos legados de vídeo e workers. |
+| 4 | Studio, Editor V6 e fluxos de vídeo | Em andamento | Criação/duplicação de cenas do Studio extraídas; miniatura 480×270 corrigida para preencher o fundo; testes Windows de paridade Turbo e exportação facial 720p/1080p aprovados. Engines do Editor V6 continuam separadas. Restam validação completa da impressão/exportação do Studio e revisão dos fluxos legados de vídeo e workers. |
 | 5 | Roteiros, Base de Vídeos, Opções, componentes e CSS | Em andamento | Biblioteca continua dona dos arquivos/IDs; Roteiros mantém metadados e referências. Guardas, canais e fila de salvamento da Base de Vídeos têm contratos testados; estilos e cálculos puros de Opções estão isolados. Restam decomposição adicional dos workspaces e CSS por feature. |
 | 6 | Performance, CI e consolidação | Em andamento | Workflow da Dev-V2 roda gates gerais e Editor V6 por plataforma; build Windows é reutilizado pelos testes MP4. Baseline repetível do cenário médio do Editor V6 registrada e captura IPC passou a ser estruturada. Restam medições de inicialização, Studio, outros workspaces e exportação, além de comparações repetidas antes de otimizar. |
 
@@ -97,7 +97,16 @@ O Node test runner não resolvia imports relativos extensionless `.ts` usados po
 - **Vínculos ao duplicar:** cada asset e elemento recebe ID novo; `backgroundAssetId` e `element.assetId` são remapeados para os assets duplicados antes da escrita. A lista só é atualizada depois de `writeDocument` concluir.
 - **Engines mantidas separadas:** Editor V6 conserva `editorV6ProjectCreation.ts`, os documentos com timeline e os fluxos próprios de áudio/mídia/exportação. A extração do Studio não compartilha builders nem altera os formatos de projeto.
 - **Verificações:** `test:studio:project-commands` passou 3/3; persistência/histórico/asset transaction do Studio passou 26/26; `npm run test:refactor` passou; `npm run test:editor-v6` passou com 220 testes e 1 skip; typecheck, audit arquitetural (567 arquivos TS/TSX) e build passaram.
-- **Pendências:** revisar caminho de captura/exportação do Studio, jobs e workers do Editor V6, fluxo de áudio/vídeo, paridade preview/export e dados legados das bibliotecas sem reativar a antiga interface Video Studio.
+- **Pendências:** validar ponta a ponta a impressão/exportação do Studio, revisar jobs/workers e o fluxo de áudio/vídeo do Editor V6, além de conferir dados legados sem reativar a antiga interface Video Studio.
+
+### Fidelidade do fundo na miniatura do Studio
+
+- **Causa comprovada:** `makeCanvasPrint` escala o contexto para a resolução de saída, mas o preenchimento do fundo usava `canvas.width`/`canvas.height` como coordenadas lógicas depois da escala. Na miniatura de 480 × 270, isso pintava somente uma área de 120 × 67,5 pixels no bitmap final.
+- **Correção:** o retângulo de fundo agora usa a área lógica fixa de 1920 × 1080 sob a escala de saída, a mesma referência usada pelos elementos. A impressão de 1920 × 1080 preserva sua geometria e as miniaturas de 480 × 270 cobrem o canvas por inteiro.
+- **Contrato preservado:** não muda estrutura do documento, autosave, resolução das impressões, resolução das miniaturas ou composição de elementos; corrige o preenchimento do fundo que ficava incompleto na miniatura.
+- **Verificações:** o novo teste sintético reproduziu a falha antes da correção e passou depois; `tests/serialized-studio-save.test.mjs` 7/7, `npm run test:refactor`, typecheck, audit arquitetural (573 arquivos TS/TSX) e build passaram.
+- **Commit local:** `b69685c` (`fix: cover Studio thumbnail after canvas scaling`).
+- **Pendências:** ainda falta uma captura visual ponta a ponta do botão Print, salvamento da imagem e abertura da pasta materializada; essa correção cobre a geração das miniaturas de autosave.
 
 ### Paridade real de MP4 e exportação facial do Editor V6
 
@@ -226,4 +235,5 @@ As falhas observadas na execução inicial da suíte em `f416a02` foram investig
 | `1d6e938` | Extrai a fila por vídeo de Base de Vídeos com testes de concorrência e retry | Local em `Dev-V2`; sem publicação. |
 | `da90c8d` | Permite redirecionar resultados sintéticos de paridade/export sem sobrescrever `out/` existente | Local em `Dev-V2`; sem publicação. |
 | `bfdcde6` | Estrutura snapshots IPC e captura baseline de timeline/memória em perfil sintético | Local em `Dev-V2`; sem publicação. |
+| `b69685c` | Corrige o preenchimento do fundo nas miniaturas do Studio após a escala do canvas | Local em `Dev-V2`; sem publicação. |
 
