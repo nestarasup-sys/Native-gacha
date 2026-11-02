@@ -19,8 +19,9 @@
 
 .wardrobe-set-row.sleeves-import { --set-border:#d4bcf2;--set-background:#f6f0ff;--set-color:#70429b;--set-active:#eadbfb; }
 .wardrobe-set-row.pants-import { --set-border:#b5cfee;--set-background:#eff6ff;--set-color:#285d98;--set-active:#daeaff; }
+.wardrobe-set-row.shoes-import { --set-border:#b9d8cf;--set-background:#eef9f5;--set-color:#286954;--set-active:#d9f0e8; }
 .wardrobe-set-row.complete-import { --set-border:#efcb9c;--set-background:#fff6e9;--set-color:#8b591c;--set-active:#ffe8c9; }
-.wardrobe-set-row.sleeves-import,.wardrobe-set-row.pants-import,.wardrobe-set-row.complete-import { border-color:var(--set-border);background:var(--set-background);color:var(--set-color); }
-.wardrobe-set-row.sleeves-import:hover,.wardrobe-set-row.sleeves-import.active,.wardrobe-set-row.pants-import:hover,.wardrobe-set-row.pants-import.active,.wardrobe-set-row.complete-import:hover,.wardrobe-set-row.complete-import.active { background:var(--set-active);border-color:var(--set-color); }
-.wardrobe-set-row.sleeves-import .wardrobe-set-icon,.wardrobe-set-row.pants-import .wardrobe-set-icon,.wardrobe-set-row.complete-import .wardrobe-set-icon { background:var(--set-active);color:var(--set-color); }
+.wardrobe-set-row.sleeves-import,.wardrobe-set-row.pants-import,.wardrobe-set-row.shoes-import,.wardrobe-set-row.complete-import { border-color:var(--set-border);background:var(--set-background);color:var(--set-color); }
+.wardrobe-set-row.sleeves-import:hover,.wardrobe-set-row.sleeves-import.active,.wardrobe-set-row.pants-import:hover,.wardrobe-set-row.pants-import.active,.wardrobe-set-row.shoes-import:hover,.wardrobe-set-row.shoes-import.active,.wardrobe-set-row.complete-import:hover,.wardrobe-set-row.complete-import.active { background:var(--set-active);border-color:var(--set-color); }
+.wardrobe-set-row.sleeves-import .wardrobe-set-icon,.wardrobe-set-row.pants-import .wardrobe-set-icon,.wardrobe-set-row.shoes-import .wardrobe-set-icon,.wardrobe-set-row.complete-import .wardrobe-set-icon { background:var(--set-active);color:var(--set-color); }
 .wardrobe-set-row small { overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }

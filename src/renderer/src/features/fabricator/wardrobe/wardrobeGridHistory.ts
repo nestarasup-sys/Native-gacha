@@ -1,15 +1,14 @@
 import type { WardrobeSet } from '../../../../../shared/fabricator'
+import { isWardrobePairedGridImportKind } from './wardrobePairedSheetPolicy'
 
 const HISTORY_LIMIT = 30
-const GRID_IMPORT_KINDS = new Set(['sleeve-grid-3x4', 'pants-grid-3x4'])
-
 export function createWardrobeGridHistory() {
   const undoStack: WardrobeSet[] = []
   const redoStack: WardrobeSet[] = []
 
   return {
     record(snapshot: WardrobeSet) {
-      if (!GRID_IMPORT_KINDS.has(snapshot.importKind ?? '')) return
+      if (!isWardrobePairedGridImportKind(snapshot.importKind)) return
       undoStack.push(snapshot)
       if (undoStack.length > HISTORY_LIMIT) undoStack.shift()
       redoStack.length = 0

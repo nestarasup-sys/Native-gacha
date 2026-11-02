@@ -5,12 +5,12 @@ import { createWardrobeGridHistory } from '../src/renderer/src/features/fabricat
 
 const snapshot = (id, importKind = 'sleeve-grid-3x4') => ({ id, importKind, components: [] })
 
-test('registra somente grades de mangas/calças e limita o histórico a 30 snapshots', () => {
+test('registra somente grades pareadas e limita o histórico a 30 snapshots', () => {
   const history = createWardrobeGridHistory()
   history.record(snapshot('complete-sheet', 'complete'))
   assert.equal(history.canUndo, false)
 
-  for (let index = 0; index < 35; index += 1) history.record(snapshot(String(index), index % 2 ? 'sleeve-grid-3x4' : 'pants-grid-3x4'))
+  for (let index = 0; index < 35; index += 1) history.record(snapshot(String(index), ['sleeve-grid-3x4', 'pants-grid-3x4', 'shoe-grid-3x4'][index % 3]))
 
   const undone = []
   let current = snapshot('current')
@@ -37,7 +37,7 @@ test('refazer repõe snapshots, volta a permitir desfazer e uma nova edição li
   assert.equal(history.canUndo, true)
 
   history.undo(restored)
-  history.record(snapshot('new-edit', 'pants-grid-3x4'))
+  history.record(snapshot('new-edit', 'shoe-grid-3x4'))
   assert.equal(history.canRedo, false)
 })
 
@@ -52,14 +52,21 @@ test('limpar a sessão remove ambos os lados do histórico', () => {
   assert.equal(history.canRedo, false)
 })
 
+test('a grade de sapatos também participa do histórico de edição', () => {
+  const history = createWardrobeGridHistory()
+  history.record(snapshot('shoes-before', 'shoe-grid-3x4'))
+  assert.equal(history.canUndo, true)
+  assert.equal(history.undo(snapshot('shoes-after', 'shoe-grid-3x4')).id, 'shoes-before')
+})
+
 test('WardrobeWorkspace usa o histórico dedicado e mantém os atalhos fora dos campos de edição', async () => {
   const page = await readFile(new URL('../src/renderer/src/features/fabricator/wardrobe/WardrobeWorkspace.tsx', import.meta.url), 'utf8')
 
   assert.match(page, /createWardrobeGridHistory\(\)/)
-  assert.match(page, /sleeveHistoryRef\.current\.record\(current\)/)
-  assert.match(page, /sleeveHistoryRef\.current\.clear\(\)/)
-  assert.match(page, /sleeveHistoryRef\.current\.undo\(draft\)/)
-  assert.match(page, /sleeveHistoryRef\.current\.redo\(draft\)/)
+  assert.match(page, /pairedGridHistoryRef\.current\.record\(current\)/)
+  assert.match(page, /pairedGridHistoryRef\.current\.clear\(\)/)
+  assert.match(page, /pairedGridHistoryRef\.current\.undo\(draft\)/)
+  assert.match(page, /pairedGridHistoryRef\.current\.redo\(draft\)/)
   assert.match(page, /target\?\.matches\('input, textarea, select, \[contenteditable="true"\]'\)/)
   assert.doesNotMatch(page, /sleeveUndoRef|sleeveRedoRef|recordSleeveHistory/)
 })

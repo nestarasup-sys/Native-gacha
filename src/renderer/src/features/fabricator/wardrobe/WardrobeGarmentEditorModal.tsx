@@ -8,7 +8,7 @@ type BodyReference = GarmentFrame & { name: string; dataUrl: string }
 type Props = {
   component: WardrobeComponent
   bodyReference?: BodyReference
-  mirrorPair?: boolean
+  pairedImageMode?: 'mirror' | 'copy'
   onClose: () => void
   onApply: (dataUrl: string) => void | Promise<void>
 }
@@ -64,7 +64,7 @@ function cssFilter(adjustments: Adjustments): string {
   return `brightness(${brightness}) contrast(${contrast}) saturate(${Math.max(0, adjustments.saturation) / 100})`
 }
 
-export function WardrobeGarmentEditorModal({ component, bodyReference, mirrorPair = false, onClose, onApply }: Props) {
+export function WardrobeGarmentEditorModal({ component, bodyReference, pairedImageMode, onClose, onApply }: Props) {
   const [tool, setTool] = useState<Tool>('erase')
   const [brushSize, setBrushSize] = useState(34)
   const [brushStrength, setBrushStrength] = useState(100)
@@ -513,7 +513,7 @@ export function WardrobeGarmentEditorModal({ component, bodyReference, mirrorPai
   return createPortal(<div className="wardrobe-image-editor-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onClose() }}>
     <section className="wardrobe-image-editor" data-history-version={historyRevision} role="dialog" aria-modal="true" aria-labelledby="wardrobe-image-editor-title">
       <header className="wardrobe-image-editor-header">
-        <div className="wardrobe-image-editor-title"><span className="wardrobe-image-editor-icon"><Icon name="edit" /></span><span><small>EDIÇÃO DA PEÇA</small><strong id="wardrobe-image-editor-title">{component.name}</strong><em>Alterações só entram no conjunto ao clicar em Aplicar.{mirrorPair ? ' A peça duplicada também será atualizada, espelhada.' : ''}</em></span></div>
+        <div className="wardrobe-image-editor-title"><span className="wardrobe-image-editor-icon"><Icon name="edit" /></span><span><small>EDIÇÃO DA PEÇA</small><strong id="wardrobe-image-editor-title">{component.name}</strong><em>Alterações só entram no conjunto ao clicar em Aplicar.{pairedImageMode === 'mirror' ? ' A peça duplicada também será atualizada, espelhada.' : pairedImageMode === 'copy' ? ' A peça duplicada também será atualizada sem inverter a imagem.' : ''}</em></span></div>
         <button type="button" className="wardrobe-image-editor-close" aria-label="Fechar editor" disabled={busy} onClick={onClose}>×</button>
       </header>
       <div className="wardrobe-image-editor-toolbar">

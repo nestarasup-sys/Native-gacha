@@ -160,7 +160,7 @@ export type WardrobeSet = {
   /** Corpo exibido apenas como referência de encaixe no Roupas DEV. */
   previewGender?: WardrobePreviewGender
   /** Importador usado para identificar conjuntos criados por uma grade de roupas. */
-  importKind?: 'torso-grid-4x3' | 'torso-grid-3x3' | 'sleeve-grid-3x4' | 'pants-grid-3x4'
+  importKind?: 'torso-grid-4x3' | 'torso-grid-3x3' | 'sleeve-grid-3x4' | 'pants-grid-3x4' | 'shoe-grid-3x4'
   /** Conjuntos antigos sem edição pertencem ao editor original. */
   edition?: WardrobeEdition
   id: string

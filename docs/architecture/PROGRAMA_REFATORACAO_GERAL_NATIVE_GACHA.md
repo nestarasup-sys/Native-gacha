@@ -549,6 +549,13 @@ O Node test runner não resolvia imports relativos extensionless `.ts` usados po
 - **Commit local:** `39b3ab3` (`refactor: isolate Animator timeline frame model`).
 - **Pendências:** preview de playback, transformações em todos os frames e renderização/exportação permanecem acoplados ao estado visual e precisam de regressões específicas antes de separação.
 
+### Importação de sapatos em Roupas DEV
+
+- **Entrada e catálogo:** a opção de sapatos usa a grade pareada de 3 colunas × 4 linhas e exige 12 recortes separados por transparência. Cada recorte da folha representa o sapato esquerdo; o conjunto salvo recebe `importKind: "shoe-grid-3x4"` no campo opcional existente, sem trocar `schemaVersion` nem exigir migração.
+- **Par e edição:** o app cria o componente direito na posição do pé direito, copiando a imagem na mesma orientação. Editar a imagem de qualquer lado mantém a cópia igual, sem espelhamento; mangas e calças continuam espelhando os pares conforme o comportamento anterior. O histórico de edição também cobre esta grade.
+- **Propriedade e persistência:** o conjunto continua pertencendo ao catálogo do Fabricador e usa os IDs e metadados de par já aceitos pelo Customizador. O tipo da folha preserva a regra de cópia ao reabrir o conjunto.
+- **Verificação desta alteração:** testes sintéticos cobrem 12 pares, pixels sem inversão, persistência e integração da opção; testes de corte de manga/calça, typecheck, auditoria arquitetural e build também passaram.
+
 ## Reconciliação das falhas da baseline
 
 As falhas observadas na execução inicial da suíte em `f416a02` foram investigadas e reconciliadas:
