@@ -52,6 +52,28 @@ function resultWithFaceAsset(request: EditorV6MotionBakeRequest): EditorV6Motion
     metrics: { ...result.metrics, atlasPixels: result.metrics.atlasPixels * 2 }
   }
 }
+function staticMouthAtlasResultFor(request: EditorV6MotionBakeRequest): EditorV6MotionBakeResult {
+  const result = resultFor(request)
+  return {
+    ...result,
+    assetRole: 'face-atlas',
+    motion: {
+      ...result.motion,
+      frames: result.motion.frames.map((frame) => ({
+        ...frame,
+        facePatch: {
+          sprite: frame.sprite,
+          x: 0.4,
+          y: 0.4,
+          width: 0.2,
+          height: 0.2,
+          replace: true,
+          replaceBounds: { x: 0.3, y: 0.3, width: 0.4, height: 0.4 }
+        }
+      }))
+    }
+  }
+}
 
 describe('transition preparation reuse', () => {
   it('detecta edição do Customizador e não prepara atlas com corpo diferente do snapshot', async () => {
@@ -431,7 +453,8 @@ describe('transition preparation reuse', () => {
         mouthScaleSamples: samples.map((_, index) => scales[index % scales.length]),
         plan: { ...original.plan, from: state, to: { ...state }, samples }
       }
-      const result = resultFor(request)
+      const result = staticMouthAtlasResultFor(request)
+      expect(editorV6MotionResultSchema.parse(result)).toEqual(result)
       const cache = createMotionDiskCache(folder)
       await cache.write(request, result)
       expect(await cache.read(request)).toEqual(result)
