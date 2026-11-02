@@ -3,13 +3,6 @@ name: Editor V6 - parity and export contracts
 on:
   pull_request:
     branches: [Dev-V2]
-    paths:
-      - 'src/renderer/src/features/editorV6/**'
-      - 'src/shared/editorV6*'
-      - 'electron/domains/editorV6/**'
-      - 'tests/editor-v6/**'
-      - 'docs/editor-v6/**'
-      - '.github/workflows/editor-v6-parity.yml'
   push:
     branches: [Dev-V2]
   workflow_dispatch:
@@ -22,6 +15,27 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  general-gates:
+    name: Dev-V2 / architecture, shared contracts and typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.22.0'
+          cache: npm
+      - name: Install without Electron postinstall hooks
+        run: npm ci --ignore-scripts
+      - name: Audit architecture boundaries
+        run: npm run audit:architecture
+      - name: Verify refactor contracts
+        run: npm run test:refactor
+      - name: Verify shared character geometry
+        run: npm run test:geometry
+      - name: TypeScript validation
+        run: npm run typecheck
+
   test:
     name: Editor V6 parity / ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
@@ -40,13 +54,24 @@ jobs:
         run: npm ci --ignore-scripts
       - name: Editor V6 timeline, export and scene tests
         run: npm run test:editor-v6
-      - name: TypeScript validation
-        run: npm run typecheck
-      - name: Build Electron and renderer
+      - name: Build bundle required by Windows export parity
+        if: matrix.os == 'windows-latest'
         run: npm run build
+      - name: Upload Windows production bundle
+        if: matrix.os == 'windows-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: editor-v6-windows-bundle
+          path: |
+            out/main/**
+            out/preload/**
+            out/renderer/**
+          if-no-files-found: error
+          retention-days: 1
 
   mp4-overlay:
     name: Real MP4 pixel parity / Windows
+    needs: test
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
@@ -59,11 +84,14 @@ jobs:
         run: npm ci --ignore-scripts
       - name: Install Electron runtime for real offscreen frames
         run: node node_modules/electron/install.js
+      - name: Download Windows production bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: editor-v6-windows-bundle
+          path: out/
       - name: Prepare verified LGPL FFmpeg tools
         shell: pwsh
         run: ./scripts/video-studio/prepare-ffmpeg-lgpl.ps1
-      - name: Build Electron export worker
-        run: npm run build
       - name: Compare real Turbo MP4 pixels with timeline
         run: node scripts/editor-v6/check-overlay-parity.cjs
       - name: Validate native facial composition and real 720p/1080p MP4
