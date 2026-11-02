@@ -28,7 +28,7 @@ Este documento acompanha a execução das Fases 1–6 e complementa a baseline d
 | 1 | Electron, IPC, persistência, backups e filas | Concluída | Diagnóstico de memória corrigido; ciclo de encerramento extraído e coberto; diferenças das filas mapeadas; backup, manutenção e segurança de janela passaram. Os gatilhos gerais de CI de `Dev-V2` ficam na Fase 6. |
 | 2 | Núcleo compartilhado de personagens | Concluída | Consumidores e regressões mapeados. Escala-base idêntica entre Studio e Editor V6 centralizada; renderizadores e contratos de exportação distintos mantidos. Testes de personagem/gênero/roupas articuladas executáveis por script dedicado. |
 | 3 | Fabricador e Customizador | Em andamento | Fluxo de catálogo/customizações coberto de ponta a ponta; gravação de roupas, operações de cabelo e seleção de peça no Customizador têm fronteiras/testes próprios. Restam mapear/decompor os workspaces maiores e ampliar cenários de reabertura. |
-| 4 | Studio, Editor V6 e fluxos de vídeo | Em andamento | Criação/duplicação de cenas do Studio extraídas; miniatura 480×270 corrigida para preencher o fundo; testes Windows de paridade Turbo e exportação facial 720p/1080p aprovados. Engines do Editor V6 continuam separadas. Restam validação completa da impressão/exportação do Studio e revisão dos fluxos legados de vídeo e workers. |
+| 4 | Studio, Editor V6 e fluxos de vídeo | Em andamento | Criação/duplicação de cenas do Studio extraídas; miniatura 480×270 corrigida; paridade Turbo e exportação facial 720p/1080p aprovadas. A antiga tela Video Studio não tem rota, mas as bibliotecas legadas seguem ativas em Roteiros e como origem de mídia do Editor V6. Teste de cancelamento do worker cobre espera do compositor. Restam validação da impressão do Studio e medições/exportação dos workers. |
 | 5 | Roteiros, Base de Vídeos, Opções, componentes e CSS | Em andamento | Biblioteca continua dona dos arquivos/IDs; Roteiros mantém metadados e referências. Guardas, canais e fila de salvamento da Base de Vídeos têm contratos testados; estilos e cálculos puros de Opções estão isolados. Restam decomposição adicional dos workspaces e CSS por feature. |
 | 6 | Performance, CI e consolidação | Em andamento | Workflow da Dev-V2 roda gates gerais e Editor V6 por plataforma; build Windows é reutilizado pelos testes MP4. Baseline repetível do cenário médio do Editor V6 registrada e captura IPC passou a ser estruturada. Restam medições de inicialização, Studio, outros workspaces e exportação, além de comparações repetidas antes de otimizar. |
 
@@ -126,6 +126,15 @@ O Node test runner não resolvia imports relativos extensionless `.ts` usados po
 - **Verificações do resolvedor:** `test:editor-v6:stress-profile` passou 5/5, incluindo os dois casos de diretório; sintaxe dos três scripts e `git diff --check` passaram.
 - **Commit local:** `da90c8d` (`test: isolate Editor V6 export artifacts`).
 - **Pendências:** a paridade real reduz incerteza de exportação facial e Turbo; continua faltando medir comparação de performance inicial/depois e revisar as capturas/exportações do Studio.
+
+### Worker de exportação e propriedade das bibliotecas legadas de vídeo
+
+- **Mapa de rotas e consumidores:** `src/renderer/src/ui/App.tsx` registra `/editor-v6`, sem rota antiga do Video Studio. As bibliotecas `video-studio.media` e `video-studio.backgrounds` continuam necessárias: Roteiros lista/importa/exclui fundos pela API `videoBackgrounds`; o Main resolve mídia para Roteiros e para links da biblioteca usados no Editor V6. Caminhos, IDs e migrações permanecem protegidos; não restaurar a interface antiga nem remover esses serviços.
+- **Worker offscreen:** a exportação aguarda a pintura do compositor antes de capturar cada frame. Uma regressão sintética agora cancela durante essa espera e confirma que a janela fecha, os listeners são limpos e `capturePage` não recebe um frame obsoleto.
+- **Contrato preservado:** somente cobertura de teste; sem mudança de formato de projeto, caminhos de mídia, canais IPC ou ciclo normal de exportação.
+- **Verificações:** `npm run test:editor-v6` passou com 221 testes e 1 skip; `npm test` passou com 29 testes incluindo armazenamento e biblioteca legada de vídeo; `npm run test:refactor` passou.
+- **Commit local:** `e5b5ff9` (`test: cover cancelled Editor V6 frame capture`).
+- **Pendências:** validar a impressão ponta a ponta do Studio e medir duração/memória de exportação; a interface e a paridade já verificadas não substituem essas medições.
 
 ### Ciclo de vida do worker de cabelo do Fabricador
 
@@ -246,4 +255,5 @@ As falhas observadas na execução inicial da suíte em `f416a02` foram investig
 | `bfdcde6` | Estrutura snapshots IPC e captura baseline de timeline/memória em perfil sintético | Local em `Dev-V2`; sem publicação. |
 | `b69685c` | Corrige o preenchimento do fundo nas miniaturas do Studio após a escala do canvas | Local em `Dev-V2`; sem publicação. |
 | `ca6ae76` | Extrai o modelo e o hook de seleção de roupas do Customizador | Local em `Dev-V2`; sem publicação. |
+| `e5b5ff9` | Cobre cancelamento durante a espera do compositor no worker de exportação | Local em `Dev-V2`; sem publicação. |
 
