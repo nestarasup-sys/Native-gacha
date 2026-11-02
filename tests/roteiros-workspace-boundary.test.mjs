@@ -22,7 +22,8 @@ test('Roteiros mantém catálogo/persistência separados do editor do projeto', 
   assert.match(workspace, /exportRoteiroAssets/)
   assert.doesNotMatch(workspace, /saveRoteiros\(/)
 
-  assert.match(page, /emptyRoteiroContent/)
+  assert.match(page, /duplicateRoteiroDocument/)
+  assert.doesNotMatch(page, /remapBlocks/)
   assert.match(workspace, /emptyRoteiroContent/)
   assert.match(defaults, /timeline: 'unspecified'/)
 })

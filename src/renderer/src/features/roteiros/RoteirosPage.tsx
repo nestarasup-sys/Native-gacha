@@ -4,11 +4,11 @@ import { registerPendingWriteFlusher } from '../../ui/pendingPersistence'
 import { CharacterPortrait } from '../../ui/components/CharacterPortrait'
 import { RenderedCharacterPortrait } from '../../ui/components/RenderedCharacterPortrait'
 import { RoteiroWorkspace } from './RoteiroWorkspace'
-import { emptyRoteiroContent } from './roteiroDefaults'
+import { duplicateRoteiroDocument } from './duplicateRoteiroDocument'
 import { createRoteiroSnapshotPersistence } from './roteiroSnapshotPersistence'
 
 import type { CustomizerCharacter } from '../../../../shared/customizer'
-import type { RoteiroDocument, RoteiroReactionBlock, RoteiroVideoReference } from '../../../../shared/roteiros'
+import type { RoteiroDocument, RoteiroVideoReference } from '../../../../shared/roteiros'
 import type { VideoLibraryItem } from '../../../../shared/mediaLibrary'
 
 /** Catálogo de roteiros, seleção de projeto e persistência dos documentos. */
@@ -128,14 +128,7 @@ export function RoteirosPage() {
   }
 
   const duplicateRoteiro = (source: SidebarRoteiro) => {
-    const remapBlocks = (blocks: RoteiroReactionBlock[] = []) => blocks.map((block) => ({ ...block, id: crypto.randomUUID() }))
-    const copy: SidebarRoteiro = {
-      ...source,
-      id: crypto.randomUUID(),
-      title: `${source.title.slice(0, 92)} (cópia)`,
-      opening: source.opening ? { ...source.opening, blocks: remapBlocks(source.opening.blocks) } : emptyRoteiroContent(),
-      tiktoks: source.tiktoks.map((item) => ({ ...item, id: crypto.randomUUID(), blocks: remapBlocks(item.blocks) }))
-    }
+    const copy = duplicateRoteiroDocument(source, () => crypto.randomUUID())
     setRoteiros((current) => [copy, ...current])
     setSelectedRoteiroId(copy.id)
   }
