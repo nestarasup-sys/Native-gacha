@@ -33,7 +33,8 @@ import { WardrobeJointCutGuide, WardrobeJointCutPositionControl } from './Wardro
 import { loadWardrobeJointCutSettings, saveWardrobeJointCutSettings, wardrobeJointCutAdjustmentFor, wardrobeJointCutTarget } from './wardrobeJointCutSettings'
 import { wardrobePreviewGenderOf, wardrobePreviewTorsoImage } from './wardrobePreviewGender'
 import { useModelAppearanceTarget, useModelPartAppearancePreview } from '../ModelAppearanceContext'
-import { createWardrobeJointAssemblyOffsets, findWardrobeJointCut, splitWardrobePixelsAtJoint, wardrobeComponentPreviewOffset } from './wardrobeJointAssembly'
+import { createWardrobeJointAssemblyOffsets, findWardrobeJointCut, wardrobeComponentPreviewOffset } from './wardrobeJointAssembly'
+import { splitWardrobeGarmentPairAtJoint } from './splitWardrobeGarmentPair'
 import './wardrobe.css'
 
 type PieceDrag = { pointerId: number; componentId: string; pointerX: number; pointerY: number; originX: number; originY: number }
@@ -488,61 +489,33 @@ export function WardrobeWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
     if (!draft || !referenceModel || !selected || !joinJointsMode || processing || saving || openingSet || !isLongJointSplitCandidate(selected)) return
     setProcessing(true); setError('')
     try {
-      const pair = draft.components.filter((component) => component.sleevePairId === selected.sleevePairId && component.sleeveSegment === 'whole')
-      if (pair.length !== 2) throw new Error('O par da roupa não está completo; nada foi alterado.')
-      const replacements: WardrobeComponent[] = []
-      for (const component of pair) {
-        const bodyOffset = wardrobeComponentPreviewOffset(component, bodyOffsets)
-        const previewComponent = { ...component, x: component.x + bodyOffset.x, y: component.y + bodyOffset.y }
-        const adjustment = wardrobeJointCutAdjustmentFor(component, jointCutSettingsRef.current, referenceModel)
-        const cut = findWardrobeJointCut(previewComponent, referenceModel, bodyOffsets, adjustment)
-        if (!cut) throw new Error(`Não encontrei uma junta vinculada entre os segmentos desta ${component.sleeveJointSplit === 'leg' || component.category === 'calca-coxa' ? 'calça' : 'manga'}. Confira os vínculos no modelo; nada foi alterado.`)
-        const image = new Image(); image.src = component.dataUrl; await image.decode()
-        const sourceCanvas = document.createElement('canvas'); sourceCanvas.width = image.naturalWidth; sourceCanvas.height = image.naturalHeight
-        const sourceContext = sourceCanvas.getContext('2d', { willReadFrequently: true })
-        if (!sourceContext) throw new Error('Não foi possível ler a imagem da roupa; nada foi alterado.')
-        sourceContext.drawImage(image, 0, 0)
-        const segments = splitWardrobePixelsAtJoint(sourceContext.getImageData(0, 0, sourceCanvas.width, sourceCanvas.height), previewComponent, cut)
-        for (const segment of segments) {
-          const upper = segment.key === 'upper'
-          const category = component.sleeveJointSplit === 'leg' || component.category === 'calca-coxa'
-            ? upper ? 'calca-coxa' as const : 'calca-canela' as const
-            : upper ? 'manga-superior' as const : 'manga-inferior' as const
-          const attachedPartId = upper ? cut.upperPartId : cut.lowerPartId
-          const bone = referenceModel.parts.find((part) => part.id === attachedPartId)
-          if (!bone) throw new Error('A junta aponta para uma parte ausente do modelo; nada foi alterado.')
-          const targetOffset = bodyOffsets[attachedPartId] ?? zeroOffset
-          const x = segment.x - targetOffset.x
-          const y = segment.y - targetOffset.y
-          const imageCanvas = document.createElement('canvas'); imageCanvas.width = segment.width; imageCanvas.height = segment.height
-          const imageContext = imageCanvas.getContext('2d')
-          if (!imageContext) throw new Error('Não foi possível preparar os recortes; nada foi alterado.')
-          const output = imageContext.createImageData(segment.width, segment.height)
-          output.data.set(segment.pixels)
-          imageContext.putImageData(output, 0, 0)
-          const suffix = component.sleeveJointSplit === 'leg' || component.category === 'calca-coxa'
-            ? upper ? 'coxa' : 'canela'
-            : upper ? 'braço superior' : 'antebraço'
-          const piece: WardrobeComponent = {
-            ...component,
-            id: upper ? component.id : crypto.randomUUID(),
-            name: component.name.replace(/ · (esquerda|direita)$/i, '') + ` · ${suffix}`,
-            sleeveSegment: segment.key,
-            sleeveJointSplit: undefined,
-            jointCutOffsetRatio: undefined,
-            category,
-            attachedPartId,
-            x, y, width: segment.width * component.width / sourceCanvas.width, height: segment.height * component.height / sourceCanvas.height,
-            originX: x, originY: y,
-            originWidth: segment.width * component.width / sourceCanvas.width,
-            originHeight: segment.height * component.height / sourceCanvas.height,
-            binding: undefined,
-            glue: { version: 1, mode: 'loose' },
-            dataUrl: imageCanvas.toDataURL('image/png')
-          }
-          replacements.push(fixWardrobeGlue(piece, bone))
+      const replacements = await splitWardrobeGarmentPairAtJoint(
+        draft,
+        selected,
+        referenceModel,
+        bodyOffsets,
+        jointCutSettingsRef.current,
+        {
+          decodePixels: async (dataUrl) => {
+            const image = new Image(); image.src = dataUrl; await image.decode()
+            const canvas = document.createElement('canvas'); canvas.width = image.naturalWidth; canvas.height = image.naturalHeight
+            const context = canvas.getContext('2d', { willReadFrequently: true })
+            if (!context) throw new Error('Não foi possível ler a imagem da roupa; nada foi alterado.')
+            context.drawImage(image, 0, 0)
+            return context.getImageData(0, 0, canvas.width, canvas.height)
+          },
+          encodeSegment: (segment) => {
+            const canvas = document.createElement('canvas'); canvas.width = segment.width; canvas.height = segment.height
+            const context = canvas.getContext('2d')
+            if (!context) throw new Error('Não foi possível preparar os recortes; nada foi alterado.')
+            const output = context.createImageData(segment.width, segment.height)
+            output.data.set(segment.pixels)
+            context.putImageData(output, 0, 0)
+            return canvas.toDataURL('image/png')
+          },
+          createId: () => crypto.randomUUID()
         }
-      }
+      )
       if (draftRef.current !== draft) throw new Error('O conjunto mudou durante o cálculo. Revise a peça e tente dividir novamente; nada foi alterado.')
       recordSleeveHistory(draft)
       setDraft({ ...draft, components: [...draft.components.filter((component) => component.sleevePairId !== selected.sleevePairId), ...replacements], updatedAt: new Date().toISOString() })
