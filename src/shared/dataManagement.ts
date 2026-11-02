@@ -133,14 +133,43 @@ export type RuntimeDiagnosticsSnapshot = {
 
 export type DiagnosticsReportSaveResult = { saved: boolean; fileName?: string }
 export type DiagnosticEventExportResult = { saved: boolean; fileName?: string; eventCount: number }
+export type IpcPerformanceRow = {
+  channel: string
+  calls: number
+  failures: number
+  averageMs: number
+  worstMs: number
+}
+export type IpcPerformanceDiagnosticsSnapshot = {
+  enabled: boolean
+  startedAt: string | null
+  durationMs: number
+  maxDurationMs: number
+  rows: IpcPerformanceRow[]
+}
+export type DiagnosticsQuickCheckId = 'runtime' | 'events' | 'backups'
+export type DiagnosticsQuickCheckResult = {
+  id: DiagnosticsQuickCheckId
+  status: 'passed' | 'failed'
+  durationMs: number
+  itemsChecked: number
+}
+export type DiagnosticsQuickCheckSnapshot = {
+  startedAt: string
+  completedAt: string
+  cancelled: boolean
+  results: DiagnosticsQuickCheckResult[]
+}
 
 export type DataManagementDesktopApi = {
   getAppDataStorageSummary: () => Promise<DataStorageSummary>
   listLocalDiagnosticEvents: () => Promise<LocalDiagnosticEvent[]>
   recordLocalDiagnosticEvent: (event: LocalDiagnosticEventInput) => Promise<void>
   getRuntimeDiagnostics: () => Promise<RuntimeDiagnosticsSnapshot>
-  saveDiagnosticsReport: () => Promise<DiagnosticsReportSaveResult>
+  saveDiagnosticsReport: (quickChecks?: DiagnosticsQuickCheckSnapshot) => Promise<DiagnosticsReportSaveResult>
   exportLocalDiagnosticEvents: (eventIds: string[]) => Promise<DiagnosticEventExportResult>
+  getIpcPerformanceSnapshot: () => Promise<IpcPerformanceDiagnosticsSnapshot>
+  setIpcPerformanceCollection: (enabled: boolean) => Promise<IpcPerformanceDiagnosticsSnapshot>
   getDataMigrationSummary: () => Promise<DataMigrationSummary>
   runDataMigration: () => Promise<DataMigrationResult>
   pauseDataMigration: () => Promise<DataMigrationPauseResult>

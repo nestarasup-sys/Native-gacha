@@ -32,7 +32,7 @@ import { registerPendingPersistenceFlushIpc } from './domains/storage/pendingPer
 import { createKeyedOperationQueue } from './domains/storage/keyedOperationQueue'
 import { configureAssetImageStorage, readAssetImage, writeAssetImageSource } from './assetImageOverrides'
 import { normalizeImageBuffer } from './imageIngestion.cjs'
-import { measureIpc } from './ipcPerformance'
+import { getIpcPerformanceSnapshot, measureIpc, setIpcPerformanceCollectionEnabled } from './ipcPerformance'
 import { restrictRendererNavigation } from './windowNavigation'
 import { restrictRendererPermissions } from './windowPermissions'
 import { BaseVideoService } from './domains/baseVideos/service'
@@ -877,6 +877,12 @@ const createMainWindow = createMainWindowFactory({
       void capture.then(() => { console.log('Capturas reais concluídas', captures, reopen ? '(reabertura)' : '(primeiro processo)'); app.quit() })
         .catch(error => { console.error('Falha no teste visual real do Fabricador:', error); app.exit(1) })
     }
+    if (process.env.GACHA_DEV_AI_TEST === '1' && process.env.GACHA_LOGS_DEV_REAL_UI_CAPTURE === '1') {
+      const capture = import('./domains/storage/logsDevVisualCapture').then((visualCapture) =>
+        visualCapture.captureLogsDevRealScreens(window, join(app.getPath('appData'), 'logs-dev-captures')))
+      void capture.then(() => { console.log('Capturas reais da Logs Dev concluídas'); app.quit() })
+        .catch(error => { console.error('Falha na revisão visual sintética da Logs Dev:', error); app.exit(1) })
+    }
   },
   onClosed: () => editorV6MotionService?.releaseIdle(),
   flushRendererWrites: async (window) => {
@@ -988,6 +994,8 @@ app.whenReady().then(async () => {
         }
       }
     },
+    getIpcPerformanceSnapshot,
+    setIpcPerformanceCollection: setIpcPerformanceCollectionEnabled,
     getStorageSummary: async () => ({ disk: await getAppDataUsage(app.getPath('appData')), catalog: dataPlatform.storageSummary() }),
     listBackups: () => dataBackupService?.listBackups() ?? Promise.resolve([]),
     getAppVersion: () => app.getVersion(),

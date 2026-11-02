@@ -3,6 +3,7 @@ import { createStudioInvoker } from '../src/shared/studioIpcChannels'
 import { createEditorV6Invoker } from '../src/shared/editorV6IpcChannels'
 import { createBaseVideosInvoker } from '../src/shared/baseVideosIpcChannels'
 import { isDiagnosticEventIdListWithinBridgeLimits, isDiagnosticEventInputWithinBridgeLimits } from './application/diagnosticEventInput'
+import { isDiagnosticsQuickCheckSnapshotWithinBridgeLimits } from './application/diagnosticQuickCheckInput'
 import { contextBridge, ipcRenderer } from 'electron'
 import type { FabricatorDesktopApi, FabricatorModelSourcePublishRequest } from '../src/shared/fabricator'
 import type { CustomizerDesktopApi } from '../src/shared/customizer'
@@ -182,10 +183,16 @@ const dataManagementApi: DataManagementDesktopApi = {
   listLocalDiagnosticEvents: () => ipcRenderer.invoke('app:diagnostics:list'),
   recordLocalDiagnosticEvent: recordDiagnosticEvent,
   getRuntimeDiagnostics: () => ipcRenderer.invoke('app:diagnostics:runtime'),
-  saveDiagnosticsReport: () => ipcRenderer.invoke('app:diagnostics:export'),
+  saveDiagnosticsReport: (quickChecks) => quickChecks === undefined || isDiagnosticsQuickCheckSnapshotWithinBridgeLimits(quickChecks)
+    ? ipcRenderer.invoke('app:diagnostics:export', quickChecks)
+    : Promise.reject(new Error('Resumo das verificações rápidas inválido.')),
   exportLocalDiagnosticEvents: (eventIds) => isDiagnosticEventIdListWithinBridgeLimits(eventIds)
     ? ipcRenderer.invoke('app:diagnostics:export-events', eventIds)
     : Promise.reject(new Error('Seleção de eventos de diagnóstico inválida.')),
+  getIpcPerformanceSnapshot: () => ipcRenderer.invoke('app:diagnostics:ipc-performance:get'),
+  setIpcPerformanceCollection: (enabled) => typeof enabled === 'boolean'
+    ? ipcRenderer.invoke('app:diagnostics:ipc-performance:set', enabled)
+    : Promise.reject(new Error('Estado da coleta de desempenho IPC inválido.')),
   getDataMigrationSummary: () => ipcRenderer.invoke('app:data-migration:prepare'),
   runDataMigration: () => ipcRenderer.invoke('app:data-migration:run-all'),
   pauseDataMigration: () => ipcRenderer.invoke('app:data-migration:pause'),

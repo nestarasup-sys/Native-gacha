@@ -1,9 +1,10 @@
 import type { IpcMain, IpcMainInvokeEvent, SaveDialogOptions } from 'electron'
 import { basename } from 'node:path'
 import { isDiagnosticEventIdListWithinBridgeLimits } from '../../application/diagnosticEventInput'
+import { isDiagnosticsQuickCheckSnapshotWithinBridgeLimits } from '../../application/diagnosticQuickCheckInput'
 import type {
   DataBackupSummary, DataStorageSummary, DiagnosticEventExportResult, DiagnosticsReportSaveResult,
-  LocalDiagnosticEvent, LocalDiagnosticEventInput, RuntimeDiagnosticsSnapshot
+  IpcPerformanceDiagnosticsSnapshot, LocalDiagnosticEvent, LocalDiagnosticEventInput, RuntimeDiagnosticsSnapshot
 } from '../../../src/shared/dataManagement'
 
 export function registerDiagnosticsHandlers(deps: {
@@ -14,6 +15,8 @@ export function registerDiagnosticsHandlers(deps: {
     recordRenderer: (event: unknown) => Promise<void>
   }
   getRuntimeDiagnostics: (event: IpcMainInvokeEvent) => Promise<RuntimeDiagnosticsSnapshot>
+  getIpcPerformanceSnapshot: () => IpcPerformanceDiagnosticsSnapshot
+  setIpcPerformanceCollection: (enabled: boolean) => IpcPerformanceDiagnosticsSnapshot
   getStorageSummary: () => Promise<DataStorageSummary>
   listBackups: () => Promise<DataBackupSummary[]>
   getAppVersion: () => string
@@ -35,8 +38,22 @@ export function registerDiagnosticsHandlers(deps: {
     return deps.getRuntimeDiagnostics(event)
   })
 
-  deps.ipcMain.handle('app:diagnostics:export', async (event): Promise<DiagnosticsReportSaveResult> => {
+  deps.ipcMain.handle('app:diagnostics:ipc-performance:get', async (event): Promise<IpcPerformanceDiagnosticsSnapshot> => {
     deps.assertTrustedSender(event)
+    return deps.getIpcPerformanceSnapshot()
+  })
+
+  deps.ipcMain.handle('app:diagnostics:ipc-performance:set', async (event, enabled: unknown): Promise<IpcPerformanceDiagnosticsSnapshot> => {
+    deps.assertTrustedSender(event)
+    if (typeof enabled !== 'boolean') throw new Error('Estado da coleta de desempenho IPC inválido.')
+    return deps.setIpcPerformanceCollection(enabled)
+  })
+
+  deps.ipcMain.handle('app:diagnostics:export', async (event, quickChecks: unknown): Promise<DiagnosticsReportSaveResult> => {
+    deps.assertTrustedSender(event)
+    if (quickChecks !== undefined && !isDiagnosticsQuickCheckSnapshotWithinBridgeLimits(quickChecks)) {
+      throw new Error('Resumo das verificações rápidas inválido.')
+    }
     const defaultPath = `Native-gacha-diagnostico-${new Date().toISOString().slice(0, 10)}.json`
     const choice = await deps.showSaveDialog(event, {
       title: 'Salvar relatório de diagnóstico',
@@ -48,6 +65,7 @@ export function registerDiagnosticsHandlers(deps: {
     const [runtime, storage, backups, events] = await Promise.all([
       deps.getRuntimeDiagnostics(event), deps.getStorageSummary(), deps.listBackups(), deps.log.list()
     ])
+    const ipcPerformance = deps.getIpcPerformanceSnapshot()
     const report = {
       format: 'native-gacha-diagnostics-v1',
       generatedAt: new Date().toISOString(),
@@ -57,6 +75,8 @@ export function registerDiagnosticsHandlers(deps: {
         reviewBeforeSharing: true
       },
       app: { name: 'Native-gacha', version: deps.getAppVersion(), runtime },
+      ...(ipcPerformance.rows.length ? { performance: { ipc: ipcPerformance } } : {}),
+      ...(quickChecks?.results.length ? { diagnostics: { quickChecks } } : {}),
       storage: { ...storage.disk, catalog: storage.catalog },
       backups: {
         count: backups.length,

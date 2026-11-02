@@ -110,15 +110,15 @@ export function DiagnosticEventBrowser({
       <label><span>Ordem</span><select value={filters.order} onChange={(event) => updateFilter('order', event.target.value as DiagnosticEventFilters['order'])}><option value="newest">Mais recentes</option><option value="oldest">Mais antigos</option></select></label>
     </div>
 
-    <div className="options-event-result-summary" aria-live="polite">
-      <span>{filteredEvents.length.toLocaleString('pt-BR')} de {events.length.toLocaleString('pt-BR')} eventos</span>
+    {(loaded && !error || events.length > 0) && <div className="options-event-result-summary" aria-live="polite">
+      <span>{filteredEvents.length.toLocaleString('pt-BR')} de {events.length.toLocaleString('pt-BR')} eventos{error ? ' · atualização falhou; exibindo leitura anterior' : ''}</span>
       {filteredEvents.length > visibleEvents.length && <span> · exibindo {visibleEvents.length.toLocaleString('pt-BR')}</span>}
-    </div>
+    </div>}
     {error && <p className="options-inline-message error" role="alert">{error}</p>}
     {copyStatus && <p className="options-inline-message" role="status">{copyStatus}</p>}
     {exportStatus && <p className="options-inline-message" role="status">{exportStatus}</p>}
-    {!busy && loaded && events.length === 0 && <div className="options-empty"><strong>Nenhum evento local registrado</strong><span>Falhas não tratadas da interface e avisos registrados pelo aplicativo aparecerão aqui.</span></div>}
-    {!busy && loaded && events.length > 0 && filteredEvents.length === 0 && <div className="options-empty"><strong>Nenhum evento corresponde aos filtros</strong><span>Limpe ou ajuste a busca, o período e os filtros selecionados.</span></div>}
+    {!error && !busy && loaded && events.length === 0 && <div className="options-empty"><strong>Nenhum evento local registrado</strong><span>Falhas não tratadas da interface e avisos registrados pelo aplicativo aparecerão aqui.</span></div>}
+    {!error && !busy && loaded && events.length > 0 && filteredEvents.length === 0 && <div className="options-empty"><strong>Nenhum evento corresponde aos filtros</strong><span>Limpe ou ajuste a busca, o período e os filtros selecionados.</span></div>}
 
     <div className="options-event-list" aria-busy={busy}>
       {visibleEvents.map((event) => <details className={`options-event options-event-${event.severity}`} key={event.id}>

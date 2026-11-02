@@ -1,13 +1,16 @@
 import { useEffect, useRef } from 'react'
+import type { DiagnosticsQuickCheckSnapshot } from '../../../../shared/dataManagement'
 
 export function DiagnosticsReportPreviewDialog({
   open,
   busy,
+  quickChecks,
   onCancel,
   onConfirm
 }: {
   open: boolean
   busy: boolean
+  quickChecks: DiagnosticsQuickCheckSnapshot | null
   onCancel: () => void
   onConfirm: () => void
 }) {
@@ -36,9 +39,13 @@ export function DiagnosticsReportPreviewDialog({
       <ul>
         <li>Versões do Native-gacha, Electron, Chromium e Node; memória e tempo aberto; lista de processos com PID e memória, sem somar os processos entre si.</li>
         <li>CPU por processo somente quando houver uma janela entre leituras. A primeira leitura informa a CPU como indisponível.</li>
+        <li>Latências IPC agregadas somente se a coleta opcional tiver sido iniciada nesta sessão. Os totais não incluem payloads e a coleta para após cinco minutos.</li>
         <li>Uso agregado por categoria, resumo do catálogo e objetos referenciados; essa leitura é atualizada quando você confirmar.</li>
         <li>Quantidade, verificação e tamanho total dos backups, sem copiar o conteúdo dos backups.</li>
         <li>Até 250 eventos locais recentes, com as mensagens e metadados sanitizados.</li>
+        <li>{quickChecks?.results.length
+          ? `Resumo das ${quickChecks.results.length} verificações rápidas executadas nesta sessão, com status, duração e quantidade de itens consultados.`
+          : 'Nenhum resultado de verificação rápida será incluído, pois ainda não foi executado nesta sessão.'}</li>
       </ul>
       <p className="options-report-privacy">O relatório não inclui documentos de projeto nem os bytes de personagens ou mídias. Caminhos, URLs e credenciais conhecidos são removidos, mas mensagens técnicas são texto livre e podem manter contexto específico. Revise o JSON gerado antes de compartilhar.</p>
       <footer>

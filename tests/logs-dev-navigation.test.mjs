@@ -59,6 +59,16 @@ test('Logs Dev separates overview, events, performance, storage, recovery and de
   assert.match(processTable, /CPU é a média do intervalo/)
   assert.match(processTable, /Não há monitoramento em segundo plano/)
   assert.match(processTable, /scope="col"/)
+  const ipcPanel = await readFile(new URL('../src/renderer/src/features/options/IpcPerformancePanel.tsx', import.meta.url), 'utf8')
+  assert.match(ipcPanel, /Iniciar coleta/)
+  assert.match(ipcPanel, /Parar coleta/)
+  assert.match(ipcPanel, /cinco minutos/)
+  assert.match(ipcPanel, /Pior duração/)
+
+  const quickChecks = await readFile(new URL('../src/renderer/src/features/options/LogsDevQuickChecksPanel.tsx', import.meta.url), 'utf8')
+  assert.match(quickChecks, /Executar verificações/)
+  assert.match(quickChecks, /Parar próximas leituras/)
+  assert.match(quickChecks, /SOMENTE LEITURA/)
 })
 
 test('report export requires a privacy summary before invoking the native save flow', async () => {
@@ -69,12 +79,15 @@ test('report export requires a privacy summary before invoking the native save f
   assert.match(preview, /Até 250 eventos locais recentes/)
   assert.match(preview, /lista de processos com PID e memória/)
   assert.match(preview, /Revise o JSON gerado antes de compartilhar/)
+  assert.match(preview, /verificações rápidas executadas nesta sessão/)
 })
 
 test('a visão geral mostra falha recente, estado consultado e acesso aos eventos sem declarar aprovação prematura', async () => {
   const page = await readFile(new URL('../src/renderer/src/features/options/OptionsPage.tsx', import.meta.url), 'utf8')
   assert.match(page, /Última falha registrada/)
   assert.match(page, /Processo principal/)
+  assert.match(page, /Falha ao consultar os eventos locais/)
+  assert.match(page, /!eventsLoaded \|\| alerts\.some/)
   assert.match(page, /Sem problemas nos eventos consultados/)
   assert.match(page, /Investigar eventos/)
 })

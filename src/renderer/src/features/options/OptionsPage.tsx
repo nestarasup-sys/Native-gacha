@@ -1,8 +1,9 @@
 import './options.css'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type {
   DataBackupSummary, DataMigrationProgress as MigrationProgress, DataMigrationSummary as MigrationSummary,
-  DataStorageSummary as StorageSummary, LocalDiagnosticEvent, RuntimeDiagnosticsSnapshot
+  DiagnosticsQuickCheckSnapshot,
+  DataStorageSummary as StorageSummary, IpcPerformanceDiagnosticsSnapshot, LocalDiagnosticEvent, RuntimeDiagnosticsSnapshot
 } from '../../../../shared/dataManagement'
 import { diagnosticAlerts, domainLabels, formatBytes, formatDate, groupLabels, latestDiagnosticFailure, totalStorageBytes } from './optionsDiagnostics'
 import { createOptionsBackupCommands } from './optionsBackupCommands'
@@ -12,6 +13,9 @@ import { type LogsDevSectionId } from './logsDevSections'
 import { DiagnosticEventBrowser } from './DiagnosticEventBrowser'
 import { DiagnosticsReportPreviewDialog } from './DiagnosticsReportPreviewDialog'
 import { RuntimeProcessMetricsTable } from './RuntimeProcessMetricsTable'
+import { IpcPerformancePanel } from './IpcPerformancePanel'
+import { LogsDevQuickChecksPanel } from './LogsDevQuickChecksPanel'
+import { runLogsDevQuickChecks } from './logsDevQuickChecks'
 
 type StoredBackup = DataBackupSummary
 
@@ -25,6 +29,9 @@ export function LogsDevPage() {
   const [runtime, setRuntime] = useState<RuntimeDiagnosticsSnapshot | null>(null)
   const [runtimeBusy, setRuntimeBusy] = useState(false)
   const [runtimeError, setRuntimeError] = useState<string | null>(null)
+  const [ipcPerformance, setIpcPerformance] = useState<IpcPerformanceDiagnosticsSnapshot | null>(null)
+  const [ipcPerformanceBusy, setIpcPerformanceBusy] = useState(false)
+  const [ipcPerformanceError, setIpcPerformanceError] = useState<string | null>(null)
   const [events, setEvents] = useState<LocalDiagnosticEvent[]>([])
   const [eventsLoaded, setEventsLoaded] = useState(false)
   const [eventsBusy, setEventsBusy] = useState(false)
@@ -41,6 +48,10 @@ export function LogsDevPage() {
   const [backupBusy, setBackupBusy] = useState(false)
   const [backupMessage, setBackupMessage] = useState<string | null>(null)
   const [backupError, setBackupError] = useState<string | null>(null)
+  const [quickChecks, setQuickChecks] = useState<DiagnosticsQuickCheckSnapshot | null>(null)
+  const [quickChecksBusy, setQuickChecksBusy] = useState(false)
+  const [quickChecksCancelRequested, setQuickChecksCancelRequested] = useState(false)
+  const quickChecksAbortController = useRef<AbortController | null>(null)
 
   const refreshStorage = useCallback(async () => {
     setStorageBusy(true); setStorageError(null)
@@ -57,11 +68,23 @@ export function LogsDevPage() {
     catch (reason) { setRuntimeError(reason instanceof Error ? reason.message : 'Não foi possível medir a memória dos processos.') }
     finally { setRuntimeBusy(false) }
   }, [])
+  const refreshIpcPerformance = useCallback(async () => {
+    setIpcPerformanceBusy(true); setIpcPerformanceError(null)
+    try { setIpcPerformance(await window.desktop.dataManagement.getIpcPerformanceSnapshot()) }
+    catch (reason) { setIpcPerformanceError(reason instanceof Error ? reason.message : 'Não foi possível ler as estatísticas IPC.') }
+    finally { setIpcPerformanceBusy(false) }
+  }, [])
+  const setIpcCollection = useCallback(async (enabled: boolean) => {
+    setIpcPerformanceBusy(true); setIpcPerformanceError(null)
+    try { setIpcPerformance(await window.desktop.dataManagement.setIpcPerformanceCollection(enabled)) }
+    catch (reason) { setIpcPerformanceError(reason instanceof Error ? reason.message : 'Não foi possível alterar a coleta IPC.') }
+    finally { setIpcPerformanceBusy(false) }
+  }, [])
   const refreshEvents = useCallback(async () => {
     setEventsBusy(true); setEventsError(null)
     try { setEvents(await window.desktop.dataManagement.listLocalDiagnosticEvents()); setEventsLoaded(true) }
     catch (reason) { setEventsError(reason instanceof Error ? reason.message : 'Não foi possível ler os registros locais.') }
-    finally { setEventsBusy(false) }
+    finally { setEventsLoaded(true); setEventsBusy(false) }
   }, [])
   const refreshBackups = useCallback(async () => {
     try { setBackups(await window.desktop.dataManagement.listDataBackups()); setBackupError(null) }
@@ -72,6 +95,35 @@ export function LogsDevPage() {
     try { setMigration(await window.desktop.dataManagement.getDataMigrationSummary()) }
     catch (reason) { setMigrationError(reason instanceof Error ? reason.message : 'Não foi possível inventariar os domínios.') }
     finally { setMigrationBusy(false) }
+  }, [])
+  const runQuickChecks = useCallback(async () => {
+    if (quickChecksAbortController.current) return
+    const controller = new AbortController()
+    quickChecksAbortController.current = controller
+    setQuickChecksBusy(true)
+    setQuickChecksCancelRequested(false)
+    try {
+      const snapshot = await runLogsDevQuickChecks({
+        getRuntimeDiagnostics: async () => {
+          const value = await window.desktop.dataManagement.getRuntimeDiagnostics()
+          setRuntime(value)
+          setRuntimeError(null)
+          return value
+        },
+        listLocalDiagnosticEvents: () => window.desktop.dataManagement.listLocalDiagnosticEvents(),
+        listDataBackups: () => window.desktop.dataManagement.listDataBackups()
+      }, controller.signal)
+      setQuickChecks(snapshot)
+    } finally {
+      if (quickChecksAbortController.current === controller) quickChecksAbortController.current = null
+      setQuickChecksBusy(false)
+      setQuickChecksCancelRequested(false)
+    }
+  }, [])
+  const cancelQuickChecks = useCallback(() => {
+    if (!quickChecksAbortController.current) return
+    setQuickChecksCancelRequested(true)
+    quickChecksAbortController.current.abort()
   }, [])
   const backupCommands = useMemo(() => createOptionsBackupCommands({
     createBackup: () => window.desktop.dataManagement.createDataBackup(),
@@ -100,6 +152,10 @@ export function LogsDevPage() {
     return window.desktop.dataManagement.onDataMigrationProgress(setProgress)
   }, [refreshBackups, refreshEvents])
 
+  useEffect(() => {
+    if (activeSection === 'performance') void refreshIpcPerformance()
+  }, [activeSection, refreshIpcPerformance])
+
   const createBackup = backupCommands.create
   const verifyBackup = backupCommands.verify
   const restoreBackup = backupCommands.restore
@@ -110,11 +166,11 @@ export function LogsDevPage() {
   const saveReport = useCallback(async () => {
     setReportBusy(true); setReportError(null); setReportMessage(null)
     try {
-      const result = await window.desktop.dataManagement.saveDiagnosticsReport()
+      const result = await window.desktop.dataManagement.saveDiagnosticsReport(quickChecks ?? undefined)
       setReportMessage(result.saved ? `Relatório salvo como ${result.fileName}.` : 'Exportação cancelada.')
     } catch (reason) { setReportError(reason instanceof Error ? reason.message : 'Não foi possível salvar o relatório.') }
     finally { setReportBusy(false) }
-  }, [])
+  }, [quickChecks])
 
   const alerts = useMemo(() => diagnosticAlerts(events, summary, migration, backups), [events, summary, migration, backups])
   const latestFailure = useMemo(() => latestDiagnosticFailure(events), [events])
@@ -123,7 +179,14 @@ export function LogsDevPage() {
   const totalBytes = summary ? totalStorageBytes(summary) : 0
   const allMigrated = !!migration?.domains.length && migration.domains.every((domain) => domain.state === 'active' || domain.state === 'verified')
   const pendingDomains = migration?.domains.filter((domain) => domain.state !== 'active' && domain.state !== 'verified').length ?? 0
-  const healthState = alerts.some((alert) => alert.level === 'error') ? 'error' : alerts.some((alert) => alert.level === 'warning') ? 'warning' : 'ok'
+  const healthState = eventsError || (eventsLoaded && alerts.some((alert) => alert.level === 'error'))
+    ? 'error'
+    : !eventsLoaded || alerts.some((alert) => alert.level === 'warning') ? 'warning' : 'ok'
+  const healthTitle = eventsError ? 'Falha ao consultar os eventos locais'
+    : !eventsLoaded ? 'Carregando os registros locais'
+      : healthState === 'error' ? 'Há problemas registrados'
+        : healthState === 'warning' ? 'Há itens para conferir'
+          : summary ? 'Itens consultados sem problema conhecido' : 'Sem problemas nos eventos consultados'
 
   return <main className="options-page" aria-label="Logs Dev">
     <div className="options-page-content">
@@ -137,6 +200,7 @@ export function LogsDevPage() {
       <DiagnosticsReportPreviewDialog
         open={reportPreviewOpen}
         busy={reportBusy}
+        quickChecks={quickChecks}
         onCancel={() => setReportPreviewOpen(false)}
         onConfirm={() => { setReportPreviewOpen(false); void saveReport() }}
       />
@@ -147,14 +211,14 @@ export function LogsDevPage() {
       {activeSection === 'overview' && <>
       <section className={`options-health options-health-${healthState}`} aria-label="Estado geral">
         <div className="options-health-icon" aria-hidden="true">{healthState === 'error' ? '!' : healthState === 'warning' ? '△' : '✓'}</div>
-        <div className="options-health-copy"><strong>{healthState === 'error' ? 'Há problemas registrados' : healthState === 'warning' ? 'Há itens para conferir' : !eventsLoaded ? 'Carregando os registros locais' : summary ? 'Verificações concluídas sem problemas conhecidos' : 'Sem problemas nos eventos consultados'}</strong><span>{eventsLoaded ? `${errorCount} erros · ${warningCount} avisos nos últimos 500 eventos` : 'A leitura dos eventos está em andamento.'}{summary ? ` · armazenamento medido ${formatDate(summary.disk.measuredAt)}` : ' · armazenamento ainda não medido'}</span></div>
+        <div className="options-health-copy"><strong>{healthTitle}</strong><span>{eventsError ? 'A leitura local falhou; não é possível confirmar se há novas falhas.' : eventsLoaded ? `${errorCount} erros · ${warningCount} avisos nos últimos 500 eventos` : 'A leitura dos eventos está em andamento.'}{summary ? ` · armazenamento medido ${formatDate(summary.disk.measuredAt)}` : ' · armazenamento ainda não medido'}</span></div>
         <span className="options-live-badge"><i /> Sem varreduras em segundo plano</span>
       </section>
 
       <section className="options-overview-grid" aria-label="Resumo">
         <article className="options-overview-card"><span>Armazenamento local</span><strong>{summary ? formatBytes(totalBytes) : 'Não medido'}</strong><small>{summary ? `${Object.values(summary.disk.groups).reduce((n, group) => n + group.files, 0).toLocaleString('pt-BR')} arquivos · ${storageScanMs ?? 0} ms nesta leitura` : 'Faça uma leitura sob demanda'}</small></article>
         <article className="options-overview-card"><span>Processo principal</span><strong>{runtime ? 'Respondendo' : runtimeError ? 'Falha na consulta' : 'Não consultado'}</strong><small>{runtime ? `Main respondeu em ${formatDate(runtime.measuredAt)}` : runtimeError ? 'Tente uma nova leitura em Desempenho' : 'Estado ainda não verificado por uma leitura'}</small></article>
-        <article className="options-overview-card"><span>Última falha registrada</span><strong>{latestFailure ? formatDate(latestFailure.at) : eventsLoaded ? 'Nenhuma nos eventos consultados' : 'Não consultado'}</strong><small>{latestFailure ? `${latestFailure.domain ?? 'Domínio não classificado'} · ${latestFailure.code}` : 'Considera os últimos 500 eventos locais disponíveis'}</small></article>
+        <article className="options-overview-card"><span>Última falha registrada</span><strong>{latestFailure ? formatDate(latestFailure.at) : eventsError ? 'Leitura indisponível' : eventsLoaded ? 'Nenhuma nos eventos consultados' : 'Não consultado'}</strong><small>{latestFailure ? `${latestFailure.domain ?? 'Domínio não classificado'} · ${latestFailure.code}` : eventsError ? 'Não foi possível consultar os registros locais' : 'Considera os últimos 500 eventos locais disponíveis'}</small></article>
         <article className="options-overview-card"><span>Versões do runtime</span><strong>{runtime ? `App ${runtime.appVersion}` : 'Não lidas'}</strong><small>{runtime ? `Electron ${runtime.electronVersion} · Chromium ${runtime.chromiumVersion} · Node ${runtime.nodeVersion}` : 'Disponíveis após uma leitura de desempenho'}</small></article>
         <article className="options-overview-card"><span>Última leitura de desempenho</span><strong>{runtime ? formatDate(runtime.measuredAt) : 'Não medida'}</strong><small>{runtime ? `${runtime.processMetrics.processes.length} processos identificados · CPU ${runtime.processMetrics.sampleIntervalMs === null ? 'sem intervalo anterior' : `média em ${(runtime.processMetrics.sampleIntervalMs / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} s`}` : 'A leitura é manual e somente sob demanda'}</small></article>
         <article className="options-overview-card"><span>Backups manuais</span><strong>{backups.length.toLocaleString('pt-BR')}</strong><small>{backups.filter((backup) => backup.verifiedAt !== null).length.toLocaleString('pt-BR')} verificados · nunca removidos automaticamente</small></article>
@@ -203,6 +267,13 @@ export function LogsDevPage() {
           <small className="options-measure-time">Medição: {formatDate(runtime.measuredAt)}</small>
         </>}
       </section>
+      <IpcPerformancePanel
+        snapshot={ipcPerformance}
+        busy={ipcPerformanceBusy}
+        error={ipcPerformanceError}
+        onRefresh={() => void refreshIpcPerformance()}
+        onSetEnabled={(enabled) => void setIpcCollection(enabled)}
+      />
       </>}
 
       {activeSection === 'events' && <>
@@ -229,6 +300,13 @@ export function LogsDevPage() {
       </>}
 
       {activeSection === 'tools' && <>
+      <LogsDevQuickChecksPanel
+        snapshot={quickChecks}
+        busy={quickChecksBusy}
+        cancelRequested={quickChecksCancelRequested}
+        onRun={() => void runQuickChecks()}
+        onCancel={cancelQuickChecks}
+      />
       <details className="options-advanced" onToggle={(event) => { if (event.currentTarget.open && !migration) void refreshMigration() }}>
         <summary><span><b>Ferramentas antigas e dados avançados</b><small>Migração legada, estado dos domínios e catálogo interno</small></span><i>+</i></summary>
         <div className="options-advanced-content">

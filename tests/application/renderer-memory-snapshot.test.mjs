@@ -47,6 +47,8 @@ function diagnosticsHarness() {
     },
     log: { list: async () => [], recordRenderer: async () => {} },
     getRuntimeDiagnostics: async () => { runtimeCalls += 1; return runtime },
+    getIpcPerformanceSnapshot: () => ({ enabled: false, startedAt: null, durationMs: 0, maxDurationMs: 300000, rows: [] }),
+    setIpcPerformanceCollection: (enabled) => ({ enabled, startedAt: enabled ? 'now' : null, durationMs: 0, maxDurationMs: 300000, rows: [] }),
     getStorageSummary: async () => ({ disk: {}, catalog: {} }),
     listBackups: async () => [],
     getAppVersion: () => '0.1.0',

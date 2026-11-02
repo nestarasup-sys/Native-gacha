@@ -1,29 +1,22 @@
-import { performance } from 'node:perf_hooks'
-import { createIpcPerformanceSnapshot, type IpcPerformanceMetric } from './ipcPerformanceSnapshot'
+import { createIpcPerformanceCollector } from './application/ipcPerformanceCollector'
 
-/** No payloads, paths, IDs or names. Explicit opt-in: GV5_IPC_PERF=1. */
-const enabled = process.env.GV5_IPC_PERF === '1'
-const metrics = new Map<string, IpcPerformanceMetric>()
+/** No payloads, paths, IDs or names. Disabled by default; Logs Dev can opt in for at most five minutes. */
+const collector = createIpcPerformanceCollector({ initiallyEnabled: process.env.GV5_IPC_PERF === '1' })
 
 export async function measureIpc<T>(label: string, action: () => Promise<T> | T): Promise<T> {
-  if (!enabled) return action()
-  const began = performance.now()
-  let failed = false
-  try { return await action() }
-  catch (reason) { failed = true; throw reason }
-  finally {
-    const elapsed = performance.now() - began
-    let metric = metrics.get(label)
-    if (!metric) { metric = { calls: 0, failures: 0, totalMs: 0, worstMs: 0 }; metrics.set(label, metric) }
-    metric.calls++
-    if (failed) metric.failures++
-    metric.totalMs += elapsed
-    metric.worstMs = Math.max(metric.worstMs, elapsed)
-  }
+  return collector.measure(label, action)
 }
 
-if (enabled) process.on('exit', () => {
-  const snapshot = createIpcPerformanceSnapshot(metrics)
-  console.log(`[GV5_IPC_PERF_JSON] ${JSON.stringify(snapshot)}`)
-  console.table(snapshot)
+export function getIpcPerformanceSnapshot() {
+  return collector.snapshot()
+}
+
+export function setIpcPerformanceCollectionEnabled(enabled: boolean) {
+  return collector.setEnabled(enabled)
+}
+
+if (process.env.GV5_IPC_PERF === '1') process.on('exit', () => {
+  const snapshot = collector.snapshot()
+  console.log(`[GV5_IPC_PERF_JSON] ${JSON.stringify(snapshot.rows)}`)
+  console.table(snapshot.rows)
 })
