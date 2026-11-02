@@ -1,7 +1,7 @@
 import type { CustomizerCharacter } from '../../../../shared/customizer.ts'
 import { fitStudioCharacterToStage } from '../../../../shared/studioCharacterGeometry.ts'
 import type { StudioAsset, StudioDocument, StudioElement } from '../../../../shared/studio.ts'
-import { trimTransparentImage } from '../../characters/characterGeometry.ts'
+import { trimTransparentImage } from '../../characters/transparentImageTrim.ts'
 
 type StudioArtwork = { dataUrl: string; width: number; height: number }
 type StudioArtworkCrop = Pick<StudioArtwork, 'dataUrl' | 'width' | 'height'>

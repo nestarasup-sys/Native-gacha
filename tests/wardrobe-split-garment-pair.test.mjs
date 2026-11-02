@@ -103,9 +103,13 @@ test('se a segunda junta não existir, rejeita o conjunto inteiro sem retornar o
 })
 
 test('WardrobeWorkspace mantém a guarda de draft obsoleto após o cálculo assíncrono', async () => {
-  const page = await readFile(new URL('../src/renderer/src/features/fabricator/wardrobe/WardrobeWorkspace.tsx', import.meta.url), 'utf8')
+  const [page, editing] = await Promise.all([
+    readFile(new URL('../src/renderer/src/features/fabricator/wardrobe/WardrobeWorkspace.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../src/renderer/src/features/fabricator/wardrobe/useWardrobeSheetEditing.ts', import.meta.url), 'utf8')
+  ])
 
-  assert.match(page, /await splitWardrobeGarmentPairAtJoint\(/)
-  assert.match(page, /if \(draftRef\.current !== draft\) throw new Error\('O conjunto mudou durante o cálculo/)
-  assert.doesNotMatch(page, /splitWardrobePixelsAtJoint\(/)
+  assert.match(page, /useWardrobeSheetEditing\(/)
+  assert.match(editing, /await splitWardrobeGarmentPairAtJoint\(/)
+  assert.match(editing, /if \(draftRef\.current !== draft\) throw new Error\('O conjunto mudou durante o cálculo/)
+  assert.doesNotMatch(editing, /splitWardrobePixelsAtJoint\(/)
 })

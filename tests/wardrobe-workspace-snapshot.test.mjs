@@ -55,10 +55,13 @@ test('propaga falha nas leituras principais para o tratamento de erro da página
 })
 
 test('WardrobeWorkspace delega a carga e mantém os guards contra respostas obsoletas', async () => {
-  const page = await readFile(new URL('../src/renderer/src/features/fabricator/wardrobe/WardrobeWorkspace.tsx', import.meta.url), 'utf8')
-  const reload = page.slice(page.indexOf('const reload = useCallback'), page.indexOf('useEffect(() => { void reload'))
+  const [page, session] = await Promise.all([
+    readFile(new URL('../src/renderer/src/features/fabricator/wardrobe/WardrobeWorkspace.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../src/renderer/src/features/fabricator/wardrobe/useWardrobeCatalogSession.ts', import.meta.url), 'utf8')
+  ])
 
-  assert.match(reload, /await loadWardrobeWorkspaceSnapshot\(targetSlot/)
-  assert.match(reload, /requestRef\.current !== requestId/)
-  assert.match(page, /requestRef\.current\+\+/)
+  assert.match(page, /useWardrobeCatalogSession\(/)
+  assert.match(session, /await loadWardrobeWorkspaceSnapshot\(targetSlot/)
+  assert.match(session, /requestRef\.current !== requestId/)
+  assert.match(session, /requestRef\.current\+\+/)
 })

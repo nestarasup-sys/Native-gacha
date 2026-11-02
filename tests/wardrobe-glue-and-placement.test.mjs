@@ -5,6 +5,8 @@ import { fixWardrobeGlue, releaseWardrobeGlue, editWardrobeGlue, wardrobeGlueSta
 import { applyWardrobeComponentEdit, nudgeWardrobeComponent, resizeWardrobeComponent, restoreWardrobeComponentOrigin, scaleWardrobeComponentAxis } from '../src/renderer/src/features/fabricator/wardrobe/wardrobeComponentEditing.ts'
 import { mapWardrobeComponentToPose } from '../src/shared/wardrobePose.ts'
 import { toggleWardrobeVisibility, updateWardrobeComponentGroups, recolorWardrobeComponents, selectWardrobePanelComponents, wardrobeGroupCategoryForSource } from '../src/shared/wardrobePlacementModel.ts'
+import { createWardrobeGridHistory } from '../src/renderer/src/features/fabricator/wardrobe/wardrobeGridHistory.ts'
+import { createWardrobeBindingCommands } from '../src/renderer/src/features/fabricator/wardrobe/wardrobeBindingCommands.ts'
 
 const bone = (id,name,x,y,width=42,height=80)=>({
   id,name,x:x+120,y:y+55,width,height,rotation:45,dataUrl:'data:image/png;base64,AA==',
@@ -72,6 +74,29 @@ test('sugestão de alvo considera sobreposição, tipo e lado sem reposicionar r
   assert.equal(suggestWardrobeGlueTarget({...sleeve,x:390,y:390},[armLeft,armRight]),null)
   const wrongSide={...piece(),name:'Manga inferior esquerda',attachedPartId:''}
   assert.equal(suggestWardrobeGlueTarget(wrongSide,[armRight]),null,'nunca sugere membro direito para peça esquerda')
+})
+
+test('comandos de grude gravam histórico e alteram somente a peça selecionada',()=>{
+  const selected=piece()
+  const draft={importKind:'pants-grid-3x4',components:[selected,{...piece('other'),id:'other'}]}
+  const pairedGridHistoryRef={current:createWardrobeGridHistory()}
+  let current=draft,dirty=false,error='erro anterior'
+  const commands=createWardrobeBindingCommands({
+    selected,referenceModel:{parts:[armRight]},pairedGridHistoryRef,
+    setDraft:update=>{current=update(current)},setDirty:value=>{dirty=value},setError:value=>{error=value}
+  })
+
+  commands.fixSelectedBinding()
+  assert.equal(current.components[0].glue.mode,'fixed')
+  assert.equal(current.components[1].glue.mode,'loose')
+  assert.equal(dirty,true)
+  assert.equal(error,'')
+  assert.equal(pairedGridHistoryRef.current.canUndo,true)
+
+  commands.releaseSelectedBinding()
+  assert.equal(current.components[0].glue.mode,'loose')
+  assert.equal(current.components[1].glue.mode,'loose')
+  assert.equal(pairedGridHistoryRef.current.canUndo,true)
 })
 
 test('edição de peça infere categoria/nome pelo osso e protege a camada de acessórios',()=>{
@@ -142,15 +167,17 @@ test('Customizador separa seleção legada por ID e muda só a peça escolhida',
 })
 
 test('interface usa grude real, sem bolinha azul, sem mudar a folha desmontada',async()=>{
-  const [workspace,controls,renderer,customizerAdjustment]=await Promise.all([
+  const [workspace,bindingCommands,controls,renderer,customizerAdjustment]=await Promise.all([
     readFile('src/renderer/src/features/fabricator/wardrobe/WardrobeWorkspace.tsx','utf8'),
+    readFile('src/renderer/src/features/fabricator/wardrobe/wardrobeBindingCommands.ts','utf8'),
     readFile('src/renderer/src/features/fabricator/wardrobe/WardrobeGlueControls.tsx','utf8'),
     readFile('src/renderer/src/characters/characterWardrobeRenderer.ts','utf8'),
     readFile('src/renderer/src/features/customizer/useCustomizerWardrobeAdjustment.ts','utf8')
   ])
   assert.match(workspace,/selectOriginalModelSource\(model\)/)
-  assert.match(workspace,/fixWardrobeGlue\(piece, bone\)/)
-  assert.match(workspace,/releaseWardrobeGlue\(piece\)/)
+  assert.match(workspace,/createWardrobeBindingCommands\(/)
+  assert.match(bindingCommands,/fixWardrobeGlue\(piece, bone\)/)
+  assert.match(bindingCommands,/releaseWardrobeGlue\(piece\)/)
   assert.match(workspace,/component\.glue\?\.mode !== 'loose'/)
   assert.doesNotMatch(workspace,/wardrobe-binding-marker|showBindingMarkers/)
   assert.match(controls,/Fixar nesta parte/)

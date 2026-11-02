@@ -1,6 +1,7 @@
 import { useRef } from 'react'
 import { studioCharacterRenderKey } from '../../../../shared/studioSceneModel'
-import { faceRenderGeometry, trimTransparentImage } from '../../characters/characterGeometry'
+import { faceRenderGeometry } from '../../characters/characterGeometry'
+import { trimTransparentImage } from '../../characters/transparentImageTrim'
 import type { CustomizerCharacter, CustomizerFaceAppearance } from '../../../../shared/customizer'
 import type { FaceExpressionEffects } from '../../../../shared/fabricator'
 import type { StudioDocument, StudioFaceMode, StudioFaceTransforms } from '../../../../shared/studio'

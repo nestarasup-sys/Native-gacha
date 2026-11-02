@@ -57,11 +57,14 @@ test('conjunto removido entre a listagem e a abertura produz o erro de domínio 
 })
 
 test('WardrobeWorkspace mantém o guard de resposta obsoleta antes de ativar o conjunto', async () => {
-  const page = await readFile(new URL('../src/renderer/src/features/fabricator/wardrobe/WardrobeWorkspace.tsx', import.meta.url), 'utf8')
-  const openSet = page.slice(page.indexOf('const openSet'), page.indexOf('const importSheet'))
+  const [page, session] = await Promise.all([
+    readFile(new URL('../src/renderer/src/features/fabricator/wardrobe/WardrobeWorkspace.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../src/renderer/src/features/fabricator/wardrobe/useWardrobeCatalogSession.ts', import.meta.url), 'utf8')
+  ])
 
-  assert.match(openSet, /await loadWardrobeSetForEditing\(/)
-  assert.match(openSet, /requestRef\.current !== requestId/)
-  assert.match(openSet, /setDraft\(loaded\)/)
-  assert.match(openSet, /incompatibleComponents/)
+  assert.match(page, /useWardrobeCatalogSession\(/)
+  assert.match(session, /await loadWardrobeSetForEditing\(/)
+  assert.match(session, /requestRef\.current !== requestId/)
+  assert.match(session, /setDraft\(loaded\)/)
+  assert.match(session, /incompatibleComponents/)
 })

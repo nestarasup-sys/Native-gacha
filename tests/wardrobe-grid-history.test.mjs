@@ -60,13 +60,17 @@ test('a grade de sapatos também participa do histórico de edição', () => {
 })
 
 test('WardrobeWorkspace usa o histórico dedicado e mantém os atalhos fora dos campos de edição', async () => {
-  const page = await readFile(new URL('../src/renderer/src/features/fabricator/wardrobe/WardrobeWorkspace.tsx', import.meta.url), 'utf8')
+  const [page, editing] = await Promise.all([
+    readFile(new URL('../src/renderer/src/features/fabricator/wardrobe/WardrobeWorkspace.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../src/renderer/src/features/fabricator/wardrobe/useWardrobeSheetEditing.ts', import.meta.url), 'utf8')
+  ])
 
   assert.match(page, /createWardrobeGridHistory\(\)/)
   assert.match(page, /pairedGridHistoryRef\.current\.record\(current\)/)
-  assert.match(page, /pairedGridHistoryRef\.current\.clear\(\)/)
-  assert.match(page, /pairedGridHistoryRef\.current\.undo\(draft\)/)
-  assert.match(page, /pairedGridHistoryRef\.current\.redo\(draft\)/)
-  assert.match(page, /target\?\.matches\('input, textarea, select, \[contenteditable="true"\]'\)/)
-  assert.doesNotMatch(page, /sleeveUndoRef|sleeveRedoRef|recordSleeveHistory/)
+  assert.match(page, /useWardrobeSheetEditing\(/)
+  assert.match(editing, /pairedGridHistoryRef\.current\.clear\(\)/)
+  assert.match(editing, /pairedGridHistoryRef\.current\.undo\(draft\)/)
+  assert.match(editing, /pairedGridHistoryRef\.current\.redo\(draft\)/)
+  assert.match(editing, /target\?\.matches\('input, textarea, select, \[contenteditable="true"\]'\)/)
+  assert.doesNotMatch(editing, /sleeveUndoRef|sleeveRedoRef|recordSleeveHistory/)
 })

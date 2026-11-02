@@ -1,7 +1,7 @@
 import type { CustomizerFaceAppearance } from '../../../../shared/customizer'
 import type { EditorV6Asset, EditorV6FaceRenderMode, EditorV6FaceTransforms } from '../../../../shared/editorV6'
 import type { FaceExpressionEffects } from '../../../../shared/fabricator'
-import type { TrimmedImage } from '../../characters/characterGeometry'
+import type { TrimmedImage } from '../../characters/transparentImageTrim'
 
 // Version 9 rebuilds snapshots made by the refresh path that applied body
 // dimensions twice to characters with customized proportions.

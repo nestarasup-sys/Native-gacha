@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { rebindWardrobeComponents } from '../src/renderer/src/features/fabricator/wardrobe/wardrobeBindings.ts'
+import { calibrateWardrobeSourceParts } from '../src/renderer/src/features/fabricator/wardrobe/wardrobeSourceCalibration.ts'
 import { bindWardrobeComponent } from '../src/shared/wardrobePose.ts'
 
 const bone = {
@@ -59,6 +60,25 @@ test('binding antigo acompanha somente componentes sem fixação explícita', ()
   assert.equal(result.components[3], components[3])
   assert.equal(result.components[1].binding, originalBinding)
   assert.equal(result.components[2].binding, originalBinding)
+})
+
+test('calibração converte junta montada para a folha original sem alterar o modelo', async () => {
+  const arm = { id: 'arm', name: 'Braço', x: 80, y: 30, width: 40, height: 40, rotation: 90, dataUrl: 'arm.png' }
+  const model = {
+    width: 300,
+    height: 400,
+    joints: [{ id: 'arm-child', parentPartId: 'arm', childPartId: 'child', parentAnchor: { x: 100, y: 30 }, childAnchor: { x: 100, y: 80 } }],
+    parts: [arm, { id: 'child', name: 'Mão', x: 90, y: 80, width: 20, height: 20, rotation: 0, dataUrl: 'hand.png' }]
+  }
+  const before = structuredClone(model)
+  const parts = calibrateWardrobeSourceParts(model, 'arm', 200, 300)
+
+  assert.deepEqual(parts[0].sourceTransform, {
+    x: 200, y: 280, width: 40, height: 40, rotation: 0, anchorVersion: 1, jointAnchor: { x: 200, y: 300 }
+  })
+  assert.equal(parts[1], model.parts[1])
+  assert.deepEqual(model, before)
+  assert.equal(calibrateWardrobeSourceParts(model, 'missing', 0, 0), null)
 })
 
 test('a tela da biblioteca delega atualização dos bindings ao modelo puro', async () => {

@@ -2,7 +2,8 @@ import type { CustomizerCharacter } from '../../../../../shared/customizer'
 import type { EditorV6Element, EditorV6TimelineBlock, EditorV6TimelineTrack } from '../../../../../shared/editorV6'
 import { editorV6MotionPlan } from '../../../../../shared/editorV6Motion'
 import { renderSavedCharacter } from '../../../characters/editorV6CharacterRenderer'
-import { fitElementToTrim, trimTransparentImage } from '../../../characters/characterGeometry'
+import { fitElementToTrim } from '../../../characters/characterGeometry'
+import { trimTransparentImage } from '../../../characters/transparentImageTrim'
 import { bakeEditorV6Motion } from '../motion/bakeMotion'
 
 const expectedNames = ['STRESS_Aurora', 'STRESS_Nix', 'STRESS_Brisa', 'STRESS_Dorian'] as const
