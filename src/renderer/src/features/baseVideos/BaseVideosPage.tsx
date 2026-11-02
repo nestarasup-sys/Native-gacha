@@ -7,6 +7,7 @@ import { createBaseVideoDetailsSaveQueue } from './baseVideoDetailsSaveQueue'
 import { deleteBaseVideoCategory } from './baseVideoCategoryCommands'
 import { selectVisibleBaseVideos, type BaseVideoListSort, type BaseVideoTimelineFilter } from './baseVideoListModel'
 import { publishBaseVideoDraft } from './publishBaseVideoDraft'
+import { deleteBaseVideosSequentially } from './deleteBaseVideosSequentially'
 
 const emptyDetails = (videoId: string): BaseVideoDetails => ({ videoId, categoryId: null, description: '', additionalContext: '', timeline: 'unspecified' })
 const formatDuration = (frames: number | null) => {
@@ -211,11 +212,12 @@ export function BaseVideosPage() {
     setBusy(true); setError(null)
     const deletedIds: string[] = []
     try {
-      for (const id of selectedIds) {
-        await flushPendingSave(id)
-        await window.desktop.baseVideos.deleteVideo(id)
-        deletedIds.push(id)
-      }
+      await deleteBaseVideosSequentially({
+        videoIds: selectedIds,
+        flushPendingSave,
+        deleteVideo: (id) => window.desktop.baseVideos.deleteVideo(id),
+        onDeleted: (id) => deletedIds.push(id)
+      })
       setItems((current) => current.filter((item) => !deletedIds.includes(item.id)))
       setDetailsById((current) => Object.fromEntries(Object.entries(current).filter(([id]) => !deletedIds.includes(id))))
       setDeleteMode(false); setSelectedIds([]); setDeleteConfirmOpen(false)
