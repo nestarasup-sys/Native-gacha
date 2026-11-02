@@ -4,6 +4,7 @@ import { createPendingOperationTracker } from '../../ui/pendingOperations'
 import { registerPendingWriteFlusher } from '../../ui/pendingPersistence'
 import { useSerializedSceneDocumentSave } from '../../ui/hooks/useSerializedSceneDocumentSave'
 import { useEditorV6Store } from './editorV6Store'
+import { restorePersistedCharacterAssets } from './editorV6AssetRecovery'
 
 type SaveTimerRef = { current: number | null }
 type EditorV6DocumentPersistenceOptions = {
@@ -40,9 +41,23 @@ export function useEditorV6DocumentPersistence({
   const pendingOperations = useMemo(() => createPendingOperationTracker(), [])
   const trackOperation = pendingOperations.track
   const savePromiseRef = useRef<Promise<boolean> | null>(null)
-  const writeDocument = useCallback((document: EditorV6Document) => (
-    trackOperation(() => window.desktop.editorV6.saveEditorV6Project(document))
-  ), [trackOperation])
+  const writeDocument = useCallback((document: EditorV6Document) => trackOperation(async () => {
+    try {
+      await window.desktop.editorV6.saveEditorV6Project(document)
+      return
+    } catch (reason) {
+      if (!(reason instanceof Error) || !reason.message.includes('Dados do EditorV6 inválidos')) throw reason
+      const persisted = await window.desktop.editorV6.loadEditorV6Project(document.id).catch(() => null)
+      if (!persisted) throw reason
+      const repaired = restorePersistedCharacterAssets(document, persisted)
+      if (repaired === document) throw reason
+
+      await window.desktop.editorV6.saveEditorV6Project(repaired)
+      updateActiveProject((current) => current.id === document.id && current.updatedAt === document.updatedAt
+        ? { ...current, assets: repaired.assets }
+        : current)
+    }
+  }), [trackOperation, updateActiveProject])
   const onDocumentSaved = useCallback((document: EditorV6Document, savedDocument: EditorV6Document) => {
     if (savedDocument.thumbnailDataUrl !== document.thumbnailDataUrl) {
       updateActiveProject((project) => project.id === document.id && project.updatedAt === document.updatedAt && project.thumbnailDataUrl !== savedDocument.thumbnailDataUrl
