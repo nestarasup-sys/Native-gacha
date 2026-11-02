@@ -27,7 +27,7 @@ Este documento acompanha a execução das Fases 1–6 e complementa a baseline d
 | 0 | Auditoria e baseline arquitetural | Concluída antes deste programa | [Relatório da Fase 0](./AUDITORIA_REFATORACAO_GERAL_V1_FASE_0.md). |
 | 1 | Electron, IPC, persistência, backups e filas | Concluída | Diagnóstico de memória corrigido; ciclo de encerramento extraído e coberto; diferenças das filas mapeadas; backup, manutenção e segurança de janela passaram. Os gatilhos gerais de CI de `Dev-V2` ficam na Fase 6. |
 | 2 | Núcleo compartilhado de personagens | Concluída | Consumidores e regressões mapeados. Escala-base idêntica entre Studio e Editor V6 centralizada; renderizadores e contratos de exportação distintos mantidos. Testes de personagem/gênero/roupas articuladas executáveis por script dedicado. |
-| 3 | Fabricador e Customizador | Em andamento | Fluxo de catálogo/customizações coberto de ponta a ponta; gravação de roupas, operações de cabelo e seleção de peça no Customizador têm fronteiras/testes próprios. Restam mapear/decompor os workspaces maiores e ampliar cenários de reabertura. |
+| 3 | Fabricador e Customizador | Em andamento | Fluxo de catálogo/customizações coberto de ponta a ponta; gravação de roupas, operações de cabelo, seleção de peça no Customizador e carregamento da sessão Roupas DEV têm fronteiras/testes próprios. Restam mapear/decompor os workspaces maiores e ampliar cenários de reabertura. |
 | 4 | Studio, Editor V6 e fluxos de vídeo | Em andamento | Criação/duplicação de cenas do Studio extraídas; miniatura 480×270 corrigida; paridade Turbo e exportação facial 720p/1080p aprovadas. A antiga tela Video Studio não tem rota, mas as bibliotecas legadas seguem ativas em Roteiros e como origem de mídia do Editor V6. Teste de cancelamento do worker cobre espera do compositor. Restam validação da impressão do Studio e medições/exportação dos workers. |
 | 5 | Roteiros, Base de Vídeos, Opções, componentes e CSS | Em andamento | Biblioteca continua dona dos arquivos/IDs; Roteiros mantém metadados e referências. Guardas, canais, fila, carregamento, listagem, publicação e exclusões da Base de Vídeos têm contratos testados; estilos e cálculos puros de Opções estão isolados. Restam decomposição adicional dos workspaces e CSS por feature. |
 | 6 | Performance, CI e consolidação | Em andamento | Workflow da Dev-V2 roda gates gerais e Editor V6 por plataforma; build Windows é reutilizado pelos testes MP4. Baseline repetível do cenário médio do Editor V6 registrada e captura IPC passou a ser estruturada. Restam medições de inicialização, Studio, outros workspaces e exportação, além de comparações repetidas antes de otimizar. |
@@ -155,6 +155,16 @@ O Node test runner não resolvia imports relativos extensionless `.ts` usados po
 - **Commit local:** `add2123` (`refactor: isolate Fabricator hair style saving`).
 - **Pendências:** outros carregamentos e comandos de `HairWorkspace` continuam no componente; não houve mudança de schema ou formato salvo.
 
+### Carregamento da sessão de Roupas DEV
+
+- **Fronteira extraída:** `loadWardrobeWorkspaceSnapshot` lê slots do Fabricador, o modelo-fonte do slot e a listagem detalhada de conjuntos em paralelo. Se o slot solicitado estiver vazio, retorna o redirecionamento para o primeiro slot preenchido; caso exista modelo, tenta recuperar sua referência original a partir do histórico disponível.
+- **Concorrência e fallback:** `WardrobeWorkspace` mantém a limpeza/estado visual e valida `requestId` antes de aplicar a resposta, inclusive após as operações assíncronas. Histórico ausente ou falha ao lê-lo mantém a referência de calibração; falhas nas leituras principais continuam indo para o tratamento de erro da página.
+- **Propriedade e compatibilidade:** a recuperação é somente para a sessão de calibração da roupa; não publica edição no catálogo-fonte. APIs existentes, slot, IDs dos conjuntos e contrato persistido não mudaram.
+- **Testes sintéticos:** cinco cenários cobrem leituras paralelas, recuperação, redirecionamento, histórico ausente/erro, falha principal e proteção da página contra respostas obsoletas.
+- **Verificações:** teste focado 5/5; `npm run test:refactor` passou com 641 testes no conjunto principal e todos os scripts encadeados; typecheck, audit arquitetural (582 arquivos TS/TSX), build e `git diff --check` passaram.
+- **Commit local:** `26fbd39` (`refactor: isolate wardrobe workspace loading`).
+- **Pendências:** `WardrobeWorkspace` segue entre os maiores componentes da interface; estado de edição, importação e interação do canvas precisam de fronteiras próprias sem fundir propriedades do Fabricador e do Customizador.
+
 ### Proteção de referências de mídia dos Roteiros e escopo do CSS de Opções
 
 - **Propriedade preservada:** a biblioteca de mídia segue responsável pelos arquivos e IDs de fundos e GIFs; Roteiros continua responsável pelas referências. Os serviços de exclusão chamam os guards SQLite antes de excluir e bloqueiam a operação quando o catálogo não está disponível.
@@ -191,7 +201,7 @@ O Node test runner não resolvia imports relativos extensionless `.ts` usados po
 - **Testes:** `base-video-details-save-queue.test.mjs` usa timers e persistência sintéticos para cobrir debounce, serialização, edição durante in-flight, flush de encerramento, falha e retry. O teste estrutural de pendências confirma que a página delega à fila e continua registrada no flusher global.
 - **Verificações:** fila 4/4; testes de pendências 14/14; Base de Vídeos 8/8; `npm run test:refactor`, typecheck, audit arquitetural (572 arquivos TS/TSX) e build passaram.
 - **Commit local:** `1d6e938` (`refactor: isolate Base de Vídeos detail save queue`).
-- **Pendências:** o restante dos comandos editoriais de Base de Vídeos permanece na página; edição de categoria e publicação exigem revisão própria antes de extração.
+- **Pendências:** o restante dos comandos editoriais de Base de Vídeos permanece na página; criação/edição de categoria ainda exige revisão própria antes de extração.
 
 ### Comando de exclusão de categoria da Base de Vídeos
 
@@ -308,4 +318,5 @@ As falhas observadas na execução inicial da suíte em `f416a02` foram investig
 | `c83f270` | Extrai o comando de publicação de rascunho com flush de metadados | Local em `Dev-V2`; sem publicação. |
 | `3e4e7b8` | Extrai exclusão sequencial com preservação de sucessos parciais | Local em `Dev-V2`; sem publicação. |
 | `8cbee7f` | Centraliza carregamento e composição do snapshot da Base de Vídeos | Local em `Dev-V2`; sem publicação. |
+| `26fbd39` | Extrai carregamento concorrente da sessão de Roupas DEV e cobertura de respostas obsoletas | Local em `Dev-V2`; sem publicação. |
 
