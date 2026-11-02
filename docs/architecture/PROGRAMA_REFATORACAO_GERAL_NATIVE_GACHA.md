@@ -28,7 +28,7 @@ Este documento acompanha a execução das Fases 1–6 e complementa a baseline d
 | 1 | Electron, IPC, persistência, backups e filas | Concluída | Diagnóstico de memória corrigido; ciclo de encerramento extraído e coberto; diferenças das filas mapeadas; backup, manutenção e segurança de janela passaram. Os gatilhos gerais de CI de `Dev-V2` ficam na Fase 6. |
 | 2 | Núcleo compartilhado de personagens | Concluída | Consumidores e regressões mapeados. Escala-base idêntica entre Studio e Editor V6 centralizada; renderizadores e contratos de exportação distintos mantidos. Testes de personagem/gênero/roupas articuladas executáveis por script dedicado. |
 | 3 | Fabricador e Customizador | Em andamento | Fluxo de catálogo/customizações coberto de ponta a ponta; gravação de roupas, operações de cabelo, seleção de peça no Customizador, carregamento da sessão e validação de conjuntos salvos em Roupas DEV têm fronteiras/testes próprios. Restam mapear/decompor os workspaces maiores e ampliar cenários de reabertura. |
-| 4 | Studio, Editor V6 e fluxos de vídeo | Em andamento | Criação/duplicação de cenas do Studio extraídas; miniatura 480×270 corrigida; paridade Turbo e exportação facial 720p/1080p aprovadas. A antiga tela Video Studio não tem rota, mas as bibliotecas legadas seguem ativas em Roteiros e como origem de mídia do Editor V6. Teste de cancelamento do worker cobre espera do compositor. Restam validação da impressão do Studio e medições/exportação dos workers. |
+| 4 | Studio, Editor V6 e fluxos de vídeo | Em andamento | Criação/duplicação e impressão do Studio extraídas; miniatura 480×270 corrigida; paridade Turbo e exportação facial 720p/1080p aprovadas. A impressão foi validada do canvas ao handler IPC com fixture de arquivos sintética. A antiga tela Video Studio não tem rota, mas as bibliotecas legadas seguem ativas em Roteiros e como origem de mídia do Editor V6. Teste de cancelamento do worker cobre espera do compositor. Restam medições e validação comparativa dos workers de exportação. |
 | 5 | Roteiros, Base de Vídeos, Opções, componentes e CSS | Em andamento | Biblioteca continua dona dos arquivos/IDs; Roteiros mantém metadados e referências. Guardas, canais, fila, carregamento, listagem, publicação e exclusões da Base de Vídeos têm contratos testados; estilos e cálculos puros de Opções estão isolados. Restam decomposição adicional dos workspaces e CSS por feature. |
 | 6 | Performance, CI e consolidação | Em andamento | Workflow da Dev-V2 roda gates gerais e Editor V6 por plataforma; build Windows é reutilizado pelos testes MP4. Baseline repetível do cenário médio do Editor V6 registrada e captura IPC passou a ser estruturada. Restam medições de inicialização, Studio, outros workspaces e exportação, além de comparações repetidas antes de otimizar. |
 
@@ -282,6 +282,15 @@ O Node test runner não resolvia imports relativos extensionless `.ts` usados po
 - **Commit local:** `bfdcde6` (`refactor: structure IPC performance snapshots`).
 - **Artefatos:** resultados completos e fixtures de medição foram criados em diretórios temporários do sistema. Os perfis de teste foram sintéticos; nenhum perfil `app-data` existente foi lido ou alterado.
 
+### Comandos de impressão do Studio
+
+- **Fronteira extraída:** `createStudioPrintCommands` em `src/renderer/src/features/studio/studioPrintCommands.ts` coordena exportação do print e abertura da pasta. `StudioPage` mantém a seleção da cena e os estados de aviso/erro; o comando injeta a drenagem de saves, renderer, invoker IPC e trackers já usados pelo Studio.
+- **Ordem e contratos preservados:** exportar continua aguardando `flushDocumentWrites`, gerando o canvas, rastreando `saveStudioPrint` e mostrando o mesmo caminho retornado pelo Main. `openStudioPrints` continua no tracker de operações. Canais, IDs, caminho de persistência e formato PNG não mudaram.
+- **Teste integrado sintético:** sete cenários cobrem ordem, falhas no flush/render/gravação, cena ausente, abertura da pasta e a sequência real `makeCanvasPrint` → handler `studio:save-print` → bytes gravados por um filesystem em memória. A suíte existente continua cobrindo autorização de sender e materialização da pasta no Main.
+- **Verificações:** `npm run test:refactor` passou com 641 testes na suíte principal e todos os scripts encadeados; a nova suíte de impressão passou 7/7. `npm run typecheck`, `npm run audit:architecture` (584 arquivos TS/TSX), `npm run build` e `git diff --check` passaram.
+- **Commit local:** `6f053fb` (`refactor: isolate Studio print commands`).
+- **Dados:** nenhum arquivo do usuário foi lido ou modificado; o teste integrado usa apenas buffers, canvas e fixtures em memória.
+
 ## Reconciliação das falhas da baseline
 
 As falhas observadas na execução inicial da suíte em `f416a02` foram investigadas e reconciliadas:
@@ -330,4 +339,6 @@ As falhas observadas na execução inicial da suíte em `f416a02` foram investig
 | `8cbee7f` | Centraliza carregamento e composição do snapshot da Base de Vídeos | Local em `Dev-V2`; sem publicação. |
 | `26fbd39` | Extrai carregamento concorrente da sessão de Roupas DEV e cobertura de respostas obsoletas | Local em `Dev-V2`; sem publicação. |
 | `fc8d74a` | Extrai validação de vínculos ao abrir conjuntos salvos de Roupas DEV | Local em `Dev-V2`; sem publicação. |
+| `210e0d1` | Documenta o limite de validação dos vínculos de conjuntos salvos de Roupas DEV | Local em `Dev-V2`; sem publicação. |
+| `6f053fb` | Extrai comandos de impressão do Studio e cobre a exportação completa até o IPC | Local em `Dev-V2`; sem publicação. |
 
