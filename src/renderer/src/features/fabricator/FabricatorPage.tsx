@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { FabricatorAssetSave, FabricatorHistoryAction, FabricatorHistoryState, FabricatorProject, FabricatorSlotSummary, ModelPart } from '../../../../shared/fabricator'
+import type { FabricatorHistoryAction, FabricatorHistoryState, FabricatorProject, FabricatorSlotSummary, ModelPart } from '../../../../shared/fabricator'
 import { Icon } from '../../ui/components/Icon'
 import { usePreviewBackground } from '../../ui/hooks/usePreviewBackground'
 import { modelRigSegmentKind, normalizeLayerOrder, orderedParts, reorderLayer } from './models/rig'
@@ -21,6 +21,7 @@ import { startImageProcessorWorker, ImageProcessorTaskError, type ImageProcessor
 import { serializeFabricatorProject } from './models/projectSerialization'
 import { createFabricatorProjectSaveCoordinator } from './projectSaveCoordinator'
 import { duplicateFabricatorSlot } from './duplicateFabricatorSlot'
+import { publishModelSourceResult } from './models/publishModelSourceResult'
 import { useFabricatorHistory } from './useFabricatorHistory'
 import { prepareLoadedFabricatorProject } from './models/projectHydration'
 import { loadFabricatorSlotForEditing } from './models/loadFabricatorSlotForEditing'
@@ -466,52 +467,27 @@ export function FabricatorPage() {
 
 
   const publishEditedModelSource = async (result: ModelSourceResult): Promise<void> => {
-    const current = projectRef.current
-    if (!current || modelSourcePublishing || processing || chromaApplying || historyBusy) throw new Error('O modelo não está disponível para edição.')
-    setModelSourcePublishing(true)
-    setSaveState('saving')
-    cancelScheduledSave()
-    try {
-      await persistProject(current)
-      const next: FabricatorProject = {
-        ...current,
-        sourceDataUrl: result.sourceDataUrl,
-        modelSkinTone: result.modelSkinTone,
-        modelOutlineColor: result.modelOutlineColor,
-        parts: result.parts,
-        joints: result.joints,
-        layerOrder: result.layerOrder,
-        hiddenPartIds: result.hiddenPartIds,
-        tolerance: result.tolerance,
-        chromaBaseTolerance: 0,
-        chromaVersion: 2,
-        updatedAt: new Date().toISOString()
-      }
-      const serialized = serializeFabricatorProject(next)
-      const changedAssets: FabricatorAssetSave[] = result.parts.map(part => ({
-        id: part.id,
-        dataUrl: part.dataUrl,
-        ...(part.chromaBaseDataUrl ? { chromaBaseDataUrl: part.chromaBaseDataUrl } : {})
-      }))
-      const newSourceName = await window.desktop.fabricator.publishFabricatorModelSource(serialized, result.sourceDataUrl, changedAssets)
-      const published: FabricatorProject = { ...next, sourceAssetName: newSourceName }
-      clearHistory()
-      dirtyAssets.current.clear()
-      dirtyChromaBases.current.clear()
-      seamMixer.clearSurfaces()
-      projectRef.current = published
-      setProject(published)
-      setChromaValue(result.tolerance)
-      setSaveState('saved')
-      setModelSourceOpen(false)
-      broadcastModelSourceUpdate({ slot: published.slot, sourceAssetName: newSourceName })
-      window.dispatchEvent(new Event('fabricator:assets-updated'))
-    } catch (reason) {
-      setSaveState('error')
-      throw reason
-    } finally {
-      setModelSourcePublishing(false)
-    }
+    return publishModelSourceResult({
+      current: projectRef.current,
+      canPublish: !modelSourcePublishing && !processing && !chromaApplying && !historyBusy,
+      result,
+      setPublishing: setModelSourcePublishing,
+      setSaveState,
+      cancelScheduledSave,
+      persistProject,
+      serializeProject: serializeFabricatorProject,
+      publish: (serialized, sourceDataUrl, changedAssets) => window.desktop.fabricator.publishFabricatorModelSource(serialized, sourceDataUrl, changedAssets),
+      clearHistory,
+      clearDirtyAssets: () => dirtyAssets.current.clear(),
+      clearDirtyChromaBases: () => dirtyChromaBases.current.clear(),
+      clearSeamSurfaces: seamMixer.clearSurfaces,
+      setProject: (published) => { projectRef.current = published; setProject(published) },
+      setChromaValue,
+      closeEditor: () => setModelSourceOpen(false),
+      broadcastModelSourceUpdate,
+      broadcastAssetsUpdated: () => window.dispatchEvent(new Event('fabricator:assets-updated')),
+      now: () => new Date().toISOString()
+    })
   }
 
   const applyChromaKey = () => {
