@@ -29,7 +29,7 @@ Este documento acompanha a execução das Fases 1–6 e complementa a baseline d
 | 2 | Núcleo compartilhado de personagens | Concluída | Consumidores e regressões mapeados. Escala-base idêntica entre Studio e Editor V6 centralizada; renderizadores e contratos de exportação distintos mantidos. Testes de personagem/gênero/roupas articuladas executáveis por script dedicado. |
 | 3 | Fabricador e Customizador | Em andamento | Fluxo de catálogo/customizações coberto de ponta a ponta; gravação de roupas e operações de cabelo (worker e serialização de conjunto) têm fronteiras/testes próprios. Restam mapear/decompor o estado dos maiores workspaces e ampliar cenários de reabertura. |
 | 4 | Studio, Editor V6 e fluxos de vídeo | Em andamento | Criação/duplicação de cenas do Studio extraídas e testadas; comandos próprios do Editor V6, timeline e exportação permanecem separados. Restam a revisão de vídeos, workers e paridade de exportação. |
-| 5 | Roteiros, Base de Vídeos, Opções, componentes e CSS | Em andamento | Biblioteca continua dona dos arquivos/IDs; Roteiros mantém metadados e referências. Guardas de exclusão têm testes sintéticos; canais da Base de Vídeos passaram a usar mapa tipado compartilhado por preload/Main; estilos e cálculos puros de Opções foram isolados. Restam decomposição dos workspaces e etapas adicionais de CSS. |
+| 5 | Roteiros, Base de Vídeos, Opções, componentes e CSS | Em andamento | Biblioteca continua dona dos arquivos/IDs; Roteiros mantém metadados e referências. Guardas, canais e fila de salvamento da Base de Vídeos têm contratos testados; estilos e cálculos puros de Opções estão isolados. Restam decomposição adicional dos workspaces e CSS por feature. |
 | 6 | Performance, CI e consolidação | Em andamento | Workflow da Dev-V2 agora roda gates gerais e Editor V6 por plataforma; build Windows é reutilizado pelos testes MP4 via artifact limitado aos diretórios compilados. Restam baseline de performance comum, medição de gargalos e cobertura dos outros módulos. |
 
 ## Fatias implementadas
@@ -146,6 +146,16 @@ O Node test runner não resolvia imports relativos extensionless `.ts` usados po
 - **Commit local:** `e338db9` (`refactor: centralize Base de Vídeos IPC contract`).
 - **Pendências:** Roteiros e as demais APIs não tipadas no preload seguem separadas nesta fase; não houve rename de canal nem mudança de comportamento de exclusão.
 
+### Fila de gravação de metadados da Base de Vídeos
+
+- **Fronteira extraída:** `baseVideoDetailsSaveQueue.ts` é dona dos mapas por vídeo, debounce, coalescência da última edição, serialização por ID, flush individual e flush do ciclo de vida. `BaseVideosPage` mantém a edição imediata do estado visual e injeta persistência, feedback e timers.
+- **Semânticas preservadas:** atraso de 350 ms; uma gravação em voo por vídeo; edição que chega durante uma gravação é gravada logo depois; flush drena as gravações e falha se uma persistência falhar; a edição com falha permanece pendente para retry; mudança de categoria e exclusão continuam flushando antes de alterar referências.
+- **Propriedade dos dados:** a fila só transporta `BaseVideoDetails` para `window.desktop.baseVideos.saveDetails`; Biblioteca de Mídia continua dona dos arquivos e IDs, e Base de Vídeos dos metadados. Não consolida a fila com as cadeias de Roteiros, Studio, Editor V6 ou Fabricador.
+- **Testes:** `base-video-details-save-queue.test.mjs` usa timers e persistência sintéticos para cobrir debounce, serialização, edição durante in-flight, flush de encerramento, falha e retry. O teste estrutural de pendências confirma que a página delega à fila e continua registrada no flusher global.
+- **Verificações:** fila 4/4; testes de pendências 14/14; Base de Vídeos 8/8; `npm run test:refactor`, typecheck, audit arquitetural (572 arquivos TS/TSX) e build passaram.
+- **Commit local:** `1d6e938` (`refactor: isolate Base de Vídeos detail save queue`).
+- **Pendências:** o restante dos comandos editoriais de Base de Vídeos permanece na página; categorias e publicação exigem revisão própria antes de extração.
+
 ### Gates gerais de CI na Dev-V2 e reutilização do bundle
 
 - **Gates gerais:** o workflow `editor-v6-parity.yml` passa a rodar `audit:architecture`, `test:refactor`, `test:geometry` e `typecheck` em um job Ubuntu para cada push ou PR da Dev-V2. Os testes de timeline/export do Editor V6 continuam em Linux e Windows.
@@ -190,4 +200,5 @@ As falhas observadas na execução inicial da suíte em `f416a02` foram investig
 | `2c3d5a3` | Adiciona gates gerais para Dev-V2 e reutiliza o bundle Windows na paridade MP4 | Local em `Dev-V2`; sem publicação. |
 | `1641353` | Extrai o cliente e o ciclo de vida do worker de processamento capilar | Local em `Dev-V2`; sem publicação. |
 | `add2123` | Extrai a preparação e gravação do conjunto de cabelo com cobertura de assets | Local em `Dev-V2`; sem publicação. |
+| `1d6e938` | Extrai a fila por vídeo de Base de Vídeos com testes de concorrência e retry | Local em `Dev-V2`; sem publicação. |
 
