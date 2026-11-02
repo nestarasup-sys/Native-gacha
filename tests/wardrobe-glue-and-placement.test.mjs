@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { fixWardrobeGlue, releaseWardrobeGlue, editWardrobeGlue, wardrobeGlueState, suggestWardrobeGlueTarget } from '../src/shared/wardrobeGlue.ts'
+import { applyWardrobeComponentEdit, nudgeWardrobeComponent, resizeWardrobeComponent, restoreWardrobeComponentOrigin, scaleWardrobeComponentAxis } from '../src/renderer/src/features/fabricator/wardrobe/wardrobeComponentEditing.ts'
 import { mapWardrobeComponentToPose } from '../src/shared/wardrobePose.ts'
 import { toggleWardrobeVisibility, updateWardrobeComponentGroups, recolorWardrobeComponents, selectWardrobePanelComponents, wardrobeGroupCategoryForSource } from '../src/shared/wardrobePlacementModel.ts'
 
@@ -73,6 +74,50 @@ test('sugestão de alvo considera sobreposição, tipo e lado sem reposicionar r
   assert.equal(suggestWardrobeGlueTarget(wrongSide,[armRight]),null,'nunca sugere membro direito para peça esquerda')
 })
 
+test('edição de peça infere categoria/nome pelo osso e protege a camada de acessórios',()=>{
+  const model={width:400,height:400,parts:[armLeft,armRight,chest]}
+  const original={...piece(),renderAboveHair:true}
+  const attached=applyWardrobeComponentEdit(original,{attachedPartId:'forearm-left'},model,400)
+  assert.equal(attached.category,'manga-inferior')
+  assert.equal(attached.name,'Manga inferior esquerda')
+  assert.equal(attached.renderAboveHair,false)
+  assert.equal(original.attachedPartId,'forearm-right')
+  assert.equal(original.renderAboveHair,true)
+
+  const accessory=applyWardrobeComponentEdit({...original,category:'oculos'},{category:'acessorio-cabeca'},model,400)
+  assert.equal(accessory.category,'acessorio-cabeca')
+  assert.equal(accessory.renderAboveHair,true)
+  assert.equal(applyWardrobeComponentEdit(original,{category:'camisa'},model,400).renderAboveHair,false)
+})
+
+test('categorias de sapato e luva escolhem somente um osso sem sobrescrever escolha explícita',()=>{
+  const leftFoot={...bone('foot-left','Pé esquerdo',160,340,40,30),x:160,y:340,rotation:0}
+  const rightFoot={...bone('foot-right','Pé direito',200,340,40,30),x:200,y:340,rotation:0}
+  const model={width:400,height:400,parts:[leftFoot,rightFoot,armLeft,armRight]}
+  const left=applyWardrobeComponentEdit({...piece(),x:205,width:30},{category:'sapato'},model,500)
+  assert.equal(left.attachedPartId,'foot-left','a seleção lateral usa a largura do conjunto atual, não a do modelo fonte')
+  assert.equal(left.name,'Manga inferior direita','a categoria sugerida não renomeia a peça automaticamente')
+  const explicit=applyWardrobeComponentEdit({...piece(),x:340,width:25},{category:'sapato',attachedPartId:'foot-left'},model,400)
+  assert.equal(explicit.attachedPartId,'foot-left')
+})
+
+test('transformações de peça são puras, mantêm o centro e recuperam o quadro original',()=>{
+  const selected={...piece(),x:10,y:20,width:40,height:60,originX:8,originY:17,originWidth:50,originHeight:75,rotation:12}
+  assert.deepEqual(nudgeWardrobeComponent(selected,3,-4),{x:13,y:16})
+  assert.deepEqual(resizeWardrobeComponent(selected,1.1),{
+    originX:8,originY:17,originWidth:50,originHeight:75,x:8,y:17,width:44,height:66
+  })
+  assert.deepEqual(scaleWardrobeComponentAxis(selected,'width',100,true),{
+    originX:8,originY:17,originWidth:50,originHeight:75,x:-20,y:-25,width:100,height:150
+  })
+  assert.deepEqual(scaleWardrobeComponentAxis(selected,'height',30,false),{
+    originX:8,originY:17,originWidth:50,originHeight:75,x:10,y:35,width:40,height:30
+  })
+  assert.equal(scaleWardrobeComponentAxis(selected,'width',Number.NaN,true),null)
+  assert.deepEqual(restoreWardrobeComponentOrigin(selected),{x:8,y:17,width:50,height:75,rotation:0})
+  assert.deepEqual(selected,{...piece(),x:10,y:20,width:40,height:60,originX:8,originY:17,originWidth:50,originHeight:75,rotation:12})
+})
+
 const group={
   modelSlot:1,setId:'uniform',category:'manga-inferior',offsetX:0,offsetY:0,scaleX:1,scaleY:1,rotation:0
 }
@@ -112,6 +157,14 @@ test('interface usa grude real, sem bolinha azul, sem mudar a folha desmontada',
   assert.match(controls,/Soltar/)
   assert.match(renderer,/component\.glue\?\.mode === 'loose'/)
   assert.match(customizerAdjustment,/updateWardrobeComponentGroups\(/)
+})
+
+test('WardrobeWorkspace mantém a sessão e encaminha as regras de edição ao módulo puro',async()=>{
+  const page=await readFile('src/renderer/src/features/fabricator/wardrobe/WardrobeWorkspace.tsx','utf8')
+  assert.match(page,/import \{ applyWardrobeComponentEdit, nudgeWardrobeComponent, resizeWardrobeComponent, restoreWardrobeComponentOrigin, scaleWardrobeComponentAxis \} from '\.\/wardrobeComponentEditing'/)
+  assert.match(page,/return applyWardrobeComponentEdit\(component, values, referenceModel, current\.width\)/)
+  assert.match(page,/scaleWardrobeComponentAxis\(selected, axis, value, lockAspectRatio\)/)
+  assert.doesNotMatch(page,/const ratio = value \/ \(axis === 'width' \? originWidth : originHeight\)/)
 })
 
 test('paletas de roupas são alteradas apenas no componente e lado escolhidos',()=>{

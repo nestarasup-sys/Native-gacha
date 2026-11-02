@@ -1,20 +1,19 @@
 import { projectForOriginalPreview, selectOriginalModelSource } from '../../../../../shared/fabricatorModelViews'
 import { useModelSourceRefresh } from '../models/useModelSourceRefresh'
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
-import type { FabricatorPose, FabricatorPoseSummary, FabricatorProject, FabricatorProjectSave, FabricatorSlotSummary, ModelPart, WardrobeCategory, WardrobeComponent, WardrobePreviewGender, WardrobeSet, WardrobeSetSummary } from '../../../../../shared/fabricator'
+import type { FabricatorPose, FabricatorPoseSummary, FabricatorProject, FabricatorProjectSave, FabricatorSlotSummary, WardrobeCategory, WardrobeComponent, WardrobePreviewGender, WardrobeSet, WardrobeSetSummary } from '../../../../../shared/fabricator'
 import { Icon } from '../../../ui/components/Icon'
 import { usePreviewBackground } from '../../../ui/hooks/usePreviewBackground'
 import { normalizeLayerOrder, orderedParts, partJointAnchor } from '../models/rig'
 import { bindWardrobeComponent, mapWardrobeComponentToPose, poseDeltaToSource, wardrobePosePadding, rebaseWardrobeSetToOriginalSheet } from './poseTransform'
-import { editWardrobeGlue, fixWardrobeGlue, releaseWardrobeGlue, suggestWardrobeGlueTarget, wardrobeGlueState } from '../../../../../shared/wardrobeGlue'
+import { fixWardrobeGlue, releaseWardrobeGlue, suggestWardrobeGlueTarget, wardrobeGlueState } from '../../../../../shared/wardrobeGlue'
 import { WardrobeGlueControls } from './WardrobeGlueControls'
 import { snapWardrobePlacement } from '../../../../../shared/wardrobeMagnet'
 import { useWardrobePoseAudit } from './useWardrobePoseAudit'
 import { WardrobePoseAuditPanel } from './WardrobePoseAuditPanel'
 import { useWardrobeComparisonPose } from './useWardrobeComparisonPose'
 import { WardrobeComparisonPreview } from './WardrobeComparisonPreview'
-import { suggestWardrobeBone } from './boneSelection'
-import { guessWardrobeCategoryForBone, guessWardrobeNameForBone } from './wardrobeAutoDetection'
+import { applyWardrobeComponentEdit, nudgeWardrobeComponent, resizeWardrobeComponent, restoreWardrobeComponentOrigin, scaleWardrobeComponentAxis } from './wardrobeComponentEditing'
 import { createWardrobeTorsoGridComponents } from './wardrobeGridImport'
 import { createWardrobeComponentsFromProcessedSheet } from './wardrobeSheetImport'
 import { saveWardrobeSetDraft } from './saveWardrobeSetDraft'
@@ -67,9 +66,6 @@ function getBodyLayer(model: FabricatorProject | null, partId: string): number {
 function serializeModel(model: FabricatorProject): FabricatorProjectSave {
   const { sourceDataUrl: _sourceDataUrl, parts, ...metadata } = model
   return { ...metadata, parts: parts.map(({ dataUrl: _dataUrl, chromaBaseDataUrl: _chromaBaseDataUrl, ...part }) => part) }
-}
-function guessBone(category: WardrobeCategory, x: number, width: number, model: FabricatorProject): ModelPart | undefined {
-  return suggestWardrobeBone(category, x, width, model).bone ?? undefined
 }
 function isLongJointSplitCandidate(component: WardrobeComponent | null | undefined): component is WardrobeComponent {
   if (!component?.sleevePairId || component.sleeveSegment !== 'whole') return false
@@ -208,25 +204,7 @@ export function WardrobeWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
       if (!pieceDragRef.current) pairedGridHistoryRef.current.record(current)
       return ({ ...current, components: current.components.map((component) => {
       if (component.id !== id) return component
-      const updated = { ...component, ...values }
-      if (values.category && values.category !== 'oculos' && values.category !== 'acessorio-cabeca') updated.renderAboveHair = false
-      if (values.attachedPartId !== undefined && values.attachedPartId !== component.attachedPartId && referenceModel) {
-        const bone = referenceBone(values.attachedPartId)
-        if (bone) {
-          const category = guessWardrobeCategoryForBone(bone, component.category)
-          if (category) {
-            updated.category = category
-            updated.name = guessWardrobeNameForBone(category, bone, referenceModel)
-            if (category !== 'oculos' && category !== 'acessorio-cabeca') updated.renderAboveHair = false
-          }
-        }
-      }
-      if ((values.category === 'sapato' || values.category === 'luvas') && values.attachedPartId === undefined && referenceModel) {
-        const target = guessBone(values.category, updated.x + updated.width / 2, current.width, referenceModel)
-        updated.attachedPartId = target?.id ?? ''
-        if (!target) updated.binding = undefined
-      }
-      return editWardrobeGlue(component, updated, referenceBone(updated.attachedPartId))
+      return applyWardrobeComponentEdit(component, values, referenceModel, current.width)
       }), updatedAt: new Date().toISOString() })
     })() : current)
   }, [sourceParts, draft?.edition, referenceModel, referenceBone])
@@ -670,27 +648,14 @@ export function WardrobeWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
   const finishPieceDrag = (event: ReactPointerEvent<HTMLElement>) => {
     if (pieceDragRef.current?.pointerId === event.pointerId) pieceDragRef.current = null
   }
-  const nudgeSelected = (dx: number, dy: number) => { if (selected) updateComponent(selected.id, { x: selected.x + dx, y: selected.y + dy }) }
-  const resizeSelected = (factor: number) => {
-    if (!selected) return
-    const width = selected.width * factor; const height = selected.height * factor
-    updateComponent(selected.id, { originX: selected.originX ?? selected.x, originY: selected.originY ?? selected.y, originWidth: selected.originWidth ?? selected.width, originHeight: selected.originHeight ?? selected.height, x: selected.x + (selected.width - width) / 2, y: selected.y + (selected.height - height) / 2, width, height })
-  }
+  const nudgeSelected = (dx: number, dy: number) => { if (selected) updateComponent(selected.id, nudgeWardrobeComponent(selected, dx, dy)) }
+  const resizeSelected = (factor: number) => { if (selected) updateComponent(selected.id, resizeWardrobeComponent(selected, factor)) }
   const scaleSelectedAxis = (axis: 'width' | 'height', value: number) => {
-    if (!selected || !Number.isFinite(value)) return
-    const originWidth = selected.originWidth ?? selected.width
-    const originHeight = selected.originHeight ?? selected.height
-    const centerX = selected.x + selected.width / 2
-    const centerY = selected.y + selected.height / 2
-    const ratio = value / (axis === 'width' ? originWidth : originHeight)
-    const width = axis === 'width' ? value : lockAspectRatio ? originWidth * ratio : selected.width
-    const height = axis === 'height' ? value : lockAspectRatio ? originHeight * ratio : selected.height
-    updateComponent(selected.id, { originX: selected.originX ?? selected.x, originY: selected.originY ?? selected.y, originWidth, originHeight, x: centerX - width / 2, y: centerY - height / 2, width, height })
-  }
-  const restoreSelectedOrigin = () => {
     if (!selected) return
-    updateComponent(selected.id, { x: selected.originX ?? selected.x, y: selected.originY ?? selected.y, width: selected.originWidth ?? selected.width, height: selected.originHeight ?? selected.height, rotation: 0 })
+    const patch = scaleWardrobeComponentAxis(selected, axis, value, lockAspectRatio)
+    if (patch) updateComponent(selected.id, patch)
   }
+  const restoreSelectedOrigin = () => { if (selected) updateComponent(selected.id, restoreWardrobeComponentOrigin(selected)) }
   const choosePreviewGender = (gender: WardrobePreviewGender) => {
     if (!draft || wardrobePreviewGenderOf(draft.previewGender) === gender) return
     setDraft((current) => current ? { ...current, previewGender: gender } : current)
