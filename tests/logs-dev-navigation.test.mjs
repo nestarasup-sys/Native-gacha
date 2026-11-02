@@ -7,6 +7,7 @@ import {
   sanitizeDiagnosticRoute,
   UI_PERFORMANCE_ROUTES
 } from '../src/shared/applicationRoutes.ts'
+import { LOGS_DEV_SECTIONS } from '../src/renderer/src/features/options/logsDevSections.ts'
 
 test('Logs Dev is canonical and the old Opções URL redirects to it', async () => {
   assert.equal(APPLICATION_ROUTES.logsDev, '/logs-dev')
@@ -35,4 +36,16 @@ test('page identity uses the Logs Dev label while keeping the existing options f
   assert.match(page, /export function LogsDevPage\(\)/)
   assert.match(page, /<h1>Logs Dev<\/h1>/)
   assert.match(page, /export const OptionsPage = LogsDevPage/)
+})
+
+test('Logs Dev separates overview, events, performance, storage, recovery and developer tools', async () => {
+  assert.deepEqual(LOGS_DEV_SECTIONS.map(({ id }) => id), [
+    'overview', 'events', 'performance', 'storage', 'backups', 'tools'
+  ])
+
+  const page = await readFile(new URL('../src/renderer/src/features/options/OptionsPage.tsx', import.meta.url), 'utf8')
+  for (const section of LOGS_DEV_SECTIONS) {
+    assert.match(page, new RegExp(`activeSection === '${section.id}'`))
+  }
+  assert.match(page, /onToggle=\{\(event\) => \{ if \(event\.currentTarget\.open && !migration\) void refreshMigration\(\) \}\}/)
 })

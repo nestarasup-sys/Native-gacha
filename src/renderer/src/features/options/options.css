@@ -4,6 +4,11 @@
 .options-page-header { display:flex;align-items:flex-end;justify-content:space-between;gap:18px;flex-wrap:wrap;padding:3px 2px 5px; }
 .options-page-header h1 { margin:5px 0 0;color:#2d2632;font-size:clamp(24px,3vw,32px);line-height:1.15; }
 .options-page-header p { margin:7px 0 0;color:#756c7b;font-size:13px; }
+.options-section-nav { min-width:0;display:flex;gap:6px;overflow-x:auto;padding:2px 1px 5px;scrollbar-width:thin; }
+.options-section-button { min-height:34px;flex:none;padding:0 12px;border:1px solid #e3dce6;border-radius:8px;background:#fff;color:#716779;font-size:10px;font-weight:750;white-space:nowrap;cursor:pointer; }
+.options-section-button:hover { border-color:#c8b2d1;background:#faf7fc; }
+.options-section-button.active { border-color:#7955bc;background:#7955bc;color:#fff; }
+.options-section-button:focus-visible { outline:2px solid #7955bc;outline-offset:2px; }
 .options-eyebrow { display:block;color:#916188;font-size:9px;font-weight:850;letter-spacing:.9px; }
 .options-header-actions { display:flex;align-items:center;gap:8px;flex-wrap:wrap; }
 .options-button { min-height:36px;display:inline-flex;align-items:center;justify-content:center;padding:0 12px;border:1px solid #ddd5e2;border-radius:8px;background:#fff;color:#514657;font-size:11px;font-weight:750;cursor:pointer;transition:background .14s,border-color .14s; }

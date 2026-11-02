@@ -7,11 +7,14 @@ import type {
 import { diagnosticAlerts, domainLabels, formatBytes, formatDate, groupLabels, totalStorageBytes } from './optionsDiagnostics'
 import { createOptionsBackupCommands } from './optionsBackupCommands'
 import { createOptionsMigrationCommands } from './optionsMigrationCommands'
+import { LogsDevSectionNavigation } from './LogsDevSectionNavigation'
+import { type LogsDevSectionId } from './logsDevSections'
 
 type StoredBackup = DataBackupSummary
 type EventFilter = 'all' | 'error' | 'warning'
 
 export function LogsDevPage() {
+  const [activeSection, setActiveSection] = useState<LogsDevSectionId>('overview')
   const [summary, setSummary] = useState<StorageSummary | null>(null)
   const [storageBusy, setStorageBusy] = useState(false)
   const [storageError, setStorageError] = useState<string | null>(null)
@@ -129,13 +132,15 @@ export function LogsDevPage() {
         </div>
       </header>
 
+      <LogsDevSectionNavigation selected={activeSection} onSelect={setActiveSection} />
+      {(reportMessage || reportError) && <p className={`options-inline-message${reportError ? ' error' : ''}`} role={reportError ? 'alert' : 'status'}>{reportError ?? reportMessage}</p>}
+
+      {activeSection === 'overview' && <>
       <section className={`options-health options-health-${healthState}`} aria-label="Estado geral">
         <div className="options-health-icon" aria-hidden="true">{healthState === 'error' ? '!' : healthState === 'warning' ? '△' : '✓'}</div>
         <div className="options-health-copy"><strong>{healthState === 'error' ? 'Há problemas registrados' : healthState === 'warning' ? 'Há itens para conferir' : summary ? 'Verificações locais concluídas' : 'Registros locais carregados'}</strong><span>{eventsLoaded ? `${errorCount} erros · ${warningCount} avisos registrados` : 'Carregando os registros recentes…'}{summary ? ` · armazenamento medido ${formatDate(summary.disk.measuredAt)}` : ''}</span></div>
         <span className="options-live-badge"><i /> Sem varreduras em segundo plano</span>
       </section>
-
-      {(reportMessage || reportError) && <p className={`options-inline-message${reportError ? ' error' : ''}`} role={reportError ? 'alert' : 'status'}>{reportError ?? reportMessage}</p>}
 
       <section className="options-overview-grid" aria-label="Resumo">
         <article className="options-overview-card"><span>Armazenamento local</span><strong>{summary ? formatBytes(totalBytes) : 'Não medido'}</strong><small>{summary ? `${Object.values(summary.disk.groups).reduce((n, group) => n + group.files, 0).toLocaleString('pt-BR')} arquivos · ${storageScanMs ?? 0} ms nesta leitura` : 'Faça uma leitura sob demanda'}</small></article>
@@ -150,7 +155,9 @@ export function LogsDevPage() {
           {alerts.map((alert, index) => <article className={`options-alert options-alert-${alert.level}`} key={`${alert.title}-${index}`}><span className="options-alert-mark">{alert.level === 'error' ? '!' : alert.level === 'warning' ? '△' : 'i'}</span><div><strong>{alert.title}</strong><small>{alert.detail}</small></div></article>)}
         </div>
       </section>
+      </>}
 
+      {activeSection === 'storage' && <>
       <section className="options-panel" aria-label="Armazenamento local">
         <header className="options-panel-header"><div><span className="options-eyebrow">PESO DOS DADOS</span><h2>Armazenamento por categoria</h2><p>A medição percorre os arquivos uma vez quando você pedir. Nenhum arquivo é movido ou excluído.</p></div><button className="options-button secondary" type="button" onClick={() => void refreshStorage()} disabled={storageBusy}>{storageBusy ? 'Medindo arquivos…' : summary ? 'Atualizar medição' : 'Medir armazenamento'}</button></header>
         {storageError && <p className="options-inline-message error" role="alert">{storageError}</p>}
@@ -167,7 +174,9 @@ export function LogsDevPage() {
           </div>
         </>}
       </section>
+      </>}
 
+      {activeSection === 'performance' && <>
       <section className="options-panel" aria-label="Leituras de desempenho">
         <header className="options-panel-header"><div><span className="options-eyebrow">LEITURA INSTANTÂNEA</span><h2>Memória e versão do aplicativo</h2><p>Os valores são uma amostra do momento em que você clicar; não representam pico nem ficam sendo coletados.</p></div><button className="options-button secondary" type="button" onClick={() => void refreshRuntime()} disabled={runtimeBusy}>{runtimeBusy ? 'Medindo…' : runtime ? 'Atualizar leitura' : 'Medir agora'}</button></header>
         {runtimeError && <p className="options-inline-message error" role="alert">{runtimeError}</p>}
@@ -182,7 +191,9 @@ export function LogsDevPage() {
           <small className="options-measure-time">Medição: {formatDate(runtime.measuredAt)}</small>
         </>}
       </section>
+      </>}
 
+      {activeSection === 'events' && <>
       <section className="options-panel" aria-label="Logs locais">
         <header className="options-panel-header"><div><span className="options-eyebrow">REGISTROS LOCAIS</span><h2>Erros e avisos recentes</h2><p>Captura eventos de erro da interface e avisos do processo. Mantém no máximo 500 registros curtos e remove caminhos locais. Mensagens técnicas podem conter detalhes específicos; revise antes de compartilhar um relatório.</p></div><div className="options-event-actions"><select aria-label="Filtrar registros" value={eventFilter} onChange={(event) => setEventFilter(event.target.value as EventFilter)}><option value="all">Todos</option><option value="error">Erros</option><option value="warning">Avisos</option></select><button className="options-button secondary" type="button" onClick={() => void refreshEvents()} disabled={eventsBusy}>{eventsBusy ? 'Lendo…' : 'Atualizar'}</button></div></header>
         {eventsError && <p className="options-inline-message error" role="alert">{eventsError}</p>}
@@ -191,7 +202,9 @@ export function LogsDevPage() {
           {visibleEvents.map((event) => <article className={`options-event options-event-${event.severity}`} key={event.id}><span className="options-event-severity">{event.severity === 'error' ? 'Erro' : event.severity === 'warning' ? 'Aviso' : 'Info'}</span><div className="options-event-copy"><strong>{event.code}</strong><p>{event.message}</p><small>{formatDate(event.at)}{event.route ? ` · ${event.route}` : ''} · {event.source === 'main' ? 'Processo principal' : 'Interface'}</small></div></article>)}
         </div>
       </section>
+      </>}
 
+      {activeSection === 'backups' && <>
       <section className="options-panel" aria-label="Backups e recuperação">
         <header className="options-panel-header"><div><span className="options-eyebrow">RECUPERAÇÃO</span><h2>Backups manuais</h2><p>Criar, verificar ou restaurar uma cópia. O app nunca limpa backups automaticamente.</p></div><button className="options-button primary" type="button" onClick={() => void createBackup()} disabled={backupBusy}>{backupBusy ? 'Processando…' : 'Criar backup agora'}</button></header>
         {backupMessage && <p className="options-inline-message" role="status">{backupMessage}</p>}
@@ -201,7 +214,9 @@ export function LogsDevPage() {
           {backups.map((backup) => <article className="options-backup-row" key={backup.id}><div><strong>{formatDate(backup.createdAt)}</strong><span>{backup.fileCount.toLocaleString('pt-BR')} arquivos · {formatBytes(backup.byteLength)} · {backup.verifiedAt ? 'verificado' : 'ainda não verificado'}</span></div><div><button className="options-button secondary compact" type="button" onClick={() => void verifyBackup(backup)} disabled={backupBusy}>Verificar</button><button className="options-button secondary compact" type="button" onClick={() => void restoreBackup(backup)} disabled={backupBusy}>Restaurar</button><button className="options-button danger compact" type="button" onClick={() => void deleteBackup(backup)} disabled={backupBusy}>Excluir</button></div></article>)}
         </div>
       </section>
+      </>}
 
+      {activeSection === 'tools' && <>
       <details className="options-advanced" onToggle={(event) => { if (event.currentTarget.open && !migration) void refreshMigration() }}>
         <summary><span><b>Ferramentas antigas e dados avançados</b><small>Migração legada, estado dos domínios e catálogo interno</small></span><i>+</i></summary>
         <div className="options-advanced-content">
@@ -218,6 +233,7 @@ export function LogsDevPage() {
           {summary && <section className="options-panel options-catalog-summary"><header><span className="options-eyebrow">ÍNDICE INTERNO</span><h2>Catálogo de arquivos</h2></header><p>{summary.catalog.assets.toLocaleString('pt-BR')} assets indexados · {summary.catalog.uniqueObjects.toLocaleString('pt-BR')} objetos únicos · {formatBytes(summary.catalog.objectBytes)} em binários catalogados.</p><small>Objetos sem referência são apenas sinalizados; esta tela nunca os remove automaticamente.</small></section>}
         </div>
       </details>
+      </>}
 
       <footer className="options-privacy-note">O relatório inclui versões, tamanhos agregados e mensagens técnicas recentes. Caminhos locais e URLs são removidos; como as mensagens são texto livre e podem conter detalhes específicos, revise o JSON antes de compartilhar.</footer>
     </div>
