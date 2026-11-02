@@ -6,6 +6,7 @@ const { pathToFileURL } = require('node:url')
 const { spawn, spawnSync } = require('node:child_process')
 const { build } = require('esbuild')
 const { createSyntheticStressProfile } = require('./synthetic-stress-profile.cjs')
+const { parseIpcPerformanceReport } = require('./ipc-performance-report.cjs')
 const root = path.resolve(__dirname, '../..')
 const ffmpeg = path.join(root, 'resources', 'video-tools', 'ffmpeg.exe')
 const ffprobe = path.join(root, 'resources', 'video-tools', 'ffprobe.exe')
@@ -586,7 +587,10 @@ async function main() {
       const reportPath = path.join(outputRoot, 'offscreen-performance.json')
       try {
         const report = JSON.parse(await fs.readFile(reportPath, 'utf8'))
-        report.ipcMetrics = processOutput.split(/\r?\n/).filter((line) => /editor-v6:|averageMs|worstMs|failures/.test(line)).slice(-300)
+        const ipcReport = parseIpcPerformanceReport(processOutput)
+        report.ipcMetrics = ipcReport.metrics
+        report.ipcMetricsCapture = ipcReport.status
+        if (ipcReport.status === 'missing') console.error('[V6 stress] A instrumentação IPC não emitiu o snapshot estruturado.')
         await fs.writeFile(reportPath, JSON.stringify(report, null, 2), 'utf8')
         if (runLabel) {
           if (!/^[a-z0-9_-]+$/i.test(runLabel)) throw new Error(`Etiqueta de execução inválida: ${runLabel}`)

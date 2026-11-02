@@ -1,9 +1,9 @@
 import { performance } from 'node:perf_hooks'
+import { createIpcPerformanceSnapshot, type IpcPerformanceMetric } from './ipcPerformanceSnapshot'
 
 /** No payloads, paths, IDs or names. Explicit opt-in: GV5_IPC_PERF=1. */
 const enabled = process.env.GV5_IPC_PERF === '1'
-type Metric = { calls: number; failures: number; totalMs: number; worstMs: number }
-const metrics = new Map<string, Metric>()
+const metrics = new Map<string, IpcPerformanceMetric>()
 
 export async function measureIpc<T>(label: string, action: () => Promise<T> | T): Promise<T> {
   if (!enabled) return action()
@@ -23,8 +23,7 @@ export async function measureIpc<T>(label: string, action: () => Promise<T> | T)
 }
 
 if (enabled) process.on('exit', () => {
-  console.table([...metrics].map(([channel, m]) => ({
-    channel, calls: m.calls, failures: m.failures,
-    averageMs: +(m.totalMs / m.calls).toFixed(2), worstMs: +m.worstMs.toFixed(2)
-  })))
+  const snapshot = createIpcPerformanceSnapshot(metrics)
+  console.log(`[GV5_IPC_PERF_JSON] ${JSON.stringify(snapshot)}`)
+  console.table(snapshot)
 })
