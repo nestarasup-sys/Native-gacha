@@ -34,6 +34,7 @@ import { CustomizerWardrobeCatalogWorkspace } from './CustomizerWardrobeCatalogW
 import { customizerSkinTonePresets, skinTonePresets, createCustomizerFaceCatalogModel } from './customizerFaceCatalogModel'
 import type { FaceLibraryPartId } from './customizerFaceCatalogModel'
 import { useCustomizerInitialArtworkPreview } from './useCustomizerInitialArtworkPreview'
+import { useCustomizerSourceCatalog } from './useCustomizerSourceCatalog'
 import { useCustomizerFacePreview } from './useCustomizerFacePreview'
 import { useCustomizerFaceCatalog } from './useCustomizerFaceCatalog'
 import { useCustomizerHairPreview } from './useCustomizerHairPreview'
@@ -288,26 +289,14 @@ export function CustomizerPage() {
   const visibleCharacters = characters
     .filter((character) => character.name.toLowerCase().includes(rosterQuery.trim().toLowerCase()))
 
-  useEffect(() => {
-    let cancelled = false
-    void Promise.all([window.desktop.fabricator.listFabricatorSlots(), window.desktop.fabricator.listFabricatorPoseSlots()])
-      .then(async ([models, poses]) => {
-        if (cancelled) return
-        setCatalogModels(models)
-        setCatalogPoses(poses)
-      })
-      .catch((reason: unknown) => {
-        if (!cancelled) {
-          setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível carregar o catálogo.')
-          setPreviewLoading(false)
-        }
-      })
-      .finally(() => { if (!cancelled) setCatalogLoading(false) })
-    return () => {
-      cancelled = true
-      previewLoadRequest.current += 1
-    }
-  }, [])
+  useCustomizerSourceCatalog({
+    requestRef: previewLoadRequest,
+    setModels: setCatalogModels,
+    setPoses: setCatalogPoses,
+    setLoading: setCatalogLoading,
+    setError: setCatalogError,
+    setPreviewLoading
+  })
 
   useCustomizerInitialArtworkPreview({
     catalogLoading, catalogModels, catalogPoses, selectedCharacter,
