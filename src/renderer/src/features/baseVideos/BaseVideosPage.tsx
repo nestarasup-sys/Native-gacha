@@ -4,6 +4,7 @@ import type { VideoLibraryItem } from '../../../../shared/mediaLibrary'
 import { Icon } from '../../ui/components/Icon'
 import { registerPendingWriteFlusher } from '../../ui/pendingPersistence'
 import { createBaseVideoDetailsSaveQueue } from './baseVideoDetailsSaveQueue'
+import { deleteBaseVideoCategory } from './baseVideoCategoryCommands'
 
 const emptyDetails = (videoId: string): BaseVideoDetails => ({ videoId, categoryId: null, description: '', additionalContext: '', timeline: 'unspecified' })
 const formatDuration = (frames: number | null) => {
@@ -132,10 +133,14 @@ export function BaseVideosPage() {
     if (busy) return
     setBusy(true); setCategoryError(null)
     try {
-      for (const [videoId, details] of Object.entries(detailsById)) if (details.categoryId === category.id) await flushPendingSave(videoId)
-      await window.desktop.baseVideos.deleteCategory(category.id)
+      await deleteBaseVideoCategory({
+        categoryId: category.id,
+        detailsById,
+        flushPendingSave,
+        deleteCategory: (categoryId) => window.desktop.baseVideos.deleteCategory(categoryId),
+        clearCategoryAssignment: (videoId) => updateDetails(videoId, { categoryId: null })
+      })
       setCategories((current) => current.filter((entry) => entry.id !== category.id))
-      for (const [videoId, details] of Object.entries(detailsById)) if (details.categoryId === category.id) updateDetails(videoId, { categoryId: null })
       if (categoryEditingId === category.id) setCategoryEditingId(null)
     } catch (reason) { setCategoryError(reason instanceof Error ? reason.message : 'Não foi possível excluir a categoria.') }
     finally { setBusy(false) }
