@@ -22,6 +22,7 @@ import { createWardrobeSleeveSheetComponents } from './wardrobeSleeveSheetImport
 import { mirrorWardrobeImageDataUrl } from './mirrorWardrobeImage'
 import type { WardrobeProcessorResponse } from './wardrobeProcessorProtocol'
 import { recoverWardrobeReferenceModel } from './wardrobeReferenceRecovery'
+import { loadWardrobeWorkspaceSnapshot } from './loadWardrobeWorkspaceSnapshot'
 import { usePaletteImport } from '../usePaletteImport'
 import { useWardrobeDeformation } from './useWardrobeDeformation'
 import { rebindWardrobeComponents } from './wardrobeBindings'
@@ -319,20 +320,20 @@ export function WardrobeWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
     setModel(null); setSets([]); setCatalogIssues([]); setDraft(null); setActiveSetId(null); setSelectedId(null)
     setError('')
     try {
-      const [savedModels, reference, library] = await Promise.all([window.desktop.fabricator.listFabricatorSlots(), window.desktop.fabricator.loadFabricatorSlot(targetSlot), window.desktop.fabricator.listWardrobeSetsDetailed(targetSlot)])
+      const snapshot = await loadWardrobeWorkspaceSnapshot(targetSlot, {
+        listSlots: () => window.desktop.fabricator.listFabricatorSlots(),
+        loadModel: (slot) => window.desktop.fabricator.loadFabricatorSlot(slot),
+        listWardrobeSets: (slot) => window.desktop.fabricator.listWardrobeSetsDetailed(slot),
+        loadHistory: (slot) => window.desktop.fabricator.loadFabricatorHistory(slot),
+        recoverReference: recoverWardrobeReferenceModel
+      })
       if (requestRef.current !== requestId) return
-      setModels(savedModels)
-      const firstAvailableModel = savedModels.find((slot) => slot)
-      if (!reference && firstAvailableModel && firstAvailableModel.slot !== targetSlot) { setModels(savedModels); setModelSlot(firstAvailableModel.slot); return }
-      let recoveredModel = reference
-      if (reference) {
-        try {
-          const history = await window.desktop.fabricator.loadFabricatorHistory(targetSlot)
-          if (history) recoveredModel = recoverWardrobeReferenceModel(reference, history)
-        } catch { /* Keep calibration available if no history can be read. */ }
+      if (snapshot.kind === 'redirect') {
+        setModels(snapshot.models)
+        setModelSlot(snapshot.targetSlot)
+        return
       }
-      if (requestRef.current !== requestId) return
-      setModels(savedModels); setModel(recoveredModel); setSets(library.sets); setCatalogIssues(library.issues)
+      setModels(snapshot.models); setModel(snapshot.model); setSets(snapshot.catalog.sets); setCatalogIssues(snapshot.catalog.issues)
       setActiveSetId(null); setDraft(null); setSelectedId(null); setDirty(false); setJoinJointsMode(false)
     } catch (reason) {
       if (requestRef.current !== requestId) return
