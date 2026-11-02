@@ -27,7 +27,7 @@ Este documento acompanha a execução das Fases 1–6 e complementa a baseline d
 | 0 | Auditoria e baseline arquitetural | Concluída antes deste programa | [Relatório da Fase 0](./AUDITORIA_REFATORACAO_GERAL_V1_FASE_0.md). |
 | 1 | Electron, IPC, persistência, backups e filas | Concluída | Diagnóstico de memória corrigido; ciclo de encerramento extraído e coberto; diferenças das filas mapeadas; backup, manutenção e segurança de janela passaram. Os gatilhos gerais de CI de `Dev-V2` ficam na Fase 6. |
 | 2 | Núcleo compartilhado de personagens | Concluída | Consumidores e regressões mapeados. Escala-base idêntica entre Studio e Editor V6 centralizada; renderizadores e contratos de exportação distintos mantidos. Testes de personagem/gênero/roupas articuladas executáveis por script dedicado. |
-| 3 | Fabricador e Customizador | Não iniciada | Preservar catálogo-fonte, instâncias e overrides; cobrir ciclo completo de edição. |
+| 3 | Fabricador e Customizador | Em andamento | Fluxo de catálogo/customizações coberto de ponta a ponta; primeira fronteira de gravação do Fabricador extraída. Restam mapear/decompor os maiores workspaces e ampliar cenários de reabertura. |
 | 4 | Studio, Editor V6 e fluxos de vídeo | Não iniciada | Manter engines distintas, paridade de exportação e caminhos legados de dados. |
 | 5 | Roteiros, Base de Vídeos, Opções, componentes e CSS | Não iniciada | Preservar propriedade da biblioteca de mídia e bloqueio de referências. |
 | 6 | Performance, CI e consolidação | Não iniciada | Medir antes/depois; remover legado somente após comprovar ausência de consumidores. |
@@ -78,19 +78,28 @@ Este documento acompanha a execução das Fases 1–6 e complementa a baseline d
 
 O módulo `editorV6CharacterRenderer.ts` continua separado de `characterRenderer.ts`: o primeiro mantém material cacheado, buffers e descarte próprios para motion/export; o segundo atende o compositor reutilizável de preview. O mapeamento não demonstrou contratos iguais para fundi-los.
 
-O Node test runner não resolvia imports relativos extensionless `.ts` usados por dois contratos existentes. `scripts/testing/resolve-typescript-extensions.mjs` e `register-typescript-extensions.mjs` são exclusivos de testes e permitem rodar esses contratos sem alterar imports de produto. `npm run test:character-contracts` passou 15/15.
+O Node test runner não resolvia imports relativos extensionless `.ts` usados por contratos existentes. `scripts/testing/resolve-typescript-extensions.mjs` e `register-typescript-extensions.mjs` são exclusivos de testes e agora também emulam imports JSON sem atributos, como o Vite já permite. Os imports de produto permanecem inalterados.
 
-## Falhas preexistentes
+### Primeira fronteira de comando no Fabricador e continuidade do catálogo
 
-As falhas abaixo já estavam na baseline de `f416a02` antes da primeira alteração desta execução. Não foram mascaradas ou removidas:
+- **Gravação de roupas:** `saveWardrobeSetDraft` em `src/renderer/src/features/fabricator/wardrobe/saveWardrobeSetDraft.ts` passou a coordenar a serialização, extração dos PNGs atuais e do backup de deformação, chamada de persistência, notificação de assets e atualização do catálogo. `WardrobeWorkspace` permanece responsável pelo estado visual e feedback de salvamento.
+- **Contrato preservado:** o comando não muda IDs, schema, campos persistidos ou canal IPC. `renderAboveHair` continua verdadeiro somente para óculos/acessórios de cabeça explicitamente configurados; todos os PNGs continuam sendo enviados por ID, separados dos metadados.
+- **Código morto removido:** o hook de deformação mantinha um `Set` de imagens sujas sem nenhum leitor; a persistência já usa os assets presentes no rascunho do conjunto. Removemos o rastreador e suas duas funções não utilizadas. A invalidação do cache continua por ID quando uma imagem é substituída.
+- **Continuidade real:** `tests/character-production-flow.test.mjs` agora altera e salva o catálogo usando `createFabricatorModelWriter`, reabre o modelo pelo catálogo e verifica que as personalizações salvas de duas personagens continuam idênticas no repositório do Customizador. Também confirma que salvar personalizações não altera o manifesto-fonte.
+- **Testes do comando:** `tests/wardrobe-save-command.test.mjs` cobre payload sem PNGs embutidos, imagens atuais e backup, campos de gênero/modelo, atualização da lista e falha de gravação sem notificação prematura. Incluído em `test:refactor` por `test:fabricator:wardrobe-save`.
+- **Testes ajustados à implementação:** os checks de composição e deformação verificam a estrutura real (um pivô por peça e cache invalidado por componente), sem exigir sintaxe antiga. O fixture de importação facial injeta `notifyAssetsUpdated`, dependência obrigatória do comando. O teste de prévia verifica a identidade do objeto quando o artwork não muda; o código preserva essa referência.
+- **Verificações:** `npm run test:refactor` passou, incluindo os 2 novos testes do comando; `npm run typecheck`, `npm run audit:architecture` (566 arquivos TS/TSX, sem violações) e `npm run build` passaram.
+- **Próxima etapa da Fase 3:** inventariar os maiores componentes Fabricador/Customizador e extrair outras fronteiras de estado/comando somente quando a propriedade do dado e os efeitos de persistência estiverem claros.
 
-1. `fabricator-customizer-studio-continuity.test.mjs`: importação do par espelhado de sobrancelhas espera contagem `2`, recebe `0`.
-2. Mesmo arquivo: importação de atlas ocular espera `{'eye-left':'eye-left'}`, recebe `{}`.
-3. Mesmo arquivo: importação de detalhe facial lança `TypeError` ao acessar `id` de valor indefinido.
-4. `renderizador deve usar um pivô por peça...`: expectativa estrutural antiga por `layer.push({ group, ...item })` não corresponde à implementação atual.
-5. `a página delega deformação ao hook...`: expectativa por `hasDirtyWarpImage(component.id)` não corresponde à implementação atual.
+## Reconciliação das falhas da baseline
 
-O Node test runner conta também a suíte agregadora que contém as três primeiras falhas; por isso reporta seis falhas no total: cinco casos com asserções que falham e o grupo agregado. As falhas 1–3 pertencem ao fluxo Fabricador/Customizador e serão investigadas na Fase 3; as falhas 4–5 serão verificadas ao mapear geometria compartilhada e seu consumidor Fabricador, nas Fases 2–3. Nenhuma correção deve enfraquecer esses contratos de teste sem evidência.
+As falhas observadas na execução inicial da suíte em `f416a02` foram investigadas e reconciliadas:
+
+- Os três erros de importação facial eram causados pelo harness não injetar `notifyAssetsUpdated`, obrigatório no contrato da dependência; corrigimos o fixture sem alterar validação de produção.
+- O Node runner não resolvia imports TypeScript extensionless nem JSON sem atributo. O resolver isolado em `scripts/testing/` agora cobre ambos somente nos testes.
+- A prévia do Customizador criava um objeto novo mesmo quando o artwork não mudava, quebrando o contrato de identidade do modelo/pose; preservamos a referência original nesse caminho.
+- Dois checks estruturais de roupas esperavam sintaxe que já não representava a implementação; foram atualizados para verificar o item com grupo e pivô individuais, o fallback de pose e o comando dono da gravação.
+- A execução atual de `npm run test:refactor` termina com sucesso; não restam falhas conhecidas dessa baseline na suíte agregada.
 
 ## Decisões e riscos abertos
 
@@ -108,4 +117,5 @@ O Node test runner conta também a suíte agregadora que contém as três primei
 | `627a654f531240788ac2f56b6392a081e180e738` | Coordenador de encerramento, semânticas de filas e testes | Local em `Dev-V2`; sem publicação. |
 | `b171929e1a7f263796dcfa7265a13b4d7d063692` | Compartilha a geometria-base idêntica entre Studio e Editor V6 | Local em `Dev-V2`; sem publicação. |
 | `a5c30c21c32bd47618ee6d08850c5eda96631e68` | Habilita execução Node de contratos de personagem com imports TS extensionless | Local em `Dev-V2`; sem publicação. |
+| `986aba7` | Extrai o comando de gravação de roupas e cobre continuidade Fabricador/Customizador | Local em `Dev-V2`; sem publicação. |
 
