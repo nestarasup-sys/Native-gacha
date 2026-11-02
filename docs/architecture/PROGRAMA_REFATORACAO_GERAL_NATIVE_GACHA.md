@@ -25,7 +25,7 @@ Este documento acompanha a execução das Fases 1–6 e complementa a baseline d
 | Fase | Escopo | Estado | Evidência/pendências |
 | --- | --- | --- | --- |
 | 0 | Auditoria e baseline arquitetural | Concluída antes deste programa | [Relatório da Fase 0](./AUDITORIA_REFATORACAO_GERAL_V1_FASE_0.md). |
-| 1 | Electron, IPC, persistência, backups, filas e gates | Em andamento | Corrigida a amostragem de memória e extraído o ciclo de encerramento para um coordenador testável. Semânticas das filas documentadas e cobertas. Ainda revisar gates de CI para `Dev-V2` e escolher extrações seguras restantes do composition root. |
+| 1 | Electron, IPC, persistência, backups e filas | Concluída | Diagnóstico de memória corrigido; ciclo de encerramento extraído e coberto; diferenças das filas mapeadas; backup, manutenção e segurança de janela passaram. Os gatilhos gerais de CI de `Dev-V2` ficam na Fase 6. |
 | 2 | Núcleo compartilhado de personagens | Não iniciada | Mapear consumidores e contratos de preview/export antes de extrair regras. |
 | 3 | Fabricador e Customizador | Não iniciada | Preservar catálogo-fonte, instâncias e overrides; cobrir ciclo completo de edição. |
 | 4 | Studio, Editor V6 e fluxos de vídeo | Não iniciada | Manter engines distintas, paridade de exportação e caminhos legados de dados. |
@@ -53,7 +53,7 @@ Este documento acompanha a execução das Fases 1–6 e complementa a baseline d
   - `createPendingOperationTracker` acompanha somente operações de filesystem ainda ativas e as retira do inventário quando terminam, com ou sem sucesso. A Promise original continua entregando erro ao chamador. É adequado para operações curtas de arquivo, não substitui uma fila serial com falhas retidas.
   - Filas do renderer e do processo principal permanecem separadas; gravações do renderer são drenadas antes por flush explícito. Não são intercambiáveis só por compartilharem a ideia de “pendente”.
 - **Testes/arquivos:** `tests/application/persistence-shutdown.test.mjs` cobre drenagem, evento duplicado, reentrada bem-sucedida e nova tentativa após falha. `tests/keyed-operation-queue.test.mjs`, `tests/roteiros-write-queue.test.mjs`, `tests/media-library-pending-inventory.test.mjs` e `tests/pending-persistence-inventory.test.mjs` registram as políticas já existentes. Script local: `npm run test:application:persistence-shutdown`.
-- **Verificações da fatia:** testes da coordenação/persistência 10/10; typecheck passou; auditoria arquitetural passou (564 arquivos TS/TSX); build de produção passou; seis falhas conhecidas de `test:refactor` continuam sem mudança.
+- **Verificações da fatia:** coordenação/persistência 10/10; backup e manutenção 7/7; segurança da janela 4/4; typecheck passou; auditoria arquitetural passou (564 arquivos TS/TSX); build de produção passou; seis falhas conhecidas de `test:refactor` continuam sem mudança.
 - **Sem mudança de dados:** nenhuma fila foi consolidada, formato persistido foi alterado ou arquivo de usuário foi usado como fixture.
 
 ## Falhas preexistentes
