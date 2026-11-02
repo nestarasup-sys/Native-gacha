@@ -29,7 +29,7 @@ Este documento acompanha a execução das Fases 1–6 e complementa a baseline d
 | 2 | Núcleo compartilhado de personagens | Concluída | Consumidores e regressões mapeados. Escala-base idêntica entre Studio e Editor V6 centralizada; renderizadores e contratos de exportação distintos mantidos. Testes de personagem/gênero/roupas articuladas executáveis por script dedicado. |
 | 3 | Fabricador e Customizador | Em andamento | Fluxo de catálogo/customizações coberto de ponta a ponta; primeira fronteira de gravação do Fabricador extraída. Restam mapear/decompor os maiores workspaces e ampliar cenários de reabertura. |
 | 4 | Studio, Editor V6 e fluxos de vídeo | Em andamento | Criação/duplicação de cenas do Studio extraídas e testadas; comandos próprios do Editor V6, timeline e exportação permanecem separados. Restam a revisão de vídeos, workers e paridade de exportação. |
-| 5 | Roteiros, Base de Vídeos, Opções, componentes e CSS | Em andamento | Biblioteca continua dona dos arquivos/IDs; Roteiros mantém metadados e referências. Testes sintéticos comprovam bloqueio de exclusão de fundos/GIFs referenciados; estilos de Opções foram movidos sem mudança visual para folha da feature. Restam decomposição dos workspaces e etapas adicionais de CSS. |
+| 5 | Roteiros, Base de Vídeos, Opções, componentes e CSS | Em andamento | Biblioteca continua dona dos arquivos/IDs; Roteiros mantém metadados e referências. Guardas de exclusão têm testes sintéticos; canais da Base de Vídeos passaram a usar mapa tipado compartilhado por preload/Main; estilos e cálculos puros de Opções foram isolados. Restam decomposição dos workspaces e etapas adicionais de CSS. |
 | 6 | Performance, CI e consolidação | Não iniciada | Medir antes/depois; remover legado somente após comprovar ausência de consumidores. |
 
 ## Fatias implementadas
@@ -118,6 +118,15 @@ O Node test runner não resolvia imports relativos extensionless `.ts` usados po
 - **Commit local:** `6735283` (`refactor: extract Options diagnostics model`).
 - **Pendências:** o estado e a orquestração assíncrona de Opções permanecem na página; qualquer extração futura deverá preservar assinaturas IPC, cancelamento/estado de progresso da migração e sequência das operações de backup.
 
+### Contrato de canais IPC da Base de Vídeos
+
+- **Contrato centralizado:** `src/shared/baseVideosIpcChannels.ts` mapeia, com verificação TypeScript de cobertura, cada método de `BaseVideosDesktopApi` para sua string IPC legada e fornece invoker tipado para o preload.
+- **Uso em ambas as bordas:** `electron/preload.ts` e `electron/domains/baseVideos/ipc.ts` usam o mesmo mapa. A ordem dos argumentos e resultados permanece igual; cada handler Main ainda verifica o sender antes de chamar o serviço.
+- **Teste:** a suíte de Base de Vídeos confere os nove canais e argumentos do invoker, além de testar validação, categorias, metadados, publicação e bloqueios de exclusão de mídia referenciada.
+- **Verificações:** `npm run test:base-videos` passou 8/8; typecheck, audit arquitetural (569 arquivos TS/TSX) e build passaram.
+- **Commit local:** `e338db9` (`refactor: centralize Base de Vídeos IPC contract`).
+- **Pendências:** Roteiros e as demais APIs não tipadas no preload seguem separadas nesta fase; não houve rename de canal nem mudança de comportamento de exclusão.
+
 ## Reconciliação das falhas da baseline
 
 As falhas observadas na execução inicial da suíte em `f416a02` foram investigadas e reconciliadas:
@@ -148,4 +157,5 @@ As falhas observadas na execução inicial da suíte em `f416a02` foram investig
 | `da3ee89` | Extrai criação/duplicação de projetos do Studio sem compartilhar o contrato do Editor V6 | Local em `Dev-V2`; sem publicação. |
 | `497079f` | Preserva guardas de referências de mídia de Roteiros e move CSS de Opções sem alterar regras | Local em `Dev-V2`; sem publicação. |
 | `6735283` | Extrai cálculos e alertas puros de Opções, com testes sintéticos | Local em `Dev-V2`; sem publicação. |
+| `e338db9` | Centraliza os nove canais IPC da Base de Vídeos no preload e no Main | Local em `Dev-V2`; sem publicação. |
 
