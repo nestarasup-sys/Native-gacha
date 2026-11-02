@@ -29,7 +29,7 @@ Este documento acompanha a execução das Fases 1–6 e complementa a baseline d
 | 2 | Núcleo compartilhado de personagens | Concluída | Consumidores e regressões mapeados. Escala-base idêntica entre Studio e Editor V6 centralizada; renderizadores e contratos de exportação distintos mantidos. Testes de personagem/gênero/roupas articuladas executáveis por script dedicado. |
 | 3 | Fabricador e Customizador | Em andamento | Fluxo de catálogo/customizações coberto de ponta a ponta; gravação de roupas, operações de cabelo, persistência serializada por personagem com recuperação e estado final protegido contra writes obsoletos, seleção de peça no Customizador, carregamento/hidratação de slot com guards de seleção obsoleta e validação de conjuntos salvos em Roupas DEV têm fronteiras/testes próprios. Restam mapear/decompor os workspaces maiores e ampliar cenários de reabertura. |
 | 4 | Studio, Editor V6 e fluxos de vídeo | Em andamento | Criação/duplicação e impressão do Studio extraídas; miniatura 480×270 corrigida; paridade Turbo e exportação facial 720p/1080p aprovadas. A impressão foi validada do canvas ao handler IPC com fixture de arquivos sintética. A antiga tela Video Studio não tem rota, mas as bibliotecas legadas seguem ativas em Roteiros e como origem de mídia do Editor V6. Teste de cancelamento do worker cobre espera do compositor. Restam medições e validação comparativa dos workers de exportação. |
-| 5 | Roteiros, Base de Vídeos, Opções, componentes e CSS | Em andamento | Biblioteca continua dona dos arquivos/IDs; Roteiros mantém metadados e referências. Guardas, canais, fila, carregamento, listagem, publicação, CRUD de categorias, importação e exclusões da Base de Vídeos têm contratos testados; estilos da Base de Vídeos e modelos/comandos de Opções têm módulos por feature. Restam decomposição adicional dos workspaces e migração gradual do CSS com revisão visual. |
+| 5 | Roteiros, Base de Vídeos, Opções, componentes e CSS | Em andamento | Biblioteca continua dona dos arquivos/IDs; Roteiros mantém metadados e referências. Guardas, canais, fila, carregamento, listagem, publicação, CRUD de categorias, importação e exclusões da Base de Vídeos têm contratos testados; estilos da Base de Vídeos e modelos/comandos de backups e migração de Opções têm módulos por feature. Restam decomposição adicional dos workspaces e migração gradual do CSS com revisão visual. |
 | 6 | Performance, CI e consolidação | Em andamento | Workflow da Dev-V2 roda gates gerais e Editor V6 por plataforma; build Windows é reutilizado pelos testes MP4. Baseline repetível do cenário médio do Editor V6 registrada e captura IPC passou a ser estruturada. Restam medições de inicialização, Studio, outros workspaces e exportação, além de comparações repetidas antes de otimizar. |
 
 ## Fatias implementadas
@@ -344,6 +344,15 @@ O Node test runner não resolvia imports relativos extensionless `.ts` usados po
 - **Commit local:** `c724489` (`refactor: isolate Options backup commands`).
 - **Compatibilidade:** canais IPC, formatos de backup, recuperação e regra de propriedade dos dados não foram alterados.
 
+### Comandos de migração em Opções
+
+- **Fronteira extraída:** `createOptionsMigrationCommands` coordena iniciar a migração, pedir pausa e reiniciar após validação. `OptionsPage` continua dona do listener de progresso, do resumo de domínios e da apresentação; os canais e serviços do Electron seguem inalterados.
+- **Semânticas preservadas:** a execução limpa erro/progresso, habilita estado ocupado, executa e atualiza o resumo; `finally` limpa busy, solicitação de pausa e progresso. Pausa mantém a solicitação até chegar progresso posterior; reinício apenas limpa erro anterior antes da chamada. Mensagens de falha mantêm os fallbacks existentes.
+- **Testes:** oito casos cobrem ordenação, sucesso, falhas com/sem `Error`, pausa, reinício e delegação da página. `npm run test:options:migration-commands` passou 8/8.
+- **Verificações:** `npm run test:refactor` passou com 641 testes na suíte principal e scripts encadeados; typecheck, auditoria arquitetural (589 arquivos TS/TSX), build e `git diff --check` passaram.
+- **Commit local:** `6d48089` (`refactor: isolate Options migration commands`).
+- **Compatibilidade:** nenhum dado, schema, evento de progresso ou canal IPC foi alterado.
+
 ## Reconciliação das falhas da baseline
 
 As falhas observadas na execução inicial da suíte em `f416a02` foram investigadas e reconciliadas:
@@ -400,4 +409,5 @@ As falhas observadas na execução inicial da suíte em `f416a02` foram investig
 | `c980558` | Extrai carregamento/hidratação de slot e protege gerações obsoletas do Fabricador | Local em `Dev-V2`; sem publicação. |
 | `413e75f` | Extrai gravação por personagem e evita que erro de write obsoleto vença o sucesso mais recente | Local em `Dev-V2`; sem publicação. |
 | `c724489` | Isola os comandos de backup de Opções e preserva seus efeitos de refresh/restauração | Local em `Dev-V2`; sem publicação. |
+| `6d48089` | Isola as ações de migração de Opções mantendo pausa e progresso assíncrono | Local em `Dev-V2`; sem publicação. |
 
