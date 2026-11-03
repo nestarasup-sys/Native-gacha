@@ -5,11 +5,11 @@
 **HEAD de partida:** `14272daf`
 **Escopo:** correção do gate local de FFmpeg, boca isolada no MP4, instrumentação e exportações sintéticas. Sem migração de schema, escrita em projetos existentes ou alteração da animação de cabelo na prévia normal do Editor V6.
 
-**Commits locais de implementação:** `51a88937` (boca isolada e contrato IPC/cache) e `fc794836` (toolchain FFmpeg, stress e perfil longo). Nenhum deles foi publicado.
+**Commits locais de implementação:** `51a88937` (boca isolada e contrato IPC/cache), `fc794836` (toolchain FFmpeg, stress e perfil longo), `87da8c12` (baseline documental) e `38fdf71` (Blob URL, medição PNG, matriz combinada e espera de RAF). Nenhum deles foi publicado.
 
 ## Resultado
 
-A Rodada 02 concluiu a correção local da cadeia de teste MP4, implementou um caminho export-only que renderiza a peça da boca separada quando o catálogo permite, e mediu exportações sintéticas de 30 s, 2 min e 5 min por processo. Também executou uma exportação combinada de 5 minutos com fala e cabelo e coletou 184 amostras dos processos. A animação de cabelo continua opt-in e exclusiva do MP4; a prévia normal do Editor V6 não foi alterada.
+A Rodada 02 concluiu a correção local da cadeia de teste MP4, implementou um caminho export-only que renderiza a peça da boca separada quando o catálogo permite, e mediu exportações sintéticas de 30 s, 2 min e 5 min por processo. Na retomada, completou a matriz combinada de fala+cabelo para 4/8 personagens em 1080p, modo seguro/Turbo, substituiu data URLs PNG por Blob URLs limitados ao quadro e removeu uma espera de RAF redundante. A animação de cabelo continua opt-in e exclusiva do MP4; a prévia normal do Editor V6 não foi alterada.
 
 O isolamento visual da boca e os MP4 sintéticos passaram. O teste de memória encontrou e corrigiu uma retenção do próprio validador: ele mantinha simultaneamente dezenas de quadros decodificados de 1080p. Depois de transmitir os lotes, a validação não mantém o conjunto de imagens inteiro na memória. Nas exportações observadas, os processos renderer/FFmpeg terminaram; o processo principal voltou perto da memória privada inicial após repouso. O processo GPU conservou parte do cache e **não** caiu ao nível inicial em 20 segundos.
 
@@ -57,16 +57,27 @@ O atlas é compacto, mas a cena ainda compõe a imagem do personagem a partir da
 - O sampler Windows fez **184 amostras**, sem erro, em intervalos de 3 s e até 20 s após a exportação. Pico de memória privada: Main 229,2 MiB; renderer de export 49,4 MiB; FFmpeg 48,3 MiB; processo GPU 441,3 MiB. Após repouso de 20 s, Main ficou em 131,0 MiB privados; renderer e FFmpeg já não existiam; GPU ficou em 120,4 MiB privados. O valor inicial do GPU já era 441,3 MiB, portanto não cresceu no cenário; memória privada do processo GPU **não é VRAM**.
 - O RSS do Main, medido pelo relatório da exportação, foi de 145,2 MiB no início e 296,0 MiB no pico. O heap JS do Main ficou em 8,1 MiB no primeiro sample e 7,7 MiB depois do repouso. Não houve tendência de crescimento contínuo do Main neste perfil; isso não cobre cancelamento com cabelo/fala nem os cenários com 4/8 personagens.
 
+### Retomada: PNGs de cabelo, captura e matriz combinada
+
+- O caminho de cabelo do export não usa mais `canvas.toDataURL('image/png')`. Ele codifica com `canvas.toBlob`, passa um `blob:` URL para o `Image` do renderer e revoga os URLs do quadro anterior somente no início do próximo pedido — depois que o worker já capturou e escreveu aquele quadro. O listener `pagehide` também revoga URLs pendentes. A mudança é restrita ao worker temporário de exportação; a prévia normal do Editor V6 continua sem animação de cabelo.
+- O relatório agora soma por parte os quadros PNG de cabelo, bytes binários, caracteres Base64 que deixaram de ser materializados, pixels dos canvases, tempo de encode e tempo de decode. Em 9.000 quadros, foram 9.000 PNGs, 18.404.924 bytes binários e **24.551.872 caracteres Base64 evitados**. Isso mede o caminho e a alocação evitada, não afirma que a RAM de pico caiu na mesma proporção.
+- A captura espera um `requestAnimationFrame` em vez de dois. `capturePage` continua validando o token do quadro e repetindo a leitura quando identifica uma captura antiga. Em um MP4 sintético de 61 quadros, o RGBA decodificado antes/depois foi idêntico em todos os bytes (14.054.400 bytes comparados). Os tempos acumulados de RAF no perfil combinado de 9.000 quadros caíram de **238,88 s para 62,92 s**.
+- A comparação longa sob carga concorrente não controlada foi de **523,68 s para 351,38 s** de ponta a ponta (-32,9%) e de **514,92 s para 342,91 s** na renderização (-33,4%). Os demais fatores, como carga do jogo e agendamento do Windows, não foram controlados; o A/B não é uma repetição laboratorial. Não atribuí ganho de tempo ao uso de Blob: o encode PNG medido foi 29,71 s antes e 35,03 s depois, resultado variável sob carga.
+- O pico privado do renderer passou de 49,0 MiB para 53,4 MiB nesta comparação, e o GPU variou de 382,7 MiB para 399,5 MiB privados. Logo, **não há evidência de queda do pico de RAM**. O ganho estrutural é retirar a grande string Base64 e limitar a vida dos URLs; o teste também confirma que renderer/FFmpeg terminam. Bytes privados do GPU não representam VRAM.
+- A matriz sintética foi concluída com quatro MP4s H.264 de 30 s/900 quadros, 1080p/30 FPS, todos validados por FFprobe e sem fallback. Com 4 atores, o seguro/1 worker levou 81,94 s e Turbo/2 workers 65,05 s; com 8 atores, 121,18 s e 98,47 s, respectivamente. Em todos os cenários, a boca foi detectada para todos os personagens e cabelo+boca foram detectados em três quadros decodificados. A matriz mede escalabilidade dos modos existentes; não compara alterações de encoder ou qualidade.
+- As quatro execuções e o perfil final de 5 min foram feitos sob jogo ativo, conforme autorização do usuário; a carga concorrente não foi controlada. O perfil final de 5 min registrou 127 amostras sem erro. Nenhum dado de `app-data` foi usado.
+- No perfil final de 5 min, executado depois da matriz no mesmo harness, os picos amostrados foram: Main 312,4 MiB de working set / 246,6 MiB privados; renderer 121,6 / 52,6 MiB; FFmpeg 39,5 / 44,8 MiB; GPU 188,2 / 279,6 MiB. Após 20 s, Main ficou em 180,7 / 150,9 MiB e GPU em 151,9 / 180,5 MiB; renderer e FFmpeg já haviam encerrado. O perfil estava aquecido pela matriz e não deve ser comparado como repetição isolada do baseline. Private bytes de GPU não são VRAM.
+
 ## Testes MP4 e pixels
 
 | Verificação | Resultado local |
 | --- | --- |
 | FFmpeg/FFprobe LGPL | Release pinado verificado por SHA, licença, build config e encoders. |
-| `npm run test:editor-v6:face-export-silent` | Aprovado; MP4 real 720p/1080p, boca isolada, 40 quadros, 3 personagens, zero diferença RGBA fora da boca, emenda Turbo, rotação/flip e corpo/roupa personalizados. |
+| `npm run test:editor-v6:face-export-silent` | Aprovado também na retomada; MP4 real 720p/1080p, boca isolada, 40 quadros, 3 personagens, zero diferença RGBA fora da boca, emenda Turbo, rotação/flip e corpo/roupa personalizados. |
 | `npm run test:editor-v6:hair-motion-export` | Aprovado; MP4 real, 7 amostras de transição, movimento de cabelo, quatro fundos, transparência e safe 720p/Turbo 1080p. |
 | `npm run test:editor-v6:export-overlay` | Aprovado; MP4 real de 60 quadros e 3 vídeos sobrepostos, incluindo quadros 29/30 da emenda Turbo. |
 | `npm run test:editor-v6:export` | Aprovado; MP4s reais para Turbo, áudio na emenda, cancelamento preservando destino, FullHD e stress do loop de boca de 301 quadros. |
-| `npm run test:editor-v6:combined-hair-mouth-memory` | Aprovado; MP4 real de 5 min / 9.000 quadros em 720p com fala+cabelo, FFprobe e 184 amostras por processo, incluindo 20 s de repouso. |
+| `npm run test:editor-v6:combined-hair-mouth-memory` | Aprovado; MP4 real de 5 min / 9.000 quadros em 720p com fala+cabelo, FFprobe e 127 amostras por processo sem erro, incluindo 20 s de repouso; também validou a matriz 4/8 atores × seguro/Turbo em 1080p, quatro MP4s de 900 quadros. |
 | `npm run test:editor-v6` | Aprovado após a regressão IPC/cache: 41 arquivos, 231 testes aprovados, 1 ignorado; stress-profile: 16 testes aprovados. |
 | `npm run typecheck` | Aprovado. |
 | `npm run audit:architecture` | Aprovado: 665 TS/TSX, sem violações ou imports faltando. |
@@ -80,6 +91,7 @@ As medições abaixo ocorreram em Windows x64, Electron 45.1.0, Node 24.18.0, 12
 
 | Perfil | Execuções | Resultado observado |
 | --- | --- | --- |
+| 300 s · 1 personagem · 720p · seguro · fala+cabelo | comparação anterior e retomada, MP4 real | Tempo total 523,682 s → 351,381 s (-32,9%); renderização 514,916 s → 342,912 s (-33,4%); RAF 238,884 s → 60,830 s. Sob jogo ativo, não controlado. |
 | 30 s · 1 personagem · 720p · seguro/Turbo | 3 por modo, MP4 real | Medianas: seguro 4,409 s, Turbo 3,529 s (20,0% menor nesta amostra); RSS pico mediano 279,1/290,2 MiB. |
 | 30 s · 8 personagens · 1080p · seguro/Turbo | 3 por modo, 116 transições verificadas por execução | Medianas: seguro 15,547 s, Turbo 13,813 s (11,2% menor); RSS pico mediano 491,4/486,0 MiB. |
 | 120 s · 4 personagens · 720p · Turbo | 1 execução, 3.600 quadros, 44 transições | 13,478 s; RSS pico do Main no relatório 314,7 MiB. |
@@ -87,20 +99,32 @@ As medições abaixo ocorreram em Windows x64, Electron 45.1.0, Node 24.18.0, 12
 
 O A/B compara os modos de worker já existentes, sem mudar encoder ou parâmetros de qualidade. Sob o jogo, o Turbo foi mais rápido nestas amostras, com mais RSS no perfil leve e valores próximos no perfil denso. Não é ganho introduzido nesta rodada. O perfil de 5 min mostrou que exportações longas completam com contagem/transições válidas e que os processos transitórios encerram; não prova todas as combinações de fala/cabelo.
 
+Picos amostrados de memória **privada** nos quatro MP4s combinados de 30 s/1080p (MiB; amostragem a cada 3 s):
+
+| Cenário | Main | Renderer de export | FFmpeg | GPU |
+| --- | ---: | ---: | ---: | ---: |
+| 4 atores · seguro · 1 worker | 224,1 | 82,1 | 67,8 | 349,6 |
+| 4 atores · Turbo · 2 workers | 262,6 | 79,7 | 66,6 | 451,7 |
+| 8 atores · seguro · 1 worker | 257,2 | 103,1 | 75,7 | 382,7 |
+| 8 atores · Turbo · 2 workers | 281,9 | 103,3 | 66,8 | 477,5 |
+
+Esses máximos são amostras por processo, podem ocorrer em instantes diferentes e foram medidos com carga de jogo concorrente não controlada. O número do processo GPU não indica uso de VRAM.
+
 O perfil de 5 min registrou Node RSS amostrado de aproximadamente 167 MiB no começo, 291 MiB no pico e 135 MiB no último ponto; heap usado permaneceu perto de 16–18 MiB. O FFmpeg atingiu aproximadamente 170 MiB de memória privada, o renderer 91 MiB e o GPU 771 MiB. Os processos renderer/FFmpeg não estavam vivos na checagem posterior. O GPU ainda estava perto de 626 MiB privados após 20 s.
 
 ## Limitações e pendências reais
 
 1. O teste facial é sintético; falta o aceite visual do usuário com um personagem real e detalhes do seu catálogo. O teste prova a composição para rigs que expõem a peça de boca, não a compatibilidade artística de cada rig.
-2. A combinação longa fala+cabelo passou em fixture de um personagem/720p/modo seguro. A matriz completa não foi executada: falta cruzar cabelo/fala com 4 e 8 personagens, 1080p, Turbo/seguro e 1/2 workers. Fala e cabelo usam fixtures sintéticas; falta aceite artístico com personagem real.
+2. A matriz combinada de 4/8 personagens, 1080p, Turbo/seguro e 1/2 workers está concluída em fixtures sintéticas. Falta aceite artístico de cabelo e fala com personagens reais; não se abriu nem alterou `app-data`.
 3. O caminho legado sem boca isolável continua usando patch facial retangular; não foi removido para não quebrar projetos antigos.
 4. Não houve uma execução hospedada do workflow GitHub; publicar está fora da autorização desta rodada.
-5. Não foi demonstrado ganho de velocidade causal da boca isolada. No perfil combinado o processo GPU diminuiu após o trabalho, mas o valor privado não corresponde a VRAM. Turbo manteve backpressure e qualidade existente.
+5. Não foi demonstrado ganho de velocidade causal da boca isolada. A melhoria observada de duração veio da remoção da espera duplicada por RAF, com RGBA idêntico na fixture de 61 quadros; a medição foi feita sob carga concorrente e precisa de repetição controlada para estimativa estável. Blob remove Base64, mas não reduziu o pico privado observado. Turbo manteve backpressure e qualidade existente.
+6. CI hospedada não foi executada, pois a publicação no GitHub continua fora da autorização desta rodada. Cancelamento/fechamento durante perfil longo combinado e contadores de VRAM real continuam sem cobertura disponível nesta infraestrutura.
 
 ## Pesquisa técnica consultada
 
 - Electron: [`app.getAppMetrics`](https://www.electronjs.org/docs/latest/api/app#appgetappmetrics), [estrutura `ProcessMetric`](https://www.electronjs.org/docs/latest/api/structures/process-metric), [estrutura `MemoryInfo`](https://www.electronjs.org/docs/latest/api/structures/memory-info), [offscreen rendering](https://www.electronjs.org/docs/latest/tutorial/offscreen-rendering) e [performance](https://www.electronjs.org/docs/latest/tutorial/performance). Os limites de memória e de regiões sujas orientaram como medir processos e validar captures.
-- MDN: [Canvas compositing](https://developer.mozilla.org/en-US/docs/Web/API/CanvasRenderingContext2D/globalCompositeOperation), [OffscreenCanvas](https://developer.mozilla.org/en-US/docs/Web/API/OffscreenCanvas) e [uso/ciclo de vida de WebCodecs](https://developer.mozilla.org/en-US/docs/Web/API/WebCodecs_API/Using_the_WebCodecs_API). Não se substituiu o transporte porque isso exigiria novo ciclo de vida e equivalência RGBA/alpha sem ganho medido.
+- MDN: [Canvas compositing](https://developer.mozilla.org/en-US/docs/Web/API/CanvasRenderingContext2D/globalCompositeOperation), [HTMLCanvasElement.toBlob](https://developer.mozilla.org/en-US/docs/Web/API/HTMLCanvasElement/toBlob), [toDataURL e a recomendação de toBlob para imagens grandes](https://developer.mozilla.org/en-US/docs/Web/API/HTMLCanvasElement/toDataURL), [ciclo de vida de Blob URLs](https://developer.mozilla.org/en-US/docs/Web/URI/Reference/Schemes/blob), [OffscreenCanvas](https://developer.mozilla.org/en-US/docs/Web/API/OffscreenCanvas) e [uso/ciclo de vida de WebCodecs](https://developer.mozilla.org/en-US/docs/Web/API/WebCodecs_API/Using_the_WebCodecs_API). `toBlob` foi adotado para evitar a string Base64 e URLs são revogados de forma limitada ao quadro; ImageBitmap, OffscreenCanvas e WebCodecs não foram introduzidos sem benefício medido e compatibilidade demonstrada.
 - FFmpeg: [documentação geral](https://www.ffmpeg.org/general.html), [licença](https://www.ffmpeg.org/legal.html), [opções](https://www.ffmpeg.org/ffmpeg-all.html) e release pinado do [BtbN FFmpeg Builds](https://github.com/BtbN/FFmpeg-Builds).
 
 ## Arquivos de evidência
@@ -108,3 +132,7 @@ O perfil de 5 min registrou Node RSS amostrado de aproximadamente 167 MiB no com
 Relatórios sintéticos e MP4s permanecem localmente sob `out/editor-v6-memory-profile`, `out/editor-v6-face-export-check`, `out/editor-v6-hair-motion-check`, `out/editor-v6-overlay-parity` e `out/editor-v6-export-check`. O perfil conjunto está em `out/editor-v6-hair-motion-check/artifacts/hair-mouth-5min-memory-profile.json`, com o vídeo e o report do export ao lado. São ignorados pelo Git e não contêm projetos pessoais.
 
 Ver também [Rodada 01](RODADA_01_V4_BOCA_CABELO_MEMORIA.md), [Roadmap V4](ROADMAP_V4_EXCELENCIA.md), [animações](ANIMACOES.md) e [exportação](EXPORTACAO.md).
+
+## Registro desta retomada
+
+A implementação e as regressões foram registradas em `38fdf71`; esta atualização documental acompanha a implementação em commit local separado. Ambos permanecem exclusivamente na `Dev-V2`; não houve push, PR, merge ou alteração de dados do usuário.
