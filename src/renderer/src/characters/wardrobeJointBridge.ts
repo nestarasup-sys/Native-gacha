@@ -3,7 +3,8 @@ import type { ModelPart, WardrobeComponent } from '../../../shared/fabricator'
 import { wardrobeAdjustmentMatrix } from '../../../shared/wardrobeAdjustment'
 import type { WardrobePoseTransform } from '../../../shared/wardrobePose'
 
-type Point = { x: number; y: number }
+export type WardrobeJointBridgePoint = { x: number; y: number }
+type Point = WardrobeJointBridgePoint
 type Affine = [number, number, number, number, number, number]
 
 export type WardrobeJointBridgeSegment = {
@@ -387,14 +388,40 @@ function triangleAffine(source: [Point, Point, Point], target: [Point, Point, Po
   return matrix.every(Number.isFinite) ? matrix : null
 }
 
-function drawTriangle(context: CanvasRenderingContext2D, image: HTMLCanvasElement, source: [Point, Point, Point], target: [Point, Point, Point]) {
+/** Expands only the raster clip so antialiasing cannot expose the canvas between neighboring patches. */
+export function expandWardrobeJointBridgeTriangle(
+  points: [Point, Point, Point],
+  amount = 1.25
+): [Point, Point, Point] {
+  const center = {
+    x: (points[0].x + points[1].x + points[2].x) / 3,
+    y: (points[0].y + points[1].y + points[2].y) / 3
+  }
+  return points.map((point) => {
+    const dx = point.x - center.x
+    const dy = point.y - center.y
+    const length = Math.hypot(dx, dy) || 1
+    return { x: point.x + dx / length * amount, y: point.y + dy / length * amount }
+  }) as [Point, Point, Point]
+}
+
+function drawTriangle(
+  context: CanvasRenderingContext2D,
+  image: HTMLCanvasElement,
+  source: [Point, Point, Point],
+  target: [Point, Point, Point],
+  clipOverlap: number
+) {
   const matrix = triangleAffine(source, target)
   if (!matrix) return
+  // Keep the affine mapping on the exact mesh. Only overlap the clipping edges;
+  // clipping adjacent triangles independently otherwise leaves thin grid lines.
+  const clip = expandWardrobeJointBridgeTriangle(target, clipOverlap)
   context.save()
   context.beginPath()
-  context.moveTo(target[0].x, target[0].y)
-  context.lineTo(target[1].x, target[1].y)
-  context.lineTo(target[2].x, target[2].y)
+  context.moveTo(clip[0].x, clip[0].y)
+  context.lineTo(clip[1].x, clip[1].y)
+  context.lineTo(clip[2].x, clip[2].y)
   context.closePath()
   context.clip()
   context.transform(...matrix)
@@ -410,7 +437,8 @@ function drawTriangle(context: CanvasRenderingContext2D, image: HTMLCanvasElemen
 export function drawWardrobeJointBridge(
   context: CanvasRenderingContext2D,
   upper: WardrobeJointBridgeSegment,
-  lower: WardrobeJointBridgeSegment
+  lower: WardrobeJointBridgeSegment,
+  rasterScale = 1
 ): boolean {
   const bounds = sourceBounds(upper, lower)
   if (bounds.width * bounds.height > 8_000_000) return false
@@ -481,6 +509,7 @@ export function drawWardrobeJointBridge(
     const end = seam.maxTangent + tangentPadding
     const columns = Math.max(1, Math.ceil((end - start) / Math.max(5, Math.min(18, halfWidth / 2))))
     const rows = Math.max(2, Math.ceil((2 * halfWidth) / Math.max(3, Math.min(8, halfWidth / 2))))
+    const clipOverlap = 1.25 / Math.max(0.01, rasterScale)
     const vertices: Point[][] = []
     for (let row = 0; row <= rows; row += 1) {
       const distance = -halfWidth + (2 * halfWidth * row) / rows
@@ -500,10 +529,10 @@ export function drawWardrobeJointBridge(
       const sourceBottomRight = pointInSeam(seam, start + ((end - start) * (column + 1)) / columns, -halfWidth + (2 * halfWidth * (row + 1)) / rows)
       drawTriangle(context, sourceCanvas,
         [sourceTopLeft, sourceTopRight, sourceBottomRight],
-        [vertices[row][column], vertices[row][column + 1], vertices[row + 1][column + 1]])
+        [vertices[row][column], vertices[row][column + 1], vertices[row + 1][column + 1]], clipOverlap)
       drawTriangle(context, sourceCanvas,
         [sourceTopLeft, sourceBottomRight, sourceBottomLeft],
-        [vertices[row][column], vertices[row + 1][column + 1], vertices[row + 1][column]])
+        [vertices[row][column], vertices[row + 1][column + 1], vertices[row + 1][column]], clipOverlap)
     }
     return true
   } finally {

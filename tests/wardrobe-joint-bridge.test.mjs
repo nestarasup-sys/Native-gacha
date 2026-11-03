@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { detectWardrobeJointSeam, fillWardrobeJointGapPixels } from '../src/renderer/src/characters/wardrobeJointBridge.ts'
+import { detectWardrobeJointSeam, expandWardrobeJointBridgeTriangle, fillWardrobeJointGapPixels } from '../src/renderer/src/characters/wardrobeJointBridge.ts'
 
 const rectangleMask = (width, height, rectangles) => {
   const data = new Uint8Array(width * height)
@@ -27,6 +27,22 @@ const rgbaForMasks = (width, height, upperRects, lowerRects) => {
   paint(lowerRects, [75, 85, 105, 255])
   return data
 }
+
+test('joint bridge triangle clips overlap slightly to hide rasterization seams', () => {
+  const triangle = [{ x: 2, y: 1 }, { x: 12, y: 1 }, { x: 2, y: 9 }]
+  const expanded = expandWardrobeJointBridgeTriangle(triangle, 1.25)
+  const center = {
+    x: triangle.reduce((total, point) => total + point.x, 0) / triangle.length,
+    y: triangle.reduce((total, point) => total + point.y, 0) / triangle.length
+  }
+
+  for (let index = 0; index < triangle.length; index += 1) {
+    const originalDistance = Math.hypot(triangle[index].x - center.x, triangle[index].y - center.y)
+    const expandedDistance = Math.hypot(expanded[index].x - center.x, expanded[index].y - center.y)
+    assert.ok(Math.abs(expandedDistance - originalDistance - 1.25) < 1e-9)
+  }
+  assert.deepEqual(triangle, [{ x: 2, y: 1 }, { x: 12, y: 1 }, { x: 2, y: 9 }], 'source triangle geometry must stay unchanged')
+})
 
 test('a tiny transparent joint gap is detected and filled from the two garment edges', () => {
   const width = 40, height = 28

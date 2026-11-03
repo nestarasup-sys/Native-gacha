@@ -288,7 +288,8 @@ export function createCharacterWardrobeRenderer(loaders: CharacterWardrobeImageL
         const lowerImage = await loadGarmentImage(bridge.lower)
         drawWardrobeJointBridge(outputContext!,
           { ...bridge.upper, image: upperImage },
-          { ...bridge.lower, image: lowerImage, sourceOffset: bridge.lowerSourceOffset })
+          { ...bridge.lower, image: lowerImage, sourceOffset: bridge.lowerSourceOffset },
+          pixelScale)
       } catch {
         const name = bridge.upper.component.name.replace(/ · (braço superior|coxa)$/i, '')
         throw new Error(`Não foi possível preparar a continuidade da roupa “${name}” na junta desta pose. Revise os dois segmentos em Roupas DEV.`)
