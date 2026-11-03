@@ -13,3 +13,12 @@ test('override de teste redireciona todos os artefatos sem alterar a pasta padr�
     NATIVE_GACHA_TEST_OUTPUT_DIR: temporaryOutput
   }), temporaryOutput)
 })
+
+test('harnesses de exportação geral e cabelo respeitam o diretório sintético isolado', () => {
+  const fs = require('node:fs')
+  for (const script of ['scripts/editor-v6/check-export.cjs', 'scripts/editor-v6/check-hair-motion-export.cjs']) {
+    const source = fs.readFileSync(script, 'utf8')
+    assert.match(source, /resolveEditorV6TestOutputDirectory\(root\)/, `${script} deve respeitar NATIVE_GACHA_TEST_OUTPUT_DIR`)
+    assert.match(source, /state: 'running', fixtureDirectory: (?:require\('node:path'\)\.)?basename\(folder\)/, `${script} não deve publicar o caminho temporário privado enquanto executa`)
+  }
+})

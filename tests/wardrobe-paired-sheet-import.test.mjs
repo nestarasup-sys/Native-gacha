@@ -109,6 +109,8 @@ test('a escolha de sapatos persiste como grade própria e edições copiam a ima
   assert.equal(wardrobePairImageMode('shoe-grid-3x4'), 'copy')
   assert.equal(wardrobePairImageMode('pants-grid-3x4'), 'mirror')
   assert.equal(wardrobePairImageMode('sleeve-grid-3x4'), 'mirror')
+  assert.equal(wardrobePairImageMode('sleeve-grid-3x4', 'sapato'), 'copy')
+  assert.equal(wardrobePairImageMode('pants-grid-3x4', 'sapato'), 'copy')
 })
 
 test('Roupas DEV oferece a importação 3×4 de sapatos e informa que o par não será invertido', async () => {
@@ -118,6 +120,6 @@ test('Roupas DEV oferece a importação 3×4 de sapatos e informa que o par não
   assert.match(page, /pairedSheetKindRef\.current = 'shoes'/)
   assert.match(page, /Importar Sapatos \(Sheet\)/)
   assert.match(page, /12 sapatos esquerdos em 3 colunas e 4 linhas/)
-  assert.match(page, /wardrobePairImageMode\(current\.importKind\) === 'mirror' \? await mirrorWardrobeImageDataUrl\(imageUrl\) : imageUrl/)
+  assert.match(page, /wardrobePairImageMode\(current\.importKind,\s*edited\.category\)/)
   assert.match(modal, /A peça duplicada também será atualizada sem inverter a imagem/)
 })

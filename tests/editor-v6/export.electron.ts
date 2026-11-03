@@ -14,6 +14,7 @@ import { runEditorV6Export } from '../../electron/domains/editorV6/exportRunner'
 import { createEditorV6Timeline, type EditorV6Document, type EditorV6Element } from '../../src/shared/editorV6'
 import { editEditorV6BackgroundAtFrame, moveEditorV6ElementInPeriod, prepareEditorV6PositionAtFrame } from '../../src/shared/editorV6Timeline'
 import { editorV6FaceModeAtFrame } from '../../src/shared/editorV6FaceSchedule'
+import { resolveEditorV6SceneAtFrame } from '../../src/shared/editorV6TimelineScene'
 
 const root = resolve(process.argv[2]), folder = resolve(process.argv[3])
 protocol.registerSchemesAsPrivileged([{ scheme: 'gacha-editor-media', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } }])
@@ -37,13 +38,17 @@ async function main() {
   project = editEditorV6BackgroundAtFrame(project, 45, { backgroundColor: '#00ff00' })
   project.exportAudio = [{ id: randomUUID(), fileName: `${randomUUID()}.wav`, name: 'Tone', sourceFrames: 120, sourceInFrame: 5, startFrame: 10, durationFrames: 80, gain: .75, muted: false }]
   const inspected = new Set<number>()
+  const inspectEveryFrame = process.env.GACHA_EXPORT_CAPTURE_DIAGNOSTICS === '1' && process.env.GACHA_EXPORT_CAPTURE_EVERY_FRAME === '1'
   const factory = createEditorV6WorkerFactory({ ipcMain, html: join(root, 'out/renderer/editor-v6-export.html'), preload: join(root, 'out/preload/editorV6ExportPreload.cjs'), mediaPath: (_projectId, fileName, libraryVideoId) => join(folder, libraryVideoId ? 'library' : 'media', fileName), inspectCapture: process.env.GACHA_EXPORT_CAPTURE_DIAGNOSTICS === '1' ? async ({ window, frame, bitmap }) => {
-    if (inspected.has(window.webContents.id)) return
+    if (!inspectEveryFrame && inspected.has(window.webContents.id)) return
     inspected.add(window.webContents.id)
     let yellowPixels = 0
     for (let offset = 0; offset < bitmap.length; offset += 4) if (bitmap[offset] < 80 && bitmap[offset + 1] > 120 && bitmap[offset + 2] > 180) yellowPixels++
-    const dom = await window.webContents.executeJavaScript(`({ viewport: [innerWidth, innerHeight, devicePixelRatio], bounds: document.querySelector('svg')?.getBoundingClientRect().toJSON(), background: document.querySelector('svg rect')?.getAttribute('fill'), images: Array.from(document.querySelectorAll('svg image')).map(image => ({ x: image.getAttribute('x'), y: image.getAttribute('y'), width: image.getAttribute('width'), height: image.getAttribute('height'), transform: image.parentElement.getAttribute('transform'), source: image.getAttribute('href') })), svg: document.querySelector('svg')?.getAttribute('viewBox') })`)
-    await writeFile(join(folder, `capture-${window.webContents.id}.json`), JSON.stringify({ frame, yellowPixels, dom }))
+    const dom = await window.webContents.executeJavaScript(`({ viewport: [innerWidth, innerHeight, devicePixelRatio], bounds: document.querySelector('svg')?.getBoundingClientRect().toJSON(), background: document.querySelector('svg rect')?.getAttribute('fill'), frame: document.querySelector('svg')?.getAttribute('data-frame'), images: Array.from(document.querySelectorAll('svg image')).map(image => ({ x: image.getAttribute('x'), y: image.getAttribute('y'), width: image.getAttribute('width'), height: image.getAttribute('height'), transform: image.parentElement.getAttribute('transform'), sourcePrefix: image.getAttribute('href')?.slice(0, 64), sourceSuffix: image.getAttribute('href')?.slice(-32) })), svg: document.querySelector('svg')?.getAttribute('viewBox') })`)
+    const probeOffset = (90 * 320 + 240) * 4
+    const probePixel = Array.from(bitmap.subarray(probeOffset, probeOffset + 4))
+    const suffix = inspectEveryFrame ? `-${frame}` : ''
+    await writeFile(join(folder, `capture-${window.webContents.id}${suffix}.json`), JSON.stringify({ frame, yellowPixels, probePixelBgra: probePixel, dom }))
   } : undefined })
   let active = 0, peak = 0
   const makeWorker = async (signal: AbortSignal, width = 320, height = 180, renderProject = project, layeredVideo = false, mouthLoops?: EditorV6ExportMouthLoops) => {
@@ -89,16 +94,9 @@ async function main() {
   const talkBlinkAsset = { id: talkBlinkAssetId, category: 'character' as const, name: 'Talk blink test', mimeType: 'image/png' as const, dataUrl: `data:image/png;base64,${(await readFile(talkBlinkPath)).toString('base64')}` }
   const faceSpeechBlock = { id: randomUUID(), label: 'Talk window', characterId: 'alice', startFrame: 8, durationFrames: 12 }
   const faceScheduleTimeline = { ...project.timeline, durationFrames: 40, tracks: project.timeline.tracks.map((track) => track.kind === 'speech' ? { ...track, blocks: [faceSpeechBlock] } : track) }
-  let faceProjectId = randomUUID()
-  for (let attempt = 0; attempt < 5000; attempt++, faceProjectId = randomUUID()) {
-    const modes = Array.from({ length: 40 }, (_, frame) => editorV6FaceModeAtFrame(faceProjectId, faceScheduleTimeline, 'alice', frame))
-    const hasIdle = modes.some((mode, frame) => frame < 8 && mode === undefined)
-    const hasTalk = modes.some((mode, frame) => frame >= 8 && frame < 20 && mode === 'talk')
-    const hasBlink = modes.some((mode, frame) => (frame < 8 || frame >= 20) && mode === 'blink')
-    const hasTalkBlink = modes.some((mode) => mode === 'talk-blink')
-    if (hasIdle && hasTalk && hasBlink && hasTalkBlink) break
-    if (attempt === 4999) throw Error('Não foi possível preparar um ciclo de face com fala, piscada e sobreposição.')
-  }
+  const faceProjectId = 'face-export-synthetic-8'
+  const faceModes = Array.from({ length: 40 }, (_, frame) => editorV6FaceModeAtFrame(faceProjectId, faceScheduleTimeline, 'alice', frame))
+  assert(faceModes[0] === undefined && faceModes[15] === 'talk-blink' && faceModes[20] === 'blink' && faceModes[21] === undefined, 'O fixture perdeu o ciclo determinístico de rosto que cruza a emenda Turbo.')
   const faceModeAssetIds = { talk: talkAssetId, blink: blinkAssetId, 'talk-blink': talkBlinkAssetId }
   const faceActor = { ...actor, faceModeAssetIds }
   const thought = { id: thoughtId, kind: 'thought' as const, text: 'Teste', x: 0, y: -30, width: 28, height: 12, rotation: 0, zIndex: 2 }
@@ -110,6 +108,12 @@ async function main() {
         : track.kind === 'thought' ? { ...track, blocks: [{ id: randomUUID(), label: thought.text, elementId: thought.id, state: thought, startFrame: 20, durationFrames: 5 }] }
           : track)
     }
+  }
+  const expectedFaceAssetIds = { talk: talkAssetId, blink: blinkAssetId, 'talk-blink': talkBlinkAssetId }
+  for (const frame of [0, 15, 20, 21]) {
+    const expected = faceModes[frame] ? expectedFaceAssetIds[faceModes[frame]!] : assetId
+    const resolved = resolveEditorV6SceneAtFrame(faceProject, frame).elements.find((element) => element.id === faceActor.id)
+    assert(resolved?.assetId === expected, `O fixture resolveu a imagem de rosto errada no quadro ${frame}.`)
   }
   const mouthAtlasPath = join(folder, 'mouth-loop-atlas.png')
   run(['-f', 'lavfi', '-i', 'color=c=red:s=48x16', '-frames:v', '1', mouthAtlasPath])
