@@ -63,6 +63,7 @@ export async function publishModelSource(
     || changedAssets.length !== project.parts.length
     || !Number.isInteger(project.width) || !Number.isInteger(project.height)
     || !Number.isFinite(project.tolerance) || project.tolerance < 0 || project.tolerance > 280
+    || (project.bodyJointBridgeEnabled !== undefined && typeof project.bodyJointBridgeEnabled !== 'boolean')
     || !Array.isArray(project.joints)) {
     throw new Error('Manifesto ou recortes do Model Source inválidos.')
   }

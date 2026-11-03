@@ -16,6 +16,7 @@ export type ModelSourceResult = {
   tolerance: number
   modelSkinTone?: FabricatorProject['modelSkinTone']
   modelOutlineColor?: FabricatorProject['modelOutlineColor']
+  bodyJointBridgeEnabled?: FabricatorProject['bodyJointBridgeEnabled']
   joints: FabricatorProject['joints']
   layerOrder?: FabricatorProject['layerOrder']
   hiddenPartIds?: FabricatorProject['hiddenPartIds']

@@ -63,6 +63,14 @@ test('writer salva a cópia masculina como asset independente sem alterar as pe�
   await assert.rejects(fs.access(join(folder, 'parts', 'male-torso.png')), /ENOENT/)
 })
 
+test('writer persists the model-scoped body-bridge option and rejects malformed values', async t => {
+  const { folder, writer } = await fixture(t)
+  await writer({ ...model, bodyJointBridgeEnabled: true }, [{ id: 'cabeca', dataUrl: png, chromaBaseDataUrl: png }])
+  const manifest = JSON.parse(await fs.readFile(join(folder, 'project.json'), 'utf8'))
+  assert.equal(manifest.bodyJointBridgeEnabled, true)
+  await assert.rejects(writer({ ...model, bodyJointBridgeEnabled: 'yes' }, [{ id: 'cabeca', dataUrl: png, chromaBaseDataUrl: png }]), /Configuração da ponte do corpo inválida/)
+})
+
 test('writer remove somente arquivos obsoletos e mantém fonte referenciada pelo histórico', async t => {
   const { folder, writer } = await fixture(t)
   await fs.mkdir(join(folder,'parts'), {recursive:true})

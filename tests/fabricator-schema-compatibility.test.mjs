@@ -35,6 +35,16 @@ test('modelo e poses recusam arrays enormes e nenhuma versão futura é atualiza
  assert.equal(inspectFabricatorStorage('model',{schemaVersion:1,parts:large,joints:[]}).compatible,false)
  assert.equal(inspectFabricatorStorage('pose',{schemaVersion:1,parts:[],joints:large}).compatible,false)
 })
+test('a ponte do corpo é opcional nos modelos antigos e só aceita booleanos nos novos',()=>{
+ const model={schemaVersion:1,parts:[],joints:[]}
+ const pose={schemaVersion:1,parts:[],joints:[]}
+ assert.equal(inspectFabricatorStorage('model',model).compatible,true)
+ assert.equal(inspectFabricatorStorage('pose',pose).compatible,true)
+ assert.equal(inspectFabricatorStorage('model',{...model,bodyJointBridgeEnabled:true}).compatible,true)
+ assert.equal(inspectFabricatorStorage('pose',{...pose,bodyJointBridgeEnabled:false}).compatible,true)
+ assert.equal(inspectFabricatorStorage('model',{...model,bodyJointBridgeEnabled:'on'}).compatible,false)
+ assert.equal(inspectFabricatorStorage('pose',{...pose,bodyJointBridgeEnabled:1}).compatible,false)
+})
 
 const expressionValidators=createFabricatorExpressionValidators(slot=>Number.isInteger(slot)&&slot>=1&&slot<=10)
 const expressionTimestamp='2026-10-29T12:00:00.000Z'

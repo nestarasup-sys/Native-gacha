@@ -18,6 +18,7 @@ export function poseFromModel(model: FabricatorProject): DraftProject {
   return {
     schemaVersion: 1,
     name: `Pose de ${model.name}`,
+    bodyJointBridgeEnabled: model.bodyJointBridgeEnabled === true,
     category: 'Parado',
     sourceModelSlot: model.slot,
     sourceModelName: model.name,

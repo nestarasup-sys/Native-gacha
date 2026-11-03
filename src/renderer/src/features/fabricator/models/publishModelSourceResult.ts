@@ -38,6 +38,7 @@ export async function publishModelSourceResult(dependencies: PublishModelSourceR
       sourceDataUrl: result.sourceDataUrl,
       modelSkinTone: result.modelSkinTone,
       modelOutlineColor: result.modelOutlineColor,
+      bodyJointBridgeEnabled: result.bodyJointBridgeEnabled,
       parts: result.parts,
       joints: result.joints,
       layerOrder: result.layerOrder,

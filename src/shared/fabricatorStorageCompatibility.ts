@@ -31,9 +31,11 @@ export function inspectFabricatorStorage(
   switch (kind) {
     case 'model':
       if (!list(document.parts,500) || !list(document.joints,500)) return incompatible('Geometria do modelo inválida.')
+      if (document.bodyJointBridgeEnabled !== undefined && typeof document.bodyJointBridgeEnabled !== 'boolean') return incompatible('Configuração da ponte do corpo inválida.')
       break
     case 'pose':
       if (!list(document.parts,500) || !list(document.joints,500)) return incompatible('Pose inválida.')
+      if (document.bodyJointBridgeEnabled !== undefined && typeof document.bodyJointBridgeEnabled !== 'boolean') return incompatible('Configuração da ponte do corpo na pose inválida.')
       break
     case 'animator':
       if (!list(document.parts,500) || !list(document.frames,10000)) return incompatible('Animação inválida.')

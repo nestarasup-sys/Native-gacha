@@ -23,6 +23,8 @@ export type ModelPart = {
   id: string
   /** Identidade da peça que originou este segmento por divisão da folha. */
   splitOriginPartId?: string
+  /** Original label used when the remaining half is reattached after deleting the other half. */
+  splitOriginPartName?: string
   name: string
   x: number
   y: number
@@ -62,6 +64,8 @@ export type FabricatorProject = {
   modelSkinTone?: string
   /** Cor padrão do contorno do modelo; personagens podem sobrescrever sem alterar a fonte. */
   modelOutlineColor?: string
+  /** Enables render-time bridges between articulated body segments for this model only. */
+  bodyJointBridgeEnabled?: boolean
   parts: ModelPart[]
   /** Independent editable copy of the source torso for the male character variant. */
   maleTorso?: ModelPart
@@ -381,6 +385,8 @@ export type WardrobePosePart = PosePart & { wardrobeAttachment?: PoseWardrobeAtt
 export type FabricatorPose = {
   schemaVersion: 1
   slot: number
+  /** Snapshot of the source model's opt-in body-joint bridge setting. */
+  bodyJointBridgeEnabled?: boolean
   name: string
   category?: string
   sourceModelSlot: number

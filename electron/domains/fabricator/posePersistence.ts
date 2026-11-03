@@ -77,6 +77,7 @@ async function preserveAndWritePoseManifest(path: string, document: FabricatorPo
 
 async function writePoseProject(modelSlot: number, slot: number, project: FabricatorPoseSave, assets: FabricatorAssetSave[]): Promise<void> {
   if (!isValidModelSlot(modelSlot) || project.sourceModelSlot !== modelSlot || !isValidPoseSlot(slot) || project.slot !== slot || project.schemaVersion !== 1 || project.parts.length === 0 || project.parts.length > 500) throw new Error('Pose inválida.')
+  if (project.bodyJointBridgeEnabled !== undefined && typeof project.bodyJointBridgeEnabled !== 'boolean') throw new Error('Configuração da ponte do corpo na pose inválida.')
   if (!areModelPartSkinContoursValid(project.parts)) throw new Error('Contornos artificiais inválidos na pose.')
   if (project.category !== undefined && (typeof project.category !== 'string' || !project.category.trim() || project.category.trim().length > 32 || /[\r\n\t]/.test(project.category))) throw new Error('Categoria de pose inválida.')
   const folder = poseSlotPath(modelSlot, slot)
@@ -113,6 +114,7 @@ async function writePoseDraft(modelSlot: number, draft: FabricatorPoseDraftSave,
   if (!isValidModelSlot(modelSlot) || draft.project.sourceModelSlot !== modelSlot) throw new Error('Modelo do rascunho inválido.')
   if (draft.editingSlot !== null && !isValidPoseSlot(draft.editingSlot)) throw new Error('Rascunho de pose inválido.')
   if (draft.project.schemaVersion !== 1 || draft.project.parts.length === 0 || draft.project.parts.length > 500) throw new Error('Rascunho de pose inválido.')
+  if (draft.project.bodyJointBridgeEnabled !== undefined && typeof draft.project.bodyJointBridgeEnabled !== 'boolean') throw new Error('Configuração da ponte do corpo na pose inválida.')
   if (!areModelPartSkinContoursValid(draft.project.parts)) throw new Error('Contornos artificiais inválidos no rascunho de pose.')
   if (draft.project.category !== undefined && (typeof draft.project.category !== 'string' || !draft.project.category.trim() || draft.project.category.trim().length > 32 || /[\r\n\t]/.test(draft.project.category))) throw new Error('Categoria de pose inválida.')
   const folder = poseDraftPath(modelSlot)

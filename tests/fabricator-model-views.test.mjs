@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { selectOriginalModelSource, selectMountedModelSource } from '../src/shared/fabricatorModelViews.ts'
+import { poseFromModel } from '../src/renderer/src/features/fabricator/models/poseProjection.ts'
 
 const source = 'data:image/png;base64,c29tZQ=='
 const project = () => ({
@@ -53,4 +54,9 @@ test('contratos funcionam para modelos legados sem sourceTransform ou lista de c
   assert.equal(selectOriginalModelSource(model).parts[0].x,175)
   assert.deepEqual(selectMountedModelSource(model).layerOrder,['cabeca'])
   assert.deepEqual(selectMountedModelSource(model).hiddenPartIds,[])
+})
+
+test('nova pose recebe a configuração da ponte do corpo do próprio modelo e legado fica desativado', () => {
+  assert.equal(poseFromModel({ ...project(), bodyJointBridgeEnabled: true }).bodyJointBridgeEnabled, true)
+  assert.equal(poseFromModel(project()).bodyJointBridgeEnabled, false)
 })

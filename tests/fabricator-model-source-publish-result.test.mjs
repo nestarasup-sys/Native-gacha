@@ -28,6 +28,7 @@ const result = {
   tolerance: 82,
   modelSkinTone: 'medium',
   modelOutlineColor: '#754444',
+  bodyJointBridgeEnabled: true,
   parts: [
     { id: 'part-with-base', dataUrl: 'data:part-a', chromaBaseDataUrl: 'data:base-a' },
     { id: 'part-no-base', dataUrl: 'data:part-b' }
@@ -78,6 +79,7 @@ test('persiste antes de publicar e só então atualiza a sessão e invalida cach
   assert.equal(serialized.sourceDataUrl, 'data:new-source')
   assert.equal(serialized.chromaBaseTolerance, 0)
   assert.equal(serialized.chromaVersion, 2)
+  assert.equal(serialized.bodyJointBridgeEnabled, true)
   assert.equal(serialized.updatedAt, '2026-11-01T12:00:00.000Z')
   const [publishCall] = calls.filter(([kind]) => kind === 'publish')
   assert.deepEqual(publishCall[3], [

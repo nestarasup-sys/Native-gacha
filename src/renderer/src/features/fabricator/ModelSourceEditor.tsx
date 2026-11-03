@@ -10,6 +10,7 @@ import { applyImageWarpBrush, type ImageWarpPoint } from './models/imageMeshWarp
 import { createModelSourceWarpSession, drawModelSourceWarp, modelSourceWarpDataUrl, warpModelSkinContours, type ModelSourceWarpSession } from './models/modelSourceWarp'
 import { useModelSourceGuides } from './models/useModelSourceGuides'
 import { useModelSourceDraft } from './models/useModelSourceDraft'
+import { articulateJoinedLimbSplit } from './models/joinedLimbSplit'
 import { isModelSkinPart } from './models/modelSkinTone'
 import { MODEL_SKIN_BASE_TONE } from '../../../../shared/skinTones'
 
@@ -539,10 +540,22 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
         : attachedAnchor ? worldPointToPart(part, attachedAnchor) : { x: part.width / 2, y: part.height / 2 }
       const split = await splitModelSourcePart(part, start, end, reference)
       const retained = split.parts[split.retainedSide]
-      const created = { ...split.parts[1 - split.retainedSide], splitOriginPartId: part.id }
-      const parts = materialized.parts.flatMap(item => item.id === part.id ? [retained, created] : [item])
-      const rig = normalizePartAnchors(parts, materialized.joints)
-      const validIds = new Set(parts.map(item => item.id))
+      const created = { ...split.parts[1 - split.retainedSide], splitOriginPartId: part.id, splitOriginPartName: part.name }
+      const articulation = materialized.bodyJointBridgeEnabled === true
+        ? articulateJoinedLimbSplit({
+          original: part,
+          splitParts: [retained, created],
+          parts: materialized.parts,
+          joints: materialized.joints,
+          start,
+          end
+        })
+        : null
+      const parts = articulation?.parts ?? materialized.parts.flatMap(item => item.id === part.id ? [retained, created] : [item])
+      const rig = articulation
+        ? { parts: articulation.parts, joints: articulation.joints }
+        : normalizePartAnchors(parts, materialized.joints)
+      const validIds = new Set(rig.parts.map(item => item.id))
       const hidden = new Set(materialized.hiddenPartIds ?? [])
       if (hidden.has(part.id)) hidden.add(created.id)
       return {
@@ -550,13 +563,16 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
           ...materialized,
           parts: rig.parts,
           joints: rig.joints,
-          layerOrder: orderAfterSplit(materialized.layerOrder, part.id, retained.id, created.id),
+          layerOrder: orderAfterSplit(materialized.layerOrder, part.id,
+            articulation?.upper.id ?? retained.id, articulation?.lower.id ?? created.id),
           hiddenPartIds: [...hidden].filter(id => validIds.has(id))
         },
         selectedId: retained.id,
-        status: connectedJoint
-          ? 'Peça dividida. A conexão foi mantida no lado que conserva o ID original; o novo lado ficou sem conexão.'
-          : 'Peça dividida em duas.'
+        status: articulation
+          ? `Peça dividida em ${articulation.upper.name} e ${articulation.lower.name}. A junta e a ponte do corpo foram ativadas para esse modelo.`
+          : connectedJoint
+            ? 'Peça dividida. A conexão foi mantida no lado que conserva o ID original; o novo lado ficou sem conexão.'
+            : 'Peça dividida em duas.'
       }
     })
   }
@@ -618,7 +634,8 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
       if (survivors.length === 1) {
         const survivor = survivors[0]
         const parts = materialized.parts.filter(part => part.id !== original.id).map(part => part.id === survivor.id
-          ? { ...part, id: original.id, name: original.name, splitOriginPartId: original.splitOriginPartId } : part)
+          ? { ...part, id: original.id, name: part.splitOriginPartName ?? original.name,
+            splitOriginPartId: original.splitOriginPartId, splitOriginPartName: original.splitOriginPartName } : part)
         const order = materialized.layerOrder?.filter(id => id !== survivor.id)
         return {
           project: { ...materialized, parts, layerOrder: order,
@@ -706,6 +723,23 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
             })}
           </aside>
           <main style={{ display: 'flex', minWidth: 0, flexDirection: 'column', gap: 8 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 11px', border: '1px solid #46556b', borderRadius: 8, background: '#1a2230', fontSize: 12, cursor: busy || downloading ? 'not-allowed' : 'pointer' }}>
+              <input
+                aria-label="Modelo com partes unidas"
+                type="checkbox"
+                checked={draft.bodyJointBridgeEnabled === true}
+                disabled={busy || downloading}
+                onChange={(event) => {
+                  saveUndoSnapshot()
+                  const enabled = event.target.checked
+                  setDraft((current) => ({ ...current, bodyJointBridgeEnabled: enabled }))
+                  setStatus(enabled
+                    ? 'Partes unidas ativado. Ao dividir um braço ou uma perna inteira, a junta e a ponte do corpo serão criadas automaticamente.'
+                    : 'Partes unidas desativado. O corte volta ao comportamento normal para este modelo.')
+                }}
+              />
+              <span><strong>Partes unidas</strong><small style={{ display: 'block', marginTop: 2, color: '#a9b5c4' }}>Para este modelo: cortes em braços e pernas inteiros criam juntas e ponte do corpo.</small></span>
+            </label>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
               <button type="button" style={toolButton(mode === 'part', busy || downloading)} disabled={busy || downloading} onClick={() => { setMode('part'); cancelDrawing() }}>Peça selecionada</button>
               <button type="button" style={toolButton(mode === 'sheet', busy || downloading)} disabled={busy || downloading} onClick={() => { setSamplingSkinColor(false); setMode('sheet'); setTool('select'); cancelDrawing() }}>Folha completa</button>

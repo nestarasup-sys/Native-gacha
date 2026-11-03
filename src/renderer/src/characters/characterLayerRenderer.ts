@@ -9,6 +9,7 @@ import { createCharacterCanvas } from './canvasSurface'
 import { drawPreviewImageWithHalo } from './characterCanvasDrawing'
 import { faceElementOrder } from './characterFaceCatalogSupport'
 import { isModelBodyPartName } from './skinTint'
+import { drawEnabledBodyJointBridges } from './bodyJointBridge'
 
 export type HairCatalogSide = 'front' | 'back'
 export type HairLayerSide = HairCatalogSide | 'fringe'
@@ -82,6 +83,14 @@ export function createCharacterLayerRenderer(loaders: CharacterLayerImageLoaders
         continue
       }
     }
+
+    context.save()
+    context.scale(scale, scale)
+    await drawEnabledBodyJointBridges(context, artwork, async (part) =>
+      isModelBodyPartName(part.name) && (skinTone || outlineColor)
+        ? loadModelBodyTintedImage(part.dataUrl, skinTone, outlineColor, part.fakeSkinContours)
+        : skinTone ? loadSkinTintedImage(part.dataUrl, skinTone) : loadCachedImage(part.dataUrl), scale)
+    context.restore()
 
     if (!trimTransparent) return canvas.toDataURL('image/png')
 
@@ -175,6 +184,13 @@ export function createCharacterLayerRenderer(loaders: CharacterLayerImageLoaders
         } catch { /* Continue rendering the remaining model layers. */ }
       }
     }
+    context.save()
+    context.scale(scale, scale)
+    await drawEnabledBodyJointBridges(context, artwork, async (part) =>
+      isModelBodyPartName(part.name) && (skinTone || outlineColor)
+        ? loadModelBodyTintedImage(part.dataUrl, skinTone, outlineColor, part.fakeSkinContours)
+        : skinTone ? loadSkinTintedImage(part.dataUrl, skinTone) : loadCachedImage(part.dataUrl), scale)
+    context.restore()
     return targetContext ? null : canvas.toDataURL('image/png')
   }
 

@@ -12,11 +12,73 @@ import { isMovablePosePart, rotatePosePart, translatePoseBranch } from './poseEd
 import type { PoseEditorProject } from './poseEditorModel'
 import { createPoseHistory, hasPoseGestureChanged, rememberPoseProject, restorePoseProject } from './poseHistory'
 import type { PoseHistory } from './poseHistory'
+import { drawBodyJointBridgePair, findBodyJointBridgePairs } from '../../characters/bodyJointBridge'
+import type { BodyJointBridgePair } from '../../characters/bodyJointBridge'
+import { loadCachedImage } from '../../characters/characterImageMemos'
 
 type DraftProject = PoseEditorProject
 type PanelTab = 'parts' | 'layers' | 'joints'
 type PanGesture = { pointerId: number; x: number; y: number; originX: number; originY: number }
 type PartGesture = { pointerId: number; partId: string; x: number; y: number; lastAngle: number; startRotation: number; accumulatedRotation: number; pivotX: number; pivotY: number; includeConnectedChildren: boolean; movePiece: boolean; canMove: boolean; before: DraftProject }
+
+type PoseBodyJointBridgePreviewProps = {
+  artwork: DraftProject
+  pair: BodyJointBridgePair
+  scale: number
+  zIndex: number
+  previewForPart: (part: PosePart) => string
+}
+
+function PoseBodyJointBridgePreview({ artwork, pair, scale, zIndex, previewForPart }: PoseBodyJointBridgePreviewProps) {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const width = Math.max(1, Math.round(artwork.width * scale))
+    const height = Math.max(1, Math.round(artwork.height * scale))
+    canvas.width = width
+    canvas.height = height
+    const target = canvas.getContext('2d')
+    if (!target) return
+    target.clearRect(0, 0, width, height)
+
+    let cancelled = false
+    const drawingCanvas = document.createElement('canvas')
+    drawingCanvas.width = width
+    drawingCanvas.height = height
+    const drawingContext = drawingCanvas.getContext('2d')
+    if (!drawingContext) return
+    drawingContext.scale(scale, scale)
+
+    const previewPair: BodyJointBridgePair = {
+      ...pair,
+      upper: { ...pair.upper, dataUrl: previewForPart(pair.upper) },
+      lower: { ...pair.lower, dataUrl: previewForPart(pair.lower) }
+    }
+    void drawBodyJointBridgePair(drawingContext, previewPair, (part) => loadCachedImage(part.dataUrl), scale)
+      .then((drawn) => {
+        if (cancelled || !drawn) return
+        const currentTarget = canvas.getContext('2d')
+        if (!currentTarget) return
+        currentTarget.clearRect(0, 0, width, height)
+        currentTarget.drawImage(drawingCanvas, 0, 0)
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        drawingCanvas.width = 0
+        drawingCanvas.height = 0
+      })
+
+    return () => {
+      cancelled = true
+      drawingCanvas.width = 0
+      drawingCanvas.height = 0
+    }
+  }, [artwork, pair, previewForPart, scale])
+
+  return <canvas ref={canvasRef} className="pose-body-joint-bridge" aria-hidden="true" style={{ zIndex }} />
+}
 
 const SLOT_COUNT = 12
 const EXPORT_POSE_SLOT_COUNT = 5
@@ -371,6 +433,7 @@ export function PoseWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
     const selectedPart = displayProject?.parts.find((part) => part.id === selectedId) ?? null
     const selectedCanMove = Boolean(project && selectedPart && isMovablePosePart(project, selectedPart.id))
     const visibleParts = useMemo(() => parts.filter((part) => !displayProject?.hiddenPartIds.includes(part.id)), [parts, displayProject?.hiddenPartIds])
+    const bodyJointBridgePairs = useMemo(() => displayProject ? findBodyJointBridgePairs(displayProject) : [], [displayProject])
   const filteredParts = useMemo(() => parts.filter((part) => part.name.toLocaleLowerCase().includes(partFilter.toLocaleLowerCase())), [parts, partFilter])
   const scale = displayProject ? Math.max(0.05, Math.min((stageSize.width - 48) / displayProject.width, (stageSize.height - 48) / displayProject.height)) * zoom : 1
 
@@ -535,6 +598,19 @@ export function PoseWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
                 return attachment
                   ? <div key={part.id} className="pose-wardrobe-anchor" style={{ left: (part.x + offsetX) * scale, top: (part.y + offsetY) * scale, width: part.width * scale, height: part.height * scale, zIndex: index + 1, transformOrigin: `${(attachment.referenceAnchor.x - part.x) * scale}px ${(attachment.referenceAnchor.y - part.y) * scale}px`, transform: `rotate(${bodyRotation}deg)` }}>{image}</div>
                   : image
+              })}
+              {displayProject && bodyJointBridgePairs.map((pair) => {
+                const upperIndex = visibleParts.findIndex((part) => part.id === pair.upper.id)
+                const lowerIndex = visibleParts.findIndex((part) => part.id === pair.lower.id)
+                if (upperIndex < 0 || lowerIndex < 0) return null
+                return <PoseBodyJointBridgePreview
+                  key={`${pair.upper.id}:${pair.lower.id}`}
+                  artwork={displayProject}
+                  pair={pair}
+                  scale={scale}
+                  zIndex={Math.max(upperIndex, lowerIndex) + 2}
+                  previewForPart={appearancePreviewForPart}
+                />
               })}
               {showJoints && <svg className="pose-joints" viewBox={`0 0 ${displayProject.width} ${displayProject.height}`} preserveAspectRatio="none">{displayProject.parts.filter((part) => !/tronco|corpo/i.test(part.name)).map((part) => {
                 const anchor = partJointAnchor(part, displayProject.joints)

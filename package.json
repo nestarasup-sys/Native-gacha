@@ -16,6 +16,7 @@
     "test:application:window": "node --experimental-strip-types --test tests/application/main-window.test.mjs tests/application/renderer-trust.test.mjs",
     "test:application:persistence-shutdown": "node --experimental-strip-types --test tests/application/persistence-shutdown.test.mjs tests/pending-persistence-inventory.test.mjs tests/keyed-operation-queue.test.mjs tests/roteiros-write-queue.test.mjs tests/media-library-pending-inventory.test.mjs",
     "test:fabricator:canvas-interaction": "node --experimental-strip-types --test tests/fabricator-canvas-interaction.test.mjs",
+    "test:fabricator:body-joint-bridge": "node --experimental-strip-types --import ./scripts/testing/register-typescript-extensions.mjs --test tests/body-joint-bridge.test.mjs",
     "test:fabricator:expression-preview-interaction": "node --experimental-strip-types --test tests/expression-preview-interaction.test.mjs",
     "test:fabricator:expression-layer-transform-edits": "node --experimental-strip-types --test tests/expression-layer-transform-edits.test.mjs",
     "test:fabricator:face-workspace-selection-storage": "node --experimental-strip-types --test tests/face-workspace-selection-storage.test.mjs",

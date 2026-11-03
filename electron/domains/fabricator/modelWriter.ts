@@ -30,6 +30,7 @@ export function createFabricatorModelWriter(deps: FabricatorModelWriterDependenc
   if (!areModelPartSkinContoursValid(project.parts)) throw new Error('Contornos artificiais do modelo inválidos.')
   if (project.modelSkinTone !== undefined && !/^#[0-9a-f]{6}$/i.test(project.modelSkinTone)) throw new Error('Cor de pele do modelo inválida.')
   if (project.modelOutlineColor !== undefined && !/^#[0-9a-f]{6}$/i.test(project.modelOutlineColor)) throw new Error('Cor do contorno do modelo inválida.')
+  if (project.bodyJointBridgeEnabled !== undefined && typeof project.bodyJointBridgeEnabled !== 'boolean') throw new Error('Configuração da ponte do corpo inválida.')
   const folder = folderOverride ?? slotPath(project.slot)
   const partsFolder = join(folder, 'parts')
   await mkdir(partsFolder, { recursive: true })
@@ -85,6 +86,7 @@ export function createFabricatorModelWriter(deps: FabricatorModelWriterDependenc
     chromaBaseTolerance: project.chromaBaseTolerance,
     modelSkinTone: project.modelSkinTone,
     modelOutlineColor: project.modelOutlineColor,
+    bodyJointBridgeEnabled: project.bodyJointBridgeEnabled,
     joints: project.joints,
     layerOrder: project.layerOrder,
     hiddenPartIds: project.hiddenPartIds,
