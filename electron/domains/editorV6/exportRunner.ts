@@ -8,7 +8,7 @@ import type { CustomizerCharacter } from '../../../src/shared/customizer'
 import { missingEditorV6Motions, type EditorV6MotionBakeRequest, type EditorV6MotionBakeResult } from '../../../src/shared/editorV6Motion'
 import { prepareExportMotions } from './prepareMotions'
 import { prepareExportMouthLoops } from './prepareMouthLoops'
-import { planEditorV6Audio, planEditorV6Export, splitEditorV6ExportParts, type EditorV6ExportAudio, type EditorV6ExportMouthLoops, type EditorV6ExportOptions, type EditorV6ExportPart, type EditorV6ExportStatus, type EditorV6FrameTimings } from '../../../src/shared/editorV6Export'
+import { planEditorV6Audio, planEditorV6Export, splitEditorV6ExportParts, type EditorV6ExportAudio, type EditorV6ExportMouthLoops, type EditorV6ExportOptions, type EditorV6ExportPart, type EditorV6ExportStatus, type EditorV6FrameMetrics, type EditorV6FrameTimings } from '../../../src/shared/editorV6Export'
 import { runExportCommand, spawnExportProcess, waitForExport } from './exportProcess'
 import type { EditorV6FrameWorker } from './exportWorkers'
 import { motionCacheKey, type EditorV6MotionCacheStats } from './motionCache'
@@ -21,7 +21,7 @@ export async function probeExportMedia(ffprobe: string, path: string, signal: Ab
 type TimingPhase = keyof EditorV6FrameTimings | 'workerStartupMs' | 'ffmpegFinalizeMs'
 type TimingAccumulator = { count: number; totalMs: number; maxMs: number; histogram: number[] }
 type FrameTimingReport = Partial<Record<TimingPhase, { samples: number; totalMs: number; p50Ms: number; p95Ms: number; maxMs: number }>>
-type PartReport = EditorV6ExportPart & { encoder: string; rendered: number; reused: number; frames: number; milliseconds: number; frameTiming?: FrameTimingReport; path: string; probe?: MediaProbe }
+type PartReport = EditorV6ExportPart & { encoder: string; rendered: number; reused: number; frames: number; milliseconds: number; frameTiming?: FrameTimingReport; frameMetrics?: EditorV6FrameMetrics; path: string; probe?: MediaProbe }
 type AttemptReport = { parts: PartReport[]; encoder: string; parallelism: number; milliseconds?: number; error?: string }
 type ExportPhase = 'temporarySetup' | 'characterLoading' | 'motionPreparation' | 'encoderProbe' | 'rendering' | 'finalization' | 'publication'
 type ExportPhaseTimings = Record<ExportPhase, number>
@@ -58,7 +58,7 @@ function addPhaseTime(report: EditorV6ExportReport, phase: ExportPhase, started:
 const TIMING_BUCKET_MS = .1
 const TIMING_BUCKETS = 2001
 function newTimingAccumulators(): Record<TimingPhase, TimingAccumulator> {
-  return Object.fromEntries((['workerStartupMs', 'sceneResolutionMs', 'faceCompositionMs', 'hairCompositionMs', 'assetPreparationMs', 'reactCommitMs', 'rafWaitMs', 'ipcDrawMs', 'captureMs', 'backgroundCaptureMs', 'foregroundCaptureMs', 'frameRoundTripMs', 'ffmpegWriteMs', 'ffmpegFinalizeMs'] as const).map((phase) => [phase, { count: 0, totalMs: 0, maxMs: 0, histogram: Array<number>(TIMING_BUCKETS).fill(0) }])) as Record<TimingPhase, TimingAccumulator>
+  return Object.fromEntries((['workerStartupMs', 'sceneResolutionMs', 'faceCompositionMs', 'hairCompositionMs', 'hairPngEncodeMs', 'hairPngDecodeMs', 'assetPreparationMs', 'reactCommitMs', 'rafWaitMs', 'ipcDrawMs', 'captureMs', 'backgroundCaptureMs', 'foregroundCaptureMs', 'frameRoundTripMs', 'ffmpegWriteMs', 'ffmpegFinalizeMs'] as const).map((phase) => [phase, { count: 0, totalMs: 0, maxMs: 0, histogram: Array<number>(TIMING_BUCKETS).fill(0) }])) as Record<TimingPhase, TimingAccumulator>
 }
 function recordTiming(accumulators: Record<TimingPhase, TimingAccumulator>, phase: TimingPhase, milliseconds: number) {
   if (!Number.isFinite(milliseconds) || milliseconds <= 0) return
@@ -81,6 +81,13 @@ function summarizeTimings(accumulators: Record<TimingPhase, TimingAccumulator>):
     report[phase] = { samples: stats.count, totalMs: Math.round(stats.totalMs * 100) / 100, p50Ms: percentile(.5) as number, p95Ms: percentile(.95) as number, maxMs: Math.round(stats.maxMs * 100) / 100 }
   }
   return report
+}
+function addFrameMetrics(target: EditorV6FrameMetrics, values: EditorV6FrameMetrics | undefined) {
+  if (!values) return
+  for (const [metric, value] of Object.entries(values) as Array<[keyof EditorV6FrameMetrics, number]>) {
+    if (!Number.isSafeInteger(value) || value < 0) continue
+    target[metric] = (target[metric] ?? 0) + value
+  }
 }
 const encodingArgs = (encoder: string, threads: number) => ['-c:v', encoder, ...(encoder === 'libopenh264' ? ['-b:v', '12M', '-rc_mode', 'quality', '-allow_skip_frames', '0', '-threads', String(threads)] : ['-b:v', '12M']), '-pix_fmt', 'yuv420p', '-profile:v', 'high', '-level:v', '4.1', '-g', '60', '-bf', '0', '-video_track_timescale', '30000']
 const MOUTH_LOOP_BATCH_FRAMES = 300
@@ -184,6 +191,7 @@ export async function runEditorV6Export(project: EditorV6Document, requestedOpti
       const beganPart = performance.now(), path = join(folder, `attempt-${report.attempts.length}-part-${part.index}.mp4`)
       const result: PartReport = { ...part, path, encoder, rendered: 0, reused: 0, frames: 0, milliseconds: 0 }
       const timingAccumulators = newTimingAccumulators()
+      const frameMetrics: EditorV6FrameMetrics = {}
       let worker: EditorV6FrameWorker | undefined
       let process: ReturnType<typeof spawnExportProcess> | undefined
       attempt.parts.push(result)
@@ -218,6 +226,7 @@ export async function runEditorV6Export(project: EditorV6Document, requestedOpti
           const rendered = await worker.frame(frame)
           recordTiming(timingAccumulators, 'frameRoundTripMs', performance.now() - frameStarted)
           for (const [phase, milliseconds] of Object.entries(rendered.timings ?? {}) as Array<[TimingPhase, number]>) recordTiming(timingAccumulators, phase, milliseconds)
+          addFrameMetrics(frameMetrics, rendered.metrics)
           if (rendered.reused && bitmap) result.reused++
           else { if (!rendered.bitmap) throw Error('O renderizador não entregou o bitmap.'); bitmap = rendered.bitmap; result.rendered++ }
           const writeStarted = performance.now()
@@ -234,8 +243,9 @@ export async function runEditorV6Export(project: EditorV6Document, requestedOpti
         if (Number(result.probe.streams.find((stream) => stream.codec_type === 'video')?.nb_frames) !== part.endFrame - part.startFrame) throw Error('Uma parte não contém todos os quadros previstos.')
         result.milliseconds = performance.now() - beganPart
         result.frameTiming = summarizeTimings(timingAccumulators)
+        if (Object.keys(frameMetrics).length) result.frameMetrics = frameMetrics
         return result
-      } catch (error) { result.frameTiming = summarizeTimings(timingAccumulators); controller.abort(error); throw error }
+      } catch (error) { result.frameTiming = summarizeTimings(timingAccumulators); if (Object.keys(frameMetrics).length) result.frameMetrics = frameMetrics; controller.abort(error); throw error }
       finally { worker?.close(); if (process?.child.exitCode === null) process.child.kill(); await process?.done.catch(() => {}) }
     }
     try {

@@ -683,12 +683,16 @@ async function main() {
     const report = await exportHairMp4(320, 180, 0, 61, true, 'hair-motion.mp4')
     assert(report.state === 'completed' && !report.fallback && report.attempts[0]?.parts.length === 2, 'A exportação MP4 com animação de cabelo não concluiu em dois trechos Turbo.')
     assert(report.attempts[0].parts.every(part => (part.frameTiming?.hairCompositionMs?.samples ?? 0) > 0), 'O relatório do export não separou o tempo da composição experimental de cabelo.')
+    assert(report.attempts[0].parts.reduce((total, part) => total + (part.frameMetrics?.hairPngFrames ?? 0), 0) === 61, 'O relatório não contabilizou um PNG de cabelo por quadro exportado.')
+    assert(report.attempts[0].parts.every(part => (part.frameTiming?.hairPngEncodeMs?.samples ?? 0) === (part.frameMetrics?.hairPngFrames ?? 0) && (part.frameTiming?.hairPngDecodeMs?.samples ?? 0) > 0 && (part.frameTiming?.hairPngDecodeMs?.samples ?? 0) <= (part.frameMetrics?.hairPngFrames ?? 0)), 'O relatório não separou a codificação e decodificação do PNG por quadro.')
+    assert(report.attempts[0].parts.reduce((total, part) => total + (part.frameMetrics?.hairPngEncodedBytes ?? 0), 0) > 0 && report.attempts[0].parts.reduce((total, part) => total + (part.frameMetrics?.hairPngBase64CharactersAvoided ?? 0), 0) > 0, 'O relatório não mediu os PNGs binários nem a codificação Base64 evitada.')
     const rawFrames = execFileSync(ffmpeg, ['-v', 'error', '-i', outputPath, '-vf', "select='eq(n,0)+eq(n,30)+eq(n,60)'", '-fps_mode', 'passthrough', '-frames:v', '3', '-pix_fmt', 'rgb24', '-f', 'rawvideo', 'pipe:1'], { windowsHide: true, maxBuffer: 16 * 1024 ** 2 })
     const frameBytes = 320 * 180 * 3
     assert(rawFrames.length === frameBytes * 3, 'O MP4 não contém os quadros esperados para validar a animação de cabelo.')
     const isSyntheticHairPixel = (red: number, green: number, blue: number) =>
       (blue > 120 && blue > red * 1.2 && green < 190)
       || (red > 100 && red > green * 1.2 && blue > 55)
+    const isSyntheticMouthPixel = (red: number, green: number, blue: number) => red > 190 && green < 75 && blue < 100
     const redPixels = (frameIndex: number) => {
       const pixels = new Uint8Array(320 * 180)
       let count = 0
@@ -763,24 +767,7 @@ async function main() {
     let combinedLongProfile: Record<string, unknown> | undefined
     if (process.argv.includes('--long-combined-profile')) {
       const durationFrames = 300 * 30
-      const combinedProject: EditorV6Document = {
-        ...project,
-        id: randomUUID(), title: 'Perfil sintético longo · fala e cabelo', elements: [actor],
-        timeline: {
-          ...project.timeline, durationFrames,
-          tracks: project.timeline.tracks.map(track => track.kind === 'character'
-            ? { ...track, blocks: [{ ...track.blocks[0], startFrame: 0, durationFrames, state: actor }] }
-            : track.kind === 'speech'
-              ? { ...track, blocks: [{ id: randomUUID(), label: 'Fala sintética contínua', characterId: actor.characterId!, startFrame: 0, durationFrames }] }
-              : track)
-        }
-      }
-      const speechCharacter: CustomizerCharacter = {
-        id: actor.characterId!, name: 'Perfil sintético fala e cabelo', hair: '', outfit: '', skin: '',
-        customization: { modelSlot: 1, poseSlot: null, partOverrides: {}, layerOrder: [] },
-        createdAt: now, updatedAt: now
-      }
-      const mouthAssetId = randomUUID()
+      const speechCharacterIds = new Set<string>()
       const mouthAtlasWidth = 192, mouthAtlasHeight = 64
       const mouthAtlasPixels = Buffer.alloc(mouthAtlasWidth * mouthAtlasHeight * 4)
       for (let sample = 0; sample < 3; sample += 1) {
@@ -791,9 +778,28 @@ async function main() {
           mouthAtlasPixels[offset] = 245; mouthAtlasPixels[offset + 1] = 24; mouthAtlasPixels[offset + 2] = 43; mouthAtlasPixels[offset + 3] = 255
         }
       }
-      const mouthAtlasAsset: EditorV6Asset = { id: mouthAssetId, category: 'character', name: 'Atlas sintético da fala', mimeType: 'image/png', dataUrl: encodeRgbaPng(mouthAtlasWidth, mouthAtlasHeight, mouthAtlasPixels), timelineSnapshot: true }
+      const mouthAtlasDataUrl = encodeRgbaPng(mouthAtlasWidth, mouthAtlasHeight, mouthAtlasPixels)
       const bakeMouthLoop = async (request: EditorV6MotionBakeRequest): Promise<EditorV6MotionBakeResult> => {
-        assert(request.character.id === speechCharacter.id && request.plan.key.startsWith('mouth-loop:') && request.mouthScaleSamples?.length === 3, 'A preparação da boca recebeu um personagem ou ciclo inesperado.')
+        if (!request.plan.key.startsWith('mouth-loop:')) {
+          const sourceMotion = project.timeline.tracks.find(track => track.kind === 'character')?.blocks[1]?.incomingMotion
+          const poseAsset = sourceMotion ? project.assets.find(asset => asset.id === sourceMotion.assetId) : undefined
+          assert(speechCharacterIds.has(request.character.id) && sourceMotion && poseAsset, `A preparação da pose sintética recebeu um personagem ou atlas inesperado: ${request.character.id}, ${request.plan.key}.`)
+          const offsetX = request.plan.from.x - actor.x
+          const faceAssetId = `synthetic-pose-face-${request.character.id}`
+          const faceAsset: EditorV6Asset = { id: faceAssetId, category: 'character', name: 'Atlas facial sintético da pose', mimeType: 'image/png', dataUrl: mouthAtlasDataUrl, timelineSnapshot: true }
+          const faceSprite = { x: 0, y: 0, width: 64, height: 64, atlasWidth: mouthAtlasWidth, atlasHeight: mouthAtlasHeight }
+          const motion = {
+            ...sourceMotion, key: request.plan.key, faceAssetId,
+            frames: sourceMotion.frames.map(frame => ({
+              ...frame, x: frame.x + offsetX,
+              facePatch: { sprite: faceSprite, x: 0.42, y: 0.22, width: 0.16, height: 0.09 }
+            }))
+          }
+          return { asset: poseAsset, faceAsset, motion, metrics: { milliseconds: 0, preparedRigs: 1, samples: motion.frames.length, atlasPixels: motion.frames.reduce((total, frame) => total + frame.sprite.width * frame.sprite.height, 0) } }
+        }
+        assert(speechCharacterIds.has(request.character.id) && request.mouthScaleSamples?.length === 3, 'A preparação da boca recebeu um personagem ou ciclo inesperado.')
+        const mouthAssetId = randomUUID()
+        const mouthAtlasAsset: EditorV6Asset = { id: mouthAssetId, category: 'character', name: 'Atlas sintético da fala', mimeType: 'image/png', dataUrl: mouthAtlasDataUrl, timelineSnapshot: true }
         const frames = request.plan.samples.map((sample, index) => {
           const sprite = { x: index * 64, y: 0, width: 64, height: 64, atlasWidth: mouthAtlasWidth, atlasHeight: mouthAtlasHeight }
           return {
@@ -804,12 +810,83 @@ async function main() {
         })
         return { asset: mouthAtlasAsset, assetRole: 'face-atlas', mouthIsolationMode: 'legacy-patch', motion: { version: 1, key: request.plan.key, assetId: mouthAssetId, frames }, metrics: { milliseconds: 0, preparedRigs: 1, samples: frames.length, atlasPixels: mouthAtlasWidth * mouthAtlasHeight } }
       }
+      const createCombinedScenario = (actorCount: number, scenarioFrames: number, includePoseTransition = true) => {
+        const sourceTrack = project.timeline.tracks.find(track => track.kind === 'character')!
+        const sourceSpeechTrack = project.timeline.tracks.find(track => track.kind === 'speech')!
+        const sourceFirstBlock = sourceTrack.blocks[0]
+        const sourceTransitionBlock = sourceTrack.blocks[1]
+        const sourceMotion = sourceTransitionBlock.incomingMotion
+        const sourceTransition = hairAnimation.motionTransitions?.find(item => item.elementId === actor.id)
+        assert(sourceMotion && sourceTransition && scenarioFrames > 30, 'O fixture combinado precisa da transição de pose sintética.')
+        const profiles = Array.from({ length: actorCount }, (_, index) => {
+          const elementId = index === 0 ? actor.id : randomUUID()
+          const characterId = actorCount === 1 ? actor.characterId! : `synthetic-character-${index + 1}`
+          const x = actorCount === 1 ? actor.x : ((index + .5) / actorCount) * 100 - 50
+          const label = actorCount === 1 ? 'Perfil sintético fala e cabelo' : `Personagem sintético ${index + 1}`
+          const base = { ...actor, id: elementId, characterId, text: label, x, zIndex: index + 1 }
+          const pose = { ...secondState, id: elementId, characterId, text: label, x: x + (actorCount === 1 ? 0 : .5), zIndex: index + 1 }
+          const character: CustomizerCharacter = {
+            id: characterId, name: label, hair: '', outfit: '', skin: '',
+            customization: { modelSlot: 1, poseSlot: null, partOverrides: {}, layerOrder: [] },
+            createdAt: now, updatedAt: now
+          }
+          speechCharacterIds.add(characterId)
+          return { elementId, characterId, label, base, pose, character }
+        })
+        const characterTracks = profiles.map(profile => ({
+          ...sourceTrack, id: randomUUID(), characterId: profile.characterId, name: profile.label,
+          blocks: includePoseTransition
+            ? [
+              { ...sourceFirstBlock, id: randomUUID(), elementId: profile.elementId, characterId: profile.characterId, startFrame: 0, durationFrames: 30, state: profile.base },
+              { ...sourceTransitionBlock, id: randomUUID(), elementId: profile.elementId, characterId: profile.characterId, startFrame: 30, durationFrames: scenarioFrames - 30, state: profile.pose, incomingMotion: { ...sourceMotion, key: '', frames: sourceMotion.frames.map(frame => ({ ...frame, x: frame.x + profile.base.x - actor.x })) } }
+            ]
+            : [{ ...sourceFirstBlock, id: randomUUID(), elementId: profile.elementId, characterId: profile.characterId, startFrame: 0, durationFrames: scenarioFrames, state: profile.base }]
+        }))
+        const nonCharacterIds = project.elements.filter(element => element.kind !== 'character').map(element => element.id)
+        const provisional: EditorV6Document = {
+          ...project, id: randomUUID(), title: `Perfil sintético · ${actorCount} personagens · fala e cabelo`, elements: profiles.map(profile => profile.base),
+          timeline: {
+            ...project.timeline, durationFrames: scenarioFrames,
+            knownElementIds: [...new Set([...nonCharacterIds, ...profiles.map(profile => profile.elementId)])],
+            tracks: project.timeline.tracks.flatMap(track => track.kind === 'character'
+              ? characterTracks
+              : track.kind === 'speech'
+                ? [{ ...sourceSpeechTrack, blocks: profiles.map(profile => ({ id: randomUUID(), label: `Fala sintética · ${profile.label}`, characterId: profile.characterId, startFrame: 0, durationFrames: scenarioFrames })) }]
+                : [track])
+          }
+        }
+        const plans = editorV6MotionPlans(provisional)
+        assert(plans.length === (includePoseTransition ? actorCount : 0), `Esperadas ${includePoseTransition ? actorCount : 0} transições sintéticas, recebidas ${plans.length}.`)
+        const plansByBlockId = new Map(plans.map(plan => [plan.blockId, plan]))
+        const combinedProject = {
+          ...provisional,
+          timeline: {
+            ...provisional.timeline,
+            tracks: provisional.timeline.tracks.map(track => ({ ...track, blocks: track.blocks.map(block => {
+              if (!block.incomingMotion) return block
+              const plan = plansByBlockId.get(block.id)
+              assert(plan, `A transição sintética do bloco ${block.id} não foi planejada.`)
+              return { ...block, incomingMotion: { ...block.incomingMotion, key: plan.key } }
+            }) }))
+          }
+        } satisfies EditorV6Document
+        const scenarioHairAnimation: EditorV6HairMotionBundle = {
+          ...hairAnimation,
+          rigs: profiles.flatMap(profile => hairAnimation.rigs.filter(rig => rig.elementId === actor.id).map(rig => ({ ...rig, elementId: profile.elementId, characterId: profile.characterId }))),
+          motionTransitions: includePoseTransition ? profiles.flatMap(profile => {
+            const plan = plans.find(item => item.elementId === profile.elementId)
+            assert(plan, `A transição de cabelo do personagem ${profile.label} não foi planejada.`)
+            return [{ ...sourceTransition, elementId: profile.elementId, key: plan.key, frames: sourceTransition.frames.map(frame => ({ ...frame, x: frame.x + profile.base.x - actor.x })) }]
+          }) : []
+        }
+        return { project: combinedProject, characters: profiles.map(profile => profile.character), hairAnimation: scenarioHairAnimation }
+      }
       const memorySampler = createWindowsProcessSampler(join(root, 'scripts/editor-v6/windows-process-sampler.ps1'))
       const ffmpegPids = new Set<number>()
       const memorySamples: Array<Record<string, unknown>> = []
       const samplingErrors: string[] = []
       const startedAt = new Date().toISOString(), startedClock = performance.now()
-      let lastFrame = 0, sampleInFlight = false
+      let lastFrame = 0, sampleInFlight = false, activeProfileName = 'matrix-setup'
       const sampleCombinedMemory = async () => {
         if (sampleInFlight) return
         sampleInFlight = true
@@ -825,7 +902,7 @@ async function main() {
           const rendererHeap = renderer ? await renderer[1].webContents.executeJavaScript(`(() => { const memory = performance.memory; return memory ? { usedJSHeapSize: memory.usedJSHeapSize, totalJSHeapSize: memory.totalJSHeapSize, jsHeapSizeLimit: memory.jsHeapSizeLimit } : null })()`).catch(() => null) : null
           const system = await memorySampler.sample([...processes].map(([pid, role]) => ({ pid, role })), lastFrame)
           memorySamples.push({
-            elapsedMilliseconds: Math.round(performance.now() - startedClock), sampledAt: system.sampledAt, frame: lastFrame,
+            profile: activeProfileName, elapsedMilliseconds: Math.round(performance.now() - startedClock), sampledAt: system.sampledAt, frame: lastFrame,
             mainNodeMemory: process.memoryUsage(), rendererHeap,
             electronProcesses: electronMetrics.map(metric => ({ pid: metric.pid, type: metric.type, workingSetBytes: Number.isFinite(metric.memory?.workingSetSize) ? Math.round(metric.memory.workingSetSize * 1024) : null, privateBytes: Number.isFinite(metric.memory?.privateBytes) ? Math.round(metric.memory.privateBytes * 1024) : null, cpuPercent: Number.isFinite(metric.cpu?.percentCPUUsage) ? metric.cpu.percentCPUUsage : null })),
             operatingSystemProcesses: system.processes
@@ -833,24 +910,96 @@ async function main() {
         } catch (error) { samplingErrors.push(error instanceof Error ? error.message : String(error)) }
         finally { sampleInFlight = false }
       }
-      const sampleTimer = setInterval(() => { void sampleCombinedMemory() }, 3000)
-      let combinedReport: Awaited<ReturnType<typeof runEditorV6Export>> | undefined
-      try {
-        await sampleCombinedMemory()
-        const combinedOutput = join(folder, 'hair-mouth-5min-720p.mp4')
-        combinedReport = await runEditorV6Export(combinedProject, { startFrame: 0, endFrame: durationFrames, width: 1280, height: 720, turbo: false, encoder: 'cpu', hairAnimationPresetSlot: 1 }, {
-          ffmpeg, ffprobe, tempRoot: folder, id: randomUUID(), outputPath: combinedOutput,
-          reportPath: join(folder, 'hair-mouth-5min-720p.mp4.report.json'), signal: new AbortController().signal,
-          getCharacters: async () => [speechCharacter], bakeMotion: bakeMouthLoop,
-          createWorker: (renderProject, _part, signal, layeredVideo, mouthLoops) => factory.create({ project: renderProject, width: 1280, height: 720, layeredVideo, ...(mouthLoops ? { mouthLoops } : {}), hairAnimation }, signal),
+      const runCombinedExport = (scenario: ReturnType<typeof createCombinedScenario>, options: { name: string; frames: number; width: number; height: number; turbo: boolean }) => {
+        const outputPath = join(folder, `${options.name}.mp4`)
+        return runEditorV6Export(scenario.project, { startFrame: 0, endFrame: options.frames, width: options.width, height: options.height, turbo: options.turbo, encoder: 'cpu', hairAnimationPresetSlot: 1 }, {
+          ffmpeg, ffprobe, tempRoot: folder, id: randomUUID(), outputPath,
+          reportPath: join(folder, `${options.name}.mp4.report.json`), signal: new AbortController().signal,
+          getCharacters: async () => scenario.characters, bakeMotion: bakeMouthLoop,
+          createWorker: (renderProject, _part, signal, layeredVideo, mouthLoops) => factory.create({ project: renderProject, width: options.width, height: options.height, layeredVideo, ...(mouthLoops ? { mouthLoops } : {}), hairAnimation: scenario.hairAnimation }, signal),
           audioPath: () => join(folder, 'unused-audio.wav'), mediaPath: () => join(folder, 'unused-media.mp4'),
           onFfmpegProcessStarted: pid => ffmpegPids.add(pid), progress: status => { lastFrame = Math.max(lastFrame, status.frames) }
         })
+      }
+      const profileProcessPeaks = (profile: string) => {
+        const peaks = new Map<string, { workingSetBytes: number; privateBytes: number }>()
+        for (const sample of memorySamples.filter(item => item.profile === profile)) for (const processRow of sample.operatingSystemProcesses as Array<{ role: string; workingSetBytes: number; privateBytes: number }>) {
+          const peak = peaks.get(processRow.role) ?? { workingSetBytes: 0, privateBytes: 0 }
+          peak.workingSetBytes = Math.max(peak.workingSetBytes, processRow.workingSetBytes)
+          peak.privateBytes = Math.max(peak.privateBytes, processRow.privateBytes)
+          peaks.set(processRow.role, peak)
+        }
+        return Object.fromEntries(peaks)
+      }
+      const sampleTimer = setInterval(() => { void sampleCombinedMemory() }, 3000)
+      let combinedReport: Awaited<ReturnType<typeof runEditorV6Export>> | undefined
+      const matrixScenarios: Array<Record<string, unknown>> = []
+      try {
+        const matrixFrames = 30 * 30
+        for (const actorCount of [4, 8]) for (const turbo of [false, true]) {
+          const mode = turbo ? 'turbo-2workers' : 'safe-1worker'
+          const name = `hair-mouth-matrix-${actorCount}actors-1080p-${mode}`
+          const scenario = createCombinedScenario(actorCount, matrixFrames)
+          activeProfileName = name
+          lastFrame = 0
+          await sampleCombinedMemory()
+          console.log(`[V6 combined profile] ${actorCount} personagens, 1080p, ${mode}, 30 s`)
+          const started = performance.now()
+          const matrixReport = await runCombinedExport(scenario, { name, frames: matrixFrames, width: 1920, height: 1080, turbo })
+          const elapsedMilliseconds = performance.now() - started
+          assert(matrixReport.state === 'completed' && matrixReport.totalFrames === matrixFrames && !matrixReport.fallback, `${name}: exportação incompleta ou com fallback.`)
+          const expectedWorkers = turbo ? 2 : 1
+          assert(matrixReport.attempts[0]?.parallelism === expectedWorkers, `${name}: esperado ${expectedWorkers} worker(s).`)
+          assert(matrixReport.mouthAnimation?.characters === actorCount && matrixReport.mouthAnimation.legacyPatchStates > 0, `${name}: a fala não cobriu os ${actorCount} personagens.`)
+          const matrixParts = matrixReport.attempts.flatMap(attempt => attempt.parts)
+          const matrixHairFrames = matrixParts.reduce((total, part) => total + (part.frameMetrics?.hairPngFrames ?? 0), 0)
+          const matrixHairBytes = matrixParts.reduce((total, part) => total + (part.frameMetrics?.hairPngEncodedBytes ?? 0), 0)
+          assert(matrixHairFrames === actorCount * matrixFrames && matrixHairBytes > 0, `${name}: faltam PNGs animados de cabelo por personagem/quadro.`)
+          const matrixHairCompositionSamples = matrixParts.reduce((total, part) => total + (part.frameTiming?.hairCompositionMs?.samples ?? 0), 0)
+          assert(matrixHairCompositionSamples === matrixFrames, `${name}: composição por quadro não foi medida.`)
+          const outputPath = join(folder, `${name}.mp4`)
+          const probe = JSON.parse(execFileSync(ffprobe, ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=width,height,r_frame_rate,nb_frames', '-of', 'json', outputPath], { windowsHide: true }).toString()) as { streams?: Array<{ width?: number; height?: number; r_frame_rate?: string; nb_frames?: string }> }
+          const stream = probe.streams?.[0]
+          assert(stream?.width === 1920 && stream.height === 1080 && stream.r_frame_rate === '30/1' && Number(stream.nb_frames) === matrixFrames, `${name}: FFprobe encontrou dimensões, FPS ou contagem de quadros incorretos.`)
+          const sampled = [0, Math.floor(matrixFrames / 2), matrixFrames - 1]
+          const rgb = execFileSync(ffmpeg, ['-v', 'error', '-i', outputPath, '-vf', `select='${sampled.map(frame => `eq(n,${frame})`).join('+')}'`, '-fps_mode', 'passthrough', '-frames:v', '3', '-pix_fmt', 'rgb24', '-f', 'rawvideo', 'pipe:1'], { windowsHide: true, maxBuffer: 64 * 1024 ** 2 })
+          const frameBytes = 1920 * 1080 * 3
+          assert(rgb.length === frameBytes * 3, `${name}: FFmpeg não decodificou três quadros completos.`)
+          const decodedPixels = sampled.map((_frame, sampleIndex) => {
+            let hair = 0, mouth = 0
+            for (let offset = sampleIndex * frameBytes; offset < (sampleIndex + 1) * frameBytes; offset += 3) {
+              if (isSyntheticHairPixel(rgb[offset], rgb[offset + 1], rgb[offset + 2])) hair += 1
+              if (isSyntheticMouthPixel(rgb[offset], rgb[offset + 1], rgb[offset + 2])) mouth += 1
+            }
+            return { hair, mouth }
+          })
+          assert(decodedPixels.every(sample => sample.hair > 100 && sample.mouth > 5), `${name}: cabelo ou boca não visíveis nos quadros decodificados (${JSON.stringify(decodedPixels)}).`)
+          await sampleCombinedMemory()
+          matrixScenarios.push({ name, actors: actorCount, speech: true, hairAnimation: true, resolution: '1920x1080', fps: 30, frames: matrixFrames, workers: expectedWorkers, elapsedMilliseconds: Number(elapsedMilliseconds.toFixed(2)), fallback: matrixReport.fallback, mp4Validated: true, mouthCharacters: matrixReport.mouthAnimation?.characters, hairPngFrames: matrixHairFrames, hairPngEncodedBytes: matrixHairBytes, decodedPixels, processPeaks: profileProcessPeaks(name), samples: memorySamples.filter(sample => sample.profile === name).length })
+        }
+        assert(matrixScenarios.length === 4, 'A matriz combinada não concluiu 4/8 personagens em 1080p seguro e Turbo.')
+
+        const longProfileName = 'hair-mouth-5min-1actor-720p-safe'
+        const longScenario = createCombinedScenario(1, durationFrames, false)
+        activeProfileName = longProfileName
+        lastFrame = 0
+        await sampleCombinedMemory()
+        const combinedOutput = join(folder, 'hair-mouth-5min-720p.mp4')
+        combinedReport = await runCombinedExport(longScenario, { name: 'hair-mouth-5min-720p', frames: durationFrames, width: 1280, height: 720, turbo: false })
         assert(combinedReport.state === 'completed' && combinedReport.totalFrames === durationFrames && !combinedReport.fallback, 'O perfil combinado de 5 minutos não concluiu os 9.000 quadros sem fallback.')
         const expectedMouthBatches = Math.ceil(durationFrames / 300)
         assert(combinedReport.mouthAnimation?.stateAtlases === expectedMouthBatches && combinedReport.mouthAnimation.legacyPatchStates === expectedMouthBatches && combinedReport.mouthAnimation.isolatedStates === 0, 'O perfil combinado não registrou todos os lotes sintéticos da camada de boca.')
         const hairCompositionSamples = combinedReport.attempts.flatMap(attempt => attempt.parts).reduce((total, part) => total + (part.frameTiming?.hairCompositionMs?.samples ?? 0), 0)
         assert(hairCompositionSamples === durationFrames, 'O perfil combinado não mediu a composição do cabelo em todos os quadros.')
+        const combinedParts = combinedReport.attempts.flatMap(attempt => attempt.parts)
+        const hairPngMetrics = combinedParts.reduce((total, part) => ({
+          frames: total.frames + (part.frameMetrics?.hairPngFrames ?? 0),
+          base64CharactersAvoided: total.base64CharactersAvoided + (part.frameMetrics?.hairPngBase64CharactersAvoided ?? 0),
+          encodedBytes: total.encodedBytes + (part.frameMetrics?.hairPngEncodedBytes ?? 0),
+          canvasPixels: total.canvasPixels + (part.frameMetrics?.hairCanvasPixels ?? 0)
+        }), { frames: 0, base64CharactersAvoided: 0, encodedBytes: 0, canvasPixels: 0 })
+        assert(hairPngMetrics.frames === durationFrames && hairPngMetrics.encodedBytes > 0 && hairPngMetrics.base64CharactersAvoided > 0, 'O perfil combinado não mediu os PNGs temporários de cabelo em todos os quadros.')
+        const timingTotalMs = (phase: 'hairPngEncodeMs' | 'hairPngDecodeMs') => combinedParts.reduce((total, part) => total + (part.frameTiming?.[phase]?.totalMs ?? 0), 0)
         const combinedProbe = JSON.parse(execFileSync(ffprobe, ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=width,height,r_frame_rate,nb_frames', '-of', 'json', combinedOutput], { windowsHide: true }).toString()) as { streams?: Array<{ width?: number; height?: number; r_frame_rate?: string; nb_frames?: string }> }
         const combinedStream = combinedProbe.streams?.[0]
         assert(combinedStream?.width === 1280 && combinedStream.height === 720 && combinedStream.r_frame_rate === '30/1' && Number(combinedStream.nb_frames) === durationFrames, 'O FFprobe encontrou resolução, FPS ou duração incorreta no perfil combinado.')
@@ -858,31 +1007,30 @@ async function main() {
         const combinedRgb = execFileSync(ffmpeg, ['-v', 'error', '-i', combinedOutput, '-vf', `select='${sampledFrames.map(frame => `eq(n,${frame})`).join('+')}'`, '-fps_mode', 'passthrough', '-frames:v', '3', '-pix_fmt', 'rgb24', '-f', 'rawvideo', 'pipe:1'], { windowsHide: true, maxBuffer: 16 * 1024 ** 2 })
         const combinedFrameBytes = 1280 * 720 * 3
         assert(combinedRgb.length === combinedFrameBytes * 3, 'Não foi possível decodificar os três quadros do perfil combinado.')
-        const hairPixelCounts = sampledFrames.map((_frame, sampleIndex) => {
-          let count = 0
-          for (let offset = sampleIndex * combinedFrameBytes; offset < (sampleIndex + 1) * combinedFrameBytes; offset += 3) if (isSyntheticHairPixel(combinedRgb[offset], combinedRgb[offset + 1], combinedRgb[offset + 2])) count += 1
-          return count
+        const decodedLongPixels = sampledFrames.map((_frame, sampleIndex) => {
+          let hair = 0, mouth = 0
+          for (let offset = sampleIndex * combinedFrameBytes; offset < (sampleIndex + 1) * combinedFrameBytes; offset += 3) {
+            if (isSyntheticHairPixel(combinedRgb[offset], combinedRgb[offset + 1], combinedRgb[offset + 2])) hair += 1
+            if (isSyntheticMouthPixel(combinedRgb[offset], combinedRgb[offset + 1], combinedRgb[offset + 2])) mouth += 1
+          }
+          return { hair, mouth }
         })
-        assert(hairPixelCounts.every(count => count > 100), `A camada de cabelo não foi visível nos quadros amostrados do perfil combinado: ${hairPixelCounts.join(', ')}.`)
+        assert(decodedLongPixels.every(sample => sample.hair > 100 && sample.mouth > 5), `A camada de cabelo ou a boca não foi visível nos quadros amostrados do perfil combinado: ${JSON.stringify(decodedLongPixels)}.`)
         await new Promise(resolveDelay => setTimeout(resolveDelay, 20_000))
         await sampleCombinedMemory()
-        const processPeaks = new Map<string, { workingSetBytes: number; privateBytes: number }>()
-        for (const sample of memorySamples) for (const processRow of sample.operatingSystemProcesses as Array<{ role: string; workingSetBytes: number; privateBytes: number }>) {
-          const peak = processPeaks.get(processRow.role) ?? { workingSetBytes: 0, privateBytes: 0 }
-          peak.workingSetBytes = Math.max(peak.workingSetBytes, processRow.workingSetBytes)
-          peak.privateBytes = Math.max(peak.privateBytes, processRow.privateBytes)
-          processPeaks.set(processRow.role, peak)
-        }
+        const longProfileSamples = memorySamples.filter(sample => sample.profile === longProfileName)
+        const processPeaks = profileProcessPeaks(longProfileName)
         combinedLongProfile = {
           syntheticOnly: true, passed: true, gameRunningByUserStatement: true, controlledBenchmark: false,
           startedAt, durationSeconds: durationFrames / 30, frames: durationFrames, resolution: '1280x720', fps: 30,
           actors: 1, speech: 'contínua; atlas de boca sintético legado preparado', hairAnimation: true, turbo: false,
           exportMilliseconds: combinedReport.milliseconds, phaseMilliseconds: combinedReport.phaseMilliseconds,
-          mouthAnimation: combinedReport.mouthAnimation, hairCompositionSamples,
+          mouthAnimation: combinedReport.mouthAnimation, hairCompositionSamples, hairPngMetrics,
+          hairPngEncodeMilliseconds: timingTotalMs('hairPngEncodeMs'), hairPngDecodeMilliseconds: timingTotalMs('hairPngDecodeMs'),
           captureSamples: combinedReport.attempts.flatMap(attempt => attempt.parts).reduce((total, part) => total + (part.frameTiming?.captureMs?.samples ?? 0), 0),
           ffmpegWriteSamples: combinedReport.attempts.flatMap(attempt => attempt.parts).reduce((total, part) => total + (part.frameTiming?.ffmpegWriteMs?.samples ?? 0), 0),
-          sampledFrames, hairPixelCounts, processPeaks: Object.fromEntries(processPeaks), memorySamples, samplingErrors,
-          note: 'Métricas sob carga concorrente do jogo, não controlada. Memória privada/working set do processo GPU não é VRAM; este cenário valida uma combinação sintética de 1 personagem e não substitui a matriz completa.'
+          sampledFrames, decodedLongPixels, processPeaks, memorySamples: longProfileSamples, matrixScenarios, samplingErrors,
+          note: 'Métricas sob carga concorrente do jogo, não controlada. Memória privada/working set do processo GPU não é VRAM. A matriz adicional cobre 4/8 personagens, fala+cabelo, 1080p, 30 s e 1/2 workers; o perfil longo individual continua em 720p/seguro.'
         }
         await writeFile(join(folder, 'hair-mouth-5min-memory-profile.json'), JSON.stringify(combinedLongProfile, null, 2))
       } finally {
@@ -919,7 +1067,7 @@ async function main() {
       '720pWorkerComparison': { trials: benchmarkTrials, safeRepeatCompleted: safe720RunB.report.state === 'completed', turboRepeatsCompleted: turbo720RunA.report.state === 'completed' && turbo720RunB.report.state === 'completed' },
       '1080pTurboLateStart': { ...result1080, startFrame: 20, elapsedMilliseconds: turbo1080Milliseconds }
     }, null, 2))
-    await writeFile(join(folder, 'result.json'), JSON.stringify({ passed: true, framesChecked: [0, 10, 22, 23, 29, 30, 31, 60], transitionFramesChecked: fullTransitionFrames.length, transitionDynamicChangedPixels, transitionFacePatchPixels: transitionFacePatchCount, transitionFacePatchPixelsPerSample: transitionFacePatchCounts, animatedPixels: true, translucentHairPixels: translucentHairPixelCount(first.bitmap), layers: 4, noContinuousLayerSeamsAt720p: true, localHeadChangesBetweenPoses: true, motionAtlasFramesCaptured: true, turboBoundaryStable: true, backgroundsChecked: ['white', 'black', 'colored', 'checkerboard'], backgroundHairPixels: backgroundChecks, transparentLayerPixels, semitransparentHairPixels: alphaLayerPixels, mp4Completed: true, mp4HairChangedPixels: changedHairPixels, '720pSafeExport': true, '1080pTurboLateStart': true, ...(combinedLongProfile ? { longCombinedProfile: { passed: true, durationSeconds: 300, frames: 9000, resolution: '1280x720', exportMilliseconds: combinedLongProfile.exportMilliseconds, sampleCount: (combinedLongProfile.memorySamples as unknown[]).length } } : {}) }))
+    await writeFile(join(folder, 'result.json'), JSON.stringify({ passed: true, framesChecked: [0, 10, 22, 23, 29, 30, 31, 60], transitionFramesChecked: fullTransitionFrames.length, transitionDynamicChangedPixels, transitionFacePatchPixels: transitionFacePatchCount, transitionFacePatchPixelsPerSample: transitionFacePatchCounts, animatedPixels: true, translucentHairPixels: translucentHairPixelCount(first.bitmap), layers: 4, noContinuousLayerSeamsAt720p: true, localHeadChangesBetweenPoses: true, motionAtlasFramesCaptured: true, turboBoundaryStable: true, backgroundsChecked: ['white', 'black', 'colored', 'checkerboard'], backgroundHairPixels: backgroundChecks, transparentLayerPixels, semitransparentHairPixels: alphaLayerPixels, mp4Completed: true, mp4HairChangedPixels: changedHairPixels, '720pSafeExport': true, '1080pTurboLateStart': true, ...(combinedLongProfile ? { longCombinedProfile: { passed: true, durationSeconds: 300, frames: 9000, resolution: '1280x720', exportMilliseconds: combinedLongProfile.exportMilliseconds, sampleCount: (combinedLongProfile.memorySamples as unknown[]).length, hairPngMetrics: combinedLongProfile.hairPngMetrics, hairPngEncodeMilliseconds: combinedLongProfile.hairPngEncodeMilliseconds, hairPngDecodeMilliseconds: combinedLongProfile.hairPngDecodeMilliseconds, matrixScenarios: combinedLongProfile.matrixScenarios } } : {}) }))
   } finally {
     sequential?.close(); split?.close(); factory.dispose()
   }

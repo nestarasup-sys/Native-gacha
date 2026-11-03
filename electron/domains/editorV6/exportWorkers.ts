@@ -1,6 +1,6 @@
 import { createMediaFileResponse } from '../mediaLibrary/mediaFileResponse'
 import { BrowserWindow, type IpcMain } from 'electron'
-import { editorV6WorkerChannels, type EditorV6FrameTimings, type EditorV6RenderFrameResult, type EditorV6WorkerPayload } from '../../../src/shared/editorV6Export'
+import { editorV6WorkerChannels, type EditorV6FrameMetrics, type EditorV6FrameTimings, type EditorV6RenderFrameResult, type EditorV6WorkerPayload } from '../../../src/shared/editorV6Export'
 import { waitForExport } from './exportProcess'
 import { restrictRendererNavigation } from '../../windowNavigation'
 import { restrictRendererPermissions } from '../../windowPermissions'
@@ -143,12 +143,14 @@ export function createEditorV6WorkerFactory(deps: { ipcMain: Pick<IpcMain, 'hand
         }
         if (!layeredVideo) {
           const captured = await capture()
-          return { reused: false, bitmap: captured.bitmap, timings: { ...result.timings, captureMs: captured.elapsedMs } }
+          return { reused: false, bitmap: captured.bitmap, timings: { ...result.timings, captureMs: captured.elapsedMs }, ...(result.metrics ? { metrics: result.metrics } : {}) }
         }
         const layerBytes = payload.width * payload.height * 4
         const timings: EditorV6FrameTimings = { ...result.timings }
+        const metrics: EditorV6FrameMetrics = { ...result.metrics }
         const collect = (drawn: EditorV6RenderFrameResult) => {
           for (const [key, value] of Object.entries(drawn.timings ?? {}) as Array<[keyof EditorV6FrameTimings, number]>) timings[key] = (timings[key] ?? 0) + value
+          for (const [key, value] of Object.entries(drawn.metrics ?? {}) as Array<[keyof EditorV6FrameMetrics, number]>) metrics[key] = (metrics[key] ?? 0) + value
         }
         const copyLayer = async (offset: number, layer: 'background' | 'foreground', drawn: EditorV6RenderFrameResult) => {
           if (drawn.layerReused) return
@@ -168,7 +170,7 @@ export function createEditorV6WorkerFactory(deps: { ipcMain: Pick<IpcMain, 'hand
         if (!layeredBitmap) throw Error('O renderizador não produziu nenhuma camada para o quadro.')
         const bitmap = layeredBitmap
         if (bitmap.length !== payload.width * payload.height * 4 * (layeredVideo ? 2 : 1)) throw Error('Dimensões inesperadas do bitmap exportado.')
-        return { reused: false, bitmap, timings }
+        return { reused: false, bitmap, timings, ...(Object.keys(metrics).length ? { metrics } : {}) }
       } }
     } catch (error) { close(); throw error }
   }
