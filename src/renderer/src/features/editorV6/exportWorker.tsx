@@ -106,9 +106,8 @@ async function initialize() {
   let headPathCapacity = 0, headPathFrame = -1
   const headPaths = new Map(animatedElementIds.map(id => [id, new Float32Array(0)]))
   const headPathLastValues = new Map(animatedElementIds.map(id => [id, 0]))
-  const headAnchorAtFrame = (elementId: string, frame: number): number => {
-    const element = resolveEditorV6SceneAtFrame(project, frame).elements.find(candidate => candidate.id === elementId && candidate.kind === 'character')
-    if (!element) return headPathLastValues.get(elementId) ?? .5
+  const headAnchorAtFrame = (element: ReturnType<typeof resolveEditorV6SceneAtFrame>['elements'][number], frame: number): number => {
+    const elementId = element.id
     if (element.motionSprite) {
       const transition = transitionForFrame(elementId, frame)
       if (transition?.from && transition.to) {
@@ -157,7 +156,7 @@ async function initialize() {
         const path = headPaths.get(elementId)!
         const element = elements.get(elementId)
         const previous = headPathLastValues.get(elementId) ?? 0
-        const current = element ? headAnchorAtFrame(elementId, frame) : previous
+        const current = element ? headAnchorAtFrame(element, frame) : previous
         path[frame] = current
         headPathLastValues.set(elementId, current)
       }
