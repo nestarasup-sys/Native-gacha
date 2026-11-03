@@ -8,13 +8,11 @@ import { ModelSourcePixelEditTaskError, startModelSourcePixelEditWorker } from '
 import { applyModelSourceBrushPixels, modelSourceBrushRegion, removeModelSourceColorPixels } from '../src/renderer/src/features/fabricator/models/modelSourcePixelOperations.ts'
 import { ModelSourceComposeTaskError, startModelSourceComposeWorker } from '../src/renderer/src/features/fabricator/models/runModelSourceComposeWorker.ts'
 import { applyChromaPixels } from '../src/renderer/src/features/fabricator/models/chroma.ts'
-import { inferImportedModelPartName } from '../src/renderer/src/features/fabricator/models/imageProcessorNaming.ts'
-import { autoConnectParts, modelRigSegmentKind } from '../src/shared/modelRig.ts'
-import { isModelBodyPartName } from '../src/renderer/src/characters/skinTint.ts'
+import { findHeadFragmentMergeTargets, inferImportedModelPartName, isHeadFragmentCandidate, mergeHeadFragments } from '../src/renderer/src/features/fabricator/models/imageProcessorNaming.ts'
 
 const imageBuffer = value => Uint8Array.of(value).buffer
 
-test('importador distingue orelhas pequenas da cabeça e as conecta ao rig como pele', () => {
+test('importador compõe recortes laterais na cabeça sem criar peças separadas', async () => {
   const namingContext = {
     sourceWidth: 100,
     sourceHeight: 100,
@@ -27,22 +25,38 @@ test('importador distingue orelhas pequenas da cabeça e as conecta ao rig como 
     componentPixelCount
   })
 
-  const headName = partName({ minX: 35, minY: 5, maxX: 65, maxY: 32 }, 1_200)
-  const leftEarName = partName({ minX: 12, minY: 8, maxX: 20, maxY: 24 }, 120)
-  const rightEarName = partName({ minX: 80, minY: 8, maxX: 88, maxY: 24 }, 120)
+  const headBounds = { minX: 35, minY: 5, maxX: 65, maxY: 32 }
+  const leftFragmentBounds = { minX: 12, minY: 8, maxX: 20, maxY: 24 }
+  const rightFragmentBounds = { minX: 80, minY: 8, maxX: 88, maxY: 24 }
+  assert.equal(partName(headBounds, 1_200), 'Cabeça')
+  assert.equal(partName(leftFragmentBounds, 120), 'Cabeça')
+  assert.equal(partName(rightFragmentBounds, 120), 'Cabeça')
+  assert.equal(isHeadFragmentCandidate({ ...namingContext, partBounds: headBounds, componentPixelCount: 1_200 }), false)
+  assert.equal(isHeadFragmentCandidate({ ...namingContext, partBounds: leftFragmentBounds, componentPixelCount: 120 }), true)
 
-  assert.equal(headName, 'Cabeça')
-  assert.equal(leftEarName, 'Orelha esquerda')
-  assert.equal(rightEarName, 'Orelha direita')
-  assert.equal(modelRigSegmentKind(leftEarName), 'ear')
-  assert.equal(isModelBodyPartName(leftEarName), true)
+  const frames = [
+    { id: 'head', name: 'Cabeça', x: 26, y: 1, width: 39, height: 36 },
+    { id: 'ear-left', name: 'Cabeça', x: 8, y: 4, width: 17, height: 24 },
+    { id: 'ear-right', name: 'Cabeça', x: 66, y: 4, width: 17, height: 24 },
+    { id: 'far-fragment', name: 'Cabeça', x: 0, y: 4, width: 8, height: 18 }
+  ]
+  const fragmentIds = ['ear-left', 'ear-right', 'far-fragment']
+  const targets = findHeadFragmentMergeTargets(frames, fragmentIds)
+  assert.deepEqual(targets, new Map([['ear-left', 'head'], ['ear-right', 'head']]))
 
-  const joints = autoConnectParts([
-    { id: 'torso', name: 'Tronco', x: 30, y: 30, width: 40, height: 60 },
-    { id: 'head', name: headName, x: 35, y: 5, width: 30, height: 27 },
-    { id: 'ear-left', name: leftEarName, x: 12, y: 8, width: 9, height: 17 }
-  ])
-  assert.ok(joints.some(joint => joint.parentPartId === 'head' && joint.childPartId === 'ear-left'))
+  const composedGroups = []
+  const result = await mergeHeadFragments(frames, fragmentIds, async members => {
+    composedGroups.push(members.map(part => part.id))
+    return {
+      ...members[0],
+      x: Math.min(...members.map(part => part.x)),
+      y: Math.min(...members.map(part => part.y)),
+      width: Math.max(...members.map(part => part.x + part.width)) - Math.min(...members.map(part => part.x)),
+      height: Math.max(...members.map(part => part.y + part.height)) - Math.min(...members.map(part => part.y))
+    }
+  })
+  assert.deepEqual(composedGroups, [['head', 'ear-left', 'ear-right']])
+  assert.deepEqual(result.map(part => part.id), ['head', 'far-fragment'])
 })
 
 test('monta o projeto importado com bases, ordem, juntas e assets pendentes preservados', () => {

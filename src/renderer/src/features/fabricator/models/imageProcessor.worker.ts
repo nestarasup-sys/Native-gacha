@@ -1,6 +1,6 @@
 import { despillGreenFringes, sampleBackground } from './chroma'
 import type { ImageProcessorMessage, ImageProcessorRequest } from './imageProcessorProtocol'
-import { inferImportedModelPartName } from './imageProcessorNaming'
+import { inferImportedModelPartName, isHeadFragmentCandidate, mergeHeadFragments } from './imageProcessorNaming'
 
 const workerScope = self as unknown as {
   onmessage: ((event: MessageEvent<ImageProcessorRequest>) => void) | null
@@ -55,7 +55,8 @@ workerScope.onmessage = async (event: MessageEvent<ImageProcessorRequest>) => {
     const total = source.width * source.height
     const visited = new Uint8Array(total)
     const queue = new Int32Array(total)
-    const parts: Extract<ImageProcessorMessage, { type: 'complete' }>['parts'] = []
+    let parts: Extract<ImageProcessorMessage, { type: 'complete' }>['parts'] = []
+    const headFragmentIds = new Set<string>()
     let progress = 0
     for (let start = 0; start < total; start += 1) {
       if (!keyed[start] || visited[start]) continue
@@ -139,21 +140,25 @@ workerScope.onmessage = async (event: MessageEvent<ImageProcessorRequest>) => {
       if (!baseContext) continue
       baseContext.putImageData(baseImage, 0, 0)
       const basePng = await (await baseCanvas.convertToBlob({ type: 'image/png' })).arrayBuffer()
+      const namingInput = {
+        partBounds: { minX, minY, maxX, maxY },
+        sourceWidth: source.width,
+        sourceHeight: source.height,
+        foregroundBounds,
+        componentPixelCount: write,
+        foregroundPixelCount
+      }
+      const partId = crypto.randomUUID()
+      if (isHeadFragmentCandidate(namingInput)) headFragmentIds.add(partId)
       parts.push({
-        id: crypto.randomUUID(),
-        name: inferImportedModelPartName({
-          partBounds: { minX, minY, maxX, maxY },
-          sourceWidth: source.width,
-          sourceHeight: source.height,
-          foregroundBounds,
-          componentPixelCount: write,
-          foregroundPixelCount
-        }),
+        id: partId,
+        name: inferImportedModelPartName(namingInput),
         x: cropMinX, y: cropMinY, width, height, png, basePng
       })
       progress += write
       if (parts.length % 2 === 0) workerScope.postMessage({ type: 'progress', id, value: Math.min(96, Math.round(progress / total * 100)) })
     }
+    parts = await mergeHeadFragments(parts, headFragmentIds, composePartImages)
     parts.sort((a, b) => a.y - b.y || a.x - b.x)
     workerScope.postMessage({ type: 'complete', id, width: source.width, height: source.height, parts }, parts.flatMap((part) => [part.png, part.basePng]))
     source.close()
@@ -164,4 +169,46 @@ workerScope.onmessage = async (event: MessageEvent<ImageProcessorRequest>) => {
 
 function clampChannel(value: number): number {
   return Math.max(0, Math.min(255, Math.round(value)))
+}
+
+async function composePartImages(parts: Extract<ImageProcessorMessage, { type: 'complete' }>['parts']): Promise<(typeof parts)[number]> {
+  const x = Math.min(...parts.map((part) => part.x))
+  const y = Math.min(...parts.map((part) => part.y))
+  const right = Math.max(...parts.map((part) => part.x + part.width))
+  const bottom = Math.max(...parts.map((part) => part.y + part.height))
+  const width = right - x
+  const height = bottom - y
+
+  const compose = async (key: 'png' | 'basePng') => {
+    const canvas = new OffscreenCanvas(width, height)
+    const context = canvas.getContext('2d', { willReadFrequently: true })
+    if (!context) throw new Error('Não foi possível unir a cabeça e os recortes próximos.')
+    const combined = context.createImageData(width, height)
+    for (const part of parts) {
+      const bitmap = await createImageBitmap(new Blob([part[key]], { type: 'image/png' }))
+      const partCanvas = new OffscreenCanvas(part.width, part.height)
+      const partContext = partCanvas.getContext('2d', { willReadFrequently: true })
+      if (!partContext) {
+        bitmap.close()
+        throw new Error('Não foi possível preparar um recorte da cabeça.')
+      }
+      partContext.drawImage(bitmap, 0, 0)
+      bitmap.close()
+      const source = partContext.getImageData(0, 0, part.width, part.height).data
+      for (let py = 0; py < part.height; py += 1) for (let px = 0; px < part.width; px += 1) {
+        const sourceOffset = (py * part.width + px) * 4
+        const targetOffset = ((part.y - y + py) * width + part.x - x + px) * 4
+        if (source[sourceOffset + 3] <= combined.data[targetOffset + 3]) continue
+        combined.data[targetOffset] = source[sourceOffset]
+        combined.data[targetOffset + 1] = source[sourceOffset + 1]
+        combined.data[targetOffset + 2] = source[sourceOffset + 2]
+        combined.data[targetOffset + 3] = source[sourceOffset + 3]
+      }
+    }
+    context.putImageData(combined, 0, 0)
+    return (await canvas.convertToBlob({ type: 'image/png' })).arrayBuffer()
+  }
+
+  const [png, basePng] = await Promise.all([compose('png'), compose('basePng')])
+  return { ...parts[0], x, y, width, height, png, basePng }
 }
