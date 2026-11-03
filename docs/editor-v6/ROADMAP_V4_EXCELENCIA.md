@@ -38,7 +38,7 @@
 1. **General gates / Linux:** falha em `tests/diagnostics-ipc.test.mjs` por usar um caminho fictício Windows (`C:\reports\filtered.json`), mas `basename()` do sistema Linux não reconhecer `\`. O resultado veio com caminho inteiro em `fileName` em vez de só o nome. Esta revisão já recebeu a correção localizada em `electron/domains/storage/diagnosticsIpc.ts` usando `path.win32.basename`, que também aceita caminhos POSIX, além de regressão POSIX no teste. **Aguardar validação na CI de HEAD mais recente**, não considerar aprovado somente porque o código foi modificado.
 2. **MP4 Windows:** `scripts/video-studio/prepare-ffmpeg-lgpl.ps1` recebeu HTTP **404 Not Found** em `Invoke-WebRequest`. O manifesto pinado em `resources/video-tools.manifest.json` apontava para release `BtbN/FFmpeg-Builds` tag `autobuild-2026-10-20-13-08`, que também retornou 404 na API pública do GitHub nesta revisão. Logo, a CI **não executou** os testes de MP4 com cabelo nesse commit.
 
-**Próxima correção obrigatória:** resolver a proveniência do binário de FFmpeg/FFprobe sem baixar código arbitrário ou reduzir integridade. Escolher pacote LGPL publicado e realmente disponível, conferir encoders requeridos, licenças, hash SHA-256 conhecido e teste de instalação em Windows; atualizar manifesto/script somente após comprovação. Evitar apontar para `latest` mutável sem política de pinagem e integridade; preservar a pasta local existente do usuário. Adicionar mensagens claras para arquivo removido, falta de rede e hash divergente. Não executar `npm audit fix --force` para mascarar falhas de CI.
+**Status após a Rodada 02:** a indisponibilidade foi corrigida localmente com release pinado, SHA-256, licença/configuração/encoders verificados e teste do instalador; a pasta local não é sobrescrita pela preparação do workflow. Os gates MP4 reais passaram neste checkout. A execução hospedada ainda não foi feita, portanto o requisito de CI verde no HEAD permanece pendente até publicação autorizada.
 
 **Critério P0:** novo HEAD passa todos os jobs da Dev-V2, incluindo teste real de cabelo, MP4 facial e paridade overlay; registrar SHA e link da execução efetivamente verde. Uma execução antiga verde não comprova o HEAD.
 
@@ -61,7 +61,14 @@ Procedimento recomendado:
 
 **O que o código realmente faz:** `motion/bakeMotion.ts` aplica a ampliação em `transforms.mouth` (não multiplica intencionalmente todo o rosto), renderiza versões inteiras do personagem e compara os pixels para encontrar `changedBounds`. Em seguida, `changedPixelPatch` captura um **retângulo RGBA completo**, com os pixels vizinhos dentro do limite. `sceneFaceComposition.ts` aplica a substituição de pixels retangular, embora o personagem tenha a boca como componente de origem separado. Esse método evita alguns halos e permite transparência/remoção de pixels anteriores, mas pode reintroduzir bordas, detalhes indesejados e custos de compor/encodar grandes áreas. **Não declarar a causa exata do artefato visual sem um par de quadros do usuário ou fixture equivalente.**
 
-### Arquitetura desejada, a ser comprovada por protótipo
+### Solução entregue na Rodada 02 (2026-11-03)
+
+- O renderizador canônico agora pode emitir uma camada `mouth-only` transparente e duas bases temporárias sem boca para `talk`/`talk-blink`; isso só é usado pelo bake do loop de fala de exportação. O restante da face mantém o catálogo, paleta, transforms e ordem de camadas existentes.
+- Os fixtures reais de Electron/FFmpeg passaram em 720p e 1080p com três personagens, rotação, flip, emenda Turbo e roupa personalizada. Referência RGBA: zero pixel alterado fora da região da boca. H.264: erro médio do corpo 1,6712/1,7176.
+- O atlas de boca mediu 15.252 pixels contra 1.253.120 equivalentes do quadro facial completo (98,78% menos pixels no atlas). Isso não prova aceleração do exportador inteiro: a composição do corpo permanece e não houve comparação causal de tempo.
+- Para rigs sem boca isolável, o patch legado permanece como fallback compatível. Aceite artístico do usuário em personagem real continua pendente.
+
+### Requisitos preservados pela solução
 
 1. **Renderizar só a boca** da seleção `mouth-open`/`mouth-closed` (e seus efeitos dependentes), em uma camada RGBA com transparência verdadeira, na posição/calibração da cabeça, usando o renderizador de face já existente — sem duplicar a regra de paletas, tintas, rotação, posições ou seleção de catálogo.
 2. **Compor a base do personagem sem a boca antiga**, mas mantendo pele, nariz, olhos, cabelo frontal e demais camadas na ordem correta. Desenhar a boca animada **entre as camadas apropriadas**, e não como imagem quadrada por cima de cabelo/pele. A remoção do desenho anterior exige plano explícito; simplesmente sobrepor uma boca nova à antiga causa fantasmas.
@@ -90,17 +97,25 @@ Procedimento recomendado:
 - A separação está em `exportFrameAssets.ts` e seu teste `tests/editor-v6/exportFrameAssets.test.ts`, que cobre mil quadros sintéticos e o reuso de IDs com isolamento de escopo. Isso testa o contrato de retenção **não** o RSS real.
 - `composeMotionHairFrame` criava um canvas nativo de resolução cheia para cada quadro durante troca de pose. Agora utiliza **um canvas scratch reutilizável**, limpa a superfície a cada uso, redimensiona apenas quando necessário e libera os canvases no encerramento do worker.
 - A física de cabelo calculava duas vezes `resolveEditorV6SceneAtFrame` por amostra/cabeça; agora reutiliza a cena já resolvida. O ganho deve ser **medido**, não presumido.
-- **Status:** alterações de código publicadas, regressão de escopo criada, teste Electron/FFmpeg completo e benchmark de RAM ainda **pendentes de CI/execução**. Não afirmar que parou de crescer até confirmar em uma exportação longa.
+- **Status após Rodada 02:** testes Electron/FFmpeg locais e perfis sintéticos silenciosos de 30 s, 2 min e 5 min foram executados. Também foi exportado um fixture combinado de 5 min / 9.000 quadros / 720p / 1 personagem com fala+cabelo, medido por processo em 184 amostras e seguido de 20 s de repouso. A retenção de assets de frame fica limitada pelo contrato já presente no baseline. O validador de stress foi corrigido para decodificar quadros em lotes, pois antes mantinha 58 quadros RGB 1080p (~358 MB) simultaneamente. Main, renderer e FFmpeg concluíram/encerraram; o Main retornou próximo do início. A amostra privada do GPU caiu após o export, mas não mede VRAM nem identifica sozinha o tipo de cache. A matriz combinada para 4/8 personagens, 1080p e Turbo continua pendente. Ver [relatório da Rodada 02](RODADA_02_V4_BOCA_CABELO_RAM.md). A execução hospedada continua pendente.
 
-### Próxima investigação de memória — medições por processo
+### Status das medições por processo
 
-1. Criar fixture **sintético** com exportação 30 s / 2 min / 5 min; três níveis de complexidade (1/4/8 personagens, fala e cabelo ativados/desativados, transições e mídia), 720p/1080p, 1 vs 2 workers e Turbo/seguro.
-2. Amostrar a cada intervalo fixo, em formato **agregado e sanitizado**: RSS/working set e private bytes do Main, renderer de export, processo GPU e FFmpeg; JS heap quando viável, contagens de caches, número de canvases/texturas e bytes de imagens temporárias. Registrar baseline de warm-up, curva, pico, após cancelamento, após finalizar e após fechar janela. Indicar métricas indisponíveis sem inventar VRAM.
-3. Distinguir **retenção persistente** (curva monotônica com quadros), **platô de cache** (sobe e estabiliza), **picos por transição**, **fragmentação/alocador** e **buffers de renderização já liberados mas ainda reservados pelo SO/Chromium**.
-4. Perfilar alocações e copies de `canvas.toDataURL('image/png')` por quadro, strings Base64, `Image.decode()`, `getImageData/putImageData`, superfícies intermediárias, atlas facial, malha GPU, `capturePage` e pipes de bitmap para FFmpeg. Verificar se algum Map/Set/Promise/listener retém assets fora de prazo.
-5. Considerar **Blob/Object URLs com `URL.revokeObjectURL`**, `ImageBitmap.close()`, canvas offscreen e buffers transferíveis, **somente** com ciclo de vida definido, segurança de origem/IPC e pixel tests; tratar perdas de alpha e latência de GPU readback.
-6. O exportador já faz envio de quadros ao FFmpeg em fluxo; **não enviar indiscriminadamente toda a RAM para swap/disco**. Arquivos temporários/proxies podem diminuir retenção de dados persistentes, mas podem piorar desempenho, fazer I/O excessivo ou ampliar o uso de espaço. Adotar apenas streaming/backpressure/caches limitados com benchmarks; nunca substituir imagens originais nem persistir dados privados em diretórios de testes.
-7. Criar report por export com **pico e platô** medidos, `hairCompositionMs`, `faceCompositionMs`, custo de captura e encerramento de recursos. Relatório local em Logs Dev com códigos sanitizados e amostras de agregados, sem payloads de projetos.
+- Perfis sintéticos reais silenciosos: 30 s / 1 personagem / 720p; 30 s / 8 personagens / 1080p; 2 min / 4 personagens / 720p; 5 min / 8 personagens / 1080p. Perfil adicional com fala+cabelo: 5 min / 1 personagem / 720p / seguro. Foram medidos Main, renderer, GPU, FFmpeg, Node heap/external, tempos por fase e processos após export/repouso.
+- 5 min / 8 personagens / 1080p / modo seguro: 9.000 quadros, 116 transições validadas, 78,37 s totais. `ffmpegWriteMs` acumulou 49,8 s (p95 6,7 ms por escrita). Backpressure foi mantido.
+- Benchmark com o jogo ativo é concorrente e não controlado. O A/B seguro/Turbo compara opções existentes e não mede uma otimização introduzida nesta rodada.
+- No perfil combinado de 5 min: 9.000 samples cada de cabelo, captura e escrita; 184 amostras de processo sem erro. Main RSS de 145 MiB inicial/296 MiB pico e private bytes de 115 MiB inicial/229 MiB pico/131 MiB após repouso. Renderer e FFmpeg não existiam após a exportação. GPU private bytes foram 441 MiB já na primeira amostra e 120 MiB após repouso; isso não mede VRAM. Perfil rodou sob jogo ativo não controlado.
+- Esta cobertura não cruza fala+cabelo com 4/8 personagens, 1080p, Turbo nem dois workers. Faltam perfil combinado após cancelamento/fechamento, contadores de canvas/textura/PNG/toDataURL e aceite visual manual do usuário.
+
+### Estado da investigação de memória
+
+1. **Matriz sintética — parcial:** estão medidos cenários silenciosos 30 s/2 min/5 min com 1/4/8 personagens e resoluções 720p/1080p, além de 5 min com fala+cabelo em 1 personagem/720p/seguro. Faltam fala+cabelo com 4/8 personagens, 1080p, Turbo e 1 vs 2 workers.
+2. **Amostras por processo — parcial:** o perfil combinado registrou 184 samples, RSS/working set, private bytes, CPU, Node heap e JS heap disponível; incluiu baseline, pico e 20 s de repouso. Renderer e FFmpeg encerraram. Não foram medidos canvas/texturas GPU e não houve cenário combinado cancelado/fechamento da janela principal. Private bytes do GPU não são VRAM.
+3. **Interpretação de retenção — parcial:** Main caiu do pico de RSS/private bytes (296/229 MiB) para 161/131 MiB após 20 s. Renderer/FFmpeg terminaram. A amostra GPU caiu de 441 MiB antes do export para 120 MiB privados após repouso; o baseline já vinha aquecido por testes anteriores, então não classificar essa queda como liberação total nem concluir ausência de toda retenção.
+4. **Alocações e superfícies — pendente:** os tempos por fase não apontaram o pipe FFmpeg como gargalo (7,2 s acumulados contra 504,6 s de round-trip de frame em 9.000 quadros). Composição de cabelo somou 114,4 s; facial 0,25 s. Ainda falta alocação detalhada de `toDataURL`, Base64, `Image.decode`, readbacks e contagem de buffers/canvas/texturas.
+5. **Alternativas Blob/ImageBitmap/OffscreenCanvas — não adotadas:** a pesquisa foi feita, mas não há ganho provado que justifique trocar ciclo de vida/alpha/transporte nesta rodada.
+6. **Streaming/backpressure — preservados e medidos:** o FFmpeg recebeu os quadros em fluxo; escrita levou 7,2 s acumulados no perfil combinado. Não houve bufferização integral ou escrita dos quadros do usuário em disco.
+7. **Relatórios — parcial:** o export mantém report de fases e timings; o harness de stress registra perfil agregado local. Ainda não existe painel Logs Dev com séries de processo/platô sanitizadas.
 
 **Critério:** sob fixture fixa, o uso de memória **não cresce indefinidamente com o número de quadros** após aquecimento; o renderer e seus recursos terminam corretamente no sucesso, falha e cancelamento. Manter desempenho e qualidade visual. Benchmarks com o usuário jogando são **sob carga concorrente**, com repetições e sem conclusões definitivas de ganho.
 
@@ -192,14 +207,14 @@ O histórico de stress de 26/10 apontou long tasks e picos isolados de React/com
 
 | Ciclo | Dependência | Objetivo | Saída mensurável |
 | --- | --- | --- | --- |
-| **E0 — CI e aceite** | Imediato | Confirmar ajuste Linux de nomes de arquivo; restaurar FFmpeg pinado; passar mp4/hair/export hospedado; revisar clipe de cabelo real | Run verde no HEAD, checklist real de cabelo |
-| **E1 — boca isolada e RAM** | E0 | Prototipar boca como camada própria com cobertura alpha/oclusão; auditar pico/platô de memória e corrigir retenções remanescentes | RGBA sem moldura, quadros faciais preservados, curva de memória por processo |
+| **E0 — CI e aceite** | Imediato | FFmpeg pinado e validado localmente; gates locais aprovados. Ainda requer CI hospedada e aceite do clipe de cabelo real | Verificação local concluída; CI hospedada/aceite artístico pendentes |
+| **E1 — boca isolada e RAM** | E0 local | Boca isolada no export quando há componente de catálogo; fallback legado explícito. Perfil sintético combinado de 5 min fala+cabelo, além de perfis silenciosos, medido por processo | RGBA sem alterações fora da boca, MP4/FFprobe válidos, curva registrada; matriz combinada e aceite artístico pendentes |
 | **E2 — sincronismo A/V** | E0; pode seguir em paralelo ao estudo da boca | Instrumentar video frames apresentados e drift áudio/vídeo, medir e corrigir apenas causas provadas | Fixture de longo prazo + relatório de p95/p99 + regressões |
 | **E3 — produtividade da timeline** | E2 pode ser paralelo no design | Waveforms/miniaturas, depois seleção múltipla se for útil | Protótipo/teste real de usabilidade + undo/snap correto |
 | **E4 — exportação profissional** | E0 e resultados E1/E2 | Preflight, mensagens recuperáveis, progresso e compatibilidade mídia | Erro antecipado com ação corretiva; PNG/MP4/FFprobe válidos |
 | **E5 — fluidez e produto** | E1–E4 | Benchmark real, caches/proxies condicionais, templates/presets aprovados | Comparações sob cenário idêntico e menos passos para produzir uma cena |
 
-**Próximos tickets:** (1) recuperar o FFmpeg LGPL pinado/validado e confirmar a CI completa; (2) fazer aceite artístico do cabelo em MP4; (3) medir RAM numa exportação longa e conferir a correção de retenção por quadro; (4) construir fixture e protótipo isolado da boca — sem moldura de pele/cabelo; (5) iniciar sincronismo A/V depois das prioridades visuais e de memória.
+**Próximos tickets:** (1) após publicação autorizada, executar e registrar todos os jobs de CI no HEAD; (2) obter aceite visual do cabelo e da boca em personagem real; (3) completar a matriz combinada de fala+cabelo com 4/8 personagens, 1080p, Turbo/seguro e workers; (4) instrumentar `toDataURL`, Base64, `Image.decode`, readbacks e buffers para localizar alocações dominantes; (5) iniciar medição de sincronismo A/V com fixture longa e timestamps apresentados.
 
 ## 10. Contratos, referências e aceite
 
