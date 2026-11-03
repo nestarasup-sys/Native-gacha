@@ -175,7 +175,13 @@ async function captureScene(scene: unknown, assets: unknown[], renderLayer: 'all
     patchCanvas.width = sprite.width; patchCanvas.height = sprite.height
     const patchContext = patchCanvas.getContext('2d')!
     patchContext.drawImage(transitionFaceAtlas, sprite.x, sprite.y, sprite.width, sprite.height, 0, 0, sprite.width, sprite.height)
-    assert(frame.facePatch.replace === true && patchContext.getImageData(0, 0, sprite.width, sprite.height).data.length === sprite.width * sprite.height * 4, 'Mouth patch is not a complete RGBA replacement region')
+    const pixels = patchContext.getImageData(0, 0, sprite.width, sprite.height).data
+    let coloredPixels = 0
+    for (let offset = 0; offset < pixels.length; offset += 4) if (pixels[offset + 3] > 0) {
+      coloredPixels++
+      assert(pixels[offset] < 30 && pixels[offset + 1] > 220 && pixels[offset + 2] < 30, 'The isolated mouth atlas contains pixels from skin, eyes, hair, or clothing')
+    }
+    assert(frame.facePatch.replace !== true && coloredPixels > 0, 'The mouth is not a transparent overlay made from the mouth piece alone')
   }
   assert(editorV6MotionResultSchema.safeParse(talkingTransition).success, 'A talking pose transition exceeded the motion result contract')
   const expressionActor = { ...actor, width: 20, height: 26.6666666667, characterCanvasWidth: 25 }
@@ -242,6 +248,7 @@ async function captureScene(scene: unknown, assets: unknown[], renderLayer: 'all
   const mouthReference = await bakeEditorV6Motion({ id: crypto.randomUUID(), plan: mouthReferencePlan, character: facialCharacter, mouthScaleSamples: [1, 1.05, 1.1025], maxAtlasPixels: 8_000_000 }, facialProvider)
   const localizedAtlas = mouthOptimized.motion.frames[0].facePatch!.sprite
   assert(mouthOptimized.metrics.samples === 3 && mouthOptimized.motion.frames.every(frame => Boolean(frame.facePatch))
+    && mouthOptimized.mouthlessBaseAssets?.length === 2
     && localizedAtlas.atlasWidth * localizedAtlas.atlasHeight === mouthOptimized.metrics.atlasPixels
     && mouthOptimized.metrics.atlasPixels < mouthReference.metrics.atlasPixels,
     'The static mouth loop did not keep its complete animation in a localized facial atlas')
@@ -282,7 +289,8 @@ async function captureScene(scene: unknown, assets: unknown[], renderLayer: 'all
   const hiPatchContext = hiPatchCanvas.getContext('2d')!
   hiPatchContext.drawImage(hiPatchAtlas, hiPatchSprite.x, hiPatchSprite.y, hiPatchSprite.width, hiPatchSprite.height, 0, 0, hiPatchSprite.width, hiPatchSprite.height)
   const hiPatchPixels = hiPatchContext.getImageData(0, 0, hiPatchSprite.width, hiPatchSprite.height).data
-  assert(hiMouthBake.motion.frames[2].facePatch?.replace === true && hiPatchPixels.length === hiPatchSprite.width * hiPatchSprite.height * 4, 'A high-resolution mouth patch is not a complete RGBA replacement region')
+  assert(hiMouthBake.motion.frames[2].facePatch?.replace !== true && hiMouthBake.mouthlessBaseAssets?.length === 2
+    && hiPatchPixels.length === hiPatchSprite.width * hiPatchSprite.height * 4, 'A high-resolution mouth patch is not a transparent mouth-only overlay')
   const hiBodyRenderer = await prepareSavedCharacterRenderer(hiCharacter, { source: hiSource, artwork: hiSource, assetProvider: hiProvider })
   const hiBody = await hiBodyRenderer.renderToCanvas(hiAppearance, {}, undefined, 'idle')
   const hiBodyCrop = trimTransparentCanvas(hiBody.canvas)
@@ -459,6 +467,7 @@ async function captureScene(scene: unknown, assets: unknown[], renderLayer: 'all
       sourceWidth: hiBodyCrop?.width ?? hiBody.width,
       sourceHeight: hiBodyCrop?.height ?? hiBody.height,
       asset: hiMouthBake.asset,
+      mouthlessBaseAssets: hiMouthBake.mouthlessBaseAssets,
       metrics: hiMouthBake.metrics,
       combined: { transition: combinedTransition, targetMouth, baseModes, targetModes, targetTransforms, characterHeight: expressionFrom.height, characterCanvasWidth: expressionFrom.characterCanvasWidth,
         customizations: hiCharacter.customization },

@@ -283,7 +283,12 @@ async function initialize() {
     return canvas.toDataURL('image/png')
   }
   const mouthLoopByBlock = new Map<string, EditorV6ExportMouthLoops['states'][number]>()
-  for (const state of mouthLoops?.states ?? []) for (const blockId of state.blockIds) mouthLoopByBlock.set(`${state.elementId}:${blockId}`, state)
+  const mouthlessSourceAssetById = new Map<string, string>()
+  for (const state of mouthLoops?.states ?? []) {
+    for (const blockId of state.blockIds) mouthLoopByBlock.set(`${state.elementId}:${blockId}`, state)
+    if (state.sourceAssetId) for (const baseAssetId of Object.values(state.baseAssetIds ?? {})) mouthlessSourceAssetById.set(baseAssetId, state.sourceAssetId)
+  }
+  const hairSourceAssetId = (element: { assetId?: string }) => element.assetId ? mouthlessSourceAssetById.get(element.assetId) ?? element.assetId : undefined
   let previous = '', previousBackground = '', previousForeground = ''
   const applyMouthLoop = (scene: ReturnType<typeof resolveEditorV6SceneAtFrame>, frame: number) => {
     if (!mouthLoops) return scene
@@ -302,7 +307,8 @@ async function initialize() {
       }
       const motion = state.frames[sampleIndex] ?? state.frames[0]
       if (!motion?.facePatch) throw Error(`A camada facial de ${element.text || element.characterId} está incompleta; a exportação foi interrompida para evitar um vídeo sem animação de boca.`)
-      return { ...element, mouthPatch: { assetId: state.assetId, ...motion.facePatch } }
+      const mouthlessAssetId = state.baseAssetIds?.[faceMode]
+      return { ...element, ...(mouthlessAssetId ? { assetId: mouthlessAssetId } : {}), mouthPatch: { assetId: state.assetId, ...motion.facePatch } }
     }) }
   }
   ;(window as unknown as { renderEditorV6ExportFrame: (frame: number, layer: 'background' | 'foreground' | undefined, paintToken: number) => Promise<EditorV6RenderFrameResult> }).renderEditorV6ExportFrame = async (frame, layer, paintToken) => {
@@ -313,7 +319,7 @@ async function initialize() {
     const hasAnimatedHair = (element: ReturnType<typeof resolveEditorV6SceneAtFrame>['elements'][number]) => element.kind === 'character' && Boolean(
       element.motionSprite
         ? transitionForFrame(element.id, frame)?.from?.layers.length
-        : element.assetId && (hairRigs.get(`${element.id}:${element.assetId}`)?.layers.length ?? 0) > 0
+        : hairSourceAssetId(element) && (hairRigs.get(`${element.id}:${hairSourceAssetId(element)}`)?.layers.length ?? 0) > 0
     )
     const activeHair = Boolean(hairAnimation && activeLayer !== 'background' && scene.elements.some(hasAnimatedHair))
     const key = editorV6VisualKey({ ...scene, mediaVideo: undefined, ...(activeHair ? { hairAnimationFrame: frame } : {}) })
@@ -382,7 +388,8 @@ async function initialize() {
           if (mouthPatch) mouthPatch = { ...mouthPatch, x: (crop.left + mouthPatch.x * crop.width) / rig.outputWidth, y: (crop.top + mouthPatch.y * crop.height) / rig.outputHeight, width: mouthPatch.width * crop.width / rig.outputWidth, height: mouthPatch.height * crop.height / rig.outputHeight }
           return { ...element, assetId, motionSprite: undefined, ...geometry, rotation: transitionFrame.rotation, flipX: transitionFrame.flipX, mouthPatch }
         }
-        const rig = original.assetId ? hairRigs.get(`${element.id}:${original.assetId}`) : undefined
+        const sourceAssetId = hairSourceAssetId(original)
+        const rig = sourceAssetId ? hairRigs.get(`${element.id}:${sourceAssetId}`) : undefined
         if (!rig) return element
         const assetId = `editor-v6-hair-motion:${element.id}`
         const asset = { id: assetId, category: 'character' as const, name: `${element.text || 'Personagem'} · cabelo animado`, mimeType: 'image/png' as const, dataUrl: composeHairFrame(rig, original, frame), timelineSnapshot: true }

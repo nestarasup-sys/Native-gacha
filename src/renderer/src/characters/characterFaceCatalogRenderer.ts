@@ -13,6 +13,7 @@ import type { HairTintOptions } from './characterImageTint'
 
 type FaceCatalogTransforms = StudioFaceTransforms | EditorV6FaceTransforms
 type FaceCatalogRenderMode = StudioFaceMode | EditorV6FaceRenderMode
+export type FaceCatalogMouthLayer = 'all' | 'without-mouth' | 'mouth-only'
 
 type CharacterFaceCatalogImageLoaders = {
   loadCachedImage: (source: string | CanvasImageSource) => Promise<HTMLImageElement>
@@ -23,7 +24,7 @@ type CharacterFaceCatalogImageLoaders = {
 
 export function createCharacterFaceCatalogRenderer(loaders: CharacterFaceCatalogImageLoaders, isBlinkMode: (mode?: FaceCatalogRenderMode) => boolean) {
   const { loadCachedImage, loadCharacterTintedImage, loadHairTintedImage, loadSkinTintedImage } = loaders
-  async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, artwork: CatalogArtwork, source: FabricatorProject, items: Partial<Record<FaceSheetKind | FaceElementKind, FaceCatalogItem>>, appearance: CustomizerFaceAppearance, skinTone?: string, studioFaceTransforms?: FaceCatalogTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: FaceCatalogRenderMode, resolveClosedEye?: ClosedEyeAssetResolver, headOverrides: CustomizerCharacter['customization']['partOverrides'] = {}, highlightedHeadId?: string | null, assetProvider: CharacterRenderAssetProvider = window.desktop.fabricator, wardrobePalettes?: Partial<Record<CustomizerWardrobePaletteKey, CharacterColorOverrides>>): Promise<void> {
+  async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, artwork: CatalogArtwork, source: FabricatorProject, items: Partial<Record<FaceSheetKind | FaceElementKind, FaceCatalogItem>>, appearance: CustomizerFaceAppearance, skinTone?: string, studioFaceTransforms?: FaceCatalogTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: FaceCatalogRenderMode, resolveClosedEye?: ClosedEyeAssetResolver, headOverrides: CustomizerCharacter['customization']['partOverrides'] = {}, highlightedHeadId?: string | null, assetProvider: CharacterRenderAssetProvider = window.desktop.fabricator, wardrobePalettes?: Partial<Record<CustomizerWardrobePaletteKey, CharacterColorOverrides>>, mouthLayer: FaceCatalogMouthLayer = 'all'): Promise<void> {
     const sourceHead = source.parts.find((part) => /cabe[çc]a|head/i.test(part.name))
     const targetHead = artwork.parts.find((part) => /cabe[çc]a|head/i.test(part.name))
     if (!sourceHead || !targetHead || sourceHead.width <= 0 || sourceHead.height <= 0) return
@@ -35,7 +36,7 @@ export function createCharacterFaceCatalogRenderer(loaders: CharacterFaceCatalog
       if (!pending) { pending = assetProvider.loadFaceComponentAsset(appearance.modelSlot, id); componentLoads.set(id, pending) }
       return pending
     }
-    await drawFaceExpressionEffects(context, artwork, targetHead, appearance, expressionEffects, 'underlay')
+    if (mouthLayer !== 'mouth-only') await drawFaceExpressionEffects(context, artwork, targetHead, appearance, expressionEffects, 'underlay')
     let mouthBlushPlacement: ExpressionEffectMouthPlacement | undefined
     const categoryIds: Partial<Record<FaceSheetKind, string | undefined>> = {
       eyes: appearance.eyeCatalogId,
@@ -45,6 +46,8 @@ export function createCharacterFaceCatalogRenderer(loaders: CharacterFaceCatalog
       'mouth-open': appearance.mouthOpen ? appearance.mouthOpenCatalogId : undefined
     }
     for (const element of faceElementOrder) {
+      if (mouthLayer === 'without-mouth' && element === 'mouth') continue
+      if (mouthLayer === 'mouth-only' && element !== 'mouth') continue
       if (element.startsWith('brow') && !appearance.eyebrows) continue
       const componentPart = element === 'eye-left' || element === 'eye-right' || element === 'brow-left' || element === 'brow-right' ? element : null
       if (componentPart) {
@@ -119,6 +122,10 @@ export function createCharacterFaceCatalogRenderer(loaders: CharacterFaceCatalog
         }
       } catch { /* Keep the rest of the face visible if one catalog asset is missing. */ }
     }
+    // The export-only mouth pass must contain exactly the selected catalog
+    // mouth. Face details, eye layers, blush, and head accessories stay in the
+    // body layer so the mouth atlas can be composited with transparent pixels.
+    if (mouthLayer === 'mouth-only') return
     const componentIds: FaceComponentPartId[] = ['eye-left', 'eye-right', 'pupil-left', 'pupil-right', 'brow-left', 'brow-right']
     const loaded = new Map<FaceComponentPartId, FaceComponentAsset>()
     await Promise.all(componentIds.map(async (part) => {
@@ -275,7 +282,7 @@ export function createCharacterFaceCatalogRenderer(loaders: CharacterFaceCatalog
       } catch { /* Keep the rest of the face visible if one detail asset is unavailable. */ }
     }
     // Paint mouth blush after the mouth bitmap so its position and rotation stay visible.
-    await drawFaceExpressionEffects(context, artwork, targetHead, appearance, expressionEffects, 'mouth', mouthBlushPlacement)
+    if (mouthLayer !== 'without-mouth') await drawFaceExpressionEffects(context, artwork, targetHead, appearance, expressionEffects, 'mouth', mouthBlushPlacement)
     for (const id of Object.values(appearance.headExtras ?? {})) {
       if (!id) continue
       const asset = await loadComponent(id)

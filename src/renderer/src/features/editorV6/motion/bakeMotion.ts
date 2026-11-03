@@ -13,10 +13,10 @@ import { motionEndpointScale } from './motionEndpointScale'
 type Renderer = Awaited<ReturnType<typeof prepareSavedCharacterRenderer>>
 type Crop = { left: number; top: number; width: number; height: number; fingerprint?: number }
 type CroppedMotionLayers = { behindFace: HTMLCanvasElement; face: HTMLCanvasElement; inFrontOfFace: HTMLCanvasElement | null }
-type MotionFrameRender = { canvas: HTMLCanvasElement; width: number; height: number; crop: Crop; renderer: Renderer; layers?: PreparedGachaLayerFrame; dispose: () => void }
+type MotionFrameRender = { canvas: HTMLCanvasElement; width: number; height: number; crop: Crop; renderer: Renderer; layers?: PreparedGachaLayerFrame; mouthCanvas?: HTMLCanvasElement; mouthCrop?: Crop; dispose: () => void }
 type BakedBodySample = { canvas: HTMLCanvasElement; crop: Crop; layers?: CroppedMotionLayers }
 type PixelBounds = { left: number; top: number; right: number; bottom: number }
-type BakedFacePatch = { index: number; canvas: HTMLCanvasElement; left: number; top: number; width: number; height: number; crop: Crop; changed: PixelBounds }
+type BakedFacePatch = { index: number; canvas: HTMLCanvasElement; left: number; top: number; width: number; height: number; crop: Crop; changed?: PixelBounds; replace?: boolean; replaceBounds?: { x: number; y: number; width: number; height: number } }
 export type EditorV6MotionLayerAtlasCapture = {
   frames: Array<Pick<EditorV6MotionFrame, 'offset' | 'sprite' | 'x' | 'y' | 'width' | 'height' | 'rotation' | 'flipX'> & { crop: Omit<Crop, 'fingerprint'>; facePatch?: EditorV6MotionFrame['facePatch'] }>
   behindFace: HTMLCanvasElement
@@ -90,17 +90,42 @@ function normalizedReplacementBounds(changed: PixelBounds, patch: PixelBounds, p
 function unionBounds(current: PixelBounds | undefined, next: PixelBounds): PixelBounds {
   return current ? { left: Math.min(current.left, next.left), top: Math.min(current.top, next.top), right: Math.max(current.right, next.right), bottom: Math.max(current.bottom, next.bottom) } : next
 }
-function cropOf(canvas: HTMLCanvasElement, fingerprint = false): Crop {
+function cropOf(canvas: HTMLCanvasElement, fingerprint = false, alphaThreshold = 8): Crop {
   const pixels = canvas.getContext('2d', { willReadFrequently: true })!.getImageData(0, 0, canvas.width, canvas.height).data
   let left = canvas.width, right = -1, top = canvas.height, bottom = -1
   let hash = 2166136261
   for (let y = 0; y < canvas.height; y++) for (let x = 0; x < canvas.width; x++) {
     const offset = (y * canvas.width + x) * 4
-    if (pixels[offset + 3] > 8) { left = Math.min(left, x); right = Math.max(right, x); top = Math.min(top, y); bottom = Math.max(bottom, y) }
+    if (pixels[offset + 3] > alphaThreshold) { left = Math.min(left, x); right = Math.max(right, x); top = Math.min(top, y); bottom = Math.max(bottom, y) }
     if (fingerprint) for (let channel = 0; channel < 4; channel++) hash = Math.imul(hash ^ pixels[offset + channel], 16777619)
   }
   if (right < left) return { left: 0, top: 0, width: 1, height: 1, ...(fingerprint ? { fingerprint: hash >>> 0 } : {}) }
   return { left, top, width: right - left + 1, height: bottom - top + 1, ...(fingerprint ? { fingerprint: hash >>> 0 } : {}) }
+}
+function alphaPatchCanvas(source: HTMLCanvasElement, bounds: Crop, gutter = 2): HTMLCanvasElement {
+  const patch = document.createElement('canvas')
+  patch.width = bounds.width + gutter * 2; patch.height = bounds.height + gutter * 2
+  const context = patch.getContext('2d')
+  if (!context) throw Error('Não foi possível preparar o recorte transparente da boca.')
+  // The gutter stays transparent so bilinear sampling cannot pull neighboring
+  // atlas frames into the antialiased mouth edge.
+  context.drawImage(source, bounds.left, bounds.top, bounds.width, bounds.height, gutter, gutter, bounds.width, bounds.height)
+  return patch
+}
+function croppedCanvas(source: HTMLCanvasElement, bounds: Crop): HTMLCanvasElement {
+  const crop = document.createElement('canvas'); crop.width = bounds.width; crop.height = bounds.height
+  const context = crop.getContext('2d')
+  if (!context) throw Error('Não foi possível preparar a base do personagem sem boca.')
+  context.drawImage(source, bounds.left, bounds.top, bounds.width, bounds.height, 0, 0, bounds.width, bounds.height)
+  return crop
+}
+function unionCrop(left: Crop, right: Crop): Crop {
+  const x = Math.min(left.left, right.left), y = Math.min(left.top, right.top)
+  const rightEdge = Math.max(left.left + left.width, right.left + right.width), bottomEdge = Math.max(left.top + left.height, right.top + right.height)
+  return { left: x, top: y, width: rightEdge - x, height: bottomEdge - y }
+}
+function isBlinkUnavailable(error: unknown): boolean {
+  return error instanceof Error && /Blink precisa|olho fechado correspondente|Selecione olhos do catálogo|assets de Olhos Dev/.test(error.message)
 }
 function cachedProvider(provider: CharacterRenderAssetProvider, sharedOnly = false): CharacterRenderAssetProvider {
   const cache = new Map<string, Promise<unknown>>()
@@ -201,9 +226,12 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
     const renderer = preparedRenderer ?? await prepare(progress), face = scaleMouthForExport(interpolateEditorV6Face(from, to, progress), mouthScale)
     try {
       const mode = faceMode ?? face.mode
-      const result = await renderer.renderToCanvas(face.appearance, face.transforms, face.effects, referenceMode ? mode : editorV6FaceModeDuringMotion(mode))
-      const layers = captureLayers ? await renderer.renderLayersToCanvas(face.appearance, face.transforms, face.effects, referenceMode ? mode : editorV6FaceModeDuringMotion(mode)) : undefined
-      return { ...result, crop: cropOf(result.canvas, fingerprint), renderer, ...(layers ? { layers } : {}), dispose: () => { if (!samePose && !preparedRenderer) renderer.dispose() } }
+      const renderMode = referenceMode ? mode : editorV6FaceModeDuringMotion(mode)
+      const isolateMouth = Boolean(request.mouthScaleSamples && (mode === 'talk' || mode === 'talk-blink') && renderer.canIsolateMouth(face.appearance))
+      const result = await renderer.renderToCanvas(face.appearance, face.transforms, face.effects, renderMode, isolateMouth ? { mouthLayer: 'without-mouth' } : undefined)
+      const mouth = isolateMouth ? await renderer.renderMouthToCanvas(face.appearance, face.transforms, face.effects, renderMode) : undefined
+      const layers = captureLayers ? await renderer.renderLayersToCanvas(face.appearance, face.transforms, face.effects, renderMode, isolateMouth ? { mouthLayer: 'without-mouth' } : undefined) : undefined
+      return { ...result, crop: cropOf(result.canvas, fingerprint), renderer, ...(layers ? { layers } : {}), ...(mouth ? { mouthCanvas: mouth.canvas, mouthCrop: cropOf(mouth.canvas, fingerprint, 0) } : {}), dispose: () => { if (!samePose && !preparedRenderer) renderer.dispose() } }
     } catch (error) { if (!samePose && !preparedRenderer) renderer.dispose(); throw error }
   }
   try {
@@ -213,6 +241,93 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
     if (staticMouthLoop) {
       const scales = request.mouthScaleSamples!
       const baseline = await render(0, from.activeFaceMode, 1, true)
+      if (baseline.mouthCanvas && baseline.mouthCrop) {
+        const fullTalk = await baseline.renderer.renderToCanvas(from.faceAppearance, from.faceTransforms, from.activeExpressionEffects, from.activeFaceMode, { mouthLayer: 'all' })
+        let sourceCrop = cropOf(fullTalk.canvas, false, 0)
+        try {
+          const fullTalkBlink = await baseline.renderer.renderToCanvas(from.faceAppearance, from.faceTransforms, from.activeExpressionEffects, 'talk-blink', { mouthLayer: 'all' })
+          sourceCrop = unionCrop(sourceCrop, cropOf(fullTalkBlink.canvas, false, 0))
+        } catch (error) { if (!isBlinkUnavailable(error)) throw error }
+        const isolatedBaseline = await render(0, from.activeFaceMode, 1, true, baseline.renderer, true)
+        const baseTalkId = crypto.randomUUID()
+        const baseTalkCanvas = croppedCanvas(isolatedBaseline.canvas, sourceCrop)
+        const baseTalkDataUrl = baseTalkCanvas.toDataURL('image/png')
+        const mouthlessBaseAssets: NonNullable<EditorV6MotionBakeResult['mouthlessBaseAssets']> = [{
+          faceMode: 'talk', asset: { id: baseTalkId, category: 'character', name: 'Personagem sem boca · fala', mimeType: 'image/png', dataUrl: baseTalkDataUrl, timelineSnapshot: true }
+        }]
+        baseTalkCanvas.width = baseTalkCanvas.height = 1
+        try {
+          const talkBlink = await render(0, 'talk-blink', 1, false, isolatedBaseline.renderer, true)
+          try {
+            const baseTalkBlinkId = crypto.randomUUID()
+            const baseTalkBlinkCanvas = croppedCanvas(talkBlink.canvas, sourceCrop)
+            mouthlessBaseAssets.push({ faceMode: 'talk-blink', asset: { id: baseTalkBlinkId, category: 'character', name: 'Personagem sem boca · fala e piscada', mimeType: 'image/png', dataUrl: baseTalkBlinkCanvas.toDataURL('image/png'), timelineSnapshot: true } })
+            baseTalkBlinkCanvas.width = baseTalkBlinkCanvas.height = 1
+          } finally { talkBlink.dispose() }
+        } catch (error) {
+          if (!isBlinkUnavailable(error)) throw error
+          mouthlessBaseAssets.push({ faceMode: 'talk-blink', asset: { id: crypto.randomUUID(), category: 'character', name: 'Personagem sem boca · fala e piscada', mimeType: 'image/png', dataUrl: baseTalkDataUrl, timelineSnapshot: true } })
+        }
+
+        const isolatedPatches: Array<{ canvas: HTMLCanvasElement; crop: Crop }> = []
+        let mouthAtlas: HTMLCanvasElement | undefined
+        try {
+          const baselineMouthCrop = isolatedBaseline.mouthCrop!
+          isolatedPatches.push({ canvas: alphaPatchCanvas(isolatedBaseline.mouthCanvas!, baselineMouthCrop), crop: baselineMouthCrop })
+          for (let index = 1; index < scales.length; index++) {
+            const comparison = await render(0, from.activeFaceMode, scales[index], index === scales.length - 1, baseline.renderer)
+            try {
+              if (!comparison.mouthCanvas || !comparison.mouthCrop) throw Error('Não foi possível isolar a peça da boca para o ciclo de fala.')
+              if (index === scales.length - 1 && comparison.mouthCrop.fingerprint === baselineMouthCrop.fingerprint) throw Error('A boca aberta não respondeu à ampliação; confira se o personagem tem uma variante de boca aberta editável no catálogo facial.')
+              isolatedPatches.push({ canvas: alphaPatchCanvas(comparison.mouthCanvas, comparison.mouthCrop), crop: comparison.mouthCrop })
+            } finally { comparison.dispose() }
+          }
+          const mouthUnion = isolatedPatches.reduce((bounds, patch) => unionCrop(bounds, patch.crop), isolatedPatches[0].crop)
+          for (const patch of isolatedPatches) {
+            const normalized = document.createElement('canvas')
+            normalized.width = mouthUnion.width + 4; normalized.height = mouthUnion.height + 4
+            const normalizedContext = normalized.getContext('2d')!
+            normalizedContext.drawImage(patch.canvas, 2, 2, patch.crop.width, patch.crop.height,
+              2 + patch.crop.left - mouthUnion.left, 2 + patch.crop.top - mouthUnion.top, patch.crop.width, patch.crop.height)
+            patch.canvas.width = patch.canvas.height = 1
+            patch.canvas = normalized
+            patch.crop = mouthUnion
+          }
+          const count = request.plan.samples.length, gutter = 2
+          const cellWidth = Math.max(...isolatedPatches.map(patch => patch.canvas.width))
+          const cellHeight = Math.max(...isolatedPatches.map(patch => patch.canvas.height))
+          const layout = chooseMotionAtlasLayout(count, cellWidth, cellHeight, 8192, Math.min(8_000_000, request.maxAtlasPixels ?? 8_000_000))
+          if (layout.ratio < 1) throw Error(`A camada facial em resolução nativa precisa de ${layout.pixels.toLocaleString('pt-BR')} pixels e excede o limite seguro; reduza o número de personagens falando simultaneamente neste trecho.`)
+          const { columns, width: atlasWidth, height: atlasHeight, pixels: atlasPixels } = layout
+          mouthAtlas = document.createElement('canvas'); mouthAtlas.width = atlasWidth; mouthAtlas.height = atlasHeight
+          const context = mouthAtlas.getContext('2d')!
+          const frames: EditorV6MotionFrame[] = []
+          for (const [index, sample] of request.plan.samples.entries()) {
+            const patch = isolatedPatches[index]
+            if (!patch) throw Error('O ciclo de fala não contém uma amostra isolada da boca.')
+            const cellX = index % columns * cellWidth, cellY = Math.floor(index / columns) * cellHeight
+            const spriteX = cellX + gutter, spriteY = cellY + gutter
+            const mouthCrop = patch.crop
+            const x = (mouthCrop.left - sourceCrop.left) / sourceCrop.width, y = (mouthCrop.top - sourceCrop.top) / sourceCrop.height
+            const width = mouthCrop.width / sourceCrop.width, height = mouthCrop.height / sourceCrop.height
+            if (x < -0.000001 || y < -0.000001 || x + width > 1.000001 || y + height > 1.000001) throw Error('A boca isolada ficou fora do recorte corporal usado pelo personagem.')
+            context.drawImage(patch.canvas, cellX, cellY)
+            const sprite = { x: spriteX, y: spriteY, width: mouthCrop.width, height: mouthCrop.height, atlasWidth, atlasHeight }
+            frames.push({ offset: sample.offset, sprite, x: Math.max(0, x), y: Math.max(0, y), width, height, rotation: from.rotation, flipX: Boolean(from.flipX), facePatch: { sprite, x: Math.max(0, x), y: Math.max(0, y), width, height } })
+          }
+          const assetId = crypto.randomUUID(), dataUrl = mouthAtlas.toDataURL('image/png')
+          return {
+            asset: { id: assetId, category: 'character', name: 'Atlas isolado da boca', mimeType: 'image/png', dataUrl, timelineSnapshot: true },
+            assetRole: 'face-atlas', mouthIsolationMode: 'isolated-piece', mouthlessBaseAssets,
+            motion: { version: 1, key: request.plan.key, assetId, frames },
+            metrics: { milliseconds: performance.now() - began, preparedRigs, samples: count, atlasPixels }
+          }
+        } finally {
+          isolatedPatches.forEach(({ canvas }) => { canvas.width = canvas.height = 1 })
+          if (mouthAtlas) mouthAtlas.width = mouthAtlas.height = 1
+          baseline.dispose(); isolatedBaseline.dispose()
+        }
+      }
       const baselineContext = baseline.canvas.getContext('2d', { willReadFrequently: true })!
       const baselinePixels = new Uint8ClampedArray(baselineContext.getImageData(0, 0, baseline.width, baseline.height).data)
       const sourceCrop = baseline.crop
@@ -254,7 +369,7 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
       }
       const assetId = crypto.randomUUID(), dataUrl = atlas.toDataURL('image/png')
       atlas.width = atlas.height = 1
-      return { asset: { id: assetId, category: 'character', name: 'Camada facial da boca', mimeType: 'image/png', dataUrl, timelineSnapshot: true }, assetRole: 'face-atlas', motion: { version: 1, key: request.plan.key, assetId, frames }, metrics: { milliseconds: performance.now() - began, preparedRigs, samples: count, atlasPixels } }
+      return { asset: { id: assetId, category: 'character', name: 'Camada facial da boca', mimeType: 'image/png', dataUrl, timelineSnapshot: true }, assetRole: 'face-atlas', mouthIsolationMode: 'legacy-patch', motion: { version: 1, key: request.plan.key, assetId, frames }, metrics: { milliseconds: performance.now() - began, preparedRigs, samples: count, atlasPixels } }
     }
     const first = await render(0, staticMouthLoop ? from.activeFaceMode : undefined, 1, Boolean(request.mouthScaleSamples)), fullWidth = first.width, fullHeight = first.height
     // Static character assets use the union of all face-mode bounds. Motion
@@ -291,9 +406,17 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
     const frames: EditorV6MotionFrame[] = []
     const facePatches: BakedFacePatch[] = pendingFacePatches = []
     const prepareFacePatch = async (index: number, sample: { faceMode?: EditorV6FaceRenderMode }, t: number, mouthScale: number, frame: MotionFrameRender) => {
-      if (!request.mouthScaleSamples || sample.faceMode !== 'talk' || mouthScale <= 1.000001) return
-      const baselinePixels = new Uint8ClampedArray(frame.canvas.getContext('2d', { willReadFrequently: true })!.getImageData(0, 0, frame.width, frame.height).data)
+      if (!request.mouthScaleSamples || (sample.faceMode !== 'talk' && sample.faceMode !== 'talk-blink')) return
+      if (mouthScale <= 1.000001 && !frame.mouthCanvas) return
       const scaled = await render(t, sample.faceMode, mouthScale, false, frame.renderer)
+      if (scaled.mouthCanvas && scaled.mouthCrop) {
+        try {
+          const patch = alphaPatchCanvas(scaled.mouthCanvas, scaled.mouthCrop)
+          facePatches.push({ index, canvas: patch, left: scaled.mouthCrop.left, top: scaled.mouthCrop.top, width: scaled.mouthCrop.width, height: scaled.mouthCrop.height, crop: frame.crop })
+        } finally { scaled.dispose() }
+        return
+      }
+      const baselinePixels = new Uint8ClampedArray(frame.canvas.getContext('2d', { willReadFrequently: true })!.getImageData(0, 0, frame.width, frame.height).data)
       try {
         const pixels = scaled.canvas.getContext('2d', { willReadFrequently: true })!.getImageData(0, 0, scaled.width, scaled.height).data
         const changed = changedBounds(baselinePixels, pixels, scaled.width, scaled.height)
@@ -303,7 +426,7 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
         const right = Math.min(frame.crop.left + frame.crop.width - 1, changed.right + padding), bottom = Math.min(frame.crop.top + frame.crop.height - 1, changed.bottom + padding)
         const patchWidth = right - left + 1, patchHeight = bottom - top + 1
         const patchCanvas = changedPixelPatch(scaled.canvas, { left, top, right, bottom })
-        facePatches.push({ index, canvas: patchCanvas, left, top, width: patchWidth, height: patchHeight, crop: frame.crop, changed })
+        facePatches.push({ index, canvas: patchCanvas, left, top, width: patchWidth, height: patchHeight, crop: frame.crop, changed, replace: true })
       } finally { scaled.dispose() }
     }
     if (ratio < 1) {
@@ -389,7 +512,7 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
     }
     let faceAsset: EditorV6MotionBakeResult['faceAsset']
     if (facePatches.length) {
-      const gutter = 2, faceWidth = facePatches.reduce((total, patch) => total + patch.width + gutter * 2, 0), faceHeight = Math.max(...facePatches.map((patch) => patch.height)) + gutter * 2
+      const gutter = 2, faceWidth = facePatches.reduce((total, patch) => total + patch.canvas.width, 0), faceHeight = Math.max(...facePatches.map((patch) => patch.canvas.height))
       const facePixels = faceWidth * faceHeight, bodyPixels = atlas.width * atlas.height
       if (faceWidth > 8192 || faceHeight > 8192 || facePixels + bodyPixels > maxAtlasPixels) throw Error('As camadas faciais desta transição excedem o limite seguro em resolução nativa. A exportação foi interrompida para não reduzir a nitidez do personagem.')
       const faceAtlas = document.createElement('canvas'); faceAtlas.width = faceWidth; faceAtlas.height = faceHeight
@@ -398,9 +521,13 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
       for (const patch of facePatches) {
         faceContext.drawImage(patch.canvas, offsetX, 0)
         const frame = frames[patch.index]
-        frame.facePatch = { sprite: { x: offsetX + gutter, y: gutter, width: patch.width, height: patch.height, atlasWidth: faceWidth, atlasHeight: faceHeight }, x: (patch.left - patch.crop.left) / patch.crop.width, y: (patch.top - patch.crop.top) / patch.crop.height, width: patch.width / patch.crop.width, height: patch.height / patch.crop.height, replace: true,
-          replaceBounds: normalizedReplacementBounds(patch.changed, { left: patch.left, top: patch.top, right: patch.left + patch.width - 1, bottom: patch.top + patch.height - 1 }) }
-        offsetX += patch.width + gutter * 2
+        frame.facePatch = {
+          sprite: { x: offsetX + gutter, y: gutter, width: patch.width, height: patch.height, atlasWidth: faceWidth, atlasHeight: faceHeight },
+          x: (patch.left - patch.crop.left) / patch.crop.width, y: (patch.top - patch.crop.top) / patch.crop.height,
+          width: patch.width / patch.crop.width, height: patch.height / patch.crop.height,
+          ...(patch.replace ? { replace: true, replaceBounds: normalizedReplacementBounds(patch.changed!, { left: patch.left, top: patch.top, right: patch.left + patch.width - 1, bottom: patch.top + patch.height - 1 }) } : {})
+        }
+        offsetX += patch.canvas.width
         patch.canvas.width = patch.canvas.height = 1
       }
       const faceAssetId = crypto.randomUUID(), assetId = crypto.randomUUID()

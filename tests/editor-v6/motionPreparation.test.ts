@@ -460,6 +460,43 @@ describe('transition preparation reuse', () => {
       expect(await cache.read(request)).toEqual(result)
     } finally { await rm(folder, { recursive: true, force: true }) }
   })
+  it('preserves mouth isolation mode through IPC and cache contracts', async () => {
+    const { request: original } = fixture()
+    const state = { ...original.plan.from, activeFaceMode: 'talk' as const }
+    const samples = original.plan.samples.map((sample) => ({ ...sample, faceMode: 'talk' as const }))
+    const request: EditorV6MotionBakeRequest = {
+      ...original,
+      mouthScaleSamples: [1, 1.05, 1.1, 1.05, 1, 1.05, 1],
+      plan: { ...original.plan, from: state, to: { ...state }, samples }
+    }
+    const base = staticMouthAtlasResultFor(request)
+    const legacy = { ...base, mouthIsolationMode: 'legacy-patch' as const }
+    expect(editorV6MotionResultSchema.parse(legacy).mouthIsolationMode).toBe('legacy-patch')
+
+    const isolated = {
+      ...base,
+      mouthIsolationMode: 'isolated-piece' as const,
+      mouthlessBaseAssets: (['talk', 'talk-blink'] as const).map((faceMode) => ({
+        faceMode,
+        asset: { id: crypto.randomUUID(), category: 'character' as const, mimeType: 'image/png' as const, name: `Base sem boca · ${faceMode}`, dataUrl: 'data:image/png;base64,AA==', timelineSnapshot: true }
+      })),
+      motion: {
+        ...base.motion,
+        frames: base.motion.frames.map((frame) => ({
+          ...frame,
+          facePatch: { ...frame.facePatch!, replace: undefined, replaceBounds: undefined }
+        }))
+      }
+    }
+    expect(editorV6MotionResultSchema.parse(isolated).mouthIsolationMode).toBe('isolated-piece')
+    expect(editorV6MotionResultSchema.safeParse({ ...isolated, mouthlessBaseAssets: isolated.mouthlessBaseAssets.slice(0, 1) }).success).toBe(false)
+    const folder = await mkdtemp(join(tmpdir(), 'v6-motion-isolated-mouth-cache-'))
+    try {
+      const cache = createMotionDiskCache(folder)
+      await cache.write(request, isolated)
+      await expect(cache.read(request)).resolves.toEqual(isolated)
+    } finally { await rm(folder, { recursive: true, force: true }) }
+  })
   it('rejects modified payloads and bounds retained disk bytes', async () => {
     const folder = await mkdtemp(join(tmpdir(), 'v6-motion-cache-limits-'))
     try {

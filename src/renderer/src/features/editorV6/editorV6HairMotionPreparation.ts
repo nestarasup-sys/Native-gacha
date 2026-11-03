@@ -179,9 +179,10 @@ export async function prepareEditorV6HairMotionBundle(
         const faceTransforms = state.faceTransforms ?? state.expressionBase?.transforms
         const effects = state.activeExpressionEffects
         const mode = target.faceMode
+        const hideMouthForExportLoop = Boolean(exportOptions.mouthLoop && (mode === 'talk' || mode === 'talk-blink') && hairlessRenderer.canIsolateMouth(currentAppearance))
         const [originalFrame, splitFrame] = await Promise.all([
           originalRenderer.renderToCanvas(currentAppearance, faceTransforms, effects, mode),
-          hairlessRenderer.renderLayersToCanvas(currentAppearance, faceTransforms, effects, mode)
+          hairlessRenderer.renderLayersToCanvas(currentAppearance, faceTransforms, effects, mode, hideMouthForExportLoop ? { mouthLayer: 'without-mouth' } : undefined)
         ])
         const faceKey = JSON.stringify([currentAppearance, faceTransforms, effects])
         let sourceCrop = cropByFace.get(faceKey)

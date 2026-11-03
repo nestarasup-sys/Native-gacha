@@ -4,7 +4,7 @@ import type { EditorV6Asset, EditorV6Document, EditorV6Element, EditorV6FaceRend
 import type { CharacterRenderAssetProvider } from './characterRenderAssets'
 import { editorV6FaceModeAtFrame, editorV6FaceModeDuringMotion } from './editorV6FaceSchedule'
 
-export const EDITOR_V6_MOTION_VERSION = 9
+export const EDITOR_V6_MOTION_VERSION = 10
 export const EDITOR_V6_MOTION_MS = 250
 export type EditorV6MotionSprite = { x: number; y: number; width: number; height: number; atlasWidth: number; atlasHeight: number }
 export type EditorV6FacePatch = { sprite: EditorV6MotionSprite; x: number; y: number; width: number; height: number; replace?: boolean; replaceBounds?: { x: number; y: number; width: number; height: number } }
@@ -18,8 +18,12 @@ export type EditorV6MotionBakeRequest = { id: string; plan: EditorV6MotionPlan; 
 export type EditorV6MotionBakeResult = {
   asset: EditorV6Asset
   faceAsset?: EditorV6Asset
+  /** Export-only base variants keep the canonical face intact except for the separately drawn mouth. */
+  mouthlessBaseAssets?: Array<{ faceMode: 'talk' | 'talk-blink'; asset: EditorV6Asset }>
   /** The primary asset itself is a localized face-patch atlas, used only for static mouth loops. */
   assetRole?: 'face-atlas'
+  /** Records whether the export loop contains only the catalog mouth or uses the compatible legacy patch. */
+  mouthIsolationMode?: 'isolated-piece' | 'legacy-patch'
   motion: EditorV6MotionAtlas
   metrics: { milliseconds: number; preparedRigs: number; samples: number; atlasPixels: number }
 }

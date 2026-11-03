@@ -13,7 +13,7 @@ export type EditorV6ExportStatus = {
   frames: number; totalFrames: number; message: string; fallback: boolean; motionProgress?: { completed: number; total: number }; outputPath?: string; reportPath?: string; error?: string
 }
 export type EditorV6ExportPart = { index: number; startFrame: number; endFrame: number }
-export type EditorV6ExportMouthLoopState = { elementId: string; characterId: string; blockIds: string[]; assetId: string; frames: EditorV6MotionFrame[] }
+export type EditorV6ExportMouthLoopState = { elementId: string; characterId: string; blockIds: string[]; assetId: string; sourceAssetId?: string; baseAssetIds?: Partial<Record<'talk' | 'talk-blink', string>>; frames: EditorV6MotionFrame[] }
 export type EditorV6ExportMouthLoops = { startFrame: number; cycleFrames: number; states: EditorV6ExportMouthLoopState[] }
 export const EDITOR_V6_MOUTH_LOOP_SAMPLE_SCALES = [1, 1.05, 1.05 * 1.05] as const
 export function editorV6MouthLoopScaleAtFrame(frame: number, startFrame: number, cycleFrames: number): number {

@@ -109,27 +109,39 @@ export const editorV6MotionAtlasSchema = z.object({ version: z.literal(1), key: 
 export const editorV6MotionResultSchema = z.object({
   asset: editorV6AssetSchema,
   faceAsset: editorV6AssetSchema.optional(),
+  mouthlessBaseAssets: z.array(z.object({ faceMode: z.enum(['talk', 'talk-blink']), asset: editorV6AssetSchema })).max(2).optional(),
   assetRole: z.literal('face-atlas').optional(),
+  mouthIsolationMode: z.enum(['isolated-piece', 'legacy-patch']).optional(),
   motion: editorV6MotionAtlasSchema,
   metrics: z.object({ milliseconds: finite.min(0), preparedRigs: z.number().int().min(1).max(9), samples: z.number().int().min(1).max(7), atlasPixels: z.number().int().min(1).max(8_100_000) })
 }).refine((result) => {
   const hasFacePatches = result.motion.frames.some((frame) => frame.facePatch)
+  const mouthlessBaseAssets = result.mouthlessBaseAssets ?? []
+  const validMouthlessBaseAssets = mouthlessBaseAssets.length <= 2
+    && new Set(mouthlessBaseAssets.map((entry) => entry.faceMode)).size === mouthlessBaseAssets.length
+    && mouthlessBaseAssets.every((entry) => entry.asset.category === 'character' && entry.asset.mimeType === 'image/png')
+  const validMouthIsolationMode = result.mouthIsolationMode === undefined
+    || result.assetRole === 'face-atlas' && (result.mouthIsolationMode === 'isolated-piece'
+      ? mouthlessBaseAssets.length === 2 && result.motion.frames.every((frame) => frame.facePatch?.replace !== true)
+      : mouthlessBaseAssets.length === 0 && result.motion.frames.every((frame) => frame.facePatch?.replace === true && Boolean(frame.facePatch.replaceBounds)))
   const validPrimaryAsset = result.asset.id === result.motion.assetId && result.asset.category === 'character' && result.asset.mimeType === 'image/png'
   const selfContainedFaceAtlas = result.assetRole === 'face-atlas'
     && !result.faceAsset && !result.motion.faceAssetId
     && result.motion.frames.length > 0
     && result.motion.frames.every((frame) => {
       const patch = frame.facePatch
-      return Boolean(patch?.replace && patch.replaceBounds
+      const sameAtlasSprite = Boolean(patch
         && frame.sprite.x === patch.sprite.x && frame.sprite.y === patch.sprite.y
         && frame.sprite.width === patch.sprite.width && frame.sprite.height === patch.sprite.height
         && frame.sprite.atlasWidth === patch.sprite.atlasWidth && frame.sprite.atlasHeight === patch.sprite.atlasHeight)
+      const validPatchMode = patch?.replace === true ? Boolean(patch.replaceBounds) : mouthlessBaseAssets.length === 2
+      return sameAtlasSprite && validPatchMode
     })
   const separateFaceAtlas = result.assetRole === undefined
     && Boolean(result.faceAsset) === Boolean(result.motion.faceAssetId)
     && (!result.faceAsset || result.faceAsset.id === result.motion.faceAssetId && result.faceAsset.category === 'character' && result.faceAsset.mimeType === 'image/png')
     && (!hasFacePatches || Boolean(result.motion.faceAssetId && result.faceAsset?.id === result.motion.faceAssetId))
-  return validPrimaryAsset && (selfContainedFaceAtlas || separateFaceAtlas)
+  return validPrimaryAsset && validMouthlessBaseAssets && validMouthIsolationMode && (selfContainedFaceAtlas || separateFaceAtlas)
 }, 'Atlas de animação inválido.')
 export function parseEditorV6MotionRequest(value: unknown): EditorV6MotionBakeRequest {
   return z.object({ id: uuid, character: z.object({ id: z.string(), customization: z.object({}).passthrough() }).passthrough(), plan: z.object({ blockId: uuid, elementId: uuid, characterId: z.string(), key: z.string().max(65536), startFrame: finite.min(0), endFrame: z.number().int().min(1).max(1_000_000), from: editorV6ElementSchema, to: editorV6ElementSchema, samples: z.array(z.object({ offset: z.number().int().min(-7).max(-1), progress: finite.gt(0).lt(1), faceMode: z.enum(['idle', 'blink', 'talk', 'talk-blink']).optional() })).min(1).max(7) }), mouthScaleSamples: z.array(finite.min(1).max(3)).min(1).max(7).optional(), maxAtlasPixels: z.number().int().min(1).max(8_000_000).optional() }).parse(value) as unknown as EditorV6MotionBakeRequest
