@@ -11,7 +11,7 @@ const eventB = {
   code: 'storage.read-warning', domain: 'storage', message: '[caminho local]'
 }
 
-function harness({ canceled = false } = {}) {
+function harness({ canceled = false, filePath = 'C:\\reports\\filtered.json' } = {}) {
   const handlers = new Map()
   const calls = { list: 0, saveDialog: [], writes: [] }
   registerDiagnosticsHandlers({
@@ -27,7 +27,7 @@ function harness({ canceled = false } = {}) {
     getStorageSummary: async () => { throw new Error('unexpected storage read') },
     listBackups: async () => { throw new Error('unexpected backup read') },
     getAppVersion: () => '1.0.0',
-    showSaveDialog: async (_event, options) => { calls.saveDialog.push(options); return canceled ? { canceled: true } : { canceled: false, filePath: 'C:\\reports\\filtered.json' } },
+    showSaveDialog: async (_event, options) => { calls.saveDialog.push(options); return canceled ? { canceled: true } : { canceled: false, filePath } },
     writeFile: async (path, data) => calls.writes.push({ path, report: JSON.parse(data) })
   })
   return { handler: handlers.get('app:diagnostics:export-events'), calls }
@@ -43,6 +43,13 @@ test('exports only selected sanitized IDs in requested order through a trusted l
   assert.deepEqual(calls.writes[0].report.events.map(({ id }) => id), [eventB.id, eventA.id])
   assert.equal(calls.writes[0].report.format, 'native-gacha-diagnostic-events-v1')
   assert.equal(calls.writes[0].report.privacy.reviewBeforeSharing, true)
+})
+
+test('returns only a filename when the save dialog uses a POSIX path', async () => {
+  const { handler, calls } = harness({ filePath: '/tmp/native-gacha/filtered-posix.json' })
+  const result = await handler({ trusted: true }, [eventA.id])
+  assert.deepEqual(result, { saved: true, fileName: 'filtered-posix.json', eventCount: 1 })
+  assert.equal(calls.writes[0].path, '/tmp/native-gacha/filtered-posix.json')
 })
 
 test('rejects untrusted senders and invalid or oversized ID selections before showing the dialog', async () => {
