@@ -2454,7 +2454,6 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .wardrobe-reference-body-part.movable:active { cursor:grabbing; }
 .wardrobe-preview-part { cursor:grab;touch-action:none;user-select:none; }
 .wardrobe-preview-part:active { cursor:grabbing; }
-.wardrobe-preview-part.selected { filter:drop-shadow(0 0 2px #e15683) drop-shadow(0 0 4px #e156835e); }
 .wardrobe-pose-garment { position:absolute;pointer-events:none; }
 .wardrobe-pose-garment>.wardrobe-preview-part { position:absolute;pointer-events:auto; }
 .wardrobe-pose-body-part { pointer-events:none; }
