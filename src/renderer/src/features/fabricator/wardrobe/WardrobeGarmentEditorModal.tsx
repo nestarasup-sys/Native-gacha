@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import { createPortal } from 'react-dom'
 import { Icon } from '../../../ui/components/Icon'
 import type { WardrobeComponent } from '../../../../../shared/fabricator'
+import { reprocessWardrobeGreenChroma } from './wardrobeChroma'
 
 type GarmentFrame = Pick<WardrobeComponent, 'x' | 'y' | 'width' | 'height' | 'rotation'>
 type BodyReference = GarmentFrame & { name: string; dataUrl: string }
@@ -454,6 +455,24 @@ export function WardrobeGarmentEditorModal({ component, previewBackground, bodyR
     drawStage()
   }
 
+  const reprocessChroma = () => {
+    const canvas = workingCanvasRef.current
+    const context = canvas?.getContext('2d', { willReadFrequently: true })
+    if (!canvas || !context || busy) return
+    if (canvas.width * canvas.height > MAX_COLOR_EDIT_PIXELS) {
+      setMessage('O reprocessamento está limitado a imagens de até 6 megapixels.')
+      return
+    }
+    const before = captureSnapshot()
+    const image = context.getImageData(0, 0, canvas.width, canvas.height)
+    const changed = reprocessWardrobeGreenChroma(image.data, canvas.width, canvas.height)
+    if (!changed) { setMessage('Não encontrei resíduos verdes nas bordas desta peça.'); return }
+    context.putImageData(image, 0, 0)
+    recordEdit(before)
+    setMessage(`Chroma reprocessado em ${changed.toLocaleString('pt-BR')} pixels. Confira a prévia e desfaça se necessário.`)
+    drawStage()
+  }
+
   const restoreOriginal = () => {
     const original = originalImageRef.current
     const canvas = workingCanvasRef.current
@@ -536,6 +555,11 @@ export function WardrobeGarmentEditorModal({ component, previewBackground, bodyR
             <label className="wardrobe-image-editor-range"><span><b>Tamanho do pincel</b><output>{brushSize}px</output></span><input type="range" min="4" max="160" step="1" value={brushSize} disabled={!ready || busy} onChange={(event) => setBrushSize(Number(event.target.value))} /></label>
             <label className="wardrobe-image-editor-range"><span><b>Força</b><output>{brushStrength}%</output></span><input type="range" min="10" max="100" step="1" value={brushStrength} disabled={!ready || busy} onChange={(event) => setBrushStrength(Number(event.target.value))} /></label>
             <small className="wardrobe-image-editor-help">Apague a borda com a borracha ou pinte de volta a partir da imagem original.</small>
+          </section>
+          <section className="wardrobe-image-editor-section">
+            <h3>Chroma key</h3>
+            <button className="wardrobe-image-editor-color-remove" type="button" disabled={!ready || busy} onClick={reprocessChroma}><Icon name="sparkles" /> Reprocessar chroma key</button>
+            <small className="wardrobe-image-editor-help">Limpa resíduos verdes ligados às bordas transparentes. Confira o resultado e use Desfazer se precisar.</small>
           </section>
           <section className="wardrobe-image-editor-section">
             <h3>Remover contorno por cor</h3>
