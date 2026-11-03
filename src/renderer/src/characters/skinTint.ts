@@ -72,12 +72,13 @@ export function fillEnclosedTransparentSkin(image: ImageData, baseTone = MODEL_S
     const pixel = queue[head++]
     const x = pixel % width
     const y = Math.floor(pixel / width)
-    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
-      if (dx === 0 && dy === 0) continue
-      const nx = x + dx
-      const ny = y + dy
-      if (nx >= 0 && ny >= 0 && nx < width && ny < height) enqueue(ny * width + nx)
-    }
+    // A 4-neighbor flood treats diagonally touching outline pixels as a closed
+    // boundary; an 8-neighbor flood leaks through their shared corners and can
+    // leave checkerboard-colored skin slivers just inside the contour.
+    if (x > 0) enqueue(pixel - 1)
+    if (x + 1 < width) enqueue(pixel + 1)
+    if (y > 0) enqueue(pixel - width)
+    if (y + 1 < height) enqueue(pixel + width)
   }
   const target = [1, 3, 5].map((index) => Number.parseInt(baseTone.slice(index, index + 2), 16))
   let filled = 0
@@ -118,8 +119,49 @@ export function fillEnclosedTransparentSkin(image: ImageData, baseTone = MODEL_S
   return filled
 }
 
+type SkinTintOptions = {
+  /** Recover pale opaque pixels along isolated model-piece edges, without crossing the ink contour. */
+  recoverPaleModelEdges?: boolean
+  protectedOutlineMask?: Uint8Array | null
+}
+
+function extendMaskToPaleModelEdges(image: ImageData, mask: Uint8Array, protectedOutlineMask?: Uint8Array | null): void {
+  const { data, width, height } = image
+  const count = width * height
+  const maxDistance = 4
+  const distance = new Uint8Array(count)
+  const queue = new Int32Array(count)
+  let head = 0
+  let tail = 0
+  for (let pixel = 0; pixel < count; pixel++) if (mask[pixel]) queue[tail++] = pixel
+
+  while (head < tail) {
+    const pixel = queue[head++]
+    const currentDistance = distance[pixel]
+    if (currentDistance >= maxDistance) continue
+    const x = pixel % width
+    const y = Math.floor(pixel / width)
+    for (let ny = Math.max(0, y - 1); ny <= Math.min(height - 1, y + 1); ny++) {
+      for (let nx = Math.max(0, x - 1); nx <= Math.min(width - 1, x + 1); nx++) {
+        const next = ny * width + nx
+        if (mask[next] || protectedOutlineMask?.[next]) continue
+        const offset = next * 4
+        if (data[offset + 3] <= 16) continue
+        const red = data[offset]
+        const green = data[offset + 1]
+        const blue = data[offset + 2]
+        const luminance = red * 0.299 + green * 0.587 + blue * 0.114
+        if (luminance < 165 || Math.max(red, green, blue) - Math.min(red, green, blue) > 48) continue
+        mask[next] = 1
+        distance[next] = currentDistance + 1
+        queue[tail++] = next
+      }
+    }
+  }
+}
+
 /** Recolor body artwork while retaining dark ink contours and filling removed skin interiors. */
-export function tintSkinPixels(image: ImageData, tone: string, fakeContours: ModelSkinContourStroke[] = [], fillOpenJointEnds = true): void {
+export function tintSkinPixels(image: ImageData, tone: string, fakeContours: ModelSkinContourStroke[] = [], fillOpenJointEnds = true, options: SkinTintOptions = {}): void {
   if (!isValidSkinTone(tone)) return
 
   fillEnclosedTransparentSkin(image, MODEL_SKIN_BASE_TONE, fakeContours, fillOpenJointEnds)
@@ -177,6 +219,7 @@ export function tintSkinPixels(image: ImageData, tone: string, fakeContours: Mod
         if (touchesSkin) mask[pixel] = 1
       }
     }
+    if (options.recoverPaleModelEdges) extendMaskToPaleModelEdges(image, mask, options.protectedOutlineMask)
   }
 
   const baseLuminance = warmCount ? warmLuminance / warmCount : 244
@@ -244,8 +287,14 @@ export function tintModelOutlinePixels(image: ImageData, color: string, mask = f
 
 /** Apply model-level body colors together so the contour mask comes from the original pixels. */
 export function tintModelBodyPixels(image: ImageData, skinTone?: string, outlineColor?: string, fakeContours: ModelSkinContourStroke[] = []): void {
-  const outlineMask = isValidSkinTone(outlineColor) ? findModelOutlinePixels(image) : null
-  if (isValidSkinTone(skinTone)) tintSkinPixels(image, skinTone, fakeContours, false)
+  const validSkinTone = isValidSkinTone(skinTone)
+  const validOutlineColor = isValidSkinTone(outlineColor)
+  const modelOutlineMask = validSkinTone || validOutlineColor ? findModelOutlinePixels(image) : null
+  const outlineMask = validOutlineColor ? modelOutlineMask : null
+  if (validSkinTone) tintSkinPixels(image, skinTone, fakeContours, false, {
+    recoverPaleModelEdges: true,
+    protectedOutlineMask: modelOutlineMask
+  })
   else fillEnclosedTransparentSkin(image, MODEL_SKIN_BASE_TONE, fakeContours, false)
-  if (outlineColor && outlineMask) tintModelOutlinePixels(image, outlineColor, outlineMask)
+  if (validOutlineColor && outlineColor && outlineMask) tintModelOutlinePixels(image, outlineColor, outlineMask)
 }
