@@ -63,6 +63,11 @@ async function main() {
       pixels[offset] = 0; pixels[offset + 1] = 255; pixels[offset + 2] = 0; pixels[offset + 3] = 255
     }
   }
+  const headMarkerPixels = (headShift = 0) => {
+    const pixels = Buffer.alloc(64 * 64 * 4)
+    setHeadAnchorMarker(pixels, 32 + headShift, 21)
+    return pixels
+  }
   const bodyPixels = () => {
     const width = 64, height = 64, pixels = Buffer.alloc(width * height * 4)
     for (let y = 0; y < height; y += 1) for (let x = 0; x < width; x += 1) {
@@ -202,6 +207,7 @@ async function main() {
   }
   const transitionBehindAtlas = transitionLayerAtlasPixels(() => bodyPixels())
   const transitionFaceAtlas = transitionLayerAtlasPixels(index => faceSurfacePixels(Math.round(transitionCrops[index].progress * 2)))
+  const transitionMarkerAtlas = transitionLayerAtlasPixels(index => headMarkerPixels(Math.round(transitionCrops[index].progress * 2)))
   const motionAssetId = 'synthetic-motion-atlas'
   project.assets.push({ id: motionAssetId, category: 'character', name: 'Synthetic pose transition', mimeType: 'image/png', dataUrl: encodeRgbaPng(atlasWidth, 64, atlasPixels), timelineSnapshot: true })
   characterTrack.blocks[1].incomingMotion = {
@@ -250,8 +256,11 @@ async function main() {
       { id: 'body', dataUrl: encodeRgbaPng(64, 64, bodyPixels()) },
       { id: 'face-pose-1', dataUrl: faceSurfaceData() },
       { id: 'face-pose-2', dataUrl: faceSurfaceData(2) },
+      { id: 'marker-pose-1', dataUrl: encodeRgbaPng(64, 64, headMarkerPixels()) },
+      { id: 'marker-pose-2', dataUrl: encodeRgbaPng(64, 64, headMarkerPixels(2)) },
       { id: 'transition-behind', dataUrl: encodeRgbaPng(atlasWidth, 64, transitionBehindAtlas) },
       { id: 'transition-face', dataUrl: encodeRgbaPng(atlasWidth, 64, transitionFaceAtlas) },
+      { id: 'transition-marker', dataUrl: encodeRgbaPng(atlasWidth, 64, transitionMarkerAtlas) },
       { id: 'transition-face-patch', dataUrl: encodeRgbaPng(4, 3, mouthPatchPixels) }
     ],
     textures: [
@@ -262,7 +271,7 @@ async function main() {
     ],
     rigs: [
       {
-        elementId: actor.id, assetId: actor.assetId!, characterId: actor.characterId!, baseSurfaceId: 'body', faceSurfaceId: 'face-pose-1', overlaySurfaceId: null,
+        elementId: actor.id, assetId: actor.assetId!, characterId: actor.characterId!, baseSurfaceId: 'body', faceSurfaceId: 'face-pose-1', overlaySurfaceId: 'marker-pose-1',
         artworkWidth: 64, artworkHeight: 64, outputWidth: 64, outputHeight: 64, shapeScaleX: 1, shapeScaleY: 1,
         sourceCrop: firstCrop, sourceHead: { width: 32, height: 24 },
         targetHead: { x: 16, y: 8, width: 32, height: 24, rotation: 0 },
@@ -274,7 +283,7 @@ async function main() {
         ]
       },
       {
-        elementId: actor.id, assetId: secondAssetId, characterId: actor.characterId!, baseSurfaceId: 'body', faceSurfaceId: 'face-pose-2', overlaySurfaceId: null,
+        elementId: actor.id, assetId: secondAssetId, characterId: actor.characterId!, baseSurfaceId: 'body', faceSurfaceId: 'face-pose-2', overlaySurfaceId: 'marker-pose-2',
         artworkWidth: 64, artworkHeight: 64, outputWidth: 64, outputHeight: 64, shapeScaleX: 1, shapeScaleY: 1,
         sourceCrop: secondCrop, sourceHead: { width: 32, height: 24 },
         targetHead: { x: 18, y: 8, width: 32, height: 24, rotation: 2 },
@@ -288,7 +297,7 @@ async function main() {
     ],
     motionTransitions: [{
       elementId: actor.id, key: transitionPlan.key, startFrame: transitionPlan.startFrame, endFrame: transitionPlan.endFrame,
-      behindFaceSurfaceId: 'transition-behind', faceSurfaceId: 'transition-face', overlaySurfaceId: null, faceAtlasSurfaceId: 'transition-face-patch',
+      behindFaceSurfaceId: 'transition-behind', faceSurfaceId: 'transition-face', overlaySurfaceId: 'transition-marker', faceAtlasSurfaceId: 'transition-face-patch',
       frames: transitionPlan.samples.map((sample, index) => {
         const motionFrame = transitionMotionFrames[index], crop = transitionCrops[index].crop
         return {
@@ -391,6 +400,58 @@ async function main() {
     const transitionFacePatchCounts = fullTransitionFrames.map(frame => magentaFacePatchPixels(frame.bitmap!))
     const transitionFacePatchCount = transitionFacePatchCounts[0]
     assert(transitionFacePatchCounts.every(count => count > 2), `A troca de pose deixou de preservar a camada facial preparada junto ao cabelo dinâmico (${transitionFacePatchCounts.join(', ')} pixels).`)
+    // A single opaque strand makes its expected center independently measurable
+    // against the head anchor, including cropped and mirrored transition frames.
+    const centeredHair = { ...hairAnimation, preset: { ...hairAnimation.preset, intensity: { back: 0, front: 0, fringe: 0 } }, rigs: hairAnimation.rigs.map(rig => ({ ...rig, layers: rig.layers.filter(layer => layer.id === 'solid-1') })) }
+    const centerWorker = await factory.create({ ...payload, hairAnimation: centeredHair }, new AbortController().signal)
+    try {
+      for (const frame of [0, 23, 29, 30]) {
+        const captured = await centerWorker.frame(frame)
+        assert(captured.bitmap, `Sem quadro para verificar o encaixe do cabelo: ${frame}.`)
+        const scene = resolveEditorV6SceneAtFrame(project, frame).elements.find(item => item.id === actor.id)!
+        const index = scene.motionSprite ? Math.round(scene.motionSprite.x / 64) : -1
+        const sample = index >= 0 ? hairAnimation.motionTransitions![0].frames[index] : undefined
+        const rig = sample ? interpolateEditorV6HairMotionRig(centeredHair.rigs[0], centeredHair.rigs[1], motionEase(transitionPlan.samples[index].progress)) : centeredHair.rigs.find(item => item.assetId === scene.assetId)!
+        const crop = sample?.crop ?? rig.sourceCrop
+        const geometry = sample ? { ...scene, ...sample } : scene
+        const size = editorV6ElementSize(geometry)
+        const angle = rig.targetHead.rotation * Math.PI / 180
+        const strand = rig.layers[0]
+        const sourceX = rig.targetHead.x + rig.targetHead.width / 2 + strand.x * Math.cos(angle) - strand.y * Math.sin(angle)
+        const sourceY = rig.targetHead.y + rig.targetHead.height / 2 + strand.x * Math.sin(angle) + strand.y * Math.cos(angle)
+        let dx = (sourceX - crop.left - crop.width / 2) / crop.width * size.width * 320 / 100
+        const dy = (sourceY - crop.top - crop.height / 2) / crop.height * size.height * 180 / 100
+        if (geometry.flipX) dx = -dx
+        const rotation = geometry.rotation * Math.PI / 180
+        const expectedX = 320 * (50 + geometry.x) / 100 + dx * Math.cos(rotation) - dy * Math.sin(rotation)
+        const expectedY = 180 * (50 + geometry.y) / 100 + dx * Math.sin(rotation) + dy * Math.cos(rotation)
+        let count = 0, sumX = 0, sumY = 0
+        for (let y = 0; y < 180; y++) for (let x = 0; x < 320; x++) {
+          const offset = (y * 320 + x) * 4, blue = captured.bitmap[offset], green = captured.bitmap[offset + 1], red = captured.bitmap[offset + 2]
+          if (green < 90 || green > 180 || red > 55 || blue > 75) continue
+          count++; sumX += x + .5; sumY += y + .5
+        }
+        assert(count > 100, `A peça de referência ficou invisível no quadro ${frame}.`)
+        const error = Math.hypot(sumX / count - expectedX, sumY / count - expectedY)
+        assert(error < 3.5, `O centro da peça se afastou da cabeça no quadro ${frame}: ${error.toFixed(2)} px.`)
+        if (frame === 23) {
+          const strandAngle = (rig.targetHead.rotation + strand.rotation) * Math.PI / 180
+          const outerX = sourceX + 8 * Math.cos(strandAngle), outerY = sourceY + 8 * Math.sin(strandAngle)
+          assert(outerX > crop.left + crop.width, 'O fixture deve colocar cabelo fora do recorte do corpo.')
+          let outerDx = (outerX - crop.left - crop.width / 2) / crop.width * size.width * 320 / 100
+          const outerDy = (outerY - crop.top - crop.height / 2) / crop.height * size.height * 180 / 100
+          if (geometry.flipX) outerDx = -outerDx
+          const px = Math.round(320 * (50 + geometry.x) / 100 + outerDx * Math.cos(rotation) - outerDy * Math.sin(rotation))
+          const py = Math.round(180 * (50 + geometry.y) / 100 + outerDx * Math.sin(rotation) + outerDy * Math.cos(rotation))
+          let outsideVisible = false
+          for (let y = Math.max(0, py - 1); y <= Math.min(179, py + 1); y++) for (let x = Math.max(0, px - 1); x <= Math.min(319, px + 1); x++) {
+            const offset = (y * 320 + x) * 4, blue = captured.bitmap[offset], green = captured.bitmap[offset + 1], red = captured.bitmap[offset + 2]
+            if (green >= 90 && green <= 180 && red <= 55 && blue <= 75) outsideVisible = true
+          }
+          assert(outsideVisible, 'A transição cortou o cabelo que ultrapassa o recorte do corpo.')
+        }
+      }
+    } finally { centerWorker.close() }
     let transitionDynamicChangedPixels = 0
     const staticMotionWorker = await factory.create({ ...payload, hairAnimation: { ...hairAnimation, preset: { ...hairAnimation.preset, intensity: { back: 0, front: 0, fringe: 0 } } } }, new AbortController().signal)
     try {
@@ -555,7 +616,7 @@ async function main() {
       await saveCapture('hair-frame-010-720p-rgba.png', deformed.bitmap, 1280, 720)
       const solidHairRows = Array.from({ length: 720 }, (_, y) => {
         let count = 0
-        for (let x = 560; x < 920; x += 1) {
+        for (let x = 0; x < 1280; x += 1) {
           const offset = (y * 1280 + x) * 4
           const blue = deformed.bitmap![offset], green = deformed.bitmap![offset + 1], red = deformed.bitmap![offset + 2]
           if (green > 65 && green > red * 1.8 && green > blue * 1.5) count += 1

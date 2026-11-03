@@ -211,7 +211,9 @@ async function initialize() {
     context.scale(piece.flipX ? -1 : 1, 1)
     const drawWidth = piece.width * piece.scaleX
     const drawHeight = piece.height * piece.scaleY
-    context.drawImage(warped, -drawWidth * 0.4, -drawHeight * 0.15, drawWidth * 1.8, drawHeight * 1.3)
+    // The padded warp canvas holds the original image at (0.4w, 0.15h).
+    // Center that original image on the same anchor used by the character renderer.
+    context.drawImage(warped, -drawWidth * 0.9, -drawHeight * 0.65, drawWidth * 1.8, drawHeight * 1.3)
     context.restore()
   }
   const composeHairFrame = (rig: EditorV6HairMotionRig, element: ReturnType<typeof resolveEditorV6SceneAtFrame>['elements'][number], frame: number): string => {
@@ -253,28 +255,19 @@ async function initialize() {
     sample: NonNullable<ReturnType<typeof transitionSampleForFrame>>
   ): string => {
     const canvas = document.createElement('canvas')
-    canvas.width = sample.sprite.width; canvas.height = sample.sprite.height
+    canvas.width = rig.outputWidth; canvas.height = rig.outputHeight
     const context = canvas.getContext('2d')
     if (!context) throw Error('Não foi possível compor o cabelo durante a troca de pose.')
     const drawAtlasSurface = (surfaceId: string | null) => {
       if (!surfaceId) return
       const image = hairSurfaces.get(surfaceId)
       if (!image) throw Error('A exportação perdeu uma camada sem cabelo da troca de pose.')
-      context.drawImage(image, sample.sprite.x, sample.sprite.y, sample.sprite.width, sample.sprite.height, 0, 0, canvas.width, canvas.height)
+      context.drawImage(image, sample.sprite.x, sample.sprite.y, sample.sprite.width, sample.sprite.height, sample.crop.left, sample.crop.top, sample.crop.width, sample.crop.height)
     }
-    const rigScaleX = canvas.width / sample.crop.width, rigScaleY = canvas.height / sample.crop.height
-    context.save()
-    context.scale(rigScaleX, rigScaleY)
-    context.translate(-sample.crop.left, -sample.crop.top)
     for (const piece of rig.layers) if (piece.side === 'back') drawHairPiece(context, rig, piece, element, frame)
-    context.restore()
     drawAtlasSurface(transition.atlas!.behindFaceSurfaceId)
     drawAtlasSurface(transition.atlas!.faceSurfaceId)
-    context.save()
-    context.scale(rigScaleX, rigScaleY)
-    context.translate(-sample.crop.left, -sample.crop.top)
     for (const piece of rig.layers) if (piece.side !== 'back') drawHairPiece(context, rig, piece, element, frame)
-    context.restore()
     drawAtlasSurface(transition.atlas!.overlaySurfaceId)
     const dataUrl = canvas.toDataURL('image/png')
     canvas.width = canvas.height = 1
@@ -369,7 +362,15 @@ async function initialize() {
             renderAssetsById.set(faceSurfaceId, faceAsset)
             mouthPatch = { assetId: faceSurfaceId, ...transitionFrame.facePatch }
           }
-          return { ...element, assetId, motionSprite: undefined, x: transitionFrame.x, y: transitionFrame.y, width: transitionFrame.width, height: transitionFrame.height, rotation: transitionFrame.rotation, flipX: transitionFrame.flipX, mouthPatch }
+          // Transition geometry describes the cropped body atlas. Expand it to
+          // the complete artwork so hair outside that crop is not clipped.
+          const crop = transitionFrame.crop
+          const scale = (element.characterScale ?? 100) / 100
+          const dx = (rig.outputWidth / 2 - crop.left - crop.width / 2) * transitionFrame.width / crop.width * scale * (element.characterWidthScale ?? 100) / 100 * 19.2 * (transitionFrame.flipX ? -1 : 1)
+          const dy = (rig.outputHeight / 2 - crop.top - crop.height / 2) * transitionFrame.height / crop.height * scale * (element.characterHeightScale ?? 100) / 100 * 10.8
+          const radians = transitionFrame.rotation * Math.PI / 180
+          if (mouthPatch) mouthPatch = { ...mouthPatch, x: (crop.left + mouthPatch.x * crop.width) / rig.outputWidth, y: (crop.top + mouthPatch.y * crop.height) / rig.outputHeight, width: mouthPatch.width * crop.width / rig.outputWidth, height: mouthPatch.height * crop.height / rig.outputHeight }
+          return { ...element, assetId, motionSprite: undefined, x: transitionFrame.x + (dx * Math.cos(radians) - dy * Math.sin(radians)) / 19.2, y: transitionFrame.y + (dx * Math.sin(radians) + dy * Math.cos(radians)) / 10.8, width: transitionFrame.width * rig.outputWidth / crop.width, height: transitionFrame.height * rig.outputHeight / crop.height, rotation: transitionFrame.rotation, flipX: transitionFrame.flipX, mouthPatch }
         }
         const rig = original.assetId ? hairRigs.get(`${element.id}:${original.assetId}`) : undefined
         if (!rig) return element

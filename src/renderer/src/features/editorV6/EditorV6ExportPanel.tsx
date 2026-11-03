@@ -101,7 +101,7 @@ export function EditorV6ExportPanel({ project, open, characterSourceRefreshRequi
       <fieldset disabled={busy || active}><legend>Animação de cabelo · experimental</legend>
         <label className="v6-export-check"><input type="checkbox" checked={hairAnimationEnabled} onChange={(event) => setHairAnimationEnabled(event.target.checked)} />Ativar animação de cabelo</label>
         <label>Preset<select value={hairPresetSlot} onChange={(event) => setHairPresetSlot(Number(event.target.value))}>{hairPresets.map((preset, index) => <option key={index} value={index + 1} disabled={!preset}>Preset {index + 1}{preset ? '' : ' · vazio'}</option>)}</select></label>
-        <small>Usa os presets salvos em Fabricador DEV → Animação cabelo DEV. O cabelo é recomposto por quadro na exportação. Durante a transição de movimento rasterizada, a deformação fica pausada para preservar a pose.</small>
+        <small>Usa os presets salvos em Fabricador DEV → Animação cabelo DEV. O cabelo é recomposto por quadro na exportação, inclusive durante as transições de pose.</small>
         {preparingHair && <p role="status">Preparando as camadas dos personagens e do cabelo…</p>}
       </fieldset>
       <fieldset disabled={busy || active}><legend>Trilha sonora da exportação</legend><p>Os arquivos são copiados para o projeto. A mixagem é aplicada uma única vez ao vídeo final.</p>
