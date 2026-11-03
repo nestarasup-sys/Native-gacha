@@ -26,7 +26,7 @@ Os fundos também são estados: escolher uma imagem, alterar a cor ou reposicion
 
 `captureEditorV6Frames` prepara os quadros sequencialmente, sem depender de um relógio de reprodução. Trechos visualmente estáticos reutilizam a imagem preparada. A operação aceita cancelamento. Essa é a base de captura para um futuro codificador de vídeo.
 
-A codificação MP4 está conectada ao exportador [Turbo 2×](EXPORTACAO.md), que monta o próprio `SceneSurface` em janelas ocultas. A trilha sonora pode ser configurada no painel de exportação. Importação de arquivos de vídeo e reprodução de áudio/vídeo sincronizados na prévia ainda precisam ser conectadas ao V6.
+A codificação MP4 está conectada ao exportador [Turbo 2×](EXPORTACAO.md), que monta o próprio `SceneSurface` em janelas ocultas. A trilha sonora pode ser configurada no painel de exportação. **Desde as implementações posteriores a este texto**, o Editor V6 também importa/vincula vídeos da Base, mantém blocos de vídeo e áudio na timeline e reproduz vídeos na cena (`SceneVideoLayer`) e áudio (`EditorV6PlaybackAudio`). A sincronização de mídia durante reprodução/seek usa `HTMLMediaElement.currentTime` e tolerâncias de correção; isso ainda requer medições de apresentação por quadro e drift em projetos complexos. O vídeo selecionado no resolvedor de cena corresponde à precedência da timeline; o render MP4 utiliza composição FFmpeg para as camadas. A física experimental de cabelo permanece **exclusiva da exportação**, não da prévia.
 
 ## Verificação
 
