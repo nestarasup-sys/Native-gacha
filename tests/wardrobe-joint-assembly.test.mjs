@@ -1,10 +1,19 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { createWardrobeJointAssemblyOffsets, findWardrobeJointCut, splitWardrobePixelsAtJoint, wardrobeJointSplitForSheetCell } from '../src/renderer/src/features/fabricator/wardrobe/wardrobeJointAssembly.ts'
+import { createWardrobeJointAssemblyOffsets, findWardrobeJointCut, splitWardrobePixelsAtJoint, wardrobeJointSplitForSheetCell, wardrobeComponentPreviewOffset } from '../src/renderer/src/features/fabricator/wardrobe/wardrobeJointAssembly.ts'
 
 const point = (x, y) => ({ x, y })
 const part = (id, name, x, y, width = 20, height = 50) => ({ id, name, x, y, width, height, rotation: 0, dataUrl: '' })
 const link = (parentPartId, childPartId, parentAnchor, childAnchor) => ({ id: `${parentPartId}-${childPartId}`, parentPartId, childPartId, parentAnchor, childAnchor })
+
+test('roupas acompanham canelas e antebraços na montagem mesmo antes de fixar', () => {
+  const offsets = { shin: point(12, -40), forearm: point(-8, 15) }
+  for (const [partId, expected] of Object.entries(offsets)) {
+    assert.deepEqual(wardrobeComponentPreviewOffset({ attachedPartId: partId }, offsets), expected)
+    assert.deepEqual(wardrobeComponentPreviewOffset({ attachedPartId: partId, binding: { boneId: partId } }, offsets), expected)
+  }
+  assert.deepEqual(wardrobeComponentPreviewOffset({ attachedPartId: 'shin' }, {}), point(0, 0))
+})
 
 function fixture() {
   const parts = [

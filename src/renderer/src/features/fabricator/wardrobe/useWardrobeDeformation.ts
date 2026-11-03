@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type Dispatc
 import type { WardrobeComponent, WardrobeSet } from '../../../../../shared/fabricator'
 import { applyWardrobeWarpBrush, createWardrobeWarpMesh, drawWardrobeWarp, type WardrobeWarpMesh, type WardrobeWarpPoint, wardrobeWarpPadding } from './wardrobeMeshWarp'
 import { createWardrobeDeformationPatch, createWardrobeRestorationPatch, wardrobeWarpBaseBounds, type WardrobeDeformationPoint, type WardrobeDeformationSessionGeometry } from './wardrobeDeformationModel'
+import { wardrobeComponentPreviewOffset } from './wardrobeJointAssembly'
 
 type WardrobeWarpSession = WardrobeDeformationSessionGeometry & {
   image: HTMLImageElement
@@ -179,10 +180,10 @@ export function useWardrobeDeformation({
 
   useLayoutEffect(() => {
     if (!deformMode || !selected || warpReadyId !== selected.id || testPose) return
-    const offset = selected.binding?.boneId === selected.attachedPartId ? bodyOffsets[selected.attachedPartId] ?? zeroOffset : zeroOffset
+    const offset = wardrobeComponentPreviewOffset(selected, bodyOffsets)
     drawWardrobeWarpPreview(selected, offset, scale)
     updateWarpBrushCursor(lastWarpPointRef.current)
-  }, [deformMode, selectedId, warpReadyId, scale, selected?.dataUrl, selected?.x, selected?.y, selected?.width, selected?.height, selected?.rotation, selected?.attachedPartId, selected?.binding?.boneId, bodyOffsets, testPose, drawWardrobeWarpPreview, updateWarpBrushCursor])
+  }, [deformMode, selectedId, warpReadyId, scale, selected, bodyOffsets, testPose, drawWardrobeWarpPreview, updateWarpBrushCursor])
 
   useEffect(() => { updateWarpBrushCursor(lastWarpPointRef.current) }, [updateWarpBrushCursor])
   useEffect(() => { if (testPose) setDeformMode(false) }, [testPose])

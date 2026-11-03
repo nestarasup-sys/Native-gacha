@@ -104,11 +104,9 @@ export function createWardrobeJointAssemblyOffsets(sourceProject: JointProject, 
   }))
 }
 
-/** Keep the same attachment-following rule as the existing preview renderer. */
+/** Follow the selected body part in the assembled preview, including loose pieces. */
 export function wardrobeComponentPreviewOffset(component: WardrobeComponent, offsets: WardrobeJointOffsets): WardrobePoint {
-  return component.binding?.boneId === component.attachedPartId
-    ? offsets[component.attachedPartId] ?? { x: 0, y: 0 }
-    : { x: 0, y: 0 }
+  return offsets[component.attachedPartId] ?? { x: 0, y: 0 }
 }
 
 function splitKinds(category: WardrobeComponent['category']): { upper: 'thigh' | 'upper-arm'; lower: 'lower-leg' | 'forearm' } | null {
