@@ -144,6 +144,7 @@ test('workspace de Modelos compõe canvas e painel sem absorver a renderização
  ])
 
  assert.match(page,/<FabricatorModelWorkspace\b/)
+ assert.match(page,/onZoomIn: \(\) => setZoom\(\(value\) => Math\.min\(5, value \+ 0\.15\)\)/)
  assert.match(workspace,/<FabricatorModelCanvas\b/)
  assert.match(workspace,/<FabricatorModelPanel\b/)
  assert.doesNotMatch(workspace,/window\.desktop|localStorage|saveFabricatorProject/)

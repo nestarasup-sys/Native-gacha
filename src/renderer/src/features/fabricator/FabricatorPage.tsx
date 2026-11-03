@@ -743,7 +743,7 @@ export function FabricatorPage() {
     onSelectPart: (partId) => setSelectedIds([partId]),
     onWarpStateChange: updateTemporaryThighDeformation,
     onWarpError: reportTemporaryThighError,
-    onZoomIn: () => setZoom((value) => Math.min(2.4, value + 0.15)),
+    onZoomIn: () => setZoom((value) => Math.min(5, value + 0.15)),
     onZoomOut: () => setZoom((value) => Math.max(0.5, value - 0.15)),
     onCenter: () => { setZoom(1); setPan({ x: 0, y: 0 }) }
   } : null
