@@ -61,3 +61,29 @@ export function applyRotatedModelSourcePart(
   const rig = normalizePartAnchors(parts, joints)
   return { ...project, parts: rig.parts, joints: rig.joints }
 }
+
+/** Mirrors the selected part's joint attachments across its fixed vertical centerline. */
+export function applyMirroredModelSourcePart(
+  project: FabricatorProject,
+  partId: string,
+  mirroredPart: ModelPart
+): FabricatorProject {
+  const originalPart = project.parts.find((part) => part.id === partId)
+  if (!originalPart) throw new Error('A peça selecionada não está mais no modelo.')
+  if (mirroredPart.id !== partId) throw new Error('O espelhamento retornou uma peça diferente da selecionada.')
+
+  const centerX = originalPart.x + originalPart.width / 2
+  const mirrorAnchor = (anchor: { x: number; y: number }) => ({ ...anchor, x: 2 * centerX - anchor.x })
+  const parts = project.parts.map((part) => part.id === partId ? mirroredPart : part)
+  const joints = project.joints.map((joint) => {
+    const parentAnchor = joint.parentPartId === partId ? mirrorAnchor(joint.parentAnchor) : joint.parentAnchor
+    const childAnchor = joint.childPartId === partId ? mirrorAnchor(joint.childAnchor) : joint.childAnchor
+    return {
+      ...joint,
+      parentAnchor,
+      childAnchor,
+      pivot: { x: (parentAnchor.x + childAnchor.x) / 2, y: (parentAnchor.y + childAnchor.y) / 2 }
+    }
+  })
+  return { ...project, parts, joints }
+}

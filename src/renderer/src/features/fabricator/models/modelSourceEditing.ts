@@ -3,7 +3,7 @@ import { cropModelSkinContours } from '../../../../../shared/modelSkinContours'
 import { loadImageFromDataUrl } from './imageData'
 import { sourceRect } from './modelSource'
 import { startModelSourcePixelEditWorker } from './runModelSourcePixelEditWorker'
-import type { ModelSourcePixelPoint } from './modelSourcePixelOperations'
+import { mirrorModelSourcePixelImage, type ModelSourcePixelPoint } from './modelSourcePixelOperations'
 
 export type ModelSourcePoint = ModelSourcePixelPoint
 export type ModelSourceCrop = { x: number; y: number; width: number; height: number }
@@ -54,6 +54,56 @@ async function normalizedImages(part: ModelPart): Promise<{ display: HTMLCanvasE
   return {
     display: imageCanvas(displayImage, part.width, part.height),
     base: imageCanvas(baseImage, part.width, part.height)
+  }
+}
+
+function mirrorCanvasHorizontally(source: HTMLCanvasElement): HTMLCanvasElement {
+  const canvas = document.createElement('canvas')
+  canvas.width = source.width
+  canvas.height = source.height
+  const context = canvas.getContext('2d', { willReadFrequently: true })
+  if (!context) throw new Error('Canvas indisponível para espelhar a peça.')
+  const mirrored = mirrorModelSourcePixelImage(contextForSource(source))
+  const imageData = context.createImageData(mirrored.width, mirrored.height)
+  imageData.data.set(mirrored.data)
+  context.putImageData(imageData, 0, 0)
+  return canvas
+}
+
+function contextForSource(source: HTMLCanvasElement) {
+  const context = source.getContext('2d', { willReadFrequently: true })
+  if (!context) throw new Error('Não foi possível ler os pixels da peça selecionada.')
+  return context.getImageData(0, 0, source.width, source.height)
+}
+
+/** Mirrors both saved images, local pivots, and skin-contour guides inside the existing part frame. */
+export async function mirrorModelSourcePart(part: ModelPart): Promise<ModelPart> {
+  const { display, base } = await normalizedImages(part)
+  const originalRect = sourceRect(part)
+  const fakeSkinContours = part.fakeSkinContours?.map((stroke) => ({
+    ...stroke,
+    points: stroke.points.map((point) => ({ x: 1 - point.x, y: point.y }))
+  }))
+  const jointAnchor = part.jointAnchor
+    ? { ...part.jointAnchor, x: part.x + part.width - (part.jointAnchor.x - part.x) }
+    : undefined
+  const sourceTransform = part.sourceTransform?.jointAnchor
+    ? {
+        ...part.sourceTransform,
+        jointAnchor: {
+          ...part.sourceTransform.jointAnchor,
+          x: originalRect.x + originalRect.width - (part.sourceTransform.jointAnchor.x - originalRect.x)
+        }
+      }
+    : part.sourceTransform
+  return {
+    ...part,
+    ...(jointAnchor ? { jointAnchor } : {}),
+    ...(sourceTransform ? { sourceTransform } : {}),
+    dataUrl: mirrorCanvasHorizontally(display).toDataURL('image/png'),
+    chromaBaseDataUrl: mirrorCanvasHorizontally(base).toDataURL('image/png'),
+    chromaBaseSaved: true,
+    fakeSkinContours
   }
 }
 

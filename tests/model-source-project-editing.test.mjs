@@ -28,7 +28,7 @@ const editing = loadTypeScriptModule('src/renderer/src/features/fabricator/model
   if (specifier === './modelSource') return modelSource
   throw new Error(`Import inesperado em modelSourceProjectEditing.ts: ${specifier}`)
 })
-const { applyRotatedModelSourcePart } = editing
+const { applyMirroredModelSourcePart, applyRotatedModelSourcePart } = editing
 
 function part(id, name, rect) {
   return {
@@ -49,6 +49,27 @@ function rotated(partToRotate, rect = { x: 25, y: 15, width: 10, height: 20 }) {
     sourceTransform: { ...rect, rotation: 90 }
   }
 }
+
+test('espelha encaixes e pivôs na linha central sem mover a peça ou alterar outros vínculos', () => {
+  const arm = part('arm', 'Braço esquerdo', { x: 20, y: 20, width: 20, height: 10 })
+  const torso = part('torso', 'Tronco', { x: 70, y: 20, width: 10, height: 20 })
+  const mirroredArm = { ...arm, dataUrl: 'data:mirrored-arm', jointAnchor: { x: 25, y: 25 } }
+  const joint = {
+    id: 'shoulder', parentPartId: arm.id, childPartId: torso.id,
+    parentAnchor: { x: 35, y: 25 }, childAnchor: { x: 65, y: 25 }, pivot: { x: 50, y: 25 }
+  }
+  const original = project([arm, torso], [joint])
+
+  const updated = applyMirroredModelSourcePart(original, arm.id, mirroredArm)
+
+  assert.equal(updated.parts[0].dataUrl, 'data:mirrored-arm')
+  assert.deepEqual(updated.joints[0].parentAnchor, { x: 25, y: 25 })
+  assert.deepEqual(updated.joints[0].childAnchor, { x: 65, y: 25 })
+  assert.deepEqual(updated.joints[0].pivot, { x: 45, y: 25 })
+  assert.deepEqual(updated.parts[0].jointAnchor, { x: 25, y: 25 })
+  assert.deepEqual(original.parts[0], arm)
+  assert.deepEqual(original.joints[0], joint)
+})
 
 test('aplica rotação sem mutar o modelo e gira os pivôs conectados com a peça', () => {
   const arm = part('arm', 'Braço esquerdo', { x: 20, y: 20, width: 20, height: 10 })

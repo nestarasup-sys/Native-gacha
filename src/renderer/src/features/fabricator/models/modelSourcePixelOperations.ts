@@ -2,6 +2,21 @@ export type ModelSourcePixelPoint = { x: number; y: number }
 export type ModelSourcePixelRegion = { x: number; y: number; width: number; height: number }
 export type ModelSourcePixelImage = { width: number; height: number; data: Uint8ClampedArray }
 
+/** Horizontally mirror an RGBA image without changing its dimensions or alpha. */
+export function mirrorModelSourcePixelImage(image: ModelSourcePixelImage): ModelSourcePixelImage {
+  if (!Number.isInteger(image.width) || !Number.isInteger(image.height) || image.width < 1 || image.height < 1
+    || image.data.length !== image.width * image.height * 4) {
+    throw new Error('A imagem não pode ser espelhada porque seus pixels estão inválidos.')
+  }
+  const data = new Uint8ClampedArray(image.data.length)
+  for (let y = 0; y < image.height; y += 1) for (let x = 0; x < image.width; x += 1) {
+    const source = (y * image.width + x) * 4
+    const target = (y * image.width + image.width - 1 - x) * 4
+    data.set(image.data.subarray(source, source + 4), target)
+  }
+  return { width: image.width, height: image.height, data }
+}
+
 function brightness(red: number, green: number, blue: number): number {
   return (red * 299 + green * 587 + blue * 114) / 1000
 }

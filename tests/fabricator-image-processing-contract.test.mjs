@@ -5,7 +5,7 @@ import { createImportedModelProject } from '../src/renderer/src/features/fabrica
 import { ChromaAdjustTaskError, startChromaAdjustWorker } from '../src/renderer/src/features/fabricator/models/runChromaAdjustWorker.ts'
 import { ImageProcessorTaskError, startImageProcessorWorker } from '../src/renderer/src/features/fabricator/models/runImageProcessorWorker.ts'
 import { ModelSourcePixelEditTaskError, startModelSourcePixelEditWorker } from '../src/renderer/src/features/fabricator/models/runModelSourcePixelEditWorker.ts'
-import { applyModelSourceBrushPixels, detectModelSourceOutlineMask, modelSourceBrushRegion, normalizeModelSourceOutlinePixels, removeModelSourceColorPixels } from '../src/renderer/src/features/fabricator/models/modelSourcePixelOperations.ts'
+import { applyModelSourceBrushPixels, detectModelSourceOutlineMask, mirrorModelSourcePixelImage, modelSourceBrushRegion, normalizeModelSourceOutlinePixels, removeModelSourceColorPixels } from '../src/renderer/src/features/fabricator/models/modelSourcePixelOperations.ts'
 import { isModelBodyPart } from '../src/renderer/src/characters/skinTint.ts'
 import { applyMirroredLimbAssets, findLimbReplacementTarget } from '../src/renderer/src/features/fabricator/models/modelSourceLimbReplacement.ts'
 import { ModelSourceComposeTaskError, startModelSourceComposeWorker } from '../src/renderer/src/features/fabricator/models/runModelSourceComposeWorker.ts'
@@ -140,6 +140,8 @@ test('tela e workers compartilham os contratos de mensagem definidos pelo domín
   assert.match(pixelWorker, /normalizeModelSourceOutlinePixels/)
   assert.match(editor, /Dividir com linha/)
   assert.match(editor, /Divisor de juntas/)
+  assert.match(editor, /Espelhar peça/)
+  assert.match(editor, /applyMirroredModelSourcePart/)
   assert.match(editor, /jointAware && materialized\.bodyJointBridgeEnabled/)
   assert.doesNotMatch(pixelEditing, /function applyBrush\(/)
   assert.doesNotMatch(pixelEditing, /function removeSelectedColor\(/)
@@ -160,6 +162,34 @@ function rgbaImage(width, height, color = [240, 200, 170, 255]) {
   for (let offset = 0; offset < data.length; offset += 4) data.set(color, offset)
   return { width, height, data }
 }
+
+test('espelha os pixels na horizontal sem alterar dimensões, alpha ou imagem original', () => {
+  const original = {
+    width: 3,
+    height: 1,
+    data: new Uint8ClampedArray([
+      255, 0, 0, 255,
+      0, 255, 0, 128,
+      0, 0, 255, 0
+    ])
+  }
+
+  const mirrored = mirrorModelSourcePixelImage(original)
+
+  assert.equal(mirrored.width, 3)
+  assert.equal(mirrored.height, 1)
+  assert.deepEqual(Array.from(mirrored.data), [
+    0, 0, 255, 0,
+    0, 255, 0, 128,
+    255, 0, 0, 255
+  ])
+  assert.deepEqual(Array.from(original.data), [
+    255, 0, 0, 255,
+    0, 255, 0, 128,
+    0, 0, 255, 0
+  ])
+  assert.throws(() => mirrorModelSourcePixelImage({ width: 2, height: 1, data: new Uint8ClampedArray(4) }), /pixels estão inválidos/)
+})
 
 function cropRgba(image, region) {
   const data = new Uint8ClampedArray(region.width * region.height * 4)

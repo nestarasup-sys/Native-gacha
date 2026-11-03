@@ -2,11 +2,12 @@ import { useEffect, useRef, useState } from 'react'
 import type { CSSProperties, PointerEvent as ReactPointerEvent, WheelEvent as ReactWheelEvent } from 'react'
 import type { FabricatorProject, ModelPart } from '../../../../shared/fabricator'
 import { modelRigSide } from '../../../../shared/modelRig'
+import { Icon } from '../../ui/components/Icon'
 import { isHeadPart } from './models/resize'
 import { normalizePartAnchors } from './models/rig'
 import { composeModelSource, sourceRect, MAX_CHROMA_TOLERANCE, type ModelSourceResult } from './models/modelSource'
-import { cropModelSourcePart, eraseModelSourceBrush, normalizeModelSourceOutline, removeModelSourceColor, rotateModelSourcePart, sampleModelSourceColor, splitModelSourcePart, worldPointInsideCrop, worldPointToPart, type ModelSourceCrop, type ModelSourcePoint, type ModelSourceQuarterTurn } from './models/modelSourceEditing'
-import { applyRotatedModelSourcePart } from './models/modelSourceProjectEditing'
+import { cropModelSourcePart, eraseModelSourceBrush, mirrorModelSourcePart, normalizeModelSourceOutline, removeModelSourceColor, rotateModelSourcePart, sampleModelSourceColor, splitModelSourcePart, worldPointInsideCrop, worldPointToPart, type ModelSourceCrop, type ModelSourcePoint, type ModelSourceQuarterTurn } from './models/modelSourceEditing'
+import { applyMirroredModelSourcePart, applyRotatedModelSourcePart } from './models/modelSourceProjectEditing'
 import { applyImageWarpBrush, type ImageWarpPoint } from './models/imageMeshWarp'
 import { createModelSourceWarpSession, drawModelSourceWarp, modelSourceWarpDataUrl, warpModelSkinContours, type ModelSourceWarpSession } from './models/modelSourceWarp'
 import { useModelSourceGuides } from './models/useModelSourceGuides'
@@ -15,6 +16,7 @@ import { articulateJoinedLimbSplit, canArticulateJoinedLimbSplit } from './model
 import { isModelSkinPart } from './models/modelSkinTone'
 import { findLimbReplacementTarget, replaceLimbPixelsFromOpposite } from './models/modelSourceLimbReplacement'
 import { MODEL_SKIN_BASE_TONE } from '../../../../shared/skinTones'
+import './model-source-editor.css'
 
 type Props = {
   project: FabricatorProject
@@ -27,18 +29,17 @@ type EditTool = 'select' | 'erase' | 'crop' | 'split' | 'joint-split' | 'outline
 type DrawingGesture = { tool: 'erase' | 'crop' | 'split' | 'joint-split' | 'outline'; start: ModelSourcePoint; current: ModelSourcePoint; points: ModelSourcePoint[] }
 type WarpDrag = { pointerId: number; partId: string; last: ImageWarpPoint; originalX: Float32Array; originalY: Float32Array; changed: boolean }
 
-const card: CSSProperties = { display: 'flex', gap: 8, alignItems: 'center', padding: 9, borderRadius: 9, cursor: 'pointer', color: 'inherit', background: '#202635', border: '1px solid #3c4554', textAlign: 'left' }
-const field: CSSProperties = { width: '100%', color: '#f7f8fa', background: '#1b2230', border: '1px solid #64748b', borderRadius: 7, padding: 8 }
+const field: CSSProperties = { width: '100%', color: '#433b45', background: '#fff', border: '1px solid #e9e1e8', borderRadius: 8, padding: 8 }
 const checker: CSSProperties = {
-  backgroundColor: '#d2d8e2',
-  backgroundImage: 'conic-gradient(#fff 25%, transparent 0 50%, #fff 0 75%, transparent 0)',
+  backgroundColor: '#fff',
+  backgroundImage: 'conic-gradient(#eee9ed 25%, transparent 0 50%, #eee9ed 0 75%, transparent 0)',
   backgroundSize: '20px 20px'
 }
 const previewBackgroundColors: Record<Exclude<PreviewBackground, 'checker'>, string> = {
   white: '#ffffff',
-  dark: '#18202b',
-  green: '#20a65a',
-  magenta: '#d946a6'
+  dark: '#302b32',
+  green: '#45a66d',
+  magenta: '#e763ad'
 }
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
 const toolButton = (active: boolean, disabled: boolean): CSSProperties => ({
@@ -47,7 +48,9 @@ const toolButton = (active: boolean, disabled: boolean): CSSProperties => ({
   padding: '7px 10px',
   fontSize: 12,
   cursor: disabled ? 'not-allowed' : 'pointer',
-  background: active ? '#24558b' : '#1b2230',
+  borderColor: active ? '#e987aa' : '#e9e1e8',
+  color: active ? '#a43d64' : '#665c67',
+  background: active ? '#fff1f6' : '#fff',
   opacity: disabled ? .5 : 1
 })
 
@@ -290,6 +293,22 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
         project: applyRotatedModelSourcePart(materialized, part.id, rotatedPart, degrees),
         selectedId: part.id,
         status: `Imagem da peça girada ${degrees > 0 ? '90° à direita' : '90° à esquerda'}. A edição pode ser desfeita e só vai ao modelo original ao salvar.`
+      }
+    })
+  }
+  const mirrorSelectedPart = () => {
+    if (!selected || busy || downloading) return
+    setTool('select')
+    cancelDrawing()
+    setGuides({ partId: selected.id, lines: [] })
+    void runMutation(async (materialized) => {
+      const part = materialized.parts.find((item) => item.id === selected.id)
+      if (!part) throw new Error('A peça selecionada não está mais no modelo.')
+      const mirroredPart = await mirrorModelSourcePart(part)
+      return {
+        project: applyMirroredModelSourcePart(materialized, part.id, mirroredPart),
+        selectedId: part.id,
+        status: `A imagem de ${part.name} foi espelhada horizontalmente. O quadro da peça foi mantido e os encaixes acompanharam a inversão; use Desfazer para voltar.`
       }
     })
   }
@@ -754,27 +773,32 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
   }
 
   return (
-    <div role="presentation" style={{ position: 'fixed', inset: 0, zIndex: 11000, background: 'rgba(0,0,0,.82)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-      <section role="dialog" aria-modal="true" aria-label="Editar imagem original — Model Source" style={{ width: 'min(1320px, 98vw)', maxHeight: '94vh', background: '#111824', color: '#f4f6fa', border: '1px solid #516078', borderRadius: 16, display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 16px 80px rgba(0,0,0,.5)' }}>
-        <header style={{ padding: '16px 22px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #303c4c' }}>
-          <div><strong style={{ fontSize: 18 }}>Editar imagem original · Model Source</strong><p style={{ margin: '5px 0 0', color: '#abb7c7', fontSize: 12 }}>Selecione uma peça para isolá-la, ampliar e editar. Rotações e outras edições só vão ao original ao clicar em “Salvar no original”.</p></div>
-          <button type="button" disabled={busy || downloading} onClick={onClose} aria-label="Fechar editor" style={{ ...field, width: 40, cursor: 'pointer' }}>✕</button>
+    <div role="presentation" className="model-source-backdrop">
+      <section role="dialog" aria-modal="true" aria-label="Editar imagem original — Model Source" className="model-source-dialog">
+        <header className="model-source-header">
+          <div className="model-source-header-copy">
+            <span className="model-source-header-mark"><Icon name="edit" /></span>
+            <span><small className="model-source-eyebrow">Fabricador · modelo base</small><h1>Editar imagem original</h1><p>As mudanças ficam no rascunho até você salvar no modelo.</p></span>
+          </div>
+          <button type="button" disabled={busy || downloading} onClick={onClose} aria-label="Fechar editor" className="model-source-close"><Icon name="close" /></button>
         </header>
-        <div style={{ display: 'grid', gridTemplateColumns: '220px minmax(0, 1fr) 235px', gap: 12, padding: 14, minHeight: 0, overflowY: 'auto' }}>
-          <aside style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 540, overflowY: 'auto' }} aria-label="Peças do modelo">
-            <strong style={{ fontSize: 13, paddingBottom: 7 }}>Peças ({draft.parts.length})</strong>
+        <div className="model-source-layout">
+          <aside className="model-source-parts-rail" aria-label="Peças do modelo">
+            <header className="model-source-rail-heading"><span><small>Catálogo do modelo</small><strong>Peças</strong></span><span className="model-source-count">{draft.parts.length}</span></header>
+            <div className="model-source-part-list">
             {draft.parts.map(part => {
               const rect = sourceRect(part, dimensions[part.id])
               return (
-              <button key={part.id} type="button" style={{ ...card, borderColor: part.id === selectedId ? '#64a5ff' : '#3c4554' }} disabled={busy || downloading} onClick={() => { setSamplingSkinColor(false); setSelectedId(part.id); setMode('part'); setTool('select'); cancelDrawing(); setError('') }}>
-                  <img src={part.dataUrl} alt="" style={{ objectFit: 'contain', width: 38, height: 40 }} />
-                  <span style={{ minWidth: 0, flex: 1 }}><b style={{ display: 'block', fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis' }}>{part.name}</b><small style={{ color: '#a9b5c4' }}>{dimensions[part.id] ? 'Modificada · ' : ''}{Math.round(rect.width)} × {Math.round(rect.height)}</small></span>
+              <button key={part.id} type="button" className={`model-source-part-card${part.id === selectedId ? ' selected' : ''}`} aria-pressed={part.id === selectedId} disabled={busy || downloading} onClick={() => { setSamplingSkinColor(false); setSelectedId(part.id); setMode('part'); setTool('select'); cancelDrawing(); setError('') }}>
+                  <span className="model-source-part-thumb"><img src={part.dataUrl} alt="" /></span>
+                  <span className="model-source-part-details"><strong>{part.name}</strong><small>{dimensions[part.id] ? 'Modificada · ' : ''}{Math.round(rect.width)} × {Math.round(rect.height)} px</small></span>
                 </button>
               )
             })}
+            </div>
           </aside>
-          <main style={{ display: 'flex', minWidth: 0, flexDirection: 'column', gap: 8 }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 11px', border: '1px solid #46556b', borderRadius: 8, background: '#1a2230', fontSize: 12, cursor: busy || downloading ? 'not-allowed' : 'pointer' }}>
+          <main className="model-source-workspace">
+            <label className="model-source-joint-setting" style={{ cursor: busy || downloading ? 'not-allowed' : 'pointer' }}>
               <input
                 aria-label="Modelo com partes unidas"
                 type="checkbox"
@@ -793,12 +817,15 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
                     : 'Partes unidas desativado. Dividir com linha continua disponível para cortes genéricos.')
                 }}
               />
-              <span><strong>Partes unidas</strong><small style={{ display: 'block', marginTop: 2, color: '#a9b5c4' }}>Ativa o Divisor de juntas para braços e pernas inteiros; não altera o corte genérico.</small></span>
+              <span><strong>Partes unidas</strong><small>Ativa o Divisor de juntas para braços e pernas inteiros; não altera o corte genérico.</small></span>
             </label>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+            <div className="model-source-view-toolbar">
+              <span className="model-source-toolbar-label">Visualização</span>
+              <div className="model-source-view-mode">
               <button type="button" style={toolButton(mode === 'part', busy || downloading)} disabled={busy || downloading} onClick={() => { setMode('part'); cancelDrawing() }}>Peça selecionada</button>
               <button type="button" style={toolButton(mode === 'sheet', busy || downloading)} disabled={busy || downloading} onClick={() => { setSamplingSkinColor(false); setMode('sheet'); setTool('select'); cancelDrawing() }}>Folha completa</button>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: '#a9b5c4' }}>Fundo
+              </div>
+              <label className="model-source-view-background">Fundo
                 <select aria-label="Fundo da prévia" value={previewBackground} disabled={busy || downloading} onChange={event => setPreviewBackground(event.target.value as PreviewBackground)} style={{ ...field, width: 'auto', padding: '7px 8px' }}>
                   <option value="checker">Xadrez / transparência</option>
                   <option value="white">Branco</option>
@@ -807,6 +834,7 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
                   <option value="magenta">Magenta</option>
                 </select>
               </label>
+              <div className="model-source-view-tools" aria-label="Ferramentas de cor e contorno">
               <button type="button" title="Escolha uma cor da pele original e remova esse tom das peças anatômicas" style={toolButton(skinRemovalOpen, busy || downloading || draft.parts.length === 0)} disabled={busy || downloading || draft.parts.length === 0} onClick={() => {
                 const open = !skinRemovalOpen
                 setSkinRemovalOpen(open)
@@ -829,43 +857,51 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
                   setStatus('Escolha a cor e normalize o contorno externo detectado nas peças do corpo.')
                 }
               }}>Normalizar contorno</button>
-              <span style={{ color: '#a9b5c4', fontSize: 12, marginLeft: 'auto' }}>Zoom</span>
+              </div>
+              <div className="model-source-zoom-group"><span className="model-source-toolbar-label">Zoom</span>
               <button type="button" aria-label="Diminuir zoom" style={toolButton(false, busy || downloading)} disabled={busy || downloading} onClick={() => changeZoom(zoom - .25)}>−</button>
               <input aria-label="Zoom da prévia" type="range" min={.5} max={4} step={.1} value={zoom} disabled={busy || downloading} onChange={event => changeZoom(Number(event.target.value))} style={{ width: 110 }} />
               <button type="button" aria-label="Aumentar zoom" style={toolButton(false, busy || downloading)} disabled={busy || downloading} onClick={() => changeZoom(zoom + .25)}>+</button>
               <button type="button" style={toolButton(false, busy || downloading)} disabled={busy || downloading} onClick={() => changeZoom(1)}>{Math.round(zoom * 100)}% · Ajustar</button>
+              </div>
             </div>
-            {mode === 'part' && <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }} aria-label="Ferramentas da peça">
-              <button type="button" style={toolButton(tool === 'select', busy || downloading || !selected)} disabled={busy || downloading || !selected} onClick={() => setEditTool('select')}>Selecionar</button>
-              <button type="button" aria-label="Girar a imagem da peça 90 graus à esquerda" title="Girar a imagem da peça 90° à esquerda; o pivô da junta acompanha" style={toolButton(false, busy || downloading || !selected)} disabled={busy || downloading || !selected} onClick={() => rotateSelectedPart(-90)}>↶ Girar 90°</button>
-              <button type="button" aria-label="Girar a imagem da peça 90 graus à direita" title="Girar a imagem da peça 90° à direita; o pivô da junta acompanha" style={toolButton(false, busy || downloading || !selected)} disabled={busy || downloading || !selected} onClick={() => rotateSelectedPart(90)}>↷ Girar 90°</button>
-              <button type="button" style={toolButton(tool === 'erase', busy || downloading || !selected)} disabled={busy || downloading || !selected} onClick={() => setEditTool('erase')}>Apagar</button>
-              <button type="button" style={toolButton(tool === 'crop', busy || downloading || !selected)} disabled={busy || downloading || !selected} onClick={() => setEditTool('crop')}>Cortar</button>
-              <button type="button" title="Corte genérico para separar e excluir a parte da imagem que não deseja" style={toolButton(tool === 'split', busy || downloading || !selected)} disabled={busy || downloading || !selected} onClick={() => setEditTool('split')}>Dividir com linha</button>
-              <button type="button" title={!draft.bodyJointBridgeEnabled ? 'Ative “Partes unidas” para usar o divisor de juntas' : !jointSplitReady ? 'Selecione um braço ou uma perna inteira ainda não dividida' : 'Divide o membro em segmentos anatômicos e cria a junta e a ponte do corpo'} style={toolButton(tool === 'joint-split', busy || downloading || !jointSplitReady)} disabled={busy || downloading || !jointSplitReady} onClick={() => setEditTool('joint-split')}>Divisor de juntas</button>
-              <button type="button" style={toolButton(tool === 'outline', busy || downloading || !selected)} disabled={busy || downloading || !selected} onClick={() => setEditTool('outline')}>Apagar contorno</button>
-              <button type="button" title={isThigh ? 'Arraste sobre a coxa para deformar' : 'A ferramenta está disponível somente nas coxas'} style={toolButton(tool === 'deform', busy || downloading || !isThigh)} disabled={busy || downloading || !isThigh} onClick={() => setEditTool('deform')}>〰 Deformar coxa</button>
-              <button type="button" title="Desenhe guias temporárias e estenda-as pelas bolinhas das pontas" style={toolButton(tool === 'guide', busy || downloading || !selected)} disabled={busy || downloading || !selected} onClick={() => setEditTool(tool === 'guide' ? 'select' : 'guide')}>／ Linha temporária</button>
-              {tool === 'guide' && visibleGuideLines.length > 0 && <button type="button" style={toolButton(false, busy || downloading)} disabled={busy || downloading} onClick={() => setGuides({ partId: selectedId, lines: [] })}>Limpar guias</button>}
-              {(tool === 'erase' || tool === 'outline') && <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: '#a9b5c4' }}>Pincel {brushSize}px
-                <input aria-label="Tamanho do pincel" type="range" min={4} max={80} step={1} value={brushSize} onChange={event => setBrushSize(Number(event.target.value))} disabled={busy || downloading} />
-              </label>}
-              {tool === 'deform' && isThigh && <>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: '#a9b5c4' }}>Raio {warpRadius}px
-                  <input aria-label="Raio do pincel de deformação" type="range" min={6} max={120} step={1} value={warpRadius} onChange={event => setWarpRadius(Number(event.target.value))} disabled={busy || downloading} />
-                </label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: '#a9b5c4' }}>Força {warpStrength}%
-                  <input aria-label="Força do pincel de deformação" type="range" min={10} max={100} step={1} value={warpStrength} onChange={event => setWarpStrength(Number(event.target.value))} disabled={busy || downloading} />
-                </label>
-              </>}
+            {mode === 'part' && <div className="model-source-tool-groups" aria-label="Ferramentas da peça">
+              <div className="model-source-tool-group">
+                <small>Transformar</small>
+                <button type="button" style={toolButton(tool === 'select', busy || downloading || !selected)} disabled={busy || downloading || !selected} onClick={() => setEditTool('select')}>Selecionar</button>
+                <button type="button" aria-label="Girar a imagem da peça 90 graus à esquerda" title="Girar a imagem da peça 90° à esquerda; o pivô da junta acompanha" style={toolButton(false, busy || downloading || !selected)} disabled={busy || downloading || !selected} onClick={() => rotateSelectedPart(-90)}>↶ 90°</button>
+                <button type="button" aria-label="Girar a imagem da peça 90 graus à direita" title="Girar a imagem da peça 90° à direita; o pivô da junta acompanha" style={toolButton(false, busy || downloading || !selected)} disabled={busy || downloading || !selected} onClick={() => rotateSelectedPart(90)}>↷ 90°</button>
+                <button type="button" className="model-source-mirror-button" aria-label="Espelhar peça horizontalmente" title="Inverte a imagem da peça da esquerda para a direita sem mover seu encaixe ou suas juntas" style={toolButton(false, busy || downloading || !selected)} disabled={busy || downloading || !selected} onClick={mirrorSelectedPart}><Icon name="flipHorizontal" />Espelhar peça</button>
+              </div>
+              <div className="model-source-tool-group">
+                <small>Recortar e dividir</small>
+                <button type="button" style={toolButton(tool === 'erase', busy || downloading || !selected)} disabled={busy || downloading || !selected} onClick={() => setEditTool('erase')}>Apagar</button>
+                <button type="button" style={toolButton(tool === 'crop', busy || downloading || !selected)} disabled={busy || downloading || !selected} onClick={() => setEditTool('crop')}>Cortar</button>
+                <button type="button" title="Corte genérico para separar e excluir a parte da imagem que não deseja" style={toolButton(tool === 'split', busy || downloading || !selected)} disabled={busy || downloading || !selected} onClick={() => setEditTool('split')}>Dividir com linha</button>
+                <button type="button" title={!draft.bodyJointBridgeEnabled ? 'Ative “Partes unidas” para usar o divisor de juntas' : !jointSplitReady ? 'Selecione um braço ou uma perna inteira ainda não dividida' : 'Divide o membro em segmentos anatômicos e cria a junta e a ponte do corpo'} style={toolButton(tool === 'joint-split', busy || downloading || !jointSplitReady)} disabled={busy || downloading || !jointSplitReady} onClick={() => setEditTool('joint-split')}>Divisor de juntas</button>
+              </div>
+              <div className="model-source-tool-group">
+                <small>Acabamento</small>
+                <button type="button" style={toolButton(tool === 'outline', busy || downloading || !selected)} disabled={busy || downloading || !selected} onClick={() => setEditTool('outline')}>Apagar contorno</button>
+                <button type="button" title={isThigh ? 'Arraste sobre a coxa para deformar' : 'A ferramenta está disponível somente nas coxas'} style={toolButton(tool === 'deform', busy || downloading || !isThigh)} disabled={busy || downloading || !isThigh} onClick={() => setEditTool('deform')}>〰 Deformar coxa</button>
+                <button type="button" title="Desenhe guias temporárias e estenda-as pelas bolinhas das pontas" style={toolButton(tool === 'guide', busy || downloading || !selected)} disabled={busy || downloading || !selected} onClick={() => setEditTool(tool === 'guide' ? 'select' : 'guide')}>／ Linha temporária</button>
+                {tool === 'guide' && visibleGuideLines.length > 0 && <button type="button" style={toolButton(false, busy || downloading)} disabled={busy || downloading} onClick={() => setGuides({ partId: selectedId, lines: [] })}>Limpar guias</button>}
+              </div>
+              {(tool === 'erase' || tool === 'outline' || tool === 'deform' && isThigh) && <div className="model-source-tool-sliders">
+                {(tool === 'erase' || tool === 'outline') && <label>Pincel {brushSize}px<input aria-label="Tamanho do pincel" type="range" min={4} max={80} step={1} value={brushSize} onChange={event => setBrushSize(Number(event.target.value))} disabled={busy || downloading} /></label>}
+                {tool === 'deform' && isThigh && <>
+                  <label>Raio {warpRadius}px<input aria-label="Raio do pincel de deformação" type="range" min={6} max={120} step={1} value={warpRadius} onChange={event => setWarpRadius(Number(event.target.value))} disabled={busy || downloading} /></label>
+                  <label>Força {warpStrength}%<input aria-label="Força do pincel de deformação" type="range" min={10} max={100} step={1} value={warpStrength} onChange={event => setWarpStrength(Number(event.target.value))} disabled={busy || downloading} /></label>
+                </>}
+              </div>}
             </div>}
-            {skinRemovalOpen && <section aria-label="Remover a cor da pele original" style={{ display: 'grid', gap: 8, padding: 10, border: '1px solid #46556b', borderRadius: 9, background: '#1a2230' }}>
+            {skinRemovalOpen && <section className="model-source-panel" aria-label="Remover a cor da pele original">
               <strong style={{ fontSize: 12 }}>Remover a cor original da pele</strong>
-              <small style={{ color: '#aabbd0', lineHeight: 1.4 }}>A cor escolhida será removida das peças anatômicas; os contornos escuros ficam preservados. A alteração continua no rascunho até “Salvar no original”.</small>
-              <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12 }}>
+              <small>A cor escolhida será removida das peças anatômicas; os contornos escuros ficam preservados. A alteração continua no rascunho até “Salvar no original”.</small>
+              <div className="model-source-panel-row">
+                <label>
                   Cor da pele
-                  <input aria-label="Selecionar cor original da pele" type="color" value={skinColor ?? '#f3d9c1'} disabled={busy || downloading} onChange={event => { setSkinColor(event.target.value); setSamplingSkinColor(false); setError('') }} style={{ width: 36, height: 30, padding: 2, border: '1px solid #64748b', borderRadius: 5, background: '#1b2230', cursor: 'pointer' }} />
+                  <input aria-label="Selecionar cor original da pele" type="color" value={skinColor ?? '#f3d9c1'} disabled={busy || downloading} onChange={event => { setSkinColor(event.target.value); setSamplingSkinColor(false); setError('') }} />
                 </label>
                 <button type="button" style={toolButton(samplingSkinColor, busy || downloading || mode !== 'part' || !previewPart)} disabled={busy || downloading || mode !== 'part' || !previewPart} onClick={() => {
                   const sampling = !samplingSkinColor
@@ -874,26 +910,26 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
                   cancelDrawing()
                   setStatus(sampling ? 'Clique em uma área da pele na prévia da peça para selecionar a cor original.' : 'Seleção de cor cancelada.')
                 }}>{samplingSkinColor ? 'Cancelar seleção' : 'Selecionar na prévia'}</button>
-                <small style={{ color: '#aabbd0' }}>{skinColor ? skinColor.toUpperCase() : 'Nenhuma cor selecionada'}</small>
+                <small className="model-source-panel-color-value">{skinColor ? skinColor.toUpperCase() : 'Nenhuma cor selecionada'}</small>
               </div>
-              <label style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8, color: '#aabbd0', fontSize: 12 }}>
+              <label className="model-source-panel-range">
                 Semelhança {skinColorTolerance}
                 <input aria-label="Semelhança da cor da pele" type="range" min={0} max={180} step={1} value={skinColorTolerance} disabled={busy || downloading} onChange={event => setSkinColorTolerance(Number(event.target.value))} style={{ flex: '1 1 160px' }} />
               </label>
               <button type="button" style={{ ...toolButton(false, busy || downloading || !skinColor || samplingSkinColor), width: '100%' }} disabled={busy || downloading || !skinColor || samplingSkinColor} onClick={removeOriginalSkinColor}>Remover cor e manter contornos</button>
             </section>}
-            {outlineNormalizationOpen && <section aria-label="Normalizar o contorno do modelo" style={{ display: 'grid', gap: 8, padding: 10, border: '1px solid #46556b', borderRadius: 9, background: '#1a2230' }}>
+            {outlineNormalizationOpen && <section className="model-source-panel" aria-label="Normalizar o contorno do modelo">
               <strong style={{ fontSize: 12 }}>Normalizar o contorno externo</strong>
-              <small style={{ color: '#aabbd0', lineHeight: 1.4 }}>Detecção automática local, sem IA. Identifica tinta escura próxima à borda transparente, aplica uma cor uniforme às peças do corpo e atualiza a cor padrão do contorno. A edição pode ser desfeita.</small>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12 }}>
+              <small>Detecção automática local, sem IA. Identifica tinta escura próxima à borda transparente, aplica uma cor uniforme às peças do corpo e atualiza a cor padrão do contorno. A edição pode ser desfeita.</small>
+              <label>
                 Cor única do contorno
-                <input aria-label="Cor única do contorno do modelo" type="color" value={outlineColor} disabled={busy || downloading} onChange={event => { setOutlineColor(event.target.value); setError('') }} style={{ width: 36, height: 30, padding: 2, border: '1px solid #64748b', borderRadius: 5, background: '#1b2230', cursor: 'pointer' }} />
-                <small style={{ color: '#aabbd0' }}>{outlineColor.toUpperCase()}</small>
+                <input aria-label="Cor única do contorno do modelo" type="color" value={outlineColor} disabled={busy || downloading} onChange={event => { setOutlineColor(event.target.value); setError('') }} />
+                <small className="model-source-panel-color-value">{outlineColor.toUpperCase()}</small>
               </label>
               <button type="button" style={{ ...toolButton(false, busy || downloading), width: '100%' }} disabled={busy || downloading} onClick={normalizeModelOutline}>Normalizar contorno do corpo</button>
             </section>}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', minHeight: 20, gap: 8 }}>
-              <small style={{ color: '#aabbd0' }}>
+            <div className="model-source-preview-heading">
+              <small>
                 {mode === 'sheet'
                   ? 'Folha PNG transparente · selecione a cabeça para mover'
                   : tool === 'crop' ? 'Arraste um retângulo sobre a peça e aplique o corte.'
@@ -905,8 +941,8 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
                         : tool === 'guide' ? 'Segure e arraste para criar uma linha. Arraste uma bolinha para continuar a linha; outras ferramentas travam as guias.'
                           : 'Prévia isolada · Ctrl + roda do mouse também altera o zoom'}
               </small>
-              {mode === 'part' && visibleGuideLines.length > 0 && tool !== 'guide' && <small style={{ color: '#a5fff4', whiteSpace: 'nowrap' }}>Guias travadas</small>}
-              {mode === 'part' && gesture && <div style={{ display: 'flex', gap: 5 }}>
+              {mode === 'part' && visibleGuideLines.length > 0 && tool !== 'guide' && <small className="model-source-guide-status">Guias travadas</small>}
+              {mode === 'part' && gesture && <div className="model-source-preview-actions">
                 {gesture.tool === 'crop' && <button type="button" style={toolButton(false, busy || downloading)} disabled={busy || downloading} onClick={applyCrop}>Aplicar corte</button>}
                 {gesture.tool === 'split' && <button type="button" style={toolButton(false, busy || downloading)} disabled={busy || downloading} onClick={() => applySplit(false)}>Dividir peça</button>}
                 {gesture.tool === 'joint-split' && <button type="button" style={toolButton(false, busy || downloading)} disabled={busy || downloading} onClick={() => applySplit(true)}>Criar segmentos e junta</button>}
@@ -915,8 +951,8 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
                 <button type="button" style={toolButton(false, busy || downloading)} disabled={busy || downloading} onClick={cancelDrawing}>Cancelar traço</button>
               </div>}
             </div>
-            <div onWheel={handlePreviewWheel} style={{ flex: '0 0 400px', minHeight: 260, maxHeight: 500, width: '100%', borderRadius: 10, background: '#242b39', overflow: 'auto', padding: 10, boxSizing: 'border-box' }}>
-              <div style={{ width: 'max-content', height: 'max-content', margin: '0 auto' }}>
+            <div onWheel={handlePreviewWheel} className="model-source-preview-stage">
+              <div className="model-source-artboard">
                 <div
                   ref={surface}
                   onPointerDown={handlePreviewPointerDown}
@@ -924,74 +960,79 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
                   onPointerUp={tool === 'guide' ? finishGuide : tool === 'deform' ? event => { void finishWarp(event) } : finishDrawing}
                   onPointerCancel={tool === 'guide' ? cancelGuide : tool === 'deform' ? event => { void finishWarp(event) } : cancelDrawing}
                   onPointerLeave={() => { if (!warpDrag.current) setWarpCursor(null) }}
-                  style={{ position: 'relative', flex: '0 0 auto', width: surfaceWidth, height: surfaceHeight, ...previewBackgroundStyle, cursor: samplingSkinColor ? 'copy' : mode === 'part' && tool !== 'select' ? 'crosshair' : 'default', touchAction: 'none', userSelect: 'none', overflow: 'hidden' }}
+                  className="model-source-preview-surface"
+                  style={{ width: surfaceWidth, height: surfaceHeight, ...previewBackgroundStyle, cursor: samplingSkinColor ? 'copy' : mode === 'part' && tool !== 'select' ? 'crosshair' : 'default' }}
                 >
                   {mode === 'sheet'
                     ? preview && <img src={preview} alt="Prévia da imagem original editada" draggable={false} style={{ width: '100%', height: '100%', objectFit: 'fill', display: 'block', pointerEvents: 'none' }} />
                     : tool === 'deform' && warpSession?.partId === selectedId
                       ? <canvas ref={warpCanvas} aria-label={'Prévia deformável: ' + (selected?.name ?? 'coxa')} style={{ width: '100%', height: '100%', objectFit: 'fill', display: 'block', pointerEvents: 'none' }} />
                       : previewPart && <img src={previewPart.dataUrl} alt={'Prévia isolada: ' + previewPart.name} draggable={false} style={{ width: '100%', height: '100%', objectFit: 'fill', display: 'block', pointerEvents: 'none' }} />}
-                  {mode === 'sheet' && selectedRect && <div aria-label={isHead ? 'Arraste a cabeça para mover na folha original' : 'Peça selecionada'} onPointerDown={startHeadDrag} onPointerMove={moveHeadDrag} onPointerUp={stopHeadDrag} onPointerCancel={stopHeadDrag} style={{ position: 'absolute', left: selectedRect.x * previewScale, top: selectedRect.y * previewScale, width: selectedRect.width * previewScale, height: selectedRect.height * previewScale, border: '2px dashed #3b89ff', boxSizing: 'border-box', cursor: isHead ? 'grab' : 'default', touchAction: 'none', userSelect: 'none' }} />}
+                  {mode === 'sheet' && selectedRect && <div aria-label={isHead ? 'Arraste a cabeça para mover na folha original' : 'Peça selecionada'} onPointerDown={startHeadDrag} onPointerMove={moveHeadDrag} onPointerUp={stopHeadDrag} onPointerCancel={stopHeadDrag} style={{ position: 'absolute', left: selectedRect.x * previewScale, top: selectedRect.y * previewScale, width: selectedRect.width * previewScale, height: selectedRect.height * previewScale, border: '2px dashed #e76391', boxSizing: 'border-box', cursor: isHead ? 'grab' : 'default', touchAction: 'none', userSelect: 'none' }} />}
                   {mode === 'part' && (visibleGuideLines.length > 0 || guideStroke?.partId === selectedId) && <svg aria-label="Linhas temporárias de referência" width="100%" height="100%" viewBox={'0 0 ' + logicalWidth + ' ' + logicalHeight} preserveAspectRatio="none" style={{ position: 'absolute', inset: 0, overflow: 'visible', pointerEvents: 'none' }}>
                     {visibleGuideLines.map(line => <g key={line.id}>
                       <line x1={line.start.x} y1={line.start.y} x2={line.end.x} y2={line.end.y} stroke="#70d6d0" strokeWidth="2" strokeDasharray="6 4" vectorEffect="non-scaling-stroke" />
-                      {[line.start, line.end].map((point, index) => <circle key={index} cx={point.x} cy={point.y} r={6 / previewScale} fill="#14252d" stroke="#a5fff4" strokeWidth="2" vectorEffect="non-scaling-stroke" pointerEvents={tool === 'guide' ? 'all' : 'none'} aria-label={tool === 'guide' ? 'Arraste para criar uma linha conectada' : 'Guia temporária travada'} onPointerDown={event => extendGuide(event, point)} style={{ cursor: tool === 'guide' ? 'crosshair' : 'default' }} />)}
+                      {[line.start, line.end].map((point, index) => <circle key={index} cx={point.x} cy={point.y} r={6 / previewScale} fill="#fff" stroke="#4faaa3" strokeWidth="2" vectorEffect="non-scaling-stroke" pointerEvents={tool === 'guide' ? 'all' : 'none'} aria-label={tool === 'guide' ? 'Arraste para criar uma linha conectada' : 'Guia temporária travada'} onPointerDown={event => extendGuide(event, point)} style={{ cursor: tool === 'guide' ? 'crosshair' : 'default' }} />)}
                     </g>)}
-                    {guideStroke?.partId === selectedId && <line x1={guideStroke.start.x} y1={guideStroke.start.y} x2={guideStroke.end.x} y2={guideStroke.end.y} stroke="#a5fff4" strokeWidth="2" strokeDasharray="3 3" vectorEffect="non-scaling-stroke" />}
+                    {guideStroke?.partId === selectedId && <line x1={guideStroke.start.x} y1={guideStroke.start.y} x2={guideStroke.end.x} y2={guideStroke.end.y} stroke="#4faaa3" strokeWidth="2" strokeDasharray="3 3" vectorEffect="non-scaling-stroke" />}
                   </svg>}
                   {mode === 'part' && gesture && <svg aria-hidden="true" width="100%" height="100%" viewBox={'0 0 ' + logicalWidth + ' ' + logicalHeight} preserveAspectRatio="none" style={{ position: 'absolute', inset: 0, overflow: 'visible', pointerEvents: 'none' }}>
-                    {gesture.tool === 'crop' && <rect x={Math.min(gesture.start.x, gesture.current.x)} y={Math.min(gesture.start.y, gesture.current.y)} width={Math.abs(gesture.current.x - gesture.start.x)} height={Math.abs(gesture.current.y - gesture.start.y)} fill="rgba(59,137,255,.18)" stroke="#61a5ff" strokeWidth="2" vectorEffect="non-scaling-stroke" />}
+                    {gesture.tool === 'crop' && <rect x={Math.min(gesture.start.x, gesture.current.x)} y={Math.min(gesture.start.y, gesture.current.y)} width={Math.abs(gesture.current.x - gesture.start.x)} height={Math.abs(gesture.current.y - gesture.start.y)} fill="rgba(231,99,145,.16)" stroke="#c74677" strokeWidth="2" vectorEffect="non-scaling-stroke" />}
                     {(gesture.tool === 'split' || gesture.tool === 'joint-split') && <line x1={gesture.start.x} y1={gesture.start.y} x2={gesture.current.x} y2={gesture.current.y} stroke={gesture.tool === 'joint-split' ? '#54d6c5' : '#ff6677'} strokeWidth="3" vectorEffect="non-scaling-stroke" />}
                     {(gesture.tool === 'erase' || gesture.tool === 'outline') && <polyline points={gesture.points.map(point => point.x + ',' + point.y).join(' ')} fill="none" stroke={gesture.tool === 'outline' ? '#ffc857' : '#ff6677'} strokeWidth={brushSize} strokeLinecap="round" strokeLinejoin="round" opacity=".75" vectorEffect="non-scaling-stroke" />}
                   </svg>}
-                  {mode === 'part' && tool === 'deform' && warpCursor && <div aria-hidden="true" style={{ position: 'absolute', left: warpCursor.x * previewScale - warpRadius * previewScale, top: warpCursor.y * previewScale - warpRadius * previewScale, width: warpRadius * 2 * previewScale, height: warpRadius * 2 * previewScale, border: '1px solid #67c4ff', borderRadius: '50%', background: 'rgba(59,137,255,.10)', boxSizing: 'border-box', pointerEvents: 'none' }} />}
+                  {mode === 'part' && tool === 'deform' && warpCursor && <div aria-hidden="true" style={{ position: 'absolute', left: warpCursor.x * previewScale - warpRadius * previewScale, top: warpCursor.y * previewScale - warpRadius * previewScale, width: warpRadius * 2 * previewScale, height: warpRadius * 2 * previewScale, border: '1px solid #c74677', borderRadius: '50%', background: 'rgba(231,99,145,.10)', boxSizing: 'border-box', pointerEvents: 'none' }} />}
                 </div>
               </div>
             </div>
-            {status && <small role="status" style={{ color: '#b2f4d5', lineHeight: 1.4 }}>{status}</small>}
+            {status && <small role="status" className="model-source-status">{status}</small>}
           </main>
-          <aside style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <strong style={{ fontSize: 13 }}>{selected?.name ?? 'Nenhuma peça'}</strong>
-            {selected && limbReplacementTarget && <section aria-label="Substituição experimental de membro" style={{ display: 'grid', gap: 8, padding: 10, border: '1px solid #7962aa', borderRadius: 9, background: '#211d30' }}>
+          <aside className="model-source-inspector">
+            <header className="model-source-inspector-heading"><small className="model-source-inspector-kicker">Propriedades e operações</small><h2>{selected?.name ?? 'Nenhuma peça'}</h2></header>
+            {selected && limbReplacementTarget && <section className="model-source-panel model-source-replacement" aria-label="Substituição experimental de membro">
               <strong style={{ fontSize: 12 }}>Substituição experimental</strong>
-              <small style={{ color: '#c0b6d6', lineHeight: 1.4 }}>Copia e espelha os pixels de {selected.name} para o lado oposto. Mantém a posição, o pivô, o ID e as juntas atuais desse lado.</small>
-              <button type="button" title={`Substituir ${limbReplacementTarget.name} pela cópia espelhada de ${selected.name}; mantém os vínculos e a posição do lado substituído.`} aria-label={`Substituir ${limbReplacementTarget.name} pela cópia espelhada de ${selected.name}`} style={{ ...field, cursor: 'pointer', borderColor: '#7962aa', whiteSpace: 'normal', lineHeight: 1.35 }} disabled={busy || downloading} onClick={replaceOppositeLimb}>Substituir {modelRigSide(limbReplacementTarget.name) === 'left' ? 'esquerda' : 'direita'} pela cópia espelhada de {modelRigSide(selected.name) === 'left' ? 'esquerda' : 'direita'}</button>
+              <small>Copia e espelha os pixels de {selected.name} para o lado oposto. Mantém a posição, o pivô, o ID e as juntas atuais desse lado.</small>
+              <button type="button" title={`Substituir ${limbReplacementTarget.name} pela cópia espelhada de ${selected.name}; mantém os vínculos e a posição do lado substituído.`} aria-label={`Substituir ${limbReplacementTarget.name} pela cópia espelhada de ${selected.name}`} className="model-source-replacement-button" disabled={busy || downloading} onClick={replaceOppositeLimb}>Substituir {modelRigSide(limbReplacementTarget.name) === 'left' ? 'esquerda' : 'direita'} pela cópia espelhada de {modelRigSide(selected.name) === 'left' ? 'esquerda' : 'direita'}</button>
             </section>}
             {selected && selectedRect && baseline && <>
-              <label style={{ display: 'grid', gap: 5, fontSize: 12 }}>Largura (pixels)
+              <label className="model-source-inspector-field">Largura (pixels)
                 <input style={field} type="number" min={1} max={8192} step={1} value={selectedRect.width} disabled={busy || downloading} onChange={event => setNumber('width', Number(event.target.value))} />
               </label>
-              <label style={{ display: 'grid', gap: 5, fontSize: 12 }}>Altura (pixels)
+              <label className="model-source-inspector-field">Altura (pixels)
                 <input style={field} type="number" min={1} max={8192} step={1} value={selectedRect.height} disabled={busy || downloading} onChange={event => setNumber('height', Number(event.target.value))} />
               </label>
               {isHead && <>
-                <strong style={{ fontSize: 12 }}>Posição da cabeça na imagem</strong>
-                <label style={{ display: 'grid', gap: 5, fontSize: 12 }}>X (pixels)
+                <strong className="model-source-inspector-subheading">Posição da cabeça na imagem</strong>
+                <label className="model-source-inspector-field">X (pixels)
                   <input style={field} type="number" min={0} max={draft.width} step={1} value={selectedRect.x} disabled={busy || downloading} onChange={event => setNumber('x', Number(event.target.value))} />
                 </label>
-                <label style={{ display: 'grid', gap: 5, fontSize: 12 }}>Y (pixels)
+                <label className="model-source-inspector-field">Y (pixels)
                   <input style={field} type="number" min={0} max={draft.height} step={1} value={selectedRect.y} disabled={busy || downloading} onChange={event => setNumber('y', Number(event.target.value))} />
                 </label>
               </>}
-              <small style={{ color: '#a9b5c4' }}>Original desta peça: {Math.round(baseline.width)} × {Math.round(baseline.height)} px</small>
-              <button style={{ ...field, cursor: 'pointer' }} type="button" disabled={busy || downloading} onClick={restoreSelected}>Restaurar dimensões</button>
+              <small className="model-source-inspector-note">Original desta peça: {Math.round(baseline.width)} × {Math.round(baseline.height)} px</small>
+              <button className="model-source-inspector-button" style={field} type="button" disabled={busy || downloading} onClick={restoreSelected}>Restaurar dimensões</button>
             </>}
-            {draft.parts.length > 1 && <button style={{ ...field, cursor: 'pointer', borderColor: '#a95562' }} type="button" disabled={!selected || busy || downloading} onClick={deleteSelected}>Excluir peça selecionada</button>}
-            <button style={{ ...field, width: 'auto', cursor: 'pointer' }} type="button" disabled={undoCount === 0 || busy || downloading} onClick={undo}>Desfazer edição ({undoCount})</button>
-            <div style={{ display: 'grid', gap: 7, paddingTop: 9, borderTop: '1px solid #3c4554' }}>
-              <label htmlFor="model-source-chroma" style={{ fontSize: 12, fontWeight: 600 }}>Chroma Key · tolerância: {chromaTolerance}</label>
+            {draft.parts.length > 1 && <button className="model-source-inspector-button model-source-danger-button" type="button" disabled={!selected || busy || downloading} onClick={deleteSelected}>Excluir peça selecionada</button>}
+            <button className="model-source-inspector-button" type="button" disabled={undoCount === 0 || busy || downloading} onClick={undo}>Desfazer edição ({undoCount})</button>
+            <div className="model-source-inspector-section">
+              <strong>Remoção do fundo</strong>
+              <label htmlFor="model-source-chroma">Chroma Key · tolerância: {chromaTolerance}</label>
               <input id="model-source-chroma" type="range" min={0} max={MAX_CHROMA_TOLERANCE} value={chromaTolerance} disabled={busy || downloading} onChange={event => { setChromaTolerance(Number(event.target.value)); setDownloadInfo('') }} />
-              <button style={{ ...field, cursor: 'pointer' }} type="button" disabled={busy || downloading} onClick={restoreChroma}>Restaurar chroma</button>
-              <small style={{ fontSize: 11, lineHeight: 1.4, color: '#a9b5c4' }}>A borracha de contorno também atualiza a base usada para recalcular o Chroma.</small>
+              <button className="model-source-inspector-button" type="button" disabled={busy || downloading} onClick={restoreChroma}>Restaurar chroma</button>
+              <small>A borracha de contorno também atualiza a base usada para recalcular o Chroma.</small>
             </div>
           </aside>
         </div>
-        {error && <p role="alert" style={{ color: '#ffc5c5', margin: '0 18px 12px' }}>{error}</p>}
-        {downloadInfo && <p role="status" style={{ color: '#b2f4d5', margin: '0 18px 12px', fontSize: 12, overflowWrap: 'anywhere' }}>{downloadInfo}</p>}
-        <footer style={{ padding: '14px 18px', display: 'flex', justifyContent: 'flex-end', gap: 10, borderTop: '1px solid #303c4c' }}>
-          <button type="button" onClick={onClose} disabled={busy || downloading} style={{ ...field, width: 'auto', cursor: 'pointer' }}>Cancelar</button>
-          <button type="button" onClick={() => void download()} disabled={busy || downloading || Boolean(error)} style={{ ...field, width: 'auto', cursor: 'pointer', background: '#344865' }}>{downloading ? 'Exportando…' : 'Baixar PNG em Downloads'}</button>
-          <button type="button" onClick={() => void save()} disabled={!edited || busy || downloading || Boolean(error)} style={{ ...field, width: 'auto', background: '#1d66bd', cursor: 'pointer', opacity: !edited || busy || downloading || error ? .55 : 1 }}>{busy ? 'Publicando…' : 'Salvar no original'}</button>
+        {error && <p role="alert" className="model-source-content-alert">{error}</p>}
+        {downloadInfo && <p role="status" className="model-source-content-alert success">{downloadInfo}</p>}
+        <footer className="model-source-footer">
+          <small className="model-source-footer-note">Edições no rascunho · use Desfazer para revisar</small>
+          <div className="model-source-footer-actions">
+          <button type="button" onClick={onClose} disabled={busy || downloading} className="model-source-footer-button">Cancelar</button>
+          <button type="button" onClick={() => void download()} disabled={busy || downloading || Boolean(error)} className="model-source-footer-button">{downloading ? 'Exportando…' : 'Baixar PNG em Downloads'}</button>
+          <button type="button" onClick={() => void save()} disabled={!edited || busy || downloading || Boolean(error)} className="model-source-footer-button model-source-save">{busy ? 'Publicando…' : 'Salvar no original'}</button>
+          </div>
         </footer>
       </section>
     </div>
