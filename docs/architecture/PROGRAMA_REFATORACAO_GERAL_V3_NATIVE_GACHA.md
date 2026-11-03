@@ -5,6 +5,18 @@
 **Execução:** local, sem push/PR/merge; sem leitura ou alteração de `app-data` pessoal.
 **Baseline de auditoria V2:** [Programa V2](./PROGRAMA_REFATORACAO_GERAL_V2_NATIVE_GACHA.md). A árvore estava limpa no início. O HEAD inicial desta rodada era `8340069`; a referência `491a4ea` do V3 era uma fotografia histórica, não foi usada para descartar commits posteriores.
 
+## Atualização após publicação — 2026-11-03
+
+A execução V3 registrada abaixo foi **publicada pelo usuário** na `Dev-V2`, culminando (antes desta revisão) em `0354c065c1e4bdcd2c9717fc54b3fc4aa9630665`. As afirmações históricas de que não houve push ou CI hospedada referem-se **à sessão local original**, não ao estado atual do GitHub.
+
+A primeira CI hospedada desse HEAD ([run 41661823251](https://github.com/nestarasup-sys/Native-gacha/actions/runs/41661823251)) **não ficou verde**: as suites Editor V6 Ubuntu/Windows passaram; no gate geral, `tests/diagnostics-ipc.test.mjs` verificou um caminho Windows no Linux e recebeu caminho inteiro em `fileName`; o job MP4 Windows parou antes da captura ao receber HTTP 404 no pacote FFmpeg LGPL pinado. Não concluir que o cabelo falhou na CI: **os testes reais novos de cabelo não chegaram a iniciar nessa execução**.
+
+Foi aplicada posteriormente uma correção de caminho multiplataforma em `electron/domains/storage/diagnosticsIpc.ts` e acrescentado teste POSIX em `tests/diagnostics-ipc.test.mjs`; essas mudanças exigem validação hospedada em um HEAD mais recente. A URL de autobuild `BtbN/FFmpeg-Builds` do manifesto retornou 404 e ainda precisa ser substituída **apenas após verificar release disponível, licença, encoders e SHA-256**. A análise e os próximos passos estão em [Plano de excelência V4 do Editor V6](../editor-v6/ROADMAP_V4_EXCELENCIA.md).
+
+A V3 concluiu aceite técnico **sintético** da malha de cabelo. O aceite **artístico com personagem real** continua pendente. Por decisão explícita de produto, o movimento experimental do cabelo fica **somente no MP4 exportado**, nunca na prévia normal do Editor V6.
+
+---
+
 ## Resumo da execução
 
 Foram corrigidas duas causas verificáveis: o exportador offscreen podia aceitar a captura de um quadro antigo como se fosse o quadro solicitado, e o gate geral de persistência dependia de uma forma literal de código que mudou quando a preparação de cabelo se tornou assíncrona. O motor experimental de cabelo foi refeito para exportação com malha texturizada contínua, âncora baseada na cabeça/recorte e regressões sintéticas com pixels e MP4.
