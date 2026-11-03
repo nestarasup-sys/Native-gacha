@@ -327,8 +327,12 @@ async function initialize() {
       : await composeEditorV6FaceReplacements(faceCompositionInput, project.assets)
     timings.faceCompositionMs = performance.now() - faceCompositionStarted
 
+    // Face composites are temporary and often change at every speaking frame.
+    // Keep them in this frame's registry only: the shared cache in
+    // sceneFaceComposition already has an explicit memory budget.
+    // Inserting them into assetsById would retain every evicted PNG for the
+    // entire export, causing renderer memory to grow with video duration.
     const renderAssetsById = new Map(composed.assets.map(asset => [asset.id, asset]))
-    for (const asset of composed.assets) assetsById.set(asset.id, asset)
     let renderScene = composed.scene
     const hairCompositionStarted = performance.now()
     if (activeHair) {
@@ -345,7 +349,7 @@ async function initialize() {
           const rig = interpolateEditorV6HairMotionRig(transition.from, transition.to, motionEase(poseSample.progress))
           const assetId = `editor-v6-hair-motion:${element.id}`
           const asset = { id: assetId, category: 'character' as const, name: `${element.text || 'Personagem'} · cabelo animado`, mimeType: 'image/png' as const, dataUrl: composeMotionHairFrame(rig, original, frame, transition, transitionFrame), timelineSnapshot: true }
-          assetsById.set(assetId, asset); renderAssetsById.set(assetId, asset); generatedAssets.push(asset)
+          renderAssetsById.set(assetId, asset); generatedAssets.push(asset)
           let mouthPatch: typeof element.mouthPatch = undefined
           if (transitionFrame.facePatch && transition.atlas.faceAtlasSurfaceId) {
             const faceSurfaceId = transition.atlas.faceAtlasSurfaceId
@@ -373,7 +377,7 @@ async function initialize() {
         if (!rig) return element
         const assetId = `editor-v6-hair-motion:${element.id}`
         const asset = { id: assetId, category: 'character' as const, name: `${element.text || 'Personagem'} · cabelo animado`, mimeType: 'image/png' as const, dataUrl: composeHairFrame(rig, original, frame), timelineSnapshot: true }
-        assetsById.set(assetId, asset); renderAssetsById.set(assetId, asset); generatedAssets.push(asset)
+        renderAssetsById.set(assetId, asset); generatedAssets.push(asset)
         const geometry = expandEditorV6HairCrop(original, { width: rig.outputWidth, height: rig.outputHeight }, rig.sourceCrop)
         const patch = original.mouthPatch
         const mouthPatch = patch ? {
@@ -393,7 +397,7 @@ async function initialize() {
     const ids = new Set(activeLayer === 'background' ? [renderScene.background.backgroundAssetId] : activeLayer === 'foreground' ? sceneAssetIds : [renderScene.background.backgroundAssetId, ...sceneAssetIds])
     const assetPreparationStarted = performance.now()
     for (const id of ids) {
-      const asset = id ? assetsById.get(id) : undefined
+      const asset = id ? renderAssetsById.get(id) ?? assetsById.get(id) : undefined
       if (!asset) continue
       let prepared = images.get(asset.id)
       if (!prepared) {
