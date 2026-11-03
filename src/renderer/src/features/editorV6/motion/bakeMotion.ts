@@ -177,10 +177,11 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
     if (samePose) reusable = renderer
     return renderer
   }
-  const render = async (progress: number, faceMode?: EditorV6FaceRenderMode, mouthScale = 1, fingerprint = false, preparedRenderer?: Renderer): Promise<MotionFrameRender> => {
+  const render = async (progress: number, faceMode?: EditorV6FaceRenderMode, mouthScale = 1, fingerprint = false, preparedRenderer?: Renderer, referenceMode = false): Promise<MotionFrameRender> => {
     const renderer = preparedRenderer ?? await prepare(progress), face = scaleMouthForExport(interpolateEditorV6Face(from, to, progress), mouthScale)
     try {
-      const result = await renderer.renderToCanvas(face.appearance, face.transforms, face.effects, editorV6FaceModeDuringMotion(faceMode ?? face.mode))
+      const mode = faceMode ?? face.mode
+      const result = await renderer.renderToCanvas(face.appearance, face.transforms, face.effects, referenceMode ? mode : editorV6FaceModeDuringMotion(mode))
       return { ...result, crop: cropOf(result.canvas, fingerprint), renderer, dispose: () => { if (!samePose && !preparedRenderer) renderer.dispose() } }
     } catch (error) { if (!samePose && !preparedRenderer) renderer.dispose(); throw error }
   }
@@ -234,11 +235,33 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
       atlas.width = atlas.height = 1
       return { asset: { id: assetId, category: 'character', name: 'Camada facial da boca', mimeType: 'image/png', dataUrl, timelineSnapshot: true }, assetRole: 'face-atlas', motion: { version: 1, key: request.plan.key, assetId, frames }, metrics: { milliseconds: performance.now() - began, preparedRigs, samples: count, atlasPixels } }
     }
-    const first = await render(0, staticMouthLoop ? from.activeFaceMode : undefined, 1, Boolean(request.mouthScaleSamples)), fromCrop = first.crop, fullWidth = first.width, fullHeight = first.height
-    first.dispose()
-    const last = staticMouthLoop ? null : await render(1), toCrop = last?.crop ?? fromCrop
+    const first = await render(0, staticMouthLoop ? from.activeFaceMode : undefined, 1, Boolean(request.mouthScaleSamples)), fullWidth = first.width, fullHeight = first.height
+    // Static character assets use the union of all face-mode bounds. Motion
+    // endpoints must use those same bounds when interpreting element centers.
+    const endpointCrop = async (progress: number, initial: Crop, renderer: Renderer): Promise<Crop> => {
+      let left = initial.left, top = initial.top, right = left + initial.width, bottom = top + initial.height
+      for (const mode of ['idle', 'blink', 'talk', 'talk-blink'] as const) {
+        try {
+          const frame = await render(progress, mode, 1, false, renderer, true)
+          try {
+            left = Math.min(left, frame.crop.left); top = Math.min(top, frame.crop.top)
+            right = Math.max(right, frame.crop.left + frame.crop.width); bottom = Math.max(bottom, frame.crop.top + frame.crop.height)
+          } finally { frame.dispose() }
+        } catch (error) {
+          const missingBlink = error instanceof Error && error.message.includes('Selecione olhos do catálogo ou assets de Olhos Dev')
+          if (!missingBlink || (mode !== 'blink' && mode !== 'talk-blink')) throw error
+        }
+      }
+      return { left, top, width: right - left, height: bottom - top }
+    }
+    let fromCrop: Crop
+    try { fromCrop = await endpointCrop(0, first.crop, first.renderer) }
+    finally { first.dispose() }
+    const last = staticMouthLoop ? null : await render(1)
+    let toCrop: Crop
+    try { toCrop = last ? await endpointCrop(1, last.crop, last.renderer) : fromCrop }
+    finally { last?.dispose() }
     const maximumCanvasWidth = Math.max(fullWidth, last?.width ?? fullWidth), maximumCanvasHeight = Math.max(fullHeight, last?.height ?? fullHeight)
-    last?.dispose()
     const count = request.plan.samples.length
     const maxAtlasPixels = Math.min(8_000_000, request.maxAtlasPixels ?? 8_000_000)
     let maximumWidth = maximumCanvasWidth, maximumHeight = maximumCanvasHeight
