@@ -22,6 +22,7 @@ type SourceBounds = { x: number; y: number; width: number; height: number }
 type Seam = { center: Point; tangent: Point; normal: Point; minTangent: number; maxTangent: number }
 type SeamGapSample = { tangent: number; upperNormal: number; lowerNormal: number }
 type SeamWithGap = Seam & { gapSamples?: SeamGapSample[] }
+export type WardrobeJointBridgeTriangle = { source: [Point, Point, Point]; target: [Point, Point, Point] }
 export type WardrobeJointBridgeMask = { width: number; height: number; data: Uint8Array }
 type AlphaMask = WardrobeJointBridgeMask
 
@@ -287,6 +288,30 @@ export function detectWardrobeJointSeam(
   }
 }
 
+/**
+ * Keeps the detected seam orientation and width while placing its center on
+ * the saved source-space joint anchor. The anchor is authored by the model's
+ * joint cutter and is more reliable than an asymmetric alpha contour.
+ */
+export function anchorWardrobeJointSeam(seam: SeamWithGap, anchor: Point): SeamWithGap {
+  if (!Number.isFinite(anchor.x) || !Number.isFinite(anchor.y)) return seam
+  const deltaX = anchor.x - seam.center.x
+  const deltaY = anchor.y - seam.center.y
+  const tangentShift = deltaX * seam.tangent.x + deltaY * seam.tangent.y
+  const normalShift = deltaX * seam.normal.x + deltaY * seam.normal.y
+  return {
+    ...seam,
+    center: { ...anchor },
+    minTangent: seam.minTangent - tangentShift,
+    maxTangent: seam.maxTangent - tangentShift,
+    ...(seam.gapSamples ? { gapSamples: seam.gapSamples.map((sample) => ({
+      tangent: sample.tangent - tangentShift,
+      upperNormal: sample.upperNormal - normalShift,
+      lowerNormal: sample.lowerNormal - normalShift
+    })) } : {})
+  }
+}
+
 function sampleOpaquePixel(data: Uint8ClampedArray, width: number, height: number, seam: Seam,
   tangent: number, normal: number, direction: number): [number, number, number, number] | null {
   for (let distance = 0; distance <= 3; distance += .5) for (const tangentOffset of [0, -.5, .5]) {
@@ -430,6 +455,58 @@ function drawTriangle(
 }
 
 /**
+ * Rasterizes the deformed band on its own surface. Neighboring mesh triangles
+ * overlap just enough to hide antialiasing gaps; replacing pixels on that
+ * surface prevents their translucent outline pixels from darkening each other.
+ */
+export function drawWardrobeJointBridgeMesh(
+  context: CanvasRenderingContext2D,
+  image: HTMLCanvasElement,
+  triangles: WardrobeJointBridgeTriangle[],
+  rasterScale = 1
+): boolean {
+  if (!triangles.length) return false
+  const scale = Number.isFinite(rasterScale) && rasterScale > 0 ? rasterScale : 1
+  const clipOverlap = 1.25 / scale
+  const targetPoints = triangles.flatMap((triangle) => triangle.target)
+  const padding = clipOverlap + 1 / scale
+  const left = Math.floor(Math.min(...targetPoints.map((point) => point.x)) - padding)
+  const top = Math.floor(Math.min(...targetPoints.map((point) => point.y)) - padding)
+  const right = Math.ceil(Math.max(...targetPoints.map((point) => point.x)) + padding)
+  const bottom = Math.ceil(Math.max(...targetPoints.map((point) => point.y)) + padding)
+  const worldWidth = Math.max(1, right - left)
+  const worldHeight = Math.max(1, bottom - top)
+  const pixelWidth = Math.max(1, Math.ceil(worldWidth * scale))
+  const pixelHeight = Math.max(1, Math.ceil(worldHeight * scale))
+  if (!Number.isSafeInteger(pixelWidth * pixelHeight) || pixelWidth * pixelHeight > 8_000_000) return false
+
+  const surface = document.createElement('canvas')
+  try {
+    surface.width = pixelWidth
+    surface.height = pixelHeight
+    const surfaceContext = surface.getContext('2d')
+    if (!surfaceContext) return false
+    surfaceContext.imageSmoothingEnabled = true
+    surfaceContext.imageSmoothingQuality = 'high'
+    surfaceContext.globalCompositeOperation = 'copy'
+    const scaleX = pixelWidth / worldWidth
+    const scaleY = pixelHeight / worldHeight
+    surfaceContext.setTransform(scaleX, 0, 0, scaleY, -left * scaleX, -top * scaleY)
+    for (const triangle of triangles) {
+      drawTriangle(surfaceContext, image, triangle.source, triangle.target, clipOverlap)
+    }
+
+    context.save()
+    try { context.drawImage(surface, 0, 0, pixelWidth, pixelHeight, left, top, worldWidth, worldHeight) }
+    finally { context.restore() }
+    return true
+  } finally {
+    surface.width = 0
+    surface.height = 0
+  }
+}
+
+/**
  * Rejoins the complementary saved halves and deforms only a narrow elbow/knee
  * band between the two bone transforms. Existing split assets can use this at
  * render time; no source PNG or saved character customization is changed.
@@ -438,7 +515,8 @@ export function drawWardrobeJointBridge(
   context: CanvasRenderingContext2D,
   upper: WardrobeJointBridgeSegment,
   lower: WardrobeJointBridgeSegment,
-  rasterScale = 1
+  rasterScale = 1,
+  sourceJointAnchor?: Point
 ): boolean {
   const bounds = sourceBounds(upper, lower)
   if (bounds.width * bounds.height > 8_000_000) return false
@@ -462,11 +540,14 @@ export function drawWardrobeJointBridge(
     const sourceContext = sourceCanvas.getContext('2d', { willReadFrequently: true })
     if (!sourceContext) throw new Error('Não foi possível preparar a junção da roupa na pose.')
 
-    const seam = detectWardrobeJointSeam(
+    const detectedSeam = detectWardrobeJointSeam(
       drawAlphaMask(sourceContext, upper, bounds),
       drawAlphaMask(sourceContext, lower, bounds),
       maximumJointGap(upper, lower)
     )
+    const seam = detectedSeam && sourceJointAnchor
+      ? anchorWardrobeJointSeam(detectedSeam, { x: sourceJointAnchor.x - bounds.x, y: sourceJointAnchor.y - bounds.y })
+      : detectedSeam
     if (!seam) return false
     if (!transformsDiffer && !seam.gapSamples?.length) return false
     sourceContext.clearRect(0, 0, bounds.width, bounds.height)
@@ -509,7 +590,7 @@ export function drawWardrobeJointBridge(
     const end = seam.maxTangent + tangentPadding
     const columns = Math.max(1, Math.ceil((end - start) / Math.max(5, Math.min(18, halfWidth / 2))))
     const rows = Math.max(2, Math.ceil((2 * halfWidth) / Math.max(3, Math.min(8, halfWidth / 2))))
-    const clipOverlap = 1.25 / Math.max(0.01, rasterScale)
+    if (columns * rows > 10_000) return false
     const vertices: Point[][] = []
     for (let row = 0; row <= rows; row += 1) {
       const distance = -halfWidth + (2 * halfWidth * row) / rows
@@ -522,19 +603,21 @@ export function drawWardrobeJointBridge(
       vertices.push(line)
     }
 
+    const triangles: WardrobeJointBridgeTriangle[] = []
     for (let row = 0; row < rows; row += 1) for (let column = 0; column < columns; column += 1) {
       const sourceTopLeft = pointInSeam(seam, start + ((end - start) * column) / columns, -halfWidth + (2 * halfWidth * row) / rows)
       const sourceTopRight = pointInSeam(seam, start + ((end - start) * (column + 1)) / columns, -halfWidth + (2 * halfWidth * row) / rows)
       const sourceBottomLeft = pointInSeam(seam, start + ((end - start) * column) / columns, -halfWidth + (2 * halfWidth * (row + 1)) / rows)
       const sourceBottomRight = pointInSeam(seam, start + ((end - start) * (column + 1)) / columns, -halfWidth + (2 * halfWidth * (row + 1)) / rows)
-      drawTriangle(context, sourceCanvas,
-        [sourceTopLeft, sourceTopRight, sourceBottomRight],
-        [vertices[row][column], vertices[row][column + 1], vertices[row + 1][column + 1]], clipOverlap)
-      drawTriangle(context, sourceCanvas,
-        [sourceTopLeft, sourceBottomRight, sourceBottomLeft],
-        [vertices[row][column], vertices[row + 1][column + 1], vertices[row + 1][column]], clipOverlap)
+      triangles.push({
+        source: [sourceTopLeft, sourceTopRight, sourceBottomRight],
+        target: [vertices[row][column], vertices[row][column + 1], vertices[row + 1][column + 1]]
+      }, {
+        source: [sourceTopLeft, sourceBottomRight, sourceBottomLeft],
+        target: [vertices[row][column], vertices[row + 1][column + 1], vertices[row + 1][column]]
+      })
     }
-    return true
+    return drawWardrobeJointBridgeMesh(context, sourceCanvas, triangles, rasterScale)
   } finally {
     sourceCanvas.width = 0
     sourceCanvas.height = 0

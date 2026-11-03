@@ -1,5 +1,5 @@
 import type { CustomizerWardrobeGroup } from '../../../shared/customizer'
-import type { FabricatorProject, ModelPart, WardrobeCategory } from '../../../shared/fabricator'
+import type { FabricatorProject, JointLink, ModelPart, WardrobeCategory } from '../../../shared/fabricator'
 import { modelRigSegmentKind, modelRigSide } from '../../../shared/modelRig'
 import { mapWardrobeComponentToPose } from '../../../shared/wardrobePose'
 import { drawWardrobeJointBridge } from './wardrobeJointBridge'
@@ -8,7 +8,7 @@ import type { WardrobeJointBridgeSegment } from './wardrobeJointBridge'
 export type BodyJointBridgeArtwork = Pick<FabricatorProject, 'parts'>
   & Partial<Pick<FabricatorProject, 'joints' | 'hiddenPartIds' | 'bodyJointBridgeEnabled'>>
 
-export type BodyJointBridgePair = { upper: ModelPart; lower: ModelPart; family: 'arm' | 'leg' }
+export type BodyJointBridgePair = { upper: ModelPart; lower: ModelPart; family: 'arm' | 'leg'; joint: JointLink }
 
 type BodyImageLoader = (part: ModelPart) => Promise<HTMLImageElement>
 
@@ -43,9 +43,38 @@ export function findBodyJointBridgePairs(artwork: BodyJointBridgeArtwork): BodyJ
     const key = `${upper.id}:${lower.id}`
     if (seen.has(key)) continue
     seen.add(key)
-    pairs.push({ upper, lower, family })
+    pairs.push({ upper, lower, family, joint })
   }
   return pairs
+}
+
+function mapCanvasPointToSource(part: ModelPart, point: { x: number; y: number }): { x: number; y: number } | null {
+  const frame = part.sourceTransform
+  if (!frame) return point
+  const sourceWidth = frame.width ?? part.width
+  const sourceHeight = frame.height ?? part.height
+  if (!(sourceWidth > 0 && sourceHeight > 0 && part.width > 0 && part.height > 0)) return null
+  const poseRadians = part.rotation * Math.PI / 180
+  const sourceRadians = frame.rotation * Math.PI / 180
+  const dx = point.x - (part.x + part.width / 2)
+  const dy = point.y - (part.y + part.height / 2)
+  const localX = (dx * Math.cos(poseRadians) + dy * Math.sin(poseRadians)) * sourceWidth / part.width
+  const localY = (-dx * Math.sin(poseRadians) + dy * Math.cos(poseRadians)) * sourceHeight / part.height
+  return {
+    x: frame.x + sourceWidth / 2 + localX * Math.cos(sourceRadians) - localY * Math.sin(sourceRadians),
+    y: frame.y + sourceHeight / 2 + localX * Math.sin(sourceRadians) + localY * Math.cos(sourceRadians)
+  }
+}
+
+/** Resolves the joint center in the source sheet, before a pose moves either segment. */
+export function bodyJointBridgeSourceAnchor(pair: BodyJointBridgePair): { x: number; y: number } | null {
+  const savedAnchor = pair.lower.sourceTransform?.jointAnchor
+  if (savedAnchor && Number.isFinite(savedAnchor.x) && Number.isFinite(savedAnchor.y)) return savedAnchor
+  const attachedAnchor = pair.joint.parentPartId === pair.lower.id
+    ? pair.joint.parentAnchor
+    : pair.joint.childAnchor
+  const mappedAnchor = mapCanvasPointToSource(pair.lower, attachedAnchor)
+  return mappedAnchor && Number.isFinite(mappedAnchor.x) && Number.isFinite(mappedAnchor.y) ? mappedAnchor : null
 }
 
 function bridgeSegment(part: ModelPart, image: HTMLImageElement, family: 'arm' | 'leg'): WardrobeJointBridgeSegment | null {
@@ -94,7 +123,9 @@ export async function drawBodyJointBridgePair(
   const [upperImage, lowerImage] = await Promise.all([loadImage(pair.upper), loadImage(pair.lower)])
   const upper = bridgeSegment(pair.upper, upperImage, pair.family)
   const lower = bridgeSegment(pair.lower, lowerImage, pair.family)
-  return upper && lower ? drawWardrobeJointBridge(context, upper, lower, rasterScale) : false
+  return upper && lower
+    ? drawWardrobeJointBridge(context, upper, lower, rasterScale, bodyJointBridgeSourceAnchor(pair) ?? undefined)
+    : false
 }
 
 export async function drawEnabledBodyJointBridges(

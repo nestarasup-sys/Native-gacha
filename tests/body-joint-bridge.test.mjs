@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { articulateJoinedLimbSplit, canArticulateJoinedLimbSplit, findOppositeJoinedLimbCounterpart, mapJoinedLimbSplitLine } from '../src/renderer/src/features/fabricator/models/joinedLimbSplit.ts'
-import { findBodyJointBridgePairs } from '../src/renderer/src/characters/bodyJointBridge.ts'
+import { bodyJointBridgeSourceAnchor, findBodyJointBridgePairs } from '../src/renderer/src/characters/bodyJointBridge.ts'
 
 const part = (id, name, x, y, width = 20, height = 30, extra = {}) => ({
   id, name, x, y, width, height, rotation: 0,
@@ -127,4 +127,44 @@ test('body bridge is opt-in and only accepts linked matching limb segments on th
     ['thigh', 'shin', 'leg']
   ])
   assert.deepEqual(findBodyJointBridgePairs({ ...artwork, bodyJointBridgeEnabled: true, hiddenPartIds: ['forearm'] }).map(({ family }) => family), ['leg'])
+})
+
+test('body bridge anchors its seam to the saved source-space joint point', () => {
+  const lower = part('forearm', 'Antebraço esquerdo', 50, 60, 20, 40, {
+    sourceTransform: { x: 10, y: 20, width: 40, height: 80, rotation: 0, jointAnchor: { x: 18, y: 37 } }
+  })
+  const pair = {
+    upper: part('arm', 'Braço esquerdo', 0, 0), lower, family: 'arm',
+    joint: { id: 'elbow', parentPartId: 'arm', childPartId: lower.id,
+      parentAnchor: { x: 55, y: 70 }, childAnchor: { x: 55, y: 70 } }
+  }
+
+  assert.deepEqual(bodyJointBridgeSourceAnchor(pair), { x: 18, y: 37 })
+})
+
+test('body bridge maps legacy pose-space joint anchors back to source coordinates', () => {
+  const lower = part('forearm', 'Antebraço esquerdo', 50, 60, 20, 40, {
+    sourceTransform: { x: 10, y: 20, width: 40, height: 80, rotation: 0 }
+  })
+  const pair = {
+    upper: part('arm', 'Braço esquerdo', 0, 0), lower, family: 'arm',
+    joint: { id: 'elbow', parentPartId: 'arm', childPartId: lower.id,
+      parentAnchor: { x: 55, y: 70 }, childAnchor: { x: 55, y: 70 } }
+  }
+
+  assert.deepEqual(bodyJointBridgeSourceAnchor(pair), { x: 20, y: 40 })
+})
+
+test('body bridge maps rotated and resized limb anchors back to the original sheet', () => {
+  const lower = part('forearm', 'Antebraço esquerdo', 50, 60, 20, 40, {
+    rotation: 90,
+    sourceTransform: { x: 10, y: 20, width: 40, height: 80, rotation: 0 }
+  })
+  const pair = {
+    upper: part('arm', 'Braço esquerdo', 0, 0), lower, family: 'arm',
+    joint: { id: 'elbow', parentPartId: 'arm', childPartId: lower.id,
+      parentAnchor: { x: 70, y: 75 }, childAnchor: { x: 70, y: 75 } }
+  }
+
+  assert.deepEqual(bodyJointBridgeSourceAnchor(pair), { x: 20, y: 40 })
 })

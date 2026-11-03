@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { detectWardrobeJointSeam, expandWardrobeJointBridgeTriangle, fillWardrobeJointGapPixels } from '../src/renderer/src/characters/wardrobeJointBridge.ts'
+import { anchorWardrobeJointSeam, detectWardrobeJointSeam, drawWardrobeJointBridgeMesh, expandWardrobeJointBridgeTriangle, fillWardrobeJointGapPixels } from '../src/renderer/src/characters/wardrobeJointBridge.ts'
 
 const rectangleMask = (width, height, rectangles) => {
   const data = new Uint8Array(width * height)
@@ -42,6 +42,66 @@ test('joint bridge triangle clips overlap slightly to hide rasterization seams',
     assert.ok(Math.abs(expandedDistance - originalDistance - 1.25) < 1e-9)
   }
   assert.deepEqual(triangle, [{ x: 2, y: 1 }, { x: 12, y: 1 }, { x: 2, y: 9 }], 'source triangle geometry must stay unchanged')
+})
+
+test('joint bridge follows the saved joint anchor and keeps its gap samples aligned', () => {
+  const seam = {
+    center: { x: 10, y: 20 }, tangent: { x: 1, y: 0 }, normal: { x: 0, y: 1 },
+    minTangent: -8, maxTangent: 12,
+    gapSamples: [{ tangent: 2, upperNormal: 3, lowerNormal: 1 }]
+  }
+  const anchored = anchorWardrobeJointSeam(seam, { x: 14, y: 23 })
+
+  assert.deepEqual(anchored.center, { x: 14, y: 23 })
+  assert.equal(anchored.minTangent, -12)
+  assert.equal(anchored.maxTangent, 8)
+  assert.deepEqual(anchored.gapSamples, [{ tangent: -2, upperNormal: 0, lowerNormal: -2 }])
+  assert.deepEqual(seam.center, { x: 10, y: 20 }, 'aligning the seam must not mutate the detected source geometry')
+})
+
+test('joint bridge composites neighboring triangles through one replacement surface', () => {
+  class FakeContext {
+    calls = []
+    globalCompositeOperation = 'source-over'
+    imageSmoothingEnabled = false
+    imageSmoothingQuality = 'low'
+    state = []
+    save() { this.state.push(this.globalCompositeOperation) }
+    restore() { this.globalCompositeOperation = this.state.pop() ?? 'source-over' }
+    setTransform(...values) { this.calls.push({ type: 'setTransform', values }) }
+    beginPath() {}
+    moveTo() {}
+    lineTo() {}
+    closePath() {}
+    clip() {}
+    transform(...values) { this.calls.push({ type: 'transform', values }) }
+    drawImage(...values) { this.calls.push({ type: 'drawImage', operation: this.globalCompositeOperation, values }) }
+  }
+  class FakeCanvas {
+    width = 0
+    height = 0
+    context = new FakeContext()
+    getContext(type) { return type === '2d' ? this.context : null }
+  }
+  const surfaces = []
+  const previousDocument = globalThis.document
+  globalThis.document = { createElement: () => { const canvas = new FakeCanvas(); surfaces.push(canvas); return canvas } }
+  try {
+    const triangleA = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }]
+    const triangleB = [{ x: 0, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }]
+    const triangles = [triangleA, triangleB].map((points) => ({ source: points, target: points }))
+    const target = new FakeContext()
+
+    assert.equal(drawWardrobeJointBridgeMesh(target, {}, triangles, 1), true)
+    const meshDraws = surfaces[0].context.calls.filter((call) => call.type === 'drawImage')
+    const finalDraws = target.calls.filter((call) => call.type === 'drawImage')
+    assert.equal(meshDraws.length, 2)
+    assert.ok(meshDraws.every((call) => call.operation === 'copy'), 'overlapping antialiased triangles must replace each other instead of darkening the seam')
+    assert.equal(finalDraws.length, 1, 'the completed bridge band is composited onto the model once')
+  } finally {
+    if (previousDocument === undefined) delete globalThis.document
+    else globalThis.document = previousDocument
+  }
 })
 
 test('a tiny transparent joint gap is detected and filled from the two garment edges', () => {
