@@ -608,7 +608,7 @@ export function PoseWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
                   artwork={displayProject}
                   pair={pair}
                   scale={scale}
-                  zIndex={Math.max(upperIndex, lowerIndex) + 2}
+                  zIndex={Math.min(upperIndex, lowerIndex)}
                   previewForPart={appearancePreviewForPart}
                 />
               })}

@@ -66,6 +66,16 @@ export function createCharacterLayerRenderer(loaders: CharacterLayerImageLoaders
       .map((part, index) => ({ part, index }))
       .sort((a, b) => (layerIndex.get(a.part.id) ?? a.index) - (layerIndex.get(b.part.id) ?? b.index))
 
+    // The bridge repairs the gap between body segments. Draw it first so the
+    // original skin and contour pixels stay above its seam when the parts follow.
+    context.save()
+    context.scale(scale, scale)
+    await drawEnabledBodyJointBridges(context, artwork, async (part) =>
+      isModelBodyPart(part) && (skinTone || outlineColor)
+        ? loadModelBodyTintedImage(part.dataUrl, skinTone, outlineColor, part.fakeSkinContours)
+        : skinTone ? loadSkinTintedImage(part.dataUrl, skinTone) : loadCachedImage(part.dataUrl), scale)
+    context.restore()
+
     for (const { part } of parts) {
       try {
         const image = isModelBodyPart(part) && (skinTone || outlineColor)
@@ -83,14 +93,6 @@ export function createCharacterLayerRenderer(loaders: CharacterLayerImageLoaders
         continue
       }
     }
-
-    context.save()
-    context.scale(scale, scale)
-    await drawEnabledBodyJointBridges(context, artwork, async (part) =>
-      isModelBodyPart(part) && (skinTone || outlineColor)
-        ? loadModelBodyTintedImage(part.dataUrl, skinTone, outlineColor, part.fakeSkinContours)
-        : skinTone ? loadSkinTintedImage(part.dataUrl, skinTone) : loadCachedImage(part.dataUrl), scale)
-    context.restore()
 
     if (!trimTransparent) return canvas.toDataURL('image/png')
 
@@ -168,6 +170,15 @@ export function createCharacterLayerRenderer(loaders: CharacterLayerImageLoaders
       } catch { /* One missing hair layer must not hide the model preview. */ }
     }
     for (const layer of validHairLayers) await drawBackHair(layer)
+    // Keep the deformed joint surface below the body layers in the preview too.
+    context.save()
+    context.scale(scale, scale)
+    await drawEnabledBodyJointBridges(context, artwork, async (part) =>
+      isModelBodyPart(part) && (skinTone || outlineColor)
+        ? loadModelBodyTintedImage(part.dataUrl, skinTone, outlineColor, part.fakeSkinContours)
+        : skinTone ? loadSkinTintedImage(part.dataUrl, skinTone) : loadCachedImage(part.dataUrl), scale)
+    context.restore()
+
     for (const id of order) {
       const part = artwork.parts.find((item) => item.id === id)
       if (!part) continue
@@ -184,13 +195,6 @@ export function createCharacterLayerRenderer(loaders: CharacterLayerImageLoaders
         } catch { /* Continue rendering the remaining model layers. */ }
       }
     }
-    context.save()
-    context.scale(scale, scale)
-    await drawEnabledBodyJointBridges(context, artwork, async (part) =>
-      isModelBodyPart(part) && (skinTone || outlineColor)
-        ? loadModelBodyTintedImage(part.dataUrl, skinTone, outlineColor, part.fakeSkinContours)
-        : skinTone ? loadSkinTintedImage(part.dataUrl, skinTone) : loadCachedImage(part.dataUrl), scale)
-    context.restore()
     return targetContext ? null : canvas.toDataURL('image/png')
   }
 

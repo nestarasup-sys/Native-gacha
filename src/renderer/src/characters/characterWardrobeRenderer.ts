@@ -203,16 +203,7 @@ export function createCharacterWardrobeRenderer(loaders: CharacterWardrobeImageL
       bridgesAfterPart.set(renderAfterPart, bridges)
     }
 
-    const bodyBridgesAfterPart = new Map<string, BodyJointBridgePair[]>()
-    for (const pair of findBodyJointBridgePairs(artwork)) {
-      const upperLayer = bodyOrder.indexOf(pair.upper.id)
-      const lowerLayer = bodyOrder.indexOf(pair.lower.id)
-      if (upperLayer < 0 || lowerLayer < 0) continue
-      const renderAfterPart = bodyOrder[Math.max(upperLayer, lowerLayer)]
-      const pairs = bodyBridgesAfterPart.get(renderAfterPart) ?? []
-      pairs.push(pair)
-      bodyBridgesAfterPart.set(renderAfterPart, pairs)
-    }
+    const bodyJointBridges = findBodyJointBridgePairs(artwork)
 
     const shoeLayersAroundShinAfterPart = new Map<string, {
       shoesBehindShin: MappedWardrobeGarment[]
@@ -316,6 +307,13 @@ export function createCharacterWardrobeRenderer(loaders: CharacterWardrobeImageL
           : skinTone ? loadSkinTintedImage(part.dataUrl, skinTone) : loadCachedImage(part.dataUrl), pixelScale)
     }
 
+    // Draw the body repair surface before the source segments so its seam is
+    // hidden by the restored skin/contour pixels wherever they overlap.
+    for (const bridge of bodyJointBridges) {
+      try { await renderBodyJointBridge(bridge) }
+      catch { /* A damaged optional bridge must not suppress the wardrobe composite. */ }
+    }
+
     for (const partId of bodyOrder) {
       const part = artwork.parts.find((item) => item.id === partId)
       if (!part) continue
@@ -333,10 +331,6 @@ export function createCharacterWardrobeRenderer(loaders: CharacterWardrobeImageL
           outputContext.drawImage(image, -part.width / 2, -part.height / 2, part.width, part.height)
           outputContext.restore()
         } catch { /* Keep rendering the remaining layers when one image is unavailable. */ }
-      }
-      for (const bridge of bodyBridgesAfterPart.get(part.id) ?? []) {
-        try { await renderBodyJointBridge(bridge) }
-        catch { /* A damaged optional bridge must not suppress the wardrobe composite. */ }
       }
       const garments = (garmentLayers.get(part.id) ?? []).sort((a, b) => a.sequence - b.sequence)
       for (const garment of garments) {
