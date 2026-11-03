@@ -18,6 +18,6 @@ export function isWardrobePairedGridImportKind(importKind: string | undefined): 
   return PAIRED_GRID_IMPORT_KINDS.has(importKind ?? '')
 }
 
-export function wardrobePairImageMode(importKind: WardrobeSet['importKind']): 'copy' | 'mirror' {
-  return importKind === 'shoe-grid-3x4' ? 'copy' : 'mirror'
+export function wardrobePairImageMode(importKind: WardrobeSet['importKind'], category?: string): 'copy' | 'mirror' {
+  return importKind === 'shoe-grid-3x4' || category === 'sapato' ? 'copy' : 'mirror'
 }
