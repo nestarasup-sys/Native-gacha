@@ -5,10 +5,10 @@ import type { EditorV6Element, EditorV6FaceRenderMode, EditorV6FaceTransform } f
 import type { EditorV6MotionBakeRequest, EditorV6MotionBakeResult, EditorV6MotionFrame } from '../../../../../shared/editorV6Motion'
 import { editorV6FaceModeDuringMotion } from '../../../../../shared/editorV6FaceSchedule'
 import { interpolateEditorV6Face, interpolateEditorV6Pose, motionAngle, motionEase, motionLerp } from '../../../../../shared/editorV6MotionInterpolation'
-import { editorV6ElementSize } from '../../../../../shared/editorV6SceneModel'
 import { loadStandardExpressionEffects, prepareSavedCharacterRenderer, type GachaReusableMaterialCache } from '../../../characters/editorV6CharacterRenderer'
 import { chooseMotionAtlasLayout } from './motionAtlasLayout'
 import { createMotionPoseResolver } from './motionPoseResolver'
+import { motionEndpointScale } from './motionEndpointScale'
 
 type Renderer = Awaited<ReturnType<typeof prepareSavedCharacterRenderer>>
 type Crop = { left: number; top: number; width: number; height: number; fingerprint?: number }
@@ -71,18 +71,6 @@ function cropOf(canvas: HTMLCanvasElement, fingerprint = false): Crop {
   }
   if (right < left) return { left: 0, top: 0, width: 1, height: 1, ...(fingerprint ? { fingerprint: hash >>> 0 } : {}) }
   return { left, top, width: right - left + 1, height: bottom - top + 1, ...(fingerprint ? { fingerprint: hash >>> 0 } : {}) }
-}
-function characterCanvasScale(element: EditorV6Element, crop: Crop, canvasWidth: number, sharedCharacterCanvasWidth?: number) {
-  const size = editorV6ElementSize(element)
-  const characterCanvasWidth = element.characterCanvasWidth ?? sharedCharacterCanvasWidth
-  if (!characterCanvasWidth || !Number.isFinite(characterCanvasWidth) || characterCanvasWidth <= 0) {
-    return { x: size.width * 19.2 / crop.width, y: size.height * 10.8 / crop.height }
-  }
-  const overall = (element.characterScale ?? 100) / 100
-  return {
-    x: characterCanvasWidth * overall * (element.characterWidthScale ?? 100) / 100 * 19.2 / canvasWidth,
-    y: characterCanvasWidth * overall * (element.characterHeightScale ?? 100) / 100 * (1920 / 1080) * 10.8 / canvasWidth
-  }
 }
 function cachedProvider(provider: CharacterRenderAssetProvider, sharedOnly = false): CharacterRenderAssetProvider {
   const cache = new Map<string, Promise<unknown>>()
@@ -312,11 +300,10 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
     const atlas = document.createElement('canvas'); atlas.width = cellWidth * columns; atlas.height = cellHeight * rows
     const context = atlas.getContext('2d')!
     const sharedCharacterCanvasWidth = request.plan.from.characterCanvasWidth ?? request.plan.to.characterCanvasWidth
-    // characterCanvasWidth stores the stage size of the untrimmed character.
-    // Alpha bounds change with facial expressions, so they must not be the
-    // reference used to scale the character's body and clothes.
-    const fromScale = characterCanvasScale(request.plan.from, fromCrop, fullWidth, sharedCharacterCanvasWidth)
-    let toScale = characterCanvasScale(request.plan.to, toCrop, last?.width ?? fullWidth, sharedCharacterCanvasWidth)
+    // The saved rectangles already encode the actual stage aspect ratio and
+    // character scale; map those rectangles to the same crops as static assets.
+    const fromScale = motionEndpointScale(request.plan.from, fromCrop)
+    let toScale = motionEndpointScale(request.plan.to, toCrop)
     // Older projects have no untrimmed-canvas width. If their actor box and
     // explicit scale are unchanged, retain the source scale through the bake.
     const sameLegacyElementSize = !sharedCharacterCanvasWidth

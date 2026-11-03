@@ -4,7 +4,7 @@ import type { EditorV6Asset, EditorV6Document, EditorV6Element, EditorV6FaceRend
 import type { CharacterRenderAssetProvider } from './characterRenderAssets'
 import { editorV6FaceModeAtFrame, editorV6FaceModeDuringMotion } from './editorV6FaceSchedule'
 
-export const EDITOR_V6_MOTION_VERSION = 8
+export const EDITOR_V6_MOTION_VERSION = 9
 export const EDITOR_V6_MOTION_MS = 250
 export type EditorV6MotionSprite = { x: number; y: number; width: number; height: number; atlasWidth: number; atlasHeight: number }
 export type EditorV6FacePatch = { sprite: EditorV6MotionSprite; x: number; y: number; width: number; height: number; replace?: boolean; replaceBounds?: { x: number; y: number; width: number; height: number } }
