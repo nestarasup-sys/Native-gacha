@@ -4,9 +4,11 @@ const { mkdtemp, readFile, mkdir, writeFile, copyFile } = require('node:fs/promi
 const { join, resolve } = require('node:path')
 const { tmpdir } = require('node:os')
 const { resolveEditorV6TestOutputDirectory } = require('./testOutputDirectory.cjs')
+const { resolveEditorV6TestVideoToolsDirectory } = require('./testVideoTools.cjs')
 
 async function main() {
   const root = resolve(__dirname, '../..')
+  const videoTools = resolveEditorV6TestVideoToolsDirectory(root)
   const folder = await mkdtemp(join(tmpdir(), 'editor-v6-face-export-'))
   const outputRoot = resolveEditorV6TestOutputDirectory(root)
   const output = join(outputRoot, 'editor-v6-face-export-check')
@@ -36,7 +38,7 @@ async function main() {
   }
   const comparisonImage = join(output, 'face-mouth-compare-1080.png')
   const comparisonVideo = join(output, 'mouth-local-composition-1080p.mp4')
-  execFileSync(join(root, 'resources/video-tools/ffmpeg.exe'), ['-v', 'error', '-y', '-i', comparisonVideo, '-filter_complex', "[0:v]select='eq(n,7)',scale=960:540[before];[0:v]select='eq(n,16)',scale=960:540[during];[before][during]hstack=inputs=2", '-frames:v', '1', comparisonImage], { windowsHide: true })
+  execFileSync(join(videoTools, 'ffmpeg.exe'), ['-v', 'error', '-y', '-i', comparisonVideo, '-filter_complex', "[0:v]select='eq(n,7)',scale=960:540[before];[0:v]select='eq(n,16)',scale=960:540[during];[before][during]hstack=inputs=2", '-frames:v', '1', comparisonImage], { windowsHide: true })
   result.comparisonImage = comparisonImage
   await writeFile(join(output, 'result.json'), JSON.stringify(result, null, 2))
 }

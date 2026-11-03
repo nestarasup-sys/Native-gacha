@@ -1,5 +1,7 @@
 param(
-  [string]$ArchivePath
+  [string]$ArchivePath,
+  [string]$ManifestPath,
+  [string]$DestinationPath
 )
 
 $ErrorActionPreference = 'Stop'
@@ -9,14 +11,16 @@ Add-Type -AssemblyName System.IO.Compression.FileSystem
 
 $projectRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
 $resourcesPath = [System.IO.Path]::GetFullPath((Join-Path $projectRoot 'resources'))
-$manifestPath = Join-Path $resourcesPath 'video-tools.manifest.json'
-$destination = Join-Path $resourcesPath 'video-tools'
+$manifestPath = if ([string]::IsNullOrWhiteSpace($ManifestPath)) { Join-Path $resourcesPath 'video-tools.manifest.json' } elseif ([System.IO.Path]::IsPathRooted($ManifestPath)) { [System.IO.Path]::GetFullPath($ManifestPath) } else { [System.IO.Path]::GetFullPath((Join-Path $projectRoot $ManifestPath)) }
+$destination = if ([string]::IsNullOrWhiteSpace($DestinationPath)) { Join-Path $resourcesPath 'video-tools' } elseif ([System.IO.Path]::IsPathRooted($DestinationPath)) { [System.IO.Path]::GetFullPath($DestinationPath) } else { [System.IO.Path]::GetFullPath((Join-Path $projectRoot $DestinationPath)) }
+$destinationParent = [System.IO.Path]::GetFullPath((Split-Path -Parent $destination))
+$destinationLeaf = Split-Path -Leaf $destination
 $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
 
 if ($manifest.schemaVersion -ne 1 -or $manifest.provider -ne 'BtbN/FFmpeg-Builds') {
   throw 'Manifesto de ferramentas de vídeo desconhecido.'
 }
-if ($manifest.variant -ne 'lgpl' -or $manifest.license -ne 'LGPL-2.1-or-later') {
+if ($manifest.variant -ne 'lgpl' -or $manifest.license -notin @('LGPL-2.1-or-later', 'LGPL-3.0-or-later')) {
   throw 'Este instalador aceita somente o pacote LGPL definido pelo projeto.'
 }
 if ($manifest.sha256 -notmatch '^[a-fA-F0-9]{64}$') {
@@ -51,7 +55,7 @@ if (Test-Path -LiteralPath $destination) {
 }
 
 $runId = [Guid]::NewGuid().ToString('N')
-$stagePath = Join-Path $resourcesPath ('.video-tools-staging-' + $runId)
+$stagePath = Join-Path $destinationParent ('.' + $destinationLeaf + '-staging-' + $runId)
 $ownsWorkDirectory = [string]::IsNullOrWhiteSpace($ArchivePath)
 $workPath = $null
 $archive = $null
@@ -75,8 +79,12 @@ if ($ownsWorkDirectory) {
   }
 }
 
-$resourcesPrefix = $resourcesPath.TrimEnd('\') + '\'
+$destinationParentPrefix = $destinationParent.TrimEnd('\') + '\'
+$stageNamePattern = '^' + [Regex]::Escape('.' + $destinationLeaf + '-staging-') + '[0-9a-f]{32}$'
 try {
+  if (-not (Test-Path -LiteralPath $destinationParent -PathType Container)) {
+    New-Item -ItemType Directory -Path $destinationParent -Force | Out-Null
+  }
   New-Item -ItemType Directory -Path $stagePath | Out-Null
   if ($ownsWorkDirectory) {
     New-Item -ItemType Directory -Path $workPath | Out-Null
@@ -117,6 +125,12 @@ try {
     $zip.Dispose()
   }
 
+  $licenseText = Get-Content -LiteralPath (Join-Path $stagePath 'FFMPEG_LICENSE.txt') -Raw
+  $expectedLicenseVersion = if ($manifest.license -eq 'LGPL-3.0-or-later') { '3' } else { '2.1' }
+  if ($licenseText -notmatch ('GNU LESSER GENERAL PUBLIC LICENSE\s+Version ' + [Regex]::Escape($expectedLicenseVersion) + '\b')) {
+    throw ('A licença do ZIP não corresponde ao manifesto (' + $manifest.license + ').')
+  }
+
   foreach ($executable in @($stageFfmpeg, $stageFfprobe)) {
     if (-not (Test-Path -LiteralPath $executable -PathType Leaf) -or (Get-Item -LiteralPath $executable).Length -lt 1MB) {
       throw 'Um dos executáveis extraídos está ausente ou incompleto.'
@@ -132,6 +146,20 @@ try {
   $ffprobeExitCode = $LASTEXITCODE
   if ($ffprobeExitCode -ne 0 -or $ffprobeVersionLines.Count -eq 0) {
     throw 'O ffprobe.exe não iniciou corretamente.'
+  }
+
+  $buildConfig = (& $stageFfmpeg -hide_banner -buildconf 2>&1 | Out-String)
+  $buildConfigExitCode = $LASTEXITCODE
+  if ($buildConfigExitCode -ne 0) {
+    throw 'Não foi possível verificar a configuração de licença do FFmpeg.'
+  }
+  foreach ($flag in $manifest.forbiddenConfigureFlags) {
+    if ($buildConfig -match ('(?<!\S)' + [Regex]::Escape([string]$flag) + '(?!\S)')) {
+      throw ('O build contém a opção de configuração proibida ' + $flag + '.')
+    }
+  }
+  if ($manifest.license -eq 'LGPL-3.0-or-later' -and $buildConfig -notmatch '(?<!\S)--enable-version3(?!\S)') {
+    throw 'O manifesto declara LGPL v3, mas o build não informa --enable-version3.'
   }
 
   $encoderOutput = (& $stageFfmpeg -hide_banner -encoders 2>&1 | Out-String)
@@ -187,7 +215,7 @@ try {
   Write-Output ('Build verificado: ' + [string]$ffmpegVersionLines[0])
 } finally {
   $resolvedStage = [System.IO.Path]::GetFullPath($stagePath)
-  if ((Test-Path -LiteralPath $resolvedStage) -and $resolvedStage.StartsWith($resourcesPrefix, [System.StringComparison]::OrdinalIgnoreCase) -and (Split-Path -Leaf $resolvedStage) -match '^\.video-tools-staging-[0-9a-f]{32}$') {
+  if ((Test-Path -LiteralPath $resolvedStage) -and $resolvedStage.StartsWith($destinationParentPrefix, [System.StringComparison]::OrdinalIgnoreCase) -and (Split-Path -Leaf $resolvedStage) -match $stageNamePattern) {
     Remove-Item -LiteralPath $resolvedStage -Recurse -Force
   }
   if ($ownsWorkDirectory -and $workPath) {

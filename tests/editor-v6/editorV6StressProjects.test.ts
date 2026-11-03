@@ -57,6 +57,12 @@ const experimentProfiles: Record<string, Partial<Scenario>> = {
   // This export benchmark intentionally measures a silent timeline. Generate it
   // without speech instead of stripping speech after motion atlas keys exist.
   silent240: { durationFrames: 7200, speechBlocks: 0, thoughtBlocks: 0 },
+  silent30: { durationFrames: 900, characterBlocks: 4, speechBlocks: 0, thoughtBlocks: 0, backgroundBlocks: 1 },
+  // Short, asset-dense profile for repeated exports: many persisted motion atlases,
+  // but only 30 seconds of encoded video, so GPU cache reuse can be measured safely.
+  memory30dense: { durationFrames: 900, characterBlocks: 30, speechBlocks: 0, thoughtBlocks: 0, backgroundBlocks: 1 },
+  silent120: { durationFrames: 3600, characterBlocks: 12, speechBlocks: 0, thoughtBlocks: 0, backgroundBlocks: 4 },
+  silent300: { durationFrames: 9000, characterBlocks: 30, speechBlocks: 0, thoughtBlocks: 0, backgroundBlocks: 10 },
   frames200: { characterBlocks: 90 },
   frames300: { characterBlocks: 60 },
   static: { transitionActorCount: 0 },
@@ -427,9 +433,11 @@ describe.skipIf(!enabled)('projetos de estresse do Editor V6', () => {
       expect(heavy?.linkedSpeechBlocks).toBe(0)
       expect(heavy?.linkedThoughtBlocks).toBe(0)
     }
-    for (const [leftKey, rightKey] of [['light', 'medium'], ['medium', 'heavy']]) {
-      const left = outputByKey.get(leftKey), right = outputByKey.get(rightKey)
-      if (left && right) expect(left.blocks).toBeLessThan(right.blocks)
+    if (stressExperiment === 'baseline') {
+      for (const [leftKey, rightKey] of [['light', 'medium'], ['medium', 'heavy']]) {
+        const left = outputByKey.get(leftKey), right = outputByKey.get(rightKey)
+        if (left && right) expect(left.blocks).toBeLessThan(right.blocks)
+      }
     }
     const multimedia = outputByKey.get('multimedia')
     if (multimedia) expect(multimedia.media).toBe(4)

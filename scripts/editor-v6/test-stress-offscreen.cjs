@@ -7,9 +7,11 @@ const { spawn, spawnSync } = require('node:child_process')
 const { build } = require('esbuild')
 const { createSyntheticStressProfile } = require('./synthetic-stress-profile.cjs')
 const { parseIpcPerformanceReport } = require('./ipc-performance-report.cjs')
+const { resolveEditorV6TestVideoToolsDirectory } = require('./testVideoTools.cjs')
 const root = path.resolve(__dirname, '../..')
-const ffmpeg = path.join(root, 'resources', 'video-tools', 'ffmpeg.exe')
-const ffprobe = path.join(root, 'resources', 'video-tools', 'ffprobe.exe')
+const videoTools = resolveEditorV6TestVideoToolsDirectory(root)
+const ffmpeg = path.join(videoTools, 'ffmpeg.exe')
+const ffprobe = path.join(videoTools, 'ffprobe.exe')
 const defaultRunId = `${new Date().toISOString().replace(/[:.]/g, '-')}-${process.pid}`
 const outputRoot = process.env.GACHA_EDITOR_V6_STRESS_OUTPUT_ROOT
   ? path.resolve(process.env.GACHA_EDITOR_V6_STRESS_OUTPUT_ROOT)
@@ -227,8 +229,8 @@ async function main() {
         GACHA_EDITOR_V6_STRESS_CHARACTERS_BUNDLE: bundlePath,
         GACHA_EDITOR_V6_STRESS_MEDIA_ROOT: mediaRoot,
         GACHA_EDITOR_V6_STRESS_SUMMARY_PATH: projectSummaryPath,
-        GACHA_EDITOR_V6_STRESS_EXPERIMENT: exportOnly ? 'silent240' : experiment,
-        ...(exportOnly ? { GACHA_EDITOR_V6_STRESS_ONLY: 'heavy' } : {})
+        GACHA_EDITOR_V6_STRESS_EXPERIMENT: process.env.GACHA_EDITOR_V6_STRESS_EXPERIMENT || (exportOnly ? 'silent240' : experiment),
+        ...(exportOnly ? { GACHA_EDITOR_V6_STRESS_ONLY: process.env.GACHA_EDITOR_V6_STRESS_ONLY || 'heavy' } : {})
       },
       timeout: 180_000,
       windowsHide: true
@@ -548,9 +550,10 @@ async function main() {
       const exportEnv = { ...process.env }
       delete exportEnv.ELECTRON_RUN_AS_NODE
       const projectFolder = path.join(projectRoot, `editorV6-${scenario.id}`)
-      const exportChild = spawn(require('electron'), [entry, root, projectFolder, outputRoot, ...(compareWorkers ? ['--compare-workers'] : [])], { cwd: root, env: exportEnv, stdio: 'inherit', windowsHide: true })
+      const exportOptions = process.argv.slice(2).filter((argument) => argument === '--memory-profile' || /^--(actor-count|width|height|idle-sample-seconds)=\d+$/.test(argument))
+      const exportChild = spawn(require('electron'), [entry, root, projectFolder, outputRoot, ...(compareWorkers ? ['--compare-workers'] : []), ...exportOptions], { cwd: root, env: exportEnv, stdio: 'inherit', windowsHide: true })
       const exportCode = await new Promise((resolve, reject) => { exportChild.once('error', reject); exportChild.once('exit', resolve) })
-      if (exportCode !== 0) throw new Error(`A exportação silenciosa de 240 segundos falhou (Electron ${exportCode}).`)
+      if (exportCode !== 0) throw new Error(`A exportação sintética de estresse falhou (Electron ${exportCode}).`)
       stressExport = JSON.parse(await fs.readFile(path.join(outputRoot, 'stress-export-validation.json'), 'utf8'))
     }
     const report = {
@@ -559,7 +562,7 @@ async function main() {
       syntheticProfile: { characterNames: syntheticProfile.characterNames, sourceFile: syntheticProfile.sourceFile, partCount: syntheticProfile.partCount, poseSlots: syntheticProfile.poseSlots },
       playbackMotionContract: 'EditorV6PlaybackScene resolves preview with includeMotion=false. The playback benchmark checks visible pose snapshot changes; prepared transition atlases are validated in the project and consumed by export.',
       runLabel,
-      experiment: exportOnly ? 'silent240' : experiment,
+      experiment: exportOnly ? (process.env.GACHA_EDITOR_V6_STRESS_EXPERIMENT || 'silent240') : experiment,
       runDurationMs: exportOnly ? 0 : runDurationMs,
       stressExport,
       mediaFixtureProbes,

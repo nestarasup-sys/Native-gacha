@@ -11,6 +11,8 @@ import type { EditorV6MotionBakeRequest, EditorV6MotionBakeResult } from '../../
 import { editorV6FaceModeAtFrame, isEditorV6BlinkFrame } from '../../src/shared/editorV6FaceSchedule'
 
 const root = resolve(process.argv[2]), folder = resolve(process.argv[3]), fixturePath = resolve(process.argv[4])
+const { resolveEditorV6TestVideoToolsDirectory } = require('../../scripts/editor-v6/testVideoTools.cjs') as { resolveEditorV6TestVideoToolsDirectory: (root: string) => string }
+const videoTools = resolveEditorV6TestVideoToolsDirectory(root)
 protocol.registerSchemesAsPrivileged([{ scheme: 'gacha-editor-media', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } }])
 const assert = (condition: unknown, message: string) => { if (!condition) throw Error(message) }
 app.setPath('userData', join(folder, 'profile'))
@@ -18,8 +20,8 @@ app.commandLine.appendSwitch('force-device-scale-factor', '1')
 app.on('window-all-closed', () => {})
 process.on('unhandledRejection', (error) => { console.error('Rejeição não tratada na validação silenciosa de faces:', error); app.exit(1) })
 
-const ffmpeg = join(root, 'resources/video-tools/ffmpeg.exe')
-const ffprobe = join(root, 'resources/video-tools/ffprobe.exe')
+const ffmpeg = join(videoTools, 'ffmpeg.exe')
+const ffprobe = join(videoTools, 'ffprobe.exe')
 const runFfmpeg = (args: string[]) => execFileSync(ffmpeg, ['-v', 'error', '-y', ...args], { windowsHide: true, maxBuffer: 32 * 1024 ** 2 })
 const readPixels = (pixels: Buffer, frame: number, width: number, x: number, y: number) => {
   const offset = frame * width * 180 * 3 + (y * width + x) * 3
@@ -58,6 +60,7 @@ async function main() {
     sourceWidth: number
     sourceHeight: number
     asset: EditorV6MotionBakeResult['asset']
+    mouthlessBaseAssets?: EditorV6MotionBakeResult['mouthlessBaseAssets']
     metrics: EditorV6MotionBakeResult['metrics']
     frames: Array<{ facePatch: NonNullable<EditorV6MotionBakeResult['motion']['frames'][number]['facePatch']> }>
     combined: { transition: EditorV6MotionBakeResult; targetMouth: EditorV6MotionBakeResult; baseModes: { assetIds: EditorV6Element['faceModeAssetIds']; extraAssets: EditorV6Document['assets'] }; targetModes: { dataUrl: string; assetIds: EditorV6Element['faceModeAssetIds']; extraAssets: EditorV6Document['assets'] }; targetTransforms: EditorV6Element['faceTransforms']; characterCanvasWidth: number; characterHeight: number; customizations: CustomizerCharacter['customization'] }
@@ -87,7 +90,7 @@ async function main() {
       const sprite = { x: index * 64, y: 0, width: 64, height: 64, atlasWidth: 192, atlasHeight: 64 }
       return { offset: sample.offset, sprite, x: request.plan.from.x, y: request.plan.from.y, width: request.plan.from.width, height: request.plan.from.height, rotation: 0, flipX: false, facePatch: { sprite, x: 0.08, y: 0.08, width: 0.2, height: 0.2 } }
     })
-    return { asset: mouthPatchAsset, motion: { version: 1, key: request.plan.key, assetId: mouthPatchId, frames }, metrics: { milliseconds: 1, preparedRigs: 1, samples: frames.length, atlasPixels: 192 * 64 } }
+    return { asset: mouthPatchAsset, mouthIsolationMode: 'legacy-patch', motion: { version: 1, key: request.plan.key, assetId: mouthPatchId, frames }, metrics: { milliseconds: 1, preparedRigs: 1, samples: frames.length, atlasPixels: 192 * 64 } }
   }
 
   const actor: EditorV6Element = {
@@ -149,6 +152,7 @@ async function main() {
   assert(report.totalFrames === 40 && report.audioClips === 0 && report.videoInputs === 0, 'A exportação incluiu mídia ou não entregou os 40 quadros silenciosos.')
   assert(workerCount === 1, `A exportação abriu ${workerCount} renderizadores; esperado: 1.`)
   assert(report.options.mouthLoop === true && report.mouthAnimation?.stateAtlases === 1 && report.mouthAnimation.atlasPixels === 192 * 64, 'A exportação de fala não preparou o atlas facial sintético obrigatório.')
+  assert(report.mouthAnimation.legacyPatchStates === 1 && report.mouthAnimation.isolatedStates === 0, 'O relatório não identificou o caminho facial legado do fixture de compatibilidade.')
 
   const probe = JSON.parse(execFileSync(ffprobe, ['-v', 'error', '-show_streams', '-show_format', '-of', 'json', output], { encoding: 'utf8', windowsHide: true })) as { streams: Array<{ codec_type: string; width?: number; height?: number; r_frame_rate?: string; nb_frames?: string }>; format: { duration?: string } }
   const videos = probe.streams.filter((stream) => stream.codec_type === 'video')
@@ -221,7 +225,8 @@ async function main() {
       x: request.plan.from.x, y: request.plan.from.y, width: request.plan.from.width, height: request.plan.from.height, rotation: 0, flipX: false,
       facePatch
     }})
-    return { asset: hiPatchAsset, motion: { version: 1, key: request.plan.key, assetId: hiPatchId, frames }, metrics: { ...hiBakeFixture.metrics, samples: frames.length } }
+    const mouthlessBaseAssets = hiBakeFixture.mouthlessBaseAssets?.map((entry) => ({ faceMode: entry.faceMode, asset: { ...entry.asset, id: randomUUID() } }))
+    return { asset: hiPatchAsset, ...(mouthlessBaseAssets ? { mouthlessBaseAssets, mouthIsolationMode: 'isolated-piece' as const } : { mouthIsolationMode: 'legacy-patch' as const }), assetRole: 'face-atlas', motion: { version: 1, key: request.plan.key, assetId: hiPatchId, frames }, metrics: { ...hiBakeFixture.metrics, samples: frames.length } }
   }
   const bakedPatch = hiBakeFixture.frames[2].facePatch
   const fullFrameAtlasEquivalentPixels = Math.ceil(Math.sqrt(hiBakeFixture.frames.length)) ** 2 * hiBakeFixture.sourceWidth * hiBakeFixture.sourceHeight
@@ -242,6 +247,7 @@ async function main() {
     })
     assert(hiReport.state === 'completed' && !hiReport.fallback && hiReport.options.mouthLoop === true, `A exportação facial ${label} falhou ou aceitou desligar a boca: ${hiReport.error ?? hiReport.state}.`)
     assert(hiReport.mouthAnimation?.stateAtlases === 7, `As camadas faciais ${label} não correspondem aos três personagens e à mudança de expressão nos dois trechos Turbo.`)
+    assert(hiReport.mouthAnimation.isolatedStates === (hiBakeFixture.mouthlessBaseAssets?.length ? 7 : 0) && hiReport.mouthAnimation.legacyPatchStates === (hiBakeFixture.mouthlessBaseAssets?.length ? 0 : 7), `O relatório não separou os estados de boca isolada do fallback em ${label}.`)
     assert(hiReport.motionTransitionsPrepared === 1, `A transição facial cruzando a emenda Turbo não foi preparada em ${label}.`)
     const hiProbe = JSON.parse(execFileSync(ffprobe, ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=width,height,r_frame_rate,nb_frames', '-of', 'json', hiOutput], { encoding: 'utf8', windowsHide: true })) as { streams: Array<{ width?: number; height?: number; r_frame_rate?: string; nb_frames?: string }> }
     assert(hiProbe.streams[0]?.width === width && hiProbe.streams[0]?.height === height && hiProbe.streams[0]?.r_frame_rate === '30/1' && Number(hiProbe.streams[0]?.nb_frames) === 40, `O MP4 facial ${label} perdeu resolução, taxa ou quadros.`)

@@ -10,8 +10,10 @@ import { runEditorV6Export } from '../../electron/domains/editorV6/exportRunner'
 
 const root = resolve(process.argv[2])
 const folder = resolve(process.argv[3])
-const ffmpeg = join(root, 'resources/video-tools/ffmpeg.exe')
-const ffprobe = join(root, 'resources/video-tools/ffprobe.exe')
+const { resolveEditorV6TestVideoToolsDirectory } = require('../../scripts/editor-v6/testVideoTools.cjs') as { resolveEditorV6TestVideoToolsDirectory: (root: string) => string }
+const videoTools = resolveEditorV6TestVideoToolsDirectory(root)
+const ffmpeg = join(videoTools, 'ffmpeg.exe')
+const ffprobe = join(videoTools, 'ffprobe.exe')
 const width = 320, height = 180, frames = 60
 const assert = (condition: unknown, description: string) => { if (!condition) throw Error(description) }
 const run = (executable: string, args: string[]) => execFileSync(executable, ['-v', 'error', ...args], {

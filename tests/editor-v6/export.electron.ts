@@ -17,13 +17,15 @@ import { editorV6FaceModeAtFrame } from '../../src/shared/editorV6FaceSchedule'
 import { resolveEditorV6SceneAtFrame } from '../../src/shared/editorV6TimelineScene'
 
 const root = resolve(process.argv[2]), folder = resolve(process.argv[3])
+const { resolveEditorV6TestVideoToolsDirectory } = require('../../scripts/editor-v6/testVideoTools.cjs') as { resolveEditorV6TestVideoToolsDirectory: (root: string) => string }
+const videoTools = resolveEditorV6TestVideoToolsDirectory(root)
 protocol.registerSchemesAsPrivileged([{ scheme: 'gacha-editor-media', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } }])
 const assert = (condition: unknown, message: string) => { if (!condition) throw Error(message) }
 app.setPath('userData', join(folder, 'profile'))
 app.commandLine.appendSwitch('force-device-scale-factor', '1')
 app.on('window-all-closed', () => {})
 process.on('unhandledRejection', (error) => { console.error('Rejeição não tratada no exportador:', error); app.exit(1) })
-const ffmpeg = join(root, 'resources/video-tools/ffmpeg.exe'), ffprobe = join(root, 'resources/video-tools/ffprobe.exe')
+const ffmpeg = join(videoTools, 'ffmpeg.exe'), ffprobe = join(videoTools, 'ffprobe.exe')
 const run = (args: string[]) => execFileSync(ffmpeg, ['-v', 'error', ...args], { windowsHide: true, maxBuffer: 16 * 1024 ** 2 })
 async function main() {
   await app.whenReady()
@@ -135,7 +137,7 @@ async function main() {
     signal.throwIfAborted()
     const assetId = randomUUID()
     const frames = request.plan.samples.map((sample, index) => ({ offset: sample.offset, sprite: { x: index * 16, y: 0, width: 16, height: 16, atlasWidth: 48, atlasHeight: 16 }, x: request.plan.from.x, y: request.plan.from.y, width: request.plan.from.width, height: request.plan.from.height, rotation: 0, flipX: false, facePatch: { sprite: { x: index * 16, y: 0, width: 16, height: 16, atlasWidth: 48, atlasHeight: 16 }, x: 0.08, y: 0.08, width: 0.2, height: 0.2 } }))
-    return { asset: { id: assetId, category: 'character', name: 'Mouth loop', mimeType: 'image/png', dataUrl: mouthAtlasData }, motion: { version: 1, key: request.plan.key, assetId, frames }, metrics: { milliseconds: 1, preparedRigs: 1, samples: frames.length, atlasPixels: 48 * 16 } }
+    return { asset: { id: assetId, category: 'character', name: 'Mouth loop', mimeType: 'image/png', dataUrl: mouthAtlasData }, mouthIsolationMode: 'legacy-patch', motion: { version: 1, key: request.plan.key, assetId, frames }, metrics: { milliseconds: 1, preparedRigs: 1, samples: frames.length, atlasPixels: 48 * 16 } }
   }
   const mouthOutput = join(folder, 'many-mouth-loop-states.mp4')
   const mouthReport = await runEditorV6Export(mouthProject, { startFrame: 5, endFrame: 306, width: 320, height: 180, turbo: false, encoder: 'cpu', mouthLoop: false, mouthLoopCycleFrames: 37 }, {
@@ -147,6 +149,7 @@ async function main() {
     }
   })
   assert(mouthReport.state === 'completed' && mouthReport.mouthAnimation?.stateAtlases === 16 && mouthReport.mouthAnimation.preparationMilliseconds > 0, 'O export não preparou todos os estados da boca divididos entre os trechos ou não registrou o tempo de preparação.')
+  assert(mouthReport.mouthAnimation.legacyPatchStates === 16 && mouthReport.mouthAnimation.isolatedStates === 0, 'O relatório não registrou os 16 estados de boca pelo caminho legado do fixture.')
   assert(mouthReport.options.mouthLoop === true, 'O exportador aceitou desligar o loop de boca por uma opção legada.')
   assert(mouthWorkerPayloads.map((item) => item.stateCount).join(',') === '15,1', 'Cada trecho recebeu estados de boca fora do seu próprio intervalo.')
   assert(mouthWorkerPayloads.map((item) => item.assetCount).join(',') === '17,3', 'O worker recebeu atlas de boca de outros trechos do export.')
