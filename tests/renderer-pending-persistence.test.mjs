@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { flushPendingRendererWrites, registerPendingWriteFlusher } from '../src/renderer/src/ui/pendingPersistence.ts'
 import { createPendingOperationTracker } from '../src/renderer/src/ui/pendingOperations.ts'
+import { cancelEditorV6ExportCommand, runEditorV6ExportCommand } from '../src/renderer/src/features/editorV6/editorV6ExportCommands.ts'
 
 function deferred() {
   let resolve
@@ -175,7 +176,81 @@ test('Studio and Editor V6 flush debounced documents and wait for renderer IPC w
   assert.match(editor, /const exportPrint = \(\) => \{[\s\S]*?return trackEditorV6Operation\(async \(\) => \{[\s\S]*?flushEditorV6DocumentWrites\(\)[\s\S]*?saveEditorV6Print/)
   assert.match(editor, /const openPrints = \(\) => trackEditorV6Operation\(async \(\) =>/)
   assert.match(exportPanel, /trackOperation\(async \(\) => \{ const clip = await window\.desktop\.editorV6\.importEditorV6ExportAudio/)
-  assert.match(exportPanel, /trackOperation\(async \(\) => \{ planEditorV6Export/)
+  assert.match(exportPanel, /trackOperation\(\(\) => runEditorV6ExportCommand\(/)
+  assert.match(exportPanel, /trackOperation\(\(\) => cancelEditorV6ExportCommand\(/)
+})
+
+test('Editor V6 renderer flush waits for hair preparation and the real export IPC result', async () => {
+  const tracker = createPendingOperationTracker()
+  const unregister = registerPendingWriteFlusher(() => tracker.flush())
+  const preparation = deferred(), preparationStarted = deferred()
+  const exportGate = deferred(), exportStarted = deferred()
+  const project = { id: 'synthetic-project', timeline: { durationFrames: 90 } }
+  const options = { startFrame: 0, endFrame: 60, width: 1920, height: 1080, turbo: true, encoder: 'auto', mouthLoop: true }
+  const preset = { name: 'synthetic-hair-preset' }
+  const hairMotion = { presetSlot: 2, preset, surfaces: [], textures: [], rigs: [] }
+  const expectedStatus = { id: 'synthetic-job', state: 'queued', message: 'synthetic export queued' }
+  const events = []
+  let receivedOptions
+  let flushFinished = false
+
+  const operation = tracker.track(() => runEditorV6ExportCommand({
+    project,
+    options,
+    hairPresetSlot: 2,
+    hairPreset: preset,
+    prepareHair: async (...args) => { events.push(['prepare', ...args]); preparationStarted.resolve(); return preparation.promise },
+    startExport: async (...args) => { events.push(['start', ...args]); receivedOptions = args[1]; exportStarted.resolve(); return exportGate.promise },
+    onPreparingHair: (value) => events.push(['preparing', value]),
+    onStatus: (value) => events.push(['status', value])
+  }))
+
+  await preparationStarted.promise
+  const flushing = flushPendingRendererWrites().then(() => { flushFinished = true })
+  await Promise.resolve()
+  assert.equal(flushFinished, false, 'o flush terminou enquanto a preparação do cabelo ainda estava pendente')
+  assert.deepEqual(events.map(([name]) => name), ['preparing', 'prepare'])
+
+  preparation.resolve(hairMotion)
+  await exportStarted.promise
+  assert.equal(receivedOptions.hairAnimationPresetSlot, 2)
+  await Promise.resolve()
+  assert.equal(flushFinished, false, 'o flush terminou antes de a chamada IPC de exportação devolver o resultado')
+
+  exportGate.resolve(expectedStatus)
+  assert.equal(await operation, expectedStatus)
+  await flushing
+  assert.equal(flushFinished, true)
+  assert.deepEqual(events.filter(([name]) => name === 'preparing').map(([, value]) => value), [true, false])
+  assert.deepEqual(events.find(([name]) => name === 'start')[3], hairMotion)
+  assert.deepEqual(events.find(([name]) => name === 'status')[1], expectedStatus)
+  unregister()
+})
+
+test('Editor V6 export cancellation stays tracked through the final status IPC', async () => {
+  const tracker = createPendingOperationTracker()
+  const unregister = registerPendingWriteFlusher(() => tracker.flush())
+  const cancelGate = deferred(), cancelStarted = deferred(), statusStarted = deferred()
+  const finalStatus = { id: 'synthetic-job', state: 'cancelled', message: 'synthetic export cancelled' }
+  const events = []
+  let flushFinished = false
+  const operation = tracker.track(() => cancelEditorV6ExportCommand({
+    job: { id: 'synthetic-job', state: 'rendering', message: 'rendering' },
+    cancel: async (jobId) => { events.push(['cancel', jobId]); cancelStarted.resolve(); await cancelGate.promise },
+    getStatus: async (jobId) => { events.push(['status-request', jobId]); statusStarted.resolve(); return finalStatus },
+    onStatus: (value) => events.push(['status', value])
+  }))
+
+  await cancelStarted.promise
+  const flushing = flushPendingRendererWrites().then(() => { flushFinished = true })
+  cancelGate.resolve()
+  await statusStarted.promise
+  assert.equal(flushFinished, false, 'o flush terminou antes da confirmação IPC do cancelamento')
+  assert.equal(await operation, finalStatus)
+  await flushing
+  assert.equal(flushFinished, true)
+  assert.deepEqual(events.map(([name]) => name), ['cancel', 'status-request', 'status'])
+  unregister()
 })
 
 test('Base Videos drains every debounced detail write before leaving', async () => {
