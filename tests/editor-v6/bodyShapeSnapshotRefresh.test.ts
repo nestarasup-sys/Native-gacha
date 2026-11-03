@@ -8,9 +8,27 @@ import { EDITOR_V6_FACE_RENDER_VERSION } from '../../src/renderer/src/features/e
 import { planEditorV6CharacterRefresh } from '../../src/renderer/src/features/editorV6/characterSnapshotRefresh'
 
 describe('geometria corporal no refresh de snapshots do Editor V6', () => {
+  it('descarta fonte de snapshot de outro slot e recarrega o modelo da personagem', async () => {
+    const source = { slot: 1, width: 10, height: 10, parts: [], layerOrder: [], hiddenPartIds: [] } as unknown as FabricatorProject
+    const staleSource = { ...source, slot: 2 }
+    const character = { id: 'slot-check', name: 'Slot check', createdAt: '', updatedAt: '', hair: '', outfit: '', skin: '', customization: { modelSlot: 1, poseSlot: null, partOverrides: {}, layerOrder: [] } } as unknown as CustomizerCharacter
+    let loadedSlot = 0
+    const assetProvider = {
+      loadFabricatorSlot: async (slot: number) => { loadedSlot = slot; return source },
+      loadFabricatorPose: async () => null
+    } as unknown as CharacterRenderAssetProvider
+
+    const resolved = await resolveSavedCharacterSource(character, { source: staleSource, artwork: staleSource, assetProvider })
+
+    expect(loadedSlot).toBe(1)
+    expect(resolved.source.slot).toBe(1)
+    expect(resolved.sourceArtwork).toBe(source)
+  })
+
   it('aplica o ajuste de coxa uma vez, como no Customizador, ao atualizar o snapshot', async () => {
     const stamp = '2026-10-31T19:29:24.028Z'
     const source = {
+      slot: 1,
       width: 100,
       height: 120,
       parts: [

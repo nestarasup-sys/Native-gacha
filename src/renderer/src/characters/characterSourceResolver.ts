@@ -63,9 +63,13 @@ export async function resolveSavedCharacterSource(
 ): Promise<{ modelSlot: number; assetProvider: CharacterRenderAssetProvider; source: FabricatorProject; sourceArtwork: CatalogArtwork; artwork: CatalogArtwork }> {
   const modelSlot = character.customization.modelSlot ?? 1
   const assetProvider = renderSource?.assetProvider ?? window.desktop.fabricator
-  const source = renderSource?.source ?? await assetProvider.loadFabricatorSlot(modelSlot)
+  // Cached snapshots can outlive a character's model selection. Never pair a
+  // pose/source from another slot with this character's wardrobe references.
+  const renderSourceMatchesModel = renderSource?.source.slot === modelSlot
+  const source = renderSourceMatchesModel ? renderSource.source : await assetProvider.loadFabricatorSlot(modelSlot)
   if (!source) throw new Error(`O modelo de ${character.name} não está disponível.`)
-  const pose = renderSource?.artwork ?? (character.customization.poseSlot === null ? null : await assetProvider.loadFabricatorPose(modelSlot, character.customization.poseSlot))
+  const pose = renderSourceMatchesModel ? renderSource.artwork
+    : character.customization.poseSlot === null ? null : await assetProvider.loadFabricatorPose(modelSlot, character.customization.poseSlot)
   const proportions = getCharacterProportions(character.customization)
   const sourceArtwork = pose ?? source
   const artworkWithModelContours = {
