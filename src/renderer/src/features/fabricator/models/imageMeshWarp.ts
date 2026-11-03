@@ -169,7 +169,7 @@ export function applyImageWarpBrushStroke(
   }
 }
 
-function expandedTriangle(points: [ImageWarpPoint, ImageWarpPoint, ImageWarpPoint], amount = 1.25): [ImageWarpPoint, ImageWarpPoint, ImageWarpPoint] {
+function expandedTriangle(points: [ImageWarpPoint, ImageWarpPoint, ImageWarpPoint], amount = 0.65): [ImageWarpPoint, ImageWarpPoint, ImageWarpPoint] {
   const center = {
     x: (points[0].x + points[1].x + points[2].x) / 3,
     y: (points[0].y + points[1].y + points[2].y) / 3
@@ -259,19 +259,26 @@ export function drawImageWarp(
     return { x: base.x + mesh.offsetX[index] + safePadding, y: base.y + mesh.offsetY[index] + safePadding }
   }
 
-  for (let row = 0; row < mesh.rows; row += 1) {
-    for (let column = 0; column < mesh.columns; column += 1) {
-      const sourceTopLeft = meshPoint(image, column, row, mesh.columns, mesh.rows)
-      const sourceTopRight = meshPoint(image, column + 1, row, mesh.columns, mesh.rows)
-      const sourceBottomRight = meshPoint(image, column + 1, row + 1, mesh.columns, mesh.rows)
-      const sourceBottomLeft = meshPoint(image, column, row + 1, mesh.columns, mesh.rows)
-      const destinationTopLeft = node(column, row)
-      const destinationTopRight = node(column + 1, row)
-      const destinationBottomRight = node(column + 1, row + 1)
-      const destinationBottomLeft = node(column, row + 1)
-      drawTriangle(context, image, [sourceTopLeft, sourceTopRight, sourceBottomRight], [destinationTopLeft, destinationTopRight, destinationBottomRight])
-      drawTriangle(context, image, [sourceTopLeft, sourceBottomRight, sourceBottomLeft], [destinationTopLeft, destinationBottomRight, destinationBottomLeft])
+  context.save()
+  try {
+    // Each overlapping patch replaces its pixels instead of darkening translucent outlines.
+    context.globalCompositeOperation = 'copy'
+    for (let row = 0; row < mesh.rows; row += 1) {
+      for (let column = 0; column < mesh.columns; column += 1) {
+        const sourceTopLeft = meshPoint(image, column, row, mesh.columns, mesh.rows)
+        const sourceTopRight = meshPoint(image, column + 1, row, mesh.columns, mesh.rows)
+        const sourceBottomRight = meshPoint(image, column + 1, row + 1, mesh.columns, mesh.rows)
+        const sourceBottomLeft = meshPoint(image, column, row + 1, mesh.columns, mesh.rows)
+        const destinationTopLeft = node(column, row)
+        const destinationTopRight = node(column + 1, row)
+        const destinationBottomRight = node(column + 1, row + 1)
+        const destinationBottomLeft = node(column, row + 1)
+        drawTriangle(context, image, [sourceTopLeft, sourceTopRight, sourceBottomRight], [destinationTopLeft, destinationTopRight, destinationBottomRight])
+        drawTriangle(context, image, [sourceTopLeft, sourceBottomRight, sourceBottomLeft], [destinationTopLeft, destinationBottomRight, destinationBottomLeft])
+      }
     }
+  } finally {
+    context.restore()
   }
 
   return { padding: safePadding, width, height }

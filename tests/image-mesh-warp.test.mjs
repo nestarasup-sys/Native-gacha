@@ -21,14 +21,19 @@ test('a malha sem deslocamentos desenha a imagem diretamente sem costuras triang
 })
 
 test('a malha deformada usa sobreposição entre triângulos para esconder frestas de rasterização', () => {
-  const calls = { drawImage: 0, clip: 0 }
+  const calls = { drawImage: 0, clip: 0, operations: [] }
   const context = {
     imageSmoothingEnabled: false,
     imageSmoothingQuality: 'low',
+    globalCompositeOperation: 'source-over',
+    state: [],
     clearRect() {},
-    drawImage() { calls.drawImage += 1 },
+    drawImage() { calls.drawImage += 1; calls.operations.push(this.globalCompositeOperation) },
     clip() { calls.clip += 1 },
-    beginPath() {}, moveTo() {}, lineTo() {}, closePath() {}, save() {}, restore() {}, setTransform() {}
+    beginPath() {}, moveTo() {}, lineTo() {}, closePath() {},
+    save() { this.state.push(this.globalCompositeOperation) },
+    restore() { this.globalCompositeOperation = this.state.pop() ?? 'source-over' },
+    setTransform() {}
   }
   const canvas = { width: 0, height: 0, getContext: () => context }
   const image = { naturalWidth: 225, naturalHeight: 305 }
@@ -37,6 +42,8 @@ test('a malha deformada usa sobreposição entre triângulos para esconder frest
   drawImageWarp(canvas, image, mesh, 0)
   assert.equal(calls.clip, 13 * 15 * 2)
   assert.equal(calls.drawImage, calls.clip)
+  assert.ok(calls.operations.every((operation) => operation === 'copy'), 'overlapping alpha edges must replace pixels rather than stack and reveal triangle boundaries')
+  assert.equal(context.globalCompositeOperation, 'source-over', 'the warp must restore the canvas composition state')
 })
 
 test('o pincel interpolado distribui a deformação pelo caminho inteiro do mouse', () => {
