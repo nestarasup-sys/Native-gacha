@@ -28,6 +28,14 @@ type PreviewBackground = 'checker' | 'white' | 'dark' | 'green' | 'magenta'
 type EditTool = 'select' | 'erase' | 'crop' | 'split' | 'joint-split' | 'outline' | 'deform' | 'guide'
 type DrawingGesture = { tool: 'erase' | 'crop' | 'split' | 'joint-split' | 'outline'; start: ModelSourcePoint; current: ModelSourcePoint; points: ModelSourcePoint[] }
 type WarpDrag = { pointerId: number; partId: string; last: ImageWarpPoint; originalX: Float32Array; originalY: Float32Array; changed: boolean }
+type OutlinePreview = {
+  part: ModelPart
+  sourceDraft: FabricatorProject
+  dimensions: Record<string, { width: number; height: number; x?: number; y?: number }>
+  color: string
+  thicknessPercent: number
+  luminanceThreshold: number
+}
 
 const field: CSSProperties = { width: '100%', color: '#433b45', background: '#fff', border: '1px solid #e9e1e8', borderRadius: 8, padding: 8 }
 const checker: CSSProperties = {
@@ -78,6 +86,8 @@ function isThighPart(part: ModelPart): boolean {
 export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
   const [preview, setPreview] = useState('')
   const [previewParts, setPreviewParts] = useState<ModelPart[]>([])
+  const [outlinePreview, setOutlinePreview] = useState<OutlinePreview | null>(null)
+  const [preparingOutlinePreview, setPreparingOutlinePreview] = useState(false)
   const [error, setError] = useState('')
   const [status, setStatus] = useState('')
   const [downloading, setDownloading] = useState(false)
@@ -92,6 +102,8 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
   const [skinRemovalOpen, setSkinRemovalOpen] = useState(false)
   const [outlineNormalizationOpen, setOutlineNormalizationOpen] = useState(false)
   const [outlineColor, setOutlineColor] = useState(project.modelOutlineColor ?? '#70342c')
+  const [outlineThicknessPercent, setOutlineThicknessPercent] = useState(4)
+  const [outlineLuminanceThreshold, setOutlineLuminanceThreshold] = useState(150)
   const [skinColor, setSkinColor] = useState<string | null>(null)
   const [skinColorTolerance, setSkinColorTolerance] = useState(58)
   const [samplingSkinColor, setSamplingSkinColor] = useState(false)
@@ -142,6 +154,7 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
   const baseline = selected ? sourceRect(selected) : null
   const isHead = Boolean(selected && isHeadPart(selected))
   const isThigh = Boolean(selected && isThighPart(selected))
+  const modelSkinPartCount = draft.parts.filter(isModelSkinPart).length
   const jointSplitReady = Boolean(selected && draft.bodyJointBridgeEnabled === true
     && canArticulateJoinedLimbSplit(selected, draft.parts, draft.joints))
   const limbReplacementTarget = selected ? findLimbReplacementTarget(draft.parts, selected) : null
@@ -151,7 +164,15 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
   const previewScale = fitScale * zoom
   const surfaceWidth = Math.max(1, logicalWidth * previewScale)
   const surfaceHeight = Math.max(1, logicalHeight * previewScale)
-  const previewPart = previewParts.find(part => part.id === selectedId) ?? selected
+  const outlinePreviewIsCurrent = Boolean(outlinePreview?.part.id === selectedId
+    && outlinePreview.sourceDraft === draft
+    && outlinePreview.dimensions === dimensions
+    && outlinePreview.color === outlineColor
+    && outlinePreview.thicknessPercent === outlineThicknessPercent
+    && outlinePreview.luminanceThreshold === outlineLuminanceThreshold)
+  const previewPart = outlinePreviewIsCurrent
+    ? outlinePreview!.part
+    : previewParts.find(part => part.id === selectedId) ?? selected
   const previewBackgroundStyle = previewBackground === 'checker'
     ? checker
     : { backgroundColor: previewBackgroundColors[previewBackground] }
@@ -202,6 +223,10 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
     }, 180)
     return () => { active = false; window.clearTimeout(handle); controller.abort() }
   }, [draft, dimensions, chromaTolerance])
+
+  useEffect(() => {
+    if (outlinePreview && !outlinePreviewIsCurrent) setOutlinePreview(null)
+  }, [outlinePreview, outlinePreviewIsCurrent])
 
   useEffect(() => {
     if (mode !== 'part' || tool !== 'deform' || !selected || !isThighPart(selected) || !previewPart) {
@@ -659,7 +684,10 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
       const replacements = new Map<string, ModelPart>()
       let normalizedPixels = 0
       for (const part of bodyParts) {
-        const result = await runPixelEdit(signal => normalizeModelSourceOutline(part, outlineColor, signal))
+        const result = await runPixelEdit(signal => normalizeModelSourceOutline(part, outlineColor, signal, {
+          thicknessPercent: outlineThicknessPercent,
+          luminanceThreshold: outlineLuminanceThreshold
+        }))
         replacements.set(part.id, result.part)
         normalizedPixels += result.removedPixels
       }
@@ -677,6 +705,45 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
         status: `${normalizedPixels.toLocaleString('pt-BR')} pixels de contorno normalizados em ${bodyParts.length} peças do corpo. A cor padrão do contorno também foi atualizada; a alteração pode ser desfeita.`
       }
     })
+  }
+  const previewSelectedOutline = async () => {
+    if (!selected || !isModelSkinPart(selected) || busy || downloading) return
+    setMode('part')
+    setTool('select')
+    cancelDrawing()
+    setBusy(true)
+    setPreparingOutlinePreview(true)
+    setError('')
+    setStatus('Preparando a prévia do contorno…')
+    try {
+      const composed = await compile()
+      const part = composed.parts.find(item => item.id === selected.id)
+      if (!part) throw new Error('A peça selecionada não está mais no modelo.')
+      const result = await runPixelEdit(signal => normalizeModelSourceOutline(part, outlineColor, signal, {
+        thicknessPercent: outlineThicknessPercent,
+        luminanceThreshold: outlineLuminanceThreshold
+      }))
+      if (!result.removedPixels) {
+        setOutlinePreview(null)
+        setStatus('Não encontrei contorno nessa peça com estes ajustes. Aumente a faixa ou a sensibilidade e tente outra vez.')
+        return
+      }
+      setOutlinePreview({
+        part: result.part,
+        sourceDraft: draft,
+        dimensions,
+        color: outlineColor,
+        thicknessPercent: outlineThicknessPercent,
+        luminanceThreshold: outlineLuminanceThreshold
+      })
+      setStatus(`Prévia temporária: ${result.removedPixels.toLocaleString('pt-BR')} pixels serão ajustados nesta peça. Aplique ao corpo para gravar no rascunho.`)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Não foi possível preparar a prévia do contorno.')
+      setStatus('')
+    } finally {
+      setPreparingOutlinePreview(false)
+      setBusy(false)
+    }
   }
   const replaceOppositeLimb = () => {
     if (!selected || !limbReplacementTarget || busy || downloading) return
@@ -920,13 +987,27 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
             </section>}
             {outlineNormalizationOpen && <section className="model-source-panel" aria-label="Normalizar o contorno do modelo">
               <strong style={{ fontSize: 12 }}>Normalizar o contorno externo</strong>
-              <small>Detecção automática local, sem IA. Identifica tinta escura próxima à borda transparente, aplica uma cor uniforme às peças do corpo e atualiza a cor padrão do contorno. A edição pode ser desfeita.</small>
+              <small>Detecta tinta junto às bordas transparentes. Ajuste a faixa e os tons que entram na seleção, confira uma peça e depois aplique às {modelSkinPartCount} peças do corpo.</small>
               <label>
                 Cor única do contorno
-                <input aria-label="Cor única do contorno do modelo" type="color" value={outlineColor} disabled={busy || downloading} onChange={event => { setOutlineColor(event.target.value); setError('') }} />
+                <input aria-label="Cor única do contorno do modelo" type="color" value={outlineColor} disabled={busy || downloading} onChange={event => { setOutlineColor(event.target.value); setOutlinePreview(null); setError('') }} />
                 <small className="model-source-panel-color-value">{outlineColor.toUpperCase()}</small>
               </label>
-              <button type="button" style={{ ...toolButton(false, busy || downloading), width: '100%' }} disabled={busy || downloading} onClick={normalizeModelOutline}>Normalizar contorno do corpo</button>
+              <label className="model-source-outline-setting">
+                Faixa analisada · {outlineThicknessPercent}% da peça
+                <input aria-label="Espessura da faixa de contorno" type="range" min={1} max={8} step={1} value={outlineThicknessPercent} disabled={busy || downloading} onChange={event => { setOutlineThicknessPercent(Number(event.target.value)); setOutlinePreview(null) }} />
+              </label>
+              <label className="model-source-outline-setting">
+                Luminância incluída · até {outlineLuminanceThreshold}/255
+                <input aria-label="Sensibilidade da detecção do contorno" type="range" min={70} max={220} step={1} value={outlineLuminanceThreshold} disabled={busy || downloading} onChange={event => { setOutlineLuminanceThreshold(Number(event.target.value)); setOutlinePreview(null) }} />
+              </label>
+              <small className="model-source-outline-help">Aumente a faixa para alcançar contornos grossos. Aumente a sensibilidade para incluir traços mais claros; se pegar linhas internas, reduza os valores.</small>
+              {outlinePreviewIsCurrent && <small className="model-source-outline-preview-note">Prévia temporária nesta peça. Ela ainda não foi aplicada ao rascunho.</small>}
+              <div className="model-source-outline-actions">
+                <button type="button" style={{ ...toolButton(outlinePreviewIsCurrent, busy || downloading || !selected || !isModelSkinPart(selected)), width: '100%' }} disabled={busy || downloading || !selected || !isModelSkinPart(selected)} onClick={() => void previewSelectedOutline}>{preparingOutlinePreview ? 'Analisando…' : outlinePreviewIsCurrent ? 'Atualizar prévia da peça' : 'Pré-visualizar nesta peça'}</button>
+                {outlinePreview && <button type="button" className="model-source-outline-discard" disabled={busy || downloading} onClick={() => { setOutlinePreview(null); setStatus('Prévia do contorno descartada; o rascunho não foi alterado.') }}>Descartar prévia</button>}
+              </div>
+              <button type="button" className="model-source-outline-apply" disabled={busy || downloading || modelSkinPartCount === 0} onClick={normalizeModelOutline}>Aplicar às {modelSkinPartCount} peças do corpo</button>
             </section>}
             <div className="model-source-preview-heading">
               <small>

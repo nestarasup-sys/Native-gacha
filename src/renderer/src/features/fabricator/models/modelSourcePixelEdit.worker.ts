@@ -26,6 +26,14 @@ function validateRequest(request: ModelSourcePixelEditRequest): void {
     }
   } else if (request.operation === 'normalize-outline') {
     if (!/^#[0-9a-f]{6}$/i.test(request.color)) throw new Error('Escolha uma cor válida para normalizar o contorno.')
+    const thicknessPercent = request.options?.thicknessPercent ?? 4
+    const luminanceThreshold = request.options?.luminanceThreshold ?? 150
+    if (!Number.isFinite(thicknessPercent) || thicknessPercent < 1 || thicknessPercent > 8) {
+      throw new Error('A espessura do contorno deve ficar entre 1 e 8 por cento.')
+    }
+    if (!Number.isFinite(luminanceThreshold) || luminanceThreshold < 70 || luminanceThreshold > 220) {
+      throw new Error('A sensibilidade do contorno deve ficar entre 70 e 220.')
+    }
   } else if (!/^#[0-9a-f]{6}$/i.test(request.color) || !Number.isFinite(request.tolerance) || request.tolerance < 0 || request.tolerance > 180) {
     throw new Error('A cor ou a semelhança selecionada está inválida.')
   }
@@ -57,7 +65,7 @@ async function editImage(dataUrl: string, request: ModelSourcePixelEditRequest, 
       }
     } else if (request.operation === 'normalize-outline') {
       const pixels = context.getImageData(0, 0, width, height)
-      const outlineMask = sharedOutlineMask ?? detectModelSourceOutlineMask(pixels)
+      const outlineMask = sharedOutlineMask ?? detectModelSourceOutlineMask(pixels, request.options)
       removedPixels = normalizeModelSourceOutlinePixels(pixels, request.color, outlineMask)
       context.putImageData(pixels, 0, 0)
       const blob = await canvas.convertToBlob({ type: 'image/png' })

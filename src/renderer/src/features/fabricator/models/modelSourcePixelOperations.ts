@@ -1,6 +1,7 @@
 export type ModelSourcePixelPoint = { x: number; y: number }
 export type ModelSourcePixelRegion = { x: number; y: number; width: number; height: number }
 export type ModelSourcePixelImage = { width: number; height: number; data: Uint8ClampedArray }
+export type ModelSourceOutlineOptions = { thicknessPercent?: number; luminanceThreshold?: number }
 
 /** Horizontally mirror an RGBA image without changing its dimensions or alpha. */
 export function mirrorModelSourcePixelImage(image: ModelSourcePixelImage): ModelSourcePixelImage {
@@ -28,11 +29,19 @@ function colorDistance(data: Uint8ClampedArray, a: number, b: number): number {
   return Math.sqrt(red * red + green * green + blue * blue)
 }
 
-/** Find dark, high-contrast ink close to the transparent silhouette edge. */
-export function detectModelSourceOutlineMask(image: ModelSourcePixelImage): Uint8Array {
+/** Find dark, high-contrast ink close to transparent edges using tunable band width and tone sensitivity. */
+export function detectModelSourceOutlineMask(image: ModelSourcePixelImage, options: ModelSourceOutlineOptions = {}): Uint8Array {
   const { width, height, data } = image
+  const thicknessPercent = options.thicknessPercent ?? 4
+  const luminanceThreshold = options.luminanceThreshold ?? 150
+  if (!Number.isFinite(thicknessPercent) || thicknessPercent < 1 || thicknessPercent > 8) {
+    throw new Error('A espessura do contorno deve ficar entre 1 e 8 por cento.')
+  }
+  if (!Number.isFinite(luminanceThreshold) || luminanceThreshold < 70 || luminanceThreshold > 220) {
+    throw new Error('A sensibilidade do contorno deve ficar entre 70 e 220.')
+  }
   const count = width * height
-  const thickness = Math.max(2, Math.min(8, Math.round(Math.min(width, height) * 0.04)))
+  const thickness = Math.max(1, Math.min(24, Math.round(Math.min(width, height) * thicknessPercent / 100)))
   const unreachable = thickness + 1
   const distance = new Uint8Array(count)
   distance.fill(unreachable)
@@ -74,11 +83,11 @@ export function detectModelSourceOutlineMask(image: ModelSourcePixelImage): Uint
     const offset = pixel * 4
     if (data[offset + 3] < 32 || distance[pixel] > thickness) continue
     const luminance = luminanceAt(pixel)
-    if (luminance <= 150) {
+    if (luminance <= luminanceThreshold) {
       mask[pixel] = 1
       continue
     }
-    if (luminance > 210) continue
+    if (luminance > Math.min(255, luminanceThreshold + 60)) continue
     let touchesLighterInterior = false
     for (let dy = -2; dy <= 2 && !touchesLighterInterior; dy += 1) for (let dx = -2; dx <= 2; dx += 1) {
       if (dx === 0 && dy === 0) continue

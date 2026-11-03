@@ -3,7 +3,7 @@ import { cropModelSkinContours } from '../../../../../shared/modelSkinContours'
 import { loadImageFromDataUrl } from './imageData'
 import { sourceRect } from './modelSource'
 import { startModelSourcePixelEditWorker } from './runModelSourcePixelEditWorker'
-import { mirrorModelSourcePixelImage, type ModelSourcePixelPoint } from './modelSourcePixelOperations'
+import { mirrorModelSourcePixelImage, type ModelSourceOutlineOptions, type ModelSourcePixelPoint } from './modelSourcePixelOperations'
 
 export type ModelSourcePoint = ModelSourcePixelPoint
 export type ModelSourceCrop = { x: number; y: number; width: number; height: number }
@@ -441,13 +441,19 @@ export async function removeModelSourceColor(part: ModelPart, color: string, tol
   }
 }
 
-export async function normalizeModelSourceOutline(part: ModelPart, color: string, signal?: AbortSignal): Promise<BrushResult> {
+export async function normalizeModelSourceOutline(
+  part: ModelPart,
+  color: string,
+  signal?: AbortSignal,
+  options: ModelSourceOutlineOptions = {}
+): Promise<BrushResult> {
   if (!/^#[0-9a-f]{6}$/i.test(color)) throw new Error('Escolha uma cor válida para normalizar o contorno.')
   const task = startModelSourcePixelEditWorker({
     id: ++pixelEditRequestId,
     operation: 'normalize-outline',
     part: { width: part.width, height: part.height, displayDataUrl: part.dataUrl, baseDataUrl: part.chromaBaseDataUrl ?? part.dataUrl },
-    color
+    color,
+    options
   }, undefined, signal)
   const edited = await task.result
   return {

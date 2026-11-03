@@ -138,6 +138,7 @@ test('tela e workers compartilham os contratos de mensagem definidos pelo domín
   assert.match(pixelWorker, /applyModelSourceBrushPixels/)
   assert.match(pixelWorker, /removeModelSourceColorPixels/)
   assert.match(pixelWorker, /normalizeModelSourceOutlinePixels/)
+  assert.match(pixelWorker, /request\.options/)
   assert.match(editor, /Dividir com linha/)
   assert.match(editor, /Divisor de juntas/)
   assert.match(editor, /Espelhar peça/)
@@ -273,6 +274,27 @@ test('normalização troca apenas tinta escura próxima ao contorno externo e ma
   assert.deepEqual(pixel(6, 7), [240, 200, 170, 255])
   assert.deepEqual(pixel(7, 7), [12, 12, 12, 255])
   assert.deepEqual(pixel(0, 0), [0, 0, 0, 0])
+})
+
+test('ajustes da normalização controlam largura da faixa e inclusão de tinta mais clara', () => {
+  const image = rgbaImage(25, 25, [0, 0, 0, 0])
+  for (let y = 3; y <= 21; y += 1) for (let x = 3; x <= 21; x += 1) {
+    const outlineBand = x < 6 || x > 18 || y < 6 || y > 18
+    image.data.set(outlineBand ? [70, 34, 32, 255] : [240, 200, 170, 255], (y * image.width + x) * 4)
+  }
+  image.data.set([170, 170, 170, 255], (3 * image.width + 12) * 4)
+
+  const narrowAndStrict = detectModelSourceOutlineMask(image, { thicknessPercent: 1, luminanceThreshold: 150 })
+  const wideAndStrict = detectModelSourceOutlineMask(image, { thicknessPercent: 8, luminanceThreshold: 150 })
+  const narrowAndSensitive = detectModelSourceOutlineMask(image, { thicknessPercent: 1, luminanceThreshold: 180 })
+  const pixel = (mask, x, y) => mask[y * image.width + x]
+
+  assert.equal(pixel(narrowAndStrict, 12, 4), 0)
+  assert.equal(pixel(wideAndStrict, 12, 4), 1)
+  assert.equal(pixel(narrowAndStrict, 12, 3), 0)
+  assert.equal(pixel(narrowAndSensitive, 12, 3), 1)
+  assert.throws(() => detectModelSourceOutlineMask(image, { thicknessPercent: 9 }), /espessura do contorno/)
+  assert.throws(() => detectModelSourceOutlineMask(image, { luminanceThreshold: 221 }), /sensibilidade do contorno/)
 })
 
 test('substituição experimental encontra apenas o lado oposto do mesmo segmento', () => {

@@ -100,6 +100,15 @@
 .model-source-panel input[type='color'] { width: 31px; height: 28px; padding: 2px; border: 1px solid #e8dfe6; border-radius: 7px; background: #fff; cursor: pointer; }
 .model-source-panel input[type='range'] { accent-color: var(--rose, #e76391); }
 .model-source-panel button { flex: 0 0 auto; }
+.model-source-outline-setting { display: grid !important; grid-template-columns: 1fr; gap: 5px !important; color: #665c67 !important; font-size: 9px !important; font-weight: 650; }
+.model-source-outline-setting input[type='range'] { width: 100%; accent-color: var(--rose, #e76391); }
+.model-source-outline-help { padding: 7px 8px; border-radius: 7px; background: #faf7f9; color: #817782 !important; }
+.model-source-outline-preview-note { padding: 7px 8px; border: 1px solid #f0d1de; border-radius: 7px; background: #fff3f8; color: #a7446b !important; font-weight: 700; }
+.model-source-outline-actions { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 6px; }
+.model-source-outline-discard { padding: 7px 9px; border: 1px solid #e9e1e8; border-radius: 8px; background: #fff; color: #716773; font-size: 9px; cursor: pointer; }
+.model-source-outline-discard:hover:not(:disabled) { border-color: #e7bdcc; background: #fff7fa; }
+.model-source-outline-apply { width: 100%; min-height: 36px; padding: 8px 10px; border: 1px solid var(--rose-dark, #c74677); border-radius: 8px; background: var(--rose-dark, #c74677); color: #fff; font-size: 10px; font-weight: 750; cursor: pointer; }
+.model-source-outline-apply:hover:not(:disabled) { border-color: #ae3b69; background: #ae3b69; }
 .model-source-preview-heading { min-height: 23px; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 2px; color: #857a86; font-size: 9px; }
 .model-source-preview-heading small { color: #8d838d; }
 .model-source-guide-status { color: #a7446b !important; }
