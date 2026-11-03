@@ -10,6 +10,7 @@ export const fabricatorSections = [
   { id: 'Animador Rosto Dev', label: 'Animador Rosto Dev', icon: 'face' },
   { id: 'Cabeças extra', label: 'Cabeças extra dev', icon: 'face' },
   { id: 'Cabelos Dev', label: 'Cabelos Dev', icon: 'bow' },
+  { id: 'Animação Cabelo Dev', label: 'Animação Cabelo Dev', icon: 'bow' },
   { id: 'Animador Dev', label: 'Animador Dev', icon: 'body' },
   { id: 'Design Dev', label: 'Design Dev', icon: 'flower' }
 ] as const satisfies readonly { id: string; label: string; icon: IconName }[]

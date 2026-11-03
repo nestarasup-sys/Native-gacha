@@ -6,6 +6,7 @@ const WardrobeWorkspace = lazy(async () => ({ default: (await import('./wardrobe
 const FaceComponentsWorkspace = lazy(async () => ({ default: (await import('./face/FaceComponentsWorkspace')).FaceComponentsWorkspace }))
 const HeadExtrasWorkspace = lazy(async () => ({ default: (await import('./face/HeadExtrasWorkspace')).HeadExtrasWorkspace }))
 const HairWorkspace = lazy(async () => ({ default: (await import('./HairWorkspace')).HairWorkspace }))
+const HairAnimationWorkspace = lazy(async () => ({ default: (await import('./hair-animation/HairAnimationWorkspace')).HairAnimationWorkspace }))
 const AnimatorWorkspace = lazy(async () => ({ default: (await import('./AnimatorWorkspace')).AnimatorWorkspace }))
 const DesignWorkspace = lazy(async () => ({ default: (await import('./DesignWorkspace')).DesignWorkspace }))
 const ExpressionPresetWorkspace = lazy(async () => ({ default: (await import('./ExpressionPresetWorkspace')).ExpressionPresetWorkspace }))
@@ -49,6 +50,9 @@ export function FabricatorWorkspaceRouter({
       break
     case 'Cabelos Dev':
       workspace = <HairWorkspace baseModelSlot={activeSlot} />
+      break
+    case 'Animação Cabelo Dev':
+      workspace = <HairAnimationWorkspace baseModelSlot={activeSlot} />
       break
     case 'Animador Dev':
       workspace = <AnimatorWorkspace baseModelSlot={activeSlot} />
