@@ -3,7 +3,7 @@ import type { CharacterColorOverrides, CustomizerWardrobeCategory, CustomizerWar
 import { projectForOriginalPreview } from '../../../shared/fabricatorModelViews'
 import { mapWardrobeComponentToPose, wardrobePosePadding } from '../../../shared/wardrobePose'
 import { wardrobeJointAssemblyOffset } from '../../../shared/wardrobeJointAssembly'
-import { normalizeLayerOrder } from '../../../shared/modelRig'
+import { autoConnectParts, normalizeLayerOrder } from '../../../shared/modelRig'
 import { bindLegacyTorsoGridWardrobeSet, validateWardrobeFlow } from '../../../shared/assetFlow'
 import { wardrobeAdjustmentMatrix } from '../../../shared/wardrobeAdjustment'
 import type { CatalogArtwork } from './characterSourceResolver'
@@ -15,6 +15,7 @@ import { drawWardrobeJointBridge } from './wardrobeJointBridge'
 import { drawBodyJointBridgePair, findBodyJointBridgePairs } from './bodyJointBridge'
 import type { BodyJointBridgePair } from './bodyJointBridge'
 import { resolveShoeBehindShinPlacement } from './wardrobeShoeLayering'
+import { findWardrobeBridgePairs } from './wardrobeBridgePairs'
 
 export type ClothingGroupCategory = CustomizerWardrobeCategory
 export type SelectedWardrobeComponent = { modelSlot: number; setId: string; category: ClothingGroupCategory; componentId: string }
@@ -175,17 +176,11 @@ export function createCharacterWardrobeRenderer(loaders: CharacterWardrobeImageL
       }
     }
 
-    const pairedGarments = new Map<string, Partial<Record<'upper' | 'lower', MappedWardrobeGarment>>>()
-    for (const garment of mappedGarments) {
-      const { sleevePairId, sleeveSide, sleeveSegment } = garment.component
-      if (!sleevePairId || !sleeveSide || (sleeveSegment !== 'upper' && sleeveSegment !== 'lower')) continue
-      const key = `${garment.group.modelSlot}:${garment.group.setId}:${sleevePairId}:${sleeveSide}`
-      const pair = pairedGarments.get(key) ?? {}
-      pair[sleeveSegment] = garment
-      pairedGarments.set(key, pair)
-    }
+    const modelJoints = source.joints?.length ? source.joints : autoConnectParts(source.parts)
+    const modelPairs = findBodyJointBridgePairs({ parts: source.parts, joints: modelJoints })
+    const pairedGarments = findWardrobeBridgePairs(mappedGarments, modelPairs)
     const bridgesAfterPart = new Map<string, MappedWardrobeJointBridge[]>()
-    for (const pair of pairedGarments.values()) {
+    for (const pair of pairedGarments) {
       const { upper, lower } = pair
       if (!upper || !lower) continue
       const armPair = upper.component.category === 'manga-superior' && lower.component.category === 'manga-inferior'
