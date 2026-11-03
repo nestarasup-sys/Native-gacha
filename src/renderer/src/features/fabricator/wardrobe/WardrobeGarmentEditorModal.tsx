@@ -7,6 +7,7 @@ type GarmentFrame = Pick<WardrobeComponent, 'x' | 'y' | 'width' | 'height' | 'ro
 type BodyReference = GarmentFrame & { name: string; dataUrl: string }
 type Props = {
   component: WardrobeComponent
+  previewBackground: string
   bodyReference?: BodyReference
   pairedImageMode?: 'mirror' | 'copy'
   onClose: () => void
@@ -64,7 +65,7 @@ function cssFilter(adjustments: Adjustments): string {
   return `brightness(${brightness}) contrast(${contrast}) saturate(${Math.max(0, adjustments.saturation) / 100})`
 }
 
-export function WardrobeGarmentEditorModal({ component, bodyReference, pairedImageMode, onClose, onApply }: Props) {
+export function WardrobeGarmentEditorModal({ component, previewBackground, bodyReference, pairedImageMode, onClose, onApply }: Props) {
   const [tool, setTool] = useState<Tool>('erase')
   const [brushSize, setBrushSize] = useState(34)
   const [brushStrength, setBrushStrength] = useState(100)
@@ -558,7 +559,7 @@ export function WardrobeGarmentEditorModal({ component, bodyReference, pairedIma
           </section>
         </aside>
         <div className="wardrobe-image-editor-stage-column">
-          <div ref={stageRef} className={`wardrobe-image-editor-stage${tool === 'sample' ? ' sampling' : ''}`}>
+          <div ref={stageRef} className={`wardrobe-image-editor-stage${tool === 'sample' ? ' sampling' : ''}`} style={{ backgroundColor: previewBackground }}>
             <canvas ref={stageCanvasRef} aria-label="Prévia da roupa e área de edição" onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerCancel={handlePointerCancel} onLostPointerCapture={handlePointerCancel} onPointerLeave={() => { if (!strokeRef.current) { hoverRef.current = null; drawStage() } }} />
             {!ready && <div className="wardrobe-image-editor-loading"><span className="model-spinner" />Carregando a imagem…</div>}
           </div>
