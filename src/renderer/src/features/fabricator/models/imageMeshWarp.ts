@@ -227,6 +227,7 @@ export function imageWarpPadding(mesh: ImageWarpMesh): number {
   for (let index = 0; index < mesh.offsetX.length; index += 1) {
     maximum = Math.max(maximum, Math.abs(mesh.offsetX[index]), Math.abs(mesh.offsetY[index]))
   }
+  if (maximum <= 0.0001) return 0
   return Math.min(MAX_WARP_PADDING, Math.ceil(maximum) + 2)
 }
 
