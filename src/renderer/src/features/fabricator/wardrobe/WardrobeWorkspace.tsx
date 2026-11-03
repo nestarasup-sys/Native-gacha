@@ -41,6 +41,7 @@ import {
   wardrobeCategoryNames as categoryNames,
   wardrobeCategories as categories,
   wardrobeImageCounterpart,
+  selectWardrobePreviewComponents,
   wardrobeSetPresentation
 } from './wardrobeWorkspaceModel'
 import './wardrobe.css'
@@ -120,11 +121,7 @@ export function WardrobeWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
   const defaultPose = useWardrobeComparisonPose(modelSlot,Boolean(model && draft))
   const selected = draft?.components.find((component) => component.id === selectedId) ?? null
   const selectedImageCounterpart = wardrobeImageCounterpart(selected, draft?.components ?? [])
-  const previewComponents = draft?.components.filter(component => {
-    if (!isWardrobePairedGridImportKind(draft.importKind) && !draft.components.some(piece => piece.sleevePairId)) return true
-    if (!selected) return false
-    return selected.sleevePairId ? component.sleevePairId === selected.sleevePairId : component.id === selected.id
-  }) ?? []
+  const previewComponents = draft ? selectWardrobePreviewComponents(draft.components, draft.importKind, selected) : []
   const selectedIndex = draft?.components.findIndex((component) => component.id === selectedId) ?? -1
   const previewProject = testPose ?? model
   const previewPoseOrder = testPose ? normalizeLayerOrder(testPose.parts, testPose.layerOrder) : []

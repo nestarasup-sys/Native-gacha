@@ -1,4 +1,11 @@
 import type { FabricatorProject, FabricatorProjectSave, WardrobeCategory, WardrobeComponent, WardrobeSetSummary } from '../../../../../shared/fabricator'
+import { isWardrobePairedGridImportKind } from './wardrobePairedSheetPolicy'
+
+export function selectWardrobePreviewComponents(components: WardrobeComponent[], importKind: WardrobeSetSummary['importKind'], selected: WardrobeComponent | null): WardrobeComponent[] {
+  if (!isWardrobePairedGridImportKind(importKind)) return components
+  if (!selected) return []
+  return components.filter((component) => selected.sleevePairId ? component.sleevePairId === selected.sleevePairId : component.id === selected.id)
+}
 
 export const wardrobeCategoryNames: Record<WardrobeCategory, string> = {
   camisa: 'Camisas', jaqueta: 'Jaquetas', 'manga-superior': 'Mangas superiores', 'manga-inferior': 'Mangas inferiores', luvas: 'Luvas', capa: 'Capa', cinto: 'Cinto', oculos: 'Óculos', 'acessorio-cabeca': 'Acessórios de cabeça', saia: 'Saia', 'calca-coxa': 'Calças · coxas', 'calca-canela': 'Calças · canelas', shorts: 'Shorts', meia: 'Meias', sapato: 'Sapatos'
