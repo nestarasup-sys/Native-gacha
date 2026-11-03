@@ -8,6 +8,8 @@ import { editorV6ExportAudioSchema, editorV6MediaAssetSchema, parseEditorV6Expor
 import type { EditorV6MediaAsset } from '../../../src/shared/editorV6'
 import type { CustomizerCharacter } from '../../../src/shared/customizer'
 import type { EditorV6MotionBakeRequest, EditorV6MotionBakeResult } from '../../../src/shared/editorV6Motion'
+import type { EditorV6HairMotionBundle } from '../../../src/shared/editorV6HairMotion'
+import { parseEditorV6HairMotionBundle } from '../../../src/shared/editorV6HairMotion'
 import { planEditorV6Export, type EditorV6ExportAudio, type EditorV6ExportOptions, type EditorV6ExportStatus } from '../../../src/shared/editorV6Export'
 import { createEditorV6WorkerFactory } from './exportWorkers'
 import { probeExportMedia, runEditorV6Export, type EditorV6ExportReport } from './exportRunner'
@@ -34,7 +36,7 @@ type EditorV6ExportIpcLifecycle = {
   drain: () => Promise<void>
   getPendingWrites: () => Promise<unknown>[]
   resumeAfterFailedShutdown: () => void
-  runIsolatedExport: (project: unknown, options: EditorV6ExportOptions, outputPath: string, reportPath: string, id: string, signal?: AbortSignal, progress?: (patch: Partial<EditorV6ExportStatus>) => void, motionPreparationConcurrency?: 1 | 2) => Promise<EditorV6ExportReport>
+  runIsolatedExport: (project: unknown, options: EditorV6ExportOptions, outputPath: string, reportPath: string, id: string, signal?: AbortSignal, progress?: (patch: Partial<EditorV6ExportStatus>) => void, motionPreparationConcurrency?: 1 | 2, hairAnimation?: EditorV6HairMotionBundle) => Promise<EditorV6ExportReport>
 }
 const uuid = z.string().uuid()
 const terminal = (status: EditorV6ExportStatus) => ['completed', 'cancelled', 'failed'].includes(status.state)
@@ -82,9 +84,11 @@ export function registerEditorV6ExportHandlers(deps: EditorV6ExportIpcDependenci
   const audioPath = async (projectId: string, clip: EditorV6ExportAudio, media: readonly EditorV6MediaAsset[] = []) => clip.libraryVideoId
     ? (await deps.resolveLibraryVideo(clip.libraryVideoId)).path
     : join(deps.projectPath(projectId), media.some((item) => item.fileName === clip.fileName) ? 'media' : 'export-audio', clip.fileName)
-  const runIsolatedExport: EditorV6ExportIpcLifecycle['runIsolatedExport'] = (rawProject, options, outputPath, reportPath, id, signal = new AbortController().signal, progress = (patch) => { if (patch.message) console.log(`[V6 isolated export] ${patch.message}`) }, motionPreparationConcurrency = 2) => {
+  const runIsolatedExport: EditorV6ExportIpcLifecycle['runIsolatedExport'] = (rawProject, options, outputPath, reportPath, id, signal = new AbortController().signal, progress = (patch) => { if (patch.message) console.log(`[V6 isolated export] ${patch.message}`) }, motionPreparationConcurrency = 2, hairAnimation) => {
     const project = parseEditorV6ExportDocument(rawProject)
     planEditorV6Export(options, project.timeline.durationFrames)
+    if (Boolean(options.hairAnimationPresetSlot) !== Boolean(hairAnimation)) throw Error('A configuração da animação de cabelo não corresponde ao pacote preparado.')
+    if (hairAnimation && hairAnimation.presetSlot !== options.hairAnimationPresetSlot) throw Error('O preset de cabelo mudou durante a preparação da exportação.')
     return runEditorV6Export(project, options, {
       ffmpeg, ffprobe, tempRoot: deps.tempRoot, id, outputPath, reportPath,
       signal,
@@ -92,7 +96,7 @@ export function registerEditorV6ExportHandlers(deps: EditorV6ExportIpcDependenci
       bakeMotion: deps.bakeMotion,
       motionPreparationConcurrency,
       getMotionCacheStats: deps.getMotionCacheStats,
-      createWorker: (renderProject, _part, signal, layeredVideo, mouthLoops) => workers.create({ project: renderProject, width: options.width, height: options.height, layeredVideo, ...(mouthLoops ? { mouthLoops } : {}) }, signal),
+      createWorker: (renderProject, _part, signal, layeredVideo, mouthLoops) => workers.create({ project: renderProject, width: options.width, height: options.height, layeredVideo, ...(mouthLoops ? { mouthLoops } : {}), ...(hairAnimation ? { hairAnimation } : {}) }, signal),
       audioPath: (clip) => audioPath(project.id, clip, project.media), mediaPath, progress
     })
   }
@@ -102,12 +106,15 @@ export function registerEditorV6ExportHandlers(deps: EditorV6ExportIpcDependenci
     if (!job || job.owner !== event.sender.id) throw Error('Exportação não encontrada nesta janela.')
     return job
   }
-  deps.ipcMain.handle(editorV6IpcChannels.startEditorV6Export, async (event, rawProject, options: EditorV6ExportOptions) => {
+  deps.ipcMain.handle(editorV6IpcChannels.startEditorV6Export, async (event, rawProject, options: EditorV6ExportOptions, rawHairAnimation?: unknown) => {
     deps.assertTrustedSender(event)
     assertAvailable()
     if ([...jobs.values()].some((job) => !terminal(job.status))) throw Error('Aguarde ou cancele a exportação atual antes de iniciar outra.')
     const project = parseEditorV6ExportDocument(rawProject)
     planEditorV6Export(options, project.timeline.durationFrames)
+    const hairAnimation = rawHairAnimation === undefined ? undefined : parseEditorV6HairMotionBundle(rawHairAnimation)
+    if (Boolean(options.hairAnimationPresetSlot) !== Boolean(hairAnimation)) throw Error('A configuração da animação de cabelo está incompleta.')
+    if (hairAnimation && hairAnimation.presetSlot !== options.hairAnimationPresetSlot) throw Error('O preset de cabelo mudou durante a preparação da exportação.')
     const owner = BrowserWindow.fromWebContents(event.sender)
     const saveOptions = { title: 'Editor V6: exportar MP4', defaultPath: project.title.replace(/[<>:"/\\|?*]/g, '_') + '.mp4', filters: [{ name: 'Vídeo MP4', extensions: ['mp4'] }] }
     const destination = owner ? await dialog.showSaveDialog(owner, saveOptions) : await dialog.showSaveDialog(saveOptions)
@@ -121,7 +128,7 @@ export function registerEditorV6ExportHandlers(deps: EditorV6ExportIpcDependenci
     jobs.set(id, job)
     const abort = () => controller.abort(Error('A janela do editor foi fechada.'))
     event.sender.once('destroyed', abort)
-    job.promise = runIsolatedExport(project, options, outputPath, reportPath, id, controller.signal, (patch) => { job.status = { ...job.status, ...patch } }).then((report) => {
+    job.promise = runIsolatedExport(project, options, outputPath, reportPath, id, controller.signal, (patch) => { job.status = { ...job.status, ...patch } }, undefined, hairAnimation).then((report) => {
       const mouth = report.mouthAnimation
       const message = `${report.deliveryWarning ?? 'MP4 exportado e validado.'}${mouth ? ` Loop da boca em ${mouth.characters} personagem(ns) · ${mouth.cycleFrames / 30}s${mouth.skippedStates ? ` · ${mouth.skippedStates} estado(s) ignorado(s); veja o relatório` : ''}.` : ''}`
       job.status = { ...job.status, state: 'completed', outputPath: report.outputPath, fallback: report.fallback, frames: status.totalFrames, message }

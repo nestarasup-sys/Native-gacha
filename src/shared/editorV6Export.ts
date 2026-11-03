@@ -1,12 +1,13 @@
 import type { EditorV6Document } from './editorV6'
 import type { EditorV6MotionFrame } from './editorV6Motion'
+import type { EditorV6HairMotionBundle } from './editorV6HairMotion'
 
 export type EditorV6ExportAudio = {
   id: string; name: string; fileName: string; sourceFrames: number
   libraryVideoId?: string
   startFrame: number; sourceInFrame: number; durationFrames: number; gain: number; muted: boolean
 }
-export type EditorV6ExportOptions = { startFrame: number; endFrame: number; width: number; height: number; turbo: boolean; encoder: 'auto' | 'cpu'; mouthLoop?: boolean; mouthLoopCycleFrames?: number }
+export type EditorV6ExportOptions = { startFrame: number; endFrame: number; width: number; height: number; turbo: boolean; encoder: 'auto' | 'cpu'; mouthLoop?: boolean; mouthLoopCycleFrames?: number; hairAnimationPresetSlot?: number }
 export type EditorV6ExportStatus = {
   id: string; state: 'preparing' | 'rendering' | 'joining' | 'validating' | 'completed' | 'cancelled' | 'failed'
   frames: number; totalFrames: number; message: string; fallback: boolean; motionProgress?: { completed: number; total: number }; outputPath?: string; reportPath?: string; error?: string
@@ -29,6 +30,7 @@ export function planEditorV6Export(options: EditorV6ExportOptions, durationFrame
   if (options.encoder !== 'auto' && options.encoder !== 'cpu') throw Error('Codificador inválido.')
   if (options.mouthLoop !== undefined && typeof options.mouthLoop !== 'boolean') throw Error('Configuração de animação da boca inválida.')
   if (!Number.isInteger(options.mouthLoopCycleFrames ?? 30) || (options.mouthLoopCycleFrames ?? 30) < 30 || (options.mouthLoopCycleFrames ?? 30) > 180) throw Error('O ciclo da boca deve durar de 1 a 6 segundos.')
+  if (options.hairAnimationPresetSlot !== undefined && (!Number.isInteger(options.hairAnimationPresetSlot) || options.hairAnimationPresetSlot < 1 || options.hairAnimationPresetSlot > 5)) throw Error('Selecione um preset de animação de cabelo válido.')
   const count = options.endFrame - options.startFrame
   const middle = options.startFrame + Math.floor(count / 2)
   return options.turbo && count >= 2 ? [{ index: 0, startFrame: options.startFrame, endFrame: middle }, { index: 1, startFrame: middle, endFrame: options.endFrame }] : [{ index: 0, startFrame: options.startFrame, endFrame: options.endFrame }]
@@ -50,18 +52,20 @@ export function splitEditorV6ExportParts(parts: readonly EditorV6ExportPart[], m
   return result
 }
 export const editorV6WorkerChannels = { payload: 'editor-v6:export-worker:payload', ready: 'editor-v6:export-worker:ready' } as const
-export type EditorV6WorkerPayload = { project: EditorV6Document; width: number; height: number; layeredVideo: boolean; mouthLoops?: EditorV6ExportMouthLoops }
+export type EditorV6WorkerPayload = { project: EditorV6Document; width: number; height: number; layeredVideo: boolean; mouthLoops?: EditorV6ExportMouthLoops; hairAnimation?: EditorV6HairMotionBundle }
 export type EditorV6WorkerBridge = { payload: () => Promise<EditorV6WorkerPayload>; ready: (error?: string) => Promise<void> }
-export type EditorV6FrameTimings = Partial<Record<'sceneResolutionMs' | 'faceCompositionMs' | 'assetPreparationMs' | 'reactCommitMs' | 'rafWaitMs' | 'ipcDrawMs' | 'captureMs' | 'backgroundCaptureMs' | 'foregroundCaptureMs' | 'frameRoundTripMs' | 'ffmpegWriteMs', number>>
+export type EditorV6FrameTimings = Partial<Record<'sceneResolutionMs' | 'faceCompositionMs' | 'hairCompositionMs' | 'assetPreparationMs' | 'reactCommitMs' | 'rafWaitMs' | 'ipcDrawMs' | 'captureMs' | 'backgroundCaptureMs' | 'foregroundCaptureMs' | 'frameRoundTripMs' | 'ffmpegWriteMs', number>>
 export type EditorV6RenderFrameResult = { reused: boolean; layerReused?: boolean; timings?: EditorV6FrameTimings }
-type EditorV6VisualKeyInput = { frame?: number; background: unknown; elements: EditorV6Document['elements']; mediaVideo?: { mediaId: string; startFrame: number; sourceInFrame: number; layout: { x: number; y: number; width: number; height: number; rotation: number } } }
+type EditorV6VisualKeyInput = { frame?: number; hairAnimationFrame?: number; background: unknown; elements: EditorV6Document['elements']; mediaVideo?: { mediaId: string; startFrame: number; sourceInFrame: number; layout: { x: number; y: number; width: number; height: number; rotation: number } } }
 function editorV6ElementVisualKeys(elements: EditorV6Document['elements']) {
   return elements.map((element) => [element.id, element.kind, element.assetId, element.text, element.x, element.y, element.width, element.height, element.rotation, element.flipX, element.characterScale, element.characterWidthScale, element.characterHeightScale, element.zIndex, element.motionSprite, element.mouthPatch])
 }
-export function editorV6LayerVisualKeys(scene: Pick<EditorV6VisualKeyInput, 'background' | 'elements'>) {
-  return { background: JSON.stringify(scene.background), foreground: JSON.stringify(editorV6ElementVisualKeys(scene.elements)) }
+export function editorV6LayerVisualKeys(scene: Pick<EditorV6VisualKeyInput, 'background' | 'elements' | 'hairAnimationFrame'>) {
+  const foreground = editorV6ElementVisualKeys(scene.elements)
+  return { background: JSON.stringify(scene.background), foreground: JSON.stringify(scene.hairAnimationFrame === undefined ? foreground : [foreground, scene.hairAnimationFrame]) }
 }
 export function editorV6VisualKey(scene: EditorV6VisualKeyInput): string {
   const mediaFrame = scene.mediaVideo && scene.frame !== undefined ? scene.mediaVideo.sourceInFrame + scene.frame - scene.mediaVideo.startFrame : null
-  return JSON.stringify([scene.background, mediaFrame === null ? null : [scene.mediaVideo?.mediaId, mediaFrame, scene.mediaVideo?.layout], editorV6ElementVisualKeys(scene.elements)])
+  const base = [scene.background, mediaFrame === null ? null : [scene.mediaVideo?.mediaId, mediaFrame, scene.mediaVideo?.layout], editorV6ElementVisualKeys(scene.elements)]
+  return JSON.stringify(scene.hairAnimationFrame === undefined ? base : [...base, scene.hairAnimationFrame])
 }

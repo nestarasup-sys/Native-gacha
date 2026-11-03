@@ -2,6 +2,9 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { EditorV6Document } from '../../../../shared/editorV6'
 import { frameTimecode } from '../../../../shared/editorV6TimelineCore'
 import { planEditorV6Export, type EditorV6ExportAudio, type EditorV6ExportOptions, type EditorV6ExportStatus } from '../../../../shared/editorV6Export'
+import { FIRST_HAIR_MOTION_PRESET, HAIR_MOTION_PRESET_KEY, parseHairMotionPresets } from '../../../../shared/hairMotionEngine'
+import { prepareEditorV6HairMotionBundle } from './editorV6HairMotionPreparation'
+import type { EditorV6HairMotionBundle } from '../../../../shared/editorV6HairMotion'
 
 let rememberedJob: EditorV6ExportStatus | null = null
 const finished = (job: EditorV6ExportStatus) => ['completed', 'cancelled', 'failed'].includes(job.state)
@@ -15,9 +18,20 @@ export function EditorV6ExportPanel({ project, open, characterSourceRefreshRequi
   }, [open])
   const [job, setJob] = useState(rememberedJob)
   const [options, setOptions] = useState<EditorV6ExportOptions>({ startFrame: 0, endFrame: project.timeline.durationFrames, width: 1920, height: 1080, turbo: true, encoder: 'auto', mouthLoop: true, mouthLoopCycleFrames: 30 })
+  const [hairAnimationEnabled, setHairAnimationEnabled] = useState(false)
+  const [hairPresetSlot, setHairPresetSlot] = useState(1)
+  const [hairPresets, setHairPresets] = useState<Array<ReturnType<typeof parseHairMotionPresets>[number]>>([structuredClone(FIRST_HAIR_MOTION_PRESET), null, null, null, null])
+  const [preparingHair, setPreparingHair] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const active = Boolean(job && !finished(job))
+  useEffect(() => {
+    if (!open) return
+    try {
+      setHairPresets(parseHairMotionPresets(window.localStorage.getItem(HAIR_MOTION_PRESET_KEY)))
+      setError('')
+    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Os presets de cabelo salvos estão inválidos.') }
+  }, [open])
   useEffect(() => { onActivity?.(active || busy); return () => onActivity?.(false) }, [active, busy, onActivity])
   const setStatus = (value: EditorV6ExportStatus) => { rememberedJob = value; setJob(value) }
   useEffect(() => {
@@ -40,10 +54,23 @@ export function EditorV6ExportPanel({ project, open, characterSourceRefreshRequi
   }
   const start = async () => {
     if (characterSourceRefreshRequired) { setError('Aguarde a sincronização da aparência do personagem com o Customizador antes de exportar.'); return }
+    const selectedHairPreset = hairAnimationEnabled ? hairPresets[hairPresetSlot - 1] : null
+    if (hairAnimationEnabled && !selectedHairPreset) { setError('Escolha um preset salvo de animação de cabelo.'); return }
     setBusy(true); setError('')
-    try { await trackOperation(async () => { planEditorV6Export(options, project.timeline.durationFrames); const value = await window.desktop.editorV6.startEditorV6Export(project, options); if (value) setStatus(value) }) }
+    try { await trackOperation(async () => {
+      const exportOptions = { ...options, hairAnimationPresetSlot: hairAnimationEnabled ? hairPresetSlot : undefined }
+      planEditorV6Export(exportOptions, project.timeline.durationFrames)
+      let hairAnimation: EditorV6HairMotionBundle | undefined
+      if (selectedHairPreset) {
+        setPreparingHair(true)
+        hairAnimation = await prepareEditorV6HairMotionBundle(project, hairPresetSlot, selectedHairPreset)
+        setPreparingHair(false)
+      }
+      const value = await window.desktop.editorV6.startEditorV6Export(project, exportOptions, hairAnimation)
+      if (value) setStatus(value)
+    }) }
     catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
-    finally { setBusy(false) }
+    finally { setBusy(false); setPreparingHair(false) }
   }
   const cancel = async () => {
     if (!job) return
@@ -68,6 +95,12 @@ export function EditorV6ExportPanel({ project, open, characterSourceRefreshRequi
       </div><small>{frameTimecode(options.startFrame)} → {frameTimecode(options.endFrame)} · {Math.max(0, options.endFrame - options.startFrame)} quadros · 30 FPS</small><label className="v6-export-check"><input type="checkbox" checked={options.turbo} onChange={(event) => setOptions({ ...options, turbo: event.target.checked })} />Turbo 2× · duas partes paralelas, com recuperação pelo modo seguro</label>
         <label>Ciclo da animação da boca<select value={options.mouthLoopCycleFrames ?? 30} onChange={(event) => setOptions({ ...options, mouthLoop: true, mouthLoopCycleFrames: Number(event.target.value) })}><option value={30}>1 segundo</option><option value={60}>2 segundos</option><option value={90}>3 segundos</option><option value={180}>6 segundos</option></select></label>
         <small>A animação da boca é aplicada automaticamente durante a fala vinculada ao personagem. Ela não altera o restante da imagem.</small></fieldset>
+      <fieldset disabled={busy || active}><legend>Animação de cabelo · experimental</legend>
+        <label className="v6-export-check"><input type="checkbox" checked={hairAnimationEnabled} onChange={(event) => setHairAnimationEnabled(event.target.checked)} />Ativar animação de cabelo</label>
+        <label>Preset<select value={hairPresetSlot} onChange={(event) => setHairPresetSlot(Number(event.target.value))}>{hairPresets.map((preset, index) => <option key={index} value={index + 1} disabled={!preset}>Preset {index + 1}{preset ? '' : ' · vazio'}</option>)}</select></label>
+        <small>Usa os presets salvos em Fabricador DEV → Animação cabelo DEV. O cabelo é recomposto por quadro na exportação. Durante a transição de movimento rasterizada, a deformação fica pausada para preservar a pose.</small>
+        {preparingHair && <p role="status">Preparando as camadas dos personagens e do cabelo…</p>}
+      </fieldset>
       <fieldset disabled={busy || active}><legend>Trilha sonora da exportação</legend><p>Os arquivos são copiados para o projeto. A mixagem é aplicada uma única vez ao vídeo final.</p>
         <div className="v6-export-audio-list">{(project.exportAudio ?? []).map((clip) => <div className="v6-export-audio" key={clip.id}>
           <strong title={clip.name}>{clip.name}</strong>

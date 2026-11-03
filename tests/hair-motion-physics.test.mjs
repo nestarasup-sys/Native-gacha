@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { createHairMotionState, hairMotionOffset, stepHairMotion } from '../src/renderer/src/features/fabricator/hair-animation/hairMotionPhysics.ts'
+import { advanceHairMotionToFrame, createHairMotionState, hairMotionOffset, stepHairMotion } from '../src/renderer/src/features/fabricator/hair-animation/hairMotionPhysics.ts'
 
 const settings = { wind: 60, gust: 0, stiffness: 45, damping: 55, responsiveness: 70, anchor: 20, speed: 100, enabled: true }
 const simulate = (state, seconds, head = 0, config = settings) => { for (let i = 0; i < seconds * 120; i++) stepHairMotion(state, config, 1 / 120, head, 0) }
@@ -44,4 +44,31 @@ test('speed control changes the progression of the simulation', () => {
   simulate(slow, 1, 0, { ...settings, speed: 50 })
   simulate(fast, 1, 0, { ...settings, speed: 200 })
   assert.ok(fast.offsets.at(-1) > slow.offsets.at(-1))
+})
+
+test('absolute-frame simulation is repeatable across Turbo chunk boundaries', () => {
+  const headAt = (frame) => frame < 45 ? frame / 180 : .25 + Math.sin(frame / 37) * .1
+  const run = (chunks) => {
+    const state = createHairMotionState()
+    for (const frame of chunks) advanceHairMotionToFrame(state, settings, frame, headAt, 1.2)
+    return state
+  }
+  const continuous = run([899])
+  const chunked = run([179, 358, 537, 718, 899])
+  assert.equal(chunked.frame, 899)
+  assert.deepEqual([...chunked.offsets], [...continuous.offsets])
+  assert.deepEqual([...chunked.velocities], [...continuous.velocities])
+  assert.equal(chunked.time, continuous.time)
+})
+
+test('seeking backwards replays from frame zero and matches a fresh simulation', () => {
+  const headAt = (frame) => Math.sin(frame / 15) * .3
+  const sought = createHairMotionState()
+  advanceHairMotionToFrame(sought, settings, 500, headAt, .4)
+  advanceHairMotionToFrame(sought, settings, 120, headAt, .4)
+  const fresh = createHairMotionState()
+  advanceHairMotionToFrame(fresh, settings, 120, headAt, .4)
+  assert.deepEqual([...sought.offsets], [...fresh.offsets])
+  assert.deepEqual([...sought.velocities], [...fresh.velocities])
+  assert.equal(sought.time, fresh.time)
 })

@@ -2,6 +2,7 @@ import type { CustomizerFaceAppearance } from './customizer'
 import type { FaceExpressionEffects } from './fabricator'
 import { isSceneFaceExpressionEffects, isSceneFaceTransforms, type SceneExpressionBase, type SceneFaceMode, type SceneFaceTransform, type SceneFaceTransformCategory, type SceneFaceTransforms } from './sceneFaceValidation'
 import type { EditorV6ExportAudio, EditorV6ExportOptions, EditorV6ExportStatus } from './editorV6Export'
+import type { EditorV6HairMotionBundle } from './editorV6HairMotion'
 import type { EditorV6FacePatch, EditorV6MotionAtlas, EditorV6MotionBakeRequest, EditorV6MotionBakeResult, EditorV6MotionSprite } from './editorV6Motion'
 export { resolveTalkMouthCatalogId as resolveEditorV6TalkMouthId } from './faceMouthSelection'
 
@@ -350,7 +351,7 @@ export type EditorV6DesktopApi = {
   importEditorV6Image: (category: EditorV6Asset['category']) => Promise<EditorV6Asset | null>
   saveEditorV6Print: (editorV6Id: string, dataUrl: string) => Promise<string | null>
   openEditorV6Prints: (editorV6Id: string) => Promise<void>
-  startEditorV6Export: (project: EditorV6Document, options: EditorV6ExportOptions) => Promise<EditorV6ExportStatus | null>
+  startEditorV6Export: (project: EditorV6Document, options: EditorV6ExportOptions, hairAnimation?: EditorV6HairMotionBundle) => Promise<EditorV6ExportStatus | null>
   getEditorV6ExportStatus: (jobId: string) => Promise<EditorV6ExportStatus>
   cancelEditorV6Export: (jobId: string) => Promise<void>
   revealEditorV6Export: (jobId: string, showReport?: boolean) => Promise<void>
