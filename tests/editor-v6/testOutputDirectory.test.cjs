@@ -19,6 +19,7 @@ test('harnesses de exportação geral e cabelo respeitam o diretório sintético
   for (const script of ['scripts/editor-v6/check-export.cjs', 'scripts/editor-v6/check-hair-motion-export.cjs']) {
     const source = fs.readFileSync(script, 'utf8')
     assert.match(source, /resolveEditorV6TestOutputDirectory\(root\)/, `${script} deve respeitar NATIVE_GACHA_TEST_OUTPUT_DIR`)
-    assert.match(source, /state: 'running', fixtureDirectory: (?:require\('node:path'\)\.)?basename\(folder\)/, `${script} não deve publicar o caminho temporário privado enquanto executa`)
+    assert.match(source, /fixtureDirectory:\s*basename\(folder\)/, `${script} deve registrar apenas o nome da pasta temporária`)
+    assert.doesNotMatch(source, /fixtureDirectory:\s*folder\b/, `${script} não deve publicar o caminho temporário privado`)
   }
 })
