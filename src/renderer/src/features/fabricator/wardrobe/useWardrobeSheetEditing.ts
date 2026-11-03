@@ -1,6 +1,7 @@
 import { useEffect, type Dispatch, type MutableRefObject, type SetStateAction } from 'react'
 import type { FabricatorProject, WardrobeComponent, WardrobeSet } from '../../../../../shared/fabricator'
 import { usePaletteImport } from '../usePaletteImport'
+import { normalizeEditableImageFile } from '../normalizeImage'
 import { createWardrobeTorsoGridComponents } from './wardrobeGridImport'
 import { createWardrobeComponentsFromProcessedSheet } from './wardrobeSheetImport'
 import { createWardrobePairedSheetComponents } from './wardrobePairedSheetImport'
@@ -64,8 +65,9 @@ export function useWardrobeSheetEditing(options: UseWardrobeSheetEditingOptions)
     setError('')
     setProcessing(true)
     try {
-      const source = await requestPaletteImport(file, 'wardrobe')
-      if (!source) { setProcessing(false); return }
+      const imported = await normalizeEditableImageFile(file)
+      if (imported.width * imported.height > 32_000_000) throw new Error('A imagem tem mais de 32 milhões de pixels. Reduza as dimensões para continuar.')
+      const source = imported.dataUrl
       workerRef.current?.terminate()
       const worker = new Worker(new URL('./wardrobeProcessor.worker.ts', import.meta.url), { type: 'module' })
       workerRef.current = worker
