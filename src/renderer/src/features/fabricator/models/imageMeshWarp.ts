@@ -195,12 +195,24 @@ function drawTriangle(
   const e = d0.x - a * s0.x - c * s0.y
   const f = d0.y - b * s0.x - d * s0.y
 
+  const center = {
+    x: (d0.x + d1.x + d2.x) / 3,
+    y: (d0.y + d1.y + d2.y) / 3
+  }
+  const clip = [d0, d1, d2].map(point => {
+    const dx = point.x - center.x
+    const dy = point.y - center.y
+    const length = Math.hypot(dx, dy) || 1
+    const bleed = 3
+    return { x: point.x + dx / length * bleed, y: point.y + dy / length * bleed }
+  })
+
   context.save()
   context.setTransform(1, 0, 0, 1, 0, 0)
   context.beginPath()
-  context.moveTo(d0.x, d0.y)
-  context.lineTo(d1.x, d1.y)
-  context.lineTo(d2.x, d2.y)
+  context.moveTo(clip[0].x, clip[0].y)
+  context.lineTo(clip[1].x, clip[1].y)
+  context.lineTo(clip[2].x, clip[2].y)
   context.closePath()
   context.clip()
   context.setTransform(a, b, c, d, e, f)
@@ -248,10 +260,9 @@ export function drawImageWarp(
 
   context.save()
   try {
-    // Shared triangle edges are subpixel-anti-aliased separately by Canvas. Add their
-    // coverage instead of replacing earlier pixels (which leaves transparent seams)
-    // or widening triangles (which darkens translucent outlines).
-    context.globalCompositeOperation = 'lighter'
+    // Let adjacent patches cover the antialiased edge so no transparent pinholes
+    // leak the preview background into the garment.
+    context.globalCompositeOperation = 'source-over'
     for (let row = 0; row < mesh.rows; row += 1) {
       for (let column = 0; column < mesh.columns; column += 1) {
         const sourceTopLeft = meshPoint(image, column, row, mesh.columns, mesh.rows)

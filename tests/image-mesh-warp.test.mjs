@@ -22,7 +22,7 @@ test('a malha sem deslocamentos desenha a imagem diretamente sem costuras triang
   assert.deepEqual(calls, { drawImage: 1, clip: 0, beginPath: 0 })
 })
 
-test('a malha deformada soma a cobertura das bordas sem alargar nem apagar pixels dos triângulos', () => {
+test('a malha deformada cobre as bordas antialias dos triângulos sem deixar frestas', () => {
   const calls = { drawImage: 0, clip: 0, operations: [], firstClip: [] }
   const context = {
     imageSmoothingEnabled: false,
@@ -47,12 +47,8 @@ test('a malha deformada soma a cobertura das bordas sem alargar nem apagar pixel
   drawImageWarp(canvas, image, mesh, 0)
   assert.equal(calls.clip, 13 * 15 * 2)
   assert.equal(calls.drawImage, calls.clip)
-  assert.ok(calls.operations.every((operation) => operation === 'lighter'), 'subpixel coverage from adjacent triangles must combine without clearing transparent pixels or stacking alpha')
-  assert.deepEqual(calls.firstClip, [
-    { x: 0, y: 0 },
-    { x: 225 / 13, y: 0 },
-    { x: 225 / 13, y: 305 / 15 }
-  ], 'triangle edges must stay on the mesh so translucent image details are not broadened')
+  assert.ok(calls.operations.every((operation) => operation === 'source-over'), 'adjacent patches must cover antialias pinholes')
+  assert.ok(calls.firstClip[0].x < 0 && calls.firstClip[1].x > 225 / 13, 'the raster clip must bleed past shared edges')
   assert.equal(context.globalCompositeOperation, 'source-over', 'the warp must restore the canvas composition state')
 })
 
