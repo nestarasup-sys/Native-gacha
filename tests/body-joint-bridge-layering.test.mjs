@@ -12,12 +12,14 @@ test('composição do personagem desenha a ponte antes das partes de pele', asyn
   const bridge = artwork.indexOf('await drawEnabledBodyJointBridges(')
   const bodyParts = artwork.indexOf('for (const { part } of parts)')
   assert.ok(bridge >= 0 && bodyParts > bridge)
+  assert.match(artwork, /scale, sourceModel\)/, 'standalone previews must receive the source model used to reconstruct separated limb images')
 
   const withHair = renderer.slice(artworkEnd)
   const backHair = withHair.indexOf('for (const layer of validHairLayers) await drawBackHair(layer)')
   const hairBridge = withHair.indexOf('await drawEnabledBodyJointBridges(')
   const bodyOrder = withHair.indexOf('for (const id of order)')
   assert.ok(backHair >= 0 && hairBridge > backHair && bodyOrder > hairBridge)
+  assert.match(withHair, /scale, source\)/, 'character previews must receive the source model used to reconstruct separated limb images')
 })
 
 test('composição com roupa e prévia de pose mantêm a pele acima da ponte', async () => {
@@ -26,7 +28,9 @@ test('composição com roupa e prévia de pose mantêm a pele acima da ponte', a
   const bodyLoop = wardrobe.indexOf('for (const partId of bodyOrder)')
   assert.ok(bridgeLoop >= 0 && bodyLoop > bridgeLoop)
   assert.doesNotMatch(wardrobe, /bodyBridgesAfterPart/)
+  assert.match(wardrobe, /pixelScale, source \?\? undefined\)/)
 
   const pose = await read('src/renderer/src/features/fabricator/PoseWorkspace.tsx')
   assert.match(pose, /zIndex=\{Math\.min\(upperIndex, lowerIndex\)\}/)
+  assert.match(pose, /scale, sourceModel\)/)
 })

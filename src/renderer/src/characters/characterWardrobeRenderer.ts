@@ -304,7 +304,7 @@ export function createCharacterWardrobeRenderer(loaders: CharacterWardrobeImageL
       await drawBodyJointBridgePair(outputContext!, pair, async (part) =>
         isModelBodyPart(part) && (skinTone || source?.modelOutlineColor)
           ? loadModelBodyTintedImage(part.dataUrl, skinTone, source?.modelOutlineColor, part.fakeSkinContours)
-          : skinTone ? loadSkinTintedImage(part.dataUrl, skinTone) : loadCachedImage(part.dataUrl), pixelScale)
+          : skinTone ? loadSkinTintedImage(part.dataUrl, skinTone) : loadCachedImage(part.dataUrl), pixelScale, source ?? undefined)
     }
 
     // Draw the body repair surface before the source segments so its seam is

@@ -1,6 +1,7 @@
 import type { CustomizerWardrobeGroup } from '../../../shared/customizer'
 import type { FabricatorProject, JointLink, ModelPart, WardrobeCategory } from '../../../shared/fabricator'
 import { modelRigSegmentKind, modelRigSide } from '../../../shared/modelRig'
+import { wardrobeJointAssemblyOffset } from '../../../shared/wardrobeJointAssembly'
 import { mapWardrobeComponentToPose } from '../../../shared/wardrobePose'
 import { drawWardrobeJointBridge } from './wardrobeJointBridge'
 import type { WardrobeJointBridgeSegment } from './wardrobeJointBridge'
@@ -109,6 +110,33 @@ function bridgeSegment(part: ModelPart, image: HTMLImageElement, family: 'arm' |
 }
 
 /**
+ * Rebuild the lower limb image beside the upper image in the source sheet.
+ * Model parts can be far apart in the imported PNG even though their saved
+ * model positions connect them. Wardrobe bridges already account for this
+ * source-to-mounted offset; body bridges need the same reconstruction.
+ */
+export function bodyJointBridgeSourceOffset(
+  pair: Pick<BodyJointBridgePair, 'upper' | 'lower'>,
+  sourceModel?: Pick<FabricatorProject, 'parts'>
+): { x: number; y: number } {
+  const sourceUpper = sourceModel?.parts.find((part) => part.id === pair.upper.id) ?? pair.upper
+  const sourceLower = sourceModel?.parts.find((part) => part.id === pair.lower.id) ?? pair.lower
+  const sourceFrame = (part: ModelPart): ModelPart => ({
+    ...part,
+    x: part.sourceTransform?.x ?? part.x,
+    y: part.sourceTransform?.y ?? part.y,
+    width: part.sourceTransform?.width ?? part.width,
+    height: part.sourceTransform?.height ?? part.height
+  })
+  return wardrobeJointAssemblyOffset(
+    sourceFrame(sourceUpper),
+    sourceFrame(sourceLower),
+    sourceUpper,
+    sourceLower
+  )
+}
+
+/**
  * Reuses the proven narrow joint mesh for body images. It reconstructs the
  * saved split seam and deforms that strip only at render time; source PNGs and
  * character/pose records remain untouched.
@@ -117,24 +145,29 @@ export async function drawBodyJointBridgePair(
   context: CanvasRenderingContext2D,
   pair: BodyJointBridgePair,
   loadImage: BodyImageLoader,
-  rasterScale = 1
+  rasterScale = 1,
+  sourceModel?: Pick<FabricatorProject, 'parts'>
 ): Promise<boolean> {
   const [upperImage, lowerImage] = await Promise.all([loadImage(pair.upper), loadImage(pair.lower)])
   const upper = bridgeSegment(pair.upper, upperImage, pair.family)
   const lower = bridgeSegment(pair.lower, lowerImage, pair.family)
-  return upper && lower
-    ? drawWardrobeJointBridge(context, upper, lower, rasterScale, bodyJointBridgeSourceAnchor(pair) ?? undefined)
-    : false
+  if (!upper || !lower) return false
+  const sourceOffset = bodyJointBridgeSourceOffset(pair, sourceModel)
+  lower.sourceOffset = sourceOffset
+  const anchor = bodyJointBridgeSourceAnchor(pair)
+  const assembledAnchor = anchor ? { x: anchor.x + sourceOffset.x, y: anchor.y + sourceOffset.y } : undefined
+  return drawWardrobeJointBridge(context, upper, lower, rasterScale, assembledAnchor)
 }
 
 export async function drawEnabledBodyJointBridges(
   context: CanvasRenderingContext2D,
   artwork: BodyJointBridgeArtwork,
   loadImage: BodyImageLoader,
-  rasterScale = 1
+  rasterScale = 1,
+  sourceModel?: Pick<FabricatorProject, 'parts'>
 ): Promise<void> {
   for (const pair of findBodyJointBridgePairs(artwork)) {
-    try { await drawBodyJointBridgePair(context, pair, loadImage, rasterScale) }
+    try { await drawBodyJointBridgePair(context, pair, loadImage, rasterScale, sourceModel) }
     catch { /* A damaged optional bridge must not suppress the character render. */ }
   }
 }

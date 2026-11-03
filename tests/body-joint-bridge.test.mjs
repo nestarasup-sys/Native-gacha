@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { articulateJoinedLimbSplit, canArticulateJoinedLimbSplit, findOppositeJoinedLimbCounterpart, mapJoinedLimbSplitLine } from '../src/renderer/src/features/fabricator/models/joinedLimbSplit.ts'
-import { bodyJointBridgeSourceAnchor, findBodyJointBridgePairs } from '../src/renderer/src/characters/bodyJointBridge.ts'
+import { bodyJointBridgeSourceAnchor, bodyJointBridgeSourceOffset, findBodyJointBridgePairs } from '../src/renderer/src/characters/bodyJointBridge.ts'
 
 const part = (id, name, x, y, width = 20, height = 30, extra = {}) => ({
   id, name, x, y, width, height, rotation: 0,
@@ -109,9 +109,9 @@ test('espelha a linha de corte e preserva sua posição proporcional no membro o
 })
 
 test('body bridge applies with or without the editing toggle and only accepts linked matching limb segments on the same side', () => {
-  const upperArm = part('arm', 'Braço esquerdo', 0, 0)
+  const upperArm = part('arm', 'Braço esquerdo - parte', 0, 0)
   const lowerArm = part('forearm', 'Antebraço esquerdo', 0, 30)
-  const upperLeg = part('thigh', 'Coxa direita', 40, 0)
+  const upperLeg = part('thigh', 'Coxa direita - parte', 40, 0)
   const lowerLeg = part('shin', 'Canela direita', 40, 30)
   const upperLeftLeg = part('thigh-left', 'Coxa esquerda', 90, 0)
   const lowerLeftLeg = part('shin-left', 'Canela esquerda', 90, 30)
@@ -146,6 +146,21 @@ test('body bridge anchors its seam to the saved source-space joint point', () =>
   }
 
   assert.deepEqual(bodyJointBridgeSourceAnchor(pair), { x: 18, y: 37 })
+})
+
+test('body bridge reassembles legacy source-sheet limb pieces using the mounted model positions', () => {
+  const upper = part('thigh', 'Coxa direita - parte', 597, 725, 177, 210)
+  const lower = part('shin', 'Canela direita', 642, 967, 227, 412)
+  const mountedUpper = { ...upper, x: 538.884, y: 634.859 }
+  const mountedLower = { ...lower, x: 587.405, y: 824.625 }
+  const pair = { upper: mountedUpper, lower: mountedLower }
+
+  const offset = bodyJointBridgeSourceOffset(pair, { parts: [mountedUpper, mountedLower] })
+  const assembledLowerTop = lower.sourceTransform.y + offset.y + 4
+  const upperVisibleBottom = upper.sourceTransform.y + 205
+
+  assert.ok(offset.y < -50 && offset.y > -55, 'the lower PNG must move back beside the upper PNG in source space')
+  assert.ok(assembledLowerTop < upperVisibleBottom, 'the imported 39px leg gap must become an overlapping seam before the bridge is warped')
 })
 
 test('body bridge maps legacy pose-space joint anchors back to source coordinates', () => {

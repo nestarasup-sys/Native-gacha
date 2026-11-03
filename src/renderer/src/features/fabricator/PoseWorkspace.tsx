@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { FabricatorPose, FabricatorPoseDraft, FabricatorPoseDraftSave, FabricatorPoseSave, FabricatorPoseSummary, FabricatorSlotSummary, PosePart } from '../../../../shared/fabricator'
+import type { FabricatorPose, FabricatorPoseDraft, FabricatorPoseDraftSave, FabricatorPoseSave, FabricatorPoseSummary, FabricatorProject, FabricatorSlotSummary, PosePart } from '../../../../shared/fabricator'
 import { resolvePoseCategory } from '../../../../shared/fabricator'
 import { defaultExportPoseSlots, poseFromModel } from './models/poseProjection'
 import { Icon } from '../../ui/components/Icon'
@@ -24,12 +24,13 @@ type PartGesture = { pointerId: number; partId: string; x: number; y: number; la
 type PoseBodyJointBridgePreviewProps = {
   artwork: DraftProject
   pair: BodyJointBridgePair
+  sourceModel?: FabricatorProject
   scale: number
   zIndex: number
   previewForPart: (part: PosePart) => string
 }
 
-function PoseBodyJointBridgePreview({ artwork, pair, scale, zIndex, previewForPart }: PoseBodyJointBridgePreviewProps) {
+function PoseBodyJointBridgePreview({ artwork, pair, sourceModel, scale, zIndex, previewForPart }: PoseBodyJointBridgePreviewProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
   useEffect(() => {
@@ -56,7 +57,7 @@ function PoseBodyJointBridgePreview({ artwork, pair, scale, zIndex, previewForPa
       upper: { ...pair.upper, dataUrl: previewForPart(pair.upper) },
       lower: { ...pair.lower, dataUrl: previewForPart(pair.lower) }
     }
-    void drawBodyJointBridgePair(drawingContext, previewPair, (part) => loadCachedImage(part.dataUrl), scale)
+    void drawBodyJointBridgePair(drawingContext, previewPair, (part) => loadCachedImage(part.dataUrl), scale, sourceModel)
       .then((drawn) => {
         if (cancelled || !drawn) return
         const currentTarget = canvas.getContext('2d')
@@ -75,7 +76,7 @@ function PoseBodyJointBridgePreview({ artwork, pair, scale, zIndex, previewForPa
       drawingCanvas.width = 0
       drawingCanvas.height = 0
     }
-  }, [artwork, pair, previewForPart, scale])
+  }, [artwork, pair, previewForPart, scale, sourceModel])
 
   return <canvas ref={canvasRef} className="pose-body-joint-bridge" aria-hidden="true" style={{ zIndex }} />
 }
@@ -111,6 +112,7 @@ export function PoseWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
   const [activeSlot, setActiveSlot] = useState(1)
   const [project, setProject] = useState<DraftProject | null>(null)
   const [sourcePreview, setSourcePreview] = useState<DraftProject | null>(null)
+  const [bridgeSourceModel, setBridgeSourceModel] = useState<FabricatorProject | null>(null)
   const [editingSlot, setEditingSlot] = useState<number | null>(null)
   const [history, setHistory] = useState<PoseHistory<DraftProject>>(createPoseHistory<DraftProject>)
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -168,6 +170,7 @@ export function PoseWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
       const draft = await window.desktop.fabricator.loadFabricatorPoseDraft(preferredModelSlot)
       const displayedModelSlot = draft?.project.sourceModelSlot ?? preferredModelSlot
       const sourceModel = await window.desktop.fabricator.loadFabricatorSlot(displayedModelSlot)
+      setBridgeSourceModel(sourceModel)
       setModels(modelSlots)
       setAllPoseSlots(poseSummaries)
       setSelectedModelSlot(displayedModelSlot)
@@ -276,8 +279,9 @@ export function PoseWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
     try { await window.desktop.fabricator.deleteFabricatorPoseDraft(sourceModelSlot) } catch { /* O conteúdo em memória continua editável. */ }
     try {
       const sourceModel = await window.desktop.fabricator.loadFabricatorSlot(sourceModelSlot)
+      setBridgeSourceModel(sourceModel)
       setSourcePreview(sourceModel ? poseFromModel(sourceModel) : null)
-    } catch { setSourcePreview(null) }
+    } catch { setBridgeSourceModel(null); setSourcePreview(null) }
     setRecoveredDraft(null)
     setEditingSlot(null)
     editingSlotRef.current = null
@@ -314,6 +318,7 @@ export function PoseWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
   const beginNewPose = async (modelSlot: number) => {
     const model = await window.desktop.fabricator.loadFabricatorSlot(modelSlot)
     if (!model) { setError('Não foi possível carregar esse modelo.'); return }
+    setBridgeSourceModel(model)
     const next = poseFromModel(model)
     setSourcePreview(null)
     setSelectedModelSlot(modelSlot)
@@ -463,6 +468,7 @@ export function PoseWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
     if (modelSlot === selectedModelSlot) { setSelectingModel(false); return }
     if (!await canReplaceCurrent()) return
     setSelectedModelSlot(modelSlot)
+    setBridgeSourceModel(null)
     setProject(null)
     projectRef.current = null
     setDirty(false)
@@ -480,6 +486,7 @@ export function PoseWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
       setRecoveredDraft(draft)
       if (draft) setActiveSlot(draft.editingSlot ?? 1)
       const sourceModel = await window.desktop.fabricator.loadFabricatorSlot(modelSlot)
+      setBridgeSourceModel(sourceModel)
       const savedExportSlots = await window.desktop.fabricator.getFabricatorExportPoseSlots(modelSlot)
       const initialExportSlots = savedExportSlots ?? defaultExportPoseSlots(allPoseSlots, modelSlot)
       if (savedExportSlots === null) await window.desktop.fabricator.saveFabricatorExportPoseSlots(modelSlot, initialExportSlots)
@@ -607,6 +614,7 @@ export function PoseWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
                   key={`${pair.upper.id}:${pair.lower.id}`}
                   artwork={displayProject}
                   pair={pair}
+                  sourceModel={bridgeSourceModel ?? undefined}
                   scale={scale}
                   zIndex={Math.min(upperIndex, lowerIndex)}
                   previewForPart={appearancePreviewForPart}

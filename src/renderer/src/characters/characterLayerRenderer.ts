@@ -49,7 +49,7 @@ export function createCharacterLayerRenderer(loaders: CharacterLayerImageLoaders
   }
 
 
-  async function renderArtwork(artwork: CatalogArtwork, maxSize: number, skinTone?: string, trimTransparent = false, outlineColor?: string): Promise<string | null> {
+  async function renderArtwork(artwork: CatalogArtwork, maxSize: number, skinTone?: string, trimTransparent = false, outlineColor?: string, sourceModel?: FabricatorProject): Promise<string | null> {
     if (artwork.width <= 0 || artwork.height <= 0) return null
     const scale = Math.min(maxSize / artwork.width, maxSize / artwork.height)
     const canvas = createCharacterCanvas()
@@ -73,7 +73,7 @@ export function createCharacterLayerRenderer(loaders: CharacterLayerImageLoaders
     await drawEnabledBodyJointBridges(context, artwork, async (part) =>
       isModelBodyPart(part) && (skinTone || outlineColor)
         ? loadModelBodyTintedImage(part.dataUrl, skinTone, outlineColor, part.fakeSkinContours)
-        : skinTone ? loadSkinTintedImage(part.dataUrl, skinTone) : loadCachedImage(part.dataUrl), scale)
+        : skinTone ? loadSkinTintedImage(part.dataUrl, skinTone) : loadCachedImage(part.dataUrl), scale, sourceModel)
     context.restore()
 
     for (const { part } of parts) {
@@ -123,11 +123,11 @@ export function createCharacterLayerRenderer(loaders: CharacterLayerImageLoaders
     const outlineColor = source.modelOutlineColor
     const hairLayers: HairLayerReference[] = Array.isArray(backStyles) ? backStyles : backStyles ? [{ style: backStyles, side: 'back', part: 'backHair' }] : []
     const validHairLayers = hairLayers.filter((layer) => layer.side === 'back' && layer.style.modelSlot === source.slot && Boolean(layer.style.back))
-    if (!validHairLayers.length && !targetContext) return renderArtwork(artwork, maxSize, skinTone, false, outlineColor)
+    if (!validHairLayers.length && !targetContext) return renderArtwork(artwork, maxSize, skinTone, false, outlineColor, source)
     const sourceHead = source.parts.find((part) => /cabe[çc]a|head/i.test(part.name))
     const targetHead = artwork.parts.find((part) => /cabe[çc]a|head/i.test(part.name))
     if (!sourceHead || !targetHead || !sourceHead.width || !sourceHead.height) {
-      const fallback = await renderArtwork(artwork, maxSize, skinTone, false, outlineColor)
+      const fallback = await renderArtwork(artwork, maxSize, skinTone, false, outlineColor, source)
       if (targetContext && fallback) targetContext.drawImage(await loadCachedImage(fallback), 0, 0, targetContext.canvas.width, targetContext.canvas.height)
       return targetContext ? null : fallback
     }
@@ -176,7 +176,7 @@ export function createCharacterLayerRenderer(loaders: CharacterLayerImageLoaders
     await drawEnabledBodyJointBridges(context, artwork, async (part) =>
       isModelBodyPart(part) && (skinTone || outlineColor)
         ? loadModelBodyTintedImage(part.dataUrl, skinTone, outlineColor, part.fakeSkinContours)
-        : skinTone ? loadSkinTintedImage(part.dataUrl, skinTone) : loadCachedImage(part.dataUrl), scale)
+        : skinTone ? loadSkinTintedImage(part.dataUrl, skinTone) : loadCachedImage(part.dataUrl), scale, source)
     context.restore()
 
     for (const id of order) {
