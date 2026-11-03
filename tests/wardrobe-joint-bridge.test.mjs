@@ -158,6 +158,11 @@ test('joint bridge can preserve translucent mesh overlaps for body skin', () => 
     clip() {}
     transform(...values) { this.calls.push({ type: 'transform', values }) }
     drawImage(...values) { this.calls.push({ type: 'drawImage', operation: this.globalCompositeOperation, values }) }
+    getImageData(x, y, width, height) {
+      this.calls.push({ type: 'getImageData', x, y, width, height })
+      return { data: new Uint8ClampedArray(width * height * 4), width, height }
+    }
+    putImageData(pixels, x, y) { this.calls.push({ type: 'putImageData', pixels, x, y }) }
   }
   class FakeCanvas {
     width = 0
@@ -174,10 +179,17 @@ test('joint bridge can preserve translucent mesh overlaps for body skin', () => 
     const triangles = [triangleA, triangleB].map((points) => ({ source: points, target: points }))
     const target = new FakeContext()
 
-    assert.equal(drawWardrobeJointBridgeMesh(target, {}, triangles, 1, 'source-over'), true)
+    const processed = []
+    assert.equal(drawWardrobeJointBridgeMesh(target, {}, triangles, 1, 'source-over', (pixels, rasterScale) => {
+      processed.push({ width: pixels.width, height: pixels.height, rasterScale })
+    }), true)
     const meshDraws = surfaces[0].context.calls.filter((call) => call.type === 'drawImage')
     assert.equal(meshDraws.length, 2)
     assert.ok(meshDraws.every((call) => call.operation === 'source-over'), 'transparent overlap pixels must leave the neighboring skin cell intact')
+    assert.equal(processed.length, 1)
+    assert.ok(processed[0].width > 0 && processed[0].height > 0)
+    assert.equal(processed[0].rasterScale, 1)
+    assert.ok(surfaces[0].context.calls.findIndex((call) => call.type === 'putImageData') > surfaces[0].context.calls.findIndex((call) => call.type === 'getImageData'))
     assert.equal(target.calls.filter((call) => call.type === 'drawImage').length, 1)
   } finally {
     if (previousDocument === undefined) delete globalThis.document

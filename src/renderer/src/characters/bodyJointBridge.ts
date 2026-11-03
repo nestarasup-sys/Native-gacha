@@ -3,8 +3,9 @@ import type { FabricatorProject, JointLink, ModelPart, WardrobeCategory } from '
 import { modelRigSegmentKind, modelRigSide } from '../../../shared/modelRig'
 import { wardrobeJointAssemblyOffset } from '../../../shared/wardrobeJointAssembly'
 import { mapWardrobeComponentToPose } from '../../../shared/wardrobePose'
+import { suppressBodyJointBridgeContourSpeckles } from './bodyJointBridgeRasterCleanup'
 import { drawWardrobeJointBridge } from './wardrobeJointBridge'
-import type { WardrobeJointBridgeSegment } from './wardrobeJointBridge'
+import type { WardrobeJointBridgeRasterProcessor, WardrobeJointBridgeSegment } from './wardrobeJointBridge'
 
 export type BodyJointBridgeArtwork = Pick<FabricatorProject, 'parts'>
   & Partial<Pick<FabricatorProject, 'joints' | 'hiddenPartIds'>>
@@ -156,9 +157,13 @@ export async function drawBodyJointBridgePair(
   lower.sourceOffset = sourceOffset
   const anchor = bodyJointBridgeSourceAnchor(pair)
   const assembledAnchor = anchor ? { x: anchor.x + sourceOffset.x, y: anchor.y + sourceOffset.y } : undefined
+  // Clean only the generated bridge raster; stored part images remain untouched.
+  const removeContourSpeckles: WardrobeJointBridgeRasterProcessor = (pixels, scale) => {
+    suppressBodyJointBridgeContourSpeckles(pixels.data, pixels.width, pixels.height, scale)
+  }
   // Body pieces often have transparent outlines near the seam. Preserve
   // neighboring mesh cells there instead of letting `copy` expose the grid.
-  return drawWardrobeJointBridge(context, upper, lower, rasterScale, assembledAnchor, 'source-over')
+  return drawWardrobeJointBridge(context, upper, lower, rasterScale, assembledAnchor, 'source-over', removeContourSpeckles)
 }
 
 export async function drawEnabledBodyJointBridges(

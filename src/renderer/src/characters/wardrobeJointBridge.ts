@@ -5,6 +5,7 @@ import type { WardrobePoseTransform } from '../../../shared/wardrobePose'
 
 export type WardrobeJointBridgePoint = { x: number; y: number }
 export type WardrobeJointBridgeCompositeOperation = 'copy' | 'source-over'
+export type WardrobeJointBridgeRasterProcessor = (pixels: ImageData, rasterScale: number) => void
 type Point = WardrobeJointBridgePoint
 type Affine = [number, number, number, number, number, number]
 
@@ -510,7 +511,8 @@ export function drawWardrobeJointBridgeMesh(
   image: HTMLCanvasElement,
   triangles: WardrobeJointBridgeTriangle[],
   rasterScale = 1,
-  compositeOperation: WardrobeJointBridgeCompositeOperation = 'copy'
+  compositeOperation: WardrobeJointBridgeCompositeOperation = 'copy',
+  rasterProcessor?: WardrobeJointBridgeRasterProcessor
 ): boolean {
   if (!triangles.length) return false
   const scale = Number.isFinite(rasterScale) && rasterScale > 0 ? rasterScale : 1
@@ -542,6 +544,11 @@ export function drawWardrobeJointBridgeMesh(
     for (const triangle of triangles) {
       drawTriangle(surfaceContext, image, triangle.source, triangle.target, clipOverlap)
     }
+    if (rasterProcessor) {
+      const pixels = surfaceContext.getImageData(0, 0, pixelWidth, pixelHeight)
+      rasterProcessor(pixels, scale)
+      surfaceContext.putImageData(pixels, 0, 0)
+    }
 
     context.save()
     try { context.drawImage(surface, 0, 0, pixelWidth, pixelHeight, left, top, worldWidth, worldHeight) }
@@ -564,7 +571,8 @@ export function drawWardrobeJointBridge(
   lower: WardrobeJointBridgeSegment,
   rasterScale = 1,
   sourceJointAnchor?: Point,
-  compositeOperation: WardrobeJointBridgeCompositeOperation = 'copy'
+  compositeOperation: WardrobeJointBridgeCompositeOperation = 'copy',
+  rasterProcessor?: WardrobeJointBridgeRasterProcessor
 ): boolean {
   const bounds = sourceBounds(upper, lower)
   if (bounds.width * bounds.height > 8_000_000) return false
@@ -671,7 +679,7 @@ export function drawWardrobeJointBridge(
         target: [vertices[row][column], vertices[row + 1][column + 1], vertices[row + 1][column]]
       })
     }
-    return drawWardrobeJointBridgeMesh(context, sourceCanvas, triangles, rasterScale, compositeOperation)
+    return drawWardrobeJointBridgeMesh(context, sourceCanvas, triangles, rasterScale, compositeOperation, rasterProcessor)
   } finally {
     sourceCanvas.width = 0
     sourceCanvas.height = 0

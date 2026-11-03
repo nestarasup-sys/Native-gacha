@@ -24,7 +24,8 @@ test('composição do personagem desenha a ponte antes das partes de pele', asyn
 
 test('composição com roupa e prévia de pose mantêm a pele acima da ponte', async () => {
   const bodyBridge = await read('src/renderer/src/characters/bodyJointBridge.ts')
-  assert.match(bodyBridge, /assembledAnchor, 'source-over'\)/, 'body bridges must preserve translucent pixels between mesh cells')
+  assert.match(bodyBridge, /assembledAnchor, 'source-over', removeContourSpeckles\)/, 'body bridges must preserve translucent pixels between mesh cells')
+  assert.match(bodyBridge, /suppressBodyJointBridgeContourSpeckles/, 'body bridge raster must remove isolated contour artifacts')
 
   const wardrobe = await read('src/renderer/src/characters/characterWardrobeRenderer.ts')
   const bridgeLoop = wardrobe.indexOf('for (const bridge of bodyJointBridges)')

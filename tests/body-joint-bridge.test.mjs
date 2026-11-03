@@ -2,12 +2,57 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { articulateJoinedLimbSplit, canArticulateJoinedLimbSplit, findOppositeJoinedLimbCounterpart, mapJoinedLimbSplitLine } from '../src/renderer/src/features/fabricator/models/joinedLimbSplit.ts'
 import { bodyJointBridgeSourceAnchor, bodyJointBridgeSourceOffset, findBodyJointBridgePairs } from '../src/renderer/src/characters/bodyJointBridge.ts'
+import { suppressBodyJointBridgeContourSpeckles } from '../src/renderer/src/characters/bodyJointBridgeRasterCleanup.ts'
 
 const part = (id, name, x, y, width = 20, height = 30, extra = {}) => ({
   id, name, x, y, width, height, rotation: 0,
   dataUrl: 'data:image/png;base64,AA==',
   sourceTransform: { x, y, width, height, rotation: 0 },
   ...extra
+})
+
+test('body bridge removes isolated mesh-sampled contour dots from its temporary raster', () => {
+  const width = 148, height = 61
+  const skin = [223, 166, 127, 255]
+  const outline = [60, 43, 33, 255]
+  const pixels = new Uint8ClampedArray(width * height * 4)
+  for (let index = 0; index < width * height; index += 1) pixels.set(skin, index * 4)
+  const dots = [[12, 36], [34, 34], [55, 32], [77, 30], [99, 28], [122, 26], [144, 24]]
+  for (const [left, top] of dots) for (let y = top; y < top + 2; y += 1) for (let x = left; x < left + 3; x += 1) {
+    pixels.set(outline, (y * width + x) * 4)
+  }
+
+  assert.equal(suppressBodyJointBridgeContourSpeckles(pixels, width, height), 42)
+  for (const [left, top] of dots) for (let y = top; y < top + 2; y += 1) for (let x = left; x < left + 3; x += 1) {
+    assert.deepEqual([...pixels.subarray((y * width + x) * 4, (y * width + x) * 4 + 4)], skin)
+  }
+  assert.deepEqual([...pixels.subarray((20 * width + 20) * 4, (20 * width + 20) * 4 + 4)], skin)
+})
+
+test('body bridge preserves continuous contour strokes and handles zoomed mesh dots', () => {
+  const width = 180, height = 80
+  const skin = [223, 166, 127, 255]
+  const outline = [60, 43, 33, 255]
+  const pixels = new Uint8ClampedArray(width * height * 4)
+  for (let index = 0; index < width * height; index += 1) pixels.set(skin, index * 4)
+  for (let y = 45; y < 47; y += 1) for (let x = 10; x < 150; x += 1) pixels.set(outline, (y * width + x) * 4)
+  assert.equal(suppressBodyJointBridgeContourSpeckles(pixels, width, height), 0)
+  assert.deepEqual([...pixels.subarray((45 * width + 80) * 4, (45 * width + 80) * 4 + 4)], outline)
+
+  const zoomWidth = 160, zoomHeight = 80
+  const zoomed = new Uint8ClampedArray(zoomWidth * zoomHeight * 4)
+  for (let index = 0; index < zoomWidth * zoomHeight; index += 1) zoomed.set(skin, index * 4)
+  for (let y = 30; y < 40; y += 1) for (let x = 50; x < 65; x += 1) zoomed.set(outline, (y * zoomWidth + x) * 4)
+  assert.equal(suppressBodyJointBridgeContourSpeckles(zoomed, zoomWidth, zoomHeight, 5), 150)
+  assert.deepEqual([...zoomed.subarray((34 * zoomWidth + 57) * 4, (34 * zoomWidth + 57) * 4 + 4)], skin)
+
+  const deepSkin = [28, 14, 10, 255]
+  const deepOutline = [3, 2, 2, 255]
+  const darkPixels = new Uint8ClampedArray(width * height * 4)
+  for (let index = 0; index < width * height; index += 1) darkPixels.set(deepSkin, index * 4)
+  for (let y = 32; y < 34; y += 1) for (let x = 70; x < 73; x += 1) darkPixels.set(deepOutline, (y * width + x) * 4)
+  assert.equal(suppressBodyJointBridgeContourSpeckles(darkPixels, width, height), 6)
+  assert.deepEqual([...darkPixels.subarray((32 * width + 71) * 4, (32 * width + 71) * 4 + 4)], deepSkin)
 })
 
 test('joined arm split names both segments, preserves the shoulder link, and links the elbow to the new lower id', () => {
