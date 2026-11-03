@@ -40,6 +40,9 @@
 .hair-animation-transport button.primary { border-color:#c95782;background:#c95782;color:#fff; }
 .hair-animation-transport button:hover { filter:brightness(.96); }
 .hair-animation-transport button:focus-visible { outline:2px solid #cd6e96;outline-offset:2px; }
+.hair-animation-transport button:disabled { opacity:.45;cursor:not-allowed; }
+.hair-animation-zoom { display:flex;align-items:center;gap:3px;padding:3px;border:1px solid #eee2e9;border-radius:8px;background:#fbf8fa; }
+.hair-animation-zoom button { min-width:27px;min-height:25px;padding:0 6px; }
 .hair-animation-stage { position:relative;min-height:220px;flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;touch-action:none;cursor:grab; }
 .hair-animation-stage:active { cursor:grabbing; }
 .hair-animation-stage>p { padding:16px;color:#786d77;font-size:12px;text-align:center; }

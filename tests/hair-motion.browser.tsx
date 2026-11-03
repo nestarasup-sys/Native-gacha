@@ -48,6 +48,11 @@ window.runHairMotionFixture = async () => {
     selects[2].value = 'hair'; selects[2].dispatchEvent(new Event('change', { bubbles: true }))
     await new Promise<void>((resolve) => setTimeout(resolve, 700))
     if (!document.querySelector('.hair-motion-mesh') || document.querySelector('.hair-motion-error')) throw new Error('Cabelo não carregou na prévia.')
+    const zoomIn = document.querySelector<HTMLButtonElement>('[aria-label="Aumentar zoom"]')!
+    zoomIn.click()
+    await new Promise<void>((resolve) => setTimeout(resolve, 100))
+    if (!(document.querySelector<HTMLElement>('.hair-animation-head')?.style.transform.includes('scale(1.1)'))) throw new Error('Zoom não foi aplicado à cabeça.')
+    document.querySelector<HTMLButtonElement>('[aria-label="Restaurar zoom"]')!.click()
     const buttons = [...document.querySelectorAll('button')]
     const pause = buttons.find((button) => button.textContent === 'Pausar')
     pause?.click()
@@ -79,6 +84,9 @@ window.runHairMotionFixture = async () => {
     const alert = document.querySelector('[role="alert"]')
     if (alert) throw new Error(`Erro ao carregar personagem: ${alert.textContent}`)
     if (!document.querySelector('img[alt="Personagem Hino teste"]') || !document.querySelector('.hair-animation-character .hair-motion-mesh')) throw new Error('Personagem ou cabelo animado não carregou.')
+    document.querySelector<HTMLButtonElement>('[aria-label="Aumentar zoom"]')!.click()
+    await new Promise<void>((resolve) => setTimeout(resolve, 100))
+    if (!(document.querySelector<HTMLElement>('.hair-animation-character')?.style.transform.includes('scale(1.1)'))) throw new Error('Zoom não foi aplicado ao personagem.')
   }
   await new Promise<void>((resolve) => setTimeout(resolve, 700))
   const error = document.querySelector('.hair-motion-error')

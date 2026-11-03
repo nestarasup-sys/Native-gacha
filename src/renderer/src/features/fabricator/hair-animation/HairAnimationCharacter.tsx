@@ -10,9 +10,9 @@ import type { HairSide } from '../hairWorkspaceModel'
 
 type Layer = { part: HairPartId; side: HairSide; asset: HairAsset; transform: HairTransform }
 type Preview = { dataUrl: string; overlayDataUrl?: string; width: number; height: number; artworkWidth: number; artworkHeight: number; scaleX: number; scaleY: number; sourceHead: ModelPart; targetHead: ModelPart; layers: Layer[] }
-type Props = { character: CustomizerCharacter; physics: Omit<HairMotionSettings, 'enabled'>; enabled: Record<HairSide, boolean>; intensity: Record<HairSide, number>; playing: boolean; headX: MutableRefObject<number>; impulse: number; resetToken: number; position: { x: number; y: number } }
+type Props = { character: CustomizerCharacter; physics: Omit<HairMotionSettings, 'enabled'>; enabled: Record<HairSide, boolean>; intensity: Record<HairSide, number>; playing: boolean; headX: MutableRefObject<number>; impulse: number; resetToken: number; position: { x: number; y: number }; zoom: number }
 
-export function HairAnimationCharacter({ character, physics, enabled, intensity, playing, headX, impulse, resetToken, position }: Props) {
+export function HairAnimationCharacter({ character, physics, enabled, intensity, playing, headX, impulse, resetToken, position, zoom }: Props) {
   const [preview, setPreview] = useState<Preview | null>(null)
   const [error, setError] = useState('')
   useEffect(() => {
@@ -85,7 +85,7 @@ export function HairAnimationCharacter({ character, physics, enabled, intensity,
   const headStyle: CSSProperties = { left: `${targetHead.x / preview.artworkWidth * 100}%`, top: `${targetHead.y / preview.artworkHeight * 100}%`, width: `${targetHead.width / preview.artworkWidth * 100}%`, height: `${targetHead.height / preview.artworkHeight * 100}%`, transform: `rotate(${targetHead.rotation}deg)` }
   const layersFor = (back: boolean) => preview.layers.filter((layer) => (layer.side === 'back') === back).map((layer, index) => <div key={`${layer.part}:${index}`} className="hair-animation-piece" style={{ ...hairAnimationGeometry(sourceHead, layer.asset, layer.transform), zIndex: index + 1 }}><HairMotionMesh source={layer.asset.dataUrl} name={`cabelo ${layer.part}`} settings={{ ...physics, enabled: enabled[layer.side] }} intensity={intensity[layer.side]} playing={playing} headX={headX} impulse={impulse} resetToken={resetToken} phase={index * 1.2 + (back ? 0 : 1.2)} flipped={Boolean(layer.transform.flipX)} /></div>)
   const artwork = (back: boolean) => <div className={`hair-animation-character-artwork ${back ? 'back' : 'front'}`} style={artworkStyle}><div className="hair-animation-character-head" style={headStyle}>{layersFor(back)}</div></div>
-  return <div className="hair-animation-character" style={{ aspectRatio: `${preview.width} / ${preview.height}`, transform: `translate(${position.x}px, ${position.y}px)` }}>
+  return <div className="hair-animation-character" style={{ aspectRatio: `${preview.width} / ${preview.height}`, transform: `translate(${position.x}px, ${position.y}px) scale(${zoom})` }}>
     {artwork(true)}<img className="hair-animation-character-image" src={preview.dataUrl} alt={`Personagem ${character.name}`} draggable={false} />{artwork(false)}{preview.overlayDataUrl && <img className="hair-animation-character-overlay" src={preview.overlayDataUrl} alt="" draggable={false} />}
     {!preview.layers.length && <div className="hair-animation-overlay">Este personagem não tem cabelo selecionado no Customizador.</div>}
   </div>
