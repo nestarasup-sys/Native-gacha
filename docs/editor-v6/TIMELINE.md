@@ -64,13 +64,13 @@ As cores dos nomes de personagem ficam em `characterNameColors`, no documento do
 
 O salvamento registra os estados e tempos no JSON e continua usando a persistência transacional de imagens do Editor V6. A normalização de projetos antigos preserva IDs de blocos, tempos e estados existentes. Duplicar um projeto remapeia também os IDs dos estados, imagens e comentários vinculados.
 
-## Recursos da referência que ainda dependem de outros módulos
+## Estado atual de mídia e melhorias pendentes (atualizado em 03/11/2026)
 
-A faixa Vídeo atualmente organiza os objetos/imagens e textos visuais já disponíveis no V6. Ela não realiza importação, decodificação ou reprodução de arquivos de vídeo.
+A faixa **Vídeo** já aceita clipes vinculados por ID à Base de Vídeos ou importados para o projeto; o componente `SceneVideoLayer` reproduz a mídia visual na prévia, enquanto o exportador compõe as camadas de vídeo por FFmpeg. A faixa **Áudio** já aceita blocos de áudio e a prévia usa `EditorV6PlaybackAudio`; o painel de exportação também mantém trilhas adicionais e mixagem final. A timeline preserva divisão, movimento, recorte de origem, duração, volume e silenciamento conforme os contratos existentes.
 
-O [exportador Turbo 2×](EXPORTACAO.md) já produz MP4 e permite importar e misturar trilhas sonoras pelo seu painel. Importação de vídeo, faixa de áudio na timeline, reprodução sincronizada de mídias na prévia, faixas personalizadas e eventos de loading/apresentação ainda precisam ser implementados.
+**Pendências reais, não funcionalidades ausentes:** não há sistema de proxies de vídeo, waveforms/miniaturas contínuas por clipe ou medição de apresentação física que comprove sincronismo A/V em cenários pesados. O playback usa `HTMLMediaElement.currentTime` com tolerâncias de correção; medir drift/seek/salto de frames antes de propor outro relógio ou motor de vídeo. Faixas personalizadas e ferramentas avançadas de edição dependem de avaliação de produto e compatibilidade com o formato dos projetos.
 
-A associação de uma fala a um personagem já fica nos dados do bloco; a troca automática da boca e o piscar automático durante a reprodução ainda precisam ser conectados ao renderizador facial. As mudanças de pose/expressão agora usam transições nos 250 ms anteriores à próxima mudança, com controle por faixa e por bloco. Veja [ANIMACOES.md](ANIMACOES.md).
+A fala vinculada já seleciona modos faciais, animações de boca e piscadas determinísticas na reprodução; mudanças de pose/expressão já usam transições preparadas nos 250 ms anteriores ao novo estado. Veja [ANIMACOES.md](ANIMACOES.md). **O movimento experimental de cabelo deve continuar exclusivamente no MP4 exportado, nunca no playback/preview normal do V6.**
 
 ## Verificação
 
