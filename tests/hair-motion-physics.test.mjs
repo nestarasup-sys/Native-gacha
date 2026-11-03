@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { advanceHairMotionToFrame, createHairMotionState, hairMotionOffset, stepHairMotion } from '../src/renderer/src/features/fabricator/hair-animation/hairMotionPhysics.ts'
+import { createHairMotionMeshPositions, HAIR_MOTION_MESH_COLUMNS, HAIR_MOTION_MESH_HEIGHT, HAIR_MOTION_MESH_ROWS, HAIR_MOTION_MESH_WIDTH } from '../src/renderer/src/characters/hairMotionMeshGeometry.ts'
 
 const settings = { wind: 60, gust: 0, stiffness: 45, damping: 55, responsiveness: 70, anchor: 20, speed: 100, enabled: true }
 const simulate = (state, seconds, head = 0, config = settings) => { for (let i = 0; i < seconds * 120; i++) stepHairMotion(state, config, 1 / 120, head, 0) }
@@ -71,4 +72,31 @@ test('seeking backwards replays from frame zero and matches a fresh simulation',
   assert.deepEqual([...sought.offsets], [...fresh.offsets])
   assert.deepEqual([...sought.velocities], [...fresh.velocities])
   assert.equal(sought.time, fresh.time)
+})
+
+test('a malha mantém a raiz na posição original e usa as mesmas dimensões no preview e no export', () => {
+  const state = createHairMotionState()
+  simulate(state, 4)
+  const positions = createHairMotionMeshPositions(state, settings, 100, 0)
+  const staticPositions = createHairMotionMeshPositions(createHairMotionState(), { ...settings, enabled: false }, 100, 0)
+  const imageWidth = 256, imageHeight = 320
+  const outputWidth = Math.ceil(imageWidth * HAIR_MOTION_MESH_WIDTH)
+  const outputHeight = Math.ceil(imageHeight * HAIR_MOTION_MESH_HEIGHT)
+  const rootRowY = positions[1]
+  assert.ok(Math.abs(rootRowY - (1 - (.15 / HAIR_MOTION_MESH_HEIGHT) * 2)) < 1e-6)
+  for (let column = 0; column <= HAIR_MOTION_MESH_COLUMNS; column += 1) {
+    const at = column * 2
+    const outputX = (positions[at] + 1) * outputWidth / 2
+    const sourceAlignedX = imageWidth * (column / HAIR_MOTION_MESH_COLUMNS + .4)
+    assert.ok(Math.abs(outputX - sourceAlignedX) <= .5, `a raiz do cabelo deslocou ${Math.abs(outputX - sourceAlignedX)}px na coluna ${column}`)
+  }
+  const lastVertex = (HAIR_MOTION_MESH_ROWS * (HAIR_MOTION_MESH_COLUMNS + 1) + HAIR_MOTION_MESH_COLUMNS) * 2
+  assert.ok(Math.abs(positions[lastVertex] - staticPositions[lastVertex]) > .001, 'os fios abaixo da raiz precisam continuar podendo balançar')
+  for (let row = 0; row <= HAIR_MOTION_MESH_ROWS; row += 1) {
+    for (let column = 0; column <= HAIR_MOTION_MESH_COLUMNS; column += 1) {
+      const at = (row * (HAIR_MOTION_MESH_COLUMNS + 1) + column) * 2
+      assert.ok(Number.isFinite(positions[at]) && Number.isFinite(positions[at + 1]))
+    }
+  }
+  assert.equal(outputHeight, Math.ceil(imageHeight * 1.3))
 })

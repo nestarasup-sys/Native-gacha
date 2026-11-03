@@ -1,10 +1,10 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { EditorV6Document } from '../../../../shared/editorV6'
 import { frameTimecode } from '../../../../shared/editorV6TimelineCore'
-import { planEditorV6Export, type EditorV6ExportAudio, type EditorV6ExportOptions, type EditorV6ExportStatus } from '../../../../shared/editorV6Export'
+import { type EditorV6ExportAudio, type EditorV6ExportOptions, type EditorV6ExportStatus } from '../../../../shared/editorV6Export'
 import { FIRST_HAIR_MOTION_PRESET, HAIR_MOTION_PRESET_KEY, parseHairMotionPresets } from '../../../../shared/hairMotionEngine'
 import { prepareEditorV6HairMotionBundle } from './editorV6HairMotionPreparation'
-import type { EditorV6HairMotionBundle } from '../../../../shared/editorV6HairMotion'
+import { cancelEditorV6ExportCommand, runEditorV6ExportCommand } from './editorV6ExportCommands'
 
 let rememberedJob: EditorV6ExportStatus | null = null
 const finished = (job: EditorV6ExportStatus) => ['completed', 'cancelled', 'failed'].includes(job.state)
@@ -57,25 +57,28 @@ export function EditorV6ExportPanel({ project, open, characterSourceRefreshRequi
     const selectedHairPreset = hairAnimationEnabled ? hairPresets[hairPresetSlot - 1] : null
     if (hairAnimationEnabled && !selectedHairPreset) { setError('Escolha um preset salvo de animação de cabelo.'); return }
     setBusy(true); setError('')
-    try { await trackOperation(async () => {
-      const exportOptions = { ...options, hairAnimationPresetSlot: hairAnimationEnabled ? hairPresetSlot : undefined }
-      planEditorV6Export(exportOptions, project.timeline.durationFrames)
-      let hairAnimation: EditorV6HairMotionBundle | undefined
-      if (selectedHairPreset) {
-        setPreparingHair(true)
-        hairAnimation = await prepareEditorV6HairMotionBundle(project, hairPresetSlot, selectedHairPreset)
-        setPreparingHair(false)
-      }
-      const value = await window.desktop.editorV6.startEditorV6Export(project, exportOptions, hairAnimation)
-      if (value) setStatus(value)
-    }) }
+    try { await trackOperation(() => runEditorV6ExportCommand({
+      project,
+      options,
+      hairPresetSlot,
+      hairPreset: selectedHairPreset,
+      prepareHair: prepareEditorV6HairMotionBundle,
+      startExport: (document, exportOptions, hairMotion) => window.desktop.editorV6.startEditorV6Export(document, exportOptions, hairMotion),
+      onPreparingHair: setPreparingHair,
+      onStatus: setStatus
+    })) }
     catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
     finally { setBusy(false); setPreparingHair(false) }
   }
   const cancel = async () => {
     if (!job) return
     setBusy(true)
-    try { await window.desktop.editorV6.cancelEditorV6Export(job.id); setStatus(await window.desktop.editorV6.getEditorV6ExportStatus(job.id)) }
+    try { await trackOperation(() => cancelEditorV6ExportCommand({
+      job,
+      cancel: (jobId) => window.desktop.editorV6.cancelEditorV6Export(jobId),
+      getStatus: (jobId) => window.desktop.editorV6.getEditorV6ExportStatus(jobId),
+      onStatus: setStatus
+    })) }
     catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
     finally { setBusy(false) }
   }

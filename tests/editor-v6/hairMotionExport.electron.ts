@@ -1,12 +1,18 @@
 import { app, ipcMain } from 'electron'
 import { execFileSync } from 'node:child_process'
 import { readFile, writeFile } from 'node:fs/promises'
+import { deflateSync } from 'node:zlib'
 import { join, resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { createEditorV6WorkerFactory } from '../../electron/domains/editorV6/exportWorkers'
 import { createEditorV6Timeline, type EditorV6Document, type EditorV6Element } from '../../src/shared/editorV6'
+import { editorV6MotionPlans } from '../../src/shared/editorV6Motion'
+import { advanceHairMotionToFrame, createHairMotionState } from '../../src/shared/hairMotionEngine'
+import { editorV6ElementSize } from '../../src/shared/editorV6SceneModel'
+import { resolveEditorV6SceneAtFrame } from '../../src/shared/editorV6TimelineScene'
 import type { EditorV6WorkerPayload } from '../../src/shared/editorV6Export'
-import type { EditorV6HairMotionBundle } from '../../src/shared/editorV6HairMotion'
+import { editorV6HairMotionHeadAnchorX, editorV6HairMotionTransitionEnvelope, interpolateEditorV6HairMotionRig, type EditorV6HairMotionBundle } from '../../src/shared/editorV6HairMotion'
+import { motionEase } from '../../src/shared/editorV6MotionInterpolation'
 import { runEditorV6Export } from '../../electron/domains/editorV6/exportRunner'
 
 const root = resolve(process.argv[2]), folder = resolve(process.argv[3])
@@ -18,45 +24,291 @@ process.on('unhandledRejection', error => { console.error(error); app.exit(1) })
 async function main() {
   await app.whenReady()
   const ffmpeg = join(root, 'resources/video-tools/ffmpeg.exe')
-  const render = (color: string, width: number, height: number) => execFileSync(ffmpeg, ['-v', 'error', '-f', 'lavfi', '-i', `color=c=${color}:s=${width}x${height}`, '-frames:v', '1', '-f', 'image2pipe', '-vcodec', 'png', 'pipe:1'], { windowsHide: true })
-  const pngData = (color: string, width: number, height: number) => `data:image/png;base64,${render(color, width, height).toString('base64')}`
-  const actor: EditorV6Element = { id: randomUUID(), kind: 'character', characterId: 'synthetic-character', assetId: 'synthetic-character-image', text: 'Fixture', x: 0, y: 0, width: 40, height: 40, rotation: 0, zIndex: 1 }
+  const pngCrcTable = Array.from({ length: 256 }, (_, value) => {
+    let crc = value
+    for (let bit = 0; bit < 8; bit += 1) crc = crc & 1 ? 0xedb88320 ^ (crc >>> 1) : crc >>> 1
+    return crc >>> 0
+  })
+  const pngChunk = (type: string, data: Buffer) => {
+    const name = Buffer.from(type), bytes = Buffer.concat([name, data])
+    let crc = 0xffffffff
+    for (const byte of bytes) crc = pngCrcTable[(crc ^ byte) & 0xff] ^ (crc >>> 8)
+    const length = Buffer.alloc(4); length.writeUInt32BE(data.length)
+    const checksum = Buffer.alloc(4); checksum.writeUInt32BE((crc ^ 0xffffffff) >>> 0)
+    return Buffer.concat([length, bytes, checksum])
+  }
+  const encodeRgbaPng = (width: number, height: number, pixels: Buffer) => {
+    const scanlines = Buffer.alloc((width * 4 + 1) * height)
+    for (let y = 0; y < height; y += 1) pixels.copy(scanlines, y * (width * 4 + 1) + 1, y * width * 4, (y + 1) * width * 4)
+    const header = Buffer.alloc(13); header.writeUInt32BE(width, 0); header.writeUInt32BE(height, 4); header[8] = 8; header[9] = 6
+    const png = Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), pngChunk('IHDR', header), pngChunk('IDAT', deflateSync(scanlines)), pngChunk('IEND', Buffer.alloc(0))])
+    return `data:image/png;base64,${png.toString('base64')}`
+  }
+  const faceSurfaceData = (headShift = 0) => {
+    const width = 64, height = 64, pixels = Buffer.alloc(width * height * 4)
+    for (let y = 0; y < height; y += 1) for (let x = 0; x < width; x += 1) {
+      if (((x - 32 - headShift) / 12) ** 2 + ((y - 21) / 11) ** 2 > 1) continue
+      const offset = (y * width + x) * 4
+      pixels[offset] = 255; pixels[offset + 1] = 255; pixels[offset + 2] = 255; pixels[offset + 3] = 255
+    }
+    setHeadAnchorMarker(pixels, 32 + headShift, 21)
+    return encodeRgbaPng(width, height, pixels)
+  }
+  const setHeadAnchorMarker = (pixels: Buffer, centerX: number, centerY: number) => {
+    // A unique synthetic fiducial lets the test measure the actual head point
+    // even when a translucent hair strand occludes part of the face silhouette.
+    for (let y = centerY - 1; y <= centerY + 1; y += 1) for (let x = centerX - 1; x <= centerX + 1; x += 1) {
+      const offset = (y * 64 + x) * 4
+      pixels[offset] = 0; pixels[offset + 1] = 255; pixels[offset + 2] = 0; pixels[offset + 3] = 255
+    }
+  }
+  const bodyPixels = () => {
+    const width = 64, height = 64, pixels = Buffer.alloc(width * height * 4)
+    for (let y = 0; y < height; y += 1) for (let x = 0; x < width; x += 1) {
+      const torso = y >= 29 && y <= 53 && x >= 22 && x <= 42
+      const neck = y >= 24 && y < 31 && x >= 28 && x <= 36
+      const leftArm = y >= 31 && y <= 52 && x >= 14 && x <= 24
+      const rightArm = y >= 31 && y <= 52 && x >= 40 && x <= 50
+      const leftLeg = y >= 50 && x >= 22 && x <= 30
+      const rightLeg = y >= 50 && x >= 34 && x <= 42
+      if (!torso && !neck && !leftArm && !rightArm && !leftLeg && !rightLeg) continue
+      const offset = (y * width + x) * 4
+      pixels[offset] = 255; pixels[offset + 1] = 224; pixels[offset + 2] = 70; pixels[offset + 3] = 255
+    }
+    return pixels
+  }
+  const checkerboardData = () => {
+    const width = 64, height = 64, pixels = Buffer.alloc(width * height * 4)
+    for (let y = 0; y < height; y += 1) for (let x = 0; x < width; x += 1) {
+      const shade = ((Math.floor(x / 8) + Math.floor(y / 8)) % 2) ? 72 : 208
+      const offset = (y * width + x) * 4
+      pixels[offset] = shade; pixels[offset + 1] = shade; pixels[offset + 2] = shade; pixels[offset + 3] = 255
+    }
+    return encodeRgbaPng(width, height, pixels)
+  }
+  const solidHairData = () => {
+    const width = 64, height = 256, pixels = Buffer.alloc(width * height * 4)
+    for (let y = 0; y < height; y += 1) for (let x = 0; x < width; x += 1) {
+      const edge = Math.min(x - 15, 49 - x), alpha = Math.max(0, Math.min(255, (edge + .5) * 255))
+      if (!alpha) continue
+      const offset = (y * width + x) * 4
+      pixels[offset] = 16; pixels[offset + 1] = 132; pixels[offset + 2] = 36; pixels[offset + 3] = alpha
+    }
+    return encodeRgbaPng(width, height, pixels)
+  }
+  const portraitPixels = (headShift: number) => {
+    const width = 64, height = 64, pixels = bodyPixels()
+    const locks = [[19, 8, 230, 100, 45], [24, 5, 25, 115, 175], [40, 5, 30, 135, 185], [45, 8, 235, 130, 40]]
+    for (let y = 0; y < height; y += 1) for (let x = 0; x < width; x += 1) {
+      const offset = (y * width + x) * 4
+      if (((x - 32 - headShift) / 12) ** 2 + ((y - 21) / 11) ** 2 <= 1) {
+        pixels[offset] = 255; pixels[offset + 1] = 246; pixels[offset + 2] = 225; pixels[offset + 3] = 255
+      }
+      for (const [center, thickness, red, green, blue] of locks) {
+        const strand = center + headShift + 1.8 * Math.sin(y / 13 + center)
+        if (y > 10 && y < 64 && Math.abs(x - strand) < thickness / 10) {
+          pixels[offset] = red; pixels[offset + 1] = green; pixels[offset + 2] = blue; pixels[offset + 3] = 255
+        }
+      }
+    }
+    setHeadAnchorMarker(pixels, 32 + headShift, 21)
+    return pixels
+  }
+  const sourceCropForPixels = (pixels: Buffer) => {
+    let left = 64, top = 64, right = -1, bottom = -1
+    for (let y = 0; y < 64; y += 1) for (let x = 0; x < 64; x += 1) {
+      if (pixels[(y * 64 + x) * 4 + 3] <= 8) continue
+      left = Math.min(left, x); top = Math.min(top, y); right = Math.max(right, x); bottom = Math.max(bottom, y)
+    }
+    assert(right >= left && bottom >= top, 'A arte sintética do personagem não tem pixels visíveis.')
+    return { left, top, width: right - left + 1, height: bottom - top + 1 }
+  }
+  const cropPixels = (pixels: Buffer, crop: { left: number; top: number; width: number; height: number }) => {
+    const output = Buffer.alloc(crop.width * crop.height * 4)
+    for (let y = 0; y < crop.height; y += 1) {
+      const start = ((crop.top + y) * 64 + crop.left) * 4
+      pixels.copy(output, y * crop.width * 4, start, start + crop.width * 4)
+    }
+    return output
+  }
+  const strandData = (base: string, light: string) => {
+    const width = 256, height = 512, pixels = Buffer.alloc(width * height * 4)
+    const rgb = (color: string) => [0, 2, 4].map(index => Number.parseInt(color.slice(index, index + 2), 16))
+    const baseRgb = rgb(base), lightRgb = rgb(light)
+    for (let y = 0; y < height; y += 1) for (let x = 0; x < width; x += 1) {
+      const centers = [44 + 7 * Math.sin(y / 49) + y * .05, 164 + 9 * Math.sin((y + 30) / 60) - y * .07]
+      let alpha = 0, color = baseRgb
+      for (const [index, center] of centers.entries()) {
+        const halfWidth = index === 0 ? 19 : 27, distance = Math.abs(x - center)
+        const coverage = Math.max(0, Math.min(1, halfWidth + .6 - distance))
+        if (coverage * 215 > alpha) { alpha = coverage * 215; color = baseRgb }
+        const strandDistance = Math.abs(x - (center + 5 * Math.sin(y / (23 + index * 7)) + (index ? -9 : 8)))
+        const strandCoverage = Math.max(0, Math.min(1, 1.15 - strandDistance)) * (y % 11 === 0 ? .38 : .78)
+        if (strandCoverage * 200 > alpha) { alpha = strandCoverage * 200; color = lightRgb }
+      }
+      const offset = (y * width + x) * 4
+      pixels[offset] = color[0]; pixels[offset + 1] = color[1]; pixels[offset + 2] = color[2]; pixels[offset + 3] = Math.round(alpha)
+    }
+    return encodeRgbaPng(width, height, pixels)
+  }
+  // Keep the Editor V6 source PNG cropped around a deliberately off-center
+  // alpha bounds box while the hair rigs retain the full artwork coordinates.
+  const firstPortrait = portraitPixels(0), firstCrop = sourceCropForPixels(firstPortrait)
+  const secondPortrait = portraitPixels(2), secondCrop = sourceCropForPixels(secondPortrait)
+  assert(firstCrop.left > 0 && firstCrop.top > 0 && firstCrop.width < 64 && firstCrop.height < 64, 'O fixture deve cobrir uma origem de recorte transparente não centralizado.')
+  const characterCanvasWidth = 40
+  const actor: EditorV6Element = { id: randomUUID(), kind: 'character', characterId: 'synthetic-character', assetId: 'synthetic-character-image', text: 'Fixture', x: -24, y: -8, width: characterCanvasWidth * firstCrop.width / 64, height: characterCanvasWidth * 16 / 9 * firstCrop.height / 64, characterCanvasWidth, rotation: 0, flipX: false, zIndex: 1, poseSlot: 1 }
   const now = new Date().toISOString()
+  const checkerboardAssetId = 'synthetic-checkerboard-background'
   const project: EditorV6Document = {
     schemaVersion: 1, id: randomUUID(), title: 'Hair motion synthetic export', color: '#ffffff', createdAt: now, updatedAt: now,
     backgroundColor: '#ffffff', backgroundAssetId: null, backgroundX: 0, backgroundY: 0, backgroundWidth: 100, backgroundHeight: 100, backgroundRotation: 0,
-    assets: [{ id: actor.assetId!, category: 'character', name: 'Synthetic character', mimeType: 'image/png', dataUrl: pngData('yellow', 64, 64) }],
+    assets: [
+      { id: actor.assetId!, category: 'character', name: 'Synthetic character', mimeType: 'image/png', dataUrl: encodeRgbaPng(firstCrop.width, firstCrop.height, cropPixels(firstPortrait, firstCrop)) },
+      { id: checkerboardAssetId, category: 'background', name: 'Synthetic checkerboard', mimeType: 'image/png', dataUrl: checkerboardData() }
+    ],
     elements: [actor], timeline: { ...createEditorV6Timeline([actor]), durationFrames: 61 }
+  }
+  const characterTrack = project.timeline.tracks.find(track => track.kind === 'character')!
+  const firstBlock = characterTrack.blocks[0]
+  const secondAssetId = 'synthetic-character-pose-2'
+  const secondState: EditorV6Element = { ...actor, assetId: secondAssetId, poseSlot: 2, x: -21, y: -6, width: characterCanvasWidth * secondCrop.width / 64, height: characterCanvasWidth * 16 / 9 * secondCrop.height / 64, rotation: 12, flipX: true }
+  characterTrack.blocks = [
+    { ...firstBlock, durationFrames: 30 },
+    { ...firstBlock, id: 'synthetic-pose-two', startFrame: 30, durationFrames: 31, state: secondState, label: 'Pose 2' }
+  ]
+  project.assets.push({ id: secondAssetId, category: 'character', name: 'Synthetic character pose 2', mimeType: 'image/png', dataUrl: encodeRgbaPng(secondCrop.width, secondCrop.height, cropPixels(secondPortrait, secondCrop)) })
+  const transitionPlan = editorV6MotionPlans(project)[0]
+  assert(transitionPlan?.samples.length === 7, 'o fixture deve conter uma transição real de pose de sete quadros')
+  const atlasWidth = transitionPlan.samples.length * 64, atlasPixels = Buffer.alloc(atlasWidth * 64 * 4)
+  const transitionCrops = transitionPlan.samples.map(sample => {
+    const progress = sample.progress, offsetX = Math.round(progress * 2), pixels = portraitPixels(offsetX)
+    return { progress, crop: sourceCropForPixels(pixels), pixels }
+  })
+  for (const [index, transition] of transitionCrops.entries()) {
+    const cropped = cropPixels(transition.pixels, transition.crop)
+    for (let y = 0; y < transition.crop.height; y += 1) cropped.copy(atlasPixels, (y * atlasWidth + index * 64) * 4, y * transition.crop.width * 4, (y + 1) * transition.crop.width * 4)
+  }
+  const motionAssetId = 'synthetic-motion-atlas'
+  project.assets.push({ id: motionAssetId, category: 'character', name: 'Synthetic pose transition', mimeType: 'image/png', dataUrl: encodeRgbaPng(atlasWidth, 64, atlasPixels), timelineSnapshot: true })
+  characterTrack.blocks[1].incomingMotion = {
+    version: 1, key: transitionPlan.key, assetId: motionAssetId,
+    frames: transitionPlan.samples.map((sample, index) => {
+      const crop = transitionCrops[index].crop
+      return {
+        offset: sample.offset, sprite: { x: index * 64, y: 0, width: crop.width, height: crop.height, atlasWidth, atlasHeight: 64 },
+        x: actor.x + (secondState.x - actor.x) * sample.progress, y: actor.y + (secondState.y - actor.y) * sample.progress,
+        width: characterCanvasWidth * crop.width / 64, height: characterCanvasWidth * 16 / 9 * crop.height / 64,
+        rotation: secondState.rotation * sample.progress, flipX: sample.progress >= .5
+      }
+    })
   }
   const preset = {
     physics: { wind: 100, gust: 100, speed: 250, stiffness: 0, damping: 0, responsiveness: 0, anchor: 0 },
     enabled: { back: true, front: true, fringe: true }, intensity: { back: 100, front: 100, fringe: 150 }
   }
+  const headAtFrame = (frame: number) => {
+    const element = resolveEditorV6SceneAtFrame(project, frame).elements.find(item => item.id === actor.id)
+    if (!element) return .5
+    const rig = hairAnimation.rigs.find(item => item.assetId === element.assetId)
+    if (rig) return editorV6HairMotionHeadAnchorX(element, rig)
+    if (element.motionSprite) {
+      const sampleIndex = Math.round(element.motionSprite.x / 64)
+      const sample = transitionPlan.samples[sampleIndex]
+      return editorV6HairMotionHeadAnchorX(element, interpolateEditorV6HairMotionRig(hairAnimation.rigs[0], hairAnimation.rigs[1], motionEase(sample.progress)))
+    }
+    return (50 + element.x) / 100
+  }
+  const simulateAt = (frames: number[]) => {
+    const state = createHairMotionState()
+    for (const frame of frames) advanceHairMotionToFrame(state, { ...preset.physics, enabled: true }, frame, headAtFrame, 1.2)
+    return { offsets: [...state.offsets], velocities: [...state.velocities], time: state.time }
+  }
   const hairAnimation: EditorV6HairMotionBundle = {
     presetSlot: 1, preset,
     surfaces: [
-      { id: 'body', dataUrl: pngData('yellow', 64, 64) },
-      { id: 'face', dataUrl: pngData('white', 16, 16) }
+      { id: 'body', dataUrl: encodeRgbaPng(64, 64, bodyPixels()) },
+      { id: 'face-pose-1', dataUrl: faceSurfaceData() },
+      { id: 'face-pose-2', dataUrl: faceSurfaceData(2) }
     ],
-    textures: [{ id: 'fringe', dataUrl: pngData('red', 32, 48) }],
-    rigs: [{
-      elementId: actor.id, assetId: actor.assetId!, characterId: actor.characterId!, baseSurfaceId: 'body', faceSurfaceId: 'face', overlaySurfaceId: null,
-      artworkWidth: 64, artworkHeight: 64, outputWidth: 64, outputHeight: 64, shapeScaleX: 1, shapeScaleY: 1,
-      sourceCrop: { left: 0, top: 0, width: 64, height: 64 }, sourceHead: { width: 32, height: 24 },
-      targetHead: { x: 16, y: 8, width: 32, height: 24, rotation: 0 },
-      layers: [{ id: 'fringe-1', textureId: 'fringe', side: 'fringe', width: 32, height: 48, x: 0, y: 8, scaleX: 1, scaleY: 1, rotation: 0, flipX: false, phase: 1.2 }]
-    }]
+    textures: [
+      { id: 'back', dataUrl: strandData('#1769aa', '#9edcff') },
+      { id: 'front', dataUrl: strandData('#a81757', '#ffc4df') },
+      { id: 'fringe', dataUrl: strandData('#e45b16', '#ffe0a1') },
+      { id: 'solid', dataUrl: solidHairData() }
+    ],
+    rigs: [
+      {
+        elementId: actor.id, assetId: actor.assetId!, characterId: actor.characterId!, baseSurfaceId: 'body', faceSurfaceId: 'face-pose-1', overlaySurfaceId: null,
+        artworkWidth: 64, artworkHeight: 64, outputWidth: 64, outputHeight: 64, shapeScaleX: 1, shapeScaleY: 1,
+        sourceCrop: firstCrop, sourceHead: { width: 32, height: 24 },
+        targetHead: { x: 16, y: 8, width: 32, height: 24, rotation: 0 },
+        layers: [
+        { id: 'back-1', textureId: 'back', side: 'back', width: 28, height: 48, x: -4, y: 8, scaleX: .9, scaleY: 1, rotation: -4, flipX: true, phase: 0 },
+        { id: 'front-1', textureId: 'front', side: 'front', width: 32, height: 46, x: 1, y: 7, scaleX: 1, scaleY: .94, rotation: 3, flipX: false, phase: 1.2 },
+        { id: 'solid-1', textureId: 'solid', side: 'front', width: 32, height: 46, x: 12, y: 8, scaleX: 1, scaleY: 1, rotation: -3, flipX: false, phase: 3.6 },
+        { id: 'fringe-1', textureId: 'fringe', side: 'fringe', width: 30, height: 31, x: 1, y: -5, scaleX: 1.05, scaleY: 1, rotation: -2, flipX: false, phase: 2.4 }
+        ]
+      },
+      {
+        elementId: actor.id, assetId: secondAssetId, characterId: actor.characterId!, baseSurfaceId: 'body', faceSurfaceId: 'face-pose-2', overlaySurfaceId: null,
+        artworkWidth: 64, artworkHeight: 64, outputWidth: 64, outputHeight: 64, shapeScaleX: 1, shapeScaleY: 1,
+        sourceCrop: secondCrop, sourceHead: { width: 32, height: 24 },
+        targetHead: { x: 18, y: 8, width: 32, height: 24, rotation: 2 },
+        layers: [
+          { id: 'back-1', textureId: 'back', side: 'back', width: 28, height: 48, x: -4, y: 8, scaleX: .9, scaleY: 1, rotation: -4, flipX: true, phase: 0 },
+          { id: 'front-1', textureId: 'front', side: 'front', width: 32, height: 46, x: 1, y: 7, scaleX: 1, scaleY: .94, rotation: 3, flipX: false, phase: 1.2 },
+          { id: 'solid-1', textureId: 'solid', side: 'front', width: 32, height: 46, x: 12, y: 8, scaleX: 1, scaleY: 1, rotation: -3, flipX: false, phase: 3.6 },
+          { id: 'fringe-1', textureId: 'fringe', side: 'fringe', width: 30, height: 31, x: 1, y: -5, scaleX: 1.05, scaleY: 1, rotation: -2, flipX: false, phase: 2.4 }
+        ]
+      }
+    ]
   }
+  assert(JSON.stringify(simulateAt([0, 22, 30, 31, 60])) === JSON.stringify(simulateAt([30, 60])), 'a física deve ser independente da ordem de captura inclusive durante a transição')
+  const processMemorySamples: Array<Record<string, unknown>> = []
+  const sampledRendererPids = new Set<number>()
+  let activeBenchmarkTrial: string | null = null
+  const summarizeProcess = (metric: Electron.ProcessMetric | undefined) => metric ? ({
+    type: metric.type,
+    workingSetBytes: Number.isFinite(metric.memory?.workingSetSize) ? Math.round(metric.memory.workingSetSize * 1024) : null,
+    privateBytes: Number.isFinite(metric.memory?.privateBytes) ? Math.round(metric.memory.privateBytes * 1024) : null,
+    cpuPercentSincePreviousSample: Number.isFinite(metric.cpu?.percentCPUUsage) ? metric.cpu.percentCPUUsage : null
+  }) : null
   const payload: EditorV6WorkerPayload = { project, width: 320, height: 180, layeredVideo: false, hairAnimation }
-  const factory = createEditorV6WorkerFactory({ ipcMain, html: join(root, 'out/renderer/editor-v6-export.html'), preload: join(root, 'out/preload/editorV6ExportPreload.cjs') })
+  const factory = createEditorV6WorkerFactory({ ipcMain, html: join(root, 'out/renderer/editor-v6-export.html'), preload: join(root, 'out/preload/editorV6ExportPreload.cjs'), inspectCapture: ({ window, frame }) => {
+    const rendererPid = window.webContents.getOSProcessId()
+    if (!rendererPid || sampledRendererPids.has(rendererPid)) return
+    sampledRendererPids.add(rendererPid)
+    const metrics = app.getAppMetrics()
+    const rendererMetric = metrics.find(metric => metric.pid === rendererPid)
+    const mainMetric = metrics.find(metric => metric.pid === process.pid)
+    const gpuMetrics = metrics.filter(metric => /gpu/i.test(metric.type))
+    const auxiliaryMetrics = metrics.filter(metric => metric.pid !== rendererPid && metric.pid !== process.pid && !/gpu/i.test(metric.type))
+    processMemorySamples.push({
+      frame, trial: activeBenchmarkTrial, main: summarizeProcess(mainMetric), exportRenderer: summarizeProcess(rendererMetric),
+      gpuProcesses: gpuMetrics.map(summarizeProcess),
+      otherElectronProcesses: auxiliaryMetrics.map(summarizeProcess),
+      dedicatedGpuMemoryBytes: null
+    })
+  } })
   let sequential: Awaited<ReturnType<typeof factory.create>> | undefined
   let split: Awaited<ReturnType<typeof factory.create>> | undefined
   try {
     sequential = await factory.create(payload, new AbortController().signal)
     const first = await sequential.frame(0)
+    const beforeTransition = await sequential.frame(22)
+    const transitionStart = await sequential.frame(23)
+    const transitionEnd = await sequential.frame(29)
     const middle = await sequential.frame(30)
+    const afterTransition = await sequential.frame(31)
     const last = await sequential.frame(60)
-    assert(first.bitmap && middle.bitmap && last.bitmap, 'O worker não entregou os quadros capturados da animação de cabelo.')
+    assert(first.bitmap && beforeTransition.bitmap && transitionStart.bitmap && transitionEnd.bitmap && middle.bitmap && afterTransition.bitmap && last.bitmap, 'O worker não entregou os quadros capturados da animação de cabelo.')
+    const saveCapture = (name: string, bitmap: Buffer, width = 320, height = 180) => writeFile(join(folder, name), execFileSync(ffmpeg, ['-v', 'error', '-f', 'rawvideo', '-pixel_format', 'bgra', '-video_size', `${width}x${height}`, '-i', 'pipe:0', '-frames:v', '1', '-f', 'image2pipe', '-vcodec', 'png', 'pipe:1'], { input: bitmap, windowsHide: true }))
+    await Promise.all([
+      saveCapture('hair-frame-000.png', first.bitmap), saveCapture('hair-frame-022-before-transition.png', beforeTransition.bitmap),
+      saveCapture('hair-frame-023-transition-start.png', transitionStart.bitmap), saveCapture('hair-frame-029-transition-end.png', transitionEnd.bitmap),
+      saveCapture('hair-frame-030-after-transition.png', middle.bitmap), saveCapture('hair-frame-031-after-transition.png', afterTransition.bitmap), saveCapture('hair-frame-060.png', last.bitmap)
+    ])
     const redPixelCount = (bitmap: Buffer) => {
       let count = 0
       for (let index = 0; index < bitmap.length; index += 4) {
@@ -66,35 +318,220 @@ async function main() {
       return count
     }
     assert(redPixelCount(first.bitmap) > 10, 'O cabelo de fixture não foi composto sobre o personagem.')
+    const translucentHairPixelCount = (bitmap: Buffer) => {
+      let count = 0
+      for (let index = 0; index < bitmap.length; index += 4) {
+        const [blue, green, red] = bitmap.subarray(index, index + 3)
+        if (red > 45 && red < 245 && green > 65 && blue > 65) count += 1
+      }
+      return count
+    }
+    const chromaticHairPixelCount = (bitmap: Buffer) => {
+      let count = 0
+      for (let index = 0; index < bitmap.length; index += 4) {
+        const blue = bitmap[index], green = bitmap[index + 1], red = bitmap[index + 2]
+        const channels = [red, green, blue], spread = Math.max(...channels) - Math.min(...channels)
+        if (spread < 42 || (red > 205 && green > 205 && blue < 90)) continue
+        if ((blue > red * 1.12 && blue > green * 1.08)
+          || (red > green * 1.35 && red > blue * 1.2)
+          || (green > red * 1.45 && green > blue * 1.45)) count += 1
+      }
+      return count
+    }
+    const pixelHairBounds = (bitmap: Buffer, width: number, height: number) => {
+      let left = width, top = height, right = -1, bottom = -1, pixels = 0
+      for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+        const offset = (y * width + x) * 4
+        const blue = bitmap[offset], green = bitmap[offset + 1], red = bitmap[offset + 2]
+        const channels = [red, green, blue], spread = Math.max(...channels) - Math.min(...channels)
+        const hair = spread >= 42 && !(red > 205 && green > 205 && blue < 90)
+          && ((blue > red * 1.12 && blue > green * 1.08)
+            || (red > green * 1.35 && red > blue * 1.2)
+            || (green > red * 1.45 && green > blue * 1.45))
+        if (!hair) continue
+        pixels++
+        left = Math.min(left, x); right = Math.max(right, x); top = Math.min(top, y); bottom = Math.max(bottom, y)
+      }
+      return { left: pixels ? left : null, top: pixels ? top : null, right: pixels ? right : null, bottom: pixels ? bottom : null, pixels }
+    }
+    assert(translucentHairPixelCount(first.bitmap) > 20, 'A composição perdeu os pixels de borda e fios semitransparentes do fixture.')
+    const backgroundChecks: Record<string, number> = {}
+    const geometryCaptureFrames = [0, 22, 23, 29, 30, 31, 60]
+    const geometryCaptures = new Map<number, Buffer>()
+    const backgrounds = [
+      { name: 'white', color: '#ffffff' }, { name: 'black', color: '#000000' },
+      { name: 'colored', color: '#6b7240' }, { name: 'checkerboard', color: '#626262', assetId: checkerboardAssetId }
+    ]
+    for (const background of backgrounds) {
+      const backgroundProject = { ...project, backgroundColor: background.color, backgroundAssetId: background.assetId ?? null }
+      const backgroundWorker = await factory.create({ ...payload, project: backgroundProject }, new AbortController().signal)
+      try {
+        const frames = background.name === 'colored' ? geometryCaptureFrames : [0]
+        for (const frame of frames) {
+          const captured = await backgroundWorker.frame(frame)
+          assert(captured.bitmap, `Não foi possível capturar o fundo ${background.name} no quadro ${frame}.`)
+          if (background.name === 'colored') geometryCaptures.set(frame, captured.bitmap)
+          if (frame === 0) {
+            backgroundChecks[background.name] = chromaticHairPixelCount(captured.bitmap)
+            await saveCapture(`hair-background-${background.name}.png`, captured.bitmap)
+          }
+        }
+        assert(backgroundChecks[background.name] > 10, `O cabelo perdeu seus pixels coloridos no fundo ${background.name}.`)
+      } finally { backgroundWorker.close() }
+    }
+    const geometryFrames = geometryCaptureFrames.map(frame => {
+      const bitmap = geometryCaptures.get(frame)!
+      const sceneElement = resolveEditorV6SceneAtFrame(project, frame).elements.find(element => element.id === actor.id)
+      assert(sceneElement, `O personagem sintético sumiu do diagnóstico no quadro ${frame}.`)
+      const sceneRig = sceneElement.assetId ? hairAnimation.rigs.find(item => item.assetId === sceneElement.assetId) : undefined
+      const transitionRig = sceneElement.motionSprite
+        ? interpolateEditorV6HairMotionRig(hairAnimation.rigs[0], hairAnimation.rigs[1], motionEase(transitionPlan.samples[Math.round(sceneElement.motionSprite.x / 64)].progress))
+        : undefined
+      const headRig = sceneRig ?? transitionRig
+      const expectedSourceHead = sceneElement.motionSprite
+        ? (() => {
+            const sampleIndex = Math.round(sceneElement.motionSprite!.x / 64)
+            const sample = transitionPlan.samples[sampleIndex]
+            return { x: 32 + Math.round(sample.progress * 2), y: 21, atlasSample: sampleIndex }
+          })()
+        : { x: sceneElement.assetId === secondAssetId ? 34 : 32, y: 21, atlasSample: null }
+      const size = editorV6ElementSize(sceneElement)
+      const center = { x: 320 * (50 + sceneElement.x) / 100, y: 180 * (50 + sceneElement.y) / 100 }
+      const sourceCrop = headRig?.sourceCrop ?? { left: 0, top: 0, width: 64, height: 64 }
+      let local = {
+        x: (expectedSourceHead.x + .5 - sourceCrop.left - sourceCrop.width / 2) / sourceCrop.width * size.width * 320 / 100,
+        y: (expectedSourceHead.y + .5 - sourceCrop.top - sourceCrop.height / 2) / sourceCrop.height * size.height * 180 / 100
+      }
+      if (sceneElement.flipX) local.x *= -1
+      const rotation = sceneElement.rotation * Math.PI / 180
+      const expectedHead = {
+        x: center.x + local.x * Math.cos(rotation) - local.y * Math.sin(rotation),
+        y: center.y + local.x * Math.sin(rotation) + local.y * Math.cos(rotation)
+      }
+      let headMarkerX = 0, headMarkerY = 0, headMarkerPixels = 0
+      let hairX = 0, hairY = 0, hairPixels = 0
+      let left = 320, top = 180, right = -1, bottom = -1
+      for (let y = 0; y < 180; y += 1) for (let x = 0; x < 320; x += 1) {
+        const offset = (y * 320 + x) * 4
+        const blue = bitmap[offset], green = bitmap[offset + 1], red = bitmap[offset + 2]
+        if (green > 235 && red < 20 && blue < 20) { headMarkerX += x; headMarkerY += y; headMarkerPixels++ }
+        const channels = [red, green, blue], spread = Math.max(...channels) - Math.min(...channels)
+        const hair = spread >= 42 && !(red > 205 && green > 205 && blue < 90)
+          && ((blue > red * 1.12 && blue > green * 1.08)
+            || (red > green * 1.35 && red > blue * 1.2)
+            || (green > red * 1.45 && green > blue * 1.45))
+        if (!hair) continue
+        hairX += x; hairY += y; hairPixels++
+        left = Math.min(left, x); right = Math.max(right, x); top = Math.min(top, y); bottom = Math.max(bottom, y)
+      }
+      assert(headMarkerPixels >= 2, `Não foi possível localizar o marcador da cabeça do fixture no quadro ${frame}.`)
+      const observedHead = { x: headMarkerX / headMarkerPixels, y: headMarkerY / headMarkerPixels }
+      const headDrift = Math.hypot(observedHead.x - expectedHead.x, observedHead.y - expectedHead.y)
+      assert(headDrift <= 1.5, `A âncora da cabeça do fixture saiu da posição derivada da geometria da cena no quadro ${frame} (${headDrift.toFixed(2)} px).`)
+      const physicsHeadAnchorStageX = headRig ? editorV6HairMotionHeadAnchorX(sceneElement, headRig) : null
+      const physicsAnchorDrift = physicsHeadAnchorStageX === null ? null : Math.abs(physicsHeadAnchorStageX * 320 - expectedHead.x)
+      if (physicsAnchorDrift !== null) assert(physicsAnchorDrift <= 2.5, `A inércia ignorou o recorte/crop da pose no quadro ${frame} (${physicsAnchorDrift.toFixed(2)} px).`)
+      assert(hairPixels > 10, `Não foi possível localizar o cabelo do fixture no quadro ${frame}.`)
+      const hairCentroid = { x: hairX / hairPixels, y: hairY / hairPixels }
+      return {
+        frame, output: { width: 320, height: 180 },
+        scene: { assetId: sceneElement.assetId, x: sceneElement.x, y: sceneElement.y, width: sceneElement.width, height: sceneElement.height, rotation: sceneElement.rotation, flipX: sceneElement.flipX, motionSprite: sceneElement.motionSprite ?? null },
+        sourceCrop, expectedSourceHead, expectedHeadStagePx: expectedHead,
+        observedHeadStagePx: observedHead, headDriftPx: Number(headDrift.toFixed(3)), headMarkerPixels,
+        hairCentroidStagePx: hairCentroid, hairRelativeToHeadPx: { x: Number((hairCentroid.x - observedHead.x).toFixed(3)), y: Number((hairCentroid.y - observedHead.y).toFixed(3)) },
+        hairBounds: { left, top, right, bottom }, hairPixels,
+        rigHeadCenterOutputPx: headRig ? {
+          x: headRig.outputWidth / 2 + (headRig.targetHead.x + headRig.targetHead.width / 2 - headRig.artworkWidth / 2) * headRig.shapeScaleX,
+          y: headRig.outputHeight / 2 + (headRig.targetHead.y + headRig.targetHead.height / 2 - headRig.artworkHeight / 2) * headRig.shapeScaleY
+        } : null,
+        physicsHeadAnchorStageX, physicsAnchorDriftPx: physicsAnchorDrift === null ? null : Number(physicsAnchorDrift.toFixed(3)),
+        rotationDegrees: sceneElement.rotation, absoluteFrame: frame,
+        motionMode: sceneElement.motionSprite ? 'static-motionSprite-atlas' : 'export-webgl-mesh'
+      }
+    })
+    const alphaWorker = await factory.create({ ...payload, layeredVideo: true }, new AbortController().signal)
+    let alphaLayerPixels = 0, transparentLayerPixels = 0
+    try {
+      const captured = await alphaWorker.frame(0)
+      const layerBytes = 320 * 180 * 4
+      assert(captured.bitmap?.length === layerBytes * 2, 'A captura RGBA em camadas não preservou os dois planos de composição.')
+      const foreground = captured.bitmap!.subarray(layerBytes)
+      for (let index = 3; index < foreground.length; index += 4) {
+        if (foreground[index] === 0) transparentLayerPixels++
+        else if (foreground[index] < 255) alphaLayerPixels++
+      }
+      assert(transparentLayerPixels > 1000, 'O plano de frente não preservou áreas transparentes fora do personagem.')
+      assert(alphaLayerPixels > 10, 'O plano de frente perdeu os pixels alfa semitransparentes do cabelo.')
+      assert(chromaticHairPixelCount(foreground) > 10, 'O plano transparente removeu as cores do cabelo.')
+      await saveCapture('hair-frame-000-alpha-layer.png', foreground)
+    } finally { alphaWorker.close() }
     assert(!first.bitmap.equals(last.bitmap), 'O cabelo ficou parado durante a exportação experimental.')
+    assert(!transitionStart.bitmap.equals(transitionEnd.bitmap), 'A geometria da cabeça deixou de acompanhar a troca de pose durante o atlas.')
+    assert(!middle.bitmap.equals(afterTransition.bitmap), 'O balanço do cabelo não retomou após a troca de pose.')
     split = await factory.create(payload, new AbortController().signal)
     const turboChunkStart = await split.frame(30)
     const turboChunkEnd = await split.frame(60)
+    assert(turboChunkStart.bitmap && turboChunkEnd.bitmap, 'O worker Turbo não entregou os quadros de comparação.')
+    await Promise.all([saveCapture('hair-frame-030-turbo.png', turboChunkStart.bitmap), saveCapture('hair-frame-060-turbo.png', turboChunkEnd.bitmap)])
     assert(middle.bitmap.equals(turboChunkStart.bitmap), 'O primeiro quadro de um trecho Turbo divergiu do render sequencial.')
-    assert(last.bitmap.equals(turboChunkEnd.bitmap), 'A animação mudou de fase na fronteira de um trecho Turbo.')
+    const differentPixels = (left: Buffer, right: Buffer) => {
+      let count = 0
+      for (let index = 0; index < left.length; index += 4) if (left[index] !== right[index] || left[index + 1] !== right[index + 1] || left[index + 2] !== right[index + 2] || left[index + 3] !== right[index + 3]) count += 1
+      return count
+    }
+    assert(last.bitmap.equals(turboChunkEnd.bitmap), `A animação mudou de fase na fronteira de um trecho Turbo (${differentPixels(last.bitmap, turboChunkEnd.bitmap)} pixels divergiram).`)
     split.close(); split = undefined
     sequential.close(); sequential = undefined
 
+    const hiRes = await factory.create({ ...payload, width: 1280, height: 720 }, new AbortController().signal)
+    try {
+      const deformed = await hiRes.frame(10)
+      assert(deformed.bitmap, 'O worker não entregou pixels sem compressão para validar as emendas da malha.')
+      await saveCapture('hair-frame-010-720p-rgba.png', deformed.bitmap, 1280, 720)
+      const solidHairRows = Array.from({ length: 720 }, (_, y) => {
+        let count = 0
+        for (let x = 560; x < 920; x += 1) {
+          const offset = (y * 1280 + x) * 4
+          const blue = deformed.bitmap![offset], green = deformed.bitmap![offset + 1], red = deformed.bitmap![offset + 2]
+          if (green > 65 && green > red * 1.8 && green > blue * 1.5) count += 1
+        }
+        return count
+      })
+      const visibleRows = solidHairRows.map((count, y) => count > 20 ? y : -1).filter(y => y >= 0)
+      const firstVisibleRow = visibleRows[0] ?? -1
+      const lastVisibleRow = visibleRows.at(-1) ?? -1
+      const continuousRows = firstVisibleRow >= 0 ? solidHairRows.slice(firstVisibleRow, lastVisibleRow + 1) : []
+      assert(continuousRows.length >= 250, 'A textura contínua perdeu cobertura no comprimento do cabelo ao deformar em WebGL.')
+      assert(continuousRows.every(count => count > 0), 'A malha deixou linhas transparentes entre faixas da camada contínua.')
+    } finally { hiRes.close() }
+
     const ffprobe = join(root, 'resources/video-tools/ffprobe.exe')
+    const exportHairMp4 = (width: number, height: number, startFrame: number, endFrame: number, turbo: boolean, name: string) => {
+      const outputPath = join(folder, name)
+      return runEditorV6Export(project, { startFrame, endFrame, width, height, turbo, encoder: 'cpu', hairAnimationPresetSlot: 1 }, {
+        ffmpeg, ffprobe, tempRoot: folder, id: randomUUID(), outputPath, reportPath: join(folder, `${name}.report.json`), signal: new AbortController().signal,
+        getCharacters: async () => [], bakeMotion: async () => { throw Error('O fixture não deve preparar animações de pose.') },
+        createWorker: (renderProject, _part, signal, layeredVideo, mouthLoops) => factory.create({ project: renderProject, width, height, layeredVideo, ...(mouthLoops ? { mouthLoops } : {}), hairAnimation }, signal),
+        audioPath: () => join(folder, 'unused-audio.wav'), mediaPath: () => join(folder, 'unused-media.mp4'), progress: () => {}
+      })
+    }
     const outputPath = join(folder, 'hair-motion.mp4')
-    const report = await runEditorV6Export(project, { startFrame: 0, endFrame: 61, width: 320, height: 180, turbo: true, encoder: 'cpu', hairAnimationPresetSlot: 1 }, {
-      ffmpeg, ffprobe, tempRoot: folder, id: randomUUID(), outputPath, reportPath: join(folder, 'hair-motion.report.json'), signal: new AbortController().signal,
-      getCharacters: async () => [], bakeMotion: async () => { throw Error('O fixture não deve preparar animações de pose.') },
-      createWorker: (renderProject, _part, signal, layeredVideo, mouthLoops) => factory.create({ project: renderProject, width: 320, height: 180, layeredVideo, ...(mouthLoops ? { mouthLoops } : {}), hairAnimation }, signal),
-      audioPath: () => join(folder, 'unused-audio.wav'), mediaPath: () => join(folder, 'unused-media.mp4'), progress: () => {}
-    })
+    const report = await exportHairMp4(320, 180, 0, 61, true, 'hair-motion.mp4')
     assert(report.state === 'completed' && !report.fallback && report.attempts[0]?.parts.length === 2, 'A exportação MP4 com animação de cabelo não concluiu em dois trechos Turbo.')
     assert(report.attempts[0].parts.every(part => (part.frameTiming?.hairCompositionMs?.samples ?? 0) > 0), 'O relatório do export não separou o tempo da composição experimental de cabelo.')
     const rawFrames = execFileSync(ffmpeg, ['-v', 'error', '-i', outputPath, '-vf', "select='eq(n,0)+eq(n,30)+eq(n,60)'", '-fps_mode', 'passthrough', '-frames:v', '3', '-pix_fmt', 'rgb24', '-f', 'rawvideo', 'pipe:1'], { windowsHide: true, maxBuffer: 16 * 1024 ** 2 })
     const frameBytes = 320 * 180 * 3
     assert(rawFrames.length === frameBytes * 3, 'O MP4 não contém os quadros esperados para validar a animação de cabelo.')
+    const isSyntheticHairPixel = (red: number, green: number, blue: number) =>
+      (blue > 120 && blue > red * 1.2 && green < 190)
+      || (red > 100 && red > green * 1.2 && blue > 55)
     const redPixels = (frameIndex: number) => {
       const pixels = new Uint8Array(320 * 180)
       let count = 0
       const start = frameIndex * frameBytes
       for (let y = 0; y < 180; y += 1) for (let x = 0; x < 320; x += 1) {
         const offset = start + (y * 320 + x) * 3
-        if (rawFrames[offset] > 130 && rawFrames[offset + 1] < 115 && rawFrames[offset + 2] < 115) { pixels[y * 320 + x] = 1; count += 1 }
+        if (isSyntheticHairPixel(rawFrames[offset], rawFrames[offset + 1], rawFrames[offset + 2])) { pixels[y * 320 + x] = 1; count += 1 }
       }
       return { count, pixels }
     }
@@ -103,7 +540,92 @@ async function main() {
     let changedHairPixels = 0
     for (let index = 0; index < firstHair.pixels.length; index += 1) if (firstHair.pixels[index] !== lastHair.pixels[index]) changedHairPixels += 1
     assert(changedHairPixels > 5, `O MP4 final não mostra o movimento do cabelo entre o início e o fim (${changedHairPixels} pixels mudaram).`)
-    await writeFile(join(folder, 'result.json'), JSON.stringify({ passed: true, framesChecked: [0, 30, 60], animatedPixels: true, turboBoundaryStable: true, mp4Completed: true, mp4HairChangedPixels: changedHairPixels }))
+    const verifyResolutionExport = (name: string, width: number, height: number, frameCount: number) => {
+      const path = join(folder, name)
+      const probe = JSON.parse(execFileSync(ffprobe, ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=width,height,nb_frames,r_frame_rate', '-of', 'json', path], { windowsHide: true }).toString())
+      const stream = probe.streams?.[0]
+      assert(stream?.width === width && stream?.height === height, `${name}: resolução do MP4 diferente da solicitada`)
+      assert(Number(stream?.nb_frames) === frameCount && stream?.r_frame_rate === '30/1', `${name}: duração ou FPS fora do contrato`)
+      assert(stream?.codec_name === undefined || stream.codec_name === 'h264', `${name}: codec inesperado`)
+      assert(reportFor(name).attempts[0]?.parts.every(part => (part.frameTiming?.hairCompositionMs?.samples ?? 0) > 0), `${name}: composição de cabelo não foi medida`)
+      const indices = frameCount > 20 ? [0, Math.floor(frameCount / 2), frameCount - 1] : [0, Math.floor(frameCount / 2), frameCount - 1]
+      const selected = indices.map(index => `eq(n,${index})`).join('+')
+      const raw = execFileSync(ffmpeg, ['-v', 'error', '-i', path, '-vf', `select='${selected}'`, '-fps_mode', 'passthrough', '-frames:v', '3', '-pix_fmt', 'rgb24', '-f', 'rawvideo', 'pipe:1'], { windowsHide: true, maxBuffer: 64 * 1024 ** 2 })
+      const frameBytes = width * height * 3
+      assert(raw.length === frameBytes * 3, `${name}: FFmpeg não devolveu os três quadros sintéticos esperados`)
+      const hairPixels = indices.map((_frame, frameIndex) => {
+        let count = 0
+        for (let offset = frameIndex * frameBytes; offset < (frameIndex + 1) * frameBytes; offset += 3) if (isSyntheticHairPixel(raw[offset], raw[offset + 1], raw[offset + 2])) count += 1
+        return count
+      })
+      assert(hairPixels.every(count => count > 50), `${name}: o cabelo não ficou visível em todos os quadros amostrados (${hairPixels.join(', ')})`)
+      return { width, height, frameCount, fps: stream.r_frame_rate, hairPixels }
+    }
+    const reportsByName = new Map<string, Awaited<ReturnType<typeof exportHairMp4>>>([['hair-motion.mp4', report]])
+    const reportFor = (name: string) => reportsByName.get(name)!
+    const median = (values: number[]) => {
+      const ordered = [...values].sort((left, right) => left - right)
+      const middle = Math.floor(ordered.length / 2)
+      const value = ordered.length % 2 ? ordered[middle] : (ordered[middle - 1] + ordered[middle]) / 2
+      return Number(value.toFixed(2))
+    }
+    const benchmarkTrials: Array<{ mode: 'safe' | 'turbo'; repetition: number; width: number; height: number; frames: number; workers: number; elapsedMilliseconds: number; fallback: boolean; hairPixels: number[] }> = []
+    const run720Benchmark = async (mode: 'safe' | 'turbo', repetition: number, name: string) => {
+      activeBenchmarkTrial = `${mode}-${repetition}`
+      const started = performance.now()
+      let result: Awaited<ReturnType<typeof exportHairMp4>>
+      try { result = await exportHairMp4(1280, 720, 0, 31, mode === 'turbo', name) }
+      finally { activeBenchmarkTrial = null }
+      reportsByName.set(name, result)
+      const elapsedMilliseconds = performance.now() - started
+      const expectedWorkers = mode === 'turbo' ? 2 : 1
+      assert(result.state === 'completed' && !result.fallback && result.attempts[0]?.parts.length === expectedWorkers, `A exportação 720p ${mode} ${repetition} não concluiu com ${expectedWorkers} worker(s).`)
+      const pixels = verifyResolutionExport(name, 1280, 720, 31)
+      const trial = { mode, repetition, width: 1280, height: 720, frames: 31, workers: result.attempts[0].parts.length, elapsedMilliseconds: Number(elapsedMilliseconds.toFixed(2)), fallback: result.fallback, hairPixels: pixels.hairPixels }
+      benchmarkTrials.push(trial)
+      return { report: result, metrics: pixels }
+    }
+    const safe720RunA = await run720Benchmark('safe', 1, 'hair-motion-720p-safe.mp4')
+    const turbo720RunA = await run720Benchmark('turbo', 1, 'hair-motion-720p-turbo-a.mp4')
+    const safe720RunB = await run720Benchmark('safe', 2, 'hair-motion-720p-safe-repeat.mp4')
+    const turbo720RunB = await run720Benchmark('turbo', 2, 'hair-motion-720p-turbo-b.mp4')
+    const result720 = safe720RunA.metrics
+    const started1080 = performance.now()
+    const turbo1080 = await exportHairMp4(1920, 1080, 20, 50, true, 'hair-motion-1080p-turbo-start-late.mp4')
+    reportsByName.set('hair-motion-1080p-turbo-start-late.mp4', turbo1080)
+    const turbo1080Milliseconds = performance.now() - started1080
+    assert(turbo1080.state === 'completed' && !turbo1080.fallback && turbo1080.attempts[0]?.parts.length === 2, 'A exportação Turbo 1080p com início tardio e troca de pose não concluiu em duas partes.')
+    const result1080 = verifyResolutionExport('hair-motion-1080p-turbo-start-late.mp4', 1920, 1080, 30)
+    await writeFile(join(folder, 'geometry.json'), JSON.stringify({ syntheticOnly: true, canvas: { width: 64, height: 64 }, sourceHead: { width: 32, height: 24 }, poses: hairAnimation.rigs.map(rig => ({ assetId: rig.assetId, targetHead: rig.targetHead, sourceCrop: rig.sourceCrop, output: { width: rig.outputWidth, height: rig.outputHeight }, shapeScale: { x: rig.shapeScaleX, y: rig.shapeScaleY } })), transition: { startFrame: transitionPlan.startFrame, endFrame: transitionPlan.endFrame, sampledFrames: transitionPlan.samples.map(sample => transitionPlan.endFrame + sample.offset) }, scene: { rotation: secondState.rotation, flipX: secondState.flipX }, textures: hairAnimation.textures.map(item => item.id), layers: hairAnimation.rigs[0].layers.map(layer => ({ id: layer.id, side: layer.side, x: layer.x, y: layer.y, width: layer.width, height: layer.height, scaleX: layer.scaleX, scaleY: layer.scaleY, rotation: layer.rotation, flipX: layer.flipX })), checkedFrames: [0, 10, 22, 23, 29, 30, 31, 60], pixelChecks: { coloredHairByBackground: backgroundChecks, transparentLayerPixels, semitransparentLayerPixels: alphaLayerPixels } }, null, 2))
+    await writeFile(join(folder, 'geometry-frames.json'), JSON.stringify({ syntheticOnly: true, sourceSpace: '64x64 character artwork', stageSpace: '320x180 output pixels', frames: geometryFrames }, null, 2))
+    await writeFile(join(folder, 'background-checks.json'), JSON.stringify({ syntheticOnly: true, colorPixelCounts: backgroundChecks, transparentLayerPixels, semitransparentHairPixels: alphaLayerPixels }, null, 2))
+    const sourceTextureBytes = (256 * 512 * 4) * 3 + 64 * 256 * 4
+    const meshFramebufferBytes = Math.max(1, Math.ceil(256 * 1.8)) * Math.max(1, Math.ceil(512 * 1.3)) * 4
+    await writeFile(join(folder, 'resolution-checks.json'), JSON.stringify({
+      syntheticOnly: true,
+      benchmarkContext: {
+        gameRunningByUserStatement: true, controlledBenchmark: false,
+        node: process.version, electron: process.versions.electron, platform: process.platform, architecture: process.arch,
+        outputResolutions: ['1280x720', '1920x1080'], framesPerSecond: 30,
+        memorySamples: processMemorySamples,
+        workerComparison: {
+          kind: 'synthetic-export-only-hair', controlledBenchmark: false, repeatedRunsPerMode: 2,
+          order: benchmarkTrials.map(trial => `${trial.mode}-${trial.repetition}`),
+          runs: benchmarkTrials,
+          mediansMilliseconds: {
+            safe: median(benchmarkTrials.filter(trial => trial.mode === 'safe').map(trial => trial.elapsedMilliseconds)),
+            turbo: median(benchmarkTrials.filter(trial => trial.mode === 'turbo').map(trial => trial.elapsedMilliseconds))
+          },
+          note: 'Amostras pareadas na mesma resolução e número de quadros, alternadas e com jogo em execução. Carga concorrente não controlada; não representam ganho de desempenho geral.'
+        },
+        webglAllocationEstimateBytes: { sourceTexturesRgba8: sourceTextureBytes, largestReusableOutputCanvasRgba8: meshFramebufferBytes, combined: sourceTextureBytes + meshFramebufferBytes, gpuMemoryApiAvailable: false },
+        note: 'Electron reporta memória de processo em working set/private bytes, não VRAM nem alocações exatas do driver; tamanhos WebGL são estimativas RGBA8 a partir das dimensões sintéticas.'
+      },
+      '720pSafe': { ...result720, elapsedMilliseconds: benchmarkTrials[0].elapsedMilliseconds },
+      '720pWorkerComparison': { trials: benchmarkTrials, safeRepeatCompleted: safe720RunB.report.state === 'completed', turboRepeatsCompleted: turbo720RunA.report.state === 'completed' && turbo720RunB.report.state === 'completed' },
+      '1080pTurboLateStart': { ...result1080, startFrame: 20, elapsedMilliseconds: turbo1080Milliseconds }
+    }, null, 2))
+    await writeFile(join(folder, 'result.json'), JSON.stringify({ passed: true, framesChecked: [0, 10, 22, 23, 29, 30, 31, 60], animatedPixels: true, translucentHairPixels: translucentHairPixelCount(first.bitmap), layers: 4, noContinuousLayerSeamsAt720p: true, localHeadChangesBetweenPoses: true, motionAtlasFramesCaptured: true, turboBoundaryStable: true, backgroundsChecked: ['white', 'black', 'colored', 'checkerboard'], backgroundHairPixels: backgroundChecks, transparentLayerPixels, semitransparentHairPixels: alphaLayerPixels, mp4Completed: true, mp4HairChangedPixels: changedHairPixels, '720pSafeExport': true, '1080pTurboLateStart': true }))
   } finally {
     sequential?.close(); split?.close(); factory.dispose()
   }

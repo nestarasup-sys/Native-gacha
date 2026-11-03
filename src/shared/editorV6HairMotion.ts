@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { normalizeHairMotionPreset, type HairMotionPreset } from './hairMotionEngine'
+import type { EditorV6Element } from './editorV6'
 
 export type EditorV6HairMotionSurface = { id: string; dataUrl: string }
 export type EditorV6HairMotionLayer = {
@@ -40,6 +41,65 @@ export type EditorV6HairMotionBundle = {
   surfaces: EditorV6HairMotionSurface[]
   textures: EditorV6HairMotionSurface[]
   rigs: EditorV6HairMotionRig[]
+}
+export type EditorV6HairMotionWindow = { startFrame: number; endFrame: number }
+
+/** Return the head's horizontal position in stage coordinates for export physics. */
+export function editorV6HairMotionHeadAnchorX(element: Pick<EditorV6Element, 'x' | 'y' | 'width' | 'height' | 'rotation' | 'flipX' | 'characterScale' | 'characterWidthScale' | 'characterHeightScale'>, rig: EditorV6HairMotionRig): number {
+  const overall = (element.characterScale ?? 100) / 100
+  const cropWidth = Math.max(1, rig.sourceCrop.width), cropHeight = Math.max(1, rig.sourceCrop.height)
+  const elementWidth = element.width * rig.outputWidth / cropWidth * overall * (element.characterWidthScale ?? 100) / 100
+  const elementHeight = element.height * rig.outputHeight / cropHeight * overall * (element.characterHeightScale ?? 100) / 100
+  const headCenterX = rig.outputWidth / 2 + (rig.targetHead.x + rig.targetHead.width / 2 - rig.artworkWidth / 2) * rig.shapeScaleX
+  const headCenterY = rig.outputHeight / 2 + (rig.targetHead.y + rig.targetHead.height / 2 - rig.artworkHeight / 2) * rig.shapeScaleY
+  const cropCenterX = rig.sourceCrop.left + cropWidth / 2
+  const cropCenterY = rig.sourceCrop.top + cropHeight / 2
+  let localX = (headCenterX - cropCenterX) / rig.outputWidth * elementWidth
+  const localY = (headCenterY - cropCenterY) / rig.outputHeight * elementHeight
+  if (element.flipX) localX *= -1
+  const radians = element.rotation * Math.PI / 180
+  const rotatedX = localX * Math.cos(radians) - localY * (9 / 16) * Math.sin(radians)
+  return (50 + element.x + rotatedX) / 100
+}
+
+/** Interpolate only the per-pose head geometry used to drive export hair inertia. */
+export function interpolateEditorV6HairMotionRig(from: EditorV6HairMotionRig, to: EditorV6HairMotionRig, progress: number): EditorV6HairMotionRig {
+  if (!Number.isFinite(progress) || progress < 0 || progress > 1) throw Error('Progresso da geometria do cabelo inválido.')
+  const mix = (left: number, right: number) => left + (right - left) * progress
+  const angle = (left: number, right: number) => left + ((((right - left) % 360 + 540) % 360) - 180) * progress
+  return {
+    ...from,
+    artworkWidth: mix(from.artworkWidth, to.artworkWidth), artworkHeight: mix(from.artworkHeight, to.artworkHeight),
+    outputWidth: mix(from.outputWidth, to.outputWidth), outputHeight: mix(from.outputHeight, to.outputHeight),
+    shapeScaleX: mix(from.shapeScaleX, to.shapeScaleX), shapeScaleY: mix(from.shapeScaleY, to.shapeScaleY),
+    sourceCrop: {
+      left: mix(from.sourceCrop.left, to.sourceCrop.left), top: mix(from.sourceCrop.top, to.sourceCrop.top),
+      width: mix(from.sourceCrop.width, to.sourceCrop.width), height: mix(from.sourceCrop.height, to.sourceCrop.height)
+    },
+    targetHead: {
+      x: mix(from.targetHead.x, to.targetHead.x), y: mix(from.targetHead.y, to.targetHead.y),
+      width: mix(from.targetHead.width, to.targetHead.width), height: mix(from.targetHead.height, to.targetHead.height),
+      rotation: angle(from.targetHead.rotation, to.targetHead.rotation)
+    }
+  }
+}
+
+/** Ease the export-only strand offsets into static pose atlases and back out without a handoff jump. */
+export function editorV6HairMotionTransitionEnvelope(frame: number, windows: readonly EditorV6HairMotionWindow[], fadeFrames = 4): number {
+  if (!Number.isFinite(frame) || !Number.isFinite(fadeFrames) || fadeFrames <= 0) throw Error('Janela de transição do cabelo inválida.')
+  let envelope = 1
+  for (const window of windows) {
+    if (!Number.isFinite(window.startFrame) || !Number.isFinite(window.endFrame) || window.endFrame <= window.startFrame) throw Error('Intervalo de transição do cabelo inválido.')
+    if (frame >= window.startFrame && frame < window.endFrame) return 0
+    const progress = frame < window.startFrame
+      ? (window.startFrame - frame) / fadeFrames
+      : (frame - window.endFrame) / fadeFrames
+    if (progress < 1) {
+      const eased = Math.max(0, Math.min(1, progress))
+      envelope = Math.min(envelope, eased * eased * (3 - 2 * eased))
+    }
+  }
+  return envelope
 }
 
 const finite = z.number().finite()

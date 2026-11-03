@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type MutableRefObject } from 'react'
-import { createHairMotionState, hairMotionOffset, stepHairMotion, type HairMotionSettings } from './hairMotionPhysics'
+import { createHairMotionState, stepHairMotion, type HairMotionSettings } from './hairMotionPhysics'
+import { createHairMotionMeshPositions, HAIR_MOTION_MESH_COLUMNS, HAIR_MOTION_MESH_HEIGHT, HAIR_MOTION_MESH_ROWS, HAIR_MOTION_MESH_WIDTH } from '../../../characters/hairMotionMeshGeometry'
 
 type Props = { source: string; name: string; settings: HairMotionSettings; intensity: number; playing: boolean; headX: MutableRefObject<number>; impulse: number; resetToken: number; phase: number; flipped: boolean }
 
@@ -35,7 +36,7 @@ export function HairMotionMesh({ source, name, settings, intensity, playing, hea
         if (!gl) throw new Error('A prévia de malha precisa de aceleração gráfica.')
         const context = gl
         const scale = Math.min(1, 1024 / Math.max(image.naturalWidth, image.naturalHeight))
-        canvas.width = Math.max(1, Math.ceil(image.naturalWidth * scale * 1.8)); canvas.height = Math.max(1, Math.ceil(image.naturalHeight * scale * 1.3))
+        canvas.width = Math.max(1, Math.ceil(image.naturalWidth * scale * HAIR_MOTION_MESH_WIDTH)); canvas.height = Math.max(1, Math.ceil(image.naturalHeight * scale * HAIR_MOTION_MESH_HEIGHT))
         const vertex = shader(context, context.VERTEX_SHADER, 'attribute vec2 position; attribute vec2 uv; varying vec2 tex; void main(){ gl_Position=vec4(position,0.0,1.0); tex=uv; }')
         const fragment = shader(context, context.FRAGMENT_SHADER, 'precision mediump float; varying vec2 tex; uniform sampler2D image; void main(){ gl_FragColor=texture2D(image,tex); }')
         program = context.createProgram()
@@ -44,7 +45,7 @@ export function HairMotionMesh({ source, name, settings, intensity, playing, hea
         context.deleteShader(vertex); context.deleteShader(fragment)
         if (!context.getProgramParameter(program, context.LINK_STATUS)) throw new Error('Não foi possível montar a prévia da malha.')
         context.useProgram(program)
-        const columns = 24, rows = 32, count = (columns + 1) * (rows + 1)
+        const columns = HAIR_MOTION_MESH_COLUMNS, rows = HAIR_MOTION_MESH_ROWS, count = (columns + 1) * (rows + 1)
         const positions = new Float32Array(count * 2), uvs = new Float32Array(count * 2), indices: number[] = []
         for (let row = 0; row <= rows; row++) for (let col = 0; col <= columns; col++) {
           const index = row * (columns + 1) + col
@@ -90,13 +91,7 @@ export function HairMotionMesh({ source, name, settings, intensity, playing, hea
           const pausedSettings = JSON.stringify([current.settings, current.intensity])
           if (!current.playing && pausedSettings === lastPausedSettings) { animation = requestAnimationFrame(frame); return }
           lastPausedSettings = current.playing ? '' : pausedSettings
-          for (let row = 0; row <= rows; row++) for (let col = 0; col <= columns; col++) {
-            const u = col / columns, v = row / rows, at = (row * (columns + 1) + col) * 2
-            const offset = current.settings.enabled ? Math.max(-.35, Math.min(.35, hairMotionOffset(motion, v, current.settings.anchor) * current.intensity / 100)) : 0
-            const flutter = current.settings.enabled ? Math.sin(v * 5 + u * 3 + motion.time * 3 + current.phase) * current.settings.gust / 100 * .015 * Math.abs(offset) * 4 : 0
-            positions[at] = ((u + .4 + offset + flutter) / 1.8) * 2 - 1
-            positions[at + 1] = 1 - ((v + .15 - Math.min(.06, Math.abs(offset) * .08)) / 1.3) * 2
-          }
+          positions.set(createHairMotionMeshPositions(motion, current.settings, current.intensity, current.phase, columns, rows))
           context.clear(context.COLOR_BUFFER_BIT); context.bindBuffer(context.ARRAY_BUFFER, positionBuffer); context.bufferSubData(context.ARRAY_BUFFER, 0, positions); context.drawElements(context.TRIANGLES, indices.length, context.UNSIGNED_SHORT, 0)
           animation = requestAnimationFrame(frame)
         }

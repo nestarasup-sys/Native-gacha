@@ -6,15 +6,46 @@ import { editorV6ClipAtFrame } from '../../../../shared/editorV6TimelineCore'
 import { resolveEditorV6SceneAtFrame } from '../../../../shared/editorV6TimelineScene'
 import { editorV6FaceModeAtFrame } from '../../../../shared/editorV6FaceSchedule'
 import { EDITOR_V6_MOUTH_LOOP_SAMPLE_SCALES, editorV6MouthLoopScaleAtFrame, editorV6LayerVisualKeys, editorV6VisualKey, type EditorV6ExportMouthLoops, type EditorV6FrameTimings, type EditorV6RenderFrameResult, type EditorV6WorkerBridge } from '../../../../shared/editorV6Export'
-import { advanceHairMotionToFrame, createHairMotionState, hairMotionOffset, type HairMotionSettings, type HairMotionState } from '../../../../shared/hairMotionEngine'
-import type { EditorV6HairMotionRig, EditorV6HairMotionLayer } from '../../../../shared/editorV6HairMotion'
+import { advanceHairMotionToFrame, createHairMotionState, type HairMotionSettings, type HairMotionState } from '../../../../shared/hairMotionEngine'
+import { editorV6HairMotionHeadAnchorX, editorV6HairMotionTransitionEnvelope, interpolateEditorV6HairMotionRig, type EditorV6HairMotionRig, type EditorV6HairMotionLayer, type EditorV6HairMotionWindow } from '../../../../shared/editorV6HairMotion'
+import { editorV6MotionPlans } from '../../../../shared/editorV6Motion'
+import { motionEase } from '../../../../shared/editorV6MotionInterpolation'
 import { faceRenderGeometry } from '../../characters/characterGeometry'
+import { HAIR_MOTION_MESH_HEIGHT, HAIR_MOTION_MESH_WIDTH } from '../../characters/hairMotionMeshGeometry'
 import { composeEditorV6FaceReplacements } from './sceneFaceComposition'
+import { createExportHairMeshRenderer } from './exportHairMeshRenderer'
 
 const worker = (window as unknown as { editorV6ExportWorker: EditorV6WorkerBridge }).editorV6ExportWorker
 async function initialize() {
   const { project, width, height, layeredVideo, mouthLoops, hairAnimation } = await worker.payload()
-  const root = createRoot(document.getElementById('root')!)
+  const rootElement = document.getElementById('root')!
+  // Keep the render surface at the requested export dimensions. A small strip
+  // beside it carries a per-frame compositor token and is cropped before the
+  // bitmap reaches FFmpeg.
+  rootElement.style.width = `${width}px`
+  rootElement.style.height = `${height}px`
+  rootElement.style.overflow = 'hidden'
+  const paintTokenElement = document.createElement('div')
+  paintTokenElement.setAttribute('aria-hidden', 'true')
+  Object.assign(paintTokenElement.style, {
+    position: 'fixed', left: `${width}px`, top: '0', width: '24px', height: '16px',
+    pointerEvents: 'none', zIndex: '2147483647', opacity: '1', contain: 'strict'
+  })
+  const paintTokenCells = Array.from({ length: 24 }, (_, bit) => {
+    const cell = document.createElement('div')
+    Object.assign(cell.style, {
+      position: 'absolute', left: `${(bit % 6) * 4}px`, top: `${Math.floor(bit / 6) * 4}px`,
+      width: '4px', height: '4px', backgroundColor: '#000'
+    })
+    paintTokenElement.append(cell)
+    return cell
+  })
+  document.body.append(paintTokenElement)
+  const setPaintToken = (token: number) => {
+    if (!Number.isInteger(token) || token < 1 || token > 0xffffff) throw Error('Identificador de quadro inválido na exportação.')
+    for (let bit = 0; bit < paintTokenCells.length; bit++) paintTokenCells[bit].style.backgroundColor = ((token >>> bit) & 1) === 1 ? '#fff' : '#000'
+  }
+  const root = createRoot(rootElement)
   const images = new Map<string, Promise<void>>()
   const loadedSvgImages = new WeakMap<SVGImageElement, string>()
   const onSvgImageLoad = (event: SyntheticEvent<SVGImageElement>) => {
@@ -48,13 +79,39 @@ async function initialize() {
   const hairSurfaces = new Map<string, HTMLImageElement>()
   const hairTextures = new Map<string, HTMLImageElement>()
   const hairRigs = new Map((hairAnimation?.rigs ?? []).map(rig => [`${rig.elementId}:${rig.assetId}`, rig]))
+  const motionBlocks = new Map(project.timeline.tracks.flatMap(track => track.blocks.map(block => [block.id, block] as const)))
+  const hairMotionWindows = new Map<string, EditorV6HairMotionWindow[]>()
+  const hairMotionTransitions: Array<{ elementId: string; startFrame: number; endFrame: number; samples: Array<{ offset: number; progress: number }>; from?: EditorV6HairMotionRig; to?: EditorV6HairMotionRig }> = []
+  for (const plan of editorV6MotionPlans(project)) {
+    if (motionBlocks.get(plan.blockId)?.incomingMotion?.key !== plan.key) continue
+    const windows = hairMotionWindows.get(plan.elementId) ?? []
+    windows.push({ startFrame: plan.startFrame, endFrame: plan.endFrame })
+    hairMotionWindows.set(plan.elementId, windows)
+    const from = plan.from.assetId ? hairRigs.get(`${plan.elementId}:${plan.from.assetId}`) : undefined
+    const to = plan.to.assetId ? hairRigs.get(`${plan.elementId}:${plan.to.assetId}`) : undefined
+    hairMotionTransitions.push({ elementId: plan.elementId, startFrame: plan.startFrame, endFrame: plan.endFrame, samples: plan.samples, from, to })
+  }
+  const hairMotionEnvelope = (elementId: string, frame: number) => editorV6HairMotionTransitionEnvelope(frame, hairMotionWindows.get(elementId) ?? [])
   const hairMotionStates = new Map<string, HairMotionState>()
   const hairWarpCanvases = new Map<string, HTMLCanvasElement>()
+  const hairMeshRenderer = createExportHairMeshRenderer()
   const hairFrameCanvases = new Map<string, { canvas: HTMLCanvasElement; context: CanvasRenderingContext2D }>()
   const animatedElementIds = [...new Set((hairAnimation?.rigs ?? []).filter(rig => rig.layers.length > 0).map(rig => rig.elementId))]
   let headPathCapacity = 0, headPathFrame = -1
   const headPaths = new Map(animatedElementIds.map(id => [id, new Float32Array(0)]))
   const headPathLastValues = new Map(animatedElementIds.map(id => [id, 0]))
+  const headAnchorAtFrame = (elementId: string, frame: number): number => {
+    const element = resolveEditorV6SceneAtFrame(project, frame).elements.find(candidate => candidate.id === elementId && candidate.kind === 'character')
+    if (!element) return headPathLastValues.get(elementId) ?? .5
+    const rig = element.assetId ? hairRigs.get(`${element.id}:${element.assetId}`) : undefined
+    if (rig) return editorV6HairMotionHeadAnchorX(element, rig)
+    const transition = hairMotionTransitions.find(candidate => candidate.elementId === elementId && frame > candidate.startFrame && frame < candidate.endFrame)
+    if (transition?.from && transition.to) {
+      const sample = transition.samples.find(candidate => transition.endFrame + candidate.offset === frame)
+      if (sample) return editorV6HairMotionHeadAnchorX(element, interpolateEditorV6HairMotionRig(transition.from, transition.to, motionEase(sample.progress)))
+    }
+    return (50 + element.x) / 100
+  }
   const loadHairImage = (dataUrl: string) => new Promise<HTMLImageElement>((resolve, reject) => {
     const image = new Image()
     image.onload = () => { void image.decode().then(() => resolve(image), () => reject(Error('Não foi possível decodificar uma camada da animação de cabelo.'))) }
@@ -87,7 +144,7 @@ async function initialize() {
         const path = headPaths.get(elementId)!
         const element = elements.get(elementId)
         const previous = headPathLastValues.get(elementId) ?? 0
-        const current = element ? element.x / Math.max(1, element.width) * (element.flipX ? -1 : 1) : previous
+        const current = element ? headAnchorAtFrame(elementId, frame) : previous
         path[frame] = current
         headPathLastValues.set(elementId, current)
       }
@@ -103,12 +160,11 @@ async function initialize() {
     enabled: hairAnimation!.preset.enabled[side]
   })
   const warpHairTexture = (textureId: string, image: HTMLImageElement, state: HairMotionState, settings: HairMotionSettings, intensity: number, phase: number): HTMLCanvasElement => {
-    const sourceScale = Math.min(1, 2048 / Math.max(image.naturalWidth, image.naturalHeight), Math.sqrt(4_000_000 / (image.naturalWidth * image.naturalHeight)))
-    const imageWidth = Math.max(1, Math.round(image.naturalWidth * sourceScale))
-    const imageHeight = Math.max(1, Math.round(image.naturalHeight * sourceScale))
+    const imageWidth = image.naturalWidth
+    const imageHeight = image.naturalHeight
     let canvas = hairWarpCanvases.get(textureId)
     if (!canvas) { canvas = document.createElement('canvas'); hairWarpCanvases.set(textureId, canvas) }
-    const outputWidth = Math.max(1, Math.ceil(imageWidth * 1.8)), outputHeight = Math.max(1, Math.ceil(imageHeight * 1.3))
+    const outputWidth = Math.max(1, Math.ceil(imageWidth * HAIR_MOTION_MESH_WIDTH)), outputHeight = Math.max(1, Math.ceil(imageHeight * HAIR_MOTION_MESH_HEIGHT))
     if (canvas.width !== outputWidth || canvas.height !== outputHeight) { canvas.width = outputWidth; canvas.height = outputHeight }
     const context = canvas.getContext('2d')
     if (!context) throw Error('Não foi possível deformar o cabelo durante a exportação.')
@@ -116,31 +172,11 @@ async function initialize() {
     context.imageSmoothingEnabled = true
     context.imageSmoothingQuality = 'high'
     if (!settings.enabled || intensity <= 0 || state.time === 0) {
-      context.drawImage(image, 0, 0, image.naturalWidth, image.naturalHeight, imageWidth * 0.4, imageHeight * 0.15, imageWidth, imageHeight)
+      context.drawImage(image, 0, 0, imageWidth, imageHeight, imageWidth * .4, imageHeight * .15, imageWidth, imageHeight)
       return canvas
     }
-    // The preview bends a textured GPU mesh. Export uses horizontal raster
-    // bands to approximate that smooth bend without reading and rewriting
-    // millions of individual pixels on the CPU for every output frame.
-    const stripCount = Math.min(96, imageHeight)
-    const stripHeight = imageHeight / stripCount
-    const destinationY = (sourceY: number) => {
-      const v = Math.max(0, Math.min(1, sourceY / Math.max(1, imageHeight - 1)))
-      const offset = Math.max(-0.35, Math.min(0.35, hairMotionOffset(state, v, settings.anchor) * intensity / 100))
-      return sourceY + imageHeight * 0.15 - Math.min(0.06, Math.abs(offset) * 0.08) * imageHeight
-    }
-    for (let strip = 0; strip < stripCount; strip += 1) {
-      const sourceTop = strip * stripHeight
-      const sourceHeight = Math.min(imageHeight - sourceTop, stripHeight)
-      const v = Math.max(0, Math.min(1, (sourceTop + sourceHeight * 0.5) / Math.max(1, imageHeight - 1)))
-      const offset = Math.max(-0.35, Math.min(0.35, hairMotionOffset(state, v, settings.anchor) * intensity / 100))
-      const flutter = Math.sin(v * 5 + state.time * 3 + phase) * settings.gust / 100 * 0.015 * Math.abs(offset) * 4
-      const sourceTopPixels = sourceTop / sourceScale
-      const sourceHeightPixels = sourceHeight / sourceScale
-      const destinationTop = destinationY(sourceTop), destinationBottom = destinationY(sourceTop + sourceHeight)
-      context.drawImage(image, 0, sourceTopPixels, image.naturalWidth, sourceHeightPixels,
-        imageWidth * (0.4 + offset + flutter), destinationTop, imageWidth, Math.max(0.01, destinationBottom - destinationTop))
-    }
+    const mesh = hairMeshRenderer.render(image, state, settings, intensity, phase)
+    context.drawImage(mesh, 0, 0, outputWidth, outputHeight)
     return canvas
   }
   const drawHairPiece = (context: CanvasRenderingContext2D, rig: EditorV6HairMotionRig, piece: EditorV6HairMotionLayer, element: ReturnType<typeof resolveEditorV6SceneAtFrame>['elements'][number], frame: number) => {
@@ -152,7 +188,7 @@ async function initialize() {
     if (!state) { state = createHairMotionState(); hairMotionStates.set(stateKey, state) }
     const direction = piece.flipX ? -1 : 1
     advanceHairMotionToFrame(state, settings, frame, sample => headXAtFrame(element.id, sample) * direction, piece.phase)
-    const intensity = hairAnimation!.preset.intensity[piece.side]
+    const intensity = hairAnimation!.preset.intensity[piece.side] * hairMotionEnvelope(element.id, frame)
     const warped = warpHairTexture(piece.textureId, texture, state, settings, intensity, piece.phase)
     context.save()
     context.translate(rig.outputWidth / 2, rig.outputHeight / 2)
@@ -224,7 +260,7 @@ async function initialize() {
       return { ...element, mouthPatch: { assetId: state.assetId, ...motion.facePatch } }
     }) }
   }
-  ;(window as unknown as { renderEditorV6ExportFrame: (frame: number, layer?: 'background' | 'foreground') => Promise<EditorV6RenderFrameResult> }).renderEditorV6ExportFrame = async (frame, layer) => {
+  ;(window as unknown as { renderEditorV6ExportFrame: (frame: number, layer: 'background' | 'foreground' | undefined, paintToken: number) => Promise<EditorV6RenderFrameResult> }).renderEditorV6ExportFrame = async (frame, layer, paintToken) => {
     const timings: EditorV6FrameTimings = {}
     const resolutionStarted = performance.now()
     const scene = applyMouthLoop(resolveEditorV6SceneAtFrame(project, frame), frame)
@@ -308,6 +344,7 @@ async function initialize() {
       return source ? [waitForSvgImage(image, source)] : []
     }))
     timings.assetPreparationMs = (timings.assetPreparationMs ?? 0) + performance.now() - svgImageDecodeStarted
+    setPaintToken(paintToken)
     const rafStarted = performance.now()
     await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
     timings.rafWaitMs = performance.now() - rafStarted
@@ -316,6 +353,7 @@ async function initialize() {
     else { previousBackground = layerKeys.background; previousForeground = layerKeys.foreground; previous = key }
     return { reused: false, timings }
   }
+  window.addEventListener('pagehide', () => hairMeshRenderer.dispose(), { once: true })
   await worker.ready()
 }
 void initialize().catch((error: unknown) => worker.ready(error instanceof Error ? error.message : String(error)))
