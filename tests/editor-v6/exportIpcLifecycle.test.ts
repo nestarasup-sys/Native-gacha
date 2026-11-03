@@ -3,6 +3,7 @@ import type { IpcMain } from 'electron'
 import { createEditorV6Timeline } from '../../src/shared/editorV6'
 import type { EditorV6MotionBakeResult } from '../../src/shared/editorV6Motion'
 import { editorV6IpcChannels } from '../../src/shared/editorV6IpcChannels'
+import { FIRST_HAIR_MOTION_PRESET } from '../../src/shared/hairMotionEngine'
 
 vi.mock('electron', () => ({
   BrowserWindow: { fromWebContents: vi.fn(() => null) },
@@ -40,9 +41,11 @@ function deferred<T = void>() {
 
 function createHarness() {
   const handlers = new Map<string, (...args: any[]) => Promise<unknown>>()
+  const recordDiagnostic = vi.fn(async () => undefined)
   const lifecycle = registerEditorV6ExportHandlers({
     ipcMain: { handle: (channel, handler) => handlers.set(channel, handler as (...args: any[]) => Promise<unknown>) } as unknown as IpcMain,
     assertTrustedSender: () => {},
+    recordDiagnostic,
     projectPath: (id) => `C:/synthetic/editorV6-${id}`,
     toolsDirectory: 'C:/synthetic/tools',
     workerHtml: 'worker.html',
@@ -52,7 +55,7 @@ function createHarness() {
     bakeMotion: async () => ({}) as EditorV6MotionBakeResult,
     resolveLibraryVideo: async () => ({ path: 'C:/synthetic/library.mp4', name: 'Video', mimeType: 'video/mp4', extension: 'mp4', size: 1024, durationFrames: 30 })
   })
-  return { handlers, lifecycle }
+  return { handlers, lifecycle, recordDiagnostic }
 }
 
 const audioClip = {
@@ -228,6 +231,41 @@ describe('lifecycle de cópias de mídia do Editor V6', () => {
     expect(status).toMatchObject({ state: 'preparing' })
     expect(runEditorV6Export).toHaveBeenCalledWith(expect.objectContaining({ assets: expect.arrayContaining([expect.objectContaining({ name: 'Snapshot 501' })]) }), expect.anything(), expect.anything())
     exportGate.resolve({ outputPath: 'C:/synthetic/output.mp4', fallback: false } as Awaited<ReturnType<typeof runEditorV6Export>>)
+  })
+
+  it('registra falha do export de cabelo no Logs Dev sem vazar erro, caminho ou preset', async () => {
+    const dataUrl = 'data:image/png;base64,AA=='
+    const hairAnimation = {
+      presetSlot: 1,
+      preset: FIRST_HAIR_MOTION_PRESET,
+      surfaces: [{ id: 'base', dataUrl }, { id: 'face', dataUrl }],
+      textures: [{ id: 'hair', dataUrl }],
+      rigs: [{
+        elementId: 'actor-element', assetId: 'actor-image', characterId: 'synthetic-character',
+        baseSurfaceId: 'base', faceSurfaceId: 'face', overlaySurfaceId: null,
+        artworkWidth: 64, artworkHeight: 64, outputWidth: 64, outputHeight: 64, shapeScaleX: 1, shapeScaleY: 1,
+        sourceCrop: { left: 0, top: 0, width: 64, height: 64 }, sourceHead: { width: 32, height: 24 },
+        targetHead: { x: 16, y: 8, width: 32, height: 24, rotation: 0 },
+        layers: [{ id: 'front-layer', textureId: 'hair', side: 'front', width: 16, height: 20, x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0, flipX: false, phase: 0 }]
+      }]
+    }
+    vi.mocked(dialog.showSaveDialog).mockResolvedValue({ canceled: false, filePath: 'C:/synthetic/output.mp4' })
+    vi.mocked(runEditorV6Export).mockRejectedValueOnce(new Error('Falha em C:\\Users\\private\\project.json: preset cru e conteúdo privado'))
+
+    const { handlers, recordDiagnostic } = createHarness()
+    const status = await handlers.get(editorV6IpcChannels.startEditorV6Export)!(event, exportProject, { ...exportOptions, hairAnimationPresetSlot: 1 }, hairAnimation)
+    await tick()
+
+    expect(handlers.get(editorV6IpcChannels.getEditorV6ExportStatus)!(event, status.id)).toMatchObject({ state: 'failed' })
+    expect(recordDiagnostic).toHaveBeenCalledWith(expect.objectContaining({
+      code: 'editor-v6.export-failed', domain: 'editor-v6', operation: 'export.mp4', stage: 'hair-motion-export',
+      result: 'failure', correlationId: status.id,
+      message: 'A exportação MP4 falhou com a animação experimental de cabelo ativa; consulte o relatório.'
+    }))
+    const logged = JSON.stringify(recordDiagnostic.mock.calls[0]?.[0])
+    expect(logged).not.toContain('private')
+    expect(logged).not.toContain('preset cru')
+    expect(logged).not.toContain('C:/Users')
   })
 
   it('retoma novos imports depois de uma cópia falhar durante o shutdown', async () => {

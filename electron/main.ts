@@ -1024,6 +1024,7 @@ app.whenReady().then(async () => {
   await registerFabricatorHandlers()
   editorV6MotionService = createEditorV6MotionService({ ipcMain, assertTrustedSender, html: rendererHtmlPath, preload: join(__dirname, '../preload/editorV6MotionPreload.cjs'), devUrl: devRendererUrl, cacheDirectory: join(app.getPath('userData'), 'cache', 'editor-v6-motion-v2'), concurrency: 2 })
   editorV6ExportService = registerEditorV6ExportHandlers({ ipcMain, assertTrustedSender, projectPath: editorV6Path,
+    recordDiagnostic: diagnosticsLog.recordMain,
     toolsDirectory: app.isPackaged ? join(process.resourcesPath, 'video-tools') : resolve(__dirname, '../../resources/video-tools'),
     workerHtml: join(__dirname, '../renderer/editor-v6-export.html'), workerPreload: join(__dirname, '../preload/editorV6ExportPreload.cjs'),
     devUrl: devRendererUrl, tempRoot: app.getPath('temp'), getCharacters: () => customizerService.list(),

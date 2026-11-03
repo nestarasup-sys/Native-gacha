@@ -3,6 +3,7 @@ import { copyFile, mkdir, stat } from 'node:fs/promises'
 import { basename, extname, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
+import type { LocalDiagnosticEventInput } from '../../../src/shared/dataManagement'
 import { editorV6IpcChannels } from '../../../src/shared/editorV6IpcChannels'
 import { editorV6ExportAudioSchema, editorV6MediaAssetSchema, parseEditorV6ExportDocument } from '../../../src/shared/editorV6Schema'
 import type { EditorV6MediaAsset } from '../../../src/shared/editorV6'
@@ -20,6 +21,7 @@ type Job = { owner: number; status: EditorV6ExportStatus; controller: AbortContr
 type EditorV6ExportIpcDependencies = {
   ipcMain: Pick<IpcMain, 'handle' | 'removeHandler'>
   assertTrustedSender: (event: IpcMainInvokeEvent) => void
+  recordDiagnostic: (input: LocalDiagnosticEventInput) => Promise<void>
   projectPath: (id: string) => string
   toolsDirectory: string
   workerHtml: string
@@ -133,7 +135,15 @@ export function registerEditorV6ExportHandlers(deps: EditorV6ExportIpcDependenci
       const message = `${report.deliveryWarning ?? 'MP4 exportado e validado.'}${mouth ? ` Loop da boca em ${mouth.characters} personagem(ns) · ${mouth.cycleFrames / 30}s${mouth.skippedStates ? ` · ${mouth.skippedStates} estado(s) ignorado(s); veja o relatório` : ''}.` : ''}`
       job.status = { ...job.status, state: 'completed', outputPath: report.outputPath, fallback: report.fallback, frames: status.totalFrames, message }
     }, (error: unknown) => {
-      job.status = { ...job.status, state: controller.signal.aborted ? 'cancelled' : 'failed', error: error instanceof Error ? error.message : String(error), message: controller.signal.aborted ? 'Exportação cancelada.' : 'A exportação falhou. Consulte o relatório.' }
+      const cancelled = controller.signal.aborted
+      job.status = { ...job.status, state: cancelled ? 'cancelled' : 'failed', error: error instanceof Error ? error.message : String(error), message: cancelled ? 'Exportação cancelada.' : 'A exportação falhou. Consulte o relatório.' }
+      if (!cancelled) void Promise.resolve().then(() => deps.recordDiagnostic({
+          severity: 'error', code: 'editor-v6.export-failed', domain: 'editor-v6', operation: 'export.mp4',
+          stage: hairAnimation ? 'hair-motion-export' : 'export', result: 'failure', correlationId: id,
+          message: hairAnimation
+            ? 'A exportação MP4 falhou com a animação experimental de cabelo ativa; consulte o relatório.'
+            : 'A exportação MP4 falhou; consulte o relatório.'
+        })).catch(() => undefined)
     }).finally(() => { if (!event.sender.isDestroyed()) event.sender.removeListener('destroyed', abort) })
     for (const [key, entry] of jobs) if (jobs.size > 20 && terminal(entry.status)) jobs.delete(key)
     return job.status
