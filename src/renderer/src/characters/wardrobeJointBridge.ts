@@ -126,8 +126,13 @@ function drawAlphaMask(context: CanvasRenderingContext2D, segment: WardrobeJoint
   return { width: bounds.width, height: bounds.height, data }
 }
 
-function findSeam(upper: AlphaMask, lower: AlphaMask): Seam | null {
+function isNearAnchor(point: Point, anchor: Point | undefined, radius: number): boolean {
+  return !anchor || Math.hypot(point.x - anchor.x, point.y - anchor.y) <= radius
+}
+
+function findSeam(upper: AlphaMask, lower: AlphaMask, anchor?: Point, anchorRadius = Number.POSITIVE_INFINITY): Seam | null {
   const points: Point[] = []
+  let towardUpper = { x: 0, y: 0 }
   const { width, height } = upper
   for (let y = 1; y < height - 1; y += 1) for (let x = 1; x < width - 1; x += 1) {
     const index = y * width + x
@@ -135,7 +140,15 @@ function findSeam(upper: AlphaMask, lower: AlphaMask): Seam | null {
     for (let dy = -1; dy <= 1; dy += 1) for (let dx = -1; dx <= 1; dx += 1) {
       if (!dx && !dy) continue
       const neighbor = (y + dy) * width + x + dx
-      if (lower.data[neighbor] >= 24) points.push({ x: x + dx / 2, y: y + dy / 2 })
+      if (lower.data[neighbor] < 24) continue
+      const contact = { x: x + dx / 2, y: y + dy / 2 }
+      if (!isNearAnchor(contact, anchor, anchorRadius)) continue
+      points.push(contact)
+      // For each touching pair, this points from the lower pixels toward the
+      // upper pixels and provides a local normal even when whole-part centers
+      // are skewed by bent or asymmetric silhouettes.
+      towardUpper.x -= dx
+      towardUpper.y -= dy
     }
   }
   if (points.length < 2) return null
@@ -149,10 +162,14 @@ function findSeam(upper: AlphaMask, lower: AlphaMask): Seam | null {
   const tangent = { x: Math.cos(angle), y: Math.sin(angle) }
   let normal = { x: -tangent.y, y: tangent.x }
 
-  const upperCenter = alphaCenter(upper)
-  const lowerCenter = alphaCenter(lower)
-  if (!upperCenter || !lowerCenter) return null
-  if ((upperCenter.x - lowerCenter.x) * normal.x + (upperCenter.y - lowerCenter.y) * normal.y < 0) {
+  let orientation: Point | null = Math.hypot(towardUpper.x, towardUpper.y) > 0.01 ? towardUpper : null
+  if (!orientation) {
+    const upperCenter = alphaCenter(upper)
+    const lowerCenter = alphaCenter(lower)
+    if (upperCenter && lowerCenter) orientation = { x: upperCenter.x - lowerCenter.x, y: upperCenter.y - lowerCenter.y }
+  }
+  if (!orientation) return null
+  if (orientation.x * normal.x + orientation.y * normal.y < 0) {
     normal = { x: -normal.x, y: -normal.y }
   }
   let minTangent = Number.POSITIVE_INFINITY
@@ -162,6 +179,7 @@ function findSeam(upper: AlphaMask, lower: AlphaMask): Seam | null {
     minTangent = Math.min(minTangent, projection)
     maxTangent = Math.max(maxTangent, projection)
   }
+  if (maxTangent - minTangent < 2) return null
   return { center, tangent, normal, minTangent, maxTangent }
 }
 
@@ -182,7 +200,14 @@ function pointInSeam(seam: Seam, tangent: number, normal: number): Point {
     y: seam.center.y + seam.tangent.y * tangent + seam.normal.y * normal }
 }
 
-function findNearbySeam(upper: AlphaMask, lower: AlphaMask, maximumGap: number, reference?: Seam): SeamWithGap | null {
+function findNearbySeam(
+  upper: AlphaMask,
+  lower: AlphaMask,
+  maximumGap: number,
+  reference?: Seam,
+  anchor?: Point,
+  anchorRadius = Number.POSITIVE_INFINITY
+): SeamWithGap | null {
   // The normal points from the lower piece toward the upper piece.
   let normal = reference?.normal
   let tangent = reference?.tangent
@@ -223,7 +248,13 @@ function findNearbySeam(upper: AlphaMask, lower: AlphaMask, maximumGap: number, 
     // half-width so touching edges count as zero gap instead of a one-pixel gap.
     const gap = upperEdge.normal - lowerEdge.normal - Math.abs(normal.x) - Math.abs(normal.y)
     if (gap > .25 && gap <= maximumGap) {
-      profiles.push({ tangent: (upperEdge.tangent + lowerEdge.tangent) / 2, upper: upperEdge, lower: lowerEdge, gap })
+      const contact = {
+        x: (upperEdge.point.x + lowerEdge.point.x) / 2,
+        y: (upperEdge.point.y + lowerEdge.point.y) / 2
+      }
+      if (isNearAnchor(contact, anchor, anchorRadius)) {
+        profiles.push({ tangent: (upperEdge.tangent + lowerEdge.tangent) / 2, upper: upperEdge, lower: lowerEdge, gap })
+      }
     }
   }
   if (profiles.length < 3) return null
@@ -249,14 +280,16 @@ function findNearbySeam(upper: AlphaMask, lower: AlphaMask, maximumGap: number, 
   return { center, tangent, normal, minTangent, maxTangent, gapSamples }
 }
 
-/** Finds the garment seam and tolerates a narrow transparent gap between its halves. */
+/** Finds a seam, optionally resolving touching/gapped edges only around a saved joint anchor. */
 export function detectWardrobeJointSeam(
   upper: WardrobeJointBridgeMask,
   lower: WardrobeJointBridgeMask,
-  maximumGap: number
+  maximumGap: number,
+  preferredAnchor?: Point,
+  anchorRadius = Number.POSITIVE_INFINITY
 ): SeamWithGap | null {
-  const touching = findSeam(upper, lower)
-  const nearby = findNearbySeam(upper, lower, maximumGap, touching ?? undefined)
+  const touching = findSeam(upper, lower, preferredAnchor, anchorRadius)
+  const nearby = findNearbySeam(upper, lower, maximumGap, touching ?? undefined, preferredAnchor, anchorRadius)
   if (!nearby) return touching
   if (!touching) return nearby
 
@@ -540,13 +573,20 @@ export function drawWardrobeJointBridge(
     const sourceContext = sourceCanvas.getContext('2d', { willReadFrequently: true })
     if (!sourceContext) throw new Error('Não foi possível preparar a junção da roupa na pose.')
 
+    const jointAnchor = sourceJointAnchor
+      ? { x: sourceJointAnchor.x - bounds.x, y: sourceJointAnchor.y - bounds.y }
+      : undefined
+    const searchRadius = Math.max(12, Math.min(64,
+      Math.min(upper.sourceBone.width, upper.sourceBone.height, lower.sourceBone.width, lower.sourceBone.height) * 1.5))
     const detectedSeam = detectWardrobeJointSeam(
       drawAlphaMask(sourceContext, upper, bounds),
       drawAlphaMask(sourceContext, lower, bounds),
-      maximumJointGap(upper, lower)
+      maximumJointGap(upper, lower),
+      jointAnchor,
+      jointAnchor ? searchRadius : Number.POSITIVE_INFINITY
     )
     const seam = detectedSeam && sourceJointAnchor
-      ? anchorWardrobeJointSeam(detectedSeam, { x: sourceJointAnchor.x - bounds.x, y: sourceJointAnchor.y - bounds.y })
+      ? anchorWardrobeJointSeam(detectedSeam, jointAnchor!)
       : detectedSeam
     if (!seam) return false
     if (!transformsDiffer && !seam.gapSamples?.length) return false

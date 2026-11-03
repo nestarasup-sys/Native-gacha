@@ -59,6 +59,28 @@ test('joint bridge follows the saved joint anchor and keeps its gap samples alig
   assert.deepEqual(seam.center, { x: 10, y: 20 }, 'aligning the seam must not mutate the detected source geometry')
 })
 
+test('joint bridge chooses local contact geometry around its anchor instead of a distant false seam', () => {
+  const width = 80, height = 80
+  const upperRects = [
+    { x: 10, y: 10, width: 10, height: 10 },
+    { x: 50, y: 50, width: 10, height: 10 }
+  ]
+  const lowerRects = [
+    { x: 20, y: 10, width: 10, height: 10 },
+    { x: 60, y: 50, width: 10, height: 10 }
+  ]
+  const upper = rectangleMask(width, height, upperRects)
+  const lower = rectangleMask(width, height, lowerRects)
+  const unrestricted = detectWardrobeJointSeam(upper, lower, 4)
+  const anchored = detectWardrobeJointSeam(upper, lower, 4, { x: 20, y: 15 }, 12)
+
+  assert.ok(unrestricted)
+  assert.ok(anchored)
+  assert.ok(Math.abs(unrestricted.tangent.x) > 0.2, 'distant contacts skew the unrestricted fit')
+  assert.ok(Math.abs(anchored.tangent.x) < 0.05, 'the local seam remains vertical at the saved joint')
+  assert.ok(Math.hypot(anchored.center.x - 20, anchored.center.y - 15) < 1)
+})
+
 test('joint bridge composites neighboring triangles through one replacement surface', () => {
   class FakeContext {
     calls = []
