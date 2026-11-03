@@ -1,4 +1,5 @@
 import type { WardrobeProcessorPiece, WardrobeProcessorRequest, WardrobeProcessorResponse } from './wardrobeProcessorProtocol'
+import { cleanWardrobeGreenEdges } from './wardrobeChroma'
 
 const scope = self as unknown as { onmessage: ((event: MessageEvent<WardrobeProcessorRequest>) => void) | null; postMessage: (message: WardrobeProcessorResponse, transfer?: Transferable[]) => void }
 scope.onmessage = async ({ data }: MessageEvent<WardrobeProcessorRequest>) => {
@@ -39,6 +40,7 @@ scope.onmessage = async ({ data }: MessageEvent<WardrobeProcessorRequest>) => {
         else if (greenish && distance < 166) pixels[at + 3] = Math.round(pixels[at + 3] * (distance - 118) / 48)
       }
     }
+    if (chromaGreen) cleanWardrobeGreenEdges(pixels, width, height, chromaGreen)
     if (data.normalizeTo) {
       let minX = width; let minY = height; let maxX = -1; let maxY = -1
       for (let y = 0; y < height; y += 1) for (let x = 0; x < width; x += 1) {
