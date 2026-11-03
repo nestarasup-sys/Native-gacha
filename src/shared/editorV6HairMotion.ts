@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { normalizeHairMotionPreset, type HairMotionPreset } from './hairMotionEngine'
 import type { EditorV6Element } from './editorV6'
+import type { EditorV6FacePatch, EditorV6MotionSprite } from './editorV6Motion'
 
 export type EditorV6HairMotionSurface = { id: string; dataUrl: string }
 export type EditorV6HairMotionLayer = {
@@ -35,14 +36,37 @@ export type EditorV6HairMotionRig = {
   targetHead: { x: number; y: number; width: number; height: number; rotation: number }
   layers: EditorV6HairMotionLayer[]
 }
+export type EditorV6HairMotionTransitionFrame = {
+  offset: number
+  sprite: EditorV6MotionSprite
+  crop: { left: number; top: number; width: number; height: number }
+  x: number
+  y: number
+  width: number
+  height: number
+  rotation: number
+  flipX: boolean
+  facePatch?: EditorV6FacePatch
+}
+export type EditorV6HairMotionTransition = {
+  elementId: string
+  key: string
+  startFrame: number
+  endFrame: number
+  behindFaceSurfaceId: string
+  faceSurfaceId: string
+  overlaySurfaceId: string | null
+  faceAtlasSurfaceId: string | null
+  frames: EditorV6HairMotionTransitionFrame[]
+}
 export type EditorV6HairMotionBundle = {
   presetSlot: number
   preset: HairMotionPreset
   surfaces: EditorV6HairMotionSurface[]
   textures: EditorV6HairMotionSurface[]
   rigs: EditorV6HairMotionRig[]
+  motionTransitions?: EditorV6HairMotionTransition[]
 }
-export type EditorV6HairMotionWindow = { startFrame: number; endFrame: number }
 
 /** Return the head's horizontal position in stage coordinates for export physics. */
 export function editorV6HairMotionHeadAnchorX(element: Pick<EditorV6Element, 'x' | 'y' | 'width' | 'height' | 'rotation' | 'flipX' | 'characterScale' | 'characterWidthScale' | 'characterHeightScale'>, rig: EditorV6HairMotionRig): number {
@@ -80,32 +104,38 @@ export function interpolateEditorV6HairMotionRig(from: EditorV6HairMotionRig, to
       x: mix(from.targetHead.x, to.targetHead.x), y: mix(from.targetHead.y, to.targetHead.y),
       width: mix(from.targetHead.width, to.targetHead.width), height: mix(from.targetHead.height, to.targetHead.height),
       rotation: angle(from.targetHead.rotation, to.targetHead.rotation)
-    }
+    },
+    layers: from.layers.map(layer => {
+      const matching = to.layers.find(candidate => candidate.id === layer.id && candidate.side === layer.side)
+      if (!matching) return layer
+      return {
+        ...layer,
+        width: mix(layer.width, matching.width), height: mix(layer.height, matching.height),
+        x: mix(layer.x, matching.x), y: mix(layer.y, matching.y),
+        scaleX: mix(layer.scaleX, matching.scaleX), scaleY: mix(layer.scaleY, matching.scaleY),
+        rotation: angle(layer.rotation, matching.rotation),
+        flipX: progress < .5 ? layer.flipX : matching.flipX
+      }
+    })
   }
-}
-
-/** Ease the export-only strand offsets into static pose atlases and back out without a handoff jump. */
-export function editorV6HairMotionTransitionEnvelope(frame: number, windows: readonly EditorV6HairMotionWindow[], fadeFrames = 4): number {
-  if (!Number.isFinite(frame) || !Number.isFinite(fadeFrames) || fadeFrames <= 0) throw Error('Janela de transição do cabelo inválida.')
-  let envelope = 1
-  for (const window of windows) {
-    if (!Number.isFinite(window.startFrame) || !Number.isFinite(window.endFrame) || window.endFrame <= window.startFrame) throw Error('Intervalo de transição do cabelo inválido.')
-    if (frame >= window.startFrame && frame < window.endFrame) return 0
-    const progress = frame < window.startFrame
-      ? (window.startFrame - frame) / fadeFrames
-      : (frame - window.endFrame) / fadeFrames
-    if (progress < 1) {
-      const eased = Math.max(0, Math.min(1, progress))
-      envelope = Math.min(envelope, eased * eased * (3 - 2 * eased))
-    }
-  }
-  return envelope
 }
 
 const finite = z.number().finite()
 const dimension = finite.positive().max(16_384)
 const id = z.string().min(1).max(300)
 const surface = z.object({ id, dataUrl: z.string().max(48_000_000).regex(/^data:image\/png;base64,[A-Za-z0-9+/]+={0,2}$/) }).strict()
+const motionSprite = z.object({
+  x: finite.min(0).max(16_384), y: finite.min(0).max(16_384), width: dimension, height: dimension,
+  atlasWidth: dimension, atlasHeight: dimension
+}).strict().superRefine((sprite, context) => {
+  if (sprite.x + sprite.width > sprite.atlasWidth || sprite.y + sprite.height > sprite.atlasHeight) context.addIssue({ code: 'custom', message: 'Recorte da transição fora do atlas.' })
+})
+const facePatch = z.object({
+  sprite: motionSprite,
+  x: finite.min(0).max(1), y: finite.min(0).max(1), width: dimension, height: dimension,
+  replace: z.boolean().optional(),
+  replaceBounds: z.object({ x: finite.min(0).max(1), y: finite.min(0).max(1), width: dimension, height: dimension }).strict().optional()
+}).strict()
 const layer = z.object({
   id, textureId: id, side: z.enum(['front', 'back', 'fringe']), width: dimension, height: dimension,
   x: finite.max(100_000).min(-100_000), y: finite.max(100_000).min(-100_000),
@@ -121,13 +151,30 @@ const rig = z.object({
   targetHead: z.object({ x: finite.min(-100_000).max(100_000), y: finite.min(-100_000).max(100_000), width: dimension, height: dimension, rotation: finite.min(-3600).max(3600) }).strict(),
   layers: z.array(layer).min(1, 'Cada personagem precisa ter uma camada visível de cabelo.').max(20)
 }).strict()
+const transitionFrame = z.object({
+  offset: finite.min(-300).max(0), sprite: motionSprite,
+  crop: z.object({ left: finite.min(0).max(16_384), top: finite.min(0).max(16_384), width: dimension, height: dimension }).strict(),
+  x: finite.min(-100_000).max(100_000), y: finite.min(-100_000).max(100_000),
+  width: finite.positive().max(100_000), height: finite.positive().max(100_000),
+  rotation: finite.min(-3600).max(3600), flipX: z.boolean(),
+  facePatch: facePatch.optional()
+}).strict()
+const transition = z.object({
+  elementId: id, key: z.string().min(1).max(20_000), startFrame: finite.min(0).max(10_000_000), endFrame: finite.min(0).max(10_000_000),
+  behindFaceSurfaceId: id, faceSurfaceId: id, overlaySurfaceId: id.nullable(), faceAtlasSurfaceId: id.nullable(),
+  frames: z.array(transitionFrame).min(1).max(16)
+}).strict().superRefine((value, context) => {
+  if (value.endFrame <= value.startFrame) context.addIssue({ code: 'custom', message: 'Intervalo da transição do cabelo inválido.' })
+  if (new Set(value.frames.map(frame => frame.offset)).size !== value.frames.length) context.addIssue({ code: 'custom', message: 'A transição do cabelo contém quadros duplicados.' })
+})
 
 const bundleSchema = z.object({
   presetSlot: z.number().int().min(1).max(5),
   preset: z.unknown(),
   surfaces: z.array(surface).max(5000),
   textures: z.array(surface).max(2000),
-  rigs: z.array(rig).min(1).max(10_000)
+  rigs: z.array(rig).min(1).max(10_000),
+  motionTransitions: z.array(transition).max(10_000).optional()
 }).strict()
 
 /** Validate the renderer-created, export-only bundle before it crosses IPC. */
@@ -139,6 +186,7 @@ export function parseEditorV6HairMotionBundle(value: unknown): EditorV6HairMotio
   const textures = new Set(parsed.textures.map(item => item.id))
   const rigKeys = new Set<string>()
   if (surfaces.size !== parsed.surfaces.length || textures.size !== parsed.textures.length) throw Error('A exportação contém camadas de cabelo repetidas.')
+  const transitionKeys = new Set<string>()
   const totalDataUrlCharacters = [...parsed.surfaces, ...parsed.textures].reduce((sum, item) => sum + item.dataUrl.length, 0)
   if (totalDataUrlCharacters > 96_000_000) throw Error('As camadas preparadas para animação de cabelo excedem o limite de memória da exportação.')
   for (const item of parsed.rigs) {
@@ -148,6 +196,12 @@ export function parseEditorV6HairMotionBundle(value: unknown): EditorV6HairMotio
     if (!surfaces.has(item.baseSurfaceId) || !surfaces.has(item.faceSurfaceId) || (item.overlaySurfaceId && !surfaces.has(item.overlaySurfaceId))) throw Error('A exportação não encontrou uma camada preparada do personagem.')
     if (item.layers.some(piece => !textures.has(piece.textureId))) throw Error('A exportação não encontrou uma imagem de cabelo preparada.')
     if (item.sourceCrop.left + item.sourceCrop.width > item.outputWidth + 1 || item.sourceCrop.top + item.sourceCrop.height > item.outputHeight + 1) throw Error('O enquadramento preparado do cabelo é inválido.')
+  }
+  for (const item of parsed.motionTransitions ?? []) {
+    const key = `${item.elementId}:${item.key}`
+    if (transitionKeys.has(key)) throw Error('A exportação contém uma transição de cabelo repetida.')
+    transitionKeys.add(key)
+    if (!surfaces.has(item.behindFaceSurfaceId) || !surfaces.has(item.faceSurfaceId) || (item.overlaySurfaceId && !surfaces.has(item.overlaySurfaceId)) || (item.faceAtlasSurfaceId && !surfaces.has(item.faceAtlasSurfaceId))) throw Error('A exportação não encontrou uma camada de pose sem cabelo.')
   }
   return { ...parsed, preset } as EditorV6HairMotionBundle
 }

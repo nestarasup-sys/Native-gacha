@@ -1,8 +1,11 @@
 import type { CustomizerCharacter } from '../../../../shared/customizer'
 import type { EditorV6Document, EditorV6Element, EditorV6FaceRenderMode } from '../../../../shared/editorV6'
 import type { HairMotionPreset } from '../../../../shared/hairMotionEngine'
+import { EDITOR_V6_MOUTH_LOOP_SAMPLE_SCALES, editorV6MouthLoopScaleAtFrame, type EditorV6ExportOptions } from '../../../../shared/editorV6Export'
+import { editorV6MotionPlans, type EditorV6MotionBakeResult, type EditorV6MotionPlan } from '../../../../shared/editorV6Motion'
 import { hairAppearanceStyleIds } from '../../../../shared/hairCategories'
-import type { EditorV6HairMotionBundle, EditorV6HairMotionLayer, EditorV6HairMotionRig } from '../../../../shared/editorV6HairMotion'
+import type { EditorV6HairMotionBundle, EditorV6HairMotionLayer, EditorV6HairMotionRig, EditorV6HairMotionTransition } from '../../../../shared/editorV6HairMotion'
+import type { EditorV6MotionLayerAtlasCapture } from './motion/bakeMotion'
 import { resolveSavedCharacterSource } from '../../characters/characterSourceResolver'
 import { trimTransparentCanvas } from './faceModeAssets'
 
@@ -49,6 +52,7 @@ export async function prepareEditorV6HairMotionBundle(
   project: EditorV6Document,
   presetSlot: number,
   preset: HairMotionPreset,
+  exportOptions: EditorV6ExportOptions,
   isCancelled: () => boolean = () => false
 ): Promise<EditorV6HairMotionBundle> {
   if (!Number.isInteger(presetSlot) || presetSlot < 1 || presetSlot > 5) throw Error('Selecione um preset de animação de cabelo válido.')
@@ -73,6 +77,7 @@ export async function prepareEditorV6HairMotionBundle(
   const surfaces: EditorV6HairMotionBundle['surfaces'] = []
   const textures: EditorV6HairMotionBundle['textures'] = []
   const rigs: EditorV6HairMotionRig[] = []
+  const motionTransitions: EditorV6HairMotionTransition[] = []
   const surfaceIds = new Map<string, string>(), textureIds = new Map<string, string>()
   const addSurface = (key: string, dataUrl: string) => {
     const existing = surfaceIds.get(key)
@@ -87,6 +92,23 @@ export async function prepareEditorV6HairMotionBundle(
     const id = `texture-${textures.length + 1}`
     textureIds.set(key, id); textures.push({ id, dataUrl })
     return id
+  }
+
+  type SerializedMotionLayerAtlas = Pick<EditorV6MotionLayerAtlasCapture, 'frames'> & {
+    behindFaceDataUrl: string
+    faceDataUrl: string
+    inFrontOfFaceDataUrl: string | null
+  }
+  const captureTransitionLayers = (plan: EditorV6MotionPlan, result: Pick<EditorV6MotionBakeResult, 'faceAsset'>, capture: SerializedMotionLayerAtlas) => {
+    const behindFaceSurfaceId = addSurface(`motion:${plan.key}:behind-face`, capture.behindFaceDataUrl)
+    const faceSurfaceId = addSurface(`motion:${plan.key}:face`, capture.faceDataUrl)
+    const overlaySurfaceId = capture.inFrontOfFaceDataUrl ? addSurface(`motion:${plan.key}:front-face`, capture.inFrontOfFaceDataUrl) : null
+    const faceAtlasSurfaceId = result.faceAsset ? addSurface(`motion:${plan.key}:face-atlas`, result.faceAsset.dataUrl) : null
+    motionTransitions.push({
+      elementId: plan.elementId, key: plan.key, startFrame: plan.startFrame, endFrame: plan.endFrame,
+      behindFaceSurfaceId, faceSurfaceId, overlaySurfaceId, faceAtlasSurfaceId,
+      frames: capture.frames
+    })
   }
 
   const [{ prepareSavedCharacterRenderer }, { loadCharacterTintedImage, resolvedHairColors }] = await Promise.all([
@@ -181,5 +203,45 @@ export async function prepareEditorV6HairMotionBundle(
     } finally { originalRenderer.dispose(); hairlessRenderer.dispose() }
   }
   if (!rigs.length) throw Error('Nenhum personagem do projeto tem uma camada de cabelo visível para animar.')
-  return { presetSlot, preset, surfaces, textures, rigs }
+
+  const rigByEndpoint = new Map(rigs.map(rig => [`${rig.elementId}:${rig.assetId}`, rig]))
+  const relevantPlans = editorV6MotionPlans(project).filter(plan => plan.startFrame < exportOptions.endFrame && plan.endFrame > exportOptions.startFrame)
+  if (relevantPlans.length) {
+    const { bakeEditorV6Motion } = await import('./motion/bakeMotion')
+    for (const plan of relevantPlans) {
+      if (isCancelled()) throw Error('Preparação da animação de cabelo cancelada.')
+      const character = characterById.get(plan.characterId)
+      if (!character?.customization.hairAppearance) continue
+      const fromRig = plan.from.assetId ? rigByEndpoint.get(`${plan.elementId}:${plan.from.assetId}`) : undefined
+      const toRig = plan.to.assetId ? rigByEndpoint.get(`${plan.elementId}:${plan.to.assetId}`) : undefined
+      if (!fromRig || !toRig) throw Error(`Não foi possível preparar o cabelo durante a troca de pose de ${plan.from.text || character.name}.`)
+      const hairlessCharacter: CustomizerCharacter = { ...character, customization: { ...character.customization, hairAppearance: undefined } }
+      const mouthScaleSamples = exportOptions.mouthLoop && plan.samples.some(sample => sample.faceMode === 'talk')
+        ? plan.samples.map(sample => sample.faceMode === 'talk'
+          ? editorV6MouthLoopScaleAtFrame(plan.endFrame + sample.offset, exportOptions.startFrame, exportOptions.mouthLoopCycleFrames ?? 30)
+          : EDITOR_V6_MOUTH_LOOP_SAMPLE_SCALES[0])
+        : undefined
+      const facialMotion = mouthScaleSamples?.some(scale => scale > 1) ? mouthScaleSamples : undefined
+      let layerCapture: SerializedMotionLayerAtlas | undefined
+      const result = await bakeEditorV6Motion({
+        id: crypto.randomUUID(), plan, character: hairlessCharacter,
+        ...(facialMotion ? { mouthScaleSamples: facialMotion } : {})
+      }, window.desktop.fabricator, undefined, capture => {
+        // bakeEditorV6Motion releases these canvases in its finally block, so
+        // snapshot them before returning across the await boundary.
+        layerCapture = {
+          frames: capture.frames,
+          behindFaceDataUrl: canvasDataUrl(capture.behindFace),
+          faceDataUrl: canvasDataUrl(capture.face),
+          inFrontOfFaceDataUrl: capture.inFrontOfFace ? canvasDataUrl(capture.inFrontOfFace) : null
+        }
+      })
+      if (!layerCapture) throw Error(`Não foi possível capturar as camadas sem cabelo da transição de ${character.name}.`)
+      if (isCancelled()) throw Error('Preparação da animação de cabelo cancelada.')
+      captureTransitionLayers(plan, result, layerCapture)
+    }
+  }
+  const totalDataUrlCharacters = [...surfaces, ...textures].reduce((sum, item) => sum + item.dataUrl.length, 0)
+  if (totalDataUrlCharacters > 96_000_000) throw Error('As poses sem cabelo preparadas para a animação excedem o limite seguro de memória da exportação. Desative o preset experimental ou reduza o número de transições no trecho.')
+  return { presetSlot, preset, surfaces, textures, rigs, motionTransitions }
 }

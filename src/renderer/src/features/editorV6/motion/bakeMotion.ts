@@ -5,17 +5,47 @@ import type { EditorV6Element, EditorV6FaceRenderMode, EditorV6FaceTransform } f
 import type { EditorV6MotionBakeRequest, EditorV6MotionBakeResult, EditorV6MotionFrame } from '../../../../../shared/editorV6Motion'
 import { editorV6FaceModeDuringMotion } from '../../../../../shared/editorV6FaceSchedule'
 import { interpolateEditorV6Face, interpolateEditorV6Pose, motionAngle, motionEase, motionLerp } from '../../../../../shared/editorV6MotionInterpolation'
-import { loadStandardExpressionEffects, prepareSavedCharacterRenderer, type GachaReusableMaterialCache } from '../../../characters/editorV6CharacterRenderer'
+import { loadStandardExpressionEffects, prepareSavedCharacterRenderer, type GachaReusableMaterialCache, type PreparedGachaLayerFrame } from '../../../characters/editorV6CharacterRenderer'
 import { chooseMotionAtlasLayout } from './motionAtlasLayout'
 import { createMotionPoseResolver } from './motionPoseResolver'
 import { motionEndpointScale } from './motionEndpointScale'
 
 type Renderer = Awaited<ReturnType<typeof prepareSavedCharacterRenderer>>
 type Crop = { left: number; top: number; width: number; height: number; fingerprint?: number }
-type MotionFrameRender = { canvas: HTMLCanvasElement; width: number; height: number; crop: Crop; renderer: Renderer; dispose: () => void }
-type BakedBodySample = { canvas: HTMLCanvasElement; crop: Crop }
+type CroppedMotionLayers = { behindFace: HTMLCanvasElement; face: HTMLCanvasElement; inFrontOfFace: HTMLCanvasElement | null }
+type MotionFrameRender = { canvas: HTMLCanvasElement; width: number; height: number; crop: Crop; renderer: Renderer; layers?: PreparedGachaLayerFrame; dispose: () => void }
+type BakedBodySample = { canvas: HTMLCanvasElement; crop: Crop; layers?: CroppedMotionLayers }
 type PixelBounds = { left: number; top: number; right: number; bottom: number }
 type BakedFacePatch = { index: number; canvas: HTMLCanvasElement; left: number; top: number; width: number; height: number; crop: Crop; changed: PixelBounds }
+export type EditorV6MotionLayerAtlasCapture = {
+  frames: Array<Pick<EditorV6MotionFrame, 'offset' | 'sprite' | 'x' | 'y' | 'width' | 'height' | 'rotation' | 'flipX'> & { crop: Omit<Crop, 'fingerprint'>; facePatch?: EditorV6MotionFrame['facePatch'] }>
+  behindFace: HTMLCanvasElement
+  face: HTMLCanvasElement
+  inFrontOfFace: HTMLCanvasElement | null
+}
+function cropPreparedLayer(source: HTMLCanvasElement, layers: PreparedGachaLayerFrame, crop: Crop): HTMLCanvasElement {
+  const canvas = document.createElement('canvas'); canvas.width = crop.width; canvas.height = crop.height
+  const context = canvas.getContext('2d')
+  if (!context) throw Error('Não foi possível preparar uma camada de cabelo durante a pose.')
+  context.translate(-crop.left, -crop.top)
+  context.translate(layers.outputWidth / 2, layers.outputHeight / 2)
+  context.scale(layers.shapeScaleX, layers.shapeScaleY)
+  context.drawImage(source, -layers.width / 2, -layers.height / 2)
+  return canvas
+}
+function cropPreparedLayers(layers: PreparedGachaLayerFrame, crop: Crop): CroppedMotionLayers {
+  return {
+    behindFace: cropPreparedLayer(layers.behindFace, layers, crop),
+    face: cropPreparedLayer(layers.face, layers, crop),
+    inFrontOfFace: layers.inFrontOfFace ? cropPreparedLayer(layers.inFrontOfFace, layers, crop) : null
+  }
+}
+function disposeCroppedLayers(layers?: CroppedMotionLayers): void {
+  if (!layers) return
+  layers.behindFace.width = layers.behindFace.height = 1
+  layers.face.width = layers.face.height = 1
+  if (layers.inFrontOfFace) layers.inFrontOfFace.width = layers.inFrontOfFace.height = 1
+}
 function changedBounds(reference: Uint8ClampedArray, next: Uint8ClampedArray, width: number, height: number): PixelBounds | undefined {
   let left = width, right = -1, top = height, bottom = -1
   for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
@@ -142,7 +172,7 @@ export type EditorV6BakeSession = { provider: CharacterRenderAssetProvider; mate
 export function createEditorV6BakeSession(provider: CharacterRenderAssetProvider): EditorV6BakeSession {
   return { provider: cachedProvider(provider, true), materials: new Map() }
 }
-export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, rawProvider: CharacterRenderAssetProvider, session?: EditorV6BakeSession): Promise<EditorV6MotionBakeResult> {
+export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, rawProvider: CharacterRenderAssetProvider, session?: EditorV6BakeSession, captureLayerAtlases?: (capture: EditorV6MotionLayerAtlasCapture) => void): Promise<EditorV6MotionBakeResult> {
   const began = performance.now(), provider = cachedProvider(session?.provider ?? rawProvider), slot = request.character.customization.modelSlot ?? 1
   const source = await provider.loadFabricatorSlot(slot)
   if (!source) throw Error('O modelo do personagem não está disponível para animar.')
@@ -157,6 +187,8 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
   const samePose = poseSignature(fromPose) === poseSignature(toPose)
   const materials: GachaReusableMaterialCache = session?.materials ?? new Map()
   let preparedRigs = 0, reusable: Renderer | undefined, preparedAtlasFrames: BakedBodySample[] | undefined, pendingFacePatches: BakedFacePatch[] | undefined
+  let behindFaceAtlas: HTMLCanvasElement | undefined, faceLayerAtlas: HTMLCanvasElement | undefined, inFrontOfFaceAtlas: HTMLCanvasElement | null | undefined
+  const layerFrames: EditorV6MotionLayerAtlasCapture['frames'] = []
   const prepare = async (progress: number) => {
     if (samePose && reusable) return reusable
     const artwork = interpolateEditorV6Pose(fromPose, toPose, progress)
@@ -165,16 +197,17 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
     if (samePose) reusable = renderer
     return renderer
   }
-  const render = async (progress: number, faceMode?: EditorV6FaceRenderMode, mouthScale = 1, fingerprint = false, preparedRenderer?: Renderer, referenceMode = false): Promise<MotionFrameRender> => {
+  const render = async (progress: number, faceMode?: EditorV6FaceRenderMode, mouthScale = 1, fingerprint = false, preparedRenderer?: Renderer, referenceMode = false, captureLayers = false): Promise<MotionFrameRender> => {
     const renderer = preparedRenderer ?? await prepare(progress), face = scaleMouthForExport(interpolateEditorV6Face(from, to, progress), mouthScale)
     try {
       const mode = faceMode ?? face.mode
       const result = await renderer.renderToCanvas(face.appearance, face.transforms, face.effects, referenceMode ? mode : editorV6FaceModeDuringMotion(mode))
-      return { ...result, crop: cropOf(result.canvas, fingerprint), renderer, dispose: () => { if (!samePose && !preparedRenderer) renderer.dispose() } }
+      const layers = captureLayers ? await renderer.renderLayersToCanvas(face.appearance, face.transforms, face.effects, referenceMode ? mode : editorV6FaceModeDuringMotion(mode)) : undefined
+      return { ...result, crop: cropOf(result.canvas, fingerprint), renderer, ...(layers ? { layers } : {}), dispose: () => { if (!samePose && !preparedRenderer) renderer.dispose() } }
     } catch (error) { if (!samePose && !preparedRenderer) renderer.dispose(); throw error }
   }
   try {
-    const staticMouthLoop = Boolean(request.mouthScaleSamples && samePose
+    const staticMouthLoop = Boolean(!captureLayerAtlases && request.mouthScaleSamples && samePose
       && JSON.stringify(from) === JSON.stringify(to)
       && request.plan.samples.every((sample) => sample.faceMode === from.activeFaceMode))
     if (staticMouthLoop) {
@@ -281,13 +314,13 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
       maximumHeight = Math.max(fromCrop.height, toCrop.height)
       for (const [index, sample] of request.plan.samples.entries()) {
         const t = motionEase(sample.progress), mouthScale = request.mouthScaleSamples?.[index] ?? 1
-        const frame = await render(t, sample.faceMode, 1)
+        const frame = await render(t, sample.faceMode, 1, false, undefined, false, Boolean(captureLayerAtlases))
         try {
           maximumWidth = Math.max(maximumWidth, frame.crop.width)
           maximumHeight = Math.max(maximumHeight, frame.crop.height)
           const cropped = document.createElement('canvas'); cropped.width = frame.crop.width; cropped.height = frame.crop.height
           cropped.getContext('2d')!.drawImage(frame.canvas, frame.crop.left, frame.crop.top, frame.crop.width, frame.crop.height, 0, 0, frame.crop.width, frame.crop.height)
-          preparedAtlasFrames.push({ canvas: cropped, crop: frame.crop })
+          preparedAtlasFrames.push({ canvas: cropped, crop: frame.crop, ...(frame.layers ? { layers: cropPreparedLayers(frame.layers, frame.crop) } : {}) })
           await prepareFacePatch(index, sample, t, mouthScale, frame)
         } finally { frame.dispose() }
       }
@@ -299,6 +332,11 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
     const cellWidth = Math.ceil(maximumWidth * ratio), cellHeight = Math.ceil(maximumHeight * ratio)
     const atlas = document.createElement('canvas'); atlas.width = cellWidth * columns; atlas.height = cellHeight * rows
     const context = atlas.getContext('2d')!
+    if (captureLayerAtlases) {
+      behindFaceAtlas = document.createElement('canvas'); behindFaceAtlas.width = atlas.width; behindFaceAtlas.height = atlas.height
+      faceLayerAtlas = document.createElement('canvas'); faceLayerAtlas.width = atlas.width; faceLayerAtlas.height = atlas.height
+      inFrontOfFaceAtlas = document.createElement('canvas'); inFrontOfFaceAtlas.width = atlas.width; inFrontOfFaceAtlas.height = atlas.height
+    }
     const sharedCharacterCanvasWidth = request.plan.from.characterCanvasWidth ?? request.plan.to.characterCanvasWidth
     // The saved rectangles already encode the actual stage aspect ratio and
     // character scale; map those rectangles to the same crops as static assets.
@@ -315,7 +353,7 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
     for (const [index, sample] of request.plan.samples.entries()) {
       const t = motionEase(sample.progress), mouthScale = request.mouthScaleSamples?.[index] ?? 1
       const baked = preparedAtlasFrames?.[index]
-      const frame = baked ? undefined : await render(t, sample.faceMode, 1)
+      const frame = baked ? undefined : await render(t, sample.faceMode, 1, false, undefined, false, Boolean(captureLayerAtlases))
       const crop = baked?.crop ?? frame!.crop
       try {
         const x = index % columns * cellWidth, y = Math.floor(index / columns) * cellHeight, width = Math.max(1, Math.ceil(crop.width * ratio)), height = Math.max(1, Math.ceil(crop.height * ratio))
@@ -326,7 +364,23 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
         const originY = motionLerp(-(fromCrop.top + fromCrop.height / 2) * fromScale.y, -(toCrop.top + toCrop.height / 2) * toScale.y, t)
         const rotation = motionAngle(from.rotation, to.rotation, t), flipX = Boolean(t < .5 ? from.flipX : to.flipX)
         const dx = (originX + (crop.left + crop.width / 2) * sx) * (flipX ? -1 : 1), dy = originY + (crop.top + crop.height / 2) * sy, radians = rotation * Math.PI / 180
-        frames.push({ offset: sample.offset, sprite: { x, y, width, height, atlasWidth: atlas.width, atlasHeight: atlas.height }, x: motionLerp(from.x, to.x, t) + (dx * Math.cos(radians) - dy * Math.sin(radians)) / 19.2, y: motionLerp(from.y, to.y, t) + (dx * Math.sin(radians) + dy * Math.cos(radians)) / 10.8, width: crop.width * sx / 19.2, height: crop.height * sy / 10.8, rotation, flipX })
+        const motionFrame: EditorV6MotionFrame = { offset: sample.offset, sprite: { x, y, width, height, atlasWidth: atlas.width, atlasHeight: atlas.height }, x: motionLerp(from.x, to.x, t) + (dx * Math.cos(radians) - dy * Math.sin(radians)) / 19.2, y: motionLerp(from.y, to.y, t) + (dx * Math.sin(radians) + dy * Math.cos(radians)) / 10.8, width: crop.width * sx / 19.2, height: crop.height * sy / 10.8, rotation, flipX }
+        frames.push(motionFrame)
+        if (captureLayerAtlases) {
+          const layers = baked?.layers ?? (frame?.layers ? cropPreparedLayers(frame.layers, crop) : undefined)
+          if (!layers || !behindFaceAtlas || !faceLayerAtlas || !inFrontOfFaceAtlas) throw Error('A preparação do cabelo não capturou as camadas da pose intermediária.')
+          const drawLayer = (target: HTMLCanvasElement, source: HTMLCanvasElement | null) => {
+            if (!source) return
+            const targetContext = target.getContext('2d')!
+            targetContext.drawImage(source, 0, 0, source.width, source.height, x, y, width, height)
+          }
+          drawLayer(behindFaceAtlas, layers.behindFace)
+          drawLayer(faceLayerAtlas, layers.face)
+          drawLayer(inFrontOfFaceAtlas, layers.inFrontOfFace)
+          layerFrames.push({ offset: sample.offset, sprite: motionFrame.sprite, x: motionFrame.x, y: motionFrame.y, width: motionFrame.width, height: motionFrame.height, rotation: motionFrame.rotation, flipX: motionFrame.flipX, crop: { left: crop.left, top: crop.top, width: crop.width, height: crop.height } })
+          if (baked?.layers) disposeCroppedLayers(baked.layers)
+          else if (layers !== baked?.layers) disposeCroppedLayers(layers)
+        }
         if (frame) await prepareFacePatch(index, sample, t, mouthScale, frame)
       } finally {
         frame?.dispose()
@@ -352,16 +406,29 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
       const faceAssetId = crypto.randomUUID(), assetId = crypto.randomUUID()
       const faceDataUrl = faceAtlas.toDataURL('image/png'), bodyDataUrl = atlas.toDataURL('image/png')
       faceAsset = { id: faceAssetId, category: 'character', name: 'Camadas faciais da transição', mimeType: 'image/png', dataUrl: faceDataUrl, timelineSnapshot: true }
+      if (captureLayerAtlases) captureLayerAtlases({ frames: frames.map(frame => {
+        const captured = layerFrames.find(item => item.offset === frame.offset)
+        if (!captured) throw Error('A preparação perdeu um quadro da pose sem cabelo.')
+        return { ...captured, ...(frame.facePatch ? { facePatch: frame.facePatch } : {}) }
+      }), behindFace: behindFaceAtlas!, face: faceLayerAtlas!, inFrontOfFace: inFrontOfFaceAtlas! })
       atlas.width = atlas.height = 1
       faceAtlas.width = faceAtlas.height = 1
       return { asset: { id: assetId, category: 'character', name: 'Transição de personagem', mimeType: 'image/png', dataUrl: bodyDataUrl, timelineSnapshot: true }, faceAsset, motion: { version: 1, key: request.plan.key, assetId, faceAssetId, frames }, metrics: { milliseconds: performance.now() - began, preparedRigs, samples: count, atlasPixels: bodyPixels + facePixels } }
     }
     const assetId = crypto.randomUUID(), atlasPixels = atlas.width * atlas.height, dataUrl = atlas.toDataURL('image/png')
+    if (captureLayerAtlases) captureLayerAtlases({ frames: frames.map(frame => {
+      const captured = layerFrames.find(item => item.offset === frame.offset)
+      if (!captured) throw Error('A preparação perdeu um quadro da pose sem cabelo.')
+      return { ...captured, ...(frame.facePatch ? { facePatch: frame.facePatch } : {}) }
+    }), behindFace: behindFaceAtlas!, face: faceLayerAtlas!, inFrontOfFace: inFrontOfFaceAtlas! })
     atlas.width = atlas.height = 1
     return { asset: { id: assetId, category: 'character', name: 'Transição de personagem', mimeType: 'image/png', dataUrl, timelineSnapshot: true }, motion: { version: 1, key: request.plan.key, assetId, frames }, metrics: { milliseconds: performance.now() - began, preparedRigs, samples: count, atlasPixels } }
   } finally {
-    preparedAtlasFrames?.forEach(({ canvas }) => { canvas.width = canvas.height = 1 })
+    preparedAtlasFrames?.forEach(({ canvas, layers }) => { canvas.width = canvas.height = 1; disposeCroppedLayers(layers) })
     pendingFacePatches?.forEach(({ canvas }) => { canvas.width = canvas.height = 1 })
+    if (behindFaceAtlas) behindFaceAtlas.width = behindFaceAtlas.height = 1
+    if (faceLayerAtlas) faceLayerAtlas.width = faceLayerAtlas.height = 1
+    if (inFrontOfFaceAtlas) inFrontOfFaceAtlas.width = inFrontOfFaceAtlas.height = 1
     reusable?.dispose()
     if (!session || materials.size > 4) materials.clear()
   }

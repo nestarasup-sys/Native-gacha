@@ -69,9 +69,26 @@ async function captureScene(scene: unknown, assets: unknown[], renderLayer: 'all
   const original = HTMLCanvasElement.prototype.getContext
   const canvases = new Set<HTMLCanvasElement>()
   HTMLCanvasElement.prototype.getContext = function (...args: unknown[]) { canvases.add(this); return original.apply(this, args as never) } as typeof original
-  const result = await bakeEditorV6Motion({ id: crypto.randomUUID(), plan, character },provider)
+  let serializedTransitionLayers: { frames: Array<{ sprite: { atlasWidth: number; atlasHeight: number } }>; dataUrls: string[] } | undefined
+  const result = await bakeEditorV6Motion({ id: crypto.randomUUID(), plan, character }, provider, undefined, capture => {
+    serializedTransitionLayers = {
+      frames: capture.frames,
+      dataUrls: [capture.behindFace, capture.face, capture.inFrontOfFace].filter((canvas): canvas is HTMLCanvasElement => Boolean(canvas)).map(canvas => canvas.toDataURL('image/png'))
+    }
+  })
   HTMLCanvasElement.prototype.getContext = original
   assert(result.metrics.samples === 7 && result.metrics.atlasPixels <= 8_100_000, 'Invalid atlas budget or sample count')
+  const capturedLayers = serializedTransitionLayers
+  if (!capturedLayers) throw Error('The export-only layer callback returned no atlas')
+  assert(capturedLayers.frames.length === 7 && capturedLayers.dataUrls.length === 3, 'The export-only layer callback did not capture every intermediate body/face atlas')
+  const transitionLayerImages = await Promise.all(capturedLayers.dataUrls.map(image))
+  assert(transitionLayerImages.every(atlas => atlas.width === capturedLayers.frames[0].sprite.atlasWidth && atlas.height === capturedLayers.frames[0].sprite.atlasHeight && atlas.width > 1 && atlas.height > 1), 'A transition layer atlas was serialized after its canvas had been released')
+  const behindLayerCanvas = document.createElement('canvas')
+  behindLayerCanvas.width = transitionLayerImages[0].width; behindLayerCanvas.height = transitionLayerImages[0].height
+  const behindLayerContext = behindLayerCanvas.getContext('2d', { willReadFrequently: true })!
+  behindLayerContext.drawImage(transitionLayerImages[0], 0, 0)
+  const behindLayerAlpha = behindLayerContext.getImageData(0, 0, behindLayerCanvas.width, behindLayerCanvas.height).data.filter((_value, index) => index % 4 === 3 && _value > 0).length
+  assert(behindLayerAlpha > 100, 'The serialized hairless body atlas is blank')
   assert(result.metrics.preparedRigs === 9, 'Pose rigs were incorrectly reused')
   assert(reads.loadFabricatorSlot === 1 && reads.loadFabricatorPose === 2, 'Source reads were repeated per sample')
   const expandedSource = { ...source, width: 1122, height: 1402 }

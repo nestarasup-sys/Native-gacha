@@ -7,7 +7,7 @@ import { resolveEditorV6SceneAtFrame } from '../../../../shared/editorV6Timeline
 import { editorV6FaceModeAtFrame } from '../../../../shared/editorV6FaceSchedule'
 import { EDITOR_V6_MOUTH_LOOP_SAMPLE_SCALES, editorV6MouthLoopScaleAtFrame, editorV6LayerVisualKeys, editorV6VisualKey, type EditorV6ExportMouthLoops, type EditorV6FrameTimings, type EditorV6RenderFrameResult, type EditorV6WorkerBridge } from '../../../../shared/editorV6Export'
 import { advanceHairMotionToFrame, createHairMotionState, type HairMotionSettings, type HairMotionState } from '../../../../shared/hairMotionEngine'
-import { editorV6HairMotionHeadAnchorX, editorV6HairMotionTransitionEnvelope, interpolateEditorV6HairMotionRig, type EditorV6HairMotionRig, type EditorV6HairMotionLayer, type EditorV6HairMotionWindow } from '../../../../shared/editorV6HairMotion'
+import { editorV6HairMotionHeadAnchorX, interpolateEditorV6HairMotionRig, type EditorV6HairMotionRig, type EditorV6HairMotionLayer, type EditorV6HairMotionTransition } from '../../../../shared/editorV6HairMotion'
 import { editorV6MotionPlans } from '../../../../shared/editorV6Motion'
 import { motionEase } from '../../../../shared/editorV6MotionInterpolation'
 import { faceRenderGeometry } from '../../characters/characterGeometry'
@@ -77,21 +77,22 @@ async function initialize() {
   }
   const assetsById = new Map(project.assets.map(asset => [asset.id, asset]))
   const hairSurfaces = new Map<string, HTMLImageElement>()
+  const hairSurfaceDataById = new Map((hairAnimation?.surfaces ?? []).map(surface => [surface.id, surface.dataUrl]))
   const hairTextures = new Map<string, HTMLImageElement>()
   const hairRigs = new Map((hairAnimation?.rigs ?? []).map(rig => [`${rig.elementId}:${rig.assetId}`, rig]))
   const motionBlocks = new Map(project.timeline.tracks.flatMap(track => track.blocks.map(block => [block.id, block] as const)))
-  const hairMotionWindows = new Map<string, EditorV6HairMotionWindow[]>()
-  const hairMotionTransitions: Array<{ elementId: string; startFrame: number; endFrame: number; samples: Array<{ offset: number; progress: number }>; from?: EditorV6HairMotionRig; to?: EditorV6HairMotionRig }> = []
+  const hairMotionTransitions: Array<{ elementId: string; key: string; startFrame: number; endFrame: number; samples: Array<{ offset: number; progress: number }>; from?: EditorV6HairMotionRig; to?: EditorV6HairMotionRig; atlas?: EditorV6HairMotionTransition }> = []
+  const preparedTransitions = new Map((hairAnimation?.motionTransitions ?? []).map(transition => [`${transition.elementId}:${transition.key}`, transition]))
   for (const plan of editorV6MotionPlans(project)) {
     if (motionBlocks.get(plan.blockId)?.incomingMotion?.key !== plan.key) continue
-    const windows = hairMotionWindows.get(plan.elementId) ?? []
-    windows.push({ startFrame: plan.startFrame, endFrame: plan.endFrame })
-    hairMotionWindows.set(plan.elementId, windows)
     const from = plan.from.assetId ? hairRigs.get(`${plan.elementId}:${plan.from.assetId}`) : undefined
     const to = plan.to.assetId ? hairRigs.get(`${plan.elementId}:${plan.to.assetId}`) : undefined
-    hairMotionTransitions.push({ elementId: plan.elementId, startFrame: plan.startFrame, endFrame: plan.endFrame, samples: plan.samples, from, to })
+    hairMotionTransitions.push({ elementId: plan.elementId, key: plan.key, startFrame: plan.startFrame, endFrame: plan.endFrame, samples: plan.samples, from, to, atlas: preparedTransitions.get(`${plan.elementId}:${plan.key}`) })
   }
-  const hairMotionEnvelope = (elementId: string, frame: number) => editorV6HairMotionTransitionEnvelope(frame, hairMotionWindows.get(elementId) ?? [])
+  const transitionForFrame = (elementId: string, frame: number) => hairMotionTransitions.find(transition => transition.elementId === elementId
+    && transition.atlas && transition.from && transition.to && frame > transition.startFrame && frame < transition.endFrame
+    && transition.atlas.frames.some(sample => transition.endFrame + sample.offset === frame))
+  const transitionSampleForFrame = (transition: NonNullable<ReturnType<typeof transitionForFrame>>, frame: number) => transition.atlas!.frames.find(sample => transition.endFrame + sample.offset === frame)
   const hairMotionStates = new Map<string, HairMotionState>()
   const hairWarpCanvases = new Map<string, HTMLCanvasElement>()
   const hairMeshRenderer = createExportHairMeshRenderer()
@@ -103,13 +104,20 @@ async function initialize() {
   const headAnchorAtFrame = (elementId: string, frame: number): number => {
     const element = resolveEditorV6SceneAtFrame(project, frame).elements.find(candidate => candidate.id === elementId && candidate.kind === 'character')
     if (!element) return headPathLastValues.get(elementId) ?? .5
+    if (element.motionSprite) {
+      const transition = transitionForFrame(elementId, frame)
+      if (transition?.from && transition.to) {
+        const sample = transition.samples.find(candidate => transition.endFrame + candidate.offset === frame)
+        const hairlessFrame = transitionSampleForFrame(transition, frame)
+        if (sample && hairlessFrame) {
+          const hairlessElement = { ...element, x: hairlessFrame.x, y: hairlessFrame.y, width: hairlessFrame.width, height: hairlessFrame.height, rotation: hairlessFrame.rotation, flipX: hairlessFrame.flipX }
+          const rig = interpolateEditorV6HairMotionRig(transition.from, transition.to, motionEase(sample.progress))
+          return editorV6HairMotionHeadAnchorX(hairlessElement, { ...rig, sourceCrop: hairlessFrame.crop })
+        }
+      }
+    }
     const rig = element.assetId ? hairRigs.get(`${element.id}:${element.assetId}`) : undefined
     if (rig) return editorV6HairMotionHeadAnchorX(element, rig)
-    const transition = hairMotionTransitions.find(candidate => candidate.elementId === elementId && frame > candidate.startFrame && frame < candidate.endFrame)
-    if (transition?.from && transition.to) {
-      const sample = transition.samples.find(candidate => transition.endFrame + candidate.offset === frame)
-      if (sample) return editorV6HairMotionHeadAnchorX(element, interpolateEditorV6HairMotionRig(transition.from, transition.to, motionEase(sample.progress)))
-    }
     return (50 + element.x) / 100
   }
   const loadHairImage = (dataUrl: string) => new Promise<HTMLImageElement>((resolve, reject) => {
@@ -188,7 +196,7 @@ async function initialize() {
     if (!state) { state = createHairMotionState(); hairMotionStates.set(stateKey, state) }
     const direction = piece.flipX ? -1 : 1
     advanceHairMotionToFrame(state, settings, frame, sample => headXAtFrame(element.id, sample) * direction, piece.phase)
-    const intensity = hairAnimation!.preset.intensity[piece.side] * hairMotionEnvelope(element.id, frame)
+    const intensity = hairAnimation!.preset.intensity[piece.side]
     const warped = warpHairTexture(piece.textureId, texture, state, settings, intensity, piece.phase)
     context.save()
     context.translate(rig.outputWidth / 2, rig.outputHeight / 2)
@@ -237,6 +245,41 @@ async function initialize() {
     const dataUrl = canvas.toDataURL('image/png')
     return dataUrl
   }
+  const composeMotionHairFrame = (
+    rig: EditorV6HairMotionRig,
+    element: ReturnType<typeof resolveEditorV6SceneAtFrame>['elements'][number],
+    frame: number,
+    transition: NonNullable<ReturnType<typeof transitionForFrame>>,
+    sample: NonNullable<ReturnType<typeof transitionSampleForFrame>>
+  ): string => {
+    const canvas = document.createElement('canvas')
+    canvas.width = sample.sprite.width; canvas.height = sample.sprite.height
+    const context = canvas.getContext('2d')
+    if (!context) throw Error('Não foi possível compor o cabelo durante a troca de pose.')
+    const drawAtlasSurface = (surfaceId: string | null) => {
+      if (!surfaceId) return
+      const image = hairSurfaces.get(surfaceId)
+      if (!image) throw Error('A exportação perdeu uma camada sem cabelo da troca de pose.')
+      context.drawImage(image, sample.sprite.x, sample.sprite.y, sample.sprite.width, sample.sprite.height, 0, 0, canvas.width, canvas.height)
+    }
+    const rigScaleX = canvas.width / sample.crop.width, rigScaleY = canvas.height / sample.crop.height
+    context.save()
+    context.scale(rigScaleX, rigScaleY)
+    context.translate(-sample.crop.left, -sample.crop.top)
+    for (const piece of rig.layers) if (piece.side === 'back') drawHairPiece(context, rig, piece, element, frame)
+    context.restore()
+    drawAtlasSurface(transition.atlas!.behindFaceSurfaceId)
+    drawAtlasSurface(transition.atlas!.faceSurfaceId)
+    context.save()
+    context.scale(rigScaleX, rigScaleY)
+    context.translate(-sample.crop.left, -sample.crop.top)
+    for (const piece of rig.layers) if (piece.side !== 'back') drawHairPiece(context, rig, piece, element, frame)
+    context.restore()
+    drawAtlasSurface(transition.atlas!.overlaySurfaceId)
+    const dataUrl = canvas.toDataURL('image/png')
+    canvas.width = canvas.height = 1
+    return dataUrl
+  }
   const mouthLoopByBlock = new Map<string, EditorV6ExportMouthLoops['states'][number]>()
   for (const state of mouthLoops?.states ?? []) for (const blockId of state.blockIds) mouthLoopByBlock.set(`${state.elementId}:${blockId}`, state)
   let previous = '', previousBackground = '', previousForeground = ''
@@ -265,7 +308,12 @@ async function initialize() {
     const resolutionStarted = performance.now()
     const scene = applyMouthLoop(resolveEditorV6SceneAtFrame(project, frame), frame)
     const activeLayer = layeredVideo ? layer ?? 'background' : undefined
-    const activeHair = Boolean(hairAnimation && activeLayer !== 'background' && scene.elements.some(element => element.kind === 'character' && !element.motionSprite && element.assetId && (hairRigs.get(`${element.id}:${element.assetId}`)?.layers.length ?? 0) > 0))
+    const hasAnimatedHair = (element: ReturnType<typeof resolveEditorV6SceneAtFrame>['elements'][number]) => element.kind === 'character' && Boolean(
+      element.motionSprite
+        ? transitionForFrame(element.id, frame)?.from?.layers.length
+        : element.assetId && (hairRigs.get(`${element.id}:${element.assetId}`)?.layers.length ?? 0) > 0
+    )
+    const activeHair = Boolean(hairAnimation && activeLayer !== 'background' && scene.elements.some(hasAnimatedHair))
     const key = editorV6VisualKey({ ...scene, mediaVideo: undefined, ...(activeHair ? { hairAnimationFrame: frame } : {}) })
     const layerKeys = editorV6LayerVisualKeys({ ...scene, ...(activeHair ? { hairAnimationFrame: frame } : {}) })
     timings.sceneResolutionMs = performance.now() - resolutionStarted
@@ -277,7 +325,7 @@ async function initialize() {
     }
     const faceCompositionStarted = performance.now()
     const originalElements = new Map(scene.elements.map(element => [element.id, element]))
-    const riggedIds = new Set(activeHair ? scene.elements.flatMap(element => element.kind === 'character' && !element.motionSprite && element.assetId && (hairRigs.get(`${element.id}:${element.assetId}`)?.layers.length ?? 0) > 0 ? [element.id] : []) : [])
+    const riggedIds = new Set(activeHair ? scene.elements.flatMap(element => hasAnimatedHair(element) ? [element.id] : []) : [])
     const faceCompositionInput = riggedIds.size
       ? { ...scene, mediaVideo: undefined, elements: scene.elements.map(element => riggedIds.has(element.id) ? { ...element, mouthPatch: undefined } : element) }
       : { ...scene, mediaVideo: undefined }
@@ -295,8 +343,36 @@ async function initialize() {
       renderScene = { ...composed.scene, elements: composed.scene.elements.map(element => {
         if (!riggedIds.has(element.id)) return element
         const original = originalElements.get(element.id)
-        const rig = original?.assetId ? hairRigs.get(`${element.id}:${original.assetId}`) : undefined
-        if (!original || !rig || original.motionSprite) return element
+        if (!original) return element
+        if (original.motionSprite) {
+          const transition = transitionForFrame(original.id, frame)
+          const transitionFrame = transition ? transitionSampleForFrame(transition, frame) : undefined
+          const poseSample = transition?.samples.find(sample => transition.endFrame + sample.offset === frame)
+          if (!transition?.from || !transition.to || !transitionFrame || !poseSample || !transition.atlas) return element
+          const rig = interpolateEditorV6HairMotionRig(transition.from, transition.to, motionEase(poseSample.progress))
+          const assetId = `editor-v6-hair-motion:${element.id}`
+          const asset = { id: assetId, category: 'character' as const, name: `${element.text || 'Personagem'} · cabelo animado`, mimeType: 'image/png' as const, dataUrl: composeMotionHairFrame(rig, original, frame, transition, transitionFrame), timelineSnapshot: true }
+          assetsById.set(assetId, asset); renderAssetsById.set(assetId, asset); generatedAssets.push(asset)
+          let mouthPatch: typeof element.mouthPatch = undefined
+          if (transitionFrame.facePatch && transition.atlas.faceAtlasSurfaceId) {
+            const faceSurfaceId = transition.atlas.faceAtlasSurfaceId
+            let faceAsset = assetsById.get(faceSurfaceId)
+            if (!faceAsset) {
+              const dataUrl = hairSurfaceDataById.get(faceSurfaceId)
+              if (!dataUrl) throw Error('A exportação perdeu as expressões faciais da troca de pose.')
+              faceAsset = { id: faceSurfaceId, category: 'character', name: `${element.text || 'Personagem'} · rosto da transição`, mimeType: 'image/png', dataUrl, timelineSnapshot: true }
+              assetsById.set(faceSurfaceId, faceAsset); generatedAssets.push(faceAsset)
+            }
+            // assetsById is a cross-frame cache, but renderAssetsById is rebuilt
+            // for every frame from the base composition. Re-register the cached
+            // face atlas so the patch remains available after the first sample.
+            renderAssetsById.set(faceSurfaceId, faceAsset)
+            mouthPatch = { assetId: faceSurfaceId, ...transitionFrame.facePatch }
+          }
+          return { ...element, assetId, motionSprite: undefined, x: transitionFrame.x, y: transitionFrame.y, width: transitionFrame.width, height: transitionFrame.height, rotation: transitionFrame.rotation, flipX: transitionFrame.flipX, mouthPatch }
+        }
+        const rig = original.assetId ? hairRigs.get(`${element.id}:${original.assetId}`) : undefined
+        if (!rig) return element
         const assetId = `editor-v6-hair-motion:${element.id}`
         const asset = { id: assetId, category: 'character' as const, name: `${element.text || 'Personagem'} · cabelo animado`, mimeType: 'image/png' as const, dataUrl: composeHairFrame(rig, original, frame), timelineSnapshot: true }
         assetsById.set(assetId, asset); renderAssetsById.set(assetId, asset); generatedAssets.push(asset)

@@ -11,7 +11,7 @@ import { advanceHairMotionToFrame, createHairMotionState } from '../../src/share
 import { editorV6ElementSize } from '../../src/shared/editorV6SceneModel'
 import { resolveEditorV6SceneAtFrame } from '../../src/shared/editorV6TimelineScene'
 import type { EditorV6WorkerPayload } from '../../src/shared/editorV6Export'
-import { editorV6HairMotionHeadAnchorX, editorV6HairMotionTransitionEnvelope, interpolateEditorV6HairMotionRig, type EditorV6HairMotionBundle } from '../../src/shared/editorV6HairMotion'
+import { editorV6HairMotionHeadAnchorX, interpolateEditorV6HairMotionRig, type EditorV6HairMotionBundle } from '../../src/shared/editorV6HairMotion'
 import { motionEase } from '../../src/shared/editorV6MotionInterpolation'
 import { runEditorV6Export } from '../../electron/domains/editorV6/exportRunner'
 
@@ -44,7 +44,7 @@ async function main() {
     const png = Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), pngChunk('IHDR', header), pngChunk('IDAT', deflateSync(scanlines)), pngChunk('IEND', Buffer.alloc(0))])
     return `data:image/png;base64,${png.toString('base64')}`
   }
-  const faceSurfaceData = (headShift = 0) => {
+  const faceSurfacePixels = (headShift = 0) => {
     const width = 64, height = 64, pixels = Buffer.alloc(width * height * 4)
     for (let y = 0; y < height; y += 1) for (let x = 0; x < width; x += 1) {
       if (((x - 32 - headShift) / 12) ** 2 + ((y - 21) / 11) ** 2 > 1) continue
@@ -52,8 +52,9 @@ async function main() {
       pixels[offset] = 255; pixels[offset + 1] = 255; pixels[offset + 2] = 255; pixels[offset + 3] = 255
     }
     setHeadAnchorMarker(pixels, 32 + headShift, 21)
-    return encodeRgbaPng(width, height, pixels)
+    return pixels
   }
+  const faceSurfaceData = (headShift = 0) => encodeRgbaPng(64, 64, faceSurfacePixels(headShift))
   const setHeadAnchorMarker = (pixels: Buffer, centerX: number, centerY: number) => {
     // A unique synthetic fiducial lets the test measure the actual head point
     // even when a translucent hair strand occludes part of the face silhouette.
@@ -96,7 +97,7 @@ async function main() {
     }
     return encodeRgbaPng(width, height, pixels)
   }
-  const portraitPixels = (headShift: number) => {
+  const portraitPixels = (headShift: number, includeHair = true) => {
     const width = 64, height = 64, pixels = bodyPixels()
     const locks = [[19, 8, 230, 100, 45], [24, 5, 25, 115, 175], [40, 5, 30, 135, 185], [45, 8, 235, 130, 40]]
     for (let y = 0; y < height; y += 1) for (let x = 0; x < width; x += 1) {
@@ -104,7 +105,7 @@ async function main() {
       if (((x - 32 - headShift) / 12) ** 2 + ((y - 21) / 11) ** 2 <= 1) {
         pixels[offset] = 255; pixels[offset + 1] = 246; pixels[offset + 2] = 225; pixels[offset + 3] = 255
       }
-      for (const [center, thickness, red, green, blue] of locks) {
+      for (const [center, thickness, red, green, blue] of includeHair ? locks : []) {
         const strand = center + headShift + 1.8 * Math.sin(y / 13 + center)
         if (y > 10 && y < 64 && Math.abs(x - strand) < thickness / 10) {
           pixels[offset] = red; pixels[offset + 1] = green; pixels[offset + 2] = blue; pixels[offset + 3] = 255
@@ -182,13 +183,25 @@ async function main() {
   assert(transitionPlan?.samples.length === 7, 'o fixture deve conter uma transição real de pose de sete quadros')
   const atlasWidth = transitionPlan.samples.length * 64, atlasPixels = Buffer.alloc(atlasWidth * 64 * 4)
   const transitionCrops = transitionPlan.samples.map(sample => {
-    const progress = sample.progress, offsetX = Math.round(progress * 2), pixels = portraitPixels(offsetX)
+    const progress = sample.progress, offsetX = Math.round(progress * 2), pixels = portraitPixels(offsetX, false)
     return { progress, crop: sourceCropForPixels(pixels), pixels }
   })
   for (const [index, transition] of transitionCrops.entries()) {
     const cropped = cropPixels(transition.pixels, transition.crop)
     for (let y = 0; y < transition.crop.height; y += 1) cropped.copy(atlasPixels, (y * atlasWidth + index * 64) * 4, y * transition.crop.width * 4, (y + 1) * transition.crop.width * 4)
   }
+  const transitionLayerAtlasPixels = (getPixels: (index: number) => Buffer) => {
+    const output = Buffer.alloc(atlasWidth * 64 * 4)
+    for (const [index, transition] of transitionCrops.entries()) {
+      const cropped = cropPixels(getPixels(index), transition.crop)
+      for (let y = 0; y < transition.crop.height; y += 1) {
+        cropped.copy(output, (y * atlasWidth + index * 64) * 4, y * transition.crop.width * 4, (y + 1) * transition.crop.width * 4)
+      }
+    }
+    return output
+  }
+  const transitionBehindAtlas = transitionLayerAtlasPixels(() => bodyPixels())
+  const transitionFaceAtlas = transitionLayerAtlasPixels(index => faceSurfacePixels(Math.round(transitionCrops[index].progress * 2)))
   const motionAssetId = 'synthetic-motion-atlas'
   project.assets.push({ id: motionAssetId, category: 'character', name: 'Synthetic pose transition', mimeType: 'image/png', dataUrl: encodeRgbaPng(atlasWidth, 64, atlasPixels), timelineSnapshot: true })
   characterTrack.blocks[1].incomingMotion = {
@@ -203,6 +216,11 @@ async function main() {
       }
     })
   }
+  const transitionMotionFrames = characterTrack.blocks[1].incomingMotion.frames
+  const mouthPatchPixels = Buffer.alloc(4 * 3 * 4)
+  for (let offset = 0; offset < mouthPatchPixels.length; offset += 4) {
+    mouthPatchPixels[offset] = 255; mouthPatchPixels[offset + 1] = 0; mouthPatchPixels[offset + 2] = 255; mouthPatchPixels[offset + 3] = 255
+  }
   const preset = {
     physics: { wind: 100, gust: 100, speed: 250, stiffness: 0, damping: 0, responsiveness: 0, anchor: 0 },
     enabled: { back: true, front: true, fringe: true }, intensity: { back: 100, front: 100, fringe: 150 }
@@ -210,13 +228,15 @@ async function main() {
   const headAtFrame = (frame: number) => {
     const element = resolveEditorV6SceneAtFrame(project, frame).elements.find(item => item.id === actor.id)
     if (!element) return .5
-    const rig = hairAnimation.rigs.find(item => item.assetId === element.assetId)
-    if (rig) return editorV6HairMotionHeadAnchorX(element, rig)
     if (element.motionSprite) {
       const sampleIndex = Math.round(element.motionSprite.x / 64)
       const sample = transitionPlan.samples[sampleIndex]
-      return editorV6HairMotionHeadAnchorX(element, interpolateEditorV6HairMotionRig(hairAnimation.rigs[0], hairAnimation.rigs[1], motionEase(sample.progress)))
+      const frame = hairAnimation.motionTransitions![0].frames[sampleIndex]
+      const rig = interpolateEditorV6HairMotionRig(hairAnimation.rigs[0], hairAnimation.rigs[1], motionEase(sample.progress))
+      return editorV6HairMotionHeadAnchorX(element, { ...rig, sourceCrop: frame.crop })
     }
+    const rig = hairAnimation.rigs.find(item => item.assetId === element.assetId)
+    if (rig) return editorV6HairMotionHeadAnchorX(element, rig)
     return (50 + element.x) / 100
   }
   const simulateAt = (frames: number[]) => {
@@ -229,7 +249,10 @@ async function main() {
     surfaces: [
       { id: 'body', dataUrl: encodeRgbaPng(64, 64, bodyPixels()) },
       { id: 'face-pose-1', dataUrl: faceSurfaceData() },
-      { id: 'face-pose-2', dataUrl: faceSurfaceData(2) }
+      { id: 'face-pose-2', dataUrl: faceSurfaceData(2) },
+      { id: 'transition-behind', dataUrl: encodeRgbaPng(atlasWidth, 64, transitionBehindAtlas) },
+      { id: 'transition-face', dataUrl: encodeRgbaPng(atlasWidth, 64, transitionFaceAtlas) },
+      { id: 'transition-face-patch', dataUrl: encodeRgbaPng(4, 3, mouthPatchPixels) }
     ],
     textures: [
       { id: 'back', dataUrl: strandData('#1769aa', '#9edcff') },
@@ -262,7 +285,25 @@ async function main() {
           { id: 'fringe-1', textureId: 'fringe', side: 'fringe', width: 30, height: 31, x: 1, y: -5, scaleX: 1.05, scaleY: 1, rotation: -2, flipX: false, phase: 2.4 }
         ]
       }
-    ]
+    ],
+    motionTransitions: [{
+      elementId: actor.id, key: transitionPlan.key, startFrame: transitionPlan.startFrame, endFrame: transitionPlan.endFrame,
+      behindFaceSurfaceId: 'transition-behind', faceSurfaceId: 'transition-face', overlaySurfaceId: null, faceAtlasSurfaceId: 'transition-face-patch',
+      frames: transitionPlan.samples.map((sample, index) => {
+        const motionFrame = transitionMotionFrames[index], crop = transitionCrops[index].crop
+        return {
+          offset: sample.offset, sprite: motionFrame.sprite, crop,
+          x: motionFrame.x, y: motionFrame.y, width: motionFrame.width, height: motionFrame.height,
+          rotation: motionFrame.rotation, flipX: motionFrame.flipX,
+          facePatch: {
+            sprite: { x: 0, y: 0, width: 4, height: 3, atlasWidth: 4, atlasHeight: 3 },
+            x: (30 - crop.left) / crop.width, y: (29 - crop.top) / crop.height,
+            width: 4 / crop.width, height: 3 / crop.height,
+            replace: true, replaceBounds: { x: 0, y: 0, width: 1, height: 1 }
+          }
+        }
+      })
+    }]
   }
   assert(JSON.stringify(simulateAt([0, 22, 30, 31, 60])) === JSON.stringify(simulateAt([30, 60])), 'a física deve ser independente da ordem de captura inclusive durante a transição')
   const processMemorySamples: Array<Record<string, unknown>> = []
@@ -298,6 +339,8 @@ async function main() {
     const first = await sequential.frame(0)
     const beforeTransition = await sequential.frame(22)
     const transitionStart = await sequential.frame(23)
+    const transitionMiddleFrames = []
+    for (let frame = 24; frame <= 28; frame += 1) transitionMiddleFrames.push(await sequential.frame(frame))
     const transitionEnd = await sequential.frame(29)
     const middle = await sequential.frame(30)
     const afterTransition = await sequential.frame(31)
@@ -338,6 +381,27 @@ async function main() {
       }
       return count
     }
+    const fullTransitionFrames = [transitionStart, ...transitionMiddleFrames, transitionEnd]
+    assert(fullTransitionFrames.every(frame => frame.bitmap && chromaticHairPixelCount(frame.bitmap) > 10), 'O cabelo desapareceu em pelo menos uma amostra da troca de pose.')
+    const magentaFacePatchPixels = (bitmap: Buffer) => {
+      let count = 0
+      for (let offset = 0; offset < bitmap.length; offset += 4) if (bitmap[offset] > 220 && bitmap[offset + 2] > 220 && bitmap[offset + 1] < 35) count++
+      return count
+    }
+    const transitionFacePatchCounts = fullTransitionFrames.map(frame => magentaFacePatchPixels(frame.bitmap!))
+    const transitionFacePatchCount = transitionFacePatchCounts[0]
+    assert(transitionFacePatchCounts.every(count => count > 2), `A troca de pose deixou de preservar a camada facial preparada junto ao cabelo dinâmico (${transitionFacePatchCounts.join(', ')} pixels).`)
+    let transitionDynamicChangedPixels = 0
+    const staticMotionWorker = await factory.create({ ...payload, hairAnimation: { ...hairAnimation, preset: { ...hairAnimation.preset, intensity: { back: 0, front: 0, fringe: 0 } } } }, new AbortController().signal)
+    try {
+      const staticTransition = await staticMotionWorker.frame(26), animatedTransition = await sequential.frame(26)
+      assert(staticTransition.bitmap && animatedTransition.bitmap, 'Não foi possível comparar o cabelo dinâmico com a textura estática durante a troca de pose.')
+      for (let offset = 0; offset < animatedTransition.bitmap.length; offset += 4) {
+        if (animatedTransition.bitmap[offset] !== staticTransition.bitmap[offset] || animatedTransition.bitmap[offset + 1] !== staticTransition.bitmap[offset + 1]
+          || animatedTransition.bitmap[offset + 2] !== staticTransition.bitmap[offset + 2] || animatedTransition.bitmap[offset + 3] !== staticTransition.bitmap[offset + 3]) transitionDynamicChangedPixels++
+      }
+      assert(transitionDynamicChangedPixels > 10, `O cabelo não foi deformado durante motionSprite (${transitionDynamicChangedPixels} pixels diferentes da camada sem movimento).`)
+    } finally { staticMotionWorker.close() }
     const pixelHairBounds = (bitmap: Buffer, width: number, height: number) => {
       let left = width, top = height, right = -1, bottom = -1, pixels = 0
       for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
@@ -383,16 +447,17 @@ async function main() {
       const bitmap = geometryCaptures.get(frame)!
       const sceneElement = resolveEditorV6SceneAtFrame(project, frame).elements.find(element => element.id === actor.id)
       assert(sceneElement, `O personagem sintético sumiu do diagnóstico no quadro ${frame}.`)
-      const sceneRig = sceneElement.assetId ? hairAnimation.rigs.find(item => item.assetId === sceneElement.assetId) : undefined
-      const transitionRig = sceneElement.motionSprite
-        ? interpolateEditorV6HairMotionRig(hairAnimation.rigs[0], hairAnimation.rigs[1], motionEase(transitionPlan.samples[Math.round(sceneElement.motionSprite.x / 64)].progress))
+      const transitionIndex = sceneElement.motionSprite ? Math.round(sceneElement.motionSprite.x / 64) : -1
+      const transitionFrame = transitionIndex >= 0 ? hairAnimation.motionTransitions![0].frames[transitionIndex] : undefined
+      const sceneRig = !sceneElement.motionSprite && sceneElement.assetId ? hairAnimation.rigs.find(item => item.assetId === sceneElement.assetId) : undefined
+      const transitionRig = transitionFrame
+        ? { ...interpolateEditorV6HairMotionRig(hairAnimation.rigs[0], hairAnimation.rigs[1], motionEase(transitionPlan.samples[transitionIndex].progress)), sourceCrop: transitionFrame.crop }
         : undefined
-      const headRig = sceneRig ?? transitionRig
+      const headRig = transitionRig ?? sceneRig
       const expectedSourceHead = sceneElement.motionSprite
         ? (() => {
-            const sampleIndex = Math.round(sceneElement.motionSprite!.x / 64)
-            const sample = transitionPlan.samples[sampleIndex]
-            return { x: 32 + Math.round(sample.progress * 2), y: 21, atlasSample: sampleIndex }
+            const sample = transitionPlan.samples[transitionIndex]
+            return { x: 32 + Math.round(sample.progress * 2), y: 21, atlasSample: transitionIndex }
           })()
         : { x: sceneElement.assetId === secondAssetId ? 34 : 32, y: 21, atlasSample: null }
       const size = editorV6ElementSize(sceneElement)
@@ -446,7 +511,7 @@ async function main() {
         } : null,
         physicsHeadAnchorStageX, physicsAnchorDriftPx: physicsAnchorDrift === null ? null : Number(physicsAnchorDrift.toFixed(3)),
         rotationDegrees: sceneElement.rotation, absoluteFrame: frame,
-        motionMode: sceneElement.motionSprite ? 'static-motionSprite-atlas' : 'export-webgl-mesh'
+        motionMode: sceneElement.motionSprite ? 'export-recomposed-motionSprite' : 'export-webgl-mesh'
       }
     })
     const alphaWorker = await factory.create({ ...payload, layeredVideo: true }, new AbortController().signal)
@@ -625,7 +690,7 @@ async function main() {
       '720pWorkerComparison': { trials: benchmarkTrials, safeRepeatCompleted: safe720RunB.report.state === 'completed', turboRepeatsCompleted: turbo720RunA.report.state === 'completed' && turbo720RunB.report.state === 'completed' },
       '1080pTurboLateStart': { ...result1080, startFrame: 20, elapsedMilliseconds: turbo1080Milliseconds }
     }, null, 2))
-    await writeFile(join(folder, 'result.json'), JSON.stringify({ passed: true, framesChecked: [0, 10, 22, 23, 29, 30, 31, 60], animatedPixels: true, translucentHairPixels: translucentHairPixelCount(first.bitmap), layers: 4, noContinuousLayerSeamsAt720p: true, localHeadChangesBetweenPoses: true, motionAtlasFramesCaptured: true, turboBoundaryStable: true, backgroundsChecked: ['white', 'black', 'colored', 'checkerboard'], backgroundHairPixels: backgroundChecks, transparentLayerPixels, semitransparentHairPixels: alphaLayerPixels, mp4Completed: true, mp4HairChangedPixels: changedHairPixels, '720pSafeExport': true, '1080pTurboLateStart': true }))
+    await writeFile(join(folder, 'result.json'), JSON.stringify({ passed: true, framesChecked: [0, 10, 22, 23, 29, 30, 31, 60], transitionFramesChecked: fullTransitionFrames.length, transitionDynamicChangedPixels, transitionFacePatchPixels: transitionFacePatchCount, transitionFacePatchPixelsPerSample: transitionFacePatchCounts, animatedPixels: true, translucentHairPixels: translucentHairPixelCount(first.bitmap), layers: 4, noContinuousLayerSeamsAt720p: true, localHeadChangesBetweenPoses: true, motionAtlasFramesCaptured: true, turboBoundaryStable: true, backgroundsChecked: ['white', 'black', 'colored', 'checkerboard'], backgroundHairPixels: backgroundChecks, transparentLayerPixels, semitransparentHairPixels: alphaLayerPixels, mp4Completed: true, mp4HairChangedPixels: changedHairPixels, '720pSafeExport': true, '1080pTurboLateStart': true }))
   } finally {
     sequential?.close(); split?.close(); factory.dispose()
   }

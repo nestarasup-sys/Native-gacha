@@ -10,7 +10,7 @@ export async function runEditorV6ExportCommand(input: {
   options: EditorV6ExportOptions
   hairPresetSlot: number
   hairPreset: HairMotionPreset | null
-  prepareHair: (project: EditorV6Document, slot: number, preset: HairMotionPreset) => Promise<EditorV6HairMotionBundle>
+  prepareHair: (project: EditorV6Document, slot: number, preset: HairMotionPreset, options: EditorV6ExportOptions) => Promise<EditorV6HairMotionBundle>
   startExport: (project: EditorV6Document, options: EditorV6ExportOptions, hairMotion?: EditorV6HairMotionBundle) => Promise<ExportJob | null>
   onPreparingHair?: (preparing: boolean) => void
   onStatus?: (status: ExportJob) => void
@@ -23,7 +23,7 @@ export async function runEditorV6ExportCommand(input: {
   if (hairPreset) {
     input.onPreparingHair?.(true)
     try {
-      hairMotion = await input.prepareHair(project, hairPresetSlot, hairPreset)
+      hairMotion = await input.prepareHair(project, hairPresetSlot, hairPreset, exportOptions)
     } finally {
       input.onPreparingHair?.(false)
     }
