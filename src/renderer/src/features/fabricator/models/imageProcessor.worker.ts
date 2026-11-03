@@ -1,5 +1,6 @@
 import { despillGreenFringes, sampleBackground } from './chroma'
 import type { ImageProcessorMessage, ImageProcessorRequest } from './imageProcessorProtocol'
+import { inferImportedModelPartName } from './imageProcessorNaming'
 
 const workerScope = self as unknown as {
   onmessage: ((event: MessageEvent<ImageProcessorRequest>) => void) | null
@@ -20,6 +21,8 @@ workerScope.onmessage = async (event: MessageEvent<ImageProcessorRequest>) => {
     const originalPixels = new Uint8ClampedArray(pixels)
     const background = sampleBackground(pixels, source.width, source.height)
     const keyed = new Uint8Array(source.width * source.height)
+    const foregroundBounds = { minX: source.width, minY: source.height, maxX: -1, maxY: -1 }
+    let foregroundPixelCount = 0
     const feather = 44
     for (let offset = 0, pixel = 0; offset < pixels.length; offset += 4, pixel += 1) {
       const distance = Math.hypot(pixels[offset] - background[0], pixels[offset + 1] - background[1], pixels[offset + 2] - background[2])
@@ -35,7 +38,16 @@ workerScope.onmessage = async (event: MessageEvent<ImageProcessorRequest>) => {
           pixels[offset + 3] = Math.round(pixels[offset + 3] * matte)
         }
       }
-      keyed[pixel] = pixels[offset + 3] > 24 ? 1 : 0
+      if (pixels[offset + 3] > 24) {
+        keyed[pixel] = 1
+        foregroundPixelCount += 1
+        const x = pixel % source.width
+        const y = Math.floor(pixel / source.width)
+        if (x < foregroundBounds.minX) foregroundBounds.minX = x
+        if (x > foregroundBounds.maxX) foregroundBounds.maxX = x
+        if (y < foregroundBounds.minY) foregroundBounds.minY = y
+        if (y > foregroundBounds.maxY) foregroundBounds.maxY = y
+      }
     }
     despillGreenFringes(pixels, background, tolerance)
     context.putImageData(image, 0, 0)
@@ -127,7 +139,18 @@ workerScope.onmessage = async (event: MessageEvent<ImageProcessorRequest>) => {
       if (!baseContext) continue
       baseContext.putImageData(baseImage, 0, 0)
       const basePng = await (await baseCanvas.convertToBlob({ type: 'image/png' })).arrayBuffer()
-      parts.push({ id: crypto.randomUUID(), name: guessName(minX, minY, maxX, maxY, source.width, source.height), x: cropMinX, y: cropMinY, width, height, png, basePng })
+      parts.push({
+        id: crypto.randomUUID(),
+        name: inferImportedModelPartName({
+          partBounds: { minX, minY, maxX, maxY },
+          sourceWidth: source.width,
+          sourceHeight: source.height,
+          foregroundBounds,
+          componentPixelCount: write,
+          foregroundPixelCount
+        }),
+        x: cropMinX, y: cropMinY, width, height, png, basePng
+      })
       progress += write
       if (parts.length % 2 === 0) workerScope.postMessage({ type: 'progress', id, value: Math.min(96, Math.round(progress / total * 100)) })
     }
@@ -141,15 +164,4 @@ workerScope.onmessage = async (event: MessageEvent<ImageProcessorRequest>) => {
 
 function clampChannel(value: number): number {
   return Math.max(0, Math.min(255, Math.round(value)))
-}
-
-function guessName(minX: number, minY: number, maxX: number, maxY: number, width: number, height: number): string {
-  const centerX = (minX + maxX) / 2 / width
-  const centerY = (minY + maxY) / 2 / height
-  if (centerY < 0.27) return 'Cabeça'
-  if (centerY > 0.70) return `Canela ${centerX < 0.5 ? 'esquerda' : 'direita'}`
-  if (centerY > 0.52) return `Coxa ${centerX < 0.5 ? 'esquerda' : 'direita'}`
-  if (centerY > 0.23 && centerY < 0.52 && centerX > 0.31 && centerX < 0.69) return 'Tronco'
-  if (centerX < 0.35 || centerX > 0.65) return centerY < 0.40 ? `Braço ${centerX < 0.5 ? 'esquerdo' : 'direito'}` : `Antebraço ${centerX < 0.5 ? 'esquerdo' : 'direito'}`
-  return 'Peça do modelo'
 }

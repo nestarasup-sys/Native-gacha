@@ -7,7 +7,7 @@ export function isTorsoPart(part: Pick<ModelPart, 'name'> | null | undefined): b
   return Boolean(part && /tronco|corpo/i.test(part.name))
 }
 
-export type ModelRigSegmentKind = 'head' | 'upper-arm' | 'forearm' | 'thigh' | 'lower-leg' | 'hand' | 'foot'
+export type ModelRigSegmentKind = 'head' | 'ear' | 'upper-arm' | 'forearm' | 'thigh' | 'lower-leg' | 'hand' | 'foot'
 export type ModelRigPair = { parent: ModelPart; child: ModelPart }
 
 const center = (part: ModelPart): Point => ({ x: part.x + part.width / 2, y: part.y + part.height / 2 })
@@ -19,6 +19,7 @@ function normalizedPartName(name: string): string {
 export function modelRigSegmentKind(name: string): ModelRigSegmentKind | null {
   const value = normalizedPartName(name)
   if (/head|cabeca/.test(value)) return 'head'
+  if (/(?:^|\s)(?:orelha(?:s)?|ears?)(?:$|\s)/.test(value)) return 'ear'
   if (/ante\s*braco|forearm|lower\s+arm|braco.*(?:inferior|lower)/.test(value)) return 'forearm'
   if (/canela|panturrilha|shin|calf|lower\s+leg|perna.*(?:inferior|lower)/.test(value)) return 'lower-leg'
   if (/coxa|thigh|upper\s+leg|perna.*(?:superior|upper)/.test(value)) return 'thigh'
@@ -56,6 +57,7 @@ export function isModelRigConnectionCompatible(parent: ModelPart, child: ModelPa
 export function inferAnatomicalJointPairs(parts: ModelPart[]): ModelRigPair[] {
   const torso = parts.find((part) => /tronco|corpo|torso|body/i.test(normalizedPartName(part.name)))
   const byKind = (kind: ModelRigSegmentKind) => parts.filter((part) => modelRigSegmentKind(part.name) === kind)
+  const heads = byKind('head')
   const pairs: ModelRigPair[] = []
   const linkedChildren = new Set<string>()
   const add = (parent: ModelPart | undefined, child: ModelPart) => {
@@ -78,10 +80,10 @@ export function inferAnatomicalJointPairs(parts: ModelPart[]): ModelRigPair[] {
   }
 
   if (torso) {
-    for (const kind of ['head', 'upper-arm', 'thigh'] as const) {
-      for (const child of byKind(kind)) if (child.id !== torso.id) add(torso, child)
-    }
+    for (const child of heads) if (child.id !== torso.id) add(torso, child)
+    for (const kind of ['upper-arm', 'thigh'] as const) for (const child of byKind(kind)) if (child.id !== torso.id) add(torso, child)
   }
+  for (const child of byKind('ear')) add(nearest(child, heads) ?? torso, child)
   const upperArms = byKind('upper-arm')
   const forearms = byKind('forearm')
   for (const child of forearms) add(nearest(child, sameSide(child, upperArms)) ?? torso, child)
@@ -229,7 +231,7 @@ export function autoConnectParts(parts: ModelPart[]): JointLink[] {
   const torsoCenter = center(torso)
   const torsoBottom = torso.y + torso.height
   const head = parts.find((part) => modelRigSegmentKind(part.name) === 'head')
-    ?? parts.filter((part) => part.id !== torso.id && center(part).y < torsoCenter.y)
+    ?? parts.filter((part) => part.id !== torso.id && modelRigSegmentKind(part.name) !== 'ear' && center(part).y < torsoCenter.y)
       .sort((a, b) => Math.abs(center(a).x - torsoCenter.x) - Math.abs(center(b).x - torsoCenter.x))[0]
 
   const joints: JointLink[] = []

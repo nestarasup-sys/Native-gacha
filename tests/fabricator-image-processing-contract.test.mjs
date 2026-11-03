@@ -8,8 +8,42 @@ import { ModelSourcePixelEditTaskError, startModelSourcePixelEditWorker } from '
 import { applyModelSourceBrushPixels, modelSourceBrushRegion, removeModelSourceColorPixels } from '../src/renderer/src/features/fabricator/models/modelSourcePixelOperations.ts'
 import { ModelSourceComposeTaskError, startModelSourceComposeWorker } from '../src/renderer/src/features/fabricator/models/runModelSourceComposeWorker.ts'
 import { applyChromaPixels } from '../src/renderer/src/features/fabricator/models/chroma.ts'
+import { inferImportedModelPartName } from '../src/renderer/src/features/fabricator/models/imageProcessorNaming.ts'
+import { autoConnectParts, modelRigSegmentKind } from '../src/shared/modelRig.ts'
+import { isModelBodyPartName } from '../src/renderer/src/characters/skinTint.ts'
 
 const imageBuffer = value => Uint8Array.of(value).buffer
+
+test('importador distingue orelhas pequenas da cabeça e as conecta ao rig como pele', () => {
+  const namingContext = {
+    sourceWidth: 100,
+    sourceHeight: 100,
+    foregroundBounds: { minX: 10, minY: 0, maxX: 90, maxY: 99 },
+    foregroundPixelCount: 10_000
+  }
+  const partName = (bounds, componentPixelCount) => inferImportedModelPartName({
+    ...namingContext,
+    partBounds: bounds,
+    componentPixelCount
+  })
+
+  const headName = partName({ minX: 35, minY: 5, maxX: 65, maxY: 32 }, 1_200)
+  const leftEarName = partName({ minX: 12, minY: 8, maxX: 20, maxY: 24 }, 120)
+  const rightEarName = partName({ minX: 80, minY: 8, maxX: 88, maxY: 24 }, 120)
+
+  assert.equal(headName, 'Cabeça')
+  assert.equal(leftEarName, 'Orelha esquerda')
+  assert.equal(rightEarName, 'Orelha direita')
+  assert.equal(modelRigSegmentKind(leftEarName), 'ear')
+  assert.equal(isModelBodyPartName(leftEarName), true)
+
+  const joints = autoConnectParts([
+    { id: 'torso', name: 'Tronco', x: 30, y: 30, width: 40, height: 60 },
+    { id: 'head', name: headName, x: 35, y: 5, width: 30, height: 27 },
+    { id: 'ear-left', name: leftEarName, x: 12, y: 8, width: 9, height: 17 }
+  ])
+  assert.ok(joints.some(joint => joint.parentPartId === 'head' && joint.childPartId === 'ear-left'))
+})
 
 test('monta o projeto importado com bases, ordem, juntas e assets pendentes preservados', () => {
   const result = createImportedModelProject({
