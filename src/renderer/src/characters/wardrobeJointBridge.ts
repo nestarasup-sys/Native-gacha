@@ -4,6 +4,7 @@ import { wardrobeAdjustmentMatrix } from '../../../shared/wardrobeAdjustment'
 import type { WardrobePoseTransform } from '../../../shared/wardrobePose'
 
 export type WardrobeJointBridgePoint = { x: number; y: number }
+export type WardrobeJointBridgeCompositeOperation = 'copy' | 'source-over'
 type Point = WardrobeJointBridgePoint
 type Affine = [number, number, number, number, number, number]
 
@@ -508,7 +509,8 @@ export function drawWardrobeJointBridgeMesh(
   context: CanvasRenderingContext2D,
   image: HTMLCanvasElement,
   triangles: WardrobeJointBridgeTriangle[],
-  rasterScale = 1
+  rasterScale = 1,
+  compositeOperation: WardrobeJointBridgeCompositeOperation = 'copy'
 ): boolean {
   if (!triangles.length) return false
   const scale = Number.isFinite(rasterScale) && rasterScale > 0 ? rasterScale : 1
@@ -533,7 +535,7 @@ export function drawWardrobeJointBridgeMesh(
     if (!surfaceContext) return false
     surfaceContext.imageSmoothingEnabled = true
     surfaceContext.imageSmoothingQuality = 'high'
-    surfaceContext.globalCompositeOperation = 'copy'
+    surfaceContext.globalCompositeOperation = compositeOperation
     const scaleX = pixelWidth / worldWidth
     const scaleY = pixelHeight / worldHeight
     surfaceContext.setTransform(scaleX, 0, 0, scaleY, -left * scaleX, -top * scaleY)
@@ -561,7 +563,8 @@ export function drawWardrobeJointBridge(
   upper: WardrobeJointBridgeSegment,
   lower: WardrobeJointBridgeSegment,
   rasterScale = 1,
-  sourceJointAnchor?: Point
+  sourceJointAnchor?: Point,
+  compositeOperation: WardrobeJointBridgeCompositeOperation = 'copy'
 ): boolean {
   const bounds = sourceBounds(upper, lower)
   if (bounds.width * bounds.height > 8_000_000) return false
@@ -668,7 +671,7 @@ export function drawWardrobeJointBridge(
         target: [vertices[row][column], vertices[row + 1][column + 1], vertices[row + 1][column]]
       })
     }
-    return drawWardrobeJointBridgeMesh(context, sourceCanvas, triangles, rasterScale)
+    return drawWardrobeJointBridgeMesh(context, sourceCanvas, triangles, rasterScale, compositeOperation)
   } finally {
     sourceCanvas.width = 0
     sourceCanvas.height = 0

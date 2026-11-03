@@ -156,7 +156,9 @@ export async function drawBodyJointBridgePair(
   lower.sourceOffset = sourceOffset
   const anchor = bodyJointBridgeSourceAnchor(pair)
   const assembledAnchor = anchor ? { x: anchor.x + sourceOffset.x, y: anchor.y + sourceOffset.y } : undefined
-  return drawWardrobeJointBridge(context, upper, lower, rasterScale, assembledAnchor)
+  // Body pieces often have transparent outlines near the seam. Preserve
+  // neighboring mesh cells there instead of letting `copy` expose the grid.
+  return drawWardrobeJointBridge(context, upper, lower, rasterScale, assembledAnchor, 'source-over')
 }
 
 export async function drawEnabledBodyJointBridges(
