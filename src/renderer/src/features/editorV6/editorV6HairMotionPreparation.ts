@@ -7,7 +7,7 @@ import { hairAppearanceStyleIds } from '../../../../shared/hairCategories'
 import type { EditorV6HairMotionBundle, EditorV6HairMotionLayer, EditorV6HairMotionRig, EditorV6HairMotionTransition } from '../../../../shared/editorV6HairMotion'
 import type { EditorV6MotionLayerAtlasCapture } from './motion/bakeMotion'
 import { resolveSavedCharacterSource } from '../../characters/characterSourceResolver'
-import { trimTransparentCanvas } from './faceModeAssets'
+import { measureFaceModeCrop } from './faceModeAssets'
 
 type MotionTarget = { elementId: string; state: EditorV6Element; assetId: string; faceMode: EditorV6FaceRenderMode }
 
@@ -171,6 +171,7 @@ export async function prepareEditorV6HairMotionBundle(
 
       const poseSurfaceKey = JSON.stringify([groupKey, character.updatedAt, appearance?.modelSlot, appearance?.parts, character.customization.partOverrides])
       let baseSurfaceId: string | undefined, overlaySurfaceId: string | null | undefined
+      const cropByFace = new Map<string, { left: number; top: number; width: number; height: number }>()
       for (const target of group.targets) {
         if (isCancelled()) throw Error('Preparação da animação de cabelo cancelada.')
         const state = target.state
@@ -182,9 +183,15 @@ export async function prepareEditorV6HairMotionBundle(
           originalRenderer.renderToCanvas(currentAppearance, faceTransforms, effects, mode),
           hairlessRenderer.renderLayersToCanvas(currentAppearance, faceTransforms, effects, mode)
         ])
-        const crop = trimTransparentCanvas(originalFrame.canvas)
-        const sourceCrop = crop ? { left: crop.left, top: crop.top, width: crop.width, height: crop.height }
-          : { left: 0, top: 0, width: originalFrame.width, height: originalFrame.height }
+        const faceKey = JSON.stringify([currentAppearance, faceTransforms, effects])
+        let sourceCrop = cropByFace.get(faceKey)
+        if (!sourceCrop) {
+          // Snapshots use the union of face modes, not the bounds of one frame.
+          const crop = await measureFaceModeCrop(character.name, originalRenderer, currentAppearance, faceTransforms, effects, mode, originalFrame)
+          sourceCrop = crop ? { left: crop.left, top: crop.top, width: crop.width, height: crop.height }
+            : { left: 0, top: 0, width: originalFrame.width, height: originalFrame.height }
+          cropByFace.set(faceKey, sourceCrop)
+        }
         const poseKey = JSON.stringify([poseSurfaceKey, state.poseSlot, sourceHeadPart.width, sourceHeadPart.height, targetHeadPart.x, targetHeadPart.y, targetHeadPart.width, targetHeadPart.height])
         baseSurfaceId ??= addSurface(`${poseKey}:base`, canvasDataUrl(splitFrame.behindFace))
         overlaySurfaceId ??= splitFrame.inFrontOfFace ? addSurface(`${poseKey}:overlay`, canvasDataUrl(splitFrame.inFrontOfFace)) : null
@@ -235,7 +242,7 @@ export async function prepareEditorV6HairMotionBundle(
           faceDataUrl: canvasDataUrl(capture.face),
           inFrontOfFaceDataUrl: capture.inFrontOfFace ? canvasDataUrl(capture.inFrontOfFace) : null
         }
-      })
+      }, { from: fromRig.sourceCrop, to: toRig.sourceCrop })
       if (!layerCapture) throw Error(`Não foi possível capturar as camadas sem cabelo da transição de ${character.name}.`)
       if (isCancelled()) throw Error('Preparação da animação de cabelo cancelada.')
       captureTransitionLayers(plan, result, layerCapture)

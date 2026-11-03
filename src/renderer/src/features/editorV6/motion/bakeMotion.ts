@@ -172,7 +172,7 @@ export type EditorV6BakeSession = { provider: CharacterRenderAssetProvider; mate
 export function createEditorV6BakeSession(provider: CharacterRenderAssetProvider): EditorV6BakeSession {
   return { provider: cachedProvider(provider, true), materials: new Map() }
 }
-export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, rawProvider: CharacterRenderAssetProvider, session?: EditorV6BakeSession, captureLayerAtlases?: (capture: EditorV6MotionLayerAtlasCapture) => void): Promise<EditorV6MotionBakeResult> {
+export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, rawProvider: CharacterRenderAssetProvider, session?: EditorV6BakeSession, captureLayerAtlases?: (capture: EditorV6MotionLayerAtlasCapture) => void, endpointCrops?: { from: Omit<Crop, 'fingerprint'>; to: Omit<Crop, 'fingerprint'> }): Promise<EditorV6MotionBakeResult> {
   const began = performance.now(), provider = cachedProvider(session?.provider ?? rawProvider), slot = request.character.customization.modelSlot ?? 1
   const source = await provider.loadFabricatorSlot(slot)
   if (!source) throw Error('O modelo do personagem não está disponível para animar.')
@@ -276,11 +276,11 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
       return { left, top, width: right - left, height: bottom - top }
     }
     let fromCrop: Crop
-    try { fromCrop = await endpointCrop(0, first.crop, first.renderer) }
+    try { fromCrop = endpointCrops?.from ?? await endpointCrop(0, first.crop, first.renderer) }
     finally { first.dispose() }
     const last = staticMouthLoop ? null : await render(1)
     let toCrop: Crop
-    try { toCrop = last ? await endpointCrop(1, last.crop, last.renderer) : fromCrop }
+    try { toCrop = endpointCrops?.to ?? (last ? await endpointCrop(1, last.crop, last.renderer) : fromCrop) }
     finally { last?.dispose() }
     const maximumCanvasWidth = Math.max(fullWidth, last?.width ?? fullWidth), maximumCanvasHeight = Math.max(fullHeight, last?.height ?? fullHeight)
     const count = request.plan.samples.length

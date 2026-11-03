@@ -1,4 +1,4 @@
-import { bakeFaceModeAssets, trimTransparentCanvas } from '../../src/renderer/src/features/editorV6/faceModeAssets'
+import { bakeFaceModeAssets, measureFaceModeCrop, trimTransparentCanvas } from '../../src/renderer/src/features/editorV6/faceModeAssets'
 import { defaultCharacterBodyDimensions, defaultCharacterProportions } from '../../src/shared/customizer'
 import { bindWardrobeComponent } from '../../src/shared/wardrobePose'
 import { editorV6MouthLoopScaleAtFrame } from '../../src/shared/editorV6Export'
@@ -14,13 +14,15 @@ import type { CustomizerCharacter } from '../../src/shared/customizer'
 import type { FaceCatalogItem, FabricatorProject } from '../../src/shared/fabricator'
 import { createEditorV6Timeline, type EditorV6Document, type EditorV6Element } from '../../src/shared/editorV6'
 import { editorV6MotionResultSchema } from '../../src/shared/editorV6Schema'
-import { editorV6MotionPlan } from '../../src/shared/editorV6Motion'
+import { editorV6MotionPlan, editorV6MotionPlans } from '../../src/shared/editorV6Motion'
+import { FIRST_HAIR_MOTION_PRESET } from '../../src/shared/hairMotionEngine'
+import { motionEase } from '../../src/shared/editorV6MotionInterpolation'
 import { prepareSavedCharacterRenderer } from '../../src/renderer/src/characters/editorV6CharacterRenderer'
 import { bakeEditorV6Motion } from '../../src/renderer/src/features/editorV6/motion/bakeMotion'
 import { SceneSurface } from '../../src/renderer/src/features/editorV6/SceneSurface'
 import { composeEditorV6FaceReplacements } from '../../src/renderer/src/features/editorV6/sceneFaceComposition'
 import { faceRenderGeometry } from '../../src/renderer/src/characters/characterGeometry'
-import { trimTransparentCanvas } from '../../src/renderer/src/features/editorV6/faceModeAssets'
+import { prepareEditorV6HairMotionBundle } from '../../src/renderer/src/features/editorV6/editorV6HairMotionPreparation'
 const assert = (ok: unknown, message: string) => { if (!ok) throw Error(message) }
 function png(color: string) { const c = document.createElement('canvas'); c.width = c.height = 10; const x = c.getContext('2d')!; x.fillStyle = color; x.fillRect(0,0,10,10); return c.toDataURL() }
 async function image(url: string) { const i = new Image(); i.src = url; await i.decode(); return i }
@@ -50,6 +52,8 @@ async function captureScene(scene: unknown, assets: unknown[], renderLayer: 'all
   } } as unknown as Parameters<typeof bakeFaceModeAssets>[1]
   const variants = await bakeFaceModeAssets('Synthetic union', variantRenderer, undefined, undefined, undefined, 'idle')
   assert(variants.crop?.left === 40 && variants.crop.top === 40 && variants.crop.width === 35 && variants.crop.height === 35, 'Facial variants were cropped using idle bounds')
+  const measuredCrop = await measureFaceModeCrop('Synthetic union', variantRenderer, undefined, undefined, undefined, 'idle')
+  assert(measuredCrop?.left === variants.crop.left && measuredCrop.top === variants.crop.top && measuredCrop.width === variants.crop.width && measuredCrop.height === variants.crop.height, 'Hair preparation used a different crop from the saved facial snapshots')
   for (const asset of variants.extraAssets) {
     const decoded = await image(asset.dataUrl)
     const check = document.createElement('canvas'); check.width = check.height = 35
@@ -91,6 +95,11 @@ async function captureScene(scene: unknown, assets: unknown[], renderLayer: 'all
   assert(behindLayerAlpha > 100, 'The serialized hairless body atlas is blank')
   assert(result.metrics.preparedRigs === 9, 'Pose rigs were incorrectly reused')
   assert(reads.loadFabricatorSlot === 1 && reads.loadFabricatorPose === 2, 'Source reads were repeated per sample')
+  let hairlessFrames: import('../../src/renderer/src/features/editorV6/motion/bakeMotion').EditorV6MotionLayerAtlasCapture['frames'] = []
+  const originalBounds = { left: 0, top: 0, width: 100, height: 100 }
+  await bakeEditorV6Motion({ id: crypto.randomUUID(), plan, character }, provider, undefined, capture => { hairlessFrames = capture.frames }, { from: originalBounds, to: originalBounds })
+  assert(hairlessFrames.length === 7 && hairlessFrames.every(frame => Math.abs(frame.width / frame.crop.width - actor.width / originalBounds.width) < 1e-9 && Math.abs(frame.height / frame.crop.height - actor.height / originalBounds.height) < 1e-9), 'The hairless transition scaled its body using its own crop instead of the original character bounds')
+  assert(hairlessFrames.some(frame => frame.crop.height < originalBounds.height), 'The fixture must distinguish the hairless crop from the original character bounds')
   const expandedSource = { ...source, width: 1122, height: 1402 }
   const expandedTarget = { ...target, width: 1122, height: 1402 }
   const expandedProvider = new Proxy({}, { get: (_, name: string) => async (...args: unknown[]) => {
@@ -300,6 +309,56 @@ async function captureScene(scene: unknown, assets: unknown[], renderLayer: 'all
   const combinedTransition = await bakeEditorV6Motion({ id: crypto.randomUUID(), character: hiCharacter,
     plan: { ...combinedPlan, samples: combinedPlan.samples.map(sample => ({ ...sample, faceMode: 'talk' as const })) },
     mouthScaleSamples: combinedPlan.samples.map(sample => editorV6MouthLoopScaleAtFrame(23 + sample.offset, 0, 30)) }, hiProvider)
+  // Exercise the actual export preparer with hair extending beyond the body and
+  // an intentionally nonstandard displayed height, not a hand-built bundle.
+  const longHair = { ...hair, front: { ...hair.front!, width: 180, height: 180 }, transforms: { ...hair.transforms, front: { ...hair.transforms.front!, y: -30 } } }
+  const longHairProvider = { ...hiProvider, loadHairStyle: async () => longHair }
+  const longHairCharacter = { ...hiCharacter, customization: { ...hiCharacter.customization, hairAppearance: { modelSlot: 1, parts: { rearHair: hair.id } }, proportions: { ...defaultCharacterProportions }, bodyDimensions: { ...defaultCharacterBodyDimensions } } }
+  const expectedRenderer = await prepareSavedCharacterRenderer(longHairCharacter, { source: hiSource, artwork: hiSource, assetProvider: longHairProvider })
+  let expectedBaseCrop: { left: number; top: number; width: number; height: number }
+  let expectedTargetCrop: typeof expectedBaseCrop
+  try {
+    const base = await bakeFaceModeAssets('Synthetic hair base', expectedRenderer, hiAppearance, {}, undefined, 'idle')
+    const target = await bakeFaceModeAssets('Synthetic hair expression', expectedRenderer, hiAppearance, targetTransforms, undefined, 'idle')
+    expectedBaseCrop = base.crop ?? { left: 0, top: 0, width: expectedRenderer.width, height: expectedRenderer.height }
+    expectedTargetCrop = target.crop ?? { left: 0, top: 0, width: expectedRenderer.width, height: expectedRenderer.height }
+  } finally { expectedRenderer.dispose() }
+  const hairlessRenderer = await prepareSavedCharacterRenderer({ ...longHairCharacter, customization: { ...longHairCharacter.customization, hairAppearance: undefined } }, { source: hiSource, artwork: hiSource, assetProvider: longHairProvider })
+  try {
+    const withoutHair = await bakeFaceModeAssets('Synthetic hairless', hairlessRenderer, hiAppearance, {}, undefined, 'idle')
+    assert(withoutHair.crop && expectedBaseCrop.top < withoutHair.crop.top, 'The fixture must have different bounds with and without hair')
+  } finally { hairlessRenderer.dispose() }
+  const exportBase: EditorV6Element = { ...expressionFrom, assetId: 'synthetic-hair-base', width: 18, height: 82, faceTransforms: {}, activeFaceMode: 'idle' }
+  const exportTarget: EditorV6Element = { ...exportBase, assetId: 'synthetic-hair-expression', activeExpressionPresetId: 'synthetic-expression', faceTransforms: targetTransforms }
+  const hairTimeline = createEditorV6Timeline([exportBase])
+  hairTimeline.durationFrames = 40
+  const hairTrack = hairTimeline.tracks.find(item => item.kind === 'character')!
+  hairTrack.blocks = [
+    { id: crypto.randomUUID(), elementId: exportBase.id, label: 'Base', startFrame: 0, durationFrames: 23, state: exportBase },
+    { id: crypto.randomUUID(), elementId: exportBase.id, label: 'Expression', startFrame: 23, durationFrames: 17, state: exportTarget }
+  ]
+  const hairProject = { id: crypto.randomUUID(), elements: [exportBase], timeline: hairTimeline } as EditorV6Document
+  const hairPlan = editorV6MotionPlans(hairProject)[0]
+  assert(hairPlan?.samples.length === 7, 'The hair export fixture must contain an expression transition')
+  const previousDesktop = Object.getOwnPropertyDescriptor(window, 'desktop')
+  Object.defineProperty(window, 'desktop', { configurable: true, value: { customizer: { listCustomizerCharacters: async () => [longHairCharacter] }, fabricator: longHairProvider } })
+  try {
+    const prepared = await prepareEditorV6HairMotionBundle(hairProject, 1, FIRST_HAIR_MOTION_PRESET, { startFrame: 0, endFrame: 40, width: 1280, height: 720, turbo: false, encoder: 'cpu' })
+    const baseRig = prepared.rigs.find(rig => rig.assetId === exportBase.assetId)!
+    const targetRig = prepared.rigs.find(rig => rig.assetId === exportTarget.assetId)!
+    assert(JSON.stringify(baseRig.sourceCrop) === JSON.stringify({ left: expectedBaseCrop.left, top: expectedBaseCrop.top, width: expectedBaseCrop.width, height: expectedBaseCrop.height }), 'The prepared hair rig did not use the saved face-mode union')
+    assert(JSON.stringify(targetRig.sourceCrop) === JSON.stringify({ left: expectedTargetCrop.left, top: expectedTargetCrop.top, width: expectedTargetCrop.width, height: expectedTargetCrop.height }), 'The expression rig did not use the saved face-mode union')
+    const transition = prepared.motionTransitions?.[0]
+    assert(transition?.frames.length === 7, 'The actual hair preparer did not build the expression transition')
+    for (const [index, frame] of transition!.frames.entries()) {
+      const t = motionEase(hairPlan.samples[index].progress)
+      const expectedHeight = frame.crop.height * (exportBase.height / expectedBaseCrop.height * (1 - t) + exportTarget.height / expectedTargetCrop.height * t)
+      assert(Math.abs(frame.height - expectedHeight) < 1e-7, 'The hairless transition changed the vertical scale of the original character')
+    }
+  } finally {
+    if (previousDesktop) Object.defineProperty(window, 'desktop', previousDesktop)
+    else delete (window as unknown as { desktop?: unknown }).desktop
+  }
   hiBody.canvas.width = hiBody.canvas.height = 1
   hiBodyRenderer.dispose()
   const concurrentSourceRefresh = await checkConcurrentSourceRefresh(hiCharacter, hiProvider, hiBodyDataUrl)

@@ -3,6 +3,23 @@ import assert from 'node:assert/strict'
 import { FIRST_HAIR_MOTION_PRESET } from '../src/shared/hairMotionEngine.ts'
 import { editorV6HairMotionHeadAnchorX, interpolateEditorV6HairMotionRig, parseEditorV6HairMotionBundle } from '../src/shared/editorV6HairMotion.ts'
 import { planEditorV6Export } from '../src/shared/editorV6Export.ts'
+import { expandEditorV6HairCrop } from '../src/renderer/src/features/editorV6/editorV6HairMotionGeometry.ts'
+
+test('recomposição preserva largura, altura e centro do recorte com escala e espelhamento', () => {
+  const crop = { left: 25, top: 40, width: 160, height: 500 }
+  const full = { width: 400, height: 600 }
+  for (const rotation of [0, 37]) for (const flipX of [false, true]) {
+    const element = { x: 8, y: -7, width: 18, height: 82, rotation, flipX, characterScale: 190, characterWidthScale: 120, characterHeightScale: 85 }
+    const expanded = expandEditorV6HairCrop(element, full, crop)
+    assert.ok(Math.abs(expanded.width * crop.width / full.width - element.width) < 1e-9)
+    assert.ok(Math.abs(expanded.height * crop.height / full.height - element.height) < 1e-9)
+    const dx = (crop.left + crop.width / 2 - full.width / 2) * expanded.width / full.width * 1.9 * 1.2 * 19.2 * (flipX ? -1 : 1)
+    const dy = (crop.top + crop.height / 2 - full.height / 2) * expanded.height / full.height * 1.9 * .85 * 10.8
+    const radians = rotation * Math.PI / 180
+    assert.ok(Math.abs(expanded.x + (dx * Math.cos(radians) - dy * Math.sin(radians)) / 19.2 - element.x) < 1e-9)
+    assert.ok(Math.abs(expanded.y + (dx * Math.sin(radians) + dy * Math.cos(radians)) / 10.8 - element.y) < 1e-9)
+  }
+})
 
 const validBundle = () => ({
   presetSlot: 2,

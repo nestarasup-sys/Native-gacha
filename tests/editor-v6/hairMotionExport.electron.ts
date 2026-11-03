@@ -392,6 +392,37 @@ async function main() {
     }
     const fullTransitionFrames = [transitionStart, ...transitionMiddleFrames, transitionEnd]
     assert(fullTransitionFrames.every(frame => frame.bitmap && chromaticHairPixelCount(frame.bitmap) > 10), 'O cabelo desapareceu em pelo menos uma amostra da troca de pose.')
+    // Compare the same body's pixel bounds with and without hair export when
+    // its saved rectangle deliberately does not follow the 16:9-derived height.
+    const stretchedProject = structuredClone(project)
+    for (const element of stretchedProject.elements) if (element.id === actor.id) element.height *= .82
+    for (const track of stretchedProject.timeline.tracks) for (const block of track.blocks) {
+      if (block.state?.id === actor.id) block.state.height *= .82
+      if (block.incomingMotion) for (const motionFrame of block.incomingMotion.frames) motionFrame.height *= .82
+    }
+    const stretchedPlan = editorV6MotionPlans(stretchedProject)[0]
+    const stretchedBlock = stretchedProject.timeline.tracks.flatMap(track => track.blocks).find(block => block.id === stretchedPlan.blockId)!
+    stretchedBlock.incomingMotion!.key = stretchedPlan.key
+    const stretchedHair = { ...hairAnimation, preset: { ...hairAnimation.preset, intensity: { back: 0, front: 0, fringe: 0 } }, rigs: hairAnimation.rigs.map(rig => ({ ...rig, layers: rig.layers.filter(layer => layer.id === 'solid-1').map(layer => ({ ...layer, side: 'back' as const })) })), motionTransitions: hairAnimation.motionTransitions!.map(transition => ({ ...transition, key: stretchedPlan.key, frames: transition.frames.map(frame => ({ ...frame, height: frame.height * .82 })) })) }
+    const referenceWorker = await factory.create({ project: stretchedProject, width: 320, height: 180, layeredVideo: false }, new AbortController().signal)
+    const stretchedWorker = await factory.create({ project: stretchedProject, width: 320, height: 180, layeredVideo: false, hairAnimation: stretchedHair }, new AbortController().signal)
+    try {
+      const bodyRows = (bitmap: Buffer) => {
+        let top = 180, bottom = -1
+        for (let y = 0; y < 180; y++) for (let x = 0; x < 320; x++) {
+          const index = (y * 320 + x) * 4, blue = bitmap[index], green = bitmap[index + 1], red = bitmap[index + 2]
+          if (red > 240 && green > 200 && blue > 40 && blue < 100) { top = Math.min(top, y); bottom = Math.max(bottom, y) }
+        }
+        return { top, bottom }
+      }
+      for (const frame of [0, 23, 29, 30]) {
+        const reference = await referenceWorker.frame(frame), actual = await stretchedWorker.frame(frame)
+        assert(reference.bitmap && actual.bitmap, `Quadro ${frame} ausente na comparação de proporções.`)
+        const expected = bodyRows(reference.bitmap), observed = bodyRows(actual.bitmap)
+        assert(expected.bottom > expected.top && observed.bottom > observed.top && Math.abs(expected.top - observed.top) <= 2 && Math.abs(expected.bottom - observed.bottom) <= 2,
+          `A altura do corpo mudou com o cabelo no quadro ${frame}: referência ${JSON.stringify(expected)}, cabelo ${JSON.stringify(observed)}.`)
+      }
+    } finally { referenceWorker.close(); stretchedWorker.close() }
     const magentaFacePatchPixels = (bitmap: Buffer) => {
       let count = 0
       for (let offset = 0; offset < bitmap.length; offset += 4) if (bitmap[offset] > 220 && bitmap[offset + 2] > 220 && bitmap[offset + 1] < 35) count++

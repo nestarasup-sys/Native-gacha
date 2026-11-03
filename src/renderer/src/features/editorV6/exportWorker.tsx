@@ -10,7 +10,7 @@ import { advanceHairMotionToFrame, createHairMotionState, type HairMotionSetting
 import { editorV6HairMotionHeadAnchorX, interpolateEditorV6HairMotionRig, type EditorV6HairMotionRig, type EditorV6HairMotionLayer, type EditorV6HairMotionTransition } from '../../../../shared/editorV6HairMotion'
 import { editorV6MotionPlans } from '../../../../shared/editorV6Motion'
 import { motionEase } from '../../../../shared/editorV6MotionInterpolation'
-import { faceRenderGeometry } from '../../characters/characterGeometry'
+import { expandEditorV6HairCrop } from './editorV6HairMotionGeometry'
 import { HAIR_MOTION_MESH_HEIGHT, HAIR_MOTION_MESH_WIDTH } from '../../characters/hairMotionMeshGeometry'
 import { composeEditorV6FaceReplacements } from './sceneFaceComposition'
 import { createExportHairMeshRenderer } from './exportHairMeshRenderer'
@@ -365,19 +365,16 @@ async function initialize() {
           // Transition geometry describes the cropped body atlas. Expand it to
           // the complete artwork so hair outside that crop is not clipped.
           const crop = transitionFrame.crop
-          const scale = (element.characterScale ?? 100) / 100
-          const dx = (rig.outputWidth / 2 - crop.left - crop.width / 2) * transitionFrame.width / crop.width * scale * (element.characterWidthScale ?? 100) / 100 * 19.2 * (transitionFrame.flipX ? -1 : 1)
-          const dy = (rig.outputHeight / 2 - crop.top - crop.height / 2) * transitionFrame.height / crop.height * scale * (element.characterHeightScale ?? 100) / 100 * 10.8
-          const radians = transitionFrame.rotation * Math.PI / 180
+          const geometry = expandEditorV6HairCrop({ ...element, ...transitionFrame }, { width: rig.outputWidth, height: rig.outputHeight }, crop)
           if (mouthPatch) mouthPatch = { ...mouthPatch, x: (crop.left + mouthPatch.x * crop.width) / rig.outputWidth, y: (crop.top + mouthPatch.y * crop.height) / rig.outputHeight, width: mouthPatch.width * crop.width / rig.outputWidth, height: mouthPatch.height * crop.height / rig.outputHeight }
-          return { ...element, assetId, motionSprite: undefined, x: transitionFrame.x + (dx * Math.cos(radians) - dy * Math.sin(radians)) / 19.2, y: transitionFrame.y + (dx * Math.sin(radians) + dy * Math.cos(radians)) / 10.8, width: transitionFrame.width * rig.outputWidth / crop.width, height: transitionFrame.height * rig.outputHeight / crop.height, rotation: transitionFrame.rotation, flipX: transitionFrame.flipX, mouthPatch }
+          return { ...element, assetId, motionSprite: undefined, ...geometry, rotation: transitionFrame.rotation, flipX: transitionFrame.flipX, mouthPatch }
         }
         const rig = original.assetId ? hairRigs.get(`${element.id}:${original.assetId}`) : undefined
         if (!rig) return element
         const assetId = `editor-v6-hair-motion:${element.id}`
         const asset = { id: assetId, category: 'character' as const, name: `${element.text || 'Personagem'} · cabelo animado`, mimeType: 'image/png' as const, dataUrl: composeHairFrame(rig, original, frame), timelineSnapshot: true }
         assetsById.set(assetId, asset); renderAssetsById.set(assetId, asset); generatedAssets.push(asset)
-        const geometry = faceRenderGeometry(original as never, { width: rig.outputWidth, height: rig.outputHeight }, null, 1920, 1080, rig.sourceCrop)
+        const geometry = expandEditorV6HairCrop(original, { width: rig.outputWidth, height: rig.outputHeight }, rig.sourceCrop)
         const patch = original.mouthPatch
         const mouthPatch = patch ? {
           ...patch,
