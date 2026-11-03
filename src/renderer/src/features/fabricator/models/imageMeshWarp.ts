@@ -169,19 +169,6 @@ export function applyImageWarpBrushStroke(
   }
 }
 
-function expandedTriangle(points: [ImageWarpPoint, ImageWarpPoint, ImageWarpPoint], amount = 0.65): [ImageWarpPoint, ImageWarpPoint, ImageWarpPoint] {
-  const center = {
-    x: (points[0].x + points[1].x + points[2].x) / 3,
-    y: (points[0].y + points[1].y + points[2].y) / 3
-  }
-  return points.map((point) => {
-    const dx = point.x - center.x
-    const dy = point.y - center.y
-    const length = Math.hypot(dx, dy) || 1
-    return { x: point.x + dx / length * amount, y: point.y + dy / length * amount }
-  }) as [ImageWarpPoint, ImageWarpPoint, ImageWarpPoint]
-}
-
 function drawTriangle(
   context: CanvasRenderingContext2D,
   image: HTMLImageElement,
@@ -208,13 +195,12 @@ function drawTriangle(
   const e = d0.x - a * s0.x - c * s0.y
   const f = d0.y - b * s0.x - d * s0.y
 
-  const clip = expandedTriangle(destination)
   context.save()
   context.setTransform(1, 0, 0, 1, 0, 0)
   context.beginPath()
-  context.moveTo(clip[0].x, clip[0].y)
-  context.lineTo(clip[1].x, clip[1].y)
-  context.lineTo(clip[2].x, clip[2].y)
+  context.moveTo(d0.x, d0.y)
+  context.lineTo(d1.x, d1.y)
+  context.lineTo(d2.x, d2.y)
   context.closePath()
   context.clip()
   context.setTransform(a, b, c, d, e, f)
@@ -262,8 +248,10 @@ export function drawImageWarp(
 
   context.save()
   try {
-    // Each overlapping patch replaces its pixels instead of darkening translucent outlines.
-    context.globalCompositeOperation = 'copy'
+    // Shared triangle edges are subpixel-anti-aliased separately by Canvas. Add their
+    // coverage instead of replacing earlier pixels (which leaves transparent seams)
+    // or widening triangles (which darkens translucent outlines).
+    context.globalCompositeOperation = 'lighter'
     for (let row = 0; row < mesh.rows; row += 1) {
       for (let column = 0; column < mesh.columns; column += 1) {
         const sourceTopLeft = meshPoint(image, column, row, mesh.columns, mesh.rows)

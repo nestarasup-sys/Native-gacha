@@ -22,8 +22,8 @@ test('a malha sem deslocamentos desenha a imagem diretamente sem costuras triang
   assert.deepEqual(calls, { drawImage: 1, clip: 0, beginPath: 0 })
 })
 
-test('a malha deformada usa sobreposição entre triângulos para esconder frestas de rasterização', () => {
-  const calls = { drawImage: 0, clip: 0, operations: [] }
+test('a malha deformada soma a cobertura das bordas sem alargar nem apagar pixels dos triângulos', () => {
+  const calls = { drawImage: 0, clip: 0, operations: [], firstClip: [] }
   const context = {
     imageSmoothingEnabled: false,
     imageSmoothingQuality: 'low',
@@ -32,7 +32,10 @@ test('a malha deformada usa sobreposição entre triângulos para esconder frest
     clearRect() {},
     drawImage() { calls.drawImage += 1; calls.operations.push(this.globalCompositeOperation) },
     clip() { calls.clip += 1 },
-    beginPath() {}, moveTo() {}, lineTo() {}, closePath() {},
+    beginPath() { if (calls.clip === 0) calls.firstClip = [] },
+    moveTo(x, y) { if (calls.clip === 0) calls.firstClip.push({ x, y }) },
+    lineTo(x, y) { if (calls.clip === 0) calls.firstClip.push({ x, y }) },
+    closePath() {},
     save() { this.state.push(this.globalCompositeOperation) },
     restore() { this.globalCompositeOperation = this.state.pop() ?? 'source-over' },
     setTransform() {}
@@ -44,7 +47,12 @@ test('a malha deformada usa sobreposição entre triângulos para esconder frest
   drawImageWarp(canvas, image, mesh, 0)
   assert.equal(calls.clip, 13 * 15 * 2)
   assert.equal(calls.drawImage, calls.clip)
-  assert.ok(calls.operations.every((operation) => operation === 'copy'), 'overlapping alpha edges must replace pixels rather than stack and reveal triangle boundaries')
+  assert.ok(calls.operations.every((operation) => operation === 'lighter'), 'subpixel coverage from adjacent triangles must combine without clearing transparent pixels or stacking alpha')
+  assert.deepEqual(calls.firstClip, [
+    { x: 0, y: 0 },
+    { x: 225 / 13, y: 0 },
+    { x: 225 / 13, y: 305 / 15 }
+  ], 'triangle edges must stay on the mesh so translucent image details are not broadened')
   assert.equal(context.globalCompositeOperation, 'source-over', 'the warp must restore the canvas composition state')
 })
 
