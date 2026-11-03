@@ -108,7 +108,7 @@ test('espelha a linha de corte e preserva sua posição proporcional no membro o
   assert.equal(line.end.y, 40)
 })
 
-test('body bridge is opt-in and only accepts linked matching limb segments on the same side', () => {
+test('body bridge applies with or without the editing toggle and only accepts linked matching limb segments on the same side', () => {
   const upperArm = part('arm', 'Braço esquerdo', 0, 0)
   const lowerArm = part('forearm', 'Antebraço esquerdo', 0, 30)
   const upperLeg = part('thigh', 'Coxa direita', 40, 0)
@@ -124,13 +124,15 @@ test('body bridge is opt-in and only accepts linked matching limb segments on th
   ]
   const artwork = { parts: [upperArm, lowerArm, upperLeg, lowerLeg, upperLeftLeg, lowerLeftLeg, mismatched], joints, hiddenPartIds: [] }
 
-  assert.deepEqual(findBodyJointBridgePairs({ ...artwork, bodyJointBridgeEnabled: false }), [])
-  assert.deepEqual(findBodyJointBridgePairs({ ...artwork, bodyJointBridgeEnabled: true }).map(({ upper, lower, family }) => [upper.id, lower.id, family]), [
+  const expected = [
     ['arm', 'forearm', 'arm'],
     ['thigh', 'shin', 'leg'],
     ['thigh-left', 'shin-left', 'leg']
-  ])
-  assert.deepEqual(findBodyJointBridgePairs({ ...artwork, bodyJointBridgeEnabled: true, hiddenPartIds: ['forearm'] }).map(({ family }) => family), ['leg', 'leg'])
+  ]
+  assert.deepEqual(findBodyJointBridgePairs(artwork).map(({ upper, lower, family }) => [upper.id, lower.id, family]), expected)
+  assert.deepEqual(findBodyJointBridgePairs({ ...artwork, bodyJointBridgeEnabled: false }).map(({ upper, lower, family }) => [upper.id, lower.id, family]), expected)
+  assert.deepEqual(findBodyJointBridgePairs({ ...artwork, bodyJointBridgeEnabled: true }).map(({ upper, lower, family }) => [upper.id, lower.id, family]), expected)
+  assert.deepEqual(findBodyJointBridgePairs({ ...artwork, bodyJointBridgeEnabled: false, hiddenPartIds: ['forearm'] }).map(({ family }) => family), ['leg', 'leg'])
 })
 
 test('body bridge anchors its seam to the saved source-space joint point', () => {

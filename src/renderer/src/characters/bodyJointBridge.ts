@@ -6,7 +6,7 @@ import { drawWardrobeJointBridge } from './wardrobeJointBridge'
 import type { WardrobeJointBridgeSegment } from './wardrobeJointBridge'
 
 export type BodyJointBridgeArtwork = Pick<FabricatorProject, 'parts'>
-  & Partial<Pick<FabricatorProject, 'joints' | 'hiddenPartIds' | 'bodyJointBridgeEnabled'>>
+  & Partial<Pick<FabricatorProject, 'joints' | 'hiddenPartIds'>>
 
 export type BodyJointBridgePair = { upper: ModelPart; lower: ModelPart; family: 'arm' | 'leg'; joint: JointLink }
 
@@ -23,9 +23,8 @@ function bridgeFamily(upper: ModelPart, lower: ModelPart): 'arm' | 'leg' | null 
   return null
 }
 
-/** Finds only connected upper/lower limb pairs on models that opted in. */
+/** Finds visible, connected upper/lower limb pairs eligible for a render-time bridge. */
 export function findBodyJointBridgePairs(artwork: BodyJointBridgeArtwork): BodyJointBridgePair[] {
-  if (artwork.bodyJointBridgeEnabled !== true) return []
   const parts = new Map(artwork.parts.map((part) => [part.id, part]))
   const hidden = new Set(artwork.hiddenPartIds ?? [])
   const seen = new Set<string>()

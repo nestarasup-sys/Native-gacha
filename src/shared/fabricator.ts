@@ -64,7 +64,7 @@ export type FabricatorProject = {
   modelSkinTone?: string
   /** Cor padrão do contorno do modelo; personagens podem sobrescrever sem alterar a fonte. */
   modelOutlineColor?: string
-  /** Enables render-time bridges between articulated body segments for this model only. */
+  /** Enables paired limb-joint editing tools in Modelos DEV; rendering bridges are inferred from linked limbs. */
   bodyJointBridgeEnabled?: boolean
   parts: ModelPart[]
   /** Independent editable copy of the source torso for the male character variant. */
@@ -385,7 +385,7 @@ export type WardrobePosePart = PosePart & { wardrobeAttachment?: PoseWardrobeAtt
 export type FabricatorPose = {
   schemaVersion: 1
   slot: number
-  /** Snapshot of the source model's opt-in body-joint bridge setting. */
+  /** Snapshot of the source model's paired limb-joint editing setting; retained for compatibility. */
   bodyJointBridgeEnabled?: boolean
   name: string
   category?: string

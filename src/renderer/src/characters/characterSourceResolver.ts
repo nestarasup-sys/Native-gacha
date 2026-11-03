@@ -10,7 +10,7 @@ import { applyCharacterBodyShape } from '../../../shared/bodyShape'
 import type { CharacterRenderAssetProvider } from '../../../shared/characterRenderAssets'
 import { isTorsoPart } from '../../../shared/modelRig'
 
-export type CatalogArtwork = Pick<FabricatorProject, 'width' | 'height' | 'parts' | 'layerOrder' | 'hiddenPartIds'> & Partial<Pick<FabricatorProject, 'joints' | 'bodyJointBridgeEnabled'>>
+export type CatalogArtwork = Pick<FabricatorProject, 'width' | 'height' | 'parts' | 'layerOrder' | 'hiddenPartIds'> & Partial<Pick<FabricatorProject, 'joints'>>
 
 export function withCharacterHeadSize(artwork: CatalogArtwork, proportions: CharacterProportions): CatalogArtwork {
   const scaleX = proportions.head * proportions.headWidth / 10000
@@ -70,7 +70,6 @@ export async function resolveSavedCharacterSource(
   const sourceArtwork = pose ?? source
   const artworkWithModelContours = {
     ...sourceArtwork,
-    bodyJointBridgeEnabled: source.bodyJointBridgeEnabled === true,
     parts: applyCurrentModelSkinContours(sourceArtwork.parts, source.parts)
   }
   const genderArtwork = withCharacterGenderTorso(artworkWithModelContours, source, character.customization.gender)

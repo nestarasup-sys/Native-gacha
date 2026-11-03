@@ -56,7 +56,7 @@ test('contratos funcionam para modelos legados sem sourceTransform ou lista de c
   assert.deepEqual(selectMountedModelSource(model).hiddenPartIds,[])
 })
 
-test('nova pose recebe a configuração da ponte do corpo do próprio modelo e legado fica desativado', () => {
+test('nova pose preserva a preferência de edição em pares do modelo e legado fica desativado', () => {
   assert.equal(poseFromModel({ ...project(), bodyJointBridgeEnabled: true }).bodyJointBridgeEnabled, true)
   assert.equal(poseFromModel(project()).bodyJointBridgeEnabled, false)
 })
