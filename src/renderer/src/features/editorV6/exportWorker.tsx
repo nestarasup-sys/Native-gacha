@@ -98,6 +98,10 @@ async function initialize() {
   const hairWarpCanvases = new Map<string, HTMLCanvasElement>()
   const hairMeshRenderer = createExportHairMeshRenderer()
   const hairFrameCanvases = new Map<string, { canvas: HTMLCanvasElement; context: CanvasRenderingContext2D }>()
+  // A single reusable scratch canvas is enough for every rasterized transition
+  // sample. Allocating a native-resolution canvas per frame pressures Chromium's
+  // backing-store allocator even when the old canvas is resized to 1×1.
+  let motionHairFrameSurface: { canvas: HTMLCanvasElement; context: CanvasRenderingContext2D } | null = null
   const animatedElementIds = [...new Set((hairAnimation?.rigs ?? []).filter(rig => rig.layers.length > 0).map(rig => rig.elementId))]
   let headPathCapacity = 0, headPathFrame = -1
   const headPaths = new Map(animatedElementIds.map(id => [id, new Float32Array(0)]))
@@ -255,10 +259,17 @@ async function initialize() {
     transition: NonNullable<ReturnType<typeof transitionForFrame>>,
     sample: NonNullable<ReturnType<typeof transitionSampleForFrame>>
   ): string => {
-    const canvas = document.createElement('canvas')
-    canvas.width = rig.outputWidth; canvas.height = rig.outputHeight
-    const context = canvas.getContext('2d')
-    if (!context) throw Error('Não foi possível compor o cabelo durante a troca de pose.')
+    if (!motionHairFrameSurface) {
+      const canvas = document.createElement('canvas')
+      const context = canvas.getContext('2d')
+      if (!context) throw Error('Não foi possível compor o cabelo durante a troca de pose.')
+      motionHairFrameSurface = { canvas, context }
+    }
+    const { canvas, context } = motionHairFrameSurface
+    if (canvas.width !== rig.outputWidth || canvas.height !== rig.outputHeight) {
+      canvas.width = rig.outputWidth; canvas.height = rig.outputHeight
+    }
+    context.clearRect(0, 0, canvas.width, canvas.height)
     const drawAtlasSurface = (surfaceId: string | null) => {
       if (!surfaceId) return
       const image = hairSurfaces.get(surfaceId)
@@ -270,9 +281,7 @@ async function initialize() {
     drawAtlasSurface(transition.atlas!.faceSurfaceId)
     for (const piece of rig.layers) if (piece.side !== 'back') drawHairPiece(context, rig, piece, element, frame)
     drawAtlasSurface(transition.atlas!.overlaySurfaceId)
-    const dataUrl = canvas.toDataURL('image/png')
-    canvas.width = canvas.height = 1
-    return dataUrl
+    return canvas.toDataURL('image/png')
   }
   const mouthLoopByBlock = new Map<string, EditorV6ExportMouthLoops['states'][number]>()
   for (const state of mouthLoops?.states ?? []) for (const blockId of state.blockIds) mouthLoopByBlock.set(`${state.elementId}:${blockId}`, state)
@@ -432,7 +441,15 @@ async function initialize() {
     else { previousBackground = layerKeys.background; previousForeground = layerKeys.foreground; previous = key }
     return { reused: false, timings }
   }
-  window.addEventListener('pagehide', () => hairMeshRenderer.dispose(), { once: true })
+  window.addEventListener('pagehide', () => {
+    hairMeshRenderer.dispose()
+    for (const canvas of hairWarpCanvases.values()) canvas.width = canvas.height = 1
+    for (const { canvas } of hairFrameCanvases.values()) canvas.width = canvas.height = 1
+    if (motionHairFrameSurface) motionHairFrameSurface.canvas.width = motionHairFrameSurface.canvas.height = 1
+    hairWarpCanvases.clear()
+    hairFrameCanvases.clear()
+    motionHairFrameSurface = null
+  }, { once: true })
   await worker.ready()
 }
 void initialize().catch((error: unknown) => worker.ready(error instanceof Error ? error.message : String(error)))
