@@ -233,3 +233,9 @@ O histórico de stress de 26/10 apontou long tasks e picos isolados de React/com
 - [MDN — Media Capabilities](https://developer.mozilla.org/en-US/docs/Web/API/Media_Capabilities_API): capacidade/suavidade de decode como sinal, não garantia absoluta.
 
 Este documento contém **propostas priorizadas**. A implementação deve ser incremental, rastreada em commits pequenos e validada com testes de regressão, capturas visuais e uso real antes de declarar sucesso.
+
+## Registro local — animação de cabelo no MP4 (03/11/2026)
+
+A fase individual por `elementId`, o espelhamento global/local e o pré-aquecimento determinístico foram implementados somente no worker da exportação. O vento salvo continua no eixo local do preset e os cinco slots e a chave `gacha-nymi:hair-animation-presets:v1` não mudaram. Cada worker reproduz a física do quadro zero, incluindo workers Turbo que começam em intervalos posteriores; mudanças de orientação de peça usam uma tabela esparsa de pontos de mudança.
+
+O relatório técnico com implementação, testes, MP4s sintéticos, medição de custo e RAM fica em [RODADA_03_V4_CABELO_ESPELHAMENTO_FASE.md](RODADA_03_V4_CABELO_ESPELHAMENTO_FASE.md). `npm run test:editor-v6:combined-hair-mouth-memory` concluiu a matriz de 4/8 personagens e o clipe sintético de 5 minutos, e `npm run test:editor-v6:export` aprovou cancelamento, emenda Turbo, boca e destino existente. Continua pendente somente o aceite visual do usuário com personagens reais; os testes sintéticos não substituem essa avaliação artística.

@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { FIRST_HAIR_MOTION_PRESET } from '../src/shared/hairMotionEngine.ts'
-import { editorV6HairMotionHeadAnchorX, interpolateEditorV6HairMotionRig, parseEditorV6HairMotionBundle } from '../src/shared/editorV6HairMotion.ts'
+import { editorV6HairMotionHeadAnchor, editorV6HairMotionHeadAnchorX, editorV6HairMotionHeadPathDelta, editorV6HairMotionInstancePhase, editorV6HairMotionLayerHeadPosition, editorV6HairMotionLocalHeadDelta, interpolateEditorV6HairMotionRig, parseEditorV6HairMotionBundle } from '../src/shared/editorV6HairMotion.ts'
 import { planEditorV6Export } from '../src/shared/editorV6Export.ts'
 import { expandEditorV6HairCrop } from '../src/renderer/src/features/editorV6/editorV6HairMotionGeometry.ts'
 
@@ -90,6 +90,39 @@ test('a inércia do cabelo usa a cabeça no espaço do palco, incluindo escala, 
   assert.equal(editorV6HairMotionHeadAnchorX({ ...element, flipX: true }, offCenter), .1)
   assert.ok(Math.abs(editorV6HairMotionHeadAnchorX({ ...element, rotation: 90 }, { ...offCenter, targetHead: { ...offCenter.targetHead, y: 50 } }) - .2875) < 1e-9)
   assert.equal(editorV6HairMotionHeadAnchorX({ ...element, characterWidthScale: 150 }, offCenter), .475)
+})
+
+test('a fase individual é estável por instância e não depende da ordem da cena', () => {
+  for (const count of [1, 2, 3, 4, 8, 32]) {
+    const ids = Array.from({ length: count }, (_, index) => `elemento-sintetico-${index + 1}`)
+    const inOrder = ids.map(editorV6HairMotionInstancePhase)
+    const reversed = [...ids].reverse().map(editorV6HairMotionInstancePhase).reverse()
+    assert.deepEqual(reversed, inOrder)
+    assert.ok(inOrder.every(phase => Number.isFinite(phase) && phase >= 0 && phase < Math.PI * 2))
+    assert.equal(new Set(inOrder).size, count, `fase repetida entre ${count} instâncias sintéticas`)
+  }
+  assert.equal(editorV6HairMotionInstancePhase('instancia-A'), editorV6HairMotionInstancePhase('instancia-A'))
+  assert.notEqual(editorV6HairMotionInstancePhase('instancia-A'), editorV6HairMotionInstancePhase('instancia-B'))
+})
+
+test('o movimento do ator é convertido uma vez para o eixo local em giro e espelhamento', () => {
+  assert.equal(editorV6HairMotionLocalHeadDelta(.1, 0, 0, false), .1)
+  assert.equal(editorV6HairMotionLocalHeadDelta(.1, 0, 0, true), -.1)
+  assert.ok(Math.abs(editorV6HairMotionLocalHeadDelta(0, .16, 90, false) - .09) < 1e-12)
+  assert.ok(Math.abs(editorV6HairMotionLocalHeadDelta(0, .16, 90, true) + .09) < 1e-12)
+  // A global flip toggling in place has zero actor-center displacement; the
+  // exporter tracks authored head offsets separately to prevent a false kick.
+  assert.equal(editorV6HairMotionLocalHeadDelta(0, 0, 37, true), 0)
+  assert.equal(editorV6HairMotionLayerHeadPosition(.08, false), .08)
+  assert.equal(editorV6HairMotionLayerHeadPosition(.08, true), -.08)
+})
+
+test('mudança de flipX em uma troca de pose não cria impulso falso na cabeça', () => {
+  const base = { centerX: .3, centerY: .4, localX: -.06, rotation: 0, flipX: false }
+  const mirrored = { ...base, flipX: true }
+  assert.equal(editorV6HairMotionHeadPathDelta(base, mirrored), 0)
+  const movedAndRotated = { ...mirrored, centerX: .32, centerY: .42, rotation: 90 }
+  assert.ok(Math.abs(editorV6HairMotionHeadPathDelta(mirrored, movedAndRotated) + .01125) < 1e-12)
 })
 
 test('a âncora usa o centro de um recorte transparente deslocado, não o centro do canvas original', () => {

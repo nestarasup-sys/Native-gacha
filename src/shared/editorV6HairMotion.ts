@@ -68,8 +68,49 @@ export type EditorV6HairMotionBundle = {
   motionTransitions?: EditorV6HairMotionTransition[]
 }
 
+export type EditorV6HairMotionHeadAnchor = { x: number; y: number; localX: number; localY: number }
+export type EditorV6HairMotionHeadPathPoint = { centerX: number; centerY: number; localX: number; rotation: number; flipX: boolean }
+
+const HAIR_MOTION_TAU = Math.PI * 2
+
+/** Stable phase per placed scene instance (not character catalog ID or render order). */
+export function editorV6HairMotionInstancePhase(elementId: string): number {
+  let hash = 0x811c9dc5
+  for (let index = 0; index < elementId.length; index += 1) {
+    hash = Math.imul(hash ^ elementId.charCodeAt(index), 0x01000193) >>> 0
+  }
+  return hash / 0x1_0000_0000 * HAIR_MOTION_TAU
+}
+
+/** Convert a stage-space center movement into the actor's authored horizontal axis. */
+export function editorV6HairMotionLocalHeadDelta(
+  deltaX: number,
+  deltaY: number,
+  rotation: number,
+  flipX = false
+): number {
+  if (![deltaX, deltaY, rotation].every(Number.isFinite)) throw Error('Movimento da cabeça para a animação de cabelo inválido.')
+  const radians = rotation * Math.PI / 180
+  const stageYInWidthUnits = deltaY * (9 / 16)
+  const localX = deltaX * Math.cos(radians) + stageYInWidthUnits * Math.sin(radians)
+  const oriented = localX * (flipX ? -1 : 1)
+  return oriented === 0 ? 0 : oriented
+}
+
+/** One deterministic path step, excluding the false head jump caused by toggling global flipX. */
+export function editorV6HairMotionHeadPathDelta(previous: EditorV6HairMotionHeadPathPoint, current: EditorV6HairMotionHeadPathPoint): number {
+  return editorV6HairMotionLocalHeadDelta(current.centerX - previous.centerX, current.centerY - previous.centerY, current.rotation, current.flipX)
+    + current.localX - previous.localX
+}
+
+/** Translate actor-local head movement to the coordinate direction of one flipped hair piece. */
+export function editorV6HairMotionLayerHeadPosition(localHeadX: number, pieceFlipX: boolean): number {
+  if (!Number.isFinite(localHeadX)) throw Error('Movimento local da peça de cabelo inválido.')
+  return pieceFlipX ? -localHeadX : localHeadX
+}
+
 /** Return the head's horizontal position in stage coordinates for export physics. */
-export function editorV6HairMotionHeadAnchorX(element: Pick<EditorV6Element, 'x' | 'y' | 'width' | 'height' | 'rotation' | 'flipX' | 'characterScale' | 'characterWidthScale' | 'characterHeightScale'>, rig: EditorV6HairMotionRig): number {
+export function editorV6HairMotionHeadAnchor(element: Pick<EditorV6Element, 'x' | 'y' | 'width' | 'height' | 'rotation' | 'flipX' | 'characterScale' | 'characterWidthScale' | 'characterHeightScale'>, rig: EditorV6HairMotionRig): EditorV6HairMotionHeadAnchor {
   const overall = (element.characterScale ?? 100) / 100
   const cropWidth = Math.max(1, rig.sourceCrop.width), cropHeight = Math.max(1, rig.sourceCrop.height)
   const elementWidth = element.width * rig.outputWidth / cropWidth * overall * (element.characterWidthScale ?? 100) / 100
@@ -83,7 +124,19 @@ export function editorV6HairMotionHeadAnchorX(element: Pick<EditorV6Element, 'x'
   if (element.flipX) localX *= -1
   const radians = element.rotation * Math.PI / 180
   const rotatedX = localX * Math.cos(radians) - localY * (9 / 16) * Math.sin(radians)
-  return (50 + element.x + rotatedX) / 100
+  const rotatedY = localY * Math.cos(radians) + localX * (16 / 9) * Math.sin(radians)
+  return {
+    x: (50 + element.x + rotatedX) / 100,
+    y: (50 + element.y + rotatedY) / 100,
+    // Unrotated, unmirrored coordinates are used to separate authored head
+    // motion from the actor transform when building the export physics path.
+    localX,
+    localY
+  }
+}
+
+export function editorV6HairMotionHeadAnchorX(element: Pick<EditorV6Element, 'x' | 'y' | 'width' | 'height' | 'rotation' | 'flipX' | 'characterScale' | 'characterWidthScale' | 'characterHeightScale'>, rig: EditorV6HairMotionRig): number {
+  return editorV6HairMotionHeadAnchor(element, rig).x
 }
 
 /** Interpolate only the per-pose head geometry used to drive export hair inertia. */

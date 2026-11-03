@@ -11,7 +11,7 @@ import { advanceHairMotionToFrame, createHairMotionState } from '../../src/share
 import { editorV6ElementSize } from '../../src/shared/editorV6SceneModel'
 import { resolveEditorV6SceneAtFrame } from '../../src/shared/editorV6TimelineScene'
 import type { EditorV6WorkerPayload } from '../../src/shared/editorV6Export'
-import { editorV6HairMotionHeadAnchorX, interpolateEditorV6HairMotionRig, type EditorV6HairMotionBundle } from '../../src/shared/editorV6HairMotion'
+import { editorV6HairMotionHeadAnchorX, editorV6HairMotionInstancePhase, interpolateEditorV6HairMotionRig, type EditorV6HairMotionBundle } from '../../src/shared/editorV6HairMotion'
 import { motionEase } from '../../src/shared/editorV6MotionInterpolation'
 import { runEditorV6Export } from '../../electron/domains/editorV6/exportRunner'
 import type { CustomizerCharacter } from '../../src/shared/customizer'
@@ -670,12 +670,12 @@ async function main() {
     } finally { hiRes.close() }
 
     const ffprobe = join(videoTools, 'ffprobe.exe')
-    const exportHairMp4 = (width: number, height: number, startFrame: number, endFrame: number, turbo: boolean, name: string) => {
+    const exportHairMp4 = (width: number, height: number, startFrame: number, endFrame: number, turbo: boolean, name: string, exportProject: EditorV6Document = project, exportHairAnimation: EditorV6HairMotionBundle = hairAnimation) => {
       const outputPath = join(folder, name)
-      return runEditorV6Export(project, { startFrame, endFrame, width, height, turbo, encoder: 'cpu', hairAnimationPresetSlot: 1 }, {
+      return runEditorV6Export(exportProject, { startFrame, endFrame, width, height, turbo, encoder: 'cpu', hairAnimationPresetSlot: 1 }, {
         ffmpeg, ffprobe, tempRoot: folder, id: randomUUID(), outputPath, reportPath: join(folder, `${name}.report.json`), signal: new AbortController().signal,
         getCharacters: async () => [], bakeMotion: async () => { throw Error('O fixture não deve preparar animações de pose.') },
-        createWorker: (renderProject, _part, signal, layeredVideo, mouthLoops) => factory.create({ project: renderProject, width, height, layeredVideo, ...(mouthLoops ? { mouthLoops } : {}), hairAnimation }, signal),
+        createWorker: (renderProject, _part, signal, layeredVideo, mouthLoops) => factory.create({ project: renderProject, width, height, layeredVideo, ...(mouthLoops ? { mouthLoops } : {}), hairAnimation: exportHairAnimation }, signal),
         audioPath: () => join(folder, 'unused-audio.wav'), mediaPath: () => join(folder, 'unused-media.mp4'), progress: () => {}
       })
     }
@@ -683,9 +683,74 @@ async function main() {
     const report = await exportHairMp4(320, 180, 0, 61, true, 'hair-motion.mp4')
     assert(report.state === 'completed' && !report.fallback && report.attempts[0]?.parts.length === 2, 'A exportação MP4 com animação de cabelo não concluiu em dois trechos Turbo.')
     assert(report.attempts[0].parts.every(part => (part.frameTiming?.hairCompositionMs?.samples ?? 0) > 0), 'O relatório do export não separou o tempo da composição experimental de cabelo.')
+    assert(report.attempts[0].parts.reduce((total, part) => total + (part.frameTiming?.hairMotionPrewarmMs?.totalMs ?? 0), 0) > 0, 'O relatório não mediu o custo do pré-aquecimento da física do cabelo.')
     assert(report.attempts[0].parts.reduce((total, part) => total + (part.frameMetrics?.hairPngFrames ?? 0), 0) === 61, 'O relatório não contabilizou um PNG de cabelo por quadro exportado.')
     assert(report.attempts[0].parts.every(part => (part.frameTiming?.hairPngEncodeMs?.samples ?? 0) === (part.frameMetrics?.hairPngFrames ?? 0) && (part.frameTiming?.hairPngDecodeMs?.samples ?? 0) > 0 && (part.frameTiming?.hairPngDecodeMs?.samples ?? 0) <= (part.frameMetrics?.hairPngFrames ?? 0)), 'O relatório não separou a codificação e decodificação do PNG por quadro.')
     assert(report.attempts[0].parts.reduce((total, part) => total + (part.frameMetrics?.hairPngEncodedBytes ?? 0), 0) > 0 && report.attempts[0].parts.reduce((total, part) => total + (part.frameMetrics?.hairPngBase64CharactersAvoided ?? 0), 0) > 0, 'O relatório não mediu os PNGs binários nem a codificação Base64 evitada.')
+
+    // Compare the final composited pixels from two real MP4 exports. The paired
+    // scene has identical IDs/settings and differs only by global flipX, so the
+    // animated hair centroid must reflect around the actor without editing its
+    // persisted negative wind preset.
+    const staticDirectionProject = structuredClone(project)
+    const staticDirectionTrack = staticDirectionProject.timeline.tracks.find(track => track.kind === 'character')!
+    const staticDirectionSourceBlock = staticDirectionTrack.blocks[0]
+    staticDirectionProject.timeline.durationFrames = 61
+    const staticDirectionBlock = { ...staticDirectionSourceBlock, startFrame: 0, durationFrames: 61, state: { ...actor, flipX: false } }
+    delete staticDirectionBlock.incomingMotion
+    staticDirectionTrack.blocks = [staticDirectionBlock]
+    staticDirectionProject.elements = [{ ...actor, flipX: false }]
+    const staticDirectionHair: EditorV6HairMotionBundle = {
+      ...structuredClone(hairAnimation), preset: { ...structuredClone(hairAnimation.preset), physics: { ...hairAnimation.preset.physics, wind: -50, gust: 28 } },
+      rigs: hairAnimation.rigs.filter(rig => rig.assetId === actor.assetId), motionTransitions: []
+    }
+    const normalPieceHair = structuredClone(staticDirectionHair)
+    normalPieceHair.rigs[0].layers = normalPieceHair.rigs[0].layers.map(piece => piece.id === 'solid-1' ? { ...piece, x: 0, y: 0, rotation: 0, flipX: false } : piece)
+    const mirroredPieceHair = structuredClone(normalPieceHair)
+    mirroredPieceHair.rigs[0].layers = mirroredPieceHair.rigs[0].layers.map(piece => piece.id === 'solid-1' ? { ...piece, flipX: true } : piece)
+    const mirroredDirectionProject = structuredClone(staticDirectionProject)
+    mirroredDirectionProject.elements = mirroredDirectionProject.elements.map(element => element.id === actor.id ? { ...element, flipX: true } : element)
+    const mirroredDirectionTrack = mirroredDirectionProject.timeline.tracks.find(track => track.kind === 'character')!
+    mirroredDirectionTrack.blocks = mirroredDirectionTrack.blocks.map(block => ({ ...block, state: block.state ? { ...block.state, flipX: true } : block.state }))
+    const directionPresetBefore = JSON.stringify(staticDirectionHair.preset)
+    const normalDirectionReport = await exportHairMp4(320, 180, 0, 61, false, 'hair-direction-negative-normal.mp4', staticDirectionProject, staticDirectionHair)
+    const mirroredDirectionReport = await exportHairMp4(320, 180, 0, 61, false, 'hair-direction-negative-mirrored.mp4', mirroredDirectionProject, staticDirectionHair)
+    const normalPieceReport = await exportHairMp4(320, 180, 0, 61, false, 'hair-piece-normal.mp4', staticDirectionProject, normalPieceHair)
+    const mirroredPieceReport = await exportHairMp4(320, 180, 0, 61, false, 'hair-piece-flipped.mp4', staticDirectionProject, mirroredPieceHair)
+    assert(normalDirectionReport.state === 'completed' && mirroredDirectionReport.state === 'completed' && normalPieceReport.state === 'completed' && mirroredPieceReport.state === 'completed', 'A comparação de espelhamento não concluiu as exportações MP4 reais.')
+    assert(JSON.stringify(staticDirectionHair.preset) === directionPresetBefore && staticDirectionHair.preset.physics.wind === -50, 'A exportação alterou o preset negativo salvo para corrigir o espelhamento.')
+    const directionFrames = [0, 5, 10, 15, 20, 30, 45, 60]
+    const readDirectionFrames = (name: string) => execFileSync(ffmpeg, ['-v', 'error', '-i', join(folder, name), '-vf', `select='${directionFrames.map(frame => `eq(n,${frame})`).join('+')}'`, '-fps_mode', 'passthrough', '-frames:v', String(directionFrames.length), '-pix_fmt', 'rgb24', '-f', 'rawvideo', 'pipe:1'], { windowsHide: true, maxBuffer: 8 * 1024 ** 2 })
+    const normalDirectionPixels = readDirectionFrames('hair-direction-negative-normal.mp4')
+    const mirroredDirectionPixels = readDirectionFrames('hair-direction-negative-mirrored.mp4')
+    const normalPiecePixels = readDirectionFrames('hair-piece-normal.mp4')
+    const mirroredPiecePixels = readDirectionFrames('hair-piece-flipped.mp4')
+    const directionFrameBytes = 320 * 180 * 3
+    assert(normalDirectionPixels.length === directionFrameBytes * directionFrames.length && mirroredDirectionPixels.length === directionFrameBytes * directionFrames.length, 'FFmpeg não decodificou os quadros necessários para comparar a direção visual do cabelo.')
+    const actorCenterX = 320 * (50 + actor.x) / 100
+    const greenHairCentroids = (pixels: Buffer, excludeMarker = false) => directionFrames.map((_frame, sampleIndex) => {
+      let count = 0, sumX = 0
+      const start = sampleIndex * directionFrameBytes
+      for (let y = 0; y < 180; y += 1) for (let x = 0; x < 320; x += 1) {
+        const offset = start + (y * 320 + x) * 3, red = pixels[offset], green = pixels[offset + 1], blue = pixels[offset + 2]
+        if (green <= 60 || green <= red * 1.8 || green <= blue * 1.5 || (excludeMarker && green > 220 && red < 35 && blue < 60)) continue
+        count += 1; sumX += x + .5
+      }
+      assert(count > 10, `O cabelo verde não apareceu no quadro MP4 ${directionFrames[sampleIndex]}.`)
+      return sumX / count
+    })
+    const normalDirectionCentroids = greenHairCentroids(normalDirectionPixels), mirroredDirectionCentroids = greenHairCentroids(mirroredDirectionPixels)
+    const mirrorErrors = directionFrames.map((_frame, index) => Math.abs(normalDirectionCentroids[index] + mirroredDirectionCentroids[index] - actorCenterX * 2))
+    assert(mirrorErrors.every(error => error < 2), `O espelhamento global não inverteu a composição final do cabelo nos pixels MP4 (erros: ${mirrorErrors.map(value => value.toFixed(2)).join(', ')} px).`)
+    const motionDeltas = directionFrames.map((_frame, index) => Math.abs((normalDirectionCentroids[index] - normalDirectionCentroids[0]) + (mirroredDirectionCentroids[index] - mirroredDirectionCentroids[0])))
+    assert(motionDeltas.every(delta => delta < 1.5), `O movimento de cabelo não preservou a direção oposta no MP4 espelhado (${motionDeltas.map(value => value.toFixed(2)).join(', ')} px).`)
+    assert(normalDirectionCentroids.some((center, index) => index > 0 && Math.abs(center - normalDirectionCentroids[0]) > .25), 'O cabelo no primeiro quadro MP4 não começou em uma fase de movimento observável.')
+    const normalPieceCentroids = greenHairCentroids(normalPiecePixels, true), mirroredPieceCentroids = greenHairCentroids(mirroredPiecePixels, true)
+    const pieceMirrorAxisX = 320 * editorV6HairMotionHeadAnchorX(staticDirectionProject.elements[0], normalPieceHair.rigs[0])
+    const pieceMirrorErrors = directionFrames.map((_frame, index) => Math.abs(normalPieceCentroids[index] + mirroredPieceCentroids[index] - pieceMirrorAxisX * 2))
+    assert(pieceMirrorErrors.every(error => error < 2), `O flipX individual da peça não refletiu os pixels do cabelo no MP4 (${pieceMirrorErrors.map(value => value.toFixed(2)).join(', ')} px).`)
+    const pieceMotionErrors = directionFrames.map((_frame, index) => Math.abs((normalPieceCentroids[index] - normalPieceCentroids[0]) + (mirroredPieceCentroids[index] - mirroredPieceCentroids[0])))
+    assert(pieceMotionErrors.every(error => error < 1.5), `A resposta da inércia ao flipX da peça divergiu no MP4 (${pieceMotionErrors.map(value => value.toFixed(2)).join(', ')} px).`)
     const rawFrames = execFileSync(ffmpeg, ['-v', 'error', '-i', outputPath, '-vf', "select='eq(n,0)+eq(n,30)+eq(n,60)'", '-fps_mode', 'passthrough', '-frames:v', '3', '-pix_fmt', 'rgb24', '-f', 'rawvideo', 'pipe:1'], { windowsHide: true, maxBuffer: 16 * 1024 ** 2 })
     const frameBytes = 320 * 180 * 3
     assert(rawFrames.length === frameBytes * 3, 'O MP4 não contém os quadros esperados para validar a animação de cabelo.')
@@ -729,7 +794,7 @@ async function main() {
       assert(hairPixels.every(count => count > 50), `${name}: o cabelo não ficou visível em todos os quadros amostrados (${hairPixels.join(', ')})`)
       return { width, height, frameCount, fps: stream.r_frame_rate, hairPixels }
     }
-    const reportsByName = new Map<string, Awaited<ReturnType<typeof exportHairMp4>>>([['hair-motion.mp4', report]])
+    const reportsByName = new Map<string, Awaited<ReturnType<typeof exportHairMp4>>>([['hair-motion.mp4', report], ['hair-direction-negative-normal.mp4', normalDirectionReport], ['hair-direction-negative-mirrored.mp4', mirroredDirectionReport], ['hair-piece-normal.mp4', normalPieceReport], ['hair-piece-flipped.mp4', mirroredPieceReport]])
     const reportFor = (name: string) => reportsByName.get(name)!
     const median = (values: number[]) => {
       const ordered = [...values].sort((left, right) => left - right)
@@ -823,22 +888,23 @@ async function main() {
           const characterId = actorCount === 1 ? actor.characterId! : `synthetic-character-${index + 1}`
           const x = actorCount === 1 ? actor.x : ((index + .5) / actorCount) * 100 - 50
           const label = actorCount === 1 ? 'Perfil sintético fala e cabelo' : `Personagem sintético ${index + 1}`
-          const base = { ...actor, id: elementId, characterId, text: label, x, zIndex: index + 1 }
-          const pose = { ...secondState, id: elementId, characterId, text: label, x: x + (actorCount === 1 ? 0 : .5), zIndex: index + 1 }
+          const startsMirrored = actorCount > 1 && index % 2 === 1
+          const base = { ...actor, id: elementId, characterId, text: label, x, flipX: startsMirrored, zIndex: index + 1 }
+          const pose = { ...secondState, id: elementId, characterId, text: label, x: x + (actorCount === 1 ? 0 : .5), flipX: true, zIndex: index + 1 }
           const character: CustomizerCharacter = {
             id: characterId, name: label, hair: '', outfit: '', skin: '',
             customization: { modelSlot: 1, poseSlot: null, partOverrides: {}, layerOrder: [] },
             createdAt: now, updatedAt: now
           }
           speechCharacterIds.add(characterId)
-          return { elementId, characterId, label, base, pose, character }
+          return { elementId, characterId, label, base, pose, character, startsMirrored }
         })
         const characterTracks = profiles.map(profile => ({
           ...sourceTrack, id: randomUUID(), characterId: profile.characterId, name: profile.label,
           blocks: includePoseTransition
             ? [
               { ...sourceFirstBlock, id: randomUUID(), elementId: profile.elementId, characterId: profile.characterId, startFrame: 0, durationFrames: 30, state: profile.base },
-              { ...sourceTransitionBlock, id: randomUUID(), elementId: profile.elementId, characterId: profile.characterId, startFrame: 30, durationFrames: scenarioFrames - 30, state: profile.pose, incomingMotion: { ...sourceMotion, key: '', frames: sourceMotion.frames.map(frame => ({ ...frame, x: frame.x + profile.base.x - actor.x })) } }
+              { ...sourceTransitionBlock, id: randomUUID(), elementId: profile.elementId, characterId: profile.characterId, startFrame: 30, durationFrames: scenarioFrames - 30, state: profile.pose, incomingMotion: { ...sourceMotion, key: '', frames: sourceMotion.frames.map(frame => ({ ...frame, x: frame.x + profile.base.x - actor.x, flipX: profile.startsMirrored || frame.flipX })) } }
             ]
             : [{ ...sourceFirstBlock, id: randomUUID(), elementId: profile.elementId, characterId: profile.characterId, startFrame: 0, durationFrames: scenarioFrames, state: profile.base }]
         }))
@@ -876,10 +942,10 @@ async function main() {
           motionTransitions: includePoseTransition ? profiles.flatMap(profile => {
             const plan = plans.find(item => item.elementId === profile.elementId)
             assert(plan, `A transição de cabelo do personagem ${profile.label} não foi planejada.`)
-            return [{ ...sourceTransition, elementId: profile.elementId, key: plan.key, frames: sourceTransition.frames.map(frame => ({ ...frame, x: frame.x + profile.base.x - actor.x })) }]
+            return [{ ...sourceTransition, elementId: profile.elementId, key: plan.key, frames: sourceTransition.frames.map(frame => ({ ...frame, x: frame.x + profile.base.x - actor.x, flipX: profile.startsMirrored || frame.flipX })) }]
           }) : []
         }
-        return { project: combinedProject, characters: profiles.map(profile => profile.character), hairAnimation: scenarioHairAnimation }
+        return { project: combinedProject, characters: profiles.map(profile => profile.character), hairAnimation: scenarioHairAnimation, instances: profiles.map(profile => ({ elementId: profile.elementId, x: profile.base.x, startsMirrored: profile.startsMirrored, phase: editorV6HairMotionInstancePhase(profile.elementId) })) }
       }
       const memorySampler = createWindowsProcessSampler(join(root, 'scripts/editor-v6/windows-process-sampler.ps1'))
       const ffmpegPids = new Set<number>()
@@ -936,10 +1002,12 @@ async function main() {
       const matrixScenarios: Array<Record<string, unknown>> = []
       try {
         const matrixFrames = 30 * 30
+      const matrixScenariosByActorCount = new Map([4, 8].map(actorCount => [actorCount, createCombinedScenario(actorCount, matrixFrames)] as const))
+      const matrixMotionProfiles = new Map<number, Map<string, number[][]>>()
         for (const actorCount of [4, 8]) for (const turbo of [false, true]) {
           const mode = turbo ? 'turbo-2workers' : 'safe-1worker'
           const name = `hair-mouth-matrix-${actorCount}actors-1080p-${mode}`
-          const scenario = createCombinedScenario(actorCount, matrixFrames)
+          const scenario = matrixScenariosByActorCount.get(actorCount)!
           activeProfileName = name
           lastFrame = 0
           await sampleCombinedMemory()
@@ -957,6 +1025,8 @@ async function main() {
           assert(matrixHairFrames === actorCount * matrixFrames && matrixHairBytes > 0, `${name}: faltam PNGs animados de cabelo por personagem/quadro.`)
           const matrixHairCompositionSamples = matrixParts.reduce((total, part) => total + (part.frameTiming?.hairCompositionMs?.samples ?? 0), 0)
           assert(matrixHairCompositionSamples === matrixFrames, `${name}: composição por quadro não foi medida.`)
+          const hairMotionPrewarmMilliseconds = matrixParts.reduce((total, part) => total + (part.frameTiming?.hairMotionPrewarmMs?.totalMs ?? 0), 0)
+          assert(hairMotionPrewarmMilliseconds > 0, `${name}: o custo de pré-aquecimento por instância não foi registrado.`)
           const outputPath = join(folder, `${name}.mp4`)
           const probe = JSON.parse(execFileSync(ffprobe, ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=width,height,r_frame_rate,nb_frames', '-of', 'json', outputPath], { windowsHide: true }).toString()) as { streams?: Array<{ width?: number; height?: number; r_frame_rate?: string; nb_frames?: string }> }
           const stream = probe.streams?.[0]
@@ -974,8 +1044,46 @@ async function main() {
             return { hair, mouth }
           })
           assert(decodedPixels.every(sample => sample.hair > 100 && sample.mouth > 5), `${name}: cabelo ou boca não visíveis nos quadros decodificados (${JSON.stringify(decodedPixels)}).`)
+          const orderedInstances = [...scenario.instances].sort((left, right) => left.x - right.x)
+          assert(orderedInstances.filter(instance => instance.startsMirrored).length === actorCount / 2, `${name}: o fixture não distribuiu igualmente personagens espelhados.`)
+          let perInstanceCentroids: Array<{ elementId: string; startsMirrored: boolean; phase: number; relativeCentroids: number[]; trajectory: number[] }> = []
+          if (actorCount === 4) {
+            const motionSampleFrames = [0, 5, 10, 15, 20, 25]
+            const motionRgb = execFileSync(ffmpeg, ['-v', 'error', '-i', outputPath, '-vf', `select='${motionSampleFrames.map(frame => `eq(n,${frame})`).join('+')}'`, '-fps_mode', 'passthrough', '-frames:v', String(motionSampleFrames.length), '-pix_fmt', 'rgb24', '-f', 'rawvideo', 'pipe:1'], { windowsHide: true, maxBuffer: 64 * 1024 ** 2 })
+            const motionFrameBytes = 1920 * 1080 * 3
+            assert(motionRgb.length === motionFrameBytes * motionSampleFrames.length, `${name}: faltam quadros MP4 para medir a fase individual.`)
+            perInstanceCentroids = orderedInstances.map((instance, actorIndex) => {
+              const left = actorIndex === 0 ? 0 : (1920 * (50 + orderedInstances[actorIndex - 1].x) / 100 + 1920 * (50 + instance.x) / 100) / 2
+              const right = actorIndex === orderedInstances.length - 1 ? 1920 : (1920 * (50 + instance.x) / 100 + 1920 * (50 + orderedInstances[actorIndex + 1].x) / 100) / 2
+              const centerX = 1920 * (50 + instance.x) / 100
+              const centroids = motionSampleFrames.map((_frame, sampleIndex) => {
+                let count = 0, sumX = 0
+                const frameStart = sampleIndex * motionFrameBytes
+                for (let y = 0; y < 1080; y += 1) for (let x = Math.max(0, Math.floor(left)); x < Math.min(1920, Math.ceil(right)); x += 1) {
+                  const offset = frameStart + (y * 1920 + x) * 3
+                  const red = motionRgb[offset], green = motionRgb[offset + 1], blue = motionRgb[offset + 2]
+                  if (green <= 60 || green <= red * 1.8 || green <= blue * 1.5 || (green > 220 && red < 35 && blue < 60)) continue
+                  count += 1; sumX += x + .5
+                }
+                assert(count > 20, `${name}: cabelo sintético verde não encontrado na instância ${instance.elementId}, quadro ${motionSampleFrames[sampleIndex]}.`)
+                return sumX / count - centerX
+              })
+              return { elementId: instance.elementId, startsMirrored: instance.startsMirrored, phase: instance.phase, relativeCentroids: centroids.map(value => Number(value.toFixed(3))), trajectory: centroids.map(value => Number((value - centroids[0]).toFixed(3))) }
+            })
+            const uniqueMotionPairs = perInstanceCentroids.flatMap((left, leftIndex) => perInstanceCentroids.slice(leftIndex + 1).map(right => Math.max(...left.trajectory.map((value, index) => Math.abs(value - right.trajectory[index])))))
+            assert(uniqueMotionPairs.every(distance => distance > .5), `${name}: duas instâncias tiveram trajetórias de cabelo sincronizadas ou indistinguíveis (${uniqueMotionPairs.map(value => value.toFixed(2)).join(', ')} px).`)
+          }
+          const currentMotionByInstance = new Map(perInstanceCentroids.map(instance => [instance.elementId, instance.trajectory]))
+          const previousMode = matrixMotionProfiles.get(actorCount)
+          if (actorCount === 4 && turbo) {
+            assert(previousMode, `${name}: não há perfil seguro para comparar a mesma cena com Turbo.`)
+            for (const instance of orderedInstances) {
+              const safeTrajectory = previousMode.get(instance.elementId), turboTrajectory = currentMotionByInstance.get(instance.elementId)
+              assert(safeTrajectory && turboTrajectory && safeTrajectory.every((value, index) => Math.abs(value - turboTrajectory[index]) <= 1.5), `${name}: fase/movimento diferente entre modo seguro e Turbo na instância ${instance.elementId}.`)
+            }
+          } else if (actorCount === 4) matrixMotionProfiles.set(actorCount, currentMotionByInstance)
           await sampleCombinedMemory()
-          matrixScenarios.push({ name, actors: actorCount, speech: true, hairAnimation: true, resolution: '1920x1080', fps: 30, frames: matrixFrames, workers: expectedWorkers, elapsedMilliseconds: Number(elapsedMilliseconds.toFixed(2)), fallback: matrixReport.fallback, mp4Validated: true, mouthCharacters: matrixReport.mouthAnimation?.characters, hairPngFrames: matrixHairFrames, hairPngEncodedBytes: matrixHairBytes, decodedPixels, processPeaks: profileProcessPeaks(name), samples: memorySamples.filter(sample => sample.profile === name).length })
+          matrixScenarios.push({ name, actors: actorCount, speech: true, hairAnimation: true, resolution: '1920x1080', fps: 30, frames: matrixFrames, workers: expectedWorkers, elapsedMilliseconds: Number(elapsedMilliseconds.toFixed(2)), hairMotionPrewarmMilliseconds: Number(hairMotionPrewarmMilliseconds.toFixed(3)), fallback: matrixReport.fallback, mp4Validated: true, mouthCharacters: matrixReport.mouthAnimation?.characters, hairPngFrames: matrixHairFrames, hairPngEncodedBytes: matrixHairBytes, decodedPixels, perInstanceHairMotion: perInstanceCentroids, processPeaks: profileProcessPeaks(name), samples: memorySamples.filter(sample => sample.profile === name).length })
         }
         assert(matrixScenarios.length === 4, 'A matriz combinada não concluiu 4/8 personagens em 1080p seguro e Turbo.')
 
@@ -1067,7 +1175,7 @@ async function main() {
       '720pWorkerComparison': { trials: benchmarkTrials, safeRepeatCompleted: safe720RunB.report.state === 'completed', turboRepeatsCompleted: turbo720RunA.report.state === 'completed' && turbo720RunB.report.state === 'completed' },
       '1080pTurboLateStart': { ...result1080, startFrame: 20, elapsedMilliseconds: turbo1080Milliseconds }
     }, null, 2))
-    await writeFile(join(folder, 'result.json'), JSON.stringify({ passed: true, framesChecked: [0, 10, 22, 23, 29, 30, 31, 60], transitionFramesChecked: fullTransitionFrames.length, transitionDynamicChangedPixels, transitionFacePatchPixels: transitionFacePatchCount, transitionFacePatchPixelsPerSample: transitionFacePatchCounts, animatedPixels: true, translucentHairPixels: translucentHairPixelCount(first.bitmap), layers: 4, noContinuousLayerSeamsAt720p: true, localHeadChangesBetweenPoses: true, motionAtlasFramesCaptured: true, turboBoundaryStable: true, backgroundsChecked: ['white', 'black', 'colored', 'checkerboard'], backgroundHairPixels: backgroundChecks, transparentLayerPixels, semitransparentHairPixels: alphaLayerPixels, mp4Completed: true, mp4HairChangedPixels: changedHairPixels, '720pSafeExport': true, '1080pTurboLateStart': true, ...(combinedLongProfile ? { longCombinedProfile: { passed: true, durationSeconds: 300, frames: 9000, resolution: '1280x720', exportMilliseconds: combinedLongProfile.exportMilliseconds, sampleCount: (combinedLongProfile.memorySamples as unknown[]).length, hairPngMetrics: combinedLongProfile.hairPngMetrics, hairPngEncodeMilliseconds: combinedLongProfile.hairPngEncodeMilliseconds, hairPngDecodeMilliseconds: combinedLongProfile.hairPngDecodeMilliseconds, matrixScenarios: combinedLongProfile.matrixScenarios } } : {}) }))
+    await writeFile(join(folder, 'result.json'), JSON.stringify({ passed: true, framesChecked: [0, 10, 22, 23, 29, 30, 31, 60], transitionFramesChecked: fullTransitionFrames.length, transitionDynamicChangedPixels, transitionFacePatchPixels: transitionFacePatchCount, transitionFacePatchPixelsPerSample: transitionFacePatchCounts, animatedPixels: true, translucentHairPixels: translucentHairPixelCount(first.bitmap), layers: 4, noContinuousLayerSeamsAt720p: true, localHeadChangesBetweenPoses: true, motionAtlasFramesCaptured: true, turboBoundaryStable: true, backgroundsChecked: ['white', 'black', 'colored', 'checkerboard'], backgroundHairPixels: backgroundChecks, transparentLayerPixels, semitransparentHairPixels: alphaLayerPixels, mp4Completed: true, mp4HairChangedPixels: changedHairPixels, globalFlipDirectionMp4: { presetWindPreserved: staticDirectionHair.preset.physics.wind, prewarmMilliseconds: normalDirectionReport.attempts.flatMap(attempt => attempt.parts).reduce((total, part) => total + (part.frameTiming?.hairMotionPrewarmMs?.totalMs ?? 0), 0), decodedFrames: directionFrames, normalCentroids: normalDirectionCentroids.map(value => Number(value.toFixed(3))), mirroredCentroids: mirroredDirectionCentroids.map(value => Number(value.toFixed(3))), mirrorErrorsPx: mirrorErrors.map(value => Number(value.toFixed(3))), mirroredMotionDeltaErrorsPx: motionDeltas.map(value => Number(value.toFixed(3))), firstFrameAlreadyMoving: normalDirectionCentroids.some((center, index) => index > 0 && Math.abs(center - normalDirectionCentroids[0]) > .25) }, individualPieceFlipMp4: { mirrorAxisX: Number(pieceMirrorAxisX.toFixed(3)), normalCentroids: normalPieceCentroids.map(value => Number(value.toFixed(3))), flippedCentroids: mirroredPieceCentroids.map(value => Number(value.toFixed(3))), mirrorErrorsPx: pieceMirrorErrors.map(value => Number(value.toFixed(3))), mirroredMotionDeltaErrorsPx: pieceMotionErrors.map(value => Number(value.toFixed(3))) }, '720pSafeExport': true, '1080pTurboLateStart': true, ...(combinedLongProfile ? { longCombinedProfile: { passed: true, durationSeconds: 300, frames: 9000, resolution: '1280x720', exportMilliseconds: combinedLongProfile.exportMilliseconds, sampleCount: (combinedLongProfile.memorySamples as unknown[]).length, hairPngMetrics: combinedLongProfile.hairPngMetrics, hairPngEncodeMilliseconds: combinedLongProfile.hairPngEncodeMilliseconds, hairPngDecodeMilliseconds: combinedLongProfile.hairPngDecodeMilliseconds, matrixScenarios: combinedLongProfile.matrixScenarios } } : {}) }))
   } finally {
     sequential?.close(); split?.close(); factory.dispose()
   }

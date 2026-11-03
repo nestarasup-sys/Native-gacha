@@ -69,6 +69,8 @@ export function parseHairMotionPresets(text: string | null): Array<HairMotionPre
 export const HAIR_MOTION_SIMULATION_HZ = 120
 export const HAIR_MOTION_OUTPUT_FPS = 30
 export const HAIR_MOTION_STEPS_PER_FRAME = HAIR_MOTION_SIMULATION_HZ / HAIR_MOTION_OUTPUT_FPS
+/** Two simulated seconds give the spring chain a stable export-only starting pose. */
+export const HAIR_MOTION_PREWARM_STEPS = HAIR_MOTION_SIMULATION_HZ * 2
 
 export function createHairMotionState(segments = 8): HairMotionState {
   return { offsets: new Float32Array(segments + 1), velocities: new Float32Array(segments + 1), previousHead: 0, time: 0, frame: -1 }
@@ -80,6 +82,33 @@ export function resetHairMotionState(state: HairMotionState): void {
   state.previousHead = 0
   state.time = 0
   state.frame = -1
+}
+
+/**
+ * Start an export at an already-moving, deterministic point in the breeze.
+ * This is deliberately opt-in: Fabricator preview continues starting from its
+ * ordinary live state, while an MP4 renderer can pre-roll without moving the
+ * scene timeline or the character's head path.
+ */
+export function prewarmHairMotionState(
+  state: HairMotionState,
+  settings: HairMotionSettings,
+  headXAtFrameZero: number,
+  phase: number
+): void {
+  if (!Number.isFinite(headXAtFrameZero) || !Number.isFinite(phase)) throw Error('Inicialização da animação de cabelo inválida.')
+  resetHairMotionState(state)
+  state.previousHead = headXAtFrameZero
+  if (settings.enabled) {
+    const dt = 1 / HAIR_MOTION_SIMULATION_HZ
+    for (let step = 0; step < HAIR_MOTION_PREWARM_STEPS; step += 1) {
+      stepHairMotion(state, settings, dt, headXAtFrameZero, phase)
+    }
+  }
+  state.previousHead = headXAtFrameZero
+  // The warm-up is internal simulation time. The first exported image remains
+  // absolute timeline frame zero and subsequent frames follow it continuously.
+  state.frame = 0
 }
 
 /** Stable fixed-step spring chain; the first point remains attached to the head. */

@@ -141,3 +141,38 @@ O workflow dedicado do Editor V6 agora tem um job Windows que instala o runtime 
 A exportação Turbo gera **60 quadros a 30 FPS**. Todos os quadros do MP4 final são decodificados e seu pixel central é comparado à mídia que `resolveEditorV6SceneAtFrame` seleciona no mesmo instante: vermelho até o 19, verde do 20 ao 36, azul do 37 ao 49 e vermelho do 50 ao 59. A emenda entre as partes, nos quadros 29 e 30, deve continuar verde. São verificadas também resolução, quantidade exata de quadros e exportação em duas partes sem fallback. O relatório de verificação sintética é anexado à execução da CI, sem acessar mídia ou dados pessoais.
 
 O teste cobre a prioridade dos clipes opacos em tela inteira, não a paridade de áudio, transparência nem transformações de layout. O teste completo `npm run test:editor-v6:export` e o aceite visual de casos adicionais continuam relevantes.
+
+## Fase por personagem e espelhamento do cabelo — 03/11/2026
+
+No MP4, o vento do preset continua no eixo horizontal local do desenho. O renderer não troca nem grava o sinal do vento: o `flipX` global espelha uma única vez a camada inteira já composta, junto com a arte do personagem. Para a inércia, o deslocamento do centro do personagem é convertido de volta para o eixo local considerando rotação e espelhamento; o deslocamento do ponto da cabeça dentro da arte é acompanhado em separado. Isso evita usar uma posição absoluta já espelhada como se fosse movimento local e evita um impulso falso quando uma troca de pose liga `flipX`.
+
+Cada instância recebe uma fase determinística calculada por FNV-1a do `elementId`, distribuída em `[0, 2π)`. Essa fase é somada à fase de cada peça, sem usar a ordem de desenho, `characterId` ou aleatoriedade por quadro. Duplicatas do mesmo personagem têm fases independentes; reexportar a mesma cena mantém as mesmas fases. Mudanças de `flipX` de peças são mantidas como pontos de mudança esparsos por camada, sem guardar uma matriz de coordenadas por peça e quadro.
+
+Quando um estado de física de exportação é criado ou precisa voltar a um quadro anterior, o worker simula dois segundos a 120 Hz com a cabeça parada na posição inicial e a fase da instância. Em seguida marca esse estado como quadro absoluto zero; a timeline e a trajetória da cabeça não são deslocadas. O primeiro frame pode, portanto, já conter movimento. A raiz continua presa. `hairMotionPrewarmMs` mede separadamente o custo em cada worker, enquanto `hairCompositionMs` segue cobrindo o trabalho completo de deformar e compor a camada.
+
+### Evidência sintética local
+
+- Dois MP4s com o mesmo `elementId` e preset `vento = -50` — um normal, outro com `flipX` global — foram decodificados com FFmpeg. O preset permaneceu em `-50`; o maior erro do reflexo do centróide foi **0,813 px**, e o maior erro de trajetória invertida foi **0,339 px**. O primeiro quadro já apresentou movimento.
+- Dois MP4s adicionais espelharam independentemente uma peça de cabelo, sem espelhar o personagem. O maior erro de reflexão foi **1,662 px** e o maior erro de trajetória foi **0,817 px**. As tolerâncias cobrem o arredondamento e a compressão H.264; também há verificações dos pixels RGBA antes do codec.
+- A matriz de 4 personagens mediu 6 posições do centróide em cada ator: as duas instâncias normais e as duas espelhadas tiveram trajetórias distintas. A mesma cena foi exportada em modo seguro e Turbo; os centróides correspondentes ficaram dentro de **1,5 px**. Testes da fase exercitam quantidades 1, 2, 3, 4, 8 e 32, sem depender da posição na lista.
+- A matriz de 4 e 8 personagens produziu MP4s de 30 segundos em 1080p, com fala sintética, em modo seguro e Turbo. O perfil contínuo de 5 minutos produziu 9.000 quadros em 720p e foi verificado por FFprobe e por pixels decodificados nos quadros 0, 4.500 e 8.999.
+
+### Custo medido nesta máquina
+
+O PC estava livre de jogo, conforme informado pelo usuário. Processos de fundo do Windows não foram controlados; portanto, estes tempos são observações deste perfil, não uma garantia de velocidade. O tempo total do pré-aquecimento ficou entre **7,3 e 14,7 ms** na matriz de 4/8 personagens. No perfil de 5 minutos, foram **55,4 ms no total** ao longo de 30 workers (1,8–1,9 ms por worker). A composição do cabelo somou **127,7 s em 9.000 quadros**, cerca de **14,2 ms por quadro**, dentro dos 345,4 s de exportação completa.
+
+| Perfil sintético | Exportação | Pré-aquecimento total | Pico do renderer por processo (WS / privado) |
+| --- | ---: | ---: | ---: |
+| 4 personagens, 1080p, seguro | 81,0 s | 7,3 ms | 151,6 / 82,2 MiB |
+| 4 personagens, 1080p, Turbo | 64,6 s | 10,8 ms | 151,1 / 81,8 MiB |
+| 8 personagens, 1080p, seguro | 122,8 s | 10,7 ms | 180,3 / 111,6 MiB |
+| 8 personagens, 1080p, Turbo | 100,5 s | 14,7 ms | 157,7 / 87,6 MiB |
+| 1 personagem, 720p, 5 min, seguro | 345,4 s | 55,4 ms / 30 workers | 122,3 / 53,8 MiB |
+
+O working set de processo GPU observado ficou entre 188,4 e 295,8 MiB nesses perfis; essa métrica **não representa a VRAM**. A fase individual não cria uma textura nem uma superfície por ator: cada cabelo continua usando a textura e os canvases reutilizáveis já existentes.
+
+### Verificações e limites
+
+Passaram `npm run typecheck`, `npm run audit:architecture`, `npm run test:editor-v6`, `npm run test:editor-v6:hair-motion-export`, `npm run test:editor-v6:export`, `npm run build`, os testes de física/presets/contrato e os testes de armazenamento, catálogo e workspace de cabelo do Fabricador. `npm run test:editor-v6` reportou 231 testes aprovados e 1 skip. A prévia do Fabricador continua usando seu loop atual; `prewarmHairMotionState` é chamado somente por `exportWorker.tsx`. O Editor V6 continua sem animação de cabelo na prévia, viewport, playback ou timeline.
+
+Os testes usam personagens e cabelos sintéticos. Ainda falta o aceite visual do usuário com os projetos e cabelos reais que ele escolher; não se afirma que os parâmetros artísticos do preset tenham sido calibrados para todos os tipos de cabelo.
