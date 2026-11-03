@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { articulateJoinedLimbSplit, canArticulateJoinedLimbSplit } from '../src/renderer/src/features/fabricator/models/joinedLimbSplit.ts'
+import { articulateJoinedLimbSplit, canArticulateJoinedLimbSplit, findOppositeJoinedLimbCounterpart, mapJoinedLimbSplitLine } from '../src/renderer/src/features/fabricator/models/joinedLimbSplit.ts'
 import { findBodyJointBridgePairs } from '../src/renderer/src/characters/bodyJointBridge.ts'
 
 const part = (id, name, x, y, width = 20, height = 30, extra = {}) => ({
@@ -78,6 +78,34 @@ test('divisor de juntas só fica disponível para membro inteiro ainda não divi
   assert.equal(canArticulateJoinedLimbSplit(upperArm, [torso, upperArm, forearm], [
     { id: 'elbow', parentPartId: 'upper', childPartId: 'forearm', parentAnchor: { x: 0, y: 0 }, childAnchor: { x: 0, y: 0 } }
   ]), false)
+})
+
+test('encontra o braço ou a perna inteira do lado oposto sem confundir segmentos já cortados', () => {
+  const torso = part('torso', 'Tronco', 90, 30, 60, 70)
+  const leftArm = part('left-arm', 'Braço esquerdo', 45, 20, 20, 100)
+  const rightArm = part('right-arm', 'Braço direito', 175, 20, 20, 100)
+  const leftLeg = part('left-leg', 'Perna esquerda', 85, 100, 24, 110)
+  const rightLeg = part('right-leg', 'Perna direita', 130, 100, 24, 110)
+  const parts = [torso, leftArm, rightArm, leftLeg, rightLeg]
+
+  assert.equal(findOppositeJoinedLimbCounterpart(rightArm, parts, []), leftArm)
+  assert.equal(findOppositeJoinedLimbCounterpart(leftLeg, parts, []), rightLeg)
+  assert.equal(findOppositeJoinedLimbCounterpart(leftArm, [torso, leftArm], []), null)
+
+  const alreadySplitLeft = { ...part('left-arm-lower', 'Antebraço esquerdo', 45, 70), splitOriginPartId: leftArm.id }
+  assert.equal(findOppositeJoinedLimbCounterpart(rightArm, [...parts, alreadySplitLeft], []), null)
+  assert.equal(canArticulateJoinedLimbSplit(leftArm, [...parts, alreadySplitLeft], []), false)
+  assert.equal(canArticulateJoinedLimbSplit(alreadySplitLeft, [...parts, alreadySplitLeft], []), false)
+})
+
+test('espelha a linha de corte e preserva sua posição proporcional no membro oposto', () => {
+  const rightArm = part('right-arm', 'Braço direito', 175, 20, 20, 100)
+  const leftArm = part('left-arm', 'Braço esquerdo', 45, 20, 30, 80)
+  const line = mapJoinedLimbSplitLine(rightArm, leftArm, { x: 2, y: 40 }, { x: 18, y: 50 })
+
+  assert.deepEqual(line.start, { x: 27, y: 32 })
+  assert.ok(Math.abs(line.end.x - 3) < 1e-9)
+  assert.equal(line.end.y, 40)
 })
 
 test('body bridge is opt-in and only accepts linked matching limb segments on the same side', () => {

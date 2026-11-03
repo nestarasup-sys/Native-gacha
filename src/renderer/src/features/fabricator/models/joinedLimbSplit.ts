@@ -42,7 +42,50 @@ function combinedLimbFamily(name: string, originalId: string, parts: ModelPart[]
 }
 
 export function canArticulateJoinedLimbSplit(original: ModelPart, parts: ModelPart[], joints: JointLink[]): boolean {
+  if (original.splitOriginPartId || parts.some((part) => part.splitOriginPartId === original.id)) return false
   return combinedLimbFamily(original.name, original.id, parts, joints) !== null
+}
+
+function resolvedSide(part: ModelPart, parts: ModelPart[]): 'left' | 'right' | null {
+  const explicit = modelRigSide(part.name)
+  if (explicit) return explicit
+  const torso = parts.find((item) => item.id !== part.id && isTorso(item))
+  if (!torso) return null
+  const delta = center(part).x - center(torso).x
+  return Math.abs(delta) < 1 ? null : delta < 0 ? 'left' : 'right'
+}
+
+/** Finds one still-whole counterpart of the same segment kind on the opposite side. */
+export function findOppositeJoinedLimbCounterpart(original: ModelPart, parts: ModelPart[], joints: JointLink[]): ModelPart | null {
+  if (!canArticulateJoinedLimbSplit(original, parts, joints)) return null
+  const family = combinedLimbFamily(original.name, original.id, parts, joints)
+  const side = resolvedSide(original, parts)
+  if (!family || !side) return null
+  const oppositeSide = side === 'left' ? 'right' : 'left'
+  const kind = modelRigSegmentKind(original.name)
+  const candidates = parts.filter((candidate) => {
+    if (candidate.id === original.id || !canArticulateJoinedLimbSplit(candidate, parts, joints)) return false
+    if (modelRigSegmentKind(candidate.name) !== kind || resolvedSide(candidate, parts) !== oppositeSide) return false
+    return combinedLimbFamily(candidate.name, candidate.id, parts, joints) === family
+  })
+  return candidates.length === 1 ? candidates[0] : null
+}
+
+/** Maps a drawn joint line proportionally and mirrors it across the opposite limb's local X axis. */
+export function mapJoinedLimbSplitLine(
+  source: ModelPart,
+  target: ModelPart,
+  start: Point,
+  end: Point
+): { start: Point; end: Point } {
+  if (source.width < 1 || source.height < 1 || target.width < 1 || target.height < 1) {
+    throw new Error('Não foi possível aplicar a divisão proporcional: dimensões de membro inválidas.')
+  }
+  const mapPoint = (point: Point): Point => ({
+    x: (1 - point.x / source.width) * target.width,
+    y: point.y / source.height * target.height
+  })
+  return { start: mapPoint(start), end: mapPoint(end) }
 }
 
 function worldPoint(part: ModelPart, local: Point): Point {

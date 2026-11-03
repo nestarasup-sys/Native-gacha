@@ -12,7 +12,7 @@ import { applyImageWarpBrush, type ImageWarpPoint } from './models/imageMeshWarp
 import { createModelSourceWarpSession, drawModelSourceWarp, modelSourceWarpDataUrl, warpModelSkinContours, type ModelSourceWarpSession } from './models/modelSourceWarp'
 import { useModelSourceGuides } from './models/useModelSourceGuides'
 import { useModelSourceDraft } from './models/useModelSourceDraft'
-import { articulateJoinedLimbSplit, canArticulateJoinedLimbSplit } from './models/joinedLimbSplit'
+import { articulateJoinedLimbSplit, canArticulateJoinedLimbSplit, findOppositeJoinedLimbCounterpart, mapJoinedLimbSplitLine } from './models/joinedLimbSplit'
 import { isModelSkinPart } from './models/modelSkinTone'
 import { findLimbReplacementTarget, replaceLimbPixelsFromOpposite } from './models/modelSourceLimbReplacement'
 import { MODEL_SKIN_BASE_TONE } from '../../../../shared/skinTones'
@@ -604,25 +604,66 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
         })
         : null
       if (jointAware && !articulation) throw new Error('O divisor de juntas só funciona em um braço ou perna unidos ainda sem divisão articulada.')
-      const parts = articulation?.parts ?? materialized.parts.flatMap(item => item.id === part.id ? [retained, created] : [item])
-      const rig = articulation
-        ? { parts: articulation.parts, joints: articulation.joints }
-        : normalizePartAnchors(parts, materialized.joints)
-      const validIds = new Set(rig.parts.map(item => item.id))
       const hidden = new Set(materialized.hiddenPartIds ?? [])
       if (hidden.has(part.id)) hidden.add(created.id)
+      const initialRig = articulation ?? normalizePartAnchors(
+        materialized.parts.flatMap(item => item.id === part.id ? [retained, created] : [item]),
+        materialized.joints
+      )
+      let nextParts = initialRig.parts
+      let nextJoints = initialRig.joints
+      let nextLayerOrder = orderAfterSplit(materialized.layerOrder, part.id,
+        articulation?.upper.id ?? retained.id, articulation?.lower.id ?? created.id)
+      let pairedNames = ''
+      if (articulation) {
+        const counterpart = findOppositeJoinedLimbCounterpart(part, materialized.parts, materialized.joints)
+        if (counterpart) {
+          const counterpartLine = mapJoinedLimbSplitLine(part, counterpart, start, end)
+          const counterpartJoint = nextJoints.find(joint => joint.parentPartId === counterpart.id || joint.childPartId === counterpart.id)
+          const counterpartAnchor = counterpartJoint
+            ? counterpartJoint.parentPartId === counterpart.id ? counterpartJoint.parentAnchor : counterpartJoint.childAnchor
+            : undefined
+          const counterpartReference = counterpart.jointAnchor
+            ? worldPointToPart(counterpart, counterpart.jointAnchor)
+            : counterpartAnchor ? worldPointToPart(counterpart, counterpartAnchor) : { x: counterpart.width / 2, y: counterpart.height / 2 }
+          const counterpartSplit = await splitModelSourcePart(counterpart, counterpartLine.start, counterpartLine.end, counterpartReference)
+          const counterpartRetained = counterpartSplit.parts[counterpartSplit.retainedSide]
+          const counterpartCreated = {
+            ...counterpartSplit.parts[1 - counterpartSplit.retainedSide],
+            splitOriginPartId: counterpart.id,
+            splitOriginPartName: counterpart.name
+          }
+          const counterpartArticulation = articulateJoinedLimbSplit({
+            original: counterpart,
+            splitParts: [counterpartRetained, counterpartCreated],
+            parts: nextParts,
+            joints: nextJoints,
+            start: counterpartLine.start,
+            end: counterpartLine.end
+          })
+          if (!counterpartArticulation) {
+            throw new Error(`Não foi possível aplicar a mesma divisão em ${counterpart.name}. A divisão original também não foi alterada.`)
+          }
+          nextParts = counterpartArticulation.parts
+          nextJoints = counterpartArticulation.joints
+          nextLayerOrder = orderAfterSplit(nextLayerOrder, counterpart.id,
+            counterpartArticulation.upper.id, counterpartArticulation.lower.id)
+          if (hidden.has(counterpart.id)) hidden.add(counterpartCreated.id)
+          pairedNames = ` A mesma divisão foi aplicada também em ${counterpartArticulation.upper.name} e ${counterpartArticulation.lower.name}.`
+        }
+      }
+      const validIds = new Set(nextParts.map(item => item.id))
       return {
         project: {
           ...materialized,
-          parts: rig.parts,
-          joints: rig.joints,
-          layerOrder: orderAfterSplit(materialized.layerOrder, part.id,
-            articulation?.upper.id ?? retained.id, articulation?.lower.id ?? created.id),
+          parts: nextParts,
+          joints: nextJoints,
+          layerOrder: nextLayerOrder,
           hiddenPartIds: [...hidden].filter(id => validIds.has(id))
         },
         selectedId: retained.id,
         status: articulation
-          ? `Peça dividida em ${articulation.upper.name} e ${articulation.lower.name}. A junta e a ponte do corpo foram ativadas para esse modelo.`
+          ? `Peça dividida em ${articulation.upper.name} e ${articulation.lower.name}. As juntas e pontes do corpo foram ativadas para esse modelo.${pairedNames || ' Não encontrei uma peça inteira correspondente no lado oposto; apenas esta peça foi dividida.'}`
           : connectedJoint
             ? 'Peça dividida. A conexão foi mantida no lado que conserva o ID original; o novo lado ficou sem conexão.'
             : 'Peça dividida em duas. Selecione e exclua o lado que não deseja manter.'
@@ -945,7 +986,7 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
                 <button type="button" style={toolButton(tool === 'erase', busy || downloading || !selected)} disabled={busy || downloading || !selected} onClick={() => setEditTool('erase')}>Apagar</button>
                 <button type="button" style={toolButton(tool === 'crop', busy || downloading || !selected)} disabled={busy || downloading || !selected} onClick={() => setEditTool('crop')}>Cortar</button>
                 <button type="button" title="Corte genérico para separar e excluir a parte da imagem que não deseja" style={toolButton(tool === 'split', busy || downloading || !selected)} disabled={busy || downloading || !selected} onClick={() => setEditTool('split')}>Dividir com linha</button>
-                <button type="button" title={!draft.bodyJointBridgeEnabled ? 'Ative “Partes unidas” para usar o divisor de juntas' : !jointSplitReady ? 'Selecione um braço ou uma perna inteira ainda não dividida' : 'Divide o membro em segmentos anatômicos e cria a junta e a ponte do corpo'} style={toolButton(tool === 'joint-split', busy || downloading || !jointSplitReady)} disabled={busy || downloading || !jointSplitReady} onClick={() => setEditTool('joint-split')}>Divisor de juntas</button>
+                <button type="button" title={!draft.bodyJointBridgeEnabled ? 'Ative “Partes unidas” para usar o divisor de juntas' : !jointSplitReady ? 'Selecione um braço ou uma perna inteira ainda não dividida' : 'Divide o membro e aplica a mesma linha proporcional ao membro inteiro do lado oposto'} style={toolButton(tool === 'joint-split', busy || downloading || !jointSplitReady)} disabled={busy || downloading || !jointSplitReady} onClick={() => setEditTool('joint-split')}>Divisor de juntas</button>
               </div>
               <div className="model-source-tool-group">
                 <small>Acabamento</small>
@@ -1015,7 +1056,7 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
                   ? 'Folha PNG transparente · selecione a cabeça para mover'
                   : tool === 'crop' ? 'Arraste um retângulo sobre a peça e aplique o corte.'
                     : tool === 'split' ? 'Trace uma linha para dividir a peça e excluir depois o lado que não deseja.'
-                    : tool === 'joint-split' ? 'Trace a articulação para nomear os segmentos e criar uma junta com ponte do corpo.'
+                    : tool === 'joint-split' ? 'Trace a articulação; a mesma divisão proporcional será aplicada ao membro inteiro do lado oposto.'
                       : tool === 'erase' ? 'Pinte a área que deseja apagar.'
                         : tool === 'outline' ? 'Pinte sobre o contorno escuro para removê-lo automaticamente.'
                       : tool === 'deform' ? warpSession ? 'Arraste sobre a coxa para deformar. Cada traço fica no rascunho; “Salvar no original” publica.' : 'Preparando a coxa para deformar…'
