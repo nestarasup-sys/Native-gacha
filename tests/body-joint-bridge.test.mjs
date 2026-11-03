@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { articulateJoinedLimbSplit } from '../src/renderer/src/features/fabricator/models/joinedLimbSplit.ts'
+import { articulateJoinedLimbSplit, canArticulateJoinedLimbSplit } from '../src/renderer/src/features/fabricator/models/joinedLimbSplit.ts'
 import { findBodyJointBridgePairs } from '../src/renderer/src/characters/bodyJointBridge.ts'
 
 const part = (id, name, x, y, width = 20, height = 30, extra = {}) => ({
@@ -66,6 +66,18 @@ test('joined leg is cut into hip-side thigh and knee-side shin; already segmente
     joints: [{ id: 'knee-existing', parentPartId: 'thigh', childPartId: 'shin', parentAnchor: { x: 0, y: 20 }, childAnchor: { x: 0, y: 30 } }],
     start: { x: 0, y: 1 }, end: { x: 4, y: 1 }
   }), null)
+})
+
+test('divisor de juntas só fica disponível para membro inteiro ainda não dividido', () => {
+  const torso = part('torso', 'Tronco', 80, -40, 60, 45)
+  const wholeArm = part('arm', 'Braço esquerdo', 96, 0, 20, 100)
+  const upperArm = part('upper', 'Braço esquerdo', 96, 0, 20, 50)
+  const forearm = part('forearm', 'Antebraço esquerdo', 96, 50, 20, 50)
+
+  assert.equal(canArticulateJoinedLimbSplit(wholeArm, [torso, wholeArm], []), true)
+  assert.equal(canArticulateJoinedLimbSplit(upperArm, [torso, upperArm, forearm], [
+    { id: 'elbow', parentPartId: 'upper', childPartId: 'forearm', parentAnchor: { x: 0, y: 0 }, childAnchor: { x: 0, y: 0 } }
+  ]), false)
 })
 
 test('body bridge is opt-in and only accepts linked matching limb segments on the same side', () => {

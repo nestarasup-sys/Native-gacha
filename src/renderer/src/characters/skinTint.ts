@@ -1,10 +1,16 @@
-import type { ModelSkinContourStroke } from '../../../shared/fabricator'
+import type { ModelPart, ModelSkinContourStroke } from '../../../shared/fabricator'
 import { MODEL_SKIN_BASE_TONE, isValidSkinTone } from '../../../shared/skinTones.ts'
 
 const MODEL_BODY_PART_NAME = /cabe[çc]a|head|tronco|corpo|torso|body|bra[cç]o|arm|antebra[cç]o|forearm|coxa|thigh|perna|canela|panturrilha|leg|calf|shin|(?:^|[\s_-])p[eé]s?(?:$|[\s_-])|foot|feet|m[aã]o(?:s)?|hands?/i
 
 export function isModelBodyPartName(name: string): boolean {
   return MODEL_BODY_PART_NAME.test(name)
+}
+
+/** Split pieces inherit body identity from their source even if their display label changes. */
+export function isModelBodyPart(part: Pick<ModelPart, 'name' | 'splitOriginPartName'>): boolean {
+  return isModelBodyPartName(part.name)
+    || Boolean(part.splitOriginPartName && isModelBodyPartName(part.splitOriginPartName))
 }
 
 function createFakeContourBarrier(width: number, height: number, contours: ModelSkinContourStroke[] = []): Uint8Array | null {

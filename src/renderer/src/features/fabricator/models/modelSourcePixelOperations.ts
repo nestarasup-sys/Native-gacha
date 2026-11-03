@@ -13,6 +13,93 @@ function colorDistance(data: Uint8ClampedArray, a: number, b: number): number {
   return Math.sqrt(red * red + green * green + blue * blue)
 }
 
+/** Find dark, high-contrast ink close to the transparent silhouette edge. */
+export function detectModelSourceOutlineMask(image: ModelSourcePixelImage): Uint8Array {
+  const { width, height, data } = image
+  const count = width * height
+  const thickness = Math.max(2, Math.min(8, Math.round(Math.min(width, height) * 0.04)))
+  const unreachable = thickness + 1
+  const distance = new Uint8Array(count)
+  distance.fill(unreachable)
+  for (let pixel = 0; pixel < count; pixel += 1) if (data[pixel * 4 + 3] < 32) distance[pixel] = 0
+
+  const advance = (value: number) => Math.min(unreachable, value + 1)
+  for (let y = 0; y < height; y += 1) for (let x = 0; x < width; x += 1) {
+    const pixel = y * width + x
+    if (distance[pixel] === 0) continue
+    let nearest = distance[pixel]
+    if (x > 0) nearest = Math.min(nearest, advance(distance[pixel - 1]))
+    if (y > 0) {
+      nearest = Math.min(nearest, advance(distance[pixel - width]))
+      if (x > 0) nearest = Math.min(nearest, advance(distance[pixel - width - 1]))
+      if (x + 1 < width) nearest = Math.min(nearest, advance(distance[pixel - width + 1]))
+    }
+    distance[pixel] = nearest
+  }
+  for (let y = height - 1; y >= 0; y -= 1) for (let x = width - 1; x >= 0; x -= 1) {
+    const pixel = y * width + x
+    if (distance[pixel] === 0) continue
+    let nearest = distance[pixel]
+    if (x + 1 < width) nearest = Math.min(nearest, advance(distance[pixel + 1]))
+    if (y + 1 < height) {
+      nearest = Math.min(nearest, advance(distance[pixel + width]))
+      if (x > 0) nearest = Math.min(nearest, advance(distance[pixel + width - 1]))
+      if (x + 1 < width) nearest = Math.min(nearest, advance(distance[pixel + width + 1]))
+    }
+    distance[pixel] = nearest
+  }
+
+  const luminanceAt = (pixel: number) => {
+    const offset = pixel * 4
+    return brightness(data[offset], data[offset + 1], data[offset + 2])
+  }
+  const mask = new Uint8Array(count)
+  for (let y = 0; y < height; y += 1) for (let x = 0; x < width; x += 1) {
+    const pixel = y * width + x
+    const offset = pixel * 4
+    if (data[offset + 3] < 32 || distance[pixel] > thickness) continue
+    const luminance = luminanceAt(pixel)
+    if (luminance <= 150) {
+      mask[pixel] = 1
+      continue
+    }
+    if (luminance > 210) continue
+    let touchesLighterInterior = false
+    for (let dy = -2; dy <= 2 && !touchesLighterInterior; dy += 1) for (let dx = -2; dx <= 2; dx += 1) {
+      if (dx === 0 && dy === 0) continue
+      const nx = x + dx
+      const ny = y + dy
+      if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue
+      const neighbor = ny * width + nx
+      if (data[neighbor * 4 + 3] >= 96 && luminanceAt(neighbor) - luminance >= 30) {
+        touchesLighterInterior = true
+        break
+      }
+    }
+    if (touchesLighterInterior) mask[pixel] = 1
+  }
+  return mask
+}
+
+/** Replace detected outer contour ink with one exact color while preserving alpha. */
+export function normalizeModelSourceOutlinePixels(image: ModelSourcePixelImage, color: string, mask = detectModelSourceOutlineMask(image)): number {
+  if (!/^#[0-9a-f]{6}$/i.test(color)) throw new Error('Escolha uma cor válida para normalizar o contorno.')
+  if (mask.length !== image.width * image.height) throw new Error('A máscara do contorno não corresponde ao tamanho da imagem.')
+  const target = [1, 3, 5].map((index) => Number.parseInt(color.slice(index, index + 2), 16))
+  let changedPixels = 0
+  for (let pixel = 0; pixel < mask.length; pixel += 1) {
+    if (!mask[pixel]) continue
+    const offset = pixel * 4
+    if (image.data[offset + 3] < 32) continue
+    if (image.data[offset] === target[0] && image.data[offset + 1] === target[1] && image.data[offset + 2] === target[2]) continue
+    image.data[offset] = target[0]
+    image.data[offset + 1] = target[1]
+    image.data[offset + 2] = target[2]
+    changedPixels += 1
+  }
+  return changedPixels
+}
+
 /** Finds the smallest source rectangle that includes every brush point and the outline test margin. */
 export function modelSourceBrushRegion(
   width: number,

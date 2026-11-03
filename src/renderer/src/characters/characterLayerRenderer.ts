@@ -8,7 +8,7 @@ import { configureCharacterSampling, MAX_CHARACTER_PREVIEW_PIXELS } from './rend
 import { createCharacterCanvas } from './canvasSurface'
 import { drawPreviewImageWithHalo } from './characterCanvasDrawing'
 import { faceElementOrder } from './characterFaceCatalogSupport'
-import { isModelBodyPartName } from './skinTint'
+import { isModelBodyPart } from './skinTint'
 import { drawEnabledBodyJointBridges } from './bodyJointBridge'
 
 export type HairCatalogSide = 'front' | 'back'
@@ -68,7 +68,7 @@ export function createCharacterLayerRenderer(loaders: CharacterLayerImageLoaders
 
     for (const { part } of parts) {
       try {
-        const image = isModelBodyPartName(part.name) && (skinTone || outlineColor)
+        const image = isModelBodyPart(part) && (skinTone || outlineColor)
           ? await loadModelBodyTintedImage(part.dataUrl, skinTone, outlineColor, part.fakeSkinContours)
           : skinTone ? await loadSkinTintedImage(part.dataUrl, skinTone) : await loadCachedImage(part.dataUrl)
         context.save()
@@ -87,7 +87,7 @@ export function createCharacterLayerRenderer(loaders: CharacterLayerImageLoaders
     context.save()
     context.scale(scale, scale)
     await drawEnabledBodyJointBridges(context, artwork, async (part) =>
-      isModelBodyPartName(part.name) && (skinTone || outlineColor)
+      isModelBodyPart(part) && (skinTone || outlineColor)
         ? loadModelBodyTintedImage(part.dataUrl, skinTone, outlineColor, part.fakeSkinContours)
         : skinTone ? loadSkinTintedImage(part.dataUrl, skinTone) : loadCachedImage(part.dataUrl), scale)
     context.restore()
@@ -173,7 +173,7 @@ export function createCharacterLayerRenderer(loaders: CharacterLayerImageLoaders
       if (!part) continue
       if (!hidden.has(part.id)) {
         try {
-          const image = isModelBodyPartName(part.name) && (skinTone || outlineColor)
+          const image = isModelBodyPart(part) && (skinTone || outlineColor)
             ? await loadModelBodyTintedImage(part.dataUrl, skinTone, outlineColor, part.fakeSkinContours)
             : skinTone ? await loadSkinTintedImage(part.dataUrl, skinTone) : await loadCachedImage(part.dataUrl)
           context.save()
@@ -187,7 +187,7 @@ export function createCharacterLayerRenderer(loaders: CharacterLayerImageLoaders
     context.save()
     context.scale(scale, scale)
     await drawEnabledBodyJointBridges(context, artwork, async (part) =>
-      isModelBodyPartName(part.name) && (skinTone || outlineColor)
+      isModelBodyPart(part) && (skinTone || outlineColor)
         ? loadModelBodyTintedImage(part.dataUrl, skinTone, outlineColor, part.fakeSkinContours)
         : skinTone ? loadSkinTintedImage(part.dataUrl, skinTone) : loadCachedImage(part.dataUrl), scale)
     context.restore()

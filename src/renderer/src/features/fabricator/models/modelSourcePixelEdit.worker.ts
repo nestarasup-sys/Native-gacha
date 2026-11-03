@@ -1,4 +1,4 @@
-import { applyModelSourceBrushPixels, modelSourceBrushRegion, removeModelSourceColorPixels } from './modelSourcePixelOperations'
+import { applyModelSourceBrushPixels, detectModelSourceOutlineMask, modelSourceBrushRegion, normalizeModelSourceOutlinePixels, removeModelSourceColorPixels } from './modelSourcePixelOperations'
 import type { ModelSourcePixelEditMessage, ModelSourcePixelEditRequest } from './modelSourcePixelEditProtocol'
 
 const MAX_IMAGE_PIXELS = 32_000_000
@@ -24,12 +24,14 @@ function validateRequest(request: ModelSourcePixelEditRequest): void {
       || !Number.isFinite(request.size) || request.size <= 0) {
       throw new Error('O traço do pincel está inválido ou excede o limite de pontos.')
     }
+  } else if (request.operation === 'normalize-outline') {
+    if (!/^#[0-9a-f]{6}$/i.test(request.color)) throw new Error('Escolha uma cor válida para normalizar o contorno.')
   } else if (!/^#[0-9a-f]{6}$/i.test(request.color) || !Number.isFinite(request.tolerance) || request.tolerance < 0 || request.tolerance > 180) {
     throw new Error('A cor ou a semelhança selecionada está inválida.')
   }
 }
 
-async function editImage(dataUrl: string, request: ModelSourcePixelEditRequest): Promise<{ png: ArrayBuffer; removedPixels: number }> {
+async function editImage(dataUrl: string, request: ModelSourcePixelEditRequest, sharedOutlineMask?: Uint8Array): Promise<{ png: ArrayBuffer; removedPixels: number; outlineMask?: Uint8Array }> {
   const response = await fetch(dataUrl)
   if (!response.ok) throw new Error('Não foi possível abrir a imagem da peça no worker.')
   const bitmap = await createImageBitmap(await response.blob())
@@ -53,6 +55,13 @@ async function editImage(dataUrl: string, request: ModelSourcePixelEditRequest):
         removedPixels = applyModelSourceBrushPixels(pixels, request.points, request.size, request.outlineOnly, region)
         context.putImageData(pixels, region.x, region.y)
       }
+    } else if (request.operation === 'normalize-outline') {
+      const pixels = context.getImageData(0, 0, width, height)
+      const outlineMask = sharedOutlineMask ?? detectModelSourceOutlineMask(pixels)
+      removedPixels = normalizeModelSourceOutlinePixels(pixels, request.color, outlineMask)
+      context.putImageData(pixels, 0, 0)
+      const blob = await canvas.convertToBlob({ type: 'image/png' })
+      return { png: await blob.arrayBuffer(), removedPixels, outlineMask }
     } else {
       const pixels = context.getImageData(0, 0, width, height)
       removedPixels = removeModelSourceColorPixels(pixels, request.color, request.tolerance)
@@ -70,7 +79,7 @@ workerScope.onmessage = async (event: MessageEvent<ModelSourcePixelEditRequest>)
   try {
     validateRequest(request)
     const display = await editImage(request.part.displayDataUrl, request)
-    const base = await editImage(request.part.baseDataUrl, request)
+    const base = await editImage(request.part.baseDataUrl, request, display.outlineMask)
     const removedPixels = request.operation === 'brush' ? display.removedPixels : Math.max(display.removedPixels, base.removedPixels)
     workerScope.postMessage({ type: 'complete', id: request.id, displayPng: display.png, basePng: base.png, removedPixels }, [display.png, base.png])
   } catch (reason) {

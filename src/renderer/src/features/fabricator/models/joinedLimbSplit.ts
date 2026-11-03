@@ -41,6 +41,10 @@ function combinedLimbFamily(name: string, originalId: string, parts: ModelPart[]
   return hasConnectedCounterpart ? null : family
 }
 
+export function canArticulateJoinedLimbSplit(original: ModelPart, parts: ModelPart[], joints: JointLink[]): boolean {
+  return combinedLimbFamily(original.name, original.id, parts, joints) !== null
+}
+
 function worldPoint(part: ModelPart, local: Point): Point {
   const radians = part.rotation * Math.PI / 180
   const dx = local.x - part.width / 2

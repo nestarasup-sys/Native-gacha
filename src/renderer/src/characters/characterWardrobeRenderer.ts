@@ -10,7 +10,7 @@ import type { CatalogArtwork } from './characterSourceResolver'
 import { configureCharacterSampling, MAX_CHARACTER_PREVIEW_PIXELS } from './renderResolution'
 import { createCharacterCanvas } from './canvasSurface'
 import { drawPreviewImageWithHalo } from './characterCanvasDrawing'
-import { isModelBodyPartName } from './skinTint'
+import { isModelBodyPart } from './skinTint'
 import { drawWardrobeJointBridge } from './wardrobeJointBridge'
 import { drawBodyJointBridgePair, findBodyJointBridgePairs } from './bodyJointBridge'
 import type { BodyJointBridgePair } from './bodyJointBridge'
@@ -311,7 +311,7 @@ export function createCharacterWardrobeRenderer(loaders: CharacterWardrobeImageL
 
     async function renderBodyJointBridge(pair: BodyJointBridgePair) {
       await drawBodyJointBridgePair(outputContext!, pair, async (part) =>
-        isModelBodyPartName(part.name) && (skinTone || source?.modelOutlineColor)
+        isModelBodyPart(part) && (skinTone || source?.modelOutlineColor)
           ? loadModelBodyTintedImage(part.dataUrl, skinTone, source?.modelOutlineColor, part.fakeSkinContours)
           : skinTone ? loadSkinTintedImage(part.dataUrl, skinTone) : loadCachedImage(part.dataUrl), pixelScale)
     }
@@ -324,7 +324,7 @@ export function createCharacterWardrobeRenderer(loaders: CharacterWardrobeImageL
           // The wardrobe composite redraws the body to interleave garments with
           // model layers. Keep that duplicate body in sync with the tinted base
           // preview, otherwise the original skin pixels cover the selected tone.
-          const image = isModelBodyPartName(part.name) && (skinTone || source.modelOutlineColor)
+          const image = isModelBodyPart(part) && (skinTone || source.modelOutlineColor)
             ? await loadModelBodyTintedImage(part.dataUrl, skinTone, source.modelOutlineColor, part.fakeSkinContours)
             : skinTone ? await loadSkinTintedImage(part.dataUrl, skinTone) : await loadCachedImage(part.dataUrl)
           outputContext.save()

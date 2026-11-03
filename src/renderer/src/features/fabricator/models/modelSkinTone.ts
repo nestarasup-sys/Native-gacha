@@ -1,11 +1,11 @@
 import type { ModelPart } from '../../../../../shared/fabricator'
 import { MODEL_SKIN_BASE_TONE, isValidSkinTone } from '../../../../../shared/skinTones'
-import { fillEnclosedTransparentSkin, isModelBodyPartName, tintModelBodyPixels } from '../../../characters/skinTint'
+import { fillEnclosedTransparentSkin, isModelBodyPart, tintModelBodyPixels } from '../../../characters/skinTint'
 import { loadImageFromDataUrl } from './imageData'
 import { createModelBodyPreviewCache } from './modelBodyPreviewCache'
 
 export function isModelSkinPart(part: ModelPart): boolean {
-  return isModelBodyPartName(part.name)
+  return isModelBodyPart(part)
 }
 
 export async function createModelBodyAppearancePreview(part: ModelPart, tone?: string, outlineColor?: string): Promise<string | null> {

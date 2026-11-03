@@ -390,3 +390,23 @@ export async function removeModelSourceColor(part: ModelPart, color: string, tol
     removedPixels: edited.removedPixels
   }
 }
+
+export async function normalizeModelSourceOutline(part: ModelPart, color: string, signal?: AbortSignal): Promise<BrushResult> {
+  if (!/^#[0-9a-f]{6}$/i.test(color)) throw new Error('Escolha uma cor válida para normalizar o contorno.')
+  const task = startModelSourcePixelEditWorker({
+    id: ++pixelEditRequestId,
+    operation: 'normalize-outline',
+    part: { width: part.width, height: part.height, displayDataUrl: part.dataUrl, baseDataUrl: part.chromaBaseDataUrl ?? part.dataUrl },
+    color
+  }, undefined, signal)
+  const edited = await task.result
+  return {
+    part: {
+      ...part,
+      chromaBaseSaved: true,
+      dataUrl: edited.displayDataUrl,
+      chromaBaseDataUrl: edited.baseDataUrl
+    },
+    removedPixels: edited.removedPixels
+  }
+}

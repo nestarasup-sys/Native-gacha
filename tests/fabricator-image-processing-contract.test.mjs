@@ -5,7 +5,9 @@ import { createImportedModelProject } from '../src/renderer/src/features/fabrica
 import { ChromaAdjustTaskError, startChromaAdjustWorker } from '../src/renderer/src/features/fabricator/models/runChromaAdjustWorker.ts'
 import { ImageProcessorTaskError, startImageProcessorWorker } from '../src/renderer/src/features/fabricator/models/runImageProcessorWorker.ts'
 import { ModelSourcePixelEditTaskError, startModelSourcePixelEditWorker } from '../src/renderer/src/features/fabricator/models/runModelSourcePixelEditWorker.ts'
-import { applyModelSourceBrushPixels, modelSourceBrushRegion, removeModelSourceColorPixels } from '../src/renderer/src/features/fabricator/models/modelSourcePixelOperations.ts'
+import { applyModelSourceBrushPixels, detectModelSourceOutlineMask, modelSourceBrushRegion, normalizeModelSourceOutlinePixels, removeModelSourceColorPixels } from '../src/renderer/src/features/fabricator/models/modelSourcePixelOperations.ts'
+import { isModelBodyPart } from '../src/renderer/src/characters/skinTint.ts'
+import { applyMirroredLimbAssets, findLimbReplacementTarget } from '../src/renderer/src/features/fabricator/models/modelSourceLimbReplacement.ts'
 import { ModelSourceComposeTaskError, startModelSourceComposeWorker } from '../src/renderer/src/features/fabricator/models/runModelSourceComposeWorker.ts'
 import { applyChromaPixels } from '../src/renderer/src/features/fabricator/models/chroma.ts'
 import { findHeadFragmentMergeTargets, inferImportedModelPartName, isHeadFragmentCandidate, mergeHeadFragments } from '../src/renderer/src/features/fabricator/models/imageProcessorNaming.ts'
@@ -103,8 +105,9 @@ test('monta o projeto importado com bases, ordem, juntas e assets pendentes pres
 })
 
 test('tela e workers compartilham os contratos de mensagem definidos pelo domínio', async () => {
-  const [page, imageWorker, chromaWorker, modelSource, chromaRunner, imageRunner, pixelWorker, pixelRunner, pixelEditing, composeWorker, composeRunner, geometry, composer] = await Promise.all([
+  const [page, editor, imageWorker, chromaWorker, modelSource, chromaRunner, imageRunner, pixelWorker, pixelRunner, pixelEditing, composeWorker, composeRunner, geometry, composer] = await Promise.all([
     readFile(new URL('../src/renderer/src/features/fabricator/FabricatorPage.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../src/renderer/src/features/fabricator/ModelSourceEditor.tsx', import.meta.url), 'utf8'),
     readFile(new URL('../src/renderer/src/features/fabricator/models/imageProcessor.worker.ts', import.meta.url), 'utf8'),
     readFile(new URL('../src/renderer/src/features/fabricator/models/chromaAdjust.worker.ts', import.meta.url), 'utf8'),
     readFile(new URL('../src/renderer/src/features/fabricator/models/modelSource.ts', import.meta.url), 'utf8'),
@@ -134,6 +137,10 @@ test('tela e workers compartilham os contratos de mensagem definidos pelo domín
   assert.match(pixelWorker, /MessageEvent<ModelSourcePixelEditRequest>/)
   assert.match(pixelWorker, /applyModelSourceBrushPixels/)
   assert.match(pixelWorker, /removeModelSourceColorPixels/)
+  assert.match(pixelWorker, /normalizeModelSourceOutlinePixels/)
+  assert.match(editor, /Dividir com linha/)
+  assert.match(editor, /Divisor de juntas/)
+  assert.match(editor, /jointAware && materialized\.bodyJointBridgeEnabled/)
   assert.doesNotMatch(pixelEditing, /function applyBrush\(/)
   assert.doesNotMatch(pixelEditing, /function removeSelectedColor\(/)
   assert.doesNotMatch(page, /new Worker\(new URL\('\.\/models\/imageProcessor\.worker/)
@@ -210,6 +217,69 @@ test('remoção de cor mantém contorno escuro e cores que não correspondem ao 
   assert.equal(image.data[3], 255)
   assert.equal(image.data[7], 0)
   assert.equal(image.data[11], 255)
+})
+
+test('segmentos divididos herdam identidade corporal da peça de origem', () => {
+  assert.equal(isModelBodyPart({ name: 'Parte inferior', splitOriginPartName: 'Braço esquerdo' }), true)
+  assert.equal(isModelBodyPart({ name: 'Braço esquerdo - parte' }), true)
+  assert.equal(isModelBodyPart({ name: 'Acessório' }), false)
+})
+
+test('normalização troca apenas tinta escura próxima ao contorno externo e mantém alpha', () => {
+  const image = rgbaImage(15, 15, [0, 0, 0, 0])
+  for (let y = 4; y <= 10; y += 1) for (let x = 4; x <= 10; x += 1) {
+    const edge = x === 4 || x === 10 || y === 4 || y === 10
+    image.data.set(edge ? [70, 34, 32, 255] : [240, 200, 170, 255], (y * image.width + x) * 4)
+  }
+  image.data.set([185, 145, 140, 255], (4 * image.width + 5) * 4)
+  image.data.set([12, 12, 12, 255], (7 * image.width + 7) * 4)
+  const mask = detectModelSourceOutlineMask(image)
+  const changed = normalizeModelSourceOutlinePixels(image, '#168cff', mask)
+  const pixel = (x, y) => Array.from(image.data.slice((y * image.width + x) * 4, (y * image.width + x) * 4 + 4))
+
+  assert.equal(changed, 24)
+  assert.deepEqual(pixel(4, 7), [22, 140, 255, 255])
+  assert.deepEqual(pixel(5, 4), [22, 140, 255, 255])
+  assert.deepEqual(pixel(6, 7), [240, 200, 170, 255])
+  assert.deepEqual(pixel(7, 7), [12, 12, 12, 255])
+  assert.deepEqual(pixel(0, 0), [0, 0, 0, 0])
+})
+
+test('substituição experimental encontra apenas o lado oposto do mesmo segmento', () => {
+  const parts = [
+    { id: 'left-arm', name: 'Braço esquerdo' },
+    { id: 'right-arm', name: 'Braço direito' },
+    { id: 'left-forearm', name: 'Antebraço esquerdo' },
+    { id: 'right-forearm', name: 'Antebraço direito' },
+    { id: 'left-leg', name: 'Perna esquerda' },
+    { id: 'right-leg', name: 'Perna direita' }
+  ]
+  assert.equal(findLimbReplacementTarget(parts, parts[0]), parts[1])
+  assert.equal(findLimbReplacementTarget(parts, parts[2]), parts[3])
+  assert.equal(findLimbReplacementTarget(parts, parts[4]), parts[5])
+  assert.equal(findLimbReplacementTarget(parts.slice(0, 1), parts[0]), null)
+  assert.equal(findLimbReplacementTarget([parts[0], parts[3]], parts[0]), null)
+})
+
+test('cópia espelhada troca apenas imagens e guias, preservando identidade e encaixe do lado substituído', () => {
+  const source = {
+    id: 'left-arm', name: 'Braço esquerdo', x: 12, y: 18, width: 30, height: 80, rotation: 0,
+    dataUrl: 'left.png', fakeSkinContours: [{ width: 0.02, points: [{ x: 0.2, y: 0.3 }, { x: 0.4, y: 0.5 }] }]
+  }
+  const target = {
+    id: 'right-arm', name: 'Braço direito', x: 92, y: 18, width: 32, height: 82, rotation: 4,
+    jointAnchor: { x: 108, y: 18 }, sourceTransform: { x: 90, y: 16, width: 35, height: 85, rotation: 4 }
+  }
+  const copied = applyMirroredLimbAssets(source, target, 'mirrored.png', 'mirrored-base.png')
+
+  assert.equal(copied.id, target.id)
+  assert.equal(copied.x, target.x)
+  assert.equal(copied.width, target.width)
+  assert.deepEqual(copied.jointAnchor, target.jointAnchor)
+  assert.deepEqual(copied.sourceTransform, target.sourceTransform)
+  assert.equal(copied.dataUrl, 'mirrored.png')
+  assert.equal(copied.chromaBaseDataUrl, 'mirrored-base.png')
+  assert.deepEqual(copied.fakeSkinContours[0].points, [{ x: 0.8, y: 0.3 }, { x: 0.6, y: 0.5 }])
 })
 
 test('Chroma compartilhado mantém o alpha verde transparente e limpa o derramamento', () => {

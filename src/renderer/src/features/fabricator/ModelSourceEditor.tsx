@@ -1,17 +1,19 @@
 import { useEffect, useRef, useState } from 'react'
 import type { CSSProperties, PointerEvent as ReactPointerEvent, WheelEvent as ReactWheelEvent } from 'react'
 import type { FabricatorProject, ModelPart } from '../../../../shared/fabricator'
+import { modelRigSide } from '../../../../shared/modelRig'
 import { isHeadPart } from './models/resize'
 import { normalizePartAnchors } from './models/rig'
 import { composeModelSource, sourceRect, MAX_CHROMA_TOLERANCE, type ModelSourceResult } from './models/modelSource'
-import { cropModelSourcePart, eraseModelSourceBrush, removeModelSourceColor, rotateModelSourcePart, sampleModelSourceColor, splitModelSourcePart, worldPointInsideCrop, worldPointToPart, type ModelSourceCrop, type ModelSourcePoint, type ModelSourceQuarterTurn } from './models/modelSourceEditing'
+import { cropModelSourcePart, eraseModelSourceBrush, normalizeModelSourceOutline, removeModelSourceColor, rotateModelSourcePart, sampleModelSourceColor, splitModelSourcePart, worldPointInsideCrop, worldPointToPart, type ModelSourceCrop, type ModelSourcePoint, type ModelSourceQuarterTurn } from './models/modelSourceEditing'
 import { applyRotatedModelSourcePart } from './models/modelSourceProjectEditing'
 import { applyImageWarpBrush, type ImageWarpPoint } from './models/imageMeshWarp'
 import { createModelSourceWarpSession, drawModelSourceWarp, modelSourceWarpDataUrl, warpModelSkinContours, type ModelSourceWarpSession } from './models/modelSourceWarp'
 import { useModelSourceGuides } from './models/useModelSourceGuides'
 import { useModelSourceDraft } from './models/useModelSourceDraft'
-import { articulateJoinedLimbSplit } from './models/joinedLimbSplit'
+import { articulateJoinedLimbSplit, canArticulateJoinedLimbSplit } from './models/joinedLimbSplit'
 import { isModelSkinPart } from './models/modelSkinTone'
+import { findLimbReplacementTarget, replaceLimbPixelsFromOpposite } from './models/modelSourceLimbReplacement'
 import { MODEL_SKIN_BASE_TONE } from '../../../../shared/skinTones'
 
 type Props = {
@@ -21,8 +23,8 @@ type Props = {
 }
 type PreviewMode = 'part' | 'sheet'
 type PreviewBackground = 'checker' | 'white' | 'dark' | 'green' | 'magenta'
-type EditTool = 'select' | 'erase' | 'crop' | 'split' | 'outline' | 'deform' | 'guide'
-type DrawingGesture = { tool: 'erase' | 'crop' | 'split' | 'outline'; start: ModelSourcePoint; current: ModelSourcePoint; points: ModelSourcePoint[] }
+type EditTool = 'select' | 'erase' | 'crop' | 'split' | 'joint-split' | 'outline' | 'deform' | 'guide'
+type DrawingGesture = { tool: 'erase' | 'crop' | 'split' | 'joint-split' | 'outline'; start: ModelSourcePoint; current: ModelSourcePoint; points: ModelSourcePoint[] }
 type WarpDrag = { pointerId: number; partId: string; last: ImageWarpPoint; originalX: Float32Array; originalY: Float32Array; changed: boolean }
 
 const card: CSSProperties = { display: 'flex', gap: 8, alignItems: 'center', padding: 9, borderRadius: 9, cursor: 'pointer', color: 'inherit', background: '#202635', border: '1px solid #3c4554', textAlign: 'left' }
@@ -85,6 +87,8 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
   const [warpRadius, setWarpRadius] = useState(28)
   const [warpStrength, setWarpStrength] = useState(70)
   const [skinRemovalOpen, setSkinRemovalOpen] = useState(false)
+  const [outlineNormalizationOpen, setOutlineNormalizationOpen] = useState(false)
+  const [outlineColor, setOutlineColor] = useState(project.modelOutlineColor ?? '#70342c')
   const [skinColor, setSkinColor] = useState<string | null>(null)
   const [skinColorTolerance, setSkinColorTolerance] = useState(58)
   const [samplingSkinColor, setSamplingSkinColor] = useState(false)
@@ -135,6 +139,9 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
   const baseline = selected ? sourceRect(selected) : null
   const isHead = Boolean(selected && isHeadPart(selected))
   const isThigh = Boolean(selected && isThighPart(selected))
+  const jointSplitReady = Boolean(selected && draft.bodyJointBridgeEnabled === true
+    && canArticulateJoinedLimbSplit(selected, draft.parts, draft.joints))
+  const limbReplacementTarget = selected ? findLimbReplacementTarget(draft.parts, selected) : null
   const logicalWidth = mode === 'part' ? selectedRect?.width ?? 1 : draft.width
   const logicalHeight = mode === 'part' ? selectedRect?.height ?? 1 : draft.height
   const fitScale = Math.min(1, 620 / Math.max(1, logicalWidth), 430 / Math.max(1, logicalHeight))
@@ -523,8 +530,9 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
       }
     })
   }
-  const applySplit = () => {
-    if (!selected || !selectedRect || gesture?.tool !== 'split') return
+  const applySplit = (jointAware: boolean) => {
+    const expectedTool = jointAware ? 'joint-split' : 'split'
+    if (!selected || !selectedRect || gesture?.tool !== expectedTool) return
     void runMutation(async materialized => {
       const part = materialized.parts.find(item => item.id === selected.id)
       if (!part) throw new Error('A peça selecionada não está mais no modelo.')
@@ -541,7 +549,7 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
       const split = await splitModelSourcePart(part, start, end, reference)
       const retained = split.parts[split.retainedSide]
       const created = { ...split.parts[1 - split.retainedSide], splitOriginPartId: part.id, splitOriginPartName: part.name }
-      const articulation = materialized.bodyJointBridgeEnabled === true
+      const articulation = jointAware && materialized.bodyJointBridgeEnabled === true
         ? articulateJoinedLimbSplit({
           original: part,
           splitParts: [retained, created],
@@ -551,6 +559,7 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
           end
         })
         : null
+      if (jointAware && !articulation) throw new Error('O divisor de juntas só funciona em um braço ou perna unidos ainda sem divisão articulada.')
       const parts = articulation?.parts ?? materialized.parts.flatMap(item => item.id === part.id ? [retained, created] : [item])
       const rig = articulation
         ? { parts: articulation.parts, joints: articulation.joints }
@@ -572,7 +581,7 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
           ? `Peça dividida em ${articulation.upper.name} e ${articulation.lower.name}. A junta e a ponte do corpo foram ativadas para esse modelo.`
           : connectedJoint
             ? 'Peça dividida. A conexão foi mantida no lado que conserva o ID original; o novo lado ficou sem conexão.'
-            : 'Peça dividida em duas.'
+            : 'Peça dividida em duas. Selecione e exclua o lado que não deseja manter.'
       }
     })
   }
@@ -600,7 +609,7 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
     if (!skinColor || busy || downloading) return
     void runMutation(async materialized => {
       const bodyParts = materialized.parts.filter(isModelSkinPart)
-      if (!bodyParts.length) throw new Error('Não encontrei peças anatômicas pelo nome para remover a cor da pele.')
+      if (!bodyParts.length) throw new Error('Não encontrei peças anatômicas para remover a cor da pele.')
       const replacements = new Map<string, ModelPart>()
       let removedPixels = 0
       for (const part of bodyParts) {
@@ -620,6 +629,48 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
         },
         selectedId,
         status: `${removedPixels.toLocaleString('pt-BR')} pixels da pele removidos nas peças do corpo; os contornos escuros foram preservados. A edição pode ser desfeita.`
+      }
+    })
+  }
+  const normalizeModelOutline = () => {
+    if (!/^#[0-9a-f]{6}$/i.test(outlineColor) || busy || downloading) return
+    void runMutation(async materialized => {
+      const bodyParts = materialized.parts.filter(isModelSkinPart)
+      if (!bodyParts.length) throw new Error('Não encontrei peças anatômicas para normalizar o contorno.')
+      const replacements = new Map<string, ModelPart>()
+      let normalizedPixels = 0
+      for (const part of bodyParts) {
+        const result = await runPixelEdit(signal => normalizeModelSourceOutline(part, outlineColor, signal))
+        replacements.set(part.id, result.part)
+        normalizedPixels += result.removedPixels
+      }
+      if (!normalizedPixels) {
+        setStatus('Não encontrei contorno escuro junto à borda transparente das peças do corpo.')
+        return null
+      }
+      return {
+        project: {
+          ...materialized,
+          modelOutlineColor: outlineColor,
+          parts: materialized.parts.map(part => replacements.get(part.id) ?? part)
+        },
+        selectedId,
+        status: `${normalizedPixels.toLocaleString('pt-BR')} pixels de contorno normalizados em ${bodyParts.length} peças do corpo. A cor padrão do contorno também foi atualizada; a alteração pode ser desfeita.`
+      }
+    })
+  }
+  const replaceOppositeLimb = () => {
+    if (!selected || !limbReplacementTarget || busy || downloading) return
+    void runMutation(async materialized => {
+      const source = materialized.parts.find(part => part.id === selected.id)
+      if (!source) throw new Error('A peça de origem não está mais no modelo.')
+      const target = findLimbReplacementTarget(materialized.parts, source)
+      if (!target) throw new Error('Não encontrei uma única peça correspondente do lado oposto para substituir.')
+      const replacement = await replaceLimbPixelsFromOpposite(source, target)
+      return {
+        project: { ...materialized, parts: materialized.parts.map(part => part.id === target.id ? replacement : part) },
+        selectedId: source.id,
+        status: `${target.name} recebeu uma cópia espelhada de ${source.name}. A posição, o pivô e as juntas existentes foram preservados; use Desfazer para voltar.`
       }
     })
   }
@@ -733,12 +784,16 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
                   saveUndoSnapshot()
                   const enabled = event.target.checked
                   setDraft((current) => ({ ...current, bodyJointBridgeEnabled: enabled }))
+                  if (!enabled && tool === 'joint-split') {
+                    setTool('select')
+                    cancelDrawing()
+                  }
                   setStatus(enabled
-                    ? 'Partes unidas ativado. Ao dividir um braço ou uma perna inteira, a junta e a ponte do corpo serão criadas automaticamente.'
-                    : 'Partes unidas desativado. O corte volta ao comportamento normal para este modelo.')
+                    ? 'Partes unidas ativado. O botão Divisor de juntas poderá separar braços e pernas inteiros; Dividir com linha continua sendo um corte genérico.'
+                    : 'Partes unidas desativado. Dividir com linha continua disponível para cortes genéricos.')
                 }}
               />
-              <span><strong>Partes unidas</strong><small style={{ display: 'block', marginTop: 2, color: '#a9b5c4' }}>Para este modelo: cortes em braços e pernas inteiros criam juntas e ponte do corpo.</small></span>
+              <span><strong>Partes unidas</strong><small style={{ display: 'block', marginTop: 2, color: '#a9b5c4' }}>Ativa o Divisor de juntas para braços e pernas inteiros; não altera o corte genérico.</small></span>
             </label>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
               <button type="button" style={toolButton(mode === 'part', busy || downloading)} disabled={busy || downloading} onClick={() => { setMode('part'); cancelDrawing() }}>Peça selecionada</button>
@@ -763,6 +818,17 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
                   setStatus('Escolha a cor manualmente ou use “Selecionar na prévia” para amostrar a pele original.')
                 }
               }}>Remover pele original</button>
+              <button type="button" title="Detecta deterministicamente o contorno externo das peças do corpo e aplica uma única cor" style={toolButton(outlineNormalizationOpen, busy || downloading || draft.parts.length === 0)} disabled={busy || downloading || draft.parts.length === 0} onClick={() => {
+                const open = !outlineNormalizationOpen
+                setOutlineNormalizationOpen(open)
+                setSamplingSkinColor(false)
+                if (open) {
+                  setMode('part')
+                  setTool('select')
+                  cancelDrawing()
+                  setStatus('Escolha a cor e normalize o contorno externo detectado nas peças do corpo.')
+                }
+              }}>Normalizar contorno</button>
               <span style={{ color: '#a9b5c4', fontSize: 12, marginLeft: 'auto' }}>Zoom</span>
               <button type="button" aria-label="Diminuir zoom" style={toolButton(false, busy || downloading)} disabled={busy || downloading} onClick={() => changeZoom(zoom - .25)}>−</button>
               <input aria-label="Zoom da prévia" type="range" min={.5} max={4} step={.1} value={zoom} disabled={busy || downloading} onChange={event => changeZoom(Number(event.target.value))} style={{ width: 110 }} />
@@ -775,7 +841,8 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
               <button type="button" aria-label="Girar a imagem da peça 90 graus à direita" title="Girar a imagem da peça 90° à direita; o pivô da junta acompanha" style={toolButton(false, busy || downloading || !selected)} disabled={busy || downloading || !selected} onClick={() => rotateSelectedPart(90)}>↷ Girar 90°</button>
               <button type="button" style={toolButton(tool === 'erase', busy || downloading || !selected)} disabled={busy || downloading || !selected} onClick={() => setEditTool('erase')}>Apagar</button>
               <button type="button" style={toolButton(tool === 'crop', busy || downloading || !selected)} disabled={busy || downloading || !selected} onClick={() => setEditTool('crop')}>Cortar</button>
-              <button type="button" style={toolButton(tool === 'split', busy || downloading || !selected)} disabled={busy || downloading || !selected} onClick={() => setEditTool('split')}>Dividir com linha</button>
+              <button type="button" title="Corte genérico para separar e excluir a parte da imagem que não deseja" style={toolButton(tool === 'split', busy || downloading || !selected)} disabled={busy || downloading || !selected} onClick={() => setEditTool('split')}>Dividir com linha</button>
+              <button type="button" title={!draft.bodyJointBridgeEnabled ? 'Ative “Partes unidas” para usar o divisor de juntas' : !jointSplitReady ? 'Selecione um braço ou uma perna inteira ainda não dividida' : 'Divide o membro em segmentos anatômicos e cria a junta e a ponte do corpo'} style={toolButton(tool === 'joint-split', busy || downloading || !jointSplitReady)} disabled={busy || downloading || !jointSplitReady} onClick={() => setEditTool('joint-split')}>Divisor de juntas</button>
               <button type="button" style={toolButton(tool === 'outline', busy || downloading || !selected)} disabled={busy || downloading || !selected} onClick={() => setEditTool('outline')}>Apagar contorno</button>
               <button type="button" title={isThigh ? 'Arraste sobre a coxa para deformar' : 'A ferramenta está disponível somente nas coxas'} style={toolButton(tool === 'deform', busy || downloading || !isThigh)} disabled={busy || downloading || !isThigh} onClick={() => setEditTool('deform')}>〰 Deformar coxa</button>
               <button type="button" title="Desenhe guias temporárias e estenda-as pelas bolinhas das pontas" style={toolButton(tool === 'guide', busy || downloading || !selected)} disabled={busy || downloading || !selected} onClick={() => setEditTool(tool === 'guide' ? 'select' : 'guide')}>／ Linha temporária</button>
@@ -815,12 +882,23 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
               </label>
               <button type="button" style={{ ...toolButton(false, busy || downloading || !skinColor || samplingSkinColor), width: '100%' }} disabled={busy || downloading || !skinColor || samplingSkinColor} onClick={removeOriginalSkinColor}>Remover cor e manter contornos</button>
             </section>}
+            {outlineNormalizationOpen && <section aria-label="Normalizar o contorno do modelo" style={{ display: 'grid', gap: 8, padding: 10, border: '1px solid #46556b', borderRadius: 9, background: '#1a2230' }}>
+              <strong style={{ fontSize: 12 }}>Normalizar o contorno externo</strong>
+              <small style={{ color: '#aabbd0', lineHeight: 1.4 }}>Detecção automática local, sem IA. Identifica tinta escura próxima à borda transparente, aplica uma cor uniforme às peças do corpo e atualiza a cor padrão do contorno. A edição pode ser desfeita.</small>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12 }}>
+                Cor única do contorno
+                <input aria-label="Cor única do contorno do modelo" type="color" value={outlineColor} disabled={busy || downloading} onChange={event => { setOutlineColor(event.target.value); setError('') }} style={{ width: 36, height: 30, padding: 2, border: '1px solid #64748b', borderRadius: 5, background: '#1b2230', cursor: 'pointer' }} />
+                <small style={{ color: '#aabbd0' }}>{outlineColor.toUpperCase()}</small>
+              </label>
+              <button type="button" style={{ ...toolButton(false, busy || downloading), width: '100%' }} disabled={busy || downloading} onClick={normalizeModelOutline}>Normalizar contorno do corpo</button>
+            </section>}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', minHeight: 20, gap: 8 }}>
               <small style={{ color: '#aabbd0' }}>
                 {mode === 'sheet'
                   ? 'Folha PNG transparente · selecione a cabeça para mover'
                   : tool === 'crop' ? 'Arraste um retângulo sobre a peça e aplique o corte.'
-                    : tool === 'split' ? 'Trace uma linha; ela será prolongada até as bordas da peça.'
+                    : tool === 'split' ? 'Trace uma linha para dividir a peça e excluir depois o lado que não deseja.'
+                    : tool === 'joint-split' ? 'Trace a articulação para nomear os segmentos e criar uma junta com ponte do corpo.'
                       : tool === 'erase' ? 'Pinte a área que deseja apagar.'
                         : tool === 'outline' ? 'Pinte sobre o contorno escuro para removê-lo automaticamente.'
                       : tool === 'deform' ? warpSession ? 'Arraste sobre a coxa para deformar. Cada traço fica no rascunho; “Salvar no original” publica.' : 'Preparando a coxa para deformar…'
@@ -830,7 +908,8 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
               {mode === 'part' && visibleGuideLines.length > 0 && tool !== 'guide' && <small style={{ color: '#a5fff4', whiteSpace: 'nowrap' }}>Guias travadas</small>}
               {mode === 'part' && gesture && <div style={{ display: 'flex', gap: 5 }}>
                 {gesture.tool === 'crop' && <button type="button" style={toolButton(false, busy || downloading)} disabled={busy || downloading} onClick={applyCrop}>Aplicar corte</button>}
-                {gesture.tool === 'split' && <button type="button" style={toolButton(false, busy || downloading)} disabled={busy || downloading} onClick={applySplit}>Dividir peça</button>}
+                {gesture.tool === 'split' && <button type="button" style={toolButton(false, busy || downloading)} disabled={busy || downloading} onClick={() => applySplit(false)}>Dividir peça</button>}
+                {gesture.tool === 'joint-split' && <button type="button" style={toolButton(false, busy || downloading)} disabled={busy || downloading} onClick={() => applySplit(true)}>Criar segmentos e junta</button>}
                 {gesture.tool === 'erase' && <button type="button" style={toolButton(false, busy || downloading)} disabled={busy || downloading} onClick={() => applyBrush(false)}>Aplicar borracha</button>}
                 {gesture.tool === 'outline' && <button type="button" style={toolButton(false, busy || downloading)} disabled={busy || downloading} onClick={() => applyBrush(true)}>Remover contorno</button>}
                 <button type="button" style={toolButton(false, busy || downloading)} disabled={busy || downloading} onClick={cancelDrawing}>Cancelar traço</button>
@@ -862,7 +941,7 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
                   </svg>}
                   {mode === 'part' && gesture && <svg aria-hidden="true" width="100%" height="100%" viewBox={'0 0 ' + logicalWidth + ' ' + logicalHeight} preserveAspectRatio="none" style={{ position: 'absolute', inset: 0, overflow: 'visible', pointerEvents: 'none' }}>
                     {gesture.tool === 'crop' && <rect x={Math.min(gesture.start.x, gesture.current.x)} y={Math.min(gesture.start.y, gesture.current.y)} width={Math.abs(gesture.current.x - gesture.start.x)} height={Math.abs(gesture.current.y - gesture.start.y)} fill="rgba(59,137,255,.18)" stroke="#61a5ff" strokeWidth="2" vectorEffect="non-scaling-stroke" />}
-                    {gesture.tool === 'split' && <line x1={gesture.start.x} y1={gesture.start.y} x2={gesture.current.x} y2={gesture.current.y} stroke="#ff6677" strokeWidth="3" vectorEffect="non-scaling-stroke" />}
+                    {(gesture.tool === 'split' || gesture.tool === 'joint-split') && <line x1={gesture.start.x} y1={gesture.start.y} x2={gesture.current.x} y2={gesture.current.y} stroke={gesture.tool === 'joint-split' ? '#54d6c5' : '#ff6677'} strokeWidth="3" vectorEffect="non-scaling-stroke" />}
                     {(gesture.tool === 'erase' || gesture.tool === 'outline') && <polyline points={gesture.points.map(point => point.x + ',' + point.y).join(' ')} fill="none" stroke={gesture.tool === 'outline' ? '#ffc857' : '#ff6677'} strokeWidth={brushSize} strokeLinecap="round" strokeLinejoin="round" opacity=".75" vectorEffect="non-scaling-stroke" />}
                   </svg>}
                   {mode === 'part' && tool === 'deform' && warpCursor && <div aria-hidden="true" style={{ position: 'absolute', left: warpCursor.x * previewScale - warpRadius * previewScale, top: warpCursor.y * previewScale - warpRadius * previewScale, width: warpRadius * 2 * previewScale, height: warpRadius * 2 * previewScale, border: '1px solid #67c4ff', borderRadius: '50%', background: 'rgba(59,137,255,.10)', boxSizing: 'border-box', pointerEvents: 'none' }} />}
@@ -873,6 +952,11 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
           </main>
           <aside style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <strong style={{ fontSize: 13 }}>{selected?.name ?? 'Nenhuma peça'}</strong>
+            {selected && limbReplacementTarget && <section aria-label="Substituição experimental de membro" style={{ display: 'grid', gap: 8, padding: 10, border: '1px solid #7962aa', borderRadius: 9, background: '#211d30' }}>
+              <strong style={{ fontSize: 12 }}>Substituição experimental</strong>
+              <small style={{ color: '#c0b6d6', lineHeight: 1.4 }}>Copia e espelha os pixels de {selected.name} para o lado oposto. Mantém a posição, o pivô, o ID e as juntas atuais desse lado.</small>
+              <button type="button" title={`Substituir ${limbReplacementTarget.name} pela cópia espelhada de ${selected.name}; mantém os vínculos e a posição do lado substituído.`} aria-label={`Substituir ${limbReplacementTarget.name} pela cópia espelhada de ${selected.name}`} style={{ ...field, cursor: 'pointer', borderColor: '#7962aa', whiteSpace: 'normal', lineHeight: 1.35 }} disabled={busy || downloading} onClick={replaceOppositeLimb}>Substituir {modelRigSide(limbReplacementTarget.name) === 'left' ? 'esquerda' : 'direita'} pela cópia espelhada de {modelRigSide(selected.name) === 'left' ? 'esquerda' : 'direita'}</button>
+            </section>}
             {selected && selectedRect && baseline && <>
               <label style={{ display: 'grid', gap: 5, fontSize: 12 }}>Largura (pixels)
                 <input style={field} type="number" min={1} max={8192} step={1} value={selectedRect.width} disabled={busy || downloading} onChange={event => setNumber('width', Number(event.target.value))} />

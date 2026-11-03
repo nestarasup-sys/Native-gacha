@@ -22,7 +22,7 @@ import { animatorFrameStartTime, deleteAnimatorFrame, duplicateAnimatorFrame, re
 import { loadAnimatorImage as loadImage } from './models/animatorImageCache'
 import { refreshAnimatorThumbnails as refreshThumbnails, renderAnimatorThumbnail as renderThumbnail } from './models/animatorThumbnail'
 import { usePreviewBackground } from '../../ui/hooks/usePreviewBackground'
-import { isModelBodyPartName, tintModelBodyPixels } from '../../characters/skinTint'
+import { isModelBodyPart, tintModelBodyPixels } from '../../characters/skinTint'
 import { useModelAppearanceSettings, useModelAppearanceTarget, useModelPartAppearancePreview } from './ModelAppearanceContext'
 import { registerPendingWriteFlusher } from '../../ui/pendingPersistence'
 import { breathingVariations, createBreathingAnimation } from './models/animatorBreathingModel'
@@ -241,7 +241,7 @@ export function AnimatorWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
     const outlineColor = selectedCharacter?.customization.modelOutlineColor ?? sharedModelAppearance?.modelOutlineColor ?? displayBase?.modelOutlineColor
     if ((!tone && !outlineColor) || !tintParts) { setTintedParts({}); return }
     void Promise.all(tintParts.map(async (part) => {
-      if (!isModelBodyPartName(part.name)) return [part.id, part.dataUrl] as const
+      if (!isModelBodyPart(part)) return [part.id, part.dataUrl] as const
       const image = await loadImage(part.dataUrl)
       const canvas = document.createElement('canvas'); canvas.width = image.naturalWidth || image.width; canvas.height = image.naturalHeight || image.height
       const context = canvas.getContext('2d', { willReadFrequently: true }); if (!context) return [part.id, part.dataUrl] as const

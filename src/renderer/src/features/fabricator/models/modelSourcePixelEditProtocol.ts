@@ -5,6 +5,7 @@ type SharedRequest = { id: number; part: PartInput }
 
 export type ModelSourcePixelEditRequest = SharedRequest & (
   | { operation: 'brush'; points: ModelSourcePixelPoint[]; size: number; outlineOnly: boolean }
+  | { operation: 'normalize-outline'; color: string }
   | { operation: 'remove-color'; color: string; tolerance: number }
 )
 
