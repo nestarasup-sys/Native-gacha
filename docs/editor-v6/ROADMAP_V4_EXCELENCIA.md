@@ -55,6 +55,55 @@ Procedimento recomendado:
 
 **Não implementar cabelo animado no viewport do Editor V6.**
 
+## 3A. PRIORIDADE VISUAL P0 — animar a boca como peça independente, não um quadrado de rosto
+
+**Relato do usuário:** atualmente, ao falar, é perceptível um recorte retangular ao redor da boca que pode incluir **pele, cabelo e outros detalhes** e parecer aumentar junto com ela. Ele quer **movimentar somente a boca**, porque os assets de boca já existem separados no Fabricador/Customizador. Isso é uma prioridade explícita de qualidade do Editor V6 e deve ser tratada como problema de produto, não somente como limpeza de código.
+
+**O que o código realmente faz:** `motion/bakeMotion.ts` aplica a ampliação em `transforms.mouth` (não multiplica intencionalmente todo o rosto), renderiza versões inteiras do personagem e compara os pixels para encontrar `changedBounds`. Em seguida, `changedPixelPatch` captura um **retângulo RGBA completo**, com os pixels vizinhos dentro do limite. `sceneFaceComposition.ts` aplica a substituição de pixels retangular, embora o personagem tenha a boca como componente de origem separado. Esse método evita alguns halos e permite transparência/remoção de pixels anteriores, mas pode reintroduzir bordas, detalhes indesejados e custos de compor/encodar grandes áreas. **Não declarar a causa exata do artefato visual sem um par de quadros do usuário ou fixture equivalente.**
+
+### Arquitetura desejada, a ser comprovada por protótipo
+
+1. **Renderizar só a boca** da seleção `mouth-open`/`mouth-closed` (e seus efeitos dependentes), em uma camada RGBA com transparência verdadeira, na posição/calibração da cabeça, usando o renderizador de face já existente — sem duplicar a regra de paletas, tintas, rotação, posições ou seleção de catálogo.
+2. **Compor a base do personagem sem a boca antiga**, mas mantendo pele, nariz, olhos, cabelo frontal e demais camadas na ordem correta. Desenhar a boca animada **entre as camadas apropriadas**, e não como imagem quadrada por cima de cabelo/pele. A remoção do desenho anterior exige plano explícito; simplesmente sobrepor uma boca nova à antiga causa fantasmas.
+3. Guardar apenas variantes/renders **compactos da boca** necessários ao ciclo de fala. O cache e atlas devem ser chaveados por personagem/pose/expressão/calibração/paleta e invalidados quando a fonte muda, sem criar PNG de corpo inteiro por frame.
+4. Para rigs legados sem boca isolável, manter **fallback seguro e explícito**, sem reduzir qualidade silenciosamente ou perder a fala obrigatória. Registrar no diagnóstico de exportação o uso de fallback de forma sanitizada.
+5. Preservar **transições de pose**, boca em `motionSprite`, `talk-blink`, giro, flip, zoom, proporções, contorno, transparência, máscaras, cabelo à frente da boca, efeitos faciais e áudio da fala.
+
+### Experimento e testes obrigatórios
+
+- Primeiro, fixture com **boca detalhada e cabelo/pele atravessando o retângulo antigo**. Comparar visualmente e em RGBA a boca antiga e a isolada em todos os quadros críticos, inclusive transparência total e semitransparente.
+- Separar testes de **posição da boca**, **limpeza da boca anterior**, **oclusão por cabelo**, **borda alpha**, **piscada/fala**, **transição** e **paridade Turbo/seguro**.
+- Medir quantidade de pixels alterados **fora da região real da boca**: objetivo visual é não alterar pele/cabelo ao falar, salvo efeitos expressamente ligados à boca. Não editar os olhos para encobrir problema de boca.
+- Comparar região de tela e PNG final nas mesmas dimensões 720p/1080p; inspecionar MP4 decodificado com tolerâncias de H.264 separadas da composição RGBA.
+- Provar ganho/custo: área de atlas, número de `getImageData`, tamanho de payload, PNG/encode, buffers RGBA, tempo de preparação e `faceCompositionMs`. Não prometer ganho 10× antes de medir.
+- **Executar a troca de renderizador só quando o isolamento da peça preservar ou melhorar os pixels visuais em todas as variantes relevantes**. Não usar máscara cromática aproximada, crop retangular menor sem limpar a boca anterior, nem substituir `putImageData` por `source-over` sem testar pixels alpha que devem ser apagados.
+
+**Critério final:** só a boca aparenta mudar de tamanho/forma, nenhuma moldura/recorte de pele ou cabelo segue o movimento, sem perda de blink, pose ou boca obrigatória em MP4. Não adicionar animação de cabelo à prévia normal do Editor V6.
+
+## 3B. PRIORIDADE DE DESEMPENHO P0 — crescimento de RAM na exportação
+
+**Relato do usuário:** durante exportação longa, a RAM total usada pelo aplicativo parece só aumentar. Isto exige investigação dos processos individualmente, antes de decidir se há leak, cache legítimo, aquecimento de buffers, memória de GPU, commit do Windows ou atividade temporária do FFmpeg. **Mais RAM no monitor de tarefas, isoladamente, não comprova um vazamento.**
+
+### Correção inicial já publicada nesta rodada
+
+- O `exportWorker.tsx` inseria **toda composição facial gerada a cada quadro** em `assetsById`, mapa persistente durante o worker. Esse mapa podia manter todos os PNGs faciais mesmo depois da expulsão pelo cache LRU limitado de `sceneFaceComposition.ts`. Agora **assets temporários de rosto e cabelo ficam apenas no registro do quadro**; o mapa durável retém assets do projeto e atlas de transição explicitamente reutilizáveis.
+- A separação está em `exportFrameAssets.ts` e seu teste `tests/editor-v6/exportFrameAssets.test.ts`, que cobre mil quadros sintéticos e o reuso de IDs com isolamento de escopo. Isso testa o contrato de retenção **não** o RSS real.
+- `composeMotionHairFrame` criava um canvas nativo de resolução cheia para cada quadro durante troca de pose. Agora utiliza **um canvas scratch reutilizável**, limpa a superfície a cada uso, redimensiona apenas quando necessário e libera os canvases no encerramento do worker.
+- A física de cabelo calculava duas vezes `resolveEditorV6SceneAtFrame` por amostra/cabeça; agora reutiliza a cena já resolvida. O ganho deve ser **medido**, não presumido.
+- **Status:** alterações de código publicadas, regressão de escopo criada, teste Electron/FFmpeg completo e benchmark de RAM ainda **pendentes de CI/execução**. Não afirmar que parou de crescer até confirmar em uma exportação longa.
+
+### Próxima investigação de memória — medições por processo
+
+1. Criar fixture **sintético** com exportação 30 s / 2 min / 5 min; três níveis de complexidade (1/4/8 personagens, fala e cabelo ativados/desativados, transições e mídia), 720p/1080p, 1 vs 2 workers e Turbo/seguro.
+2. Amostrar a cada intervalo fixo, em formato **agregado e sanitizado**: RSS/working set e private bytes do Main, renderer de export, processo GPU e FFmpeg; JS heap quando viável, contagens de caches, número de canvases/texturas e bytes de imagens temporárias. Registrar baseline de warm-up, curva, pico, após cancelamento, após finalizar e após fechar janela. Indicar métricas indisponíveis sem inventar VRAM.
+3. Distinguir **retenção persistente** (curva monotônica com quadros), **platô de cache** (sobe e estabiliza), **picos por transição**, **fragmentação/alocador** e **buffers de renderização já liberados mas ainda reservados pelo SO/Chromium**.
+4. Perfilar alocações e copies de `canvas.toDataURL('image/png')` por quadro, strings Base64, `Image.decode()`, `getImageData/putImageData`, superfícies intermediárias, atlas facial, malha GPU, `capturePage` e pipes de bitmap para FFmpeg. Verificar se algum Map/Set/Promise/listener retém assets fora de prazo.
+5. Considerar **Blob/Object URLs com `URL.revokeObjectURL`**, `ImageBitmap.close()`, canvas offscreen e buffers transferíveis, **somente** com ciclo de vida definido, segurança de origem/IPC e pixel tests; tratar perdas de alpha e latência de GPU readback.
+6. O exportador já faz envio de quadros ao FFmpeg em fluxo; **não enviar indiscriminadamente toda a RAM para swap/disco**. Arquivos temporários/proxies podem diminuir retenção de dados persistentes, mas podem piorar desempenho, fazer I/O excessivo ou ampliar o uso de espaço. Adotar apenas streaming/backpressure/caches limitados com benchmarks; nunca substituir imagens originais nem persistir dados privados em diretórios de testes.
+7. Criar report por export com **pico e platô** medidos, `hairCompositionMs`, `faceCompositionMs`, custo de captura e encerramento de recursos. Relatório local em Logs Dev com códigos sanitizados e amostras de agregados, sem payloads de projetos.
+
+**Critério:** sob fixture fixa, o uso de memória **não cresce indefinidamente com o número de quadros** após aquecimento; o renderer e seus recursos terminam corretamente no sucesso, falha e cancelamento. Manter desempenho e qualidade visual. Benchmarks com o usuário jogando são **sob carga concorrente**, com repetições e sem conclusões definitivas de ganho.
+
 ## 4. P1 — sincronismo real de áudio, vídeo, fala e timeline
 
 **Maior oportunidade técnica identificada para qualidade de edição cotidiana.**
@@ -144,12 +193,13 @@ O histórico de stress de 26/10 apontou long tasks e picos isolados de React/com
 | Ciclo | Dependência | Objetivo | Saída mensurável |
 | --- | --- | --- | --- |
 | **E0 — CI e aceite** | Imediato | Confirmar ajuste Linux de nomes de arquivo; restaurar FFmpeg pinado; passar mp4/hair/export hospedado; revisar clipe de cabelo real | Run verde no HEAD, checklist real de cabelo |
-| **E1 — sincronismo A/V** | E0 | Instrumentar video frames apresentados e drift áudio/vídeo, medir e corrigir apenas causas provadas | Fixture de longo prazo + relatório de p95/p99 + regressões |
-| **E2 — produtividade da timeline** | E1 pode ser paralelo no design | Waveforms/miniaturas, depois seleção múltipla se for útil | Protótipo/teste real de usabilidade + undo/snap correto |
-| **E3 — exportação profissional** | E0 e resultados E1 | Preflight, mensagens recuperáveis, progresso e compatibilidade mídia | Erro antecipado com ação corretiva; PNG/MP4/FFprobe válidos |
-| **E4 — fluidez e produto** | E1–E3 | Benchmark real, caches/proxies condicionais, templates/presets aprovados | Comparações sob cenário idêntico e menos passos para produzir uma cena |
+| **E1 — boca isolada e RAM** | E0 | Prototipar boca como camada própria com cobertura alpha/oclusão; auditar pico/platô de memória e corrigir retenções remanescentes | RGBA sem moldura, quadros faciais preservados, curva de memória por processo |
+| **E2 — sincronismo A/V** | E0; pode seguir em paralelo ao estudo da boca | Instrumentar video frames apresentados e drift áudio/vídeo, medir e corrigir apenas causas provadas | Fixture de longo prazo + relatório de p95/p99 + regressões |
+| **E3 — produtividade da timeline** | E2 pode ser paralelo no design | Waveforms/miniaturas, depois seleção múltipla se for útil | Protótipo/teste real de usabilidade + undo/snap correto |
+| **E4 — exportação profissional** | E0 e resultados E1/E2 | Preflight, mensagens recuperáveis, progresso e compatibilidade mídia | Erro antecipado com ação corretiva; PNG/MP4/FFprobe válidos |
+| **E5 — fluidez e produto** | E1–E4 | Benchmark real, caches/proxies condicionais, templates/presets aprovados | Comparações sob cenário idêntico e menos passos para produzir uma cena |
 
-**Primeiro ticket executável após esta auditoria:** recuperar o download verificado LGPL do FFmpeg na CI; rodar o gate mais recente e confirmar a correção já aplicada no Logs Dev. **Segundo:** sessão de aceite visual do cabelo real. **Terceiro:** desenhar um harness A/V de 60–120 segundos antes de refatorar clocks de reprodução.
+**Próximos tickets:** (1) recuperar o FFmpeg LGPL pinado/validado e confirmar a CI completa; (2) fazer aceite artístico do cabelo em MP4; (3) medir RAM numa exportação longa e conferir a correção de retenção por quadro; (4) construir fixture e protótipo isolado da boca — sem moldura de pele/cabelo; (5) iniciar sincronismo A/V depois das prioridades visuais e de memória.
 
 ## 10. Contratos, referências e aceite
 
