@@ -106,6 +106,18 @@ function maximumJointGap(upper: WardrobeJointBridgeSegment, lower: WardrobeJoint
   return Math.max(2, Math.min(8, (lengths.length ? Math.min(...lengths) : 40) * .05))
 }
 
+/** Search the full cut span; wide legs and diagonal joints can exceed the old fixed 64px window. */
+export function wardrobeJointBridgeAnchorSearchRadius(
+  upper: Pick<ModelPart, 'width' | 'height'>,
+  lower: Pick<ModelPart, 'width' | 'height'>
+): number {
+  const crossSections = [upper, lower]
+    .flatMap((part) => [part.width, part.height])
+    .filter((length) => Number.isFinite(length) && length > 0)
+  const narrowest = crossSections.length ? Math.min(...crossSections) : 8
+  return Math.max(12, Math.min(512, narrowest * 1.25))
+}
+
 function drawSourceSegment(context: CanvasRenderingContext2D, segment: WardrobeJointBridgeSegment, bounds: SourceBounds, applyOpacity = true) {
   const { component, group, image } = segment
   const offset = segment.sourceOffset ?? { x: 0, y: 0 }
@@ -576,8 +588,7 @@ export function drawWardrobeJointBridge(
     const jointAnchor = sourceJointAnchor
       ? { x: sourceJointAnchor.x - bounds.x, y: sourceJointAnchor.y - bounds.y }
       : undefined
-    const searchRadius = Math.max(12, Math.min(64,
-      Math.min(upper.sourceBone.width, upper.sourceBone.height, lower.sourceBone.width, lower.sourceBone.height) * 1.5))
+    const searchRadius = wardrobeJointBridgeAnchorSearchRadius(upper.sourceBone, lower.sourceBone)
     const detectedSeam = detectWardrobeJointSeam(
       drawAlphaMask(sourceContext, upper, bounds),
       drawAlphaMask(sourceContext, lower, bounds),

@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { anchorWardrobeJointSeam, detectWardrobeJointSeam, drawWardrobeJointBridgeMesh, expandWardrobeJointBridgeTriangle, fillWardrobeJointGapPixels } from '../src/renderer/src/characters/wardrobeJointBridge.ts'
+import { anchorWardrobeJointSeam, detectWardrobeJointSeam, drawWardrobeJointBridgeMesh, expandWardrobeJointBridgeTriangle, fillWardrobeJointGapPixels, wardrobeJointBridgeAnchorSearchRadius } from '../src/renderer/src/characters/wardrobeJointBridge.ts'
 
 const rectangleMask = (width, height, rectangles) => {
   const data = new Uint8Array(width * height)
@@ -79,6 +79,21 @@ test('joint bridge chooses local contact geometry around its anchor instead of a
   assert.ok(Math.abs(unrestricted.tangent.x) > 0.2, 'distant contacts skew the unrestricted fit')
   assert.ok(Math.abs(anchored.tangent.x) < 0.05, 'the local seam remains vertical at the saved joint')
   assert.ok(Math.hypot(anchored.center.x - 20, anchored.center.y - 15) < 1)
+})
+
+test('joint bridge search covers wide thigh and calf cuts beyond 64 pixels', () => {
+  const width = 240, height = 270
+  const upper = rectangleMask(width, height, [{ x: 20, y: 15, width: 100, height: 240 }])
+  const lower = rectangleMask(width, height, [{ x: 120, y: 15, width: 100, height: 240 }])
+  const radius = wardrobeJointBridgeAnchorSearchRadius(
+    { width: 240, height: 500 },
+    { width: 220, height: 520 }
+  )
+  const seam = detectWardrobeJointSeam(upper, lower, 4, { x: 120, y: 135 }, radius)
+
+  assert.equal(radius, 275)
+  assert.ok(seam)
+  assert.ok(seam.maxTangent - seam.minTangent > 230, 'the entire 240px knee cut must remain inside the local search')
 })
 
 test('joint bridge composites neighboring triangles through one replacement surface', () => {
