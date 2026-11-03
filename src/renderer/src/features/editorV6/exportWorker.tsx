@@ -14,6 +14,7 @@ import { expandEditorV6HairCrop } from './editorV6HairMotionGeometry'
 import { HAIR_MOTION_MESH_HEIGHT, HAIR_MOTION_MESH_WIDTH } from '../../characters/hairMotionMeshGeometry'
 import { composeEditorV6FaceReplacements } from './sceneFaceComposition'
 import { createExportHairMeshRenderer } from './exportHairMeshRenderer'
+import { createEditorV6FrameAssetRegistry } from './exportFrameAssets'
 
 const worker = (window as unknown as { editorV6ExportWorker: EditorV6WorkerBridge }).editorV6ExportWorker
 async function initialize() {
@@ -332,7 +333,7 @@ async function initialize() {
     // sceneFaceComposition already has an explicit memory budget.
     // Inserting them into assetsById would retain every evicted PNG for the
     // entire export, causing renderer memory to grow with video duration.
-    const renderAssetsById = new Map(composed.assets.map(asset => [asset.id, asset]))
+    const { current: renderAssetsById, resolve: resolveFrameAsset } = createEditorV6FrameAssetRegistry(assetsById, composed.assets)
     let renderScene = composed.scene
     const hairCompositionStarted = performance.now()
     if (activeHair) {
@@ -397,7 +398,7 @@ async function initialize() {
     const ids = new Set(activeLayer === 'background' ? [renderScene.background.backgroundAssetId] : activeLayer === 'foreground' ? sceneAssetIds : [renderScene.background.backgroundAssetId, ...sceneAssetIds])
     const assetPreparationStarted = performance.now()
     for (const id of ids) {
-      const asset = id ? renderAssetsById.get(id) ?? assetsById.get(id) : undefined
+      const asset = id ? resolveFrameAsset(id) : undefined
       if (!asset) continue
       let prepared = images.get(asset.id)
       if (!prepared) {
