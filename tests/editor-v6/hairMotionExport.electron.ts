@@ -1021,7 +1021,7 @@ async function main() {
         const longProfileSamples = memorySamples.filter(sample => sample.profile === longProfileName)
         const processPeaks = profileProcessPeaks(longProfileName)
         combinedLongProfile = {
-          syntheticOnly: true, passed: true, gameRunningByUserStatement: true, controlledBenchmark: false,
+          syntheticOnly: true, passed: true, gameRunningByUserStatement: false, controlledBenchmark: false,
           startedAt, durationSeconds: durationFrames / 30, frames: durationFrames, resolution: '1280x720', fps: 30,
           actors: 1, speech: 'contínua; atlas de boca sintético legado preparado', hairAnimation: true, turbo: false,
           exportMilliseconds: combinedReport.milliseconds, phaseMilliseconds: combinedReport.phaseMilliseconds,
@@ -1030,7 +1030,7 @@ async function main() {
           captureSamples: combinedReport.attempts.flatMap(attempt => attempt.parts).reduce((total, part) => total + (part.frameTiming?.captureMs?.samples ?? 0), 0),
           ffmpegWriteSamples: combinedReport.attempts.flatMap(attempt => attempt.parts).reduce((total, part) => total + (part.frameTiming?.ffmpegWriteMs?.samples ?? 0), 0),
           sampledFrames, decodedLongPixels, processPeaks, memorySamples: longProfileSamples, matrixScenarios, samplingErrors,
-          note: 'Métricas sob carga concorrente do jogo, não controlada. Memória privada/working set do processo GPU não é VRAM. A matriz adicional cobre 4/8 personagens, fala+cabelo, 1080p, 30 s e 1/2 workers; o perfil longo individual continua em 720p/seguro.'
+          note: 'Executado com o PC livre e sem jogo em execução, conforme correção do usuário; processos de fundo do Windows não foram controlados. Memória privada/working set do processo GPU não é VRAM. A matriz adicional cobre 4/8 personagens, fala+cabelo, 1080p, 30 s e 1/2 workers; o perfil longo individual continua em 720p/seguro.'
         }
         await writeFile(join(folder, 'hair-mouth-5min-memory-profile.json'), JSON.stringify(combinedLongProfile, null, 2))
       } finally {
@@ -1046,7 +1046,7 @@ async function main() {
     await writeFile(join(folder, 'resolution-checks.json'), JSON.stringify({
       syntheticOnly: true,
       benchmarkContext: {
-        gameRunningByUserStatement: true, controlledBenchmark: false,
+        gameRunningByUserStatement: false, controlledBenchmark: false,
         node: process.version, electron: process.versions.electron, platform: process.platform, architecture: process.arch,
         outputResolutions: ['1280x720', '1920x1080'], framesPerSecond: 30,
         memorySamples: processMemorySamples,
@@ -1058,7 +1058,7 @@ async function main() {
             safe: median(benchmarkTrials.filter(trial => trial.mode === 'safe').map(trial => trial.elapsedMilliseconds)),
             turbo: median(benchmarkTrials.filter(trial => trial.mode === 'turbo').map(trial => trial.elapsedMilliseconds))
           },
-          note: 'Amostras pareadas na mesma resolução e número de quadros, alternadas e com jogo em execução. Carga concorrente não controlada; não representam ganho de desempenho geral.'
+          note: 'Amostras pareadas na mesma resolução e número de quadros, alternadas, com o PC livre e sem jogo em execução conforme informado pelo usuário. Processos de fundo do Windows não foram controlados; os números não representam garantia de desempenho geral.'
         },
         webglAllocationEstimateBytes: { sourceTexturesRgba8: sourceTextureBytes, largestReusableOutputCanvasRgba8: meshFramebufferBytes, combined: sourceTextureBytes + meshFramebufferBytes, gpuMemoryApiAvailable: false },
         note: 'Electron reporta memória de processo em working set/private bytes, não VRAM nem alocações exatas do driver; tamanhos WebGL são estimativas RGBA8 a partir das dimensões sintéticas.'
