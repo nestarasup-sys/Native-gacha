@@ -8,6 +8,7 @@ import { editorV6CharacterEyeSourceRevision, editorV6CharacterHairSourceRevision
 import { buildEditorV6ExpressionAppearance, buildEditorV6ExpressionTransforms, resolveEditorV6ExpressionBase } from './expressionTransforms.ts'
 import { bakeFaceModeAssets, EDITOR_V6_FACE_RENDER_VERSION, editorV6FaceModeForElement } from './faceModeAssets.ts'
 import { editorV6CharacterRefreshStateSignature } from './editorV6CharacterRefreshModel.ts'
+import { resolveRefreshedFaceAppearance } from './editorV6RefreshAppearance.ts'
 
 export type EditorV6CharacterRefreshTarget = { kind: 'element' | 'block'; id: string; state: EditorV6Element }
 export type EditorV6CharacterRefreshGroup = {
@@ -163,7 +164,7 @@ export async function renderEditorV6CharacterRefresh(
       : null
     const appearance = preset && expressionBase?.appearance
       ? await buildEditorV6ExpressionAppearance(preset, expressionBase.appearance, (id) => memoizedPromise(faceCatalogCache, `${preset.modelSlot}:${id}`, () => window.desktop.fabricator.loadFaceCatalogItem(preset.modelSlot, id)))
-      : state.faceAppearance ?? expressionBase?.appearance
+      : resolveRefreshedFaceAppearance(state, character) ?? expressionBase?.appearance
     const faceTransforms = preset && appearance && expressionBase
       ? await buildEditorV6ExpressionTransforms(preset, appearance, expressionBase.transforms,
         (id) => memoizedPromise(faceComponentCache, `${preset.modelSlot}:${id}`, () => window.desktop.fabricator.loadFaceComponentAsset(preset.modelSlot, id)),
