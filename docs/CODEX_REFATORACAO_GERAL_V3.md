@@ -21,6 +21,16 @@ Desde a baseline V2 houve **71 commits** publicados até o SHA de referência: V
 
 **Objetivo geral:** corrigir os defeitos de qualidade e regressões, conferir a integridade das alterações posteriores à V2, refatorar somente onde ainda houver problemas demonstráveis e consolidar a aplicação inteira. Autonomia técnica para executar as tarefas e decisões rotineiras, sem esperar um prompt por cada módulo.
 
+### RESTRIÇÃO DE PRODUTO — ANIMAÇÃO DE CABELO EXCLUSIVA DO EXPORT
+
+**Decisão expressa do usuário: NÃO implementar, ativar, simular ou mostrar animação de cabelo na prévia normal/interativa do Editor V6. O movimento de cabelo deve existir SOMENTE nos quadros do MP4 durante a exportação, quando o usuário ativar a opção experimental.**
+
+- O viewport, timeline, reprodução, seek e cenas em edição no Editor V6 devem continuar exibindo o personagem sem animação dinâmica de cabelo. Não adicionar toggle de preview, loop de física no playback nem camada dinâmica ao `SceneSurface` interativo.
+- É permitido usar o renderizador offscreen oculto do EXPORTADOR e seus testes/capturas para validar a geometria e os pixels do vídeo. Essas capturas **não são** a prévia normal do editor.
+- É permitido reutilizar a malha WebGL e a física da prévia de **Fabricador DEV → Animação cabelo DEV** como referência ou código de renderização para o worker de exportação. Preserve a prévia de desenvolvimento do Fabricador; não a transporte para o viewport do Editor V6.
+- A exigência de continuidade de cabelo *durante trocas de pose* refere-se exclusivamente aos quadros exportados, não à reprodução interativa no Editor V6.
+- Não transformar a correção de cabelo em uma tarefa de paridade visual do cabelo entre a prévia interativa do Editor V6 e a exportação. **Somente o MP4 deve receber o efeito.** Qualquer mudança futura nesse requisito depende de autorização explícita do usuário.
+
 ## 2. Regras de Git, segurança e dados
 
 - Trabalhe somente **localmente na Dev-V2**, sem criar outra branch, checkout de outra branch, push, PR, merge, rebase ou force-push.
@@ -56,7 +66,7 @@ Esses defeitos **não foram corrigidos** no commit de implementação **5853ca32
 ### 4.1 Arquitetura existente: preserve o que funciona
 
 - **Fabricador DEV → Animação cabelo DEV** salva até cinco presets em localStorage na chave **gacha-nymi:hair-animation-presets:v1**.
-- **EditorV6ExportPanel.tsx** permite opt-in e escolha do preset; a prévia comum do Editor V6 ainda não anima cabelo.
+- **EditorV6ExportPanel.tsx** permite opt-in e escolha do preset; a prévia comum do Editor V6 não deve animar cabelo por decisão expressa do usuário.
 - **editorV6HairMotionPreparation.ts** consulta fontes Fabricador e Customizador e cria superfícies temporárias de corpo/rosto/cabelo, com cores e transforms.
 - **src/shared/editorV6HairMotion.ts** valida IDs, limites e os vínculos do bundle antes do worker; nada é salvo no projeto nem na personalização do usuário.
 - **src/shared/hairMotionEngine.ts** define a física fixa **120 Hz**, quatro subpassos por quadro **30 FPS**, com estado determinístico a partir do quadro absoluto.
@@ -145,7 +155,7 @@ O recurso só pode ser considerado visualmente corrigido quando:
 - A exportação sem opção de cabelo permaneça idêntica ou dentro de contrato visual explicitamente testado.
 - Estabilidade, cancelamento, uso de memória, renderizador/FFmpeg e proteção de arquivo de destino permaneçam corretos.
 
-A **prévia comum do Editor V6** ainda não implementa cabelo animado. Após corrigir o export, avaliar paridade da prévia como próximo incremento seguro, sem bloquear a recuperação da exportação por uma reescrita da UI.
+**Escopo fechado por decisão do usuário: não implementar cabelo animado na prévia normal do Editor V6.** A física, os testes de imagens e as transições de cabelo devem ser tratados apenas pelo renderizador offscreen da exportação e pelo MP4 final. Preserve a prévia estática/interativa atual, sem adicionar camada dinâmica, toggle de prévia ou efeito de cabelo no playback do editor. A prévia do Fabricador DEV pode continuar mostrando a simulação para ajuste de presets.
 
 ## 5. P0 independente — falha de continuidade do exportador geral
 
