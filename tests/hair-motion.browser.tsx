@@ -29,19 +29,23 @@ window.runHairMotionFixture = async () => {
     const hairCanvas = document.createElement('canvas'); hairCanvas.width = 120; hairCanvas.height = 130
     const hairContext = hairCanvas.getContext('2d')!; hairContext.fillStyle = '#713e60'; hairContext.beginPath(); hairContext.ellipse(60, 60, 55, 58, 0, Math.PI, Math.PI * 2); hairContext.lineTo(110, 110); hairContext.lineTo(10, 110); hairContext.closePath(); hairContext.fill()
     const part = { id: 'head', name: 'Cabeça', x: 0, y: 0, width: 100, height: 120, rotation: 0, dataUrl: headCanvas.toDataURL() }
+    const torsoCanvas = document.createElement('canvas'); torsoCanvas.width = 50; torsoCanvas.height = 100
+    const torsoContext = torsoCanvas.getContext('2d')!; torsoContext.fillStyle = '#b86282'; torsoContext.fillRect(0, 0, 50, 100)
+    const torso = { id: 'torso', name: 'Tronco', x: 25, y: 100, width: 50, height: 100, rotation: 0, dataUrl: torsoCanvas.toDataURL() }
     const asset = { width: 120, height: 130, dataUrl: hairCanvas.toDataURL() }
     const transform = { x: 50, y: 60, scaleX: 1, scaleY: 1, rotation: 0 }
     const style = { id: 'hair', name: 'Cabelo de teste', front: asset, back: asset, fringe: null, transforms: { front: transform, back: transform } }
-    Object.defineProperty(window, 'desktop', { configurable: true, value: { fabricator: {
+    const character = { id: 'character', name: 'Hino teste', updatedAt: 'now', customization: { modelSlot: 1, poseSlot: null, hairAppearance: { modelSlot: 1, parts: { backHair: 'hair' } } } }
+    Object.defineProperty(window, 'desktop', { configurable: true, value: { customizer: { listCustomizerCharacters: async () => [character] }, fabricator: {
       listFabricatorSlots: async () => [{ slot: 1, name: 'Modelo teste' }],
-      loadFabricatorSlot: async () => ({ slot: 1, name: 'Modelo teste', parts: [part], joints: [], width: 100, height: 120 }),
+      loadFabricatorSlot: async () => ({ slot: 1, name: 'Modelo teste', parts: [torso, part], layerOrder: ['torso', 'head'], joints: [], width: 100, height: 240 }),
       listHairStyles: async () => [style], loadHairStyle: async () => style
     } } })
     root.render(<HairAnimationWorkspace baseModelSlot={1} />)
     await new Promise<void>((resolve) => setTimeout(resolve, 300))
     const selects = document.querySelectorAll('select')
-    if (selects.length !== 4) throw new Error('Seletores da área não foram carregados.')
-    selects[1].value = 'hair'; selects[1].dispatchEvent(new Event('change', { bubbles: true }))
+    if (selects.length !== 5) throw new Error('Seletores da área não foram carregados.')
+    selects[2].value = 'hair'; selects[2].dispatchEvent(new Event('change', { bubbles: true }))
     await new Promise<void>((resolve) => setTimeout(resolve, 700))
     if (!document.querySelector('.hair-motion-mesh') || document.querySelector('.hair-motion-error')) throw new Error('Cabelo não carregou na prévia.')
     const buttons = [...document.querySelectorAll('button')]
@@ -50,6 +54,31 @@ window.runHairMotionFixture = async () => {
     if (!pause) throw new Error('Controle de reprodução ausente.')
     await new Promise<void>((resolve) => setTimeout(resolve, 100))
     if (![...document.querySelectorAll('button')].some((button) => button.textContent === 'Reproduzir')) throw new Error('A pausa não foi aplicada.')
+    const preset = [...document.querySelectorAll('button')].find((button) => button.textContent === 'Preset 1')
+    if (!preset) throw new Error('Preset 1 ausente.')
+    preset.click()
+    await new Promise<void>((resolve) => setTimeout(resolve, 100))
+    if ((document.querySelector('.hair-animation-range input') as HTMLInputElement)?.value !== '-50') throw new Error('Preset 1 não aplicou o vento solicitado.')
+    const save = document.querySelector<HTMLButtonElement>('[aria-label="Salvar configuração no preset 2"]')
+    if (!save) throw new Error('Controle de salvar preset ausente.')
+    save.click()
+    await new Promise<void>((resolve) => setTimeout(resolve, 100))
+    if (!localStorage.getItem('gacha-nymi:hair-animation-presets:v1')) throw new Error('Preset não foi persistido.')
+    root.render(<div />)
+    await new Promise<void>((resolve) => setTimeout(resolve, 100))
+    root.render(<HairAnimationWorkspace baseModelSlot={1} />)
+    await new Promise<void>((resolve) => setTimeout(resolve, 300))
+    const savedPreset = [...document.querySelectorAll('button')].find((button) => button.textContent === 'Preset 2')
+    if (!savedPreset || savedPreset.disabled) throw new Error('Preset salvo não foi restaurado ao reabrir a área.')
+    savedPreset.click()
+    await new Promise<void>((resolve) => setTimeout(resolve, 100))
+    if ((document.querySelector('.hair-animation-range input') as HTMLInputElement)?.value !== '-50') throw new Error('Preset restaurado não manteve seus valores.')
+    const characterSelect = document.querySelector<HTMLSelectElement>('select')!
+    characterSelect.value = 'character'; characterSelect.dispatchEvent(new Event('change', { bubbles: true }))
+    await new Promise<void>((resolve) => setTimeout(resolve, 1600))
+    const alert = document.querySelector('[role="alert"]')
+    if (alert) throw new Error(`Erro ao carregar personagem: ${alert.textContent}`)
+    if (!document.querySelector('img[alt="Personagem Hino teste"]') || !document.querySelector('.hair-animation-character .hair-motion-mesh')) throw new Error('Personagem ou cabelo animado não carregou.')
   }
   await new Promise<void>((resolve) => setTimeout(resolve, 700))
   const error = document.querySelector('.hair-motion-error')

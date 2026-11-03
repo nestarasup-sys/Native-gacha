@@ -60,7 +60,7 @@ async function main() {
     await window.webContents.executeJavaScript('window.runHairWorkspaceFixture()')
     const previewPath = path.join(folder, 'workspace.png')
     await fs.writeFile(previewPath, (await window.webContents.capturePage()).toPNG())
-    console.log(`Área experimental: seleção e pausa verificadas. Prévia sintética: ${previewPath}`)
+    console.log(`Área experimental: seleção, pausa, presets persistidos e personagem com cabelo verificados. Prévia sintética: ${previewPath}`)
     window.destroy(); app.exit(0)
   } catch (error) { console.error(error); window.destroy(); app.exit(1) }
 }

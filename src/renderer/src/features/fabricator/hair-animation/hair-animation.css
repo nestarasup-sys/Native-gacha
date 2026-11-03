@@ -45,6 +45,20 @@
 .hair-animation-stage>p { padding:16px;color:#786d77;font-size:12px;text-align:center; }
 .hair-animation-head { position:relative;width:min(52%,360px);max-height:78%; }
 .hair-animation-head-image { position:absolute;inset:0;z-index:2;width:100%;height:100%;object-fit:fill;user-select:none;pointer-events:none; }
+.hair-animation-character { position:relative;height:min(78%,600px);max-width:75%;pointer-events:none; }
+.hair-animation-character-image { position:absolute;inset:0;z-index:2;width:100%;height:100%;object-fit:fill; }
+.hair-animation-character-overlay { position:absolute;inset:0;z-index:4;width:100%;height:100%;object-fit:fill; }
+.hair-animation-character-artwork { position:absolute;left:50%;top:50%;transform-origin:center; }
+.hair-animation-character-artwork.back { z-index:1; }
+.hair-animation-character-artwork.front { z-index:3; }
+.hair-animation-character-head { position:absolute;transform-origin:center; }
+.hair-animation-character-error { padding:12px;border-radius:8px;background:#fff4f6;color:#a24357;font-size:11px; }
+.hair-animation-preset-slots { display:grid;gap:5px; }
+.hair-animation-preset-slot { display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px; }
+.hair-animation-preset-slot button { min-height:30px;padding:0 9px;border:1px solid #eadde5;border-radius:7px;background:#fff;color:#755f6e;font-size:10px;font-weight:700;cursor:pointer; }
+.hair-animation-preset-slot button:first-child { text-align:left; }
+.hair-animation-preset-slot button:disabled { opacity:.48;cursor:not-allowed; }
+.hair-animation-preset-slot button:not(:disabled):hover { border-color:#d99fba;background:#fff1f7; }
 .hair-animation-piece { position:absolute;pointer-events:none; }
 .hair-motion-mesh { position:absolute;left:-40%;top:-15%;width:180%;height:130%;pointer-events:none; }
 .hair-motion-fallback { position:absolute;inset:0;width:100%;height:100%;object-fit:fill; }
