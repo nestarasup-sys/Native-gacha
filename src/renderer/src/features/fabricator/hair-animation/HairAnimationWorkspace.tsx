@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type CSSProperties } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent } from 'react'
 import type { FabricatorProject, FabricatorSlotSummary, HairStyle, HairStyleSummary } from '../../../../../shared/fabricator'
 import { projectForOriginalPreview } from '../../../../../shared/fabricatorModelViews'
 import { Icon } from '../../../ui/components/Icon'
@@ -6,6 +6,8 @@ import { usePreviewBackground } from '../../../ui/hooks/usePreviewBackground'
 import { useModelAppearanceTarget, useModelPartAppearancePreview } from '../ModelAppearanceContext'
 import { headPart, initialTransform, type HairSide } from '../hairWorkspaceModel'
 import { hairAnimationGeometry } from './hairAnimationGeometry'
+import { HairMotionMesh } from './HairMotionMesh'
+import type { HairMotionSettings } from './hairMotionPhysics'
 import './hair-animation.css'
 
 const sides: Array<{ id: HairSide; label: string }> = [
@@ -13,6 +15,13 @@ const sides: Array<{ id: HairSide; label: string }> = [
 ]
 const emptySelection: Record<HairSide, string> = { back: '', front: '', fringe: '' }
 const defaultEnabled: Record<HairSide, boolean> = { back: true, front: true, fringe: true }
+const defaultIntensity: Record<HairSide, number> = { back: 100, front: 75, fringe: 40 }
+const presets = {
+  brisa: { wind: 20, gust: 28, stiffness: 42, damping: 52, responsiveness: 55, anchor: 14, speed: 100 },
+  vento: { wind: 65, gust: 55, stiffness: 30, damping: 42, responsiveness: 65, anchor: 12, speed: 115 },
+  suave: { wind: 0, gust: 5, stiffness: 48, damping: 65, responsiveness: 35, anchor: 18, speed: 85 },
+  solto: { wind: 8, gust: 20, stiffness: 16, damping: 28, responsiveness: 95, anchor: 8, speed: 100 }
+} satisfies Record<string, Omit<HairMotionSettings, 'enabled'>>
 
 export function HairAnimationWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
   const [slot, setSlot] = useState(baseModelSlot)
@@ -22,9 +31,13 @@ export function HairAnimationWorkspace({ baseModelSlot }: { baseModelSlot: numbe
   const [selection, setSelection] = useState<Record<HairSide, string>>(emptySelection)
   const [styles, setStyles] = useState<Record<string, HairStyle>>({})
   const [enabled, setEnabled] = useState<Record<HairSide, boolean>>(defaultEnabled)
-  const [amplitude, setAmplitude] = useState(6)
-  const [duration, setDuration] = useState(2.8)
-  const [anchor, setAnchor] = useState(15)
+  const [intensity, setIntensity] = useState<Record<HairSide, number>>(defaultIntensity)
+  const [physics, setPhysics] = useState(presets.brisa)
+  const [impulse, setImpulse] = useState(0)
+  const [resetToken, setResetToken] = useState(0)
+  const [headPosition, setHeadPosition] = useState({ x: 0, y: 0 })
+  const headX = useRef(0)
+  const drag = useRef<{ pointerId: number; x: number; y: number; startX: number; startY: number } | null>(null)
   const [playing, setPlaying] = useState(true)
   const [loading, setLoading] = useState(true)
   const [loadingStyles, setLoadingStyles] = useState(false)
@@ -43,7 +56,7 @@ export function HairAnimationWorkspace({ baseModelSlot }: { baseModelSlot: numbe
 
   useEffect(() => {
     let cancelled = false
-    setLoading(true); setError(''); setModel(null); setSummaries([]); setSelection(emptySelection); setStyles({})
+    setLoading(true); setError(''); setModel(null); setSummaries([]); setSelection(emptySelection); setStyles({}); headX.current = 0; setHeadPosition({ x: 0, y: 0 })
     void Promise.all([window.desktop.fabricator.loadFabricatorSlot(slot), window.desktop.fabricator.listHairStyles(slot)])
       .then(([project, items]) => {
         if (cancelled) return
@@ -69,40 +82,54 @@ export function HairAnimationWorkspace({ baseModelSlot }: { baseModelSlot: numbe
     return () => { cancelled = true }
   }, [slot, selectionKey])
 
-  const resetControls = () => { setAmplitude(6); setDuration(2.8); setAnchor(15); setEnabled(defaultEnabled); setPlaying(true) }
+  const centerHead = () => { headX.current = 0; setHeadPosition({ x: 0, y: 0 }) }
+  const resetControls = () => { setPhysics(presets.brisa); setEnabled(defaultEnabled); setIntensity(defaultIntensity); setPlaying(true); centerHead(); setResetToken((value) => value + 1) }
+  const beginDrag = (event: PointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0 || !head) return
+    event.currentTarget.setPointerCapture(event.pointerId)
+    drag.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, startX: headPosition.x, startY: headPosition.y }
+  }
+  const moveDrag = (event: PointerEvent<HTMLDivElement>) => {
+    const active = drag.current
+    if (!active || active.pointerId !== event.pointerId) return
+    const bounds = event.currentTarget.getBoundingClientRect()
+    const x = Math.max(-bounds.width * .3, Math.min(bounds.width * .3, active.startX + event.clientX - active.x))
+    const y = Math.max(-bounds.height * .2, Math.min(bounds.height * .2, active.startY + event.clientY - active.y))
+    headX.current = x / Math.max(1, bounds.width)
+    setHeadPosition({ x, y })
+  }
+  const finishDrag = (event: PointerEvent<HTMLDivElement>) => { if (drag.current?.pointerId === event.pointerId) drag.current = null }
   const renderHair = (side: HairSide) => {
     if (!head) return null
     const style = styles[selection[side]]
     const asset = style?.[side]
     if (!asset) return null
     const transform = style.transforms[side] ?? initialTransform(side, head, asset)
-    const phase = side === 'back' ? 0 : side === 'front' ? -.12 : -.24
+    const phase = side === 'back' ? 0 : side === 'front' ? 1.2 : 2.4
     const frame: CSSProperties = {
       ...hairAnimationGeometry(head, asset, transform),
       zIndex: side === 'back' ? 1 : side === 'front' ? 3 : 4
     }
-    const animated: CSSProperties = {
-      '--hair-sway': `${enabled[side] ? amplitude : 0}deg`, '--hair-anchor': `${anchor}%`,
-      animationDuration: `${duration}s`, animationDelay: `${duration * phase}s`, animationPlayState: playing ? 'running' : 'paused'
-    } as CSSProperties
-    return <div key={side} className="hair-animation-piece" style={frame}><img className="hair-animation-sway" style={animated} src={asset.dataUrl} alt={`Cabelo ${sides.find((item) => item.id === side)?.label.toLowerCase()}`} draggable={false} /></div>
+    return <div key={side} className="hair-animation-piece" style={frame}><HairMotionMesh source={asset.dataUrl} name={`cabelo ${sides.find((item) => item.id === side)?.label.toLowerCase()}`} settings={{ ...physics, enabled: enabled[side] }} intensity={intensity[side]} playing={playing} headX={headX} impulse={impulse} resetToken={resetToken} phase={phase} flipped={Boolean(transform.flipX)} /></div>
   }
 
   return <section className="hair-animation-workspace" aria-label="Animação Cabelo Dev">
-    <header className="hair-animation-header"><div><small>FABRICADOR · EXPERIMENTAL</small><h2>Animação Cabelo Dev</h2><p>Experimente um balanço nas camadas de cabelo do modelo.</p></div><span>Área de teste</span></header>
+    <header className="hair-animation-header"><div><small>FABRICADOR · EXPERIMENTAL</small><h2>Animação Cabelo Dev</h2><p>Experimente vento, elasticidade e movimento secundário em cada camada.</p></div><span>Área de teste</span></header>
     <div className="hair-animation-layout">
       <aside className="hair-animation-panel">
         <section><h3>Modelo e cabelos</h3><label>Modelo<select value={slot} onChange={(event) => setSlot(Number(event.target.value))}>{models.filter((item): item is NonNullable<FabricatorSlotSummary> => Boolean(item)).map((item) => <option key={item.slot} value={item.slot}>{String(item.slot).padStart(2, '0')} · {item.name}</option>)}</select></label>
           {sides.map(({ id, label }) => <label key={id}>{label}<select value={selection[id]} disabled={loading || !head} onChange={(event) => setSelection((current) => ({ ...current, [id]: event.target.value }))}><option value="">Nenhum</option>{summaries.filter((item) => Boolean(item[id])).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>)}
           {!loading && !summaries.length && <p className="hair-animation-hint">Salve um cabelo em Cabelos Dev para escolhê-lo aqui.</p>}
         </section>
-        <section><h3>Movimento</h3><label className="hair-animation-range"><span>Intensidade <output>{amplitude}°</output></span><input type="range" min="0" max="25" value={amplitude} onChange={(event) => setAmplitude(Number(event.target.value))} /></label><label className="hair-animation-range"><span>Duração do ciclo <output>{duration.toFixed(1)} s</output></span><input type="range" min="0.6" max="8" step="0.1" value={duration} onChange={(event) => setDuration(Number(event.target.value))} /></label><label className="hair-animation-range"><span>Ponto de fixação <output>{anchor}%</output></span><input type="range" min="0" max="100" value={anchor} onChange={(event) => setAnchor(Number(event.target.value))} /></label><div className="hair-animation-layers"><span>Animar camadas</span>{sides.map(({ id, label }) => <label key={id}><input type="checkbox" checked={enabled[id]} onChange={(event) => setEnabled((current) => ({ ...current, [id]: event.target.checked }))} />{label}</label>)}</div><div className="hair-animation-actions"><button className="primary" type="button" onClick={() => setPlaying((value) => !value)}>{playing ? 'Pausar' : 'Reproduzir'}</button><button type="button" onClick={resetControls}>Restaurar controles</button></div></section>
+        <section><h3>Movimento</h3><div className="hair-animation-presets">{([['brisa', 'Brisa'], ['vento', 'Ventania'], ['suave', 'Suave'], ['solto', 'Solto']] as const).map(([key, label]) => <button type="button" key={key} onClick={() => { setPhysics(presets[key]); setPlaying(true) }}>{label}</button>)}</div>
+          {([['wind', 'Vento', -100, 100], ['gust', 'Rajadas', 0, 100], ['speed', 'Velocidade', 25, 250], ['stiffness', 'Rigidez', 0, 100], ['damping', 'Amortecimento', 0, 100], ['responsiveness', 'Reação à cabeça', 0, 100], ['anchor', 'Raiz fixa', 0, 85]] as const).map(([key, label, min, max]) => <label key={key} className="hair-animation-range"><span>{label}<output>{physics[key]}{key === 'wind' ? '' : '%'}</output></span><input type="range" min={min} max={max} value={physics[key]} onChange={(event) => setPhysics((current) => ({ ...current, [key]: Number(event.target.value) }))} /></label>)}
+          <div className="hair-animation-layers"><span>Força por camada</span>{sides.map(({ id, label }) => <div className="hair-animation-layer" key={id}><label><input type="checkbox" checked={enabled[id]} onChange={(event) => setEnabled((current) => ({ ...current, [id]: event.target.checked }))} />{label}</label><input aria-label={`Força da camada ${label.toLowerCase()}`} type="range" min="0" max="150" value={intensity[id]} disabled={!enabled[id]} onChange={(event) => setIntensity((current) => ({ ...current, [id]: Number(event.target.value) }))} /><output>{intensity[id]}%</output></div>)}</div><div className="hair-animation-actions"><button type="button" onClick={resetControls}>Restaurar controles</button></div></section>
         <p className="hair-animation-note">Experimento temporário: as escolhas e o movimento ficam nesta prévia.</p>
       </aside>
-      <div className="hair-animation-preview"><div className="hair-animation-preview-header"><strong>PRÉVIA DA CABEÇA</strong><label>Fundo <input aria-label="Cor do fundo das prévias" type="color" value={background} onChange={(event) => setBackground(event.target.value)} /></label></div><div className="hair-animation-stage" style={{ backgroundColor: background }}>
-        {head ? <div className="hair-animation-head" style={{ aspectRatio: `${head.width} / ${head.height}` }}>{renderHair('back')}<img className="hair-animation-head-image" src={appearanceForPart(head)} alt="Cabeça do modelo" draggable={false} />{renderHair('front')}{renderHair('fringe')}</div> : <p>{loading ? 'Carregando modelo…' : 'Selecione um modelo com cabeça para começar.'}</p>}
+      <div className="hair-animation-preview"><div className="hair-animation-preview-header"><strong>PRÉVIA DA CABEÇA</strong><div className="hair-animation-transport"><button className="primary" type="button" onClick={() => setPlaying((value) => !value)}>{playing ? 'Pausar' : 'Reproduzir'}</button><button type="button" onClick={() => { setImpulse((value) => value + 1); setPlaying(true) }}>Sacudir cabelo</button><button type="button" onClick={centerHead}>Centralizar</button><label>Fundo <input aria-label="Cor do fundo das prévias" type="color" value={background} onChange={(event) => setBackground(event.target.value)} /></label></div></div><div className="hair-animation-stage" style={{ backgroundColor: background }} onPointerDown={beginDrag} onPointerMove={moveDrag} onPointerUp={finishDrag} onPointerCancel={finishDrag} onLostPointerCapture={finishDrag}>
+        {head ? <div className="hair-animation-head" style={{ aspectRatio: `${head.width} / ${head.height}`, transform: `translate(${headPosition.x}px, ${headPosition.y}px)` }}>{renderHair('back')}<img className="hair-animation-head-image" src={appearanceForPart(head)} alt="Cabeça do modelo" draggable={false} />{renderHair('front')}{renderHair('fringe')}</div> : <p>{loading ? 'Carregando modelo…' : 'Selecione um modelo com cabeça para começar.'}</p>}
         {head && !selectedIds.length && <div className="hair-animation-overlay">Escolha um cabelo no painel para testar o movimento.</div>}{loadingStyles && <div className="hair-animation-overlay" role="status">Carregando cabelo…</div>}
-      </div><footer><Icon name="sparkles" /> O movimento é uma simulação por camada, com a raiz como ponto de apoio.</footer></div>
+      </div><footer><Icon name="sparkles" /> Arraste a cabeça ou use “Sacudir cabelo” para testar a reação.</footer></div>
     </div>{error && <div className="hair-animation-error" role="alert">{error}</div>}
   </section>
 }

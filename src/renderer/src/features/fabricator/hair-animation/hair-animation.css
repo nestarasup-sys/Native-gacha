@@ -8,7 +8,7 @@
 .hair-animation-panel { min-height:0;overflow:auto;display:flex;flex-direction:column;gap:12px; }
 .hair-animation-panel section { display:grid;gap:10px;padding:15px;border:1px solid #eee4eb;border-radius:12px;background:#fff; }
 .hair-animation-panel h3 { margin:0 0 2px;font-size:12px;color:#5a4050; }
-.hair-animation-panel section>label { display:grid;gap:5px;color:#857382;font-size:10px;font-weight:700; }
+.hair-animation-panel section>label { display:grid;gap:5px;color:#857382;font-size:11px;font-weight:700; }
 .hair-animation-panel select { width:100%;height:34px;padding:0 8px;border:1px solid #e9dfe7;border-radius:7px;background:#fff;color:#534650;font:inherit;font-size:11px; }
 .hair-animation-panel select:disabled { opacity:.5; }
 .hair-animation-range span { display:flex;justify-content:space-between;gap:10px; }
@@ -18,24 +18,37 @@
 .hair-animation-layers>span { flex-basis:100%;font-weight:700; }
 .hair-animation-layers label { display:flex;align-items:center;gap:4px; }
 .hair-animation-layers input { margin:0;accent-color:#c95683; }
-.hair-animation-actions { display:grid;grid-template-columns:1fr 1fr;gap:6px; }
+.hair-animation-layer { width:100%;display:grid;grid-template-columns:75px minmax(0,1fr) 34px;align-items:center;gap:6px; }
+.hair-animation-layer input[type="range"] { width:100%; }
+.hair-animation-layer output { color:#bc527c;text-align:right;font-variant-numeric:tabular-nums; }
+.hair-animation-actions { display:grid;gap:6px; }
 .hair-animation-actions button { min-height:34px;padding:5px;border:1px solid #eadde5;border-radius:7px;background:#fff;color:#755f6e;font-size:10px;font-weight:700;cursor:pointer; }
 .hair-animation-actions button.primary { border-color:#c95782;background:#c95782;color:#fff; }
 .hair-animation-actions button:hover { filter:brightness(.96); }
 .hair-animation-actions button:focus-visible,.hair-animation-panel select:focus-visible { outline:2px solid #cd6e96;outline-offset:2px; }
+.hair-animation-presets { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px; }
+.hair-animation-presets button { min-height:29px;border:1px solid #eddde8;border-radius:7px;background:#fdf8fb;color:#a04970;font-size:10px;font-weight:700;cursor:pointer; }
+.hair-animation-presets button:hover { border-color:#d99fba;background:#fff1f7; }
 .hair-animation-note,.hair-animation-hint { margin:0;color:#9b8996;font-size:10px;line-height:1.5; }
 .hair-animation-note { padding:0 4px; }
 .hair-animation-preview { min-width:0;min-height:0;display:flex;flex-direction:column;overflow:hidden;border:1px solid #eee4eb;border-radius:12px;background:#fff; }
 .hair-animation-preview-header { min-height:46px;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:0 14px;color:#9b8794;font-size:10px;letter-spacing:.04em; }
 .hair-animation-preview-header label { display:flex;align-items:center;gap:7px;letter-spacing:normal;font-weight:700; }
 .hair-animation-preview-header input { width:25px;height:25px;padding:0;border:1px solid #e6dce3;border-radius:5px;background:white;cursor:pointer; }
-.hair-animation-stage { position:relative;min-height:220px;flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden; }
+.hair-animation-transport { display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:6px; }
+.hair-animation-transport button { min-height:29px;padding:0 10px;border:1px solid #eadde5;border-radius:7px;background:#fff;color:#755f6e;font-size:10px;font-weight:700;cursor:pointer; }
+.hair-animation-transport button.primary { border-color:#c95782;background:#c95782;color:#fff; }
+.hair-animation-transport button:hover { filter:brightness(.96); }
+.hair-animation-transport button:focus-visible { outline:2px solid #cd6e96;outline-offset:2px; }
+.hair-animation-stage { position:relative;min-height:220px;flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;touch-action:none;cursor:grab; }
+.hair-animation-stage:active { cursor:grabbing; }
 .hair-animation-stage>p { padding:16px;color:#786d77;font-size:12px;text-align:center; }
 .hair-animation-head { position:relative;width:min(52%,360px);max-height:78%; }
 .hair-animation-head-image { position:absolute;inset:0;z-index:2;width:100%;height:100%;object-fit:fill;user-select:none;pointer-events:none; }
 .hair-animation-piece { position:absolute;pointer-events:none; }
-.hair-animation-sway { display:block;width:100%;height:100%;object-fit:fill;transform-origin:50% var(--hair-anchor);animation:hair-animation-sway 2.8s ease-in-out infinite;user-select:none; }
-@keyframes hair-animation-sway { 0%,100% { transform:rotate(calc(-1 * var(--hair-sway))); } 50% { transform:rotate(var(--hair-sway)); } }
+.hair-motion-mesh { position:absolute;left:-40%;top:-15%;width:180%;height:130%;pointer-events:none; }
+.hair-motion-fallback { position:absolute;inset:0;width:100%;height:100%;object-fit:fill; }
+.hair-motion-error { position:absolute;top:0;left:0;padding:5px;background:#fff;color:#a24357;font-size:10px; }
 .hair-animation-overlay { position:absolute;bottom:14px;left:50%;max-width:90%;padding:8px 12px;border:1px solid #eadbe5;border-radius:8px;background:#fffffff2;color:#8a7282;font-size:10px;text-align:center;transform:translateX(-50%); }
 .hair-animation-preview footer { display:flex;align-items:center;gap:6px;min-height:35px;padding:0 13px;color:#a08f9b;font-size:10px; }
 .hair-animation-preview footer svg { width:14px;height:14px;color:#bd6a8c; }
