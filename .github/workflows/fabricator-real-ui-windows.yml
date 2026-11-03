@@ -2,18 +2,26 @@ name: Fabricator - screenshots reais Windows
 
 on:
   push:
-    branches: [feature/model-source-editor]
+    branches: [Dev-V2, feature/model-source-editor]
     paths:
       - 'electron/**'
       - 'src/**'
       - 'scripts/fabricator/**'
+      - 'scripts/dev-ai/**'
+      - 'tests/**'
+      - 'package.json'
+      - 'package-lock.json'
       - '.github/workflows/fabricator-real-ui-windows.yml'
   pull_request:
-    branches: [refactor/shared-character-core]
+    branches: [Dev-V2, refactor/shared-character-core]
     paths:
       - 'electron/**'
       - 'src/**'
       - 'scripts/fabricator/**'
+      - 'scripts/dev-ai/**'
+      - 'tests/**'
+      - 'package.json'
+      - 'package-lock.json'
       - '.github/workflows/fabricator-real-ui-windows.yml'
   workflow_dispatch:
 
@@ -39,9 +47,9 @@ jobs:
         run: npm ci
       - name: Compile desktop application
         run: npm run build
-      - name: Capture eleven real UI screens in two Electron processes (synthetic profile)
+      - name: Capture twelve real UI screens in two Electron processes (synthetic profile)
         run: npm run test:fabricator:real-ui -- --synthetic-complete
-      - name: Verify eleven screenshots, persisted identities and SHA256
+      - name: Verify twelve screenshots, persisted identities and SHA256
         shell: pwsh
         run: |
           $captures = Get-ChildItem -Path out/dev-ai/runs -Recurse -File -Filter manifest.json |
