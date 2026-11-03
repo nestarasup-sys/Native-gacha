@@ -14,6 +14,8 @@
 - [Prompt de continuidade para Codex — Refatoração Geral V3](CODEX_REFATORACAO_GERAL_V3.md): plano executável, priorizando defeitos de cabelo na exportação, CI e revisão das alterações pós-V2. **Somente Dev-V2 local; sem publicação de código automática.**
 - [Editor V6 — exportação MP4](editor-v6/EXPORTACAO.md): contratos e estado experimental da animação de cabelo, incluindo limitações e testes ainda necessários.
 - [Editor V6 — plano de excelência V4](editor-v6/ROADMAP_V4_EXCELENCIA.md): auditoria pós-V3, CI, sincronismo de áudio/vídeo, oportunidades de timeline, exportação e experiência criativa.
+- [Editor V6 V4 — Rodada 01 (boca, cabelo e memória)](editor-v6/RODADA_01_V4_BOCA_CABELO_MEMORIA.md): retenção corrigida, superfície de cabelo reutilizada, diagnóstico do quadrado facial e validação pendente.
+- [Codex — Rodada 02 V4 (boca isolada e RAM)](editor-v6/CODEX_RODADA_02_V4_BOCA_CABELO_RAM.md): prompt executável para validar o trabalho, corrigir a boca em peça independente e medir exportações longas.
 - [Refatoração V3 — execução e revisão após publicação](architecture/PROGRAMA_REFATORACAO_GERAL_V3_NATIVE_GACHA.md): resultados técnicos, aceite sintético, limitações e pendências da CI.
 - [Registro de importação](IMPORTAR_ZIP.md): proveniência histórica e cuidados de publicação.
 
