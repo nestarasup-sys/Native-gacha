@@ -64,6 +64,9 @@ Esses dados medem esta implementação; não houve uma execução A/B prévia co
 - Os benchmarks não têm linha de base anterior medida nas mesmas condições. O tempo de exportação não é afirmado como mais rápido; o custo novo medido é somente o pré-aquecimento e foi baixo.
 - CI hospedada não foi executada nesta rodada local.
 
-## Commit local
+## Commits locais
 
-Será registrado após a última revisão do diff e das verificações. Nenhum push, PR, merge ou troca de branch será feito.
+- `fcd0edb` — implementação, regressões e evidências desta rodada.
+- O registro desta referência será incluído em um commit local de documentação na própria `Dev-V2`.
+
+Nenhum push, PR, merge ou troca de branch foi feito.
