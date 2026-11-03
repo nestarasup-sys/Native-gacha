@@ -1,5 +1,5 @@
 import type { IpcMain, IpcMainInvokeEvent, SaveDialogOptions } from 'electron'
-import { basename } from 'node:path'
+import { win32 } from 'node:path'
 import { isDiagnosticEventIdListWithinBridgeLimits } from '../../application/diagnosticEventInput'
 import { isDiagnosticsQuickCheckSnapshotWithinBridgeLimits } from '../../application/diagnosticQuickCheckInput'
 import type {
@@ -87,7 +87,7 @@ export function registerDiagnosticsHandlers(deps: {
       events: events.slice(-250)
     }
     await deps.writeFile(choice.filePath, JSON.stringify(report, null, 2))
-    return { saved: true, fileName: basename(choice.filePath) }
+    return { saved: true, fileName: win32.basename(choice.filePath) }
   })
 
   deps.ipcMain.handle('app:diagnostics:export-events', async (event, input: unknown): Promise<DiagnosticEventExportResult> => {
@@ -113,6 +113,6 @@ export function registerDiagnosticsHandlers(deps: {
       events: selectedEvents
     }
     await deps.writeFile(choice.filePath, JSON.stringify(report, null, 2))
-    return { saved: true, fileName: basename(choice.filePath), eventCount: selectedEvents.length }
+    return { saved: true, fileName: win32.basename(choice.filePath), eventCount: selectedEvents.length }
   })
 }
