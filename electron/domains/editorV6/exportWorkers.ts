@@ -1,5 +1,5 @@
 import { createMediaFileResponse } from '../mediaLibrary/mediaFileResponse'
-import { BrowserWindow, type IpcMain, type NativeImage } from 'electron'
+import { BrowserWindow, type IpcMain } from 'electron'
 import { editorV6WorkerChannels, type EditorV6FrameTimings, type EditorV6RenderFrameResult, type EditorV6WorkerPayload } from '../../../src/shared/editorV6Export'
 import { waitForExport } from './exportProcess'
 import { restrictRendererNavigation } from '../../windowNavigation'
@@ -9,43 +9,46 @@ import { exportBitmap } from './exportBitmap'
 
 export type EditorV6FrameWorker = { frame: (frame: number) => Promise<EditorV6RenderFrameResult & { bitmap?: Buffer }>; close: () => void }
 
-function waitForOffscreenPaint(window: BrowserWindow, signal: AbortSignal): Promise<void> {
-  if (signal.aborted) return Promise.reject(signal.reason ?? Error('Exportação cancelada.'))
-  const { webContents } = window
-  return new Promise((resolve, reject) => {
-    let settled = false
-    let timeout: ReturnType<typeof setTimeout> | undefined
-    const cleanup = () => {
-      if (timeout) clearTimeout(timeout)
-      webContents.removeListener('paint', onPaint)
-      window.removeListener('closed', onClosed)
-      signal.removeEventListener('abort', onAbort)
-    }
-    const finish = (error?: unknown) => {
-      if (settled) return
-      settled = true
-      cleanup()
-      if (error) reject(error)
-      else resolve()
-    }
-    const onPaint = (_event: Electron.Event, _dirtyRect: Electron.Rectangle, _image: NativeImage) => finish()
-    const onClosed = () => finish(Error('A janela de exportação foi fechada.'))
-    const onAbort = () => finish(signal.reason ?? Error('Exportação cancelada.'))
+const PAINT_TOKEN_SIZE = 24
+const PAINT_TOKEN_CELL_SIZE = 4
+const PAINT_TOKEN_COLUMNS = 6
+const FRAME_CAPTURE_TIMEOUT_MS = 60000
+const FRAME_CAPTURE_RETRY_MS = 16
 
-    webContents.once('paint', onPaint)
-    window.once('closed', onClosed)
-    signal.addEventListener('abort', onAbort, { once: true })
-    timeout = setTimeout(() => finish(Error('Tempo limite: pintar quadro do renderizador de exportação.')), 60000)
-    if (signal.aborted) { onAbort(); return }
-    try {
-      // The renderer's animation frames only confirm that React/SVG committed.
-      // Wait for Chromium's offscreen compositor after every visual change so
-      // image-source transitions cannot be captured from the previous paint.
-      webContents.invalidate()
-    } catch (error) {
-      finish(error)
+function captureHasPaintToken(image: Electron.NativeImage, width: number, height: number, token: number) {
+  const size = image.getSize()
+  if (size.width < width + PAINT_TOKEN_SIZE || size.height < height) return false
+  const bitmap = image.toBitmap({ scaleFactor: 1 })
+  if (bitmap.length !== size.width * size.height * 4) return false
+  // The opaque black/white bit cells live outside the scene. Sampling their
+  // centers from the same NativeImage that will be cropped avoids both stale
+  // compositor frames and color-profile rounding between adjacent frame IDs.
+  for (let bit = 0; bit < 24; bit++) {
+    const cellX = width + (bit % PAINT_TOKEN_COLUMNS) * PAINT_TOKEN_CELL_SIZE + PAINT_TOKEN_CELL_SIZE / 2
+    const cellY = Math.floor(bit / PAINT_TOKEN_COLUMNS) * PAINT_TOKEN_CELL_SIZE + PAINT_TOKEN_CELL_SIZE / 2
+    const offset = (cellY * size.width + cellX) * 4
+    const actual = bitmap[offset + 2] > 127
+    const expected = ((token >>> bit) & 1) === 1
+    if (actual !== expected || bitmap[offset + 3] < 254) return false
+  }
+  return true
+}
+
+async function capturePaintedFrame(window: BrowserWindow, signal: AbortSignal, width: number, height: number, token: number) {
+  const deadline = Date.now() + FRAME_CAPTURE_TIMEOUT_MS
+  while (Date.now() < deadline) {
+    signal.throwIfAborted()
+    const image = await waitForExport(window.webContents.capturePage({ x: 0, y: 0, width: width + PAINT_TOKEN_SIZE, height }), signal, FRAME_CAPTURE_TIMEOUT_MS, 'capturar quadro')
+    if (captureHasPaintToken(image, width, height, token)) {
+      return exportBitmap(image.crop({ x: 0, y: 0, width, height }), width, height)
     }
-  })
+    // Invalidate only after observing a stale readback. This is a bounded
+    // readback fence, not a blind wait for any queued paint event: each retry
+    // verifies the marker in the exact image that will be exported.
+    window.webContents.invalidate()
+    await waitForExport(new Promise<void>((resolve) => setTimeout(resolve, FRAME_CAPTURE_RETRY_MS)), signal, FRAME_CAPTURE_TIMEOUT_MS, 'sincronizar quadro')
+  }
+  throw Error('Tempo limite: o compositor não apresentou o quadro solicitado para exportação.')
 }
 
 export function createEditorV6WorkerFactory(deps: { ipcMain: Pick<IpcMain, 'handle' | 'removeHandler'>; html: string; preload: string; devUrl?: string; mediaPath?: (projectId: string, fileName: string, libraryVideoId?: string) => string | Promise<string>; inspectCapture?: (capture: { window: BrowserWindow; frame: number; bitmap: Buffer }) => Promise<void> }) {
@@ -67,7 +70,7 @@ export function createEditorV6WorkerFactory(deps: { ipcMain: Pick<IpcMain, 'hand
     signal.throwIfAborted()
     if (disposed) throw Error('A fábrica de renderizadores de exportação foi encerrada.')
     const layeredVideo = payload.layeredVideo
-    const window = new BrowserWindow({ show: false, useContentSize: true, width: payload.width, height: payload.height, enableLargerThanScreen: true, frame: false, transparent: layeredVideo, ...(layeredVideo ? { backgroundColor: '#00000000' } : {}),
+    const window = new BrowserWindow({ show: false, useContentSize: true, width: payload.width + PAINT_TOKEN_SIZE, height: payload.height, enableLargerThanScreen: true, frame: false, transparent: layeredVideo, ...(layeredVideo ? { backgroundColor: '#00000000' } : {}),
       webPreferences: { preload: deps.preload, contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: false, offscreen: true, devTools: false, partition: `editor-v6-export-${crypto.randomUUID()}` } })
     const mediaList = payload.project.media, mediaPath = deps.mediaPath
     if (mediaPath && mediaList?.length) window.webContents.session.protocol.handle('gacha-editor-media', async (request) => {
@@ -84,7 +87,7 @@ export function createEditorV6WorkerFactory(deps: { ipcMain: Pick<IpcMain, 'hand
     restrictRendererPermissions(window.webContents.session)
     window.removeMenu()
     // Initial native bounds can be clamped to the monitor work area on Windows.
-    window.setContentSize(payload.width, payload.height)
+    window.setContentSize(payload.width + PAINT_TOKEN_SIZE, payload.height)
     window.webContents.setFrameRate(60)
     restrictRendererResources(window.webContents.session, {
       html: deps.html,
@@ -117,21 +120,24 @@ export function createEditorV6WorkerFactory(deps: { ipcMain: Pick<IpcMain, 'hand
       await waitForExport(deps.devUrl ? window.loadURL(new URL('editor-v6-export.html', deps.devUrl.endsWith('/') ? deps.devUrl : deps.devUrl + '/').href) : window.loadFile(deps.html), signal, 60000, 'abrir renderizador')
       await waitForExport(ready, signal, 60000, 'preparar renderizador')
       window.webContents.setZoomFactor(1)
+      let nextPaintToken = 0
       return { close, frame: async (frame) => {
         signal.throwIfAborted()
         if (closed) throw Error('O renderizador de exportação foi encerrado.')
         const draw = async (layer?: 'background' | 'foreground') => {
           const started = performance.now()
-          const result = await waitForExport(window.webContents.executeJavaScript(`window.renderEditorV6ExportFrame(${Math.round(frame)}${layer ? `, '${layer}'` : ''})`) as Promise<EditorV6RenderFrameResult>, signal, 60000, 'desenhar quadro')
+          nextPaintToken = nextPaintToken % 0xfffffe + 1
+          const token = nextPaintToken
+          const layerArgument = layer ? `'${layer}'` : 'undefined'
+          const result = await waitForExport(window.webContents.executeJavaScript(`window.renderEditorV6ExportFrame(${Math.round(frame)}, ${layerArgument}, ${token})`) as Promise<EditorV6RenderFrameResult>, signal, 60000, 'desenhar quadro')
           return { ...result, timings: { ...result.timings, ipcDrawMs: performance.now() - started } }
         }
         const result = await draw(layeredVideo ? 'background' : undefined)
         if (result.reused) return result
         const capture = async () => {
           const started = performance.now()
-          await waitForOffscreenPaint(window, signal)
-          const image = await waitForExport(window.webContents.capturePage({ x: 0, y: 0, width: payload.width, height: payload.height }), signal, 60000, 'capturar quadro')
-          const bitmap = exportBitmap(image, payload.width, payload.height)
+          const token = nextPaintToken
+          const bitmap = await capturePaintedFrame(window, signal, payload.width, payload.height, token)
           await deps.inspectCapture?.({ window, frame, bitmap })
           return { bitmap, elapsedMs: performance.now() - started }
         }

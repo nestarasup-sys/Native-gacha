@@ -4,18 +4,49 @@ import type { IpcMain } from 'electron'
 import type { EditorV6WorkerPayload } from '../../src/shared/editorV6Export'
 import { editorV6WorkerChannels } from '../../src/shared/editorV6Export'
 
-const state = vi.hoisted(() => ({ windows: [] as any[] }))
+const state = vi.hoisted(() => {
+  const imageFor = (width: number, height: number, token: number) => {
+    const bitmap = Buffer.alloc(width * height * 4, 127)
+    for (let bit = 0; bit < 24; bit++) {
+      const markerX = width - 24 + (bit % 6) * 4 + 2, markerY = Math.floor(bit / 6) * 4 + 2
+      const offset = (markerY * width + markerX) * 4
+      const color = ((token >>> bit) & 1) === 1 ? 255 : 0
+      bitmap[offset] = color; bitmap[offset + 1] = color; bitmap[offset + 2] = color; bitmap[offset + 3] = 255
+    }
+    return {
+      getSize: () => ({ width, height }),
+      toBitmap: () => bitmap,
+      crop: ({ x, y, width: cropWidth, height: cropHeight }: { x: number; y: number; width: number; height: number }) => {
+        const cropped = Buffer.alloc(cropWidth * cropHeight * 4)
+        for (let row = 0; row < cropHeight; row++) bitmap.copy(cropped, row * cropWidth * 4, ((y + row) * width + x) * 4, ((y + row) * width + x + cropWidth) * 4)
+        return { getSize: () => ({ width: cropWidth, height: cropHeight }), toBitmap: () => cropped, resize: vi.fn() }
+      },
+      resize: vi.fn()
+    }
+  }
+  return { windows: [] as any[], imageFor }
+})
 vi.mock('electron', () => ({ BrowserWindow: class extends EventEmitter {
   destroyed = false
-  webContents = Object.assign(new EventEmitter(), {
-    setWindowOpenHandler: vi.fn(),
-    id: state.windows.length + 1, mainFrame: {}, setFrameRate: vi.fn(), setZoomFactor: vi.fn(),
-    invalidate: vi.fn(function (this: EventEmitter) { setTimeout(() => this.emit('paint', {}, {}, {}), 0) }),
-    executeJavaScript: vi.fn().mockResolvedValue({ reused: false, timings: {} }),
-    capturePage: vi.fn().mockResolvedValue({ getSize: () => ({ width: 320, height: 180 }), toBitmap: () => Buffer.alloc(320 * 180 * 4, 255), resize: vi.fn() }),
-    session: { setPermissionCheckHandler: vi.fn(), setPermissionRequestHandler: vi.fn(), webRequest: { onBeforeRequest: vi.fn() } }
-  })
-  constructor() { super(); state.windows.push(this) }
+  paintToken = 0
+  webContents: any
+  constructor() {
+    super()
+    const window = this
+    this.webContents = Object.assign(new EventEmitter(), {
+      setWindowOpenHandler: vi.fn(),
+      id: state.windows.length + 1, mainFrame: {}, setFrameRate: vi.fn(), setZoomFactor: vi.fn(),
+      invalidate: vi.fn(),
+      executeJavaScript: vi.fn(async (script: string) => {
+        const token = script.match(/,\s*(\d+)\)\s*$/)
+        if (token) window.paintToken = Number(token[1])
+        return { reused: false, timings: {} }
+      }),
+      capturePage: vi.fn(async ({ width, height }: { width: number; height: number }) => state.imageFor(width, height, window.paintToken)),
+      session: { setPermissionCheckHandler: vi.fn(), setPermissionRequestHandler: vi.fn(), webRequest: { onBeforeRequest: vi.fn() } }
+    })
+    state.windows.push(this)
+  }
   removeMenu() {}
   setContentSize = vi.fn()
   loadFile() { return Promise.resolve() }
@@ -46,7 +77,7 @@ describe('export worker lifecycle', () => {
     ready()
     const worker = await pending
     const window = state.windows[0]
-    expect(window.setContentSize).toHaveBeenCalledWith(payload.width, payload.height)
+    expect(window.setContentSize).toHaveBeenCalledWith(payload.width + 24, payload.height)
     window.destroy()
     expect(remove).toHaveBeenCalledWith('abort', expect.any(Function))
     expect(() => handlers.get(editorV6WorkerChannels.payload)!({ sender: window.webContents, senderFrame: window.webContents.mainFrame })).toThrow('não autorizado')
@@ -68,36 +99,33 @@ describe('export worker lifecycle', () => {
     await expect(factory.create(payload, new AbortController().signal)).rejects.toThrow('encerrada')
   })
 
-  it('waits for the offscreen compositor before capturing each rendered frame', async () => {
+  it('verifies a unique compositor token in the same capture that is cropped for export', async () => {
     const { factory, payload, ready } = fixture()
     const pending = factory.create(payload, new AbortController().signal)
     ready()
     const worker = await pending
+    const window = state.windows[0]
     const contents = state.windows[0].webContents
-    let paintCount = 0
-    const bitmap = Buffer.alloc(320 * 180 * 4, 127)
-    const paintedImage = { getSize: () => ({ width: 320, height: 180 }), toBitmap: () => bitmap, resize: vi.fn() }
-    contents.invalidate.mockImplementation(() => setTimeout(() => {
-      paintCount++
-      contents.emit('paint', {}, { x: 0, y: 0, width: 320, height: 180 }, paintedImage)
-    }, 0))
+    const output = Buffer.alloc(payload.width * payload.height * 4, 127)
+    let captureCount = 0
     contents.capturePage.mockImplementation(async () => {
-      expect(paintCount).toBe(contents.invalidate.mock.calls.length)
-      return paintedImage
+      captureCount++
+      return state.imageFor(payload.width + 24, payload.height, captureCount === 1 ? 0xffffff : window.paintToken)
     })
     const first = await worker.frame(10)
-    const second = await worker.frame(11)
 
-    expect(contents.invalidate).toHaveBeenCalledTimes(2)
-    expect(paintCount).toBe(2)
+    expect(contents.setZoomFactor).toHaveBeenCalledWith(1)
     expect(contents.capturePage).toHaveBeenCalledTimes(2)
-    expect(first.bitmap).toBe(bitmap)
-    expect(second.bitmap).toBe(bitmap)
+    expect(contents.invalidate).toHaveBeenCalledTimes(1)
+    expect(first.bitmap).toHaveLength(output.length)
+    expect(first.bitmap?.subarray(0, 32)).toEqual(output.subarray(0, 32))
+    expect(first.bitmap?.some((byte) => byte !== 127)).toBe(false)
+    expect(contents.capturePage).toHaveBeenLastCalledWith({ x: 0, y: 0, width: payload.width + 24, height: payload.height })
     worker.close()
     factory.dispose()
   })
 
-  it('does not capture a stale frame when cancelled during compositor paint wait', async () => {
+  it('never returns a stale readback and cancels while waiting for the matching token', async () => {
     const { factory, payload, ready } = fixture()
     const controller = new AbortController()
     const pending = factory.create(payload, controller.signal)
@@ -105,14 +133,14 @@ describe('export worker lifecycle', () => {
     const worker = await pending
     const window = state.windows[0]
     const contents = window.webContents
-    contents.invalidate.mockImplementation(() => {})
+    contents.capturePage.mockImplementation(async () => state.imageFor(payload.width + 24, payload.height, 0xffffff))
 
     const frame = worker.frame(12)
-    await vi.waitFor(() => expect(contents.invalidate).toHaveBeenCalledTimes(1))
+    await vi.waitFor(() => expect(contents.invalidate.mock.calls.length).toBeGreaterThan(0))
     controller.abort(Error('cancelamento sintético'))
 
-    await expect(frame).rejects.toThrow('fechada')
-    expect(contents.capturePage).not.toHaveBeenCalled()
+    await expect(frame).rejects.toThrow('cancelamento sintético')
+    expect(contents.capturePage).toHaveBeenCalled()
     expect(contents.listenerCount('paint')).toBe(0)
     expect(window.destroyed).toBe(true)
     worker.close()
