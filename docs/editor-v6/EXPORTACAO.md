@@ -12,6 +12,46 @@ O painel também oferece **Animação de cabelo · experimental**. Ao ativá-la,
 
 O motor usa a mesma cadeia de física fixa de 120 Hz da prévia. Cada quadro exportado avança pelo tempo absoluto da timeline, então seeks, intervalos que começam no meio da animação e a emenda entre trechos Turbo preservam a fase. A captura do Editor V6 já armazena as trocas rasterizadas de pose e rosto; durante esses atlas temporários o cabelo experimental fica pausado e retoma quando a transição termina, sem deformar uma imagem de transição como se fosse cabelo. O worker recompõe as camadas temporárias por quadro e usa faixas rasterizadas para deformar as peças sem expor a malha gráfica da prévia. A qualidade e o custo variam com o tamanho do cabelo, a quantidade de camadas e os personagens visíveis; a opção permanece desligada por padrão.
 
+## Estado de qualidade — animação de cabelo experimental (2026-11-03)
+
+> **Experimental e opt-in; não aprovado visualmente em personagem completo.** O recurso continua desligado por padrão. O fato de um MP4 sintético ter sido gerado não comprova fidelidade com cabelos detalhados, transparência ou transições reais.
+
+### Funcionamento efetivamente implementado
+
+- Presets: cinco posições guardadas em `localStorage`, chave `gacha-nymi:hair-animation-presets:v1`, produzidas no Fabricador DEV. Ao exportar, o renderer resolve Customizador/Fabricador e prepara `body`, `face`, cabelo atrás, frente e franjas, preservando o documento V6 e a instância do personagem.
+- Física: `src/shared/hairMotionEngine.ts` usa passos determinísticos de 120 Hz, quatro por quadro de 30 FPS, partindo do quadro absoluto zero para suportar início tardio e trechos Turbo.
+- Transporte: `src/shared/editorV6HairMotion.ts` valida referências e orçamento dos dados temporários. O worker mede `hairCompositionMs`. O cabelo **não é animado na prévia normal do Editor V6**; durante `motionSprite` de pose/expressão, a deformação experimental é ignorada, o que pode tornar visível a transição entre modos de desenho.
+
+### Falhas observadas em uso real (em aberto)
+
+1. **Desancoragem:** o cabelo sai da cabeça e se aproxima do centro da tela antes de voltar.
+2. **Listras claras:** aparecem linhas brancas semelhantes a emendas entre trechos de deformação.
+3. **Salto em transição:** ao entrar ou sair de poses animadas, o cabelo volta à cabeça e depois reaparece deslocado.
+
+Não foram corrigidas no commit `5853ca324c` nem no commit de documentação seguinte; são observações reais relatadas pelo usuário. É preciso capturar pixels/quadros antes, durante e após a transição e registrar coordenadas para confirmar as causas.
+
+### Hipóteses técnicas a provar
+
+- A prévia do Fabricador deforma uma **malha WebGL contínua**, enquanto `exportWorker.tsx` redesenha **até 96 faixas horizontais** com `CanvasRenderingContext2D.drawImage`. Subpixels, alpha e interpolação podem produzir lacunas/halos nas junções; o teste atual com bloco vermelho opaco não cobre essa classe de artefato.
+- `editorV6HairMotionPreparation.ts` monta transforms de peças sobre a cabeça e guarda `sourceCrop`, `targetHead`, dimensões de artwork e de saída. O worker reaplica transforms e chama `faceRenderGeometry`; uma mistura de coordenadas de artwork, crop, cabeça e cena — ou transformação dupla — é plausível, ainda não comprovada.
+- A trajetória usada como entrada da física no worker deriva `element.x / element.width` e ignora a posição local da cabeça dentro das poses. O modo `motionSprite` desativa a recomposição do cabelo, podendo introduzir salto na passagem de estados. Exigir âncora calculada a partir da geometria **efetivamente renderizada** e continuidade entre os dois caminhos.
+
+### Cobertura exigida antes de promover o recurso
+
+- Testar recorte transparente, bordas semitransparentes, fios finos, cores claras/escuras, escala corporal, rotação, espelhamento e roupas/cabelo reais em fixtures não pessoais.
+- Verificar a cabeça e o cabelo em quadros `antes/durante/depois` de transições, no primeiro/último quadro, em diferentes posições de cena e em Turbo nos limites de partes, inclusive início de exportação diferente de zero.
+- Comparar pixels RGBA sem compressão em fundos transparentes, claro, escuro e quadriculado; depois inspecionar MP4/FFprobe com tolerância explícita para compressão H.264. Medir drift da âncora, pixels de costura e saltos temporais sem mascará-los com redução de resolução.
+- Preservar geometria, fala/boca obrigatória, sobreposição de vídeo, áudio, exportação 720p/1080p, cancelamento, recuperação e perfil de memória. Não ativar por padrão nem anunciar paridade até os testes e a revisão visual passarem.
+- Investigar **separadamente** a falha relatada de `npm run test:editor-v6:export` na emenda, pixel `(240, 90)`, presente antes do cenário experimental; não atribuir essa falha ao cabelo sem reprodução causal.
+
+### Limitação atual da CI
+
+O workflow `.github/workflows/editor-v6-parity.yml` executa as suítes do V6 e o MP4 facial/overlay em Windows, mas não executa `node scripts/editor-v6/check-hair-motion-export.cjs` nem o teste real amplo `npm run test:editor-v6:export`. A run de referência [41623161063](https://github.com/nestarasup-sys/Native-gacha/actions/runs/41623161063) falhou no gate geral por assertiva textual legada em `tests/renderer-pending-persistence.test.mjs` após o exportador ganhar preparação de cabelo; a paridade MP4 preexistente passou. Precisamos de um gate dedicado à composição de cabelo com alpha/poses para poder afirmar que o novo motor está protegido.
+
+Referências técnicas: [Canvas drawImage (MDN)](https://developer.mozilla.org/en-US/docs/Web/API/CanvasRenderingContext2D/drawImage), [WebGL (MDN)](https://developer.mozilla.org/en-US/docs/Web/API/WebGL_API), [OffscreenCanvas/ImageBitmap (MDN)](https://developer.mozilla.org/en-US/docs/Web/API/OffscreenCanvas/transferToImageBitmap), [Electron Performance](https://www.electronjs.org/docs/latest/tutorial/performance). A escolha por WebGL, rasterização contínua ou outra técnica depende de teste de precisão RGBA, desempenho e integração no worker.
+
+---
+
 O painel pode ser fechado durante a exportação. O trabalho continua enquanto o aplicativo estiver aberto. Ao reabrir, o painel recupera o trabalho mais recente da janela. Encerrar o aplicativo cancela os processos e aguarda a liberação dos temporários.
 
 ## Fluxo implementado
