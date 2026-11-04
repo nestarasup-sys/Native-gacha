@@ -1,9 +1,15 @@
+import { current, isDraft } from 'immer'
 import type { EditorV6Document } from '../../../../shared/editorV6'
 import { planEditorV6Export, type EditorV6ExportOptions, type EditorV6ExportStatus } from '../../../../shared/editorV6Export'
 import type { EditorV6HairMotionBundle } from '../../../../shared/editorV6HairMotion'
 import type { HairMotionPreset } from '../../../../shared/hairMotionEngine'
 
 type ExportJob = EditorV6ExportStatus
+
+/** Export preparation crosses several awaits; never retain an Immer draft past the event/update that created it. */
+function detachedSnapshot<T>(value: T): T {
+  return structuredClone(isDraft(value) ? current(value) : value)
+}
 
 export async function runEditorV6ExportCommand(input: {
   project: EditorV6Document
@@ -15,7 +21,10 @@ export async function runEditorV6ExportCommand(input: {
   onPreparingHair?: (preparing: boolean) => void
   onStatus?: (status: ExportJob) => void
 }): Promise<ExportJob | null> {
-  const { project, options, hairPreset, hairPresetSlot } = input
+  const project = detachedSnapshot(input.project)
+  const options = detachedSnapshot(input.options)
+  const hairPreset = input.hairPreset ? detachedSnapshot(input.hairPreset) : null
+  const { hairPresetSlot } = input
   const exportOptions = { ...options, hairAnimationPresetSlot: hairPreset ? hairPresetSlot : undefined }
   planEditorV6Export(exportOptions, project.timeline.durationFrames)
 
