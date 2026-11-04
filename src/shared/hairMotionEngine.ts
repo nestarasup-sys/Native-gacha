@@ -168,6 +168,53 @@ export function advanceHairMotionToFrame(
   }
 }
 
+
+/** Export-only sampled breeze; 90/120 small Float32 vectors rather than PNGs.
+ * Not a cache across exports. Fixed-step spring is simulated once per piece.
+ * The seam guarantees matching position; the derivative can still differ.
+ */
+export type HairMotionLoop = Readonly<{ cycleFrames: number; offsets: ReadonlyArray<Float32Array> }>
+
+export function buildHairMotionLoop(settings: HairMotionSettings, phase: number, cycleFrames: number, segments = 8): HairMotionLoop {
+  if (![90, 120].includes(cycleFrames) || !Number.isFinite(phase) || !Number.isSafeInteger(segments) || segments < 1 || segments > 128) {
+    throw Error('Configuração do ciclo de cabelo inválida.')
+  }
+  const state = createHairMotionState(segments)
+  prewarmHairMotionState(state, settings, 0, phase)
+  const samples: Float32Array[] = [new Float32Array(state.offsets)]
+  const dt = 1 / HAIR_MOTION_SIMULATION_HZ
+  for (let frame = 1; frame < cycleFrames; frame += 1) {
+    for (let step = 0; step < HAIR_MOTION_STEPS_PER_FRAME; step += 1) stepHairMotion(state, settings, dt, 0, phase)
+    samples.push(new Float32Array(state.offsets))
+  }
+  // Blend the final 12 samples back into sample zero, without a positional jump.
+  const fadeFrames = 12
+  for (let frame = cycleFrames - fadeFrames; frame < cycleFrames; frame += 1) {
+    const t = (frame - (cycleFrames - fadeFrames)) / (fadeFrames - 1)
+    const blend = t * t * (3 - 2 * t)
+    for (let index = 0; index < samples[frame].length; index += 1) {
+      samples[frame][index] = Math.fround(samples[frame][index] * (1 - blend) + samples[0][index] * blend)
+    }
+  }
+  return { cycleFrames, offsets: samples }
+}
+
+/** Absolute timeline index avoids restarting the loop at a Turbo seam. */
+export function hairMotionLoopOffsets(loop: HairMotionLoop, frame: number): Float32Array {
+  if (!Number.isSafeInteger(frame) || frame < 0) throw Error('Quadro do ciclo de cabelo inválido.')
+  return loop.offsets[frame % loop.cycleFrames]
+}
+
+/** Small authored-head impulse; rig motion still comes from the pose pipeline. */
+export function applyHairMotionLoopHeadImpulse(offsets: Float32Array, headDelta: number, settings: HairMotionSettings): void {
+  if (!Number.isFinite(headDelta)) throw Error('Movimento da cabeça inválido.')
+  if (!settings.enabled || headDelta === 0) return
+  const impulse = Math.max(-0.05, Math.min(0.05, -headDelta * settings.responsiveness / 100 * 0.08))
+  for (let i = 1; i < offsets.length; i += 1) {
+    offsets[i] = Math.fround(Math.max(-0.45, Math.min(0.45, offsets[i] + impulse * (i / (offsets.length - 1)))))
+  }
+}
+
 export function hairMotionOffset(state: HairMotionState, vertical: number, anchor: number): number {
   const root = Math.max(0, Math.min(0.95, anchor / 100))
   const amount = Math.max(0, Math.min(1, (vertical - root) / (1 - root)))

@@ -20,6 +20,7 @@ const ELECTRON_VITE = path.join(ROOT, 'node_modules', 'electron-vite', 'bin', 'e
 
 const TESTS = {
   hair: [
+    'tests/editor-v6/hairMotionLoop.test.ts',
     'tests/editor-v6/hairBakeBatch.test.ts',
     'tests/editor-v6/hairBakeEndpointGeometry.test.ts',
     'tests/editor-v6/motionAlphaCrop.test.ts',

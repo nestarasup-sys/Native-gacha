@@ -64,6 +64,7 @@ export type EditorV6HairMotionTransition = {
 export type EditorV6HairMotionBundle = {
   presetSlot: number
   preset: HairMotionPreset
+  loopFrames?: 90 | 120
   surfaces: EditorV6HairMotionSurface[]
   textures: EditorV6HairMotionSurface[]
   rigs: EditorV6HairMotionRig[]
@@ -266,6 +267,7 @@ const transition = z.object({
 const bundleSchema = z.object({
   presetSlot: z.number().int().min(1).max(5),
   preset: z.unknown(),
+  loopFrames: z.union([z.literal(90), z.literal(120)]).optional(),
   surfaces: z.array(surface).max(5000),
   textures: z.array(surface).max(2000),
   rigs: z.array(rig).min(1).max(10_000),
