@@ -6,6 +6,16 @@
 
 **Regra de produto inegociável:** a animação dinâmica experimental de cabelo fica **exclusivamente na exportação MP4**, habilitada manualmente. A prévia, viewport, seek e reprodução normal do Editor V6 não devem ganhar cabelo animado. A prévia de animação do **Fabricador DEV** permanece.
 
+## Novo foco da V4 — velocidade real do MP4 (Rodadas 04/05)
+
+O usuário mudou a prioridade para **exportar 10 s do projeto Editor V6 06 em ≤15 s, idealmente ≤10 s**, com **dois personagens, cabelo ativo no Preset 2**, sem rebaixar resolução, 30 FPS ou qualidade. Referência **relatada**: ~65 s. Não considerar a estimativa inicial equivalente a benchmark reproduzido.
+
+A [Rodada 04](RODADA_04_V4_ACELERACAO_EXPORT.md) aplicou melhoria de leitura BGRA em uma conversão, corrigiu fixture de CI e a opção CPU H.264 do painel; **ganho real em segundos ainda não medido**. A [Rodada 05 para Codex](CODEX_RODADA_05_V4_EXPORT_10_15S.md) exige cópia imutável do projeto real, medida de clique→MP4 (inclusive preparação de cabelo fora do Main), análise por fase e comparação A/B visual. Priorizar gargalos que realmente consomem o tempo; preservar tentativas históricas rejeitadas, tokens do compositor e o modo export-only do cabelo.
+
+**Ordem vigente:** CI verde + baseline do projeto real → classificação dos custos de preparo/render/captura/encode → experimentos de composição/infra com testes RGBA/MP4 → medição de velocidade, RAM e qualidade → depois as sugestões anteriores de timeline e recursos criativos. Nenhum ganho 4×–6× foi demonstrado nesta revisão.
+
+---
+
 ## 1. Estado comprovado do aplicativo
 
 | Sistema | O que já existe — preservar | Limites e oportunidade |
