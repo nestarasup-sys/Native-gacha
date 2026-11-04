@@ -702,7 +702,7 @@ async function main() {
     const ffprobe = join(videoTools, 'ffprobe.exe')
     const exportHairMp4 = (width: number, height: number, startFrame: number, endFrame: number, turbo: boolean, name: string, exportProject: EditorV6Document = project, exportHairAnimation: EditorV6HairMotionBundle = hairAnimation) => {
       const outputPath = join(folder, name)
-      return runEditorV6Export(exportProject, { startFrame, endFrame, width, height, turbo, encoder: 'cpu', hairAnimationPresetSlot: 1 }, {
+      return runEditorV6Export(exportProject, { startFrame, endFrame, width, height, turbo, encoder: 'cpu', hairAnimationPresetSlot: 1, ...(exportHairAnimation.loopFrames ? { hairAnimationLoopFrames: exportHairAnimation.loopFrames } : {}) }, {
         ffmpeg, ffprobe, tempRoot: folder, id: randomUUID(), outputPath, reportPath: join(folder, `${name}.report.json`), signal: new AbortController().signal,
         getCharacters: async () => [], bakeMotion: async () => { throw Error('O fixture não deve preparar animações de pose.') },
         createWorker: (renderProject, _part, signal, layeredVideo, mouthLoops) => factory.create({ project: renderProject, width, height, layeredVideo, ...(mouthLoops ? { mouthLoops } : {}), hairAnimation: exportHairAnimation }, signal),
@@ -716,6 +716,17 @@ async function main() {
     assert(report.attempts[0].parts.reduce((total, part) => total + (part.frameTiming?.hairMotionPrewarmMs?.totalMs ?? 0), 0) > 0, 'O relatório não mediu o custo do pré-aquecimento da física do cabelo.')
     assert(report.attempts[0].parts.reduce((total, part) => total + (part.frameMetrics?.hairRasterFrames ?? 0), 0) === 61, 'O relatório não contabilizou uma superfície rasterizada de cabelo por quadro exportado.')
     assert(report.attempts[0].parts.reduce((total, part) => total + (part.frameMetrics?.hairRasterPixels ?? 0), 0) > 0, 'O relatório não mediu os pixels rasterizados da camada de cabelo.')
+
+    // New mode: actual offscreen MP4 through the same fixture/codec path.
+    // This short test exercises loop vectors in both Turbo halves without
+    // requiring the real private Preset 2. The full wrap is unit-tested.
+    const numericalLoopHair = { ...hairAnimation, loopFrames: 120 as const }
+    const loopReport = await exportHairMp4(320, 180, 0, 31, true, 'hair-motion-loop-4s.mp4', project, numericalLoopHair)
+    assert(loopReport.state === 'completed' && !loopReport.fallback && loopReport.attempts[0]?.parts.length === 2,
+      'O MP4 de cabelo em loop numérico não concluiu com duas partes Turbo.')
+    assert(loopReport.attempts[0].parts.reduce((sum, part) => sum + (part.frameMetrics?.hairRasterFrames ?? 0), 0) === 31,
+      'O loop experimental não rasterizou exatamente os 31 quadros do vídeo de teste.')
+
 
     // Compare the final composited pixels from two real MP4 exports. The paired
     // scene has identical IDs/settings and differs only by global flipX, so the
