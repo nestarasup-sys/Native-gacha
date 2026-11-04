@@ -31,6 +31,7 @@ async function main() {
     webPreferences: { offscreen: true, backgroundThrottling: false, sandbox: true, contextIsolation: true, nodeIntegration: false }
   })
   const timer = setTimeout(() => app.exit(1), 60000)
+  let captureErrors = 0
   try {
     await window.loadURL('data:text/html,' + encodeURIComponent('<!doctype html><html><body style="margin:0;background:transparent"><canvas id="c" width="256" height="256"></canvas></body></html>'))
     const results = []
@@ -70,6 +71,7 @@ async function main() {
       const paintSize = image.getSize(), captureSize = captured.getSize()
       const a = image.toBitmap(), b = captured.toBitmap()
       const equal = paintSize.width === captureSize.width && paintSize.height === captureSize.height && a.equals(b)
+      if (!equal) captureErrors++
       results.push({ token, tokenAtPaint, paintMs: Math.round((time - start) * 1000) / 1000,
         captureMs: Math.round(captureMs * 1000) / 1000, width: paintSize.width,
         height: paintSize.height, byteEqual: equal, sameSize: paintSize.width === captureSize.width && paintSize.height === captureSize.height })
@@ -77,12 +79,14 @@ async function main() {
     const output = path.resolve(process.env.NATIVE_GACHA_TEST_OUTPUT_DIR || path.join(__dirname, '../../out'))
     await fs.mkdir(path.join(output, 'editor-v6-r36-paint'), { recursive: true })
     const summary = { experimental: true, productionEnabled: false, frames: results.length,
-      exactMatches: results.filter(x => x.byteEqual).length, results }
+      exactMatches: results.filter(x => x.byteEqual).length, mismatches: captureErrors,
+      strictParityPassed: captureErrors === 0 && results.every(x => x.tokenAtPaint === String(x.token)),
+      warning: 'paint event has no atomic frame token; even strict byte equality does not authorize production capture', results }
     await fs.writeFile(path.join(output, 'editor-v6-r36-paint', 'result.json'), JSON.stringify(summary, null, 2))
     console.log(JSON.stringify(summary))
     // A paint token is only a DOM state observation, not an atomic association
     // between a bitmap and a request. Do not treat this probe as R36 approval.
-    if (results.some(x => x.tokenAtPaint !== String(x.token))) throw Error('R36: stale token observation')
+    if (!summary.strictParityPassed) throw Error('R36: bitmap mismatch or stale token observation; inspect result.json')
     clearTimeout(timer)
     window.destroy()
     app.exit(0)
