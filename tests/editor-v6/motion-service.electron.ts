@@ -50,8 +50,8 @@ async function main() {
   assert.equal(first.asset.dataUrl, second.asset.dataUrl, 'Warm resources changed raster output')
   // Identical pose endpoints, different stage coordinates: new rig work must
   // disappear while output atlas bytes remain unchanged.
-  assert.ok(second.metrics.preparedRigs <= first.metrics.preparedRigs - 2,
-    `Warm endpoint reuse did not reduce the rig count: ${first.metrics.preparedRigs} -> ${second.metrics.preparedRigs}`)
+  assert.equal(second.metrics.preparedRigs, 0,
+    `Warm full-pose pool rebuilt rigs for identical interpolated geometry: ${first.metrics.preparedRigs} -> ${second.metrics.preparedRigs}`)
   assert.ok(first.motion.frames[0].x !== second.motion.frames[0].x,
     'Session reuse accidentally returned the previous actor geometry')
   await writeFile(join(folder, 'client.html'), '<!doctype html><html><body></body></html>')

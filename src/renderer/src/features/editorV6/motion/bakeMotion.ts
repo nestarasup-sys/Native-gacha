@@ -201,8 +201,9 @@ function calibratePair(from: EditorV6Element, to: EditorV6Element) {
 /** Bake canonical rig samples into one bounded PNG atlas, off the UI thread. */
 /**
  * Hidden Electron baker executes one request at a time per lane. Renderer rigs
- * for byte-identical endpoint poses can survive across requests in THAT lane.
- * Intermediate poses retain their original path and sample count.
+ * for byte-identical poses (including intermediate samples) survive across
+ * requests in THAT lane. All canonical frames are still painted and encoded;
+ * only redundant rig construction is avoided.
  */
 export type EditorV6BakeSession = {
   provider: CharacterRenderAssetProvider
@@ -219,7 +220,12 @@ export function createEditorV6BakeSession(provider: CharacterRenderAssetProvider
     materials,
     endpointRenderers,
     trim() {
-      while (endpointRenderers.size > 4) {
+      // Bounded worker-local pool, based on a conservative estimate of five
+      // Canvas RGBA surfaces per rig. Two independent workers can run in Turbo.
+      const estimatedBytes = () => [...endpointRenderers.values()].reduce(
+        (total, renderer) => total + renderer.width * renderer.height * 4 * 5, 0
+      )
+      while (endpointRenderers.size > 12 || (endpointRenderers.size > 1 && estimatedBytes() > 96 * 1024 * 1024)) {
         const oldest = endpointRenderers.keys().next().value!
         const renderer = endpointRenderers.get(oldest)!
         endpointRenderers.delete(oldest)
@@ -255,7 +261,8 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
     const artwork = interpolateEditorV6Pose(fromPose, toPose, progress)
     // No hash: exact character+model+interpolated pose identity. A one-byte
     // change or minute pivot variation refuses reuse, preserving RGBA.
-    const key = session && (progress === 0 || progress === 1)
+    // Dynamic facial elements are still repainted on every requested frame.
+    const key = session
       ? JSON.stringify([request.character, source.updatedAt, artwork])
       : undefined
     if (key) {
