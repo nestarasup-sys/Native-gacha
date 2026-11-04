@@ -3,9 +3,15 @@
 Data: 30/10/2026. Base inicial de análise: branch `Dev-V2`, commit `b79aaaf`.
 Estado: em andamento. A preparação de movimentos recebeu concorrência limitada a duas tarefas. A reutilização de um frame idêntico da boca reduziu as medianas em 6,5% no total e 9,4% na renderização com um bake simultâneo; com dois bakes, reduziu 6,4% e 7,3%. Todos os seis exports de cada comparação passaram a validação. O RSS do processo principal variou bastante; com dois bakes, a mediana foi 13,8% maior no candidato, mas o maior pico medido foi menor (1,341 GB contra 1,507 GB no baseline), então ainda não há evidência para atribuir essa diferença à mudança. O restante do plano continua aberto.
 
+## Medição local R07–R09 — 2026-11-04
+
+A linha de base real do projeto autorizado ficou em **34,84 s de média/mediana quente** (duas rodadas) e 57,72 s na primeira rodada fria, com 300 quadros, 1080p30, Preset 2 e `h264_amf`. A reutilização de uma sessão local de bake reduziu a média quente para **34,33 s** e manteve 3/3 MP4s idênticos por SHA-256; o ganho é modesto e a meta ≤15 s segue pendente. O preparo de cabelo ainda leva 18,23 s, e a renderização principal, 14,41 s. O projeto não tinha clipes reais de áudio ou mídia de vídeo no intervalo, então áudio real segue sem validação.
+
+Testes de concorrência 1 e 3 e um modo que omitia o atlas corporal foram medidos em cópias isoladas e rejeitados por não reduzirem o tempo; a concorrência 3 foi mais lenta, e o modo sem atlas teve divergência em hashes de quadro decodificados. Detalhes, testes e limites em [Relatório da Rodada 05 — medição local](RODADA_05_V4_ACELERACAO_EDITOR_V6_06.md). A próxima prioridade é reduzir o roundtrip de quadro/captura e o custo de composição, com paridade RGBA/MP4 antes de adotar qualquer mudança.
+
 ## Retomada: Rodadas 05/06 — 2026-11-03
 
-**A medição local da meta 10–15 s ainda é pendente.** Após a tentativa anterior do Codex, foram concluídas duas rodadas de código na `Dev-V2`:
+**A medição local da meta 10–15 s já foi executada; a meta continua pendente.** Antes dessa medição, após a tentativa anterior do Codex, foram concluídas duas rodadas de código na `Dev-V2`:
 
 - **[Rodada 05](RODADA_05_V4_RETOMADA_BENCHMARK.md):** consertou o harness do `Editor V6 06`, que exigia saída silenciosa apesar de permitir áudio real no documento. Os testes de benchmark agora aceitam MP4 com áudio válido e conferem uma cópia correta de 300 quadros sem adulterar o projeto.
 - **[Rodada 06](RODADA_06_V4_MALHA_CABELO_GPU.md):** otimizou o hot path da malha com buffer `Float32` reutilizado, deslocamento vertical por linha (33 cálculos em vez de 825 por peça/quadro) e leitura única das capacidades de WebGL por contexto, com golden numérico que deve preservar exatamente os vértices.

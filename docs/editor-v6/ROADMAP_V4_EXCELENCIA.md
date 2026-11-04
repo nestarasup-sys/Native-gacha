@@ -12,9 +12,9 @@
 
 **Rodada 06 — custo da malha WebGL:** reduziu de 825 para 33 as chamadas de `hairMotionOffset` por peça/quadro (cálculo vertical por linha), removeu alocação de 1.650 floats por desenho do renderizador de exportação e passou a consultar limites da GPU uma só vez por contexto. Testes comparam todos os valores `Float32` com a fórmula anterior. [Relatório da Rodada 06](RODADA_06_V4_MALHA_CABELO_GPU.md).
 
-**Resultado esperado, ainda não medido no computador:** menor CPU/alocação/overhead WebGL e benchmark do projeto real destravado. **A meta ≤15 s para 300 quadros ainda não foi comprovada**. A CI e as exportações MP4 hospedadas precisam ser confirmadas no HEAD final; a qualidade visual em personagens reais e o tempo de clique→MP4 só podem ser aceitos com dados locais autorizados.
+**Resultado medido localmente em 2026-11-04:** a R09 exportou três MP4s reais completos e válidos a 1080p30, 300 quadros, Preset 2 e `h264_amf`; a média/mediana das duas rodadas quentes ficou em 34,84 s. Reutilizar a sessão de bake por lote teve uma redução observada de 1,49% no tempo quente e saída byte a byte idêntica, mas não aproximou a meta ≤15 s. A preparação de cabelo durou 18,31 s e a renderização 14,83 s em média. O intervalo não continha áudio nem vídeo, portanto a verificação de áudio real continua pendente. Resultados e experimentos rejeitados estão em [Rodada 05 — aceleração local do Editor V6 06](RODADA_05_V4_ACELERACAO_EDITOR_V6_06.md).
 
-Próxima prioridade: obter A/B real com Preset 2 e 1920×1080, inspecionar os maiores componentes de tempo, e atuar na renderização/recaptura de camadas e no FFmpeg **somente** quando medições provarem custo recuperável. Preserve cabelo exclusivamente no MP4.
+Próxima prioridade: reduzir roundtrip/captura e composição de quadros com um spike isolado de camadas estáticas e componentes dinâmicos. Provar paridade RGBA/MP4, controle de memória e melhora no tempo total antes de alterar o renderizador. A opção de textura compartilhada do Electron depende de um adaptador nativo para importar a textura; não é um switch direto para FFmpeg. Preserve cabelo exclusivamente no MP4.
 
 ---
 
