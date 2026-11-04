@@ -35,10 +35,14 @@
 - [R34 — poses intermediárias](ZONA_GUERRA_R34_POSES_INTERMEDIARIAS_REUTILIZADAS.md): compartilha rigs estáticos de cada amostra interp./pose idêntica, orçamento 12 rigs / estimativa 96MiB por lane.
 - [R35 — telemetria de rigs](ZONA_GUERRA_R35_METRICAS_REUSO_RIGS.md): registra `motionPreparation.preparedRigs` e `motionPreparation.reusedRigs` no JSON para comparar ao `23.658s` original.
 
+## Estado atualizado da implementação
+
+A seção de desempenho acima é uma **linha de base histórica**, não um benchmark pós-R35. O [painel de pendências](ZONA_GUERRA_PENDENCIAS.md) é a referência atual para implementação versus evidência. Desde o diagnóstico, o R37 ganhou um rasterizador isolado de peças planas, testes de comportamento e fixture de 30 quadros RGBA sintéticos; **não** substitui o renderizador/atlas da exportação e ainda não tem equivalência de personagem completo comprovada. A [bancada Windows](ZONA_GUERRA_BANCADA_WINDOWS_REMOTA.md) foi configurada para executar esses testes, mas a aprovação da CI deve ser verificada nos runs.
+
 ## Próxima fronteira: R36/R37
 
 - **R36 (a avaliar):** testar a entrega direta dos bitmaps do evento Electron offscreen `paint` antes de recorrer ao `capturePage`. O relatório revela ~15s de captura somada; implementação tem de validar token exato da pintura, Turbo, transparência, PNG sem artefato, cancelamento e fallback. **Não alterar a produção sem A/B visual e temporal.**
-- **R37 (a avaliar):** eliminar montagem de roupa/corpo duplicada em cada pose distinta via compilador de comandos por peças (`EditorV6PartMotionPrototype`) e buffers de tint; obrigatoriamente incluir pele, pontes de juntas, roupa, rosto, camada posterior/traseira e RGBA 7/7, 30/30 antes de trocar atlas.
+- **R37 (em implementação experimental, não pronto):** eliminar montagem de roupa/corpo duplicada em cada pose distinta via compilador de comandos por peças (`EditorV6PartMotionPrototype`) e buffers de tint; obrigatoriamente incluir pele, pontes de juntas, roupa, rosto, camada posterior/traseira e RGBA 7/7, 30/30 antes de trocar atlas.
 
 ## Checklist de benchmark para a primeira exportação na branch de guerra
 
