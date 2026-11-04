@@ -9,6 +9,7 @@ import type { EditorV6MotionLayerAtlasCapture } from './motion/bakeMotion'
 import { resolveSavedCharacterSource } from '../../characters/characterSourceResolver'
 import { measureFaceModeCrop } from './faceModeAssets'
 import { mapConcurrentItems } from '../../ui/mapConcurrentItems'
+import { createEditorV6HairBakeBatch, editorV6HairBakeContentKey } from './motion/hairBakeBatch'
 
 type MotionTarget = { elementId: string; state: EditorV6Element; assetId: string; faceMode: EditorV6FaceRenderMode }
 
@@ -240,6 +241,7 @@ export async function prepareEditorV6HairMotionBundle(
     const { bakeEditorV6Motion, createEditorV6BakeSession } = await import('./motion/bakeMotion')
     // Reuse renderer material/provider caches only within this export's transition batch.
     const transitionSession = createEditorV6BakeSession(window.desktop.fabricator)
+    const hairBakeBatch = createEditorV6HairBakeBatch<{ result: EditorV6MotionBakeResult; layerCapture: SerializedMotionLayerAtlas }>()
     const preparedTransitions = await mapConcurrentItems(relevantPlans, async (plan) => {
       if (isCancelled()) throw Error('Preparação da animação de cabelo cancelada.')
       const character = characterById.get(plan.characterId)
@@ -254,29 +256,50 @@ export async function prepareEditorV6HairMotionBundle(
           : EDITOR_V6_MOUTH_LOOP_SAMPLE_SCALES[0])
         : undefined
       const facialMotion = mouthScaleSamples?.some(scale => scale > 1) ? mouthScaleSamples : undefined
-      let layerCapture: SerializedMotionLayerAtlas | undefined
-      stageStarted = performance.now()
-      const result = await bakeEditorV6Motion({
-        id: crypto.randomUUID(), plan, character: hairlessCharacter,
-        ...(facialMotion ? { mouthScaleSamples: facialMotion } : {})
-      }, window.desktop.fabricator, transitionSession, capture => {
-        // bakeEditorV6Motion releases these canvases in its finally block, so
-        // snapshot them before returning across the await boundary.
-        layerCapture = {
-          frames: capture.frames,
-          behindFaceDataUrl: canvasDataUrl(capture.behindFace),
-          faceDataUrl: canvasDataUrl(capture.face),
-          inFrontOfFaceDataUrl: capture.inFrontOfFace ? canvasDataUrl(capture.inFrontOfFace) : null
-        }
-      }, {
-        from: { ...fromRig.sourceCrop, outputWidth: fromRig.outputWidth, outputHeight: fromRig.outputHeight },
-        to: { ...toRig.sourceCrop, outputWidth: toRig.outputWidth, outputHeight: toRig.outputHeight }
+      // Same visual transition may occur several times in a single timeline.
+      // Share only within THIS export's batch; mouth scales depend on absolute
+      // frame and are part of the key. No cross-export reuse is introduced.
+      const bakeKey = editorV6HairBakeContentKey({
+        planKey: plan.key,
+        characterId: character.id,
+        characterRevision: character.updatedAt,
+        source: character.customization,
+        fromCrop: fromRig.sourceCrop,
+        toCrop: toRig.sourceCrop,
+        fromDimensions: [fromRig.outputWidth, fromRig.outputHeight],
+        toDimensions: [toRig.outputWidth, toRig.outputHeight],
+        mouthScaleSamples: facialMotion
       })
-      reportStage('bakeHairlessMotionTransition', stageStarted)
-      if (!layerCapture) throw Error(`Não foi possível capturar as camadas sem cabelo da transição de ${character.name}.`)
+      const prepared = await hairBakeBatch.run(bakeKey, async () => {
+        let layerCapture: SerializedMotionLayerAtlas | undefined
+        const bakeStarted = performance.now()
+        const result = await bakeEditorV6Motion({
+          id: crypto.randomUUID(), plan, character: hairlessCharacter,
+          ...(facialMotion ? { mouthScaleSamples: facialMotion } : {})
+        }, window.desktop.fabricator, transitionSession, capture => {
+          // The baker releases its canvases after callback return. Serialize
+          // synchronously before crossing the await boundary.
+          layerCapture = {
+            frames: capture.frames,
+            behindFaceDataUrl: canvasDataUrl(capture.behindFace),
+            faceDataUrl: canvasDataUrl(capture.face),
+            inFrontOfFaceDataUrl: capture.inFrontOfFace ? canvasDataUrl(capture.inFrontOfFace) : null
+          }
+        }, {
+          from: { ...fromRig.sourceCrop, outputWidth: fromRig.outputWidth, outputHeight: fromRig.outputHeight },
+          to: { ...toRig.sourceCrop, outputWidth: toRig.outputWidth, outputHeight: toRig.outputHeight }
+        })
+        diagnostics?.onStage?.('bakeHairlessMotionTransition', performance.now() - bakeStarted)
+        if (!layerCapture) throw Error(`Não foi possível capturar as camadas sem cabelo da transição de ${character.name}.`)
+        return { result, layerCapture }
+      })
       if (isCancelled()) throw Error('Preparação da animação de cabelo cancelada.')
-      return { plan, result, layerCapture }
-    }, isCancelled, 2).finally(() => transitionSession.materials.clear())
+      return { plan, ...prepared }
+    }, isCancelled, 2).finally(() => {
+      diagnostics?.onStage?.('bakeHairlessMotionTransitionReused', hairBakeBatch.metrics().reusedBakes)
+      hairBakeBatch.clear()
+      transitionSession.materials.clear()
+    })
     for (const transition of preparedTransitions) {
       if (!transition) continue
       captureTransitionLayers(transition.plan, transition.result, transition.layerCapture)

@@ -23,3 +23,13 @@ O teste de geometria cobre dimensões originais, validação, não mutação e f
 **Exigência adicional de aceite no Windows 11 x64 do usuário:** execute 3 exportações do projeto `Editor V6 06`, 300 quadros, 1920×1080, Preset 2, dois renderizadores, `h264_amf` e cópias verificadas. Meça separadamente preparação, renderização, captura, áudio e total. Compare PNG/RGBA de **todos os 300 quadros** e, se possível, SHA-256 completo dos MP4s. Se houver qualquer divergência não justificada, reverta esta otimização antes de manter em produção.
 
 Baseline da sessão anterior: frio **53,47 s**; média quente **34,33 s**; preparo **18,23 s**; render principal **16,10 s**. **Nenhum resultado novo em segundos foi medido nesta rodada.**
+
+## Segundo ajuste da rodada: deduplicar conteúdo repetido somente no lote bruto
+
+`editorV6HairMotionPreparation.ts` agora usa `hairBakeBatch.ts` para não rasterizar a mesma transição duas vezes **dentro de UMA preparação da primeira exportação**. A identidade leva `plan.key`, personagem + snapshot, geometria/crop de ambas as poses e vetor exato de escalas da boca, que pode depender do frame absoluto. Promises em andamento são compartilhadas e os resultados concluídos sobrevivem apenas até o fim desse lote; o mapa é limpo em `finally`.
+
+Isso **não** reutiliza uma exportação anterior, não escreve cache em disco e não evita o preparo da exportação seguinte. Para 11 transições, o benefício depende de quantas chaves realmente se repetem; se forem todas diferentes, a melhoria economiza zero bakes e só adiciona lookup barato.
+
+A métrica `bakeHairlessMotionTransition` agora usa um cronômetro **local por tarefa** (antes usava `stageStarted` compartilhado entre duas promises concorrentes, portanto a soma do diagnóstico podia estar errada). A métrica `bakeHairlessMotionTransitionReused` reporta a quantidade reusada no lote; ela **não** é tempo em milissegundos, então não a some às fases temporais.
+
+Testes novos cobrem concorrência, conclusão, limpeza, falhas e diferenciação da chave quando face/crops/character ou escalas da boca mudam.
