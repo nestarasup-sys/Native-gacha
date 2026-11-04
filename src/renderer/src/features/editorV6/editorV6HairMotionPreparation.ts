@@ -11,6 +11,7 @@ import { measureFaceModeCrop } from './faceModeAssets'
 import { mapConcurrentItems } from '../../ui/mapConcurrentItems'
 import { createEditorV6HairBakeBatch, editorV6HairBakeContentKey, selectEditorV6HairlessTransitionBakes } from './motion/hairBakeBatch'
 import { createEditorV6HairPreparationReuse, editorV6HairFaceSurfaceKey } from './motion/hairPreparationReuse'
+import { createEditorV6HairSourceBatch } from './motion/hairSourceBatch'
 import type { GachaReusableMaterialCache } from '../../characters/preparedCharacterMaterials'
 
 type MotionTarget = { elementId: string; state: EditorV6Element; assetId: string; faceMode: EditorV6FaceRenderMode }
@@ -126,6 +127,7 @@ export async function prepareEditorV6HairMotionBundle(
   // never reuse any characters/materials from an earlier export.
   const materialCache: GachaReusableMaterialCache = new Map()
   const currentExportReuse = createEditorV6HairPreparationReuse()
+  const rawSources = createEditorV6HairSourceBatch(window.desktop.fabricator)
   const [{ prepareSavedCharacterRenderer }, { loadCharacterTintedImage, resolvedHairColors }] = await Promise.all([
     import('../../characters/editorV6CharacterRenderer'), import('../../characters/characterRenderer')
   ])
@@ -133,7 +135,7 @@ export async function prepareEditorV6HairMotionBundle(
     if (isCancelled()) throw Error('Preparação da animação de cabelo cancelada.')
     const character = group.character
     stageStarted = performance.now()
-    const resolved = await resolveSavedCharacterSource(character)
+    const resolved = await resolveSavedCharacterSource(character, await rawSources.sourceFor(character))
     reportStage('resolveSavedCharacterSource', stageStarted)
     const appearance = character.customization.hairAppearance
     const references = appearance?.modelSlot === resolved.modelSlot ? hairAppearanceStyleIds(appearance) : []
@@ -265,6 +267,7 @@ export async function prepareEditorV6HairMotionBundle(
   }
   materialCache.clear()
   currentExportReuse.clear()
+  rawSources.clear()
   if (!rigs.length) throw Error('Nenhum personagem do projeto tem uma camada de cabelo visível para animar.')
 
   const rigByEndpoint = new Map(rigs.map(rig => [`${rig.elementId}:${rig.assetId}`, rig]))
