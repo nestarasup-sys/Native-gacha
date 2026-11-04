@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createEditorV6HairBakeBatch, editorV6HairBakeContentKey } from '../../src/renderer/src/features/editorV6/motion/hairBakeBatch'
+import { createEditorV6HairBakeBatch, editorV6HairBakeContentKey, selectEditorV6HairlessTransitionBakes } from '../../src/renderer/src/features/editorV6/motion/hairBakeBatch'
 
 const key = (other: Partial<Parameters<typeof editorV6HairBakeContentKey>[0]> = {}) => editorV6HairBakeContentKey({
   planKey: 'pose-a-b', characterId: 'actor-1', characterRevision: 'saved-v1',
@@ -54,5 +54,32 @@ describe('Editor V6 first-export transition bake deduplication', () => {
     await expect(batch.run(key(), async () => 123)).rejects.toThrow('original bake failed')
     batch.clear()
     expect(await batch.run(key(), async () => 123)).toBe(123)
+  })
+})
+
+
+describe('Round 22: hairless transition atlas selection', () => {
+  const plans = [
+    { id: 'before', startFrame: 0, endFrame: 20 },
+    { id: 'first-pose', startFrame: 24, endFrame: 30 },
+    { id: 'second-pose', startFrame: 56, endFrame: 60 },
+    { id: 'after', startFrame: 90, endFrame: 100 }
+  ]
+  it('preserves the exact original selection for continuous and 3/4-second loops', () => {
+    const options = { startFrame: 20, endFrame: 90 }
+    expect(selectEditorV6HairlessTransitionBakes(plans, options).map(p => p.id))
+      .toEqual(['first-pose', 'second-pose'])
+    expect(selectEditorV6HairlessTransitionBakes(plans, { ...options, hairPoseReactionOnly: false }).map(p => p.id))
+      .toEqual(['first-pose', 'second-pose'])
+  })
+  it('eliminates only the second hairless atlas in one-shot mode', () => {
+    expect(selectEditorV6HairlessTransitionBakes(plans, { startFrame: 20, endFrame: 90, hairPoseReactionOnly: true })).toEqual([])
+    // Does not alter the original plan list or any on-disk motion atlas.
+    expect(plans.map(p => p.id)).toEqual(['before', 'first-pose', 'second-pose', 'after'])
+  })
+  it('matches strict half-open export bounds without baking adjacent transitions', () => {
+    expect(selectEditorV6HairlessTransitionBakes(plans, { startFrame: 30, endFrame: 60 }).map(p => p.id))
+      .toEqual(['second-pose'])
+    expect(selectEditorV6HairlessTransitionBakes(plans, { startFrame: 60, endFrame: 90 })).toEqual([])
   })
 })

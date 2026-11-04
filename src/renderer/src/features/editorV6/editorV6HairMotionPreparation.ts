@@ -9,7 +9,8 @@ import type { EditorV6MotionLayerAtlasCapture } from './motion/bakeMotion'
 import { resolveSavedCharacterSource } from '../../characters/characterSourceResolver'
 import { measureFaceModeCrop } from './faceModeAssets'
 import { mapConcurrentItems } from '../../ui/mapConcurrentItems'
-import { createEditorV6HairBakeBatch, editorV6HairBakeContentKey } from './motion/hairBakeBatch'
+import { createEditorV6HairBakeBatch, editorV6HairBakeContentKey, selectEditorV6HairlessTransitionBakes } from './motion/hairBakeBatch'
+import type { GachaReusableMaterialCache } from '../../characters/preparedCharacterMaterials'
 
 type MotionTarget = { elementId: string; state: EditorV6Element; assetId: string; faceMode: EditorV6FaceRenderMode }
 
@@ -119,6 +120,10 @@ export async function prepareEditorV6HairMotionBundle(
     })
   }
 
+  // One small material cache per current export preparation (bounded in the
+  // renderer material loader). Share wardrobe/hair manifests across poses;
+  // never reuse any characters/materials from an earlier export.
+  const materialCache: GachaReusableMaterialCache = new Map()
   const [{ prepareSavedCharacterRenderer }, { loadCharacterTintedImage, resolvedHairColors }] = await Promise.all([
     import('../../characters/editorV6CharacterRenderer'), import('../../characters/characterRenderer')
   ])
@@ -141,7 +146,7 @@ export async function prepareEditorV6HairMotionBundle(
     if (!sourceHeadPart || !targetHeadPart) throw Error(`O modelo de ${character.name} não tem uma cabeça disponível para animar o cabelo.`)
 
     const hairless: CustomizerCharacter = { ...character, customization: { ...character.customization, hairAppearance: undefined } }
-    const renderSource = { source: resolved.source, artwork: resolved.sourceArtwork, assetProvider: window.desktop.fabricator }
+    const renderSource = { source: resolved.source, artwork: resolved.sourceArtwork, assetProvider: window.desktop.fabricator, materialCache }
     stageStarted = performance.now()
     const [originalRenderer, hairlessRenderer] = await Promise.all([
       prepareSavedCharacterRenderer(character, renderSource),
@@ -233,10 +238,11 @@ export async function prepareEditorV6HairMotionBundle(
       }
     } finally { originalRenderer.dispose(); hairlessRenderer.dispose() }
   }
+  materialCache.clear()
   if (!rigs.length) throw Error('Nenhum personagem do projeto tem uma camada de cabelo visível para animar.')
 
   const rigByEndpoint = new Map(rigs.map(rig => [`${rig.elementId}:${rig.assetId}`, rig]))
-  const relevantPlans = editorV6MotionPlans(project).filter(plan => plan.startFrame < exportOptions.endFrame && plan.endFrame > exportOptions.startFrame)
+  const relevantPlans = selectEditorV6HairlessTransitionBakes(editorV6MotionPlans(project), exportOptions)
   if (relevantPlans.length) {
     const { bakeEditorV6Motion, createEditorV6BakeSession } = await import('./motion/bakeMotion')
     // Reuse renderer material/provider caches only within this export's transition batch.

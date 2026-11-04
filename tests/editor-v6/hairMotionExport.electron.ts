@@ -682,7 +682,7 @@ async function main() {
     // marked rearHair may move. Capture actual offscreen BGRA frames.
     const makePosteriorFixture = (reacting: boolean): EditorV6HairMotionBundle => ({
       ...structuredClone(hairAnimation),
-      ...(reacting ? { poseReactionOnly: true } : {}),
+      ...(reacting ? { poseReactionOnly: true, motionTransitions: [] } : {}),
       preset: {
         ...structuredClone(hairAnimation.preset),
         enabled: { back: false, front: reacting, fringe: false }
@@ -700,8 +700,17 @@ async function main() {
     })
     const stillWorker = await factory.create({ ...payload, hairAnimation: makePosteriorFixture(false) }, new AbortController().signal)
     const reactionWorker = await factory.create({ ...payload, hairAnimation: makePosteriorFixture(true) }, new AbortController().signal)
+    const canonicalWorker = await factory.create({ ...payload, hairAnimation: undefined }, new AbortController().signal)
     try {
-      for (const frame of [0, 29, 30, 40, 60]) {
+      // The canonical full-character atlas supplies all seven transition
+      // frames. No second hairless atlas may alter a single BGRA pixel.
+      for (const sample of transitionPlan.samples) {
+        const frame = transitionPlan.endFrame + sample.offset
+        const [baseline, reaction] = await Promise.all([canonicalWorker.frame(frame), reactionWorker.frame(frame)])
+        assert(baseline.bitmap && reaction.bitmap && baseline.bitmap.equals(reaction.bitmap),
+          'A transição sem atlas extra não preservou RGBA exato no quadro ' + frame + '.')
+      }
+      for (const frame of [0, 30, 40, 60]) {
         const [stationary, reaction] = await Promise.all([stillWorker.frame(frame), reactionWorker.frame(frame)])
         assert(stationary.bitmap && reaction.bitmap, 'A reação do Posterior não entregou quadros BGRA.')
         const diff = differentPixels(stationary.bitmap, reaction.bitmap)
@@ -709,6 +718,7 @@ async function main() {
         else assert(diff === 0, 'O modo posterior modificou peças ou um quadro em repouso: ' + frame + ' (' + diff + ' pixels).')
       }
     } finally {
+      canonicalWorker.close()
       stillWorker.close()
       reactionWorker.close()
     }

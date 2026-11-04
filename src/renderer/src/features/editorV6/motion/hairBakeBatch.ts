@@ -26,6 +26,24 @@ export function createEditorV6HairBakeBatch<T>() {
   }
 }
 
+/**
+ * A one-shot POSTERIOR reaction starts AFTER a pose transition. The normal
+ * export already creates/verifies the complete full-character motion atlas,
+ * so generating a second hairless atlas for those same 7 pose samples would
+ * duplicate expensive body/face rendering without changing the final effect.
+ *
+ * All other hair modes must retain their existing hairless animation atlases.
+ * The selection is scoped to the requested export range, never cached between
+ * exports. Use the original motion renderer in the one-shot transition.
+ */
+export function selectEditorV6HairlessTransitionBakes<T extends { startFrame: number; endFrame: number }>(
+  plans: readonly T[],
+  options: { startFrame: number; endFrame: number; hairPoseReactionOnly?: boolean }
+): T[] {
+  if (options.hairPoseReactionOnly) return []
+  return plans.filter(plan => plan.startFrame < options.endFrame && plan.endFrame > options.startFrame)
+}
+
 /** Include the current character snapshot, both prepared rig dimensions/crops,
  * the canonical motion key and the absolute-frame mouth scale sequence.
  * Identical plan keys alone are insufficient for looped speech.

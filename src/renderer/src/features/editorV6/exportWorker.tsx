@@ -96,10 +96,13 @@ async function initialize() {
     return hairPoseRigs.get(`${element.id}:${poseSlot ?? 'base'}`) ?? direct
   }
   const motionBlocks = new Map(project.timeline.tracks.flatMap(track => track.blocks.map(block => [block.id, block] as const)))
+  const motionPlans = editorV6MotionPlans(project)
   const hairMotionTransitions: Array<{ elementId: string; key: string; startFrame: number; endFrame: number; samples: Array<{ offset: number; progress: number }>; from?: EditorV6HairMotionRig; to?: EditorV6HairMotionRig; physicsFrom?: EditorV6HairMotionRig; physicsTo?: EditorV6HairMotionRig; fromElement: typeof project.elements[number]; toElement: typeof project.elements[number]; atlas?: EditorV6HairMotionTransition }> = []
   const preparedTransitions = new Map((hairAnimation?.motionTransitions ?? []).map(transition => [`${transition.elementId}:${transition.key}`, transition]))
-  for (const plan of editorV6MotionPlans(project)) {
-    if (motionBlocks.get(plan.blockId)?.incomingMotion?.key !== plan.key) continue
+  for (const plan of motionPlans) {
+    // One-shot pose reaction keeps the canonical full-character motion atlas.
+    // It needs only the end-of-pose events, not interpolated hairless layers.
+    if (hairAnimation?.poseReactionOnly || motionBlocks.get(plan.blockId)?.incomingMotion?.key !== plan.key) continue
     const from = plan.from.assetId ? hairRigs.get(`${plan.elementId}:${plan.from.assetId}`) : undefined
     const to = plan.to.assetId ? hairRigs.get(`${plan.elementId}:${plan.to.assetId}`) : undefined
     hairMotionTransitions.push({ elementId: plan.elementId, key: plan.key, startFrame: plan.startFrame, endFrame: plan.endFrame, samples: plan.samples, from, to, physicsFrom: hairRigForElement(plan.from), physicsTo: hairRigForElement(plan.to), fromElement: plan.from, toElement: plan.to, atlas: preparedTransitions.get(`${plan.elementId}:${plan.key}`) })
@@ -107,7 +110,12 @@ async function initialize() {
   // The worker owns one immutable export document. Pre-index only prepared interior
   // frames, keeping the first eligible transition when authored ranges overlap.
   const hairTransitionIndex = createExportHairTransitionFrameIndex(hairMotionTransitions)
-  const hairPoseReactionEnds = hairAnimation?.poseReactionOnly ? hairMotionPoseReactionEndFrames(hairMotionTransitions) : new Map<string, number[]>()
+  // Pose events must not depend on an incomingMotion atlas being prepared
+  // before the UI sent the export. The main MP4 runner prepares any missing
+  // canonical atlases later; these timeline plans are the source of truth.
+  const hairPoseReactionEnds = hairAnimation?.poseReactionOnly
+    ? hairMotionPoseReactionEndFrames(motionPlans.map(plan => ({ elementId: plan.elementId, endFrame: plan.endFrame, fromElement: plan.from, toElement: plan.to })))
+    : new Map<string, number[]>()
   const transitionForFrame = (elementId: string, frame: number) => hairTransitionIndex.get(elementId, frame)?.transition
   let resolvedFrame = -1
   let resolvedRawScene: ReturnType<typeof resolveEditorV6SceneAtFrame> | undefined
@@ -429,7 +437,7 @@ async function initialize() {
     const activeLayer = layeredVideo ? layer ?? 'background' : undefined
     const hasAnimatedHair = (element: ReturnType<typeof resolveEditorV6SceneAtFrame>['elements'][number]) => element.kind === 'character' && Boolean(
       element.motionSprite
-        ? transitionForFrame(element.id, frame)?.from?.layers.length
+        ? !hairAnimation?.poseReactionOnly && Boolean(transitionForFrame(element.id, frame)?.from?.layers.length)
         : hairSourceAssetId(element) && (hairRigs.get(`${element.id}:${hairSourceAssetId(element)}`)?.layers.length ?? 0) > 0
     )
     const activeHair = Boolean(hairAnimation && activeLayer !== 'background' && scene.elements.some(hasAnimatedHair))
