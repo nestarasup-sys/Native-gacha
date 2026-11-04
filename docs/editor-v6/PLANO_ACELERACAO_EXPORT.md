@@ -1,5 +1,14 @@
 # Editor V6 — plano de aceleração máxima do export
 
+## Rodada 16 — pesquisa além do exportador (04/11/2026)
+
+**Investigação de todo o app:** [Pesquisa sistêmica de motores, Customizador/Fabricador e exportação](PESQUISA_SISTEMICA_MOTORES_E_EXPORT_2026-11-04.md) e [quadro de experimentos rápidos no Windows 11](EXPERIMENTOS_RAPIDOS_WINDOWS11.md).
+
+Priorizar **compilação do personagem na origem (A01/A02)**, **render de poses sem atlas intermediário (C01)** e **IR independente de React/Chromium (B01)** antes de novos micro-ajustes. Comparar sharp, Skia, PixiJS, WebCodecs e D3D11 por spikes com RGBA e custos medidos. **Não recriar cache de reexportação**, não baixar qualidade nem testar Linux. Esta atualização é **pesquisa**, não comprovação da meta de 15 s.
+
+---
+
+
 Data: 30/10/2026. Base inicial de análise: branch `Dev-V2`, commit `b79aaaf`.
 Estado: em andamento. A preparação de movimentos recebeu concorrência limitada a duas tarefas. A reutilização de um frame idêntico da boca reduziu as medianas em 6,5% no total e 9,4% na renderização com um bake simultâneo; com dois bakes, reduziu 6,4% e 7,3%. Todos os seis exports de cada comparação passaram a validação. O RSS do processo principal variou bastante; com dois bakes, a mediana foi 13,8% maior no candidato, mas o maior pico medido foi menor (1,341 GB contra 1,507 GB no baseline), então ainda não há evidência para atribuir essa diferença à mudança. O restante do plano continua aberto.
 

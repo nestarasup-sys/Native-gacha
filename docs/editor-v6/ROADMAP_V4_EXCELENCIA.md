@@ -2,6 +2,15 @@
 
 # Editor V6 — Plano de excelência V4 (revisão de 2026-11-03)
 
+## Rodada 16 — pesquisa além do exportador (04/11/2026)
+
+**Investigação de todo o app:** [Pesquisa sistêmica de motores, Customizador/Fabricador e exportação](PESQUISA_SISTEMICA_MOTORES_E_EXPORT_2026-11-04.md) e [quadro de experimentos rápidos no Windows 11](EXPERIMENTOS_RAPIDOS_WINDOWS11.md).
+
+Priorizar **compilação do personagem na origem (A01/A02)**, **render de poses sem atlas intermediário (C01)** e **IR independente de React/Chromium (B01)** antes de novos micro-ajustes. Comparar sharp, Skia, PixiJS, WebCodecs e D3D11 por spikes com RGBA e custos medidos. **Não recriar cache de reexportação**, não baixar qualidade nem testar Linux. Esta atualização é **pesquisa**, não comprovação da meta de 15 s.
+
+---
+
+
 > **Proposta de evolução, não autorização para implementar tudo de uma vez.** Prioridades fundamentadas na `Dev-V2` após a refatoração V3. A finalidade é melhorar **qualidade de edição, confiança no resultado, fluidez e velocidade do trabalho do criador**. "10× melhor" significa ganho de experiência e produtividade a demonstrar, não promessa de exportar dez vezes mais rápido.
 
 **Baseline de análise de código:** `0354c065c1e4bdcd2c9717fc54b3fc4aa9630665` (11 commits posteriores ao handoff V3 anterior). Verificar HEAD antes de implementar. Os commits de documentação e uma correção portátil de Logs Dev podem ser mais recentes.
