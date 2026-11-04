@@ -93,7 +93,7 @@ jobs:
           $videoTools = Join-Path $env:RUNNER_TEMP 'native-gacha-editor-v6-video-tools'
           ./scripts/video-studio/prepare-ffmpeg-lgpl.ps1 -DestinationPath $videoTools
           "EDITOR_V6_TEST_VIDEO_TOOLS_DIR=$videoTools" >> $env:GITHUB_ENV
-      - name: Validate warm motion service: exact endpoint atlas parity and rig-count reduction
+      - name: 'Validate warm motion service: exact endpoint atlas parity and rig-count reduction'
         run: node scripts/editor-v6/check-motion-service.cjs
       - name: Verify native RGBA of single-pass face composition in isolated Electron
         run: node scripts/editor-v6/check-motion.cjs
