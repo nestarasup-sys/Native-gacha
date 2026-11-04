@@ -8,6 +8,16 @@
 
 **Regra de produto inegociável:** a animação dinâmica experimental de cabelo fica **exclusivamente na exportação MP4**, habilitada manualmente. A prévia, viewport, seek e reprodução normal do Editor V6 não devem ganhar cabelo animado. A prévia de animação do **Fabricador DEV** permanece.
 
+## Otimização do primeiro export — Rodadas 12–15 (04/11/2026)
+
+- **R12:** removeu cache de reexportação por decisão explícita do usuário; não há reaproveitamento entre exportações. Testes automatizados somente em Windows x64; benchmark de aceitação em Windows 11 com AMD.
+- **R13:** eliminou renders redundantes de endpoints e deduplicou bakes equivalentes **dentro do lote atual**, sem cache entre exportações. [R13](RODADA_13_V4_BAKE_BRUTO_ENDPOINTS.md).
+- **R14:** o bake com cabelo passa a pintar componentes faciais uma única vez por amostra, produzindo corpo e camadas na mesma chamada. A rota padrão da prévia não muda. Teste de igualdade RGBA nativa via Electron/Windows e paridade MP4. [R14](RODADA_14_V4_RENDER_FACE_UNICA.md).
+- **R15:** varredura de alfa por linha em quadros intermediários, evitando quatro operações de min/max por pixel opaco. Testes de equivalência determinísticos na suíte Windows. [R15](RODADA_15_V4_VARREDURA_ALPHA_NATIVA.md).
+- **Métrica:** 34,33 s quente ainda é a última medição real publicada. Nenhum ganho da R13–R15 foi validado no Windows 11 AMD; manter 1920×1080/30 FPS, Preset 2 e comparações RGBA/MP4 estritas.
+
+---
+
 ## Retomada atual — Rodadas 10 e 11 (04/11/2026)
 
 - **R10 — reexportação:** cache em RAM de apenas um bundle de cabelo, com chave de projeto/preset/intervalo e invalidação por alterações de fontes. Possível evitar novo preparo de 18,23 s ao exportar duas vezes exatamente a mesma cena pela interface. Não modifica o primeiro export e o benchmark CLI atual não exercita o cache. [Detalhes](RODADA_10_V4_REEXPORT_CABELO_REUSO_SEGURO.md).

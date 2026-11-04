@@ -7,6 +7,7 @@ import { editorV6FaceModeDuringMotion } from '../../../../../shared/editorV6Face
 import { interpolateEditorV6Face, interpolateEditorV6Pose, motionAngle, motionEase, motionLerp } from '../../../../../shared/editorV6MotionInterpolation'
 import { loadStandardExpressionEffects, prepareSavedCharacterRenderer, type GachaReusableMaterialCache, type PreparedGachaLayerFrame } from '../../../characters/editorV6CharacterRenderer'
 import { chooseMotionAtlasLayout } from './motionAtlasLayout'
+import { editorV6AlphaCropBounds } from './motionAlphaCrop'
 import { createMotionPoseResolver } from './motionPoseResolver'
 import { motionEndpointScale } from './motionEndpointScale'
 import { resolvedHairBakeEndpointDimensions, type HairBakeEndpointCrop } from './hairBakeEndpointGeometry'
@@ -93,15 +94,19 @@ function unionBounds(current: PixelBounds | undefined, next: PixelBounds): Pixel
 }
 function cropOf(canvas: HTMLCanvasElement, fingerprint = false, alphaThreshold = 8): Crop {
   const pixels = canvas.getContext('2d', { willReadFrequently: true })!.getImageData(0, 0, canvas.width, canvas.height).data
+  // Transition frames ordinarily need visible alpha bounds only. Compute
+  // extrema per row, not four Math.min/max operations for every opaque pixel.
+  // Keep the old ordered channel walk for callers requiring a fingerprint.
+  if (!fingerprint) return editorV6AlphaCropBounds(pixels, canvas.width, canvas.height, alphaThreshold)
   let left = canvas.width, right = -1, top = canvas.height, bottom = -1
   let hash = 2166136261
   for (let y = 0; y < canvas.height; y++) for (let x = 0; x < canvas.width; x++) {
     const offset = (y * canvas.width + x) * 4
     if (pixels[offset + 3] > alphaThreshold) { left = Math.min(left, x); right = Math.max(right, x); top = Math.min(top, y); bottom = Math.max(bottom, y) }
-    if (fingerprint) for (let channel = 0; channel < 4; channel++) hash = Math.imul(hash ^ pixels[offset + channel], 16777619)
+    for (let channel = 0; channel < 4; channel++) hash = Math.imul(hash ^ pixels[offset + channel], 16777619)
   }
-  if (right < left) return { left: 0, top: 0, width: 1, height: 1, ...(fingerprint ? { fingerprint: hash >>> 0 } : {}) }
-  return { left, top, width: right - left + 1, height: bottom - top + 1, ...(fingerprint ? { fingerprint: hash >>> 0 } : {}) }
+  if (right < left) return { left: 0, top: 0, width: 1, height: 1, fingerprint: hash >>> 0 }
+  return { left, top, width: right - left + 1, height: bottom - top + 1, fingerprint: hash >>> 0 }
 }
 function alphaPatchCanvas(source: HTMLCanvasElement, bounds: Crop, gutter = 2): HTMLCanvasElement {
   const patch = document.createElement('canvas')
