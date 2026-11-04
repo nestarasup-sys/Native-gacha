@@ -91,6 +91,7 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
   const [error, setError] = useState('')
   const [status, setStatus] = useState('')
   const [downloading, setDownloading] = useState(false)
+  const [downloadWithMaleTorso, setDownloadWithMaleTorso] = useState(false)
   const [downloadInfo, setDownloadInfo] = useState('')
   const [mode, setMode] = useState<PreviewMode>('part')
   const [previewBackground, setPreviewBackground] = useState<PreviewBackground>('checker')
@@ -865,7 +866,30 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
     setDownloadInfo('')
     try {
       const result = await compile()
-      const path = await window.desktop.fabricator.downloadFabricatorModelSource(draft.slot, result.previewDataUrl)
+      let pngDataUrl = result.previewDataUrl
+      if (downloadWithMaleTorso) {
+        const torso = result.parts.find(part => /tronco|corpo/i.test(part.name))
+        const maleTorso = draft.maleTorso
+        if (!torso || !maleTorso) throw new Error('Salve um tronco masculino em Modelos DEV antes de usar esta opção.')
+        const canvas = document.createElement('canvas')
+        canvas.width = draft.width
+        canvas.height = draft.height
+        const context = canvas.getContext('2d')
+        if (!context) throw new Error('Não foi possível preparar a folha PNG.')
+        const loadImage = (dataUrl: string) => new Promise<HTMLImageElement>((resolve, reject) => {
+          const image = new Image()
+          image.onload = () => resolve(image)
+          image.onerror = () => reject(new Error('Não foi possível carregar uma peça para o PNG.'))
+          image.src = dataUrl
+        })
+        for (const part of result.parts) {
+          const image = await loadImage(part.id === torso.id ? maleTorso.dataUrl : part.dataUrl)
+          const rect = sourceRect(part, dimensions[part.id])
+          context.drawImage(image, rect.x, rect.y, rect.width, rect.height)
+        }
+        pngDataUrl = canvas.toDataURL('image/png')
+      }
+      const path = await window.desktop.fabricator.downloadFabricatorModelSource(draft.slot, pngDataUrl)
       setDownloadInfo('PNG salvo em Downloads: ' + path)
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Não foi possível baixar a imagem.')
@@ -1152,6 +1176,10 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
           <small className="model-source-footer-note">Edições no rascunho · use Desfazer para revisar</small>
           <div className="model-source-footer-actions">
           <button type="button" onClick={onClose} disabled={busy || downloading} className="model-source-footer-button">Cancelar</button>
+          <select aria-label="Tronco incluído no PNG" value={downloadWithMaleTorso ? 'male' : 'original'} onChange={event => setDownloadWithMaleTorso(event.target.value === 'male')} disabled={busy || downloading || Boolean(error) || !draft.maleTorso} className="model-source-footer-button" title={draft.maleTorso ? 'Escolha qual versão do tronco incluir no PNG' : 'Crie e salve um tronco masculino para habilitar esta opção'}>
+            <option value="original">Tronco original</option>
+            <option value="male">Tronco masculino</option>
+          </select>
           <button type="button" onClick={() => void download()} disabled={busy || downloading || Boolean(error)} className="model-source-footer-button">{downloading ? 'Exportando…' : 'Baixar PNG em Downloads'}</button>
           <button type="button" onClick={() => void save()} disabled={!edited || busy || downloading || Boolean(error)} className="model-source-footer-button model-source-save">{busy ? 'Publicando…' : 'Salvar no original'}</button>
           </div>
