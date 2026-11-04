@@ -3,6 +3,16 @@
 Data: 30/10/2026. Base inicial de análise: branch `Dev-V2`, commit `b79aaaf`.
 Estado: em andamento. A preparação de movimentos recebeu concorrência limitada a duas tarefas. A reutilização de um frame idêntico da boca reduziu as medianas em 6,5% no total e 9,4% na renderização com um bake simultâneo; com dois bakes, reduziu 6,4% e 7,3%. Todos os seis exports de cada comparação passaram a validação. O RSS do processo principal variou bastante; com dois bakes, a mediana foi 13,8% maior no candidato, mas o maior pico medido foi menor (1,341 GB contra 1,507 GB no baseline), então ainda não há evidência para atribuir essa diferença à mudança. O restante do plano continua aberto.
 
+## Atualização da Rodada 04 — referência de 2026-11-03
+
+O usuário relatou cerca de **65 s para exportar 10 s** do projeto **Editor V6 06**, dois personagens e animação de cabelo experimental **Preset 2**. A nova meta de trabalho é **≤15 s**, idealmente **≤10 s**, conservando 300 quadros/30 FPS, resolução e qualidade, inclusive preparação, captura, áudio e validação. Este é um **alvo pendente, não um benchmark confirmado**. Ver [Rodada 04 — primeira otimização de readback](RODADA_04_V4_ACELERACAO_EXPORT.md) e [Codex — Rodada 05 no projeto real](CODEX_RODADA_05_V4_EXPORT_10_15S.md).
+
+A Rodada 04 removeu a **segunda conversão `NativeImage.toBitmap`** por captura (token e BGRA agora vêm da mesma leitura com cópia de linhas), adicionou testes de pixels/células, atualizou fixture IPC de cabelo para incluir `poseSlot: null` e corrigiu opção CPU do painel que emitia `libx264` em vez do código aceito `cpu`. **Ainda não há medição de economia em segundos ou avaliação de paridade visual Electron da Rodada 04**. A medição do clique ao MP4 deve incluir preparo do bundle de cabelo, que acontece antes do job/relatório do Main.
+
+As tentativas históricas documentadas abaixo (evento paint como captura final, menos sincronização RAF sem fence, mais workers indiscriminadamente) **não devem ser aplicadas como otimização sem novos testes de paridade**, pois já produziram saídas visualmente incorretas ou aumento de RAM. A solução de 10–15 s pode exigir mudanças maiores de composição em camadas e tratamento de frames, mas somente após identificar o gargalo no projeto real.
+
+---
+
 ## Objetivo
 
 Reduzir o tempo entre clicar em Exportar e receber o MP4 validado, incluindo preparação, renderização, codificação, áudio e publicação. Buscar o maior ganho comprovado no computador disponível, preservando resolução, 30 FPS, movimentos, expressões, roupas, transparências, ordem das camadas e sincronização de áudio.
