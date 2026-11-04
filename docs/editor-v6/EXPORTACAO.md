@@ -67,7 +67,7 @@ O painel pode ser fechado durante a exportação. O trabalho continua enquanto o
 
 ## Fluxo implementado
 
-1. O main valida o documento e o intervalo `[início, fim)`, em quadros inteiros, e abre o diálogo de destino.
+1. O main valida o documento e o intervalo `[início, fim)`, em quadros inteiros. Sem pasta fixa, abre o diálogo de destino; com pasta fixa, usa a preferência local `editor-v6-export-folder.json` no perfil do Electron e gera um nome com UUID para cada MP4. A pasta é escolhida ou alterada por diálogo nativo, validada no main e pode ser desativada no painel. Caso esteja indisponível, a exportação informa o erro; a preferência não altera documentos do Editor V6.
 2. Para Turbo com pelo menos dois quadros, a divisão ocorre em `início + floor(total / 2)`. Intervalos ímpares não repetem nem perdem o quadro da emenda. Um intervalo de um quadro usa um único renderizador.
 3. O codificador é escolhido antes de renderizar. A seleção automática testa NVENC, QSV e AMF e usa OpenH264 por CPU se necessário. O FFmpeg já incluído no projeto fornece OpenH264; não exige baixar outro binário.
 4. Duas janelas Electron ocultas e offscreen recebem o documento completo. Cada uma carrega uma página exclusiva de exportação e desenha apenas seu intervalo com o próprio `SceneSurface` da prévia.

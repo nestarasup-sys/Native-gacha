@@ -38,7 +38,10 @@ let closePanelTest: () => void
   localStorage.setItem(HAIR_MOTION_PRESET_KEY, JSON.stringify([FIRST_HAIR_MOTION_PRESET, FIRST_HAIR_MOTION_PRESET, null, null, null]))
   const clip = { id: crypto.randomUUID(), name: 'Trilha de teste.wav', fileName: `${crypto.randomUUID()}.wav`, sourceFrames: 120, sourceInFrame: 0, startFrame: 0, durationFrames: 120, gain: 1, muted: false }
   const job: EditorV6ExportStatus = { id: crypto.randomUUID(), state: 'completed', frames: 300, totalFrames: 300, message: 'MP4 exportado e validado.', fallback: false }
-  const editorV6: Pick<EditorV6DesktopApi, 'getEditorV6ExportStatus' | 'importEditorV6ExportAudio' | 'startEditorV6Export'> = {
+  const editorV6: Pick<EditorV6DesktopApi, 'getEditorV6ExportStatus' | 'getEditorV6ExportFolder' | 'chooseEditorV6ExportFolder' | 'clearEditorV6ExportFolder' | 'importEditorV6ExportAudio' | 'startEditorV6Export'> = {
+    getEditorV6ExportFolder: async () => null,
+    chooseEditorV6ExportFolder: async () => 'C:/exportacoes',
+    clearEditorV6ExportFolder: async () => {},
     getEditorV6ExportStatus: async (id: string) => { if (id === 'latest') throw Error('Nenhuma exportação anterior.'); return job },
     importEditorV6ExportAudio: async () => { imported++; return clip },
     startEditorV6Export: async (project: EditorV6Document, options: { turbo: boolean; width: number; height: number; encoder: string; forceTurbo1080?: boolean; hairPosteriorOnly?: boolean; hairPoseReactionOnly?: boolean; hairAnimationPresetSlot?: number }) => { assert(project.exportAudio?.length === 1 && options.turbo && options.width === 1920 && options.height === 1080 && options.encoder === 'cpu' && options.forceTurbo1080 && options.hairPosteriorOnly && options.hairPoseReactionOnly && options.hairAnimationPresetSlot === 2, 'Painel perdeu trilha de áudio ou configurações do Turbo.'); started++; return job }
@@ -54,6 +57,10 @@ let closePanelTest: () => void
   flushSync(() => root.render(<Demo />))
   await new Promise((resolve) => requestAnimationFrame(resolve))
   assert(document.activeElement?.getAttribute('role') === 'dialog', 'Exportador não recebeu o foco.')
+  const chooseFolder = Array.from(mount.querySelectorAll('button')).find((button) => button.textContent?.includes('Escolher pasta fixa'))!
+  chooseFolder.click()
+  await new Promise((resolve) => requestAnimationFrame(resolve))
+  assert(mount.textContent?.includes('C:/exportacoes') && mount.textContent?.includes('Mudar pasta fixa'), 'Painel não mostrou a pasta escolhida.')
   const add = Array.from(mount.querySelectorAll('button')).find((button) => button.textContent?.includes('Adicionar áudio'))!
   add.click()
   await new Promise((resolve) => requestAnimationFrame(resolve))

@@ -1,6 +1,7 @@
-import { BrowserWindow, dialog, shell, type IpcMain, type IpcMainInvokeEvent } from 'electron'
+import { app, BrowserWindow, dialog, shell, type IpcMain, type IpcMainInvokeEvent } from 'electron'
+import * as fs from 'node:fs/promises'
 import { copyFile, mkdir, stat } from 'node:fs/promises'
-import { basename, extname, join } from 'node:path'
+import { basename, extname, isAbsolute, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import type { LocalDiagnosticEventInput } from '../../../src/shared/dataManagement'
@@ -15,6 +16,7 @@ import { planEditorV6Export, type EditorV6ExportAudio, type EditorV6ExportOption
 import { createEditorV6WorkerFactory } from './exportWorkers'
 import { probeExportMedia, runEditorV6Export, type EditorV6ExportReport } from './exportRunner'
 import type { EditorV6MotionCacheStats } from './motionCache'
+import { publishJsonManifest } from '../storage/atomicManifest'
 import { createPendingOperationTracker } from '../storage/pendingOperationTracker.ts'
 
 type Job = { owner: number; status: EditorV6ExportStatus; controller: AbortController; promise: Promise<void> }
@@ -43,6 +45,17 @@ type EditorV6ExportIpcLifecycle = {
 const uuid = z.string().uuid()
 const terminal = (status: EditorV6ExportStatus) => ['completed', 'cancelled', 'failed'].includes(status.state)
 export function registerEditorV6ExportHandlers(deps: EditorV6ExportIpcDependencies): EditorV6ExportIpcLifecycle {
+  const folderPreference = join(app.getPath('userData'), 'editor-v6-export-folder.json')
+  const readExportFolder = async (): Promise<string | null> => {
+    let text: string
+    try { text = await fs.readFile(folderPreference, 'utf8') }
+    catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null; throw error }
+    const value: unknown = JSON.parse(text)
+    return z.object({ folder: z.string().refine(isAbsolute).nullable() }).strict().parse(value).folder
+  }
+  const saveExportFolder = async (folder: string | null) => {
+    await publishJsonManifest({ files: fs, target: folderPreference, temporary: `${folderPreference}.${randomUUID()}.tmp`, value: { folder } })
+  }
   const mediaPath = async (projectId: string, fileName: string, libraryVideoId?: string) => libraryVideoId ? (await deps.resolveLibraryVideo(libraryVideoId)).path : join(deps.projectPath(projectId), 'media', fileName)
   const workers = createEditorV6WorkerFactory({ ipcMain: deps.ipcMain, html: deps.workerHtml, preload: deps.workerPreload, devUrl: deps.devUrl, mediaPath })
   const ffmpeg = join(deps.toolsDirectory, 'ffmpeg.exe'), ffprobe = join(deps.toolsDirectory, 'ffprobe.exe')
@@ -112,6 +125,22 @@ export function registerEditorV6ExportHandlers(deps: EditorV6ExportIpcDependenci
     if (!job || job.owner !== event.sender.id) throw Error('Exportação não encontrada nesta janela.')
     return job
   }
+  deps.ipcMain.handle(editorV6IpcChannels.getEditorV6ExportFolder, async (event) => { deps.assertTrustedSender(event); return readExportFolder() })
+  deps.ipcMain.handle(editorV6IpcChannels.chooseEditorV6ExportFolder, async (event) => {
+    deps.assertTrustedSender(event); assertAvailable()
+    const owner = BrowserWindow.fromWebContents(event.sender)
+    const options = { title: 'Escolher pasta fixa para exportar MP4', properties: ['openDirectory', 'createDirectory'] as Array<'openDirectory' | 'createDirectory'> }
+    const result = owner ? await dialog.showOpenDialog(owner, options) : await dialog.showOpenDialog(options)
+    if (result.canceled || !result.filePaths[0]) return null
+    const folder = result.filePaths[0]
+    if (!isAbsolute(folder) || !(await stat(folder)).isDirectory()) throw Error('A pasta escolhida é inválida.')
+    await pendingFileWrites.track(() => saveExportFolder(folder))
+    return folder
+  })
+  deps.ipcMain.handle(editorV6IpcChannels.clearEditorV6ExportFolder, async (event) => {
+    deps.assertTrustedSender(event); assertAvailable()
+    await pendingFileWrites.track(() => saveExportFolder(null))
+  })
   deps.ipcMain.handle(editorV6IpcChannels.startEditorV6Export, async (event, rawProject, options: EditorV6ExportOptions, rawHairAnimation?: unknown) => {
     deps.assertTrustedSender(event)
     assertAvailable()
@@ -124,14 +153,24 @@ export function registerEditorV6ExportHandlers(deps: EditorV6ExportIpcDependenci
     if (hairAnimation?.loopFrames !== options.hairAnimationLoopFrames) throw Error('O ciclo de cabelo preparado não corresponde às opções da exportação.')
     if (Boolean(hairAnimation?.poseReactionOnly) !== Boolean(options.hairPoseReactionOnly)) throw Error('A reação após pose não corresponde às opções da exportação.')
     if (Boolean(hairAnimation?.posteriorOnly) !== Boolean(options.hairPosteriorOnly)) throw Error('A seleção exclusiva de cabelo posterior não corresponde às opções da exportação.')
-    const owner = BrowserWindow.fromWebContents(event.sender)
-    const saveOptions = { title: 'Editor V6: exportar MP4', defaultPath: project.title.replace(/[<>:"/\\|?*]/g, '_') + '.mp4', filters: [{ name: 'Vídeo MP4', extensions: ['mp4'] }] }
-    const destination = owner ? await dialog.showSaveDialog(owner, saveOptions) : await dialog.showSaveDialog(saveOptions)
-    if (destination.canceled || !destination.filePath) return null
+    const folder = await readExportFolder()
+    const id = randomUUID()
+    const name = project.title.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').replace(/[. ]+$/g, '').slice(0, 100) || 'Video'
+    let outputPath: string
+    if (folder) {
+      const info = await stat(folder).catch(() => null)
+      if (!info?.isDirectory()) throw Error('A pasta fixa de exportação não está disponível. Escolha outra pasta no painel.')
+      outputPath = join(folder, `${name} - ${id}.mp4`)
+    } else {
+      const owner = BrowserWindow.fromWebContents(event.sender)
+      const saveOptions = { title: 'Editor V6: exportar MP4', defaultPath: name + '.mp4', filters: [{ name: 'Vídeo MP4', extensions: ['mp4'] }] }
+      const destination = owner ? await dialog.showSaveDialog(owner, saveOptions) : await dialog.showSaveDialog(saveOptions)
+      if (destination.canceled || !destination.filePath) return null
+      outputPath = destination.filePath.toLowerCase().endsWith('.mp4') ? destination.filePath : destination.filePath + '.mp4'
+    }
     assertAvailable()
     if ([...jobs.values()].some((job) => !terminal(job.status))) throw Error('Outra exportação já foi iniciada.')
-    const id = randomUUID(), controller = new AbortController(), reportPath = join(deps.projectPath(project.id), 'exports', `${id}.report.json`)
-    const outputPath = destination.filePath.toLowerCase().endsWith('.mp4') ? destination.filePath : destination.filePath + '.mp4'
+    const controller = new AbortController(), reportPath = join(deps.projectPath(project.id), 'exports', `${id}.report.json`)
     const status: EditorV6ExportStatus = { id, state: 'preparing', frames: 0, totalFrames: options.endFrame - options.startFrame, message: 'Verificando codificador e preparando exportação…', fallback: false, reportPath }
     const job: Job = { owner: event.sender.id, status, controller, promise: Promise.resolve() }
     jobs.set(id, job)

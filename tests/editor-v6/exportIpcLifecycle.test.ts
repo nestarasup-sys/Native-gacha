@@ -6,11 +6,16 @@ import { editorV6IpcChannels } from '../../src/shared/editorV6IpcChannels'
 import { FIRST_HAIR_MOTION_PRESET } from '../../src/shared/hairMotionEngine'
 
 vi.mock('electron', () => ({
+  app: { getPath: vi.fn(() => 'C:/synthetic/profile') },
   BrowserWindow: { fromWebContents: vi.fn(() => null) },
   dialog: { showOpenDialog: vi.fn(), showSaveDialog: vi.fn() },
   shell: { showItemInFolder: vi.fn() }
 }))
 vi.mock('node:fs/promises', () => ({
+  readFile: vi.fn(async () => { throw Object.assign(new Error('missing'), { code: 'ENOENT' }) }),
+  writeFile: vi.fn(async () => undefined),
+  rename: vi.fn(async () => undefined),
+  unlink: vi.fn(async () => { throw Object.assign(new Error('missing'), { code: 'ENOENT' }) }),
   copyFile: vi.fn(),
   mkdir: vi.fn(async () => undefined),
   stat: vi.fn(async () => ({ size: 1024 }))
@@ -24,7 +29,7 @@ vi.mock('../../electron/domains/editorV6/exportRunner', () => ({
 }))
 
 import { dialog } from 'electron'
-import { copyFile } from 'node:fs/promises'
+import { copyFile, readFile, stat, writeFile } from 'node:fs/promises'
 import { probeExportMedia, runEditorV6Export } from '../../electron/domains/editorV6/exportRunner'
 import { registerEditorV6ExportHandlers } from '../../electron/domains/editorV6/exportIpc'
 
@@ -188,6 +193,38 @@ describe('lifecycle de cópias de mídia do Editor V6', () => {
     await operation
     await draining
     expect(lifecycle.getPendingWrites()).toEqual([])
+  })
+
+  it('usa pasta fixa para exportar sem abrir diálogo e dá nome único ao MP4', async () => {
+    vi.mocked(readFile).mockResolvedValueOnce(JSON.stringify({ folder: 'C:/synthetic/exports' }) as never)
+    vi.mocked(stat).mockResolvedValueOnce({ isDirectory: () => true } as never)
+    vi.mocked(dialog.showSaveDialog).mockClear()
+    const gate = deferred<Awaited<ReturnType<typeof runEditorV6Export>>>()
+    vi.mocked(runEditorV6Export).mockImplementation(() => gate.promise)
+    const { handlers } = createHarness()
+    await handlers.get(editorV6IpcChannels.startEditorV6Export)!(event, exportProject, exportOptions)
+    expect(dialog.showSaveDialog).not.toHaveBeenCalled()
+    expect(runEditorV6Export).toHaveBeenCalledWith(expect.anything(), expect.anything(), expect.objectContaining({ outputPath: expect.stringMatching(/Projeto sintético - [0-9a-f-]{36}\.mp4$/) }))
+    gate.resolve({ outputPath: 'C:/synthetic/exports/video.mp4', fallback: false } as Awaited<ReturnType<typeof runEditorV6Export>>)
+    await tick()
+  })
+
+  it('informa quando a pasta fixa desapareceu sem iniciar exportação', async () => {
+    vi.mocked(readFile).mockResolvedValueOnce(JSON.stringify({ folder: 'C:/synthetic/missing' }) as never)
+    vi.mocked(stat).mockRejectedValueOnce(Object.assign(new Error('missing'), { code: 'ENOENT' }))
+    const { handlers } = createHarness()
+    await expect(handlers.get(editorV6IpcChannels.startEditorV6Export)!(event, exportProject, exportOptions)).rejects.toThrow('pasta fixa de exportação não está disponível')
+  })
+
+  it('grava pasta escolhida e permite voltar ao seletor de arquivo', async () => {
+    vi.mocked(dialog.showOpenDialog).mockResolvedValueOnce({ canceled: false, filePaths: ['C:/synthetic/exports'] })
+    vi.mocked(stat).mockResolvedValueOnce({ isDirectory: () => true } as never)
+    vi.mocked(writeFile).mockClear()
+    const { handlers } = createHarness()
+    expect(await handlers.get(editorV6IpcChannels.chooseEditorV6ExportFolder)!(event)).toBe('C:/synthetic/exports')
+    expect(writeFile).toHaveBeenCalledWith(expect.any(String), JSON.stringify({ folder: 'C:/synthetic/exports' }), 'utf8')
+    await handlers.get(editorV6IpcChannels.clearEditorV6ExportFolder)!(event)
+    expect(writeFile).toHaveBeenCalledWith(expect.any(String), JSON.stringify({ folder: null }), 'utf8')
   })
 
   it('mantém a exportação MP4 ativa no inventário até concluir os arquivos de saída e relatório', async () => {

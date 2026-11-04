@@ -22,6 +22,7 @@ export function EditorV6ExportPanel({ project, open, characterSourceRefreshRequi
     return () => { if (previous instanceof HTMLElement && previous.isConnected) previous.focus() }
   }, [open])
   const [job, setJob] = useState(rememberedJob)
+  const [exportFolder, setExportFolder] = useState<string | null>(null)
   const [options, setOptions] = useState<EditorV6ExportOptions>({ startFrame: 0, endFrame: project.timeline.durationFrames, ...DEFAULT_EXPORT_SETTINGS })
   const [hairPresetSlot, setHairPresetSlot] = useState(2)
   const [hairPresets, setHairPresets] = useState<Array<ReturnType<typeof parseHairMotionPresets>[number]>>([structuredClone(FIRST_HAIR_MOTION_PRESET), null, null, null, null])
@@ -44,6 +45,12 @@ export function EditorV6ExportPanel({ project, open, characterSourceRefreshRequi
       setError('')
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Os presets de cabelo salvos estão inválidos.') }
   }, [open])
+  useEffect(() => {
+    if (!open) return
+    let cancelled = false
+    void window.desktop.editorV6.getEditorV6ExportFolder().then((folder) => { if (!cancelled) setExportFolder(folder) }).catch((reason: unknown) => { if (!cancelled) setError(reason instanceof Error ? reason.message : String(reason)) })
+    return () => { cancelled = true }
+  }, [open])
   useEffect(() => { onActivity?.(active || busy); return () => onActivity?.(false) }, [active, busy, onActivity])
   const setStatus = (value: EditorV6ExportStatus) => { rememberedJob = value; setJob(value) }
   useEffect(() => {
@@ -61,6 +68,18 @@ export function EditorV6ExportPanel({ project, open, characterSourceRefreshRequi
   const importAudio = async () => {
     setBusy(true); setError('')
     try { await trackOperation(async () => { const clip = await window.desktop.editorV6.importEditorV6ExportAudio(project.id); if (clip) onChange((document) => ({ ...document, exportAudio: [...(document.exportAudio ?? []), clip], updatedAt: new Date().toISOString() })) }) }
+    catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
+    finally { setBusy(false) }
+  }
+  const chooseExportFolder = async () => {
+    setBusy(true); setError('')
+    try { const folder = await window.desktop.editorV6.chooseEditorV6ExportFolder(); if (folder) setExportFolder(folder) }
+    catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
+    finally { setBusy(false) }
+  }
+  const clearExportFolder = async () => {
+    setBusy(true); setError('')
+    try { await window.desktop.editorV6.clearEditorV6ExportFolder(); setExportFolder(null) }
     catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
     finally { setBusy(false) }
   }
@@ -127,6 +146,9 @@ export function EditorV6ExportPanel({ project, open, characterSourceRefreshRequi
           <label>Do início (s)<input type="number" min={0} step={1 / 30} value={seconds(options.startFrame)} onChange={(event) => setOptions({ ...options, startFrame: frames(event.target.value, project.timeline.durationFrames) })} /></label>
           <label>Até (s)<input type="number" min={1 / 30} step={1 / 30} value={seconds(options.endFrame)} onChange={(event) => setOptions({ ...options, endFrame: frames(event.target.value, project.timeline.durationFrames) })} /></label>
         </div><small>{frameTimecode(options.startFrame)} → {frameTimecode(options.endFrame)} · {Math.max(0, options.endFrame - options.startFrame)} quadros · 30 FPS</small>
+          <p><strong>Destino do MP4</strong><br /><small>{exportFolder ?? 'Perguntar onde salvar a cada exportação'}</small></p>
+          <button type="button" onClick={() => void chooseExportFolder()}>{exportFolder ? 'Mudar pasta fixa' : 'Escolher pasta fixa'}</button>
+          {exportFolder && <button type="button" onClick={() => void clearExportFolder()}>Voltar a perguntar onde salvar</button>}
           <p><strong>1080p · 1920 × 1080 · CPU H.264</strong></p>
           <p><strong>Turbo 2× obrigatório</strong><br /><small>Se o Turbo falhar, a exportação será interrompida e mostrará o erro.</small></p>
           <p><strong>Cabelo posterior animado após cada troca de pose</strong><br /><small>Uma reação por troca, sem loop; o cabelo volta à posição original. A animação é exclusiva do MP4.</small></p>
