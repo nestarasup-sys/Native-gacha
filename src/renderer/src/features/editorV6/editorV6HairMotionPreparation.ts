@@ -254,7 +254,7 @@ export async function prepareEditorV6HairMotionBundle(
         rigs.push({
           elementId: target.elementId, assetId: target.assetId, characterId: target.state.characterId!,
           poseSlot: character.customization.poseSlot ?? null,
-          baseSurfaceId, faceSurfaceId, overlaySurfaceId,
+          baseSurfaceId, faceSurfaceId, overlaySurfaceId: overlaySurfaceId ?? null,
           ...preparedGeometry,
           sourceCrop, sourceHead: { width: sourceHeadPart.width, height: sourceHeadPart.height },
           targetHead: { x: targetHeadPart.x, y: targetHeadPart.y, width: targetHeadPart.width, height: targetHeadPart.height, rotation: targetHeadPart.rotation },
