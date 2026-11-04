@@ -1,0 +1,93 @@
+# Synthetic Electron export lab. Never reads personal Windows profiles or user projects.
+name: Zona de Guerra - Windows export lab
+on:
+  workflow_dispatch:
+    inputs:
+      rounds:
+        description: 'Independent synthetic parity rounds (1, 2 or 3)'
+        required: true
+        default: '3'
+        type: choice
+        options: ['1', '2', '3']
+  push:
+    branches: [dev-v2-zona-de-guerra]
+    paths:
+      - 'electron/domains/editorV6/**'
+      - 'src/renderer/src/features/editorV6/**'
+      - 'src/renderer/src/characters/**'
+      - 'src/shared/editorV6*'
+      - 'tests/editor-v6/**'
+      - 'scripts/editor-v6/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/zona-guerra-export-lab.yml'
+permissions:
+  contents: read
+concurrency:
+  group: zona-guerra-lab-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  synthetic-windows:
+    name: Synthetic Electron + Turbo MP4 / repeated runs
+    runs-on: windows-2025
+    timeout-minutes: 90
+    env:
+      LAB_ROUNDS: ${{ github.event_name == 'workflow_dispatch' && inputs.rounds || '2' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.22.0'
+          cache: npm
+      - name: Install reproducible dependencies
+        run: npm ci --ignore-scripts
+      - name: Install Electron runtime
+        run: node node_modules/electron/install.js
+      - name: Build application
+        run: npm run build
+      - name: Prepare verified LGPL FFmpeg tools
+        shell: pwsh
+        run: |
+          $videoTools = Join-Path $env:RUNNER_TEMP 'native-gacha-video-tools'
+          ./scripts/video-studio/prepare-ffmpeg-lgpl.ps1 -DestinationPath $videoTools
+          "EDITOR_V6_TEST_VIDEO_TOOLS_DIR=$videoTools" >> $env:GITHUB_ENV
+      - name: Repeat isolated motion, service and real MP4 parity checks
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $rounds = [int]$env:LAB_ROUNDS
+          if ($rounds -lt 1 -or $rounds -gt 3) { throw 'Invalid LAB_ROUNDS' }
+          New-Item -ItemType Directory -Force -Path 'out/zona-guerra-lab' | Out-Null
+          $summary = @()
+          $failures = 0
+          for ($i = 1; $i -le $rounds; $i++) {
+            $folder = Join-Path 'out/zona-guerra-lab' ("round-" + $i)
+            New-Item -ItemType Directory -Force -Path $folder | Out-Null
+            $env:NATIVE_GACHA_TEST_OUTPUT_DIR = (Resolve-Path $folder).Path
+            foreach ($check in @(
+              @{ name = 'motion'; script = 'scripts/editor-v6/check-motion.cjs' },
+              @{ name = 'motion-service'; script = 'scripts/editor-v6/check-motion-service.cjs' },
+              @{ name = 'overlay-parity'; script = 'scripts/editor-v6/check-overlay-parity.cjs' }
+            )) {
+              $watch = [System.Diagnostics.Stopwatch]::StartNew()
+              $log = Join-Path $folder ($check.name + '.log')
+              & node $check.script *> $log
+              $code = $LASTEXITCODE
+              $watch.Stop()
+              $summary += [pscustomobject]@{ round = $i; check = $check.name; seconds = [math]::Round($watch.Elapsed.TotalSeconds, 3); exitCode = $code }
+              Get-Content $log -Tail 12
+              if ($code -ne 0) { $failures++ }
+            }
+          }
+          $summary | ConvertTo-Json -Depth 4 | Set-Content -Encoding utf8 'out/zona-guerra-lab/summary.json'
+          $summary | Format-Table -AutoSize
+          if ($failures -gt 0) { throw "$failures synthetic checks failed. See uploaded logs." }
+      - name: Upload summaries, logs and synthetic output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zona-guerra-lab-${{ github.run_id }}
+          path: |
+            out/zona-guerra-lab/**
+          if-no-files-found: warn
+          retention-days: 14
