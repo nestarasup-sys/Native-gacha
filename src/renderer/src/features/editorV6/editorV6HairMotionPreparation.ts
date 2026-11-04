@@ -237,7 +237,9 @@ export async function prepareEditorV6HairMotionBundle(
   const rigByEndpoint = new Map(rigs.map(rig => [`${rig.elementId}:${rig.assetId}`, rig]))
   const relevantPlans = editorV6MotionPlans(project).filter(plan => plan.startFrame < exportOptions.endFrame && plan.endFrame > exportOptions.startFrame)
   if (relevantPlans.length) {
-    const { bakeEditorV6Motion } = await import('./motion/bakeMotion')
+    const { bakeEditorV6Motion, createEditorV6BakeSession } = await import('./motion/bakeMotion')
+    // Reuse renderer material/provider caches only within this export's transition batch.
+    const transitionSession = createEditorV6BakeSession(window.desktop.fabricator)
     const preparedTransitions = await mapConcurrentItems(relevantPlans, async (plan) => {
       if (isCancelled()) throw Error('Preparação da animação de cabelo cancelada.')
       const character = characterById.get(plan.characterId)
@@ -257,7 +259,7 @@ export async function prepareEditorV6HairMotionBundle(
       const result = await bakeEditorV6Motion({
         id: crypto.randomUUID(), plan, character: hairlessCharacter,
         ...(facialMotion ? { mouthScaleSamples: facialMotion } : {})
-      }, window.desktop.fabricator, undefined, capture => {
+      }, window.desktop.fabricator, transitionSession, capture => {
         // bakeEditorV6Motion releases these canvases in its finally block, so
         // snapshot them before returning across the await boundary.
         layerCapture = {
@@ -271,7 +273,7 @@ export async function prepareEditorV6HairMotionBundle(
       if (!layerCapture) throw Error(`Não foi possível capturar as camadas sem cabelo da transição de ${character.name}.`)
       if (isCancelled()) throw Error('Preparação da animação de cabelo cancelada.')
       return { plan, result, layerCapture }
-    }, isCancelled, 2)
+    }, isCancelled, 2).finally(() => transitionSession.materials.clear())
     for (const transition of preparedTransitions) {
       if (!transition) continue
       captureTransitionLayers(transition.plan, transition.result, transition.layerCapture)
