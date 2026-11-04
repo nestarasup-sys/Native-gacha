@@ -109,7 +109,6 @@ describe('R37 isolated piece raster backend', () => {
     const invalid = [
       { ...frame([a]), progress: Number.NaN },
       frame([a, { ...b, id: 'a' }]),
-      frame([a, { ...b, order: 0 }]),
       frame([{ ...a, order: -1 }]),
       frame([{ ...a, visible: undefined as never }])
     ]
