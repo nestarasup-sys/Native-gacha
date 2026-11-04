@@ -75,6 +75,9 @@ async function main() {
   }
 
   const manifest = JSON.parse(await fs.readFile(path.join(projectFolder, 'editorV6.json'), 'utf8'))
+  if (hairPresetSlot && (manifest.title?.trim() !== 'Editor V6 06' || !Number.isInteger(manifest.timeline?.durationFrames) || manifest.timeline.durationFrames < 300)) {
+    throw Error('O benchmark com cabelo exige uma cópia verificada do Editor V6 06 com pelo menos 300 quadros; nenhum projeto foi modificado.')
+  }
   await fs.access(path.join(libraryFolder, 'catalog.json'))
   for (const media of manifest.media ?? []) if (media.libraryVideoId) await fs.access(path.join(libraryFolder, 'videos', media.fileName))
   await fs.access(charactersPath)
@@ -126,7 +129,9 @@ async function main() {
   if (!summary.passed || (hairPresetSlot
     ? summary.benchmarkKind !== 'real-project-hair-export' || summary.runs?.length !== 3
       || summary.hairPresetSlot !== Number(hairPresetSlot)
-      || summary.runs.some((run) => run.totalFrames !== 300 || run.width !== 1920 || run.height !== 1080 || run.fps !== '30/1' || run.audioClips !== 0 || run.audioOutput !== false || !run.selectedEncoder)
+      || summary.runs.some((run) => run.totalFrames !== 300 || run.width !== 1920 || run.height !== 1080 || run.fps !== '30/1'
+        || !Number.isSafeInteger(run.audioClips) || run.audioClips < 0 || run.audioOutput !== (run.audioClips > 0)
+        || run.audioClips !== summary.runs[0].audioClips || !run.selectedEncoder)
     : singleMotionRun
     ? summary.benchmarkKind !== 'motion-concurrency-single' || summary.runs?.length !== 1
       || summary.motionBakeConcurrency !== Number(motionConcurrency)
