@@ -252,6 +252,13 @@ export function hairMotionLatestPoseEnd(events: readonly number[], frame: number
   return low ? events[low - 1] : null
 }
 
+/** Is a rearHair one-shot reaction currently moving at this absolute frame?
+ * A reaction occupies exactly frames end+1 through end+29. */
+export function hairMotionPoseReactionIsActive(events: readonly number[], frame: number): boolean {
+  const end = hairMotionLatestPoseEnd(events, frame)
+  return end !== null && frame > end && frame < end + HAIR_MOTION_POSE_REACTION_FRAMES
+}
+
 /** Two opposing half-swings, returning exactly to unwarped rest.
  * Smooth envelope makes both endpoints approach zero without sudden jumps.
  */

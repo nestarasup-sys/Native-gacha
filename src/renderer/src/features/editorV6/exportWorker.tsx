@@ -6,7 +6,7 @@ import { editorV6ClipAtFrame } from '../../../../shared/editorV6TimelineCore'
 import { resolveEditorV6SceneAtFrame } from '../../../../shared/editorV6TimelineScene'
 import { editorV6FaceModeAtFrame } from '../../../../shared/editorV6FaceSchedule'
 import { EDITOR_V6_MOUTH_LOOP_SAMPLE_SCALES, editorV6MouthLoopScaleAtFrame, editorV6LayerVisualKeys, editorV6VisualKey, type EditorV6ExportMouthLoops, type EditorV6FrameMetrics, type EditorV6FrameTimings, type EditorV6RenderFrameResult, type EditorV6WorkerBridge } from '../../../../shared/editorV6Export'
-import { advanceHairMotionToFrame, applyHairMotionLoopHeadImpulse, buildHairMotionLoop, createHairMotionState, hairMotionLatestPoseEnd, hairMotionLoopOffsets, hairMotionPoseReactionEndFrames, prewarmHairMotionState, sampleHairMotionPoseReaction, type HairMotionLoop, type HairMotionSettings, type HairMotionState } from '../../../../shared/hairMotionEngine'
+import { advanceHairMotionToFrame, applyHairMotionLoopHeadImpulse, buildHairMotionLoop, createHairMotionState, hairMotionLatestPoseEnd, hairMotionLoopOffsets, hairMotionPoseReactionEndFrames, hairMotionPoseReactionIsActive, prewarmHairMotionState, sampleHairMotionPoseReaction, type HairMotionLoop, type HairMotionSettings, type HairMotionState } from '../../../../shared/hairMotionEngine'
 import { editorV6HairMotionHeadPathDelta, editorV6HairMotionHeadPathPoint, editorV6HairMotionInstancePhase, editorV6HairMotionLayerHeadPosition, interpolateEditorV6HairMotionHeadPathPoint, interpolateEditorV6HairMotionRig, type EditorV6HairMotionHeadPathPoint, type EditorV6HairMotionRig, type EditorV6HairMotionLayer, type EditorV6HairMotionTransition } from '../../../../shared/editorV6HairMotion'
 import { editorV6MotionPlans } from '../../../../shared/editorV6Motion'
 import { motionEase } from '../../../../shared/editorV6MotionInterpolation'
@@ -441,8 +441,22 @@ async function initialize() {
         : hairSourceAssetId(element) && (hairRigs.get(`${element.id}:${hairSourceAssetId(element)}`)?.layers.length ?? 0) > 0
     )
     const activeHair = Boolean(hairAnimation && activeLayer !== 'background' && scene.elements.some(hasAnimatedHair))
-    const key = editorV6VisualKey({ ...scene, mediaVideo: undefined, ...(activeHair ? { hairAnimationFrame: frame } : {}) })
-    const layerKeys = editorV6LayerVisualKeys({ ...scene, ...(activeHair ? { hairAnimationFrame: frame } : {}) })
+    // Keep the exact existing hair composition on the first rest frame.
+    // Subsequent identical frames need no new raster or capture. Never swap
+    // to the saved static snapshot: its pixels can differ from composed hair.
+    const reacting = Boolean(hairAnimation?.poseReactionOnly && activeHair && scene.elements.some(element =>
+      hasAnimatedHair(element) && hairMotionPoseReactionIsActive(hairPoseReactionEnds.get(element.id) ?? [], frame)
+    ))
+    const hairNeedsFrame = activeHair && (!hairAnimation?.poseReactionOnly || reacting)
+    const baseKey = editorV6VisualKey({ ...scene, mediaVideo: undefined, ...(hairNeedsFrame ? { hairAnimationFrame: frame } : {}) })
+    const baseLayerKeys = editorV6LayerVisualKeys({ ...scene, ...(hairNeedsFrame ? { hairAnimationFrame: frame } : {}) })
+    // Original visual keys omit some expression and effect properties.
+    // Require the whole resolved scene element identity to match at rest.
+    const signature = hairAnimation?.poseReactionOnly ? JSON.stringify(scene.elements) : null
+    const key = signature === null ? baseKey : JSON.stringify([baseKey, signature])
+    const layerKeys = signature === null ? baseLayerKeys : {
+      ...baseLayerKeys, foreground: JSON.stringify([baseLayerKeys.foreground, signature])
+    }
     timings.sceneResolutionMs = performance.now() - resolutionStarted
     if (key === previous) return { reused: true, timings }
     if (activeLayer === 'background' && layerKeys.background === previousBackground) return { reused: false, layerReused: true, timings }

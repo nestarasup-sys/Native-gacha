@@ -3,7 +3,7 @@ import {
   applyHairMotionLoopHeadImpulse, buildHairMotionLoop, createHairMotionState,
   hairMotionLoopOffsets, prewarmHairMotionState, advanceHairMotionToFrame,
   hairMotionPosteriorOnlyPreset, FIRST_HAIR_MOTION_PRESET,
-  hairMotionLatestPoseEnd, hairMotionPoseReactionEndFrames, sampleHairMotionPoseReaction, HAIR_MOTION_POSE_REACTION_FRAMES,
+  hairMotionLatestPoseEnd, hairMotionPoseReactionEndFrames, hairMotionPoseReactionIsActive, sampleHairMotionPoseReaction, HAIR_MOTION_POSE_REACTION_FRAMES,
   type HairMotionSettings
 } from '../../src/shared/hairMotionEngine'
 import { planEditorV6Export } from '../../src/shared/editorV6Export'
@@ -27,6 +27,20 @@ describe('V6 experimental numerical hair loop', () => {
   })
 
 
+  it('R28: static frames are outside the one-shot reaction window', () => {
+    const events = [29, 90, 149]
+    const active: number[] = []
+    for (let frame = 0; frame < 200; frame++) if (hairMotionPoseReactionIsActive(events, frame)) active.push(frame)
+    expect(active).toHaveLength(87)
+    expect([active[0], active[28], active[29], active[57], active[58], active[86]])
+      .toEqual([30, 58, 91, 119, 150, 178])
+    for (const frame of [0, 29, 59, 90, 120, 149, 179, 199])
+      expect(hairMotionPoseReactionIsActive(events, frame)).toBe(false)
+    for (const frame of [30, 44, 58, 91, 110, 119, 150, 165, 178]) {
+      const offsets = new Float32Array(9)
+      expect(sampleHairMotionPoseReaction(offsets, settings, frame, hairMotionLatestPoseEnd(events, frame), 0.4)).toBe(true)
+    }
+  })
   it('triggers only after changing pose, not after expression-only transitions', () => {
     const events = hairMotionPoseReactionEndFrames([
       { elementId: 'actor', endFrame: 29, fromElement: { poseSlot: 1 }, toElement: { poseSlot: 2 } },
