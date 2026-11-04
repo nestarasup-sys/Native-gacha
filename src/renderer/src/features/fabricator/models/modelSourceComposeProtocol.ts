@@ -50,7 +50,7 @@ export function materializeModelSourceResult(
     tolerance: output.tolerance,
     modelSkinTone: project.modelSkinTone,
     modelOutlineColor: project.modelOutlineColor,
-    bodyJointBridgeEnabled: project.bodyJointBridgeEnabled,
+    ...(project.bodyJointBridgeEnabled === undefined ? {} : { bodyJointBridgeEnabled: project.bodyJointBridgeEnabled }),
     joints: project.joints,
     layerOrder: project.layerOrder,
     hiddenPartIds: project.hiddenPartIds
