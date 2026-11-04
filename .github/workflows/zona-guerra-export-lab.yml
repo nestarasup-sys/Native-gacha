@@ -61,6 +61,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $false
           $rounds = [int]$env:LAB_ROUNDS
           if ($rounds -lt 1 -or $rounds -gt 3) { throw 'Invalid LAB_ROUNDS' }
           New-Item -ItemType Directory -Force -Path 'out/zona-guerra-lab' | Out-Null
@@ -79,11 +80,19 @@ jobs:
             )) {
               $watch = [System.Diagnostics.Stopwatch]::StartNew()
               $log = Join-Path $folder ($check.name + '.log')
-              & node $check.script *> $log
-              $code = $LASTEXITCODE
-              $watch.Stop()
+              $code = 1
+              try {
+                & node $check.script *> $log
+                $code = $LASTEXITCODE
+                if ($null -eq $code) { $code = 1 }
+              } catch {
+                $_ | Out-String | Add-Content -Path $log
+                $code = 1
+              } finally {
+                $watch.Stop()
+              }
               $summary += [pscustomobject]@{ round = $i; check = $check.name; seconds = [math]::Round($watch.Elapsed.TotalSeconds, 3); exitCode = $code }
-              Get-Content $log -Tail 12
+              if (Test-Path $log) { Get-Content $log -Tail 12 }
               if ($code -ne 0) { $failures++ }
             }
           }
