@@ -32,7 +32,7 @@ jobs:
     runs-on: windows-2025
     timeout-minutes: 90
     env:
-      LAB_ROUNDS: ${{ github.event_name == 'workflow_dispatch' && inputs.rounds || '2' }}
+      LAB_ROUNDS: ${{ github.event_name == 'workflow_dispatch' && inputs.rounds || '3' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -73,6 +73,7 @@ jobs:
             foreach ($check in @(
               @{ name = 'motion'; script = 'scripts/editor-v6/check-motion.cjs' },
               @{ name = 'r37-pixel'; script = 'scripts/editor-v6/check-r37-raster.cjs' },
+              @{ name = 'r36-paint'; script = 'scripts/editor-v6/check-r36-paint.cjs' },
               @{ name = 'motion-service'; script = 'scripts/editor-v6/check-motion-service.cjs' },
               @{ name = 'overlay-parity'; script = 'scripts/editor-v6/check-overlay-parity.cjs' }
             )) {
@@ -92,6 +93,18 @@ jobs:
           $lines | Set-Content -Encoding utf8 'out/zona-guerra-lab/summary.md'
           if ($env:GITHUB_STEP_SUMMARY) { $lines | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8 }
           $summary | Format-Table -AutoSize
+          $groups = $summary | Group-Object check
+          $benchmark = foreach ($group in $groups) {
+            $values = @($group.Group | ForEach-Object { $_.seconds } | Sort-Object)
+            $median = $values[[int][math]::Floor(($values.Count - 1) / 2)]
+            [pscustomobject]@{ check = $group.Name; runs = $values.Count; minSeconds = $values[0]; medianSeconds = $median; maxSeconds = $values[-1]; failures = @($group.Group | Where-Object { $_.exitCode -ne 0 }).Count }
+          }
+          $benchmark | ConvertTo-Json -Depth 4 | Set-Content -Encoding utf8 'out/zona-guerra-lab/benchmark.json'
+          $benchmark | Format-Table -AutoSize
+          if ($env:GITHUB_STEP_SUMMARY) {
+            @('', '### Synthetic run-time ranges (not a 309-frame benchmark)', '', '| Check | Runs | Min s | Median s | Max s | Failures |', '|---|---:|---:|---:|---:|---:|') | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+            foreach ($item in $benchmark) { "| $($item.check) | $($item.runs) | $($item.minSeconds) | $($item.medianSeconds) | $($item.maxSeconds) | $($item.failures) |" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8 }
+          }
           if ($failures -gt 0) { throw "$failures synthetic checks failed. See uploaded logs." }
       - name: Upload summaries, logs and synthetic output
         if: always()
