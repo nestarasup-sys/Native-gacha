@@ -34,7 +34,7 @@ describe('R26: bounded hair targets for first export', () => {
     const original = project()
     const before = JSON.stringify(original)
     expect(selectEditorV6HairTargetStates(original).map(x => x.assetId))
-      .toEqual(['base', 'late', 'old', 'middle', 'far-away', 'short'])
+      .toEqual(['base', 'later', 'old', 'middle', 'far-away', 'short'])
     expect(JSON.stringify(original)).toBe(before)
   })
   it('drops far-outside portraits but keeps a character pose held past its stored duration', () => {
