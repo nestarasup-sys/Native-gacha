@@ -43,6 +43,12 @@ jobs:
         run: npm ci --ignore-scripts
       - name: Install Electron runtime
         run: node node_modules/electron/install.js
+      - name: Verify TypeScript and architecture
+        run: |
+          npm run audit:architecture
+          npm run typecheck
+      - name: Run motion preparation regression suite
+        run: npx vitest run --config vitest.editor-v6.config.ts tests/editor-v6/motionPreparation.test.ts
       - name: Build application
         run: npm run build
       - name: Prepare verified LGPL FFmpeg tools
@@ -80,6 +86,10 @@ jobs:
             }
           }
           $summary | ConvertTo-Json -Depth 4 | Set-Content -Encoding utf8 'out/zona-guerra-lab/summary.json'
+          $lines = @('## Zona de Guerra — synthetic Windows lab', '', '| Round | Check | Seconds | Exit |', '|---:|---|---:|---:|')
+          foreach ($item in $summary) { $lines += "| $($item.round) | $($item.check) | $($item.seconds) | $($item.exitCode) |" }
+          $lines | Set-Content -Encoding utf8 'out/zona-guerra-lab/summary.md'
+          if ($env:GITHUB_STEP_SUMMARY) { $lines | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8 }
           $summary | Format-Table -AutoSize
           if ($failures -gt 0) { throw "$failures synthetic checks failed. See uploaded logs." }
       - name: Upload summaries, logs and synthetic output
