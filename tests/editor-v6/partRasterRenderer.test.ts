@@ -80,6 +80,45 @@ describe('R37 isolated piece raster backend', () => {
     expect(decodes).toBe(1)
     expect(renderer.cachedSources()).toBe(1)
   })
+  it('finishes a frame if cancellation is requested synchronously during drawing', async () => {
+    const controller = new AbortController()
+    const { canvas, calls } = harness()
+    const originalContext = canvas.getContext()
+    const context = {
+      ...originalContext,
+      drawImage: (...args: unknown[]) => {
+        calls.push(['drawImage', ...args])
+        controller.abort()
+      }
+    }
+    const target = { ...canvas, getContext: () => context as never }
+    const renderer = createEditorV6PartRasterRenderer(async () => ({} as never))
+    const metrics = await renderer.render(frame([part('a', 'a'), part('b', 'b')]), target, controller.signal)
+    expect(metrics.drawnParts).toBe(2)
+    expect(calls.filter(call => call[0] === 'drawImage')).toHaveLength(2)
+    expect(calls.filter(call => call[0] === 'restore')).toHaveLength(2)
+    expect(calls.filter(call => call[0] === 'clearRect')).toHaveLength(1)
+    await expect(renderer.render(frame([part('a', 'a')]), target, controller.signal)).rejects.toThrow('cancelled')
+  })
+  it('rejects malformed draw lists before decoding or clearing the target', async () => {
+    const { canvas, calls } = harness()
+    let decodes = 0
+    const renderer = createEditorV6PartRasterRenderer(async () => { decodes++; return {} as never })
+    const a = part('a', 'a')
+    const b = { ...part('b', 'b'), order: 1 }
+    const invalid = [
+      { ...frame([a]), progress: Number.NaN },
+      frame([a, { ...b, id: 'a' }]),
+      frame([a, { ...b, order: 0 }]),
+      frame([{ ...a, order: -1 }]),
+      frame([{ ...a, visible: undefined as never }])
+    ]
+    for (const candidate of invalid) {
+      await expect(renderer.render(candidate, canvas)).rejects.toThrow('invalid frame geometry')
+    }
+    expect(decodes).toBe(0)
+    expect(calls).toHaveLength(0)
+  })
   it('rejects invalid cache capacities', () => {
     for (const capacity of [0, -1, 257, 1.5, Number.NaN]) {
       expect(() => createEditorV6PartRasterRenderer(async () => ({} as never), capacity)).toThrow()
