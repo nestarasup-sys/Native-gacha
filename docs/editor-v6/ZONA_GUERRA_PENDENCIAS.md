@@ -26,7 +26,9 @@ Este documento distingue:
 
 ## R36 — captura direta do paint
 
-- [ ] Localizar e instrumentar o caminho offscreen atual de `capturePage`.
+- [x] Criar probe isolado Electron com `paint` e `capturePage` em sete quadros sintéticos (`scripts/editor-v6/check-r36-paint.cjs`).
+- [x] Registrar duração e igualdade de bytes BGRA dos dois caminhos sem ativar a produção.
+- [ ] Localizar e instrumentar o caminho offscreen atual de `capturePage` na produção.
 - [ ] Protótipo `paint` com associação inequívoca entre frame solicitado e bitmap recebido.
 - [ ] A/B de RGBA, transparência, PNG, flipX, boca, cabelo e quadros de emenda.
 - [ ] Cancelamento, timeout e fallback para `capturePage` sem frames atrasados.
@@ -38,9 +40,9 @@ Este documento distingue:
 - [x] Compilador geométrico experimental `src/shared/editorV6PartMotionPrototype.ts`, desligado do exportador.
 - [x] Backend isolado de raster `src/shared/editorV6PartRasterRenderer.ts` com cache de imagens decodificadas.
 - [x] Testes de comportamento `tests/editor-v6/partMotionPrototype.test.ts` e `partRasterRenderer.test.ts`.
-- [x] Fixture de 30 quadros sintéticos `tests/editor-v6/r37RasterParity.browser.ts` com comparador RGBA para peças planas.
+- [x] Fixture de 309 quadros sintéticos `tests/editor-v6/r37RasterParity.browser.ts` com comparador RGBA para peças planas.
 - [x] Script Electron `scripts/editor-v6/check-r37-raster.cjs` e integração no laboratório Windows.
-- [ ] Confirmar resultado verde dos testes e analisar capturas PNG/tempos.
+- [ ] Confirmar resultado verde das três rodadas remotas (309 quadros sintéticos cada) e analisar capturas PNG/tempos.
 - [ ] Pele, tint e contorno com a mesma ordem e amostragem do renderizador atual.
 - [ ] Pontes de articulações e pivôs.
 - [ ] Roupas, acessórios, recortes, camadas Posterior/Traseiro.
@@ -58,6 +60,13 @@ Este documento distingue:
 - [ ] Comparar `motionPreparation` com 23.658s; `hairPreparation` com 9.984s; `rendering` com 18.197s.
 - [ ] Registrar `preparedRigs` e `reusedRigs`, picos de memória e qualidade visual.
 - [ ] Executar pelo menos três A/B comparáveis antes de propor promoção.
+
+## Rodada adicional de implementação (2026-11-04)
+
+- R36: A/B offscreen de sete quadros com `paint`/`capturePage` e comparação de bytes, **apenas diagnóstico**. O evento de pintura pode ser coalescido e observar o token DOM não prova a identidade atômica do bitmap; por isso não é seguro usar o probe como substituto de captura.
+- R37: corrigida invalidação de decode em andamento, teste de regressão e paridade sintética estendida a 309 quadros; o benchmark mede desenho simples em 96×96, **não** exportação real 1080p.
+- CI: três rodadas automáticas com agregação min/mediana/máximo por verificação; ainda sem resultado de execução confirmado.
+- **Não concluído:** compositor completo com roupas, juntas, tint, rosto e cabelo; R36 produção; três A/B reais de 309 quadros em Windows 11. Não declarar as três frentes finalizadas sem esses dados.
 
 ## Limites da revisão documental
 
