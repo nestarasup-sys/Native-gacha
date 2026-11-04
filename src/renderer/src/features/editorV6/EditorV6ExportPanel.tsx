@@ -1,10 +1,9 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { EditorV6Document } from '../../../../shared/editorV6'
 import { frameTimecode } from '../../../../shared/editorV6TimelineCore'
 import { EDITOR_V6_ENCODER_CHOICES, type EditorV6ExportAudio, type EditorV6ExportOptions, type EditorV6ExportStatus } from '../../../../shared/editorV6Export'
 import { FIRST_HAIR_MOTION_PRESET, HAIR_MOTION_PRESET_KEY, parseHairMotionPresets, type HairMotionPreset } from '../../../../shared/hairMotionEngine'
 import { prepareEditorV6HairMotionBundle } from './editorV6HairMotionPreparation'
-import { createEditorV6HairPreparationCache } from './editorV6HairPreparationCache'
 import { EditorV6HairPresetEditor } from './EditorV6HairPresetEditor'
 import { saveEditorV6HairPresetSlot } from './editorV6HairPresetStorage'
 import { cancelEditorV6ExportCommand, runEditorV6ExportCommand } from './editorV6ExportCommands'
@@ -28,31 +27,12 @@ export function EditorV6ExportPanel({ project, open, characterSourceRefreshRequi
   const [presetDraft, setPresetDraft] = useState<{ slot: number; value: HairMotionPreset } | null>(null)
   const [editingHairPreset, setEditingHairPreset] = useState(false)
   const [hairPresetMessage, setHairPresetMessage] = useState('')
-  // One bounded, disposable export-only bundle. Invalidated by document changes
-  // and every source refresh; never persisted to the project or localStorage.
-  const hairPreparationCache = useMemo(() => createEditorV6HairPreparationCache(), [])
   const [preparingHair, setPreparingHair] = useState(false)
   const [startingExport, setStartingExport] = useState(false)
   const [exportStartedAt, setExportStartedAt] = useState<number | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const active = Boolean(job && !finished(job))
-  useEffect(() => { hairPreparationCache.invalidate() }, [hairPreparationCache, project, characterSourceRefreshRequired])
-  useEffect(() => {
-    const invalidate = () => hairPreparationCache.invalidate()
-    const onVisibilityChange = () => { if (document.visibilityState === 'visible') invalidate() }
-    window.addEventListener('customizer:characters-updated', invalidate)
-    window.addEventListener('fabricator:assets-updated', invalidate)
-    window.addEventListener('focus', invalidate)
-    document.addEventListener('visibilitychange', onVisibilityChange)
-    return () => {
-      window.removeEventListener('customizer:characters-updated', invalidate)
-      window.removeEventListener('fabricator:assets-updated', invalidate)
-      window.removeEventListener('focus', invalidate)
-      document.removeEventListener('visibilitychange', onVisibilityChange)
-      hairPreparationCache.invalidate()
-    }
-  }, [hairPreparationCache])
   useEffect(() => {
     if (!open) return
     try {
@@ -112,10 +92,7 @@ export function EditorV6ExportPanel({ project, open, characterSourceRefreshRequi
       options,
       hairPresetSlot,
       hairPreset: preparedHairPreset,
-      prepareHair: (document, slot, preset, exportOptions) => hairPreparationCache.prepare(
-        document, slot, preset, exportOptions,
-        () => prepareEditorV6HairMotionBundle(document, slot, preset, exportOptions)
-      ),
+      prepareHair: prepareEditorV6HairMotionBundle,
       startExport: (document, exportOptions, hairMotion) => window.desktop.editorV6.startEditorV6Export(document, exportOptions, hairMotion),
       onPreparingHair: setPreparingHair,
       onStatus: setStatus

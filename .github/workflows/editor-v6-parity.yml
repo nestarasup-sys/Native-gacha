@@ -1,3 +1,5 @@
+# GitHub-hosted Windows x64 is Windows Server 2025, NOT Windows 11.
+# Real Windows 11 x64 + AMD AMF performance acceptance runs on the user's PC.
 name: Editor V6 - parity and export contracts
 
 on:
@@ -17,7 +19,7 @@ concurrency:
 jobs:
   general-gates:
     name: Dev-V2 / architecture, shared contracts and typecheck
-    runs-on: ubuntu-latest
+    runs-on: windows-2025
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
@@ -37,13 +39,9 @@ jobs:
         run: npm run typecheck
 
   test:
-    name: Editor V6 parity / ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
+    name: Editor V6 parity / Windows x64
+    runs-on: windows-2025
     timeout-minutes: 35
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -55,10 +53,8 @@ jobs:
       - name: Editor V6 timeline, export and scene tests
         run: npm run test:editor-v6
       - name: Build bundle required by Windows export parity
-        if: matrix.os == 'windows-latest'
         run: npm run build
       - name: Upload Windows production bundle
-        if: matrix.os == 'windows-latest'
         uses: actions/upload-artifact@v4
         with:
           name: editor-v6-windows-bundle
@@ -72,7 +68,7 @@ jobs:
   mp4-overlay:
     name: Real MP4 pixel parity / Windows
     needs: test
-    runs-on: windows-latest
+    runs-on: windows-2025
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4

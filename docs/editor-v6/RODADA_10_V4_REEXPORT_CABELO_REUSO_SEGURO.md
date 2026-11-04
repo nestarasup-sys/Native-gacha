@@ -1,3 +1,5 @@
+> **SUBSTITUÍDA NA RODADA 12 EM 04/11/2026.** O usuário priorizou exclusivamente aceleração da **primeira exportação**. O cache temporário da Rodada 10 foi removido do painel, junto de seu módulo e testes. Este documento permanece apenas como registro histórico.
+
 # Editor V6 — Rodada 10 · Reexportação com preparo de cabelo reutilizável
 
 **Data:** 04/11/2026. **Base:** `53c8c49b0f60be45fdcd726de98fd80dfedcb0f2`. **Branch:** `Dev-V2`.

@@ -1,3 +1,5 @@
+> **Atualização de escopo 04/11/2026 — Rodada 12:** o cache da Rodada 10 foi totalmente removido por solicitação do usuário. O foco agora é diminuir a **primeira exportação**. CI somente em Windows x64 hospedado (Windows Server 2025; aceite real no PC Windows 11 x64). [Rodada 12](RODADA_12_V4_EXPORT_BRUTO_WINDOWS.md).
+
 # Editor V6 — Plano de excelência V4 (revisão de 2026-11-03)
 
 > **Proposta de evolução, não autorização para implementar tudo de uma vez.** Prioridades fundamentadas na `Dev-V2` após a refatoração V3. A finalidade é melhorar **qualidade de edição, confiança no resultado, fluidez e velocidade do trabalho do criador**. "10× melhor" significa ganho de experiência e produtividade a demonstrar, não promessa de exportar dez vezes mais rápido.
