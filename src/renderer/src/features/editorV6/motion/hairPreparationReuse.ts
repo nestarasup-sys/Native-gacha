@@ -42,3 +42,8 @@ export function createEditorV6HairPreparationReuse(maxEntries = 64) {
     clear() { styles.clear(); textures.clear() }
   }
 }
+
+/** Face identity scoped to a single prepared character/pose; includes mouth isolation. */
+export function editorV6HairFaceSurfaceKey(appearanceKey: string, mode: 'idle' | 'blink' | 'talk' | 'talk-blink', withoutMouth: boolean): string {
+  return JSON.stringify([appearanceKey, mode, withoutMouth])
+}
