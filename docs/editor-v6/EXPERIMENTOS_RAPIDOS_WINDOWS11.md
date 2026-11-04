@@ -116,3 +116,11 @@ O kit de testes Windows 11 e plano de desenho puro está em [Rodada 18](RODADA_1
 3. **X00 primeiro:** instrumentação curta para distinguir material/rig/face/PNG/captura/FFmpeg; exportar só fixture pequena em vez de três MP4s completos.
 4. Testar **X01 ou X02** com 1 personagem e provar paridade; caso errado, documentar e reverter imediatamente.
 5. Só um candidato G2 aprovado avança à medição 300 frames. Commits **locais pequenos**, sem push até autorização.
+
+## Rodada 18 — X05 motionSprite (Windows 11)
+
+- Sincronizado por fast-forward até `5d3d730e54faac830b4588301aabd96fe0614f4f`. Doctor bloqueou porque TypeScript não foi detectado; `quick --scope=render` e `quick-offscreen --scope=render` passaram. O offscreen comparou quatro quadros com zero canais diferentes; registrou diferenças somente na região de texto (7.524 canais; erro médio 0,1223).
+- O plano experimental ganhou `sourceRect` (x, y, largura, altura e dimensões do atlas) para `motionSprite` em personagens, mantendo o retângulo de destino, rotação e flip do SVG. Cabelo dinâmico, mouthPatch associado, vídeo e elementos incompatíveis continuam bloqueados. Nada foi ligado à exportação de produção.
+- Sete amostras numéricas e 30 frames repetidos/determinísticos passaram em `tests/editor-v6/exportDrawPlan.test.ts` (5/5). `npm run typecheck` passou. A fixture antiga foi corrigida para manter o blocker `motion-sprite` em imagem, enquanto permite o caso de personagem suportado.
+- Paridade RGBA do plano motionSprite não foi executada: o harness existente compara SceneSurface/captura, mas não executa comandos do plano experimental. O resultado offscreen genérico não prova paridade deste plano. Não criei outro renderer apenas para simular equivalência.
+- Decisão: manter somente o protótipo geométrico, ainda não integrado. Próximo passo: fixture visual dedicada que renderize o atlas por comando do plano e por SceneSurface em BrowserWindow oculta, compare RGBA exato e pare na primeira divergência.

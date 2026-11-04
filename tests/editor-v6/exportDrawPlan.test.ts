@@ -34,7 +34,7 @@ describe('V6 experimental draw plan — geometry only, never active export', () 
   it('refuses hair, video, dynamic mouth/sprites, text, missing assets and invalid geometry', () => {
     const result = createEditorV6ExperimentalDrawPlan(scene(0, [
       { ...character(), mouthPatch: { assetId: 'mouth' } },
-      { ...character(), id: 'sprite', motionSprite: { x: 0 } },
+      { ...character(), id: 'sprite', kind: 'image', motionSprite: { x: 0 } },
       { ...character(), id: 'missing', assetId: undefined },
       { ...character(), id: 'invalid', width: 0 },
       { id: 'speech', kind: 'speech', text: 'Olá' }
@@ -53,5 +53,32 @@ describe('V6 experimental draw plan — geometry only, never active export', () 
     expect(outputs.every(output => output.geometryOnlyCandidate && output.commands.length === 1)).toBe(true)
     expect(outputs[29].commands[0].flipX).toBe(true)
     expect(outputs[0].commands[0].centerX).not.toBe(outputs[29].commands[0].centerX)
+  })
+  it('maps seven motion atlas samples to the same source rect and destination geometry', () => {
+    const samples = Array.from({ length: 7 }, (_, index) => {
+      const frame = index - 7
+      const motionSprite = { x: 12 + index * 3, y: 20 + index, width: 80 + index, height: 120 - index, atlasWidth: 512, atlasHeight: 256 }
+      const item = { ...character(frame), motionSprite, characterScale: 100, characterWidthScale: 100, characterHeightScale: 100 }
+      const command = createEditorV6ExperimentalDrawPlan(scene(frame, [item]), { animatedHair: false }).commands[0]
+      expect(command).toMatchObject({
+        centerX: (50 + item.x) * 19.2, centerY: (50 + item.y) * 10.8,
+        width: item.width * 19.2, height: item.height * 10.8,
+        rotationDegrees: item.rotation, flipX: item.flipX, sourceRect: motionSprite
+      })
+      return JSON.stringify(command)
+    })
+    expect(new Set(samples).size).toBe(7)
+  })
+  it('keeps 30 distinct motion frames deterministic across repeated planning', () => {
+    for (let frame = 0; frame < 30; frame++) {
+      const actor = { ...character(frame), characterScale: 100, characterWidthScale: 100, characterHeightScale: 100,
+        motionSprite: { x: frame * 2, y: frame, width: 48, height: 72, atlasWidth: 512, atlasHeight: 256 } }
+      const source = scene(frame, [actor])
+      const first = createEditorV6ExperimentalDrawPlan(source, { animatedHair: false })
+      const second = createEditorV6ExperimentalDrawPlan(source, { animatedHair: false })
+      expect(first).toEqual(second)
+      expect(first.commands[0].sourceRect).toEqual(actor.motionSprite)
+      expect(first.geometryOnlyCandidate).toBe(true)
+    }
   })
 })

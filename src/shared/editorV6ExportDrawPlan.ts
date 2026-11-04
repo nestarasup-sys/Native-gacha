@@ -20,6 +20,8 @@ export type EditorV6DrawSprite = Readonly<{
   height: number
   rotationDegrees: number
   flipX: boolean
+  /** Source atlas crop; rendered into the same destination rect as the SVG viewport. */
+  sourceRect?: Readonly<{ x: number; y: number; width: number; height: number; atlasWidth: number; atlasHeight: number }>
 }>
 export type EditorV6DrawPlanBlocker = Readonly<{
   elementId: string | null
@@ -59,7 +61,7 @@ export function createEditorV6ExperimentalDrawPlan(
       continue
     }
     if (!element.assetId) { block(element.id, 'missing-asset'); continue }
-    if (element.motionSprite) { block(element.id, 'motion-sprite'); continue }
+    if (element.motionSprite && (element.kind !== 'character' || element.mouthPatch)) { block(element.id, 'motion-sprite'); continue }
     if (element.mouthPatch) { block(element.id, 'mouth-patch'); continue }
 
     const size = editorV6ElementSize(element)
@@ -75,7 +77,8 @@ export function createEditorV6ExperimentalDrawPlan(
     commands.push({
       id: element.id, assetId: element.assetId, sourceKind: element.kind,
       centerX, centerY, width, height,
-      rotationDegrees: element.rotation, flipX: Boolean(element.flipX)
+      rotationDegrees: element.rotation, flipX: Boolean(element.flipX),
+      ...(element.motionSprite ? { sourceRect: { ...element.motionSprite } } : {})
     })
   }
 
