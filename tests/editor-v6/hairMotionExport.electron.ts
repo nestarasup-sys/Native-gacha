@@ -677,6 +677,42 @@ async function main() {
     split.close(); split = undefined
     sequential.close(); sequential = undefined
 
+    // Category regression: rearHair is POSTERIOR; backHair is TRASEIRO.
+    // Two front-side pieces are deliberately present: only the one explicitly
+    // marked rearHair may move. Capture actual offscreen BGRA frames.
+    const makePosteriorFixture = (reacting: boolean): EditorV6HairMotionBundle => ({
+      ...structuredClone(hairAnimation),
+      ...(reacting ? { poseReactionOnly: true } : {}),
+      preset: {
+        ...structuredClone(hairAnimation.preset),
+        enabled: { back: false, front: reacting, fringe: false }
+      },
+      rigs: hairAnimation.rigs.map(rig => ({
+        ...structuredClone(rig),
+        layers: rig.layers.map(piece => ({
+          ...piece,
+          id: piece.id === 'front-1' ? 'rearHair:1'
+            : piece.id === 'back-1' ? 'backHair:1'
+              : piece.id === 'solid-1' ? 'ahoge:1'
+                : piece.id === 'fringe-1' ? 'frontHair:1' : piece.id
+        }))
+      }))
+    })
+    const stillWorker = await factory.create({ ...payload, hairAnimation: makePosteriorFixture(false) }, new AbortController().signal)
+    const reactionWorker = await factory.create({ ...payload, hairAnimation: makePosteriorFixture(true) }, new AbortController().signal)
+    try {
+      for (const frame of [0, 29, 30, 40, 60]) {
+        const [stationary, reaction] = await Promise.all([stillWorker.frame(frame), reactionWorker.frame(frame)])
+        assert(stationary.bitmap && reaction.bitmap, 'A reação do Posterior não entregou quadros BGRA.')
+        const diff = differentPixels(stationary.bitmap, reaction.bitmap)
+        if (frame === 40) assert(diff > 0, 'O cabelo POSTERIOR não reagiu após a transição.')
+        else assert(diff === 0, 'O modo posterior modificou peças ou um quadro em repouso: ' + frame + ' (' + diff + ' pixels).')
+      }
+    } finally {
+      stillWorker.close()
+      reactionWorker.close()
+    }
+
     const hiRes = await factory.create({ ...payload, width: 1280, height: 720 }, new AbortController().signal)
     try {
       const deformed = await hiRes.frame(10)
