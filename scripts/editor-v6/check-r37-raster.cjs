@@ -41,8 +41,15 @@ async function main() {
     }
     const output = path.resolve(process.env.NATIVE_GACHA_TEST_OUTPUT_DIR || path.join(__dirname, '../../out'))
     await fs.mkdir(path.join(output, 'editor-v6-r37-pixel'), { recursive: true })
-    await fs.writeFile(path.join(output, 'editor-v6-r37-pixel', 'result.json'), JSON.stringify(result, null, 2))
-    console.log(JSON.stringify(result))
+    const { captures, ...summary } = result
+    for (const name of ['first', 'last']) {
+      if (typeof captures?.[name] !== 'string' || !captures[name].startsWith('data:image/png;base64,')) {
+        throw Error('R37: missing synthetic visual capture ' + name)
+      }
+      await fs.writeFile(path.join(output, 'editor-v6-r37-pixel', name + '.png'), Buffer.from(captures[name].split(',')[1], 'base64'))
+    }
+    await fs.writeFile(path.join(output, 'editor-v6-r37-pixel', 'result.json'), JSON.stringify(summary, null, 2))
+    console.log(JSON.stringify(summary))
     clearTimeout(timeout)
     window.destroy()
     app.exit(0)
