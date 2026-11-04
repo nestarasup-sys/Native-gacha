@@ -75,7 +75,9 @@ async function main() {
   await start('abort')
   const controller = new AbortController()
   const cancelled = service!.bakeForExport(request(2), controller.signal)
-  setTimeout(() => controller.abort(), 10)
+  // The optimized path can complete a 100x100 synthetic bake before a 10ms
+  // timer fires. Abort synchronously to test cancellation rather than speed.
+  controller.abort(Error('Synthetic motion preparation cancelled'))
   await assert.rejects(cancelled)
   await service!.bakeForExport(request(3), new AbortController().signal)
   await start(undefined, 2)
