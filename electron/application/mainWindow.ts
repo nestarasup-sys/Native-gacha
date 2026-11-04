@@ -74,8 +74,19 @@ export function createMainWindowFactory(deps: MainWindowDependencies): () => Bro
       })
     })
 
-    if (deps.rendererUrl) void window.loadURL(deps.rendererUrl)
-    else void window.loadFile(deps.rendererPath)
+    const hairStressHarness = videoStressOffscreen && /^\d+$/.test(deps.env.GACHA_EDITOR_V6_STRESS_HAIR_PRESET_SLOT ?? '')
+    if (deps.rendererUrl) {
+      const url = new URL(deps.rendererUrl)
+      if (hairStressHarness) {
+        url.searchParams.set('editorV6StressHairPreparation', '1')
+        url.hash = '/editor-v6-stress-hair-preparation'
+      }
+      void window.loadURL(url.href)
+    } else {
+      void window.loadFile(deps.rendererPath, hairStressHarness
+        ? { query: { editorV6StressHairPreparation: '1' }, hash: '/editor-v6-stress-hair-preparation' }
+        : undefined)
+    }
     return window
   }
 }

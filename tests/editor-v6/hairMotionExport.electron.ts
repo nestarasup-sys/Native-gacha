@@ -714,9 +714,8 @@ async function main() {
     assert(report.state === 'completed' && !report.fallback && report.attempts[0]?.parts.length === 2, 'A exportação MP4 com animação de cabelo não concluiu em dois trechos Turbo.')
     assert(report.attempts[0].parts.every(part => (part.frameTiming?.hairCompositionMs?.samples ?? 0) > 0), 'O relatório do export não separou o tempo da composição experimental de cabelo.')
     assert(report.attempts[0].parts.reduce((total, part) => total + (part.frameTiming?.hairMotionPrewarmMs?.totalMs ?? 0), 0) > 0, 'O relatório não mediu o custo do pré-aquecimento da física do cabelo.')
-    assert(report.attempts[0].parts.reduce((total, part) => total + (part.frameMetrics?.hairPngFrames ?? 0), 0) === 61, 'O relatório não contabilizou um PNG de cabelo por quadro exportado.')
-    assert(report.attempts[0].parts.every(part => (part.frameTiming?.hairPngEncodeMs?.samples ?? 0) === (part.frameMetrics?.hairPngFrames ?? 0) && (part.frameTiming?.hairPngDecodeMs?.samples ?? 0) > 0 && (part.frameTiming?.hairPngDecodeMs?.samples ?? 0) <= (part.frameMetrics?.hairPngFrames ?? 0)), 'O relatório não separou a codificação e decodificação do PNG por quadro.')
-    assert(report.attempts[0].parts.reduce((total, part) => total + (part.frameMetrics?.hairPngEncodedBytes ?? 0), 0) > 0 && report.attempts[0].parts.reduce((total, part) => total + (part.frameMetrics?.hairPngBase64CharactersAvoided ?? 0), 0) > 0, 'O relatório não mediu os PNGs binários nem a codificação Base64 evitada.')
+    assert(report.attempts[0].parts.reduce((total, part) => total + (part.frameMetrics?.hairRasterFrames ?? 0), 0) === 61, 'O relatório não contabilizou uma superfície rasterizada de cabelo por quadro exportado.')
+    assert(report.attempts[0].parts.reduce((total, part) => total + (part.frameMetrics?.hairRasterPixels ?? 0), 0) > 0, 'O relatório não mediu os pixels rasterizados da camada de cabelo.')
 
     // Compare the final composited pixels from two real MP4 exports. The paired
     // scene has identical IDs/settings and differs only by global flipX, so the
@@ -1050,9 +1049,9 @@ async function main() {
           assert(matrixReport.attempts[0]?.parallelism === expectedWorkers, `${name}: esperado ${expectedWorkers} worker(s).`)
           assert(matrixReport.mouthAnimation?.characters === actorCount && matrixReport.mouthAnimation.legacyPatchStates > 0, `${name}: a fala não cobriu os ${actorCount} personagens.`)
           const matrixParts = matrixReport.attempts.flatMap(attempt => attempt.parts)
-          const matrixHairFrames = matrixParts.reduce((total, part) => total + (part.frameMetrics?.hairPngFrames ?? 0), 0)
-          const matrixHairBytes = matrixParts.reduce((total, part) => total + (part.frameMetrics?.hairPngEncodedBytes ?? 0), 0)
-          assert(matrixHairFrames === actorCount * matrixFrames && matrixHairBytes > 0, `${name}: faltam PNGs animados de cabelo por personagem/quadro.`)
+          const matrixHairFrames = matrixParts.reduce((total, part) => total + (part.frameMetrics?.hairRasterFrames ?? 0), 0)
+          const matrixHairPixels = matrixParts.reduce((total, part) => total + (part.frameMetrics?.hairRasterPixels ?? 0), 0)
+          assert(matrixHairFrames === actorCount * matrixFrames && matrixHairPixels > 0, `${name}: faltam superfícies rasterizadas de cabelo por personagem/quadro.`)
           const matrixHairCompositionSamples = matrixParts.reduce((total, part) => total + (part.frameTiming?.hairCompositionMs?.samples ?? 0), 0)
           assert(matrixHairCompositionSamples === matrixFrames, `${name}: composição por quadro não foi medida.`)
           const hairMotionPrewarmMilliseconds = matrixParts.reduce((total, part) => total + (part.frameTiming?.hairMotionPrewarmMs?.totalMs ?? 0), 0)
@@ -1113,7 +1112,7 @@ async function main() {
             }
           } else if (actorCount === 4) matrixMotionProfiles.set(actorCount, currentMotionByInstance)
           await sampleCombinedMemory()
-          matrixScenarios.push({ name, actors: actorCount, speech: true, hairAnimation: true, resolution: '1920x1080', fps: 30, frames: matrixFrames, workers: expectedWorkers, elapsedMilliseconds: Number(elapsedMilliseconds.toFixed(2)), hairMotionPrewarmMilliseconds: Number(hairMotionPrewarmMilliseconds.toFixed(3)), fallback: matrixReport.fallback, mp4Validated: true, mouthCharacters: matrixReport.mouthAnimation?.characters, hairPngFrames: matrixHairFrames, hairPngEncodedBytes: matrixHairBytes, decodedPixels, perInstanceHairMotion: perInstanceCentroids, processPeaks: profileProcessPeaks(name), samples: memorySamples.filter(sample => sample.profile === name).length })
+          matrixScenarios.push({ name, actors: actorCount, speech: true, hairAnimation: true, resolution: '1920x1080', fps: 30, frames: matrixFrames, workers: expectedWorkers, elapsedMilliseconds: Number(elapsedMilliseconds.toFixed(2)), hairMotionPrewarmMilliseconds: Number(hairMotionPrewarmMilliseconds.toFixed(3)), fallback: matrixReport.fallback, mp4Validated: true, mouthCharacters: matrixReport.mouthAnimation?.characters, hairRasterFrames: matrixHairFrames, hairRasterPixels: matrixHairPixels, decodedPixels, perInstanceHairMotion: perInstanceCentroids, processPeaks: profileProcessPeaks(name), samples: memorySamples.filter(sample => sample.profile === name).length })
         }
         assert(matrixScenarios.length === 4, 'A matriz combinada não concluiu 4/8 personagens em 1080p seguro e Turbo.')
 
@@ -1130,14 +1129,11 @@ async function main() {
         const hairCompositionSamples = combinedReport.attempts.flatMap(attempt => attempt.parts).reduce((total, part) => total + (part.frameTiming?.hairCompositionMs?.samples ?? 0), 0)
         assert(hairCompositionSamples === durationFrames, 'O perfil combinado não mediu a composição do cabelo em todos os quadros.')
         const combinedParts = combinedReport.attempts.flatMap(attempt => attempt.parts)
-        const hairPngMetrics = combinedParts.reduce((total, part) => ({
-          frames: total.frames + (part.frameMetrics?.hairPngFrames ?? 0),
-          base64CharactersAvoided: total.base64CharactersAvoided + (part.frameMetrics?.hairPngBase64CharactersAvoided ?? 0),
-          encodedBytes: total.encodedBytes + (part.frameMetrics?.hairPngEncodedBytes ?? 0),
-          canvasPixels: total.canvasPixels + (part.frameMetrics?.hairCanvasPixels ?? 0)
-        }), { frames: 0, base64CharactersAvoided: 0, encodedBytes: 0, canvasPixels: 0 })
-        assert(hairPngMetrics.frames === durationFrames && hairPngMetrics.encodedBytes > 0 && hairPngMetrics.base64CharactersAvoided > 0, 'O perfil combinado não mediu os PNGs temporários de cabelo em todos os quadros.')
-        const timingTotalMs = (phase: 'hairPngEncodeMs' | 'hairPngDecodeMs') => combinedParts.reduce((total, part) => total + (part.frameTiming?.[phase]?.totalMs ?? 0), 0)
+        const hairRasterMetrics = combinedParts.reduce((total, part) => ({
+          frames: total.frames + (part.frameMetrics?.hairRasterFrames ?? 0),
+          pixels: total.pixels + (part.frameMetrics?.hairRasterPixels ?? 0)
+        }), { frames: 0, pixels: 0 })
+        assert(hairRasterMetrics.frames === durationFrames && hairRasterMetrics.pixels > 0, 'O perfil combinado não comprovou as superfícies diretas de cabelo nos quadros.')
         const combinedProbe = JSON.parse(execFileSync(ffprobe, ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=width,height,r_frame_rate,nb_frames', '-of', 'json', combinedOutput], { windowsHide: true }).toString()) as { streams?: Array<{ width?: number; height?: number; r_frame_rate?: string; nb_frames?: string }> }
         const combinedStream = combinedProbe.streams?.[0]
         assert(combinedStream?.width === 1280 && combinedStream.height === 720 && combinedStream.r_frame_rate === '30/1' && Number(combinedStream.nb_frames) === durationFrames, 'O FFprobe encontrou resolução, FPS ou duração incorreta no perfil combinado.')
@@ -1163,8 +1159,7 @@ async function main() {
           startedAt, durationSeconds: durationFrames / 30, frames: durationFrames, resolution: '1280x720', fps: 30,
           actors: 1, speech: 'contínua; atlas de boca sintético legado preparado', hairAnimation: true, turbo: false,
           exportMilliseconds: combinedReport.milliseconds, phaseMilliseconds: combinedReport.phaseMilliseconds,
-          mouthAnimation: combinedReport.mouthAnimation, hairCompositionSamples, hairPngMetrics,
-          hairPngEncodeMilliseconds: timingTotalMs('hairPngEncodeMs'), hairPngDecodeMilliseconds: timingTotalMs('hairPngDecodeMs'),
+          mouthAnimation: combinedReport.mouthAnimation, hairCompositionSamples, hairRasterMetrics,
           captureSamples: combinedReport.attempts.flatMap(attempt => attempt.parts).reduce((total, part) => total + (part.frameTiming?.captureMs?.samples ?? 0), 0),
           ffmpegWriteSamples: combinedReport.attempts.flatMap(attempt => attempt.parts).reduce((total, part) => total + (part.frameTiming?.ffmpegWriteMs?.samples ?? 0), 0),
           sampledFrames, decodedLongPixels, processPeaks, memorySamples: longProfileSamples, matrixScenarios, samplingErrors,
@@ -1205,7 +1200,7 @@ async function main() {
       '720pWorkerComparison': { trials: benchmarkTrials, safeRepeatCompleted: safe720RunB.report.state === 'completed', turboRepeatsCompleted: turbo720RunA.report.state === 'completed' && turbo720RunB.report.state === 'completed' },
       '1080pTurboLateStart': { ...result1080, startFrame: 20, elapsedMilliseconds: turbo1080Milliseconds }
     }, null, 2))
-    await writeFile(join(folder, 'result.json'), JSON.stringify({ passed: true, framesChecked: [0, 10, 22, 23, 29, 30, 31, 60], transitionFramesChecked: fullTransitionFrames.length, transitionDynamicChangedPixels, transitionFacePatchPixels: transitionFacePatchCount, transitionFacePatchPixelsPerSample: transitionFacePatchCounts, animatedPixels: true, translucentHairPixels: translucentHairPixelCount(first.bitmap), layers: 4, noContinuousLayerSeamsAt720p: true, localHeadChangesBetweenPoses: true, motionAtlasFramesCaptured: true, turboBoundaryStable: true, backgroundsChecked: ['white', 'black', 'colored', 'checkerboard'], backgroundHairPixels: backgroundChecks, transparentLayerPixels, semitransparentHairPixels: alphaLayerPixels, mp4Completed: true, mp4HairChangedPixels: changedHairPixels, globalFlipDirectionMp4: { presetWindPreserved: staticDirectionHair.preset.physics.wind, prewarmMilliseconds: normalDirectionReport.attempts.flatMap(attempt => attempt.parts).reduce((total, part) => total + (part.frameTiming?.hairMotionPrewarmMs?.totalMs ?? 0), 0), decodedFrames: directionFrames, normalCentroids: normalDirectionCentroids.map(value => Number(value.toFixed(3))), mirroredCentroids: mirroredDirectionCentroids.map(value => Number(value.toFixed(3))), mirrorErrorsPx: mirrorErrors.map(value => Number(value.toFixed(3))), mirroredMotionDeltaErrorsPx: motionDeltas.map(value => Number(value.toFixed(3))), firstFrameAlreadyMoving: normalDirectionCentroids.some((center, index) => index > 0 && Math.abs(center - normalDirectionCentroids[0]) > .25) }, individualPieceFlipMp4: { mirrorAxisX: Number(pieceMirrorAxisX.toFixed(3)), normalCentroids: normalPieceCentroids.map(value => Number(value.toFixed(3))), flippedCentroids: mirroredPieceCentroids.map(value => Number(value.toFixed(3))), mirrorErrorsPx: pieceMirrorErrors.map(value => Number(value.toFixed(3))), mirroredMotionDeltaErrorsPx: pieceMotionErrors.map(value => Number(value.toFixed(3))) }, '720pSafeExport': true, '1080pTurboLateStart': true, ...(combinedLongProfile ? { longCombinedProfile: { passed: true, durationSeconds: 300, frames: 9000, resolution: '1280x720', exportMilliseconds: combinedLongProfile.exportMilliseconds, sampleCount: (combinedLongProfile.memorySamples as unknown[]).length, hairPngMetrics: combinedLongProfile.hairPngMetrics, hairPngEncodeMilliseconds: combinedLongProfile.hairPngEncodeMilliseconds, hairPngDecodeMilliseconds: combinedLongProfile.hairPngDecodeMilliseconds, matrixScenarios: combinedLongProfile.matrixScenarios } } : {}) }))
+    await writeFile(join(folder, 'result.json'), JSON.stringify({ passed: true, framesChecked: [0, 10, 22, 23, 29, 30, 31, 60], transitionFramesChecked: fullTransitionFrames.length, transitionDynamicChangedPixels, transitionFacePatchPixels: transitionFacePatchCount, transitionFacePatchPixelsPerSample: transitionFacePatchCounts, animatedPixels: true, translucentHairPixels: translucentHairPixelCount(first.bitmap), layers: 4, noContinuousLayerSeamsAt720p: true, localHeadChangesBetweenPoses: true, motionAtlasFramesCaptured: true, turboBoundaryStable: true, backgroundsChecked: ['white', 'black', 'colored', 'checkerboard'], backgroundHairPixels: backgroundChecks, transparentLayerPixels, semitransparentHairPixels: alphaLayerPixels, mp4Completed: true, mp4HairChangedPixels: changedHairPixels, globalFlipDirectionMp4: { presetWindPreserved: staticDirectionHair.preset.physics.wind, prewarmMilliseconds: normalDirectionReport.attempts.flatMap(attempt => attempt.parts).reduce((total, part) => total + (part.frameTiming?.hairMotionPrewarmMs?.totalMs ?? 0), 0), decodedFrames: directionFrames, normalCentroids: normalDirectionCentroids.map(value => Number(value.toFixed(3))), mirroredCentroids: mirroredDirectionCentroids.map(value => Number(value.toFixed(3))), mirrorErrorsPx: mirrorErrors.map(value => Number(value.toFixed(3))), mirroredMotionDeltaErrorsPx: motionDeltas.map(value => Number(value.toFixed(3))), firstFrameAlreadyMoving: normalDirectionCentroids.some((center, index) => index > 0 && Math.abs(center - normalDirectionCentroids[0]) > .25) }, individualPieceFlipMp4: { mirrorAxisX: Number(pieceMirrorAxisX.toFixed(3)), normalCentroids: normalPieceCentroids.map(value => Number(value.toFixed(3))), flippedCentroids: mirroredPieceCentroids.map(value => Number(value.toFixed(3))), mirrorErrorsPx: pieceMirrorErrors.map(value => Number(value.toFixed(3))), mirroredMotionDeltaErrorsPx: pieceMotionErrors.map(value => Number(value.toFixed(3))) }, '720pSafeExport': true, '1080pTurboLateStart': true, ...(combinedLongProfile ? { longCombinedProfile: { passed: true, durationSeconds: 300, frames: 9000, resolution: '1280x720', exportMilliseconds: combinedLongProfile.exportMilliseconds, sampleCount: (combinedLongProfile.memorySamples as unknown[]).length, hairRasterMetrics: combinedLongProfile.hairRasterMetrics, matrixScenarios: combinedLongProfile.matrixScenarios } } : {}) }))
   } finally {
     sequential?.close(); split?.close(); factory.dispose()
   }

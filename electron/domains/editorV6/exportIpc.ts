@@ -38,7 +38,7 @@ type EditorV6ExportIpcLifecycle = {
   drain: () => Promise<void>
   getPendingWrites: () => Promise<unknown>[]
   resumeAfterFailedShutdown: () => void
-  runIsolatedExport: (project: unknown, options: EditorV6ExportOptions, outputPath: string, reportPath: string, id: string, signal?: AbortSignal, progress?: (patch: Partial<EditorV6ExportStatus>) => void, motionPreparationConcurrency?: 1 | 2, hairAnimation?: EditorV6HairMotionBundle) => Promise<EditorV6ExportReport>
+  runIsolatedExport: (project: unknown, options: EditorV6ExportOptions, outputPath: string, reportPath: string, id: string, signal?: AbortSignal, progress?: (patch: Partial<EditorV6ExportStatus>) => void, motionPreparationConcurrency?: 1 | 2, hairAnimation?: EditorV6HairMotionBundle, onFfmpegProcessStarted?: (pid: number) => void) => Promise<EditorV6ExportReport>
 }
 const uuid = z.string().uuid()
 const terminal = (status: EditorV6ExportStatus) => ['completed', 'cancelled', 'failed'].includes(status.state)
@@ -86,7 +86,7 @@ export function registerEditorV6ExportHandlers(deps: EditorV6ExportIpcDependenci
   const audioPath = async (projectId: string, clip: EditorV6ExportAudio, media: readonly EditorV6MediaAsset[] = []) => clip.libraryVideoId
     ? (await deps.resolveLibraryVideo(clip.libraryVideoId)).path
     : join(deps.projectPath(projectId), media.some((item) => item.fileName === clip.fileName) ? 'media' : 'export-audio', clip.fileName)
-  const runIsolatedExport: EditorV6ExportIpcLifecycle['runIsolatedExport'] = (rawProject, options, outputPath, reportPath, id, signal = new AbortController().signal, progress = (patch) => { if (patch.message) console.log(`[V6 isolated export] ${patch.message}`) }, motionPreparationConcurrency = 2, hairAnimation) => {
+  const runIsolatedExport: EditorV6ExportIpcLifecycle['runIsolatedExport'] = (rawProject, options, outputPath, reportPath, id, signal = new AbortController().signal, progress = (patch) => { if (patch.message) console.log(`[V6 isolated export] ${patch.message}`) }, motionPreparationConcurrency = 2, hairAnimation, onFfmpegProcessStarted) => {
     const project = parseEditorV6ExportDocument(rawProject)
     planEditorV6Export(options, project.timeline.durationFrames)
     if (Boolean(options.hairAnimationPresetSlot) !== Boolean(hairAnimation)) throw Error('A configuração da animação de cabelo não corresponde ao pacote preparado.')
@@ -97,6 +97,7 @@ export function registerEditorV6ExportHandlers(deps: EditorV6ExportIpcDependenci
       getCharacters: deps.getCharacters,
       bakeMotion: deps.bakeMotion,
       motionPreparationConcurrency,
+      onFfmpegProcessStarted,
       getMotionCacheStats: deps.getMotionCacheStats,
       createWorker: (renderProject, _part, signal, layeredVideo, mouthLoops) => workers.create({ project: renderProject, width: options.width, height: options.height, layeredVideo, ...(mouthLoops ? { mouthLoops } : {}), ...(hairAnimation ? { hairAnimation } : {}) }, signal),
       audioPath: (clip) => audioPath(project.id, clip, project.media), mediaPath, progress

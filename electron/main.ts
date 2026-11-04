@@ -1041,47 +1041,177 @@ app.whenReady().then(async () => {
       await nativeMkdir(outputRoot, { recursive: true })
       const project = await readEditorV6(projectId)
       if (!project) throw Error(`Projeto de benchmark ${projectId} não encontrado no perfil temporário.`)
+      const hairPresetSlotValue = process.env.GACHA_EDITOR_V6_STRESS_HAIR_PRESET_SLOT
+      const hairPresetSlot = hairPresetSlotValue === undefined ? null : Number(hairPresetSlotValue)
+      if (hairPresetSlot !== null && (!Number.isInteger(hairPresetSlot) || hairPresetSlot < 1 || hairPresetSlot > 5)) throw Error('O slot de preset de cabelo precisa estar entre 1 e 5.')
+      if (hairPresetSlot !== null && !process.env.GACHA_VIDEO_STRESS_OFFSCREEN) throw Error('O preparo real de cabelo requer um perfil Electron isolado.')
       const cacheProbe = process.env.GACHA_EDITOR_V6_STRESS_CACHE_PROBE === '1'
       const singleMotionRun = process.env.GACHA_EDITOR_V6_STRESS_SINGLE_MOTION_RUN === '1'
       const motionConcurrencyValue = process.env.GACHA_EDITOR_V6_STRESS_MOTION_CONCURRENCY
       const motionConcurrency = motionConcurrencyValue === '1' ? 1 : motionConcurrencyValue === '2' || motionConcurrencyValue === undefined ? 2 : null
       if (motionConcurrency === null) throw Error('A concorrência de bakes do benchmark precisa ser 1 ou 2.')
       // Keep worker variants grouped so one configuration cannot evict the other's cache mid-measurement.
-      const modes = singleMotionRun ? [false] : cacheProbe ? [false, false, false] : [false, false, false, true, true, true]
+      const modes = hairPresetSlot !== null ? [true, true, true] : singleMotionRun ? [false] : cacheProbe ? [false, false, false] : [false, false, false, true, true, true]
+      let hairHarnessWindow: BrowserWindow | null = null
+      const processPeakByRunRole = new Map<string, { run: number; role: string; samples: number; peakWorkingSetBytes: number; peakPrivateBytes: number; peakCpuPercent: number | null }>()
+      const processSampleCountByRun = new Map<number, number>()
+      let processSampler: { sample: (processes: Array<{ pid: number; role: string }>, frame: number) => Promise<{ sampledAt: string; frame: number; processes: unknown[] }>; close: () => Promise<void> } | null = null
+      let sampleTimer: ReturnType<typeof setInterval> | null = null
+      let hairStressCompleted = false
+      const ffmpegPids = new Set<number>()
+      const hairRuns: Array<{
+        run: number; cacheState: string; workers: number; totalFrames: number; width: number; height: number; fps: string
+        requestedEncoder: string; selectedEncoder: string; hairPresetSlot: number; hairPresetFingerprint: string
+        hairPreparationRendererMs: number; hairPreparationWallMs: number; hairPreparationStages: unknown; hairBundleSerializationMs: number; hairBundleBytes: number
+        mainExportWallMs: number; clickToValidatedWallMs: number; exportMilliseconds: number
+        phaseMilliseconds: unknown; audioClips: number; audioOutput: boolean; videoInputs: number
+        mouthAnimation: { characters: number; stateAtlases: number; skippedStates: number; staleStates: number; preparationMilliseconds: number } | null
+        motionTransitionsPrepared: number; motionCache: unknown; motionCacheDelta: EditorV6MotionCacheStats
+        mainProcessMemory: unknown; partTiming: unknown[]; processSampleCount: number; processPeaks: unknown[]
+      }> = []
       const runs: Array<{ run: number; workers: number; motionConcurrency: number; motionConcurrentPeak: number; milliseconds: number; renderingMilliseconds: number; finalizationMilliseconds: number; rssPeakBytes: number; motionTransitions: number; motionCache?: EditorV6MotionCacheStats & { inputSamples: Array<{ cacheKey: string; planKeyHash: string; characterId: string; characterFingerprint: string }> }; motionCacheTotal?: EditorV6MotionCacheStats; mouthStates: number; audioClips: number; videoInputs: number; audioOutput: boolean }> = []
-      for (const [index, turbo] of modes.entries()) {
-        const id = randomUUID()
-        const suffix = `run-${index + 1}-workers-${turbo ? 2 : 1}-motion-bakes-${motionConcurrency}`
-        const outputPath = join(outputRoot, `actual-project-${suffix}.mp4`)
-        const reportPath = join(outputRoot, `actual-project-${suffix}.report.json`)
-        const options: EditorV6ExportOptions = { startFrame: 0, endFrame: project.timeline.durationFrames, width: 1920, height: 1080, turbo, encoder: 'auto', mouthLoop: true, mouthLoopCycleFrames: 30 }
-        console.log(`[V6 isolated export] Rodada ${index + 1}/${modes.length}: ${turbo ? 'dois' : 'um'} workers e ${motionConcurrency} bake(s) simultâneo(s), ${project.timeline.durationFrames} quadros, 1920×1080, áudio e animação automática da boca.`)
-        const cacheBeforeExport = editorV6MotionService!.getCacheStats()
-        const report = await editorV6ExportService!.runIsolatedExport(project, options, outputPath, reportPath, id, undefined, undefined, motionConcurrency)
-        const cacheAfterExport = editorV6MotionService!.getCacheStats()
-        const motionCacheTotal = Object.fromEntries(Object.keys(cacheAfterExport).map((key) => [key, cacheAfterExport[key as keyof EditorV6MotionCacheStats] - cacheBeforeExport[key as keyof EditorV6MotionCacheStats]])) as EditorV6MotionCacheStats
-        const streams = (report.validation as { streams?: Array<{ codec_type?: string; nb_read_frames?: string | number; r_frame_rate?: string }> } | undefined)?.streams ?? []
-        const video = streams.find((stream) => stream.codec_type === 'video')
-        const audio = streams.some((stream) => stream.codec_type === 'audio')
-        if (report.state !== 'completed' || report.totalFrames !== project.timeline.durationFrames || Number(video?.nb_read_frames) !== project.timeline.durationFrames
-          || video?.r_frame_rate !== '30/1' || report.motionTransitionsPrepared !== report.motionTransitionsRequired
-          || !report.motionTransitionsRequired || !report.mouthAnimation || report.mouthAnimation.skippedStates || report.mouthAnimation.staleStates
-          || report.videoInputs < 1 || report.audioClips < 1 || !audio
-          || singleMotionRun && (!report.motionPreparation || report.motionPreparation.maxConcurrentBakes !== Math.min(motionConcurrency, report.motionPreparation.unique)
-            || !report.motionCache || report.motionCache.rasterized !== report.motionTransitionsRequired || report.motionCache.diskHits !== 0)) {
-          throw Error(`A rodada ${index + 1} não preservou todos os estados esperados: ${JSON.stringify({ state: report.state, frames: report.totalFrames, videoFrames: video?.nb_read_frames, fps: video?.r_frame_rate, motionRequired: report.motionTransitionsRequired, motionPrepared: report.motionTransitionsPrepared, motionPreparation: report.motionPreparation, motionCache: report.motionCache, mouth: report.mouthAnimation, audioClips: report.audioClips, videoInputs: report.videoInputs, audio })}`)
+      try {
+        if (hairPresetSlot !== null) {
+          const { createWindowsProcessSampler } = require(resolve(__dirname, '../../scripts/editor-v6/windowsProcessSampler.cjs')) as { createWindowsProcessSampler: (scriptPath: string) => NonNullable<typeof processSampler> }
+          processSampler = createWindowsProcessSampler(resolve(__dirname, '../../scripts/editor-v6/windows-process-sampler.ps1'))
+          hairHarnessWindow = createMainWindow()
+          const harnessWindow = hairHarnessWindow
+          await new Promise<void>((resolveLoad, rejectLoad) => {
+            harnessWindow.webContents.once('did-finish-load', () => resolveLoad())
+            harnessWindow.webContents.once('did-fail-load', (_event, code, description) => rejectLoad(Error(`O renderer do benchmark não carregou (${code}: ${description}).`)))
+          })
+          const harnessDeadline = Date.now() + 60000
+          while (Date.now() < harnessDeadline) {
+            const ready = await harnessWindow.webContents.executeJavaScript('typeof window.__editorV6PrepareRealProjectHairForStress === "function"')
+            if (ready) break
+            await new Promise(resolveWait => setTimeout(resolveWait, 100))
+          }
+          if (!await harnessWindow.webContents.executeJavaScript('typeof window.__editorV6PrepareRealProjectHairForStress === "function"')) throw Error('O renderer não instalou o preparo de cabelo do benchmark.')
         }
-        runs.push({ run: index + 1, workers: turbo ? 2 : 1, motionConcurrency, motionConcurrentPeak: report.motionPreparation?.maxConcurrentBakes ?? 0, milliseconds: report.milliseconds!, renderingMilliseconds: report.phaseMilliseconds.rendering, finalizationMilliseconds: report.phaseMilliseconds.finalization, rssPeakBytes: report.mainProcessMemory!.peakRssBytes, motionTransitions: report.motionTransitionsPrepared, motionCache: report.motionCache, motionCacheTotal, mouthStates: report.mouthAnimation.stateAtlases, audioClips: report.audioClips, videoInputs: report.videoInputs, audioOutput: audio })
+
+        for (const [index, turbo] of modes.entries()) {
+          const id = randomUUID()
+          const frameCount = hairPresetSlot === null ? project.timeline.durationFrames : Math.min(300, project.timeline.durationFrames)
+          let reportProgressFrame = 0
+          let sampleInFlight: Promise<void> | null = null
+          const sampleProcesses = () => {
+            if (!processSampler) return Promise.resolve()
+            if (sampleInFlight) return sampleInFlight
+            const pending = (async () => {
+              const metrics = app.getAppMetrics()
+              const processRoles = new Map<number, string>([[process.pid, 'main']])
+              for (const metric of metrics) if (metric.pid !== process.pid) processRoles.set(metric.pid, /gpu/i.test(metric.type) ? 'gpu' : `electron-${metric.type}`)
+              for (const window of BrowserWindow.getAllWindows()) {
+                if (window.isDestroyed()) continue
+                const pid = window.webContents.getOSProcessId()
+                if (pid > 0) processRoles.set(pid, window.webContents.getURL().includes('editor-v6-export.html') ? 'export-renderer' : 'benchmark-renderer')
+              }
+              for (const pid of ffmpegPids) processRoles.set(pid, 'ffmpeg')
+              const sample = await processSampler!.sample([...processRoles].map(([pid, role]) => ({ pid, role })), reportProgressFrame)
+              const run = index + 1
+              processSampleCountByRun.set(run, (processSampleCountByRun.get(run) ?? 0) + 1)
+              for (const process of sample.processes as Array<{ role: string; workingSetBytes: number; privateBytes: number; cpuPercentSincePreviousSample: number | null }>) {
+                const key = `${run}:${process.role}`
+                const previous = processPeakByRunRole.get(key)
+                processPeakByRunRole.set(key, {
+                  run, role: process.role, samples: (previous?.samples ?? 0) + 1,
+                  peakWorkingSetBytes: Math.max(previous?.peakWorkingSetBytes ?? 0, process.workingSetBytes),
+                  peakPrivateBytes: Math.max(previous?.peakPrivateBytes ?? 0, process.privateBytes),
+                  peakCpuPercent: process.cpuPercentSincePreviousSample === null
+                    ? previous?.peakCpuPercent ?? null
+                    : Math.max(previous?.peakCpuPercent ?? 0, process.cpuPercentSincePreviousSample)
+                })
+              }
+            })()
+            sampleInFlight = pending
+            void pending.then(() => { if (sampleInFlight === pending) sampleInFlight = null }, () => { if (sampleInFlight === pending) sampleInFlight = null })
+            return pending
+          }
+          if (hairPresetSlot !== null) {
+            await sampleProcesses()
+            sampleTimer = setInterval(() => { void sampleProcesses().catch(error => console.error('[V6 benchmark process sample]', error)) }, 1000)
+          }
+          const suffix = hairPresetSlot === null ? `run-${index + 1}-workers-${turbo ? 2 : 1}-motion-bakes-${motionConcurrency}` : `hair-preset-${hairPresetSlot}-run-${index + 1}-workers-2`
+          const outputPath = join(outputRoot, `actual-project-${suffix}.mp4`)
+          const reportPath = join(outputRoot, `actual-project-${suffix}.report.json`)
+          const options: EditorV6ExportOptions = { startFrame: 0, endFrame: frameCount, width: 1920, height: 1080, turbo, encoder: 'auto', mouthLoop: true, mouthLoopCycleFrames: 30, ...(hairPresetSlot !== null ? { hairAnimationPresetSlot: hairPresetSlot } : {}) }
+          let hairAnimation: import('../src/shared/editorV6HairMotion').EditorV6HairMotionBundle | undefined
+          let hairPreparationWallMs = 0
+          let hairPreparationRendererMs = 0
+          let hairPreparationStages: unknown = {}
+          let hairBundleSerializationMs = 0
+          let hairBundleBytes = 0
+          let hairPresetFingerprint = ''
+          if (hairPresetSlot !== null) {
+            const prepareStarted = performance.now()
+            const prepared = await hairHarnessWindow!.webContents.executeJavaScript(`window.__editorV6PrepareRealProjectHairForStress(${JSON.stringify(projectId)}, ${hairPresetSlot}, ${JSON.stringify(options)})`) as { bundle: import('../src/shared/editorV6HairMotion').EditorV6HairMotionBundle; preparationMs: number; preparationStages: unknown; bundleBytes: number; bundleSerializationMs: number; presetFingerprint: string; presetSlot: number }
+            hairPreparationWallMs = performance.now() - prepareStarted
+            hairPreparationRendererMs = prepared.preparationMs
+            hairPreparationStages = prepared.preparationStages
+            hairBundleSerializationMs = prepared.bundleSerializationMs
+            hairAnimation = prepared.bundle
+            hairBundleBytes = prepared.bundleBytes
+            hairPresetFingerprint = prepared.presetFingerprint
+            if (prepared.presetSlot !== hairPresetSlot || !hairAnimation.rigs.length) throw Error('O preparo não carregou o preset esperado ou não produziu rigs de cabelo.')
+          }
+          console.log(`[V6 isolated export] Rodada ${index + 1}/${modes.length}: ${turbo ? 'dois' : 'um'} workers, ${frameCount} quadros 1920×1080${hairPresetSlot === null ? ', sem cabelo experimental' : `, cabelo Preset ${hairPresetSlot} ativo`}.`)
+          const cacheBeforeExport = editorV6MotionService!.getCacheStats()
+          const exportStarted = performance.now()
+          const report = await editorV6ExportService!.runIsolatedExport(project, options, outputPath, reportPath, id, undefined, (patch) => {
+            if (typeof patch.frames === 'number') reportProgressFrame = patch.frames
+            if (patch.message) console.log(`[V6 isolated export] ${patch.message}`)
+          }, motionConcurrency, hairAnimation, pid => ffmpegPids.add(pid))
+          const exportWallMs = performance.now() - exportStarted
+          if (sampleTimer) { clearInterval(sampleTimer); sampleTimer = null }
+          if (sampleInFlight) await sampleInFlight
+          if (processSampler) await sampleProcesses()
+          const cacheAfterExport = editorV6MotionService!.getCacheStats()
+          const motionCacheTotal = Object.fromEntries(Object.keys(cacheAfterExport).map((key) => [key, cacheAfterExport[key as keyof EditorV6MotionCacheStats] - cacheBeforeExport[key as keyof EditorV6MotionCacheStats]])) as EditorV6MotionCacheStats
+          const streams = (report.validation as { streams?: Array<{ codec_type?: string; nb_read_frames?: string | number; r_frame_rate?: string; width?: number; height?: number }> } | undefined)?.streams ?? []
+          const video = streams.find((stream) => stream.codec_type === 'video')
+          const audio = streams.some((stream) => stream.codec_type === 'audio')
+          const expectedAudioClips = hairPresetSlot !== null ? 0 : undefined
+          const audioValid = expectedAudioClips === undefined ? report.audioClips >= 1 && audio : report.audioClips === expectedAudioClips && !audio
+          if (report.state !== 'completed' || report.totalFrames !== frameCount || Number(video?.nb_read_frames) !== frameCount
+            || video?.r_frame_rate !== '30/1' || video.width !== options.width || video.height !== options.height
+            || report.motionTransitionsPrepared !== report.motionTransitionsRequired
+            || hairPresetSlot === null && (!report.motionTransitionsRequired || !report.mouthAnimation || report.mouthAnimation.skippedStates || report.mouthAnimation.staleStates || report.videoInputs < 1)
+            || hairPresetSlot !== null && (report.options.hairAnimationPresetSlot !== hairPresetSlot || !hairAnimation?.rigs.length || !report.attempts.some(attempt => attempt.parts.some(part => (part.frameTiming?.hairCompositionMs?.samples ?? 0) > 0)))
+            || !audioValid
+            || singleMotionRun && (!report.motionPreparation || report.motionPreparation.maxConcurrentBakes !== Math.min(motionConcurrency, report.motionPreparation.unique)
+              || !report.motionCache || report.motionCache.rasterized !== report.motionTransitionsRequired || report.motionCache.diskHits !== 0)) {
+            throw Error(`A rodada ${index + 1} não preservou os estados esperados: ${JSON.stringify({ state: report.state, frames: report.totalFrames, videoFrames: video?.nb_read_frames, fps: video?.r_frame_rate, width: video?.width, height: video?.height, motionRequired: report.motionTransitionsRequired, motionPrepared: report.motionTransitionsPrepared, hairRigs: hairAnimation?.rigs.length, hairCompositionSamples: report.attempts.flatMap(attempt => attempt.parts).map(part => part.frameTiming?.hairCompositionMs?.samples ?? 0), mouth: report.mouthAnimation, audioClips: report.audioClips, audio })}`)
+          }
+          if (hairPresetSlot !== null) {
+            const timing = report.attempts.flatMap(attempt => attempt.parts).map(part => part.frameTiming)
+            const runNumber = index + 1
+            hairRuns.push({ run: runNumber, cacheState: index === 0 ? 'cold-motion-cache' : 'warm-motion-cache', workers: turbo ? 2 : 1, totalFrames: report.totalFrames, width: options.width, height: options.height, fps: '30/1', requestedEncoder: options.encoder, selectedEncoder: report.attempts[0]?.encoder ?? 'unknown', hairPresetSlot, hairPresetFingerprint, hairPreparationRendererMs, hairPreparationWallMs, hairPreparationStages, hairBundleSerializationMs, hairBundleBytes, mainExportWallMs: exportWallMs, clickToValidatedWallMs: hairPreparationWallMs + exportWallMs, exportMilliseconds: report.milliseconds ?? exportWallMs, phaseMilliseconds: report.phaseMilliseconds, audioClips: report.audioClips, audioOutput: audio, videoInputs: report.videoInputs, mouthAnimation: report.mouthAnimation ? { characters: report.mouthAnimation.characters, stateAtlases: report.mouthAnimation.stateAtlases, skippedStates: report.mouthAnimation.skippedStates, staleStates: report.mouthAnimation.staleStates, preparationMilliseconds: report.mouthAnimation.preparationMilliseconds } : null, motionTransitionsPrepared: report.motionTransitionsPrepared, motionCache: report.motionCache ?? null, motionCacheDelta: motionCacheTotal, mainProcessMemory: report.mainProcessMemory ?? null, partTiming: timing, processSampleCount: processSampleCountByRun.get(runNumber) ?? 0, processPeaks: [...processPeakByRunRole.values()].filter(sample => sample.run === runNumber) })
+          } else {
+            runs.push({ run: index + 1, workers: turbo ? 2 : 1, motionConcurrency, motionConcurrentPeak: report.motionPreparation?.maxConcurrentBakes ?? 0, milliseconds: report.milliseconds!, renderingMilliseconds: report.phaseMilliseconds.rendering, finalizationMilliseconds: report.phaseMilliseconds.finalization, rssPeakBytes: report.mainProcessMemory!.peakRssBytes, motionTransitions: report.motionTransitionsPrepared, motionCache: report.motionCache, motionCacheTotal, mouthStates: report.mouthAnimation?.stateAtlases ?? 0, audioClips: report.audioClips, videoInputs: report.videoInputs, audioOutput: audio })
+          }
+        }
+        const median = (values: number[]) => { const sorted = [...values].sort((left, right) => left - right); return sorted[Math.floor(sorted.length / 2)] }
+        if (hairPresetSlot !== null) {
+          const summary = { passed: hairRuns.length === modes.length, benchmarkKind: 'real-project-hair-export', projectTitle: 'Editor V6 06', durationFrames: hairRuns[0]?.totalFrames, durationSeconds: (hairRuns[0]?.totalFrames ?? 0) / 30, width: 1920, height: 1080, fps: '30/1', turbo: true, requestedEncoder: 'auto', hairPresetSlot, hairPresetFingerprint: hairRuns[0]?.hairPresetFingerprint, dialogSelectionMs: 0, dialogNote: 'Destino predefinido dentro da pasta isolada; o tempo humano de seleção no diálogo não foi medido.', audioClips: hairRuns[0]?.audioClips, audioOutput: hairRuns[0]?.audioOutput, medianClickToValidatedWallMs: median(hairRuns.map(run => run.clickToValidatedWallMs)), runs: hairRuns }
+          await nativeWriteFile(join(outputRoot, 'stress-export-validation.json'), JSON.stringify(summary, null, 2), 'utf8')
+          hairStressCompleted = summary.passed
+          console.log(JSON.stringify(summary, null, 2))
+        } else {
+          const variants = (cacheProbe || singleMotionRun ? [1] : [1, 2]).map((workers) => {
+            const selected = runs.filter((run) => run.workers === workers)
+            return { workers, runs: selected.length, medianMilliseconds: median(selected.map((run) => run.milliseconds)), medianRenderingMilliseconds: median(selected.map((run) => run.renderingMilliseconds)), maxMainProcessRssBytes: Math.max(...selected.map((run) => run.rssPeakBytes)) }
+          })
+          const summary = { passed: true, benchmarkKind: singleMotionRun ? 'motion-concurrency-single' : cacheProbe ? 'motion-cache-repeat' : 'worker-comparison', projectId, projectUpdatedAt: project.updatedAt, durationFrames: project.timeline.durationFrames, durationSeconds: project.timeline.durationFrames / 30, width: 1920, height: 1080, fps: '30/1', encoder: 'auto', mouthLoop: true, audioClips: runs[0].audioClips, videoInputs: runs[0].videoInputs, audioOutput: true, motionTransitionsPreparedPerRun: runs[0].motionTransitions, mouthStatesPerRun: runs[0].mouthStates, motionBakeConcurrency: motionConcurrency, runOrder: runs.map((run) => run.workers), runs, variants }
+          await nativeWriteFile(join(outputRoot, 'stress-export-validation.json'), JSON.stringify(summary, null, 2), 'utf8')
+          console.log(JSON.stringify(summary, null, 2))
+        }
+        app.quit()
+      } finally {
+        if (sampleTimer) clearInterval(sampleTimer)
+        await processSampler?.close()
+        if (hairHarnessWindow && !hairHarnessWindow.isDestroyed()) hairHarnessWindow.destroy()
+        if (hairPresetSlot !== null) app.exit(hairStressCompleted ? 0 : 1)
       }
-      const median = (values: number[]) => { const sorted = [...values].sort((left, right) => left - right); return sorted[Math.floor(sorted.length / 2)] }
-      const variants = (cacheProbe || singleMotionRun ? [1] : [1, 2]).map((workers) => {
-        const selected = runs.filter((run) => run.workers === workers)
-        return { workers, runs: selected.length, medianMilliseconds: median(selected.map((run) => run.milliseconds)), medianRenderingMilliseconds: median(selected.map((run) => run.renderingMilliseconds)), maxMainProcessRssBytes: Math.max(...selected.map((run) => run.rssPeakBytes)) }
-      })
-      const summary = { passed: true, benchmarkKind: singleMotionRun ? 'motion-concurrency-single' : cacheProbe ? 'motion-cache-repeat' : 'worker-comparison', projectId, projectUpdatedAt: project.updatedAt, durationFrames: project.timeline.durationFrames, durationSeconds: project.timeline.durationFrames / 30, width: 1920, height: 1080, fps: '30/1', encoder: 'auto', mouthLoop: true, audioClips: runs[0].audioClips, videoInputs: runs[0].videoInputs, audioOutput: true, motionTransitionsPreparedPerRun: runs[0].motionTransitions, mouthStatesPerRun: runs[0].mouthStates, motionBakeConcurrency: motionConcurrency, runOrder: runs.map((run) => run.workers), runs, variants }
-      await nativeWriteFile(join(outputRoot, 'stress-export-validation.json'), JSON.stringify(summary, null, 2), 'utf8')
-      console.log(JSON.stringify(summary, null, 2))
-      app.quit()
     })().catch((error) => { console.error('[V6 isolated export] Falha:', error); app.exit(1) })
   } else createMainWindow()
 

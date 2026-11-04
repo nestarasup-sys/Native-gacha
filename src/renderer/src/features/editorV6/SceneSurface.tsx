@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useRef, type PointerEvent as ReactPointerEvent, type SyntheticEvent } from 'react'
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, type PointerEvent as ReactPointerEvent, type SyntheticEvent } from 'react'
 import type { EditorV6Asset, EditorV6Element, EditorV6SceneElement } from '../../../../shared/editorV6'
 import { editorV6ElementSize } from '../../../../shared/editorV6SceneModel'
 import type { EditorV6ResolvedScene } from '../../../../shared/editorV6TimelineScene'
@@ -83,7 +83,17 @@ const SceneVideoLayer = memo(function SceneVideoLayer({ scene, playing, selected
   </>
 })
 
-type SceneLayerProps = { element: EditorV6SceneElement; asset?: EditorV6Asset; mouthAsset?: EditorV6Asset; selected: boolean; interaction?: SceneSurfaceInteraction; onImageLoad?: (event: SyntheticEvent<SVGImageElement>) => void }
+type SceneLayerProps = { element: EditorV6SceneElement; asset?: EditorV6Asset; mouthAsset?: EditorV6Asset; rasterCanvas?: HTMLCanvasElement; rasterFrame?: number; selected: boolean; interaction?: SceneSurfaceInteraction; onImageLoad?: (event: SyntheticEvent<SVGImageElement>) => void }
+function ExportRasterCanvas({ canvas, frame }: { canvas: HTMLCanvasElement; frame: number }) {
+  const mountRef = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    const mount = mountRef.current
+    if (!mount) return
+    Object.assign(canvas.style, { display: 'block', width: '100%', height: '100%' })
+    if (mount.firstChild !== canvas) mount.replaceChildren(canvas)
+  }, [canvas, frame])
+  return <div ref={mountRef} style={{ width: '100%', height: '100%', overflow: 'hidden' }} />
+}
 function sameMotionSprite(left: EditorV6Element['motionSprite'], right: EditorV6Element['motionSprite']): boolean {
   if (left === right) return true
   return Boolean(left && right && left.x === right.x && left.y === right.y && left.width === right.width && left.height === right.height
@@ -101,7 +111,7 @@ function sameMouthPatch(left: EditorV6Element['mouthPatch'], right: EditorV6Elem
  * replaces the asset object; motionSprite's six fields fully define its crop within that asset. */
 export function sceneLayerPropsEqual(previous: SceneLayerProps, next: SceneLayerProps): boolean {
   if (typeof window !== 'undefined' && (window as Window & { __editorV6DisableSceneLayerMemo?: boolean }).__editorV6DisableSceneLayerMemo) return false
-  if (previous.asset !== next.asset || previous.mouthAsset !== next.mouthAsset || previous.selected !== next.selected || previous.interaction !== next.interaction || previous.onImageLoad !== next.onImageLoad) return false
+  if (previous.asset !== next.asset || previous.mouthAsset !== next.mouthAsset || previous.rasterCanvas !== next.rasterCanvas || previous.rasterFrame !== next.rasterFrame || previous.selected !== next.selected || previous.interaction !== next.interaction || previous.onImageLoad !== next.onImageLoad) return false
   const left = previous.element, right = next.element
   const keys = Object.keys(left) as Array<keyof EditorV6Element>
   if (keys.length !== Object.keys(right).length) return false
@@ -110,7 +120,7 @@ export function sceneLayerPropsEqual(previous: SceneLayerProps, next: SceneLayer
       : Object.is(left[key], right[key]))
 }
 
-const SceneLayer = memo(function SceneLayer({ element, asset, mouthAsset, selected, interaction, onImageLoad }: SceneLayerProps) {
+const SceneLayer = memo(function SceneLayer({ element, asset, mouthAsset, rasterCanvas, rasterFrame = 0, selected, interaction, onImageLoad }: SceneLayerProps) {
   const size = editorV6ElementSize(element), width = size.width * 19.2, height = size.height * 10.8
   const image = element.kind === 'image' || element.kind === 'character'
   const fontSize = Math.max(8, Math.min(32, height * .3, width / 2)), lineHeight = fontSize * 1.22
@@ -126,14 +136,15 @@ const SceneLayer = memo(function SceneLayer({ element, asset, mouthAsset, select
   return <g transform={transform(element.x, element.y, element.rotation)} data-element-id={element.id} aria-label={`${speakerName ? `${speakerName}: ` : ''}${element.text || asset?.name || 'Objeto'}`} role={interaction ? 'button' : undefined}
     style={{ cursor: interaction ? element.positionLocked ? 'default' : 'move' : undefined, touchAction: 'none' }}
     onPointerDown={interaction ? (event) => interaction.start(event, element.id) : undefined} onPointerMove={interaction?.move} onPointerUp={interaction?.end} onPointerCancel={interaction?.end}>
-    {image && asset ? <g transform={element.flipX ? 'scale(-1 1)' : undefined}>
+    {image && (asset || rasterCanvas) ? <g transform={element.flipX ? 'scale(-1 1)' : undefined}>
       {element.mouthPatch?.replace && mouthAsset && <defs><mask id={faceReplacementMaskId} maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse" x={-width * 2} y={-height * 2} width={width * 4} height={height * 4}>
         <rect x={-width * 2} y={-height * 2} width={width * 4} height={height * 4} fill="#fff" />
         <rect x={-width / 2 + (element.mouthPatch.x + (element.mouthPatch.replaceBounds?.x ?? 0) * element.mouthPatch.width) * width} y={-height / 2 + (element.mouthPatch.y + (element.mouthPatch.replaceBounds?.y ?? 0) * element.mouthPatch.height) * height} width={(element.mouthPatch.replaceBounds?.width ?? 1) * element.mouthPatch.width * width} height={(element.mouthPatch.replaceBounds?.height ?? 1) * element.mouthPatch.height * height} fill="#000" />
       </mask></defs>}
       <g mask={element.mouthPatch?.replace && mouthAsset ? `url(#${faceReplacementMaskId})` : undefined}>
-      {element.motionSprite ? <svg x={-width / 2} y={-height / 2} width={width} height={height} viewBox={`${element.motionSprite.x} ${element.motionSprite.y} ${element.motionSprite.width} ${element.motionSprite.height}`} preserveAspectRatio="none" overflow="hidden"><image href={asset.dataUrl} onLoad={onImageLoad} x={0} y={0} width={element.motionSprite.atlasWidth} height={element.motionSprite.atlasHeight} /></svg>
-        : <image href={asset.dataUrl} onLoad={onImageLoad} x={-width / 2} y={-height / 2} width={width} height={height} preserveAspectRatio={element.kind === 'character' ? 'none' : 'xMidYMid meet'} />}
+      {rasterCanvas ? <foreignObject x={-width / 2} y={-height / 2} width={width} height={height}><ExportRasterCanvas canvas={rasterCanvas} frame={rasterFrame} /></foreignObject>
+        : element.motionSprite ? <svg x={-width / 2} y={-height / 2} width={width} height={height} viewBox={`${element.motionSprite.x} ${element.motionSprite.y} ${element.motionSprite.width} ${element.motionSprite.height}`} preserveAspectRatio="none" overflow="hidden"><image href={asset!.dataUrl} onLoad={onImageLoad} x={0} y={0} width={element.motionSprite.atlasWidth} height={element.motionSprite.atlasHeight} /></svg>
+          : <image href={asset!.dataUrl} onLoad={onImageLoad} x={-width / 2} y={-height / 2} width={width} height={height} preserveAspectRatio={element.kind === 'character' ? 'none' : 'xMidYMid meet'} />}
       </g>
       {element.mouthPatch && mouthAsset && <svg x={-width / 2 + element.mouthPatch.x * width} y={-height / 2 + element.mouthPatch.y * height} width={element.mouthPatch.width * width} height={element.mouthPatch.height * height} viewBox={`${element.mouthPatch.sprite.x} ${element.mouthPatch.sprite.y} ${element.mouthPatch.sprite.width} ${element.mouthPatch.sprite.height}`} preserveAspectRatio="none" overflow="hidden"><image href={mouthAsset.dataUrl} onLoad={onImageLoad} x={0} y={0} width={element.mouthPatch.sprite.atlasWidth} height={element.mouthPatch.sprite.atlasHeight} /></svg>}
     </g> : !image && <>
@@ -150,7 +161,7 @@ const SceneLayer = memo(function SceneLayer({ element, asset, mouthAsset, select
 }, sceneLayerPropsEqual)
 
 /** Shared scene drawing for the live Chromium preview and sequential frame captures. */
-export const SceneSurface = memo(function SceneSurface({ scene, assets, selectedId = null, interaction, playing = false, outputWidth = 1920, outputHeight = 1080, renderLayer = 'all', onImageLoad }: { scene: EditorV6ResolvedScene; assets: readonly EditorV6Asset[]; selectedId?: string | null; interaction?: SceneSurfaceInteraction; playing?: boolean; outputWidth?: number; outputHeight?: number; renderLayer?: 'all' | 'background' | 'foreground'; onImageLoad?: (event: SyntheticEvent<SVGImageElement>) => void }) {
+export const SceneSurface = memo(function SceneSurface({ scene, assets, selectedId = null, interaction, playing = false, outputWidth = 1920, outputHeight = 1080, renderLayer = 'all', onImageLoad, rasterCanvases }: { scene: EditorV6ResolvedScene; assets: readonly EditorV6Asset[]; selectedId?: string | null; interaction?: SceneSurfaceInteraction; playing?: boolean; outputWidth?: number; outputHeight?: number; renderLayer?: 'all' | 'background' | 'foreground'; onImageLoad?: (event: SyntheticEvent<SVGImageElement>) => void; rasterCanvases?: ReadonlyMap<string, HTMLCanvasElement> }) {
   const assetsById = useMemo(() => new Map(assets.map((asset) => [asset.id, asset])), [assets])
   const background = scene.background, asset = background.backgroundAssetId ? assetsById.get(background.backgroundAssetId) : undefined
   const width = background.backgroundWidth * 19.2, height = background.backgroundHeight * 10.8
@@ -161,6 +172,9 @@ export const SceneSurface = memo(function SceneSurface({ scene, assets, selected
       {selectedId === 'background' && <Selection width={width} height={height} />}
     </g>}
     {renderLayer === 'all' && <SceneVideoLayer scene={scene} playing={playing} selectedId={selectedId} interaction={interaction} />}
-    {renderLayer !== 'background' && scene.elements.map((element) => <SceneLayer key={element.id} element={element} asset={element.assetId ? assetsById.get(element.assetId) : undefined} mouthAsset={element.mouthPatch ? assetsById.get(element.mouthPatch.assetId) : undefined} selected={selectedId === element.id} interaction={interaction} onImageLoad={onImageLoad} />)}
+    {renderLayer !== 'background' && scene.elements.map((element) => {
+      const rasterCanvas = rasterCanvases?.get(element.id)
+      return <SceneLayer key={element.id} element={element} asset={element.assetId ? assetsById.get(element.assetId) : undefined} mouthAsset={element.mouthPatch ? assetsById.get(element.mouthPatch.assetId) : undefined} rasterCanvas={rasterCanvas} rasterFrame={rasterCanvas ? scene.frame : undefined} selected={selectedId === element.id} interaction={interaction} onImageLoad={onImageLoad} />
+    })}
   </svg>
 })
