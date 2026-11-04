@@ -35,21 +35,15 @@ export function createMainWindowFactory(deps: MainWindowDependencies): () => Bro
         contextIsolation: true,
         nodeIntegration: false,
         sandbox: true,
+        ...(videoStressOffscreen ? { offscreen: true } : {}),
         // Normal windows retain Chromium's background throttling. Stress sessions
-        // keep their preview clock active while the window stays off-display.
+        // keep their preview clock active in a hidden offscreen BrowserWindow.
         backgroundThrottling: videoStressOffscreen || syntheticAiTest ? false : true
       }
     })
 
     if (videoStressOffscreen) {
       window.setSkipTaskbar(true)
-      window.once('ready-to-show', () => {
-        // A never-shown BrowserWindow is throttled by some Windows compositor
-        // paths despite backgroundThrottling=false. An off-display native window
-        // keeps real Electron rendering active without appearing on any monitor.
-        window.setPosition(-32000, -32000)
-        window.showInactive()
-      })
     }
 
     deps.restrictNavigation(window.webContents)

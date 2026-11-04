@@ -85,18 +85,19 @@ test('janela normal mantém isolamento, política de navegação e caminho de re
   assert.equal(fixture.calls.closed, 1)
 })
 
-test('modo offscreen usa uma janela fora da tela sem mostrá-la na taskbar', () => {
+test('modo offscreen mantém o renderer ativo sem mostrar a janela', () => {
   const fixture = makeWindow({ GACHA_VIDEO_STRESS_OFFSCREEN: '1' })
   const window = fixture.create()
 
   assert.equal(fixture.calls.options.show, false)
+  assert.equal(fixture.calls.options.webPreferences.offscreen, true)
   assert.equal(fixture.calls.options.webPreferences.backgroundThrottling, false)
   assert.equal(window.skippedTaskbar, true)
   assert.deepEqual(window.loadTarget, { type: 'file', value: '/app/index.html' })
 
   window.emit('ready-to-show')
-  assert.deepEqual(window.position, [-32000, -32000])
-  assert.equal(window.shownInactive, true)
+  assert.equal(window.position, null)
+  assert.equal(window.shownInactive, false)
 })
 
 test('fechamento aguarda o flush, bloqueia fechamentos concorrentes e tenta novamente após erro', async () => {
