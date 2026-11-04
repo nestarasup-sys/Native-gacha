@@ -82,9 +82,16 @@ function cacheComposite(key: string, asset: EditorV6Asset): void {
 /** Applies a complete native-resolution RGBA face replacement before SVG scaling. */
 export async function composeEditorV6FaceReplacements<T extends { elements: EditorV6Element[] }>(
   scene: T,
-  assets: readonly EditorV6Asset[]
+  assets: readonly EditorV6Asset[],
+  options?: { assetIndex?: ReadonlyMap<string, EditorV6Asset>; additionsOnly?: boolean }
 ): Promise<{ scene: T; assets: EditorV6Asset[] }> {
-  const assetsById = new Map(assets.map((asset) => [asset.id, asset]))
+  // The export worker can resolve persistent assets from its own stable index,
+  // so it does not need to copy that entire catalog for every rendered frame.
+  // Default behavior stays unchanged for preview and other consumers.
+  if (!scene.elements.some(element => element.kind === 'character' && element.mouthPatch?.replace)) {
+    return { scene, assets: options?.additionsOnly ? [] : [...assets] }
+  }
+  const assetsById = options?.assetIndex ?? new Map(assets.map((asset) => [asset.id, asset]))
   const additions: EditorV6Asset[] = []
   const elements = await Promise.all(scene.elements.map(async (element) => {
     const patch = element.mouthPatch
@@ -131,5 +138,5 @@ export async function composeEditorV6FaceReplacements<T extends { elements: Edit
     return { ...element, assetId: composed.id, ...(element.motionSprite ? { motionSprite: { x: 0, y: 0, width: element.motionSprite.width, height: element.motionSprite.height, atlasWidth: element.motionSprite.width, atlasHeight: element.motionSprite.height } } : {}), mouthPatch: undefined }
   }))
   const uniqueAdditions = [...new Map(additions.map((asset) => [asset.id, asset])).values()]
-  return { scene: { ...scene, elements }, assets: [...assets, ...uniqueAdditions] }
+  return { scene: { ...scene, elements }, assets: options?.additionsOnly ? uniqueAdditions : [...assets, ...uniqueAdditions] }
 }

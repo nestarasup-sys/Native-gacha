@@ -15,7 +15,7 @@ import { HAIR_MOTION_MESH_HEIGHT, HAIR_MOTION_MESH_WIDTH } from '../../character
 import { composeEditorV6FaceReplacements } from './sceneFaceComposition'
 import { createExportHairMeshRenderer } from './exportHairMeshRenderer'
 import { createExportHairTransitionFrameIndex } from './exportHairTransitionIndex'
-import { createEditorV6FrameAssetRegistry } from './exportFrameAssets'
+import { createEditorV6FrameAssetRegistry, selectEditorV6RenderableAssets } from './exportFrameAssets'
 
 const worker = (window as unknown as { editorV6ExportWorker: EditorV6WorkerBridge }).editorV6ExportWorker
 async function initialize() {
@@ -77,7 +77,10 @@ async function initialize() {
       if (loadedSvgImages.get(image) === expectedSource) finish()
     })
   }
-  const assetsById = new Map(project.assets.map(asset => [asset.id, asset]))
+  // The document catalog is immutable during this worker's lifetime. Keep its
+  // composition index separate from the small durable atlas cache.
+  const projectAssetIndex = new Map(project.assets.map(asset => [asset.id, asset]))
+  const assetsById = new Map(projectAssetIndex)
   const hairSurfaces = new Map<string, HTMLImageElement>()
   const hairSurfaceDataById = new Map((hairAnimation?.surfaces ?? []).map(surface => [surface.id, surface.dataUrl]))
   const hairTextures = new Map<string, HTMLImageElement>()
@@ -419,8 +422,8 @@ async function initialize() {
       ? { ...scene, mediaVideo: undefined, elements: scene.elements.map(element => riggedIds.has(element.id) ? { ...element, mouthPatch: undefined } : element) }
       : { ...scene, mediaVideo: undefined }
     const composed = activeLayer === 'background'
-      ? { scene: { ...scene, mediaVideo: undefined }, assets: project.assets }
-      : await composeEditorV6FaceReplacements(faceCompositionInput, project.assets)
+      ? { scene: { ...scene, mediaVideo: undefined }, assets: [] }
+      : await composeEditorV6FaceReplacements(faceCompositionInput, project.assets, { assetIndex: projectAssetIndex, additionsOnly: true })
     timings.faceCompositionMs = performance.now() - faceCompositionStarted
 
     // Face composites are temporary and often change at every speaking frame.
@@ -488,13 +491,12 @@ async function initialize() {
       renderScene = { ...composed.scene, elements: animatedElements }
       timings.hairCompositionMs = performance.now() - hairCompositionStarted
     }
-    const renderAssets = [...renderAssetsById.values()]
-    const sceneAssetIds = renderScene.elements.flatMap(element => [element.assetId, element.mouthPatch?.assetId])
-    const ids = new Set(activeLayer === 'background' ? [renderScene.background.backgroundAssetId] : activeLayer === 'foreground' ? sceneAssetIds : [renderScene.background.backgroundAssetId, ...sceneAssetIds])
+    // SceneSurface and the image preloader only need the assets actually
+    // referenced by this layer/frame. Previously the whole project catalog was
+    // rebuilt and passed to React on every animated-hair frame.
+    const renderAssets = selectEditorV6RenderableAssets(renderScene, activeLayer ?? 'all', resolveFrameAsset)
     const assetPreparationStarted = performance.now()
-    for (const id of ids) {
-      const asset = id ? resolveFrameAsset(id) : undefined
-      if (!asset) continue
+    for (const asset of renderAssets) {
       let prepared = images.get(asset.id)
       if (!prepared) {
         prepared = new Promise<void>((resolve, reject) => {
