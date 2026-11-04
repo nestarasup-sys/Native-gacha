@@ -14,6 +14,19 @@ const settings: HairMotionSettings = {
 }
 describe('V6 experimental numerical hair loop', () => {
 
+  it('validates optional preparation profile without user identifiers', () => {
+    const prep = {
+      totalMilliseconds: 12.25,
+      stages: [{ name: 'prepareCharacterRenderers', samples: 2, totalMilliseconds: 7.5, maxMilliseconds: 5 }],
+      counts: { surfaces: 3, textures: 2, rigs: 1, motionTransitions: 0, encodedCharacters: 128 }
+    }
+    expect(prep.stages[0].name).toBe('prepareCharacterRenderers')
+    // The payload accepts only a bounded stage vocabulary and numeric counts;
+    // exported reports never need names, snapshots or local user paths.
+    expect(Object.keys(prep.counts).sort()).toEqual(['encodedCharacters','motionTransitions','rigs','surfaces','textures'])
+  })
+
+
   it('triggers only after changing pose, not after expression-only transitions', () => {
     const events = hairMotionPoseReactionEndFrames([
       { elementId: 'actor', endFrame: 29, fromElement: { poseSlot: 1 }, toElement: { poseSlot: 2 } },

@@ -97,7 +97,18 @@ export async function prepareEditorV6HairMotionBundle(
   diagnostics?: { onStage?: (stage: string, milliseconds: number) => void }
 ): Promise<EditorV6HairMotionBundle> {
   if (!Number.isInteger(presetSlot) || presetSlot < 1 || presetSlot > 5) throw Error('Selecione um preset de animação de cabelo válido.')
-  const reportStage = (stage: string, started: number) => diagnostics?.onStage?.(stage, performance.now() - started)
+  const preparationStarted = performance.now()
+  const stageStats = new Map<string, { samples: number; totalMilliseconds: number; maxMilliseconds: number }>()
+  const recordStage = (stage: string, milliseconds: number) => {
+    if (!Number.isFinite(milliseconds) || milliseconds < 0) return
+    const current = stageStats.get(stage) ?? { samples: 0, totalMilliseconds: 0, maxMilliseconds: 0 }
+    current.samples += 1
+    current.totalMilliseconds += milliseconds
+    current.maxMilliseconds = Math.max(current.maxMilliseconds, milliseconds)
+    stageStats.set(stage, current)
+    diagnostics?.onStage?.(stage, milliseconds)
+  }
+  const reportStage = (stage: string, started: number) => recordStage(stage, performance.now() - started)
   let stageStarted = performance.now()
   const targets = collectEditorV6HairMotionTargets(project, exportOptions)
   reportStage('collectTargets', stageStarted)
@@ -359,7 +370,7 @@ export async function prepareEditorV6HairMotionBundle(
           from: { ...fromRig.sourceCrop, outputWidth: fromRig.outputWidth, outputHeight: fromRig.outputHeight },
           to: { ...toRig.sourceCrop, outputWidth: toRig.outputWidth, outputHeight: toRig.outputHeight }
         })
-        diagnostics?.onStage?.('bakeHairlessMotionTransition', performance.now() - bakeStarted)
+        recordStage('bakeHairlessMotionTransition', performance.now() - bakeStarted)
         if (!layerCapture) throw Error(`Não foi possível capturar as camadas sem cabelo da transição de ${character.name}.`)
         return { result, layerCapture }
       })
@@ -376,5 +387,8 @@ export async function prepareEditorV6HairMotionBundle(
   }
   const totalDataUrlCharacters = [...surfaces, ...textures].reduce((sum, item) => sum + item.dataUrl.length, 0)
   if (totalDataUrlCharacters > 96_000_000) throw Error('As poses sem cabelo preparadas para a animação excedem o limite seguro de memória da exportação. Desative o preset experimental ou reduza o número de transições no trecho.')
-  return { presetSlot, preset, ...(exportOptions.hairAnimationLoopFrames ? { loopFrames: exportOptions.hairAnimationLoopFrames } : {}), ...(exportOptions.hairPoseReactionOnly ? { poseReactionOnly: true } : {}), ...(exportOptions.hairPosteriorOnly ? { posteriorOnly: true } : {}), surfaces, textures, rigs, motionTransitions }
+  const preparationProfile = { totalMilliseconds: performance.now() - preparationStarted,
+    stages: [...stageStats].map(([name, stage]) => ({ name, ...stage })),
+    counts: { surfaces: surfaces.length, textures: textures.length, rigs: rigs.length, motionTransitions: motionTransitions.length, encodedCharacters: totalDataUrlCharacters } }
+  return { presetSlot, preset, preparationProfile, ...(exportOptions.hairAnimationLoopFrames ? { loopFrames: exportOptions.hairAnimationLoopFrames } : {}), ...(exportOptions.hairPoseReactionOnly ? { poseReactionOnly: true } : {}), ...(exportOptions.hairPosteriorOnly ? { posteriorOnly: true } : {}), surfaces, textures, rigs, motionTransitions }
 }

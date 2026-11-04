@@ -61,12 +61,21 @@ export type EditorV6HairMotionTransition = {
   faceAtlasSurfaceId: string | null
   frames: EditorV6HairMotionTransitionFrame[]
 }
+/** Stage timings from the renderer-side hair preparation, BEFORE Electron
+ * starts its MP4 job. Contains numbers only, never character/project data. */
+export type EditorV6HairPreparationProfile = {
+  totalMilliseconds: number
+  stages: Array<{ name: string; samples: number; totalMilliseconds: number; maxMilliseconds: number }>
+  counts: { surfaces: number; textures: number; rigs: number; motionTransitions: number; encodedCharacters: number }
+}
+
 export type EditorV6HairMotionBundle = {
   presetSlot: number
   preset: HairMotionPreset
   loopFrames?: 90 | 120
   poseReactionOnly?: boolean
   posteriorOnly?: boolean
+  preparationProfile?: EditorV6HairPreparationProfile
   surfaces: EditorV6HairMotionSurface[]
   textures: EditorV6HairMotionSurface[]
   rigs: EditorV6HairMotionRig[]
@@ -266,12 +275,30 @@ const transition = z.object({
   if (new Set(value.frames.map(frame => frame.offset)).size !== value.frames.length) context.addIssue({ code: 'custom', message: 'A transição do cabelo contém quadros duplicados.' })
 })
 
+const preparationProfile = z.object({
+  totalMilliseconds: finite.min(0).max(3_600_000),
+  stages: z.array(z.object({
+    name: z.enum(['collectTargets', 'loadCustomizerCharacters', 'resolveSavedCharacterSource', 'loadHairStyles', 'prepareCharacterRenderers', 'prepareHairLayers', 'renderHairlessFaceTarget', 'measureFaceModeCrop', 'serializeFaceSurface', 'bakeHairlessMotionTransition']),
+    samples: z.number().int().min(1).max(100_000),
+    totalMilliseconds: finite.min(0).max(3_600_000),
+    maxMilliseconds: finite.min(0).max(3_600_000)
+  }).strict()).max(16),
+  counts: z.object({
+    surfaces: z.number().int().min(0).max(5000),
+    textures: z.number().int().min(0).max(2000),
+    rigs: z.number().int().min(0).max(10_000),
+    motionTransitions: z.number().int().min(0).max(10_000),
+    encodedCharacters: z.number().int().min(0).max(96_000_000)
+  }).strict()
+}).strict()
+
 const bundleSchema = z.object({
   presetSlot: z.number().int().min(1).max(5),
   preset: z.unknown(),
   loopFrames: z.union([z.literal(90), z.literal(120)]).optional(),
   poseReactionOnly: z.boolean().optional(),
   posteriorOnly: z.boolean().optional(),
+  preparationProfile: preparationProfile.optional(),
   surfaces: z.array(surface).max(5000),
   textures: z.array(surface).max(2000),
   rigs: z.array(rig).min(1).max(10_000),

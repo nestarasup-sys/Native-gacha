@@ -113,6 +113,7 @@ export function registerEditorV6ExportHandlers(deps: EditorV6ExportIpcDependenci
       getCharacters: deps.getCharacters,
       bakeMotion: deps.bakeMotion,
       motionPreparationConcurrency,
+      ...(hairAnimation?.preparationProfile ? { hairPreparation: hairAnimation.preparationProfile } : {}),
       onFfmpegProcessStarted,
       getMotionCacheStats: deps.getMotionCacheStats,
       createWorker: (renderProject, _part, signal, layeredVideo, mouthLoops) => workers.create({ project: renderProject, width: options.width, height: options.height, layeredVideo, ...(mouthLoops ? { mouthLoops } : {}), ...(hairAnimation ? { hairAnimation } : {}) }, signal),
