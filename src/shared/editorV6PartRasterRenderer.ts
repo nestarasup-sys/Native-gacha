@@ -32,6 +32,7 @@ const validFrame = (frame: EditorV6ExperimentalPartFrame) =>
   Number.isFinite(frame.progress) && frame.progress >= 0 && frame.progress <= 1 &&
   Number.isSafeInteger(frame.width) && Number.isSafeInteger(frame.height) && frame.width > 0 && frame.height > 0
 const validPart = (part: EditorV6ExperimentalPartFrame['parts'][number]) =>
+  part !== null && typeof part === 'object' &&
   typeof part.id === 'string' && part.id.length > 0 &&
   typeof part.sourceDataUrl === 'string' && part.sourceDataUrl.length > 0 &&
   typeof part.visible === 'boolean' && Number.isSafeInteger(part.order) && part.order >= 0 &&
