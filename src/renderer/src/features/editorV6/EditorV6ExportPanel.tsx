@@ -22,6 +22,7 @@ export function EditorV6ExportPanel({ project, open, characterSourceRefreshRequi
   const [job, setJob] = useState(rememberedJob)
   const [options, setOptions] = useState<EditorV6ExportOptions>({ startFrame: 0, endFrame: project.timeline.durationFrames, width: 1920, height: 1080, turbo: true, encoder: 'auto', mouthLoop: true, mouthLoopCycleFrames: 30 })
   const [hairAnimationEnabled, setHairAnimationEnabled] = useState(false)
+  const [hairLoopMode, setHairLoopMode] = useState<0 | 90 | 120>(0)
   const [hairPresetSlot, setHairPresetSlot] = useState(1)
   const [hairPresets, setHairPresets] = useState<Array<ReturnType<typeof parseHairMotionPresets>[number]>>([structuredClone(FIRST_HAIR_MOTION_PRESET), null, null, null, null])
   const [presetDraft, setPresetDraft] = useState<{ slot: number; value: HairMotionPreset } | null>(null)
@@ -89,7 +90,7 @@ export function EditorV6ExportPanel({ project, open, characterSourceRefreshRequi
     try {
       const startedJob = await trackOperation(() => runEditorV6ExportCommand({
       project,
-      options,
+      options: { ...options, hairAnimationLoopFrames: hairAnimationEnabled && hairLoopMode ? hairLoopMode : undefined },
       hairPresetSlot,
       hairPreset: preparedHairPreset,
       prepareHair: prepareEditorV6HairMotionBundle,
@@ -133,6 +134,8 @@ export function EditorV6ExportPanel({ project, open, characterSourceRefreshRequi
         <fieldset className="v6-export-hair-settings" disabled={busy || active}><legend>Animação de cabelo <span>EXPERIMENTAL</span></legend>
           <label className="v6-export-check"><input type="checkbox" checked={hairAnimationEnabled} onChange={(event) => setHairAnimationEnabled(event.target.checked)} />Ativar animação de cabelo</label>
           <label>Preset<select value={hairPresetSlot} onChange={(event) => { setHairPresetSlot(Number(event.target.value)); setPresetDraft(null); setEditingHairPreset(false); setHairPresetMessage('') }}>{hairPresets.map((preset, index) => <option key={index} value={index + 1}>Preset {index + 1}{preset ? '' : ' · vazio'}</option>)}</select></label>
+          <label>Movimento do cabelo<select value={hairLoopMode} onChange={(event) => setHairLoopMode(Number(event.target.value) as 0 | 90 | 120)}><option value={0}>Física contínua (atual)</option><option value={90}>Loop experimental · 3 segundos</option><option value={120}>Loop experimental · 4 segundos</option></select></label>
+          <small>O loop prepara uma vez os deslocamentos das mechas e os repete no MP4. A preparação das poses continua necessária. A prévia normal do Editor V6 não muda.</small>
           <small>O preset usa a mesma chave do Fabricador DEV. O cabelo animado continua exclusivo do MP4.</small>
           <button type="button" aria-expanded={editingHairPreset} onClick={() => editingHairPreset ? setEditingHairPreset(false) : beginEditingHairPreset()}>{editingHairPreset ? 'Recolher controles' : selectedHairPreset ? 'Editar preset no Editor V6' : 'Criar preset neste slot'}</button>
           {editingHairPreset && presetDraft?.slot === hairPresetSlot && <EditorV6HairPresetEditor slot={hairPresetSlot} preset={presetDraft.value}

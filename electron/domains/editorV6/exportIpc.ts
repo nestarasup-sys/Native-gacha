@@ -91,6 +91,7 @@ export function registerEditorV6ExportHandlers(deps: EditorV6ExportIpcDependenci
     planEditorV6Export(options, project.timeline.durationFrames)
     if (Boolean(options.hairAnimationPresetSlot) !== Boolean(hairAnimation)) throw Error('A configuração da animação de cabelo não corresponde ao pacote preparado.')
     if (hairAnimation && hairAnimation.presetSlot !== options.hairAnimationPresetSlot) throw Error('O preset de cabelo mudou durante a preparação da exportação.')
+    if (hairAnimation?.loopFrames !== options.hairAnimationLoopFrames) throw Error('O ciclo de cabelo preparado não corresponde às opções da exportação.')
     return runEditorV6Export(project, options, {
       ffmpeg, ffprobe, tempRoot: deps.tempRoot, id, outputPath, reportPath,
       signal,
@@ -118,6 +119,7 @@ export function registerEditorV6ExportHandlers(deps: EditorV6ExportIpcDependenci
     const hairAnimation = rawHairAnimation === undefined ? undefined : parseEditorV6HairMotionBundle(rawHairAnimation)
     if (Boolean(options.hairAnimationPresetSlot) !== Boolean(hairAnimation)) throw Error('A configuração da animação de cabelo está incompleta.')
     if (hairAnimation && hairAnimation.presetSlot !== options.hairAnimationPresetSlot) throw Error('O preset de cabelo mudou durante a preparação da exportação.')
+    if (hairAnimation?.loopFrames !== options.hairAnimationLoopFrames) throw Error('O ciclo de cabelo preparado não corresponde às opções da exportação.')
     const owner = BrowserWindow.fromWebContents(event.sender)
     const saveOptions = { title: 'Editor V6: exportar MP4', defaultPath: project.title.replace(/[<>:"/\\|?*]/g, '_') + '.mp4', filters: [{ name: 'Vídeo MP4', extensions: ['mp4'] }] }
     const destination = owner ? await dialog.showSaveDialog(owner, saveOptions) : await dialog.showSaveDialog(saveOptions)
