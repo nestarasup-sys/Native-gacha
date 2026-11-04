@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createEditorV6HairPreparationReuse } from '../../src/renderer/src/features/editorV6/motion/hairPreparationReuse'
+import { createEditorV6HairPreparationReuse, editorV6HairFaceSurfaceKey } from '../../src/renderer/src/features/editorV6/motion/hairPreparationReuse'
 
 describe('R23: only-current-export style and tinted texture reuse', () => {
   it('coalesces in-flight style reads across poses/character targets', async () => {
@@ -48,5 +48,37 @@ describe('R23: only-current-export style and tinted texture reuse', () => {
     }
     expect(calls).toBe(4)
     expect(() => createEditorV6HairPreparationReuse(0)).toThrow()
+  })
+})
+
+
+describe('R24: identical face surfaces shared only within the same prepared pose', () => {
+  const appearance = JSON.stringify([
+    { mouthClosedCatalogId: 'mouth-1', eyes: 'eyes-1' },
+    { faceMove: { x: 2 } },
+    { blinkEffect: 0.5 }
+  ])
+  it('reuses across target image IDs when all visual inputs are identical', () => {
+    const a = editorV6HairFaceSurfaceKey(appearance, 'idle', false)
+    const b = editorV6HairFaceSurfaceKey(appearance, 'idle', false)
+    expect(a).toBe(b)
+    const cached = new Map([[a, 'face-surface-1']])
+    expect(cached.get(b)).toBe('face-surface-1')
+  })
+  it('keeps blink, talk, talk-blink and mouth isolation independent', () => {
+    const base = editorV6HairFaceSurfaceKey(appearance, 'idle', false)
+    for (const mode of ['blink', 'talk', 'talk-blink'] as const) {
+      expect(editorV6HairFaceSurfaceKey(appearance, mode, false)).not.toBe(base)
+    }
+    expect(editorV6HairFaceSurfaceKey(appearance, 'idle', true)).not.toBe(base)
+  })
+  it('keeps separate faces for any changed artwork, effects or transforms', () => {
+    const expected = editorV6HairFaceSurfaceKey(appearance, 'idle', false)
+    const inputs = [
+      [{ mouthClosedCatalogId: 'mouth-2', eyes: 'eyes-1' }, { faceMove: { x: 2 } }, { blinkEffect: 0.5 }],
+      [{ mouthClosedCatalogId: 'mouth-1', eyes: 'eyes-1' }, { faceMove: { x: 3 } }, { blinkEffect: 0.5 }],
+      [{ mouthClosedCatalogId: 'mouth-1', eyes: 'eyes-1' }, { faceMove: { x: 2 } }, { blinkEffect: 0.8 }]
+    ]
+    for (const input of inputs) expect(editorV6HairFaceSurfaceKey(JSON.stringify(input), 'idle', false)).not.toBe(expected)
   })
 })
