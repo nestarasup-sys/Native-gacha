@@ -48,7 +48,7 @@ jobs:
           npm run audit:architecture
           npm run typecheck
       - name: Run motion preparation regression suite
-        run: npx vitest run --config vitest.editor-v6.config.ts tests/editor-v6/motionPreparation.test.ts tests/editor-v6/partMotionPrototype.test.ts
+        run: npx vitest run --config vitest.editor-v6.config.ts tests/editor-v6/motionPreparation.test.ts tests/editor-v6/partMotionPrototype.test.ts tests/editor-v6/partRasterRenderer.test.ts
       - name: Build application
         run: npm run build
       - name: Prepare verified LGPL FFmpeg tools
@@ -72,6 +72,7 @@ jobs:
             $env:NATIVE_GACHA_TEST_OUTPUT_DIR = (Resolve-Path $folder).Path
             foreach ($check in @(
               @{ name = 'motion'; script = 'scripts/editor-v6/check-motion.cjs' },
+              @{ name = 'r37-pixel'; script = 'scripts/editor-v6/check-r37-raster.cjs' },
               @{ name = 'motion-service'; script = 'scripts/editor-v6/check-motion-service.cjs' },
               @{ name = 'overlay-parity'; script = 'scripts/editor-v6/check-overlay-parity.cjs' }
             )) {
