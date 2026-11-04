@@ -5,6 +5,8 @@ import { SceneSurface } from '../../src/renderer/src/features/editorV6/SceneSurf
 import { EditorV6ExportPanel } from '../../src/renderer/src/features/editorV6/EditorV6ExportPanel'
 import { captureEditorV6Frame, captureEditorV6Frames } from '../../src/renderer/src/features/editorV6/sceneCapture'
 import { createEditorV6Timeline, type EditorV6DesktopApi, type EditorV6Document, type EditorV6Element } from '../../src/shared/editorV6'
+import { FIRST_HAIR_MOTION_PRESET, HAIR_MOTION_PRESET_KEY } from '../../src/shared/hairMotionEngine'
+import type { EditorV6HairMotionBundle } from '../../src/shared/editorV6HairMotion'
 import type { EditorV6ExportStatus } from '../../src/shared/editorV6Export'
 import { addEditorV6ElementAtFrame, editEditorV6BackgroundAtFrame, editEditorV6DocumentAtBlock, prepareEditorV6PositionAtFrame, resolveEditorV6SceneAtFrame } from '../../src/shared/editorV6Timeline'
 
@@ -32,13 +34,14 @@ let expectedCapture = ''
 let panelProject: EditorV6Document
 let closePanelTest: () => void
 ;(globalThis as unknown as { checkExportPanel: () => Promise<unknown> }).checkExportPanel = async () => {
-  let imported = 0, started = 0
+  let imported = 0, started = 0, prepared = 0
+  localStorage.setItem(HAIR_MOTION_PRESET_KEY, JSON.stringify([FIRST_HAIR_MOTION_PRESET, FIRST_HAIR_MOTION_PRESET, null, null, null]))
   const clip = { id: crypto.randomUUID(), name: 'Trilha de teste.wav', fileName: `${crypto.randomUUID()}.wav`, sourceFrames: 120, sourceInFrame: 0, startFrame: 0, durationFrames: 120, gain: 1, muted: false }
   const job: EditorV6ExportStatus = { id: crypto.randomUUID(), state: 'completed', frames: 300, totalFrames: 300, message: 'MP4 exportado e validado.', fallback: false }
   const editorV6: Pick<EditorV6DesktopApi, 'getEditorV6ExportStatus' | 'importEditorV6ExportAudio' | 'startEditorV6Export'> = {
     getEditorV6ExportStatus: async (id: string) => { if (id === 'latest') throw Error('Nenhuma exportação anterior.'); return job },
     importEditorV6ExportAudio: async () => { imported++; return clip },
-    startEditorV6Export: async (project: EditorV6Document, options: { turbo: boolean; width: number }) => { assert(project.exportAudio?.length === 1 && options.turbo && options.width === 1920, 'Painel perdeu trilha de áudio ou configurações do Turbo.'); started++; return job }
+    startEditorV6Export: async (project: EditorV6Document, options: { turbo: boolean; width: number; height: number; encoder: string; forceTurbo1080?: boolean; hairPosteriorOnly?: boolean; hairPoseReactionOnly?: boolean; hairAnimationPresetSlot?: number }) => { assert(project.exportAudio?.length === 1 && options.turbo && options.width === 1920 && options.height === 1080 && options.encoder === 'cpu' && options.forceTurbo1080 && options.hairPosteriorOnly && options.hairPoseReactionOnly && options.hairAnimationPresetSlot === 2, 'Painel perdeu trilha de áudio ou configurações do Turbo.'); started++; return job }
   }
   Object.defineProperty(window, 'desktop', { configurable: true, value: { editorV6 } })
   const mount = document.createElement('div')
@@ -46,7 +49,7 @@ let closePanelTest: () => void
   const root = createRoot(mount)
   function Demo() {
     const [project, setProject] = useState(panelProject)
-    return <EditorV6ExportPanel project={project} open onClose={() => {}} onChange={setProject} trackOperation={async (operation) => operation()} />
+    return <EditorV6ExportPanel project={project} open onClose={() => {}} onChange={setProject} trackOperation={async (operation) => operation()} prepareHair={async (_project, slot, preset) => { assert(slot === 2 && preset.enabled.front && !preset.enabled.back && !preset.enabled.fringe, 'Preset padrão não isolou o cabelo posterior.'); prepared++; return {} as EditorV6HairMotionBundle }} />
   }
   flushSync(() => root.render(<Demo />))
   await new Promise((resolve) => requestAnimationFrame(resolve))
@@ -58,7 +61,7 @@ let closePanelTest: () => void
   const start = Array.from(mount.querySelectorAll('button')).find((button) => button.textContent === 'EXPORTAR TURBO 2×')!
   start.click()
   await new Promise((resolve) => requestAnimationFrame(resolve))
-  assert(started === 1 && mount.textContent?.includes('MP4 exportado e validado.'), 'Painel não iniciou ou mostrou o resultado da exportação.')
+  assert(prepared === 1 && started === 1 && mount.textContent?.includes('MP4 exportado e validado.'), 'Painel não iniciou ou mostrou o resultado da exportação.')
   closePanelTest = () => { root.unmount(); mount.remove() }
   return { passed: true, importedAudio: imported, startedExports: started }
 }
