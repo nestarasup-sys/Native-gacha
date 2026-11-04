@@ -53,7 +53,7 @@ export async function prepareExportMotions(project: EditorV6Document, startFrame
   const schedule = editorV6MotionBakeGroupOrder(groupedPlans)
   const preparedGroups: Array<{ result: Pick<EditorV6MotionBakeResult, 'asset' | 'faceAsset' | 'motion'>; baked: boolean; milliseconds: number } | undefined> = Array(groupedPlans.length)
   const concurrency = Math.min(deps.concurrency ?? 1, Math.max(1, groupedPlans.length)) as 1 | 2
-  let nextGroup = 0, completed = 0, baked = 0, activeBakes = 0, maxConcurrentBakes = 0, failure: unknown
+  let nextGroup = 0, completed = 0, baked = 0, preparedRigs = 0, reusedRigs = 0, activeBakes = 0, maxConcurrentBakes = 0, failure: unknown
   const controller = new AbortController()
   const abortWithParent = () => controller.abort(deps.signal.reason ?? Error('Preparação de transições cancelada.'))
   deps.signal.addEventListener('abort', abortWithParent, { once: true })
@@ -84,8 +84,12 @@ export async function prepareExportMotions(project: EditorV6Document, startFrame
         else {
           activeBakes++
           maxConcurrentBakes = Math.max(maxConcurrentBakes, activeBakes)
-          try { result = await deps.bake({ id: randomUUID(), plan, character, ...(facialMotion ? { mouthScaleSamples: facialMotion } : {}) }, controller.signal) }
-          finally { activeBakes-- }
+          try {
+            const bakedResult = await deps.bake({ id: randomUUID(), plan, character, ...(facialMotion ? { mouthScaleSamples: facialMotion } : {}) }, controller.signal)
+            preparedRigs += bakedResult.metrics.preparedRigs
+            reusedRigs += bakedResult.metrics.reusedRigs ?? 0
+            result = bakedResult
+          } finally { activeBakes-- }
         }
         controller.signal.throwIfAborted()
         preparedGroups[index] = { result, baked: !known || !asset, milliseconds: performance.now() - started }
@@ -134,5 +138,5 @@ export async function prepareExportMotions(project: EditorV6Document, startFrame
       }
     }
   }
-  return { project, stats: { total: missing.length, unique: groupedPlans.length, requested: baked, reused: missing.length - baked, maxConcurrentBakes, milliseconds: performance.now() - began, requestMilliseconds: timings } }
+  return { project, stats: { total: missing.length, unique: groupedPlans.length, requested: baked, reused: missing.length - baked, preparedRigs, reusedRigs, maxConcurrentBakes, milliseconds: performance.now() - began, requestMilliseconds: timings } }
 }

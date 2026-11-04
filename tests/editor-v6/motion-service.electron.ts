@@ -52,6 +52,8 @@ async function main() {
   // disappear while output atlas bytes remain unchanged.
   assert.equal(second.metrics.preparedRigs, 0,
     `Warm full-pose pool rebuilt rigs for identical interpolated geometry: ${first.metrics.preparedRigs} -> ${second.metrics.preparedRigs}`)
+  assert.ok((second.metrics.reusedRigs ?? 0) >= 7,
+    'Motion bake did not report reused renderer sessions for seven exact canonical samples')
   assert.ok(first.motion.frames[0].x !== second.motion.frames[0].x,
     'Session reuse accidentally returned the previous actor geometry')
   await writeFile(join(folder, 'client.html'), '<!doctype html><html><body></body></html>')

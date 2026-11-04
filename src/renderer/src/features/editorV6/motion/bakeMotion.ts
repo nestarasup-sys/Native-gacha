@@ -256,7 +256,7 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
   const poseSignature = (pose: typeof fromPose) => JSON.stringify([pose.width, pose.height, pose.parts, pose.joints, pose.layerOrder, pose.hiddenPartIds])
   const samePose = poseSignature(fromPose) === poseSignature(toPose)
   const materials: GachaReusableMaterialCache = session?.materials ?? new Map()
-  let preparedRigs = 0, reusable: Renderer | undefined, preparedAtlasFrames: BakedBodySample[] | undefined, pendingFacePatches: BakedFacePatch[] | undefined
+  let preparedRigs = 0, reusedRigs = 0, reusable: Renderer | undefined, preparedAtlasFrames: BakedBodySample[] | undefined, pendingFacePatches: BakedFacePatch[] | undefined
   let behindFaceAtlas: HTMLCanvasElement | undefined, faceLayerAtlas: HTMLCanvasElement | undefined, inFrontOfFaceAtlas: HTMLCanvasElement | null | undefined
   const layerFrames: EditorV6MotionLayerAtlasCapture['frames'] = []
   const prepare = async (progress: number) => {
@@ -273,6 +273,7 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
       if (cached) {
         session!.endpointRenderers.delete(key)
         session!.endpointRenderers.set(key, cached)
+        reusedRigs++
         if (samePose) reusable = cached
         return cached
       }
@@ -392,7 +393,7 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
             asset: { id: assetId, category: 'character', name: 'Atlas isolado da boca', mimeType: 'image/png', dataUrl, timelineSnapshot: true },
             assetRole: 'face-atlas', mouthIsolationMode: 'isolated-piece', mouthlessBaseAssets,
             motion: { version: 1, key: request.plan.key, assetId, frames },
-            metrics: { milliseconds: performance.now() - began, preparedRigs, samples: count, atlasPixels }
+            metrics: { milliseconds: performance.now() - began, preparedRigs, reusedRigs, samples: count, atlasPixels }
           }
         } finally {
           isolatedPatches.forEach(({ canvas }) => { canvas.width = canvas.height = 1 })
@@ -441,7 +442,7 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
       }
       const assetId = crypto.randomUUID(), dataUrl = atlas.toDataURL('image/png')
       atlas.width = atlas.height = 1
-      return { asset: { id: assetId, category: 'character', name: 'Camada facial da boca', mimeType: 'image/png', dataUrl, timelineSnapshot: true }, assetRole: 'face-atlas', mouthIsolationMode: 'legacy-patch', motion: { version: 1, key: request.plan.key, assetId, frames }, metrics: { milliseconds: performance.now() - began, preparedRigs, samples: count, atlasPixels } }
+      return { asset: { id: assetId, category: 'character', name: 'Camada facial da boca', mimeType: 'image/png', dataUrl, timelineSnapshot: true }, assetRole: 'face-atlas', mouthIsolationMode: 'legacy-patch', motion: { version: 1, key: request.plan.key, assetId, frames }, metrics: { milliseconds: performance.now() - began, preparedRigs, reusedRigs, samples: count, atlasPixels } }
     }
     // The export-hair preparator already rendered both endpoint faces while
     // building the static rigs. Reuse those exact measured canvas dimensions
@@ -630,7 +631,7 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
       }), behindFace: behindFaceAtlas!, face: faceLayerAtlas!, inFrontOfFace: inFrontOfFaceAtlas! })
       atlas.width = atlas.height = 1
       faceAtlas.width = faceAtlas.height = 1
-      return { asset: { id: assetId, category: 'character', name: 'Transição de personagem', mimeType: 'image/png', dataUrl: bodyDataUrl, timelineSnapshot: true }, faceAsset, motion: { version: 1, key: request.plan.key, assetId, faceAssetId, frames }, metrics: { milliseconds: performance.now() - began, preparedRigs, samples: count, atlasPixels: bodyPixels + facePixels } }
+      return { asset: { id: assetId, category: 'character', name: 'Transição de personagem', mimeType: 'image/png', dataUrl: bodyDataUrl, timelineSnapshot: true }, faceAsset, motion: { version: 1, key: request.plan.key, assetId, faceAssetId, frames }, metrics: { milliseconds: performance.now() - began, preparedRigs, reusedRigs, samples: count, atlasPixels: bodyPixels + facePixels } }
     }
     const assetId = crypto.randomUUID(), atlasPixels = atlas.width * atlas.height, dataUrl = atlas.toDataURL('image/png')
     if (captureLayerAtlases) captureLayerAtlases({ frames: frames.map(frame => {
@@ -639,7 +640,7 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
       return { ...captured, ...(frame.facePatch ? { facePatch: frame.facePatch } : {}) }
     }), behindFace: behindFaceAtlas!, face: faceLayerAtlas!, inFrontOfFace: inFrontOfFaceAtlas! })
     atlas.width = atlas.height = 1
-    return { asset: { id: assetId, category: 'character', name: 'Transição de personagem', mimeType: 'image/png', dataUrl, timelineSnapshot: true }, motion: { version: 1, key: request.plan.key, assetId, frames }, metrics: { milliseconds: performance.now() - began, preparedRigs, samples: count, atlasPixels } }
+    return { asset: { id: assetId, category: 'character', name: 'Transição de personagem', mimeType: 'image/png', dataUrl, timelineSnapshot: true }, motion: { version: 1, key: request.plan.key, assetId, frames }, metrics: { milliseconds: performance.now() - began, preparedRigs, reusedRigs, samples: count, atlasPixels } }
   } finally {
     preparedAtlasFrames?.forEach(({ canvas, layers }) => { canvas.width = canvas.height = 1; disposeCroppedLayers(layers) })
     pendingFacePatches?.forEach(({ canvas }) => { canvas.width = canvas.height = 1 })

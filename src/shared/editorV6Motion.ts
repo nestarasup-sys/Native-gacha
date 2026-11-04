@@ -25,7 +25,7 @@ export type EditorV6MotionBakeResult = {
   /** Records whether the export loop contains only the catalog mouth or uses the compatible legacy patch. */
   mouthIsolationMode?: 'isolated-piece' | 'legacy-patch'
   motion: EditorV6MotionAtlas
-  metrics: { milliseconds: number; preparedRigs: number; samples: number; atlasPixels: number }
+  metrics: { milliseconds: number; preparedRigs: number; reusedRigs?: number; samples: number; atlasPixels: number }
 }
 /** Static mouth cycles store their localized face atlas as the motion asset itself. */
 export function editorV6UsesStaticMouthAtlas(request: EditorV6MotionBakeRequest): boolean {

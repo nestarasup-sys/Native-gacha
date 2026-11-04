@@ -113,7 +113,7 @@ export const editorV6MotionResultSchema = z.object({
   assetRole: z.literal('face-atlas').optional(),
   mouthIsolationMode: z.enum(['isolated-piece', 'legacy-patch']).optional(),
   motion: editorV6MotionAtlasSchema,
-  metrics: z.object({ milliseconds: finite.min(0), preparedRigs: z.number().int().min(0).max(9), samples: z.number().int().min(1).max(7), atlasPixels: z.number().int().min(1).max(8_100_000) })
+  metrics: z.object({ milliseconds: finite.min(0), preparedRigs: z.number().int().min(0).max(9), reusedRigs: z.number().int().min(0).max(100).optional(), samples: z.number().int().min(1).max(7), atlasPixels: z.number().int().min(1).max(8_100_000) })
 }).refine((result) => {
   const hasFacePatches = result.motion.frames.some((frame) => frame.facePatch)
   const mouthlessBaseAssets = result.mouthlessBaseAssets ?? []
