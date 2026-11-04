@@ -61,6 +61,12 @@ export type EditorV6WorkerPayload = { project: EditorV6Document; width: number; 
 export type EditorV6WorkerBridge = { payload: () => Promise<EditorV6WorkerPayload>; ready: (error?: string) => Promise<void> }
 export type EditorV6FrameTimings = Partial<Record<'sceneResolutionMs' | 'faceCompositionMs' | 'hairCompositionMs' | 'hairMotionPrewarmMs' | 'assetPreparationMs' | 'reactCommitMs' | 'rafWaitMs' | 'ipcDrawMs' | 'captureMs' | 'backgroundCaptureMs' | 'foregroundCaptureMs' | 'frameRoundTripMs' | 'ffmpegWriteMs', number>>
 export type EditorV6FrameMetrics = Partial<Record<'hairRasterFrames' | 'hairRasterPixels', number>>
+/** A real-project export may legitimately contain audio even with animated hair.
+ * The benchmark must verify its MP4 output, not assume a silent test scene.
+ */
+export function editorV6BenchmarkAudioMatchesExport(audioClips: number, outputHasAudio: boolean): boolean {
+  return Number.isSafeInteger(audioClips) && audioClips >= 0 && outputHasAudio === (audioClips > 0)
+}
 export type EditorV6RenderFrameResult = { reused: boolean; layerReused?: boolean; timings?: EditorV6FrameTimings; metrics?: EditorV6FrameMetrics }
 type EditorV6VisualKeyInput = { frame?: number; hairAnimationFrame?: number; background: unknown; elements: EditorV6Document['elements']; mediaVideo?: { mediaId: string; startFrame: number; sourceInFrame: number; layout: { x: number; y: number; width: number; height: number; rotation: number } } }
 function editorV6ElementVisualKeys(elements: EditorV6Document['elements']) {
