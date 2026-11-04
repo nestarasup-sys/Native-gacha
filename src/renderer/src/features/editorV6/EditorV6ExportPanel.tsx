@@ -2,9 +2,11 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { EditorV6Document } from '../../../../shared/editorV6'
 import { frameTimecode } from '../../../../shared/editorV6TimelineCore'
 import { EDITOR_V6_ENCODER_CHOICES, type EditorV6ExportAudio, type EditorV6ExportOptions, type EditorV6ExportStatus } from '../../../../shared/editorV6Export'
-import { FIRST_HAIR_MOTION_PRESET, HAIR_MOTION_PRESET_KEY, parseHairMotionPresets } from '../../../../shared/hairMotionEngine'
+import { FIRST_HAIR_MOTION_PRESET, HAIR_MOTION_PRESET_KEY, parseHairMotionPresets, type HairMotionPreset } from '../../../../shared/hairMotionEngine'
 import { prepareEditorV6HairMotionBundle } from './editorV6HairMotionPreparation'
 import { createEditorV6HairPreparationCache } from './editorV6HairPreparationCache'
+import { EditorV6HairPresetEditor } from './EditorV6HairPresetEditor'
+import { saveEditorV6HairPresetSlot } from './editorV6HairPresetStorage'
 import { cancelEditorV6ExportCommand, runEditorV6ExportCommand } from './editorV6ExportCommands'
 import { EditorV6ExportActivity } from './EditorV6ExportActivity'
 
@@ -23,6 +25,9 @@ export function EditorV6ExportPanel({ project, open, characterSourceRefreshRequi
   const [hairAnimationEnabled, setHairAnimationEnabled] = useState(false)
   const [hairPresetSlot, setHairPresetSlot] = useState(1)
   const [hairPresets, setHairPresets] = useState<Array<ReturnType<typeof parseHairMotionPresets>[number]>>([structuredClone(FIRST_HAIR_MOTION_PRESET), null, null, null, null])
+  const [presetDraft, setPresetDraft] = useState<{ slot: number; value: HairMotionPreset } | null>(null)
+  const [editingHairPreset, setEditingHairPreset] = useState(false)
+  const [hairPresetMessage, setHairPresetMessage] = useState('')
   // One bounded, disposable export-only bundle. Invalidated by document changes
   // and every source refresh; never persisted to the project or localStorage.
   const hairPreparationCache = useMemo(() => createEditorV6HairPreparationCache(), [])
@@ -52,6 +57,9 @@ export function EditorV6ExportPanel({ project, open, characterSourceRefreshRequi
     if (!open) return
     try {
       setHairPresets(parseHairMotionPresets(window.localStorage.getItem(HAIR_MOTION_PRESET_KEY)))
+      setPresetDraft(null)
+      setEditingHairPreset(false)
+      setHairPresetMessage('')
       setError('')
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Os presets de cabelo salvos estão inválidos.') }
   }, [open])
@@ -75,10 +83,27 @@ export function EditorV6ExportPanel({ project, open, characterSourceRefreshRequi
     catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
     finally { setBusy(false) }
   }
+  const selectedHairPreset = presetDraft?.slot === hairPresetSlot ? presetDraft.value : hairPresets[hairPresetSlot - 1]
+  const beginEditingHairPreset = () => {
+    setPresetDraft({ slot: hairPresetSlot, value: structuredClone(selectedHairPreset ?? FIRST_HAIR_MOTION_PRESET) })
+    setEditingHairPreset(true)
+    setHairPresetMessage('')
+  }
+  const saveHairPreset = () => {
+    const value = presetDraft?.slot === hairPresetSlot ? presetDraft.value : null
+    if (!value) return
+    try {
+      setHairPresets(saveEditorV6HairPresetSlot(window.localStorage, hairPresetSlot, value))
+      setHairPresetMessage(`Preset ${hairPresetSlot} salvo para Editor V6 e Fabricador DEV.`)
+      setError('')
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Não foi possível salvar o preset.')
+    }
+  }
   const start = async () => {
     if (characterSourceRefreshRequired) { setError('Aguarde a sincronização da aparência do personagem com o Customizador antes de exportar.'); return }
-    const selectedHairPreset = hairAnimationEnabled ? hairPresets[hairPresetSlot - 1] : null
-    if (hairAnimationEnabled && !selectedHairPreset) { setError('Escolha um preset salvo de animação de cabelo.'); return }
+    const preparedHairPreset = hairAnimationEnabled ? selectedHairPreset : null
+    if (hairAnimationEnabled && !preparedHairPreset) { setError('Escolha ou configure um preset de animação de cabelo.'); return }
     setExportStartedAt(Date.now()); setStartingExport(true)
     setBusy(true); setError('')
     try {
@@ -86,7 +111,7 @@ export function EditorV6ExportPanel({ project, open, characterSourceRefreshRequi
       project,
       options,
       hairPresetSlot,
-      hairPreset: selectedHairPreset,
+      hairPreset: preparedHairPreset,
       prepareHair: (document, slot, preset, exportOptions) => hairPreparationCache.prepare(
         document, slot, preset, exportOptions,
         () => prepareEditorV6HairMotionBundle(document, slot, preset, exportOptions)
@@ -130,8 +155,14 @@ export function EditorV6ExportPanel({ project, open, characterSourceRefreshRequi
           <small>A animação da boca é aplicada automaticamente durante a fala vinculada ao personagem. Ela não altera o restante da imagem.</small></fieldset>
         <fieldset className="v6-export-hair-settings" disabled={busy || active}><legend>Animação de cabelo <span>EXPERIMENTAL</span></legend>
           <label className="v6-export-check"><input type="checkbox" checked={hairAnimationEnabled} onChange={(event) => setHairAnimationEnabled(event.target.checked)} />Ativar animação de cabelo</label>
-          <label>Preset<select value={hairPresetSlot} onChange={(event) => setHairPresetSlot(Number(event.target.value))}>{hairPresets.map((preset, index) => <option key={index} value={index + 1} disabled={!preset}>Preset {index + 1}{preset ? '' : ' · vazio'}</option>)}</select></label>
-          <small>Usa os presets salvos em Fabricador DEV → Animação cabelo DEV. O movimento aparece somente no MP4 exportado.</small>
+          <label>Preset<select value={hairPresetSlot} onChange={(event) => { setHairPresetSlot(Number(event.target.value)); setPresetDraft(null); setEditingHairPreset(false); setHairPresetMessage('') }}>{hairPresets.map((preset, index) => <option key={index} value={index + 1}>Preset {index + 1}{preset ? '' : ' · vazio'}</option>)}</select></label>
+          <small>O preset usa a mesma chave do Fabricador DEV. O cabelo animado continua exclusivo do MP4.</small>
+          <button type="button" aria-expanded={editingHairPreset} onClick={() => editingHairPreset ? setEditingHairPreset(false) : beginEditingHairPreset()}>{editingHairPreset ? 'Recolher controles' : selectedHairPreset ? 'Editar preset no Editor V6' : 'Criar preset neste slot'}</button>
+          {editingHairPreset && presetDraft?.slot === hairPresetSlot && <EditorV6HairPresetEditor slot={hairPresetSlot} preset={presetDraft.value}
+            onChange={(value) => { setPresetDraft({ slot: hairPresetSlot, value }); setHairPresetMessage('') }}
+            onSave={saveHairPreset}
+            onDiscard={() => { setPresetDraft(null); setEditingHairPreset(false); setHairPresetMessage('') }} />}
+          {hairPresetMessage && <small role="status">{hairPresetMessage}</small>}
         </fieldset>
         <fieldset className="v6-export-audio-settings" disabled={busy || active}><legend>Trilha sonora da exportação</legend><p>Os arquivos são copiados para o projeto. A mixagem é aplicada uma única vez ao vídeo final.</p>
           {(project.exportAudio?.length ?? 0) > 0 ? <div className="v6-export-audio-list">{(project.exportAudio ?? []).map((clip) => <div className="v6-export-audio" key={clip.id}>

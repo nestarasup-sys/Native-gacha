@@ -6,6 +6,14 @@
 
 **Regra de produto inegociável:** a animação dinâmica experimental de cabelo fica **exclusivamente na exportação MP4**, habilitada manualmente. A prévia, viewport, seek e reprodução normal do Editor V6 não devem ganhar cabelo animado. A prévia de animação do **Fabricador DEV** permanece.
 
+## Retomada atual — Rodadas 10 e 11 (04/11/2026)
+
+- **R10 — reexportação:** cache em RAM de apenas um bundle de cabelo, com chave de projeto/preset/intervalo e invalidação por alterações de fontes. Possível evitar novo preparo de 18,23 s ao exportar duas vezes exatamente a mesma cena pela interface. Não modifica o primeiro export e o benchmark CLI atual não exercita o cache. [Detalhes](RODADA_10_V4_REEXPORT_CABELO_REUSO_SEGURO.md).
+- **R11 — presets mais próximos do trabalho:** editar/salvar Presets 1–5 diretamente no painel de exportação do Editor V6, compartilhando dados e limites com o laboratório de animação no Fabricador DEV. A prévia normal continua sem cabelo animado. [Detalhes](RODADA_11_V4_PRESETS_NO_EDITOR_E_RENDERS.md).
+- **Direção para velocidade maior:** [arquitetura híbrida e alternativas sem Chromium obrigatório](ALTERNATIVAS_EXPORT_SEM_CHROMIUM_2026-11-04.md): priorizar cache de prebake verificável e spike de composição nativa de 30/300 quadros, iniciando com `sharp` já instalado; Skia/resvg/texture GPU apenas com demonstração de compatibilidade e ganho. **Não anunciar 10–15 s até medir.**
+
+---
+
 ## Retomada após o Codex — execução de duas rodadas na Dev-V2
 
 **Rodada 05 — benchmark real:** o script isolado para o `Editor V6 06` foi corrigido para **não rejeitar exportações com cabelo e áudio**. O benchmark agora valida coerência entre clipes planejados e trilha MP4, além de verificar que o projeto copiado é o título esperado e tem pelo menos 300 quadros. Testes cobrem exportação com/sem áudio. [Relatório da Rodada 05](RODADA_05_V4_RETOMADA_BENCHMARK.md).

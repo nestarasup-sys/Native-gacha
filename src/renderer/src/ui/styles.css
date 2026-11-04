@@ -2942,3 +2942,16 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .v6-video-picker>footer>small { color:#82788b;font-size:11px; }
 .v6-video-picker>footer>button { min-height:35px;padding:0 14px;border:1px solid #e6dce9;border-radius:8px;background:#fff;color:#786c7e;font-size:13px;cursor:pointer; }
 @media (max-width:620px) { .v6-video-picker-toolbar { flex-direction:column; } .v6-video-picker-badge { min-width:68px;font-size:9px; } .v6-video-picker-action { font-size:0; } .v6-video-picker-action::after { content:'→';font-size:16px; } }
+
+/* Editor V6 preset authoring: shared ranges with Fabricator DEV, no live-hair preview. */
+.v6-hair-preset-editor { display:grid;gap:10px;padding:12px;border:1px solid #eedce8;border-radius:12px;background:#fff8fc; }
+.v6-hair-preset-editor>strong { font-size:11px;color:#64445c; }
+.v6-hair-preset-physics,.v6-hair-preset-layers { display:grid;gap:9px; }
+.v6-hair-preset-editor .v6-hair-preset-range { display:grid;gap:3px;font-size:10px; }
+.v6-hair-preset-range>span { display:flex;justify-content:space-between;gap:8px; }
+.v6-hair-preset-range output { color:#a34a7b;font-variant-numeric:tabular-nums; }
+.v6-export-panel .v6-hair-preset-editor input[type=range] { width:100%;height:20px;min-height:20px;padding:0;accent-color:#b64b80; }
+.v6-hair-preset-editor .v6-hair-preset-toggle { display:flex;flex-direction:row;align-items:center;gap:8px; }
+.v6-export-panel .v6-hair-preset-editor input[type=checkbox] { width:16px;height:16px;padding:0;accent-color:#b64b80; }
+.v6-hair-preset-layers>div { display:grid;gap:5px;padding:7px 0;border-top:1px solid #f0e2eb; }
+.v6-hair-preset-actions { display:flex;flex-wrap:wrap;gap:7px; }

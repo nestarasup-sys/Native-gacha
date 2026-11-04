@@ -10,12 +10,11 @@ import { hairAnimationGeometry } from './hairAnimationGeometry'
 import { HairMotionMesh } from './HairMotionMesh'
 import { HairAnimationCharacter } from './HairAnimationCharacter'
 import { HAIR_MOTION_PRESET_KEY, parseHairMotionPresets, type HairMotionPreset } from './hairMotionPresets'
+import { HAIR_MOTION_PHYSICS_CONTROLS, HAIR_MOTION_LAYER_CONTROLS } from '../../../../../shared/hairMotionPresetControls'
 import type { HairMotionSettings } from './hairMotionPhysics'
 import './hair-animation.css'
 
-const sides: Array<{ id: HairSide; label: string }> = [
-  { id: 'back', label: 'Traseiro' }, { id: 'front', label: 'Posterior' }, { id: 'fringe', label: 'Franja' }
-]
+const sides = HAIR_MOTION_LAYER_CONTROLS
 const emptySelection: Record<HairSide, string> = { back: '', front: '', fringe: '' }
 const defaultEnabled: Record<HairSide, boolean> = { back: true, front: true, fringe: true }
 const defaultIntensity: Record<HairSide, number> = { back: 100, front: 75, fringe: 40 }
@@ -153,7 +152,7 @@ export function HairAnimationWorkspace({ baseModelSlot }: { baseModelSlot: numbe
         </section>
         <section><h3>Presets salvos</h3><div className="hair-animation-preset-slots">{presetSlots.map((preset, index) => <div className="hair-animation-preset-slot" key={index}><button type="button" disabled={!preset} onClick={() => { if (preset) loadPreset(preset) }}>Preset {index + 1}{preset ? '' : ' · vazio'}</button><button type="button" disabled={Boolean(presetStorage.error)} aria-label={`Salvar configuração no preset ${index + 1}`} onClick={() => savePreset(index)}>Salvar</button></div>)}</div>{presetMessage && <p className="hair-animation-hint" role="status">{presetMessage}</p>}</section>
         <section><h3>Movimento</h3><div className="hair-animation-presets">{([['brisa', 'Brisa'], ['vento', 'Ventania'], ['suave', 'Suave'], ['solto', 'Solto']] as const).map(([key, label]) => <button type="button" key={key} onClick={() => { setPhysics(presets[key]); setPlaying(true) }}>{label}</button>)}</div>
-          {([['wind', 'Vento', -100, 100], ['gust', 'Rajadas', 0, 100], ['speed', 'Velocidade', 25, 250], ['stiffness', 'Rigidez', 0, 100], ['damping', 'Amortecimento', 0, 100], ['responsiveness', 'Reação à cabeça', 0, 100], ['anchor', 'Raiz fixa', 0, 85]] as const).map(([key, label, min, max]) => <label key={key} className="hair-animation-range"><span>{label}<output>{physics[key]}{key === 'wind' ? '' : '%'}</output></span><input type="range" min={min} max={max} value={physics[key]} onChange={(event) => setPhysics((current) => ({ ...current, [key]: Number(event.target.value) }))} /></label>)}
+          {HAIR_MOTION_PHYSICS_CONTROLS.map(({ key, label, min, max }) => <label key={key} className="hair-animation-range"><span>{label}<output>{physics[key]}{key === 'wind' ? '' : '%'}</output></span><input type="range" min={min} max={max} value={physics[key]} onChange={(event) => setPhysics((current) => ({ ...current, [key]: Number(event.target.value) }))} /></label>)}
           <div className="hair-animation-layers"><span>Força por camada</span>{sides.map(({ id, label }) => <div className="hair-animation-layer" key={id}><label><input type="checkbox" checked={enabled[id]} onChange={(event) => setEnabled((current) => ({ ...current, [id]: event.target.checked }))} />{label}</label><input aria-label={`Força da camada ${label.toLowerCase()}`} type="range" min="0" max="150" value={intensity[id]} disabled={!enabled[id]} onChange={(event) => setIntensity((current) => ({ ...current, [id]: Number(event.target.value) }))} /><output>{intensity[id]}%</output></div>)}</div><div className="hair-animation-actions"><button type="button" onClick={resetControls}>Restaurar controles</button></div></section>
         <p className="hair-animation-note">Os presets ficam salvos neste computador. O movimento é experimental e fica nesta prévia.</p>
       </aside>
