@@ -1,0 +1,32 @@
+'use strict'
+const test = require('node:test')
+const assert = require('node:assert/strict')
+const { parseArgs, compareRgba, benchmark } = require('../../scripts/editor-v6/spike-native-compositor.cjs')
+
+test('rejects unsafe or incomplete spike arguments', () => {
+  assert.throws(() => parseArgs(['--background=/tmp/bg.png']))
+  assert.throws(() => parseArgs(['--frames=0']))
+  assert.throws(() => parseArgs(['--strict']))
+  assert.throws(() => parseArgs(['--width=10000']))
+  assert.equal(parseArgs(['--frames=8', '--width=96', '--height=64']).frames, 8)
+})
+test('compares complete RGBA channels without losing alpha differences', () => {
+  const left = Buffer.from([0, 10, 20, 30, 100, 120, 140, 160])
+  const right = Buffer.from([0, 10, 20, 31, 103, 120, 140, 160])
+  const diff = compareRgba(left, right, 2, 1)
+  assert.equal(diff.identical, false)
+  assert.equal(diff.mismatchedPixels, 2)
+  assert.equal(diff.mismatchedChannels, 2)
+  assert.equal(diff.maximumChannelDifference, 3)
+  assert.equal(compareRgba(left, left, 2, 1).mismatchedPixels, 0)
+  assert.throws(() => compareRgba(Buffer.alloc(7), right, 2, 1))
+})
+test('runs 8 native synthetic frames with no project I/O', async () => {
+  const result = await benchmark(parseArgs(['--frames=8', '--width=96', '--height=64']))
+  assert.equal(result.syntheticOnly, true)
+  assert.equal(result.frames, 8)
+  assert.equal(result.width, 96)
+  assert.equal(result.height, 64)
+  assert.equal(result.parity, null)
+  assert.ok(Number.isFinite(result.framesPerSecond) && result.framesPerSecond > 0)
+})

@@ -58,3 +58,15 @@ O primeiro spike deve usar 30 quadros representativos (incluindo boca, cabelo em
 5. Considerar spike D3D11 se o A/B mostrar que composição nativa de pixels ainda gasta muito em cópias.
 
 **Critério de aceite:** reprodutibilidade e fidelidade primeiro; meta de 15 s só depois de benchmark completo. Não publicar screenshots/media/dados do projeto real.
+
+## Ferramenta executável da Rodada 11 — compositor nativo isolado
+
+Foi incluído `scripts/editor-v6/spike-native-compositor.cjs`, executável com `npm run spike:editor-v6:native-composite -- --frames=300`. Por padrão ele gera um par **sintético** de camadas 1080p, mede tempo total/p50/p95 e RSS observado (não edita arquivos). Para testar camadas externas copiadas para um diretório isolado, utilize:
+
+```powershell
+node scripts/editor-v6/spike-native-compositor.cjs --background=C:\CAMINHO_ISOLADO\fundo.png --foreground=C:\CAMINHO_ISOLADO\personagens-alpha.png --reference=C:\CAMINHO_ISOLADO\composicao-electron.png --frames=30 --strict
+```
+
+A opção `--strict` exige **RGBA exatamente igual**. Para investigação inicial, execute sem `--strict` e confira `mismatchedPixels`, `maximumChannelDifference` e `meanAbsoluteChannelDifference`. O script lê PNGs, não os publica e não imprime caminhos privados. O teste automatizado `tests/editor-v6/nativeCompositorSpike.test.cjs` cobre parser/alpha e oito quadros sintéticos.
+
+**Atenção:** o mesmo primeiro plano é repetido em cada ciclo; o número de FPS é do **blend nativo isolado**, não do MP4. O Codex deve depois exportar 30 pares **diferentes** de cenas reais e comparar o fluxo nativo completo com o renderer de referência. As saídas do spike não provam fidelidade de SVG, hair mesh, WebGL, sincronia, áudio nem encode.

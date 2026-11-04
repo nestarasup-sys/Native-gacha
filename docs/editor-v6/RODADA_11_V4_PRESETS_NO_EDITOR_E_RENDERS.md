@@ -25,3 +25,7 @@ A mudança de UI não acelera o processo de geração do MP4. Ela reduz a navega
 O plano para **acelerar o primeiro export** deixa de ser uma fixação em `capturePage` e passa a exigir avaliação de backends independentes; veja [ALTERNATIVAS_EXPORT_SEM_CHROMIUM_2026-11-04.md](ALTERNATIVAS_EXPORT_SEM_CHROMIUM_2026-11-04.md).
 
 **Aceite:** verificar Electron/Windows, testes de Fabricador, presets lidos de ambas as telas, nenhum dado pessoal modificado, real MP4 com paridade e testes da Rodada 10. Não alegar a meta de 15 s sem medi-la em 300 quadros reais.
+
+## Instrumento da mesma rodada
+
+O script `scripts/editor-v6/spike-native-compositor.cjs` permite experimentar `sharp` fora do Chromium, com PNG RGBA de referência e relatório de diferença por pixel. Seus testes de parser, alpha e fixture sintética fazem parte de `npm run test:editor-v6`. **Não está ligado ao exportador de produção** e não altera o MP4.
