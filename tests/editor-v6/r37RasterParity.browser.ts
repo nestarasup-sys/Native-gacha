@@ -48,6 +48,9 @@ export async function runR37RasterParity() {
   })
   const actual = canvas(), expected = canvas()
   const context = expected.getContext('2d')!
+  const referenceImage = new Image()
+  referenceImage.src = dataUrl
+  await referenceImage.decode()
   let samples = 0
   let rasterMilliseconds = 0
   let referenceMilliseconds = 0
@@ -64,15 +67,12 @@ export async function runR37RasterParity() {
     context.clearRect(0, 0, expected.width, expected.height)
     // Independent reference drawing, matching the existing characterLayerRenderer
     // transform sequence for the plain-piece subset only.
-    const img = new Image()
-    img.src = dataUrl
-    await img.decode()
     for (const p of frame.parts) {
       if (!p.visible) continue
       context.save()
       context.translate(p.x + p.width / 2, p.y + p.height / 2)
       context.rotate(p.rotation * Math.PI / 180)
-      context.drawImage(img, -p.width / 2, -p.height / 2, p.width, p.height)
+      context.drawImage(referenceImage, -p.width / 2, -p.height / 2, p.width, p.height)
       context.restore()
     }
     referenceMilliseconds += performance.now() - referenceStart
@@ -85,5 +85,6 @@ export async function runR37RasterParity() {
   return { passed: true, frames: samples, decodedImages: decodes, scope: 'plain-parts-only', exportReady: false,
     rasterMilliseconds: Math.round(rasterMilliseconds * 1000) / 1000,
     referenceMilliseconds: Math.round(referenceMilliseconds * 1000) / 1000,
+    timingScope: 'synthetic-96x96-predecoded-reference-not-full-export',
     captures }
 }
