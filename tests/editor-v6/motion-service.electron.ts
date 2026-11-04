@@ -91,7 +91,9 @@ async function main() {
   const sharedCancellation = new AbortController(), survivingRequest = request(101)
   const cancelledSubscriber = service!.bakeForExport(survivingRequest, sharedCancellation.signal)
   const survivingSubscriber = service!.bakeForExport({ ...survivingRequest, id: randomUUID() }, new AbortController().signal)
-  setTimeout(() => sharedCancellation.abort(), 10)
+  // Both subscribers are attached before this synchronous abort. A very fast
+  // bake must not make a wall-clock timer invalidate the cancellation test.
+  sharedCancellation.abort(Error('One subscriber cancelled'))
   await assert.rejects(cancelledSubscriber)
   assert.ok((await survivingSubscriber).asset.dataUrl.startsWith('data:image/png;base64,'), 'One subscriber cancellation interrupted another subscriber')
   const rounds: Array<{ mode: string; workers: number; round: number; milliseconds: number; windows: number }> = []
