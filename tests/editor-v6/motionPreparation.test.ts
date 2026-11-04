@@ -11,6 +11,7 @@ import { editorV6MotionResultSchema } from '../../src/shared/editorV6Schema'
 import { pruneEditorV6TimelineSnapshots, repairEditorV6DuplicateAssets, resolveEditorV6ElementsAtFrame } from '../../src/shared/editorV6Timeline'
 import { editEditorV6DocumentAtBlock } from '../../src/shared/editorV6TimelineEdits'
 import { prepareExportMotions } from '../../electron/domains/editorV6/prepareMotions'
+import { editorV6MotionBakeGroupOrder } from '../../electron/domains/editorV6/motionBakeSchedule'
 import { EDITOR_V6_MOUTH_LOOP_SAMPLE_SCALES, editorV6MouthLoopScaleAtFrame } from '../../src/shared/editorV6Export'
 import { createMotionDiskCache, motionCacheKey } from '../../electron/domains/editorV6/motionCache'
 import { createEditorV6MotionService, editorV6MotionMemoryCacheKey } from '../../electron/domains/editorV6/motionIpc'
@@ -76,6 +77,20 @@ function staticMouthAtlasResultFor(request: EditorV6MotionBakeRequest): EditorV6
 }
 
 describe('transition preparation reuse', () => {
+  it('R33 groups characters to keep motion-bake lane sessions warm without reordering results', () => {
+    const grouped = [
+      [{ characterId: 'beta' }], [{ characterId: 'alpha' }],
+      [{ characterId: 'beta' }], [{ characterId: 'alpha' }],
+      [{ characterId: 'alpha' }], [{ characterId: 'beta' }]
+    ]
+    const original = JSON.stringify(grouped)
+    const order = editorV6MotionBakeGroupOrder(grouped)
+    expect(order).toEqual([1, 3, 4, 0, 2, 5])
+    expect(order.map(index => grouped[index][0].characterId)).toEqual(['alpha', 'alpha', 'alpha', 'beta', 'beta', 'beta'])
+    expect(JSON.stringify(grouped)).toBe(original)
+    expect(editorV6MotionBakeGroupOrder([])).toEqual([])
+    expect(editorV6MotionBakeGroupOrder([[{ characterId: 'single' }]])).toEqual([0])
+  })
   it('detecta edição do Customizador e não prepara atlas com corpo diferente do snapshot', async () => {
     const { project, character } = fixture()
     const changedCharacter = {

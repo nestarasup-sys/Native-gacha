@@ -4,6 +4,7 @@ import type { CustomizerCharacter } from '../../../src/shared/customizer'
 import { editorV6CharacterSnapshotIsCurrent } from '../../../src/shared/editorV6CharacterSource.ts'
 import { editorV6MotionHasAvailableAssets, editorV6MotionPlans, missingEditorV6Motions, type EditorV6MotionBakeRequest, type EditorV6MotionBakeResult } from '../../../src/shared/editorV6Motion'
 import { editorV6MouthLoopScaleAtFrame, EDITOR_V6_MOUTH_LOOP_SAMPLE_SCALES } from '../../../src/shared/editorV6Export'
+import { editorV6MotionBakeGroupOrder } from './motionBakeSchedule'
 
 export async function prepareExportMotions(project: EditorV6Document, startFrame: number, endFrame: number, deps: {
   signal: AbortSignal; characters: CustomizerCharacter[]
@@ -46,6 +47,10 @@ export async function prepareExportMotions(project: EditorV6Document, startFrame
   const plansByBlock = new Map(editorV6MotionPlans(project).map((plan) => [plan.blockId, plan]))
   const preparedByBlock = new Map<string, Pick<EditorV6MotionBakeResult, 'asset' | 'faceAsset' | 'motion'>>()
   const groupedPlans = [...groups.values()]
+  // Group work per character so each warm Electron worker can reuse its
+  // model/wardrobe/face and exact endpoint renderers across consecutive bakes.
+  // Original indexed results and timeline order remain unchanged.
+  const schedule = editorV6MotionBakeGroupOrder(groupedPlans)
   const preparedGroups: Array<{ result: Pick<EditorV6MotionBakeResult, 'asset' | 'faceAsset' | 'motion'>; baked: boolean; milliseconds: number } | undefined> = Array(groupedPlans.length)
   const concurrency = Math.min(deps.concurrency ?? 1, Math.max(1, groupedPlans.length)) as 1 | 2
   let nextGroup = 0, completed = 0, baked = 0, activeBakes = 0, maxConcurrentBakes = 0, failure: unknown
@@ -55,8 +60,9 @@ export async function prepareExportMotions(project: EditorV6Document, startFrame
   if (deps.signal.aborted) abortWithParent()
   const prepareNext = async () => {
     while (!controller.signal.aborted) {
-      const index = nextGroup++
-      if (index >= groupedPlans.length) return
+      const sequence = nextGroup++
+      if (sequence >= schedule.length) return
+      const index = schedule[sequence]
       const plans = groupedPlans[index], plan = plans[0], character = characters.get(plan.characterId)
       if (!character) {
         failure = Error(`Não foi possível preparar a transição: personagem ${plan.from.text} não encontrado.`)
