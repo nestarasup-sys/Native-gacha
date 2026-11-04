@@ -285,6 +285,12 @@ export function sampleHairMotionPoseReaction(
   return true
 }
 
+/** The texture remains pixel-identical while a piece is disabled, at rest,
+ * or has zero intensity. Its padded source can be shared within one worker. */
+export function hairMotionNeedsWarp(state: HairMotionState, settings: HairMotionSettings, intensity: number): boolean {
+  return settings.enabled && intensity > 0 && state.time !== 0
+}
+
 export function hairMotionOffset(state: HairMotionState, vertical: number, anchor: number): number {
   const root = Math.max(0, Math.min(0.95, anchor / 100))
   const amount = Math.max(0, Math.min(1, (vertical - root) / (1 - root)))

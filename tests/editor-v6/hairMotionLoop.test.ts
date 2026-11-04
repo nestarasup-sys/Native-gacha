@@ -3,7 +3,7 @@ import {
   applyHairMotionLoopHeadImpulse, buildHairMotionLoop, createHairMotionState,
   hairMotionLoopOffsets, prewarmHairMotionState, advanceHairMotionToFrame,
   hairMotionPosteriorOnlyPreset, FIRST_HAIR_MOTION_PRESET,
-  hairMotionLatestPoseEnd, hairMotionPoseReactionEndFrames, hairMotionPoseReactionIsActive, sampleHairMotionPoseReaction, HAIR_MOTION_POSE_REACTION_FRAMES,
+  hairMotionLatestPoseEnd, hairMotionNeedsWarp, hairMotionPoseReactionEndFrames, hairMotionPoseReactionIsActive, sampleHairMotionPoseReaction, HAIR_MOTION_POSE_REACTION_FRAMES,
   type HairMotionSettings
 } from '../../src/shared/hairMotionEngine'
 import { planEditorV6Export } from '../../src/shared/editorV6Export'
@@ -27,6 +27,15 @@ describe('V6 experimental numerical hair loop', () => {
   })
 
 
+  it('R29: stationary and disabled pieces never trigger WebGL mesh warping', () => {
+    const state = createHairMotionState()
+    const settingsEnabled = { ...settings, enabled: true }
+    expect(hairMotionNeedsWarp(state, settingsEnabled, 1)).toBe(false)
+    state.time = 1
+    expect(hairMotionNeedsWarp(state, settingsEnabled, 1)).toBe(true)
+    expect(hairMotionNeedsWarp(state, settingsEnabled, 0)).toBe(false)
+    expect(hairMotionNeedsWarp(state, { ...settingsEnabled, enabled: false }, 1)).toBe(false)
+  })
   it('R28: static frames are outside the one-shot reaction window', () => {
     const events = [29, 90, 149]
     const active: number[] = []
