@@ -91,6 +91,8 @@ jobs:
           $videoTools = Join-Path $env:RUNNER_TEMP 'native-gacha-editor-v6-video-tools'
           ./scripts/video-studio/prepare-ffmpeg-lgpl.ps1 -DestinationPath $videoTools
           "EDITOR_V6_TEST_VIDEO_TOOLS_DIR=$videoTools" >> $env:GITHUB_ENV
+      - name: Verify native RGBA of single-pass face composition in isolated Electron
+        run: node scripts/editor-v6/check-motion.cjs
       - name: Validate experimental export-only hair animation on synthetic fixtures
         run: node scripts/editor-v6/check-hair-motion-export.cjs
       - name: Compare real Turbo MP4 pixels with timeline

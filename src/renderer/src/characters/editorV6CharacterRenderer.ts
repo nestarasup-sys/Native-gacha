@@ -91,7 +91,7 @@ export async function materialsForPreparedCharacter(
   return loadPreparedCharacterMaterials(character, slot, assetProvider, loadHairAppearanceLayers, cache)
 }
 
-export async function prepareSavedCharacterRenderer(character: CustomizerCharacter, renderSource?: { artwork: CatalogArtwork; source: FabricatorProject; assetProvider?: CharacterRenderAssetProvider; materialCache?: GachaReusableMaterialCache }): Promise<{ width: number; height: number; render: (appearance?: CustomizerFaceAppearance, studioFaceTransforms?: EditorV6FaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: EditorV6FaceRenderMode, options?: { mouthLayer?: FaceCatalogMouthLayer }) => Promise<{ dataUrl: string; width: number; height: number }>; renderToCanvas: (appearance?: CustomizerFaceAppearance, studioFaceTransforms?: EditorV6FaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: EditorV6FaceRenderMode, options?: { mouthLayer?: FaceCatalogMouthLayer }) => Promise<{ canvas: HTMLCanvasElement; width: number; height: number }>; renderMouthToCanvas: (appearance?: CustomizerFaceAppearance, studioFaceTransforms?: EditorV6FaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: EditorV6FaceRenderMode) => Promise<{ canvas: HTMLCanvasElement; width: number; height: number }>; canIsolateMouth: (appearance?: CustomizerFaceAppearance) => boolean; renderLayersToCanvas: (appearance?: CustomizerFaceAppearance, studioFaceTransforms?: EditorV6FaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: EditorV6FaceRenderMode, options?: { mouthLayer?: FaceCatalogMouthLayer }) => Promise<PreparedGachaLayerFrame> ; dispose: () => void }> {
+export async function prepareSavedCharacterRenderer(character: CustomizerCharacter, renderSource?: { artwork: CatalogArtwork; source: FabricatorProject; assetProvider?: CharacterRenderAssetProvider; materialCache?: GachaReusableMaterialCache }): Promise<{ width: number; height: number; render: (appearance?: CustomizerFaceAppearance, studioFaceTransforms?: EditorV6FaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: EditorV6FaceRenderMode, options?: { mouthLayer?: FaceCatalogMouthLayer }) => Promise<{ dataUrl: string; width: number; height: number }>; renderToCanvas: (appearance?: CustomizerFaceAppearance, studioFaceTransforms?: EditorV6FaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: EditorV6FaceRenderMode, options?: { mouthLayer?: FaceCatalogMouthLayer }) => Promise<{ canvas: HTMLCanvasElement; width: number; height: number }>; renderMouthToCanvas: (appearance?: CustomizerFaceAppearance, studioFaceTransforms?: EditorV6FaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: EditorV6FaceRenderMode) => Promise<{ canvas: HTMLCanvasElement; width: number; height: number }>; canIsolateMouth: (appearance?: CustomizerFaceAppearance) => boolean; renderToCanvasWithLayers: (appearance?: CustomizerFaceAppearance, studioFaceTransforms?: EditorV6FaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: EditorV6FaceRenderMode, options?: { mouthLayer?: FaceCatalogMouthLayer }) => Promise<{ canvas: HTMLCanvasElement; width: number; height: number; layers: PreparedGachaLayerFrame }>; renderLayersToCanvas: (appearance?: CustomizerFaceAppearance, studioFaceTransforms?: EditorV6FaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: EditorV6FaceRenderMode, options?: { mouthLayer?: FaceCatalogMouthLayer }) => Promise<PreparedGachaLayerFrame> ; dispose: () => void }> {
   const { modelSlot, assetProvider, source, artwork } = await resolveSavedCharacterSource(character, renderSource)
   const proportions = getCharacterProportions(character.customization)
   const hairAppearance = character.customization.hairAppearance
@@ -289,6 +289,35 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
     outputContext.restore()
     return { canvas: scaledOutput, width: outputWidth, height: outputHeight }
   }
+  /**
+   * Export-only dual output. Paint expensive facial components exactly once on
+   * the reusable transparent face layer, then composite the same layer into
+   * the full body buffer. The normal Editor/Fabricator preview path is unchanged.
+   */
+  const renderToCanvasWithLayers = async (...args: Parameters<typeof renderLayersToCanvas>) => {
+    const layers = await renderLayersToCanvas(...args)
+    context.clearRect(0, 0, canvas.width, canvas.height)
+    context.drawImage(layers.behindFace, 0, 0, canvas.width, canvas.height)
+    context.drawImage(layers.face, 0, 0, canvas.width, canvas.height)
+    if (layers.inFrontOfFace) context.drawImage(layers.inFrontOfFace, 0, 0, canvas.width, canvas.height)
+    if (shapeScale.x === 1 && shapeScale.y === 1) return { canvas, width: canvas.width, height: canvas.height, layers }
+    if (!scaledOutput) {
+      scaledOutput = createCharacterCanvas()
+      scaledOutput.width = outputWidth
+      scaledOutput.height = outputHeight
+      scaledContext = scaledOutput.getContext('2d')
+      if (!scaledContext) throw new Error('Não foi possível aplicar as proporções do personagem.')
+    }
+    const outputContext = scaledContext!
+    outputContext.save()
+    outputContext.setTransform(1, 0, 0, 1, 0, 0)
+    outputContext.clearRect(0, 0, outputWidth, outputHeight)
+    outputContext.translate(outputWidth / 2, outputHeight / 2)
+    outputContext.scale(shapeScale.x, shapeScale.y)
+    outputContext.drawImage(canvas, -canvas.width / 2, -canvas.height / 2)
+    outputContext.restore()
+    return { canvas: scaledOutput, width: outputWidth, height: outputHeight, layers }
+  }
   const canIsolateMouth = (currentAppearance: CustomizerFaceAppearance | undefined = appearance) => Boolean(
     currentAppearance?.modelSlot === modelSlot && (currentAppearance.mouthClosedCatalogId || currentAppearance.mouthOpenCatalogId)
   )
@@ -326,7 +355,7 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
       if (surface) { surface.width = 1; surface.height = 1 }
     }
   }
-  return { width: outputWidth, height: outputHeight, render, renderToCanvas, renderMouthToCanvas, canIsolateMouth, renderLayersToCanvas, dispose }
+  return { width: outputWidth, height: outputHeight, render, renderToCanvas, renderMouthToCanvas, canIsolateMouth, renderLayersToCanvas, renderToCanvasWithLayers, dispose }
 }
 
 export async function renderSavedCharacter(character: CustomizerCharacter, studioFaceTransforms?: EditorV6FaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: EditorV6FaceRenderMode): Promise<{ dataUrl: string; width: number; height: number }> {

@@ -229,9 +229,15 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
       const mode = faceMode ?? face.mode
       const renderMode = referenceMode ? mode : editorV6FaceModeDuringMotion(mode)
       const isolateMouth = Boolean(request.mouthScaleSamples && (mode === 'talk' || mode === 'talk-blink') && renderer.canIsolateMouth(face.appearance))
-      const result = await renderer.renderToCanvas(face.appearance, face.transforms, face.effects, renderMode, isolateMouth ? { mouthLayer: 'without-mouth' } : undefined)
+      // A hair-layer bake needs both the full body and split layers. Render
+      // expensive face assets once, not twice for every intermediate sample.
+      const mouthOptions = isolateMouth ? { mouthLayer: 'without-mouth' as const } : undefined
+      const layered = captureLayers
+        ? await renderer.renderToCanvasWithLayers(face.appearance, face.transforms, face.effects, renderMode, mouthOptions)
+        : undefined
+      const result = layered ?? await renderer.renderToCanvas(face.appearance, face.transforms, face.effects, renderMode, mouthOptions)
+      const layers = layered?.layers
       const mouth = isolateMouth ? await renderer.renderMouthToCanvas(face.appearance, face.transforms, face.effects, renderMode) : undefined
-      const layers = captureLayers ? await renderer.renderLayersToCanvas(face.appearance, face.transforms, face.effects, renderMode, isolateMouth ? { mouthLayer: 'without-mouth' } : undefined) : undefined
       return { ...result, crop: cropOf(result.canvas, fingerprint), renderer, ...(layers ? { layers } : {}), ...(mouth ? { mouthCanvas: mouth.canvas, mouthCrop: cropOf(mouth.canvas, fingerprint, 0) } : {}), dispose: () => { if (!samePose && !preparedRenderer) renderer.dispose() } }
     } catch (error) { if (!samePose && !preparedRenderer) renderer.dispose(); throw error }
   }

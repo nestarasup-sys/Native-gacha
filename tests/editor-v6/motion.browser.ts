@@ -158,6 +158,23 @@ async function captureScene(scene: unknown, assets: unknown[], renderLayer: 'all
   const facialProvider = { ...Object.fromEntries(['loadFabricatorSlot','loadFabricatorPose','loadHairStyle','loadWardrobeSet','loadFaceSet','listFaceComponentAssets','loadFaceComponentAsset','listFaceCatalog','listFaceExpressionPresets','loadFaceExpressionPreset'].map(name => [name, provider[name as keyof typeof provider]])), loadFaceCatalogItem: async (_modelSlot: number, id: string) => id === openMouth.id ? openMouth : mouth } as CharacterRenderAssetProvider
   const appearance = { modelSlot: 1,mouthClosedCatalogId: mouth.id,mouthOpenCatalogId: openMouth.id,eyeState: 0 as const,eyebrows: false,noseIndex: 0,expressionIndex: 0,mouthOpen: false }
   const facialCharacter = { ...character, customization: { ...character.customization, faceAppearance: appearance } }
+  // The export-only hair bake previously drew the entire face twice: once
+  // into the body and again into a separate face layer. Assert exact native
+  // RGBA equality before relying on the new single-pass dual-output route.
+  const dualRenderer = await prepareSavedCharacterRenderer(facialCharacter, { source, artwork: source, assetProvider: facialProvider })
+  try {
+    for (const mode of ['idle', 'talk'] as const) {
+      const originalFrame = await dualRenderer.renderToCanvas(appearance, undefined, undefined, mode)
+      const reference = new Uint8ClampedArray(originalFrame.canvas.getContext('2d', { willReadFrequently: true })!.getImageData(0, 0, originalFrame.width, originalFrame.height).data)
+      const pairedFrame = await dualRenderer.renderToCanvasWithLayers(appearance, undefined, undefined, mode)
+      const changed = pairedFrame.canvas.getContext('2d', { willReadFrequently: true })!.getImageData(0, 0, pairedFrame.width, pairedFrame.height).data
+      assert(pairedFrame.width === originalFrame.width && pairedFrame.height === originalFrame.height, 'Dual-output face composition changed its canvas dimensions')
+      let differences = 0
+      for (let channel = 0; channel < reference.length; channel++) if (reference[channel] !== changed[channel]) differences++
+      assert(differences === 0, `The single-pass face rendering changed ${differences} native RGBA channels in ${mode} mode`)
+      assert(pairedFrame.layers.face.width > 1 && pairedFrame.layers.behindFace.width > 1, 'Dual-output renderer lost the export-only layers')
+    }
+  } finally { dualRenderer.dispose() }
   const talkFrom = { ...previous, state: { ...actor, faceAppearance: appearance, activeFaceMode: 'talk' as const } }
   const talkTo = { ...next, state: { ...actor, poseSlot: 2, faceAppearance: appearance, activeFaceMode: 'talk' as const } }
   const talkPlanBase = editorV6MotionPlan(track, talkFrom, talkTo)!
