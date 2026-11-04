@@ -10,6 +10,7 @@ import { resolveSavedCharacterSource } from '../../characters/characterSourceRes
 import { measureFaceModeCrop } from './faceModeAssets'
 import { mapConcurrentItems } from '../../ui/mapConcurrentItems'
 import { createEditorV6HairBakeBatch, editorV6HairBakeContentKey, selectEditorV6HairlessTransitionBakes } from './motion/hairBakeBatch'
+import { createEditorV6HairPreparationReuse } from './motion/hairPreparationReuse'
 import type { GachaReusableMaterialCache } from '../../characters/preparedCharacterMaterials'
 
 type MotionTarget = { elementId: string; state: EditorV6Element; assetId: string; faceMode: EditorV6FaceRenderMode }
@@ -124,6 +125,7 @@ export async function prepareEditorV6HairMotionBundle(
   // renderer material loader). Share wardrobe/hair manifests across poses;
   // never reuse any characters/materials from an earlier export.
   const materialCache: GachaReusableMaterialCache = new Map()
+  const currentExportReuse = createEditorV6HairPreparationReuse()
   const [{ prepareSavedCharacterRenderer }, { loadCharacterTintedImage, resolvedHairColors }] = await Promise.all([
     import('../../characters/editorV6CharacterRenderer'), import('../../characters/characterRenderer')
   ])
@@ -138,7 +140,7 @@ export async function prepareEditorV6HairMotionBundle(
     if (!references.length) continue
     const styleIds = [...new Set(references.map(reference => reference.id))]
     stageStarted = performance.now()
-    const loadedStyles = await Promise.all(styleIds.map(async id => [id, await window.desktop.fabricator.loadHairStyle(resolved.modelSlot, id)] as const))
+    const loadedStyles = await Promise.all(styleIds.map(async id => [id, await currentExportReuse.loadStyle(resolved.modelSlot, id, () => window.desktop.fabricator.loadHairStyle(resolved.modelSlot, id))] as const))
     reportStage('loadHairStyles', stageStarted)
     const styles = new Map(loadedStyles)
     const sourceHeadPart = resolved.source.parts.find(part => /cabe[çc]a|head/i.test(part.name))
@@ -167,14 +169,20 @@ export async function prepareEditorV6HairMotionBundle(
           rotation: baseTransform.rotation + (override.rotation ?? 0)
         } : baseTransform
         const colors = resolvedHairColors(appearance, reference.part)
-        let dataUrl = original.dataUrl
-        if (Object.keys(colors).length) {
-          const tinted = await loadCharacterTintedImage(original.dataUrl, colors)
-          const canvas = document.createElement('canvas'); canvas.width = tinted.naturalWidth; canvas.height = tinted.naturalHeight
-          const context = canvas.getContext('2d')
-          if (!context) throw Error('Não foi possível recolorir uma camada de cabelo para a exportação.')
-          context.drawImage(tinted, 0, 0); dataUrl = canvasDataUrl(canvas); canvas.width = canvas.height = 1
-        }
+        const dataUrl = await currentExportReuse.prepareTexture(
+          resolved.modelSlot, reference.id, reference.side, reference.part, colors,
+          async () => {
+            if (!Object.keys(colors).length) return original.dataUrl
+            const tinted = await loadCharacterTintedImage(original.dataUrl, colors)
+            const canvas = document.createElement('canvas'); canvas.width = tinted.naturalWidth; canvas.height = tinted.naturalHeight
+            const context = canvas.getContext('2d')
+            if (!context) throw Error('Não foi possível recolorir uma camada de cabelo para a exportação.')
+            try {
+              context.drawImage(tinted, 0, 0)
+              return canvasDataUrl(canvas)
+            } finally { canvas.width = canvas.height = 1 }
+          }
+        )
         descriptors.push({
           id: `${reference.part}:${index}`,
           textureId: addTexture(`${character.id}:${reference.id}:${reference.side}:${reference.part}`, dataUrl),
@@ -239,6 +247,7 @@ export async function prepareEditorV6HairMotionBundle(
     } finally { originalRenderer.dispose(); hairlessRenderer.dispose() }
   }
   materialCache.clear()
+  currentExportReuse.clear()
   if (!rigs.length) throw Error('Nenhum personagem do projeto tem uma camada de cabelo visível para animar.')
 
   const rigByEndpoint = new Map(rigs.map(rig => [`${rig.elementId}:${rig.assetId}`, rig]))
