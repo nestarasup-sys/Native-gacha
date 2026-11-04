@@ -30,6 +30,6 @@ Baseline da sessão anterior: frio **53,47 s**; média quente **34,33 s**; prepa
 
 Isso **não** reutiliza uma exportação anterior, não escreve cache em disco e não evita o preparo da exportação seguinte. Para 11 transições, o benefício depende de quantas chaves realmente se repetem; se forem todas diferentes, a melhoria economiza zero bakes e só adiciona lookup barato.
 
-A métrica `bakeHairlessMotionTransition` agora usa um cronômetro **local por tarefa** (antes usava `stageStarted` compartilhado entre duas promises concorrentes, portanto a soma do diagnóstico podia estar errada). A métrica `bakeHairlessMotionTransitionReused` reporta a quantidade reusada no lote; ela **não** é tempo em milissegundos, então não a some às fases temporais.
+A métrica `bakeHairlessMotionTransition` agora usa um cronômetro **local por tarefa** (antes usava `stageStarted` compartilhado entre duas promises concorrentes, portanto a soma do diagnóstico podia estar errada). Os testes consultam `batch.metrics().reusedBakes` para validar a deduplicação, **sem misturar contadores com medições em milissegundos**. A quantidade real de bakes no projeto pessoal só será conhecida ao executar o benchmark no Windows 11.
 
 Testes novos cobrem concorrência, conclusão, limpeza, falhas e diferenciação da chave quando face/crops/character ou escalas da boca mudam.

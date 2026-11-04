@@ -296,7 +296,6 @@ export async function prepareEditorV6HairMotionBundle(
       if (isCancelled()) throw Error('Preparação da animação de cabelo cancelada.')
       return { plan, ...prepared }
     }, isCancelled, 2).finally(() => {
-      diagnostics?.onStage?.('bakeHairlessMotionTransitionReused', hairBakeBatch.metrics().reusedBakes)
       hairBakeBatch.clear()
       transitionSession.materials.clear()
     })
